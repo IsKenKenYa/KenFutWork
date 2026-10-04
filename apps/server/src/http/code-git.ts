@@ -18,9 +18,6 @@ import {
   codeShellsResponseSchema,
   codeTerminalRequestSchema,
   codeTerminalResponseSchema,
-  codeWorktreeCreateRequestSchema,
-  codeWorktreeListResponseSchema,
-  codeWorktreeRemoveRequestSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -39,21 +36,21 @@ export async function registerCodeGitRoutes(
   app: FastifyInstance,
   options: { auth: RequestAuthenticator; codeGitService: CodeGitService },
 ) {
-  app.get<{ Querystring: { canvasId?: string } }>(
+  app.get<{ Querystring: { taskId?: string } }>(
     "/api/code/git",
     async (request, reply) => {
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthorized(reply);
-      const canvasId = request.query.canvasId ?? "";
-      if (!canvasId) {
+      const taskId = request.query.taskId ?? "";
+      if (!taskId) {
         return reply.code(400).send(
           applicationErrorResponseSchema.parse({
-            error: { code: "invalid_input", message: "缺少 canvasId。" },
+            error: { code: "invalid_input", message: "缺少 taskId。" },
           }),
         );
       }
       try {
-        const git = await options.codeGitService.status(user, canvasId);
+        const git = await options.codeGitService.status(user, taskId);
         return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
       } catch (error) {
         return sendCodeGitError(error, reply);
@@ -68,7 +65,7 @@ export async function registerCodeGitRoutes(
       const payload = codeGitCheckoutRequestSchema.parse(request.body);
       const git = await options.codeGitService.checkout(
         user,
-        payload.canvasId,
+        payload.taskId,
         payload.branch,
       );
       return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
@@ -79,21 +76,21 @@ export async function registerCodeGitRoutes(
 
   // --- R2-1：更改统计 / 提交 / 推送 / 新建分支（写操作纪律在 service 里） ---
 
-  app.get<{ Querystring: { canvasId?: string } }>(
+  app.get<{ Querystring: { taskId?: string } }>(
     "/api/code/git/diff-stat",
     async (request, reply) => {
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthorized(reply);
-      const canvasId = request.query.canvasId ?? "";
-      if (!canvasId) {
+      const taskId = request.query.taskId ?? "";
+      if (!taskId) {
         return reply.code(400).send(
           applicationErrorResponseSchema.parse({
-            error: { code: "invalid_input", message: "缺少 canvasId。" },
+            error: { code: "invalid_input", message: "缺少 taskId。" },
           }),
         );
       }
       try {
-        const stat = await options.codeGitService.diffStat(user, canvasId);
+        const stat = await options.codeGitService.diffStat(user, taskId);
         return reply
           .code(200)
           .send(codeGitDiffStatResponseSchema.parse({ stat }));
@@ -105,22 +102,22 @@ export async function registerCodeGitRoutes(
 
   // GET /api/code/git/graph — git 图谱（R2-1 条目 6）。条数上限由查询给，
   // 这里夹到 1..200：界面只画最近几十条，给个越界值不该让服务端去 log 十万行。
-  app.get<{ Querystring: { canvasId?: string; limit?: string } }>(
+  app.get<{ Querystring: { taskId?: string; limit?: string } }>(
     "/api/code/git/graph",
     async (request, reply) => {
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthorized(reply);
-      const canvasId = request.query.canvasId ?? "";
-      if (!canvasId) {
+      const taskId = request.query.taskId ?? "";
+      if (!taskId) {
         return reply.code(400).send(
           applicationErrorResponseSchema.parse({
-            error: { code: "invalid_input", message: "缺少 canvasId。" },
+            error: { code: "invalid_input", message: "缺少 taskId。" },
           }),
         );
       }
       const limit = clampGraphLimit(request.query.limit);
       try {
-        const graph = await options.codeGitService.graph(user, canvasId, limit);
+        const graph = await options.codeGitService.graph(user, taskId, limit);
         return reply
           .code(200)
           .send(codeGitGraphResponseSchema.parse({ graph }));
@@ -131,23 +128,23 @@ export async function registerCodeGitRoutes(
   );
 
   // GET /api/code/git/changes — 变更文件清单（R3-2）：逐文件增删行数与状态
-  app.get<{ Querystring: { canvasId?: string } }>(
+  app.get<{ Querystring: { taskId?: string } }>(
     "/api/code/git/changes",
     async (request, reply) => {
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthorized(reply);
-      const canvasId = request.query.canvasId ?? "";
-      if (!canvasId) {
+      const taskId = request.query.taskId ?? "";
+      if (!taskId) {
         return reply.code(400).send(
           applicationErrorResponseSchema.parse({
-            error: { code: "invalid_input", message: "缺少 canvasId。" },
+            error: { code: "invalid_input", message: "缺少 taskId。" },
           }),
         );
       }
       try {
         const changes = await options.codeGitService.changes(
           user,
-          canvasId,
+          taskId,
           MAX_CHANGED_FILES,
         );
         return reply
@@ -160,29 +157,25 @@ export async function registerCodeGitRoutes(
   );
 
   // GET /api/code/git/diff?path= — 单文件差异（R3-2「审查」）
-  app.get<{ Querystring: { canvasId?: string; path?: string } }>(
+  app.get<{ Querystring: { taskId?: string; path?: string } }>(
     "/api/code/git/diff",
     async (request, reply) => {
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthorized(reply);
-      const canvasId = request.query.canvasId ?? "";
+      const taskId = request.query.taskId ?? "";
       const path = request.query.path ?? "";
-      if (!canvasId || !path) {
+      if (!taskId || !path) {
         return reply.code(400).send(
           applicationErrorResponseSchema.parse({
             error: {
               code: "invalid_input",
-              message: "缺少 canvasId 或 path。",
+              message: "缺少 taskId 或 path。",
             },
           }),
         );
       }
       try {
-        const diff = await options.codeGitService.fileDiff(
-          user,
-          canvasId,
-          path,
-        );
+        const diff = await options.codeGitService.fileDiff(user, taskId, path);
         return reply.code(200).send(codeGitDiffResponseSchema.parse({ diff }));
       } catch (error) {
         return sendCodeGitError(error, reply);
@@ -193,29 +186,25 @@ export async function registerCodeGitRoutes(
   // GET /api/code/file?path= — 工作目录里的单文件内容（R3-2「打开」/ R3-3「文档入口」）。
   // 与 git 同一作用域（沙箱工作目录）+ 同一套归属校验，故并在这里注册；读取本身只是
   // 受限的只读文本预览（路径必须落在工作目录内、只读前 256 KB、二进制只回元信息）。
-  app.get<{ Querystring: { canvasId?: string; path?: string } }>(
+  app.get<{ Querystring: { taskId?: string; path?: string } }>(
     "/api/code/file",
     async (request, reply) => {
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthorized(reply);
-      const canvasId = request.query.canvasId ?? "";
+      const taskId = request.query.taskId ?? "";
       const path = request.query.path ?? "";
-      if (!canvasId || !path) {
+      if (!taskId || !path) {
         return reply.code(400).send(
           applicationErrorResponseSchema.parse({
             error: {
               code: "invalid_input",
-              message: "缺少 canvasId 或 path。",
+              message: "缺少 taskId 或 path。",
             },
           }),
         );
       }
       try {
-        const file = await options.codeGitService.readFile(
-          user,
-          canvasId,
-          path,
-        );
+        const file = await options.codeGitService.readFile(user, taskId, path);
         return reply.code(200).send(codeGitFileResponseSchema.parse({ file }));
       } catch (error) {
         return sendCodeGitError(error, reply);
@@ -224,23 +213,23 @@ export async function registerCodeGitRoutes(
   );
 
   // GET /api/code/files — 工作目录的文件目录（R3-1「文件目录」标签）：只列一层
-  app.get<{ Querystring: { canvasId?: string; path?: string } }>(
+  app.get<{ Querystring: { taskId?: string; path?: string } }>(
     "/api/code/files",
     async (request, reply) => {
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthorized(reply);
-      const canvasId = request.query.canvasId ?? "";
-      if (!canvasId) {
+      const taskId = request.query.taskId ?? "";
+      if (!taskId) {
         return reply.code(400).send(
           applicationErrorResponseSchema.parse({
-            error: { code: "invalid_input", message: "缺少 canvasId。" },
+            error: { code: "invalid_input", message: "缺少 taskId。" },
           }),
         );
       }
       try {
         const files = await options.codeGitService.listFiles(
           user,
-          canvasId,
+          taskId,
           request.query.path ?? "",
         );
         return reply.code(200).send(codeFilesResponseSchema.parse({ files }));
@@ -260,7 +249,7 @@ export async function registerCodeGitRoutes(
       const payload = codeTerminalRequestSchema.parse(request.body);
       const result = await options.codeGitService.runTerminal(
         user,
-        payload.canvasId,
+        payload.taskId,
         payload.command,
         payload.shell,
       );
@@ -278,7 +267,7 @@ export async function registerCodeGitRoutes(
       const payload = codeGitStageRequestSchema.parse(request.body);
       const result = await options.codeGitService.setFileStaged(
         user,
-        payload.canvasId,
+        payload.taskId,
         payload.path,
         payload.staged,
       );
@@ -296,7 +285,7 @@ export async function registerCodeGitRoutes(
       const payload = codeGitStageHunkRequestSchema.parse(request.body);
       const result = await options.codeGitService.applyFileHunk(
         user,
-        payload.canvasId,
+        payload.taskId,
         payload.path,
         payload.patch,
         {
@@ -325,12 +314,12 @@ export async function registerCodeGitRoutes(
       if (payload.path) {
         await options.codeGitService.discardFile(
           user,
-          payload.canvasId,
+          payload.taskId,
           payload.path,
           payload.untracked ?? false,
         );
       } else {
-        await options.codeGitService.discardAllChanges(user, payload.canvasId);
+        await options.codeGitService.discardAllChanges(user, payload.taskId);
       }
       return reply
         .code(200)
@@ -361,9 +350,9 @@ export async function registerCodeGitRoutes(
     if (!user) return sendUnauthorized(reply);
     try {
       const payload = codeGitCheckoutRequestSchema
-        .pick({ canvasId: true })
+        .pick({ taskId: true })
         .parse(request.body);
-      const git = await options.codeGitService.init(user, payload.canvasId);
+      const git = await options.codeGitService.init(user, payload.taskId);
       return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
     } catch (error) {
       return sendCodeGitError(error, reply);
@@ -377,7 +366,7 @@ export async function registerCodeGitRoutes(
       const payload = codeGitCommitRequestSchema.parse(request.body);
       const git = await options.codeGitService.commit(
         user,
-        payload.canvasId,
+        payload.taskId,
         payload.message,
       );
       return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
@@ -391,75 +380,10 @@ export async function registerCodeGitRoutes(
     if (!user) return sendUnauthorized(reply);
     try {
       const payload = codeGitCheckoutRequestSchema
-        .pick({ canvasId: true })
+        .pick({ taskId: true })
         .parse(request.body);
-      const git = await options.codeGitService.push(user, payload.canvasId);
+      const git = await options.codeGitService.push(user, payload.taskId);
       return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
-    } catch (error) {
-      return sendCodeGitError(error, reply);
-    }
-  });
-
-  // ── 工作树（R5-2）：列出 / 新建 / 删除 ──
-
-  app.get<{ Querystring: { canvasId?: string } }>(
-    "/api/code/git/worktrees",
-    async (request, reply) => {
-      const user = await options.auth.authenticate(request);
-      if (!user) return sendUnauthorized(reply);
-      const canvasId = request.query.canvasId ?? "";
-      if (!canvasId) {
-        return reply.code(400).send(
-          applicationErrorResponseSchema.parse({
-            error: { code: "invalid_input", message: "缺少 canvasId。" },
-          }),
-        );
-      }
-      try {
-        const result = await options.codeGitService.listWorktrees(
-          user,
-          canvasId,
-        );
-        return reply
-          .code(200)
-          .send(codeWorktreeListResponseSchema.parse(result));
-      } catch (error) {
-        return sendCodeGitError(error, reply);
-      }
-    },
-  );
-
-  app.post("/api/code/git/worktrees", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
-    if (!user) return sendUnauthorized(reply);
-    try {
-      const payload = codeWorktreeCreateRequestSchema.parse(request.body);
-      const result = await options.codeGitService.createWorktree(
-        user,
-        payload.canvasId,
-        {
-          path: payload.path,
-          branch: payload.branch,
-          create: payload.create,
-        },
-      );
-      return reply.code(200).send(codeWorktreeListResponseSchema.parse(result));
-    } catch (error) {
-      return sendCodeGitError(error, reply);
-    }
-  });
-
-  app.post("/api/code/git/worktrees/remove", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
-    if (!user) return sendUnauthorized(reply);
-    try {
-      const payload = codeWorktreeRemoveRequestSchema.parse(request.body);
-      const result = await options.codeGitService.removeWorktree(
-        user,
-        payload.canvasId,
-        { path: payload.path, force: payload.force },
-      );
-      return reply.code(200).send(codeWorktreeListResponseSchema.parse(result));
     } catch (error) {
       return sendCodeGitError(error, reply);
     }
@@ -472,7 +396,7 @@ export async function registerCodeGitRoutes(
       const payload = codeGitBranchCreateRequestSchema.parse(request.body);
       const git = await options.codeGitService.createBranch(
         user,
-        payload.canvasId,
+        payload.taskId,
         payload.name,
       );
       return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));

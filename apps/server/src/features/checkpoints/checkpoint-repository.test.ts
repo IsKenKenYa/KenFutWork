@@ -19,7 +19,10 @@ import {
 const row = (overrides: Partial<CheckpointRow> = {}): CheckpointRow => ({
   id: "ck-1",
   workspaceId: "ws-1",
-  canvasId: "canvas-1",
+  taskId: "task-1",
+  projectId: "project-1",
+  rootDirectory: "/workspace",
+  directorySnapshots: [{ rootDirectory: "/workspace", shadowCommit: "a".repeat(40) }],
   runId: null,
   kind: "turn",
   label: "轮次开始快照",
@@ -70,7 +73,10 @@ describe("检查点仓储：SQL 形状（录制假 persistence）", () => {
     expect(sql).toContain(":workspace");
     expect(statements[0]?.params).toEqual([
       "ck-1",
-      "canvas-1",
+      "project-1",
+      "task-1",
+      "/workspace",
+      JSON.stringify([{ rootDirectory: "/workspace", shadowCommit: "a".repeat(40) }]),
       null,
       "turn",
       "轮次开始快照",
@@ -86,7 +92,10 @@ describe("检查点仓储：SQL 形状（录制假 persistence）", () => {
     const { persistence } = makeRecordingPersistence({
       id: "ck-9",
       workspace_id: "ws-1",
-      canvas_id: "c-9",
+      task_id: "c-9",
+      project_id: "project-1",
+      root_directory: "/workspace",
+      directory_snapshots: [{ rootDirectory: "/workspace", shadowCommit: "b".repeat(40) }],
       run_id: "run-2",
       kind: "restore",
       label: "回滚恢复点",
@@ -103,7 +112,10 @@ describe("检查点仓储：SQL 形状（录制假 persistence）", () => {
     expect(loaded).toEqual({
       id: "ck-9",
       workspaceId: "ws-1",
-      canvasId: "c-9",
+      taskId: "c-9",
+      projectId: "project-1",
+      rootDirectory: "/workspace",
+      directorySnapshots: [{ rootDirectory: "/workspace", shadowCommit: "b".repeat(40) }],
       runId: "run-2",
       kind: "restore",
       label: "回滚恢复点",
@@ -115,11 +127,11 @@ describe("检查点仓储：SQL 形状（录制假 persistence）", () => {
     });
   });
 
-  it("listByCanvas 升序、getPrevious 严格早于，均带工作区谓词", async () => {
+  it("listByTask 升序、getPrevious 严格早于，均带工作区谓词", async () => {
     const { persistence, statements } = makeRecordingPersistence();
     const repo = createCheckpointRepository(persistence);
 
-    await repo.listByCanvas("ws-1", "c-1");
+    await repo.listByTask("ws-1", "c-1");
     expect(statements[0]?.sql).toContain("workspace_id = :workspace");
     expect(statements[0]?.sql).toContain("order by created_at asc");
     expect(statements[0]?.params).toEqual(["c-1"]);
@@ -133,7 +145,7 @@ describe("检查点仓储：SQL 形状（录制假 persistence）", () => {
 });
 
 describe("检查点仓储：内存实现", () => {
-  it("listByCanvas 按 createdAt 升序（与插入顺序无关），画布之间隔离", async () => {
+  it("listByTask 按 createdAt 升序（与插入顺序无关），画布之间隔离", async () => {
     const repo = createInMemoryCheckpointRepository();
     await repo.insert(
       row({ id: "ck-2", createdAt: "2026-01-01T00:00:01.000Z" }),
@@ -144,14 +156,14 @@ describe("检查点仓储：内存实现", () => {
     await repo.insert(
       row({
         id: "ck-3",
-        canvasId: "canvas-2",
+        taskId: "task-2",
         createdAt: "2026-01-01T00:00:02.000Z",
       }),
     );
 
-    const rows = await repo.listByCanvas("ws-1", "canvas-1");
+    const rows = await repo.listByTask("ws-1", "task-1");
     expect(rows.map((r) => r.id)).toEqual(["ck-1", "ck-2"]);
-    expect(await repo.listByCanvas("ws-1", "canvas-2")).toHaveLength(1);
+    expect(await repo.listByTask("ws-1", "task-2")).toHaveLength(1);
   });
 
   it("getById 按工作区隔离：外工作区取不到", async () => {
@@ -172,18 +184,18 @@ describe("检查点仓储：内存实现", () => {
     );
 
     expect(
-      (await repo.getPrevious("ws-1", "canvas-1", "2026-01-01T00:00:02.000Z"))
+      (await repo.getPrevious("ws-1", "task-1", "2026-01-01T00:00:02.000Z"))
         ?.id,
     ).toBe("ck-2");
     expect(
-      (await repo.getPrevious("ws-1", "canvas-1", "2026-01-01T00:00:01.000Z"))
+      (await repo.getPrevious("ws-1", "task-1", "2026-01-01T00:00:01.000Z"))
         ?.id,
     ).toBe("ck-1");
     expect(
-      await repo.getPrevious("ws-1", "canvas-1", "2026-01-01T00:00:00.000Z"),
+      await repo.getPrevious("ws-1", "task-1", "2026-01-01T00:00:00.000Z"),
     ).toBeNull();
     expect(
-      await repo.getPrevious("ws-1", "canvas-1", "2025-12-31T00:00:00.000Z"),
+      await repo.getPrevious("ws-1", "task-1", "2025-12-31T00:00:00.000Z"),
     ).toBeNull();
   });
 });

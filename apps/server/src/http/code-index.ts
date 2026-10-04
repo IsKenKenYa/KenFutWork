@@ -22,7 +22,7 @@ import type { SettingsService } from "../features/settings/settings-service.js";
  *   关着时搜索端点**如实拒绝并指路**（不是静默回空列表——那会让人以为「搜不到」是内容问题）。
  * - `codeIndexAutoNewFolder` =「索引新文件夹」：搜到还没有索引的目录时自动建一份；
  *   关着时如实说「没有索引，请手动重建」；文件数达 50,000 时不自动建（可读原因）。
- * 索引数据是本机缓存（`<cwd>/.kenfutwork/index/<canvasId>.json`），所以「清空」是真删文件。
+ * 索引数据是本机缓存（`<cwd>/.kenfutwork/index/<taskId>.json`），所以「清空」是真删文件。
  */
 export async function registerCodeIndexRoutes(
   app: FastifyInstance,
@@ -52,9 +52,9 @@ export async function registerCodeIndexRoutes(
   /** 画布 → 工作目录（越权 404，与其它 code 端点同一处校验）+ 该工作区的两个索引开关。 */
   const scopeFor = async (
     user: AuthenticatedUser,
-    canvasId: string,
+    taskId: string,
   ): Promise<{ enabled: boolean; autoNewFolder: boolean; dir: string }> => {
-    const scope = await options.codeGitService.indexScope(user, canvasId);
+    const scope = await options.codeGitService.indexScope(user, taskId);
     const settings = await options.settingsService.getWorkspaceSettings(
       user,
       scope.workspaceId,
@@ -66,16 +66,16 @@ export async function registerCodeIndexRoutes(
     };
   };
 
-  app.get<{ Querystring: { canvasId?: string } }>(
+  app.get<{ Querystring: { taskId?: string } }>(
     "/api/code/index",
     async (request, reply) => {
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthorized(reply);
-      const canvasId = request.query.canvasId ?? "";
-      if (!canvasId) return sendBadInput(reply, "缺少 canvasId。");
+      const taskId = request.query.taskId ?? "";
+      if (!taskId) return sendBadInput(reply, "缺少 taskId。");
       try {
-        const { enabled, autoNewFolder } = await scopeFor(user, canvasId);
-        const index = await options.indexStore.load(canvasId);
+        const { enabled, autoNewFolder } = await scopeFor(user, taskId);
+        const index = await options.indexStore.load(taskId);
         return reply.code(200).send({
           enabled,
           autoNewFolder,
@@ -90,14 +90,14 @@ export async function registerCodeIndexRoutes(
   app.post("/api/code/index/rebuild", async (request, reply) => {
     const user = await options.auth.authenticate(request);
     if (!user) return sendUnauthorized(reply);
-    const canvasId = (request.body as { canvasId?: unknown } | undefined)
-      ?.canvasId;
-    if (typeof canvasId !== "string" || !canvasId) {
-      return sendBadInput(reply, "缺少 canvasId。");
+    const taskId = (request.body as { taskId?: unknown } | undefined)
+      ?.taskId;
+    if (typeof taskId !== "string" || !taskId) {
+      return sendBadInput(reply, "缺少 taskId。");
     }
     try {
-      const { dir } = await scopeFor(user, canvasId);
-      const index = await options.indexStore.rebuild(canvasId, dir);
+      const { dir } = await scopeFor(user, taskId);
+      const index = await options.indexStore.rebuild(taskId, dir);
       return reply
         .code(200)
         .send({ stats: await options.indexStore.stats(index) });
@@ -106,16 +106,16 @@ export async function registerCodeIndexRoutes(
     }
   });
 
-  app.delete<{ Querystring: { canvasId?: string } }>(
+  app.delete<{ Querystring: { taskId?: string } }>(
     "/api/code/index",
     async (request, reply) => {
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthorized(reply);
-      const canvasId = request.query.canvasId ?? "";
-      if (!canvasId) return sendBadInput(reply, "缺少 canvasId。");
+      const taskId = request.query.taskId ?? "";
+      if (!taskId) return sendBadInput(reply, "缺少 taskId。");
       try {
-        await scopeFor(user, canvasId);
-        await options.indexStore.clear(canvasId);
+        await scopeFor(user, taskId);
+        await options.indexStore.clear(taskId);
         return reply.code(200).send({ ok: true });
       } catch (error) {
         return sendIndexError(reply, error);
@@ -123,18 +123,18 @@ export async function registerCodeIndexRoutes(
     },
   );
 
-  app.get<{ Querystring: { canvasId?: string; q?: string } }>(
+  app.get<{ Querystring: { taskId?: string; q?: string } }>(
     "/api/code/index/search",
     async (request, reply) => {
       const user = await options.auth.authenticate(request);
       if (!user) return sendUnauthorized(reply);
-      const canvasId = request.query.canvasId ?? "";
+      const taskId = request.query.taskId ?? "";
       const query = request.query.q ?? "";
-      if (!canvasId || !query.trim()) {
-        return sendBadInput(reply, "缺少 canvasId 或 q。");
+      if (!taskId || !query.trim()) {
+        return sendBadInput(reply, "缺少 taskId 或 q。");
       }
       try {
-        const { enabled, autoNewFolder, dir } = await scopeFor(user, canvasId);
+        const { enabled, autoNewFolder, dir } = await scopeFor(user, taskId);
         if (!enabled) {
           return reply.code(409).send(
             applicationErrorResponseSchema.parse({
@@ -146,7 +146,7 @@ export async function registerCodeIndexRoutes(
             }),
           );
         }
-        const index = await options.indexStore.ensure(canvasId, dir, {
+        const index = await options.indexStore.ensure(taskId, dir, {
           auto: autoNewFolder,
         });
         if (!index) {

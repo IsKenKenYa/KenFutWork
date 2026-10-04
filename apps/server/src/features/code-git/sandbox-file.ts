@@ -1,4 +1,5 @@
-import { closeSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 import { join } from "node:path";
 
 import { resolveInsideRoot } from "../../utils/inside-root.js";
@@ -14,7 +15,7 @@ import { resolveInsideRoot } from "../../utils/inside-root.js";
  * 二进制判定用「窗口里有没有 NUL 字节」这一常见启发式：不是万无一失的 MIME 探测，
  * 但足够避免把 .png 当文本塞进界面。命中就只回元信息、不回内容。
  */
-export const MAX_VIEW_BYTES = 256 * 1024;
+export const MAX_VIEW_BYTES = AGENT_GOVERNANCE_DEFAULTS.codeReadMaxBytes;
 
 export interface SandboxFileView {
   /** 相对工作目录的路径（回显给界面，便于确认看的是哪个文件）。 */
@@ -31,21 +32,22 @@ export interface SandboxFileView {
 export function readSandboxTextFile(
   root: string,
   relativePath: string,
+  maxBytes: number = MAX_VIEW_BYTES,
 ): SandboxFileView {
   const absolute = resolveInsideRoot(root, relativePath);
-  const stat = statSync(absolute, { throwIfNoEntry: false });
-  if (!stat) {
-    throw new Error(`文件不存在：${relativePath}`);
+  let fd: number;
+  try { fd = openSync(absolute, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); }
+  catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") throw new Error(`文件不存在：${relativePath}`);
+    throw error;
   }
-  if (stat.isDirectory()) {
-    throw new Error(`${relativePath} 是目录，不能按文件打开。`);
-  }
-
-  const size = stat.size;
-  const window = Math.min(size, MAX_VIEW_BYTES);
-  const buffer = Buffer.alloc(window);
-  const fd = openSync(absolute, "r");
   try {
+    const stat = fstatSync(fd);
+    if (stat.isDirectory()) throw new Error(`${relativePath} 是目录，不能按文件打开。`);
+    if (!stat.isFile()) throw new Error(`${relativePath} 不是普通文件，不能打开。`);
+    const size = stat.size;
+    const window = Math.min(size, maxBytes);
+    const buffer = Buffer.alloc(window);
     let read = 0;
     while (read < window) {
       const chunk = readSync(fd, buffer, read, window - read, read);
@@ -73,7 +75,7 @@ export function readSandboxTextFile(
  * 排序：目录在前、同类型按名字；跳过 `.git`（版本元数据不是工作内容，且条目极多）。
  * 上限 {@link MAX_DIR_ENTRIES}：超出即标 truncated，界面如实说明「只列前 N 项」。
  */
-export const MAX_DIR_ENTRIES = 500;
+export const MAX_DIR_ENTRIES = AGENT_GOVERNANCE_DEFAULTS.codeSearchMaxResults;
 
 export interface SandboxDirEntry {
   name: string;
@@ -93,6 +95,7 @@ export interface SandboxDirListing {
 export function listSandboxDir(
   root: string,
   relativePath: string,
+  maxEntries: number = MAX_DIR_ENTRIES,
 ): SandboxDirListing {
   const normalized = relativePath.replace(/^[/\\]+/, "");
   const absolute = normalized
@@ -110,7 +113,7 @@ export function listSandboxDir(
   let truncated = false;
   for (const entry of readdirSync(absolute, { withFileTypes: true })) {
     if (entry.name === ".git") continue;
-    if (entries.length >= MAX_DIR_ENTRIES) {
+    if (entries.length >= maxEntries) {
       truncated = true;
       break;
     }

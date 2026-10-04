@@ -104,7 +104,7 @@ export const codeGitStatusResponseSchema = z.object({
 });
 
 export const codeGitCheckoutRequestSchema = z.object({
-  canvasId: z.string().min(1),
+  taskId: z.string().min(1),
   branch: z.string().min(1),
 });
 
@@ -121,12 +121,12 @@ export const codeGitDiffStatResponseSchema = z.object({
 });
 
 export const codeGitCommitRequestSchema = z.object({
-  canvasId: z.string().min(1),
+  taskId: z.string().min(1),
   message: z.string().trim().min(1).max(500),
 });
 
 export const codeGitBranchCreateRequestSchema = z.object({
-  canvasId: z.string().min(1),
+  taskId: z.string().min(1),
   name: z.string().trim().min(1).max(200),
 });
 
@@ -180,14 +180,14 @@ export const codeGitChangedFileSchema = z.object({
 
 /** 「审查」里的暂存/取消暂存（参考图审查视图的「暂存」）。 */
 export const codeGitStageRequestSchema = z.object({
-  canvasId: z.string().min(1),
+  taskId: z.string().min(1),
   path: z.string().min(1).max(1000),
   staged: z.boolean(),
 });
 
 /** 暂存 / 取消暂存**一个块**（参考图审查视图的「暂存块」）。 */
 export const codeGitStageHunkRequestSchema = z.object({
-  canvasId: z.string().min(1),
+  taskId: z.string().min(1),
   /** 这个块属于哪个文件（服务端会核对 patch 里改的确实只有它）。 */
   path: z.string().min(1).max(1000),
   /** 「文件头 + 这一块」的 patch 文本（由审查视图从 diff 里切出来）。 */
@@ -200,7 +200,7 @@ export const codeGitStageHunkRequestSchema = z.object({
 
 /** 撤销：单个文件（未跟踪的会被删掉）或全部未提交改动。 */
 export const codeGitDiscardRequestSchema = z.object({
-  canvasId: z.string().min(1),
+  taskId: z.string().min(1),
   /** 缺省 = 撤销全部。 */
   path: z.string().min(1).max(1000).optional(),
   /** 该文件是否未跟踪（未跟踪的撤销 = 删除文件）。 */
@@ -259,7 +259,7 @@ export const codeFilesResponseSchema = z.object({
 // --- 右栏终端（R3-1「终端」标签）：在画布工作目录里跑用户命令 ---
 
 export const codeTerminalRequestSchema = z.object({
-  canvasId: z.string().min(1),
+  taskId: z.string().min(1),
   command: z.string().trim().min(1).max(4000),
   /** 本次用的 shell；缺省用工作区设置的默认（设置里没配就是 `auto`）。 */
   shell: terminalShellSchema.optional(),

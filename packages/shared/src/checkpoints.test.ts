@@ -20,6 +20,8 @@ const sha2 = "b".repeat(40);
 
 const summary = {
   id: "ck-1",
+  projectId: "project-1",
+  taskId: "task-1",
   runId: null,
   kind: "turn",
   label: "轮次开始快照",
@@ -71,13 +73,14 @@ describe("checkpointSummarySchema", () => {
 });
 
 describe("checkpointListResponseSchema / query", () => {
-  it("列表解析收下；query 缺 canvasId 拒绝", () => {
+  it("列表解析收下；query 缺Task身份或仅给canvasId拒绝", () => {
     expect(
       checkpointListResponseSchema.parse({ checkpoints: [summary] }),
     ).toEqual({ checkpoints: [summary] });
     expect(checkpointListQuerySchema.safeParse({}).success).toBe(false);
-    expect(checkpointListQuerySchema.parse({ canvasId: "canvas-1" })).toEqual({
-      canvasId: "canvas-1",
+    expect(checkpointListQuerySchema.safeParse({ canvasId: "canvas-1" }).success).toBe(false);
+    expect(checkpointListQuerySchema.parse({ taskId: "task-1" })).toEqual({
+      taskId: "task-1",
     });
   });
 });
@@ -87,11 +90,12 @@ describe("checkpointDiffResponseSchema", () => {
     const parsed = checkpointDiffResponseSchema.parse({
       diff: "diff --git a/a.txt b/a.txt\n",
       files: [
-        { path: "a.txt", added: 1, deleted: 0 },
-        { path: "logo.png", added: null, deleted: null },
+        { rootDirectory: "/project", path: "a.txt", added: 1, deleted: 0 },
+        { rootDirectory: "/project", path: "logo.png", added: null, deleted: null },
       ],
     });
     expect(parsed.files[1]).toEqual({
+      rootDirectory: "/project",
       path: "logo.png",
       added: null,
       deleted: null,
@@ -99,14 +103,14 @@ describe("checkpointDiffResponseSchema", () => {
     expect(
       checkpointDiffResponseSchema.safeParse({
         diff: "",
-        files: [{ path: "a.txt", added: 0, deleted: 0 }],
+        files: [{ rootDirectory: "/project", path: "a.txt", added: 0, deleted: 0 }],
       }).success,
     ).toBe(true);
     // 伪造二进制行数（非 null 数字以外的形态）仍按 schema 校验
     expect(
       checkpointDiffResponseSchema.safeParse({
         diff: "",
-        files: [{ path: "a.txt", added: "many", deleted: 0 }],
+        files: [{ rootDirectory: "/project", path: "a.txt", added: "many", deleted: 0 }],
       }).success,
     ).toBe(false);
   });
@@ -115,13 +119,15 @@ describe("checkpointDiffResponseSchema", () => {
 describe("checkpointPreviewResponseSchema", () => {
   it("targetSha + 受影响清单与汇总；targetSha 非法拒绝", () => {
     const preview = {
+      expectedVersion: "version-1",
       targetSha: sha2,
-      files: [{ path: "a.txt", added: 2, deleted: 1 }],
+      files: [{ rootDirectory: "/project", path: "a.txt", added: 2, deleted: 1 }],
       filesChanged: 1,
       insertions: 2,
       deletions: 1,
     };
     expect(checkpointPreviewResponseSchema.parse(preview)).toEqual(preview);
+    expect(checkpointPreviewResponseSchema.safeParse({ ...preview, expectedVersion: "" }).success).toBe(false);
     expect(
       checkpointPreviewResponseSchema.safeParse({ ...preview, targetSha: "x" })
         .success,

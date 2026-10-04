@@ -10,13 +10,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-
+import type { ExecShadowGit } from "./shadow-git-client.js";
 import {
   createShadowGitClient,
   SHADOW_EXCLUDES,
   type ShadowGitScope,
 } from "./shadow-git-client.js";
-import { createShadowGitExec } from "./shadow-git-exec.js";
 
 /**
  * 影子 git（Code 模式检查点核心）。
@@ -26,7 +25,38 @@ import { createShadowGitExec } from "./shadow-git-exec.js";
  * 「嵌套仓库隐形」「read-tree 恢复含删除」「ignore 文件不动」这些行为。
  */
 
-const exec = createShadowGitExec({ binary: "git" });
+// 纯 Git 客户端语义测试的执行替身；生产执行只走 ProcessSandbox。
+const exec: ExecShadowGit = async (args, scope, input) => {
+  mkdirSync(scope.gitDir, { recursive: true });
+  try {
+    return {
+      code: 0,
+      stderr: "",
+      stdout: execFileSync("git", ["--no-optional-locks", ...args], {
+        cwd: scope.workTree,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GIT_DIR: scope.gitDir,
+          GIT_WORK_TREE: scope.workTree,
+        },
+        ...(input === undefined ? {} : { input }),
+        stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+      }),
+    };
+  } catch (error) {
+    const failure = error as {
+      status?: number;
+      stderr?: Buffer;
+      stdout?: Buffer;
+    };
+    return {
+      code: failure.status ?? 1,
+      stderr: failure.stderr?.toString() ?? "失败",
+      stdout: failure.stdout?.toString() ?? "",
+    };
+  }
+};
 const client = createShadowGitClient({
   exec,
   writeTextFile: async (path, content) => {
@@ -207,106 +237,35 @@ describe("影子 git（Code 模式检查点核心）", () => {
     });
   });
 
-  describe("restoreTo 恢复三态", () => {
-    it("修改、新建、删除三类未提交改动全部精确还原", async () => {
+  describe("私有恢复 staging", () => {
+    it("精确保留二进制/中文文件字节，materialize不碰实时文件或用户.git", async () => {
       const scope = makeScope();
       await setup(scope);
-      writeFileSync(join(scope.workTree, "a.txt"), "one\n", "utf8");
-      writeFileSync(join(scope.workTree, "gone.txt"), "gone\n", "utf8");
-      writeFileSync(join(scope.workTree, "keep.txt"), "keep\n", "utf8");
-      const sha1 = (await client.commitSnapshot({ ...scope, message: "c1" }))
-        ?.sha as string;
-
-      // 三态：改 a.txt、删 gone.txt、增 new.txt
-      writeFileSync(join(scope.workTree, "a.txt"), "mutated\n", "utf8");
-      rmSync(join(scope.workTree, "gone.txt"));
-      writeFileSync(join(scope.workTree, "new.txt"), "new\n", "utf8");
-
-      await client.restoreTo({ ...scope, sha: sha1 });
-
-      expect(readFileSync(join(scope.workTree, "a.txt"), "utf8")).toBe("one\n");
-      expect(readFileSync(join(scope.workTree, "gone.txt"), "utf8")).toBe(
-        "gone\n",
-      );
-      expect(readFileSync(join(scope.workTree, "keep.txt"), "utf8")).toBe(
-        "keep\n",
-      );
-      expect(existsSync(join(scope.workTree, "new.txt"))).toBe(false);
-    });
-
-    it("只改不提交直接恢复：未提交改动被覆盖回目标状态", async () => {
-      const scope = makeScope();
-      await setup(scope);
-      writeFileSync(join(scope.workTree, "a.txt"), "v1\n", "utf8");
-      const sha1 = (await client.commitSnapshot({ ...scope, message: "c1" }))
-        ?.sha as string;
-
-      // 不产生新检查点，直接改动后恢复
-      writeFileSync(join(scope.workTree, "a.txt"), "未提交的脏改动\n", "utf8");
-      await client.restoreTo({ ...scope, sha: sha1 });
-      expect(readFileSync(join(scope.workTree, "a.txt"), "utf8")).toBe("v1\n");
-    });
-  });
-
-  describe("忽略与嵌套", () => {
-    it("忽略项（node_modules / *.log）在恢复前后原样存在", async () => {
-      const scope = makeScope();
-      await setup(scope);
-      writeFileSync(join(scope.workTree, "a.txt"), "v1\n", "utf8");
-      mkdirSync(join(scope.workTree, "node_modules", "pkg"), {
-        recursive: true,
-      });
-      writeFileSync(
-        join(scope.workTree, "node_modules", "pkg", "lib.js"),
-        "nm\n",
-        "utf8",
-      );
-      const sha1 = (await client.commitSnapshot({ ...scope, message: "c1" }))
-        ?.sha as string;
-
-      // 检查点之后新出现的忽略文件（从未进过影子仓库）
-      writeFileSync(join(scope.workTree, "app.log"), "log\n", "utf8");
-      writeFileSync(join(scope.workTree, "a.txt"), "v2\n", "utf8");
-
-      await client.restoreTo({ ...scope, sha: sha1 });
-
-      expect(readFileSync(join(scope.workTree, "a.txt"), "utf8")).toBe("v1\n");
+      const bytes = Buffer.from([0, 255, 10, 128]);
+      writeFileSync(join(scope.workTree, "binary.dat"), bytes);
+      writeFileSync(join(scope.workTree, "中文 文件.txt"), "原始\n");
+      const first = await client.commitSnapshot({ ...scope, message: "初始" });
+      if (!first) throw new Error("缺少初始快照");
+      writeFileSync(join(scope.workTree, "binary.dat"), "当前内容");
+      writeFileSync(join(scope.workTree, "new.txt"), "新文件");
+      mkdirSync(join(scope.workTree, ".git"));
+      writeFileSync(join(scope.workTree, ".git", "config"), "用户git");
+      const stagingDirectory = join(scope.gitDir, "restore");
+      mkdirSync(stagingDirectory);
+      await client.materialize({ ...scope, sha: first.sha, stagingDirectory });
+      expect(readFileSync(join(stagingDirectory, "binary.dat"))).toEqual(bytes);
       expect(
-        readFileSync(
-          join(scope.workTree, "node_modules", "pkg", "lib.js"),
-          "utf8",
-        ),
-      ).toBe("nm\n");
-      expect(readFileSync(join(scope.workTree, "app.log"), "utf8")).toBe(
-        "log\n",
+        readFileSync(join(stagingDirectory, "中文 文件.txt"), "utf8"),
+      ).toBe("原始\n");
+      expect(existsSync(join(stagingDirectory, "new.txt"))).toBe(false);
+      expect(readFileSync(join(scope.workTree, "binary.dat"), "utf8")).toBe(
+        "当前内容",
       );
-    });
-
-    it("嵌套 .git 不进影子仓库：numstat 不含其内容，恢复后原样存在", async () => {
-      const scope = makeScope();
-      await setup(scope);
-      writeFileSync(join(scope.workTree, "a.txt"), "v1\n", "utf8");
-      const sha1 = (await client.commitSnapshot({ ...scope, message: "c1" }))
-        ?.sha as string;
-
-      makeNestedRepo(scope.workTree);
-
-      const sha2 = (await client.commitSnapshot({ ...scope, message: "c2" }))
-        ?.sha as string;
-      const entries = await client.numstat({
-        ...scope,
-        from: sha1,
-        to: sha2,
-      });
-      // 嵌套仓库的**内容**一个字节都不进影子仓库（gitlink 指针不算内容）
-      expect(
-        entries.filter((e) => e.path.startsWith("nested/")).map((e) => e.path),
-      ).toEqual([]);
-
-      await client.restoreTo({ ...scope, sha: sha1 });
-      expect(
-        readFileSync(join(scope.workTree, "nested", "inner.txt"), "utf8"),
-      ).toBe("inner\n");
+      expect(readFileSync(join(scope.workTree, ".git", "config"), "utf8")).toBe(
+        "用户git",
+      );
+      expect(await client.currentPaths(scope)).toContain("new.txt");
+      expect(await client.currentPaths(scope)).not.toContain(".git/config");
     });
   });
 
@@ -376,8 +335,13 @@ describe("影子 git（Code 模式检查点核心）", () => {
       expect(entries.map((e) => e.path)).toEqual(["中文 文件.txt"]);
       expect(entries[0]?.added).toBe(1);
 
-      await client.restoreTo({ ...scope, sha: sha1 });
-      expect(readFileSync(path, "utf8")).toBe("你好\n");
+      const stagingDirectory = join(scope.gitDir, "restore-chinese");
+      mkdirSync(stagingDirectory);
+      await client.materialize({ ...scope, sha: sha1, stagingDirectory });
+      expect(
+        readFileSync(join(stagingDirectory, "中文 文件.txt"), "utf8"),
+      ).toBe("你好\n");
+      expect(readFileSync(path, "utf8")).toBe("你好\n世界\n");
     });
   });
 });
