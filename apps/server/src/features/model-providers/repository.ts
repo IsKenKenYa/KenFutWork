@@ -1,3 +1,4 @@
+import type { ProviderInstanceModel } from "@kenfutwork/shared";
 import type { PersistenceService } from "../persistence/types.js";
 
 export type ProviderInstanceRecord = {
@@ -7,15 +8,10 @@ export type ProviderInstanceRecord = {
   name: string;
   protocol: string;
   base_url: string | null;
-  encrypted_api_key: string;
-  models: Array<{
-    id: string;
-    name: string;
-    capability: string;
-    vision?: boolean;
-    contextWindow?: number;
-    maxOutputTokens?: number;
-  }> | null;
+  encrypted_api_key: string | null;
+  models: Array<
+    Omit<ProviderInstanceModel, "capability"> & { capability: string }
+  > | null;
   compat: Record<string, unknown> | null;
   headers: Record<string, string> | null;
   enabled: boolean;
@@ -28,8 +24,9 @@ export type ProviderInstanceRecord = {
 /** 更新补丁：`undefined` = 不改；显式 null = 清空（如移除 base_url）。 */
 export type ProviderInstancePatch = {
   name?: string | undefined;
+  protocol?: string | undefined;
   base_url?: string | null | undefined;
-  encrypted_api_key?: string | undefined;
+  encrypted_api_key?: string | null | undefined;
   models?: unknown;
   compat?: unknown;
   headers?: unknown;
@@ -41,7 +38,7 @@ export type NewWorkspaceInstance = {
   compat?: Record<string, unknown> | undefined;
   headers?: Record<string, string> | undefined;
   createdBy: string;
-  encryptedApiKey: string;
+  encryptedApiKey: string | null;
   enabled: boolean;
   models: unknown;
   name: string;
@@ -54,7 +51,7 @@ export type NewSystemInstance = {
   compat?: Record<string, unknown> | undefined;
   headers?: Record<string, string> | undefined;
   createdBy: string;
-  encryptedApiKey: string;
+  encryptedApiKey: string | null;
   enabled: boolean;
   models: unknown;
   name: string;
@@ -102,11 +99,13 @@ export interface ModelProviderRepository {
   updateSystemInstance(
     instanceId: string,
     patch: ProviderInstancePatch,
+    expectedRevision?: number,
   ): Promise<ProviderInstanceRecord | null>;
   updateWorkspaceInstance(
     workspaceId: string,
     instanceId: string,
     patch: ProviderInstancePatch,
+    expectedRevision?: number,
   ): Promise<ProviderInstanceRecord | null>;
 }
 
@@ -117,7 +116,8 @@ const INSTANCE_COLUMNS =
 function buildPatch(
   patch: ProviderInstancePatch,
   idParam: unknown,
-): { assignments: string[]; values: unknown[] } | null {
+  expectedRevision?: number,
+): { assignments: string[]; values: unknown[]; revisionFilter: string } | null {
   const assignments: string[] = [];
   const values: unknown[] = [idParam];
 
@@ -127,6 +127,7 @@ function buildPatch(
   };
 
   if (patch.name !== undefined) push("name", patch.name);
+  if (patch.protocol !== undefined) push("protocol", patch.protocol);
   if (patch.base_url !== undefined) push("base_url", patch.base_url);
   if (patch.encrypted_api_key !== undefined) {
     push("encrypted_api_key", patch.encrypted_api_key);
@@ -142,7 +143,16 @@ function buildPatch(
   }
   if (patch.enabled !== undefined) push("enabled", patch.enabled);
 
-  return assignments.length === 0 ? null : { assignments, values };
+  if (assignments.length === 0) return null;
+  if (expectedRevision !== undefined) values.push(expectedRevision);
+  return {
+    assignments,
+    values,
+    revisionFilter:
+      expectedRevision === undefined
+        ? ""
+        : `and config_revision = $${values.length}`,
+  };
 }
 
 export function createModelProviderRepository(
@@ -197,8 +207,13 @@ export function createModelProviderRepository(
         );
     },
 
-    async updateWorkspaceInstance(workspaceId, instanceId, patch) {
-      const built = buildPatch(patch, instanceId);
+    async updateWorkspaceInstance(
+      workspaceId,
+      instanceId,
+      patch,
+      expectedRevision,
+    ) {
+      const built = buildPatch(patch, instanceId, expectedRevision);
       if (!built) {
         return null;
       }
@@ -211,6 +226,7 @@ export function createModelProviderRepository(
           where workspace_id = :workspace
             and id = $1
             and scope = 'workspace'
+            ${built.revisionFilter}
         returning ${INSTANCE_COLUMNS}`,
           // $1 是目标 id；工作区由 :workspace 追加为末位参数，保持 SET 片段引用不漂移。
           built.values,
@@ -281,8 +297,8 @@ export function createModelProviderRepository(
       );
     },
 
-    async updateSystemInstance(instanceId, patch) {
-      const built = buildPatch(patch, instanceId);
+    async updateSystemInstance(instanceId, patch, expectedRevision) {
+      const built = buildPatch(patch, instanceId, expectedRevision);
       if (!built) {
         return null;
       }
@@ -292,6 +308,7 @@ export function createModelProviderRepository(
                 ${built.assignments.join(", ")}
           where id = $1
             and scope = 'system'
+            ${built.revisionFilter}
         returning ${INSTANCE_COLUMNS}`,
         built.values,
       );

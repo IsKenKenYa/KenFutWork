@@ -1,3 +1,8 @@
+import {
+  providerInstanceCreateRequestSchema,
+  providerInstanceResponseSchema,
+  providerInstanceUpdateRequestSchema,
+} from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 
 import type { AuthenticatedUser } from "../auth/types.js";
@@ -14,7 +19,7 @@ import {
   createModelProviderRepository,
   type ProviderInstanceRecord,
 } from "./repository.js";
-import { decryptSecret } from "./secret-store.js";
+import { decryptSecret, encryptSecret } from "./secret-store.js";
 
 const USER_ID = "user-1";
 const WORKSPACE_ID = "ws-1";
@@ -56,6 +61,9 @@ function createRunner(
         query: async (text, values) => run(text, values),
         release: () => {},
       };
+    },
+    async acquireSession() {
+      throw new Error("此查询夹具不提供真实执行宿主会话。");
     },
     async end() {},
   };
@@ -143,6 +151,200 @@ function buildService(options: {
 }
 
 describe("model-providers 服务（BYOK 凭证红线）", () => {
+  it("凭证保留显式chatApi方言，包括completions的false", async () => {
+    for (const chatApi of ["responses", "completions"]) {
+      const { service } = buildService({
+        rows: [
+          {
+            ...INSTANCE_ROW,
+            encrypted_api_key: encryptSecret(
+              { credentialSecret: CREDENTIAL_SECRET },
+              "test-key",
+            ),
+            compat: { chatApi },
+            probe_result: { responsesApi: true },
+          },
+        ],
+      });
+      expect(await service.resolveCredentials(USER, INSTANCE_ID)).toMatchObject(
+        {
+          useResponsesApi: chatApi === "responses",
+          responsesApi: true,
+        },
+      );
+    }
+  });
+
+  it("空模型草稿不得探测fabricated模型，停用chat模型也不发probe请求", async () => {
+    for (const models of [
+      [],
+      [{ id: "off", name: "停用", capability: "chat", enabled: false }],
+    ]) {
+      const { service } = buildService({
+        rows: [
+          {
+            ...INSTANCE_ROW,
+            models,
+            encrypted_api_key: encryptSecret(
+              { credentialSecret: CREDENTIAL_SECRET },
+              "test-key",
+            ),
+          },
+        ],
+      });
+      let requests = 0;
+      await expect(
+        service.probeInstance(USER, INSTANCE_ID, async () => {
+          requests += 1;
+          return new Response("{}", { status: 200 });
+        }),
+      ).rejects.toMatchObject({
+        code: "instance_model_unavailable",
+        statusCode: 409,
+      });
+      expect(requests).toBe(0);
+    }
+  });
+
+  it("同工作区旧修订返回409，缺失或其它作用域保持404", async () => {
+    for (const existing of [INSTANCE_ROW, null]) {
+      const runner = createRunner((sql) => ({
+        rowCount: sql.trimStart().startsWith("select") && existing ? 1 : 0,
+        rows:
+          sql.trimStart().startsWith("select") && existing ? [existing] : [],
+      }));
+      const service = createModelProviderService({
+        credentialEnv: {},
+        repository: createModelProviderRepository(
+          createPersistenceFromRunner(runner.runner),
+        ),
+        viewerService: VIEWER_STUB,
+      });
+      await expect(
+        service.updateInstance(USER, INSTANCE_ID, {
+          name: "旧草稿",
+          expectedRevision: 1,
+        }),
+      ).rejects.toMatchObject({
+        code: existing ? "instance_revision_conflict" : "instance_not_found",
+        statusCode: existing ? 409 : 404,
+      });
+    }
+  });
+
+  it("平台池旧修订只对system行返回409，其它工作区实例不可观察", async () => {
+    for (const existing of [SYSTEM_ROW, INSTANCE_ROW, null]) {
+      const runner = createRunner((sql) => ({
+        rowCount: sql.trimStart().startsWith("select") && existing ? 1 : 0,
+        rows:
+          sql.trimStart().startsWith("select") && existing ? [existing] : [],
+      }));
+      const service = createModelProviderService({
+        credentialEnv: {},
+        repository: createModelProviderRepository(
+          createPersistenceFromRunner(runner.runner),
+        ),
+      });
+      await expect(
+        service.updateSystemInstance(INSTANCE_ID, {
+          name: "旧平台草稿",
+          expectedRevision: 1,
+        }),
+      ).rejects.toMatchObject({
+        code:
+          existing?.scope === "system"
+            ? "instance_revision_conflict"
+            : "instance_not_found",
+        statusCode: existing?.scope === "system" ? 409 : 404,
+      });
+    }
+  });
+
+  it("实例读回保留模型的完整原生能力与显式false", async () => {
+    const model = {
+      id: "custom",
+      name: "自定义",
+      capability: "chat" as const,
+      vision: false,
+      enabled: true,
+      inputModalities: ["text", "pdf"],
+      contextWindow: 1000,
+      maxOutputTokens: 200,
+      structuredOutput: false,
+      nativeWebSearch: true,
+      systemMessage: false,
+      reasoningEfforts: ["medium"],
+      extraBody: { thinking: { type: "enabled" } },
+    };
+    const { service } = buildService({
+      rows: [{ ...INSTANCE_ROW, models: [model] }],
+    });
+    expect((await service.listInstances(USER))[0]?.models).toEqual([model]);
+  });
+
+  it("原UI可通过真实update清除key并切换protocol，省略key仍不修改已存值", async () => {
+    const { service, calls } = buildService({
+      rows: [
+        {
+          ...INSTANCE_ROW,
+          encrypted_api_key: null,
+          protocol: "anthropic",
+          models: [],
+          config_revision: "2",
+        },
+      ],
+      credentialSecret: "",
+    });
+    const input = providerInstanceUpdateRequestSchema.parse({
+      apiKey: null,
+      protocol: "anthropic",
+      models: [],
+    });
+    expect(
+      await service.updateInstance(USER, INSTANCE_ID, input),
+    ).toMatchObject({
+      hasCredential: false,
+      protocol: "anthropic",
+      models: [],
+      configRevision: 2,
+    });
+    expect(calls[0]?.text).toContain("encrypted_api_key");
+    expect(calls[0]?.values).toContain(null);
+    expect(calls[0]?.values).toContain("anthropic");
+    await expect(
+      service.resolveCredentials(USER, INSTANCE_ID),
+    ).rejects.toMatchObject({
+      code: "credential_unavailable",
+      statusCode: 409,
+    });
+  });
+
+  it("原Provider UI可保存无密钥空模型draft，真实hasCredential与revision只读，运行缺key fail loud", async () => {
+    const row = { ...INSTANCE_ROW, encrypted_api_key: null, models: [] };
+    const { service, calls } = buildService({
+      rows: [row],
+      credentialSecret: "",
+    });
+    const input = providerInstanceCreateRequestSchema.parse({
+      name: "供应商草稿",
+      protocol: "openai-compatible",
+      models: [],
+    });
+    expect(
+      providerInstanceResponseSchema.parse(
+        await service.createInstance(USER, input),
+      ),
+    ).toMatchObject({ hasCredential: false, models: [], configRevision: 1 });
+    expect(calls[0]?.values[3]).toBeNull();
+    expect(JSON.stringify(calls[0]?.values)).not.toContain("apiKey");
+    await expect(
+      service.resolveCredentials(USER, INSTANCE_ID),
+    ).rejects.toMatchObject({
+      code: "credential_unavailable",
+      statusCode: 409,
+    });
+  });
+
   it("列表按工作区 + scope='workspace' 限定，响应不含 Key", async () => {
     const { calls, service } = buildService({ rows: [INSTANCE_ROW] });
     const instances = await service.listInstances(USER);
@@ -155,6 +357,7 @@ describe("model-providers 服务（BYOK 凭证红线）", () => {
         protocol: "openai-compatible",
         baseUrl: "https://api.example.com/v1",
         hasCredential: true,
+        configRevision: 1,
         models: [{ id: "gpt-4.1", name: "GPT-4.1", capability: "chat" }],
         compat: { streamUsage: true },
         headerKeys: [],

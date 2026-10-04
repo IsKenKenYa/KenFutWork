@@ -23,6 +23,7 @@ function instance(
     name: "我的网关",
     protocol: "openai-compatible",
     hasCredential: true,
+    configRevision: 1,
     models: [
       { id: "gpt-x", name: "GPT X", capability: "chat" },
       { id: "img-1", name: "IMG 1", capability: "image" },

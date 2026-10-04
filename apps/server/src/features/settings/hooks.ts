@@ -1,4 +1,5 @@
 import type { WorkspaceSettings } from "@kenfutwork/shared";
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 
 import {
   detectTerminalShells,
@@ -25,9 +26,9 @@ import {
 export type HookEvent = "turn-start" | "turn-end";
 
 /** 钩子超时：比终端的默认值短——它是旁路，不该拖住一轮。 */
-export const HOOK_TIMEOUT_MS = 30_000;
+export const HOOK_TIMEOUT_MS = AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs;
 /** 进转录的输出上限（字符）。 */
-export const HOOK_OUTPUT_CHARS = 200;
+export const HOOK_OUTPUT_CHARS = AGENT_GOVERNANCE_DEFAULTS.processPreviewMaxChars;
 
 export interface HookRunResult {
   event: HookEvent;
@@ -60,6 +61,8 @@ export async function runHooks(input: {
   cwd: string;
   shell?: WorkspaceSettings["terminalShell"];
   runCommand?: typeof runTerminalCommand;
+  timeoutMs?: number;
+  previewMaxChars?: number;
 }): Promise<HookRunResult[]> {
   const run = input.runCommand ?? runTerminalCommand;
   const results: HookRunResult[] = [];
@@ -68,7 +71,7 @@ export async function runHooks(input: {
       command,
       cwd: input.cwd,
       ...(input.shell ? { shell: input.shell } : {}),
-      timeoutMs: HOOK_TIMEOUT_MS,
+      timeoutMs: input.timeoutMs ?? HOOK_TIMEOUT_MS,
     }).catch(
       (error: unknown): TerminalResult => ({
         command,
@@ -87,7 +90,7 @@ export async function runHooks(input: {
       command,
       exitCode: result.exitCode,
       timedOut: result.timedOut,
-      output: raw.replace(/\s+/g, " ").slice(0, HOOK_OUTPUT_CHARS),
+      output: raw.replace(/\s+/g, " ").slice(0, input.previewMaxChars ?? HOOK_OUTPUT_CHARS),
       durationMs: result.durationMs,
     });
   }

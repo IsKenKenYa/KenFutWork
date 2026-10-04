@@ -1,6 +1,6 @@
 import type {
-  ModelCapability,
   ProviderInstanceCreateRequest,
+  ProviderInstanceModel,
   ProviderInstanceResponse,
   ProviderInstanceUpdateRequest,
   ProviderPreset,
@@ -8,9 +8,16 @@ import type {
   ProviderProtocol,
   ProviderScope,
 } from "@kenfutwork/shared";
+import { providerInstanceModelSchema } from "@kenfutwork/shared";
 
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import {
+  type ModelConnectivityInput,
+  type ModelConnectivityOptions,
+  type ModelConnectivityResult,
+  testInstanceModelConnectivity,
+} from "./model-connectivity.js";
 import { loadBundledModelsDevSnapshot } from "./models-dev-bundled.js";
 import { listProviderPresets } from "./models-dev-snapshot.js";
 import { type ProbeFetch, type ProbeTarget, probeInstance } from "./probe.js";
@@ -39,6 +46,8 @@ export class ModelProviderServiceError extends Error {
     | "instance_delete_failed"
     | "instance_query_failed"
     | "instance_probe_failed"
+    | "instance_revision_conflict"
+    | "instance_model_unavailable"
     | "credential_unavailable";
 
   constructor(
@@ -60,45 +69,20 @@ export interface ResolvedInstanceCredentials {
   protocol: ProviderProtocol;
   baseUrl?: string;
   apiKey: string;
+  useResponsesApi?: boolean;
+  responsesApi?: boolean;
   compat?: Record<string, unknown>;
   /** 自定义请求头（原值，含占位符）：调用方按会话上下文渲染后再交给适配器。 */
   headers?: Record<string, string>;
-  models: Array<{
-    id: string;
-    name: string;
-    capability: ModelCapability;
-    enabled?: boolean;
-    reasoningEfforts?: string[];
-    extraBody?: Record<string, unknown>;
-  }>;
+  models: ProviderInstanceModel[];
   /** 实例配置修订号：异步任务落盘修订与当前不一致即拒（跨修订防护）。 */
   configRevision: number;
 }
 
-type InstanceModel = {
-  id: string;
-  name: string;
-  capability: string;
-  enabled?: boolean;
-  vision?: boolean;
-  contextWindow?: number;
-  maxOutputTokens?: number;
-  reasoningEfforts?: string[];
-  extraBody?: Record<string, unknown>;
-};
-
-function mapModels(models: InstanceModel[] | null) {
-  return (models ?? []).map((m) => ({
-    id: m.id,
-    name: m.name,
-    capability: m.capability as ModelCapability,
-    ...(m.enabled === false ? { enabled: false } : {}),
-    ...(m.vision ? { vision: true } : {}),
-    ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
-    ...(m.maxOutputTokens ? { maxOutputTokens: m.maxOutputTokens } : {}),
-    ...(m.reasoningEfforts ? { reasoningEfforts: m.reasoningEfforts } : {}),
-    ...(m.extraBody ? { extraBody: m.extraBody } : {}),
-  }));
+function mapModels(models: ProviderInstanceRecord["models"]) {
+  return (models ?? []).map((model) =>
+    providerInstanceModelSchema.parse(model),
+  );
 }
 
 function toResponse(row: ProviderInstanceRecord): ProviderInstanceResponse {
@@ -108,7 +92,8 @@ function toResponse(row: ProviderInstanceRecord): ProviderInstanceResponse {
     name: row.name,
     protocol: row.protocol as ProviderProtocol,
     ...(row.base_url ? { baseUrl: row.base_url } : {}),
-    hasCredential: true,
+    hasCredential: Boolean(row.encrypted_api_key),
+    configRevision: Number(row.config_revision),
     models: mapModels(row.models),
     ...(row.compat ? { compat: row.compat } : {}),
     // 自定义头只回键名，值不回显（与 MCP env/envKeys 同口径）。
@@ -127,6 +112,11 @@ function toCredentials(row: ProviderInstanceRecord, apiKey: string) {
     protocol: row.protocol as ProviderProtocol,
     ...(row.base_url ? { baseUrl: row.base_url } : {}),
     apiKey,
+    ...(row.compat?.chatApi === "responses"
+      ? { useResponsesApi: true }
+      : row.compat?.chatApi === "completions"
+        ? { useResponsesApi: false }
+        : {}),
     ...(row.compat ? { compat: row.compat } : {}),
     ...(row.headers ? { headers: row.headers } : {}),
     models: mapModels(row.models),
@@ -143,6 +133,7 @@ function toCredentials(row: ProviderInstanceRecord, apiKey: string) {
 function toPatch(input: ProviderInstanceUpdateRequest) {
   const patch: ProviderInstancePatch = {};
   if (input.name !== undefined) patch.name = input.name;
+  if (input.protocol !== undefined) patch.protocol = input.protocol;
   if (input.baseUrl !== undefined) patch.base_url = input.baseUrl;
   if (input.models !== undefined) patch.models = input.models;
   if (input.compat !== undefined) patch.compat = input.compat;
@@ -153,6 +144,12 @@ function toPatch(input: ProviderInstanceUpdateRequest) {
 }
 
 export interface ModelProviderService {
+  /** 对当前声明且启用的模型发真实native调用，不以能力probe代替连接验证。 */
+  testModelConnectivity(
+    user: AuthenticatedUser,
+    input: ModelConnectivityInput,
+    options: ModelConnectivityOptions,
+  ): Promise<ModelConnectivityResult>;
   listInstances(user: AuthenticatedUser): Promise<ProviderInstanceResponse[]>;
   createInstance(
     user: AuthenticatedUser,
@@ -238,6 +235,14 @@ export function createModelProviderService(options: {
     return credentialEnv.credentialSecret;
   }
 
+  function encryptKey(apiKey: string | null | undefined): string | null {
+    if (apiKey === undefined || apiKey === null) return null;
+    return encryptSecret(
+      { credentialSecret: requireCredentialSecret() },
+      apiKey,
+    );
+  }
+
   /** 工作区 id 一律由服务端从鉴权用户解析（`FORM-9`）。 */
   async function requireWorkspaceId(
     user: AuthenticatedUser,
@@ -267,6 +272,14 @@ export function createModelProviderService(options: {
       );
     }
 
+    if (!row.encrypted_api_key) {
+      throw new ModelProviderServiceError(
+        "credential_unavailable",
+        "该供应商尚未配置 API Key，请先在供应商设置中配置。",
+        409,
+      );
+    }
+
     try {
       return toCredentials(
         row,
@@ -281,7 +294,14 @@ export function createModelProviderService(options: {
     }
   }
 
-  return {
+  const service: ModelProviderService = {
+    async testModelConnectivity(user, input, options) {
+      return testInstanceModelConnectivity(
+        () => service.resolveCredentials(user, input.instanceId),
+        input,
+        options,
+      );
+    },
     async listInstances(user) {
       const workspaceId = await requireWorkspaceId(
         user,
@@ -301,7 +321,7 @@ export function createModelProviderService(options: {
     },
 
     async createInstance(user, input) {
-      const secret = requireCredentialSecret();
+      const encryptedApiKey = encryptKey(input.apiKey);
       const workspaceId = await requireWorkspaceId(
         user,
         "instance_create_failed",
@@ -313,10 +333,7 @@ export function createModelProviderService(options: {
           ...(input.compat ? { compat: input.compat } : {}),
           ...(input.headers ? { headers: input.headers } : {}),
           createdBy: user.id,
-          encryptedApiKey: encryptSecret(
-            { credentialSecret: secret },
-            input.apiKey,
-          ),
+          encryptedApiKey,
           enabled: input.enabled ?? true,
           models: input.models,
           name: input.name,
@@ -343,11 +360,7 @@ export function createModelProviderService(options: {
     async updateInstance(user, instanceId, input) {
       const patch = toPatch(input);
       if (input.apiKey !== undefined) {
-        const secret = requireCredentialSecret();
-        patch.encrypted_api_key = encryptSecret(
-          { credentialSecret: secret },
-          input.apiKey,
-        );
+        patch.encrypted_api_key = encryptKey(input.apiKey);
       }
       if (Object.keys(patch).length === 0) {
         throw new ModelProviderServiceError(
@@ -363,7 +376,12 @@ export function createModelProviderService(options: {
       );
 
       const row = await repository
-        .updateWorkspaceInstance(workspaceId, instanceId, patch)
+        .updateWorkspaceInstance(
+          workspaceId,
+          instanceId,
+          patch,
+          input.expectedRevision,
+        )
         .catch(() => {
           throw new ModelProviderServiceError(
             "instance_update_failed",
@@ -372,6 +390,16 @@ export function createModelProviderService(options: {
         });
 
       if (!row) {
+        if (
+          input.expectedRevision !== undefined &&
+          (await repository.findWorkspaceInstance(workspaceId, instanceId))
+        ) {
+          throw new ModelProviderServiceError(
+            "instance_revision_conflict",
+            "供应商配置已发生变化，请刷新后重新保存。",
+            409,
+          );
+        }
         throw new ModelProviderServiceError(
           "instance_not_found",
           "Provider instance not found.",
@@ -462,8 +490,19 @@ export function createModelProviderService(options: {
       const credentials = decryptRow(row);
 
       const chatModel = credentials.models.find(
-        (m) => m.capability === "chat",
+        (m) => m.capability === "chat" && m.enabled !== false,
       )?.id;
+      if (
+        !chatModel &&
+        (credentials.protocol === "openai-compatible" ||
+          credentials.protocol === "anthropic")
+      ) {
+        throw new ModelProviderServiceError(
+          "instance_model_unavailable",
+          "该供应商尚未声明启用的聊天模型，无法探测。",
+          409,
+        );
+      }
       const baseUrl =
         credentials.baseUrl ??
         (credentials.protocol === "anthropic"
@@ -517,7 +556,7 @@ export function createModelProviderService(options: {
     },
 
     async createSystemInstance(input, createdByUserId) {
-      const secret = requireCredentialSecret();
+      const encryptedApiKey = encryptKey(input.apiKey);
 
       const row = await repository
         .insertSystemInstance({
@@ -525,10 +564,7 @@ export function createModelProviderService(options: {
           ...(input.compat ? { compat: input.compat } : {}),
           ...(input.headers ? { headers: input.headers } : {}),
           createdBy: createdByUserId,
-          encryptedApiKey: encryptSecret(
-            { credentialSecret: secret },
-            input.apiKey,
-          ),
+          encryptedApiKey,
           enabled: input.enabled ?? true,
           models: input.models,
           name: input.name,
@@ -554,11 +590,7 @@ export function createModelProviderService(options: {
     async updateSystemInstance(instanceId, input) {
       const patch = toPatch(input);
       if (input.apiKey !== undefined) {
-        const secret = requireCredentialSecret();
-        patch.encrypted_api_key = encryptSecret(
-          { credentialSecret: secret },
-          input.apiKey,
-        );
+        patch.encrypted_api_key = encryptKey(input.apiKey);
       }
       if (Object.keys(patch).length === 0) {
         throw new ModelProviderServiceError(
@@ -569,7 +601,7 @@ export function createModelProviderService(options: {
       }
 
       const row = await repository
-        .updateSystemInstance(instanceId, patch)
+        .updateSystemInstance(instanceId, patch, input.expectedRevision)
         .catch(() => {
           throw new ModelProviderServiceError(
             "instance_update_failed",
@@ -578,6 +610,16 @@ export function createModelProviderService(options: {
         });
 
       if (!row) {
+        if (
+          input.expectedRevision !== undefined &&
+          (await repository.findById(instanceId))?.scope === "system"
+        ) {
+          throw new ModelProviderServiceError(
+            "instance_revision_conflict",
+            "平台供应商配置已发生变化，请刷新后重新保存。",
+            409,
+          );
+        }
         throw new ModelProviderServiceError(
           "instance_not_found",
           "System provider instance not found.",
@@ -606,4 +648,5 @@ export function createModelProviderService(options: {
       return row.scope === "system" ? "system" : "workspace";
     },
   };
+  return service;
 }

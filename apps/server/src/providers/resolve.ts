@@ -14,6 +14,8 @@ import type {
   InstanceVideoAdapterOptions,
 } from "./types.js";
 import * as volces from "./volces/index.js";
+import { validateInstanceModelExtraBody } from "./request-options.js";
+export { validateInstanceModelExtraBody } from "./request-options.js";
 
 /**
  * `generation` 缝的运行期适配器注册表（§4.8）：
@@ -24,7 +26,7 @@ import * as volces from "./volces/index.js";
 type ChatAdapterFactory = (
   model: string,
   credentials: InstanceCredentials,
-  /** 模型级请求体注入（extraBody）；仅 openai-compatible 消费，其余忽略。 */
+  /** 三种聊天协议消费同一本轮模型参数快照。 */
   extraBody?: Record<string, unknown>,
 ) => BaseLanguageModel;
 
@@ -62,9 +64,12 @@ export function resolveInstanceChatModel(
   protocol: ProviderProtocol,
   model: string,
   credentials: InstanceCredentials,
-  /** 模型级请求体注入（推理参数映射 extraBody）；仅 openai-compatible 消费。 */
+  /** 模型级请求体参数，包含宿主编译的本轮选项。 */
   extraBody?: Record<string, unknown>,
 ): BaseLanguageModel {
+  if (!credentials.apiKey.trim())
+    throw new Error("[providers] 未配置 API Key，无法调用供应商模型。");
+  validateInstanceModelExtraBody(extraBody);
   const factory = CHAT_ADAPTERS[protocol];
   if (!factory) {
     throw new Error(
