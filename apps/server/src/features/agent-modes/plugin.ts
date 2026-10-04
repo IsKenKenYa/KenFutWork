@@ -49,6 +49,8 @@ export function createAgentModesPlugin(): PluginDefinition {
 
       // tool-pre-execute：solo 全禁、plan 只读（内核注册表路径的硬约束）
       ctx.on("tool-pre-execute", async (payload, next) => {
+        // Code Task 的 V4 mode/worker ceiling 由 permissions 的可信调用事实裁决。
+        if (payload.permissionInvocation) return next(payload);
         if (!payload.threadId) {
           return next(payload);
         }

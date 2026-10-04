@@ -26,7 +26,7 @@ describe("jsonSchemaToZod（桥接转换）", () => {
     expect(schema.safeParse({ query: 1 }).success).toBe(false);
   });
 
-  it("array/嵌套 object 递归，深层降级为 record", () => {
+  it("array/嵌套 object保留完整校验语义", () => {
     const arraySchema = jsonSchemaToZod({
       type: "array",
       items: { type: "string" },
@@ -58,13 +58,13 @@ describe("jsonSchemaToZod（桥接转换）", () => {
         },
       },
     }) as z.ZodObject<Record<string, z.ZodTypeAny>>;
-    // 第 5 层起不再展开（降级 record），但整体仍可解析对象
+    // 深层对象仍按属主schema校验，不用无关深度值削弱校验。
     expect(deep.safeParse({ a: { b: { c: { d: { e: "v" } } } } }).success).toBe(
       true,
     );
   });
 
-  it("无 type/空 schema 降级为空对象", () => {
+  it("无 type/空 schema按工具参数对象解析", () => {
     const schema = jsonSchemaToZod({}) as z.ZodObject<
       Record<string, z.ZodTypeAny>
     >;
@@ -73,6 +73,64 @@ describe("jsonSchemaToZod（桥接转换）", () => {
 });
 
 describe("kernelToolToStructuredTool（模型可调用桥）", () => {
+  it("JSON属主schema的default/enum在模型桥与审批入口保持同样参数语义", async () => {
+    const bridge = kernelToolToStructuredTool({
+      name: "external",
+      scope: "shared",
+      description: "external",
+      parameters: {
+        type: "object",
+        properties: {
+          mode: { type: "string", enum: ["fast", "safe"] },
+          count: { type: "integer", default: 2 },
+        },
+        required: ["mode"],
+        additionalProperties: false,
+      },
+      execute: async (args) => args,
+    });
+    expect(await bridge.invoke({ mode: "safe" })).toMatchObject({
+      mode: "safe",
+      count: 2,
+    });
+    await expect(bridge.invoke({ mode: "invalid" })).rejects.toThrow();
+  });
+  it("真实调用身份与媒体内容进入模型，完整结果单独留给界面", async () => {
+    let observedCallId: string | undefined;
+    const block = {
+      type: "image",
+      source_type: "base64",
+      mime_type: "image/png",
+      data: "cG5n",
+    };
+    const raw = {
+      type: "image",
+      filePath: "/project/proof.png",
+      modelContent: [block],
+      display: { kind: "image" },
+    };
+    const bridged = kernelToolToStructuredTool({
+      name: "Read",
+      description: "读取",
+      scope: "code",
+      parameters: { type: "object" },
+      execute: async (_args, context) => {
+        observedCallId = context.toolCallId;
+        return raw;
+      },
+    });
+    const message = await bridged.invoke({
+      type: "tool_call",
+      name: "Read",
+      id: "model-call-1",
+      args: {},
+    });
+    expect(observedCallId).toBe("model-call-1");
+    expect(message).toMatchObject({
+      content: [block],
+      artifact: { canonicalOutput: raw },
+    });
+  });
   it("调用透传 args 与执行上下文", async () => {
     const execute = vi.fn(async (args: Record<string, unknown>) => ({
       echo: args.q,
@@ -96,6 +154,20 @@ describe("kernelToolToStructuredTool（模型可调用桥）", () => {
       { q: "kenfutwork" },
       expect.objectContaining({ runId: "run-1" }),
     );
+  });
+
+  it("原执行canonical与模型内容不混入独立UI展示，artifact保完整结果与display", async () => {
+    const canonical = { type: "update", filePath: "/work/a.ts", content: "new\n", originalFile: "old\n", version: "v2" };
+    const content = [{ type: "text", text: "已修改a.ts" }];
+    const display = { kind: "file_diff", filePath: canonical.filePath, additions: 1, deletions: 1, structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ["-old", "+new"] }] };
+    const output = { canonicalOutput: canonical, modelContent: content, display };
+    const before = structuredClone(output);
+    const bridged = kernelToolToStructuredTool({ name: "Edit", description: "修改", scope: "code", parameters: { type: "object" }, execute: async () => output });
+    const message = await bridged.invoke({ type: "tool_call", name: "Edit", id: "display-separate", args: {} });
+    expect(message).toMatchObject({ content, artifact: { canonicalOutput: canonical, display } });
+    expect(output).toEqual(before);
+    expect(JSON.stringify(message.content)).not.toContain("structuredPatch");
+    expect(message.artifact.canonicalOutput).not.toHaveProperty("display");
   });
 
   it("bridgeKernelTools 批量桥接并保留名称", () => {
@@ -158,7 +230,7 @@ describe("kernelToolToStructuredTool（模型可调用桥）", () => {
       },
     });
 
-    // 模型只传部分字段 → zod default 补齐（JSON Schema 转换路径会丢 default）
+    // 模型只传部分字段 → 属主zod default补齐。
     const result = await bridged.invoke({} as never);
     expect(result).toBe("ok");
     expect(seen.at(0)).toEqual({ level: "low", count: 3 });

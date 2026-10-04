@@ -28,11 +28,15 @@ export function createPermissionsPlugin(_deps: {
       const service: PermissionService = createPermissionService();
       ctx.register("permissions", () => service);
 
-      // tool-pre-execute 拦截（waterfall）：deny 即阻止工具执行
+      // Code 在此等待真实人审；所有 waterfall 消费方放行后才由 kernel claim。
       ctx.on("tool-pre-execute", async (payload, next) => {
-        const decision = service.evaluate({
-          toolName: payload.toolName,
-        });
+        if (payload.decision === "deny") return next(payload);
+        const decision = payload.permissionInvocation
+          ? await service.admit(payload.permissionInvocation)
+          : service.evaluate({
+              toolName: payload.toolName,
+              ...(payload.threadId ? { threadId: payload.threadId } : {}),
+            });
         return next({
           ...payload,
           ...(decision.decision === "deny"

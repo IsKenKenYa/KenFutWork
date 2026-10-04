@@ -1,6 +1,9 @@
 import type { FastifyInstance } from "fastify";
-
+import { z } from "zod";
 import type { ServerEnv } from "../config/env.js";
+import type { PermissionInvocation } from "../features/permissions/approval-types.js";
+import type { PermissionService } from "../features/permissions/permission-service.js";
+import { publicToolArguments } from "./tool-arguments.js";
 import type {
   AgentRunEvent,
   AgentRunEventPayloads,
@@ -117,7 +120,10 @@ export class ToolRegistryImpl implements ToolRegistry {
   private readonly tools = new Map<string, ToolDefinition>();
   private readonly dynamicEntries = new Map<string, DynamicToolEntry>();
 
-  constructor(private readonly events: AgentRunEventBus) {}
+  constructor(
+    private readonly events: AgentRunEventBus,
+    private readonly permissions?: () => PermissionService | undefined,
+  ) {}
 
   register(tool: ToolDefinition): () => void {
     if (this.tools.has(tool.name)) {
@@ -146,7 +152,7 @@ export class ToolRegistryImpl implements ToolRegistry {
         continue;
       }
       const tool = entry.resolve(ctx);
-      if (tool) {
+      if (tool && (tool.scope === "shared" || tool.scope === ctx.preset)) {
         resolved.push(tool);
       }
     }
@@ -188,8 +194,74 @@ export class ToolRegistryImpl implements ToolRegistry {
     args: Record<string, unknown>,
     execCtx: ToolExecutionContext = {},
   ): Promise<unknown> {
+    execCtx.signal?.throwIfAborted();
+    const handle = execCtx.scopeHandle;
+    const approval = execCtx.codeApproval;
+    const permissions = handle ? this.permissions?.() : undefined;
+    const normalized = execCtx.scopeHandle
+      ? ((tool.zodSchema ?? z.fromJSONSchema(tool.parameters)).parse(
+          args,
+        ) as Record<string, unknown>)
+      : args;
+    let invocation: PermissionInvocation | undefined;
+    let approvedExecutionMode: ToolExecutionContext["approvedExecutionMode"];
+    if (execCtx.scopeHandle) {
+      await execCtx.scopeHandle.resolvePath(".", "read");
+      if (tool.scope === "design")
+        throw new ToolDeniedError(
+          tool.name,
+          "Code Task 不包含可视化画布目标。",
+        );
+      const readonly =
+        execCtx.scopeHandle.role === "explore" ||
+        execCtx.scopeHandle.role === "review" ||
+        execCtx.scopeHandle.describe().sandboxMode === "read-only";
+      if (
+        readonly &&
+        tool.access !== "read" &&
+        !(tool.access === "execute" && tool.readonlyExecution)
+      )
+        throw new ToolDeniedError(
+          tool.name,
+          "当前作用域只读，该工具没有声明可验证的只读执行能力。",
+        );
+      if (
+        !approval ||
+        !execCtx.runId ||
+        !execCtx.toolCallId ||
+        !execCtx.userId ||
+        !permissions
+      )
+        throw new ToolDeniedError(tool.name, "缺少可信逐调用审批上下文。");
+      const scope = execCtx.scopeHandle.describe();
+      const policy = await approval.resolve();
+      if (policy.scopeGeneration !== scope.generation)
+        throw new ToolDeniedError(tool.name, "工具调用的授权代际已失效。");
+      invocation = {
+        preset: "code",
+        workspaceId: scope.workspaceId,
+        taskId: scope.taskId,
+        runId: execCtx.runId,
+        toolCallId: execCtx.toolCallId,
+        userId: execCtx.userId,
+        agentId: execCtx.scopeHandle.agentId,
+        role: execCtx.scopeHandle.role,
+        scopeGeneration: policy.scopeGeneration,
+        branchGeneration: policy.branchGeneration,
+        mode: policy.mode,
+        approvalCeiling: approval.ceiling,
+        toolName: tool.name,
+        args: normalized,
+        displayArgs: publicToolArguments(tool, normalized),
+        access: tool.access,
+        readonlyExecution: tool.readonlyExecution,
+        signal: execCtx.signal,
+        ...(execCtx.threadId ? { threadId: execCtx.threadId } : {}),
+      };
+    }
     const decision = await this.events.emitWaterfall("tool-pre-execute", {
-      args,
+      args: normalized,
+      ...(invocation ? { permissionInvocation: invocation } : {}),
       decision: "allow",
       runId: execCtx.runId,
       ...(execCtx.threadId ? { threadId: execCtx.threadId } : {}),
@@ -198,7 +270,39 @@ export class ToolRegistryImpl implements ToolRegistry {
     if (decision.decision === "deny") {
       throw new ToolDeniedError(tool.name, decision.denyReason);
     }
-    return tool.execute(args, execCtx);
+    execCtx.signal?.throwIfAborted();
+    if (invocation && handle && approval && permissions) {
+      await handle.resolvePath(".", "read");
+      const current = await approval.resolve();
+      if (
+        current.scopeGeneration !== invocation.scopeGeneration ||
+        current.branchGeneration !== invocation.branchGeneration
+      )
+        throw new ToolDeniedError(
+          tool.name,
+          "等待审批期间 Task 授权代际或分支已改变。",
+        );
+      const claim = permissions.claim({
+        ...invocation,
+        mode: current.mode,
+      });
+      if (claim.decision === "deny")
+        throw new ToolDeniedError(tool.name, claim.reason);
+      approvedExecutionMode =
+        invocation.mode === "plan" || current.mode === "plan"
+          ? "plan"
+          : current.mode;
+    }
+    return tool.execute(
+      normalized,
+      invocation
+        ? {
+            ...execCtx,
+            permissionInvocation: invocation,
+            approvedExecutionMode,
+          }
+        : execCtx,
+    );
   }
 }
 

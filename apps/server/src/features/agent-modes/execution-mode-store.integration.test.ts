@@ -47,7 +47,7 @@ describe.skipIf(!DATABASE_URL)("执行模式持久化真实库集成", () => {
 
       const created = await createProjectRepository(
         persistence,
-      ).createWithCanvas({
+      ).createProject({
         canvasName: "模式集成画布",
         description: null,
         name: "模式集成项目",
@@ -55,6 +55,7 @@ describe.skipIf(!DATABASE_URL)("执行模式持久化真实库集成", () => {
         userId: (profile as IdRow).id,
         workspaceId,
       });
+      if (!created.canvas) throw new Error("Design 夹具缺少主画布");
 
       const threadId = `thread_mode_int_${randomUUID()}`;
       const chat = createChatRepository(persistence);

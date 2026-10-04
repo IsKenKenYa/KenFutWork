@@ -138,7 +138,7 @@ export function composePlugins(
   if (!overrides.tools) {
     factories.set("tools", {
       kind: "ready",
-      service: new ToolRegistryImpl(events),
+      service: new ToolRegistryImpl(events, () => tryGet("permissions")),
     });
   }
   if (!overrides.capabilities) {

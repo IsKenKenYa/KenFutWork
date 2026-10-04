@@ -70,6 +70,10 @@ export const BUILTIN_EXECUTION_MODES: Array<{
  * 白名单外一律拒绝：修改类文件工具、execute、子代理 task、MCP/生成/画布写操作。
  */
 const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
+  "Read",
+  "Glob",
+  "Grep",
+  "TaskOutput",
   // deepagents FilesystemMiddleware 内置只读工具
   "ls",
   "read_file",
@@ -176,7 +180,7 @@ export function evaluateToolPolicy(
   policy: ToolPolicy,
   toolName: string,
   /** 子代理派发的目标定义细节（DEC-17）：只读定义在 plan 档放行派发。 */
-  detail?: { subagentReadOnly?: boolean },
+  detail?: { subagentReadOnly?: boolean; readonlyExecution?: boolean },
 ): { allowed: true } | { allowed: false; reason: string } {
   if (policy.kind === "allow-all") {
     return { allowed: true };
@@ -185,6 +189,9 @@ export function evaluateToolPolicy(
     return { allowed: false, reason: policy.reason };
   }
   if (READ_ONLY_TOOLS.has(toolName)) {
+    return { allowed: true };
+  }
+  if (toolName === "Bash" && detail?.readonlyExecution === true) {
     return { allowed: true };
   }
   if (

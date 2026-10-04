@@ -125,10 +125,10 @@ describe("内置提示段的模式互斥（装配契约）", () => {
       );
     }
     for (const required of [
-      "工作目录就是项目本身",
-      "execute_background",
+      "Task 的主目录跨轮保持稳定",
+      "后台工作归 Task",
       "检查点",
-      "始终用用户的语言回复",
+      "跟随用户的语言回复",
     ]) {
       expect(prompt, `code 提示应包含「${required}」`).toContain(required);
     }
@@ -142,8 +142,8 @@ describe("内置提示段的模式互斥（装配契约）", () => {
     });
 
     for (const forbidden of [
-      "工作目录就是项目本身",
-      "execute_background",
+      "Task 的主目录跨轮保持稳定",
+      "后台工作归 Task",
       "影子 git",
       "diff_files",
     ]) {

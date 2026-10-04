@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-
 import { buildApp } from "../../app.js";
+import { createStartupPersistenceFixture } from "../../test-startup-persistence.js";
+import { createMemoryTaskWorkManager } from "../task-work/test-store.js";
 
 /**
  * `POST /api/browser/snapshot` 的两条路（右栏「选择网页元素加入聊天」的接口）。
@@ -25,6 +26,8 @@ function buildBrowserApp(browser: Record<string, unknown>) {
       credentialSecret: "test-secret",
     },
     overrides: {
+      taskWork: createMemoryTaskWorkManager(),
+      persistence: createStartupPersistenceFixture(),
       auth: {
         authenticate: async () => USER,
         resolveUser: async () => USER,

@@ -126,6 +126,23 @@ describe("执行模式词汇表", () => {
 });
 
 describe("模式工具策略（evaluateToolPolicy）", () => {
+  it("plan 使用真实 Code 只读工具名，可信只读 Bash 由审批门再逐次确认", () => {
+    const service = createExecutionModeService();
+    service.activate("code-plan", "plan");
+    const policy = service.resolveToolPolicy("code-plan");
+    for (const tool of ["Read", "Glob", "Grep", "TaskOutput"]) {
+      expect(evaluateToolPolicy(policy, tool).allowed, tool).toBe(true);
+    }
+    expect(
+      evaluateToolPolicy(policy, "Bash", { readonlyExecution: true }).allowed,
+    ).toBe(true);
+    expect(evaluateToolPolicy(policy, "Bash").allowed).toBe(false);
+    expect(
+      evaluateToolPolicy(policy, "execute", { readonlyExecution: true })
+        .allowed,
+    ).toBe(false);
+  });
+
   it("solo：deny-all，任何工具（含只读与 deepagents 内置）一律拒绝", () => {
     const service = createExecutionModeService();
     service.activate("t-solo", "solo");

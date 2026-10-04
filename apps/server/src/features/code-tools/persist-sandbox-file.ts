@@ -51,7 +51,7 @@ export function createPersistSandboxFileToolDefinition(
       "Upload a file generated in the sandbox (e.g., a PDF or PNG created by Python code execution) " +
       "to persistent storage. Returns a signed URL the user can access. " +
       "Use this after execute() produces an output file you want to share with the user.",
-    scope: "shared",
+    scope: "design",
     zodSchema: persistSandboxFileSchema,
     parameters: z.toJSONSchema(persistSandboxFileSchema),
     execute: async (args, execCtx) => {

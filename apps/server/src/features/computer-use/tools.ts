@@ -229,5 +229,5 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
         guarded(deps, () => deps.service.stop(runIdOf(execCtx))),
     },
   ];
-  return tools;
+  return tools.map((definition) => ({ ...definition, exposure: "deferred", access: "execute" }));
 }

@@ -172,7 +172,7 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
       .resolveRunTools({ ...resolutionCtx(), preset: "code" })
       .map((tool) => tool.name);
 
-    expect(names).toEqual(["project_search", "persist_sandbox_file"]);
+    expect(names).toEqual([]);
     for (const forbidden of [
       "inspect_canvas",
       "manipulate_canvas",
@@ -280,19 +280,59 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
       // code 能力层工具（preview/diff）不进 design 面
       expect(designNames).not.toContain("preview_file");
       // code 面含 code 能力层工具、不含画布/生图
+      const { mkdtemp, realpath, rm } = await import("node:fs/promises");
+      const { tmpdir } = await import("node:os");
+      const { join } = await import("node:path");
+      const { createExecutionScopes } = await import(
+        "../features/execution/scope-service.js"
+      );
+      const directory = await realpath(
+        await mkdtemp(join(tmpdir(), "kfw-tool-mode-")),
+      );
+      const scope = {
+        workspaceId: "00000000-0000-4000-8000-000000000001",
+        projectId: "00000000-0000-4000-8000-000000000002",
+        taskId: "00000000-0000-4000-8000-000000000003",
+        generation: 1,
+        rootDirectory: directory,
+        additionalDirectories: [],
+        sandboxMode: "workspace-write" as const,
+      };
+      const handle = await createExecutionScopes({
+        repository: {
+          load: async () => ({ scope, state: "ready", branchGeneration: 1 }),
+        },
+        viewerService: {
+          resolveWorkspace: async () => ({ id: scope.workspaceId }),
+        } as never,
+      }).openTask(
+        { id: "user", email: "", accessToken: "", userMetadata: {} },
+        scope.taskId,
+      );
       const codeNames = tools
-        .resolveRunTools({ ...resolutionCtx(), preset: "code" })
+        .resolveRunTools({
+          ...resolutionCtx(),
+          preset: "code",
+          scopeHandle: handle,
+        })
         .map((tool) => tool.name);
       expect(codeNames).toEqual(
         expect.arrayContaining([
           "preview_file",
           "diff_files",
-          "project_search",
-          "persist_sandbox_file",
+          "Read",
+          "Write",
+          "Edit",
+          "ApplyPatch",
+          "Glob",
+          "Grep",
         ]),
       );
       expect(codeNames).not.toContain("inspect_canvas");
       expect(codeNames).not.toContain("generate_image");
+      expect(codeNames).not.toContain("project_search");
+      expect(codeNames).not.toContain("persist_sandbox_file");
+      await rm(directory, { recursive: true, force: true });
     } finally {
       kernel.dispose();
       await app.close();
