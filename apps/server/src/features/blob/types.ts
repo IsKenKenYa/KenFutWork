@@ -99,7 +99,7 @@ export type BlobBucket = {
     expiresInSeconds: number,
   ): Promise<SignedUrlEntry[]>;
   /** 读回对象内容。 */
-  download(path: string): Promise<Uint8Array>;
+  download(path: string, options?: { maxBytes: number }): Promise<Uint8Array>;
   /** 桶内复制（源与目标同桶）。 */
   copy(fromPath: string, toPath: string): Promise<void>;
   /** 删除对象；不存在的路径不报错（幂等）。 */

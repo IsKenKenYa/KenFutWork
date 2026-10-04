@@ -1,4 +1,4 @@
-import { Pool, types } from "pg";
+import { Client, Pool, types } from "pg";
 
 import {
   SqlError,
@@ -7,6 +7,7 @@ import {
 } from "../errors.js";
 import type {
   PersistenceService,
+  PersistenceSessionLock,
   SqlClient,
   SqlRow,
   SqlTransaction,
@@ -59,10 +60,17 @@ export interface PostgresConnection {
   release(): void;
 }
 
+export interface PostgresSessionConnection {
+  query(text: string, values: unknown[]): Promise<PostgresResult>;
+  onLost(listener: (cause: unknown) => void): () => void;
+  release(): Promise<void>;
+}
+
 /** 连接池抽象：生产用 pg `Pool`，测试与桌面内嵌实例注入自定义 runner。 */
 export interface PostgresQueryRunner {
   query(text: string, values: unknown[]): Promise<PostgresResult>;
   acquire(): Promise<PostgresConnection>;
+  acquireSession(): Promise<PostgresSessionConnection>;
   end(): Promise<void>;
 }
 
@@ -95,10 +103,15 @@ export function createPostgresPersistence(options: {
     console.error("[persistence] 连接池空闲连接出错：", error.message);
   });
 
-  return createPersistenceFromRunner(createPoolRunner(pool));
+  return createPersistenceFromRunner(
+    createPoolRunner(pool, options.databaseUrl),
+  );
 }
 
-function createPoolRunner(pool: Pool): PostgresQueryRunner {
+function createPoolRunner(
+  pool: Pool,
+  databaseUrl: string,
+): PostgresQueryRunner {
   const runOn = (target: Queryable): QueryFn => {
     return async (text, values) => {
       const result = await target.query(text, values as never[]);
@@ -115,7 +128,100 @@ function createPoolRunner(pool: Pool): PostgresQueryRunner {
         release: () => client.release(),
       };
     },
+    acquireSession: () => createDedicatedSession(databaseUrl, runOn),
     end: () => pool.end(),
+  };
+}
+
+async function createDedicatedSession(
+  databaseUrl: string,
+  runOn: (target: Queryable) => QueryFn,
+): Promise<PostgresSessionConnection> {
+  const client = new Client({ connectionString: databaseUrl });
+  const listeners = new Set<(cause: unknown) => void>();
+  let lost: unknown;
+  let released = false;
+  let releasePromise: Promise<void> | undefined;
+  const publishLoss = (cause: unknown) => {
+    if (released || lost !== undefined) return;
+    lost = cause;
+    for (const listener of listeners) listener(cause);
+  };
+  client.on("error", publishLoss);
+  client.on("end", () => publishLoss(new Error("Postgres 独占会话已断开。")));
+  try {
+    await client.connect();
+  } catch (error) {
+    released = true;
+    await client.end();
+    throw toSqlError(error);
+  }
+  return {
+    query: runOn(client),
+    onLost(listener) {
+      listeners.add(listener);
+      if (lost !== undefined) listener(lost);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    release() {
+      releasePromise ??= (async () => {
+        released = true;
+        await client.end();
+      })();
+      return releasePromise;
+    },
+  };
+}
+
+async function acquireSessionLock(
+  runner: PostgresQueryRunner,
+  key: string,
+): Promise<PersistenceSessionLock | null> {
+  const connection = await runner.acquireSession();
+  const query = normalizeQuery(connection.query);
+  const controller = new AbortController();
+  let physicalLoss = false;
+  const removeListener = connection.onLost((cause) => {
+    physicalLoss = true;
+    controller.abort(toSqlError(cause));
+  });
+  try {
+    // 固定 seed 是 advisory key 的哈希结构常量，不是运行时治理限额。
+    const result = await query(
+      "select pg_try_advisory_lock(hashtextextended($1, 0)) as acquired",
+      [key],
+    );
+    controller.signal.throwIfAborted();
+    if (!(result.rows[0] as { acquired: boolean } | undefined)?.acquired) {
+      removeListener();
+      await connection.release();
+      return null;
+    }
+  } catch (error) {
+    removeListener();
+    await connection.release();
+    throw error;
+  }
+  let releasePromise: Promise<void> | undefined;
+  return {
+    signal: controller.signal,
+    release() {
+      releasePromise ??= (async () => {
+        controller.abort(new Error("Postgres 独占会话已释放。"));
+        try {
+          if (!physicalLoss)
+            await query("select pg_advisory_unlock(hashtextextended($1, 0))", [
+              key,
+            ]);
+        } finally {
+          removeListener();
+          await connection.release();
+        }
+      })();
+      return releasePromise;
+    },
   };
 }
 
@@ -124,6 +230,9 @@ export function createPersistenceFromRunner(
   runner: PostgresQueryRunner,
 ): PersistenceService {
   const root = createClient(normalizeQuery(runner.query));
+  const locks = new Set<PersistenceSessionLock>();
+  let closing = false;
+  let closePromise: Promise<void> | undefined;
 
   return {
     ...root,
@@ -132,10 +241,48 @@ export function createPersistenceFromRunner(
     forWorkspace: (workspaceId) =>
       createWorkspaceClient(normalizeQuery(runner.query), workspaceId),
     transaction: (fn) => runTransaction(runner, fn),
+    async acquireSessionLock(key) {
+      if (closing) throw new Error("存储服务已关闭，不能认领执行宿主。");
+      const lock = await acquireSessionLock(runner, key);
+      if (!lock) return null;
+      const wrapped: PersistenceSessionLock = {
+        signal: lock.signal,
+        async release() {
+          try {
+            await lock.release();
+          } finally {
+            locks.delete(wrapped);
+          }
+        },
+      };
+      if (closing) {
+        await wrapped.release();
+        throw new Error("存储服务已关闭，不能认领执行宿主。");
+      }
+      locks.add(wrapped);
+      return wrapped;
+    },
     async ping() {
       await root.query(PING_SQL);
     },
-    close: () => runner.end(),
+    close() {
+      closing = true;
+      closePromise ??= (async () => {
+        const outcomes = await Promise.allSettled(
+          [...locks].map((lock) => lock.release()),
+        );
+        await runner.end();
+        const failures = outcomes.flatMap((outcome) =>
+          outcome.status === "rejected" ? [outcome.reason] : [],
+        );
+        if (failures.length)
+          throw new AggregateError(
+            failures,
+            "部分 Postgres 独占会话未正常释放。",
+          );
+      })();
+      return closePromise;
+    },
   };
 }
 

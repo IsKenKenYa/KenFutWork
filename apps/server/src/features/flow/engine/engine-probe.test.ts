@@ -59,6 +59,7 @@ function difyInstance(overrides: Partial<ProviderInstanceResponse> = {}) {
     protocol: "dify-engine",
     baseUrl: "http://10.0.0.8:5001",
     hasCredential: true,
+    configRevision: 1,
     models: [],
     headerKeys: [],
     enabled: true,

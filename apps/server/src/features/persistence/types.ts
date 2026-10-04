@@ -55,6 +55,12 @@ export interface UserSqlClient extends SqlClient {
  * Provider：自管 Postgres（`FORM-2` 桌面捆绑实例 / 自托管用户 Postgres）；
  * Consumer：各聚合 repository。
  */
+/** 同一物理会话持有排他锁；失锁或显式释放时 signal 终止。 */
+export interface PersistenceSessionLock {
+  readonly signal: AbortSignal;
+  release(): Promise<void>;
+}
+
 export interface PersistenceService extends SqlClient {
   /** 用户隔离入口；按 `user_id` 定权的表（无 workspace_id）经此访问。 */
   forUser(userId: string): UserSqlClient;
@@ -62,6 +68,8 @@ export interface PersistenceService extends SqlClient {
   forWorkspace(workspaceId: string): WorkspaceSqlClient;
   /** 原子写入口：回调内全部语句同事务，抛错回滚。 */
   transaction<T>(fn: (tx: SqlTransaction) => Promise<T>): Promise<T>;
+  /** 专用长寿命会话，不占普通查询池；未获得排他锁返回 null。 */
+  acquireSessionLock(key: string): Promise<PersistenceSessionLock | null>;
   /** 启动期连通性检查（配置 fail loud）。 */
   ping(): Promise<void>;
   close(): Promise<void>;

@@ -43,7 +43,7 @@ describe.skipIf(!DATABASE_URL)("canvas 真实库集成", () => {
       expect(workspaceId).toBeTruthy();
 
       const projects = createProjectRepository(persistence);
-      const created = await projects.createWithCanvas({
+      const created = await projects.createProject({
         canvasName: "集成画布",
         description: null,
         name: "集成项目",
@@ -51,6 +51,7 @@ describe.skipIf(!DATABASE_URL)("canvas 真实库集成", () => {
         userId: (profile as IdRow).id,
         workspaceId,
       });
+      if (!created.canvas) throw new Error("Design 夹具缺少主画布");
 
       try {
         await run({
@@ -162,7 +163,7 @@ describe.skipIf(!DATABASE_URL)("canvas 原子追加（并发落图不丢元素�
 
       const created = await createProjectRepository(
         persistence,
-      ).createWithCanvas({
+      ).createProject({
         canvasName: "并发画布",
         description: null,
         name: "并发项目",
@@ -170,6 +171,7 @@ describe.skipIf(!DATABASE_URL)("canvas 原子追加（并发落图不丢元素�
         userId: (profile as IdRow).id,
         workspaceId,
       });
+      if (!created.canvas) throw new Error("Design 夹具缺少主画布");
 
       try {
         await run({ canvasId: created.canvas.id, persistence, workspaceId });
