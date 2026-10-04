@@ -46,14 +46,30 @@ function binding(input: PermissionInvocation) {
 describe("Code 逐调用审批公共服务", () => {
   it("审批展示隐藏环境值，批准仍绑定完整原始参数，换Key不能借同一展示重放", async () => {
     const service = createPermissionService();
-    const input = invocation({ toolName: "install_mcp_server", access: "execute", args: { name: "server", env: { TASK_SECRET: "private-value" } }, displayArgs: { name: "server", envKeys: ["TASK_SECRET"] } });
+    const input = invocation({
+      toolName: "install_mcp_server",
+      access: "execute",
+      args: { name: "server", env: { TASK_SECRET: "private-value" } },
+      displayArgs: { name: "server", envKeys: ["TASK_SECRET"] },
+    });
     const admitted = service.admit(input);
     const pending = pendingFor(service);
-    expect(pending.interaction.payload).toMatchObject({ detail: { name: "server", envKeys: ["TASK_SECRET"] } });
+    expect(pending.interaction.payload).toMatchObject({
+      detail: { name: "server", envKeys: ["TASK_SECRET"] },
+    });
     expect(JSON.stringify(pending)).not.toContain("private-value");
-    await service.resolve({ interactionId: pending.interaction.interactionId, binding: binding(input), answer: { optionId: "allowOnce" } });
+    await service.resolve({
+      interactionId: pending.interaction.interactionId,
+      binding: binding(input),
+      answer: { optionId: "allowOnce" },
+    });
     expect((await admitted).decision).toBe("allow");
-    expect(service.peek({ ...input, args: { name: "server", env: { TASK_SECRET: "different-value" } } }).decision).toBe("deny");
+    expect(
+      service.peek({
+        ...input,
+        args: { name: "server", env: { TASK_SECRET: "different-value" } },
+      }).decision,
+    ).toBe("deny");
     expect(service.claim(input).decision).toBe("allow");
   });
   it("edit仅自动受控FS编辑，应用/配置write仍逐调用等待人审", async () => {

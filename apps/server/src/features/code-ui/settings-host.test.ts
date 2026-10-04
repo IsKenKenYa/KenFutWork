@@ -59,7 +59,8 @@ async function fixture() {
     viewer: { resolveWorkspace: async () => ({ id: workspaceId }) },
     projects: { listProjects: async () => projects },
     settings: {
-      getWorkspaceSettings: async () => workspaceSettingsSchema.parse({ defaultModel: "fixture-model" }),
+      getWorkspaceSettings: async () =>
+        workspaceSettingsSchema.parse({ defaultModel: "fixture-model" }),
     },
     modelProviders: {
       listInstances: async () => [],

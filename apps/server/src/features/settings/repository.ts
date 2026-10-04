@@ -8,7 +8,15 @@ import type { PersistenceService } from "../persistence/types.js";
  */
 export interface SettingsRepository {
   findRuntimeGovernance(workspaceId: string): Promise<unknown>;
-  upsertRuntimeGovernance(workspaceId: string, patch: Record<string, number>): Promise<void>;
+  upsertRuntimeGovernance(
+    workspaceId: string,
+    patch: Record<string, number>,
+  ): Promise<void>;
+  findCodeUiReconnectDelayMs(workspaceId: string): Promise<number | null>;
+  upsertCodeUiReconnectDelayMs(
+    workspaceId: string,
+    value: number,
+  ): Promise<void>;
   /** 读默认模型；无行返回 null（由服务落回退默认值）。 */
   findDefaultModel(workspaceId: string): Promise<string | null>;
   /** 读 run 重试上限；无行返回 null（由服务落缺省 10）。 */
@@ -90,9 +98,11 @@ export function createSettingsRepository(
 ): SettingsRepository {
   return {
     async findRuntimeGovernance(workspaceId) {
-      const row = await persistence.forWorkspace(workspaceId).queryOne<{ runtime_governance: unknown }>(
-        "select runtime_governance from public.workspace_settings where workspace_id = :workspace",
-      );
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<{ runtime_governance: unknown }>(
+          "select runtime_governance from public.workspace_settings where workspace_id = :workspace",
+        );
       return row?.runtime_governance ?? {};
     },
     async upsertRuntimeGovernance(workspaceId, patch) {
@@ -103,6 +113,22 @@ export function createSettingsRepository(
          set runtime_governance = public.workspace_settings.runtime_governance || excluded.runtime_governance`,
         [JSON.stringify(patch)],
       );
+    },
+    async findCodeUiReconnectDelayMs(workspaceId) {
+      const row = await persistence
+        .forWorkspace(workspaceId)
+        .queryOne<{ code_ui_reconnect_delay_ms: number | null }>(
+          `select code_ui_reconnect_delay_ms from public.workspace_settings where workspace_id = :workspace`,
+        );
+      return row?.code_ui_reconnect_delay_ms ?? null;
+    },
+    async upsertCodeUiReconnectDelayMs(workspaceId, value) {
+      await persistence
+        .forWorkspace(workspaceId)
+        .execute(
+          `insert into public.workspace_settings (workspace_id, code_ui_reconnect_delay_ms) values (:workspace, $1) on conflict (workspace_id) do update set code_ui_reconnect_delay_ms = excluded.code_ui_reconnect_delay_ms`,
+          [value],
+        );
     },
     async findDefaultModel(workspaceId) {
       const row = await persistence

@@ -41,7 +41,11 @@ export function useActiveTaskSnapshotMeta(
     preferredRemoteSessionId,
     workspaceIdentity,
   );
-  const zcodeTaskService = useZCodeTaskService(workspacePath, preferredRemoteSessionId, workspaceIdentity);
+  const zcodeTaskService = useZCodeTaskService(
+    workspacePath,
+    preferredRemoteSessionId,
+    workspaceIdentity,
+  );
   const metadataSource = useOptionalPlatform()?.sessionMetadataSource;
   const [snapshotMeta, setSnapshotMeta] = useState<ZCodeTaskMeta | null>(null);
 
@@ -64,17 +68,19 @@ export function useActiveTaskSnapshotMeta(
       };
     }
 
-    const read = metadataSource === "task-index"
-      ? zcodeTaskService.getTaskMeta({ workspacePath, workspaceIdentity, taskId })
-      : zcodeSessionService
+    const read =
+      metadataSource === "task-index"
+        ? zcodeTaskService.getTaskMeta({ workspacePath, workspaceIdentity, taskId })
+        : zcodeSessionService
       // active header 只需要 session meta/标题兜底，走 ZCode Protocol 的轻量读取，
       // 避免继续经 legacy snapshot 把大任务消息整包拉回 UI。
-      .readSession({
-        workspacePath,
-        workspaceIdentity,
-        sessionId: taskId,
-        messageLimit: 1,
-      }).then(zcodeSessionSnapshotToTaskMeta);
+            .readSession({
+              workspacePath,
+              workspaceIdentity,
+              sessionId: taskId,
+              messageLimit: 1,
+            })
+            .then(zcodeSessionSnapshotToTaskMeta);
     void read
       .then((meta) => {
         if (cancelled) {
@@ -92,7 +98,15 @@ export function useActiveTaskSnapshotMeta(
     return () => {
       cancelled = true;
     };
-  }, [metadataSource, zcodeTaskService, zcodeSessionService, taskId, taskMetaFromLists, workspaceIdentity, workspacePath]);
+  }, [
+    metadataSource,
+    zcodeTaskService,
+    zcodeSessionService,
+    taskId,
+    taskMetaFromLists,
+    workspaceIdentity,
+    workspacePath,
+  ]);
 
   return snapshotMeta;
 }

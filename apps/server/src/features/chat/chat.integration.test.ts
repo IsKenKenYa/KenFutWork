@@ -44,9 +44,7 @@ describe.skipIf(!DATABASE_URL)("chat 真实库集成", () => {
       const workspaceId = workspace?.id as string;
       expect(workspaceId).toBeTruthy();
 
-      const created = await createProjectRepository(
-        persistence,
-      ).createProject({
+      const created = await createProjectRepository(persistence).createProject({
         canvasName: "会话集成画布",
         description: null,
         name: "会话集成项目",

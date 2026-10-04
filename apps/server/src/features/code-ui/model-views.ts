@@ -17,12 +17,15 @@ import {
   parseZCodeBuiltinModelConfigRules,
   serializeRegistryModelConfig,
 } from "@zcode/provider";
+import modelRules from "../model-providers/zcode-model-config-rules.json" with {
+  type: "json",
+};
 import {
+  codeUiProviderIssues,
   codeUiProviderMetadata,
   codeUiPublicProviderConfig,
   isCodeChatProtocol,
 } from "./provider-settings-rpc-config.js";
-import modelRules from "./zcode-model-config-rules.json" with { type: "json" };
 
 const rules = parseZCodeBuiltinModelConfigRules(modelRules);
 
@@ -101,9 +104,16 @@ export function resolveCodeUiModelConfig(
     personal?.config,
   );
   effective = google.config;
-  const complete = google.issue
+  const modelComplete = google.issue
     ? { ok: false as const, issues: [google.issue] }
     : createRegistryModelConfig(effective);
+  const issues = [
+    ...codeUiProviderIssues(instance),
+    ...(modelComplete.ok ? [] : modelComplete.issues),
+  ];
+  const complete = issues.length
+    ? { ok: false as const, issues }
+    : modelComplete;
   return { inherited, effective, complete, personal };
 }
 
@@ -259,32 +269,36 @@ export function buildCodeUiModelViews(input: {
   const revision = input.revision ?? 0;
   const providers = input.instances
     .filter((instance) => isCodeChatProtocol(instance.protocol))
-    .map((instance) => ({
-      providerId: instance.id,
-      providerName: instance.name,
-      enabled: instance.enabled,
-      executable: instance.enabled && instance.hasCredential,
-      credentialConfigured: instance.hasCredential,
-      configRevision: instance.configRevision,
-      ...(codeUiProviderMetadata(instance).templateId
-        ? { templateId: codeUiProviderMetadata(instance).templateId }
-        : {}),
-      effectiveConfig: codeUiPublicProviderConfig(instance),
-      personalConfig: codeUiPublicProviderConfig(instance),
-      issues: [],
-      models: instance.models
-        .filter((model) => model.capability === "chat")
-        .map((model) =>
-          modelView(
-            instance,
-            input.catalog.find(
-              (entry) =>
-                entry.provider.instanceId === instance.id &&
-                entry.id === model.id,
-            ) ?? codeUiModelEntry(instance, model),
+    .map((instance) => {
+      const issues = codeUiProviderIssues(instance);
+      return {
+        providerId: instance.id,
+        providerName: instance.name,
+        enabled: instance.enabled,
+        executable:
+          instance.enabled && instance.hasCredential && issues.length === 0,
+        credentialConfigured: instance.hasCredential,
+        configRevision: instance.configRevision,
+        ...(codeUiProviderMetadata(instance).templateId
+          ? { templateId: codeUiProviderMetadata(instance).templateId }
+          : {}),
+        effectiveConfig: codeUiPublicProviderConfig(instance),
+        personalConfig: codeUiPublicProviderConfig(instance),
+        issues,
+        models: instance.models
+          .filter((model) => model.capability === "chat")
+          .map((model) =>
+            modelView(
+              instance,
+              input.catalog.find(
+                (entry) =>
+                  entry.provider.instanceId === instance.id &&
+                  entry.id === model.id,
+              ) ?? codeUiModelEntry(instance, model),
+            ),
           ),
-        ),
-    }));
+      };
+    });
   const order = new Map(
     (
       input.providerOrder ?? providers.map((provider) => provider.providerId)

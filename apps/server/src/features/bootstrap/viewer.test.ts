@@ -102,7 +102,9 @@ function createRecordingPersistence(
     forUser,
     forWorkspace,
     transaction: (fn) => fn({ ...read, forUser, forWorkspace }),
-    acquireSessionLock: async () => { throw new Error("此 viewer 夹具不提供执行宿主锁。"); },
+    acquireSessionLock: async () => {
+      throw new Error("此 viewer 夹具不提供执行宿主锁。");
+    },
     ping: async () => {},
     close: async () => {},
   };

@@ -46,7 +46,9 @@ it("无session预算只读工作区metadata，有session必须owned且缺提供�
     }),
     repository: {
       ...stored,
-      async interruptStaging() { initializations += 1; },
+      async interruptStaging() {
+        initializations += 1;
+      },
       async transact<T>(
         session: CodeAttachmentSession,
         key: string,

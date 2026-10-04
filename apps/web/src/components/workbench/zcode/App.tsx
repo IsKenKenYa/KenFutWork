@@ -47,7 +47,7 @@ import {
 } from "@zui/lib/settingsNavigation.js";
 import { runWorkspaceVisibleCommand } from "@zui/lib/workspaceVisibleCommand.js";
 import { ZCODE_PRODUCT_DOCS_URL } from "@zui/lib/productDocs.js";
-import appLogoUrl from "@zui/assets/provider-icons/logo-zai.svg";
+import appLogoUrl from "@zui/assets/kenfutwork-mark.png";
 import { resolveTheme } from "@zui/useTheme.js";
 import { WorkspaceShellLayout } from "@zui/app-shell/WorkspaceShellLayout.js";
 import { useAppChromeState } from "@zui/app-shell/useAppChromeState.js";

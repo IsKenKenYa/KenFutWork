@@ -9,6 +9,7 @@ import {
 import {
   type ModelConfigObject,
   type ModelInputFormatConfigInput,
+  ProviderApiConfig,
   type ProviderApiType,
   type ProviderConfigObject,
   parseModelConfig,
@@ -72,6 +73,15 @@ export function codeUiPublicProviderConfig(
     ...(metadata.modelOrder ? { modelOrder: metadata.modelOrder } : {}),
     visibility: instance.enabled ? "visible" : "hidden",
   };
+}
+
+/** 公开API字段可独立校验；凭证只有presence事实，不读取或伪造密钥。 */
+export function codeUiProviderIssues(instance: ProviderInstanceResponse) {
+  const config = codeUiPublicProviderConfig(instance);
+  return new ProviderApiConfig(config.api ?? {}).validateComplete([
+    "provider",
+    "api",
+  ]);
 }
 
 export function codeUiTemplateConfig(

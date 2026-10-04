@@ -4,8 +4,8 @@ import { Root } from "@zui/index";
 import { afterEach, expect, it, vi } from "vitest";
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
 import { createCodePlatform } from "../src/components/workbench/zcode/host/platform";
-import { bindCodeWorkspaceServices } from "../src/components/workbench/zcode/host/workspaceServices";
 import { createCodeWorkspaceContextResolver } from "../src/components/workbench/zcode/host/workspaceServiceController";
+import { bindCodeWorkspaceServices } from "../src/components/workbench/zcode/host/workspaceServices";
 import {
   installCodeRootBrowser,
   restoreCodeRootBrowser,

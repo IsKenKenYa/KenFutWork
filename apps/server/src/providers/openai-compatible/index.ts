@@ -2,14 +2,14 @@ import type { CallbackManagerForLLMRun } from "@langchain/core/callbacks/manager
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { ChatGenerationChunk, ChatResult } from "@langchain/core/outputs";
-import {
-  ChatOpenAICompletions,
-  ChatOpenAIResponses,
-} from "@langchain/openai";
+import { ChatOpenAICompletions, ChatOpenAIResponses } from "@langchain/openai";
 
 import { OpenAIImageProvider } from "../../generation/providers/openai-image.js";
 import type { ImageProvider } from "../../generation/types.js";
-import { mergeInvocationParameters, validateInstanceModelExtraBody } from "../request-options.js";
+import {
+  mergeInvocationParameters,
+  validateInstanceModelExtraBody,
+} from "../request-options.js";
 import type {
   InstanceCredentials,
   InstanceImageAdapterOptions,
@@ -22,21 +22,38 @@ export type OnResponsesFallback = () => void;
 
 class InstanceCompletionsModel extends ChatOpenAICompletions {
   readonly requestBody: Record<string, unknown>;
-  constructor(fields: ConstructorParameters<typeof ChatOpenAICompletions>[0], body: Record<string, unknown>) {
-    super(fields); this.requestBody = structuredClone(body);
+  constructor(
+    fields: ConstructorParameters<typeof ChatOpenAICompletions>[0],
+    body: Record<string, unknown>,
+  ) {
+    super(fields);
+    this.requestBody = structuredClone(body);
   }
-  override invocationParams(options?: this["ParsedCallOptions"], extra?: Parameters<ChatOpenAICompletions["invocationParams"]>[1]) {
-    return mergeInvocationParameters(super.invocationParams(options, extra), this.requestBody);
+  override invocationParams(
+    options?: this["ParsedCallOptions"],
+    extra?: Parameters<ChatOpenAICompletions["invocationParams"]>[1],
+  ) {
+    return mergeInvocationParameters(
+      super.invocationParams(options, extra),
+      this.requestBody,
+    );
   }
 }
 
 class InstanceResponsesModel extends ChatOpenAIResponses {
   readonly requestBody: Record<string, unknown>;
-  constructor(fields: ConstructorParameters<typeof ChatOpenAIResponses>[0], body: Record<string, unknown>) {
-    super(fields); this.requestBody = structuredClone(body);
+  constructor(
+    fields: ConstructorParameters<typeof ChatOpenAIResponses>[0],
+    body: Record<string, unknown>,
+  ) {
+    super(fields);
+    this.requestBody = structuredClone(body);
   }
   override invocationParams(options?: this["ParsedCallOptions"]) {
-    return mergeInvocationParameters(super.invocationParams(options), this.requestBody);
+    return mergeInvocationParameters(
+      super.invocationParams(options),
+      this.requestBody,
+    );
   }
 }
 
@@ -161,7 +178,10 @@ export function createInstanceChatModel(
     return new InstanceCompletionsModel(fields, extraBody ?? {});
   }
 
-  const completionsModel = new InstanceCompletionsModel(fields, extraBody ?? {});
+  const completionsModel = new InstanceCompletionsModel(
+    fields,
+    extraBody ?? {},
+  );
 
   return new ResponsesFallbackChatModel(
     fields,

@@ -2,9 +2,11 @@ import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type StreamEvent, workspaceSettingsSchema } from "@kenfutwork/shared";
+import type { HumanMessage } from "@langchain/core/messages";
 import { afterEach, expect, it } from "vitest";
 import type { ServerEnv } from "../config/env.js";
 import { codeRolePromptSection } from "../features/agent-runs/prompt-sections.js";
+import type { TrustedCodeInput } from "../features/code-ui/attachments/input-types.js";
 import type { ExecutionRole } from "../features/execution/scope-service.js";
 import { createExecutionScopes } from "../features/execution/scope-service.js";
 import { createTaskWorkManager } from "../features/task-work/service.js";
@@ -13,8 +15,6 @@ import type { TaskWorkContext } from "../features/task-work/types.js";
 import { SystemPromptRegistryImpl } from "../kernel/context.js";
 import type { KenFutWorkAgentFactory } from "./deep-agent.js";
 import { createAgentRunService } from "./runtime.js";
-import type { TrustedCodeInput } from "../features/code-ui/attachments/input-types.js";
-import type { HumanMessage } from "@langchain/core/messages";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -148,7 +148,13 @@ async function fixture(
       resolveCredentials: async () => ({
         apiKey: "fixture",
         protocol: "openai-compatible",
-        models: [{ id: "model", vision: options.vision ?? false, inputModalities: options.pdf ? ["text", "pdf"] : ["text"] }],
+        models: [
+          {
+            id: "model",
+            vision: options.vision ?? false,
+            inputModalities: options.pdf ? ["text", "pdf"] : ["text"],
+          },
+        ],
       }),
       getInstanceScope: async () => "workspace",
     } as never,
@@ -157,7 +163,9 @@ async function fixture(
     } as never,
     settingsService: {
       getWorkspaceSettings: async () =>
-        workspaceSettingsSchema.parse({ defaultModel: `${scope.projectId}:model` }),
+        workspaceSettingsSchema.parse({
+          defaultModel: `${scope.projectId}:model`,
+        }),
     },
     systemPromptRegistry: registry,
     checkpointHooks: {
@@ -211,7 +219,19 @@ async function fixture(
 
 it("Code已授权文本附件确实进入模型消息，创建Run后修改调用端bytes不能改写输入", async () => {
   const bytes = new Uint8Array(Buffer.from("姓名,金额\n小明,12\n"));
-  const f = await fixture({ codeInputs: [{ attachment: { ref: "code-attachment:committed", fileName: "数据.csv", mime: "text/csv", bytes: bytes.length }, bytes }] });
+  const f = await fixture({
+    codeInputs: [
+      {
+        attachment: {
+          ref: "code-attachment:committed",
+          fileName: "数据.csv",
+          mime: "text/csv",
+          bytes: bytes.length,
+        },
+        bytes,
+      },
+    ],
+  });
   bytes.fill(0);
   expect((await f.drain()).at(-1)?.type).toBe("run.completed");
   expect(f.messages[0]?.content).toEqual([
@@ -221,16 +241,35 @@ it("Code已授权文本附件确实进入模型消息，创建Run后修改调用
 });
 
 it("Code图片附件进入真实多模态消息；所选模型明确不支持图片时可读失败", async () => {
-  const bytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=", "base64");
-  const codeInputs = [{ attachment: { ref: "code-attachment:committed-image", fileName: "像素.png", mime: "image/png", bytes: bytes.length }, bytes }];
+  const bytes = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=",
+    "base64",
+  );
+  const codeInputs = [
+    {
+      attachment: {
+        ref: "code-attachment:committed-image",
+        fileName: "像素.png",
+        mime: "image/png",
+        bytes: bytes.length,
+      },
+      bytes,
+    },
+  ];
   const supported = await fixture({ codeInputs, vision: true });
   expect((await supported.drain()).at(-1)?.type).toBe("run.completed");
   expect(supported.messages[0]?.content).toEqual([
     { type: "text", text: expect.stringContaining("work") },
-    { type: "image_url", image_url: `data:image/png;base64,${bytes.toString("base64")}` },
+    {
+      type: "image_url",
+      image_url: `data:image/png;base64,${bytes.toString("base64")}`,
+    },
   ]);
   const unsupported = await fixture({ codeInputs, vision: false });
-  expect((await unsupported.drain()).at(-1)).toMatchObject({ type: "run.failed", error: { message: expect.stringContaining("不支持图片") } });
+  expect((await unsupported.drain()).at(-1)).toMatchObject({
+    type: "run.failed",
+    error: { message: expect.stringContaining("不支持图片") },
+  });
   expect(unsupported.messages).toEqual([]);
 });
 
@@ -246,12 +285,27 @@ endstream endobj
 trailer << /Size 6 /Root 1 0 R >>
 %%EOF
 `);
-  const codeInputs = [{ attachment: { ref: "code-attachment:committed-pdf", fileName: "文档.pdf", mime: "application/pdf", bytes: bytes.length }, bytes }];
+  const codeInputs = [
+    {
+      attachment: {
+        ref: "code-attachment:committed-pdf",
+        fileName: "文档.pdf",
+        mime: "application/pdf",
+        bytes: bytes.length,
+      },
+      bytes,
+    },
+  ];
   const native = await fixture({ codeInputs, pdf: true });
   expect((await native.drain()).at(-1)?.type).toBe("run.completed");
   expect(native.messages[0]?.content).toEqual([
     { type: "text", text: expect.stringContaining("work") },
-    { type: "file", source_type: "base64", mime_type: "application/pdf", data: bytes.toString("base64") },
+    {
+      type: "file",
+      source_type: "base64",
+      mime_type: "application/pdf",
+      data: bytes.toString("base64"),
+    },
   ]);
   const textual = await fixture({ codeInputs, pdf: false, vision: false });
   expect((await textual.drain()).at(-1)?.type).toBe("run.completed");

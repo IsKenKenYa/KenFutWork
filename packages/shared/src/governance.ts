@@ -69,13 +69,27 @@ export type AgentGovernanceValue = keyof typeof AGENT_GOVERNANCE_DEFAULTS;
 /** 新工作域数值落同一设置表 JSON 对象，避免每项重复增加列与存取分支。 */
 export const RUNTIME_GOVERNANCE_KEYS = [
   "codeUiReconnectDelayMs",
-  "codeReadMaxBytes", "codeReadPageCharacters", "codeSearchMaxResults",
-  "codeSearchMaxBytes", "codePatchMaxBytes", "processMaxOutputBytes",
-  "processPreviewMaxChars", "processYieldMs", "processKillGraceMs", "sandboxProbeTimeoutMs",
-  "codePdfMaxPages", "codePdfRenderScale",
-  "codeAttachmentMaxBytes", "codeAttachmentChunkMaxBytes", "codeAttachmentMaxChunks",
-  "codeAttachmentMaxConcurrent", "codeAttachmentStagedMaxBytes", "codeAttachmentUploadTtlMs",
-  "codeAttachmentMaxPerInput", "codeAttachmentMaxRetries", "codeAttachmentRetryDelayMs",
+  "codeReadMaxBytes",
+  "codeReadPageCharacters",
+  "codeSearchMaxResults",
+  "codeSearchMaxBytes",
+  "codePatchMaxBytes",
+  "processMaxOutputBytes",
+  "processPreviewMaxChars",
+  "processYieldMs",
+  "processKillGraceMs",
+  "sandboxProbeTimeoutMs",
+  "codePdfMaxPages",
+  "codePdfRenderScale",
+  "codeAttachmentMaxBytes",
+  "codeAttachmentChunkMaxBytes",
+  "codeAttachmentMaxChunks",
+  "codeAttachmentMaxConcurrent",
+  "codeAttachmentStagedMaxBytes",
+  "codeAttachmentUploadTtlMs",
+  "codeAttachmentMaxPerInput",
+  "codeAttachmentMaxRetries",
+  "codeAttachmentRetryDelayMs",
   "terminalMaxSessions",
 ] as const;
 export type RuntimeGovernanceKey = (typeof RUNTIME_GOVERNANCE_KEYS)[number];
@@ -243,28 +257,61 @@ export function resolveGovernanceEnvOverrides(
         ? Number(source.KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS)
         : undefined,
     codeReadMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_READ_MAX_BYTES),
-    codeReadPageCharacters: parseStrictInt(source.KENFUTWORK_CODE_READ_PAGE_CHARACTERS),
-    codeSearchMaxResults: parseStrictInt(source.KENFUTWORK_CODE_SEARCH_MAX_RESULTS),
+    codeReadPageCharacters: parseStrictInt(
+      source.KENFUTWORK_CODE_READ_PAGE_CHARACTERS,
+    ),
+    codeSearchMaxResults: parseStrictInt(
+      source.KENFUTWORK_CODE_SEARCH_MAX_RESULTS,
+    ),
     codeSearchMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_SEARCH_MAX_BYTES),
     codePatchMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_PATCH_MAX_BYTES),
     codePdfMaxPages: parseStrictInt(source.KENFUTWORK_CODE_PDF_MAX_PAGES),
-    codePdfRenderScale: source.KENFUTWORK_CODE_PDF_RENDER_SCALE?.trim() && Number.isFinite(Number(source.KENFUTWORK_CODE_PDF_RENDER_SCALE))
-      ? Number(source.KENFUTWORK_CODE_PDF_RENDER_SCALE) : undefined,
-    codeAttachmentMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_MAX_BYTES),
-    codeAttachmentChunkMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_CHUNK_MAX_BYTES),
-    codeAttachmentMaxChunks: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_MAX_CHUNKS),
-    codeAttachmentMaxConcurrent: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_MAX_CONCURRENT),
-    codeAttachmentStagedMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_STAGED_MAX_BYTES),
-    codeAttachmentUploadTtlMs: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_UPLOAD_TTL_MS),
-    codeAttachmentMaxPerInput: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_MAX_PER_INPUT),
-    codeAttachmentMaxRetries: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_MAX_RETRIES),
-    codeAttachmentRetryDelayMs: parseStrictInt(source.KENFUTWORK_CODE_ATTACHMENT_RETRY_DELAY_MS),
-    processMaxOutputBytes: parseStrictInt(source.KENFUTWORK_PROCESS_MAX_OUTPUT_BYTES),
-    processPreviewMaxChars: parseStrictInt(source.KENFUTWORK_PROCESS_PREVIEW_MAX_CHARS),
+    codePdfRenderScale:
+      source.KENFUTWORK_CODE_PDF_RENDER_SCALE?.trim() &&
+      Number.isFinite(Number(source.KENFUTWORK_CODE_PDF_RENDER_SCALE))
+        ? Number(source.KENFUTWORK_CODE_PDF_RENDER_SCALE)
+        : undefined,
+    codeAttachmentMaxBytes: parseStrictInt(
+      source.KENFUTWORK_CODE_ATTACHMENT_MAX_BYTES,
+    ),
+    codeAttachmentChunkMaxBytes: parseStrictInt(
+      source.KENFUTWORK_CODE_ATTACHMENT_CHUNK_MAX_BYTES,
+    ),
+    codeAttachmentMaxChunks: parseStrictInt(
+      source.KENFUTWORK_CODE_ATTACHMENT_MAX_CHUNKS,
+    ),
+    codeAttachmentMaxConcurrent: parseStrictInt(
+      source.KENFUTWORK_CODE_ATTACHMENT_MAX_CONCURRENT,
+    ),
+    codeAttachmentStagedMaxBytes: parseStrictInt(
+      source.KENFUTWORK_CODE_ATTACHMENT_STAGED_MAX_BYTES,
+    ),
+    codeAttachmentUploadTtlMs: parseStrictInt(
+      source.KENFUTWORK_CODE_ATTACHMENT_UPLOAD_TTL_MS,
+    ),
+    codeAttachmentMaxPerInput: parseStrictInt(
+      source.KENFUTWORK_CODE_ATTACHMENT_MAX_PER_INPUT,
+    ),
+    codeAttachmentMaxRetries: parseStrictInt(
+      source.KENFUTWORK_CODE_ATTACHMENT_MAX_RETRIES,
+    ),
+    codeAttachmentRetryDelayMs: parseStrictInt(
+      source.KENFUTWORK_CODE_ATTACHMENT_RETRY_DELAY_MS,
+    ),
+    processMaxOutputBytes: parseStrictInt(
+      source.KENFUTWORK_PROCESS_MAX_OUTPUT_BYTES,
+    ),
+    processPreviewMaxChars: parseStrictInt(
+      source.KENFUTWORK_PROCESS_PREVIEW_MAX_CHARS,
+    ),
     processYieldMs: parseStrictInt(source.KENFUTWORK_PROCESS_YIELD_MS),
     processKillGraceMs: parseStrictInt(source.KENFUTWORK_PROCESS_KILL_GRACE_MS),
-    terminalMaxSessions: parseStrictInt(source.KENFUTWORK_TERMINAL_MAX_SESSIONS),
-    sandboxProbeTimeoutMs: parseStrictInt(source.KENFUTWORK_SANDBOX_PROBE_TIMEOUT_MS),
+    terminalMaxSessions: parseStrictInt(
+      source.KENFUTWORK_TERMINAL_MAX_SESSIONS,
+    ),
+    sandboxProbeTimeoutMs: parseStrictInt(
+      source.KENFUTWORK_SANDBOX_PROBE_TIMEOUT_MS,
+    ),
     subagentMaxContinuations: parseStrictInt(
       source.KENFUTWORK_SUBAGENT_MAX_CONTINUATIONS,
     ),
@@ -309,13 +356,18 @@ export function governanceBoolSetting<K extends "llmInfiniteRetry">(key: K) {
 }
 
 /** 运行时读取档：库 ?? env ?? 默认，只在本属主统一钳回护栏。 */
-export function resolveGovernanceNumber<K extends keyof typeof AGENT_GOVERNANCE_LIMITS>(
+export function resolveGovernanceNumber<
+  K extends keyof typeof AGENT_GOVERNANCE_LIMITS,
+>(
   key: K,
   stored: number | null | undefined,
   overrides: AgentGovernanceOverrides = {},
 ): number {
   const { min, max } = AGENT_GOVERNANCE_LIMITS[key];
   const value = stored ?? overrides[key] ?? AGENT_GOVERNANCE_DEFAULTS[key];
-  if (key === "codePdfRenderScale") return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : AGENT_GOVERNANCE_DEFAULTS[key];
+  if (key === "codePdfRenderScale")
+    return Number.isFinite(value)
+      ? Math.min(max, Math.max(min, value))
+      : AGENT_GOVERNANCE_DEFAULTS[key];
   return clampInt(value, min, max);
 }

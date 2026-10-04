@@ -1,5 +1,13 @@
 # Code界面阶段同步记录
 
+## 2026-10-04：固定UI分支与Task内核双亲合并
+
+先按功能完成17批提交至`6e746f55`，再合并原UI固定`29fb8c09`；60处冲突按双方意图融合，保留原Root/主子SessionPane/品牌、资源删除与CanvasWorkbench提取，保留Task/Project UUID、固定Task根、权限与配置代际及终端/附件消费者。删除被terminal-api取代的code-git-api与旧panel-layout测试；第二settings/model config写面未复活。历史迁移均保留原字节。
+
+合并后全量test（web449/server1866/shared90）、typecheck、Code/Design与Web/server构建、API生成和文档门禁通过；独占临时PG上compact FIFO、完整rewind、卸载及Controller/设置竞争5条通过，TaskWork迁移重放/no-op3条通过。3027项来源零漂移，Kimi登记源码逐项SHA验证；第一方改动安全format/import整理不改vendor字节。现存20项历史lint错误保持common base字节，未声明全lint通过。
+
+这只证明合并与上述行为，未证明全部原UI操作/1:1视觉或Design完整回归。新引入默认skip的HTTP fixture仍有路径替UUID/旧Canvas/缺hello及外部DSN问题；下一切片改显式client与独占临时PG/random端口，再继续describe/list真实组件、队列/权限/结构化提问/子停止和历史编辑/分叉。权威施工清单仍见《Code内核实施交接》最新节，原UI交接的“主链已替换但未全部验收”结论保留。
+
 ## 第1阶段：原能力显隐、目录等待、URL模式
 
 来源：`e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5`；以基线`65d1097ec398c0c8bb42f38816f4033a98ad109d`到来源提交的精确hunk同步，未整体cherry-pick。

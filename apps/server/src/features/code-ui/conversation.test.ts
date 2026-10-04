@@ -2,25 +2,76 @@ import { describe, expect, it } from "vitest";
 import { createCodeUiConversation } from "./conversation.js";
 
 it("共同Harness的真实run.compacted投影为自动压缩标记，不伪造用户行或实际token数", () => {
-  const host = createCodeUiConversation({ sessionId: "root", workspacePath: "/project", config: { provider: "zcode", model: "test", thought: "", followupMode: "queue" } });
+  const host = createCodeUiConversation({
+    sessionId: "root",
+    workspacePath: "/project",
+    config: {
+      provider: "zcode",
+      model: "test",
+      thought: "",
+      followupMode: "queue",
+    },
+  });
   host.startTurn({ runId: "run", commandId: "send", text: "研究" });
-  host.recordEvent({ type: "run.compacted", runId: "run", triggerTokens: 4096, triggerSource: "reserved-output", keepMessages: 20, timestamp: "2026-10-03T00:00:00Z" });
+  host.recordEvent({
+    type: "run.compacted",
+    runId: "run",
+    triggerTokens: 4096,
+    triggerSource: "reserved-output",
+    keepMessages: 20,
+    timestamp: "2026-10-03T00:00:00Z",
+  });
   const snapshot = host.getSnapshot();
-  expect(snapshot.rows.window.filter((row) => row.kind === "userInput")).toHaveLength(1);
-  const marker = snapshot.rows.window.find((row) => row.kind === "timelineMarker");
-  expect(marker).toMatchObject({ lane: "assistantWork", marker: { type: "compact", origin: "auto", status: "success" } });
-  expect(marker?.kind === "timelineMarker" ? marker.marker : {}).not.toHaveProperty("tokensBefore");
+  expect(
+    snapshot.rows.window.filter((row) => row.kind === "userInput"),
+  ).toHaveLength(1);
+  const marker = snapshot.rows.window.find(
+    (row) => row.kind === "timelineMarker",
+  );
+  expect(marker).toMatchObject({
+    lane: "assistantWork",
+    marker: { type: "compact", origin: "auto", status: "success" },
+  });
+  expect(
+    marker?.kind === "timelineMarker" ? marker.marker : {},
+  ).not.toHaveProperty("tokensBefore");
 });
 
 describe("Code 宿主会话快照", () => {
   it("原sendText的完整模型选项持久到Task快照，恢复后追问沿用同一选择", () => {
-    const selection = { providerId: "provider", modelId: "model", options: { reasoningLevel: "low" } };
-    const host = createCodeUiConversation({ sessionId: "selected-task", workspacePath: "/work", config: { provider: "zcode", model: "model", thought: "", followupMode: "queue", mode: "build" } });
-    host.startTurn({ runId: "run", commandId: "command", text: "执行", modelSelection: selection });
-    const restored = createCodeUiConversation({ sessionId: "selected-task", workspacePath: "/work", config: host.getSnapshot().config, state: host.exportState() });
+    const selection = {
+      providerId: "provider",
+      modelId: "model",
+      options: { reasoningLevel: "low" },
+    };
+    const host = createCodeUiConversation({
+      sessionId: "selected-task",
+      workspacePath: "/work",
+      config: {
+        provider: "zcode",
+        model: "model",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    host.startTurn({
+      runId: "run",
+      commandId: "command",
+      text: "执行",
+      modelSelection: selection,
+    });
+    const restored = createCodeUiConversation({
+      sessionId: "selected-task",
+      workspacePath: "/work",
+      config: host.getSnapshot().config,
+      state: host.exportState(),
+    });
     expect(restored.getSnapshot().config.modelSelection).toEqual(selection);
     selection.options.reasoningLevel = "high";
-    expect(restored.getSnapshot().config.modelSelection?.options?.reasoningLevel).toBe("low");
+    expect(
+      restored.getSnapshot().config.modelSelection?.options?.reasoningLevel,
+    ).toBe("low");
   });
   it("真实文件工具的chip保留实际绝对路径，运行事实原参数保持完整", () => {
     const host = createCodeUiConversation({

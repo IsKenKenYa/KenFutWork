@@ -9,21 +9,21 @@ import {
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider";
 import { Root } from "@zui/index";
 import { useAlertDialogStore } from "@zui/store/alertDialogStore";
+import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore";
 import { afterEach, expect, it, vi } from "vitest";
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
-import { bindCodeWorkspaceServices } from "../src/components/workbench/zcode/host/workspaceServices";
-import { createCodeWorkspaceContextResolver } from "../src/components/workbench/zcode/host/workspaceServiceController";
 import { createCodePlatform } from "../src/components/workbench/zcode/host/platform";
+import { createCodeWorkspaceContextResolver } from "../src/components/workbench/zcode/host/workspaceServiceController";
+import { bindCodeWorkspaceServices } from "../src/components/workbench/zcode/host/workspaceServices";
+import {
+  installCodeRootBrowser as installBrowserLayout,
+  restoreCodeRootBrowser,
+} from "./setup/code-root-host-browser";
 import {
   createCodeRootHostFetch,
   rootProjectId,
   rootWorkspace,
 } from "./setup/code-root-host-http";
-import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore";
-import {
-  installCodeRootBrowser as installBrowserLayout,
-  restoreCodeRootBrowser,
-} from "./setup/code-root-host-browser";
 
 const clients: CodeHttpChannelClient[] = [];
 const releases: Array<() => void> = [];

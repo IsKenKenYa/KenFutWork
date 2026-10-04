@@ -189,13 +189,11 @@ it("真实SDK graph先拒绝未激活调用，ToolSearch之后才绑定与执行
         execution,
         prompt: { registry: prompts, composition: { preset: "code" } },
       },
-      kernelTools: registry
-        .resolveRunTools(resolution)
-        .map((definition) => ({
-          ...definition,
-          execute: (args, context) =>
-            registry.executeDefinition(definition, args, context),
-        })),
+      kernelTools: registry.resolveRunTools(resolution).map((definition) => ({
+        ...definition,
+        execute: (args, context) =>
+          registry.executeDefinition(definition, args, context),
+      })),
       runExtensions: [
         {
           preset: "code",

@@ -88,6 +88,10 @@ export type CreateProjectInput = {
 export interface ProjectRepository {
   beginCloseProject(workspaceId: string, projectId: string): Promise<void>;
   failCloseProject(workspaceId: string, projectId: string): Promise<void>;
+  findActiveCodeDirectory(
+    workspaceId: string,
+    path: string,
+  ): Promise<{ project: CreatedProjectRow; canvas: null } | null>;
   /** 归档（软删）活跃项目；返回受影响行数（0 = 不存在或已归档）。 */
   archive(workspaceId: string, projectId: string): Promise<number>;
   /** 建项目 + 主画布，同一事务（原子性不依赖 DB 函数）。 */
@@ -156,6 +160,17 @@ export function createProjectRepository(
           where workspace_id = :workspace and project_id = $1 and execution_state = 'revoking'`,
         [projectId],
       );
+    },
+    async findActiveCodeDirectory(workspaceId, path) {
+      return persistence
+        .forWorkspace(workspaceId)
+        .queryOne<{ project: CreatedProjectRow; canvas: null }>(
+          `select to_jsonb(p) as project, null::jsonb as canvas
+         from public.projects p
+         where p.workspace_id=:workspace and p.archived_at is null and p.kind='code' and p.work_dir=$1
+         order by p.created_at asc limit 1`,
+          [path],
+        );
     },
     async listActive(workspaceId, kind = "design") {
       return persistence.forWorkspace(workspaceId).query<ProjectListRow>(
@@ -303,7 +318,7 @@ export function createProjectRepository(
     async findWorkDirByCanvas(workspaceId, canvasId) {
       const row = await persistence.forWorkspace(workspaceId).queryOne<{
         work_dir: string | null;
-  additional_directories: AdditionalDirectory[];
+        additional_directories: AdditionalDirectory[];
       }>(
         `select p.work_dir
            from public.canvases c

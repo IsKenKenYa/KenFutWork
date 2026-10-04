@@ -70,11 +70,14 @@ function fixture() {
       return structuredClone(updated);
     },
   );
+  const listInstances = vi.fn(async (user: AuthenticatedUser) =>
+    structuredClone(own(user)),
+  );
   const notifyViews = vi.fn(async () => {});
   const testConnectivity = vi.fn(async () => ({ success: true as const }));
   const deps: CodeUiProviderSettingsRpcDeps = {
     modelProviders: {
-      listInstances: async (user) => structuredClone(own(user)),
+      listInstances,
       createInstance,
       updateInstance,
       deleteInstance: async (user, id) => {
@@ -128,6 +131,7 @@ function fixture() {
     credentials,
     createInstance,
     updateInstance,
+    listInstances,
     notifyViews,
     testConnectivity,
     preferences,
@@ -207,6 +211,146 @@ it("Key只写，空表单值不覆盖，null明确删除；协议编辑保存真
   expect(
     (await rpc.readViews(actor)).settings.providers[0]?.credentialConfigured,
   ).toBe(false);
+});
+
+it("access与api明确null清除真实凭证、端点与头，模型不再可执行", async () => {
+  const { rpc, create, call, rows, credentials, updateInstance } = fixture();
+  const { providerId } = await create({
+    initialConfig: {
+      access: { type: "api-key", apiKey: "keep-key" },
+      api: {
+        type: "openai-responses",
+        baseUrl: "https://gateway.test/v1",
+        headers: { "x-custom": "keep" },
+      },
+      personalModelIds: ["chat"],
+    },
+  });
+  await call("savePersonalProviderOverlay", [providerId, { api: null }]);
+  expect(credentials.get(providerId)).toBe("keep-key");
+  expect(rows.get(actor.id)?.[0]?.baseUrl).toBe("");
+  expect(updateInstance).toHaveBeenLastCalledWith(
+    actor,
+    providerId,
+    expect.objectContaining({
+      baseUrl: "",
+      headers: {},
+      expectedRevision: 1,
+    }),
+  );
+  expect(rows.get(actor.id)?.[0]?.compat?.chatApi).toBeUndefined();
+  const cleared = await rpc.readViews(actor);
+  expect(cleared.settings.providers[0]?.executable).toBe(false);
+  expect(cleared.settings.providers[0]?.models[0]?.executable).toBe(false);
+  expect(cleared.selection.providers).toEqual([]);
+  expect(cleared.selection.effectiveSelection).toBeNull();
+  expect(cleared.settings.providers[0]?.issues).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: ["provider", "api", "baseUrl"] }),
+    ]),
+  );
+  await call("savePersonalProviderOverlay", [providerId, { access: null }]);
+  expect(credentials.has(providerId)).toBe(false);
+  expect(updateInstance).toHaveBeenLastCalledWith(
+    actor,
+    providerId,
+    expect.objectContaining({ apiKey: null, expectedRevision: 2 }),
+  );
+});
+
+it("非空但仅含空白的Key在创建与保存时拒绝，保留原凭证与修订", async () => {
+  const { create, call, rows, credentials, createInstance, updateInstance } =
+    fixture();
+  await expect(
+    create({ initialConfig: { access: { type: "api-key", apiKey: "  \t" } } }),
+  ).rejects.toMatchObject({ code: "command_conflict" });
+  expect(createInstance).not.toHaveBeenCalled();
+  const { providerId } = await create({
+    initialConfig: { access: { type: "api-key", apiKey: "keep-key" } },
+  });
+  await expect(
+    call("savePersonalProviderOverlay", [
+      providerId,
+      { access: { type: "api-key", apiKey: " \n" } },
+    ]),
+  ).rejects.toMatchObject({ code: "command_conflict" });
+  expect(updateInstance).not.toHaveBeenCalled();
+  expect(credentials.get(providerId)).toBe("keep-key");
+  expect(rows.get(actor.id)?.[0]?.configRevision).toBe(1);
+});
+
+it("模型草稿两读之间外部实例更新不能借新CAS修订覆盖旧草稿", async () => {
+  const { rpc, create, call, rows, listInstances, updateInstance } = fixture();
+  const { providerId } = await create({
+    initialConfig: { personalModelIds: ["chat"] },
+  });
+  const revision = (await rpc.readViews(actor)).settings.revision;
+  listInstances.mockImplementationOnce(async (user) => {
+    const snapshot = structuredClone(rows.get(user.id) ?? []);
+    const current = rows.get(actor.id)?.[0];
+    if (!current) throw new Error("测试供应商未创建");
+    rows.set(actor.id, [
+      {
+        ...current,
+        configRevision: current.configRevision + 1,
+        models: current.models.map((model) => ({
+          ...model,
+          contextWindow: 8192,
+        })),
+      },
+    ]);
+    return snapshot;
+  });
+  await expect(
+    call("savePersonalModelDraft", [
+      {
+        providerId,
+        originalModelId: "chat",
+        nextModelId: "chat",
+        personalConfig: { properties: { contextWindow: 4096 } },
+        basedOnRevision: revision,
+      },
+    ]),
+  ).rejects.toMatchObject({ code: "revision_conflict" });
+  expect(updateInstance).not.toHaveBeenCalled();
+  expect(rows.get(actor.id)?.[0]?.models[0]?.contextWindow).toBe(8192);
+});
+
+it("模型草稿已核UI修订后外部更新仍由实例CAS拒绝", async () => {
+  const { rpc, create, call, rows, updateInstance } = fixture();
+  const { providerId } = await create({
+    initialConfig: { personalModelIds: ["chat"] },
+  });
+  const revision = (await rpc.readViews(actor)).settings.revision;
+  const update = updateInstance.getMockImplementation();
+  if (!update) throw new Error("测试供应商更新实现缺失");
+  updateInstance.mockImplementationOnce(async (user, id, input) => {
+    const current = rows.get(actor.id)?.[0];
+    if (!current) throw new Error("测试供应商未创建");
+    rows.set(actor.id, [
+      {
+        ...current,
+        configRevision: current.configRevision + 1,
+        models: current.models.map((model) => ({
+          ...model,
+          contextWindow: 8192,
+        })),
+      },
+    ]);
+    return update(user, id, input);
+  });
+  await expect(
+    call("savePersonalModelDraft", [
+      {
+        providerId,
+        originalModelId: "chat",
+        nextModelId: "chat",
+        personalConfig: { properties: { contextWindow: 4096 } },
+        basedOnRevision: revision,
+      },
+    ]),
+  ).rejects.toMatchObject({ code: "revision_conflict" });
+  expect(rows.get(actor.id)?.[0]?.models[0]?.contextWindow).toBe(8192);
 });
 
 it("provider旧修订表单409，保持另一客户端最新URL和凭证", async () => {

@@ -16,17 +16,13 @@
       "source": "references/zcode/packages/ui/src/App.tsx",
       "target": "apps/web/src/components/workbench/zcode/App.tsx",
       "sha256": "ad78d4e881b8706bf708a5acd08aff900c66784a8a435603fd50cf1b8670a987",
-      "copiedSha256": "5965100a3e79e89da85d93ea6ebb89f6c6b9800365a90274873ac3fcf514b3c0",
+      "copiedSha256": "9e5ce923820818868f13d4c668c74bd61231371cdaf955d7298b60cae83b9132",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：未接通自动化服务时不进入原自动化主视图、不轮询闲时任务通知",
+        "品牌适配：应用 chrome 标识换 KenFutWork 自有标，ZCode 归属保留于 About 与 NOTICE",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/App.tsx",
-        "blobSha1": "5bd6a6b2222d9a244b44edea31fba1cdb72ae10d",
-        "sha256": "5965100a3e79e89da85d93ea6ebb89f6c6b9800365a90274873ac3fcf514b3c0"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/AssistantCodeCommentCards.tsx",
@@ -134,14 +130,9 @@
       "copiedSha256": "bd5dd19b0d16329588ab5de2c4ca5cc74cfecd1493f9c84cff74dfa8947c21a6",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/ChatErrorBanner.tsx",
-        "blobSha1": "0f782c827a992dfb27b30dda77ed2a8b49ae1254",
-        "sha256": "bd5dd19b0d16329588ab5de2c4ca5cc74cfecd1493f9c84cff74dfa8947c21a6"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/ChatMediaAttachmentPreviewDialog.tsx",
@@ -210,9 +201,10 @@
       "source": "references/zcode/packages/ui/src/DesktopTopOverlay.tsx",
       "target": "apps/web/src/components/workbench/zcode/DesktopTopOverlay.tsx",
       "sha256": "5d7ea8687a3e2a31762685664ffcf90ec9b277594cfcb483346590972bccee40",
-      "copiedSha256": "d9e13fb26277858e2547bb6ece363a87c7bdc120f93c81ccbbe63173b0238acf",
+      "copiedSha256": "1dcb90614cddbf0e730039a9b904cb6c80c4c5aaf6489cc1ab8de40ce32b4c82",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "品牌适配：应用 chrome 标识换 KenFutWork 自有标"
       ]
     },
     {
@@ -258,14 +250,9 @@
       "copiedSha256": "597bc464509c2e2a4a4b2cb27385249fcc0d4adeb11e7f6cf1f20b1a56c649e3",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：选择回调支持 Promise；沿原 loading/error 状态等待绑定、失败保留选择器；原 UI 标记不变",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/DirectoryBrowser.tsx",
-        "blobSha1": "50b4a8a4adabf748dbebd96419129fa4d4f6f2fe",
-        "sha256": "597bc464509c2e2a4a4b2cb27385249fcc0d4adeb11e7f6cf1f20b1a56c649e3"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/ElicitationDialog.tsx",
@@ -589,14 +576,11 @@
       "copiedSha256": "da92c4196d9447581cebf85a30bf798d0ec5f0c606db86c4a060582cc16c0345",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
-      ],
-      "syncSource": {
-        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
-        "path": "apps/web/src/components/workbench/zcode/Root.tsx",
-        "blobSha1": "3d6ba31f4cb5602181ce390b39036b1f4d68b5ab",
-        "sha256": "990afced028894f2f605337d17f5dbe71dd5f0533dcdbbaf9765e4d55f5f6e90"
-      }
+        "宿主接口：真实身份、mode callback与握手clientMode透传；非云OAuth/账号迁移门及未接引导/import/运行偏好门，保留原Root生命周期",
+        "宿主接口：原目录选择等待真实resolvePath与Project绑定，成功才关闭，失败沿原错误区重试",
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/SSHDialog.tsx",
@@ -623,15 +607,11 @@
       "copiedSha256": "f2f16d2c46ad559068e77638f684975bf6b0445bd2ebd3ca26910271b6a3b1b9",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落",
+        "能力显隐：未接引导记录时隐藏原引导入口和查询，缺省原行为",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
-      ],
-      "syncSource": {
-        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
-        "path": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
-        "blobSha1": "d9cdb23ae327334145c3310aa65fa7593cb1e1e3",
-        "sha256": "f2f16d2c46ad559068e77638f684975bf6b0445bd2ebd3ca26910271b6a3b1b9"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/SidePaneTerminalPane.tsx",
@@ -957,14 +937,9 @@
       "copiedSha256": "8dd18b0b803f0dc8cb9eab7a387dc7432cb3877e119948a0a0722cb0f050cdae",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：未接通自动化服务时隐藏原工具卡跳转按钮，保留原结果正文与默认宿主点击语义",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/ToolCallBlocks/renderers/cron-create.tsx",
-        "blobSha1": "f7eb278e10eae67c2e80456bcf25b5967ba85481",
-        "sha256": "8dd18b0b803f0dc8cb9eab7a387dc7432cb3877e119948a0a0722cb0f050cdae"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/ToolCallBlocks/renderers/cua-group.tsx",
@@ -1235,14 +1210,9 @@
       "copiedSha256": "584036baf8ff87e1b8dd333a0bc5043533f9c2b25f767d04dd450435ed656e7d",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：未接通自动化服务时隐藏原工具卡跳转按钮，保留原结果正文与默认宿主点击语义",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/ToolCallBlocks/renderers/offpeak-create.tsx",
-        "blobSha1": "01d81b41e8acebf0a91373f1db8d7204819ce5f4",
-        "sha256": "584036baf8ff87e1b8dd333a0bc5043533f9c2b25f767d04dd450435ed656e7d"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/ToolCallBlocks/renderers/plan-guidance.tsx",
@@ -1510,9 +1480,10 @@
       "source": "references/zcode/packages/ui/src/WelcomeScreen.tsx",
       "target": "apps/web/src/components/workbench/zcode/WelcomeScreen.tsx",
       "sha256": "24c6c75f90b087c86772a3854b6d793c1d8b713697e918203f99f3fc901883b9",
-      "copiedSha256": "8db3188f10901dad2debe9ade2f82fcd524f7aa17bf7f259a7b76a4a239e3618",
+      "copiedSha256": "53ad79de69c91dfa984ff81132f5e86aa01aa5de22dad156b6fbd0b4a26c4fac",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "品牌适配：登录面板 aria 标签改 KenFutWork"
       ]
     },
     {
@@ -1528,9 +1499,10 @@
       "source": "references/zcode/packages/ui/src/WindowsTopLeftLogo.tsx",
       "target": "apps/web/src/components/workbench/zcode/WindowsTopLeftLogo.tsx",
       "sha256": "722cc7365745adcdc13d400ae6ddc9ef81ad90c76b12cc126918d8616cdfa776",
-      "copiedSha256": "4eef1407189a144b67e97e8e33924c07715f07505202f9f8d5947f2f79097ebe",
+      "copiedSha256": "205ea4b90c9c57cdc2fe9487ce8eb6b61506bb19afe68af9cc4ef56ac17f91c4",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "品牌适配：窗口左上标识换 KenFutWork 自有标"
       ]
     },
     {
@@ -1684,14 +1656,9 @@
       "copiedSha256": "ba936a62ca192934c79092e0ce4d36ed2fb011bd4e2b5de5b2dede3fd2201c50",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：原自动化按钮及分组快捷入口仅在宿主服务可用时显示",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/WorkspaceSidebar.tsx",
-        "blobSha1": "32f8a06ee137cfd4d19123e0d1220cd26275233b",
-        "sha256": "ba936a62ca192934c79092e0ce4d36ed2fb011bd4e2b5de5b2dede3fd2201c50"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar/ReconnectingRemoteWorkspaceLogTooltip.tsx",
@@ -1715,9 +1682,10 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar/WorkspaceSidebarCollapsedRail.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebar/WorkspaceSidebarCollapsedRail.tsx",
       "sha256": "66145c7f50a4911b03a3a5444379ca0f8effaf7f01ee4a806b9dc54380f1d56a",
-      "copiedSha256": "fe54b8c8ad9d8d9bd404fe1e69537e20220b5121fe51eda252a0db29441bd126",
+      "copiedSha256": "e4e3709d3dc12ec1e7b0df7f855da7daa944850b7781f35acc261df11ddd5334",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "品牌适配：应用 chrome 标识换 KenFutWork 自有标"
       ]
     },
     {
@@ -1742,17 +1710,13 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebarFooter.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebarFooter.tsx",
       "sha256": "5f64bddab48988a8cea50ea65f615d6b1f02bb63a2a40b232f207cfea30a9a57",
-      "copiedSha256": "d629e1a425137083914bb23793ec685f07d8faee02bd1b869781caacd4acc604",
+      "copiedSha256": "01c8c58217394b1bc4f56aea845744b7eeef7230054c6575cee8ed60024ffb66",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：未提供云账户的宿主隐藏原云徽标/登录/退出，保留原偏好与用量项",
+        "品牌适配：无用户名时的回退显示名改 KenFutWork",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/WorkspaceSidebarFooter.tsx",
-        "blobSha1": "00d61371f7f3c8e2c8d61e3da629818b44205c03",
-        "sha256": "d629e1a425137083914bb23793ec685f07d8faee02bd1b869781caacd4acc604"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/WorkspaceSidebarFooterPlanBadgeHelpers.ts",
@@ -1770,14 +1734,9 @@
       "copiedSha256": "8d28e70c09d8153b310d40354865d4e5b512241c15b90fa3156f5951e40258a2",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：原用量组件增加可选套餐项开关，未开启云能力时不显示套餐操作",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/WorkspaceSidebarFooterUsageSummary.tsx",
-        "blobSha1": "7b3046f9e75676f1f51e4f1a992e61754884d3cf",
-        "sha256": "8d28e70c09d8153b310d40354865d4e5b512241c15b90fa3156f5951e40258a2"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/WorkspaceSidebarItem.tsx",
@@ -2511,15 +2470,6 @@
       ]
     },
     {
-      "source": "references/zcode/packages/ui/src/assets/chevron-down-md.svg",
-      "target": "apps/web/src/components/workbench/zcode/assets/chevron-down-md.svg",
-      "sha256": "4533cf8a824ccc76701f0b3ad41ce2b4466ac38a4b0b626a80ea2f69d0d252b7",
-      "copiedSha256": "4533cf8a824ccc76701f0b3ad41ce2b4466ac38a4b0b626a80ea2f69d0d252b7",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
       "source": "references/zcode/packages/ui/src/assets/cli-icons/icon-glm-for-dark.png",
       "target": "apps/web/src/components/workbench/zcode/assets/cli-icons/icon-glm-for-dark.png",
       "sha256": "9de2d32f869150af875174e7c91137dd66ca4ef10b68687fd0f28c781f669a5f",
@@ -2533,15 +2483,6 @@
       "target": "apps/web/src/components/workbench/zcode/assets/cli-icons/icon-glm-for-light.png",
       "sha256": "8159019313f25aad9862e959e86bbc66838e7926faead3ca099b9d254c056252",
       "copiedSha256": "8159019313f25aad9862e959e86bbc66838e7926faead3ca099b9d254c056252",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/cli-icons/icon-glm.png",
-      "target": "apps/web/src/components/workbench/zcode/assets/cli-icons/icon-glm.png",
-      "sha256": "0f7b3d57763e17d541cca7e3b983f67b4d08ba75ca3d364be9569874fa8d4652",
-      "copiedSha256": "0f7b3d57763e17d541cca7e3b983f67b4d08ba75ca3d364be9569874fa8d4652",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -2578,87 +2519,6 @@
       "target": "apps/web/src/components/workbench/zcode/assets/notification-sounds/task-notification-pop.mp3",
       "sha256": "bd95332236b7435be42002aed75335dbaac6e896a1650d16b8e2f49183d5cfce",
       "copiedSha256": "bd95332236b7435be42002aed75335dbaac6e896a1650d16b8e2f49183d5cfce",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/american-express.webp",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/american-express.webp",
-      "sha256": "a0c3a9a138053e6acf494ea391eb075d45507d31f260492cdd3f8714ab6e3dbb",
-      "copiedSha256": "a0c3a9a138053e6acf494ea391eb075d45507d31f260492cdd3f8714ab6e3dbb",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/icon-alipay@2x.png",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/icon-alipay@2x.png",
-      "sha256": "c0decdb18921491c3d0c475a9cd74c562d3f225207ca6f7f815c91ba2dcaa081",
-      "copiedSha256": "c0decdb18921491c3d0c475a9cd74c562d3f225207ca6f7f815c91ba2dcaa081",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/jcb.webp",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/jcb.webp",
-      "sha256": "a93a80adda4bab54904c4b3f4245b9dd0fb72b81ff85b8edcdfcc3f3f0391706",
-      "copiedSha256": "a93a80adda4bab54904c4b3f4245b9dd0fb72b81ff85b8edcdfcc3f3f0391706",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/master.webp",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/master.webp",
-      "sha256": "fc1c84410526d95e5ff737bcaf1ec70b2612f6e526c3b3bf51c623540089cc5c",
-      "copiedSha256": "fc1c84410526d95e5ff737bcaf1ec70b2612f6e526c3b3bf51c623540089cc5c",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/paypal-text.svg",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/paypal-text.svg",
-      "sha256": "7518ed5debc95a0d617798d9430d1ae6671f3f8a7b4f298da763d01438252441",
-      "copiedSha256": "7518ed5debc95a0d617798d9430d1ae6671f3f8a7b4f298da763d01438252441",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/paypal.webp",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/paypal.webp",
-      "sha256": "b1ac19857a8b155caae226fad0eb420edc65e301b907b6cfdc4485006d05be3b",
-      "copiedSha256": "b1ac19857a8b155caae226fad0eb420edc65e301b907b6cfdc4485006d05be3b",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/stripe-text.svg",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/stripe-text.svg",
-      "sha256": "50ca6a5c875a4b163a1eebbde737491fb49b044e6181664f4082749f3a69a509",
-      "copiedSha256": "50ca6a5c875a4b163a1eebbde737491fb49b044e6181664f4082749f3a69a509",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/unionpay.webp",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/unionpay.webp",
-      "sha256": "7e96ab9557a02607ab5e437e1621140fa538db567b75b5d3bd0b33c71c120b6f",
-      "copiedSha256": "7e96ab9557a02607ab5e437e1621140fa538db567b75b5d3bd0b33c71c120b6f",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/payment-icons/visa.webp",
-      "target": "apps/web/src/components/workbench/zcode/assets/payment-icons/visa.webp",
-      "sha256": "8500f60371dff9b4b55998b87df56ed7f63cd10675c1ea993f0cd7c702a31845",
-      "copiedSha256": "8500f60371dff9b4b55998b87df56ed7f63cd10675c1ea993f0cd7c702a31845",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -2718,46 +2578,10 @@
       ]
     },
     {
-      "source": "references/zcode/packages/ui/src/assets/provider-icons/logo-anthropic.svg",
-      "target": "apps/web/src/components/workbench/zcode/assets/provider-icons/logo-anthropic.svg",
-      "sha256": "99f07c2361e3c3875765cfd0568e75e3cdd0c016e0e5094509a2e96c28bdb2fe",
-      "copiedSha256": "99f07c2361e3c3875765cfd0568e75e3cdd0c016e0e5094509a2e96c28bdb2fe",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
       "source": "references/zcode/packages/ui/src/assets/provider-icons/logo-bigmodel.svg",
       "target": "apps/web/src/components/workbench/zcode/assets/provider-icons/logo-bigmodel.svg",
       "sha256": "63d72de1b988ab15000f8e5c495d9a9da39272748c8fef103a4b39fda6605847",
       "copiedSha256": "63d72de1b988ab15000f8e5c495d9a9da39272748c8fef103a4b39fda6605847",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/provider-icons/logo-moonshoot.svg",
-      "target": "apps/web/src/components/workbench/zcode/assets/provider-icons/logo-moonshoot.svg",
-      "sha256": "0f44e74d497f6d5d9921af67417ba6788435bc6bd503f6164f0b0c3398cfe4cd",
-      "copiedSha256": "0f44e74d497f6d5d9921af67417ba6788435bc6bd503f6164f0b0c3398cfe4cd",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/provider-icons/logo-openrouter.svg",
-      "target": "apps/web/src/components/workbench/zcode/assets/provider-icons/logo-openrouter.svg",
-      "sha256": "aa422921888a886727dde29a010769afd4c6922140974d9aebdccfb4296364e9",
-      "copiedSha256": "aa422921888a886727dde29a010769afd4c6922140974d9aebdccfb4296364e9",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/provider-icons/logo-zai-square.svg",
-      "target": "apps/web/src/components/workbench/zcode/assets/provider-icons/logo-zai-square.svg",
-      "sha256": "07a45e8e35b0b631ed2c68cd1cb041f9721b1ceeb0bd0e34f1459b0304a741c7",
-      "copiedSha256": "07a45e8e35b0b631ed2c68cd1cb041f9721b1ceeb0bd0e34f1459b0304a741c7",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -2902,15 +2726,6 @@
       "target": "apps/web/src/components/workbench/zcode/assets/provider-icons/model-provider-zai-app.png",
       "sha256": "1ec553f7eaeae4492c673e9d636692a3898d11800d912628d8c1e667222d6d19",
       "copiedSha256": "1ec553f7eaeae4492c673e9d636692a3898d11800d912628d8c1e667222d6d19",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/assets/provider-icons/model-provider-zai.png",
-      "target": "apps/web/src/components/workbench/zcode/assets/provider-icons/model-provider-zai.png",
-      "sha256": "9fd3cb324dcace295da0069949065c3d2919eb76140d2c20201583de47c8eb8d",
-      "copiedSha256": "9fd3cb324dcace295da0069949065c3d2919eb76140d2c20201583de47c8eb8d",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -4953,17 +4768,12 @@
       "source": "references/zcode/packages/ui/src/hooks/useActiveTaskSnapshotMeta.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useActiveTaskSnapshotMeta.ts",
       "sha256": "cd6c0ae51e670d16cfa726755c6092cc17d281e0de0f89285560afaad4a750cf",
-      "copiedSha256": "db32711575dfad9d586b647d05eb2c1f1e768685bd6c06354df36aead09912c4",
+      "copiedSha256": "ffb36d0e0abd8665458a818256c56da0b3b30b4d5d1d005260e695e89cb1e8d7",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：KenFutWork原V4消息链的标题兜底消费原Task.getTaskMeta轻量读面；未声明宿主策略保留原session snapshot与原投影，取消/空/失败边界保留",
         "阶段同步3f5c3873: 可选sessionMetadataSource与原Root轻量真实标题；Task-index只读metainfo，未声明保持原session投影"
-      ],
-      "syncSource": {
-        "commit": "3f5c38732f151fa64e99856f456623b303dbe14e",
-        "path": "apps/web/src/components/workbench/zcode/hooks/useActiveTaskSnapshotMeta.ts",
-        "blobSha1": "73032d01fb51c51862e021232c6101fa254a28fd",
-        "sha256": "ffb36d0e0abd8665458a818256c56da0b3b30b4d5d1d005260e695e89cb1e8d7"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/hooks/useAlertDialog.ts",
@@ -5044,14 +4854,10 @@
       "copiedSha256": "b22fefe89b30c6a9e49c3f59d1f6975ce7f5272edcc305d4b0e36fff0620adef",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主能力：云账户禁用时不加载账户视图、不发出 OAuth 凭证与套餐查询",
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/hooks/useCodingPlanEntryPlanList.ts",
-        "blobSha1": "e44961d78053e8b780bfc506d8addc5ca4d89ada",
-        "sha256": "b22fefe89b30c6a9e49c3f59d1f6975ce7f5272edcc305d4b0e36fff0620adef"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/hooks/useCodingPlanQuotaResetUi.ts",
@@ -5132,14 +4938,9 @@
       "copiedSha256": "e91f0c96af43247e0ad7c709c40f722b882503ab86f0f022eabe2f877236e42c",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：未接自动化/云订阅时停止套餐查询，缺省原行为",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
-      ],
-      "syncSource": {
-        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
-        "path": "apps/web/src/components/workbench/zcode/hooks/useDynamicWorkflowAvailability.ts",
-        "blobSha1": "68d7c810e584a0c7e2cad4b41aa9793804e71c0d",
-        "sha256": "e91f0c96af43247e0ad7c709c40f722b882503ab86f0f022eabe2f877236e42c"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/hooks/useEnsureWorkspaceMcpLoaded.ts",
@@ -5319,14 +5120,9 @@
       "copiedSha256": "3a9f883988b3e8e69a6b0e0ce9fbac5a420fc742b84a03f4652279505d2a65a8",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：未接引导记录服务时不提供原consumer，缺省原行为",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
-      ],
-      "syncSource": {
-        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
-        "path": "apps/web/src/components/workbench/zcode/hooks/useOnboardingRecordService.ts",
-        "blobSha1": "d1a84d6185655399d84b5a7830153b966af032cb",
-        "sha256": "3a9f883988b3e8e69a6b0e0ce9fbac5a420fc742b84a03f4652279505d2a65a8"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/hooks/usePlanIdentitySnapshot.ts",
@@ -5416,14 +5212,9 @@
       "copiedSha256": "9d51bdbf9b04245952b26e043c9bbce859093aa535cd65461d762c43d3f3ab0e",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：原统一远程入口门消费宿主真实支持态，未声明仍显示",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/hooks/useRemoteConnectionEntryVisibility.ts",
-        "blobSha1": "63a6e5b6364563cd385cdae85d2bcffc71af3070",
-        "sha256": "9d51bdbf9b04245952b26e043c9bbce859093aa535cd65461d762c43d3f3ab0e"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/hooks/useRemoteConnectionForm.ts",
@@ -5880,37 +5671,33 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "52415e4cf20ed0f2db51ae351e6b9856913eecd04872e61186cf383cbe837f1c",
+      "copiedSha256": "5292f9f22d67cbfc2950a2274f4061150d06d409d7d074f2e194fb6011859127",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
+        "宿主 BYOK 文案：真实配置状态与明确 clear，不显示旧 Key",
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义",
+        "品牌适配：用户可见文案 ZCode→KenFutWork（不做产品品牌呈现，归属保留）",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
-        "原Edit工具卡补丁预览预算截断提示英文本地化"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
-        "blobSha1": "8b57627e81470fac8b1e541c5778692856477386",
-        "sha256": "044909e8dc6bf1ba1ce088af74b9837ac425e6267500d98d8cbf3ceacaecda30"
-      }
+        "原Edit工具卡补丁预览预算截断提示英文本地化",
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "5967fa9eb93757f1703285129b073cb5def41a5302b93f94841b4fff2f14f7ca",
+      "copiedSha256": "343df832b7b13bcc9e9b283374d7f5dce57806e9a137cd4dc10e9973dcdebb1c",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
+        "宿主 BYOK 文案：真实配置状态与明确 clear，不显示旧 Key",
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义",
+        "品牌适配：用户可见文案 ZCode→KenFutWork（不做产品品牌呈现，归属保留）",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
-        "原Edit工具卡补丁预览预算截断提示中文本地化"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
-        "blobSha1": "9abada12f0b957978bdff359d6b52b8ce68ebdfc",
-        "sha256": "a8d064a8f5d673aaeed7fd85b6afc1ca5383eb4d7f894605195438830d1415ee"
-      }
+        "原Edit工具卡补丁预览预算截断提示中文本地化",
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/index.ts",
@@ -6407,14 +6194,9 @@
       "copiedSha256": "c815992e6b47e40d361ff72530cd8d1a2db795574998f12239716bf6786e4e1c",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：原平台门先检查宿主 CUA 支持态，避免 Windows Web 降级函数被当成真实 IPC 能力",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/lib/cuaPlatform.ts",
-        "blobSha1": "25b982e2ec5abcd0ba0e04743493c4e56d5893db",
-        "sha256": "c815992e6b47e40d361ff72530cd8d1a2db795574998f12239716bf6786e4e1c"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/lib/desktopUpdateMenu.ts",
@@ -7009,7 +6791,9 @@
       "copiedSha256": "f4256ddaac7db1fbfdf34d49f174725a8e7f9bf0930aaabd87aee672ba309cd7",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
+        "宿主 DTO 接线：原投影传递真实凭证 presence，不生成 Key 占位值",
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
       ]
     },
     {
@@ -7019,7 +6803,9 @@
       "copiedSha256": "158e86070f31e4248b65d21ef1c976de233af0d06ae657941b896252f8ad4b91",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
+        "宿主类型兼容：原表单传递可选 credentialConfigured",
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
       ]
     },
     {
@@ -7146,14 +6932,9 @@
       "copiedSha256": "d37b918a1c6bbfa05ed7792a63878e67471c8005cb3e6109bffa57e0363a4b1e",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：iframe自身或同源父工作台reload均保留原恢复资格；独立/跨源保持当前文档，普通冷启动不恢复",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
-      ],
-      "syncSource": {
-        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
-        "path": "apps/web/src/components/workbench/zcode/lib/rendererNavigation.ts",
-        "blobSha1": "80c788ab9cb5d058919bd9c52f27e7013548dac2",
-        "sha256": "d37b918a1c6bbfa05ed7792a63878e67471c8005cb3e6109bffa57e0363a4b1e"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/lib/rendererZCodeEndpoint.ts",
@@ -8350,14 +8131,9 @@
       "copiedSha256": "dd327c588b9470fc46d6aad980beb1fbd2cb61234a13c01084c3597b286b480e",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：未接引导记录时保留children与模式切换，隐藏未接快捷入口，原实现保留",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
-      ],
-      "syncSource": {
-        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
-        "path": "apps/web/src/components/workbench/zcode/onboarding/OccupationOnboarding.tsx",
-        "blobSha1": "32cde8adb57ef0e18ef7a7b3ea6bbb33bff2ef2b",
-        "sha256": "dd327c588b9470fc46d6aad980beb1fbd2cb61234a13c01084c3597b286b480e"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/onboarding/OccupationOnboardingVisual.tsx",
@@ -8453,9 +8229,10 @@
       "source": "references/zcode/packages/ui/src/onboarding/OnboardingWelcomeView.tsx",
       "target": "apps/web/src/components/workbench/zcode/onboarding/OnboardingWelcomeView.tsx",
       "sha256": "3e6932ce5ded13eaadfc4e0e6f246a5d0a3d5d82c524a486b7fabb6e1ee2f10a",
-      "copiedSha256": "d41e73ada9c3cb0b86c74230fc5c330a7f3e5f8078b46432660d60a0b215768c",
+      "copiedSha256": "9b3a53e78025f0df253aeaa649a76bd7d4212246ae8300c4cd96affb9c2f3eb5",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "品牌适配：引导页 aria 标签改 KenFutWork"
       ]
     },
     {
@@ -9168,14 +8945,10 @@
       "copiedSha256": "c17c60075f1d106ca86e94b92bd04e3378cb93c16d512a3b63058a9a2adebcd0",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
-      ],
-      "syncSource": {
-        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
-        "path": "apps/web/src/components/workbench/zcode/root/types.ts",
-        "blobSha1": "4955946399e2be047ee0ea108aea77f270f7f10d",
-        "sha256": "ab7d4fd930ebfa6adcab25d927e0fa94bd0d4d67e3eea90ce579888629bdd595"
-      }
+        "宿主接口：新增initialUserInfo、onInterfaceModeChange与原握手clientMode类型透传",
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/root/useAccountConnectionLossNotification.ts",
@@ -9184,14 +8957,9 @@
       "copiedSha256": "fc1e2d3e2a27ff79dba2b1cbdab59fb24674576619eec89abc0808fd458e0423",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：云连接观察可由宿主关闭，缺省原行为",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
-      ],
-      "syncSource": {
-        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
-        "path": "apps/web/src/components/workbench/zcode/root/useAccountConnectionLossNotification.ts",
-        "blobSha1": "db5f06742d63f903ee474a186cf50a45b4f08a26",
-        "sha256": "fc1e2d3e2a27ff79dba2b1cbdab59fb24674576619eec89abc0808fd458e0423"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/root/useBotBroadcastEffects.ts",
@@ -9270,14 +9038,9 @@
       "copiedSha256": "6a2cc6740d4b778c80d1766a76dbd1f9b7cbce412c69601b3ed8627369d40dbd",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：无云宿主停止OAuth恢复、JWT云消息和云回调，未声明时保留原行为",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
-      ],
-      "syncSource": {
-        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
-        "path": "apps/web/src/components/workbench/zcode/root/useRootOAuthEffects.ts",
-        "blobSha1": "40b3ace5e791cdde89841b21be8a33176b0b7705",
-        "sha256": "6a2cc6740d4b778c80d1766a76dbd1f9b7cbce412c69601b3ed8627369d40dbd"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/root/useRootPlatformEffects.ts",
@@ -9310,19 +9073,16 @@
       "source": "references/zcode/packages/ui/src/root/useRootWorkspaceActions.ts",
       "target": "apps/web/src/components/workbench/zcode/root/useRootWorkspaceActions.ts",
       "sha256": "3c8ebfe29150dcc21e53e17feca678aa58f93c59c5d875fe5db162cda65c79cb",
-      "copiedSha256": "811c60aefa1856dd7fc11f8b3da2c3ed522fea37cb809bc4d545ff6cd57b6f22",
+      "copiedSha256": "9ebdf3d8ebbf5789c725ca8c716ba2fbc960363879f02203d7d7d9de304ba596",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：增加可选选择错误回调，Code 宿主交回原目录选择器；原 UI 装配不变",
+        "宿主接口：目录选择可逐次回传失败，缺省沿用原错误callback；原动作显示真实错误，失败保留原选择器",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "第2阶段宿主适配: 项目选择后草稿沿用新tab的qualified workspaceIdentity",
-        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
-      ],
-      "syncSource": {
-        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
-        "path": "apps/web/src/components/workbench/zcode/root/useRootWorkspaceActions.ts",
-        "blobSha1": "b6db1188ebb53645751af0fd77cea46f6b53f5c7",
-        "sha256": "28f72f153fd9a5954bfca7bd9e6dedd287f525ce9dff128d319c160228c779f1"
-      }
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/root/zcodeJwtInvalidRestartMarker.ts",
@@ -9475,14 +9235,9 @@
       "copiedSha256": "223a0265ad00f9bf4912dd0376d6749a88b90d703eff9d6a80c39b98c7ca3f70",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/settings/CodingPlanEntryButton.tsx",
-        "blobSha1": "977ecef2f8b16c9bca9a1d7ff37fac4b172889b5",
-        "sha256": "223a0265ad00f9bf4912dd0376d6749a88b90d703eff9d6a80c39b98c7ca3f70"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/CodingPlanUpgradeDialog.tsx",
@@ -9500,14 +9255,10 @@
       "copiedSha256": "f6af7a7786eb2cce3e970a7ce7d019862f472474e4e848135e19c96f66694ea2",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：云账户禁用时不挂购买弹窗，不启动原套餐查询；保留原 Context/调用链",
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/settings/CodingPlanUpgradeDialogProvider.tsx",
-        "blobSha1": "f8d40ebe33a79a5a283e4b03691ce1e0e8ea80c1",
-        "sha256": "f6af7a7786eb2cce3e970a7ce7d019862f472474e4e848135e19c96f66694ea2"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/CommandCard.tsx",
@@ -9679,14 +9430,9 @@
       "copiedSha256": "8f25c623cccdb45f91cd85cee690e697319f8956d1cffe3ff77c3041d2ce3d17",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/settings/ModelProviderSection.tsx",
-        "blobSha1": "a30fb44b22c1f9ed4e872b256012a484a2fa6797",
-        "sha256": "8f25c623cccdb45f91cd85cee690e697319f8956d1cffe3ff77c3041d2ce3d17"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/OffPeakEditActionsMenu.tsx",
@@ -10271,6 +10017,7 @@
       "copiedSha256": "0fd9fdbe22014db4837416579a79210bda549a8272314d7c0d1d80eabfe32a12",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主 BYOK 接线：原输入/Button 保持布局，已保存且输入为空时提供明确 clear；无 Key 回读或假星号",
         "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
       ]
     },
@@ -10317,6 +10064,7 @@
       "copiedSha256": "9cbdaf9d177d0e4d179223945e38242752e3bdda75f0d700006822975bfacbbd",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主 BYOK 接线：沿原保存链明确 clear，仅清成功提交且未继续编辑的对应 Key 草稿，保护迟到应答",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。"
       ]
     },
@@ -10373,6 +10121,7 @@
       "copiedSha256": "d240a97f9232a1031b9403087fef7dfefffa11bd599b1544c10f1d225777b3e6",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：原 Key 区段透传 presence 与 clear 回调",
         "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
       ]
     },
@@ -10392,6 +10141,7 @@
       "copiedSha256": "286aa4c3ba343b77624820480e77fe0b5b876789a8fc1976fc5a0898bb5e33ad",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主只写契约：原稀疏草稿以显式 null 表达清除 Key",
         "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
       ]
     },
@@ -10735,14 +10485,9 @@
       "copiedSha256": "7e55c1341ec8a9fdc69c9b2ad24df47ab9d2dff3bd9d2af999715d30c0f4dd9f",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/settings/model-provider-section/useModelProviderNavigation.ts",
-        "blobSha1": "fcbbf927546230bc32fca487206a0002bf028e92",
-        "sha256": "7e55c1341ec8a9fdc69c9b2ad24df47ab9d2dff3bd9d2af999715d30c0f4dd9f"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/useOptimisticReorder.ts",
@@ -11121,14 +10866,9 @@
       "copiedSha256": "cf9f15a59edbbe068d6510357f4645f8e3a769b5967994eb18f331d6f9ba5d55",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：原设置分区数据按宿主自动化/浏览器/CUA能力过滤，原分组和组件保留",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/settings/settingsPageConfig.ts",
-        "blobSha1": "b8343e745289597440d8bba540db03f0d25f5da8",
-        "sha256": "cf9f15a59edbbe068d6510357f4645f8e3a769b5967994eb18f331d6f9ba5d55"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/settingsResourceRowInteraction.ts",
@@ -11344,14 +11084,9 @@
       "copiedSha256": "60786f18381f9a4014f126f132d6bc99e00bd65e9188a83798a164fccf962e4c",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：隐藏未接引导与运行偏好对应原控件，缺省原行为",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
-      ],
-      "syncSource": {
-        "commit": "92fad1ca182fcdd224d5f8f0c15ab4202d7b8754",
-        "path": "apps/web/src/components/workbench/zcode/settingsPageHelpers.tsx",
-        "blobSha1": "a58433f6bd4fce3839f4c584bbff0d7dcd706bd3",
-        "sha256": "60786f18381f9a4014f126f132d6bc99e00bd65e9188a83798a164fccf962e4c"
-      }
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/shortcuts/bindings.ts",
@@ -12275,15 +12010,11 @@
       "copiedSha256": "047d6ffc651bb370cb99f12b04e42c188a18bf600a2687a3299042a2ff75cb16",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：未接通自动化服务时撤下原行上下文与草稿建议的全部跳转回调；原会话装配不变",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
-        "Workspace配置消费：仅metadata恢复prepare传实际目标agent与resolved endpoint，保留Task附件与文件能力并行接线"
-      ],
-      "syncSource": {
-        "commit": "e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5",
-        "path": "apps/web/src/components/workbench/zcode/v4/SessionPane.tsx",
-        "blobSha1": "3ce202afa3cd1e7b1cde1652f47c6e6451c6a7d6",
-        "sha256": "231ebee6ecda8977d72bd81fafb36e357aa0aad58ef7b7837df4f58104a724c7"
-      }
+        "Workspace配置消费：仅metadata恢复prepare传实际目标agent与resolved endpoint，保留Task附件与文件能力并行接线",
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/v4/SessionPluginReferenceIconProvider.tsx",
@@ -14761,16 +14492,15 @@
       "sha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
       "copiedSha256": "013721beb5c3f5e7fc103ab6539634fdbba9fae9db9114b33350c5c2071ea81f",
       "adaptations": [
+        "宿主能力接口：增加可选云账户支持标记；未声明的原宿主行为不变",
+        "宿主接口：可选自动化/嵌入浏览器/CUA/远程能力声明；未声明保持原平台语义",
+        "宿主接口：新增可选引导记录、设置导入与运行偏好支持态，缺省原语义",
+        "宿主接口：可选sessionMetadataSource声明真实轻量元信息读面，缺省原session行为；不新增消息装配或兼容旧调试数据",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
-        "阶段同步3f5c3873: 可选sessionMetadataSource与原Root轻量真实标题；Task-index只读metainfo，未声明保持原session投影"
-      ],
-      "syncSource": {
-        "commit": "3f5c38732f151fa64e99856f456623b303dbe14e",
-        "path": "packages/zcode-shared/src/platform.ts",
-        "blobSha1": "168c98a39a54362457a0c9572445c957def593b8",
-        "sha256": "f2623badafecaf4eb3d9c23507f22017f40dc6ee6ddcf73d075fa7c0f6189c7c"
-      }
+        "阶段同步3f5c3873: 可选sessionMetadataSource与原Root轻量真实标题；Task-index只读metainfo，未声明保持原session投影",
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/plugin-display-name.ts",
@@ -16251,8 +15981,10 @@
       "source": "references/zcode/packages/provider/src/config-service.ts",
       "target": "packages/zcode-provider/src/config-service.ts",
       "sha256": "0b04f9c58779c4b4c3945332d816fe5524de02acb179e0a9f68f421cf4b3b202",
-      "copiedSha256": "0b04f9c58779c4b4c3945332d816fe5524de02acb179e0a9f68f421cf4b3b202",
-      "adaptations": []
+      "copiedSha256": "c59e1253582e476351cb638c181515349b48ba450fdfdf658e9b27e162e7b217",
+      "adaptations": [
+        "宿主接口：仅导出原 isStructurallyEmpty，KenFutWork 持久化复用恢复推荐规则的原判定；函数实现不变"
+      ]
     },
     {
       "source": "references/zcode/packages/provider/src/config/ids.ts",
@@ -16332,7 +16064,9 @@
       "sha256": "8d03047f2cf27adce44c7ee16e8bf4378d8b455950ccdf728509162bba3f263d",
       "copiedSha256": "a3948893afb9eebb50408c6c90d9b1c43b8e013946180f90ab0813d61ee164ad",
       "adaptations": [
-        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
+        "宿主契约：可选 credentialConfigured 传递真实凭证 presence，Key 只写不读，缺省保留原宿主语义",
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
       ]
     },
     {
@@ -16598,92 +16332,10 @@
       "source": "references/zcode/public/icon_512@2x.png",
       "target": "apps/web/src/components/workbench/zcode/public/icon_512@2x.png",
       "sha256": "edd87a182097389b0f59c07f8de283dbe433c9d37cd6e9a2a372611516ab81eb",
-      "copiedSha256": "edd87a182097389b0f59c07f8de283dbe433c9d37cd6e9a2a372611516ab81eb",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/icon.icns",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/icon.icns",
-      "sha256": "9c286aeaf42ea1026877869dfade0f44ebce4c335c7b7ae347ba007ba0e16aa1",
-      "copiedSha256": "9c286aeaf42ea1026877869dfade0f44ebce4c335c7b7ae347ba007ba0e16aa1",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/16x16.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/16x16.png",
-      "sha256": "9e84a5ce676da8646d7bc59b91869c89480a4a6f014e925d8da22c48cd6ec2be",
-      "copiedSha256": "9e84a5ce676da8646d7bc59b91869c89480a4a6f014e925d8da22c48cd6ec2be",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/1024x1024.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/1024x1024.png",
-      "sha256": "ae8cc4ca59180441ce3ba60a572ee9a5ee802f9ab9e7de1177ae5e0027c36a7a",
-      "copiedSha256": "ae8cc4ca59180441ce3ba60a572ee9a5ee802f9ab9e7de1177ae5e0027c36a7a",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/256x256.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/256x256.png",
-      "sha256": "ad0e1d32febb23d42942ab6faa32254d5647ddce38b18c276523bc7baab0e7aa",
-      "copiedSha256": "ad0e1d32febb23d42942ab6faa32254d5647ddce38b18c276523bc7baab0e7aa",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/icon.ico",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/icon.ico",
-      "sha256": "d2f81c9fd6d51e7bcff886a275b43c71f9214bcfd4d443ff5d2c9878414de093",
-      "copiedSha256": "d2f81c9fd6d51e7bcff886a275b43c71f9214bcfd4d443ff5d2c9878414de093",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/128x128.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/128x128.png",
-      "sha256": "1ec553f7eaeae4492c673e9d636692a3898d11800d912628d8c1e667222d6d19",
-      "copiedSha256": "1ec553f7eaeae4492c673e9d636692a3898d11800d912628d8c1e667222d6d19",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/48x48.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/48x48.png",
-      "sha256": "175d22b10030197817da1233ad4d132a561f9a17240eb3854cca320987b557e4",
-      "copiedSha256": "175d22b10030197817da1233ad4d132a561f9a17240eb3854cca320987b557e4",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/24x24.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/24x24.png",
-      "sha256": "1cd2e69ff44786fad06b2ceb7586d9b1cfd97c17cfa27f60e6c4416603b58ff9",
-      "copiedSha256": "1cd2e69ff44786fad06b2ceb7586d9b1cfd97c17cfa27f60e6c4416603b58ff9",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/32x32.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/32x32.png",
-      "sha256": "bec6e3e9a172e9fe15fda9cf7205eb60d8c5ea59aaa981145ae7ea4b5797deea",
-      "copiedSha256": "bec6e3e9a172e9fe15fda9cf7205eb60d8c5ea59aaa981145ae7ea4b5797deea",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/512x512.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/512x512.png",
-      "sha256": "8b3453fe890576be4fb593ed378a08c3882cdf2aab928f924eb1dc3e8e354e46",
-      "copiedSha256": "8b3453fe890576be4fb593ed378a08c3882cdf2aab928f924eb1dc3e8e354e46",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/public/logo/icons/64x64.png",
-      "target": "apps/web/src/components/workbench/zcode/public/logo/icons/64x64.png",
-      "sha256": "769f896dfa661599edafe46e41a560edde5d9c05f773bcf8709758a62bb35aab",
-      "copiedSha256": "769f896dfa661599edafe46e41a560edde5d9c05f773bcf8709758a62bb35aab",
-      "adaptations": []
-    },
-    {
-      "source": "references/zcode/packages/web/public/favicon.ico",
-      "target": "apps/web/src/components/workbench/zcode/public/favicon.ico",
-      "sha256": "d2f81c9fd6d51e7bcff886a275b43c71f9214bcfd4d443ff5d2c9878414de093",
-      "copiedSha256": "d2f81c9fd6d51e7bcff886a275b43c71f9214bcfd4d443ff5d2c9878414de093",
-      "adaptations": []
+      "copiedSha256": "b4bc6fed8a35245e4ca125025f2588317700383ce453ee6f5f50dde0c0619f0c",
+      "adaptations": [
+        "品牌适配：更新弹窗 dock 图标换 KenFutWork 标识（原 user-provided 素材权利链不明，一并移除）"
+      ]
     },
     {
       "source": "references/zcode/packages/web/public/material-icons/folder-vue-directives-open.svg",
@@ -24730,12 +24382,15 @@
     },
     {
       "source": "references/zcode/config/provider/zcode-builtin.json",
-      "target": "apps/server/src/features/code-ui/zcode-model-config-rules.json",
+      "target": "apps/server/src/features/model-providers/zcode-model-config-rules.json",
       "sha256": "0b3d735e0c2334353eecadfa8c0756a1a19fc4f7938fc62882048d6630c5f424",
       "copiedSha256": "8fb6c00c5771f22fa8a261588e0b1b736a9962c8e667e375e4c79e835604f66a",
       "adaptations": [
+        "数据切片：完整复制 /config/modelConfigRules，模型默认与协议/供应商覆盖全部来自原数据",
+        "宿主域归属：原规则移到 modelProviders，原编辑器与运行元信息共用，文件内容不变",
         "数据切片：复制 /config/modelConfigRules，保留原模型默认与协议/供应商覆盖",
-        "KenFutWork 本地 Gemini 原生协议适配：新增 google-generative-language 基础 map；思考 default 保留模型默认，maxOutputTokens 映射 generationConfig.maxOutputTokens。此规则不来自 ZCode upstream。字段与版本边界依据 https://ai.google.dev/api/generate-content；声明的 Gemini 3+ thinkingLevel 与显式个人映射由本地 model-views.ts 校验"
+        "KenFutWork 本地 Gemini 原生协议适配：新增 google-generative-language 基础 map；思考 default 保留模型默认，maxOutputTokens 映射 generationConfig.maxOutputTokens。此规则不来自 ZCode upstream。字段与版本边界依据 https://ai.google.dev/api/generate-content；声明的 Gemini 3+ thinkingLevel 与显式个人映射由本地 model-views.ts 校验",
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
       ],
       "jsonPointer": "/config/modelConfigRules"
     },
@@ -24759,9 +24414,10 @@
       "source": "references/zcode/packages/web/index.html",
       "target": "apps/web/src/components/workbench/zcode/index.html",
       "sha256": "9401ec7985ad7011dcca0714d88b8a5f9b9a7167183dc944bb05ee0152408785",
-      "copiedSha256": "3168737ee9e015233f18ce8194884d5fa94a526ed55b8827f0214505976bb677",
+      "copiedSha256": "c684297f63015665899b2921deca9bd4d7998e03fb95b4159b89aaf9e24d2bf7",
       "adaptations": [
-        "保留原 Web 启动主题、字体及标志；改入口、标题与语言"
+        "保留原 Web 启动主题、字体及标志；改入口、标题与语言",
+        "品牌适配：favicon 与启动闪屏换 KenFutWork 标识"
       ]
     },
     {
@@ -24770,12 +24426,43 @@
       "sha256": "f04ca005720f19faa41f4402eb8d4f874e78da3e19f8b85577dcdfc94e38e57d",
       "copiedSha256": "f04ca005720f19faa41f4402eb8d4f874e78da3e19f8b85577dcdfc94e38e57d",
       "adaptations": []
+    },
+    {
+      "source": "references/zcode/packages/desktop/src/host/windowHostControllerService.ts",
+      "target": "packages/zcode-window-controller/src/windowHostControllerService.ts",
+      "sha256": "9ea93717f532120b1622d2fc059f72c04aa76eb75af6128b705aa4484375e9a1",
+      "copiedSha256": "9ea93717f532120b1622d2fc059f72c04aa76eb75af6128b705aa4484375e9a1",
+      "adaptations": []
+    },
+    {
+      "source": "references/zcode/packages/desktop/src/host/windowHostControllerProjection.ts",
+      "target": "packages/zcode-window-controller/src/windowHostControllerProjection.ts",
+      "sha256": "09a1c9731b957a6af21154ea684d6a533d311ee8560c3a8643ad18855881e573",
+      "copiedSha256": "09a1c9731b957a6af21154ea684d6a533d311ee8560c3a8643ad18855881e573",
+      "adaptations": []
+    },
+    {
+      "source": "references/zcode/packages/desktop/src/host/windowHostSessionsIndexObserver.ts",
+      "target": "packages/zcode-window-controller/src/windowHostSessionsIndexObserver.ts",
+      "sha256": "f2b291630d2cd0519116e4f5577a8c56deb56f565b755f987f90a6cd84084b10",
+      "copiedSha256": "f2b291630d2cd0519116e4f5577a8c56deb56f565b755f987f90a6cd84084b10",
+      "adaptations": []
+    },
+    {
+      "source": "references/zcode/LICENSE",
+      "target": "packages/zcode-window-controller/LICENSE",
+      "sha256": "606c36baf38b973227273df12a74930e4b4137280eea835c5cd623aa4553c13b",
+      "copiedSha256": "606c36baf38b973227273df12a74930e4b4137280eea835c5cd623aa4553c13b",
+      "adaptations": []
     }
   ],
   "buildAdaptations": [
     "UI 使用独立 Vite 文档，保留原主题与 portal 文档语义",
     "vendor 工程 strictNullChecks=true 以正确检查 zod 合同；宿主 strict/exactOptional=true",
     "RPC 保留原 noUncheckedIndexedAccess=false；services #src imports 映射到构建输出；CUA type-only 保留真实 .d.ts",
-    "第一方宿主消费 shared 父子文档认证/模式桥接契约，原 UI 的服务 RPC 与物理帧接口不变"
+    "第一方宿主消费 shared 父子文档认证/模式桥接契约，原 UI 的服务 RPC 与物理帧接口不变",
+    "Design 既有输入器与 hover-card 从原源码编译成 design-shared ESM 入口，完整 Code App/CSS 不进入 Next React 树",
+    "Code/Design 客户端模式导航分别挂载独立 Code 文档及保留的画布工作台；Code 源 Store 的宿主模式回调保持 coding",
+    "dist-design 为编译产物，与 dist/dist-types/dist-host 同样忽略，不纳入源码棘轮"
   ]
 }

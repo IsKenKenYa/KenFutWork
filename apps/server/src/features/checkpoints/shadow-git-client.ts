@@ -307,12 +307,20 @@ export function createShadowGitClient(deps: {
 
   /** 在私有 staging materialize；绝不让 Git 直接覆盖真实工作目录。 */
   const materialize = async (
-    input: ShadowGitScope & { sha: string; stagingDirectory: string; path?: string },
+    input: ShadowGitScope & {
+      sha: string;
+      stagingDirectory: string;
+      path?: string;
+    },
   ): Promise<void> => {
     await expectOk(["read-tree", input.sha], input, "读取检查点树失败。");
     if (input.path) {
-      const listed = await exec(["--literal-pathspecs", "ls-files", "-z", "--", input.path], input);
-      if (listed.code !== 0) throw new Error(listed.stderr.trim() || "读取检查点文件失败。");
+      const listed = await exec(
+        ["--literal-pathspecs", "ls-files", "-z", "--", input.path],
+        input,
+      );
+      if (listed.code !== 0)
+        throw new Error(listed.stderr.trim() || "读取检查点文件失败。");
       if (!listed.stdout.split("\0").includes(input.path)) return;
     }
     await expectOk(

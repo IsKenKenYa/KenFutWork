@@ -11,7 +11,10 @@
  * - **元素索引优先于坐标**；坐标只能引用最近一帧截图。
  */
 
-import type { ToolDefinition, ToolExecutionContext } from "../../kernel/types.js";
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+} from "../../kernel/types.js";
 import type { CuToolResult } from "./service.js";
 
 export const CU_TOOL_PREFIX = "mcp__computer-use__";
@@ -34,7 +37,11 @@ export interface CuToolDeps {
       input: { includeScreenshot?: boolean },
     ): Promise<CuToolResult>;
     screenshot(appRef: unknown): Promise<CuToolResult>;
-    click(appRef: unknown, rawTarget: unknown, runId: string): Promise<CuToolResult>;
+    click(
+      appRef: unknown,
+      rawTarget: unknown,
+      runId: string,
+    ): Promise<CuToolResult>;
     typeText(
       appRef: unknown,
       text: string,
@@ -65,7 +72,10 @@ async function guarded(
       ],
       isError: true,
       structuredContent: {
-        error: { code: "plugin_disabled", suggested_action: gate.message ?? "" },
+        error: {
+          code: "plugin_disabled",
+          suggested_action: gate.message ?? "",
+        },
       },
     };
   }
@@ -77,7 +87,8 @@ const APP_REF_SCHEMA = {
     { type: "string", description: "bundle id（如 com.apple.calculator）" },
     {
       type: "object",
-      description: "应用引用：name（显示名，须与 OS 列出的完全一致）/ bundleId / pid 之一，可加 windowId 钉住单窗口",
+      description:
+        "应用引用：name（显示名，须与 OS 列出的完全一致）/ bundleId / pid 之一，可加 windowId 钉住单窗口",
       properties: {
         name: { type: "string" },
         bundleId: { type: "string" },
@@ -93,7 +104,10 @@ const TARGET_SCHEMA = {
     {
       type: "object",
       description: "元素索引（首选）：取自最近一次 get_app_state 的树",
-      properties: { type: { type: "string", enum: ["element"] }, index: { type: "number" } },
+      properties: {
+        type: { type: "string", enum: ["element"] },
+        index: { type: "number" },
+      },
       required: ["type", "index"],
     },
     {
@@ -128,7 +142,8 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
         "列出当前运行的应用（pid/bundle_id/名称/是否活跃）。要操作某个应用前先看它的准确标识——显示名必须逐字复制 OS 列出的名字，不要翻译或简写。",
       scope: "code",
       parameters: { type: "object", properties: {} },
-      execute: async (_args, execCtx) => guarded(deps, () => deps.service.listApps()),
+      execute: async (_args, execCtx) =>
+        guarded(deps, () => deps.service.listApps()),
     },
     {
       name: `${CU_TOOL_PREFIX}list_windows`,
@@ -229,5 +244,9 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
         guarded(deps, () => deps.service.stop(runIdOf(execCtx))),
     },
   ];
-  return tools.map((definition) => ({ ...definition, exposure: "deferred", access: "execute" }));
+  return tools.map((definition) => ({
+    ...definition,
+    exposure: "deferred",
+    access: "execute",
+  }));
 }

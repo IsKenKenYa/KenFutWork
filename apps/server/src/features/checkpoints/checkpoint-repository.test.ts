@@ -22,7 +22,9 @@ const row = (overrides: Partial<CheckpointRow> = {}): CheckpointRow => ({
   taskId: "task-1",
   projectId: "project-1",
   rootDirectory: "/workspace",
-  directorySnapshots: [{ rootDirectory: "/workspace", shadowCommit: "a".repeat(40) }],
+  directorySnapshots: [
+    { rootDirectory: "/workspace", shadowCommit: "a".repeat(40) },
+  ],
   runId: null,
   kind: "turn",
   label: "轮次开始快照",
@@ -76,7 +78,9 @@ describe("检查点仓储：SQL 形状（录制假 persistence）", () => {
       "project-1",
       "task-1",
       "/workspace",
-      JSON.stringify([{ rootDirectory: "/workspace", shadowCommit: "a".repeat(40) }]),
+      JSON.stringify([
+        { rootDirectory: "/workspace", shadowCommit: "a".repeat(40) },
+      ]),
       null,
       "turn",
       "轮次开始快照",
@@ -95,7 +99,9 @@ describe("检查点仓储：SQL 形状（录制假 persistence）", () => {
       task_id: "c-9",
       project_id: "project-1",
       root_directory: "/workspace",
-      directory_snapshots: [{ rootDirectory: "/workspace", shadowCommit: "b".repeat(40) }],
+      directory_snapshots: [
+        { rootDirectory: "/workspace", shadowCommit: "b".repeat(40) },
+      ],
       run_id: "run-2",
       kind: "restore",
       label: "回滚恢复点",
@@ -115,7 +121,9 @@ describe("检查点仓储：SQL 形状（录制假 persistence）", () => {
       taskId: "c-9",
       projectId: "project-1",
       rootDirectory: "/workspace",
-      directorySnapshots: [{ rootDirectory: "/workspace", shadowCommit: "b".repeat(40) }],
+      directorySnapshots: [
+        { rootDirectory: "/workspace", shadowCommit: "b".repeat(40) },
+      ],
       runId: "run-2",
       kind: "restore",
       label: "回滚恢复点",

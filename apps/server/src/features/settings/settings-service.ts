@@ -7,6 +7,7 @@ import type {
 
 import {
   AGENT_GOVERNANCE_DEFAULTS,
+  clampCodeUiReconnectDelayMs,
   clampComputerUseActionTimeoutMs,
   clampComputerUseMaxActionsPerRun,
   clampComputerUseObserveMaxBytes,
@@ -56,6 +57,7 @@ export class SettingsServiceError extends Error {
 export type WorkspaceSettingsPatch = Partial<
   Record<RuntimeGovernanceKey, number | undefined>
 > & {
+  codeUiReconnectDelayMs?: number | undefined;
   defaultModel?: string | undefined;
   agentMaxRetries?: number | undefined;
   terminalShell?: TerminalShellId | undefined;
@@ -81,6 +83,10 @@ export type SettingsService = {
       changedKeys: readonly (keyof WorkspaceSettingsPatch)[];
     }) => void | Promise<void>,
   ): () => void;
+  getCodeUiTransportSettings(
+    user: AuthenticatedUser,
+    workspaceId: string,
+  ): Promise<{ reconnectDelayMs: number }>;
   getWorkspaceSettings(
     user: AuthenticatedUser,
     workspaceId: string,
@@ -167,6 +173,17 @@ export function createSettingsService(options: {
   const { repository } = options;
   const listeners = new Set<Parameters<SettingsService["onUpdated"]>[0]>();
 
+  const getCodeUiTransportSettings = async (
+    _user: AuthenticatedUser,
+    workspaceId: string,
+  ) => ({
+    reconnectDelayMs: clampCodeUiReconnectDelayMs(
+      (await repository.findCodeUiReconnectDelayMs(workspaceId)) ??
+        governanceEnv.codeUiReconnectDelayMs ??
+        AGENT_GOVERNANCE_DEFAULTS.codeUiReconnectDelayMs,
+    ),
+  });
+
   const getSettings = async (
     user: AuthenticatedUser,
     workspaceId: string,
@@ -239,6 +256,9 @@ export function createSettingsService(options: {
 
     return {
       ...runtimeGovernance,
+      codeUiReconnectDelayMs: (
+        await getCodeUiTransportSettings(user, workspaceId)
+      ).reconnectDelayMs,
       agentMaxRetries: clampMaxRunRetries(
         storedRetries ?? DEFAULT_MAX_RUN_RETRIES,
       ),
@@ -316,11 +336,19 @@ export function createSettingsService(options: {
         listeners.delete(listener);
       };
     },
+    getCodeUiTransportSettings,
     getWorkspaceSettings: getSettings,
 
     async updateWorkspaceSettings(user, workspaceId, patch) {
       // 逐列 upsert（各写各的列）：没送来的字段一个字都不动
       const writes: Array<Promise<void>> = [];
+      if (patch.codeUiReconnectDelayMs !== undefined)
+        writes.push(
+          repository.upsertCodeUiReconnectDelayMs(
+            workspaceId,
+            clampCodeUiReconnectDelayMs(patch.codeUiReconnectDelayMs),
+          ),
+        );
       if (patch.defaultModel !== undefined) {
         writes.push(
           repository.upsertDefaultModel(workspaceId, patch.defaultModel),

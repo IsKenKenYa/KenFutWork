@@ -1,3 +1,4 @@
+import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { renderHook, waitFor } from "@testing-library/react";
 import { useGlobalTaskList } from "@zui/hooks/useGlobalTaskList";
 import { ServiceProvider } from "@zui/hooks/useServices";
@@ -6,7 +7,6 @@ import { type ReactNode, useSyncExternalStore } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
 import { bindCodeWorkspaceServices } from "../src/components/workbench/zcode/host/workspaceServices";
-import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 
 import {
   controllerDefaultRoot,
@@ -260,10 +260,15 @@ it("断线丢失 task_created 后原项目目录重读成员行，空 sessions-i
     },
   ]);
   const release = bindCodeWorkspaceServices(client);
-  const workspaceTabs = [{
-    id: "workspace", kind: "workspace" as const, workspacePath: controllerTaskRoot,
-    workspaceIdentity: controllerWorkspaceIdentity, label: "项目",
-  }];
+  const workspaceTabs = [
+    {
+      id: "workspace",
+      kind: "workspace" as const,
+      workspacePath: controllerTaskRoot,
+      workspaceIdentity: controllerWorkspaceIdentity,
+      label: "项目",
+    },
+  ];
   const visibleLimitByWorkspaceKey = {};
   const view = renderHook(
     () =>

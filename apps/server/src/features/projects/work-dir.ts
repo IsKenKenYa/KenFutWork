@@ -106,12 +106,18 @@ export async function resolveProjectWorkDirectory(input: {
     if (!verdict.ok) throw new Error(verdict.reason);
     return verdict.path;
   }
-  const directory = resolve(input.sandboxRoot, input.workspaceId, input.projectId);
+  const directory = resolve(
+    input.sandboxRoot,
+    input.workspaceId,
+    input.projectId,
+  );
   await mkdir(directory, { recursive: true });
   return realpath(directory);
 }
 
-export function normalizeAdditionalDirectories(directories: AdditionalDirectory[]): AdditionalDirectory[] {
+export function normalizeAdditionalDirectories(
+  directories: AdditionalDirectory[],
+): AdditionalDirectory[] {
   return directories.map((directory) => {
     const verdict = validateWorkDir(directory.path);
     if (!verdict.ok) throw new Error(verdict.reason);

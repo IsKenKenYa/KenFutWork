@@ -16,7 +16,8 @@
   "dependencies": {
     "@zcode/services": "workspace:*",
     "@zcode/shared": "workspace:*",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "@zcode/provider": "workspace:*"
   },
   "scripts": {
     "build": "tsc --build tsconfig.json --force",

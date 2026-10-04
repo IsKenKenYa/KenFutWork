@@ -135,7 +135,7 @@ it("无管理员标记的认证用户可读机器库存，陌生actor与给出�
   ).rejects.toThrow("用户级无目标库存不得读取或创建Project/Task/scope");
 });
 
-it("未知remoteSession和畸形请求不签权限，未装配写方法保持unsupported且不落安装态", async () => {
+it("未知remoteSession和畸形写请求拒绝准入且不产生安装库存副作用", async () => {
   const { host, owner, directory } = await fixture();
   await expect(
     host.call(owner, "listPlugins", {
@@ -148,7 +148,9 @@ it("未知remoteSession和畸形请求不签权限，未装配写方法保持uns
   ).rejects.toThrow();
   await expect(host.call(owner, "installPlugin", {})).rejects.toThrow();
   await expect(host.call(owner, "setPluginEnabled", {})).rejects.toThrow();
-  expect(await host.call(owner, "uninstallPlugin", {})).toBeNull();
+  await expect(host.call(owner, "uninstallPlugin", {})).rejects.toMatchObject({
+    code: "invalid_request",
+  });
   await expect(
     readFile(join(directory, "plugins", "installed.json")),
   ).rejects.toMatchObject({ code: "ENOENT" });

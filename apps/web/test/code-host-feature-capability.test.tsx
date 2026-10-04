@@ -1,4 +1,3 @@
-import { appSettingsSchema } from "../../../packages/zcode-shared/dist/index.js";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "@zui/App";
@@ -15,6 +14,7 @@ import { CronCreateAutomationCard } from "@zui/ToolCallBlocks/renderers/cron-cre
 import { OffPeakCreateTaskCard } from "@zui/ToolCallBlocks/renderers/offpeak-create";
 import { V4ComposerCuaEntry } from "@zui/v4/composer/V4ComposerCuaEntry";
 import { afterEach, expect, it, vi } from "vitest";
+import { appSettingsSchema } from "../../../packages/zcode-shared/dist/index.js";
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
 import { createCodePlatform } from "../src/components/workbench/zcode/host/platform";
 import { codeHostNotificationResponse } from "./setup/code-host-http";
@@ -87,7 +87,8 @@ async function createHostFixture(originalCapabilities: boolean) {
 }
 
 async function renderOriginalSurfaces(originalCapabilities = false) {
-  const { client, platform, calls } = await createHostFixture(originalCapabilities);
+  const { client, platform, calls } =
+    await createHostFixture(originalCapabilities);
   const openToolAutomation = vi.fn();
   render(
     <ServiceProvider services={client.services}>

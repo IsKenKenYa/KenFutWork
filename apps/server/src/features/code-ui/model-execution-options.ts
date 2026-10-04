@@ -1,4 +1,3 @@
-import { validateInstanceModelExtraBody } from "../../providers/request-options.js";
 import type {
   ModelCatalogEntry,
   ProviderInstanceResponse,
@@ -9,13 +8,17 @@ import {
   type JsonValue,
 } from "@zcode/model-option-map";
 import {
-  validateModelSelectionOptions,
   type ModelSelection,
+  validateModelSelectionOptions,
 } from "@zcode/provider";
 import { z } from "zod";
+import { validateInstanceModelExtraBody } from "../../providers/request-options.js";
 import { codeUiModelEntry, resolveCodeUiModelConfig } from "./model-views.js";
+import {
+  codeUiApiType,
+  isCodeChatProtocol,
+} from "./provider-settings-rpc-config.js";
 import { CodeUiRepositoryError } from "./repository.js";
-import { codeUiApiType, isCodeChatProtocol } from "./provider-settings-rpc-config.js";
 
 export interface CodeUiModelExecutionSnapshot {
   readonly providerId: string;
@@ -28,9 +31,17 @@ export interface CodeUiModelExecutionSnapshot {
     readonly pdf: boolean;
   };
 }
-export function assertCodeUiModelRequestOptions(body: Record<string, unknown>): void {
-  try { validateInstanceModelExtraBody(body); }
-  catch (error) { throw new CodeUiRepositoryError("command_conflict", error instanceof Error ? error.message : "模型选项不可执行。"); }
+export function assertCodeUiModelRequestOptions(
+  body: Record<string, unknown>,
+): void {
+  try {
+    validateInstanceModelExtraBody(body);
+  } catch (error) {
+    throw new CodeUiRepositoryError(
+      "command_conflict",
+      error instanceof Error ? error.message : "模型选项不可执行。",
+    );
+  }
 }
 
 function freezeJson<T extends JsonValue>(value: T): T {
@@ -116,7 +127,9 @@ export function compileCodeUiModelExecution(input: {
     providerId: instance.id,
     modelId: model.id,
     configRevision: instance.configRevision,
-    ...(instance.protocol === "openai-compatible" ? { useResponsesApi: codeUiApiType(instance) === "openai-responses" } : {}),
+    ...(instance.protocol === "openai-compatible"
+      ? { useResponsesApi: codeUiApiType(instance) === "openai-responses" }
+      : {}),
     body: freezeJson(body),
     inputCapabilities: Object.freeze({
       image: config.properties.inputFormat.supportsImage,

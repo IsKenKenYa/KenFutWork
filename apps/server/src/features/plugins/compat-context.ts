@@ -1,5 +1,8 @@
-import { createResourceDisposer, type ResourceDisposer } from "../../kernel/disposal.js";
 import type { PluginUiSlot } from "@kenfutwork/shared";
+import {
+  createResourceDisposer,
+  type ResourceDisposer,
+} from "../../kernel/disposal.js";
 
 import type {
   ToolDefinition,
@@ -421,7 +424,11 @@ export async function loadCompatPlugin(
   const rollback = (): Promise<void> => {
     if (!prepared) {
       prepared = true;
-      disposeStack.push(...contributionDisposers, ...effectDisposers, ...toolDisposers);
+      disposeStack.push(
+        ...contributionDisposers,
+        ...effectDisposers,
+        ...toolDisposers,
+      );
     }
     return drain();
   };

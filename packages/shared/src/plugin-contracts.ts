@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { codeWorkDirectoryTargetSchema, visualWorkDirectoryTargetSchema } from "./execution-contracts.js";
+import {
+  codeWorkDirectoryTargetSchema,
+  visualWorkDirectoryTargetSchema,
+} from "./execution-contracts.js";
 
 /**
  * 插件互操作契约（HTTP + bundle 产物）。

@@ -20,9 +20,8 @@ import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
 import type { CheckpointService } from "../features/checkpoints/checkpoint-service.js";
 import type { CodeGitService } from "../features/code-git/code-git-service.js";
-import type { CodeUiService } from "../features/code-ui/service.js";
 import type { CodeTerminalService } from "../features/code-terminal/types.js";
-import type { ResourceDisposer } from "./disposal.js";
+import type { CodeUiService } from "../features/code-ui/service.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import type { TierGuard } from "../features/credits/tier-guard.js";
 import type {
@@ -63,6 +62,7 @@ import type {
 } from "../generation/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type { CanvasEventBuffer } from "../ws/event-buffer.js";
+import type { ResourceDisposer } from "./disposal.js";
 
 /**
  * 内核服务仓库（ctx key 表的唯一代码落点）。
@@ -368,7 +368,9 @@ export interface ToolDefinition {
   readonlyExecution?: boolean | undefined;
   parameters: Record<string, unknown>;
   /** 仅用于公开事件/显示/日志；执行与审批仍使用原始参数。 */
-  projectArguments?: ((args: Record<string, unknown>) => Record<string, unknown>) | undefined;
+  projectArguments?:
+    | ((args: Record<string, unknown>) => Record<string, unknown>)
+    | undefined;
   /**
    * 原生 zod schema（内置工具专用逃生口）：桥接层优先用它构造 StructuredTool，
    * 避免 zod → JSON Schema → zod 往返丢精度（default/union/enum）。

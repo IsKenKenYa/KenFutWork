@@ -1,5 +1,5 @@
 import { cn } from "@zui/components/lib/utils.js";
-import zaiLogoUrl from "@zui/assets/provider-icons/logo-zai.svg";
+import appLogoUrl from "@zui/assets/kenfutwork-mark.png";
 
 export function WindowsTopLeftLogo({
   className,
@@ -20,8 +20,8 @@ export function WindowsTopLeftLogo({
       )}
     >
       <img
-        src={zaiLogoUrl}
-        alt="ZCode"
+        src={appLogoUrl}
+        alt="KenFutWork"
         className={cn("pointer-events-none size-5 select-none", imageClassName)}
         draggable={false}
       />

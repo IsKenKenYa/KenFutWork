@@ -62,11 +62,11 @@ import {
   codeGitStageResponseSchema,
   codeGitStatusResponseSchema,
   codeShellsResponseSchema,
-  codeTerminalRequestSchema,
-  codeTerminalResponseSchema,
   codeTaskScopeResponseSchema,
   codeTaskScopeUpdateRequestSchema,
-  codeUiEventSchema,
+  codeTerminalRequestSchema,
+  codeTerminalResponseSchema,
+  codeUiEventStreamSchema,
   codeUiRpcRequestSchema,
   codeUiRpcResponseSchema,
   codeUiSnapshotResponseSchema,
@@ -164,6 +164,7 @@ export interface OpenApiRouteEntry {
   requestSchema?: ZodType;
   querySchema?: ZodType;
   responseSchema?: ZodType;
+  responseMediaType?: "text/event-stream";
   /** multipart 上传：file 为二进制字段名，fields 为附加表单字段（名 → 说明）。 */
   multipart?: { fileField: string; fields?: Record<string, string> };
   /** 成功响应为二进制时的 MIME 类型。 */
@@ -177,7 +178,8 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "code",
     auth: "user",
     successStatus: 200,
-    responseSchema: codeUiEventSchema,
+    responseSchema: codeUiEventStreamSchema,
+    responseMediaType: "text/event-stream",
     summary: "订阅 Code 原协议宿主通知流",
     description:
       "认证 SSE 连接先发送原 V4 hello；RPC 使用其 connectionId 完成 clientHello 后订阅。每个 data 记录承载 ready 或原 physical wire frame，订阅初始帧在 RPC ACK 后发送，断线释放 owned 订阅。",
@@ -218,16 +220,27 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
   },
   // ---- admin.ts（管理后台；除 /me 外均要求管理员，403 语义见 description）----
   {
-    method: "get", path: "/api/code-ui/tasks/:taskId/scope", tag: "code", auth: "user", successStatus: 200,
+    method: "get",
+    path: "/api/code-ui/tasks/:taskId/scope",
+    tag: "code",
+    auth: "user",
+    successStatus: 200,
     responseSchema: codeTaskScopeResponseSchema,
     summary: "查询 Code Task 的执行目录授权",
-    description: "按认证工作区和 Task 身份读取固定主目录、附加目录及沙箱授权代际，不返回密钥或审批凭据。",
+    description:
+      "按认证工作区和 Task 身份读取固定主目录、附加目录及沙箱授权代际，不返回密钥或审批凭据。",
   },
   {
-    method: "patch", path: "/api/code-ui/tasks/:taskId/scope", tag: "code", auth: "user", successStatus: 200,
-    requestSchema: codeTaskScopeUpdateRequestSchema, responseSchema: codeTaskScopeResponseSchema,
+    method: "patch",
+    path: "/api/code-ui/tasks/:taskId/scope",
+    tag: "code",
+    auth: "user",
+    successStatus: 200,
+    requestSchema: codeTaskScopeUpdateRequestSchema,
+    responseSchema: codeTaskScopeResponseSchema,
     summary: "调整 Code Task 的附加目录与执行授权",
-    description: "主目录不可更换；收紧授权先拒绝旧操作并终止受影响的执行资源，确认真实退出后才恢复可执行状态；失败保留撤销失败事实。",
+    description:
+      "主目录不可更换；收紧授权先拒绝旧操作并终止受影响的执行资源，确认真实退出后才恢复可执行状态；失败保留撤销失败事实。",
   },
   {
     method: "get",
@@ -646,7 +659,10 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "code",
     auth: "user",
     successStatus: 200,
-    querySchema: checkpointListQuerySchema.extend({ path: z.string().optional(), rootDirectory: z.string().optional() }),
+    querySchema: checkpointListQuerySchema.extend({
+      path: z.string().optional(),
+      rootDirectory: z.string().optional(),
+    }),
     responseSchema: checkpointDiffResponseSchema,
     summary: "查询检查点差异",
     description:
@@ -655,13 +671,17 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
   {
     method: "post",
     path: "/api/code/checkpoints/:checkpointId/preview",
-    querySchema: checkpointListQuerySchema.extend({ path: z.string().optional(), rootDirectory: z.string().optional() }),
+    querySchema: checkpointListQuerySchema.extend({
+      path: z.string().optional(),
+      rootDirectory: z.string().optional(),
+    }),
     tag: "code",
     auth: "user",
     successStatus: 200,
     responseSchema: checkpointPreviewResponseSchema,
     summary: "预览恢复影响",
-    description: "返回 Task 恢复影响及 expectedVersion；taskId 必填，可选 path/rootDirectory。恢复提交必须携带该预览版本。",
+    description:
+      "返回 Task 恢复影响及 expectedVersion；taskId 必填，可选 path/rootDirectory。恢复提交必须携带该预览版本。",
   },
   {
     method: "post",

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   agentRunActivityResponseSchema,
   agentSubagentListResponseSchema,
@@ -7,7 +8,6 @@ import {
   runCreateResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
-import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { AgentRunService } from "../agent/runtime.js";
 import { resolveSandboxScopeId } from "../agent/sandbox-dir.js";
@@ -27,13 +27,16 @@ import {
   type ThreadService,
   ThreadServiceError,
 } from "../features/chat/thread-service.js";
+import type { CodeUiService } from "../features/code-ui/service.js";
 import type { CreditService } from "../features/credits/credit-service.js";
+import {
+  ExecutionScopeError,
+  type ExecutionScopes,
+} from "../features/execution/scope-service.js";
 import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import { isZodError } from "./zod-error.js";
-import { ExecutionScopeError, type ExecutionScopes } from "../features/execution/scope-service.js";
-import type { CodeUiService } from "../features/code-ui/service.js";
 
 export async function registerRunRoutes(
   app: FastifyInstance,
@@ -152,14 +155,47 @@ export async function registerRunRoutes(
               payload.sessionId,
             )
           : null;
-      const codeMode = sessionThread?.mode === "code" || payload.preset === "code";
-      if (sessionThread && payload.preset && payload.preset !== sessionThread.mode) throw new ExecutionScopeError("mode_mismatch", "Run 不能改变会话所属模式。", 409);
-      if (payload.projectId && sessionThread?.projectId !== payload.projectId) throw new ExecutionScopeError("scope_mismatch", "Run 的项目与持久 Task 不一致。", 409);
-      if (codeMode && (payload.canvasId || (payload.taskId && payload.taskId !== payload.sessionId))) throw new ExecutionScopeError("scope_mismatch", "Code Run 只能使用所属 Task 工作域，不能传 Canvas 或另一 Task。", 400);
+      const codeMode =
+        sessionThread?.mode === "code" || payload.preset === "code";
+      if (
+        sessionThread &&
+        payload.preset &&
+        payload.preset !== sessionThread.mode
+      )
+        throw new ExecutionScopeError(
+          "mode_mismatch",
+          "Run 不能改变会话所属模式。",
+          409,
+        );
+      if (payload.projectId && sessionThread?.projectId !== payload.projectId)
+        throw new ExecutionScopeError(
+          "scope_mismatch",
+          "Run 的项目与持久 Task 不一致。",
+          409,
+        );
+      if (
+        codeMode &&
+        (payload.canvasId ||
+          (payload.taskId && payload.taskId !== payload.sessionId))
+      )
+        throw new ExecutionScopeError(
+          "scope_mismatch",
+          "Code Run 只能使用所属 Task 工作域，不能传 Canvas 或另一 Task。",
+          400,
+        );
       const scopeHandle = codeMode
         ? authenticatedUser && options.executionScopes
-          ? await options.executionScopes.openTask(authenticatedUser, payload.sessionId)
-          : (() => { throw new ExecutionScopeError("scope_unavailable", "Code 执行需要已认证的持久 Task 工作域。", 503); })()
+          ? await options.executionScopes.openTask(
+              authenticatedUser,
+              payload.sessionId,
+            )
+          : (() => {
+              throw new ExecutionScopeError(
+                "scope_unavailable",
+                "Code 执行需要已认证的持久 Task 工作域。",
+                503,
+              );
+            })()
         : undefined;
 
       // Resolve per-workspace model if auth context is available
@@ -256,8 +292,19 @@ export async function registerRunRoutes(
       const runId = randomUUID();
       const eventSink = scopeHandle
         ? authenticatedUser && options.codeUi
-          ? await options.codeUi.admitExternalRun(authenticatedUser, scopeHandle, runId, payload.prompt)
-          : (() => { throw new ExecutionScopeError("admission_unavailable", "Code Task 前台 admission 未装配，不能绕过 Task 并发控制。", 503); })()
+          ? await options.codeUi.admitExternalRun(
+              authenticatedUser,
+              scopeHandle,
+              runId,
+              payload.prompt,
+            )
+          : (() => {
+              throw new ExecutionScopeError(
+                "admission_unavailable",
+                "Code Task 前台 admission 未装配，不能绕过 Task 并发控制。",
+                503,
+              );
+            })()
         : undefined;
       const response = runCreateResponseSchema.parse(
         agentRuns.createRun(payload, {
@@ -273,11 +320,13 @@ export async function registerRunRoutes(
           ...(model ? { model } : {}),
           // 与 WS 路径同口径：客户端只能给会话 UUID 时，沙箱目录名改用会话的真实画布
           ...(() => {
-            const sandboxScopeId = scopeHandle ? undefined : resolveSandboxScopeId({
-              conversationId: payload.conversationId,
-              requestedCanvasId: payload.canvasId ?? payload.conversationId,
-              sessionCanvasId: sessionThread?.canvasId,
-            });
+            const sandboxScopeId = scopeHandle
+              ? undefined
+              : resolveSandboxScopeId({
+                  conversationId: payload.conversationId,
+                  requestedCanvasId: payload.canvasId ?? payload.conversationId,
+                  sessionCanvasId: sessionThread?.canvasId,
+                });
             return sandboxScopeId ? { sandboxScopeId } : {};
           })(),
           ...(sessionThread ? { threadId: sessionThread.threadId } : {}),
@@ -295,7 +344,12 @@ export async function registerRunRoutes(
 
       return reply.code(202).send(response);
     } catch (error) {
-      if (error instanceof ExecutionScopeError) return reply.code(error.statusCode).send(applicationErrorResponseSchema.parse({ error: { code: error.code, message: error.message } }));
+      if (error instanceof ExecutionScopeError)
+        return reply.code(error.statusCode).send(
+          applicationErrorResponseSchema.parse({
+            error: { code: error.code, message: error.message },
+          }),
+        );
       if (error instanceof ThreadServiceError) {
         return reply.code(error.statusCode).send(
           applicationErrorResponseSchema.parse({

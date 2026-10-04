@@ -1,9 +1,9 @@
 import {
   AGENT_GOVERNANCE_DEFAULTS,
-  clampCodeUiReconnectDelayMs,
-  codeUiWorkspaceSchema,
   type CodeUiViewerScope,
   type CodeUiWorkspace,
+  clampCodeUiReconnectDelayMs,
+  codeUiWorkspaceSchema,
 } from "@kenfutwork/shared";
 import {
   Emitter,

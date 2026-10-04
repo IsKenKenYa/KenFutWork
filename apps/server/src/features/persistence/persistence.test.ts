@@ -53,7 +53,9 @@ function createFakeRunner(respond: Responder = emptyResponse) {
         },
       };
     },
-    async acquireSession() { throw new Error("此查询夹具不提供真实独占会话。"); },
+    async acquireSession() {
+      throw new Error("此查询夹具不提供真实独占会话。");
+    },
     async end() {
       ended = true;
     },
@@ -215,7 +217,9 @@ describe("persistence（自管 Postgres Provider）", () => {
       async acquire() {
         throw new Error("should not acquire");
       },
-      async acquireSession() { throw new Error("此查询夹具不提供真实独占会话。"); },
+      async acquireSession() {
+        throw new Error("此查询夹具不提供真实独占会话。");
+      },
       async end() {},
     });
 

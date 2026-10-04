@@ -1,6 +1,9 @@
 import { readdir, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, join } from "node:path";
-import { type CodeUiWorkspace, codeUiWorkspaceSchema } from "@kenfutwork/shared";
+import {
+  type CodeUiWorkspace,
+  codeUiWorkspaceSchema,
+} from "@kenfutwork/shared";
 import { appSettingsSchema, type FileEntry } from "@zcode/shared";
 import { z } from "zod";
 import type { AuthenticatedUser } from "../auth/types.js";
@@ -24,7 +27,10 @@ function normalizeRecentProjects(paths: readonly string[]): string[] {
 function canonicalWorkspace(project: CodeUiWorkspace): CodeUiWorkspace {
   const root = validateWorkDir(project.path);
   if (!root.ok)
-    throw new CodeUiRepositoryError("not_found", `Code 项目目录不可用：${root.reason}`);
+    throw new CodeUiRepositoryError(
+      "not_found",
+      `Code 项目目录不可用：${root.reason}`,
+    );
   return codeUiWorkspaceSchema.parse({ ...project, path: root.path });
 }
 
@@ -83,16 +89,27 @@ export function createHumanWorkspaceRpc(options: {
     const current = conversationOpening.get(workspaceId);
     if (current) return current;
     const ensuring = (async (): Promise<ConversationWorkspace> => {
-      const preferences = await options.preferences.readHumanPreferences(workspaceId);
+      const preferences =
+        await options.preferences.readHumanPreferences(workspaceId);
       const savedId = preferences.defaultConversationProjectId;
       const existing = (await options.listWorkspaces(actor)).find(
         (project) => project.projectId === savedId,
       );
       if (existing)
-        return { ...canonicalWorkspace(existing), created: false, workspacePurpose: "conversation" };
-      const created = await options.projects.createProject(actor, { kind: "code", name: "默认对话" });
+        return {
+          ...canonicalWorkspace(existing),
+          created: false,
+          workspacePurpose: "conversation",
+        };
+      const created = await options.projects.createProject(actor, {
+        kind: "code",
+        name: "默认对话",
+      });
       if (created.kind !== "code")
-        throw new CodeUiRepositoryError("command_conflict", "默认对话项目创建类型不匹配。");
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "默认对话项目创建类型不匹配。",
+        );
       const project = canonicalWorkspace({
         projectId: created.id,
         name: created.name,
@@ -105,14 +122,18 @@ export function createHumanWorkspaceRpc(options: {
         { referencedProjectIds: [project.projectId] },
       );
       if (!saved)
-        throw new CodeUiRepositoryError("not_found", "默认对话项目已归档，工作区引用未保存。");
+        throw new CodeUiRepositoryError(
+          "not_found",
+          "默认对话项目已归档，工作区引用未保存。",
+        );
       return { ...project, created: true, workspacePurpose: "conversation" };
     })();
     conversationOpening.set(workspaceId, ensuring);
     try {
       return await ensuring;
     } finally {
-      if (conversationOpening.get(workspaceId) === ensuring) conversationOpening.delete(workspaceId);
+      if (conversationOpening.get(workspaceId) === ensuring)
+        conversationOpening.delete(workspaceId);
     }
   };
   const preferenceOwners = async (
@@ -141,7 +162,11 @@ export function createHumanWorkspaceRpc(options: {
       })),
     );
     for (const { path, taskId, owner } of tasks) {
-      if (!owner || owner.rootDirectory !== path || !projectIds.has(owner.projectId)) {
+      if (
+        !owner ||
+        owner.rootDirectory !== path ||
+        !projectIds.has(owner.projectId)
+      ) {
         // 显式Task焦点失效不能悄悄转给碰巧拥有同路径的另一Project。
         owners.delete(path);
       } else {
@@ -218,10 +243,17 @@ export function createHumanWorkspaceRpc(options: {
       ),
     ]);
     const settings = appSettingsSchema.parse(stored);
-    const owners = await preferenceOwners(actor, workspaces, settings.lastActiveTaskByWorkspace);
-    settings.recentProjects = normalizeRecentProjects((
-      stored.recentProjects === undefined ? workspaces.map((project) => project.path) : settings.recentProjects
-    ).filter((path) => owners.has(path)));
+    const owners = await preferenceOwners(
+      actor,
+      workspaces,
+      settings.lastActiveTaskByWorkspace,
+    );
+    settings.recentProjects = normalizeRecentProjects(
+      (stored.recentProjects === undefined
+        ? workspaces.map((project) => project.path)
+        : settings.recentProjects
+      ).filter((path) => owners.has(path)),
+    );
     const active = settings.lastWorkspaceSession[settings.lastActiveTabIndex];
     settings.lastWorkspaceSession = settings.lastWorkspaceSession.filter(
       (entry) => entry.kind === "local" && owners.has(entry.workspacePath),
@@ -307,12 +339,14 @@ export function createHumanWorkspaceRpc(options: {
             "command_conflict",
             "Code 项目创建类型不匹配。",
           );
-        return { result: canonicalWorkspace({
-          projectId: project.id,
-          name: project.name,
-          path: project.workDir,
-          additionalDirectories: project.additionalDirectories,
-        }) };
+        return {
+          result: canonicalWorkspace({
+            projectId: project.id,
+            name: project.name,
+            path: project.workDir,
+            additionalDirectories: project.additionalDirectories,
+          }),
+        };
       }
       if (service === "setting" && method === "get")
         return { result: await settingsFor(actor) };
@@ -327,7 +361,11 @@ export function createHumanWorkspaceRpc(options: {
             `当前宿主尚不支持设置：${unsupported}`,
           );
         const parsed = appSettingsSchema.parse({
-          ...appSettingsSchema.parse(await options.preferences.readHumanPreferences(await options.workspaceId(actor))),
+          ...appSettingsSchema.parse(
+            await options.preferences.readHumanPreferences(
+              await options.workspaceId(actor),
+            ),
+          ),
           ...patch,
         });
         const normalized = Object.fromEntries(
@@ -346,18 +384,34 @@ export function createHumanWorkspaceRpc(options: {
           ...("lastWorkspaceSession" in normalized
             ? parsed.lastWorkspaceSession.map((entry) => {
                 if (entry.kind !== "local")
-                  throw new CodeUiRepositoryError("not_found", "当前 Code 宿主尚未接通远程工作区。");
+                  throw new CodeUiRepositoryError(
+                    "not_found",
+                    "当前 Code 宿主尚未接通远程工作区。",
+                  );
                 return entry.workspacePath;
               })
             : []),
-          ...Object.keys("lastActiveTaskByWorkspace" in normalized ? parsed.lastActiveTaskByWorkspace ?? {} : {}),
+          ...Object.keys(
+            "lastActiveTaskByWorkspace" in normalized
+              ? (parsed.lastActiveTaskByWorkspace ?? {})
+              : {},
+          ),
         ];
         const workspaces = await options.listWorkspaces(actor);
-        const owners = await preferenceOwners(actor, workspaces, parsed.lastActiveTaskByWorkspace);
+        const owners = await preferenceOwners(
+          actor,
+          workspaces,
+          parsed.lastActiveTaskByWorkspace,
+        );
         if (referencedPaths.some((path) => !owners.has(path)))
-          throw new CodeUiRepositoryError("not_found", "设置中的工作目录不属于当前工作区或已归档。");
+          throw new CodeUiRepositoryError(
+            "not_found",
+            "设置中的工作目录不属于当前工作区或已归档。",
+          );
         if ("recentProjects" in normalized)
-          normalized.recentProjects = normalizeRecentProjects(parsed.recentProjects);
+          normalized.recentProjects = normalizeRecentProjects(
+            parsed.recentProjects,
+          );
         const saved = await options.preferences.updateHumanPreferences(
           await options.workspaceId(actor),
           normalized,
@@ -369,7 +423,10 @@ export function createHumanWorkspaceRpc(options: {
           },
         );
         if (!saved)
-          throw new CodeUiRepositoryError("not_found", "设置中的 Code 项目已归档，偏好未保存。");
+          throw new CodeUiRepositoryError(
+            "not_found",
+            "设置中的 Code 项目已归档，偏好未保存。",
+          );
         return { result: undefined };
       }
       return null;

@@ -89,7 +89,9 @@ export interface CheckpointService {
   ): Promise<{ text: string; files: CheckpointFileChange[] }>;
   turnFiles(input: CheckpointInput): Promise<{ files: CheckpointFileChange[] }>;
   /** 精确文件引用；字节只交可信恢复消费者，不把解码文本当原文件。 */
-  readFileSnapshot(input: CheckpointInput & { path: string }): Promise<{ bytes: Uint8Array | null; mode?: number }>;
+  readFileSnapshot(
+    input: CheckpointInput & { path: string },
+  ): Promise<{ bytes: Uint8Array | null; mode?: number }>;
   previewRestore(
     input: CheckpointInput & FileTarget,
   ): Promise<CheckpointPreview>;
@@ -603,31 +605,63 @@ export function createCheckpointService(options: {
       ...totals(files),
     };
   };
-  const readFileSnapshot = async (input: CheckpointInput & { path: string }) => {
+  const readFileSnapshot = async (
+    input: CheckpointInput & { path: string },
+  ) => {
     const row = await rowFor(input);
     const canonical = await input.scope.resolvePath(input.path, "read");
     const directory = [...row.directorySnapshots]
-      .sort((left, right) => right.rootDirectory.length - left.rootDirectory.length)
+      .sort(
+        (left, right) => right.rootDirectory.length - left.rootDirectory.length,
+      )
       .find((entry) => within(entry.rootDirectory, canonical));
     if (!directory || canonical === directory.rootDirectory)
-      throw new CodeCheckpointError("not_found", "文件不属于该检查点的授权目录。", 404);
+      throw new CodeCheckpointError(
+        "not_found",
+        "文件不属于该检查点的授权目录。",
+        404,
+      );
     const path = requireRelative(relative(directory.rootDirectory, canonical));
     const gitDir = gitDirectory(input.scope, directory.rootDirectory);
     const stagingDirectory = join(gitDir, `read-${randomUUID()}`);
     await mkdir(stagingDirectory, { recursive: true });
     try {
       const git = await options.gitForScope(input.scope, input.actor);
-      await git.materialize({ gitDir, workTree: directory.rootDirectory, sha: directory.shadowCommit, stagingDirectory, path });
+      await git.materialize({
+        gitDir,
+        workTree: directory.rootDirectory,
+        sha: directory.shadowCommit,
+        stagingDirectory,
+        path,
+      });
       const staged = join(stagingDirectory, path);
       const stat = await lstat(staged).catch((error: unknown) => {
-        if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return null;
+        if (
+          error &&
+          typeof error === "object" &&
+          "code" in error &&
+          error.code === "ENOENT"
+        )
+          return null;
         throw error;
       });
-      if (stat && (!stat.isFile() || stat.size > input.scope.backend.limits.codePatchMaxBytes))
-        throw new CodeCheckpointError("checkpoint_failed", "检查点文件类型或字节数超过允许范围。", 409);
+      if (
+        stat &&
+        (!stat.isFile() ||
+          stat.size > input.scope.backend.limits.codePatchMaxBytes)
+      )
+        throw new CodeCheckpointError(
+          "checkpoint_failed",
+          "检查点文件类型或字节数超过允许范围。",
+          409,
+        );
       const bytes = stat ? new Uint8Array(await readFile(staged)) : null;
-      if (await input.scope.resolvePath(input.path, "read") !== canonical)
-        throw new CodeCheckpointError("checkpoint_failed", "文件身份在读取检查点期间变化。", 409);
+      if ((await input.scope.resolvePath(input.path, "read")) !== canonical)
+        throw new CodeCheckpointError(
+          "checkpoint_failed",
+          "文件身份在读取检查点期间变化。",
+          409,
+        );
       return { bytes, ...(stat ? { mode: stat.mode } : {}) };
     } finally {
       await rm(stagingDirectory, { recursive: true, force: true });
@@ -726,7 +760,9 @@ export function createCheckpointService(options: {
     turnFiles: (input) =>
       checked(input, () => exclusive(input.scope, () => changes(input, false))),
     readFileSnapshot: (input) =>
-      checked(input, () => exclusive(input.scope, () => readFileSnapshot(input))),
+      checked(input, () =>
+        exclusive(input.scope, () => readFileSnapshot(input)),
+      ),
     previewRestore: (input) =>
       checked(input, () => exclusive(input.scope, () => preview(input))),
     restore: (input) =>

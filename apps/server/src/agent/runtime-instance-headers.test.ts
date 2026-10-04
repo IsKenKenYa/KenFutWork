@@ -5,8 +5,8 @@ import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { ServerEnv } from "../config/env.js";
-import { createAgentRunService } from "./runtime.js";
 import type { ModelInvocationSnapshot } from "../providers/types.js";
+import { createAgentRunService } from "./runtime.js";
 
 /**
  * 自定义请求头在 **runtime → 适配器 → 线上** 的整链验证（§4.8 验收用例）。
@@ -43,7 +43,11 @@ async function startStub(reject = false): Promise<{
     bodies.push(JSON.parse(body));
     requests.push({ ...req.headers });
     paths.push(req.url ?? "");
-    if (reject) { res.writeHead(400, { "content-type": "application/json" }); res.end(JSON.stringify({ error: { message: "request captured" } })); return; }
+    if (reject) {
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: { message: "request captured" } }));
+      return;
+    }
     res.writeHead(200, { "content-type": "text/event-stream" });
     res.write(
       `data: ${JSON.stringify({
@@ -103,10 +107,19 @@ async function resolveModelForRun(input: {
       resolveCredentials: async () => ({
         instanceId: INSTANCE_ID,
         configRevision: 1,
-        models: [{ id: "glm-test", name: "model", capability: "chat", extraBody: { legacy: "old", max_tokens: 999 } }],
+        models: [
+          {
+            id: "glm-test",
+            name: "model",
+            capability: "chat",
+            extraBody: { legacy: "old", max_tokens: 999 },
+          },
+        ],
         apiKey: "sk-instance",
         protocol: "openai-compatible",
-        ...(input.probedResponses !== undefined ? { responsesApi: input.probedResponses } : {}),
+        ...(input.probedResponses !== undefined
+          ? { responsesApi: input.probedResponses }
+          : {}),
         baseUrl: input.baseUrl,
         headers: {
           "x-opencode-session": "{{sessionId}}",
@@ -137,7 +150,9 @@ async function resolveModelForRun(input: {
       model: `${INSTANCE_ID}:glm-test`,
       threadId: input.threadId,
       userId: "u-headers",
-      ...(input.modelInvocation ? { modelInvocation: input.modelInvocation } : {}),
+      ...(input.modelInvocation
+        ? { modelInvocation: input.modelInvocation }
+        : {}),
     },
   );
 
@@ -157,29 +172,70 @@ async function resolveModelForRun(input: {
 describe("runtime 自定义请求头：占位符按 run 的会话取值", () => {
   it("原UI明确选择Completions的false快照覆盖供应商Responses探测，真实HTTP路径一致", async () => {
     const stub = await startStub(true);
-    const model = await resolveModelForRun({ baseUrl: stub.baseUrl, sessionId: "dialect-session", threadId: "dialect-thread", probedResponses: true, modelInvocation: { providerId: INSTANCE_ID, modelId: "glm-test", configRevision: 1, useResponsesApi: false, body: {}, inputCapabilities: { image: false, pdf: false } } });
+    const model = await resolveModelForRun({
+      baseUrl: stub.baseUrl,
+      sessionId: "dialect-session",
+      threadId: "dialect-thread",
+      probedResponses: true,
+      modelInvocation: {
+        providerId: INSTANCE_ID,
+        modelId: "glm-test",
+        configRevision: 1,
+        useResponsesApi: false,
+        body: {},
+        inputCapabilities: { image: false, pdf: false },
+      },
+    });
     await model.invoke("验证实际方言").catch(() => undefined);
     expect(stub.paths).toEqual(["/v1/chat/completions"]);
   });
   it("共同Harness把本轮冻结参数送到实际HTTP，不重并静态extraBody复活已删除字段", async () => {
     const stub = await startStub(true);
-    const model = await resolveModelForRun({ baseUrl: stub.baseUrl, sessionId: "selected-session", threadId: "selected-thread", modelInvocation: {
-      providerId: INSTANCE_ID, modelId: "glm-test", configRevision: 1,
-      body: { max_tokens: 321, flag: false }, inputCapabilities: { image: false, pdf: false },
-    } });
+    const model = await resolveModelForRun({
+      baseUrl: stub.baseUrl,
+      sessionId: "selected-session",
+      threadId: "selected-thread",
+      modelInvocation: {
+        providerId: INSTANCE_ID,
+        modelId: "glm-test",
+        configRevision: 1,
+        body: { max_tokens: 321, flag: false },
+        inputCapabilities: { image: false, pdf: false },
+      },
+    });
     await model.invoke("原始输入").catch(() => undefined);
     expect(stub.bodies).toHaveLength(1);
-    expect(stub.bodies[0]).toMatchObject({ model: "glm-test", max_tokens: 321, flag: false });
+    expect(stub.bodies[0]).toMatchObject({
+      model: "glm-test",
+      max_tokens: 321,
+      flag: false,
+    });
     expect(stub.bodies[0]).not.toHaveProperty("legacy");
     expect(stub.requests[0]?.["x-opencode-session"]).toBe("selected-session");
     expect(stub.requests[0]?.authorization).toBe("Bearer sk-instance");
   });
   it("配置修订或模型身份改变时真实Run可读失败，拒绝调用旧参数的模型", async () => {
     const stub = await startStub(true);
-    for (const changed of [{ configRevision: 2 }, { providerId: "other-provider" }, { modelId: "other-model" }]) {
-      await expect(resolveModelForRun({ baseUrl: stub.baseUrl, sessionId: "selected-session", threadId: "selected-thread", modelInvocation: {
-        providerId: INSTANCE_ID, modelId: "glm-test", configRevision: 1, body: { max_tokens: 321 }, inputCapabilities: { image: false, pdf: false }, ...changed,
-      } })).rejects.toThrow("本轮供应商或模型配置已改变");
+    for (const changed of [
+      { configRevision: 2 },
+      { providerId: "other-provider" },
+      { modelId: "other-model" },
+    ]) {
+      await expect(
+        resolveModelForRun({
+          baseUrl: stub.baseUrl,
+          sessionId: "selected-session",
+          threadId: "selected-thread",
+          modelInvocation: {
+            providerId: INSTANCE_ID,
+            modelId: "glm-test",
+            configRevision: 1,
+            body: { max_tokens: 321 },
+            inputCapabilities: { image: false, pdf: false },
+            ...changed,
+          },
+        }),
+      ).rejects.toThrow("本轮供应商或模型配置已改变");
     }
     expect(stub.bodies).toHaveLength(0);
   });

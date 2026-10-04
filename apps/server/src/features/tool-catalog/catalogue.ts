@@ -79,7 +79,16 @@ export function createToolCatalogueMiddleware(
       const scope = context.execution.scopeHandle;
       const ceiling = context.execution.codeApproval?.ceiling;
       if (!scope || !approvalMode || !ceiling) return true;
-      return codePermissionPolicy({ role: scope.role, mode: approvalMode, approvalCeiling: ceiling, toolName: definition.name, access: definition.access, readonlyExecution: definition.readonlyExecution }) !== "deny";
+      return (
+        codePermissionPolicy({
+          role: scope.role,
+          mode: approvalMode,
+          approvalCeiling: ceiling,
+          toolName: definition.name,
+          access: definition.access,
+          readonlyExecution: definition.readonlyExecution,
+        }) !== "deny"
+      );
     });
     const names = new Set(permitted.map((definition) => definition.name));
     for (const name of activation.names)

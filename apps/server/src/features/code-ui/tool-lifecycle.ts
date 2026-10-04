@@ -31,7 +31,11 @@ function publicToolOutput(output: unknown): unknown {
     content: output.content,
     tool_call_id: output.tool_call_id,
     ...(output.name ? { name: output.name } : {}),
-    ...(failures.length ? { status: "error" as const } : output.status ? { status: output.status } : {}),
+    ...(failures.length
+      ? { status: "error" as const }
+      : output.status
+        ? { status: output.status }
+        : {}),
     artifact: { canonicalOutput: projected },
   });
 }

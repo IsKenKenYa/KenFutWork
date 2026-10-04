@@ -2748,8 +2748,9 @@ export class CodeUiService {
           state: root.state!,
         });
         host.recordEvent(event);
+        const state = host.exportState();
         return {
-          state: host.exportState(),
+          state,
           activeRunId:
             host.getSnapshot().control.phase === "running"
               ? (host
@@ -2776,7 +2777,7 @@ export class CodeUiService {
     user: AuthenticatedUser,
     project: CodeUiWorkspace,
     sessionId: string,
-    reason: "user_message_saved" | "task_status_changed",
+    reason: "task_created" | "user_message_saved" | "task_status_changed",
   ) {
     const workspace = await this.deps.viewer.resolveWorkspace(user);
     const record = await this.deps.repository.find(workspace.id, sessionId);
@@ -2861,18 +2862,10 @@ export class CodeUiService {
         scopeHandle.describe().workspaceId,
         sessionId,
       );
-      const admitted = current?.state?.inputs?.find(
-        (entry) => entry.runId === runId,
-      );
-      if (
-        admitted &&
-        (admitted.status !== "active" ||
-          admitted.scopeGeneration !== scopeHandle.describe().generation ||
-          admitted.branchGeneration !== Number(current!.branch_generation))
-      )
+      if (!current)
         throw new CodeUiRepositoryError(
-          "command_conflict",
-          "输入的工作域或权限已改变，请重新确认后提交。",
+          "not_found",
+          "Code Task 已删除或不存在。",
         );
       this.taskActors.set(
         JSON.stringify([scopeHandle.describe().workspaceId, sessionId]),
@@ -2884,22 +2877,72 @@ export class CodeUiService {
         threadId,
         model,
       });
-      const latest = await this.deps.repository.find(
+      const started = await this.deps.repository.startRunIfCurrent(
         scopeHandle.describe().workspaceId,
         sessionId,
+        runId,
+        {
+          scopeGeneration: scopeHandle.describe().generation,
+          branchGeneration: Number(current.branch_generation),
+          inputRequired: backgroundInputIdentity === undefined,
+        },
+        (root) => {
+          const currentInput = root.state!.inputs?.find(
+            (entry) => entry.runId === runId,
+          );
+          this.deps.agentRuns.createRun(
+            {
+              sessionId,
+              conversationId: sessionId,
+              projectId: project.projectId,
+              taskId: sessionId,
+              preset: "code",
+              prompt: text,
+              model,
+            },
+            {
+              runId,
+              threadId,
+              scopeHandle,
+              accessToken: user.accessToken,
+              userId: user.id,
+              model,
+              ...(modelInvocation ? { modelInvocation } : {}),
+              ...(codeInputs?.length ? { codeInputs } : {}),
+              ...(currentInput
+                ? {
+                    inputIdentity: {
+                      clientId: currentInput.intent.clientId,
+                      sourceCommandId: currentInput.intent.sourceCommandId,
+                    },
+                    inputOrigin:
+                      currentInput.intent.kind === "compact"
+                        ? ("controlOperation" as const)
+                        : ("userInput" as const),
+                    ...(currentInput.intent.kind === "compact"
+                      ? { operation: { kind: "compact" as const } }
+                      : {}),
+                  }
+                : backgroundInputIdentity
+                  ? {
+                      inputIdentity: { ...backgroundInputIdentity },
+                      inputOrigin: "backgroundResult" as const,
+                    }
+                  : {}),
+              ...(currentInput?.intent.mode
+                ? {
+                    approvalCeiling: currentInput.intent.planEnabled
+                      ? ("plan" as const)
+                      : currentInput.intent.mode,
+                  }
+                : {}),
+              eventSink: (event) =>
+                this.recordRunEvent(user, project, sessionId, event, ++ordinal),
+            },
+          );
+        },
       );
-      const currentInput = latest?.state?.inputs?.find(
-        (entry) => entry.runId === runId,
-      );
-      if (
-        !latest ||
-        latest.active_run_id !== runId ||
-        (currentInput &&
-          (currentInput.status !== "active" ||
-            currentInput.scopeGeneration !==
-              scopeHandle.describe().generation ||
-            currentInput.branchGeneration !== Number(latest.branch_generation)))
-      ) {
+      if (!started) {
         await this.deps.agentRunMetadata.updateRun({
           runId,
           status: "canceled",
@@ -2907,56 +2950,6 @@ export class CodeUiService {
         });
         return;
       }
-      this.deps.agentRuns.createRun(
-        {
-          sessionId,
-          conversationId: sessionId,
-          projectId: project.projectId,
-          taskId: sessionId,
-          preset: "code",
-          prompt: text,
-          model,
-        },
-        {
-          runId,
-          threadId,
-          scopeHandle,
-          accessToken: user.accessToken,
-          userId: user.id,
-          model,
-          ...(modelInvocation ? { modelInvocation } : {}),
-          ...(codeInputs?.length ? { codeInputs } : {}),
-          ...(currentInput
-            ? {
-                inputIdentity: {
-                  clientId: currentInput.intent.clientId,
-                  sourceCommandId: currentInput.intent.sourceCommandId,
-                },
-                inputOrigin:
-                  currentInput.intent.kind === "compact"
-                    ? ("controlOperation" as const)
-                    : ("userInput" as const),
-                ...(currentInput.intent.kind === "compact"
-                  ? { operation: { kind: "compact" as const } }
-                  : {}),
-              }
-            : backgroundInputIdentity
-              ? {
-                  inputIdentity: { ...backgroundInputIdentity },
-                  inputOrigin: "backgroundResult" as const,
-                }
-              : {}),
-          ...(admitted?.intent.mode
-            ? {
-                approvalCeiling: admitted.intent.planEnabled
-                  ? ("plan" as const)
-                  : admitted.intent.mode,
-              }
-            : {}),
-          eventSink: (event) =>
-            this.recordRunEvent(user, project, sessionId, event, ++ordinal),
-        },
-      );
       for await (const _event of this.deps.agentRuns.streamRun(runId)) {
         /* 持久事件由共享 Harness eventSink 投影。 */
       }

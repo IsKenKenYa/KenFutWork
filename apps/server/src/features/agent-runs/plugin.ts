@@ -218,8 +218,16 @@ export function createAgentRunsPlugin(
           ...(checkpoints
             ? {
                 checkpointHooks: {
-                  beforeTurn: (hookCtx) => checkpoints.captureTurnBoundary({ ...hookCtx, phase: "pre" }),
-                  afterTurn: (hookCtx) => checkpoints.captureTurnBoundary({ ...hookCtx, phase: "post" }),
+                  beforeTurn: (hookCtx) =>
+                    checkpoints.captureTurnBoundary({
+                      ...hookCtx,
+                      phase: "pre",
+                    }),
+                  afterTurn: (hookCtx) =>
+                    checkpoints.captureTurnBoundary({
+                      ...hookCtx,
+                      phase: "post",
+                    }),
                 },
               }
             : {}),

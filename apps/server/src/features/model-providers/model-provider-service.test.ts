@@ -308,9 +308,12 @@ describe("model-providers 服务（BYOK 凭证红线）", () => {
       models: [],
       configRevision: 2,
     });
-    expect(calls[0]?.text).toContain("encrypted_api_key");
-    expect(calls[0]?.values).toContain(null);
-    expect(calls[0]?.values).toContain("anthropic");
+    const update = calls.find((call) =>
+      call.text.includes("update public.provider_instances"),
+    );
+    expect(update?.text).toContain("encrypted_api_key");
+    expect(update?.values).toContain(null);
+    expect(update?.values).toContain("anthropic");
     await expect(
       service.resolveCredentials(USER, INSTANCE_ID),
     ).rejects.toMatchObject({
@@ -335,8 +338,11 @@ describe("model-providers 服务（BYOK 凭证红线）", () => {
         await service.createInstance(USER, input),
       ),
     ).toMatchObject({ hasCredential: false, models: [], configRevision: 1 });
-    expect(calls[0]?.values[3]).toBeNull();
-    expect(JSON.stringify(calls[0]?.values)).not.toContain("apiKey");
+    const insert = calls.find((call) =>
+      call.text.includes("insert into public.provider_instances"),
+    );
+    expect(insert?.values[3]).toBeNull();
+    expect(JSON.stringify(insert?.values)).not.toContain("apiKey");
     await expect(
       service.resolveCredentials(USER, INSTANCE_ID),
     ).rejects.toMatchObject({
@@ -383,7 +389,10 @@ describe("model-providers 服务（BYOK 凭证红线）", () => {
       protocol: "openai-compatible",
     });
 
-    const values = calls[0]?.values ?? [];
+    const values =
+      calls.find((call) =>
+        call.text.includes("insert into public.provider_instances"),
+      )?.values ?? [];
     const stored = String(values[3]);
     expect(stored).not.toContain("sk-plaintext-secret");
     expect(stored).toMatch(/^v1:/);
@@ -423,7 +432,11 @@ describe("model-providers 服务（BYOK 凭证红线）", () => {
 
     const hit = buildService({ rows: [{ ...INSTANCE_ROW, name: "新名" }] });
     await hit.service.updateInstance(USER, INSTANCE_ID, { name: "新名" });
-    const sql = hit.calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    const sql =
+      hit.calls
+        .find((call) => call.text.includes("update public.provider_instances"))
+        ?.text.replace(/\s+/g, " ")
+        .trim() ?? "";
     expect(sql).toContain("config_revision = config_revision + 1");
     expect(sql).toContain("name = $2");
     expect(sql).toContain(
@@ -435,7 +448,10 @@ describe("model-providers 服务（BYOK 凭证红线）", () => {
     const { calls, service } = buildService({ rows: [INSTANCE_ROW] });
     await service.updateInstance(USER, INSTANCE_ID, { apiKey: "sk-new" });
 
-    const values = calls[0]?.values ?? [];
+    const values =
+      calls.find((call) =>
+        call.text.includes("update public.provider_instances"),
+      )?.values ?? [];
     expect(String(values[1])).toMatch(/^v1:/);
     expect(String(values[1])).not.toContain("sk-new");
   });
@@ -653,9 +669,19 @@ describe("model-providers 自定义请求头（§4.8，R6-1）", () => {
     expect(JSON.stringify(created)).not.toContain("{{sessionId}}");
     expect(JSON.stringify(created)).not.toContain("ws-42");
 
-    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    const sql =
+      calls
+        .find((call) =>
+          call.text.includes("insert into public.provider_instances"),
+        )
+        ?.text.replace(/\s+/g, " ")
+        .trim() ?? "";
     expect(sql).toContain("headers");
-    const stored = (calls[0]?.values ?? []).find(
+    const stored = (
+      calls.find((call) =>
+        call.text.includes("insert into public.provider_instances"),
+      )?.values ?? []
+    ).find(
       (value) => typeof value === "string" && value.includes("x-opencode"),
     );
     expect(JSON.parse(String(stored))).toEqual(HEADERS);
@@ -671,9 +697,17 @@ describe("model-providers 自定义请求头（§4.8，R6-1）", () => {
     });
 
     expect(updated.headerKeys).toEqual([]);
-    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    const sql =
+      calls
+        .find((call) => call.text.includes("update public.provider_instances"))
+        ?.text.replace(/\s+/g, " ")
+        .trim() ?? "";
     expect(sql).toContain("headers = $2::jsonb");
-    expect(calls[0]?.values[1]).toBe("{}");
+    expect(
+      calls.find((call) =>
+        call.text.includes("update public.provider_instances"),
+      )?.values[1],
+    ).toBe("{}");
   });
 
   it("凭证解析带出 headers 原值（含占位符）——渲染在适配器调用点完成", async () => {

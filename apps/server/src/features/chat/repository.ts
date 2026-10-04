@@ -185,7 +185,11 @@ export function createChatRepository(
               and p.workspace_id = :workspace`,
           [input.sessionId],
         );
-        if (!existing || existing.mode === "code" || existing.canvas_id !== input.canvasId) {
+        if (
+          !existing ||
+          existing.mode === "code" ||
+          existing.canvas_id !== input.canvasId
+        ) {
           return null;
         }
 

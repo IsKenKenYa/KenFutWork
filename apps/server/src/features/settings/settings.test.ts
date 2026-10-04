@@ -74,6 +74,8 @@ function createRepositoryFake(
     findRuntimeGovernance: async () => ({}),
     upsertRuntimeGovernance: async () => {},
     findDefaultModel: async () => null,
+    findCodeUiReconnectDelayMs: async () => null,
+    upsertCodeUiReconnectDelayMs: async () => {},
     findAgentMaxRetries: async () => null,
     findTerminalShell: async () => null,
     findCodeIndexEnabled: async () => null,

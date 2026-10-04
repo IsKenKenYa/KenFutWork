@@ -1,9 +1,9 @@
 import { registerProjectRoutes } from "../../http/projects.js";
 import type { PluginDefinition } from "../../kernel/types.js";
-import { createProjectService } from "./project-service.js";
-import { createProjectRepository } from "./repository.js";
 import { createCodeUiRepository } from "../code-ui/repository.js";
 import { createTaskResourceCloser } from "../task-work/close-resources.js";
+import { createProjectService } from "./project-service.js";
+import { createProjectRepository } from "./repository.js";
 
 /**
  * projects 插件：项目 CRUD + 缩略图服务 + HTTP 路由（路由注册放 mounted）。
@@ -22,10 +22,28 @@ export function createProjectsPlugin(): PluginDefinition {
           sandboxRoot: ctx.env.sandboxRoot,
           beforeArchiveCodeProject: async (actor, projectId) => {
             const workspace = await ctx.get("viewer").resolveWorkspace(actor);
-            const roots = (await createCodeUiRepository(ctx.get("persistence")).listRoots(workspace.id)).filter((root) => root.project_id === projectId && !root.deleted_at);
-            const close = createTaskResourceCloser({ viewer: ctx.get("viewer"), resources: () => ({ runs: ctx.get("agentRuns"), work: ctx.get("taskWork"), sandbox: ctx.get("processSandbox"), capabilities: ctx.get("capabilities") }) });
-            const settled = await Promise.allSettled(roots.map((root) => close(actor, root.id, "项目已关闭")));
-            const failure = settled.find((result) => result.status === "rejected");
+            const roots = (
+              await createCodeUiRepository(ctx.get("persistence")).listRoots(
+                workspace.id,
+              )
+            ).filter(
+              (root) => root.project_id === projectId && !root.deleted_at,
+            );
+            const close = createTaskResourceCloser({
+              viewer: ctx.get("viewer"),
+              resources: () => ({
+                runs: ctx.get("agentRuns"),
+                work: ctx.get("taskWork"),
+                sandbox: ctx.get("processSandbox"),
+                capabilities: ctx.get("capabilities"),
+              }),
+            });
+            const settled = await Promise.allSettled(
+              roots.map((root) => close(actor, root.id, "项目已关闭")),
+            );
+            const failure = settled.find(
+              (result) => result.status === "rejected",
+            );
             if (failure?.status === "rejected") throw failure.reason;
           },
         }),

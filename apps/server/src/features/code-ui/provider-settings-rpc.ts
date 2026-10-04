@@ -3,10 +3,7 @@ import type {
   ProviderInstanceResponse,
   ProviderInstanceUpdateRequest,
 } from "@kenfutwork/shared";
-import {
-  type ModelSelection,
-  parseProviderConfig,
-} from "@zcode/provider";
+import { type ModelSelection, parseProviderConfig } from "@zcode/provider";
 import {
   type ModelConnectivityResult,
   modelSelectionSchema,
@@ -222,6 +219,12 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
         "command_conflict",
         "Code BYOK 供应商需要用户自己的 API Key。",
       );
+    const apiKey = config.access?.apiKey;
+    if (typeof apiKey === "string" && apiKey !== "" && !apiKey.trim())
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "API Key 不能只包含空白字符。",
+      );
     const ids = [
       ...new Set([
         ...(config.builtinModelIds ?? []),
@@ -275,6 +278,12 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
         "command_conflict",
         "原生账号连接不能代替 BYOK 凭证。",
       );
+    const apiKey = config.access?.apiKey;
+    if (typeof apiKey === "string" && apiKey !== "" && !apiKey.trim())
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "API Key 不能只包含空白字符。",
+      );
     const compat = {
       ...instance.compat,
       codeUi: {
@@ -288,23 +297,27 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
     if (config.api?.type === "openai-responses") compat.chatApi = "responses";
     else if (config.api?.type === "openai-chat-completions")
       compat.chatApi = "completions";
-    else if (config.api?.type) delete compat.chatApi;
+    else if (config.api === null || config.api?.type) delete compat.chatApi;
     await this.save(actor, instance, {
       ...(metadata.providerName ? { name: metadata.providerName } : {}),
       ...(config.api?.type
         ? { protocol: codeUiNativeProtocol(config.api.type) }
         : {}),
-      ...(config.api?.baseUrl !== undefined
-        ? { baseUrl: config.api.baseUrl ?? "" }
-        : {}),
-      ...(config.api?.headers !== undefined
-        ? { headers: { ...config.api.headers } }
-        : {}),
-      ...(config.access &&
-      config.access.apiKey !== undefined &&
-      config.access.apiKey !== ""
-        ? { apiKey: config.access.apiKey }
-        : {}),
+      ...(config.api === null
+        ? { baseUrl: "", headers: {} }
+        : {
+            ...(config.api?.baseUrl !== undefined
+              ? { baseUrl: config.api.baseUrl ?? "" }
+              : {}),
+            ...(config.api?.headers !== undefined
+              ? { headers: { ...config.api.headers } }
+              : {}),
+          }),
+      ...(config.access === null
+        ? { apiKey: null }
+        : apiKey !== undefined && apiKey !== ""
+          ? { apiKey }
+          : {}),
       ...(metadata.enabled !== undefined
         ? { enabled: metadata.enabled }
         : config.visibility

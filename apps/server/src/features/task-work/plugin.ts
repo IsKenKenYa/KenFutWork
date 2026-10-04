@@ -66,25 +66,21 @@ export function createTaskWorkPlugin(): PluginDefinition {
           },
         });
       }
-      ctx
-        .get("capabilities")
-        .register("task-close", {
-          id: "task-work:command-handles",
-          value: {
-            close: (workspaceId: string, taskId: string) =>
-              getCommands().forgetTask(workspaceId, taskId),
-          },
-        });
-      ctx
-        .get("capabilities")
-        .register("process-snapshot", {
-          id: "task-work:durable-output",
-          value: {
-            receive: (
-              snapshot: import("../process-sandbox/types.js").ManagedProcessSnapshot,
-            ) => getCommands().acceptSnapshot(snapshot),
-          },
-        });
+      ctx.get("capabilities").register("task-close", {
+        id: "task-work:command-handles",
+        value: {
+          close: (workspaceId: string, taskId: string) =>
+            getCommands().forgetTask(workspaceId, taskId),
+        },
+      });
+      ctx.get("capabilities").register("process-snapshot", {
+        id: "task-work:durable-output",
+        value: {
+          receive: (
+            snapshot: import("../process-sandbox/types.js").ManagedProcessSnapshot,
+          ) => getCommands().acceptSnapshot(snapshot),
+        },
+      });
     },
     mounted(ctx) {
       const manager = ctx.get("taskWork");

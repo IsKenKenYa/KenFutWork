@@ -4,6 +4,16 @@
 
 ## 2026-10-04 提交冻结与UI合并入口（最新）
 
+### 合并验证收口（优先于下方冻结取样）
+
+- 已先完成17批提交，冻结ours `6e746f55`，再以双亲merge整合UI固定提交 `29fb8c09`。保留原Root/主子SessionPane/renderer、品牌与资源删除；保留Task UUID/Project UUID、固定根、权限代际、配置租约、附件/终端和Code无Canvas。原checkout未编辑/切支；尚未push/PR，Goal仍active。
+- 偏好只保留`code_ui_preferences`/workspace-rpc，模型只保留`compat.codeUi`与实例CAS；删掉无consumer的第二settings/config helper，双方历史SQL原字节保留。根锁内登记Run同时检查ready/activeRun/授权与分支代际及canonical输入；插件串行变更、等待restore/disposal/shutdown与失败贡献物保留同时生效。
+- 合并首全量4失败及1未处理异常均已修复：显式清空API后原SDK端点校验同时约束选择器与运行快照；旧SQL夹具识别实际insert/update而非事务begin；畸形卸载拒绝且库存无副作用；搜索授权复验期间撤销的真实取消窗口actualRED→GREEN，在创建流前拒绝已中止signal并等待文件/子进程收尾。窄回归77+21通过，未skip/吞异常。
+- 最新`pnpm test`通过：shared90、web449、server1866（170默认跳过），16任务成功且没有Unhandled；`pnpm typecheck`13任务成功；`pnpm build`13任务成功，包含原Code/Design两bundle；`pnpm api:spec`、`pnpm test:docs`通过。日志`/private/tmp/kfw-merge-{test-final,types-commit,build,api-spec,docs}.log`。3027项ZCode来源零漂移；Kimi明确登记源码逐项SHA验证，不批量格式化第三方。
+- 独占临时PG验证5条：V4 compact FIFO、真实文件rewind、真实卸载/缓存与加密数据、Controller固定Task根、设置与归档竞争；另TaskWork真实库3条含全迁移重放和二次no-op。日志`/private/tmp/kfw-merge-private-pg-green.log`、`/private/tmp/kfw-merge-pg-replay-green.log`。未连接现有开发库、未执行运行库迁移。
+- lint仍须区分基线：本Goal新增与merge第一方格式/import已整理；Computer Use与两份历史Web文件保持common base原字节，现存20个错误尚未修，不能称全lint绿色。原源码与版权按来源SHA验证。旧Code已删资源静态import零残留，不等于全视觉验收。
+- 新UI分支若干默认skip的HTTP integration仍使用目录替Project UUID/旧Canvas或缺ClientHello，公共fixture默认3001且stop会直接锁外部DSN；不能以skip当GREEN，也不放宽生产身份来迁就。后续先显式client+独占PG/buildApp/随机端口，再验证原UI命令。describe/list真实组件发现、edit/retry/fork/guide、子停止/权限/队列完整UI、全视觉与Design回归及Windows实机仍待完成。
+
 - 用户要求先提交全部暂存/未暂存/未跟踪工作，按功能模块分批，之后合并固定UI提交 `29fb8c09c03e99bd55d60ea491dfbda076f1eae1`，由本线程统一继续。原checkout该分支干净，只在隔离 `codex/重构Code工作域与工具内核` 操作；尚未push/PR。
 - 已按源码许可、契约/依赖、存储、Task/文件、沙箱/PTY、后台任务、审批、扩展/释放、供应商、检查点、附件、Harness、原UI、Code宿主、装配与测试拆分提交。逐批日志在《日志》末尾；不得把多个模块重新压成一个大提交。
 - 冻结工作树 `pnpm test` 与 `pnpm typecheck` 全通过，日志 `/private/tmp/kfw-precommit-all-green.log`、`/private/tmp/kfw-precommit-full-types-final.log`；`pnpm api:spec` 与文档门禁通过。真实native/PG/V4FIFO压缩、完整文件恢复与独占临时PG重放证据继续有效，运行库未迁移。旧OpenAPI3失效注册已按本次“正确处理删除与提交”授权清理，不补假schema。

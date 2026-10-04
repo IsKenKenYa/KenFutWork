@@ -1,6 +1,6 @@
 import type { CodeUiViewerScope } from "@kenfutwork/shared";
-import { ServiceChannels } from "../../../packages/zcode-shared/dist/channels.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ServiceChannels } from "../../../packages/zcode-shared/dist/channels.js";
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
 import { codeHostNotificationResponse } from "./setup/code-host-http";
 

@@ -594,38 +594,76 @@ it("最后pane释放后原keep-warm到期精确退订，过期frame不能更新�
 it("initial ACK仍pending时最后lease到期，迟到ACK只精确退订旧id，不激活或清掉新租约", async () => {
   const fixture = createWorkspaceConfigHttpFixture();
   vi.stubGlobal("fetch", fixture.fetch);
-  const client = new CodeHttpChannelClient({ apiBase: "https://config-host.test" });
+  const client = new CodeHttpChannelClient({
+    apiBase: "https://config-host.test",
+  });
   clients.push(client);
   await client.connect();
   client.registerWorkspaces([configWorkspace]);
   releases.push(bindCodeWorkspaceServices(client));
   const platform = createCodePlatform(client);
-  const tree = () => <ServiceProvider services={client.services}>
-    <PlatformProvider platform={platform}><TabStoreProvider>
-      <V4PaneConversationProvider scope={{ workspacePath: configProjectPath, workspaceIdentity: configProjectIdentity }}>
-        <ConfigReadout />
-      </V4PaneConversationProvider>
-    </TabStoreProvider></PlatformProvider>
-  </ServiceProvider>;
+  const tree = () => (
+    <ServiceProvider services={client.services}>
+      <PlatformProvider platform={platform}>
+        <TabStoreProvider>
+          <V4PaneConversationProvider
+            scope={{
+              workspacePath: configProjectPath,
+              workspaceIdentity: configProjectIdentity,
+            }}
+          >
+            <ConfigReadout />
+          </V4PaneConversationProvider>
+        </TabStoreProvider>
+      </PlatformProvider>
+    </ServiceProvider>
+  );
   vi.useFakeTimers();
   fixture.holdNextSubscribeAck();
   const old = render(tree());
-  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
   const oldId = [...fixture.subscriptions.keys()][0];
   if (!oldId) throw new Error("在途初订阅没有真实id。");
   expect(screen.getByLabelText("Project默认模型").textContent).toBe("");
   old.unmount();
-  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
-  fixture.setSource({ configOptions: [{ id: "model", name: "Model", type: "select", currentValue: "provider/new-lease$high", options: [] }], slashCommands: [] });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(30_000);
+  });
+  fixture.setSource({
+    configOptions: [
+      {
+        id: "model",
+        name: "Model",
+        type: "select",
+        currentValue: "provider/new-lease$high",
+        options: [],
+      },
+    ],
+    slashCommands: [],
+  });
   render(tree());
-  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-  expect(screen.getByLabelText("Project默认模型").textContent).toBe("provider/new-lease$high");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(screen.getByLabelText("Project默认模型").textContent).toBe(
+    "provider/new-lease$high",
+  );
   const newId = [...fixture.subscriptions.keys()].find((id) => id !== oldId);
   if (!newId) throw new Error("新的配置租约未建立。");
   fixture.releaseSubscribeAck(oldId);
-  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-  expect(screen.getByLabelText("Project默认模型").textContent).toBe("provider/new-lease$high");
-  expect(fixture.requests.filter((request) => request.method === "unsubscribeWorkspaceConfigV4").map((request) => request.args[0]?.subscriptionId)).toEqual([oldId]);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(screen.getByLabelText("Project默认模型").textContent).toBe(
+    "provider/new-lease$high",
+  );
+  expect(
+    fixture.requests
+      .filter((request) => request.method === "unsubscribeWorkspaceConfigV4")
+      .map((request) => request.args[0]?.subscriptionId),
+  ).toEqual([oldId]);
   expect(fixture.subscriptions.has(oldId)).toBe(false);
   expect(fixture.subscriptions.has(newId)).toBe(true);
 });
@@ -633,54 +671,160 @@ it("initial ACK仍pending时最后lease到期，迟到ACK只精确退订旧id，
 it("真实配置源失败透出原错误并保持error，不能把旧缓存或空目录假作prepare成功；显式重读可恢复", async () => {
   const fixture = createWorkspaceConfigHttpFixture();
   vi.stubGlobal("fetch", fixture.fetch);
-  const client = new CodeHttpChannelClient({ apiBase: "https://config-host.test" });
+  const client = new CodeHttpChannelClient({
+    apiBase: "https://config-host.test",
+  });
   clients.push(client);
   await client.connect();
   client.registerWorkspaces([configWorkspace]);
   const store = useZCodeSessionStore.getState();
-  store.setConfigOptions(configProjectPath, [{ id: "model", name: "Model", type: "select", currentValue: "provider/old-cache$low", options: [] }], configProjectIdentity);
+  store.setConfigOptions(
+    configProjectPath,
+    [
+      {
+        id: "model",
+        name: "Model",
+        type: "select",
+        currentValue: "provider/old-cache$low",
+        options: [],
+      },
+    ],
+    configProjectIdentity,
+  );
   fixture.failNextSubscribe("真实目录读取失败，Project数据不可用");
-  const request = { workspacePath: configProjectPath, workspaceIdentity: configProjectIdentity, provider: "glm" as const, agentService: client.services.zcodeAgentService };
-  await expect(prepareWorkspaceWithZCodeSessionService(request)).rejects.toThrow("真实目录读取失败");
-  const failed = store.getWorkspaceState(configProjectPath, configProjectIdentity);
+  const request = {
+    workspacePath: configProjectPath,
+    workspaceIdentity: configProjectIdentity,
+    provider: "glm" as const,
+    agentService: client.services.zcodeAgentService,
+  };
+  await expect(
+    prepareWorkspaceWithZCodeSessionService(request),
+  ).rejects.toThrow("真实目录读取失败");
+  const failed = store.getWorkspaceState(
+    configProjectPath,
+    configProjectIdentity,
+  );
   expect(failed.configOptionsStatus).toBe("error");
-  expect(failed.configOptions?.find((option) => option.id === "model")?.currentValue).toBe("provider/old-cache$low");
+  expect(
+    failed.configOptions?.find((option) => option.id === "model")?.currentValue,
+  ).toBe("provider/old-cache$low");
   expect(fixture.subscriptions.size).toBe(0);
   const actual = await prepareWorkspaceWithZCodeSessionService(request);
-  expect(actual.configOptions?.find((option) => option.id === "model")?.currentValue).toBe("provider/default-B$high");
-  expect(store.getWorkspaceState(configProjectPath, configProjectIdentity).configOptionsStatus).toBe("ready");
-  expect(fixture.requests.filter((entry) => ["createSession", "sendConversationCommandV4", "startRun"].includes(entry.method))).toEqual([]);
+  expect(
+    actual.configOptions?.find((option) => option.id === "model")?.currentValue,
+  ).toBe("provider/default-B$high");
+  expect(
+    store.getWorkspaceState(configProjectPath, configProjectIdentity)
+      .configOptionsStatus,
+  ).toBe("ready");
+  expect(
+    fixture.requests.filter((entry) =>
+      ["createSession", "sendConversationCommandV4", "startRun"].includes(
+        entry.method,
+      ),
+    ),
+  ).toEqual([]);
 });
 
 it("新online完整态取代迟到recovery后flight收口，下一坏帧仍能再次same-sub恢复", async () => {
   const fixture = createWorkspaceConfigHttpFixture();
   vi.stubGlobal("fetch", fixture.fetch);
-  const client = new CodeHttpChannelClient({ apiBase: "https://config-host.test" });
+  const client = new CodeHttpChannelClient({
+    apiBase: "https://config-host.test",
+  });
   clients.push(client);
   await client.connect();
   client.registerWorkspaces([configWorkspace]);
   releases.push(bindCodeWorkspaceServices(client));
-  render(<ServiceProvider services={client.services}>
-    <PlatformProvider platform={createCodePlatform(client)}><TabStoreProvider>
-      <V4PaneConversationProvider scope={{ workspacePath: configProjectPath, workspaceIdentity: configProjectIdentity }}>
-        <ConfigReadout />
-      </V4PaneConversationProvider>
-    </TabStoreProvider></PlatformProvider>
-  </ServiceProvider>);
-  await waitFor(() => expect(screen.getByLabelText("Project默认模型").textContent).toBe("provider/default-B$high"));
+  render(
+    <ServiceProvider services={client.services}>
+      <PlatformProvider platform={createCodePlatform(client)}>
+        <TabStoreProvider>
+          <V4PaneConversationProvider
+            scope={{
+              workspacePath: configProjectPath,
+              workspaceIdentity: configProjectIdentity,
+            }}
+          >
+            <ConfigReadout />
+          </V4PaneConversationProvider>
+        </TabStoreProvider>
+      </PlatformProvider>
+    </ServiceProvider>,
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText("Project默认模型").textContent).toBe(
+      "provider/default-B$high",
+    ),
+  );
   const id = [...fixture.subscriptions.keys()][0];
   if (!id) throw new Error("配置源lease未建立。");
   const corrupt = () => {
     const packet = fixture.capture(id)[0];
-    if (!packet || packet.frame.kind !== "complete" || packet.frame.frame.payload.kind !== "snapshot") throw new Error("坏帧夹具未取得完整态。");
-    fixture.send(0, { ...packet, frame: { ...packet.frame, frame: { ...packet.frame.frame, payload: { kind: "snapshot", snapshot: { ...packet.frame.frame.payload.snapshot, config: { configOptions: "corrupt", slashCommands: [] } } } } } });
+    if (
+      !packet ||
+      packet.frame.kind !== "complete" ||
+      packet.frame.frame.payload.kind !== "snapshot"
+    )
+      throw new Error("坏帧夹具未取得完整态。");
+    fixture.send(0, {
+      ...packet,
+      frame: {
+        ...packet.frame,
+        frame: {
+          ...packet.frame.frame,
+          payload: {
+            kind: "snapshot",
+            snapshot: {
+              ...packet.frame.frame.payload.snapshot,
+              config: { configOptions: "corrupt", slashCommands: [] },
+            },
+          },
+        },
+      },
+    });
   };
   fixture.onlineSnapshotReplacesNextRecovery();
-  fixture.setSource({ configOptions: [{ id: "model", name: "Model", type: "select", currentValue: "provider/online-replacement$high", options: [] }], slashCommands: [] });
+  fixture.setSource({
+    configOptions: [
+      {
+        id: "model",
+        name: "Model",
+        type: "select",
+        currentValue: "provider/online-replacement$high",
+        options: [],
+      },
+    ],
+    slashCommands: [],
+  });
   corrupt();
-  await waitFor(() => expect(screen.getByLabelText("Project默认模型").textContent).toBe("provider/online-replacement$high"));
-  fixture.setSource({ configOptions: [{ id: "model", name: "Model", type: "select", currentValue: "provider/next-recovery$low", options: [] }], slashCommands: [] });
+  await waitFor(() =>
+    expect(screen.getByLabelText("Project默认模型").textContent).toBe(
+      "provider/online-replacement$high",
+    ),
+  );
+  fixture.setSource({
+    configOptions: [
+      {
+        id: "model",
+        name: "Model",
+        type: "select",
+        currentValue: "provider/next-recovery$low",
+        options: [],
+      },
+    ],
+    slashCommands: [],
+  });
   corrupt();
-  await waitFor(() => expect(screen.getByLabelText("Project默认模型").textContent).toBe("provider/next-recovery$low"));
-  expect(fixture.requests.filter((request) => request.method === "resyncWorkspaceConfigV4").map((request) => request.args[0]?.subscriptionId)).toEqual([id, id]);
+  await waitFor(() =>
+    expect(screen.getByLabelText("Project默认模型").textContent).toBe(
+      "provider/next-recovery$low",
+    ),
+  );
+  expect(
+    fixture.requests
+      .filter((request) => request.method === "resyncWorkspaceConfigV4")
+      .map((request) => request.args[0]?.subscriptionId),
+  ).toEqual([id, id]);
 });

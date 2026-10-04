@@ -114,12 +114,13 @@ async function saveDraft(
     })
     .strict()
     .parse(value);
+  // 先捕获实例 CAS 修订，再核 UI 草稿修订；两读之间的外部更新不能借新修订覆盖旧草稿。
+  const instance = await context.load(actor, params.providerId);
   if (params.basedOnRevision !== (await context.revision(actor)))
     throw new CodeUiRepositoryError(
       "revision_conflict",
       "模型配置已变化，请刷新草稿后重试。",
     );
-  const instance = await context.load(actor, params.providerId);
   const recommended =
     params.useRecommendedConfig ??
     codeUiProviderMetadata(instance).models?.[params.originalModelId]

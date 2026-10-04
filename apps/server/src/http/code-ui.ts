@@ -15,6 +15,7 @@ import type { CodeUiService } from "../features/code-ui/service.js";
 import { ExecutionScopeError } from "../features/execution/scope-service.js";
 import { ModelProviderServiceError } from "../features/model-providers/model-provider-service.js";
 import { PluginRegistryError } from "../features/plugins/plugin-registry-service.js";
+import { ProjectServiceError } from "../features/projects/project-service.js";
 import { isZodError } from "./zod-error.js";
 
 function sendError(reply: FastifyReply, error: unknown) {
@@ -24,7 +25,16 @@ function sendError(reply: FastifyReply, error: unknown) {
       .send({ error: { code: error.code, message: error.message } });
   if (error instanceof PluginRegistryError)
     return reply
-      .code(error.report ? 422 : error.code === "system_plugin" ? 403 : 400)
+      .code(
+        error.report
+          ? 422
+          : error.code === "system_plugin"
+            ? 403
+            : error.code === "plugin_not_found" ||
+                error.code === "not_installed"
+              ? 404
+              : 400,
+      )
       .send({
         error: {
           code: error.report ? "plugin_incompatible" : error.code,
@@ -32,6 +42,10 @@ function sendError(reply: FastifyReply, error: unknown) {
         },
         ...(error.report ? { report: error.report } : {}),
       });
+  if (error instanceof ProjectServiceError)
+    return reply
+      .code(error.statusCode)
+      .send({ error: { code: error.code, message: error.message } });
   if (error instanceof CodeAttachmentError)
     return reply
       .code(error.statusCode)

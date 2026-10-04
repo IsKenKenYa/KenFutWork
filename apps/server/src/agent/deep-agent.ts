@@ -33,18 +33,18 @@ import {
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type { CompactionPlan } from "./auto-compact.js";
+import { resolveCompactionPlan } from "./auto-compact.js";
 import {
   type AgentBackendResult,
   createAgentBackend,
 } from "./backends/index.js";
+import type { AgentContextHistory } from "./context-history.js";
 import { createExecuteBackgroundTool } from "./execute-background.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
-import { createNativeCompactionTracker } from "./native-compaction.js";
-import type { AgentContextHistory } from "./context-history.js";
-import { createNativeContextHistory } from "./native-context-history.js";
-import { resolveCompactionPlan } from "./auto-compact.js";
 import { attachNativeCheckpointDurability } from "./native-checkpoint-durability.js";
+import { createNativeCompactionTracker } from "./native-compaction.js";
+import { createNativeContextHistory } from "./native-context-history.js";
 import type {
   AgentRunExtension,
   AgentRunExtensionContext,
@@ -552,13 +552,20 @@ export function createKenFutWorkDeepAgent(options: {
    */
   const nativeSummarization = createSummarizationMiddleware({
     backend: backendResult.factory,
-    ...(options.autoCompact ? { trigger: options.autoCompact.trigger, keep: options.autoCompact.keep } : {}),
+    ...(options.autoCompact
+      ? { trigger: options.autoCompact.trigger, keep: options.autoCompact.keep }
+      : {}),
   }) as unknown as AgentMiddleware;
-  const compactionTracker = options.autoCompact ? createNativeCompactionTracker(nativeSummarization) : undefined;
+  const compactionTracker = options.autoCompact
+    ? createNativeCompactionTracker(nativeSummarization)
+    : undefined;
   // 同名覆盖DA默认auto行为，仍保留summary state schema供显式维护operation。
-  const summarizationMiddleware: AgentMiddleware[] = [compactionTracker?.middleware ?? {
-    ...nativeSummarization, wrapModelCall: (request, handler) => handler(request),
-  }];
+  const summarizationMiddleware: AgentMiddleware[] = [
+    compactionTracker?.middleware ?? {
+      ...nativeSummarization,
+      wrapModelCall: (request, handler) => handler(request),
+    },
+  ];
 
   // 后台任务通知（DEC-15）：每次模型调用前注入已结算未消费的通知
   const notificationMiddleware: AgentMiddleware[] = [
@@ -633,12 +640,23 @@ export function createKenFutWorkDeepAgent(options: {
   if (compactionTracker && options.checkpointer)
     compactionTracker.attach(agent);
   return Object.assign(agent, {
-    ...(options.checkpointer ? { contextHistory: createNativeContextHistory(agent, {
-          model: resolvedModel, backend: backendResult.factory,
-          ...(options.store ? { store: options.store } : {}),
-          plan: options.manualCompactPlan ?? options.autoCompact ?? resolveCompactionPlan({}),
-          llmRetry: options.llmRetry ?? { maxAttempts: AGENT_GOVERNANCE_DEFAULTS.llmRequestMaxRetries, infinite: AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry },
-        }) } : {}),
+    ...(options.checkpointer
+      ? {
+          contextHistory: createNativeContextHistory(agent, {
+            model: resolvedModel,
+            backend: backendResult.factory,
+            ...(options.store ? { store: options.store } : {}),
+            plan:
+              options.manualCompactPlan ??
+              options.autoCompact ??
+              resolveCompactionPlan({}),
+            llmRetry: options.llmRetry ?? {
+              maxAttempts: AGENT_GOVERNANCE_DEFAULTS.llmRequestMaxRetries,
+              infinite: AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
+            },
+          }),
+        }
+      : {}),
     canonicalToolEvents: (options.runExtensions ?? []).some(
       (extension) => extension.canonicalToolEvents,
     ),

@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
 
 import type { ServerEnv } from "../config/env.js";
-import { createResourceDisposer, type ResourceDisposer } from "./disposal.js";
 import {
   AgentRunEventBus,
   CapabilityRegistryImpl,
@@ -10,6 +9,7 @@ import {
   SystemPromptRegistryImpl,
   ToolRegistryImpl,
 } from "./context.js";
+import { createResourceDisposer, type ResourceDisposer } from "./disposal.js";
 import type {
   DepsOf,
   KernelEvents,

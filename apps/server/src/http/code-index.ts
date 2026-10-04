@@ -90,8 +90,7 @@ export async function registerCodeIndexRoutes(
   app.post("/api/code/index/rebuild", async (request, reply) => {
     const user = await options.auth.authenticate(request);
     if (!user) return sendUnauthorized(reply);
-    const taskId = (request.body as { taskId?: unknown } | undefined)
-      ?.taskId;
+    const taskId = (request.body as { taskId?: unknown } | undefined)?.taskId;
     if (typeof taskId !== "string" || !taskId) {
       return sendBadInput(reply, "缺少 taskId。");
     }

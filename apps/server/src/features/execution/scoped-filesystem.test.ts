@@ -731,13 +731,34 @@ it("Task revoke cancels an in-flight native search and waits for its child and i
     join(rootDirectory, "large-search.txt"),
     "searchable text line\n".repeat(1_000_000),
   );
+  const validating = deferred();
+  const releaseValidation = deferred();
+  const resolvePath = scope.resolvePath;
+  let validations = 0;
+  scope.resolvePath = async (path, operation) => {
+    const canonical = await resolvePath(path, operation);
+    // 在文件已打开后的授权复验处撤销，稳定覆盖流创建之前的取消窗口。
+    if (canonical === join(rootDirectory, "large-search.txt")) {
+      validations += 1;
+      if (validations === 3) {
+        validating.resolve();
+        await releaseValidation.promise;
+      }
+    }
+    return canonical;
+  };
   const searching = backend.grepPage({ pattern: "absent-pattern" }).then(
     () => "completed",
     () => "aborted",
   );
-  await new Promise<void>((resolve) => setTimeout(resolve, 5));
+  await validating.promise;
   const identity = scope.describe();
-  await revokeTaskFileOperations(identity.workspaceId, identity.taskId);
+  const revoking = revokeTaskFileOperations(
+    identity.workspaceId,
+    identity.taskId,
+  );
+  releaseValidation.resolve();
+  await revoking;
   expect(await searching).toBe("aborted");
   expect(
     (await backend.grepPage({ pattern: "searchable", limit: 1 })).matches[0]

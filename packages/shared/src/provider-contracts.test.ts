@@ -80,7 +80,10 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
     expect(providerInstanceCreateRequestSchema.safeParse(base).success).toBe(
       true,
     );
-    expect(providerInstanceCreateRequestSchema.safeParse({ ...base, apiKey: "" }).success).toBe(false);
+    expect(
+      providerInstanceCreateRequestSchema.safeParse({ ...base, apiKey: "" })
+        .success,
+    ).toBe(false);
   });
 
   it("凭证红线：响应 schema 不含 apiKey/apiKeyRef 字段（多余的 key 会被剥掉）", () => {

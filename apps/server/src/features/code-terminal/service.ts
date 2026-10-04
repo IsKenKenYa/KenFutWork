@@ -13,8 +13,8 @@ import type {
 } from "../execution/scope-service.js";
 import type {
   ManagedTerminalProcess,
-  ProcessSandbox,
   ProcessExit,
+  ProcessSandbox,
 } from "../process-sandbox/types.js";
 import type { SettingsService } from "../settings/settings-service.js";
 import type {

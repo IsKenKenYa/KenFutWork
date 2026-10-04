@@ -8,7 +8,7 @@ import {
   workspaceSettingsSchema,
 } from "@kenfutwork/shared";
 import Fastify from "fastify";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
 import { createLocalFsBlobStore } from "../blob/providers/local-fs.js";
 import type {
@@ -139,6 +139,27 @@ async function fixture(
     list: async () => [structuredClone(root)],
     listRoots: async () => [structuredClone(root)],
     listVersion: async () => Number(root.revision),
+    async startRunIfCurrent(workspace, task, runId, expected, start) {
+      if (workspace !== workspaceId || task !== taskId) return false;
+      const input = root.state?.inputs?.find((entry) => entry.runId === runId);
+      if (
+        root.archived ||
+        root.execution_state !== "ready" ||
+        Number(root.scope_generation) !== expected.scopeGeneration ||
+        Number(root.branch_generation) !== expected.branchGeneration ||
+        root.active_run_id !== runId ||
+        root.state?.runId !== runId ||
+        root.state.closedRuns.includes(runId) ||
+        (expected.inputRequired && !input) ||
+        (input &&
+          (input.status !== "active" ||
+            input.scopeGeneration !== expected.scopeGeneration ||
+            input.branchGeneration !== expected.branchGeneration))
+      )
+        return false;
+      start(structuredClone(root));
+      return true;
+    },
     async applyCommand(_workspace, envelope, fingerprint, decide) {
       const key = JSON.stringify([envelope.clientId, envelope.commandId]);
       const previous = commands.get(key);
@@ -240,6 +261,8 @@ async function fixture(
   const completed = new Map<string, Promise<void>>();
   const complete = new Map<string, () => void>();
   const starters: Array<{ count: number; resolve: () => void }> = [];
+  const createAcceptedRun = vi.fn(async () => {});
+  const updateRun = vi.fn(async () => {});
   const service = new CodeUiService({
     repository,
     attachmentRepository,
@@ -274,8 +297,8 @@ async function fixture(
     },
     executionScopes: { openTask: async () => ({ describe: () => scope }) },
     agentRunMetadata: {
-      createAcceptedRun: async () => {},
-      updateRun: async () => {},
+      createAcceptedRun,
+      updateRun,
     },
     agentRuns: {
       createRun: (input: unknown, runOptions: { runId: string }) => {
@@ -469,6 +492,9 @@ async function fixture(
     directory,
     connectionId: connection.hello.connectionId,
     events,
+    root,
+    createAcceptedRun,
+    updateRun,
   };
 }
 
@@ -1030,6 +1056,98 @@ it("Stop在输入已保存但Harness尚未启动时关闭该轮，迟到publish�
   expect(
     (await host.service.getSnapshot(host.actor, host.taskId)).control.phase,
   ).toBe("completedInterrupted");
+});
+
+it("Stop在已接受元信息落库与同步Harness登记之间关闭输入，恢复publish不登记运行", async () => {
+  const host = await fixture();
+  let accepted!: () => void;
+  let resume!: () => void;
+  const reached = new Promise<void>((resolve) => {
+    accepted = resolve;
+  });
+  const released = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  host.createAcceptedRun.mockImplementation(async () => {
+    accepted();
+    await released;
+  });
+  const prepared = await host.send({
+    text: "登记窗口",
+    modelSelection: host.selection,
+  });
+  if (!prepared?.publish) throw new Error("测试输入未被认领");
+  const publishing = prepared.publish();
+  await reached;
+  const snapshot = await host.service.getSnapshot(host.actor, host.taskId);
+  const stopped = await host.command("stop", {}, snapshot.revision);
+  await stopped?.publish?.();
+  resume();
+  await publishing;
+  expect(host.runs).toHaveLength(0);
+  expect(host.updateRun).toHaveBeenCalledWith(
+    expect.objectContaining({ status: "canceled" }),
+  );
+  expect(
+    (await host.service.getSnapshot(host.actor, host.taskId)).control.phase,
+  ).toBe("completedInterrupted");
+});
+
+it.each([
+  [
+    "scope改变",
+    (root: CodeUiSessionRecord) => {
+      root.scope_generation = Number(root.scope_generation) + 1;
+    },
+  ],
+  [
+    "branch改变",
+    (root: CodeUiSessionRecord) => {
+      root.branch_generation = Number(root.branch_generation) + 1;
+    },
+  ],
+  [
+    "关闭正在撤销",
+    (root: CodeUiSessionRecord) => {
+      root.execution_state = "revoking";
+    },
+  ],
+  [
+    "归档",
+    (root: CodeUiSessionRecord) => {
+      root.archived = true;
+    },
+  ],
+  [
+    "canonical输入丢弃",
+    (root: CodeUiSessionRecord) => {
+      const input = root.state?.inputs?.[0];
+      if (!input) throw new Error("测试输入未被认领");
+      input.status = "discarded";
+    },
+  ],
+  [
+    "canonical输入缺失",
+    (root: CodeUiSessionRecord) => {
+      if (!root.state) throw new Error("测试会话状态缺失");
+      root.state.inputs = [];
+    },
+  ],
+] as const)("输入已接受后%s时不能登记Harness", async (_label, change) => {
+  const host = await fixture();
+  host.createAcceptedRun.mockImplementation(async () => {
+    change(host.root);
+  });
+  const prepared = await host.send({
+    text: "代际窗口",
+    modelSelection: host.selection,
+  });
+  if (!prepared?.publish) throw new Error("测试输入未被认领");
+  await prepared.publish();
+  expect(host.runs).toHaveLength(0);
+  expect(host.updateRun).toHaveBeenCalledWith(
+    expect.objectContaining({ status: "canceled" }),
+  );
 });
 
 it("同一已认领输入的publish并发重复调用也只启动一次Harness", async () => {

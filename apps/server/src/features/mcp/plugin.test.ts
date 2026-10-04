@@ -75,6 +75,11 @@ async function fixture(options: Parameters<typeof stdioSandbox>[0] = {}) {
         executionScopes: f.scopes,
         settings: {
           onUpdated: () => () => {},
+          getCodeUiTransportSettings: async () => ({
+            reconnectDelayMs: workspaceSettingsSchema.parse({
+              defaultModel: "fixture",
+            }).codeUiReconnectDelayMs,
+          }),
           getWorkspaceSettings: async () =>
             workspaceSettingsSchema.parse({
               defaultModel: "fixture",

@@ -99,18 +99,16 @@ export function createTaskWorkStore(
       return lease;
     },
     async closeFence(workspaceId, taskId) {
-      const row = await persistence
-        .forWorkspace(workspaceId)
-        .queryOne<
-          SqlRow & {
-            scope_generation: number | string;
-            branch_generation: number | string;
-            execution_state: "ready" | "revoking" | "failed";
-          }
-        >(
-          "select scope_generation, branch_generation, execution_state from public.code_ui_sessions where workspace_id = :workspace and id = $1 and parent_session_id is null",
-          [taskId],
-        );
+      const row = await persistence.forWorkspace(workspaceId).queryOne<
+        SqlRow & {
+          scope_generation: number | string;
+          branch_generation: number | string;
+          execution_state: "ready" | "revoking" | "failed";
+        }
+      >(
+        "select scope_generation, branch_generation, execution_state from public.code_ui_sessions where workspace_id = :workspace and id = $1 and parent_session_id is null",
+        [taskId],
+      );
       return row
         ? {
             scopeGeneration: Number(row.scope_generation),

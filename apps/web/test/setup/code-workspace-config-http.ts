@@ -156,9 +156,15 @@ export function createWorkspaceConfigHttpFixture() {
     capture: (id: string) => packets(id, "online"),
     send,
     disconnect,
-    holdNextSubscribeAck() { holdNextAck = true; },
-    failNextSubscribe(message: string) { subscribeFailure = message; },
-    onlineSnapshotReplacesNextRecovery() { replaceRecoveryWithOnline = true; },
+    holdNextSubscribeAck() {
+      holdNextAck = true;
+    },
+    failNextSubscribe(message: string) {
+      subscribeFailure = message;
+    },
+    onlineSnapshotReplacesNextRecovery() {
+      replaceRecoveryWithOnline = true;
+    },
     releaseSubscribeAck(id: string) {
       const release = pendingAcks.get(id);
       if (!release) throw new Error("外部测试ACK没有处于pending。");
@@ -219,7 +225,9 @@ export function createWorkspaceConfigHttpFixture() {
         publish(id, "initial");
         if (holdNextAck) {
           holdNextAck = false;
-          await new Promise<void>((resolve) => { pendingAcks.set(id, resolve); });
+          await new Promise<void>((resolve) => {
+            pendingAcks.set(id, resolve);
+          });
         }
         return Response.json({
           result: protocol.v4WorkspaceConfigSubscribeResultSchema.parse({

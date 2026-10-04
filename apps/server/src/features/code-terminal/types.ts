@@ -1,6 +1,9 @@
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { TerminalShellId } from "../code-git/terminal-runner.js";
-import type { ProcessExit, TerminalOutputCursor } from "../process-sandbox/types.js";
+import type {
+  ProcessExit,
+  TerminalOutputCursor,
+} from "../process-sandbox/types.js";
 
 export interface TerminalSubscriber {
   output(data: string, cursor: TerminalOutputCursor): Promise<void>;
@@ -43,7 +46,12 @@ export interface CodeTerminalService {
     rows: number,
   ): Promise<void>;
   /** 创建只保留首帧；消费方装好 data/exit 监听后显式激活。 */
-  subscribe(actor: AuthenticatedUser, connectionId: string, id: string, subscriber: TerminalSubscriber): Promise<void>;
+  subscribe(
+    actor: AuthenticatedUser,
+    connectionId: string,
+    id: string,
+    subscriber: TerminalSubscriber,
+  ): Promise<void>;
   stop(
     actor: AuthenticatedUser,
     connectionId: string,

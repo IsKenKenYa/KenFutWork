@@ -8,13 +8,14 @@ import * as googleImage from "./google-image/index.js";
 import * as metaso from "./metaso/index.js";
 import * as openaiCompatible from "./openai-compatible/index.js";
 import * as replicate from "./replicate/index.js";
+import { validateInstanceModelExtraBody } from "./request-options.js";
 import type {
   InstanceCredentials,
   InstanceImageAdapterOptions,
   InstanceVideoAdapterOptions,
 } from "./types.js";
 import * as volces from "./volces/index.js";
-import { validateInstanceModelExtraBody } from "./request-options.js";
+
 export { validateInstanceModelExtraBody } from "./request-options.js";
 
 /**

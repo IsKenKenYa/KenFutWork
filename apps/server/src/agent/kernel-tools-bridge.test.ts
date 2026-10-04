@@ -157,14 +157,52 @@ describe("kernelToolToStructuredTool（模型可调用桥）", () => {
   });
 
   it("原执行canonical与模型内容不混入独立UI展示，artifact保完整结果与display", async () => {
-    const canonical = { type: "update", filePath: "/work/a.ts", content: "new\n", originalFile: "old\n", version: "v2" };
+    const canonical = {
+      type: "update",
+      filePath: "/work/a.ts",
+      content: "new\n",
+      originalFile: "old\n",
+      version: "v2",
+    };
     const content = [{ type: "text", text: "已修改a.ts" }];
-    const display = { kind: "file_diff", filePath: canonical.filePath, additions: 1, deletions: 1, structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ["-old", "+new"] }] };
-    const output = { canonicalOutput: canonical, modelContent: content, display };
+    const display = {
+      kind: "file_diff",
+      filePath: canonical.filePath,
+      additions: 1,
+      deletions: 1,
+      structuredPatch: [
+        {
+          oldStart: 1,
+          oldLines: 1,
+          newStart: 1,
+          newLines: 1,
+          lines: ["-old", "+new"],
+        },
+      ],
+    };
+    const output = {
+      canonicalOutput: canonical,
+      modelContent: content,
+      display,
+    };
     const before = structuredClone(output);
-    const bridged = kernelToolToStructuredTool({ name: "Edit", description: "修改", scope: "code", parameters: { type: "object" }, execute: async () => output });
-    const message = await bridged.invoke({ type: "tool_call", name: "Edit", id: "display-separate", args: {} });
-    expect(message).toMatchObject({ content, artifact: { canonicalOutput: canonical, display } });
+    const bridged = kernelToolToStructuredTool({
+      name: "Edit",
+      description: "修改",
+      scope: "code",
+      parameters: { type: "object" },
+      execute: async () => output,
+    });
+    const message = await bridged.invoke({
+      type: "tool_call",
+      name: "Edit",
+      id: "display-separate",
+      args: {},
+    });
+    expect(message).toMatchObject({
+      content,
+      artifact: { canonicalOutput: canonical, display },
+    });
     expect(output).toEqual(before);
     expect(JSON.stringify(message.content)).not.toContain("structuredPatch");
     expect(message.artifact.canonicalOutput).not.toHaveProperty("display");

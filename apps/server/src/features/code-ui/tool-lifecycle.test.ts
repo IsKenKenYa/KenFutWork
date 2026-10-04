@@ -4,33 +4,78 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { adaptDeepAgentStream } from "../../agent/stream-adapter.js";
-import { createToolLifecycleMiddleware } from "./tool-lifecycle.js";
 import { AgentRunEventBus, ToolRegistryImpl } from "../../kernel/context.js";
+import { createToolLifecycleMiddleware } from "./tool-lifecycle.js";
 
 describe("Agent 公共工具生命周期", () => {
   it("公开工具事件只投影envKeys，执行仍得到原始环境，投影不能改写调用", async () => {
     const args = { name: "local", env: { TASK_SECRET: "private-value" } };
     let executed: unknown;
     const registry = new ToolRegistryImpl(new AgentRunEventBus());
-    registry.register({ name: "install_mcp_server", description: "安装Task MCP", scope: "code", parameters: {},
+    registry.register({
+      name: "install_mcp_server",
+      description: "安装Task MCP",
+      scope: "code",
+      parameters: {},
       projectArguments: (input) => {
-        const env = input.env as Record<string, string>; env.TASK_SECRET = "projection-mutation";
+        const env = input.env as Record<string, string>;
+        env.TASK_SECRET = "projection-mutation";
         return { name: input.name, envKeys: Object.keys(env) };
-      }, execute: async () => "unused",
+      },
+      execute: async () => "unused",
     });
-    const install = tool(async (input) => { executed = structuredClone(input); return "installed"; }, {
-      name: "install_mcp_server", description: "安装测试MCP", schema: z.object({ name: z.string(), env: z.record(z.string(), z.string()) }),
-    });
-    const agent = createAgent({ model: new FakeToolCallingModel({ toolCalls: [[{ id: "mcp-call", name: "install_mcp_server", args }], []] }), tools: [install],
-      middleware: [createToolLifecycleMiddleware({}, { registry, resolution: { preset: "code", backendFactory: () => { throw new Error("display不得创建backend"); } }, execution: {} })],
+    const install = tool(
+      async (input) => {
+        executed = structuredClone(input);
+        return "installed";
+      },
+      {
+        name: "install_mcp_server",
+        description: "安装测试MCP",
+        schema: z.object({
+          name: z.string(),
+          env: z.record(z.string(), z.string()),
+        }),
+      },
+    );
+    const agent = createAgent({
+      model: new FakeToolCallingModel({
+        toolCalls: [[{ id: "mcp-call", name: "install_mcp_server", args }], []],
+      }),
+      tools: [install],
+      middleware: [
+        createToolLifecycleMiddleware(
+          {},
+          {
+            registry,
+            resolution: {
+              preset: "code",
+              backendFactory: () => {
+                throw new Error("display不得创建backend");
+              },
+            },
+            execution: {},
+          },
+        ),
+      ],
     });
     const events = [];
-    for await (const event of adaptDeepAgentStream({ conversationId: "c", sessionId: "s", runId: "r", canonicalToolEvents: true,
-      stream: agent.streamEvents({ messages: [new HumanMessage("安装MCP")] }, { version: "v2" }),
-    })) events.push(event);
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "c",
+      sessionId: "s",
+      runId: "r",
+      canonicalToolEvents: true,
+      stream: agent.streamEvents(
+        { messages: [new HumanMessage("安装MCP")] },
+        { version: "v2" },
+      ),
+    }))
+      events.push(event);
     expect(executed).toEqual(args);
     expect(args.env.TASK_SECRET).toBe("private-value");
-    expect(events.find((event) => event.type === "tool.started")).toMatchObject({ input: { name: "local", envKeys: ["TASK_SECRET"] } });
+    expect(events.find((event) => event.type === "tool.started")).toMatchObject(
+      { input: { name: "local", envKeys: ["TASK_SECRET"] } },
+    );
     expect(JSON.stringify(events)).not.toContain("private-value");
     expect(JSON.stringify(events)).not.toContain("projection-mutation");
   });

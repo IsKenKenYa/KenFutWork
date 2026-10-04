@@ -23,11 +23,17 @@ import type {
 } from "../features/auth/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { ChatService } from "../features/chat/chat-service.js";
-import type { ThreadService, SessionThreadBinding } from "../features/chat/thread-service.js";
-import { ExecutionScopeError, type ExecutionScopes } from "../features/execution/scope-service.js";
-import type { CodeUiService } from "../features/code-ui/service.js";
+import type {
+  SessionThreadBinding,
+  ThreadService,
+} from "../features/chat/thread-service.js";
 import { chunkForFrames } from "../features/code-git/terminal-session.js";
 import type { CodeTerminalService } from "../features/code-terminal/types.js";
+import type { CodeUiService } from "../features/code-ui/service.js";
+import {
+  ExecutionScopeError,
+  type ExecutionScopes,
+} from "../features/execution/scope-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import { createAssistantBlockCollector } from "./assistant-block-collector.js";
 import type { ConnectionManager } from "./connection-manager.js";
@@ -175,37 +181,81 @@ async function authenticateAndBind(
 
   // terminal owner采用本次socket独立身份；重连复用的transport ID不能接管旧PTY。
   const terminalConnectionId = randomUUID();
-  const terminalOwner = options.viewerService?.resolveWorkspace(authenticatedUser);
+  const terminalOwner =
+    options.viewerService?.resolveWorkspace(authenticatedUser);
   const sendToClient = (message: Record<string, unknown>) => {
     if (socket.readyState === 1) socket.send(JSON.stringify(message));
   };
-  const sendTerminal = (message: Record<string, unknown>): Promise<void> => new Promise((resolve, reject) => {
-    if (socket.readyState !== 1) { resolve(); return; }
-    socket.send(JSON.stringify(message), (error) => error ? reject(error) : resolve());
-  });
-  const terminalFailure = (id: string, error: unknown) => sendToClient({
-    type: "terminal.exit", sessionId: id, exitCode: null,
-    reason: error instanceof Error ? error.message : String(error),
-  });
+  const sendTerminal = (message: Record<string, unknown>): Promise<void> =>
+    new Promise((resolve, reject) => {
+      if (socket.readyState !== 1) {
+        resolve();
+        return;
+      }
+      socket.send(JSON.stringify(message), (error) =>
+        error ? reject(error) : resolve(),
+      );
+    });
+  const terminalFailure = (id: string, error: unknown) =>
+    sendToClient({
+      type: "terminal.exit",
+      sessionId: id,
+      exitCode: null,
+      reason: error instanceof Error ? error.message : String(error),
+    });
   const startTerminal = async (payload: WsTerminalStartCommand["payload"]) => {
     const terminals = options.codeTerminal;
-    if (!terminals || !terminalOwner) throw new Error("服务端没有装配Task终端能力。");
+    if (!terminals || !terminalOwner)
+      throw new Error("服务端没有装配Task终端能力。");
     await terminalOwner;
     if (socket.readyState !== 1) throw new Error("终端连接已经关闭。");
-    const opened = await terminals.create(authenticatedUser, terminalConnectionId, payload);
-    await sendTerminal({ type: "command.ack", action: "terminal.start", payload: {
-      sessionId: opened.id, shell: opened.shell, executable: opened.executable, tty: opened.tty, ...(opened.reused ? { reused: true } : {}),
-    } });
-    await terminals.subscribe(authenticatedUser, terminalConnectionId, opened.id, {
-      output: async (chunk) => {
-        for (const data of chunkForFrames(chunk)) await sendTerminal({ type: "terminal.output", sessionId: opened.id, data });
+    const opened = await terminals.create(
+      authenticatedUser,
+      terminalConnectionId,
+      payload,
+    );
+    await sendTerminal({
+      type: "command.ack",
+      action: "terminal.start",
+      payload: {
+        sessionId: opened.id,
+        shell: opened.shell,
+        executable: opened.executable,
+        tty: opened.tty,
+        ...(opened.reused ? { reused: true } : {}),
       },
-      exit: (exit) => sendTerminal({ type: "terminal.exit", sessionId: opened.id, exitCode: exit.exitCode, ...(exit.reason ? { reason: exit.reason } : {}) }),
     });
+    await terminals.subscribe(
+      authenticatedUser,
+      terminalConnectionId,
+      opened.id,
+      {
+        output: async (chunk) => {
+          for (const data of chunkForFrames(chunk))
+            await sendTerminal({
+              type: "terminal.output",
+              sessionId: opened.id,
+              data,
+            });
+        },
+        exit: (exit) =>
+          sendTerminal({
+            type: "terminal.exit",
+            sessionId: opened.id,
+            exitCode: exit.exitCode,
+            ...(exit.reason ? { reason: exit.reason } : {}),
+          }),
+      },
+    );
   };
   const closeTerminals = async () => {
     const workspace = await terminalOwner;
-    if (workspace) await options.codeTerminal?.closeConnection(workspace.id, terminalConnectionId, "终端连接断开");
+    if (workspace)
+      await options.codeTerminal?.closeConnection(
+        workspace.id,
+        terminalConnectionId,
+        "终端连接断开",
+      );
   };
 
   const onMessage = (raw: Buffer | string) => {
@@ -287,7 +337,12 @@ async function authenticateAndBind(
           connectionManager,
           options,
         ).catch((error: unknown) => {
-          socket.send(JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error) }));
+          socket.send(
+            JSON.stringify({
+              type: "error",
+              message: error instanceof Error ? error.message : String(error),
+            }),
+          );
         });
       } else if (msg.action === "agent.cancel") {
         log.info("run_cancel", {
@@ -339,13 +394,43 @@ async function authenticateAndBind(
           });
         }
       } else if (msg.action === "terminal.start") {
-        void startTerminal(msg.payload).catch((error: unknown) => terminalFailure(msg.payload.sessionId, error));
+        void startTerminal(msg.payload).catch((error: unknown) =>
+          terminalFailure(msg.payload.sessionId, error),
+        );
       } else if (msg.action === "terminal.input") {
-        void options.codeTerminal?.write(authenticatedUser, terminalConnectionId, msg.payload.sessionId, msg.payload.data).catch((error: unknown) => terminalFailure(msg.payload.sessionId, error));
+        void options.codeTerminal
+          ?.write(
+            authenticatedUser,
+            terminalConnectionId,
+            msg.payload.sessionId,
+            msg.payload.data,
+          )
+          .catch((error: unknown) =>
+            terminalFailure(msg.payload.sessionId, error),
+          );
       } else if (msg.action === "terminal.resize") {
-        void options.codeTerminal?.resize(authenticatedUser, terminalConnectionId, msg.payload.sessionId, msg.payload.cols, msg.payload.rows).catch((error: unknown) => terminalFailure(msg.payload.sessionId, error));
+        void options.codeTerminal
+          ?.resize(
+            authenticatedUser,
+            terminalConnectionId,
+            msg.payload.sessionId,
+            msg.payload.cols,
+            msg.payload.rows,
+          )
+          .catch((error: unknown) =>
+            terminalFailure(msg.payload.sessionId, error),
+          );
       } else if (msg.action === "terminal.stop") {
-        void options.codeTerminal?.stop(authenticatedUser, terminalConnectionId, msg.payload.sessionId, "客户端关闭终端").catch((error: unknown) => terminalFailure(msg.payload.sessionId, error));
+        void options.codeTerminal
+          ?.stop(
+            authenticatedUser,
+            terminalConnectionId,
+            msg.payload.sessionId,
+            "客户端关闭终端",
+          )
+          .catch((error: unknown) =>
+            terminalFailure(msg.payload.sessionId, error),
+          );
       }
     }
   };
@@ -367,7 +452,11 @@ async function authenticateAndBind(
   socket.on("close", () => {
     log.info("disconnected", { userId: authenticatedUser.id, connectionId });
     clearInterval(pingInterval);
-    void closeTerminals().catch((error: unknown) => log.warn("terminal_cleanup_unconfirmed", { error: error instanceof Error ? error.message : String(error) }));
+    void closeTerminals().catch((error: unknown) =>
+      log.warn("terminal_cleanup_unconfirmed", {
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
     // 带 socket 身份：客户端重连复用 connectionId，迟到的旧 socket close 不得删掉新注册
     connectionManager.remove(connectionId, socket);
   });
@@ -464,13 +553,45 @@ async function handleRunCommand(
   ]);
   const threadId = sessionBinding?.threadId;
   const codeMode = sessionBinding?.mode === "code" || payload.preset === "code";
-  if (sessionBinding && payload.preset && payload.preset !== sessionBinding.mode) throw new ExecutionScopeError("mode_mismatch", "Run 不能改变会话所属模式。", 409);
-  if (payload.projectId && sessionBinding?.projectId !== payload.projectId) throw new ExecutionScopeError("scope_mismatch", "Run 的项目与持久 Task 不一致。", 409);
-  if (codeMode && (payload.canvasId || (payload.taskId && payload.taskId !== payload.sessionId))) throw new ExecutionScopeError("scope_mismatch", "Code Run 只能使用所属 Task 工作域，不能传 Canvas 或另一 Task。", 400);
+  if (
+    sessionBinding &&
+    payload.preset &&
+    payload.preset !== sessionBinding.mode
+  )
+    throw new ExecutionScopeError(
+      "mode_mismatch",
+      "Run 不能改变会话所属模式。",
+      409,
+    );
+  if (payload.projectId && sessionBinding?.projectId !== payload.projectId)
+    throw new ExecutionScopeError(
+      "scope_mismatch",
+      "Run 的项目与持久 Task 不一致。",
+      409,
+    );
+  if (
+    codeMode &&
+    (payload.canvasId ||
+      (payload.taskId && payload.taskId !== payload.sessionId))
+  )
+    throw new ExecutionScopeError(
+      "scope_mismatch",
+      "Code Run 只能使用所属 Task 工作域，不能传 Canvas 或另一 Task。",
+      400,
+    );
   const scopeHandle = codeMode
     ? services.executionScopes
-      ? await services.executionScopes.openTask(authenticatedUser, payload.sessionId)
-      : (() => { throw new ExecutionScopeError("scope_unavailable", "Code 执行工作域未装配。", 503); })()
+      ? await services.executionScopes.openTask(
+          authenticatedUser,
+          payload.sessionId,
+        )
+      : (() => {
+          throw new ExecutionScopeError(
+            "scope_unavailable",
+            "Code 执行工作域未装配。",
+            503,
+          );
+        })()
     : undefined;
 
   /**
@@ -480,11 +601,13 @@ async function handleRunCommand(
    * 直接落盘就是 `tmp/sandbox/<会话UUID>`，与服务端懒供给的「Code 工作台」画布对不上。
    * 这里只在「客户端发的就是会话作用域」时改用会话的真实画布；正常项目作用域不动。
    */
-  const sandboxScopeId = scopeHandle ? undefined : resolveSandboxScopeId({
-    conversationId: payload.conversationId,
-    requestedCanvasId: payload.canvasId ?? payload.conversationId,
-    sessionCanvasId: sessionBinding?.canvasId,
-  });
+  const sandboxScopeId = scopeHandle
+    ? undefined
+    : resolveSandboxScopeId({
+        conversationId: payload.conversationId,
+        requestedCanvasId: payload.canvasId ?? payload.conversationId,
+        sessionCanvasId: sessionBinding?.canvasId,
+      });
 
   // Client-provided model takes priority over workspace default
   const resolvedModel = payload.model ?? model;
@@ -548,7 +671,9 @@ async function handleRunCommand(
   }
 
   // 共享传输的 Map key：Code 显式 Task 前缀，不是 Canvas UUID，也不创建隐藏画布。
-  const canvasId = scopeHandle ? `task:${scopeHandle.describe().taskId}` : payload.canvasId ?? sessionBinding?.canvasId ?? payload.conversationId;
+  const canvasId = scopeHandle
+    ? `task:${scopeHandle.describe().taskId}`
+    : (payload.canvasId ?? sessionBinding?.canvasId ?? payload.conversationId);
 
   /**
    * 起一次尝试：建 run + 落元数据 + 绑定画布 + 发 ack + 标活跃。
@@ -558,8 +683,19 @@ async function handleRunCommand(
     const acceptedRunId = randomUUID();
     const eventSink = scopeHandle
       ? services.codeUi
-        ? await services.codeUi.admitExternalRun(authenticatedUser, scopeHandle, acceptedRunId, payload.prompt)
-        : (() => { throw new ExecutionScopeError("admission_unavailable", "Code Task 前台 admission 未装配，不能绕过 Task 并发控制。", 503); })()
+        ? await services.codeUi.admitExternalRun(
+            authenticatedUser,
+            scopeHandle,
+            acceptedRunId,
+            payload.prompt,
+          )
+        : (() => {
+            throw new ExecutionScopeError(
+              "admission_unavailable",
+              "Code Task 前台 admission 未装配，不能绕过 Task 并发控制。",
+              503,
+            );
+          })()
       : undefined;
     const response = agentRuns.createRun(payload, {
       runId: acceptedRunId,
@@ -720,7 +856,11 @@ async function handleRunCommand(
       });
       if (!decision.retry) {
         // ── Server-side assistant message persistence ──
-        if (!scopeHandle && services.chatService && blockCollector.hasVisibleContent) {
+        if (
+          !scopeHandle &&
+          services.chatService &&
+          blockCollector.hasVisibleContent
+        ) {
           try {
             await services.chatService.createMessage(
               authenticatedUser,

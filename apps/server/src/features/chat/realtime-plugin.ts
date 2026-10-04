@@ -6,19 +6,39 @@ import { registerWsRoute } from "../../ws/handler.js";
 export function createRealtimePlugin(): PluginDefinition {
   return {
     name: "chat:realtime",
-    inject: ["ws", "agentRuns", "agentModes", "agentRunMetadata", "auth", "chat", "codeTerminal", "codeUi", "executionScopes", "settings", "threads", "viewer"],
+    inject: [
+      "ws",
+      "agentRuns",
+      "agentModes",
+      "agentRunMetadata",
+      "auth",
+      "chat",
+      "codeTerminal",
+      "codeUi",
+      "executionScopes",
+      "settings",
+      "threads",
+      "viewer",
+    ],
     apply() {},
     mounted(ctx) {
       void ctx.app.register(async (instance) => {
         await instance.register(websocket);
         const { connectionManager, eventBuffer } = ctx.get("ws");
         await registerWsRoute(instance, {
-          agentRuns: ctx.get("agentRuns"), agentModes: ctx.get("agentModes"),
-          agentRunMetadataService: ctx.get("agentRunMetadata"), auth: ctx.get("auth"),
-          chatService: ctx.get("chat"), codeTerminal: ctx.get("codeTerminal"),
-          executionScopes: ctx.get("executionScopes"), connectionManager, eventBuffer,
+          agentRuns: ctx.get("agentRuns"),
+          agentModes: ctx.get("agentModes"),
+          agentRunMetadataService: ctx.get("agentRunMetadata"),
+          auth: ctx.get("auth"),
+          chatService: ctx.get("chat"),
+          codeTerminal: ctx.get("codeTerminal"),
+          executionScopes: ctx.get("executionScopes"),
+          connectionManager,
+          eventBuffer,
           codeUi: ctx.get("codeUi"),
-          settingsService: ctx.get("settings"), threadService: ctx.get("threads"), viewerService: ctx.get("viewer"),
+          settingsService: ctx.get("settings"),
+          threadService: ctx.get("threads"),
+          viewerService: ctx.get("viewer"),
         });
       });
     },

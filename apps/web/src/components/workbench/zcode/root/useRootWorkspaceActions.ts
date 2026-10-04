@@ -457,6 +457,7 @@ export function useRootWorkspaceActions({
       platform,
       requestConfirmation,
       services.settingService,
+      setWorkspaceActionError,
       startDraftInWorkspace,
       supportsSettings,
       tabStoreApi,

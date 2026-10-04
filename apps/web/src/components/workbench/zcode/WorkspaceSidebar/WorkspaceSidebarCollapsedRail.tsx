@@ -1,5 +1,5 @@
 import { PanelLeftOpen } from "lucide-react";
-import appLogoUrl from "@zui/assets/provider-icons/logo-zai.svg";
+import appLogoUrl from "@zui/assets/kenfutwork-mark.png";
 import { Button } from "@zui/components/ui/button.js";
 import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
@@ -34,7 +34,7 @@ export function WorkspaceSidebarCollapsedRail({
             >
               <img
                 src={appLogoUrl}
-                alt="ZCode"
+                alt="KenFutWork"
                 className="size-5 transition-opacity group-hover:opacity-0"
                 draggable={false}
               />

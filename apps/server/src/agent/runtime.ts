@@ -21,25 +21,26 @@ import {
 } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { HumanMessage } from "@langchain/core/messages";
-import type { TrustedCodeInput } from "../features/code-ui/attachments/input-types.js";
-import { codeInputContent } from "../features/code-ui/attachments/model-input.js";
-import type { FileLimits } from "../features/code-tools/file-types.js";
 import type { ServerEnv } from "../config/env.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
-import type { AgentTurnBoundary, AgentTurnBoundaryPhase } from "../features/agent-runs/types.js";
-import type { TurnBoundaryCapture } from "../features/checkpoints/checkpoint-service.js";
-import { captureAgentTurnBoundaryFacts, type AgentTurnBoundaryFacts } from "./turn-boundaries.js";
-import { streamCompactOperation } from "./compact-operation.js";
+import type {
+  AgentTurnBoundary,
+  AgentTurnBoundaryPhase,
+} from "../features/agent-runs/types.js";
 import type { AuthenticatedUser } from "../features/auth/types.js";
 import type { BlobStore } from "../features/blob/types.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
 import type { CanvasRepository } from "../features/canvas/repository.js";
 import { buildCanvasSummaryForContext } from "../features/canvas/tools/inspect-canvas.js";
+import type { TurnBoundaryCapture } from "../features/checkpoints/checkpoint-service.js";
+import type { FileLimits } from "../features/code-tools/file-types.js";
 import type {
   CodeProjectContext,
   CodeProjectContextLimits,
 } from "../features/code-tools/project-instructions-types.js";
+import type { TrustedCodeInput } from "../features/code-ui/attachments/input-types.js";
+import { codeInputContent } from "../features/code-ui/attachments/model-input.js";
 import type { CreditService } from "../features/credits/credit-service.js";
 import {
   type TierGuard,
@@ -74,6 +75,7 @@ import type {
   AvailableModel,
   AvailableVideoModel,
 } from "../generation/types.js";
+import { publicToolArguments } from "../kernel/tool-arguments.js";
 import type {
   PromptCompositionContext,
   SystemPromptRegistry,
@@ -82,6 +84,7 @@ import type {
 } from "../kernel/types.js";
 import { instanceHeadersOption } from "../providers/instance-headers.js";
 import { resolveInstanceChatModel } from "../providers/resolve.js";
+import type { ModelInvocationSnapshot } from "../providers/types.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
@@ -91,6 +94,7 @@ import {
   type BackgroundTaskRegistry,
   createBackgroundTaskRegistry,
 } from "./background-tasks.js";
+import { streamCompactOperation } from "./compact-operation.js";
 import type { ToolGate, ToolGateHooks } from "./deep-agent.js";
 import {
   createDefaultModelSpecifier,
@@ -101,8 +105,6 @@ import {
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { measureTools } from "./prompt-composition.js";
 import type { AgentRunExtension } from "./run-extension.js";
-import type { ModelInvocationSnapshot } from "../providers/types.js";
-import { publicToolArguments } from "../kernel/tool-arguments.js";
 import { withBoundWorkDir } from "./sandbox-dir.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
 import { formatTaskNotificationsXml } from "./task-notifications.js";
@@ -110,10 +112,14 @@ import {
   createToolDenialTracker,
   type ToolDenialRecord,
 } from "./tool-denial.js";
+import {
+  type AgentTurnBoundaryFacts,
+  captureAgentTurnBoundaryFacts,
+} from "./turn-boundaries.js";
 import type {
   WorkspaceSkillEntry,
-  WorkspaceSkillsLoader,
   WorkspaceSkillsByWorkspaceLoader,
+  WorkspaceSkillsLoader,
 } from "./workspace-skills.js";
 /**
  * Build the text portion of a user message, appending <input_images> XML
@@ -213,7 +219,10 @@ export function buildUserMessage(
   if (videoGenerationPreferenceXml)
     xmlBlocks.push(videoGenerationPreferenceXml);
 
-  const mentionXmlBlocks = buildMentionXmlBlocks(mentions, workspaceSkillSource);
+  const mentionXmlBlocks = buildMentionXmlBlocks(
+    mentions,
+    workspaceSkillSource,
+  );
   xmlBlocks.push(...mentionXmlBlocks);
 
   if (!xmlBlocks.length) return { text: prompt };
@@ -333,15 +342,13 @@ function buildMentionXmlBlocks(
   );
   if (mentionedSkills.length > 0) {
     const skillXml = mentionedSkills
-      .map(
-        (mention, i) => {
-          const readInstruction =
-            workspaceSkillSource === "database"
-              ? `Call use_skill with name ${JSON.stringify(mention.slug)} for the installed skill instructions. Attached resources use use_skill resource_path; this DB installation is not a Native Read filesystem path.`
-              : `Read \`/workspace-skills/${mention.slug}/SKILL.md\` for full instructions and follow them.`;
-          return `<skill index="${i + 1}" id="${escapeXmlAttribute(mention.id)}" name="${escapeXmlAttribute(mention.label)}" slug="${escapeXmlAttribute(mention.slug)}">\nThe user explicitly requested this skill. ${readInstruction}\n</skill>`;
-        },
-      )
+      .map((mention, i) => {
+        const readInstruction =
+          workspaceSkillSource === "database"
+            ? `Call use_skill with name ${JSON.stringify(mention.slug)} for the installed skill instructions. Attached resources use use_skill resource_path; this DB installation is not a Native Read filesystem path.`
+            : `Read \`/workspace-skills/${mention.slug}/SKILL.md\` for full instructions and follow them.`;
+        return `<skill index="${i + 1}" id="${escapeXmlAttribute(mention.id)}" name="${escapeXmlAttribute(mention.label)}" slug="${escapeXmlAttribute(mention.slug)}">\nThe user explicitly requested this skill. ${readInstruction}\n</skill>`;
+      })
       .join("\n  ");
     xmlBlocks.push(
       `<human_skill_mentions count="${mentionedSkills.length}">\n  ${skillXml}\n</human_skill_mentions>`,
@@ -383,12 +390,20 @@ type RuntimeRunStatus =
 type RuntimeRunRecord = RunCreateRequest & {
   acceptedCancellation?: Promise<void>;
   branchGeneration?: number;
-  turnBoundaryWrites?: Partial<Record<AgentTurnBoundaryPhase, { boundary: AgentTurnBoundary; persisted: boolean }>>;
+  turnBoundaryWrites?: Partial<
+    Record<
+      AgentTurnBoundaryPhase,
+      { boundary: AgentTurnBoundary; persisted: boolean }
+    >
+  >;
   inputIdentity?: { clientId: string; sourceCommandId: string };
   inputOrigin?: "userInput" | "backgroundResult" | "controlOperation";
   operation?: { kind: "compact" };
   codeInputs?: TrustedCodeInput[];
-  projectToolInput?: (name: string, args: Record<string, unknown>) => Record<string, unknown>;
+  projectToolInput?: (
+    name: string,
+    args: Record<string, unknown>,
+  ) => Record<string, unknown>;
   modelInvocation?: ModelInvocationSnapshot;
   approvalCeiling?: import("../features/permissions/approval-types.js").CodeApprovalMode;
   delegationDepth?: number;
@@ -521,7 +536,13 @@ type CreateAgentRuntimeOptions = {
 
 function inputMessageIdFor(run: RuntimeRunRecord): string {
   return run.inputIdentity
-    ? JSON.stringify(["code-input", run.scopeHandle?.describe().taskId ?? run.sessionId, run.inputOrigin ?? "userInput", run.inputIdentity.clientId, run.inputIdentity.sourceCommandId])
+    ? JSON.stringify([
+        "code-input",
+        run.scopeHandle?.describe().taskId ?? run.sessionId,
+        run.inputOrigin ?? "userInput",
+        run.inputIdentity.clientId,
+        run.inputIdentity.sourceCommandId,
+      ])
     : JSON.stringify(["run-input", run.runId, run.inputOrigin ?? "userInput"]);
 }
 
@@ -547,39 +568,65 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
   const runs = new Map<string, RuntimeRunRecord>();
   const runIdFactory = options.runIdFactory ?? (() => randomUUID());
 
-  const persistBoundary = async (run: RuntimeRunRecord, phase: AgentTurnBoundaryPhase, facts: AgentTurnBoundaryFacts) => {
-    if (run.scopeHandle?.role !== "main" || !run.threadId || !options.agentRunMetadataService?.recordTurnBoundary) return;
-    const writes = run.turnBoundaryWrites ??= {};
+  const persistBoundary = async (
+    run: RuntimeRunRecord,
+    phase: AgentTurnBoundaryPhase,
+    facts: AgentTurnBoundaryFacts,
+  ) => {
+    if (
+      run.scopeHandle?.role !== "main" ||
+      !run.threadId ||
+      !options.agentRunMetadataService?.recordTurnBoundary
+    )
+      return;
+    run.turnBoundaryWrites ??= {};
+    const writes = run.turnBoundaryWrites;
     const scope = run.scopeHandle.describe();
-    const write = writes[phase] ??= {
+    writes[phase] ??= {
       persisted: false,
       boundary: {
-        workspaceId: scope.workspaceId, projectId: scope.projectId, taskId: scope.taskId,
-        runId: run.runId, threadId: run.threadId, phase,
-        scopeGeneration: scope.generation, branchGeneration: run.branchGeneration ?? null,
+        workspaceId: scope.workspaceId,
+        projectId: scope.projectId,
+        taskId: scope.taskId,
+        runId: run.runId,
+        threadId: run.threadId,
+        phase,
+        scopeGeneration: scope.generation,
+        branchGeneration: run.branchGeneration ?? null,
         inputIdentity: run.inputIdentity ? { ...run.inputIdentity } : null,
-        inputOrigin: run.inputOrigin ?? "userInput", inputMessageId: run.operation ? null : inputMessageIdFor(run),
+        inputOrigin: run.inputOrigin ?? "userInput",
+        inputMessageId: run.operation ? null : inputMessageIdFor(run),
         ...(run.operation ? { operation: { ...run.operation } } : {}),
         ...structuredClone(facts),
       },
     };
+    const write = writes[phase];
     if (write.persisted) return;
     try {
       await options.agentRunMetadataService.recordTurnBoundary(write.boundary);
       write.persisted = true;
     } catch {
-      console.warn(`[turn-boundary] ${phase}持久边界保存失败，历史控制不可用。`);
+      console.warn(
+        `[turn-boundary] ${phase}持久边界保存失败，历史控制不可用。`,
+      );
     }
   };
 
-  const settleAcceptedCancellation = (run: RuntimeRunRecord): Promise<void> | undefined => {
+  const settleAcceptedCancellation = (
+    run: RuntimeRunRecord,
+  ): Promise<void> | undefined => {
     if (run.consumed) return;
     run.status = "canceled";
     run.acceptedCancellation ??= (async () => {
       await persistBoundary(run, "pre", unstartedTurnFacts);
       await persistBoundary(run, "post", unstartedTurnFacts);
       try {
-        await updatePersistedRunStatus(options.agentRunMetadataService, run, "canceled", { completedAt: now() });
+        await updatePersistedRunStatus(
+          options.agentRunMetadataService,
+          run,
+          "canceled",
+          { completedAt: now() },
+        );
       } catch {
         console.warn("[agent-runtime] 未启动Run的取消元数据保存失败。");
       }
@@ -725,16 +772,27 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       runs.set(runId, {
         ...runInput,
-        ...(runOptions?.operation ? { operation: { ...runOptions.operation } } : {}),        ...(runOptions?.inputIdentity ? { inputIdentity: { ...runOptions.inputIdentity } } : {}),
-        ...(runOptions?.inputOrigin ? { inputOrigin: runOptions.inputOrigin } : {}),
+        ...(runOptions?.operation
+          ? { operation: { ...runOptions.operation } }
+          : {}),
+        ...(runOptions?.inputIdentity
+          ? { inputIdentity: { ...runOptions.inputIdentity } }
+          : {}),
+        ...(runOptions?.inputOrigin
+          ? { inputOrigin: runOptions.inputOrigin }
+          : {}),
         ...(runOptions?.accessToken
           ? { accessToken: runOptions.accessToken }
           : {}),
         consumed: false,
         controller: new AbortController(),
         ...(runOptions?.model ? { modelOverride: runOptions.model } : {}),
-        ...(runOptions?.modelInvocation ? { modelInvocation: structuredClone(runOptions.modelInvocation) } : {}),
-        ...(runOptions?.codeInputs ? { codeInputs: structuredClone(runOptions.codeInputs) } : {}),
+        ...(runOptions?.modelInvocation
+          ? { modelInvocation: structuredClone(runOptions.modelInvocation) }
+          : {}),
+        ...(runOptions?.codeInputs
+          ? { codeInputs: structuredClone(runOptions.codeInputs) }
+          : {}),
         ...(runOptions?.scopeHandle
           ? { scopeHandle: runOptions.scopeHandle }
           : {}),
@@ -1474,11 +1532,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         if (run.scopeHandle?.role !== "main") return;
         const scope = run.scopeHandle;
         const actor = taskWorkContext?.actor;
-        const hook = phase === "pre" ? options.checkpointHooks?.beforeTurn : options.checkpointHooks?.afterTurn;
+        const hook =
+          phase === "pre"
+            ? options.checkpointHooks?.beforeTurn
+            : options.checkpointHooks?.afterTurn;
         const facts = await captureAgentTurnBoundaryFacts({
           contextHistory: agent?.contextHistory,
           threadId: run.threadId,
-          captureFiles: hook && actor ? () => hook({ scope, actor, runId }) : undefined,
+          captureFiles:
+            hook && actor ? () => hook({ scope, actor, runId }) : undefined,
         });
         await persistBoundary(run, phase, facts);
       };
@@ -1546,15 +1608,34 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 (m) => m.id === instanceSpec.model,
               );
               const modelInvocation = run.modelInvocation;
-              if (modelInvocation && (modelInvocation.providerId !== credentials.instanceId || modelInvocation.modelId !== instanceSpec.model || modelInvocation.configRevision !== credentials.configRevision)) throw new Error("本轮供应商或模型配置已改变，请重新确认模型选择后发送。");
-              modelCapabilities = modelInvocation?.inputCapabilities ?? resolveModelInputCapabilities(modelRow ?? {});
+              if (
+                modelInvocation &&
+                (modelInvocation.providerId !== credentials.instanceId ||
+                  modelInvocation.modelId !== instanceSpec.model ||
+                  modelInvocation.configRevision !== credentials.configRevision)
+              )
+                throw new Error(
+                  "本轮供应商或模型配置已改变，请重新确认模型选择后发送。",
+                );
+              modelCapabilities =
+                modelInvocation?.inputCapabilities ??
+                resolveModelInputCapabilities(modelRow ?? {});
               resolvedModel = resolveInstanceChatModel(
                 credentials.protocol,
                 instanceSpec.model,
                 {
                   apiKey: credentials.apiKey,
-                  ...((modelInvocation?.useResponsesApi ?? credentials.useResponsesApi) !== undefined ? { useResponsesApi: modelInvocation?.useResponsesApi ?? credentials.useResponsesApi } : {}),
-                  ...(credentials.responsesApi !== undefined ? { responsesApi: credentials.responsesApi } : {}),
+                  ...((modelInvocation?.useResponsesApi ??
+                    credentials.useResponsesApi) !== undefined
+                    ? {
+                        useResponsesApi:
+                          modelInvocation?.useResponsesApi ??
+                          credentials.useResponsesApi,
+                      }
+                    : {}),
+                  ...(credentials.responsesApi !== undefined
+                    ? { responsesApi: credentials.responsesApi }
+                    : {}),
                   ...(credentials.baseUrl
                     ? { baseUrl: credentials.baseUrl }
                     : {}),
@@ -2090,12 +2171,26 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 }))
             : [];
           // 保存已经曝光工具的公开投影，卸载后的迟到deny事件也不能泄露原参数。
-          const argumentProjectors = new Map(kernelToolDefinitions.filter((tool) => tool.projectArguments).map((tool) => [tool.name, { projectArguments: tool.projectArguments }]));
+          const argumentProjectors = new Map(
+            kernelToolDefinitions
+              .filter((tool) => tool.projectArguments)
+              .map((tool) => [
+                tool.name,
+                { projectArguments: tool.projectArguments },
+              ]),
+          );
           run.projectToolInput = (name, args) => {
             try {
-              const current = kernelToolRegistry?.resolveRunTools(toolResolutionContext).find((tool) => tool.name === name);
-              if (current?.projectArguments) argumentProjectors.set(name, { projectArguments: current.projectArguments });
-            } catch { /* 已曝光的投影仍用于迟到公开事件；不改变真实执行结果。 */ }
+              const current = kernelToolRegistry
+                ?.resolveRunTools(toolResolutionContext)
+                .find((tool) => tool.name === name);
+              if (current?.projectArguments)
+                argumentProjectors.set(name, {
+                  projectArguments: current.projectArguments,
+                });
+            } catch {
+              /* 已曝光的投影仍用于迟到公开事件；不改变真实执行结果。 */
+            }
             return publicToolArguments(argumentProjectors.get(name), args);
           };
 
@@ -2218,23 +2313,39 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         if (run.operation?.kind === "compact") {
           await captureBoundary("pre");
           try {
-            if (!run.threadId || !agent.contextHistory || !manualCompactPlan) throw new Error("当前Harness未提供手动上下文压缩能力。");
+            if (!run.threadId || !agent.contextHistory || !manualCompactPlan)
+              throw new Error("当前Harness未提供手动上下文压缩能力。");
             for await (const event of streamCompactOperation({
-              history: agent.contextHistory, threadId: run.threadId, runId,
-              sessionId: run.sessionId, conversationId: run.conversationId,
-              plan: manualCompactPlan, signal: run.controller.signal, now,
+              history: agent.contextHistory,
+              threadId: run.threadId,
+              runId,
+              sessionId: run.sessionId,
+              conversationId: run.conversationId,
+              plan: manualCompactPlan,
+              signal: run.controller.signal,
+              now,
               onUsage: (usage) => {
                 if (!run.userId) return;
                 options.runUsage?.update(runId, {
-                  inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
-                  provider: run.usageMeta?.provider ?? "builtin", model: run.usageMeta?.model ?? "unknown",
-                  ...(run.usageMeta?.providerInstanceId ? { providerInstanceId: run.usageMeta.providerInstanceId } : {}), userId: run.userId,
+                  inputTokens: usage.inputTokens,
+                  outputTokens: usage.outputTokens,
+                  provider: run.usageMeta?.provider ?? "builtin",
+                  model: run.usageMeta?.model ?? "unknown",
+                  ...(run.usageMeta?.providerInstanceId
+                    ? { providerInstanceId: run.usageMeta.providerInstanceId }
+                    : {}),
+                  userId: run.userId,
                 });
               },
             })) {
               if (event.type === "run.completed") {
                 run.status = "completed";
-                await syncPersistedRunFromEvent(options.agentRunMetadataService, run, event, now);
+                await syncPersistedRunFromEvent(
+                  options.agentRunMetadataService,
+                  run,
+                  event,
+                  now,
+                );
               }
               yield event;
             }
@@ -2243,7 +2354,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               ? { type: "run.canceled", runId, timestamp: now() }
               : toFailedEvent(runId, now, error);
             run.status = event.type === "run.canceled" ? "canceled" : "failed";
-            await syncPersistedRunFromEvent(options.agentRunMetadataService, run, event, now);
+            await syncPersistedRunFromEvent(
+              options.agentRunMetadataService,
+              run,
+              event,
+              now,
+            );
             yield event;
           }
           return;
@@ -2271,13 +2387,33 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           let attachmentDataMap: Record<string, string> = {};
 
           if (run.codeInputs?.length) {
-            if (!run.scopeHandle) throw new Error("Code附件输入缺少可信Task工作域。");
-            let { text: enrichedPrompt } = buildUserMessage(run.prompt, [], run.imageGenerationPreference, run.mentions, run.videoGenerationPreference, canvasSummary, "database");
+            if (!run.scopeHandle)
+              throw new Error("Code附件输入缺少可信Task工作域。");
+            let { text: enrichedPrompt } = buildUserMessage(
+              run.prompt,
+              [],
+              run.imageGenerationPreference,
+              run.mentions,
+              run.videoGenerationPreference,
+              canvasSummary,
+              "database",
+            );
             enrichedPrompt = await applyPreStep(enrichedPrompt, run.threadId);
-            const content = await codeInputContent(run.codeInputs, codeInputLimits, modelCapabilities, run.controller.signal);
-            userMessage = new HumanMessage({ id: userMessageId, content: [{ type: "text", text: enrichedPrompt }, ...content] });
+            const content = await codeInputContent(
+              run.codeInputs,
+              codeInputLimits,
+              modelCapabilities,
+              run.controller.signal,
+            );
+            userMessage = new HumanMessage({
+              id: userMessageId,
+              content: [{ type: "text", text: enrichedPrompt }, ...content],
+            });
           } else if (hasAttachments) {
-            if (run.scopeHandle) throw new Error("Code附件必须经所属Task的附件提交接口解析，不能传任意图片URL。");
+            if (run.scopeHandle)
+              throw new Error(
+                "Code附件必须经所属Task的附件提交接口解析，不能传任意图片URL。",
+              );
             // Download images and build parallel data structures:
             // 1. imageBlocks: base64 content parts for LLM vision
             // 2. downloaded: assetId → base64 mapping for tool resolution
@@ -2367,7 +2503,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               run.scopeHandle ? "database" : undefined,
             );
             enrichedPrompt = await applyPreStep(enrichedPrompt, run.threadId);
-            userMessage = new HumanMessage({ id: userMessageId, content: enrichedPrompt });
+            userMessage = new HumanMessage({
+              id: userMessageId,
+              content: enrichedPrompt,
+            });
           }
 
           // HumanMessage进入graph之前捕获真实context与有效文件版本，并绑定本run的pre。
@@ -2672,10 +2811,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             // 续轮：附件映射随首轮消息已进 thread 历史，无需重带
             stream = agent.streamEvents(
               {
-                messages: [new HumanMessage({
-                  id: JSON.stringify(["background-continuation", runId, continuationRounds]),
-                  content: continuationInput ?? "",
-                })],
+                messages: [
+                  new HumanMessage({
+                    id: JSON.stringify([
+                      "background-continuation",
+                      runId,
+                      continuationRounds,
+                    ]),
+                    content: continuationInput ?? "",
+                  }),
+                ],
               },
               {
                 ...(run.threadId ||
@@ -2809,9 +2954,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       for await (const event of execute(runId)) {
         try {
           const run = runs.get(runId);
-          const visible = event.type === "tool.started" && event.input
-            ? { ...event, input: run?.projectToolInput?.(event.toolName, event.input) ?? event.input }
-            : event;
+          const visible =
+            event.type === "tool.started" && event.input
+              ? {
+                  ...event,
+                  input:
+                    run?.projectToolInput?.(event.toolName, event.input) ??
+                    event.input,
+                }
+              : event;
           await run?.eventSink?.(visible);
           yield visible;
         } catch (error) {

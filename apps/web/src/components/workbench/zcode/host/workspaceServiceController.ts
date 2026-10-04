@@ -5,8 +5,8 @@ import {
   unbindRemoteWorkspaceIdentity,
   unregisterRemoteWorkspaceSession,
 } from "@zui/store/remoteWorkspaceSessionStore.js";
-import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
+import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 
 /** Root layout阶段给出明确目标；请求时读取该桶当前真实Task，失败不会退借其它Project。 */
 export function createCodeWorkspaceContextResolver(

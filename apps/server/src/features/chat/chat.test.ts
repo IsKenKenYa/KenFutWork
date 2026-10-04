@@ -55,7 +55,11 @@ function createRunner(
       };
     },
     async acquireSession() {
-      return { query: async (text, values) => run(text, values), onLost: () => () => {}, release: async () => {} };
+      return {
+        query: async (text, values) => run(text, values),
+        onLost: () => () => {},
+        release: async () => {},
+      };
     },
     async end() {},
   };
@@ -113,7 +117,9 @@ describe("chat repository（会话与消息经画布→项目链限定）", () =
     const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
     expect(sql).toContain("from public.chat_sessions s");
     expect(sql).not.toContain("join public.canvases");
-    expect(sql).toContain("join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id");
+    expect(sql).toContain(
+      "join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id",
+    );
     expect(sql).toContain("where s.canvas_id = $1 and p.workspace_id = $2");
     expect(sql).toContain("order by s.updated_at desc");
     expect(calls[0]?.values).toEqual([CANVAS_ID, WORKSPACE_ID]);
@@ -221,7 +227,9 @@ describe("chat repository（会话与消息经画布→项目链限定）", () =
     expect(sql).toContain("from public.chat_messages m");
     expect(sql).toContain("join public.chat_sessions s on s.id = m.session_id");
     expect(sql).not.toContain("join public.canvases");
-    expect(sql).toContain("join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id");
+    expect(sql).toContain(
+      "join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id",
+    );
     expect(sql).toContain("order by m.created_at asc");
     expect(calls[0]?.values).toEqual([SESSION_ID, WORKSPACE_ID]);
   });
@@ -329,14 +337,40 @@ function buildService(
 describe("chat service", () => {
   it("generic视觉聊天入口拒绝CodeTask写/删/改名/读取，V4是唯一聚合", async () => {
     let writes = 0;
-    const { chat } = buildService({ repository: {
-      findSessionThread: async () => ({ id: SESSION_ID, canvas_id: null, project_id: PROJECT_ID, mode: "code", thread_id: "code-thread" }),
-      deleteSession: async () => { writes++; return 1; },
-      updateSessionTitle: async () => { writes++; return 1; },
-      insertMessage: async () => { writes++; return MESSAGE_ROW; },
-    } });
-    for (const action of [() => chat.deleteSession(USER, SESSION_ID), () => chat.updateSessionTitle(USER, SESSION_ID, "标题"), () => chat.createMessage(USER, SESSION_ID, { role: "user", content: "消息" }), () => chat.listMessages(USER, SESSION_ID)])
-      await expect(action()).rejects.toMatchObject({ code: "session_not_found", statusCode: 404 });
+    const { chat } = buildService({
+      repository: {
+        findSessionThread: async () => ({
+          id: SESSION_ID,
+          canvas_id: null,
+          project_id: PROJECT_ID,
+          mode: "code",
+          thread_id: "code-thread",
+        }),
+        deleteSession: async () => {
+          writes++;
+          return 1;
+        },
+        updateSessionTitle: async () => {
+          writes++;
+          return 1;
+        },
+        insertMessage: async () => {
+          writes++;
+          return MESSAGE_ROW;
+        },
+      },
+    });
+    for (const action of [
+      () => chat.deleteSession(USER, SESSION_ID),
+      () => chat.updateSessionTitle(USER, SESSION_ID, "标题"),
+      () =>
+        chat.createMessage(USER, SESSION_ID, { role: "user", content: "消息" }),
+      () => chat.listMessages(USER, SESSION_ID),
+    ])
+      await expect(action()).rejects.toMatchObject({
+        code: "session_not_found",
+        statusCode: 404,
+      });
     expect(writes).toBe(0);
   });
 
@@ -346,7 +380,13 @@ describe("chat service", () => {
     });
 
     await expect(chat.listSessions(USER, CANVAS_ID)).resolves.toEqual([
-      { id: SESSION_ID, title: "New Chat", updatedAt: SESSION_ROW.updated_at, projectId: PROJECT_ID, mode: "design" },
+      {
+        id: SESSION_ID,
+        title: "New Chat",
+        updatedAt: SESSION_ROW.updated_at,
+        projectId: PROJECT_ID,
+        mode: "design",
+      },
     ]);
   });
 

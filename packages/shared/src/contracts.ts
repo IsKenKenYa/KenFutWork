@@ -310,7 +310,9 @@ export const workspaceSettingsSchema = z.object({
   codeAttachmentChunkMaxBytes: governanceSetting("codeAttachmentChunkMaxBytes"),
   codeAttachmentMaxChunks: governanceSetting("codeAttachmentMaxChunks"),
   codeAttachmentMaxConcurrent: governanceSetting("codeAttachmentMaxConcurrent"),
-  codeAttachmentStagedMaxBytes: governanceSetting("codeAttachmentStagedMaxBytes"),
+  codeAttachmentStagedMaxBytes: governanceSetting(
+    "codeAttachmentStagedMaxBytes",
+  ),
   codeAttachmentUploadTtlMs: governanceSetting("codeAttachmentUploadTtlMs"),
   codeAttachmentMaxPerInput: governanceSetting("codeAttachmentMaxPerInput"),
   codeAttachmentMaxRetries: governanceSetting("codeAttachmentMaxRetries"),

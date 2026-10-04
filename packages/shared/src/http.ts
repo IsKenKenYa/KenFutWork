@@ -1,6 +1,4 @@
 import { z } from "zod";
-import { additionalDirectorySchema } from "./execution-contracts.js";
-
 import {
   assetObjectSchema,
   canvasContentSchema,
@@ -17,6 +15,7 @@ import {
   workspaceSettingsSchema,
   workspaceSummarySchema,
 } from "./contracts.js";
+import { additionalDirectorySchema } from "./execution-contracts.js";
 
 export const healthResponseSchema = z.object({
   ok: z.literal(true),
@@ -405,7 +404,6 @@ export const agentRunActivityResponseSchema = z.object({
     totalSeconds: z.number().int().nonnegative(),
   }),
 });
-
 
 export const codeGitFileResponseSchema = z.object({
   file: z.object({

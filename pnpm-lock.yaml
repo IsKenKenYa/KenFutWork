@@ -627,6 +627,9 @@ importers:
 
   packages/shared:
     dependencies:
+      '@zcode/provider':
+        specifier: workspace:*
+        version: link:../zcode-provider
       '@zcode/services':
         specifier: workspace:*
         version: link:../zcode-services

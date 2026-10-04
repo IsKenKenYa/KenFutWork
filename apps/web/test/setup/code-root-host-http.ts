@@ -1,10 +1,10 @@
+import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import {
   appSettingsSchema,
   ZCODE_PROTOCOL_NAME,
   ZCODE_PROTOCOL_VERSION,
   zcodeSessionStateSnapshotSchema,
 } from "../../../../packages/zcode-shared/dist/index.js";
-import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { codeHostNotificationResponse } from "./code-host-http";
 
 export const rootProjectId = "30000000-0000-4000-8000-000000000003";

@@ -61,7 +61,9 @@ export function createPluginAdminFixture(
 }
 
 /** 同一真实package/registry用于原hostRPC与独立Adapter公共seam；不注册vitest用例。 */
-export async function createPluginInventoryFixture(options: { storage?: PluginStorage } = {}) {
+export async function createPluginInventoryFixture(
+  options: { storage?: PluginStorage } = {},
+) {
   const directory = await mkdtemp(
     join(tmpdir(), "kfw-code-package-inventory-"),
   );
@@ -132,7 +134,9 @@ export async function createPluginInventoryFixture(options: { storage?: PluginSt
 }
 
 /** 原动作Adapter公共边界，可信项目元信息回调由主HTTP测试另行走真实解析器。 */
-export async function createPluginManagementFixture(options: { storage?: PluginStorage } = {}) {
+export async function createPluginManagementFixture(
+  options: { storage?: PluginStorage } = {},
+) {
   const actual = await createPluginInventoryFixture(options);
   const reader = { ...actual.actor, id: randomUUID() };
   const admin = createPluginAdminFixture(actual.actor);

@@ -14,15 +14,22 @@ import { createCheckpointRepository } from "./repository.js";
 const DATABASE_URL = process.env.DATABASE_URL;
 const TASK_ID = process.env.CODE_CHECKPOINT_TEST_TASK_ID;
 
-describe.skipIf(!DATABASE_URL || !TASK_ID || process.env.RUN_CODE_STORAGE_INTEGRATION !== "1")("project_checkpoints 仓储集成", () => {
+describe.skipIf(
+  !DATABASE_URL || !TASK_ID || process.env.RUN_CODE_STORAGE_INTEGRATION !== "1",
+)("project_checkpoints 仓储集成", () => {
   it("insert → 升序读回 → 工作区隔离 → getPrevious 严格早于", async () => {
     const persistence = createPostgresPersistence({
       databaseUrl: DATABASE_URL as string,
     });
     try {
       const repository = createCheckpointRepository(persistence);
-      const stored = await persistence.queryOne<{ workspace_id: string; project_id: string; root_directory: string }>(
-        "select workspace_id, project_id, root_directory from public.code_ui_sessions where id = $1 and root_session_id = id", [TASK_ID],
+      const stored = await persistence.queryOne<{
+        workspace_id: string;
+        project_id: string;
+        root_directory: string;
+      }>(
+        "select workspace_id, project_id, root_directory from public.code_ui_sessions where id = $1 and root_session_id = id",
+        [TASK_ID],
       );
       if (!stored) throw new Error("测试必须指定已创建的 Code Task");
       const workspaceId = stored.workspace_id;
@@ -35,7 +42,12 @@ describe.skipIf(!DATABASE_URL || !TASK_ID || process.env.RUN_CODE_STORAGE_INTEGR
         taskId,
         projectId: stored.project_id,
         rootDirectory: stored.root_directory,
-        directorySnapshots: [{ rootDirectory: stored.root_directory, shadowCommit: String(seq).repeat(40) }],
+        directorySnapshots: [
+          {
+            rootDirectory: stored.root_directory,
+            shadowCommit: String(seq).repeat(40),
+          },
+        ],
         runId: seq === 1 ? null : "run-1",
         kind: seq === 1 ? ("turn" as const) : ("restore" as const),
         label: `检查点${seq}`,
@@ -49,7 +61,9 @@ describe.skipIf(!DATABASE_URL || !TASK_ID || process.env.RUN_CODE_STORAGE_INTEGR
       await repository.insert(row(1, t1));
       await repository.insert(row(2, t2));
 
-      const rows = (await repository.listByTask(workspaceId, taskId)).filter((entry) => [t1, t2].includes(entry.createdAt));
+      const rows = (await repository.listByTask(workspaceId, taskId)).filter(
+        (entry) => [t1, t2].includes(entry.createdAt),
+      );
       expect(rows.map((r) => r.shadowCommit)).toEqual(["sha-1", "sha-2"]);
       const [first] = rows;
       if (!first) throw new Error("应能读回两行");
@@ -65,9 +79,7 @@ describe.skipIf(!DATABASE_URL || !TASK_ID || process.env.RUN_CODE_STORAGE_INTEGR
       expect(
         (await repository.getPrevious(workspaceId, taskId, t2))?.shadowCommit,
       ).toBe("sha-1");
-      expect(
-        await repository.getPrevious(workspaceId, taskId, t1),
-      ).toBeNull();
+      expect(await repository.getPrevious(workspaceId, taskId, t1)).toBeNull();
     } finally {
       await persistence.close();
     }

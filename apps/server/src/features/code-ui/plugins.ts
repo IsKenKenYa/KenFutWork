@@ -8,6 +8,8 @@ import {
   zcodePluginsOverviewResultSchema,
   zcodePluginsSetEnabledParamsSchema,
   zcodePluginsSetEnabledResultSchema,
+  zcodePluginsUninstallParamsSchema,
+  zcodePluginsUninstallResultSchema,
 } from "@kenfutwork/shared";
 import { z } from "zod";
 import type { AdminService } from "../admin/admin-service.js";
@@ -15,6 +17,7 @@ import type { AuthenticatedUser } from "../auth/types.js";
 import {
   PluginRegistryError,
   type PluginRegistryService,
+  SYSTEM_PLUGIN_NAMES,
 } from "../plugins/plugin-registry-service.js";
 
 export interface CodeUiPluginsTarget {
@@ -306,6 +309,40 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
     });
   }
 
+  async function uninstall(actor: AuthenticatedUser, value: unknown) {
+    const { target, input } = nativePluginInput(
+      zcodePluginsUninstallParamsSchema,
+      value,
+    );
+    await requireMutation(actor, target);
+    const inventory = await deps.registry.readPackageInventory();
+    const marketplace = marketplaceResolver(inventory);
+    const entry = inventory.installed.find(
+      ({ record }) =>
+        (input.pluginId
+          ? record.id === input.pluginId
+          : Boolean(input.pluginName) && record.name === input.pluginName) &&
+        (!input.marketplace || input.marketplace === marketplace(record.id)),
+    );
+    if (!entry) {
+      if (input.pluginId && SYSTEM_PLUGIN_NAMES.has(input.pluginId))
+        await deps.registry.uninstall(input.pluginId, {
+          removeCache: input.removeCache ?? true,
+        });
+      throw new PluginRegistryError("插件未安装。", "not_installed");
+    }
+    await deps.registry.uninstall(entry.record.id, {
+      removeCache: input.removeCache ?? true,
+    });
+    return zcodePluginsUninstallResultSchema.parse({
+      removedPlugin: installedSummary(
+        { ...entry, record: { ...entry.record, enabled: false } },
+        marketplace,
+      ),
+      diagnostics: [],
+    });
+  }
+
   return {
     async call(
       actor: AuthenticatedUser,
@@ -316,6 +353,8 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
         return { result: await install(actor, value) };
       if (method === "setPluginEnabled")
         return { result: await setEnabled(actor, value) };
+      if (method === "uninstallPlugin")
+        return { result: await uninstall(actor, value) };
       if (method !== "listPlugins" && method !== "getPluginsOverview")
         return null;
       const target = targetSchema.parse(value);

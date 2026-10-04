@@ -255,8 +255,10 @@ describe("Human-only Code workspace RPC", () => {
     const hidden = await rpc.call(actor, "file", "readdir", [
       { path: root, includeHidden: true, humanPurpose: "directory-picker" },
     ]);
+    if (!hidden || !Array.isArray(hidden.result))
+      throw new Error("目录选择器未返回真实目录列表");
     expect(
-      (hidden?.result as Array<{ name: string }>).map((entry) => entry.name),
+      (hidden.result as Array<{ name: string }>).map((entry) => entry.name),
     ).toContain(".hidden");
   });
   it("选择symlink目录按canonical项目身份，失效/文件路径不留假项目", async () => {

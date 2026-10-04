@@ -1,6 +1,14 @@
-import { closeSync, constants, fstatSync, openSync, readdirSync, readSync, statSync } from "node:fs";
-import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  openSync,
+  readdirSync,
+  readSync,
+  statSync,
+} from "node:fs";
 import { join } from "node:path";
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 
 import { resolveInsideRoot } from "../../utils/inside-root.js";
 
@@ -36,15 +44,27 @@ export function readSandboxTextFile(
 ): SandboxFileView {
   const absolute = resolveInsideRoot(root, relativePath);
   let fd: number;
-  try { fd = openSync(absolute, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); }
-  catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") throw new Error(`文件不存在：${relativePath}`);
+  try {
+    fd = openSync(
+      absolute,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ENOENT"
+    )
+      throw new Error(`文件不存在：${relativePath}`);
     throw error;
   }
   try {
     const stat = fstatSync(fd);
-    if (stat.isDirectory()) throw new Error(`${relativePath} 是目录，不能按文件打开。`);
-    if (!stat.isFile()) throw new Error(`${relativePath} 不是普通文件，不能打开。`);
+    if (stat.isDirectory())
+      throw new Error(`${relativePath} 是目录，不能按文件打开。`);
+    if (!stat.isFile())
+      throw new Error(`${relativePath} 不是普通文件，不能打开。`);
     const size = stat.size;
     const window = Math.min(size, maxBytes);
     const buffer = Buffer.alloc(window);

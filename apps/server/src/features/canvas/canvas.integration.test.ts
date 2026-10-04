@@ -161,9 +161,7 @@ describe.skipIf(!DATABASE_URL)("canvas 原子追加（并发落图不丢元素�
       const workspaceId = workspace?.id as string;
       expect(workspaceId).toBeTruthy();
 
-      const created = await createProjectRepository(
-        persistence,
-      ).createProject({
+      const created = await createProjectRepository(persistence).createProject({
         canvasName: "并发画布",
         description: null,
         name: "并发项目",

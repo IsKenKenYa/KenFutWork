@@ -36,9 +36,7 @@ describe.skipIf(!DATABASE_URL)("workspace-skills 真实库集成", () => {
       const workspaceId = workspace?.id as string;
       expect(workspaceId).toBeTruthy();
 
-      const created = await createProjectRepository(
-        persistence,
-      ).createProject({
+      const created = await createProjectRepository(persistence).createProject({
         canvasName: "技能集成画布",
         description: null,
         name: "技能集成项目",

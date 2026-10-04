@@ -26,13 +26,28 @@ export function createCodeGitPlugin(): PluginDefinition {
           scopes: ctx.get("executionScopes"),
           processSandbox: ctx.get("processSandbox"),
           gitForScope: async (scope, actor) => {
-            const settings = await ctx.get("settings").getWorkspaceSettings(actor, scope.describe().workspaceId);
-            return createGitClient({ exec: createScopedGitExec({ scope, sandbox: ctx.get("processSandbox"),
-              binary: gitBinDir ? join(gitBinDir, process.platform === "win32" ? "git.exe" : "git") : "git",
-              timeoutMs: settings.executeTimeoutMs,
-              limits: { maxOutputBytes: settings.processMaxOutputBytes, previewMaxChars: settings.processPreviewMaxChars,
-                yieldMs: settings.processYieldMs, killGraceMs: settings.processKillGraceMs },
-            }) });
+            const settings = await ctx
+              .get("settings")
+              .getWorkspaceSettings(actor, scope.describe().workspaceId);
+            return createGitClient({
+              exec: createScopedGitExec({
+                scope,
+                sandbox: ctx.get("processSandbox"),
+                binary: gitBinDir
+                  ? join(
+                      gitBinDir,
+                      process.platform === "win32" ? "git.exe" : "git",
+                    )
+                  : "git",
+                timeoutMs: settings.executeTimeoutMs,
+                limits: {
+                  maxOutputBytes: settings.processMaxOutputBytes,
+                  previewMaxChars: settings.processPreviewMaxChars,
+                  yieldMs: settings.processYieldMs,
+                  killGraceMs: settings.processKillGraceMs,
+                },
+              }),
+            });
           },
           source: ctx.env.gitSource ?? (gitBinDir ? "bundled" : "system"),
           viewerService: ctx.get("viewer"),

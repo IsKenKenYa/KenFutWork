@@ -1,18 +1,18 @@
+import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
-import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider";
 import { TooltipProvider } from "@zui/components/ui/tooltip";
+import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider";
 import { StoreProvider } from "@zui/store/StoreProvider";
 import { ToolCallBlock } from "@zui/ToolCallBlocks";
-import { toolCallRowToLegacyNode } from "@zui/v4/toolCallRowAdapter";
 import { readRawToolCallFileSummaries } from "@zui/ToolCallBlocks/shared";
+import { toolCallRowToLegacyNode } from "@zui/v4/toolCallRowAdapter";
+import { afterEach, expect, it, vi } from "vitest";
 import { createFileDisplayPublicFixture } from "../../server/src/features/code-ui/file-display.test-fixture";
+import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
 import {
   installCodeRootBrowser,
   restoreCodeRootBrowser,
 } from "./setup/code-root-host-browser";
-import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
-import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
 
 afterEach(() => {
   cleanup();
@@ -186,8 +186,18 @@ it("真实Edit完整提交但预览受Task预算截断时，原工具卡保留�
     expect(fixture.canonicalResult).toMatchObject({
       canonicalOutput: {
         structuredPatch: [
-          { lines: [expect.stringMatching(/^-first/), expect.stringMatching(/^\+second/)] },
-          { lines: [expect.stringMatching(/^-first/), expect.stringMatching(/^\+second/)] },
+          {
+            lines: [
+              expect.stringMatching(/^-first/),
+              expect.stringMatching(/^\+second/),
+            ],
+          },
+          {
+            lines: [
+              expect.stringMatching(/^-first/),
+              expect.stringMatching(/^\+second/),
+            ],
+          },
         ],
       },
     });
@@ -197,11 +207,19 @@ it("真实Edit完整提交但预览受Task预算截断时，原工具卡保留�
       deletions: 2,
       truncated: true,
       structuredPatch: [
-        { lines: [expect.stringMatching(/^-first/), expect.stringMatching(/^\+second/)] },
+        {
+          lines: [
+            expect.stringMatching(/^-first/),
+            expect.stringMatching(/^\+second/),
+          ],
+        },
       ],
     });
     const node = toolCallRowToLegacyNode(fixture.row);
-    const summaries = readRawToolCallFileSummaries(node.toolCall.raw, node.toolCall);
+    const summaries = readRawToolCallFileSummaries(
+      node.toolCall.raw,
+      node.toolCall,
+    );
     expect(summaries).toMatchObject([
       {
         path: fixture.filePath,
@@ -225,11 +243,19 @@ it("真实Edit完整提交但预览受Task预算截断时，原工具卡保留�
       </ZCodeIntlProvider>,
     );
     expect(
-      (await screen.findByText("补丁预览受工作区字节预算限制，仅展示部分变更。")).textContent,
+      (
+        await screen.findByText(
+          "补丁预览受工作区字节预算限制，仅展示部分变更。",
+        )
+      ).textContent,
     ).toBe("补丁预览受工作区字节预算限制，仅展示部分变更。");
     fireEvent.click(screen.getByRole("button", { name: "example.ts" }));
     expect(opened).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "patch", path: fixture.filePath, patch: summaries[0]?.patch }),
+      expect.objectContaining({
+        type: "patch",
+        path: fixture.filePath,
+        patch: summaries[0]?.patch,
+      }),
     );
   } finally {
     client.dispose();

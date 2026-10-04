@@ -13,4 +13,6 @@ export interface CodeAdmittedInput {
   previousRunId?: string;
 }
 
-export const codeInputKey = (input: Pick<protocol.ConversationInputIntent, "clientId" | "sourceCommandId">): string => JSON.stringify([input.clientId, input.sourceCommandId]);
+export const codeInputKey = (
+  input: Pick<protocol.ConversationInputIntent, "clientId" | "sourceCommandId">,
+): string => JSON.stringify([input.clientId, input.sourceCommandId]);

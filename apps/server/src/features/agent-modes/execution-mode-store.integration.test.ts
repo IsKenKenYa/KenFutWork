@@ -45,9 +45,7 @@ describe.skipIf(!DATABASE_URL)("执行模式持久化真实库集成", () => {
       const workspaceId = workspace?.id as string;
       expect(workspaceId).toBeTruthy();
 
-      const created = await createProjectRepository(
-        persistence,
-      ).createProject({
+      const created = await createProjectRepository(persistence).createProject({
         canvasName: "模式集成画布",
         description: null,
         name: "模式集成项目",

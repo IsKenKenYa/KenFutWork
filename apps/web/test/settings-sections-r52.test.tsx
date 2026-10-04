@@ -8,21 +8,30 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../src/components/toast";
 import { AccountSection } from "../src/components/workbench/account-section";
 import { SubagentsSection } from "../src/components/workbench/subagents-section";
-import { onPanelViewRequest } from "../src/lib/panel-open";
+
+const navigateToCode = vi.hoisted(() => vi.fn());
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: navigateToCode }),
+}));
 
 /**
  * R5-2：设置里「子智能体」与「账号」两页的信息全部来自真实数据源——
  * 子智能体清单来自 `GET /api/agent/subagents`（与 agent 装配同源），
  * 账号来自 viewer（显示名/邮箱/套餐/额度）。
  *
- * 锁三件事：① 页面只显示服务端真给的东西；② 「打开右栏子智能体」走真通道
- * （有订阅者时转交，没有时**如实说明**而不是假装打开了）；③ 账号页没启用计费时不编数字。
+ * 锁三件事：① 页面只显示服务端真给的东西；② 子智能体运行入口导航到完整原 Code 工作台；③ 账号页没启用计费时不编数字。
  */
 const fetchSubagents = vi.fn();
 const updateWorkspaceSettings = vi.fn();
 
 vi.mock("../src/lib/auth-context", () => ({
-  useAuth: () => ({ session: null, user: null, loading: false, signOut: vi.fn(), refresh: vi.fn() }),
+  useAuth: () => ({
+    session: null,
+    user: null,
+    loading: false,
+    signOut: vi.fn(),
+    refresh: vi.fn(),
+  }),
 }));
 
 vi.mock("../src/lib/server-api.js", () => ({
@@ -64,31 +73,14 @@ describe("设置 → 子智能体", () => {
     expect(screen.getByText(/工具：generate_video/)).toBeVisible();
   });
 
-  it("点「打开右栏子智能体」：有订阅者时转交面板通道", async () => {
-    fetchSubagents.mockResolvedValue({ subagents: [], builtin: [] });
-    const seen: string[] = [];
-    const unsubscribe = onPanelViewRequest((kind) => seen.push(kind));
-    render(<SubagentsSection accessToken="tok" />);
-    await screen.findByText(/主 Agent 可以把子任务/);
-
-    await userEvent.click(
-      screen.getByRole("button", { name: /打开右栏「子智能体」/ }),
-    );
-    expect(seen).toEqual(["subagents"]);
-    unsubscribe();
-  });
-
-  it("没有面板在监听（如 Design 模式）：如实说明，不假装打开", async () => {
+  it("子代理运行入口导航到完整原 Code 工作台", async () => {
     fetchSubagents.mockResolvedValue({ subagents: [], builtin: [] });
     render(<SubagentsSection accessToken="tok" />);
     await screen.findByText(/主 Agent 可以把子任务/);
-
     await userEvent.click(
-      screen.getByRole("button", { name: /打开右栏「子智能体」/ }),
+      screen.getByRole("button", { name: "前往 Code 查看子智能体" }),
     );
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      /没有右栏面板可打开/,
-    );
+    expect(navigateToCode).toHaveBeenCalledWith("/workbench");
   });
 
   it("读取失败：原样显示服务端原因", async () => {

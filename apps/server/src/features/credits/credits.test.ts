@@ -40,7 +40,9 @@ function createRunner(
         release: () => {},
       };
     },
-    async acquireSession() { throw new Error("此查询夹具不提供真实执行宿主会话。"); },
+    async acquireSession() {
+      throw new Error("此查询夹具不提供真实执行宿主会话。");
+    },
     async end() {},
   };
 

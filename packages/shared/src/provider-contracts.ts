@@ -1,5 +1,5 @@
-import { z } from "zod";
 import { modelConfigDataSchema } from "@zcode/shared/model-config";
+import { z } from "zod";
 
 /**
  * BYOK 供应商缝契约（《改造计划》§4.8 / §5）。
@@ -71,17 +71,33 @@ export const videoGenerationCapsSchema = z.object({
 export type VideoGenerationCaps = z.infer<typeof videoGenerationCapsSchema>;
 
 /** 原 Code 设置的安全元数据；连接与凭证仍由供应商实例持有。 */
-export const codeUiProviderMetadataSchema = z.object({
-  templateId: z.string().min(1).optional(),
-  group: z.enum(["standard-personal", "zai-family", "bigmodel-family"]).optional(),
-  logo: z.object({ type: z.literal("builtin"), key: z.string().min(1) }).strict().optional(),
-  modelOrder: z.array(z.string().min(1)).optional(),
-  models: z.record(z.string().min(1), z.object({
-    config: modelConfigDataSchema,
-    useRecommendedConfig: z.boolean(),
-  }).strict()).optional(),
-}).strict();
-export type CodeUiProviderMetadata = z.infer<typeof codeUiProviderMetadataSchema>;
+export const codeUiProviderMetadataSchema = z
+  .object({
+    templateId: z.string().min(1).optional(),
+    group: z
+      .enum(["standard-personal", "zai-family", "bigmodel-family"])
+      .optional(),
+    logo: z
+      .object({ type: z.literal("builtin"), key: z.string().min(1) })
+      .strict()
+      .optional(),
+    modelOrder: z.array(z.string().min(1)).optional(),
+    models: z
+      .record(
+        z.string().min(1),
+        z
+          .object({
+            config: modelConfigDataSchema,
+            useRecommendedConfig: z.boolean(),
+          })
+          .strict(),
+      )
+      .optional(),
+  })
+  .strict();
+export type CodeUiProviderMetadata = z.infer<
+  typeof codeUiProviderMetadataSchema
+>;
 
 /** OpenAI 兼容网关的兼容性开关（按实例覆盖默认行为）。 */
 export const providerCompatSchema = z.object({
@@ -263,23 +279,22 @@ export type ProviderInstanceConfig = z.infer<
 
 // --- HTTP 请求/响应（服务端 provider 设置 CRUD） ---
 
-export const providerInstanceCreateRequestSchema = z
-  .object({
-    name: z.string().min(1),
-    protocol: providerProtocolSchema,
-    baseUrl: z.string().optional(),
-    /** 只写不读：创建时提交明文 Key，服务端加密落库后仅存 ref。 */
-    apiKey: z.string().min(1).optional(),
-    /** 缺省视为空列表：模型型实例会被 superRefine 拒（见下），dify-engine 合法省略。 */
-    models: z.array(providerInstanceModelSchema).default([]),
-    compat: providerCompatSchema.optional(),
-    /**
-     * 自定义请求头：值只写不读（响应只回 `headerKeys`）。
-     * 显式传 `{}` 即清空；缺省表示不设置/不修改。
-     */
-    headers: providerInstanceHeadersSchema.optional(),
-    enabled: z.boolean().optional(),
-  });
+export const providerInstanceCreateRequestSchema = z.object({
+  name: z.string().min(1),
+  protocol: providerProtocolSchema,
+  baseUrl: z.string().optional(),
+  /** 只写不读：创建时提交明文 Key，服务端加密落库后仅存 ref。 */
+  apiKey: z.string().min(1).optional(),
+  /** 缺省视为空列表：模型型实例会被 superRefine 拒（见下），dify-engine 合法省略。 */
+  models: z.array(providerInstanceModelSchema).default([]),
+  compat: providerCompatSchema.optional(),
+  /**
+   * 自定义请求头：值只写不读（响应只回 `headerKeys`）。
+   * 显式传 `{}` 即清空；缺省表示不设置/不修改。
+   */
+  headers: providerInstanceHeadersSchema.optional(),
+  enabled: z.boolean().optional(),
+});
 export type ProviderInstanceCreateRequest = z.infer<
   typeof providerInstanceCreateRequestSchema
 >;

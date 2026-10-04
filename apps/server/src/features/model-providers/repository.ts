@@ -1,5 +1,8 @@
 import type { ProviderInstanceModel } from "@kenfutwork/shared";
-import type { PersistenceService } from "../persistence/types.js";
+import type {
+  PersistenceService,
+  WorkspaceSqlClient,
+} from "../persistence/types.js";
 
 export type ProviderInstanceRecord = {
   id: string;
@@ -139,7 +142,11 @@ function buildPatch(
     push("compat", JSON.stringify(patch.compat), "::jsonb");
   }
   if (patch.headers !== undefined) {
-    push("headers", JSON.stringify(patch.headers), "::jsonb");
+    push(
+      "headers",
+      patch.headers === null ? null : JSON.stringify(patch.headers),
+      "::jsonb",
+    );
   }
   if (patch.enabled !== undefined) push("enabled", patch.enabled);
 
@@ -158,6 +165,21 @@ function buildPatch(
 export function createModelProviderRepository(
   persistence: PersistenceService,
 ): ModelProviderRepository {
+  // 所有配置写入先锁工作区修订再锁实例，统一 HTTP/原宿主的锁序与 CAS 边界。
+  const writeWorkspace = <T>(
+    workspaceId: string,
+    operation: (scoped: WorkspaceSqlClient) => Promise<T>,
+  ) =>
+    persistence.transaction(async (tx) => {
+      const scoped = tx.forWorkspace(workspaceId);
+      await scoped.execute(
+        `insert into public.provider_registry_revisions(workspace_id,revision) values(:workspace,0) on conflict(workspace_id) do nothing`,
+      );
+      await scoped.queryOne<{ revision: string }>(
+        `select revision from public.provider_registry_revisions where workspace_id=:workspace for update`,
+      );
+      return operation(scoped);
+    });
   return {
     async listWorkspaceInstances(workspaceId) {
       return persistence
@@ -185,9 +207,8 @@ export function createModelProviderRepository(
     },
 
     async insertWorkspaceInstance(input) {
-      return persistence
-        .forWorkspace(input.workspaceId)
-        .queryOne<ProviderInstanceRecord>(
+      return writeWorkspace(input.workspaceId, (scoped) =>
+        scoped.queryOne<ProviderInstanceRecord>(
           `insert into public.provider_instances
                   (workspace_id, scope, name, protocol, base_url,
                    encrypted_api_key, models, compat, headers, enabled, created_by)
@@ -204,7 +225,8 @@ export function createModelProviderRepository(
             input.enabled,
             input.createdBy,
           ],
-        );
+        ),
+      );
     },
 
     async updateWorkspaceInstance(
@@ -217,9 +239,8 @@ export function createModelProviderRepository(
       if (!built) {
         return null;
       }
-      return persistence
-        .forWorkspace(workspaceId)
-        .queryOne<ProviderInstanceRecord>(
+      return writeWorkspace(workspaceId, (scoped) =>
+        scoped.queryOne<ProviderInstanceRecord>(
           `update public.provider_instances
             set config_revision = config_revision + 1,
                 ${built.assignments.join(", ")}
@@ -230,7 +251,8 @@ export function createModelProviderRepository(
         returning ${INSTANCE_COLUMNS}`,
           // $1 是目标 id；工作区由 :workspace 追加为末位参数，保持 SET 片段引用不漂移。
           built.values,
-        );
+        ),
+      );
     },
 
     async setProbeResult(workspaceId, instanceId, result) {
@@ -249,12 +271,14 @@ export function createModelProviderRepository(
     },
 
     async deleteWorkspaceInstance(workspaceId, instanceId) {
-      return persistence.forWorkspace(workspaceId).execute(
-        `delete from public.provider_instances
+      return writeWorkspace(workspaceId, (scoped) =>
+        scoped.execute(
+          `delete from public.provider_instances
           where workspace_id = :workspace
             and id = $1
             and scope = 'workspace'`,
-        [instanceId],
+          [instanceId],
+        ),
       );
     },
 

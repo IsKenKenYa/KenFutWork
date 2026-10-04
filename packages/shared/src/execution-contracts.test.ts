@@ -21,10 +21,14 @@ describe("Code 项目工作域契约", () => {
       ...project,
       kind: "code",
       workDir: "/home/user/app",
-      additionalDirectories: [{ path: "/home/user/reference", access: "read-only" }],
+      additionalDirectories: [
+        { path: "/home/user/reference", access: "read-only" },
+      ],
     });
     expect(code).not.toHaveProperty("primaryCanvas");
     expect(code.workDir).toBe("/home/user/app");
-    expect(projectSummarySchema.safeParse({ ...project, kind: "design" }).success).toBe(false);
+    expect(
+      projectSummarySchema.safeParse({ ...project, kind: "design" }).success,
+    ).toBe(false);
   });
 });

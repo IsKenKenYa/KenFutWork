@@ -101,6 +101,8 @@ async function feedFile(
       const body = text.slice(start);
       if (body && !target.write(body)) await once(target, "drain", { signal });
     };
+    // 授权复验包含异步等待；先拒绝已撤销操作，避免创建已中止的流漏发 error。
+    signal.throwIfAborted();
     for await (const chunk of handle.createReadStream({
       autoClose: false,
       signal,

@@ -8,7 +8,11 @@ export class ThreadServiceError extends Error {
   readonly statusCode: number;
   readonly code: "session_not_found" | "session_unavailable";
 
-  constructor(message: string, statusCode: number, code: ThreadServiceError["code"] = "session_not_found") {
+  constructor(
+    message: string,
+    statusCode: number,
+    code: ThreadServiceError["code"] = "session_not_found",
+  ) {
     super(message);
     this.name = "ThreadServiceError";
     this.code = code;
@@ -48,15 +52,24 @@ export function createThreadService(options: {
     },
 
     async resolveOwnedSessionThread(user, sessionId) {
-      const workspace = await options.viewerService.resolveWorkspace(user).catch(() => {
-        throw new ThreadServiceError("工作区暂不可用，请稍后重新打开会话。", 503, "session_unavailable");
-      });
+      const workspace = await options.viewerService
+        .resolveWorkspace(user)
+        .catch(() => {
+          throw new ThreadServiceError(
+            "工作区暂不可用，请稍后重新打开会话。",
+            503,
+            "session_unavailable",
+          );
+        });
 
       if (!workspace) {
         throw new ThreadServiceError("Session not found.", 404);
       }
 
-      const row = await options.repository.findSessionThread(workspace.id, sessionId);
+      const row = await options.repository.findSessionThread(
+        workspace.id,
+        sessionId,
+      );
 
       if (!row) {
         throw new ThreadServiceError("Session not found.", 404);
@@ -70,7 +83,9 @@ export function createThreadService(options: {
       }
 
       return {
-        ...(row.mode !== "code" && row.canvas_id ? { canvasId: row.canvas_id } : {}),
+        ...(row.mode !== "code" && row.canvas_id
+          ? { canvasId: row.canvas_id }
+          : {}),
         projectId: row.project_id,
         mode: row.mode,
         sessionId: row.id,

@@ -860,9 +860,7 @@
     },
     "KENFUTWORK_PTY_TEST_HELPER_PATH": {
       "surface": "test",
-      "readers": [
-        "apps/server/src/features/code-terminal/service.test.ts"
-      ],
+      "readers": ["apps/server/src/features/code-terminal/service.test.ts"],
       "inExamples": false,
       "status": "active",
       "note": "真实PTY终端测试可覆盖本轮私有发布helper，缺省源码helper"
@@ -1058,14 +1056,19 @@
     },
     "KENFUTWORK_HARNESS_TEST_PG": {
       "surface": "test",
-      "readers": ["apps/server/src/features/agent-runs/turn-boundaries.integration.test.ts", "apps/server/src/features/code-ui/manual-compact-v4.integration.test.ts"],
+      "readers": [
+        "apps/server/src/features/agent-runs/turn-boundaries.integration.test.ts",
+        "apps/server/src/features/code-ui/manual-compact-v4.integration.test.ts"
+      ],
       "inExamples": false,
       "status": "test-gate",
       "note": "仅启用Harness轮次边界的一次性本机Postgres集成回归；不连接现有数据库"
     },
     "KENFUTWORK_CODE_PLUGINS_TEST_PG": {
       "surface": "test",
-      "readers": ["apps/server/src/features/code-ui/plugins-uninstall.integration.test.ts"],
+      "readers": [
+        "apps/server/src/features/code-ui/plugins-uninstall.integration.test.ts"
+      ],
       "inExamples": false,
       "status": "test-gate",
       "note": "插件卸载施工规格使用独占临时Postgres与真实加密存储；默认跳过，尚未实现的卸载不计GREEN"

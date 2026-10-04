@@ -2,14 +2,13 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import websocket from "@fastify/websocket";
+import { workspaceSettingsSchema } from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
-
-import { workspaceSettingsSchema } from "@kenfutwork/shared";
+import { createCodeTerminalService } from "../features/code-terminal/service.js";
 import { createExecutionScopes } from "../features/execution/scope-service.js";
 import { createProcessSandbox } from "../features/process-sandbox/service.js";
-import { createCodeTerminalService } from "../features/code-terminal/service.js";
 
 import { registerWsRoute } from "./handler.js";
 
@@ -74,26 +73,60 @@ function makeStubs() {
   const auth = {
     authenticate: async () => ({ id: "user-1", accessToken: "token" }),
   };
-  const workDirState = { dir: mkdtempSync(join(tmpdir(), "kfw-ws-domain-")), deny: false };
+  const workDirState = {
+    dir: mkdtempSync(join(tmpdir(), "kfw-ws-domain-")),
+    deny: false,
+  };
   const captureRoot = workDirState.dir;
   const workspaceId = "00000000-0000-4000-8000-000000000001";
   const taskId = "00000000-0000-4000-8000-000000000003";
   const viewer = { resolveWorkspace: async () => ({ id: workspaceId }) };
-  const sandbox = createProcessSandbox({ captureRoot: join(workDirState.dir, "capture"), network: { allowedDomains: [], deniedDomains: [] } });
+  const sandbox = createProcessSandbox({
+    captureRoot: join(workDirState.dir, "capture"),
+    network: { allowedDomains: [], deniedDomains: [] },
+  });
   const terminals = createCodeTerminalService({
-    scopes: createExecutionScopes({ viewerService: viewer as never, repository: { load: async () => {
-      if (workDirState.deny) throw new Error("Task不属于当前工作区。");
-      return { scope: { workspaceId, projectId: "00000000-0000-4000-8000-000000000002", taskId, generation: 1, rootDirectory: realpathSync(workDirState.dir), additionalDirectories: [], sandboxMode: "workspace-write" as const }, state: "ready", branchGeneration: 1 };
-    } } }),
-    sandbox, viewer: viewer as never,
-    settings: { getWorkspaceSettings: async () => workspaceSettingsSchema.parse({ defaultModel: "fixture", terminalShell: "sh" }) } as never,
+    scopes: createExecutionScopes({
+      viewerService: viewer as never,
+      repository: {
+        load: async () => {
+          if (workDirState.deny) throw new Error("Task不属于当前工作区。");
+          return {
+            scope: {
+              workspaceId,
+              projectId: "00000000-0000-4000-8000-000000000002",
+              taskId,
+              generation: 1,
+              rootDirectory: realpathSync(workDirState.dir),
+              additionalDirectories: [],
+              sandboxMode: "workspace-write" as const,
+            },
+            state: "ready",
+            branchGeneration: 1,
+          };
+        },
+      },
+    }),
+    sandbox,
+    viewer: viewer as never,
+    settings: {
+      getWorkspaceSettings: async () =>
+        workspaceSettingsSchema.parse({
+          defaultModel: "fixture",
+          terminalShell: "sh",
+        }),
+    } as never,
   });
   return {
     connectionManager,
     agentRuns,
     auth,
     sockets,
-    terminals, sandbox, viewer, taskId, captureRoot,
+    terminals,
+    sandbox,
+    viewer,
+    taskId,
+    captureRoot,
     workDirState,
   };
 }
@@ -108,9 +141,15 @@ async function startServer(overrides?: {
     connectionManager: stubs.connectionManager as never,
     agentRuns: stubs.agentRuns as never,
     auth: (overrides?.auth ?? stubs.auth) as never,
-    codeTerminal: stubs.terminals, viewerService: stubs.viewer as never,
+    codeTerminal: stubs.terminals,
+    viewerService: stubs.viewer as never,
   });
-  app.addHook("onClose", async () => { await stubs.terminals.close("test_cleanup"); await stubs.sandbox.close("test_cleanup"); rmSync(stubs.workDirState.dir, { recursive: true, force: true }); rmSync(stubs.captureRoot, { recursive: true, force: true }); });
+  app.addHook("onClose", async () => {
+    await stubs.terminals.close("test_cleanup");
+    await stubs.sandbox.close("test_cleanup");
+    rmSync(stubs.workDirState.dir, { recursive: true, force: true });
+    rmSync(stubs.captureRoot, { recursive: true, force: true });
+  });
   await app.listen({ port: 0, host: "127.0.0.1" });
   const address = app.server.address();
   const port =
@@ -348,9 +387,19 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
     const { app, port } = await startServer();
     const session = await connect(port);
     try {
-      const rejected = await session.sendAndWait({ type: "command", action: "terminal.start", payload: { sessionId: "t-no-task", cols: 80, rows: 24 } }, (message) => message.type === "error");
+      const rejected = await session.sendAndWait(
+        {
+          type: "command",
+          action: "terminal.start",
+          payload: { sessionId: "t-no-task", cols: 80, rows: 24 },
+        },
+        (message) => message.type === "error",
+      );
       expect(rejected.message).toBe("Invalid command format");
-    } finally { session.client.close(); await app.close(); }
+    } finally {
+      session.client.close();
+      await app.close();
+    }
   });
 
   it("起会话拿到 ack；输入的命令原样回到输出；stop 后回 exit", async () => {
@@ -363,7 +412,12 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
         {
           type: "command",
           action: "terminal.start",
-          payload: { sessionId: "t1", taskId: stubs.taskId, cols: 80, rows: 24 },
+          payload: {
+            sessionId: "t1",
+            taskId: stubs.taskId,
+            cols: 80,
+            rows: 24,
+          },
         },
         isAck,
       );
@@ -374,7 +428,10 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
         {
           type: "command",
           action: "terminal.input",
-          payload: { sessionId: "t1", data: "printf '\\127\\123\\137\\124\\105\\122\\115\\137\\117\\113\\n'\r" },
+          payload: {
+            sessionId: "t1",
+            data: "printf '\\127\\123\\137\\124\\105\\122\\115\\137\\117\\113\\n'\r",
+          },
         },
         (msg) =>
           msg.type === "terminal.output" &&
@@ -413,7 +470,12 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
         {
           type: "command",
           action: "terminal.start",
-          payload: { sessionId: "t1", taskId: stubs.taskId, cols: 80, rows: 24 },
+          payload: {
+            sessionId: "t1",
+            taskId: stubs.taskId,
+            cols: 80,
+            rows: 24,
+          },
         },
         isAck,
       );
@@ -421,7 +483,12 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
         {
           type: "command",
           action: "terminal.start",
-          payload: { sessionId: "t1", taskId: stubs.taskId, cols: 80, rows: 24 },
+          payload: {
+            sessionId: "t1",
+            taskId: stubs.taskId,
+            cols: 80,
+            rows: 24,
+          },
         },
         isAck,
       );
@@ -449,7 +516,12 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
         {
           type: "command",
           action: "terminal.start",
-          payload: { sessionId: "t1", taskId: stubs.taskId, cols: 80, rows: 24 },
+          payload: {
+            sessionId: "t1",
+            taskId: stubs.taskId,
+            cols: 80,
+            rows: 24,
+          },
         },
         (msg) => msg.type === "terminal.exit",
       );
@@ -470,7 +542,12 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
         {
           type: "command",
           action: "terminal.start",
-          payload: { sessionId: "t1", taskId: stubs.taskId, cols: 80, rows: 24 },
+          payload: {
+            sessionId: "t1",
+            taskId: stubs.taskId,
+            cols: 80,
+            rows: 24,
+          },
         },
         isAck,
       );

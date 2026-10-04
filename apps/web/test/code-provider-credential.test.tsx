@@ -11,8 +11,8 @@ import { ProviderDetailFeedbackBoundary } from "@zui/settings/model-provider-sec
 import { useCallback } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
+import { createCodePlatform } from "../src/components/workbench/zcode/host/platform";
 import { codeHostNotificationResponse } from "./setup/code-host-http";
-import { createWebPlatform } from "../src/components/workbench/zcode/host/upstream/browserPlatform";
 
 afterEach(() => {
   cleanup();
@@ -69,8 +69,8 @@ function renderOriginalCard(beforeSave: () => Promise<void> = async () => {}) {
   const savedKeys: Array<string | null | undefined> = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input, options) => {
-      if (String(input).endsWith("/events"))
+    vi.fn(async (_input, options) => {
+      if (String(_input).endsWith("/events"))
         return codeHostNotificationResponse(options?.signal);
       const request = JSON.parse(options.body);
       if (request.service === "providerSettingsService") {
@@ -93,7 +93,7 @@ function renderOriginalCard(beforeSave: () => Promise<void> = async () => {}) {
   });
   render(
     <ServiceProvider services={client.services}>
-      <PlatformProvider platform={createWebPlatform()}>
+      <PlatformProvider platform={createCodePlatform(client)}>
         <ZCodeIntlProvider initialLocale="zh-CN">
           <TooltipProvider>
             <ProviderDetailFeedbackBoundary>

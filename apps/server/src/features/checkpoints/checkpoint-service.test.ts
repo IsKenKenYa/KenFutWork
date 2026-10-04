@@ -172,16 +172,43 @@ describe("Task 检查点", () => {
   it("按精确pre引用读取选定文件原始字节，保留UTF16与BOM且不猜相邻检查点", async () => {
     const { root, service, scope } = await world();
     const path = join(root, "encoded.txt");
-    const original = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("before\n", "utf16le")]);
+    const original = Buffer.concat([
+      Buffer.from([0xff, 0xfe]),
+      Buffer.from("before\n", "utf16le"),
+    ]);
     await writeFile(path, original);
-    const pre = await service.captureTurnBoundary({ scope, actor, runId: "encoded-run", phase: "pre" });
+    const pre = await service.captureTurnBoundary({
+      scope,
+      actor,
+      runId: "encoded-run",
+      phase: "pre",
+    });
     if (!pre.effective) throw new Error("真实pre引用未保存");
     await scope.backend.readPage({ path });
-    await scope.backend.editFile({ path, oldString: "before", newString: "after" });
-    await service.captureTurnBoundary({ scope, actor, runId: "encoded-run", phase: "post" });
-    const bytes = await service.readFileSnapshot({ scope, actor, checkpointId: pre.effective.id, path });
+    await scope.backend.editFile({
+      path,
+      oldString: "before",
+      newString: "after",
+    });
+    await service.captureTurnBoundary({
+      scope,
+      actor,
+      runId: "encoded-run",
+      phase: "post",
+    });
+    const bytes = await service.readFileSnapshot({
+      scope,
+      actor,
+      checkpointId: pre.effective.id,
+      path,
+    });
     expect(Buffer.from(bytes.bytes!)).toEqual(original);
-    expect(await readFile(path)).toEqual(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("after\n", "utf16le")]));
+    expect(await readFile(path)).toEqual(
+      Buffer.concat([
+        Buffer.from([0xff, 0xfe]),
+        Buffer.from("after\n", "utf16le"),
+      ]),
+    );
   });
   it("captureTurnBoundary无变化按本次真实shadow版本返回post有效引用，不猜数据库最新行", async () => {
     const { root, service, scope } = await world();

@@ -15,17 +15,14 @@ import { createChatPlugin } from "../features/chat/plugin.js";
 import { createRealtimePlugin } from "../features/chat/realtime-plugin.js";
 import { createCheckpointsPlugin } from "../features/checkpoints/plugin.js";
 import { createCodeGitPlugin } from "../features/code-git/plugin.js";
+import { createCodeSubagentsPlugin } from "../features/code-subagents/plugin.js";
+import { createCodeTerminalPlugin } from "../features/code-terminal/plugin.js";
 import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
 import { createCodeUiAgentEventsPlugin } from "../features/code-ui/agent-events-plugin.js";
 import { createCodeUiPlugin } from "../features/code-ui/plugin.js";
-import { createCodeTerminalPlugin } from "../features/code-terminal/plugin.js";
-import { createExecutionScopesPlugin } from "../features/execution/plugin.js";
-import { createProcessSandboxPlugin } from "../features/process-sandbox/plugin.js";
-import { createTaskWorkPlugin } from "../features/task-work/plugin.js";
-import { createCodeSubagentsPlugin } from "../features/code-subagents/plugin.js";
-import { createToolCatalogPlugin } from "../features/tool-catalog/plugin.js";
 import { createComputerUsePlugin } from "../features/computer-use/plugin.js";
 import { createCreditsPlugin } from "../features/credits/plugin.js";
+import { createExecutionScopesPlugin } from "../features/execution/plugin.js";
 import { createFlowHostPlugin } from "../features/flow/plugin.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
 import type { JobService } from "../features/jobs/job-service.js";
@@ -41,12 +38,15 @@ import {
   createPluginsPlugin,
   type PluginCatalogEntry,
 } from "../features/plugins/plugin.js";
+import { createProcessSandboxPlugin } from "../features/process-sandbox/plugin.js";
 import { createProjectsPlugin } from "../features/projects/plugin.js";
 import { createQueuePlugin } from "../features/queue/plugin.js";
 import { createSearchPlugin } from "../features/search/plugin.js";
 import { createSettingsPlugin } from "../features/settings/plugin.js";
 import { createSkillsPlugin } from "../features/skills/plugin.js";
 import { createSystemPlugin } from "../features/system/plugin.js";
+import { createTaskWorkPlugin } from "../features/task-work/plugin.js";
+import { createToolCatalogPlugin } from "../features/tool-catalog/plugin.js";
 import { createUploadsPlugin } from "../features/uploads/plugin.js";
 import { createUsagePlugin } from "../features/usage/plugin.js";
 import type { KernelEvents, PluginDefinition } from "../kernel/types.js";

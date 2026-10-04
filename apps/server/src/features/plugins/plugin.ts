@@ -202,7 +202,14 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
 
   return {
     name: "plugin-registry",
-    inject: ["auth", "admin", "persistence", "viewer", "projects", "executionScopes"],
+    inject: [
+      "auth",
+      "admin",
+      "persistence",
+      "viewer",
+      "projects",
+      "executionScopes",
+    ],
     apply(ctx) {
       const pluginsDir = resolvePluginsDir(deps.pluginsDir);
       const hostNodeMajor = resolveHostNodeMajor(deps.hostNodeMajor);
@@ -274,8 +281,13 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
         canvasWorkDirs: ctx.env.canvasWorkDirs,
         projectWorkDirLoader: projectWorkDirLoaderFor(ctx.get("persistence")),
       });
-      // 启动装载已启用插件：单个失败只记日志，不阻断进程启动
-      void registry.restore();
+      // 原服务必须在宿主接请求前恢复，在同步kernel disposer前完成在途释放。
+      ctx.app.addHook("onReady", async () => {
+        await registry.restore();
+      });
+      ctx.app.addHook("preClose", async () => {
+        await registry.shutdown();
+      });
     },
   };
 }

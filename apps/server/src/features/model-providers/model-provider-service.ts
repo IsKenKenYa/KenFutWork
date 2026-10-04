@@ -9,7 +9,6 @@ import type {
   ProviderScope,
 } from "@kenfutwork/shared";
 import { providerInstanceModelSchema } from "@kenfutwork/shared";
-
 import type { AuthenticatedUser } from "../auth/types.js";
 import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import {
@@ -79,8 +78,8 @@ export interface ResolvedInstanceCredentials {
   configRevision: number;
 }
 
-function mapModels(models: ProviderInstanceRecord["models"]) {
-  return (models ?? []).map((model) =>
+function mapModels(row: ProviderInstanceRecord) {
+  return (row.models ?? []).map((model) =>
     providerInstanceModelSchema.parse(model),
   );
 }
@@ -91,10 +90,10 @@ function toResponse(row: ProviderInstanceRecord): ProviderInstanceResponse {
     scope: row.scope === "system" ? "system" : "workspace",
     name: row.name,
     protocol: row.protocol as ProviderProtocol,
-    ...(row.base_url ? { baseUrl: row.base_url } : {}),
+    ...(row.base_url !== null ? { baseUrl: row.base_url } : {}),
     hasCredential: Boolean(row.encrypted_api_key),
     configRevision: Number(row.config_revision),
-    models: mapModels(row.models),
+    models: mapModels(row),
     ...(row.compat ? { compat: row.compat } : {}),
     // 自定义头只回键名，值不回显（与 MCP env/envKeys 同口径）。
     headerKeys: Object.keys(row.headers ?? {}),
@@ -119,9 +118,9 @@ function toCredentials(row: ProviderInstanceRecord, apiKey: string) {
         : {}),
     ...(row.compat ? { compat: row.compat } : {}),
     ...(row.headers ? { headers: row.headers } : {}),
-    models: mapModels(row.models),
+    models: mapModels(row),
     configRevision: Number(row.config_revision),
-    // 探测纠偏消费面：仅 true 带出（false/缺席=未支持或不详，默认 completions）
+    // 已声明的格式走精确native API；仅未声明格式的旧实例沿用探测回落。
     ...((row.probe_result as { responsesApi?: boolean } | null)
       ?.responsesApi === true
       ? { responsesApi: true }

@@ -101,11 +101,25 @@ export function createChatService(options: {
   viewerService: ViewerService;
 }): ChatService {
   const { repository, viewerService } = options;
-  const requireVisualSession = async (workspaceId: string, sessionId: string) => {
-    const session = await repository.findSessionThread(workspaceId, sessionId).catch(() => {
-      throw new ChatServiceError("chat_error", "会话暂不可用，请稍后重试。", 503);
-    });
-    if (!session || session.mode === "code") throw new ChatServiceError("session_not_found", "此入口只接受画布会话。", 404);
+  const requireVisualSession = async (
+    workspaceId: string,
+    sessionId: string,
+  ) => {
+    const session = await repository
+      .findSessionThread(workspaceId, sessionId)
+      .catch(() => {
+        throw new ChatServiceError(
+          "chat_error",
+          "会话暂不可用，请稍后重试。",
+          503,
+        );
+      });
+    if (!session || session.mode === "code")
+      throw new ChatServiceError(
+        "session_not_found",
+        "此入口只接受画布会话。",
+        404,
+      );
   };
 
   /** 工作区一律由服务端从鉴权用户解析（`FORM-9`）。 */
