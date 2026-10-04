@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { describe, expect, it, vi } from "vitest";
+import { createCodeUiHttpFixture } from "./code-ui-http.fixture.js";
 import { type openCodeStream, request } from "./host-client.fixture.js";
 import { createCodeSessionFixture as createSession } from "./host-session.fixture.js";
 import { heldModel } from "./model-stream.fixture.js";
@@ -72,7 +73,7 @@ async function disposeModelRun(
     const current = await host.snapshot();
     for (const row of current.rows.window)
       if (row.kind === "turnHeader")
-        await request(`/api/agent/runs/${row.turnId}/cancel`, {});
+        await host.client.request(`/api/agent/runs/${row.turnId}/cancel`, {});
   } finally {
     await model.close();
     await host.dispose();
@@ -104,6 +105,52 @@ async function assertStaleStopsKeepRunning(
 }
 
 describe.skipIf(!enabled)("原停止命令公开宿主 integration", () => {
+  it("独占HTTP与PG经真实Project UUID创建根会话并停止真实模型流", async () => {
+    const fixture = await createCodeUiHttpFixture();
+    const model = await heldModel();
+    let host: Awaited<ReturnType<typeof createSession>> | undefined;
+    try {
+      host = await createSession(model.baseUrl, { client: fixture.client });
+      const sent = await host.command("sendText", {
+        text: "保持真实模型流直到停止。",
+      });
+      expect(sent.status, JSON.stringify(sent.body)).toBe(200);
+      const running = await waitForText(host, "正在运行 1");
+      const runId = running.control.activeWorks[0].foregroundExecutionId;
+      const stopped = await host.command("stop", {
+        expectedForegroundExecutionId: runId,
+      });
+      expect(stopped.status, JSON.stringify(stopped.body)).toBe(200);
+      expect(stopped.body.result.status).toBe("accepted");
+      await vi.waitFor(() =>
+        expect(model.requests.map((entry) => entry.closed)).toEqual([true]),
+      );
+      const ended = await host.snapshot();
+      expect(ended.control).toMatchObject({
+        phase: "completedInterrupted",
+        canStop: false,
+      });
+      expect(
+        ended.rows.window.filter(
+          (row: { kind: string }) => row.kind === "assistantText",
+        ),
+      ).toMatchObject([{ text: "正在运行 1", state: "interrupted" }]);
+      const sessionId = host.sessionId;
+      await vi.waitFor(async () => {
+        const fact = await fixture.database.persistence.queryOne<{
+          status: string;
+        }>(
+          "select status from public.agent_runs where id=$1 and session_id=$2",
+          [runId, sessionId],
+        );
+        expect(fact).toMatchObject({ status: "canceled" });
+      });
+    } finally {
+      if (host) await disposeModelRun(host, model);
+      else await model.close();
+      await fixture.close();
+    }
+  }, 90_000);
   it.skipIf(!process.env.CODE_UI_TEST_DATABASE_URL)(
     "停止事务等待期间项目归档，迟到命令返回 404 且不保存 accepted 回执",
     async () => {

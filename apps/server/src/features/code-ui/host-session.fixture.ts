@@ -2,40 +2,37 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ModelSelection } from "@zcode/provider";
+import { modelSelectionSchema } from "@zcode/shared";
 import { expect } from "vitest";
-import { openCodeStream, request } from "./host-client.fixture.js";
+import { z } from "zod";
+import {
+  type CodeUiTestClient,
+  openCodeStream,
+  request,
+} from "./host-client.fixture.js";
 
 async function bindSession(
   stream: Awaited<ReturnType<typeof openCodeStream>>,
   workspacePath: string,
-  providerId: string,
+  modelSelection: ModelSelection,
+  projectId: string,
+  clientId: string,
+  client: Pick<CodeUiTestClient, "request">,
 ) {
-  const clientId = randomUUID();
-  await stream.rpc("initializeConversationV4", [
-    {
-      kind: "clientHello",
-      protocolVersion: 3,
-      clientId,
-      appVersion: "integration",
-      clientKind: "web",
-    },
-  ]);
   const created = await stream.rpc("sendConversationCommandV4", [
     {
       workspacePath,
+      projectId,
       envelope: {
         commandId: randomUUID(),
         clientId,
         sessionId: null,
         type: "createSession",
         payload: {
-          workspaceId: workspacePath,
+          workspaceId: projectId,
           config: {
-            modelSelection: {
-              providerId,
-              modelId: "stop-model",
-              options: {},
-            },
+            modelSelection,
           },
         },
         issuedAt: Date.now(),
@@ -52,6 +49,7 @@ async function bindSession(
     stream.rpc("sendConversationCommandV4", [
       {
         workspacePath,
+        projectId,
         envelope: {
           commandId,
           clientId,
@@ -63,42 +61,74 @@ async function bindSession(
       },
     ]);
   const snapshot = async () => {
-    const result = await request(`/api/code-ui/sessions/${sessionId}`);
+    const result = await client.request(`/api/code-ui/sessions/${sessionId}`);
     expect(result.status).toBe(200);
     return result.body.snapshot;
   };
   return { command, snapshot, sessionId };
 }
 
-export async function createCodeSessionFixture(baseUrl: string) {
+export async function createCodeSessionFixture(
+  baseUrl: string,
+  options?: { client: Pick<CodeUiTestClient, "request" | "openCodeStream"> },
+) {
+  const transport = options?.client ?? { request, openCodeStream };
+  const viewer = await transport.request("/api/viewer");
+  expect(viewer.status, JSON.stringify(viewer.body)).toBe(200);
   const dir = await mkdtemp(join(tmpdir(), "code-ui-stop-"));
   const streams: AbortController[] = [];
   let projectId = "";
   let providerId = "";
+  const stream = await transport.openCodeStream(streams);
+  const clientId = randomUUID();
+  const connectedRequest: CodeUiTestClient["request"] = (path, body, method) =>
+    transport.request(
+      path,
+      path === "/api/code-ui/rpc" && body !== null && typeof body === "object"
+        ? { ...body, connectionId: stream.ready.hello.connectionId }
+        : body,
+      method,
+    );
+  const client = {
+    ...transport,
+    request: connectedRequest,
+  };
   const dispose = async () => {
-    for (const stream of streams) stream.abort();
-    if (providerId)
-      await request("/api/code-ui/rpc", {
-        service: "providerSettingsService",
-        method: "deletePersonalProvider",
-        args: [providerId],
-      });
-    if (projectId)
-      await request(`/api/projects/${projectId}`, undefined, "DELETE");
-    await rm(dir, { recursive: true, force: true });
+    try {
+      if (providerId)
+        await client.request("/api/code-ui/rpc", {
+          service: "providerSettingsService",
+          method: "deletePersonalProvider",
+          args: [providerId],
+        });
+      if (projectId)
+        await client.request(`/api/projects/${projectId}`, undefined, "DELETE");
+    } finally {
+      for (const controller of streams) controller.abort();
+      await rm(dir, { recursive: true, force: true });
+    }
   };
   try {
-    expect((await request("/api/viewer")).status).toBe(200);
-    const opened = await request("/api/code-ui/rpc", {
+    const hello = await stream.rpc("initializeConversationV4", [
+      {
+        kind: "clientHello",
+        protocolVersion: 3,
+        clientId,
+        appVersion: "isolated-stop-integration",
+        clientKind: "web",
+      },
+    ]);
+    expect(hello.status, JSON.stringify(hello.body)).toBe(200);
+    const opened = await client.request("/api/code-ui/rpc", {
       service: "workspace",
       method: "open",
       args: [{ path: dir }],
     });
     expect(opened.status).toBe(200);
-    projectId = opened.body.result.projectId;
+    projectId = z.uuid().parse(opened.body.result.projectId);
     const workspacePath = opened.body.result.path;
     const provider = (method: string, args: unknown[]) =>
-      request("/api/code-ui/rpc", {
+      client.request("/api/code-ui/rpc", {
         service: "providerSettingsService",
         method,
         args,
@@ -115,9 +145,26 @@ export async function createCodeSessionFixture(baseUrl: string) {
       },
     ]);
     await provider("addPersonalModel", [providerId, "stop-model", {}]);
-    const stream = await openCodeStream(streams);
-    const bound = await bindSession(stream, workspacePath, providerId);
-    return { ...bound, stream, workspacePath, projectId, dispose };
+    const view = await client.request("/api/code-ui/rpc", {
+      service: "modelSelectionService",
+      method: "getView",
+      args: [],
+    });
+    expect(view.status, JSON.stringify(view.body)).toBe(200);
+    const selection = modelSelectionSchema.parse(
+      view.body.result.preferredSelection,
+    );
+    expect(selection).toMatchObject({ providerId, modelId: "stop-model" });
+    z.string().min(1).parse(selection.options?.reasoningLevel);
+    const bound = await bindSession(
+      stream,
+      workspacePath,
+      selection,
+      projectId,
+      clientId,
+      client,
+    );
+    return { ...bound, stream, workspacePath, projectId, client, dispose };
   } catch (error) {
     await dispose();
     throw error;
