@@ -18,6 +18,7 @@ export * from "./http.js";
 export * from "./instance-contracts.js";
 export * from "./job-contracts.js";
 export * from "./json.js";
+export * from "./local-access-contracts.js";
 export * from "./mcp-contracts.js";
 export * from "./model-context-windows.js";
 export * from "./plugin-contracts.js";
