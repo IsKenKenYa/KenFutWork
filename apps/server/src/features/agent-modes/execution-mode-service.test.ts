@@ -30,6 +30,7 @@ function makeFakeStore(): ExecutionModeStore & {
     async save(workspaceId, threadId, mode) {
       saved.push({ workspaceId, threadId, mode });
       rows.set(threadId, { exists: true, mode });
+      return true;
     },
   };
 }
@@ -66,7 +67,7 @@ describe("执行模式词汇表", () => {
     expect(service.getMode("t-m")).toBe("loop");
   });
 
-  it("hydrate：缓存命中不查库；miss 时读回持久化模式并 warm 缓存；无行回落 agent", async () => {
+  it("hydrate：带store时按当前Scope读回模式并warm缓存，无行回落agent", async () => {
     const store = makeFakeStore();
     const service = createExecutionModeService({ store });
     store.rows.set("t-persisted", { exists: true, mode: "plan" });
@@ -77,15 +78,15 @@ describe("执行模式词汇表", () => {
     // warm 后 getMode 直接命中
     expect(service.getMode("t-persisted")).toBe("plan");
 
-    // 无行/未设置 → agent，同样进缓存
+    // 无行 → agent，不借另一工作区可能存在的热缓存
     expect(await service.hydrate("t-missing", { workspaceId: "ws" })).toBe(
       "agent",
     );
 
-    // 缓存命中：改库不再影响读数（activate 才会刷新缓存）
+    // 当前持久事实改变时，hydrate必须读回，不能保留旧alias负缓存
     store.rows.set("t-missing", { exists: true, mode: "solo" });
     expect(await service.hydrate("t-missing", { workspaceId: "ws" })).toBe(
-      "agent",
+      "solo",
     );
   });
 

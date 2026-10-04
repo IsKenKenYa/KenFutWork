@@ -263,19 +263,22 @@ export function createExecutionModeService(
       if (!known.has(mode)) {
         throw new Error(`[agent-modes] 未知执行模式 ${mode}（fail loud）。`);
       }
-      active.set(threadId, mode);
       if (scope && deps.store) {
-        await deps.store.save(scope.workspaceId, threadId, mode);
+        const saved = await deps.store.save(scope.workspaceId, threadId, mode);
+        if (!saved) throw new Error("执行模式会话不存在或不属于当前工作区。");
       }
+      // 写穿成功后才发布运行缓存；真实存储拒绝不能改变已激活指导/策略。
+      active.set(threadId, mode);
     },
     async hydrate(threadId, scope) {
-      const cached = active.get(threadId);
-      if (cached) {
-        return cached;
+      if (!deps.store) {
+        const mode = active.get(threadId) ?? "agent";
+        active.set(threadId, mode);
+        return mode;
       }
-      const row = deps.store
-        ? await deps.store.lookup(scope.workspaceId, threadId)
-        : { exists: false, mode: null };
+      // 持久化Scope是事实源；thread/session双alias与跨工作区不能借热缓存绕过归属。
+      const row = await deps.store.lookup(scope.workspaceId, threadId);
+      if (!row.exists) return "agent";
       const mode = row.mode ?? "agent";
       active.set(threadId, mode);
       return mode;

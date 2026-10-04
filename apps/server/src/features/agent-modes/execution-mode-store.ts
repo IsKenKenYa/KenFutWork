@@ -4,11 +4,11 @@ import type { PersistenceService } from "../persistence/types.js";
 
 /**
  * 执行模式持久化（chat_sessions.execution_mode，按线程）。
- * chat_sessions 是工作区归属数据（经 画布→项目 链），读写都走 `forWorkspace`
- * 客户端——DB 层已无 RLS 兜底，隔离谓词必须显式出现在语句里（FORM-9）。
+ * chat_sessions 直接持有项目/工作区归属，以项目与工作区复合键校验，
+ * 读写都走 `forWorkspace` 客户端——DB 层已无 RLS 兜底（FORM-9）。
  *
  * **入参同时接受 thread_id 与会话 id**：run 路径（WS）用服务端内部 thread_id，
- * 而画布助手面板的选择器只有会话 id（会话列表仅回 id/title/updatedAt，见 contracts.ts）。
+ * 而界面选择器只有会话 id（会话列表仅回 id/title/updatedAt，见 contracts.ts）。
  * 此前只匹配 thread_id，面板切换必然落空——接口回 400「Invalid mode.」（catch-all 盖住了
  * 真实原因），实际是「该线程不存在」。
  */
@@ -30,7 +30,7 @@ export interface ExecutionModeStore {
     workspaceId: string,
     threadId: string,
     mode: ExecutionMode,
-  ): Promise<void>;
+  ): Promise<boolean>;
 }
 
 export function isExecutionMode(value: unknown): value is ExecutionMode {
@@ -47,10 +47,9 @@ export function createExecutionModeStore(
         .query<{ execution_mode: unknown }>(
           `select s.execution_mode
              from public.chat_sessions s
-             join public.canvases c on c.id = s.canvas_id
-             join public.projects p on p.id = c.project_id
+             join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id
             where (s.thread_id = $1 or s.id::text = $1)
-              and p.workspace_id = :workspace`,
+              and s.workspace_id = :workspace`,
           [threadId],
         );
       const row = rows[0];
@@ -64,20 +63,17 @@ export function createExecutionModeStore(
     },
 
     async save(workspaceId, threadId, mode) {
-      // 行不存在（会话尚未落库）或不在本工作区：0 行更新，内存中的激活仍对本轮 run 生效
-      await persistence.forWorkspace(workspaceId).execute(
+      // 受影响行是原子归属/存活证明；零行不改库，也不能被consumer当作激活成功。
+      const changed = await persistence.forWorkspace(workspaceId).execute(
         `update public.chat_sessions s
             set execution_mode = $2
-          where (s.thread_id = $1 or s.id::text = $1)
-            and exists (
-              select 1
-                from public.canvases c
-                join public.projects p on p.id = c.project_id
-               where c.id = s.canvas_id
-                 and p.workspace_id = :workspace
-            )`,
+           from public.projects p
+          where p.id = s.project_id and p.workspace_id = s.workspace_id
+            and s.workspace_id = :workspace
+            and (s.thread_id = $1 or s.id::text = $1)`,
         [threadId, mode],
       );
+      return changed > 0;
     },
   };
 }

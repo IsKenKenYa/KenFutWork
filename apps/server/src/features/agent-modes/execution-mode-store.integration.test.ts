@@ -1,149 +1,312 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
-
+import {
+  zcodeUiProtocol as protocol,
+  viewerResponseSchema,
+} from "@kenfutwork/shared";
+import { describe, expect, it, vi } from "vitest";
+import { prepareHarnessTask } from "../agent-runs/test-harness.js";
+import { createAccountRepository } from "../auth/repository.js";
 import { createViewerRepository } from "../bootstrap/repository.js";
 import { createChatRepository } from "../chat/repository.js";
-import { createPostgresPersistence } from "../persistence/providers/postgres.js";
+import { createCodeUiHttpFixture } from "../code-ui/code-ui-http.fixture.js";
+import { createCodeSessionFixture } from "../code-ui/host-session.fixture.js";
+import { heldModel } from "../code-ui/model-stream.fixture.js";
 import { createProjectRepository } from "../projects/repository.js";
+import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
+import { createExecutionModeService } from "./execution-mode-service.js";
 import { createExecutionModeStore } from "./execution-mode-store.js";
 
-/**
- * 执行模式持久化真实库集成测试（默认 skipped：需要 DATABASE_URL）。
- * 目的：证明 chat_sessions.execution_mode 的读回/写穿在工作区谓词下成立——
- * 归属工作区可见、外工作区不可见，迁移落列后无脏读。
- *
- * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/postgres \
- *       pnpm --filter @kenfutwork/server exec vitest run execution-mode-store.integration
- */
-const DATABASE_URL = process.env.DATABASE_URL;
-const FOREIGN_WORKSPACE = "00000000-0000-0000-0000-000000000000";
+type CodeHost = Awaited<ReturnType<typeof createCodeSessionFixture>>;
 
-type IdRow = { id: string };
-
-describe.skipIf(!DATABASE_URL)("执行模式持久化真实库集成", () => {
-  async function withThreadFixture(
-    run: (input: {
-      threadId: string;
-      persistence: ReturnType<typeof createPostgresPersistence>;
-      userId: string;
-      workspaceId: string;
-    }) => Promise<void>,
-  ) {
-    const persistence = createPostgresPersistence({
-      databaseUrl: DATABASE_URL as string,
-    });
-
-    try {
-      const profile = await persistence.queryOne<IdRow>(
-        "select id from public.profiles order by created_at limit 1",
+async function waitActive(
+  host: CodeHost,
+  model: Awaited<ReturnType<typeof heldModel>>,
+  requests: number,
+) {
+  // 仅测试同步期限：等真实HTTP模型请求与公开运行投影，不是业务运行时限额。
+  await vi.waitFor(
+    async () => {
+      expect(model.requests).toHaveLength(requests);
+      const snapshot = protocol.conversationSnapshotSchema.parse(
+        await host.snapshot(),
       );
-      expect(profile, "需要至少一个已引导的 profile 作夹具").not.toBeNull();
+      expect(snapshot.control.phase).toBe("running");
+    },
+    { timeout: 30_000 },
+  );
+  const snapshot = protocol.conversationSnapshotSchema.parse(
+    await host.snapshot(),
+  );
+  const foregroundId = snapshot.control.activeWorks.find(
+    (work) => work.kind === "primaryTurn",
+  )?.foregroundExecutionId;
+  if (!foregroundId) throw new Error("实际原编辑运行的前台身份缺失");
+  return foregroundId;
+}
 
-      const workspace = await createViewerRepository(
-        persistence,
-      ).findPersonalWorkspace((profile as IdRow).id);
-      const workspaceId = workspace?.id as string;
-      expect(workspaceId).toBeTruthy();
+async function editContextThroughHost(
+  host: CodeHost,
+  model: Awaited<ReturnType<typeof heldModel>>,
+) {
+  await host.command("sendText", { text: "模式应跟随稳定Task" });
+  const first = await waitActive(host, model, 1);
+  expect(
+    (await host.command("stop", { expectedForegroundExecutionId: first })).body
+      .result.status,
+  ).toBe("accepted");
+  const beforeEdit = protocol.conversationSnapshotSchema.parse(
+    await host.snapshot(),
+  );
+  const row = beforeEdit.rows.window.find(
+    (entry) => entry.kind === "userInput" && entry.origin === "realUser",
+  );
+  if (row?.kind !== "userInput") throw new Error("原编辑公开目标行缺失");
+  const edited = await host.command(
+    "editUserQuery",
+    {
+      target: { rowId: row.rowId, entityId: row.entityId },
+      newText: "上下文分支换绑后继续",
+      workspaceMode: "preserve",
+    },
+    randomUUID(),
+    {
+      baseRevision: beforeEdit.revision,
+      baseLogEpoch: beforeEdit.logEpoch,
+    },
+  );
+  expect(edited.body.result).toMatchObject({
+    status: "accepted",
+    result: { type: "editUserQuery", disposition: "rewind" },
+  });
+  const second = await waitActive(host, model, 2);
+  expect(second).not.toBe(first);
+  return second;
+}
 
-      const created = await createProjectRepository(persistence).createProject({
-        canvasName: "模式集成画布",
-        description: null,
-        name: "模式集成项目",
-        slug: `mode-int-${Date.now().toString(36)}`,
-        userId: (profile as IdRow).id,
-        workspaceId,
-      });
-      if (!created.canvas) throw new Error("Design 夹具缺少主画布");
-
-      const threadId = `thread_mode_int_${randomUUID()}`;
-      const chat = createChatRepository(persistence);
-      await chat.createSession(workspaceId, {
-        canvasId: created.canvas.id,
-        threadId,
-        userId: (profile as IdRow).id,
-      });
-
+/** 只创建独占临时Postgres并重放正式迁移；不解析.env或连接任何现存数据库。 */
+describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
+  "执行模式持久化真实库 integration",
+  () => {
+    it("无Canvas Code Task支持两种id的模式激活、冷重启恢复和foreign工作区隔离", async () => {
+      const database = await createTaskWorkDatabase();
       try {
-        await run({
-          threadId,
-          persistence,
-          userId: (profile as IdRow).id,
-          workspaceId,
+        const { scope, threadId } = await prepareHarnessTask(database);
+        const ownerScope = { workspaceId: scope.workspaceId };
+        const sessionId = scope.taskId;
+        const session = await database.persistence
+          .forWorkspace(scope.workspaceId)
+          .queryOne<{ canvas_id: string | null; kind: string; mode: string }>(
+            `select s.canvas_id, s.mode, p.kind
+               from public.chat_sessions s
+               join public.projects p on p.id=s.project_id and p.workspace_id=s.workspace_id
+              where s.id=$1 and s.workspace_id=:workspace`,
+            [sessionId],
+          );
+        expect(session).toEqual({
+          canvas_id: null,
+          kind: "code",
+          mode: "code",
         });
+
+        const foreignAccount = await createAccountRepository(
+          database.persistence,
+        ).ensurePasswordlessAccount({
+          email: `mode-foreign-${randomUUID()}@integration.local`,
+          displayName: "模式隔离工作区",
+        });
+        const viewer = createViewerRepository(database.persistence);
+        await viewer.bootstrap({
+          email: foreignAccount.email,
+          userId: foreignAccount.id,
+          userMeta: {},
+        });
+        const foreignWorkspace = await viewer.findPersonalWorkspace(
+          foreignAccount.id,
+        );
+        if (!foreignWorkspace) throw new Error("私有foreign工作区未创建");
+        const foreignScope = { workspaceId: foreignWorkspace.id };
+        const createService = () =>
+          createExecutionModeService({
+            store: createExecutionModeStore(database.persistence),
+          });
+        const service = createService();
+        for (const id of [sessionId, threadId]) {
+          expect(await service.lookup(id, ownerScope)).toEqual({
+            exists: true,
+            mode: null,
+          });
+          expect(await service.hydrate(id, ownerScope)).toBe("agent");
+        }
+        await service.activate(sessionId, "plan", ownerScope);
+        const atomicStore = createExecutionModeStore(database.persistence);
+        expect(
+          await atomicStore.save(scope.workspaceId, sessionId, "plan"),
+        ).toBe(true);
+
+        const restarted = createService();
+        for (const id of [sessionId, threadId]) {
+          expect(await restarted.lookup(id, ownerScope)).toEqual({
+            exists: true,
+            mode: "plan",
+          });
+          expect(await restarted.hydrate(id, ownerScope)).toBe("plan");
+        }
+        await restarted.activate(threadId, "goal", ownerScope);
+        const coldOwner = createService();
+        const coldForeign = createService();
+        const store = createExecutionModeStore(database.persistence);
+        for (const id of [sessionId, threadId]) {
+          expect(await coldForeign.lookup(id, foreignScope)).toEqual({
+            exists: false,
+            mode: null,
+          });
+          expect(await coldForeign.hydrate(id, foreignScope)).toBe("agent");
+          expect(await store.save(foreignWorkspace.id, id, "solo")).toBe(false);
+          expect(await coldOwner.lookup(id, ownerScope)).toEqual({
+            exists: true,
+            mode: "goal",
+          });
+          expect(await coldOwner.hydrate(id, ownerScope)).toBe("goal");
+        }
       } finally {
-        await persistence.query(
-          "delete from public.chat_sessions where canvas_id = $1",
-          [created.canvas.id],
-        );
-        await persistence.query(
-          "delete from public.canvases where project_id = $1",
-          [created.project.id],
-        );
-        await persistence.query("delete from public.projects where id = $1", [
-          created.project.id,
-        ]);
+        await database.close();
       }
-    } finally {
-      await persistence.close();
-    }
-  }
+    });
 
-  it("lookup：归属工作区 exists+null，外工作区不可见；save 写穿后读回一致", async () => {
-    await withThreadFixture(async ({ threadId, persistence, workspaceId }) => {
-      const store = createExecutionModeStore(persistence);
+    it("Design和Flow使用正式项目会话仓库创建后，两种id可持久往返现有六档模式", async () => {
+      const database = await createTaskWorkDatabase();
+      try {
+        const { scope, actor } = await prepareHarnessTask(database);
+        const ownerScope = { workspaceId: scope.workspaceId };
+        const projects = createProjectRepository(database.persistence);
+        const chat = createChatRepository(database.persistence);
+        const createService = () =>
+          createExecutionModeService({
+            store: createExecutionModeStore(database.persistence),
+          });
+        const modes = [
+          "agent",
+          "plan",
+          "solo",
+          "goal",
+          "loop",
+          "creative",
+        ] as const;
+        expect(
+          createService()
+            .listModes()
+            .map((mode) => mode.id),
+        ).toEqual(modes);
+        for (const kind of ["design", "flow"] as const) {
+          const created = await projects.createProject({
+            workspaceId: scope.workspaceId,
+            userId: actor.id,
+            kind,
+            name: `${kind}执行模式隔离回归`,
+            slug: `mode-${kind}-${randomUUID()}`,
+            description: null,
+            canvasName: "主画布",
+          });
+          if (!created.canvas) throw new Error(`${kind}正式仓库未创建主画布`);
+          const threadId = `mode-${kind}-${randomUUID()}`;
+          const session = await chat.createSession(scope.workspaceId, {
+            canvasId: created.canvas.id,
+            threadId,
+            userId: actor.id,
+          });
+          if (!session) throw new Error("正式Design/Flow会话未创建");
+          expect(session).toMatchObject({
+            project_id: created.project.id,
+            mode: kind,
+          });
+          const service = createService();
+          for (const id of [session.id, threadId])
+            expect(await service.lookup(id, ownerScope)).toEqual({
+              exists: true,
+              mode: null,
+            });
+          for (const mode of modes) {
+            await service.activate(session.id, mode, ownerScope);
+            const restarted = createService();
+            for (const id of [session.id, threadId]) {
+              expect(await restarted.lookup(id, ownerScope)).toEqual({
+                exists: true,
+                mode,
+              });
+              expect(await restarted.hydrate(id, ownerScope)).toBe(mode);
+            }
+          }
+        }
+      } finally {
+        await database.close();
+      }
+    });
 
-      // 新会话未设置模式：行存在、值为 null
-      expect(await store.lookup(workspaceId, threadId)).toEqual({
-        exists: true,
-        mode: null,
-      });
-      // 外工作区看不到该线程（FORM-9 隔离谓词）
-      expect(await store.lookup(FOREIGN_WORKSPACE, threadId)).toEqual({
-        exists: false,
-        mode: null,
-      });
-
-      // 写穿 + 读回
-      await store.save(workspaceId, threadId, "plan");
-      expect(await store.lookup(workspaceId, threadId)).toEqual({
-        exists: true,
-        mode: "plan",
-      });
-
-      // 外工作区写入是 0 行更新，不影响归属工作区的值
-      await store.save(FOREIGN_WORKSPACE, threadId, "solo");
-      expect(await store.lookup(workspaceId, threadId)).toEqual({
-        exists: true,
-        mode: "plan",
-      });
-
-      // 全六档值都能落列（约束列合法性）
-      for (const mode of [
-        "agent",
-        "plan",
-        "solo",
-        "goal",
-        "loop",
-        "creative",
-      ] as const) {
-        await store.save(workspaceId, threadId, mode);
-        expect(await store.lookup(workspaceId, threadId)).toEqual({
-          exists: true,
-          mode,
+    it("原编辑HTTP真正换绑后，稳定会话id和新thread别名冷恢复模式，旧别名不再拥有持久行", async () => {
+      const fixture = await createCodeUiHttpFixture();
+      const model = await heldModel();
+      let host: CodeHost | undefined;
+      try {
+        host = await createCodeSessionFixture(model.baseUrl, {
+          client: fixture.client,
         });
+        const viewerResponse = await host.client.request("/api/viewer");
+        expect(viewerResponse.status).toBe(200);
+        const viewer = viewerResponseSchema.parse(viewerResponse.body);
+        const scope = { workspaceId: viewer.workspace.id };
+        const chat = createChatRepository(fixture.database.persistence);
+        const original = await chat.findSessionThread(
+          scope.workspaceId,
+          host.sessionId,
+        );
+        if (!original?.thread_id) throw new Error("原Code Task线程未实际绑定");
+        expect(original).toMatchObject({ mode: "code", canvas_id: null });
+        const createService = () =>
+          createExecutionModeService({
+            store: createExecutionModeStore(fixture.database.persistence),
+          });
+        await createService().activate(host.sessionId, "plan", scope);
+        const second = await editContextThroughHost(host, model);
+        const rebound = await chat.findSessionThread(
+          scope.workspaceId,
+          host.sessionId,
+        );
+        if (!rebound?.thread_id) throw new Error("新上下文线程未实际绑定");
+        expect(rebound.thread_id).not.toBe(original.thread_id);
+        const restarted = createService();
+        for (const id of [host.sessionId, rebound.thread_id]) {
+          expect(await restarted.lookup(id, scope)).toEqual({
+            exists: true,
+            mode: "plan",
+          });
+          expect(await restarted.hydrate(id, scope)).toBe("plan");
+        }
+        expect(await restarted.lookup(original.thread_id, scope)).toEqual({
+          exists: false,
+          mode: null,
+        });
+        expect(await restarted.hydrate(original.thread_id, scope)).toBe(
+          "agent",
+        );
+        const store = createExecutionModeStore(fixture.database.persistence);
+        expect(
+          await store.save(scope.workspaceId, original.thread_id, "solo"),
+        ).toBe(false);
+        expect(await createService().hydrate(host.sessionId, scope)).toBe(
+          "plan",
+        );
+        await host.command("stop", { expectedForegroundExecutionId: second });
+      } finally {
+        if (host) {
+          const snapshot = protocol.conversationSnapshotSchema.parse(
+            await host.snapshot(),
+          );
+          if (snapshot.control.canStop) await host.command("stop", {});
+          await host.dispose();
+        }
+        await model.close();
+        await fixture.close();
       }
     });
-  });
-
-  it("save 对不存在的线程是 0 行 no-op（会话未落库时内存激活兜底）", async () => {
-    await withThreadFixture(async ({ persistence, workspaceId }) => {
-      const store = createExecutionModeStore(persistence);
-      const ghost = `thread_mode_ghost_${randomUUID()}`;
-      await store.save(workspaceId, ghost, "solo");
-      expect(await store.lookup(workspaceId, ghost)).toEqual({
-        exists: false,
-        mode: null,
-      });
-    });
-  });
-});
+  },
+);
