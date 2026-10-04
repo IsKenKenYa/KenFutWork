@@ -8,6 +8,11 @@
 
 #### 合并后原UI接线进展（最新）
 
+##### 运行初始化拒绝与迁回主工作区（2026-10-05）
+
+- 旧POST启动消费者已接Store新语义：显式activate或Scoped hydrate真实失败均503，不能吞错按默认agent创建Run。真实PG读/写拒绝各RED→GREEN，公开组合4GREEN；registry/spec与Apifox独立AI分支同步见《日志》一百一十五。AI分支未合主，历史3条退役接口的审阅清理另行完成。
+- 用户最新指令：此模块提交后快进整合到主checkout的codex/完整移植ZCode-Code界面，之后停止在code-harness worktree编辑，与用户系统线程共用主工作区。question仅首真实RED、无生产broker；测试草稿保留并迁入主checkout。完整Goal active，后续施工位置以合并回执为准。
+
 ##### 可信执行模式指导接线（2026-10-05最新）
 
 - runtime以已接受Run与scopeHandle描述提供pre-step事实（实际runId/preset/workspaceId/taskId/sessionId）；agent-modes在Code输入前await Scoped hydrate恢复原指导。真实内核+PG+Harness冷服务与同Task真实分支换thread/冷Kernel2条GREEN，最新HumanMessage含goal，不靠历史前缀假绿。V4工具权限仍是唯一执行授权，本轮只恢复指导，无新事件/key/runtime。

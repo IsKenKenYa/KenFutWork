@@ -1728,7 +1728,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: runCreateResponseSchema,
     summary: "创建智能体运行",
     description:
-      "启动一次智能体运行：补建 Code 模式会话、解析工作区默认模型、平台池额度前置拦截（余额耗尽 402）、激活执行模式与 plan 批准门，返回 202 与 runId。携带 Bearer 时鉴权；无令头允许匿名启动（本地形态）。",
+      "启动一次智能体运行：补建 Code 模式会话、解析工作区默认模型、平台池额度前置拦截（余额耗尽 402）、读取或激活执行模式与 plan 批准门；模式存储读取或写入失败时返回 503，且不创建 Run，成功返回 202 与 runId。携带 Bearer 时鉴权；无令头允许匿名启动（本地形态）。",
   },
   {
     method: "post",

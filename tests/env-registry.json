@@ -1058,11 +1058,31 @@
       "surface": "test",
       "readers": [
         "apps/server/src/features/agent-runs/turn-boundaries.integration.test.ts",
-        "apps/server/src/features/code-ui/manual-compact-v4.integration.test.ts"
+        "apps/server/src/features/code-ui/manual-compact-v4.integration.test.ts",
+        "apps/server/src/features/agent-modes/execution-mode-store.integration.test.ts",
+        "apps/server/src/features/agent-modes/execution-mode-cache.integration.test.ts"
       ],
       "inExamples": false,
       "status": "test-gate",
       "note": "仅启用Harness轮次边界的一次性本机Postgres集成回归；不连接现有数据库"
+    },
+    "KENFUTWORK_RUN_MODE_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/http/runs-execution-mode.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "独占临时Postgres验证Run模式读写失败阻止启动；不读取现有数据库"
+    },
+    "KENFUTWORK_AGENT_MODE_GUIDANCE_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/agent-runs/code-mode-guidance.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "独占临时Postgres与真实Harness验证Code冷恢复及换线程后的模式指导"
     },
     "KENFUTWORK_CODE_PLUGINS_TEST_PG": {
       "surface": "test",

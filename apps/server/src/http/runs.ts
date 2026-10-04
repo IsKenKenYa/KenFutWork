@@ -285,7 +285,14 @@ export async function registerRunRoutes(
             await options.agentModes.hydrate(sessionThread.threadId, modeScope);
           }
         } catch {
-          // 持久化失败不阻断启动：内存激活/默认 agent 兜底（载荷模式已过 zod 枚举）
+          return reply.code(503).send(
+            applicationErrorResponseSchema.parse({
+              error: {
+                code: "service_unavailable",
+                message: "无法确认执行模式，运行未启动，请稍后重试。",
+              },
+            }),
+          );
         }
       }
 
