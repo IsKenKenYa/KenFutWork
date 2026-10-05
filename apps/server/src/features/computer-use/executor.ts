@@ -184,6 +184,30 @@ export async function createExecutorForPlatform(options: {
   log?: (message: string) => void;
 }): Promise<ComputerUseExecutor> {
   const platform = options.platform ?? process.platform;
+  if (platform === "win32") {
+    try {
+      return await (
+        await import("./executor-windows.js")
+      ).createWindowsExecutor();
+    } catch (error) {
+      return createUnavailableExecutor(
+        `Windows桌面后端未就绪：${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  if (platform === "linux") {
+    try {
+      if (process.env.WAYLAND_DISPLAY)
+        return await (
+          await import("./executor-wayland.js")
+        ).createWaylandExecutor();
+      return await (await import("./executor-linux.js")).createLinuxExecutor();
+    } catch (error) {
+      return createUnavailableExecutor(
+        `Linux桌面后端未就绪：${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
   if (platform === "darwin") {
     try {
       const { createMacosExecutor } = await import("./executor-macos.js");
