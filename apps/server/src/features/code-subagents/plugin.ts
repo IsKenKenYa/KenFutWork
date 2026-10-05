@@ -22,7 +22,7 @@ export function createCodeSubagentsPlugin(): PluginDefinition {
                 throw new Error("子任务治理设置缺少可信用户身份。");
               const settings = await ctx
                 .get("settings")
-                .getWorkspaceSettings(context.actor, context.scope.workspaceId);
+                .getInstanceSettings(context.actor, context.scope.instanceId);
               return {
                 maxDepth: settings.subagentMaxDepth,
                 previewMaxChars: settings.processPreviewMaxChars,

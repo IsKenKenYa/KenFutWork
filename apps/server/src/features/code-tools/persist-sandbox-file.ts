@@ -40,7 +40,7 @@ export type PersistSandboxFileDeps = {
 /**
  * `persist_sandbox_file`（shared）：沙箱产物上传换签名 URL。沙箱目录是
  * per-run 事实（dev=per-run tmp），经内核动态工具缝在 run 起始期解析；
- * 工作区从 execCtx.workspaceId 直取（runtime 已解析，不再经画布 JOIN 反查）。
+ * 工作区从 execCtx.instanceId 直取（runtime 已解析，不再经画布 JOIN 反查）。
  */
 export function createPersistSandboxFileToolDefinition(
   deps: PersistSandboxFileDeps,
@@ -89,8 +89,8 @@ export function createPersistSandboxFileToolDefinition(
           : basename(input.filePath);
 
         // 存储路径按工作区前缀（RLS 口径）；工作区未解析时回落 uploads/ 前缀
-        const storagePath = execCtx.workspaceId
-          ? `${execCtx.workspaceId}/generated/${Date.now()}-${fileName}`
+        const storagePath = execCtx.instanceId
+          ? `${execCtx.instanceId}/generated/${Date.now()}-${fileName}`
           : `uploads/${Date.now()}-${fileName}`;
         const bucket = deps.blob.bucket("project-assets");
         await bucket.upload(storagePath, fileBuffer, {

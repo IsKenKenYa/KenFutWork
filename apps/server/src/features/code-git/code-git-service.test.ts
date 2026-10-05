@@ -4,11 +4,12 @@ import { join } from "node:path";
 import {
   AGENT_GOVERNANCE_DEFAULTS,
   type CodeExecutionScope,
-  workspaceSettingsSchema,
+  instanceSettingsSchema,
 } from "@kenfutwork/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AuthenticatedUser } from "../auth/types.js";
+import { createRuntimeTestInstance } from "../../agent/runtime-test-fixtures.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type {
   ManagedProcess,
   ProcessSandbox,
@@ -16,14 +17,12 @@ import type {
 import { createCodeGitService } from "./code-git-service.js";
 import type { GitClient, GitRepoView } from "./git-client.js";
 
-const WORKSPACE_ID = "2cdb5c27-a1f7-4109-9927-40e0b0822956";
+const INSTANCE_ID = "2cdb5c27-a1f7-4109-9927-40e0b0822956";
 const PROJECT_ID = "c15b75a5-b7ef-46b5-8b0c-d543dd7769d5";
 const TASK_ID = "0432143f-e2b8-4ea6-adea-01f706f537d3";
-const ACTOR: AuthenticatedUser = {
-  id: "actor",
-  email: "actor@example.test",
-  accessToken: "private",
-  userMetadata: {},
+const ACTOR: LocalActor = {
+  instanceId: INSTANCE_ID,
+  accessClientId: "00000000-0000-4000-8000-000000000009",
 };
 const view: GitRepoView = {
   isRepo: true,
@@ -53,7 +52,7 @@ async function world(
   const extra = await realpath(await mkdtemp(join(tmpdir(), "kfw-git-extra-")));
   temporary.push(extra);
   const identity: CodeExecutionScope = {
-    workspaceId: WORKSPACE_ID,
+    instanceId: INSTANCE_ID,
     projectId: PROJECT_ID,
     taskId: TASK_ID,
     generation: 1,
@@ -68,11 +67,7 @@ async function world(
           ? null
           : { scope: identity, state: "ready", branchGeneration: 1 },
     },
-    viewerService: {
-      resolveWorkspace: vi.fn(
-        async () => ({ id: identity.workspaceId }) as never,
-      ),
-    },
+    localInstance: createRuntimeTestInstance(INSTANCE_ID),
     resolveFileLimits: async () => ({
       ...AGENT_GOVERNANCE_DEFAULTS,
       codePatchMaxBytes:
@@ -125,12 +120,10 @@ async function world(
     gitForScope: vi.fn(async () => git),
     processSandbox: sandbox,
     source: options.unavailable ? "unavailable" : "system",
-    viewerService: {
-      resolveWorkspace: async () => ({ id: identity.workspaceId }) as never,
-    },
+    localInstance: createRuntimeTestInstance(INSTANCE_ID),
     settingsService: {
-      getWorkspaceSettings: async () =>
-        workspaceSettingsSchema.parse({ defaultModel: "test" }),
+      getInstanceSettings: async () =>
+        instanceSettingsSchema.parse({ defaultModel: "test" }),
     },
     availableShells: [{ id: "bash", label: "Bash", executable: "/bin/bash" }],
   });

@@ -24,7 +24,7 @@ async function fixture() {
     role: "main",
     agentId: "main",
     describe: () => ({
-      workspaceId: "00000000-0000-4000-8000-000000000001",
+      instanceId: "00000000-0000-4000-8000-000000000001",
       projectId: "00000000-0000-4000-8000-000000000002",
       taskId: "00000000-0000-4000-8000-000000000003",
       generation: 0,

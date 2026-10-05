@@ -30,10 +30,10 @@ const mutations = new Map<
 >();
 
 /** Call after Task resources have stopped. Foreground Run stops retain Task observations. */
-export function forgetTaskFileState(workspaceId: string, taskId: string): void {
-  if (hasTaskFileOperations(workspaceId, taskId))
+export function forgetTaskFileState(instanceId: string, taskId: string): void {
+  if (hasTaskFileOperations(instanceId, taskId))
     throw new Error("Task 文件操作仍在运行，请先完成撤销再清理状态");
-  const prefix = `${workspaceId}:${taskId}:`;
+  const prefix = `${instanceId}:${taskId}:`;
   for (const key of observations.keys()) {
     if (key.startsWith(prefix)) observations.delete(key);
   }
@@ -113,7 +113,7 @@ export class ScopedFileController {
   ) {}
   currentObservations() {
     const identity = this.scope.describe();
-    const key = `${identity.workspaceId}:${identity.taskId}:${this.scope.role}:${this.scope.agentId}:${identity.generation}`;
+    const key = `${identity.instanceId}:${identity.taskId}:${this.scope.role}:${this.scope.agentId}:${identity.generation}`;
     const observed = observations.get(key) ?? new Map<string, Observation>();
     observations.set(key, observed);
     return observed;
@@ -328,7 +328,7 @@ export class ScopedFileController {
     if (typeof input.operationId !== "string" || !input.operationId)
       return action();
     const identity = this.scope.describe();
-    const key = `${identity.workspaceId}:${identity.taskId}:${this.scope.role}:${this.scope.agentId}:${input.operationId}`;
+    const key = `${identity.instanceId}:${identity.taskId}:${this.scope.role}:${this.scope.agentId}:${input.operationId}`;
     const parameters = Object.fromEntries(
       Object.entries(input)
         .filter(

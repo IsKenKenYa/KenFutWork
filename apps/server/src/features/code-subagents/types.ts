@@ -1,6 +1,6 @@
 import type { StreamEvent } from "@kenfutwork/shared";
-import type { AuthenticatedUser } from "../auth/types.js";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type { CodeApprovalMode } from "../permissions/approval-types.js";
 import type { TaskWorkRecord } from "../task-work/types.js";
 
@@ -17,7 +17,7 @@ export interface ChildSession {
 export interface CodeChildRequest {
   childSessionId: string;
   approvalCeiling: CodeApprovalMode;
-  actor: AuthenticatedUser;
+  actor: LocalActor;
   scope: ExecutionScopeHandle;
   model: string;
   parentSessionId: string;

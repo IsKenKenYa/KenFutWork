@@ -97,7 +97,7 @@ export async function commitBatch<T extends ScopedFilesystemScope>(
         const previous = scope.describe();
         const next = newScope.describe();
         if (
-          previous.workspaceId !== next.workspaceId ||
+          previous.instanceId !== next.instanceId ||
           previous.taskId !== next.taskId ||
           previous.projectId !== next.projectId
         )

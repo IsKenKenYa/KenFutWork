@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import type { AuthenticatedUser } from "../auth/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import {
   detectTerminalShells,
   resolveTerminalShell,
@@ -11,6 +9,10 @@ import type {
   ExecutionScopeHandle,
   ExecutionScopes,
 } from "../execution/scope-service.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import type {
   ManagedTerminalProcess,
   ProcessExit,
@@ -39,7 +41,7 @@ export class CodeTerminalError extends Error {
   }
 }
 interface TerminalRecord {
-  workspaceId: string;
+  instanceId: string;
   userId: string;
   connectionId: string;
   id: string;
@@ -62,36 +64,32 @@ interface TerminalRecord {
 export function createCodeTerminalService(deps: {
   scopes: ExecutionScopes;
   sandbox: ProcessSandbox;
-  viewer: Pick<ViewerService, "resolveWorkspace">;
-  settings: Pick<SettingsService, "getWorkspaceSettings">;
+  localInstance: Pick<LocalInstanceService, "resolve">;
+  settings: Pick<SettingsService, "getInstanceSettings">;
 }): CodeTerminalService {
   const records = new Map<string, TerminalRecord>();
   const closedConnections = new Set<string>();
   let closed = false;
   let ordinal = 0;
-  const ownerKey = (workspaceId: string, connectionId: string) =>
-    JSON.stringify([workspaceId, connectionId]);
-  const key = (workspaceId: string, connectionId: string, id: string) =>
-    JSON.stringify([workspaceId, connectionId, id]);
+  const ownerKey = (instanceId: string, connectionId: string) =>
+    JSON.stringify([instanceId, connectionId]);
+  const key = (instanceId: string, connectionId: string, id: string) =>
+    JSON.stringify([instanceId, connectionId, id]);
   const ensureOpen = (record: TerminalRecord) => {
     if (
       closed ||
       record.closing ||
-      closedConnections.has(ownerKey(record.workspaceId, record.connectionId))
+      closedConnections.has(ownerKey(record.instanceId, record.connectionId))
     )
       throw new CodeTerminalError(
         "closed",
         "终端连接或Task已关闭，拒绝迟到启动。",
       );
   };
-  const owned = async (
-    actor: AuthenticatedUser,
-    connectionId: string,
-    id: string,
-  ) => {
-    const workspace = await deps.viewer.resolveWorkspace(actor);
-    const record = records.get(key(workspace.id, connectionId, id));
-    if (!record || record.userId !== actor.id)
+  const owned = async (actor: LocalActor, connectionId: string, id: string) => {
+    const workspace = await deps.localInstance.resolve(actor);
+    const record = records.get(key(workspace.instanceId, connectionId, id));
+    if (!record || record.userId !== actor.instanceId)
       throw new CodeTerminalError("not_found", "终端不属于当前用户连接。", 404);
     return record;
   };
@@ -142,17 +140,20 @@ export function createCodeTerminalService(deps: {
   };
   return {
     async create(actor, connectionId, input) {
-      const workspace = await deps.viewer.resolveWorkspace(actor);
-      if (closed || closedConnections.has(ownerKey(workspace.id, connectionId)))
+      const workspace = await deps.localInstance.resolve(actor);
+      if (
+        closed ||
+        closedConnections.has(ownerKey(workspace.instanceId, connectionId))
+      )
         throw new CodeTerminalError("closed", "终端连接已关闭。");
       const request = { ...input, sessionId: input.sessionId ?? randomUUID() };
       const id = request.sessionId;
-      const recordKey = key(workspace.id, connectionId, id);
+      const recordKey = key(workspace.instanceId, connectionId, id);
       const fingerprint = parameterFingerprint(request);
       const existing = records.get(recordKey);
       if (existing) {
         if (
-          existing.userId !== actor.id ||
+          existing.userId !== actor.instanceId ||
           existing.fingerprint !== fingerprint
         )
           throw new CodeTerminalError(
@@ -169,8 +170,8 @@ export function createCodeTerminalService(deps: {
         rejectReady = reject;
       });
       const record: TerminalRecord = {
-        workspaceId: workspace.id,
-        userId: actor.id,
+        instanceId: workspace.instanceId,
+        userId: actor.instanceId,
         connectionId,
         id,
         request,
@@ -187,13 +188,13 @@ export function createCodeTerminalService(deps: {
         const scope = await deps.scopes.openTask(actor, request.taskId);
         record.scope = scope;
         ensureOpen(record);
-        const settings = await deps.settings.getWorkspaceSettings(
+        const settings = await deps.settings.getInstanceSettings(
           actor,
-          workspace.id,
+          workspace.instanceId,
         );
         const preceding = [...records.values()].filter(
           (candidate) =>
-            candidate.workspaceId === workspace.id &&
+            candidate.instanceId === workspace.instanceId &&
             candidate.connectionId === connectionId &&
             candidate.ordinal <= record.ordinal &&
             !candidate.closing &&
@@ -249,7 +250,7 @@ export function createCodeTerminalService(deps: {
         if (
           record.closing ||
           closed ||
-          closedConnections.has(ownerKey(workspace.id, connectionId))
+          closedConnections.has(ownerKey(workspace.instanceId, connectionId))
         ) {
           const exit = await process.stop("终端连接在启动期间关闭");
           if (!exit.rangeEmpty)
@@ -308,28 +309,28 @@ export function createCodeTerminalService(deps: {
     async stop(actor, connectionId, id, reason) {
       await stopRecord(await owned(actor, connectionId, id), reason);
     },
-    async closeConnection(workspaceId, connectionId, reason) {
-      closedConnections.add(ownerKey(workspaceId, connectionId));
+    async closeConnection(instanceId, connectionId, reason) {
+      closedConnections.add(ownerKey(instanceId, connectionId));
       await closeRecords(
         [...records.values()].filter(
           (record) =>
-            record.workspaceId === workspaceId &&
+            record.instanceId === instanceId &&
             record.connectionId === connectionId,
         ),
         reason,
       );
       for (const [id, record] of records)
         if (
-          record.workspaceId === workspaceId &&
+          record.instanceId === instanceId &&
           record.connectionId === connectionId
         )
           records.delete(id);
     },
-    async closeTask(workspaceId, taskId, reason) {
+    async closeTask(instanceId, taskId, reason) {
       await closeRecords(
         [...records.values()].filter(
           (record) =>
-            record.workspaceId === workspaceId &&
+            record.instanceId === instanceId &&
             record.request.taskId === taskId,
         ),
         reason,

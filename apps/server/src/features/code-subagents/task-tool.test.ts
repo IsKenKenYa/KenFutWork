@@ -2,6 +2,7 @@ import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
+import { createRuntimeTestInstance } from "../../agent/runtime-test-fixtures.js";
 import type { ToolExecutionContext } from "../../kernel/types.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import { createTaskWorkManager } from "../task-work/service.js";
@@ -13,7 +14,7 @@ import type { CodeChildRequest, CodeChildResult } from "./types.js";
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), "kfw-child-tool-"));
   const scope = {
-    workspaceId: "00000000-0000-4000-8000-000000000001",
+    instanceId: "00000000-0000-4000-8000-000000000001",
     projectId: "00000000-0000-4000-8000-000000000002",
     taskId: "00000000-0000-4000-8000-000000000003",
     generation: 1,
@@ -21,14 +22,12 @@ async function fixture() {
     additionalDirectories: [],
     sandboxMode: "workspace-write" as const,
   };
-  const actor = { id: "owner", email: "", accessToken: "", userMetadata: {} };
+  const actor = { instanceId: scope.instanceId, accessClientId: null };
   const handle = await createExecutionScopes({
     repository: {
       load: async () => ({ state: "ready", branchGeneration: 1, scope }),
     },
-    viewerService: {
-      resolveWorkspace: async () => ({ id: scope.workspaceId }),
-    } as never,
+    localInstance: createRuntimeTestInstance(scope.instanceId),
   }).openTask(actor, scope.taskId);
   const context: TaskWorkContext = {
     actor,

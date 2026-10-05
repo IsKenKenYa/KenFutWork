@@ -29,7 +29,7 @@ export function childSessionId(
   const hex = createHash("sha256")
     .update(
       JSON.stringify([
-        context.scope.workspaceId,
+        context.scope.instanceId,
         context.scope.taskId,
         context.agentId,
         context.runId,

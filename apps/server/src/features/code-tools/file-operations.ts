@@ -8,8 +8,8 @@ interface ActiveFileOperation {
 }
 const active = new Map<string, Set<ActiveFileOperation>>();
 const revoking = new Map<string, Promise<void>>();
-const taskKey = (workspaceId: string, taskId: string) =>
-  `${workspaceId}:${taskId}`;
+const taskKey = (instanceId: string, taskId: string) =>
+  `${instanceId}:${taskId}`;
 
 interface RestoreBarrier {
   key: string;
@@ -85,7 +85,7 @@ export async function acquireTaskFileRestoreBarrier(
     ),
   ];
   const identity = scope.describe();
-  const key = taskKey(identity.workspaceId, identity.taskId);
+  const key = taskKey(identity.instanceId, identity.taskId);
   for (const barrier of restoreBarriers)
     if (overlaps(canonical, barrier.roots))
       throw new FileRestoreBarrierError("另一个文件恢复屏障已占用该目录。");
@@ -108,7 +108,7 @@ export async function acquireTaskFileRestoreBarrier(
       const facts = next.describe();
       if (
         released ||
-        taskKey(facts.workspaceId, facts.taskId) !== barrier.key ||
+        taskKey(facts.instanceId, facts.taskId) !== barrier.key ||
         facts.projectId !== barrier.projectId
       )
         throw new FileRestoreBarrierError(
@@ -127,10 +127,10 @@ export async function acquireTaskFileRestoreBarrier(
 
 /** A canceled flag is not completion: callers await each operation's resource cleanup. */
 export function revokeTaskFileOperations(
-  workspaceId: string,
+  instanceId: string,
   taskId: string,
 ): Promise<void> {
-  const key = taskKey(workspaceId, taskId);
+  const key = taskKey(instanceId, taskId);
   const existing = revoking.get(key);
   if (existing) return existing;
   const entries = [...(active.get(key) ?? [])];
@@ -148,10 +148,10 @@ export function revokeTaskFileOperations(
 }
 
 export function hasTaskFileOperations(
-  workspaceId: string,
+  instanceId: string,
   taskId: string,
 ): boolean {
-  const key = taskKey(workspaceId, taskId);
+  const key = taskKey(instanceId, taskId);
   return (active.get(key)?.size ?? 0) > 0 || revoking.has(key);
 }
 
@@ -162,7 +162,7 @@ export function runFileOperation<T>(
   operation: "read" | "write" = "read",
 ): Promise<T> {
   const identity = scope.describe();
-  const key = taskKey(identity.workspaceId, identity.taskId);
+  const key = taskKey(identity.instanceId, identity.taskId);
   if (revoking.has(key))
     return Promise.reject(new Error("Task 文件作用域正在撤销，禁止新操作"));
   if (parentSignal?.aborted) return Promise.reject(parentSignal.reason);

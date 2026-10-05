@@ -1,7 +1,7 @@
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { workspaceSettingsSchema } from "@kenfutwork/shared";
+import { instanceSettingsSchema } from "@kenfutwork/shared";
 import { expect, it } from "vitest";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
@@ -14,7 +14,7 @@ it("显式Task终端并发同ID只认领一次，连接关闭期间迟到授权�
   );
   try {
     const scope = {
-      workspaceId: "00000000-0000-4000-8000-000000000001",
+      instanceId: "00000000-0000-4000-8000-000000000001",
       projectId: "00000000-0000-4000-8000-000000000002",
       taskId: "00000000-0000-4000-8000-000000000003",
       generation: 1,
@@ -22,7 +22,7 @@ it("显式Task终端并发同ID只认领一次，连接关闭期间迟到授权�
       additionalDirectories: [],
       sandboxMode: "workspace-write" as const,
     };
-    const actor = { id: "owner", email: "", accessToken: "", userMetadata: {} };
+    const actor = { instanceId: scope.instanceId, accessClientId: null };
     let opened!: () => void;
     const opening = new Promise<void>((resolve) => {
       opened = resolve;
@@ -39,8 +39,11 @@ it("显式Task终端并发同ID只认领一次，连接关闭期间迟到授权�
           return { scope, state: "ready", branchGeneration: 1 };
         },
       },
-      viewerService: {
-        resolveWorkspace: async () => ({ id: scope.workspaceId }),
+      localInstance: {
+        resolve: async (subject: { instanceId: string }) => ({
+          instanceId: subject.instanceId,
+          dataDir: root,
+        }),
       } as never,
     });
     let spawns = 0;
@@ -52,12 +55,15 @@ it("显式Task终端并发同ID只认领一次，连接关闭期间迟到授权�
           throw new Error("关闭后的终端不能启动");
         },
       } as never,
-      viewer: {
-        resolveWorkspace: async () => ({ id: scope.workspaceId }),
+      localInstance: {
+        resolve: async (subject: { instanceId: string }) => ({
+          instanceId: subject.instanceId,
+          dataDir: root,
+        }),
       } as never,
       settings: {
-        getWorkspaceSettings: async () =>
-          workspaceSettingsSchema.parse({ defaultModel: "fixture" }),
+        getInstanceSettings: async () =>
+          instanceSettingsSchema.parse({ defaultModel: "fixture" }),
       } as never,
     });
     const request = {
@@ -72,7 +78,7 @@ it("显式Task终端并发同ID只认领一次，连接关闭期间迟到授权�
     const results = Promise.allSettled([first, replay]);
     await opening;
     const closing = service.closeConnection(
-      scope.workspaceId,
+      scope.instanceId,
       "connection",
       "socket closed",
     );
@@ -98,7 +104,7 @@ it.skipIf(process.platform !== "darwin")(
       await mkdtemp(join(tmpdir(), "kfw-terminal-stream-")),
     );
     const scope = {
-      workspaceId: "00000000-0000-4000-8000-000000000001",
+      instanceId: "00000000-0000-4000-8000-000000000001",
       projectId: "00000000-0000-4000-8000-000000000002",
       taskId: "00000000-0000-4000-8000-000000000003",
       generation: 1,
@@ -106,9 +112,12 @@ it.skipIf(process.platform !== "darwin")(
       additionalDirectories: [],
       sandboxMode: "workspace-write" as const,
     };
-    const actor = { id: "owner", email: "", accessToken: "", userMetadata: {} };
-    const viewer = {
-      resolveWorkspace: async () => ({ id: scope.workspaceId }),
+    const actor = { instanceId: scope.instanceId, accessClientId: null };
+    const localInstance = {
+      resolve: async (subject: { instanceId: string }) => ({
+        instanceId: subject.instanceId,
+        dataDir: root,
+      }),
     };
     const sandbox = createProcessSandbox({
       captureRoot: join(root, "capture"),
@@ -126,13 +135,13 @@ it.skipIf(process.platform !== "darwin")(
         repository: {
           load: async () => ({ scope, state: "ready", branchGeneration: 1 }),
         },
-        viewerService: viewer as never,
+        localInstance: localInstance as never,
       }),
       sandbox,
-      viewer: viewer as never,
+      localInstance: localInstance as never,
       settings: {
-        getWorkspaceSettings: async () =>
-          workspaceSettingsSchema.parse({
+        getInstanceSettings: async () =>
+          instanceSettingsSchema.parse({
             defaultModel: "fixture",
             terminalShell: "sh",
           }),
@@ -164,7 +173,7 @@ it.skipIf(process.platform !== "darwin")(
       const exited: number[] = [];
       await expect(
         service.subscribe(
-          { ...actor, id: "stranger" },
+          { ...actor, instanceId: "00000000-0000-4000-8000-000000000099" },
           "connection",
           first.id,
           {
@@ -230,7 +239,7 @@ it.skipIf(process.platform !== "darwin")(
       await mkdtemp(join(tmpdir(), "kfw-terminal-late-reader-")),
     );
     const release = join(root, "release");
-    const settings = workspaceSettingsSchema.parse({ defaultModel: "fixture" });
+    const settings = instanceSettingsSchema.parse({ defaultModel: "fixture" });
     const sandbox = createProcessSandbox({
       captureRoot: join(root, "capture"),
       network: { allowedDomains: [], deniedDomains: [] },
@@ -238,7 +247,7 @@ it.skipIf(process.platform !== "darwin")(
     try {
       const child = await sandbox.spawnPty({
         scope: {
-          workspaceId: "late-reader-workspace",
+          instanceId: "late-reader-workspace",
           projectId: "late-reader-project",
           taskId: "late-reader-task",
           generation: 1,

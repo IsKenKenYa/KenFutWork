@@ -1,7 +1,7 @@
 import { resolveTerminalFontProfile } from "@zcode/services/terminal-profile";
 import type { AppSettings } from "@zcode/shared";
 import { z } from "zod";
-import type { AuthenticatedUser } from "../auth/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type { CodeTerminalService, TerminalSubscriber } from "./types.js";
 
 const identity = z.object({ id: z.string().min(1) });
@@ -18,7 +18,7 @@ const resize = identity.merge(size);
 
 export async function codeUiTerminalRpc(deps: {
   terminals: CodeTerminalService;
-  actor: AuthenticatedUser;
+  actor: LocalActor;
   connectionId: string;
   method: string;
   args: unknown[];

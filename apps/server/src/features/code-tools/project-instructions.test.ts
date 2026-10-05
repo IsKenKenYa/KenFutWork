@@ -13,6 +13,7 @@ import {
   type CodeExecutionScope,
 } from "@kenfutwork/shared";
 import { afterEach, expect, it } from "vitest";
+import { createRuntimeTestInstance } from "../../agent/runtime-test-fixtures.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import type { FileLimits } from "./file-types.js";
 import {
@@ -39,7 +40,7 @@ async function fixture(fileLimits: Partial<FileLimits> = {}) {
   );
   directories.push(root, extra);
   const snapshot: CodeExecutionScope = {
-    workspaceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
+    instanceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
     projectId: "c15b75a5-b7ef-46b5-8b0c-d543dd7769d5",
     taskId: "0432143f-e2b8-4ea6-adea-01f706f537d3",
     generation: 0,
@@ -59,21 +60,12 @@ async function fixture(fileLimits: Partial<FileLimits> = {}) {
         branchGeneration: 1,
       }),
     },
-    viewerService: {
-      resolveWorkspace: async () => ({
-        id: snapshot.workspaceId,
-        name: "工作区",
-        type: "personal",
-        ownerUserId: "user",
-      }),
-    },
+    localInstance: createRuntimeTestInstance(snapshot.instanceId),
   });
   const handle = await scopes.openTask(
     {
-      id: "user",
-      email: "user@example.test",
-      accessToken: "test",
-      userMetadata: {},
+      instanceId: snapshot.instanceId,
+      accessClientId: null,
     },
     snapshot.taskId,
   );

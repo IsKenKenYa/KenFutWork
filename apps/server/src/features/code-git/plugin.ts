@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { resolveDesktopDataDir } from "../../desktop/paths.js";
 
 import { registerCodeGitRoutes } from "../../http/code-git.js";
 import { registerCodeIndexRoutes } from "../../http/code-index.js";
@@ -18,7 +19,13 @@ import { createScopedGitExec } from "./scoped-git-exec.js";
 export function createCodeGitPlugin(): PluginDefinition {
   return {
     name: "code-git",
-    inject: ["auth", "settings", "viewer", "executionScopes", "processSandbox"],
+    inject: [
+      "localAccess",
+      "settings",
+      "localInstance",
+      "executionScopes",
+      "processSandbox",
+    ],
     apply(ctx) {
       const gitBinDir = ctx.env.gitBinDir;
       ctx.register("codeGit", () =>
@@ -28,7 +35,7 @@ export function createCodeGitPlugin(): PluginDefinition {
           gitForScope: async (scope, actor) => {
             const settings = await ctx
               .get("settings")
-              .getWorkspaceSettings(actor, scope.describe().workspaceId);
+              .getInstanceSettings(actor, scope.describe().instanceId);
             return createGitClient({
               exec: createScopedGitExec({
                 scope,
@@ -50,7 +57,7 @@ export function createCodeGitPlugin(): PluginDefinition {
             });
           },
           source: ctx.env.gitSource ?? (gitBinDir ? "bundled" : "system"),
-          viewerService: ctx.get("viewer"),
+          localInstance: ctx.get("localInstance"),
           /* 终端默认 shell 来自工作区设置（/api/settings 的 terminalShell） */
           settingsService: ctx.get("settings"),
         }),
@@ -58,15 +65,22 @@ export function createCodeGitPlugin(): PluginDefinition {
     },
     mounted(ctx) {
       void registerCodeGitRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         codeGitService: ctx.get("codeGit"),
       });
-      // 索引库（R4-3）：数据落本机 `<cwd>/.kenfutwork/index`，不进库表
+      // 可重建的本机索引也随实例数据根迁移。
       void registerCodeIndexRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         codeGitService: ctx.get("codeGit"),
         settingsService: ctx.get("settings"),
-        indexStore: createCodeIndexStore({}),
+        indexStore: createCodeIndexStore({
+          indexDir: join(
+            resolveDesktopDataDir({
+              env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
+            }),
+            "index",
+          ),
+        }),
       });
     },
   };

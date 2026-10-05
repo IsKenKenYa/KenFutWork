@@ -1,17 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { expect, it, vi } from "vitest";
-import type { AuthenticatedUser } from "../auth/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type { CodeTerminalService } from "./types.js";
 import { codeUiTerminalRpc } from "./ui-rpc.js";
 
 it("原terminal.create返回用户字体及真实source，fallback不返回空占位", async () => {
   const taskId = randomUUID();
-  const actor: AuthenticatedUser = {
-    id: randomUUID(),
-    email: "terminal@test",
-    accessToken: "private",
-    userMetadata: {},
-  };
+  const actor: LocalActor = { instanceId: randomUUID(), accessClientId: null };
   const create = vi.fn(async () => ({
     id: "actual-pty",
     taskId,

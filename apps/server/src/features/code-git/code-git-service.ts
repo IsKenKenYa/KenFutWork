@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { resolveInsideRoot } from "../../utils/inside-root.js";
-import type { AuthenticatedUser } from "../auth/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type {
   ExecutionScopeHandle,
   ExecutionScopes,
 } from "../execution/scope-service.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import type { ProcessSandbox } from "../process-sandbox/types.js";
 import type { SettingsService } from "../settings/settings-service.js";
 import type {
@@ -79,35 +81,31 @@ export type CodeGitFileView = SandboxFileView;
 export type CodeFileListing = SandboxDirListing;
 
 export type CodeGitService = {
-  status(user: AuthenticatedUser, taskId: string): Promise<CodeGitStatus>;
+  status(user: LocalActor, taskId: string): Promise<CodeGitStatus>;
   checkout(
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
     branch: string,
   ): Promise<CodeGitStatus>;
   /** 更改统计（R2-1）：相对 HEAD 的增删行数 + 未跟踪数。 */
-  diffStat(user: AuthenticatedUser, taskId: string): Promise<CodeGitDiffStat>;
+  diffStat(user: LocalActor, taskId: string): Promise<CodeGitDiffStat>;
   /** git 图谱（R2-1 条目 6）：只读；非仓库或还没有提交时给空图，不抛错。 */
-  graph(
-    user: AuthenticatedUser,
-    taskId: string,
-    limit: number,
-  ): Promise<CodeGitGraph>;
+  graph(user: LocalActor, taskId: string, limit: number): Promise<CodeGitGraph>;
   /** 变更文件清单（R3-2）：逐文件增删行数与状态；非仓库给空清单。 */
   changes(
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
     maxFiles: number,
   ): Promise<CodeGitChanges>;
   /** 单文件差异（R3-2「审查」）：未跟踪文件合成「按新增行」的视图。 */
   fileDiff(
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
     path: string,
   ): Promise<CodeGitFileDiff>;
   /** 单文件内容（R3-2「打开」/ R3-3「文档入口」）：只读、有字节上限、二进制只回元信息。 */
   readFile(
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
     path: string,
   ): Promise<CodeGitFileView>;
@@ -117,7 +115,7 @@ export type CodeGitService = {
    * 因此没有工具门，但同样受「登录 + Task归属 + 沙箱 cwd + 超时/输出上限」约束。
    */
   runTerminal(
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
     command: string,
     shell?: TerminalShellId,
@@ -126,7 +124,7 @@ export type CodeGitService = {
    * 本机可用的 shell + 工作区默认（终端下拉与设置页共用）。
    * `resolvedShell` 是默认值在这台机器上实际会用的那个（`auto` 时尤其需要说清）。
    */
-  listTerminalShells(user: AuthenticatedUser): Promise<{
+  listTerminalShells(user: LocalActor): Promise<{
     shells: TerminalShellOption[];
     defaultShell: TerminalShellId;
     resolvedShell: TerminalShellId;
@@ -136,31 +134,31 @@ export type CodeGitService = {
    * 与一次性执行同一处解析（`ExecutionScopeHandle.resolvePath`）——会话里的命令和 agent 读写的
    * 是同一个目录。
    */
-  terminalWorkDir(user: AuthenticatedUser, taskId: string): Promise<string>;
+  terminalWorkDir(user: LocalActor, taskId: string): Promise<string>;
   /**
    * 索引库（R4-3）的作用域：已校验归属的工作目录 + 工作区 id（开关按工作区读）。
    * 与 terminalWorkDir 同一处解析，保证「索引里的路径」与 agent 写的是同一个目录。
    */
   indexScope(
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
-  ): Promise<{ workspaceId: string; dir: string }>;
+  ): Promise<{ instanceId: string; dir: string }>;
   /** 列一层目录（R3-1「文件目录」标签）：只列一层，子目录由界面点进去。 */
   listFiles(
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
     path: string,
   ): Promise<CodeFileListing>;
   /** 暂存 / 取消暂存单个文件（参考图审查视图的「暂存」）。 */
   setFileStaged(
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
     path: string,
     staged: boolean,
   ): Promise<{ path: string; staged: boolean }>;
   /** 应用 / 反向应用**一个块**（参考图审查视图的「暂存块 / 撤销块」）。 */
   applyFileHunk(
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
     path: string,
     patch: string,
@@ -168,29 +166,26 @@ export type CodeGitService = {
   ): Promise<{ path: string; applied: true }>;
   /** 撤销单个文件的改动（二次确认在界面）；未跟踪 = 删除该文件。 */
   discardFile(
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
     path: string,
     untracked: boolean,
   ): Promise<{ path: string }>;
   /** 撤销全部未提交改动（二次确认在界面）。 */
-  discardAllChanges(
-    user: AuthenticatedUser,
-    taskId: string,
-  ): Promise<{ ok: true }>;
+  discardAllChanges(user: LocalActor, taskId: string): Promise<{ ok: true }>;
   /** 提交全部改动（写操作：git 不可用即 503，未仓库/空改动 409）。 */
   /** 初始化仓库（幂等）。 */
-  init(user: AuthenticatedUser, taskId: string): Promise<CodeGitStatus>;
+  init(user: LocalActor, taskId: string): Promise<CodeGitStatus>;
   commit(
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
     message: string,
   ): Promise<CodeGitStatus>;
   /** 推送当前分支（写操作，同上纪律）。 */
-  push(user: AuthenticatedUser, taskId: string): Promise<CodeGitStatus>;
+  push(user: LocalActor, taskId: string): Promise<CodeGitStatus>;
   /** 创建并检出新分支（写操作，同上纪律）。 */
   createBranch(
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
     name: string,
   ): Promise<CodeGitStatus>;
@@ -216,24 +211,26 @@ export function createCodeGitService(options: {
   scopes: Pick<ExecutionScopes, "openTask">;
   gitForScope: (
     scope: ExecutionScopeHandle,
-    actor: AuthenticatedUser,
+    actor: LocalActor,
   ) => Promise<GitClient>;
   processSandbox: ProcessSandbox;
-  viewerService: Pick<ViewerService, "resolveWorkspace">;
-  settingsService: Pick<SettingsService, "getWorkspaceSettings">;
+  localInstance: Pick<LocalInstanceService, "resolve">;
+  settingsService: Pick<SettingsService, "getInstanceSettings">;
   source: GitSource;
   availableShells?: readonly TerminalShellOption[] | undefined;
 }): CodeGitService {
-  const { source, viewerService } = options;
-  const workspaceSettings = async (user: AuthenticatedUser) => {
-    const workspace = await viewerService.resolveWorkspace(user);
-    return options.settingsService.getWorkspaceSettings(user, workspace.id);
+  const { source, localInstance } = options;
+  const instanceSettings = async (user: LocalActor) => {
+    const workspace = await localInstance.resolve(user);
+    return options.settingsService.getInstanceSettings(
+      user,
+      workspace.instanceId,
+    );
   };
-  const workspaceShell = async (
-    user: AuthenticatedUser,
-  ): Promise<TerminalShellId> => (await workspaceSettings(user)).terminalShell;
+  const workspaceShell = async (user: LocalActor): Promise<TerminalShellId> =>
+    (await instanceSettings(user)).terminalShell;
   const scopeFor = async (
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
     operation: "read" | "write" = "read",
   ) => {
@@ -374,7 +371,7 @@ export function createCodeGitService(options: {
         throw new CodeGitError("git_write_failed", "命令不能为空。", 400);
       }
       const { dir, scope } = await scopeFor(user, taskId);
-      const settings = await workspaceSettings(user);
+      const settings = await instanceSettings(user);
       const selected = resolveTerminalShell(
         shell ?? settings.terminalShell,
         options.availableShells ?? detectTerminalShells(),
@@ -445,14 +442,12 @@ export function createCodeGitService(options: {
 
     /** 索引库作用域：目录 + 工作区（开关在工作区设置里）。 */
     async indexScope(user, taskId) {
-      const workspace = await viewerService
-        .resolveWorkspace(user)
-        .catch(() => null);
+      const workspace = await localInstance.resolve(user).catch(() => null);
       if (!workspace) {
         throw new CodeGitError("not_found", "找不到工作区。", 404);
       }
       const { dir } = await scopeFor(user, taskId);
-      return { workspaceId: workspace.id, dir };
+      return { instanceId: workspace.instanceId, dir };
     },
 
     /** 暂存单个文件：路径先过「必须落在工作目录内」这道门（与读文件同一处判定）。 */

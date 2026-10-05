@@ -5,13 +5,13 @@ import { createCodeTerminalService } from "./service.js";
 export function createCodeTerminalPlugin(): PluginDefinition {
   return {
     name: "code-terminal",
-    inject: ["executionScopes", "processSandbox", "viewer", "settings"],
+    inject: ["executionScopes", "processSandbox", "localInstance", "settings"],
     apply(ctx) {
       ctx.register("codeTerminal", () =>
         createCodeTerminalService({
           scopes: ctx.get("executionScopes"),
           sandbox: ctx.get("processSandbox"),
-          viewer: ctx.get("viewer"),
+          localInstance: ctx.get("localInstance"),
           settings: ctx.get("settings"),
         }),
       );
@@ -21,11 +21,15 @@ export function createCodeTerminalPlugin(): PluginDefinition {
       ctx.get("capabilities").register("task-before-process-close", {
         id: "code-terminal:connections",
         value: {
-          close: (workspaceId: string, taskId: string) =>
-            terminals.closeTask(workspaceId, taskId, "Task已关闭"),
+          close: (instanceId: string, taskId: string) =>
+            terminals.closeTask(instanceId, taskId, "Task已关闭"),
         },
       });
-      ctx.app.addHook("onClose", () => terminals.close("终端宿主关闭"));
+      ctx.app.addHook("onClose", async () => {
+        console.log("[shutdown] 关闭交互终端。");
+        await terminals.close("终端宿主关闭");
+        console.log("[shutdown] 交互终端已关闭。");
+      });
     },
   };
 }

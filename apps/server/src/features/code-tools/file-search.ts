@@ -51,7 +51,7 @@ function fingerprint(scope: ScopedFilesystemScope, request: object): string {
   return createHash("sha256")
     .update(
       JSON.stringify({
-        workspace: identity.workspaceId,
+        workspace: identity.instanceId,
         task: identity.taskId,
         agent: scope.agentId,
         role: scope.role,
