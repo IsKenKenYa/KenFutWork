@@ -9,6 +9,7 @@
       "../../../release/web": "app/web",
       "../../../release/pg": "app/pg",
       "../../../release/runtime": "app/runtime",
+      "../../../release/process-helper": "app/process-helper",
       "../../../release/node_modules": "app/node_modules",
       "../../../release/supabase": "app/supabase"
     },

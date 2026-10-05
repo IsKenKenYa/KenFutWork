@@ -49,11 +49,8 @@ done
 port_up 3000 || { echo "[dev] web 未能就绪，看 .kenfutwork-data/web-dev.log"; exit 1; }
 echo "[dev] web 就绪（3000，API 直连 :3001）"
 
-# 2.5 服务端（源码 + 桌面身份）归本脚本独占：3001 归桌面 dev 独占——先清掉任何
-# 占用者（旧打包快照 / `pnpm dev` 的 managed 服务端，壳复用健康 3001 时不注入桌面
-# 身份，会出登录页或旧代码——2026-09-27 两次踩坑），再以**最新源码**拉起并等健康，
-# 最后才开 Tauri 窗口（壳探到健康 3001 直接复用）。窗口打开时服务端必然已就绪，
-# 不会出现「登录页闪现后要手动刷新」。
+# 2.5 3001由源码服务端持有；先释放旧快照，再以最新代码拉起并等健康。
+# Tauri就绪后从同一系统数据目录读取私有凭据，申请一次性票据连接。
 if port_up 3001; then
   pid="$(lsof -nP -iTCP:3001 -sTCP:LISTEN -t 2>/dev/null | head -1 || true)"
   if [ -n "$pid" ]; then
@@ -63,8 +60,8 @@ if port_up 3001; then
     port_up 3001 && { echo "[dev] 3001 仍被占用，请手动检查：lsof -nP -iTCP:3001"; exit 1; }
   fi
 fi
-echo "[dev] 启动源码服务端（local-trust 本机用户）…"
-(KENFUTWORK_AUTH_DRIVER=local-trust pnpm --filter @kenfutwork/server dev:server \
+echo "[dev] 启动源码服务端（本地实例与接入校验）…"
+(pnpm --filter @kenfutwork/server dev:server \
   > "$ROOT/.kenfutwork-data/server-dev.log" 2>&1) &
 PIDS+=($!)
 for _ in $(seq 1 90); do
@@ -72,9 +69,9 @@ for _ in $(seq 1 90); do
   sleep 1
 done
 port_up 3001 || { echo "[dev] 服务端未能就绪，看 .kenfutwork-data/server-dev.log"; exit 1; }
-curl -sf -m 5 "http://127.0.0.1:3001/api/viewer" -H "Origin: http://localhost:3000" \
-  -o /dev/null || { echo "[dev] 服务端已监听但 viewer 未就绪，稍后刷新窗口即可"; }
-echo "[dev] 服务端就绪（3001，本机用户）"
+curl -sf -m 5 "http://127.0.0.1:3001/api/health" \
+  -o /dev/null || { echo "[dev] 服务端尚未就绪，请检查服务端日志"; exit 1; }
+echo "[dev] 服务端就绪（3001，本地实例）"
 
 # 3. Tauri 窗口（阻塞在本进程；关窗即退出并回收上面拉起的进程）
 echo "[dev] 打开 Tauri 窗口…"

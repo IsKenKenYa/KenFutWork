@@ -23,6 +23,9 @@ required-features = ["test-fixture"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }
+
 [dependencies]
 # unstable：右栏浏览器的**子 webview**（真内核嵌入）要用 Tauri 的多 webview API；
 # devtools：release 里也能开 WebView2 的调试工具（参考视频里「打开调试工具」那一项）

@@ -319,9 +319,7 @@ fn open_spawn_log(data_dir: &std::path::Path) -> Option<std::fs::File> {
  * 确保服务端在 `config.port` 上健康：已健康 → 复用不 spawn；
  * 未健康 → spawn 子进程（注入 `KENFUTWORK_DATA_DIR`）并探活等待，失败即回收子进程。
  */
-pub fn ensure_server_running(
-    config: ServerSpawnConfig,
-) -> Result<ServerLaunch, LifecycleError> {
+pub fn ensure_server_running(config: ServerSpawnConfig) -> Result<ServerLaunch, LifecycleError> {
     if health_once(config.port) {
         return Ok(ServerLaunch::Reused);
     }
@@ -366,7 +364,9 @@ pub fn ensure_server_running(
     let job = {
         use std::os::windows::io::AsRawHandle;
         match job::ProcessJob::create() {
-            Ok(job) => match job.assign(child.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE) {
+            Ok(job) => match job
+                .assign(child.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE)
+            {
                 Ok(()) => Some(job),
                 Err(error) => {
                     eprintln!("[desktop] 绑定作业对象失败（后代回收降级为 taskkill /T）：{error}");
@@ -414,6 +414,16 @@ pub struct ServerHandle {
 }
 
 impl ServerHandle {
+    /// 宿主已通过可信HTTP请求停服务/停库；此处只等自然退出，不提前强杀数据库。
+    pub fn wait_for_clean_exit(&mut self) -> std::io::Result<()> {
+        let status = self.child.wait()?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(std::io::Error::other(format!("服务端退出状态：{status}")))
+        }
+    }
+
     pub fn pid(&self) -> u32 {
         self.child.id()
     }
@@ -487,7 +497,9 @@ impl ServerHandle {
         {
             // 子进程继承壳的进程组时 kill(-pid) 会连带收掉它的后代
             let pid = self.child.id();
-            let _ = Command::new("kill").args(["-KILL", &format!("-{pid}")]).status();
+            let _ = Command::new("kill")
+                .args(["-KILL", &format!("-{pid}")])
+                .status();
         }
         let _ = self.child.kill();
     }
