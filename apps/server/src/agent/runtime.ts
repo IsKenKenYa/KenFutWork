@@ -48,8 +48,11 @@ import type {
   LocalInstanceService,
 } from "../features/local-instance/types.js";
 import { resolveModelInputCapabilities } from "../features/model-providers/input-capabilities.js";
-import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
-import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
+import {
+  type ModelCatalogService,
+  parseInstanceSpecifier,
+  toInstanceSpecifier,
+} from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type {
   ProcessLimits,
@@ -1723,7 +1726,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 .listCatalog(run.actor)
                 .catch(() => []);
               const entry = entries.find(
-                (candidate) => candidate.id === specifier,
+                (candidate) => toInstanceSpecifier(candidate) === specifier,
               );
               declaredWindow = entry?.model.contextWindow ?? null;
               declaredMaxOutput = entry?.model.maxOutputTokens ?? null;
@@ -2008,7 +2011,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     run.actor,
                   );
                   const entry = entries?.find(
-                    (candidate) => candidate.id === specifier,
+                    (candidate) => toInstanceSpecifier(candidate) === specifier,
                   );
                   const plan = resolveCompactionPlan({
                     contextWindow: resolveContextWindow(
