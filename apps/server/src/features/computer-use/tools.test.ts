@@ -22,9 +22,9 @@ function buildTools(gate: { ok: boolean; message?: string }) {
 }
 
 describe("createComputerUseTools（工具面装配）", () => {
-  it("8 个工具全部 mcp__computer-use__ 前缀 + scope:code", () => {
+  it("14 个工具全部 mcp__computer-use__ 前缀 + scope:code", () => {
     const tools = buildTools({ ok: true });
-    expect(tools).toHaveLength(8);
+    expect(tools).toHaveLength(14);
     for (const tool of tools) {
       expect(tool.name.startsWith(CU_TOOL_PREFIX)).toBe(true);
       expect(tool.scope).toBe("code");
@@ -39,6 +39,12 @@ describe("createComputerUseTools（工具面装配）", () => {
       "mcp__computer-use__click",
       "mcp__computer-use__type",
       "mcp__computer-use__stop_computer_control",
+      "mcp__computer-use__list_displays",
+      "mcp__computer-use__mouse_move",
+      "mcp__computer-use__drag",
+      "mcp__computer-use__scroll",
+      "mcp__computer-use__key",
+      "mcp__computer-use__focus_window",
     ]);
   });
 
@@ -62,7 +68,10 @@ describe("createComputerUseTools（工具面装配）", () => {
     const result = (await state.execute(
       { app: "com.apple.calculator" },
       { runId: "r1" },
-    )) as { isError?: boolean; structuredContent?: { error?: { code?: string } } };
+    )) as {
+      isError?: boolean;
+      structuredContent?: { error?: { code?: string } };
+    };
     expect(result.isError).toBe(true);
     expect(result.structuredContent?.error?.code).toBe("unavailable");
   });

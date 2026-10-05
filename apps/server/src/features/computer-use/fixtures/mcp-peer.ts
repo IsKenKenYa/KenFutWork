@@ -20,6 +20,7 @@ const node = (index: number, depth: number) => ({
   depth,
   node: { role: "group", title: `node-${index}` },
 });
+let actionStarted = false;
 server.setRequestHandler(CallToolRequestSchema, async (_request, extra) => {
   let structuredContent: Record<string, unknown>;
   if (mode === "bad-permissions") {
@@ -31,7 +32,11 @@ server.setRequestHandler(CallToolRequestSchema, async (_request, extra) => {
     structuredContent = {
       apps: [{ pid: -1, name: "peer", bundleId: null, active: true }],
     };
-  } else if (mode === "bad-frame" || mode === "pixel-budget") {
+  } else if (
+    mode === "bad-frame" ||
+    mode === "pixel-budget" ||
+    mode === "valid-frame"
+  ) {
     const size = mode === "pixel-budget" ? 128 : 2;
     const png = new PNG({ width: size, height: size });
     png.data.fill(255);
@@ -57,7 +62,13 @@ server.setRequestHandler(CallToolRequestSchema, async (_request, extra) => {
     structuredContent = {
       actionSent: mode === "action-false" ? false : "true",
     };
-  } else if (mode === "wait-cancel") {
+  } else if (
+    mode === "wait-cancel" ||
+    (mode === "cancel-lifecycle" &&
+      _request.params.name === "click" &&
+      !actionStarted)
+  ) {
+    actionStarted = true;
     await server.sendLoggingMessage({ level: "info", data: "request-started" });
     await new Promise<void>((resolve) => {
       extra.signal.addEventListener("abort", () => resolve(), { once: true });
@@ -68,6 +79,11 @@ server.setRequestHandler(CallToolRequestSchema, async (_request, extra) => {
       data: "request-cancelled",
     });
     structuredContent = { actionSent: false };
+  } else if (
+    (mode === "lifecycle" || mode === "cancel-lifecycle") &&
+    _request.params.name !== "get_app_state"
+  ) {
+    structuredContent = { actionSent: true };
   } else {
     const elements =
       mode === "tree-gap"
