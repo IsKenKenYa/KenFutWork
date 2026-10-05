@@ -2,51 +2,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  ApiAuthError,
+  ApiAccessError,
   connectCdp,
   createProject,
   createRun,
   fetchDirectoryPickerStatus,
   fetchProjects,
   fetchVideoModels,
-  fetchViewer,
   pickDirectory,
 } from "../src/lib/server-api";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
 
-describe("authenticated server API", () => {
+describe("本机Cookie与显式Bearer API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("NEXT_PUBLIC_SERVER_BASE_URL", "http://localhost:3001");
-  });
-
-  it("fetchViewer sends bearer token and returns viewer response", async () => {
-    const viewer = {
-      profile: {
-        id: "u1",
-        email: "a@b.com",
-        displayName: "A",
-        avatarUrl: null,
-      },
-      workspace: { id: "w1", name: "W", type: "personal", ownerUserId: "u1" },
-      membership: { workspaceId: "w1", userId: "u1", role: "owner" },
-    };
-    mockFetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => viewer,
-    });
-
-    const result = await fetchViewer("token_abc");
-    expect(mockFetch).toHaveBeenCalledWith(
-      "http://localhost:3001/api/viewer",
-      expect.objectContaining({
-        headers: { Authorization: "Bearer token_abc" },
-      }),
-    );
-    expect(result.profile.id).toBe("u1");
   });
 
   it("createRun sends bearer auth when access token is provided", async () => {
@@ -73,6 +45,7 @@ describe("authenticated server API", () => {
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:3001/api/agent/runs",
       expect.objectContaining({
+        credentials: "include",
         method: "POST",
         headers: {
           Authorization: "Bearer token_abc",
@@ -82,7 +55,7 @@ describe("authenticated server API", () => {
     );
   });
 
-  it("createRun keeps demo calls unauthenticated by default", async () => {
+  it("createRun uses the local Cookie when no explicit Bearer is provided", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 202,
@@ -103,6 +76,7 @@ describe("authenticated server API", () => {
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:3001/api/agent/runs",
       expect.objectContaining({
+        credentials: "include",
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -134,6 +108,7 @@ describe("authenticated server API", () => {
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:3001/api/projects",
       expect.objectContaining({
+        credentials: "include",
         method: "POST",
         headers: expect.objectContaining({
           Authorization: "Bearer token_abc",
@@ -158,6 +133,7 @@ describe("authenticated server API", () => {
       "http://localhost:3001/api/projects?kind=design",
       expect.objectContaining({
         headers: { Authorization: "Bearer token_abc" },
+        credentials: "include",
       }),
     );
     expect(result.projects).toHaveLength(1);
@@ -175,6 +151,7 @@ describe("authenticated server API", () => {
       "http://localhost:3001/api/projects?kind=code",
       expect.objectContaining({
         headers: { Authorization: "Bearer token_abc" },
+        credentials: "include",
       }),
     );
   });
@@ -187,7 +164,6 @@ describe("authenticated server API", () => {
           displayName: "MiniMax H3 (Metaso)",
           description: "Metaso H3",
           provider: "metaso",
-          creditCost: 51,
           capabilities: {
             textToVideo: true,
             imageToVideo: true,
@@ -227,10 +203,10 @@ describe("authenticated server API", () => {
 
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:3001/api/video-models",
+      { credentials: "include" },
     );
     expect(result.models[0]).toMatchObject({
       id: "metaso/minimax-h3",
-      creditCost: 51,
       limits: { maxDuration: 15, maxInputImages: 2 },
       pricing: { evidenceDate: "2026-08-19" },
     });
@@ -255,19 +231,7 @@ describe("authenticated server API", () => {
     }
   });
 
-  it("fetchViewer throws ApiAuthError on 401", async () => {
-    mockFetch.mockResolvedValue({
-      ok: false,
-      status: 401,
-      json: async () => ({
-        error: { code: "unauthorized", message: "Bad token." },
-      }),
-    });
-
-    await expect(fetchViewer("expired")).rejects.toThrow("unauthorized");
-  });
-
-  it("fetchProjects throws ApiAuthError on 401", async () => {
+  it("fetchProjects throws ApiAccessError on 401", async () => {
     mockFetch.mockResolvedValue({
       ok: false,
       status: 401,
@@ -301,6 +265,7 @@ describe("原生目录对话框端点", () => {
       "http://localhost:3001/api/system/directory-picker",
       expect.objectContaining({
         headers: { Authorization: "Bearer token_abc" },
+        credentials: "include",
       }),
     );
     expect(status.available).toBe(false);
@@ -328,13 +293,15 @@ describe("原生目录对话框端点", () => {
     }
   });
 
-  it("未登录：抛 ApiAuthError（401 不落成普通应用错误）", async () => {
+  it("未登录：抛 ApiAccessError（401 不落成普通应用错误）", async () => {
     mockFetch.mockResolvedValue({
       ok: false,
       status: 401,
       json: async () => ({}),
     });
-    await expect(pickDirectory("expired")).rejects.toBeInstanceOf(ApiAuthError);
+    await expect(pickDirectory("expired")).rejects.toBeInstanceOf(
+      ApiAccessError,
+    );
   });
 });
 

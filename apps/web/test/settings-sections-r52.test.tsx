@@ -6,7 +6,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ToastProvider } from "../src/components/toast";
-import { AccountSection } from "../src/components/workbench/account-section";
 import { SubagentsSection } from "../src/components/workbench/subagents-section";
 
 const navigateToCode = vi.hoisted(() => vi.fn());
@@ -22,23 +21,13 @@ vi.mock("next/navigation", () => ({
  * 锁三件事：① 页面只显示服务端真给的东西；② 子智能体运行入口导航到完整原 Code 工作台；③ 账号页没启用计费时不编数字。
  */
 const fetchSubagents = vi.fn();
-const updateWorkspaceSettings = vi.fn();
-
-vi.mock("../src/lib/auth-context", () => ({
-  useAuth: () => ({
-    session: null,
-    user: null,
-    loading: false,
-    signOut: vi.fn(),
-    refresh: vi.fn(),
-  }),
-}));
+const updateInstanceSettings = vi.fn();
 
 vi.mock("../src/lib/server-api.js", () => ({
   fetchSubagents: (...args: unknown[]) => fetchSubagents(...args),
   // 钩子/命令等页面都用它写工作区设置（同一文件只能有一个 mock 工厂，所以放一起）
-  updateWorkspaceSettings: (...args: unknown[]) =>
-    updateWorkspaceSettings(...args),
+  updateInstanceSettings: (...args: unknown[]) =>
+    updateInstanceSettings(...args),
 }));
 
 afterEach(() => {
@@ -89,41 +78,6 @@ describe("设置 → 子智能体", () => {
     await waitFor(() =>
       expect(screen.getByText("服务端未装配认证。")).toBeVisible(),
     );
-  });
-});
-
-describe("设置 → 账号", () => {
-  it("只列真实字段；未启用计费时写「未启用计费」而不是编数字", () => {
-    render(
-      <AccountSection
-        displayName=""
-        email="u@example.com"
-        plan={null}
-        balance={null}
-      />,
-    );
-    expect(screen.getByText("（未设置）")).toBeVisible();
-    expect(screen.getByText("u@example.com")).toBeVisible();
-    expect(screen.getAllByText("未启用计费")).toHaveLength(2);
-    expect(screen.queryByRole("button", { name: "管理后台" })).toBeNull();
-  });
-
-  it("管理员才出现「管理后台」，点了走真回调", async () => {
-    const onOpenAdmin = vi.fn();
-    render(
-      <AccountSection
-        displayName="未来"
-        email="u@example.com"
-        plan="pro"
-        balance={941}
-        isAdmin
-        onOpenAdmin={onOpenAdmin}
-      />,
-    );
-    expect(screen.getByText("pro")).toBeVisible();
-    expect(screen.getByText("941")).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "管理后台" }));
-    expect(onOpenAdmin).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -217,7 +171,6 @@ describe("插件市场：使用态", () => {
           open
           onClose={() => {}}
           accessToken="tok"
-          isAdmin
           onUse={onUse}
         />
         ,
@@ -256,7 +209,6 @@ describe("插件市场：使用态", () => {
           open
           onClose={() => {}}
           accessToken="tok"
-          isAdmin
           onUse={() => {}}
         />
         ,
@@ -294,7 +246,6 @@ describe("插件市场：使用态", () => {
           open
           onClose={() => {}}
           accessToken="tok"
-          isAdmin
           onUse={() => {}}
         />
         ,
@@ -315,7 +266,7 @@ describe("插件市场：使用态", () => {
  */
 describe("设置 → 钩子", () => {
   it("空表：给示例；新增后可写时机与命令并整表保存", async () => {
-    updateWorkspaceSettings.mockResolvedValue({
+    updateInstanceSettings.mockResolvedValue({
       settings: {
         hooks: [{ event: "turn-end", command: "npx biome check ." }],
       },
@@ -334,7 +285,7 @@ describe("设置 → 钩子", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "保存钩子" }));
 
-    expect(updateWorkspaceSettings).toHaveBeenCalledWith("tok", {
+    expect(updateInstanceSettings).toHaveBeenCalledWith("tok", {
       hooks: [{ event: "turn-end", command: "npx biome check ." }],
     });
     expect(onSaved).toHaveBeenCalled();
@@ -348,7 +299,7 @@ describe("设置 → 钩子", () => {
     await userEvent.click(screen.getByRole("button", { name: /新增钩子/ }));
     await userEvent.click(screen.getByRole("button", { name: "保存钩子" }));
     expect(screen.getByText(/还没写命令/)).toBeVisible();
-    expect(updateWorkspaceSettings).not.toHaveBeenCalled();
+    expect(updateInstanceSettings).not.toHaveBeenCalled();
   });
 
   it("边界写在页面上：只有你能配置 / 在工作目录里跑 / 失败不影响本轮", async () => {
@@ -359,75 +310,5 @@ describe("设置 → 钩子", () => {
     expect(screen.getByText(/只有你能配置/)).toBeVisible();
     expect(screen.getByText(/工作目录/)).toBeVisible();
     expect(screen.getByText(/失败也不影响本轮对话/)).toBeVisible();
-  });
-});
-
-/**
- * 设置 → 外部应用授权（R5-2「外部应用授权」）。
- *
- * 锁三条：① 明文只显示一次（创建响应里拿到的那个串出现在醒目块里）；② 列表只显示前缀
- * 与最近使用时间（**不显示明文**）；③ 四条红线写在页面上（尤其「令牌不能签发令牌」）。
- */
-const fetchApiTokens = vi.fn();
-const createApiToken = vi.fn();
-const revokeApiToken = vi.fn();
-vi.mock("../src/lib/server-api.js", () => ({
-  fetchSubagents: (...args: unknown[]) => fetchSubagents(...args),
-  updateWorkspaceSettings: (...args: unknown[]) =>
-    updateWorkspaceSettings(...args),
-  fetchApiTokens: (...args: unknown[]) => fetchApiTokens(...args),
-  createApiToken: (...args: unknown[]) => createApiToken(...args),
-  revokeApiToken: (...args: unknown[]) => revokeApiToken(...args),
-}));
-
-describe("设置 → 外部应用授权", () => {
-  it("创建后明文只出现一次，列表只给前缀与最近使用", async () => {
-    fetchApiTokens.mockResolvedValue({
-      tokens: [
-        {
-          id: "tok-1",
-          name: "CI 部署",
-          tokenPrefix: "kfw_abcd1234",
-          createdAt: "2026-09-17T00:00:00.000Z",
-          lastUsedAt: null,
-          revokedAt: null,
-        },
-      ],
-    });
-    createApiToken.mockResolvedValue({
-      token: "kfw_plaintext_once",
-      record: {
-        id: "tok-2",
-        name: "新令牌",
-        tokenPrefix: "kfw_plainte",
-        createdAt: "2026-09-17T01:00:00.000Z",
-        lastUsedAt: null,
-        revokedAt: null,
-      },
-    });
-    const { ApiTokensSection } = await import(
-      "../src/components/workbench/api-tokens-section"
-    );
-    render(<ApiTokensSection accessToken="tok" />);
-
-    // 列表：前缀 + 从未使用（没有明文）
-    expect(await screen.findByText(/kfw_abcd1234…/)).toBeVisible();
-    expect(screen.queryByText("kfw_plaintext_once")).toBeNull();
-
-    await userEvent.type(screen.getByLabelText("令牌名字"), "新令牌");
-    await userEvent.click(screen.getByRole("button", { name: /创建令牌/ }));
-    expect(await screen.findByText("kfw_plaintext_once")).toBeVisible();
-    expect(screen.getByText(/令牌只显示这一次/)).toBeVisible();
-  });
-
-  it("红线写在页面上：只显示一次 / 可吊销 / 需要登录会话", async () => {
-    fetchApiTokens.mockResolvedValue({ tokens: [] });
-    const { ApiTokensSection } = await import(
-      "../src/components/workbench/api-tokens-section"
-    );
-    render(<ApiTokensSection accessToken="tok" />);
-    expect(await screen.findByText(/只显示一次/)).toBeVisible();
-    expect(screen.getByText(/可随时吊销/)).toBeVisible();
-    expect(screen.getByText(/创建与吊销令牌需要登录会话/)).toBeVisible();
   });
 });

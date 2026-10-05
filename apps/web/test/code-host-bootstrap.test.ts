@@ -3,7 +3,7 @@ import { requestParentBootstrap } from "../src/components/workbench/zcode/host/p
 
 afterEach(() => document.body.replaceChildren());
 
-it("Code 宿主只接收同源父窗口的有效认证配置", async () => {
+it("Code 宿主只接收同源父窗口的有效本地宿主配置", async () => {
   const frame = document.createElement("iframe");
   document.body.append(frame);
   const parent = frame.contentWindow;
@@ -18,8 +18,7 @@ it("Code 宿主只接收同源父窗口的有效认证配置", async () => {
   const config = {
     type: "kenfutwork:code-bootstrap",
     apiBase: "http://localhost:3001",
-    accessToken: "private-token",
-    user: { id: "actor", username: "dev", displayName: "本机用户" },
+    user: null,
   };
   for (const event of [
     { source: parent, origin: "https://untrusted.example", data: config },

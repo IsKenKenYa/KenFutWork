@@ -7,15 +7,16 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { getServerBaseUrl } from "@/lib/env";
 import { type FlowEntry, resolveFlowEntry } from "@/lib/flow-embed";
+import { serverFetch } from "@/lib/local-access";
 
 /**
  * Flow 模式入口的接线层：插件安装态 + 宿主适配层探针 → `resolveFlowEntry`。
  *
- * 拉取时机：登录后一次 + 手动 `refresh()`（插件市场装/卸 flow 后工作台要能立即反应，
+ * 拉取时机：本机连接就绪后一次 + 手动 `refresh()`（插件市场装/卸 flow 后工作台要能立即反应，
  * 不等下一次进页面）。两路请求任何一路失败都按「不可用」处理（fail loud 给 reason，
  * 不猜「也许能用」）。
  */
-export function useFlowHostEntry(accessToken: string | null): {
+export function useFlowHostEntry(enabled = true): {
   entry: FlowEntry | null;
   refresh: () => void;
 } {
@@ -27,7 +28,7 @@ export function useFlowHostEntry(accessToken: string | null): {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: tick 是手动刷新信号（refresh() 递增它以重跑本 effect），effect 体内不读它
   useEffect(() => {
-    if (!accessToken) {
+    if (!enabled) {
       setPluginInstalled(null);
       setStatus(null);
       return;
@@ -36,9 +37,12 @@ export function useFlowHostEntry(accessToken: string | null): {
 
     void (async () => {
       try {
-        const response = await fetch(`${getServerBaseUrl()}/api/plugins`, {
-          headers: { authorization: `Bearer ${accessToken}` },
-        });
+        const response = await serverFetch(
+          `${getServerBaseUrl()}/api/plugins`,
+          {
+            headers: {},
+          },
+        );
         if (!response.ok) throw new Error(String(response.status));
         const body = (await response.json()) as {
           plugins?: Array<{ name: string; installed: boolean }>;
@@ -55,9 +59,9 @@ export function useFlowHostEntry(accessToken: string | null): {
       }
 
       try {
-        const response = await fetch(
+        const response = await serverFetch(
           `${getServerBaseUrl()}/api/flow/host/status`,
-          { headers: { authorization: `Bearer ${accessToken}` } },
+          { headers: {} },
         );
         if (!response.ok) throw new Error(String(response.status));
         if (cancelled) return;
@@ -70,9 +74,9 @@ export function useFlowHostEntry(accessToken: string | null): {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, tick]);
+  }, [enabled, tick]);
 
-  // 两路都没回来过（未登录 / 首次加载中）→ null：调用方先不渲染入口也不报错。
+  // 两路都没回来过（未启用 / 首次加载中）→ null：调用方先不渲染入口也不报错。
   if (pluginInstalled === null) return { entry: null, refresh };
   return { entry: resolveFlowEntry({ pluginInstalled, status }), refresh };
 }

@@ -7,7 +7,10 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Workbench } from "../src/components/workbench/workbench";
-import { AuthProvider } from "../src/lib/auth-context";
+import {
+  LocalInstanceBoundary,
+  LocalInstanceProvider,
+} from "../src/lib/local-instance-context";
 
 const navigation = vi.hoisted(() => ({
   query: "",
@@ -27,23 +30,15 @@ afterEach(() => {
 });
 
 function installFixture(flowInstalled = false, flowEnabled = false) {
-  localStorage.setItem("kenfutwork.session.token", "private-session");
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input) => {
       const path = String(input);
       let result: unknown = {};
-      if (path.endsWith("/api/auth/session"))
+      if (path.endsWith("/api/instance"))
         result = {
-          user: { id: "actor", email: "dev@test", displayName: "开发者" },
-          session: {
-            token: "private-session",
-            expiresAt: "2099-01-01T00:00:00Z",
-          },
-        };
-      if (path.endsWith("/api/viewer"))
-        result = {
-          profile: { id: "actor", email: "dev@test", displayName: "开发者" },
+          instanceId: "11111111-1111-4111-8111-111111111111",
+          dataDir: "/data",
         };
       if (path.includes("/api/projects"))
         result = {
@@ -71,7 +66,7 @@ function installFixture(flowInstalled = false, flowEnabled = false) {
           reasons: [],
         };
       if (path.endsWith("/api/models")) result = { models: [] };
-      if (path.endsWith("/api/settings"))
+      if (path.endsWith("/api/instance/settings"))
         result = { settings: { commands: [] } };
       return Response.json(result);
     }),
@@ -81,9 +76,11 @@ function installFixture(flowInstalled = false, flowEnabled = false) {
 it("Code默认主区仍是原iframe，可信原菜单Design请求同时更新URL导航", async () => {
   installFixture();
   render(
-    <AuthProvider>
-      <Workbench />
-    </AuthProvider>,
+    <LocalInstanceProvider>
+      <LocalInstanceBoundary>
+        <Workbench />
+      </LocalInstanceBoundary>
+    </LocalInstanceProvider>,
   );
   const frame = (await screen.findByTitle("Code 工作台")) as HTMLIFrameElement;
   expect(frame.getAttribute("src")).toBe("/code-ui/index.html");
@@ -105,9 +102,11 @@ it("URL Design始终画布，侧栏折返不替换主区；Flow未装时无入�
   navigation.query = "mode=design";
   installFixture();
   render(
-    <AuthProvider>
-      <Workbench />
-    </AuthProvider>,
+    <LocalInstanceProvider>
+      <LocalInstanceBoundary>
+        <Workbench />
+      </LocalInstanceBoundary>
+    </LocalInstanceProvider>,
   );
   const canvas = await screen.findByTitle("设计项目 画布");
   expect(canvas.getAttribute("src")).toBe("/canvas?id=canvas");
@@ -133,9 +132,11 @@ it.each([false, true])(
     navigation.query = "mode=flow";
     installFixture(installed);
     render(
-      <AuthProvider>
-        <Workbench />
-      </AuthProvider>,
+      <LocalInstanceProvider>
+        <LocalInstanceBoundary>
+          <Workbench />
+        </LocalInstanceBoundary>
+      </LocalInstanceProvider>,
     );
     expect(await screen.findByTitle("Code 工作台")).toBeTruthy();
     expect(screen.queryByRole("radio", { name: "Flow" })).toBeNull();
@@ -146,9 +147,11 @@ it("Flow URL只有插件安装且宿主配齐时挂工作流画布，Code切换�
   navigation.query = "mode=flow";
   installFixture(true, true);
   render(
-    <AuthProvider>
-      <Workbench />
-    </AuthProvider>,
+    <LocalInstanceProvider>
+      <LocalInstanceBoundary>
+        <Workbench />
+      </LocalInstanceBoundary>
+    </LocalInstanceProvider>,
   );
   const flow = await screen.findByTitle("Flow 工作流画布");
   expect(flow.getAttribute("src")).toContain("https://flow.example.test");

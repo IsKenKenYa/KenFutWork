@@ -33,7 +33,7 @@ import type { ProviderInstanceResponse } from "@kenfutwork/shared";
 
 const instance: ProviderInstanceResponse = {
   id: "inst-1",
-  scope: "workspace",
+  scope: "local",
   name: "我的网关",
   protocol: "openai-compatible",
   hasCredential: true,

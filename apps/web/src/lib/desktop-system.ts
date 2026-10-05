@@ -52,6 +52,28 @@ export async function openExternal(url: string): Promise<void> {
   await invoke("open_external", { url });
 }
 
+export async function openDataDirectory(): Promise<void> {
+  const invoke = tauriInvoke();
+  if (!invoke) throw new Error("请在桌面应用中打开数据目录。");
+  await invoke("open_data_directory");
+}
+
+export async function moveDataDirectory(
+  dataDir: string,
+): Promise<{ dataDir: string }> {
+  const invoke = tauriInvoke();
+  if (!invoke) throw new Error("请在桌面应用中迁移数据目录。");
+  return (await invoke("move_data_directory", { dataDir })) as {
+    dataDir: string;
+  };
+}
+
+export async function openInBrowser(): Promise<void> {
+  const invoke = tauriInvoke();
+  if (!invoke) throw new Error("请在桌面应用中创建浏览器连接。");
+  await invoke("open_in_browser");
+}
+
 /**
  * 桌面形态接管 `target="_blank"` 外链：WKWebView 开不了新窗口，点过去毫无反应——
  * 捕获阶段拦截后交给系统浏览器。重复调用安全（同一 document 只挂一次）。

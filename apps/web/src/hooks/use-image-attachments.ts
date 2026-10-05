@@ -40,7 +40,10 @@ const ALLOWED_TYPES = new Set([
   "image/gif",
 ]);
 
-export function useImageAttachments(accessToken: string, projectId?: string) {
+export function useImageAttachments(
+  accessToken: string | null,
+  projectId?: string,
+) {
   const [attachments, setAttachments] = useState<ImageAttachmentState[]>([]);
   const accessTokenRef = useRef(accessToken);
   accessTokenRef.current = accessToken;

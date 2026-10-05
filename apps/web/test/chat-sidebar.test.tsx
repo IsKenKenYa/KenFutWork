@@ -6,7 +6,6 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatSidebar, type SidePanelTab } from "../src/components/chat-sidebar";
-import { TierLimitToastProvider } from "../src/components/credits/tier-limit-toast";
 import { ToastProvider } from "../src/components/toast";
 import type { WebSocketHandle } from "../src/hooks/use-websocket";
 
@@ -19,7 +18,7 @@ const {
   fetchMessagesMock,
   fetchModelsMock,
   fetchSessionsMock,
-  fetchWorkspaceSkillsMock,
+  fetchInstanceSkillsMock,
   saveMessageMock,
   updateSessionTitleMock,
 } = vi.hoisted(() => ({
@@ -31,7 +30,7 @@ const {
   fetchMessagesMock: vi.fn(),
   fetchModelsMock: vi.fn(),
   fetchSessionsMock: vi.fn(),
-  fetchWorkspaceSkillsMock: vi.fn(),
+  fetchInstanceSkillsMock: vi.fn(),
   saveMessageMock: vi.fn(),
   updateSessionTitleMock: vi.fn(),
 }));
@@ -45,7 +44,7 @@ vi.mock("../src/lib/server-api", () => ({
   fetchMessages: fetchMessagesMock,
   fetchModels: fetchModelsMock,
   fetchSessions: fetchSessionsMock,
-  fetchWorkspaceSkills: fetchWorkspaceSkillsMock,
+  fetchInstanceSkills: fetchInstanceSkillsMock,
   saveMessage: saveMessageMock,
   updateSessionTitle: updateSessionTitleMock,
 }));
@@ -117,8 +116,8 @@ describe("ChatSidebar", () => {
     fetchExecutionModeMock.mockReset();
     fetchExecutionModeMock.mockResolvedValue({ mode: "agent" });
     fetchImageModelsMock.mockResolvedValue({ models: [] });
-    fetchWorkspaceSkillsMock.mockReset();
-    fetchWorkspaceSkillsMock.mockResolvedValue({ skills: [] });
+    fetchInstanceSkillsMock.mockReset();
+    fetchInstanceSkillsMock.mockResolvedValue({ skills: [] });
     fetchSessionsMock.mockReset();
     fetchSessionsMock.mockResolvedValue({
       sessions: [
@@ -144,15 +143,13 @@ describe("ChatSidebar", () => {
   it("starts runs via WebSocket with the active real session id", async () => {
     render(
       <ToastProvider>
-        <TierLimitToastProvider>
-          <ChatSidebar
-            accessToken="token_abc"
-            canvasId="canvas-1"
-            open
-            onToggle={() => {}}
-            ws={mockWs}
-          />
-        </TierLimitToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
       </ToastProvider>,
     );
 
@@ -181,15 +178,13 @@ describe("ChatSidebar", () => {
   it("本轮正在跑时给出「停止本轮」入口，点了 cancelRun 的是这一轮的 runId", async () => {
     render(
       <ToastProvider>
-        <TierLimitToastProvider>
-          <ChatSidebar
-            accessToken="token_abc"
-            canvasId="canvas-1"
-            open
-            onToggle={() => {}}
-            ws={mockWs}
-          />
-        </TierLimitToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
       </ToastProvider>,
     );
 
@@ -225,9 +220,7 @@ describe("ChatSidebar", () => {
 
     render(
       <ToastProvider>
-        <TierLimitToastProvider>
-          <Harness />
-        </TierLimitToastProvider>
+        <Harness />
       </ToastProvider>,
     );
 
@@ -258,15 +251,13 @@ describe("ChatSidebar", () => {
   it("对话视图里显示「打开的对话」标签页，当前会话占一个标签且可关闭", async () => {
     render(
       <ToastProvider>
-        <TierLimitToastProvider>
-          <ChatSidebar
-            accessToken="token_abc"
-            canvasId="canvas-1"
-            open
-            onToggle={() => {}}
-            ws={mockWs}
-          />
-        </TierLimitToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
       </ToastProvider>,
     );
 
@@ -321,9 +312,7 @@ describe("ChatSidebar", () => {
     }
     render(
       <ToastProvider>
-        <TierLimitToastProvider>
-          <Harness />
-        </TierLimitToastProvider>
+        <Harness />
       </ToastProvider>,
     );
 

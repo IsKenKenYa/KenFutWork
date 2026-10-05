@@ -19,7 +19,6 @@ function clientWith(result: unknown = { content: "read" }) {
   return {
     client: new CodeHttpChannelClient({
       apiBase: "http://host.test",
-      accessToken: "private",
     }),
     requests,
   };
