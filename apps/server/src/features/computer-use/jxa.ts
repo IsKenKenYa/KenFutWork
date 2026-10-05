@@ -362,10 +362,12 @@ export function buildElementActionScript(
   action: "press" | "focus",
   limits: CuTreeLimits = CU_AX_DEFAULT_LIMITS,
   binding?: string,
+  expectedElement?: Pick<AxNode, "role" | "title">,
 ): string {
   return `
 ${buildResolveWindowScript(appRef, binding)}
 ${buildDescribeElementScript(limits)}
+${buildElementIdentityScript(expectedElement)}
 const root = describeElementEx(win, 0, ${limits.maxDepth});
 if (!root) {
   JSON.stringify({ ok: false, error: 'element_unavailable' });
@@ -375,7 +377,7 @@ if (!root) {
   let target = null;
   const visit = (result) => {
     if (target) return;
-    if (counter === ${index}) { target = result.elm; return; }
+    if (counter === ${index}) { checkElementIdentity(result.node); target = result.elm; return; }
     counter++;
     for (const child of (result._children || [])) {
       visit(child);
@@ -399,7 +401,21 @@ if (!root) {
     }
   }
 }
+
 `;
+}
+
+/** 索引仅属于上一观察；不把当前树里同位置的新控件当成原目标。值/焦点变化不改变身份。 */
+export function buildElementIdentityScript(
+  expected?: Pick<AxNode, "role" | "title">,
+): string {
+  return `function checkElementIdentity(node) {
+  const expected=${JSON.stringify(expected ?? null)}, aliases=${JSON.stringify(ROLE_ALIASES)};
+  if (!expected) return;
+  const role=aliases[node.role] || String(node.role || 'unknown').replace(/^AX/,'').toLowerCase();
+  if (role!==expected.role || (node.title || null)!==(expected.title || null))
+    throw new Error('element_stale: 观察后目标控件已变化，请重新观察');
+}`;
 }
 
 /** 运行 JXA 脚本并解析 JSON 结果。 */

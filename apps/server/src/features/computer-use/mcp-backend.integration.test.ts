@@ -69,6 +69,36 @@ async function withPeer(
 }
 
 describe("外部桌面MCP真实stdio协议边界", () => {
+  it("同一Run停止并重新观察不能重置动作总额", async () => {
+    await withPeer("lifecycle", async (executor) => {
+      const service = createComputerUseService({
+        executor,
+        governance: () => ({ ...governance(), maxActionsPerRun: 1 }),
+      });
+      const context = { runId: "quota-run" };
+      const app = { name: "peer" };
+      const target = { type: "element", index: 50 };
+      try {
+        await service.getState(app, {}, context);
+        expect(
+          await service.click(app, target, context.runId, context),
+        ).toMatchObject({ structuredContent: { actionSent: true } });
+        await service.stop(context.runId);
+        await service.getState(app, {}, context);
+        expect(
+          await service.click(app, target, context.runId, context),
+        ).toMatchObject({
+          isError: true,
+          structuredContent: { error: { code: "action_limit" } },
+        });
+        const next = { runId: "next-quota-run" };
+        await service.getState(app, {}, next);
+        expect(await service.click(app, target, next.runId, next)).toMatchObject({ structuredContent: { actionSent: true } });
+      } finally {
+        await service.dispose();
+      }
+    });
+  });
   it("缺少本Run观察的请求拒绝后不占用其它Run的控制租约", async () => {
     await withPeer("lifecycle", async (executor) => {
       const service = createComputerUseService({ executor, governance });

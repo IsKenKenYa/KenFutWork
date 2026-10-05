@@ -33,6 +33,7 @@ import { CU_AX_DEFAULT_LIMITS } from "./executor.js";
 import {
   buildDescribeElementScript,
   buildElementActionScript,
+  buildElementIdentityScript,
   buildListAppsScript,
   buildListWindowsScript,
   buildObserveScript,
@@ -480,6 +481,7 @@ win.actions.byName('AXRaise').perform(); JSON.stringify({ok:true});`,
               "press",
               context?.treeLimits,
               context?.binding,
+              context?.expectedElement,
             ),
             timeoutMs,
             context,
@@ -559,6 +561,7 @@ win.actions.byName('AXRaise').perform(); JSON.stringify({ok:true});`,
           index,
           context?.treeLimits,
           context?.binding,
+          context?.expectedElement,
         );
         const type = async () => {
           const prepared = await jxaJson<{ ok: boolean; message?: string }>(
@@ -610,10 +613,12 @@ function buildTypeScript(
   index: number | undefined,
   limits: CuTreeLimits = CU_AX_DEFAULT_LIMITS,
   binding?: string,
+  expectedElement?: CuOperationContext["expectedElement"],
 ): string {
   return `
 ${buildResolveWindowScript(appRef, binding)}
 ${buildDescribeElementScript(limits)}
+${buildElementIdentityScript(expectedElement)}
 let target = null;
 if (${index ?? -1} >= 0) {
   const root = describeElementEx(win, 0, ${limits.maxDepth});
@@ -621,7 +626,7 @@ if (${index ?? -1} >= 0) {
     let counter = 0;
     const visit = (result) => {
       if (target) return;
-      if (counter === ${index ?? -1}) { target = result.elm; return; }
+      if (counter === ${index ?? -1}) { checkElementIdentity(result.node); target = result.elm; return; }
       counter++;
       for (const child of (result._children || [])) {
         visit(child);

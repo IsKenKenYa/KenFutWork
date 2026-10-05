@@ -94,6 +94,7 @@ export type CuInputAction =
 
 export interface CuOperationContext {
   binding?: string | undefined;
+  expectedElement?: Pick<AxNode, "role" | "title"> | undefined;
   signal: AbortSignal;
   timeoutMs?: number | undefined;
   treeLimits?: CuTreeLimits | undefined;

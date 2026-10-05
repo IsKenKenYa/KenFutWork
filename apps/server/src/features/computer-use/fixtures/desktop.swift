@@ -70,10 +70,14 @@ DispatchQueue.global().async {
         second.makeKeyAndOrderFront(nil)
       } else if command == "close-main" {
         window.close()
+      } else if command == "rename-main-button" {
+        window.contentView?.subviews.compactMap { $0 as? NSButton }.first?.title = "变更后的按钮"
       }
       print("COMMAND \(command)"); fflush(stdout)
     }
   }
 }
-print("READY \(ProcessInfo.processInfo.processIdentifier)"); fflush(stdout)
+DispatchQueue.main.async {
+  print("READY \(ProcessInfo.processInfo.processIdentifier)"); fflush(stdout)
+}
 app.run()

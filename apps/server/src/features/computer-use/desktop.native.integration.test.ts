@@ -197,6 +197,28 @@ JSON.stringify(rows);`,
           expect(
             (displays.structuredContent!.displays as unknown[]).length,
           ).toBeGreaterThan(0);
+          await expect
+            .poll(
+              async () => {
+                const result = await client.callTool({
+                  name: "list_windows",
+                  arguments: { app },
+                });
+                const structured = result.structuredContent;
+                const windows =
+                  structured &&
+                  typeof structured === "object" &&
+                  "windows" in structured
+                    ? structured.windows
+                    : undefined;
+                return Array.isArray(windows) ? windows.length : 0;
+              },
+              {
+                timeout: defaults.computerUseActionTimeoutMs,
+                interval: defaults.computerUseInputDelayMs,
+              },
+            )
+            .toBeGreaterThan(0);
           const windows = await call("list_windows", { app });
           expect(JSON.stringify(windows.structuredContent)).toContain(
             "KenFutWork 桌面能力验收",
@@ -448,6 +470,36 @@ JSON.stringify(rows);`,
             app: { pid: app.pid, windowId: secondId },
           });
           expect(JSON.stringify(second.content)).toContain("点击数：0");
+          const buttonIndex = Number(
+            JSON.stringify(pinned.content).match(
+              /\[(\d+)\] button 验收按钮/,
+            )?.[1],
+          );
+          expect(Number.isInteger(buttonIndex)).toBe(true);
+          await command("rename-main-button");
+          const staleElement = await client.callTool({
+            name: "click",
+            arguments: {
+              app: main,
+              target: { type: "element", index: buttonIndex },
+            },
+          });
+          expect(staleElement.isError).toBe(true);
+          expect(staleElement.structuredContent).toMatchObject({
+            error: { code: "element_stale", actionSent: false },
+          });
+          const renamed = await call("get_app_state", { app: main });
+          expect(JSON.stringify(renamed.content)).toContain("点击数：3");
+          expect(JSON.stringify(renamed.content)).toContain("变更后的按钮");
+          await call("click", {
+            app: main,
+            target: { type: "element", index: buttonIndex },
+          });
+          expect(
+            JSON.stringify(
+              (await call("get_app_state", { app: main })).content,
+            ),
+          ).toContain("点击数：4");
           await command("close-main");
           const closed = await client.callTool({
             name: "key",

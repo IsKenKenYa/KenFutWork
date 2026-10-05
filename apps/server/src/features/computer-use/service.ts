@@ -10,6 +10,7 @@
 import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 import {
   type AxAppRef,
+  type AxNode,
   type AxWindowRef,
   flattenAxTree,
   formatAxTree,
@@ -136,6 +137,7 @@ interface LatestObservation {
   app: AxAppRef;
   window: AxWindowRef;
   elementIndexes: Set<number>;
+  elementNodes: Map<number, AxNode>;
   raster?: CuRaster;
   treeLimits?: import("./executor.js").CuTreeLimits | undefined;
 }
@@ -203,11 +205,12 @@ export function createComputerUseService(options: {
   let disposed = false;
   let replacing = false;
   const stoppingRuns = new Map<string, Promise<void>>();
-  const clearRun = (runId: string) => {
+  const clearRun = (runId: string, finished: boolean) => {
     for (const [key, observation] of observations)
       if (observation.runId === runId) observations.delete(key);
     lease.release(runId);
-    actionCounts.delete(runId);
+    // 手动停止仅释放控制权；同一Run的动作总额不能由模型自行重置。
+    if (finished) actionCounts.delete(runId);
     sessionStartedAt.delete(runId);
   };
   const joinRun = async (runId: string) => {
@@ -217,14 +220,14 @@ export function createComputerUseService(options: {
     for (const [controller] of stopping) controller.abort();
     await Promise.all(stopping.map(([, operation]) => operation.done));
   };
-  const finishRun = (runId: string, stopBackend: boolean) => {
+  const finishRun = (runId: string, stopBackend: boolean, finished = false) => {
     const existing = stoppingRuns.get(runId);
     if (existing) return existing;
     const pending = Promise.resolve()
       .then(async () => {
         await joinRun(runId);
         if (stopBackend) await executor.stop();
-        clearRun(runId);
+        clearRun(runId, finished);
       })
       .finally(() => stoppingRuns.delete(runId));
     stoppingRuns.set(runId, pending);
@@ -269,10 +272,20 @@ export function createComputerUseService(options: {
             executor.unavailableReason ?? "执行器不可用",
           );
 
+  const checkActionCount = (runId: string): CuToolResult | undefined => {
+    const maximum = governance().maxActionsPerRun;
+    const count = actionCounts.get(runId) ?? 0;
+    return count >= maximum
+      ? errorResult("action_limit", `本轮 run 已执行 ${count} 个动作，达到上限 ${maximum}（设置可调 computerUseMaxActionsPerRun）。`, { retry: "never" })
+      : undefined;
+  };
+
   /** 会话与动作治理：租约互斥 + 会话时长 + 单 run 动作上限。 */
   const governAction = (runId: string): CuToolResult | undefined => {
     if (replacing || stoppingRuns.has(runId))
       return errorResult("controller_busy", "桌面控制正在停止或切换后端");
+    const limited = checkActionCount(runId);
+    if (limited) return limited;
     const gov = governance();
     const acquired = lease.acquire(runId);
     if (!acquired.ok) {
@@ -293,16 +306,9 @@ export function createComputerUseService(options: {
   };
 
   const bumpActionCount = (runId: string): CuToolResult | undefined => {
-    const gov = governance();
-    const count = (actionCounts.get(runId) ?? 0) + 1;
-    actionCounts.set(runId, count);
-    if (count > gov.maxActionsPerRun) {
-      return errorResult(
-        "action_limit",
-        `本轮 run 已执行 ${count - 1} 个动作，达到上限 ${gov.maxActionsPerRun}（设置可调 computerUseMaxActionsPerRun）。`,
-        { retry: "never" },
-      );
-    }
+    const limited = checkActionCount(runId);
+    if (limited) return limited;
+    actionCounts.set(runId, (actionCounts.get(runId) ?? 0) + 1);
     return undefined;
   };
 
@@ -313,6 +319,7 @@ export function createComputerUseService(options: {
     raster?: CuRaster,
     mayHaveSent = false,
     binding?: string,
+    expectedElement?: Pick<AxNode, "role" | "title">,
   ): Promise<T> => {
     if (
       disposed ||
@@ -348,6 +355,7 @@ export function createComputerUseService(options: {
         timeoutMs,
         raster,
         binding: binding ?? raster?.binding,
+        expectedElement,
         treeLimits: treeLimits(),
         maxOutputBytes:
           governance().processMaxOutputBytes ??
@@ -631,6 +639,9 @@ export function createComputerUseService(options: {
               ? []
               : flattenAxTree(observation.root).map((row) => row.index),
           ),
+          elementNodes: new Map(
+            flattenAxTree(observation.root).map((row) => [row.index, row.node]),
+          ),
         };
         observations.set(observationKey(appRef, context), latest);
         let structured: Record<string, unknown> = {
@@ -704,6 +715,7 @@ export function createComputerUseService(options: {
           app: appRef,
           window: {},
           elementIndexes: new Set<number>(),
+          elementNodes: new Map<number, AxNode>(),
         };
         latest.raster = raster;
         latest.binding = raster.binding;
@@ -756,6 +768,9 @@ export function createComputerUseService(options: {
           latest?.raster,
           true,
           latest?.binding,
+          target?.kind === "element"
+            ? latest?.elementNodes.get(target.index)
+            : undefined,
         );
         return okResult(`${result.detail}（actionSent=${result.actionSent}）`, {
           actionSent: result.actionSent,
@@ -803,6 +818,9 @@ export function createComputerUseService(options: {
           latest?.raster,
           true,
           latest?.binding,
+          target?.kind === "element"
+            ? latest?.elementNodes.get(target.index)
+            : undefined,
         );
         return okResult(`${result.detail}（actionSent=${result.actionSent}）`, {
           actionSent: result.actionSent,
@@ -904,7 +922,7 @@ export function createComputerUseService(options: {
     },
 
     async releaseLease(runId: string) {
-      await finishRun(runId, false);
+      await finishRun(runId, false, true);
     },
 
     setExecutor(next: ComputerUseExecutor) {
