@@ -22804,6 +22804,42 @@
                 "type": "integer",
                 "minimum": 60000,
                 "maximum": 86400000
+              },
+              "computerUseAxMaxDepth": {
+                "default": 8,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 128
+              },
+              "computerUseAxMaxChildren": {
+                "default": 120,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100000
+              },
+              "computerUseAxTitleMaxChars": {
+                "default": 200,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1048576
+              },
+              "computerUseAxValueMaxChars": {
+                "default": 300,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1048576
+              },
+              "computerUseAxMaxActions": {
+                "default": 12,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100000
+              },
+              "computerUseInputDelayMs": {
+                "default": 100,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 60000
               }
             },
             "required": [
@@ -22850,7 +22886,13 @@
               "computerUseObserveMaxBytes",
               "computerUseScreenshotMaxBytes",
               "computerUseMaxActionsPerRun",
-              "computerUseSessionMaxMs"
+              "computerUseSessionMaxMs",
+              "computerUseAxMaxDepth",
+              "computerUseAxMaxChildren",
+              "computerUseAxTitleMaxChars",
+              "computerUseAxValueMaxChars",
+              "computerUseAxMaxActions",
+              "computerUseInputDelayMs"
             ],
             "additionalProperties": false
           }
@@ -23128,6 +23170,36 @@
             "type": "integer",
             "minimum": 60000,
             "maximum": 86400000
+          },
+          "computerUseAxMaxDepth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 128
+          },
+          "computerUseAxMaxChildren": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000
+          },
+          "computerUseAxTitleMaxChars": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1048576
+          },
+          "computerUseAxValueMaxChars": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1048576
+          },
+          "computerUseAxMaxActions": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000
+          },
+          "computerUseInputDelayMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 60000
           }
         }
       },

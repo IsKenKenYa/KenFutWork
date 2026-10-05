@@ -335,6 +335,13 @@ export const workspaceSettingsSchema = z.object({
   computerUseMaxActionsPerRun: governanceSetting("computerUseMaxActionsPerRun"),
   /** Computer Use：控制租约会话时长上限（毫秒）。 */
   computerUseSessionMaxMs: governanceSetting("computerUseSessionMaxMs"),
+
+  computerUseAxMaxDepth: governanceSetting("computerUseAxMaxDepth"),
+  computerUseAxMaxChildren: governanceSetting("computerUseAxMaxChildren"),
+  computerUseAxTitleMaxChars: governanceSetting("computerUseAxTitleMaxChars"),
+  computerUseAxValueMaxChars: governanceSetting("computerUseAxValueMaxChars"),
+  computerUseAxMaxActions: governanceSetting("computerUseAxMaxActions"),
+  computerUseInputDelayMs: governanceSetting("computerUseInputDelayMs"),
 });
 
 export const modelInfoSchema = z.object({

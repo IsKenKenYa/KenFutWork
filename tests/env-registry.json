@@ -1092,6 +1092,48 @@
       "inExamples": false,
       "status": "test-gate",
       "note": "插件卸载施工规格使用独占临时Postgres与真实加密存储；默认跳过，尚未实现的卸载不计GREEN"
+    },
+    "KENFUTWORK_COMPUTER_USE_AX_MAX_DEPTH": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：AX树最大深度，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_AX_MAX_CHILDREN": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：AX节点子项上限，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_AX_TITLE_MAX_CHARS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：AX标题文字上限，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_AX_VALUE_MAX_CHARS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：AX值文字上限，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_AX_MAX_ACTIONS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：AX语义动作列表上限，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_INPUT_DELAY_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：输入事件间隔毫秒，实例设置优先于env兜底"
     }
   },
   "legacy": {

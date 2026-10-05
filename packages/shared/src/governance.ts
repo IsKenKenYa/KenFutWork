@@ -62,6 +62,13 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   computerUseMaxActionsPerRun: 200,
   /** Computer Use：控制租约会话时长上限（毫秒）。 */
   computerUseSessionMaxMs: 1_800_000,
+
+  computerUseAxMaxDepth: 8,
+  computerUseAxMaxChildren: 120,
+  computerUseAxTitleMaxChars: 200,
+  computerUseAxValueMaxChars: 300,
+  computerUseAxMaxActions: 12,
+  computerUseInputDelayMs: 100,
 } as const;
 
 export type AgentGovernanceValue = keyof typeof AGENT_GOVERNANCE_DEFAULTS;
@@ -91,6 +98,13 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "codeAttachmentMaxRetries",
   "codeAttachmentRetryDelayMs",
   "terminalMaxSessions",
+
+  "computerUseAxMaxDepth",
+  "computerUseAxMaxChildren",
+  "computerUseAxTitleMaxChars",
+  "computerUseAxValueMaxChars",
+  "computerUseAxMaxActions",
+  "computerUseInputDelayMs",
 ] as const;
 export type RuntimeGovernanceKey = (typeof RUNTIME_GOVERNANCE_KEYS)[number];
 
@@ -130,6 +144,13 @@ export type AgentGovernanceOverrides = {
   computerUseScreenshotMaxBytes?: number | undefined;
   computerUseMaxActionsPerRun?: number | undefined;
   computerUseSessionMaxMs?: number | undefined;
+
+  computerUseAxMaxDepth?: number | undefined;
+  computerUseAxMaxChildren?: number | undefined;
+  computerUseAxTitleMaxChars?: number | undefined;
+  computerUseAxValueMaxChars?: number | undefined;
+  computerUseAxMaxActions?: number | undefined;
+  computerUseInputDelayMs?: number | undefined;
 };
 
 const clampInt = (value: number, min: number, max: number): number =>
@@ -213,6 +234,13 @@ export const AGENT_GOVERNANCE_LIMITS = {
   computerUseScreenshotMaxBytes: { min: 16_384, max: 2_097_152 },
   computerUseMaxActionsPerRun: { min: 1, max: 2_000 },
   computerUseSessionMaxMs: { min: 60_000, max: 86_400_000 },
+
+  computerUseAxMaxDepth: { min: 1, max: 128 },
+  computerUseAxMaxChildren: { min: 1, max: 100_000 },
+  computerUseAxTitleMaxChars: { min: 0, max: 1_048_576 },
+  computerUseAxValueMaxChars: { min: 0, max: 1_048_576 },
+  computerUseAxMaxActions: { min: 1, max: 100_000 },
+  computerUseInputDelayMs: { min: 0, max: 60_000 },
 } as const;
 
 /**
@@ -225,9 +253,9 @@ export function resolveGovernanceEnvOverrides(
   source: Record<string, string | undefined>,
 ): AgentGovernanceOverrides {
   const parseStrictInt = (raw: string | undefined): number | undefined => {
-    if (raw === undefined || raw.trim() === "") return undefined;
-    const parsed = Number.parseInt(raw, 10);
-    return Number.isNaN(parsed) ? undefined : parsed;
+    if (raw === undefined || !/^[+-]?\d+$/u.test(raw.trim())) return undefined;
+    const parsed = Number(raw.trim());
+    return Number.isSafeInteger(parsed) ? parsed : undefined;
   };
   const truthy = new Set(["true", "1", "yes", "on"]);
   const falsy = new Set(["false", "0", "no", "off"]);
@@ -329,6 +357,25 @@ export function resolveGovernanceEnvOverrides(
     ),
     computerUseSessionMaxMs: parseStrictInt(
       source.KENFUTWORK_COMPUTER_USE_SESSION_MAX_MS,
+    ),
+
+    computerUseAxMaxDepth: parseStrictInt(
+      source.KENFUTWORK_COMPUTER_USE_AX_MAX_DEPTH,
+    ),
+    computerUseAxMaxChildren: parseStrictInt(
+      source.KENFUTWORK_COMPUTER_USE_AX_MAX_CHILDREN,
+    ),
+    computerUseAxTitleMaxChars: parseStrictInt(
+      source.KENFUTWORK_COMPUTER_USE_AX_TITLE_MAX_CHARS,
+    ),
+    computerUseAxValueMaxChars: parseStrictInt(
+      source.KENFUTWORK_COMPUTER_USE_AX_VALUE_MAX_CHARS,
+    ),
+    computerUseAxMaxActions: parseStrictInt(
+      source.KENFUTWORK_COMPUTER_USE_AX_MAX_ACTIONS,
+    ),
+    computerUseInputDelayMs: parseStrictInt(
+      source.KENFUTWORK_COMPUTER_USE_INPUT_DELAY_MS,
     ),
   };
   return Object.fromEntries(
