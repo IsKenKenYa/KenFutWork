@@ -56,6 +56,32 @@ describe("parseAppRef（应用引用）", () => {
     expect(() => parseAppRef(123)).toThrow(CuTargetError);
     expect(() => parseAppRef({})).toThrow(/name|bundle|pid/);
   });
+
+  it.each([
+    { name: "" },
+    { name: "  " },
+    { pid: 0 },
+    { pid: -1 },
+    { pid: 1.5 },
+    { pid: Number.NaN },
+    { pid: Number.POSITIVE_INFINITY },
+    { pid: 1, windowId: -1 },
+    { pid: 1, windowId: 0.5 },
+    { displayId: "" },
+    { displayId: "3", pid: 1 },
+  ])("拒绝无效或混用引用 %j", (input) => {
+    expect(() => parseAppRef(input)).toThrow(CuTargetError);
+  });
+
+  it("显示器引用独立于应用，坐标解析保留来源帧", () => {
+    expect(parseAppRef({ displayId: "3" })).toEqual({ displayId: "3" });
+    expect(
+      parseTarget({ type: "coordinate", x: 10, y: 20, frameId: "frame-9" }),
+    ).toEqual({ kind: "coordinate", x: 10, y: 20, frameId: "frame-9" });
+    expect(() =>
+      parseTarget({ type: "coordinate", x: 10, y: 20, frameId: "" }),
+    ).toThrow(CuTargetError);
+  });
 });
 
 describe("validateTarget（帧绑定与元素存在性）", () => {
@@ -96,14 +122,18 @@ describe("validateTarget（帧绑定与元素存在性）", () => {
   });
 
   it("元素索引必须在最新观察树中：缺失 → element_unavailable", () => {
-    const verdict = validateTarget({ kind: "element", index: 99 }, latest, latest);
+    const verdict = validateTarget(
+      { kind: "element", index: 99 },
+      latest,
+      latest,
+    );
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.code).toBe("element_unavailable");
   });
 
   it("树内索引放行（元素寻址不依赖 raster 几何）", () => {
-    expect(validateTarget({ kind: "element", index: 11 }, latest, latest).ok).toBe(
-      true,
-    );
+    expect(
+      validateTarget({ kind: "element", index: 11 }, latest, latest).ok,
+    ).toBe(true);
   });
 });

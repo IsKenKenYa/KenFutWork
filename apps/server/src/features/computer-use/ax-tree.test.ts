@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  flattenAxTree,
-  formatAxTree,
-  type AxNode,
-} from "./ax-tree.js";
+import { type AxNode, flattenAxTree, formatAxTree } from "./ax-tree.js";
 
 const calcTree: AxNode = {
   role: "group",
