@@ -21,7 +21,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useAuth } from "@/lib/auth-context";
 import { getServerBaseUrl } from "@/lib/env";
 import { executionModeOptions } from "@/lib/execution-modes";
 import { expandCommand } from "@/lib/slash-commands";
@@ -63,7 +62,6 @@ export function DesignHome({
     handleModelChange,
     handleThinkingChange,
   } = composer;
-  const { session } = useAuth();
   const [prompt, setPrompt] = useState("");
   const mode = "design";
   const meta = {
@@ -80,9 +78,8 @@ export function DesignHome({
     () =>
       new CodeHttpChannelClient({
         apiBase: getServerBaseUrl() || window.location.origin,
-        ...(session?.access_token ? { accessToken: session.access_token } : {}),
       }),
-    [session],
+    [],
   );
   const services = client.services;
   useEffect(() => () => client.dispose(), [client]);

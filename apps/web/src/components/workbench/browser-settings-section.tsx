@@ -157,7 +157,6 @@ export function BrowserSettingsSection({
 
   // 「允许 AI 控制浏览器」「自动截图」「无头」都是服务端开关（工具门控必须在服务端生效）
   useEffect(() => {
-    if (!accessToken) return;
     let cancelled = false;
     fetchPermissionSettings(accessToken)
       .then((view) => {
@@ -183,7 +182,6 @@ export function BrowserSettingsSection({
   }, [accessToken]);
 
   const cdpConnect = async () => {
-    if (!accessToken) return;
     setCdpBusy(true);
     setMessage(null);
     try {
@@ -204,7 +202,6 @@ export function BrowserSettingsSection({
   };
 
   const cdpDisconnect = async () => {
-    if (!accessToken) return;
     setCdpBusy(true);
     try {
       setCdp(await disconnectCdp(accessToken));
@@ -224,7 +221,6 @@ export function BrowserSettingsSection({
       | "browserDevtoolsReadEnabled",
     next: boolean,
   ) => {
-    if (!accessToken) return;
     const setter =
       key === "browserAutoScreenshot"
         ? setBrowserAutoScreenshot
@@ -263,7 +259,6 @@ export function BrowserSettingsSection({
   };
 
   const toggleAgentControl = async (next: boolean) => {
-    if (!accessToken) return;
     setMessage(null);
     try {
       const view = await updatePermissionSettings(accessToken, {
@@ -371,7 +366,7 @@ export function BrowserSettingsSection({
             ) : (
               <button
                 type="button"
-                disabled={cdpBusy || !accessToken}
+                disabled={cdpBusy}
                 onClick={() => void cdpConnect()}
                 className="rounded-md bg-primary px-2.5 py-1 text-xs text-primary-foreground disabled:opacity-50"
               >

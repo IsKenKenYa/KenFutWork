@@ -36,7 +36,7 @@ import {
 import { deleteProject } from "@/lib/server-api";
 
 interface CanvasLogoMenuProps {
-  accessToken: string;
+  accessToken: string | null;
   projectId: string;
   canvasId: string;
   /** 项目名——导出画布时用作文件名（缺省回落到 canvas）。 */

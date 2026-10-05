@@ -26,7 +26,6 @@ export function useDesignProjects(
   const [notice, setNotice] = useState<string | null>(null);
   const autoCanvasTried = useRef(false);
   const refreshProjects = useCallback(() => {
-    if (!accessToken) return;
     fetchProjects(accessToken, "design")
       .then((data) =>
         setProjects(
@@ -63,7 +62,6 @@ export function useDesignProjects(
   }, [refreshProjects]);
   const createProjectNamed = useCallback(
     async (name: string): Promise<CanvasProject | null> => {
-      if (!accessToken) return null;
       setCreatingProject(true);
       try {
         const result = await createProject(accessToken, {
@@ -86,7 +84,6 @@ export function useDesignProjects(
   );
   const renameProject = useCallback(
     async (projectId: string, name: string) => {
-      if (!accessToken) return;
       try {
         await updateProject(accessToken, projectId, { name });
         setProjects((prev) =>
@@ -102,7 +99,6 @@ export function useDesignProjects(
   );
   const removeProject = useCallback(
     async (projectId: string) => {
-      if (!accessToken) return;
       try {
         await deleteProject(accessToken, projectId);
         setProjects((prev) =>

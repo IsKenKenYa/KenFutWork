@@ -1,9 +1,9 @@
 "use client";
 
-import type { WorkspaceSettings } from "@kenfutwork/shared";
+import type { InstanceSettings } from "@kenfutwork/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { updateWorkspaceSettings } from "@/lib/server-api";
+import { updateInstanceSettings } from "@/lib/server-api";
 
 /**
  * 设置 → 命令（R5-2 的「命令」条目）。
@@ -20,7 +20,7 @@ import { updateWorkspaceSettings } from "@/lib/server-api";
  * 删除/插入时 React 会复用错行的输入框（把上一条的文本挪到下一条）。
  */
 type Row = { id: string; name: string; description: string; prompt: string };
-const withRowIds = (list: WorkspaceSettings["commands"]): Row[] =>
+const withRowIds = (list: InstanceSettings["commands"]): Row[] =>
   list.map((command) => ({ id: crypto.randomUUID(), ...command }));
 
 export function CommandsSection({
@@ -28,10 +28,10 @@ export function CommandsSection({
   commands,
   onSaved,
 }: {
-  accessToken: string;
+  accessToken: string | null;
   /** 工作区设置里的命令表（由设置模态统一读写，避免两处真相）。 */
-  commands: WorkspaceSettings["commands"];
-  onSaved: (next: WorkspaceSettings["commands"]) => void;
+  commands: InstanceSettings["commands"];
+  onSaved: (next: InstanceSettings["commands"]) => void;
 }) {
   const [rows, setRows] = useState<Row[]>(() => withRowIds(commands));
   const [saving, setSaving] = useState(false);
@@ -76,7 +76,7 @@ export function CommandsSection({
     }
     setSaving(true);
     try {
-      const result = await updateWorkspaceSettings(accessToken, {
+      const result = await updateInstanceSettings(accessToken, {
         commands: rows.map((row) => ({
           name: row.name.trim(),
           description: row.description.trim(),

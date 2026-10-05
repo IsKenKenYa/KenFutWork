@@ -49,7 +49,7 @@ export function IndexLibrarySection({
   onToggle,
   onToggleAuto,
 }: {
-  accessToken: string;
+  accessToken: string | null;
   /** 当前 Code Task（目录取该 Task 创建时的快照）。 */
   taskId: string | null;
   /** ② 「索引存储库以实现即时搜索」：搜索走索引。 */

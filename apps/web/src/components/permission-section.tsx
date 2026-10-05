@@ -50,7 +50,11 @@ export function linesToRules(text: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-export function PermissionSection({ accessToken }: { accessToken: string }) {
+export function PermissionSection({
+  accessToken,
+}: {
+  accessToken: string | null;
+}) {
   const [settings, setSettings] = useState<PermissionSettingsView | null>(null);
   const [denyText, setDenyText] = useState("");
   const [allowText, setAllowText] = useState("");

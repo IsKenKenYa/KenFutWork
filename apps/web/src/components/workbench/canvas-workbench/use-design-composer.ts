@@ -1,10 +1,11 @@
 "use client";
+
 import type { ExecutionMode } from "@kenfutwork/shared";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAuth } from "@/lib/auth-context";
 import { contextUsageModelMeta } from "@/lib/context-usage";
 import { getServerBaseUrl } from "@/lib/env";
-import { fetchProjects, fetchWorkspaceSettings } from "@/lib/server-api";
+import { serverFetch } from "@/lib/local-access";
+import { fetchInstanceSettings, fetchProjects } from "@/lib/server-api";
 import type { WorkspaceCommand } from "@/lib/slash-commands";
 export type WorkbenchModelOption = {
   id: string;
@@ -17,7 +18,6 @@ export type WorkbenchModelOption = {
 };
 
 export function useDesignComposer() {
-  const { session } = useAuth();
   const [tier, setTier] = useState("default");
   /** 「完全访问」的风险确认弹窗（确认后才写库与生效）。 */
   const [pendingFullAccess, setPendingFullAccess] = useState(false);
@@ -54,20 +54,14 @@ export function useDesignComposer() {
     }
   }, []);
   useEffect(() => {
-    const token = session?.access_token;
-    if (!token) return;
-    fetchWorkspaceSettings(token)
+    fetchInstanceSettings(null)
       .then((data) => {
         setCommands(data.settings.commands);
       })
       .catch(() => {});
-  }, [session]);
+  }, []);
   useEffect(() => {
-    const token = session?.access_token;
-    if (!token) return;
-    fetch(`${getServerBaseUrl()}/api/execution-modes`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    serverFetch(`${getServerBaseUrl()}/api/execution-modes`)
       .then((r) => (r.ok ? r.json() : { modes: [] }))
       .then(
         (data: {
@@ -80,21 +74,16 @@ export function useDesignComposer() {
         }) => setExecutionModes(data.modes),
       )
       .catch(() => {});
-  }, [session]);
+  }, []);
   useEffect(() => {
-    if (!session?.access_token) return;
-    fetch(`${getServerBaseUrl()}/api/permissions/tier`, {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    })
+    serverFetch(`${getServerBaseUrl()}/api/permissions/tier`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.tier) setTier(data.tier);
       })
       .catch(() => {});
     // 模型目录（带凭证并入 BYOK 实例）
-    fetch(`${getServerBaseUrl()}/api/models`, {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    })
+    serverFetch(`${getServerBaseUrl()}/api/models`)
       .then((r) => (r.ok ? r.json() : { models: [] }))
       .then((data: { models: WorkbenchModelOption[] }) => {
         setModels(data.models);
@@ -112,7 +101,7 @@ export function useDesignComposer() {
         );
       })
       .catch(() => {});
-  }, [session]);
+  }, []);
 
   /** 模型选择：记住到 localStorage（与 thinking 同一口径）。 */
   const handleModelChange = useCallback((next: string) => {
@@ -123,25 +112,20 @@ export function useDesignComposer() {
       // 存储失败不阻塞
     }
   }, []);
-  const applyTier = useCallback(
-    async (next: string) => {
-      setTier(next);
-      if (!session?.access_token) return;
-      try {
-        await fetch(`${getServerBaseUrl()}/api/permissions/tier`, {
-          method: "PUT",
-          headers: {
-            "content-type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({ tier: next }),
-        });
-      } catch {
-        // 权限档位失败不阻塞任务
-      }
-    },
-    [session],
-  );
+  const applyTier = useCallback(async (next: string) => {
+    setTier(next);
+    try {
+      await serverFetch(`${getServerBaseUrl()}/api/permissions/tier`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ tier: next }),
+      });
+    } catch {
+      // 权限档位失败不阻塞任务
+    }
+  }, []);
 
   /**
    * 切档：**「完全访问」先过一道风险确认**（用户口径：不要用括号交代风险，改成弹窗提示并确认）。
@@ -158,11 +142,10 @@ export function useDesignComposer() {
     [applyTier, tier],
   );
   useEffect(() => {
-    if (!session?.access_token) return;
-    fetchProjects(session.access_token, "code")
+    fetchProjects(null, "code")
       .then((data) => setHasWorkDir(data.projects.length > 0))
       .catch(() => {});
-  }, [session]);
+  }, []);
   return {
     tier,
     thinking,

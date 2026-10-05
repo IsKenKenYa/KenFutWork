@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import {
+  fetchInstanceSettings,
   fetchPermissionSettings,
   fetchProviderInstances,
-  fetchWorkspaceSettings,
   type PermissionSettingsView,
 } from "@/lib/server-api";
 
@@ -69,7 +69,7 @@ export function OnboardingSection({
   conversationCount,
   onGoToTab,
 }: {
-  accessToken: string;
+  accessToken: string | null;
   /** 是否已有 kind=code 的工作目录项目（由工作台按**真实项目列表**传入）。 */
   hasWorkDir: boolean;
   /** 侧栏里已可见的会话数。 */
@@ -83,7 +83,7 @@ export function OnboardingSection({
     let cancelled = false;
     Promise.all([
       fetchProviderInstances(accessToken).catch(() => null),
-      fetchWorkspaceSettings(accessToken).catch(() => null),
+      fetchInstanceSettings(accessToken).catch(() => null),
       fetchPermissionSettings(accessToken).catch(() => null),
     ]).then(([providers, settings, permissions]) => {
       if (cancelled) return;

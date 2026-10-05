@@ -15,9 +15,13 @@ import {
 
 /**
  * 供应商设置（P5 BYOK）：用户供应商实例 CRUD。
- * 凭证红线：apiKey 与自定义头值都只写不读——列表只有 hasCredential 与 headerKeys（键名）。
+ * 普通列表只含凭据状态；查看/复制凭据使用原 Code 供应商设置。
  */
-export function ProviderSettings({ accessToken }: { accessToken: string }) {
+export function ProviderSettings({
+  accessToken,
+}: {
+  accessToken: string | null;
+}) {
   const [instances, setInstances] = useState<ProviderInstanceResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -78,7 +82,8 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
         <div>
           <h3 className="text-base font-medium">供应商设置</h3>
           <p className="text-sm text-muted-foreground">
-            使用你自己的 API Key，Key 加密保存、不回显。
+            使用你自己的 API Key，Key 以明文保存在本机数据目录。可在 Code
+            供应商设置中查看或复制。
           </p>
         </div>
         <button

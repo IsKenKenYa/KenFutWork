@@ -1,9 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFlowHostEntry } from "@/hooks/use-flow-host";
-import { useAuth } from "@/lib/auth-context";
 import { installDesktopExternalLinks } from "@/lib/desktop-system";
 import { SIDEBAR_RAIL_WIDTH } from "@/lib/panel-layout";
 import {
@@ -16,7 +14,6 @@ import { FullAccessDialog } from "./canvas-workbench/full-access-dialog";
 import { useDesignComposer } from "./canvas-workbench/use-design-composer";
 import { useDesignProjects } from "./canvas-workbench/use-design-projects";
 import { useSidebarWidth } from "./canvas-workbench/use-sidebar-width";
-import { useWorkbenchViewer } from "./canvas-workbench/use-workbench-viewer";
 import {
   FlowCanvasFrame,
   type FlowCanvasFrameHandle,
@@ -34,15 +31,11 @@ export function CanvasWorkbench({
   mode: "design" | "flow";
   onModeChange: (mode: WorkbenchMode) => void;
 }) {
-  const router = useRouter();
-  const { user, session, loading, signOut } = useAuth();
-  const accessToken = session?.access_token ?? null;
-  const getToken = useCallback(() => accessToken, [accessToken]);
-  const { entry: flowEntry, refresh: refreshFlowEntry } =
-    useFlowHostEntry(accessToken);
+  const accessToken = null;
+  const getToken = useCallback(() => accessToken, []);
+  const { entry: flowEntry, refresh: refreshFlowEntry } = useFlowHostEntry();
   const flowFrameRef = useRef<FlowCanvasFrameHandle>(null);
   const projects = useDesignProjects(accessToken, mode);
-  const viewer = useWorkbenchViewer(accessToken);
   const composer = useDesignComposer();
   const { sidebarWidth, startSidebarResize } = useSidebarWidth();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -58,19 +51,12 @@ export function CanvasWorkbench({
     hasActiveTask: false,
   });
   useEffect(() => {
-    if (!loading && !user) router.replace("/login");
-  }, [loading, user, router]);
-  useEffect(() => {
     installDesktopExternalLinks();
   }, []);
   useEffect(() => {
     if (mode === "flow" && flowEntry && !flowEntry.available)
       onModeChange("design");
   }, [mode, flowEntry, onModeChange]);
-  const handleSignOut = useCallback(() => {
-    void signOut();
-    router.push("/login");
-  }, [signOut, router]);
   const handlePluginUse = useCallback(
     (name: string) => {
       setPluginsOpen(false);
@@ -87,13 +73,7 @@ export function CanvasWorkbench({
     },
     [onModeChange],
   );
-  if (loading)
-    return (
-      <div className="flex h-screen items-center justify-center bg-background text-sm text-muted-foreground">
-        加载中…
-      </div>
-    );
-  if (!user || (mode === "flow" && !flowEntry?.available)) return null;
+  if (mode === "flow" && !flowEntry?.available) return null;
 
   return (
     <div
@@ -106,7 +86,6 @@ export function CanvasWorkbench({
     >
       <CanvasSidebar
         {...projects}
-        {...viewer}
         mode={mode}
         switchMode={onModeChange}
         sidebarWidth={sidebarWidth}
@@ -117,8 +96,6 @@ export function CanvasWorkbench({
         setPluginsOpen={setPluginsOpen}
         setSkillsOpen={setSkillsOpen}
         setMcpOpen={setMcpOpen}
-        handleSignOut={handleSignOut}
-        session={session}
         flowEntry={flowEntry}
         flowFrameRef={flowFrameRef}
       />
@@ -143,7 +120,7 @@ export function CanvasWorkbench({
             selectedProject={selectedProject}
             setSettingsTab={setSettingsTab}
             onSubmit={(text) => {
-              if (text.trim() && accessToken) setCanvasPrompt(text.trim());
+              if (text.trim()) setCanvasPrompt(text.trim());
             }}
           />
         )}
@@ -156,8 +133,6 @@ export function CanvasWorkbench({
         accessToken={accessToken}
         hasWorkDir={composer.hasWorkDir}
         conversationCount={0}
-        isAdmin={viewer.isPlatformAdmin}
-        onOpenAdmin={() => router.push("/admin")}
         key={mode}
       />
       {pluginsOpen ? (
@@ -167,7 +142,6 @@ export function CanvasWorkbench({
           onClose={() => setPluginsOpen(false)}
           accessToken={accessToken}
           canvasId={selectedProject?.primaryCanvas?.id ?? null}
-          isAdmin={viewer.isPlatformAdmin}
           onPluginsChanged={refreshFlowEntry}
         />
       ) : null}

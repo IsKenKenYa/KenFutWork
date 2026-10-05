@@ -27,7 +27,11 @@ function subagentRows(data: AgentSubagentListResponse): Array<{
   return [...data.subagents, ...data.builtin];
 }
 
-export function SubagentsSection({ accessToken }: { accessToken: string }) {
+export function SubagentsSection({
+  accessToken,
+}: {
+  accessToken: string | null;
+}) {
   const [data, setData] = useState<AgentSubagentListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();

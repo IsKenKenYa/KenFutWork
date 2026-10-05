@@ -1,6 +1,5 @@
 "use client";
 
-import { Lock, Zap } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
@@ -184,21 +183,9 @@ export function ImageModelPreferencePopover({
                 <div className="flex flex-1 flex-col">
                   <span className="flex items-center gap-1.5 text-[13px] font-medium text-foreground">
                     {m.displayName}
-                    {m.accessible === false && (
-                      <span className="inline-flex items-center gap-0.5 rounded px-1 py-px text-[9px] font-semibold uppercase leading-tight tracking-wider bg-muted text-muted-foreground">
-                        <Lock className="h-2.5 w-2.5" />
-                        {m.minTier ?? "PRO"}
-                      </span>
-                    )}
                   </span>
                   <span className="flex items-center gap-1.5 text-[11px] leading-tight text-muted-foreground">
                     {m.description}
-                    {typeof m.creditCost === "number" && (
-                      <span className="inline-flex items-center gap-0.5 tabular-nums text-muted-foreground">
-                        <Zap className="h-2.5 w-2.5" />
-                        {m.creditCost}
-                      </span>
-                    )}
                   </span>
                 </div>
                 {selected && (

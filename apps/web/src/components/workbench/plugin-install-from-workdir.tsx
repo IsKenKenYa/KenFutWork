@@ -14,20 +14,18 @@ import { CompatReportView } from "./plugin-compat-report";
 /**
  * 从工作目录安装插件：列出当前工作目录里的 bundle 候选（创造模式的插件产物），一键安装。
  *
- * 与「从链接安装」同一条服务端事务：管理员门 + 兼容性门禁都不绕过——不通过时把门禁报告
+ * 与「从链接安装」同一条服务端事务：本机接入与兼容性门禁都不绕过——不通过时把门禁报告
  * 原样给用户看（而不是只说一句失败）。
  */
 export function PluginInstallFromWorkdir({
   accessToken,
   canvasId,
-  isAdmin = false,
   onInstalled,
 }: {
   accessToken: string | null;
   /** 当前工作目录所在画布（服务端据此解析沙箱目录）。 */
   canvasId: string | null;
-  /** 安装要过管理员门：非管理员直接说清，而不是点了才失败。 */
-  isAdmin?: boolean;
+  /** 安装保留兼容性检查。 */
   onInstalled: () => void;
 }) {
   const [bundles, setBundles] = useState<SandboxPluginBundle[]>([]);
@@ -99,11 +97,6 @@ export function PluginInstallFromWorkdir({
       <p className="mt-1 text-xs text-muted-foreground">
         工作目录里的插件会出现在这里，安装前同样会先校验兼容性。
       </p>
-      {!isAdmin ? (
-        <p className="mt-1 text-xs text-amber-600">
-          安装需要管理员权限；你可以照常浏览扫描结果，或复制目录路径交给管理员安装。
-        </p>
-      ) : null}
 
       {scanError ? (
         <p className="mt-2 text-xs text-destructive">{scanError}</p>
@@ -139,7 +132,7 @@ export function PluginInstallFromWorkdir({
                 onClick={() => {
                   void install(item.path);
                 }}
-                disabled={!isAdmin || installingPath !== null}
+                disabled={installingPath !== null}
                 className="shrink-0 rounded-md border px-3 py-1.5 text-sm disabled:opacity-40"
               >
                 {installingPath === item.path ? (

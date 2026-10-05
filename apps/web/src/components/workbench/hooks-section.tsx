@@ -1,9 +1,9 @@
 "use client";
 
-import type { WorkspaceSettings } from "@kenfutwork/shared";
+import type { InstanceSettings } from "@kenfutwork/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { updateWorkspaceSettings } from "@/lib/server-api";
+import { updateInstanceSettings } from "@/lib/server-api";
 
 /**
  * 设置 → 钩子（R5-2「钩子」条目）。
@@ -22,7 +22,7 @@ type HookRow = {
   command: string;
 };
 
-const withRowIds = (hooks: WorkspaceSettings["hooks"]): HookRow[] =>
+const withRowIds = (hooks: InstanceSettings["hooks"]): HookRow[] =>
   hooks.map((hook) => ({ id: crypto.randomUUID(), ...hook }));
 
 export function HooksSection({
@@ -30,9 +30,9 @@ export function HooksSection({
   hooks,
   onSaved,
 }: {
-  accessToken: string;
-  hooks: WorkspaceSettings["hooks"];
-  onSaved: (next: WorkspaceSettings["hooks"]) => void;
+  accessToken: string | null;
+  hooks: InstanceSettings["hooks"];
+  onSaved: (next: InstanceSettings["hooks"]) => void;
 }) {
   const [rows, setRows] = useState<HookRow[]>(() => withRowIds(hooks));
   const [saving, setSaving] = useState(false);
@@ -53,7 +53,7 @@ export function HooksSection({
     }
     setSaving(true);
     try {
-      const result = await updateWorkspaceSettings(accessToken, {
+      const result = await updateInstanceSettings(accessToken, {
         hooks: rows.map((row) => ({
           event: row.event,
           command: row.command.trim(),

@@ -11,36 +11,31 @@ import {
   Server,
   Workflow,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import type { Dispatch, MouseEvent, RefObject, SetStateAction } from "react";
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
 import type { FlowEntry } from "@/lib/flow-embed";
 import { PluginIcon, PluginPanelButtons } from "@/lib/plugin-panels";
 import type { WorkbenchMode } from "@/lib/workbench-surface";
 import type { FlowCanvasFrameHandle } from "../flow-canvas-frame";
+import { InstanceMenu } from "../instance-menu";
 import type { SettingsTab } from "../settings-modal";
 import { SidebarRow } from "../sidebar-row";
-import { UserMenu } from "../user-menu";
 import type { useDesignProjects } from "./use-design-projects";
-import type { useWorkbenchViewer } from "./use-workbench-viewer";
 
-type Props = ReturnType<typeof useDesignProjects> &
-  ReturnType<typeof useWorkbenchViewer> & {
-    mode: "design" | "flow";
-    switchMode: (mode: WorkbenchMode) => void;
-    sidebarWidth: number;
-    sidebarCollapsed: boolean;
-    setSidebarCollapsed: Dispatch<SetStateAction<boolean>>;
-    startSidebarResize: (event: MouseEvent) => void;
-    setSettingsTab: Dispatch<SetStateAction<SettingsTab | null>>;
-    setPluginsOpen: Dispatch<SetStateAction<boolean>>;
-    setSkillsOpen: Dispatch<SetStateAction<boolean>>;
-    setMcpOpen: Dispatch<SetStateAction<boolean>>;
-    handleSignOut: () => void;
-    session: { access_token: string } | null;
-    flowEntry: FlowEntry | null;
-    flowFrameRef: RefObject<FlowCanvasFrameHandle | null>;
-  };
+type Props = ReturnType<typeof useDesignProjects> & {
+  mode: "design" | "flow";
+  switchMode: (mode: WorkbenchMode) => void;
+  sidebarWidth: number;
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: Dispatch<SetStateAction<boolean>>;
+  startSidebarResize: (event: MouseEvent) => void;
+  setSettingsTab: Dispatch<SetStateAction<SettingsTab | null>>;
+  setPluginsOpen: Dispatch<SetStateAction<boolean>>;
+  setSkillsOpen: Dispatch<SetStateAction<boolean>>;
+  setMcpOpen: Dispatch<SetStateAction<boolean>>;
+  flowEntry: FlowEntry | null;
+  flowFrameRef: RefObject<FlowCanvasFrameHandle | null>;
+};
 /** 从原工作台提取的 Design/Flow 侧栏；Code 只执行宿主导航。 */
 export function CanvasSidebar({
   projects,
@@ -50,8 +45,6 @@ export function CanvasSidebar({
   createProjectNamed,
   renameProject,
   removeProject,
-  workbenchUser,
-  isPlatformAdmin,
   sidebarWidth,
   sidebarCollapsed,
   setSidebarCollapsed,
@@ -62,12 +55,9 @@ export function CanvasSidebar({
   setPluginsOpen,
   setSkillsOpen,
   setMcpOpen,
-  handleSignOut,
-  session,
   flowEntry,
   flowFrameRef,
 }: Props) {
-  const router = useRouter();
   const availableModes: WorkbenchMode[] = flowEntry?.available
     ? ["code", "design", "flow"]
     : ["code", "design"];
@@ -120,13 +110,9 @@ export function CanvasSidebar({
             <Layers className="h-4 w-4" />
           </button>
           <div className="mt-auto">
-            <UserMenu
-              user={workbenchUser}
+            <InstanceMenu
               collapsed
-              isAdmin={isPlatformAdmin}
               onOpenSettings={() => setSettingsTab("general")}
-              onOpenAdmin={() => router.push("/admin")}
-              onSignOut={handleSignOut}
             />
           </div>
         </aside> /* 展开态：logo + 模式切换 + 插件 + 项目(design) + 任务列表 +
@@ -224,7 +210,7 @@ export function CanvasSidebar({
             </button>
             {/* 插件面板（能力 `ui`）：侧栏槽位 */}
             <PluginPanelButtons
-              accessToken={session?.access_token ?? null}
+              accessToken={null}
               slot="sidebar"
               renderButton={(panel, open) => (
                 <button
@@ -329,13 +315,9 @@ export function CanvasSidebar({
 
           {/* 底部：个人中心（头像弹出） */}
           <div className="border-t p-2">
-            <UserMenu
-              user={workbenchUser}
+            <InstanceMenu
               collapsed={false}
-              isAdmin={isPlatformAdmin}
               onOpenSettings={() => setSettingsTab("general")}
-              onOpenAdmin={() => router.push("/admin")}
-              onSignOut={handleSignOut}
             />
           </div>
         </aside>

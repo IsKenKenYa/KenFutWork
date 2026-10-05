@@ -11,6 +11,7 @@ import { Blocks, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
+import { serverFetch } from "@/lib/local-access";
 import {
   describeInstallFailure,
   type MarketItemView,
@@ -85,12 +86,12 @@ export function SkillsModal({
     setError(null);
     const base = getServerBaseUrl();
     Promise.all([
-      fetch(`${base}/api/skills`, { headers: authHeaders() }).then((r) =>
+      serverFetch(`${base}/api/skills`, { headers: authHeaders() }).then((r) =>
         r.ok ? r.json() : { skills: [] },
       ),
-      fetch(`${base}/api/workspaces/skills`, { headers: authHeaders() }).then(
-        (r) => (r.ok ? r.json() : { skills: [] }),
-      ),
+      serverFetch(`${base}/api/workspaces/skills`, {
+        headers: authHeaders(),
+      }).then((r) => (r.ok ? r.json() : { skills: [] })),
     ])
       .then(
         ([all, installed]: [
@@ -114,7 +115,7 @@ export function SkillsModal({
       const base = getServerBaseUrl();
       // 已安装 → 直接切启用态；未安装 → 先安装（安装即启用）
       const response = row.installed
-        ? await fetch(
+        ? await serverFetch(
             `${base}/api/workspaces/skills/${encodeURIComponent(row.id)}`,
             {
               method: "PATCH",
@@ -122,7 +123,7 @@ export function SkillsModal({
               body: JSON.stringify({ enabled: !row.enabled }),
             },
           )
-        : await fetch(`${base}/api/workspaces/skills`, {
+        : await serverFetch(`${base}/api/workspaces/skills`, {
             method: "POST",
             headers: { "content-type": "application/json", ...authHeaders() },
             body: JSON.stringify({ skillId: row.id }),
@@ -147,7 +148,7 @@ export function SkillsModal({
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch(
+      const response = await serverFetch(
         `${getServerBaseUrl()}/api/skills/${encodeURIComponent(row.id)}`,
         { method: "DELETE", headers: authHeaders() },
       );
@@ -168,7 +169,7 @@ export function SkillsModal({
     setBusyId(row.id);
     setError(null);
     try {
-      const response = await fetch(
+      const response = await serverFetch(
         `${getServerBaseUrl()}/api/skills/${encodeURIComponent(row.id)}`,
         { headers: authHeaders() },
       );
@@ -492,11 +493,14 @@ function SkillsCreatePanel({
     setError(null);
     setMessage(null);
     try {
-      const response = await fetch(`${getServerBaseUrl()}/api/skills/import`, {
-        method: "POST",
-        headers: { "content-type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ url: url.trim() }),
-      });
+      const response = await serverFetch(
+        `${getServerBaseUrl()}/api/skills/import`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", ...authHeaders() },
+          body: JSON.stringify({ url: url.trim() }),
+        },
+      );
       if (!response.ok) {
         setError(await readErrorMessage(response, "导入失败。"));
         return;
@@ -521,7 +525,7 @@ function SkillsCreatePanel({
     setError(null);
     setMessage(null);
     try {
-      const response = await fetch(`${getServerBaseUrl()}/api/skills`, {
+      const response = await serverFetch(`${getServerBaseUrl()}/api/skills`, {
         method: "POST",
         headers: { "content-type": "application/json", ...authHeaders() },
         body: JSON.stringify({
@@ -717,7 +721,7 @@ function SkillsMarketPanel({
         q: normalizeMarketQuery(rawQuery),
         limit: "20",
       });
-      void fetch(
+      void serverFetch(
         `${getServerBaseUrl()}/api/skills/marketplace/search?${params}`,
         { headers: authHeaders() },
       )
@@ -749,7 +753,7 @@ function SkillsMarketPanel({
     setError(null);
     setMessage(null);
     try {
-      const response = await fetch(
+      const response = await serverFetch(
         `${getServerBaseUrl()}/api/skills/marketplace/install`,
         {
           method: "POST",

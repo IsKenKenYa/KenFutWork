@@ -2,9 +2,9 @@
 
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { getVideoCreditCost, type VideoResolution } from "@kenfutwork/shared";
-import { Lock, Plus, Zap } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { VideoResolution } from "@kenfutwork/shared";
+import { Plus } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { useGenerationErrorHandler } from "../../hooks/use-generation-error-handler";
@@ -34,7 +34,7 @@ type VideoGeneratorPanelProps = {
   elementBounds: { x: number; y: number; width: number; height: number };
   data: VideoGeneratorData;
   excalidrawApi: ExcalidrawImperativeAPI;
-  accessToken: string;
+  accessToken: string | null;
   /** 当前画布会话（§4.8）：实例自定义头的 `{{sessionId}}` 按它渲染；无会话时缺省。 */
   sessionId?: string | undefined;
   canvasScrollZoom: { scrollX: number; scrollY: number; zoom: number };
@@ -164,13 +164,6 @@ export function VideoGeneratorPanel({
   const currentPriceRate = currentModel?.pricing?.rates.find(
     (rate) => rate.resolution === resolution,
   );
-  const currentCreditCost = useMemo(() => {
-    try {
-      return getVideoCreditCost(model, duration, resolution as VideoResolution);
-    } catch {
-      return undefined;
-    }
-  }, [duration, model, resolution]);
 
   const handleAspectRatioChange = useCallback(
     (ratio: string) => {
@@ -668,7 +661,7 @@ export function VideoGeneratorPanel({
                     key={m.id}
                     type="button"
                     onClick={() => handleModelChange(m.id)}
-                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted ${m.id === model ? "bg-muted" : ""} ${m.accessible === false ? "opacity-60" : ""}`}
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted ${m.id === model ? "bg-muted" : ""}`}
                   >
                     {m.iconUrl && (
                       // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
@@ -680,16 +673,7 @@ export function VideoGeneratorPanel({
                     )}
                     <span className="flex-1 text-foreground">
                       {m.displayName}
-                      {m.accessible === false && (
-                        <Lock className="ml-1 inline h-2.5 w-2.5 text-muted-foreground" />
-                      )}
                     </span>
-                    {typeof m.creditCost === "number" && (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] tabular-nums text-muted-foreground">
-                        <Zap className="h-2.5 w-2.5" />
-                        {m.creditCost}
-                      </span>
-                    )}
                     {m.id === model && (
                       <svg
                         aria-hidden="true"
@@ -720,21 +704,14 @@ export function VideoGeneratorPanel({
             {loading ? (
               <div className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-primary-foreground/30 border-t-primary-foreground dark:border-primary-foreground/30 dark:border-t-primary-foreground" />
             ) : (
-              <>
-                <svg
-                  aria-hidden="true"
-                  className="h-3.5 w-[9.3px] shrink-0"
-                  viewBox="0 0 8 10"
-                  fill="currentColor"
-                >
-                  <path d="M6.9 4.36H5.385V.76c0-.84-.447-1.01-.991-.38L4 .835.677 4.685c-.457.525-.265.955.422.955h1.517v3.6c0 .84.446 1.01.991.38L4 9.165l3.323-3.85c.456-.525.265-.955-.422-.955" />
-                </svg>
-                {typeof currentCreditCost === "number" && (
-                  <span className="text-xs tabular-nums">
-                    {currentCreditCost}
-                  </span>
-                )}
-              </>
+              <svg
+                aria-hidden="true"
+                className="h-3.5 w-[9.3px] shrink-0"
+                viewBox="0 0 8 10"
+                fill="currentColor"
+              >
+                <path d="M6.9 4.36H5.385V.76c0-.84-.447-1.01-.991-.38L4 .835.677 4.685c-.457.525-.265.955.422.955h1.517v3.6c0 .84.446 1.01.991.38L4 9.165l3.323-3.85c.456-.525.265-.955-.422-.955" />
+              </svg>
             )}
           </button>
         </div>

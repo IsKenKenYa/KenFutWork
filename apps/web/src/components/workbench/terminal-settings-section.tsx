@@ -11,8 +11,8 @@ import {
 } from "@/components/ui/select";
 import { ListLoading } from "@/components/workbench/list-state";
 import {
-  fetchWorkspaceSettings,
-  updateWorkspaceSettings,
+  fetchInstanceSettings,
+  updateInstanceSettings,
 } from "@/lib/server-api";
 import { fetchTerminalShells } from "@/lib/terminal-api";
 
@@ -28,7 +28,7 @@ import { fetchTerminalShells } from "@/lib/terminal-api";
 export function TerminalSettingsSection({
   accessToken,
 }: {
-  accessToken: string;
+  accessToken: string | null;
 }) {
   const [shells, setShells] = useState<
     Array<{ id: TerminalShellId; label: string; executable: string }>
@@ -44,7 +44,7 @@ export function TerminalSettingsSection({
     try {
       const [list, settings] = await Promise.all([
         fetchTerminalShells(accessToken),
-        fetchWorkspaceSettings(accessToken),
+        fetchInstanceSettings(accessToken),
       ]);
       setShells(list.shells);
       setAutoShell(list.resolvedShell);
@@ -64,7 +64,7 @@ export function TerminalSettingsSection({
     setSaving(true);
     setMessage(null);
     try {
-      await updateWorkspaceSettings(accessToken, { terminalShell: next });
+      await updateInstanceSettings(accessToken, { terminalShell: next });
       setShell(next);
       setMessage("已保存，下次执行时生效。");
     } catch (err) {

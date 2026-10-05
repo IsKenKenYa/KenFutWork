@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { updateProject } from "@/lib/server-api";
 
 interface EditableProjectNameProps {
-  accessToken: string;
+  accessToken: string | null;
   projectId: string;
   initialName: string;
 }

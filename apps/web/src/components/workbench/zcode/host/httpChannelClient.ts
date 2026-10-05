@@ -77,6 +77,14 @@ class CodeHostHttpError extends Error {
   }
 }
 
+function reportAccessLost(status: number) {
+  if (status !== 401 || window.parent === window) return;
+  window.parent.postMessage(
+    { type: "kenfutwork:code-access-lost" },
+    window.location.origin,
+  );
+}
+
 const servicesByChannel: Record<string, string> = {
   [ServiceChannels.ZCodeAgent]: "zcodeAgentService",
   [ServiceChannels.ModelSelection]: "modelSelectionService",
@@ -195,7 +203,7 @@ export class CodeHttpChannelClient implements IChannelClient {
       `${this.config.apiBase.replace(/\/$/u, "")}${path}`,
       {
         method: body === undefined ? "GET" : "POST",
-        credentials: "omit",
+        credentials: "include",
         signal: this.controller.signal,
         headers: {
           ...this.headers(),
@@ -204,6 +212,7 @@ export class CodeHttpChannelClient implements IChannelClient {
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       },
     );
+    reportAccessLost(response.status);
     const result = await response.json();
     if (!response.ok)
       throw new CodeHostHttpError(
@@ -246,10 +255,11 @@ export class CodeHttpChannelClient implements IChannelClient {
       `${this.config.apiBase.replace(/\/$/u, "")}/api/code-ui/events`,
       {
         headers: this.headers(),
-        credentials: "omit",
+        credentials: "include",
         signal: this.controller.signal,
       },
     );
+    reportAccessLost(response.status);
     if (!response.ok || !response.body) {
       await response.body?.cancel();
       throw new CodeHostHttpError(

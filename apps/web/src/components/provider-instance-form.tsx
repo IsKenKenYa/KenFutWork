@@ -38,7 +38,7 @@ const DEFAULT_MODELS_JSON =
 /**
  * 供应商实例表单（新建 / 编辑同一张表，避免两套字段漂移）。
  *
- * 只写字段的口径（凭证红线）：
+ * 凭据更新行为：
  * - `apiKey` 编辑时留空 = 不改（服务端 `undefined` 即不写该列）；
  * - 自定义头值同理：留空 = 保留已存的（表单下方列出键名），填 `{}` = 清空。
  */
@@ -110,7 +110,7 @@ export function ProviderInstanceForm({
     }
 
     if (!apiKey.trim()) {
-      onError("请填写 API Key（保存后不可查看）");
+      onError("请填写 API Key");
       return;
     }
     await onSubmitCreate({

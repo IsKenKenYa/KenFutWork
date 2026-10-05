@@ -7,7 +7,7 @@ import { fetchBrandKits } from "@/lib/brand-kit-api";
 import { updateProject } from "@/lib/server-api";
 
 interface BrandKitSelectorProps {
-  accessToken: string;
+  accessToken: string | null;
   projectId: string;
   currentBrandKitId: string | null;
   onBrandKitChange: (kitId: string | null) => void;

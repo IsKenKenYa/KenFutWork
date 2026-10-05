@@ -3,8 +3,8 @@
 import { Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
-  fetchWorkspaceSettings,
-  updateWorkspaceSettings,
+  fetchInstanceSettings,
+  updateInstanceSettings,
 } from "@/lib/server-api";
 
 /**
@@ -27,10 +27,9 @@ export function RulesMemorySection({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!accessToken) return;
     let cancelled = false;
     setLoading(true);
-    fetchWorkspaceSettings(accessToken)
+    fetchInstanceSettings(accessToken)
       .then((payload) => {
         if (cancelled) return;
         const view = payload.settings;
@@ -50,10 +49,9 @@ export function RulesMemorySection({
   }, [accessToken]);
 
   const handleSaveRules = async () => {
-    if (!accessToken) return;
     setStatus(null);
     try {
-      const payload = await updateWorkspaceSettings(accessToken, {
+      const payload = await updateInstanceSettings(accessToken, {
         userRules: rules,
       });
       const saved = payload.settings.userRules ?? "";
@@ -66,12 +64,11 @@ export function RulesMemorySection({
   };
 
   const persistEntries = async (next: string[], message: string) => {
-    if (!accessToken) return;
     const previous = entries;
     setEntries(next);
     setStatus(null);
     try {
-      const payload = await updateWorkspaceSettings(accessToken, {
+      const payload = await updateInstanceSettings(accessToken, {
         ruleEntries: next,
       });
       setEntries(payload.settings.ruleEntries ?? []);
@@ -102,22 +99,17 @@ export function RulesMemorySection({
         rows={5}
         placeholder={"例如：回答先给结论；不要用 emoji；改代码前先跑测试。"}
         className="w-full rounded-md border px-3 py-2 text-sm"
-        disabled={loading || !accessToken}
+        disabled={loading}
       />
       <div className="mt-2 flex items-center gap-2">
         <button
           type="button"
           onClick={() => void handleSaveRules()}
-          disabled={loading || !accessToken || rules === savedRules}
+          disabled={loading || rules === savedRules}
           className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
         >
           保存
         </button>
-        {!accessToken ? (
-          <span className="text-xs text-muted-foreground">
-            未登录，无法保存
-          </span>
-        ) : null}
       </div>
 
       <h3 className="mt-6 mb-1 text-base font-medium">规则条目</h3>
@@ -137,12 +129,11 @@ export function RulesMemorySection({
           }}
           placeholder="输入一条规则，回车添加"
           className="min-w-0 flex-1 rounded-md border px-3 py-1.5 text-sm"
-          disabled={!accessToken}
         />
         <button
           type="button"
           onClick={() => void handleAddEntry()}
-          disabled={!accessToken || !newEntry.trim()}
+          disabled={!newEntry.trim()}
           className="flex shrink-0 items-center gap-1 rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
         >
           <Plus className="h-3.5 w-3.5" /> 添加

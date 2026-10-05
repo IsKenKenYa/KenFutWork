@@ -1,37 +1,37 @@
 "use client";
 
-import type { WorkspaceSettings } from "@kenfutwork/shared";
+import {
+  AGENT_GOVERNANCE_DEFAULTS,
+  type InstanceSettings,
+  instanceSettingsSchema,
+} from "@kenfutwork/shared";
 import { PanelsTopLeft } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AgentGovernanceSection } from "@/components/agent-governance-section";
 import { AgentSection } from "@/components/agent-section";
 import { PermissionSection } from "@/components/permission-section";
-import { ProfileSection } from "@/components/profile-section";
 import { ProviderSettings } from "@/components/provider-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { AboutSection } from "@/components/workbench/about-section";
-import { AccountSection } from "@/components/workbench/account-section";
-import { ApiTokensSection } from "@/components/workbench/api-tokens-section";
 import { AppearanceSection } from "@/components/workbench/appearance-section";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
 import { CommandsSection } from "@/components/workbench/commands-section";
 import { HooksSection } from "@/components/workbench/hooks-section";
 import { IndexLibrarySection } from "@/components/workbench/index-library-section";
 import { ListLoading } from "@/components/workbench/list-state";
+import { LocalAccessClientsSection } from "@/components/workbench/local-access-clients-section";
+import { LocalInstanceSection } from "@/components/workbench/local-instance-section";
 import { OnboardingSection } from "@/components/workbench/onboarding-section";
 import { RulesMemorySection } from "@/components/workbench/rules-memory-section";
 import { SubagentsSection } from "@/components/workbench/subagents-section";
 import { TerminalSettingsSection } from "@/components/workbench/terminal-settings-section";
 import { UsageStatsSection } from "@/components/workbench/usage-stats-section";
-import { useAuth } from "@/lib/auth-context";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
 import {
+  fetchInstanceSettings,
   fetchModels,
-  fetchViewer,
-  fetchWorkspaceSettings,
-  updateProfile,
-  updateWorkspaceSettings,
+  updateInstanceSettings,
 } from "@/lib/server-api";
 
 export type SettingsTab =
@@ -51,8 +51,17 @@ export type SettingsTab =
   | "usage"
   | "index"
   | "onboarding"
-  | "account"
   | "about";
+
+type AgentGovernanceSettings = Pick<
+  InstanceSettings,
+  | "subagentMaxDepth"
+  | "subagentMaxConcurrency"
+  | "llmRequestMaxRetries"
+  | "llmInfiniteRetry"
+  | "executeTimeoutMs"
+  | "subagentMaxContinuations"
+>;
 
 /**
  * 侧栏分组（R5-1）：基础设置 / Agent 能力 / 数据与统计。
@@ -97,7 +106,6 @@ const TAB_GROUPS: Array<{
       { id: "onboarding", label: "引导" },
       // 插件面板（能力 `ui` 的 settings 槽位）：装了带面板的插件才出现内容
       { id: "pluginPanels", label: "插件面板" },
-      { id: "account", label: "账号" },
       { id: "about", label: "关于" },
     ],
   },
@@ -121,25 +129,20 @@ export function SettingsModal({
   activeTaskId = null,
   hasWorkDir = false,
   conversationCount = 0,
-  isAdmin = false,
-  onOpenAdmin,
 }: {
   open: boolean;
   /** 打开时定位的分类（如「管理模型」直达供应商页）。 */
   initialTab?: SettingsTab | undefined;
-  /** 插件面板需要它取 `/api/plugins`（未登录时为空 → 面板列表为空）。 */
+  /** 插件面板需要它取 `/api/plugins`（本机Cookie会话用于授权）。 */
   accessToken?: string | null;
   /** 当前 Code Task（索引取 Task 固定目录；视觉模式或未创建 Task 时为 null）。 */
   activeTaskId?: string | null;
   /** 「引导」页用：是否已有工作目录项目、已有多少会话。 */
   hasWorkDir?: boolean;
   conversationCount?: number;
-  /** 「账号」页用：管理员才给「管理后台」入口（服务端仍独立鉴权）。 */
-  isAdmin?: boolean;
-  onOpenAdmin?: (() => void) | undefined;
+  /**  */
   onClose: () => void;
 }) {
-  const { session } = useAuth();
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     initialTab ?? "general",
   );
@@ -148,53 +151,37 @@ export function SettingsModal({
   useEffect(() => {
     if (open && initialTab) setActiveTab(initialTab);
   }, [open, initialTab]);
-  const [profile, setProfile] = useState<{
-    displayName: string;
-    email: string;
-  } | null>(null);
-  /** 「账号」页用：套餐与额度（未装配计费时为 null）。 */
-  const [account, setAccount] = useState<{
-    plan: string | null;
-    balance: number | null;
-  }>({ plan: null, balance: null });
   const [defaultModel, setDefaultModel] = useState("");
-  const [agentMaxRetries, setAgentMaxRetries] = useState(10);
-  const [governance, setGovernance] = useState({
-    subagentMaxDepth: 1,
-    subagentMaxConcurrency: 4,
-    llmRequestMaxRetries: 10,
-    llmInfiniteRetry: false,
-    executeTimeoutMs: 120000,
-    subagentMaxContinuations: 50,
+  const [agentMaxRetries, setAgentMaxRetries] = useState(
+    instanceSettingsSchema.shape.agentMaxRetries.parse(undefined),
+  );
+  const [governance, setGovernance] = useState<AgentGovernanceSettings>({
+    subagentMaxDepth: AGENT_GOVERNANCE_DEFAULTS.subagentMaxDepth,
+    subagentMaxConcurrency: AGENT_GOVERNANCE_DEFAULTS.subagentMaxConcurrency,
+    llmRequestMaxRetries: AGENT_GOVERNANCE_DEFAULTS.llmRequestMaxRetries,
+    llmInfiniteRetry: AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
+    executeTimeoutMs: AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs,
+    subagentMaxContinuations:
+      AGENT_GOVERNANCE_DEFAULTS.subagentMaxContinuations,
   });
   const [codeIndexEnabled, setCodeIndexEnabled] = useState(false);
   const [codeIndexAutoNewFolder, setCodeIndexAutoNewFolder] = useState(true);
   const [autoCompactEnabled, setAutoCompactEnabled] = useState(true);
-  const [commands, setCommands] = useState<WorkspaceSettings["commands"]>([]);
-  const [hooks, setHooks] = useState<WorkspaceSettings["hooks"]>([]);
+  const [commands, setCommands] = useState<InstanceSettings["commands"]>([]);
+  const [hooks, setHooks] = useState<InstanceSettings["hooks"]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const accessTokenRef = useRef(session?.access_token);
-  accessTokenRef.current = session?.access_token;
+  const accessTokenRef = useRef(accessToken);
+  accessTokenRef.current = accessToken;
   const getToken = useCallback(() => accessTokenRef.current, []);
 
   const loadData = useCallback(async () => {
     const token = getToken();
-    if (!token) return;
     setLoading(true);
+    setLoadError(null);
     try {
-      const [viewer, settings] = await Promise.all([
-        fetchViewer(token),
-        fetchWorkspaceSettings(token),
-      ]);
-      setProfile({
-        displayName: viewer.profile.displayName,
-        email: viewer.profile.email,
-      });
-      setAccount({
-        plan: viewer.credits?.plan ?? null,
-        balance: viewer.credits?.balance ?? null,
-      });
+      const settings = await fetchInstanceSettings(token);
       setDefaultModel(settings.settings.defaultModel);
       setAgentMaxRetries(settings.settings.agentMaxRetries);
       setCodeIndexEnabled(settings.settings.codeIndexEnabled);
@@ -210,8 +197,8 @@ export function SettingsModal({
       });
       setCommands(settings.settings.commands);
       setHooks(settings.settings.hooks);
-    } catch {
-      // 加载失败时保留空态，各分区自行提示
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "设置加载失败。");
     } finally {
       setLoading(false);
     }
@@ -221,27 +208,13 @@ export function SettingsModal({
     if (open) void loadData();
   }, [open, loadData]);
 
-  const handleProfileSave = useCallback(
-    async (displayName: string) => {
-      const token = getToken();
-      if (!token) return;
-      const result = await updateProfile(token, { displayName });
-      setProfile({
-        displayName: result.profile.displayName,
-        email: result.profile.email,
-      });
-    },
-    [getToken],
-  );
-
-  /** 索引库开关写工作区设置（部分更新：只送这一个字段）。 */
+  /** 索引库开关写实例设置（部分更新：只送这一个字段）。 */
   const handleIndexToggle = useCallback(
     async (next: boolean) => {
       const token = getToken();
-      if (!token) return;
       setCodeIndexEnabled(next);
       try {
-        const result = await updateWorkspaceSettings(token, {
+        const result = await updateInstanceSettings(token, {
           codeIndexEnabled: next,
         });
         setCodeIndexEnabled(result.settings.codeIndexEnabled);
@@ -256,10 +229,9 @@ export function SettingsModal({
   const handleIndexAutoToggle = useCallback(
     async (next: boolean) => {
       const token = getToken();
-      if (!token) return;
       setCodeIndexAutoNewFolder(next);
       try {
-        const result = await updateWorkspaceSettings(token, {
+        const result = await updateInstanceSettings(token, {
           codeIndexAutoNewFolder: next,
         });
         setCodeIndexAutoNewFolder(result.settings.codeIndexAutoNewFolder);
@@ -274,10 +246,9 @@ export function SettingsModal({
   const handleAutoCompactToggle = useCallback(
     async (next: boolean) => {
       const token = getToken();
-      if (!token) return;
       setAutoCompactEnabled(next);
       try {
-        const result = await updateWorkspaceSettings(token, {
+        const result = await updateInstanceSettings(token, {
           autoCompactEnabled: next,
         });
         setAutoCompactEnabled(result.settings.autoCompactEnabled);
@@ -291,8 +262,7 @@ export function SettingsModal({
   const handleModelSave = useCallback(
     async (next: { agentMaxRetries: number; defaultModel: string }) => {
       const token = getToken();
-      if (!token) return;
-      const result = await updateWorkspaceSettings(token, next);
+      const result = await updateInstanceSettings(token, next);
       setDefaultModel(result.settings.defaultModel);
       setAgentMaxRetries(result.settings.agentMaxRetries);
     },
@@ -300,17 +270,9 @@ export function SettingsModal({
   );
 
   const handleGovernanceSave = useCallback(
-    async (next: {
-      subagentMaxDepth: number;
-      subagentMaxConcurrency: number;
-      llmRequestMaxRetries: number;
-      llmInfiniteRetry: boolean;
-      executeTimeoutMs: number;
-      subagentMaxContinuations: number;
-    }) => {
+    async (next: AgentGovernanceSettings) => {
       const token = getToken();
-      if (!token) return;
-      const result = await updateWorkspaceSettings(token, next);
+      const result = await updateInstanceSettings(token, next);
       setGovernance({
         subagentMaxDepth: result.settings.subagentMaxDepth,
         subagentMaxConcurrency: result.settings.subagentMaxConcurrency,
@@ -373,18 +335,27 @@ export function SettingsModal({
             ref={contentScrollRef}
             className="min-w-0 flex-1 overflow-y-auto px-6 py-4"
           >
-            {loading && !profile ? (
+            {loadError ? (
+              <div
+                role="status"
+                className="mb-4 flex items-center gap-3 text-sm text-destructive"
+              >
+                <span>{loadError}</span>
+                <button
+                  type="button"
+                  className="rounded-md border px-2 py-1"
+                  onClick={() => void loadData()}
+                >
+                  重试
+                </button>
+              </div>
+            ) : null}
+            {loading ? (
               <ListLoading label="正在加载设置…" rows={2} />
             ) : activeTab === "general" ? (
               <div className="space-y-8">
-                {profile ? (
-                  <ProfileSection
-                    displayName={profile.displayName}
-                    email={profile.email}
-                    onSave={handleProfileSave}
-                  />
-                ) : null}
-                {token ? <TerminalSettingsSection accessToken={token} /> : null}
+                <LocalInstanceSection />
+                <TerminalSettingsSection accessToken={token} />
               </div>
             ) : activeTab === "appearance" ? (
               <AppearanceSection />
@@ -403,13 +374,9 @@ export function SettingsModal({
                 onSave={handleGovernanceSave}
               />
             ) : activeTab === "providers" ? (
-              token ? (
-                <ProviderSettings accessToken={token} />
-              ) : null
+              <ProviderSettings accessToken={token} />
             ) : activeTab === "permissions" ? (
-              token ? (
-                <PermissionSection accessToken={token} />
-              ) : null
+              <PermissionSection accessToken={token} />
             ) : activeTab === "browser" ? (
               <BrowserSettingsSection accessToken={accessToken} />
             ) : activeTab === "pluginPanels" ? (
@@ -417,60 +384,37 @@ export function SettingsModal({
             ) : activeTab === "usage" ? (
               <UsageStatsSection />
             ) : activeTab === "index" ? (
-              token ? (
-                <IndexLibrarySection
-                  accessToken={token}
-                  taskId={activeTaskId}
-                  enabled={codeIndexEnabled}
-                  autoNewFolder={codeIndexAutoNewFolder}
-                  onToggle={handleIndexToggle}
-                  onToggleAuto={handleIndexAutoToggle}
-                />
-              ) : null
+              <IndexLibrarySection
+                accessToken={token}
+                taskId={activeTaskId}
+                enabled={codeIndexEnabled}
+                autoNewFolder={codeIndexAutoNewFolder}
+                onToggle={handleIndexToggle}
+                onToggleAuto={handleIndexAutoToggle}
+              />
             ) : activeTab === "onboarding" ? (
-              token ? (
-                <OnboardingSection
-                  accessToken={token}
-                  hasWorkDir={hasWorkDir}
-                  conversationCount={conversationCount}
-                  onGoToTab={(next) => setActiveTab(next)}
-                />
-              ) : null
+              <OnboardingSection
+                accessToken={token}
+                hasWorkDir={hasWorkDir}
+                conversationCount={conversationCount}
+                onGoToTab={(next) => setActiveTab(next)}
+              />
             ) : activeTab === "commands" ? (
-              token ? (
-                <CommandsSection
-                  accessToken={token}
-                  commands={commands}
-                  onSaved={setCommands}
-                />
-              ) : null
+              <CommandsSection
+                accessToken={token}
+                commands={commands}
+                onSaved={setCommands}
+              />
             ) : activeTab === "hooks" ? (
-              token ? (
-                <HooksSection
-                  accessToken={token}
-                  hooks={hooks}
-                  onSaved={setHooks}
-                />
-              ) : null
+              <HooksSection
+                accessToken={token}
+                hooks={hooks}
+                onSaved={setHooks}
+              />
             ) : activeTab === "apiTokens" ? (
-              token ? (
-                <ApiTokensSection accessToken={token} />
-              ) : null
+              <LocalAccessClientsSection />
             ) : activeTab === "subagents" ? (
-              token ? (
-                <SubagentsSection accessToken={token} />
-              ) : null
-            ) : activeTab === "account" ? (
-              profile ? (
-                <AccountSection
-                  displayName={profile.displayName}
-                  email={profile.email}
-                  plan={account.plan}
-                  balance={account.balance}
-                  isAdmin={isAdmin}
-                  {...(onOpenAdmin ? { onOpenAdmin } : {})}
-                />
-              ) : null
+              <SubagentsSection accessToken={token} />
             ) : activeTab === "about" ? (
               <AboutSection />
             ) : (

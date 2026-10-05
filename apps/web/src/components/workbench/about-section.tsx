@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getServerBaseUrl } from "@/lib/env";
+import { serverFetch } from "@/lib/local-access";
 
 /**
  * 设置 → 关于（R5-2 里能落到实处的条目之一）。
@@ -20,7 +21,7 @@ export function AboutSection() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${base}/api/health`)
+    serverFetch(`${base}/api/health`)
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((payload: { ok: boolean; version: string; service: string }) => {
         if (!cancelled) setHealth(payload);

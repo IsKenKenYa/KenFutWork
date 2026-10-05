@@ -1,4 +1,4 @@
-import type { CodeUiWorkspace, ViewerResponse } from "@kenfutwork/shared";
+import type { CodeUiWorkspace, InstanceContext } from "@kenfutwork/shared";
 import type { UserInfo } from "@zcode/shared";
 import type { HelloMessage } from "@zcode/shared/zcode-protocol-v4";
 import { ScopedErrorBoundary } from "@zui/ErrorBoundary.js";
@@ -21,12 +21,11 @@ import "@zui/styles.css";
 const params = new URLSearchParams(window.location.search);
 const bootstrap =
   window.parent !== window ? await requestParentBootstrap(window.parent) : null;
+const workspacePath = params.get("workspace");
 const config: CodeHostConfig = {
   apiBase: bootstrap?.apiBase ?? params.get("api") ?? window.location.origin,
   ...(bootstrap?.accessToken ? { accessToken: bootstrap.accessToken } : {}),
-  ...(params.get("workspace")
-    ? { workspacePath: params.get("workspace")! }
-    : {}),
+  ...(workspacePath ? { workspacePath } : {}),
 };
 const client = new CodeHttpChannelClient(config);
 const platform = createCodePlatform(client);
@@ -89,15 +88,7 @@ function CodeHost({
 
 root.render(<RootStartupLoading label="加载 Code 工作台" />);
 try {
-  const user = bootstrap
-    ? bootstrap.user
-    : await client
-        .request<ViewerResponse>("/api/viewer")
-        .then(({ profile }) => ({
-          id: profile.id,
-          username: profile.email,
-          displayName: profile.displayName,
-        }));
+  if (!bootstrap) await client.request<InstanceContext>("/api/instance");
   await client.connect();
   const hello = await ensureAgentV4ConnectionHandshake(
     client.services.zcodeAgentService,
@@ -113,7 +104,7 @@ try {
   root.render(
     <CodeHost
       {...(workspace ? { workspace } : {})}
-      user={user}
+      user={null}
       clientMode={hello.clientMode}
     />,
   );
