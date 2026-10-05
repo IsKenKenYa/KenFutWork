@@ -34,6 +34,31 @@ export function isDesktopRuntime(env: ServerEnv): boolean {
   return Boolean(env.embeddedPostgres) || env.authDriver === "local-trust";
 }
 
+/** API与独立worker共用目录归一；不启动服务、不创建目录、不接管数据库生命周期。 */
+export function resolveLocalRuntimeEnv(
+  env: ServerEnv,
+  processEnv: Record<string, string | undefined> = process.env,
+): ServerEnv & { desktopDataDir: string } {
+  const dataDir = resolveDesktopDataDir({
+    env: {
+      ...processEnv,
+      ...(env.desktopDataDir
+        ? { KENFUTWORK_DATA_DIR: env.desktopDataDir }
+        : {}),
+    },
+  });
+  const paths = resolveDesktopPaths(dataDir);
+  return {
+    ...env,
+    desktopDataDir: dataDir,
+    blobDir: paths.blobDir,
+    sandboxRoot: paths.sandboxDir,
+    checkpointRoot: paths.checkpointDir,
+    agentFilesRoot: paths.agentFilesDir,
+    pluginsDir: paths.pluginsDir,
+  };
+}
+
 /** 迁移集目录：`KENFUTWORK_MIGRATIONS_ROOT` → `<exeDir>/supabase` → `<repoRoot>/supabase`。 */
 export function resolveMigrationRoots(input: {
   env: Record<string, string | undefined>;
@@ -76,19 +101,17 @@ export async function prepareDesktopRuntime(options: {
   const exeDir = options.exeDir ?? process.cwd();
   const repoRoot = options.repoRoot ?? process.cwd();
   const env = options.env;
+  const processEnv = options.processEnv ?? process.env;
+  const localEnv = resolveLocalRuntimeEnv(env, processEnv);
+  const paths = resolveDesktopPaths(localEnv.desktopDataDir);
 
   if (!env.embeddedPostgres) {
     // 非内嵌形态（开发连外部库 / 自托管）：本函数不接管任何生命周期
-    return { env, shutdown: async () => {} };
+    return { env: localEnv, shutdown: async () => {} };
   }
 
   const { existsSync } = await import("node:fs");
   const exists = options.exists ?? existsSync;
-  const processEnv = options.processEnv ?? process.env;
-
-  const dataDir =
-    env.desktopDataDir ?? resolveDesktopDataDir({ env: processEnv });
-  const paths = resolveDesktopPaths(dataDir);
   await mkdir(paths.dataDir, { recursive: true });
 
   const binDir = env.pgBinDir ?? resolvePgBinDir({ env: processEnv, exeDir });
@@ -145,14 +168,13 @@ export async function prepareDesktopRuntime(options: {
 
   return {
     env: {
-      ...env,
-      // 显式配置优先：桌面下若用户自己配了库/队列/blob，尊重之
-      blobDir: env.blobDir ?? paths.blobDir,
+      ...localEnv,
+      blobDir: paths.blobDir,
       // BYOK 凭证加密主密钥：桌面必须开箱可用，故首次生成并持久化（用户不配也不报错）
       credentialSecret:
         env.credentialSecret ??
         (await readOrCreateSecret(paths.credentialSecretFile)),
-      databaseUrl: env.databaseUrl ?? postgres.connectionString,
+      databaseUrl: postgres.connectionString,
       queueDriver: env.queueDriver ?? "in-process",
     },
     shutdown,

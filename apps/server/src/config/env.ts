@@ -58,6 +58,8 @@ export type ServerEnv = {
    * `<画布UUID>.git`（GIT_DIR），work-tree 指向沙箱工作目录。
    */
   checkpointRoot?: string;
+  /** 插件目录由本机入口从应用数据根派生。 */
+  pluginsDir?: string;
   /**
    * agent 治理五项的 env 兜底（DEC-18；变量名清单与解析见 shared `governance.ts`）。
    * 优先级 = workspace_settings 库值 ?? 本字段 ?? DEFAULTS；非法值已被忽略。
