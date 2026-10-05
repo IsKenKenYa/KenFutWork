@@ -127,7 +127,8 @@
       "readers": [
         "apps/server/src/config/env.ts",
         "apps/server/src/desktop/paths.ts",
-        "apps/desktop/src-tauri/src/server_handle.rs"
+        "apps/desktop/src-tauri/src/server_handle.rs",
+        "apps/server/src/features/computer-use/desktop.app.integration.test.ts"
       ],
       "inExamples": true,
       "status": "active",
@@ -230,11 +231,19 @@
         "apps/server/src/features/computer-use/desktop.native.integration.test.ts",
         "apps/server/src/features/computer-use/agent.native.integration.test.ts",
         "apps/server/src/features/computer-use/desktop.linux.integration.test.ts",
-        "apps/server/src/features/computer-use/desktop.windows.integration.test.ts"
+        "apps/server/src/features/computer-use/desktop.windows.integration.test.ts",
+        "apps/server/src/features/computer-use/desktop.app.integration.test.ts"
       ],
       "inExamples": false,
       "status": "test-gate",
       "note": "真实桌面验收入口，只有明确开启才操作第一方测试窗口；skip不代表能力通过"
+    },
+    "KENFUTWORK_TEST_APP_ROOT": {
+      "surface": "test",
+      "readers": ["apps/server/src/features/computer-use/desktop.app.integration.test.ts"],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "复用有本验收所属标记的临时.app安装根，保持系统TCC权限主体；每次另建数据目录，不接管既有进程"
     },
     "KENFUTWORK_MCP_HTTP_TEST": {
       "surface": "test",
