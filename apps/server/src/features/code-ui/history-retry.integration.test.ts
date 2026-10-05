@@ -3,7 +3,10 @@ import { readFile, writeFile } from "node:fs/promises";
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
+import {
+  codeTaskScopeResponseSchema,
+  zcodeUiProtocol as protocol,
+} from "@kenfutwork/shared";
 import { modelSelectionSchema } from "@zcode/shared";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -297,6 +300,7 @@ async function prepareCompletedAB(
   fixture: HttpFixture,
   host: Host,
   model: FiniteModel,
+  bMode: "build" | "yolo" = "build",
 ) {
   const modelB = await prepareModelB(host);
   await writeFile(join(host.workspacePath, A_FILE), A_READ);
@@ -318,7 +322,7 @@ async function prepareCompletedAB(
       text: B_INPUT,
       attachments: [attachment],
       modelSelection: modelB,
-      mode: "build",
+      mode: bMode,
       planEnabled: false,
     },
     bCommandId,
@@ -349,7 +353,7 @@ async function prepareCompletedAB(
     text: B_INPUT,
     attachments: [attachment],
     modelSelection: modelB,
-    mode: "build",
+    mode: bMode,
     planEnabled: false,
   });
   expect(admitted.modelInvocation).toMatchObject({
@@ -400,11 +404,77 @@ async function changeCurrentMode(host: Host, prepared: CompletedAB) {
   return current;
 }
 
+async function narrowCurrentScope(host: Host, prepared: CompletedAB) {
+  const full = await readTaskScope(host);
+  expect(full.sandboxMode).toBe("danger-full-access");
+  const changed = await host.client.request(
+    `/api/code-ui/tasks/${host.sessionId}/scope`,
+    { sandboxMode: "read-only" },
+    "PATCH",
+  );
+  expect(changed.status, JSON.stringify(changed.body)).toBe(200);
+  expect(codeTaskScopeResponseSchema.parse(changed.body).scope).toEqual({
+    ...full,
+    generation: full.generation + 1,
+    sandboxMode: "read-only",
+  });
+  const current = protocol.conversationSnapshotSchema.parse(
+    await host.snapshot(),
+  );
+  expect(current.config.modelSelection).toEqual(prepared.modelB);
+  expect(current.config.mode).toBe("yolo");
+  expect(current.config.planEnabled ?? false).toBe(false);
+  return current;
+}
+
+async function captureRetryAuthorization(
+  fixture: HttpFixture,
+  host: Host,
+  prepared: CompletedAB,
+  sandboxMode: "danger-full-access" | "read-only",
+) {
+  const scope = await readTaskScope(host);
+  const facts = await taskFacts(fixture, host);
+  expect(scope).toMatchObject({
+    instanceId: fixture.actor.instanceId,
+    projectId: host.projectId,
+    taskId: host.sessionId,
+    rootDirectory: host.workspacePath,
+    sandboxMode,
+  });
+  expect(facts.task).toMatchObject({
+    id: scope.taskId,
+    instance_id: scope.instanceId,
+    project_id: scope.projectId,
+    root_directory: scope.rootDirectory,
+    additional_directories: scope.additionalDirectories,
+    sandbox_mode: scope.sandboxMode,
+    execution_state: "ready",
+    active_run_id: null,
+  });
+  expect(Number(facts.task.scope_generation)).toBe(scope.generation);
+  expect(facts.binding.thread_id).toBe(prepared.original.binding.thread_id);
+  return { scope, facts };
+}
+
+type RetryAuthorization = Awaited<ReturnType<typeof captureRetryAuthorization>>;
+
+async function readTaskScope(host: Host) {
+  const response = await host.client.request(
+    `/api/code-ui/tasks/${host.sessionId}/scope`,
+    undefined,
+    "GET",
+  );
+  expect(response.status, JSON.stringify(response.body)).toBe(200);
+  return codeTaskScopeResponseSchema.parse(response.body).scope;
+}
+
 async function assertRetriedState(
   fixture: HttpFixture,
   host: Host,
   model: FiniteModel,
   prepared: CompletedAB,
+  authorization: RetryAuthorization,
   retryId: string,
 ) {
   const ended = await waitCompleted(host, RETRY_ANSWER);
@@ -414,6 +484,18 @@ async function assertRetriedState(
     model: MODEL_B,
     reasoning_effort: "low",
   });
+  const policy = retryRequest.messages
+    .filter((message) => ["system", "developer"].includes(message.role))
+    .map(messageText)
+    .join("\n");
+  expect(policy).toContain(`文件模式：${authorization.scope.sandboxMode}`);
+  const tools = z
+    .array(z.object({ function: z.object({ name: z.string() }) }))
+    .parse(retryRequest.tools ?? [])
+    .map((tool) => tool.function.name);
+  if (authorization.scope.sandboxMode === "read-only")
+    expect(tools).not.toContain("Write");
+  else expect(tools).toContain("Write");
   assertNativeRead(retryRequest.messages);
   expect(
     retryRequest.messages.filter(
@@ -426,7 +508,31 @@ async function assertRetriedState(
   expect(context).not.toContain(B_ANSWER);
   const rebound = await taskFacts(fixture, host);
   expect(rebound.task.id).toBe(host.sessionId);
-  expect(rebound.task.sandbox_mode).toBe("workspace-write");
+  const restoredScope = await readTaskScope(host);
+  // retry恢复上下文与canonical，不重新签发已明确授权的物理权限。
+  expect(rebound.task.sandbox_mode).toBe(authorization.scope.sandboxMode);
+  expect(restoredScope).toEqual({
+    ...authorization.scope,
+    generation: authorization.scope.generation + 1,
+  });
+  expect(rebound.task).toMatchObject({
+    instance_id: authorization.facts.task.instance_id,
+    project_id: authorization.facts.task.project_id,
+    root_session_id: authorization.facts.task.root_session_id,
+    chat_session_id: authorization.facts.task.chat_session_id,
+    parent_session_id: authorization.facts.task.parent_session_id,
+    root_directory: authorization.scope.rootDirectory,
+    additional_directories: authorization.scope.additionalDirectories,
+    execution_state: "ready",
+    active_run_id: null,
+  });
+  // 原beginRewindTask合法撤销旧句柄：scope和branch分别且仅推进一次。
+  expect(Number(rebound.task.scope_generation)).toBe(
+    authorization.scope.generation + 1,
+  );
+  expect(Number(rebound.task.branch_generation)).toBe(
+    Number(authorization.facts.task.branch_generation) + 1,
+  );
   expect(rebound.binding.thread_id).not.toBe(
     prepared.original.binding.thread_id,
   );
@@ -439,7 +545,7 @@ async function assertRetriedState(
     text: B_INPUT,
     attachments: [prepared.attachment],
     modelSelection: prepared.modelB,
-    mode: "build",
+    mode: prepared.admitted.intent.mode,
     planEnabled: false,
   });
   expect(replay.modelInvocation).toEqual(prepared.admitted.modelInvocation);
@@ -457,9 +563,13 @@ async function assertRetriedState(
   expect(
     await readFile(join(host.workspacePath, "preserve-current.txt"), "utf8"),
   ).toBe("CURRENT_FILES_MUST_SURVIVE");
+  return { scope: restoredScope, rebound };
 }
 
-async function runHistoryRetryTracer() {
+async function runHistoryRetryTracer(
+  bMode: "build" | "yolo",
+  sandboxMode: "danger-full-access" | "read-only",
+) {
   const fixture = await createCodeUiHttpFixture();
   const model = await finiteHistoryModel();
   let host: Host | undefined;
@@ -467,8 +577,16 @@ async function runHistoryRetryTracer() {
     host = await createCodeSessionFixture(model.baseUrl, {
       client: fixture.client,
     });
-    const prepared = await prepareCompletedAB(fixture, host, model);
-    const beforeRetry = await changeCurrentMode(host, prepared);
+    const prepared = await prepareCompletedAB(fixture, host, model, bMode);
+    let beforeRetry = await changeCurrentMode(host, prepared);
+    if (sandboxMode === "read-only")
+      beforeRetry = await narrowCurrentScope(host, prepared);
+    const authorization = await captureRetryAuthorization(
+      fixture,
+      host,
+      prepared,
+      sandboxMode,
+    );
     await writeFile(
       join(host.workspacePath, "preserve-current.txt"),
       "CURRENT_FILES_MUST_SURVIVE",
@@ -487,9 +605,26 @@ async function runHistoryRetryTracer() {
     const retried = await host.command("retryTurn", payload, retryId, guard);
     expect(retried.status, JSON.stringify(retried.body)).toBe(200);
     expect(retried.body.result.status).toBe("accepted");
-    await assertRetriedState(fixture, host, model, prepared, retryId);
+    const restored = await assertRetriedState(
+      fixture,
+      host,
+      model,
+      prepared,
+      authorization,
+      retryId,
+    );
     const repeated = await host.command("retryTurn", payload, retryId, guard);
+    expect(repeated.status, JSON.stringify(repeated.body)).toBe(200);
     expect(repeated.body.result.status).toBe("duplicate");
+    expect(await readTaskScope(host)).toEqual(restored.scope);
+    const replayed = await taskFacts(fixture, host);
+    expect(Number(replayed.task.scope_generation)).toBe(
+      Number(restored.rebound.task.scope_generation),
+    );
+    expect(Number(replayed.task.branch_generation)).toBe(
+      Number(restored.rebound.task.branch_generation),
+    );
+    expect(replayed.binding.thread_id).toBe(restored.rebound.binding.thread_id);
     expect(model.requests).toHaveLength(4);
   } finally {
     if (host) {
@@ -613,7 +748,12 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
     }, 180_000); // 真实HTTP/PG的验收期限，非运行时治理值。
     it(
       "A真实Read与B自然complete后，原retry保留B冻结配置/附件lineage与当前文件，重放只执行一次",
-      runHistoryRetryTracer,
+      () => runHistoryRetryTracer("build", "danger-full-access"),
+      120_000,
+    );
+    it(
+      "B原yolo冻结后当前Scope明确只读，原retry保持权限与model/附件/nativeRead/当前文件且重放不再推进",
+      () => runHistoryRetryTracer("yolo", "read-only"),
       120_000,
     );
     it("ready发布真实失败不留下已切换的半分支，回执可重放且用户可恢复后重试", async () => {

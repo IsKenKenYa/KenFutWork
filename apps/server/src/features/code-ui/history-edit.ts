@@ -567,17 +567,6 @@ function decideEditPublication(
       previousThreadId: prepared.previousThreadId,
       threadId: operation.targetThreadId,
       expectedGeneration: prepared.record.scopeGeneration,
-      ...(operation.kind === "retryTurn"
-        ? {
-            sandboxMode:
-              prepared.record.intent.planEnabled ||
-              prepared.record.intent.mode === "plan"
-                ? ("read-only" as const)
-                : prepared.record.intent.mode === "yolo"
-                  ? ("danger-full-access" as const)
-                  : ("workspace-write" as const),
-          }
-        : {}),
     },
     ack: {
       commandId: operation.envelope.commandId,
