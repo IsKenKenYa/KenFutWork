@@ -13,6 +13,14 @@ const source = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const { build } = await import(require.resolve("esbuild"));
 await mkdir(output, { recursive: true });
+// 原市场/安装消费者按.app工作目录的plugins读取自带bundle；源码目录不能代替发行资源。
+await cp(
+  fileURLToPath(
+    new URL("../../../../../plugins/computer-use/", import.meta.url),
+  ),
+  join(dirname(output), "plugins", "computer-use"),
+  { recursive: true, dereference: true },
+);
 await build({
   entryPoints: [join(source, "input-worker.ts")],
   outfile: join(output, "input-worker.cjs"),
