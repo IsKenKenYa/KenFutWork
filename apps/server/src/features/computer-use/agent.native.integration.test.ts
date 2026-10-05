@@ -295,6 +295,22 @@ describe.skipIf(!enabled)("真实macOS Task→插件→Agent→模型HTTP→V4�
           expect(
             "error" in cancelled || cancelled.result.isError === true,
           ).toBe(true);
+          // SDK的本地abort先返回；原工具还要join强制退出及一次独立释放，各自有动作预算。
+          await expect
+            .poll(
+              () =>
+                events.some(
+                  (event) =>
+                    event.type === "tool.completed" &&
+                    event.toolName === `${CU_TOOL_PREFIX}key`,
+                ),
+              {
+                timeout:
+                  AGENT_GOVERNANCE_DEFAULTS.computerUseActionTimeoutMs * 2,
+                interval: AGENT_GOVERNANCE_DEFAULTS.computerUseInputDelayMs,
+              },
+            )
+            .toBe(true);
           await expect
             .poll(
               async () => {
@@ -314,20 +330,6 @@ describe.skipIf(!enabled)("真实macOS Task→插件→Agent→模型HTTP→V4�
             .toBe(0);
           testShiftHeld = false;
           frozenWorker = undefined;
-          await expect
-            .poll(
-              () =>
-                events.some(
-                  (event) =>
-                    event.type === "tool.completed" &&
-                    event.toolName === `${CU_TOOL_PREFIX}key`,
-                ),
-              {
-                timeout: AGENT_GOVERNANCE_DEFAULTS.computerUseActionTimeoutMs,
-                interval: AGENT_GOVERNANCE_DEFAULTS.computerUseInputDelayMs,
-              },
-            )
-            .toBe(true);
           await installed.settings.updateInstanceSettings(
             task.actor,
             task.actor.instanceId,
