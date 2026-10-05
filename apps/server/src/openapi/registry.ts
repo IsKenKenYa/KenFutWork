@@ -1577,7 +1577,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: instanceSettingsResponseSchema,
     summary: "读取实例设置",
     description:
-      "解析当前本地实例后返回其本地设置；未配置默认模型时 defaultModel 可为空字符串。",
+      "解析当前本地实例后返回其已解析设置；未配置默认模型时 defaultModel 可为空字符串。压缩保留字段表示近期原始消息的配置目标，不表示 SDK 实际保留量。",
   },
   {
     method: "patch",
@@ -1589,7 +1589,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: instanceSettingsResponseSchema,
     summary: "更新实例设置",
     description:
-      "仅更新送来的实例设置字段，未配置默认模型也可保存其他设置。显式设置默认模型必须提供非空标识，并校验其是否在目录中；不存在返回 400 invalid_model 及可用清单。",
+      "仅更新送来的实例设置字段，未配置默认模型也可保存其他设置。压缩保留目标按窗口已知/未知分别设置，自动与手动维护共用。显式设置默认模型必须提供非空标识，并校验其是否在目录中；不存在返回 400 invalid_model 及可用清单。",
   },
   // ---- skills.ts（技能；含实例安装态）----
   {

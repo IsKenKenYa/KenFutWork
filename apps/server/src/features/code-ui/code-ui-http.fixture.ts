@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { localAccessTicketResponseSchema } from "@kenfutwork/shared";
+import {
+  type AgentGovernanceOverrides,
+  localAccessTicketResponseSchema,
+} from "@kenfutwork/shared";
 import { afterEach, beforeEach } from "vitest";
 import { buildApp } from "../../app.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
@@ -20,6 +23,7 @@ export async function createCodeUiHttpFixture(
   options: {
     builtinPluginsDir?: string;
     allowThirdPartyPlugins?: boolean;
+    governanceEnv?: AgentGovernanceOverrides;
   } = {},
 ) {
   const database = await createTaskWorkDatabase();
@@ -53,6 +57,9 @@ export async function createCodeUiHttpFixture(
         sandboxRoot: join(directory, "sandbox"),
         checkpointRoot: join(directory, "checkpoints"),
         webOrigin: origin,
+        ...(options.governanceEnv
+          ? { agentGovernance: options.governanceEnv }
+          : {}),
         serverHost: "127.0.0.1",
       },
     });

@@ -278,6 +278,20 @@
       "status": "active",
       "note": "agent 治理：子代理派生深度上限（DEC-17/18）；优先级 库值 ?? env ?? DEFAULTS"
     },
+    "KENFUTWORK_COMPACT_KEEP_MESSAGES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "已知窗口的近期原始消息保留目标；自动与手动共用，库值 ?? env ?? DEFAULTS"
+    },
+    "KENFUTWORK_COMPACT_FALLBACK_KEEP_MESSAGES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "未知窗口的近期原始消息保留目标；目标不是SDK实际保留条数"
+    },
     "KENFUTWORK_SUBAGENT_MAX_CONCURRENCY": {
       "surface": "server",
       "readers": [

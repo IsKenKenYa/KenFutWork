@@ -248,6 +248,10 @@ export const instanceSettingsSchema = z.object({
    * 用户转录不变、原文 offload 到工作区 /conversation_history/）。关掉时中间件不挂。
    */
   autoCompactEnabled: z.boolean().default(true),
+  /** 摘要后近期原始消息的保留目标；工具配对和溢出恢复可能调整实际数量。 */
+  compactKeepMessages: governanceSetting("compactKeepMessages"),
+  /** 窗口未知时的保留目标；自动与手动维护共用，独立于自动压缩开关。 */
+  compactFallbackKeepMessages: governanceSetting("compactFallbackKeepMessages"),
   /**
    * run 失败自动重试上限（含首次尝试；0 = 不重试）。
    * 缺省 10；服务端对「已执行工具」的轮次一律不重试（副作用安全），见 agent/run-retry.ts。

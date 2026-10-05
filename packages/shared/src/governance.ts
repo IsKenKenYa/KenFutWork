@@ -6,12 +6,16 @@ import { z } from "zod";
  *
  * 口径（AGENTS.md「运行时 tunables」硬约束）：一切运行时可调数值，代码里只允许
  * 出现这里的 DEFAULTS 与区间护栏（shared 的 `instanceSettingsSchema` 直接引用
- * 本模块常量，禁止另写一份字面量）；覆盖入口只有两个——`workspace_settings` 表
+ * 本模块常量，禁止另写一份字面量）；覆盖入口只有两个——`instance_settings` 表
  * （设置页）与 env 兜底（`resolveGovernanceEnvOverrides`）。表里的越界值
  * （手改/旧数据）在读侧钳回护栏，不报错也不放行。
  */
 
 export const AGENT_GOVERNANCE_DEFAULTS = {
+  /** 已知窗口时，摘要后近期原始消息的保留目标；不是实际保留数。 */
+  compactKeepMessages: 20,
+  /** 窗口未知时的保留目标，自动与显式维护共用。 */
+  compactFallbackKeepMessages: 6,
   /** 子代理派生深度上限：1 = 子代理不得再派生（禁孙代理）。 */
   subagentMaxDepth: 1,
   /** 后台任务（子代理/长命令）同时运行上限。 */
@@ -88,6 +92,8 @@ export type AgentGovernanceValue = keyof typeof AGENT_GOVERNANCE_DEFAULTS;
 
 /** 新工作域数值落同一设置表 JSON 对象，避免每项重复增加列与存取分支。 */
 export const RUNTIME_GOVERNANCE_KEYS = [
+  "compactKeepMessages",
+  "compactFallbackKeepMessages",
   "codeUiReconnectDelayMs",
   "localAccessTicketTtlMs",
   "localAccessSessionMaxAgeMs",
@@ -128,6 +134,8 @@ export type RuntimeGovernanceKey = (typeof RUNTIME_GOVERNANCE_KEYS)[number];
 
 /** 覆盖值形态（env / 调用方传参）：键可缺、值可显式 undefined（exactOptionalPropertyTypes）。 */
 export type AgentGovernanceOverrides = {
+  compactKeepMessages?: number | undefined;
+  compactFallbackKeepMessages?: number | undefined;
   subagentMaxDepth?: number | undefined;
   subagentMaxConcurrency?: number | undefined;
   llmRequestMaxRetries?: number | undefined;
@@ -223,6 +231,8 @@ export const coerceLlmInfiniteRetry = (value: unknown): boolean =>
 
 /** 供 `instanceSettingsSchema` 直接引用的区间护栏（与 clamp 同区间）。 */
 export const AGENT_GOVERNANCE_LIMITS = {
+  compactKeepMessages: { min: 1, max: 10_000 },
+  compactFallbackKeepMessages: { min: 1, max: 10_000 },
   subagentMaxDepth: { min: 1, max: 4 },
   subagentMaxConcurrency: { min: 1, max: 16 },
   llmRequestMaxRetries: { min: 0, max: 100 },
@@ -296,6 +306,12 @@ export function resolveGovernanceEnvOverrides(
   };
 
   const overrides: AgentGovernanceOverrides = {
+    compactKeepMessages: parseStrictInt(
+      source.KENFUTWORK_COMPACT_KEEP_MESSAGES,
+    ),
+    compactFallbackKeepMessages: parseStrictInt(
+      source.KENFUTWORK_COMPACT_FALLBACK_KEEP_MESSAGES,
+    ),
     localDataMigrationPollMs: parseStrictInt(
       source.KENFUTWORK_LOCAL_DATA_MIGRATION_POLL_MS,
     ),

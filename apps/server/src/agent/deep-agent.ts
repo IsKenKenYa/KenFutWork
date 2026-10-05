@@ -32,7 +32,7 @@ import {
 } from "../features/task-work/model-mailbox.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
-import type { CompactionPlan } from "./auto-compact.js";
+import type { CompactionPlan, CompactionRetention } from "./auto-compact.js";
 import { resolveCompactionPlan } from "./auto-compact.js";
 import {
   type AgentBackendResult,
@@ -299,6 +299,8 @@ export type KenFutWorkAgentFactory = (options: {
   autoCompact?: CompactionPlan;
   /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
   manualCompactPlan?: CompactionPlan;
+  /** 原生维护适配器缺省预算仍消费本 Run 已解析的实例保留目标。 */
+  compactionRetention?: CompactionRetention;
   /**
    * 装配完成时回吐工具清单（R4-1 分类占比要按 schema 量「系统工具 / MCP 工具」）。
    * 用回调而不是返回值：调用方（runtime）拿的是 agent 对象，工具清单只在装配期有。
@@ -346,6 +348,7 @@ export function createKenFutWorkDeepAgent(options: {
   autoCompact?: CompactionPlan;
   /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
   manualCompactPlan?: CompactionPlan;
+  compactionRetention?: CompactionRetention;
   /**
    * 装配完成时回吐工具清单（R4-1 分类占比要按 schema 量「系统工具 / MCP 工具」）。
    * 用回调而不是返回值：调用方（runtime）拿到的是 agent 对象，工具清单只在装配期有。
@@ -676,7 +679,11 @@ export function createKenFutWorkDeepAgent(options: {
             plan:
               options.manualCompactPlan ??
               options.autoCompact ??
-              resolveCompactionPlan({}),
+              resolveCompactionPlan({
+                ...(options.compactionRetention
+                  ? { retention: options.compactionRetention }
+                  : {}),
+              }),
             llmRetry: options.llmRetry ?? {
               maxAttempts: AGENT_GOVERNANCE_DEFAULTS.llmRequestMaxRetries,
               infinite: AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,

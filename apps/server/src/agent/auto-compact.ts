@@ -1,3 +1,8 @@
+import {
+  type InstanceSettings,
+  resolveGovernanceNumber,
+} from "@kenfutwork/shared";
+
 /**
  * 上下文自动压缩的**口径**（R4-1 的「输出预留线」在这里有了执行面）。
  *
@@ -19,15 +24,13 @@
  * 上下文里留摘要），因此「库里消息数」与「模型看到的上下文」本来就会不一致——这是
  * **设计**，不是 bug；界面上用一条提示说明发生了什么（见 stream-adapter 的 notice）。
  *
- * 保留条数固定 20 条（框架文档里的 keep 默认），不用百分比——条数可控、可预测。
+ * 近期原文按消息数设置保留目标，默认值与护栏由 shared governance 持有；
+ * 已知/未知窗口的目标均由实例设置控制，SDK 可为工具配对或溢出恢复调整实际尾部。
  */
 
 /** deepagents 的框架约定（不自己发明数字，改这里必须同步核对依赖版本）。 */
 export const FRAMEWORK_TRIGGER_FRACTION = 0.85;
 export const FRAMEWORK_FALLBACK_TRIGGER_TOKENS = 170_000;
-export const FRAMEWORK_FALLBACK_KEEP_MESSAGES = 6;
-/** 我们的保留条数（框架 d.ts 的 keep 默认值）。 */
-export const KEEP_MESSAGES = 20;
 /** 触发线的下限：窗口很小的模型也不能一上来就压（避免病态配置把每轮都压一遍）。 */
 export const MIN_TRIGGER_TOKENS = 4_000;
 
@@ -38,6 +41,11 @@ export interface CompactionPlan {
   source: "reserved-output" | "fraction" | "fallback";
 }
 
+export type CompactionRetention = Pick<
+  InstanceSettings,
+  "compactKeepMessages" | "compactFallbackKeepMessages"
+>;
+
 /**
  * 算压缩触发线。
  *
@@ -47,6 +55,7 @@ export interface CompactionPlan {
 export function resolveCompactionPlan(input: {
   contextWindow?: number | null;
   maxOutputTokens?: number | null;
+  retention?: CompactionRetention;
 }): CompactionPlan {
   const window =
     typeof input.contextWindow === "number" &&
@@ -64,7 +73,13 @@ export function resolveCompactionPlan(input: {
   if (window === null) {
     return {
       trigger: { type: "tokens", value: FRAMEWORK_FALLBACK_TRIGGER_TOKENS },
-      keep: { type: "messages", value: FRAMEWORK_FALLBACK_KEEP_MESSAGES },
+      keep: {
+        type: "messages",
+        value: resolveGovernanceNumber(
+          "compactFallbackKeepMessages",
+          input.retention?.compactFallbackKeepMessages,
+        ),
+      },
       source: "fallback",
     };
   }
@@ -76,7 +91,13 @@ export function resolveCompactionPlan(input: {
 
   return {
     trigger: { type: "tokens", value: Math.max(MIN_TRIGGER_TOKENS, value) },
-    keep: { type: "messages", value: KEEP_MESSAGES },
+    keep: {
+      type: "messages",
+      value: resolveGovernanceNumber(
+        "compactKeepMessages",
+        input.retention?.compactKeepMessages,
+      ),
+    },
     source: maxOutput === null ? "fraction" : "reserved-output",
   };
 }

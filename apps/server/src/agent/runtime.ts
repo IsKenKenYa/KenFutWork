@@ -84,7 +84,11 @@ import type { ModelInvocationSnapshot } from "../providers/types.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createPipelineLogger } from "../ws/logger.js";
-import { type CompactionPlan, resolveCompactionPlan } from "./auto-compact.js";
+import {
+  type CompactionPlan,
+  type CompactionRetention,
+  resolveCompactionPlan,
+} from "./auto-compact.js";
 import { createAgentBackend } from "./backends/index.js";
 import {
   type BackgroundTaskRegistry,
@@ -1345,6 +1349,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
        * 事件检测在流式适配期用（同一个口径）——两个块是兄弟，必须看到同一份。
        */
       let autoCompactEnabled = true;
+      let compactionRetention: CompactionRetention = {
+        compactKeepMessages: AGENT_GOVERNANCE_DEFAULTS.compactKeepMessages,
+        compactFallbackKeepMessages:
+          AGENT_GOVERNANCE_DEFAULTS.compactFallbackKeepMessages,
+      };
       let codeInputLimits: FileLimits = AGENT_GOVERNANCE_DEFAULTS;
       let modelCapabilities = { image: false, pdf: false };
       let autoCompact: CompactionPlan | undefined;
@@ -1613,6 +1622,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             }
             // 同一个设置对象顺带读压缩开关（少一次库往返）
             autoCompactEnabled = instanceSettings?.autoCompactEnabled ?? true;
+            if (instanceSettings)
+              compactionRetention = {
+                compactKeepMessages: instanceSettings.compactKeepMessages,
+                compactFallbackKeepMessages:
+                  instanceSettings.compactFallbackKeepMessages,
+              };
             // 钩子也从这个对象读（同一趟）：起点钩子在装配 agent 之前跑
             hookCommands = {
               start: hooksFor(instanceSettings?.hooks, "turn-start"),
@@ -1732,6 +1747,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               declaredMaxOutput = entry?.model.maxOutputTokens ?? null;
             }
             const plan = resolveCompactionPlan({
+              retention: compactionRetention,
               contextWindow: resolveContextWindow(declaredWindow, specifier),
               maxOutputTokens: declaredMaxOutput,
             });
@@ -1753,7 +1769,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             manualCompactPlan = autoCompact;
             if (!autoCompactEnabled) autoCompact = undefined;
             console.log(
-              `[agent] 自动压缩触发线 ${plan.trigger.value} tokens（来源 ${plan.source}，保留 ${plan.keep.value} 条）`,
+              `[agent] 自动压缩触发线 ${plan.trigger.value} tokens（来源 ${plan.source}，保留目标 ${plan.keep.value} 条）`,
             );
           }
 
@@ -2014,6 +2030,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     (candidate) => toInstanceSpecifier(candidate) === specifier,
                   );
                   const plan = resolveCompactionPlan({
+                    retention: compactionRetention,
                     contextWindow: resolveContextWindow(
                       entry?.model.contextWindow,
                       specifier,
@@ -2083,6 +2100,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(resolvedModel ? { model: resolvedModel } : {}),
             ...(autoCompact ? { autoCompact } : {}),
             ...(manualCompactPlan ? { manualCompactPlan } : {}),
+            compactionRetention,
             // execute 工具由 LocalShellBackend 自动提供，无需手动传递
             ...(persistence ? { store: persistence.store } : {}),
             ...(kernelToolDefinitions.length > 0

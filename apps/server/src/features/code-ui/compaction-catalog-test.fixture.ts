@@ -1,4 +1,5 @@
 import {
+  AGENT_GOVERNANCE_DEFAULTS,
   instanceSettingsResponseSchema,
   modelListResponseSchema,
   providerInstanceListResponseSchema,
@@ -12,14 +13,12 @@ import {
 } from "@zcode/provider";
 import { modelSelectionSchema } from "@zcode/shared";
 import { expect, vi } from "vitest";
-import { KEEP_MESSAGES } from "../../agent/auto-compact.js";
 import { effectiveNativeMessages } from "../../agent/native-context-history.js";
 import type { createCodeUiHttpFixture } from "./code-ui-http.fixture.js";
 import {
   CATALOG_COMPACT_EXPECTED_TRIGGER,
   CATALOG_COMPACT_MAX_OUTPUT,
   CATALOG_COMPACT_MODEL,
-  CATALOG_COMPACT_TURNS,
   CATALOG_COMPACT_WINDOW,
   type catalogCompactionModelFixture,
   catalogModelText,
@@ -46,26 +45,36 @@ export async function declareAndQualify(
   host: Host,
   declarations: {
     providerId?: string;
-    contextWindow?: number;
-    maxOutputTokens?: number;
+    contextWindow?: number | null;
+    maxOutputTokens?: number | null;
+    expectedAutoCompactEnabled?: boolean;
   } = {},
 ) {
   const initial = await snapshot(host);
   const providerId =
     declarations.providerId ??
     modelSelectionSchema.parse(initial.config.modelSelection).providerId;
-  const contextWindow = declarations.contextWindow ?? CATALOG_COMPACT_WINDOW;
+  const contextWindow =
+    declarations.contextWindow === null
+      ? undefined
+      : (declarations.contextWindow ?? CATALOG_COMPACT_WINDOW);
   const maxOutputTokens =
-    declarations.maxOutputTokens ?? CATALOG_COMPACT_MAX_OUTPUT;
+    declarations.maxOutputTokens === null
+      ? undefined
+      : (declarations.maxOutputTokens ?? CATALOG_COMPACT_MAX_OUTPUT);
   await declareCatalogModel(host, providerId, contextWindow, maxOutputTokens);
-  return qualifyCatalogModel(host, providerId);
+  return qualifyCatalogModel(
+    host,
+    providerId,
+    declarations.expectedAutoCompactEnabled ?? true,
+  );
 }
 
 async function declareCatalogModel(
   host: Host,
   providerId: string,
-  contextWindow: number,
-  maxOutputTokens: number,
+  contextWindow: number | undefined,
+  maxOutputTokens: number | undefined,
 ) {
   // 原Provider RPC是唯一声明写入口；不PATCH defaultModel，不用内核fake catalog。
   const added = await host.client.request("/api/code-ui/rpc", {
@@ -75,8 +84,12 @@ async function declareCatalogModel(
       providerId,
       CATALOG_COMPACT_MODEL,
       {
-        properties: { contextWindow },
-        optionSpecs: { maxOutputTokens: { max: maxOutputTokens } },
+        ...(contextWindow !== undefined
+          ? { properties: { contextWindow } }
+          : {}),
+        ...(maxOutputTokens !== undefined
+          ? { optionSpecs: { maxOutputTokens: { max: maxOutputTokens } } }
+          : {}),
       },
     ],
   });
@@ -88,28 +101,32 @@ async function declareCatalogModel(
   const instance = providerInstanceListResponseSchema
     .parse(instancesResponse.body)
     .instances.find((entry) => entry.id === providerId);
-  expect(instance?.models).toContainEqual(
-    expect.objectContaining({
-      id: CATALOG_COMPACT_MODEL,
-      contextWindow,
-      maxOutputTokens,
-    }),
+  const declared = instance?.models.find(
+    (entry) => entry.id === CATALOG_COMPACT_MODEL,
   );
+  expect(declared).toMatchObject({ id: CATALOG_COMPACT_MODEL });
+  expect(declared?.contextWindow).toBe(contextWindow);
+  expect(declared?.maxOutputTokens).toBe(maxOutputTokens);
   const catalogResponse = await host.client.request("/api/models");
   expect(catalogResponse.status).toBe(200);
-  expect(
-    modelListResponseSchema.parse(catalogResponse.body).models,
-  ).toContainEqual(
-    expect.objectContaining({
-      id: `${providerId}:${CATALOG_COMPACT_MODEL}`,
-      provider: providerId,
-      contextWindow,
-      maxOutputTokens,
-    }),
-  );
+  const listed = modelListResponseSchema
+    .parse(catalogResponse.body)
+    .models.find(
+      (entry) => entry.id === `${providerId}:${CATALOG_COMPACT_MODEL}`,
+    );
+  expect(listed).toMatchObject({
+    id: `${providerId}:${CATALOG_COMPACT_MODEL}`,
+    provider: providerId,
+  });
+  expect(listed?.contextWindow).toBe(contextWindow);
+  expect(listed?.maxOutputTokens).toBe(maxOutputTokens);
 }
 
-async function qualifyCatalogModel(host: Host, providerId: string) {
+async function qualifyCatalogModel(
+  host: Host,
+  providerId: string,
+  expectedAutoCompactEnabled: boolean,
+) {
   const result = await host.client.request("/api/code-ui/rpc", {
     service: "modelSelectionService",
     method: "getView",
@@ -139,7 +156,7 @@ async function qualifyCatalogModel(host: Host, providerId: string) {
   expect(
     instanceSettingsResponseSchema.parse(settingsResponse.body).settings
       .autoCompactEnabled,
-  ).toBe(true);
+  ).toBe(expectedAutoCompactEnabled);
   return selection;
 }
 
@@ -238,7 +255,11 @@ export async function assertAutoEvidence(
   host: Host,
   model: Model,
   runIds: string[],
-  options: { triggerTokens?: number; endpoint?: string } = {},
+  options: {
+    triggerTokens?: number;
+    endpoint?: string;
+    keepMessages?: number;
+  } = {},
 ) {
   const compacted = await readCatalogCompactedEvents(fixture, host);
   // 要求真实自动压缩事实；错误specifier匹配导致的fallback170k无法由有限历史掩盖。
@@ -252,7 +273,8 @@ export async function assertAutoEvidence(
     expect(event).toMatchObject({
       triggerTokens: options.triggerTokens ?? CATALOG_COMPACT_EXPECTED_TRIGGER,
       triggerSource: "reserved-output",
-      keepMessages: KEEP_MESSAGES,
+      keepMessages:
+        options.keepMessages ?? AGENT_GOVERNANCE_DEFAULTS.compactKeepMessages,
     });
   }
   expect(model.errors).toEqual([]);
@@ -295,6 +317,7 @@ export async function assertFullHistory(
   finalRunId: string,
   commandIds: string[],
   endpoint = "",
+  maintenanceCommandIds: readonly string[] = [],
 ) {
   const post = await readNativeBoundaryState(fixture, host, finalRunId, "post");
   const messages = post.state.messages;
@@ -307,7 +330,7 @@ export async function assertFullHistory(
         .filter(HumanMessage.isInstance)
         .filter((message) => message.content === text),
     ).toHaveLength(1);
-  for (let round = 1; round <= CATALOG_COMPACT_TURNS; round++)
+  for (let round = 1; round <= commandIds.length; round++)
     expect(
       messages
         .filter(AIMessage.isInstance)
@@ -327,11 +350,13 @@ export async function assertFullHistory(
     "NATIVE_CATALOG_SUMMARY_",
   );
   const current = await task(fixture, host);
-  expect(current.state.inputs).toHaveLength(CATALOG_COMPACT_TURNS);
-  const transcript = (await snapshot(host)).rows.window.filter(
-    (row) => row.kind === "userInput" && row.origin === "realUser",
+  expect(current.state.inputs).toHaveLength(
+    commandIds.length + maintenanceCommandIds.length,
   );
-  expect(transcript).toHaveLength(CATALOG_COMPACT_TURNS);
+  const transcript = (await snapshot(host)).rows.window
+    .filter((row) => row.kind === "userInput")
+    .filter((row) => row.origin === "realUser");
+  expect(transcript).toHaveLength(commandIds.length);
   for (const [index, commandId] of commandIds.entries()) {
     expect(transcript).toContainEqual(
       expect.objectContaining({
@@ -344,6 +369,25 @@ export async function assertFullHistory(
         (input) => input.intent.sourceCommandId === commandId,
       ),
     ).toHaveLength(1);
+  }
+  for (const commandId of maintenanceCommandIds) {
+    const inputs = current.state.inputs?.filter(
+      (input) => input.intent.sourceCommandId === commandId,
+    );
+    expect(inputs).toEqual([
+      expect.objectContaining({
+        status: "settled",
+        intent: expect.objectContaining({
+          kind: "compact",
+          text: "",
+          clientId: host.clientId,
+          sourceCommandId: commandId,
+        }),
+      }),
+    ]);
+    expect(
+      transcript.filter((row) => row.sourceCommandId === commandId),
+    ).toEqual([]);
   }
 }
 

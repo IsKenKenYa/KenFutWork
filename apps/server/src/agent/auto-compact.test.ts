@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  FRAMEWORK_FALLBACK_KEEP_MESSAGES,
   FRAMEWORK_FALLBACK_TRIGGER_TOKENS,
-  KEEP_MESSAGES,
   MIN_TRIGGER_TOKENS,
   resolveCompactionPlan,
 } from "./auto-compact.js";
@@ -22,7 +20,7 @@ describe("自动压缩触发线", () => {
     });
     expect(plan.trigger).toEqual({ type: "tokens", value: 872_000 });
     expect(plan.source).toBe("reserved-output");
-    expect(plan.keep).toEqual({ type: "messages", value: KEEP_MESSAGES });
+    expect(plan.keep).toEqual({ type: "messages", value: 20 });
   });
 
   it("只有窗口：按框架约定取 85%（PROFILE_TRIGGER）", () => {
@@ -31,10 +29,10 @@ describe("自动压缩触发线", () => {
     expect(plan.source).toBe("fraction");
   });
 
-  it("窗口未知：用框架回退值（170k / 保留 6 条），不自己编数字", () => {
+  it("窗口未知：默认阈值170k，近期原文保留目标为6", () => {
     const plan = resolveCompactionPlan({ contextWindow: null });
     expect(plan.trigger.value).toBe(FRAMEWORK_FALLBACK_TRIGGER_TOKENS);
-    expect(plan.keep.value).toBe(FRAMEWORK_FALLBACK_KEEP_MESSAGES);
+    expect(plan.keep.value).toBe(6);
     expect(plan.source).toBe("fallback");
   });
 

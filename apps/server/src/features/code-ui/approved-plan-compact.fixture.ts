@@ -1,9 +1,6 @@
 import { createServer, type ServerResponse } from "node:http";
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 import { z } from "zod";
-import {
-  FRAMEWORK_FALLBACK_KEEP_MESSAGES,
-  KEEP_MESSAGES,
-} from "../../agent/auto-compact.js";
 import { ENTER_PLAN_CALL } from "./enter-plan.fixture.js";
 import { EXIT_PLAN_CALL, EXIT_PLAN_MARKDOWN } from "./exit-plan.fixture.js";
 import {
@@ -13,7 +10,12 @@ import {
 
 // 仅安排实际公开历史长度，不改正式compact保留窗口。
 export const PLAN_COMPACT_FILLER_TURNS =
-  Math.floor(Math.max(KEEP_MESSAGES, FRAMEWORK_FALLBACK_KEEP_MESSAGES) / 2) + 1;
+  Math.floor(
+    Math.max(
+      AGENT_GOVERNANCE_DEFAULTS.compactKeepMessages,
+      AGENT_GOVERNANCE_DEFAULTS.compactFallbackKeepMessages,
+    ) / 2,
+  ) + 1;
 export const PLAN_COMPACT_SUMMARY =
   "COMPACT_SUMMARY_WITHOUT_APPROVAL_250acf91：已整理之前的普通工作上下文，继续下一项任务。";
 export const PLAN_COMPACT_CONTINUE = "继续当前任务。";

@@ -193,7 +193,7 @@ export const runCompactedEventSchema = z
     triggerSource: z
       .enum(["reserved-output", "fraction", "fallback"])
       .optional(),
-    /** 保留下来的最近消息条数。 */
+    /** 本次摘要配置的近期原始消息保留目标；不是 SDK 实际保留条数。 */
     keepMessages: z.number().int().positive(),
     timestamp: timestampSchema,
   })
