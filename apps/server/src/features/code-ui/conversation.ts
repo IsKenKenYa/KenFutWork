@@ -697,14 +697,19 @@ export function createCodeUiConversation(input: {
         record.status = "settled";
         record.intent.steer = { state: "guided" };
         record.intent.dispatch = { state: "drained" };
-        if (record.intent.modelSelection) {
-          root.config = protocol.sessionConfigStateSchema.parse({
-            ...root.config,
-            modelSelection: record.intent.modelSelection,
-            model: record.intent.modelSelection.modelId,
-            thought: record.intent.modelSelection.options?.reasoningLevel ?? "",
-          });
-        }
+        root.config = protocol.sessionConfigStateSchema.parse({
+          ...root.config,
+          mode: record.intent.planEnabled ? "plan" : record.intent.mode,
+          planEnabled: record.intent.planEnabled,
+          ...(record.intent.modelSelection
+            ? {
+                modelSelection: record.intent.modelSelection,
+                model: record.intent.modelSelection.modelId,
+                thought:
+                  record.intent.modelSelection.options?.reasoningLevel ?? "",
+              }
+            : {}),
+        });
         root.queue.items = root.queue.items.filter(
           (item) => item.queueItemId !== record.intent.queueItemId,
         );

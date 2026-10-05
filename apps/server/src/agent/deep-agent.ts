@@ -370,6 +370,12 @@ export function createKenFutWorkDeepAgent(options: {
 
   // 运行 preset（DEC-2）：本次装配的能力集口径——运行态工具、子代理清单共用
   const preset = options.preset;
+  // 权威生命周期包住工具目录/权限的提前返回，拒绝也必须进入原产品事件链。
+  const runExtensions = [...(options.runExtensions ?? [])].sort(
+    (left, right) =>
+      Number(Boolean(right.canonicalToolEvents)) -
+      Number(Boolean(left.canonicalToolEvents)),
+  );
 
   applyOpenAICompatEnv(options.env);
 
@@ -422,7 +428,7 @@ export function createKenFutWorkDeepAgent(options: {
           ]
         : [];
       middleware.unshift(
-        ...(options.runExtensions ?? []).map((extension) =>
+        ...runExtensions.map((extension) =>
           extension.createMiddleware({
             agentCallId: callId,
             agentName: definition.name,
@@ -628,7 +634,7 @@ export function createKenFutWorkDeepAgent(options: {
     ...(options.toolGate
       ? {
           middleware: [
-            ...(options.runExtensions ?? []).map((extension) =>
+            ...runExtensions.map((extension) =>
               extension.createMiddleware({}, options.extensionContext),
             ),
             ...summarizationMiddleware,
@@ -643,7 +649,7 @@ export function createKenFutWorkDeepAgent(options: {
         }
       : {
           middleware: [
-            ...(options.runExtensions ?? []).map((extension) =>
+            ...runExtensions.map((extension) =>
               extension.createMiddleware({}, options.extensionContext),
             ),
             ...summarizationMiddleware,
@@ -678,7 +684,7 @@ export function createKenFutWorkDeepAgent(options: {
           }),
         }
       : {}),
-    canonicalToolEvents: (options.runExtensions ?? []).some(
+    canonicalToolEvents: runExtensions.some(
       (extension) => extension.canonicalToolEvents,
     ),
   });

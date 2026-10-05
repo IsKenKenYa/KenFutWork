@@ -195,7 +195,7 @@ export function createToolCatalogueMiddleware(
         return new ToolMessage({
           tool_call_id: request.toolCall.id ?? "",
           status: "error",
-          content: "工具已卸载、当前角色不可用或未注册，请重新 ToolSearch。",
+          content: `工具未注册、已卸载或当前${approvalMode ?? ""}模式/角色/目录权限拒绝访问，请重新 ToolSearch。`,
         });
       }
       if (
