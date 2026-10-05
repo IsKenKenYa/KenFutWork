@@ -342,6 +342,14 @@ export const workspaceSettingsSchema = z.object({
   computerUseAxValueMaxChars: governanceSetting("computerUseAxValueMaxChars"),
   computerUseAxMaxActions: governanceSetting("computerUseAxMaxActions"),
   computerUseInputDelayMs: governanceSetting("computerUseInputDelayMs"),
+
+  localAccessTicketTtlMs: governanceSetting("localAccessTicketTtlMs"),
+  localAccessSessionMaxAgeMs: governanceSetting("localAccessSessionMaxAgeMs"),
+  localDataMigrationPollMs: governanceSetting("localDataMigrationPollMs"),
+  localServiceStartupTimeoutMs: governanceSetting(
+    "localServiceStartupTimeoutMs",
+  ),
+  localServiceStartupPollMs: governanceSetting("localServiceStartupPollMs"),
 });
 
 export const modelInfoSchema = z.object({

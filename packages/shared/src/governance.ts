@@ -69,6 +69,12 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   computerUseAxValueMaxChars: 300,
   computerUseAxMaxActions: 12,
   computerUseInputDelayMs: 100,
+
+  localAccessTicketTtlMs: 60_000,
+  localAccessSessionMaxAgeMs: 2_592_000_000,
+  localDataMigrationPollMs: 250,
+  localServiceStartupTimeoutMs: 120_000,
+  localServiceStartupPollMs: 1_000,
 } as const;
 
 export type AgentGovernanceValue = keyof typeof AGENT_GOVERNANCE_DEFAULTS;
@@ -105,6 +111,12 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "computerUseAxValueMaxChars",
   "computerUseAxMaxActions",
   "computerUseInputDelayMs",
+
+  "localAccessTicketTtlMs",
+  "localAccessSessionMaxAgeMs",
+  "localDataMigrationPollMs",
+  "localServiceStartupTimeoutMs",
+  "localServiceStartupPollMs",
 ] as const;
 export type RuntimeGovernanceKey = (typeof RUNTIME_GOVERNANCE_KEYS)[number];
 
@@ -151,6 +163,12 @@ export type AgentGovernanceOverrides = {
   computerUseAxValueMaxChars?: number | undefined;
   computerUseAxMaxActions?: number | undefined;
   computerUseInputDelayMs?: number | undefined;
+
+  localAccessTicketTtlMs?: number | undefined;
+  localAccessSessionMaxAgeMs?: number | undefined;
+  localDataMigrationPollMs?: number | undefined;
+  localServiceStartupTimeoutMs?: number | undefined;
+  localServiceStartupPollMs?: number | undefined;
 };
 
 const clampInt = (value: number, min: number, max: number): number =>
@@ -241,6 +259,12 @@ export const AGENT_GOVERNANCE_LIMITS = {
   computerUseAxValueMaxChars: { min: 0, max: 1_048_576 },
   computerUseAxMaxActions: { min: 1, max: 100_000 },
   computerUseInputDelayMs: { min: 0, max: 60_000 },
+
+  localAccessTicketTtlMs: { min: 1_000, max: 3_600_000 },
+  localAccessSessionMaxAgeMs: { min: 60_000, max: 31_536_000_000 },
+  localDataMigrationPollMs: { min: 10, max: 60_000 },
+  localServiceStartupTimeoutMs: { min: 100, max: 1_800_000 },
+  localServiceStartupPollMs: { min: 10, max: 60_000 },
 } as const;
 
 /**
@@ -376,6 +400,22 @@ export function resolveGovernanceEnvOverrides(
     ),
     computerUseInputDelayMs: parseStrictInt(
       source.KENFUTWORK_COMPUTER_USE_INPUT_DELAY_MS,
+    ),
+
+    localDataMigrationPollMs: parseStrictInt(
+      source.KENFUTWORK_LOCAL_DATA_MIGRATION_POLL_MS,
+    ),
+    localServiceStartupTimeoutMs: parseStrictInt(
+      source.KENFUTWORK_LOCAL_SERVICE_STARTUP_TIMEOUT_MS,
+    ),
+    localServiceStartupPollMs: parseStrictInt(
+      source.KENFUTWORK_LOCAL_SERVICE_STARTUP_POLL_MS,
+    ),
+    localAccessTicketTtlMs: parseStrictInt(
+      source.KENFUTWORK_LOCAL_ACCESS_TICKET_TTL_MS,
+    ),
+    localAccessSessionMaxAgeMs: parseStrictInt(
+      source.KENFUTWORK_LOCAL_ACCESS_SESSION_MAX_AGE_MS,
     ),
   };
   return Object.fromEntries(

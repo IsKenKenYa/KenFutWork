@@ -1141,6 +1141,41 @@
       "inExamples": true,
       "status": "active",
       "note": "系统配置目录绝对路径；数据位置指针留在此处，不随应用数据根移动。"
+    },
+    "KENFUTWORK_LOCAL_DATA_MIGRATION_POLL_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "目录迁移等待真实在途工作的复核间隔毫秒；设置值优先。"
+    },
+    "KENFUTWORK_LOCAL_SERVICE_STARTUP_TIMEOUT_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "launcher冷启动等待总预算；接通前只能采用env ?? DEFAULTS，统一clamp"
+    },
+    "KENFUTWORK_LOCAL_SERVICE_STARTUP_POLL_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "launcher冷启动健康复核间隔与单请求等待预算；启动期env ?? DEFAULTS"
+    },
+    "KENFUTWORK_LOCAL_ACCESS_TICKET_TTL_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "本机一次性连接票据有效期毫秒；设置值优先于env兜底。"
+    },
+    "KENFUTWORK_LOCAL_ACCESS_SESSION_MAX_AGE_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "浏览器本机接入会话有效期毫秒；不涉及官方账户。"
     }
   },
   "legacy": {

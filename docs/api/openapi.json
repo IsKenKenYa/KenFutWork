@@ -22840,6 +22840,36 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 60000
+              },
+              "localAccessTicketTtlMs": {
+                "default": 60000,
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 3600000
+              },
+              "localAccessSessionMaxAgeMs": {
+                "default": 2592000000,
+                "type": "integer",
+                "minimum": 60000,
+                "maximum": 31536000000
+              },
+              "localDataMigrationPollMs": {
+                "default": 250,
+                "type": "integer",
+                "minimum": 10,
+                "maximum": 60000
+              },
+              "localServiceStartupTimeoutMs": {
+                "default": 120000,
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 1800000
+              },
+              "localServiceStartupPollMs": {
+                "default": 1000,
+                "type": "integer",
+                "minimum": 10,
+                "maximum": 60000
               }
             },
             "required": [
@@ -22892,7 +22922,12 @@
               "computerUseAxTitleMaxChars",
               "computerUseAxValueMaxChars",
               "computerUseAxMaxActions",
-              "computerUseInputDelayMs"
+              "computerUseInputDelayMs",
+              "localAccessTicketTtlMs",
+              "localAccessSessionMaxAgeMs",
+              "localDataMigrationPollMs",
+              "localServiceStartupTimeoutMs",
+              "localServiceStartupPollMs"
             ],
             "additionalProperties": false
           }
@@ -23199,6 +23234,31 @@
           "computerUseInputDelayMs": {
             "type": "integer",
             "minimum": 0,
+            "maximum": 60000
+          },
+          "localAccessTicketTtlMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 3600000
+          },
+          "localAccessSessionMaxAgeMs": {
+            "type": "integer",
+            "minimum": 60000,
+            "maximum": 31536000000
+          },
+          "localDataMigrationPollMs": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 60000
+          },
+          "localServiceStartupTimeoutMs": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 1800000
+          },
+          "localServiceStartupPollMs": {
+            "type": "integer",
+            "minimum": 10,
             "maximum": 60000
           }
         }
