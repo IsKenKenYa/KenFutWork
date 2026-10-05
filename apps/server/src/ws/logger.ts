@@ -11,7 +11,7 @@ import { join } from "node:path";
  *
  * Usage:
  *   const log = createPipelineLogger("ws");
- *   log.info("connected", { userId });
+ *   log.info("connected", { instanceId });
  *   log.warn("auth_failed", { reason: "token expired" });
  *   log.lap("thread_resolved");  // auto-tracks elapsed ms
  */

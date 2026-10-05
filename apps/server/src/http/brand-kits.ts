@@ -10,11 +10,12 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
 import {
   type BrandKitService,
   BrandKitServiceError,
 } from "../features/brand-kit/brand-kit-service.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import { LocalInstanceError } from "../features/local-instance/service.js";
 import { isZodError } from "./zod-error.js";
 
 const ALLOWED_UPLOAD_MIME_TYPES = new Set([
@@ -37,14 +38,14 @@ type BrandKitErrorFallbackCode =
 export async function registerBrandKitRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     brandKitService: BrandKitService;
   },
 ) {
   // GET /api/brand-kits — list kits
   app.get("/api/brand-kits", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
 
       if (!user) {
         return sendUnauthenticated(reply);
@@ -62,7 +63,7 @@ export async function registerBrandKitRoutes(
   // POST /api/brand-kits — create kit
   app.post("/api/brand-kits", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
 
       if (!user) {
         return sendUnauthenticated(reply);
@@ -87,7 +88,7 @@ export async function registerBrandKitRoutes(
   // GET /api/brand-kits/:kitId — get detail
   app.get("/api/brand-kits/:kitId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
 
       if (!user) {
         return sendUnauthenticated(reply);
@@ -105,7 +106,7 @@ export async function registerBrandKitRoutes(
   // PATCH /api/brand-kits/:kitId — update kit
   app.patch("/api/brand-kits/:kitId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
 
       if (!user) {
         return sendUnauthenticated(reply);
@@ -131,7 +132,7 @@ export async function registerBrandKitRoutes(
   // POST /api/brand-kits/:kitId/duplicate — duplicate kit
   app.post("/api/brand-kits/:kitId/duplicate", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
 
       if (!user) {
         return sendUnauthenticated(reply);
@@ -149,7 +150,7 @@ export async function registerBrandKitRoutes(
   // DELETE /api/brand-kits/:kitId — delete kit
   app.delete("/api/brand-kits/:kitId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
 
       if (!user) {
         return sendUnauthenticated(reply);
@@ -167,7 +168,7 @@ export async function registerBrandKitRoutes(
   // POST /api/brand-kits/:kitId/assets/upload — upload file asset (logo/image)
   app.post("/api/brand-kits/:kitId/assets/upload", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
 
       if (!user) {
         return sendUnauthenticated(reply);
@@ -238,7 +239,7 @@ export async function registerBrandKitRoutes(
   // POST /api/brand-kits/:kitId/assets — create asset
   app.post("/api/brand-kits/:kitId/assets", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
 
       if (!user) {
         return sendUnauthenticated(reply);
@@ -270,7 +271,7 @@ export async function registerBrandKitRoutes(
     "/api/brand-kits/:kitId/assets/:assetId",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
+        const user = await options.localAccess.authenticate(request);
 
         if (!user) {
           return sendUnauthenticated(reply);
@@ -307,7 +308,7 @@ export async function registerBrandKitRoutes(
     "/api/brand-kits/:kitId/assets/:assetId",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
+        const user = await options.localAccess.authenticate(request);
 
         if (!user) {
           return sendUnauthenticated(reply);
@@ -332,7 +333,7 @@ function sendUnauthenticated(reply: FastifyReply) {
     unauthenticatedErrorResponseSchema.parse({
       error: {
         code: "unauthorized",
-        message: "Missing or invalid bearer token.",
+        message: "缺少或无效的本机接入凭据。",
       },
     }),
   );
@@ -343,7 +344,10 @@ function sendBrandKitError(
   reply: FastifyReply,
   fallbackCode: BrandKitErrorFallbackCode,
 ) {
-  if (error instanceof BrandKitServiceError) {
+  if (
+    error instanceof BrandKitServiceError ||
+    error instanceof LocalInstanceError
+  ) {
     return reply.code(error.statusCode).send(
       applicationErrorResponseSchema.parse({
         error: {

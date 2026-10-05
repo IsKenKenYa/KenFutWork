@@ -1,7 +1,7 @@
+import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
-import { buildApp } from "../app.js";
-import { createMemoryTaskWorkManager } from "../features/task-work/test-store.js";
-import { createStartupPersistenceFixture } from "../test-startup-persistence.js";
+import { createRuntimeTestInstance } from "../agent/runtime-test-fixtures.js";
+import { registerGenerateRoutes } from "./generate.js";
 
 /**
  * 直连生成路由的**会话上下文**回归（§4.8 自定义头占位符）。
@@ -11,74 +11,75 @@ import { createStartupPersistenceFixture } from "../test-startup-persistence.js"
  * 落进 job 行」是这条链路的关键，光看路由参数不够。
  */
 
-const USER = {
-  accessToken: "tok",
-  email: "u@example.com",
-  id: "user-1",
-  userMetadata: {},
+const ACTOR = {
+  instanceId: "11111111-1111-4111-8111-111111111111",
+  accessClientId: "22222222-2222-4222-8222-222222222222",
 };
 
 const SESSION_ID = "3f1a1111-2222-4333-8444-555555555555";
 
 function buildGenerateApp() {
   const createdJobs: Array<Record<string, unknown>> = [];
+  const localInstance = createRuntimeTestInstance(ACTOR.instanceId);
+  const app = Fastify();
   const jobService = {
-    cancelJob: vi.fn(async () => {}),
-    createJob: vi.fn(async (_user: unknown, input: Record<string, unknown>) => {
-      createdJobs.push(input);
-      return { id: "job-1" };
-    }),
-    getJobAdmin: vi.fn(async () => ({
-      id: "job-1",
-      status: "succeeded",
-      result: {
-        signed_url: "https://cdn.example/v.mp4",
-        asset_id: "asset-1",
-        mime_type: "video/mp4",
-        width: 1280,
-        height: 720,
+    createJob: vi.fn(
+      async (_actor: unknown, input: Record<string, unknown>) => {
+        createdJobs.push(input);
+        return { id: "job-1" };
       },
-    })),
-    setCreditsInfo: vi.fn(async () => {}),
+    ),
   };
-
-  const app = buildApp({
-    env: {
-      databaseUrl: "postgres://localhost:5432/loomic-test",
-      blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
-      credentialSecret: "test-secret",
-    },
-    overrides: {
-      taskWork: createMemoryTaskWorkManager(),
-      persistence: createStartupPersistenceFixture(),
-      auth: {
-        authenticate: async () => USER,
-        resolveUser: async () => USER,
-      } as never,
-      // 计费/配额与权限档位若走真实实现会去连库；本用例只关心「会话有没有落进 job 行」，
-      // 故给最小替身：不扣费、不拦模型，确保路由走到 createJob。
-      credits: {
-        getSubscription: async () => ({ plan: "pro" }),
-        deductCredits: async () => "tx-1",
-      } as never,
-      tierGuard: {
-        calculateCreditCost: () => 0,
-        checkConcurrency: async () => {},
-        checkModelAccess: () => {},
-        checkVideoResolution: () => {},
-      } as never,
-      jobs: jobService as never,
-      modelProviders: {} as never,
-      viewer: {
-        ensureViewer: async () => ({ workspace: { id: "ws-1" } }),
-      } as never,
-    },
+  void registerGenerateRoutes(app, {
+    localAccess: { authenticate: async () => ACTOR },
+    localInstance,
+    modelProviders: {
+      resolveCredentials: async () => ({
+        protocol: "openai-compatible",
+        apiKey: "BYOK",
+        models: [],
+        configRevision: 1,
+      }),
+    } as never,
+    jobService: jobService as never,
+    uploadService: {} as never,
+    usage: { record: async () => {} } as never,
   });
-
-  return { app, createdJobs, jobService };
+  return { app, createdJobs, jobService, localInstance };
 }
 
 describe("直连生成：会话上下文落进 job 行（§4.8 占位符渲染依赖它）", () => {
+  it("入队失败释放实例准入；准备迁移后拒绝新任务且不再提交", async () => {
+    const { app, jobService, localInstance } = buildGenerateApp();
+    const payload = {
+      prompt: "一只猫在跑",
+      model: "seedance-1-0-pro-250528",
+      providerInstanceId: "11111111-2222-4333-8444-555555555555",
+    };
+    jobService.createJob.mockRejectedValueOnce(new Error("队列不可用"));
+    try {
+      const failed = await app.inject({
+        method: "POST",
+        url: "/api/agent/generate-video",
+        payload,
+      });
+      expect(failed.statusCode).toBe(502);
+      expect(localInstance.activeAdmissionCount()).toBe(0);
+      await localInstance.beginMaintenance(async () => {});
+      const draining = await app.inject({
+        method: "POST",
+        url: "/api/agent/generate-video",
+        payload,
+      });
+      expect(draining.statusCode).toBe(503);
+      expect(draining.json().error.code).toBe("instance_draining");
+      expect(jobService.createJob).toHaveBeenCalledTimes(1);
+      expect(localInstance.activeAdmissionCount()).toBe(0);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("generate-video 带 sessionId：写入 job 行的 session_id", async () => {
     const { app, createdJobs } = buildGenerateApp();
     try {

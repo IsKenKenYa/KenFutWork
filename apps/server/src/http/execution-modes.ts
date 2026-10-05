@@ -5,20 +5,20 @@ import {
 } from "@kenfutwork/shared";
 import type { FastifyInstance } from "fastify";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
-import type { RequestAuthenticator } from "../features/auth/types.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import type { LocalInstanceService } from "../features/local-instance/types.js";
 
 export async function registerExecutionModeRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
-    viewer?: ViewerService;
+    localAccess: LocalAccessVerifier;
+    viewer?: LocalInstanceService;
     agentModes: ExecutionModeService;
   },
 ) {
   // GET /api/execution-modes — 模式词汇表（DEC-3：六档）
   app.get("/api/execution-modes", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) {
       return reply.code(401).send(
         unauthenticatedErrorResponseSchema.parse({
@@ -34,7 +34,7 @@ export async function registerExecutionModeRoutes(
 
   // GET /api/execution-modes/:threadId — 当前线程激活模式（缓存 miss 时读回持久化值）
   app.get("/api/execution-modes/:threadId", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) {
       return reply.code(401).send(
         unauthenticatedErrorResponseSchema.parse({
@@ -48,11 +48,11 @@ export async function registerExecutionModeRoutes(
     const { threadId } = request.params as { threadId: string };
     try {
       const workspace = options.viewer
-        ? await options.viewer.resolveWorkspace(user)
+        ? await options.viewer.resolve(user)
         : null;
       const mode = workspace
         ? await options.agentModes.hydrate(threadId, {
-            workspaceId: workspace.id,
+            instanceId: workspace.instanceId,
           })
         : options.agentModes.getMode(threadId);
       return reply.code(200).send({ mode: executionModeSchema.parse(mode) });
@@ -70,7 +70,7 @@ export async function registerExecutionModeRoutes(
 
   // PUT /api/execution-modes/:threadId — 激活/切换（会话级，DEC-2；写穿持久化）
   app.put("/api/execution-modes/:threadId", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) {
       return reply.code(401).send(
         unauthenticatedErrorResponseSchema.parse({
@@ -88,7 +88,7 @@ export async function registerExecutionModeRoutes(
       );
       // 归属校验：threadId 属于本用户工作区的会话才允许改（此前内存版无此校验）
       const workspace = options.viewer
-        ? await options.viewer.resolveWorkspace(user)
+        ? await options.viewer.resolve(user)
         : null;
       if (options.viewer && !workspace) {
         return reply.code(404).send(
@@ -99,7 +99,7 @@ export async function registerExecutionModeRoutes(
       }
       if (workspace) {
         const lookup = await options.agentModes.lookup(threadId, {
-          workspaceId: workspace.id,
+          instanceId: workspace.instanceId,
         });
         if (!lookup.exists) {
           return reply.code(404).send(
@@ -115,7 +115,7 @@ export async function registerExecutionModeRoutes(
       await options.agentModes.activate(
         threadId,
         mode,
-        workspace ? { workspaceId: workspace.id } : undefined,
+        workspace ? { instanceId: workspace.instanceId } : undefined,
       );
       return reply.code(200).send({ mode });
     } catch (error) {

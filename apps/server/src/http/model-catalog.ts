@@ -4,20 +4,20 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
 
 export async function registerModelCatalogRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     modelCatalog: ModelCatalogService;
   },
 ) {
   // GET /api/model-catalog — 从用户供应商实例推导的动态模型目录
   app.get("/api/model-catalog", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) {
         return reply.code(401).send(
           unauthenticatedErrorResponseSchema.parse({

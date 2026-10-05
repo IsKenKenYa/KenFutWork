@@ -1,11 +1,11 @@
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
-import { buildApp } from "../app.js";
+import { createLocalInstanceService } from "../features/local-instance/service.js";
 import { createProjectService } from "../features/projects/project-service.js";
-import { createMemoryTaskWorkManager } from "../features/task-work/test-store.js";
-import { createStartupPersistenceFixture } from "../test-startup-persistence.js";
+import { registerProjectRoutes } from "./projects.js";
 
 /**
  * 工作目录（`projects.work_dir`，web 形态「填本机路径」）的 **HTTP 边界**回归。
@@ -18,19 +18,12 @@ import { createStartupPersistenceFixture } from "../test-startup-persistence.js"
  * （它不知道谁在用哪个码）——只有真发一次请求才看得到。
  */
 
-const USER = {
-  accessToken: "tok",
-  email: "u@example.com",
-  id: "user-1",
-  userMetadata: {},
-};
-
-const WORKSPACE = {
-  id: "ws-1",
-  name: "Personal Workspace",
-  ownerUserId: USER.id,
-  type: "personal" as const,
-};
+const INSTANCE_ID = "11111111-1111-4111-8111-111111111111";
+const ACTOR = { instanceId: INSTANCE_ID, accessClientId: "client-1" };
+const localInstance = createLocalInstanceService({
+  repository: { ensure: async () => INSTANCE_ID },
+  dataDir: "/tmp/project-http-test",
+});
 
 function buildHttpApp(
   overrides: { createdWorkDir?: (v?: string) => void } = {},
@@ -63,7 +56,7 @@ function buildHttpApp(
             description: null,
             created_at: "2026-09-17T00:00:00+00:00",
             updated_at: "2026-09-17T00:00:00+00:00",
-            workspace_id: WORKSPACE.id,
+            instance_id: INSTANCE_ID,
             work_dir: typed.workDir ?? null,
             additional_directories: [],
           },
@@ -76,27 +69,12 @@ function buildHttpApp(
       update: async () => 1,
       findWorkDirByCanvas: async () => null,
     } as never,
-    viewerService: {
-      ensureViewer: async () => undefined,
-      resolveWorkspace: async () => WORKSPACE,
-    } as never,
+    localInstance,
   });
-
-  const app = buildApp({
-    env: {
-      databaseUrl: "postgres://localhost:5432/loenfut-test",
-      blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
-      credentialSecret: "test-secret",
-    },
-    overrides: {
-      taskWork: createMemoryTaskWorkManager(),
-      persistence: createStartupPersistenceFixture(),
-      auth: {
-        authenticate: async () => USER,
-        resolveUser: async () => USER,
-      } as never,
-      projects: projectService as never,
-    },
+  const app = Fastify();
+  void registerProjectRoutes(app, {
+    localAccess: { authenticate: async () => ACTOR },
+    projectService,
   });
 
   return { app };

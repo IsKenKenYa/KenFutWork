@@ -21,11 +21,11 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
 import {
   CodeGitError,
   type CodeGitService,
 } from "../features/code-git/code-git-service.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
 
 /**
  * Code 模式 git 分支视图路由（工作目录=项目）。
@@ -34,12 +34,12 @@ import {
  */
 export async function registerCodeGitRoutes(
   app: FastifyInstance,
-  options: { auth: RequestAuthenticator; codeGitService: CodeGitService },
+  options: { localAccess: LocalAccessVerifier; codeGitService: CodeGitService },
 ) {
   app.get<{ Querystring: { taskId?: string } }>(
     "/api/code/git",
     async (request, reply) => {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthorized(reply);
       const taskId = request.query.taskId ?? "";
       if (!taskId) {
@@ -59,7 +59,7 @@ export async function registerCodeGitRoutes(
   );
 
   app.post("/api/code/git/checkout", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthorized(reply);
     try {
       const payload = codeGitCheckoutRequestSchema.parse(request.body);
@@ -79,7 +79,7 @@ export async function registerCodeGitRoutes(
   app.get<{ Querystring: { taskId?: string } }>(
     "/api/code/git/diff-stat",
     async (request, reply) => {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthorized(reply);
       const taskId = request.query.taskId ?? "";
       if (!taskId) {
@@ -105,7 +105,7 @@ export async function registerCodeGitRoutes(
   app.get<{ Querystring: { taskId?: string; limit?: string } }>(
     "/api/code/git/graph",
     async (request, reply) => {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthorized(reply);
       const taskId = request.query.taskId ?? "";
       if (!taskId) {
@@ -131,7 +131,7 @@ export async function registerCodeGitRoutes(
   app.get<{ Querystring: { taskId?: string } }>(
     "/api/code/git/changes",
     async (request, reply) => {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthorized(reply);
       const taskId = request.query.taskId ?? "";
       if (!taskId) {
@@ -160,7 +160,7 @@ export async function registerCodeGitRoutes(
   app.get<{ Querystring: { taskId?: string; path?: string } }>(
     "/api/code/git/diff",
     async (request, reply) => {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthorized(reply);
       const taskId = request.query.taskId ?? "";
       const path = request.query.path ?? "";
@@ -189,7 +189,7 @@ export async function registerCodeGitRoutes(
   app.get<{ Querystring: { taskId?: string; path?: string } }>(
     "/api/code/file",
     async (request, reply) => {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthorized(reply);
       const taskId = request.query.taskId ?? "";
       const path = request.query.path ?? "";
@@ -216,7 +216,7 @@ export async function registerCodeGitRoutes(
   app.get<{ Querystring: { taskId?: string; path?: string } }>(
     "/api/code/files",
     async (request, reply) => {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthorized(reply);
       const taskId = request.query.taskId ?? "";
       if (!taskId) {
@@ -243,7 +243,7 @@ export async function registerCodeGitRoutes(
   // 权限口径见 features/code-git/terminal-runner.ts（用户自己的操作，不套 agent 工具门；
   // 但同样要求登录 + 画布归属，且固定 cwd、有超时与输出上限）。
   app.post("/api/code/terminal", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthorized(reply);
     try {
       const payload = codeTerminalRequestSchema.parse(request.body);
@@ -261,7 +261,7 @@ export async function registerCodeGitRoutes(
 
   // POST /api/code/git/stage — 暂存 / 取消暂存单个文件（参考图审查视图里的「暂存」）。
   app.post("/api/code/git/stage", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthorized(reply);
     try {
       const payload = codeGitStageRequestSchema.parse(request.body);
@@ -279,7 +279,7 @@ export async function registerCodeGitRoutes(
 
   // POST /api/code/git/stage-hunk — 暂存 / 取消暂存一个块（参考图的「暂存块」）。
   app.post("/api/code/git/stage-hunk", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthorized(reply);
     try {
       const payload = codeGitStageHunkRequestSchema.parse(request.body);
@@ -307,7 +307,7 @@ export async function registerCodeGitRoutes(
 
   // POST /api/code/git/discard — 撤销更改（单文件或全部）。**丢内容**，界面负责二次确认。
   app.post("/api/code/git/discard", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthorized(reply);
     try {
       const payload = codeGitDiscardRequestSchema.parse(request.body);
@@ -333,7 +333,7 @@ export async function registerCodeGitRoutes(
   // 只要求登录：清单里带可执行文件路径，而能开这个终端的人本来就能 `where bash` 问出来，
   // 多藏一层只会让界面说不清「为什么这个选项不可用」。
   app.get("/api/code/shells", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthorized(reply);
     try {
       const shells = await options.codeGitService.listTerminalShells(user);
@@ -346,7 +346,7 @@ export async function registerCodeGitRoutes(
   // POST /api/code/git/init — 初始化仓库（幂等）：让「每次对话用 git 跟踪」在
   // 非仓库目录上也能开始（分支 chip 里「非 Git 仓库」时提供入口）
   app.post("/api/code/git/init", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthorized(reply);
     try {
       const payload = codeGitCheckoutRequestSchema
@@ -360,7 +360,7 @@ export async function registerCodeGitRoutes(
   });
 
   app.post("/api/code/git/commit", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthorized(reply);
     try {
       const payload = codeGitCommitRequestSchema.parse(request.body);
@@ -376,7 +376,7 @@ export async function registerCodeGitRoutes(
   });
 
   app.post("/api/code/git/push", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthorized(reply);
     try {
       const payload = codeGitCheckoutRequestSchema
@@ -390,7 +390,7 @@ export async function registerCodeGitRoutes(
   });
 
   app.post("/api/code/git/branch", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthorized(reply);
     try {
       const payload = codeGitBranchCreateRequestSchema.parse(request.body);

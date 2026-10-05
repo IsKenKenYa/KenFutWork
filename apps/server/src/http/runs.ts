@@ -21,19 +21,18 @@ import {
   type AgentRunMetadataService,
   AgentRunPersistenceError,
 } from "../features/agent-runs/agent-run-service.js";
-import type { RequestAuthenticator } from "../features/auth/types.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
   type ThreadService,
   ThreadServiceError,
 } from "../features/chat/thread-service.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
-import type { CreditService } from "../features/credits/credit-service.js";
 import {
   ExecutionScopeError,
   type ExecutionScopes,
 } from "../features/execution/scope-service.js";
-import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import { LocalInstanceMaintenanceError } from "../features/local-instance/service.js";
+import type { LocalInstanceService } from "../features/local-instance/types.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import { isZodError } from "./zod-error.js";
@@ -44,20 +43,18 @@ export async function registerRunRoutes(
   options: {
     /** 运行活动查询（Git 弹层的「智能体 N 秒 · M 运行」；口径见仓储 workspaceActivity）。 */
     activityQuery?: (input: {
-      workspaceId: string;
+      instanceId: string;
     }) => Promise<{ runs: number; totalSeconds: number; windowDays: number }>;
     agentModes?: ExecutionModeService;
     agentRunMetadataService?: AgentRunMetadataService;
-    auth?: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     settingsService?: SettingsService;
     threadService?: ThreadService;
-    viewerService?: ViewerService;
-    /** 平台池额度前置拦截（FORM-10）：只有走系统供应商的运行需要余额。 */
-    creditService?: CreditService;
+    localInstance: LocalInstanceService;
     modelProviders?: ModelProviderService;
     executionScopes?: ExecutionScopes;
     codeUi?: Pick<CodeUiService, "admitExternalRun">;
-  } = {},
+  },
 ) {
   /**
    * GET /api/agent/subagents — 子智能体清单（设置 →「子智能体」）。
@@ -66,7 +63,7 @@ export async function registerRunRoutes(
    * 界面因此不会出现「写着有、跑起来没有」。不依赖工作区，登录即可读。
    */
   app.get("/api/agent/subagents", async (request, reply) => {
-    if (!options.auth) {
+    if (!options.localAccess) {
       return reply.code(503).send(
         applicationErrorResponseSchema.parse({
           error: {
@@ -76,13 +73,13 @@ export async function registerRunRoutes(
         }),
       );
     }
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) {
       return reply.code(401).send(
         unauthenticatedErrorResponseSchema.parse({
           error: {
             code: "unauthorized",
-            message: "Missing or invalid bearer token.",
+            message: "本机连接凭据缺失或无效。",
           },
         }),
       );
@@ -103,27 +100,25 @@ export async function registerRunRoutes(
   // 归属校验：先解析工作区（拿不到就返回全 0——不区分「不存在」与「不属于你」，
   // 与其它只读端点同一口径，不给账号/资源枚举留信号）。
   app.get("/api/agent/runs/activity", async (request, reply) => {
-    const authenticatedUser = options.auth
-      ? await options.auth.authenticate(request)
+    const authenticatedUser = options.localAccess
+      ? await options.localAccess.authenticate(request)
       : null;
     if (!authenticatedUser) {
       return reply.code(401).send(
         applicationErrorResponseSchema.parse({
           error: {
             code: "unauthorized",
-            message: "Missing or invalid bearer token.",
+            message: "本机连接凭据缺失或无效。",
           },
         }),
       );
     }
-    const workspace = options.viewerService
-      ? await options.viewerService
-          .resolveWorkspace(authenticatedUser)
-          .catch(() => null)
+    const workspace = options.localInstance
+      ? await options.localInstance.resolve(authenticatedUser).catch(() => null)
       : null;
     const activity =
       workspace && options.activityQuery
-        ? await options.activityQuery({ workspaceId: workspace.id })
+        ? await options.activityQuery({ instanceId: workspace.instanceId })
         : { runs: 0, totalSeconds: 0, windowDays: 7 };
     return reply
       .code(200)
@@ -131,20 +126,12 @@ export async function registerRunRoutes(
   });
 
   app.post("/api/agent/runs", async (request, reply) => {
+    let releaseAdmission: (() => void) | undefined;
     try {
       const payload = runCreateRequestSchema.parse(request.body);
-      const hasAuthorization = hasBearerAuthorization(
-        request.headers.authorization,
-      );
-      const authenticatedUser =
-        hasAuthorization && options?.auth
-          ? await options.auth.authenticate(request)
-          : null;
-
-      if (hasAuthorization && !authenticatedUser) {
-        return sendUnauthorized(reply);
-      }
-
+      const authenticatedUser = await options.localAccess.authenticate(request);
+      if (!authenticatedUser) return sendUnauthorized(reply);
+      releaseAdmission = options.localInstance.beginAdmission();
       // Code 模式会话供给（方案 A，与 WS 路径同口径）：客户端自造的 sessionId 在库里没有
       // 会话行 → 线程解析失败且助手消息无处落库。此处先按该 id 供给真实会话与线程。
       // Design 模式不供给：其会话由画布页经 API 先建行，缺行属真错误，不该被掩盖。
@@ -198,78 +185,20 @@ export async function registerRunRoutes(
             })()
         : undefined;
 
-      // Resolve per-workspace model if auth context is available
-      let model: string | undefined;
-      if (
-        authenticatedUser &&
-        options.settingsService &&
-        options.viewerService
-      ) {
-        try {
-          const viewer =
-            await options.viewerService.ensureViewer(authenticatedUser);
-          const settings = await options.settingsService.getWorkspaceSettings(
+      const context = await options.localInstance.resolve(authenticatedUser);
+      const settings = options.settingsService
+        ? await options.settingsService.getInstanceSettings(
             authenticatedUser,
-            viewer.workspace.id,
-          );
-          model = settings.defaultModel;
-        } catch {
-          // Fall through to server default model if settings lookup fails
-        }
-      }
-
-      // 平台池额度前置拦截（FORM-10）：走系统供应商（scope='system'）的运行
-      // 先查余额；余额耗尽直接 402，不让 run 起跑后才在结算处失败。
-      // 自带 Key（BYOK）不受此限——用户自带凭证不计费。
-      const effectiveModel = payload.model ?? model;
-      if (
-        authenticatedUser &&
-        effectiveModel &&
-        options.modelProviders &&
-        options.creditService &&
-        options.viewerService
-      ) {
-        const specifier = parseInstanceSpecifier(effectiveModel);
-        if (specifier) {
-          try {
-            const scope = await options.modelProviders.getInstanceScope(
-              specifier.instanceId,
-            );
-            if (scope === "system") {
-              const viewer =
-                await options.viewerService.ensureViewer(authenticatedUser);
-              const { balance } = await options.creditService.getBalance(
-                viewer.workspace.id,
-              );
-              if (balance <= 0) {
-                return reply.code(402).send(
-                  applicationErrorResponseSchema.parse({
-                    error: {
-                      code: "insufficient_credits",
-                      message:
-                        "平台额度已用完，请联系管理员充值或改用自己的供应商 Key。",
-                    },
-                  }),
-                );
-              }
-            }
-          } catch {
-            // 额度查询失败不阻断启动（结算侧仍有兜底），避免误伤正常使用
-          }
-        }
-      }
+            context.instanceId,
+          )
+        : undefined;
+      const model = settings?.defaultModel;
 
       // 执行模式（DEC-3）：载荷声明 → 按真实 threadId 激活并写穿持久化；
       // 未声明 → 读回线程持久化模式（与 WS 路径同口径，重启后仍按线程模式走）。
       // plan 批准门（机器可读）：与 WS 路径同口径，批准短语本条消息起按 agent 执行。
       if (sessionThread && options.agentModes) {
-        const workspace =
-          authenticatedUser && options.viewerService
-            ? await options.viewerService
-                .resolveWorkspace(authenticatedUser)
-                .catch(() => null)
-            : null;
-        const modeScope = workspace ? { workspaceId: workspace.id } : undefined;
+        const modeScope = { instanceId: context.instanceId };
         let effectiveMode = payload.executionMode;
         if (effectiveMode === "plan" && isPlanApprovalInput(payload.prompt)) {
           effectiveMode = "agent";
@@ -320,8 +249,7 @@ export async function registerRunRoutes(
           ...(scopeHandle ? { scopeHandle } : {}),
           ...(authenticatedUser
             ? {
-                accessToken: authenticatedUser.accessToken,
-                userId: authenticatedUser.id,
+                actor: authenticatedUser,
               }
             : {}),
           ...(model ? { model } : {}),
@@ -351,6 +279,10 @@ export async function registerRunRoutes(
 
       return reply.code(202).send(response);
     } catch (error) {
+      if (error instanceof LocalInstanceMaintenanceError)
+        return reply
+          .code(503)
+          .send({ error: { code: error.code, message: error.message } });
       if (error instanceof ExecutionScopeError)
         return reply.code(error.statusCode).send(
           applicationErrorResponseSchema.parse({
@@ -380,10 +312,15 @@ export async function registerRunRoutes(
       }
 
       return handleZodError(error, reply);
+    } finally {
+      releaseAdmission?.();
     }
   });
 
   app.post("/api/agent/runs/:runId/cancel", async (request, reply) => {
+    const actor = await options.localAccess.authenticate(request);
+    if (!actor) return sendUnauthorized(reply);
+    await options.localInstance.resolve(actor);
     const { runId } = request.params as { runId: string };
     const canceledRun = agentRuns.cancelRun(runId);
 
@@ -398,20 +335,12 @@ export async function registerRunRoutes(
   });
 }
 
-function hasBearerAuthorization(
-  authorizationHeader: string | string[] | undefined,
-) {
-  return typeof authorizationHeader === "string"
-    ? authorizationHeader.trim().toLowerCase().startsWith("bearer ")
-    : false;
-}
-
 function sendUnauthorized(reply: FastifyReply) {
   return reply.code(401).send(
     unauthenticatedErrorResponseSchema.parse({
       error: {
         code: "unauthorized",
-        message: "Missing or invalid bearer token.",
+        message: "本机连接凭据缺失或无效。",
       },
     }),
   );

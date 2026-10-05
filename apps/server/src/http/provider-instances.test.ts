@@ -9,17 +9,10 @@ import { createStartupPersistenceFixture } from "../test-startup-persistence.js"
  * fail loud 变成 4xx」只有真发请求才看得到——这条曾被历史漏挂载坑过（见 app.test.ts）。
  */
 
-const USER = {
-  accessToken: "tok",
-  email: "u@example.com",
-  id: "user-1",
-  userMetadata: {},
-};
-
-function buildHttpApp() {
-  const createInstance = vi.fn(async (_user: unknown, input: unknown) => ({
+async function buildHttpApp() {
+  const createInstance = vi.fn(async (_actor: unknown, input: unknown) => ({
     id: "inst-1",
-    scope: "workspace" as const,
+    scope: "local" as const,
     name: (input as { name: string }).name,
     protocol: (input as { protocol: string }).protocol,
     hasCredential: true,
@@ -29,19 +22,16 @@ function buildHttpApp() {
     enabled: true,
   }));
 
+  const persistence = createStartupPersistenceFixture();
   const app = buildApp({
     env: {
       databaseUrl: "postgres://localhost:5432/loomic-test",
       blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
-      credentialSecret: "test-secret",
+      desktopDataDir: persistence.dataDir,
     },
     overrides: {
       taskWork: createMemoryTaskWorkManager(),
-      persistence: createStartupPersistenceFixture(),
-      auth: {
-        authenticate: async () => USER,
-        resolveUser: async () => USER,
-      } as never,
+      persistence,
       modelProviders: {
         createInstance,
         listInstances: async () => [],
@@ -49,16 +39,23 @@ function buildHttpApp() {
     },
   });
 
-  return { app, createInstance };
+  await app.ready();
+  const token = await app.kernel.get("localAccess").getDesktopToken();
+  const headers = { authorization: `Bearer ${token}` };
+  const actor = await app.kernel
+    .get("localAccess")
+    .authenticate({ headers, ip: "127.0.0.1" });
+  return { app, createInstance, headers, actor };
 }
 
 describe("POST /api/provider-instances 自定义请求头（HTTP 边界）", () => {
   it("携带 headers 透传到服务，响应只回 headerKeys", async () => {
-    const { app, createInstance } = buildHttpApp();
+    const { app, createInstance, headers, actor } = await buildHttpApp();
     try {
       const response = await app.inject({
         method: "POST",
         url: "/api/provider-instances",
+        headers,
         payload: {
           name: "opencode",
           protocol: "openai-compatible",
@@ -70,7 +67,7 @@ describe("POST /api/provider-instances 自定义请求头（HTTP 边界）", () 
 
       expect(response.statusCode, response.body).toBe(201);
       expect(createInstance).toHaveBeenCalledWith(
-        USER,
+        actor,
         expect.objectContaining({
           headers: { "x-opencode-session": "{{sessionId}}" },
         }),
@@ -84,7 +81,11 @@ describe("POST /api/provider-instances 自定义请求头（HTTP 边界）", () 
   });
 
   it("保留头 / CRLF 注入 / 白名单外占位符：写入时即拒（4xx，不落库）", async () => {
-    const { app, createInstance } = buildHttpApp();
+    const {
+      app,
+      createInstance,
+      headers: accessHeaders,
+    } = await buildHttpApp();
     const base = {
       name: "opencode",
       protocol: "openai-compatible",
@@ -95,12 +96,13 @@ describe("POST /api/provider-instances 自定义请求头（HTTP 边界）", () 
       for (const headers of [
         { Authorization: "Bearer sk-evil" },
         { "x-opencode-session": "a\r\nX-Evil: 1" },
-        { "x-tenant": "{{workspaceId}}" },
+        { "x-tenant": "{{instanceId}}" },
         { "Content-Type": "text/plain" },
       ]) {
         const response = await app.inject({
           method: "POST",
           url: "/api/provider-instances",
+          headers: accessHeaders,
           payload: { ...base, headers },
         });
         expect(

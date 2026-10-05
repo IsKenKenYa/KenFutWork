@@ -11,7 +11,6 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
 import {
   type CheckpointService,
   CodeCheckpointError,
@@ -20,12 +19,13 @@ import {
   ExecutionScopeError,
   type ExecutionScopes,
 } from "../features/execution/scope-service.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
 
 /** 所有 Code 检查点调用先打开真实 Task 句柄，再校验检查点属于该 Task。 */
 export async function registerCheckpointsRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     executionScopes: Pick<ExecutionScopes, "openTask">;
     checkpointsService: CheckpointService;
   },
@@ -33,11 +33,11 @@ export async function registerCheckpointsRoutes(
   type Query = { taskId?: string; path?: string; rootDirectory?: string };
   type Params = { checkpointId: string };
   const context = async (
-    request: Parameters<RequestAuthenticator["authenticate"]>[0],
+    request: Parameters<LocalAccessVerifier["authenticate"]>[0],
     query: Query,
     reply: FastifyReply,
   ) => {
-    const actor = await options.auth.authenticate(request);
+    const actor = await options.localAccess.authenticate(request);
     if (!actor) {
       reply.code(401).send(
         unauthenticatedErrorResponseSchema.parse({

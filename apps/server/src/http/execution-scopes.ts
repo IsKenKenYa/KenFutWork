@@ -4,24 +4,27 @@ import {
   codeTaskScopeUpdateRequestSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, RouteHandlerMethod } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
 import {
   ExecutionScopeError,
   type ExecutionScopes,
 } from "../features/execution/scope-service.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import { isZodError } from "./zod-error.js";
 
 /** 原 V4 以外的宿主目录授权 API；用户动作不假装成 Agent 工具提权。 */
 export async function registerExecutionScopeRoutes(
   app: FastifyInstance,
-  deps: { auth: RequestAuthenticator; scopes: ExecutionScopes },
+  deps: { localAccess: LocalAccessVerifier; scopes: ExecutionScopes },
 ) {
   const handler: RouteHandlerMethod = async (request, reply) => {
-    const actor = await deps.auth.authenticate(request);
+    const actor = await deps.localAccess.authenticate(request);
     if (!actor)
-      return reply
-        .code(401)
-        .send({ error: { code: "unauthenticated", message: "请先登录" } });
+      return reply.code(401).send({
+        error: {
+          code: "unauthenticated",
+          message: "请从桌面重新建立本机连接",
+        },
+      });
     try {
       const { taskId } = codeTaskScopeParamsSchema.parse(request.params);
       const scope =

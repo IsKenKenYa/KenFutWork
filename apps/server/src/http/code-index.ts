@@ -3,15 +3,13 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type {
-  AuthenticatedUser,
-  RequestAuthenticator,
-} from "../features/auth/types.js";
 import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import {
   type CodeIndexStore,
   IndexTooLargeError,
 } from "../features/code-index/index-store.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import type { LocalActor } from "../features/local-instance/types.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 
 /**
@@ -27,7 +25,7 @@ import type { SettingsService } from "../features/settings/settings-service.js";
 export async function registerCodeIndexRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     codeGitService: CodeGitService;
     settingsService: SettingsService;
     indexStore: CodeIndexStore;
@@ -51,13 +49,13 @@ export async function registerCodeIndexRoutes(
 
   /** 画布 → 工作目录（越权 404，与其它 code 端点同一处校验）+ 该工作区的两个索引开关。 */
   const scopeFor = async (
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
   ): Promise<{ enabled: boolean; autoNewFolder: boolean; dir: string }> => {
     const scope = await options.codeGitService.indexScope(user, taskId);
-    const settings = await options.settingsService.getWorkspaceSettings(
+    const settings = await options.settingsService.getInstanceSettings(
       user,
-      scope.workspaceId,
+      scope.instanceId,
     );
     return {
       enabled: settings.codeIndexEnabled,
@@ -69,7 +67,7 @@ export async function registerCodeIndexRoutes(
   app.get<{ Querystring: { taskId?: string } }>(
     "/api/code/index",
     async (request, reply) => {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthorized(reply);
       const taskId = request.query.taskId ?? "";
       if (!taskId) return sendBadInput(reply, "缺少 taskId。");
@@ -88,7 +86,7 @@ export async function registerCodeIndexRoutes(
   );
 
   app.post("/api/code/index/rebuild", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthorized(reply);
     const taskId = (request.body as { taskId?: unknown } | undefined)?.taskId;
     if (typeof taskId !== "string" || !taskId) {
@@ -108,7 +106,7 @@ export async function registerCodeIndexRoutes(
   app.delete<{ Querystring: { taskId?: string } }>(
     "/api/code/index",
     async (request, reply) => {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthorized(reply);
       const taskId = request.query.taskId ?? "";
       if (!taskId) return sendBadInput(reply, "缺少 taskId。");
@@ -125,7 +123,7 @@ export async function registerCodeIndexRoutes(
   app.get<{ Querystring: { taskId?: string; q?: string } }>(
     "/api/code/index/search",
     async (request, reply) => {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthorized(reply);
       const taskId = request.query.taskId ?? "";
       const query = request.query.q ?? "";

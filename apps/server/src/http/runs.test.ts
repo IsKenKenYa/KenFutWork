@@ -1,5 +1,9 @@
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
+import {
+  createRuntimeTestInstance,
+  RUNTIME_TEST_ACTOR,
+} from "../agent/runtime-test-fixtures.js";
 
 import { registerRunRoutes } from "./runs.js";
 
@@ -7,28 +11,21 @@ import { registerRunRoutes } from "./runs.js";
  * `GET /api/agent/subagents`（设置 →「子智能体」的数据源）的**路由级**回归。
  *
  * 这一层的价值在于契约形状：响应要过 `agentSubagentListResponseSchema`，客户端据此渲染
- * （漏字段/多字段都会被 zod 拦下或剥掉）。同时钉住「未登录不给清单」这条基本线。
+ * （漏字段/多字段都会被 zod 拦下或剥掉）。同时钉住「未授权不给清单」这条基本线。
  */
-const USER = {
-  accessToken: "tok",
-  email: "u@example.com",
-  id: "user-1",
-  userMetadata: {},
-};
-
 function buildApp(authenticated: boolean) {
   const app = Fastify();
   void registerRunRoutes(app, {} as never, {
-    auth: {
-      authenticate: async () => (authenticated ? USER : null),
-      resolveUser: async () => null,
-    } as never,
+    localAccess: {
+      authenticate: async () => (authenticated ? RUNTIME_TEST_ACTOR : null),
+    },
+    localInstance: createRuntimeTestInstance(),
   });
   return app;
 }
 
 describe("GET /api/agent/subagents", () => {
-  it("登录后返回声明的子代理与内置分发工具（形状过契约）", async () => {
+  it("本机授权后返回声明的子代理与内置分发工具（形状过契约）", async () => {
     const app = buildApp(true);
     try {
       const response = await app.inject({
@@ -54,7 +51,7 @@ describe("GET /api/agent/subagents", () => {
     }
   });
 
-  it("未登录：401（清单不外泄）", async () => {
+  it("未获本机授权：401（清单不外泄）", async () => {
     const app = buildApp(false);
     try {
       const response = await app.inject({

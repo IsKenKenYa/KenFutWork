@@ -2,19 +2,19 @@
 // 目录/遗留 env 注册退役，模型清单来自用户实例目录；specifier = <instanceId>:<model>）。
 
 import type { FastifyInstance } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
 import { toInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
 
 export async function registerVideoModelRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     modelCatalog: ModelCatalogService;
   },
 ) {
   app.get("/api/video-models", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) {
       return reply.code(401).send({
         error: {

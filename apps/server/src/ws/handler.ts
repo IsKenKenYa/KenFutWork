@@ -17,16 +17,8 @@ import { resolveSandboxScopeId } from "../agent/sandbox-dir.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import { isPlanApprovalInput } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
-import type {
-  AuthenticatedUser,
-  RequestAuthenticator,
-} from "../features/auth/types.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { ChatService } from "../features/chat/chat-service.js";
-import type {
-  SessionThreadBinding,
-  ThreadService,
-} from "../features/chat/thread-service.js";
+import type { ThreadService } from "../features/chat/thread-service.js";
 import { chunkForFrames } from "../features/code-git/terminal-session.js";
 import type { CodeTerminalService } from "../features/code-terminal/types.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
@@ -34,9 +26,20 @@ import {
   ExecutionScopeError,
   type ExecutionScopes,
 } from "../features/execution/scope-service.js";
+import type {
+  LocalAccessService,
+  LocalAccessVerifier,
+} from "../features/local-access/types.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../features/local-instance/types.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import { createAssistantBlockCollector } from "./assistant-block-collector.js";
-import type { ConnectionManager } from "./connection-manager.js";
+import {
+  ConnectionIdentityConflictError,
+  type ConnectionManager,
+} from "./connection-manager.js";
 import type { CanvasEventBuffer } from "./event-buffer.js";
 import { createPipelineLogger } from "./logger.js";
 
@@ -44,14 +47,15 @@ type RegisterWsOptions = {
   agentRuns: AgentRunService;
   agentModes?: ExecutionModeService;
   agentRunMetadataService?: AgentRunMetadataService;
-  auth?: RequestAuthenticator;
+  localAccess?: LocalAccessVerifier &
+    Partial<Pick<LocalAccessService, "onRevoked">>;
   chatService?: ChatService;
   codeTerminal?: CodeTerminalService;
   connectionManager: ConnectionManager;
   eventBuffer?: CanvasEventBuffer;
   settingsService?: SettingsService;
   threadService?: ThreadService;
-  viewerService?: ViewerService;
+  localInstance?: LocalInstanceService;
   executionScopes?: ExecutionScopes;
   codeUi?: Pick<CodeUiService, "admitExternalRun">;
 };
@@ -66,23 +70,14 @@ export async function registerWsRoute(
     "/api/ws",
     { websocket: true },
     (socket: WebSocket, request: FastifyRequest) => {
-      const url = new URL(request.url, `http://${request.headers.host}`);
-      const token = url.searchParams.get("token") ?? "";
-
-      /**
-       * **不在这里要求 token**：桌面形态是 local-trust（回环 + 可信 Origin 免登录），
-       * 本来就没有 token——以前这道 `!token` 的门会把桌面端的 WS 全部关在门外
-       * （表现为打包后 run / 终端一律连不上）。要不要凭证由鉴权器决定：
-       * 会话档没有 Bearer 就返回 null，local-trust 只看 ip/Origin。
-       */
-      if (!options.auth) {
+      // WS与HTTP共用Cookie/Bearer准入；回环和Origin不能替代真实凭据。
+      if (!options.localAccess) {
         socket.close(4001, "Unauthorized");
         return;
       }
 
       void authenticateAndBind(
         socket,
-        token,
         request,
         options,
         agentRuns,
@@ -94,7 +89,6 @@ export async function registerWsRoute(
 
 async function authenticateAndBind(
   socket: WebSocket,
-  token: string,
   request: FastifyRequest,
   options: RegisterWsOptions,
   agentRuns: AgentRunService,
@@ -119,70 +113,145 @@ async function authenticateAndBind(
   };
   socket.on("message", captureEarly);
 
-  let authenticatedUser: AuthenticatedUser;
-  try {
-    // 路由入口已校验 options.auth 存在；函数边界丢失该收窄，这里重新收窄为局部 const
-    const auth = options.auth;
-    if (!auth) {
-      socket.close(4001, "Unauthorized");
-      return;
+  let authenticatedUser: LocalActor;
+  let revoked = false;
+  let unsubscribeRevoked = () => {};
+  let removeRegistered = () => {};
+  const releaseAuth = () => {
+    unsubscribeRevoked();
+    unsubscribeRevoked = () => {};
+  };
+  const rejectConnection = (code: number, reason: string) => {
+    // 先撤销服务端路由资格，再发close帧；客户端close可能早于服务端close事件。
+    // 注册前为noop，冲突拒绝不会删除另一客户端的entry。
+    removeRegistered();
+    socket.off("message", captureEarly);
+    earlyMessages.length = 0;
+    releaseAuth();
+    try {
+      socket.close(code, reason);
+    } catch {
+      log.warn("socket_close_failed", { reason: "本机连接关闭尚未确认" });
+      try {
+        socket.terminate();
+      } catch {
+        log.warn("socket_terminate_failed", {
+          reason: "本机连接强制关闭尚未确认",
+        });
+      }
     }
-    /**
-     * 交给鉴权器的请求**要带真实的连接上下文**：ip 与 Origin 都是鉴权依据
-     * （local-trust 就认这两样）。以前这里只塞了 authorization，于是桌面形态永远判 null。
-     */
-    const authRequest = {
-      ip: request.ip,
-      headers: {
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-        ...(request.headers.origin ? { origin: request.headers.origin } : {}),
-      },
-    } as unknown as FastifyRequest;
+  };
+  socket.once("close", releaseAuth);
+  const auth = options.localAccess;
+  if (!auth) {
+    rejectConnection(4001, "本机连接凭据缺失");
+    return;
+  }
+  const authRequest = { ip: request.ip, headers: request.headers };
+  try {
     const user = await auth.authenticate(authRequest);
-    if (!user) {
-      log.warn("auth_rejected", { reason: "invalid_token" });
-      socket.close(4001, "Unauthorized");
+    if (!user?.accessClientId) {
+      rejectConnection(4001, "本机连接凭据已失效");
       return;
     }
     authenticatedUser = user;
-    log.info("connected", { userId: user.id });
-  } catch (err) {
-    log.warn("auth_error", {
-      error: err instanceof Error ? err.message : String(err),
+    if (!auth.onRevoked) {
+      rejectConnection(1011, "本机接入撤权通知不可用");
+      return;
+    }
+    // 注册前先订阅撤权再重验，不能将期间已撤销的身份加入连接索引。
+    unsubscribeRevoked = auth.onRevoked((clientId) => {
+      if (clientId !== authenticatedUser.accessClientId) return;
+      revoked = true;
+      rejectConnection(4001, "本机连接授权已撤销");
     });
-    socket.close(4001, "Unauthorized");
+    if (revoked) releaseAuth();
+    const current = await auth.authenticate(authRequest);
+    if (
+      revoked ||
+      !current ||
+      current.instanceId !== user.instanceId ||
+      current.accessClientId !== user.accessClientId
+    ) {
+      rejectConnection(4001, "本机连接授权已失效");
+      return;
+    }
+  } catch {
+    log.warn("auth_error", { reason: "本机接入校验暂不可用" });
+    rejectConnection(1011, "本机服务暂时不可用");
+    return;
+  }
+  if (socket.readyState !== 1) {
+    releaseAuth();
+    socket.off("message", captureEarly);
+    earlyMessages.length = 0;
     return;
   }
 
-  if (socket.readyState !== 1) return;
-
-  // Use client-provided connectionId for reconnect identity; fallback to server UUID
   const urlForParams = new URL(request.url, `http://${request.headers.host}`);
   const connectionId =
     urlForParams.searchParams.get("connectionId") || randomUUID();
-  connectionManager.register(connectionId, authenticatedUser.id, socket);
+  try {
+    connectionManager.register(
+      connectionId,
+      authenticatedUser.instanceId,
+      socket,
+      authenticatedUser.accessClientId,
+    );
+    removeRegistered = () => connectionManager.remove(connectionId, socket);
+  } catch (error) {
+    if (error instanceof ConnectionIdentityConflictError) {
+      rejectConnection(4001, error.message);
+    } else {
+      rejectConnection(1011, "本机连接注册失败");
+    }
+    return;
+  }
+  log.info("connected", { instanceId: authenticatedUser.instanceId });
 
-  // Heartbeat with pong timeout (spec §1.3: 60s no-pong → disconnect)
+  // 沿既有30s心跳/60s无pong门；每轮仅一个授权查询，不累积慢查询。
   let lastPong = Date.now();
-  socket.on("pong", () => {
+  const onPong = () => {
     lastPong = Date.now();
-  });
-
+  };
+  socket.on("pong", onPong);
+  let heartbeatPending = false;
   const pingInterval = setInterval(() => {
+    if (socket.readyState !== 1) return;
     if (Date.now() - lastPong > 60_000) {
-      log.warn("pong_timeout", { userId: authenticatedUser.id });
+      log.warn("pong_timeout", { instanceId: authenticatedUser.instanceId });
+      removeRegistered();
+      releaseAuth();
       socket.terminate();
       return;
     }
-    if (socket.readyState === 1) {
-      socket.ping();
-    }
+    if (heartbeatPending) return;
+    heartbeatPending = true;
+    void (async () => {
+      try {
+        const current = await auth.authenticate(authRequest);
+        if (socket.readyState !== 1) return;
+        if (
+          revoked ||
+          !current ||
+          current.instanceId !== authenticatedUser.instanceId ||
+          current.accessClientId !== authenticatedUser.accessClientId
+        ) {
+          rejectConnection(4001, "本机连接授权已失效");
+          return;
+        }
+        socket.ping();
+      } catch {
+        rejectConnection(1011, "本机服务暂时不可用");
+      } finally {
+        heartbeatPending = false;
+      }
+    })();
   }, 30_000);
 
   // terminal owner采用本次socket独立身份；重连复用的transport ID不能接管旧PTY。
   const terminalConnectionId = randomUUID();
-  const terminalOwner =
-    options.viewerService?.resolveWorkspace(authenticatedUser);
+  const terminalOwner = options.localInstance?.resolve(authenticatedUser);
   const sendToClient = (message: Record<string, unknown>) => {
     if (socket.readyState === 1) socket.send(JSON.stringify(message));
   };
@@ -252,13 +321,28 @@ async function authenticateAndBind(
     const workspace = await terminalOwner;
     if (workspace)
       await options.codeTerminal?.closeConnection(
-        workspace.id,
+        workspace.instanceId,
         terminalConnectionId,
         "终端连接断开",
       );
   };
 
-  const onMessage = (raw: Buffer | string) => {
+  const onMessage = async (raw: Buffer | string) => {
+    try {
+      const current = await options.localAccess?.authenticate(request);
+      if (
+        !current ||
+        current.instanceId !== authenticatedUser.instanceId ||
+        current.accessClientId !== authenticatedUser.accessClientId
+      ) {
+        socket.close(4001, "本机连接授权已失效");
+        return;
+      }
+    } catch {
+      socket.close(1011, "本机服务暂时不可用");
+      return;
+    }
+    if (socket.readyState !== 1) return;
     let parsed: unknown;
     try {
       parsed = JSON.parse(
@@ -303,12 +387,8 @@ async function authenticateAndBind(
 
       if (msg.action === "agent.run") {
         const p = msg.payload;
-        const runToken = p.accessToken ?? token;
         void handleRunCommand(
-          {
-            ...authenticatedUser,
-            accessToken: runToken,
-          },
+          authenticatedUser,
           connectionId,
           {
             sessionId: p.sessionId,
@@ -346,7 +426,7 @@ async function authenticateAndBind(
         });
       } else if (msg.action === "agent.cancel") {
         log.info("run_cancel", {
-          userId: authenticatedUser.id,
+          instanceId: authenticatedUser.instanceId,
           runId: msg.payload.runId,
         });
         const cancelResult = agentRuns.cancelRun(msg.payload.runId);
@@ -361,7 +441,7 @@ async function authenticateAndBind(
       } else if (msg.action === "canvas.resume") {
         const p = msg.payload;
         log.info("canvas_resume", {
-          userId: authenticatedUser.id,
+          instanceId: authenticatedUser.instanceId,
           canvasId: p.canvasId,
           lastSeq: p.lastSeq,
         });
@@ -435,13 +515,24 @@ async function authenticateAndBind(
     }
   };
 
-  socket.on("message", onMessage);
+  let messageQueue = Promise.resolve();
+  const enqueueMessage = (raw: Buffer | string) => {
+    messageQueue = messageQueue
+      .then(() => onMessage(raw))
+      .catch((error: unknown) => {
+        log.warn("message_failed", {
+          error: error instanceof Error ? error.message : "消息处理失败",
+        });
+        socket.close(1011, "本机消息处理失败");
+      });
+  };
+  socket.on("message", enqueueMessage);
   // 回放鉴权期间缓冲的早期消息（否则 open 后立即发送的命令会静默丢失）
   forwarding = true;
   socket.off("message", captureEarly);
   for (const raw of earlyMessages.splice(0)) {
     try {
-      onMessage(raw);
+      enqueueMessage(raw);
     } catch (error) {
       log.warn("early_message_replay_failed", {
         error: error instanceof Error ? error.message : String(error),
@@ -450,8 +541,13 @@ async function authenticateAndBind(
   }
 
   socket.on("close", () => {
-    log.info("disconnected", { userId: authenticatedUser.id, connectionId });
+    log.info("disconnected", {
+      instanceId: authenticatedUser.instanceId,
+      connectionId,
+    });
     clearInterval(pingInterval);
+    releaseAuth();
+    socket.off("pong", onPong);
     void closeTerminals().catch((error: unknown) =>
       log.warn("terminal_cleanup_unconfirmed", {
         error: error instanceof Error ? error.message : String(error),
@@ -462,8 +558,13 @@ async function authenticateAndBind(
   });
 
   socket.on("error", () => {
-    log.error("socket_error", { userId: authenticatedUser.id, connectionId });
+    log.error("socket_error", {
+      instanceId: authenticatedUser.instanceId,
+      connectionId,
+    });
     clearInterval(pingInterval);
+    releaseAuth();
+    socket.off("pong", onPong);
     connectionManager.remove(connectionId, socket);
     /**
      * 必须把 socket 也收掉，不能只注销注册。
@@ -483,74 +584,56 @@ async function authenticateAndBind(
 }
 
 async function handleRunCommand(
-  authenticatedUser: AuthenticatedUser,
+  actor: LocalActor,
   connectionId: string,
-  payload: Omit<RunCreateRequest, "accessToken">,
+  payload: RunCreateRequest,
+  agentRuns: AgentRunService,
+  connectionManager: ConnectionManager,
+  services: RegisterWsOptions,
+) {
+  if (!services.localInstance) throw new Error("本地实例准入服务未装配。");
+  const release = services.localInstance.beginAdmission();
+  try {
+    return await handleAdmittedRunCommand(
+      actor,
+      connectionId,
+      payload,
+      agentRuns,
+      connectionManager,
+      services,
+    );
+  } finally {
+    release();
+  }
+}
+
+async function handleAdmittedRunCommand(
+  authenticatedUser: LocalActor,
+  connectionId: string,
+  payload: RunCreateRequest,
   agentRuns: AgentRunService,
   connectionManager: ConnectionManager,
   services: RegisterWsOptions,
 ) {
   const log = createPipelineLogger("agent.run", {
-    userId: authenticatedUser.id,
+    instanceId: authenticatedUser.instanceId,
     sessionId: payload.sessionId,
   });
   log.info("started", { prompt: payload.prompt.slice(0, 80) });
 
-  // Code 模式会话供给（方案 A）：工作台用**客户端自造**的 sessionId 发起 run，库里
-  // 没有对应 chat_sessions 行——于是线程解析失败、助手消息无处落库（实测 0 行）。
-  // 这里按该 id 供给真实会话与线程（载体是工作区隐藏的「Code 工作台」项目/画布），
-  // 供给成功则下面的解析直接命中；失败不阻断 run（解析处仍有兜底），只记一条 warn。
-  // Design 模式不供给：其会话由画布页经 API 先建行，缺行属真错误，不该被掩盖。
-  // viewer 解析（工作区作用域）：模型默认值、执行模式持久化共用，只解析一次
-  const viewerPromise = (async () => {
-    if (!services.viewerService) return undefined;
-    try {
-      return await services.viewerService.ensureViewer(authenticatedUser);
-    } catch (error) {
-      log.warn("viewer_resolve_failed", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return undefined;
-    }
-  })();
-
-  // Resolve thread + model in parallel
-  const [sessionBinding, viewer, model] = await Promise.all([
-    (async (): Promise<SessionThreadBinding | undefined> => {
-      if (!services.threadService) return undefined;
-      try {
-        const sessionThread =
-          await services.threadService.resolveOwnedSessionThread(
-            authenticatedUser,
-            payload.sessionId,
-          );
-        return sessionThread;
-      } catch (error) {
-        log.warn("thread_resolve_failed", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return undefined;
-      }
-    })(),
-    viewerPromise,
-    (async (): Promise<string | undefined> => {
-      if (!services.settingsService) return undefined;
-      try {
-        const viewer = await viewerPromise;
-        if (!viewer) return undefined;
-        const settings = await services.settingsService.getWorkspaceSettings(
-          authenticatedUser,
-          viewer.workspace.id,
-        );
-        return settings.defaultModel;
-      } catch (error) {
-        log.warn("model_resolve_failed", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return undefined;
-      }
-    })(),
+  if (!services.localInstance) throw new Error("本地实例服务未装配。");
+  const viewer = await services.localInstance.resolve(authenticatedUser);
+  const [sessionBinding, settings] = await Promise.all([
+    services.threadService?.resolveOwnedSessionThread(
+      authenticatedUser,
+      payload.sessionId,
+    ),
+    services.settingsService?.getInstanceSettings(
+      authenticatedUser,
+      viewer.instanceId,
+    ),
   ]);
+  const model = settings?.defaultModel;
   const threadId = sessionBinding?.threadId;
   const codeMode = sessionBinding?.mode === "code" || payload.preset === "code";
   if (
@@ -619,7 +702,7 @@ async function handleRunCommand(
 
   // 执行模式（DEC-3）：WS 载荷声明 → 按真实 threadId 激活（写穿 chat_sessions）
   //（threadId 是服务端内部 ID，客户端拿不到，故不走 PUT /execution-modes/:threadId）
-  const modeScope = viewer ? { workspaceId: viewer.workspace.id } : undefined;
+  const modeScope = viewer ? { instanceId: viewer.instanceId } : undefined;
   // plan 批准门（机器可读）：线程在 plan 且消息本身就是批准短语时，本条消息起按
   // agent 执行——过去文字「批准」不解锁工具门，用户必须再手动切档（GUI 实测多绕一步）
   let effectiveMode = payload.executionMode;
@@ -701,8 +784,7 @@ async function handleRunCommand(
       runId: acceptedRunId,
       ...(eventSink ? { eventSink } : {}),
       ...(scopeHandle ? { scopeHandle } : {}),
-      accessToken: authenticatedUser.accessToken,
-      userId: authenticatedUser.id,
+      actor: authenticatedUser,
       ...(resolvedModel ? { model: resolvedModel } : {}),
       ...(sandboxScopeId ? { sandboxScopeId } : {}),
       ...(threadId ? { threadId } : {}),
@@ -761,7 +843,7 @@ async function handleRunCommand(
   const runSettings =
     viewer && services.settingsService
       ? await services.settingsService
-          .getWorkspaceSettings(authenticatedUser, viewer.workspace.id)
+          .getInstanceSettings(authenticatedUser, viewer.instanceId)
           .catch(() => undefined)
       : undefined;
   const maxAttempts = clampMaxRunRetries(

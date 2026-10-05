@@ -1,13 +1,15 @@
 import type { WorkDirectoryTarget } from "@kenfutwork/shared";
 import { resolveSandboxDir } from "../agent/sandbox-dir.js";
-import type { AuthenticatedUser } from "../features/auth/types.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CanvasRepository } from "../features/canvas/repository.js";
 import {
   ExecutionScopeError,
   type ExecutionScopeHandle,
   type ExecutionScopes,
 } from "../features/execution/scope-service.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../features/local-instance/types.js";
 import type { ProjectService } from "../features/projects/project-service.js";
 
 /**
@@ -21,25 +23,23 @@ import type { ProjectService } from "../features/projects/project-service.js";
  */
 export async function resolveSandboxForCanvas(
   deps: {
-    viewerService: ViewerService;
+    localInstance: LocalInstanceService;
     canvasRepository: CanvasRepository;
     projects: Pick<ProjectService, "getProject">;
     sandboxRoot?: string | undefined;
     canvasWorkDirs?: Record<string, string> | undefined;
     /** 项目绑定的本机工作目录（`projects.work_dir`）；界面绑定优先于环境变量映射。 */
     projectWorkDirLoader?:
-      | ((canvasId: string) => Promise<string | null>)
+      | ((instanceId: string, canvasId: string) => Promise<string | null>)
       | undefined;
   },
-  user: AuthenticatedUser,
+  user: LocalActor,
   canvasId: string,
 ): Promise<string | null> {
-  const workspace = await deps.viewerService
-    .resolveWorkspace(user)
-    .catch(() => null);
+  const workspace = await deps.localInstance.resolve(user).catch(() => null);
   if (!workspace) return null;
   const canvas = await deps.canvasRepository
-    .findById(workspace.id, canvasId)
+    .findById(workspace.instanceId, canvasId)
     .catch(() => null);
   if (!canvas) return null;
   const project = await deps.projects.getProject(user, canvas.project_id);
@@ -50,7 +50,9 @@ export async function resolveSandboxForCanvas(
       400,
     );
   const boundWorkDir = deps.projectWorkDirLoader
-    ? await deps.projectWorkDirLoader(canvasId).catch(() => null)
+    ? await deps
+        .projectWorkDirLoader(user.instanceId, canvasId)
+        .catch(() => null)
     : null;
   return resolveSandboxDir(
     canvasId,
@@ -63,7 +65,7 @@ export async function resolveWorkDirectoryTarget(
   deps: Parameters<typeof resolveSandboxForCanvas>[0] & {
     executionScopes: Pick<ExecutionScopes, "openTask">;
   },
-  actor: AuthenticatedUser,
+  actor: LocalActor,
   target: WorkDirectoryTarget,
 ): Promise<{ rootDirectory: string; scope: ExecutionScopeHandle | null }> {
   if ("taskId" in target) {

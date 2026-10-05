@@ -8,12 +8,10 @@ describe("权限 HTTP 公共入口", () => {
     const app = Fastify();
     const permissions = createPermissionService();
     await registerPermissionRoutes(app, {
-      auth: {
+      localAccess: {
         authenticate: async () => ({
-          id: "user",
-          email: "user@example.test",
-          accessToken: "test",
-          userMetadata: {},
+          instanceId: "00000000-0000-4000-8000-000000000001",
+          accessClientId: "00000000-0000-4000-8000-000000000009",
         }),
       },
       permissions,
@@ -43,11 +41,10 @@ describe("权限 HTTP 公共入口", () => {
       expect(
         permissions.peek({
           preset: "code",
-          workspaceId: "workspace",
+          instanceId: "00000000-0000-4000-8000-000000000001",
           taskId: "task",
           runId: "run",
           toolCallId: "call",
-          userId: "user",
           agentId: "main",
           role: "main",
           scopeGeneration: 1,

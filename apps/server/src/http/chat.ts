@@ -8,17 +8,18 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
 import {
   type ChatService,
   ChatServiceError,
 } from "../features/chat/chat-service.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import { LocalInstanceError } from "../features/local-instance/service.js";
 import { isZodError } from "./zod-error.js";
 
 export async function registerChatRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     chatService: ChatService;
   },
 ) {
@@ -27,7 +28,7 @@ export async function registerChatRoutes(
     "/api/canvases/:canvasId/sessions",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
+        const user = await options.localAccess.authenticate(request);
         if (!user) return sendUnauthorized(reply);
 
         const sessions = await options.chatService.listSessions(
@@ -49,7 +50,7 @@ export async function registerChatRoutes(
     "/api/canvases/:canvasId/sessions",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
+        const user = await options.localAccess.authenticate(request);
         if (!user) return sendUnauthorized(reply);
 
         const body = request.body as { title?: string } | undefined;
@@ -73,7 +74,7 @@ export async function registerChatRoutes(
     "/api/sessions/:sessionId",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
+        const user = await options.localAccess.authenticate(request);
         if (!user) return sendUnauthorized(reply);
 
         const body = request.body as { title?: string } | undefined;
@@ -97,7 +98,7 @@ export async function registerChatRoutes(
     "/api/sessions/:sessionId",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
+        const user = await options.localAccess.authenticate(request);
         if (!user) return sendUnauthorized(reply);
 
         await options.chatService.deleteSession(user, request.params.sessionId);
@@ -114,7 +115,7 @@ export async function registerChatRoutes(
     "/api/sessions/:sessionId/messages",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
+        const user = await options.localAccess.authenticate(request);
         if (!user) return sendUnauthorized(reply);
 
         const messages = await options.chatService.listMessages(
@@ -145,7 +146,7 @@ export async function registerChatRoutes(
     { bodyLimit: 10 * 1024 * 1024 }, // 10 MB — messages may include base64 image data from canvas selections
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
+        const user = await options.localAccess.authenticate(request);
         if (!user) return sendUnauthorized(reply);
 
         const input = chatMessageCreateRequestSchema.parse(request.body);
@@ -182,14 +183,17 @@ function sendUnauthorized(reply: FastifyReply) {
     unauthenticatedErrorResponseSchema.parse({
       error: {
         code: "unauthorized",
-        message: "Missing or invalid bearer token.",
+        message: "缺少或无效的本机接入凭据。",
       },
     }),
   );
 }
 
 function sendChatError(error: unknown, reply: FastifyReply) {
-  if (error instanceof ChatServiceError) {
+  if (
+    error instanceof ChatServiceError ||
+    error instanceof LocalInstanceError
+  ) {
     return reply.code(error.statusCode).send(
       applicationErrorResponseSchema.parse({
         error: {

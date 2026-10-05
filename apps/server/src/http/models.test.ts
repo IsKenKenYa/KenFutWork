@@ -2,19 +2,18 @@ import type { ModelCatalogEntry } from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ServerEnv } from "../config/env.js";
-import type { RequestAuthenticator } from "../features/auth/types.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import type { LocalActor } from "../features/local-instance/types.js";
 import { registerModelRoutes } from "./models.js";
 
-const user = {
-  accessToken: "token",
-  email: "u@example.com",
-  id: "user-1",
-  userMetadata: {},
+const actor: LocalActor = {
+  instanceId: "00000000-0000-4000-8000-000000000001",
+  accessClientId: "00000000-0000-4000-8000-000000000009",
 };
 
-const auth = {
-  authenticate: async () => user,
-} as unknown as RequestAuthenticator;
+const localAccess: LocalAccessVerifier = {
+  authenticate: async () => actor,
+};
 
 function entry(overrides: Partial<ModelCatalogEntry>): ModelCatalogEntry {
   return {
@@ -26,7 +25,7 @@ function entry(overrides: Partial<ModelCatalogEntry>): ModelCatalogEntry {
       instanceId: "11111111-1111-1111-1111-111111111111",
       name: "我的网关",
       protocol: "openai-compatible",
-      scope: "workspace",
+      scope: "local",
     },
     ...overrides,
   };
@@ -36,7 +35,7 @@ async function buildApp(catalogEntries: ModelCatalogEntry[]) {
   const app = Fastify();
   await app.register(registerModelRoutes, {
     env: {} as ServerEnv,
-    auth,
+    localAccess,
     modelCatalog: {
       describeInstanceModels: () => catalogEntries,
       listCatalog: async () => catalogEntries,

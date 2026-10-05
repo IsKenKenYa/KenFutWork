@@ -1,13 +1,13 @@
 import type { CodeExecutionScope } from "@kenfutwork/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RequestAuthenticator } from "../features/auth/types.js";
 import {
   type CheckpointService,
   CodeCheckpointError,
 } from "../features/checkpoints/checkpoint-service.js";
 import type { CheckpointRow } from "../features/checkpoints/repository.js";
 import type { ExecutionScopeHandle } from "../features/execution/scope-service.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import { registerCheckpointsRoutes } from "./checkpoints.js";
 
 const actor = {
@@ -17,7 +17,7 @@ const actor = {
   userMetadata: {},
 };
 const identity: CodeExecutionScope = {
-  workspaceId: "workspace",
+  instanceId: "workspace",
   projectId: "project",
   taskId: "task",
   generation: 1,
@@ -83,9 +83,9 @@ async function appWith(
   };
   const openTask = vi.fn(async () => scope);
   await registerCheckpointsRoutes(app, {
-    auth: {
+    localAccess: {
       authenticate: async () => (options.unauthorized ? null : actor),
-    } as RequestAuthenticator,
+    } as LocalAccessVerifier,
     executionScopes: { openTask },
     checkpointsService: service,
   });
@@ -128,7 +128,7 @@ describe("Task checkpoint HTTP", () => {
       taskId: "task",
       projectId: "project",
     });
-    expect(response.json().checkpoints[0]).not.toHaveProperty("workspaceId");
+    expect(response.json().checkpoints[0]).not.toHaveProperty("instanceId");
     expect(response.json().checkpoints[0]).not.toHaveProperty("accessToken");
   });
   it("diff/files/preview都先打开同Task；preview透传文件范围和版本", async () => {

@@ -13,15 +13,13 @@ import {
   workDirectoryTargetSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-
-import type { AdminService } from "../features/admin/admin-service.js";
-import type {
-  AuthenticatedUser,
-  RequestAuthenticator,
-} from "../features/auth/types.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CanvasRepository } from "../features/canvas/repository.js";
 import type { ExecutionScopes } from "../features/execution/scope-service.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../features/local-instance/types.js";
 import { createScopedBundleSource } from "../features/plugins/bundle-source.js";
 import type { PluginRegistryService } from "../features/plugins/plugin-registry-service.js";
 import { PluginRegistryError } from "../features/plugins/plugin-registry-service.js";
@@ -42,26 +40,25 @@ import { resolveWorkDirectoryTarget } from "./sandbox-scope.js";
  */
 
 export interface PluginRoutesDeps {
-  auth: RequestAuthenticator;
-  admin: AdminService;
+  localAccess: LocalAccessVerifier;
   registry: PluginRegistryService;
   /** 「从工作目录安装」需要：画布归属校验 + 沙箱目录解析（与技能/agent 同一处）。 */
   canvasRepository: CanvasRepository;
   projects: Pick<ProjectService, "getProject">;
   executionScopes: Pick<ExecutionScopes, "openTask">;
-  viewerService: ViewerService;
+  localInstance: LocalInstanceService;
   sandboxRoot?: string | undefined;
   canvasWorkDirs?: Record<string, string> | undefined;
   /** 项目绑定的本机工作目录（`projects.work_dir`）；界面绑定优先于环境变量映射。 */
   projectWorkDirLoader?:
-    | ((canvasId: string) => Promise<string | null>)
+    | ((instanceId: string, canvasId: string) => Promise<string | null>)
     | undefined;
 }
 
 function sendUnauthenticated(reply: FastifyReply) {
   return reply.code(401).send(
     unauthenticatedErrorResponseSchema.parse({
-      error: { code: "unauthorized", message: "请先登录。" },
+      error: { code: "unauthorized", message: "请从桌面重新建立本机连接。" },
     }),
   );
 }
@@ -72,13 +69,13 @@ function sendUnauthenticated(reply: FastifyReply) {
  * 解析失败（例如身份已建但个人工作区缺失）**不在这里 500**：公共面板路由本就没有身份，
  * 而插件真的读写存储时，存储层会因缺工作区 fail loud——报错点离出错点更近，更好排查。
  */
-async function resolveWorkspaceId(
-  viewerService: ViewerService,
-  user: AuthenticatedUser,
+async function resolveId(
+  localInstance: LocalInstanceService,
+  user: LocalActor,
 ): Promise<string | undefined> {
   try {
-    const workspace = await viewerService.resolveWorkspace(user);
-    return workspace.id;
+    const workspace = await localInstance.resolve(user);
+    return workspace.instanceId;
   } catch {
     return undefined;
   }
@@ -105,34 +102,28 @@ export async function registerPluginRoutes(
   app: FastifyInstance,
   options: PluginRoutesDeps,
 ) {
-  /** 登录 + 管理员双重门（变更类端点用）。 */
-  const requireAdmin = async (
-    request: Parameters<RequestAuthenticator["authenticate"]>[0],
+  /** 本机接入验证（变更类端点用）。 */
+  const requireAccess = async (
+    request: Parameters<LocalAccessVerifier["authenticate"]>[0],
     reply: FastifyReply,
   ): Promise<boolean> => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) {
       void sendUnauthenticated(reply);
-      return false;
-    }
-    try {
-      await options.admin.requireAdmin(user);
-    } catch {
-      void sendError(reply, "forbidden", "需要管理员权限。", 403);
       return false;
     }
     return true;
   };
 
   app.get("/api/plugins", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthenticated(reply);
     return reply.code(200).send({ plugins: await options.registry.list() });
   });
 
   // 只校验不安装：让 UI 在用户点「安装」前就能看到门禁结论
   app.post("/api/plugins/inspect", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthenticated(reply);
 
     const parsed = pluginInspectRequestSchema.safeParse(request.body);
@@ -154,7 +145,7 @@ export async function registerPluginRoutes(
   });
 
   app.post("/api/plugins/install", async (request, reply) => {
-    if (!(await requireAdmin(request, reply))) return reply;
+    if (!(await requireAccess(request, reply))) return reply;
 
     const body = (request.body ?? {}) as Record<string, unknown>;
     const parsed =
@@ -188,7 +179,7 @@ export async function registerPluginRoutes(
   app.get<{ Querystring: { canvasId?: string; taskId?: string } }>(
     "/api/plugins/sandbox-bundles",
     async (request, reply) => {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
       const target = workDirectoryTargetSchema.safeParse(request.query);
       if (!target.success)
@@ -224,15 +215,15 @@ export async function registerPluginRoutes(
   );
 
   // POST /api/plugins/sandbox-install — 把工作目录里的 bundle 目录安装到本实例
-  // 与 /api/plugins/install 同一道 admin 门：插件会加载执行第三方代码（本机目录也不例外）
+  // 与 /api/plugins/install 同一本机接入门：插件会加载执行第三方代码（本机目录也不例外）
   app.post("/api/plugins/sandbox-install", async (request, reply) => {
-    if (!(await requireAdmin(request, reply))) return reply;
+    if (!(await requireAccess(request, reply))) return reply;
 
     const parsed = sandboxPluginInstallRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return sendError(reply, "invalid_request", "请求参数不合法。", 400);
     }
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthenticated(reply);
 
     let directory: Awaited<ReturnType<typeof resolveWorkDirectoryTarget>>;
@@ -302,9 +293,9 @@ export async function registerPluginRoutes(
     if (!pluginId) {
       return sendError(reply, "invalid_request", "缺少插件 id。", 404);
     }
-    const user = await options.auth.authenticate(request);
-    const workspaceId = user
-      ? await resolveWorkspaceId(options.viewerService, user)
+    const user = await options.localAccess.authenticate(request);
+    const instanceId = user
+      ? await resolveId(options.localInstance, user)
       : undefined;
     const result = await options.registry.dispatchRoute({
       pluginId,
@@ -314,7 +305,7 @@ export async function registerPluginRoutes(
       body: request.body,
       headers: request.headers as Record<string, string | undefined>,
       isAuthenticated: Boolean(user),
-      ...(workspaceId ? { workspaceId } : {}),
+      ...(instanceId ? { instanceId } : {}),
     });
     if (!result) {
       return sendError(
@@ -365,7 +356,7 @@ export async function registerPluginRoutes(
   app.post("/api/plugins/:pluginId/*", dispatchPluginRoute);
 
   app.post("/api/plugins/:id/uninstall", async (request, reply) => {
-    if (!(await requireAdmin(request, reply))) return reply;
+    if (!(await requireAccess(request, reply))) return reply;
     const { id } = request.params as { id: string };
     try {
       await options.registry.uninstall(id);
@@ -386,7 +377,7 @@ export async function registerPluginRoutes(
   });
 
   app.post("/api/plugins/:id/toggle", async (request, reply) => {
-    if (!(await requireAdmin(request, reply))) return reply;
+    if (!(await requireAccess(request, reply))) return reply;
     const { id } = request.params as { id: string };
     const body = request.body as { enabled?: unknown } | undefined;
     if (typeof body?.enabled !== "boolean") {
@@ -413,7 +404,7 @@ export async function registerPluginRoutes(
 
   // 导出产出 bundle 骨架（双声明，两端可装）；不落盘，由客户端决定保存位置
   app.post("/api/plugins/export", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthenticated(reply);
 
     const parsed = pluginExportRequestSchema.safeParse(request.body);

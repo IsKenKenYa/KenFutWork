@@ -12,10 +12,6 @@ import { loadServerEnv } from "../config/env.js";
 import { createExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import { createExecutionModeStore } from "../features/agent-modes/execution-mode-store.js";
 import { BoundaryModel } from "../features/agent-runs/test-harness.js";
-import { createLocalTrustAuthenticator } from "../features/auth/local-trust.js";
-import { createAccountRepository } from "../features/auth/repository.js";
-import { createViewerService } from "../features/bootstrap/ensure-user-foundation.js";
-import { createViewerRepository } from "../features/bootstrap/repository.js";
 import { createChatRepository } from "../features/chat/repository.js";
 import { createThreadService } from "../features/chat/thread-service.js";
 import { createProjectRepository } from "../features/projects/repository.js";
@@ -30,6 +26,7 @@ async function createModeRouteFixture(
   const persistence = createAgentPersistenceService({});
   const model = new BoundaryModel();
   const runtime = createAgentRunService({
+    localInstance: database.localInstance,
     env: loadServerEnv({
       databaseUrl: database.connectionString,
       agentBackendMode: "filesystem",
@@ -45,20 +42,12 @@ async function createModeRouteFixture(
     await database.close();
   };
   try {
-    const auth = createLocalTrustAuthenticator({
-      accounts: createAccountRepository(database.persistence),
-    });
-    const actor = await auth.authenticate({ headers: {}, ip: "127.0.0.1" });
-    if (!actor) throw new Error("隔离HTTP认证未创建本机账号");
-    const viewer = createViewerService({
-      repository: createViewerRepository(database.persistence),
-    });
-    const { workspace } = await viewer.ensureViewer(actor);
+    const { localAccess, localInstance, actor, instanceId } = database;
     const created = await createProjectRepository(
       database.persistence,
     ).createProject({
-      workspaceId: workspace.id,
-      userId: actor.id,
+      instanceId,
+      createdByClientId: actor.accessClientId,
       kind: "design",
       name: "HTTP执行模式写穿回归",
       slug: `http-mode-${randomUUID()}`,
@@ -68,13 +57,13 @@ async function createModeRouteFixture(
     if (!created.canvas) throw new Error("正式Design项目未创建主画布");
     const chat = createChatRepository(database.persistence);
     const threadId = `http-mode-${randomUUID()}`;
-    const session = await chat.createSession(workspace.id, {
+    const session = await chat.createSession(instanceId, {
       canvasId: created.canvas.id,
-      userId: actor.id,
+      createdByClientId: actor.accessClientId,
       threadId,
     });
     if (!session) throw new Error("正式Design会话未创建");
-    const modeScope = { workspaceId: workspace.id };
+    const modeScope = { instanceId };
     const createModes = () =>
       createExecutionModeService({
         store: createExecutionModeStore(database.persistence),
@@ -87,16 +76,17 @@ async function createModeRouteFixture(
     );
     const modes = options.cold ? createModes() : initialModes;
     await registerRunRoutes(app, runtime, {
-      auth,
-      viewerService: viewer,
+      localAccess,
+      localInstance,
       threadService: createThreadService({
         repository: chat,
-        viewerService: viewer,
+        localInstance,
       }),
       agentModes: modes,
     });
     return {
       app,
+      headers: { authorization: `Bearer ${database.desktopToken}` },
       database,
       runtime,
       model,
@@ -138,7 +128,7 @@ describe.skipIf(process.env.KENFUTWORK_RUN_MODE_TEST_PG !== "1")(
         const response = await f.app.inject({
           method: "POST",
           url: "/api/agent/runs",
-          headers: { authorization: "Bearer integration-only" },
+          headers: f.headers,
           payload: f.payload,
         });
         if (response.statusCode === 202)
@@ -181,7 +171,7 @@ describe.skipIf(process.env.KENFUTWORK_RUN_MODE_TEST_PG !== "1")(
         const response = await f.app.inject({
           method: "POST",
           url: "/api/agent/runs",
-          headers: { authorization: "Bearer integration-only" },
+          headers: f.headers,
           payload: { ...f.payload, executionMode: undefined },
         });
         if (response.statusCode === 202)

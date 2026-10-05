@@ -1,85 +1,165 @@
-import { workspaceSettingsUpdateRequestSchema } from "@kenfutwork/shared";
+import {
+  instanceSettingsSchema,
+  instanceSettingsUpdateRequestSchema,
+} from "@kenfutwork/shared";
 import Fastify from "fastify";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+import { createLocalInstanceService } from "../features/local-instance/service.js";
+import type { LocalActor } from "../features/local-instance/types.js";
+import {
+  createPersistenceFromRunner,
+  type PostgresQueryRunner,
+} from "../features/persistence/providers/postgres.js";
+import { createSettingsRepository } from "../features/settings/repository.js";
+import { createSettingsService } from "../features/settings/settings-service.js";
 import { registerSettingsRoutes } from "./settings.js";
 
-/**
- * `PUT /api/workspace/settings` 是**部分更新**——这条口径在本轮真机上又被打破过一次：
- * `workspaceSettingsSchema.partial()` 会**保留字段上的 `.default(...)`**，于是只送一个键的
- * payload 里会多出一堆默认值（`codeIndexEnabled: false` / `terminalShell: "auto"` /
- * `userRules: ""` …），服务层逐列写下去就把**用户没碰过的设置全部重置**了。
- *
- * 界面上的表现极具迷惑性：改一个索引开关，另一个索引开关自己关了、终端 shell 回到 auto、
- * 「规则与记忆」里的用户规则被清空——而且每一步都「保存成功」。
- *
- * 所以这里锁的是**路由交给服务层的那份 patch**：必须只含客户端真的送来的键。
- */
-const FULL_SETTINGS = {
+const INSTANCE_ID = "11111111-1111-4111-8111-111111111111";
+const ACTOR: LocalActor = {
+  instanceId: INSTANCE_ID,
+  accessClientId: "desktop",
+};
+const FULL_SETTINGS = instanceSettingsSchema.parse({
   defaultModel: "glm-5.3-flash",
-  terminalShell: "git-bash" as const,
+  terminalShell: "git-bash",
   codeIndexEnabled: true,
   codeIndexAutoNewFolder: true,
   userRules: "永远用中文回答",
   ruleEntries: ["不要动 .env"],
   agentMaxRetries: 10,
-};
+});
 
+/** 真正的服务/仓储由可变 SQL 夹具支撑，验证 PATCH 后 GET 读到的实际设置。 */
 function buildRouteApp() {
-  let received: unknown = null;
-  const app = Fastify();
-  registerSettingsRoutes(app, {
-    auth: {
-      authenticate: async () => ({
-        accessToken: "tok",
-        email: "u@example.com",
-        id: "user-1",
-        userMetadata: {},
-      }),
-      resolveUser: async () => null,
-    } as never,
-    viewerService: {
-      ensureViewer: async () => ({ workspace: { id: "ws-1" } }),
-    } as never,
-    settingsService: {
-      getWorkspaceSettings: async () => FULL_SETTINGS,
-      updateWorkspaceSettings: async (
-        _user: unknown,
-        _workspaceId: string,
-        patch: unknown,
-      ) => {
-        received = patch;
-        return FULL_SETTINGS;
-      },
-    } as never,
+  const stored: Record<string, unknown> = {
+    default_model: FULL_SETTINGS.defaultModel,
+    terminal_shell: FULL_SETTINGS.terminalShell,
+    code_index_enabled: FULL_SETTINGS.codeIndexEnabled,
+    code_index_auto_new_folder: FULL_SETTINGS.codeIndexAutoNewFolder,
+    user_rules: FULL_SETTINGS.userRules,
+    rule_entries: FULL_SETTINGS.ruleEntries,
+    agent_max_retries: FULL_SETTINGS.agentMaxRetries,
+    runtime_governance: {},
+  };
+  const writes: Array<{ sql: string; values: unknown[] }> = [];
+  const query: PostgresQueryRunner["query"] = async (sql, values) => {
+    if (sql.trimStart().startsWith("insert")) {
+      const column = sql.match(/\(instance_id,\s*([a-z_]+)\)/)?.[1];
+      if (!column || values.at(-1) !== INSTANCE_ID)
+        throw new Error("设置写入未绑定真实实例。");
+      writes.push({ sql, values });
+      const value = sql.includes("$1::jsonb")
+        ? JSON.parse(String(values[0]))
+        : values[0];
+      if (column === "runtime_governance") {
+        stored[column] = { ...Object(stored[column]), ...value };
+      } else stored[column] = value;
+    }
+    return {
+      rowCount: 1,
+      rows: values.at(-1) === INSTANCE_ID ? [{ ...stored }] : [],
+    };
+  };
+  const runner: PostgresQueryRunner = {
+    query,
+    acquire: async () => ({ query, release() {} }),
+    acquireSession: async () => {
+      throw new Error("设置夹具不建立任务宿主会话。");
+    },
+    end: async () => {},
+  };
+  const localInstance = createLocalInstanceService({
+    repository: { ensure: async () => INSTANCE_ID },
+    dataDir: "/tmp/settings-http-test",
   });
-  return { app, received: () => received };
+  const service = createSettingsService({
+    repository: createSettingsRepository(createPersistenceFromRunner(runner)),
+    localInstance,
+  });
+  const update = vi.spyOn(service, "updateInstanceSettings");
+  let actor: LocalActor | null = ACTOR;
+  const validateSpecifier = vi.fn(
+    async (_actor: LocalActor, specifier: string) =>
+      specifier === "glm-5.3-flash" || specifier === "inst-1:glm-5.3-flash"
+        ? { ok: true as const }
+        : { ok: false as const, message: "模型不在当前本地实例目录。" },
+  );
+  const app = Fastify();
+  void registerSettingsRoutes(app, {
+    localAccess: { authenticate: async () => actor },
+    localInstance,
+    settingsService: service,
+    modelCatalog: { validateSpecifier },
+  });
+  return {
+    app,
+    update,
+    writes,
+    validateSpecifier,
+    setActor: (value: LocalActor | null) => {
+      actor = value;
+    },
+  };
 }
 
-describe("PUT /api/workspace/settings（部分更新）", () => {
-  it("只送一个键：交给服务层的 patch 也只有这一个键（不夹带默认值）", async () => {
-    const { app, received } = buildRouteApp();
+describe("GET/PATCH /api/instance/settings", () => {
+  it("只送一个键只改该键，随后 GET 保留终端、规则及其他开关", async () => {
+    const { app, update } = buildRouteApp();
     try {
       const response = await app.inject({
-        method: "PUT",
-        url: "/api/workspace/settings",
+        method: "PATCH",
+        url: "/api/instance/settings",
         payload: { codeIndexAutoNewFolder: false },
       });
       expect(response.statusCode).toBe(200);
-      expect(received()).toEqual({ codeIndexAutoNewFolder: false });
+      expect(update.mock.calls[0]).toEqual([
+        ACTOR,
+        INSTANCE_ID,
+        { codeIndexAutoNewFolder: false },
+      ]);
+      const read = await app.inject({
+        method: "GET",
+        url: "/api/instance/settings",
+      });
+      expect(read.statusCode).toBe(200);
+      expect(read.json().settings).toEqual({
+        ...FULL_SETTINGS,
+        codeIndexAutoNewFolder: false,
+      });
     } finally {
       await app.close();
     }
   });
 
-  it("送模型与重试上限：同样不夹带其它设置（用户规则/终端/索引开关都不能被重置）", async () => {
-    const { app, received } = buildRouteApp();
+  it("模型与重试上限真实保存，不夹带默认值；空 PATCH 不写任何列", async () => {
+    const { app, update, writes, validateSpecifier } = buildRouteApp();
     try {
-      await app.inject({
-        method: "PUT",
-        url: "/api/workspace/settings",
+      const response = await app.inject({
+        method: "PATCH",
+        url: "/api/instance/settings",
         payload: { defaultModel: "inst-1:glm-5.3-flash", agentMaxRetries: 3 },
       });
-      expect(received()).toEqual({
+      expect(response.statusCode).toBe(200);
+      expect(update.mock.calls[0]?.[2]).toEqual({
+        defaultModel: "inst-1:glm-5.3-flash",
+        agentMaxRetries: 3,
+      });
+      expect(validateSpecifier).toHaveBeenCalledWith(
+        ACTOR,
+        "inst-1:glm-5.3-flash",
+      );
+      const previousWrites = writes.length;
+      const empty = await app.inject({
+        method: "PATCH",
+        url: "/api/instance/settings",
+        payload: {},
+      });
+      expect(empty.statusCode).toBe(200);
+      expect(update.mock.calls.at(-1)?.[2]).toEqual({});
+      expect(writes).toHaveLength(previousWrites);
+      expect(empty.json().settings).toEqual({
+        ...FULL_SETTINGS,
         defaultModel: "inst-1:glm-5.3-flash",
         agentMaxRetries: 3,
       });
@@ -88,43 +168,131 @@ describe("PUT /api/workspace/settings（部分更新）", () => {
     }
   });
 
-  it("空对象：patch 也是空的（服务层一条都不写）", async () => {
-    const { app, received } = buildRouteApp();
+  it("body 中的实例或账户归属不能替换真实调用上下文", async () => {
+    const { app, update, writes } = buildRouteApp();
     try {
-      await app.inject({
-        method: "PUT",
-        url: "/api/workspace/settings",
-        payload: {},
+      const response = await app.inject({
+        method: "PATCH",
+        url: "/api/instance/settings",
+        payload: {
+          instanceId: "foreign",
+          workspaceId: "foreign",
+          userId: "foreign",
+          codeIndexEnabled: false,
+        },
       });
-      expect(received()).toEqual({});
+      expect(response.statusCode).toBe(200);
+      expect(update.mock.calls[0]).toEqual([
+        ACTOR,
+        INSTANCE_ID,
+        { codeIndexEnabled: false },
+      ]);
+      expect(writes.every((write) => write.values.at(-1) === INSTANCE_ID)).toBe(
+        true,
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("缺失接入凭据与伪造实例拒绝，不能写入或观察模型目录", async () => {
+    const { app, setActor, update, validateSpecifier } = buildRouteApp();
+    try {
+      setActor(null);
+      expect(
+        (await app.inject({ method: "GET", url: "/api/instance/settings" }))
+          .statusCode,
+      ).toBe(401);
+      expect(
+        (
+          await app.inject({
+            method: "PATCH",
+            url: "/api/instance/settings",
+            payload: { defaultModel: "glm-5.3-flash" },
+          })
+        ).statusCode,
+      ).toBe(401);
+      setActor({ instanceId: "foreign", accessClientId: "desktop" });
+      const response = await app.inject({
+        method: "PATCH",
+        url: "/api/instance/settings",
+        payload: { defaultModel: "glm-5.3-flash" },
+      });
+      expect(response.statusCode).toBe(403);
+      expect(response.json().error.code).toBe("instance_forbidden");
+      expect(update).not.toHaveBeenCalled();
+      expect(validateSpecifier).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("不存在的默认模型及非法设置返回 400，真实设置不变", async () => {
+    const { app, update, writes } = buildRouteApp();
+    try {
+      const invalidModel = await app.inject({
+        method: "PATCH",
+        url: "/api/instance/settings",
+        payload: { defaultModel: "missing" },
+      });
+      expect(invalidModel.statusCode).toBe(400);
+      expect(invalidModel.json().error.code).toBe("invalid_model");
+      const invalidSettings = await app.inject({
+        method: "PATCH",
+        url: "/api/instance/settings",
+        payload: { terminalShell: "invalid" },
+      });
+      expect(invalidSettings.statusCode).toBe(400);
+      expect(update).not.toHaveBeenCalled();
+      expect(writes).toEqual([]);
+      expect(
+        (
+          await app.inject({ method: "GET", url: "/api/instance/settings" })
+        ).json().settings,
+      ).toEqual(FULL_SETTINGS);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("旧 URI 和新 URI 的 PUT 已退役", async () => {
+    const { app } = buildRouteApp();
+    try {
+      expect(
+        (await app.inject({ method: "GET", url: "/api/workspace/settings" }))
+          .statusCode,
+      ).toBe(404);
+      expect(
+        (
+          await app.inject({
+            method: "PUT",
+            url: "/api/instance/settings",
+            payload: {},
+          })
+        ).statusCode,
+      ).toBe(404);
     } finally {
       await app.close();
     }
   });
 });
 
-describe("workspaceSettingsUpdateRequestSchema（默认值泄漏的根因）", () => {
-  it("缺省的键不进结果——`.partial()` 之外的 `.default(...)` 必须被剥掉", () => {
-    const parsed = workspaceSettingsUpdateRequestSchema.parse({
+describe("实例设置 PATCH 契约", () => {
+  it("省略字段不夹带 schema 默认值，校验仍生效", () => {
+    const parsed = instanceSettingsUpdateRequestSchema.parse({
       codeIndexAutoNewFolder: false,
     });
-    expect(Object.keys(parsed)).toEqual(["codeIndexAutoNewFolder"]);
-    expect(parsed).not.toHaveProperty("codeIndexEnabled");
-    expect(parsed).not.toHaveProperty("terminalShell");
-    expect(parsed).not.toHaveProperty("userRules");
-  });
-
-  it("校验规则还在（不是把 schema 放松成 any）", () => {
+    expect(parsed).toEqual({ codeIndexAutoNewFolder: false });
     expect(
-      workspaceSettingsUpdateRequestSchema.safeParse({ agentMaxRetries: 999 })
+      instanceSettingsUpdateRequestSchema.safeParse({ agentMaxRetries: 999 })
         .success,
     ).toBe(false);
     expect(
-      workspaceSettingsUpdateRequestSchema.safeParse({ terminalShell: "nope" })
+      instanceSettingsUpdateRequestSchema.safeParse({ terminalShell: "nope" })
         .success,
     ).toBe(false);
     expect(
-      workspaceSettingsUpdateRequestSchema.safeParse({ ruleEntries: [""] })
+      instanceSettingsUpdateRequestSchema.safeParse({ ruleEntries: [""] })
         .success,
     ).toBe(false);
   });
