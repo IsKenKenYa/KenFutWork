@@ -1134,6 +1134,13 @@
       "inExamples": false,
       "status": "active",
       "note": "Computer Use：输入事件间隔毫秒，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_CONFIG_DIR": {
+      "surface": "server",
+      "readers": ["apps/server/src/desktop/paths.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "系统配置目录绝对路径；数据位置指针留在此处，不随应用数据根移动。"
     }
   },
   "legacy": {
