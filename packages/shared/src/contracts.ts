@@ -181,7 +181,8 @@ export const terminalShellSchema = z.enum([
 export type TerminalShellId = z.infer<typeof terminalShellSchema>;
 
 export const instanceSettingsSchema = z.object({
-  defaultModel: z.string().min(1),
+  /** 未配置默认模型时为真实空值，局部设置保存不要求先选模型。 */
+  defaultModel: z.string(),
   /** 终端默认 shell（用户口径：「可以在设置里配置默认的」）。 */
   terminalShell: terminalShellSchema.default("auto"),
   /**

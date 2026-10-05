@@ -552,7 +552,11 @@ function withoutDefaults<T extends z.ZodRawShape>(
  * 让键本身可缺。少任何一个，客户端的单字段保存都会把其余设置重置成默认。
  */
 export const instanceSettingsUpdateRequestSchema = z
-  .object(withoutDefaults(instanceSettingsSchema.shape))
+  .object({
+    ...withoutDefaults(instanceSettingsSchema.shape),
+    // 响应允许未配置空值；显式选择默认模型仍必须提供非空标识。
+    defaultModel: z.string().min(1),
+  })
   .partial();
 
 export const modelListResponseSchema = z.object({
