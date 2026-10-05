@@ -17,6 +17,7 @@ import {
 import type { AgentRunService } from "../../agent/runtime.js";
 import { DEFAULT_SANDBOX_ROOT } from "../../agent/sandbox-dir.js";
 import type { ServerEnv } from "../../config/env.js";
+import type { ToolExecutionContext } from "../../kernel/types.js";
 import type { ModelInvocationSnapshot } from "../../providers/types.js";
 import type { AgentRunMetadataService } from "../agent-runs/agent-run-service.js";
 import type { BlobStore } from "../blob/types.js";
@@ -76,6 +77,7 @@ import {
 import { createCodeUiFileHistory } from "./file-history.js";
 import { CodeUiFileIndex, codeUiViewerRpc } from "./files.js";
 import { createCodeUiHistoryEdit } from "./history-edit.js";
+import { createCodeGuideInputs } from "./guide-input.js";
 import { createCodeUiFileWatchers } from "./host-file-watcher.js";
 import {
   type CodeUiHostGitRpc,
@@ -94,9 +96,14 @@ import {
   createCodeUiProviderSettingsRpc,
 } from "./provider-settings-rpc.js";
 import type { CodeInputSettlement } from "./queue-control.js";
-import { applyCodeQueueCommand, CODE_QUEUE_COMMANDS } from "./queue-control.js";
+import { applyCodeQueueCommand, CODE_QUEUE_COMMANDS, codeInputRouting } from "./queue-control.js";
 import { type CodeUiRepository, CodeUiRepositoryError } from "./repository.js";
 import { codeUiTaskMeta } from "./task-index.js";
+import type {
+  CodeUserInputService,
+  UserInputEvent,
+  UserInputResolutionResult,
+} from "./user-input-types.js";
 import {
   type CodeUiWorkspaceConfigRequest,
   type CodeUiWorkspaceConfigTarget,
@@ -111,6 +118,7 @@ export interface CodeUiServiceDeps {
   plugins?: PluginRegistryService;
   checkpoints?: CheckpointService;
   permissions?: PermissionService;
+  userInputs?: CodeUserInputService;
   terminals?: CodeTerminalService;
   blob?: BlobStore;
   attachmentRepository?: CodeAttachmentRepository;
@@ -146,6 +154,32 @@ function canonical(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
+function requireLiveUserInput(
+  root: NonNullable<Awaited<ReturnType<CodeUiRepository["find"]>>>,
+  event: ApprovalEvent | UserInputEvent,
+) {
+  const ownerId =
+    event.identity.agentId === "main" ? root.id : event.identity.agentId;
+  const owner = root.state?.snapshots.find(
+    (snapshot) => snapshot.sessionId === ownerId,
+  );
+  if (
+    root.deleted_at ||
+    root.archived ||
+    root.execution_state !== "ready" ||
+    Number(root.scope_generation) !== event.identity.scopeGeneration ||
+    Number(root.branch_generation) !== event.identity.branchGeneration ||
+    owner?.control.phase !== "running" ||
+    !owner.control.activeWorks.some(
+      (work) => work.foregroundExecutionId === event.identity.runId,
+    )
+  )
+    throw new CodeUiRepositoryError(
+      "command_conflict",
+      "提问所属运行或 Task 代际已失效",
+    );
+}
+
 function publishOnce(operation: () => Promise<void>): () => Promise<void> {
   let publication: Promise<void> | undefined;
   return () => (publication ??= operation());
@@ -167,6 +201,8 @@ export function codeUiCommandFingerprint(
 
 /** 服务定义的具体 Provider；原 GUI 仅调用该域提供的 RPC/会话消费接口。 */
 export class CodeUiService {
+  private readonly guideInputs: ReturnType<typeof createCodeGuideInputs>;
+  readonly userInputs: CodeUserInputService | undefined;
   private readonly connections = new CodeUiConnections();
   private readonly controllers = new Map<
     string,
@@ -196,6 +232,11 @@ export class CodeUiService {
     | ReturnType<typeof createCodeUiPluginsHost>
     | undefined;
   constructor(private readonly deps: CodeUiServiceDeps) {
+    this.guideInputs = createCodeGuideInputs({
+      repository: deps.repository,
+      refresh: (instanceId, path, projectId) => this.refreshTaskProjection(instanceId, path, projectId),
+    });
+    this.userInputs = deps.userInputs;
     this.inputOwner = {
       hostId: createHash("sha256")
         .update(resolve(deps.env.checkpointRoot ?? "data/checkpoints"))
@@ -557,9 +598,23 @@ export class CodeUiService {
   }
 
   async onApprovalEvent(event: ApprovalEvent): Promise<void> {
+    return this.onBoundInteractionEvent(event);
+  }
+
+  async onUserInputEvent(event: UserInputEvent): Promise<void> {
+    return this.onBoundInteractionEvent(event);
+  }
+
+  private async onBoundInteractionEvent(
+    event: ApprovalEvent | UserInputEvent,
+  ): Promise<void> {
     const { instanceId, taskId } = event.identity;
     const root = await this.deps.repository.find(instanceId, taskId);
-    if (!root?.state || root.deleted_at) return;
+    if (!root?.state || root.deleted_at) {
+      if (event.type !== "cancelled" && event.interaction.kind === "userInput")
+        throw new CodeUiRepositoryError("not_found", "提问所属 Task 已不存在");
+      return;
+    }
     // 请求必须属于尚有效的授权；cancel回执仍需清掉旧代际UI阻塞。
     if (
       event.type === "requested" &&
@@ -576,13 +631,18 @@ export class CodeUiService {
       instanceId,
       taskId,
       {
-        key: `approval:${event.interaction.interactionId}/${event.type}`,
+        key: `${event.interaction.kind === "permission" ? "approval" : "user-input"}:${event.interaction.interactionId}/${event.type}`,
         fingerprint: createHash("sha256")
           .update(canonical(event))
           .digest("hex"),
         event,
       },
       (current) => {
+        if (
+          event.interaction.kind === "userInput" &&
+          event.type !== "cancelled"
+        )
+          requireLiveUserInput(current, event);
         const snapshot = current.state!.snapshots.find(
           (entry) => entry.sessionId === current.id,
         )!;
@@ -592,7 +652,7 @@ export class CodeUiService {
           config: snapshot.config,
           state: current.state!,
         });
-        host.recordApprovalEvent(event);
+        host.recordInteractionEvent(event);
         return {
           state: host.exportState(),
           activeRunId: current.active_run_id,
@@ -1909,7 +1969,10 @@ export class CodeUiService {
         parsed.envelope.type === "compact"
       )
         return this.sendText(user, input.workspacePath, parsed.envelope);
-      if (parsed.envelope.type === "editUserQuery")
+      if (
+        parsed.envelope.type === "editUserQuery" ||
+        parsed.envelope.type === "retryTurn"
+      )
         return this.historyEdit.command(user, target, parsed.envelope);
       if (parsed.envelope.type === "applyFileRewind")
         return this.fileHistory.command(user, target, parsed.envelope);
@@ -1985,6 +2048,7 @@ export class CodeUiService {
             },
           };
         snapshot.config = { ...snapshot.config, followupMode: mode };
+        snapshot.inputRouting = codeInputRouting(snapshot);
         snapshot.seq += 1;
         snapshot.revision += 1;
         return {
@@ -2094,11 +2158,8 @@ export class CodeUiService {
     workspacePath: string,
     envelope: protocol.CommandEnvelope,
   ) {
-    if (!envelope.sessionId || !this.deps.permissions)
-      throw new CodeUiRepositoryError(
-        "not_found",
-        "审批入口不可用或缺少 Task 身份",
-      );
+    if (!envelope.sessionId)
+      throw new CodeUiRepositoryError("not_found", "交互命令缺少 Task 身份");
     const loaded = await this.loadConversation(user, envelope.sessionId);
     if (loaded.root.root_directory !== workspacePath)
       throw new CodeUiRepositoryError(
@@ -2110,23 +2171,26 @@ export class CodeUiService {
     );
     let resolution:
       | Awaited<ReturnType<PermissionService["resolve"]>>
+      | UserInputResolutionResult
       | undefined;
     const ack = await this.deps.repository.applyScopeCommand(
       loaded.instanceId,
       { ...envelope, sessionId: loaded.root.id },
       codeUiCommandFingerprint(envelope),
       async (root) => {
-        const pending = this.deps
-          .permissions!.listPending(loaded.instanceId, root.id)
-          .find(
-            (entry) =>
-              entry.interaction.interactionId === payload.interactionId,
-          );
+        const question = this.userInputs?.find(
+          loaded.instanceId,
+          root.id,
+          payload.interactionId,
+        );
+        const approval = this.deps.permissions?.find(
+          loaded.instanceId,
+          root.id,
+          payload.interactionId,
+        );
+        const pending = question ?? approval;
         if (!pending) {
-          resolution = {
-            status: "alreadyResolved",
-            reasonCode: "proto.alreadyResolved",
-          };
+          resolution = { status: "rejected", reasonCode: "not_found" };
           return;
         }
         const ownerSessionId =
@@ -2134,8 +2198,8 @@ export class CodeUiService {
             ? root.id
             : pending.identity.agentId;
         if (ownerSessionId !== loaded.entry.id)
-          throw new CodeUiRepositoryError("not_found", "审批不属于该会话");
-        resolution = await this.deps.permissions!.resolve({
+          throw new CodeUiRepositoryError("not_found", "交互不属于该会话");
+        const input = {
           interactionId: payload.interactionId,
           answer: payload.answer,
           binding: {
@@ -2145,7 +2209,10 @@ export class CodeUiService {
             scopeGeneration: Number(root.scope_generation),
             branchGeneration: Number(root.branch_generation),
           },
-        });
+        };
+        resolution = question
+          ? await this.userInputs!.resolve(input)
+          : await this.deps.permissions!.resolve(input);
       },
       (root) => ({
         state: root.state!,
@@ -2449,6 +2516,14 @@ export class CodeUiService {
     }
   }
 
+  consumeGuides(context: ToolExecutionContext) {
+    return this.guideInputs.consumeGuides(context);
+  }
+
+  hasPendingGuides(context: ToolExecutionContext) {
+    return this.guideInputs.hasPendingGuides(context);
+  }
+
   private async admitText(
     user: LocalActor,
     workspacePath: string,
@@ -2555,7 +2630,19 @@ export class CodeUiService {
             "command_conflict",
             "前台运行身份不可用，不能安全抢占。",
           );
-        const delivery =
+        const active = root.state?.inputs?.find(
+          (input) => input.runId === previous && input.status === "active",
+        );
+        const mode = payload.mode ?? current.config.mode;
+        const planEnabled = payload.planEnabled ?? current.config.planEnabled;
+        const requestedGuide = !compact && busy &&
+          (payload.requestedDelivery === "guide" ||
+            (payload.requestedDelivery === undefined && current.config.followupMode === "guide"));
+        const guide = requestedGuide && !!previous && active?.intent.kind === "sendText" &&
+          !codeInputs.length && canonical(selection) === canonical(active.intent.modelSelection) &&
+          canonical(modelInvocation) === canonical(active.modelInvocation) &&
+          mode === active.intent.mode && !!planEnabled === !!active.intent.planEnabled;
+        const delivery = guide ? "guide" :
           (!preempt && busy) ||
           payload.requestedDelivery === "queue" ||
           (compact &&
@@ -2610,17 +2697,17 @@ export class CodeUiService {
           },
           steer: {
             state:
-              payload.requestedDelivery === "guide"
+              guide ? "steering" : payload.requestedDelivery === "guide"
                 ? "fellBack"
                 : "notRequested",
-            ...(payload.requestedDelivery === "guide"
+            ...(payload.requestedDelivery === "guide" && !guide
               ? { reasonCode: "guard.steeringUnavailable" }
               : {}),
           },
           dispatch: {
             state: preempt
               ? "reserved"
-              : delivery === "queue"
+              : delivery === "queue" || delivery === "guide"
                 ? "queued"
                 : "admitted",
             ...(preempt ? { reservationId: runId } : {}),
@@ -2629,13 +2716,13 @@ export class CodeUiService {
         };
         const record: CodeAdmittedInput = {
           intent,
-          runId,
+          runId: guide ? previous! : runId,
           modelInvocation,
           scopeGeneration: Number(root.scope_generation),
           branchGeneration: Number(root.branch_generation),
           status: preempt
             ? "reserved"
-            : delivery === "queue"
+            : delivery === "queue" || delivery === "guide"
               ? "queued"
               : "active",
           ...(preempt
@@ -2658,7 +2745,7 @@ export class CodeUiService {
             revisionAtDecision: host.getSnapshot().revision,
             result: {
               type: "inputAccepted",
-              delivery,
+              delivery: delivery === "guide" ? "queue" : delivery,
               inputId: envelope.commandId,
             },
           },
@@ -3032,6 +3119,15 @@ export class CodeUiService {
           status: "canceled",
           completedAt: new Date().toISOString(),
         });
+        // accepted输入可能在真实派发前被撤权；原事件消费者同时结算输入与V4。
+        // 如果更新的Run已接管，consumer按runId忽略旧终态，不中断新运行。
+        await this.recordRunEvent(
+          user,
+          project,
+          sessionId,
+          { type: "run.canceled", runId, timestamp: new Date().toISOString() },
+          ++ordinal,
+        );
         return;
       }
       for await (const _event of this.deps.agentRuns.streamRun(runId)) {
@@ -3064,6 +3160,12 @@ export class CodeUiService {
         console.warn("[code-ui] 轮次文件恢复能力刷新失败：", error);
       }
       await this.drainQueuedInput(user, sessionId);
+      // 前台释放时公共Task还未完成；完成投影/用户队列调度后再唤醒持久后台通知。
+      await this.deps.taskWork
+        .notifyReady(user.instanceId, sessionId)
+        .catch((error: unknown) => {
+          console.warn("[code-ui] Run收尾后的后台通知 admission失败：", error);
+        });
     }
   }
 

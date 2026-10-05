@@ -646,6 +646,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
           previousThreadId: string;
           threadId: string;
           expectedGeneration: number;
+          sandboxMode?: CodeUiSessionRecord["sandbox_mode"];
         };
       },
       afterCommit?: (ack: protocol.CommandAck) => Promise<void>,
@@ -694,6 +695,23 @@ export function createCodeUiRepository(persistence: PersistenceService) {
                 "revision_conflict",
                 "原Task的上下文绑定已经改变",
               );
+            // native上下文与旧资源关闭已完成；ready与新thread/state/ACK必须同事务，
+            // 否则进程在发布后退出会留下无法重放收尾的revoking Task。
+            const ready = await scoped.execute(
+              "update public.code_ui_sessions set sandbox_mode=coalesce($2, sandbox_mode), execution_state='ready' where instance_id=:instance and root_session_id=$1 and scope_generation=$3 and execution_state='revoking' and deleted_at is null",
+              [
+                root.id,
+                binding.sandboxMode ?? null,
+                binding.expectedGeneration,
+              ],
+            );
+            if (ready < 1)
+              throw new CodeUiRepositoryError(
+                "revision_conflict",
+                "上下文分支就绪代际不匹配",
+              );
+            root.execution_state = "ready";
+            root.sandbox_mode = binding.sandboxMode ?? root.sandbox_mode;
           }
           await writeState(
             scoped,

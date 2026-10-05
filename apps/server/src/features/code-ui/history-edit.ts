@@ -81,6 +81,33 @@ function latestEditableInput(
   return null;
 }
 
+function latestRetryInput(
+  root: CodeUiSessionRecord,
+  snapshot: protocol.ConversationSnapshot,
+) {
+  if (
+    !latestEditableInput(root, snapshot) ||
+    snapshot.pendingInteractions.length
+  )
+    return null;
+  const assistant = [...snapshot.rows.window]
+    .reverse()
+    .find((row) => row.kind === "assistantText");
+  if (assistant?.kind !== "assistantText" || assistant.state !== "complete")
+    return null;
+  const header = snapshot.rows.window.find(
+    (row) => row.kind === "turnHeader" && row.turnId === assistant.turnId,
+  );
+  if (header?.kind !== "turnHeader" || header.state === "running") return null;
+  const row = [...snapshot.rows.window].reverse().find(
+    (row) =>
+      row.kind === "userInput" &&
+      row.origin === "realUser" &&
+      row.turnId === assistant.turnId,
+  );
+  return row?.kind === "userInput" ? { row, assistant } : null;
+}
+
 function validBoundary(
   loaded: Loaded,
   row: protocol.ConversationSnapshot["rows"]["window"][number],
@@ -147,6 +174,9 @@ function cutLatestTurn(root: CodeUiSessionRecord, turnId: string) {
 type EditPayload = ReturnType<
   typeof protocol.commandPayloadSchemas.editUserQuery.parse
 >;
+type RetryPayload = ReturnType<
+  typeof protocol.commandPayloadSchemas.retryTurn.parse
+>;
 type EditableRow = Extract<
   protocol.ConversationSnapshot["rows"]["window"][number],
   { kind: "userInput" }
@@ -176,11 +206,13 @@ type EditOperation = {
   actor: LocalActor;
   loaded: Loaded;
   envelope: protocol.CommandEnvelope;
-  payload: EditPayload;
   targetThreadId: string;
   progress: EditProgress;
   publication?: Promise<void>;
-};
+} & (
+  | { kind: "editUserQuery"; payload: EditPayload }
+  | { kind: "retryTurn"; payload: RetryPayload }
+);
 type EditSource = {
   row: EditableRow & { sourceCommandId: string };
   snapshot: protocol.ConversationSnapshot;
@@ -189,6 +221,7 @@ type EditSource = {
   model: ModelPlan;
   inputs: TrustedCodeInput[];
   previousThreadId: string;
+  canonical?: CodeAdmittedInput;
 };
 
 function requireState(root: CodeUiSessionRecord) {
@@ -226,16 +259,28 @@ async function createOperation(
       "not_found",
       "历史编辑不属于该Project与根Task固定目录",
     );
-  return {
+  const base = {
     actor,
     loaded,
     envelope,
-    payload: protocol.commandPayloadSchemas.editUserQuery.parse(
-      envelope.payload,
-    ),
     targetThreadId: deps.threads.createThreadId(),
-    progress: { phase: "preparing" },
+    progress: { phase: "preparing" as const },
   };
+  return envelope.type === "retryTurn"
+    ? {
+        ...base,
+        kind: "retryTurn",
+        payload: protocol.commandPayloadSchemas.retryTurn.parse(
+          envelope.payload,
+        ),
+      }
+    : {
+        ...base,
+        kind: "editUserQuery",
+        payload: protocol.commandPayloadSchemas.editUserQuery.parse(
+          envelope.payload,
+        ),
+      };
 }
 
 function rejectOperation(
@@ -269,7 +314,10 @@ function selectEditTarget(
     );
     return;
   }
-  if (payload.workspaceMode === "rewind") {
+  if (
+    operation.kind === "editUserQuery" &&
+    operation.payload.workspaceMode === "rewind"
+  ) {
     rejectOperation(
       operation,
       "guard.capabilityUnavailable",
@@ -277,16 +325,27 @@ function selectEditTarget(
     );
     return;
   }
-  const row = latestEditableInput(root, snapshot);
+  const retry =
+    operation.kind === "retryTurn" ? latestRetryInput(root, snapshot) : null;
+  const row =
+    operation.kind === "retryTurn"
+      ? retry?.row
+      : latestEditableInput(root, snapshot);
+  const target = operation.kind === "retryTurn" ? retry?.assistant : row;
   if (
     !row ||
-    row.rowId !== payload.target.rowId ||
-    row.entityId !== payload.target.entityId
+    !target ||
+    target.rowId !== payload.target.rowId ||
+    target.entityId !== payload.target.entityId
   ) {
     rejectOperation(
       operation,
-      "guard.editTargetUnavailable",
-      "请在根Task空闲且队列为空时编辑最新真实用户输入。",
+      operation.kind === "retryTurn"
+        ? "guard.retryTargetUnavailable"
+        : "guard.editTargetUnavailable",
+      operation.kind === "retryTurn"
+        ? "重试只接受根Task空闲时全时间线最新完整且有真实用户原因的回复。"
+        : "请在根Task空闲且队列为空时编辑最新真实用户输入。",
     );
     return;
   }
@@ -326,13 +385,45 @@ async function prepareEditSource(
     );
     return;
   }
-  const attachments = operation.payload.attachments ?? row.attachments ?? [];
-  if (!operation.payload.newText.trim() && !attachments.length) {
+  const canonical =
+    operation.kind === "retryTurn"
+      ? root.state?.inputs?.find(
+          (input) =>
+            input.runId === row.turnId &&
+            input.intent.sourceCommandId === row.sourceCommandId &&
+            input.intent.clientId === row.clientId,
+        )
+      : undefined;
+  if (
+    operation.kind === "retryTurn" &&
+    (!canonical?.intent.modelSelection || canonical.intent.kind !== "sendText")
+  ) {
+    rejectOperation(
+      operation,
+      "guard.contextUnavailable",
+      "原回复的canonical输入不可用，未更改Task或文件。",
+    );
+    return;
+  }
+  const attachments =
+    operation.kind === "retryTurn"
+      ? canonical!.intent.attachments
+      : (operation.payload.attachments ?? row.attachments ?? []);
+  const text =
+    operation.kind === "retryTurn"
+      ? canonical!.intent.text
+      : operation.payload.newText;
+  if (!text.trim() && !attachments.length) {
     rejectOperation(operation, "guard.emptyInput", "编辑内容不能为空。");
     return;
   }
   const [model, inputs, binding] = await Promise.all([
-    deps.model(operation.actor, snapshot.config.modelSelection),
+    canonical
+      ? Promise.resolve({
+          selection: canonical.intent.modelSelection!,
+          modelInvocation: structuredClone(canonical.modelInvocation),
+        })
+      : deps.model(operation.actor, snapshot.config.modelSelection),
     deps.inputs(operation.actor, root.id, attachments),
     deps.threads.resolveOwnedSessionThread(operation.actor, root.id),
   ]);
@@ -344,6 +435,7 @@ async function prepareEditSource(
     model,
     inputs,
     previousThreadId: binding.threadId,
+    ...(canonical ? { canonical: structuredClone(canonical) } : {}),
   };
 }
 
@@ -359,7 +451,8 @@ function createEditedInput(
     scopeGeneration: scope.describe().generation,
     branchGeneration: Number(root.branch_generation) + 1,
     status: "active",
-    editOf: {
+    historyOf: {
+      action: operation.kind,
       rootSourceCommandId:
         source.row.rootSourceCommandId ?? source.row.sourceCommandId,
       sourceRunId: source.row.turnId,
@@ -368,14 +461,18 @@ function createEditedInput(
       sourceCommandId: operation.envelope.commandId,
       queueItemId: randomUUID(),
       clientId: operation.envelope.clientId,
-      kind: "sendText",
-      text: operation.payload.newText,
+      kind: source.canonical?.intent.kind ?? "sendText",
+      text:
+        source.canonical?.intent.text ??
+        (operation.kind === "editUserQuery" ? operation.payload.newText : ""),
       attachments: source.inputs.map((input) => input.attachment),
       modelSelection: source.model.selection,
       mode: protocol.commandPayloadSchemas.switchCollaborationMode.parse({
-        mode: source.snapshot.config.mode,
+        mode: source.canonical?.intent.mode ?? source.snapshot.config.mode,
       }).mode,
-      planEnabled: source.snapshot.config.planEnabled,
+      planEnabled: source.canonical
+        ? source.canonical.intent.planEnabled
+        : source.snapshot.config.planEnabled,
       delivery: { requested: "startNow", admitted: "startNow" },
       order: {
         admissionSeq:
@@ -470,16 +567,31 @@ function decideEditPublication(
       previousThreadId: prepared.previousThreadId,
       threadId: operation.targetThreadId,
       expectedGeneration: prepared.record.scopeGeneration,
+      ...(operation.kind === "retryTurn"
+        ? {
+            sandboxMode:
+              prepared.record.intent.planEnabled ||
+              prepared.record.intent.mode === "plan"
+                ? ("read-only" as const)
+                : prepared.record.intent.mode === "yolo"
+                  ? ("danger-full-access" as const)
+                  : ("workspace-write" as const),
+          }
+        : {}),
     },
     ack: {
       commandId: operation.envelope.commandId,
       status: "accepted" as const,
       revisionAtDecision: host.getSnapshot().revision,
-      result: {
-        type: "editUserQuery" as const,
-        disposition: "rewind" as const,
-        sessionId: root.id,
-      },
+      ...(operation.kind === "editUserQuery"
+        ? {
+            result: {
+              type: "editUserQuery" as const,
+              disposition: "rewind" as const,
+              sessionId: root.id,
+            },
+          }
+        : {}),
     },
   };
 }
@@ -491,18 +603,17 @@ async function finishCommittedEdit(
 ): Promise<void> {
   const progress = operation.progress;
   if (ack.status !== "accepted" || progress.phase !== "prepared") return;
-  // DB已原子发布thread/state/ACK；后续readiness或通知失败不能补偿已发布target。
+  // DB已原子发布thread/state/ready/ACK；后续租约释放或通知失败不能补偿已发布target。
   operation.progress = { ...progress, phase: "published" };
   try {
     deps.agentRuns.releaseContextBranch({
       targetThreadId: progress.clone.threadId,
       reference: progress.clone.reference,
     });
-    await deps.finishRestore(progress.scope, operation.actor, true);
   } catch (error) {
     throw new CodeUiRepositoryError(
       "command_conflict",
-      `历史编辑已发布，但新执行上下文尚未确认就绪：${error instanceof Error ? error.message : "执行资源处理失败"}`,
+      `历史编辑已发布且执行域就绪，但原生分支租约未确认释放：${error instanceof Error ? error.message : "执行资源处理失败"}`,
     );
   }
   try {
@@ -586,13 +697,39 @@ export function createCodeUiHistoryEdit(deps: Deps) {
       snapshot: protocol.ConversationSnapshot,
     ) {
       for (const row of snapshot.rows.window)
-        if (row.kind === "userInput" && row.actions) delete row.actions.canEdit;
+        if (row.actions) {
+          if (row.kind === "userInput") delete row.actions.canEdit;
+          if (row.kind === "assistantText") delete row.actions.canRetry;
+        }
       if (
         loaded.entry.parent_session_id ||
         !deps.agentRuns.canCloneContextBranches?.()
       )
         return;
       const row = latestEditableInput(loaded.root, snapshot);
+      const retry = latestRetryInput(loaded.root, snapshot);
+      if (!row && !retry) return;
+      if (retry?.row.sourceCommandId && retry.row.clientId) {
+        const canonical = loaded.root.state?.inputs?.find(
+          (input) =>
+            input.runId === retry.row.turnId &&
+            input.intent.sourceCommandId === retry.row.sourceCommandId &&
+            input.intent.clientId === retry.row.clientId,
+        );
+        const pair = await deps.agentRunMetadata.getOwnedTurnBoundaries(actor, {
+          taskId: loaded.root.id,
+          runId: retry.row.turnId,
+        });
+        if (
+          canonical?.intent.kind === "sendText" &&
+          canonical.intent.modelSelection &&
+          validBoundary(loaded, retry.row, pair.pre)
+        )
+          retry.assistant.actions = {
+            ...retry.assistant.actions,
+            canRetry: true,
+          };
+      }
       if (!row) return;
       const pair = await deps.agentRunMetadata.getOwnedTurnBoundaries(actor, {
         taskId: loaded.root.id,

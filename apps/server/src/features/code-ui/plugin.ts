@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import type { AgentRunExtension } from "../../agent/run-extension.js";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import {
@@ -6,9 +7,12 @@ import {
   createSkillCatalogRepository,
 } from "../skills/repository.js";
 import { createTaskResourceCloser } from "../task-work/close-resources.js";
+import { createAskUserQuestionToolDefinition } from "./ask-user-question.js";
 import { createCodeAttachmentRepository } from "./attachments/repository.js";
+import { createCodeGuideMiddleware } from "./guide-model-mailbox.js";
 import { createCodeUiRepository } from "./repository.js";
 import { createCodeUiService } from "./service.js";
+import { createUserInputBroker } from "./user-input-broker.js";
 
 export function createCodeUiPlugin(): PluginDefinition {
   return {
@@ -34,8 +38,10 @@ export function createCodeUiPlugin(): PluginDefinition {
       "plugins",
     ],
     apply(ctx) {
-      ctx.register("codeUi", () =>
-        createCodeUiService({
+      ctx.register("codeUi", () => {
+        const userInputs = createUserInputBroker();
+        return createCodeUiService({
+          userInputs,
           repository: createCodeUiRepository(ctx.get("persistence")),
           executionScopes: ctx.get("executionScopes"),
           taskWork: ctx.get("taskWork"),
@@ -71,10 +77,30 @@ export function createCodeUiPlugin(): PluginDefinition {
           agentRunMetadata: ctx.get("agentRunMetadata"),
           checkpoints: ctx.get("checkpoints"),
           env: ctx.env,
-        }),
-      );
+        });
+      });
+      ctx.get("tools").registerDynamic({
+        id: "code.user-input.ask-user-question",
+        scope: "code",
+        resolve(run) {
+          if (!run.scopeHandle) return null;
+          const broker = ctx.get("codeUi").userInputs;
+          if (!broker) throw new Error("Code UI 提问服务未装配");
+          return createAskUserQuestionToolDefinition({ broker });
+        },
+      });
     },
     mounted(ctx) {
+      const guideExtension: AgentRunExtension = {
+        preset: "code",
+        createMiddleware(identity, context) {
+          return createCodeGuideMiddleware(ctx.get("codeUi"), identity, context);
+        },
+      };
+      ctx.get("capabilities").register("agent-run-extension", {
+        id: "code-ui:guide",
+        value: guideExtension,
+      });
       ctx.effect(() =>
         ctx.get("settings").onUpdated(({ instanceId, changedKeys }) => {
           if (
@@ -88,6 +114,14 @@ export function createCodeUiPlugin(): PluginDefinition {
         await ctx.get("codeUi").initialize();
       });
       const permissions = ctx.get("permissions");
+      const userInputs = ctx.get("codeUi").userInputs;
+      if (!userInputs) throw new Error("Code UI 提问服务未装配");
+      ctx.effect(() =>
+        userInputs.onEvent((event) =>
+          ctx.get("codeUi").onUserInputEvent(event),
+        ),
+      );
+      ctx.effect(() => () => userInputs.close("Code UI 宿主关闭"));
       ctx.effect(() =>
         permissions.onEvent((event) =>
           ctx.get("codeUi").onApprovalEvent(event),
@@ -98,6 +132,16 @@ export function createCodeUiPlugin(): PluginDefinition {
           .get("executionScopes")
           .onRevoke(({ previous }) =>
             permissions.cancel(
+              { instanceId: previous.instanceId, taskId: previous.taskId },
+              "Task 授权发生变更",
+            ),
+          ),
+      );
+      ctx.effect(() =>
+        ctx
+          .get("executionScopes")
+          .onRevoke(({ previous }) =>
+            userInputs.cancel(
               { instanceId: previous.instanceId, taskId: previous.taskId },
               "Task 授权发生变更",
             ),
@@ -118,6 +162,13 @@ export function createCodeUiPlugin(): PluginDefinition {
         value: {
           close: (instanceId: string, taskId: string) =>
             ctx.get("codeUi").closeTaskWatchers(instanceId, taskId),
+        },
+      });
+      ctx.get("capabilities").register("task-close", {
+        id: "code-ui:user-input",
+        value: {
+          close: (instanceId: string, taskId: string) =>
+            userInputs.cancel({ instanceId, taskId }, "Task 已关闭"),
         },
       });
       ctx.get("capabilities").register("task-close", {

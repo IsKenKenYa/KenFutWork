@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import type { ApprovalEvent } from "../permissions/approval-types.js";
 import { createPermissionService } from "../permissions/permission-service.js";
 import { createCodeUiConversation } from "./conversation.js";
+import { createUserInputBroker } from "./user-input-broker.js";
 
 function host() {
   const conversation = createCodeUiConversation({
@@ -266,4 +267,124 @@ it("子运行未能持久写终态时，Task工作终态关闭子卡片并拒绝
       .getSnapshot("child")
       .rows.window.some((row) => row.kind === "assistantText"),
   ).toBe(false);
+});
+
+it("重建转录后Task工作中断清掉子Ask等待和工具，随后父取消不留下无法回答的问题", async () => {
+  const conversation = host();
+  conversation.registerChildDispatch({
+    parentSessionId: "root",
+    parentRunId: "parent",
+    toolCallId: "task",
+    childSessionId: "child",
+    role: "explore",
+    title: "research",
+    at: 1,
+    detached: true,
+  });
+  conversation.recordChildRunEvent("child", {
+    type: "tool.started",
+    runId: "child-run",
+    toolCallId: "ask-child",
+    toolName: "AskUserQuestion",
+    timestamp: "2026-10-03T00:00:01Z",
+  });
+  const broker = createUserInputBroker();
+  const controller = new AbortController();
+  let published!: () => void;
+  const publication = new Promise<void>((resolve) => {
+    published = resolve;
+  });
+  const unsubscribe = broker.onEvent((event) => {
+    conversation.recordInteractionEvent(event);
+    if (event.type === "requested") published();
+  });
+  const request = broker.request({
+    preset: "code",
+    instanceId: "workspace",
+    taskId: "root",
+    runId: "child-run",
+    toolCallId: "ask-child",
+    agentId: "child",
+    role: "explore",
+    scopeGeneration: 1,
+    branchGeneration: 1,
+    mode: "build",
+    approvalCeiling: "build",
+    toolName: "AskUserQuestion",
+    access: "read",
+    signal: controller.signal,
+    args: {
+      questions: [
+        {
+          question: "选择调研来源？",
+          header: "来源",
+          options: [
+            { label: "官方源码", description: "追踪实际实现" },
+            { label: "官方文档", description: "核对公开契约" },
+          ],
+          multiSelect: false,
+        },
+      ],
+    },
+  });
+  const outcome = request.catch(() => undefined);
+  try {
+    await Promise.race([
+      publication,
+      outcome.then(() => {
+        throw new Error("子问题发布前调用已结束");
+      }),
+    ]);
+    expect(conversation.getSnapshot("child").pendingInteractions).toHaveLength(
+      1,
+    );
+    const restored = createCodeUiConversation({
+      sessionId: "root",
+      workspacePath: "/project",
+      config: conversation.getSnapshot().config,
+      state: conversation.exportState(),
+    });
+    restored.recordEvent({
+      type: "task.work",
+      runId: "parent",
+      timestamp: "2026-10-03T00:00:03Z",
+      work: {
+        workId: "work",
+        taskId: "root",
+        branchGeneration: 1,
+        originRunId: "parent",
+        toolCallId: "task",
+        kind: "subagent",
+        label: "research",
+        status: "interrupted",
+        startedAt: "2026-10-03T00:00:00Z",
+        endedAt: "2026-10-03T00:00:03Z",
+        childSessionId: "child",
+        summary: "宿主重启",
+        consumed: true,
+        detached: true,
+      },
+    });
+    restored.recordEvent({
+      type: "run.canceled",
+      runId: "parent",
+      timestamp: "2026-10-03T00:00:04Z",
+    });
+    const child = restored.getSnapshot("child");
+    expect(child.control).toMatchObject({
+      phase: "completedInterrupted",
+      activeWorks: [],
+      canStop: false,
+    });
+    expect(child.pendingInteractions).toEqual([]);
+    expect(
+      child.rows.window.filter((row) => row.kind === "toolCall"),
+    ).toMatchObject([
+      { toolCallId: "child-run/ask-child", status: "cancelled" },
+    ]);
+  } finally {
+    await broker.close("test cleanup");
+    await outcome;
+    unsubscribe();
+  }
 });
