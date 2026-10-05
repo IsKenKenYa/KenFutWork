@@ -5,25 +5,40 @@ import { createStartupPersistenceFixture } from "./test-startup-persistence.js";
 
 /**
  * buildApp 装配完整性回归：所有 feature 插件的认证门路由必须真实注册。
- * 用未认证请求探针：401 = 路由已注册且过认证门；404 = 插件漏挂载（装配回归）。
+ * 用未授权请求探针：401 = 路由已注册且过本机接入门；404 = 插件漏挂载。
  * 背景：P3 迁移中曾出现「路由手工注册已删、插件却未接入内核清单」的静默漏挂载，
- * 该测试把 11 个 feature 的装配完整性锁死。
+ * 本机功能必须真实挂载；退役账户和商业功能必须返回 404。
  */
 const AUTH_GATED_PROBES = [
   { method: "GET", url: "/api/brand-kits" },
-  { method: "GET", url: "/api/credits" },
   { method: "GET", url: "/api/jobs" },
   { method: "GET", url: "/api/projects" },
   { method: "GET", url: "/api/skills" },
-  { method: "GET", url: "/api/workspaces/skills" },
-  { method: "GET", url: "/api/viewer" },
-  { method: "POST", url: "/api/agent/runs" },
-  { method: "GET", url: "/api/workspace/settings" },
+  { method: "GET", url: "/api/instance/skills" },
+  { method: "GET", url: "/api/instance" },
+  {
+    method: "POST",
+    url: "/api/agent/runs",
+    payload: {
+      sessionId: "session-1",
+      conversationId: "conversation-1",
+      prompt: "hello",
+    },
+  },
+  { method: "GET", url: "/api/instance/settings" },
+  { method: "GET", url: "/api/local-access/clients" },
+  { method: "GET", url: "/api/models" },
   { method: "GET", url: "/api/provider-instances" },
   { method: "GET", url: "/api/model-catalog" },
   { method: "GET", url: "/api/usage/summary" },
-  // 平台管理后台（FORM-10）：探针只断言「已装配」（非 404）；
-  // 未认证 401 / 非管理员 403 的判定由 admin-service 单测覆盖。
+] as const;
+
+const RETIRED_PROBES = [
+  { method: "GET", url: "/api/viewer" },
+  { method: "GET", url: "/api/credits" },
+  { method: "POST", url: "/api/auth/login" },
+  { method: "POST", url: "/api/auth/register" },
+  { method: "GET", url: "/api/payments/plans" },
   { method: "GET", url: "/api/admin/me" },
   { method: "GET", url: "/api/admin/users" },
   { method: "GET", url: "/api/admin/usage" },
@@ -31,34 +46,51 @@ const AUTH_GATED_PROBES = [
 ] as const;
 
 /** 无认证门但必须装配的路由（注册完整性用 200 探针）。 */
-const PUBLIC_GET_ROUTES = ["/api/health", "/api/models"] as const;
+const PUBLIC_GET_ROUTES = ["/api/health"] as const;
 
 function buildProbeApp() {
+  const persistence = createStartupPersistenceFixture();
   return buildApp({
     env: {
       databaseUrl: "postgres://localhost:5432/kenfutwork-test",
       // blob 缝是必需能力且只有本地 FS 形态（M1.5 已删 Supabase Provider）
       blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
-      credentialSecret: "test-secret",
+      desktopDataDir: persistence.dataDir,
     },
     overrides: {
       taskWork: createMemoryTaskWorkManager(),
-      persistence: createStartupPersistenceFixture(),
-      auth: { authenticate: async () => null },
+      persistence,
     },
   });
 }
 
 describe("buildApp 装配完整性（插件清单防漏挂）", () => {
-  it("全部 feature 路由已装配：探针返回 400/401 等，唯独不允许 404", async () => {
+  it("全部本机 feature 路由已装配且拒绝无凭据请求", async () => {
     const app = buildProbeApp();
     try {
       for (const probe of AUTH_GATED_PROBES) {
         const response = await app.inject(probe);
         expect(
           response.statusCode,
-          `${probe.method} ${probe.url} 未按预期装配（返回 404）`,
-        ).not.toBe(404);
+          `${probe.method} ${probe.url} 未通过本机接入门`,
+        ).toBe(401);
+      }
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("账户、管理员与商业路由均已退役", async () => {
+    const app = buildProbeApp();
+    try {
+      await app.ready();
+      const token = await app.kernel.get("localAccess").getDesktopToken();
+      for (const probe of RETIRED_PROBES) {
+        const response = await app.inject({
+          ...probe,
+          headers: { authorization: `Bearer ${token}` },
+        });
+        expect(response.statusCode, `${probe.method} ${probe.url}`).toBe(404);
       }
     } finally {
       await app.close();
@@ -76,11 +108,9 @@ describe("buildApp 装配完整性（插件清单防漏挂）", () => {
           // blob 配置给全，让「缺 databaseUrl」成为唯一的失败原因
           env: {
             blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
-            credentialSecret: "test-secret",
           },
           overrides: {
             taskWork: createMemoryTaskWorkManager(),
-            auth: { authenticate: async () => null },
           },
         }),
       ).toThrow(/persistence/);

@@ -92,7 +92,6 @@ describe("桌面数据目录解析（FORM-2）", () => {
       pgLogFile: join("D:/", "data", "logs", "postgres.log"),
       pgPasswordFile: join("D:/", "data", "postgres-password"),
       pluginsDir: join("D:/", "data", "plugins"),
-      credentialSecretFile: join("D:/", "data", "credential-secret"),
       checkpointDir: join("D:/", "data", "checkpoints"),
       sandboxDir: join("D:/", "data", "sandbox"),
       credentialsDir: join("D:/", "data", "credentials"),

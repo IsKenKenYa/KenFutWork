@@ -10,12 +10,12 @@ import { prepareDesktopRuntime } from "./runtime.js";
  *   KENFUTWORK_DESKTOP_PG_IT=1 pnpm --filter @kenfutwork/server exec vitest run desktop-runtime.integration
  *
  * 这条用例是 M2.3 的「开箱即用」验收：一个空数据目录 → 拉起内嵌 Postgres →
- * 跑完 40 条迁移 → 起 HTTP → **不带任何令牌**访问受保护接口成功（local-trust）→
- * 认证路由不存在（免登录形态不保留口令攻击面）→ 关停后停库。
+ * 跑完同源迁移 → 起HTTP → 私有桌面凭据换一次性浏览器cookie →
+ * 无账户且有真实接入校验 → 关停后停库。
  */
 const ENABLED = process.env.KENFUTWORK_DESKTOP_PG_IT === "1";
 
-describe.skipIf(!ENABLED)("桌面运行时（内嵌 PG + local-trust）", () => {
+describe.skipIf(!ENABLED)("桌面运行时（内嵌PG + 本机接入）", () => {
   it("空目录首启动即建成完整 schema，且免登录可用", async () => {
     const { mkdtemp, rm } = await import("node:fs/promises");
     const { join } = await import("node:path");
@@ -29,8 +29,6 @@ describe.skipIf(!ENABLED)("桌面运行时（内嵌 PG + local-trust）", () => 
 
     const runtime = await prepareDesktopRuntime({
       env: loadServerEnv({
-        authDriver: "local-trust",
-        credentialSecret: "desktop-test-secret",
         desktopDataDir: dataDir,
         embeddedPostgres: true,
         serverHost: "127.0.0.1",
@@ -46,35 +44,64 @@ describe.skipIf(!ENABLED)("桌面运行时（内嵌 PG + local-trust）", () => 
       // 首启动建库 + 全量迁移（日志里应有迁移执行行）
       expect(logs.some((line) => line.includes("已执行迁移"))).toBe(true);
 
-      // 1) 免登录：不带 Authorization 也拿到 viewer（本机账号自动引导）
-      const viewer = await app.inject({ method: "GET", url: "/api/viewer" });
-      expect(viewer.statusCode).toBe(200);
-      const viewerBody = viewer.json<{
-        profile: { displayName: string; id: string };
-        workspace: { type: string };
-      }>();
-      expect(viewerBody.workspace.type).toBe("personal");
-      expect(viewerBody.profile.id).toBeTruthy();
+      await app.ready();
+      const token = await app.kernel.get("localAccess").getDesktopToken();
+      const headers = { authorization: `Bearer ${token}` };
+      const missing = await app.inject({ method: "GET", url: "/api/instance" });
+      expect(missing.statusCode).toBe(401);
+      const instance = await app.inject({
+        method: "GET",
+        url: "/api/instance",
+        headers,
+      });
+      expect(instance.statusCode).toBe(200);
+      expect(instance.json().dataDir).toBe(dataDir);
+      expect(instance.json().instanceId).toMatch(/^[0-9a-f-]{36}$/);
 
       // 2) 其它受保护接口同样免登录可用
-      for (const url of ["/api/models", "/api/projects", "/api/credits"]) {
-        const response = await app.inject({ method: "GET", url });
+      for (const url of ["/api/models", "/api/projects"]) {
+        const response = await app.inject({ method: "GET", url, headers });
         expect(response.statusCode, url).toBe(200);
       }
 
       // 3) 免登录形态不挂口令认证路由（不保留无人使用的攻击面）
-      const login = await app.inject({
-        body: { email: "x@y.test", password: "irrelevant" },
+      for (const url of ["/api/viewer", "/api/credits", "/api/auth/login"]) {
+        expect(
+          (await app.inject({ method: "GET", url, headers })).statusCode,
+        ).toBe(404);
+      }
+
+      const issued = await app.inject({
         method: "POST",
-        url: "/api/auth/login",
+        url: "/api/local-access/tickets",
+        headers,
+        payload: {},
       });
-      expect(login.statusCode).toBe(404);
+      expect(issued.statusCode).toBe(201);
+      const connected = await app.inject({
+        method: "POST",
+        url: "/api/local-access/connect",
+        payload: { ticket: issued.json().ticket },
+      });
+      expect(connected.statusCode).toBe(200);
+      expect(connected.json().instanceId).toBe(instance.json().instanceId);
+      expect(connected.json()).not.toHaveProperty("token");
+      const cookieHeader = connected.headers["set-cookie"];
+      if (typeof cookieHeader !== "string")
+        throw new Error("未签发浏览器cookie。");
+      const browser = await app.inject({
+        method: "GET",
+        url: "/api/instance",
+        headers: { cookie: cookieHeader.split(";")[0] ?? "" },
+      });
+      expect(browser.statusCode).toBe(200);
+      expect(browser.json()).toEqual(instance.json());
 
       // 4) 外来源页面被拒（防用户浏览器里的网页借本机端口读数据）
       const foreign = await app.inject({
-        headers: { origin: "https://evil.example.com" },
+        headers: { ...headers, origin: "https://evil.example.com" },
         method: "GET",
-        url: "/api/viewer",
+        url: "/api/instance",
       });
       // CORS 钩子先于认证挡下跨源请求，故是 403（比 401 更早、更明确）
       expect(foreign.statusCode).toBe(403);

@@ -73,9 +73,7 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node --env-file=../../.env.local --import tsx ./src/server.ts",
-    "migrate": "node --env-file=../../.env.local --import tsx ./src/migrate.ts",
-    "auth:seed": "node --env-file=../../.env.local --import tsx ./src/seed-auth-credentials.ts",
-    "seed:accounts": "node --env-file=../../.env.local --import tsx ./src/seed-test-accounts.ts"
+    "migrate": "node --env-file=../../.env.local --import tsx ./src/migrate.ts"
   },
   "start:worker": "node --env-file=../../.env.local --import tsx ./src/worker.ts",
   "optionalDependencies": {

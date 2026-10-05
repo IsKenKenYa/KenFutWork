@@ -136,8 +136,6 @@ export type DesktopPaths = {
   pgLogFile: string;
   /** 内嵌 Postgres 的超级用户口令（首次 initdb 时生成并持久化）。 */
   pgPasswordFile: string;
-  /** BYOK 凭证加密主密钥（首次生成后持久化）。 */
-  credentialSecretFile: string;
   /** 本地插件安装目录。 */
   pluginsDir: string;
   checkpointDir: string;
@@ -158,7 +156,6 @@ export function resolveDesktopPaths(dataDir: string): DesktopPaths {
     pgDataDir: join(dataDir, "postgres"),
     pgLogFile: join(dataDir, "logs", "postgres.log"),
     pgPasswordFile: join(dataDir, "postgres-password"),
-    credentialSecretFile: join(dataDir, "credential-secret"),
     pluginsDir: join(dataDir, "plugins"),
     checkpointDir: join(dataDir, "checkpoints"),
     sandboxDir: join(dataDir, "sandbox"),

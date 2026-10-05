@@ -35,7 +35,9 @@ export function buildApp(
   const connectionManager =
     options.connectionManager ?? new ConnectionManager();
   const eventBuffer = new CanvasEventBuffer();
-  setInterval(() => eventBuffer.cleanup(), 5 * 60 * 1000);
+  const eventCleanup = setInterval(() => eventBuffer.cleanup(), 5 * 60 * 1000);
+  eventCleanup.unref();
+  app.addHook("onClose", async () => clearInterval(eventCleanup));
   const eventBus = new AgentRunEventBus();
 
   const kernel = composePlugins(
@@ -43,7 +45,6 @@ export function buildApp(
     serverProfile({
       connectionManager,
       events: createKernelEvents(eventBus),
-      credentialEnv: env,
       env,
       ...(options.agentFactory ? { agentFactory: options.agentFactory } : {}),
       ...(options.agentModel ? { agentModel: options.agentModel } : {}),
@@ -55,9 +56,6 @@ export function buildApp(
         : {}),
       ...(options.overrides?.modelProviders
         ? { overrideModelProviders: options.overrides.modelProviders }
-        : {}),
-      ...(options.overrides?.payments
-        ? { overridePayments: options.overrides.payments }
         : {}),
     }),
     {
@@ -83,7 +81,9 @@ export function buildApp(
 
   // HTTP 关闭即释放内核资源（连接池等 effect disposer）——否则停库时连接池还握着连接
   app.addHook("onClose", async () => {
+    console.log("[shutdown] 开始卸载内核资源。");
     await kernel.dispose();
+    console.log("[shutdown] 内核资源卸载完成。");
   });
 
   // 内核句柄随 app 一起返回：桌面单进程形态要在同一内核上起任务消费循环
