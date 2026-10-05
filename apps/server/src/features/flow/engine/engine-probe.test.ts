@@ -54,8 +54,8 @@ const WSL_OK = {
 function difyInstance(overrides: Partial<ProviderInstanceResponse> = {}) {
   return {
     id: "dify-1",
-    scope: "system" as const,
-    name: "平台 Dify",
+    scope: "local" as const,
+    name: "本地 Dify",
     protocol: "dify-engine",
     baseUrl: "http://10.0.0.8:5001",
     hasCredential: true,
@@ -276,27 +276,27 @@ describe("probeContainerPath（Provider B）", () => {
 });
 
 describe("probeRemotePath（Provider C）", () => {
-  it("平台池有启用的 dify-engine 实例 → 可用，detail 带来源", async () => {
+  it("本地实例有启用的 dify-engine 实例 → 可用，detail 带来源", async () => {
     const path = await probeRemotePath({
-      listSystemInstances: async () => [difyInstance()],
+      listInstances: async () => [difyInstance()],
     });
     expect(path.available).toBe(true);
-    expect(path.detail).toContain("平台 Dify");
+    expect(path.detail).toContain("本地 Dify");
   });
 
-  it("未配置 / 只有禁用的实例 / 查询抛错 → 不可用，指路管理后台", async () => {
+  it("未配置 / 只有禁用的实例 / 查询抛错 → 不可用，指路本地设置", async () => {
     for (const deps of [
-      { listSystemInstances: async () => [] },
-      { listSystemInstances: async () => [difyInstance({ enabled: false })] },
+      { listInstances: async () => [] },
+      { listInstances: async () => [difyInstance({ enabled: false })] },
       {
-        listSystemInstances: async () => {
+        listInstances: async () => {
           throw new Error("db down");
         },
       },
     ]) {
       const path = await probeRemotePath(deps);
       expect(path.available).toBe(false);
-      expect(path.reason).toContain("管理后台");
+      expect(path.reason).toContain("本地设置 → 供应商");
     }
   });
 });
@@ -314,7 +314,7 @@ describe("probeEnginePaths（平台矩阵聚合）", () => {
       platform: "win32",
       release: "10.0.26200",
       run,
-      listSystemInstances: async () => [],
+      listInstances: async () => [],
     });
     expect(report.recommended).toBe("wsl2");
     expect(report.paths.map((p) => p.id)).toEqual([
@@ -329,7 +329,7 @@ describe("probeEnginePaths（平台矩阵聚合）", () => {
       platform: "win32",
       release: "10.0.26200",
       run: fakeRun(readyDocker),
-      listSystemInstances: async () => [],
+      listInstances: async () => [],
     });
     expect(report.recommended).toBe("container");
   });
@@ -339,7 +339,7 @@ describe("probeEnginePaths（平台矩阵聚合）", () => {
       platform: "linux",
       release: "6.8.0",
       run: fakeRun({}),
-      listSystemInstances: async () => [difyInstance()],
+      listInstances: async () => [difyInstance()],
     });
     expect(report.recommended).toBe("remote");
     const container = report.paths.find((p) => p.id === "container");
@@ -351,7 +351,7 @@ describe("probeEnginePaths（平台矩阵聚合）", () => {
       platform: "darwin",
       release: "23.6.0",
       run: fakeRun({}),
-      listSystemInstances: async () => [],
+      listInstances: async () => [],
     });
     expect(report.recommended).toBeNull();
     expect(report.paths.every((path) => !path.available)).toBe(true);

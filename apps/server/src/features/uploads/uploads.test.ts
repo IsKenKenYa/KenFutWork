@@ -1,26 +1,25 @@
 import { describe, expect, it } from "vitest";
-
-import type { AuthenticatedUser } from "../auth/types.js";
 import { BlobError } from "../blob/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
-import { BootstrapError } from "../bootstrap/errors.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import { SqlError } from "../persistence/errors.js";
 import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
 } from "../persistence/providers/postgres.js";
 import { createUploadRepository } from "./repository.js";
-import { createUploadService, UploadServiceError } from "./upload-service.js";
+import { createUploadService } from "./upload-service.js";
 
-const USER_ID = "user-1";
-const WORKSPACE_ID = "ws-1";
+const CLIENT_ID = "client-1";
+const INSTANCE_ID = "instance-1";
 const ASSET_ID = "asset-1";
 
-const USER: AuthenticatedUser = {
-  accessToken: "token",
-  email: "user@example.com",
-  id: USER_ID,
-  userMetadata: {},
+const ACTOR: LocalActor = {
+  instanceId: INSTANCE_ID,
+  accessClientId: CLIENT_ID,
 };
 
 type FakeResult = { rowCount: number | null; rows: unknown[] } | Error;
@@ -93,29 +92,19 @@ function createStorageStub(
   return { blob: blob as never, calls };
 }
 
-const VIEWER_STUB: ViewerService = {
-  ensureViewer: async () => {
-    throw new Error("not used");
-  },
-  resolveWorkspace: async () => ({
-    id: WORKSPACE_ID,
-    name: "Personal Workspace",
-    ownerUserId: USER_ID,
-    type: "personal",
-  }),
-  updateProfile: async () => {
-    throw new Error("not used");
-  },
-};
+const LOCAL_INSTANCE = createLocalInstanceService({
+  repository: { ensure: async () => INSTANCE_ID },
+  dataDir: "/tmp/uploads-instance-test",
+});
 
 /** 驱动形状的原始行：int8 列为字符串（repository 负责归一）。 */
 const RAW_ASSET_ROW = {
   id: ASSET_ID,
   bucket: "project-assets",
-  object_path: `${WORKSPACE_ID}/123-file.png`,
+  object_path: `${INSTANCE_ID}/123-file.png`,
   mime_type: "image/png",
   byte_size: "2048",
-  workspace_id: WORKSPACE_ID,
+  instance_id: INSTANCE_ID,
   project_id: null,
   created_at: "2026-09-13T00:00:00+00:00",
 };
@@ -124,7 +113,7 @@ const RAW_ASSET_ROW = {
 const ASSET_ROW = { ...RAW_ASSET_ROW, byte_size: 2048 };
 
 describe("uploads repository", () => {
-  it("插入元数据带工作区谓词，且 bigint 字节数归一为 number", async () => {
+  it("插入元数据带实例谓词，且 bigint 字节数归一为 number", async () => {
     const { calls, runner } = createRunner(() => ({
       rowCount: 1,
       rows: [RAW_ASSET_ROW],
@@ -137,28 +126,31 @@ describe("uploads repository", () => {
       byteSize: 2048,
       mimeType: "image/png",
       objectPath: RAW_ASSET_ROW.object_path,
-      userId: USER_ID,
-      workspaceId: WORKSPACE_ID,
+      createdByClientId: CLIENT_ID,
+      instanceId: INSTANCE_ID,
     });
 
     // 驱动对 int8 返回字符串；契约要求 number，必须归一。
     expect(asset?.byte_size).toBe(2048);
     expect(typeof asset?.byte_size).toBe("number");
     expect(calls[0]?.text.replace(/\s+/g, " ")).toContain(
-      `values ($7, $1, $2, $3, $4, $5, $6)`,
+      "select $7, $1, $2, $3, $4, $5::uuid, $6::uuid",
+    );
+    expect(calls[0]?.text.replace(/\s+/g, " ")).toContain(
+      "p.id = $6::uuid and p.instance_id = $7",
     );
     expect(calls[0]?.values).toEqual([
       "project-assets",
       RAW_ASSET_ROW.object_path,
       "image/png",
       2048,
-      USER_ID,
+      CLIENT_ID,
       null,
-      WORKSPACE_ID,
+      INSTANCE_ID,
     ]);
   });
 
-  it("取对象位置与删除都限定工作区", async () => {
+  it("取对象位置与删除都限定实例", async () => {
     const location = createRunner(() => ({
       rowCount: 1,
       rows: [{ bucket: "project-assets", object_path: "p/a.png" }],
@@ -166,23 +158,23 @@ describe("uploads repository", () => {
     await expect(
       createUploadRepository(
         createPersistenceFromRunner(location.runner),
-      ).findLocation(WORKSPACE_ID, ASSET_ID),
+      ).findLocation(INSTANCE_ID, ASSET_ID),
     ).resolves.toEqual({ bucket: "project-assets", object_path: "p/a.png" });
     expect(location.calls[0]?.text.replace(/\s+/g, " ")).toContain(
-      "where workspace_id = $2 and id = $1",
+      "where instance_id = $2 and id = $1",
     );
-    expect(location.calls[0]?.values).toEqual([ASSET_ID, WORKSPACE_ID]);
+    expect(location.calls[0]?.values).toEqual([ASSET_ID, INSTANCE_ID]);
 
     const deleted = createRunner(() => ({ rowCount: 1, rows: [] }));
     await expect(
       createUploadRepository(
         createPersistenceFromRunner(deleted.runner),
-      ).deleteById(WORKSPACE_ID, ASSET_ID),
+      ).deleteById(INSTANCE_ID, ASSET_ID),
     ).resolves.toBe(1);
     expect(deleted.calls[0]?.text.replace(/\s+/g, " ")).toContain(
       "delete from public.asset_objects",
     );
-    expect(deleted.calls[0]?.values).toEqual([ASSET_ID, WORKSPACE_ID]);
+    expect(deleted.calls[0]?.values).toEqual([ASSET_ID, INSTANCE_ID]);
   });
 });
 
@@ -190,7 +182,7 @@ describe("upload service", () => {
   const buildService = (options: {
     repository: Partial<ReturnType<typeof createUploadRepository>>;
     storage?: ReturnType<typeof createStorageStub>;
-    viewerService?: ViewerService;
+    localInstance?: LocalInstanceService;
   }) => {
     const storage = options.storage ?? createStorageStub();
     return {
@@ -202,18 +194,18 @@ describe("upload service", () => {
           insert: async () => null,
           ...options.repository,
         } as ReturnType<typeof createUploadRepository>,
-        viewerService: options.viewerService ?? VIEWER_STUB,
+        localInstance: options.localInstance ?? LOCAL_INSTANCE,
       }),
       storage,
     };
   };
 
-  it("上传成功返回资产与公开 URL，且工作区由服务内部解析", async () => {
+  it("上传成功返回资产与公开 URL，且实例由服务内部解析", async () => {
     const { service, storage } = buildService({
       repository: { insert: async () => ASSET_ROW },
     });
 
-    const result = await service.uploadFile(USER, {
+    const result = await service.uploadFile(ACTOR, {
       bucket: "project-assets",
       fileName: "shot.png",
       fileBuffer: Buffer.alloc(2048),
@@ -223,9 +215,7 @@ describe("upload service", () => {
     expect(result.asset.id).toBe(ASSET_ID);
     expect(result.asset.byteSize).toBe(2048);
     expect(result.url).toContain("https://blob.test/project-assets/");
-    expect(storage.calls[0]).toContain(
-      `upload:project-assets:${WORKSPACE_ID}/`,
-    );
+    expect(storage.calls[0]).toContain(`upload:project-assets:${INSTANCE_ID}/`);
     // 公开性由存储侧回答，服务只调 resolveUrl（不再自己判公开桶）
     expect(storage.calls.at(-1)).toContain("resolveUrl:project-assets:");
   });
@@ -245,7 +235,7 @@ describe("upload service", () => {
     });
 
     await expect(
-      service.uploadFile(USER, {
+      service.uploadFile(ACTOR, {
         bucket: "project-assets",
         fileName: "shot.png",
         fileBuffer: Buffer.alloc(8),
@@ -265,7 +255,7 @@ describe("upload service", () => {
     });
 
     await expect(
-      service.uploadFile(USER, {
+      service.uploadFile(ACTOR, {
         bucket: "project-assets",
         fileName: "shot.png",
         fileBuffer: Buffer.alloc(8),
@@ -278,7 +268,7 @@ describe("upload service", () => {
   it("资产不存在返回 404；存在则按桶类型签发 URL", async () => {
     const missing = buildService({ repository: {} });
     await expect(
-      missing.service.getAssetUrl(USER, ASSET_ID),
+      missing.service.getAssetUrl(ACTOR, ASSET_ID),
     ).rejects.toMatchObject({ code: "asset_not_found", statusCode: 404 });
 
     const publicAsset = buildService({
@@ -290,7 +280,7 @@ describe("upload service", () => {
       },
     });
     await expect(
-      publicAsset.service.getAssetUrl(USER, ASSET_ID),
+      publicAsset.service.getAssetUrl(ACTOR, ASSET_ID),
     ).resolves.toContain("https://blob.test/project-assets/p/a.png");
 
     const privateAsset = buildService({
@@ -302,7 +292,7 @@ describe("upload service", () => {
       },
     });
     await expect(
-      privateAsset.service.getAssetUrl(USER, ASSET_ID),
+      privateAsset.service.getAssetUrl(ACTOR, ASSET_ID),
     ).resolves.toContain("https://signed.test/user-avatars/u/a.png");
   });
 
@@ -315,7 +305,7 @@ describe("upload service", () => {
         }),
       },
     });
-    await expect(service.deleteAsset(USER, ASSET_ID)).resolves.toBeUndefined();
+    await expect(service.deleteAsset(ACTOR, ASSET_ID)).resolves.toBeUndefined();
     expect(storage.calls).toEqual(["remove:project-assets:p/a.png"]);
 
     const race = buildService({
@@ -328,25 +318,45 @@ describe("upload service", () => {
       },
     });
     await expect(
-      race.service.deleteAsset(USER, ASSET_ID),
+      race.service.deleteAsset(ACTOR, ASSET_ID),
     ).rejects.toMatchObject({ code: "asset_not_found", statusCode: 404 });
   });
 
-  it("工作区解析失败按 upload_failed 报错，不泄露内部错误", async () => {
+  it("实例解析故障原样传播，不伪装成资源或凭据错误", async () => {
     const { service } = buildService({
       repository: {},
-      viewerService: {
-        ...VIEWER_STUB,
-        resolveWorkspace: async () => {
-          throw new BootstrapError();
+      localInstance: {
+        ...LOCAL_INSTANCE,
+        resolve: async () => {
+          throw new Error("本地实例暂不可用");
         },
       },
     });
 
     const error = await service
-      .getAssetUrl(USER, ASSET_ID)
+      .getAssetUrl(ACTOR, ASSET_ID)
       .catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(UploadServiceError);
-    expect(error).toMatchObject({ code: "upload_failed", statusCode: 500 });
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toMatchObject({ message: "本地实例暂不可用" });
+  });
+  it("资产查询拒绝伪造实例，存储故障不伪装成资产不存在", async () => {
+    let queries = 0;
+    const failure = new Error("磁盘或数据库暂不可用");
+    const { service } = buildService({
+      repository: {
+        findLocation: async () => {
+          queries += 1;
+          throw failure;
+        },
+      },
+    });
+    await expect(
+      service.getAssetUrl(
+        { instanceId: "foreign", accessClientId: ACTOR.accessClientId },
+        ASSET_ID,
+      ),
+    ).rejects.toMatchObject({ code: "instance_forbidden" });
+    expect(queries).toBe(0);
+    await expect(service.getAssetUrl(ACTOR, ASSET_ID)).rejects.toBe(failure);
   });
 });

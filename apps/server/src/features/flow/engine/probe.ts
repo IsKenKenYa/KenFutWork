@@ -27,14 +27,14 @@ export async function probeEnginePaths(deps: {
   platform: NodeJS.Platform;
   release: string;
   run: RunCommand;
-  listSystemInstances: Parameters<
+  listInstances: Parameters<
     typeof probeRemotePath
-  >[0]["listSystemInstances"];
+  >[0]["listInstances"];
 }): Promise<FlowHostEngineResponse> {
   const [wsl2, container, remote] = await Promise.all([
     probeWsl2Path(deps),
     probeContainerPath(deps),
-    probeRemotePath({ listSystemInstances: deps.listSystemInstances }),
+    probeRemotePath({ listInstances: deps.listInstances }),
   ]);
 
   const paths = [wsl2, container, remote];

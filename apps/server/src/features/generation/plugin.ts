@@ -12,7 +12,7 @@ import { createVideoGenerateToolDefinition } from "./tools/video-generate.js";
  * （generate_image / generate_video，scope=design）。工具是 per-run 动态的：
  * schema 内嵌工作区模型目录、job 闭包捕获 run 上下文——经内核动态工具缝
  * 在 run 起始期解析（§4.10）。
- * 服务依赖（credits/uploads/viewer 等）经 ctx 解析；provider 按实例实例化见
+ * 服务依赖（uploads/localInstance 等）经 ctx 解析；provider 按实例实例化见
  * providers/resolve.ts（遗留 env 注册并行至 BYOK 切换）。
  */
 export function createGenerationPlugin(deps: {
@@ -23,13 +23,13 @@ export function createGenerationPlugin(deps: {
     // `jobs` 是直连视频生成的必需依赖（建 job + 轮询终态）——真机踩过：
     // 漏了它时路由恒走「jobService 未配置」分支，视频生成整条不可用。
     inject: [
-      "auth",
-      "credits",
-      "tierGuard",
+      "localAccess",
       "uploads",
-      "viewer",
+      "localInstance",
       "jobs",
       "modelCatalog",
+      "modelProviders",
+      "usage",
     ],
     apply(ctx) {
       const tools = ctx.get("tools");
@@ -64,23 +64,22 @@ export function createGenerationPlugin(deps: {
     mounted(ctx) {
       void registerModelRoutes(ctx.app, {
         env: deps.env,
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         modelCatalog: ctx.get("modelCatalog"),
       });
       void registerImageModelRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         modelCatalog: ctx.get("modelCatalog"),
       });
       void registerVideoModelRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         modelCatalog: ctx.get("modelCatalog"),
       });
       void registerGenerateRoutes(ctx.app, {
-        auth: ctx.get("auth"),
-        creditService: ctx.get("credits"),
+        localAccess: ctx.get("localAccess"),
         uploadService: ctx.get("uploads"),
-        viewerService: ctx.get("viewer"),
-        tierGuard: ctx.get("tierGuard"),
+        usage: ctx.get("usage"),
+        localInstance: ctx.get("localInstance"),
         modelProviders: ctx.get("modelProviders"),
         jobService: ctx.get("jobs"),
       });

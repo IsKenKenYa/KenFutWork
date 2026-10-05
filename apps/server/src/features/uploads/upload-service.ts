@@ -1,11 +1,11 @@
 import type { AssetBucket, AssetObject } from "@kenfutwork/shared";
-
-import type { AuthenticatedUser } from "../auth/types.js";
 import type { BlobStore } from "../blob/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import type { UploadRepository } from "./repository.js";
 
-const UPLOAD_FAILED_MESSAGE = "Unable to upload asset.";
 const ASSET_NOT_FOUND_MESSAGE = "Asset not found.";
 
 export class UploadServiceError extends Error {
@@ -35,41 +35,32 @@ export type UploadFileInput = {
 
 export type UploadService = {
   uploadFile(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     input: UploadFileInput,
   ): Promise<{ asset: AssetObject; url: string }>;
 
-  getAssetUrl(user: AuthenticatedUser, assetId: string): Promise<string>;
+  getAssetUrl(actor: LocalActor, assetId: string): Promise<string>;
 
-  deleteAsset(user: AuthenticatedUser, assetId: string): Promise<void>;
+  deleteAsset(actor: LocalActor, assetId: string): Promise<void>;
 };
 
 export function createUploadService(options: {
   /** 对象存储走 blob 缝（Provider 随形态替换）。 */
   blob: BlobStore;
   repository: UploadRepository;
-  viewerService: ViewerService;
+  localInstance: LocalInstanceService;
 }): UploadService {
-  const { blob, repository, viewerService } = options;
+  const { blob, repository, localInstance } = options;
 
-  const resolveWorkspaceId = async (user: AuthenticatedUser) => {
-    const workspace = await viewerService
-      .resolveWorkspace(user)
-      .catch(() => null);
-
-    if (!workspace) {
-      throw new UploadServiceError("upload_failed", UPLOAD_FAILED_MESSAGE, 500);
-    }
-
-    return workspace.id;
-  };
+  const resolveId = async (actor: LocalActor) =>
+    (await localInstance.resolve(actor)).instanceId;
 
   return {
-    async uploadFile(user, input) {
-      const workspaceId = await resolveWorkspaceId(user);
+    async uploadFile(actor, input) {
+      const instanceId = await resolveId(actor);
       const bucket = blob.bucket(input.bucket);
       const objectPath = buildObjectPath(
-        workspaceId,
+        instanceId,
         input.projectId,
         input.fileName,
       );
@@ -96,8 +87,8 @@ export function createUploadService(options: {
           mimeType: input.mimeType,
           objectPath,
           projectId: input.projectId,
-          userId: user.id,
-          workspaceId,
+          createdByClientId: actor.accessClientId,
+          instanceId,
         })
         .catch(() => null);
 
@@ -118,7 +109,7 @@ export function createUploadService(options: {
           objectPath: assetRow.object_path,
           mimeType: assetRow.mime_type,
           byteSize: assetRow.byte_size,
-          workspaceId: assetRow.workspace_id,
+          instanceId: assetRow.instance_id,
           projectId: assetRow.project_id,
           createdAt: assetRow.created_at,
         },
@@ -126,11 +117,9 @@ export function createUploadService(options: {
       };
     },
 
-    async getAssetUrl(user, assetId) {
-      const workspaceId = await resolveWorkspaceId(user);
-      const location = await repository
-        .findLocation(workspaceId, assetId)
-        .catch(() => null);
+    async getAssetUrl(actor, assetId) {
+      const instanceId = await resolveId(actor);
+      const location = await repository.findLocation(instanceId, assetId);
 
       if (!location) {
         throw new UploadServiceError(
@@ -143,11 +132,9 @@ export function createUploadService(options: {
       return resolveAssetUrl(blob, location.bucket, location.object_path);
     },
 
-    async deleteAsset(user, assetId) {
-      const workspaceId = await resolveWorkspaceId(user);
-      const location = await repository
-        .findLocation(workspaceId, assetId)
-        .catch(() => null);
+    async deleteAsset(actor, assetId) {
+      const instanceId = await resolveId(actor);
+      const location = await repository.findLocation(instanceId, assetId);
 
       if (!location) {
         throw new UploadServiceError(
@@ -159,9 +146,7 @@ export function createUploadService(options: {
 
       await blob.bucket(location.bucket).remove([location.object_path]);
 
-      const deleted = await repository
-        .deleteById(workspaceId, assetId)
-        .catch(() => 0);
+      const deleted = await repository.deleteById(instanceId, assetId);
 
       if (deleted === 0) {
         throw new UploadServiceError(
@@ -175,16 +160,16 @@ export function createUploadService(options: {
 }
 
 function buildObjectPath(
-  workspaceId: string,
+  instanceId: string,
   projectId: string | undefined,
   fileName: string,
 ): string {
   const timestamp = Date.now();
   const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
   if (projectId) {
-    return `${workspaceId}/${projectId}/${timestamp}-${safeName}`;
+    return `${instanceId}/${projectId}/${timestamp}-${safeName}`;
   }
-  return `${workspaceId}/${timestamp}-${safeName}`;
+  return `${instanceId}/${timestamp}-${safeName}`;
 }
 
 /**
