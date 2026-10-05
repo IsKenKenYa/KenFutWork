@@ -73,11 +73,14 @@ describe("BYOK运行时退役计费门", () => {
           version: "test",
           webOrigin: "http://localhost:3000",
         },
-        viewerService: { resolveWorkspace: async () => ({ id: instanceId }) } as never,
+        localInstance: createLocalInstanceService({
+          repository: { ensure: async () => instanceId },
+          dataDir: join(tmpdir(), "kfw-byok-billing-runtime"),
+        }),
         modelProviders: { resolveCredentials, getInstanceScope } as never,
         jobService: {
           createJob: created,
-          getJobAdmin: async () => ({
+          getJobForWorker: async () => ({
             status: "succeeded",
             result: {
               signed_url: "https://example.invalid/generated",
@@ -108,7 +111,7 @@ describe("BYOK运行时退役计费门", () => {
           prompt: "请求",
           sessionId: "session",
         },
-        { userId: instanceId, accessToken: "legacy-test-input", model: `${providerId}:byok-model`, threadId: "byok-thread" },
+        { actor, model: `${providerId}:byok-model`, threadId: "byok-thread" },
       );
       const events: StreamEvent[] = [];
       for await (const event of runtime.streamRun(runId)) events.push(event);

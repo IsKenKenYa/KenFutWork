@@ -2,15 +2,13 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { workspaceSettingsSchema } from "@kenfutwork/shared";
+import { instanceSettingsSchema } from "@kenfutwork/shared";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, type BaseMessage } from "@langchain/core/messages";
 import { createNativeContextBranchService } from "../../agent/native-context-branch.js";
 import { createAgentPersistenceService } from "../../agent/persistence/index.js";
 import { createAgentRunService } from "../../agent/runtime.js";
 import { loadServerEnv } from "../../config/env.js";
-import { createViewerService } from "../bootstrap/ensure-user-foundation.js";
-import { createViewerRepository } from "../bootstrap/repository.js";
 import { createChatRepository } from "../chat/repository.js";
 import { createThreadService } from "../chat/thread-service.js";
 import { createCheckpointService } from "../checkpoints/checkpoint-service.js";
@@ -33,45 +31,32 @@ export async function prepareHarnessTask(
   database: Awaited<ReturnType<typeof createTaskWorkDatabase>>,
 ) {
   const scope = database.context.scope;
-  const owner = await database.persistence.queryOne<{
-    owner_user_id: string;
-  }>("select owner_user_id from public.workspaces where id=$1", [
-    scope.workspaceId,
-  ]);
-  if (!owner) throw new Error("私有工作区不存在");
-  const actor = {
-    id: owner.owner_user_id,
-    email: "boundary@integration.test",
-    accessToken: "private",
-    userMetadata: {},
-  };
+  const actor = database.actor;
   const threadId = `boundary-thread-${randomUUID()}`;
   await database.persistence
-    .forWorkspace(scope.workspaceId)
+    .forInstance(scope.instanceId)
     .execute(
-      "insert into public.chat_sessions (id,workspace_id,project_id,mode,created_by,thread_id) values ($1,:workspace,$2,'code',$3,$4)",
-      [scope.taskId, scope.projectId, actor.id, threadId],
+      "insert into public.chat_sessions (id,instance_id,project_id,mode,created_by_client_id,thread_id) values ($1,:instance,$2,'code',$3,$4)",
+      [scope.taskId, scope.projectId, actor.accessClientId, threadId],
     );
   await database.persistence
-    .forWorkspace(scope.workspaceId)
+    .forInstance(scope.instanceId)
     .execute(
-      "update public.code_ui_sessions set chat_session_id=$1 where workspace_id=:workspace and id=$1",
+      "update public.code_ui_sessions set chat_session_id=$1 where instance_id=:instance and id=$1",
       [scope.taskId],
     );
-  const viewer = createViewerService({
-    repository: createViewerRepository(database.persistence),
-  });
+  const localInstance = database.localInstance;
   const threads = createThreadService({
     repository: createChatRepository(database.persistence),
-    viewerService: viewer,
+    localInstance,
   });
   const metadata = () =>
     createAgentRunMetadataService({
       repository: createAgentRunRepository(database.persistence),
-      viewerService: viewer,
+      localInstance,
       threadService: threads,
     });
-  return { scope, actor, threadId, viewer, threads, metadata };
+  return { scope, actor, threadId, localInstance, threads, metadata };
 }
 
 export class BoundaryModel extends BaseChatModel {
@@ -110,11 +95,11 @@ export async function createHarness(
     | "emitPreStep"
   >,
 ) {
-  const { scope, actor, threadId, viewer, threads, metadata } =
+  const { scope, actor, threadId, localInstance, threads, metadata } =
     await prepareHarnessTask(database);
   const executionScopes = createExecutionScopes({
     repository: createScopeRepository(database.persistence),
-    viewerService: viewer,
+    localInstance,
   });
   const handle = await executionScopes.openTask(actor, scope.taskId);
   const context: TaskWorkContext = {
@@ -138,6 +123,7 @@ export async function createHarness(
   });
   const runtime = createAgentRunService({
     blob: {} as never,
+    localInstance,
     env,
     model,
     agentPersistenceService: persistence,
@@ -149,8 +135,8 @@ export async function createHarness(
     ...(singleAttempt
       ? {
           settingsService: {
-            getWorkspaceSettings: async () =>
-              workspaceSettingsSchema.parse({ llmRequestMaxRetries: 1 }),
+            getInstanceSettings: async () =>
+              instanceSettingsSchema.parse({ llmRequestMaxRetries: 1 }),
           },
         }
       : {}),
@@ -175,7 +161,7 @@ export async function createHarness(
     persistence,
     env,
     handle,
-    viewer,
+    localInstance,
     threads,
     executionScopes,
     model,

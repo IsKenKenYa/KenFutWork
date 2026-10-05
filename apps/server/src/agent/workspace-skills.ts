@@ -15,7 +15,7 @@ export interface SkillFileEntry {
  * Metadata for a workspace skill loaded from the database.
  * Compatible with the deepagents SkillsMiddleware SkillMetadata shape.
  */
-export interface WorkspaceSkillEntry {
+export interface InstanceSkillEntry {
   /** Skill slug (used as directory name in virtual path) */
   name: string;
   /** Human-readable description for the system prompt */
@@ -28,29 +28,27 @@ export interface WorkspaceSkillEntry {
   files: SkillFileEntry[];
 }
 
-export type WorkspaceSkillsLoader = (
+export type InstanceSkillsLoader = (
+  instanceId: string,
   canvasId: string,
-) => Promise<WorkspaceSkillEntry[]>;
+) => Promise<InstanceSkillEntry[]>;
 
-export type WorkspaceSkillsByWorkspaceLoader = (
-  workspaceId: string,
-) => Promise<WorkspaceSkillEntry[]>;
+export type InstanceSkillsByInstanceLoader = (
+  instanceId: string,
+) => Promise<InstanceSkillEntry[]>;
 
 /** Code用可信工作区身份读取安装包，不经Canvas JOIN，不签发物理FS路径。 */
-export function createWorkspaceSkillsByWorkspaceLoader(options: {
-  skills: Pick<
-    SkillCatalogRepository,
-    "listWorkspaceSkills" | "listSkillFiles"
-  >;
-}): WorkspaceSkillsByWorkspaceLoader {
-  return async (workspaceId) => {
+export function createInstanceSkillsByInstanceLoader(options: {
+  skills: Pick<SkillCatalogRepository, "listInstanceSkills" | "listSkillFiles">;
+}): InstanceSkillsByInstanceLoader {
+  return async (instanceId) => {
     const installed = await options.skills
-      .listWorkspaceSkills(workspaceId)
+      .listInstanceSkills(instanceId)
       .catch(() => []);
     const enabled = installed.filter((entry) => entry.enabled);
     const files = await options.skills
       .listSkillFiles(
-        workspaceId,
+        instanceId,
         enabled.map((entry) => entry.skillId),
       )
       .catch(() => []);
@@ -82,23 +80,22 @@ export function createWorkspaceSkillsByWorkspaceLoader(options: {
  * 技能加载缝（agent 侧消费）：把「画布 → 工作区 → 已启用 skill + 附带文件」
  * 从 agent 内部装配收敛到数据访问层。
  *
- * 数据访问全部经 repository（工作区谓词）——技能表本身没有 workspace_id，
+ * 数据访问全部经 repository（工作区谓词）——技能表本身没有 instance_id，
  * 靠 `workspace_skills` 这一层限定；不用裸 skill id 取数。
  */
-export function createWorkspaceSkillsLoader(options: {
+export function createInstanceSkillsLoader(options: {
   canvases: CanvasRepository;
   skills: SkillCatalogRepository;
-}): WorkspaceSkillsLoader {
+}): InstanceSkillsLoader {
   const { canvases, skills } = options;
-  const loadWorkspace = createWorkspaceSkillsByWorkspaceLoader({ skills });
+  const loadWorkspace = createInstanceSkillsByInstanceLoader({ skills });
 
-  return async (canvasId) => {
-    const workspaceId = await canvases
-      .findWorkspaceIdByCanvas(canvasId)
+  return async (instanceId, canvasId) => {
+    const canvas = await canvases
+      .findById(instanceId, canvasId)
       .catch(() => null);
-    if (!workspaceId) return [];
-
-    return (await loadWorkspace(workspaceId)).map((entry) => ({
+    if (!canvas) return [];
+    return (await loadWorkspace(instanceId)).map((entry) => ({
       ...entry,
       path: `/workspace-skills/${entry.name}/SKILL.md`,
     }));

@@ -3,10 +3,13 @@ import type { AddressInfo } from "node:net";
 import type { StreamEvent } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { afterEach, describe, expect, it } from "vitest";
-
 import type { ServerEnv } from "../config/env.js";
 import type { ModelInvocationSnapshot } from "../providers/types.js";
 import { createAgentRunService } from "./runtime.js";
+import {
+  createRuntimeTestInstance,
+  RUNTIME_TEST_ACTOR,
+} from "./runtime-test-fixtures.js";
 
 /**
  * 自定义请求头在 **runtime → 适配器 → 线上** 的整链验证（§4.8 验收用例）。
@@ -103,7 +106,6 @@ async function resolveModelForRun(input: {
     blob: { upload: async () => ({}) } as never,
     env: makeEnv(),
     modelProviders: {
-      getInstanceScope: async () => "workspace",
       resolveCredentials: async () => ({
         instanceId: INSTANCE_ID,
         configRevision: 1,
@@ -127,9 +129,7 @@ async function resolveModelForRun(input: {
         },
       }),
     } as never,
-    viewerService: {
-      resolveWorkspace: async () => ({ id: "ws-headers-test" }),
-    } as never,
+    localInstance: createRuntimeTestInstance(),
     agentPersistenceService: {
       getPersistence: async () => ({ checkpointer: null, store: null }),
     } as never,
@@ -146,10 +146,9 @@ async function resolveModelForRun(input: {
       sessionId: input.sessionId,
     },
     {
-      accessToken: "tok",
       model: `${INSTANCE_ID}:glm-test`,
       threadId: input.threadId,
-      userId: "u-headers",
+      actor: RUNTIME_TEST_ACTOR,
       ...(input.modelInvocation
         ? { modelInvocation: input.modelInvocation }
         : {}),

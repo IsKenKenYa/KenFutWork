@@ -18,6 +18,10 @@ import type { TaskWorkContext } from "../features/task-work/types.js";
 import { createKenFutWorkDeepAgent } from "./deep-agent.js";
 import { createAgentPersistenceService } from "./persistence/index.js";
 import { createAgentRunService } from "./runtime.js";
+import {
+  createRuntimeTestInstance,
+  RUNTIME_TEST_ACTOR,
+} from "./runtime-test-fixtures.js";
 
 class ControlledModel extends BaseChatModel {
   readonly requests: BaseMessage[][] = [];
@@ -43,7 +47,7 @@ async function fixture() {
     await mkdtemp(join(tmpdir(), "kfw-harness-history-")),
   );
   const scope = {
-    workspaceId: "00000000-0000-4000-8000-000000000001",
+    instanceId: "00000000-0000-4000-8000-000000000001",
     projectId: "00000000-0000-4000-8000-000000000002",
     taskId: "00000000-0000-4000-8000-000000000003",
     generation: 1,
@@ -51,14 +55,12 @@ async function fixture() {
     additionalDirectories: [],
     sandboxMode: "workspace-write" as const,
   };
-  const actor = { id: "owner", accessToken: "", email: "", userMetadata: {} };
+  const actor = RUNTIME_TEST_ACTOR;
   const handle = await createExecutionScopes({
     repository: {
       load: async () => ({ state: "ready", branchGeneration: 1, scope }),
     },
-    viewerService: {
-      resolveWorkspace: async () => ({ id: scope.workspaceId }),
-    } as never,
+    localInstance: createRuntimeTestInstance(),
   }).openTask(actor, scope.taskId);
   const context: TaskWorkContext = {
     actor,
@@ -80,6 +82,7 @@ async function fixture() {
   const persistence = createAgentPersistenceService({});
   const model = new ControlledModel();
   const runtime = createAgentRunService({
+    localInstance: createRuntimeTestInstance(),
     blob: {} as never,
     env,
     model,
@@ -112,7 +115,7 @@ async function fixture() {
       },
       {
         scopeHandle: handle,
-        userId: actor.id,
+        actor,
         threadId: "harness-thread",
         inputIdentity: { clientId, sourceCommandId },
         inputOrigin: "userInput",

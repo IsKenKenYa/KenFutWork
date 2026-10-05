@@ -37,7 +37,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           threadId,
         });
         const pre = {
-          workspaceId: scope.workspaceId,
+          instanceId: scope.instanceId,
           projectId: scope.projectId,
           taskId: scope.taskId,
           runId,
@@ -84,7 +84,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         ).toEqual({ pre, post });
         await expect(
           metadata().getOwnedTurnBoundaries(
-            { ...actor, id: randomUUID() },
+            { ...actor, instanceId: randomUUID() },
             { taskId: scope.taskId, runId },
           ),
         ).rejects.toMatchObject({ code: "not_found" });
@@ -127,7 +127,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
             runId,
             threadId,
             scopeHandle: handle,
-            userId: actor.id,
+            actor,
             inputIdentity: {
               clientId: "real-client",
               sourceCommandId: "real-command",
@@ -198,7 +198,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
             runId,
             threadId: f.threadId,
             scopeHandle: f.handle,
-            userId: f.actor.id,
+            actor: f.actor,
             inputIdentity: {
               clientId: "pending-client",
               sourceCommandId: "pending-command",
@@ -269,7 +269,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
             runId,
             threadId: f.threadId,
             scopeHandle: f.handle,
-            userId: f.actor.id,
+            actor: f.actor,
           },
         );
         first = (async () => {
@@ -348,7 +348,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
               runId,
               threadId: f.threadId,
               scopeHandle: f.handle,
-              userId: f.actor.id,
+              actor: f.actor,
               inputIdentity: { clientId: "no-change-client", sourceCommandId },
               inputOrigin: "userInput",
             },
@@ -419,7 +419,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
             runId,
             threadId: f.threadId,
             scopeHandle: f.handle,
-            userId: f.actor.id,
+            actor: f.actor,
           },
         );
         const events: StreamEvent[] = [];
@@ -493,7 +493,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
             runId,
             threadId: f.threadId,
             scopeHandle: f.handle,
-            userId: f.actor.id,
+            actor: f.actor,
           },
         );
         draining = (async () => {
@@ -590,7 +590,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
             runId,
             threadId: f.threadId,
             scopeHandle: f.handle,
-            userId: f.actor.id,
+            actor: f.actor,
             operation: { kind: "compact" },
             inputOrigin: "controlOperation",
             inputIdentity: {

@@ -49,7 +49,7 @@ describe.skipIf(!enabled)("Harness真实数据库持久化 integration", () => {
           runId,
           threadId: f.threadId,
           scopeHandle: f.handle,
-          userId: f.actor.id,
+          actor: f.actor,
           inputIdentity: {
             clientId: "persistence-client",
             sourceCommandId: "persistence-command",

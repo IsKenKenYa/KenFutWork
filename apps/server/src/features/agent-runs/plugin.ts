@@ -17,8 +17,8 @@ import type { AgentRunExtension } from "../../agent/run-extension.js";
 import { createAgentRunService } from "../../agent/runtime.js";
 import { composeToolGate } from "../../agent/tool-gate.js";
 import {
-  createWorkspaceSkillsByWorkspaceLoader,
-  createWorkspaceSkillsLoader,
+  createInstanceSkillsByInstanceLoader,
+  createInstanceSkillsLoader,
 } from "../../agent/workspace-skills.js";
 import { registerRunRoutes } from "../../http/runs.js";
 import type {
@@ -70,15 +70,13 @@ export function createAgentRunsPlugin(
     name: "agent-runs",
     inject: [
       "agentModes",
-      "auth",
+      "localAccess",
       "brandKit",
       "canvas",
-      "credits",
       "persistence",
       "settings",
       "threads",
-      "tierGuard",
-      "viewer",
+      "localInstance",
       "taskWork",
     ],
     apply(ctx) {
@@ -93,7 +91,7 @@ export function createAgentRunsPlugin(
       ctx.register("agentRunMetadata", () =>
         createAgentRunMetadataService({
           repository: agentRunRepository,
-          viewerService: ctx.get("viewer"),
+          localInstance: ctx.get("localInstance"),
           threadService: ctx.get("threads"),
         }),
       );
@@ -176,13 +174,13 @@ export function createAgentRunsPlugin(
             const scope = handle.describe();
             const row = await ctx
               .get("persistence")
-              .forWorkspace(scope.workspaceId)
+              .forInstance(scope.instanceId)
               .queryOne<{
                 state: import("../code-ui/conversation.js").CodeUiConversationState;
                 scope_generation: number | string;
                 branch_generation: number | string;
               }>(
-                "select state, scope_generation, branch_generation from public.code_ui_sessions where workspace_id = :workspace and id = $1 and parent_session_id is null and deleted_at is null and archived = false and execution_state = 'ready'",
+                "select state, scope_generation, branch_generation from public.code_ui_sessions where instance_id = :instance and id = $1 and parent_session_id is null and deleted_at is null and archived = false and execution_state = 'ready'",
                 [scope.taskId],
               );
             if (!row) throw new Error("Code Task 已关闭或授权不可用。");
@@ -204,9 +202,9 @@ export function createAgentRunsPlugin(
             const scope = scopeHandle.describe();
             const row = await ctx
               .get("persistence")
-              .forWorkspace(scope.workspaceId)
+              .forInstance(scope.instanceId)
               .queryOne<{ branch_generation: string | number }>(
-                "select branch_generation from public.code_ui_sessions where workspace_id = :workspace and id = $1 and deleted_at is null and archived = false and execution_state = 'ready'",
+                "select branch_generation from public.code_ui_sessions where instance_id = :instance and id = $1 and deleted_at is null and archived = false and execution_state = 'ready'",
                 [scope.taskId],
               );
             if (!row) throw new Error("Code Task 已关闭或授权不可用。");
@@ -250,17 +248,15 @@ export function createAgentRunsPlugin(
                 },
               }
             : {}),
-          workspaceSkillsLoader: createWorkspaceSkillsLoader({
+          instanceSkillsLoader: createInstanceSkillsLoader({
             canvases: canvasRepository,
             skills: createSkillCatalogRepository(ctx.get("persistence")),
           }),
-          workspaceSkillsByWorkspaceLoader:
-            createWorkspaceSkillsByWorkspaceLoader({
-              skills: createSkillCatalogRepository(ctx.get("persistence")),
-            }),
+          instanceSkillsByInstanceLoader: createInstanceSkillsByInstanceLoader({
+            skills: createSkillCatalogRepository(ctx.get("persistence")),
+          }),
           // 项目绑定的本机工作目录（web 形态「填本机路径」）→ run 的沙箱作用域
           projectWorkDirLoader: createProjectWorkDirLoader({
-            canvases: canvasRepository,
             projects: createProjectRepository(ctx.get("persistence")),
           }),
           connectionManager: deps.connectionManager,
@@ -285,9 +281,7 @@ export function createAgentRunsPlugin(
           emitTurnStopping: (payload) => deps.events.emitTurnStopping(payload),
           ...(deps.emitPreStep ? { emitPreStep: deps.emitPreStep } : {}),
           toolGateFor,
-          creditService: d.get("credits"),
-          tierGuard: d.get("tierGuard"),
-          viewerService: d.get("viewer"),
+          localInstance: d.get("localInstance"),
         });
       });
       return async () => {
@@ -305,12 +299,11 @@ export function createAgentRunsPlugin(
         executionScopes: ctx.get("executionScopes"),
         codeUi: ctx.get("codeUi"),
         agentRunMetadataService: ctx.get("agentRunMetadata"),
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         settingsService: ctx.get("settings"),
         threadService: ctx.get("threads"),
-        viewerService: ctx.get("viewer"),
+        localInstance: ctx.get("localInstance"),
         // 平台池额度前置拦截（FORM-10）：走系统供应商且余额耗尽时拒绝启动
-        creditService: ctx.get("credits"),
         modelProviders: ctx.get("modelProviders"),
       });
     },

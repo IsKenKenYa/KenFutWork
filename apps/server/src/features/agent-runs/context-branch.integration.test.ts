@@ -63,7 +63,7 @@ async function runInput(f: Harness, threadId: string, prompt: string) {
       runId,
       threadId,
       scopeHandle: f.handle,
-      userId: f.actor.id,
+      actor: f.actor,
       inputIdentity: {
         clientId: "context-branch-client",
         sourceCommandId: runId,

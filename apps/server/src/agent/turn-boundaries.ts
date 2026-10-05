@@ -25,9 +25,12 @@ export async function captureAgentTurnBoundaryFacts(options: {
           status: "captured",
           reference: capture.effective?.id ?? null,
         };
-    } catch {
+    } catch (error) {
       files = { status: "failed", reason: "capture_failed" };
-      console.warn("[turn-boundary] 文件边界捕获失败。");
+      console.warn(
+        "[turn-boundary] 文件边界捕获失败：",
+        error instanceof Error ? error.message : "未知捕获错误",
+      );
     }
   }
   let context: AgentTurnBoundary["context"] = {

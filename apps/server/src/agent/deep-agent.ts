@@ -283,7 +283,7 @@ export type KenFutWorkAgentFactory = (options: {
   store?: BaseStore;
   /** 内核 ctx.tools 贡献的工具（按 preset 过滤后），桥接为模型可调用工具。 */
   kernelTools?: ToolDefinition[];
-  /** 本次运行的工具执行上下文（runId/accessToken）。 */
+  /** 本次运行的工具执行上下文（runId/LocalActor）。 */
   runToolContext?: ToolExecutionContext;
   /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
   toolGate?: ToolGate;

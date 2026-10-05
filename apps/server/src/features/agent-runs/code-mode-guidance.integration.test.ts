@@ -8,8 +8,6 @@ import { composePlugins } from "../../kernel/compose.js";
 import type { PreStepPayload } from "../../kernel/types.js";
 import { createExecutionModeStore } from "../agent-modes/execution-mode-store.js";
 import { createAgentModesPlugin } from "../agent-modes/plugin.js";
-import { createLocalTrustAuthenticator } from "../auth/local-trust.js";
-import { createAccountRepository } from "../auth/repository.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { BoundaryModel, createHarness } from "./test-harness.js";
 
@@ -63,11 +61,9 @@ async function createGuidanceFixture() {
         {
           app,
           overrides: {
-            auth: createLocalTrustAuthenticator({
-              accounts: createAccountRepository(database.persistence),
-            }),
+            localAccess: database.localAccess,
             persistence: database.persistence,
-            viewer: f.viewer,
+            localInstance: f.localInstance,
           },
         },
       );
@@ -101,8 +97,7 @@ async function runInput(f: Harness, threadId: string, prompt: string) {
     {
       threadId,
       scopeHandle: f.handle,
-      userId: f.actor.id,
-      accessToken: f.actor.accessToken,
+      actor: f.actor,
     },
   );
   await f.service.createAcceptedRun({
@@ -124,10 +119,11 @@ describe.skipIf(process.env.KENFUTWORK_AGENT_MODE_GUIDANCE_TEST_PG !== "1")(
       const f = await createGuidanceFixture();
       try {
         const modeStore = createExecutionModeStore(f.database.persistence);
-        await modeStore.save(f.scope.workspaceId, f.threadId, "goal");
-        expect(await modeStore.lookup(f.scope.workspaceId, f.threadId)).toEqual(
-          { exists: true, mode: "goal" },
-        );
+        await modeStore.save(f.scope.instanceId, f.threadId, "goal");
+        expect(await modeStore.lookup(f.scope.instanceId, f.threadId)).toEqual({
+          exists: true,
+          mode: "goal",
+        });
         expect(f.initialKernel.get("agentModes").getMode(f.threadId)).toBe(
           "agent",
         );
@@ -142,7 +138,7 @@ describe.skipIf(process.env.KENFUTWORK_AGENT_MODE_GUIDANCE_TEST_PG !== "1")(
           {
             runId,
             threadId: f.threadId,
-            workspaceId: f.scope.workspaceId,
+            instanceId: f.scope.instanceId,
             taskId: f.scope.taskId,
             sessionId: f.scope.taskId,
             preset: "code",
@@ -156,7 +152,7 @@ describe.skipIf(process.env.KENFUTWORK_AGENT_MODE_GUIDANCE_TEST_PG !== "1")(
       const f = await createGuidanceFixture();
       try {
         const modeStore = createExecutionModeStore(f.database.persistence);
-        await modeStore.save(f.scope.workspaceId, f.threadId, "goal");
+        await modeStore.save(f.scope.instanceId, f.threadId, "goal");
         const originalRunId = await runInput(
           f,
           f.threadId,
@@ -178,9 +174,9 @@ describe.skipIf(process.env.KENFUTWORK_AGENT_MODE_GUIDANCE_TEST_PG !== "1")(
         if (!branch) throw new Error("同Task新context thread未实际克隆");
         // 只建立history-edit已验证的持久换绑边界，不替代其事务实现。
         await f.database.persistence
-          .forWorkspace(f.scope.workspaceId)
+          .forInstance(f.scope.instanceId)
           .execute(
-            "update public.chat_sessions set thread_id=$1 where workspace_id=:workspace and id=$2 and project_id=$3 and thread_id=$4",
+            "update public.chat_sessions set thread_id=$1 where instance_id=:instance and id=$2 and project_id=$3 and thread_id=$4",
             [targetThreadId, f.scope.taskId, f.scope.projectId, f.threadId],
           );
         f.runtime.releaseContextBranch({
@@ -188,7 +184,7 @@ describe.skipIf(process.env.KENFUTWORK_AGENT_MODE_GUIDANCE_TEST_PG !== "1")(
           reference: branch,
         });
         expect(
-          await modeStore.lookup(f.scope.workspaceId, targetThreadId),
+          await modeStore.lookup(f.scope.instanceId, targetThreadId),
         ).toEqual({ exists: true, mode: "goal" });
         const coldKernel = await f.installColdKernel();
         expect(coldKernel.get("agentModes").getMode(targetThreadId)).toBe(
@@ -215,7 +211,7 @@ describe.skipIf(process.env.KENFUTWORK_AGENT_MODE_GUIDANCE_TEST_PG !== "1")(
         expect(f.observed.at(-1)).toMatchObject({
           runId,
           threadId: targetThreadId,
-          workspaceId: f.scope.workspaceId,
+          instanceId: f.scope.instanceId,
           taskId: f.scope.taskId,
           sessionId: f.scope.taskId,
           preset: "code",

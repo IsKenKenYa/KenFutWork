@@ -1,6 +1,8 @@
-import type { AuthenticatedUser } from "../auth/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type { ThreadService } from "../chat/thread-service.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import type { AgentRunRepository } from "./repository.js";
 import type {
   AgentTurnBoundaries,
@@ -34,7 +36,7 @@ export class AgentTurnBoundaryError extends Error {
 export type AgentRunMetadataService = {
   recordTurnBoundary(input: AgentTurnBoundary): Promise<void>;
   getOwnedTurnBoundaries(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     input: { taskId: string; runId: string },
   ): Promise<AgentTurnBoundaries>;
   createAcceptedRun(input: CreateAcceptedAgentRunInput): Promise<void>;
@@ -54,14 +56,14 @@ export function createAgentActivityQuery(options: {
 }) {
   const now = options.now ?? (() => new Date());
   return async function workspaceActivity(input: {
-    workspaceId: string;
+    instanceId: string;
   }): Promise<{ runs: number; totalSeconds: number; windowDays: number }> {
     const since = new Date(
       now().getTime() - AGENT_ACTIVITY_WINDOW_DAYS * 24 * 60 * 60 * 1000,
     );
     const activity = await options.repository.workspaceActivity({
       since,
-      workspaceId: input.workspaceId,
+      instanceId: input.instanceId,
     });
     return { windowDays: AGENT_ACTIVITY_WINDOW_DAYS, ...activity };
   };
@@ -69,7 +71,7 @@ export function createAgentActivityQuery(options: {
 
 export function createAgentRunMetadataService(options: {
   repository: AgentRunRepository;
-  viewerService?: Pick<ViewerService, "resolveWorkspace">;
+  localInstance?: Pick<LocalInstanceService, "resolve">;
   threadService?: Pick<ThreadService, "resolveOwnedSessionThread">;
 }): AgentRunMetadataService {
   const { repository } = options;
@@ -84,10 +86,10 @@ export function createAgentRunMetadataService(options: {
         );
     },
     async getOwnedTurnBoundaries(actor, input) {
-      if (!options.viewerService || !options.threadService)
+      if (!options.localInstance || !options.threadService)
         throw new AgentRunPersistenceError("轮次历史读取服务未装配。");
-      const workspace = await options.viewerService
-        .resolveWorkspace(actor)
+      const workspace = await options.localInstance
+        .resolve(actor)
         .catch(() => null);
       const binding = workspace
         ? await options.threadService
@@ -101,7 +103,7 @@ export function createAgentRunMetadataService(options: {
           404,
         );
       return repository.getTurnBoundaries({
-        workspaceId: workspace.id,
+        instanceId: workspace.instanceId,
         projectId: binding.projectId,
         taskId: input.taskId,
         runId: input.runId,

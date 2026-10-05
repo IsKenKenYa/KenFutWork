@@ -6,6 +6,7 @@ import {
   clampSubagentMaxContinuations,
   type ImageAttachment,
   type ImageGenerationPreference,
+  type InstanceSettings,
   type MessageMention,
   type RunCancelResponse,
   type RunCreateRequest,
@@ -13,7 +14,6 @@ import {
   resolveContextWindow,
   type StreamEvent,
   type VideoGenerationPreference,
-  type WorkspaceSettings,
 } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { HumanMessage } from "@langchain/core/messages";
@@ -23,9 +23,7 @@ import type {
   AgentTurnBoundary,
   AgentTurnBoundaryPhase,
 } from "../features/agent-runs/types.js";
-import type { AuthenticatedUser } from "../features/auth/types.js";
 import type { BlobStore } from "../features/blob/types.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
 import type { CanvasRepository } from "../features/canvas/repository.js";
 import { buildCanvasSummaryForContext } from "../features/canvas/tools/inspect-canvas.js";
@@ -37,8 +35,6 @@ import type {
 } from "../features/code-tools/project-instructions-types.js";
 import type { TrustedCodeInput } from "../features/code-ui/attachments/input-types.js";
 import { codeInputContent } from "../features/code-ui/attachments/model-input.js";
-import type { CreditService } from "../features/credits/credit-service.js";
-import type { TierGuard } from "../features/credits/tier-guard.js";
 import type { ExecutionScopeHandle } from "../features/execution/scope-service.js";
 // execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
 // 不需要自定义代码执行工具
@@ -47,6 +43,10 @@ import type {
   SubmitVideoJobFn,
 } from "../features/generation/tool-types.js";
 import type { JobService } from "../features/jobs/job-service.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../features/local-instance/types.js";
 import { resolveModelInputCapabilities } from "../features/model-providers/input-capabilities.js";
 import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
 import { parseInstanceSpecifier } from "../features/model-providers/model-catalog-service.js";
@@ -116,9 +116,9 @@ import {
   captureAgentTurnBoundaryFacts,
 } from "./turn-boundaries.js";
 import type {
-  WorkspaceSkillEntry,
-  WorkspaceSkillsByWorkspaceLoader,
-  WorkspaceSkillsLoader,
+  InstanceSkillEntry,
+  InstanceSkillsByInstanceLoader,
+  InstanceSkillsLoader,
 } from "./workspace-skills.js";
 /**
  * Build the text portion of a user message, appending <input_images> XML
@@ -126,8 +126,7 @@ import type {
  */
 /**
  * run → agent preset（DEC-2 会话级能力集），**模式能力分离的口径源头**：
- * - 客户端显式传 preset 时以传入值优先（Code 工作台显式传 `code`——
- *   Code run 必带 canvasId（沙箱目录名载体），按 canvasId 推定会误判）；
+ * - Code 通过可信 Task scope 选择编码能力，画布身份不参与执行；
  * - 未显式声明时按 canvasId 兜底：有画布归 design（画布页会话），无画布归 code。
  */
 export function resolvePresetForRun(run: {
@@ -142,36 +141,35 @@ export function resolvePresetForRun(run: {
 /**
  * 首轮消息的画布状态摘要（`<canvas_state>`）：**仅 design 注入**。
  *
- * Code run 也带 canvasId（项目主画布/Code 工作台载体），但 Code 会话没有画布
- * （DEC-2 分离）——注入隐藏画布的数据只会误导模型。仓储缺席或画布解析失败
+ * Code 的持久 Task 与画布分离；画布摘要只供 Design 使用。仓储缺席或画布解析失败
  * 一律返回 null（非关键：design 下 agent 仍可手动 inspect_canvas）。
  */
 export async function resolveCanvasStateForRun(
   run: {
     canvasId?: string | undefined;
-    userId?: string | undefined;
+    actor?: LocalActor | undefined;
     preset?: "design" | "code" | undefined;
   },
   deps: {
     canvasRepository?: CanvasRepository;
-    viewerService?: ViewerService;
+    localInstance?: LocalInstanceService;
   },
 ): Promise<string | null> {
   if (
     resolvePresetForRun(run) !== "design" ||
     !run.canvasId ||
-    !run.userId ||
+    !run.actor ||
     !deps.canvasRepository
   ) {
     return null;
   }
   try {
-    const canvasWorkspace = await deps.viewerService
-      ?.resolveWorkspace({ id: run.userId })
+    const canvasWorkspace = await deps.localInstance
+      ?.resolve(run.actor)
       .catch(() => null);
     const canvasRow = canvasWorkspace
       ? await deps.canvasRepository
-          .findById(canvasWorkspace.id, run.canvasId)
+          .findById(canvasWorkspace.instanceId, run.canvasId)
           .catch(() => null)
       : null;
     const content = canvasRow?.content as { elements?: unknown[] } | undefined;
@@ -194,7 +192,7 @@ export function buildUserMessage(
   mentions: MessageMention[] = [],
   videoGenerationPreference?: VideoGenerationPreference,
   canvasSummary?: string | null,
-  workspaceSkillSource?: "database",
+  instanceSkillSource?: "database",
 ): { text: string } {
   const xmlBlocks: string[] = [];
 
@@ -218,10 +216,7 @@ export function buildUserMessage(
   if (videoGenerationPreferenceXml)
     xmlBlocks.push(videoGenerationPreferenceXml);
 
-  const mentionXmlBlocks = buildMentionXmlBlocks(
-    mentions,
-    workspaceSkillSource,
-  );
+  const mentionXmlBlocks = buildMentionXmlBlocks(mentions, instanceSkillSource);
   xmlBlocks.push(...mentionXmlBlocks);
 
   if (!xmlBlocks.length) return { text: prompt };
@@ -285,7 +280,7 @@ function buildVideoGenerationPreferenceXml(
 
 function buildMentionXmlBlocks(
   mentions: MessageMention[],
-  workspaceSkillSource?: "database",
+  instanceSkillSource?: "database",
 ): string[] {
   const xmlBlocks: string[] = [];
 
@@ -343,7 +338,7 @@ function buildMentionXmlBlocks(
     const skillXml = mentionedSkills
       .map((mention, i) => {
         const readInstruction =
-          workspaceSkillSource === "database"
+          instanceSkillSource === "database"
             ? `Call use_skill with name ${JSON.stringify(mention.slug)} for the installed skill instructions. Attached resources use use_skill resource_path; this DB installation is not a Native Read filesystem path.`
             : `Read \`/workspace-skills/${mention.slug}/SKILL.md\` for full instructions and follow them.`;
         return `<skill index="${i + 1}" id="${escapeXmlAttribute(mention.id)}" name="${escapeXmlAttribute(mention.label)}" slug="${escapeXmlAttribute(mention.slug)}">\nThe user explicitly requested this skill. ${readInstruction}\n</skill>`;
@@ -410,22 +405,15 @@ type RuntimeRunRecord = RunCreateRequest & {
   eventSink?: (event: StreamEvent) => Promise<void>;
   /** Code 的可信 Task 工作域；目录与角色授权由服务端解析，不能由请求伪造。 */
   scopeHandle?: ExecutionScopeHandle;
-  accessToken?: string;
+  actor: LocalActor;
   consumed: boolean;
   controller: AbortController;
   modelOverride?: string;
   runId: string;
-  /**
-   * 沙箱目录名用的 id（画布 UUID）。
-   *
-   * 无工作目录的 Code 会话，客户端只能把**会话 UUID** 当 canvasId 发上来，
-   * 直接落盘会得到 `tmp/sandbox/<会话UUID>`——与服务端懒供给的「Code 工作台」画布对不上。
-   * 运行入口解析出真实画布后放这里；事件路由仍用 `canvasId`（客户端认的是它）。
-   */
+  /** Design 的显式画布沙箱；Code 工作域完全由 scopeHandle 持有。 */
   sandboxScopeId?: string;
   status: RuntimeRunStatus;
   threadId?: string;
-  userId?: string;
   /** 用量归属元数据（DEC-6），模型解析后填入；turn-stopping 结算时消费。 */
   usageMeta?: {
     provider: string;
@@ -448,7 +436,7 @@ type CreateAgentRuntimeOptions = {
   processSandbox?: ProcessSandbox;
   taskWork?: TaskWorkManager;
   resolveTaskWorkContext?: (
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     scopeHandle: ExecutionScopeHandle,
     runId: string,
   ) => Promise<TaskWorkContext>;
@@ -457,24 +445,26 @@ type CreateAgentRuntimeOptions = {
   contextBranchProvider?: AgentContextBranchService;
   agentFactory?: KenFutWorkAgentFactory;
   agentRunMetadataService?: AgentRunMetadataService;
-  /** 画布数据访问（工作区作用域）：run 启动时读画布摘要、解析 brandKitId。 */
+  /** 画布数据访问（实例作用域）：run 启动时读画布摘要、解析 brandKitId。 */
   canvasRepository?: CanvasRepository;
   /** 画布写入（canvas 插件提供）：生成物落画布经此，运行时不再直连存储 SDK。 */
   canvasService?: CanvasService;
   /** 工作区技能加载（skills/canvas 聚合的数据访问提供）：运行时不再直连 SDK。 */
-  workspaceSkillsLoader?: WorkspaceSkillsLoader;
+  instanceSkillsLoader?: InstanceSkillsLoader;
   /** Code技能按可信Task工作区读取，不通过Canvas或虚拟Store路径。 */
-  workspaceSkillsByWorkspaceLoader?: WorkspaceSkillsByWorkspaceLoader;
+  instanceSkillsByInstanceLoader?: InstanceSkillsByInstanceLoader;
   /**
    * 画布 → 项目绑定的本机工作目录（`projects.work_dir`，判定见
    * features/projects/work-dir.ts）。命中时覆盖 `env.canvasWorkDirs`：
    * 用户在界面上绑定的目录优先于运维的环境变量映射。
    */
-  projectWorkDirLoader?: (canvasId: string) => Promise<string | null>;
+  projectWorkDirLoader?: (
+    instanceId: string,
+    canvasId: string,
+  ) => Promise<string | null>;
   connectionManager?: ConnectionManager;
   /** 对象存储（blob 缝）：生成物落盘与 URL（M3.1 起不再直连 Supabase Storage）。 */
   blob: BlobStore;
-  creditService?: CreditService;
   env: ServerEnv;
   eventDelayMs?: number;
   jobService?: JobService;
@@ -485,8 +475,8 @@ type CreateAgentRuntimeOptions = {
   modelCatalog?:
     | Pick<ModelCatalogService, "validateSpecifier" | "listCatalog">
     | undefined;
-  /** 工作区设置（读「用户规则」拼进系统提示词；缺省不注入）。 */
-  settingsService?: Pick<SettingsService, "getWorkspaceSettings"> | undefined;
+  /** 实例设置（读「用户规则」拼进系统提示词；缺省不注入）。 */
+  settingsService?: Pick<SettingsService, "getInstanceSettings"> | undefined;
   /** agent 链路用量累积器（turn-stopping 结算，DEC-6）。 */
   runUsage?: RunUsageAccumulator;
   /** 内核统一工具注册表：按 run 的 preset 过滤后桥接进模型工具列表（§4.5）。 */
@@ -518,20 +508,41 @@ type CreateAgentRuntimeOptions = {
   checkpointHooks?: {
     beforeTurn(ctx: {
       scope: ExecutionScopeHandle;
-      actor: AuthenticatedUser;
+      actor: LocalActor;
       runId: string;
     }): Promise<TurnBoundaryCapture | void>;
     afterTurn(ctx: {
       scope: ExecutionScopeHandle;
-      actor: AuthenticatedUser;
+      actor: LocalActor;
       runId: string;
     }): Promise<TurnBoundaryCapture | void>;
   };
   now?: () => string;
   runIdFactory?: () => string;
-  tierGuard?: TierGuard;
-  viewerService?: ViewerService;
+  localInstance: LocalInstanceService;
 };
+
+function copyRunInput(input: RunCreateRequest): RunCreateRequest {
+  return {
+    sessionId: input.sessionId,
+    conversationId: input.conversationId,
+    prompt: input.prompt,
+    ...(input.projectId ? { projectId: input.projectId } : {}),
+    ...(input.taskId ? { taskId: input.taskId } : {}),
+    ...(input.canvasId ? { canvasId: input.canvasId } : {}),
+    ...(input.attachments ? { attachments: input.attachments } : {}),
+    ...(input.imageGenerationPreference
+      ? { imageGenerationPreference: input.imageGenerationPreference }
+      : {}),
+    ...(input.videoGenerationPreference
+      ? { videoGenerationPreference: input.videoGenerationPreference }
+      : {}),
+    ...(input.mentions ? { mentions: input.mentions } : {}),
+    ...(input.model ? { model: input.model } : {}),
+    ...(input.preset ? { preset: input.preset } : {}),
+    ...(input.executionMode ? { executionMode: input.executionMode } : {}),
+  };
+}
 
 function inputMessageIdFor(run: RuntimeRunRecord): string {
   return run.inputIdentity
@@ -584,7 +595,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     writes[phase] ??= {
       persisted: false,
       boundary: {
-        workspaceId: scope.workspaceId,
+        instanceId: scope.instanceId,
         projectId: scope.projectId,
         taskId: scope.taskId,
         runId: run.runId,
@@ -649,9 +660,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       preset: resolvePresetForRun(run),
       ...(run.threadId ? { threadId: run.threadId } : {}),
       ...(run.sessionId ? { sessionId: run.sessionId } : {}),
-      ...(scope
-        ? { workspaceId: scope.workspaceId, taskId: scope.taskId }
-        : {}),
+      ...(scope ? { instanceId: scope.instanceId, taskId: scope.taskId } : {}),
     });
     return typeof result.input === "string" ? result.input : input;
   };
@@ -720,7 +729,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         operation?: { kind: "compact" };
         /** 持久命令已铸造的运行身份；恢复/去重不得再次生成另一轮 run。 */
         runId?: string;
-        accessToken?: string;
+        actor?: LocalActor;
         model?: string;
         modelInvocation?: ModelInvocationSnapshot;
         codeInputs?: TrustedCodeInput[];
@@ -728,15 +737,25 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         /** 沙箱目录名用的 id（画布 UUID）；缺省回落到 canvasId。 */
         sandboxScopeId?: string;
         threadId?: string;
-        userId?: string;
         eventSink?: (event: StreamEvent) => Promise<void>;
         delegationDepth?: number;
         roleInstructions?: string;
         approvalCeiling?: import("../features/permissions/approval-types.js").CodeApprovalMode;
       },
     ): RunCreateResponse {
+      if (!runOptions?.actor) throw new Error("运行缺少可信的本地实例身份。");
+      const actor: LocalActor = Object.freeze({
+        instanceId: runOptions.actor.instanceId,
+        accessClientId: runOptions.actor.accessClientId,
+      });
+      // 新工作由传输/命令准入把关；已受理队列、子代理和后台结果在维护期间继续收尾。
+      if (
+        runOptions.scopeHandle &&
+        runOptions.scopeHandle.describe().instanceId !== actor.instanceId
+      )
+        throw new Error("运行身份与 Task 执行作用域不属于同一本地实例。");
       const runId = runOptions?.runId ?? runIdFactory();
-      const { accessToken: _ignoredAccessToken, ...runInput } = input;
+      const runInput = copyRunInput(input);
       let finish!: () => void;
       const completion = {
         promise: new Promise<void>((resolve) => {
@@ -761,9 +780,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         ...(runOptions?.inputOrigin
           ? { inputOrigin: runOptions.inputOrigin }
           : {}),
-        ...(runOptions?.accessToken
-          ? { accessToken: runOptions.accessToken }
-          : {}),
+        actor,
         consumed: false,
         controller: new AbortController(),
         ...(runOptions?.model ? { modelOverride: runOptions.model } : {}),
@@ -780,7 +797,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           ? { sandboxScopeId: runOptions.sandboxScopeId }
           : {}),
         ...(runOptions?.threadId ? { threadId: runOptions.threadId } : {}),
-        ...(runOptions?.userId ? { userId: runOptions.userId } : {}),
         ...(runOptions?.eventSink ? { eventSink: runOptions.eventSink } : {}),
         ...(runOptions?.delegationDepth !== undefined
           ? { delegationDepth: runOptions.delegationDepth }
@@ -805,6 +821,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
     hasRun(runId: string) {
       return runs.has(runId);
+    },
+
+    activeRunCount(): number {
+      return [...runs.values()].filter(
+        (run) => !completions.get(run.runId)?.settled,
+      ).length;
     },
 
     hasActiveRunForTask(taskId: string): boolean {
@@ -871,6 +893,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       const rlog = createPipelineLogger("runtime", { runId });
 
       try {
+        await options.localInstance.resolve(run.actor);
         await updatePersistedRunStatus(
           options.agentRunMetadataService,
           run,
@@ -933,10 +956,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       // Build submitImageJob / submitVideoJob closures for async jobs via PGMQ
       let submitImageJob: SubmitImageJobFn | undefined;
       let submitVideoJob: SubmitVideoJobFn | undefined;
-      if (options.jobService && run.accessToken && run.userId) {
+      if (options.jobService) {
         const jobSvc = options.jobService;
-        const accessToken = run.accessToken;
-        const userId = run.userId;
+        const actor = run.actor;
         const canvasId = run.canvasId;
         const sessionId = run.sessionId;
         const runId = run.runId;
@@ -950,30 +972,21 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             );
           };
 
-          // Look up personal workspace directly — the viewer is already
-          // bootstrapped from the normal auth flow, so we skip ensureViewer
-          // to avoid its strict email validation on the profile schema.
-          const ws = await options.viewerService
-            ?.resolveWorkspace({ id: userId })
-            .catch(() => null);
-          if (!ws?.id) throw new Error("No personal workspace found");
+          await options.localInstance.resolve(actor);
+          const selected = parseInstanceSpecifier(input.model);
+          if (!selected) throw new Error("请从本地供应商目录选择图像模型。");
 
-          const user: AuthenticatedUser = {
-            id: userId,
-            accessToken,
-            email: "",
-            userMetadata: {},
-          };
-
-          const job = await jobSvc.createJob(user, {
+          const job = await jobSvc.createJob(actor, {
             ...(canvasId ? { canvasId } : {}),
             ...(sessionId ? { sessionId } : {}),
             jobType: "image_generation",
             payload: {
               prompt: input.prompt,
               title: input.title,
-              model: input.model,
+              model: selected.model,
+              provider_instance_id: selected.instanceId,
               aspect_ratio: input.aspectRatio,
+              ...(input.quality ? { quality: input.quality } : {}),
               ...(input.inputImages ? { input_images: input.inputImages } : {}),
             },
           });
@@ -996,10 +1009,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             pollCount++;
 
             if (run.controller.signal.aborted) {
+              await jobSvc.cancelJob(actor, job.id).catch(() => {});
               throw new Error("Run was canceled");
             }
 
-            const current = await jobSvc.getJobAdmin(job.id);
+            const current = await jobSvc.getJobForWorker(job.id);
 
             if (current.status === "succeeded" && current.result) {
               const result = current.result as {
@@ -1026,20 +1040,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                       : undefined;
 
                   const insertResult =
-                    await options.canvasService.insertImageElement(
-                      { accessToken, id: userId },
-                      {
-                        canvasId,
-                        objectPath: result.object_path,
-                        width: result.width ?? 1024,
-                        height: result.height ?? 1024,
-                        mimeType: result.mime_type ?? "image/png",
-                        ...(input.title ? { title: input.title } : {}),
-                        ...(explicitPlacement
-                          ? { placement: explicitPlacement }
-                          : {}),
-                      },
-                    );
+                    await options.canvasService.insertImageElement(actor, {
+                      canvasId,
+                      objectPath: result.object_path,
+                      width: result.width ?? 1024,
+                      height: result.height ?? 1024,
+                      mimeType: result.mime_type ?? "image/png",
+                      ...(input.title ? { title: input.title } : {}),
+                      ...(explicitPlacement
+                        ? { placement: explicitPlacement }
+                        : {}),
+                    });
                   elementId = insertResult.elementId;
 
                   // Notify connected frontends to refresh canvas
@@ -1111,25 +1122,18 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             );
           };
 
-          const ws = await options.viewerService
-            ?.resolveWorkspace({ id: userId })
-            .catch(() => null);
-          if (!ws?.id) throw new Error("No personal workspace found");
+          await options.localInstance.resolve(actor);
+          const selected = parseInstanceSpecifier(input.model);
+          if (!selected) throw new Error("请从本地供应商目录选择视频模型。");
 
-          const user: AuthenticatedUser = {
-            id: userId,
-            accessToken,
-            email: "",
-            userMetadata: {},
-          };
-
-          const job = await jobSvc.createJob(user, {
+          const job = await jobSvc.createJob(actor, {
             ...(canvasId ? { canvasId } : {}),
             ...(sessionId ? { sessionId } : {}),
             jobType: "video_generation",
             payload: {
               prompt: input.prompt,
-              model: input.model,
+              model: selected.model,
+              provider_instance_id: selected.instanceId,
               ...(input.duration != null ? { duration: input.duration } : {}),
               ...(input.resolution ? { resolution: input.resolution } : {}),
               ...(input.aspectRatio ? { aspect_ratio: input.aspectRatio } : {}),
@@ -1160,10 +1164,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             pollCount++;
 
             if (run.controller.signal.aborted) {
+              await jobSvc.cancelJob(actor, job.id).catch(() => {});
               throw new Error("Run was canceled");
             }
 
-            const current = await jobSvc.getJobAdmin(job.id);
+            const current = await jobSvc.getJobForWorker(job.id);
 
             if (current.status === "succeeded" && current.result) {
               const result = current.result as {
@@ -1190,24 +1195,21 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                       : undefined;
 
                   const insertResult =
-                    await options.canvasService.insertVideoElement(
-                      { accessToken, id: userId },
-                      {
-                        canvasId,
-                        signedUrl: result.signed_url,
-                        width: result.width ?? 1280,
-                        height: result.height ?? 720,
-                        mimeType: result.mime_type ?? "video/mp4",
-                        ...(result.duration_seconds != null
-                          ? { durationSeconds: result.duration_seconds }
-                          : {}),
-                        ...(input.title ? { title: input.title } : {}),
-                        ...(input.prompt ? { prompt: input.prompt } : {}),
-                        ...(explicitPlacement
-                          ? { placement: explicitPlacement }
-                          : {}),
-                      },
-                    );
+                    await options.canvasService.insertVideoElement(actor, {
+                      canvasId,
+                      signedUrl: result.signed_url,
+                      width: result.width ?? 1280,
+                      height: result.height ?? 720,
+                      mimeType: result.mime_type ?? "video/mp4",
+                      ...(result.duration_seconds != null
+                        ? { durationSeconds: result.duration_seconds }
+                        : {}),
+                      ...(input.title ? { title: input.title } : {}),
+                      ...(input.prompt ? { prompt: input.prompt } : {}),
+                      ...(explicitPlacement
+                        ? { placement: explicitPlacement }
+                        : {}),
+                    });
                   elementId = insertResult.elementId;
 
                   // Notify connected frontends to refresh canvas
@@ -1274,18 +1276,23 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       }
 
       // Code uses the trusted Task workspace; only Design stages a Store route.
-      let workspaceSkills: WorkspaceSkillEntry[] = [];
-      const skillOwnerId = run.scopeHandle
-        ? run.scopeHandle.describe().workspaceId
-        : run.canvasId;
-      const skillsLoader = run.scopeHandle
-        ? options.workspaceSkillsByWorkspaceLoader
-        : options.workspaceSkillsLoader;
-      if (skillOwnerId && skillsLoader) {
+      let instanceSkills: InstanceSkillEntry[] = [];
+      if (
+        run.scopeHandle
+          ? options.instanceSkillsByInstanceLoader
+          : run.canvasId && options.instanceSkillsLoader
+      ) {
         try {
-          workspaceSkills = await skillsLoader(skillOwnerId);
+          instanceSkills = run.scopeHandle
+            ? await options.instanceSkillsByInstanceLoader!(
+                run.actor.instanceId,
+              )
+            : await options.instanceSkillsLoader!(
+                run.actor.instanceId,
+                run.canvasId!,
+              );
           rlog.lap("workspace_skills_loaded", {
-            count: workspaceSkills.length,
+            count: instanceSkills.length,
           });
         } catch (err) {
           // Non-fatal: agent runs without workspace skills
@@ -1297,12 +1304,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       const backendCanvasId = run.scopeHandle
         ? undefined
         : (run.sandboxScopeId ?? run.canvasId);
-      // 项目绑定的本机工作目录（Code 模式「工作目录=项目」）：覆盖环境变量映射。
+      // Design 项目可绑定本机目录；Code 直接使用可信 Task 的 scopeHandle。
       // 读不到就照旧回沙箱目录——绑定是增强，不是 run 的前置条件。
       const boundWorkDir =
         backendCanvasId && options.projectWorkDirLoader
           ? await options
-              .projectWorkDirLoader(backendCanvasId)
+              .projectWorkDirLoader(run.actor.instanceId, backendCanvasId)
               .catch(() => null)
           : null;
       const scopedBackend = run.scopeHandle;
@@ -1315,7 +1322,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         : createAgentBackend(
             withBoundWorkDir(options.env, backendCanvasId, boundWorkDir),
             backendCanvasId,
-            { hasWorkspaceSkills: workspaceSkills.length > 0 },
+            { hasInstanceSkills: instanceSkills.length > 0 },
           );
 
       /**
@@ -1332,7 +1339,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         start: [],
         end: [],
       };
-      let hookShell: WorkspaceSettings["terminalShell"] | undefined;
+      let hookShell: InstanceSettings["terminalShell"] | undefined;
       let processLimits: ProcessLimits = {
         maxOutputBytes: AGENT_GOVERNANCE_DEFAULTS.processMaxOutputBytes,
         previewMaxChars: AGENT_GOVERNANCE_DEFAULTS.processPreviewMaxChars,
@@ -1396,11 +1403,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 : String(options.model ?? "default"),
           };
           // BYOK：run 的 model 携带实例 specifier 时，按用户供应商实例实例化聊天模型
-          if (
-            typeof resolvedModel === "string" &&
-            run.userId &&
-            options.modelProviders
-          ) {
+          if (typeof resolvedModel === "string" && options.modelProviders) {
             const instanceSpec = parseInstanceSpecifier(resolvedModel);
             if (instanceSpec) {
               /**
@@ -1409,15 +1412,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                */
               if (options.modelCatalog) {
                 const verdict = await options.modelCatalog
-                  .validateSpecifier(
-                    {
-                      accessToken: run.accessToken ?? "",
-                      email: "",
-                      id: run.userId,
-                      userMetadata: {},
-                    },
-                    resolvedModel,
-                  )
+                  .validateSpecifier(run.actor, resolvedModel)
                   .catch(() => ({ ok: true as const }));
                 if (!verdict.ok) {
                   throw new Error(verdict.message);
@@ -1425,12 +1420,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               }
               const credentials =
                 await options.modelProviders.resolveCredentials(
-                  {
-                    accessToken: run.accessToken ?? "",
-                    email: "",
-                    id: run.userId,
-                    userMetadata: {},
-                  },
+                  run.actor,
                   instanceSpec.instanceId,
                 );
               // 模型级推理参数映射（extraBody）随模型行带入请求体
@@ -1504,13 +1494,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 .replace(/^-|-$/g, "");
               const fileName = `gen-${slug}-${Date.now()}.${ext}`;
 
-              const resolved = run.userId
-                ? await options.viewerService
-                    ?.resolveWorkspace({ id: run.userId })
-                    .catch(() => null)
-                : null;
-              const workspaceId = resolved?.id ?? "default";
-              const objectPath = `${workspaceId}/${Date.now()}-${fileName}`;
+              const { instanceId } = await options.localInstance.resolve(
+                run.actor,
+              );
+              const objectPath = `${instanceId}/${Date.now()}-${fileName}`;
 
               const assetBucket = blob.bucket("project-assets");
               await assetBucket.upload(objectPath, buffer, {
@@ -1525,13 +1512,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
           // Resolve brand kit ID from canvas to project (single JOIN, workspace-scoped)
           let brandKitId: string | null = null;
-          if (run.canvasId && run.userId && options.canvasRepository) {
-            const canvasWorkspace = await options.viewerService
-              ?.resolveWorkspace({ id: run.userId })
+          if (run.canvasId && options.canvasRepository) {
+            const canvasWorkspace = await options.localInstance
+              ?.resolve(run.actor)
               .catch(() => null);
             if (canvasWorkspace) {
               brandKitId = await options.canvasRepository
-                .findProjectBrandKitId(canvasWorkspace.id, run.canvasId)
+                .findProjectBrandKitId(canvasWorkspace.instanceId, run.canvasId)
                 .catch(() => null);
             }
           }
@@ -1544,7 +1531,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           const store = persistence?.store;
           if (
             !run.scopeHandle &&
-            workspaceSkills.length > 0 &&
+            instanceSkills.length > 0 &&
             store &&
             run.canvasId
           ) {
@@ -1556,7 +1543,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             const now_ = new Date().toISOString();
 
             const writeOps: Promise<void>[] = [];
-            for (const skill of workspaceSkills) {
+            for (const skill of instanceSkills) {
               // Write SKILL.md
               writeOps.push(
                 store.put(storeNamespace, `/${skill.name}/SKILL.md`, {
@@ -1578,12 +1565,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             }
 
             await Promise.all(writeOps);
-            const totalFiles = workspaceSkills.reduce(
+            const totalFiles = instanceSkills.reduce(
               (sum, s) => sum + s.files.length,
               0,
             );
             rlog.lap("workspace_skills_stored", {
-              count: workspaceSkills.length,
+              count: instanceSkills.length,
               files: totalFiles,
             });
           }
@@ -1612,15 +1599,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               }
             : undefined;
 
-          // 工具执行上下文的工作区：工具侧（skill 目录等）按工作区取数，
-          // 否则只能拿到 runId/accessToken，无法解析工作区（曾致技能工具恒空）。
-          let toolWorkspaceId: string | undefined;
-          if (run.userId && options.viewerService) {
-            const workspace = await options.viewerService
-              .resolveWorkspace({ id: run.userId })
-              .catch(() => null);
-            toolWorkspaceId = workspace?.id;
-          }
+          // 工具使用可信运行的稳定实例归属，客户端身份不会改变资源所有者。
+          const { instanceId: toolInstanceId } =
+            await options.localInstance.resolve(run.actor);
 
           /**
            * 用户规则（设置 → 规则与记忆）拼进系统提示词：这是那段 UI 的**真实消费方**
@@ -1628,67 +1609,59 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
            */
           let userRulesFragment: string[] = [];
           let codeProjectContext: CodeProjectContext | undefined;
-          if (toolWorkspaceId && options.settingsService) {
-            const workspaceSettings = await options.settingsService
-              .getWorkspaceSettings(
-                {
-                  accessToken: run.accessToken ?? "",
-                  email: "",
-                  id: run.userId ?? "",
-                  userMetadata: {},
-                },
-                toolWorkspaceId,
-              )
+          if (toolInstanceId && options.settingsService) {
+            const instanceSettings = await options.settingsService
+              .getInstanceSettings(run.actor, toolInstanceId)
               .catch(() => null);
-            if (workspaceSettings) codeInputLimits = workspaceSettings;
+            if (instanceSettings) codeInputLimits = instanceSettings;
             userRulesFragment = formatUserRulesFragment({
-              userRules: workspaceSettings?.userRules,
-              ruleEntries: workspaceSettings?.ruleEntries,
+              userRules: instanceSettings?.userRules,
+              ruleEntries: instanceSettings?.ruleEntries,
             });
             if (run.scopeHandle && options.codeProjectContextLoader) {
-              if (!workspaceSettings)
+              if (!instanceSettings)
                 throw new Error("Code 项目规则加载缺少治理设置。");
               codeProjectContext = await options.codeProjectContextLoader(
                 run.scopeHandle,
                 {
-                  maxTextBytes: workspaceSettings.codeReadMaxBytes,
-                  maxEntries: workspaceSettings.codeSearchMaxResults,
+                  maxTextBytes: instanceSettings.codeReadMaxBytes,
+                  maxEntries: instanceSettings.codeSearchMaxResults,
                 },
                 run.controller.signal,
               );
             }
             // 同一个设置对象顺带读压缩开关（少一次库往返）
-            autoCompactEnabled = workspaceSettings?.autoCompactEnabled ?? true;
+            autoCompactEnabled = instanceSettings?.autoCompactEnabled ?? true;
             // 钩子也从这个对象读（同一趟）：起点钩子在装配 agent 之前跑
             hookCommands = {
-              start: hooksFor(workspaceSettings?.hooks, "turn-start"),
-              end: hooksFor(workspaceSettings?.hooks, "turn-end"),
+              start: hooksFor(instanceSettings?.hooks, "turn-start"),
+              end: hooksFor(instanceSettings?.hooks, "turn-end"),
             };
-            hookShell = workspaceSettings?.terminalShell;
-            if (workspaceSettings)
+            hookShell = instanceSettings?.terminalShell;
+            if (instanceSettings)
               processLimits = {
-                maxOutputBytes: workspaceSettings.processMaxOutputBytes,
-                previewMaxChars: workspaceSettings.processPreviewMaxChars,
-                yieldMs: workspaceSettings.processYieldMs,
-                killGraceMs: workspaceSettings.processKillGraceMs,
+                maxOutputBytes: instanceSettings.processMaxOutputBytes,
+                previewMaxChars: instanceSettings.processPreviewMaxChars,
+                yieldMs: instanceSettings.processYieldMs,
+                killGraceMs: instanceSettings.processKillGraceMs,
               };
             // 后台任务并发上限（DEC-15/18）：治理设置读侧已钳回护栏
             governanceConcurrency =
-              workspaceSettings?.subagentMaxConcurrency ??
+              instanceSettings?.subagentMaxConcurrency ??
               AGENT_GOVERNANCE_DEFAULTS.subagentMaxConcurrency;
             governanceLlmRetry = {
               maxAttempts:
-                workspaceSettings?.llmRequestMaxRetries ??
+                instanceSettings?.llmRequestMaxRetries ??
                 AGENT_GOVERNANCE_DEFAULTS.llmRequestMaxRetries,
               infinite:
-                workspaceSettings?.llmInfiniteRetry ??
+                instanceSettings?.llmInfiniteRetry ??
                 AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
             };
             governanceExecuteTimeoutMs =
-              workspaceSettings?.executeTimeoutMs ??
+              instanceSettings?.executeTimeoutMs ??
               AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs;
             governanceMaxContinuations = clampSubagentMaxContinuations(
-              workspaceSettings?.subagentMaxContinuations ??
+              instanceSettings?.subagentMaxContinuations ??
                 AGENT_GOVERNANCE_DEFAULTS.subagentMaxContinuations,
             );
           }
@@ -1699,12 +1672,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             if (!options.taskWork || !options.resolveTaskWorkContext)
               throw new Error("Code Task 后台工作与前台执行协调器未装配。");
             taskWorkContext = await options.resolveTaskWorkContext(
-              {
-                id: run.userId ?? "",
-                accessToken: run.accessToken ?? "",
-                email: "",
-                userMetadata: {},
-              },
+              run.actor,
               run.scopeHandle,
               runId,
             );
@@ -1772,14 +1740,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   : "";
             let declaredWindow: number | null = null;
             let declaredMaxOutput: number | null = null;
-            if (specifier && options.modelCatalog && run.accessToken) {
+            if (specifier && options.modelCatalog) {
               const entries = await options.modelCatalog
-                .listCatalog({
-                  accessToken: run.accessToken,
-                  email: "",
-                  id: run.userId ?? "",
-                  userMetadata: {},
-                })
+                .listCatalog(run.actor)
                 .catch(() => []);
               const entry = entries.find(
                 (candidate) => candidate.id === specifier,
@@ -1817,16 +1780,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           // 的 schema 枚举与模型校验来源；无实例时空清单（工具如实报未配置）。
           let availableImageModels: AvailableModel[] = [];
           let availableVideoModels: AvailableVideoModel[] = [];
-          if (options.modelCatalog && run.userId) {
+          if (options.modelCatalog) {
             try {
-              const catalogUser: AuthenticatedUser = {
-                id: run.userId,
-                accessToken: run.accessToken ?? "",
-                email: "",
-                userMetadata: {},
-              };
+              const catalogActor = run.actor;
               const entries =
-                await options.modelCatalog.listCatalog(catalogUser);
+                await options.modelCatalog.listCatalog(catalogActor);
               const selection = parseInstanceSpecifier(
                 run.modelOverride ?? run.model ?? "",
               );
@@ -1909,11 +1867,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(taskWorkContext ? { taskWorkContext } : {}),
             ...(run.canvasId ? { canvasId: run.canvasId } : {}),
             ...(run.threadId ? { threadId: run.threadId } : {}),
-            ...(run.accessToken ? { accessToken: run.accessToken } : {}),
-            ...(run.userId ? { userId: run.userId } : {}),
-            ...(toolWorkspaceId ? { workspaceId: toolWorkspaceId } : {}),
+            actor: run.actor,
+            instanceId: toolInstanceId,
           };
           const toolResolutionContext = {
+            actor: run.actor,
             sessionId: run.sessionId,
             modelSpecifier: run.modelOverride ?? run.model,
             delegationDepth: run.delegationDepth ?? 0,
@@ -1974,9 +1932,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               ? { roleInstructions: run.roleInstructions }
               : {}),
             ...(brandKitId ? { brandKitId } : {}),
-            ...(toolWorkspaceId ? { workspaceId: toolWorkspaceId } : {}),
-            workspaceSkills: [
-              ...workspaceSkills,
+            instanceId: toolInstanceId,
+            instanceSkills: [
+              ...instanceSkills,
               ...(codeProjectContext?.skills ?? []),
             ],
             ...(codeProjectContext
@@ -2099,7 +2057,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               signal: run.controller.signal,
               now,
               onUsage: (usage) => {
-                if (!run.userId) return;
                 options.runUsage?.update(runId, {
                   inputTokens: usage.inputTokens,
                   outputTokens: usage.outputTokens,
@@ -2108,7 +2065,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   ...(run.usageMeta?.providerInstanceId
                     ? { providerInstanceId: run.usageMeta.providerInstanceId }
                     : {}),
-                  userId: run.userId,
+                  instanceId: run.actor.instanceId,
+                  accessClientId: run.actor.accessClientId,
                 });
               },
             })) {
@@ -2148,9 +2106,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(options.canvasRepository
               ? { canvasRepository: options.canvasRepository }
               : {}),
-            ...(options.viewerService
-              ? { viewerService: options.viewerService }
-              : {}),
+            localInstance: options.localInstance,
           });
 
           // 附件在下载与提示词构建两处消费：收窄成局部 const（缺省空数组，分支内不再判空）
@@ -2294,25 +2250,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               messages: [userMessage],
             },
             {
-              ...(run.threadId ||
-              run.canvasId ||
-              run.accessToken ||
-              run.userId ||
-              Object.keys(attachmentDataMap).length > 0
-                ? {
-                    configurable: {
-                      ...(run.threadId ? { thread_id: run.threadId } : {}),
-                      ...(run.canvasId ? { canvas_id: run.canvasId } : {}),
-                      ...(run.accessToken
-                        ? { access_token: run.accessToken }
-                        : {}),
-                      ...(run.userId ? { user_id: run.userId } : {}),
-                      ...(Object.keys(attachmentDataMap).length > 0
-                        ? { user_attachment_map: attachmentDataMap }
-                        : {}),
-                    },
-                  }
-                : {}),
+              configurable: {
+                ...(run.threadId ? { thread_id: run.threadId } : {}),
+                ...(run.canvasId ? { canvas_id: run.canvasId } : {}),
+                instance_id: run.actor.instanceId,
+                access_client_id: run.actor.accessClientId,
+                ...(Object.keys(attachmentDataMap).length > 0
+                  ? { user_attachment_map: attachmentDataMap }
+                  : {}),
+              },
               signal: run.controller.signal,
               version: "v2",
             },
@@ -2331,9 +2277,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           return;
         }
 
-        const usageUserId = run.userId;
+        const usageActor = run.actor;
         // 终态事件哨兵：正常路径适配器必发 run.completed / run.canceled / run.failed；
-        // 异常路径会让for-await静默结束；收尾必须补失败事件。
+        // 异常路径可能静默结束，收尾必须补失败事件。
         // DEC-15 轮末闸门循环：模型收尾时若后台任务未结算，吞掉这次
         // run.completed，以「后台任务通知」为新一轮输入重入同一 thread；
         // 全部结算后的那次 completed 才放行（通知必达，usage 归属不变）。
@@ -2349,7 +2295,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               canonicalToolEvents: agent.canonicalToolEvents === true,
               conversationId: run.conversationId,
               now,
-              ...(options.runUsage && usageUserId
+              ...(options.runUsage && usageActor
                 ? {
                     onUsage: (usage: {
                       inputTokens: number;
@@ -2366,7 +2312,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                                 run.usageMeta.providerInstanceId,
                             }
                           : {}),
-                        userId: usageUserId,
+                        instanceId: usageActor.instanceId,
+                        accessClientId: usageActor.accessClientId,
                       });
                     },
                   }
@@ -2463,8 +2410,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               if (isTerminalEvent(event)) {
                 sawTerminalEvent = true;
               }
-              // 被拒工具触发的有界失败：abort 后适配器报「用户取消」，但这是系统
-              // 主动中止——改判 run.failed 并把可读原因带给客户端
+              // 工具连续拒绝引起的主动中止保留可读失败原因。
               if (
                 event.type === "run.canceled" &&
                 denialTracker?.fatalReason()
@@ -2492,7 +2438,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 yield failedEvent;
                 return;
               }
-
               try {
                 await syncPersistedRunFromEvent(
                   options.agentRunMetadataService,
@@ -2549,7 +2494,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             return;
           }
 
-          // 流静默结束时补发失败终态，持久化并向消费者提供可读原因。
+          // 续轮保持同一Task/线程；静默结束的异常由下面的终态哨兵收尾。
           if (suppressCompletedForContinuation) {
             suppressCompletedForContinuation = false;
             // 续轮：附件映射随首轮消息已进 thread 历史，无需重带
@@ -2567,21 +2512,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 ],
               },
               {
-                ...(run.threadId ||
-                run.canvasId ||
-                run.accessToken ||
-                run.userId
-                  ? {
-                      configurable: {
-                        ...(run.threadId ? { thread_id: run.threadId } : {}),
-                        ...(run.canvasId ? { canvas_id: run.canvasId } : {}),
-                        ...(run.accessToken
-                          ? { access_token: run.accessToken }
-                          : {}),
-                        ...(run.userId ? { user_id: run.userId } : {}),
-                      },
-                    }
-                  : {}),
+                configurable: {
+                  ...(run.threadId ? { thread_id: run.threadId } : {}),
+                  ...(run.canvasId ? { canvas_id: run.canvasId } : {}),
+                  instance_id: run.actor.instanceId,
+                  access_client_id: run.actor.accessClientId,
+                },
                 signal: run.controller.signal,
                 version: "v2",
               },
@@ -2589,7 +2525,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             continue;
           }
           if (!sawTerminalEvent && run.status === "running") {
-            // error.code采用封闭枚举run_failed，可读原因由message承载。
+            // 统一持久化失败终态，可读原因由 message 承载。
             const message = "运行被中止且未产生结束事件（无终态事件）。";
             const failedEvent: StreamEvent = {
               error: { code: "run_failed", message },

@@ -1,7 +1,7 @@
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type StreamEvent, workspaceSettingsSchema } from "@kenfutwork/shared";
+import { instanceSettingsSchema, type StreamEvent } from "@kenfutwork/shared";
 import type { HumanMessage } from "@langchain/core/messages";
 import { afterEach, expect, it } from "vitest";
 import type { ServerEnv } from "../config/env.js";
@@ -15,6 +15,10 @@ import type { TaskWorkContext } from "../features/task-work/types.js";
 import { SystemPromptRegistryImpl } from "../kernel/context.js";
 import type { KenFutWorkAgentFactory } from "./deep-agent.js";
 import { createAgentRunService } from "./runtime.js";
+import {
+  createRuntimeTestInstance,
+  RUNTIME_TEST_ACTOR,
+} from "./runtime-test-fixtures.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -38,7 +42,7 @@ async function fixture(
   );
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
   const scope = {
-    workspaceId: "00000000-0000-4000-8000-000000000001",
+    instanceId: "00000000-0000-4000-8000-000000000001",
     projectId: "00000000-0000-4000-8000-000000000002",
     taskId: "00000000-0000-4000-8000-000000000003",
     generation: 1,
@@ -46,14 +50,12 @@ async function fixture(
     additionalDirectories: [],
     sandboxMode: "workspace-write" as const,
   };
-  const actor = { id: "owner", accessToken: "", email: "", userMetadata: {} };
+  const actor = RUNTIME_TEST_ACTOR;
   const handle = await createExecutionScopes({
     repository: {
       load: async () => ({ state: "ready", branchGeneration: 1, scope }),
     },
-    viewerService: {
-      resolveWorkspace: async () => ({ id: scope.workspaceId }),
-    } as never,
+    localInstance: createRuntimeTestInstance(),
   }).openTask(actor, scope.taskId);
   const execution = options.role
     ? handle.derive(options.role, "child")
@@ -156,14 +158,11 @@ async function fixture(
           },
         ],
       }),
-      getInstanceScope: async () => "workspace",
     } as never,
-    viewerService: {
-      resolveWorkspace: async () => ({ id: scope.workspaceId }),
-    } as never,
+    localInstance: createRuntimeTestInstance(),
     settingsService: {
-      getWorkspaceSettings: async () =>
-        workspaceSettingsSchema.parse({
+      getInstanceSettings: async () =>
+        instanceSettingsSchema.parse({
           defaultModel: `${scope.projectId}:model`,
         }),
     },
@@ -184,7 +183,7 @@ async function fixture(
     },
     {
       scopeHandle: execution,
-      userId: actor.id,
+      actor,
       model: `${scope.projectId}:model`,
       ...(options.codeInputs ? { codeInputs: options.codeInputs } : {}),
       ...(options.role ? { roleInstructions: "readonly evidence" } : {}),

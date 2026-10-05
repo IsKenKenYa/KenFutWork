@@ -72,8 +72,8 @@ describe("agent-runs repository（agent_runs，按 run id 定权）", () => {
       "accepted",
       "thread-1",
     ]);
-    // agent_runs 无 workspace_id 列：按 run id 定权（run id 由服务端生成）
-    expect(calls[0]?.text).not.toContain("workspace_id");
+    // agent_runs 无 instance_id 列：按 run id 定权（run id 由服务端生成）
+    expect(calls[0]?.text).not.toContain("instance_id");
   });
 
   it("更新只写显式给出且非 undefined 的列", async () => {
@@ -162,7 +162,7 @@ describe("workspaceActivity（运行活动）", () => {
     const activity = await createAgentRunRepository(
       createPersistenceFromRunner(runner),
     ).workspaceActivity({
-      workspaceId: "ws-1",
+      instanceId: "ws-1",
       since: new Date("2026-09-09T00:00:00.000Z"),
     });
 
@@ -171,9 +171,9 @@ describe("workspaceActivity（运行活动）", () => {
     expect(sql).toContain("join public.chat_sessions s on s.id = r.session_id");
     expect(sql).toContain("join public.canvases c on c.id = s.canvas_id");
     expect(sql).toContain("join public.projects p on p.id = c.project_id");
-    // 时间窗是位置参数 $1；`:workspace` 由 persistence 层追加到参数表末尾
+    // 时间窗是位置参数 $1；`:instance` 由 persistence 层追加到参数表末尾
     expect(sql).toContain("r.created_at >= $1");
-    expect(sql).toContain("p.workspace_id = $2");
+    expect(sql).toContain("p.instance_id = $2");
     // 仍在跑的轮按「到现在」计，数字不会冻住
     expect(sql).toContain("coalesce(r.completed_at, now())");
     expect(calls[0]?.values).toEqual(["2026-09-09T00:00:00.000Z", "ws-1"]);
@@ -189,7 +189,7 @@ describe("workspaceActivity（运行活动）", () => {
       const activity = await createAgentRunRepository(
         createPersistenceFromRunner(runner),
       ).workspaceActivity({
-        workspaceId: "ws-1",
+        instanceId: "ws-1",
         since: new Date(),
       });
       expect(activity).toEqual({ runs: 0, totalSeconds: 0 });

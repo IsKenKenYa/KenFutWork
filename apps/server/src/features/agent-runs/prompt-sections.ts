@@ -61,12 +61,12 @@ export function renderSkillsSection(
   return `## Skills\n\nThe following skills are enabled in this workspace:\n${skillsList}`;
 }
 
-/** skills 段：workspaceSkills 为 run 起始期事实（composition ctx 携带）。 */
+/** skills 段：instanceSkills 为 run 起始期事实（composition ctx 携带）。 */
 export const skillsPromptSection: PromptSectionDefinition = {
   name: "workspace.skills",
   order: 200,
   scope: "always",
-  resolve: (ctx) => renderSkillsSection(ctx.workspaceSkills ?? []),
+  resolve: (ctx) => renderSkillsSection(ctx.instanceSkills ?? []),
 };
 
 export const codeRolePromptSection: PromptSectionDefinition = {

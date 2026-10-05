@@ -34,7 +34,7 @@ export type AgentBoundaryCapture<T> =
 
 /** phase属于本run；files.reference允许指向此前run的同一实际文件版本。 */
 export interface AgentTurnBoundary {
-  workspaceId: string;
+  instanceId: string;
   projectId: string;
   taskId: string;
   runId: string;

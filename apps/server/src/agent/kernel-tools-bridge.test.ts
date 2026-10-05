@@ -1,6 +1,7 @@
+import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
-
 import { z } from "zod";
+import { createLocalInstanceService } from "../features/local-instance/service.js";
 import { ToolDeniedError } from "../kernel/context.js";
 import type { ToolDefinition } from "../kernel/types.js";
 import {
@@ -346,18 +347,22 @@ describe("resolvePresetForRun（DEC-2 会话级 preset）", () => {
 
 describe("resolveCanvasStateForRun（DEC-2 画布状态门控：design 才注入）", () => {
   const CANVAS_ID = "canvas-1";
+  const CANVAS_ACTOR = {
+    instanceId: "00000000-0000-4000-8000-000000000001",
+    accessClientId: null,
+  };
   const elements = [
     { id: "r1", type: "rectangle", x: 0, y: 0, width: 100, height: 50 },
   ];
 
   function deps(overrides: { findById?: () => unknown } = {}) {
     return {
-      viewerService: {
-        resolveWorkspace: async () => ({ id: "ws-1" }),
-      } as never,
+      localInstance: createLocalInstanceService({
+        repository: { ensure: async () => CANVAS_ACTOR.instanceId },
+        dataDir: tmpdir(),
+      }),
       canvasRepository: {
         findById: async () => ({ content: { elements } }),
-        findWorkspaceIdByCanvas: async () => "ws-1",
         findProjectBrandKitId: async () => null,
         saveContent: async () => 1,
         appendContent: async () => 1,
@@ -368,7 +373,7 @@ describe("resolveCanvasStateForRun（DEC-2 画布状态门控：design 才注入
 
   it("design（含 canvasId 兜底路径）：解析画布并产出摘要", async () => {
     const summary = await resolveCanvasStateForRun(
-      { canvasId: CANVAS_ID, userId: "u1", preset: "design" },
+      { canvasId: CANVAS_ID, actor: CANVAS_ACTOR, preset: "design" },
       deps(),
     );
     expect(summary).toContain("Canvas: 1 elements");
@@ -376,7 +381,7 @@ describe("resolveCanvasStateForRun（DEC-2 画布状态门控：design 才注入
 
     // 未显式声明 preset、带 canvasId → design 兜底，同样注入
     const fallback = await resolveCanvasStateForRun(
-      { canvasId: CANVAS_ID, userId: "u1" },
+      { canvasId: CANVAS_ID, actor: CANVAS_ACTOR },
       deps(),
     );
     expect(fallback).toContain("Canvas: 1 elements");
@@ -384,7 +389,7 @@ describe("resolveCanvasStateForRun（DEC-2 画布状态门控：design 才注入
 
   it("code：即使带真实 canvasId（项目主画布）也不注入", async () => {
     const summary = await resolveCanvasStateForRun(
-      { canvasId: CANVAS_ID, userId: "u1", preset: "code" },
+      { canvasId: CANVAS_ID, actor: CANVAS_ACTOR, preset: "code" },
       deps(),
     );
     expect(summary).toBeNull();
@@ -393,13 +398,13 @@ describe("resolveCanvasStateForRun（DEC-2 画布状态门控：design 才注入
   it("design 但仓储缺席 / 画布解析失败 → null（非关键）", async () => {
     expect(
       await resolveCanvasStateForRun(
-        { canvasId: CANVAS_ID, userId: "u1", preset: "design" },
+        { canvasId: CANVAS_ID, actor: CANVAS_ACTOR, preset: "design" },
         {},
       ),
     ).toBeNull();
     expect(
       await resolveCanvasStateForRun(
-        { canvasId: CANVAS_ID, userId: "u1", preset: "design" },
+        { canvasId: CANVAS_ID, actor: CANVAS_ACTOR, preset: "design" },
         deps({ findById: () => null }),
       ),
     ).toBeNull();

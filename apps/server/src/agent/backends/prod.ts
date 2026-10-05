@@ -42,7 +42,7 @@ export function createProductionBackendFactory(
     /** 画布 → 真实目录映射（`KENFUTWORK_CANVAS_WORK_DIRS`）；命中时直接落该目录。 */
     workDir?: string;
     skillsRoot?: string;
-    hasWorkspaceSkills?: boolean;
+    hasInstanceSkills?: boolean;
     /** 随包运行时 bin 目录（前置到 sandbox PATH）。 */
     runtimePathAdditions?: string[];
     /** 随包 JDK 根目录（JAVA_HOME）。 */
@@ -108,7 +108,7 @@ export function createProductionBackendFactory(
       "/skills/": skillsBackend,
     };
 
-    if (options?.hasWorkspaceSkills) {
+    if (options?.hasInstanceSkills) {
       routes["/workspace-skills/"] = new StoreBackend(stateAndStore, {
         namespace: ["projects", canvasId, "workspace-skills"],
       });
