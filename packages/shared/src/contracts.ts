@@ -14,13 +14,9 @@ export const conversationIdSchema = identifierSchema;
 export const runIdSchema = identifierSchema;
 export const messageIdSchema = identifierSchema;
 export const toolCallIdSchema = identifierSchema;
-export const userIdSchema = identifierSchema;
-export const workspaceIdSchema = identifierSchema;
+export const instanceIdSchema = identifierSchema;
 export const projectIdSchema = identifierSchema;
 export const canvasIdSchema = identifierSchema;
-
-export const workspaceTypeSchema = z.enum(["personal", "team"]);
-export const workspaceRoleSchema = z.enum(["owner", "admin", "member"]);
 
 export const runStatusSchema = z.enum([
   "accepted",
@@ -107,26 +103,6 @@ export const runCreateResponseSchema = z.object({
   status: z.literal("accepted"),
 });
 
-export const viewerProfileSchema = z.object({
-  id: userIdSchema,
-  email: z.email(),
-  displayName: z.string().min(1),
-  avatarUrl: z.url().nullable().optional(),
-});
-
-export const workspaceSummarySchema = z.object({
-  id: workspaceIdSchema,
-  name: z.string().min(1),
-  type: workspaceTypeSchema,
-  ownerUserId: userIdSchema,
-});
-
-export const workspaceMembershipSchema = z.object({
-  workspaceId: workspaceIdSchema,
-  userId: userIdSchema,
-  role: workspaceRoleSchema,
-});
-
 export const canvasSummarySchema = z.object({
   id: canvasIdSchema,
   name: z.string().min(1),
@@ -154,7 +130,7 @@ const projectSummaryFields = {
   workDir: z.string().min(1).nullable().optional(),
   additionalDirectories: z.array(additionalDirectorySchema).default([]),
   thumbnailUrl: z.string().nullable().optional(),
-  workspace: workspaceSummarySchema,
+  instanceId: instanceIdSchema,
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
 };
@@ -186,10 +162,6 @@ export const canvasDetailSchema = z.object({
   content: canvasContentSchema,
 });
 
-export const profileUpdateRequestSchema = z.object({
-  displayName: z.string().trim().min(1).max(100),
-});
-
 /**
  * 右栏「终端」用的 shell（`auto` = 按平台取默认：Windows → cmd，POSIX → sh）。
  *
@@ -208,7 +180,7 @@ export const terminalShellSchema = z.enum([
 
 export type TerminalShellId = z.infer<typeof terminalShellSchema>;
 
-export const workspaceSettingsSchema = z.object({
+export const instanceSettingsSchema = z.object({
   defaultModel: z.string().min(1),
   /** 终端默认 shell（用户口径：「可以在设置里配置默认的」）。 */
   terminalShell: terminalShellSchema.default("auto"),
@@ -299,6 +271,14 @@ export const workspaceSettingsSchema = z.object({
   executeTimeoutMs: governanceSetting("executeTimeoutMs"),
   /** Code 宿主通知通道重连间隔；与执行超时分别治理。 */
   codeUiReconnectDelayMs: governanceSetting("codeUiReconnectDelayMs"),
+  localAccessTicketTtlMs: governanceSetting("localAccessTicketTtlMs"),
+  localAccessSessionMaxAgeMs: governanceSetting("localAccessSessionMaxAgeMs"),
+  localDataMigrationPollMs: governanceSetting("localDataMigrationPollMs"),
+  /** launcher冷启动接通前不能读取库设置，只采用env兜底或默认值。 */
+  localServiceStartupTimeoutMs: governanceSetting(
+    "localServiceStartupTimeoutMs",
+  ),
+  localServiceStartupPollMs: governanceSetting("localServiceStartupPollMs"),
   codeReadMaxBytes: governanceSetting("codeReadMaxBytes"),
   codeReadPageCharacters: governanceSetting("codeReadPageCharacters"),
   codeSearchMaxResults: governanceSetting("codeSearchMaxResults"),
@@ -335,21 +315,12 @@ export const workspaceSettingsSchema = z.object({
   computerUseMaxActionsPerRun: governanceSetting("computerUseMaxActionsPerRun"),
   /** Computer Use：控制租约会话时长上限（毫秒）。 */
   computerUseSessionMaxMs: governanceSetting("computerUseSessionMaxMs"),
-
   computerUseAxMaxDepth: governanceSetting("computerUseAxMaxDepth"),
   computerUseAxMaxChildren: governanceSetting("computerUseAxMaxChildren"),
   computerUseAxTitleMaxChars: governanceSetting("computerUseAxTitleMaxChars"),
   computerUseAxValueMaxChars: governanceSetting("computerUseAxValueMaxChars"),
   computerUseAxMaxActions: governanceSetting("computerUseAxMaxActions"),
   computerUseInputDelayMs: governanceSetting("computerUseInputDelayMs"),
-
-  localAccessTicketTtlMs: governanceSetting("localAccessTicketTtlMs"),
-  localAccessSessionMaxAgeMs: governanceSetting("localAccessSessionMaxAgeMs"),
-  localDataMigrationPollMs: governanceSetting("localDataMigrationPollMs"),
-  localServiceStartupTimeoutMs: governanceSetting(
-    "localServiceStartupTimeoutMs",
-  ),
-  localServiceStartupPollMs: governanceSetting("localServiceStartupPollMs"),
 });
 
 export const modelInfoSchema = z.object({
@@ -519,7 +490,7 @@ export const assetObjectSchema = z.object({
   objectPath: z.string().min(1),
   mimeType: z.string().min(1).nullable(),
   byteSize: z.number().int().nonnegative().nullable(),
-  workspaceId: workspaceIdSchema,
+  instanceId: instanceIdSchema,
   projectId: projectIdSchema.nullable(),
   createdAt: timestampSchema,
 });
@@ -547,14 +518,10 @@ export type ChatMessageCreateRequest = z.infer<
   typeof chatMessageCreateRequestSchema
 >;
 export type ChatToolActivity = z.infer<typeof chatToolActivitySchema>;
-export type ProfileUpdateRequest = z.infer<typeof profileUpdateRequestSchema>;
-export type WorkspaceSettings = z.infer<typeof workspaceSettingsSchema>;
+export type InstanceSettings = z.infer<typeof instanceSettingsSchema>;
 export type ModelInfo = z.infer<typeof modelInfoSchema>;
 export type RunCreateRequest = z.infer<typeof runCreateRequestSchema>;
 export type RunCreateResponse = z.infer<typeof runCreateResponseSchema>;
-export type ViewerProfile = z.infer<typeof viewerProfileSchema>;
-export type WorkspaceSummary = z.infer<typeof workspaceSummarySchema>;
-export type WorkspaceMembership = z.infer<typeof workspaceMembershipSchema>;
 export type CanvasSummary = z.infer<typeof canvasSummarySchema>;
 export type ProjectSummary = z.infer<typeof projectSummarySchema>;
 export type CanvasContent = z.infer<typeof canvasContentSchema>;

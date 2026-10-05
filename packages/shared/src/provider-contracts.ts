@@ -3,7 +3,7 @@ import { z } from "zod";
 
 /**
  * BYOK 供应商缝契约（《改造计划》§4.8 / §5）。
- * 红线：apiKey 只写不读——所有响应 schema 一律不含 apiKey 字段（由本文件测试锁死）。
+ * 本地 Key 明文保存在实例数据目录；授权设置可按需读取，普通目录/事件不携带 Key。
  */
 
 /**
@@ -34,7 +34,7 @@ export const modelCapabilitySchema = z.enum([
 export type ModelCapability = z.infer<typeof modelCapabilitySchema>;
 
 /**
- * 模型级任务能力声明（BYOK 用户/管理员对单个模型的可选细化，docs/future/05 §6）。
+ * 模型级任务能力声明（实例主人对单个模型的可选细化，docs/future/05 §6）。
  * 语义红线：**字段缺省 = 未知，不是不支持**——目录与 UI 不得把「没声明」当「肯定不行」
  * 处理（kimi-code 的 UNKNOWN 语义）；只有显式声明的取值才可参与运行期裁剪。
  */
@@ -122,7 +122,7 @@ export type ProviderHeaderPlaceholder =
 
 /**
  * 保留头（大小写不敏感）：由适配器/运行时按凭证与线协议持有，自定义头**不得覆盖**。
- * 不加这条，就能用自定义头顶掉凭证头，等于绕开「apiKey 只写不读」的整个模型。
+ * 凭证头由适配器统一生成，自定义头不能顶掉当前 Key 的授权。
  */
 export const reservedProviderHeaderNames = [
   // 凭证类：由 apiKey 解析生成，或线协议的 key 头
@@ -259,14 +259,14 @@ export type ProviderInstanceModel = z.infer<typeof providerInstanceModelSchema>;
 
 const identifier = z.string().min(1);
 
-/** 用户供应商实例（BYOK 核心）：Key 以 apiKeyRef 间接引用，永不回传前端。 */
+/** 本地供应商配置：Key 以 apiKeyRef 引用凭据文件，普通目录不携带明文。 */
 export const providerInstanceConfigSchema = z.object({
   id: identifier,
-  workspaceId: identifier,
+  instanceId: identifier,
   name: z.string().min(1),
   protocol: providerProtocolSchema,
   baseUrl: z.string().optional(),
-  apiKeyRef: identifier,
+  apiKeyRef: identifier.nullable(),
   models: z.array(providerInstanceModelSchema).min(1),
   compat: providerCompatSchema.optional(),
   /** 自定义请求头（值含占位符，只写不读）。 */
@@ -283,7 +283,7 @@ export const providerInstanceCreateRequestSchema = z.object({
   name: z.string().min(1),
   protocol: providerProtocolSchema,
   baseUrl: z.string().optional(),
-  /** 只写不读：创建时提交明文 Key，服务端加密落库后仅存 ref。 */
+  /** 创建时提交明文 Key；数据库仅存本地凭据文件的引用。 */
   apiKey: z.string().min(1).optional(),
   /** 缺省视为空列表：模型型实例会被 superRefine 拒（见下），dify-engine 合法省略。 */
   models: z.array(providerInstanceModelSchema).default([]),
@@ -303,7 +303,7 @@ export const providerInstanceUpdateRequestSchema = z.object({
   name: z.string().min(1).optional(),
   protocol: providerProtocolSchema.optional(),
   baseUrl: z.string().optional(),
-  /** 只写不读：undefined保留旧值，null真实清除，字符串更新即覆盖。 */
+  /** undefined 保留旧值，null 真实清除，非空字符串更新凭据文件。 */
   apiKey: z.string().min(1).nullable().optional(),
   models: z.array(providerInstanceModelSchema).optional(),
   /** 可选CAS；由响应configRevision取得，冲突返回409。 */
@@ -317,12 +317,12 @@ export type ProviderInstanceUpdateRequest = z.infer<
   typeof providerInstanceUpdateRequestSchema
 >;
 
-/** 实例作用域：workspace = 用户自带（BYOK）；system = 平台池（管理员配置、分发给用户）。 */
-export const providerScopeSchema = z.enum(["workspace", "system"]);
+/** 供应商只属于当前本地实例，不存在平台池或账户作用域。 */
+export const providerScopeSchema = z.enum(["local"]);
 export type ProviderScope = z.infer<typeof providerScopeSchema>;
 
 /**
- * 实例响应：只有 apiKeyRef 语义的 hasCredential 标记，绝无 key 本体。
+ * 普通实例响应仅含 hasCredential 标记；授权设置明文读取走独立按需方法。
  * `headerKeys` 同理——自定义头的**键名**可见，值一律不回显（与 MCP `env`/`envKeys` 同口径）。
  */
 /**
@@ -435,7 +435,7 @@ export const modelCatalogEntrySchema = z.object({
     instanceId: identifier,
     name: z.string().min(1),
     protocol: providerProtocolSchema,
-    /** workspace = 用户自带（不计费）；system = 平台池（按 token 计费）。 */
+    /** 本地实例的 BYOK 供应商。 */
     scope: providerScopeSchema,
   }),
 });

@@ -3,7 +3,7 @@ import {
   codeUiEventSchema,
   zcodeUiProtocol as protocol,
 } from "./code-ui-contracts.js";
-import { workspaceSettingsSchema } from "./contracts.js";
+import { instanceSettingsSchema } from "./contracts.js";
 import {
   clampCodeUiReconnectDelayMs,
   RUNTIME_GOVERNANCE_KEYS,
@@ -16,7 +16,7 @@ const envKey = "KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS";
 
 it("Code重连间隔默认与工作区JSON治理一致，库优先env，空库落env或默认并统一护栏", () => {
   expect(
-    workspaceSettingsSchema.parse({ defaultModel: "fixture-model" })[key],
+    instanceSettingsSchema.parse({ defaultModel: "fixture-model" })[key],
   ).toBe(1_000);
   expect(RUNTIME_GOVERNANCE_KEYS).toContain(key);
   const overrides = resolveGovernanceEnvOverrides({ [envKey]: " 2000 " });
@@ -28,13 +28,13 @@ it("Code重连间隔默认与工作区JSON治理一致，库优先env，空库�
   expect(clampCodeUiReconnectDelayMs(999.9)).toBe(999);
   expect(clampCodeUiReconnectDelayMs(Number.NaN)).toBe(100);
   expect(
-    workspaceSettingsSchema.safeParse({
+    instanceSettingsSchema.safeParse({
       defaultModel: "fixture-model",
       [key]: 99,
     }).success,
   ).toBe(false);
   expect(
-    workspaceSettingsSchema.safeParse({
+    instanceSettingsSchema.safeParse({
       defaultModel: "fixture-model",
       [key]: 60_001,
     }).success,

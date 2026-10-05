@@ -57,7 +57,7 @@ export type SkillFileEntry = z.infer<typeof skillFileEntrySchema>;
 export const skillDetailSchema = skillListItemSchema.extend({
   license: z.string().nullable(),
   skillContent: z.string(),
-  createdBy: z.string().nullable(),
+  createdByClientId: z.string().nullable(),
   sourceUrl: z.string().nullable().optional(),
   packageName: z.string().nullable().optional(),
   files: z.array(skillFileEntrySchema).optional(),
@@ -93,11 +93,11 @@ export const skillUpdateRequestSchema = z.object({
 });
 export type SkillUpdateRequest = z.infer<typeof skillUpdateRequestSchema>;
 
-export const workspaceSkillToggleRequestSchema = z.object({
+export const instanceSkillToggleRequestSchema = z.object({
   enabled: z.boolean(),
 });
-export type WorkspaceSkillToggleRequest = z.infer<
-  typeof workspaceSkillToggleRequestSchema
+export type InstanceSkillToggleRequest = z.infer<
+  typeof instanceSkillToggleRequestSchema
 >;
 
 export const skillImportRequestSchema = z.object({
@@ -148,11 +148,11 @@ export const skillDetailResponseSchema = z.object({
 });
 export type SkillDetailResponse = z.infer<typeof skillDetailResponseSchema>;
 
-export const workspaceSkillListResponseSchema = z.object({
+export const instanceSkillListResponseSchema = z.object({
   skills: z.array(skillListItemSchema),
 });
-export type WorkspaceSkillListResponse = z.infer<
-  typeof workspaceSkillListResponseSchema
+export type InstanceSkillListResponse = z.infer<
+  typeof instanceSkillListResponseSchema
 >;
 
 export const skillFilesResponseSchema = z.object({

@@ -270,28 +270,6 @@ export const canvasSyncEventSchema = z.object({
   timestamp: timestampSchema,
 });
 
-export const billingErrorCodeSchema = z.enum([
-  "insufficient_credits",
-  "model_not_accessible",
-  "resolution_not_allowed",
-  "concurrency_limit",
-]);
-
-export type BillingErrorCode = z.infer<typeof billingErrorCodeSchema>;
-
-export const billingErrorEventSchema = z.object({
-  type: z.literal("billing.error"),
-  runId: runIdSchema,
-  timestamp: timestampSchema,
-  code: billingErrorCodeSchema,
-  message: z.string(),
-  // Credits-specific (only for insufficient_credits)
-  currentBalance: z.number().optional(),
-  requiredAmount: z.number().optional(),
-  plan: z.string().optional(),
-  dailyClaimed: z.boolean().optional(),
-});
-
 /**
  * flow 运行事件（P5，《flow 集成方案》事件缝）。
  *
@@ -334,7 +312,6 @@ export const streamEventSchema = z.discriminatedUnion("type", [
   runFailedEventSchema,
   runRetryingEventSchema,
   canvasSyncEventSchema,
-  billingErrorEventSchema,
   flowRunEventSchema,
 ]);
 

@@ -1,14 +1,11 @@
-// Cross-app contract barrel, including Supabase viewer/project HTTP schemas.
+// 本地实例与跨端产品契约的公开入口。
 
-export * from "./admin-contracts.js";
-export * from "./auth-contracts.js";
 export * from "./brand-kit-contracts.js";
 export * from "./capability-contracts.js";
 export * from "./checkpoints.js";
 export * from "./code-ui-contracts.js";
 export * from "./code-ui-host-bridge.js";
 export * from "./contracts.js";
-export * from "./credits.js";
 export * from "./errors.js";
 export * from "./events.js";
 export * from "./execution-contracts.js";

@@ -5,15 +5,12 @@ import {
   canvasDetailSchema,
   chatMessageSchema,
   chatSessionSummarySchema,
+  instanceSettingsSchema,
   modelInfoSchema,
   projectKindSchema,
   projectSummarySchema,
   runIdSchema,
   terminalShellSchema,
-  viewerProfileSchema,
-  workspaceMembershipSchema,
-  workspaceSettingsSchema,
-  workspaceSummarySchema,
 } from "./contracts.js";
 import { additionalDirectorySchema } from "./execution-contracts.js";
 
@@ -26,25 +23,6 @@ export const healthResponseSchema = z.object({
 export const runCancelResponseSchema = z.object({
   runId: runIdSchema,
   status: z.enum(["canceling", "canceled"]),
-});
-
-export const viewerCreditsSchema = z.object({
-  balance: z.number().int(),
-  plan: z.string(),
-  dailyClaimed: z.boolean(),
-  limits: z.object({
-    maxConcurrentJobs: z.number().int(),
-    maxResolution: z.string(),
-    monthlyCredits: z.number().int(),
-    dailyCredits: z.number().int(),
-  }),
-});
-
-export const viewerResponseSchema = z.object({
-  profile: viewerProfileSchema,
-  workspace: workspaceSummarySchema,
-  membership: workspaceMembershipSchema,
-  credits: viewerCreditsSchema.optional(),
 });
 
 export const projectListResponseSchema = z.object({
@@ -295,41 +273,6 @@ export const codeTerminalResponseSchema = z.object({
   }),
 });
 
-// --- 外部应用访问令牌（R5-2「外部应用授权」） ---
-
-/**
- * 一条令牌的**可读**形状：**没有明文**（明文只在创建响应里回一次）。
- * `tokenPrefix` 是明文前 12 位，仅供界面辨认。
- */
-export const apiTokenRecordSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  tokenPrefix: z.string().min(1),
-  createdAt: z.string().min(1),
-  lastUsedAt: z.string().min(1).nullable(),
-  revokedAt: z.string().min(1).nullable(),
-});
-
-export const apiTokenListResponseSchema = z.object({
-  tokens: z.array(apiTokenRecordSchema),
-});
-
-export const apiTokenCreateRequestSchema = z.object({
-  name: z.string().trim().min(1).max(60),
-});
-
-export const apiTokenCreateResponseSchema = z.object({
-  /** 明文，**只在这里出现一次**（库里只有 sha256）。 */
-  token: z.string().min(1),
-  record: apiTokenRecordSchema,
-});
-
-export type ApiTokenRecord = z.infer<typeof apiTokenRecordSchema>;
-export type ApiTokenListResponse = z.infer<typeof apiTokenListResponseSchema>;
-export type ApiTokenCreateResponse = z.infer<
-  typeof apiTokenCreateResponseSchema
->;
-
 // --- 子智能体（R1-3 目录 + 设置 →「子智能体」页） ---
 
 /**
@@ -417,6 +360,10 @@ export const codeGitFileResponseSchema = z.object({
 });
 
 export const applicationErrorCodeSchema = z.enum([
+  "instance_forbidden",
+  "instance_draining",
+  "settings_forbidden",
+  "settings_failed",
   "application_error",
   /**
    * 依赖的服务/能力未装配或不可用（HTTP 503）。
@@ -492,18 +439,9 @@ export const applicationErrorCodeSchema = z.enum([
   "instance_update_failed",
   "instance_delete_failed",
   "instance_query_failed",
+  "instance_draining",
   "marketplace_install_failed",
-  "insufficient_credits",
-  "credit_query_failed",
-  "credit_claim_failed",
-  "credit_deduct_failed",
-  "credit_refund_failed",
-  "credit_plan_update_failed",
-  "model_not_accessible",
-  "resolution_not_allowed",
   "concurrency_limit",
-  "variant_not_found",
-  "checkout_failed",
   "generation_failed",
   // 插件市场（安装前兼容性门禁 + 启停）
   "invalid_request",
@@ -569,8 +507,6 @@ export const canvasSaveResponseSchema = z.object({
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 export type RunCancelResponse = z.infer<typeof runCancelResponseSchema>;
-export type ViewerCredits = z.infer<typeof viewerCreditsSchema>;
-export type ViewerResponse = z.infer<typeof viewerResponseSchema>;
 export type ProjectListResponse = z.infer<typeof projectListResponseSchema>;
 export type ProjectCreateRequest = z.infer<typeof projectCreateRequestSchema>;
 export type ProjectCreateResponse = z.infer<typeof projectCreateResponseSchema>;
@@ -581,12 +517,9 @@ export type ApplicationErrorCode = z.infer<typeof applicationErrorCodeSchema>;
 export type ApplicationErrorResponse = z.infer<
   typeof applicationErrorResponseSchema
 >;
-export const profileUpdateResponseSchema = z.object({
-  profile: viewerProfileSchema,
-});
 
-export const workspaceSettingsResponseSchema = z.object({
-  settings: workspaceSettingsSchema,
+export const instanceSettingsResponseSchema = z.object({
+  settings: instanceSettingsSchema,
 });
 
 /**
@@ -618,8 +551,8 @@ function withoutDefaults<T extends z.ZodRawShape>(
  * 两个都不能省：① 每个字段先剥掉默认值（见 {@link withoutDefaults}）；② 再 `.partial()`
  * 让键本身可缺。少任何一个，客户端的单字段保存都会把其余设置重置成默认。
  */
-export const workspaceSettingsUpdateRequestSchema = z
-  .object(withoutDefaults(workspaceSettingsSchema.shape))
+export const instanceSettingsUpdateRequestSchema = z
+  .object(withoutDefaults(instanceSettingsSchema.shape))
   .partial();
 
 export const modelListResponseSchema = z.object({
@@ -649,12 +582,11 @@ export type MessageCreateResponse = z.infer<typeof messageCreateResponseSchema>;
 export type CanvasGetResponse = z.infer<typeof canvasGetResponseSchema>;
 export type CanvasSaveRequest = z.infer<typeof canvasSaveRequestSchema>;
 export type CanvasSaveResponse = z.infer<typeof canvasSaveResponseSchema>;
-export type ProfileUpdateResponse = z.infer<typeof profileUpdateResponseSchema>;
-export type WorkspaceSettingsResponse = z.infer<
-  typeof workspaceSettingsResponseSchema
+export type InstanceSettingsResponse = z.infer<
+  typeof instanceSettingsResponseSchema
 >;
-export type WorkspaceSettingsUpdateRequest = z.infer<
-  typeof workspaceSettingsUpdateRequestSchema
+export type InstanceSettingsUpdateRequest = z.infer<
+  typeof instanceSettingsUpdateRequestSchema
 >;
 export type ModelListResponse = z.infer<typeof modelListResponseSchema>;
 

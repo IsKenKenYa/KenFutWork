@@ -8,12 +8,7 @@ describe("Code 项目工作域契约", () => {
       name: "应用",
       slug: "app",
       description: null,
-      workspace: {
-        id: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
-        name: "工作区",
-        type: "personal",
-        ownerUserId: "7b4b2269-87bd-45ec-930d-ec134f506f39",
-      },
+      instanceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
       createdAt: "2026-10-03T08:00:00.000Z",
       updatedAt: "2026-10-03T08:00:00.000Z",
     };

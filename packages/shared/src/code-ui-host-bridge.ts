@@ -11,6 +11,7 @@ export const codeUiBootstrapSchema = z.object({
 });
 export const codeUiParentRequestSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("kenfutwork:code-ready") }),
+  z.object({ type: z.literal("kenfutwork:code-access-lost") }),
   z.object({
     type: z.literal("kenfutwork:code-navigate"),
     mode: z.literal("design"),

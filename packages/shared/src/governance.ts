@@ -5,7 +5,7 @@ import { z } from "zod";
  * key 不是我们提供的，一切限额必须用户可调）。
  *
  * 口径（AGENTS.md「运行时 tunables」硬约束）：一切运行时可调数值，代码里只允许
- * 出现这里的 DEFAULTS 与区间护栏（shared 的 `workspaceSettingsSchema` 直接引用
+ * 出现这里的 DEFAULTS 与区间护栏（shared 的 `instanceSettingsSchema` 直接引用
  * 本模块常量，禁止另写一份字面量）；覆盖入口只有两个——`workspace_settings` 表
  * （设置页）与 env 兜底（`resolveGovernanceEnvOverrides`）。表里的越界值
  * （手改/旧数据）在读侧钳回护栏，不报错也不放行。
@@ -26,6 +26,16 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   executeTimeoutMs: 120_000,
   /** Code 宿主通知通道断线后的重连间隔（毫秒）。 */
   codeUiReconnectDelayMs: 1_000,
+  /** 本机浏览器一次性连接入口有效期。 */
+  localAccessTicketTtlMs: 60_000,
+  /** 浏览器接入会话期限；不涉及官方账户登录。 */
+  localAccessSessionMaxAgeMs: 2_592_000_000,
+  /** 数据目录迁移等待本机工作结束时的状态复核间隔。 */
+  localDataMigrationPollMs: 250,
+  /** launcher等待本机服务冷启动的总预算；接通前只能使用env兜底。 */
+  localServiceStartupTimeoutMs: 120_000,
+  /** 冷启动健康复核间隔，同时约束单次健康请求的等待。 */
+  localServiceStartupPollMs: 1_000,
   /** 文件读取/编辑的单文件预算；分页展示不改变观察版本。 */
   codeReadMaxBytes: 1_048_576,
   codeReadPageCharacters: 8_000,
@@ -62,19 +72,14 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   computerUseMaxActionsPerRun: 200,
   /** Computer Use：控制租约会话时长上限（毫秒）。 */
   computerUseSessionMaxMs: 1_800_000,
-
+  /** AX树深度、单节点子项、标题/值和语义动作列表预算。 */
   computerUseAxMaxDepth: 8,
   computerUseAxMaxChildren: 120,
   computerUseAxTitleMaxChars: 200,
   computerUseAxValueMaxChars: 300,
   computerUseAxMaxActions: 12,
+  /** 输入事件间隔；原生控件需要追踪down/up，0仅适用于明确可处理即时输入的目标。 */
   computerUseInputDelayMs: 100,
-
-  localAccessTicketTtlMs: 60_000,
-  localAccessSessionMaxAgeMs: 2_592_000_000,
-  localDataMigrationPollMs: 250,
-  localServiceStartupTimeoutMs: 120_000,
-  localServiceStartupPollMs: 1_000,
 } as const;
 
 export type AgentGovernanceValue = keyof typeof AGENT_GOVERNANCE_DEFAULTS;
@@ -82,6 +87,11 @@ export type AgentGovernanceValue = keyof typeof AGENT_GOVERNANCE_DEFAULTS;
 /** 新工作域数值落同一设置表 JSON 对象，避免每项重复增加列与存取分支。 */
 export const RUNTIME_GOVERNANCE_KEYS = [
   "codeUiReconnectDelayMs",
+  "localAccessTicketTtlMs",
+  "localAccessSessionMaxAgeMs",
+  "localDataMigrationPollMs",
+  "localServiceStartupTimeoutMs",
+  "localServiceStartupPollMs",
   "codeReadMaxBytes",
   "codeReadPageCharacters",
   "codeSearchMaxResults",
@@ -104,19 +114,12 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "codeAttachmentMaxRetries",
   "codeAttachmentRetryDelayMs",
   "terminalMaxSessions",
-
   "computerUseAxMaxDepth",
   "computerUseAxMaxChildren",
   "computerUseAxTitleMaxChars",
   "computerUseAxValueMaxChars",
   "computerUseAxMaxActions",
   "computerUseInputDelayMs",
-
-  "localAccessTicketTtlMs",
-  "localAccessSessionMaxAgeMs",
-  "localDataMigrationPollMs",
-  "localServiceStartupTimeoutMs",
-  "localServiceStartupPollMs",
 ] as const;
 export type RuntimeGovernanceKey = (typeof RUNTIME_GOVERNANCE_KEYS)[number];
 
@@ -128,6 +131,11 @@ export type AgentGovernanceOverrides = {
   llmInfiniteRetry?: boolean | undefined;
   executeTimeoutMs?: number | undefined;
   codeUiReconnectDelayMs?: number | undefined;
+  localAccessTicketTtlMs?: number | undefined;
+  localAccessSessionMaxAgeMs?: number | undefined;
+  localDataMigrationPollMs?: number | undefined;
+  localServiceStartupTimeoutMs?: number | undefined;
+  localServiceStartupPollMs?: number | undefined;
   codeReadMaxBytes?: number | undefined;
   codeReadPageCharacters?: number | undefined;
   codeSearchMaxResults?: number | undefined;
@@ -156,19 +164,12 @@ export type AgentGovernanceOverrides = {
   computerUseScreenshotMaxBytes?: number | undefined;
   computerUseMaxActionsPerRun?: number | undefined;
   computerUseSessionMaxMs?: number | undefined;
-
   computerUseAxMaxDepth?: number | undefined;
   computerUseAxMaxChildren?: number | undefined;
   computerUseAxTitleMaxChars?: number | undefined;
   computerUseAxValueMaxChars?: number | undefined;
   computerUseAxMaxActions?: number | undefined;
   computerUseInputDelayMs?: number | undefined;
-
-  localAccessTicketTtlMs?: number | undefined;
-  localAccessSessionMaxAgeMs?: number | undefined;
-  localDataMigrationPollMs?: number | undefined;
-  localServiceStartupTimeoutMs?: number | undefined;
-  localServiceStartupPollMs?: number | undefined;
 };
 
 const clampInt = (value: number, min: number, max: number): number =>
@@ -216,13 +217,18 @@ export const clampComputerUseSessionMaxMs = (value: number): number =>
 export const coerceLlmInfiniteRetry = (value: unknown): boolean =>
   value === true;
 
-/** 供 `workspaceSettingsSchema` 直接引用的区间护栏（与 clamp 同区间）。 */
+/** 供 `instanceSettingsSchema` 直接引用的区间护栏（与 clamp 同区间）。 */
 export const AGENT_GOVERNANCE_LIMITS = {
   subagentMaxDepth: { min: 1, max: 4 },
   subagentMaxConcurrency: { min: 1, max: 16 },
   llmRequestMaxRetries: { min: 0, max: 100 },
   executeTimeoutMs: { min: 5_000, max: 1_800_000 },
   codeUiReconnectDelayMs: { min: 100, max: 60_000 },
+  localAccessTicketTtlMs: { min: 1_000, max: 3_600_000 },
+  localAccessSessionMaxAgeMs: { min: 60_000, max: 31_536_000_000 },
+  localDataMigrationPollMs: { min: 10, max: 60_000 },
+  localServiceStartupTimeoutMs: { min: 100, max: 1_800_000 },
+  localServiceStartupPollMs: { min: 10, max: 60_000 },
   codeReadMaxBytes: { min: 1_024, max: 67_108_864 },
   codeReadPageCharacters: { min: 128, max: 1_048_576 },
   codeSearchMaxResults: { min: 1, max: 100_000 },
@@ -252,19 +258,12 @@ export const AGENT_GOVERNANCE_LIMITS = {
   computerUseScreenshotMaxBytes: { min: 16_384, max: 2_097_152 },
   computerUseMaxActionsPerRun: { min: 1, max: 2_000 },
   computerUseSessionMaxMs: { min: 60_000, max: 86_400_000 },
-
   computerUseAxMaxDepth: { min: 1, max: 128 },
   computerUseAxMaxChildren: { min: 1, max: 100_000 },
   computerUseAxTitleMaxChars: { min: 0, max: 1_048_576 },
   computerUseAxValueMaxChars: { min: 0, max: 1_048_576 },
   computerUseAxMaxActions: { min: 1, max: 100_000 },
   computerUseInputDelayMs: { min: 0, max: 60_000 },
-
-  localAccessTicketTtlMs: { min: 1_000, max: 3_600_000 },
-  localAccessSessionMaxAgeMs: { min: 60_000, max: 31_536_000_000 },
-  localDataMigrationPollMs: { min: 10, max: 60_000 },
-  localServiceStartupTimeoutMs: { min: 100, max: 1_800_000 },
-  localServiceStartupPollMs: { min: 10, max: 60_000 },
 } as const;
 
 /**
@@ -292,6 +291,21 @@ export function resolveGovernanceEnvOverrides(
   };
 
   const overrides: AgentGovernanceOverrides = {
+    localDataMigrationPollMs: parseStrictInt(
+      source.KENFUTWORK_LOCAL_DATA_MIGRATION_POLL_MS,
+    ),
+    localServiceStartupTimeoutMs: parseStrictInt(
+      source.KENFUTWORK_LOCAL_SERVICE_STARTUP_TIMEOUT_MS,
+    ),
+    localServiceStartupPollMs: parseStrictInt(
+      source.KENFUTWORK_LOCAL_SERVICE_STARTUP_POLL_MS,
+    ),
+    localAccessTicketTtlMs: parseStrictInt(
+      source.KENFUTWORK_LOCAL_ACCESS_TICKET_TTL_MS,
+    ),
+    localAccessSessionMaxAgeMs: parseStrictInt(
+      source.KENFUTWORK_LOCAL_ACCESS_SESSION_MAX_AGE_MS,
+    ),
     subagentMaxDepth: parseStrictInt(source.KENFUTWORK_SUBAGENT_MAX_DEPTH),
     subagentMaxConcurrency: parseStrictInt(
       source.KENFUTWORK_SUBAGENT_MAX_CONCURRENCY,
@@ -382,7 +396,6 @@ export function resolveGovernanceEnvOverrides(
     computerUseSessionMaxMs: parseStrictInt(
       source.KENFUTWORK_COMPUTER_USE_SESSION_MAX_MS,
     ),
-
     computerUseAxMaxDepth: parseStrictInt(
       source.KENFUTWORK_COMPUTER_USE_AX_MAX_DEPTH,
     ),
@@ -401,22 +414,6 @@ export function resolveGovernanceEnvOverrides(
     computerUseInputDelayMs: parseStrictInt(
       source.KENFUTWORK_COMPUTER_USE_INPUT_DELAY_MS,
     ),
-
-    localDataMigrationPollMs: parseStrictInt(
-      source.KENFUTWORK_LOCAL_DATA_MIGRATION_POLL_MS,
-    ),
-    localServiceStartupTimeoutMs: parseStrictInt(
-      source.KENFUTWORK_LOCAL_SERVICE_STARTUP_TIMEOUT_MS,
-    ),
-    localServiceStartupPollMs: parseStrictInt(
-      source.KENFUTWORK_LOCAL_SERVICE_STARTUP_POLL_MS,
-    ),
-    localAccessTicketTtlMs: parseStrictInt(
-      source.KENFUTWORK_LOCAL_ACCESS_TICKET_TTL_MS,
-    ),
-    localAccessSessionMaxAgeMs: parseStrictInt(
-      source.KENFUTWORK_LOCAL_ACCESS_SESSION_MAX_AGE_MS,
-    ),
   };
   return Object.fromEntries(
     Object.entries(overrides).filter(([, v]) => v !== undefined),
@@ -425,7 +422,7 @@ export function resolveGovernanceEnvOverrides(
 
 /**
  * 治理字段在设置响应里的解析档：DEFAULTS 打底 + 区间护栏。
- * `workspaceSettingsSchema` 的五个字段全部经此构造，禁止手写第二份字面量。
+ * `instanceSettingsSchema` 的五个字段全部经此构造，禁止手写第二份字面量。
  */
 export function governanceSetting<
   K extends keyof typeof AGENT_GOVERNANCE_LIMITS,

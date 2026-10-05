@@ -12,7 +12,7 @@ import {
 /**
  * 检查点契约（影子 git）：解析与拒绝口径。
  * 重点锁：40 位十六进制 sha、二进制行数 null、未知 kind 拒绝、zod 剥离多余键
- * （服务行带 workspaceId/canvasId，API 面不带）。
+ * （服务行带 instanceId/canvasId，API 面不带）。
  */
 
 const sha1 = "a".repeat(40);
@@ -36,11 +36,11 @@ describe("checkpointSummarySchema", () => {
   it("解析合法摘要；额外键被剥离（服务行不外发工作区/画布 id）", () => {
     const parsed = checkpointSummarySchema.parse({
       ...summary,
-      workspaceId: "ws-1",
+      instanceId: "ws-1",
       canvasId: "canvas-1",
     });
     expect(parsed).toEqual(summary);
-    expect(parsed).not.toHaveProperty("workspaceId");
+    expect(parsed).not.toHaveProperty("instanceId");
   });
 
   it("拒绝非 40 位十六进制的 shadowCommit 与未知 kind", () => {

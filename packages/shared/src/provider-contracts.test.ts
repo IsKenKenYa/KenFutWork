@@ -16,10 +16,17 @@ import {
   providerInstanceResponseSchema,
   providerInstanceUpdateRequestSchema,
   providerProtocolSchema,
+  providerScopeSchema,
   reservedProviderHeaderNames,
 } from "./provider-contracts.js";
 
 describe("provider-contracts（BYOK 供应商缝）", () => {
+  it("供应商作用域只有 local，账户与平台池作用域被拒绝", () => {
+    expect(providerScopeSchema.safeParse("local").success).toBe(true);
+    expect(providerScopeSchema.safeParse("workspace").success).toBe(false);
+    expect(providerScopeSchema.safeParse("system").success).toBe(false);
+  });
+
   it("协议是封闭集合：未知协议拒绝", () => {
     expect(providerProtocolSchema.safeParse("openai-compatible").success).toBe(
       true,
@@ -50,7 +57,7 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
   it("实例 config：空 models 与空 apiKeyRef 拒绝", () => {
     const base = {
       id: "inst-1",
-      workspaceId: "ws-1",
+      instanceId: "local-1",
       name: "我的网关",
       protocol: "openai-compatible",
       apiKeyRef: "ref-1",
@@ -58,6 +65,17 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
       enabled: true,
     };
     expect(providerInstanceConfigSchema.safeParse(base).success).toBe(true);
+    expect(
+      providerInstanceConfigSchema.safeParse({ ...base, apiKeyRef: null })
+        .success,
+    ).toBe(true);
+    expect(
+      providerInstanceConfigSchema.safeParse({
+        ...base,
+        instanceId: undefined,
+        workspaceId: "old",
+      }).success,
+    ).toBe(false);
     expect(
       providerInstanceConfigSchema.safeParse({ ...base, models: [] }).success,
     ).toBe(false);
@@ -67,7 +85,7 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
     ).toBe(false);
   });
 
-  it("创建可保存无凭证草稿，提供的apiKey仍为非空只写字段", () => {
+  it("创建可保存无凭证草稿，提供的 apiKey 必须非空", () => {
     const base = {
       name: "网关",
       protocol: "anthropic",
@@ -86,13 +104,13 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
     ).toBe(false);
   });
 
-  it("凭证红线：响应 schema 不含 apiKey/apiKeyRef 字段（多余的 key 会被剥掉）", () => {
+  it("普通响应 schema 不含 apiKey/apiKeyRef；设置按需读取独立于目录", () => {
     const parsed = providerInstanceResponseSchema.parse({
       id: "inst-1",
       name: "网关",
       protocol: "gemini",
-      // scope 是契约必填（6a3155c 平台管理后台引入：workspace=BYOK / system=平台池）
-      scope: "workspace",
+      // 目录仅有本地实例作用域。
+      scope: "local",
       hasCredential: true,
       configRevision: 1,
       models: [{ id: "m1", name: "M1", capability: "image" }],
@@ -112,7 +130,7 @@ describe("provider-contracts（BYOK 供应商缝）", () => {
           id: "i",
           name: "n",
           protocol: "volces",
-          scope: "system",
+          scope: "local",
           hasCredential: false,
           configRevision: 1,
           models: [{ id: "m", name: "M", capability: "video" }],
@@ -216,7 +234,7 @@ describe("provider-contracts 自定义请求头（§4.8，R6-1）", () => {
   it("响应侧只回 headerKeys：值即使误传也被剥除", () => {
     const parsed = providerInstanceResponseSchema.parse({
       id: "inst-1",
-      scope: "workspace",
+      scope: "local",
       name: "opencode",
       protocol: "openai-compatible",
       hasCredential: true,
@@ -255,7 +273,7 @@ describe("capability-contracts（能力层共享契约）", () => {
 
   it("用量记录：token 数必须非负整数，agent/直连两链路字段可选", () => {
     const base = {
-      workspaceId: "ws-1",
+      instanceId: "local-1",
       provider: "openai-compatible",
       model: "gpt-x",
       capability: "chat",

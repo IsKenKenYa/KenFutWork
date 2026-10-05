@@ -16,7 +16,7 @@ export const sandboxModeSchema = z.enum([
 /** 服务端签发的执行事实；凭据和审批不能进入可序列化目录授权。 */
 export const codeExecutionScopeSchema = z
   .object({
-    workspaceId: z.uuid(),
+    instanceId: z.uuid(),
     projectId: z.uuid(),
     taskId: z.uuid(),
     generation: z.number().int().nonnegative().safe(),
