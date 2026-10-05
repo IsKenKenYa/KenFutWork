@@ -1,12 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
+  instanceResponseSchema,
   zcodeUiProtocol as protocol,
-  viewerResponseSchema,
 } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
 import { prepareHarnessTask } from "../agent-runs/test-harness.js";
-import { createAccountRepository } from "../auth/repository.js";
-import { createViewerRepository } from "../bootstrap/repository.js";
 import { createChatRepository } from "../chat/repository.js";
 import { createCodeUiHttpFixture } from "../code-ui/code-ui-http.fixture.js";
 import { createCodeSessionFixture } from "../code-ui/host-session.fixture.js";
@@ -87,19 +85,19 @@ async function editContextThroughHost(
 describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
   "执行模式持久化真实库 integration",
   () => {
-    it("无Canvas Code Task支持两种id的模式激活、冷重启恢复和foreign工作区隔离", async () => {
+    it("无Canvas Code Task支持两种id的模式激活、冷重启恢复和foreign实例隔离", async () => {
       const database = await createTaskWorkDatabase();
       try {
         const { scope, threadId } = await prepareHarnessTask(database);
-        const ownerScope = { workspaceId: scope.workspaceId };
+        const ownerScope = { instanceId: scope.instanceId };
         const sessionId = scope.taskId;
         const session = await database.persistence
-          .forWorkspace(scope.workspaceId)
+          .forInstance(scope.instanceId)
           .queryOne<{ canvas_id: string | null; kind: string; mode: string }>(
             `select s.canvas_id, s.mode, p.kind
                from public.chat_sessions s
-               join public.projects p on p.id=s.project_id and p.workspace_id=s.workspace_id
-              where s.id=$1 and s.workspace_id=:workspace`,
+               join public.projects p on p.id=s.project_id and p.instance_id=s.instance_id
+              where s.id=$1 and s.instance_id=:instance`,
             [sessionId],
           );
         expect(session).toEqual({
@@ -108,23 +106,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           mode: "code",
         });
 
-        const foreignAccount = await createAccountRepository(
-          database.persistence,
-        ).ensurePasswordlessAccount({
-          email: `mode-foreign-${randomUUID()}@integration.local`,
-          displayName: "模式隔离工作区",
-        });
-        const viewer = createViewerRepository(database.persistence);
-        await viewer.bootstrap({
-          email: foreignAccount.email,
-          userId: foreignAccount.id,
-          userMeta: {},
-        });
-        const foreignWorkspace = await viewer.findPersonalWorkspace(
-          foreignAccount.id,
-        );
-        if (!foreignWorkspace) throw new Error("私有foreign工作区未创建");
-        const foreignScope = { workspaceId: foreignWorkspace.id };
+        const foreignScope = { instanceId: randomUUID() };
         const createService = () =>
           createExecutionModeService({
             store: createExecutionModeStore(database.persistence),
@@ -140,7 +122,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         await service.activate(sessionId, "plan", ownerScope);
         const atomicStore = createExecutionModeStore(database.persistence);
         expect(
-          await atomicStore.save(scope.workspaceId, sessionId, "plan"),
+          await atomicStore.save(scope.instanceId, sessionId, "plan"),
         ).toBe(true);
 
         const restarted = createService();
@@ -161,7 +143,9 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
             mode: null,
           });
           expect(await coldForeign.hydrate(id, foreignScope)).toBe("agent");
-          expect(await store.save(foreignWorkspace.id, id, "solo")).toBe(false);
+          expect(await store.save(foreignScope.instanceId, id, "solo")).toBe(
+            false,
+          );
           expect(await coldOwner.lookup(id, ownerScope)).toEqual({
             exists: true,
             mode: "goal",
@@ -177,7 +161,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
       const database = await createTaskWorkDatabase();
       try {
         const { scope, actor } = await prepareHarnessTask(database);
-        const ownerScope = { workspaceId: scope.workspaceId };
+        const ownerScope = { instanceId: scope.instanceId };
         const projects = createProjectRepository(database.persistence);
         const chat = createChatRepository(database.persistence);
         const createService = () =>
@@ -199,8 +183,8 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         ).toEqual(modes);
         for (const kind of ["design", "flow"] as const) {
           const created = await projects.createProject({
-            workspaceId: scope.workspaceId,
-            userId: actor.id,
+            instanceId: scope.instanceId,
+            createdByClientId: actor.accessClientId,
             kind,
             name: `${kind}执行模式隔离回归`,
             slug: `mode-${kind}-${randomUUID()}`,
@@ -209,10 +193,10 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           });
           if (!created.canvas) throw new Error(`${kind}正式仓库未创建主画布`);
           const threadId = `mode-${kind}-${randomUUID()}`;
-          const session = await chat.createSession(scope.workspaceId, {
+          const session = await chat.createSession(scope.instanceId, {
             canvasId: created.canvas.id,
             threadId,
-            userId: actor.id,
+            createdByClientId: actor.accessClientId,
           });
           if (!session) throw new Error("正式Design/Flow会话未创建");
           expect(session).toMatchObject({
@@ -250,13 +234,13 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         host = await createCodeSessionFixture(model.baseUrl, {
           client: fixture.client,
         });
-        const viewerResponse = await host.client.request("/api/viewer");
-        expect(viewerResponse.status).toBe(200);
-        const viewer = viewerResponseSchema.parse(viewerResponse.body);
-        const scope = { workspaceId: viewer.workspace.id };
+        const instanceResponse = await host.client.request("/api/instance");
+        expect(instanceResponse.status).toBe(200);
+        const instance = instanceResponseSchema.parse(instanceResponse.body);
+        const scope = { instanceId: instance.instanceId };
         const chat = createChatRepository(fixture.database.persistence);
         const original = await chat.findSessionThread(
-          scope.workspaceId,
+          scope.instanceId,
           host.sessionId,
         );
         if (!original?.thread_id) throw new Error("原Code Task线程未实际绑定");
@@ -268,7 +252,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         await createService().activate(host.sessionId, "plan", scope);
         const second = await editContextThroughHost(host, model);
         const rebound = await chat.findSessionThread(
-          scope.workspaceId,
+          scope.instanceId,
           host.sessionId,
         );
         if (!rebound?.thread_id) throw new Error("新上下文线程未实际绑定");
@@ -290,7 +274,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         );
         const store = createExecutionModeStore(fixture.database.persistence);
         expect(
-          await store.save(scope.workspaceId, original.thread_id, "solo"),
+          await store.save(scope.instanceId, original.thread_id, "solo"),
         ).toBe(false);
         expect(await createService().hydrate(host.sessionId, scope)).toBe(
           "plan",

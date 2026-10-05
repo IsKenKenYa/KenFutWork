@@ -41,17 +41,17 @@ export type NewChatSession = {
   /** 缺省即省略该列，由 `chat_sessions.title` 的默认值落库（不写 NULL）。 */
   title?: string | undefined;
   threadId: string;
-  userId: string;
+  createdByClientId: string | null;
 };
 
 /**
  * chat 聚合的数据访问（`chat_sessions`/`chat_messages`）。
- * 会话以 workspace/project 身份定权，消息经
- * `chat_messages → chat_sessions → projects` 施加工作区谓词（`FORM-9`）。
+ * 会话以 instance/project 身份定权，消息经
+ * `chat_messages → chat_sessions → projects` 施加实例谓词（`FORM-9`）。
  */
 export interface ChatRepository {
   createSession(
-    workspaceId: string,
+    instanceId: string,
     input: NewChatSession,
   ): Promise<ChatSessionRow | null>;
   /**
@@ -62,36 +62,33 @@ export interface ChatRepository {
    * 主键冲突（`on conflict (id)`）＋事务。
    */
   ensureSessionWithId(
-    workspaceId: string,
+    instanceId: string,
     input: {
       canvasId: string;
       sessionId: string;
       threadId: string;
       title?: string | undefined;
-      userId: string;
+      createdByClientId: string | null;
     },
   ): Promise<ChatSessionThreadRow | null>;
-  deleteSession(workspaceId: string, sessionId: string): Promise<number>;
+  deleteSession(instanceId: string, sessionId: string): Promise<number>;
   findSessionThread(
-    workspaceId: string,
+    instanceId: string,
     sessionId: string,
   ): Promise<ChatSessionThreadRow | null>;
   insertMessage(
-    workspaceId: string,
+    instanceId: string,
     input: NewChatMessage,
   ): Promise<ChatMessageRow | null>;
   listMessages(
-    workspaceId: string,
+    instanceId: string,
     sessionId: string,
   ): Promise<ChatMessageRow[]>;
-  listSessions(
-    workspaceId: string,
-    canvasId: string,
-  ): Promise<ChatSessionRow[]>;
+  listSessions(instanceId: string, canvasId: string): Promise<ChatSessionRow[]>;
   /** 追加消息后推进会话排序时间（`chat_sessions` 触发器只认本表更新）。 */
-  touchSession(workspaceId: string, sessionId: string): Promise<number>;
+  touchSession(instanceId: string, sessionId: string): Promise<number>;
   updateSessionTitle(
-    workspaceId: string,
+    instanceId: string,
     sessionId: string,
     title: string,
   ): Promise<number>;
@@ -105,44 +102,44 @@ export function createChatRepository(
   persistence: PersistenceService,
 ): ChatRepository {
   return {
-    async listSessions(workspaceId, canvasId) {
-      return persistence.forWorkspace(workspaceId).query<ChatSessionRow>(
+    async listSessions(instanceId, canvasId) {
+      return persistence.forInstance(instanceId).query<ChatSessionRow>(
         `select ${SESSION_COLUMNS}
            from public.chat_sessions s
-           join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id
+           join public.projects p on p.id = s.project_id and p.instance_id = s.instance_id
           where s.canvas_id = $1
-            and p.workspace_id = :workspace
+            and p.instance_id = :instance
           order by s.updated_at desc`,
         [canvasId],
       );
     },
 
-    async createSession(workspaceId, input) {
+    async createSession(instanceId, input) {
       // title 为 NOT NULL 带默认值：缺省时必须省略该列而不是写 NULL。
       const withTitle = input.title !== undefined;
       const columns = withTitle
-        ? "(workspace_id, project_id, mode, canvas_id, created_by, thread_id, title)"
-        : "(workspace_id, project_id, mode, canvas_id, created_by, thread_id)";
+        ? "(instance_id, project_id, mode, canvas_id, created_by_client_id, thread_id, title)"
+        : "(instance_id, project_id, mode, canvas_id, created_by_client_id, thread_id)";
       const selectList = withTitle ? "$2, $3, $4" : "$2, $3";
       const params = withTitle
-        ? [input.canvasId, input.userId, input.threadId, input.title]
-        : [input.canvasId, input.userId, input.threadId];
+        ? [input.canvasId, input.createdByClientId, input.threadId, input.title]
+        : [input.canvasId, input.createdByClientId, input.threadId];
 
-      return persistence.forWorkspace(workspaceId).queryOne<ChatSessionRow>(
+      return persistence.forInstance(instanceId).queryOne<ChatSessionRow>(
         `insert into public.chat_sessions ${columns}
-         select :workspace, p.id, p.kind, c.id, ${selectList}
+         select :instance, p.id, p.kind, c.id, ${selectList}
            from public.canvases c
            join public.projects p on p.id = c.project_id
           where c.id = $1
-            and p.workspace_id = :workspace and p.kind <> 'code'
+            and p.instance_id = :instance and p.kind <> 'code'
          returning id, title, updated_at, project_id, mode`,
         params,
       );
     },
 
-    async ensureSessionWithId(workspaceId, input) {
+    async ensureSessionWithId(instanceId, input) {
       return persistence.transaction(async (tx) => {
-        const scoped = tx.forWorkspace(workspaceId);
+        const scoped = tx.forInstance(instanceId);
 
         // 两个变体（带/不带标题）参数个数不同，故画布占位符要跟着算——
         // 写死会指向不存在的 $N（实测报 "could not determine data type of parameter $4"）。
@@ -151,23 +148,23 @@ export function createChatRepository(
         const withTitle = input.title !== undefined;
         const canvasParam = withTitle ? "$5" : "$4";
 
-        // 画布必须属本工作区（经 projects 父链校验）；不属则查不到，插不进去
+        // 画布必须属本实例（经 projects 父链校验）；不属则查不到，插不进去
         const inserted = await scoped.queryOne<ChatSessionThreadRow>(
-          `insert into public.chat_sessions (id, workspace_id, project_id, mode, canvas_id, created_by, thread_id${
+          `insert into public.chat_sessions (id, instance_id, project_id, mode, canvas_id, created_by_client_id, thread_id${
             withTitle ? ", title" : ""
           })
-           select $1::uuid, :workspace, p.id, p.kind, c.id, $2::uuid, $3::text${
+           select $1::uuid, :instance, p.id, p.kind, c.id, $2::uuid, $3::text${
              withTitle ? ", $4::text" : ""
            }
              from public.canvases c
              join public.projects p on p.id = c.project_id
             where c.id = ${canvasParam}::uuid
-              and p.workspace_id = :workspace and p.kind <> 'code'
+              and p.instance_id = :instance and p.kind <> 'code'
            on conflict (id) do nothing
            returning id, thread_id, canvas_id, project_id, mode`,
           [
             input.sessionId,
-            input.userId,
+            input.createdByClientId,
             input.threadId,
             ...(withTitle ? [input.title] : []),
             input.canvasId,
@@ -180,9 +177,9 @@ export function createChatRepository(
         const existing = await scoped.queryOne<ChatSessionThreadRow>(
           `select s.id, s.thread_id, s.canvas_id, s.project_id, s.mode
              from public.chat_sessions s
-             join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id
+             join public.projects p on p.id = s.project_id and p.instance_id = s.instance_id
             where s.id = $1
-              and p.workspace_id = :workspace`,
+              and p.instance_id = :instance`,
           [input.sessionId],
         );
         if (
@@ -201,10 +198,10 @@ export function createChatRepository(
           `update public.chat_sessions s
               set thread_id = $1::text
              from public.projects p
-            where p.id = s.project_id and s.workspace_id = :workspace
+            where p.id = s.project_id and s.instance_id = :instance
               and s.id = $2
               and s.thread_id is null
-              and p.workspace_id = :workspace
+              and p.instance_id = :instance
            returning s.id, s.thread_id, s.canvas_id, s.project_id, s.mode`,
           [input.threadId, input.sessionId],
         );
@@ -212,57 +209,57 @@ export function createChatRepository(
       });
     },
 
-    async updateSessionTitle(workspaceId, sessionId, title) {
-      return persistence.forWorkspace(workspaceId).execute(
+    async updateSessionTitle(instanceId, sessionId, title) {
+      return persistence.forInstance(instanceId).execute(
         `update public.chat_sessions s
             set title = $1
            from public.projects p
-          where p.id = s.project_id and s.workspace_id = :workspace
+          where p.id = s.project_id and s.instance_id = :instance
             and s.id = $2 and s.mode <> 'code'
-            and p.workspace_id = :workspace`,
+            and p.instance_id = :instance`,
         [title, sessionId],
       );
     },
 
-    async deleteSession(workspaceId, sessionId) {
-      return persistence.forWorkspace(workspaceId).execute(
+    async deleteSession(instanceId, sessionId) {
+      return persistence.forInstance(instanceId).execute(
         `delete from public.chat_sessions s
           using public.projects p
-          where p.id = s.project_id and s.workspace_id = :workspace
+          where p.id = s.project_id and s.instance_id = :instance
             and s.id = $1 and s.mode <> 'code'
-            and p.workspace_id = :workspace`,
+            and p.instance_id = :instance`,
         [sessionId],
       );
     },
 
-    async findSessionThread(workspaceId, sessionId) {
+    async findSessionThread(instanceId, sessionId) {
       const row = await persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .queryOne<ChatSessionThreadRow>(
           `select s.id, s.thread_id, s.canvas_id, s.project_id, s.mode
              from public.chat_sessions s
-             join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id
+             join public.projects p on p.id = s.project_id and p.instance_id = s.instance_id
             where s.id = $1
-              and p.workspace_id = :workspace`,
+              and p.instance_id = :instance`,
           [sessionId],
         );
       return row ?? null;
     },
 
-    async listMessages(workspaceId, sessionId) {
-      return persistence.forWorkspace(workspaceId).query<ChatMessageRow>(
+    async listMessages(instanceId, sessionId) {
+      return persistence.forInstance(instanceId).query<ChatMessageRow>(
         `select ${MESSAGE_COLUMNS}
            from public.chat_messages m
            join public.chat_sessions s on s.id = m.session_id
-           join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id
+           join public.projects p on p.id = s.project_id and p.instance_id = s.instance_id
           where m.session_id = $1 and s.mode <> 'code'
-            and p.workspace_id = :workspace
+            and p.instance_id = :instance
           order by m.created_at asc`,
         [sessionId],
       );
     },
 
-    async insertMessage(workspaceId, input) {
+    async insertMessage(instanceId, input) {
       const toolActivities =
         input.toolActivities === undefined
           ? null
@@ -272,14 +269,14 @@ export function createChatRepository(
           ? null
           : JSON.stringify(input.contentBlocks);
 
-      return persistence.forWorkspace(workspaceId).queryOne<ChatMessageRow>(
+      return persistence.forInstance(instanceId).queryOne<ChatMessageRow>(
         `insert into public.chat_messages
                 (session_id, role, content, tool_activities, content_blocks)
          select s.id, $2, $3, $4::jsonb, $5::jsonb
            from public.chat_sessions s
-           join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id
+           join public.projects p on p.id = s.project_id and p.instance_id = s.instance_id
           where s.id = $1 and s.mode <> 'code'
-            and p.workspace_id = :workspace
+            and p.instance_id = :instance
          returning ${MESSAGE_COLUMNS.replaceAll("m.", "")}`,
         [
           input.sessionId,
@@ -291,14 +288,14 @@ export function createChatRepository(
       );
     },
 
-    async touchSession(workspaceId, sessionId) {
-      return persistence.forWorkspace(workspaceId).execute(
+    async touchSession(instanceId, sessionId) {
+      return persistence.forInstance(instanceId).execute(
         `update public.chat_sessions s
             set updated_at = now()
            from public.projects p
-          where p.id = s.project_id and s.workspace_id = :workspace
+          where p.id = s.project_id and s.instance_id = :instance
             and s.id = $1
-            and p.workspace_id = :workspace`,
+            and p.instance_id = :instance`,
         [sessionId],
       );
     },

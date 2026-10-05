@@ -11,25 +11,30 @@ export function createRealtimePlugin(): PluginDefinition {
       "agentRuns",
       "agentModes",
       "agentRunMetadata",
-      "auth",
+      "localAccess",
       "chat",
       "codeTerminal",
       "codeUi",
       "executionScopes",
       "settings",
       "threads",
-      "viewer",
+      "localInstance",
     ],
     apply() {},
     mounted(ctx) {
       void ctx.app.register(async (instance) => {
         await instance.register(websocket);
         const { connectionManager, eventBuffer } = ctx.get("ws");
+        ctx.effect(() =>
+          ctx.get("localAccess").onRevoked((clientId) => {
+            connectionManager.revokeClient(clientId);
+          }),
+        );
         await registerWsRoute(instance, {
           agentRuns: ctx.get("agentRuns"),
           agentModes: ctx.get("agentModes"),
           agentRunMetadataService: ctx.get("agentRunMetadata"),
-          auth: ctx.get("auth"),
+          localAccess: ctx.get("localAccess"),
           chatService: ctx.get("chat"),
           codeTerminal: ctx.get("codeTerminal"),
           executionScopes: ctx.get("executionScopes"),
@@ -38,7 +43,7 @@ export function createRealtimePlugin(): PluginDefinition {
           codeUi: ctx.get("codeUi"),
           settingsService: ctx.get("settings"),
           threadService: ctx.get("threads"),
-          viewerService: ctx.get("viewer"),
+          localInstance: ctx.get("localInstance"),
         });
       });
     },

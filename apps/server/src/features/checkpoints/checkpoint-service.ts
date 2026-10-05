@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { AuthenticatedUser } from "../auth/types.js";
 import type { GitSource } from "../code-git/code-git-service.js";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type {
   CheckpointKind,
   CheckpointRepository,
@@ -59,7 +59,7 @@ export interface CheckpointRestoreBarrier {
   authorize(scope: ExecutionScopeHandle): ExecutionScopeHandle;
   release(): Promise<void>;
 }
-type ScopeInput = { scope: ExecutionScopeHandle; actor: AuthenticatedUser };
+type ScopeInput = { scope: ExecutionScopeHandle; actor: LocalActor };
 type CheckpointInput = ScopeInput & { checkpointId: string };
 type FileTarget = {
   path?: string | undefined;
@@ -73,7 +73,7 @@ export interface TurnBoundaryCapture {
   effective: CheckpointRow | null;
 }
 export interface CheckpointService {
-  forgetTask(workspaceId: string, taskId: string): void;
+  forgetTask(instanceId: string, taskId: string): void;
   captureTurnBoundary(
     input: ScopeInput & { runId: string; phase: TurnBoundaryPhase },
   ): Promise<TurnBoundaryCapture>;
@@ -164,7 +164,7 @@ export function createCheckpointService(options: {
   repository: CheckpointRepository;
   gitForScope: (
     scope: ExecutionScopeHandle,
-    actor: AuthenticatedUser,
+    actor: LocalActor,
   ) => Promise<ShadowGitClient>;
   gitSource: GitSource;
   checkpointRoot: string;
@@ -175,11 +175,11 @@ export function createCheckpointService(options: {
   ) => Promise<CheckpointRestoreBarrier>;
   onBeforeRestore: (
     scope: ExecutionScopeHandle,
-    actor: AuthenticatedUser,
+    actor: LocalActor,
   ) => Promise<ExecutionScopeHandle>;
   onAfterRestore: (
     scope: ExecutionScopeHandle,
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     success: boolean,
   ) => Promise<void>;
 }): CheckpointService {
@@ -196,12 +196,12 @@ export function createCheckpointService(options: {
     }
   >();
   const identityKey = (scope: ExecutionScopeHandle) =>
-    `${scope.describe().workspaceId}:${scope.describe().taskId}`;
+    `${scope.describe().instanceId}:${scope.describe().taskId}`;
   const gitDirectory = (scope: ExecutionScopeHandle, root: string) => {
     const id = scope.describe();
     return join(
       options.checkpointRoot,
-      id.workspaceId,
+      id.instanceId,
       id.projectId,
       `${id.taskId}.git`,
       createHash("sha256").update(root).digest("hex"),
@@ -260,7 +260,7 @@ export function createCheckpointService(options: {
   const rowFor = async (input: CheckpointInput) => {
     const identity = input.scope.describe();
     const row = await options.repository.getById(
-      identity.workspaceId,
+      identity.instanceId,
       input.checkpointId,
     );
     if (
@@ -292,7 +292,7 @@ export function createCheckpointService(options: {
   ): Promise<Omit<TurnBoundaryCapture, "phase">> => {
     const identity = input.scope.describe();
     const previous = (
-      await options.repository.listByTask(identity.workspaceId, identity.taskId)
+      await options.repository.listByTask(identity.instanceId, identity.taskId)
     ).at(-1);
     const git = await options.gitForScope(input.scope, input.actor);
     const directorySnapshots: DirectorySnapshot[] = [];
@@ -321,7 +321,7 @@ export function createCheckpointService(options: {
     }
     if (!directorySnapshots.length) return { created: null, effective: null };
     const effective = await options.repository.getByVersion(
-      identity.workspaceId,
+      identity.instanceId,
       identity.taskId,
       {
         projectId: identity.projectId,
@@ -349,7 +349,7 @@ export function createCheckpointService(options: {
     }
     const row: CheckpointRow = {
       id: randomUUID(),
-      workspaceId: identity.workspaceId,
+      instanceId: identity.instanceId,
       projectId: identity.projectId,
       taskId: identity.taskId,
       rootDirectory: identity.rootDirectory,
@@ -377,7 +377,7 @@ export function createCheckpointService(options: {
     const row = await rowFor(input);
     const identity = input.scope.describe();
     const previous = await options.repository.getPrevious(
-      identity.workspaceId,
+      identity.instanceId,
       identity.taskId,
       row.createdAt,
     );
@@ -455,7 +455,7 @@ export function createCheckpointService(options: {
       );
     const previous = input.path
       ? await options.repository.getPrevious(
-          identity.workspaceId,
+          identity.instanceId,
           identity.taskId,
           row.createdAt,
         )
@@ -726,8 +726,8 @@ export function createCheckpointService(options: {
     }
   };
   return {
-    forgetTask: (workspaceId, taskId) => {
-      previews.delete(`${workspaceId}:${taskId}`);
+    forgetTask: (instanceId, taskId) => {
+      previews.delete(`${instanceId}:${taskId}`);
     },
     captureTurnBoundary: (input) =>
       checked(input, () =>
@@ -751,7 +751,7 @@ export function createCheckpointService(options: {
     list: (input) =>
       checked(input, () =>
         options.repository.listByTask(
-          input.scope.describe().workspaceId,
+          input.scope.describe().instanceId,
           input.scope.describe().taskId,
         ),
       ),

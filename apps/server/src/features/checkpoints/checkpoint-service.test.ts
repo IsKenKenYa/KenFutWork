@@ -11,13 +11,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CodeExecutionScope } from "@kenfutwork/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AuthenticatedUser } from "../auth/types.js";
+import { createRuntimeTestInstance } from "../../agent/runtime-test-fixtures.js";
 import type { ScopeState } from "../execution/scope-repository.js";
 import {
   createExecutionScopes,
   type ExecutionScopeHandle,
 } from "../execution/scope-service.js";
 import { acquireTaskFileRestoreBarrier } from "../execution/scoped-filesystem.js";
+import type { LocalActor } from "../local-instance/types.js";
 import {
   type CheckpointFileTransactions,
   createCheckpointService,
@@ -28,14 +29,12 @@ import {
   type ExecShadowGit,
 } from "./shadow-git-client.js";
 
-const WORKSPACE_ID = "2cdb5c27-a1f7-4109-9927-40e0b0822956";
+const INSTANCE_ID = "2cdb5c27-a1f7-4109-9927-40e0b0822956";
 const PROJECT_ID = "c15b75a5-b7ef-46b5-8b0c-d543dd7769d5";
 const TASK_ID = "0432143f-e2b8-4ea6-adea-01f706f537d3";
-const actor: AuthenticatedUser = {
-  id: "actor",
-  email: "dev@example.test",
-  accessToken: "private",
-  userMetadata: {},
+const actor: LocalActor = {
+  instanceId: INSTANCE_ID,
+  accessClientId: "00000000-0000-4000-8000-000000000009",
 };
 const temporary: string[] = [];
 afterEach(async () => {
@@ -83,7 +82,7 @@ async function world() {
   await Promise.all([mkdir(root), mkdir(extra)]);
   await mkdir(readonly);
   let identity: CodeExecutionScope = {
-    workspaceId: WORKSPACE_ID,
+    instanceId: INSTANCE_ID,
     projectId: PROJECT_ID,
     taskId: TASK_ID,
     generation: 1,
@@ -98,14 +97,12 @@ async function world() {
   let state: ScopeState = "ready";
   const scopes = createExecutionScopes({
     repository: {
-      load: async (_workspace, task) =>
+      load: async (_instanceId, task) =>
         task === TASK_ID
           ? { scope: identity, state, branchGeneration: branch }
           : null,
     },
-    viewerService: {
-      resolveWorkspace: async () => ({ id: identity.workspaceId }) as never,
-    },
+    localInstance: createRuntimeTestInstance(INSTANCE_ID),
   });
   const scope = await scopes.openTask(actor, TASK_ID);
   const git = createShadowGitClient({
@@ -121,7 +118,7 @@ async function world() {
   const afterRestore = vi.fn(
     async (
       _scope: ExecutionScopeHandle,
-      _actor: AuthenticatedUser,
+      _actor: LocalActor,
       success: boolean,
     ) => {
       state = success ? "ready" : "failed";
@@ -413,7 +410,7 @@ describe("Task 检查点", () => {
     expect(await service.beforeTurn({ scope, actor, runId: "r" })).toBeNull();
     await repository.insert({
       id: "other",
-      workspaceId: WORKSPACE_ID,
+      instanceId: INSTANCE_ID,
       projectId: PROJECT_ID,
       taskId: "other-task",
       rootDirectory: scope.describe().rootDirectory,

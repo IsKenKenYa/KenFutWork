@@ -61,7 +61,7 @@ export const BUILTIN_EXECUTION_MODES: Array<{
     label: "创造",
     description: "插件/技能创造引导：按规范产出 SKILL.md 或插件 bundle 产物。",
     inputDirective:
-      '<execution_mode name="creative">\n本轮为创造模式，目标是产出**可安装**的插件/技能产物：\n1. 先与用户确认交付物形态（SKILL.md 技能 / 插件 bundle 目录）；\n2. 技能以 SKILL.md 开头（YAML frontmatter 含 name/description，正文为操作指引，附属文件与 SKILL.md 同目录）；\n3. 技能写好后**调用 create_skill 工具发布到当前工作区**（name/description/content 必填，content 即 SKILL.md 全文），发布即启用、后续会话可用——不要只把文件留在工作目录里让用户手动导入；\n4. 插件 bundle（package.json 声明 kenfutwork.bundle / dsh.bundle）写好后调用 **install_plugin** 安装；\n5. MCP server 脚本（stdio 协议，.py/.js 均可）写好后调用 **create_mcp_server** 注册（name + 相对工作目录的 path；其工具以 mcp__<name>__<tool> 进入注册表）；\n6. 安装/注册都需要管理员：当前用户不是管理员时，如实说明并给出文件位置，让管理员去插件市场 / MCP 面板安装；\n7. 不要擅自删除或覆盖既有产物，生成前先检查目录现状。\n</execution_mode>',
+      '<execution_mode name="creative">\n本轮为创造模式，目标是产出**可安装**的插件/技能产物：\n1. 先与用户确认交付物形态（SKILL.md 技能 / 插件 bundle 目录）；\n2. 技能以 SKILL.md 开头（YAML frontmatter 含 name/description，正文为操作指引，附属文件与 SKILL.md 同目录）；\n3. 技能写好后**调用 create_skill 工具发布到当前实例**（name/description/content 必填，content 即 SKILL.md 全文），发布即启用、后续会话可用——不要只把文件留在工作目录里让用户手动导入；\n4. 插件 bundle（package.json 声明 kenfutwork.bundle / dsh.bundle）写好后调用 **install_plugin** 安装；\n5. MCP server 脚本（stdio 协议，.py/.js 均可）写好后调用 **create_mcp_server** 注册（name + 相对工作目录的 path；其工具以 mcp__<name>__<tool> 进入注册表）；\n6. 安装/注册都需要管理员：当前用户不是管理员时，如实说明并给出文件位置，让管理员去插件市场 / MCP 面板安装；\n7. 不要擅自删除或覆盖既有产物，生成前先检查目录现状。\n</execution_mode>',
   },
 ];
 
@@ -264,8 +264,8 @@ export function createExecutionModeService(
         throw new Error(`[agent-modes] 未知执行模式 ${mode}（fail loud）。`);
       }
       if (scope && deps.store) {
-        const saved = await deps.store.save(scope.workspaceId, threadId, mode);
-        if (!saved) throw new Error("执行模式会话不存在或不属于当前工作区。");
+        const saved = await deps.store.save(scope.instanceId, threadId, mode);
+        if (!saved) throw new Error("执行模式会话不存在或不属于当前实例。");
       }
       // 写穿成功后才发布运行缓存；真实存储拒绝不能改变已激活指导/策略。
       active.set(threadId, mode);
@@ -277,7 +277,7 @@ export function createExecutionModeService(
         return mode;
       }
       // 持久化Scope是事实源；thread/session双alias与跨工作区不能借热缓存绕过归属。
-      const row = await deps.store.lookup(scope.workspaceId, threadId);
+      const row = await deps.store.lookup(scope.instanceId, threadId);
       if (!row.exists) return "agent";
       const mode = row.mode ?? "agent";
       active.set(threadId, mode);
@@ -287,7 +287,7 @@ export function createExecutionModeService(
       if (!deps.store) {
         return { exists: false, mode: active.get(threadId) ?? null };
       }
-      return deps.store.lookup(scope.workspaceId, threadId);
+      return deps.store.lookup(scope.instanceId, threadId);
     },
     resolveToolPolicy(threadId) {
       return policyForMode(this.getMode(threadId));

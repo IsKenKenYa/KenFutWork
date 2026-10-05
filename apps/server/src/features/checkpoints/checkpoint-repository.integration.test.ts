@@ -24,21 +24,21 @@ describe.skipIf(
     try {
       const repository = createCheckpointRepository(persistence);
       const stored = await persistence.queryOne<{
-        workspace_id: string;
+        instance_id: string;
         project_id: string;
         root_directory: string;
       }>(
-        "select workspace_id, project_id, root_directory from public.code_ui_sessions where id = $1 and root_session_id = id",
+        "select instance_id, project_id, root_directory from public.code_ui_sessions where id = $1 and root_session_id = id",
         [TASK_ID],
       );
       if (!stored) throw new Error("测试必须指定已创建的 Code Task");
-      const workspaceId = stored.workspace_id;
+      const instanceId = stored.instance_id;
       const taskId = TASK_ID as string;
       const t1 = new Date(Date.now() - 2_000).toISOString();
       const t2 = new Date(Date.now() - 1_000).toISOString();
       const row = (seq: number, createdAt: string) => ({
         id: randomUUID(),
-        workspaceId,
+        instanceId,
         taskId,
         projectId: stored.project_id,
         rootDirectory: stored.root_directory,
@@ -61,7 +61,7 @@ describe.skipIf(
       await repository.insert(row(1, t1));
       await repository.insert(row(2, t2));
 
-      const rows = (await repository.listByTask(workspaceId, taskId)).filter(
+      const rows = (await repository.listByTask(instanceId, taskId)).filter(
         (entry) => [t1, t2].includes(entry.createdAt),
       );
       expect(rows.map((r) => r.shadowCommit)).toEqual(["sha-1", "sha-2"]);
@@ -71,15 +71,15 @@ describe.skipIf(
 
       // 外工作区不可见；本工作区按 id 可取
       expect(await repository.getById(randomUUID(), first.id)).toBeNull();
-      expect((await repository.getById(workspaceId, first.id))?.label).toBe(
+      expect((await repository.getById(instanceId, first.id))?.label).toBe(
         "检查点1",
       );
 
       // getPrevious：严格早于
       expect(
-        (await repository.getPrevious(workspaceId, taskId, t2))?.shadowCommit,
+        (await repository.getPrevious(instanceId, taskId, t2))?.shadowCommit,
       ).toBe("sha-1");
-      expect(await repository.getPrevious(workspaceId, taskId, t1)).toBeNull();
+      expect(await repository.getPrevious(instanceId, taskId, t1)).toBeNull();
     } finally {
       await persistence.close();
     }

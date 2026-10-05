@@ -12,7 +12,7 @@ export interface DirectorySnapshot {
 export interface CheckpointRow {
   /** 应用层 randomUUID 生成，不走 DB 默认值。 */
   id: string;
-  workspaceId: string;
+  instanceId: string;
   taskId: string;
   projectId: string;
   rootDirectory: string;
@@ -33,8 +33,8 @@ export interface CheckpointRow {
 
 /**
  * 检查点聚合的数据访问（`public.project_checkpoints`）。
- * 工作区隔离经持久化缝的 `forWorkspace` 谓词（`FORM-9`）：每条语句显式引用
- * `:workspace`，漏写即执行前报错——归属校验与查询是同一条语句。
+ * 工作区隔离经持久化缝的 `forInstance` 谓词（`FORM-9`）：每条语句显式引用
+ * `:instance`，漏写即执行前报错——归属校验与查询是同一条语句。
  *
  * 表 DDL 在切片4 的迁移里落地；真实库行为见 `checkpoint-repository.integration.test.ts`。
  */
@@ -48,29 +48,29 @@ export interface CheckpointRepository {
   insert(row: CheckpointRow): Promise<void>;
   /** 仅返回与本次实际shadow版本完整匹配且属于当前工作区/Task的行。 */
   getByVersion(
-    workspaceId: string,
+    instanceId: string,
     taskId: string,
     version: CheckpointVersion,
   ): Promise<CheckpointRow | null>;
   /** 某 Task的全部检查点，createdAt 升序。 */
-  listByTask(workspaceId: string, taskId: string): Promise<CheckpointRow[]>;
+  listByTask(instanceId: string, taskId: string): Promise<CheckpointRow[]>;
   /** 按 id 读单行；不存在或不属本工作区返回 null。 */
-  getById(workspaceId: string, id: string): Promise<CheckpointRow | null>;
+  getById(instanceId: string, id: string): Promise<CheckpointRow | null>;
   /** 严格早于该时刻的最近一行（diff/统计的基准）；没有则 null。 */
   getPrevious(
-    workspaceId: string,
+    instanceId: string,
     taskId: string,
     createdAt: string,
   ): Promise<CheckpointRow | null>;
 }
 
 const CHECKPOINT_COLUMNS =
-  "id, workspace_id, project_id, task_id, root_directory, directory_snapshots, run_id, kind, label, shadow_commit, files_changed, insertions, deletions, created_at";
+  "id, instance_id, project_id, task_id, root_directory, directory_snapshots, run_id, kind, label, shadow_commit, files_changed, insertions, deletions, created_at";
 
 // type alias（而非 interface）才能获得隐式索引签名，满足 SqlRow 的泛型约束
 type CheckpointDbRow = {
   id: string;
-  workspace_id: string;
+  instance_id: string;
   task_id: string;
   project_id: string;
   root_directory: string;
@@ -89,7 +89,7 @@ type CheckpointDbRow = {
 function toDomain(row: CheckpointDbRow): CheckpointRow {
   return {
     id: row.id,
-    workspaceId: row.workspace_id,
+    instanceId: row.instance_id,
     taskId: row.task_id,
     projectId: row.project_id,
     rootDirectory: row.root_directory,
@@ -117,12 +117,12 @@ export function createCheckpointRepository(
 ): CheckpointRepository {
   return {
     async insert(row) {
-      // workspace_id 不进参数：由客户端绑定的 :workspace 决定，杜绝参数错位跨区写
-      await persistence.forWorkspace(row.workspaceId).execute(
+      // instance_id 不进参数：由客户端绑定的 :instance 决定，杜绝参数错位跨区写
+      await persistence.forInstance(row.instanceId).execute(
         `insert into public.project_checkpoints
-           (id, workspace_id, project_id, task_id, root_directory, directory_snapshots, run_id, kind, label, shadow_commit,
+           (id, instance_id, project_id, task_id, root_directory, directory_snapshots, run_id, kind, label, shadow_commit,
             files_changed, insertions, deletions, created_at)
-         values ($1, :workspace, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13)`,
+         values ($1, :instance, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
           row.id,
           row.projectId,
@@ -141,27 +141,27 @@ export function createCheckpointRepository(
       );
     },
 
-    async listByTask(workspaceId, taskId) {
+    async listByTask(instanceId, taskId) {
       const rows = await persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .query<CheckpointDbRow>(
           `select ${CHECKPOINT_COLUMNS}
              from public.project_checkpoints
             where task_id = $1
-              and workspace_id = :workspace
+              and instance_id = :instance
             order by created_at asc`,
           [taskId],
         );
       return rows.map(toDomain);
     },
 
-    async getByVersion(workspaceId, taskId, version) {
+    async getByVersion(instanceId, taskId, version) {
       const row = await persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .queryOne<CheckpointDbRow>(
           `select ${CHECKPOINT_COLUMNS}
            from public.project_checkpoints
-          where workspace_id = :workspace and task_id = $1 and project_id = $2 and root_directory = $3
+          where instance_id = :instance and task_id = $1 and project_id = $2 and root_directory = $3
             and directory_snapshots @> $4::jsonb and directory_snapshots <@ $4::jsonb
           order by created_at desc, id desc limit 1`,
           [
@@ -174,29 +174,29 @@ export function createCheckpointRepository(
       return row ? toDomain(row) : null;
     },
 
-    async getById(workspaceId, id) {
+    async getById(instanceId, id) {
       const row = await persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .queryOne<CheckpointDbRow>(
           `select ${CHECKPOINT_COLUMNS}
              from public.project_checkpoints
             where id = $1
               and task_id is not null
-              and workspace_id = :workspace`,
+              and instance_id = :instance`,
           [id],
         );
       return row ? toDomain(row) : null;
     },
 
-    async getPrevious(workspaceId, taskId, createdAt) {
+    async getPrevious(instanceId, taskId, createdAt) {
       const row = await persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .queryOne<CheckpointDbRow>(
           `select ${CHECKPOINT_COLUMNS}
              from public.project_checkpoints
             where task_id = $1
               and created_at < $2
-              and workspace_id = :workspace
+              and instance_id = :instance
             order by created_at desc
             limit 1`,
           [taskId, createdAt],
@@ -225,18 +225,18 @@ export function createInMemoryCheckpointRepository(): CheckpointRepository {
     async insert(row) {
       rows.push(structuredClone(row));
     },
-    async listByTask(workspaceId, taskId) {
+    async listByTask(instanceId, taskId) {
       return rows
-        .filter((r) => r.workspaceId === workspaceId && r.taskId === taskId)
+        .filter((r) => r.instanceId === instanceId && r.taskId === taskId)
         .sort(byTime)
         .map((r) => structuredClone(r));
     },
-    async getByVersion(workspaceId, taskId, version) {
+    async getByVersion(instanceId, taskId, version) {
       const expected = snapshotKey(version.directorySnapshots);
       const found = rows
         .filter(
           (row) =>
-            row.workspaceId === workspaceId &&
+            row.instanceId === instanceId &&
             row.taskId === taskId &&
             row.projectId === version.projectId &&
             row.rootDirectory === version.rootDirectory &&
@@ -246,18 +246,18 @@ export function createInMemoryCheckpointRepository(): CheckpointRepository {
         .at(-1);
       return found ? structuredClone(found) : null;
     },
-    async getById(workspaceId, id) {
+    async getById(instanceId, id) {
       const found = rows.find(
-        (r) => r.workspaceId === workspaceId && r.id === id,
+        (r) => r.instanceId === instanceId && r.id === id,
       );
       return found ? structuredClone(found) : null;
     },
-    async getPrevious(workspaceId, taskId, createdAt) {
+    async getPrevious(instanceId, taskId, createdAt) {
       const time = Date.parse(createdAt);
       const previous = rows
         .filter(
           (r) =>
-            r.workspaceId === workspaceId &&
+            r.instanceId === instanceId &&
             r.taskId === taskId &&
             Date.parse(r.createdAt) < time,
         )

@@ -19,7 +19,7 @@ import { createExecutionModeStore } from "./execution-mode-store.js";
 export function createAgentModesPlugin(): PluginDefinition {
   return {
     name: "agent-modes",
-    inject: ["auth", "persistence", "viewer"],
+    inject: ["localAccess", "persistence", "localInstance"],
     apply(ctx) {
       const service = createExecutionModeService({
         store: createExecutionModeStore(ctx.get("persistence")),
@@ -37,9 +37,9 @@ export function createAgentModesPlugin(): PluginDefinition {
       ctx.on("pre-step", async (payload, next) => {
         const mode = !payload.threadId
           ? "agent"
-          : payload.preset === "code" && payload.workspaceId && payload.taskId
+          : payload.preset === "code" && payload.instanceId && payload.taskId
             ? await service.hydrate(payload.threadId, {
-                workspaceId: payload.workspaceId,
+                instanceId: payload.instanceId,
               })
             : service.getMode(payload.threadId);
         const directive = BUILTIN_EXECUTION_MODES.find(
@@ -72,8 +72,8 @@ export function createAgentModesPlugin(): PluginDefinition {
     },
     mounted(ctx) {
       void registerExecutionModeRoutes(ctx.app, {
-        auth: ctx.get("auth"),
-        viewer: ctx.get("viewer"),
+        localAccess: ctx.get("localAccess"),
+        viewer: ctx.get("localInstance"),
         agentModes: ctx.get("agentModes"),
       });
     },

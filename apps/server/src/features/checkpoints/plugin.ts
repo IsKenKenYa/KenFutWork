@@ -12,7 +12,7 @@ export function createCheckpointsPlugin(): PluginDefinition {
   return {
     name: "checkpoints",
     inject: [
-      "auth",
+      "localAccess",
       "persistence",
       "settings",
       "executionScopes",
@@ -31,7 +31,7 @@ export function createCheckpointsPlugin(): PluginDefinition {
           gitForScope: async (scope, actor) => {
             const settings = await ctx
               .get("settings")
-              .getWorkspaceSettings(actor, scope.describe().workspaceId);
+              .getInstanceSettings(actor, scope.describe().instanceId);
             return createShadowGitClient({
               // Git 只读用户目录，系统 authority 仅开放 Task 私有 metadata。
               exec: createShadowGitExec({
@@ -112,19 +112,19 @@ export function createCheckpointsPlugin(): PluginDefinition {
       ctx.get("capabilities").register("task-close", {
         id: "checkpoints:restore-previews",
         value: {
-          close: (workspaceId: string, taskId: string) =>
-            ctx.get("checkpoints").forgetTask(workspaceId, taskId),
+          close: (instanceId: string, taskId: string) =>
+            ctx.get("checkpoints").forgetTask(instanceId, taskId),
         },
       });
       ctx.effect(() =>
         ctx.get("executionScopes").onRevoke(async ({ previous }) => {
           ctx
             .get("checkpoints")
-            .forgetTask(previous.workspaceId, previous.taskId);
+            .forgetTask(previous.instanceId, previous.taskId);
         }),
       );
       void registerCheckpointsRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         executionScopes: ctx.get("executionScopes"),
         checkpointsService: ctx.get("checkpoints"),
       });

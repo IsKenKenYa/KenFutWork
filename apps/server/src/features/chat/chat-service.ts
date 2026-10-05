@@ -4,9 +4,10 @@ import type {
   ChatSessionSummary,
   ContentBlock,
 } from "@kenfutwork/shared";
-
-import type { AuthenticatedUser } from "../auth/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import type { ChatMessageRow, ChatRepository } from "./repository.js";
 import type { ThreadService } from "./thread-service.js";
 
@@ -28,26 +29,23 @@ export class ChatServiceError extends Error {
 
 export type ChatService = {
   listSessions(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     canvasId: string,
   ): Promise<ChatSessionSummary[]>;
   createSession(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     canvasId: string,
     title?: string,
   ): Promise<ChatSessionSummary>;
   updateSessionTitle(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     sessionId: string,
     title: string,
   ): Promise<void>;
-  deleteSession(user: AuthenticatedUser, sessionId: string): Promise<void>;
-  listMessages(
-    user: AuthenticatedUser,
-    sessionId: string,
-  ): Promise<ChatMessage[]>;
+  deleteSession(actor: LocalActor, sessionId: string): Promise<void>;
+  listMessages(actor: LocalActor, sessionId: string): Promise<ChatMessage[]>;
   createMessage(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     sessionId: string,
     input: ChatMessageCreateRequest,
   ): Promise<ChatMessage>;
@@ -98,15 +96,15 @@ function toChatMessage(row: ChatMessageRow): ChatMessage {
 export function createChatService(options: {
   repository: ChatRepository;
   threadService: Pick<ThreadService, "createThreadId">;
-  viewerService: ViewerService;
+  localInstance: LocalInstanceService;
 }): ChatService {
-  const { repository, viewerService } = options;
+  const { repository, localInstance } = options;
   const requireVisualSession = async (
-    workspaceId: string,
+    instanceId: string,
     sessionId: string,
   ) => {
     const session = await repository
-      .findSessionThread(workspaceId, sessionId)
+      .findSessionThread(instanceId, sessionId)
       .catch(() => {
         throw new ChatServiceError(
           "chat_error",
@@ -122,31 +120,15 @@ export function createChatService(options: {
       );
   };
 
-  /** 工作区一律由服务端从鉴权用户解析（`FORM-9`）。 */
-  const requireWorkspaceId = async (
-    user: AuthenticatedUser,
-    message: string,
-  ) => {
-    const workspace = await viewerService
-      .resolveWorkspace(user)
-      .catch(() => null);
-
-    if (!workspace) {
-      throw new ChatServiceError("chat_error", message, 500);
-    }
-
-    return workspace.id;
-  };
+  const requireInstanceId = async (actor: LocalActor) =>
+    (await localInstance.resolve(actor)).instanceId;
 
   return {
-    async listSessions(user, canvasId) {
-      const workspaceId = await requireWorkspaceId(
-        user,
-        "Failed to list sessions.",
-      );
+    async listSessions(actor, canvasId) {
+      const instanceId = await requireInstanceId(actor);
 
       const rows = await repository
-        .listSessions(workspaceId, canvasId)
+        .listSessions(instanceId, canvasId)
         .catch(() => {
           throw new ChatServiceError(
             "chat_error",
@@ -164,17 +146,14 @@ export function createChatService(options: {
       }));
     },
 
-    async createSession(user, canvasId, title) {
-      const workspaceId = await requireWorkspaceId(
-        user,
-        "Failed to create session.",
-      );
+    async createSession(actor, canvasId, title) {
+      const instanceId = await requireInstanceId(actor);
 
       const row = await repository
-        .createSession(workspaceId, {
+        .createSession(instanceId, {
           canvasId,
           threadId: options.threadService.createThreadId(),
-          userId: user.id,
+          createdByClientId: actor.accessClientId,
           ...(title ? { title } : {}),
         })
         .catch(() => null);
@@ -197,15 +176,12 @@ export function createChatService(options: {
       };
     },
 
-    async updateSessionTitle(user, sessionId, title) {
-      const workspaceId = await requireWorkspaceId(
-        user,
-        "Failed to update session title.",
-      );
-      await requireVisualSession(workspaceId, sessionId);
+    async updateSessionTitle(actor, sessionId, title) {
+      const instanceId = await requireInstanceId(actor);
+      await requireVisualSession(instanceId, sessionId);
 
       const affected = await repository
-        .updateSessionTitle(workspaceId, sessionId, title)
+        .updateSessionTitle(instanceId, sessionId, title)
         .catch(() => {
           throw new ChatServiceError(
             "chat_error",
@@ -224,12 +200,12 @@ export function createChatService(options: {
       }
     },
 
-    async deleteSession(user, sessionId) {
-      const workspaceId = await requireWorkspaceId(user, "Session not found.");
-      await requireVisualSession(workspaceId, sessionId);
+    async deleteSession(actor, sessionId) {
+      const instanceId = await requireInstanceId(actor);
+      await requireVisualSession(instanceId, sessionId);
 
       const affected = await repository
-        .deleteSession(workspaceId, sessionId)
+        .deleteSession(instanceId, sessionId)
         .catch(() => {
           throw new ChatServiceError(
             "session_not_found",
@@ -247,15 +223,12 @@ export function createChatService(options: {
       }
     },
 
-    async listMessages(user, sessionId) {
-      const workspaceId = await requireWorkspaceId(
-        user,
-        "Failed to list messages.",
-      );
-      await requireVisualSession(workspaceId, sessionId);
+    async listMessages(actor, sessionId) {
+      const instanceId = await requireInstanceId(actor);
+      await requireVisualSession(instanceId, sessionId);
 
       const rows = await repository
-        .listMessages(workspaceId, sessionId)
+        .listMessages(instanceId, sessionId)
         .catch(() => {
           throw new ChatServiceError(
             "chat_error",
@@ -278,15 +251,12 @@ export function createChatService(options: {
       });
     },
 
-    async createMessage(user, sessionId, input) {
-      const workspaceId = await requireWorkspaceId(
-        user,
-        "Failed to save message.",
-      );
-      await requireVisualSession(workspaceId, sessionId);
+    async createMessage(actor, sessionId, input) {
+      const instanceId = await requireInstanceId(actor);
+      await requireVisualSession(instanceId, sessionId);
 
       const row = await repository
-        .insertMessage(workspaceId, {
+        .insertMessage(instanceId, {
           sessionId,
           role: input.role,
           content: input.content,
@@ -308,7 +278,7 @@ export function createChatService(options: {
       }
 
       // 会话排序时间随消息推进（消息表更新不会触发会话触发器）；失败不影响消息已落库。
-      await repository.touchSession(workspaceId, sessionId).catch(() => 0);
+      await repository.touchSession(instanceId, sessionId).catch(() => 0);
 
       return toChatMessage(row);
     },

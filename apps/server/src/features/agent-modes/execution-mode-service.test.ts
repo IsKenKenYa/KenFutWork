@@ -11,10 +11,10 @@ import {
 import type { ExecutionModeStore } from "./execution-mode-store.js";
 
 function makeFakeStore(): ExecutionModeStore & {
-  saved: Array<{ workspaceId: string; threadId: string; mode: string }>;
+  saved: Array<{ instanceId: string; threadId: string; mode: string }>;
   rows: Map<string, { exists: boolean; mode: ExecutionMode | null }>;
 } {
-  const saved: Array<{ workspaceId: string; threadId: string; mode: string }> =
+  const saved: Array<{ instanceId: string; threadId: string; mode: string }> =
     [];
   const rows = new Map<
     string,
@@ -23,12 +23,12 @@ function makeFakeStore(): ExecutionModeStore & {
   return {
     saved,
     rows,
-    async lookup(workspaceId, threadId) {
-      void workspaceId;
+    async lookup(instanceId, threadId) {
+      void instanceId;
       return rows.get(threadId) ?? { exists: false, mode: null };
     },
-    async save(workspaceId, threadId, mode) {
-      saved.push({ workspaceId, threadId, mode });
+    async save(instanceId, threadId, mode) {
+      saved.push({ instanceId, threadId, mode });
       rows.set(threadId, { exists: true, mode });
       return true;
     },
@@ -57,9 +57,9 @@ describe("执行模式词汇表", () => {
     const store = makeFakeStore();
     const service = createExecutionModeService({ store });
 
-    await service.activate("t-w", "goal", { workspaceId: "ws-1" });
+    await service.activate("t-w", "goal", { instanceId: "ws-1" });
     expect(store.saved).toEqual([
-      { workspaceId: "ws-1", threadId: "t-w", mode: "goal" },
+      { instanceId: "ws-1", threadId: "t-w", mode: "goal" },
     ]);
 
     await service.activate("t-m", "loop");
@@ -72,34 +72,34 @@ describe("执行模式词汇表", () => {
     const service = createExecutionModeService({ store });
     store.rows.set("t-persisted", { exists: true, mode: "plan" });
 
-    expect(await service.hydrate("t-persisted", { workspaceId: "ws" })).toBe(
+    expect(await service.hydrate("t-persisted", { instanceId: "ws" })).toBe(
       "plan",
     );
     // warm 后 getMode 直接命中
     expect(service.getMode("t-persisted")).toBe("plan");
 
     // 无行 → agent，不借另一工作区可能存在的热缓存
-    expect(await service.hydrate("t-missing", { workspaceId: "ws" })).toBe(
+    expect(await service.hydrate("t-missing", { instanceId: "ws" })).toBe(
       "agent",
     );
 
     // 当前持久事实改变时，hydrate必须读回，不能保留旧alias负缓存
     store.rows.set("t-missing", { exists: true, mode: "solo" });
-    expect(await service.hydrate("t-missing", { workspaceId: "ws" })).toBe(
+    expect(await service.hydrate("t-missing", { instanceId: "ws" })).toBe(
       "solo",
     );
   });
 
   it("hydrate/lookup 无 store 时退化为内存语义（部分装配兼容）", async () => {
     const service = createExecutionModeService();
-    expect(await service.hydrate("t-x", { workspaceId: "ws" })).toBe("agent");
+    expect(await service.hydrate("t-x", { instanceId: "ws" })).toBe("agent");
     // hydrate 会把回落值 warm 进缓存：无 store 的 lookup 只报缓存值，exists 恒 false
-    expect(await service.lookup("t-x", { workspaceId: "ws" })).toEqual({
+    expect(await service.lookup("t-x", { instanceId: "ws" })).toEqual({
       exists: false,
       mode: "agent",
     });
     await service.activate("t-x", "solo");
-    expect(await service.lookup("t-x", { workspaceId: "ws" })).toEqual({
+    expect(await service.lookup("t-x", { instanceId: "ws" })).toEqual({
       exists: false,
       mode: "solo",
     });
@@ -111,15 +111,15 @@ describe("执行模式词汇表", () => {
     store.rows.set("t-set", { exists: true, mode: "creative" });
     store.rows.set("t-unset", { exists: true, mode: null });
 
-    expect(await service.lookup("t-set", { workspaceId: "ws" })).toEqual({
+    expect(await service.lookup("t-set", { instanceId: "ws" })).toEqual({
       exists: true,
       mode: "creative",
     });
-    expect(await service.lookup("t-unset", { workspaceId: "ws" })).toEqual({
+    expect(await service.lookup("t-unset", { instanceId: "ws" })).toEqual({
       exists: true,
       mode: null,
     });
-    expect(await service.lookup("t-none", { workspaceId: "ws" })).toEqual({
+    expect(await service.lookup("t-none", { instanceId: "ws" })).toEqual({
       exists: false,
       mode: null,
     });

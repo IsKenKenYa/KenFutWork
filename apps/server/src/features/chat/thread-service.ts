@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-
-import type { AuthenticatedUser } from "../auth/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import type { ChatRepository } from "./repository.js";
 
 export class ThreadServiceError extends Error {
@@ -32,16 +33,16 @@ export type SessionThreadBinding = {
 export type ThreadService = {
   createThreadId(): string;
   resolveOwnedSessionThread(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     sessionId: string,
   ): Promise<SessionThreadBinding>;
 };
 
 export function createThreadService(options: {
-  /** 会话属主经 project/workspace 身份校验；Code 不再经 Canvas。 */
+  /** 会话属主经 project/instance 身份校验；Code 不再经 Canvas。 */
   repository: ChatRepository;
   threadIdFactory?: () => string;
-  viewerService: ViewerService;
+  localInstance: LocalInstanceService;
 }): ThreadService {
   const threadIdFactory =
     options.threadIdFactory ?? (() => `thread_${randomUUID()}`);
@@ -51,23 +52,11 @@ export function createThreadService(options: {
       return threadIdFactory();
     },
 
-    async resolveOwnedSessionThread(user, sessionId) {
-      const workspace = await options.viewerService
-        .resolveWorkspace(user)
-        .catch(() => {
-          throw new ThreadServiceError(
-            "工作区暂不可用，请稍后重新打开会话。",
-            503,
-            "session_unavailable",
-          );
-        });
-
-      if (!workspace) {
-        throw new ThreadServiceError("Session not found.", 404);
-      }
+    async resolveOwnedSessionThread(actor, sessionId) {
+      const context = await options.localInstance.resolve(actor);
 
       const row = await options.repository.findSessionThread(
-        workspace.id,
+        context.instanceId,
         sessionId,
       );
 

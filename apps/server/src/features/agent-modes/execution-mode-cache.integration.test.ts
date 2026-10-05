@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { prepareHarnessTask } from "../agent-runs/test-harness.js";
-import { createAccountRepository } from "../auth/repository.js";
-import { createViewerRepository } from "../bootstrap/repository.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createExecutionModeService } from "./execution-mode-service.js";
 import { createExecutionModeStore } from "./execution-mode-store.js";
@@ -10,33 +8,20 @@ import { createExecutionModeStore } from "./execution-mode-store.js";
 const enabled = process.env.KENFUTWORK_HARNESS_TEST_PG === "1";
 
 describe.skipIf(!enabled)("执行模式Scoped缓存真实库 integration", () => {
-  it("已暖模式缓存仍按当前工作区查询，foreign hydrate不能读取或覆盖owner模式", async () => {
+  it("已暖模式缓存仍按当前实例查询，foreign hydrate不能读取或覆盖owner模式", async () => {
     const database = await createTaskWorkDatabase();
     try {
       const { scope, threadId } = await prepareHarnessTask(database);
-      const account = await createAccountRepository(
-        database.persistence,
-      ).ensurePasswordlessAccount({
-        email: `cache-foreign-${randomUUID()}@integration.local`,
-        displayName: "缓存隔离",
-      });
-      const viewer = createViewerRepository(database.persistence);
-      await viewer.bootstrap({
-        email: account.email,
-        userId: account.id,
-        userMeta: {},
-      });
-      const foreign = await viewer.findPersonalWorkspace(account.id);
-      if (!foreign) throw new Error("独占foreign工作区未创建");
+      const foreign = { instanceId: randomUUID() };
       const service = createExecutionModeService({
         store: createExecutionModeStore(database.persistence),
       });
-      const owner = { workspaceId: scope.workspaceId };
+      const owner = { instanceId: scope.instanceId };
       await service.activate(threadId, "plan", owner);
       expect(await service.hydrate(threadId, owner)).toBe("plan");
-      expect(await service.hydrate(threadId, { workspaceId: foreign.id })).toBe(
-        "agent",
-      );
+      expect(
+        await service.hydrate(threadId, { instanceId: foreign.instanceId }),
+      ).toBe("agent");
       expect(service.getMode(threadId)).toBe("plan");
       expect(await service.lookup(threadId, owner)).toEqual({
         exists: true,
@@ -50,7 +35,7 @@ describe.skipIf(!enabled)("执行模式Scoped缓存真实库 integration", () =>
     const database = await createTaskWorkDatabase();
     try {
       const { scope, threadId } = await prepareHarnessTask(database);
-      const owner = { workspaceId: scope.workspaceId };
+      const owner = { instanceId: scope.instanceId };
       const service = createExecutionModeService({
         store: createExecutionModeStore(database.persistence),
       });
@@ -88,28 +73,15 @@ describe.skipIf(!enabled)("执行模式Scoped缓存真实库 integration", () =>
     const database = await createTaskWorkDatabase();
     try {
       const { scope, threadId } = await prepareHarnessTask(database);
-      const account = await createAccountRepository(
-        database.persistence,
-      ).ensurePasswordlessAccount({
-        email: `activate-foreign-${randomUUID()}@integration.local`,
-        displayName: "模式激活隔离",
-      });
-      const viewer = createViewerRepository(database.persistence);
-      await viewer.bootstrap({
-        email: account.email,
-        userId: account.id,
-        userMeta: {},
-      });
-      const foreign = await viewer.findPersonalWorkspace(account.id);
-      if (!foreign) throw new Error("独占foreign工作区未创建");
-      const owner = { workspaceId: scope.workspaceId };
+      const foreign = { instanceId: randomUUID() };
+      const owner = { instanceId: scope.instanceId };
       const service = createExecutionModeService({
         store: createExecutionModeStore(database.persistence),
       });
       await service.activate(threadId, "plan", owner);
       await expect(
-        service.activate(threadId, "solo", { workspaceId: foreign.id }),
-      ).rejects.toThrow("不属于当前工作区");
+        service.activate(threadId, "solo", { instanceId: foreign.instanceId }),
+      ).rejects.toThrow("不属于当前实例");
       expect(service.getMode(threadId)).toBe("plan");
       expect(await service.lookup(threadId, owner)).toEqual({
         exists: true,
