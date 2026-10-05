@@ -44,7 +44,10 @@ import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
 import { attachNativeCheckpointDurability } from "./native-checkpoint-durability.js";
 import { createNativeCompactionTracker } from "./native-compaction.js";
-import { createNativeContextHistory } from "./native-context-history.js";
+import {
+  createNativeContextHistory,
+  effectiveNativeMessages,
+} from "./native-context-history.js";
 import type {
   AgentRunExtension,
   AgentRunExtensionContext,
@@ -563,7 +566,14 @@ export function createKenFutWorkDeepAgent(options: {
   const summarizationMiddleware: AgentMiddleware[] = [
     compactionTracker?.middleware ?? {
       ...nativeSummarization,
-      wrapModelCall: (request, handler) => handler(request),
+      wrapModelCall: (request, handler) =>
+        handler({
+          ...request,
+          messages: effectiveNativeMessages(
+            request.messages,
+            request.state,
+          ),
+        }),
     },
   ];
 

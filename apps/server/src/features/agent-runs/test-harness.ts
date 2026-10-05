@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { instanceSettingsSchema } from "@kenfutwork/shared";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, type BaseMessage } from "@langchain/core/messages";
+import type { ChatResult } from "@langchain/core/outputs";
 import { createNativeContextBranchService } from "../../agent/native-context-branch.js";
 import { createAgentPersistenceService } from "../../agent/persistence/index.js";
 import { createAgentRunService } from "../../agent/runtime.js";
@@ -72,7 +73,10 @@ export class BoundaryModel extends BaseChatModel {
   bindTools(): this {
     return this;
   }
-  async _generate(messages: BaseMessage[], options?: { signal?: AbortSignal }) {
+  async _generate(
+    messages: BaseMessage[],
+    options?: { signal?: AbortSignal },
+  ): Promise<ChatResult> {
     this.requests.push(messages);
     await this.beforeReply?.(options?.signal);
     return { generations: [{ text: "完成", message: new AIMessage("完成") }] };
@@ -93,6 +97,7 @@ export async function createHarness(
     | "agentPersistenceService"
     | "contextBranchProvider"
     | "emitPreStep"
+    | "runUsage"
   >,
 ) {
   const { scope, actor, threadId, localInstance, threads, metadata } =
