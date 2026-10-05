@@ -145,7 +145,28 @@ describe("人工viewer scope", () => {
     expect(
       await call("searchWorkspaceFiles", { rootPath: root, query: "dmt" }),
     ).toMatchObject({
-      result: [{ name: "deep-module.ts", relativePath: "src/deep-module.ts" }],
+      // 原ZCode也对绝对路径打分，随机临时根可能匹配dmt；验证目标与边界，不假定只有一项。
+      result: expect.arrayContaining([
+        expect.objectContaining({
+          name: "deep-module.ts",
+          relativePath: "src/deep-module.ts",
+        }),
+      ]),
+    });
+    expect(
+      await call("searchWorkspaceFiles", { rootPath: root, query: root }),
+    ).toMatchObject({
+      result: expect.arrayContaining([
+        expect.objectContaining({
+          name: "src",
+          relativePath: "src",
+          type: "directory",
+        }),
+        expect.objectContaining({
+          name: "deep-module.ts",
+          relativePath: "src/deep-module.ts",
+        }),
+      ]),
     });
     const secretSearch = (
       await call("searchWorkspaceFiles", { rootPath: root, query: "secret" })
