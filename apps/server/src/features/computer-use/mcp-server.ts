@@ -9,6 +9,7 @@ import type { LocalActor } from "../local-instance/types.js";
 import { CU_TOOL_PREFIX } from "./tools.js";
 
 export interface ComputerUseMcpExport {
+  assertRun(actor: LocalActor, runId: string): void;
   createServer(actor: LocalActor, runId: string): Server;
 }
 

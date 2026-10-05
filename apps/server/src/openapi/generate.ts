@@ -319,18 +319,31 @@ function buildOperation(ctx: Ctx, entry: OpenApiRouteEntry) {
         : {}),
     };
   }
+  for (const status of entry.additionalSuccessStatuses ?? []) {
+    responses[String(status)] = { description: "已受理，无响应体" };
+  }
   if (entry.auth === "local") {
     responses["401"] = {
       description: "未认证或令牌无效",
       content: jsonContent(
-        schemaRefOrInline(ctx, unauthenticatedErrorResponseSchema, "output"),
+        schemaRefOrInline(
+          ctx,
+          entry.errorResponseSchema ?? unauthenticatedErrorResponseSchema,
+          "output",
+        ),
       ),
     };
   }
   responses.default = {
-    description: "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+    description: entry.errorResponseSchema
+      ? "协议或业务错误，见本端点错误响应契约"
+      : "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
     content: jsonContent(
-      schemaRefOrInline(ctx, applicationErrorResponseSchema, "output"),
+      schemaRefOrInline(
+        ctx,
+        entry.errorResponseSchema ?? applicationErrorResponseSchema,
+        "output",
+      ),
     ),
   };
 

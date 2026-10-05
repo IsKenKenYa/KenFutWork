@@ -64,6 +64,7 @@ server.setRequestHandler(CallToolRequestSchema, async (_request, extra) => {
     };
   } else if (
     mode === "wait-cancel" ||
+    (mode === "repeat-cancel" && _request.params.name === "click") ||
     (mode === "cancel-lifecycle" &&
       _request.params.name === "click" &&
       !actionStarted)
@@ -80,7 +81,7 @@ server.setRequestHandler(CallToolRequestSchema, async (_request, extra) => {
     });
     structuredContent = { actionSent: false };
   } else if (
-    (mode === "lifecycle" || mode === "cancel-lifecycle") &&
+    ["lifecycle", "cancel-lifecycle", "repeat-cancel"].includes(mode ?? "") &&
     _request.params.name !== "get_app_state"
   ) {
     structuredContent = { actionSent: true };

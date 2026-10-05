@@ -57,6 +57,10 @@ import {
   codeUiRpcResponseSchema,
   codeUiSnapshotResponseSchema,
   codeUiWorkspaceListSchema,
+  computerUseMcpErrorResponseSchema,
+  computerUseMcpEventStreamSchema,
+  computerUseMcpMessageSchema,
+  computerUseMcpQuerySchema,
   createImageJobRequestSchema,
   createVideoJobRequestSchema,
   directoryPickerStatusSchema,
@@ -145,6 +149,8 @@ export interface OpenApiRouteEntry {
   description: string;
   auth: EndpointAuth;
   successStatus: 200 | 201 | 202 | 204 | 503;
+  additionalSuccessStatuses?: Array<200 | 202 | 204>;
+  errorResponseSchema?: ZodType;
   requestSchema?: ZodType;
   querySchema?: ZodType;
   responseSchema?: ZodType;
@@ -156,6 +162,49 @@ export interface OpenApiRouteEntry {
 }
 
 export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
+  {
+    method: "post",
+    path: "/api/computer-use/mcp",
+    tag: "mcp",
+    auth: "local",
+    summary: "调用活动Code Run的桌面MCP",
+    description:
+      "标准MCP Streamable HTTP：初始化后沿同一Mcp-Session-Id与Mcp-Protocol-Version调用/取消；会话固定本机连接与真实Run，令牌只在HTTP头。JSON-RPC响应为200 SSE消息流，通知受理为202；Run结束/客户端撤权关闭会话。",
+    successStatus: 200,
+    additionalSuccessStatuses: [202],
+    querySchema: computerUseMcpQuerySchema,
+    requestSchema: computerUseMcpMessageSchema,
+    responseSchema: computerUseMcpEventStreamSchema,
+    responseMediaType: "text/event-stream",
+    errorResponseSchema: computerUseMcpErrorResponseSchema,
+  },
+  {
+    method: "get",
+    path: "/api/computer-use/mcp",
+    tag: "mcp",
+    auth: "local",
+    summary: "订阅活动桌面MCP会话的消息流",
+    description:
+      "标准MCP SSE通道；须携带初始化取得的Mcp-Session-Id与Mcp-Protocol-Version，每次重连都重验原本机连接和Run。心跳由computerUseMcpKeepAliveMs治理，撤权/Run结束关闭流。",
+    successStatus: 200,
+    querySchema: computerUseMcpQuerySchema,
+    responseSchema: computerUseMcpEventStreamSchema,
+    responseMediaType: "text/event-stream",
+    errorResponseSchema: computerUseMcpErrorResponseSchema,
+  },
+  {
+    method: "delete",
+    path: "/api/computer-use/mcp",
+    tag: "mcp",
+    auth: "local",
+    summary: "结束当前连接的桌面MCP会话",
+    description:
+      "按标准MCP协议携带Mcp-Session-Id与Mcp-Protocol-Version关闭原SDK transport，取消该会话在途请求；不结束所属Code Run，不重置每Run动作总额。成功为200空体，原nonce不能再使用。",
+    successStatus: 200,
+    querySchema: computerUseMcpQuerySchema,
+    errorResponseSchema: computerUseMcpErrorResponseSchema,
+  },
+
   {
     method: "get",
     path: "/api/instance",

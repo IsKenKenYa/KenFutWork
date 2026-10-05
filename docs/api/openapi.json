@@ -152,6 +152,191 @@
     }
   ],
   "paths": {
+    "/api/computer-use/mcp": {
+      "post": {
+        "operationId": "postComputerUseMcp",
+        "summary": "调用活动Code Run的桌面MCP",
+        "description": "标准MCP Streamable HTTP：初始化后沿同一Mcp-Session-Id与Mcp-Protocol-Version调用/取消；会话固定本机连接与真实Run，令牌只在HTTP头。JSON-RPC响应为200 SSE消息流，通知受理为202；Run结束/客户端撤权关闭会话。",
+        "tags": [
+          "mcp"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/computerUseMcpMessageSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/computerUseMcpEventStreamSchema"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "已受理，无响应体"
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/computerUseMcpErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "协议或业务错误，见本端点错误响应契约",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/computerUseMcpErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getComputerUseMcp",
+        "summary": "订阅活动桌面MCP会话的消息流",
+        "description": "标准MCP SSE通道；须携带初始化取得的Mcp-Session-Id与Mcp-Protocol-Version，每次重连都重验原本机连接和Run。心跳由computerUseMcpKeepAliveMs治理，撤权/Run结束关闭流。",
+        "tags": [
+          "mcp"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/computerUseMcpEventStreamSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/computerUseMcpErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "协议或业务错误，见本端点错误响应契约",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/computerUseMcpErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteComputerUseMcp",
+        "summary": "结束当前连接的桌面MCP会话",
+        "description": "按标准MCP协议携带Mcp-Session-Id与Mcp-Protocol-Version关闭原SDK transport，取消该会话在途请求；不结束所属Code Run，不重置每Run动作总额。成功为200空体，原nonce不能再使用。",
+        "tags": [
+          "mcp"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/computerUseMcpErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "协议或业务错误，见本端点错误响应契约",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/computerUseMcpErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/instance": {
       "get": {
         "operationId": "getInstance",
@@ -11444,6 +11629,412 @@
         ],
         "additionalProperties": false
       },
+      "computerUseMcpErrorResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "jsonrpc": {
+                "type": "string",
+                "const": "2.0"
+              },
+              "id": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "data": {}
+                },
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "jsonrpc",
+              "error"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "instance_forbidden",
+                      "instance_draining",
+                      "settings_forbidden",
+                      "settings_failed",
+                      "application_error",
+                      "service_unavailable",
+                      "auth_unavailable",
+                      "email_taken",
+                      "invalid_credentials",
+                      "invalid_input",
+                      "forbidden",
+                      "admin_query_failed",
+                      "admin_action_failed",
+                      "user_not_found",
+                      "invalid_action",
+                      "bootstrap_failed",
+                      "brand_kit_not_found",
+                      "brand_kit_create_failed",
+                      "brand_kit_update_failed",
+                      "brand_kit_delete_failed",
+                      "brand_kit_query_failed",
+                      "brand_kit_asset_not_found",
+                      "brand_kit_asset_create_failed",
+                      "canvas_not_found",
+                      "canvas_save_failed",
+                      "chat_error",
+                      "profile_update_failed",
+                      "project_query_failed",
+                      "project_create_failed",
+                      "project_delete_failed",
+                      "project_not_found",
+                      "project_slug_taken",
+                      "project_update_failed",
+                      "index_disabled",
+                      "index_not_built",
+                      "index_too_large",
+                      "index_failed",
+                      "invalid_work_dir",
+                      "session_not_found",
+                      "session_unavailable",
+                      "settings_not_found",
+                      "settings_update_failed",
+                      "invalid_model",
+                      "upload_failed",
+                      "asset_not_found",
+                      "job_not_found",
+                      "job_create_failed",
+                      "job_query_failed",
+                      "job_cancel_failed",
+                      "skill_not_found",
+                      "skill_create_failed",
+                      "skill_update_failed",
+                      "skill_delete_failed",
+                      "skill_query_failed",
+                      "skill_install_failed",
+                      "skill_uninstall_failed",
+                      "skill_toggle_failed",
+                      "skill_import_failed",
+                      "skill_file_query_failed",
+                      "marketplace_search_failed",
+                      "marketplace_detail_failed",
+                      "instance_create_failed",
+                      "instance_update_failed",
+                      "instance_delete_failed",
+                      "instance_query_failed",
+                      "marketplace_install_failed",
+                      "concurrency_limit",
+                      "generation_failed",
+                      "invalid_request",
+                      "plugin_not_found",
+                      "plugin_asset_not_found",
+                      "plugin_source_failed",
+                      "plugin_incompatible",
+                      "install_failed",
+                      "uninstall_failed",
+                      "toggle_failed",
+                      "system_plugin",
+                      "not_installed",
+                      "git_unavailable",
+                      "git_write_failed",
+                      "checkpoint_not_found",
+                      "checkpoint_failed",
+                      "run_in_progress",
+                      "usage_query_failed",
+                      "flow_engine_not_configured",
+                      "flow_engine_invalid",
+                      "flow_billing_conflict",
+                      "flow_billing_failed"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "computerUseMcpEventStreamSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string",
+        "description": "标准MCP Streamable HTTP的SSE消息流；每个data帧是原JSON-RPC消息。"
+      },
+      "computerUseMcpMessageSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "jsonrpc": {
+                "type": "string",
+                "const": "2.0"
+              },
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                ]
+              },
+              "method": {
+                "type": "string"
+              },
+              "params": {
+                "type": "object",
+                "properties": {
+                  "_meta": {
+                    "type": "object",
+                    "properties": {
+                      "progressToken": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        ]
+                      },
+                      "io.modelcontextprotocol/related-task": {
+                        "type": "object",
+                        "properties": {
+                          "taskId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "taskId"
+                        ]
+                      }
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "jsonrpc",
+              "id",
+              "method"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "jsonrpc": {
+                "type": "string",
+                "const": "2.0"
+              },
+              "method": {
+                "type": "string"
+              },
+              "params": {
+                "type": "object",
+                "properties": {
+                  "_meta": {
+                    "type": "object",
+                    "properties": {
+                      "progressToken": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        ]
+                      },
+                      "io.modelcontextprotocol/related-task": {
+                        "type": "object",
+                        "properties": {
+                          "taskId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "taskId"
+                        ]
+                      }
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "jsonrpc",
+              "method"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "jsonrpc": {
+                "type": "string",
+                "const": "2.0"
+              },
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                ]
+              },
+              "result": {
+                "type": "object",
+                "properties": {
+                  "_meta": {
+                    "type": "object",
+                    "properties": {
+                      "progressToken": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        ]
+                      },
+                      "io.modelcontextprotocol/related-task": {
+                        "type": "object",
+                        "properties": {
+                          "taskId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "taskId"
+                        ]
+                      }
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "jsonrpc",
+              "id",
+              "result"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "jsonrpc": {
+                "type": "string",
+                "const": "2.0"
+              },
+              "id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                ]
+              },
+              "error": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "data": {}
+                },
+                "required": [
+                  "code",
+                  "message"
+                ]
+              }
+            },
+            "required": [
+              "jsonrpc",
+              "error"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
       "createImageJobRequestSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -12325,6 +12916,12 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 60000
+              },
+              "computerUseMcpKeepAliveMs": {
+                "default": 15000,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 86400000
               }
             },
             "required": [
@@ -12382,7 +12979,8 @@
               "computerUseAxTitleMaxChars",
               "computerUseAxValueMaxChars",
               "computerUseAxMaxActions",
-              "computerUseInputDelayMs"
+              "computerUseInputDelayMs",
+              "computerUseMcpKeepAliveMs"
             ],
             "additionalProperties": false
           }
@@ -12715,6 +13313,11 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 60000
+          },
+          "computerUseMcpKeepAliveMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 86400000
           }
         }
       },

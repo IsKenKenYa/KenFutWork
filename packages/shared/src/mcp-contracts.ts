@@ -1,4 +1,26 @@
+import {
+  JSONRPCErrorResponseSchema,
+  JSONRPCMessageSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { runIdSchema } from "./contracts.js";
+import { applicationErrorResponseSchema } from "./http.js";
+
+/** 标准MCP wire直接采用官方SDK契约；不另造工具、Task或身份DTO。 */
+export const computerUseMcpMessageSchema = JSONRPCMessageSchema;
+export const computerUseMcpQuerySchema = z.object({ runId: runIdSchema });
+/** SDK HTTP层的解析/会话错误用null id；标准MCP消息的RequestId仍保持原SDK约束。 */
+export const computerUseMcpTransportErrorSchema =
+  JSONRPCErrorResponseSchema.extend({
+    id: JSONRPCErrorResponseSchema.shape.id.nullable(),
+  });
+export const computerUseMcpErrorResponseSchema = z.union([
+  computerUseMcpTransportErrorSchema,
+  applicationErrorResponseSchema,
+]);
+export const computerUseMcpEventStreamSchema = z
+  .string()
+  .describe("标准MCP Streamable HTTP的SSE消息流；每个data帧是原JSON-RPC消息。");
 
 /**
  * MCP server 管理契约（`/api/mcp/servers*`）。

@@ -23,6 +23,11 @@ const fields = [
   ],
   ["computerUseAxMaxActions", "KENFUTWORK_COMPUTER_USE_AX_MAX_ACTIONS", 12],
   ["computerUseInputDelayMs", "KENFUTWORK_COMPUTER_USE_INPUT_DELAY_MS", 100],
+  [
+    "computerUseMcpKeepAliveMs",
+    "KENFUTWORK_COMPUTER_USE_MCP_KEEP_ALIVE_MS",
+    15_000,
+  ],
 ] as const;
 
 it.each(fields)(

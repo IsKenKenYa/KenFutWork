@@ -321,6 +321,7 @@ export const instanceSettingsSchema = z.object({
   computerUseAxValueMaxChars: governanceSetting("computerUseAxValueMaxChars"),
   computerUseAxMaxActions: governanceSetting("computerUseAxMaxActions"),
   computerUseInputDelayMs: governanceSetting("computerUseInputDelayMs"),
+  computerUseMcpKeepAliveMs: governanceSetting("computerUseMcpKeepAliveMs"),
 });
 
 export const modelInfoSchema = z.object({

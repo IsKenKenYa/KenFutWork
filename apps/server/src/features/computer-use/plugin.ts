@@ -22,18 +22,21 @@ import {
   clampComputerUseSessionMaxMs,
 } from "@kenfutwork/shared";
 import type { ServerEnv } from "../../config/env.js";
+import { registerComputerUseMcpRoutes } from "../../http/computer-use-mcp.js";
 import type {
   PluginDefinition,
   ToolExecutionContext,
 } from "../../kernel/types.js";
-import type { LocalActor } from "../local-instance/types.js";
 import { createActiveComputerUseRuns } from "./active-runs.js";
 import { createUnavailableExecutor } from "./executor.js";
 import {
   type ComputerUseMcpSource,
   createMcpComputerUseExecutor,
 } from "./mcp-backend.js";
-import { createComputerUseMcpServer } from "./mcp-server.js";
+import {
+  type ComputerUseMcpExport,
+  createComputerUseMcpServer,
+} from "./mcp-server.js";
 import {
   type CuGovernanceValues,
   createComputerUseService,
@@ -135,7 +138,7 @@ export function createComputerUsePlugin(options?: {
 }): PluginDefinition {
   return {
     name: "computer-use",
-    inject: ["settings"],
+    inject: ["settings", "localAccess", "localInstance"],
     apply(ctx) {
       const runGovernance = new AsyncLocalStorage<CuGovernanceValues>();
       const executionContext = new AsyncLocalStorage<ToolExecutionContext>();
@@ -159,22 +162,32 @@ export function createComputerUsePlugin(options?: {
           value: activeRuns.extension,
         }),
       );
+      const exporter: ComputerUseMcpExport = {
+        assertRun: (actor, runId) => activeRuns.assertRun(actor, runId),
+        createServer: (actor, runId) => {
+          activeRuns.assertRun(actor, runId);
+          return createComputerUseMcpServer({
+            registry: tools,
+            version: ctx.env.version,
+            resolveContext: async (signal) =>
+              activeRuns.resolveContext(actor, runId, signal),
+            execute: (name, args, execution) =>
+              activeRuns.execute(actor, runId, name, args, execution),
+          });
+        },
+      };
       ctx.effect(() =>
         ctx.get("capabilities").register("computer-use-mcp-export", {
           id: "computer-use:trusted-run",
-          value: {
-            createServer: (actor: LocalActor, runId: string) =>
-              createComputerUseMcpServer({
-                registry: tools,
-                version: ctx.env.version,
-                resolveContext: async (signal) =>
-                  activeRuns.resolveContext(actor, runId, signal),
-                execute: (name, args, execution) =>
-                  activeRuns.execute(actor, runId, name, args, execution),
-              }),
-          },
+          value: exporter,
         }),
       );
+      const http = registerComputerUseMcpRoutes(ctx.app, {
+        exporter,
+        localAccess: ctx.get("localAccess"),
+        localInstance: ctx.get("localInstance"),
+        settings: ctx.get("settings"),
+      });
       const external = async (context: ToolExecutionContext) =>
         (
           await Promise.all(
@@ -338,6 +351,7 @@ export function createComputerUsePlugin(options?: {
       // run 结束释放控制租约（防泄漏的租约把后续 run 全挡在 controller_busy）
       ctx.on("turn-stopping", async (_payload, next) => {
         activeRuns.closeRun(_payload.runId);
+        await http.closeRun(_payload.runId);
         await next();
         await service.releaseLease(_payload.runId);
       });
@@ -345,6 +359,7 @@ export function createComputerUsePlugin(options?: {
       ctx.effect(() => async () => {
         disposed = true;
         activeRuns.dispose();
+        await http.dispose();
         await service.dispose();
       });
     },

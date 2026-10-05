@@ -80,6 +80,8 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   computerUseAxMaxActions: 12,
   /** 输入事件间隔；原生控件需要追踪down/up，0仅适用于明确可处理即时输入的目标。 */
   computerUseInputDelayMs: 100,
+  /** MCP HTTP的SSE心跳间隔；0关闭，默认与官方SDK一致。 */
+  computerUseMcpKeepAliveMs: 15_000,
 } as const;
 
 export type AgentGovernanceValue = keyof typeof AGENT_GOVERNANCE_DEFAULTS;
@@ -120,6 +122,7 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "computerUseAxValueMaxChars",
   "computerUseAxMaxActions",
   "computerUseInputDelayMs",
+  "computerUseMcpKeepAliveMs",
 ] as const;
 export type RuntimeGovernanceKey = (typeof RUNTIME_GOVERNANCE_KEYS)[number];
 
@@ -170,6 +173,7 @@ export type AgentGovernanceOverrides = {
   computerUseAxValueMaxChars?: number | undefined;
   computerUseAxMaxActions?: number | undefined;
   computerUseInputDelayMs?: number | undefined;
+  computerUseMcpKeepAliveMs?: number | undefined;
 };
 
 const clampInt = (value: number, min: number, max: number): number =>
@@ -264,6 +268,7 @@ export const AGENT_GOVERNANCE_LIMITS = {
   computerUseAxValueMaxChars: { min: 0, max: 1_048_576 },
   computerUseAxMaxActions: { min: 1, max: 100_000 },
   computerUseInputDelayMs: { min: 0, max: 60_000 },
+  computerUseMcpKeepAliveMs: { min: 0, max: 86_400_000 },
 } as const;
 
 /**
@@ -413,6 +418,9 @@ export function resolveGovernanceEnvOverrides(
     ),
     computerUseInputDelayMs: parseStrictInt(
       source.KENFUTWORK_COMPUTER_USE_INPUT_DELAY_MS,
+    ),
+    computerUseMcpKeepAliveMs: parseStrictInt(
+      source.KENFUTWORK_COMPUTER_USE_MCP_KEEP_ALIVE_MS,
     ),
   };
   return Object.fromEntries(

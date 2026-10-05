@@ -144,6 +144,9 @@ export function createActiveComputerUseRuns(registry: ToolRegistry) {
   };
   return {
     extension,
+    assertRun: (actor: LocalActor, runId: string) => {
+      requireRun(actor, runId);
+    },
     resolveContext,
     execute,
     closeRun,

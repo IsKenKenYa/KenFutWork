@@ -236,6 +236,15 @@
       "status": "test-gate",
       "note": "真实桌面验收入口，只有明确开启才操作第一方测试窗口；skip不代表能力通过"
     },
+    "KENFUTWORK_MCP_HTTP_TEST": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/computer-use/http.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "=1启用真实隔离PG/Task/Agent/HTTP/SDK/stdio协议测试，默认skip不计验收"
+    },
     "KENFUTWORK_MCP_LIFECYCLE": {
       "surface": "test",
       "readers": ["apps/server/src/features/mcp/mcp-service.lifecycle.test.ts"],
@@ -396,6 +405,13 @@
       "inExamples": false,
       "status": "active",
       "note": "Computer Use：输入事件间隔毫秒，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_MCP_KEEP_ALIVE_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "桌面MCP HTTP的SSE心跳间隔，0关闭；实例设置优先于env兜底"
     },
     "KENFUTWORK_SEARCH_API_KEY": {
       "surface": "server",

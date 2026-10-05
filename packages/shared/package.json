@@ -14,6 +14,7 @@
     "dist"
   ],
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@zcode/services": "workspace:*",
     "@zcode/shared": "workspace:*",
     "zod": "^4.6.5",
