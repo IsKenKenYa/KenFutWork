@@ -9,12 +9,14 @@ import {
 } from "@kenfutwork/shared";
 import { ChatOpenAI } from "@langchain/openai";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, it } from "vitest";
 import { loadServerEnv } from "../../config/env.js";
 import { ToolDeniedError } from "../../kernel/context.js";
+import { adaptSdkTransport } from "../mcp/sdk-transport.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createDesktopModelServer } from "./fixtures/model-server.js";
 import { installedKernel, taskRuntime } from "./fixtures/task-agent.js";
@@ -26,9 +28,9 @@ const enabled =
   process.platform === "darwin" && process.env.KENFUTWORK_TEST_DESKTOP === "1";
 
 describe.skipIf(!enabled)("真实macOS Task→插件→Agent→模型HTTP→V4事件", () => {
-  it(
-    "持久Task实际调用CUA，模型HTTP拿到PNG且原V4行保留结果",
-    async () => {
+  it.each(["内存", "HTTP"])(
+    "%s出口的持久Task实际调用CUA，模型HTTP拿到PNG且原V4行保留结果",
+    async (transportForm) => {
       const database = await createTaskWorkDatabase();
       let fixture: ReturnType<typeof spawn> | undefined;
       let installed: Awaited<ReturnType<typeof installedKernel>> | undefined;
@@ -38,6 +40,12 @@ describe.skipIf(!enabled)("真实macOS Task→插件→Agent→模型HTTP→V4�
         | undefined;
       let mcpClient: Client | undefined;
       let mcpServer: Server | undefined;
+      let httpTransport: StreamableHTTPClientTransport | undefined;
+      let httpOrigin: string | undefined;
+      let otherHttpClient: Client | undefined;
+      let nativeOutput = "";
+      let testShiftHeld = false;
+      let frozenWorker: number | undefined;
       let pumping: Promise<void> | undefined;
       let activeRunId: string | undefined;
       let resumeModel = () => {};
@@ -60,6 +68,9 @@ describe.skipIf(!enabled)("真实macOS Task→插件→Agent→模型HTTP→V4�
         ]);
         fixture = spawn(executable, [], { stdio: ["pipe", "pipe", "pipe"] });
         await once(fixture.stdout!, "data");
+        fixture.stdout!.on("data", (bytes) => {
+          nativeOutput += String(bytes);
+        });
         modelServer = await createDesktopModelServer(fixture.pid!, {
           beforeResponse: async (stage) => {
             if (stage === 0) {
@@ -130,15 +141,35 @@ describe.skipIf(!enabled)("真实macOS Task→插件→Agent→模型HTTP→V4�
           .get("capabilities")
           .list<ComputerUseMcpExport>("computer-use-mcp-export")[0]?.value;
         if (!exporter) throw new Error("真实profile未装配桌面MCP出口");
-        mcpServer = exporter.createServer(task.actor, runId);
         mcpClient = new Client({
           name: "native-task-mcp-consumer",
           version: "test",
         });
-        const [clientTransport, serverTransport] =
-          InMemoryTransport.createLinkedPair();
-        await mcpServer.connect(serverTransport);
-        await mcpClient.connect(clientTransport);
+        if (transportForm === "HTTP") {
+          httpOrigin = await installed.app.listen({
+            host: "127.0.0.1",
+            port: 0,
+          });
+          httpTransport = new StreamableHTTPClientTransport(
+            new URL(
+              `/api/computer-use/mcp?runId=${encodeURIComponent(runId)}`,
+              httpOrigin,
+            ),
+            {
+              requestInit: {
+                headers: { authorization: `Bearer ${database.desktopToken}` },
+              },
+            },
+          );
+          await mcpClient.connect(adaptSdkTransport(httpTransport));
+          expect(typeof httpTransport.sessionId).toBe("string");
+        } else {
+          mcpServer = exporter.createServer(task.actor, runId);
+          const [clientTransport, serverTransport] =
+            InMemoryTransport.createLinkedPair();
+          await mcpServer.connect(serverTransport);
+          await mcpClient.connect(clientTransport);
+        }
         const externalState = CallToolResultSchema.parse(
           await mcpClient.callTool({
             name: "get_app_state",
@@ -171,6 +202,181 @@ describe.skipIf(!enabled)("真实macOS Task→插件→Agent→模型HTTP→V4�
             },
           )
           .toBe(2);
+        if (httpTransport && httpOrigin) {
+          const endpoint = new URL(
+            `/api/computer-use/mcp?runId=${encodeURIComponent(runId)}`,
+            httpOrigin,
+          );
+          const sessionId = httpTransport.sessionId;
+          if (!sessionId) throw new Error("原SDK未返回会话nonce");
+          const headers = {
+            authorization: `Bearer ${database.desktopToken}`,
+            "mcp-session-id": sessionId,
+            "mcp-protocol-version": "2025-11-25",
+          };
+          const anonymous = await fetch(endpoint, {
+            method: "GET",
+            headers: { accept: "text/event-stream" },
+          });
+          expect(anonymous.status).toBe(401);
+          const other = await database.localAccess.createApiClient(
+            {
+              ip: "127.0.0.1",
+              headers: { authorization: headers.authorization },
+            },
+            { label: "桌面MCP绑定验收" },
+          );
+          const borrowed = await fetch(endpoint, {
+            method: "GET",
+            headers: {
+              ...headers,
+              authorization: `Bearer ${other.token}`,
+              accept: "text/event-stream",
+            },
+          });
+          expect(borrowed.status).toBe(403);
+          const changedRun = new URL(endpoint);
+          changedRun.searchParams.set("runId", "different-real-run-required");
+          expect(
+            (
+              await fetch(changedRun, {
+                method: "GET",
+                headers: { ...headers, accept: "text/event-stream" },
+              })
+            ).status,
+          ).toBe(403);
+          await installed.settings.updateInstanceSettings(
+            task.actor,
+            task.actor.instanceId,
+            {
+              computerUseInputDelayMs:
+                AGENT_GOVERNANCE_DEFAULTS.computerUseInputDelayMs * 10,
+            },
+          );
+          nativeOutput = "";
+          const interrupted = new AbortController();
+          const pendingKey = mcpClient
+            .callTool(
+              {
+                name: "key",
+                arguments: { app: { pid: fixture.pid }, keys: ["shift", "A"] },
+              },
+              undefined,
+              { signal: interrupted.signal },
+            )
+            .then(
+              (result) => ({ result }),
+              (error) => ({ error }),
+            );
+          await expect
+            .poll(() => nativeOutput.includes("SHIFT 1"), {
+              timeout: AGENT_GOVERNANCE_DEFAULTS.computerUseActionTimeoutMs,
+              interval: AGENT_GOVERNANCE_DEFAULTS.computerUseInputDelayMs,
+            })
+            .toBe(true);
+          testShiftHeld = true;
+          const workers = (
+            await exec("pgrep", [
+              "-P",
+              String(process.pid),
+              "-f",
+              "input-worker",
+            ])
+          ).stdout
+            .trim()
+            .split("\n")
+            .map(Number);
+          expect(workers).toHaveLength(1);
+          frozenWorker = workers[0];
+          if (!frozenWorker) throw new Error("实际输入worker未找到");
+          process.kill(frozenWorker, "SIGSTOP");
+          interrupted.abort();
+          const cancelled = await pendingKey;
+          expect(
+            "error" in cancelled || cancelled.result.isError === true,
+          ).toBe(true);
+          await expect
+            .poll(
+              async () => {
+                const { stdout } = await exec("osascript", [
+                  "-l",
+                  "JavaScript",
+                  "-e",
+                  "ObjC.import('CoreGraphics'); Number($.CGEventSourceFlagsState(0) & (1 << 17));",
+                ]);
+                return Number(stdout.trim());
+              },
+              {
+                timeout: AGENT_GOVERNANCE_DEFAULTS.computerUseActionTimeoutMs,
+                interval: AGENT_GOVERNANCE_DEFAULTS.computerUseInputDelayMs,
+              },
+            )
+            .toBe(0);
+          testShiftHeld = false;
+          frozenWorker = undefined;
+          await expect
+            .poll(
+              () =>
+                events.some(
+                  (event) =>
+                    event.type === "tool.completed" &&
+                    event.toolName === `${CU_TOOL_PREFIX}key`,
+                ),
+              {
+                timeout: AGENT_GOVERNANCE_DEFAULTS.computerUseActionTimeoutMs,
+                interval: AGENT_GOVERNANCE_DEFAULTS.computerUseInputDelayMs,
+              },
+            )
+            .toBe(true);
+          await installed.settings.updateInstanceSettings(
+            task.actor,
+            task.actor.instanceId,
+            {
+              computerUseInputDelayMs:
+                AGENT_GOVERNANCE_DEFAULTS.computerUseInputDelayMs,
+            },
+          );
+          expect(
+            JSON.stringify(events).includes(database.desktopToken) ||
+              JSON.stringify(events).includes(other.token),
+          ).toBe(false);
+          otherHttpClient = new Client({
+            name: "http-revoke-probe",
+            version: "test",
+          });
+          const otherTransport = new StreamableHTTPClientTransport(endpoint, {
+            requestInit: {
+              headers: { authorization: `Bearer ${other.token}` },
+            },
+          });
+          await otherHttpClient.connect(adaptSdkTransport(otherTransport));
+          expect(
+            (await otherHttpClient.listTools()).tools.some(
+              (tool) => tool.name === "get_app_state",
+            ),
+          ).toBe(true);
+          const otherSessionId = otherTransport.sessionId;
+          if (!otherSessionId) throw new Error("被撤权SDK连接未取得nonce");
+          await database.localAccess.revokeClient(
+            {
+              ip: "127.0.0.1",
+              headers: { authorization: headers.authorization },
+            },
+            other.client.id,
+          );
+          expect(
+            (
+              await fetch(endpoint, {
+                method: "GET",
+                headers: {
+                  ...headers,
+                  "mcp-session-id": otherSessionId,
+                  accept: "text/event-stream",
+                },
+              })
+            ).status,
+          ).toBe(404);
+        }
         resumeModel();
         await pumping;
         await expect(
@@ -178,7 +384,7 @@ describe.skipIf(!enabled)("真实macOS Task→插件→Agent→模型HTTP→V4�
             name: "screenshot",
             arguments: { app: { pid: fixture.pid } },
           }),
-        ).rejects.toThrow("活动主Code Run");
+        ).rejects.toThrow(/活动主Code Run|MCP会话不存在或已结束/);
         expect(
           events.at(-1)?.type,
           JSON.stringify(
@@ -252,9 +458,22 @@ describe.skipIf(!enabled)("真实macOS Task→插件→Agent→模型HTTP→V4�
           structuredContent: { error: { code: "context_required" } },
         });
       } finally {
+        if (frozenWorker) {
+          try {
+            process.kill(frozenWorker, "SIGCONT");
+          } catch {}
+        }
+        if (testShiftHeld)
+          await exec("osascript", [
+            "-l",
+            "JavaScript",
+            "-e",
+            "ObjC.import('CoreGraphics'); const e=$.CGEventCreateKeyboardEvent(null,56,false); $.CGEventSetFlags(e,0); $.CGEventPost(0,e);",
+          ]).catch(() => {});
         resumeModel();
         if (activeRunId) await task?.runtime.cancelRunAndWait(activeRunId);
         await pumping?.catch(() => {});
+        await otherHttpClient?.close();
         await mcpClient?.close();
         await mcpServer?.close();
         await installed?.kernel.dispose();
