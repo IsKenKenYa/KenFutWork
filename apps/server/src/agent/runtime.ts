@@ -1,14 +1,11 @@
-// @credits-system — Agent tool runtime with credit checks before image/video generation
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   AGENT_GOVERNANCE_DEFAULTS,
-  type BillingErrorCode,
   clampSubagentMaxContinuations,
   type ImageAttachment,
   type ImageGenerationPreference,
-  type ImageQualityLevel,
   type MessageMention,
   type RunCancelResponse,
   type RunCreateRequest,
@@ -16,7 +13,6 @@ import {
   resolveContextWindow,
   type StreamEvent,
   type VideoGenerationPreference,
-  type VideoResolution,
   type WorkspaceSettings,
 } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
@@ -42,10 +38,7 @@ import type {
 import type { TrustedCodeInput } from "../features/code-ui/attachments/input-types.js";
 import { codeInputContent } from "../features/code-ui/attachments/model-input.js";
 import type { CreditService } from "../features/credits/credit-service.js";
-import {
-  type TierGuard,
-  TierGuardError,
-} from "../features/credits/tier-guard.js";
+import type { TierGuard } from "../features/credits/tier-guard.js";
 import type { ExecutionScopeHandle } from "../features/execution/scope-service.js";
 // execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
 // 不需要自定义代码执行工具
@@ -418,8 +411,6 @@ type RuntimeRunRecord = RunCreateRequest & {
   /** Code 的可信 Task 工作域；目录与角色授权由服务端解析，不能由请求伪造。 */
   scopeHandle?: ExecutionScopeHandle;
   accessToken?: string;
-  /** billing 门中止原因：流会静默结束（无终态事件），收尾须据此补 run.failed。 */
-  billingFailure?: { code: string; message: string };
   consumed: boolean;
   controller: AbortController;
   modelOverride?: string;
@@ -680,49 +671,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           lastToolInventory = tools;
         },
       }));
-
-  // ── Billing error helper: push WS event + abort run ──────────
-  function pushBillingErrorAndAbort(
-    run: {
-      billingFailure?: { code: string; message: string };
-      conversationId: string;
-      controller: AbortController;
-      runId: string;
-    },
-    canvasId: string | undefined,
-    opts: { connectionManager?: ConnectionManager },
-    code: BillingErrorCode,
-    message: string,
-    extra?: {
-      currentBalance?: number;
-      requiredAmount?: number;
-      plan?: string;
-      dailyClaimed?: boolean;
-    },
-  ): void {
-    const canvasTarget = canvasId ?? run.conversationId;
-    // 先记录中止原因：billing 门直接 abort 会让流静默结束（不产生 run.failed），
-    // 收尾处据此补发失败事件——否则 run 行永远停在 running，且 WS 重试判定
-    // 拿不到失败文案，额度不足这类永久性失败会被无意义地连环重试。
-    run.billingFailure = { code, message };
-    if (!opts.connectionManager || !canvasTarget) {
-      console.warn(
-        `[billing] pushBillingErrorAndAbort: no connectionManager or canvasTarget, billing.error (${code}) not sent to client`,
-      );
-    } else {
-      opts.connectionManager.pushToCanvas(canvasTarget, {
-        type: "billing.error",
-        runId: run.runId,
-        timestamp: new Date().toISOString(),
-        code,
-        message,
-        ...extra,
-      });
-    }
-    if (!run.controller.signal.aborted) {
-      run.controller.abort();
-    }
-  }
 
   const service = {
     canCloneContextBranches(): boolean {
@@ -1017,59 +965,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             userMetadata: {},
           };
 
-          // ── Tier guard + credit checks (same as HTTP route) ──
-          const workspaceId = ws.id;
-          let creditsCost = 0;
-          if (options.creditService && options.tierGuard) {
-            const sub =
-              await options.creditService.getSubscription(workspaceId);
-            const quality = (input.quality as ImageQualityLevel) ?? "hd";
-            try {
-              options.tierGuard.checkModelAccess(sub.plan, input.model);
-              options.tierGuard.checkResolution(sub.plan, quality);
-              await options.tierGuard.checkConcurrency(workspaceId, sub.plan);
-            } catch (err) {
-              if (err instanceof TierGuardError) {
-                pushBillingErrorAndAbort(
-                  run,
-                  canvasId,
-                  options,
-                  err.code,
-                  err.message,
-                );
-                throw err;
-              }
-              throw err;
-            }
-            creditsCost = options.tierGuard.calculateCreditCost(
-              input.model,
-              "image_generation",
-              { quality },
-            );
-          }
-
-          // ── Balance pre-check: stop run immediately if insufficient ──
-          if (options.creditService && creditsCost > 0) {
-            const balanceInfo =
-              await options.creditService.getBalance(workspaceId);
-            if (balanceInfo.balance < creditsCost) {
-              pushBillingErrorAndAbort(
-                run,
-                canvasId,
-                options,
-                "insufficient_credits",
-                "Insufficient credits",
-                {
-                  currentBalance: balanceInfo.balance,
-                  requiredAmount: creditsCost,
-                  plan: balanceInfo.plan,
-                  dailyClaimed: balanceInfo.dailyClaimed,
-                },
-              );
-              throw new Error("Insufficient credits");
-            }
-          }
-
           const job = await jobSvc.createJob(user, {
             ...(canvasId ? { canvasId } : {}),
             ...(sessionId ? { sessionId } : {}),
@@ -1083,25 +978,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             },
           });
 
-          // Deduct credits after job creation
-          if (options.creditService && creditsCost > 0) {
-            try {
-              const txId = await options.creditService.deductCredits(
-                workspaceId,
-                userId,
-                creditsCost,
-                job.id,
-                `Image generation: ${input.model}`,
-              );
-              await jobSvc.setCreditsInfo(job.id, creditsCost, txId);
-            } catch (deductError) {
-              await jobSvc.cancelJob(user, job.id).catch(() => {});
-              throw deductError;
-            }
-          }
           jobLap("job_created", {
             jobId: job.id,
-            creditsCost,
             sessionId,
             runId,
           });
@@ -1245,69 +1123,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             userMetadata: {},
           };
 
-          // ── Tier guard + credit checks (same as HTTP route) ──
-          const workspaceId = ws.id;
-          let creditsCost = 0;
-          if (options.creditService && options.tierGuard) {
-            const sub =
-              await options.creditService.getSubscription(workspaceId);
-            try {
-              options.tierGuard.checkModelAccess(sub.plan, input.model);
-              if (input.resolution) {
-                // 工具分辨率还含 "480p"（不在 VideoResolution 枚举内，计费守卫按最低档放行）
-                options.tierGuard.checkVideoResolution(
-                  sub.plan,
-                  input.resolution as VideoResolution,
-                );
-              }
-              await options.tierGuard.checkConcurrency(workspaceId, sub.plan);
-            } catch (err) {
-              if (err instanceof TierGuardError) {
-                pushBillingErrorAndAbort(
-                  run,
-                  canvasId,
-                  options,
-                  err.code,
-                  err.message,
-                );
-                throw err;
-              }
-              throw err;
-            }
-            creditsCost = options.tierGuard.calculateCreditCost(
-              input.model,
-              "video_generation",
-              {
-                ...(input.duration != null ? { duration: input.duration } : {}),
-                ...(input.resolution
-                  ? { resolution: input.resolution as VideoResolution }
-                  : {}),
-              },
-            );
-          }
-
-          // ── Balance pre-check: stop run immediately if insufficient ──
-          if (options.creditService && creditsCost > 0) {
-            const balanceInfo =
-              await options.creditService.getBalance(workspaceId);
-            if (balanceInfo.balance < creditsCost) {
-              pushBillingErrorAndAbort(
-                run,
-                canvasId,
-                options,
-                "insufficient_credits",
-                "Insufficient credits",
-                {
-                  currentBalance: balanceInfo.balance,
-                  requiredAmount: creditsCost,
-                  plan: balanceInfo.plan,
-                  dailyClaimed: balanceInfo.dailyClaimed,
-                },
-              );
-              throw new Error("Insufficient credits");
-            }
-          }
-
           const job = await jobSvc.createJob(user, {
             ...(canvasId ? { canvasId } : {}),
             ...(sessionId ? { sessionId } : {}),
@@ -1326,25 +1141,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             },
           });
 
-          // Deduct credits after job creation
-          if (options.creditService && creditsCost > 0) {
-            try {
-              const txId = await options.creditService.deductCredits(
-                workspaceId,
-                userId,
-                creditsCost,
-                job.id,
-                `Video generation: ${input.model}`,
-              );
-              await jobSvc.setCreditsInfo(job.id, creditsCost, txId);
-            } catch (deductError) {
-              await jobSvc.cancelJob(user, job.id).catch(() => {});
-              throw deductError;
-            }
-          }
           jobLap("job_created", {
             jobId: job.id,
-            creditsCost,
             sessionId,
             runId,
           });
@@ -1685,62 +1483,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 model: instanceSpec.model,
                 providerInstanceId: instanceSpec.instanceId,
               };
-
-              // 平台池额度门（FORM-10）：走系统供应商的对话必须有余额。
-              // 放在 runtime 而非 HTTP 路由，是因为 workbench 经 WS 发起 run，
-              // 只在路由拦会漏掉真实使用路径。BYOK 不计费也不拦。
-              // 工作区直查用户 client（同图像路径）：ensureViewer 的邮箱校验
-              // 在 runtime 上下文拿不到真实邮箱，不可用。
-              const scope = await options.modelProviders.getInstanceScope(
-                instanceSpec.instanceId,
-              );
-              if (scope === "system" && options.creditService) {
-                const balanceWorkspace = await options.viewerService
-                  ?.resolveWorkspace({ id: run.userId })
-                  .catch(() => null);
-                if (balanceWorkspace?.id) {
-                  const balanceInfo = await options.creditService.getBalance(
-                    balanceWorkspace.id,
-                  );
-                  if (balanceInfo.balance <= 0) {
-                    const billingMessage =
-                      "平台额度已用完，请联系管理员充值或改用自己的供应商 Key。";
-                    pushBillingErrorAndAbort(
-                      run,
-                      run.canvasId,
-                      options,
-                      "insufficient_credits",
-                      billingMessage,
-                      {
-                        currentBalance: balanceInfo.balance,
-                        plan: balanceInfo.plan,
-                        dailyClaimed: balanceInfo.dailyClaimed,
-                      },
-                    );
-                    // 不能静默 return：生成器零事件结束会让 run 行停在 running、
-                    // WS 重试判定拿不到失败文案（额度这类永久性失败被连环重试）。
-                    run.status = "failed";
-                    await updatePersistedRunFailure(
-                      options.agentRunMetadataService,
-                      run,
-                      now,
-                      new Error(billingMessage),
-                    ).catch((persistErr) =>
-                      console.error(
-                        "[agent-runtime] Failed to persist billing run failure:",
-                        persistErr,
-                      ),
-                    );
-                    yield {
-                      error: { code: "run_failed", message: billingMessage },
-                      runId,
-                      timestamp: now(),
-                      type: "run.failed",
-                    };
-                    return;
-                  }
-                }
-              }
             }
           }
 
@@ -2591,7 +2333,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
         const usageUserId = run.userId;
         // 终态事件哨兵：正常路径适配器必发 run.completed / run.canceled / run.failed；
-        // billing 门中止等异常路径会让 for-await 静默结束——收尾必须补失败事件。
+        // 异常路径会让for-await静默结束；收尾必须补失败事件。
         // DEC-15 轮末闸门循环：模型收尾时若后台任务未结算，吞掉这次
         // run.completed，以「后台任务通知」为新一轮输入重入同一 thread；
         // 全部结算后的那次 completed 才放行（通知必达，usage 归属不变）。
@@ -2721,14 +2463,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               if (isTerminalEvent(event)) {
                 sawTerminalEvent = true;
               }
-              // billing 门中止（如图片生成的额度/tier 拒绝）会把异常误报成「用户取消」
-              // ——中止信号先于错误到达适配器。有 billingFailure 在身却报取消的，
-              // 一律改判 run.failed，文案给可读的 billing 原因。
               // 被拒工具触发的有界失败：abort 后适配器报「用户取消」，但这是系统
-              // 主动中止——改判 run.failed 并把可读原因带给客户端（同 billing 口径）
+              // 主动中止——改判 run.failed 并把可读原因带给客户端
               if (
                 event.type === "run.canceled" &&
-                !run.billingFailure &&
                 denialTracker?.fatalReason()
               ) {
                 const message =
@@ -2754,31 +2492,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 yield failedEvent;
                 return;
               }
-              if (event.type === "run.canceled" && run.billingFailure) {
-                const failedEvent: StreamEvent = {
-                  error: {
-                    code: "run_failed",
-                    message: run.billingFailure.message,
-                  },
-                  runId,
-                  timestamp: now(),
-                  type: "run.failed",
-                };
-                run.status = "failed";
-                await updatePersistedRunFailure(
-                  options.agentRunMetadataService,
-                  run,
-                  now,
-                  new Error(run.billingFailure.message),
-                ).catch((persistErr) =>
-                  console.error(
-                    "[agent-runtime] Failed to persist billing-canceled run failure:",
-                    persistErr,
-                  ),
-                );
-                yield failedEvent;
-                return;
-              }
+
               try {
                 await syncPersistedRunFromEvent(
                   options.agentRunMetadataService,
@@ -2835,9 +2549,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             return;
           }
 
-          // 流静默结束（无终态事件）：billing 门中止是已知路径（abort 后适配器不发
-          // 事件）。这里补发 run.failed——持久化失败终态，并让 WS 重试判定拿到
-          // 失败文案（额度不足命中永久性失败模式，不再连环重试）。
+          // 流静默结束时补发失败终态，持久化并向消费者提供可读原因。
           if (suppressCompletedForContinuation) {
             suppressCompletedForContinuation = false;
             // 续轮：附件映射随首轮消息已进 thread 历史，无需重带
@@ -2877,11 +2589,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             continue;
           }
           if (!sawTerminalEvent && run.status === "running") {
-            // error.code 是封闭枚举（shared/errors.ts），billing 细节留在 billing.error
-            // 事件里；这里统一 run_failed，可读原因由 message 承载。
-            const message =
-              run.billingFailure?.message ??
-              "运行被中止且未产生结束事件（无终态事件）。";
+            // error.code采用封闭枚举run_failed，可读原因由message承载。
+            const message = "运行被中止且未产生结束事件（无终态事件）。";
             const failedEvent: StreamEvent = {
               error: { code: "run_failed", message },
               runId,
