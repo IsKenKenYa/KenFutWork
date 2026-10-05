@@ -9,17 +9,15 @@ export const CATALOG_COMPACT_MAX_OUTPUT = 22_000;
 export const CATALOG_COMPACT_EXPECTED_TRIGGER = 4_000;
 export const CATALOG_COMPACT_TURNS = 12;
 const FILLER_LINES = 48;
-const MAX_NORMAL_REQUESTS = CATALOG_COMPACT_TURNS * 2;
-const MAX_SUMMARY_REQUESTS = CATALOG_COMPACT_TURNS;
 const FILLER_LINE =
   "catalog-budget-record alpha beta gamma delta epsilon zeta eta theta lambda.\n";
 
 export const catalogUserText = (round: number) =>
   `CATALOG_COMPACT_USER_${round}_381dfc02：这是独占测试数据，只回复本轮标记。\n${FILLER_LINE.repeat(FILLER_LINES)}`;
-export const catalogReplyText = (round: number) =>
-  `CATALOG_COMPACT_REPLY_${round}_29108dd6：本轮自然完成。`;
-export const catalogSummaryText = (ordinal: number) =>
-  `NATIVE_CATALOG_SUMMARY_${ordinal}_680f4c2a：较早测试上下文已经整理，继续当前用户任务。`;
+export const catalogReplyText = (round: number, endpoint = "") =>
+  `CATALOG_COMPACT_REPLY_${round}_29108dd6：本轮自然完成。${endpoint ? `实际端点：${endpoint}。` : ""}`;
+export const catalogSummaryText = (ordinal: number, endpoint = "") =>
+  `NATIVE_CATALOG_SUMMARY_${ordinal}_680f4c2a：较早测试上下文已经整理，继续当前用户任务。${endpoint ? `实际摘要端点：${endpoint}。` : ""}`;
 
 const requestSchema = modelRequestSchema
   .extend({ model: z.string().min(1), stream: z.boolean().optional() })
@@ -28,9 +26,17 @@ type Request = z.infer<typeof requestSchema>;
 export type CatalogObservedRequest = {
   body: Request;
   kind: "normal" | "summary";
+  endpoint: string;
   round: number | null;
   summaryOrdinal: number | null;
   reply: string;
+  closed: boolean;
+};
+export type CatalogModelFixtureOptions = {
+  // 只用于测试区分同名模型的真实 HTTP 路由，不是生产 provider 配置入口。
+  endpointLabels?: readonly string[];
+  turns?: number;
+  holdFromRound?: number;
 };
 
 export function catalogModelText(content: unknown): string {
@@ -60,17 +66,42 @@ function isNativeSummary(request: Request): boolean {
   );
 }
 
+function writeChunk(
+  response: ServerResponse,
+  body: Request,
+  id: string,
+  delta: Record<string, unknown>,
+  finishReason: string | null,
+) {
+  response.write(
+    `data: ${JSON.stringify({
+      id,
+      created: 1,
+      model: body.model,
+      object: "chat.completion.chunk",
+      choices: [{ index: 0, delta, finish_reason: finishReason }],
+    })}\n\n`,
+  );
+}
+
+function finishReply(response: ServerResponse, body: Request, id: string) {
+  writeChunk(response, body, id, {}, "stop");
+  response.end("data: [DONE]\n\n");
+}
+
 function writeReply(
   response: ServerResponse,
   body: Request,
   id: string,
   text: string,
+  held: boolean,
 ) {
-  const common = { id, created: 1, model: body.model };
   if (body.stream !== true) {
     response.writeHead(200, { "content-type": "application/json" }).end(
       JSON.stringify({
-        ...common,
+        id,
+        created: 1,
+        model: body.model,
         object: "chat.completion",
         choices: [
           {
@@ -87,34 +118,80 @@ function writeReply(
     "content-type": "text/event-stream; charset=utf-8",
     connection: "close",
   });
-  for (const [delta, finishReason] of [
-    [{ role: "assistant", content: text }, null],
-    [{}, "stop"],
-  ] as const) {
-    response.write(
-      `data: ${JSON.stringify({
-        ...common,
-        object: "chat.completion.chunk",
-        choices: [{ index: 0, delta, finish_reason: finishReason }],
-      })}\n\n`,
-    );
-  }
-  response.end("data: [DONE]\n\n");
+  writeChunk(response, body, id, { role: "assistant", content: text }, null);
+  if (!held) finishReply(response, body, id);
 }
 
-/** 唯一被控制的外部 HTTP 模型；普通回应/实际 native summary 都接受真实 stream 形态，脚本总调用量有界。 */
-export async function catalogCompactionModelFixture() {
+/** 唯一被控制的外部 HTTP 模型；摘要按真实 prompt 识别，Guide 只控制普通 SSE 何时自然结束。 */
+export async function catalogCompactionModelFixture(
+  options: CatalogModelFixtureOptions = {},
+) {
+  const turns = options.turns ?? CATALOG_COMPACT_TURNS;
+  const endpointLabels = options.endpointLabels ?? [""];
   const requests: CatalogObservedRequest[] = [];
   const errors: string[] = [];
+  const latestRounds = new Map<string, number>();
+  const heldResponses = new Map<
+    CatalogObservedRequest,
+    { response: ServerResponse; id: string }
+  >();
   let normalRequests = 0;
   let summaryRequests = 0;
-  let latestRound = 0;
+
+  function observe(body: Request, endpoint: string): CatalogObservedRequest {
+    if (body.model !== CATALOG_COMPACT_MODEL)
+      throw new Error("目录压缩脚本收到未显式选择的模型。");
+    if (isNativeSummary(body)) {
+      if (++summaryRequests > turns)
+        throw new Error("native摘要请求超过有限测试脚本预算。");
+      return {
+        body,
+        endpoint,
+        kind: "summary",
+        round: null,
+        summaryOrdinal: summaryRequests,
+        reply: catalogSummaryText(summaryRequests, endpoint),
+        closed: false,
+      };
+    }
+    if (body.stream !== true)
+      throw new Error("原正常模型请求没有使用实际SSE配置。");
+    if (++normalRequests > turns * 2)
+      throw new Error("正常请求超过有限测试脚本预算。");
+    const markers = body.messages
+      .filter((message) => message.role === "user")
+      .flatMap((message) => [
+        ...catalogModelText(message.content).matchAll(
+          /CATALOG_COMPACT_USER_(\d+)_381dfc02/gu,
+        ),
+      ]);
+    const round = Number(markers.at(-1)?.[1]);
+    if (
+      !Number.isInteger(round) ||
+      round < (latestRounds.get(endpoint) ?? 0) ||
+      round < 1 ||
+      round > turns
+    )
+      throw new Error("正常请求没有当前有限用户轮次，或发生历史倒退。");
+    latestRounds.set(endpoint, round);
+    return {
+      body,
+      endpoint,
+      kind: "normal",
+      round,
+      summaryOrdinal: null,
+      reply: catalogReplyText(round, endpoint),
+      closed: false,
+    };
+  }
+
   const server = createServer(async (request, response) => {
     try {
-      if (
-        request.method !== "POST" ||
-        !request.url?.endsWith("/chat/completions")
-      ) {
+      const endpoint = endpointLabels.find(
+        (label) =>
+          request.url === `${label ? `/${label}` : ""}/v1/chat/completions`,
+      );
+      if (request.method !== "POST" || endpoint === undefined) {
         response.writeHead(404).end();
         return;
       }
@@ -123,55 +200,18 @@ export async function catalogCompactionModelFixture() {
       const body = requestSchema.parse(
         JSON.parse(Buffer.concat(chunks).toString("utf8")),
       );
-      if (body.model !== CATALOG_COMPACT_MODEL)
-        throw new Error("目录压缩脚本收到未显式选择的模型。");
-      let observed: CatalogObservedRequest;
-      if (isNativeSummary(body)) {
-        if (++summaryRequests > MAX_SUMMARY_REQUESTS)
-          throw new Error("native摘要请求超过有限测试脚本预算。");
-        observed = {
-          body,
-          kind: "summary",
-          round: null,
-          summaryOrdinal: summaryRequests,
-          reply: catalogSummaryText(summaryRequests),
-        };
-      } else {
-        if (body.stream !== true)
-          throw new Error("原正常模型请求没有使用实际SSE配置。");
-        if (++normalRequests > MAX_NORMAL_REQUESTS)
-          throw new Error("正常请求超过有限测试脚本预算。");
-        const markers = body.messages
-          .filter((message) => message.role === "user")
-          .flatMap((message) => [
-            ...catalogModelText(message.content).matchAll(
-              /CATALOG_COMPACT_USER_(\d+)_381dfc02/gu,
-            ),
-          ]);
-        const round = Number(markers.at(-1)?.[1]);
-        if (
-          !Number.isInteger(round) ||
-          round < latestRound ||
-          round < 1 ||
-          round > CATALOG_COMPACT_TURNS
-        )
-          throw new Error("正常请求没有当前有限用户轮次，或发生历史倒退。");
-        latestRound = round;
-        observed = {
-          body,
-          kind: "normal",
-          round,
-          summaryOrdinal: null,
-          reply: catalogReplyText(round),
-        };
-      }
+      const observed = observe(body, endpoint);
       requests.push(observed);
-      writeReply(
-        response,
-        body,
-        `chatcmpl-catalog-${requests.length}`,
-        observed.reply,
-      );
+      response.on("close", () => {
+        observed.closed = true;
+      });
+      const id = `chatcmpl-catalog-${requests.length}`;
+      const held =
+        observed.kind === "normal" &&
+        options.holdFromRound !== undefined &&
+        (observed.round ?? 0) >= options.holdFromRound;
+      if (held) heldResponses.set(observed, { response, id });
+      writeReply(response, body, id, observed.reply, held);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       errors.push(message);
@@ -196,10 +236,23 @@ export async function catalogCompactionModelFixture() {
   const address = server.address();
   if (!address || typeof address === "string")
     throw new Error("目录压缩外部模型HTTP地址不可读。");
+  const baseUrlFor = (endpoint: string) => {
+    if (!endpointLabels.includes(endpoint))
+      throw new Error("测试未声明该实际HTTP端点。");
+    return `http://127.0.0.1:${address.port}${endpoint ? `/${endpoint}` : ""}/v1`;
+  };
   return {
-    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    baseUrl: baseUrlFor(endpointLabels[0] ?? ""),
+    baseUrlFor,
     requests,
     errors,
+    finish(observed: CatalogObservedRequest) {
+      const held = heldResponses.get(observed);
+      if (!held || held.response.destroyed || held.response.writableEnded)
+        throw new Error("实际普通SSE尚未保持打开或已经结束。");
+      finishReply(held.response, observed.body, held.id);
+      heldResponses.delete(observed);
+    },
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.closeAllConnections();
