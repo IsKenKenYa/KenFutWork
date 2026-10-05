@@ -31,13 +31,25 @@ function startupTimeout(reason: string): Error {
   });
 }
 
-async function jsonRequest(url: string, init: RequestInit, budgetMs: number) {
+/** Node timer可早于performance小数deadline唤醒；复核绝对时刻才取消，不能提前重发健康请求。 */
+function deadlineSignal(deadline: number) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), budgetMs);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const check = () => {
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) controller.abort();
+    else timer = setTimeout(check, Math.ceil(remaining));
+  };
+  check();
+  return { signal: controller.signal, close: () => clearTimeout(timer) };
+}
+
+async function jsonRequest(url: string, init: RequestInit, deadline: number) {
+  const cancellation = deadlineSignal(deadline);
   try {
     const response = await fetch(url, {
       ...init,
-      signal: controller.signal,
+      signal: cancellation.signal,
       redirect: "error",
     });
     if (!response.ok) {
@@ -50,7 +62,7 @@ async function jsonRequest(url: string, init: RequestInit, budgetMs: number) {
       payload: await response.json(),
     };
   } finally {
-    clearTimeout(timer);
+    cancellation.close();
   }
 }
 
@@ -67,7 +79,7 @@ async function waitForLocalService(
       const health = await jsonRequest(
         `${apiBase}/api/health`,
         {},
-        Math.min(pollMs, remaining),
+        Math.min(deadline, performance.now() + pollMs),
       );
       if (health.ok && healthResponseSchema.safeParse(health.payload).success) {
         if (performance.now() >= deadline) throw startupTimeout(reason);
@@ -88,20 +100,20 @@ async function waitForLocalService(
 async function readDesktopConnectionToken(dataDir: string, deadline: number) {
   const remaining = deadline - performance.now();
   if (remaining <= 0) throw startupTimeout("服务就绪后已超过启动预算");
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), remaining);
+  const cancellation = deadlineSignal(deadline);
   try {
     return (
       await readFile(join(dataDir, "local-access", "desktop-token"), {
         encoding: "utf8",
-        signal: controller.signal,
+        signal: cancellation.signal,
       })
     ).trim();
   } catch (error) {
-    if (controller.signal.aborted) throw startupTimeout("接入凭据文件读取超时");
+    if (cancellation.signal.aborted)
+      throw startupTimeout("接入凭据文件读取超时");
     throw error;
   } finally {
-    clearTimeout(timer);
+    cancellation.close();
   }
 }
 
@@ -146,7 +158,7 @@ export async function createLocalConnectionUrl(options: {
         },
         body: "{}",
       },
-      remaining,
+      deadline,
     );
   } catch {
     throw new Error("本机连接票据签发失败：连接中断、重定向或请求超时。");

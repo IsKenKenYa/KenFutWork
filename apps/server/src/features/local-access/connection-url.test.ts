@@ -158,6 +158,24 @@ describe("launcher本机连接：真实回环HTTP", () => {
     expect(healthCalls).toBe(1);
   });
 
+  it("连续启动覆盖亚毫秒timer边界，挂起健康请求每次只发一个且不提前截断预算", async () => {
+    let healthCalls = 0;
+    const port = await listen(() => {
+      healthCalls += 1;
+    });
+    const timeoutMs = AGENT_GOVERNANCE_LIMITS.localServiceStartupTimeoutMs.min;
+    // 测试重复次数用于覆盖Node timer与performance时钟的不同小数相位，不是业务重试配置。
+    for (let index = 0; index < 20; index += 1) {
+      const before = healthCalls;
+      const started = performance.now();
+      await expect(
+        createLocalConnectionUrl(options(port, timeoutMs, timeoutMs * 10)),
+      ).rejects.toMatchObject({ code: "local_service_startup_timeout" });
+      expect(performance.now() - started).toBeGreaterThanOrEqual(timeoutMs);
+      expect(healthCalls - before).toBe(1);
+    }
+  });
+
   it("健康就绪后缺失token立即报文件故障，不继续轮询或创建第二个凭据", async () => {
     let healthCalls = 0;
     let ticketCalls = 0;
