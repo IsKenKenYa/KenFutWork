@@ -3622,6 +3622,14 @@ export class CodeUiService {
       sandboxRoot: this.deps.env.sandboxRoot ?? DEFAULT_SANDBOX_ROOT,
       workDir: record.work_dir,
     });
+    const execution = resolveExecutionState({
+      ...(payload.config?.mode !== undefined
+        ? { mode: payload.config.mode }
+        : {}),
+      ...(payload.config?.planEnabled !== undefined
+        ? { planEnabled: payload.config.planEnabled }
+        : {}),
+    });
     const host = createCodeUiConversation({
       sessionId,
       workspacePath: rootDirectory,
@@ -3631,8 +3639,10 @@ export class CodeUiService {
         thought: selection?.options?.reasoningLevel ?? "",
         ...(selection ? { modelSelection: selection } : {}),
         followupMode: payload.config?.followupMode ?? "queue",
-        mode: payload.config?.mode ?? "build",
-        planEnabled: payload.config?.planEnabled ?? false,
+        mode: protocol.commandPayloadSchemas.switchCollaborationMode.parse({
+          mode: execution.mode,
+        }).mode,
+        planEnabled: execution.planEnabled,
       },
     });
     return this.deps.repository.createRoot(workspace.instanceId, {
@@ -3646,11 +3656,7 @@ export class CodeUiService {
         rootDirectory,
         additionalDirectories,
         sandboxMode:
-          host.getSnapshot().config.mode === "plan"
-            ? "read-only"
-            : host.getSnapshot().config.mode === "yolo"
-              ? "danger-full-access"
-              : "workspace-write",
+          execution.mode === "yolo" ? "danger-full-access" : "workspace-write",
       } satisfies CodeExecutionScope,
       createdByClientId: user.accessClientId,
       threadId: this.deps.threads.createThreadId(),

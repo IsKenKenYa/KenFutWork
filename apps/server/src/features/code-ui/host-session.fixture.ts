@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import type { ModelSelection } from "@zcode/provider";
 import { modelSelectionSchema } from "@zcode/shared";
 import { expect } from "vitest";
@@ -10,6 +11,11 @@ import { createLocalInstanceService } from "../local-instance/service.js";
 import type { LocalActor } from "../local-instance/types.js";
 import type { CodeUiTestClient } from "./host-client.fixture.js";
 
+type InitialConfig = Pick<
+  NonNullable<protocol.CommandPayloadMap["createSession"]["config"]>,
+  "mode" | "planEnabled"
+>;
+
 async function bindSession(
   stream: Awaited<ReturnType<CodeUiTestClient["openCodeStream"]>>,
   workspacePath: string,
@@ -17,6 +23,7 @@ async function bindSession(
   projectId: string,
   clientId: string,
   client: Pick<CodeUiTestClient, "request">,
+  initialConfig?: InitialConfig,
 ) {
   const created = await stream.rpc("sendConversationCommandV4", [
     {
@@ -30,6 +37,7 @@ async function bindSession(
         payload: {
           workspaceId: projectId,
           config: {
+            ...initialConfig,
             modelSelection,
           },
         },
@@ -38,6 +46,9 @@ async function bindSession(
     },
   ]);
   expect(created.status, JSON.stringify(created.body)).toBe(200);
+  expect(protocol.commandAckSchema.parse(created.body.result).status).toBe(
+    "accepted",
+  );
   const sessionId = created.body.result.result.sessionId as string;
   const command = (
     type: string,
@@ -70,7 +81,10 @@ async function bindSession(
 
 export async function createCodeSessionFixture(
   baseUrl: string,
-  options: { client: Pick<CodeUiTestClient, "request" | "openCodeStream"> },
+  options: {
+    client: Pick<CodeUiTestClient, "request" | "openCodeStream">;
+    initialConfig?: InitialConfig;
+  },
 ) {
   const transport = options.client;
   const dir = await mkdtemp(join(tmpdir(), "code-ui-stop-"));
@@ -161,6 +175,7 @@ export async function createCodeSessionFixture(
       projectId,
       clientId,
       client,
+      options.initialConfig,
     );
     return { ...bound, stream, workspacePath, projectId, client, dispose };
   } catch (error) {
