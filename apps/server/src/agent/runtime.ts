@@ -2650,27 +2650,35 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     if (run?.consumed) return;
     // 在第一个await之前原子认领消费者；no-op重订阅不得完成活动Run或写其边界。
     if (run) run.consumed = true;
+    let terminal: StreamEvent | undefined;
     try {
       for await (const event of execute(runId)) {
-        try {
-          const run = runs.get(runId);
-          const visible =
-            event.type === "tool.started" && event.input
-              ? {
-                  ...event,
-                  input:
-                    run?.projectToolInput?.(event.toolName, event.input) ??
-                    event.input,
-                }
-              : event;
-          await run?.eventSink?.(visible);
-          yield visible;
-        } catch (error) {
-          // 在关闭上游iterator之前中止工具signal，禁止丢失持久投影后继续写文件。
-          runs.get(runId)?.controller.abort("持久事件投影失败");
-          throw error;
+        if (isTerminalEvent(event)) {
+          // 模型结束仍有真实turn-end/post捕获/前台释放；公共完成不能早于它们。
+          terminal = event;
+          continue;
         }
+        const run = runs.get(runId);
+        const visible =
+          event.type === "tool.started" && event.input
+            ? {
+                ...event,
+                input:
+                  run?.projectToolInput?.(event.toolName, event.input) ??
+                  event.input,
+              }
+            : event;
+        await run?.eventSink?.(visible);
+        yield visible;
       }
+      if (terminal) {
+        await run?.eventSink?.(terminal);
+        yield terminal;
+      }
+    } catch (error) {
+      // 在关闭上游iterator之前中止工具signal，禁止丢失持久投影后继续写文件。
+      run?.controller.abort("持久事件投影失败");
+      throw error;
     } finally {
       if (run) {
         // 启动前失败/取消也保留partial事实；不在finally把当前目录伪装为pre。
