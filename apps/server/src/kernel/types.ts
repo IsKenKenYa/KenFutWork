@@ -1,7 +1,7 @@
+import type { StreamEvent } from "@kenfutwork/shared";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeAny } from "zod";
-
 import type { AgentBackendFactory } from "../agent/backends/index.js";
 import type { AgentPersistenceService } from "../agent/persistence/index.js";
 import type { AgentRunService } from "../agent/runtime.js";
@@ -297,6 +297,15 @@ export interface SystemPromptRegistry {
 }
 
 export interface ToolExecutionContext {
+  /** 真实Run持久事件消费方；出口工具复用此通路，不持有已结束的SDK子run回调。 */
+  publishToolEvent?:
+    | ((
+        event: Extract<
+          StreamEvent,
+          { type: "tool.started" | "tool.completed" }
+        >,
+      ) => Promise<void>)
+    | undefined;
   /** 完成绑定审批的原调用事实；属主按原始效果收窄执行，不能把旧只读批准扩大。 */
   permissionInvocation?: PermissionInvocation | undefined;
   /** 最终claim固定的执行效果档；原plan或最终plan始终夹到只读。 */

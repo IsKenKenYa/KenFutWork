@@ -1876,6 +1876,35 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             };
           }
           const runToolContext: ToolExecutionContext = {
+            ...(run.eventSink
+              ? {
+                  publishToolEvent: async (
+                    event: Extract<
+                      StreamEvent,
+                      { type: "tool.started" | "tool.completed" }
+                    >,
+                  ) => {
+                    if (completions.get(runId)?.settled)
+                      throw new Error("工具事件所属Run已结束。");
+                    if (event.runId !== runId)
+                      throw new Error("工具事件不能跨Run发布。");
+                    if (event.type === "tool.started")
+                      run.controller.signal.throwIfAborted();
+                    const visible =
+                      event.type === "tool.started" && event.input
+                        ? {
+                            ...event,
+                            input:
+                              run.projectToolInput?.(
+                                event.toolName,
+                                event.input,
+                              ) ?? event.input,
+                          }
+                        : event;
+                    await run.eventSink?.(visible);
+                  },
+                }
+              : {}),
             sessionId: run.sessionId,
             modelSpecifier: run.modelOverride ?? run.model,
             delegationDepth: run.delegationDepth ?? 0,

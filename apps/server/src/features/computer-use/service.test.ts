@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { AxNode } from "./ax-tree.js";
-import {
-  createComputerUseService,
-  type CuGovernanceValues,
-} from "./service.js";
 import type {
   ComputerUseExecutor,
   CuAppInfo,
   CuObservation,
   CuRaster,
 } from "./executor.js";
+import {
+  type CuGovernanceValues,
+  createComputerUseService,
+} from "./service.js";
 
 const governance: CuGovernanceValues = {
   actionTimeoutMs: 10_000,
@@ -50,7 +50,12 @@ function fakeExecutor(overrides: Partial<ComputerUseExecutor> = {}) {
     async listApps(): Promise<CuAppInfo[]> {
       calls.push("listApps");
       return [
-        { pid: 1, name: "计算器", bundleId: "com.apple.calculator", active: true },
+        {
+          pid: 1,
+          name: "计算器",
+          bundleId: "com.apple.calculator",
+          active: true,
+        },
       ];
     },
     async listWindows() {
@@ -69,7 +74,11 @@ function fakeExecutor(overrides: Partial<ComputerUseExecutor> = {}) {
       calls.push("observe");
       return {
         app: { pid: 1, bundleId: "com.apple.calculator", name: "计算器" },
-        window: { windowId: 6363, title: "计算器", bounds: [990, 382, 230, 408] },
+        window: {
+          windowId: 6363,
+          title: "计算器",
+          bounds: [990, 382, 230, 408],
+        },
         root: tree,
       };
     },
@@ -187,9 +196,9 @@ describe("ComputerUseService：观察", () => {
     });
     const result = await service.screenshot(APP);
     expect(result.isError).toBe(true);
-    expect(
-      (result.structuredContent?.error as { code?: string })?.code,
-    ).toBe("permission_denied");
+    expect((result.structuredContent?.error as { code?: string })?.code).toBe(
+      "permission_denied",
+    );
     expect(JSON.stringify(result)).toContain("屏幕录制");
   });
 
@@ -233,7 +242,11 @@ describe("ComputerUseService：动作", () => {
       governance: () => governance,
     });
     await service.getState(APP, {});
-    const result = await service.click(APP, { type: "element", index: 1 }, "run-A");
+    const result = await service.click(
+      APP,
+      { type: "element", index: 1 },
+      "run-A",
+    );
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent?.actionSent).toBe(true);
     expect(calls).toContain('click:{"kind":"element","index":1}');
@@ -246,11 +259,15 @@ describe("ComputerUseService：动作", () => {
       governance: () => governance,
     });
     await service.getState(APP, {});
-    const result = await service.click(APP, { type: "element", index: 99 }, "run-A");
+    const result = await service.click(
+      APP,
+      { type: "element", index: 99 },
+      "run-A",
+    );
     expect(result.isError).toBe(true);
-    expect(
-      (result.structuredContent?.error as { code?: string })?.code,
-    ).toBe("element_unavailable");
+    expect((result.structuredContent?.error as { code?: string })?.code).toBe(
+      "element_unavailable",
+    );
   });
 
   it("坐标过期帧 → element_stale（retry=reobserve）", async () => {
@@ -268,9 +285,9 @@ describe("ComputerUseService：动作", () => {
       "run-A",
     );
     expect(result.isError).toBe(true);
-    expect(
-      (result.structuredContent?.error as { code?: string })?.code,
-    ).toBe("element_stale");
+    expect((result.structuredContent?.error as { code?: string })?.code).toBe(
+      "element_stale",
+    );
   });
 
   it("租约互斥：run-B 在 run-A 持有期间 → controller_busy", async () => {
@@ -281,9 +298,16 @@ describe("ComputerUseService：动作", () => {
     });
     await service.getState(APP, {});
     await service.click(APP, { type: "element", index: 1 }, "run-A");
-    const result = await service.click(APP, { type: "element", index: 1 }, "run-B");
+    const result = await service.click(
+      APP,
+      { type: "element", index: 1 },
+      "run-B",
+    );
     expect(result.isError).toBe(true);
-    const error = result.structuredContent?.error as { code?: string; owner?: string };
+    const error = result.structuredContent?.error as {
+      code?: string;
+      owner?: string;
+    };
     expect(error?.code).toBe("controller_busy");
     expect(error?.owner).toBe("run-A");
   });
@@ -298,7 +322,11 @@ describe("ComputerUseService：动作", () => {
     await service.click(APP, { type: "element", index: 1 }, "run-A");
     await service.stop("run-A");
     expect(calls).toContain("stop");
-    const result = await service.click(APP, { type: "element", index: 1 }, "run-B");
+    const result = await service.click(
+      APP,
+      { type: "element", index: 1 },
+      "run-B",
+    );
     expect(result.isError).toBeUndefined();
   });
 
@@ -312,7 +340,11 @@ describe("ComputerUseService：动作", () => {
     await service.click(APP, { type: "element", index: 1 }, "run-A");
     await service.click(APP, { type: "element", index: 1 }, "run-A");
     await service.click(APP, { type: "element", index: 1 }, "run-A");
-    const result = await service.click(APP, { type: "element", index: 1 }, "run-A");
+    const result = await service.click(
+      APP,
+      { type: "element", index: 1 },
+      "run-A",
+    );
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result)).toContain("达到上限");
   });

@@ -95,6 +95,25 @@ function readSubagentCallId(evt: LangChainStreamEvent): string | undefined {
 /** Inner tools that may be suppressed when running inside a sub-agent. */
 const INNER_SUB_AGENT_TOOLS = new Set(["generate_video"]);
 
+export async function* projectCanonicalToolEvent(
+  data: Record<string, unknown>,
+  identity: { runId: string; sessionId: string; conversationId: string },
+): AsyncGenerator<
+  Extract<StreamEvent, { type: "tool.started" | "tool.completed" }>
+> {
+  const stream = (async function* () {
+    yield { event: "on_custom_event", name: "kenfutwork.tool", data };
+  })();
+  for await (const event of adaptDeepAgentStream({
+    ...identity,
+    stream,
+    canonicalToolEvents: true,
+  })) {
+    if (event.type === "tool.started" || event.type === "tool.completed")
+      yield event;
+  }
+}
+
 function canonicalToolEvent(
   evt: LangChainStreamEvent,
 ): LangChainStreamEvent | undefined {
