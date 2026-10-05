@@ -146,7 +146,7 @@ interface PluginContributions {
       query: Record<string, string>;
       body: unknown;
       headers: Record<string, string | undefined>;
-      workspaceId?: string | undefined;
+      instanceId?: string | undefined;
     }) => unknown | Promise<unknown>;
   }>;
   ui: Array<{
@@ -215,7 +215,7 @@ export interface PluginRegistryService {
     headers: Record<string, string | undefined>;
     isAuthenticated: boolean;
     /** 调用者所属工作区（未登录时为 undefined）：插件 `ctx.storage` 的显式入参。 */
-    workspaceId?: string | undefined;
+    instanceId?: string | undefined;
   }): Promise<PluginRouteDispatchResult | undefined>;
   /**
    * 读插件 bundle 里的静态资源（`/api/plugins/<id>/assets/…`）。
@@ -513,13 +513,13 @@ export function createPluginRegistryService(
         // 存储：调用方（插件的路由/工具）显式传工作区，这里只把 pluginId 绑上，
         // 插件拿不到「换个插件 id 读写别人数据」的口子。
         storage: {
-          get: (workspaceId, key) =>
-            deps.storage.get(workspaceId, record.id, key),
-          set: (workspaceId, key, value) =>
-            deps.storage.set(workspaceId, record.id, key, value),
-          remove: (workspaceId, key) =>
-            deps.storage.remove(workspaceId, record.id, key),
-          keys: (workspaceId) => deps.storage.keys(workspaceId, record.id),
+          get: (instanceId, key) =>
+            deps.storage.get(instanceId, record.id, key),
+          set: (instanceId, key, value) =>
+            deps.storage.set(instanceId, record.id, key, value),
+          remove: (instanceId, key) =>
+            deps.storage.remove(instanceId, record.id, key),
+          keys: (instanceId) => deps.storage.keys(instanceId, record.id),
         },
       });
       loaded.set(record.id, result);
@@ -885,7 +885,7 @@ export function createPluginRegistryService(
       body,
       headers,
       isAuthenticated,
-      workspaceId,
+      instanceId,
     }) {
       const normalized = routePath.replace(/^\/+/, "");
       const route = contributions.routes.find(
@@ -905,7 +905,7 @@ export function createPluginRegistryService(
           query,
           body,
           headers,
-          ...(workspaceId ? { workspaceId } : {}),
+          ...(instanceId ? { instanceId } : {}),
         });
         if (
           result &&

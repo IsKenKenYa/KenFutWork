@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { AIMessage } from "@langchain/core/messages";
 import type { AgentMiddleware } from "langchain";
 import { expect, it } from "vitest";
+import { createRuntimeTestInstance } from "../../agent/runtime-test-fixtures.js";
 import { AgentRunEventBus, ToolRegistryImpl } from "../../kernel/context.js";
 import type { StoredExecutionScope } from "../execution/scope-repository.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
@@ -17,7 +18,7 @@ it("下一模型请求重新核验真实scope代际，收紧权限撤销旧激�
       state: "ready",
       branchGeneration: 1,
       scope: {
-        workspaceId: "00000000-0000-4000-8000-000000000001",
+        instanceId: "00000000-0000-4000-8000-000000000001",
         projectId: "00000000-0000-4000-8000-000000000002",
         taskId: "00000000-0000-4000-8000-000000000003",
         generation: 1,
@@ -28,12 +29,10 @@ it("下一模型请求重新核验真实scope代际，收紧权限撤销旧激�
     };
     const scopes = createExecutionScopes({
       repository: { load: async () => structuredClone(stored) },
-      viewerService: {
-        resolveWorkspace: async () => ({ id: stored.scope.workspaceId }),
-      } as never,
+      localInstance: createRuntimeTestInstance(stored.scope.instanceId),
     });
     const handle = await scopes.openTask(
-      { id: "owner", email: "", accessToken: "", userMetadata: {} },
+      { instanceId: stored.scope.instanceId, accessClientId: null },
       stored.scope.taskId,
     );
     const registry = new ToolRegistryImpl(new AgentRunEventBus());

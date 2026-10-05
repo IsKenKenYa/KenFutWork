@@ -5,8 +5,7 @@ import type {
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import { resolveInsideRoot } from "../../utils/inside-root.js";
-import type { AdminService } from "../admin/admin-service.js";
-import type { RequestAuthenticator } from "../auth/types.js";
+import type { LocalInstanceService } from "../local-instance/types.js";
 import type { McpService } from "./mcp-service.js";
 import { projectMcpArguments } from "./mcp-tools.js";
 
@@ -15,8 +14,8 @@ import { projectMcpArguments } from "./mcp-tools.js";
  * （创造模式的第三种产物：插件 / 技能 / MCP 工具）。
  *
  * 与 `install_plugin` 同两条硬约束：
- * 1. **管理员门**：MCP server 由服务端在本机起子进程并把自己的工具注册进统一注册表，
- *    与 `/api/mcp/servers` 同一条 admin 门（非管理员如实拒绝）；
+ * 1. **实例接入门**：MCP server 由服务端在本机起子进程并把自己的工具注册进统一注册表，
+ *    与 `/api/mcp/servers` 同样只消费接入层签发的LocalActor；
  * 2. **落点**：脚本路径必须在本轮 run 的沙箱工作目录内（`resolveInsideRoot` 防 `../`），
  *    目录由 `resolveSandboxDir` 解析——与 agent/git/插件安装同一处口径。
  *
@@ -26,19 +25,18 @@ import { projectMcpArguments } from "./mcp-tools.js";
  */
 export function createCreateMcpServerTool(options: {
   service: McpService;
-  auth: RequestAuthenticator;
-  admin: AdminService;
+  localInstance: LocalInstanceService;
   sandboxRoot?: string | undefined;
   canvasWorkDirs?: Record<string, string> | undefined;
   /** 项目绑定的本机工作目录（`projects.work_dir`）；界面绑定优先于环境变量映射。 */
   projectWorkDirLoader?:
-    | ((canvasId: string) => Promise<string | null>)
+    | ((instanceId: string, canvasId: string) => Promise<string | null>)
     | undefined;
 }): ToolDefinition {
   return {
     name: "create_mcp_server",
     description:
-      "把工作目录里的 MCP server 脚本注册成本实例的 MCP 工具源（需要管理员权限）。用于「创造」模式：先用 write_file 在工作目录写好 server 脚本（stdio 协议），再用本工具注册；注册成功后其工具以 mcp__<name>__<tool> 进入统一注册表，后续会话可直接调用。",
+      "把工作目录里的 MCP server 脚本注册成本实例的 MCP 工具源（需要已授权本机访问）。用于「创造」模式：先用 write_file 在工作目录写好 server 脚本（stdio 协议），再用本工具注册；注册成功后其工具以 mcp__<name>__<tool> 进入统一注册表，后续会话可直接调用。",
     scope: "design",
     exposure: "deferred",
     access: "write",
@@ -82,26 +80,16 @@ export function createCreateMcpServerTool(options: {
           "当前执行上下文缺少画布，无法定位工作目录（create_mcp_server 需要 run 绑定项目）。",
         );
       }
-      const user = execCtx.accessToken
-        ? await options.auth
-            .authenticate({
-              headers: { authorization: `Bearer ${execCtx.accessToken}` },
-            })
-            .catch(() => null)
-        : null;
-      if (!user) {
-        throw new Error("当前执行上下文缺少用户凭据，无法注册 MCP server。");
-      }
-      try {
-        await options.admin.requireAdmin(user);
-      } catch {
+      const actor = execCtx.actor;
+      if (!actor || actor.instanceId !== execCtx.instanceId) {
         throw new Error(
-          "注册 MCP server 需要管理员权限（会在本机起子进程并注册工具），请让管理员在模拟器设置里添加。",
+          "当前执行上下文缺少可信本地实例，无法注册 MCP server。",
         );
       }
+      await options.localInstance.resolve(actor);
 
       const boundWorkDir = options.projectWorkDirLoader
-        ? await options.projectWorkDirLoader(execCtx.canvasId).catch(() => null)
+        ? await options.projectWorkDirLoader(actor.instanceId, execCtx.canvasId)
         : null;
       const sandboxDir = resolveSandboxDir(
         execCtx.canvasId,

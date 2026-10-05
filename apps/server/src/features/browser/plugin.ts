@@ -1,8 +1,11 @@
+import { join } from "node:path";
 import { unauthenticatedErrorResponseSchema } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { resolveDesktopDataDir } from "../../desktop/paths.js";
 
 import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
-import type { AuthenticatedUser, RequestAuthenticator } from "../auth/types.js";
+import type { LocalAccessVerifier } from "../local-access/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import { createCdpBrowserSession } from "./cdp-session.js";
 import {
   BrowserFetchError,
@@ -36,6 +39,12 @@ export function createBrowserPlugin(): PluginDefinition {
     inject: [],
     apply(ctx) {
       const cdp = createCdpBrowserSession({
+        dataDir: join(
+          resolveDesktopDataDir({
+            env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
+          }),
+          "browser",
+        ),
         get blob() {
           return ctx.tryGet("blob");
         },
@@ -354,7 +363,7 @@ export function createBrowserPlugin(): PluginDefinition {
     },
     mounted(ctx) {
       registerBrowserRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         browser: ctx.get("browser"),
         settingsForHeadless: () =>
           ctx.tryGet("permissions")?.getSettings().browserHeadless ?? false,
@@ -367,7 +376,7 @@ export function createBrowserPlugin(): PluginDefinition {
 export function registerBrowserRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     browser: BrowserService;
     /** CDP 连接时是否无头（读实例设置；缺省有窗口）。 */
     settingsForHeadless?: () => boolean;
@@ -390,10 +399,11 @@ export function registerBrowserRoutes(
    */
   const tickets = createViewTicketStore();
   const authenticate = async (
-    request: Parameters<RequestAuthenticator["authenticate"]>[0],
+    request: Parameters<LocalAccessVerifier["authenticate"]>[0],
     reply: FastifyReply,
-  ): Promise<AuthenticatedUser | null> =>
-    (await options.auth.authenticate(request)) ?? sendUnauthorized(reply);
+  ): Promise<LocalActor | null> =>
+    (await options.localAccess.authenticate(request)) ??
+    sendUnauthorized(reply);
 
   app.post("/api/browser/snapshot", async (request, reply) => {
     const user = await authenticate(request, reply);

@@ -21,7 +21,7 @@ function makeEnv(): ServerEnv {
 
 function makeHost() {
   const kernel = composePlugins(makeEnv(), []);
-  const storageCalls: Array<{ op: string; workspaceId: string; key: string }> =
+  const storageCalls: Array<{ op: string; instanceId: string; key: string }> =
     [];
   return {
     tools: kernel.get("tools"),
@@ -30,19 +30,19 @@ function makeHost() {
     routes: () => () => {},
     ui: () => () => {},
     storage: {
-      async get(workspaceId: string, key: string) {
-        storageCalls.push({ op: "get", workspaceId, key });
+      async get(instanceId: string, key: string) {
+        storageCalls.push({ op: "get", instanceId, key });
         return null;
       },
-      async set(workspaceId: string, key: string) {
-        storageCalls.push({ op: "set", workspaceId, key });
+      async set(instanceId: string, key: string) {
+        storageCalls.push({ op: "set", instanceId, key });
       },
-      async remove(workspaceId: string, key: string) {
-        storageCalls.push({ op: "remove", workspaceId, key });
+      async remove(instanceId: string, key: string) {
+        storageCalls.push({ op: "remove", instanceId, key });
         return true;
       },
-      async keys(workspaceId: string) {
-        storageCalls.push({ op: "keys", workspaceId, key: "" });
+      async keys(instanceId: string) {
+        storageCalls.push({ op: "keys", instanceId, key: "" });
         return [];
       },
     },
@@ -429,14 +429,14 @@ describe("插件上下文的存储通道（能力 storage）", () => {
       inject: ["storage"],
       async apply(ctx: {
         storage: {
-          get: (workspaceId: string, key: string) => Promise<string | null>;
+          get: (instanceId: string, key: string) => Promise<string | null>;
           set: (
-            workspaceId: string,
+            instanceId: string,
             key: string,
             value: string,
           ) => Promise<void>;
-          remove: (workspaceId: string, key: string) => Promise<boolean>;
-          keys: (workspaceId: string) => Promise<string[]>;
+          remove: (instanceId: string, key: string) => Promise<boolean>;
+          keys: (instanceId: string) => Promise<string[]>;
         };
       }) {
         await ctx.storage.set("ws-1", "session", "v1");
@@ -450,10 +450,10 @@ describe("插件上下文的存储通道（能力 storage）", () => {
     await loadCompatPlugin(namespace, host as never);
 
     expect(host.storageCalls).toEqual([
-      { op: "set", workspaceId: "ws-1", key: "session" },
-      { op: "get", workspaceId: "ws-1", key: "session" },
-      { op: "remove", workspaceId: "ws-2", key: "gone" },
-      { op: "keys", workspaceId: "ws-3", key: "" },
+      { op: "set", instanceId: "ws-1", key: "session" },
+      { op: "get", instanceId: "ws-1", key: "session" },
+      { op: "remove", instanceId: "ws-2", key: "gone" },
+      { op: "keys", instanceId: "ws-3", key: "" },
     ]);
     // 存储是数据通道，不参与贡献物注销（不返回 disposer）
     expect(typeof (seen.storage as { get: unknown }).get).toBe("function");

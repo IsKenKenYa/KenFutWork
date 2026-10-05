@@ -18,7 +18,7 @@ export function createToolCatalogPlugin(): PluginDefinition {
             if (!context) return { name: "ToolCatalogueUnavailable" };
             const handle = context.execution.scopeHandle;
             const key = JSON.stringify([
-              context.execution.workspaceId,
+              context.execution.instanceId,
               handle?.describe().taskId ?? context.execution.threadId,
               handle?.agentId ?? "main",
               preset,
@@ -32,22 +32,13 @@ export function createToolCatalogPlugin(): PluginDefinition {
               context,
               activation,
               async () => {
-                const actor =
-                  context.execution.taskWorkContext?.actor ??
-                  (context.execution.userId
-                    ? {
-                        id: context.execution.userId,
-                        accessToken: context.execution.accessToken ?? "",
-                        email: "",
-                        userMetadata: {},
-                      }
-                    : undefined);
-                if (!actor || !context.execution.workspaceId)
+                const actor = context.execution.actor;
+                if (!actor || !context.execution.instanceId)
                   throw new Error("工具发现缺少可信 Task 用户上下文。");
                 return (
                   await ctx
                     .get("settings")
-                    .getWorkspaceSettings(actor, context.execution.workspaceId)
+                    .getInstanceSettings(actor, context.execution.instanceId)
                 ).codeSearchMaxResults;
               },
             );
@@ -68,10 +59,10 @@ export function createToolCatalogPlugin(): PluginDefinition {
       ctx.get("capabilities").register("task-close", {
         id: "tool-catalog:activation",
         value: {
-          close: (workspaceId: string, taskId: string) => {
+          close: (instanceId: string, taskId: string) => {
             for (const key of activations.keys()) {
               const identity = JSON.parse(key) as unknown[];
-              if (identity[0] === workspaceId && identity[1] === taskId)
+              if (identity[0] === instanceId && identity[1] === taskId)
                 activations.delete(key);
             }
           },

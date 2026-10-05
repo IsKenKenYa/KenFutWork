@@ -1,9 +1,10 @@
+import type { LocalInstanceService } from "../local-instance/types.js";
 import type { PersistenceService } from "../persistence/types.js";
 
 /**
  * MCP server 配置存储（`mcp_servers` 单表，实例级）。
  *
- * 与 BYOK 同口径的密钥纪律：`env` 可能含密钥，**只写不读**——
+ * `env` 可能含密钥，运行时读取与普通库存事件分开——
  * 仓储层提供 `list()`（含值，仅供运行时连接使用）与 `listPublic()`
  * （仅键名，供 HTTP 下发），路由绝不能把前者直接返回给客户端。
  */
@@ -116,34 +117,37 @@ const COLUMNS = "id, name, command, args, env, enabled, created_at, updated_at";
 
 export function createMcpServerStore(
   persistence: PersistenceService,
+  localInstance: LocalInstanceService,
 ): McpServerStore {
+  const scoped = async () =>
+    persistence.forInstance((await localInstance.getContext()).instanceId);
   return {
     async list() {
-      const rows = await persistence.query<Row>(
-        `select ${COLUMNS} from public.mcp_servers order by name asc`,
+      const rows = await (await scoped()).query<Row>(
+        `select ${COLUMNS} from public.mcp_servers where instance_id = :instance order by name asc`,
       );
       return rows.map(toStored);
     },
 
     async listPublic() {
-      const rows = await persistence.query<Row>(
-        `select ${COLUMNS} from public.mcp_servers order by name asc`,
+      const rows = await (await scoped()).query<Row>(
+        `select ${COLUMNS} from public.mcp_servers where instance_id = :instance order by name asc`,
       );
       return rows.map(toPublic);
     },
 
     async findByName(name) {
-      const row = await persistence.queryOne<Row>(
-        `select ${COLUMNS} from public.mcp_servers where name = $1`,
+      const row = await (await scoped()).queryOne<Row>(
+        `select ${COLUMNS} from public.mcp_servers where instance_id = :instance and name = $1`,
         [name],
       );
       return row ? toStored(row) : null;
     },
 
     async create(input) {
-      const row = await persistence.queryOne<Row>(
-        `insert into public.mcp_servers (name, command, args, env, enabled)
-         values ($1, $2, $3::jsonb, $4::jsonb, $5)
+      const row = await (await scoped()).queryOne<Row>(
+        `insert into public.mcp_servers (instance_id, name, command, args, env, enabled)
+         values (:instance, $1, $2, $3::jsonb, $4::jsonb, $5)
          returning ${COLUMNS}`,
         [
           input.name,
@@ -176,17 +180,17 @@ export function createMcpServerStore(
       if (patch.enabled !== undefined) push("enabled = $?", patch.enabled);
       if (sets.length === 0) {
         // 无字段可改：按 id 读回现值（不发空 UPDATE）
-        const current = await persistence.queryOne<Row>(
-          `select ${COLUMNS} from public.mcp_servers where id = $1`,
+        const current = await (await scoped()).queryOne<Row>(
+          `select ${COLUMNS} from public.mcp_servers where instance_id = :instance and id = $1`,
           [id],
         );
         return current ? toStored(current) : null;
       }
       params.push(id);
-      const row = await persistence.queryOne<Row>(
+      const row = await (await scoped()).queryOne<Row>(
         `update public.mcp_servers
             set ${sets.join(", ")}, updated_at = now()
-          where id = $${params.length}
+          where instance_id = :instance and id = $${params.length}
         returning ${COLUMNS}`,
         params,
       );
@@ -194,10 +198,10 @@ export function createMcpServerStore(
     },
 
     async setEnabled(id, enabled) {
-      const row = await persistence.queryOne<Row>(
+      const row = await (await scoped()).queryOne<Row>(
         `update public.mcp_servers
             set enabled = $1, updated_at = now()
-          where id = $2
+          where instance_id = :instance and id = $2
         returning ${COLUMNS}`,
         [enabled, id],
       );
@@ -205,8 +209,8 @@ export function createMcpServerStore(
     },
 
     async remove(id) {
-      return persistence.execute(
-        "delete from public.mcp_servers where id = $1",
+      return (await scoped()).execute(
+        "delete from public.mcp_servers where instance_id = :instance and id = $1",
         [id],
       );
     },

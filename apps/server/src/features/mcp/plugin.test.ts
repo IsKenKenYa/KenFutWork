@@ -1,9 +1,8 @@
 import { join } from "node:path";
-import { workspaceSettingsSchema } from "@kenfutwork/shared";
+import { instanceSettingsSchema } from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { afterEach, expect, it } from "vitest";
 import { composePlugins } from "../../kernel/compose.js";
-import type { AdminService } from "../admin/admin-service.js";
 import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
@@ -45,14 +44,22 @@ async function fixture(options: Parameters<typeof stdioSandbox>[0] = {}) {
   const unused = async (): Promise<never> => {
     throw new Error("此MCP夹具不消费平台管理业务。");
   };
-  const admin: AdminService = {
-    isAdmin: async () => true,
-    requireAdmin: async () => {},
-    listUsers: unused,
-    platformUsage: unused,
-    grantCredits: unused,
-    setRole: unused,
-    setPlan: unused,
+  const localInstance = {
+    getContext: async () => ({
+      instanceId: f.scope.instanceId,
+      dataDir: f.root,
+    }),
+    resolve: async (actor: typeof f.actor) => ({
+      instanceId: actor.instanceId,
+      dataDir: f.root,
+    }),
+    serviceActor: async () => f.actor,
+    isDraining: () => false,
+    beginAdmission: () => () => {},
+    activeAdmissionCount: () => 0,
+    assertReady() {},
+    beginMaintenance: unused,
+    cancelMaintenance() {},
   };
   const kernel = composePlugins(
     {
@@ -68,24 +75,34 @@ async function fixture(options: Parameters<typeof stdioSandbox>[0] = {}) {
       app,
       overrides: {
         tools: f.registry,
-        auth: { authenticate: async () => f.actor },
-        admin,
+        localAccess: {
+          onRevoked: () => () => {},
+          initialize: async () => {},
+          getDesktopToken: unused,
+          authenticate: async () => f.actor,
+          issueTicket: unused,
+          consumeTicket: unused,
+          createApiClient: unused,
+          listClients: unused,
+          revokeClient: unused,
+        },
+        localInstance,
         persistence,
         processSandbox: { ...sandbox, spawnStdio: f.sandbox.spawnStdio },
         executionScopes: f.scopes,
         settings: {
           onUpdated: () => () => {},
           getCodeUiTransportSettings: async () => ({
-            reconnectDelayMs: workspaceSettingsSchema.parse({
+            reconnectDelayMs: instanceSettingsSchema.parse({
               defaultModel: "fixture",
             }).codeUiReconnectDelayMs,
           }),
-          getWorkspaceSettings: async () =>
-            workspaceSettingsSchema.parse({
+          getInstanceSettings: async () =>
+            instanceSettingsSchema.parse({
               defaultModel: "fixture",
               processMaxOutputBytes: 4096,
             }),
-          updateWorkspaceSettings: unused,
+          updateInstanceSettings: unused,
         },
         taskWork: createTaskWorkManager({
           store: createTaskWorkStore(persistence),
@@ -129,14 +146,14 @@ it("MCP真实插件入口按Design/Code一处分派，Code创建接共同Harness
   ).toMatchObject({ status: "connected", envKeys: ["USER_TOKEN"] });
   const closures = f.kernel
     .get("capabilities")
-    .list<{ close: (workspaceId: string, taskId: string) => Promise<void> }>(
+    .list<{ close: (instanceId: string, taskId: string) => Promise<void> }>(
       "task-before-process-close",
     );
   const close = closures.find(
     (registration) => registration.id === "mcp:task-connections",
   );
   if (!close) throw new Error("MCP Task资源未登记关闭能力。");
-  await close.value.close(f.scope.workspaceId, f.scope.taskId);
+  await close.value.close(f.scope.instanceId, f.scope.taskId);
   expect(f.children[0]?.process.snapshot().exit?.rangeEmpty).toBe(true);
   expect(
     f.registry

@@ -11,6 +11,7 @@ import {
 import type { ChatResult } from "@langchain/core/outputs";
 import { expect, it } from "vitest";
 import { createKenFutWorkDeepAgent } from "../../agent/deep-agent.js";
+import { createRuntimeTestInstance } from "../../agent/runtime-test-fixtures.js";
 import type { ServerEnv } from "../../config/env.js";
 import {
   AgentRunEventBus,
@@ -71,7 +72,7 @@ it("真实SDK graph先拒绝未激活调用，ToolSearch之后才绑定与执行
   );
   try {
     const scope = {
-      workspaceId: "00000000-0000-4000-8000-000000000001",
+      instanceId: "00000000-0000-4000-8000-000000000001",
       projectId: "00000000-0000-4000-8000-000000000002",
       taskId: "00000000-0000-4000-8000-000000000003",
       generation: 1,
@@ -83,11 +84,9 @@ it("真实SDK graph先拒绝未激活调用，ToolSearch之后才绑定与执行
       repository: {
         load: async () => ({ scope, state: "ready", branchGeneration: 1 }),
       },
-      viewerService: {
-        resolveWorkspace: async () => ({ id: scope.workspaceId }),
-      } as never,
+      localInstance: createRuntimeTestInstance(scope.instanceId),
     }).openTask(
-      { id: "owner", email: "", accessToken: "", userMetadata: {} },
+      { instanceId: scope.instanceId, accessClientId: null },
       scope.taskId,
     );
     const permissions = createPermissionService();
@@ -114,10 +113,11 @@ it("真实SDK graph先拒绝未激活调用，ToolSearch之后才绑定与执行
       },
     });
     const execution: ToolExecutionContext = {
+      actor: { instanceId: scope.instanceId, accessClientId: null },
       scopeHandle: handle,
       runId: "sdk-run",
       sessionId: scope.taskId,
-      userId: "owner",
+      instanceId: scope.instanceId,
       codeApproval: {
         ceiling: "build",
         resolve: async () => ({

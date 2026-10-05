@@ -12,7 +12,7 @@ import { createTaskMcpTools } from "./task-mcp-tools.js";
  * mcp 插件（P4d，§4.5）：连接 MCP server → 工具注册进 ctx.tools。
  *
  * 配置来源两处（**同名时库内优先**）：
- * - `mcp_servers` 表：界面可增删改（变更类走管理员门，因为会在本机起子进程）；
+ * - `mcp_servers` 表：界面可增删改（变更类走已授权本机访问门，因为会在本机起子进程）；
  * - `KENFUTWORK_MCP_SERVERS` 环境变量：引导/遗留入口，UI 标注来源且只读。
  *
  * 插件**常驻挂载**（不再以「有没有配 server」决定 enabled）——否则没配环境变量时
@@ -60,8 +60,8 @@ export function createMcpPlugin(): PluginDefinition {
   return {
     name: "mcp",
     inject: [
-      "auth",
-      "admin",
+      "localInstance",
+      "localAccess",
       "persistence",
       "processSandbox",
       "settings",
@@ -72,7 +72,10 @@ export function createMcpPlugin(): PluginDefinition {
       service = createMcpService({
         env: ctx.env as ServerEnv,
         registry: ctx.get("tools"),
-        store: createMcpServerStore(ctx.get("persistence")),
+        store: createMcpServerStore(
+          ctx.get("persistence"),
+          ctx.get("localInstance"),
+        ),
       });
       // 连接是异步的：挂载后逐个连接并注册工具（可用性不影响进程启动）
       // 兜底 catch：即使 connectAll 内部失效，也不能把进程带走（unhandled rejection）
@@ -89,7 +92,7 @@ export function createMcpPlugin(): PluginDefinition {
       }
       // 创造模式的第三种产物：把工作目录里的 MCP server 脚本注册成本实例的工具源。
       // 注册放 mounted（不是 apply）：apply 期 ctx.get 只解析得到「更早 apply 的插件」的
-      // key，admin 依赖会因顺序而 fail loud（probe 装配实测踩中）。
+      // key，后装配的能力依赖会因顺序而 fail loud（probe 装配实测踩中）。
       const tools = ctx.get("tools");
       const tasks = createTaskMcpService({
         sandbox: ctx.get("processSandbox"),
@@ -99,8 +102,7 @@ export function createMcpPlugin(): PluginDefinition {
       });
       const designCreator = createCreateMcpServerTool({
         service,
-        auth: ctx.get("auth"),
-        admin: ctx.get("admin"),
+        localInstance: ctx.get("localInstance"),
         sandboxRoot: ctx.env.sandboxRoot,
         canvasWorkDirs: ctx.env.canvasWorkDirs,
         projectWorkDirLoader: projectWorkDirLoaderFor(ctx.get("persistence")),
@@ -132,8 +134,8 @@ export function createMcpPlugin(): PluginDefinition {
         ctx.get("capabilities").register("task-before-process-close", {
           id: "mcp:task-connections",
           value: {
-            close: (workspaceId: string, taskId: string) =>
-              tasks.closeTask(workspaceId, taskId, "Task已关闭"),
+            close: (instanceId: string, taskId: string) =>
+              tasks.closeTask(instanceId, taskId, "Task已关闭"),
           },
         }),
       );
@@ -153,8 +155,8 @@ export function createMcpPlugin(): PluginDefinition {
       };
       ctx.app.addHook("onClose", shutdown);
       void registerMcpRoutes(ctx.app, {
-        admin: ctx.get("admin"),
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
+        localInstance: ctx.get("localInstance"),
         service,
       });
       // 最后登记：LIFO卸载先夹紧准入并join真实stop，再撤销工具和生命周期订阅。

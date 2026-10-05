@@ -1,13 +1,14 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+import type { ServerEnv } from "../../config/env.js";
+import {
+  resolveDesktopDataDir,
+  resolveDesktopPaths,
+} from "../../desktop/paths.js";
 import { registerPluginRoutes } from "../../http/plugins.js";
 import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
 import { createCanvasRepository } from "../canvas/repository.js";
-import {
-  decryptSecret,
-  encryptSecret,
-} from "../model-providers/secret-store.js";
 import { projectWorkDirLoaderFor } from "../projects/work-dir.js";
 import { type BundleFiles, buildBundleManifest } from "./bundle-manifest.js";
 import { CompatLoadError } from "./compat-context.js";
@@ -29,8 +30,7 @@ import { createPluginStorage } from "./plugin-storage.js";
  * - Service Provider：`createPluginRegistryService`（本地插件目录 + 兼容性门禁）
  * - Consumer：`/api/plugins*` 路由 + 前端插件市场 UI
  *
- * 依赖 `auth`（登录门）与 `admin`（变更类端点的管理员门）：安装会拉取并在本机执行
- * 第三方代码，属实例级危险操作。
+ * 管理由localAccess验证的实例主人操作；安装检查与执行审批继续生效。
  */
 
 export type { PluginCatalogEntry, PluginRegistryService };
@@ -38,7 +38,7 @@ export type { PluginCatalogEntry, PluginRegistryService };
 export interface PluginsPluginDeps {
   /** 内置插件目录（来自 profile，避免与 profiles 互相 import） */
   builtinCatalog: readonly PluginCatalogEntry[];
-  /** 已安装插件落盘目录；缺省 `<cwd>/.kenfutwork/plugins`，可用 KENFUTWORK_PLUGINS_DIR 覆盖 */
+  /** 已安装插件目录；生产为实例数据根/plugins，测试可显式注入。 */
   pluginsDir?: string;
   /**
    * 自带 bundle 插件目录（每个子目录是一个可安装的插件，如 `plugins/mihome`）。
@@ -55,15 +55,19 @@ export interface PluginsPluginDeps {
 /**
  * 解析插件落盘目录。
  *
- * 默认按 `process.cwd()` 解析——**启动期会把绝对路径打进日志**，因为 cwd 随启动方式变化
- * （`pnpm --filter` 时是 `apps/server`，桌面 exe 启动时是任意目录），不打印出来会很难排查。
- * 需要固定位置时用 `KENFUTWORK_PLUGINS_DIR` 覆盖。
+ * 正式入口已经统一目录；独立kernel/测试可用deps或ServerEnv注入。
+ * 插件不直接读取进程环境，cwd只用于寻找随包只读bundle。
  */
-function resolvePluginsDir(explicit?: string): string {
+function resolvePluginsDir(env: ServerEnv, explicit?: string): string {
   if (explicit) return path.resolve(explicit);
-  const fromEnv = process.env.KENFUTWORK_PLUGINS_DIR?.trim();
-  if (fromEnv) return path.resolve(fromEnv);
-  return path.resolve(process.cwd(), ".kenfutwork", "plugins");
+  if (env.pluginsDir) return path.resolve(env.pluginsDir);
+  return resolveDesktopPaths(
+    resolveDesktopDataDir({
+      env: {
+        KENFUTWORK_DATA_DIR: env.desktopDataDir,
+      },
+    }),
+  ).pluginsDir;
 }
 
 function resolveHostNodeMajor(explicit?: number): number {
@@ -203,15 +207,14 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
   return {
     name: "plugin-registry",
     inject: [
-      "auth",
-      "admin",
+      "localAccess",
       "persistence",
-      "viewer",
+      "localInstance",
       "projects",
       "executionScopes",
     ],
     apply(ctx) {
-      const pluginsDir = resolvePluginsDir(deps.pluginsDir);
+      const pluginsDir = resolvePluginsDir(ctx.env, deps.pluginsDir);
       const hostNodeMajor = resolveHostNodeMajor(deps.hostNodeMajor);
       const bundledBundles = loadBundledBundles(
         deps.builtinPluginsDir,
@@ -225,11 +228,6 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
             .join(", ")}`,
         );
       }
-      // 插件存储复用凭证缝的加解密（同一把 KENFUTWORK_CREDENTIAL_SECRET）：
-      // 缺密钥时在**调用期** fail loud，而不是启动期——不用存储的插件照常可用。
-      const credentialEnv = ctx.env.credentialSecret
-        ? { credentialSecret: ctx.env.credentialSecret }
-        : {};
       ctx.register("plugins", () => {
         service = createPluginRegistryService({
           // 部署形态决定能不能跑第三方插件（云端默认禁止；见 env.resolveAllowThirdPartyPlugins）
@@ -242,10 +240,6 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
           bundledBundles,
           storage: createPluginStorage({
             persistence: ctx.get("persistence"),
-            cipher: {
-              encrypt: (plaintext) => encryptSecret(credentialEnv, plaintext),
-              decrypt: (ciphertext) => decryptSecret(credentialEnv, ciphertext),
-            },
           }),
           ...(deps.githubToken ? { githubToken: deps.githubToken } : {}),
         });
@@ -257,26 +251,23 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
     },
     mounted(ctx) {
       const registry = ctx.get("plugins");
-      // install_plugin：创造模式的插件产物收尾（从工作目录安装；管理员门 + 兼容性门禁不绕过）。
-      // 与 mcp 的 create_mcp_server 同理，注册放 mounted——apply 期解析 admin 依赖看顺序。
+      // 从已授权工作目录安装；实例归属、安装检查与执行审批在消费方保持有效。
       ctx.get("tools").register(
         createInstallPluginTool({
           registry,
-          auth: ctx.get("auth"),
-          admin: ctx.get("admin"),
+          localInstance: ctx.get("localInstance"),
           sandboxRoot: ctx.env.sandboxRoot,
           canvasWorkDirs: ctx.env.canvasWorkDirs,
           projectWorkDirLoader: projectWorkDirLoaderFor(ctx.get("persistence")),
         }),
       );
       void registerPluginRoutes(ctx.app, {
-        auth: ctx.get("auth"),
-        admin: ctx.get("admin"),
+        localAccess: ctx.get("localAccess"),
         registry,
         canvasRepository: createCanvasRepository(ctx.get("persistence")),
         projects: ctx.get("projects"),
         executionScopes: ctx.get("executionScopes"),
-        viewerService: ctx.get("viewer"),
+        localInstance: ctx.get("localInstance"),
         sandboxRoot: ctx.env.sandboxRoot,
         canvasWorkDirs: ctx.env.canvasWorkDirs,
         projectWorkDirLoader: projectWorkDirLoaderFor(ctx.get("persistence")),
@@ -286,7 +277,9 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
         await registry.restore();
       });
       ctx.app.addHook("preClose", async () => {
+        console.log("[shutdown] 关闭本地插件。");
         await registry.shutdown();
+        console.log("[shutdown] 本地插件已关闭。");
       });
     },
   };

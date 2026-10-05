@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type CodeExecutionScope,
-  workspaceSettingsSchema,
+  instanceSettingsSchema,
 } from "@kenfutwork/shared";
 import { AgentRunEventBus, ToolRegistryImpl } from "../../kernel/context.js";
 import type { ToolExecutionContext } from "../../kernel/types.js";
@@ -22,7 +22,7 @@ export async function taskMcpFixture(
   addCleanup(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "server.mjs"), "// 受控句柄测试夹具\n");
   const scope: CodeExecutionScope = {
-    workspaceId: randomUUID(),
+    instanceId: randomUUID(),
     projectId: randomUUID(),
     taskId: randomUUID(),
     generation: 1,
@@ -30,12 +30,7 @@ export async function taskMcpFixture(
     additionalDirectories: [],
     sandboxMode: "workspace-write",
   };
-  const actor = {
-    id: randomUUID(),
-    email: "task@fixture",
-    accessToken: "token",
-    userMetadata: {},
-  };
+  const actor = { instanceId: scope.instanceId, accessClientId: null };
   let stored: StoredExecutionScope = {
     scope,
     state: "ready",
@@ -43,8 +38,8 @@ export async function taskMcpFixture(
   };
   const scopes = createExecutionScopes({
     repository: {
-      load: async (workspaceId, taskId) =>
-        workspaceId === scope.workspaceId && taskId === scope.taskId
+      load: async (instanceId, taskId) =>
+        instanceId === scope.instanceId && taskId === scope.taskId
           ? stored
           : null,
       beginUpdate: async (previous, patch) => {
@@ -66,12 +61,10 @@ export async function taskMcpFixture(
         return true;
       },
     },
-    viewerService: {
-      resolveWorkspace: async () => ({
-        id: scope.workspaceId,
-        name: "个人工作区",
-        ownerUserId: actor.id,
-        type: "personal",
+    localInstance: {
+      resolve: async (requestActor) => ({
+        instanceId: requestActor.instanceId,
+        dataDir: root,
       }),
     },
   });
@@ -94,8 +87,8 @@ export async function taskMcpFixture(
     registry,
     version: "1",
     settings: {
-      getWorkspaceSettings: async () =>
-        workspaceSettingsSchema.parse({
+      getInstanceSettings: async () =>
+        instanceSettingsSchema.parse({
           defaultModel: "fixture",
           processMaxOutputBytes: 4096,
         }),
@@ -110,8 +103,8 @@ export async function taskMcpFixture(
     scopeHandle: handle,
     runId: "run-1",
     toolCallId: "create-1",
-    userId: actor.id,
-    workspaceId: scope.workspaceId,
+    actor,
+    instanceId: scope.instanceId,
     taskWorkContext: {
       actor,
       scope,

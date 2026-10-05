@@ -42,30 +42,30 @@ const tempDirs: string[] = [];
 function fakePluginStorage() {
   const rows = new Map<string, string>();
   const purged: string[] = [];
-  const rowKey = (workspaceId: string, pluginId: string, key: string) =>
-    JSON.stringify([workspaceId, pluginId, key]);
+  const rowKey = (instanceId: string, pluginId: string, key: string) =>
+    JSON.stringify([instanceId, pluginId, key]);
   return {
     rows,
     purged,
     storage: {
-      async get(workspaceId: string, pluginId: string, key: string) {
-        return rows.get(rowKey(workspaceId, pluginId, key)) ?? null;
+      async get(instanceId: string, pluginId: string, key: string) {
+        return rows.get(rowKey(instanceId, pluginId, key)) ?? null;
       },
       async set(
-        workspaceId: string,
+        instanceId: string,
         pluginId: string,
         key: string,
         value: string,
       ) {
-        rows.set(rowKey(workspaceId, pluginId, key), value);
+        rows.set(rowKey(instanceId, pluginId, key), value);
       },
-      async remove(workspaceId: string, pluginId: string, key: string) {
-        return rows.delete(rowKey(workspaceId, pluginId, key));
+      async remove(instanceId: string, pluginId: string, key: string) {
+        return rows.delete(rowKey(instanceId, pluginId, key));
       },
-      async keys(workspaceId: string, pluginId: string) {
+      async keys(instanceId: string, pluginId: string) {
         return [...rows.keys()]
           .map((raw) => JSON.parse(raw) as [string, string, string])
-          .filter(([ws, id]) => ws === workspaceId && id === pluginId)
+          .filter(([ws, id]) => ws === instanceId && id === pluginId)
           .map(([, , key]) => key)
           .sort();
       },
@@ -180,12 +180,12 @@ async function writeStorageBundle(): Promise<string> {
       '    description: "读写插件存储（工作区取自执行上下文）",',
       '    parameters: { type: "object", properties: {} },',
       "    async execute(_args, exec) {",
-      '      const before = await ctx.storage.get(exec.workspaceId, "session");',
-      '      await ctx.storage.set(exec.workspaceId, "session", "v:" + (before ?? "none"));',
+      '      const before = await ctx.storage.get(exec.instanceId, "session");',
+      '      await ctx.storage.set(exec.instanceId, "session", "v:" + (before ?? "none"));',
       "      return {",
       "        before,",
-      '        after: await ctx.storage.get(exec.workspaceId, "session"),',
-      "        keys: await ctx.storage.keys(exec.workspaceId),",
+      '        after: await ctx.storage.get(exec.instanceId, "session"),',
+      "        keys: await ctx.storage.keys(exec.instanceId),",
       "      };",
       "    },",
       "  });",
@@ -318,15 +318,15 @@ describe("plugin-registry：安装并真的能用", () => {
     expect(report.supportedCapabilities).toEqual(["tools", "storage"]);
 
     const tool = kernel.get("tools").require("storage_probe");
-    const first = await tool.execute({}, { workspaceId: "ws-1" });
+    const first = await tool.execute({}, { instanceId: "ws-1" });
     expect(first).toEqual({ before: null, after: "v:none", keys: ["session"] });
 
     // 同一工作区第二次读得到上次写的值
-    const second = await tool.execute({}, { workspaceId: "ws-1" });
+    const second = await tool.execute({}, { instanceId: "ws-1" });
     expect(second).toMatchObject({ before: "v:none" });
 
     // 另一个工作区读不到（隔离），且数据各自落在「该插件 + 该工作区」名下
-    const other = await tool.execute({}, { workspaceId: "ws-2" });
+    const other = await tool.execute({}, { instanceId: "ws-2" });
     expect(other).toMatchObject({ before: null });
     expect([...fake.rows.keys()].sort()).toEqual(
       [

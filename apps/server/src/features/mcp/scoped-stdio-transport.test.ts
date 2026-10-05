@@ -6,7 +6,7 @@ import { deferred, stdioSandbox } from "./test-stdio-process.js";
 
 const request: ProcessStdioSpawnRequest = {
   scope: {
-    workspaceId: "workspace",
+    instanceId: "workspace",
     projectId: "project",
     taskId: "task",
     generation: 1,

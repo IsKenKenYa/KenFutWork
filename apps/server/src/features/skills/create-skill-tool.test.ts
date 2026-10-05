@@ -1,41 +1,34 @@
 import { describe, expect, it, vi } from "vitest";
-
+import type { ToolExecutionContext } from "../../kernel/types.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
 import { createCreateSkillTool } from "./create-skill-tool.js";
 import type { SkillCatalogRepository } from "./repository.js";
 
-const USER = {
-  accessToken: "tok-1",
-  email: "creator@test.kenfutwork.com",
-  id: "u-1",
-  userMetadata: {},
+const ACTOR = { instanceId: "instance-1", accessClientId: "client-1" };
+const localInstance = createLocalInstanceService({
+  repository: { ensure: async () => ACTOR.instanceId },
+  dataDir: "/tmp/create-skill-test",
+});
+const CONTEXT: ToolExecutionContext = {
+  actor: ACTOR,
+  instanceId: ACTOR.instanceId,
+};
+const SKILL_MD =
+  "---\nname: en-zh-translate\ndescription: 英译中\n---\n\n步骤…";
+const INPUT = {
+  name: "en-zh-translate",
+  description: "英译中",
+  content: SKILL_MD,
 };
 
-const SKILL_MD = `---
-name: en-zh-translate
-description: 把英文段落翻译成中文
----
-
-# 步骤
-1. 读输入
-2. 输出中文
-`;
-
-function makeRepository(
-  calls: Record<string, unknown[]>,
-): SkillCatalogRepository {
+function repository(): SkillCatalogRepository {
   return {
-    insertOwned: async (userId, input) => {
-      calls.insertOwned = [userId, input];
-      return { id: "skill-1" };
-    },
-    insertFilesForOwnedSkill: async (userId, skillId, files) => {
-      calls.insertFiles = [userId, skillId, files];
-      return files.length;
-    },
-    upsertInstallation: async (input) => {
-      calls.install = [input];
-    },
-    // 其余方法本用例不触发
+    insertOwned: vi.fn(async () => ({ id: "skill-1" })),
+    insertFilesForOwnedSkill: vi.fn(
+      async (_instanceId, _skillId, files) => files.length,
+    ),
+    upsertInstallation: vi.fn(async () => {}),
+    setEnabled: async () => false,
     deleteOwnedById: async () => 0,
     findVisibleById: async () => null,
     findVisibleSkill: async () => null,
@@ -43,100 +36,94 @@ function makeRepository(
     listInstalled: async () => [],
     listSkillFiles: async () => [],
     listVisible: async () => [],
-    listWorkspaceSkills: async () => [],
+    listInstanceSkills: async () => [],
     uninstall: async () => 0,
     updateOwnedById: async () => null,
-  } as SkillCatalogRepository;
+  };
 }
 
-describe("create_skill 工具（创造模式的发布动作）", () => {
-  it("发布技能：写入技能库 + 附带文件 + 装进当前工作区", async () => {
-    const calls: Record<string, unknown[]> = {};
-    const tool = createCreateSkillTool({
-      repository: makeRepository(calls),
-      auth: { authenticate: async () => USER },
-    });
-
-    const result = (await tool.execute(
+describe("create_skill（实例发布）", () => {
+  it("以签发的 Actor 保存正文、文件和安装，不从模型参数提取归属", async () => {
+    const store = repository();
+    const tool = createCreateSkillTool({ repository: store, localInstance });
+    const result = await tool.execute(
       {
-        name: "en-zh-translate",
-        description: "英译中",
-        content: SKILL_MD,
-        files: [{ path: "scripts/run.py", content: "print('x')" }],
+        ...INPUT,
+        instanceId: "foreign",
+        actor: { instanceId: "foreign" },
+        files: [{ path: "scripts/run.py", content: "print(1)" }],
       },
-      { workspaceId: "ws-9", accessToken: "tok-1" },
-    )) as Record<string, unknown>;
-
+      CONTEXT,
+    );
     expect(result).toMatchObject({
       installed: true,
-      slug: "en-zh-translate",
       skillId: "skill-1",
       files: 1,
     });
-    expect(calls.insertOwned?.[0]).toBe("u-1");
-    expect(calls.insertOwned?.[1]).toMatchObject({
-      name: "en-zh-translate",
-      skillContent: SKILL_MD,
-      slug: "en-zh-translate",
-    });
-    expect(calls.install?.[0]).toMatchObject({
+    expect(store.insertOwned).toHaveBeenCalledWith(
+      ACTOR.instanceId,
+      expect.objectContaining({
+        createdByClientId: ACTOR.accessClientId,
+        skillContent: SKILL_MD,
+        slug: "en-zh-translate",
+      }),
+    );
+    expect(store.insertFilesForOwnedSkill).toHaveBeenCalledWith(
+      ACTOR.instanceId,
+      "skill-1",
+      expect.any(Array),
+    );
+    expect(store.upsertInstallation).toHaveBeenCalledWith({
       enabled: true,
-      installedBy: "u-1",
+      installedByClientId: ACTOR.accessClientId,
+      instanceId: ACTOR.instanceId,
       skillId: "skill-1",
-      workspaceId: "ws-9",
     });
   });
 
-  it("缺工作区 / 缺凭据 / 缺参数都如实报错（不静默）", async () => {
-    const tool = createCreateSkillTool({
-      repository: makeRepository({}),
-      auth: { authenticate: async () => null },
-    });
-
+  it("缺 Actor、Actor 不属实例、Task 与 Actor 不一致均在写入前拒绝", async () => {
+    const store = repository();
+    const tool = createCreateSkillTool({ repository: store, localInstance });
     await expect(
-      tool.execute(
-        { name: "a", description: "b", content: SKILL_MD },
-        { accessToken: "tok-1" },
-      ),
-    ).rejects.toThrow(/工作区/);
-
+      tool.execute(INPUT, { instanceId: ACTOR.instanceId }),
+    ).rejects.toThrow(/可信/);
     await expect(
-      tool.execute(
-        { name: "a", description: "b", content: SKILL_MD },
-        { workspaceId: "ws-9" },
-      ),
-    ).rejects.toThrow(/用户凭据/);
-
-    // 参数校验在凭据之后：这条用「认证能过」的工具实例才能命中
-    const authorized = createCreateSkillTool({
-      repository: makeRepository({}),
-      auth: { authenticate: async () => USER },
-    });
+      tool.execute(INPUT, { actor: ACTOR, instanceId: "foreign" }),
+    ).rejects.toThrow(/不匹配/);
     await expect(
-      authorized.execute(
-        { name: "a", description: "", content: SKILL_MD },
-        { workspaceId: "ws-9", accessToken: "tok-1" },
-      ),
+      tool.execute(INPUT, {
+        actor: { instanceId: "foreign", accessClientId: null },
+        instanceId: "foreign",
+      }),
+    ).rejects.toMatchObject({ code: "instance_forbidden" });
+    expect(store.insertOwned).not.toHaveBeenCalled();
+  });
+
+  it("后台真实 serviceActor 的 null 客户端不会被当作缺凭据", async () => {
+    const store = repository();
+    const actor = await localInstance.serviceActor();
+    const tool = createCreateSkillTool({ repository: store, localInstance });
+    await tool.execute(INPUT, { actor, instanceId: actor.instanceId });
+    expect(store.upsertInstallation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instanceId: actor.instanceId,
+        installedByClientId: null,
+      }),
+    );
+  });
+
+  it("缺参数与坏 frontmatter 拒绝，数据库故障原样传播", async () => {
+    const store = repository();
+    const tool = createCreateSkillTool({ repository: store, localInstance });
+    await expect(
+      tool.execute({ ...INPUT, description: "" }, CONTEXT),
     ).rejects.toThrow(/name \/ description \/ content/);
-  });
-
-  it("SKILL.md 缺 frontmatter 时按导入错误拒绝（不落库）", async () => {
-    const calls: Record<string, unknown[]> = {};
-    const insertSpy = vi.fn(async () => ({ id: "skill-1" }));
-    const tool = createCreateSkillTool({
-      repository: {
-        ...makeRepository(calls),
-        insertOwned: insertSpy,
-      } as SkillCatalogRepository,
-      auth: { authenticate: async () => USER },
-    });
-
     await expect(
-      tool.execute(
-        { name: "bad", description: "b", content: "没有 frontmatter" },
-        { workspaceId: "ws-9", accessToken: "tok-1" },
-      ),
+      tool.execute({ ...INPUT, content: "坏正文" }, CONTEXT),
     ).rejects.toThrow(/frontmatter/);
-    expect(insertSpy).not.toHaveBeenCalled();
+    expect(store.insertOwned).not.toHaveBeenCalled();
+    const failure = new Error("数据库暂不可用");
+    vi.mocked(store.insertOwned).mockRejectedValueOnce(failure);
+    await expect(tool.execute(INPUT, CONTEXT)).rejects.toBe(failure);
   });
 });

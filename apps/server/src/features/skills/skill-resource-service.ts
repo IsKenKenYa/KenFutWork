@@ -1,17 +1,19 @@
+import { LocalInstanceError } from "../local-instance/service.js";
+import type { LocalInstanceService } from "../local-instance/types.js";
 import type { SkillCatalogRepository } from "./repository.js";
 
-export interface WorkspaceSkillResource {
+export interface InstanceSkillResource {
   name: string;
   resourceRef: string;
   resourcePath: string;
   content: string;
 }
-export interface WorkspaceSkillResourceReader {
+export interface InstanceSkillResourceReader {
   read(
-    workspaceId: string,
+    instanceId: string,
     slug: string,
     resourcePath?: string,
-  ): Promise<WorkspaceSkillResource | undefined>;
+  ): Promise<InstanceSkillResource | undefined>;
 }
 /** 安装包是只读DB资源；读取不签发本机路径、执行权限或NativeRead observation。 */
 function canonicalResourcePath(path: string): string {
@@ -29,22 +31,25 @@ function canonicalResourcePath(path: string): string {
   return value;
 }
 
-export function createWorkspaceSkillResourceReader(options: {
+export function createInstanceSkillResourceReader(options: {
+  localInstance: LocalInstanceService;
   repository: Pick<
     SkillCatalogRepository,
-    "listWorkspaceSkills" | "listSkillFiles"
+    "listInstanceSkills" | "listSkillFiles"
   >;
-}): WorkspaceSkillResourceReader {
+}): InstanceSkillResourceReader {
   return {
-    async read(workspaceId, slug, resourcePath = "SKILL.md") {
+    async read(instanceId, slug, resourcePath = "SKILL.md") {
+      if ((await options.localInstance.getContext()).instanceId !== instanceId)
+        throw new LocalInstanceError();
       const path = canonicalResourcePath(resourcePath);
       const installed = (
-        await options.repository.listWorkspaceSkills(workspaceId)
+        await options.repository.listInstanceSkills(instanceId)
       ).find((row) => row.slug === slug && row.enabled);
       if (!installed) return undefined;
       let content = installed.skillContent;
       if (path !== "SKILL.md") {
-        const files = await options.repository.listSkillFiles(workspaceId, [
+        const files = await options.repository.listSkillFiles(instanceId, [
           installed.skillId,
         ]);
         const file = files.find(
@@ -57,7 +62,7 @@ export function createWorkspaceSkillResourceReader(options: {
       }
       // 已卸载/停用的迟到读取不得返回包内容；DB安装态与资源相对路径都再次核对。
       const current = (
-        await options.repository.listWorkspaceSkills(workspaceId)
+        await options.repository.listInstanceSkills(instanceId)
       ).find(
         (row) =>
           row.skillId === installed.skillId && row.slug === slug && row.enabled,

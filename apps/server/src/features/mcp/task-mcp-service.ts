@@ -54,7 +54,7 @@ export interface TaskMcpService {
   ): Promise<TaskMcpStatus>;
   remove(name: string, context: ToolExecutionContext): Promise<void>;
   list(context: ToolExecutionContext): Promise<TaskMcpStatus[]>;
-  closeTask(workspaceId: string, taskId: string, reason: string): Promise<void>;
+  closeTask(instanceId: string, taskId: string, reason: string): Promise<void>;
   revoke(previous: CodeExecutionScope, next: CodeExecutionScope): Promise<void>;
   shutdown(reason: string): Promise<void>;
 }
@@ -92,15 +92,15 @@ function deferred<T>() {
 export function createTaskMcpService(deps: {
   sandbox: Pick<ProcessSandbox, "spawnStdio">;
   registry: ToolRegistry;
-  settings: Pick<SettingsService, "getWorkspaceSettings">;
+  settings: Pick<SettingsService, "getInstanceSettings">;
   version: string;
 }): TaskMcpService {
   const records = new Map<string, Connection>();
   const closedTasks = new Set<string>();
   let closed = false;
   let shutdown: Promise<void> | undefined;
-  const taskKey = (scope: Pick<CodeExecutionScope, "workspaceId" | "taskId">) =>
-    JSON.stringify([scope.workspaceId, scope.taskId]);
+  const taskKey = (scope: Pick<CodeExecutionScope, "instanceId" | "taskId">) =>
+    JSON.stringify([scope.instanceId, scope.taskId]);
   const publicStatus = (record: Connection): TaskMcpStatus => ({
     name: record.input.name,
     taskId: record.scope.taskId,
@@ -123,9 +123,9 @@ export function createTaskMcpService(deps: {
   const requestOptions = async (
     owner: McpTaskContext,
   ): Promise<RequestOptions> => {
-    const settings = await deps.settings.getWorkspaceSettings(
+    const settings = await deps.settings.getInstanceSettings(
       owner.actor,
-      owner.scope.workspaceId,
+      owner.scope.instanceId,
     );
     return {
       timeout: settings.executeTimeoutMs,
@@ -143,7 +143,7 @@ export function createTaskMcpService(deps: {
     const owner = taskMcpContext(execution);
     if (
       taskKey(owner.scope) !== taskKey(record.scope) ||
-      owner.actor.id !== record.owner.actor.id ||
+      owner.actor.instanceId !== record.owner.actor.instanceId ||
       owner.branchGeneration !== record.owner.branchGeneration
     )
       throw new TaskMcpError(
@@ -196,9 +196,9 @@ export function createTaskMcpService(deps: {
         throw new Error("MCP脚本的真实路径已改变。");
       args = [script, ...args];
     }
-    const settings = await deps.settings.getWorkspaceSettings(
+    const settings = await deps.settings.getInstanceSettings(
       record.owner.actor,
-      record.owner.scope.workspaceId,
+      record.owner.scope.instanceId,
     );
     await refreshMcpScope(record.owner);
     ensureOpen(record);
@@ -233,7 +233,7 @@ export function createTaskMcpService(deps: {
     const namespace = `task_${createHash("sha256")
       .update(
         JSON.stringify([
-          record.scope.workspaceId,
+          record.scope.instanceId,
           record.scope.taskId,
           record.input.name,
         ]),
@@ -343,7 +343,7 @@ export function createTaskMcpService(deps: {
     if (closed || closedTasks.has(taskKey(owner.scope)))
       throw new TaskMcpError("mcp_closed", "MCP宿主或Task已关闭。");
     const key = JSON.stringify([
-      owner.scope.workspaceId,
+      owner.scope.instanceId,
       owner.scope.taskId,
       input.name,
     ]);
@@ -362,7 +362,7 @@ export function createTaskMcpService(deps: {
       ensureOpen(prior);
       if (
         prior.signature !== signature ||
-        prior.owner.actor.id !== owner.actor.id ||
+        prior.owner.actor.instanceId !== owner.actor.instanceId ||
         prior.owner.branchGeneration !== owner.branchGeneration
       )
         throw new TaskMcpError(
@@ -448,7 +448,7 @@ export function createTaskMcpService(deps: {
         .filter(
           (record) =>
             taskKey(record.scope) === taskKey(owner.scope) &&
-            record.owner.actor.id === owner.actor.id,
+            record.owner.actor.instanceId === owner.actor.instanceId,
         )
         .map(publicStatus);
     },
@@ -456,11 +456,11 @@ export function createTaskMcpService(deps: {
       const owner = taskMcpContext(context);
       await refreshMcpScope(owner);
       const record = records.get(
-        JSON.stringify([owner.scope.workspaceId, owner.scope.taskId, name]),
+        JSON.stringify([owner.scope.instanceId, owner.scope.taskId, name]),
       );
       if (!record) return;
       if (
-        record.owner.actor.id !== owner.actor.id ||
+        record.owner.actor.instanceId !== owner.actor.instanceId ||
         record.owner.branchGeneration !== owner.branchGeneration ||
         (owner.handle.role !== "main" &&
           record.owner.handle.agentId !== owner.handle.agentId)
@@ -472,8 +472,8 @@ export function createTaskMcpService(deps: {
         );
       await stop(record, "Task MCP已卸载");
     },
-    async closeTask(workspaceId, taskId, reason) {
-      const key = taskKey({ workspaceId, taskId });
+    async closeTask(instanceId, taskId, reason) {
+      const key = taskKey({ instanceId, taskId });
       closedTasks.add(key);
       await closeRecords(
         [...records.values()].filter((record) => taskKey(record.scope) === key),

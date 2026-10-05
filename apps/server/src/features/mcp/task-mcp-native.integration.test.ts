@@ -2,7 +2,7 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { workspaceSettingsSchema } from "@kenfutwork/shared";
+import { instanceSettingsSchema } from "@kenfutwork/shared";
 import { afterEach, expect, it, vi } from "vitest";
 import { createProcessSandbox } from "../process-sandbox/service.js";
 import type { ManagedStdioProcess } from "../process-sandbox/types.js";
@@ -80,8 +80,8 @@ it.skipIf(!enabled || process.platform !== "darwin")(
         },
       },
       settings: {
-        getWorkspaceSettings: async () =>
-          workspaceSettingsSchema.parse({
+        getInstanceSettings: async () =>
+          instanceSettingsSchema.parse({
             defaultModel: "fixture",
             processMaxOutputBytes: 4096,
           }),
@@ -139,11 +139,7 @@ it.skipIf(!enabled || process.platform !== "darwin")(
           ).length,
       )
       .toBeGreaterThan(0);
-    await service.closeTask(
-      f.scope.workspaceId,
-      f.scope.taskId,
-      "实际Task关闭",
-    );
+    await service.closeTask(f.scope.instanceId, f.scope.taskId, "实际Task关闭");
     expect(children[0]?.snapshot().exit?.rangeEmpty).toBe(true);
     const before = await readFile(join(f.root, "mcp-heartbeat"), "utf8");
     await delay(100);

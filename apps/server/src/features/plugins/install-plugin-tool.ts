@@ -5,8 +5,7 @@ import type {
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import { resolveInsideRoot } from "../../utils/inside-root.js";
-import type { AdminService } from "../admin/admin-service.js";
-import type { RequestAuthenticator } from "../auth/types.js";
+import type { LocalInstanceService } from "../local-instance/types.js";
 import { createScopedBundleSource } from "./bundle-source.js";
 import type { PluginRegistryService } from "./plugin-registry-service.js";
 
@@ -14,23 +13,21 @@ import type { PluginRegistryService } from "./plugin-registry-service.js";
  * `install_plugin` 工具：把**工作目录里的插件 bundle** 安装到本实例（创造模式的插件产物收尾）。
  *
  * 三个硬约束（缺一不可，都在这里显式表达）：
- * 1. **管理员门**：插件会加载并执行第三方代码，安装是实例级危险操作——与
- *    `/api/plugins/install` 同一条 admin 门，非管理员直接拒绝（不静默降级）；
+ * 1. **实例归属**：调用者必须来自可信的本地实例，执行仍经过工具审批；
  * 2. **落点**：bundle 目录必须在本轮 run 的沙箱工作目录内（`resolveInsideRoot` 防 `../`），
  *    目录由 `resolveSandboxDir` 解析（与 agent/git 同一处口径）；
  * 3. **兼容性门禁**：仍有 PluginRegistryService 负责（本工具不绕过它）。
  *
- * 抽成工厂便于单测：只依赖 registry / auth / admin 三个接口。
+ * 抽成工厂便于单测：只依赖 registry / localInstance 三个接口。
  */
 export function createInstallPluginTool(options: {
   registry: PluginRegistryService;
-  auth: RequestAuthenticator;
-  admin: AdminService;
+  localInstance: LocalInstanceService;
   sandboxRoot?: string | undefined;
   canvasWorkDirs?: Record<string, string> | undefined;
   /** 项目绑定的本机工作目录（`projects.work_dir`）；界面绑定优先于环境变量映射。 */
   projectWorkDirLoader?:
-    | ((canvasId: string) => Promise<string | null>)
+    | ((instanceId: string, canvasId: string) => Promise<string | null>)
     | undefined;
   /** 安装期生命周期脚本：默认拒绝（与 HTTP 路由同口径），工具不给模型开这个口子。 */
   allowLifecycleScripts?: boolean;
@@ -40,7 +37,7 @@ export function createInstallPluginTool(options: {
     access: "execute",
     exposure: "deferred",
     description:
-      "把工作目录里的插件 bundle 安装到本实例（需要管理员权限）。生成并检查 bundle 文件后调用；package.json 需声明 kenfutwork.bundle 或 dsh.bundle。安装前会校验兼容性。",
+      "把工作目录里的插件 bundle 安装到本实例。生成并检查 bundle 文件后调用；package.json 需声明 kenfutwork.bundle 或 dsh.bundle。安装前会校验兼容性。",
     scope: "shared",
     parameters: {
       type: "object",
@@ -74,22 +71,11 @@ export function createInstallPluginTool(options: {
           scope.role === "review")
       )
         throw new Error("只读 Code 工作域不能安装插件。");
-      const user = execCtx.accessToken
-        ? await options.auth
-            .authenticate({
-              headers: { authorization: `Bearer ${execCtx.accessToken}` },
-            })
-            .catch(() => null)
-        : null;
-      if (!user) {
-        throw new Error("当前执行上下文缺少用户凭据，无法安装插件。");
-      }
-      try {
-        await options.admin.requireAdmin(user);
-      } catch {
-        throw new Error(
-          "安装插件需要管理员权限（插件会加载并执行第三方代码），请让管理员在插件市场操作。",
-        );
+      const actor = execCtx.actor;
+      if (!actor) throw new Error("当前工具调用缺少可信本地实例上下文。");
+      await options.localInstance.resolve(actor);
+      if (scope && scope.describe().instanceId !== actor.instanceId) {
+        throw new Error("插件安装工作域不属于当前本地实例。");
       }
 
       let bundleDir: string;
@@ -101,7 +87,7 @@ export function createInstallPluginTool(options: {
         const canvasId = execCtx.canvasId;
         if (!canvasId) throw new Error("当前执行上下文缺少可视化 Canvas。");
         const boundWorkDir = options.projectWorkDirLoader
-          ? await options.projectWorkDirLoader(canvasId)
+          ? await options.projectWorkDirLoader(actor.instanceId, canvasId)
           : null;
         const sandboxDir = resolveSandboxDir(
           canvasId,

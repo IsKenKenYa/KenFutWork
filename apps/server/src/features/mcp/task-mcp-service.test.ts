@@ -154,7 +154,7 @@ it("Task关闭与迟到stdio启动竞争，rangeEmpty前不完成也不注册工
   await expect.poll(() => f.calls.length).toBe(1);
   let closed = false;
   const closing = f.service
-    .closeTask(f.scope.workspaceId, f.scope.taskId, "Task已关闭")
+    .closeTask(f.scope.instanceId, f.scope.taskId, "Task已关闭")
     .then(() => {
       closed = true;
     });
@@ -197,7 +197,7 @@ it("stop未确认保留失败状态/envKeys，禁止迟到调用并能重试真�
     f.context,
   );
   await expect(
-    f.service.closeTask(f.scope.workspaceId, f.scope.taskId, "Task已关闭"),
+    f.service.closeTask(f.scope.instanceId, f.scope.taskId, "Task已关闭"),
   ).rejects.toMatchObject({ code: "stop_unconfirmed" });
   expect((await f.service.list(f.context))[0]).toMatchObject({
     status: "error",
@@ -208,7 +208,7 @@ it("stop未确认保留失败状态/envKeys，禁止迟到调用并能重试真�
   );
   expect(f.registry.resolveRunTools(f.resolution())).toHaveLength(0);
   confirmed = true;
-  await f.service.closeTask(f.scope.workspaceId, f.scope.taskId, "再次清理");
+  await f.service.closeTask(f.scope.instanceId, f.scope.taskId, "再次清理");
   expect(await f.service.list(f.context)).toEqual([]);
 });
 

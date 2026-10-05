@@ -1,8 +1,8 @@
 import type { CodeExecutionScope } from "@kenfutwork/shared";
 import { z } from "zod";
 import type { ToolExecutionContext } from "../../kernel/types.js";
-import type { AuthenticatedUser } from "../auth/types.js";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
+import type { LocalActor } from "../local-instance/types.js";
 
 const fields = {
   name: z
@@ -30,7 +30,7 @@ export const taskMcpCreateSchema = z
 
 export interface McpTaskContext {
   handle: ExecutionScopeHandle;
-  actor: AuthenticatedUser;
+  actor: LocalActor;
   scope: CodeExecutionScope;
   branchGeneration: number;
   runId: string;
@@ -60,7 +60,8 @@ export function taskMcpContext(
     !work?.actor ||
     !context.runId ||
     !context.toolCallId ||
-    !context.userId
+    !context.actor ||
+    !context.instanceId
   )
     throw new TaskMcpError(
       "mcp_context_required",
@@ -69,8 +70,10 @@ export function taskMcpContext(
     );
   const scope = handle.describe();
   if (
-    work.actor.id !== context.userId ||
-    work.scope.workspaceId !== scope.workspaceId ||
+    work.actor.instanceId !== context.actor.instanceId ||
+    work.actor.instanceId !== context.instanceId ||
+    work.actor.instanceId !== scope.instanceId ||
+    work.scope.instanceId !== scope.instanceId ||
     work.scope.taskId !== scope.taskId ||
     work.scope.projectId !== scope.projectId ||
     !Number.isSafeInteger(work.branchGeneration) ||
@@ -78,7 +81,7 @@ export function taskMcpContext(
   )
     throw new TaskMcpError(
       "mcp_owner_mismatch",
-      "MCP调用的Task、工作区或用户身份不匹配。",
+      "MCP调用的Task、实例或调用身份不匹配。",
       403,
     );
   if (
