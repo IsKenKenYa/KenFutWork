@@ -101,6 +101,10 @@ import {
   type KenFutWorkAgent,
   type KenFutWorkAgentFactory,
 } from "./deep-agent.js";
+import {
+  MODEL_USAGE_OWNER_METADATA,
+  type ModelCallUsage,
+} from "./model-call-usage.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { measureTools } from "./prompt-composition.js";
 import type { AgentRunExtension } from "./run-extension.js";
@@ -1476,6 +1480,21 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             }
           }
 
+          if (
+            resolvedModel &&
+            typeof resolvedModel !== "string" &&
+            run.usageMeta
+          ) {
+            resolvedModel.metadata = {
+              ...resolvedModel.metadata,
+              [MODEL_USAGE_OWNER_METADATA]: {
+                ...run.usageMeta,
+                ...(run.modelInvocation
+                  ? { configRevision: run.modelInvocation.configRevision }
+                  : {}),
+              },
+            };
+          }
           // Build persistImage closure over the blob seam. 上传发生在真正生成图片时。
           let persistImage:
             | ((url: string, mime: string, prompt: string) => Promise<string>)
@@ -2057,9 +2076,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               signal: run.controller.signal,
               now,
               onUsage: (usage) => {
-                options.runUsage?.update(runId, {
+                return options.runUsage?.update(runId, usage.modelCallId, {
                   inputTokens: usage.inputTokens,
                   outputTokens: usage.outputTokens,
+                  ...(usage.cachedInputTokens === undefined
+                    ? {}
+                    : { cachedInputTokens: usage.cachedInputTokens }),
                   provider: run.usageMeta?.provider ?? "builtin",
                   model: run.usageMeta?.model ?? "unknown",
                   ...(run.usageMeta?.providerInstanceId
@@ -2297,19 +2319,20 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               now,
               ...(options.runUsage && usageActor
                 ? {
-                    onUsage: (usage: {
-                      inputTokens: number;
-                      outputTokens: number;
-                    }) => {
-                      options.runUsage?.update(runId, {
+                    onUsage: (usage: ModelCallUsage) => {
+                      const owner = usage.owner ?? run.usageMeta;
+                      return options.runUsage?.update(runId, usage.modelCallId, {
                         inputTokens: usage.inputTokens,
                         outputTokens: usage.outputTokens,
-                        provider: run.usageMeta?.provider ?? "builtin",
-                        model: run.usageMeta?.model ?? "unknown",
-                        ...(run.usageMeta?.providerInstanceId
+                        provider: owner?.provider ?? "builtin",
+                        model: owner?.model ?? "unknown",
+                        ...(usage.cachedInputTokens === undefined
+                          ? {}
+                          : { cachedInputTokens: usage.cachedInputTokens }),
+                        ...(owner?.providerInstanceId
                           ? {
                               providerInstanceId:
-                                run.usageMeta.providerInstanceId,
+                                owner.providerInstanceId,
                             }
                           : {}),
                         instanceId: usageActor.instanceId,

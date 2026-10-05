@@ -61,7 +61,7 @@ export function createNativeManualCompaction(
     const callbacks = [
       {
         name: "manual-compaction-usage",
-        handleLLMEnd(output: LLMResult) {
+        handleLLMEnd(output: LLMResult, modelCallId: string) {
           for (const generations of output.generations) {
             for (const generation of generations) {
               const message = (generation as { message?: unknown }).message;
@@ -78,6 +78,7 @@ export function createNativeManualCompaction(
               if (!usage) continue;
               const cached = usage.input_token_details?.cache_read;
               onUsage?.({
+                modelCallId,
                 inputTokens: usage.input_tokens,
                 outputTokens: usage.output_tokens,
                 ...(cached !== undefined ? { cachedInputTokens: cached } : {}),

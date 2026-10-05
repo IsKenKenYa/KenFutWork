@@ -39,8 +39,7 @@ export function createUsagePlugin(
 
       // 事件缝职责：归属 + 收尾结算（DEC-1 turn-stopping）
       ctx.on("turn-stopping", async (payload, next) => {
-        const entry = accumulator.take(payload.runId);
-        if (entry) {
+        for (const entry of accumulator.take(payload.runId)) {
           await usageService.record({
             instanceId: entry.instanceId,
             ...(entry.accessClientId

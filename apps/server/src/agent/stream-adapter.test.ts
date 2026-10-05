@@ -1,12 +1,18 @@
 import type { StreamEvent } from "@kenfutwork/shared";
 import {
+  AIMessage,
   AIMessageChunk,
   HumanMessage,
+  type StandardMessageStructure,
   SystemMessage,
   ToolMessage,
 } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
 
+import {
+  MODEL_USAGE_OWNER_METADATA,
+  type ModelCallUsage,
+} from "./model-call-usage.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
 
 /** 停滞流：首次 next() 之后永不产出（模拟上游首 token 后卡死）。 */
@@ -315,47 +321,121 @@ describe("工具抛错：以终态事件收尾并带可读原因", () => {
 
 /**
  * 用量快照事件（R4-1 上下文容量 / 缓存命中浮层的唯一数据源）。
- * 关键约束：只在**输入侧**变化时下发——output_tokens 每个 chunk 都在涨，
- * 逐 chunk 下发会把 WS 灌满；缓存字段上游不报时不许编 0。
+ * 实际用量变化下发；同 call 的重复绝对值不重复投影，正文chunk不额外灌用量事件。
+ * 真实 SDK call ID 是调用边界；缓存字段上游不报时不许编 0。
  */
-describe("stream-adapter 用量快照", () => {
-  function usageChunk(inputTokens: number, cacheRead?: number) {
-    // usage_metadata 在 AIMessageChunk 的构造类型里不开放，构造后再挂（真实流也是
-    // 在 chunk 上带这个字段的）
-    const chunk = new AIMessageChunk({ content: "" });
-    (chunk as { usage_metadata?: unknown }).usage_metadata = {
+const modelUsageOwner = {
+  provider: "openai-compatible",
+  model: "stop-model",
+  providerInstanceId: "provider-1",
+  configRevision: 1,
+};
+
+function usageChunk(inputTokens: number, cacheRead?: number, outputTokens = 3) {
+  return new AIMessageChunk<StandardMessageStructure>({
+    content: "",
+    usage_metadata: {
       input_tokens: inputTokens,
-      output_tokens: 3,
-      total_tokens: inputTokens + 3,
+      output_tokens: outputTokens,
+      total_tokens: inputTokens + outputTokens,
       ...(cacheRead === undefined
         ? {}
         : { input_token_details: { cache_read: cacheRead } }),
-    };
-    return chunk;
-  }
+    },
+  });
+}
 
-  function chunkStream(chunks: unknown[]): AsyncIterable<unknown> {
-    return {
-      async *[Symbol.asyncIterator]() {
-        for (const chunk of chunks) {
-          yield { event: "on_chat_model_stream", data: { chunk } };
-        }
-      },
-    };
-  }
+function chunkStream(
+  modelCallId: string,
+  chunks: AIMessageChunk<StandardMessageStructure>[],
+  output:
+    | AIMessage<StandardMessageStructure>
+    | AIMessageChunk<StandardMessageStructure>
+    | undefined = chunks.at(-1),
+): AsyncIterable<unknown> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield {
+        event: "on_chat_model_start",
+        run_id: modelCallId,
+        metadata: { [MODEL_USAGE_OWNER_METADATA]: modelUsageOwner },
+        data: { input: { messages: [] } },
+      };
+      for (const chunk of chunks) {
+        yield {
+          event: "on_chat_model_stream",
+          run_id: modelCallId,
+          data: { chunk },
+        };
+      }
+      yield {
+        event: "on_chat_model_end",
+        run_id: modelCallId,
+        data: { output },
+      };
+    },
+  };
+}
 
-  it("带缓存字段的用量下发一次 run.usage（含 cachedInputTokens）", async () => {
-    const seen: Array<{
-      inputTokens: number;
-      cachedInputTokens?: number | undefined;
-    }> = [];
+describe("stream-adapter 用量快照", () => {
+  async function collectUsage(
+    stream: AsyncIterable<unknown>,
+    onUsage?: Parameters<typeof adaptDeepAgentStream>[0]["onUsage"],
+  ) {
     const events: StreamEvent[] = [];
     for await (const event of adaptDeepAgentStream({
       conversationId: "conv-1",
       runId: "run-1",
       sessionId: "sess-1",
-      stream: chunkStream([usageChunk(1200, 1000)]),
-      onUsage: (usage) => seen.push(usage),
+      stream,
+      ...(onUsage ? { onUsage } : {}),
+    })) {
+      events.push(event);
+    }
+    return events;
+  }
+
+  it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    "非法模型用量 %s 不入账、不污染累计，也不阻断原正文与完成",
+    async (tokens) => {
+      const seen: ModelCallUsage[] = [];
+      const events = await collectUsage(
+        chunkStream(
+          "call-a",
+          [usageChunk(tokens), usageChunk(10)],
+          new AIMessage<StandardMessageStructure>({ content: "完成正文" }),
+        ),
+        (usage) => {
+          seen.push(usage);
+        },
+      );
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ inputTokens: 10, outputTokens: 3 });
+      expect(events.filter((event) => event.type === "run.usage")).toEqual([
+        expect.objectContaining({
+          inputTokens: 10,
+          runInputTokens: 10,
+          runOutputTokens: 3,
+        }),
+      ]);
+      expect(events).toContainEqual(
+        expect.objectContaining({ type: "message.delta", delta: "完成正文" }),
+      );
+      expect(events.at(-1)?.type).toBe("run.completed");
+    },
+  );
+
+  it("带缓存字段的用量下发一次 run.usage（含 cachedInputTokens）", async () => {
+    const seen: ModelCallUsage[] = [];
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "conv-1",
+      runId: "run-1",
+      sessionId: "sess-1",
+      stream: chunkStream("call-a", [usageChunk(1200, 1000)]),
+      onUsage: (usage) => {
+        seen.push(usage);
+      },
     })) {
       events.push(event);
     }
@@ -365,23 +445,82 @@ describe("stream-adapter 用量快照", () => {
     expect(usageEvents[0]).toMatchObject({
       type: "run.usage",
       runId: "run-1",
+      modelCallId: "call-a",
       inputTokens: 1200,
       cachedInputTokens: 1000,
     });
     expect(seen[0]).toMatchObject({
+      modelCallId: "call-a",
+      owner: modelUsageOwner,
       inputTokens: 1200,
       outputTokens: 3,
       cachedInputTokens: 1000,
     });
   });
 
-  it("同一提示词大小的多次 chunk 只下发一次（不逐 chunk 灌 WS）", async () => {
+  it("用量旁路拒绝写入时仍发布真实正文和完成，不把采集失败变成Run失败", async () => {
+    const events = await collectUsage(
+      chunkStream(
+        "call-a",
+        [usageChunk(10)],
+        new AIMessage<StandardMessageStructure>({ content: "完成正文" }),
+      ),
+      () => {
+        throw new Error("test-usage-storage-unavailable");
+      },
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "run.usage",
+        runInputTokens: 10,
+        runOutputTokens: 3,
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "message.delta", delta: "完成正文" }),
+    );
+    expect(events.at(-1)?.type).toBe("run.completed");
+  });
+
+  it("停止前最后的实际用量增长已可见，即使上游没有模型end事件", async () => {
+    const controller = new AbortController();
+    const stream: AsyncIterable<unknown> = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          event: "on_chat_model_stream",
+          run_id: "call-a",
+          data: { chunk: usageChunk(10, undefined, 1) },
+        };
+        yield {
+          event: "on_chat_model_stream",
+          run_id: "call-a",
+          data: { chunk: usageChunk(10, undefined, 7) },
+        };
+        controller.abort();
+      },
+    };
+    const events = await collect(stream, { signal: controller.signal });
+    expect(
+      events.filter((event) => event.type === "run.usage").at(-1),
+    ).toMatchObject({
+      modelCallId: "call-a",
+      runInputTokens: 10,
+      runOutputTokens: 7,
+    });
+    expect(events.at(-1)?.type).toBe("run.canceled");
+  });
+
+  it("同一 call 的重复 chunk/end 只下发一次（不逐 chunk 灌 WS）", async () => {
     const events: StreamEvent[] = [];
     for await (const event of adaptDeepAgentStream({
       conversationId: "conv-1",
       runId: "run-1",
       sessionId: "sess-1",
-      stream: chunkStream([usageChunk(500), usageChunk(500), usageChunk(500)]),
+      stream: chunkStream("call-a", [
+        usageChunk(500),
+        usageChunk(500),
+        usageChunk(500),
+      ]),
     })) {
       events.push(event);
     }
@@ -390,21 +529,30 @@ describe("stream-adapter 用量快照", () => {
     );
   });
 
-  it("工具轮次之间提示词变大：按新的大小再下发一次", async () => {
+  it("工具轮次是两个明确 call，各自用量与 Run 总量同时下发", async () => {
+    const stream: AsyncIterable<unknown> = {
+      async *[Symbol.asyncIterator]() {
+        yield* chunkStream("call-a", [usageChunk(500)]);
+        yield* chunkStream("call-b", [usageChunk(1500, 1200)]);
+      },
+    };
     const events: StreamEvent[] = [];
     for await (const event of adaptDeepAgentStream({
       conversationId: "conv-1",
       runId: "run-1",
       sessionId: "sess-1",
-      stream: chunkStream([usageChunk(500), usageChunk(1500, 1200)]),
+      stream,
     })) {
       events.push(event);
     }
     const usageEvents = events.filter((event) => event.type === "run.usage");
     expect(usageEvents).toHaveLength(2);
     expect(usageEvents[1]).toMatchObject({
+      modelCallId: "call-b",
       inputTokens: 1500,
       cachedInputTokens: 1200,
+      runInputTokens: 2000,
+      runOutputTokens: 6,
     });
   });
 
@@ -414,13 +562,295 @@ describe("stream-adapter 用量快照", () => {
       conversationId: "conv-1",
       runId: "run-1",
       sessionId: "sess-1",
-      stream: chunkStream([usageChunk(800)]),
+      stream: chunkStream("call-a", [usageChunk(800)]),
     })) {
       events.push(event);
     }
     const usage = events.find((event) => event.type === "run.usage");
     expect(usage).toBeDefined();
     expect(usage).not.toHaveProperty("cachedInputTokens");
+  });
+
+  it("不同 call 的相同 input=10 分别累计，void 回调仍投影 Run 总 20/10", async () => {
+    const seen: ModelCallUsage[] = [];
+    const stream: AsyncIterable<unknown> = {
+      async *[Symbol.asyncIterator]() {
+        yield* chunkStream("call-a", [usageChunk(10, undefined, 3)]);
+        yield* chunkStream("call-b", [usageChunk(10, undefined, 7)]);
+      },
+    };
+    const events = await collectUsage(stream, (usage) => {
+      seen.push(usage);
+    });
+    const usageEvents = events.filter((event) => event.type === "run.usage");
+    expect(usageEvents).toHaveLength(2);
+    expect(usageEvents[0]).toMatchObject({
+      modelCallId: "call-a",
+      inputTokens: 10,
+      outputTokens: 3,
+      runInputTokens: 10,
+      runOutputTokens: 3,
+    });
+    expect(usageEvents[1]).toMatchObject({
+      modelCallId: "call-b",
+      inputTokens: 10,
+      outputTokens: 7,
+      runInputTokens: 20,
+      runOutputTokens: 10,
+    });
+    expect(seen.map((usage) => usage.modelCallId)).toEqual([
+      "call-a",
+      "call-a",
+      "call-b",
+      "call-b",
+    ]);
+  });
+
+  it("同 call 实际用量增长及end修正绝对值可见，并保留已知缓存", async () => {
+    const events = await collectUsage(
+      chunkStream(
+        "call-a",
+        [usageChunk(10, 4, 1), usageChunk(10, undefined, 2)],
+        new AIMessage<StandardMessageStructure>({
+          content: "",
+          usage_metadata: {
+            input_tokens: 10,
+            output_tokens: 7,
+            total_tokens: 17,
+          },
+        }),
+      ),
+    );
+    const usageEvents = events.filter((event) => event.type === "run.usage");
+    expect(usageEvents).toHaveLength(3);
+    expect(usageEvents[0]).toMatchObject({
+      modelCallId: "call-a",
+      inputTokens: 10,
+      outputTokens: 1,
+      runInputTokens: 10,
+      runOutputTokens: 1,
+    });
+    expect(usageEvents[1]).toMatchObject({
+      outputTokens: 2,
+      runOutputTokens: 2,
+    });
+    expect(usageEvents[2]).toMatchObject({
+      modelCallId: "call-a",
+      inputTokens: 10,
+      outputTokens: 7,
+      cachedInputTokens: 4,
+      runInputTokens: 10,
+      runOutputTokens: 7,
+      runCachedInputTokens: 4,
+    });
+  });
+
+  it("onUsage 回传整个 Run 的绝对 totals 时，投影直接采用该总量", async () => {
+    const seen: ModelCallUsage[] = [];
+    const events = await collectUsage(
+      chunkStream("call-a", [usageChunk(10, 4, 7)]),
+      (usage) => {
+        seen.push(usage);
+        return { inputTokens: 110, outputTokens: 17, cachedInputTokens: 50 };
+      },
+    );
+    expect(events.filter((event) => event.type === "run.usage")).toEqual([
+      expect.objectContaining({
+        modelCallId: "call-a",
+        inputTokens: 10,
+        outputTokens: 7,
+        cachedInputTokens: 4,
+        runInputTokens: 110,
+        runOutputTokens: 17,
+        runCachedInputTokens: 50,
+      }),
+    ]);
+    expect(seen).toEqual([
+      {
+        modelCallId: "call-a",
+        inputTokens: 10,
+        outputTokens: 7,
+        cachedInputTokens: 4,
+        owner: modelUsageOwner,
+      },
+      {
+        modelCallId: "call-a",
+        inputTokens: 10,
+        outputTokens: 7,
+        cachedInputTokens: 4,
+        owner: modelUsageOwner,
+      },
+    ]);
+  });
+
+  it("非流式模型 end 同时保留正文与完整用量", async () => {
+    const seen: ModelCallUsage[] = [];
+    const events = await collectUsage(
+      chunkStream(
+        "call-a",
+        [],
+        new AIMessage<StandardMessageStructure>({
+          id: "nonstream-message",
+          content: "完整正文",
+          usage_metadata: {
+            input_tokens: 10,
+            output_tokens: 7,
+            total_tokens: 17,
+          },
+        }),
+      ),
+      (usage) => {
+        seen.push(usage);
+      },
+    );
+    expect(events.filter((event) => event.type === "run.usage")).toEqual([
+      expect.objectContaining({
+        modelCallId: "call-a",
+        inputTokens: 10,
+        outputTokens: 7,
+        runInputTokens: 10,
+        runOutputTokens: 7,
+      }),
+    ]);
+    expect(events.filter((event) => event.type === "message.delta")).toEqual([
+      expect.objectContaining({
+        messageId: "nonstream-message",
+        delta: "完整正文",
+      }),
+    ]);
+    expect(seen).toEqual([
+      {
+        modelCallId: "call-a",
+        inputTokens: 10,
+        outputTokens: 7,
+        owner: modelUsageOwner,
+      },
+    ]);
+    expect(events.at(-1)?.type).toBe("run.completed");
+  });
+
+  it("Read tool-call 的 stream/end 在正文过滤前计量且不重复累计", async () => {
+    const chunk = new AIMessageChunk<StandardMessageStructure>({
+      content: "",
+      tool_calls: [
+        {
+          name: "Read",
+          args: { file_path: "usage-read.txt" },
+          id: "read-call",
+          type: "tool_call",
+        },
+      ],
+      usage_metadata: { input_tokens: 10, output_tokens: 3, total_tokens: 13 },
+    });
+    const output = new AIMessage<StandardMessageStructure>({
+      content: "",
+      tool_calls: [
+        {
+          name: "Read",
+          args: { file_path: "usage-read.txt" },
+          id: "read-call",
+          type: "tool_call",
+        },
+      ],
+      usage_metadata: { input_tokens: 10, output_tokens: 3, total_tokens: 13 },
+    });
+    const seen: ModelCallUsage[] = [];
+    const events = await collectUsage(
+      chunkStream("call-a", [chunk], output),
+      (usage) => {
+        seen.push(usage);
+      },
+    );
+    expect(events.filter((event) => event.type === "run.usage")).toEqual([
+      expect.objectContaining({
+        modelCallId: "call-a",
+        inputTokens: 10,
+        outputTokens: 3,
+        runInputTokens: 10,
+        runOutputTokens: 3,
+      }),
+    ]);
+    expect(events.filter((event) => event.type === "message.delta")).toEqual(
+      [],
+    );
+    expect(seen).toEqual([
+      {
+        modelCallId: "call-a",
+        inputTokens: 10,
+        outputTokens: 3,
+        owner: modelUsageOwner,
+      },
+      {
+        modelCallId: "call-a",
+        inputTokens: 10,
+        outputTokens: 3,
+        owner: modelUsageOwner,
+      },
+    ]);
+  });
+
+  it("正文已流式输出时，end 去重正文仍保留完整用量", async () => {
+    const events = await collectUsage(
+      chunkStream(
+        "call-a",
+        [
+          new AIMessageChunk<StandardMessageStructure>({
+            id: "streamed-message",
+            content: "流式正文",
+          }),
+        ],
+        new AIMessage<StandardMessageStructure>({
+          id: "streamed-message",
+          content: "流式正文",
+          usage_metadata: {
+            input_tokens: 10,
+            output_tokens: 7,
+            total_tokens: 17,
+          },
+        }),
+      ),
+    );
+    expect(events.filter((event) => event.type === "message.delta")).toEqual([
+      expect.objectContaining({
+        messageId: "streamed-message",
+        delta: "流式正文",
+      }),
+    ]);
+    expect(events.filter((event) => event.type === "run.usage")).toEqual([
+      expect.objectContaining({
+        modelCallId: "call-a",
+        inputTokens: 10,
+        outputTokens: 7,
+        runInputTokens: 10,
+        runOutputTokens: 7,
+      }),
+    ]);
+  });
+
+  it("缺失 SDK call ID 时拒绝计量，message ID 与 token 值不能替代调用身份", async () => {
+    const chunk = new AIMessageChunk<StandardMessageStructure>({
+      id: "message-id-is-not-a-call-id",
+      content: "",
+      usage_metadata: { input_tokens: 10, output_tokens: 3, total_tokens: 13 },
+    });
+    const stream: AsyncIterable<unknown> = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          event: "on_chat_model_start",
+          metadata: { [MODEL_USAGE_OWNER_METADATA]: modelUsageOwner },
+          data: { input: { messages: [] } },
+        };
+        yield { event: "on_chat_model_stream", data: { chunk } };
+        yield { event: "on_chat_model_end", data: { output: chunk } };
+      },
+    };
+    const seen: ModelCallUsage[] = [];
+    const events = await collectUsage(stream, (usage) => {
+      seen.push(usage);
+    });
+    expect(seen).toEqual([]);
+    expect(events.filter((event) => event.type === "run.usage")).toEqual([]);
+    expect(events.at(-1)?.type).toBe("run.completed");
   });
 });
 
@@ -433,36 +863,16 @@ describe("stream-adapter 用量快照", () => {
  * runCachedInputTokens=90（加权 9%），而不是两份单次读数的算术平均。
  */
 describe("stream-adapter 累计用量（平均缓存命中率的分母）", () => {
-  function usageChunk(inputTokens: number, cacheRead?: number) {
-    const chunk = new AIMessageChunk({ content: "" });
-    (chunk as { usage_metadata?: unknown }).usage_metadata = {
-      input_tokens: inputTokens,
-      output_tokens: 1,
-      total_tokens: inputTokens + 1,
-      ...(cacheRead === undefined
-        ? {}
-        : { input_token_details: { cache_read: cacheRead } }),
-    };
-    return chunk;
-  }
-
   it("两次调用的累计值随最后一次 run.usage 下发", async () => {
     const stream: AsyncIterable<unknown> = {
       async *[Symbol.asyncIterator]() {
-        // 第一次调用：同一输入会随多个 chunk 反复出现，只应算一次
-        yield {
-          event: "on_chat_model_stream",
-          data: { chunk: usageChunk(100, 90) },
-        };
-        yield {
-          event: "on_chat_model_stream",
-          data: { chunk: usageChunk(100, 90) },
-        };
+        // 第一次调用：同 call 的 stream/end 绝对值只应算一次
+        yield* chunkStream("call-a", [
+          usageChunk(100, 90, 1),
+          usageChunk(100, 90, 1),
+        ]);
         // 第二次调用：提示词变长（工具结果进了上下文），这次没命中缓存
-        yield {
-          event: "on_chat_model_stream",
-          data: { chunk: usageChunk(900, 0) },
-        };
+        yield* chunkStream("call-b", [usageChunk(900, 0, 1)]);
       },
     };
 
@@ -479,13 +889,17 @@ describe("stream-adapter 累计用量（平均缓存命中率的分母）", () =
     const usageEvents = events.filter((event) => event.type === "run.usage");
     expect(usageEvents).toHaveLength(2);
     expect(usageEvents[0]).toMatchObject({
+      modelCallId: "call-a",
       inputTokens: 100,
       runInputTokens: 100,
+      runOutputTokens: 1,
       runCachedInputTokens: 90,
     });
     expect(usageEvents[1]).toMatchObject({
+      modelCallId: "call-b",
       inputTokens: 900,
       runInputTokens: 1000,
+      runOutputTokens: 2,
       runCachedInputTokens: 90,
     });
   });
@@ -493,10 +907,7 @@ describe("stream-adapter 累计用量（平均缓存命中率的分母）", () =
   it("上游一次都没报缓存：不下发累计缓存字段（不拿 0 冒充）", async () => {
     const stream: AsyncIterable<unknown> = {
       async *[Symbol.asyncIterator]() {
-        yield {
-          event: "on_chat_model_stream",
-          data: { chunk: usageChunk(500) },
-        };
+        yield* chunkStream("call-a", [usageChunk(500, undefined, 1)]);
       },
     };
     const events: StreamEvent[] = [];
@@ -527,6 +938,8 @@ describe("stream-adapter 分类占比", () => {
       async *[Symbol.asyncIterator]() {
         yield {
           event: "on_chat_model_start",
+          run_id: "call-a",
+          metadata: { [MODEL_USAGE_OWNER_METADATA]: modelUsageOwner },
           data: {
             input: {
               messages: [
@@ -535,13 +948,17 @@ describe("stream-adapter 分类占比", () => {
             },
           },
         };
-        const chunk = new AIMessageChunk({ content: "" });
-        (chunk as { usage_metadata?: unknown }).usage_metadata = {
-          input_tokens: 100,
-          output_tokens: 1,
-          total_tokens: 101,
+        const chunk = usageChunk(100, undefined, 1);
+        yield {
+          event: "on_chat_model_stream",
+          run_id: "call-a",
+          data: { chunk },
         };
-        yield { event: "on_chat_model_stream", data: { chunk } };
+        yield {
+          event: "on_chat_model_end",
+          run_id: "call-a",
+          data: { output: chunk },
+        };
       },
     };
 
@@ -569,13 +986,17 @@ describe("stream-adapter 分类占比", () => {
   it("没有模型输入事件：不下发 composition（不编空段）", async () => {
     const stream: AsyncIterable<unknown> = {
       async *[Symbol.asyncIterator]() {
-        const chunk = new AIMessageChunk({ content: "" });
-        (chunk as { usage_metadata?: unknown }).usage_metadata = {
-          input_tokens: 10,
-          output_tokens: 1,
-          total_tokens: 11,
+        const chunk = usageChunk(10, undefined, 1);
+        yield {
+          event: "on_chat_model_stream",
+          run_id: "call-a",
+          data: { chunk },
         };
-        yield { event: "on_chat_model_stream", data: { chunk } };
+        yield {
+          event: "on_chat_model_end",
+          run_id: "call-a",
+          data: { output: chunk },
+        };
       },
     };
     const events: StreamEvent[] = [];
@@ -612,6 +1033,8 @@ describe("stream-adapter 自动压缩信号", () => {
       async *[Symbol.asyncIterator]() {
         yield {
           event: "on_chat_model_start",
+          run_id: "call-a",
+          metadata: { [MODEL_USAGE_OWNER_METADATA]: modelUsageOwner },
           data: { input: { messages: [[new SystemMessage("sys"), summary]] } },
         };
         if (options.committed) {
@@ -628,6 +1051,8 @@ describe("stream-adapter 自动压缩信号", () => {
         }
         yield {
           event: "on_chat_model_start",
+          run_id: "call-b",
+          metadata: { [MODEL_USAGE_OWNER_METADATA]: modelUsageOwner },
           data: { input: { messages: [[new SystemMessage("sys"), summary]] } },
         };
       },
@@ -762,11 +1187,19 @@ describe("stream-adapter 子代理归因（DEC-19）", () => {
       eventStream([
         {
           event: "on_chat_model_stream",
-          data: { chunk: new AIMessageChunk({ content: "主文" }) },
+          data: {
+            chunk: new AIMessageChunk<StandardMessageStructure>({
+              content: "主文",
+            }),
+          },
         },
         {
           event: "on_chat_model_stream",
-          data: { chunk: new AIMessageChunk({ content: "子文" }) },
+          data: {
+            chunk: new AIMessageChunk<StandardMessageStructure>({
+              content: "子文",
+            }),
+          },
           metadata: {
             lc_agent_name: "explore",
             lc_agent_call_id: "parent-call-1",

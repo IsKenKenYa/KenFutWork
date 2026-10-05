@@ -29,6 +29,7 @@ export interface AgentContextMessage {
   summary: boolean;
 }
 export interface AgentOperationUsage {
+  modelCallId: string;
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens?: number;

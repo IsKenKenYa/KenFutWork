@@ -141,6 +141,8 @@ export const runCompletedEventSchema = z.object({
 export const runUsageEventSchema = z.object({
   type: z.literal("run.usage"),
   runId: runIdSchema,
+  /** SDK实际模型调用身份；同一次stream/end累计更新共用此键。 */
+  modelCallId: z.string().min(1).optional(),
   /** 本次模型调用的提示词大小（一轮里随工具结果增长）。 */
   inputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
@@ -154,6 +156,8 @@ export const runUsageEventSchema = z.object({
    * 与 `inputTokens` 一起下发，客户端不必自己累加，断线重连后也能立刻拿到正确分母。
    */
   runInputTokens: z.number().int().nonnegative().optional(),
+  /** 本轮各模型调用的累计输出token；由同一调用账本导出。 */
+  runOutputTokens: z.number().int().nonnegative().optional(),
   /** 本轮 run 累计命中缓存的输入 token；一次都没上报时为 undefined。 */
   runCachedInputTokens: z.number().int().nonnegative().optional(),
   /**

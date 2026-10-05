@@ -1,4 +1,5 @@
 import type { StreamEvent } from "@kenfutwork/shared";
+import type { RunUsageTotals } from "../features/usage/run-usage-accumulator.js";
 import type { CompactionPlan } from "./auto-compact.js";
 import type {
   AgentContextHistory,
@@ -15,7 +16,7 @@ export async function* streamCompactOperation(options: {
   plan: CompactionPlan;
   signal: AbortSignal;
   now: () => string;
-  onUsage?: (usage: AgentOperationUsage) => void;
+  onUsage?: (usage: AgentOperationUsage) => RunUsageTotals | void;
 }): AsyncGenerator<StreamEvent> {
   yield {
     type: "run.started",
@@ -24,20 +25,30 @@ export async function* streamCompactOperation(options: {
     conversationId: options.conversationId,
     timestamp: options.now(),
   };
-  const usages: AgentOperationUsage[] = [];
+  const usages: Array<{ usage: AgentOperationUsage; totals?: RunUsageTotals }> =
+    [];
   const result = await options.history.compactCurrent({
     threadId: options.threadId,
     signal: options.signal,
     onUsage: (usage) => {
-      usages.push(usage);
-      options.onUsage?.(usage);
+      const totals = options.onUsage?.(usage);
+      usages.push({ usage, ...(totals ? { totals } : {}) });
     },
   });
-  for (const usage of usages)
+  for (const { usage, totals } of usages)
     yield {
       type: "run.usage",
       runId: options.runId,
       ...usage,
+      ...(totals
+        ? {
+            runInputTokens: totals.inputTokens,
+            runOutputTokens: totals.outputTokens,
+            ...(totals.cachedInputTokens === undefined
+              ? {}
+              : { runCachedInputTokens: totals.cachedInputTokens }),
+          }
+        : {}),
       timestamp: options.now(),
     };
   if (result.status === "applied")

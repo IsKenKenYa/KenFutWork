@@ -43,6 +43,8 @@
 
 ## Code 原界面的宿主通道
 
+模型计量事件仍由 shared `streamEventSchema` 持有，调用身份与 Run 总量口径见《job-events.md》的 `run.usage` 约定。Code 宿主把权威 Run 总量归入原 V4 的持久 Task `usage.cumulative`，主/子会话分别累计；刷新与重复通知不能将同一调用重复相加。原 V4 帧与 schema 未因计量新增字段而改写。
+
 Code 使用 `packages/shared/src/code-ui-contracts.ts` 导出的原 V4 协议：认证 HTTP RPC `/api/code-ui/rpc` 与 SSE `/api/code-ui/events`，不经旧工作台的 TaskMessage 展示归约。连接先收原 hello 和宿主 reconnectDelayMs（与 hello 分开，原协议不改），以 connectionId 完成 clientHello；原 subscribe 服务参数是 sessionId，RPC 只返回 ACK，snapshot/恢复帧随后经 owned 通知下发。主/子转录与租约独立，UI 复用原 SessionDataLayer。
 
 现阶段已接创建、发送、根会话停止、命令查询、快照/订阅/恢复、历史行读取、Task 索引、文本文件与原 readdir 目录读取。权限/提问、队列、子代理独立停止、文件回退、终端等尚待接通；既有 `/api/ws` 的 Design/终端通道不因此改变。
