@@ -33,10 +33,13 @@ describe("MCP 工具注册（P4d）", () => {
     expect(tool.name).toBe("mcp__fs__read_file");
     expect(tool.scope).toBe("design");
     const result = await tool.execute({ path: "/tmp/a" }, {});
-    expect(callTool).toHaveBeenCalledWith({
-      name: "read_file",
-      arguments: { path: "/tmp/a" },
-    });
+    expect(callTool).toHaveBeenCalledWith(
+      {
+        name: "read_file",
+        arguments: { path: "/tmp/a" },
+      },
+      undefined,
+    );
     expect(result).toEqual({ content: "called:read_file" });
   });
 

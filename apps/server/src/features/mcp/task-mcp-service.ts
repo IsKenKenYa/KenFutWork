@@ -4,6 +4,7 @@ import type { CodeExecutionScope } from "@kenfutwork/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ToolExecutionContext, ToolRegistry } from "../../kernel/types.js";
+import type { ComputerUseMcpConnection } from "../computer-use/mcp-backend.js";
 import { losesExecutionRights } from "../process-sandbox/scope-change.js";
 import type { ProcessSandbox } from "../process-sandbox/types.js";
 import type { SettingsService } from "../settings/settings-service.js";
@@ -44,6 +45,9 @@ export interface TaskMcpStatus {
   error?: string;
 }
 export interface TaskMcpService {
+  computerUseConnections(
+    context: ToolExecutionContext,
+  ): Promise<ComputerUseMcpConnection[]>;
   create(
     input: TaskMcpCreateInput,
     context: ToolExecutionContext,
@@ -431,6 +435,34 @@ export function createTaskMcpService(deps: {
   };
 
   return {
+    async computerUseConnections(context) {
+      const owner = taskMcpContext(context);
+      await refreshMcpScope(owner);
+      return [...records.values()].flatMap((record) => {
+        const capability = record.client.getServerCapabilities()
+          ?.experimental?.["kenfutwork.computer-use"] as
+          | { version?: number }
+          | undefined;
+        if (
+          record.closing ||
+          record.status !== "connected" ||
+          taskKey(record.scope) !== taskKey(owner.scope) ||
+          capability?.version !== 1
+        )
+          return [];
+        return [
+          {
+            id: `task:${createHash("sha256").update(record.key).digest("hex")}`,
+            name: record.input.name,
+            call: (
+              name: string,
+              args: Record<string, unknown>,
+              execution: ToolExecutionContext,
+            ) => call(record, name, args, execution),
+          },
+        ];
+      });
+    },
     async create(input, context) {
       const parsed = taskMcpCreateSchema.parse(input);
       return start(

@@ -18,10 +18,13 @@ export interface McpServerToolLike {
 
 export interface McpClientLike {
   listTools(): Promise<{ tools: McpServerToolLike[] }>;
-  callTool(args: {
-    name: string;
-    arguments?: Record<string, unknown>;
-  }): Promise<unknown>;
+  callTool(
+    args: {
+      name: string;
+      arguments?: Record<string, unknown>;
+    },
+    signal?: AbortSignal,
+  ): Promise<unknown>;
 }
 
 export function toKernelTool(
@@ -29,8 +32,12 @@ export function toKernelTool(
   tool: McpServerToolLike,
   client: McpClientLike,
 ): ToolDefinition {
-  return createMcpToolDefinition(serverName, tool, "design", async (args) =>
-    client.callTool({ name: tool.name, arguments: args }),
+  return createMcpToolDefinition(
+    serverName,
+    tool,
+    "design",
+    async (args, context) =>
+      client.callTool({ name: tool.name, arguments: args }, context.signal),
   );
 }
 
@@ -77,9 +84,14 @@ export function registerMcpServerTools(
   tools: McpServerToolLike[],
   client: McpClientLike,
 ): () => void {
-  const disposers = tools.map((tool) =>
-    registry.register(toKernelTool(serverName, tool, client)),
-  );
+  const disposers: Array<() => void> = [];
+  try {
+    for (const tool of tools)
+      disposers.push(registry.register(toKernelTool(serverName, tool, client)));
+  } catch (error) {
+    for (const dispose of disposers.reverse()) dispose();
+    throw error;
+  }
   return () => {
     for (const dispose of disposers.reverse()) {
       dispose();

@@ -6,6 +6,7 @@ import { createTaskMcpTools } from "./task-mcp-tools.js";
 it("Code创建/安装/卸载入口是execute，状态只读；参数投影幂等但真实env照常送达服务", async () => {
   const calls: unknown[] = [];
   const service: TaskMcpService = {
+    computerUseConnections: async () => [],
     create: async (input) => {
       calls.push(input);
       return {

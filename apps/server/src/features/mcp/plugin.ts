@@ -1,6 +1,7 @@
 import type { ServerEnv } from "../../config/env.js";
 import { registerMcpRoutes } from "../../http/mcp.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import type { ComputerUseMcpSource } from "../computer-use/mcp-backend.js";
 import { projectWorkDirLoaderFor } from "../projects/work-dir.js";
 import { createCreateMcpServerTool } from "./create-mcp-server-tool.js";
 import { createMcpService, type McpService } from "./mcp-service.js";
@@ -76,6 +77,14 @@ export function createMcpPlugin(): PluginDefinition {
           ctx.get("persistence"),
           ctx.get("localInstance"),
         ),
+        resolveTimeoutMs: async () => {
+          const actor = await ctx.get("localInstance").serviceActor();
+          return (
+            await ctx
+              .get("settings")
+              .getInstanceSettings(actor, actor.instanceId)
+          ).executeTimeoutMs;
+        },
       });
       // 连接是异步的：挂载后逐个连接并注册工具（可用性不影响进程启动）
       // 兜底 catch：即使 connectAll 内部失效，也不能把进程带走（unhandled rejection）
@@ -100,6 +109,27 @@ export function createMcpPlugin(): PluginDefinition {
         settings: ctx.get("settings"),
         version: ctx.env.version,
       });
+      ctx.effect(() =>
+        ctx
+          .get("capabilities")
+          .register<ComputerUseMcpSource>("computer-use-mcp-source", {
+            id: "mcp:instance-inventory",
+            value: {
+              list: async (context) => {
+                if (
+                  !context.actor ||
+                  context.actor.instanceId !== context.instanceId
+                )
+                  throw new Error("桌面MCP缺少可信本地调用上下文");
+                await ctx.get("localInstance").resolve(context.actor);
+                return [
+                  ...(await service!.computerUseConnections()),
+                  ...(await tasks.computerUseConnections(context)),
+                ];
+              },
+            },
+          }),
+      );
       const designCreator = createCreateMcpServerTool({
         service,
         localInstance: ctx.get("localInstance"),
