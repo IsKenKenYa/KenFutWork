@@ -188,10 +188,18 @@ export function createAgentRunsPlugin(
               (snapshot) => snapshot.sessionId === scope.taskId,
             )?.config;
             if (!config) throw new Error("Code Task 权限配置缺失。");
+            const mode =
+              protocol.commandPayloadSchemas.switchCollaborationMode.parse({
+                mode: config.mode,
+              }).mode;
+            const planEnabled =
+              protocol.sessionConfigStateSchema.shape.planEnabled.parse(
+                config.planEnabled,
+              ) ?? false;
             return {
-              mode: protocol.commandPayloadSchemas.switchCollaborationMode.parse(
-                { mode: config.mode },
-              ).mode,
+              // Task保留基础mode；规划仅收窄本次实际权限，不改写配置。
+              mode: planEnabled ? "plan" : mode,
+              planEnabled,
               scopeGeneration: Number(row.scope_generation),
               branchGeneration: Number(row.branch_generation),
             };

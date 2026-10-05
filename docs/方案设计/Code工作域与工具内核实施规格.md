@@ -32,17 +32,17 @@
 
 ```ts
 interface ExecutionScopes {
-  openTask(actor: AuthenticatedUser, taskId: string): Promise<ExecutionScopeHandle>;
+  openTask(actor: LocalActor, taskId: string): Promise<ExecutionScopeHandle>;
 }
 interface ExecutionScopeHandle {
   describe(): CodeExecutionScope;
-  derive(role: "main" | "explore" | "review" | "worker"): ExecutionScopeHandle;
+  derive(role: "main" | "explore" | "review" | "worker", agentId?: string): ExecutionScopeHandle;
   resolvePath(path: string, operation: "read" | "write"): Promise<string>;
   readonly backend: BackendProtocolV2;
 }
 ```
 
-`CodeExecutionScope` 包含 workspaceId/projectId/taskId、generation、rootDirectory、additionalDirectories 与 sandboxMode；不包含 bearer、provider key 或可由模型伪造的审批凭据。后台执行器由同一 scope 生成 OS policy。所有消费者必须接线，禁止路径校验只存在于模型 schema/提示。
+`CodeExecutionScope` 包含 instanceId/projectId/taskId、generation、rootDirectory、additionalDirectories 与 sandboxMode；LocalActor包含instanceId/accessClientId，不包含账户别名、bearer、provider key或可由模型伪造的审批凭据。后台执行器由同一scope生成OS policy。所有消费者必须接线，禁止路径校验只存在于模型schema/提示。
 
 Task 的持久目录授权保存到 Code session，项目默认在创建时继承。数据库/目录不可用必须返回可读原因，禁止吞错换到另一目录。路径穿越、符号链接逃逸、同路径别名、只读子目录和跨工作区身份均由统一规则处理。
 
@@ -78,6 +78,12 @@ chat_sessions 增加项目及产品模式归属，Canvas 外键仅为 Design 可
 
 prompt registry 保留：中性共享基础＋Code/Design 模式段＋实际工具指导＋角色＋项目规则＋Skills/插件段。Kimi MIT 核心提示可作底稿，改为本产品事实；Claude 镜像仅作历史机制参考。取消“方案讨论一律不能读工具”、全模式可爱人格与子代理硬编码中文。工具描述、曝光与指导同源，不宣称尚未实现能力。
 
+### 2.5 规划状态与基础权限
+
+Task的基础权限mode与独立planEnabled分别持有。输入接纳即冻结二者；普通纯文本guide按FIFO在同一Run下一模型边界生效，未消费的输入不能提前改变当前策略。开启规划保留基础mode，由既有逐调用解析器派生有效plan权限，工具目录、真实执行门与规划提示消费同一事实；关闭后回基础权限，仍受Task物理目录/沙箱及派生角色上限约束。
+
+规划开关不等于退出批准。Enter/Exit必须是有限的可信控制效果，不能伪装成Read或让MCP描述签发权限；Exit复用原人审，明确approve才可批准，拒绝/取消/撤权保持可读结果。批准计划属于独立Task事实与管理文件相对引用，不能把snapshot.plan的Todo进度作为批准源，也不能为了计划扩张Task目录。批准文件、冷恢复、子任务限制和压缩后的消费者均须真实接线与验证。
+
 ## 3. TDD、治理与来源
 
 用户已授权代理代为决定实现细节；测试 seam 固定为：执行作用域/真实文件工具、进程与 Task 后台公共接口、Agent 公共运行事件、原 Code 宿主 RPC/frame/组件操作、Design 画布与助手不变量。使用临时真实 FS/子进程；真实 PG 测试标 integration，外部模型边界可替身。一次一条 red→green，所有测试由主代理串行调度，worker 不另跑测试实例。
@@ -88,7 +94,7 @@ prompt registry 保留：中性共享基础＋Code/Design 模式段＋实际工�
 
 ## 4. 实施顺序与完整验收
 
-1. 独立 managed worktree 基于当前 ZCode UI 已提交基础；共享 Schema 首先对齐，保留并行工作区，提交只包含本 Goal 路径/hunk。
+1. 按用户后续指令，统一在主checkout的 `codex/完整移植ZCode-Code界面` 并行开发，不再在独立worktree施工。共享Schema先协调，保留其他线程的路径/hunk，测试只启动单实例；提交按功能模块分批，不整体暂存。
 2. Code Project/Task/schema/作用域改造，移除隐藏画布与画布目录载体；全链追问、刷新、重连仍绑定同一真实目录。
 3. 文件工具＋受控 backend：Readonly/Worker、精确编辑/补丁、分页/搜索、真实 diff。
 4. 真实命令与三平台 sandbox/helper，前后台句柄、stdin/输出/stop/撤销。
@@ -100,6 +106,10 @@ prompt registry 保留：中性共享基础＋Code/Design 模式段＋实际工�
 验收必须覆盖：跨工作区/路径与角色拒绝、并发同文件/迟到请求/幂等、空/超长/Unicode、真实 stop 与撤销、Task 删除/重启/分支通知、忙闲自动续跑、压缩恢复与跨轮产物、三协议工具发现、图片/PDF、真实模型链路、原 UI 交互与 Design 回归。没有证据的项仍是未完成，不以窄测试替代全目标。
 
 ## 5. 当前回执
+
+2026-10-05更新：已回到主checkout，Code/用户系统/Computer Use共享同一分支。c0aa9f59已独立提交同Run mode指导与拒绝事件；独立规划boolean取得9446真实RED→32492三条GREEN、82942八文件12条交叉、14938全包16/16及42407全类型13/13；随后94110冷起点与原场景4条再次通过。对应独立提交以Git历史及《日志》为准。Code完整Goal继续active，Enter/Exit批准/计划文件/压缩、guided历史/工时、媒体/子任务/摘要组合、原GUI/Design与三平台完整验收继续待完成。命令与剩余项见 `apps/server/src/features/code-ui/独立Plan开关实施回执.md`，不将默认skip计为能力通过。
+
+以下为2026-10-03初始快照，保留当时施工位置与证据，不作为当前checkout或完成状态：
 
 - 独立 worktree：`/Users/shigaoyu/.codex/worktrees/code-harness/KenFutWork`；分支 `codex/重构Code工作域与工具内核`；起点 `65d1097e`。
 - 已完成一手调研与接口比较；总 Goal active。代码/数据库/真实 UI 全目标尚未验收。

@@ -699,7 +699,7 @@ export function createCodeUiConversation(input: {
         record.intent.dispatch = { state: "drained" };
         root.config = protocol.sessionConfigStateSchema.parse({
           ...root.config,
-          mode: record.intent.planEnabled ? "plan" : record.intent.mode,
+          mode: record.intent.mode,
           planEnabled: record.intent.planEnabled,
           ...(record.intent.modelSelection
             ? {
@@ -739,7 +739,7 @@ export function createCodeUiConversation(input: {
         runId: record.runId,
         commandId: record.intent.sourceCommandId,
         modelSelection: record.intent.modelSelection!,
-        mode: record.intent.planEnabled ? "plan" : record.intent.mode,
+        mode: record.intent.mode,
         planEnabled: record.intent.planEnabled,
       };
       if (record.intent.kind === "compact") {

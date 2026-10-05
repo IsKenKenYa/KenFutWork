@@ -439,6 +439,7 @@ type CreateAgentRuntimeOptions = {
   ) => Promise<CodeProjectContext>;
   resolveCodeApprovalMode?: (scope: ExecutionScopeHandle) => Promise<{
     mode: import("../features/permissions/approval-types.js").CodeApprovalMode;
+    planEnabled?: boolean | undefined;
     scopeGeneration: number;
     branchGeneration: number;
   }>;
@@ -1957,6 +1958,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             promptCompositionContext.executionRole = run.scopeHandle.role;
             promptCompositionContext.approvalMode = initialPolicy?.mode;
             promptCompositionContext.approvalCeiling = codeApproval?.ceiling;
+            promptCompositionContext.planEnabled = initialPolicy?.planEnabled;
           }
 
           let modelControl: AgentRunModelControl | undefined;

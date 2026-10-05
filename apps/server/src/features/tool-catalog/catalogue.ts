@@ -152,6 +152,7 @@ export function createToolCatalogueMiddleware(
             executionRole: context.execution.scopeHandle?.role,
             approvalMode: policy?.mode,
             approvalCeiling: context.execution.codeApproval?.ceiling,
+            planEnabled: policy?.planEnabled,
           })
         : request.systemPrompt;
       const definitions = available().filter(

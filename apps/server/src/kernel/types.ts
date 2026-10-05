@@ -244,6 +244,7 @@ export interface PromptCompositionContext {
     | undefined;
   approvalMode?: CodeApprovalMode | undefined;
   approvalCeiling?: CodeApprovalMode | undefined;
+  planEnabled?: boolean | undefined;
   roleInstructions?: string | undefined;
   projectInstructions?:
     | ReadonlyArray<
@@ -316,6 +317,8 @@ export interface ToolExecutionContext {
         ceiling: CodeApprovalMode;
         resolve(): Promise<{
           mode: CodeApprovalMode;
+          /** 独立规划状态；mode是逐调用派生的有效权限档。 */
+          planEnabled?: boolean | undefined;
           scopeGeneration: number;
           branchGeneration: number;
         }>;

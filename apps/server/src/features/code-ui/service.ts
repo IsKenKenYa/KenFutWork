@@ -2633,7 +2633,6 @@ export class CodeUiService {
         const active = root.state?.inputs?.find(
           (input) => input.runId === previous && input.status === "active",
         );
-        const planEnabled = payload.planEnabled ?? current.config.planEnabled;
         const requestedGuide = !compact && busy &&
           (payload.requestedDelivery === "guide" ||
             (payload.requestedDelivery === undefined &&
@@ -2642,8 +2641,7 @@ export class CodeUiService {
           requestedGuide &&
           !!previous &&
           active?.intent.kind === "sendText" &&
-          !codeInputs.length &&
-          !!planEnabled === !!active.intent.planEnabled;
+          !codeInputs.length;
         const delivery = guide
           ? "guide"
           : (!preempt && busy) ||
