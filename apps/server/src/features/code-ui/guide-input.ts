@@ -56,9 +56,10 @@ export function createCodeGuideInputs(deps: {
       context.signal?.throwIfAborted();
       let root = await deps.repository.find(scope.instanceId, scope.taskId);
       if (!root?.state || !matchingRun(root, context)) return [];
-      const pending = guidesForRun(root, context.runId).filter(
-        (input) => input.status === "queued",
-      );
+      // 每个模型边界只提升一个输入，后续guide保留独立配置与历史边界。
+      const pending = guidesForRun(root, context.runId)
+        .filter((input) => input.status === "queued")
+        .slice(0, 1);
       if (pending.length) {
         const ids = new Set(pending.map(codeGuideMessageId));
         const fingerprint = createHash("sha256")
