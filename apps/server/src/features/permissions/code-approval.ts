@@ -295,6 +295,16 @@ export function createCodeApprovalService(): CodeApprovalService {
       call.finish(call.result);
       return { status: "resolved", decision: call.result.decision };
     },
+    find(instanceId, taskId, interactionId) {
+      const call = interactions.get(interactionId);
+      if (
+        !call ||
+        call.request.identity.instanceId !== instanceId ||
+        call.request.identity.taskId !== taskId
+      )
+        return undefined;
+      return structuredClone(call.request);
+    },
     listPending(instanceId, taskId) {
       return [...calls.values()]
         .filter(

@@ -96,6 +96,12 @@ export interface CodeApprovalService {
     invocation: PermissionInvocation,
   ): import("./permission-service.js").PermissionDecision;
   resolve(input: ApprovalResolution): Promise<ApprovalResolutionResult>;
+  /** 只读绑定含已结算请求；宿主核归属后才可使用迟到回执。 */
+  find(
+    instanceId: string,
+    taskId: string,
+    interactionId: string,
+  ): BoundApprovalRequest | undefined;
   listPending(instanceId: string, taskId: string): BoundApprovalRequest[];
   cancel(identity: ApprovalCancellation, reason: string): Promise<void>;
   onEvent(listener: (event: ApprovalEvent) => void | Promise<void>): () => void;

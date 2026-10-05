@@ -19,10 +19,25 @@ export interface CodeInputSettlement {
 export function codeInputRouting(
   snapshot: protocol.ConversationSnapshot,
 ): protocol.InputRouting {
+  const controlOnly =
+    snapshot.control.activeWorks.some(
+      (work) => work.kind === "compact" || work.kind === "goalVerifier",
+    ) ||
+    snapshot.rows.window.some(
+      (row) =>
+        (row.kind === "turnHeader" &&
+          row.state === "running" &&
+          row.executionKind === "controlOnly") ||
+        (row.kind === "timelineMarker" &&
+          row.marker.type === "compact" &&
+          row.marker.status === "running"),
+    );
   return {
     mode:
       snapshot.control.phase === "running"
-        ? "enqueue"
+        ? snapshot.config.followupMode === "guide" && !controlOnly
+          ? "guide"
+          : "enqueue"
         : !snapshot.queue.autoDrain && snapshot.queue.items.length
           ? "choice"
           : "startNow",

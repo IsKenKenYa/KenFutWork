@@ -11,10 +11,17 @@ export interface CodeAdmittedInput {
   status: "queued" | "reserved" | "active" | "settled" | "discarded";
   autoDrainAtAdmission?: boolean;
   previousRunId?: string;
-  /** 编辑重跑的原输入归属；不改变本次command/run幂等身份。 */
-  editOf?: { rootSourceCommandId: string; sourceRunId: string };
+  /** 历史操作保留原输入归属；重试与编辑不混用语义，不改变新command/run幂等身份。 */
+  historyOf?: {
+    action: "editUserQuery" | "retryTurn";
+    rootSourceCommandId: string;
+    sourceRunId: string;
+  };
 }
 
 export const codeInputKey = (
   input: Pick<protocol.ConversationInputIntent, "clientId" | "sourceCommandId">,
 ): string => JSON.stringify([input.clientId, input.sourceCommandId]);
+
+export const codeGuideMessageId = (input: CodeAdmittedInput): string =>
+  `guide:${codeInputKey(input.intent)}`;
