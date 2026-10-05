@@ -18,7 +18,7 @@ export function losesExecutionRights(
   next: CodeExecutionScope,
 ): boolean {
   if (
-    previous.workspaceId !== next.workspaceId ||
+    previous.instanceId !== next.instanceId ||
     previous.projectId !== next.projectId ||
     previous.taskId !== next.taskId ||
     previous.rootDirectory !== next.rootDirectory

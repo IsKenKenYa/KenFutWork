@@ -20,8 +20,12 @@ import type {
 } from "./types.js";
 
 const context: TaskWorkContext = {
+  actor: {
+    instanceId: "00000000-0000-4000-8000-000000000001",
+    accessClientId: null,
+  },
   scope: {
-    workspaceId: "00000000-0000-4000-8000-000000000001",
+    instanceId: "00000000-0000-4000-8000-000000000001",
     projectId: "00000000-0000-4000-8000-000000000002",
     taskId: "00000000-0000-4000-8000-000000000003",
     generation: 1,
@@ -254,7 +258,7 @@ it("并发重复 stop、Task close 与宿主 close 加入同一次真实停止�
   const outcomes = Promise.allSettled([
     first,
     manager.stop(taskContext, record.id, "重复停止"),
-    manager.closeTask(scope.workspaceId, scope.taskId, "关闭Task"),
+    manager.closeTask(scope.instanceId, scope.taskId, "关闭Task"),
     manager.close("关闭宿主"),
   ]);
   try {
@@ -357,9 +361,9 @@ it("未接纳的空闲唤醒释放准入锁，用户上下文恢复后并发就�
     await vi.waitFor(() => expect(ready).toHaveBeenCalledTimes(1));
     actorAvailable = true;
     await Promise.all([
-      manager.notifyReady(context.scope.workspaceId, context.scope.taskId),
-      manager.notifyReady(context.scope.workspaceId, context.scope.taskId),
-      manager.notifyReady(context.scope.workspaceId, context.scope.taskId),
+      manager.notifyReady(context.scope.instanceId, context.scope.taskId),
+      manager.notifyReady(context.scope.instanceId, context.scope.taskId),
+      manager.notifyReady(context.scope.instanceId, context.scope.taskId),
     ]);
     expect(ready).toHaveBeenCalledTimes(2);
     expect(admitted).toBe(1);
@@ -386,7 +390,7 @@ it("空Task关闭使用权威代际，旧scope不得复活，同代际revoking�
   await manager.initialize();
   try {
     await manager.closeTask(
-      context.scope.workspaceId,
+      context.scope.instanceId,
       context.scope.taskId,
       "关闭空Task",
     );
@@ -412,7 +416,7 @@ it("空Task关闭使用权威代际，旧scope不得复活，同代际revoking�
     };
     store.setTask(rewind, "revoking");
     await manager.closeTask(
-      context.scope.workspaceId,
+      context.scope.instanceId,
       context.scope.taskId,
       "回绕旧分支",
     );
@@ -525,7 +529,7 @@ it("宿主重启保留日志并发布恢复事实，旧running与已完成未消
   await store.create(completed);
   await store.create(remote);
   await store.updateOutput(
-    context.scope.workspaceId,
+    context.scope.instanceId,
     context.scope.taskId,
     running.id,
     running.ownerId,
@@ -533,7 +537,7 @@ it("宿主重启保留日志并发布恢复事实，旧running与已完成未消
     { retainedBytes: 11, totalBytes: 13, discardedBytes: 2 },
   );
   await store.settle(
-    context.scope.workspaceId,
+    context.scope.instanceId,
     context.scope.taskId,
     completed.id,
     { status: "completed", summary: "已完成但未消费", outputRef: output },
@@ -576,7 +580,7 @@ it("宿主重启保留日志并发布恢复事实，旧running与已完成未消
       consumed: false,
     });
     expect(await readFile(output, "utf8")).toBe("old output\n");
-    await manager.notifyReady(context.scope.workspaceId, context.scope.taskId);
+    await manager.notifyReady(context.scope.instanceId, context.scope.taskId);
     const leave = await manager.enterForeground({
       ...context,
       runId: "new-after-restart",
@@ -636,7 +640,7 @@ it("前台子任务持久记录且不重复通知，后台子任务默认detache
     await vi.waitFor(async () =>
       expect((await manager.find(context, fore.id))?.status).toBe("completed"),
     );
-    await manager.notifyReady(context.scope.workspaceId, context.scope.taskId);
+    await manager.notifyReady(context.scope.instanceId, context.scope.taskId);
     expect(await manager.consumeNotifications(context)).toEqual([]);
     expect(ready).not.toHaveBeenCalled();
     let finishBackground!: (outcome: TaskWorkOutcome) => void;
@@ -757,7 +761,7 @@ it("忙碌前台保持排他并在模型边界消费一次，分支墓碑拒绝�
       code: "task_closed",
     });
     await leave();
-    await manager.notifyReady(context.scope.workspaceId, context.scope.taskId);
+    await manager.notifyReady(context.scope.instanceId, context.scope.taskId);
     expect(ready).not.toHaveBeenCalled();
     const leaveNew = await manager.enterForeground(branch);
     expect(await manager.consumeNotifications(branch)).toEqual([]);
@@ -795,7 +799,7 @@ it("可信新scope在旧Task停止确认前不可重开，确认后旧scope终�
     { run: () => completion, stop },
   );
   const closing = manager.closeTask(
-    context.scope.workspaceId,
+    context.scope.instanceId,
     context.scope.taskId,
     "close",
   );
@@ -817,7 +821,7 @@ it("可信新scope在旧Task停止确认前不可重开，确认后旧scope终�
     await closing;
   }
   try {
-    await manager.notifyReady(context.scope.workspaceId, context.scope.taskId);
+    await manager.notifyReady(context.scope.instanceId, context.scope.taskId);
     expect(ready).not.toHaveBeenCalled();
     const leave = await manager.enterForeground(next);
     expect(await manager.consumeNotifications(next)).toEqual([]);

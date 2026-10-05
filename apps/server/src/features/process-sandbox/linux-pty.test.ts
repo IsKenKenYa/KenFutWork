@@ -41,7 +41,7 @@ test.skipIf(process.platform !== "linux")(
     const program = `const fs=require("node:fs");if(!process.stdin.isTTY||!process.stdout.isTTY)throw Error("not-tty");process.stdin.setRawMode(true);process.stdout.on("resize",()=>process.stdout.write("SIZE:"+process.stdout.rows+"x"+process.stdout.columns+"\\n"));let denied=false;try{fs.readFileSync(${JSON.stringify(denied)})}catch(e){denied=true}let readonly=false;try{fs.writeFileSync(${JSON.stringify(allowed)},"escape")}catch(e){readonly=true}process.stdout.write("TTY_READY\\nPIDNS:"+fs.readlinkSync("/proc/self/ns/pid")+"\\nACCESS:"+denied+":"+readonly+":"+fs.readFileSync(${JSON.stringify(allowed)},"utf8")+"\\n");process.stdin.on("data",b=>process.stdout.write("KEY:"+b.toString("hex")+"\\n"))`;
     const child = await sandbox.spawnPty({
       scope: {
-        workspaceId: "workspace",
+        instanceId: "workspace",
         projectId: "project",
         taskId: "linux-pty-task",
         generation: 1,

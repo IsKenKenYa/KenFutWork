@@ -59,7 +59,7 @@ async function fixture(pending = false, live = true) {
   const broker = new Broker(pending);
   const request: ProcessSpawnRequest = {
     scope: {
-      workspaceId: "workspace",
+      instanceId: "workspace",
       projectId: "project",
       taskId: "task",
       generation: 1,

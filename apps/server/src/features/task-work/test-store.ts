@@ -20,8 +20,8 @@ export function createMemoryTaskWorkStore(
 } {
   const records = new Map<string, TaskWorkRecord>();
   let current = true;
-  const taskKey = (workspaceId: string, taskId: string) =>
-    JSON.stringify([workspaceId, taskId]);
+  const taskKey = (instanceId: string, taskId: string) =>
+    JSON.stringify([instanceId, taskId]);
   const tasks = new Map<string, TaskWorkCloseFence & { projectId: string }>();
   const hosts = new Map<
     string,
@@ -31,7 +31,7 @@ export function createMemoryTaskWorkStore(
     context: TaskWorkContext,
     state: TaskWorkCloseFence["state"] = "ready",
   ) => {
-    tasks.set(taskKey(context.scope.workspaceId, context.scope.taskId), {
+    tasks.set(taskKey(context.scope.instanceId, context.scope.taskId), {
       projectId: context.scope.projectId,
       scopeGeneration: context.scope.generation,
       branchGeneration: context.branchGeneration,
@@ -39,8 +39,8 @@ export function createMemoryTaskWorkStore(
     });
   };
   for (const context of initialTasks) setTask(context);
-  const owned = (workspaceId: string, taskId: string, record: TaskWorkRecord) =>
-    record.scope.workspaceId === workspaceId && record.scope.taskId === taskId;
+  const owned = (instanceId: string, taskId: string, record: TaskWorkRecord) =>
+    record.scope.instanceId === instanceId && record.scope.taskId === taskId;
   return {
     invalidate() {
       current = false;
@@ -65,12 +65,12 @@ export function createMemoryTaskWorkStore(
       hosts.set(executionHostId, { ownerId, lease, controller });
       return lease;
     },
-    async closeFence(workspaceId, taskId) {
-      return structuredClone(tasks.get(taskKey(workspaceId, taskId)) ?? null);
+    async closeFence(instanceId, taskId) {
+      return structuredClone(tasks.get(taskKey(instanceId, taskId)) ?? null);
     },
     async isCurrent(context, purpose) {
       const task = tasks.get(
-        taskKey(context.scope.workspaceId, context.scope.taskId),
+        taskKey(context.scope.instanceId, context.scope.taskId),
       );
       return (
         current &&
@@ -84,7 +84,7 @@ export function createMemoryTaskWorkStore(
     async create(record) {
       const existing = [...records.values()].find(
         (candidate) =>
-          owned(record.scope.workspaceId, record.scope.taskId, candidate) &&
+          owned(record.scope.instanceId, record.scope.taskId, candidate) &&
           candidate.originRunId === record.originRunId &&
           candidate.toolCallId === record.toolCallId &&
           candidate.branchGeneration === record.branchGeneration,
@@ -94,19 +94,19 @@ export function createMemoryTaskWorkStore(
       records.set(record.id, structuredClone(record));
       return { record: structuredClone(record), created: true };
     },
-    async find(workspaceId, taskId, workId) {
+    async find(instanceId, taskId, workId) {
       const record = records.get(workId);
-      return record && owned(workspaceId, taskId, record)
+      return record && owned(instanceId, taskId, record)
         ? structuredClone(record)
         : null;
     },
-    async list(workspaceId, taskId) {
+    async list(instanceId, taskId) {
       return [...records.values()]
-        .filter((record) => owned(workspaceId, taskId, record))
+        .filter((record) => owned(instanceId, taskId, record))
         .map((record) => structuredClone(record));
     },
     async settle(
-      workspaceId: string,
+      instanceId: string,
       taskId: string,
       workId: string,
       outcome: TaskWorkOutcome,
@@ -115,7 +115,7 @@ export function createMemoryTaskWorkStore(
       const record = records.get(workId);
       if (
         !record ||
-        !owned(workspaceId, taskId, record) ||
+        !owned(instanceId, taskId, record) ||
         record.status !== "running"
       )
         return null;
@@ -126,7 +126,7 @@ export function createMemoryTaskWorkStore(
       if (!current) return [];
       const pending = [...records.values()].filter(
         (record) =>
-          owned(context.scope.workspaceId, context.scope.taskId, record) &&
+          owned(context.scope.instanceId, context.scope.taskId, record) &&
           record.detached &&
           record.branchGeneration === context.branchGeneration &&
           record.status !== "running" &&
@@ -160,11 +160,11 @@ export function createMemoryTaskWorkStore(
       }
       return changed;
     },
-    async updateOutput(workspaceId, taskId, workId, ownerId, outputRef, stats) {
+    async updateOutput(instanceId, taskId, workId, ownerId, outputRef, stats) {
       const record = records.get(workId);
       if (
         record &&
-        owned(workspaceId, taskId, record) &&
+        owned(instanceId, taskId, record) &&
         record.ownerId === ownerId &&
         record.status === "running"
       )

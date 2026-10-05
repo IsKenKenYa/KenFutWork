@@ -4,8 +4,8 @@ import type {
   ToolDefinition,
   ToolExecutionContext,
 } from "../../kernel/types.js";
-import type { AuthenticatedUser } from "../auth/types.js";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
+import type { LocalActor } from "../local-instance/types.js";
 import { createScopedExecute } from "../process-sandbox/consumer.js";
 import { readCapturedOutput } from "../process-sandbox/output-capture.js";
 import type {
@@ -49,7 +49,7 @@ const inputSchema = z
   .strict();
 const stopSchema = z.object({ task_id: z.string().min(1) }).strict();
 
-type CommandContext = TaskWorkContext & { actor: AuthenticatedUser };
+type CommandContext = TaskWorkContext & { actor: LocalActor };
 function scopeOf(context: ToolExecutionContext): ExecutionScopeHandle {
   if (!context.scopeHandle) throw new Error("命令工具缺少可信 Task 工作域。");
   return context.scopeHandle;
@@ -160,10 +160,7 @@ export function createTaskCommandTools(deps: {
     return entry.flushing;
   };
   const settingsFor = (context: CommandContext) =>
-    deps.settings.getWorkspaceSettings(
-      context.actor,
-      context.scope.workspaceId,
-    );
+    deps.settings.getInstanceSettings(context.actor, context.scope.instanceId);
   const limitsFor = (
     settings: Awaited<ReturnType<typeof settingsFor>>,
   ): ProcessLimits => ({
@@ -476,7 +473,7 @@ export function createTaskCommandTools(deps: {
   return {
     tools: [bash, taskOutput, taskInput, taskStop],
     acceptSnapshot,
-    forgetTask(_workspaceId: string, taskId: string) {
+    forgetTask(_instanceId: string, taskId: string) {
       for (const [id, process] of commands)
         if (process.snapshot().ownerTaskId === taskId) commands.delete(id);
       for (const [key, entry] of invocations)

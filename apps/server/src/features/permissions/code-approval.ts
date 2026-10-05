@@ -22,22 +22,20 @@ interface ApprovalCall {
 
 function identity(input: PermissionInvocation): ApprovalIdentity {
   const {
-    workspaceId,
+    instanceId,
     taskId,
     runId,
     toolCallId,
-    userId,
     agentId,
     role,
     scopeGeneration,
     branchGeneration,
   } = input;
   return {
-    workspaceId,
+    instanceId,
     taskId,
     runId,
     toolCallId,
-    userId,
     agentId,
     role,
     scopeGeneration,
@@ -47,7 +45,7 @@ function identity(input: PermissionInvocation): ApprovalIdentity {
 
 function callKey(input: ApprovalIdentity): string {
   return JSON.stringify([
-    input.workspaceId,
+    input.instanceId,
     input.taskId,
     input.runId,
     input.agentId,
@@ -68,10 +66,9 @@ function signature(input: PermissionInvocation): string {
 
 function sameBinding(call: ApprovalCall, input: ApprovalResolution): boolean {
   const keys = [
-    "workspaceId",
+    "instanceId",
     "taskId",
     "runId",
-    "userId",
     "scopeGeneration",
     "branchGeneration",
   ] as const;
@@ -298,12 +295,12 @@ export function createCodeApprovalService(): CodeApprovalService {
       call.finish(call.result);
       return { status: "resolved", decision: call.result.decision };
     },
-    listPending(workspaceId, taskId) {
+    listPending(instanceId, taskId) {
       return [...calls.values()]
         .filter(
           (call) =>
             call.state === "pending" &&
-            call.request.identity.workspaceId === workspaceId &&
+            call.request.identity.instanceId === instanceId &&
             call.request.identity.taskId === taskId,
         )
         .map((call) => structuredClone(call.request));

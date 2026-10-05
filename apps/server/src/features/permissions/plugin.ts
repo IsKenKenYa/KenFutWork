@@ -23,7 +23,7 @@ export function createPermissionsPlugin(_deps: {
 }): PluginDefinition {
   return {
     name: "permissions",
-    inject: ["auth", "persistence"],
+    inject: ["localAccess", "persistence"],
     apply(ctx) {
       const service: PermissionService = createPermissionService();
       ctx.register("permissions", () => service);
@@ -65,7 +65,7 @@ export function createPermissionsPlugin(_deps: {
           );
         });
       void registerPermissionRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         permissions: service,
         tierStore,
       });

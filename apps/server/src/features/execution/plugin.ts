@@ -8,17 +8,17 @@ import { revokeTaskFileOperations } from "./scoped-filesystem.js";
 export function createExecutionScopesPlugin(): PluginDefinition {
   return {
     name: "execution-scopes",
-    inject: ["auth", "persistence", "viewer", "settings"],
+    inject: ["localAccess", "persistence", "localInstance", "settings"],
     apply(ctx) {
       ctx.get("systemPrompt").register(executionScopePromptSection);
       ctx.register("executionScopes", () =>
         createExecutionScopes({
           repository: createScopeRepository(ctx.get("persistence")),
-          viewerService: ctx.get("viewer"),
+          localInstance: ctx.get("localInstance"),
           resolveFileLimits: async (actor, scope) => {
             const settings = await ctx
               .get("settings")
-              .getWorkspaceSettings(actor, scope.workspaceId);
+              .getInstanceSettings(actor, scope.instanceId);
             return {
               codeReadMaxBytes: settings.codeReadMaxBytes,
               codeReadPageCharacters: settings.codeReadPageCharacters,
@@ -37,11 +37,11 @@ export function createExecutionScopesPlugin(): PluginDefinition {
         ctx
           .get("executionScopes")
           .onRevoke(({ previous }) =>
-            revokeTaskFileOperations(previous.workspaceId, previous.taskId),
+            revokeTaskFileOperations(previous.instanceId, previous.taskId),
           ),
       );
       void registerExecutionScopeRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         scopes: ctx.get("executionScopes"),
       });
     },

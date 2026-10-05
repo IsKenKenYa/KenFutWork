@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CodeExecutionScope } from "@kenfutwork/shared";
 import { expect, it } from "vitest";
+import { createRuntimeTestInstance } from "../../agent/runtime-test-fixtures.js";
 import type {
   ScopeRepository,
   StoredExecutionScope,
@@ -28,7 +29,7 @@ it("Task 工作域拒绝越界和符号链接逃逸，只读角色不能提升�
     await mkdir(join(root, "reference"));
     await symlink(outside, join(root, "escape"));
     const snapshot: CodeExecutionScope = {
-      workspaceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
+      instanceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
       projectId: "c15b75a5-b7ef-46b5-8b0c-d543dd7769d5",
       taskId: "0432143f-e2b8-4ea6-adea-01f706f537d3",
       generation: 0,
@@ -46,21 +47,17 @@ it("Task 工作域拒绝越界和符号链接逃逸，只读角色不能提升�
           branchGeneration: 1,
         }),
       },
-      viewerService: {
-        resolveWorkspace: async () => ({
-          id: snapshot.workspaceId,
-          name: "工作区",
-          type: "personal" as const,
-          ownerUserId: "user",
+      localInstance: {
+        resolve: async () => ({
+          instanceId: snapshot.instanceId,
+          dataDir: root,
         }),
       },
     });
     const main = await scopes.openTask(
       {
-        id: "user",
-        email: "user@example.com",
-        accessToken: "secret",
-        userMetadata: {},
+        instanceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
+        accessClientId: null,
       },
       snapshot.taskId,
     );
@@ -88,10 +85,8 @@ it("Task 工作域拒绝越界和符号链接逃逸，只读角色不能提升�
 });
 
 const actor = {
-  id: "user",
-  email: "user@example.com",
-  accessToken: "secret",
-  userMetadata: {},
+  instanceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
+  accessClientId: null,
 };
 
 async function withTaskScope(
@@ -110,7 +105,7 @@ async function withTaskScope(
     state: "ready",
     branchGeneration: 1,
     scope: {
-      workspaceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
+      instanceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
       projectId: "c15b75a5-b7ef-46b5-8b0c-d543dd7769d5",
       taskId: "0432143f-e2b8-4ea6-adea-01f706f537d3",
       generation: 0,
@@ -120,8 +115,8 @@ async function withTaskScope(
     },
   };
   const repository: ScopeRepository = {
-    async load(workspaceId, taskId) {
-      return workspaceId === current.scope.workspaceId &&
+    async load(instanceId, taskId) {
+      return instanceId === current.scope.instanceId &&
         taskId === current.scope.taskId
         ? structuredClone(current)
         : null;
@@ -157,15 +152,10 @@ async function withTaskScope(
   };
   const scopes = createExecutionScopes({
     repository,
-    viewerService: {
-      resolveWorkspace: async (user) => ({
-        id:
-          user.id === actor.id
-            ? current.scope.workspaceId
-            : "951bd6ce-d728-4b7e-9035-4c0f1a315071",
-        name: "工作区",
-        type: "personal",
-        ownerUserId: user.id,
+    localInstance: {
+      resolve: async (subject) => ({
+        instanceId: subject.instanceId,
+        dataDir: root,
       }),
     },
   });
@@ -270,9 +260,12 @@ it("撤销器未装配时拒绝授权变更，原Task授权不被静默替换", 
   });
 });
 
-it("另一个工作区的身份不能打开已知Task或变更其目录授权", async () => {
+it("另一个实例的身份不能打开已知Task或变更其目录授权", async () => {
   await withTaskScope(async ({ scopes, taskId }) => {
-    const foreign = { ...actor, id: "other-user" };
+    const foreign = {
+      ...actor,
+      instanceId: "951bd6ce-d728-4b7e-9035-4c0f1a315071",
+    };
     await expect(scopes.openTask(foreign, taskId)).rejects.toMatchObject({
       code: "task_not_found",
       statusCode: 404,
@@ -321,7 +314,7 @@ it("分支重绕后旧主/子句柄均不可写，新句柄才可在同一目录
 it("恢复期间普通Run打不开工作域，私有恢复句柄仅在精确代际和revoking内有效", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "code-restoring-")));
   const identity: CodeExecutionScope = {
-    workspaceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
+    instanceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
     projectId: "c15b75a5-b7ef-46b5-8b0c-d543dd7769d5",
     taskId: "0432143f-e2b8-4ea6-adea-01f706f537d3",
     generation: 2,
@@ -334,9 +327,7 @@ it("恢复期间普通Run打不开工作域，私有恢复句柄仅在精确代�
     repository: {
       load: async () => ({ scope: identity, state, branchGeneration: 2 }),
     },
-    viewerService: {
-      resolveWorkspace: async () => ({ id: identity.workspaceId }) as never,
-    },
+    localInstance: createRuntimeTestInstance(identity.instanceId),
   });
   try {
     await expect(scopes.openTask(actor, identity.taskId)).rejects.toMatchObject(

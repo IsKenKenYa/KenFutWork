@@ -105,7 +105,7 @@ describe.skipIf(process.env.KENFUTWORK_TASK_WORK_PG_TEST !== "1")(
       await store.create(foreground);
       expect(
         await store.find(
-          context.scope.workspaceId,
+          context.scope.instanceId,
           context.scope.taskId,
           foreground.id,
         ),
@@ -113,7 +113,7 @@ describe.skipIf(process.env.KENFUTWORK_TASK_WORK_PG_TEST !== "1")(
       const output = join(database.directory, "recovery-output.bin");
       await writeFile(output, "preserved");
       await store.updateOutput(
-        context.scope.workspaceId,
+        context.scope.instanceId,
         context.scope.taskId,
         running.id,
         running.ownerId,
@@ -121,14 +121,14 @@ describe.skipIf(process.env.KENFUTWORK_TASK_WORK_PG_TEST !== "1")(
         { retainedBytes: 9, totalBytes: 9, discardedBytes: 0 },
       );
       await store.settle(
-        context.scope.workspaceId,
+        context.scope.instanceId,
         context.scope.taskId,
         completed.id,
         { status: "completed", summary: "原终态摘要" },
         "2026-10-02T00:01:00.000Z",
       );
       await store.settle(
-        context.scope.workspaceId,
+        context.scope.instanceId,
         context.scope.taskId,
         foreground.id,
         { status: "completed", summary: "原SDK返回" },
@@ -169,7 +169,7 @@ describe.skipIf(process.env.KENFUTWORK_TASK_WORK_PG_TEST !== "1")(
           }),
         ).toEqual([]);
         await manager.notifyReady(
-          context.scope.workspaceId,
+          context.scope.instanceId,
           context.scope.taskId,
         );
         expect(ready).not.toHaveBeenCalled();
@@ -261,7 +261,7 @@ describe.skipIf(process.env.KENFUTWORK_TASK_WORK_PG_TEST !== "1")(
           executionHostId: "physical-loss-host",
           tasks: [
             {
-              workspaceId: context.scope.workspaceId,
+              instanceId: context.scope.instanceId,
               taskId: context.scope.taskId,
             },
           ],

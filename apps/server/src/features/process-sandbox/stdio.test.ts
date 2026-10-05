@@ -21,7 +21,7 @@ test.skipIf(process.platform === "win32")(
     cleanups.push(() => sandbox.close("test_cleanup"));
     const child = await sandbox.spawnStdio({
       scope: {
-        workspaceId: "workspace",
+        instanceId: "workspace",
         projectId: "project",
         taskId: "stdio-task",
         generation: 1,

@@ -1,17 +1,19 @@
 import type { AgentRunService } from "../../agent/runtime.js";
 import type { CapabilityRegistry } from "../../kernel/types.js";
-import type { AuthenticatedUser } from "../auth/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import {
   forgetTaskFileState,
   revokeTaskFileOperations,
 } from "../execution/scoped-filesystem.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import type { ProcessSandbox } from "../process-sandbox/types.js";
 import type { TaskWorkManager } from "./types.js";
 
 /** 延迟解析跨域引用以避免装配环；关闭失败保留 revoking/failed，不报告资源已退出。 */
 export function createTaskResourceCloser(deps: {
-  viewer: ViewerService;
+  localInstance: LocalInstanceService;
   resources: () => {
     runs: AgentRunService;
     work: TaskWorkManager;
@@ -19,26 +21,26 @@ export function createTaskResourceCloser(deps: {
     capabilities: CapabilityRegistry;
   };
 }) {
-  return async (actor: AuthenticatedUser, taskId: string, reason: string) => {
-    const workspace = await deps.viewer.resolveWorkspace(actor);
+  return async (actor: LocalActor, taskId: string, reason: string) => {
+    const workspace = await deps.localInstance.resolve(actor);
     const resources = deps.resources();
     const stopped = await Promise.allSettled([
       resources.runs.cancelTaskRuns(taskId),
-      resources.work.closeTask(workspace.id, taskId, reason),
-      revokeTaskFileOperations(workspace.id, taskId),
+      resources.work.closeTask(workspace.instanceId, taskId, reason),
+      revokeTaskFileOperations(workspace.instanceId, taskId),
     ]);
     const failure = stopped.find((result) => result.status === "rejected");
     if (failure?.status === "rejected") throw failure.reason;
     for (const registration of resources.capabilities.list<{
-      close: (workspaceId: string, taskId: string) => void | Promise<void>;
+      close: (instanceId: string, taskId: string) => void | Promise<void>;
     }>("task-before-process-close"))
-      await registration.value.close(workspace.id, taskId);
+      await registration.value.close(workspace.instanceId, taskId);
     // executor 先结算输出，之后才关闭 helper；关闭 IPC 不能被当作进程退出证据。
     await resources.sandbox.closeTask(taskId, reason);
     for (const registration of resources.capabilities.list<{
-      close: (workspaceId: string, taskId: string) => void | Promise<void>;
+      close: (instanceId: string, taskId: string) => void | Promise<void>;
     }>("task-close"))
-      await registration.value.close(workspace.id, taskId);
-    forgetTaskFileState(workspace.id, taskId);
+      await registration.value.close(workspace.instanceId, taskId);
+    forgetTaskFileState(workspace.instanceId, taskId);
   };
 }

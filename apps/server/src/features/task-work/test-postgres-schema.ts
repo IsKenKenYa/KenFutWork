@@ -2,13 +2,16 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 import { Client } from "pg";
 import {
   ensurePgmqAvailable,
   resolvePgmqShimDir,
 } from "../../desktop/pgmq-shim.js";
-import { createAccountRepository } from "../auth/repository.js";
-import { createViewerRepository } from "../bootstrap/repository.js";
+import { createLocalAccessService } from "../local-access/service.js";
+import { createLocalAccessStore } from "../local-access/store.js";
+import { createLocalInstanceRepository } from "../local-instance/repository.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
 import {
   applyMigrations,
   loadMigrationSet,
@@ -47,21 +50,33 @@ export async function createTaskWorkDatabase() {
     const persistence = createPostgresPersistence({
       databaseUrl: database.connectionString,
     });
-    const email = `task-work-${randomUUID()}@integration.local`;
-    const account = await createAccountRepository(
-      persistence,
-    ).ensurePasswordlessAccount({ email, displayName: "隔离回归" });
-    const viewer = createViewerRepository(persistence);
-    await viewer.bootstrap({ email, userId: account.id, userMeta: {} });
-    const workspace = await viewer.findPersonalWorkspace(account.id);
-    if (!workspace) throw new Error("夹具工作区未创建。");
+    const localInstance = createLocalInstanceService({
+      repository: createLocalInstanceRepository(persistence),
+      dataDir: database.directory,
+    });
+    const { instanceId } = await localInstance.getContext();
+    const localAccess = createLocalAccessService({
+      instance: localInstance,
+      store: createLocalAccessStore(persistence),
+      allowedOrigins: [],
+      readGovernance: async () => ({
+        ticketTtlMs: AGENT_GOVERNANCE_DEFAULTS.localAccessTicketTtlMs,
+        sessionMaxAgeMs: AGENT_GOVERNANCE_DEFAULTS.localAccessSessionMaxAgeMs,
+      }),
+    });
+    const desktopToken = await localAccess.getDesktopToken();
+    const actor = await localAccess.authenticate({
+      ip: "127.0.0.1",
+      headers: { authorization: `Bearer ${desktopToken}` },
+    });
+    if (!actor) throw new Error("隔离夹具本地接入未初始化。");
     const directory = join(database.directory, "project");
     await mkdir(directory);
     const { project } = await createProjectRepository(
       persistence,
     ).createProject({
-      workspaceId: workspace.id,
-      userId: account.id,
+      instanceId,
+      createdByClientId: actor.accessClientId,
       kind: "code",
       name: "TaskWork隔离回归",
       slug: "task-work-test",
@@ -71,8 +86,9 @@ export async function createTaskWorkDatabase() {
     });
     const taskId = randomUUID();
     const context: TaskWorkContext = {
+      actor,
       scope: {
-        workspaceId: workspace.id,
+        instanceId,
         projectId: project.id,
         taskId,
         generation: 1,
@@ -85,14 +101,19 @@ export async function createTaskWorkDatabase() {
       branchGeneration: 1,
     };
     await persistence
-      .forWorkspace(workspace.id)
+      .forInstance(instanceId)
       .execute(
-        `insert into public.code_ui_sessions (id, workspace_id, project_id, root_session_id, root_directory, additional_directories, sandbox_mode, scope_generation, branch_generation) values ($1, :workspace, $2, $1, $3, '[]'::jsonb, 'workspace-write', 1, 1)`,
+        `insert into public.code_ui_sessions (id, instance_id, project_id, root_session_id, root_directory, additional_directories, sandbox_mode, scope_generation, branch_generation) values ($1, :instance, $2, $1, $3, '[]'::jsonb, 'workspace-write', 1, 1)`,
         [taskId, project.id, directory],
       );
     return {
       ...database,
       persistence,
+      localInstance,
+      localAccess,
+      actor,
+      desktopToken,
+      instanceId,
       context,
       replayed: first.applied,
       expectedMigrations: files.length,

@@ -14,7 +14,7 @@ import {
   type CodeExecutionScope,
 } from "@kenfutwork/shared";
 import { afterEach, expect, it, vi } from "vitest";
-import type { AdminService } from "../admin/admin-service.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
 import {
   createScopedBundleSource,
   fetchBundleFiles,
@@ -29,12 +29,7 @@ import {
 } from "../skills/sandbox-skill-packages.js";
 import { createExecutionScopes } from "./scope-service.js";
 
-const actor = {
-  id: randomUUID(),
-  accessToken: "private",
-  email: "admin@test.example",
-  userMetadata: {},
-};
+const actor = { instanceId: randomUUID(), accessClientId: null };
 const temporary: string[] = [];
 afterEach(async () => {
   await Promise.all(
@@ -61,7 +56,7 @@ async function fixture(
   const reference = await makeRoot();
   const outside = await makeRoot();
   const identity: CodeExecutionScope = {
-    workspaceId: randomUUID(),
+    instanceId: actor.instanceId,
     projectId: randomUUID(),
     taskId: randomUUID(),
     generation: 0,
@@ -78,8 +73,8 @@ async function fixture(
         branchGeneration: 1,
       }),
     },
-    viewerService: {
-      resolveWorkspace: async () => ({ id: identity.workspaceId }) as never,
+    localInstance: {
+      resolve: async () => ({ instanceId: identity.instanceId, dataDir: root }),
     },
     resolveFileLimits: async () => ({
       ...AGENT_GOVERNANCE_DEFAULTS,
@@ -217,20 +212,19 @@ it("install_plugin拒绝只读角色/越界/失效Task，Code上下文不退回C
   }));
   const tool = createInstallPluginTool({
     registry: { install } as unknown as PluginRegistryService,
-    auth: { authenticate: async () => actor },
-    admin: { requireAdmin: async () => {} } as unknown as AdminService,
+    localInstance: createLocalInstanceService({
+      repository: { ensure: async () => scope.describe().instanceId },
+      dataDir: scope.describe().rootDirectory,
+    }),
   });
   await expect(
     tool.execute(
       { path: "bundle" },
-      { scopeHandle: scope.derive("review"), accessToken: actor.accessToken },
+      { scopeHandle: scope.derive("review"), actor },
     ),
   ).rejects.toThrow("只读");
   await expect(
-    tool.execute(
-      { path: outside },
-      { scopeHandle: scope, accessToken: actor.accessToken },
-    ),
+    tool.execute({ path: outside }, { scopeHandle: scope, actor }),
   ).rejects.toMatchObject({ code: "path_denied" });
   await expect(
     tool.execute(
@@ -238,16 +232,13 @@ it("install_plugin拒绝只读角色/越界/失效Task，Code上下文不退回C
       {
         canvasId: "legacy",
         codeApproval: {} as never,
-        accessToken: actor.accessToken,
+        actor,
       },
     ),
   ).rejects.toThrow("明确的 Task");
   revoke();
   await expect(
-    tool.execute(
-      { path: "bundle" },
-      { scopeHandle: scope, accessToken: actor.accessToken },
-    ),
+    tool.execute({ path: "bundle" }, { scopeHandle: scope, actor }),
   ).rejects.toMatchObject({ code: "scope_unavailable" });
   expect(install).not.toHaveBeenCalled();
 });
@@ -269,8 +260,10 @@ it("install_plugin使用Task真实根，安装来源在权限收紧后不再允�
   );
   const tool = createInstallPluginTool({
     registry: { install } as unknown as PluginRegistryService,
-    auth: { authenticate: async () => actor },
-    admin: { requireAdmin: async () => {} } as unknown as AdminService,
+    localInstance: createLocalInstanceService({
+      repository: { ensure: async () => scope.describe().instanceId },
+      dataDir: scope.describe().rootDirectory,
+    }),
   });
   await expect(
     tool.execute(
@@ -278,7 +271,7 @@ it("install_plugin使用Task真实根，安装来源在权限收紧后不再允�
       {
         scopeHandle: scope,
         canvasId: "must-not-be-used",
-        accessToken: actor.accessToken,
+        actor,
       },
     ),
   ).rejects.toThrow("已收紧为只读");

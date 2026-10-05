@@ -36,7 +36,7 @@ async function fixture(
     agentId,
     role,
     describe: () => ({
-      workspaceId: "00000000-0000-4000-8000-000000000001",
+      instanceId: "00000000-0000-4000-8000-000000000001",
       projectId: "00000000-0000-4000-8000-000000000002",
       taskId: "00000000-0000-4000-8000-000000000003",
       generation: 0,
@@ -516,7 +516,7 @@ it("Task filesystem revocation waits for the current operation to finish and blo
   try {
     const identity = scope.describe();
     stopping = revokeTaskFileOperations(
-      identity.workspaceId,
+      identity.instanceId,
       identity.taskId,
     ).then(() => {
       settled = true;
@@ -644,7 +644,7 @@ it("an in-flight large text read cancels and releases resources before Task revo
   await new Promise<void>((resolve) => setTimeout(resolve, 5));
   controller.abort(new Error("用户取消"));
   const identity = scope.describe();
-  await revokeTaskFileOperations(identity.workspaceId, identity.taskId);
+  await revokeTaskFileOperations(identity.instanceId, identity.taskId);
   expect(await reading).toBe("aborted");
   expect(
     (await backend.readPage({ path: "large.txt", line: 1, limit: 1 })).content,
@@ -754,7 +754,7 @@ it("Task revoke cancels an in-flight native search and waits for its child and i
   await validating.promise;
   const identity = scope.describe();
   const revoking = revokeTaskFileOperations(
-    identity.workspaceId,
+    identity.instanceId,
     identity.taskId,
   );
   releaseValidation.resolve();

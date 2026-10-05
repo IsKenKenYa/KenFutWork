@@ -18,7 +18,7 @@ export type TaskScopePatch = {
 };
 export interface ScopeRepository {
   load(
-    workspaceId: string,
+    instanceId: string,
     taskId: string,
   ): Promise<StoredExecutionScope | null>;
   beginUpdate?(
@@ -34,7 +34,7 @@ export interface ScopeRepository {
 type ScopeRow = SqlRow & {
   id: string;
   project_id: string;
-  workspace_id: string;
+  instance_id: string;
   root_directory: string;
   additional_directories: AdditionalDirectory[];
   sandbox_mode: SandboxMode;
@@ -48,7 +48,7 @@ function fromRow(row: ScopeRow): StoredExecutionScope {
     branchGeneration: Number(row.branch_generation),
     state: row.execution_state,
     scope: codeExecutionScopeSchema.parse({
-      workspaceId: row.workspace_id,
+      instanceId: row.instance_id,
       projectId: row.project_id,
       taskId: row.id,
       generation: Number(row.scope_generation),
@@ -63,33 +63,31 @@ export function createScopeRepository(
   persistence: PersistenceService,
 ): ScopeRepository {
   return {
-    async load(workspaceId, taskId) {
-      const row = await persistence
-        .forWorkspace(workspaceId)
-        .queryOne<ScopeRow>(
-          `select s.id, s.project_id, s.workspace_id, s.root_directory,
+    async load(instanceId, taskId) {
+      const row = await persistence.forInstance(instanceId).queryOne<ScopeRow>(
+        `select s.id, s.project_id, s.instance_id, s.root_directory,
                 s.additional_directories, s.sandbox_mode, s.scope_generation, s.execution_state, s.branch_generation
            from public.code_ui_sessions s
-           join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id
+           join public.projects p on p.id = s.project_id and p.instance_id = s.instance_id
            join public.chat_sessions c on c.id = s.chat_session_id and c.project_id = p.id
-          where s.workspace_id = :workspace and s.id = $1
-            and c.workspace_id = :workspace and c.mode = 'code' and p.kind = 'code'
+          where s.instance_id = :instance and s.id = $1
+            and c.instance_id = :instance and c.mode = 'code' and p.kind = 'code'
             and p.archived_at is null and s.deleted_at is null and s.archived = false
             and s.parent_session_id is null`,
-          [taskId],
-        );
+        [taskId],
+      );
       return row ? fromRow(row) : null;
     },
     async beginUpdate(scope, patch) {
       const row = await persistence
-        .forWorkspace(scope.workspaceId)
+        .forInstance(scope.instanceId)
         .queryOne<ScopeRow>(
           `update public.code_ui_sessions s
             set additional_directories = coalesce($3::jsonb, s.additional_directories),
                 sandbox_mode = coalesce($4::text, s.sandbox_mode),
                 scope_generation = scope_generation + 1, execution_state = 'revoking'
            from public.projects p
-          where s.workspace_id = :workspace and p.workspace_id = :workspace
+          where s.instance_id = :instance and p.instance_id = :instance
             and p.id = s.project_id and p.kind = 'code' and p.archived_at is null
             and s.id = $1 and s.scope_generation = $2 and s.deleted_at is null
             and s.parent_session_id is null and s.execution_state <> 'revoking'
@@ -107,9 +105,9 @@ export function createScopeRepository(
     },
     async finishUpdate(scope, state) {
       return (
-        (await persistence.forWorkspace(scope.workspaceId).execute(
+        (await persistence.forInstance(scope.instanceId).execute(
           `update public.code_ui_sessions set execution_state = $3
-          where workspace_id = :workspace and id = $1 and scope_generation = $2
+          where instance_id = :instance and id = $1 and scope_generation = $2
             and execution_state = 'revoking' and deleted_at is null`,
           [scope.taskId, scope.generation, state],
         )) === 1

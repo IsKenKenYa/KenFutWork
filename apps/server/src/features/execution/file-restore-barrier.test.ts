@@ -30,13 +30,11 @@ async function fixture() {
   );
   directories.push(root);
   const actor = {
-    id: "user",
-    email: "user@example.test",
-    accessToken: "test",
-    userMetadata: {},
+    instanceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
+    accessClientId: null,
   };
   const initial: CodeExecutionScope = {
-    workspaceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
+    instanceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
     projectId: "c15b75a5-b7ef-46b5-8b0c-d543dd7769d5",
     taskId: "0432143f-e2b8-4ea6-adea-01f706f537d3",
     generation: 0,
@@ -55,7 +53,7 @@ async function fixture() {
   let blockOther = false;
   const scopes = createExecutionScopes({
     repository: {
-      load: async (_workspaceId, taskId) => {
+      load: async (_instanceId, taskId) => {
         if (taskId === other.taskId && blockOther) {
           entered.resolve();
           await released.promise;
@@ -65,13 +63,8 @@ async function fixture() {
           : { scope: other, state: "ready", branchGeneration: 1 };
       },
     },
-    viewerService: {
-      resolveWorkspace: async () => ({
-        id: initial.workspaceId,
-        name: "工作区",
-        type: "personal",
-        ownerUserId: actor.id,
-      }),
+    localInstance: {
+      resolve: async () => ({ instanceId: initial.instanceId, dataDir: root }),
     },
   });
   return {

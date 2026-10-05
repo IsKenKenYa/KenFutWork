@@ -69,7 +69,7 @@ export function createTaskWorkManager(options: {
   const waking = new Set<string>();
   const queues = new Map<string, Promise<unknown>>();
   const readyListeners = new Set<
-    (identity: { workspaceId: string; taskId: string }) => Promise<boolean>
+    (identity: { instanceId: string; taskId: string }) => Promise<boolean>
   >();
   const changeListeners = new Set<(record: TaskWorkRecord) => Promise<void>>();
   let closed = false;
@@ -79,10 +79,10 @@ export function createTaskWorkManager(options: {
   const hostLossListeners = new Set<
     (event: TaskWorkHostLoss) => Promise<void>
   >();
-  const keyOf = (workspaceId: string, taskId: string) =>
-    JSON.stringify([workspaceId, taskId]);
+  const keyOf = (instanceId: string, taskId: string) =>
+    JSON.stringify([instanceId, taskId]);
   const keyFor = (context: TaskWorkContext) =>
-    keyOf(context.scope.workspaceId, context.scope.taskId);
+    keyOf(context.scope.instanceId, context.scope.taskId);
 
   const serial = async <T>(
     key: string,
@@ -137,8 +137,8 @@ export function createTaskWorkManager(options: {
           ...[...live.values()].map((entry) => keyFor(entry.context)),
         ]);
         const tasks = [...taskKeys].map((key) => {
-          const [workspaceId, taskId]: [string, string] = JSON.parse(key);
-          return { workspaceId, taskId };
+          const [instanceId, taskId]: [string, string] = JSON.parse(key);
+          return { instanceId, taskId };
         });
         for (const listener of hostLossListeners)
           void Promise.resolve()
@@ -195,7 +195,7 @@ export function createTaskWorkManager(options: {
       )
         return false;
       const pending = (
-        await store.list(context.scope.workspaceId, context.scope.taskId)
+        await store.list(context.scope.instanceId, context.scope.taskId)
       ).some(
         (record) =>
           record.detached &&
@@ -213,7 +213,7 @@ export function createTaskWorkManager(options: {
       for (const listener of readyListeners)
         if (
           await listener({
-            workspaceId: context.scope.workspaceId,
+            instanceId: context.scope.instanceId,
             taskId: context.scope.taskId,
           })
         )
@@ -241,7 +241,7 @@ export function createTaskWorkManager(options: {
   ) => {
     const record = await serial(keyFor(entry.context), () =>
       store.settle(
-        entry.context.scope.workspaceId,
+        entry.context.scope.instanceId,
         entry.context.scope.taskId,
         workId,
         outcome,
@@ -326,7 +326,7 @@ export function createTaskWorkManager(options: {
       return serial(keyFor(context), async () => {
         await requireCurrent(context);
         const records = await store.list(
-          context.scope.workspaceId,
+          context.scope.instanceId,
           context.scope.taskId,
         );
         const detached = input.detached ?? true;
@@ -392,19 +392,15 @@ export function createTaskWorkManager(options: {
     },
     async find(context, workId) {
       await initialize();
-      return store.find(
-        context.scope.workspaceId,
-        context.scope.taskId,
-        workId,
-      );
+      return store.find(context.scope.instanceId, context.scope.taskId, workId);
     },
     async list(context) {
       await initialize();
-      return store.list(context.scope.workspaceId, context.scope.taskId);
+      return store.list(context.scope.instanceId, context.scope.taskId);
     },
     async stop(context, workId, reason) {
       const record = await store.find(
-        context.scope.workspaceId,
+        context.scope.instanceId,
         context.scope.taskId,
         workId,
       );
@@ -419,11 +415,11 @@ export function createTaskWorkManager(options: {
         );
       await stopEntry(workId, entry, reason);
     },
-    async closeTask(workspaceId, taskId, reason) {
+    async closeTask(instanceId, taskId, reason) {
       await initialize();
-      const key = keyOf(workspaceId, taskId);
+      const key = keyOf(instanceId, taskId);
       const closing = await serial(key, async () => {
-        const authority = await store.closeFence(workspaceId, taskId);
+        const authority = await store.closeFence(instanceId, taskId);
         // CodeUI beginClose/rewind 已推进 scope/branch；关闭墓碑属于被关闭的旧版本。
         const increment = authority?.state === "revoking" ? 1 : 0;
         const previous = closedTasks.get(key);
@@ -509,8 +505,8 @@ export function createTaskWorkManager(options: {
           record.detached && (!fence || record.scope.generation > fence.floor),
       );
     },
-    async notifyReady(workspaceId, taskId) {
-      const records = await store.list(workspaceId, taskId);
+    async notifyReady(instanceId, taskId) {
+      const records = await store.list(instanceId, taskId);
       for (const record of records.filter(
         (record) =>
           record.detached && record.status !== "running" && !record.consumed,
@@ -525,7 +521,7 @@ export function createTaskWorkManager(options: {
     },
     async recordOutput(context, workId, outputRef, stats) {
       await store.updateOutput(
-        context.scope.workspaceId,
+        context.scope.instanceId,
         context.scope.taskId,
         workId,
         ownerId,

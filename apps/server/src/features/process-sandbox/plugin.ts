@@ -42,7 +42,7 @@ export function createProcessSandboxPlugin(): PluginDefinition {
           resolveInternalWriteRoots: async (scope) => [
             join(
               dataRoot,
-              scope.workspaceId,
+              scope.instanceId,
               scope.projectId,
               `${scope.taskId}.git`,
             ),
@@ -59,7 +59,11 @@ export function createProcessSandboxPlugin(): PluginDefinition {
             sandbox.applyScopeChange(previous, next, "Task 目录或权限发生变更"),
           ),
       );
-      ctx.app.addHook("onClose", () => sandbox.close("执行宿主关闭"));
+      ctx.app.addHook("onClose", async () => {
+        console.log("[shutdown] 关闭Task执行helper。");
+        await sandbox.close("执行宿主关闭");
+        console.log("[shutdown] Task执行helper已关闭。");
+      });
     },
   };
 }

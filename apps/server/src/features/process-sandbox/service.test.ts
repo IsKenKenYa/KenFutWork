@@ -42,7 +42,7 @@ test("shell 不能绕过附加目录的只读授权，扩权保留后台进程�
   });
   cleanups.push(() => sandbox.close("test_cleanup"));
   const scope: CodeExecutionScope = {
-    workspaceId: "workspace",
+    instanceId: "workspace",
     projectId: "project",
     taskId: "scope-task",
     generation: 1,
@@ -111,7 +111,7 @@ test("真实命令的输出可继续读取，停止确认退出后不再接受 s
   });
   cleanups.push(() => sandbox.close("test_cleanup"));
   const scope: CodeExecutionScope = {
-    workspaceId: "test-workspace",
+    instanceId: "test-workspace",
     projectId: "test-project",
     taskId: "test-task",
     generation: 1,
@@ -171,7 +171,7 @@ test("精确 argv 和显式环境保持字面量，stdin EOF 让真实消费者�
   });
   cleanups.push(() => sandbox.close("test_cleanup"));
   const scope: CodeExecutionScope = {
-    workspaceId: "workspace",
+    instanceId: "workspace",
     projectId: "project",
     taskId: "argv-task",
     generation: 1,
@@ -224,7 +224,7 @@ test("真实 UTF-8 输出分片未完成时不损坏字符，继续游标按字�
   });
   cleanups.push(() => sandbox.close("test_cleanup"));
   const scope: CodeExecutionScope = {
-    workspaceId: "workspace",
+    instanceId: "workspace",
     projectId: "project",
     taskId: "utf8-task",
     generation: 1,
@@ -281,7 +281,7 @@ async function processFixture(taskId: string) {
   });
   cleanups.push(() => sandbox.close("test_cleanup"));
   const scope: CodeExecutionScope = {
-    workspaceId: "workspace",
+    instanceId: "workspace",
     projectId: "project",
     taskId,
     generation: 1,

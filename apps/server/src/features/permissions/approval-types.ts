@@ -10,11 +10,10 @@ export type CodeApprovalMode =
   CommandPayloadMap["switchCollaborationMode"]["mode"];
 
 export interface ApprovalIdentity {
-  workspaceId: string;
+  instanceId: string;
   taskId: string;
   runId: string;
   toolCallId: string;
-  userId: string;
   agentId: string;
   role: ExecutionRole;
   scopeGeneration: number;
@@ -60,12 +59,7 @@ export interface ApprovalResolution {
   /** Current facts resolved by the authenticated host, never from answer. */
   binding: Pick<
     ApprovalIdentity,
-    | "workspaceId"
-    | "taskId"
-    | "runId"
-    | "userId"
-    | "scopeGeneration"
-    | "branchGeneration"
+    "instanceId" | "taskId" | "runId" | "scopeGeneration" | "branchGeneration"
   >;
 }
 
@@ -86,7 +80,7 @@ export type ApprovalCancellation = Partial<
     "runId" | "agentId" | "scopeGeneration" | "branchGeneration"
   >
 > &
-  Pick<ApprovalIdentity, "workspaceId" | "taskId">;
+  Pick<ApprovalIdentity, "instanceId" | "taskId">;
 
 export interface CodeApprovalService {
   /** Wait for this actual invocation's human answer. Does not consume grant. */
@@ -102,7 +96,7 @@ export interface CodeApprovalService {
     invocation: PermissionInvocation,
   ): import("./permission-service.js").PermissionDecision;
   resolve(input: ApprovalResolution): Promise<ApprovalResolutionResult>;
-  listPending(workspaceId: string, taskId: string): BoundApprovalRequest[];
+  listPending(instanceId: string, taskId: string): BoundApprovalRequest[];
   cancel(identity: ApprovalCancellation, reason: string): Promise<void>;
   onEvent(listener: (event: ApprovalEvent) => void | Promise<void>): () => void;
 }

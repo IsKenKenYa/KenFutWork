@@ -46,7 +46,7 @@ async function fixture() {
   });
   cleanups.push(() => sandbox.close("integration_cleanup"));
   const scope: CodeExecutionScope = {
-    workspaceId: "workspace",
+    instanceId: "workspace",
     projectId: "project",
     taskId: "windows-task",
     generation: 1,

@@ -9,6 +9,7 @@ import {
   createExecutionScopes,
   type ExecutionScopeHandle,
 } from "../execution/scope-service.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
 import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
@@ -41,13 +42,11 @@ async function fixture() {
   const root = join(directory, "project");
   await mkdir(root);
   const actor = {
-    id: "user",
-    email: "user@example.test",
-    accessToken: "test",
-    userMetadata: {},
+    instanceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
+    accessClientId: null,
   };
   const scope: CodeExecutionScope = {
-    workspaceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
+    instanceId: "2cdb5c27-a1f7-4109-9927-40e0b0822956",
     projectId: "c15b75a5-b7ef-46b5-8b0c-d543dd7769d5",
     taskId: "0432143f-e2b8-4ea6-adea-01f706f537d3",
     generation: 1,
@@ -59,12 +58,10 @@ async function fixture() {
     repository: {
       load: async () => ({ scope, state: "ready", branchGeneration: 1 }),
     },
-    viewerService: {
-      resolveWorkspace: async () => ({
-        id: scope.workspaceId,
-        name: "工作区",
-        type: "personal",
-        ownerUserId: actor.id,
+    localInstance: {
+      resolve: async () => ({
+        instanceId: scope.instanceId,
+        dataDir: directory,
       }),
     },
   });
@@ -98,6 +95,10 @@ async function fixture() {
   };
   const settings = createSettingsService({
     repository: createSettingsRepository(createPersistenceFromRunner(runner)),
+    localInstance: createLocalInstanceService({
+      repository: { ensure: async () => scope.instanceId },
+      dataDir: directory,
+    }),
   });
   const controller = createTaskCommandTools({ manager, sandbox, settings });
   const tool = (name: string) => {
@@ -109,6 +110,7 @@ async function fixture() {
     handle: ExecutionScopeHandle,
     call: string,
   ): ToolExecutionContext => ({
+    actor,
     scopeHandle: handle,
     taskWorkContext: { ...context, runId: `run-${handle.agentId}` },
     toolCallId: call,
@@ -248,11 +250,10 @@ it.each([
     const program = `require('node:fs').writeFileSync(${JSON.stringify(marker)},'forbidden')`;
     exec.permissionInvocation = {
       preset: "code",
-      workspaceId: state.context.scope.workspaceId,
+      instanceId: state.context.scope.instanceId,
       taskId: state.context.scope.taskId,
       runId: state.context.runId,
       toolCallId: "readonly-plan",
-      userId: "user",
       agentId: "main",
       role: "main",
       scopeGeneration: 1,

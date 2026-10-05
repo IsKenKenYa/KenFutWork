@@ -145,7 +145,7 @@ export function createProcessRestoreCoordinator() {
           pending.some(
             ({ admission, domain }) =>
               (admission.scope.taskId !== scope.taskId ||
-                admission.scope.workspaceId !== scope.workspaceId ||
+                admission.scope.instanceId !== scope.instanceId ||
                 admission.scope.projectId !== scope.projectId) &&
               intersects(domain, canonical),
           )

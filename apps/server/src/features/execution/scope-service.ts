@@ -12,9 +12,11 @@ import {
   type CodeExecutionScope,
   codeExecutionScopeSchema,
 } from "@kenfutwork/shared";
-import type { AuthenticatedUser } from "../auth/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type { FileLimits } from "../code-tools/file-types.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import type {
   ScopeRepository,
   StoredExecutionScope,
@@ -39,18 +41,15 @@ export type ScopeRevocation = {
   next: CodeExecutionScope;
 };
 export interface ExecutionScopes {
-  openTask(
-    actor: AuthenticatedUser,
-    taskId: string,
-  ): Promise<ExecutionScopeHandle>;
+  openTask(actor: LocalActor, taskId: string): Promise<ExecutionScopeHandle>;
   /** 仅系统恢复 consumer；普通 HTTP/Run 不得调用此权限入口。 */
   openRestoringTask(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     taskId: string,
     expectedGeneration: number,
   ): Promise<ExecutionScopeHandle>;
   updateTask(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     taskId: string,
     patch: TaskScopePatch,
   ): Promise<CodeExecutionScope>;
@@ -342,22 +341,22 @@ class ScopeHandle implements ExecutionScopeHandle {
 
 type ScopeOptions = {
   repository: ScopeRepository;
-  viewerService: Pick<ViewerService, "resolveWorkspace">;
+  localInstance: Pick<LocalInstanceService, "resolve">;
   resolveFileLimits?: (
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     scope: CodeExecutionScope,
   ) => Promise<FileLimits>;
 };
 
 async function requireStored(
   repository: ScopeRepository,
-  workspaceId: string,
+  instanceId: string,
   taskId: string,
 ): Promise<StoredExecutionScope> {
-  const stored = await repository.load(workspaceId, taskId);
+  const stored = await repository.load(instanceId, taskId);
   if (
     !stored ||
-    stored.scope.workspaceId !== workspaceId ||
+    stored.scope.instanceId !== instanceId ||
     stored.scope.taskId !== taskId
   ) {
     throw new ExecutionScopeError(
@@ -373,14 +372,14 @@ export function createExecutionScopes(options: ScopeOptions): ExecutionScopes {
   const revokers = new Set<(event: ScopeRevocation) => Promise<void>>();
   const updatedListeners = new Set<(event: ScopeRevocation) => Promise<void>>();
   const open = async (
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     taskId: string,
     restoringGeneration?: number,
   ): Promise<ExecutionScopeHandle> => {
-    const workspace = await options.viewerService.resolveWorkspace(actor);
+    const workspace = await options.localInstance.resolve(actor);
     const opened = await requireStored(
       options.repository,
-      workspace.id,
+      workspace.instanceId,
       taskId,
     );
     const branchGeneration = opened.branchGeneration;
@@ -405,7 +404,7 @@ export function createExecutionScopes(options: ScopeOptions): ExecutionScopes {
     const load = async () => {
       const stored = await requireStored(
         options.repository,
-        workspace.id,
+        workspace.instanceId,
         taskId,
       );
       if (stored.branchGeneration !== branchGeneration)
@@ -446,10 +445,10 @@ export function createExecutionScopes(options: ScopeOptions): ExecutionScopes {
     openRestoringTask: (actor, taskId, expectedGeneration) =>
       open(actor, taskId, expectedGeneration),
     async updateTask(actor, taskId, patch) {
-      const workspace = await options.viewerService.resolveWorkspace(actor);
+      const workspace = await options.localInstance.resolve(actor);
       const stored = await requireStored(
         options.repository,
-        workspace.id,
+        workspace.instanceId,
         taskId,
       );
       if (stored.state === "revoking")

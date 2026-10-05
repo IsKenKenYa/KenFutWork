@@ -14,11 +14,10 @@ function invocation(
 ): PermissionInvocation {
   return {
     preset: "code",
-    workspaceId: "workspace",
+    instanceId: "workspace",
     taskId: "task",
     runId: "run",
     toolCallId: "call",
-    userId: "user",
     agentId: "main",
     role: "main",
     scopeGeneration: 1,
@@ -34,10 +33,9 @@ function invocation(
 
 function binding(input: PermissionInvocation) {
   return {
-    workspaceId: input.workspaceId,
+    instanceId: input.instanceId,
     taskId: input.taskId,
     runId: input.runId,
-    userId: input.userId,
     scopeGeneration: input.scopeGeneration,
     branchGeneration: input.branchGeneration,
   };
@@ -92,7 +90,7 @@ describe("Code 逐调用审批公共服务", () => {
       expect(service.listPending("workspace", "task")).toHaveLength(1);
     } finally {
       await service.cancel(
-        { workspaceId: "workspace", taskId: "task" },
+        { instanceId: "workspace", taskId: "task" },
         "Task 结束",
       );
     }
@@ -120,7 +118,7 @@ describe("Code 逐调用审批公共服务", () => {
     });
     expect((await admitted).decision).toBe("allow");
     await service.cancel(
-      { workspaceId: "workspace", taskId: "task" },
+      { instanceId: "workspace", taskId: "task" },
       "目录授权已撤销",
     );
     expect((await service.admit(input)).decision).toBe("deny");
@@ -136,7 +134,7 @@ describe("Code 逐调用审批公共服务", () => {
       expect(service.listPending("workspace", "task")).toHaveLength(2);
     } finally {
       await service.cancel(
-        { workspaceId: "workspace", taskId: "task" },
+        { instanceId: "workspace", taskId: "task" },
         "Task 关闭",
       );
     }
@@ -168,7 +166,7 @@ describe("Code 逐调用审批公共服务", () => {
       });
     }
     await service.cancel(
-      { workspaceId: "workspace", taskId: "task" },
+      { instanceId: "workspace", taskId: "task" },
       "Task 关闭",
     );
     expect((await admitted).decision).toBe("deny");
@@ -256,7 +254,7 @@ describe("Code 逐调用审批公共服务", () => {
     expect((await second).decision).toBe("allow");
     for (const patch of [
       { agentId: "other" },
-      { userId: "other" },
+      { toolCallId: "other" },
       { toolName: "Edit" },
       { scopeGeneration: 2 },
       { branchGeneration: 2 },
@@ -270,14 +268,14 @@ describe("Code 逐调用审批公共服务", () => {
     ]);
   });
 
-  it("跨用户、Task、Run、scope 与 branch 回执拒绝；先到响应获胜", async () => {
+  it("非法实例、Task、Run、scope 与 branch 回执拒绝；先到响应获胜", async () => {
     const service = createPermissionService();
     const input = invocation();
     const admitted = service.admit(input);
     const pending = pendingFor(service);
     for (const patch of [
-      { userId: "other" },
-      { workspaceId: "other" },
+      { instanceId: "" },
+      { instanceId: "other" },
       { taskId: "other" },
       { runId: "other" },
       { scopeGeneration: 2 },
@@ -351,7 +349,7 @@ describe("Code 逐调用审批公共服务", () => {
       }),
     ).toEqual({ status: "rejected", reasonCode: "approval.invalidBinding" });
     await service.cancel(
-      { workspaceId: "workspace", taskId: "task" },
+      { instanceId: "workspace", taskId: "task" },
       "Task 关闭",
     );
     expect((await admitted).decision).toBe("deny");

@@ -57,8 +57,8 @@ function fromRow(row: WorkRow): TaskWorkRecord {
 
 /** 此谓词也用于通知 admission，删除/归档/分支重绕的迟到工作不得唤醒模型。 */
 const CURRENT_TASK = `select s.id from public.code_ui_sessions s
-  join public.projects p on p.id = s.project_id and p.workspace_id = s.workspace_id
-  where s.workspace_id = :workspace and p.workspace_id = :workspace
+  join public.projects p on p.id = s.project_id and p.instance_id = s.instance_id
+  where s.instance_id = :instance and p.instance_id = :instance
     and s.id = $1 and s.project_id = $2 and s.branch_generation = $3
     and ($5::boolean or s.scope_generation = $4) and s.execution_state = 'ready'
     and s.parent_session_id is null and s.deleted_at is null and s.archived = false
@@ -98,15 +98,15 @@ export function createTaskWorkStore(
       hosts.set(executionHostId, { ownerId, lease });
       return lease;
     },
-    async closeFence(workspaceId, taskId) {
-      const row = await persistence.forWorkspace(workspaceId).queryOne<
+    async closeFence(instanceId, taskId) {
+      const row = await persistence.forInstance(instanceId).queryOne<
         SqlRow & {
           scope_generation: number | string;
           branch_generation: number | string;
           execution_state: "ready" | "revoking" | "failed";
         }
       >(
-        "select scope_generation, branch_generation, execution_state from public.code_ui_sessions where workspace_id = :workspace and id = $1 and parent_session_id is null",
+        "select scope_generation, branch_generation, execution_state from public.code_ui_sessions where instance_id = :instance and id = $1 and parent_session_id is null",
         [taskId],
       );
       return row
@@ -120,7 +120,7 @@ export function createTaskWorkStore(
     async isCurrent(context, purpose) {
       return (
         (await persistence
-          .forWorkspace(context.scope.workspaceId)
+          .forInstance(context.scope.instanceId)
           .queryOne(
             CURRENT_TASK,
             contextParams(context, purpose === "notification"),
@@ -129,7 +129,7 @@ export function createTaskWorkStore(
     },
     async create(record) {
       return persistence.transaction(async (transaction) => {
-        const scoped = transaction.forWorkspace(record.scope.workspaceId);
+        const scoped = transaction.forInstance(record.scope.instanceId);
         const context: TaskWorkContext = {
           scope: record.scope,
           agentId: record.agentId,
@@ -147,7 +147,7 @@ export function createTaskWorkStore(
             "Task 的派发授权或分支代际已改变。",
           );
         const existing = await scoped.queryOne<WorkRow>(
-          "select * from public.task_works where workspace_id = :workspace and task_id = $1 and branch_generation = $2 and origin_run_id = $3 and tool_call_id = $4",
+          "select * from public.task_works where instance_id = :instance and task_id = $1 and branch_generation = $2 and origin_run_id = $3 and tool_call_id = $4",
           [
             record.scope.taskId,
             record.branchGeneration,
@@ -158,8 +158,8 @@ export function createTaskWorkStore(
         if (existing) return { record: fromRow(existing), created: false };
         await scoped.execute(
           `insert into public.task_works
-          (id, workspace_id, project_id, task_id, scope, agent_id, kind, label, origin_run_id, tool_call_id, child_session_id, branch_generation, status, started_at, owner_id, execution_host_id, parameter_fingerprint, detached, consumed_at)
-          values ($1, :workspace, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, 'running', $12, $13, $14, $15, $16, $17)`,
+          (id, instance_id, project_id, task_id, scope, agent_id, kind, label, origin_run_id, tool_call_id, child_session_id, branch_generation, status, started_at, owner_id, execution_host_id, parameter_fingerprint, detached, consumed_at)
+          values ($1, :instance, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, 'running', $12, $13, $14, $15, $16, $17)`,
           [
             record.id,
             record.scope.projectId,
@@ -183,29 +183,29 @@ export function createTaskWorkStore(
         return { record, created: true };
       });
     },
-    async find(workspaceId, taskId, workId) {
+    async find(instanceId, taskId, workId) {
       const row = await persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .queryOne<WorkRow>(
-          "select * from public.task_works where workspace_id = :workspace and task_id = $1 and id = $2",
+          "select * from public.task_works where instance_id = :instance and task_id = $1 and id = $2",
           [taskId, workId],
         );
       return row ? fromRow(row) : null;
     },
-    async list(workspaceId, taskId) {
+    async list(instanceId, taskId) {
       return (
         await persistence
-          .forWorkspace(workspaceId)
+          .forInstance(instanceId)
           .query<WorkRow>(
-            "select * from public.task_works where workspace_id = :workspace and task_id = $1 order by started_at, id",
+            "select * from public.task_works where instance_id = :instance and task_id = $1 order by started_at, id",
             [taskId],
           )
       ).map(fromRow);
     },
-    async settle(workspaceId, taskId, workId, outcome, at) {
-      const row = await persistence.forWorkspace(workspaceId).queryOne<WorkRow>(
+    async settle(instanceId, taskId, workId, outcome, at) {
+      const row = await persistence.forInstance(instanceId).queryOne<WorkRow>(
         `update public.task_works set status = $3, summary = $4, output_ref = coalesce($5, output_ref), ended_at = $6, output_stats = coalesce($7::jsonb, output_stats)
-        where workspace_id = :workspace and task_id = $1 and id = $2 and status = 'running' returning *`,
+        where instance_id = :instance and task_id = $1 and id = $2 and status = 'running' returning *`,
         [
           taskId,
           workId,
@@ -220,7 +220,7 @@ export function createTaskWorkStore(
     },
     async consume(context) {
       return persistence.transaction(async (transaction) => {
-        const scoped = transaction.forWorkspace(context.scope.workspaceId);
+        const scoped = transaction.forInstance(context.scope.instanceId);
         if (
           !(await scoped.queryOne(
             `${CURRENT_TASK} for update of s`,
@@ -230,7 +230,7 @@ export function createTaskWorkStore(
           return [];
         const rows = await scoped.query<WorkRow>(
           `update public.task_works set consumed_at = now(), consumed_by_run_id = $3
-          where workspace_id = :workspace and task_id = $1 and branch_generation = $2
+          where instance_id = :instance and task_id = $1 and branch_generation = $2
             and detached = true and status <> 'running' and consumed_at is null returning *`,
           [context.scope.taskId, context.branchGeneration, context.runId],
         );
@@ -262,10 +262,10 @@ export function createTaskWorkStore(
       );
       return rows.map(fromRow);
     },
-    async updateOutput(workspaceId, taskId, workId, ownerId, outputRef, stats) {
-      await persistence.forWorkspace(workspaceId).execute(
+    async updateOutput(instanceId, taskId, workId, ownerId, outputRef, stats) {
+      await persistence.forInstance(instanceId).execute(
         `update public.task_works set output_ref = $4, output_stats = $5::jsonb
-        where workspace_id = :workspace and task_id = $1 and id = $2 and owner_id = $3 and status = 'running'`,
+        where instance_id = :instance and task_id = $1 and id = $2 and owner_id = $3 and status = 'running'`,
         [taskId, workId, ownerId, outputRef, JSON.stringify(stats)],
       );
     },

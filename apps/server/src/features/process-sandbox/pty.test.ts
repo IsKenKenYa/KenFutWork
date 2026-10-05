@@ -22,7 +22,7 @@ test.skipIf(!["darwin", "linux"].includes(process.platform))(
     });
     cleanups.push(() => sandbox.close("test_cleanup"));
     const scope: CodeExecutionScope = {
-      workspaceId: "pty-workspace",
+      instanceId: "pty-workspace",
       projectId: "pty-project",
       taskId: "pty-task",
       generation: 1,
@@ -95,7 +95,7 @@ test.skipIf(!["darwin", "linux"].includes(process.platform))(
     cleanups.push(() => sandbox.close("test_cleanup"));
     const child = await sandbox.spawnPty({
       scope: {
-        workspaceId: "workspace",
+        instanceId: "workspace",
         projectId: "project",
         taskId: "resize-task",
         generation: 1,
@@ -145,7 +145,7 @@ test.skipIf(!["darwin", "linux"].includes(process.platform))(
     cleanups.push(() => sandbox.close("test_cleanup"));
     const child = await sandbox.spawnPty({
       scope: {
-        workspaceId: "workspace",
+        instanceId: "workspace",
         projectId: "project",
         taskId: "live-task",
         generation: 1,
@@ -206,7 +206,7 @@ test.skipIf(!["darwin", "linux"].includes(process.platform))(
     cleanups.push(() => sandbox.close("test_cleanup"));
     const child = await sandbox.spawnPty({
       scope: {
-        workspaceId: "workspace",
+        instanceId: "workspace",
         projectId: "project",
         taskId: "cursor-task",
         generation: 1,
@@ -286,7 +286,7 @@ test
     cleanups.push(() => sandbox.close("test_cleanup"));
     const child = await sandbox.spawnPty({
       scope: {
-        workspaceId: "workspace",
+        instanceId: "workspace",
         projectId: "project",
         taskId: "jobs-task",
         generation: 1,
@@ -377,7 +377,7 @@ test.skipIf(!["darwin", "linux"].includes(process.platform)).each([0, 50])(
     cleanups.push(() => sandbox.close("test_cleanup"));
     const child = await sandbox.spawnPty({
       scope: {
-        workspaceId: "workspace",
+        instanceId: "workspace",
         projectId: "project",
         taskId: "drain-task",
         generation: 1,

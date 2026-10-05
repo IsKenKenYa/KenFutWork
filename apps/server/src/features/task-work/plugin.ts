@@ -22,7 +22,7 @@ export function createTaskWorkPlugin(): PluginDefinition {
             return (
               await ctx
                 .get("settings")
-                .getWorkspaceSettings(context.actor, context.scope.workspaceId)
+                .getInstanceSettings(context.actor, context.scope.instanceId)
             ).subagentMaxConcurrency;
           },
         }),
@@ -69,8 +69,8 @@ export function createTaskWorkPlugin(): PluginDefinition {
       ctx.get("capabilities").register("task-close", {
         id: "task-work:command-handles",
         value: {
-          close: (workspaceId: string, taskId: string) =>
-            getCommands().forgetTask(workspaceId, taskId),
+          close: (instanceId: string, taskId: string) =>
+            getCommands().forgetTask(instanceId, taskId),
         },
       });
       ctx.get("capabilities").register("process-snapshot", {
@@ -88,7 +88,9 @@ export function createTaskWorkPlugin(): PluginDefinition {
         await manager.initialize();
       });
       ctx.app.addHook("preClose", async () => {
+        console.log("[shutdown] 关闭TaskWork执行宿主。");
         await manager.close("执行宿主关闭");
+        console.log("[shutdown] TaskWork执行宿主已关闭。");
       });
       ctx.effect(() =>
         manager.onChanged((record) =>
@@ -96,15 +98,15 @@ export function createTaskWorkPlugin(): PluginDefinition {
         ),
       );
       ctx.effect(() =>
-        manager.onReady(({ workspaceId, taskId }) =>
-          ctx.get("codeUi").resumeTaskWork(workspaceId, taskId),
+        manager.onReady(({ instanceId, taskId }) =>
+          ctx.get("codeUi").resumeTaskWork(instanceId, taskId),
         ),
       );
       ctx.effect(() =>
         ctx
           .get("executionScopes")
           .onUpdated(({ next }) =>
-            manager.notifyReady(next.workspaceId, next.taskId),
+            manager.notifyReady(next.instanceId, next.taskId),
           ),
       );
       ctx.effect(() =>
@@ -115,7 +117,7 @@ export function createTaskWorkPlugin(): PluginDefinition {
           const results = await Promise.allSettled(
             tasks.flatMap((task) => [
               ctx.get("agentRuns").cancelTaskRuns(task.taskId),
-              revokeTaskFileOperations(task.workspaceId, task.taskId),
+              revokeTaskFileOperations(task.instanceId, task.taskId),
             ]),
           );
           const failure = results.find(

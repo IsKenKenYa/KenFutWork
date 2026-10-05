@@ -203,7 +203,7 @@ interface TaskEntry {
   connection: Promise<TaskConnection>;
   initialized: Promise<unknown>;
   generation: number;
-  workspaceId: string;
+  instanceId: string;
   projectId: string;
   rootDirectory: string;
   phase: "ready" | "revoking" | "failed" | "closed";
@@ -345,7 +345,7 @@ export function createProcessSandbox(
         connection,
         initialized: connection.then((helper) => helper.initialize(request)),
         generation: request.scope.generation,
-        workspaceId: request.scope.workspaceId,
+        instanceId: request.scope.instanceId,
         projectId: request.scope.projectId,
         rootDirectory: request.scope.rootDirectory,
         phase: "ready",
@@ -359,7 +359,7 @@ export function createProcessSandbox(
       });
     }
     if (
-      entry.workspaceId !== request.scope.workspaceId ||
+      entry.instanceId !== request.scope.instanceId ||
       entry.projectId !== request.scope.projectId ||
       entry.rootDirectory !== request.scope.rootDirectory
     )
@@ -586,7 +586,7 @@ export function createProcessSandbox(
     async applyScopeChange(previous, next, reason) {
       if (
         previous.taskId !== next.taskId ||
-        previous.workspaceId !== next.workspaceId ||
+        previous.instanceId !== next.instanceId ||
         previous.projectId !== next.projectId
       )
         throw new ProcessSandboxError(
