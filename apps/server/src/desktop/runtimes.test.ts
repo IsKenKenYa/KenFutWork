@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 import {
@@ -7,6 +8,7 @@ import {
   prependRuntimePath,
   resolveRuntime,
   resolveRuntimes,
+  resolveSystemGitExecutable,
   runtimeEnvAdditions,
 } from "./runtimes.js";
 
@@ -327,31 +329,154 @@ describe("git 运行时的优先级（本地优先，打包兜底；Windows 桌�
 });
 
 describe("Darwin 系统 Git 选择", () => {
-  // 提交冻结时仅完成规格，resolver实现留待合并UI分支后的接续；不计为GREEN。
-  it.skip("待接线：PATH 选中 Apple shim 时通过固定 xcrun 返回真实系统 Git 目录", () => {
+  it("PATH 选中Apple启动器时只调用固定xcrun，返回真实Git可执行文件", () => {
     const actualGit = "/Library/Developer/CommandLineTools/usr/bin/git";
     const finder = vi.mocked(execFileSync);
     finder.mockReturnValue(`${actualGit}\n`);
     try {
-      const resolved = resolveRuntimes({
+      const resolved = resolveSystemGitExecutable({
         env: {},
-        exeDir: "/Applications/KenFutWork.app/Contents/Resources/app",
         platform: "darwin",
-        systemPath: "/usr/bin:/bin",
+        path: "/usr/bin:/bin",
         exists: fakeFs(["/usr/bin/git", actualGit]),
       });
 
-      expect(resolved).toMatchObject({
-        gitSource: "system",
-        gitBinDir: "/Library/Developer/CommandLineTools/usr/bin",
-      });
-      expect(resolved.bundled).not.toContain("git");
+      expect(resolved).toBe(actualGit);
+      expect(finder).toHaveBeenCalledWith(
+        "/usr/bin/xcrun",
+        ["--find", "git"],
+        expect.objectContaining({
+          encoding: "utf8",
+          timeout: AGENT_GOVERNANCE_DEFAULTS.localServiceStartupTimeoutMs,
+        }),
+      );
       expect(finder.mock.calls.map((call) => call.slice(0, 2))).toEqual([
         ["/usr/bin/xcrun", ["--find", "git"]],
       ]);
     } finally {
       finder.mockReset();
     }
+  });
+
+  it("PATH里更早的自定义Git优先，不查询Apple selector", () => {
+    const customGit = join("/opt/custom git/bin", "git");
+    const resolver = vi.fn(
+      () => "/Library/Developer/CommandLineTools/usr/bin/git",
+    );
+    expect(
+      resolveSystemGitExecutable({
+        path: "/opt/custom git/bin:/usr/bin",
+        platform: "darwin",
+        env: {},
+        exists: fakeFs([customGit, "/usr/bin/git"]),
+        resolveAppleGit: resolver,
+      }),
+    ).toBe(customGit);
+    expect(resolver).not.toHaveBeenCalled();
+  });
+
+  it("Apple解析失败即不可用，不运行git启动器或回退后面的Git", () => {
+    const resolver = vi.fn(() => {
+      throw new Error("开发者工具未安装");
+    });
+    expect(
+      resolveSystemGitExecutable({
+        path: "/usr/bin:/opt/other/bin",
+        platform: "darwin",
+        env: {},
+        exists: fakeFs(["/usr/bin/git", "/opt/other/bin/git"]),
+        resolveAppleGit: resolver,
+      }),
+    ).toBeNull();
+    expect(resolver).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["", "relative/git", "/usr/bin/git", "/bin/sh", "/missing/git"])(
+    "Apple返回无效或不存在的可执行路径%s时不可用",
+    (result) => {
+      expect(
+        resolveSystemGitExecutable({
+          path: "/usr/bin",
+          platform: "darwin",
+          env: {},
+          exists: fakeFs(["/usr/bin/git"]),
+          resolveAppleGit: () => result,
+        }),
+      ).toBeNull();
+    },
+  );
+
+  it("Apple查询超时采用shared启动治理值，合法env覆盖且非法值回落", () => {
+    const actualGit = "/Library/Developer/CommandLineTools/usr/bin/git";
+    const resolver = vi.fn(() => actualGit);
+    const options = {
+      path: "/usr/bin",
+      platform: "darwin" as const,
+      exists: fakeFs(["/usr/bin/git", actualGit]),
+      resolveAppleGit: resolver,
+    };
+    expect(
+      resolveSystemGitExecutable({
+        ...options,
+        env: { KENFUTWORK_LOCAL_SERVICE_STARTUP_TIMEOUT_MS: "750" },
+      }),
+    ).toBe(actualGit);
+    expect(resolver).toHaveBeenLastCalledWith(750);
+    expect(
+      resolveSystemGitExecutable({
+        ...options,
+        env: { KENFUTWORK_LOCAL_SERVICE_STARTUP_TIMEOUT_MS: "invalid" },
+      }),
+    ).toBe(actualGit);
+    expect(resolver).toHaveBeenLastCalledWith(
+      AGENT_GOVERNANCE_DEFAULTS.localServiceStartupTimeoutMs,
+    );
+  });
+
+  const platforms: Array<{
+    platform: NodeJS.Platform;
+    path: string;
+    git: string;
+  }> = [
+    {
+      platform: "win32",
+      path: "C:/tools/git;C:/Windows",
+      git: join("C:/tools/git", "git.exe"),
+    },
+    {
+      platform: "linux",
+      path: "/usr/bin:/opt/git",
+      git: join("/usr/bin", "git"),
+    },
+  ];
+  it.each(platforms)(
+    "$platform保留平台PATH和可执行体口径，不调用Apple resolver",
+    (options) => {
+      const resolver = vi.fn(() => "不可调用");
+      expect(
+        resolveSystemGitExecutable({
+          ...options,
+          exists: fakeFs([options.git]),
+          env: {},
+          resolveAppleGit: resolver,
+        }),
+      ).toBe(options.git);
+      expect(resolver).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([undefined, "", ": :"])("空PATH或只有空段%s时不查询Apple", (path) => {
+    const resolver = vi.fn(() => "不可调用");
+    expect(
+      resolveSystemGitExecutable({
+        path,
+        platform: "darwin",
+        env: {},
+        exists: () => true,
+        resolveAppleGit: resolver,
+      }),
+    ).toBeNull();
+    expect(resolver).not.toHaveBeenCalled();
   });
 });
 
