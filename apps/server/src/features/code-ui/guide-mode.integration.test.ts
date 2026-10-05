@@ -60,7 +60,7 @@ async function prepareModeGuide(fixture: Fixture, host: Host, model: Model) {
     text: GUIDE_TEXT,
     modelSelection: selected,
     mode: "plan",
-    planEnabled: false,
+    planEnabled: true,
   };
   const accepted = await host.command("sendText", payload, guideCommandId);
   expect(accepted.status, JSON.stringify(accepted.body)).toBe(200);
@@ -79,8 +79,8 @@ async function prepareModeGuide(fixture: Fixture, host: Host, model: Model) {
   );
   expect(guide?.intent).toMatchObject({
     modelSelection: selected,
-    mode: "plan",
-    planEnabled: false,
+    mode: "yolo",
+    planEnabled: true,
   });
   assertTaskUnchanged(admission, original, fixture, first.runId);
   const replay = await host.command("sendText", payload, guideCommandId);
@@ -129,15 +129,15 @@ async function assertGuidedMode(
     branchGeneration: Number(prepared.original.branch_generation),
     intent: {
       modelSelection: prepared.selected,
-      mode: "plan",
-      planEnabled: false,
+      mode: "yolo",
+      planEnabled: true,
       delivery: { requested: "auto", admitted: "guide" },
       steer: { state: "guided" },
     },
   });
   expect(guide.modelInvocation).toEqual(prepared.frozenA.modelInvocation);
   const value = await snapshot(host);
-  expect(value.config).toMatchObject({ mode: "plan", planEnabled: false });
+  expect(value.config).toMatchObject({ mode: "yolo", planEnabled: true });
   const guided = value.rows.window.find(
     (row) =>
       row.kind === "userInput" &&
@@ -253,7 +253,7 @@ async function admitYoloRestore(
   });
   const held = await snapshot(host);
   // 下一边界的yolo指导不能提前解除当前B的plan限制。
-  expect(held.config).toMatchObject({ mode: "plan", planEnabled: false });
+  expect(held.config).toMatchObject({ mode: "yolo", planEnabled: true });
   expect(held.queue.items).toContainEqual(
     expect.objectContaining({
       sourceCommandId: commandId,
@@ -304,8 +304,8 @@ async function assertRestoredCycleState(
       branchGeneration: Number(prepared.original.branch_generation),
       intent: {
         modelSelection: prepared.selected,
-        mode: index === 0 ? "plan" : "yolo",
-        planEnabled: false,
+        mode: "yolo",
+        planEnabled: index === 0,
         delivery: { requested: "auto", admitted: "guide" },
         steer: { state: "guided" },
       },
@@ -529,9 +529,9 @@ async function runModeCycleScenario(
 
 /** 真实HTTP/PG/Actor/Task/Harness与工具拒绝；外部SSE按原脚本逐次释放。 */
 describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
-  "Code同Run mode-only guide integration",
+  "Code同Run原plan别名guide integration",
   () => {
-    it("yolo正文后guide只切plan模式，恶意Write仍被正式管线拒绝且C同Run自然结束", async () => {
+    it("yolo正文后原plan别名开启独立规划，恶意Write正式拒绝且C同Run自然结束", async () => {
       await withModeFixture(false, runPlanGuideScenario);
     }, 90_000); // 独占HTTP/PG与三段SSE同步期限，非运行时治理值。
 

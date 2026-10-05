@@ -12,6 +12,7 @@ import {
 } from "@kenfutwork/shared";
 import {
   appSettingsSchema,
+  resolveExecutionState,
   zcodeWorkspacePresentationSchema,
 } from "@zcode/shared";
 import type { AgentRunService } from "../../agent/runtime.js";
@@ -2709,6 +2710,28 @@ export class CodeUiService {
             };
           settlements = held.settlements;
         }
+        // 在接纳边界用原resolver固定别名语义；不能先用current补flag再解释raw plan。
+        const currentExecution = resolveExecutionState({
+          mode: current.config.mode,
+          ...(current.config.planEnabled !== undefined
+            ? { planEnabled: current.config.planEnabled }
+            : {}),
+        });
+        const execution = resolveExecutionState(
+          {
+            ...(payload.mode !== undefined
+              ? {
+                  mode: protocol.commandPayloadSchemas.switchCollaborationMode.parse(
+                    { mode: payload.mode },
+                  ).mode,
+                }
+              : {}),
+            ...(payload.planEnabled !== undefined
+              ? { planEnabled: payload.planEnabled }
+              : {}),
+          },
+          currentExecution,
+        );
         const intent: protocol.ConversationInputIntent = {
           sourceCommandId: envelope.commandId,
           queueItemId: randomUUID(),
@@ -2718,9 +2741,9 @@ export class CodeUiService {
           attachments: codeInputs.map((input) => input.attachment),
           modelSelection: selection,
           mode: protocol.commandPayloadSchemas.switchCollaborationMode.parse({
-            mode: payload.mode ?? current.config.mode,
+            mode: execution.mode,
           }).mode,
-          planEnabled: payload.planEnabled ?? current.config.planEnabled,
+          planEnabled: execution.planEnabled,
           delivery: {
             requested: payload.requestedDelivery ?? "auto",
             admitted: delivery,

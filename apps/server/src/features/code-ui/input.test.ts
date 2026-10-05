@@ -594,7 +594,7 @@ it("忙时sendText进入同一Task持久FIFO，冻结完整提交选项且不伪
         text: "第二轮",
         clientId: host.clientId,
         modelSelection: host.selection,
-        mode: "plan",
+        mode: "build",
         planEnabled: true,
         delivery: { admitted: "queue" },
         dispatch: { state: "queued" },
