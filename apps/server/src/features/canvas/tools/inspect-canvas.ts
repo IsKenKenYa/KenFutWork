@@ -1,5 +1,7 @@
 import { z } from "zod";
 import type { ToolDefinition } from "../../../kernel/types.js";
+import type { LocalInstanceService } from "../../local-instance/types.js";
+import { resolveCanvasActor } from "../canvas-actor.js";
 import type { CanvasRepository } from "../repository.js";
 
 const inspectCanvasSchema = z.object({
@@ -167,6 +169,7 @@ export function buildCanvasSummaryForContext(
 export function createInspectCanvasToolDefinition(deps: {
   /** 画布数据访问（工作区作用域）：内容读取不再直连 SDK。 */
   canvasRepository?: CanvasRepository;
+  localInstance: LocalInstanceService;
 }): ToolDefinition {
   return {
     name: "inspect_canvas",
@@ -198,14 +201,12 @@ export function createInspectCanvasToolDefinition(deps: {
       const input = inspectCanvasSchema.parse(args);
 
       // 经 projects 父链解析工作区，再按工作区作用域取内容（不直连 SDK）
-      const workspaceId = await deps.canvasRepository
-        .findWorkspaceIdByCanvas(canvasId)
-        .catch(() => null);
-      const canvasRow = workspaceId
-        ? await deps.canvasRepository
-            .findById(workspaceId, canvasId)
-            .catch(() => null)
-        : null;
+      const actor = await resolveCanvasActor(deps.localInstance, execCtx);
+      const instanceId = actor.instanceId;
+      const canvasRow = await deps.canvasRepository?.findById(
+        instanceId,
+        canvasId,
+      );
 
       if (!canvasRow) {
         return JSON.stringify({

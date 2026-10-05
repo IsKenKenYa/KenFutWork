@@ -62,78 +62,82 @@ const ASSET_COLUMNS =
 /**
  * brand-kit 聚合的数据访问。
  *
- * **隔离口径**：`brand_kits` 按 `user_id` 定权（schema 早于 workspaces，无
- * `workspace_id` 列），故经 `forUser` 的 `:user` 谓词；`brand_kit_assets` 自身
- * 既无 `user_id` 也无 `workspace_id`，一律经父链
- * `exists (select 1 from brand_kits k where k.id = <asset.kit_id> and k.user_id = :user)`
+ * **隔离口径**：`brand_kits` 按 `instance_id` 定权（schema 早于 实例，无
+ * `instance_id` 列），故经 `forInstance` 的 `:instance` 谓词；`brand_kit_assets` 自身
+ * 既无 `instance_id` 也无 `instance_id`，一律经父链
+ * `exists (select 1 from brand_kits k where k.id = <asset.kit_id> and k.instance_id = :instance)`
  * 限定——**归属校验与读写是同一条语句**，不存在「先查归属再操作」的窗口。
  */
 export interface BrandKitRepository {
-  /** 把该用户其余套件的 is_default 清掉（设默认前的互斥步骤）。 */
-  clearDefault(userId: string): Promise<number>;
-  deleteAsset(userId: string, kitId: string, assetId: string): Promise<number>;
-  deleteKit(userId: string, kitId: string): Promise<number>;
+  /** 把该实例其余套件的 is_default 清掉（设默认前的互斥步骤）。 */
+  clearDefault(instanceId: string): Promise<number>;
+  deleteAsset(
+    instanceId: string,
+    kitId: string,
+    assetId: string,
+  ): Promise<number>;
+  deleteKit(instanceId: string, kitId: string): Promise<number>;
   findAsset(
-    userId: string,
+    instanceId: string,
     kitId: string,
     assetId: string,
   ): Promise<BrandKitAssetRow | null>;
   findAssetRef(
-    userId: string,
+    instanceId: string,
     kitId: string,
     assetId: string,
   ): Promise<{ file_url: string | null; id: string } | null>;
-  findKit(userId: string, kitId: string): Promise<BrandKitRow | null>;
+  findKit(instanceId: string, kitId: string): Promise<BrandKitRow | null>;
   /** 仅取 id 的存在性检查（建资产/上传前的套件校验）。 */
-  findKitRef(userId: string, kitId: string): Promise<string | null>;
+  findKitRef(instanceId: string, kitId: string): Promise<string | null>;
   /** 复制套件时取源套件的可复制字段。 */
   findKitSource(
-    userId: string,
+    instanceId: string,
     kitId: string,
   ): Promise<{ guidance_text: string | null; name: string } | null>;
   insertAsset(
-    userId: string,
+    instanceId: string,
     kitId: string,
     input: NewBrandKitAsset,
   ): Promise<BrandKitAssetRow | null>;
   /** 批量插入（复制套件用）：单条语句，归属校验在内。 */
   insertAssets(
-    userId: string,
+    instanceId: string,
     kitId: string,
     rows: readonly NewBrandKitAsset[],
   ): Promise<number>;
   insertKit(
-    userId: string,
+    instanceId: string,
     input: { guidance_text?: string | null | undefined; name: string },
   ): Promise<string | null>;
   listAssetCounts(
-    userId: string,
+    instanceId: string,
     kitIds: readonly string[],
   ): Promise<Array<{ asset_type: string; kit_id: string }>>;
-  listAssetFilePaths(userId: string, kitId: string): Promise<string[]>;
-  listAssets(userId: string, kitId: string): Promise<BrandKitAssetRow[]>;
-  listKits(userId: string): Promise<BrandKitSummaryRow[]>;
+  listAssetFilePaths(instanceId: string, kitId: string): Promise<string[]>;
+  listAssets(instanceId: string, kitId: string): Promise<BrandKitAssetRow[]>;
+  listKits(instanceId: string): Promise<BrandKitSummaryRow[]>;
   maxAssetSortOrder(
-    userId: string,
+    instanceId: string,
     kitId: string,
     assetType: string,
   ): Promise<number | null>;
   updateAsset(
-    userId: string,
+    instanceId: string,
     kitId: string,
     assetId: string,
     patch: BrandKitAssetPatch,
   ): Promise<BrandKitAssetRow | null>;
   updateKit(
-    userId: string,
+    instanceId: string,
     kitId: string,
     patch: BrandKitPatch,
   ): Promise<number>;
 }
 
-/** 资产归属校验片段：经父链确认套件属于该用户。 */
-const assetOwnedByUser = (kitIdExpr: string) =>
-  `exists (select 1 from public.brand_kits k where k.id = ${kitIdExpr} and k.user_id = :user)`;
+/** 资产归属校验片段：经父链确认套件属于该实例。 */
+const assetOwnedByInstance = (kitIdExpr: string) =>
+  `exists (select 1 from public.brand_kits k where k.id = ${kitIdExpr} and k.instance_id = :instance)`;
 
 /**
  * 把补丁翻成 SET 片段。`seed` 是 WHERE 已占用的前导参数（如 `[id]` 或
@@ -163,126 +167,130 @@ export function createBrandKitRepository(
   persistence: PersistenceService,
 ): BrandKitRepository {
   return {
-    async listKits(userId) {
-      return persistence.forUser(userId).query<BrandKitSummaryRow>(
+    async listKits(instanceId) {
+      return persistence.forInstance(instanceId).query<BrandKitSummaryRow>(
         `select ${KIT_SUMMARY_COLUMNS}
            from public.brand_kits
-          where user_id = :user
+          where instance_id = :instance
           order by created_at asc`,
       );
     },
 
-    async findKit(userId, kitId) {
-      return persistence.forUser(userId).queryOne<BrandKitRow>(
+    async findKit(instanceId, kitId) {
+      return persistence.forInstance(instanceId).queryOne<BrandKitRow>(
         `select ${KIT_COLUMNS}
            from public.brand_kits
-          where user_id = :user
+          where instance_id = :instance
             and id = $1`,
         [kitId],
       );
     },
 
-    async findKitRef(userId, kitId) {
-      const row = await persistence.forUser(userId).queryOne<{ id: string }>(
-        `select id
+    async findKitRef(instanceId, kitId) {
+      const row = await persistence
+        .forInstance(instanceId)
+        .queryOne<{ id: string }>(
+          `select id
            from public.brand_kits
-          where user_id = :user
+          where instance_id = :instance
             and id = $1`,
-        [kitId],
-      );
+          [kitId],
+        );
       return row?.id ?? null;
     },
 
-    async findKitSource(userId, kitId) {
+    async findKitSource(instanceId, kitId) {
       return persistence
-        .forUser(userId)
+        .forInstance(instanceId)
         .queryOne<{ guidance_text: string | null; name: string }>(
           `select name, guidance_text
              from public.brand_kits
-            where user_id = :user
+            where instance_id = :instance
               and id = $1`,
           [kitId],
         );
     },
 
-    async insertKit(userId, input) {
-      const row = await persistence.forUser(userId).queryOne<{ id: string }>(
-        `insert into public.brand_kits (user_id, name, guidance_text)
-         values (:user, $1, $2)
+    async insertKit(instanceId, input) {
+      const row = await persistence
+        .forInstance(instanceId)
+        .queryOne<{ id: string }>(
+          `insert into public.brand_kits (instance_id, name, guidance_text)
+         values (:instance, $1, $2)
          returning id`,
-        [input.name, input.guidance_text ?? null],
-      );
+          [input.name, input.guidance_text ?? null],
+        );
       return row?.id ?? null;
     },
 
-    async clearDefault(userId) {
-      return persistence.forUser(userId).execute(
+    async clearDefault(instanceId) {
+      return persistence.forInstance(instanceId).execute(
         `update public.brand_kits
             set is_default = false
-          where user_id = :user
+          where instance_id = :instance
             and is_default = true`,
       );
     },
 
-    async updateKit(userId, kitId, patch) {
+    async updateKit(instanceId, kitId, patch) {
       const built = buildPatch(patch, [kitId]);
       if (!built) {
         return 0;
       }
 
-      return persistence.forUser(userId).execute(
+      return persistence.forInstance(instanceId).execute(
         `update public.brand_kits
             set ${built.assignments.join(", ")}
-          where user_id = :user
+          where instance_id = :instance
             and id = $1`,
         built.values,
       );
     },
 
-    async deleteKit(userId, kitId) {
-      return persistence.forUser(userId).execute(
+    async deleteKit(instanceId, kitId) {
+      return persistence.forInstance(instanceId).execute(
         `delete from public.brand_kits
-          where user_id = :user
+          where instance_id = :instance
             and id = $1`,
         [kitId],
       );
     },
 
-    async listAssets(userId, kitId) {
-      return persistence.forUser(userId).query<BrandKitAssetRow>(
+    async listAssets(instanceId, kitId) {
+      return persistence.forInstance(instanceId).query<BrandKitAssetRow>(
         `select ${ASSET_COLUMNS}
            from public.brand_kit_assets a
           where a.kit_id = $1
-            and ${assetOwnedByUser("a.kit_id")}
+            and ${assetOwnedByInstance("a.kit_id")}
           order by a.sort_order asc, a.created_at asc`,
         [kitId],
       );
     },
 
-    async listAssetCounts(userId, kitIds) {
+    async listAssetCounts(instanceId, kitIds) {
       if (kitIds.length === 0) {
         return [];
       }
       return persistence
-        .forUser(userId)
+        .forInstance(instanceId)
         .query<{ asset_type: string; kit_id: string }>(
           `select a.kit_id, a.asset_type
              from public.brand_kit_assets a
             where a.kit_id = any($1::uuid[])
-              and ${assetOwnedByUser("a.kit_id")}`,
+              and ${assetOwnedByInstance("a.kit_id")}`,
           [kitIds],
         );
     },
 
-    async listAssetFilePaths(userId, kitId) {
+    async listAssetFilePaths(instanceId, kitId) {
       const rows = await persistence
-        .forUser(userId)
+        .forInstance(instanceId)
         .query<{ file_url: string | null }>(
           `select a.file_url
              from public.brand_kit_assets a
             where a.kit_id = $1
               and a.file_url is not null
-              and ${assetOwnedByUser("a.kit_id")}`,
+              and ${assetOwnedByInstance("a.kit_id")}`,
           [kitId],
         );
       return rows
@@ -290,39 +298,39 @@ export function createBrandKitRepository(
         .filter((path): path is string => !!path);
     },
 
-    async findAsset(userId, kitId, assetId) {
-      return persistence.forUser(userId).queryOne<BrandKitAssetRow>(
+    async findAsset(instanceId, kitId, assetId) {
+      return persistence.forInstance(instanceId).queryOne<BrandKitAssetRow>(
         `select ${ASSET_COLUMNS}
            from public.brand_kit_assets a
           where a.id = $1
             and a.kit_id = $2
-            and ${assetOwnedByUser("a.kit_id")}`,
+            and ${assetOwnedByInstance("a.kit_id")}`,
         [assetId, kitId],
       );
     },
 
-    async findAssetRef(userId, kitId, assetId) {
+    async findAssetRef(instanceId, kitId, assetId) {
       return persistence
-        .forUser(userId)
+        .forInstance(instanceId)
         .queryOne<{ file_url: string | null; id: string }>(
           `select a.id, a.file_url
              from public.brand_kit_assets a
             where a.id = $1
               and a.kit_id = $2
-              and ${assetOwnedByUser("a.kit_id")}`,
+              and ${assetOwnedByInstance("a.kit_id")}`,
           [assetId, kitId],
         );
     },
 
-    async maxAssetSortOrder(userId, kitId, assetType) {
+    async maxAssetSortOrder(instanceId, kitId, assetType) {
       const row = await persistence
-        .forUser(userId)
+        .forInstance(instanceId)
         .queryOne<{ sort_order: number }>(
           `select a.sort_order
              from public.brand_kit_assets a
             where a.kit_id = $1
               and a.asset_type = $2::public.brand_kit_asset_type
-              and ${assetOwnedByUser("a.kit_id")}
+              and ${assetOwnedByInstance("a.kit_id")}
             order by a.sort_order desc
             limit 1`,
           [kitId, assetType],
@@ -330,13 +338,13 @@ export function createBrandKitRepository(
       return row?.sort_order ?? null;
     },
 
-    async insertAsset(userId, kitId, input) {
-      return persistence.forUser(userId).queryOne<BrandKitAssetRow>(
+    async insertAsset(instanceId, kitId, input) {
+      return persistence.forInstance(instanceId).queryOne<BrandKitAssetRow>(
         `insert into public.brand_kit_assets
                 (kit_id, asset_type, display_name, role, sort_order,
                  text_content, file_url, metadata)
          select $1, $2::public.brand_kit_asset_type, $3, $4, $5, $6, $7, $8::jsonb
-          where ${assetOwnedByUser("$1")}
+          where ${assetOwnedByInstance("$1")}
          returning ${ASSET_COLUMNS}`,
         [
           kitId,
@@ -351,7 +359,7 @@ export function createBrandKitRepository(
       );
     },
 
-    async insertAssets(userId, kitId, rows) {
+    async insertAssets(instanceId, kitId, rows) {
       if (rows.length === 0) {
         return 0;
       }
@@ -378,7 +386,7 @@ export function createBrandKitRepository(
         return `($1::uuid, $${start}::public.brand_kit_asset_type, $${start + 1}, $${start + 2}, $${start + 3}::int, $${start + 4}, $${start + 5}, $${end}::jsonb)`;
       });
 
-      return persistence.forUser(userId).execute(
+      return persistence.forInstance(instanceId).execute(
         `insert into public.brand_kit_assets
                 (kit_id, asset_type, display_name, role, sort_order,
                  text_content, file_url, metadata)
@@ -386,12 +394,12 @@ export function createBrandKitRepository(
            from (values ${tuples.join(", ")})
                   as v(kit_id, asset_type, display_name, role, sort_order,
                        text_content, file_url, metadata)
-          where ${assetOwnedByUser("$1")}`,
+          where ${assetOwnedByInstance("$1")}`,
         values,
       );
     },
 
-    async updateAsset(userId, kitId, assetId, patch) {
+    async updateAsset(instanceId, kitId, assetId, patch) {
       const built = buildPatch(patch, [assetId, kitId], {
         metadata: "::jsonb",
       });
@@ -399,23 +407,23 @@ export function createBrandKitRepository(
         return null;
       }
 
-      return persistence.forUser(userId).queryOne<BrandKitAssetRow>(
+      return persistence.forInstance(instanceId).queryOne<BrandKitAssetRow>(
         `update public.brand_kit_assets a
             set ${built.assignments.join(", ")}
           where a.id = $1
             and a.kit_id = $2
-            and ${assetOwnedByUser("a.kit_id")}
+            and ${assetOwnedByInstance("a.kit_id")}
         returning ${ASSET_COLUMNS}`,
         built.values,
       );
     },
 
-    async deleteAsset(userId, kitId, assetId) {
-      return persistence.forUser(userId).execute(
+    async deleteAsset(instanceId, kitId, assetId) {
+      return persistence.forInstance(instanceId).execute(
         `delete from public.brand_kit_assets a
           where a.id = $1
             and a.kit_id = $2
-            and ${assetOwnedByUser("a.kit_id")}`,
+            and ${assetOwnedByInstance("a.kit_id")}`,
         [assetId, kitId],
       );
     },

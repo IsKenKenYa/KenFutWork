@@ -82,55 +82,34 @@ describe("validateWorkDir", () => {
   });
 });
 
-describe("createProjectWorkDirLoader（画布 → 项目绑定目录）", () => {
-  it("画布所属项目绑定了目录时返回该目录", async () => {
+describe("createProjectWorkDirLoader（可信实例 → 画布项目绑定目录）", () => {
+  it("目标实例由调用者传入，画布不能反推或替换归属", async () => {
     const loader = createProjectWorkDirLoader({
-      canvases: { findWorkspaceIdByCanvas: async () => "ws-1" },
       projects: {
-        findWorkDirByCanvas: async (workspaceId, canvasId) =>
-          workspaceId === "ws-1" && canvasId === "c1" ? "D:/work" : null,
+        findWorkDirByCanvas: async (instanceId, canvasId) =>
+          instanceId === "instance-1" && canvasId === "c1"
+            ? "/work/project"
+            : null,
       },
     });
-    await expect(loader("c1")).resolves.toBe("D:/work");
+    expect(await loader("instance-1", "c1")).toBe("/work/project");
+    expect(await loader("foreign", "c1")).toBeNull();
   });
-
-  it("画布不属于任何工作区、或未绑定，都返回 null（绑定是增强不是前置条件）", async () => {
-    const noWorkspace = createProjectWorkDirLoader({
-      canvases: { findWorkspaceIdByCanvas: async () => null },
-      projects: { findWorkDirByCanvas: async () => "D:/work" },
-    });
-    await expect(noWorkspace("c1")).resolves.toBeNull();
-
-    const unbound = createProjectWorkDirLoader({
-      canvases: { findWorkspaceIdByCanvas: async () => "ws-1" },
-      projects: { findWorkDirByCanvas: async () => null },
-    });
-    await expect(unbound("c1")).resolves.toBeNull();
-  });
-
-  it("数据访问抛错时不冒泡（整轮 run 不该因为读绑定目录失败而失败）", async () => {
-    const loader = createProjectWorkDirLoader({
-      canvases: {
-        findWorkspaceIdByCanvas: async () => {
-          throw new Error("db down");
+  it("未绑定返回 null；存储故障如实传播", async () => {
+    expect(
+      await createProjectWorkDirLoader({
+        projects: { findWorkDirByCanvas: async () => null },
+      })("instance-1", "c1"),
+    ).toBeNull();
+    const failure = new Error("db down");
+    await expect(
+      createProjectWorkDirLoader({
+        projects: {
+          findWorkDirByCanvas: async () => {
+            throw failure;
+          },
         },
-      },
-      projects: {
-        findWorkDirByCanvas: async () => {
-          throw new Error("db down");
-        },
-      },
-    });
-    await expect(loader("c1")).resolves.toBeNull();
-
-    const secondLoader = createProjectWorkDirLoader({
-      canvases: { findWorkspaceIdByCanvas: async () => "ws-1" },
-      projects: {
-        findWorkDirByCanvas: async () => {
-          throw new Error("db down");
-        },
-      },
-    });
-    await expect(secondLoader("c1")).resolves.toBeNull();
+      })("instance-1", "c1"),
+    ).rejects.toBe(failure);
   });
 });

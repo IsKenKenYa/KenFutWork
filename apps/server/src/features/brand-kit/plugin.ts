@@ -14,11 +14,12 @@ import { createBrandKitRepository } from "./repository.js";
  */
 export const brandKitPlugin: PluginDefinition = {
   name: "brand-kit",
-  inject: ["auth", "blob", "persistence"],
+  inject: ["localAccess", "blob", "persistence", "localInstance"],
   apply(ctx) {
     ctx.register("brandKit", () =>
       createBrandKitService({
         blob: ctx.get("blob"),
+        localInstance: ctx.get("localInstance"),
         repository: createBrandKitRepository(ctx.get("persistence")),
       }),
     );
@@ -26,13 +27,16 @@ export const brandKitPlugin: PluginDefinition = {
       createBrandKitToolDefinition({
         // apply 内取即实例化（纯构造无 IO；compose 启动期本就强制全量定例化）
         brandKitService: ctx.get("brandKit"),
+        localInstance: ctx.get("localInstance"),
         canvasRepository: createCanvasRepository(ctx.get("persistence")),
       }),
     );
     // 品牌段：与 get_brand_kit 工具同属主（design + 已绑定才出现）
     ctx.get("systemPrompt").register(brandKitPromptSection);
+  },
+  mounted(ctx) {
     void registerBrandKitRoutes(ctx.app, {
-      auth: ctx.get("auth"),
+      localAccess: ctx.get("localAccess"),
       brandKitService: ctx.get("brandKit"),
     });
   },

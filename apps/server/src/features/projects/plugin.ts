@@ -7,30 +7,30 @@ import { createProjectRepository } from "./repository.js";
 
 /**
  * projects 插件：项目 CRUD + 缩略图服务 + HTTP 路由（路由注册放 mounted）。
- * 数据访问经 `persistence` 缝，缩略图经 `blob` 缝——不再持有用户 Supabase 客户端。
+ * 数据访问经 `persistence` 缝，缩略图经 `blob` 缝——不再持有旧账户客户端。
  */
 export function createProjectsPlugin(): PluginDefinition {
   return {
     name: "projects",
-    inject: ["auth", "blob", "persistence", "viewer"],
+    inject: ["localAccess", "blob", "persistence", "localInstance"],
     apply(ctx) {
       ctx.register("projects", () =>
         createProjectService({
           blob: ctx.get("blob"),
           repository: createProjectRepository(ctx.get("persistence")),
-          viewerService: ctx.get("viewer"),
+          localInstance: ctx.get("localInstance"),
           sandboxRoot: ctx.env.sandboxRoot,
           beforeArchiveCodeProject: async (actor, projectId) => {
-            const workspace = await ctx.get("viewer").resolveWorkspace(actor);
+            const context = await ctx.get("localInstance").resolve(actor);
             const roots = (
               await createCodeUiRepository(ctx.get("persistence")).listRoots(
-                workspace.id,
+                context.instanceId,
               )
             ).filter(
               (root) => root.project_id === projectId && !root.deleted_at,
             );
             const close = createTaskResourceCloser({
-              viewer: ctx.get("viewer"),
+              localInstance: ctx.get("localInstance"),
               resources: () => ({
                 runs: ctx.get("agentRuns"),
                 work: ctx.get("taskWork"),
@@ -51,7 +51,7 @@ export function createProjectsPlugin(): PluginDefinition {
     },
     mounted(ctx) {
       void registerProjectRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         projectService: ctx.get("projects"),
       });
     },
