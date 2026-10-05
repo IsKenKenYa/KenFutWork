@@ -6,9 +6,11 @@ import {
 import type { z } from "zod";
 import { deriveSessionTitle } from "../chat/session-title.js";
 import type { ApprovalEvent } from "../permissions/approval-types.js";
+import type { RunUsageTotals } from "../usage/run-usage-accumulator.js";
 import { updateTurnFileSummary } from "./file-changes.js";
-import type { CodeAdmittedInput } from "./input-intents.js";
+import { type CodeAdmittedInput, codeGuideMessageId } from "./input-intents.js";
 import { codeInputRouting, resolveHeldQueue } from "./queue-control.js";
+import type { UserInputEvent } from "./user-input-types.js";
 
 type Snapshot = protocol.ConversationSnapshot;
 type Row = protocol.ConversationRow;
@@ -50,6 +52,21 @@ export interface CodeUiConversationState {
   detachedChildSessionIds?: string[];
   inputs?: CodeAdmittedInput[];
   inputOwner?: { hostId: string; runtimeId: string };
+  runUsage?: Array<[string, RunUsageTotals]>;
+  childRunUsage?: Array<[string, Array<[string, RunUsageTotals]>]>;
+}
+
+function cancelToolWaits(snapshot: Snapshot, at: number) {
+  snapshot.pendingInteractions = [];
+  for (const row of snapshot.rows.window) {
+    if (
+      row.kind === "toolCall" &&
+      ["running", "inputStreaming", "pendingApproval"].includes(row.status)
+    ) {
+      row.status = "cancelled";
+      row.endedAt = at;
+    }
+  }
 }
 
 function cancelSnapshot(
@@ -66,7 +83,7 @@ function cancelSnapshot(
     activeWorks: [],
   };
   snapshot.inputRouting = codeInputRouting(snapshot);
-  snapshot.pendingInteractions = [];
+  cancelToolWaits(snapshot, at);
   for (const row of snapshot.rows.window) {
     if (
       (row.kind === "assistantText" || row.kind === "reasoning") &&
@@ -76,13 +93,7 @@ function cancelSnapshot(
     if (row.kind === "turnHeader" && row.state === "running") {
       row.state = "completedInterrupted";
       row.endedAt = at;
-    }
-    if (
-      row.kind === "toolCall" &&
-      ["running", "inputStreaming", "pendingApproval"].includes(row.status)
-    ) {
-      row.status = "cancelled";
-      row.endedAt = at;
+      for (const segment of row.workSegments ?? []) segment.endedAt ??= at;
     }
     if (
       row.kind === "subagent" &&
@@ -123,6 +134,7 @@ function completeSnapshot(snapshot: Snapshot, at: number) {
     if (row.kind === "turnHeader" && row.state === "running") {
       row.state = "completedSuccess";
       row.endedAt = at;
+      for (const segment of row.workSegments ?? []) segment.endedAt ??= at;
     }
   }
 }
@@ -183,6 +195,8 @@ function finishChild(
         : "success";
   row.summaryText = event.outputSummary ?? event.outputText ?? "";
   row.endedAt = at;
+  if (row.status === "failed" || row.status === "cancelled")
+    cancelToolWaits(child, at);
   child.seq += 1;
   child.revision += 1;
   child.control = {
@@ -277,6 +291,8 @@ export function createCodeUiConversation(input: {
   const detachedChildren = new Set(input.state?.detachedChildSessionIds ?? []);
   const inputs = structuredClone(input.state?.inputs ?? []);
   let inputOwner = input.state?.inputOwner;
+  const runUsage = new Map(input.state?.runUsage ?? []);
+  const childRunUsage = new Map(input.state?.childRunUsage ?? []);
   const config = protocol.sessionConfigStateSchema.parse(input.config);
   if (input.state) {
     if (input.state.version !== 1) throw new Error("Code 会话状态版本不匹配");
@@ -376,6 +392,8 @@ export function createCodeUiConversation(input: {
         closedRuns: [...closedRuns],
         detachedChildSessionIds: [...detachedChildren],
         inputs,
+        runUsage: [...runUsage],
+        childRunUsage: [...childRunUsage],
         ...(inputOwner ? { inputOwner } : {}),
       });
     },
@@ -462,6 +480,9 @@ export function createCodeUiConversation(input: {
       return structuredClone(record);
     },
     recordApprovalEvent(event: ApprovalEvent) {
+      this.recordInteractionEvent(event);
+    },
+    recordInteractionEvent(event: ApprovalEvent | UserInputEvent) {
       const target = requireSnapshot(
         event.identity.agentId === "main"
           ? event.identity.taskId
@@ -488,9 +509,12 @@ export function createCodeUiConversation(input: {
         row.status =
           event.type === "requested"
             ? "pendingApproval"
-            : event.type === "resolved" && event.decision === "allow"
+            : event.type === "resolved" &&
+                (!("decision" in event) || event.decision === "allow")
               ? "running"
-              : "error";
+              : event.interaction.kind === "userInput"
+                ? "cancelled"
+                : "error";
         if (row.status === "error")
           row.error = {
             code: "tool_denied",
@@ -590,6 +614,8 @@ export function createCodeUiConversation(input: {
         state: {
           version: 1,
           runId: event.runId,
+          runUsage: childRunUsage.get(childSessionId) ?? [],
+          childRunUsage: [...childRunUsage].filter(([id]) => descendants.has(id)),
           snapshots: [...snapshots.values()].filter((snapshot) =>
             descendants.has(snapshot.sessionId),
           ),
@@ -607,7 +633,11 @@ export function createCodeUiConversation(input: {
           text: child.meta.title ?? "子任务",
         });
       host.recordEvent(event);
-      for (const snapshot of host.exportState().snapshots)
+      const state = host.exportState();
+      childRunUsage.set(childSessionId, state.runUsage ?? []);
+      for (const [id, usage] of state.childRunUsage ?? [])
+        childRunUsage.set(id, usage);
+      for (const snapshot of state.snapshots)
         snapshots.set(snapshot.sessionId, snapshot);
       if (!["run.completed", "run.failed", "run.canceled"].includes(event.type))
         return;
@@ -648,6 +678,49 @@ export function createCodeUiConversation(input: {
         parent.revision += 1;
       }
     },
+    consumeGuides(ids: ReadonlySet<string>) {
+      const header = root.rows.window.find(
+        (row) => row.kind === "turnHeader" && row.turnId === runId,
+      );
+      if (header?.kind !== "turnHeader" || header.state !== "running")
+        throw new Error("指导所属轮次已结束。");
+      for (const record of inputs) {
+        const entityId = codeGuideMessageId(record);
+        if (
+          !ids.has(entityId) ||
+          record.runId !== runId ||
+          record.status !== "queued" ||
+          record.intent.delivery.admitted !== "guide"
+        )
+          continue;
+        const at = clock();
+        record.status = "settled";
+        record.intent.steer = { state: "guided" };
+        record.intent.dispatch = { state: "drained" };
+        root.queue.items = root.queue.items.filter(
+          (item) => item.queueItemId !== record.intent.queueItemId,
+        );
+        header.workSegments ??= [
+          { segmentId: header.entityId ?? `turn:${runId}`, startedAt: header.startedAt },
+        ];
+        const previous = header.workSegments.at(-1);
+        if (previous) previous.endedAt = at;
+        header.workSegments.push({ segmentId: entityId, triggerEntityId: entityId, startedAt: at });
+        header.sourceCommandId = record.intent.sourceCommandId;
+        root.seq += 1;
+        root.revision += 1;
+        appendRow(root, {
+          ...base(root, entityId, at),
+          kind: "userInput",
+          origin: "realUser",
+          guided: true,
+          sourceCommandId: record.intent.sourceCommandId,
+          rootSourceCommandId: record.intent.provenance?.sourceCommandId ?? record.intent.sourceCommandId,
+          clientId: record.intent.clientId,
+          text: record.intent.text,
+        });
+      }
+    },
     startInput(record: CodeAdmittedInput) {
       const execution = {
         runId: record.runId,
@@ -669,10 +742,13 @@ export function createCodeUiConversation(input: {
         this.startTurn({
           ...execution,
           clientId: record.intent.clientId,
-          ...(record.editOf
+          ...(record.historyOf
             ? {
-                origin: "editRerun" as const,
-                rootSourceCommandId: record.editOf.rootSourceCommandId,
+                origin:
+                  record.historyOf.action === "editUserQuery"
+                    ? ("editRerun" as const)
+                    : ("userInput" as const),
+                rootSourceCommandId: record.historyOf.rootSourceCommandId,
               }
             : {}),
           text: record.intent.text,
@@ -824,9 +900,52 @@ export function createCodeUiConversation(input: {
         return;
       }
       if (event.runId !== runId || closedRuns.has(event.runId)) return;
+      if (event.type === "run.usage") {
+        if (
+          event.runInputTokens === undefined ||
+          event.runOutputTokens === undefined
+        )
+          return;
+        const cached =
+          event.runCachedInputTokens ??
+          runUsage.get(event.runId)?.cachedInputTokens;
+        runUsage.set(event.runId, {
+          inputTokens: event.runInputTokens,
+          outputTokens: event.runOutputTokens,
+          ...(cached === undefined ? {} : { cachedInputTokens: cached }),
+        });
+        root.usage.cumulative = {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: root.usage.cumulative.cacheWriteTokens,
+        };
+        for (const usage of runUsage.values()) {
+          root.usage.cumulative.inputTokens += usage.inputTokens;
+          root.usage.cumulative.outputTokens += usage.outputTokens;
+          root.usage.cumulative.cacheReadTokens += usage.cachedInputTokens ?? 0;
+        }
+        root.seq += 1;
+        root.revision += 1;
+        return;
+      }
       if (
         ["run.completed", "run.failed", "run.canceled"].includes(event.type)
       ) {
+        // 未到模型边界的指导仍是原canonical输入；转回普通队列，不能复用已关闭Run。
+        for (const guide of inputs) {
+          if (
+            guide.runId !== event.runId || guide.status !== "queued" ||
+            guide.intent.delivery.admitted !== "guide"
+          ) continue;
+          const reasonCode = event.type === "run.completed"
+            ? "guide.noToolBoundary" : "guide.turnInterrupted";
+          guide.runId = randomUUID();
+          guide.intent.delivery = { ...guide.intent.delivery, admitted: "queue", fallbackReasonCode: reasonCode };
+          guide.intent.steer = { state: "fellBack", reasonCode };
+          const index = root.queue.items.findIndex((item) => item.queueItemId === guide.intent.queueItemId);
+          if (index >= 0) root.queue.items[index] = protocol.queueItemSchema.parse(guide.intent);
+        }
         const active = inputs.find(
           (entry) => entry.runId === event.runId && entry.status === "active",
         );
@@ -944,8 +1063,11 @@ export function createCodeUiConversation(input: {
         });
         const pending = snapshot.pendingInteractions.find(
           (interaction) =>
-            interaction.payload.kind === "permission" &&
-            interaction.payload.toolCallId === toolCallId,
+            (interaction.payload.kind === "permission" &&
+              interaction.payload.toolCallId === toolCallId) ||
+            (interaction.payload.kind === "userInput" &&
+              interaction.payload.traceId === event.runId &&
+              interaction.payload.toolCallId === event.toolCallId),
         );
         const toolRow = snapshot.rows.window.at(-1);
         if (pending && toolRow?.kind === "toolCall") {

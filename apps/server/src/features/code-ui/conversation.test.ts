@@ -1,3 +1,4 @@
+import type { StreamEvent } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 import { createCodeUiConversation } from "./conversation.js";
 
@@ -35,6 +36,364 @@ it("共同Harness的真实run.compacted投影为自动压缩标记，不伪造�
   expect(
     marker?.kind === "timelineMarker" ? marker.marker : {},
   ).not.toHaveProperty("tokensBefore");
+});
+
+describe("Code 会话用量的公共投影与恢复", () => {
+  const timestamp = "2026-10-05T00:00:00.000Z";
+  const input: Parameters<typeof createCodeUiConversation>[0] = {
+    sessionId: "usage-root",
+    workspacePath: "/workspace/project",
+    clock: () => Date.parse(timestamp),
+    config: {
+      provider: "zcode",
+      model: "stop-model",
+      thought: "",
+      followupMode: "queue",
+      mode: "build",
+    },
+  };
+  const usageA = {
+    type: "run.usage",
+    runId: "run-a",
+    modelCallId: "call-a-last",
+    inputTokens: 10,
+    outputTokens: 7,
+    cachedInputTokens: 4,
+    runInputTokens: 20,
+    runOutputTokens: 10,
+    runCachedInputTokens: 4,
+    timestamp,
+  } satisfies StreamEvent;
+  const usageB = {
+    type: "run.usage",
+    runId: "run-b",
+    modelCallId: "call-b",
+    inputTokens: 7,
+    outputTokens: 2,
+    cachedInputTokens: 3,
+    runInputTokens: 7,
+    runOutputTokens: 2,
+    runCachedInputTokens: 3,
+    timestamp,
+  } satisfies StreamEvent;
+
+  it("同 Run 的绝对 totals 重放不翻倍，向下终值修正覆盖旧值", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "读取并回答" });
+    host.recordEvent(usageA);
+    host.recordEvent(usageA);
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 10,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+
+    const corrected = {
+      ...usageA,
+      outputTokens: 6,
+      cachedInputTokens: 3,
+      runOutputTokens: 9,
+      runCachedInputTokens: 3,
+    };
+    host.recordEvent(corrected);
+    host.recordEvent(corrected);
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 9,
+      cacheReadTokens: 3,
+      cacheWriteTokens: 0,
+    });
+    expect(host.exportState().runUsage).toEqual([
+      ["run-a", { inputTokens: 20, outputTokens: 9, cachedInputTokens: 3 }],
+    ]);
+  });
+
+  it("A 完成后 B 的 Run totals 与会话历史 A 相加", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "第一轮" });
+    host.recordEvent(usageA);
+    host.recordEvent({ type: "run.completed", runId: "run-a", timestamp });
+    host.startTurn({ runId: "run-b", commandId: "send-b", text: "继续" });
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 10,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+    host.recordEvent(usageB);
+    host.recordEvent(usageB);
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 27,
+      outputTokens: 12,
+      cacheReadTokens: 7,
+      cacheWriteTokens: 0,
+    });
+    expect(host.exportState().runUsage).toEqual([
+      ["run-a", { inputTokens: 20, outputTokens: 10, cachedInputTokens: 4 }],
+      ["run-b", { inputTokens: 7, outputTokens: 2, cachedInputTokens: 3 }],
+    ]);
+  });
+
+  it("exportState 重建后，B 的绝对修正仍保留 A 的已结算总量", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "第一轮" });
+    host.recordEvent(usageA);
+    host.recordEvent({ type: "run.completed", runId: "run-a", timestamp });
+    host.startTurn({ runId: "run-b", commandId: "send-b", text: "第二轮" });
+    host.recordEvent(usageB);
+    const state = host.exportState();
+    const restored = createCodeUiConversation({ ...input, state });
+    expect(restored.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 27,
+      outputTokens: 12,
+      cacheReadTokens: 7,
+      cacheWriteTokens: 0,
+    });
+
+    const corrected = {
+      ...usageB,
+      outputTokens: 1,
+      cachedInputTokens: 1,
+      runOutputTokens: 1,
+      runCachedInputTokens: 1,
+    };
+    restored.recordEvent(corrected);
+    restored.recordEvent(corrected);
+    expect(restored.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 27,
+      outputTokens: 11,
+      cacheReadTokens: 5,
+      cacheWriteTokens: 0,
+    });
+    expect(restored.exportState().runUsage).toEqual([
+      ["run-a", { inputTokens: 20, outputTokens: 10, cachedInputTokens: 4 }],
+      ["run-b", { inputTokens: 7, outputTokens: 1, cachedInputTokens: 1 }],
+    ]);
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 27,
+      outputTokens: 12,
+      cacheReadTokens: 7,
+      cacheWriteTokens: 0,
+    });
+  });
+
+  it("关闭 A 后迟到 usage 和无完整 totals 的旧事件不影响新 B", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "第一轮" });
+    host.recordEvent(usageA);
+    host.recordEvent({ type: "run.completed", runId: "run-a", timestamp });
+    const lateA = {
+      ...usageA,
+      inputTokens: 1000,
+      outputTokens: 1000,
+      runInputTokens: 1000,
+      runOutputTokens: 1000,
+      runCachedInputTokens: 900,
+    };
+    const completed = host.getSnapshot();
+    host.recordEvent(lateA);
+    expect(host.getSnapshot()).toEqual(completed);
+
+    host.startTurn({ runId: "run-b", commandId: "send-b", text: "第二轮" });
+    host.recordEvent(usageB);
+    const before = host.getSnapshot();
+    host.recordEvent(lateA);
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-b",
+      inputTokens: 999,
+      outputTokens: 999,
+      cachedInputTokens: 999,
+      timestamp,
+    });
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-b",
+      inputTokens: 999,
+      outputTokens: 999,
+      runInputTokens: 999,
+      timestamp,
+    });
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-b",
+      inputTokens: 999,
+      outputTokens: 999,
+      runOutputTokens: 999,
+      timestamp,
+    });
+    expect(host.getSnapshot()).toEqual(before);
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 27,
+      outputTokens: 12,
+      cacheReadTokens: 7,
+      cacheWriteTokens: 0,
+    });
+  });
+
+  it("缓存未知不登记新的已知零，后续缺失保留已知值，显式零才修正", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "读取并回答" });
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-a",
+      modelCallId: "call-a-first",
+      inputTokens: 10,
+      outputTokens: 3,
+      runInputTokens: 10,
+      runOutputTokens: 3,
+      timestamp,
+    });
+    expect(host.exportState().runUsage).toEqual([
+      ["run-a", { inputTokens: 10, outputTokens: 3 }],
+    ]);
+    host.recordEvent(usageA);
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-a",
+      modelCallId: "call-a-last",
+      inputTokens: 10,
+      outputTokens: 6,
+      runInputTokens: 20,
+      runOutputTokens: 9,
+      timestamp,
+    });
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 9,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+    expect(host.exportState().runUsage).toEqual([
+      ["run-a", { inputTokens: 20, outputTokens: 9, cachedInputTokens: 4 }],
+    ]);
+
+    host.recordEvent({
+      ...usageA,
+      outputTokens: 5,
+      cachedInputTokens: 0,
+      runOutputTokens: 8,
+      runCachedInputTokens: 0,
+    });
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-a",
+      modelCallId: "call-a-last",
+      inputTokens: 10,
+      outputTokens: 4,
+      runInputTokens: 20,
+      runOutputTokens: 7,
+      timestamp,
+    });
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 7,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+    expect(host.exportState().runUsage).toEqual([
+      ["run-a", { inputTokens: 20, outputTokens: 7, cachedInputTokens: 0 }],
+    ]);
+  });
+
+  it("真实 Task 子会话连续两 call 累计，重建后修正仍保留子用量与缓存", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "派发检查" });
+    host.recordEvent(usageA);
+    const childId = host.registerChildDispatch({
+      parentSessionId: "usage-root",
+      parentRunId: "run-a",
+      toolCallId: "task-usage",
+      childSessionId: "usage-child",
+      role: "explore",
+      title: "检查子任务",
+      at: Date.parse(timestamp),
+      detached: false,
+    });
+    expect(
+      host.getSnapshot().rows.window.find((row) => row.kind === "subagent"),
+    ).toMatchObject({
+      childSessionId: childId,
+      parentToolCallId: "run-a/task-usage",
+      status: "running",
+    });
+    const firstCall = {
+      type: "run.usage",
+      runId: "child-run",
+      modelCallId: "child-call-a",
+      inputTokens: 10,
+      outputTokens: 3,
+      cachedInputTokens: 4,
+      runInputTokens: 10,
+      runOutputTokens: 3,
+      runCachedInputTokens: 4,
+      timestamp,
+    } satisfies StreamEvent;
+    host.recordEvent(firstCall);
+    expect(host.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 10,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+    host.recordChildRunEvent(childId, firstCall);
+    expect(host.getSnapshot(childId).usage.cumulative).toEqual({
+      inputTokens: 10,
+      outputTokens: 3,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+    const secondCall = {
+      ...firstCall,
+      modelCallId: "child-call-b",
+      outputTokens: 7,
+      cachedInputTokens: 0,
+      runInputTokens: 20,
+      runOutputTokens: 10,
+    };
+    host.recordChildRunEvent(childId, secondCall);
+    host.recordChildRunEvent(childId, secondCall);
+    expect(host.getSnapshot(childId).usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 10,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+
+    const restored = createCodeUiConversation({
+      ...input,
+      state: host.exportState(),
+    });
+    expect(restored.getSnapshot(childId).usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 10,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+    restored.recordChildRunEvent(childId, {
+      type: "run.usage",
+      runId: "child-run",
+      modelCallId: "child-call-b",
+      inputTokens: 10,
+      outputTokens: 6,
+      runInputTokens: 20,
+      runOutputTokens: 9,
+      timestamp,
+    });
+    expect(restored.getSnapshot(childId).usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 9,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+    expect(restored.getSnapshot().usage.cumulative).toEqual({
+      inputTokens: 20,
+      outputTokens: 10,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 0,
+    });
+  });
 });
 
 describe("Code 宿主会话快照", () => {
