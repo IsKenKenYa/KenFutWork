@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  SqlError,
-  UserIsolationError,
-  WorkspaceIsolationError,
-} from "./errors.js";
+import { InstanceIsolationError, SqlError } from "./errors.js";
 import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
@@ -77,7 +73,7 @@ function dataCalls(calls: QueryCall[]) {
 }
 
 describe("persistence（自管 Postgres Provider）", () => {
-  it("根客户端原样下传参数（系统级语句不绑定工作区）", async () => {
+  it("根客户端原样下传参数（系统级语句不绑定实例）", async () => {
     const fake = createFakeRunner(
       alwaysRespond({ rowCount: 1, rows: [{ id: "p1" }] }),
     );
@@ -94,70 +90,73 @@ describe("persistence（自管 Postgres Provider）", () => {
     ]);
   });
 
-  it("forWorkspace 把 :workspace 重写为末位参数占位符", async () => {
+  it("forInstance 把 :instance 重写为末位参数占位符", async () => {
     const fake = createFakeRunner();
     const persistence = createPersistenceFromRunner(fake.runner);
 
     await persistence
-      .forWorkspace("ws-1")
+      .forInstance("instance-1")
       .query(
-        "select id from projects where workspace_id = :workspace and id = $1",
+        "select id from projects where instance_id = :instance and id = $1",
         ["prj"],
       );
 
     expect(fake.calls).toEqual([
       {
-        text: "select id from projects where workspace_id = $2 and id = $1",
-        values: ["prj", "ws-1"],
+        text: "select id from projects where instance_id = $2 and id = $1",
+        values: ["prj", "instance-1"],
       },
     ]);
   });
 
-  it("多处 :workspace 复用同一占位符，工作区只绑定一次", async () => {
+  it("多处 :instance 复用同一占位符，实例只绑定一次", async () => {
     const fake = createFakeRunner();
     const persistence = createPersistenceFromRunner(fake.runner);
 
     await persistence
-      .forWorkspace("ws-2")
+      .forInstance("instance-2")
       .execute(
-        "delete from canvases where workspace_id = :workspace and project_id in (select id from projects where workspace_id = :workspace)",
+        "delete from canvases where instance_id = :instance and project_id in (select id from projects where instance_id = :instance)",
       );
 
     expect(fake.calls).toEqual([
       {
-        text: "delete from canvases where workspace_id = $1 and project_id in (select id from projects where workspace_id = $1)",
-        values: ["ws-2"],
+        text: "delete from canvases where instance_id = $1 and project_id in (select id from projects where instance_id = $1)",
+        values: ["instance-2"],
       },
     ]);
   });
 
-  it("漏写 :workspace 谓词的 workspace 语句立即失败，且不下发查询", async () => {
+  it("漏写 :instance 谓词立即失败，且不下发查询", async () => {
     const fake = createFakeRunner();
     const persistence = createPersistenceFromRunner(fake.runner);
-    const scoped = persistence.forWorkspace("ws-1");
+    const scoped = persistence.forInstance("instance-1");
 
     await expect(
       scoped.query("select id from projects where id = $1", ["prj"]),
-    ).rejects.toBeInstanceOf(WorkspaceIsolationError);
+    ).rejects.toBeInstanceOf(InstanceIsolationError);
     await expect(
       scoped.queryOne("select id from projects where id = $1", ["prj"]),
-    ).rejects.toBeInstanceOf(WorkspaceIsolationError);
+    ).rejects.toBeInstanceOf(InstanceIsolationError);
     await expect(
       scoped.execute("delete from projects where id = $1", ["prj"]),
-    ).rejects.toBeInstanceOf(WorkspaceIsolationError);
+    ).rejects.toBeInstanceOf(InstanceIsolationError);
 
     expect(fake.calls).toHaveLength(0);
   });
 
-  it("不同工作区各自绑定自己的 id（跨工作区参数不串）", async () => {
+  it("不同实例各自绑定自己的 id（跨实例参数不串）", async () => {
     const fake = createFakeRunner();
     const persistence = createPersistenceFromRunner(fake.runner);
-    const sql = "select id from projects where workspace_id = :workspace";
+    const sql = "select id from projects where instance_id = :instance";
 
-    await persistence.forWorkspace("ws-a").query(sql);
-    await persistence.forWorkspace("ws-b").query(sql);
+    await persistence.forInstance("instance-a").query(sql);
+    await persistence.forInstance("instance-b").query(sql);
 
-    expect(fake.calls.map((call) => call.values)).toEqual([["ws-a"], ["ws-b"]]);
+    expect(fake.calls.map((call) => call.values)).toEqual([
+      ["instance-a"],
+      ["instance-b"],
+    ]);
   });
 
   it("queryOne 空结果返回 null，命中返回首行", async () => {
@@ -324,117 +323,63 @@ describe("persistence 事务", () => {
     expect(fake.releaseCount()).toBe(1);
   });
 
-  it("事务内 forWorkspace 仍是隔离客户端（漏写 :workspace 即失败）", async () => {
+  it("事务内 forInstance 仍是隔离客户端（漏写 :instance 即失败）", async () => {
     const fake = createFakeRunner();
     const persistence = createPersistenceFromRunner(fake.runner);
 
     await expect(
       persistence.transaction((tx) =>
-        tx.forWorkspace("ws-1").query("select 1"),
+        tx.forInstance("instance-1").query("select 1"),
       ),
-    ).rejects.toBeInstanceOf(WorkspaceIsolationError);
+    ).rejects.toBeInstanceOf(InstanceIsolationError);
     expect(dataCalls(fake.calls)).toHaveLength(0);
     expect(fake.releaseCount()).toBe(1);
   });
 
-  it("事务内 forWorkspace 绑定工作区并与业务参数共存", async () => {
+  it("事务内 forInstance 绑定实例并与业务参数共存", async () => {
     const fake = createFakeRunner();
     const persistence = createPersistenceFromRunner(fake.runner);
 
     await persistence.transaction((tx) =>
       tx
-        .forWorkspace("ws-9")
+        .forInstance("instance-9")
         .execute(
-          "delete from projects where workspace_id = :workspace and id = $1",
+          "delete from projects where instance_id = :instance and id = $1",
           ["p1"],
         ),
     );
 
     expect(dataCalls(fake.calls)).toEqual([
       {
-        text: "delete from projects where workspace_id = $2 and id = $1",
-        values: ["p1", "ws-9"],
+        text: "delete from projects where instance_id = $2 and id = $1",
+        values: ["p1", "instance-9"],
       },
     ]);
   });
 });
 
-describe("persistence 用户作用域（forUser）", () => {
-  it("forUser 把 :user 重写为末位参数占位符", async () => {
+describe("实例谓词的隔离拒绝", () => {
+  it("旧用户和工作区标记都被拒绝，参数数组不被追加修改", async () => {
     const fake = createFakeRunner();
-    const persistence = createPersistenceFromRunner(fake.runner);
-
-    await persistence
-      .forUser("user-1")
-      .query(
-        "select id from public.brand_kits where user_id = :user and id = $1",
-        ["kit-1"],
-      );
-
-    expect(fake.calls).toEqual([
-      {
-        text: "select id from public.brand_kits where user_id = $2 and id = $1",
-        values: ["kit-1", "user-1"],
-      },
-    ]);
-    expect(persistence.forUser("user-2").userId).toBe("user-2");
-  });
-
-  it("漏写 :user 谓词立即失败且不下发查询", async () => {
-    const fake = createFakeRunner();
-    const scoped = createPersistenceFromRunner(fake.runner).forUser("user-1");
-
-    await expect(
-      scoped.query("select id from public.brand_kits where id = $1", ["kit-1"]),
-    ).rejects.toBeInstanceOf(UserIsolationError);
-    await expect(
-      scoped.execute("delete from public.brand_kits where id = $1", ["kit-1"]),
-    ).rejects.toBeInstanceOf(UserIsolationError);
-    expect(fake.calls).toHaveLength(0);
-  });
-
-  it("两种作用域互不通用：标记不对即违约（防串用）", async () => {
-    const fake = createFakeRunner();
-    const persistence = createPersistenceFromRunner(fake.runner);
-
-    // 用户作用域遇到 workspace 语句 → 缺 :user
-    await expect(
-      persistence
-        .forUser("user-1")
-        .query(
-          "select id from public.projects where workspace_id = :workspace",
-        ),
-    ).rejects.toBeInstanceOf(UserIsolationError);
-
-    // 工作区作用域遇到用户语句 → 缺 :workspace
-    await expect(
-      persistence
-        .forWorkspace("ws-1")
-        .query("select id from public.brand_kits where user_id = :user"),
-    ).rejects.toBeInstanceOf(WorkspaceIsolationError);
-
-    expect(fake.calls).toHaveLength(0);
-  });
-
-  it("事务内 forUser 绑定用户并与业务参数共存", async () => {
-    const fake = createFakeRunner();
-    const persistence = createPersistenceFromRunner(fake.runner);
-
-    await persistence.transaction((tx) =>
-      tx
-        .forUser("user-9")
-        .execute(
-          "update public.brand_kits set name = $1 where user_id = :user",
-          ["新名"],
-        ),
+    const scoped = createPersistenceFromRunner(fake.runner).forInstance(
+      "instance-1",
     );
-
-    expect(dataCalls(fake.calls)).toEqual([
-      {
-        text: "update public.brand_kits set name = $1 where user_id = $2",
-        values: ["新名", "user-9"],
-      },
-    ]);
+    const params = Object.freeze(["record-id"]);
+    for (const marker of [":workspace", ":user"]) {
+      await expect(
+        scoped.query(
+          `select id from records where owner = ${marker} and id = $1`,
+          params,
+        ),
+      ).rejects.toBeInstanceOf(InstanceIsolationError);
+    }
+    expect(fake.calls).toEqual([]);
+    await scoped.query(
+      "select id from records where instance_id = :instance and id = $1",
+      params,
+    );
+    expect(params).toEqual(["record-id"]);
+    expect(fake.calls[0]?.values).toEqual(["record-id", "instance-1"]);
   });
 });
 

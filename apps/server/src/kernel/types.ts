@@ -6,13 +6,9 @@ import type { AgentBackendFactory } from "../agent/backends/index.js";
 import type { AgentPersistenceService } from "../agent/persistence/index.js";
 import type { AgentRunService } from "../agent/runtime.js";
 import type { ServerEnv } from "../config/env.js";
-import type { AdminService } from "../features/admin/admin-service.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
-import type { ApiTokenService } from "../features/api-tokens/token-service.js";
-import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { BlobStore } from "../features/blob/types.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
 import type { BrowserService } from "../features/browser/fetch-page.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
@@ -22,8 +18,6 @@ import type { CheckpointService } from "../features/checkpoints/checkpoint-servi
 import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import type { CodeTerminalService } from "../features/code-terminal/types.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
-import type { CreditService } from "../features/credits/credit-service.js";
-import type { TierGuard } from "../features/credits/tier-guard.js";
 import type {
   ExecutionScopeHandle,
   ExecutionScopes,
@@ -34,9 +28,13 @@ import type {
   SubmitVideoJobFn,
 } from "../features/generation/tool-types.js";
 import type { JobService } from "../features/jobs/job-service.js";
+import type { LocalAccessService } from "../features/local-access/types.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../features/local-instance/types.js";
 import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
-import type { PaymentService } from "../features/payments/payment-service.js";
 import type {
   CodeApprovalMode,
   PermissionInvocation,
@@ -77,12 +75,6 @@ export interface ServiceMap {
   agentPersistence: AgentPersistenceService;
   agentRunMetadata: AgentRunMetadataService;
   agentRuns: AgentRunService;
-  /** 计费三件套（目标态默认关闭，DEC-5） */
-  credits: CreditService;
-  tierGuard: TierGuard;
-  payments: PaymentService;
-  /** 平台管理后台（FORM-10：系统供应商分发 + 额度/套餐统一管理） */
-  admin: AdminService;
   /** 领域服务（design 侧为主） */
   brandKit: BrandKitService;
   canvas: CanvasService;
@@ -115,22 +107,17 @@ export interface ServiceMap {
   assetWriter: AssetWriter;
   /**
    * blob 缝（M3.1）：对象存储唯一入口；Provider 随形态替换
-   * （`local` 桌面本地 FS / `supabase` 过渡期与自托管现状 / 后续 MinIO）。
+   * （当前本地FS；远端对象存储按未来连接边界独立接入）。
    */
   blob: BlobStore;
-  viewer: ViewerService;
+  localInstance: LocalInstanceService;
   /**
-   * 自管 Postgres 存储缝（§4.2；`FORM-9`）：唯一 DB 入口，workspace 隔离在
+   * 自管 Postgres 存储缝（§4.2；`FORM-9`）：唯一 DB 入口，实例隔离在
    * 应用层强制（DB 层已无 RLS 兜底）。Provider 随形态替换（桌面捆绑 / 自托管）。
    */
   persistence: PersistenceService;
-  /** 认证缝（目标 local-trust / 自管 auth） */
-  auth: RequestAuthenticator;
-  /**
-   * 外部应用访问令牌（R5-2「外部应用授权」）：给外部应用/脚本/CI 用的 API 凭据。
-   * 认证缝的第二条路径由 auth 插件合成消费（见 auth/plugin.ts）。
-   */
-  apiTokens: ApiTokenService;
+  /** 回环本机Cookie/Bearer接入；不代表官方账户。 */
+  localAccess: LocalAccessService;
   /** JobService（PGMQ，Postgres 扩展） */
   jobs: JobService;
   /**
@@ -196,7 +183,7 @@ export interface PreStepPayload {
   threadId?: string | undefined;
   /** Runtime已接受的run/Task事实，仅供指导hydrate；不作为工具执行授权。 */
   preset?: "design" | "code" | undefined;
-  workspaceId?: string | undefined;
+  instanceId?: string | undefined;
   taskId?: string | undefined;
   sessionId?: string | undefined;
 }
@@ -269,11 +256,11 @@ export interface PromptCompositionContext {
   projectContextTruncated?: boolean | undefined;
   preset: "design" | "code";
   /** 工作区 id：规则段等按工作区读取设置的定位键。 */
-  workspaceId?: string | undefined;
+  instanceId?: string | undefined;
   /** 项目绑定的品牌套件 id（品牌段出现与否的判定）。 */
   brandKitId?: string | undefined;
   /** 工作区技能清单（skills 段渲染；结构取 WorkspaceSkillEntry 的消费子集）。 */
-  workspaceSkills?: ReadonlyArray<{
+  instanceSkills?: ReadonlyArray<{
     name: string;
     description: string;
     path: string;
@@ -336,19 +323,18 @@ export interface ToolExecutionContext {
   signal?: AbortSignal | undefined;
   /** 会话线程：tool-pre-execute 监听器（执行模式拦截）据此定位线程策略。 */
   threadId?: string | undefined;
-  workspaceId?: string | undefined;
+  instanceId?: string | undefined;
   /**
    * 运行方用户 id：需要用户身份的工具（画布截图 RPC 路由、品牌套件 `:user`
-   * 隔离谓词）据此构造调用方，与 workspaceId 同为 run 起始期一次性解析。
+   * 隔离谓词）据此构造调用方，与 instanceId 同为 run 起始期一次性解析。
    */
-  userId?: string | undefined;
+  actor?: LocalActor | undefined;
   /**
    * 本轮 run 绑定的画布：需要落点的工具（如 install_plugin 从工作目录安装）
    * 据此解析沙箱目录——解析口径与 agent/git 同一处（resolveSandboxDir）。
    */
   canvasId?: string | undefined;
   /** 运行方（agent 运行时）传入的请求级用户令牌；需要用户上下文的工具据此解析数据。 */
-  accessToken?: string | undefined;
   /**
    * 附件 assetId → data URI 映射（run 附件下载产物）：generate_image 的
    * 参考图解析经它。桥接层从 LangChain invoke 期的 configurable 透传——

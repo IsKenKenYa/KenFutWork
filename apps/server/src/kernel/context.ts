@@ -229,21 +229,26 @@ export class ToolRegistryImpl implements ToolRegistry {
         !approval ||
         !execCtx.runId ||
         !execCtx.toolCallId ||
-        !execCtx.userId ||
+        !execCtx.actor ||
         !permissions
       )
         throw new ToolDeniedError(tool.name, "缺少可信逐调用审批上下文。");
       const scope = execCtx.scopeHandle.describe();
+      if (execCtx.actor.instanceId !== scope.instanceId) {
+        throw new ToolDeniedError(
+          tool.name,
+          "调用者与工作域不属于同一本地实例。",
+        );
+      }
       const policy = await approval.resolve();
       if (policy.scopeGeneration !== scope.generation)
         throw new ToolDeniedError(tool.name, "工具调用的授权代际已失效。");
       invocation = {
         preset: "code",
-        workspaceId: scope.workspaceId,
+        instanceId: scope.instanceId,
         taskId: scope.taskId,
         runId: execCtx.runId,
         toolCallId: execCtx.toolCallId,
-        userId: execCtx.userId,
         agentId: execCtx.scopeHandle.agentId,
         role: execCtx.scopeHandle.role,
         scopeGeneration: policy.scopeGeneration,

@@ -19,35 +19,21 @@ export interface SqlClient {
 }
 
 /**
- * 工作区隔离客户端（`FORM-9`）：语句必须显式引用 `:workspace` 占位符，
- * 由客户端绑定为当前工作区 id 并追加为末位参数；漏写在执行前抛错——
- * DB 层已无 RLS 兜底，这里把「静默跨工作区读写」变成立即失败。
+ * 实例隔离客户端（`FORM-9`）：语句必须显式引用 `:instance` 占位符，
+ * 由客户端绑定为当前实例 id 并追加为末位参数；漏写在执行前抛错——
+ * DB 层已无 RLS 兜底，这里把「静默跨实例读写」变成立即失败。
  */
-export interface WorkspaceSqlClient extends SqlClient {
-  readonly workspaceId: string;
+export interface InstanceSqlClient extends SqlClient {
+  readonly instanceId: string;
 }
 
 /**
  * 单连接事务句柄：回调内语句同事务提交，抛错整体回滚。
- * 原子写（余额/额度、多表插入）必须走事务，禁止用多条独立语句拼「伪事务」。
+ * 原子写（多表插入与状态更新）必须走事务，禁止用多条独立语句拼「伪事务」。
  */
 export interface SqlTransaction extends SqlClient {
-  /** 事务内的用户作用域客户端（与根客户端同一隔离规则）。 */
-  forUser(userId: string): UserSqlClient;
-  /** 事务内的工作区作用域客户端（与根客户端同一隔离规则）。 */
-  forWorkspace(workspaceId: string): WorkspaceSqlClient;
-}
-
-/**
- * 用户隔离客户端：语句必须显式引用 `:user` 占位符，由客户端绑定为当前用户 id
- * 并追加为末位参数。
- *
- * 存在的理由：并非所有租户数据都挂在 workspace 上——`brand_kits` 这类表
- * （schema 早于 workspaces）按 `user_id` 定权，没有 `workspace_id` 列。
- * 与工作区作用域同构：把「静默漏写隔离谓词」变成立即失败。
- */
-export interface UserSqlClient extends SqlClient {
-  readonly userId: string;
+  /** 事务内的实例作用域客户端（与根客户端同一隔离规则）。 */
+  forInstance(instanceId: string): InstanceSqlClient;
 }
 
 /**
@@ -62,10 +48,8 @@ export interface PersistenceSessionLock {
 }
 
 export interface PersistenceService extends SqlClient {
-  /** 用户隔离入口；按 `user_id` 定权的表（无 workspace_id）经此访问。 */
-  forUser(userId: string): UserSqlClient;
-  /** 工作区隔离入口；workspace 归属数据一律经此访问。 */
-  forWorkspace(workspaceId: string): WorkspaceSqlClient;
+  /** 实例隔离入口；实例归属数据一律经此访问。 */
+  forInstance(instanceId: string): InstanceSqlClient;
   /** 原子写入口：回调内全部语句同事务，抛错回滚。 */
   transaction<T>(fn: (tx: SqlTransaction) => Promise<T>): Promise<T>;
   /** 专用长寿命会话，不占普通查询池；未获得排他锁返回 null。 */

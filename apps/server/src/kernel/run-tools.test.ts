@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { createBrandKitToolDefinition } from "../features/brand-kit/brand-kit-tool.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
@@ -13,6 +14,8 @@ import { createProjectSearchToolDefinition } from "../features/code-tools/projec
 import { createGenerationPlugin } from "../features/generation/plugin.js";
 import { createImageGenerateToolDefinition } from "../features/generation/tools/image-generate.js";
 import { createVideoGenerateToolDefinition } from "../features/generation/tools/video-generate.js";
+import { createConsumerLocalAccessService } from "../features/local-access/test-consumer-service.js";
+import { createLocalInstanceService } from "../features/local-instance/service.js";
 import { AgentRunEventBus, ToolRegistryImpl } from "./context.js";
 import type { ToolDefinition } from "./types.js";
 
@@ -133,13 +136,39 @@ describe("ToolRegistry 动态工具缝", () => {
 describe("内置工具的模式工具面（静态+动态装配契约）", () => {
   function registryWithBuiltins() {
     const registry = new ToolRegistryImpl(new AgentRunEventBus());
-    registry.register(createInspectCanvasToolDefinition({}));
-    registry.register(createManipulateCanvasToolDefinition({}));
+    registry.register(
+      createInspectCanvasToolDefinition({
+        localInstance: createLocalInstanceService({
+          repository: {
+            ensure: async () => "00000000-0000-4000-8000-000000000001",
+          },
+          dataDir: tmpdir(),
+        }),
+      }),
+    );
+    registry.register(
+      createManipulateCanvasToolDefinition({
+        localInstance: createLocalInstanceService({
+          repository: {
+            ensure: async () => "00000000-0000-4000-8000-000000000001",
+          },
+          dataDir: tmpdir(),
+        }),
+      }),
+    );
     registry.register(
       createScreenshotCanvasToolDefinition({ connectionManager: {} as never }),
     );
     registry.register(
-      createBrandKitToolDefinition({ brandKitService: {} as never }),
+      createBrandKitToolDefinition({
+        brandKitService: {} as never,
+        localInstance: createLocalInstanceService({
+          repository: {
+            ensure: async () => "00000000-0000-4000-8000-000000000001",
+          },
+          dataDir: tmpdir(),
+        }),
+      }),
     );
     // 动态四条：与各插件 apply 内同一工厂（backend/沙箱以 stub 满足签名）
     registry.registerDynamic({
@@ -221,7 +250,7 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
     } as never;
     const persistenceStub = {
       execute: async () => ({ rows: [] }),
-      forWorkspace: () => ({
+      forInstance: () => ({
         execute: async () => ({ rows: [] }),
         query: async () => [],
       }),
@@ -246,13 +275,17 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
       {
         app,
         overrides: {
-          auth: { authenticate: async () => null } as never,
+          localAccess: createConsumerLocalAccessService(),
           blob: blobStub,
           persistence: persistenceStub,
-          viewer: { resolveWorkspace: async () => null } as never,
+          localInstance: createLocalInstanceService({
+            repository: {
+              ensure: async () => "00000000-0000-4000-8000-000000000001",
+            },
+            dataDir: tmpdir(),
+          }),
           ws: { connectionManager: {} as never, eventBuffer: {} as never },
-          credits: {} as never,
-          tierGuard: { guard: async () => {} } as never,
+          usage: { record: async () => {} } as never,
           uploads: {} as never,
           jobs: {} as never,
           modelCatalog: { listCatalog: async () => ({ entries: [] }) } as never,
@@ -290,7 +323,7 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
         await mkdtemp(join(tmpdir(), "kfw-tool-mode-")),
       );
       const scope = {
-        workspaceId: "00000000-0000-4000-8000-000000000001",
+        instanceId: "00000000-0000-4000-8000-000000000001",
         projectId: "00000000-0000-4000-8000-000000000002",
         taskId: "00000000-0000-4000-8000-000000000003",
         generation: 1,
@@ -302,11 +335,14 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
         repository: {
           load: async () => ({ scope, state: "ready", branchGeneration: 1 }),
         },
-        viewerService: {
-          resolveWorkspace: async () => ({ id: scope.workspaceId }),
+        localInstance: {
+          resolve: async () => ({
+            instanceId: scope.instanceId,
+            dataDir: directory,
+          }),
         } as never,
       }).openTask(
-        { id: "user", email: "", accessToken: "", userMetadata: {} },
+        { instanceId: scope.instanceId, accessClientId: null },
         scope.taskId,
       );
       const codeNames = tools

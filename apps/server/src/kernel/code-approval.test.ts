@@ -15,7 +15,7 @@ async function fixture() {
     state: "ready",
     branchGeneration: 1,
     scope: {
-      workspaceId: "00000000-0000-4000-8000-000000000001",
+      instanceId: "00000000-0000-4000-8000-000000000001",
       projectId: "00000000-0000-4000-8000-000000000002",
       taskId: "00000000-0000-4000-8000-000000000003",
       generation: 1,
@@ -26,11 +26,14 @@ async function fixture() {
   };
   const scope = await createExecutionScopes({
     repository: { load: async () => structuredClone(stored) },
-    viewerService: {
-      resolveWorkspace: async () => ({ id: stored.scope.workspaceId }),
+    localInstance: {
+      resolve: async () => ({
+        instanceId: stored.scope.instanceId,
+        dataDir: temporary,
+      }),
     } as never,
   }).openTask(
-    { id: "user", email: "", accessToken: "", userMetadata: {} },
+    { instanceId: stored.scope.instanceId, accessClientId: null },
     stored.scope.taskId,
   );
   const permissions = createPermissionService();
@@ -55,7 +58,7 @@ async function fixture() {
   const registry = new ToolRegistryImpl(bus, () => permissions);
   const context: ToolExecutionContext = {
     scopeHandle: scope,
-    userId: "user",
+    actor: { instanceId: stored.scope.instanceId, accessClientId: null },
     runId: "run",
     toolCallId: "call",
     codeApproval: {

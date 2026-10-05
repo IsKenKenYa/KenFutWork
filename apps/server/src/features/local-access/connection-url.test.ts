@@ -10,7 +10,7 @@ import { join } from "node:path";
 import {
   AGENT_GOVERNANCE_DEFAULTS,
   AGENT_GOVERNANCE_LIMITS,
-  workspaceSettingsSchema,
+  instanceSettingsSchema,
   resolveGovernanceEnvOverrides,
   resolveGovernanceNumber,
 } from "@kenfutwork/shared";
@@ -271,7 +271,7 @@ describe("launcher本机连接：真实回环HTTP", () => {
   });
 
   it("启动字段沿用唯一默认值、env解析和clamp；接通前不读库设置", () => {
-    const settings = workspaceSettingsSchema.parse({
+    const settings = instanceSettingsSchema.parse({
       defaultModel: "test-provider:model",
     });
     expect(settings.localServiceStartupTimeoutMs).toBe(

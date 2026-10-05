@@ -1,25 +1,17 @@
 import { Client, Pool, types } from "pg";
 
-import {
-  SqlError,
-  UserIsolationError,
-  WorkspaceIsolationError,
-} from "../errors.js";
+import { InstanceIsolationError, SqlError } from "../errors.js";
 import type {
+  InstanceSqlClient,
   PersistenceService,
   PersistenceSessionLock,
   SqlClient,
   SqlRow,
   SqlTransaction,
-  UserSqlClient,
-  WorkspaceSqlClient,
 } from "../types.js";
 
-/** 工作区谓词占位符：workspace 作用域语句必须显式引用它（`FORM-9`）。 */
-export const WORKSPACE_MARKER = ":workspace";
-
-/** 用户谓词占位符：按 `user_id` 定权的表（无 workspace_id）必须显式引用它。 */
-export const USER_MARKER = ":user";
+/** 实例谓词占位符：实例作用域语句必须显式引用它（DEC-20）。 */
+export const INSTANCE_MARKER = ":instance";
 
 const DEFAULT_POOL_MAX = 10;
 const PING_SQL = "select 1 as ok";
@@ -87,7 +79,7 @@ type Queryable = {
 
 /**
  * 自管 Postgres Provider（`FORM-2`/`FORM-9`）：单一信任 DB 角色、参数化查询、
- * 工作区隔离在应用层强制。数据库地址来源见 `ServerEnv.databaseUrl`。
+ * 实例隔离在应用层强制。数据库地址来源见 `ServerEnv.databaseUrl`。
  */
 export function createPostgresPersistence(options: {
   databaseUrl: string;
@@ -236,10 +228,8 @@ export function createPersistenceFromRunner(
 
   return {
     ...root,
-    forUser: (userId) =>
-      createUserScopedClient(normalizeQuery(runner.query), userId),
-    forWorkspace: (workspaceId) =>
-      createWorkspaceClient(normalizeQuery(runner.query), workspaceId),
+    forInstance: (instanceId) =>
+      createInstanceClient(normalizeQuery(runner.query), instanceId),
     transaction: (fn) => runTransaction(runner, fn),
     async acquireSessionLock(key) {
       if (closing) throw new Error("存储服务已关闭，不能认领执行宿主。");
@@ -301,8 +291,7 @@ async function runTransaction<T>(
     await query("begin", []);
     const result = await fn({
       ...createClient(query),
-      forUser: (userId) => createUserScopedClient(query, userId),
-      forWorkspace: (workspaceId) => createWorkspaceClient(query, workspaceId),
+      forInstance: (instanceId) => createInstanceClient(query, instanceId),
     });
     await query("commit", []);
     return result;
@@ -362,7 +351,7 @@ function createBind(
   };
 }
 
-/** 作用域客户端的三个查询方法（工作区/用户两种作用域共用，仅绑定器不同）。 */
+/** 作用域客户端的三个查询方法（三种方法共享同一实例绑定器）。 */
 function createScopedMethods(bind: BindFn, query: QueryFn) {
   return {
     async query<T extends SqlRow = SqlRow>(
@@ -389,27 +378,17 @@ function createScopedMethods(bind: BindFn, query: QueryFn) {
   };
 }
 
-function createWorkspaceClient(
+function createInstanceClient(
   query: QueryFn,
-  workspaceId: string,
-): WorkspaceSqlClient {
+  instanceId: string,
+): InstanceSqlClient {
   const bind = createBind(
-    WORKSPACE_MARKER,
-    workspaceId,
-    (operation) => new WorkspaceIsolationError(operation),
+    INSTANCE_MARKER,
+    instanceId,
+    (operation) => new InstanceIsolationError(operation),
   );
 
-  return { workspaceId, ...createScopedMethods(bind, query) };
-}
-
-function createUserScopedClient(query: QueryFn, userId: string): UserSqlClient {
-  const bind = createBind(
-    USER_MARKER,
-    userId,
-    (operation) => new UserIsolationError(operation),
-  );
-
-  return { userId, ...createScopedMethods(bind, query) };
+  return { instanceId, ...createScopedMethods(bind, query) };
 }
 
 /** 把「可能抛驱动错误」的查询函数包成归一错误的 `QueryFn`。 */

@@ -1,4 +1,4 @@
-import type { WorkspaceSettings } from "@kenfutwork/shared";
+import type { InstanceSettings } from "@kenfutwork/shared";
 import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 
 import {
@@ -44,7 +44,7 @@ export interface HookRunResult {
 
 /** 取该钩子点的命令（顺序即执行顺序）。 */
 export function hooksFor(
-  hooks: WorkspaceSettings["hooks"] | undefined,
+  hooks: InstanceSettings["hooks"] | undefined,
   event: HookEvent,
 ): string[] {
   return (hooks ?? [])
@@ -60,7 +60,7 @@ export async function runHooks(input: {
   event: HookEvent;
   commands: readonly string[];
   cwd: string;
-  shell?: WorkspaceSettings["terminalShell"];
+  shell?: InstanceSettings["terminalShell"];
   runCommand?: typeof runTerminalCommand;
   timeoutMs?: number;
   previewMaxChars?: number;

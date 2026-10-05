@@ -22,15 +22,9 @@ export const persistencePlugin: PluginDefinition = {
       return createPostgresPersistence({ databaseUrl });
     });
 
-    // 优雅退出：kernel dispose 时关闭连接池（不阻塞同步 dispose，异常只记日志）。
-    ctx.effect(() => () => {
-      const persistence = ctx.tryGet("persistence");
-      if (!persistence) {
-        return;
-      }
-      void persistence.close().catch((error: unknown) => {
-        console.error("[persistence] 关闭连接池失败：", error);
-      });
+    // 退出必须等待真实连接池释放；失败保持可见并由内核保留disposer以便重试。
+    ctx.effect(() => async () => {
+      await ctx.tryGet("persistence")?.close();
     });
   },
 };
