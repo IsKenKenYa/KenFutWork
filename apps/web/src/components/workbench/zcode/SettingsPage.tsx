@@ -19,6 +19,7 @@ import type {
 } from "@zcode/shared";
 import {
   BUILTIN_MODEL_PROVIDER_IDS,
+  isLocalWorkspaceTarget,
   TID_SETTINGS_BACK_BUTTON,
   TID_SETTINGS_PAGE,
   TID_SETTINGS_SECTION_NAV,
@@ -664,11 +665,11 @@ export function SettingsPage({
       }),
     [activeWorkspaceIdentity, activeWorkspacePath, activeWorkspaceTab, workspaceTabs],
   );
-  const isRemoteModelProviderWorkspace = Boolean(
-    activeWorkspaceIdentity?.trim() ||
-    activeWorkspaceTab?.remoteSessionId?.trim() ||
-    activeWorkspaceTab?.remoteTarget,
-  );
+  const isRemoteModelProviderWorkspace = !isLocalWorkspaceTarget({
+    ...activeWorkspaceTab,
+    workspacePath: activeWorkspacePath ?? undefined,
+    workspaceIdentity: activeWorkspaceIdentity,
+  });
   const selectDirectory = useSelectDirectory();
   const services = useServices();
   const onboardingRecordService = platform.supportsUserOnboarding === false ? undefined : services.onboardingRecordService;

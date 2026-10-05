@@ -1,15 +1,11 @@
+import { isLocalWorkspaceTarget } from "@zcode/shared";
+
 interface ConnectivityWorkspaceTab {
   workspacePath: string;
   workspaceIdentity?: string | null;
   remoteSessionId?: string | null;
   remoteTarget?: unknown;
   localWorkspacePath?: string | null;
-}
-
-function isRemoteWorkspaceTab(tab: ConnectivityWorkspaceTab | null | undefined): boolean {
-  return Boolean(
-    tab?.workspaceIdentity?.trim() || tab?.remoteSessionId?.trim() || tab?.remoteTarget,
-  );
 }
 
 /**
@@ -29,10 +25,12 @@ export function resolveModelProviderConnectivityWorkspacePath(params: {
 
   // 旧 tab 可能只有 remoteSessionId 或 remoteTarget，没有 workspaceIdentity。
   // 这些 tab 的 workspacePath 仍是远端路径，不能因 identity 缺失而交给 Local Host。
-  const activeWorkspaceIsRemote = Boolean(
-    params.activeWorkspaceIdentity?.trim() || isRemoteWorkspaceTab(params.activeWorkspaceTab),
-  );
-  if (!activeWorkspaceIsRemote) {
+  const activeWorkspaceIsLocal = isLocalWorkspaceTarget({
+    ...params.activeWorkspaceTab,
+    workspacePath: params.activeWorkspaceTab?.workspacePath ?? params.activeWorkspacePath ?? undefined,
+    workspaceIdentity: params.activeWorkspaceIdentity ?? params.activeWorkspaceTab?.workspaceIdentity,
+  });
+  if (activeWorkspaceIsLocal) {
     const activeLocalPath = params.activeWorkspaceTab?.workspacePath.trim();
     if (activeLocalPath) {
       return activeLocalPath;
@@ -43,6 +41,6 @@ export function resolveModelProviderConnectivityWorkspacePath(params: {
     }
   }
 
-  const localTab = params.workspaceTabs.find((tab) => !isRemoteWorkspaceTab(tab));
+  const localTab = params.workspaceTabs.find(isLocalWorkspaceTarget);
   return localTab?.workspacePath.trim() ?? "";
 }

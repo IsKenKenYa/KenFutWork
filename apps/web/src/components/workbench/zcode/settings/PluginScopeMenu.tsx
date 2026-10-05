@@ -1,5 +1,5 @@
 import { ChevronDown, Cloud, Folder, Monitor } from "lucide-react";
-import { testId } from "@zcode/shared";
+import { isLocalWorkspaceTarget, testId } from "@zcode/shared";
 import { Button } from "@zui/components/ui/button.js";
 import {
   DropdownMenu,
@@ -24,10 +24,7 @@ export function isPluginScopeWorkspaceConnected(tab: WorkspaceTabState): boolean
   if (tab.availability === "unavailable-local-directory") {
     return false;
   }
-  const isRemote = Boolean(
-    tab.workspaceIdentity?.trim() || tab.remoteTarget || tab.remoteSessionId,
-  );
-  if (!isRemote) {
+  if (isLocalWorkspaceTarget(tab)) {
     return true;
   }
   return Boolean(tab.remoteSessionId);
@@ -64,7 +61,7 @@ export function PluginScopeMenu({
     workspaceTabs.filter(isPluginScopeWorkspaceConnected).map((tab) => ({
       key: getPluginWorkspaceKey(tab),
       label: tab.label,
-      remote: Boolean(tab.remoteTarget || tab.remoteSessionId),
+      remote: !isLocalWorkspaceTarget(tab),
     }));
   const selectedWorkspace = scopeWorkspaces.find((workspace) => workspace.key === selectedScopeKey);
   const SelectedWorkspaceIcon = selectedWorkspace?.remote ? Cloud : Folder;

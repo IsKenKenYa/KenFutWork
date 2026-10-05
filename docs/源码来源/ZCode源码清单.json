@@ -604,13 +604,14 @@
       "source": "references/zcode/packages/ui/src/SettingsPage.tsx",
       "target": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
       "sha256": "0f3d3b06be4fdb675f870e06dcc8bf89aeff9ad9fc880ca1f0f6338a6e76916a",
-      "copiedSha256": "f2f16d2c46ad559068e77638f684975bf6b0445bd2ebd3ca26910271b6a3b1b9",
+      "copiedSha256": "9ae9d754f0b4d6c90b91a736054d3ca9d6a7989abd81fca5616f2ac9a8ccac17",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落",
         "能力显隐：未接引导记录时隐藏原引导入口和查询，缺省原行为",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
-        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
+        "设置目标统一复用isLocalWorkspaceTarget：本机Project身份不再误判远端，保留远端连接及目录匹配校验。"
       ]
     },
     {
@@ -5058,9 +5059,10 @@
       "source": "references/zcode/packages/ui/src/hooks/useModelProviders.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useModelProviders.ts",
       "sha256": "3d9c37eb8b604239dfde83894e70bf6b89e25f624ae6bde606a2056cd6b47875",
-      "copiedSha256": "b14cda0f0b3148e3813e65460f47e617a7e64c30aebbf83f9e587bf11bd14e47",
+      "copiedSha256": "178a07be972577a6f216bf241ebb4a651781acc5996cd9c09d59a51c1c9fd03b",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "设置目标统一复用isLocalWorkspaceTarget：本机Project身份不再误判远端，保留远端连接及目录匹配校验。"
       ]
     },
     {
@@ -6478,9 +6480,10 @@
       "source": "references/zcode/packages/ui/src/lib/modelProviderConnectivityTarget.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/modelProviderConnectivityTarget.ts",
       "sha256": "23442f80c965fc5b458a1f85f2723e4cd47549d0a7ac709cff6a59fb6d7ae724",
-      "copiedSha256": "23442f80c965fc5b458a1f85f2723e4cd47549d0a7ac709cff6a59fb6d7ae724",
+      "copiedSha256": "f9a324d944cf3699549a1e20d61cc4bcd533e23986726f17a90cca9f49c8fc76",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "设置目标统一复用isLocalWorkspaceTarget：本机Project身份不再误判远端，保留远端连接及目录匹配校验。"
       ]
     },
     {
@@ -9531,9 +9534,10 @@
       "source": "references/zcode/packages/ui/src/settings/PluginScopeMenu.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/PluginScopeMenu.tsx",
       "sha256": "6c0bb084b10f39a96edc417403cd862ed86cfffb4dec72d37dc4047bed2d00fc",
-      "copiedSha256": "b3288a7b8f40618414021ee7f829367949d282108d2edebb8754a9efdead3386",
+      "copiedSha256": "259cb0f7cec8ebb74f34a14532824988ee3714bf4067cdf0dd8f2eb6dbab1c0c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "设置目标统一复用isLocalWorkspaceTarget：本机Project身份不再误判远端，保留远端连接及目录匹配校验。"
       ]
     },
     {

@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useRef } from "react";
 import type { ProviderSettingsFormProvider } from "@zui/lib/providerSettingsFormTypes.js";
-import type { ModelConnectivityResult } from "@zcode/shared";
+import { isLocalWorkspaceTarget, type ModelConnectivityResult } from "@zcode/shared";
 import type { ProviderSettingsView } from "@zcode/services";
 import { useServices } from "@zui/hooks/useServices.js";
 import { logger } from "@zui/logger.js";
@@ -184,7 +184,7 @@ export function useModelProviders(target: {
       const connectivityWorkspacePath = target.connectivityWorkspacePath?.trim();
       if (
         !connectivityWorkspacePath &&
-        (target.connectivityWorkspaceRequired || target.workspaceIdentity?.trim())
+        (target.connectivityWorkspaceRequired || !isLocalWorkspaceTarget(target))
       ) {
         return {
           success: false,
