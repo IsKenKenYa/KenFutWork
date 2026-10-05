@@ -16,10 +16,9 @@
     "api:spec": "pnpm --filter @kenfutwork/server api:spec",
     "test:packages": "turbo run test",
     "test": "pnpm run test:workspace && pnpm run test:packages",
-    "seed": "pnpm --filter @kenfutwork/server seed:accounts",
     "typecheck": "turbo run typecheck",
     "smoke:desktop": "node scripts/desktop-offline-smoke.mjs",
-    "verify:desktop": "node scripts/\u9a8c\u6536\u6253\u5305\u684c\u9762\u7aef.mjs",
+    "verify:desktop": "node scripts/验收打包桌面端.mjs",
     "fetch:runtimes": "node scripts/fetch-runtimes.mjs"
   },
   "devDependencies": {

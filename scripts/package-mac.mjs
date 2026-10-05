@@ -39,6 +39,10 @@ import {
 import { createRequire } from "node:module";
 import { basename, dirname, join } from "node:path";
 import process from "node:process";
+import {
+  packageCodeNativeRuntime,
+  packageRipgrepRuntime,
+} from "./package-code-native.mjs";
 
 const ROOT = process.cwd();
 const RELEASE = join(ROOT, "release");
@@ -166,6 +170,13 @@ function main() {
   copyFileSync(splashSource, join(webOut, "_splash.html"));
   console.log("[package-mac] 启动页已写入静态导出：_splash.html");
 
+  packageCodeNativeRuntime(ROOT, RELEASE);
+  packageRipgrepRuntime(ROOT, RELEASE);
+  run("构建独立进程执行helper", process.execPath, [
+    "apps/server/src/features/process-sandbox/build-helper.mjs",
+    join(RELEASE, "process-helper"),
+  ]);
+
   run("构建macOS桌面控制输入helper", process.execPath, [
     "apps/server/src/features/computer-use/build-helper.mjs",
     join(RELEASE, "computer-use"),
@@ -187,6 +198,8 @@ function main() {
     "--define:KFW_PACKAGED_CJS=true",
     "--external:node-pty",
     "--external:@computer-use/node-mac-permissions",
+    "--external:@napi-rs/canvas",
+    "--external:@vscode/ripgrep",
     `--outfile=${serverOut}`,
     "--log-level=warning",
   ]);
@@ -309,7 +322,10 @@ function main() {
       )
     : [];
   if (runtimeNames.length > 0) {
-    cpSync(runtimeDir, join(RELEASE, "runtime"), { recursive: true });
+    cpSync(runtimeDir, join(RELEASE, "runtime"), {
+      recursive: true,
+      verbatimSymlinks: true,
+    });
     console.log(
       `[package-mac] 捆绑随包运行时（runtime/）：${runtimeNames.join("、")}`,
     );

@@ -25,7 +25,6 @@
 | `tool.completed` | 工具 | 工具调用完成（含结果摘要） |
 | `task.notification` | 子代理/后台任务 | 后台任务完成通知注入 |
 | `canvas.sync` | 画布 | 画布状态同步 |
-| `billing.error` | 计费 | 计费错误（错误码封闭枚举 `billingErrorCodeSchema`） |
 | `flowRun.event` | flow 集成 | flow 引擎运行事件回流（经宿主缝 `POST /api/flow/host/events` 进入） |
 
 ## 约定

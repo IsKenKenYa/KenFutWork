@@ -5,7 +5,7 @@
 ## 端点与鉴权
 
 - 端点：`GET /api/ws`（WebSocket 升级，`@fastify/websocket`），注册于 `apps/server/src/ws/handler.ts`。
-- 鉴权：令牌走查询参数 `?token=<bearer>`（浏览器 WebSocket 无法自定义 header）；managed 驱动校验会话/API 令牌，桌面 local-trust 形态凭回环信任免 token。鉴权失败以 close code `4001` 关闭。
+- 鉴权：与HTTP/SSE/RPC共用真实本机接入。浏览器升级请求携带HttpOnly cookie，明确授权脚本可使用Bearer头；不通过URL查询参数携带长令牌。回环IP与精确Origin共同校验，撤销对应客户端会关闭已建立连接，逐消息再次确认授权。
 - 不入 OpenAPI spec：OpenAPI 3.1 不覆盖 WebSocket，Apifox 侧以独立 WebSocket 接口条目录入（见 `AGENTS.md`「API 文档与 Apifox 同步」）。
 
 ## 帧类型

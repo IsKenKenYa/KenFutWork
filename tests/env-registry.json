@@ -1,5 +1,5 @@
 {
-  "$comment": "env 名唯一权威机械表。新增/改名 env 先登记这里再使用——scripts/check-env.mjs（pnpm test:env 与 tests/workspace.test.mjs）会扫描全仓引用逐名对表：表外即 fail。surface: server|shell|script|test|build；status: active|test-gate|external；inExamples=true 表示应在 .env.example 出现。第三方既有约定（OPENAI_/GOOGLE_ 等）标 external，允许不出现在 .env.example。",
+  "$comment": "env 名唯一权威机械表。新增/改名 env 先登记这里再使用——scripts/check-env.mjs（pnpm test:env 与 tests/workspace.test.mjs）会扫描全仓引用逐名对表：表外即 fail。surface: server|shell|script|test|build；status: active|test-gate|external|retired；inExamples=true 表示应在 .env.example 出现。第三方既有约定（OPENAI_/GOOGLE_ 等）标 external，允许不出现在 .env.example。",
   "vars": {
     "KENFUTWORK_DEPLOYMENT": {
       "surface": "server",
@@ -26,9 +26,7 @@
       "surface": "server",
       "readers": [
         "apps/server/src/config/env.ts",
-        "apps/server/src/features/flow/plugin.ts",
-        "apps/server/src/features/flow/flow-host.test.ts",
-        "apps/server/src/http/flow-host.ts"
+        "apps/server/src/features/flow/plugin.ts"
       ],
       "inExamples": false,
       "status": "active",
@@ -38,9 +36,7 @@
       "surface": "server",
       "readers": [
         "apps/server/src/config/env.ts",
-        "apps/server/src/config/env.test.ts",
-        "apps/server/src/features/flow/flow-host.test.ts",
-        "apps/server/src/http/flow-host.ts"
+        "apps/server/src/config/env.test.ts"
       ],
       "inExamples": false,
       "status": "active",
@@ -93,41 +89,38 @@
     },
     "KENFUTWORK_AUTH_DRIVER": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts",
-        "apps/server/src/features/auth/local-trust.ts"
-      ],
-      "inExamples": true,
-      "status": "active",
-      "note": "managed（自管账号）| local-trust（桌面回环免登录）"
+      "readers": [],
+      "inExamples": false,
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "KENFUTWORK_TEST_ACCOUNT_PASSWORD": {
       "surface": "script",
-      "readers": ["apps/server/src/seed-test-accounts.ts"],
-      "inExamples": true,
-      "status": "active",
-      "note": "pnpm seed 测试账号口令"
+      "readers": [],
+      "inExamples": false,
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "KENFUTWORK_ADMIN_EMAIL": {
       "surface": "script",
-      "readers": ["apps/server/src/seed-test-accounts.ts"],
-      "inExamples": true,
-      "status": "active",
-      "note": "管理员账号"
+      "readers": [],
+      "inExamples": false,
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "KENFUTWORK_ADMIN_PASSWORD": {
       "surface": "script",
-      "readers": ["apps/server/src/seed-test-accounts.ts"],
-      "inExamples": true,
-      "status": "active",
-      "note": "管理员口令"
+      "readers": [],
+      "inExamples": false,
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "KENFUTWORK_CREDENTIAL_SECRET": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
-      "inExamples": true,
-      "status": "active",
-      "note": "BYOK 凭证加密主密钥（必填；桌面缺省自动生成）"
+      "readers": [],
+      "inExamples": false,
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "KENFUTWORK_DATA_DIR": {
       "surface": "server",
@@ -156,14 +149,14 @@
     },
     "KENFUTWORK_SANDBOX_ROOT": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts", "apps/server/src/server.ts"],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "沙箱根目录"
     },
     "KENFUTWORK_CHECKPOINT_ROOT": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts", "apps/server/src/server.ts"],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "检查点影子仓库根目录"
@@ -180,7 +173,7 @@
       "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
-      "note": "agent 文件后端根目录"
+      "note": "独立服务缝/测试的agent文件根注入；正式本机入口统一为数据根/sandbox/agent-files"
     },
     "KENFUTWORK_SKILLS_ROOT": {
       "surface": "server",
@@ -191,10 +184,38 @@
     },
     "KENFUTWORK_PLUGINS_DIR": {
       "surface": "server",
-      "readers": ["apps/server/src/features/plugins/plugin.ts"],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
-      "note": "插件落盘目录（缺省 <cwd>/.kenfutwork/plugins）"
+      "note": "独立kernel/测试的插件目录注入；正式本机入口统一为数据根/plugins"
+    },
+    "RUN_LOCAL_INSTANCE_SCHEMA_INTEGRATION": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/local-instance/schema.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "=1 启用独占测试PG的本地实例最终schema/全量重放回归；生产无读者"
+    },
+    "KENFUTWORK_LOCAL_ROOT_PG_TEST": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/local-instance/root-binding.integration.test.ts",
+        "apps/server/src/features/local-instance/idle.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "=1 启用独占测试PG与真实Git的数据根重绑定/精确回滚回归；生产无读者"
+    },
+    "KENFUTWORK_SETTINGS_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/settings/settings.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "=1 启用真实PG的实例设置/CAS回归；生产无读者"
     },
     "KENFUTWORK_MCP_SERVERS": {
       "surface": "server",
@@ -330,6 +351,48 @@
       "inExamples": true,
       "status": "active",
       "note": "agent 治理：Computer Use 控制租约会话时长上限毫秒（CU 插件）"
+    },
+    "KENFUTWORK_COMPUTER_USE_AX_MAX_DEPTH": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：AX树最大深度，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_AX_MAX_CHILDREN": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：AX节点子项上限，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_AX_TITLE_MAX_CHARS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：AX标题文字上限，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_AX_VALUE_MAX_CHARS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：AX值文字上限，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_AX_MAX_ACTIONS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：AX语义动作列表上限，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_INPUT_DELAY_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：输入事件间隔毫秒，实例设置优先于env兜底"
     },
     "KENFUTWORK_SEARCH_API_KEY": {
       "surface": "server",
@@ -642,66 +705,66 @@
     },
     "LEMONSQUEEZY_API_KEY": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "Lemon Squeezy 支付（配置齐全才建 PaymentService）"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "LEMONSQUEEZY_STORE_ID": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "店铺 ID"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "LEMONSQUEEZY_WEBHOOK_SECRET": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "webhook 签名"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "LEMONSQUEEZY_VARIANT_STARTER_MONTHLY": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "套餐变体映射"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "LEMONSQUEEZY_VARIANT_STARTER_YEARLY": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "套餐变体映射"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "LEMONSQUEEZY_VARIANT_PRO_MONTHLY": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "套餐变体映射"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "LEMONSQUEEZY_VARIANT_PRO_YEARLY": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "套餐变体映射"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "LEMONSQUEEZY_VARIANT_ULTRA_MONTHLY": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "套餐变体映射"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "LEMONSQUEEZY_VARIANT_ULTRA_YEARLY": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "套餐变体映射"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "WORKER_CONCURRENCY": {
       "surface": "server",
@@ -1102,54 +1165,29 @@
       "status": "test-gate",
       "note": "插件卸载施工规格使用独占临时Postgres与真实加密存储；默认跳过，尚未实现的卸载不计GREEN"
     },
-    "KENFUTWORK_COMPUTER_USE_AX_MAX_DEPTH": {
-      "surface": "server",
-      "readers": ["packages/shared/src/governance.ts"],
-      "inExamples": false,
-      "status": "active",
-      "note": "Computer Use：AX树最大深度，实例设置优先于env兜底"
-    },
-    "KENFUTWORK_COMPUTER_USE_AX_MAX_CHILDREN": {
-      "surface": "server",
-      "readers": ["packages/shared/src/governance.ts"],
-      "inExamples": false,
-      "status": "active",
-      "note": "Computer Use：AX节点子项上限，实例设置优先于env兜底"
-    },
-    "KENFUTWORK_COMPUTER_USE_AX_TITLE_MAX_CHARS": {
-      "surface": "server",
-      "readers": ["packages/shared/src/governance.ts"],
-      "inExamples": false,
-      "status": "active",
-      "note": "Computer Use：AX标题文字上限，实例设置优先于env兜底"
-    },
-    "KENFUTWORK_COMPUTER_USE_AX_VALUE_MAX_CHARS": {
-      "surface": "server",
-      "readers": ["packages/shared/src/governance.ts"],
-      "inExamples": false,
-      "status": "active",
-      "note": "Computer Use：AX值文字上限，实例设置优先于env兜底"
-    },
-    "KENFUTWORK_COMPUTER_USE_AX_MAX_ACTIONS": {
-      "surface": "server",
-      "readers": ["packages/shared/src/governance.ts"],
-      "inExamples": false,
-      "status": "active",
-      "note": "Computer Use：AX语义动作列表上限，实例设置优先于env兜底"
-    },
-    "KENFUTWORK_COMPUTER_USE_INPUT_DELAY_MS": {
-      "surface": "server",
-      "readers": ["packages/shared/src/governance.ts"],
-      "inExamples": false,
-      "status": "active",
-      "note": "Computer Use：输入事件间隔毫秒，实例设置优先于env兜底"
-    },
     "KENFUTWORK_CONFIG_DIR": {
       "surface": "server",
-      "readers": ["apps/server/src/desktop/paths.ts"],
+      "readers": [
+        "apps/server/src/desktop/paths.ts",
+        "apps/desktop/src-tauri/src/lib.rs"
+      ],
       "inExamples": true,
       "status": "active",
       "note": "系统配置目录绝对路径；数据位置指针留在此处，不随应用数据根移动。"
+    },
+    "KENFUTWORK_LOCAL_ACCESS_TICKET_TTL_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "本机一次性连接票据有效期毫秒；设置值优先于env兜底。"
+    },
+    "KENFUTWORK_LOCAL_ACCESS_SESSION_MAX_AGE_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "浏览器本机接入会话有效期毫秒；不涉及官方账户。"
     },
     "KENFUTWORK_LOCAL_DATA_MIGRATION_POLL_MS": {
       "surface": "server",
@@ -1172,19 +1210,42 @@
       "status": "active",
       "note": "launcher冷启动健康复核间隔与单请求等待预算；启动期env ?? DEFAULTS"
     },
-    "KENFUTWORK_LOCAL_ACCESS_TICKET_TTL_MS": {
-      "surface": "server",
-      "readers": ["packages/shared/src/governance.ts"],
+    "KENFUTWORK_CRUD_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/uploads/uploads.integration.test.ts",
+        "apps/server/src/features/projects/projects.integration.test.ts",
+        "apps/server/src/features/skills/skills.integration.test.ts",
+        "apps/server/src/features/brand-kit/brand-kit.integration.test.ts",
+        "apps/server/src/features/chat/chat.integration.test.ts",
+        "apps/server/src/features/canvas/canvas.integration.test.ts"
+      ],
       "inExamples": false,
-      "status": "active",
-      "note": "本机一次性连接票据有效期毫秒；设置值优先于env兜底。"
+      "status": "test-gate",
+      "note": "仅开启本地实例CRUD的独占临时Postgres回归，不连接开发或生产数据库。"
     },
-    "KENFUTWORK_LOCAL_ACCESS_SESSION_MAX_AGE_MS": {
-      "surface": "server",
-      "readers": ["packages/shared/src/governance.ts"],
+    "KENFUTWORK_PERSISTENCE_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/persistence/persistence.integration.test.ts"
+      ],
       "inExamples": false,
-      "status": "active",
-      "note": "浏览器本机接入会话有效期毫秒；不涉及官方账户。"
+      "status": "test-gate",
+      "note": "显式开启本地实例schema与作用域的独占Postgres回归，不读取现存库配置。"
+    },
+    "LEMONSQUEEZY_VARIANT_BUSINESS_MONTHLY": {
+      "surface": "server",
+      "readers": [],
+      "inExamples": false,
+      "status": "retired",
+      "note": "付费套餐映射已退役，不再提供生产配置读取。"
+    },
+    "LEMONSQUEEZY_VARIANT_BUSINESS_YEARLY": {
+      "surface": "server",
+      "readers": [],
+      "inExamples": false,
+      "status": "retired",
+      "note": "付费套餐映射已退役，仅供负向回归登记历史名称。"
     }
   },
   "legacy": {

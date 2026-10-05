@@ -20,6 +20,10 @@ import {
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import process from "node:process";
+import {
+  packageCodeNativeRuntime,
+  packageRipgrepRuntime,
+} from "./package-code-native.mjs";
 
 const ROOT = process.cwd();
 const RELEASE = join(ROOT, "release");
@@ -122,6 +126,25 @@ function main() {
   copyFileSync(splashSource, join(webOut, "_splash.html"));
   console.log("[package] 启动页已写入静态导出：_splash.html");
 
+  packageCodeNativeRuntime(ROOT, RELEASE);
+  packageRipgrepRuntime(ROOT, RELEASE);
+  const brokerManifest =
+    "apps/server/src/features/process-sandbox/native/Cargo.toml";
+  run("构建Windows Task工作域代理", "cargo", [
+    "build",
+    "--release",
+    "--manifest-path",
+    brokerManifest,
+  ]);
+  run("构建独立进程执行helper", process.execPath, [
+    "apps/server/src/features/process-sandbox/build-helper.mjs",
+    join(RELEASE, "process-helper"),
+    join(
+      ROOT,
+      "apps/server/src/features/process-sandbox/native/target/release/kenfutwork-process-broker.exe",
+    ),
+  ]);
+
   // 2) esbuild 打包服务端为单文件 CJS（SEA 要求 CommonJS）
   run("打包服务端（esbuild）", "pnpm", [
     "exec",
@@ -138,6 +161,8 @@ function main() {
     // node-pty 是原生模块（conpty.node + conpty.dll/OpenConsole.exe）：**不能打进单文件**，
     // 运行时从 <exe>/node_modules/node-pty 解析（同 sharp 的办法）。
     "--external:node-pty",
+    "--external:@napi-rs/canvas",
+    "--external:@vscode/ripgrep",
     `--outfile=${join(BUILD, "server.cjs")}`,
     "--log-level=warning",
   ]);
@@ -265,7 +290,10 @@ function main() {
       )
     : [];
   if (runtimeNames.length > 0) {
-    cpSync(runtimeDir, join(RELEASE, "runtime"), { recursive: true });
+    cpSync(runtimeDir, join(RELEASE, "runtime"), {
+      recursive: true,
+      verbatimSymlinks: true,
+    });
     console.log(
       `[package] 捆绑随包运行时（runtime/）：${runtimeNames.join("、")}`,
     );
@@ -276,6 +304,24 @@ function main() {
   }
 
   writeFileSync(
+    join(RELEASE, "打开浏览器.ps1"),
+    `\uFEFF$ErrorActionPreference = 'Stop'
+try {
+  $output = & (Join-Path $PSScriptRoot '${EXE_NAME}') '--local-connection-url'
+  if ($LASTEXITCODE -ne 0) { throw '本机服务未能签发连接票据，请检查启动日志。' }
+  $url = ($output | Select-Object -Last 1).Trim()
+  if ($url -notmatch '^http://127\\.0\\.0\\.1:[0-9]+/#connect=[A-Za-z0-9_-]{43}$') {
+    throw '本机连接入口格式无效。'
+  }
+  Start-Process -FilePath $url
+} catch {
+  Write-Host ('打开浏览器失败：' + $_.Exception.Message)
+  exit 1
+}
+`,
+  );
+
+  writeFileSync(
     join(RELEASE, "启动.bat"),
     `@echo off
 rem KenFutWork 桌面启动器：内嵌 Postgres + 本机免登录，开箱即用（无需安装数据库）
@@ -283,18 +329,17 @@ rem 自定义：同目录建 .env（每行「键=值」）覆盖下列默认值�
 setlocal
 cd /d "%~dp0"
 set "KENFUTWORK_EMBEDDED_PG=1"
-set "KENFUTWORK_AUTH_DRIVER=local-trust"
 set "KENFUTWORK_QUEUE_DRIVER=in-process"
 set "KENFUTWORK_SERVER_PORT=3001"
 set "KENFUTWORK_WEB_ORIGIN=http://127.0.0.1:3001"
 set "KENFUTWORK_WEB_DIST=%~dp0web"
-rem 数据目录默认 %LOCALAPPDATA%\\KenFutWork\\data；需要随身携带再设 KENFUTWORK_DATA_DIR
+rem 默认数据目录与迁移指针由同源服务端解析；显式 KENFUTWORK_DATA_DIR 优先
 set "KENFUTWORK_AGENT_MODEL=google:gemini-2.5-flash"
 if exist "%~dp0.env" (
   for /f "usebackq eol=# tokens=1,* delims==" %%a in ("%~dp0.env") do set "%%a=%%b"
 )
 echo KenFutWork 启动中：http://localhost:%KENFUTWORK_SERVER_PORT%
-start "" http://localhost:%KENFUTWORK_SERVER_PORT%
+start "" /b powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0打开浏览器.ps1"
 "%~dp0${EXE_NAME}"
 pause
 `,
@@ -305,12 +350,13 @@ pause
     `KenFutWork Windows 桌面包
 ======================
 
-双击「启动.bat」即可：自动在 %LOCALAPPDATA%\\KenFutWork\\data 初始化本机数据库并打开浏览器
-（http://localhost:3001）。首次启动需十几秒建库，之后是秒级。
+双击「启动.bat」即可：初始化本机数据库，服务就绪后通过一次性连接入口打开浏览器。
+默认数据目录是 %APPDATA%\\com.kenfutwork.desktop\\data；迁移后的目录由配置指针决定。
+显式 KENFUTWORK_DATA_DIR 优先。首次启动需十几秒建库，之后是秒级。
 
 形态说明（无需任何外部服务，可离线使用）
   数据库：随包内嵌 Postgres（pg/），首启动 initdb + 执行随包迁移 SQL（supabase/）
-  认证：本机免登录（只监听 127.0.0.1，仅本机可访问）
+  接入：免账户，只监听回环；桌面凭据在宿主读取，浏览器兑换 HttpOnly 会话 cookie
   队列：进程内（不依赖 Postgres 扩展）
   文件：本机磁盘（数据目录下的 blobs/）
   运行时：随包 Node / Python / JDK（runtime/）——agent 执行命令时自动注入其路径，
@@ -320,10 +366,11 @@ pause
   在本目录新建 .env，每行一条「键=值」，例如：
     KENFUTWORK_AGENT_MODEL=google:gemini-2.5-flash
     GOOGLE_API_KEY=your-key
-  供应商 Key 也可在界面里按 BYOK 添加（加密后只存本机数据目录）。
+  供应商 Key 也可在界面里按 BYOK 添加（明文文件只存本机数据目录，可查看和复制）。
 
 端口：默认 3001，可在 .env 中用 KENFUTWORK_SERVER_PORT 修改。
-重置数据：删除 %LOCALAPPDATA%\\KenFutWork\\data 即回到全新状态。
+备份恢复：完全退出应用和数据库后备份整个数据目录；恢复后启动，不自动重放任务。
+重置数据：确认无需保留会话和配置后，删除当前数据目录即回到全新状态。
 `,
   );
 

@@ -52,7 +52,7 @@ graph LR
 | `视觉设计/logo/字体/字体说明.md` | 字标字体清单（在用 Momo Trust Display + 候选样张的来源与许可状态）与第三方字体免责声明 | 参考 |
 | `未做需求.md` | **参考图需求台账**：需求状态总表（做了 / 没做、有无参考图、图名）+ 仍未做清单 + 参考图反向索引 + 逐条详情 | 待办清单：条目状态以代码为准，落地后请在同一提交里更新总表；参考图本身只是方向参考 |
 | `日志.md` | **施工日志 + 变更台账**：历轮回执（§九 ~ §四十五，按轮次记「用户口径 → 做了什么 → 证据 / 验证 / 遗留」）+ 迁移台账（§四十六，《改造计划》§4.13 移入的逐里程碑/PR 回执与 Supabase 专有对象底账）；编号是稳定引用锚点 | 参考：台账看现状、日志看过程；编号不重排不改写 |
-| `api/openapi.json` | 服务端 HTTP API 的 OpenAPI 3.1 规范（162 端点）：由中央路由表 `apps/server/src/openapi/registry.ts` 经 `pnpm api:spec` 生成，也是 Apifox「KenFutWork-Community」项目的导入源 | **快照（生成产物）**：勿手改；与源码路由的漂移由 `tests/api-spec-consistency.test.mjs` 门禁拦截；契约唯一属主仍是 `packages/shared` 的 zod schema |
+| `api/openapi.json` | 服务端 HTTP API 的 OpenAPI 3.1 规范（145 端点）：由中央路由表 `apps/server/src/openapi/registry.ts` 经 `pnpm api:spec` 生成，也是 Apifox「KenFutWork-Community」项目的导入源 | **快照（生成产物）**：勿手改；与源码路由的漂移由 `tests/api-spec-consistency.test.mjs` 门禁拦截；契约唯一属主仍是 `packages/shared` 的 zod schema |
 | `api/ws-protocol.md` | WebSocket 端点 `/api/ws` 的协议导读：客户端命令（agent.run / agent.cancel / canvas.resume / terminal.*）与服务端帧（event / rpc / command.ack / terminal.*） | 参考：契约唯一属主 `packages/shared/src/ws-protocol.ts`，本文不复制结构定义 |
 | `api/job-events.md` | 服务端事件契约导读：`streamEventSchema` 16 型 run/job 流事件清单与投递通道（WS 实时推送 + jobs 轮询兜底） | 参考：契约唯一属主 `packages/shared/src/events.ts` |
 | `api/smoke-scenarios.md` | 只读冒烟场景清单（15 端点 × 状态码 + 响应核心字段断言，实测回执与 Apifox 场景 `8814394` 的维护方式） | 参考：断言字段以 `docs/api/openapi.json` 响应 schema 顶层字段为准 |
