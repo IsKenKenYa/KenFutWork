@@ -40,6 +40,9 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "macos-alias"
-    ]
+    ],
+    "patchedDependencies": {
+      "langchain@1.5.11": "patches/langchain@1.5.11.patch"
+    }
   }
 }
