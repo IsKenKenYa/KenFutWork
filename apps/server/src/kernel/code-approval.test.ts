@@ -163,3 +163,94 @@ it("等待审批期间branch改变拒绝迟到执行", async () => {
     await f.close();
   }
 });
+
+it("主Task规划控制能在真实只读scope调用且不授予资源write，claim只能消费一次", async () => {
+  const f = await fixture();
+  try {
+    f.stored.scope.sandboxMode = "read-only";
+    let entered = 0;
+    const control: ToolDefinition = {
+      name: "EnterPlanMode",
+      scope: "code",
+      planControl: "enter",
+      description: "收紧规划",
+      parameters: { type: "object", additionalProperties: false },
+      execute: async () => {
+        entered += 1;
+        return "entered";
+      },
+    };
+    expect(await f.registry.executeDefinition(control, {}, f.context)).toBe(
+      "entered",
+    );
+    expect(
+      f.permissions.listPending(
+        f.stored.scope.instanceId,
+        f.stored.scope.taskId,
+      ),
+    ).toEqual([]);
+    await expect(
+      f.registry.executeDefinition(control, {}, f.context),
+    ).rejects.toThrow(/拒绝|消费/);
+    expect(entered).toBe(1);
+    await expect(
+      f.registry.executeDefinition(
+        f.tool,
+        { content: "no" },
+        {
+          ...f.context,
+          toolCallId: "resource-call",
+        },
+      ),
+    ).rejects.toThrow(/只读|拒绝/);
+    expect(f.writes()).toBe(0);
+  } finally {
+    await f.close();
+  }
+});
+
+it("规划控制不能被worker/explore/review、shared工具或资源access借用", async () => {
+  const f = await fixture();
+  try {
+    let executed = 0;
+    const control: ToolDefinition = {
+      name: "EnterPlanMode",
+      scope: "code",
+      planControl: "enter",
+      description: "收紧规划",
+      parameters: { type: "object" },
+      execute: async () => {
+        executed += 1;
+        return "unexpected";
+      },
+    };
+    for (const role of ["worker", "explore", "review"] as const)
+      await expect(
+        f.registry.executeDefinition(
+          control,
+          {},
+          {
+            ...f.context,
+            scopeHandle: f.context.scopeHandle!.derive(role, `agent-${role}`),
+          },
+        ),
+      ).rejects.toThrow(/规划控制|主Code/);
+    for (const access of ["read", "write", "execute"] as const)
+      await expect(
+        f.registry.executeDefinition({ ...control, access }, {}, f.context),
+      ).rejects.toThrow(/混合|规划控制/);
+    await expect(
+      f.registry.executeDefinition(
+        { ...control, scope: "shared" },
+        {},
+        f.context,
+      ),
+    ).rejects.toThrow(/规划控制/);
+    await expect(f.registry.executeDefinition(control, {}, {})).rejects.toThrow(
+      /规划控制/,
+    );
+    expect(executed).toBe(0);
+  } finally {
+    await f.close();
+  }
+});

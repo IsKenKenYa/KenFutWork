@@ -59,6 +59,7 @@ function signature(input: PermissionInvocation): string {
     toolName: input.toolName,
     args: input.args,
     access: input.access,
+    planControl: input.planControl,
     readonlyExecution: input.readonlyExecution,
     approvalCeiling: input.approvalCeiling,
   });

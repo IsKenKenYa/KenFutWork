@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { ServerEnv } from "../config/env.js";
 import type { PermissionInvocation } from "../features/permissions/approval-types.js";
+import { allowsPlanControl } from "../features/permissions/code-policy.js";
 import type { PermissionService } from "../features/permissions/permission-service.js";
 import { publicToolArguments } from "./tool-arguments.js";
 import type {
@@ -198,6 +199,11 @@ export class ToolRegistryImpl implements ToolRegistry {
     const handle = execCtx.scopeHandle;
     const approval = execCtx.codeApproval;
     const permissions = handle ? this.permissions?.() : undefined;
+    const planControl = tool.planControl !== undefined;
+    if (planControl && (!handle || tool.scope !== "code" || !allowsPlanControl({
+      role: handle.role, access: tool.access, planControl: tool.planControl,
+    })))
+      throw new ToolDeniedError(tool.name, "规划控制必须由主Code Task独立声明，不能混合资源访问效果。");
     const normalized = execCtx.scopeHandle
       ? ((tool.zodSchema ?? z.fromJSONSchema(tool.parameters)).parse(
           args,
@@ -218,6 +224,7 @@ export class ToolRegistryImpl implements ToolRegistry {
         execCtx.scopeHandle.describe().sandboxMode === "read-only";
       if (
         readonly &&
+        !planControl &&
         tool.access !== "read" &&
         !(tool.access === "execute" && tool.readonlyExecution)
       )
@@ -259,6 +266,7 @@ export class ToolRegistryImpl implements ToolRegistry {
         args: normalized,
         displayArgs: publicToolArguments(tool, normalized),
         access: tool.access,
+        planControl: tool.planControl,
         readonlyExecution: tool.readonlyExecution,
         signal: execCtx.signal,
         ...(execCtx.threadId ? { threadId: execCtx.threadId } : {}),

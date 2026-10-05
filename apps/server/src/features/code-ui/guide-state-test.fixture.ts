@@ -313,8 +313,9 @@ export async function assertCycleSuccessFacts(
 export async function withModeFixture(
   cycle: boolean,
   scenario: (fixture: Fixture, host: Host, model: Model) => Promise<void>,
+  createModel: () => Promise<Model> = () => guideModeFixture({ cycle }),
 ) {
-  const model = await guideModeFixture({ cycle });
+  const model = await createModel();
   let fixture: Fixture | undefined;
   let host: Host | undefined;
   try {

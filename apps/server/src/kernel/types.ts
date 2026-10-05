@@ -37,6 +37,7 @@ import type { ModelCatalogService } from "../features/model-providers/model-cata
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type {
   CodeApprovalMode,
+  CodePlanControl,
   PermissionInvocation,
 } from "../features/permissions/approval-types.js";
 import type { PermissionService } from "../features/permissions/permission-service.js";
@@ -367,6 +368,8 @@ export interface ToolDefinition {
   exposure?: "core" | "deferred" | undefined;
   /** 执行效果由可信属主声明；未知外部工具不能进入只读角色。 */
   access?: "read" | "write" | "execute" | undefined;
+  /** 有限Task控制；不得与资源access混合或从外部MCP字段签发。 */
+  planControl?: CodePlanControl | undefined;
   /** 仅可信执行属主签发：只读文件域且网络禁用，不来自模型参数。 */
   readonlyExecution?: boolean | undefined;
   parameters: Record<string, unknown>;

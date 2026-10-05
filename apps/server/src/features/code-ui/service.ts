@@ -78,6 +78,7 @@ import { createCodeUiFileHistory } from "./file-history.js";
 import { CodeUiFileIndex, codeUiViewerRpc } from "./files.js";
 import { createCodeUiHistoryEdit } from "./history-edit.js";
 import { createCodeGuideInputs } from "./guide-input.js";
+import { createCodePlanningControl } from "./planning-control.js";
 import { createCodeUiFileWatchers } from "./host-file-watcher.js";
 import {
   type CodeUiHostGitRpc,
@@ -202,6 +203,7 @@ export function codeUiCommandFingerprint(
 /** 服务定义的具体 Provider；原 GUI 仅调用该域提供的 RPC/会话消费接口。 */
 export class CodeUiService {
   private readonly guideInputs: ReturnType<typeof createCodeGuideInputs>;
+  private readonly planning: ReturnType<typeof createCodePlanningControl>;
   readonly userInputs: CodeUserInputService | undefined;
   private readonly connections = new CodeUiConnections();
   private readonly controllers = new Map<
@@ -232,6 +234,11 @@ export class CodeUiService {
     | ReturnType<typeof createCodeUiPluginsHost>
     | undefined;
   constructor(private readonly deps: CodeUiServiceDeps) {
+    this.planning = createCodePlanningControl({
+      repository: deps.repository,
+      refresh: (instanceId, path, projectId) =>
+        this.refreshTaskProjection(instanceId, path, projectId),
+    });
     this.guideInputs = createCodeGuideInputs({
       repository: deps.repository,
       refresh: (instanceId, path, projectId) => this.refreshTaskProjection(instanceId, path, projectId),
@@ -2518,6 +2525,10 @@ export class CodeUiService {
 
   consumeGuides(context: ToolExecutionContext) {
     return this.guideInputs.consumeGuides(context);
+  }
+
+  enterPlanMode(context: ToolExecutionContext) {
+    return this.planning.enter(context);
   }
 
   hasPendingGuides(context: ToolExecutionContext) {

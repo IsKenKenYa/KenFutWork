@@ -8,6 +8,7 @@ import {
 } from "../skills/repository.js";
 import { createTaskResourceCloser } from "../task-work/close-resources.js";
 import { createAskUserQuestionToolDefinition } from "./ask-user-question.js";
+import { createEnterPlanModeToolDefinition } from "./enter-plan.js";
 import { createCodeAttachmentRepository } from "./attachments/repository.js";
 import { createCodeGuideMiddleware } from "./guide-model-mailbox.js";
 import { createCodeUiRepository } from "./repository.js";
@@ -78,6 +79,17 @@ export function createCodeUiPlugin(): PluginDefinition {
           checkpoints: ctx.get("checkpoints"),
           env: ctx.env,
         });
+      });
+      ctx.get("tools").registerDynamic({
+        id: "code.planning.enter",
+        scope: "code",
+        resolve(run) {
+          if (run.scopeHandle?.role !== "main" ||
+            run.scopeHandle.agentId !== "main") return null;
+          return createEnterPlanModeToolDefinition({
+            control: { enter: (context) => ctx.get("codeUi").enterPlanMode(context) },
+          });
+        },
       });
       ctx.get("tools").registerDynamic({
         id: "code.user-input.ask-user-question",

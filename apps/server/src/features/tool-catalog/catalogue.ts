@@ -5,7 +5,10 @@ import { kernelToolToStructuredTool } from "../../agent/kernel-tools-bridge.js";
 import type { AgentRunExtensionContext } from "../../agent/run-extension.js";
 import type { ToolDefinition } from "../../kernel/types.js";
 import type { CodeApprovalMode } from "../permissions/approval-types.js";
-import { codePermissionPolicy } from "../permissions/code-policy.js";
+import {
+  allowsPlanControl,
+  codePermissionPolicy,
+} from "../permissions/code-policy.js";
 
 export interface ToolActivation {
   generation: number;
@@ -70,7 +73,19 @@ export function createToolCatalogueMiddleware(
       .resolveRunTools(context.resolution)
       .filter(
         (definition) =>
+          definition.planControl === undefined ||
+          (definition.scope === "code" &&
+            !!context.execution.scopeHandle &&
+            allowsPlanControl({
+              role: context.execution.scopeHandle.role,
+              access: definition.access,
+              planControl: definition.planControl,
+            })),
+      )
+      .filter(
+        (definition) =>
           !readOnly(context) ||
+          definition.planControl !== undefined ||
           definition.access === "read" ||
           (definition.access === "execute" &&
             definition.readonlyExecution === true),
@@ -86,6 +101,7 @@ export function createToolCatalogueMiddleware(
           approvalCeiling: ceiling,
           toolName: definition.name,
           access: definition.access,
+          planControl: definition.planControl,
           readonlyExecution: definition.readonlyExecution,
         }) !== "deny"
       );

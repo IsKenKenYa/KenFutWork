@@ -9,6 +9,9 @@ import type { ExecutionRole } from "../execution/scope-service.js";
 export type CodeApprovalMode =
   CommandPayloadMap["switchCollaborationMode"]["mode"];
 
+/** 可信工具属主声明的Task控制效果；不属于文件/命令访问授权。 */
+export type CodePlanControl = "enter";
+
 export interface ApprovalIdentity {
   instanceId: string;
   taskId: string;
@@ -33,6 +36,7 @@ export interface PermissionInvocation extends ApprovalIdentity {
   /** 可信工具属主提供的公开投影；指纹与审批claim仍绑定args。 */
   displayArgs?: Record<string, unknown> | undefined;
   access: "read" | "write" | "execute" | undefined;
+  planControl?: CodePlanControl | undefined;
   /** Trusted proof of a readonly filesystem AND denied network. */
   readonlyExecution?: boolean | undefined;
   summary?: string | undefined;
