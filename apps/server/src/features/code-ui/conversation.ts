@@ -11,6 +11,7 @@ import { updateTurnFileSummary } from "./file-changes.js";
 import { type CodeAdmittedInput, codeGuideMessageId } from "./input-intents.js";
 import { codeInputRouting, resolveHeldQueue } from "./queue-control.js";
 import type { UserInputEvent } from "./user-input-types.js";
+import type { CodeApprovedPlan } from "./planning-types.js";
 
 type Snapshot = protocol.ConversationSnapshot;
 type Row = protocol.ConversationRow;
@@ -54,6 +55,8 @@ export interface CodeUiConversationState {
   inputOwner?: { hostId: string; runtimeId: string };
   runUsage?: Array<[string, RunUsageTotals]>;
   childRunUsage?: Array<[string, Array<[string, RunUsageTotals]>]>;
+  planningEpoch?: number;
+  approvedPlan?: CodeApprovedPlan;
 }
 
 function cancelToolWaits(snapshot: Snapshot, at: number) {
@@ -293,6 +296,8 @@ export function createCodeUiConversation(input: {
   let inputOwner = input.state?.inputOwner;
   const runUsage = new Map(input.state?.runUsage ?? []);
   const childRunUsage = new Map(input.state?.childRunUsage ?? []);
+  const planningEpoch = input.state?.planningEpoch ?? 0;
+  const approvedPlan = input.state?.approvedPlan;
   const config = protocol.sessionConfigStateSchema.parse(input.config);
   if (input.state) {
     if (input.state.version !== 1) throw new Error("Code 会话状态版本不匹配");
@@ -394,6 +399,8 @@ export function createCodeUiConversation(input: {
         inputs,
         runUsage: [...runUsage],
         childRunUsage: [...childRunUsage],
+        planningEpoch,
+        ...(approvedPlan ? { approvedPlan } : {}),
         ...(inputOwner ? { inputOwner } : {}),
       });
     },

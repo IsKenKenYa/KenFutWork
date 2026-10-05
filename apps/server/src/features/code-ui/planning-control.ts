@@ -1,117 +1,131 @@
-import type { CodeExecutionScope } from "@kenfutwork/shared";
 import type { ToolExecutionContext } from "../../kernel/types.js";
 import { parameterFingerprint } from "../execution/parameter-fingerprint.js";
-import type { ExecutionScopeHandle } from "../execution/scope-service.js";
-import type { PermissionInvocation } from "../permissions/approval-types.js";
-import { matchesActiveCodeRun } from "./active-run-binding.js";
-import type { CodeUiRepository, CodeUiSessionRecord } from "./repository.js";
+import type { LocalInstanceService } from "../local-instance/types.js";
+import { createCodeApprovedPlanStore } from "./approved-plan-store.js";
+import type { CodePlanningCall } from "./planning-binding.js";
+import {
+  requireActivePlanningRun,
+  requirePlanningCall,
+} from "./planning-binding.js";
+import type { CodeUiRepository } from "./repository.js";
 
 export const ENTER_PLAN_MODE_TOOL_NAME = "EnterPlanMode";
 
-type EnterPlanCall = {
-  context: ToolExecutionContext;
-  scope: CodeExecutionScope;
-  handle: ExecutionScopeHandle;
-  invocation: PermissionInvocation;
-  signal: AbortSignal;
-};
-
-function requireEnterPlanCall(context: ToolExecutionContext): EnterPlanCall {
-  const handle = context.scopeHandle;
-  const scope = handle?.describe();
-  const invocation = context.permissionInvocation;
-  const work = context.taskWorkContext;
-  const signal = context.signal;
-  if (
-    !scope ||
-    !handle ||
-    !invocation ||
-    !work ||
-    !signal ||
-    !context.runId ||
-    !context.toolCallId ||
-    handle.role !== "main" ||
-    handle.agentId !== "main" ||
-    context.actor?.instanceId !== scope.instanceId ||
-    invocation.preset !== "code" ||
-    invocation.instanceId !== scope.instanceId ||
-    invocation.taskId !== scope.taskId ||
-    invocation.runId !== context.runId ||
-    invocation.toolCallId !== context.toolCallId ||
-    invocation.agentId !== handle.agentId ||
-    invocation.role !== handle.role ||
-    invocation.scopeGeneration !== scope.generation ||
-    invocation.branchGeneration !== work.branchGeneration ||
-    invocation.signal !== signal ||
-    invocation.planControl !== "enter" ||
-    invocation.access !== undefined ||
-    invocation.toolName !== ENTER_PLAN_MODE_TOOL_NAME ||
-    work.scope.instanceId !== scope.instanceId ||
-    work.scope.taskId !== scope.taskId ||
-    work.scope.rootDirectory !== scope.rootDirectory ||
-    work.scope.generation !== scope.generation ||
-    work.agentId !== handle.agentId ||
-    work.runId !== context.runId ||
-    work.actor?.instanceId !== scope.instanceId
-  )
-    throw new Error(
-      "EnterPlanMode必须绑定真实主Task工具调用、授权代际与取消信号。",
-    );
-  if (
-    !invocation.args ||
-    typeof invocation.args !== "object" ||
-    Array.isArray(invocation.args) ||
-    Object.keys(invocation.args).length !== 0
-  )
-    throw new Error("EnterPlanMode的可信调用参数必须为空对象。");
-  signal.throwIfAborted();
-  // SDK工具signal可由父Run与调用取消合成；不按对象身份否认合法绑定。
-  work.signal?.throwIfAborted();
-  return { context, scope, handle, invocation, signal };
-}
-
-function requireActiveRun(
-  root: CodeUiSessionRecord | null,
-  call: EnterPlanCall,
+function requirePendingPlan(
+  root: Awaited<ReturnType<CodeUiRepository["find"]>>,
+  call: CodePlanningCall,
 ) {
-  call.signal.throwIfAborted();
-  const { scope, invocation } = call;
+  const current = requireActivePlanningRun(root, call);
   if (
-    !root?.state ||
-    root.id !== scope.taskId ||
-    root.instance_id !== scope.instanceId ||
-    root.parent_session_id !== null ||
-    root.root_session_id !== root.id ||
-    !matchesActiveCodeRun(root, call.context)
+    current.snapshot.config.planEnabled !== true ||
+    !Number.isSafeInteger(call.invocation.planningEpoch) ||
+    (current.state.planningEpoch ?? 0) !== call.invocation.planningEpoch
   )
-    throw new Error("规划所属Run或Task授权代际已失效，未开启规划。");
-  const snapshot = root.state.snapshots.find(
-    (entry) => entry.sessionId === root.id,
-  );
-  if (
-    !snapshot ||
-    snapshot.control.phase !== "running" ||
-    !snapshot.control.activeWorks.some(
-      (work) =>
-        work.kind === "primaryTurn" &&
-        work.foregroundExecutionId === invocation.runId,
-    )
-  )
-    throw new Error("EnterPlanMode要求同一主Run仍在执行。");
-  return { root, state: root.state, snapshot };
+    throw new Error("计划所属规划代际已失效，原批准不能退出当前规划。");
+  return current;
 }
 
 /** Provider：只收紧真实主Task规划状态；工具生命周期仍由原observer持有。 */
 export function createCodePlanningControl(deps: {
   repository: CodeUiRepository;
+  localInstance: LocalInstanceService;
   refresh(instanceId: string, path: string, projectId: string): Promise<void>;
 }) {
+  const plans = createCodeApprovedPlanStore();
   return {
+    async exit(context: ToolExecutionContext): Promise<unknown> {
+      const call = requirePlanningCall(context, "exit");
+      const { scope, invocation } = call;
+      const plan = invocation.args.plan;
+      if (typeof plan !== "string" || !plan.trim())
+        throw new Error("计划正文不能为空。");
+      await call.handle.resolvePath(".", "read");
+      requirePendingPlan(
+        await deps.repository.find(scope.instanceId, scope.taskId),
+        call,
+      );
+      const release = deps.localInstance.beginAdmission();
+      try {
+        const owner = await deps.localInstance.resolve(call.actor);
+        const identity = {
+          instanceId: invocation.instanceId,
+          taskId: invocation.taskId,
+          runId: invocation.runId,
+          toolCallId: invocation.toolCallId,
+          agentId: invocation.agentId,
+          role: invocation.role,
+          scopeGeneration: invocation.scopeGeneration,
+          branchGeneration: invocation.branchGeneration,
+          planningEpoch: invocation.planningEpoch,
+        };
+        const planRef = await plans.save(owner.dataDir, identity, plan);
+        call.signal.throwIfAborted();
+        deps.localInstance.assertReady();
+        await call.handle.resolvePath(".", "read");
+        const event = { type: "plan.approved", ...identity, planRef };
+        await deps.repository.appendEvent(
+          scope.instanceId,
+          scope.taskId,
+          {
+            key: `plan-exit:${invocation.runId}/${invocation.toolCallId}`,
+            fingerprint: parameterFingerprint({ ...event, plan }),
+            event,
+          },
+          (current) => {
+            const { state, snapshot } = requirePendingPlan(
+              { ...current, state: structuredClone(current.state) },
+              call,
+            );
+            state.approvedPlan = {
+              ...identity,
+              planRef,
+              approvedAt: Date.now(),
+            };
+            snapshot.config.planEnabled = false;
+            snapshot.seq += 1;
+            snapshot.revision += 1;
+            return { state, activeRunId: current.active_run_id };
+          },
+        );
+        const { root } = requireActivePlanningRun(
+          await deps.repository.find(scope.instanceId, scope.taskId),
+          call,
+        );
+        await deps.refresh(
+          scope.instanceId,
+          scope.rootDirectory,
+          root.project_id,
+        );
+        await call.handle.resolvePath(".", "read");
+        const { snapshot, state } = requireActivePlanningRun(
+          await deps.repository.find(scope.instanceId, scope.taskId),
+          call,
+        );
+        if (
+          snapshot.config.planEnabled === true ||
+          state.approvedPlan?.planRef.planId !== planRef.planId
+        )
+          throw new Error("批准计划未持久提交，未报告退出成功。");
+        const result = {
+          approved: true,
+          plan,
+          mode: snapshot.config.mode,
+          planEnabled: false,
+          planRef,
+        };
+        return {
+          canonicalOutput: result,
+          modelContent: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      } finally {
+        release();
+      }
+    },
     async enter(context: ToolExecutionContext): Promise<unknown> {
-      const call = requireEnterPlanCall(context);
+      const call = requirePlanningCall(context, "enter");
       const { scope, invocation } = call;
       await call.handle.resolvePath(".", "read");
-      requireActiveRun(
+      requireActivePlanningRun(
         await deps.repository.find(scope.instanceId, scope.taskId),
         call,
       );
@@ -135,7 +149,7 @@ export function createCodePlanningControl(deps: {
           event,
         },
         (current) => {
-          const { state, snapshot } = requireActiveRun(
+          const { state, snapshot } = requireActivePlanningRun(
             { ...current, state: structuredClone(current.state) },
             call,
           );
@@ -146,7 +160,7 @@ export function createCodePlanningControl(deps: {
         },
       );
       // 重复事件不执行apply；复验当前事实，不能为停止/撤权后的重放报成功。
-      const { root } = requireActiveRun(
+      const { root } = requireActivePlanningRun(
         await deps.repository.find(scope.instanceId, scope.taskId),
         call,
       );
@@ -156,7 +170,7 @@ export function createCodePlanningControl(deps: {
         root.project_id,
       );
       await call.handle.resolvePath(".", "read");
-      const { snapshot } = requireActiveRun(
+      const { snapshot } = requireActivePlanningRun(
         await deps.repository.find(scope.instanceId, scope.taskId),
         call,
       );

@@ -440,6 +440,7 @@ type CreateAgentRuntimeOptions = {
   resolveCodeApprovalMode?: (scope: ExecutionScopeHandle) => Promise<{
     mode: import("../features/permissions/approval-types.js").CodeApprovalMode;
     planEnabled?: boolean | undefined;
+    planningEpoch?: number | undefined;
     scopeGeneration: number;
     branchGeneration: number;
   }>;

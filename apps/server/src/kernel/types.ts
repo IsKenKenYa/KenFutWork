@@ -320,6 +320,7 @@ export interface ToolExecutionContext {
           mode: CodeApprovalMode;
           /** 独立规划状态；mode是逐调用派生的有效权限档。 */
           planEnabled?: boolean | undefined;
+          planningEpoch?: number | undefined;
           scopeGeneration: number;
           branchGeneration: number;
         }>;

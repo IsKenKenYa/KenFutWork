@@ -9,6 +9,7 @@ import type {
   PermissionInvocation,
 } from "./approval-types.js";
 import { codePermissionPolicy } from "./code-policy.js";
+import { createPlanApprovalRequest, planApprovalDecision } from "../code-ui/plan-approval.js";
 import type { PermissionDecision } from "./permission-service.js";
 
 interface ApprovalCall {
@@ -40,6 +41,7 @@ function identity(input: PermissionInvocation): ApprovalIdentity {
     role,
     scopeGeneration,
     branchGeneration,
+    ...(input.planControl === "exit" ? { planningEpoch: input.planningEpoch } : {}),
   };
 }
 
@@ -73,7 +75,8 @@ function sameBinding(call: ApprovalCall, input: ApprovalResolution): boolean {
     "scopeGeneration",
     "branchGeneration",
   ] as const;
-  return keys.every(
+  return (call.request.identity.planningEpoch === undefined ||
+    call.request.identity.planningEpoch === input.binding.planningEpoch) && keys.every(
     (key) => call.request.identity[key] === input.binding?.[key],
   );
 }
@@ -110,6 +113,8 @@ function answerDecision(
 }
 
 function createRequest(input: PermissionInvocation): BoundApprovalRequest {
+  if (input.planControl === "exit")
+    return createPlanApprovalRequest(input, Object.freeze(identity(input)));
   return {
     identity: Object.freeze(identity(input)),
     parameterFingerprint: parameterFingerprint(input.args),
@@ -273,7 +278,8 @@ export function createCodeApprovalService(): CodeApprovalService {
           status: "alreadyResolved",
           reasonCode: "proto.alreadyResolved",
         };
-      const decision = answerDecision(input.answer);
+      const decision = call.request.interaction.kind === "userInput"
+        ? planApprovalDecision(input.answer) : answerDecision(input.answer);
       if (!decision)
         return { status: "rejected", reasonCode: "approval.invalidAnswer" };
       const allowed = decision === "allow";

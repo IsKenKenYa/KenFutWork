@@ -61,6 +61,10 @@ async function writeState(
   state: CodeUiConversationState,
   activeRunId: string | null,
 ) {
+  // 同一Task锁内按持久bit迁移推进epoch；普通流事件/usage不改变批准代际。
+  const previousPlan = root.state?.snapshots.find((entry) => entry.sessionId === root.id)?.config.planEnabled === true;
+  const currentPlan = state.snapshots.find((entry) => entry.sessionId === root.id)?.config.planEnabled === true;
+  state.planningEpoch = (root.state?.planningEpoch ?? 0) + (previousPlan === currentPlan ? 0 : 1);
   await scoped.execute(
     `update public.code_ui_sessions set state = $2::jsonb, revision = revision + 1, active_run_id = $3, updated_at = now()
       where instance_id = :instance and id = $1 and deleted_at is null`,

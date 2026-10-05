@@ -200,6 +200,7 @@ export function createAgentRunsPlugin(
               // Task保留基础mode；规划仅收窄本次实际权限，不改写配置。
               mode: planEnabled ? "plan" : mode,
               planEnabled,
+              planningEpoch: row.state.planningEpoch ?? 0,
               scopeGeneration: Number(row.scope_generation),
               branchGeneration: Number(row.branch_generation),
             };

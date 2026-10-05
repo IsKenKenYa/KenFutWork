@@ -15,12 +15,12 @@ export type CodePermissionPolicyInput = Pick<
   | "planControl"
 >;
 
-/** 仅主Task可收紧规划；控制声明不能掩盖资源副作用。 */
+/** 仅主Task可控制规划；控制声明不能掩盖资源副作用。 */
 export function allowsPlanControl(
   input: Pick<PermissionInvocation, "role" | "access" | "planControl">,
 ): boolean {
   return (
-    input.planControl === "enter" &&
+    (input.planControl === "enter" || input.planControl === "exit") &&
     input.role === "main" &&
     input.access === undefined
   );
@@ -30,8 +30,10 @@ export function allowsPlanControl(
 export function codePermissionPolicy(
   input: CodePermissionPolicyInput,
 ): CodePermissionPolicy {
-  if (input.planControl !== undefined)
-    return allowsPlanControl(input) ? "allow" : "deny";
+  if (input.planControl !== undefined) {
+    if (!allowsPlanControl(input)) return "deny";
+    return input.planControl === "exit" ? "ask" : "allow";
+  }
   if (!input.access) return "deny";
   if (input.access === "read") return "allow";
   if (input.role === "explore" || input.role === "review") return "deny";

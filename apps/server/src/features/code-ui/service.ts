@@ -173,7 +173,10 @@ function requireLiveUserInput(
     owner?.control.phase !== "running" ||
     !owner.control.activeWorks.some(
       (work) => work.foregroundExecutionId === event.identity.runId,
-    )
+    ) ||
+    (event.identity.planningEpoch !== undefined &&
+      (event.identity.planningEpoch !== (root.state?.planningEpoch ?? 0) ||
+        root.active_run_id !== event.identity.runId || owner.config.planEnabled !== true))
   )
     throw new CodeUiRepositoryError(
       "command_conflict",
@@ -236,6 +239,7 @@ export class CodeUiService {
   constructor(private readonly deps: CodeUiServiceDeps) {
     this.planning = createCodePlanningControl({
       repository: deps.repository,
+      localInstance: deps.localInstance,
       refresh: (instanceId, path, projectId) =>
         this.refreshTaskProjection(instanceId, path, projectId),
     });
@@ -2215,6 +2219,10 @@ export class CodeUiService {
             runId: pending.identity.runId,
             scopeGeneration: Number(root.scope_generation),
             branchGeneration: Number(root.branch_generation),
+            ...(approval?.identity.planningEpoch !== undefined ? {
+              planningEpoch: root.state?.planningEpoch ?? 0,
+              runId: root.active_run_id ?? "",
+            } : {}),
           },
         };
         resolution = question
@@ -2529,6 +2537,10 @@ export class CodeUiService {
 
   enterPlanMode(context: ToolExecutionContext) {
     return this.planning.enter(context);
+  }
+
+  exitPlanMode(context: ToolExecutionContext) {
+    return this.planning.exit(context);
   }
 
   hasPendingGuides(context: ToolExecutionContext) {

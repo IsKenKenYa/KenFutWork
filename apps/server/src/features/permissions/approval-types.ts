@@ -10,7 +10,7 @@ export type CodeApprovalMode =
   CommandPayloadMap["switchCollaborationMode"]["mode"];
 
 /** 可信工具属主声明的Task控制效果；不属于文件/命令访问授权。 */
-export type CodePlanControl = "enter";
+export type CodePlanControl = "enter" | "exit";
 
 export interface ApprovalIdentity {
   instanceId: string;
@@ -21,6 +21,8 @@ export interface ApprovalIdentity {
   role: ExecutionRole;
   scopeGeneration: number;
   branchGeneration: number;
+  /** 规划批准绑定的可信episode；普通工具不携带。 */
+  planningEpoch?: number | undefined;
 }
 
 /** All fields except args originate from the trusted host/tool owner. */
@@ -63,7 +65,7 @@ export interface ApprovalResolution {
   /** Current facts resolved by the authenticated host, never from answer. */
   binding: Pick<
     ApprovalIdentity,
-    "instanceId" | "taskId" | "runId" | "scopeGeneration" | "branchGeneration"
+    "instanceId" | "taskId" | "runId" | "scopeGeneration" | "branchGeneration" | "planningEpoch"
   >;
 }
 
