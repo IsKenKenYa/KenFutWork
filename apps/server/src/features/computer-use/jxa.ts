@@ -10,12 +10,10 @@
  */
 
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 import type { AxAppRef, AxNode, AxWindowRef } from "./ax-tree.js";
+import { CU_AX_DEFAULT_LIMITS, type CuTreeLimits } from "./executor.js";
 import type { ParsedAppRef } from "./target.js";
-
-const execFileAsync = promisify(execFile);
 
 export interface JxaRawElement {
   role?: string;
@@ -27,6 +25,7 @@ export interface JxaRawElement {
 }
 
 export interface JxaRawObservation {
+  binding?: string;
   app: { pid?: number; bundleId?: string | null; name?: string | null };
   window: {
     windowId?: number | null;
@@ -104,11 +103,74 @@ export function toJxaAppSelector(appRef: ParsedAppRef): string {
 }
 
 function escapeJxaString(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return JSON.stringify(value).slice(1, -1);
 }
 
-/** 深度上限：AX 树递归的成本护栏（结构常量，非用户语义数值）。 */
-export const AX_MAX_DEPTH = 8;
+/** CGWindowID提供稳定句柄；AX与CG只接受唯一匹配，重排/同名/替换时不猜数组位置。 */
+export function buildResolveWindowScript(
+  appRef: ParsedAppRef,
+  expectedBinding?: string,
+): string {
+  const hasApp = appRef.pid != null || appRef.bundleId || appRef.name;
+  return `
+ObjC.import('AppKit'); ObjC.import('CoreGraphics');
+ObjC.bindFunction('CGWindowListCopyWindowInfo', ['id', ['uint32', 'uint32']]);
+const se = Application('System Events');
+const nativeWindows = $.CGWindowListCopyWindowInfo(0, 0), cg = [];
+for (let i=0; i<Number(nativeWindows.count); i++) cg.push(ObjC.deepUnwrap(nativeWindows.objectAtIndex(i)));
+const expected = ${JSON.stringify(expectedBinding ?? null)};
+const bound = expected ? JSON.parse(expected) : null;
+const requestedId = ${appRef.windowId ?? "null"} ?? (bound ? bound.windowId : null);
+const cgTarget = requestedId === null ? null : cg.find(row => Number(row.kCGWindowNumber) === requestedId);
+if (requestedId !== null && !cgTarget) throw new Error('element_stale: 目标窗口已关闭或被替换');
+const proc = ${hasApp ? toJxaAppSelector(appRef) : "se.applicationProcesses.whose({unixId: Number(cgTarget.kCGWindowOwnerPID)})[0]"};
+let pid;
+try { pid=Number(proc.unixId()); } catch(e) { throw new Error('app_not_found: 目标应用未运行'); }
+const host = Application.currentApplication(); host.includeStandardAdditions = true;
+const launchedAt = host.doShellScript('LC_ALL=C /bin/ps -p '+pid+' -o lstart=').trim();
+if (!launchedAt) throw new Error('app_not_found: 无法确认目标进程的启动身份');
+if (bound && (bound.pid !== pid || bound.launchedAt !== launchedAt)) throw new Error('element_stale: 目标进程已替换');
+if (cgTarget && Number(cgTarget.kCGWindowOwnerPID) !== pid) throw new Error('element_stale: 窗口不属于目标进程');
+function windowBounds(win) {
+  const p=win.position(), s=win.size(); return [p[0],p[1],s[0],s[1]];
+}
+function cgBounds(row) {
+  const b=row.kCGWindowBounds; return [Number(b.X),Number(b.Y),Number(b.Width),Number(b.Height)];
+}
+function matches(win, row) {
+  const a=windowBounds(win), b=cgBounds(row);
+  return a.every((value,i) => value===b[i]);
+}
+function uniqueMatch(win, rows) {
+  let candidates=rows.filter(row => matches(win,row));
+  if (candidates.length>1) {
+    const title=win.title(); candidates=candidates.filter(row => row.kCGWindowName===title);
+  }
+  if (candidates.length!==1) throw new Error('element_stale: 无法唯一绑定AX窗口与原生窗口');
+  return candidates[0];
+}
+const windows=proc.windows();
+const cgRows=cg.filter(row => Number(row.kCGWindowOwnerPID)===pid && Number(row.kCGWindowLayer)===0);
+let win, nativeWindow;
+if (cgTarget) {
+  const candidates=windows.filter(candidate => {
+    // 已验证CG句柄/进程启动身份，AX标题须唯一。窗口移动不改变身份；坐标几何另行复核。
+    if (bound && typeof bound.axTitle==='string') {
+      try { return candidate.title()===bound.axTitle; } catch(e) { return false; }
+    }
+    try { return Number(uniqueMatch(candidate,cgRows).kCGWindowNumber)===requestedId; } catch(e) { return false; }
+  });
+  if (candidates.length!==1) throw new Error('element_stale: 目标窗口没有唯一AX对应');
+  win=candidates[0]; nativeWindow=cgTarget;
+} else {
+  if (!windows.length) throw new Error('app_not_found: 目标应用没有窗口');
+  win=windows[0]; nativeWindow=uniqueMatch(win,cgRows);
+}
+const windowId=Number(nativeWindow.kCGWindowNumber);
+const binding=JSON.stringify({pid,launchedAt,windowId,axTitle:win.title()});
+if (expected && binding!==expected) throw new Error('element_stale: 窗口绑定已改变');
+`;
+}
 
 /**
  * 共享 describeElement：观察/动作/输入三个脚本**同一份**遍历实现——
@@ -119,7 +181,10 @@ export const AX_MAX_DEPTH = 8;
  * 标题解析链：title() → AXIdentifier → description()（Calculator 类自绘按钮
  * 只有 AXIdentifier 有语义值；AXHelp 太长不用）。
  */
-export const JXA_DESCRIBE_ELEMENT = `
+export function buildDescribeElementScript(
+  limits: CuTreeLimits = CU_AX_DEFAULT_LIMITS,
+): string {
+  return `
 function cleanActionName(raw) {
   // a.name() 可能返回 "Name:拷贝<LF>Target:0x0<LF>Selector:(null)" 这类完整描述：
   // 取首段并剥 Name: 前缀（注意：模板里的 \\\\n 经两层转义后是 JXA 的字面 \\n）
@@ -133,7 +198,7 @@ function describeElementEx(elm, depth, maxDepth) {
   let title = null;
   try {
     const t = elm.title();
-    if (typeof t === 'string' && t.length > 0) title = t.slice(0, 200);
+    if (typeof t === 'string' && t.length > 0) title = t.slice(0, ${limits.titleMaxChars});
   } catch (e) {}
   if (!title) {
     try {
@@ -143,11 +208,11 @@ function describeElementEx(elm, depth, maxDepth) {
         // 拆开成标题与值（对普通 identifier 无副作用）
         const sep = id.indexOf(';value:');
         if (sep > 0) {
-          title = id.slice(0, sep).slice(0, 200);
+          title = id.slice(0, sep).slice(0, ${limits.titleMaxChars});
           const embedded = id.slice(sep + 7);
-          if (embedded.length > 0 && embedded.length <= 300) node.value = embedded;
+          if (embedded.length > 0 && embedded.length <= ${limits.valueMaxChars}) node.value = embedded;
         } else {
-          title = id.slice(0, 200);
+          title = id.slice(0, ${limits.titleMaxChars});
         }
       }
     } catch (e) {}
@@ -156,7 +221,7 @@ function describeElementEx(elm, depth, maxDepth) {
     try {
       const d = elm.description();
       if (typeof d === 'string' && d.length > 0 && d !== '按钮' && d !== 'button') {
-        title = d.slice(0, 200);
+        title = d.slice(0, ${limits.titleMaxChars});
       }
     } catch (e) {}
   }
@@ -164,12 +229,12 @@ function describeElementEx(elm, depth, maxDepth) {
   try {
     const v = elm.value();
     if (v !== null && v !== undefined && typeof v !== 'object') {
-      node.value = String(v).slice(0, 300);
+      node.value = String(v).slice(0, ${limits.valueMaxChars});
     }
   } catch (e) {}
   let actionNames = [];
   try {
-    actionNames = elm.actions().map(a => cleanActionName(a.name())).filter(n => n.length > 0).slice(0, 12);
+    actionNames = elm.actions().map(a => cleanActionName(a.name())).filter(n => n.length > 0).slice(0, ${limits.maxActions});
     if (actionNames.length) node.actions = actionNames;
   } catch (e) {}
   const states = [];
@@ -181,7 +246,7 @@ function describeElementEx(elm, depth, maxDepth) {
   if (depth < maxDepth) {
     try {
       const kids = elm.uiElements();
-      for (let i = 0; i < kids.length && i < 120; i++) {
+      for (let i = 0; i < kids.length && i < ${limits.maxChildren}; i++) {
         const child = describeElementEx(kids[i], depth + 1, maxDepth);
         // 过滤谓词与 normalizeAxNode 一致：无角色且无标题的节点不进树（索引对齐的前提）
         if (child && (child.node.role !== undefined || child.node.title !== undefined)) {
@@ -205,65 +270,87 @@ function toPlainElement(result) {
   return node;
 }
 `;
+}
 
-export function buildObserveScript(appRef: ParsedAppRef): string {
-  const selector = toJxaAppSelector(appRef);
+export function buildObserveScript(
+  appRef: ParsedAppRef,
+  limits: CuTreeLimits = CU_AX_DEFAULT_LIMITS,
+): string {
   return `
-ObjC.import('Foundation');
-const se = Application('System Events');
-const proc = ${selector};
-${JXA_DESCRIBE_ELEMENT}
+${buildResolveWindowScript(appRef)}
+${buildDescribeElementScript(limits)}
 function describeWindow(win) {
   const out = {};
   try { out.title = win.title(); } catch (e) {}
   try {
     const pos = win.position(), size = win.size();
-    if (pos && size && pos.x !== null && size.width !== null) {
-      out.bounds = [pos.x, pos.y, size.width, size.height];
+    if (pos && size && pos[0] !== null && size[0] !== null) {
+      out.bounds = [pos[0], pos[1], size[0], size[1]];
     }
   } catch (e) {}
   return out;
 }
+
 const app = { pid: proc.unixId(), name: proc.name() };
 try { app.bundleId = proc.bundleIdentifier(); } catch (e) {}
-const win = proc.windows[0];
 const windowInfo = describeWindow(win);
-JSON.stringify({ app, window: windowInfo, root: toPlainElement(describeElementEx(win, 0, ${AX_MAX_DEPTH})) });
+windowInfo.windowId = windowId;
+JSON.stringify({ app, window: windowInfo, binding, root: toPlainElement(describeElementEx(win, 0, ${limits.maxDepth})) });
 `;
+}
+
+/** 输入前只取几何；不为每次鼠标动作再次递归整个AX树。 */
+export function buildWindowBoundsScript(
+  appRef: ParsedAppRef,
+  binding?: string,
+): string {
+  return `${buildResolveWindowScript(appRef, binding)}
+const position = win.position(), size = win.size();
+JSON.stringify({binding,bounds:[position[0],position[1],size[0],size[1]]});`;
+}
+
+/** 直接检查发事件的JXA进程；较新C API不在JXA旧bridge元数据中，按SDK声明绑定。 */
+export function buildPostEventAccessScript(): string {
+  return `ObjC.import('CoreGraphics');
+ObjC.bindFunction('CGPreflightPostEventAccess', ['bool', []]);
+JSON.stringify({postEventAccess: Boolean($.CGPreflightPostEventAccess())});`;
 }
 
 export function buildListAppsScript(): string {
   return `
 ObjC.import('AppKit');
-const apps = ObjC.deepUnwrap($.NSWorkspace.sharedWorkspace.runningApplications)
-  .filter(a => a.activationPolicy === 0)
-  .map(a => ({
-    pid: a.processIdentifier,
-    name: a.localizedName ? String(a.localizedName) : null,
-    bundleId: a.bundleIdentifier ? String(a.bundleIdentifier) : null,
-    active: a.active === true,
-  }));
+const running = $.NSWorkspace.sharedWorkspace.runningApplications;
+const apps = [];
+for (let i = 0; i < Number(running.count); i++) {
+  const a = running.objectAtIndex(i);
+  if (Number(a.activationPolicy) !== 0) continue;
+  apps.push({
+    pid: Number(a.processIdentifier),
+    name: ObjC.unwrap(a.localizedName) || null,
+    bundleId: ObjC.unwrap(a.bundleIdentifier) || null,
+    active: Boolean(a.active),
+  });
+}
 JSON.stringify(apps);
 `;
 }
 
 export function buildListWindowsScript(appRef: ParsedAppRef): string {
-  const selector = toJxaAppSelector(appRef);
   return `
-const se = Application('System Events');
-const proc = ${selector};
-const rows = proc.windows().map(win => {
+${buildResolveWindowScript(appRef)}
+const rows = windows.map(win => {
   const out = {};
+  try { out.windowId = Number(uniqueMatch(win,cgRows).kCGWindowNumber); } catch(e) { return null; }
   try { out.title = win.title(); } catch (e) { out.title = null; }
   try { out.subrole = win.subrole(); } catch (e) { out.subrole = null; }
   try {
     const pos = win.position(), size = win.size();
-    out.bounds = [pos.x, pos.y, size.width, size.height];
+    out.bounds = [pos[0], pos[1], size[0], size[1]];
   } catch (e) { out.bounds = null; }
   try { out.main = win.attributes['AXMain'].value() === true; } catch (e) { out.main = false; }
   try { out.focused = win.attributes['AXFocused'].value() === true; } catch (e) { out.focused = false; }
   return out;
-});
+}).filter(row => row!==null);
 JSON.stringify(rows);
 `;
 }
@@ -273,14 +360,13 @@ export function buildElementActionScript(
   appRef: ParsedAppRef,
   index: number,
   action: "press" | "focus",
+  limits: CuTreeLimits = CU_AX_DEFAULT_LIMITS,
+  binding?: string,
 ): string {
-  const selector = toJxaAppSelector(appRef);
   return `
-const se = Application('System Events');
-const proc = ${selector};
-${JXA_DESCRIBE_ELEMENT}
-const win = proc.windows[0];
-const root = describeElementEx(win, 0, ${AX_MAX_DEPTH});
+${buildResolveWindowScript(appRef, binding)}
+${buildDescribeElementScript(limits)}
+const root = describeElementEx(win, 0, ${limits.maxDepth});
 if (!root) {
   JSON.stringify({ ok: false, error: 'element_unavailable' });
 } else {
@@ -320,19 +406,55 @@ if (!root) {
 export async function runJxa(
   script: string,
   timeoutMs: number,
+  signal?: AbortSignal,
+  maxOutputBytes: number = AGENT_GOVERNANCE_DEFAULTS.processMaxOutputBytes,
 ): Promise<unknown> {
-  const { stdout } = await execFileAsync(
-    "osascript",
-    ["-l", "JavaScript", "-e", script],
-    { timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024 },
-  );
-  return JSON.parse(stdout.trim());
+  try {
+    const stdout = await new Promise<string>((resolve, reject) => {
+      const child = execFile(
+        "osascript",
+        ["-l", "JavaScript", "-"],
+        {
+          timeout: timeoutMs,
+          maxBuffer: maxOutputBytes,
+          ...(signal ? { signal } : {}),
+        },
+        (error, output, stderr) => {
+          if (error) reject(Object.assign(error, { stderr }));
+          else resolve(output);
+        },
+      );
+      child.stdin?.on("error", () => {});
+      child.stdin?.end(script);
+    });
+    return JSON.parse(stdout.trim());
+  } catch (error) {
+    const failure = error as {
+      stderr?: string;
+      signal?: string;
+      code?: string | number;
+    };
+    const reason = failure.stderr?.trim();
+    const code = reason?.match(/\b(element_stale|app_not_found):/)?.[1];
+    // child_process默认message包含整段脚本（可能含输入文本），不得把它回传到日志/事件。
+    throw Object.assign(
+      new Error(
+        `macOS桥失败：${reason || failure.signal || failure.code || "无有效JSON结果"}`,
+      ),
+      {
+        code: signal?.aborted ? "cancelled" : (code ?? "internal"),
+        // 已知绑定拒绝发生在动作前；其它桥失败可能发生在AX动作之后，由调用方保守判定。
+        ...(code ? { actionSent: false } : {}),
+      },
+    );
+  }
 }
 
 export function jxaObservationToParts(raw: unknown): {
   app: AxAppRef;
   window: AxWindowRef;
   root: AxNode;
+  binding?: string;
 } {
   const obs = raw as JxaRawObservation;
   return {
@@ -342,12 +464,11 @@ export function jxaObservationToParts(raw: unknown): {
       ...(obs.app.name != null ? { name: obs.app.name } : {}),
     },
     window: {
-      ...(obs.window.windowId != null
-        ? { windowId: obs.window.windowId }
-        : {}),
+      ...(obs.window.windowId != null ? { windowId: obs.window.windowId } : {}),
       ...(obs.window.title != null ? { title: obs.window.title } : {}),
       ...(obs.window.bounds != null ? { bounds: obs.window.bounds } : {}),
     },
     root: normalizeAxNode(obs.root ?? {}),
+    ...(obs.binding ? { binding: obs.binding } : {}),
   };
 }

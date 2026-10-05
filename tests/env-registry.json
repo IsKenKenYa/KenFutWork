@@ -203,6 +203,15 @@
       "status": "active",
       "note": "MCP server JSON 数组（stdio 命令型）"
     },
+    "KENFUTWORK_TEST_DESKTOP": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/computer-use/desktop.native.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "=1 允许真实 macOS 第一方窗口验收；默认跳过不代表能力通过"
+    },
     "KENFUTWORK_MCP_LIFECYCLE": {
       "surface": "test",
       "readers": ["apps/server/src/features/mcp/mcp-service.lifecycle.test.ts"],
