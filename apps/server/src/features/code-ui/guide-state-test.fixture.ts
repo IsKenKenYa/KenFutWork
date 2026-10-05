@@ -378,18 +378,23 @@ export async function finishAndWaitForCompletion(
   );
 }
 
-export async function readNativePostMessages(
+export async function readNativeBoundaryState(
   fixture: Fixture,
   host: Host,
   runId: string,
+  phase: "pre" | "post",
 ) {
   const boundaries = await fixture.app.kernel
     .get("agentRunMetadata")
     .getOwnedTurnBoundaries(fixture.actor, { taskId: host.sessionId, runId });
-  const reference = boundaries.post?.context;
-  if (reference?.status !== "captured" || !reference.reference)
-    throw new Error("折返自然完成没有native post。");
-  const native = decodeNativeContextReference(reference.reference);
+  const boundary = boundaries[phase];
+  if (
+    !boundary ||
+    boundary.context.status !== "captured" ||
+    !boundary.context.reference
+  )
+    throw new Error(`真实Run缺少native ${phase}边界。`);
+  const native = decodeNativeContextReference(boundary.context.reference);
   const persistence = await fixture.app.kernel
     .get("agentPersistence")
     .getPersistence();
@@ -401,7 +406,17 @@ export async function readNativePostMessages(
       checkpoint_id: native.checkpointId,
     },
   });
-  const messages = checkpoint?.channel_values.messages;
+  if (!checkpoint) throw new Error("真实native边界checkpoint缺失。");
+  return { boundary, state: checkpoint.channel_values };
+}
+
+export async function readNativePostMessages(
+  fixture: Fixture,
+  host: Host,
+  runId: string,
+) {
+  const { state } = await readNativeBoundaryState(fixture, host, runId, "post");
+  const messages = state.messages;
   if (!Array.isArray(messages)) throw new Error("折返native消息缺失。");
   return messages;
 }

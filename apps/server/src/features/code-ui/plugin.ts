@@ -10,6 +10,7 @@ import { createTaskResourceCloser } from "../task-work/close-resources.js";
 import { createAskUserQuestionToolDefinition } from "./ask-user-question.js";
 import { createEnterPlanModeToolDefinition } from "./enter-plan.js";
 import { createExitPlanModeToolDefinition } from "./exit-plan.js";
+import { createApprovedPlanPromptSection } from "./approved-plan-prompt.js";
 import { createCodeAttachmentRepository } from "./attachments/repository.js";
 import { createCodeGuideMiddleware } from "./guide-model-mailbox.js";
 import { createCodeUiRepository } from "./repository.js";
@@ -92,6 +93,9 @@ export function createCodeUiPlugin(): PluginDefinition {
           });
         },
       });
+      ctx.get("systemPrompt").register(createApprovedPlanPromptSection({
+        read: (context) => ctx.get("codeUi").readApprovedPlan(context),
+      }));
       ctx.get("tools").registerDynamic({
         id: "code.planning.exit",
         scope: "code",

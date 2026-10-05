@@ -4,6 +4,7 @@ import { z } from "zod";
 import { kernelToolToStructuredTool } from "../../agent/kernel-tools-bridge.js";
 import type { AgentRunExtensionContext } from "../../agent/run-extension.js";
 import type { ToolDefinition } from "../../kernel/types.js";
+import { promptExecutionContext } from "../../kernel/prompt-execution.js";
 import type { CodeApprovalMode } from "../permissions/approval-types.js";
 import {
   allowsPlanControl,
@@ -164,6 +165,7 @@ export function createToolCatalogueMiddleware(
       const systemPrompt = context.prompt
         ? await context.prompt.registry.compose({
             ...context.prompt.composition,
+            execution: promptExecutionContext(context.execution),
             executionScope: context.execution.scopeHandle?.describe(),
             executionRole: context.execution.scopeHandle?.role,
             approvalMode: policy?.mode,

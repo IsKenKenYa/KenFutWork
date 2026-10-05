@@ -867,6 +867,16 @@ export function createCodeUiRepository(persistence: PersistenceService) {
         return true;
       });
     },
+    /** 批准事实与正文指纹在原Task事务中提交；不是模型转录或Todo。 */
+    async readApprovedPlanProof(instanceId: string, taskId: string, runId: string, toolCallId: string) {
+      const row = await persistence.forInstance(instanceId).queryOne<SqlRow & {
+        parameter_fingerprint: string; payload: unknown;
+      }>(
+        "select parameter_fingerprint,payload from public.code_ui_events where instance_id=:instance and root_session_id=$1 and event_key=$2",
+        [taskId, `plan-exit:${runId}/${toolCallId}`],
+      );
+      return row ? { fingerprint: row.parameter_fingerprint, event: row.payload } : null;
+    },
     /** 可信文件恢复消费者读原生提交；原文留在私有journal，不经UI展示字段重建。 */
     async readToolCompletions(
       instanceId: string,

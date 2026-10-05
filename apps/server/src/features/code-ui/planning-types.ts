@@ -11,3 +11,31 @@ export interface CodeApprovedPlan extends ApprovalIdentity {
   planRef: CodePlanRef;
   approvedAt: number;
 }
+
+/** 稳定批准调用身份；不能将approvedAt或正文混进管理文件幂等键。 */
+export function codePlanApprovalIdentity(
+  input: ApprovalIdentity,
+): ApprovalIdentity {
+  const {
+    instanceId,
+    taskId,
+    runId,
+    toolCallId,
+    agentId,
+    role,
+    scopeGeneration,
+    branchGeneration,
+    planningEpoch,
+  } = input;
+  return {
+    instanceId,
+    taskId,
+    runId,
+    toolCallId,
+    agentId,
+    role,
+    scopeGeneration,
+    branchGeneration,
+    planningEpoch,
+  };
+}

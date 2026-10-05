@@ -5,9 +5,11 @@ import {
   readFile,
   rm,
   symlink,
+  writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 import type { ApprovalIdentity } from "../permissions/approval-types.js";
 import { createCodeApprovedPlanStore } from "./approved-plan-store.js";
@@ -44,6 +46,33 @@ describe("批准计划管理文件公开存储", () => {
         PLAN,
       );
       expect(await store.save(root, identity, PLAN)).toEqual(ref);
+      const options = {
+        maxBytes: AGENT_GOVERNANCE_DEFAULTS.codeReadMaxBytes,
+        signal: new AbortController().signal,
+      };
+      expect(await store.read(alias, identity, ref, options)).toBe(PLAN);
+      await expect(
+        store.read(
+          root,
+          { ...identity, taskId: "fc000aaa-bb11-4c22-9d33-000000000055" },
+          ref,
+          options,
+        ),
+      ).rejects.toThrow("批准计划引用不可读");
+      await expect(
+        store.read(
+          root,
+          identity,
+          { ...ref, relativePath: "../outside.md" },
+          options,
+        ),
+      ).rejects.toThrow("批准计划引用不可读");
+      await expect(
+        store.read(root, identity, ref, {
+          ...options,
+          maxBytes: Buffer.byteLength(PLAN) - 1,
+        }),
+      ).rejects.toThrow("读取预算");
       expect(
         await Promise.all([
           store.save(alias, identity, PLAN),
@@ -61,6 +90,10 @@ describe("批准计划管理文件公开存储", () => {
           join(root, "sandbox", "agent-files", "plans", identity.taskId),
         ),
       ).toEqual([`${ref.planId}.md`]);
+      await writeFile(resolve(root, ref.relativePath), "# 篡改\n");
+      await expect(store.read(root, identity, ref, options)).rejects.toThrow(
+        "哈希已改变",
+      );
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

@@ -239,6 +239,8 @@ export type PromptSectionScope = "always" | "design" | "code";
  * 持有服务引用，按 ctx 定位——ctx 不装「已取好的数据」，只装定位键。
  */
 export interface PromptCompositionContext {
+  /** 私有执行定位；从实际Run复制，不由模型或路径签发，不缓存业务正文。 */
+  execution?: PromptExecutionContext | undefined;
   executionScope?: import("@kenfutwork/shared").CodeExecutionScope | undefined;
   executionRole?:
     | import("../features/execution/scope-service.js").ExecutionRole
@@ -274,6 +276,11 @@ export interface PromptCompositionContext {
    */
   userRulesFragment?: readonly string[];
 }
+
+export type PromptExecutionContext = Pick<
+  ToolExecutionContext,
+  "actor" | "scopeHandle" | "taskWorkContext" | "runId" | "signal"
+>;
 
 /**
  * 系统提示段（dsh PromptSection 式）：插件向 `ctx.systemPrompt` 贡献，

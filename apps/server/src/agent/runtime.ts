@@ -76,6 +76,7 @@ import type {
   ToolExecutionContext,
   ToolRegistry,
 } from "../kernel/types.js";
+import { promptExecutionContext } from "../kernel/prompt-execution.js";
 import type { ModelInvocationSnapshot } from "../providers/types.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
@@ -1933,6 +1934,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           };
 
           const promptCompositionContext: PromptCompositionContext = {
+            execution: promptExecutionContext(runToolContext),
             preset,
             ...(run.roleInstructions
               ? { roleInstructions: run.roleInstructions }

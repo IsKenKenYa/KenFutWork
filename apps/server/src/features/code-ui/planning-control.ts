@@ -1,7 +1,7 @@
 import type { ToolExecutionContext } from "../../kernel/types.js";
 import { parameterFingerprint } from "../execution/parameter-fingerprint.js";
 import type { LocalInstanceService } from "../local-instance/types.js";
-import { createCodeApprovedPlanStore } from "./approved-plan-store.js";
+import type { CodeApprovedPlanStore } from "./approved-plan-store.js";
 import type { CodePlanningCall } from "./planning-binding.js";
 import {
   requireActivePlanningRun,
@@ -29,9 +29,10 @@ function requirePendingPlan(
 export function createCodePlanningControl(deps: {
   repository: CodeUiRepository;
   localInstance: LocalInstanceService;
+  files: CodeApprovedPlanStore;
   refresh(instanceId: string, path: string, projectId: string): Promise<void>;
 }) {
-  const plans = createCodeApprovedPlanStore();
+  const plans = deps.files;
   return {
     async exit(context: ToolExecutionContext): Promise<unknown> {
       const call = requirePlanningCall(context, "exit");

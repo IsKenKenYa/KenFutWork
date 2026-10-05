@@ -26,7 +26,10 @@
 
 - **Sandbox（沙箱）** — OS 级执行囚禁。三档：`read-only` / `workspace-write`（默认，可写根 = 项目文件夹）/ `danger-full-access`。只拦「能不能」，不拦「问不问」。主后端为 **srt**（`@anthropic-ai/sandbox-runtime`，三平台 + 网络域名白名单），经自建 Sandbox 缝隔离、可换后端；fail-closed（无 runner 绝不裸奔）+ enforcement 等级报告。
 - **Approval Gate（审批门）** — 应用层逐操作同意：文件编辑 / 危险命令 / 未白名单网络的确认弹窗 + 一次性行内提权。
-- **Permission Mode（权限模式）** — 四档产品预设（沙箱档 × 审批门的组合，Task 内可切换）：`plan`（计划模式）/ `ask`（变更前确认）/ `auto-edit`（自动编辑）/ `full-access`（完全访问）。
+- **Planning State（规划状态）** — Code Task 的独立 `planEnabled` 开关；开启时在基础权限与物理工作域上收窄为只读调查/规划，不改写基础权限或 Task 目录。原 `mode=plan` wire 入口的消费者规范化仍在迁移。
+- **Planning Epoch（规划代际）** — Task 根锁中按持久规划开关变化推进的版本；批准请求绑定该版本，避免迟到批准退出另一轮规划。与消息 revision、scopeGeneration、branchGeneration 分开。
+- **Approved Plan（批准计划）** — 人明确批准后在同一 Task 事务记录的计划事实，关联宿主管理文件相对引用、SHA-256 与原 Run/工具调用来源。作为实施上下文保留，执行继续遵守当前工作域、角色与审批；Todo 的 `snapshot.plan` 只表示进度。
+- **Permission Mode（基础权限模式）** — Task 的执行审批预设：原 wire `build`（变更逐次确认）、`edit`（仅受控文件编辑自动允许）、`yolo`（自动执行），仍与当前沙箱、目录和角色上限取交集。规划状态单独持有；原 wire 的 `plan` 输入归一化仍在迁移。
 - **Capability Node（能力节点）** — 向服务端注册能力清单的 Worker 进程（云端容器 / 桌面本地 / 移动受限）。任务按能力路由。
 - **Job（队列任务）** — 后台队列的执行单元（图/视频生成等）。与 Task（用户工作项）严格区分；与 Run（agent 执行）严格区分。
 - **Execution Scope（执行作用域）** — 持久 Task 在当前授权代际下可访问的工作目录与可执行操作的边界；与接入客户端身份分开。

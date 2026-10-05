@@ -79,6 +79,9 @@ import { CodeUiFileIndex, codeUiViewerRpc } from "./files.js";
 import { createCodeUiHistoryEdit } from "./history-edit.js";
 import { createCodeGuideInputs } from "./guide-input.js";
 import { createCodePlanningControl } from "./planning-control.js";
+import { createCodeApprovedPlanStore } from "./approved-plan-store.js";
+import { createCodeApprovedPlanReader } from "./approved-plan-reader.js";
+import type { PromptExecutionContext } from "../../kernel/types.js";
 import { createCodeUiFileWatchers } from "./host-file-watcher.js";
 import {
   type CodeUiHostGitRpc,
@@ -207,6 +210,7 @@ export function codeUiCommandFingerprint(
 export class CodeUiService {
   private readonly guideInputs: ReturnType<typeof createCodeGuideInputs>;
   private readonly planning: ReturnType<typeof createCodePlanningControl>;
+  private readonly approvedPlans: ReturnType<typeof createCodeApprovedPlanReader>;
   readonly userInputs: CodeUserInputService | undefined;
   private readonly connections = new CodeUiConnections();
   private readonly controllers = new Map<
@@ -237,9 +241,14 @@ export class CodeUiService {
     | ReturnType<typeof createCodeUiPluginsHost>
     | undefined;
   constructor(private readonly deps: CodeUiServiceDeps) {
+    const files = createCodeApprovedPlanStore();
+    this.approvedPlans = createCodeApprovedPlanReader({
+      repository: deps.repository, localInstance: deps.localInstance, settings: deps.settings, files,
+    });
     this.planning = createCodePlanningControl({
       repository: deps.repository,
       localInstance: deps.localInstance,
+      files,
       refresh: (instanceId, path, projectId) =>
         this.refreshTaskProjection(instanceId, path, projectId),
     });
@@ -2541,6 +2550,10 @@ export class CodeUiService {
 
   exitPlanMode(context: ToolExecutionContext) {
     return this.planning.exit(context);
+  }
+
+  readApprovedPlan(context: PromptExecutionContext) {
+    return this.approvedPlans.read(context);
   }
 
   hasPendingGuides(context: ToolExecutionContext) {
