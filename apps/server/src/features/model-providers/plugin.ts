@@ -7,65 +7,51 @@ import { createModelProviderService } from "./model-provider-service.js";
 import { loadBundledModelsDevSnapshot } from "./models-dev-bundled.js";
 import { createModelProviderRepository } from "./repository.js";
 
-/**
- * model-providers 插件（P4）：BYOK 供应商缝三元组。
- * - modelProviders：用户实例 CRUD + 凭证解析（SecretStore 加密落库，DEC-7）
- * - modelCatalog：从实例推导模型目录
- * - Consumer：provider-instances / model-catalog HTTP 路由；agent 链路与生成
- *   executor 按实例经 providers/resolve.ts 实例化适配器（P4 后续接线）
- *
- * 数据访问经 `persistence` 缝：工作区实例走工作区作用域，平台池实例按
- * `scope='system'` 限定（原先靠「用户客户端 vs 服务角色客户端」区分，现已统一为
- * 单一信任角色 + 显式谓词）。
- */
-export function createModelProvidersPlugin(deps: {
-  credentialEnv: { credentialSecret?: string };
-  /** HTTP 进程挂路由（需 auth）；worker 传 false。 */
-  withRoutes?: boolean;
-  /** 测试替身：直接作为 modelProviders 缝实例（跳过真实仓储装配）。 */
-  injectedModelProviders?: ModelProviderService;
-}): PluginDefinition {
-  const withRoutes = deps.withRoutes ?? true;
+/** BYOK 服务装配不依赖本机访问门，避免 access → settings → catalog 的环。 */
+export function createModelProvidersPlugin(
+  deps: {
+    /** 测试替身：直接作为 modelProviders 缝实例（跳过真实仓储装配）。 */
+    injectedModelProviders?: ModelProviderService;
+  } = {},
+): PluginDefinition {
   return {
     name: "model-providers",
-    // worker 无 HTTP 面、也无 auth/viewer：工作区级方法在那里不可用，
-    // 缺 viewer 时由服务 fail loud（不静默）。
-    inject: withRoutes ? ["auth", "persistence", "viewer"] : ["persistence"],
+    inject: ["persistence", "localInstance"],
     apply(ctx) {
-      const viewerService = ctx.tryGet("viewer");
-      const injected = deps.injectedModelProviders as
-        | ModelProviderService
-        | undefined;
-      ctx.register("modelProviders", () => {
-        // 测试替身直通（app.test 的 overrides 注入）；生产走真实服务
-        if (injected) {
-          return injected;
-        }
-        return createModelProviderService({
-          credentialEnv: deps.credentialEnv,
-          repository: createModelProviderRepository(ctx.get("persistence")),
-          ...(viewerService ? { viewerService } : {}),
-        });
-      });
+      ctx.register(
+        "modelProviders",
+        () =>
+          deps.injectedModelProviders ??
+          createModelProviderService({
+            repository: createModelProviderRepository(ctx.get("persistence")),
+            localInstance: ctx.get("localInstance"),
+          }),
+      );
       ctx.register("modelCatalog", () => {
-        // 快照损坏/漂移时 fail-open 为 undefined（无 hints，目录照常）。
         const snapshot = loadBundledModelsDevSnapshot();
         return createModelCatalogService({
           modelProviders: ctx.get("modelProviders"),
+          localInstance: ctx.get("localInstance"),
           ...(snapshot ? { snapshot } : {}),
         });
       });
     },
+  };
+}
+
+/** HTTP 消费方独立挂载，worker 只装配 BYOK 服务插件。 */
+export function createModelProviderRoutesPlugin(): PluginDefinition {
+  return {
+    name: "model-providers:http",
+    inject: ["localAccess", "modelProviders", "modelCatalog"],
+    apply() {},
     mounted(ctx) {
-      if (!withRoutes) {
-        return;
-      }
       void registerProviderInstanceRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         modelProviders: ctx.get("modelProviders"),
       });
       void registerModelCatalogRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         modelCatalog: ctx.get("modelCatalog"),
       });
     },

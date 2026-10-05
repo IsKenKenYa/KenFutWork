@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import type {
+  InstanceContext,
   ProviderInstanceCreateRequest,
   ProviderInstanceModel,
   ProviderInstanceResponse,
@@ -6,11 +8,16 @@ import type {
   ProviderPreset,
   ProviderProbeResult,
   ProviderProtocol,
-  ProviderScope,
 } from "@kenfutwork/shared";
 import { providerInstanceModelSchema } from "@kenfutwork/shared";
-import type { AuthenticatedUser } from "../auth/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
+import {
+  createLocalCredentialStore,
+  type LocalCredentialStore,
+} from "./local-credential-store.js";
 import {
   type ModelConnectivityInput,
   type ModelConnectivityOptions,
@@ -25,15 +32,11 @@ import type {
   ProviderInstancePatch,
   ProviderInstanceRecord,
 } from "./repository.js";
-import { decryptSecret, encryptSecret } from "./secret-store.js";
 
 /**
- * modelProviders 缝（§4.8）：用户供应商实例 CRUD + 凭证解析。
- * 职责边界：不持有协议适配器实现（那是 providers/<protocol>/ + generation 注册表），
- * 不推导目录（那是 modelCatalog）。
- * 凭证红线（DEC-7）：明文 Key 只在 encryptSecret/decryptSecret 边界短暂出现，
- * 任何响应都不含 key；工作区实例按鉴权用户解析的工作区隔离（`FORM-9`），
- * 平台池实例（`scope='system'`）是系统级数据、按 scope 限定。
+ * modelProviders 缝（DEC-7 / DEC-20）：本地实例供应商 CRUD + 凭据解析。
+ * 元数据唯一保存在 Postgres，Key 由实例数据目录的 LocalCredentialStore 持有。
+ * 普通响应不含 Key；授权设置通过 readCredential 按需读取。
  */
 
 export class ModelProviderServiceError extends Error {
@@ -61,7 +64,7 @@ export class ModelProviderServiceError extends Error {
   }
 }
 
-/** 解密后的实例运行时凭证——只允许进入协议适配器，禁止序列化/日志/响应。 */
+/** 实例运行时凭据供适配器使用；普通目录与持久事件不携带 Key。 */
 export interface ResolvedInstanceCredentials {
   instanceId: string;
   name: string;
@@ -87,11 +90,11 @@ function mapModels(row: ProviderInstanceRecord) {
 function toResponse(row: ProviderInstanceRecord): ProviderInstanceResponse {
   return {
     id: row.id,
-    scope: row.scope === "system" ? "system" : "workspace",
+    scope: "local",
     name: row.name,
     protocol: row.protocol as ProviderProtocol,
     ...(row.base_url !== null ? { baseUrl: row.base_url } : {}),
-    hasCredential: Boolean(row.encrypted_api_key),
+    hasCredential: Boolean(row.api_key_ref),
     configRevision: Number(row.config_revision),
     models: mapModels(row),
     ...(row.compat ? { compat: row.compat } : {}),
@@ -120,7 +123,7 @@ function toCredentials(row: ProviderInstanceRecord, apiKey: string) {
     ...(row.headers ? { headers: row.headers } : {}),
     models: mapModels(row),
     configRevision: Number(row.config_revision),
-    // 已声明的格式走精确native API；仅未声明格式的旧实例沿用探测回落。
+    // 已声明的格式走精确 native API，未声明格式由能力探测辅助。
     ...((row.probe_result as { responsesApi?: boolean } | null)
       ?.responsesApi === true
       ? { responsesApi: true }
@@ -143,358 +146,263 @@ function toPatch(input: ProviderInstanceUpdateRequest) {
 }
 
 export interface ModelProviderService {
-  /** 对当前声明且启用的模型发真实native调用，不以能力probe代替连接验证。 */
   testModelConnectivity(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     input: ModelConnectivityInput,
     options: ModelConnectivityOptions,
   ): Promise<ModelConnectivityResult>;
-  listInstances(user: AuthenticatedUser): Promise<ProviderInstanceResponse[]>;
+  listInstances(actor: LocalActor): Promise<ProviderInstanceResponse[]>;
   createInstance(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     input: ProviderInstanceCreateRequest,
   ): Promise<ProviderInstanceResponse>;
   updateInstance(
-    user: AuthenticatedUser,
-    instanceId: string,
+    actor: LocalActor,
+    providerId: string,
     input: ProviderInstanceUpdateRequest,
   ): Promise<ProviderInstanceResponse>;
-  deleteInstance(user: AuthenticatedUser, instanceId: string): Promise<void>;
-  /** 内部凭证解析：明文 Key 只在此处解密，供协议适配器实例化（DEC-7）。 */
+  deleteInstance(actor: LocalActor, providerId: string): Promise<void>;
+  /** 授权设置按需读取明文；未配置返回 null，磁盘与格式故障照常上抛。 */
+  readCredential(actor: LocalActor, providerId: string): Promise<string | null>;
   resolveCredentials(
-    user: AuthenticatedUser,
-    instanceId: string,
+    actor: LocalActor,
+    providerId: string,
   ): Promise<ResolvedInstanceCredentials>;
-  /**
-   * worker 路径：按实例 id 直接解析。
-   * 任务 executor 无用户 access token，故不做工作区限定（系统级取数）。
-   */
+  /** 后台路径也限定当前本地实例，不依赖接入客户端或访问令牌。 */
   resolveCredentialsById(
-    instanceId: string,
+    providerId: string,
   ): Promise<ResolvedInstanceCredentials>;
-  /**
-   * 实例能力探测（阶段 E）：连通性 + 中转方言四探测项，结果缓存到实例。
-   * 仅限用户自己的工作区实例；每次探测都会覆盖上一次结果。
-   */
   probeInstance(
-    user: AuthenticatedUser,
-    instanceId: string,
+    actor: LocalActor,
+    providerId: string,
     fetchFn?: ProbeFetch,
   ): Promise<ProviderProbeResult>;
-  /** models.dev 供应商预设清单（供应商设置的「从预设选择」）。 */
   listProviderPresets(): ProviderPreset[];
-  /**
-   * 平台池（scope='system'）：管理员配置一份 Key，分发给全体用户使用。
-   */
-  listSystemInstances(): Promise<ProviderInstanceResponse[]>;
-  createSystemInstance(
-    input: ProviderInstanceCreateRequest,
-    /** 创建者（管理员用户 id）：provider_instances.created_by 仍是非空外键。 */
-    createdByUserId: string,
-  ): Promise<ProviderInstanceResponse>;
-  updateSystemInstance(
-    instanceId: string,
-    input: ProviderInstanceUpdateRequest,
-  ): Promise<ProviderInstanceResponse>;
-  deleteSystemInstance(instanceId: string): Promise<void>;
-  /** 实例作用域（平台池计费归属用）；实例不存在返回 null。 */
-  getInstanceScope(instanceId: string): Promise<ProviderScope | null>;
 }
 
 export function createModelProviderService(options: {
-  credentialEnv: { credentialSecret?: string };
   repository: ModelProviderRepository;
-  /**
-   * 工作区实例路径需要它；worker 进程只走平台池/按 id 解析路径，可缺省。
-   * 缺省时工作区方法**立即 fail loud**（不是静默降级）。
-   */
-  viewerService?: ViewerService | undefined;
+  localInstance: LocalInstanceService;
 }): ModelProviderService {
-  const { credentialEnv, repository, viewerService } = options;
+  const { repository, localInstance } = options;
+  const stores = new Map<string, LocalCredentialStore>();
 
-  function requireViewer(): ViewerService {
-    if (!viewerService) {
+  function credentials(context: InstanceContext): LocalCredentialStore {
+    let store = stores.get(context.dataDir);
+    if (!store) {
+      store = createLocalCredentialStore(context.dataDir);
+      stores.set(context.dataDir, store);
+    }
+    return store;
+  }
+
+  async function findProvider(
+    context: InstanceContext,
+    providerId: string,
+  ): Promise<ProviderInstanceRecord> {
+    const row = await repository.findInstance(context.instanceId, providerId);
+    if (!row) {
       throw new ModelProviderServiceError(
-        "instance_query_failed",
-        "工作区级供应商实例操作需要 ViewerService（worker 进程不提供）。",
-        500,
+        "instance_not_found",
+        "找不到该供应商实例。",
+        404,
       );
     }
-    return viewerService;
+    return row;
   }
 
-  function requireCredentialSecret(): string {
-    if (!credentialEnv.credentialSecret) {
-      throw new ModelProviderServiceError(
-        "credential_unavailable",
-        "KENFUTWORK_CREDENTIAL_SECRET 未配置，无法写入用户凭证（fail loud）。",
-        500,
-      );
-    }
-    return credentialEnv.credentialSecret;
+  async function readKey(
+    context: InstanceContext,
+    row: ProviderInstanceRecord,
+  ): Promise<string | null> {
+    return row.api_key_ref === null
+      ? null
+      : credentials(context).get(row.api_key_ref);
   }
 
-  function encryptKey(apiKey: string | null | undefined): string | null {
-    if (apiKey === undefined || apiKey === null) return null;
-    return encryptSecret(
-      { credentialSecret: requireCredentialSecret() },
-      apiKey,
-    );
-  }
-
-  /** 工作区 id 一律由服务端从鉴权用户解析（`FORM-9`）。 */
-  async function requireWorkspaceId(
-    user: AuthenticatedUser,
-    errorCode: ModelProviderServiceError["code"],
-  ): Promise<string> {
-    const workspace = await requireViewer()
-      .resolveWorkspace(user)
-      .catch(() => null);
-
-    if (!workspace) {
-      throw new ModelProviderServiceError(
-        errorCode,
-        "Unable to resolve workspace for provider instance.",
-      );
-    }
-
-    return workspace.id;
-  }
-
-  /** 解密实例凭证；停用即 409，解密失败即 fail loud。 */
-  function decryptRow(row: ProviderInstanceRecord) {
+  async function resolveRow(
+    context: InstanceContext,
+    row: ProviderInstanceRecord,
+  ): Promise<ResolvedInstanceCredentials> {
     if (!row.enabled) {
       throw new ModelProviderServiceError(
         "credential_unavailable",
-        `Provider instance ${row.name} is disabled.`,
+        `供应商实例 ${row.name} 已停用。`,
         409,
       );
     }
-
-    if (!row.encrypted_api_key) {
+    const apiKey = await readKey(context, row);
+    if (apiKey === null) {
       throw new ModelProviderServiceError(
         "credential_unavailable",
         "该供应商尚未配置 API Key，请先在供应商设置中配置。",
         409,
       );
     }
+    return toCredentials(row, apiKey);
+  }
 
-    try {
-      return toCredentials(
-        row,
-        decryptSecret(credentialEnv, row.encrypted_api_key),
-      );
-    } catch (error) {
-      if (error instanceof ModelProviderServiceError) throw error;
+  function validateKey(
+    key: string | null | undefined,
+    code: "instance_create_failed" | "instance_update_failed",
+  ): void {
+    if (key === "") {
       throw new ModelProviderServiceError(
-        "credential_unavailable",
-        "Unable to decrypt provider credentials (fail loud).",
+        code,
+        "API Key 不能为空字符串；清除凭据请使用 null。",
+        400,
       );
     }
   }
 
+  async function updateMetadata(
+    context: InstanceContext,
+    providerId: string,
+    patch: ProviderInstancePatch,
+    expectedRevision: number | undefined,
+  ): Promise<ProviderInstanceRecord> {
+    const row = await repository.updateInstance(
+      context.instanceId,
+      providerId,
+      patch,
+      expectedRevision,
+    );
+    if (row) return row;
+    if (
+      expectedRevision !== undefined &&
+      (await repository.findInstance(context.instanceId, providerId))
+    ) {
+      throw new ModelProviderServiceError(
+        "instance_revision_conflict",
+        "供应商配置已发生变化，请刷新后重新保存。",
+        409,
+      );
+    }
+    throw new ModelProviderServiceError(
+      "instance_not_found",
+      "找不到该供应商实例。",
+      404,
+    );
+  }
+
   const service: ModelProviderService = {
-    async testModelConnectivity(user, input, options) {
+    async testModelConnectivity(actor, input, options) {
       return testInstanceModelConnectivity(
-        () => service.resolveCredentials(user, input.instanceId),
+        () => service.resolveCredentials(actor, input.instanceId),
         input,
         options,
       );
     },
-    async listInstances(user) {
-      const workspaceId = await requireWorkspaceId(
-        user,
-        "instance_query_failed",
+
+    async listInstances(actor) {
+      const context = await localInstance.resolve(actor);
+      return (await repository.listInstances(context.instanceId)).map(
+        toResponse,
       );
-
-      const rows = await repository
-        .listWorkspaceInstances(workspaceId)
-        .catch(() => {
-          throw new ModelProviderServiceError(
-            "instance_query_failed",
-            "Unable to load provider instances.",
-          );
-        });
-
-      return rows.map(toResponse);
     },
 
-    async createInstance(user, input) {
-      const encryptedApiKey = encryptKey(input.apiKey);
-      const workspaceId = await requireWorkspaceId(
-        user,
-        "instance_create_failed",
+    async createInstance(actor, input) {
+      const context = await localInstance.resolve(actor);
+      validateKey(input.apiKey, "instance_create_failed");
+      const providerId = randomUUID();
+      const key = input.apiKey ?? null;
+      const row = await credentials(context).change(
+        providerId,
+        key,
+        async () => {
+          const created = await repository.insertInstance({
+            id: providerId,
+            instanceId: context.instanceId,
+            ...(input.baseUrl !== undefined ? { baseUrl: input.baseUrl } : {}),
+            ...(input.compat !== undefined ? { compat: input.compat } : {}),
+            ...(input.headers !== undefined ? { headers: input.headers } : {}),
+            apiKeyRef: key === null ? null : providerId,
+            enabled: input.enabled ?? true,
+            models: input.models,
+            name: input.name,
+            protocol: input.protocol,
+          });
+          if (!created) {
+            throw new ModelProviderServiceError(
+              "instance_create_failed",
+              "无法创建供应商实例。",
+            );
+          }
+          return created;
+        },
       );
-
-      const row = await repository
-        .insertWorkspaceInstance({
-          ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
-          ...(input.compat ? { compat: input.compat } : {}),
-          ...(input.headers ? { headers: input.headers } : {}),
-          createdBy: user.id,
-          encryptedApiKey,
-          enabled: input.enabled ?? true,
-          models: input.models,
-          name: input.name,
-          protocol: input.protocol,
-          workspaceId,
-        })
-        .catch(() => {
-          throw new ModelProviderServiceError(
-            "instance_create_failed",
-            "Unable to create provider instance.",
-          );
-        });
-
-      if (!row) {
-        throw new ModelProviderServiceError(
-          "instance_create_failed",
-          "Unable to create provider instance.",
-        );
-      }
-
       return toResponse(row);
     },
 
-    async updateInstance(user, instanceId, input) {
+    async updateInstance(actor, providerId, input) {
+      const context = await localInstance.resolve(actor);
+      validateKey(input.apiKey, "instance_update_failed");
       const patch = toPatch(input);
       if (input.apiKey !== undefined) {
-        patch.encrypted_api_key = encryptKey(input.apiKey);
+        patch.api_key_ref = input.apiKey === null ? null : providerId;
       }
       if (Object.keys(patch).length === 0) {
         throw new ModelProviderServiceError(
           "instance_update_failed",
-          "No fields to update.",
+          "没有要更新的字段。",
           400,
         );
       }
-
-      const workspaceId = await requireWorkspaceId(
-        user,
-        "instance_update_failed",
-      );
-
-      const row = await repository
-        .updateWorkspaceInstance(
-          workspaceId,
-          instanceId,
-          patch,
+      const commit = (credentialChanged = false) =>
+        updateMetadata(
+          context,
+          providerId,
+          { ...patch, credential_changed: credentialChanged },
           input.expectedRevision,
-        )
-        .catch(() => {
-          throw new ModelProviderServiceError(
-            "instance_update_failed",
-            "Unable to update provider instance.",
-          );
-        });
-
-      if (!row) {
-        if (
-          input.expectedRevision !== undefined &&
-          (await repository.findWorkspaceInstance(workspaceId, instanceId))
-        ) {
-          throw new ModelProviderServiceError(
-            "instance_revision_conflict",
-            "供应商配置已发生变化，请刷新后重新保存。",
-            409,
-          );
-        }
-        throw new ModelProviderServiceError(
-          "instance_not_found",
-          "Provider instance not found.",
-          404,
         );
-      }
-
+      const row =
+        input.apiKey === undefined
+          ? await commit()
+          : await credentials(context).change(providerId, input.apiKey, commit);
       return toResponse(row);
     },
 
-    async deleteInstance(user, instanceId) {
-      const workspaceId = await requireWorkspaceId(
-        user,
-        "instance_delete_failed",
+    async deleteInstance(actor, providerId) {
+      const context = await localInstance.resolve(actor);
+      const row = await repository.findInstance(context.instanceId, providerId);
+      if (!row) return;
+      await credentials(context).change(
+        row.api_key_ref ?? providerId,
+        null,
+        () => repository.deleteInstance(context.instanceId, providerId),
       );
-
-      // 未命中不报错：删除是幂等操作（重复删除返回成功）。
-      await repository
-        .deleteWorkspaceInstance(workspaceId, instanceId)
-        .catch(() => {
-          throw new ModelProviderServiceError(
-            "instance_delete_failed",
-            "Unable to delete provider instance.",
-          );
-        });
     },
 
-    async resolveCredentials(user, instanceId) {
-      const workspaceId = await requireWorkspaceId(
-        user,
-        "instance_query_failed",
-      );
+    async readCredential(actor, providerId) {
+      const context = await localInstance.resolve(actor);
+      return readKey(context, await findProvider(context, providerId));
+    },
 
-      const row = await repository
-        .findWorkspaceInstance(workspaceId, instanceId)
-        .catch(() => {
-          throw new ModelProviderServiceError(
-            "instance_query_failed",
-            "Unable to load provider instance.",
-          );
-        });
+    async resolveCredentials(actor, providerId) {
+      const context = await localInstance.resolve(actor);
+      return resolveRow(context, await findProvider(context, providerId));
+    },
 
-      if (row) {
-        return decryptRow(row);
-      }
-
-      // 回退到**平台池**（`scope='system'`，FORM-10）：管理员配一份 Key 分发全体用户，
-      // 模型目录里就包含这些实例，故凭证解析必须覆盖它们——否则选中平台池模型必然 404。
-      // **只接受 system 作用域**：工作区实例拿不到别人的（隔离性不因此放宽）。
-      const systemRow = await repository.findById(instanceId).catch(() => null);
-      if (systemRow?.scope !== "system") {
-        throw new ModelProviderServiceError(
-          "instance_not_found",
-          "Provider instance not found.",
-          404,
-        );
-      }
-
-      return decryptRow(systemRow);
+    async resolveCredentialsById(providerId) {
+      const context = await localInstance.getContext();
+      return resolveRow(context, await findProvider(context, providerId));
     },
 
     listProviderPresets() {
       return listProviderPresets(loadBundledModelsDevSnapshot() ?? {});
     },
 
-    async probeInstance(user, instanceId, fetchFn) {
-      const workspaceId = await requireWorkspaceId(
-        user,
-        "instance_probe_failed",
-      );
-
-      const rows = await repository
-        .listWorkspaceInstances(workspaceId)
-        .catch(() => {
-          throw new ModelProviderServiceError(
-            "instance_probe_failed",
-            "Unable to load provider instances.",
-          );
-        });
-      const row = rows.find((candidate) => candidate.id === instanceId);
-      if (!row) {
-        throw new ModelProviderServiceError(
-          "instance_not_found",
-          "Provider instance not found.",
-          404,
-        );
-      }
-      const credentials = decryptRow(row);
-
-      const chatModel = credentials.models.find(
-        (m) => m.capability === "chat" && m.enabled !== false,
+    async probeInstance(actor, providerId, fetchFn) {
+      const context = await localInstance.resolve(actor);
+      const row = await findProvider(context, providerId);
+      const resolved = await resolveRow(context, row);
+      const chatModel = resolved.models.find(
+        (model) => model.capability === "chat" && model.enabled !== false,
       )?.id;
       if (
         !chatModel &&
-        (credentials.protocol === "openai-compatible" ||
-          credentials.protocol === "anthropic")
+        (resolved.protocol === "openai-compatible" ||
+          resolved.protocol === "anthropic")
       ) {
         throw new ModelProviderServiceError(
           "instance_model_unavailable",
@@ -503,148 +411,25 @@ export function createModelProviderService(options: {
         );
       }
       const baseUrl =
-        credentials.baseUrl ??
-        (credentials.protocol === "anthropic"
+        resolved.baseUrl ??
+        (resolved.protocol === "anthropic"
           ? "https://api.anthropic.com/v1"
           : null);
       if (!baseUrl) {
         throw new ModelProviderServiceError(
           "instance_probe_failed",
-          "该实例未声明 baseUrl，无法探测（openai-compatible 协议必须显式配置）",
+          "该实例未声明 baseUrl，无法探测（openai-compatible 协议必须显式配置）。",
         );
       }
       const target: ProbeTarget = {
-        protocol: credentials.protocol,
+        protocol: resolved.protocol,
         baseUrl,
-        apiKey: credentials.apiKey,
+        apiKey: resolved.apiKey,
         ...(chatModel ? { model: chatModel } : {}),
       };
       const result = await probeInstance(fetchFn ?? fetch, target);
-      await repository.setProbeResult(workspaceId, instanceId, result);
+      await repository.setProbeResult(context.instanceId, providerId, result);
       return result;
-    },
-
-    async resolveCredentialsById(instanceId) {
-      const row = await repository.findById(instanceId).catch(() => {
-        throw new ModelProviderServiceError(
-          "instance_query_failed",
-          "Unable to load provider instance.",
-        );
-      });
-
-      if (!row) {
-        throw new ModelProviderServiceError(
-          "instance_not_found",
-          "Provider instance not found.",
-          404,
-        );
-      }
-
-      return decryptRow(row);
-    },
-
-    // ── 平台池（scope='system'）：管理员配置、分发给用户 ──
-    async listSystemInstances() {
-      const rows = await repository.listSystemInstances().catch(() => {
-        throw new ModelProviderServiceError(
-          "instance_query_failed",
-          "Unable to load system provider instances.",
-        );
-      });
-      return rows.map(toResponse);
-    },
-
-    async createSystemInstance(input, createdByUserId) {
-      const encryptedApiKey = encryptKey(input.apiKey);
-
-      const row = await repository
-        .insertSystemInstance({
-          ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
-          ...(input.compat ? { compat: input.compat } : {}),
-          ...(input.headers ? { headers: input.headers } : {}),
-          createdBy: createdByUserId,
-          encryptedApiKey,
-          enabled: input.enabled ?? true,
-          models: input.models,
-          name: input.name,
-          protocol: input.protocol,
-        })
-        .catch(() => {
-          throw new ModelProviderServiceError(
-            "instance_create_failed",
-            "Unable to create system provider instance.",
-          );
-        });
-
-      if (!row) {
-        throw new ModelProviderServiceError(
-          "instance_create_failed",
-          "Unable to create system provider instance.",
-        );
-      }
-
-      return toResponse(row);
-    },
-
-    async updateSystemInstance(instanceId, input) {
-      const patch = toPatch(input);
-      if (input.apiKey !== undefined) {
-        patch.encrypted_api_key = encryptKey(input.apiKey);
-      }
-      if (Object.keys(patch).length === 0) {
-        throw new ModelProviderServiceError(
-          "instance_update_failed",
-          "No fields to update.",
-          400,
-        );
-      }
-
-      const row = await repository
-        .updateSystemInstance(instanceId, patch, input.expectedRevision)
-        .catch(() => {
-          throw new ModelProviderServiceError(
-            "instance_update_failed",
-            "Unable to update system provider instance.",
-          );
-        });
-
-      if (!row) {
-        if (
-          input.expectedRevision !== undefined &&
-          (await repository.findById(instanceId))?.scope === "system"
-        ) {
-          throw new ModelProviderServiceError(
-            "instance_revision_conflict",
-            "平台供应商配置已发生变化，请刷新后重新保存。",
-            409,
-          );
-        }
-        throw new ModelProviderServiceError(
-          "instance_not_found",
-          "System provider instance not found.",
-          404,
-        );
-      }
-
-      return toResponse(row);
-    },
-
-    async deleteSystemInstance(instanceId) {
-      // 未命中不报错：删除是幂等操作。
-      await repository.deleteSystemInstance(instanceId).catch(() => {
-        throw new ModelProviderServiceError(
-          "instance_delete_failed",
-          "Unable to delete system provider instance.",
-        );
-      });
-    },
-
-    async getInstanceScope(instanceId) {
-      const row = await repository.findById(instanceId).catch(() => null);
-      if (!row) {
-        return null;
-      }
-      return row.scope === "system" ? "system" : "workspace";
     },
   };
   return service;

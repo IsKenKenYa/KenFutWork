@@ -11,7 +11,9 @@ export interface RunUsageEntry {
   provider: string;
   model: string;
   providerInstanceId?: string;
-  userId: string;
+  instanceId: string;
+  accessClientId?: string | null;
+  costUsd?: number;
 }
 
 export interface RunUsageAccumulator {

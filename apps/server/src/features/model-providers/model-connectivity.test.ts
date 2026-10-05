@@ -1,32 +1,36 @@
+import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { createLocalInstanceService } from "../local-instance/service.js";
 import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
 } from "../persistence/providers/postgres.js";
+import { createLocalCredentialStore } from "./local-credential-store.js";
 import { createModelProviderService } from "./model-provider-service.js";
 import {
   createModelProviderRepository,
   type ProviderInstanceRecord,
 } from "./repository.js";
-import { encryptSecret } from "./secret-store.js";
 
 const key = "private-provider-key";
 const header = "private-provider-header";
-const credentialSecret = "connectivity-test-secret";
+const directories: string[] = [];
 const servers: Server[] = [];
 afterEach(async () => {
+  await Promise.all(
+    directories
+      .splice(0)
+      .map((path) => rm(path, { recursive: true, force: true })),
+  );
   for (const server of servers.splice(0)) {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
-const actor = {
-  id: "actor",
-  email: "actor@test",
-  accessToken: "test",
-  userMetadata: {},
-};
+const actor = { instanceId: "local-connectivity", accessClientId: "desktop" };
 const governance = { timeoutMs: 3000, maxAttempts: 1, infinite: false };
 
 async function fixture(
@@ -87,15 +91,11 @@ async function fixture(
     throw new Error("连接夹具未获得端口。");
   const row: ProviderInstanceRecord = {
     id: "provider",
-    scope: "workspace",
-    workspace_id: "workspace",
+    instance_id: actor.instanceId,
     name: "实际供应商",
     protocol: "openai-compatible",
     base_url: `http://127.0.0.1:${address.port}/v1`,
-    encrypted_api_key:
-      options.credential === false
-        ? null
-        : encryptSecret({ credentialSecret }, key),
+    api_key_ref: options.credential === false ? null : "provider",
     models: [
       {
         id: "selected-model",
@@ -127,25 +127,19 @@ async function fixture(
     },
     end: async () => {},
   };
+  const dataDir = await mkdtemp(join(tmpdir(), "kenfutwork-connectivity-"));
+  directories.push(dataDir);
+  if (options.credential !== false) {
+    await createLocalCredentialStore(dataDir).set("provider", key);
+  }
   const service = createModelProviderService({
-    credentialEnv: { credentialSecret },
     repository: createModelProviderRepository(
       createPersistenceFromRunner(runner),
     ),
-    viewerService: {
-      resolveWorkspace: async () => ({
-        id: "workspace",
-        name: "workspace",
-        ownerUserId: actor.id,
-        type: "personal",
-      }),
-      ensureViewer: async () => {
-        throw new Error("unused");
-      },
-      updateProfile: async () => {
-        throw new Error("unused");
-      },
-    },
+    localInstance: createLocalInstanceService({
+      repository: { ensure: async () => actor.instanceId },
+      dataDir,
+    }),
   });
   return { service, requests };
 }

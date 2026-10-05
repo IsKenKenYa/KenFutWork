@@ -10,21 +10,24 @@ describe("runUsageAccumulator（agent 链路用量累积）", () => {
       outputTokens: 5,
       provider: "instance",
       model: "gpt-x",
-      userId: "u1",
+      instanceId: "instance-1",
+      accessClientId: "client-1",
     });
     acc.update("run-1", {
       inputTokens: 30,
       outputTokens: 20,
       provider: "instance",
       model: "gpt-x",
-      userId: "u1",
+      instanceId: "instance-1",
+      accessClientId: "client-1",
     });
     expect(acc.take("run-1")).toEqual({
       inputTokens: 30,
       outputTokens: 20,
       provider: "instance",
       model: "gpt-x",
-      userId: "u1",
+      instanceId: "instance-1",
+      accessClientId: "client-1",
     });
     expect(acc.take("run-1")).toBeUndefined();
     expect(acc.take("run-2")).toBeUndefined();

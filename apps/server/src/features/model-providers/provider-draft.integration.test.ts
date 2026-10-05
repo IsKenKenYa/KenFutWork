@@ -1,62 +1,38 @@
+import { join } from "node:path";
 import {
   providerInstanceCreateRequestSchema,
   providerInstanceUpdateRequestSchema,
 } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
+
+import { createLocalInstanceRepository } from "../local-instance/repository.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
+import { createLocalCredentialStore } from "./local-credential-store.js";
 import { createModelProviderService } from "./model-provider-service.js";
 import { createModelProviderRepository } from "./repository.js";
 
-/** Only a disposable localhost PostgreSQL cluster; never DATABASE_URL. */
+/** 独占临时数据库与数据目录，默认跳过；不连接开发或用户数据库。 */
 describe.skipIf(process.env.KENFUTWORK_PROVIDER_TEST_PG !== "1")(
-  "原Provider UI draft/CAS真实隔离Postgres",
+  "原供应商设置本地 draft/CAS 真实 Postgres",
   () => {
-    it("全迁移重放/noop后真实NULL草稿、同修订并发单赢家、清Key与跨工作区拒绝", async () => {
+    it("真实 NULL 草稿、同修订 Key 并发单赢家、清除及重启读取都沿原设置语义", async () => {
       const database = await createTaskWorkDatabase();
       try {
-        expect(database.replayed).toHaveLength(database.expectedMigrations);
-        expect(database.secondReplay).toHaveLength(0);
-        expect(
-          await database.persistence.queryOne<{ is_nullable: string }>(
-            "select is_nullable from information_schema.columns where table_schema = 'public' and table_name = 'provider_instances' and column_name = 'encrypted_api_key'",
-          ),
-        ).toEqual({ is_nullable: "YES" });
-        const workspaceId = database.context.scope.workspaceId;
-        const workspace = await database.persistence.queryOne<{
-          owner_user_id: string;
-        }>("select owner_user_id from public.workspaces where id = $1", [
-          workspaceId,
-        ]);
-        if (!workspace) throw new Error("隔离夹具工作区不存在。");
-        const actor = {
-          id: workspace.owner_user_id,
-          email: "provider@integration.test",
-          accessToken: "test",
-          userMetadata: {},
-        };
+        const localInstance = createLocalInstanceService({
+          repository: createLocalInstanceRepository(database.persistence),
+          dataDir: join(database.directory, "local-data"),
+        });
+        const actor = await localInstance.serviceActor();
         const repository = createModelProviderRepository(database.persistence);
         const service = createModelProviderService({
           repository,
-          credentialEnv: { credentialSecret: "private-provider-test-secret" },
-          viewerService: {
-            ensureViewer: async () => {
-              throw new Error("此凭证夹具不调用资料引导。");
-            },
-            updateProfile: async () => {
-              throw new Error("此凭证夹具不更新资料。");
-            },
-            resolveWorkspace: async () => ({
-              id: workspaceId,
-              name: "隔离工作区",
-              ownerUserId: actor.id,
-              type: "personal",
-            }),
-          },
+          localInstance,
         });
         const created = await service.createInstance(
           actor,
           providerInstanceCreateRequestSchema.parse({
-            name: "原UI草稿",
+            name: "原 UI 草稿",
             protocol: "openai-compatible",
             models: [],
           }),
@@ -67,27 +43,29 @@ describe.skipIf(process.env.KENFUTWORK_PROVIDER_TEST_PG !== "1")(
           models: [],
         });
         expect(
-          (await repository.findWorkspaceInstance(workspaceId, created.id))
-            ?.encrypted_api_key,
+          (await repository.findInstance(actor.instanceId, created.id))
+            ?.api_key_ref,
         ).toBeNull();
+        const keys = ["private-concurrent-a", "private-concurrent-b"];
         const attempts = await Promise.allSettled(
-          ["并发A", "并发B"].map((name) =>
+          keys.map((apiKey) =>
             service.updateInstance(
               actor,
               created.id,
               providerInstanceUpdateRequestSchema.parse({
-                name,
-                expectedRevision: created.configRevision,
+                apiKey,
+                expectedRevision: 1,
               }),
             ),
           ),
         );
-        expect(
-          attempts.filter((result) => result.status === "fulfilled"),
-        ).toHaveLength(1);
+        const winners = attempts.flatMap((result, index) =>
+          result.status === "fulfilled" ? [index] : [],
+        );
+        expect(winners).toHaveLength(1);
         const failure = attempts.find((result) => result.status === "rejected");
         if (failure?.status !== "rejected")
-          throw new Error("并发CAS必须有一个冲突回执。");
+          throw new Error("并发 CAS 必须有一个冲突回执。");
         expect(failure.reason).toMatchObject({
           code: "instance_revision_conflict",
           statusCode: 409,
@@ -95,89 +73,57 @@ describe.skipIf(process.env.KENFUTWORK_PROVIDER_TEST_PG !== "1")(
         const [latest] = await service.listInstances(actor);
         if (!latest) throw new Error("供应商草稿丢失。");
         expect(latest.configRevision).toBe(2);
-        const keyed = await service.updateInstance(
-          actor,
-          created.id,
-          providerInstanceUpdateRequestSchema.parse({
-            apiKey: "private-runtime-key",
-            expectedRevision: latest.configRevision,
-          }),
+        expect(JSON.stringify(latest)).not.toContain("private-concurrent");
+        expect(await service.readCredential(actor, created.id)).toBe(
+          keys[winners[0] ?? -1],
         );
-        expect(keyed).toMatchObject({ hasCredential: true, configRevision: 3 });
-        expect(JSON.stringify(keyed)).not.toContain("private-runtime-key");
+        const restarted = createModelProviderService({
+          repository,
+          localInstance: createLocalInstanceService({
+            repository: createLocalInstanceRepository(database.persistence),
+            dataDir: join(database.directory, "local-data"),
+          }),
+        });
+        expect(
+          (await restarted.resolveCredentialsById(created.id)).apiKey,
+        ).toBe(keys[winners[0] ?? -1]);
         const cleared = await service.updateInstance(
           actor,
           created.id,
           providerInstanceUpdateRequestSchema.parse({
             apiKey: null,
             protocol: "anthropic",
-            expectedRevision: keyed.configRevision,
+            expectedRevision: latest.configRevision,
           }),
         );
         expect(cleared).toMatchObject({
           hasCredential: false,
           protocol: "anthropic",
-          configRevision: 4,
+          configRevision: 3,
         });
         expect(
-          (await repository.findWorkspaceInstance(workspaceId, created.id))
-            ?.encrypted_api_key,
+          (await repository.findInstance(actor.instanceId, created.id))
+            ?.api_key_ref,
+        ).toBeNull();
+        expect(
+          await createLocalCredentialStore(
+            join(database.directory, "local-data"),
+          ).get(created.id),
         ).toBeNull();
         await expect(
-          service.resolveCredentials(actor, created.id),
+          restarted.resolveCredentialsById(created.id),
         ).rejects.toMatchObject({
           code: "credential_unavailable",
           statusCode: 409,
         });
         await expect(
-          repository.updateWorkspaceInstance(
-            "00000000-0000-0000-0000-000000000000",
+          service.readCredential(
+            { instanceId: "foreign", accessClientId: null },
             created.id,
-            { name: "越界" },
-            cleared.configRevision,
           ),
-        ).resolves.toBeNull();
-        expect((await service.listInstances(actor))[0]?.name).not.toBe("越界");
-        const system = await service.createSystemInstance(
-          {
-            name: "平台草稿",
-            protocol: "openai-compatible",
-            models: [],
-          },
-          actor.id,
-        );
-        expect(system).toMatchObject({
-          hasCredential: false,
-          configRevision: 1,
-        });
-        const systemAttempts = await Promise.allSettled(
-          ["平台A", "平台B"].map((name) =>
-            service.updateSystemInstance(system.id, {
-              name,
-              expectedRevision: system.configRevision,
-            }),
-          ),
-        );
-        expect(
-          systemAttempts.filter((result) => result.status === "fulfilled"),
-        ).toHaveLength(1);
-        const systemFailure = systemAttempts.find(
-          (result) => result.status === "rejected",
-        );
-        if (systemFailure?.status !== "rejected")
-          throw new Error("平台并发CAS必须有冲突回执。");
-        expect(systemFailure.reason).toMatchObject({
-          code: "instance_revision_conflict",
-          statusCode: 409,
-        });
-        await expect(
-          service.updateSystemInstance(created.id, {
-            name: "不可见",
-            expectedRevision: cleared.configRevision,
-          }),
         ).rejects.toMatchObject({
-          code: "instance_not_found",
-          statusCode: 404,
+          code: "instance_forbidden",
+          statusCode: 403,
         });
       } finally {
         await database.close();
