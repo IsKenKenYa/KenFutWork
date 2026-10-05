@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@modelcontextprotocol/sdk@1.30.0':
+    hash: 70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b
+    path: patches/@modelcontextprotocol__sdk@1.30.0.patch
   langchain@1.5.11:
     hash: 03f0d1e2212cdca4bc1935a5fbebd7981bc58e5519ca0918b5da939aa06accc9
     path: patches/langchain@1.5.11.patch
@@ -82,7 +85,7 @@ importers:
         version: 11.3.1
       '@google/genai':
         specifier: ^2.23.0
-        version: 2.23.0(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.6.5))
+        version: 2.23.0(@modelcontextprotocol/sdk@1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@4.6.5))
       '@kenfutwork/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -112,7 +115,7 @@ importers:
         version: 1.5.13(@langchain/core@1.2.12(@opentelemetry/api@1.9.1)(openai@7.20.0(undici@8.10.2)(ws@8.21.3)(zod@4.6.5))(ws@8.21.3))(undici@8.10.2)(ws@8.21.3)
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
-        version: 1.30.0(@cfworker/json-schema@4.1.1)(zod@4.6.5)
+        version: 1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@4.6.5)
       '@napi-rs/canvas':
         specifier: 0.1.100
         version: 0.1.100
@@ -9027,14 +9030,14 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@google/genai@2.23.0(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.6.5))':
+  '@google/genai@2.23.0(@modelcontextprotocol/sdk@1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@4.6.5))':
     dependencies:
       google-auth-library: 10.9.1
       p-retry: 4.6.2
       protobufjs: 7.6.6
       ws: 8.21.3
     optionalDependencies:
-      '@modelcontextprotocol/sdk': 1.30.0(@cfworker/json-schema@4.1.1)(zod@4.6.5)
+      '@modelcontextprotocol/sdk': 1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@4.6.5)
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -9716,7 +9719,7 @@ snapshots:
     dependencies:
       '@chevrotain/types': 11.1.2
 
-  '@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@3.25.76)':
+  '@modelcontextprotocol/sdk@1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@3.25.76)':
     dependencies:
       '@hono/node-server': 2.1.1(hono@4.13.5)
       ajv: 8.20.0
@@ -9740,7 +9743,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.6.5)':
+  '@modelcontextprotocol/sdk@1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@4.6.5)':
     dependencies:
       '@hono/node-server': 2.1.1(hono@4.13.5)
       ajv: 8.20.0
@@ -15452,7 +15455,7 @@ snapshots:
       '@babel/plugin-transform-typescript': 7.29.7(@babel/core@7.29.7)
       '@babel/preset-typescript': 7.29.7(@babel/core@7.29.7)
       '@dotenvx/dotenvx': 1.75.1
-      '@modelcontextprotocol/sdk': 1.30.0(@cfworker/json-schema@4.1.1)(zod@3.25.76)
+      '@modelcontextprotocol/sdk': 1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@3.25.76)
       '@types/validate-npm-package-name': 4.0.2
       browserslist: 4.28.8
       commander: 14.0.3
@@ -15495,7 +15498,7 @@ snapshots:
       '@babel/plugin-transform-typescript': 7.29.7(@babel/core@7.29.7)
       '@babel/preset-typescript': 7.29.7(@babel/core@7.29.7)
       '@dotenvx/dotenvx': 1.75.1
-      '@modelcontextprotocol/sdk': 1.30.0(@cfworker/json-schema@4.1.1)(zod@3.25.76)
+      '@modelcontextprotocol/sdk': 1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@3.25.76)
       '@types/validate-npm-package-name': 4.0.2
       browserslist: 4.28.8
       cn: 0.2.6

@@ -41,7 +41,8 @@
       "macos-alias"
     ],
     "patchedDependencies": {
-      "langchain@1.5.11": "patches/langchain@1.5.11.patch"
+      "langchain@1.5.11": "patches/langchain@1.5.11.patch",
+      "@modelcontextprotocol/sdk@1.30.0": "patches/@modelcontextprotocol__sdk@1.30.0.patch"
     }
   }
 }

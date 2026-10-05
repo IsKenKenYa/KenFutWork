@@ -1,0 +1,64 @@
+diff --git a/dist/cjs/server/webStandardStreamableHttp.js b/dist/cjs/server/webStandardStreamableHttp.js
+index fc1e159278cbaac333817cb7370c6df12cd20ac9..f276878985bf8e8552391835ad3c7fa3e1dd2d11 100644
+--- a/dist/cjs/server/webStandardStreamableHttp.js
++++ b/dist/cjs/server/webStandardStreamableHttp.js
+@@ -785,6 +785,7 @@ class WebStandardStreamableHTTPServerTransport {
+         this._streamMapping.clear();
+         // Clear any pending responses
+         this._requestResponseMap.clear();
++        this._requestToStreamMapping.clear();
+         this._resumableStreams.clear();
+         this.onclose?.();
+     }
+@@ -801,6 +802,19 @@ class WebStandardStreamableHTTPServerTransport {
+         if (stream) {
+             stream.cleanup();
+         }
++        // Without an event store this closed stream cannot be resumed. A
++        // cancelled Protocol handler will not send a response to release these
++        // correlations, so drop every request owned by the closed POST stream.
++        // Keep event-store correlations intact for polling/replay.
++        if (!this._eventStore) {
++            for (const [id, assignedStreamId] of this._requestToStreamMapping) {
++                if (assignedStreamId === streamId) {
++                    this._requestToStreamMapping.delete(id);
++                    this._requestResponseMap.delete(id);
++                }
++            }
++            this._resumableStreams.delete(streamId);
++        }
+     }
+     /**
+      * Close the standalone GET SSE stream, triggering client reconnection.
+diff --git a/dist/esm/server/webStandardStreamableHttp.js b/dist/esm/server/webStandardStreamableHttp.js
+index 469abcff61f56c535f7e0c1da8fd637958e39f96..090c4260cbd3555cb678bd1e916134744ede7ab7 100644
+--- a/dist/esm/server/webStandardStreamableHttp.js
++++ b/dist/esm/server/webStandardStreamableHttp.js
+@@ -782,6 +782,7 @@ export class WebStandardStreamableHTTPServerTransport {
+         this._streamMapping.clear();
+         // Clear any pending responses
+         this._requestResponseMap.clear();
++        this._requestToStreamMapping.clear();
+         this._resumableStreams.clear();
+         this.onclose?.();
+     }
+@@ -798,6 +799,19 @@ export class WebStandardStreamableHTTPServerTransport {
+         if (stream) {
+             stream.cleanup();
+         }
++        // Without an event store this closed stream cannot be resumed. A
++        // cancelled Protocol handler will not send a response to release these
++        // correlations, so drop every request owned by the closed POST stream.
++        // Keep event-store correlations intact for polling/replay.
++        if (!this._eventStore) {
++            for (const [id, assignedStreamId] of this._requestToStreamMapping) {
++                if (assignedStreamId === streamId) {
++                    this._requestToStreamMapping.delete(id);
++                    this._requestResponseMap.delete(id);
++                }
++            }
++            this._resumableStreams.delete(streamId);
++        }
+     }
+     /**
+      * Close the standalone GET SSE stream, triggering client reconnection.
