@@ -2117,19 +2117,16 @@ export class CodeUiService {
       protocol.commandPayloadSchemas.switchCollaborationMode.parse(
         envelope.payload,
       );
-    const sandboxMode =
-      mode === "plan"
-        ? "read-only"
-        : mode === "yolo"
-          ? "danger-full-access"
-          : "workspace-write";
     const ack = await this.deps.repository.applyScopeCommand(
       loaded.instanceId,
       envelope,
       codeUiCommandFingerprint(envelope),
       async () => {
+        // 规划别名只收窄应用策略，不撤销或扩大用户已经授权的物理工作域。
+        if (mode === "plan") return;
         await this.deps.executionScopes.updateTask(user, loaded.root.id, {
-          sandboxMode,
+          sandboxMode:
+            mode === "yolo" ? "danger-full-access" : "workspace-write",
         });
       },
       (root) => {
@@ -2139,10 +2136,21 @@ export class CodeUiService {
         );
         if (!snapshot)
           throw new CodeUiRepositoryError("not_found", "Task 根快照不存在");
+        const execution = resolveExecutionState(
+          { mode },
+          resolveExecutionState({
+            mode: snapshot.config.mode,
+            ...(snapshot.config.planEnabled !== undefined
+              ? { planEnabled: snapshot.config.planEnabled }
+              : {}),
+          }),
+        );
         snapshot.config = {
           ...snapshot.config,
-          mode,
-          planEnabled: mode === "plan",
+          mode: protocol.commandPayloadSchemas.switchCollaborationMode.parse({
+            mode: execution.mode,
+          }).mode,
+          planEnabled: execution.planEnabled,
         };
         snapshot.seq += 1;
         snapshot.revision += 1;
