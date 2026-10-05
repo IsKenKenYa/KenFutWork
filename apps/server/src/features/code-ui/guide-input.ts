@@ -113,6 +113,7 @@ export function createCodeGuideInputs(deps: {
         .map((input) => ({
           id: codeGuideMessageId(input),
           text: input.intent.text,
+          modelInvocation: structuredClone(input.modelInvocation),
         }));
     },
   };

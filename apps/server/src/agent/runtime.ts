@@ -76,8 +76,6 @@ import type {
   ToolExecutionContext,
   ToolRegistry,
 } from "../kernel/types.js";
-import { instanceHeadersOption } from "../providers/instance-headers.js";
-import { resolveInstanceChatModel } from "../providers/resolve.js";
 import type { ModelInvocationSnapshot } from "../providers/types.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
@@ -107,7 +105,14 @@ import {
 } from "./model-call-usage.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { measureTools } from "./prompt-composition.js";
-import type { AgentRunExtension } from "./run-extension.js";
+import type {
+  AgentRunExtension,
+  AgentRunModelControl,
+} from "./run-extension.js";
+import {
+  createRunModelControl,
+  resolveInstanceModelExecution,
+} from "./model-execution.js";
 import { withBoundWorkDir } from "./sandbox-dir.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
 import { formatTaskNotificationsXml } from "./task-notifications.js";
@@ -1406,78 +1411,29 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 ? run.modelOverride
                 : String(options.model ?? "default"),
           };
-          // BYOK：run 的 model 携带实例 specifier 时，按用户供应商实例实例化聊天模型
-          if (typeof resolvedModel === "string" && options.modelProviders) {
-            const instanceSpec = parseInstanceSpecifier(resolvedModel);
-            if (instanceSpec) {
-              /**
-               * 起始期 fail loud（E）：带实例前缀的模型必须能在这个用户的目录里找到。
-               * 不做这一步时，模型被改名/停用后要等上游回 4xx 才暴露，且界面只有通用文案。
-               */
-              if (options.modelCatalog) {
-                const verdict = await options.modelCatalog
-                  .validateSpecifier(run.actor, resolvedModel)
-                  .catch(() => ({ ok: true as const }));
-                if (!verdict.ok) {
-                  throw new Error(verdict.message);
-                }
-              }
-              const credentials =
-                await options.modelProviders.resolveCredentials(
-                  run.actor,
-                  instanceSpec.instanceId,
-                );
-              // 模型级推理参数映射（extraBody）随模型行带入请求体
-              const modelRow = credentials.models?.find(
-                (m) => m.id === instanceSpec.model,
-              );
-              const modelInvocation = run.modelInvocation;
-              if (
-                modelInvocation &&
-                (modelInvocation.providerId !== credentials.instanceId ||
-                  modelInvocation.modelId !== instanceSpec.model ||
-                  modelInvocation.configRevision !== credentials.configRevision)
-              )
-                throw new Error(
-                  "本轮供应商或模型配置已改变，请重新确认模型选择后发送。",
-                );
-              modelCapabilities =
-                modelInvocation?.inputCapabilities ??
-                resolveModelInputCapabilities(modelRow ?? {});
-              resolvedModel = resolveInstanceChatModel(
-                credentials.protocol,
-                instanceSpec.model,
-                {
-                  apiKey: credentials.apiKey,
-                  ...((modelInvocation?.useResponsesApi ??
-                    credentials.useResponsesApi) !== undefined
-                    ? {
-                        useResponsesApi:
-                          modelInvocation?.useResponsesApi ??
-                          credentials.useResponsesApi,
-                      }
-                    : {}),
-                  ...(credentials.responsesApi !== undefined
-                    ? { responsesApi: credentials.responsesApi }
-                    : {}),
-                  ...(credentials.baseUrl
-                    ? { baseUrl: credentials.baseUrl }
-                    : {}),
-                  // 自定义头逐会话取值（§4.8）：亲和类头写死固定值会把所有会话钉到同一分片
-                  ...instanceHeadersOption(credentials.headers, {
-                    sessionId: run.sessionId,
-                    threadId: run.threadId,
-                  }),
-                },
-                // 编译结果已按RFC7386处理静态参数；不能再次合并使已删除字段复活。
-                modelInvocation?.body ?? modelRow?.extraBody,
-              );
-              run.usageMeta = {
-                provider: "instance",
-                model: instanceSpec.model,
-                providerInstanceId: instanceSpec.instanceId,
-              };
-            }
+          // 起点与模型边界使用同一冻结配置解析器。
+          if (
+            typeof resolvedModel === "string" &&
+            options.modelProviders &&
+            parseInstanceSpecifier(resolvedModel)
+          ) {
+            const execution = await resolveInstanceModelExecution({
+              actor: run.actor,
+              specifier: resolvedModel,
+              invocation: run.modelInvocation,
+              providers: options.modelProviders,
+              catalog: options.modelCatalog,
+              headers: { sessionId: run.sessionId, threadId: run.threadId },
+            });
+            resolvedModel = execution.model;
+            run.usageMeta = {
+              provider: execution.owner.provider,
+              model: execution.owner.model,
+              ...(execution.owner.providerInstanceId
+                ? { providerInstanceId: execution.owner.providerInstanceId }
+                : {}),
+            };
+            modelCapabilities = execution.capabilities;
           }
 
           if (
@@ -2003,6 +1959,78 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             promptCompositionContext.approvalCeiling = codeApproval?.ceiling;
           }
 
+          let modelControl: AgentRunModelControl | undefined;
+          if (
+            resolvedModel &&
+            typeof resolvedModel !== "string" &&
+            options.modelProviders
+          ) {
+            const providers = options.modelProviders;
+            modelControl = createRunModelControl({
+              initialModel: resolvedModel,
+              initialInvocation: run.modelInvocation,
+              resolve: (invocation) =>
+                resolveInstanceModelExecution({
+                  actor: run.actor,
+                  specifier: `${invocation.providerId}:${invocation.modelId}`,
+                  invocation,
+                  providers,
+                  catalog: options.modelCatalog,
+                  headers: { sessionId: run.sessionId, threadId: run.threadId },
+                }),
+              async validate() {
+                run.controller.signal.throwIfAborted();
+                const policy = await codeApproval?.resolve();
+                if (run.scopeHandle) {
+                  const scope = run.scopeHandle.describe();
+                  await run.scopeHandle.resolvePath(
+                    scope.rootDirectory,
+                    "read",
+                  );
+                  if (
+                    policy?.scopeGeneration !== scope.generation ||
+                    policy.branchGeneration !==
+                      taskWorkContext?.branchGeneration
+                  )
+                    throw new Error("模型切换所属Task或分支授权已失效。");
+                }
+                run.controller.signal.throwIfAborted();
+              },
+              async apply(execution, invocation) {
+                const specifier = `${invocation.providerId}:${invocation.modelId}`;
+                if (autoCompact) {
+                  const entries = await options.modelCatalog?.listCatalog(
+                    run.actor,
+                  );
+                  const entry = entries?.find(
+                    (candidate) => candidate.id === specifier,
+                  );
+                  const plan = resolveCompactionPlan({
+                    contextWindow: resolveContextWindow(
+                      entry?.model.contextWindow,
+                      specifier,
+                    ),
+                    maxOutputTokens: entry?.model.maxOutputTokens ?? null,
+                  });
+                  const override = Number(
+                    options.env.autoCompactTriggerTokens ?? Number.NaN,
+                  );
+                  if (Number.isFinite(override) && override > 0)
+                    plan.trigger.value = Math.floor(override);
+                  // SDK持有trigger/keep引用；更新同一对象，不留下A的压缩阈值。
+                  Object.assign(autoCompact.trigger, plan.trigger);
+                  Object.assign(autoCompact.keep, plan.keep);
+                  autoCompact.source = plan.source;
+                }
+                run.controller.signal.throwIfAborted();
+                // 原Run/canonical起点不改；未来文件/子任务沿当前实际模型。
+                Object.assign(modelCapabilities, execution.capabilities);
+                runToolContext.modelSpecifier = specifier;
+                toolResolutionContext.modelSpecifier = specifier;
+              },
+            });
+          }
+
           agent = resolvedAgentFactory({
             ...(options.runExtensions
               ? {
@@ -2014,6 +2042,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(kernelToolRegistry
               ? {
                   extensionContext: {
+                    ...(modelControl ? { modelControl } : {}),
                     registry: kernelToolRegistry,
                     resolution: toolResolutionContext,
                     execution: runToolContext,

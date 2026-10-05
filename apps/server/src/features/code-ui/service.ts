@@ -2637,17 +2637,22 @@ export class CodeUiService {
         const planEnabled = payload.planEnabled ?? current.config.planEnabled;
         const requestedGuide = !compact && busy &&
           (payload.requestedDelivery === "guide" ||
-            (payload.requestedDelivery === undefined && current.config.followupMode === "guide"));
-        const guide = requestedGuide && !!previous && active?.intent.kind === "sendText" &&
-          !codeInputs.length && canonical(selection) === canonical(active.intent.modelSelection) &&
-          canonical(modelInvocation) === canonical(active.modelInvocation) &&
-          mode === active.intent.mode && !!planEnabled === !!active.intent.planEnabled;
-        const delivery = guide ? "guide" :
-          (!preempt && busy) ||
-          payload.requestedDelivery === "queue" ||
-          (compact &&
-            !current.queue.autoDrain &&
-            current.queue.items.length > 0)
+            (payload.requestedDelivery === undefined &&
+              current.config.followupMode === "guide"));
+        const guide =
+          requestedGuide &&
+          !!previous &&
+          active?.intent.kind === "sendText" &&
+          !codeInputs.length &&
+          mode === active.intent.mode &&
+          !!planEnabled === !!active.intent.planEnabled;
+        const delivery = guide
+          ? "guide"
+          : (!preempt && busy) ||
+              payload.requestedDelivery === "queue" ||
+              (compact &&
+                !current.queue.autoDrain &&
+                current.queue.items.length > 0)
             ? "queue"
             : "startNow";
         let settlements: CodeInputSettlement[] = [];

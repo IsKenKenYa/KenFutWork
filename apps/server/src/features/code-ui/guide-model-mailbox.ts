@@ -5,10 +5,12 @@ import type {
   AgentRunExtensionContext,
 } from "../../agent/run-extension.js";
 import type { ToolExecutionContext } from "../../kernel/types.js";
+import type { ModelInvocationSnapshot } from "../../providers/types.js";
 
 export interface CodeGuideMessage {
   id: string;
   text: string;
+  modelInvocation: ModelInvocationSnapshot;
 }
 
 export interface CodeGuideConsumer {
@@ -35,11 +37,16 @@ export function createCodeGuideMiddleware(
       if (!main || !execution) return {};
       const guides = await consumer.consumeGuides(execution);
       const existingIds = new Set(state.messages.map((message) => message.id));
-      const messages = guides
-        .filter((guide) => !existingIds.has(guide.id))
-        .map(
-          (guide) => new HumanMessage({ id: guide.id, content: guide.text }),
-        );
+      const added = guides.filter((guide) => !existingIds.has(guide.id));
+      const latest = added.at(-1);
+      if (latest) {
+        if (!context?.modelControl)
+          throw new Error("当前Harness未提供冻结模型切换能力。");
+        context.modelControl.selectInvocation(latest.modelInvocation);
+      }
+      const messages = added.map(
+        (guide) => new HumanMessage({ id: guide.id, content: guide.text }),
+      );
       return messages.length ? { messages } : {};
     },
     afterModel: {

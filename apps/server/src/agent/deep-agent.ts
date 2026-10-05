@@ -563,17 +563,28 @@ export function createKenFutWorkDeepAgent(options: {
     ? createNativeCompactionTracker(nativeSummarization)
     : undefined;
   // 同名覆盖DA默认auto行为，仍保留summary state schema供显式维护operation。
+  const summaryExecution: AgentMiddleware = compactionTracker?.middleware ?? {
+    ...nativeSummarization,
+    wrapModelCall: (request, handler) =>
+      handler({
+        ...request,
+        messages: effectiveNativeMessages(request.messages, request.state),
+      }),
+  };
+  const summaryCall = summaryExecution.wrapModelCall;
+  if (!summaryCall) throw new Error("摘要模型请求入口未装配。");
   const summarizationMiddleware: AgentMiddleware[] = [
-    compactionTracker?.middleware ?? {
-      ...nativeSummarization,
-      wrapModelCall: (request, handler) =>
-        handler({
-          ...request,
-          messages: effectiveNativeMessages(
-            request.messages,
-            request.state,
-          ),
-        }),
+    {
+      ...summaryExecution,
+      async wrapModelCall(request, handler) {
+        // SDK默认摘要位于普通扩展之前；这里统一采用已消费输入的冻结模型。
+        const model =
+          await options.extensionContext?.modelControl?.resolveCurrent();
+        return summaryCall(
+          { ...request, ...(model ? { model } : {}) },
+          handler,
+        );
+      },
     },
   ];
 
