@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  workspaceSettingsSchema,
+  instanceSettingsSchema,
   zcodePluginsInstallResultSchema,
   zcodePluginsListResultSchema,
   zcodePluginsOverviewResultSchema,
@@ -10,10 +10,8 @@ import {
 import Fastify from "fastify";
 import { afterEach, expect, it } from "vitest";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
-import {
-  createPluginAdminFixture,
-  createPluginInventoryFixture,
-} from "./plugins.test-fixture.js";
+import { createCodeUiTestInstance } from "./host-session.fixture.js";
+import { createPluginInventoryFixture } from "./plugins.test-fixture.js";
 import { CodeUiService, type CodeUiServiceDeps } from "./service.js";
 
 const cleanups: Array<() => Promise<unknown>> = [];
@@ -21,7 +19,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-async function fixture(withTargets = false, role: "admin" | "user" = "admin") {
+async function fixture(withTargets = false) {
   const actual = await createPluginInventoryFixture();
   cleanups.push(actual.dispose);
   const projectId = randomUUID();
@@ -30,13 +28,11 @@ async function fixture(withTargets = false, role: "admin" | "user" = "admin") {
   const currentRoot = join(actual.directory, "new-project-default");
   const service = new CodeUiService({
     plugins: actual.registry,
-    admin: createPluginAdminFixture(actual.actor, { role }),
-    viewer: {
-      resolveWorkspace: async (actor: { id: string }) => {
-        if (actor.id !== actual.actor.id) throw new Error("工作区身份无效");
-        return { id: actual.workspaceId };
-      },
-    },
+    localInstance: createCodeUiTestInstance(
+      actual.instanceId,
+      null,
+      actual.directory,
+    ).localInstance,
     repository: {
       recoverRuntimeInputs: async () => {},
       listRoots: async () => [
@@ -50,8 +46,8 @@ async function fixture(withTargets = false, role: "admin" | "user" = "admin") {
     },
     taskWork: { initialize: async () => [] },
     settings: {
-      getWorkspaceSettings: async () =>
-        workspaceSettingsSchema.parse({ defaultModel: "test" }),
+      getInstanceSettings: async () =>
+        instanceSettingsSchema.parse({ defaultModel: "test" }),
     },
     projects: {
       listProjects: async () => {
@@ -90,7 +86,7 @@ async function fixture(withTargets = false, role: "admin" | "user" = "admin") {
   const app = Fastify();
   await registerCodeUiRoutes(app, {
     service,
-    auth: { authenticate: async () => actual.actor },
+    localAccess: { authenticate: async () => actual.actor },
   });
   cleanups.push(() => app.close());
   const rpc = (method: string, value: unknown) =>
@@ -217,26 +213,21 @@ it("原安装HTTP消费管理员能力与真实Project元信息，真实安装�
   ).toEqual(result.installedPlugins);
 });
 
-it("原插件HTTP拒绝普通用户安装为403，读取库存仍可用且无副作用", async () => {
-  const f = await fixture(true, "user");
-  const read = await f.rpc("getPluginsOverview", { configScope: "user" });
-  expect(read.statusCode).toBe(200);
-  const denied = await f.rpc("installPlugin", {
+it("实例主人可管理本机插件，无平台管理员前置条件", async () => {
+  const f = await fixture(true);
+  const installed = await f.rpc("installPlugin", {
     workspacePath: f.currentRoot,
     projectId: f.projectId,
     pluginName: f.bundled.name,
     marketplace: "kenfutwork-bundled",
     scope: "user",
   });
-  expect(denied.statusCode).toBe(403);
-  expect(denied.json()).toMatchObject({
-    error: { code: "forbidden", message: "需要平台管理员权限。" },
-  });
+  expect(installed.statusCode).toBe(200);
   const after = await f.rpc("getPluginsOverview", { configScope: "user" });
   expect(
     zcodePluginsOverviewResultSchema.parse(after.json().result)
       .installedPlugins,
-  ).toEqual([]);
+  ).toMatchObject([{ id: f.bundled.id, enabled: true }]);
 });
 
 it("原插件HTTP对未装配的项目安装范围给明确400，避免误报宿主故障", async () => {

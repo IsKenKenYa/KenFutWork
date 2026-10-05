@@ -3,7 +3,6 @@ import type { CodeExecutionScope, StreamEvent } from "@kenfutwork/shared";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { applyPatch, structuredPatch } from "diff";
 import { z } from "zod";
-import type { AuthenticatedUser } from "../auth/types.js";
 import type { CheckpointService } from "../checkpoints/checkpoint-service.js";
 import { hasTaskFileOperations } from "../code-tools/file-operations.js";
 import type { FileRestoreChange } from "../code-tools/file-types.js";
@@ -12,6 +11,7 @@ import {
   acquireTaskFileRestoreBarrier,
   revokeTaskFileOperations,
 } from "../execution/scoped-filesystem.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type { ProcessSandbox } from "../process-sandbox/types.js";
 import { requireFileChangesTarget } from "./file-changes.js";
 
@@ -58,7 +58,7 @@ export interface FileRewindCapture {
 }
 export interface PrepareFileRewindInput {
   scope: ExecutionScopeHandle;
-  actor: AuthenticatedUser;
+  actor: LocalActor;
   snapshot: protocol.ConversationSnapshot;
   params: protocol.V4ConversationFileRewindPreviewParams;
   events: readonly StreamEvent[];
@@ -73,16 +73,16 @@ export interface PreparedFileRewind {
 }
 export interface ApplyFileRewindInput {
   scope: ExecutionScopeHandle;
-  actor: AuthenticatedUser;
+  actor: LocalActor;
   processSandbox: Pick<ProcessSandbox, "acquireRestoreBarrier" | "closeTask">;
   beginRestore(
     scope: ExecutionScopeHandle,
-    actor: AuthenticatedUser,
+    actor: LocalActor,
   ): Promise<ExecutionScopeHandle>;
   /** 宿主先持久化reverted投影与ACK，再开放Task readiness。 */
   finishRestore(
     scope: ExecutionScopeHandle,
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     success: boolean,
   ): Promise<void>;
 }
@@ -421,11 +421,11 @@ export async function applyFileRewind(
           plan.identity.generation,
         );
         await revokeTaskFileOperations(
-          plan.identity.workspaceId,
+          plan.identity.instanceId,
           plan.identity.taskId,
         );
         if (
-          hasTaskFileOperations(plan.identity.workspaceId, plan.identity.taskId)
+          hasTaskFileOperations(plan.identity.instanceId, plan.identity.taskId)
         )
           throw new Error("旧Task文件范围未确认清空，不能完成恢复。");
         return restoring;

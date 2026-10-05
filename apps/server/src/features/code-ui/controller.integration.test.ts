@@ -4,16 +4,18 @@ import { join } from "node:path";
 import {
   type CodeUiEvent,
   type CodeUiWorkspace,
+  instanceSettingsSchema,
   zcodeUiProtocol as protocol,
-  workspaceSettingsSchema,
 } from "@kenfutwork/shared";
 import { Client } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
+import { useCodeUiHttpFixture } from "./code-ui-http.fixture.js";
 import { CodeUiConnections } from "./connections.js";
 import { createCodeUiWindowController } from "./controller-host.js";
 import { createCodeUiConversation } from "./conversation.js";
-import { nextHostServiceEvent, request } from "./host-client.fixture.js";
+import { nextHostServiceEvent } from "./host-client.fixture.js";
+
 import { createCodeSessionFixture } from "./host-session.fixture.js";
 import { heldModel } from "./model-stream.fixture.js";
 import { createCodeUiRepository } from "./repository.js";
@@ -53,22 +55,12 @@ describe.skipIf(process.env.KENFUTWORK_CONTROLLER_HOST_TEST_PG !== "1")(
         expect(database.secondReplay).toHaveLength(0);
         const scope = database.context.scope;
         const repository = createCodeUiRepository(database.persistence);
-        const owner = await database.persistence.queryOne<{
-          owner_user_id: string;
-        }>("select owner_user_id from public.workspaces where id=$1", [
-          scope.workspaceId,
-        ]);
-        if (!owner) throw new Error("隔离工作区不存在");
-        const actor = {
-          id: owner.owner_user_id,
-          email: "controller@integration.test",
-          accessToken: "private-test",
-          userMetadata: {},
-        };
-        const initial = await repository.find(scope.workspaceId, scope.taskId);
+
+        const actor = { instanceId: scope.instanceId, accessClientId: null };
+        const initial = await repository.find(scope.instanceId, scope.taskId);
         if (!initial) throw new Error("隔离Task不存在");
         await repository.save(
-          scope.workspaceId,
+          scope.instanceId,
           scope.taskId,
           Number(initial.revision),
           finishedConversation(scope.taskId, scope.rootDirectory, "原目录Task"),
@@ -77,17 +69,17 @@ describe.skipIf(process.env.KENFUTWORK_CONTROLLER_HOST_TEST_PG !== "1")(
         const newRoot = join(database.directory, "new-root");
         await mkdir(newRoot);
         await database.persistence
-          .forWorkspace(scope.workspaceId)
+          .forInstance(scope.instanceId)
           .execute(
-            "update public.projects set work_dir=$2 where workspace_id=:workspace and id=$1",
+            "update public.projects set work_dir=$2 where instance_id=:instance and id=$1",
             [scope.projectId, newRoot],
           );
         const newTaskId = randomUUID();
-        await repository.createRoot(scope.workspaceId, {
+        await repository.createRoot(scope.instanceId, {
           sessionId: newTaskId,
           projectId: scope.projectId,
           scope: { ...scope, taskId: newTaskId, rootDirectory: newRoot },
-          userId: actor.id,
+          createdByClientId: actor.accessClientId,
           threadId: randomUUID(),
           state: finishedConversation(newTaskId, newRoot, "新默认目录Task"),
           command: {
@@ -98,14 +90,14 @@ describe.skipIf(process.env.KENFUTWORK_CONTROLLER_HOST_TEST_PG !== "1")(
         });
         const sent: CodeUiEvent[] = [];
         human = connections.open(
-          scope.workspaceId,
-          actor.id,
+          scope.instanceId,
+          actor.instanceId,
           async (event) => {
             sent.push(event);
           },
           () => {},
         );
-        connections.initialize(scope.workspaceId, human.hello.connectionId, {
+        connections.initialize(scope.instanceId, human.hello.connectionId, {
           kind: "clientHello",
           protocolVersion: protocol.V4_WIRE_PROTOCOL_VERSION,
           clientId: "human-controller-integration",
@@ -114,28 +106,28 @@ describe.skipIf(process.env.KENFUTWORK_CONTROLLER_HOST_TEST_PG !== "1")(
         });
         host = createCodeUiWindowController({
           actor,
-          workspaceId: scope.workspaceId,
+          instanceId: scope.instanceId,
           connectionId: human.hello.connectionId,
           connections,
           repository,
           settings: {
             onUpdated: () => () => {},
             getCodeUiTransportSettings: async () => ({
-              reconnectDelayMs: workspaceSettingsSchema.parse({
+              reconnectDelayMs: instanceSettingsSchema.parse({
                 defaultModel: "fixture",
               }).codeUiReconnectDelayMs,
             }),
-            getWorkspaceSettings: async () =>
-              workspaceSettingsSchema.parse({ defaultModel: "fixture" }),
-            updateWorkspaceSettings: async () => {
+            getInstanceSettings: async () =>
+              instanceSettingsSchema.parse({ defaultModel: "fixture" }),
+            updateInstanceSettings: async () => {
               throw new Error("Controller 只读来源不得写工作区设置");
             },
           },
           listWorkspaces: async () => {
             const projects = await database.persistence
-              .forWorkspace(scope.workspaceId)
+              .forInstance(scope.instanceId)
               .query<{ id: string; name: string; work_dir: string }>(
-                "select id,name,work_dir from public.projects where workspace_id=:workspace and kind='code' and archived_at is null",
+                "select id,name,work_dir from public.projects where instance_id=:instance and kind='code' and archived_at is null",
               );
             return projects.map(
               (project): CodeUiWorkspace => ({
@@ -216,7 +208,7 @@ describe.skipIf(process.env.KENFUTWORK_CONTROLLER_HOST_TEST_PG !== "1")(
             }),
           ]),
         );
-        await repository.delete(scope.workspaceId, scope.taskId);
+        await repository.delete(scope.instanceId, scope.taskId);
         await host.refresh();
         await expect(
           host.call("listTaskList", {
@@ -252,6 +244,9 @@ describe.skipIf(process.env.KENFUTWORK_CONTROLLER_HOST_TEST_PG !== "1")(
   },
 );
 
+const isolatedHttp = useCodeUiHttpFixture();
+const { request } = isolatedHttp;
+
 const enabled = process.env.RUN_CODE_UI_INTEGRATION === "1";
 
 async function nextControllerFrame(
@@ -283,7 +278,9 @@ async function nextTaskUpsert(
 describe.skipIf(!enabled)("原任务目录公开宿主 integration", () => {
   it("原 Controller 订阅返回原 ACK 与 snapshot，任务创建后发送原投影 delta 并能实时查询", async () => {
     const model = await heldModel();
-    const host = await createCodeSessionFixture(model.baseUrl);
+    const host = await createCodeSessionFixture(model.baseUrl, {
+      client: isolatedHttp,
+    });
     const controller = (method: string, args: unknown[]) =>
       request("/api/code-ui/rpc", {
         service: "window-controller",
@@ -379,7 +376,9 @@ describe.skipIf(!enabled)("原任务目录公开宿主 integration", () => {
     }
   });
   it("Controller 游标和工作目录只归当前连接；非法归属、查询参数和已释放租约被拒绝", async () => {
-    const host = await createCodeSessionFixture("https://example.invalid/v1");
+    const host = await createCodeSessionFixture("https://example.invalid/v1", {
+      client: isolatedHttp,
+    });
     const controller = (method: string, args: unknown[]) =>
       request("/api/code-ui/rpc", {
         service: "window-controller",
@@ -444,62 +443,61 @@ describe.skipIf(!enabled)("原任务目录公开宿主 integration", () => {
       await host.dispose();
     }
   });
-  it.skipIf(!process.env.CODE_UI_TEST_DATABASE_URL)(
-    "Controller 目录读取等待期间关闭通知，迟到订阅拒绝且不能产生无载体 ACK",
-    async () => {
-      const host = await createCodeSessionFixture("https://example.invalid/v1");
-      const delay = new Client({
-        connectionString: process.env.CODE_UI_TEST_DATABASE_URL,
+  it("Controller 目录读取等待期间关闭通知，迟到订阅拒绝且不能产生无载体 ACK", async () => {
+    const host = await createCodeSessionFixture("https://example.invalid/v1", {
+      client: isolatedHttp,
+    });
+    const delay = new Client({
+      connectionString: isolatedHttp.databaseUrl(),
+    });
+    let pending: ReturnType<typeof request> | undefined;
+    try {
+      await delay.connect();
+      await delay.query("begin");
+      // 独占测试库的外部故障注入，只延迟目录读取；行为断言仍走公开 HTTP/SSE。
+      await delay.query("lock table public.projects in access exclusive mode");
+      pending = request("/api/code-ui/rpc", {
+        service: "window-controller",
+        method: "subscribeControllerV4",
+        args: [{ topic: "controller/tasks-index" }],
+        connectionId: host.stream.ready.hello.connectionId,
       });
-      let pending: ReturnType<typeof request> | undefined;
-      try {
-        await delay.connect();
-        await delay.query("begin");
-        // 独占测试库的外部故障注入，只延迟目录读取；行为断言仍走公开 HTTP/SSE。
-        await delay.query(
-          "lock table public.projects in access exclusive mode",
+      await vi.waitFor(async () => {
+        const waiting = await delay.query(
+          "select 1 from pg_locks where granted=false and relation='public.projects'::regclass",
         );
-        pending = request("/api/code-ui/rpc", {
-          service: "window-controller",
-          method: "subscribeControllerV4",
-          args: [{ topic: "controller/tasks-index" }],
-          connectionId: host.stream.ready.hello.connectionId,
-        });
-        await vi.waitFor(async () => {
-          const waiting = await delay.query(
-            "select 1 from pg_locks where granted=false and relation='public.projects'::regclass",
-          );
-          if (!waiting.rows.length)
-            throw new Error("等待 Controller 到达目录延迟点");
-        });
-        host.stream.controller.abort();
-        await vi.waitFor(async () => {
-          const closed = await host.stream.rpc("initializeConversationV4", [
-            {
-              kind: "clientHello",
-              protocolVersion: protocol.V4_WIRE_PROTOCOL_VERSION,
-              clientId: "closed-controller-probe",
-              appVersion: "integration",
-              clientKind: "web",
-            },
-          ]);
-          expect(closed.status).toBe(404);
-        });
-        await delay.query("commit");
-        const late = await pending;
-        expect(late.status, JSON.stringify(late.body)).toBe(404);
-        expect(late.body.result).toBeUndefined();
-      } finally {
-        await delay.query("rollback").catch(() => {});
-        await delay.end();
-        await pending;
-        await host.dispose();
-      }
-    },
-  );
+        if (!waiting.rows.length)
+          throw new Error("等待 Controller 到达目录延迟点");
+      });
+      host.stream.controller.abort();
+      await vi.waitFor(async () => {
+        const closed = await host.stream.rpc("initializeConversationV4", [
+          {
+            kind: "clientHello",
+            protocolVersion: protocol.V4_WIRE_PROTOCOL_VERSION,
+            clientId: "closed-controller-probe",
+            appVersion: "integration",
+            clientKind: "web",
+          },
+        ]);
+        expect(closed.status).toBe(404);
+      });
+      await delay.query("commit");
+      const late = await pending;
+      expect(late.status, JSON.stringify(late.body)).toBe(404);
+      expect(late.body.result).toBeUndefined();
+    } finally {
+      await delay.query("rollback").catch(() => {});
+      await delay.end();
+      await pending;
+      await host.dispose();
+    }
+  });
   it("首条输入建立任务集合时发送原 task_created，原目录无需刷新即可重读新任务", async () => {
     const model = await heldModel();
-    const host = await createCodeSessionFixture(model.baseUrl);
+    const host = await createCodeSessionFixture(model.baseUrl, {
+      client: isolatedHttp,
+    });
     try {
       const sent = await host.command("sendText", {
         text: "首次目录热更新验收",

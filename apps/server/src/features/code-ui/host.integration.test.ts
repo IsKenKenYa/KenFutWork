@@ -8,7 +8,10 @@ import {
   type ProviderSettingsView,
 } from "@zcode/provider";
 import { describe, expect, it } from "vitest";
-import { openCodeStream, request } from "./host-client.fixture.js";
+import { useCodeUiHttpFixture } from "./code-ui-http.fixture.js";
+
+const isolatedHttp = useCodeUiHttpFixture();
+const { request, openCodeStream } = isolatedHttp;
 
 const enabled = process.env.RUN_CODE_UI_INTEGRATION === "1";
 
@@ -23,7 +26,6 @@ function expectNoPrivateConfigKeys(value: unknown) {
 
 describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", () => {
   it("原工作目录打开绑定真实 Code Project 与固定 Task 工作域，并发和目录别名不创建第二份项目", async () => {
-    expect((await request("/api/viewer")).status).toBe(200);
     const root = await mkdtemp(join(tmpdir(), "code-ui-open-directory-"));
     const first = join(root, "甲", "同名目录");
     const second = join(root, "乙", "同名目录");
@@ -116,7 +118,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
                 sessionId: null,
                 type: "createSession",
                 payload: {
-                  workspaceId: opened.body.result.path,
+                  instanceId: opened.body.result.path,
                   config: {
                     modelSelection: {
                       providerId,
@@ -201,7 +203,6 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
     }
   });
   it("原目录选择器读取真实目录、隐藏项和 Unicode，符号链接保持原类型且不可用路径有可读错误", async () => {
-    expect((await request("/api/viewer")).status).toBe(200);
     const dir = await mkdtemp(join(tmpdir(), "code-ui-directory-"));
     const rpc = (path: string, includeHidden?: boolean) =>
       request("/api/code-ui/rpc", {
@@ -267,7 +268,6 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
     }
   });
   it("Code 宿主 ready 使用工作区持久重连间隔，刷新保留且非法限额拒绝", async () => {
-    expect((await request("/api/viewer")).status).toBe(200);
     const original = await request("/api/workspace/settings");
     expect(original.status).toBe(200);
     const value = original.body.settings.codeUiReconnectDelayMs;
@@ -312,7 +312,6 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
     }
   });
   it("原模型删除清理成员和精确规则，并发删除不丢失且迟到保存和启用不能复活", async () => {
-    expect((await request("/api/viewer")).status).toBe(200);
     const rpc = (method: string, args: unknown[] = []) =>
       request("/api/code-ui/rpc", {
         service: "providerSettingsService",
@@ -372,7 +371,6 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
     }
   });
   it("原模型启停只修改最新 enabled，保留手动模式与精确配置且刷新和同值重放一致", async () => {
-    expect((await request("/api/viewer")).status).toBe(200);
     const rpc = (method: string, args: unknown[] = []) =>
       request("/api/code-ui/rpc", {
         service: "providerSettingsService",
@@ -483,7 +481,6 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
     }
   });
   it("原模型恢复智能规则删除个人精确配置，刷新保留推荐且同值保存不推进修订", async () => {
-    expect((await request("/api/viewer")).status).toBe(200);
     const rpc = (method: string, args: unknown[] = []) =>
       request("/api/code-ui/rpc", {
         service: "providerSettingsService",
@@ -550,7 +547,6 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
     }
   });
   it("原模型草稿原子改名与保存精确规则，拒绝同修订并发和跨供应商过期修订", async () => {
-    expect((await request("/api/viewer")).status).toBe(200);
     const rpc = (method: string, args: unknown[] = []) =>
       request("/api/code-ui/rpc", {
         service: "providerSettingsService",
@@ -649,7 +645,6 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
     }
   });
   it("原模型添加的并发成员不丢失，同键只成功一次，删除供应商后的迟到添加不能重建", async () => {
-    expect((await request("/api/viewer")).status).toBe(200);
     const rpc = (method: string, args: unknown[] = []) =>
       request("/api/code-ui/rpc", {
         service: "providerSettingsService",
@@ -696,7 +691,6 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
     }
   });
   it("原模型编辑器解析原推荐规则并添加精确个人配置，刷新保持成员和完整配置且不产生假模型", async () => {
-    expect((await request("/api/viewer")).status).toBe(200);
     const rpc = (method: string, args: unknown[] = []) =>
       request("/api/code-ui/rpc", {
         service: "providerSettingsService",
@@ -782,7 +776,6 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
     }
   });
   it("原供应商稀疏配置保存原格式与品牌字段，Key 和请求头只写，省略保留而明确 null 清除", async () => {
-    expect((await request("/api/viewer")).status).toBe(200);
     let providerId = "";
     const rpc = (method: string, args: unknown[] = []) =>
       request("/api/code-ui/rpc", {
@@ -836,10 +829,21 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
           },
         },
       });
-      expect(JSON.stringify(saved.body.result)).not.toMatch(
-        /integration-credential-private|integration-header-private/,
-      );
-      expectNoPrivateConfigKeys(saved.body.result);
+      expect(
+        saved.body.result.providers.find(
+          (entry: ProviderSettingsView["providers"][number]) =>
+            entry.providerId === providerId,
+        )?.personalConfig.access,
+      ).toMatchObject({
+        type: "api-key",
+        apiKey: "integration-credential-private",
+      });
+      const publicSelection = await request("/api/code-ui/rpc", {
+        service: "modelSelectionService",
+        method: "getView",
+        args: [],
+      });
+      expectNoPrivateConfigKeys(publicSelection.body.result);
       const updated = await rpc("savePersonalProviderOverlay", [
         providerId,
         { api: { baseUrl: "https://example.invalid/v2" } },
@@ -904,7 +908,6 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
     }
   });
   it("原设置保留停用模型与供应商候选，执行目录遵守各级开关，同值保存不推进修订", async () => {
-    expect((await request("/api/viewer")).status).toBe(200);
     let providerId = "";
     const view = async (service = "providerSettingsService") =>
       request("/api/code-ui/rpc", { service, method: "getView", args: [] });
@@ -1006,7 +1009,6 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
     }
   });
   it("原供应商草稿提交后向已连接原服务广播与应答相同的完整 View，刷新不推进修订", async () => {
-    expect((await request("/api/viewer")).status).toBe(200);
     const streams: AbortController[] = [];
     let providerId = "";
     const rpc = (method: string, args: unknown[] = []) =>
@@ -1070,7 +1072,6 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
     }
   });
   it("原供应商创建操作保存真实无凭证无模型草稿，读取和刷新保持不可执行且不泄露凭证", async () => {
-    expect((await request("/api/viewer")).status).toBe(200);
     let providerId = "";
     const rpc = (method: string, args: unknown[] = []) =>
       request("/api/code-ui/rpc", {
@@ -1237,7 +1238,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
           sessionId: null,
           type: "createSession",
           payload: {
-            workspaceId: projectId,
+            instanceId: projectId,
             config: { modelSelection: selection },
           },
           issuedAt: Date.now(),
@@ -1354,7 +1355,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
             clientId,
             sessionId: null,
             type: "createSession",
-            payload: { workspaceId: projectId },
+            payload: { instanceId: projectId },
             issuedAt: Date.now(),
           },
         },
@@ -1430,7 +1431,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
         clientId: randomUUID(),
         sessionId: null,
         type: "createSession",
-        payload: { workspaceId: projectId },
+        payload: { instanceId: projectId },
         issuedAt: Date.now(),
       };
       const call = (value: unknown) =>
@@ -1463,7 +1464,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       });
       const conflict = await call({
         ...envelope,
-        payload: { workspaceId: projectId, config: { planEnabled: true } },
+        payload: { instanceId: projectId, config: { planEnabled: true } },
       });
       expect(conflict.status).toBe(409);
     } finally {

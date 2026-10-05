@@ -29,11 +29,10 @@ it("审批先于流工具事件到达时，后到工具row恢复真实pending锚
   service.onEvent((event) => conversation.recordApprovalEvent(event));
   const pending = service.admit({
     preset: "code",
-    workspaceId: "workspace",
+    instanceId: "workspace",
     taskId: "root",
     runId: "parent",
     toolCallId: "write",
-    userId: "u",
     agentId: "main",
     role: "main",
     scopeGeneration: 1,
@@ -58,7 +57,7 @@ it("审批先于流工具事件到达时，后到工具row恢复真实pending锚
     expect(tool).toMatchObject({ status: "pendingApproval" });
   } finally {
     await service.cancel(
-      { workspaceId: "workspace", taskId: "root" },
+      { instanceId: "workspace", taskId: "root" },
       "cleanup",
     );
     await pending;
@@ -77,11 +76,10 @@ it("审批请求进入原pendingInteractions，批准后移除阻塞且保留原
   const event: ApprovalEvent = {
     type: "requested",
     identity: {
-      workspaceId: "workspace",
+      instanceId: "workspace",
       taskId: "root",
       runId: "parent",
       toolCallId: "write",
-      userId: "u",
       agentId: "main",
       role: "main",
       scopeGeneration: 1,

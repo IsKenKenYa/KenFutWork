@@ -6,14 +6,15 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../app.js";
 import { loadServerEnv } from "../../config/env.js";
+import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
+import { codeUiAuthorizedInject } from "./code-ui-http.fixture.js";
 
 function pluginHostEnv(databaseUrl: string, dir: string) {
   return loadServerEnv(
     {
       databaseUrl,
-      authDriver: "local-trust",
+      desktopDataDir: dir,
       queueDriver: "in-process",
-      credentialSecret: randomBytes(32).toString("hex"),
       blobDir: join(dir, "blobs"),
       sandboxRoot: join(dir, "sandbox"),
       webOrigin: "http://localhost:3300",
@@ -22,13 +23,11 @@ function pluginHostEnv(databaseUrl: string, dir: string) {
   );
 }
 
-const enabled =
-  process.env.RUN_CODE_UI_INTEGRATION === "1" &&
-  Boolean(process.env.CODE_UI_TEST_DATABASE_URL);
+const enabled = process.env.RUN_CODE_UI_INTEGRATION === "1";
 describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
   it("禁止第三方部署重启后仍恢复真实自带包路由与工具，原目录enabled不伪装成运行可用", async () => {
-    const databaseUrl = process.env.CODE_UI_TEST_DATABASE_URL;
-    if (!databaseUrl) throw new Error("恢复用例需要独占测试数据库");
+    const database = await createTaskWorkDatabase();
+    const databaseUrl = database.connectionString;
     const dir = await mkdtemp(join(tmpdir(), "code-ui-builtin-restore-"));
     vi.stubEnv("KENFUTWORK_PLUGINS_DIR", join(dir, "plugins"));
     vi.stubEnv("KENFUTWORK_ALLOW_THIRD_PARTY_PLUGINS", "false");
@@ -36,7 +35,7 @@ describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
     let app = buildApp({ env });
     let closed = false;
     try {
-      const opened = await app.inject({
+      const opened = await codeUiAuthorizedInject(app, {
         method: "POST",
         url: "/api/code-ui/rpc",
         payload: {
@@ -47,14 +46,14 @@ describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
       });
       expect(opened.statusCode).toBe(200);
       const workspacePath = opened.json().result.path;
-      const denied = await app.inject({
+      const denied = await codeUiAuthorizedInject(app, {
         method: "POST",
         url: "/api/plugins/install",
         payload: { url: dir, allowLifecycleScripts: false },
       });
       expect(denied.statusCode).toBe(400);
       expect(denied.json().error.message).toContain("不允许安装第三方插件");
-      const installed = await app.inject({
+      const installed = await codeUiAuthorizedInject(app, {
         method: "POST",
         url: "/api/code-ui/rpc",
         payload: {
@@ -74,7 +73,9 @@ describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
       const id = installed.json().result.installedPlugins[0].id;
       expect(
         (
-          await app.inject({ url: `/api/plugins/${id}/data?probe=before` })
+          await codeUiAuthorizedInject(app, {
+            url: `/api/plugins/${id}/data?probe=before`,
+          })
         ).json(),
       ).toEqual({ ok: true, query: { probe: "before" } });
       await app.close();
@@ -82,12 +83,12 @@ describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
       app = buildApp({ env });
       closed = false;
       await app.ready();
-      const after = await app.inject({
+      const after = await codeUiAuthorizedInject(app, {
         url: `/api/plugins/${id}/data?probe=after`,
       });
       expect(after.statusCode).toBe(200);
       expect(after.json()).toEqual({ ok: true, query: { probe: "after" } });
-      const exported = await app.inject({
+      const exported = await codeUiAuthorizedInject(app, {
         method: "POST",
         url: "/api/plugins/export",
         payload: { name: id, format: "kenfutwork" },
@@ -96,7 +97,7 @@ describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
       expect(exported.json().files["index.js"]).toContain(
         '"name": "demo_ping"',
       );
-      const overview = await app.inject({
+      const overview = await codeUiAuthorizedInject(app, {
         method: "POST",
         url: "/api/code-ui/rpc",
         payload: {
@@ -116,12 +117,13 @@ describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
     } finally {
       if (!closed) await app.close();
       vi.unstubAllEnvs();
+      await database.close();
       await rm(dir, { recursive: true, force: true });
     }
   });
   it("同名第三方包不因id碰到自带目录而绕过重启策略", async () => {
-    const databaseUrl = process.env.CODE_UI_TEST_DATABASE_URL;
-    if (!databaseUrl) throw new Error("恢复用例需要独占测试数据库");
+    const database = await createTaskWorkDatabase();
+    const databaseUrl = database.connectionString;
     const dir = await mkdtemp(join(tmpdir(), "code-ui-local-restore-denied-"));
     vi.stubEnv("KENFUTWORK_PLUGINS_DIR", join(dir, "plugins"));
     vi.stubEnv("KENFUTWORK_ALLOW_THIRD_PARTY_PLUGINS", "true");
@@ -129,7 +131,7 @@ describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
     let app = buildApp({ env });
     let closed = false;
     try {
-      const installed = await app.inject({
+      const installed = await codeUiAuthorizedInject(app, {
         method: "POST",
         url: "/api/plugins/install",
         payload: {
@@ -143,7 +145,8 @@ describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
       const id = installed.json().installed.id;
       expect(installed.json().installed.source).toBe("url");
       expect(
-        (await app.inject({ url: `/api/plugins/${id}/data` })).statusCode,
+        (await codeUiAuthorizedInject(app, { url: `/api/plugins/${id}/data` }))
+          .statusCode,
       ).toBe(200);
       await app.close();
       closed = true;
@@ -152,9 +155,10 @@ describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
       closed = false;
       await app.ready();
       expect(
-        (await app.inject({ url: `/api/plugins/${id}/data` })).statusCode,
+        (await codeUiAuthorizedInject(app, { url: `/api/plugins/${id}/data` }))
+          .statusCode,
       ).toBe(404);
-      const exported = await app.inject({
+      const exported = await codeUiAuthorizedInject(app, {
         method: "POST",
         url: "/api/plugins/export",
         payload: { name: id, format: "kenfutwork" },
@@ -163,7 +167,7 @@ describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
       expect(exported.json().files["index.js"]).not.toContain(
         '"name": "demo_ping"',
       );
-      const opened = await app.inject({
+      const opened = await codeUiAuthorizedInject(app, {
         method: "POST",
         url: "/api/code-ui/rpc",
         payload: {
@@ -173,7 +177,7 @@ describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
         },
       });
       expect(opened.statusCode).toBe(200);
-      const collision = await app.inject({
+      const collision = await codeUiAuthorizedInject(app, {
         method: "POST",
         url: "/api/code-ui/rpc",
         payload: {
@@ -192,7 +196,7 @@ describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
             (item: { name: string }) => item.name === "kenfutwork-demo-panel",
           ).id,
       ).toBe(id);
-      const activation = await app.inject({
+      const activation = await codeUiAuthorizedInject(app, {
         method: "POST",
         url: "/api/code-ui/rpc",
         payload: {
@@ -211,17 +215,19 @@ describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
       expect(activation.statusCode).toBe(400);
       expect(activation.json().error.message).toContain("不允许启用第三方插件");
       expect(
-        (await app.inject({ url: `/api/plugins/${id}/data` })).statusCode,
+        (await codeUiAuthorizedInject(app, { url: `/api/plugins/${id}/data` }))
+          .statusCode,
       ).toBe(404);
     } finally {
       if (!closed) await app.close();
       vi.unstubAllEnvs();
+      await database.close();
       await rm(dir, { recursive: true, force: true });
     }
   });
   it("scoped npm 名称的自带包目录与安装id一致，禁止第三方重启后仍可启用和运行", async () => {
-    const databaseUrl = process.env.CODE_UI_TEST_DATABASE_URL;
-    if (!databaseUrl) throw new Error("恢复用例需要独占测试数据库");
+    const database = await createTaskWorkDatabase();
+    const databaseUrl = database.connectionString;
     const dir = await mkdtemp(join(tmpdir(), "code-ui-scoped-builtin-"));
     const bundle = join(dir, "bundles", "probe");
     await mkdir(bundle, { recursive: true });
@@ -253,7 +259,7 @@ describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
     let app = buildApp({ env });
     let closed = false;
     try {
-      const opened = await app.inject({
+      const opened = await codeUiAuthorizedInject(app, {
         method: "POST",
         url: "/api/code-ui/rpc",
         payload: {
@@ -296,7 +302,9 @@ describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
       closed = false;
       await app.ready();
       expect(
-        (await app.inject({ url: `/api/plugins/${id}/probe` })).json(),
+        (
+          await codeUiAuthorizedInject(app, { url: `/api/plugins/${id}/probe` })
+        ).json(),
       ).toEqual({ scoped: true });
       const activation = await rpc("setPluginEnabled", {
         pluginId: id,
@@ -307,6 +315,7 @@ describe.skipIf(!enabled)("原Code自带包宿主重启 integration", () => {
     } finally {
       if (!closed) await app.close();
       vi.unstubAllEnvs();
+      await database.close();
       await rm(dir, { recursive: true, force: true });
     }
   });

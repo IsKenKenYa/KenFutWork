@@ -7,7 +7,7 @@ import {
   zcodePluginsOverviewResultSchema,
 } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
-import { request } from "./host-client.fixture.js";
+import { useCodeUiHttpFixture } from "./code-ui-http.fixture.js";
 
 async function createLocalPluginFixture() {
   const dir = await mkdtemp(join(tmpdir(), "code-ui-package-"));
@@ -61,10 +61,12 @@ async function assertCorruptInventoryFails(
   }
 }
 
+const isolatedHttp = useCodeUiHttpFixture();
+const { request } = isolatedHttp;
+
 const enabled = process.env.RUN_CODE_UI_INTEGRATION === "1";
 describe.skipIf(!enabled)("原插件市场公开宿主接口 integration", () => {
   it("原目录与运行列表读取真实机器插件库存，系统内核不伪装成可卸载插件包", async () => {
-    expect((await request("/api/viewer")).status).toBe(200);
     const dir = await mkdtemp(join(tmpdir(), "code-ui-market-"));
     let projectId = "";
     try {
@@ -122,7 +124,6 @@ describe.skipIf(!enabled || process.env.CODE_UI_TEST_ISOLATED_PLUGINS !== "1")(
   "原插件真实安装态 integration",
   () => {
     it("停用仍是已安装包，版本/路径来自库存，源存在时不标为孤立", async () => {
-      expect((await request("/api/viewer")).status).toBe(200);
       const { dir, name } = await createLocalPluginFixture();
       let projectId = "";
       let id = "";

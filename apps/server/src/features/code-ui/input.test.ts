@@ -3,9 +3,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  instanceSettingsSchema,
   zcodeUiProtocol as protocol,
   providerInstanceResponseSchema,
-  workspaceSettingsSchema,
 } from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { afterEach, expect, it, vi } from "vitest";
@@ -18,6 +18,7 @@ import type {
   CodeAttachmentTransaction,
 } from "./attachments/types.js";
 import { createCodeUiConversation } from "./conversation.js";
+import { createCodeUiTestInstance } from "./host-session.fixture.js";
 import type { CodeUiRepository, CodeUiSessionRecord } from "./repository.js";
 import { CodeUiService, type CodeUiServiceDeps } from "./service.js";
 
@@ -35,19 +36,14 @@ async function fixture(
 ) {
   const directory = await mkdtemp(join(tmpdir(), "kfw-code-input-"));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
-  const actor = {
-    id: randomUUID(),
-    email: "human@example.test",
-    accessToken: "private-token",
-    userMetadata: {},
-  };
-  const workspaceId = randomUUID();
+  const instanceId = randomUUID();
+  const actor = { instanceId, accessClientId: null };
   const projectId = randomUUID();
   const taskId = randomUUID();
   const clientId = randomUUID();
   const provider = providerInstanceResponseSchema.parse({
     id: randomUUID(),
-    scope: "workspace",
+    scope: "local",
     name: "Input test",
     protocol: "openai-compatible",
     hasCredential: true,
@@ -85,7 +81,7 @@ async function fixture(
     options: { reasoningLevel: "low" },
   };
   const scope = {
-    workspaceId,
+    instanceId,
     projectId,
     taskId,
     rootDirectory: directory,
@@ -106,7 +102,7 @@ async function fixture(
   });
   const root: CodeUiSessionRecord = {
     id: taskId,
-    workspace_id: workspaceId,
+    instance_id: instanceId,
     project_id: projectId,
     root_directory: directory,
     additional_directories: [],
@@ -135,12 +131,12 @@ async function fixture(
     recoverRuntimeInputs: async () => {},
     readHumanPreferences: async () => ({}),
     find: async (workspace: string, id: string) =>
-      workspace === workspaceId && id === taskId ? structuredClone(root) : null,
+      workspace === instanceId && id === taskId ? structuredClone(root) : null,
     list: async () => [structuredClone(root)],
     listRoots: async () => [structuredClone(root)],
     listVersion: async () => Number(root.revision),
     async startRunIfCurrent(workspace, task, runId, expected, start) {
-      if (workspace !== workspaceId || task !== taskId) return false;
+      if (workspace !== instanceId || task !== taskId) return false;
       const input = root.state?.inputs?.find((entry) => entry.runId === runId);
       if (
         root.archived ||
@@ -271,7 +267,7 @@ async function fixture(
       publicBaseUrl: "http://localhost/blob",
       signingSecret: "private-input-test",
     }),
-    viewer: { resolveWorkspace: async () => ({ id: workspaceId }) },
+    localInstance: createCodeUiTestInstance(instanceId).localInstance,
     projects: {
       listProjects: async () => [
         {
@@ -289,8 +285,8 @@ async function fixture(
     },
     modelCatalog: { listCatalog: async () => [] },
     settings: {
-      getWorkspaceSettings: async () =>
-        workspaceSettingsSchema.parse({ defaultModel: "test" }),
+      getInstanceSettings: async () =>
+        instanceSettingsSchema.parse({ defaultModel: "test" }),
     },
     threads: {
       resolveOwnedSessionThread: async () => ({ threadId: `thread:${taskId}` }),
@@ -478,7 +474,7 @@ async function fixture(
   return {
     service,
     actor,
-    workspaceId,
+    instanceId,
     taskId,
     clientId,
     selection,
@@ -546,7 +542,7 @@ it("纯附件输入由真实提交ref进入共同Harness并持久为原消息附
 it("后台终态自动续跑传持久host命令身份与background来源，重复通知不新建Run", async () => {
   const host = await fixture({ backgroundReady: true });
   await host.service.getSnapshot(host.actor, host.taskId);
-  expect(await host.service.resumeTaskWork(host.workspaceId, host.taskId)).toBe(
+  expect(await host.service.resumeTaskWork(host.instanceId, host.taskId)).toBe(
     true,
   );
   await host.waitRuns(1);
@@ -566,7 +562,7 @@ it("后台终态自动续跑传持久host命令身份与background来源，重�
     },
     inputOrigin: "backgroundResult",
   });
-  expect(await host.service.resumeTaskWork(host.workspaceId, host.taskId)).toBe(
+  expect(await host.service.resumeTaskWork(host.instanceId, host.taskId)).toBe(
     true,
   );
   expect(host.runs).toHaveLength(1);
@@ -1167,7 +1163,7 @@ it("真实HTTP在已保存输入后丢失响应仍启动该轮，同命令重试
     await app.close();
   });
   await registerCodeUiRoutes(app, {
-    auth: { authenticate: async () => host.actor },
+    localAccess: { authenticate: async () => host.actor },
     service: host.service,
   });
   app.addHook("onSend", async (request, reply, payload) => {
@@ -1272,9 +1268,9 @@ it("暂停队列必须确认完整队列集合，过时clear拒绝；keep立即�
   expect(host.runs).toHaveLength(2);
 });
 
-it("同workspace其它用户不能借用已知SSE connectionId握手或读取连接身份", async () => {
+it("同实例其它接入客户端不能借用已知SSE connectionId握手或读取连接身份", async () => {
   const host = await fixture();
-  const foreign = { ...host.actor, id: randomUUID() };
+  const foreign = { ...host.actor, accessClientId: randomUUID() };
   await expect(
     host.service.transportRpc(
       foreign,

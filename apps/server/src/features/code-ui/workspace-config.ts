@@ -5,7 +5,7 @@ import {
   getZCodeAgentModeSelectOptions,
 } from "@zcode/shared";
 import { z } from "zod";
-import type { AuthenticatedUser } from "../auth/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type { CodeUiConnections } from "./connections.js";
 import type { CodeUiHostConnection } from "./host-service-rpc.js";
 import type { CodeUiProviderViews } from "./provider-settings-rpc.js";
@@ -25,7 +25,7 @@ const methods = new Set([
 ]);
 export type CodeUiWorkspaceConfigRequest = z.infer<typeof targetSchema>;
 export interface CodeUiWorkspaceConfigTarget {
-  workspaceId: string;
+  instanceId: string;
   projectId: string;
   workspacePath: string;
 }
@@ -115,12 +115,12 @@ function configState(
 export function createCodeUiWorkspaceConfigHost(deps: {
   connections: CodeUiConnections;
   resolveTarget(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     request: CodeUiWorkspaceConfigRequest,
   ): Promise<CodeUiWorkspaceConfigTarget>;
-  modelViews(actor: AuthenticatedUser): Promise<CodeUiProviderViews>;
+  modelViews(actor: LocalActor): Promise<CodeUiProviderViews>;
   readPresentation(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     target: CodeUiWorkspaceConfigTarget,
   ): Promise<CodeUiWorkspacePresentation>;
 }) {
@@ -136,16 +136,16 @@ export function createCodeUiWorkspaceConfigHost(deps: {
       request.workspaceIdentity ?? request.workspacePath,
     );
   const requireConnection = (
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     connection: CodeUiHostConnection,
   ) => {
     deps.connections.require(
-      connection.workspaceId,
+      connection.instanceId,
       connection.connectionId,
       true,
-      actor.id,
+      actor.accessClientId,
     );
-    if (connection.userId !== actor.id)
+    if (connection.instanceId !== actor.instanceId)
       throw new CodeUiRepositoryError(
         "not_found",
         "配置订阅连接不属于当前用户。",
@@ -158,7 +158,7 @@ export function createCodeUiWorkspaceConfigHost(deps: {
   ) => {
     const subscriptionId = z.string().min(1).parse(request.subscriptionId);
     const subscription = deps.connections.requireSubscription(
-      connection.workspaceId,
+      connection.instanceId,
       connection.connectionId,
       subscriptionId,
       topicFor(request),
@@ -174,14 +174,14 @@ export function createCodeUiWorkspaceConfigHost(deps: {
     return subscriptionId;
   };
   const resolveTarget = async (
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     request: CodeUiWorkspaceConfigRequest,
     connection: CodeUiHostConnection,
   ) => {
     requireConnection(actor, connection);
     const target = await deps.resolveTarget(actor, request);
     if (
-      target.workspaceId !== connection.workspaceId ||
+      target.instanceId !== connection.instanceId ||
       target.workspacePath !== request.workspacePath ||
       (request.projectId && request.projectId !== target.projectId)
     )
@@ -192,20 +192,20 @@ export function createCodeUiWorkspaceConfigHost(deps: {
     return target;
   };
   const read = (
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     request: CodeUiWorkspaceConfigRequest,
     connection: CodeUiHostConnection,
     expected: CodeUiWorkspaceConfigTarget,
   ) => {
     const key = JSON.stringify([
-      connection.workspaceId,
-      actor.id,
+      connection.instanceId,
+      actor.instanceId,
       expected.projectId,
       topicFor(request),
     ]);
     const produce = async () => {
       for (;;) {
-        const refreshRevision = refreshRevisions.get(connection.workspaceId);
+        const refreshRevision = refreshRevisions.get(connection.instanceId);
         const before = await resolveTarget(actor, request, connection);
         if (before.projectId !== expected.projectId)
           throw new CodeUiRepositoryError(
@@ -222,7 +222,7 @@ export function createCodeUiWorkspaceConfigHost(deps: {
             "not_found",
             "配置读取期间Project身份已改变。",
           );
-        if (refreshRevision !== refreshRevisions.get(connection.workspaceId))
+        if (refreshRevision !== refreshRevisions.get(connection.instanceId))
           continue;
         const config = configState(views, presentation);
         const fingerprint = createHash("sha256")
@@ -256,7 +256,7 @@ export function createCodeUiWorkspaceConfigHost(deps: {
   };
   return {
     async call(
-      actor: AuthenticatedUser,
+      actor: LocalActor,
       method: string,
       args: unknown[],
       connection: CodeUiHostConnection,
@@ -266,7 +266,7 @@ export function createCodeUiWorkspaceConfigHost(deps: {
       requireConnection(actor, connection);
       if (method === "unsubscribeWorkspaceConfigV4") {
         deps.connections.unsubscribe(
-          connection.workspaceId,
+          connection.instanceId,
           connection.connectionId,
           requireOwnedSubscription(request, connection),
         );
@@ -276,7 +276,7 @@ export function createCodeUiWorkspaceConfigHost(deps: {
       const topic = topicFor(request);
       if (method === "subscribeWorkspaceConfigV4") {
         return deps.connections.subscribe(
-          connection.workspaceId,
+          connection.instanceId,
           connection.connectionId,
           {
             topic,
@@ -301,19 +301,19 @@ export function createCodeUiWorkspaceConfigHost(deps: {
             : { forceSnapshot: request.forceSnapshot }),
         });
         return deps.connections.resync(
-          connection.workspaceId,
+          connection.instanceId,
           connection.connectionId,
           params,
         );
       }
       return null;
     },
-    refresh(workspaceId: string, projectId?: string) {
+    refresh(instanceId: string, projectId?: string) {
       refreshRevisions.set(
-        workspaceId,
-        (refreshRevisions.get(workspaceId) ?? 0) + 1,
+        instanceId,
+        (refreshRevisions.get(instanceId) ?? 0) + 1,
       );
-      return deps.connections.refreshWorkspaceConfig(workspaceId, projectId);
+      return deps.connections.refreshWorkspaceConfig(instanceId, projectId);
     },
   };
 }

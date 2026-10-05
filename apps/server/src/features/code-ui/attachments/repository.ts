@@ -11,8 +11,8 @@ import {
 } from "./types.js";
 
 type AttachmentRow = SqlRow & { record: CodeAttachmentRecord };
-const TOMBSTONE_RECORD = `jsonb_build_object('status', 'aborted', 'key', upload_key, 'workspaceId', workspace_id,
-  'projectId', project_id, 'taskId', task_id, 'sessionId', session_id, 'userId', user_id)`;
+const TOMBSTONE_RECORD = `jsonb_build_object('status', 'aborted', 'key', upload_key, 'instanceId', instance_id,
+  'projectId', project_id, 'taskId', task_id, 'sessionId', session_id, 'createdByClientId', created_by_client_id)`;
 
 export function abortedAttachment(
   record: CodeAttachmentRecord,
@@ -20,11 +20,11 @@ export function abortedAttachment(
   return {
     status: "aborted",
     key: record.key,
-    workspaceId: record.workspaceId,
+    instanceId: record.instanceId,
     projectId: record.projectId,
     taskId: record.taskId,
     sessionId: record.sessionId,
-    userId: record.userId,
+    createdByClientId: record.createdByClientId,
   };
 }
 
@@ -56,8 +56,8 @@ export function createCodeAttachmentRepository(
         );
       await persistence.execute(
         `update public.code_attachments set status = 'aborted', connection_id = null, runtime_id = null,
-        record = jsonb_build_object('status', 'aborted', 'key', upload_key, 'workspaceId', workspace_id,
-          'projectId', project_id, 'taskId', task_id, 'sessionId', session_id, 'userId', user_id)
+        record = jsonb_build_object('status', 'aborted', 'key', upload_key, 'instanceId', instance_id,
+          'projectId', project_id, 'taskId', task_id, 'sessionId', session_id, 'createdByClientId', created_by_client_id)
         where execution_host_id = $1 and status = 'staging' and runtime_id <> $2`,
         [executionHostId, runtimeId],
       );
@@ -65,22 +65,21 @@ export function createCodeAttachmentRepository(
     async transact(session, key, operation) {
       requireHostLease();
       return persistence.transaction(async (tx) => {
-        const scoped = tx.forWorkspace(session.workspaceId);
+        const scoped = tx.forInstance(session.instanceId);
         // 固定散列种子属于 SQL 锁算法，不是运行时限额。
         await scoped.query(
-          "select pg_advisory_xact_lock(hashtextextended(:workspace::text || '/code-attachment/' || $1, 0))",
+          "select pg_advisory_xact_lock(hashtextextended(:instance::text || '/code-attachment/' || $1, 0))",
           [key],
         );
         const row = await scoped.queryOne<AttachmentRow>(
-          "select record from public.code_attachments where workspace_id = :workspace and upload_key = $1 for update",
+          "select record from public.code_attachments where instance_id = :instance and upload_key = $1 for update",
           [key],
         );
         if (
           row &&
           (row.record.projectId !== session.projectId ||
             row.record.taskId !== session.taskId ||
-            row.record.sessionId !== session.sessionId ||
-            row.record.userId !== session.userId)
+            row.record.sessionId !== session.sessionId)
         )
           throw new CodeAttachmentError(
             "fault.attachment.notAuthorized",
@@ -93,9 +92,9 @@ export function createCodeAttachmentRepository(
             requireHostLease();
             const task = await scoped.queryOne(
               `select t.id from public.code_ui_sessions t
-              join public.code_ui_sessions s on s.root_session_id = t.id and s.workspace_id = t.workspace_id
-              join public.projects p on p.id = t.project_id and p.workspace_id = t.workspace_id
-              where t.workspace_id = :workspace and s.workspace_id = :workspace and p.workspace_id = :workspace
+              join public.code_ui_sessions s on s.root_session_id = t.id and s.instance_id = t.instance_id
+              join public.projects p on p.id = t.project_id and p.instance_id = t.instance_id
+              where t.instance_id = :instance and s.instance_id = :instance and p.instance_id = :instance
                 and t.id = $1 and t.project_id = $2 and s.id = $3 and s.deleted_at is null and s.archived = false
                 and t.parent_session_id is null and t.deleted_at is null and t.archived = false
                 and t.execution_state = 'ready' and t.scope_generation = $4 and t.branch_generation = $5
@@ -120,11 +119,10 @@ export function createCodeAttachmentRepository(
             if (record.status !== "aborted") requireHostLease();
             if (
               record.key !== key ||
-              record.workspaceId !== session.workspaceId ||
+              record.instanceId !== session.instanceId ||
               record.projectId !== session.projectId ||
               record.taskId !== session.taskId ||
-              record.sessionId !== session.sessionId ||
-              record.userId !== session.userId
+              record.sessionId !== session.sessionId
             )
               throw new CodeAttachmentError(
                 "fault.attachment.notAuthorized",
@@ -133,15 +131,15 @@ export function createCodeAttachmentRepository(
               );
             await scoped.execute(
               `insert into public.code_attachments
-              (workspace_id, project_id, task_id, session_id, user_id, upload_key, status, execution_host_id, connection_id, runtime_id, record)
-              values (:workspace, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
-              on conflict (workspace_id, upload_key) do update set status = excluded.status,
+              (instance_id, project_id, task_id, session_id, created_by_client_id, upload_key, status, execution_host_id, connection_id, runtime_id, record)
+              values (:instance, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+              on conflict (instance_id, upload_key) do update set status = excluded.status,
                 connection_id = excluded.connection_id, runtime_id = excluded.runtime_id, record = excluded.record`,
               [
                 record.projectId,
                 record.taskId,
                 record.sessionId,
-                record.userId,
+                record.createdByClientId,
                 key,
                 record.status,
                 executionHostId,
@@ -157,20 +155,20 @@ export function createCodeAttachmentRepository(
     },
     async findCommitted(session, ref) {
       const row = await persistence
-        .forWorkspace(session.workspaceId)
+        .forInstance(session.instanceId)
         .queryOne<AttachmentRow>(
-          `select record from public.code_attachments where workspace_id = :workspace
+          `select record from public.code_attachments where instance_id = :instance
           and project_id = $1 and task_id = $2 and session_id = $3 and status = 'committed' and record->>'ref' = $4`,
           [session.projectId, session.taskId, session.sessionId, ref],
         );
       return row?.record.status === "committed" ? row.record : null;
     },
-    async abortConnection(workspaceId, connectionId, runtimeId) {
-      await persistence.forWorkspace(workspaceId).execute(
+    async abortConnection(instanceId, connectionId, runtimeId) {
+      await persistence.forInstance(instanceId).execute(
         `update public.code_attachments set status = 'aborted', connection_id = null, runtime_id = null,
-        record = jsonb_build_object('status', 'aborted', 'key', upload_key, 'workspaceId', workspace_id,
-          'projectId', project_id, 'taskId', task_id, 'sessionId', session_id, 'userId', user_id)
-        where workspace_id = :workspace and execution_host_id = $1 and connection_id = $2 and runtime_id = $3 and status = 'staging'`,
+        record = jsonb_build_object('status', 'aborted', 'key', upload_key, 'instanceId', instance_id,
+          'projectId', project_id, 'taskId', task_id, 'sessionId', session_id, 'createdByClientId', created_by_client_id)
+        where instance_id = :instance and execution_host_id = $1 and connection_id = $2 and runtime_id = $3 and status = 'staging'`,
         [executionHostId, connectionId, runtimeId],
       );
     },
@@ -179,10 +177,10 @@ export function createCodeAttachmentRepository(
       hostLease = null;
       await lease?.release();
     },
-    async releaseTask(workspaceId, taskId, runtimeId) {
-      await persistence.forWorkspace(workspaceId).execute(
+    async releaseTask(instanceId, taskId, runtimeId) {
+      await persistence.forInstance(instanceId).execute(
         `update public.code_attachments set status = 'aborted', connection_id = null, runtime_id = null,
-        record = ${TOMBSTONE_RECORD} where workspace_id = :workspace and task_id = $1 and execution_host_id = $2 and runtime_id = $3 and status = 'staging'`,
+        record = ${TOMBSTONE_RECORD} where instance_id = :instance and task_id = $1 and execution_host_id = $2 and runtime_id = $3 and status = 'staging'`,
         [taskId, executionHostId, runtimeId],
       );
     },
@@ -195,11 +193,11 @@ export function createCodeAttachmentRepository(
           400,
         );
       await persistence.transaction(async (tx) => {
-        const scoped = tx.forWorkspace(session.workspaceId);
+        const scoped = tx.forInstance(session.instanceId);
         const task = await scoped.queryOne(
           `select t.id from public.code_ui_sessions t
-          join public.projects p on p.id = t.project_id and p.workspace_id = t.workspace_id
-          where t.workspace_id = :workspace and p.workspace_id = :workspace and t.id = $1 and t.project_id = $2
+          join public.projects p on p.id = t.project_id and p.instance_id = t.instance_id
+          where t.instance_id = :instance and p.instance_id = :instance and t.id = $1 and t.project_id = $2
             and t.parent_session_id is null and t.scope_generation = $3 and t.execution_state = 'revoking'
             and t.deleted_at is null and p.kind = 'code' for update of t`,
           [session.taskId, session.projectId, expectedScopeGeneration],
@@ -213,7 +211,7 @@ export function createCodeAttachmentRepository(
           requireHostLease();
           const rows = await scoped.query<AttachmentRow>(
             `select record from public.code_attachments
-            where workspace_id = :workspace and project_id = $1 and task_id = $2 and status = 'committed'
+            where instance_id = :instance and project_id = $1 and task_id = $2 and status = 'committed'
             order by upload_key limit $3 for update`,
             [session.projectId, session.taskId, batchSize],
           );
@@ -230,13 +228,13 @@ export function createCodeAttachmentRepository(
           requireHostLease();
           await scoped.execute(
             `update public.code_attachments set status = 'aborted', connection_id = null, runtime_id = null,
-            record = ${TOMBSTONE_RECORD} where workspace_id = :workspace and task_id = $1 and upload_key = any($2::text[])`,
+            record = ${TOMBSTONE_RECORD} where instance_id = :instance and task_id = $1 and upload_key = any($2::text[])`,
             [session.taskId, records.map((record) => record.key)],
           );
         }
         await scoped.execute(
           `update public.code_attachments set status = 'aborted', connection_id = null, runtime_id = null,
-          record = ${TOMBSTONE_RECORD} where workspace_id = :workspace and task_id = $1 and status = 'staging'`,
+          record = ${TOMBSTONE_RECORD} where instance_id = :instance and task_id = $1 and status = 'staging'`,
           [session.taskId],
         );
         requireHostLease();

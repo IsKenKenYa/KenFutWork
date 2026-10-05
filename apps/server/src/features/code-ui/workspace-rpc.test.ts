@@ -16,16 +16,11 @@ import {
   type ProjectSummary,
 } from "@kenfutwork/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AuthenticatedUser } from "../auth/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type { ProjectService } from "../projects/project-service.js";
 import { createHumanWorkspaceRpc } from "./workspace-rpc.js";
 
-const actor: AuthenticatedUser = {
-  id: randomUUID(),
-  email: "human@example.test",
-  accessToken: "private",
-  userMetadata: {},
-};
+const actor: LocalActor = { instanceId: randomUUID(), accessClientId: null };
 const temporary: string[] = [];
 afterEach(async () => {
   await Promise.all(
@@ -43,7 +38,7 @@ async function world() {
   let preferences: Record<string, unknown> = {};
   const createProject = vi.fn(
     async (
-      _actor: AuthenticatedUser,
+      _actor: LocalActor,
       input: ProjectCreateRequest,
     ): Promise<ProjectSummary> => {
       const id = randomUUID();
@@ -63,12 +58,7 @@ async function world() {
         description: null,
         workDir: path,
         additionalDirectories: [],
-        workspace: {
-          id: randomUUID(),
-          name: "人类工作区",
-          type: "personal",
-          ownerUserId: actor.id,
-        },
+        instanceId: actor.instanceId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -87,7 +77,7 @@ async function world() {
     createHumanWorkspaceRpc({
       projects: { createProject } as unknown as ProjectService,
       preferences: preferencesApi,
-      workspaceId: async () => "workspace",
+      instanceId: async () => "workspace",
       listWorkspaces: async () => workspaces,
       maxEntries: async () => 5,
     });

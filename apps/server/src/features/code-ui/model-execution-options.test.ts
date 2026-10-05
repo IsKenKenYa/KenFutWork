@@ -15,7 +15,7 @@ function fixture(
   };
   const instance = providerInstanceResponseSchema.parse({
     id: randomUUID(),
-    scope: "workspace",
+    scope: "local",
     name: "实际实例",
     protocol: "openai-compatible",
     hasCredential: true,
@@ -147,7 +147,7 @@ it("原DSL非法源码或两份map冲突不发出部分请求参数", () => {
 it("Gemini默认不编造thinking预算，声明的Gemini3档位才使用真实thinkingLevel", () => {
   const instance = providerInstanceResponseSchema.parse({
     id: randomUUID(),
-    scope: "workspace",
+    scope: "local",
     name: "Google",
     protocol: "gemini",
     hasCredential: true,

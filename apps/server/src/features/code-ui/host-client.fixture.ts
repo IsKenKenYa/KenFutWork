@@ -3,6 +3,7 @@ import { expect } from "vitest";
 export function createCodeUiTestClient(input: {
   baseUrl: string;
   origin: string;
+  headers?: Readonly<Record<string, string>>;
 }) {
   const base = new URL(input.baseUrl).toString().replace(/\/$/u, "");
   const origin = new URL(input.origin).origin;
@@ -20,6 +21,7 @@ export function createCodeUiTestClient(input: {
         ...(body === undefined ? {} : { "content-type": "application/json" }),
         connection: "close",
         origin,
+        ...input.headers,
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
@@ -37,7 +39,7 @@ export function createCodeUiTestClient(input: {
     streams.push(controller);
     ownedStreams.add(controller);
     const response = await fetch(`${base}/api/code-ui/events`, {
-      headers: { origin, connection: "close" },
+      headers: { origin, connection: "close", ...input.headers },
       signal: controller.signal,
     });
     expect(response.status).toBe(200);
@@ -105,26 +107,9 @@ export function createCodeUiTestClient(input: {
 }
 export type CodeUiTestClient = ReturnType<typeof createCodeUiTestClient>;
 
-function explicitLegacyClient() {
-  const baseUrl = process.env.CODE_UI_TEST_BASE;
-  if (!baseUrl)
-    throw new Error(
-      "旧HTTP集成必须显式指定CODE_UI_TEST_BASE；独占回归请使用createCodeUiHttpFixture。",
-    );
-  return createCodeUiTestClient({
-    baseUrl,
-    origin: process.env.CODE_UI_TEST_ORIGIN ?? "http://localhost:3000",
-  });
-}
-/** 旧外部smoke仅在显式配置目标时可用；没有共享3001默认值。 */
-export const request: CodeUiTestClient["request"] = (...args) =>
-  explicitLegacyClient().request(...args);
-export const openCodeStream: CodeUiTestClient["openCodeStream"] = (...args) =>
-  explicitLegacyClient().openCodeStream(...args);
-
 /** 公共 SSE 多路服务帧按原 channel/事件身份选取，不能把其它服务通知当成本场景帧。 */
 export async function nextHostServiceEvent(
-  stream: Awaited<ReturnType<typeof openCodeStream>>,
+  stream: Awaited<ReturnType<CodeUiTestClient["openCodeStream"]>>,
   service: string,
   name: string,
   scope?: { workspacePath?: string; taskId?: string },

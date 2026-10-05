@@ -11,7 +11,7 @@ import {
   parseLocalWorkspaceIdentity,
 } from "@zcode/shared";
 import { z } from "zod";
-import type { AuthenticatedUser } from "../auth/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type { ProjectService } from "../projects/project-service.js";
 import { validateWorkDir } from "../projects/work-dir.js";
 import type { CodeUiRepository } from "./repository.js";
@@ -179,7 +179,7 @@ function applyPreferenceFocus(
 
 export interface HumanWorkspaceRpc {
   call(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     service: string,
     method: string,
     args: unknown[],
@@ -193,23 +193,23 @@ export function createHumanWorkspaceRpc(options: {
     CodeUiRepository,
     "readHumanPreferences" | "updateHumanPreferences"
   >;
-  workspaceId: (actor: AuthenticatedUser) => Promise<string>;
-  listWorkspaces: (actor: AuthenticatedUser) => Promise<CodeUiWorkspace[]>;
+  instanceId: (actor: LocalActor) => Promise<string>;
+  listWorkspaces: (actor: LocalActor) => Promise<CodeUiWorkspace[]>;
   resolveTaskPreference?: (
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     taskId: string,
   ) => Promise<{ projectId: string; rootDirectory: string } | null>;
-  maxEntries: (actor: AuthenticatedUser) => Promise<number>;
+  maxEntries: (actor: LocalActor) => Promise<number>;
 }): HumanWorkspaceRpc {
   const opening = new Map<string, Promise<CodeUiWorkspace>>();
   const conversationOpening = new Map<string, Promise<ConversationWorkspace>>();
-  const ensureConversationWorkspace = async (actor: AuthenticatedUser) => {
-    const workspaceId = await options.workspaceId(actor);
-    const current = conversationOpening.get(workspaceId);
+  const ensureConversationWorkspace = async (actor: LocalActor) => {
+    const instanceId = await options.instanceId(actor);
+    const current = conversationOpening.get(instanceId);
     if (current) return current;
     const ensuring = (async (): Promise<ConversationWorkspace> => {
       const preferences =
-        await options.preferences.readHumanPreferences(workspaceId);
+        await options.preferences.readHumanPreferences(instanceId);
       const savedId = preferences.defaultConversationProjectId;
       const existing = (await options.listWorkspaces(actor)).find(
         (project) => project.projectId === savedId,
@@ -236,7 +236,7 @@ export function createHumanWorkspaceRpc(options: {
         additionalDirectories: created.additionalDirectories,
       });
       const saved = await options.preferences.updateHumanPreferences(
-        workspaceId,
+        instanceId,
         { defaultConversationProjectId: project.projectId },
         { referencedProjectIds: [project.projectId] },
       );
@@ -247,16 +247,16 @@ export function createHumanWorkspaceRpc(options: {
         );
       return { ...project, created: true, workspacePurpose: "conversation" };
     })();
-    conversationOpening.set(workspaceId, ensuring);
+    conversationOpening.set(instanceId, ensuring);
     try {
       return await ensuring;
     } finally {
-      if (conversationOpening.get(workspaceId) === ensuring)
-        conversationOpening.delete(workspaceId);
+      if (conversationOpening.get(instanceId) === ensuring)
+        conversationOpening.delete(instanceId);
     }
   };
   const preferenceOwners = async (
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     workspaces: CodeUiWorkspace[],
     focus: Record<string, string> | undefined,
   ) => {
@@ -292,7 +292,7 @@ export function createHumanWorkspaceRpc(options: {
     return owners;
   };
   const openProject = async (
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     inputPath: string,
     projectId?: string,
   ): Promise<CodeUiWorkspace> => {
@@ -301,8 +301,8 @@ export function createHumanWorkspaceRpc(options: {
     const path = await realpath(inputPath);
     if (!(await stat(path)).isDirectory())
       throw new CodeUiRepositoryError("not_found", "选中的路径不是目录。");
-    const workspaceId = await options.workspaceId(actor);
-    const key = `${workspaceId}:${projectId ?? ""}:${path}`;
+    const instanceId = await options.instanceId(actor);
+    const key = `${instanceId}:${projectId ?? ""}:${path}`;
     const existing = opening.get(key);
     if (existing) return existing;
     const openingProject = (async () => {
@@ -350,13 +350,11 @@ export function createHumanWorkspaceRpc(options: {
     }
   };
   const settingsFor = async (
-    actor: AuthenticatedUser,
+    actor: LocalActor,
   ): Promise<z.infer<typeof appSettingsSchema>> => {
     const [workspaces, stored] = await Promise.all([
       options.listWorkspaces(actor),
-      options.preferences.readHumanPreferences(
-        await options.workspaceId(actor),
-      ),
+      options.preferences.readHumanPreferences(await options.instanceId(actor)),
     ]);
     const settings = appSettingsSchema.parse(stored);
     const owners = await preferenceOwners(
@@ -479,7 +477,7 @@ export function createHumanWorkspaceRpc(options: {
         const parsed = appSettingsSchema.parse({
           ...appSettingsSchema.parse(
             await options.preferences.readHumanPreferences(
-              await options.workspaceId(actor),
+              await options.instanceId(actor),
             ),
           ),
           ...patch,
@@ -551,7 +549,7 @@ export function createHumanWorkspaceRpc(options: {
             parsed.recentProjects,
           );
         const saved = await options.preferences.updateHumanPreferences(
-          await options.workspaceId(actor),
+          await options.instanceId(actor),
           normalized,
           {
             referencedProjectIds: referencedKeys.flatMap((key) => {

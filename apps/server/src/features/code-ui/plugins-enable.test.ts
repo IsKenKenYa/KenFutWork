@@ -20,14 +20,11 @@ it("原setPluginEnabled持久停用并收回真实工具，恢复启用仍执行
   });
   const input = { ...f.target, pluginId: f.bundled.id, enabled: false };
   await expect(
-    f.host.call(f.reader, "setPluginEnabled", input),
+    f.host.call(f.foreignActor, "setPluginEnabled", input),
   ).rejects.toMatchObject({
-    code: "forbidden",
+    code: "instance_forbidden",
     statusCode: 403,
   });
-  await expect(
-    f.withoutAdmin.call(f.actor, "setPluginEnabled", input),
-  ).rejects.toThrow("管理员服务");
   await expect(
     f.host.call(f.actor, "setPluginEnabled", { ...input, scope: "workspace" }),
   ).rejects.toThrow("项目层插件");
@@ -45,7 +42,7 @@ it("原setPluginEnabled持久停用并收回真实工具，恢复启用仍执行
   expect(f.tools.get("clock_now")).toBeUndefined();
   expect(
     zcodePluginsOverviewResultSchema.parse(
-      (await f.host.call(f.reader, "getPluginsOverview", {}))?.result,
+      (await f.host.call(f.actor, "getPluginsOverview", {}))?.result,
     ).installedPlugins,
   ).toMatchObject([{ id: f.bundled.id, enabled: false }]);
   const enabled = zcodePluginsSetEnabledResultSchema.parse(
@@ -62,7 +59,7 @@ it("原setPluginEnabled持久停用并收回真实工具，恢复启用仍执行
   });
   const clock = f.tools.get("clock_now");
   if (!clock) throw new Error("恢复启用必须重新提供原clock_now工具");
-  const result = await clock.execute({}, { workspaceId: f.workspaceId });
+  const result = await clock.execute({}, { instanceId: f.instanceId });
   expect(result).toMatchObject({
     iso: expect.any(String),
     epochMs: expect.any(Number),

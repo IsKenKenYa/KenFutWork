@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { open, readdir, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import type { CodeUiViewerScope, WorkspaceSettings } from "@kenfutwork/shared";
+import type { CodeUiViewerScope, InstanceSettings } from "@kenfutwork/shared";
 import { codeUiViewerScopeSchema } from "@kenfutwork/shared";
 import type { WorkspaceFileEntry } from "@zcode/shared";
 import { packWorkspaceFileEntries } from "@zcode/shared/workspaceFileEntriesCodec";
@@ -33,7 +33,7 @@ const missing = (error: unknown) =>
       error.code === "ENOENT",
   );
 type ViewerLimits = Pick<
-  WorkspaceSettings,
+  InstanceSettings,
   "codeReadMaxBytes" | "codeSearchMaxResults" | "codeSearchMaxBytes"
 >;
 const indexParamsSchema = z.object({

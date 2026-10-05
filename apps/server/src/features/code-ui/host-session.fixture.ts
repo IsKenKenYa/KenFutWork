@@ -6,14 +6,12 @@ import type { ModelSelection } from "@zcode/provider";
 import { modelSelectionSchema } from "@zcode/shared";
 import { expect } from "vitest";
 import { z } from "zod";
-import {
-  type CodeUiTestClient,
-  openCodeStream,
-  request,
-} from "./host-client.fixture.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
+import type { LocalActor } from "../local-instance/types.js";
+import type { CodeUiTestClient } from "./host-client.fixture.js";
 
 async function bindSession(
-  stream: Awaited<ReturnType<typeof openCodeStream>>,
+  stream: Awaited<ReturnType<CodeUiTestClient["openCodeStream"]>>,
   workspacePath: string,
   modelSelection: ModelSelection,
   projectId: string,
@@ -72,11 +70,9 @@ async function bindSession(
 
 export async function createCodeSessionFixture(
   baseUrl: string,
-  options?: { client: Pick<CodeUiTestClient, "request" | "openCodeStream"> },
+  options: { client: Pick<CodeUiTestClient, "request" | "openCodeStream"> },
 ) {
-  const transport = options?.client ?? { request, openCodeStream };
-  const viewer = await transport.request("/api/viewer");
-  expect(viewer.status, JSON.stringify(viewer.body)).toBe(200);
+  const transport = options.client;
   const dir = await mkdtemp(join(tmpdir(), "code-ui-stop-"));
   const streams: AbortController[] = [];
   let projectId = "";
@@ -171,4 +167,18 @@ export async function createCodeSessionFixture(
     await dispose();
     throw error;
   }
+}
+
+/** 单元夹具复用真实实例服务，Actor 不包含账户/邮箱/令牌别名。 */
+export function createCodeUiTestInstance(
+  instanceId: string,
+  accessClientId: string | null = null,
+  dataDir = tmpdir(),
+) {
+  const actor: LocalActor = Object.freeze({ instanceId, accessClientId });
+  const localInstance = createLocalInstanceService({
+    repository: { ensure: async () => instanceId },
+    dataDir,
+  });
+  return { actor, localInstance };
 }

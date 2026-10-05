@@ -1,7 +1,7 @@
 import { codeUiViewerScopeSchema } from "@kenfutwork/shared";
 import type { GitWorkspaceRepositoryInfo } from "@zcode/shared";
 import { z } from "zod";
-import type { AuthenticatedUser } from "../auth/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import {
   CodeUiHostGitRepository,
   type CodeUiHostGitSession,
@@ -42,7 +42,7 @@ const unavailableMethods = new Set([
 ]);
 export interface CodeUiHostGitRpc {
   call(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     method: string,
     args: unknown[],
     connection: CodeUiHostConnection,
@@ -152,11 +152,11 @@ async function dispatch(
 /** Task只读Git纵切片；写操作在真实实现获批前明确拒绝，不返回假成功。 */
 export function createCodeUiHostGitRpc(deps: {
   resolveTarget(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     request: CodeUiHostTargetRequest,
   ): Promise<CodeUiHostTarget>;
   openSession(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     target: CodeUiHostTarget,
     operation: "read",
   ): Promise<CodeUiHostGitSession>;
@@ -164,13 +164,16 @@ export function createCodeUiHostGitRpc(deps: {
   return {
     async call(actor, method, args, connection) {
       if (!methods.has(method) && !unavailableMethods.has(method)) return null;
-      if (!connection.connectionId || connection.userId !== actor.id)
-        throw new Error("Git连接身份不属于当前用户。");
+      if (
+        !connection.connectionId ||
+        connection.instanceId !== actor.instanceId
+      )
+        throw new Error("Git连接身份不属于当前实例。");
       const target = await deps.resolveTarget(
         actor,
         targetParams.parse(args[0]),
       );
-      if (target.workspaceId !== connection.workspaceId)
+      if (target.instanceId !== connection.instanceId)
         throw new Error("Git工作区与可信连接身份不匹配。");
       if (target.viewerScope.kind !== "task")
         throw new Error(

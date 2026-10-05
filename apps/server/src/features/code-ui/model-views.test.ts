@@ -6,7 +6,7 @@ import { buildCodeUiModelViews } from "./model-views.js";
 function provider(input: Record<string, unknown> = {}) {
   return providerInstanceResponseSchema.parse({
     id: randomUUID(),
-    scope: "workspace",
+    scope: "local",
     name: "Google",
     protocol: "gemini",
     hasCredential: true,

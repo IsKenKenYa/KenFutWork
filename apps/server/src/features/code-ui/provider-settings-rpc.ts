@@ -10,7 +10,7 @@ import {
 } from "@zcode/shared";
 import { modelConfigDataSchema } from "@zcode/shared/model-config";
 import { z } from "zod";
-import type { AuthenticatedUser } from "../auth/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type { ModelCatalogService } from "../model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../model-providers/model-provider-service.js";
 import type { SettingsService } from "../settings/settings-service.js";
@@ -33,11 +33,11 @@ import { CodeUiRepositoryError } from "./repository.js";
 export type CodeUiProviderViews = ReturnType<typeof buildCodeUiModelViews>;
 export interface CodeUiProviderSettingsRpc {
   readViews(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     selection?: ModelSelection | null,
   ): Promise<CodeUiProviderViews>;
   call(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     service: string,
     method: string,
     args: unknown[],
@@ -46,6 +46,7 @@ export interface CodeUiProviderSettingsRpc {
 export interface CodeUiProviderSettingsRpcDeps {
   modelProviders: Pick<
     ModelProviderService,
+    | "readCredential"
     | "listInstances"
     | "listProviderPresets"
     | "createInstance"
@@ -53,18 +54,15 @@ export interface CodeUiProviderSettingsRpcDeps {
     | "deleteInstance"
   >;
   modelCatalog: Pick<ModelCatalogService, "listCatalog">;
-  settings: Pick<SettingsService, "getWorkspaceSettings">;
-  workspaceId(actor: AuthenticatedUser): Promise<string>;
+  settings: Pick<SettingsService, "getInstanceSettings">;
+  instanceId(actor: LocalActor): Promise<string>;
   preferences: Pick<
     CodeUiRepository,
     "readHumanPreferences" | "updateHumanPreferences"
   >;
-  notifyViews(
-    actor: AuthenticatedUser,
-    views: CodeUiProviderViews,
-  ): Promise<void>;
+  notifyViews(actor: LocalActor, views: CodeUiProviderViews): Promise<void>;
   testConnectivity(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     target: {
       providerId: string;
       modelId: string;
@@ -111,15 +109,15 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
   }
 
   async readViews(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     selection?: ModelSelection | null,
   ): Promise<CodeUiProviderViews> {
-    const workspaceId = await this.deps.workspaceId(actor);
+    const instanceId = await this.deps.instanceId(actor);
     const [instances, catalog, settings, preferences] = await Promise.all([
       this.deps.modelProviders.listInstances(actor),
       this.deps.modelCatalog.listCatalog(actor),
-      this.deps.settings.getWorkspaceSettings(actor, workspaceId),
-      this.deps.preferences.readHumanPreferences(workspaceId),
+      this.deps.settings.getInstanceSettings(actor, instanceId),
+      this.deps.preferences.readHumanPreferences(instanceId),
     ]);
     const order = z
       .array(z.string())
@@ -137,18 +135,46 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
     const fingerprint = createHash("sha256")
       .update(JSON.stringify(publicViews))
       .digest("hex");
-    const previous = this.revisions.get(workspaceId);
+    const previous = this.revisions.get(instanceId);
     const revision = previous
       ? previous.revision + Number(previous.fingerprint !== fingerprint)
       : 0;
-    this.revisions.set(workspaceId, { fingerprint, revision });
+    this.revisions.set(instanceId, { fingerprint, revision });
     return buildCodeUiModelViews({
       ...base,
       revision,
       ...(selection === undefined ? {} : { selection }),
     });
   }
-  private async load(actor: AuthenticatedUser, id: string) {
+  private async settingsView(actor: LocalActor) {
+    const { settings } = await this.readViews(actor);
+    const providers = await Promise.all(
+      settings.providers.map(async (provider) => {
+        const key = await this.deps.modelProviders.readCredential(
+          actor,
+          provider.providerId,
+        );
+        const includeKey = (config: typeof provider.effectiveConfig) => ({
+          ...config,
+          access: {
+            ...config.access,
+            type: "api-key" as const,
+            ...(key === null ? {} : { apiKey: key }),
+          },
+        });
+        return {
+          ...provider,
+          effectiveConfig: includeKey(provider.effectiveConfig),
+          personalConfig: includeKey(
+            provider.personalConfig ?? provider.effectiveConfig,
+          ),
+        };
+      }),
+    );
+    return { ...settings, providers };
+  }
+
+  private async load(actor: LocalActor, id: string) {
     const instance = (await this.deps.modelProviders.listInstances(actor)).find(
       (entry) => entry.id === id && isCodeChatProtocol(entry.protocol),
     );
@@ -160,7 +186,7 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
     return instance;
   }
   private async save(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     instance: ProviderInstanceResponse,
     patch: ProviderInstanceUpdateRequest,
   ) {
@@ -170,28 +196,28 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
     });
   }
 
-  private async afterMutation(actor: AuthenticatedUser) {
+  private async afterMutation(actor: LocalActor) {
     const views = await this.readViews(actor);
     await Promise.allSettled([this.deps.notifyViews(actor, views)]);
-    return views.settings;
+    return this.settingsView(actor);
   }
   private async serialized<T>(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     operation: () => Promise<T>,
   ): Promise<T> {
-    const workspaceId = await this.deps.workspaceId(actor);
-    const previous = this.mutations.get(workspaceId) ?? Promise.resolve();
+    const instanceId = await this.deps.instanceId(actor);
+    const previous = this.mutations.get(instanceId) ?? Promise.resolve();
     const pending = previous.then(operation, operation);
-    this.mutations.set(workspaceId, pending);
+    this.mutations.set(instanceId, pending);
     try {
       return await pending;
     } finally {
-      if (this.mutations.get(workspaceId) === pending)
-        this.mutations.delete(workspaceId);
+      if (this.mutations.get(instanceId) === pending)
+        this.mutations.delete(instanceId);
     }
   }
 
-  private async create(actor: AuthenticatedUser, value: unknown) {
+  private async create(actor: LocalActor, value: unknown) {
     const input = z
       .object({
         templateId: z.string().optional(),
@@ -259,7 +285,7 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
     });
     return { providerId: created.id, view: await this.afterMutation(actor) };
   }
-  private async saveOverlay(actor: AuthenticatedUser, args: unknown[]) {
+  private async saveOverlay(actor: LocalActor, args: unknown[]) {
     const id = providerId.parse(args[0]);
     const config = parseProviderConfig(args[1]).toJSON();
     const metadata = z
@@ -330,7 +356,7 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
     });
     return this.afterMutation(actor);
   }
-  private async reorder(actor: AuthenticatedUser, value: unknown) {
+  private async reorder(actor: LocalActor, value: unknown) {
     const ids = z.array(providerId).parse(value);
     const current = (
       await this.deps.modelProviders.listInstances(actor)
@@ -345,12 +371,12 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
         "供应商成员已变化，请刷新后重新排序。",
       );
     await this.deps.preferences.updateHumanPreferences(
-      await this.deps.workspaceId(actor),
+      await this.deps.instanceId(actor),
       { codeUiProviderOrder: ids },
     );
     return this.afterMutation(actor);
   }
-  private async resolveModel(actor: AuthenticatedUser, value: unknown) {
+  private async resolveModel(actor: LocalActor, value: unknown) {
     const input = z
       .object({
         providerId,
@@ -383,7 +409,7 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
     };
   }
   private async connectivity(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     value: unknown,
   ): Promise<ModelConnectivityResult> {
     const input = z
@@ -426,7 +452,7 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
   }
 
   async call(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     service: string,
     method: string,
     args: unknown[],
@@ -442,8 +468,7 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
       };
     }
     if (service !== "providerSettingsService") return null;
-    if (method === "getView")
-      return { result: (await this.readViews(actor)).settings };
+    if (method === "getView") return { result: await this.settingsView(actor) };
     if (method === "refresh")
       return { result: await this.afterMutation(actor) };
     if (method === "resolveModelConfig")

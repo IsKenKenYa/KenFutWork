@@ -1,7 +1,7 @@
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { z } from "zod";
-import type { AuthenticatedUser } from "../auth/types.js";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
+import type { LocalActor } from "../local-instance/types.js";
 import {
   collectTurnFileChanges,
   requireFileChangesTarget,
@@ -41,18 +41,18 @@ type Deps = Pick<
   | "checkpoints"
   | "processSandbox"
 > & {
-  load(actor: AuthenticatedUser, sessionId: string): Promise<Loaded>;
+  load(actor: LocalActor, sessionId: string): Promise<Loaded>;
   beginRestore(
     scope: ExecutionScopeHandle,
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     guard: Guard,
   ): Promise<ExecutionScopeHandle>;
   finishRestore(
     scope: ExecutionScopeHandle,
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     success: boolean,
   ): Promise<void>;
-  refresh(workspaceId: string, path: string, projectId: string): Promise<void>;
+  refresh(instanceId: string, path: string, projectId: string): Promise<void>;
   fingerprint(envelope: protocol.CommandEnvelope): string;
 };
 
@@ -92,7 +92,7 @@ function capturedPair(
       (boundary) =>
         boundary.runId !== runId ||
         boundary.taskId !== loaded.root.id ||
-        boundary.workspaceId !== loaded.workspaceId ||
+        boundary.instanceId !== loaded.instanceId ||
         boundary.projectId !== loaded.project.projectId ||
         boundary.scopeGeneration !== Number(loaded.root.scope_generation) ||
         boundary.branchGeneration !== Number(loaded.root.branch_generation),
@@ -110,13 +110,13 @@ function capturedPair(
 
 /** 原V4文件控制的唯一consumer；公开preview永不带私有恢复字节或context引用。 */
 export function createCodeUiFileHistory(deps: Deps) {
-  const load = async (actor: AuthenticatedUser, request: Request) => {
+  const load = async (actor: LocalActor, request: Request) => {
     const loaded = await deps.load(actor, request.sessionId);
     assertTarget(loaded, request);
     return loaded;
   };
   const prepare = async (
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     request: Request,
     loaded: Loaded,
   ) => {
@@ -141,12 +141,12 @@ export function createCodeUiFileHistory(deps: Deps) {
       taskId: loaded.root.id,
       runId: header.turnId,
     });
-    const limits = await deps.settings.getWorkspaceSettings(
+    const limits = await deps.settings.getInstanceSettings(
       actor,
-      loaded.workspaceId,
+      loaded.instanceId,
     );
     const events = await deps.repository.readToolCompletions(
-      loaded.workspaceId,
+      loaded.instanceId,
       loaded.root.id,
       header.turnId,
       {
@@ -182,7 +182,7 @@ export function createCodeUiFileHistory(deps: Deps) {
     scope: ExecutionScopeHandle,
   ) => {
     await deps.repository.appendEvent(
-      loaded.workspaceId,
+      loaded.instanceId,
       loaded.root.id,
       {
         key: `file-rewind:${envelope.clientId}/${envelope.commandId}`,
@@ -228,7 +228,7 @@ export function createCodeUiFileHistory(deps: Deps) {
     );
     try {
       await deps.refresh(
-        loaded.workspaceId,
+        loaded.instanceId,
         loaded.project.path,
         loaded.project.projectId,
       );
@@ -237,7 +237,7 @@ export function createCodeUiFileHistory(deps: Deps) {
     }
   };
   return {
-    async preview(actor: AuthenticatedUser, value: Request) {
+    async preview(actor: LocalActor, value: Request) {
       const request = parseRequest(value);
       const loaded = await load(actor, request);
       const prepared = await prepare(actor, request, loaded);
@@ -248,7 +248,7 @@ export function createCodeUiFileHistory(deps: Deps) {
       };
     },
     async command(
-      actor: AuthenticatedUser,
+      actor: LocalActor,
       value: WorkspaceTarget,
       envelope: protocol.CommandEnvelope,
     ) {
@@ -267,7 +267,7 @@ export function createCodeUiFileHistory(deps: Deps) {
       let plan: PreparedFileRewind | undefined;
       let restored: ExecutionScopeHandle | undefined;
       const ack = await deps.repository.applyScopeCommand(
-        loaded.workspaceId,
+        loaded.instanceId,
         envelope,
         deps.fingerprint(envelope),
         async () => {
@@ -321,7 +321,7 @@ export function createCodeUiFileHistory(deps: Deps) {
       return { result: ack };
     },
     async refreshAvailability(
-      actor: AuthenticatedUser,
+      actor: LocalActor,
       sessionId: string,
       runId: string,
     ) {
@@ -351,7 +351,7 @@ export function createCodeUiFileHistory(deps: Deps) {
       });
       if (!capturedPair(loaded, runId, pair)) return;
       await deps.repository.appendEvent(
-        loaded.workspaceId,
+        loaded.instanceId,
         loaded.root.id,
         {
           key: `file-rewind-available:${runId}`,
@@ -387,7 +387,7 @@ export function createCodeUiFileHistory(deps: Deps) {
         },
       );
       await deps.refresh(
-        loaded.workspaceId,
+        loaded.instanceId,
         loaded.project.path,
         loaded.project.projectId,
       );

@@ -18,7 +18,7 @@ async function fixture() {
   return actual;
 }
 
-it("原installPlugin只接受管理员本机自带包，dryRun不落盘且workspace范围明确拒绝", async () => {
+it("原installPlugin只接受实例主人本机自带包，dryRun不落盘且workspace范围明确拒绝", async () => {
   const f = await fixture();
   const input = {
     ...f.target,
@@ -36,21 +36,18 @@ it("原installPlugin只接受管理员本机自带包，dryRun不落盘且worksp
   });
   expect(
     zcodePluginsOverviewResultSchema.parse(
-      (await f.host.call(f.reader, "getPluginsOverview", {}))?.result,
+      (await f.host.call(f.actor, "getPluginsOverview", {}))?.result,
     ).installedPlugins,
   ).toEqual([]);
   await expect(
     readFile(join(f.directory, "plugins", "installed.json")),
   ).rejects.toMatchObject({ code: "ENOENT" });
   await expect(
-    f.host.call(f.reader, "installPlugin", input),
+    f.host.call(f.foreignActor, "installPlugin", input),
   ).rejects.toMatchObject({
-    code: "forbidden",
+    code: "instance_forbidden",
     statusCode: 403,
   });
-  await expect(
-    f.withoutAdmin.call(f.actor, "installPlugin", input),
-  ).rejects.toThrow("管理员服务");
   await expect(
     f.host.call(f.actor, "installPlugin", { ...input, scope: "workspace" }),
   ).rejects.toThrow("项目层插件");
@@ -61,7 +58,7 @@ it("原installPlugin只接受管理员本机自带包，dryRun不落盘且worksp
     { id: f.bundled.id, name: f.bundled.name, enabled: true, scope: "user" },
   ]);
   const overview = zcodePluginsOverviewResultSchema.parse(
-    (await f.host.call(f.reader, "getPluginsOverview", {}))?.result,
+    (await f.host.call(f.actor, "getPluginsOverview", {}))?.result,
   );
   expect(overview.availablePlugins).toMatchObject([
     { id: f.bundled.id, installed: true },

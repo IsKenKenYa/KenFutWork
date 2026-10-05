@@ -10,11 +10,11 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { workspaceSettingsSchema } from "@kenfutwork/shared";
+import { instanceSettingsSchema } from "@kenfutwork/shared";
 import { afterEach, expect, it } from "vitest";
-import type { AuthenticatedUser } from "../auth/types.js";
 import type { ExecGit } from "../code-git/git-client.js";
 import { resolveReadOnlyProjectPath } from "../execution/scope-service.js";
+import type { LocalActor } from "../local-instance/types.js";
 import { createCodeUiHostGitRpc } from "./host-git-rpc.js";
 
 const roots: string[] = [];
@@ -69,13 +69,8 @@ async function fixture() {
   await writeFile(join(root, "new.txt"), "new content\n");
   await writeFile(join(root, "ignored.txt"), "ignored\n");
   await writeFile(join(root, "untracked-binary.dat"), Buffer.from([0, 4, 5]));
-  const actor: AuthenticatedUser = {
-    id: randomUUID(),
-    email: "git@test",
-    accessToken: "private",
-    userMetadata: {},
-  };
-  const workspaceId = randomUUID();
+  const instanceId = randomUUID();
+  const actor: LocalActor = { instanceId, accessClientId: null };
   const projectId = randomUUID();
   const taskId = randomUUID();
   const requests: Array<readonly string[]> = [];
@@ -83,7 +78,7 @@ async function fixture() {
   const rpc = createCodeUiHostGitRpc({
     resolveTarget: async (owner, request) => {
       if (
-        owner.id !== actor.id ||
+        owner.instanceId !== actor.instanceId ||
         request.workspacePath !== root ||
         !request.viewerScope ||
         (request.viewerScope.kind === "task"
@@ -92,7 +87,7 @@ async function fixture() {
       )
         throw new Error("没有目标授权");
       return {
-        workspaceId,
+        instanceId,
         projectId,
         rootDirectory: root,
         viewerScope: request.viewerScope,
@@ -101,7 +96,7 @@ async function fixture() {
     openSession: async () => ({
       rootDirectory: root,
       available,
-      limits: workspaceSettingsSchema.parse({ defaultModel: "fixture" }),
+      limits: instanceSettingsSchema.parse({ defaultModel: "fixture" }),
       resolvePath: (path) =>
         resolveReadOnlyProjectPath(
           { rootDirectory: root, additionalDirectories: [] },
@@ -115,8 +110,7 @@ async function fixture() {
   });
   const connection = {
     connectionId: randomUUID(),
-    workspaceId,
-    userId: actor.id,
+    instanceId,
   };
   const params = {
     workspacePath: root,
@@ -129,7 +123,7 @@ async function fixture() {
     actor,
     projectId,
     taskId,
-    workspaceId,
+    instanceId,
     connection,
     params,
     rpc,
@@ -376,15 +370,15 @@ it("Project不伪造Task，connection与workspace核对；未接通写操作明�
   await expect(
     f.rpc.call(f.actor, "getRepositorySummary", [f.params], {
       ...f.connection,
-      userId: randomUUID(),
+      instanceId: randomUUID(),
     }),
   ).rejects.toThrow(/连接/);
   await expect(
     f.rpc.call(f.actor, "getRepositorySummary", [f.params], {
       ...f.connection,
-      workspaceId: randomUUID(),
+      instanceId: randomUUID(),
     }),
-  ).rejects.toThrow(/工作区/);
+  ).rejects.toThrow(/实例/);
   for (const method of [
     "stagePaths",
     "unstagePaths",

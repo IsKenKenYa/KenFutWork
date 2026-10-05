@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { CodeUiWorkspace } from "@kenfutwork/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import type { AuthenticatedUser } from "../auth/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type { ProjectService } from "../projects/project-service.js";
 import { createProjectRepository } from "../projects/repository.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
@@ -18,18 +18,9 @@ afterEach(async () => {
 async function fixture() {
   const database = await createTaskWorkDatabase();
   cleanups.push(() => database.close());
-  const { workspaceId, projectId, rootDirectory } = database.context.scope;
-  const owner = await database.persistence.queryOne<{ owner_user_id: string }>(
-    "select owner_user_id from public.workspaces where id=$1",
-    [workspaceId],
-  );
-  if (!owner) throw new Error("独占工作区不存在");
-  const actor: AuthenticatedUser = {
-    id: owner.owner_user_id,
-    email: "settings-recovery@integration.local",
-    accessToken: "private-test",
-    userMetadata: {},
-  };
+  const { instanceId, projectId, rootDirectory } = database.context.scope;
+
+  const actor: LocalActor = { instanceId, accessClientId: null };
   const repository = createCodeUiRepository(database.persistence);
   const projects = createProjectRepository(database.persistence);
   const createTask = async (id = projectId, path = rootDirectory) => {
@@ -50,11 +41,11 @@ async function fixture() {
         followupMode: "queue",
       },
     });
-    await repository.createRoot(workspaceId, {
+    await repository.createRoot(instanceId, {
       sessionId: taskId,
       projectId: id,
       scope,
-      userId: actor.id,
+      createdByClientId: actor.accessClientId,
       threadId: `settings-recovery:${taskId}`,
       state: conversation.exportState(),
       command: {
@@ -69,13 +60,13 @@ async function fixture() {
     createHumanWorkspaceRpc({
       projects: {} as ProjectService,
       preferences: repository,
-      workspaceId: async () => workspaceId,
+      instanceId: async () => instanceId,
       listWorkspaces: async () =>
         (
           await database.persistence
-            .forWorkspace(workspaceId)
+            .forInstance(instanceId)
             .query<{ id: string; name: string; work_dir: string }>(
-              "select id,name,work_dir from public.projects where workspace_id=:workspace and kind='code' and archived_at is null",
+              "select id,name,work_dir from public.projects where instance_id=:instance and kind='code' and archived_at is null",
             )
         ).map(
           (project): CodeUiWorkspace => ({
@@ -86,7 +77,7 @@ async function fixture() {
           }),
         ),
       resolveTaskPreference: async (_actor, id) => {
-        const root = await repository.find(workspaceId, id);
+        const root = await repository.find(instanceId, id);
         if (
           !root?.state ||
           root.parent_session_id ||
@@ -122,8 +113,8 @@ async function fixture() {
   const anotherProject = async () =>
     (
       await projects.createProject({
-        workspaceId,
-        userId: actor.id,
+        instanceId,
+        createdByClientId: actor.accessClientId,
         kind: "code",
         name: "同路径另一项目",
         slug: `same-path-${randomUUID()}`,
@@ -134,7 +125,7 @@ async function fixture() {
     ).project;
   return {
     database,
-    workspaceId,
+    instanceId,
     projectId,
     rootDirectory,
     repository,
@@ -161,7 +152,7 @@ describe.skipIf(process.env.KENFUTWORK_SETTINGS_HOST_TEST_PG !== "1")(
       expect(await f.call("get")).toMatchObject({ result: f.saved });
       const nextRoot = join(f.database.directory, "new-default-B");
       await mkdir(nextRoot);
-      await f.projects.update(f.workspaceId, f.projectId, {
+      await f.projects.update(f.instanceId, f.projectId, {
         workDir: nextRoot,
       });
       expect(
@@ -181,10 +172,10 @@ describe.skipIf(process.env.KENFUTWORK_SETTINGS_HOST_TEST_PG !== "1")(
         lastActiveTabIndex: 0,
         lastActiveTaskByWorkspace: { [f.rootDirectory]: f.taskId },
       };
-      await f.repository.updateHumanPreferences(f.workspaceId, legacy);
+      await f.repository.updateHumanPreferences(f.instanceId, legacy);
       const nextRoot = join(f.database.directory, "new-default-B");
       await mkdir(nextRoot);
-      await f.projects.update(f.workspaceId, f.projectId, {
+      await f.projects.update(f.instanceId, f.projectId, {
         workDir: nextRoot,
       });
       await f.anotherProject();
@@ -194,7 +185,7 @@ describe.skipIf(process.env.KENFUTWORK_SETTINGS_HOST_TEST_PG !== "1")(
       expect((read.result as typeof f.saved).lastActiveTaskByWorkspace).toEqual(
         { [f.identity]: f.taskId },
       );
-      expect(await f.repository.readHumanPreferences(f.workspaceId)).toEqual(
+      expect(await f.repository.readHumanPreferences(f.instanceId)).toEqual(
         legacy,
       );
     });
@@ -216,7 +207,7 @@ describe.skipIf(process.env.KENFUTWORK_SETTINGS_HOST_TEST_PG !== "1")(
       };
       await f.call("update", saved);
       expect(await f.call("get")).toMatchObject({ result: saved });
-      const stored = await f.repository.readHumanPreferences(f.workspaceId);
+      const stored = await f.repository.readHumanPreferences(f.instanceId);
       for (const patch of [
         {
           locale: "en-US",
@@ -247,7 +238,7 @@ describe.skipIf(process.env.KENFUTWORK_SETTINGS_HOST_TEST_PG !== "1")(
         await expect(f.call("update", patch)).rejects.toMatchObject({
           code: "not_found",
         });
-        expect(await f.repository.readHumanPreferences(f.workspaceId)).toEqual(
+        expect(await f.repository.readHumanPreferences(f.instanceId)).toEqual(
           stored,
         );
       }

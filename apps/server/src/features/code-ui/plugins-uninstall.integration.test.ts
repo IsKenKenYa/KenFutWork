@@ -7,10 +7,6 @@ import {
   zcodePluginsUninstallResultSchema,
 } from "@kenfutwork/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  decryptSecret,
-  encryptSecret,
-} from "../model-providers/secret-store.js";
 import { createPluginStorage } from "../plugins/plugin-storage.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createPluginManagementFixture } from "./plugins.test-fixture.js";
@@ -23,18 +19,11 @@ afterEach(async () => {
 describe.skipIf(process.env.KENFUTWORK_CODE_PLUGINS_TEST_PG !== "1")(
   "原插件卸载公共契约与真实插件数据",
   () => {
-    it("removeCache=false收回实例并保留缓存与加密数据，复装可用后默认卸载删除两者", async () => {
+    it("removeCache=false收回实例并保留缓存与本地数据，复装可用后默认卸载删除两者", async () => {
       const database = await createTaskWorkDatabase();
       cleanups.push(database.close);
-      const credentialEnv = {
-        credentialSecret: "plugin-uninstall-integration",
-      };
       const storage = createPluginStorage({
         persistence: database.persistence,
-        cipher: {
-          encrypt: (value) => encryptSecret(credentialEnv, value),
-          decrypt: (value) => decryptSecret(credentialEnv, value),
-        },
       });
       const f = await createPluginManagementFixture({ storage });
       cleanups.push(f.dispose);
@@ -44,18 +33,15 @@ describe.skipIf(process.env.KENFUTWORK_CODE_PLUGINS_TEST_PG !== "1")(
         marketplace: "kenfutwork-bundled",
       };
       await f.host.call(f.actor, "installPlugin", install);
-      const workspaceId = database.context.scope.workspaceId;
-      await storage.set(workspaceId, f.bundled.id, "session", "保留的会话值");
+      const instanceId = database.context.scope.instanceId;
+      await storage.set(instanceId, f.bundled.id, "session", "保留的会话值");
       const input = { ...f.target, pluginId: f.bundled.id, removeCache: false };
       await expect(
-        f.host.call(f.reader, "uninstallPlugin", input),
+        f.host.call(f.foreignActor, "uninstallPlugin", input),
       ).rejects.toMatchObject({
-        code: "forbidden",
+        code: "instance_forbidden",
         statusCode: 403,
       });
-      await expect(
-        f.withoutAdmin.call(f.actor, "uninstallPlugin", input),
-      ).rejects.toThrow("管理员服务");
       await expect(
         f.host.call(f.actor, "uninstallPlugin", {
           ...input,
@@ -83,7 +69,7 @@ describe.skipIf(process.env.KENFUTWORK_CODE_PLUGINS_TEST_PG !== "1")(
       });
       expect(f.tools.get("clock_now")).toBeUndefined();
       const overview = zcodePluginsOverviewResultSchema.parse(
-        (await f.host.call(f.reader, "getPluginsOverview", {}))?.result,
+        (await f.host.call(f.actor, "getPluginsOverview", {}))?.result,
       );
       expect(overview.installedPlugins).toEqual([]);
       expect(overview.availablePlugins).toMatchObject([
@@ -94,7 +80,7 @@ describe.skipIf(process.env.KENFUTWORK_CODE_PLUGINS_TEST_PG !== "1")(
         f.bundled.files["index.js"],
       );
       await expect(
-        storage.get(workspaceId, f.bundled.id, "session"),
+        storage.get(instanceId, f.bundled.id, "session"),
       ).resolves.toBe("保留的会话值");
       const reinstalled = zcodePluginsInstallResultSchema.parse(
         (await f.host.call(f.actor, "installPlugin", install))?.result,
@@ -104,11 +90,11 @@ describe.skipIf(process.env.KENFUTWORK_CODE_PLUGINS_TEST_PG !== "1")(
       ]);
       const clock = f.tools.get("clock_now");
       if (!clock) throw new Error("复装必须恢复真实工具");
-      expect(await clock.execute({}, { workspaceId })).toMatchObject({
+      expect(await clock.execute({}, { instanceId })).toMatchObject({
         iso: expect.any(String),
       });
       await expect(
-        storage.get(workspaceId, f.bundled.id, "session"),
+        storage.get(instanceId, f.bundled.id, "session"),
       ).resolves.toBe("保留的会话值");
       zcodePluginsUninstallResultSchema.parse(
         (
@@ -122,7 +108,7 @@ describe.skipIf(process.env.KENFUTWORK_CODE_PLUGINS_TEST_PG !== "1")(
         code: "ENOENT",
       });
       await expect(
-        storage.get(workspaceId, f.bundled.id, "session"),
+        storage.get(instanceId, f.bundled.id, "session"),
       ).resolves.toBeNull();
       expect(f.tools.get("clock_now")).toBeUndefined();
     }, 60_000);

@@ -1,26 +1,21 @@
 import { randomUUID } from "node:crypto";
 import {
+  instanceSettingsSchema,
   type ProviderInstanceResponse,
   providerInstanceCreateRequestSchema,
   providerInstanceResponseSchema,
   providerInstanceUpdateRequestSchema,
-  workspaceSettingsSchema,
 } from "@kenfutwork/shared";
 import { expect, it, vi } from "vitest";
-import type { AuthenticatedUser } from "../auth/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import {
   type CodeUiProviderSettingsRpcDeps,
   createCodeUiProviderSettingsRpc,
 } from "./provider-settings-rpc.js";
 import { CodeUiRepositoryError } from "./repository.js";
 
-const actor: AuthenticatedUser = {
-  id: randomUUID(),
-  email: "human@test.example",
-  accessToken: "private",
-  userMetadata: {},
-};
-const foreign: AuthenticatedUser = { ...actor, id: randomUUID() };
+const actor: LocalActor = { instanceId: randomUUID(), accessClientId: null };
+const foreign: LocalActor = { ...actor, instanceId: randomUUID() };
 
 it("原Root省略模型查询参数经过HTTP序列化后仍能读取默认模型view，畸形对象仍拒绝", async () => {
   const { rpc } = fixture();
@@ -39,27 +34,25 @@ function fixture() {
   const rows = new Map<string, ProviderInstanceResponse[]>();
   const preferences = new Map<string, Record<string, unknown>>();
   const credentials = new Map<string, string>();
-  const own = (user: AuthenticatedUser) => rows.get(user.id) ?? [];
-  const createInstance = vi.fn(
-    async (user: AuthenticatedUser, input: unknown) => {
-      const parsed = providerInstanceCreateRequestSchema.parse(input);
-      const id = randomUUID();
-      if (parsed.apiKey) credentials.set(id, parsed.apiKey);
-      const row = providerInstanceResponseSchema.parse({
-        ...parsed,
-        id,
-        scope: "workspace",
-        hasCredential: Boolean(parsed.apiKey),
-        configRevision: 1,
-        headerKeys: Object.keys(parsed.headers ?? {}),
-        enabled: parsed.enabled ?? true,
-      });
-      rows.set(user.id, [...own(user), row]);
-      return structuredClone(row);
-    },
-  );
+  const own = (user: LocalActor) => rows.get(user.instanceId) ?? [];
+  const createInstance = vi.fn(async (user: LocalActor, input: unknown) => {
+    const parsed = providerInstanceCreateRequestSchema.parse(input);
+    const id = randomUUID();
+    if (parsed.apiKey) credentials.set(id, parsed.apiKey);
+    const row = providerInstanceResponseSchema.parse({
+      ...parsed,
+      id,
+      scope: "local",
+      hasCredential: Boolean(parsed.apiKey),
+      configRevision: 1,
+      headerKeys: Object.keys(parsed.headers ?? {}),
+      enabled: parsed.enabled ?? true,
+    });
+    rows.set(user.instanceId, [...own(user), row]);
+    return structuredClone(row);
+  });
   const updateInstance = vi.fn(
-    async (user: AuthenticatedUser, id: string, input: unknown) => {
+    async (user: LocalActor, id: string, input: unknown) => {
       const patch = providerInstanceUpdateRequestSchema.parse(input);
       const current = own(user).find((row) => row.id === id);
       if (!current)
@@ -78,25 +71,30 @@ function fixture() {
         configRevision: current.configRevision + 1,
       });
       rows.set(
-        user.id,
+        user.instanceId,
         own(user).map((row) => (row.id === id ? updated : row)),
       );
       return structuredClone(updated);
     },
   );
-  const listInstances = vi.fn(async (user: AuthenticatedUser) =>
+  const listInstances = vi.fn(async (user: LocalActor) =>
     structuredClone(own(user)),
   );
   const notifyViews = vi.fn(async () => {});
   const testConnectivity = vi.fn(async () => ({ success: true as const }));
   const deps: CodeUiProviderSettingsRpcDeps = {
     modelProviders: {
+      readCredential: async (user, id) => {
+        if (!own(user).some((row) => row.id === id))
+          throw new CodeUiRepositoryError("not_found", "外实例供应商不可读");
+        return credentials.get(id) ?? null;
+      },
       listInstances,
       createInstance,
       updateInstance,
       deleteInstance: async (user, id) => {
         rows.set(
-          user.id,
+          user.instanceId,
           own(user).filter((row) => row.id !== id),
         );
         credentials.delete(id);
@@ -115,10 +113,10 @@ function fixture() {
     },
     modelCatalog: { listCatalog: async () => [] },
     settings: {
-      getWorkspaceSettings: async () =>
-        workspaceSettingsSchema.parse({ defaultModel: "test" }),
+      getInstanceSettings: async () =>
+        instanceSettingsSchema.parse({ defaultModel: "test" }),
     },
-    workspaceId: async (user) => user.id,
+    instanceId: async (user) => user.instanceId,
     preferences: {
       readHumanPreferences: async (id) => preferences.get(id) ?? {},
       updateHumanPreferences: async (id, patch) => {
@@ -187,7 +185,7 @@ it("原空provider草稿真落库，Google模板映射Gemini，无Key不进入�
   expect(views.selection.providers).toEqual([]);
 });
 
-it("Key只写，空表单值不覆盖，null明确删除；协议编辑保存真实Responses", async () => {
+it("授权设置可读Key，普通投影无Key；空表单值不覆盖，null明确删除；协议编辑保存真实Responses", async () => {
   const { rpc, create, call, credentials, updateInstance } = fixture();
   const { providerId } = await create();
   await call("savePersonalProviderOverlay", [
@@ -206,7 +204,23 @@ it("Key只写，空表单值不覆盖，null明确删除；协议编辑保存真
       compat: expect.objectContaining({ chatApi: "responses" }),
     }),
   );
+  const settingsRead = await rpc.call(
+    actor,
+    "providerSettingsService",
+    "getView",
+    [],
+  );
+  expect(settingsRead?.result).toMatchObject({
+    providers: [
+      { personalConfig: { access: { type: "api-key", apiKey: "typed-key" } } },
+    ],
+  });
   expect(JSON.stringify(await rpc.readViews(actor))).not.toContain("typed-key");
+  expect(
+    JSON.stringify(
+      (await rpc.call(actor, "modelSelectionService", "getView", []))?.result,
+    ),
+  ).not.toContain("typed-key");
   expect((await rpc.readViews(actor)).settings.providers[0]).toMatchObject({
     credentialConfigured: true,
     personalConfig: { access: { type: "api-key" } },
@@ -242,7 +256,7 @@ it("access与api明确null清除真实凭证、端点与头，模型不再可执
   });
   await call("savePersonalProviderOverlay", [providerId, { api: null }]);
   expect(credentials.get(providerId)).toBe("keep-key");
-  expect(rows.get(actor.id)?.[0]?.baseUrl).toBe("");
+  expect(rows.get(actor.instanceId)?.[0]?.baseUrl).toBe("");
   expect(updateInstance).toHaveBeenLastCalledWith(
     actor,
     providerId,
@@ -252,7 +266,7 @@ it("access与api明确null清除真实凭证、端点与头，模型不再可执
       expectedRevision: 1,
     }),
   );
-  expect(rows.get(actor.id)?.[0]?.compat?.chatApi).toBeUndefined();
+  expect(rows.get(actor.instanceId)?.[0]?.compat?.chatApi).toBeUndefined();
   const cleared = await rpc.readViews(actor);
   expect(cleared.settings.providers[0]?.executable).toBe(false);
   expect(cleared.settings.providers[0]?.models[0]?.executable).toBe(false);
@@ -290,7 +304,7 @@ it("非空但仅含空白的Key在创建与保存时拒绝，保留原凭证与�
   ).rejects.toMatchObject({ code: "command_conflict" });
   expect(updateInstance).not.toHaveBeenCalled();
   expect(credentials.get(providerId)).toBe("keep-key");
-  expect(rows.get(actor.id)?.[0]?.configRevision).toBe(1);
+  expect(rows.get(actor.instanceId)?.[0]?.configRevision).toBe(1);
 });
 
 it("模型草稿两读之间外部实例更新不能借新CAS修订覆盖旧草稿", async () => {
@@ -300,10 +314,10 @@ it("模型草稿两读之间外部实例更新不能借新CAS修订覆盖旧草�
   });
   const revision = (await rpc.readViews(actor)).settings.revision;
   listInstances.mockImplementationOnce(async (user) => {
-    const snapshot = structuredClone(rows.get(user.id) ?? []);
-    const current = rows.get(actor.id)?.[0];
+    const snapshot = structuredClone(rows.get(user.instanceId) ?? []);
+    const current = rows.get(actor.instanceId)?.[0];
     if (!current) throw new Error("测试供应商未创建");
-    rows.set(actor.id, [
+    rows.set(actor.instanceId, [
       {
         ...current,
         configRevision: current.configRevision + 1,
@@ -327,7 +341,7 @@ it("模型草稿两读之间外部实例更新不能借新CAS修订覆盖旧草�
     ]),
   ).rejects.toMatchObject({ code: "revision_conflict" });
   expect(updateInstance).not.toHaveBeenCalled();
-  expect(rows.get(actor.id)?.[0]?.models[0]?.contextWindow).toBe(8192);
+  expect(rows.get(actor.instanceId)?.[0]?.models[0]?.contextWindow).toBe(8192);
 });
 
 it("模型草稿已核UI修订后外部更新仍由实例CAS拒绝", async () => {
@@ -339,9 +353,9 @@ it("模型草稿已核UI修订后外部更新仍由实例CAS拒绝", async () =>
   const update = updateInstance.getMockImplementation();
   if (!update) throw new Error("测试供应商更新实现缺失");
   updateInstance.mockImplementationOnce(async (user, id, input) => {
-    const current = rows.get(actor.id)?.[0];
+    const current = rows.get(actor.instanceId)?.[0];
     if (!current) throw new Error("测试供应商未创建");
-    rows.set(actor.id, [
+    rows.set(actor.instanceId, [
       {
         ...current,
         configRevision: current.configRevision + 1,
@@ -364,7 +378,7 @@ it("模型草稿已核UI修订后外部更新仍由实例CAS拒绝", async () =>
       },
     ]),
   ).rejects.toMatchObject({ code: "revision_conflict" });
-  expect(rows.get(actor.id)?.[0]?.models[0]?.contextWindow).toBe(8192);
+  expect(rows.get(actor.instanceId)?.[0]?.models[0]?.contextWindow).toBe(8192);
 });
 
 it("provider旧修订表单409，保持另一客户端最新URL和凭证", async () => {
@@ -372,7 +386,7 @@ it("provider旧修订表单409，保持另一客户端最新URL和凭证", async
   const { providerId } = await create({
     initialConfig: { access: { type: "api-key", apiKey: "keep" } },
   });
-  const current = rows.get(actor.id)?.[0];
+  const current = rows.get(actor.instanceId)?.[0];
   if (!current) throw new Error("测试供应商未创建");
   current.baseUrl = "https://other-client.test/v1";
   current.configRevision++;
@@ -383,7 +397,9 @@ it("provider旧修订表单409，保持另一客户端最新URL和凭证", async
       { expectedRevision: 1 },
     ]),
   ).rejects.toMatchObject({ code: "revision_conflict" });
-  expect(rows.get(actor.id)?.[0]?.baseUrl).toBe("https://other-client.test/v1");
+  expect(rows.get(actor.instanceId)?.[0]?.baseUrl).toBe(
+    "https://other-client.test/v1",
+  );
   expect(updateInstance).toHaveBeenLastCalledWith(
     actor,
     providerId,
@@ -492,9 +508,9 @@ it("并发同ID只创建一次，外Workspace/重复排序/成员变化不写错
   expect(outcomes.filter((entry) => entry.status === "fulfilled")).toHaveLength(
     1,
   );
-  expect(rows.get(actor.id)?.[0]?.models.map((model) => model.id)).toEqual([
-    "same",
-  ]);
+  expect(
+    rows.get(actor.instanceId)?.[0]?.models.map((model) => model.id),
+  ).toEqual(["same"]);
   await expect(
     call("deletePersonalProvider", [providerId], foreign),
   ).rejects.toMatchObject({ code: "not_found" });

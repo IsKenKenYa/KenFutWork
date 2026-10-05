@@ -4,7 +4,7 @@ import {
   codeUiControllerTaskListQuerySchema,
   zcodeUiProtocol as protocol,
 } from "@kenfutwork/shared";
-import type { AuthenticatedUser } from "../auth/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type { SettingsService } from "../settings/settings-service.js";
 import type { CodeUiConnections } from "./connections.js";
 import {
@@ -20,8 +20,8 @@ import { codeUiTaskMeta } from "./task-index.js";
 
 /** 原 Controller 的 readonly source consumer；不创建 Task、运行、目录授权或第二套会话。 */
 export function createCodeUiWindowController(options: {
-  actor: AuthenticatedUser;
-  workspaceId: string;
+  actor: LocalActor;
+  instanceId: string;
   connectionId: string;
   connections: CodeUiConnections;
   repository: CodeUiRepository;
@@ -32,7 +32,7 @@ export function createCodeUiWindowController(options: {
   const readSources = async () => {
     const [projects, records] = await Promise.all([
       options.listWorkspaces(),
-      options.repository.listRoots(options.workspaceId),
+      options.repository.listRoots(options.instanceId),
     ]);
     const projectIds = new Set(projects.map((project) => project.projectId));
     const sources = new Map<
@@ -98,9 +98,9 @@ export function createCodeUiWindowController(options: {
         ),
       );
     const query = codeUiControllerTaskListQuerySchema.parse(args[0]);
-    const settings = await options.settings.getWorkspaceSettings(
+    const settings = await options.settings.getInstanceSettings(
       options.actor,
-      options.workspaceId,
+      options.instanceId,
     );
     const visible = records.filter((record) =>
       protocol.matchesTaskListMembershipKind(record, query.kind),
@@ -163,21 +163,22 @@ export function createCodeUiWindowController(options: {
     const existing = leases.get(source.workspaceIdentity);
     if (existing) return existing;
     options.connections.require(
-      options.workspaceId,
+      options.instanceId,
       options.connectionId,
       false,
-      options.actor.id,
+      options.actor.accessClientId,
     );
     const connection = options.connections.open(
-      options.workspaceId,
-      options.actor.id,
+      options.instanceId,
+      options.actor.instanceId,
       async (event) => host.accept(event),
       () => {},
       false,
       false,
+      options.actor.accessClientId,
     );
     options.connections.initialize(
-      options.workspaceId,
+      options.instanceId,
       connection.hello.connectionId,
       {
         kind: "clientHello",
@@ -201,7 +202,7 @@ export function createCodeUiWindowController(options: {
             ?.subscriptionId,
         });
         options.connections.unsubscribe(
-          options.workspaceId,
+          options.instanceId,
           lease.hello.connectionId,
           value.subscriptionId,
         );
@@ -221,7 +222,7 @@ export function createCodeUiWindowController(options: {
             : {}),
         });
         const prepared = await options.connections.resync(
-          options.workspaceId,
+          options.instanceId,
           lease.hello.connectionId,
           value,
         );
@@ -234,7 +235,7 @@ export function createCodeUiWindowController(options: {
           "Controller source 只允许读取会话索引。",
         );
       const prepared = await options.connections.subscribe(
-        options.workspaceId,
+        options.instanceId,
         lease.hello.connectionId,
         {
           topic: protocol.sessionsIndexTopic(source.workspaceIdentity),
@@ -245,7 +246,7 @@ export function createCodeUiWindowController(options: {
             const snapshot = protocol.sessionsIndexSnapshotSchema.parse({
               protocolVersion: 1,
               workspaceId: source.workspaceIdentity,
-              logEpoch: options.workspaceId,
+              logEpoch: options.instanceId,
               sessions: records
                 .filter((record) => !record.archived && record.state)
                 .flatMap((record) => {
@@ -288,7 +289,7 @@ export function createCodeUiWindowController(options: {
             return {
               snapshot,
               seq: await options.repository.listVersion(
-                options.workspaceId,
+                options.instanceId,
                 source.projectId,
               ),
             };
@@ -299,11 +300,7 @@ export function createCodeUiWindowController(options: {
       return prepared.result;
     },
     send: (event) =>
-      options.connections.send(
-        options.workspaceId,
-        options.connectionId,
-        event,
-      ),
+      options.connections.send(options.instanceId, options.connectionId, event),
     disposeSource: async (source) => {
       if (source) {
         leases.get(source.workspaceIdentity)?.dispose();

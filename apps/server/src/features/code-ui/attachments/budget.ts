@@ -1,9 +1,9 @@
-import type { WorkspaceSettings } from "@kenfutwork/shared";
+import type { InstanceSettings } from "@kenfutwork/shared";
 import type { CodeAttachmentLimits } from "./types.js";
 
 /** Settings resolve DB ?? env ?? governance defaults; adapters never restate defaults. */
 export function codeAttachmentLimits(
-  settings: WorkspaceSettings,
+  settings: InstanceSettings,
 ): CodeAttachmentLimits {
   return {
     maxBytes: settings.codeAttachmentMaxBytes,

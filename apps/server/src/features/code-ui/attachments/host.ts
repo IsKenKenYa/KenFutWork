@@ -1,7 +1,9 @@
 import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
-import type { AuthenticatedUser } from "../../auth/types.js";
 import type { BlobStore } from "../../blob/types.js";
-import type { ViewerService } from "../../bootstrap/ensure-user-foundation.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../../local-instance/types.js";
 import type { SettingsService } from "../../settings/settings-service.js";
 import type { CodeUiRepository } from "../repository.js";
 import { codeAttachmentLimits } from "./budget.js";
@@ -16,17 +18,20 @@ export function createCodeAttachmentHost(deps: {
   repository: CodeUiRepository;
   attachments: CodeAttachmentRepository;
   blob: BlobStore;
-  viewer: ViewerService;
+  localInstance: LocalInstanceService;
   settings: SettingsService;
 }) {
-  async function owned(actor: AuthenticatedUser, sessionId: string) {
-    const workspace = await deps.viewer.resolveWorkspace(actor);
-    const entry = await deps.repository.find(workspace.id, sessionId);
+  async function owned(actor: LocalActor, sessionId: string) {
+    const workspace = await deps.localInstance.resolve(actor);
+    const entry = await deps.repository.find(workspace.instanceId, sessionId);
     const root =
       entry?.root_session_id === entry?.id
         ? entry
         : entry
-          ? await deps.repository.find(workspace.id, entry.root_session_id)
+          ? await deps.repository.find(
+              workspace.instanceId,
+              entry.root_session_id,
+            )
           : null;
     if (
       !entry ||
@@ -50,24 +55,24 @@ export function createCodeAttachmentHost(deps: {
         "附件所属会话不在该Task中。",
         404,
       );
-    return { entry, root, snapshot, workspaceId: workspace.id };
+    return { entry, root, snapshot, instanceId: workspace.instanceId };
   }
   return createCodeAttachmentsService({
     blob: deps.blob,
     repository: deps.attachments,
-    authorizeWorkspace: async (actor) =>
-      (await deps.viewer.resolveWorkspace(actor)).id,
+    authorizeInstance: async (actor) =>
+      (await deps.localInstance.resolve(actor)).instanceId,
     authorizeSession: async (
       actor,
       sessionId,
     ): Promise<CodeAttachmentSession> => {
       const value = await owned(actor, sessionId);
       return {
-        workspaceId: value.workspaceId,
+        instanceId: value.instanceId,
         projectId: value.root.project_id,
         taskId: value.root.id,
         sessionId,
-        userId: actor.id,
+        createdByClientId: actor.accessClientId,
         scopeGeneration: Number(value.root.scope_generation),
         branchGeneration: Number(value.root.branch_generation),
         revision: Number(value.root.revision),
@@ -103,10 +108,10 @@ export function createCodeAttachmentHost(deps: {
         );
       return matches[0]!;
     },
-    limits: async (actor, workspaceId) => {
-      const settings = await deps.settings.getWorkspaceSettings(
+    limits: async (actor, instanceId) => {
+      const settings = await deps.settings.getInstanceSettings(
         actor,
-        workspaceId,
+        instanceId,
       );
       return codeAttachmentLimits(settings);
     },

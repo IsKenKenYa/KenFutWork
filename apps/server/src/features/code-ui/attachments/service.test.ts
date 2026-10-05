@@ -2,10 +2,10 @@ import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { workspaceSettingsSchema } from "@kenfutwork/shared";
+import { instanceSettingsSchema } from "@kenfutwork/shared";
 import { afterEach, expect, it } from "vitest";
-import type { AuthenticatedUser } from "../../auth/types.js";
 import { createLocalFsBlobStore } from "../../blob/providers/local-fs.js";
+import type { LocalActor } from "../../local-instance/types.js";
 import { codeAttachmentLimits } from "./budget.js";
 import { createCodeAttachmentsService } from "./service.js";
 import type {
@@ -31,7 +31,7 @@ it("无session预算只读工作区metadata，有session必须owned且缺提供�
     join(tmpdir(), "kfw-code-attachment-budget-"),
   );
   directories.push(directory);
-  const settings = workspaceSettingsSchema.parse({
+  const settings = instanceSettingsSchema.parse({
     defaultModel: "fixture",
     codeAttachmentMaxPerInput: 1,
   });
@@ -58,8 +58,8 @@ it("无session预算只读工作区metadata，有session必须owned且缺提供�
         return stored.transact<T>(session, key, operation);
       },
     },
-    async authorizeWorkspace() {
-      return identity.workspaceId;
+    async authorizeInstance() {
+      return identity.instanceId;
     },
     async authorizeSession(_actor, sessionId) {
       if (sessionId !== identity.sessionId)
@@ -84,7 +84,7 @@ it("无session预算只读工作区metadata，有session必须owned且缺提供�
   await expect(
     createCodeAttachmentsService({
       ...deps,
-      authorizeWorkspace: undefined,
+      authorizeInstance: undefined,
     }).budget(actor),
   ).rejects.toMatchObject({ code: "fault.attachment.budgetUnavailable" });
   expect(initializations).toBe(0);
@@ -131,7 +131,7 @@ it("连接关闭发生在首Begin权威校验等待期间，迟到Begin不得返
       );
     },
   };
-  const settings = workspaceSettingsSchema.parse({ defaultModel: "fixture" });
+  const settings = instanceSettingsSchema.parse({ defaultModel: "fixture" });
   const service = createCodeAttachmentsService({
     repository,
     blob: createLocalFsBlobStore({
@@ -164,7 +164,7 @@ it("连接关闭发生在首Begin权威校验等待期间，迟到Begin不得返
   const pending = service.begin(actor, input);
   await entered;
   const closing = service.releaseConnection(
-    identity.workspaceId,
+    identity.instanceId,
     input.connectionId,
   );
   resume?.();
@@ -178,18 +178,13 @@ it("连接关闭发生在首Begin权威校验等待期间，迟到Begin不得返
   await service.close();
 });
 
-const actor: AuthenticatedUser = {
-  id: "user-a",
-  email: "human@test.example",
-  accessToken: "token-a",
-  userMetadata: {},
-};
+const actor: LocalActor = { instanceId: "workspace-a", accessClientId: null };
 const identity: CodeAttachmentSession = {
-  workspaceId: "workspace-a",
+  instanceId: "workspace-a",
   projectId: "project-a",
   taskId: "task-a",
   sessionId: "task-a",
-  userId: actor.id,
+  createdByClientId: actor.accessClientId,
   scopeGeneration: 1,
   branchGeneration: 1,
   revision: 1,
@@ -222,7 +217,7 @@ function repositoryFixture(): CodeAttachmentRepository {
           ): record is Extract<CodeAttachmentRecord, { status: "committed" }> =>
             record.status === "committed" &&
             record.ref === ref &&
-            record.workspaceId === session.workspaceId &&
+            record.instanceId === session.instanceId &&
             record.projectId === session.projectId &&
             record.taskId === session.taskId &&
             record.sessionId === session.sessionId,
@@ -241,7 +236,7 @@ it("真实附件事务提交后，重建服务仍由所属消息读取私有 byt
   const directory = await mkdtemp(join(tmpdir(), "kfw-code-attachments-"));
   directories.push(directory);
   const bytes = Buffer.from([0, 255, 1, 2]);
-  const settings = workspaceSettingsSchema.parse({ defaultModel: "fixture" });
+  const settings = instanceSettingsSchema.parse({ defaultModel: "fixture" });
   const repository = repositoryFixture();
   let canonical:
     | { ref: string; fileName: string; mime: string; bytes: number }

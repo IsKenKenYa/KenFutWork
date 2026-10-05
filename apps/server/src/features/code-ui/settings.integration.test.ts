@@ -6,7 +6,8 @@ import { Client } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import type { ProjectService } from "../projects/project-service.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
-import { request } from "./host-client.fixture.js";
+import { useCodeUiHttpFixture } from "./code-ui-http.fixture.js";
+
 import { createCodeSessionFixture } from "./host-session.fixture.js";
 import { createCodeUiRepository } from "./repository.js";
 import { createHumanWorkspaceRpc } from "./workspace-rpc.js";
@@ -29,35 +30,25 @@ describe.skipIf(process.env.KENFUTWORK_SETTINGS_HOST_TEST_PG !== "1")(
       try {
         expect(database.replayed).toHaveLength(database.expectedMigrations);
         expect(database.secondReplay).toHaveLength(0);
-        const workspaceId = database.context.scope.workspaceId;
+        const instanceId = database.context.scope.instanceId;
         const projectId = database.context.scope.projectId;
         const rootDirectory = database.context.scope.rootDirectory;
-        const owner = await database.persistence.queryOne<{
-          owner_user_id: string;
-        }>("select owner_user_id from public.workspaces where id=$1", [
-          workspaceId,
-        ]);
-        if (!owner) throw new Error("隔离工作区不存在。");
-        const actor = {
-          id: owner.owner_user_id,
-          email: "settings@integration.test",
-          accessToken: "private-test",
-          userMetadata: {},
-        };
+
+        const actor = { instanceId: instanceId, accessClientId: null };
         const repository = createCodeUiRepository(database.persistence);
         const rpc = createHumanWorkspaceRpc({
           projects: {} as ProjectService,
           preferences: repository,
-          workspaceId: async () => workspaceId,
+          instanceId: async () => instanceId,
           listWorkspaces: async () => {
             const projects = await database.persistence
-              .forWorkspace(workspaceId)
+              .forInstance(instanceId)
               .query<{
                 id: string;
                 name: string;
                 work_dir: string;
               }>(
-                "select id,name,work_dir from public.projects where workspace_id=:workspace and kind='code' and archived_at is null",
+                "select id,name,work_dir from public.projects where instance_id=:instance and kind='code' and archived_at is null",
               );
             return projects.map(
               (project): CodeUiWorkspace => ({
@@ -79,7 +70,7 @@ describe.skipIf(process.env.KENFUTWORK_SETTINGS_HOST_TEST_PG !== "1")(
             ],
           },
         ]);
-        const before = await repository.readHumanPreferences(workspaceId);
+        const before = await repository.readHumanPreferences(instanceId);
         await blocker.connect();
         await archiver.connect();
         await blocker.query("begin");
@@ -133,7 +124,7 @@ describe.skipIf(process.env.KENFUTWORK_SETTINGS_HOST_TEST_PG !== "1")(
           status: "rejected",
           reason: { code: "not_found" },
         });
-        expect(await repository.readHumanPreferences(workspaceId)).toEqual(
+        expect(await repository.readHumanPreferences(instanceId)).toEqual(
           before,
         );
         expect(await rpc.call(actor, "setting", "get", [])).toMatchObject({
@@ -153,6 +144,9 @@ describe.skipIf(process.env.KENFUTWORK_SETTINGS_HOST_TEST_PG !== "1")(
   },
 );
 
+const isolatedHttp = useCodeUiHttpFixture();
+const { request } = isolatedHttp;
+
 const enabled = process.env.RUN_CODE_UI_INTEGRATION === "1";
 const setting = (method: string, value?: unknown) =>
   request("/api/code-ui/rpc", {
@@ -163,7 +157,9 @@ const setting = (method: string, value?: unknown) =>
 
 describe.skipIf(!enabled)("原 Root 设置公开宿主 integration", () => {
   it("原语言、展示偏好与工作区 tab 快照稀疏保存后可重新读取，保持同一项目目录", async () => {
-    const host = await createCodeSessionFixture("https://example.invalid/v1");
+    const host = await createCodeSessionFixture("https://example.invalid/v1", {
+      client: isolatedHttp,
+    });
     try {
       const saved = await setting("update", {
         locale: "en-US",
@@ -210,7 +206,9 @@ describe.skipIf(!enabled)("原 Root 设置公开宿主 integration", () => {
     }
   });
   it("不同显示偏好并发保存不丢叶子；最近目录与tab快照仍来自同一原工作区", async () => {
-    const host = await createCodeSessionFixture("https://example.invalid/v1");
+    const host = await createCodeSessionFixture("https://example.invalid/v1", {
+      client: isolatedHttp,
+    });
     try {
       const written = await Promise.all([
         setting("update", { locale: "en-US" }),
@@ -254,7 +252,9 @@ describe.skipIf(!enabled)("原 Root 设置公开宿主 integration", () => {
     }
   });
   it("非法值、凭据及外部目录整条拒绝；归档后的tab保存不能复活目录", async () => {
-    const host = await createCodeSessionFixture("https://example.invalid/v1");
+    const host = await createCodeSessionFixture("https://example.invalid/v1", {
+      client: isolatedHttp,
+    });
     try {
       const before = (await setting("get")).body.result;
       for (const patch of [
@@ -295,65 +295,62 @@ describe.skipIf(!enabled)("原 Root 设置公开宿主 integration", () => {
       await host.dispose();
     }
   });
-  it.skipIf(!process.env.CODE_UI_TEST_DATABASE_URL)(
-    "设置在途等待项目锁时先归档，迟到patch返回404且不部分保存",
-    async () => {
-      const host = await createCodeSessionFixture("https://example.invalid/v1");
-      const delay = new Client({
-        connectionString: process.env.CODE_UI_TEST_DATABASE_URL,
-      });
-      let archive: ReturnType<typeof request> | undefined;
-      let update: ReturnType<typeof setting> | undefined;
-      try {
-        const before = (await setting("get")).body.result;
-        await delay.connect();
-        await delay.query("begin");
-        // 独占测试库外部故障注入：让公开归档先排队，设置的FOR SHARE再等待同一项目。
-        await delay.query(
-          "select id from public.projects where id=$1 for update",
-          [host.projectId],
-        );
-        const waitForBlocked = (count: number) =>
-          vi.waitFor(async () => {
-            const waiting = await delay.query(
-              "select distinct pid from pg_locks where granted=false and (transactionid=pg_current_xact_id()::text::xid or relation='public.projects'::regclass)",
-            );
-            if (waiting.rows.length < count)
-              throw new Error("等待公开请求到达项目延迟点");
-          });
-        archive = request(
-          `/api/projects/${host.projectId}`,
-          undefined,
-          "DELETE",
-        );
-        await waitForBlocked(1);
-        update = setting("update", {
-          locale: "en-US",
-          recentProjects: [host.workspacePath],
-          lastWorkspaceSession: [
-            { kind: "local", workspacePath: host.workspacePath },
-          ],
+  it("设置在途等待项目锁时先归档，迟到patch返回404且不部分保存", async () => {
+    const host = await createCodeSessionFixture("https://example.invalid/v1", {
+      client: isolatedHttp,
+    });
+    const delay = new Client({
+      connectionString: isolatedHttp.databaseUrl(),
+    });
+    let archive: ReturnType<typeof request> | undefined;
+    let update: ReturnType<typeof setting> | undefined;
+    try {
+      const before = (await setting("get")).body.result;
+      await delay.connect();
+      await delay.query("begin");
+      // 独占测试库外部故障注入：让公开归档先排队，设置的FOR SHARE再等待同一项目。
+      await delay.query(
+        "select id from public.projects where id=$1 for update",
+        [host.projectId],
+      );
+      const waitForBlocked = (count: number) =>
+        vi.waitFor(async () => {
+          const waiting = await delay.query(
+            "select distinct pid from pg_locks where granted=false and (transactionid=pg_current_xact_id()::text::xid or relation='public.projects'::regclass)",
+          );
+          if (waiting.rows.length < count)
+            throw new Error("等待公开请求到达项目延迟点");
         });
-        await waitForBlocked(2);
-        await delay.query("commit");
-        expect((await archive).status).toBe(204);
-        const late = await update;
-        expect(late.status, JSON.stringify(late.body)).toBe(404);
-        const after = (await setting("get")).body.result;
-        expect(after.locale).toBe(before.locale);
-        expect(after.lastWorkspaceSession).toEqual(before.lastWorkspaceSession);
-      } finally {
-        await delay.query("rollback").catch(() => {});
-        await delay.end();
-        await Promise.all([archive, update]);
-        await host.dispose();
-      }
-    },
-  );
+      archive = request(`/api/projects/${host.projectId}`, undefined, "DELETE");
+      await waitForBlocked(1);
+      update = setting("update", {
+        locale: "en-US",
+        recentProjects: [host.workspacePath],
+        lastWorkspaceSession: [
+          { kind: "local", workspacePath: host.workspacePath },
+        ],
+      });
+      await waitForBlocked(2);
+      await delay.query("commit");
+      expect((await archive).status).toBe(204);
+      const late = await update;
+      expect(late.status, JSON.stringify(late.body)).toBe(404);
+      const after = (await setting("get")).body.result;
+      expect(after.locale).toBe(before.locale);
+      expect(after.lastWorkspaceSession).toEqual(before.lastWorkspaceSession);
+    } finally {
+      await delay.query("rollback").catch(() => {});
+      await delay.end();
+      await Promise.all([archive, update]);
+      await host.dispose();
+    }
+  });
   it("过滤归档tab时仍激活原目录，关联任务焦点不保留归档键", async () => {
     const hosts = await Promise.all(
       [1, 2, 3].map(() =>
-        createCodeSessionFixture("https://example.invalid/v1"),
+        createCodeSessionFixture("https://example.invalid/v1", {
+          client: isolatedHttp,
+        }),
       ),
     );
     const [first, active, last] = hosts;
@@ -409,7 +406,6 @@ describe.skipIf(!enabled)("原 Root 设置公开宿主 integration", () => {
     const projects: string[] = [];
     const paths: string[] = [];
     try {
-      await request("/api/viewer");
       for (let index = 0; index < 11; index += 1) {
         const path = join(dir, `目录${index}`);
         await mkdir(path);

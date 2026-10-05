@@ -2,7 +2,7 @@ import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { request } from "./host-client.fixture.js";
+import { useCodeUiHttpFixture } from "./code-ui-http.fixture.js";
 
 async function createPluginProject(prefix: string) {
   const dir = await mkdtemp(join(tmpdir(), prefix));
@@ -30,13 +30,15 @@ async function createPluginProject(prefix: string) {
   };
 }
 
+const isolatedHttp = useCodeUiHttpFixture();
+const { request } = isolatedHttp;
+
 const enabled =
   process.env.RUN_CODE_UI_INTEGRATION === "1" &&
   process.env.CODE_UI_TEST_ISOLATED_PLUGINS === "1";
 
 describe.skipIf(!enabled)("原插件包操作公开宿主 integration", () => {
   it("自带包经原安装、停用与卸载命令改变真实库存，停用保留安装且卸载后迟到启用不复活", async () => {
-    expect((await request("/api/viewer")).status).toBe(200);
     const host = await createPluginProject("code-ui-package-actions-");
     const { call } = host;
     let pluginId = "";

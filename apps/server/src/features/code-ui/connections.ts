@@ -47,6 +47,7 @@ export interface CodeUiWorkspaceConfigRefreshFailure {
 }
 interface Connection {
   owner: string;
+  accessClientId: string | null;
   hello: protocol.HelloMessage;
   client: protocol.ClientHello | null;
   send: (event: CodeUiEvent) => Promise<void>;
@@ -66,6 +67,7 @@ export class CodeUiConnections {
     close: () => void,
     localTerminal = false,
     receivesNotifications = true,
+    accessClientId: string | null = null,
   ) {
     const hello = protocol.helloMessageSchema.parse({
       kind: "hello",
@@ -84,6 +86,7 @@ export class CodeUiConnections {
     });
     this.connections.set(hello.connectionId, {
       owner,
+      accessClientId,
       hello,
       client: null,
       send,
@@ -131,13 +134,14 @@ export class CodeUiConnections {
     owner: string,
     id: string | undefined,
     initialized = true,
-    userId?: string,
+    accessClientId?: string | null,
   ) {
     const connection = id ? this.connections.get(id) : undefined;
     if (
       !connection ||
       connection.owner !== owner ||
-      (userId !== undefined && connection.hello.auth.userId !== userId)
+      (accessClientId !== undefined &&
+        connection.accessClientId !== accessClientId)
     )
       throw new CodeUiRepositoryError(
         "not_found",

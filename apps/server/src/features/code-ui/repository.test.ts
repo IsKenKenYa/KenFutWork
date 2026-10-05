@@ -8,7 +8,7 @@ describe("恢复代际失败边界", () => {
     let generation = 3;
     let state = "revoking";
     const persistence = {
-      forWorkspace: () => ({
+      forInstance: () => ({
         execute: async (sql: string, params: readonly unknown[]) => {
           statements.push({ sql, params });
           if (
@@ -26,7 +26,7 @@ describe("恢复代际失败边界", () => {
     await repository.failCloseTask("workspace", "task", 2);
     expect(state).toBe("revoking");
     expect(statements[0]?.params).toEqual(["task", 2]);
-    expect(statements[0]?.sql).toContain("workspace_id = :workspace");
+    expect(statements[0]?.sql).toContain("instance_id = :instance");
     await repository.failCloseTask("workspace", "task", 3);
     expect(state).toBe("failed");
     generation = 4;

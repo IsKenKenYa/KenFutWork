@@ -7,9 +7,9 @@ import {
   streamEventSchema,
 } from "@kenfutwork/shared";
 import type {
+  InstanceSqlClient,
   PersistenceService,
   SqlRow,
-  WorkspaceSqlClient,
 } from "../persistence/types.js";
 import {
   type CodeUiConversationState,
@@ -19,7 +19,7 @@ import type { CodeInputSettlement } from "./queue-control.js";
 
 export type CodeUiSessionRecord = SqlRow & {
   id: string;
-  workspace_id: string;
+  instance_id: string;
   project_id: string;
   root_directory: string | null;
   additional_directories: AdditionalDirectory[] | null;
@@ -56,14 +56,14 @@ export interface CodeUiHumanPreferencesWriteOptions {
 }
 
 async function writeState(
-  scoped: WorkspaceSqlClient,
+  scoped: InstanceSqlClient,
   root: CodeUiSessionRecord,
   state: CodeUiConversationState,
   activeRunId: string | null,
 ) {
   await scoped.execute(
     `update public.code_ui_sessions set state = $2::jsonb, revision = revision + 1, active_run_id = $3, updated_at = now()
-      where workspace_id = :workspace and id = $1 and deleted_at is null`,
+      where instance_id = :instance and id = $1 and deleted_at is null`,
     [root.id, JSON.stringify(state), activeRunId],
   );
   for (const snapshot of state.snapshots) {
@@ -75,8 +75,8 @@ async function writeState(
       )
         continue;
       await scoped.execute(
-        `insert into public.code_ui_sessions (id, workspace_id, project_id, root_session_id, parent_session_id, parent_tool_call_id, root_directory, additional_directories, sandbox_mode, scope_generation, execution_state, branch_generation)
-         values ($1, :workspace, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11) on conflict (id) do nothing`,
+        `insert into public.code_ui_sessions (id, instance_id, project_id, root_session_id, parent_session_id, parent_tool_call_id, root_directory, additional_directories, sandbox_mode, scope_generation, execution_state, branch_generation)
+         values ($1, :instance, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11) on conflict (id) do nothing`,
         [
           row.childSessionId,
           root.project_id,
@@ -95,9 +95,9 @@ async function writeState(
   }
 }
 
-async function lockRoot(scoped: WorkspaceSqlClient, sessionId: string) {
+async function lockRoot(scoped: InstanceSqlClient, sessionId: string) {
   const root = await scoped.queryOne<CodeUiSessionRecord>(
-    "select * from public.code_ui_sessions where workspace_id = :workspace and id = $1 and parent_session_id is null and deleted_at is null for update",
+    "select * from public.code_ui_sessions where instance_id = :instance and id = $1 and parent_session_id is null and deleted_at is null for update",
     [sessionId],
   );
   if (!root?.state)
@@ -106,12 +106,12 @@ async function lockRoot(scoped: WorkspaceSqlClient, sessionId: string) {
 }
 
 async function claimScopeCommand(
-  scoped: WorkspaceSqlClient,
+  scoped: InstanceSqlClient,
   envelope: protocol.CommandEnvelope,
   fingerprint: string,
 ) {
   await scoped.query(
-    "select pg_advisory_xact_lock(hashtextextended(:workspace::text || '/' || $1 || '/' || $2, 0))",
+    "select pg_advisory_xact_lock(hashtextextended(:instance::text || '/' || $1 || '/' || $2, 0))",
     [envelope.clientId, envelope.commandId],
   );
   const previous = await scoped.queryOne<
@@ -121,7 +121,7 @@ async function claimScopeCommand(
       status: string;
     }
   >(
-    "select parameter_fingerprint, ack, status from public.code_ui_commands where workspace_id = :workspace and client_id = $1 and command_id = $2",
+    "select parameter_fingerprint, ack, status from public.code_ui_commands where instance_id = :instance and client_id = $1 and command_id = $2",
     [envelope.clientId, envelope.commandId],
   );
   if (previous) {
@@ -147,19 +147,19 @@ async function claimScopeCommand(
   }
   const root = await lockRoot(scoped, envelope.sessionId!);
   await scoped.execute(
-    `insert into public.code_ui_commands (workspace_id, client_id, command_id, session_id, parameter_fingerprint, status)
-     values (:workspace, $1, $2, $3, $4, 'pending')`,
+    `insert into public.code_ui_commands (instance_id, client_id, command_id, session_id, parameter_fingerprint, status)
+     values (:instance, $1, $2, $3, $4, 'pending')`,
     [envelope.clientId, envelope.commandId, root.id, fingerprint],
   );
   return { root, ack: null };
 }
 
 async function lockActiveProject(
-  scoped: WorkspaceSqlClient,
+  scoped: InstanceSqlClient,
   root: CodeUiSessionRecord,
 ) {
   return scoped.queryOne<SqlRow & { id: string }>(
-    "select id from public.projects where workspace_id=:workspace and id=$1 and kind='code' and archived_at is null for share",
+    "select id from public.projects where instance_id=:instance and id=$1 and kind='code' and archived_at is null for share",
     [root.project_id],
   );
 }
@@ -179,7 +179,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       );
       for (const candidate of candidates)
         await persistence.transaction(async (transaction) => {
-          const scoped = transaction.forWorkspace(candidate.workspace_id);
+          const scoped = transaction.forInstance(candidate.instance_id);
           const root = await lockRoot(scoped, candidate.id);
           if (
             root.state!.inputOwner?.hostId !== owner.hostId ||
@@ -235,7 +235,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
               },
             };
             await scoped.execute(
-              `update public.code_ui_commands set status = 'failed', ack = $4::jsonb where workspace_id = :workspace and session_id = $1 and client_id = $2 and command_id = $3 and status = 'accepted'`,
+              `update public.code_ui_commands set status = 'failed', ack = $4::jsonb where instance_id = :instance and session_id = $1 and client_id = $2 and command_id = $3 and status = 'accepted'`,
               [
                 root.id,
                 record.intent.clientId,
@@ -247,17 +247,17 @@ export function createCodeUiRepository(persistence: PersistenceService) {
         });
     },
     async readHumanPreferences(
-      workspaceId: string,
+      instanceId: string,
     ): Promise<Record<string, unknown>> {
       const row = await persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .queryOne<{ code_ui_preferences: Record<string, unknown> }>(
-          "select code_ui_preferences from public.workspace_settings where workspace_id = :workspace",
+          "select code_ui_preferences from public.instance_settings where instance_id = :instance",
         );
       return row?.code_ui_preferences ?? {};
     },
     async updateHumanPreferences(
-      workspaceId: string,
+      instanceId: string,
       patch: Record<string, unknown>,
       options: CodeUiHumanPreferencesWriteOptions = {},
     ): Promise<boolean> {
@@ -265,18 +265,18 @@ export function createCodeUiRepository(persistence: PersistenceService) {
         ...new Set(options.referencedProjectIds ?? []),
       ].sort();
       const row = await persistence
-        .forWorkspace(workspaceId)
-        .queryOne<{ workspace_id: string }>(
+        .forInstance(instanceId)
+        .queryOne<{ instance_id: string }>(
           `with live_projects as (
-           select id from public.projects where workspace_id=:workspace and kind='code'
+           select id from public.projects where instance_id=:instance and kind='code'
              and archived_at is null and id=any($3::uuid[]) order by id for share
          )
-         insert into public.workspace_settings (workspace_id,code_ui_preferences)
-         select :workspace,$1::jsonb - $2::text[]
+         insert into public.instance_settings (instance_id,code_ui_preferences)
+         select :instance,$1::jsonb - $2::text[]
          where (select count(*) from live_projects)=cardinality($3::uuid[])
-         on conflict (workspace_id) do update set
-           code_ui_preferences=(workspace_settings.code_ui_preferences || excluded.code_ui_preferences) - $2::text[]
-         returning workspace_id`,
+         on conflict (instance_id) do update set
+           code_ui_preferences=(instance_settings.code_ui_preferences || excluded.code_ui_preferences) - $2::text[]
+         returning instance_id`,
           [
             JSON.stringify(patch),
             options.removeKeys ?? [],
@@ -286,7 +286,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       return row !== null;
     },
     async beginRewindTask(
-      workspaceId: string,
+      instanceId: string,
       taskId: string,
       expectedScopeGeneration: number,
       guard?: Pick<
@@ -295,7 +295,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       >,
     ) {
       return persistence.transaction(async (transaction) => {
-        const scoped = transaction.forWorkspace(workspaceId);
+        const scoped = transaction.forInstance(instanceId);
         const root = await lockRoot(scoped, taskId);
         const snapshot = root.state!.snapshots.find(
           (entry) => entry.sessionId === root.id,
@@ -320,21 +320,21 @@ export function createCodeUiRepository(persistence: PersistenceService) {
           );
         await scoped.execute(
           `update public.code_ui_sessions set execution_state = 'revoking', scope_generation = scope_generation + 1, branch_generation = branch_generation + 1
-          where workspace_id = :workspace and root_session_id = $1 and deleted_at is null`,
+          where instance_id = :instance and root_session_id = $1 and deleted_at is null`,
           [taskId],
         );
         return expectedScopeGeneration + 1;
       });
     },
     async finishRewindTask(
-      workspaceId: string,
+      instanceId: string,
       taskId: string,
       expectedGeneration: number,
       state: CodeUiConversationState,
       activeRunId: string | null = null,
     ) {
       return persistence.transaction(async (transaction) => {
-        const scoped = transaction.forWorkspace(workspaceId);
+        const scoped = transaction.forInstance(instanceId);
         const root = await lockRoot(scoped, taskId);
         if (
           root.execution_state !== "revoking" ||
@@ -347,14 +347,14 @@ export function createCodeUiRepository(persistence: PersistenceService) {
         await writeState(scoped, root, state, activeRunId);
         await scoped.execute(
           `update public.code_ui_sessions set execution_state = 'ready'
-          where workspace_id = :workspace and root_session_id = $1 and execution_state = 'revoking' and scope_generation = $2 and deleted_at is null`,
+          where instance_id = :instance and root_session_id = $1 and execution_state = 'revoking' and scope_generation = $2 and deleted_at is null`,
           [taskId, expectedGeneration],
         );
       });
     },
-    async beginCloseTask(workspaceId: string, taskId: string) {
+    async beginCloseTask(instanceId: string, taskId: string) {
       return persistence.transaction(async (transaction) => {
-        const scoped = transaction.forWorkspace(workspaceId);
+        const scoped = transaction.forInstance(instanceId);
         const root = await lockRoot(scoped, taskId);
         if (root.execution_state === "revoking")
           throw new CodeUiRepositoryError(
@@ -364,7 +364,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
         const changed = await scoped.execute(
           `update public.code_ui_sessions set execution_state = 'revoking',
                 scope_generation = scope_generation + 1, branch_generation = branch_generation + 1
-          where workspace_id = :workspace and root_session_id = $1 and deleted_at is null`,
+          where instance_id = :instance and root_session_id = $1 and deleted_at is null`,
           [taskId],
         );
         if (changed === 0)
@@ -376,13 +376,13 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       });
     },
     async failCloseTask(
-      workspaceId: string,
+      instanceId: string,
       taskId: string,
       expectedGeneration?: number,
     ) {
-      await persistence.forWorkspace(workspaceId).execute(
+      await persistence.forInstance(instanceId).execute(
         `update public.code_ui_sessions set execution_state = 'failed'
-          where workspace_id = :workspace and root_session_id = $1 and execution_state = 'revoking'${expectedGeneration !== undefined ? " and scope_generation = $2" : ""}`,
+          where instance_id = :instance and root_session_id = $1 and execution_state = 'revoking'${expectedGeneration !== undefined ? " and scope_generation = $2" : ""}`,
         [
           taskId,
           ...(expectedGeneration !== undefined ? [expectedGeneration] : []),
@@ -390,15 +390,15 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       );
     },
     async advanceBranch(
-      workspaceId: string,
+      instanceId: string,
       taskId: string,
       expectedBranchGeneration: number,
     ) {
       const row = await persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .queryOne<SqlRow & { branch_generation: number | string }>(
           `update public.code_ui_sessions set branch_generation = branch_generation + 1
-          where workspace_id = :workspace and id = $1 and branch_generation = $2
+          where instance_id = :instance and id = $1 and branch_generation = $2
             and parent_session_id is null and deleted_at is null
           returning branch_generation`,
           [taskId, expectedBranchGeneration],
@@ -411,22 +411,22 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       return Number(row.branch_generation);
     },
     async createRoot(
-      workspaceId: string,
+      instanceId: string,
       input: {
         sessionId: string;
         projectId: string;
         scope: CodeExecutionScope;
-        userId: string;
+        createdByClientId: string | null;
         threadId: string;
         state: CodeUiConversationState;
         command: { clientId: string; commandId: string; fingerprint: string };
       },
     ) {
       return persistence.transaction(async (tx) => {
-        const scoped = tx.forWorkspace(workspaceId);
+        const scoped = tx.forInstance(instanceId);
         // 固定散列种子仅为 SQL 锁键算法，非运行时限额。命令键由原客户端生成，重试不变。
         await scoped.query(
-          "select pg_advisory_xact_lock(hashtextextended(:workspace::text || '/' || $1 || '/' || $2, 0))",
+          "select pg_advisory_xact_lock(hashtextextended(:instance::text || '/' || $1 || '/' || $2, 0))",
           [input.command.clientId, input.command.commandId],
         );
         const previous = await scoped.queryOne<
@@ -436,7 +436,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
             status: string;
           }
         >(
-          "select parameter_fingerprint, ack, status from public.code_ui_commands where workspace_id = :workspace and client_id = $1 and command_id = $2",
+          "select parameter_fingerprint, ack, status from public.code_ui_commands where instance_id = :instance and client_id = $1 and command_id = $2",
           [input.command.clientId, input.command.commandId],
         );
         if (previous) {
@@ -456,13 +456,13 @@ export function createCodeUiRepository(persistence: PersistenceService) {
         }
         const project = await scoped.queryOne<SqlRow & { id: string }>(
           `select id from public.projects
-           where workspace_id = :workspace and id = $1 and kind = 'code' and archived_at is null
+           where instance_id = :instance and id = $1 and kind = 'code' and archived_at is null
            for update`,
           [input.projectId],
         );
         if (
           !project ||
-          input.scope.workspaceId !== workspaceId ||
+          input.scope.instanceId !== instanceId ||
           input.scope.projectId !== project.id ||
           input.scope.taskId !== input.sessionId
         ) {
@@ -472,13 +472,18 @@ export function createCodeUiRepository(persistence: PersistenceService) {
           );
         }
         await scoped.execute(
-          `insert into public.chat_sessions (id, workspace_id, project_id, mode, created_by, thread_id)
-           values ($1::uuid, :workspace, $2::uuid, 'code', $3::uuid, $4::text)`,
-          [input.sessionId, input.projectId, input.userId, input.threadId],
+          `insert into public.chat_sessions (id, instance_id, project_id, mode, created_by_client_id, thread_id)
+           values ($1::uuid, :instance, $2::uuid, 'code', $3::uuid, $4::text)`,
+          [
+            input.sessionId,
+            input.projectId,
+            input.createdByClientId,
+            input.threadId,
+          ],
         );
         await scoped.execute(
-          `insert into public.code_ui_sessions (id, workspace_id, project_id, chat_session_id, root_session_id, state, root_directory, additional_directories, sandbox_mode, scope_generation)
-           values ($1, :workspace, $2, $1, $1, $3::jsonb, $4, $5::jsonb, $6, $7)`,
+          `insert into public.code_ui_sessions (id, instance_id, project_id, chat_session_id, root_session_id, state, root_directory, additional_directories, sandbox_mode, scope_generation)
+           values ($1, :instance, $2, $1, $1, $3::jsonb, $4, $5::jsonb, $6, $7)`,
           [
             input.sessionId,
             input.projectId,
@@ -496,8 +501,8 @@ export function createCodeUiRepository(persistence: PersistenceService) {
           result: { type: "createSession", sessionId: input.sessionId },
         });
         await scoped.execute(
-          `insert into public.code_ui_commands (workspace_id, client_id, command_id, session_id, parameter_fingerprint, ack, status)
-           values (:workspace, $1, $2, $3, $4, $5::jsonb, 'accepted')`,
+          `insert into public.code_ui_commands (instance_id, client_id, command_id, session_id, parameter_fingerprint, ack, status)
+           values (:instance, $1, $2, $3, $4, $5::jsonb, 'accepted')`,
           [
             input.command.clientId,
             input.command.commandId,
@@ -510,46 +515,46 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       });
     },
     async find(
-      workspaceId: string,
+      instanceId: string,
       sessionId: string,
     ): Promise<CodeUiSessionRecord | null> {
       return persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .queryOne<CodeUiSessionRecord>(
-          "select * from public.code_ui_sessions where workspace_id = :workspace and id = $1 and deleted_at is null",
+          "select * from public.code_ui_sessions where instance_id = :instance and id = $1 and deleted_at is null",
           [sessionId],
         );
     },
     async list(
-      workspaceId: string,
+      instanceId: string,
       projectId: string,
     ): Promise<CodeUiSessionRecord[]> {
-      return persistence.forWorkspace(workspaceId).query<CodeUiSessionRecord>(
+      return persistence.forInstance(instanceId).query<CodeUiSessionRecord>(
         `select * from public.code_ui_sessions
-          where workspace_id = :workspace and project_id = $1 and parent_session_id is null and deleted_at is null
+          where instance_id = :instance and project_id = $1 and parent_session_id is null and deleted_at is null
           order by updated_at desc, id`,
         [projectId],
       );
     },
-    async listRoots(workspaceId: string): Promise<CodeUiSessionRecord[]> {
-      return persistence.forWorkspace(workspaceId).query<CodeUiSessionRecord>(
+    async listRoots(instanceId: string): Promise<CodeUiSessionRecord[]> {
+      return persistence.forInstance(instanceId).query<CodeUiSessionRecord>(
         `select s.* from public.code_ui_sessions s join public.projects p on p.id = s.project_id
-         where s.workspace_id = :workspace and p.workspace_id = :workspace and p.kind = 'code' and p.archived_at is null
+         where s.instance_id = :instance and p.instance_id = :instance and p.kind = 'code' and p.archived_at is null
            and s.parent_session_id is null order by s.updated_at desc, s.id`,
       );
     },
-    async listVersion(workspaceId: string, projectId: string): Promise<number> {
+    async listVersion(instanceId: string, projectId: string): Promise<number> {
       // 包含删除墓碑，列表序号不会因删除或归档倒退。
       const record = await persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .queryOne<SqlRow & { seq: string }>(
-          "select coalesce(sum(revision + 1), 0)::text as seq from public.code_ui_sessions where workspace_id = :workspace and project_id = $1 and parent_session_id is null",
+          "select coalesce(sum(revision + 1), 0)::text as seq from public.code_ui_sessions where instance_id = :instance and project_id = $1 and parent_session_id is null",
           [projectId],
         );
       return Number(record?.seq ?? 0);
     },
     async applyCommand(
-      workspaceId: string,
+      instanceId: string,
       envelope: protocol.CommandEnvelope,
       fingerprint: string,
       decide: (root: CodeUiSessionRecord) => {
@@ -562,9 +567,9 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       if (!envelope.sessionId)
         throw new CodeUiRepositoryError("not_found", "Code 命令缺少会话身份");
       return persistence.transaction(async (tx) => {
-        const scoped = tx.forWorkspace(workspaceId);
+        const scoped = tx.forInstance(instanceId);
         await scoped.query(
-          "select pg_advisory_xact_lock(hashtextextended(:workspace::text || '/' || $1 || '/' || $2, 0))",
+          "select pg_advisory_xact_lock(hashtextextended(:instance::text || '/' || $1 || '/' || $2, 0))",
           [envelope.clientId, envelope.commandId],
         );
         const previous = await scoped.queryOne<
@@ -574,7 +579,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
             status: string;
           }
         >(
-          "select parameter_fingerprint, ack, status from public.code_ui_commands where workspace_id = :workspace and client_id = $1 and command_id = $2",
+          "select parameter_fingerprint, ack, status from public.code_ui_commands where instance_id = :instance and client_id = $1 and command_id = $2",
           [envelope.clientId, envelope.commandId],
         );
         if (previous) {
@@ -605,7 +610,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
         for (const settlement of decision.settlements ?? [])
           await scoped.execute(
             `update public.code_ui_commands set ack = $4::jsonb, status = 'failed'
-            where workspace_id = :workspace and session_id = $1 and client_id = $2 and command_id = $3 and status = 'accepted'`,
+            where instance_id = :instance and session_id = $1 and client_id = $2 and command_id = $3 and status = 'accepted'`,
             [
               root.id,
               settlement.clientId,
@@ -614,8 +619,8 @@ export function createCodeUiRepository(persistence: PersistenceService) {
             ],
           );
         await scoped.execute(
-          `insert into public.code_ui_commands (workspace_id, client_id, command_id, session_id, parameter_fingerprint, ack, status)
-           values (:workspace, $1, $2, $3, $4, $5::jsonb, 'accepted')`,
+          `insert into public.code_ui_commands (instance_id, client_id, command_id, session_id, parameter_fingerprint, ack, status)
+           values (:instance, $1, $2, $3, $4, $5::jsonb, 'accepted')`,
           [
             envelope.clientId,
             envelope.commandId,
@@ -629,7 +634,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
     },
     /** 命令先持久认领；撤销在已提交的 revoking 状态下等待，不能把停止等待包进 DB 行锁。 */
     async applyScopeCommand(
-      workspaceId: string,
+      instanceId: string,
       envelope: protocol.CommandEnvelope,
       fingerprint: string,
       change: (root: CodeUiSessionRecord) => Promise<void>,
@@ -648,14 +653,14 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       if (!envelope.sessionId)
         throw new CodeUiRepositoryError("not_found", "授权命令缺少 Task 身份");
       const claimed = await persistence.transaction((tx) =>
-        claimScopeCommand(tx.forWorkspace(workspaceId), envelope, fingerprint),
+        claimScopeCommand(tx.forInstance(instanceId), envelope, fingerprint),
       );
       if (claimed.ack) return claimed.ack;
       let persisted: protocol.CommandAck;
       try {
         await change(claimed.root!);
         persisted = await persistence.transaction(async (tx) => {
-          const scoped = tx.forWorkspace(workspaceId);
+          const scoped = tx.forInstance(instanceId);
           const root = await lockRoot(scoped, envelope.sessionId!);
           const decision = decide(root);
           const ack = protocol.commandAckSchema.parse(decision.ack);
@@ -676,7 +681,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
                 "上下文分支的Project已归档",
               );
             const bound = await scoped.execute(
-              "update public.chat_sessions set thread_id=$2 where workspace_id=:workspace and id=$1 and project_id=$3 and mode='code' and thread_id=$4",
+              "update public.chat_sessions set thread_id=$2 where instance_id=:instance and id=$1 and project_id=$3 and mode='code' and thread_id=$4",
               [
                 root.chat_session_id,
                 binding.threadId,
@@ -700,7 +705,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
           );
           const written = await scoped.execute(
             `update public.code_ui_commands set ack = $3::jsonb, status = 'accepted'
-              where workspace_id = :workspace and client_id = $1 and command_id = $2 and status = 'pending'`,
+              where instance_id = :instance and client_id = $1 and command_id = $2 and status = 'pending'`,
             [envelope.clientId, envelope.commandId, JSON.stringify(ack)],
           );
           if (written !== 1)
@@ -718,9 +723,9 @@ export function createCodeUiRepository(persistence: PersistenceService) {
           message: error instanceof Error ? error.message : "Task 授权变更失败",
           revisionAtDecision: Number(claimed.root!.revision),
         });
-        await persistence.forWorkspace(workspaceId).execute(
+        await persistence.forInstance(instanceId).execute(
           `update public.code_ui_commands set ack = $3::jsonb, status = 'failed'
-            where workspace_id = :workspace and client_id = $1 and command_id = $2 and status = 'pending'`,
+            where instance_id = :instance and client_id = $1 and command_id = $2 and status = 'pending'`,
           [envelope.clientId, envelope.commandId, JSON.stringify(ack)],
         );
         return ack;
@@ -730,7 +735,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       return persisted;
     },
     async startRunIfCurrent(
-      workspaceId: string,
+      instanceId: string,
       rootSessionId: string,
       runId: string,
       expected: {
@@ -741,7 +746,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       start: (root: CodeUiSessionRecord) => void,
     ): Promise<boolean> {
       return persistence.transaction(async (tx) => {
-        const scoped = tx.forWorkspace(workspaceId);
+        const scoped = tx.forInstance(instanceId);
         const root = await lockRoot(scoped, rootSessionId);
         const input = root.state?.inputs?.find(
           (entry) => entry.runId === runId,
@@ -769,7 +774,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       });
     },
     async appendEvent(
-      workspaceId: string,
+      instanceId: string,
       rootSessionId: string,
       input: { key: string; fingerprint: string; event: unknown },
       apply: (root: CodeUiSessionRecord) => {
@@ -778,19 +783,19 @@ export function createCodeUiRepository(persistence: PersistenceService) {
         childChat?: {
           sessionId: string;
           threadId: string;
-          userId: string;
+          createdByClientId: string | null;
           title: string;
         };
         settlements?: CodeInputSettlement[];
       },
     ) {
       return persistence.transaction(async (tx) => {
-        const scoped = tx.forWorkspace(workspaceId);
+        const scoped = tx.forInstance(instanceId);
         const root = await lockRoot(scoped, rootSessionId);
         const previous = await scoped.queryOne<
           SqlRow & { parameter_fingerprint: string }
         >(
-          "select parameter_fingerprint from public.code_ui_events where workspace_id = :workspace and root_session_id = $1 and event_key = $2",
+          "select parameter_fingerprint from public.code_ui_events where instance_id = :instance and root_session_id = $1 and event_key = $2",
           [root.id, input.key],
         );
         if (previous) {
@@ -806,7 +811,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
         for (const settlement of decision.settlements ?? [])
           await scoped.execute(
             `update public.code_ui_commands set ack = $4::jsonb, status = 'failed'
-            where workspace_id = :workspace and session_id = $1 and client_id = $2 and command_id = $3 and status = 'accepted'`,
+            where instance_id = :instance and session_id = $1 and client_id = $2 and command_id = $3 and status = 'accepted'`,
             [
               root.id,
               settlement.clientId,
@@ -817,24 +822,24 @@ export function createCodeUiRepository(persistence: PersistenceService) {
         if (decision.childChat) {
           const child = decision.childChat;
           await scoped.execute(
-            `insert into public.chat_sessions (id, workspace_id, project_id, mode, created_by, thread_id, title)
-            values ($1, :workspace, $2, 'code', $3, $4, $5) on conflict (id) do nothing`,
+            `insert into public.chat_sessions (id, instance_id, project_id, mode, created_by_client_id, thread_id, title)
+            values ($1, :instance, $2, 'code', $3, $4, $5) on conflict (id) do nothing`,
             [
               child.sessionId,
               root.project_id,
-              child.userId,
+              child.createdByClientId,
               child.threadId,
               child.title,
             ],
           );
           await scoped.execute(
-            `update public.code_ui_sessions set chat_session_id = $1 where workspace_id = :workspace and id = $1 and root_session_id = $2`,
+            `update public.code_ui_sessions set chat_session_id = $1 where instance_id = :instance and id = $1 and root_session_id = $2`,
             [child.sessionId, root.id],
           );
         }
         await scoped.execute(
-          `insert into public.code_ui_events (workspace_id, root_session_id, seq, event_key, parameter_fingerprint, payload)
-           select :workspace, $1::uuid, coalesce(max(seq), 0) + 1, $2, $3, $4::jsonb from public.code_ui_events where workspace_id = :workspace and root_session_id = $1::uuid`,
+          `insert into public.code_ui_events (instance_id, root_session_id, seq, event_key, parameter_fingerprint, payload)
+           select :instance, $1::uuid, coalesce(max(seq), 0) + 1, $2, $3, $4::jsonb from public.code_ui_events where instance_id = :instance and root_session_id = $1::uuid`,
           [root.id, input.key, input.fingerprint, JSON.stringify(input.event)],
         );
         return true;
@@ -842,14 +847,14 @@ export function createCodeUiRepository(persistence: PersistenceService) {
     },
     /** 可信文件恢复消费者读原生提交；原文留在私有journal，不经UI展示字段重建。 */
     async readToolCompletions(
-      workspaceId: string,
+      instanceId: string,
       rootSessionId: string,
       runId: string,
       limits: { maxEvents: number; maxBytes: number },
     ): Promise<Array<Extract<StreamEvent, { type: "tool.completed" }>>> {
-      const scoped = persistence.forWorkspace(workspaceId);
+      const scoped = persistence.forInstance(instanceId);
       const root = await scoped.queryOne<SqlRow & { id: string }>(
-        "select id from public.code_ui_sessions where workspace_id = :workspace and id = $1 and parent_session_id is null and deleted_at is null and state is not null",
+        "select id from public.code_ui_sessions where instance_id = :instance and id = $1 and parent_session_id is null and deleted_at is null and state is not null",
         [rootSessionId],
       );
       if (!root)
@@ -858,7 +863,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
           "文件提交所属Task已删除或不存在。",
         );
       const predicate =
-        "workspace_id = :workspace and root_session_id = $1 and payload->>'type' = 'tool.completed' and payload->>'runId' = $2 and payload->>'toolName' in ('Write', 'Edit', 'ApplyPatch')";
+        "instance_id = :instance and root_session_id = $1 and payload->>'type' = 'tool.completed' and payload->>'runId' = $2 and payload->>'toolName' in ('Write', 'Edit', 'ApplyPatch')";
       const totals = await scoped.queryOne<
         SqlRow & { count: string; bytes: string | null }
       >(
@@ -897,16 +902,16 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       });
     },
     async queryCommands(
-      workspaceId: string,
+      instanceId: string,
       clientId: string,
       keys: protocol.CommandKey[],
     ): Promise<protocol.CommandsQueryResult> {
       const results = await Promise.all(
         keys.map(async (key) => {
           const row = await persistence
-            .forWorkspace(workspaceId)
+            .forInstance(instanceId)
             .queryOne<SqlRow & { ack: protocol.CommandAck | null }>(
-              "select ack from public.code_ui_commands where workspace_id = :workspace and client_id = $1 and command_id = $2 and ($3::uuid is null or session_id = $3::uuid)",
+              "select ack from public.code_ui_commands where instance_id = :instance and client_id = $1 and command_id = $2 and ($3::uuid is null or session_id = $3::uuid)",
               [clientId, key.commandId, key.sessionId],
             );
           return { key, result: row?.ack ?? ("unknown" as const) };
@@ -915,16 +920,16 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       return protocol.commandsQueryResultSchema.parse({ results });
     },
     async save(
-      workspaceId: string,
+      instanceId: string,
       rootSessionId: string,
       expectedRevision: number,
       state: CodeUiConversationState,
       activeRunId: string | null,
     ) {
       await persistence.transaction(async (tx) => {
-        const scoped = tx.forWorkspace(workspaceId);
+        const scoped = tx.forInstance(instanceId);
         const root = await scoped.queryOne<CodeUiSessionRecord>(
-          "select * from public.code_ui_sessions where workspace_id = :workspace and id = $1 and deleted_at is null for update",
+          "select * from public.code_ui_sessions where instance_id = :instance and id = $1 and deleted_at is null for update",
           [rootSessionId],
         );
         if (!root)
@@ -941,36 +946,36 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       });
     },
     async setListState(
-      workspaceId: string,
+      instanceId: string,
       sessionId: string,
       state: { pinned?: boolean; archived?: boolean },
     ) {
-      await persistence.forWorkspace(workspaceId).execute(
+      await persistence.forInstance(instanceId).execute(
         `update public.code_ui_sessions set pinned = coalesce($2, pinned), archived = coalesce($3, archived), revision = revision + 1, updated_at = now()
-          where workspace_id = :workspace and id = $1 and deleted_at is null`,
+          where instance_id = :instance and id = $1 and deleted_at is null`,
         [sessionId, state.pinned ?? null, state.archived ?? null],
       );
     },
-    async delete(workspaceId: string, rootSessionId: string) {
+    async delete(instanceId: string, rootSessionId: string) {
       await persistence.transaction(async (tx) => {
-        const scoped = tx.forWorkspace(workspaceId);
+        const scoped = tx.forInstance(instanceId);
         await scoped.execute(
           `update public.code_ui_sessions set deleted_at = now(), state = null, parent_tool_call_id = null, active_run_id = null, root_directory = null, additional_directories = null, scope_generation = scope_generation + 1, execution_state = 'failed', revision = revision + 1
-            where workspace_id = :workspace and root_session_id = $1 and deleted_at is null`,
+            where instance_id = :instance and root_session_id = $1 and deleted_at is null`,
           [rootSessionId],
         );
         await scoped.execute(
-          "delete from public.code_ui_events where workspace_id = :workspace and root_session_id = $1",
+          "delete from public.code_ui_events where instance_id = :instance and root_session_id = $1",
           [rootSessionId],
         );
         await scoped.execute(
-          "delete from public.code_ui_outputs where workspace_id = :workspace and root_session_id = $1",
+          "delete from public.code_ui_outputs where instance_id = :instance and root_session_id = $1",
           [rootSessionId],
         );
         await scoped.execute(
           `update public.code_ui_commands set status = 'deleted', parameter_fingerprint = null, ack = null
-            where workspace_id = :workspace and session_id in
-            (select id from public.code_ui_sessions where workspace_id = :workspace and root_session_id = $1)`,
+            where instance_id = :instance and session_id in
+            (select id from public.code_ui_sessions where instance_id = :instance and root_session_id = $1)`,
           [rootSessionId],
         );
       });

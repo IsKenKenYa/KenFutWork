@@ -21,7 +21,6 @@ import {
   toolCompletedEventSchema,
 } from "@kenfutwork/shared";
 import { afterEach, expect, it } from "vitest";
-import type { AuthenticatedUser } from "../auth/types.js";
 import { createCheckpointService } from "../checkpoints/checkpoint-service.js";
 import { createInMemoryCheckpointRepository } from "../checkpoints/repository.js";
 import {
@@ -38,6 +37,7 @@ import {
   acquireTaskFileRestoreBarrier,
   revokeTaskFileOperations,
 } from "../execution/scoped-filesystem.js";
+import type { LocalActor } from "../local-instance/types.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
 import { createCodeUiConversation } from "./conversation.js";
 import {
@@ -45,16 +45,15 @@ import {
   type FileRewindCapture,
   prepareFileRewind,
 } from "./file-rewind.js";
+import { createCodeUiTestInstance } from "./host-session.fixture.js";
 
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
-const actor: AuthenticatedUser = {
-  id: "rewind-owner",
-  email: "rewind@example.test",
-  accessToken: "private",
-  userMetadata: {},
+const actor: LocalActor = {
+  instanceId: "8f57b590-a878-40b9-aad8-fdbddc7c1b0e",
+  accessClientId: null,
 };
 // Git持久化边界用真实Git对象；ProcessSandbox屏障仍消费真实生产provider。
 const exec: ExecShadowGit = async (args, directory, input) => {
@@ -93,7 +92,7 @@ async function world(
   const root = join(base, "project");
   await mkdir(root);
   let identity: CodeExecutionScope = {
-    workspaceId: randomUUID(),
+    instanceId: actor.instanceId,
     projectId: randomUUID(),
     taskId: randomUUID(),
     generation: 0,
@@ -106,13 +105,11 @@ async function world(
   const scopes = createExecutionScopes({
     repository: {
       load: async (workspace, task) =>
-        workspace === identity.workspaceId && task === identity.taskId
+        workspace === identity.instanceId && task === identity.taskId
           ? { scope: identity, state, branchGeneration: branch }
           : null,
     },
-    viewerService: {
-      resolveWorkspace: async () => ({ id: identity.workspaceId }) as never,
-    },
+    localInstance: createCodeUiTestInstance(identity.instanceId).localInstance,
     resolveFileLimits: async () => ({
       ...AGENT_GOVERNANCE_DEFAULTS,
       codePatchMaxBytes,
@@ -130,7 +127,7 @@ async function world(
     const old = identity;
     identity = { ...identity, generation: identity.generation + 1 };
     await processSandbox.closeTask(old.taskId, "file_rewind", old.generation);
-    await revokeTaskFileOperations(old.workspaceId, old.taskId);
+    await revokeTaskFileOperations(old.instanceId, old.taskId);
     return scopes.openRestoringTask(
       actor,
       identity.taskId,
@@ -139,7 +136,7 @@ async function world(
   };
   const finishRestore = async (
     _scope: ExecutionScopeHandle,
-    _actor: AuthenticatedUser,
+    _actor: LocalActor,
     success: boolean,
   ) => {
     state = success ? "ready" : "failed";

@@ -2,8 +2,8 @@ import { resolve } from "node:path";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import {
+  createInstanceSkillSettingsRepository,
   createSkillCatalogRepository,
-  createWorkspaceSkillSettingsRepository,
 } from "../skills/repository.js";
 import { createTaskResourceCloser } from "../task-work/close-resources.js";
 import { createCodeAttachmentRepository } from "./attachments/repository.js";
@@ -14,9 +14,8 @@ export function createCodeUiPlugin(): PluginDefinition {
   return {
     name: "code-ui",
     inject: [
-      "auth",
-      "admin",
-      "viewer",
+      "localAccess",
+      "localInstance",
       "persistence",
       "projects",
       "modelProviders",
@@ -44,18 +43,17 @@ export function createCodeUiPlugin(): PluginDefinition {
           terminals: ctx.get("codeTerminal"),
           processSandbox: ctx.get("processSandbox"),
           plugins: ctx.get("plugins"),
-          admin: ctx.get("admin"),
           blob: ctx.get("blob"),
           attachmentRepository: createCodeAttachmentRepository(
             ctx.get("persistence"),
             resolve(ctx.env.checkpointRoot ?? "data/checkpoints"),
           ),
           skillRepository: createSkillCatalogRepository(ctx.get("persistence")),
-          skillSettingsRepository: createWorkspaceSkillSettingsRepository(
+          skillSettingsRepository: createInstanceSkillSettingsRepository(
             ctx.get("persistence"),
           ),
           beforeCloseTask: createTaskResourceCloser({
-            viewer: ctx.get("viewer"),
+            localInstance: ctx.get("localInstance"),
             resources: () => ({
               runs: ctx.get("agentRuns"),
               work: ctx.get("taskWork"),
@@ -63,7 +61,7 @@ export function createCodeUiPlugin(): PluginDefinition {
               capabilities: ctx.get("capabilities"),
             }),
           }),
-          viewer: ctx.get("viewer"),
+          localInstance: ctx.get("localInstance"),
           projects: ctx.get("projects"),
           modelProviders: ctx.get("modelProviders"),
           modelCatalog: ctx.get("modelCatalog"),
@@ -78,12 +76,12 @@ export function createCodeUiPlugin(): PluginDefinition {
     },
     mounted(ctx) {
       ctx.effect(() =>
-        ctx.get("settings").onUpdated(({ workspaceId, changedKeys }) => {
+        ctx.get("settings").onUpdated(({ instanceId, changedKeys }) => {
           if (
             changedKeys.includes("defaultModel") ||
             changedKeys.includes("commands")
           )
-            return ctx.get("codeUi").refreshWorkspaceConfiguration(workspaceId);
+            return ctx.get("codeUi").refreshWorkspaceConfiguration(instanceId);
         }),
       );
       ctx.app.addHook("onReady", async () => {
@@ -100,7 +98,7 @@ export function createCodeUiPlugin(): PluginDefinition {
           .get("executionScopes")
           .onRevoke(({ previous }) =>
             permissions.cancel(
-              { workspaceId: previous.workspaceId, taskId: previous.taskId },
+              { instanceId: previous.instanceId, taskId: previous.taskId },
               "Task 授权发生变更",
             ),
           ),
@@ -111,26 +109,26 @@ export function createCodeUiPlugin(): PluginDefinition {
           .onRevoke(({ previous }) =>
             ctx
               .get("codeUi")
-              .closeTaskWatchers(previous.workspaceId, previous.taskId),
+              .closeTaskWatchers(previous.instanceId, previous.taskId),
           ),
       );
       ctx.effect(() => () => ctx.get("codeUi").closeConnections());
       ctx.get("capabilities").register("task-close", {
         id: "code-ui:file-watchers",
         value: {
-          close: (workspaceId: string, taskId: string) =>
-            ctx.get("codeUi").closeTaskWatchers(workspaceId, taskId),
+          close: (instanceId: string, taskId: string) =>
+            ctx.get("codeUi").closeTaskWatchers(instanceId, taskId),
         },
       });
       ctx.get("capabilities").register("task-close", {
         id: "permissions:code-calls",
         value: {
-          close: (workspaceId: string, taskId: string) =>
-            permissions.cancel({ workspaceId, taskId }, "Task 已关闭"),
+          close: (instanceId: string, taskId: string) =>
+            permissions.cancel({ instanceId, taskId }, "Task 已关闭"),
         },
       });
       void registerCodeUiRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         service: ctx.get("codeUi"),
       });
     },

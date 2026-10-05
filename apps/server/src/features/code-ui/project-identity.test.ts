@@ -4,23 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type CodeUiEvent,
+  instanceSettingsSchema,
   zcodeUiProtocol as protocol,
-  workspaceSettingsSchema,
 } from "@kenfutwork/shared";
 import { zcodeTaskMetaSchema } from "@zcode/shared";
 import { afterEach, expect, it, vi } from "vitest";
 import { createAgentRunService } from "../../agent/runtime.js";
 import { loadServerEnv } from "../../config/env.js";
 import { createCodeUiConversation } from "./conversation.js";
+import { createCodeUiTestInstance } from "./host-session.fixture.js";
 import type { CodeUiRepository, CodeUiSessionRecord } from "./repository.js";
 import { CodeUiService, type CodeUiServiceDeps } from "./service.js";
 
-const actor = {
-  id: randomUUID(),
-  email: "human@example.test",
-  accessToken: "private",
-  userMetadata: {},
-};
 const temporary: string[] = [];
 afterEach(async () => {
   await Promise.all(
@@ -40,7 +35,8 @@ async function fixture(
   const pathB = join(base, "B");
   const reference = join(base, "reference");
   await Promise.all([mkdir(pathA), mkdir(pathB), mkdir(reference)]);
-  const workspaceId = randomUUID();
+  const instanceId = randomUUID();
+  const actor = { instanceId, accessClientId: null };
   const firstId = randomUUID();
   const secondId = randomUUID();
   const taskId = randomUUID();
@@ -77,7 +73,7 @@ async function fixture(
   });
   const root: CodeUiSessionRecord = {
     id: taskId,
-    workspace_id: workspaceId,
+    instance_id: instanceId,
     project_id: secondId,
     root_directory: pathA,
     additional_directories: [],
@@ -154,10 +150,14 @@ async function fixture(
     {},
   );
   const service = new CodeUiService({
-    agentRuns: createAgentRunService({ env, blob: {} as never }),
+    agentRuns: createAgentRunService({
+      env,
+      blob: {} as never,
+      localInstance: createCodeUiTestInstance(instanceId).localInstance,
+    }),
     repository,
     beforeCloseTask: async () => {},
-    viewer: { resolveWorkspace: async () => ({ id: workspaceId }) },
+    localInstance: createCodeUiTestInstance(instanceId).localInstance,
     projects: {
       listProjects: async () => projects,
       getProject: async (_user: unknown, id: string) => ({
@@ -172,11 +172,11 @@ async function fixture(
       listProviderPresets: () => [],
     },
     modelCatalog: { listCatalog: async () => [] },
-    skillRepository: { listWorkspaceSkills: async () => [] },
+    skillRepository: { listInstanceSkills: async () => [] },
     skillSettingsRepository: { setEnabled: async () => true },
     settings: {
-      getWorkspaceSettings: async () =>
-        workspaceSettingsSchema.parse({
+      getInstanceSettings: async () =>
+        instanceSettingsSchema.parse({
           defaultModel: "test",
           ...(options.searchResults
             ? { codeSearchMaxResults: options.searchResults }
@@ -188,6 +188,7 @@ async function fixture(
     taskWork: { initialize: async () => [], notifyReady: async () => {} },
   } as unknown as CodeUiServiceDeps);
   return {
+    actor,
     service,
     projects,
     root,
@@ -203,7 +204,7 @@ async function fixture(
 }
 
 it("共享目录必须指定Project，旧Task目录不能替默认目录猜项目", async () => {
-  const { service, projects, pathA, pathB, firstId, secondId } =
+  const { actor, service, projects, pathA, pathB, firstId, secondId } =
     await fixture();
   await expect(service.requireWorkspace(actor, pathA)).rejects.toMatchObject({
     code: "command_conflict",
@@ -221,6 +222,7 @@ it("共享目录必须指定Project，旧Task目录不能替默认目录猜项�
 
 it("原CodeUI宿主订阅真实workspace目录，固定Task根A不借项目默认B重绑且不同Project不串桶", async () => {
   const f = await fixture();
+  const actor = f.actor;
   f.projects[0]!.workDir = f.pathB;
   f.projects[1]!.workDir = f.pathB;
   const events: CodeUiEvent[] = [];
@@ -315,6 +317,7 @@ it("原CodeUI宿主订阅真实workspace目录，固定Task根A不借项目默�
 
 it("Window Controller真实宿主按Project与固定目录聚合，搜索旧Task正文且拒绝其它项目串入", async () => {
   const {
+    actor,
     service,
     projects,
     roots,
@@ -416,7 +419,7 @@ it("Window Controller真实宿主按Project与固定目录聚合，搜索旧Task
 });
 
 it("原宿主Skills以真实Task/Project匹配qualified source身份，拒绝借同路径其它Project换绑", async () => {
-  const { service, projects, pathA, pathB, firstId, secondId, taskId } =
+  const { actor, service, projects, pathA, pathB, firstId, secondId, taskId } =
     await fixture();
   projects[1]!.workDir = pathB;
   const stream = await service.openConnection(
@@ -464,6 +467,7 @@ it("原宿主Skills以真实Task/Project匹配qualified source身份，拒绝借
 
 it("同路径不同Project的真实sessions订阅共存并保留qualified身份，旧Task目录只返回自身source", async () => {
   const {
+    actor,
     service,
     projects,
     roots,
@@ -564,7 +568,7 @@ it("同路径不同Project的真实sessions订阅共存并保留qualified身份�
 });
 
 it("原Task元数据可按原契约解析，未选择思考档位时省略而不传空字符串", async () => {
-  const { service, pathA, taskId } = await fixture();
+  const { actor, service, pathA, taskId } = await fixture();
   const result = await service.hostRpc(actor, "zcode-task", "getTaskMeta", [
     { workspacePath: pathA, taskId },
   ]);
@@ -573,7 +577,7 @@ it("原Task元数据可按原契约解析，未选择思考档位时省略而不
 });
 
 it("单Task轻量元数据在工作区全量列表不可用时仍可读，保留真实项目和固定目录", async () => {
-  const { service, pathA, taskId, secondId } = await fixture({
+  const { actor, service, pathA, taskId, secondId } = await fixture({
     enumerationUnavailable: true,
   });
   const result = await service.hostRpc(actor, "zcode-task", "getTaskMeta", [
@@ -588,7 +592,7 @@ it("单Task轻量元数据在工作区全量列表不可用时仍可读，保留
 });
 
 it("明确Human创建真实空Task不依赖模型配置，首次发送仍明确拒绝不可执行模型", async () => {
-  const { service, pathA, secondId } = await fixture();
+  const { actor, service, pathA, secondId } = await fixture();
   const ack = await service.createSession(actor, {
     clientId: randomUUID(),
     commandId: randomUUID(),
@@ -632,7 +636,7 @@ it("明确Human创建真实空Task不依赖模型配置，首次发送仍明确�
 });
 
 it("Controller正文搜索在最终结果限额下保留全部命中计数，不把source静默截断当作完整列表", async () => {
-  const { service, roots, root, pathA, secondId } = await fixture({
+  const { actor, service, roots, root, pathA, secondId } = await fixture({
     searchResults: 1,
   });
   const other = structuredClone(root);
@@ -689,7 +693,7 @@ it("Controller正文搜索在最终结果限额下保留全部命中计数，不
 });
 
 it("Controller timeline正文搜索遵循原成员语义，不重复返回已置顶Task", async () => {
-  const { service, roots, root, pathA, secondId } = await fixture();
+  const { actor, service, roots, root, pathA, secondId } = await fixture();
   root.pinned = true;
   const regular = structuredClone(root);
   regular.id = randomUUID();
@@ -748,7 +752,7 @@ it("Controller timeline正文搜索遵循原成员语义，不重复返回已置
 });
 
 it("真实宿主归档Task后更新已订阅Controller成员，不等待客户端重新查询", async () => {
-  const { service, taskId } = await fixture();
+  const { actor, service, taskId } = await fixture();
   const events: CodeUiEvent[] = [];
   const stream = await service.openConnection(
     actor,
@@ -808,7 +812,7 @@ it("真实宿主归档Task后更新已订阅Controller成员，不等待客户�
 });
 
 it("Task元信息按真实projectId，默认A改B后显式项目列表仍返回Task固定A", async () => {
-  const { service, projects, pathA, pathB, firstId, secondId, taskId } =
+  const { actor, service, projects, pathA, pathB, firstId, secondId, taskId } =
     await fixture();
   expect(
     (
@@ -839,7 +843,7 @@ it("Task元信息按真实projectId，默认A改B后显式项目列表仍返回T
 });
 
 it("Conversation订阅按Task项目，历史A上的index订阅用明确Project且不漂到B", async () => {
-  const { service, projects, pathA, pathB, firstId, secondId, taskId } =
+  const { actor, service, projects, pathA, pathB, firstId, secondId, taskId } =
     await fixture();
   const events: unknown[] = [];
   const connection = await service.openConnection(
@@ -909,6 +913,7 @@ it("Conversation订阅按Task项目，历史A上的index订阅用明确Project�
 
 it("新Task按选择Project UUID读取最新B/附加目录，同项目旧Task保留A", async () => {
   const {
+    actor,
     service,
     projects,
     root,

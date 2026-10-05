@@ -1,8 +1,9 @@
-import { randomBytes } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { localAccessTicketResponseSchema } from "@kenfutwork/shared";
+import { afterEach, beforeEach } from "vitest";
 import { buildApp } from "../../app.js";
-import type { ServerEnv } from "../../config/env.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createCodeUiTestClient } from "./host-client.fixture.js";
 
@@ -17,7 +18,6 @@ function applicationEnvKey(key: string) {
 /** 独占真实HTTP/SSE/PG；只用共享迁移创建schema，不读取.env或任何现存DSN。 */
 export async function createCodeUiHttpFixture(
   options: {
-    authDriver?: ServerEnv["authDriver"];
     builtinPluginsDir?: string;
     allowThirdPartyPlugins?: boolean;
   } = {},
@@ -46,9 +46,8 @@ export async function createCodeUiHttpFixture(
     app = buildApp({
       env: {
         databaseUrl: database.connectionString,
-        authDriver: options.authDriver ?? "local-trust",
+        desktopDataDir: directory,
         queueDriver: "in-process",
-        credentialSecret: randomBytes(32).toString("hex"),
         agentFilesRoot: join(directory, "agent-files"),
         blobDir: join(directory, "blobs"),
         sandboxRoot: join(directory, "sandbox"),
@@ -59,7 +58,51 @@ export async function createCodeUiHttpFixture(
     });
     const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
     const host = app;
-    const client = createCodeUiTestClient({ baseUrl, origin });
+    // 桌面真实凭据授权一次性入口，浏览器再兑换自己的 HttpOnly 会话。
+    const desktopToken = await host.kernel.get("localAccess").getDesktopToken();
+    const ticketResponse = await fetch(`${baseUrl}/api/local-access/tickets`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${desktopToken}`,
+        origin,
+        "content-type": "application/json",
+        connection: "close",
+      },
+      body: "{}",
+    });
+    if (ticketResponse.status !== 201)
+      throw new Error("独占HTTP夹具无法签发本机连接入口。");
+    const ticket = localAccessTicketResponseSchema.parse(
+      await ticketResponse.json(),
+    );
+    const connected = await fetch(`${baseUrl}/api/local-access/connect`, {
+      method: "POST",
+      headers: {
+        origin,
+        "content-type": "application/json",
+        connection: "close",
+      },
+      body: JSON.stringify({
+        ticket: ticket.ticket,
+        label: "Code UI 集成浏览器",
+      }),
+    });
+    if (connected.status !== 200)
+      throw new Error("独占HTTP夹具无法兑换本机会话。");
+    const cookieHeader = connected.headers.get("set-cookie");
+    if (!cookieHeader || !/;\s*HttpOnly/i.test(cookieHeader))
+      throw new Error("独占HTTP夹具未得到 HttpOnly 接入 cookie。");
+    const cookie = cookieHeader.split(";")[0];
+    if (!cookie) throw new Error("独占HTTP夹具会话 cookie 为空。");
+    const actor = await host.kernel
+      .get("localAccess")
+      .authenticate({ ip: "127.0.0.1", headers: { origin, cookie } });
+    if (!actor) throw new Error("独占HTTP夹具会话无法通过真实接入授权。");
+    const client = createCodeUiTestClient({
+      baseUrl,
+      origin,
+      headers: { cookie },
+    });
     let closing: Promise<void> | undefined;
     return {
       app: host,
@@ -69,6 +112,7 @@ export async function createCodeUiHttpFixture(
       baseUrl,
       origin,
       client,
+      actor,
       close() {
         closing ??= (async () => {
           await client.close();
@@ -90,4 +134,141 @@ export async function createCodeUiHttpFixture(
       if (applicationEnvKey(key)) delete process.env[key];
     for (const [key, value] of saved) process.env[key] = value;
   }
+}
+
+/** 既有外部HTTP场景逐例取得独占DB及真实浏览器连接，不读取共享DSN。 */
+export function useCodeUiHttpFixture() {
+  const enabled = process.env.RUN_CODE_UI_INTEGRATION === "1";
+  let active: Awaited<ReturnType<typeof createCodeUiHttpFixture>> | undefined;
+  let connectionId: string | undefined;
+  beforeEach(async () => {
+    if (!enabled) return;
+    active = await createCodeUiHttpFixture();
+    const stream = await active.client.openCodeStream();
+    connectionId = stream.ready.hello.connectionId;
+    const initialized = await stream.rpc("initializeConversationV4", [
+      {
+        kind: "clientHello",
+        protocolVersion: 3,
+        clientId: randomUUID(),
+        appVersion: "isolated-http-test",
+        clientKind: "web",
+      },
+    ]);
+    if (initialized.status !== 200)
+      throw new Error("独占HTTP夹具无法初始化原Code连接。");
+  });
+  afterEach(async () => {
+    const current = active;
+    active = undefined;
+    connectionId = undefined;
+    await current?.close();
+  });
+  function current() {
+    if (!active) throw new Error("独占HTTP夹具尚未初始化。");
+    return active;
+  }
+  return {
+    request: (
+      ...args: Parameters<ReturnType<typeof createCodeUiTestClient>["request"]>
+    ) => {
+      const [path, body, method] = args;
+      return current().client.request(
+        path,
+        path === "/api/code-ui/rpc" && body !== null && typeof body === "object"
+          ? { connectionId, ...body }
+          : body,
+        method,
+      );
+    },
+    openCodeStream: (
+      ...args: Parameters<
+        ReturnType<typeof createCodeUiTestClient>["openCodeStream"]
+      >
+    ) => current().client.openCodeStream(...args),
+    databaseUrl: () => current().database.connectionString,
+  };
+}
+
+const appSessions = new WeakMap<
+  ReturnType<typeof buildApp>,
+  Promise<{ cookie: string; connectionId: string }>
+>();
+/** 重启/宿主关闭测试仍通过真实HTTP票据和SSE建连接，再向真实路由inject请求。 */
+export async function codeUiAuthorizedInject(
+  app: ReturnType<typeof buildApp>,
+  options: import("fastify").InjectOptions,
+): Promise<import("fastify").LightMyRequestResponse> {
+  let pending = appSessions.get(app);
+  if (!pending) {
+    pending = (async () => {
+      const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
+      const origin = "http://localhost:3300";
+      const desktopToken = await app.kernel
+        .get("localAccess")
+        .getDesktopToken();
+      const issued = await app.inject({
+        method: "POST",
+        url: "/api/local-access/tickets",
+        headers: { origin, authorization: `Bearer ${desktopToken}` },
+        payload: {},
+      });
+      if (issued.statusCode !== 201)
+        throw new Error("重启夹具无法签发连接入口。");
+      const ticket = localAccessTicketResponseSchema.parse(issued.json());
+      const connected = await app.inject({
+        method: "POST",
+        url: "/api/local-access/connect",
+        headers: { origin },
+        payload: { ticket: ticket.ticket, label: "Code 重启测试" },
+      });
+      const setCookie = connected.headers["set-cookie"];
+      const value = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+      if (
+        connected.statusCode !== 200 ||
+        typeof value !== "string" ||
+        !/;\s*HttpOnly/i.test(value)
+      )
+        throw new Error("重启夹具无法兑换本机会话。");
+      const cookie = value.split(";")[0];
+      if (!cookie) throw new Error("重启夹具会话为空。");
+      const client = createCodeUiTestClient({
+        baseUrl,
+        origin,
+        headers: { cookie },
+      });
+      const stream = await client.openCodeStream();
+      const initialized = await stream.rpc("initializeConversationV4", [
+        {
+          kind: "clientHello",
+          protocolVersion: 3,
+          clientId: randomUUID(),
+          appVersion: "restart-http-test",
+          clientKind: "web",
+        },
+      ]);
+      if (initialized.status !== 200)
+        throw new Error("重启夹具无法初始化Code连接。");
+      return { cookie, connectionId: stream.ready.hello.connectionId };
+    })();
+    appSessions.set(app, pending);
+  }
+  const session = await pending;
+  const { payload, ...injectOptions } = options;
+  const boundPayload =
+    options.url === "/api/code-ui/rpc" &&
+    payload !== null &&
+    typeof payload === "object"
+      ? { connectionId: session.connectionId, ...payload }
+      : payload;
+  const injected: import("fastify").InjectOptions = {
+    ...injectOptions,
+    headers: {
+      origin: "http://localhost:3300",
+      cookie: session.cookie,
+      ...options.headers,
+    },
+    ...(boundPayload === undefined ? {} : { payload: boundPayload }),
+  };
+  return app.inject(injected);
 }

@@ -4,7 +4,7 @@ import {
   providerInstanceResponseSchema,
 } from "@kenfutwork/shared";
 import { expect, it, vi } from "vitest";
-import type { AuthenticatedUser } from "../auth/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import { CodeUiConnections } from "./connections.js";
 import { buildCodeUiModelViews } from "./model-views.js";
 import {
@@ -14,32 +14,27 @@ import {
 
 function fixture(
   shared: {
-    workspaceId?: string;
-    actor?: AuthenticatedUser;
+    instanceId?: string;
+    actor?: LocalActor;
     connections?: CodeUiConnections;
   } = {},
 ) {
-  const workspaceId = shared.workspaceId ?? randomUUID();
+  const instanceId = shared.instanceId ?? randomUUID();
   const projectId = randomUUID();
-  const actor = shared.actor ?? {
-    id: randomUUID(),
-    email: "workspace-config@test",
-    accessToken: "private",
-    userMetadata: {},
-  };
+  const actor = shared.actor ?? { instanceId, accessClientId: null };
   const path = "/owned/project";
   const identity = JSON.stringify([projectId, path]);
   const events: unknown[] = [];
   const connections = shared.connections ?? new CodeUiConnections();
   const carrier = connections.open(
-    workspaceId,
-    actor.id,
+    instanceId,
+    actor.instanceId,
     async (event) => {
       events.push(event);
     },
     () => {},
   );
-  connections.initialize(workspaceId, carrier.hello.connectionId, {
+  connections.initialize(instanceId, carrier.hello.connectionId, {
     kind: "clientHello",
     protocolVersion: protocol.V4_WIRE_PROTOCOL_VERSION,
     clientId: randomUUID(),
@@ -47,14 +42,13 @@ function fixture(
     clientKind: "web",
   });
   const connection = {
-    workspaceId,
-    userId: actor.id,
+    instanceId,
     connectionId: carrier.hello.connectionId,
   };
   const instance = providerInstanceResponseSchema.parse({
     id: randomUUID(),
     name: "用户供应商",
-    scope: "workspace",
+    scope: "local",
     protocol: "openai-compatible",
     enabled: true,
     hasCredential: true,
@@ -84,15 +78,15 @@ function fixture(
     }),
   );
   const resolve = vi.fn(
-    async (user: AuthenticatedUser, request: CodeUiWorkspaceConfigRequest) => {
+    async (user: LocalActor, request: CodeUiWorkspaceConfigRequest) => {
       if (
         !available ||
-        user.id !== actor.id ||
+        user.instanceId !== actor.instanceId ||
         request.projectId !== projectId ||
         request.workspacePath !== path
       )
         throw new Error("Project不属于当前可信用户或已经归档。");
-      return { workspaceId, projectId, workspacePath: path };
+      return { instanceId, projectId, workspacePath: path };
     },
   );
   const createHost = () =>
@@ -119,7 +113,7 @@ function fixture(
     views,
     resolve,
     instance,
-    workspaceId,
+    instanceId,
     restartHost: createHost,
     setPresentation(value: typeof presentation) {
       presentation = value;
@@ -204,7 +198,7 @@ it("真实provider停用与命令更新刷新同租约conflated最新态，resyn
       { name: "build", description: "新的真实命令", source: "custom" },
     ],
   });
-  await f.host.refresh(f.workspaceId);
+  await f.host.refresh(f.instanceId);
   const update = frame(f.events[1]);
   expect(update.wire.deliveryKind).toBe("online");
   expect(update.frame.toSeq).toBeGreaterThan(frame(f.events[0]).frame.toSeq);
@@ -239,7 +233,7 @@ it("真实provider停用与命令更新刷新同租约conflated最新态，resyn
     [{ ...f.params, subscriptionId: subscribed.result.ack.subscriptionId }],
     f.connection,
   );
-  await f.host.refresh(f.workspaceId);
+  await f.host.refresh(f.instanceId);
   expect(f.events).toHaveLength(3);
 });
 
@@ -250,7 +244,7 @@ it("刷新已送出最新态后，迟到initial与recovery不得倒退配置；�
     mode: "edit",
     slashCommands: [],
   });
-  await f.host.refresh(f.workspaceId);
+  await f.host.refresh(f.instanceId);
   expect(frame(f.events[0]).snapshot.config.configOptions).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ id: "mode", currentValue: "edit" }),
@@ -273,7 +267,7 @@ it("刷新已送出最新态后，迟到initial与recovery不得倒退配置；�
   if (!recovery || !("publish" in recovery))
     throw new Error("resync缺少真实publish。");
   f.setPresentation({ mode: "yolo", slashCommands: [] });
-  await f.host.refresh(f.workspaceId);
+  await f.host.refresh(f.instanceId);
   await recovery.publish();
   expect(f.events).toHaveLength(2);
   const current = await f.host.call(
@@ -304,7 +298,7 @@ it("配置host换代的新epoch从seq零正确开始，旧lease迟到帧不得�
   const original = await subscribe(f);
   await original.publish();
   f.setPresentation({ mode: "edit", slashCommands: [] });
-  await f.host.refresh(f.workspaceId);
+  await f.host.refresh(f.instanceId);
   expect(frame(f.events[1]).frame.toSeq).toBeGreaterThan(0);
   const replacement = await subscribe({ ...f, host: f.restartHost() });
   await replacement.publish();
@@ -350,7 +344,7 @@ it("modelViews在途时发生mutation，refresh排队重新读取最新目录，
   );
   await entered;
   f.instance.enabled = false;
-  const refreshing = f.host.refresh(f.workspaceId);
+  const refreshing = f.host.refresh(f.instanceId);
   finish?.();
   const recovered = await recovery;
   await refreshing;
@@ -390,7 +384,7 @@ it("initial订阅读取目录期间发生mutation，尚未注册lease也必须�
   const initial = subscribe(f);
   await entered;
   f.instance.enabled = false;
-  await f.host.refresh(f.workspaceId);
+  await f.host.refresh(f.instanceId);
   finish?.();
   const subscribed = await initial;
   expect(f.views.mock.calls.length).toBeGreaterThan(1);
@@ -406,7 +400,7 @@ it("initial订阅读取目录期间发生mutation，尚未注册lease也必须�
 it("单个归档订阅真实失败隔离，其余Project继续送帧；source消费者仅dispose失败lease", async () => {
   const archived = fixture();
   const healthy = fixture({
-    workspaceId: archived.workspaceId,
+    instanceId: archived.instanceId,
     actor: archived.actor,
     connections: archived.connections,
   });
@@ -416,7 +410,7 @@ it("单个归档订阅真实失败隔离，其余Project继续送帧；source消
   await liveLease.publish();
   archived.archive();
   healthy.setPresentation({ mode: "edit", slashCommands: [] });
-  const failures = await healthy.host.refresh(healthy.workspaceId);
+  const failures = await healthy.host.refresh(healthy.instanceId);
   expect(healthy.events).toHaveLength(2);
   expect(archived.events).toHaveLength(1);
   expect(failures).toHaveLength(1);
@@ -431,15 +425,15 @@ it("单个归档订阅真实失败隔离，其余Project继续送帧；source消
   failures[0]?.dispose();
   expect(
     archived.connections.require(
-      archived.workspaceId,
+      archived.instanceId,
       archived.connection.connectionId,
     ).subscriptions.size,
   ).toBe(0);
-  const next = await healthy.host.refresh(healthy.workspaceId);
+  const next = await healthy.host.refresh(healthy.instanceId);
   expect(next).toEqual([]);
   expect(
     healthy.connections.require(
-      healthy.workspaceId,
+      healthy.instanceId,
       healthy.connection.connectionId,
     ).subscriptions.size,
   ).toBe(1);
@@ -449,7 +443,7 @@ it("单个归档订阅真实失败隔离，其余Project继续送帧；source消
 it("归档后的精确owned退订仍能释放lease，同topic错Project不能resync或退订", async () => {
   const first = fixture();
   const second = fixture({
-    workspaceId: first.workspaceId,
+    instanceId: first.instanceId,
     actor: first.actor,
     connections: first.connections,
   });
@@ -488,7 +482,7 @@ it("归档后的精确owned退订仍能释放lease，同topic错Project不能res
   await owned.publish();
   expect(first.events).toEqual([]);
   expect(
-    first.connections.require(first.workspaceId, first.connection.connectionId)
+    first.connections.require(first.instanceId, first.connection.connectionId)
       .subscriptions.size,
   ).toBe(0);
 });
@@ -512,7 +506,7 @@ it("重订阅替换只认新lease，关闭连接后迟到publish无帧；source�
   expect(failed.events).toEqual([]);
   expect(
     failed.connections.require(
-      failed.workspaceId,
+      failed.instanceId,
       failed.connection.connectionId,
     ).subscriptions.size,
   ).toBe(0);
@@ -523,7 +517,7 @@ it("foreign actor/连接/Project与跨主题subId拒绝，读期间归档不会�
   const subscribed = await subscribe(f);
   await expect(
     f.host.call(
-      { ...f.actor, id: randomUUID() },
+      { ...f.actor, instanceId: randomUUID() },
       "subscribeWorkspaceConfigV4",
       [f.params],
       f.connection,

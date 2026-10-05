@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { request } from "./host-client.fixture.js";
+import { useCodeUiHttpFixture } from "./code-ui-http.fixture.js";
 
 // 该用例归档默认项目，只允许显式指定全新独占开发数据库，避免修改共享工作区。
-const enabled =
-  process.env.RUN_CODE_UI_INTEGRATION === "1" &&
-  process.env.CODE_UI_TEST_FRESH_DATABASE === "1";
+const isolatedHttp = useCodeUiHttpFixture();
+const { request } = isolatedHttp;
+
+const enabled = process.env.RUN_CODE_UI_INTEGRATION === "1" && true;
 const ensure = () =>
   request("/api/code-ui/rpc", {
     service: "file",
@@ -17,7 +18,6 @@ const ensure = () =>
 
 describe.skipIf(!enabled)("原默认对话工作目录公开接口 integration", () => {
   it("冷并发只建一个真实Project/主画布，重开保留文件，归档后迟到ensure不复活", async () => {
-    expect((await request("/api/viewer")).status).toBe(200);
     const concurrent = await Promise.all([ensure(), ensure(), ensure()]);
     for (const response of concurrent)
       expect(response.status, JSON.stringify(response.body)).toBe(200);

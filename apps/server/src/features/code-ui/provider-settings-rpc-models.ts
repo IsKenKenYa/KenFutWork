@@ -9,7 +9,7 @@ import {
 } from "@zcode/provider";
 import { modelConfigDataSchema } from "@zcode/shared/model-config";
 import { z } from "zod";
-import type { AuthenticatedUser } from "../auth/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import {
   codeUiNativeModel,
   codeUiProviderMetadata,
@@ -18,15 +18,15 @@ import { CodeUiRepositoryError } from "./repository.js";
 
 export interface ProviderModelMutationContext {
   load(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     providerId: string,
   ): Promise<ProviderInstanceResponse>;
   save(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     instance: ProviderInstanceResponse,
     patch: ProviderInstanceUpdateRequest,
   ): Promise<void>;
-  revision(actor: AuthenticatedUser): Promise<number>;
+  revision(actor: LocalActor): Promise<number>;
 }
 const id = z.string().trim().min(1);
 const providerId = z.uuid();
@@ -100,7 +100,7 @@ function replaceModel(
 
 async function saveDraft(
   context: ProviderModelMutationContext,
-  actor: AuthenticatedUser,
+  actor: LocalActor,
   value: unknown,
 ) {
   const params = z
@@ -141,7 +141,7 @@ async function saveDraft(
 }
 async function addModel(
   context: ProviderModelMutationContext,
-  actor: AuthenticatedUser,
+  actor: LocalActor,
   args: unknown[],
 ) {
   const [owner, modelId, value, recommended] = z
@@ -168,7 +168,7 @@ async function addModel(
 }
 async function renameModel(
   context: ProviderModelMutationContext,
-  actor: AuthenticatedUser,
+  actor: LocalActor,
   args: unknown[],
 ) {
   const [owner, modelId, nextId] = z.tuple([providerId, id, id]).parse(args);
@@ -188,7 +188,7 @@ async function renameModel(
 }
 async function deleteModel(
   context: ProviderModelMutationContext,
-  actor: AuthenticatedUser,
+  actor: LocalActor,
   args: unknown[],
 ) {
   const [owner, modelId] = z.tuple([providerId, id]).parse(args);
@@ -217,7 +217,7 @@ async function deleteModel(
 }
 async function toggleModel(
   context: ProviderModelMutationContext,
-  actor: AuthenticatedUser,
+  actor: LocalActor,
   args: unknown[],
 ) {
   const [owner, modelId, enabled] = z
@@ -248,7 +248,7 @@ async function toggleModel(
 }
 async function reorderModels(
   context: ProviderModelMutationContext,
-  actor: AuthenticatedUser,
+  actor: LocalActor,
   args: unknown[],
 ) {
   const [owner, requested] = z.tuple([providerId, z.array(id)]).parse(args);
@@ -281,7 +281,7 @@ export function createProviderModelMutations(
 ) {
   const handlers: Record<
     string,
-    (actor: AuthenticatedUser, args: unknown[]) => Promise<void>
+    (actor: LocalActor, args: unknown[]) => Promise<void>
   > = {
     addPersonalModel: (actor, args) => addModel(context, actor, args),
     renamePersonalModel: (actor, args) => renameModel(context, actor, args),
@@ -292,7 +292,7 @@ export function createProviderModelMutations(
   };
   return {
     supports: (method: string) => methods.has(method),
-    call: async (actor: AuthenticatedUser, method: string, args: unknown[]) => {
+    call: async (actor: LocalActor, method: string, args: unknown[]) => {
       const handler = handlers[method];
       if (!handler)
         throw new CodeUiRepositoryError("not_found", "未知模型设置操作。");

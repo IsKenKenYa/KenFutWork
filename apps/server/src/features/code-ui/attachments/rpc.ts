@@ -1,6 +1,6 @@
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { z } from "zod";
-import type { AuthenticatedUser } from "../../auth/types.js";
+import type { LocalActor } from "../../local-instance/types.js";
 import { attachmentFrameDataBytes } from "./bytes.js";
 import { CodeAttachmentError, type CodeAttachmentsService } from "./types.js";
 
@@ -22,7 +22,7 @@ export const isCodeAttachmentRpc = (method: string): boolean =>
 /** Original RPC names and shapes; the carrier supplies connection identity, never renderer data. */
 export async function codeAttachmentsRpc(
   service: CodeAttachmentsService,
-  actor: AuthenticatedUser,
+  actor: LocalActor,
   method: string,
   args: unknown[],
   connectionId: string,

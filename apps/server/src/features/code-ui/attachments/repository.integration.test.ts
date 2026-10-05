@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { workspaceSettingsSchema } from "@kenfutwork/shared";
+import { instanceSettingsSchema } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 import { createLocalFsBlobStore } from "../../blob/providers/local-fs.js";
 import type { PersistenceSessionLock } from "../../persistence/types.js";
@@ -25,31 +25,24 @@ describe.skipIf(process.env.KENFUTWORK_ATTACHMENT_TEST_PG !== "1")(
       try {
         expect(database.replayed).toHaveLength(database.expectedMigrations);
         expect(database.secondReplay).toHaveLength(0);
-        const workspaceId = database.context.scope.workspaceId;
-        const workspace = await database.persistence.queryOne<{
-          owner_user_id: string;
-        }>("select owner_user_id from public.workspaces where id = $1", [
-          workspaceId,
-        ]);
-        if (!workspace) throw new Error("隔离附件工作区不存在。");
+        const instanceId = database.context.scope.instanceId;
+
         const actor = {
-          id: workspace.owner_user_id,
-          email: "attachment@integration.test",
-          accessToken: "private-test",
-          userMetadata: {},
+          instanceId: database.context.scope.instanceId,
+          accessClientId: null,
         };
         const identity: CodeAttachmentSession = {
-          workspaceId,
+          instanceId,
           projectId: database.context.scope.projectId,
           taskId: database.context.scope.taskId,
           sessionId: database.context.scope.taskId,
-          userId: actor.id,
+          createdByClientId: actor.accessClientId,
           scopeGeneration: database.context.scope.generation,
           branchGeneration: database.context.branchGeneration,
           revision: 0,
           canUpload: true,
         };
-        const settings = workspaceSettingsSchema.parse({
+        const settings = instanceSettingsSchema.parse({
           defaultModel: "fixture",
         });
         const bytes = Buffer.from([0, 255, 2, 3]);
@@ -135,9 +128,9 @@ describe.skipIf(process.env.KENFUTWORK_ATTACHMENT_TEST_PG !== "1")(
           restarted.service.begin(actor, { ...plan, ...upload }),
         ).resolves.toMatchObject({ state: "committed", ref });
         await database.persistence
-          .forWorkspace(workspaceId)
+          .forInstance(instanceId)
           .execute(
-            "update public.code_ui_sessions set archived = true where workspace_id = :workspace and id = $1",
+            "update public.code_ui_sessions set archived = true where instance_id = :instance and id = $1",
             [identity.taskId],
           );
         const read = {
@@ -152,9 +145,9 @@ describe.skipIf(process.env.KENFUTWORK_ATTACHMENT_TEST_PG !== "1")(
           (await restarted.service.read(actor, read, "share")).dataBase64,
         ).toBe(bytes.toString("base64"));
         await database.persistence
-          .forWorkspace(workspaceId)
+          .forInstance(instanceId)
           .execute(
-            "update public.code_ui_sessions set archived = false where workspace_id = :workspace and id = $1",
+            "update public.code_ui_sessions set archived = false where instance_id = :instance and id = $1",
             [identity.taskId],
           );
         const late = { ...upload, uploadId: "late-generation" };
@@ -165,18 +158,18 @@ describe.skipIf(process.env.KENFUTWORK_ATTACHMENT_TEST_PG !== "1")(
           dataBase64: bytes.toString("base64"),
         });
         await database.persistence
-          .forWorkspace(workspaceId)
+          .forInstance(instanceId)
           .execute(
-            "update public.code_ui_sessions set scope_generation = scope_generation + 1, branch_generation = branch_generation + 1 where workspace_id = :workspace and id = $1",
+            "update public.code_ui_sessions set scope_generation = scope_generation + 1, branch_generation = branch_generation + 1 where instance_id = :instance and id = $1",
             [identity.taskId],
           );
         await expect(
           restarted.service.commit(actor, late),
         ).rejects.toMatchObject({ code: "fault.attachment.staleTask" });
         const rows = await database.persistence
-          .forWorkspace(workspaceId)
+          .forInstance(instanceId)
           .query<{ status: string; record: Record<string, unknown> }>(
-            "select status, record from public.code_attachments where workspace_id = :workspace and task_id = $1",
+            "select status, record from public.code_attachments where instance_id = :instance and task_id = $1",
             [identity.taskId],
           );
         expect(rows.filter((row) => row.status === "committed")).toHaveLength(
@@ -185,13 +178,13 @@ describe.skipIf(process.env.KENFUTWORK_ATTACHMENT_TEST_PG !== "1")(
         expect(rows.filter((row) => row.status === "aborted")).toHaveLength(2);
         for (const row of rows.filter((item) => item.status === "aborted"))
           expect(Object.keys(row.record).sort()).toEqual([
+            "createdByClientId",
+            "instanceId",
             "key",
             "projectId",
             "sessionId",
             "status",
             "taskId",
-            "userId",
-            "workspaceId",
           ]);
       } finally {
         await Promise.allSettled(services.map((service) => service.close()));
@@ -223,30 +216,23 @@ describe.skipIf(process.env.KENFUTWORK_ATTACHMENT_TEST_PG !== "1")(
       let service: ReturnType<typeof createCodeAttachmentsService> | undefined;
       try {
         const scope = database.context.scope;
-        const workspace = await database.persistence.queryOne<{
-          owner_user_id: string;
-        }>("select owner_user_id from public.workspaces where id = $1", [
-          scope.workspaceId,
-        ]);
-        if (!workspace) throw new Error("隔离租约工作区不存在。");
+
         const actor = {
-          id: workspace.owner_user_id,
-          email: "attachment@integration.test",
-          accessToken: "private-test",
-          userMetadata: {},
+          instanceId: database.context.scope.instanceId,
+          accessClientId: null,
         };
         const identity: CodeAttachmentSession = {
-          workspaceId: scope.workspaceId,
+          instanceId: scope.instanceId,
           projectId: scope.projectId,
           taskId: scope.taskId,
           sessionId: scope.taskId,
-          userId: actor.id,
+          createdByClientId: actor.accessClientId,
           scopeGeneration: scope.generation,
           branchGeneration: database.context.branchGeneration,
           revision: 0,
           canUpload: true,
         };
-        const settings = workspaceSettingsSchema.parse({
+        const settings = instanceSettingsSchema.parse({
           defaultModel: "fixture",
         });
         service = createCodeAttachmentsService({
@@ -300,9 +286,9 @@ describe.skipIf(process.env.KENFUTWORK_ATTACHMENT_TEST_PG !== "1")(
           code: "fault.attachment.hostUnavailable",
         });
         const rows = await database.persistence
-          .forWorkspace(scope.workspaceId)
+          .forInstance(scope.instanceId)
           .query<{ status: string; record: Record<string, unknown> }>(
-            "select status, record from public.code_attachments where workspace_id = :workspace and task_id = $1",
+            "select status, record from public.code_attachments where instance_id = :instance and task_id = $1",
             [scope.taskId],
           );
         expect(rows).toHaveLength(1);
@@ -336,20 +322,13 @@ describe.skipIf(process.env.KENFUTWORK_ATTACHMENT_TEST_PG !== "1")(
       let service: ReturnType<typeof createCodeAttachmentsService> | undefined;
       try {
         const scope = database.context.scope;
-        const workspace = await database.persistence.queryOne<{
-          owner_user_id: string;
-        }>("select owner_user_id from public.workspaces where id = $1", [
-          scope.workspaceId,
-        ]);
-        if (!workspace) throw new Error("隔离生命周期工作区不存在。");
+
         const actor = {
-          id: workspace.owner_user_id,
-          email: "attachment@integration.test",
-          accessToken: "private-test",
-          userMetadata: {},
+          instanceId: database.context.scope.instanceId,
+          accessClientId: null,
         };
         let generation = scope.generation;
-        const settings = workspaceSettingsSchema.parse({
+        const settings = instanceSettingsSchema.parse({
           defaultModel: "fixture",
         });
         const bytes = Buffer.from([0, 255, 3, 4]);
@@ -359,11 +338,11 @@ describe.skipIf(process.env.KENFUTWORK_ATTACHMENT_TEST_PG !== "1")(
           blob,
           async authorizeSession() {
             return {
-              workspaceId: scope.workspaceId,
+              instanceId: scope.instanceId,
               projectId: scope.projectId,
               taskId: scope.taskId,
               sessionId: scope.taskId,
-              userId: actor.id,
+              createdByClientId: actor.accessClientId,
               scopeGeneration: generation,
               branchGeneration: database.context.branchGeneration,
               revision: 0,
@@ -409,7 +388,7 @@ describe.skipIf(process.env.KENFUTWORK_ATTACHMENT_TEST_PG !== "1")(
         ref = (await service.commit(actor, upload)).ref;
         const staged = { ...upload, uploadId: "unfinished" };
         await service.begin(actor, { ...staged, ...plan });
-        await service.releaseTask(scope.workspaceId, scope.taskId);
+        await service.releaseTask(scope.instanceId, scope.taskId);
         await expect(service.commit(actor, staged)).rejects.toMatchObject({
           code: "fault.attachment.interrupted",
         });
@@ -428,9 +407,9 @@ describe.skipIf(process.env.KENFUTWORK_ATTACHMENT_TEST_PG !== "1")(
           service.purgeTask(actor, scope.taskId, generation),
         ).rejects.toMatchObject({ code: "fault.attachment.staleTask" });
         const row = await database.persistence
-          .forWorkspace(scope.workspaceId)
+          .forInstance(scope.instanceId)
           .queryOne<{ record: { objectPath: string } }>(
-            "select record from public.code_attachments where workspace_id = :workspace and task_id = $1 and status = 'committed'",
+            "select record from public.code_attachments where instance_id = :instance and task_id = $1 and status = 'committed'",
             [scope.taskId],
           );
         if (!row) throw new Error("已提交附件丢失。");
@@ -439,9 +418,9 @@ describe.skipIf(process.env.KENFUTWORK_ATTACHMENT_TEST_PG !== "1")(
           .upload("unrelated/keep", Buffer.from([9]));
         generation += 1;
         await database.persistence
-          .forWorkspace(scope.workspaceId)
+          .forInstance(scope.instanceId)
           .execute(
-            "update public.code_ui_sessions set scope_generation = $2, execution_state = 'revoking' where workspace_id = :workspace and id = $1",
+            "update public.code_ui_sessions set scope_generation = $2, execution_state = 'revoking' where instance_id = :instance and id = $1",
             [scope.taskId, generation],
           );
         await expect(
@@ -457,22 +436,22 @@ describe.skipIf(process.env.KENFUTWORK_ATTACHMENT_TEST_PG !== "1")(
           ),
         ).toEqual([9]);
         const rows = await database.persistence
-          .forWorkspace(scope.workspaceId)
+          .forInstance(scope.instanceId)
           .query<{ status: string; record: Record<string, unknown> }>(
-            "select status, record from public.code_attachments where workspace_id = :workspace and task_id = $1",
+            "select status, record from public.code_attachments where instance_id = :instance and task_id = $1",
             [scope.taskId],
           );
         expect(rows).toHaveLength(2);
         for (const item of rows) {
           expect(item.status).toBe("aborted");
           expect(Object.keys(item.record).sort()).toEqual([
+            "createdByClientId",
+            "instanceId",
             "key",
             "projectId",
             "sessionId",
             "status",
             "taskId",
-            "userId",
-            "workspaceId",
           ]);
         }
         await expect(service.commit(actor, upload)).rejects.toMatchObject({

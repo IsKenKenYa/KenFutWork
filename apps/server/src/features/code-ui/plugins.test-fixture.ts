@@ -4,16 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AgentRunEventBus, ToolRegistryImpl } from "../../kernel/context.js";
-import { createAdminService } from "../admin/admin-service.js";
-import { createAdminRepository } from "../admin/repository.js";
-import type { AuthenticatedUser } from "../auth/types.js";
-import { createViewerRepository } from "../bootstrap/repository.js";
-import { createCreditService } from "../credits/credit-service.js";
-import { createCreditRepository } from "../credits/repository.js";
-import {
-  createPersistenceFromRunner,
-  type PostgresQueryRunner,
-} from "../persistence/providers/postgres.js";
+import type { LocalActor } from "../local-instance/types.js";
 import { buildBundleManifest } from "../plugins/bundle-manifest.js";
 import { validateBundleFiles } from "../plugins/compat-validator.js";
 import {
@@ -21,44 +12,11 @@ import {
   createPluginRegistryService,
 } from "../plugins/plugin-registry-service.js";
 import type { PluginStorage } from "../plugins/plugin-storage.js";
+import { createCodeUiTestInstance } from "./host-session.fixture.js";
 import {
   type CodeUiPluginsTarget,
   createCodeUiPluginsHost,
 } from "./plugins.js";
-
-/** 只替换角色数据库边界；判定仍走原AdminService与原repositories。 */
-export function createPluginAdminFixture(
-  actor: Pick<AuthenticatedUser, "id">,
-  options: { role?: "admin" | "user" } = {},
-) {
-  const runner: PostgresQueryRunner = {
-    query: async (sql, values) => {
-      if (sql !== "select role from public.profiles where id = $1")
-        throw new Error("插件管理夹具只提供平台角色数据库读取");
-      return {
-        rowCount: 1,
-        rows: [
-          { role: values[0] === actor.id ? (options.role ?? "admin") : "user" },
-        ],
-      };
-    },
-    acquire: async () => {
-      throw new Error("插件管理不应开启数据库写事务");
-    },
-    acquireSession: async () => {
-      throw new Error("机器插件安装不得建立Task执行作用域");
-    },
-    end: async () => {},
-  };
-  const persistence = createPersistenceFromRunner(runner);
-  return createAdminService({
-    repository: createAdminRepository(persistence),
-    workspaces: createViewerRepository(persistence),
-    credits: createCreditService({
-      repository: createCreditRepository(persistence),
-    }),
-  });
-}
 
 /** 同一真实package/registry用于原hostRPC与独立Adapter公共seam；不注册vitest用例。 */
 export async function createPluginInventoryFixture(
@@ -108,16 +66,11 @@ export async function createPluginInventoryFixture(
       purgePlugin: async () => 0,
     },
   });
-  const actor = {
-    id: randomUUID(),
-    email: "inventory@example.test",
-    accessToken: "private",
-    userMetadata: {},
-  };
-  const workspaceId = randomUUID();
+  const instanceId = randomUUID();
+  const actor = { instanceId, accessClientId: null };
   return {
     actor,
-    workspaceId,
+    instanceId,
     registry,
     tools,
     bundled,
@@ -138,8 +91,15 @@ export async function createPluginManagementFixture(
   options: { storage?: PluginStorage } = {},
 ) {
   const actual = await createPluginInventoryFixture(options);
-  const reader = { ...actual.actor, id: randomUUID() };
-  const admin = createPluginAdminFixture(actual.actor);
+  const foreignActor: LocalActor = {
+    instanceId: randomUUID(),
+    accessClientId: null,
+  };
+  const { localInstance } = createCodeUiTestInstance(
+    actual.instanceId,
+    null,
+    actual.directory,
+  );
   const projectId = randomUUID();
   const target = {
     workspacePath: actual.packageRoot,
@@ -148,7 +108,8 @@ export async function createPluginManagementFixture(
   };
   const deps = {
     registry: actual.registry,
-    readWorkspaceId: async () => actual.workspaceId,
+    resolveInstanceId: async (actor: LocalActor) =>
+      (await localInstance.resolve(actor)).instanceId,
     workspace: async (_actor: unknown, value: CodeUiPluginsTarget) => {
       if (
         value.workspacePath !== target.workspacePath ||
@@ -167,8 +128,7 @@ export async function createPluginManagementFixture(
   return {
     ...actual,
     target,
-    reader,
-    host: createCodeUiPluginsHost({ ...deps, admin }),
-    withoutAdmin: createCodeUiPluginsHost(deps),
+    foreignActor,
+    host: createCodeUiPluginsHost(deps),
   };
 }

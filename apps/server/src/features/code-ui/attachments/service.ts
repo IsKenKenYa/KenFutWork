@@ -43,23 +43,22 @@ export function createCodeAttachmentsService(
   let closed = false;
   let releaseSerial = 0;
   const releasedTasks = new Map<string, number>();
-  const taskKey = (workspaceId: string, taskId: string) =>
-    JSON.stringify([workspaceId, taskId]);
-  const connectionClosed = (workspaceId: string, connectionId: string) =>
-    closed ||
-    closedConnections.has(JSON.stringify([workspaceId, connectionId]));
+  const taskKey = (instanceId: string, taskId: string) =>
+    JSON.stringify([instanceId, taskId]);
+  const connectionClosed = (instanceId: string, connectionId: string) =>
+    closed || closedConnections.has(JSON.stringify([instanceId, connectionId]));
 
   async function exclusive<T>(
-    workspaceId: string,
+    instanceId: string,
     operation: () => Promise<T>,
   ): Promise<T> {
-    const previous = locks.get(workspaceId) ?? Promise.resolve();
+    const previous = locks.get(instanceId) ?? Promise.resolve();
     const next = previous.then(operation, operation);
-    locks.set(workspaceId, next);
+    locks.set(instanceId, next);
     try {
       return await next;
     } finally {
-      if (locks.get(workspaceId) === next) locks.delete(workspaceId);
+      if (locks.get(instanceId) === next) locks.delete(instanceId);
     }
   }
   function discard(key: string) {
@@ -84,7 +83,10 @@ export function createCodeAttachmentsService(
     sessionId: string,
   ) {
     const identity = await deps.authorizeSession(actor, sessionId);
-    if (identity.sessionId !== sessionId || identity.userId !== actor.id)
+    if (
+      identity.sessionId !== sessionId ||
+      identity.instanceId !== actor.instanceId
+    )
       throw new CodeAttachmentError(
         "fault.attachment.notAuthorized",
         "附件身份不属于当前用户会话。",
@@ -93,7 +95,7 @@ export function createCodeAttachmentsService(
     return identity;
   }
   async function expire(entry: Staging) {
-    await exclusive(entry.record.workspaceId, async () => {
+    await exclusive(entry.record.instanceId, async () => {
       await deps.repository.transact(
         entry.record,
         entry.record.key,
@@ -140,7 +142,7 @@ export function createCodeAttachmentsService(
     identity: CodeAttachmentSession,
     record: CommittedRecord,
   ) {
-    const limits = await deps.limits(actor, identity.workspaceId);
+    const limits = await deps.limits(actor, identity.instanceId);
     if (
       record.totalBytes > limits.maxBytes ||
       record.totalBytes > limits.stagedMaxBytes
@@ -198,22 +200,22 @@ export function createCodeAttachmentsService(
   const service: CodeAttachmentsService = {
     initialize,
     async budget(actor, sessionId) {
-      const workspaceId = sessionId
-        ? (await ownedSession(actor, sessionId)).workspaceId
-        : await deps.authorizeWorkspace?.(actor);
-      if (!workspaceId)
+      const instanceId = sessionId
+        ? (await ownedSession(actor, sessionId)).instanceId
+        : await deps.authorizeInstance?.(actor);
+      if (!instanceId)
         throw new CodeAttachmentError(
           "fault.attachment.budgetUnavailable",
           "附件预算的工作区身份提供方不可用。",
           503,
         );
-      return deps.limits(actor, workspaceId);
+      return deps.limits(actor, instanceId);
     },
     async close() {
       closed = true;
       for (const entry of [...staging.values()])
         await service.releaseConnection(
-          entry.record.workspaceId,
+          entry.record.instanceId,
           entry.record.connectionId,
         );
       await deps.repository.close();
@@ -222,16 +224,16 @@ export function createCodeAttachmentsService(
       const input = protocol.v4AttachmentBeginParamsSchema.parse(raw);
       const admittedBeforeRelease = releaseSerial;
       const identity = await session(actor, input.sessionId);
-      const limits = await deps.limits(actor, identity.workspaceId);
+      const limits = await deps.limits(actor, identity.instanceId);
       const key = attachmentKey(identity, input.uploadId);
       const fingerprint = attachmentFingerprint(input);
       const admissionClosed = () =>
-        connectionClosed(identity.workspaceId, input.connectionId) ||
-        (releasedTasks.get(taskKey(identity.workspaceId, identity.taskId)) ??
+        connectionClosed(identity.instanceId, input.connectionId) ||
+        (releasedTasks.get(taskKey(identity.instanceId, identity.taskId)) ??
           0) > admittedBeforeRelease;
       const decision = await exclusive<
         protocol.V4AttachmentBeginResult | { error: CodeAttachmentError }
-      >(identity.workspaceId, async () => {
+      >(identity.instanceId, async () => {
         const result = await deps.repository.transact<
           protocol.V4AttachmentBeginResult | { error: CodeAttachmentError }
         >(identity, key, async (transaction) => {
@@ -276,7 +278,7 @@ export function createCodeAttachmentsService(
           await transaction.assertWritable(identity);
           if (admissionClosed()) return cancel();
           const owned = [...staging.values()].filter(
-            (entry) => entry.record.workspaceId === identity.workspaceId,
+            (entry) => entry.record.instanceId === identity.instanceId,
           );
           const chunkMaxBytes = Math.min(
             limits.chunkMaxBytes,
@@ -359,8 +361,8 @@ export function createCodeAttachmentsService(
     async chunk(actor, input) {
       const identity = await session(actor, input.sessionId);
       const key = attachmentKey(identity, input.uploadId);
-      const limits = await deps.limits(actor, identity.workspaceId);
-      return exclusive(identity.workspaceId, () =>
+      const limits = await deps.limits(actor, identity.instanceId);
+      return exclusive(identity.instanceId, () =>
         deps.repository.transact(identity, key, async (transaction) => {
           const entry = requireStage(transaction.record, input.connectionId);
           await transaction.assertWritable(entry.record);
@@ -408,8 +410,8 @@ export function createCodeAttachmentsService(
       protocol.v4AttachmentCommitParamsSchema.parse(input);
       const identity = await session(actor, input.sessionId);
       const key = attachmentKey(identity, input.uploadId);
-      const limits = await deps.limits(actor, identity.workspaceId);
-      const result = await exclusive(identity.workspaceId, () =>
+      const limits = await deps.limits(actor, identity.instanceId);
+      const result = await exclusive(identity.instanceId, () =>
         deps.repository.transact(identity, key, async (transaction) => {
           const previous = transaction.record;
           if (previous?.status === "committed") return { ref: previous.ref };
@@ -454,7 +456,7 @@ export function createCodeAttachmentsService(
             };
           }
           const ref = `code-attachment:${key}`;
-          const objectPath = `${identity.workspaceId}/${identity.projectId}/${identity.taskId}/${key}`;
+          const objectPath = `${identity.instanceId}/${identity.projectId}/${identity.taskId}/${key}`;
           await bucket.upload(objectPath, bytes, {
             contentType: entry.record.mime,
             upsert: true,
@@ -499,7 +501,7 @@ export function createCodeAttachmentsService(
       protocol.v4AttachmentAbortParamsSchema.parse(input);
       const identity = await session(actor, input.sessionId);
       const key = attachmentKey(identity, input.uploadId);
-      await exclusive(identity.workspaceId, () =>
+      await exclusive(identity.instanceId, () =>
         deps.repository.transact(identity, key, async (transaction) => {
           const record = transaction.record;
           if (record?.status === "committed" || record?.status === "aborted")
@@ -519,30 +521,30 @@ export function createCodeAttachmentsService(
         }),
       );
     },
-    async releaseConnection(workspaceId, connectionId) {
-      closedConnections.add(JSON.stringify([workspaceId, connectionId]));
-      await exclusive(workspaceId, async () => {
+    async releaseConnection(instanceId, connectionId) {
+      closedConnections.add(JSON.stringify([instanceId, connectionId]));
+      await exclusive(instanceId, async () => {
         await deps.repository.abortConnection(
-          workspaceId,
+          instanceId,
           connectionId,
           runtimeId,
         );
         for (const [key, entry] of staging)
           if (
-            entry.record.workspaceId === workspaceId &&
+            entry.record.instanceId === instanceId &&
             entry.record.connectionId === connectionId
           )
             discard(key);
       });
     },
-    async releaseTask(workspaceId, taskId) {
+    async releaseTask(instanceId, taskId) {
       // A trusted local admission sequence fences even Begin calls still resolving identity.
-      releasedTasks.set(taskKey(workspaceId, taskId), ++releaseSerial);
-      await exclusive(workspaceId, async () => {
-        await deps.repository.releaseTask(workspaceId, taskId, runtimeId);
+      releasedTasks.set(taskKey(instanceId, taskId), ++releaseSerial);
+      await exclusive(instanceId, async () => {
+        await deps.repository.releaseTask(instanceId, taskId, runtimeId);
         for (const [key, entry] of staging)
           if (
-            entry.record.workspaceId === workspaceId &&
+            entry.record.instanceId === instanceId &&
             entry.record.taskId === taskId
           )
             discard(key);
@@ -556,17 +558,17 @@ export function createCodeAttachmentsService(
           "附件清理只接受根 Task。",
           404,
         );
-      await service.releaseTask(identity.workspaceId, taskId);
-      const limits = await deps.limits(actor, identity.workspaceId);
+      await service.releaseTask(identity.instanceId, taskId);
+      const limits = await deps.limits(actor, identity.instanceId);
       await deps.repository.purgeTask(
         identity,
         expectedScopeGeneration,
         limits.maxConcurrent,
         async (records) => {
           const paths = records.map((record) => {
-            const ownPath = `${identity.workspaceId}/${identity.projectId}/${identity.taskId}/${record.key}`;
+            const ownPath = `${identity.instanceId}/${identity.projectId}/${identity.taskId}/${record.key}`;
             if (
-              record.workspaceId !== identity.workspaceId ||
+              record.instanceId !== identity.instanceId ||
               record.projectId !== identity.projectId ||
               record.taskId !== identity.taskId ||
               record.ref !== `code-attachment:${record.key}` ||
@@ -590,7 +592,7 @@ export function createCodeAttachmentsService(
           : protocol.v4AttachmentReadParamsSchema.parse(raw);
       const { identity, record } = await authorizeRow(actor, input, purpose);
       const bytes = await bytesFor(actor, identity, record);
-      const limits = await deps.limits(actor, identity.workspaceId);
+      const limits = await deps.limits(actor, identity.instanceId);
       const limit = Math.min(
         input.limit,
         limits.chunkMaxBytes,
@@ -637,7 +639,7 @@ export function createCodeAttachmentsService(
     },
     async readForInput(actor, sessionId, attachments) {
       const identity = await session(actor, sessionId);
-      const limits = await deps.limits(actor, identity.workspaceId);
+      const limits = await deps.limits(actor, identity.instanceId);
       if (attachments.length > limits.maxPerInput)
         throw new CodeAttachmentError(
           "proto.payloadTooLarge",

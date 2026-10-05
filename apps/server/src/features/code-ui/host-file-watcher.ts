@@ -7,7 +7,7 @@ import {
 } from "@kenfutwork/shared";
 import type { FileWatchEvent } from "@zcode/shared";
 import { z } from "zod";
-import type { AuthenticatedUser } from "../auth/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type {
   CodeUiHostConnection,
   CodeUiHostTarget,
@@ -20,7 +20,7 @@ export interface CodeUiWatchTarget extends CodeUiHostTarget {
 }
 interface WatchEntry {
   id: string;
-  actor: AuthenticatedUser;
+  actor: LocalActor;
   connection: CodeUiHostConnection;
   target: CodeUiWatchTarget;
   watcher: FSWatcher;
@@ -31,13 +31,13 @@ interface WatchEntry {
 }
 export interface CodeUiFileWatchers {
   call(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     method: string,
     args: unknown[],
     connection: CodeUiHostConnection,
   ): Promise<{ result: unknown } | null>;
-  closeConnection(workspaceId: string, connectionId: string): Promise<void>;
-  closeTask(workspaceId: string, taskId: string): Promise<void>;
+  closeConnection(instanceId: string, connectionId: string): Promise<void>;
+  closeTask(instanceId: string, taskId: string): Promise<void>;
   close(): Promise<void>;
 }
 const watchParams = z.object({
@@ -51,7 +51,7 @@ const idParams = z.object({ id: z.string().min(1) });
 export function createCodeUiFileWatchers(deps: {
   assertConnection(connection: CodeUiHostConnection): void;
   resolveTarget(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     viewer: CodeUiViewerScope,
     path: string,
   ): Promise<CodeUiWatchTarget>;
@@ -77,10 +77,14 @@ export function createCodeUiFileWatchers(deps: {
     await entry.closed;
   };
   const requireConnection = (
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     connection: CodeUiHostConnection,
   ) => {
-    if (closed || !connection.connectionId || actor.id !== connection.userId)
+    if (
+      closed ||
+      !connection.connectionId ||
+      actor.instanceId !== connection.instanceId
+    )
       throw new Error("文件监视连接已关闭或不属于当前用户。");
     deps.assertConnection(connection);
   };
@@ -99,7 +103,7 @@ export function createCodeUiFileWatchers(deps: {
           entry.target.path,
         );
         if (
-          current.workspaceId !== entry.connection.workspaceId ||
+          current.instanceId !== entry.connection.instanceId ||
           current.path !== entry.target.path ||
           current.rootDirectory !== entry.target.rootDirectory ||
           current.generation !== entry.target.generation ||
@@ -138,7 +142,7 @@ export function createCodeUiFileWatchers(deps: {
       if (method === "disposeAll") {
         await closeMatching(
           (owner) =>
-            owner.workspaceId === connection.workspaceId &&
+            owner.instanceId === connection.instanceId &&
             owner.connectionId === connection.connectionId,
         );
         return { result: undefined };
@@ -148,7 +152,7 @@ export function createCodeUiFileWatchers(deps: {
         const entry = entries.get(id);
         if (
           entry &&
-          (entry.connection.workspaceId !== connection.workspaceId ||
+          (entry.connection.instanceId !== connection.instanceId ||
             entry.connection.connectionId !== connection.connectionId)
         )
           throw new Error("文件监视不属于当前连接。");
@@ -171,7 +175,7 @@ export function createCodeUiFileWatchers(deps: {
         requireConnection(actor, connection);
         if (
           reservation.cancelled ||
-          target.workspaceId !== connection.workspaceId
+          target.instanceId !== connection.instanceId
         )
           throw new Error("文件监视启动期间连接或Task已关闭。");
         const watcher = watch(target.path, {
@@ -219,16 +223,16 @@ export function createCodeUiFileWatchers(deps: {
         pending.delete(reservation);
       }
     },
-    closeConnection: (workspaceId, connectionId) =>
+    closeConnection: (instanceId, connectionId) =>
       closeMatching(
         (owner) =>
-          owner.workspaceId === workspaceId &&
+          owner.instanceId === instanceId &&
           owner.connectionId === connectionId,
       ),
-    closeTask: (workspaceId, taskId) =>
+    closeTask: (instanceId, taskId) =>
       closeMatching(
         (owner, viewer) =>
-          owner.workspaceId === workspaceId &&
+          owner.instanceId === instanceId &&
           viewer.kind === "task" &&
           viewer.taskId === taskId,
       ),

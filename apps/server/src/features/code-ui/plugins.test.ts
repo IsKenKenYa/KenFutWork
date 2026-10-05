@@ -18,9 +18,10 @@ async function fixture() {
   cleanups.push(actual.dispose);
   const host = createCodeUiPluginsHost({
     registry: actual.registry,
-    readWorkspaceId: async (actor) => {
-      if (actor.id !== actual.actor.id) throw new Error("工作区身份无效");
-      return actual.workspaceId;
+    resolveInstanceId: async (actor) => {
+      if (actor.instanceId !== actual.actor.instanceId)
+        throw new Error("工作区身份无效");
+      return actual.instanceId;
     },
     workspace: async () => {
       throw new Error("用户级无目标库存不得读取或创建Project/Task/scope");
@@ -119,7 +120,7 @@ it("无管理员标记的认证用户可读机器库存，陌生actor与给出�
     ).plugins,
   ).toEqual([]);
   await expect(
-    host.call({ ...owner, id: randomUUID() }, "listPlugins", {
+    host.call({ ...owner, instanceId: randomUUID() }, "listPlugins", {
       configScope: "user",
     }),
   ).rejects.toThrow("工作区身份无效");

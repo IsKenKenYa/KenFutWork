@@ -20,6 +20,7 @@ import { createSettingsRepository } from "../settings/repository.js";
 import { createSettingsService } from "../settings/settings-service.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createCodeUiConversation } from "./conversation.js";
+import { createCodeUiTestInstance } from "./host-session.fixture.js";
 import { createCodeUiRepository } from "./repository.js";
 import { CodeUiService } from "./service.js";
 
@@ -58,6 +59,11 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         await gate?.wait;
       });
       const settings = createSettingsService({
+        localInstance: createCodeUiTestInstance(
+          database.context.scope.instanceId,
+          null,
+          database.directory,
+        ).localInstance,
         repository: createSettingsRepository(database.persistence),
       });
       const f = await createHarness(database, model, undefined, false, {
@@ -71,8 +77,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
       try {
         const providers = createModelProviderService({
           repository: createModelProviderRepository(database.persistence),
-          credentialEnv: { credentialSecret: "private-compact-test-secret" },
-          viewerService: f.viewer,
+          localInstance: f.localInstance,
         });
         const provider = await providers.createInstance(
           f.actor,
@@ -96,13 +101,13 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           modelId: "test",
           options: { reasoningLevel: "low" },
         };
-        await settings.updateWorkspaceSettings(f.actor, f.scope.workspaceId, {
+        await settings.updateInstanceSettings(f.actor, f.scope.instanceId, {
           defaultModel: `${provider.id}:test`,
           autoCompactEnabled: false,
         });
         const repository = createCodeUiRepository(database.persistence);
         await repository.save(
-          f.scope.workspaceId,
+          f.scope.instanceId,
           f.scope.taskId,
           0,
           createCodeUiConversation({
@@ -120,17 +125,18 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         );
         ui = new CodeUiService({
           repository,
-          viewer: f.viewer,
+          localInstance: f.localInstance,
           threads: f.threads,
           executionScopes: f.executionScopes,
           projects: createProjectService({
             repository: createProjectRepository(database.persistence),
-            viewerService: f.viewer,
+            localInstance: f.localInstance,
             blob: {} as never,
           }),
           modelProviders: providers,
           modelCatalog: createModelCatalogService({
             modelProviders: providers,
+            localInstance: f.localInstance,
           }),
           settings,
           agentRuns: f.runtime,
@@ -249,7 +255,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         });
         const running = await ui.getSnapshot(f.actor, f.scope.taskId);
         const activeRecord = await repository.find(
-          f.scope.workspaceId,
+          f.scope.instanceId,
           f.scope.taskId,
         );
         const compactInput = activeRecord?.state?.inputs?.find(
@@ -342,7 +348,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           async () => {
             expect(f.runtime.hasActiveRunForTask(f.scope.taskId)).toBe(false);
             expect(
-              (await repository.find(f.scope.workspaceId, f.scope.taskId))
+              (await repository.find(f.scope.instanceId, f.scope.taskId))
                 ?.active_run_id,
             ).toBeNull();
           },

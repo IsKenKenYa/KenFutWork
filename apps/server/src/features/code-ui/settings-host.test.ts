@@ -1,19 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { workspaceSettingsSchema } from "@kenfutwork/shared";
+import { instanceSettingsSchema } from "@kenfutwork/shared";
 import { expect, it, vi } from "vitest";
+import { createCodeUiTestInstance } from "./host-session.fixture.js";
 import { CodeUiService, type CodeUiServiceDeps } from "./service.js";
 
 async function fixture() {
-  const workspaceId = randomUUID();
+  const instanceId = randomUUID();
   const projectId = randomUUID();
   const otherProjectId = randomUUID();
   const taskId = randomUUID();
-  const actor = {
-    id: randomUUID(),
-    email: "settings-host@test",
-    accessToken: "private",
-    userMetadata: {},
-  };
+  const actor = { instanceId: instanceId, accessClientId: null };
   const rootA = "/owned/fixed-task-A";
   const rootB = "/owned/new-default-B";
   const project = {
@@ -26,7 +22,7 @@ async function fixture() {
   const projects = [project];
   const task = {
     id: taskId,
-    workspace_id: workspaceId,
+    instance_id: instanceId,
     project_id: projectId,
     root_session_id: taskId,
     parent_session_id: null,
@@ -38,7 +34,7 @@ async function fixture() {
   };
   let preferences: Record<string, unknown> = {};
   const updates = vi.fn(
-    async (_workspaceId: string, patch: Record<string, unknown>) => {
+    async (_instanceId: string, patch: Record<string, unknown>) => {
       preferences = { ...preferences, ...patch };
       return true;
     },
@@ -54,13 +50,13 @@ async function fixture() {
       readHumanPreferences: async () => preferences,
       updateHumanPreferences: updates,
       find: async (workspace: string, id: string) =>
-        workspace === workspaceId && id === taskId ? task : null,
+        workspace === instanceId && id === taskId ? task : null,
     },
-    viewer: { resolveWorkspace: async () => ({ id: workspaceId }) },
+    localInstance: createCodeUiTestInstance(instanceId).localInstance,
     projects: { listProjects: async () => projects },
     settings: {
-      getWorkspaceSettings: async () =>
-        workspaceSettingsSchema.parse({ defaultModel: "fixture-model" }),
+      getInstanceSettings: async () =>
+        instanceSettingsSchema.parse({ defaultModel: "fixture-model" }),
     },
     modelProviders: {
       listInstances: async () => [],

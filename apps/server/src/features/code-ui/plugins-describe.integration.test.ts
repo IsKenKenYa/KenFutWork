@@ -48,7 +48,6 @@ describe.skipIf(!enabled)(
           allowThirdPartyPlugins: false,
         });
         const { client } = host;
-        expect((await client.request("/api/viewer")).status).toBe(200);
         const stream = await client.openCodeStream();
         const connectionId = stream.ready.hello.connectionId;
         const projectDirectory = join(directory, "project");

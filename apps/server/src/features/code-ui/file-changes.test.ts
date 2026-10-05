@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import {
+  instanceSettingsSchema,
   zcodeUiProtocol as protocol,
-  workspaceSettingsSchema,
 } from "@kenfutwork/shared";
 import { afterEach, expect, it, vi } from "vitest";
 import { createCodeUiConversation } from "./conversation.js";
 import { createFileDisplayPublicFixture } from "./file-display.test-fixture.js";
+import { createCodeUiTestInstance } from "./host-session.fixture.js";
 import type { CodeUiSessionRecord } from "./repository.js";
 import { CodeUiService, type CodeUiServiceDeps } from "./service.js";
 
@@ -21,15 +22,10 @@ async function fixture(multipleFiles = false, truncatePreview = false) {
     truncatePreview,
   );
   cleanups.push(actual.dispose);
-  const workspaceId = randomUUID();
+  const instanceId = randomUUID();
   const projectId = randomUUID();
   const sessionId = randomUUID();
-  const actor = {
-    id: randomUUID(),
-    email: "files@example.test",
-    accessToken: "private",
-    userMetadata: {},
-  };
+  const actor = { instanceId: instanceId, accessClientId: null };
   const host = createCodeUiConversation({
     sessionId,
     workspacePath: actual.rootDirectory,
@@ -49,7 +45,7 @@ async function fixture(multipleFiles = false, truncatePreview = false) {
   const state = host.exportState();
   const root: CodeUiSessionRecord = {
     id: sessionId,
-    workspace_id: workspaceId,
+    instance_id: instanceId,
     project_id: projectId,
     root_directory: actual.rootDirectory,
     additional_directories: [],
@@ -78,11 +74,9 @@ async function fixture(multipleFiles = false, truncatePreview = false) {
       recoverRuntimeInputs: async () => {},
       readHumanPreferences: async () => ({}),
       find: async (owner: string, id: string) =>
-        owner === workspaceId && id === sessionId
-          ? structuredClone(root)
-          : null,
+        owner === instanceId && id === sessionId ? structuredClone(root) : null,
       readToolCompletions: async (owner: string, id: string, runId: string) =>
-        owner === workspaceId && id === sessionId
+        owner === instanceId && id === sessionId
           ? actual.events.filter(
               (event) =>
                 event.type === "tool.completed" &&
@@ -91,7 +85,7 @@ async function fixture(multipleFiles = false, truncatePreview = false) {
             )
           : [],
     },
-    viewer: { resolveWorkspace: async () => ({ id: workspaceId }) },
+    localInstance: createCodeUiTestInstance(instanceId).localInstance,
     projects: {
       listProjects: async () => [
         {
@@ -105,8 +99,8 @@ async function fixture(multipleFiles = false, truncatePreview = false) {
     },
     executionScopes: { openTask },
     settings: {
-      getWorkspaceSettings: async () =>
-        workspaceSettingsSchema.parse({ defaultModel: "fixture" }),
+      getInstanceSettings: async () =>
+        instanceSettingsSchema.parse({ defaultModel: "fixture" }),
     },
     env: {},
     taskWork: { initialize: async () => [] },

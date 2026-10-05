@@ -2,10 +2,10 @@ import type { CodeUiViewerScope } from "@kenfutwork/shared";
 import { codeUiViewerScopeSchema } from "@kenfutwork/shared";
 import type { SkillSummary, SkillsListResult } from "@zcode/shared";
 import { z } from "zod";
-import type { AuthenticatedUser } from "../auth/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type {
+  InstanceSkillSettingsRepository,
   SkillCatalogRepository,
-  WorkspaceSkillSettingsRepository,
 } from "../skills/repository.js";
 
 export interface CodeUiHostTargetRequest {
@@ -14,19 +14,18 @@ export interface CodeUiHostTargetRequest {
   viewerScope?: CodeUiViewerScope | undefined;
 }
 export interface CodeUiHostTarget {
-  workspaceId: string;
+  instanceId: string;
   projectId: string;
   rootDirectory: string;
   viewerScope: CodeUiViewerScope;
 }
 export interface CodeUiHostConnection {
   connectionId: string;
-  workspaceId: string;
-  userId: string;
+  instanceId: string;
 }
 export interface CodeUiHostServicesRpc {
   call(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     service: string,
     method: string,
     args: unknown[],
@@ -45,7 +44,7 @@ const toggleParams = skillParams.extend({
   enabled: z.boolean(),
   scope: z.enum(["workspace", "user", "plugin"]).optional(),
 });
-type WorkspaceSkillSummary = SkillSummary & { resourceRef: string };
+type InstanceSkillSummary = SkillSummary & { resourceRef: string };
 function xmlAttribute(value: string) {
   return value
     .replaceAll("&", "&amp;")
@@ -56,22 +55,22 @@ function xmlAttribute(value: string) {
 
 export function createCodeUiHostServicesRpc(deps: {
   resolveTarget(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     request: CodeUiHostTargetRequest,
   ): Promise<CodeUiHostTarget>;
-  skills: Pick<SkillCatalogRepository, "listWorkspaceSkills">;
-  skillSettings: WorkspaceSkillSettingsRepository;
+  skills: Pick<SkillCatalogRepository, "listInstanceSkills">;
+  skillSettings: InstanceSkillSettingsRepository;
 }): CodeUiHostServicesRpc {
   const target = async (
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     value: unknown,
     connection: CodeUiHostConnection,
   ) => {
-    if (!connection.connectionId || connection.userId !== actor.id)
+    if (!connection.connectionId || connection.instanceId !== actor.instanceId)
       throw new Error("Skills连接身份不属于当前用户。");
     const request = skillParams.parse(value);
     const resolved = await deps.resolveTarget(actor, request);
-    if (resolved.workspaceId !== connection.workspaceId)
+    if (resolved.instanceId !== connection.instanceId)
       throw new Error("Skills目标工作区与可信连接身份不匹配。");
     return resolved;
   };
@@ -98,7 +97,7 @@ export function createCodeUiHostServicesRpc(deps: {
           throw new Error("该技能设置只管理当前工作区的安装态。");
         if (
           !(await deps.skillSettings.setEnabled(
-            scope.workspaceId,
+            scope.instanceId,
             input.skillId,
             input.enabled,
           ))
@@ -106,7 +105,7 @@ export function createCodeUiHostServicesRpc(deps: {
           throw new Error("技能未安装、已卸载或不属于当前工作区。");
         return { result: undefined };
       }
-      const rows = await deps.skills.listWorkspaceSkills(scope.workspaceId);
+      const rows = await deps.skills.listInstanceSkills(scope.instanceId);
       if (method === "buildPromptContext") {
         const { prompt } = skillParams
           .extend({ prompt: z.string() })
@@ -136,7 +135,7 @@ export function createCodeUiHostServicesRpc(deps: {
           },
         };
       }
-      const skills: WorkspaceSkillSummary[] = rows.map((row) => ({
+      const skills: InstanceSkillSummary[] = rows.map((row) => ({
         id: row.skillId,
         name: row.slug,
         description: row.description,

@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import {
+  instanceSettingsSchema,
   zcodeUiProtocol as protocol,
   providerInstanceResponseSchema,
-  workspaceSettingsSchema,
 } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createCodeUiConversation } from "./conversation.js";
+import { createCodeUiTestInstance } from "./host-session.fixture.js";
 import { createCodeUiRepository } from "./repository.js";
 import { CodeUiService, type CodeUiServiceDeps } from "./service.js";
 
@@ -20,21 +21,11 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
       const services: CodeUiService[] = [];
       try {
         const scope = database.context.scope;
-        const account = await database.persistence.queryOne<{
-          owner_user_id: string;
-        }>("select owner_user_id from public.workspaces where id=$1", [
-          scope.workspaceId,
-        ]);
-        const actor = {
-          id: account!.owner_user_id,
-          accessToken: "private",
-          email: "host@integration.test",
-          userMetadata: {},
-        };
+        const actor = { instanceId: scope.instanceId, accessClientId: null };
         const repository = createCodeUiRepository(database.persistence);
         const provider = providerInstanceResponseSchema.parse({
           id: randomUUID(),
-          scope: "workspace",
+          scope: "local",
           name: "Private fixture",
           protocol: "openai-compatible",
           configRevision: 1,
@@ -63,7 +54,7 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
           modelSelection: selection,
         };
         await repository.save(
-          scope.workspaceId,
+          scope.instanceId,
           scope.taskId,
           0,
           createCodeUiConversation({
@@ -77,9 +68,11 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         function host(name: string) {
           const service = new CodeUiService({
             repository,
-            viewer: {
-              resolveWorkspace: async () => ({ id: scope.workspaceId }),
-            },
+            localInstance: createCodeUiTestInstance(
+              scope.instanceId,
+              null,
+              database.directory,
+            ).localInstance,
             projects: {
               listProjects: async () => [
                 {
@@ -101,8 +94,8 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
             },
             modelCatalog: { listCatalog: async () => [] },
             settings: {
-              getWorkspaceSettings: async () =>
-                workspaceSettingsSchema.parse({ defaultModel: "test" }),
+              getInstanceSettings: async () =>
+                instanceSettingsSchema.parse({ defaultModel: "test" }),
             },
             threads: {
               resolveOwnedSessionThread: async (
@@ -113,7 +106,7 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
             },
             executionScopes: {
               openTask: async (_actor: unknown, taskId: string) => {
-                const task = await repository.find(scope.workspaceId, taskId);
+                const task = await repository.find(scope.instanceId, taskId);
                 if (!task?.root_directory)
                   throw new Error("真实Task作用域不存在");
                 return {
@@ -222,7 +215,7 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
           sessionId: null,
           type: "createSession",
           payload: {
-            workspaceId: scope.projectId,
+            instanceId: scope.projectId,
             config: { modelSelection: selection },
           },
           issuedAt: Date.now(),

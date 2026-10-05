@@ -18,8 +18,6 @@ import {
 import { createAgentRunMetadataService } from "../agent-runs/agent-run-service.js";
 import { createAgentRunRepository } from "../agent-runs/repository.js";
 import type { AgentTurnBoundary } from "../agent-runs/types.js";
-import { createViewerService } from "../bootstrap/ensure-user-foundation.js";
-import { createViewerRepository } from "../bootstrap/repository.js";
 import { createChatRepository } from "../chat/repository.js";
 import { createThreadService } from "../chat/thread-service.js";
 import { createCheckpointService } from "../checkpoints/checkpoint-service.js";
@@ -30,6 +28,8 @@ import { createCodeFileTools } from "../code-tools/tool-definitions.js";
 import { createScopeRepository } from "../execution/scope-repository.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import { acquireTaskFileRestoreBarrier } from "../execution/scoped-filesystem.js";
+import { createLocalInstanceRepository } from "../local-instance/repository.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
 import { createProjectService } from "../projects/project-service.js";
 import { createProjectRepository } from "../projects/repository.js";
@@ -47,55 +47,48 @@ import { createToolLifecycleMiddleware } from "./tool-lifecycle.js";
 type Database = Awaited<ReturnType<typeof createTaskWorkDatabase>>;
 async function ownedTask(database: Database) {
   const { scope } = database.context;
-  const owner = await database.persistence.queryOne<{ owner_user_id: string }>(
-    "select owner_user_id from public.workspaces where id=$1",
-    [scope.workspaceId],
-  );
-  if (!owner) throw new Error("隔离工作区不存在");
-  const actor = {
-    id: owner.owner_user_id,
-    email: "file-rewind@integration.test",
-    accessToken: "private",
-    userMetadata: {},
-  };
+
+  const actor = { instanceId: scope.instanceId, accessClientId: null };
   const threadId = `file-rewind-${randomUUID()}`;
   await database.persistence
-    .forWorkspace(scope.workspaceId)
+    .forInstance(scope.instanceId)
     .execute(
-      "insert into public.chat_sessions (id,workspace_id,project_id,mode,created_by,thread_id) values ($1,:workspace,$2,'code',$3,$4)",
-      [scope.taskId, scope.projectId, actor.id, threadId],
+      "insert into public.chat_sessions (id,instance_id,project_id,mode,created_by_client_id,thread_id) values ($1,:instance,$2,'code',$3,$4)",
+      [scope.taskId, scope.projectId, actor.accessClientId, threadId],
     );
   await database.persistence
-    .forWorkspace(scope.workspaceId)
+    .forInstance(scope.instanceId)
     .execute(
-      "update public.code_ui_sessions set chat_session_id=$1 where workspace_id=:workspace and id=$1",
+      "update public.code_ui_sessions set chat_session_id=$1 where instance_id=:instance and id=$1",
       [scope.taskId],
     );
-  const viewer = createViewerService({
-    repository: createViewerRepository(database.persistence),
+  const localInstance = createLocalInstanceService({
+    repository: createLocalInstanceRepository(database.persistence),
+    dataDir: database.directory,
   });
   const threads = createThreadService({
     repository: createChatRepository(database.persistence),
-    viewerService: viewer,
+    localInstance: localInstance,
   });
   const metadata = createAgentRunMetadataService({
     repository: createAgentRunRepository(database.persistence),
-    viewerService: viewer,
+    localInstance: localInstance,
     threadService: threads,
   });
   const settings = createSettingsService({
+    localInstance,
     repository: createSettingsRepository(database.persistence),
   });
   const scopes = createExecutionScopes({
     repository: createScopeRepository(database.persistence),
-    viewerService: viewer,
+    localInstance: localInstance,
     resolveFileLimits: (user, current) =>
-      settings.getWorkspaceSettings(user, current.workspaceId),
+      settings.getInstanceSettings(user, current.instanceId),
   });
   const handle = await scopes.openTask(actor, scope.taskId);
   const repository = createCodeUiRepository(database.persistence);
   await repository.save(
-    scope.workspaceId,
+    scope.instanceId,
     scope.taskId,
     0,
     createCodeUiConversation({
@@ -114,7 +107,7 @@ async function ownedTask(database: Database) {
     scope,
     actor,
     threadId,
-    viewer,
+    localInstance,
     threads,
     metadata,
     settings,
@@ -143,7 +136,7 @@ async function hostFixture(database: Database) {
     resolveInternalWriteRoots: async (scope) => [
       join(
         checkpointRoot,
-        scope.workspaceId,
+        scope.instanceId,
         scope.projectId,
         `${scope.taskId}.git`,
       ),
@@ -154,9 +147,9 @@ async function hostFixture(database: Database) {
     executionHostId: database.directory,
     resolveMaxConcurrent: async (context) =>
       (
-        await binding.settings.getWorkspaceSettings(
+        await binding.settings.getInstanceSettings(
           binding.actor,
-          context.scope.workspaceId,
+          context.scope.instanceId,
         )
       ).subagentMaxConcurrency,
   });
@@ -168,6 +161,7 @@ async function hostFixture(database: Database) {
     gitSource: "system",
   });
   const runtime = createAgentRunService({
+    localInstance: binding.localInstance,
     blob: {} as never,
     env,
     model: new FakeToolCallingModel({ toolCalls: [] }),
@@ -176,7 +170,7 @@ async function hostFixture(database: Database) {
   });
   const capabilities = new CapabilityRegistryImpl();
   const closer = createTaskResourceCloser({
-    viewer: binding.viewer,
+    localInstance: binding.localInstance,
     resources: () => ({ runs: runtime, work, sandbox, capabilities }),
   });
   let host: CodeUiService | undefined;
@@ -185,9 +179,9 @@ async function hostFixture(database: Database) {
     gitSource: "system",
     checkpointRoot,
     gitForScope: async (scope, actor) => {
-      const settings = await binding.settings.getWorkspaceSettings(
+      const settings = await binding.settings.getInstanceSettings(
         actor,
-        scope.describe().workspaceId,
+        scope.describe().instanceId,
       );
       return createShadowGitClient({
         exec: createShadowGitExec({
@@ -256,11 +250,11 @@ async function hostFixture(database: Database) {
     // 空BYOK目录是外部模型目录边界；文件、身份、日志、恢复与执行域均使用真实provider。
     host = new CodeUiService({
       repository: createCodeUiRepository(database.persistence),
-      viewer: binding.viewer,
+      localInstance: binding.localInstance,
       threads: binding.threads,
       projects: createProjectService({
         repository: createProjectRepository(database.persistence),
-        viewerService: binding.viewer,
+        localInstance: binding.localInstance,
         blob: {} as never,
       }),
       settings: binding.settings,
@@ -324,7 +318,7 @@ async function nativeTurn(
       phase,
     });
     await fixture.metadata.recordTurnBoundary({
-      workspaceId: fixture.scope.workspaceId,
+      instanceId: fixture.scope.instanceId,
       projectId: fixture.scope.projectId,
       taskId: fixture.scope.taskId,
       runId,

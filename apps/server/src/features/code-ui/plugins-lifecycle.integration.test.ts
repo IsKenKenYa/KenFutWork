@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../app.js";
 import { loadServerEnv } from "../../config/env.js";
+import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
+import { codeUiAuthorizedInject } from "./code-ui-http.fixture.js";
 
 function deferred() {
   let resolve!: () => void;
@@ -64,13 +66,11 @@ export async function apply() { await fetch("http://127.0.0.1:${address.port}/ap
   };
 }
 
-const enabled =
-  process.env.RUN_CODE_UI_INTEGRATION === "1" &&
-  Boolean(process.env.CODE_UI_TEST_DATABASE_URL);
+const enabled = process.env.RUN_CODE_UI_INTEGRATION === "1";
 describe.skipIf(!enabled)("原插件宿主关闭 integration", () => {
   it("客户端断开后仍在装载的包必须在宿主关闭返回前结束，关闭后不再留下迟到写入", async () => {
-    const databaseUrl = process.env.CODE_UI_TEST_DATABASE_URL;
-    if (!databaseUrl) throw new Error("关闭用例需要独占测试数据库");
+    const database = await createTaskWorkDatabase();
+    const databaseUrl = database.connectionString;
     const dir = await mkdtemp(join(tmpdir(), "code-ui-closing-package-"));
     const fixture = await createBlockedBuiltin(dir);
     vi.stubEnv("KENFUTWORK_PLUGINS_DIR", join(dir, "plugins"));
@@ -79,9 +79,8 @@ describe.skipIf(!enabled)("原插件宿主关闭 integration", () => {
       env: loadServerEnv(
         {
           databaseUrl,
-          authDriver: "local-trust",
+          desktopDataDir: dir,
           queueDriver: "in-process",
-          credentialSecret: randomBytes(32).toString("hex"),
           blobDir: join(dir, "blobs"),
           sandboxRoot: join(dir, "sandbox"),
           webOrigin: "http://localhost:3300",
@@ -93,10 +92,16 @@ describe.skipIf(!enabled)("原插件宿主关闭 integration", () => {
     const controller = new AbortController();
     try {
       const base = await app.listen({ host: "127.0.0.1", port: 0 });
+      const desktopToken = await app.kernel
+        .get("localAccess")
+        .getDesktopToken();
       const rpc = async (service: string, method: string, fields = {}) => {
         const response = await fetch(`${base}/api/code-ui/rpc`, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${desktopToken}`,
+          },
           body: JSON.stringify({ service, method, args: [fields] }),
         });
         expect(response.status).toBe(200);
@@ -106,7 +111,10 @@ describe.skipIf(!enabled)("原插件宿主关闭 integration", () => {
       const installation = fetch(`${base}/api/code-ui/rpc`, {
         method: "POST",
         signal: controller.signal,
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${desktopToken}`,
+        },
         body: JSON.stringify({
           service: "plugin-management",
           method: "installPlugin",
@@ -145,6 +153,7 @@ describe.skipIf(!enabled)("原插件宿主关闭 integration", () => {
       await (closing ?? app.close());
       await fixture.dispose();
       vi.unstubAllEnvs();
+      await database.close();
       await rm(dir, { recursive: true, force: true });
     }
   });

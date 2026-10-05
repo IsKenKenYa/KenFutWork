@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { expect, it } from "vitest";
+import { createLocalInstanceService } from "../local-instance/service.js";
 import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
 } from "../persistence/providers/postgres.js";
 import {
+  createInstanceSkillSettingsRepository,
   createSkillCatalogRepository,
-  createWorkspaceSkillSettingsRepository,
 } from "../skills/repository.js";
 import { createSkillCatalogService } from "../skills/skill-catalog-service.js";
 import {
@@ -15,18 +16,12 @@ import {
 } from "./host-service-rpc.js";
 
 function fixture() {
-  const owner = randomUUID();
   const workspace = randomUUID();
   const foreignWorkspace = randomUUID();
   const skill = randomUUID();
   const otherSkill = randomUUID();
   const project = randomUUID();
-  const actor = {
-    id: owner,
-    email: "skills@test",
-    accessToken: "private",
-    userMetadata: {},
-  };
+  const actor = { instanceId: workspace, accessClientId: null };
   const rows = new Map<
     string,
     Map<
@@ -102,18 +97,18 @@ function fixture() {
   const requests: CodeUiHostTargetRequest[] = [];
   const rpc = createCodeUiHostServicesRpc({
     skills,
-    skillSettings: createWorkspaceSkillSettingsRepository(persistence),
+    skillSettings: createInstanceSkillSettingsRepository(persistence),
     resolveTarget: async (user, request) => {
       requests.push(request);
       if (
-        user.id !== owner ||
+        user.instanceId !== workspace ||
         request.workspacePath !== "/owned-project" ||
         request.viewerScope?.kind !== "project" ||
         request.viewerScope.projectId !== project
       )
         throw new Error("项目/工作区viewer未授权。");
       return {
-        workspaceId: workspace,
+        instanceId: workspace,
         projectId: project,
         rootDirectory: "/owned-project",
         viewerScope: request.viewerScope,
@@ -127,8 +122,7 @@ function fixture() {
   };
   const connection = {
     connectionId: "owned-connection",
-    workspaceId: workspace,
-    userId: owner,
+    instanceId: workspace,
   };
   return {
     actor,
@@ -179,7 +173,13 @@ it("原ISkillsService list→toggle→共享Code技能正文读口径，真实wo
     [{ ...f.params, skillId: f.skill, enabled: false, scope: "workspace" }],
     f.connection,
   );
-  const catalog = createSkillCatalogService({ repository: f.skills });
+  const catalog = createSkillCatalogService({
+    repository: f.skills,
+    localInstance: createLocalInstanceService({
+      repository: { ensure: async () => f.actor.instanceId },
+      dataDir: "/tmp/host-skills",
+    }),
+  });
   expect(await catalog.getSkill(f.workspace, "design-skill")).toBeUndefined();
   expect(
     await f.rpc.call(f.actor, "skills", "list", [f.params], f.connection),
@@ -194,7 +194,7 @@ it("原ISkillsService list→toggle→共享Code技能正文读口径，真实wo
   expect(await catalog.getSkill(f.workspace, "design-skill")).toMatchObject({
     content: expect.stringContaining("完整正文"),
   });
-  expect(f.queries.every((entry) => entry.sql.includes("workspace_id"))).toBe(
+  expect(f.queries.every((entry) => entry.sql.includes("instance_id"))).toBe(
     true,
   );
 });
@@ -263,7 +263,7 @@ it("其它viewer/connection/skillId不越工作区，不能由raw path签发技�
   await expect(
     f.rpc.call(f.actor, "skills", "list", [f.params], {
       ...f.connection,
-      userId: "other",
+      instanceId: "other",
     }),
   ).rejects.toThrow(/连接|身份/);
   await expect(

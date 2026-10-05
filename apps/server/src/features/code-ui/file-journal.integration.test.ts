@@ -29,7 +29,7 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         });
         host.startTurn({ runId, commandId: "human-source", text: "修改文件" });
         await repository.save(
-          scope.workspaceId,
+          scope.instanceId,
           scope.taskId,
           0,
           host.exportState(),
@@ -61,7 +61,7 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         };
         const append = (key: string, payload: unknown) =>
           repository.appendEvent(
-            scope.workspaceId,
+            scope.instanceId,
             scope.taskId,
             { key, fingerprint: key, event: payload },
             (root) => ({ state: root.state!, activeRunId: null }),
@@ -84,7 +84,7 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         const limits = { maxEvents: 10, maxBytes: 10000 };
         expect(
           await repository.readToolCompletions(
-            scope.workspaceId,
+            scope.instanceId,
             scope.taskId,
             runId,
             limits,
@@ -92,7 +92,7 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         ).toEqual([event]);
         await expect(
           repository.readToolCompletions(
-            scope.workspaceId,
+            scope.instanceId,
             scope.taskId,
             runId,
             { ...limits, maxBytes: 1 },
@@ -112,7 +112,7 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         });
         await expect(
           repository.readToolCompletions(
-            scope.workspaceId,
+            scope.instanceId,
             scope.taskId,
             runId,
             { ...limits, maxEvents: 1 },
@@ -128,7 +128,7 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
           issuedAt: Date.now(),
         };
         await repository.applyScopeCommand(
-          scope.workspaceId,
+          scope.instanceId,
           envelope,
           "scope-receipt-order",
           async () => {
@@ -144,7 +144,7 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
           }),
           async () => {
             const receipt = await repository.queryCommands(
-              scope.workspaceId,
+              scope.instanceId,
               envelope.clientId,
               [{ commandId: envelope.commandId, sessionId: scope.taskId }],
             );
@@ -155,10 +155,10 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
           },
         );
         expect(steps).toEqual(["changed", "after-committed"]);
-        await repository.delete(scope.workspaceId, scope.taskId);
+        await repository.delete(scope.instanceId, scope.taskId);
         await expect(
           repository.readToolCompletions(
-            scope.workspaceId,
+            scope.instanceId,
             scope.taskId,
             runId,
             limits,

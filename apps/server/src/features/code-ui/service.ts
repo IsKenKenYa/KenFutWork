@@ -18,11 +18,8 @@ import type { AgentRunService } from "../../agent/runtime.js";
 import { DEFAULT_SANDBOX_ROOT } from "../../agent/sandbox-dir.js";
 import type { ServerEnv } from "../../config/env.js";
 import type { ModelInvocationSnapshot } from "../../providers/types.js";
-import type { AdminService } from "../admin/admin-service.js";
 import type { AgentRunMetadataService } from "../agent-runs/agent-run-service.js";
-import type { AuthenticatedUser } from "../auth/types.js";
 import type { BlobStore } from "../blob/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
 import type { ThreadService } from "../chat/thread-service.js";
 import type { CheckpointService } from "../checkpoints/checkpoint-service.js";
 import { createScopedGitExec } from "../code-git/scoped-git-exec.js";
@@ -39,6 +36,10 @@ import {
   resolveReadOnlyProjectPath,
 } from "../execution/scope-service.js";
 import { forgetTaskFileState } from "../execution/scoped-filesystem.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import type { ModelCatalogService } from "../model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../model-providers/model-provider-service.js";
 import type { ApprovalEvent } from "../permissions/approval-types.js";
@@ -49,8 +50,8 @@ import type { ProjectService } from "../projects/project-service.js";
 import { resolveProjectWorkDirectory } from "../projects/work-dir.js";
 import type { SettingsService } from "../settings/settings-service.js";
 import type {
+  InstanceSkillSettingsRepository,
   SkillCatalogRepository,
-  WorkspaceSkillSettingsRepository,
 } from "../skills/repository.js";
 import type {
   TaskWorkContext,
@@ -107,7 +108,6 @@ import {
 } from "./workspace-rpc.js";
 
 export interface CodeUiServiceDeps {
-  admin?: AdminService;
   plugins?: PluginRegistryService;
   checkpoints?: CheckpointService;
   permissions?: PermissionService;
@@ -115,16 +115,16 @@ export interface CodeUiServiceDeps {
   blob?: BlobStore;
   attachmentRepository?: CodeAttachmentRepository;
   skillRepository?: SkillCatalogRepository;
-  skillSettingsRepository?: WorkspaceSkillSettingsRepository;
+  skillSettingsRepository?: InstanceSkillSettingsRepository;
   processSandbox?: ProcessSandbox;
   beforeCloseTask?: (
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     taskId: string,
     reason: "archive" | "delete" | "branch",
   ) => Promise<void>;
   repository: CodeUiRepository;
   executionScopes: ExecutionScopes;
-  viewer: ViewerService;
+  localInstance: LocalInstanceService;
   projects: ProjectService;
   modelProviders: ModelProviderService;
   modelCatalog: ModelCatalogService;
@@ -171,11 +171,11 @@ export class CodeUiService {
   private readonly controllers = new Map<
     string,
     {
-      workspaceId: string;
+      instanceId: string;
       host: ReturnType<typeof createCodeUiWindowController>;
     }
   >();
-  private readonly taskActors = new Map<string, AuthenticatedUser>();
+  private readonly taskActors = new Map<string, LocalActor>();
   private readonly humanWorkspace: HumanWorkspaceRpc;
   private readonly providerSettings: CodeUiProviderSettingsRpc;
   private readonly attachments: CodeAttachmentsService | undefined;
@@ -219,8 +219,8 @@ export class CodeUiService {
         ),
       finishRestore: (scope, actor, success) =>
         this.finishTaskRestore(scope, actor, success),
-      refresh: (workspaceId, path, projectId) =>
-        this.refreshTaskProjection(workspaceId, path, projectId),
+      refresh: (instanceId, path, projectId) =>
+        this.refreshTaskProjection(instanceId, path, projectId),
       fingerprint: codeUiCommandFingerprint,
     });
     this.historyEdit = createCodeUiHistoryEdit({
@@ -246,8 +246,8 @@ export class CodeUiService {
         this.rewindTask(actor, taskId, generation, guard),
       finishRestore: (scope, actor, success) =>
         this.finishTaskRestore(scope, actor, success),
-      refresh: (workspaceId, path, projectId) =>
-        this.refreshTaskProjection(workspaceId, path, projectId),
+      refresh: (instanceId, path, projectId) =>
+        this.refreshTaskProjection(instanceId, path, projectId),
       run: (actor, project, taskId, threadId, record, inputs) =>
         this.runTurn(
           actor,
@@ -265,7 +265,7 @@ export class CodeUiService {
     this.workspaceConfig = createCodeUiWorkspaceConfigHost({
       connections: this.connections,
       resolveTarget: (actor, request) =>
-        this.resolveWorkspaceConfigTarget(actor, request),
+        this.resolveConfigTarget(actor, request),
       modelViews: (actor) => this.modelViews(actor),
       readPresentation: (actor, target) =>
         this.readWorkspaceConfiguration(actor, target),
@@ -273,11 +273,10 @@ export class CodeUiService {
     this.plugins = deps.plugins
       ? createCodeUiPluginsHost({
           registry: deps.plugins,
-          ...(deps.admin ? { admin: deps.admin } : {}),
-          readWorkspaceId: async (actor) =>
-            (await deps.viewer.resolveWorkspace(actor)).id,
+          resolveInstanceId: async (actor) =>
+            (await deps.localInstance.resolve(actor)).instanceId,
           workspace: async (actor, request) => {
-            const target = await this.resolveWorkspaceConfigTarget(actor, {
+            const target = await this.resolveConfigTarget(actor, {
               ...request,
             });
             const project = (await this.listWorkspaces(actor)).find(
@@ -295,11 +294,11 @@ export class CodeUiService {
     this.watchers = createCodeUiFileWatchers({
       assertConnection: (connection) => {
         const current = this.connections.require(
-          connection.workspaceId,
+          connection.instanceId,
           connection.connectionId,
           false,
         );
-        if (current.hello.auth.userId !== connection.userId)
+        if (current.hello.auth.userId !== connection.instanceId)
           throw new CodeUiRepositoryError(
             "not_found",
             "文件监视连接不属于当前用户。",
@@ -308,7 +307,7 @@ export class CodeUiService {
       resolveTarget: (actor, viewer, path) =>
         this.resolveWatchTarget(actor, viewer, path),
       send: (connection, watcherId, data) =>
-        this.connections.send(connection.workspaceId, connection.connectionId, {
+        this.connections.send(connection.instanceId, connection.connectionId, {
           event: "service",
           service: "file-watcher",
           name: "onDynamicChange",
@@ -332,9 +331,9 @@ export class CodeUiService {
                 target.viewerScope.taskId,
               )
             ).derive("review", `human-git:${randomUUID()}`);
-            const settings = await deps.settings.getWorkspaceSettings(
+            const settings = await deps.settings.getInstanceSettings(
               actor,
-              target.workspaceId,
+              target.instanceId,
             );
             return {
               rootDirectory: scope.describe().rootDirectory,
@@ -378,7 +377,7 @@ export class CodeUiService {
             repository: deps.repository,
             attachments: deps.attachmentRepository,
             blob: deps.blob,
-            viewer: deps.viewer,
+            localInstance: deps.localInstance,
             settings: deps.settings,
           })
         : undefined;
@@ -386,11 +385,11 @@ export class CodeUiService {
       modelProviders: deps.modelProviders,
       modelCatalog: deps.modelCatalog,
       settings: deps.settings,
-      workspaceId: async (actor) =>
-        (await deps.viewer.resolveWorkspace(actor)).id,
+      instanceId: async (actor) =>
+        (await deps.localInstance.resolve(actor)).instanceId,
       preferences: deps.repository,
       notifyViews: async (actor, views) => {
-        const owner = (await deps.viewer.resolveWorkspace(actor)).id;
+        const owner = (await deps.localInstance.resolve(actor)).instanceId;
         await this.connections.notify(
           owner,
           "providerSettingsService",
@@ -408,9 +407,9 @@ export class CodeUiService {
         await this.refreshWorkspaceConfiguration(owner);
       },
       testConnectivity: async (actor, target) => {
-        const settings = await deps.settings.getWorkspaceSettings(
+        const settings = await deps.settings.getInstanceSettings(
           actor,
-          (await deps.viewer.resolveWorkspace(actor)).id,
+          (await deps.localInstance.resolve(actor)).instanceId,
         );
         const result = await deps.modelProviders.testModelConnectivity(
           actor,
@@ -434,19 +433,19 @@ export class CodeUiService {
     this.humanWorkspace = createHumanWorkspaceRpc({
       projects: deps.projects,
       preferences: deps.repository,
-      workspaceId: async (actor) =>
-        (await deps.viewer.resolveWorkspace(actor)).id,
+      instanceId: async (actor) =>
+        (await deps.localInstance.resolve(actor)).instanceId,
       listWorkspaces: (actor) => this.listWorkspaces(actor),
       maxEntries: async (actor) =>
         deps.settings
-          .getWorkspaceSettings(
+          .getInstanceSettings(
             actor,
-            (await deps.viewer.resolveWorkspace(actor)).id,
+            (await deps.localInstance.resolve(actor)).instanceId,
           )
           .then((settings) => settings.codeSearchMaxResults),
       resolveTaskPreference: async (actor, taskId) => {
-        const workspace = await deps.viewer.resolveWorkspace(actor);
-        const root = await deps.repository.find(workspace.id, taskId);
+        const workspace = await deps.localInstance.resolve(actor);
+        const root = await deps.repository.find(workspace.instanceId, taskId);
         if (
           !root?.state ||
           root.id !== root.root_session_id ||
@@ -479,7 +478,7 @@ export class CodeUiService {
   }
 
   async admitExternalRun(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     scopeHandle: ExecutionScopeHandle,
     runId: string,
     text: string,
@@ -496,7 +495,7 @@ export class CodeUiService {
       issuedAt: Date.now(),
     };
     await this.deps.repository.applyCommand(
-      scope.workspaceId,
+      scope.instanceId,
       envelope,
       codeUiCommandFingerprint(envelope),
       (root) => {
@@ -538,11 +537,11 @@ export class CodeUiService {
       },
     );
     this.taskActors.set(
-      JSON.stringify([scope.workspaceId, scope.taskId]),
+      JSON.stringify([scope.instanceId, scope.taskId]),
       actor,
     );
     await this.refreshTaskProjection(
-      scope.workspaceId,
+      scope.instanceId,
       loaded.project.path,
       loaded.project.projectId,
     );
@@ -558,8 +557,8 @@ export class CodeUiService {
   }
 
   async onApprovalEvent(event: ApprovalEvent): Promise<void> {
-    const { workspaceId, taskId } = event.identity;
-    const root = await this.deps.repository.find(workspaceId, taskId);
+    const { instanceId, taskId } = event.identity;
+    const root = await this.deps.repository.find(instanceId, taskId);
     if (!root?.state || root.deleted_at) return;
     // 请求必须属于尚有效的授权；cancel回执仍需清掉旧代际UI阻塞。
     if (
@@ -574,7 +573,7 @@ export class CodeUiService {
         "审批请求的 Task 代际已失效",
       );
     await this.deps.repository.appendEvent(
-      workspaceId,
+      instanceId,
       taskId,
       {
         key: `approval:${event.interaction.interactionId}/${event.type}`,
@@ -602,7 +601,7 @@ export class CodeUiService {
     );
     if (root.root_directory)
       await this.refreshTaskProjection(
-        workspaceId,
+        instanceId,
         root.root_directory,
         root.project_id,
       );
@@ -616,7 +615,7 @@ export class CodeUiService {
     );
     if (
       loaded.root.id !== scope.taskId ||
-      loaded.workspaceId !== scope.workspaceId
+      loaded.instanceId !== scope.instanceId
     )
       throw new CodeUiRepositoryError("not_found", "子任务不属于父Task");
     const threadId = `code-child:${request.childSessionId}`;
@@ -644,7 +643,7 @@ export class CodeUiService {
       )
       .digest("hex");
     await this.deps.repository.appendEvent(
-      scope.workspaceId,
+      scope.instanceId,
       scope.taskId,
       {
         key: `child-dispatch:${request.parentRunId}/${request.toolCallId}`,
@@ -686,14 +685,14 @@ export class CodeUiService {
           childChat: {
             sessionId: request.childSessionId,
             threadId,
-            userId: request.actor.id,
+            createdByClientId: request.actor.accessClientId,
             title: request.description,
           },
         };
       },
     );
     await this.refreshTaskProjection(
-      scope.workspaceId,
+      scope.instanceId,
       loaded.root.root_directory!,
       loaded.root.project_id,
     );
@@ -703,7 +702,7 @@ export class CodeUiService {
       threadId,
       emit: async (event) => {
         await this.deps.repository.appendEvent(
-          scope.workspaceId,
+          scope.instanceId,
           scope.taskId,
           {
             key: `child-event:${request.childSessionId}/${event.runId}/${++ordinal}`,
@@ -732,20 +731,20 @@ export class CodeUiService {
           },
         );
         await this.refreshTaskProjection(
-          scope.workspaceId,
+          scope.instanceId,
           loaded.root.root_directory!,
           loaded.root.project_id,
         );
       },
       storeResult: async (text) => {
-        const settings = await this.deps.settings.getWorkspaceSettings(
+        const settings = await this.deps.settings.getInstanceSettings(
           request.actor,
-          scope.workspaceId,
+          scope.instanceId,
         );
         const directory = join(
           dirname(resolve(this.deps.env.checkpointRoot ?? "data/checkpoints")),
           "execution-output",
-          scope.workspaceId,
+          scope.instanceId,
           scope.taskId,
           "children",
         );
@@ -782,7 +781,7 @@ export class CodeUiService {
   }
 
   async rewindTask(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     taskId: string,
     expectedScopeGeneration: number,
     guard?: Pick<
@@ -803,16 +802,16 @@ export class CodeUiService {
         503,
       );
     const generation = await this.deps.repository.beginRewindTask(
-      loaded.workspaceId,
+      loaded.instanceId,
       taskId,
       expectedScopeGeneration,
       guard,
     );
     try {
       await this.deps.beforeCloseTask(actor, taskId, "branch");
-      await this.attachments?.releaseTask(loaded.workspaceId, taskId);
+      await this.attachments?.releaseTask(loaded.instanceId, taskId);
       const current = await this.deps.repository.find(
-        loaded.workspaceId,
+        loaded.instanceId,
         taskId,
       );
       if (!current?.state)
@@ -840,7 +839,7 @@ export class CodeUiService {
       for (const entry of state.snapshots) entry.backgroundWorks = [];
       // 只更新转录，保持 revoking；整个恢复 batch 与后快照完成后才开放普通 Run。
       await this.deps.repository.save(
-        loaded.workspaceId,
+        loaded.instanceId,
         taskId,
         Number(current.revision),
         state,
@@ -853,7 +852,7 @@ export class CodeUiService {
       );
     } catch (error) {
       await this.deps.repository.failCloseTask(
-        loaded.workspaceId,
+        loaded.instanceId,
         taskId,
         generation,
       );
@@ -863,29 +862,32 @@ export class CodeUiService {
 
   async finishTaskRestore(
     scope: ExecutionScopeHandle,
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     success: boolean,
   ): Promise<void> {
     const identity = scope.describe();
-    const workspace = await this.deps.viewer.resolveWorkspace(actor);
-    if (workspace.id !== identity.workspaceId)
+    const workspace = await this.deps.localInstance.resolve(actor);
+    if (workspace.instanceId !== identity.instanceId)
       throw new CodeUiRepositoryError(
         "not_found",
         "恢复作用域不属于当前工作区",
       );
     if (!success) {
       await this.deps.repository.failCloseTask(
-        workspace.id,
+        workspace.instanceId,
         identity.taskId,
         identity.generation,
       );
       return;
     }
-    const root = await this.deps.repository.find(workspace.id, identity.taskId);
+    const root = await this.deps.repository.find(
+      workspace.instanceId,
+      identity.taskId,
+    );
     if (!root?.state)
       throw new CodeUiRepositoryError("not_found", "恢复 Task 已删除");
     await this.deps.repository.finishRewindTask(
-      workspace.id,
+      workspace.instanceId,
       root.id,
       identity.generation,
       root.state,
@@ -894,11 +896,11 @@ export class CodeUiService {
     // ready 的真实提交已完成，通知失败不改写完成状态或触发重复恢复。
     const notifications = await Promise.allSettled([
       this.refreshTaskProjection(
-        workspace.id,
+        workspace.instanceId,
         root.root_directory!,
         root.project_id,
       ),
-      this.deps.taskWork.notifyReady(workspace.id, root.id),
+      this.deps.taskWork.notifyReady(workspace.instanceId, root.id),
     ]);
     for (const result of notifications)
       if (result.status === "rejected")
@@ -908,7 +910,7 @@ export class CodeUiService {
   /** 后台记录先持久化，原 V4 聚合再投影；旧 Run 终态不屏蔽 Task 级更新。 */
   async onTaskWorkChanged(record: TaskWorkRecord) {
     const root = await this.deps.repository.find(
-      record.scope.workspaceId,
+      record.scope.instanceId,
       record.scope.taskId,
     );
     if (
@@ -942,7 +944,7 @@ export class CodeUiService {
       },
     };
     const applied = await this.deps.repository.appendEvent(
-      record.scope.workspaceId,
+      record.scope.instanceId,
       root.id,
       {
         key: `task-work/${record.id}/${record.status}/${record.consumed}`,
@@ -975,16 +977,16 @@ export class CodeUiService {
     );
     if (applied && root.root_directory)
       await this.refreshTaskProjection(
-        record.scope.workspaceId,
+        record.scope.instanceId,
         root.root_directory,
         root.project_id,
       );
   }
 
   /** 空闲续跑由真正的终态触发；命令认领和前台 lease 共同拒绝重复/并发新 Run。 */
-  async resumeTaskWork(workspaceId: string, taskId: string): Promise<boolean> {
+  async resumeTaskWork(instanceId: string, taskId: string): Promise<boolean> {
     if (this.closing) return false;
-    const actor = this.taskActors.get(JSON.stringify([workspaceId, taskId]));
+    const actor = this.taskActors.get(JSON.stringify([instanceId, taskId]));
     if (!actor) return false;
     const loaded = await this.loadConversation(actor, taskId);
     if (
@@ -1044,7 +1046,7 @@ export class CodeUiService {
       issuedAt: Date.now(),
     };
     const ack = await this.deps.repository.applyCommand(
-      workspaceId,
+      instanceId,
       envelope,
       codeUiCommandFingerprint(envelope),
       (root) => {
@@ -1085,7 +1087,7 @@ export class CodeUiService {
     );
     if (ack.status === "duplicate") return true;
     await this.refreshTaskProjection(
-      workspaceId,
+      instanceId,
       loaded.project.path,
       loaded.project.projectId,
     );
@@ -1108,22 +1110,24 @@ export class CodeUiService {
   }
 
   async openConnection(
-    user: AuthenticatedUser,
+    user: LocalActor,
     send: (event: CodeUiEvent) => Promise<void>,
     close: () => void,
   ) {
     await this.initialize();
-    const workspace = await this.deps.viewer.resolveWorkspace(user);
-    const settings = await this.deps.settings.getWorkspaceSettings(
+    const workspace = await this.deps.localInstance.resolve(user);
+    const settings = await this.deps.settings.getInstanceSettings(
       user,
-      workspace.id,
+      workspace.instanceId,
     );
     const connection = this.connections.open(
-      workspace.id,
-      user.id,
+      workspace.instanceId,
+      user.instanceId,
       send,
       close,
       Boolean(this.deps.terminals),
+      true,
+      user.accessClientId,
     );
     return {
       ...connection,
@@ -1138,18 +1142,18 @@ export class CodeUiService {
               this.controllers.delete(connection.hello.connectionId);
             }),
           this.deps.terminals?.closeConnection(
-            workspace.id,
+            workspace.instanceId,
             connection.hello.connectionId,
             "Code通知连接关闭",
           ),
           this.attachmentsUsed
             ? this.attachments?.releaseConnection(
-                workspace.id,
+                workspace.instanceId,
                 connection.hello.connectionId,
               )
             : undefined,
           this.watchers.closeConnection(
-            workspace.id,
+            workspace.instanceId,
             connection.hello.connectionId,
           ),
         ]);
@@ -1195,46 +1199,46 @@ export class CodeUiService {
       throw new AggregateError(failures, "Code连接资源尚未全部确认关闭。");
   }
 
-  closeTaskWatchers(workspaceId: string, taskId: string): Promise<void> {
-    return this.watchers.closeTask(workspaceId, taskId);
+  closeTaskWatchers(instanceId: string, taskId: string): Promise<void> {
+    return this.watchers.closeTask(instanceId, taskId);
   }
 
   private async refreshTaskProjection(
-    workspaceId: string,
+    instanceId: string,
     path: string,
     projectId: string,
   ) {
     try {
-      await this.connections.refresh(workspaceId, path, projectId);
+      await this.connections.refresh(instanceId, path, projectId);
     } catch (error) {
       console.warn("[code-ui] 事实已持久化，订阅刷新失败：", error);
     }
   }
 
   private async refreshTaskLists(
-    workspaceId: string,
+    instanceId: string,
     path: string,
     projectId: string,
   ) {
     try {
       await Promise.all(
         [...this.controllers.values()]
-          .filter((controller) => controller.workspaceId === workspaceId)
+          .filter((controller) => controller.instanceId === instanceId)
           .map((controller) => controller.host.refresh()),
       );
-      await this.refreshTaskProjection(workspaceId, path, projectId);
+      await this.refreshTaskProjection(instanceId, path, projectId);
     } catch (error) {
       console.warn("[code-ui] Task列表事实已持久化，订阅刷新失败：", error);
     }
   }
 
   private async closeTaskResources(
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
     reason: "archive" | "delete",
   ) {
-    const workspace = await this.deps.viewer.resolveWorkspace(user);
-    const root = await this.deps.repository.find(workspace.id, taskId);
+    const workspace = await this.deps.localInstance.resolve(user);
+    const root = await this.deps.repository.find(workspace.instanceId, taskId);
     if (!root || root.parent_session_id)
       throw new CodeUiRepositoryError("not_found", "根 Task 不存在或已经删除");
     if (!this.deps.beforeCloseTask)
@@ -1244,19 +1248,19 @@ export class CodeUiService {
         503,
       );
     const generation = await this.deps.repository.beginCloseTask(
-      workspace.id,
+      workspace.instanceId,
       root.id,
     );
     try {
       await this.deps.beforeCloseTask(user, root.id, reason);
-      await this.attachments?.releaseTask(workspace.id, root.id);
+      await this.attachments?.releaseTask(workspace.instanceId, root.id);
       if (reason === "delete")
         await this.attachments?.purgeTask(user, root.id, generation);
-      forgetTaskFileState(workspace.id, root.id);
-      return { workspaceId: workspace.id, root };
+      forgetTaskFileState(workspace.instanceId, root.id);
+      return { instanceId: workspace.instanceId, root };
     } catch (error) {
       await this.deps.repository.failCloseTask(
-        workspace.id,
+        workspace.instanceId,
         root.id,
         generation,
       );
@@ -1268,57 +1272,62 @@ export class CodeUiService {
     }
   }
 
-  async archiveTask(user: AuthenticatedUser, taskId: string): Promise<void> {
-    const { workspaceId, root } = await this.closeTaskResources(
+  async archiveTask(user: LocalActor, taskId: string): Promise<void> {
+    const { instanceId, root } = await this.closeTaskResources(
       user,
       taskId,
       "archive",
     );
-    await this.deps.repository.setListState(workspaceId, root.id, {
+    await this.deps.repository.setListState(instanceId, root.id, {
       archived: true,
     });
-    await this.deps.repository.failCloseTask(workspaceId, root.id);
-    this.taskActors.delete(JSON.stringify([workspaceId, root.id]));
+    await this.deps.repository.failCloseTask(instanceId, root.id);
+    this.taskActors.delete(JSON.stringify([instanceId, root.id]));
     await this.refreshTaskLists(
-      workspaceId,
+      instanceId,
       root.root_directory!,
       root.project_id,
     );
   }
 
-  async deleteTask(user: AuthenticatedUser, taskId: string): Promise<void> {
-    const { workspaceId, root } = await this.closeTaskResources(
+  async deleteTask(user: LocalActor, taskId: string): Promise<void> {
+    const { instanceId, root } = await this.closeTaskResources(
       user,
       taskId,
       "delete",
     );
-    await this.deps.repository.delete(workspaceId, root.id);
-    this.taskActors.delete(JSON.stringify([workspaceId, root.id]));
+    await this.deps.repository.delete(instanceId, root.id);
+    this.taskActors.delete(JSON.stringify([instanceId, root.id]));
     await this.refreshTaskLists(
-      workspaceId,
+      instanceId,
       root.root_directory!,
       root.project_id,
     );
   }
 
   async hostRpc(
-    user: AuthenticatedUser,
+    user: LocalActor,
     service: string,
     method: string,
     args: unknown[],
     connectionId?: string,
   ) {
     if (connectionId !== undefined) {
-      const owner = await this.deps.viewer.resolveWorkspace(user);
-      this.connections.require(owner.id, connectionId, false, user.id);
+      const owner = await this.deps.localInstance.resolve(user);
+      this.connections.require(
+        owner.instanceId,
+        connectionId,
+        false,
+        user.accessClientId,
+      );
     }
     if (service === "window-controller") {
-      const owner = await this.deps.viewer.resolveWorkspace(user);
+      const owner = await this.deps.localInstance.resolve(user);
       const connection = this.connections.require(
-        owner.id,
+        owner.instanceId,
         connectionId,
         true,
-        user.id,
+        user.accessClientId,
       );
       if (this.closing)
         throw new CodeUiRepositoryError("not_found", "Code通知宿主已关闭。");
@@ -1328,7 +1337,7 @@ export class CodeUiService {
       if (!controller) {
         controller = createCodeUiWindowController({
           actor: user,
-          workspaceId: owner.id,
+          instanceId: owner.instanceId,
           connectionId: connection.hello.connectionId,
           connections: this.connections,
           repository: this.deps.repository,
@@ -1336,15 +1345,15 @@ export class CodeUiService {
           listWorkspaces: () => this.listWorkspaces(user),
         });
         this.controllers.set(connection.hello.connectionId, {
-          workspaceId: owner.id,
+          instanceId: owner.instanceId,
           host: controller,
         });
       }
       if (method === "listTaskList") {
         const query = codeUiControllerTaskListQuerySchema.parse(args[0]);
-        const settings = await this.deps.settings.getWorkspaceSettings(
+        const settings = await this.deps.settings.getInstanceSettings(
           user,
-          owner.id,
+          owner.instanceId,
         );
         return controller.call(method, {
           ...query,
@@ -1357,49 +1366,56 @@ export class CodeUiService {
       return controller.call(method, args[0]);
     }
     if (service === "plugin-management" && this.plugins) {
-      const owner = await this.deps.viewer.resolveWorkspace(user);
-      this.connections.require(owner.id, connectionId, false, user.id);
+      const owner = await this.deps.localInstance.resolve(user);
+      this.connections.require(
+        owner.instanceId,
+        connectionId,
+        false,
+        user.accessClientId,
+      );
       return this.plugins.call(user, method, args[0]);
     }
     if (service === "file-watcher" || service === "git") {
-      const owner = await this.deps.viewer.resolveWorkspace(user);
-      const current = this.connections.require(owner.id, connectionId, false);
-      if (current.hello.auth.userId !== user.id)
+      const owner = await this.deps.localInstance.resolve(user);
+      const current = this.connections.require(
+        owner.instanceId,
+        connectionId,
+        false,
+      );
+      if (current.hello.auth.userId !== user.instanceId)
         throw new CodeUiRepositoryError(
           "not_found",
           "宿主连接不属于当前用户。",
         );
       const connection = {
         connectionId: connectionId!,
-        workspaceId: owner.id,
-        userId: current.hello.auth.userId,
+        instanceId: owner.instanceId,
       };
       return service === "file-watcher"
         ? this.watchers.call(user, method, args, connection)
         : (this.git?.call(user, method, args, connection) ?? null);
     }
     if (service === "skills" && this.hostServices) {
-      const owner = await this.deps.viewer.resolveWorkspace(user);
-      this.connections.require(owner.id, connectionId, false);
+      const owner = await this.deps.localInstance.resolve(user);
+      this.connections.require(owner.instanceId, connectionId, false);
       return this.hostServices.call(user, service, method, args, {
         connectionId: connectionId!,
-        workspaceId: owner.id,
-        userId: user.id,
+        instanceId: owner.instanceId,
       });
     }
     if (
       service === "providerSettingsService" ||
       service === "modelSelectionService"
     ) {
-      const owner = await this.deps.viewer.resolveWorkspace(user);
-      this.connections.require(owner.id, connectionId, false);
+      const owner = await this.deps.localInstance.resolve(user);
+      this.connections.require(owner.instanceId, connectionId, false);
       return this.providerSettings.call(user, service, method, args);
     }
     if (service === "terminal" && this.deps.terminals) {
-      const owner = await this.deps.viewer.resolveWorkspace(user);
-      this.connections.require(owner.id, connectionId, false);
+      const owner = await this.deps.localInstance.resolve(user);
+      this.connections.require(owner.instanceId, connectionId, false);
       const preferences = appSettingsSchema.parse(
-        await this.deps.repository.readHumanPreferences(owner.id),
+        await this.deps.repository.readHumanPreferences(owner.instanceId),
       );
       return codeUiTerminalRpc({
         terminals: this.deps.terminals,
@@ -1416,7 +1432,7 @@ export class CodeUiService {
         },
         subscriber: (terminalId) => ({
           output: (data) =>
-            this.connections.send(owner.id, connectionId!, {
+            this.connections.send(owner.instanceId, connectionId!, {
               event: "service",
               service: "terminal",
               name: "onDynamicData",
@@ -1424,7 +1440,7 @@ export class CodeUiService {
               data,
             }),
           exit: (exit) =>
-            this.connections.send(owner.id, connectionId!, {
+            this.connections.send(owner.instanceId, connectionId!, {
               event: "service",
               service: "terminal",
               name: "onDynamicExit",
@@ -1439,18 +1455,18 @@ export class CodeUiService {
       service === "file" ||
       service === "setting"
     ) {
-      const owner = await this.deps.viewer.resolveWorkspace(user);
+      const owner = await this.deps.localInstance.resolve(user);
       const connection = this.connections.require(
-        owner.id,
+        owner.instanceId,
         connectionId,
         false,
       );
       const human = await this.humanWorkspace.call(user, service, method, args);
       if (human) return human;
       if (service === "file") {
-        const settings = await this.deps.settings.getWorkspaceSettings(
+        const settings = await this.deps.settings.getInstanceSettings(
           user,
-          owner.id,
+          owner.instanceId,
         );
         let fileIndex = this.fileIndexes.get(connection);
         if (!fileIndex) {
@@ -1499,7 +1515,7 @@ export class CodeUiService {
       return { result: { homedir: homedir(), platform: process.platform } };
     if (service === "zcode-session" && method === "readWorkspacePresentation") {
       const request = args[0] as CodeUiWorkspaceConfigRequest;
-      const target = await this.resolveWorkspaceConfigTarget(user, request);
+      const target = await this.resolveConfigTarget(user, request);
       const presentation = await this.readWorkspaceConfiguration(user, target);
       return {
         result: zcodeWorkspacePresentationSchema.parse({
@@ -1515,7 +1531,7 @@ export class CodeUiService {
   }
 
   private async taskIndexRpc(
-    user: AuthenticatedUser,
+    user: LocalActor,
     method: string,
     args: unknown[],
   ) {
@@ -1528,7 +1544,7 @@ export class CodeUiService {
       "getTaskMeta",
     ]);
     if (!supported.has(method)) return null;
-    const workspace = await this.deps.viewer.resolveWorkspace(user);
+    const workspace = await this.deps.localInstance.resolve(user);
     const projects = await this.listWorkspaces(user);
     const target = args[0] as {
       workspacePath: string;
@@ -1537,7 +1553,7 @@ export class CodeUiService {
     };
     if (method === "getTaskMeta") {
       const found = target?.taskId
-        ? await this.deps.repository.find(workspace.id, target.taskId)
+        ? await this.deps.repository.find(workspace.instanceId, target.taskId)
         : null;
       const record =
         found &&
@@ -1561,7 +1577,7 @@ export class CodeUiService {
             : null,
       };
     }
-    const records = await this.deps.repository.listRoots(workspace.id);
+    const records = await this.deps.repository.listRoots(workspace.instanceId);
     if (method === "listPinnedTaskIds")
       return {
         result: records
@@ -1608,21 +1624,29 @@ export class CodeUiService {
   }
 
   async transportRpc(
-    user: AuthenticatedUser,
+    user: LocalActor,
     connectionId: string | undefined,
     method: string,
     args: unknown[],
   ): Promise<{ result: unknown; publish?: () => Promise<void> } | null> {
-    const workspace = await this.deps.viewer.resolveWorkspace(user);
+    const workspace = await this.deps.localInstance.resolve(user);
     if (connectionId !== undefined)
-      this.connections.require(workspace.id, connectionId, false, user.id);
+      this.connections.require(
+        workspace.instanceId,
+        connectionId,
+        false,
+        user.accessClientId,
+      );
     if (method === "helloConversationV4")
       return {
-        result: this.connections.require(workspace.id, connectionId, false)
-          .hello,
+        result: this.connections.require(
+          workspace.instanceId,
+          connectionId,
+          false,
+        ).hello,
       };
     if (method === "initializeConversationV4") {
-      this.connections.initialize(workspace.id, connectionId, args[0]);
+      this.connections.initialize(workspace.instanceId, connectionId, args[0]);
       return { result: null };
     }
     if (
@@ -1631,19 +1655,18 @@ export class CodeUiService {
       method === "unsubscribeWorkspaceConfigV4"
     ) {
       const connection = this.connections.require(
-        workspace.id,
+        workspace.instanceId,
         connectionId,
         true,
-        user.id,
+        user.accessClientId,
       );
       return this.workspaceConfig.call(user, method, args, {
-        workspaceId: workspace.id,
-        userId: user.id,
+        instanceId: workspace.instanceId,
         connectionId: connection.hello.connectionId,
       });
     }
     if (this.attachments && isCodeAttachmentRpc(method)) {
-      this.connections.require(workspace.id, connectionId, false);
+      this.connections.require(workspace.instanceId, connectionId, false);
       this.attachmentsUsed = true;
       const prepared = await codeAttachmentsRpc(
         this.attachments,
@@ -1687,7 +1710,7 @@ export class CodeUiService {
         await this.historyEdit.decorate(user, loaded, snapshot);
         return { snapshot, seq: snapshot.seq };
       };
-      return this.connections.subscribe(workspace.id, connectionId, {
+      return this.connections.subscribe(workspace.instanceId, connectionId, {
         topic: params.topic,
         workspacePath: project.path,
         projectId: project.projectId,
@@ -1715,7 +1738,7 @@ export class CodeUiService {
       if (
         target.workspaceIdentity &&
         project.path !== subscriptionPath &&
-        !(await this.deps.repository.listRoots(workspace.id)).some(
+        !(await this.deps.repository.listRoots(workspace.instanceId)).some(
           (entry) =>
             entry.project_id === project.projectId &&
             entry.root_directory === subscriptionPath &&
@@ -1735,11 +1758,11 @@ export class CodeUiService {
           target.workspaceIdentity,
         ),
         seq: await this.deps.repository.listVersion(
-          workspace.id,
+          workspace.instanceId,
           project.projectId,
         ),
       });
-      return this.connections.subscribe(workspace.id, connectionId, {
+      return this.connections.subscribe(workspace.instanceId, connectionId, {
         topic: protocol.sessionsIndexTopic(
           target.workspaceIdentity ?? subscriptionPath,
         ),
@@ -1760,7 +1783,11 @@ export class CodeUiService {
           ? { forceSnapshot: value.forceSnapshot }
           : {}),
       });
-      return this.connections.resync(workspace.id, connectionId, params);
+      return this.connections.resync(
+        workspace.instanceId,
+        connectionId,
+        params,
+      );
     }
     if (
       method === "unsubscribeConversationV4" ||
@@ -1769,7 +1796,7 @@ export class CodeUiService {
       if (!target.subscriptionId)
         throw new CodeUiRepositoryError("not_found", "Code 订阅身份缺失");
       this.connections.unsubscribe(
-        workspace.id,
+        workspace.instanceId,
         connectionId,
         target.subscriptionId,
       );
@@ -1781,11 +1808,13 @@ export class CodeUiService {
         commands: params.commands,
         ...(params.clock ? { clock: true } : {}),
       });
-      const clientId = this.connections.require(workspace.id, connectionId)
-        .client!.clientId;
+      const clientId = this.connections.require(
+        workspace.instanceId,
+        connectionId,
+      ).client!.clientId;
       return {
         result: await this.deps.repository.queryCommands(
-          workspace.id,
+          workspace.instanceId,
           clientId,
           parsed.commands,
         ),
@@ -1839,12 +1868,12 @@ export class CodeUiService {
         );
       const snapshot = loaded.host.getSnapshot(parsed.sessionId);
       const header = requireFileChangesTarget(snapshot, parsed);
-      const limits = await this.deps.settings.getWorkspaceSettings(
+      const limits = await this.deps.settings.getInstanceSettings(
         user,
-        loaded.workspaceId,
+        loaded.instanceId,
       );
       const events = await this.deps.repository.readToolCompletions(
-        loaded.workspaceId,
+        loaded.instanceId,
         loaded.root.id,
         header.turnId,
         {
@@ -1863,7 +1892,10 @@ export class CodeUiService {
       const parsed = protocol.parseCommandEnvelope(input.envelope);
       if (!parsed.ok) throw parsed.error;
       if (connectionId) {
-        const bound = this.connections.require(workspace.id, connectionId);
+        const bound = this.connections.require(
+          workspace.instanceId,
+          connectionId,
+        );
         if (bound.client!.clientId !== parsed.envelope.clientId)
           throw new CodeUiRepositoryError(
             "command_conflict",
@@ -1902,7 +1934,7 @@ export class CodeUiService {
   }
 
   private async setFollowupMode(
-    user: AuthenticatedUser,
+    user: LocalActor,
     workspacePath: string,
     envelope: protocol.CommandEnvelope,
   ) {
@@ -1918,7 +1950,7 @@ export class CodeUiService {
       envelope.payload,
     );
     const ack = await this.deps.repository.applyCommand(
-      loaded.workspaceId,
+      loaded.instanceId,
       envelope,
       codeUiCommandFingerprint(envelope),
       (root) => {
@@ -1971,7 +2003,7 @@ export class CodeUiService {
       publish: publishOnce(async () => {
         if (ack.status !== "accepted") return;
         await this.refreshTaskProjection(
-          loaded.workspaceId,
+          loaded.instanceId,
           loaded.project.path,
           loaded.project.projectId,
         );
@@ -1980,7 +2012,7 @@ export class CodeUiService {
   }
 
   private async switchMode(
-    user: AuthenticatedUser,
+    user: LocalActor,
     workspacePath: string,
     envelope: protocol.CommandEnvelope,
   ) {
@@ -2007,7 +2039,7 @@ export class CodeUiService {
           ? "danger-full-access"
           : "workspace-write";
     const ack = await this.deps.repository.applyScopeCommand(
-      loaded.workspaceId,
+      loaded.instanceId,
       envelope,
       codeUiCommandFingerprint(envelope),
       async () => {
@@ -2043,7 +2075,7 @@ export class CodeUiService {
       result: ack,
       publish: async () => {
         await this.refreshTaskProjection(
-          loaded.workspaceId,
+          loaded.instanceId,
           loaded.project.path,
           loaded.project.projectId,
         );
@@ -2058,7 +2090,7 @@ export class CodeUiService {
   }
 
   private async resolveInteraction(
-    user: AuthenticatedUser,
+    user: LocalActor,
     workspacePath: string,
     envelope: protocol.CommandEnvelope,
   ) {
@@ -2080,12 +2112,12 @@ export class CodeUiService {
       | Awaited<ReturnType<PermissionService["resolve"]>>
       | undefined;
     const ack = await this.deps.repository.applyScopeCommand(
-      loaded.workspaceId,
+      loaded.instanceId,
       { ...envelope, sessionId: loaded.root.id },
       codeUiCommandFingerprint(envelope),
       async (root) => {
         const pending = this.deps
-          .permissions!.listPending(loaded.workspaceId, root.id)
+          .permissions!.listPending(loaded.instanceId, root.id)
           .find(
             (entry) =>
               entry.interaction.interactionId === payload.interactionId,
@@ -2107,10 +2139,9 @@ export class CodeUiService {
           interactionId: payload.interactionId,
           answer: payload.answer,
           binding: {
-            workspaceId: loaded.workspaceId,
+            instanceId: loaded.instanceId,
             taskId: root.id,
             runId: pending.identity.runId,
-            userId: user.id,
             scopeGeneration: Number(root.scope_generation),
             branchGeneration: Number(root.branch_generation),
           },
@@ -2132,7 +2163,7 @@ export class CodeUiService {
   }
 
   private async stopExecution(
-    user: AuthenticatedUser,
+    user: LocalActor,
     envelope: protocol.CommandEnvelope,
   ) {
     if (!envelope.sessionId)
@@ -2140,7 +2171,7 @@ export class CodeUiService {
     const loaded = await this.loadConversation(user, envelope.sessionId);
     const payload = protocol.commandPayloadSchemas.stop.parse(envelope.payload);
     const ack = await this.deps.repository.applyScopeCommand(
-      loaded.workspaceId,
+      loaded.instanceId,
       { ...envelope, sessionId: loaded.root.id },
       codeUiCommandFingerprint(envelope),
       async (root) => {
@@ -2165,7 +2196,7 @@ export class CodeUiService {
           return;
         if (loaded.entry.id === root.id)
           await this.deps.repository.appendEvent(
-            loaded.workspaceId,
+            loaded.instanceId,
             root.id,
             {
               key: `input-stop:${envelope.clientId}/${envelope.commandId}`,
@@ -2230,7 +2261,7 @@ export class CodeUiService {
         if (execution) await this.deps.agentRuns.cancelRunAndWait(execution);
         if (execution && loaded.entry.id === root.id)
           await this.deps.repository.appendEvent(
-            loaded.workspaceId,
+            loaded.instanceId,
             root.id,
             {
               key: `input-stop-completed:${envelope.clientId}/${envelope.commandId}`,
@@ -2276,7 +2307,7 @@ export class CodeUiService {
   }
 
   private async cancelBackgroundWork(
-    user: AuthenticatedUser,
+    user: LocalActor,
     envelope: protocol.CommandEnvelope,
   ) {
     if (!envelope.sessionId)
@@ -2297,7 +2328,7 @@ export class CodeUiService {
       branchGeneration: Number(loaded.root.branch_generation),
     };
     const ack = await this.deps.repository.applyScopeCommand(
-      loaded.workspaceId,
+      loaded.instanceId,
       { ...envelope, sessionId: loaded.root.id },
       codeUiCommandFingerprint(envelope),
       async () => {
@@ -2327,7 +2358,7 @@ export class CodeUiService {
   }
 
   private async queueCommand(
-    user: AuthenticatedUser,
+    user: LocalActor,
     workspacePath: string,
     envelope: protocol.CommandEnvelope,
   ) {
@@ -2341,7 +2372,7 @@ export class CodeUiService {
       );
     let dispatch: CodeAdmittedInput | undefined;
     const ack = await this.deps.repository.applyCommand(
-      loaded.workspaceId,
+      loaded.instanceId,
       envelope,
       codeUiCommandFingerprint(envelope),
       (root) => {
@@ -2365,7 +2396,7 @@ export class CodeUiService {
       result: ack,
       publish: async () => {
         await this.refreshTaskProjection(
-          loaded.workspaceId,
+          loaded.instanceId,
           workspacePath,
           loaded.project.projectId,
         );
@@ -2406,7 +2437,20 @@ export class CodeUiService {
   }
 
   private async sendText(
-    user: AuthenticatedUser,
+    user: LocalActor,
+    workspacePath: string,
+    envelope: protocol.CommandEnvelope,
+  ) {
+    const release = this.deps.localInstance.beginAdmission();
+    try {
+      return await this.admitText(user, workspacePath, envelope);
+    } finally {
+      release();
+    }
+  }
+
+  private async admitText(
+    user: LocalActor,
     workspacePath: string,
     envelope: protocol.CommandEnvelope,
   ) {
@@ -2452,7 +2496,7 @@ export class CodeUiService {
     );
     const runId = randomUUID();
     const ack = await this.deps.repository.applyCommand(
-      loaded.workspaceId,
+      loaded.instanceId,
       envelope,
       // 运行身份来自本次事务；忙时立即发送先只认领，停止确认后才投影新一轮。
       codeUiCommandFingerprint(envelope),
@@ -2626,7 +2670,7 @@ export class CodeUiService {
       publish: publishOnce(async () => {
         if (ack.status !== "accepted") return;
         await this.refreshTaskProjection(
-          loaded.workspaceId,
+          loaded.instanceId,
           workspacePath,
           loaded.project.projectId,
         );
@@ -2644,7 +2688,7 @@ export class CodeUiService {
           return;
         }
         const accepted = await this.deps.repository.find(
-          loaded.workspaceId,
+          loaded.instanceId,
           loaded.root.id,
         );
         const record = accepted?.state?.inputs?.find(
@@ -2676,7 +2720,7 @@ export class CodeUiService {
   }
 
   private async preemptInput(
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
     reservation: CodeAdmittedInput,
   ): Promise<boolean> {
@@ -2685,7 +2729,7 @@ export class CodeUiService {
     const loaded = await this.loadConversation(user, taskId);
     let selected = false;
     await this.deps.repository.appendEvent(
-      loaded.workspaceId,
+      loaded.instanceId,
       taskId,
       {
         key: `input-preempt:${reservation.runId}`,
@@ -2758,15 +2802,15 @@ export class CodeUiService {
   }
 
   private async recordRunEvent(
-    user: AuthenticatedUser,
+    user: LocalActor,
     project: CodeUiWorkspace,
     sessionId: string,
     event: StreamEvent,
     ordinal: number,
   ) {
-    const workspace = await this.deps.viewer.resolveWorkspace(user);
+    const workspace = await this.deps.localInstance.resolve(user);
     const applied = await this.deps.repository.appendEvent(
-      workspace.id,
+      workspace.instanceId,
       sessionId,
       {
         key: `${event.runId}/${ordinal}`,
@@ -2802,7 +2846,7 @@ export class CodeUiService {
     );
     if (applied) {
       await this.refreshTaskProjection(
-        workspace.id,
+        workspace.instanceId,
         project.path,
         project.projectId,
       );
@@ -2812,13 +2856,16 @@ export class CodeUiService {
   }
 
   private async notifyTask(
-    user: AuthenticatedUser,
+    user: LocalActor,
     project: CodeUiWorkspace,
     sessionId: string,
     reason: "task_created" | "user_message_saved" | "task_status_changed",
   ) {
-    const workspace = await this.deps.viewer.resolveWorkspace(user);
-    const record = await this.deps.repository.find(workspace.id, sessionId);
+    const workspace = await this.deps.localInstance.resolve(user);
+    const record = await this.deps.repository.find(
+      workspace.instanceId,
+      sessionId,
+    );
     const meta = record
       ? codeUiTaskMeta(record, record.root_directory ?? project.path)
       : null;
@@ -2844,7 +2891,7 @@ export class CodeUiService {
         taskMeta: { ...meta, workspaceIdentity },
       };
       for (const controller of this.controllers.values())
-        if (controller.workspaceId === workspace.id)
+        if (controller.instanceId === workspace.instanceId)
           controller.host.accept({
             event: "service",
             service: "zcode-task",
@@ -2856,7 +2903,7 @@ export class CodeUiService {
       await Promise.all(
         [...paths].map((path) =>
           this.connections.notify(
-            workspace.id,
+            workspace.instanceId,
             "zcode-task",
             "onDynamicWorkspaceEvent",
             path,
@@ -2874,7 +2921,7 @@ export class CodeUiService {
   }
 
   private async runTurn(
-    user: AuthenticatedUser,
+    user: LocalActor,
     project: CodeUiWorkspace,
     sessionId: string,
     threadId: string,
@@ -2897,7 +2944,7 @@ export class CodeUiService {
         sessionId,
       );
       const current = await this.deps.repository.find(
-        scopeHandle.describe().workspaceId,
+        scopeHandle.describe().instanceId,
         sessionId,
       );
       if (!current)
@@ -2906,7 +2953,7 @@ export class CodeUiService {
           "Code Task 已删除或不存在。",
         );
       this.taskActors.set(
-        JSON.stringify([scopeHandle.describe().workspaceId, sessionId]),
+        JSON.stringify([scopeHandle.describe().instanceId, sessionId]),
         user,
       );
       await this.deps.agentRunMetadata.createAcceptedRun({
@@ -2916,7 +2963,7 @@ export class CodeUiService {
         model,
       });
       const started = await this.deps.repository.startRunIfCurrent(
-        scopeHandle.describe().workspaceId,
+        scopeHandle.describe().instanceId,
         sessionId,
         runId,
         {
@@ -2942,8 +2989,7 @@ export class CodeUiService {
               runId,
               threadId,
               scopeHandle,
-              accessToken: user.accessToken,
-              userId: user.id,
+              actor: user,
               model,
               ...(modelInvocation ? { modelInvocation } : {}),
               ...(codeInputs?.length ? { codeInputs } : {}),
@@ -3022,7 +3068,7 @@ export class CodeUiService {
   }
 
   private async drainQueuedInput(
-    user: AuthenticatedUser,
+    user: LocalActor,
     taskId: string,
   ): Promise<void> {
     if (this.closing) return;
@@ -3046,7 +3092,7 @@ export class CodeUiService {
     let selected: CodeAdmittedInput | undefined;
     const reservationId = randomUUID();
     await this.deps.repository.appendEvent(
-      loaded.workspaceId,
+      loaded.instanceId,
       taskId,
       {
         key: `input-claim:${reservationId}`,
@@ -3127,7 +3173,7 @@ export class CodeUiService {
     }
   }
 
-  async listWorkspaces(user: AuthenticatedUser): Promise<CodeUiWorkspace[]> {
+  async listWorkspaces(user: LocalActor): Promise<CodeUiWorkspace[]> {
     const projects = await this.deps.projects.listProjects(user, "code");
     return projects.flatMap((project) =>
       project.kind === "code"
@@ -3144,7 +3190,7 @@ export class CodeUiService {
   }
 
   async requireWorkspace(
-    user: AuthenticatedUser,
+    user: LocalActor,
     path: string,
   ): Promise<CodeUiWorkspace> {
     const projects = await this.listWorkspaces(user);
@@ -3163,8 +3209,8 @@ export class CodeUiService {
     );
   }
 
-  async refreshWorkspaceConfiguration(workspaceId: string, projectId?: string) {
-    const failures = await this.workspaceConfig.refresh(workspaceId, projectId);
+  async refreshWorkspaceConfiguration(instanceId: string, projectId?: string) {
+    const failures = await this.workspaceConfig.refresh(instanceId, projectId);
     for (const failure of failures) {
       failure.dispose();
       console.warn(
@@ -3174,11 +3220,11 @@ export class CodeUiService {
     }
   }
 
-  private async resolveWorkspaceConfigTarget(
-    actor: AuthenticatedUser,
+  private async resolveConfigTarget(
+    actor: LocalActor,
     request: CodeUiWorkspaceConfigRequest,
   ): Promise<CodeUiWorkspaceConfigTarget> {
-    const workspace = await this.deps.viewer.resolveWorkspace(actor);
+    const workspace = await this.deps.localInstance.resolve(actor);
     const projects = await this.listWorkspaces(actor);
     const candidates = projects.filter(
       (project) =>
@@ -3197,7 +3243,7 @@ export class CodeUiService {
     const project = candidates[0]!;
     if (
       project.path !== request.workspacePath &&
-      !(await this.deps.repository.listRoots(workspace.id)).some(
+      !(await this.deps.repository.listRoots(workspace.instanceId)).some(
         (root) =>
           root.project_id === project.projectId &&
           root.root_directory === request.workspacePath &&
@@ -3210,19 +3256,19 @@ export class CodeUiService {
         "配置目录没有该Project默认目录或固定Task来源。",
       );
     return {
-      workspaceId: workspace.id,
+      instanceId: workspace.instanceId,
       projectId: project.projectId,
       workspacePath: request.workspacePath,
     };
   }
 
   private async readWorkspaceConfiguration(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     target: CodeUiWorkspaceConfigTarget,
   ) {
-    const settings = await this.deps.settings.getWorkspaceSettings(
+    const settings = await this.deps.settings.getInstanceSettings(
       actor,
-      target.workspaceId,
+      target.instanceId,
     );
     return {
       mode: "build",
@@ -3235,10 +3281,10 @@ export class CodeUiService {
   }
 
   private async resolveHostTarget(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     request: CodeUiHostTargetRequest,
   ) {
-    const workspace = await this.deps.viewer.resolveWorkspace(actor);
+    const workspace = await this.deps.localInstance.resolve(actor);
     if (request.viewerScope?.kind === "task") {
       const loaded = await this.loadConversation(
         actor,
@@ -3259,7 +3305,7 @@ export class CodeUiService {
           "宿主能力目标与Task身份不匹配。",
         );
       return {
-        workspaceId: workspace.id,
+        instanceId: workspace.instanceId,
         projectId: loaded.project.projectId,
         rootDirectory: loaded.project.path,
         viewerScope: request.viewerScope,
@@ -3293,7 +3339,7 @@ export class CodeUiService {
         "宿主能力目标与Project身份不匹配。",
       );
     return {
-      workspaceId: workspace.id,
+      instanceId: workspace.instanceId,
       projectId: project.projectId,
       rootDirectory: project.path,
       viewerScope: { kind: "project" as const, projectId: project.projectId },
@@ -3301,7 +3347,7 @@ export class CodeUiService {
   }
 
   private async resolveWatchTarget(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     viewerScope: import("@kenfutwork/shared").CodeUiViewerScope,
     path: string,
   ) {
@@ -3312,7 +3358,7 @@ export class CodeUiService {
       );
       const identity = scope.describe();
       return {
-        workspaceId: identity.workspaceId,
+        instanceId: identity.instanceId,
         projectId: identity.projectId,
         rootDirectory: identity.rootDirectory,
         generation: identity.generation,
@@ -3321,9 +3367,9 @@ export class CodeUiService {
       };
     }
     const project = await this.requireWorkspace(actor, viewerScope.projectId);
-    const workspace = await this.deps.viewer.resolveWorkspace(actor);
+    const workspace = await this.deps.localInstance.resolve(actor);
     return {
-      workspaceId: workspace.id,
+      instanceId: workspace.instanceId,
       projectId: project.projectId,
       rootDirectory: project.path,
       viewerScope,
@@ -3338,14 +3384,14 @@ export class CodeUiService {
   }
 
   async modelViews(
-    user: AuthenticatedUser,
+    user: LocalActor,
     selection?: protocol.SessionConfigState["modelSelection"] | null,
   ) {
     return this.providerSettings.readViews(user, selection);
   }
 
   private async prepareInputModel(
-    user: AuthenticatedUser,
+    user: LocalActor,
     selection: protocol.SessionConfigState["modelSelection"],
   ) {
     const views = await this.modelViews(user, selection);
@@ -3362,7 +3408,7 @@ export class CodeUiService {
   }
 
   private async prepareModelInvocation(
-    user: AuthenticatedUser,
+    user: LocalActor,
     selection: NonNullable<protocol.SessionConfigState["modelSelection"]>,
   ): Promise<ModelInvocationSnapshot> {
     const [instances, catalog] = await Promise.all([
@@ -3373,7 +3419,19 @@ export class CodeUiService {
   }
 
   async createSession(
-    user: AuthenticatedUser,
+    user: LocalActor,
+    envelope: protocol.CommandEnvelope,
+  ): Promise<protocol.CommandAck> {
+    const release = this.deps.localInstance.beginAdmission();
+    try {
+      return await this.createAdmittedSession(user, envelope);
+    } finally {
+      release();
+    }
+  }
+
+  private async createAdmittedSession(
+    user: LocalActor,
     envelope: protocol.CommandEnvelope,
   ): Promise<protocol.CommandAck> {
     await this.initialize();
@@ -3381,7 +3439,7 @@ export class CodeUiService {
       envelope.payload,
     );
     const project = await this.requireWorkspace(user, payload.workspaceId);
-    const workspace = await this.deps.viewer.resolveWorkspace(user);
+    const workspace = await this.deps.localInstance.resolve(user);
     const views = await this.modelViews(user, payload.config?.modelSelection);
     const selection =
       payload.config?.modelSelection ?? views.selection.preferredSelection;
@@ -3389,7 +3447,7 @@ export class CodeUiService {
     const record = await this.deps.projects.getProject(user, project.projectId);
     const additionalDirectories = record.additional_directories ?? [];
     const rootDirectory = await resolveProjectWorkDirectory({
-      workspaceId: workspace.id,
+      instanceId: workspace.instanceId,
       projectId: project.projectId,
       sandboxRoot: this.deps.env.sandboxRoot ?? DEFAULT_SANDBOX_ROOT,
       workDir: record.work_dir,
@@ -3407,11 +3465,11 @@ export class CodeUiService {
         planEnabled: payload.config?.planEnabled ?? false,
       },
     });
-    return this.deps.repository.createRoot(workspace.id, {
+    return this.deps.repository.createRoot(workspace.instanceId, {
       sessionId,
       projectId: project.projectId,
       scope: {
-        workspaceId: workspace.id,
+        instanceId: workspace.instanceId,
         projectId: project.projectId,
         taskId: sessionId,
         generation: 0,
@@ -3424,7 +3482,7 @@ export class CodeUiService {
               ? "danger-full-access"
               : "workspace-write",
       } satisfies CodeExecutionScope,
-      userId: user.id,
+      createdByClientId: user.accessClientId,
       threadId: this.deps.threads.createThreadId(),
       state: host.exportState(),
       command: {
@@ -3435,16 +3493,22 @@ export class CodeUiService {
     });
   }
 
-  async loadConversation(user: AuthenticatedUser, sessionId: string) {
+  async loadConversation(user: LocalActor, sessionId: string) {
     await this.initialize();
-    const workspace = await this.deps.viewer.resolveWorkspace(user);
-    const entry = await this.deps.repository.find(workspace.id, sessionId);
+    const workspace = await this.deps.localInstance.resolve(user);
+    const entry = await this.deps.repository.find(
+      workspace.instanceId,
+      sessionId,
+    );
     if (!entry)
       throw new CodeUiRepositoryError("not_found", "Code 会话不存在或已删除");
     const root =
       entry.id === entry.root_session_id
         ? entry
-        : await this.deps.repository.find(workspace.id, entry.root_session_id);
+        : await this.deps.repository.find(
+            workspace.instanceId,
+            entry.root_session_id,
+          );
     if (!root?.state)
       throw new CodeUiRepositoryError("not_found", "Code 会话权威状态不存在");
     const currentProject = (await this.listWorkspaces(user)).find(
@@ -3467,20 +3531,20 @@ export class CodeUiService {
       config: snapshot.config,
       state: root.state,
     });
-    return { workspaceId: workspace.id, project, entry, root, host };
+    return { instanceId: workspace.instanceId, project, entry, root, host };
   }
 
-  async getSnapshot(user: AuthenticatedUser, sessionId: string) {
+  async getSnapshot(user: LocalActor, sessionId: string) {
     const loaded = await this.loadConversation(user, sessionId);
     this.taskActors.set(
-      JSON.stringify([loaded.workspaceId, loaded.root.id]),
+      JSON.stringify([loaded.instanceId, loaded.root.id]),
       user,
     );
     const snapshot = loaded.host.getSnapshot(sessionId);
     await this.historyEdit.decorate(user, loaded, snapshot);
     if (snapshot.backgroundWorks.some((work) => work.status !== "running")) {
       void this.deps.taskWork
-        .notifyReady(loaded.workspaceId, loaded.root.id)
+        .notifyReady(loaded.instanceId, loaded.root.id)
         .catch((error: unknown) =>
           console.warn("[code-ui] 后台通知 admission 失败：", error),
         );
@@ -3489,21 +3553,21 @@ export class CodeUiService {
   }
 
   async sessionsIndex(
-    user: AuthenticatedUser,
+    user: LocalActor,
     path: string,
     projectId?: string,
     workspaceIdentity?: string,
   ) {
     const project = await this.requireWorkspace(user, projectId ?? path);
-    const workspace = await this.deps.viewer.resolveWorkspace(user);
+    const workspace = await this.deps.localInstance.resolve(user);
     const records = await this.deps.repository.list(
-      workspace.id,
+      workspace.instanceId,
       project.projectId,
     );
     return protocol.sessionsIndexSnapshotSchema.parse({
       protocolVersion: 1,
       workspaceId: workspaceIdentity ?? path,
-      logEpoch: workspace.id,
+      logEpoch: workspace.instanceId,
       sessions: records
         .filter(
           (record) =>

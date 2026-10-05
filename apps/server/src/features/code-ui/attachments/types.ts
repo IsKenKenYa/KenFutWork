@@ -1,6 +1,6 @@
 import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
-import type { AuthenticatedUser } from "../../auth/types.js";
 import type { BlobStore } from "../../blob/types.js";
+import type { LocalActor } from "../../local-instance/types.js";
 
 export class CodeAttachmentError extends Error {
   constructor(
@@ -15,11 +15,11 @@ export class CodeAttachmentError extends Error {
 
 /** Identity comes from the owned Code Task, never a renderer path or a Canvas. */
 export interface CodeAttachmentSession {
-  workspaceId: string;
+  instanceId: string;
   projectId: string;
   taskId: string;
   sessionId: string;
-  userId: string;
+  createdByClientId: string | null;
   scopeGeneration: number;
   branchGeneration: number;
   revision: number;
@@ -68,11 +68,11 @@ export type CodeAttachmentRecord =
   | {
       status: "aborted";
       key: string;
-      workspaceId: string;
+      instanceId: string;
       projectId: string;
       taskId: string;
       sessionId: string;
-      userId: string;
+      createdByClientId: string | null;
     };
 
 /** The provider locks the upload key and checks the real Task generations in its transaction. */
@@ -94,12 +94,12 @@ export interface CodeAttachmentRepository {
   ): Promise<Extract<CodeAttachmentRecord, { status: "committed" }> | null>;
   interruptStaging(runtimeId: string): Promise<void>;
   abortConnection(
-    workspaceId: string,
+    instanceId: string,
     connectionId: string,
     runtimeId: string,
   ): Promise<void>;
   releaseTask(
-    workspaceId: string,
+    instanceId: string,
     taskId: string,
     runtimeId: string,
   ): Promise<void>;
@@ -128,71 +128,63 @@ export interface CodeAttachmentsDeps {
   blob: BlobStore;
   repository: CodeAttachmentRepository;
   authorizeSession(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     sessionId: string,
   ): Promise<CodeAttachmentSession>;
   /** Returns only the canonical attachment of an authorized userInput row. */
   authorizeRow(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     request: CodeAttachmentRowRequest,
   ): Promise<protocol.AttachmentRef>;
-  limits(
-    actor: AuthenticatedUser,
-    workspaceId: string,
-  ): Promise<CodeAttachmentLimits>;
+  limits(actor: LocalActor, instanceId: string): Promise<CodeAttachmentLimits>;
   clock?: (() => number) | undefined;
-  authorizeWorkspace?:
-    | ((actor: AuthenticatedUser) => Promise<string>)
-    | undefined;
+  authorizeInstance?: ((actor: LocalActor) => Promise<string>) | undefined;
 }
 
 export interface CodeAttachmentsService {
   initialize(): Promise<void>;
-  budget(
-    actor: AuthenticatedUser,
-    sessionId?: string,
-  ): Promise<CodeAttachmentLimits>;
+  budget(actor: LocalActor, sessionId?: string): Promise<CodeAttachmentLimits>;
   close(): Promise<void>;
   begin(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     input: protocol.V4AttachmentBeginParams,
     chunkFrameMaxBytes?: number,
   ): Promise<protocol.V4AttachmentBeginResult>;
   chunk(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     input: protocol.V4AttachmentChunkParams,
   ): Promise<protocol.V4AttachmentChunkResult>;
   commit(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     input: protocol.V4AttachmentCommitParams,
   ): Promise<protocol.V4AttachmentCommitResult>;
   abort(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     input: protocol.V4AttachmentAbortParams,
   ): Promise<void>;
-  releaseConnection(workspaceId: string, connectionId: string): Promise<void>;
-  releaseTask(workspaceId: string, taskId: string): Promise<void>;
+  releaseConnection(instanceId: string, connectionId: string): Promise<void>;
+  releaseTask(instanceId: string, taskId: string): Promise<void>;
   /** Caller first closes real execution resources; revoking + exact generation is rechecked in SQL. */
   purgeTask(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     taskId: string,
     expectedScopeGeneration: number,
   ): Promise<void>;
   read(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     input: protocol.V4AttachmentReadParams,
     purpose?: "preview" | "share",
   ): Promise<protocol.V4AttachmentReadResult>;
   stat(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     input: protocol.V4ConversationAttachmentStatParams,
   ): Promise<protocol.V4ConversationAttachmentStatResult>;
   previewSource(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     input: protocol.V4AttachmentPreviewSourceParams,
   ): Promise<protocol.V4AttachmentPreviewSourceResult>;
   readForInput(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     sessionId: string,
     attachments: readonly protocol.AttachmentRef[],
   ): Promise<Array<{ attachment: protocol.AttachmentRef; bytes: Uint8Array }>>;

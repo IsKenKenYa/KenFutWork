@@ -16,8 +16,7 @@ import {
   zcodePluginsDescribeResultSchema,
 } from "@zcode/shared";
 import { z } from "zod";
-import type { AdminService } from "../admin/admin-service.js";
-import type { AuthenticatedUser } from "../auth/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import {
   PluginRegistryError,
   type PluginRegistryService,
@@ -31,10 +30,9 @@ export interface CodeUiPluginsTarget {
 }
 export interface CodeUiPluginsHostDeps {
   registry: PluginRegistryService;
-  admin?: AdminService | undefined;
-  readWorkspaceId(actor: AuthenticatedUser): Promise<string>;
+  resolveInstanceId(actor: LocalActor): Promise<string>;
   workspace(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     target: CodeUiPluginsTarget,
   ): Promise<CodeUiWorkspace>;
 }
@@ -109,7 +107,7 @@ function nativePluginInput<T extends z.ZodType>(schema: T, value: unknown) {
 
 async function validateTarget(
   deps: CodeUiPluginsHostDeps,
-  actor: AuthenticatedUser,
+  actor: LocalActor,
   target: z.infer<typeof targetSchema>,
 ) {
   if (target.remoteSessionId)
@@ -237,17 +235,11 @@ function overviewResult(
 /** 原plugin-management机器包库存读面；项目解析只读，安装态由既有registry持有。 */
 export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
   async function requireMutation(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     target: z.infer<typeof targetSchema>,
     scope?: "user" | "workspace",
   ) {
-    await deps.readWorkspaceId(actor);
-    if (!deps.admin)
-      throw new PluginRegistryError(
-        "当前宿主未装配插件管理所需的管理员服务。",
-        "invalid_request",
-      );
-    await deps.admin.requireAdmin(actor);
+    await deps.resolveInstanceId(actor);
     await validateTarget(deps, actor, target);
     if (scope === "workspace")
       throw new PluginRegistryError(
@@ -256,7 +248,7 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
       );
   }
 
-  async function install(actor: AuthenticatedUser, value: unknown) {
+  async function install(actor: LocalActor, value: unknown) {
     const { target, input } = nativePluginInput(
       zcodePluginsInstallParamsSchema,
       value,
@@ -302,7 +294,7 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
     });
   }
 
-  async function setEnabled(actor: AuthenticatedUser, value: unknown) {
+  async function setEnabled(actor: LocalActor, value: unknown) {
     const { target, input } = nativePluginInput(
       zcodePluginsSetEnabledParamsSchema,
       value,
@@ -333,12 +325,12 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
     });
   }
 
-  async function describe(actor: AuthenticatedUser, value: unknown) {
+  async function describe(actor: LocalActor, value: unknown) {
     const { target, input } = nativePluginInput(
       zcodePluginsDescribeParamsSchema,
       value,
     );
-    await deps.readWorkspaceId(actor);
+    await deps.resolveInstanceId(actor);
     await validateTarget(deps, actor, target);
     const inventory = await deps.registry.readPackageInventory();
     const marketplace = marketplaceResolver(inventory);
@@ -361,7 +353,7 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
     });
   }
 
-  async function uninstall(actor: AuthenticatedUser, value: unknown) {
+  async function uninstall(actor: LocalActor, value: unknown) {
     const { target, input } = nativePluginInput(
       zcodePluginsUninstallParamsSchema,
       value,
@@ -397,7 +389,7 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
 
   return {
     async call(
-      actor: AuthenticatedUser,
+      actor: LocalActor,
       method: string,
       value: unknown,
     ): Promise<{ result: unknown } | null> {
@@ -412,7 +404,7 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
       if (method !== "listPlugins" && method !== "getPluginsOverview")
         return null;
       const target = targetSchema.parse(value);
-      await deps.readWorkspaceId(actor);
+      await deps.resolveInstanceId(actor);
       await validateTarget(deps, actor, target);
       const inventory = await deps.registry.readPackageInventory();
       const marketplace = marketplaceResolver(inventory);

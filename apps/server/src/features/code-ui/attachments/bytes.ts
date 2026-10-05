@@ -11,11 +11,10 @@ export const attachmentKey = (
   createHash("sha256")
     .update(
       JSON.stringify([
-        session.workspaceId,
+        session.instanceId,
         session.projectId,
         session.taskId,
         session.sessionId,
-        session.userId,
         uploadId,
       ]),
     )

@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
-import type { WorkspaceSettings } from "@kenfutwork/shared";
+import type { InstanceSettings } from "@kenfutwork/shared";
 import type {
   GitBranchComparison,
   GitCommitGraphRef,
@@ -21,7 +21,7 @@ export interface CodeUiHostGitSession {
   exec: ExecGit;
   resolvePath(path: string, operation: "read" | "write"): Promise<string>;
   limits: Pick<
-    WorkspaceSettings,
+    InstanceSettings,
     "codeReadMaxBytes" | "codeSearchMaxBytes" | "codeSearchMaxResults"
   >;
 }

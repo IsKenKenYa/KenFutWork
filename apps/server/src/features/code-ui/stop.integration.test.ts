@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { createCodeUiHttpFixture } from "./code-ui-http.fixture.js";
-import { type openCodeStream, request } from "./host-client.fixture.js";
+import {
+  createCodeUiHttpFixture,
+  useCodeUiHttpFixture,
+} from "./code-ui-http.fixture.js";
+
 import { createCodeSessionFixture as createSession } from "./host-session.fixture.js";
 import { heldModel } from "./model-stream.fixture.js";
+
+const isolatedHttp = useCodeUiHttpFixture();
+const { request, openCodeStream } = isolatedHttp;
 
 const enabled = process.env.RUN_CODE_UI_INTEGRATION === "1";
 
@@ -26,7 +32,7 @@ async function nextTaskChange(
 }
 
 async function delayRunRegistration() {
-  const connectionString = process.env.CODE_UI_TEST_DATABASE_URL;
+  const connectionString = isolatedHttp.databaseUrl();
   if (!connectionString) throw new Error("延迟场景必须指定独占测试数据库");
   const client = new Client({ connectionString });
   await client.connect();
@@ -151,153 +157,131 @@ describe.skipIf(!enabled)("原停止命令公开宿主 integration", () => {
       await fixture.close();
     }
   }, 90_000);
-  it.skipIf(!process.env.CODE_UI_TEST_DATABASE_URL)(
-    "停止事务等待期间项目归档，迟到命令返回 404 且不保存 accepted 回执",
-    async () => {
-      const host = await createSession("https://example.invalid/v1");
-      const delay = new Client({
-        connectionString: process.env.CODE_UI_TEST_DATABASE_URL,
+  it("停止事务等待期间项目归档，迟到命令返回 404 且不保存 accepted 回执", async () => {
+    const host = await createSession("https://example.invalid/v1", {
+      client: isolatedHttp,
+    });
+    const delay = new Client({
+      connectionString: isolatedHttp.databaseUrl(),
+    });
+    let stop: ReturnType<typeof host.command> | undefined;
+    try {
+      await delay.connect();
+      await delay.query("begin");
+      await delay.query(
+        "select id from public.code_ui_sessions where id=$1 for update",
+        [host.sessionId],
+      );
+      const commandId = randomUUID();
+      stop = host.command("stop", {}, commandId);
+      // 外部数据库故障同步点，不用于验证业务数据；确保请求已读完归属且在等根锁。
+      await vi.waitFor(async () => {
+        const blocked = await delay.query(
+          "select 1 from pg_locks where granted=false and locktype='transactionid' and transactionid=pg_current_xact_id()::text::xid",
+        );
+        if (!blocked.rows.length) throw new Error("等待停止事务到达延迟点");
       });
-      let stop: ReturnType<typeof host.command> | undefined;
-      try {
-        await delay.connect();
-        await delay.query("begin");
-        await delay.query(
-          "select id from public.code_ui_sessions where id=$1 for update",
-          [host.sessionId],
-        );
-        const commandId = randomUUID();
-        stop = host.command("stop", {}, commandId);
-        // 外部数据库故障同步点，不用于验证业务数据；确保请求已读完归属且在等根锁。
-        await vi.waitFor(async () => {
-          const blocked = await delay.query(
-            "select 1 from pg_locks where granted=false and locktype='transactionid' and transactionid=pg_current_xact_id()::text::xid",
-          );
-          if (!blocked.rows.length) throw new Error("等待停止事务到达延迟点");
-        });
-        expect(
-          (
-            await request(
-              `/api/projects/${host.projectId}`,
-              undefined,
-              "DELETE",
-            )
-          ).status,
-        ).toBe(204);
-        await delay.query("commit");
-        const late = await stop;
-        expect(late.status, JSON.stringify(late.body)).toBe(404);
-        expect((await host.command("stop", {})).status).toBe(404);
-        const queried = await host.stream.rpc("queryConversationCommandsV4", [
-          {
-            workspacePath: host.workspacePath,
-            commands: [{ sessionId: host.sessionId, commandId }],
-          },
-        ]);
-        expect(queried.body.result.results[0].result).toBe("unknown");
-      } finally {
-        await delay.query("rollback").catch(() => {});
-        await delay.end();
-        await stop;
-        await host.dispose();
-      }
-    },
-  );
-  it.skipIf(!process.env.CODE_UI_TEST_DATABASE_URL)(
-    "已获发送 ACK 但引擎尚未启动时停止，解除数据库延迟后不会重新执行模型",
-    async () => {
-      const model = await heldModel();
-      const host = await createSession(model.baseUrl);
-      const delay = await delayRunRegistration();
-      try {
-        // 独占测试库的外部故障注入：延迟运行登记；断言仍只走公开 HTTP 与模型边界。
-        const sent = await host.command("sendText", {
-          text: "延迟启动的测试消息。",
-        });
-        expect(sent.status, JSON.stringify(sent.body)).toBe(200);
-        const running = await host.snapshot();
-        expect(running.control.phase).toBe("running");
-        const runId = running.control.activeWorks[0].foregroundExecutionId;
-        await nextTaskChange(host.stream, "task_created", host.sessionId);
-        const stopped = await host.command("stop", {
-          expectedForegroundExecutionId: runId,
-        });
-        expect(stopped.body.result.status).toBe("accepted");
-        expect((await host.snapshot()).control.phase).toBe(
-          "completedInterrupted",
-        );
-        await nextTaskChange(
-          host.stream,
-          "task_status_changed",
-          host.sessionId,
-        );
-        await delay.release();
-        await Promise.race([
-          nextTaskChange(host.stream, "task_status_changed", host.sessionId),
-          model.firstRequest.then(() => {
-            throw new Error("已停止运行仍启动了模型");
-          }),
-        ]);
-        expect(model.requests).toEqual([]);
-      } finally {
-        await delay.close();
-        await disposeModelRun(host, model);
-      }
-    },
-  );
-  it.skipIf(!process.env.CODE_UI_TEST_DATABASE_URL)(
-    "前一轮取消事件迟到到达已获 ACK 的下一轮，不改变新运行身份",
-    async () => {
-      const model = await heldModel();
-      const host = await createSession(model.baseUrl);
-      let delay: Awaited<ReturnType<typeof delayRunRegistration>> | undefined;
-      try {
-        await host.command("sendText", { text: "第一轮等待停止。" });
-        const first = await waitForText(host, "正在运行 1");
-        await nextTaskChange(host.stream, "task_created", host.sessionId);
-        delay = await delayRunRegistration();
-        const stopped = await host.command("stop", {
-          expectedForegroundExecutionId:
-            first.control.activeWorks[0].foregroundExecutionId,
-        });
-        expect(stopped.body.result.status).toBe("accepted");
-        await nextTaskChange(
-          host.stream,
-          "task_status_changed",
-          host.sessionId,
-        );
-        await vi.waitFor(() => expect(model.requests[0]?.closed).toBe(true));
-        await host.command("sendText", {
-          text: "第二轮在前一轮结算迟到前创建。",
-        });
-        const second = await host.snapshot();
-        expect(second.control.phase).toBe("running");
-        const runId = second.control.activeWorks[0].foregroundExecutionId;
-        await nextTaskChange(host.stream, "user_message_saved", host.sessionId);
-        await delay.release();
-        const running = await waitForText(host, "正在运行 2");
-        expect(running.control.activeWorks[0].foregroundExecutionId).toBe(
-          runId,
-        );
-        const final = await host.command("stop", {
-          expectedForegroundExecutionId: runId,
-        });
-        expect(final.body.result.status).toBe("accepted");
-        await vi.waitFor(() =>
-          expect(model.requests.map((request) => request.closed)).toEqual([
-            true,
-            true,
-          ]),
-        );
-      } finally {
-        await delay?.close();
-        await disposeModelRun(host, model);
-      }
-    },
-  );
+      expect(
+        (await request(`/api/projects/${host.projectId}`, undefined, "DELETE"))
+          .status,
+      ).toBe(204);
+      await delay.query("commit");
+      const late = await stop;
+      expect(late.status, JSON.stringify(late.body)).toBe(404);
+      expect((await host.command("stop", {})).status).toBe(404);
+      const queried = await host.stream.rpc("queryConversationCommandsV4", [
+        {
+          workspacePath: host.workspacePath,
+          commands: [{ sessionId: host.sessionId, commandId }],
+        },
+      ]);
+      expect(queried.body.result.results[0].result).toBe("unknown");
+    } finally {
+      await delay.query("rollback").catch(() => {});
+      await delay.end();
+      await stop;
+      await host.dispose();
+    }
+  });
+  it("已获发送 ACK 但引擎尚未启动时停止，解除数据库延迟后不会重新执行模型", async () => {
+    const model = await heldModel();
+    const host = await createSession(model.baseUrl, { client: isolatedHttp });
+    const delay = await delayRunRegistration();
+    try {
+      // 独占测试库的外部故障注入：延迟运行登记；断言仍只走公开 HTTP 与模型边界。
+      const sent = await host.command("sendText", {
+        text: "延迟启动的测试消息。",
+      });
+      expect(sent.status, JSON.stringify(sent.body)).toBe(200);
+      const running = await host.snapshot();
+      expect(running.control.phase).toBe("running");
+      const runId = running.control.activeWorks[0].foregroundExecutionId;
+      await nextTaskChange(host.stream, "task_created", host.sessionId);
+      const stopped = await host.command("stop", {
+        expectedForegroundExecutionId: runId,
+      });
+      expect(stopped.body.result.status).toBe("accepted");
+      expect((await host.snapshot()).control.phase).toBe(
+        "completedInterrupted",
+      );
+      await nextTaskChange(host.stream, "task_status_changed", host.sessionId);
+      await delay.release();
+      await Promise.race([
+        nextTaskChange(host.stream, "task_status_changed", host.sessionId),
+        model.firstRequest.then(() => {
+          throw new Error("已停止运行仍启动了模型");
+        }),
+      ]);
+      expect(model.requests).toEqual([]);
+    } finally {
+      await delay.close();
+      await disposeModelRun(host, model);
+    }
+  });
+  it("前一轮取消事件迟到到达已获 ACK 的下一轮，不改变新运行身份", async () => {
+    const model = await heldModel();
+    const host = await createSession(model.baseUrl, { client: isolatedHttp });
+    let delay: Awaited<ReturnType<typeof delayRunRegistration>> | undefined;
+    try {
+      await host.command("sendText", { text: "第一轮等待停止。" });
+      const first = await waitForText(host, "正在运行 1");
+      await nextTaskChange(host.stream, "task_created", host.sessionId);
+      delay = await delayRunRegistration();
+      const stopped = await host.command("stop", {
+        expectedForegroundExecutionId:
+          first.control.activeWorks[0].foregroundExecutionId,
+      });
+      expect(stopped.body.result.status).toBe("accepted");
+      await nextTaskChange(host.stream, "task_status_changed", host.sessionId);
+      await vi.waitFor(() => expect(model.requests[0]?.closed).toBe(true));
+      await host.command("sendText", {
+        text: "第二轮在前一轮结算迟到前创建。",
+      });
+      const second = await host.snapshot();
+      expect(second.control.phase).toBe("running");
+      const runId = second.control.activeWorks[0].foregroundExecutionId;
+      await nextTaskChange(host.stream, "user_message_saved", host.sessionId);
+      await delay.release();
+      const running = await waitForText(host, "正在运行 2");
+      expect(running.control.activeWorks[0].foregroundExecutionId).toBe(runId);
+      const final = await host.command("stop", {
+        expectedForegroundExecutionId: runId,
+      });
+      expect(final.body.result.status).toBe("accepted");
+      await vi.waitFor(() =>
+        expect(model.requests.map((request) => request.closed)).toEqual([
+          true,
+          true,
+        ]),
+      );
+    } finally {
+      await delay?.close();
+      await disposeModelRun(host, model);
+    }
+  });
   it("原 stop 真正取消流式引擎，并发/重放幂等，迟到停止不误杀下一轮", async () => {
     const model = await heldModel();
-    const host = await createSession(model.baseUrl);
+    const host = await createSession(model.baseUrl, { client: isolatedHttp });
     try {
       expect(
         (
@@ -368,7 +352,9 @@ describe.skipIf(!enabled)("原停止命令公开宿主 integration", () => {
     }
   }, 90_000); // 真实数据库与外部模型替身的测试期限，非 Agent 运行限额。
   it("停止精确校验前台身份，空闲目标变化返回原 noop，重复命令对账和刷新保持同一结果", async () => {
-    const host = await createSession("https://example.invalid/v1");
+    const host = await createSession("https://example.invalid/v1", {
+      client: isolatedHttp,
+    });
     try {
       const before = await host.snapshot();
       const commandId = randomUUID();

@@ -42,7 +42,7 @@ export async function createFileDisplayPublicFixture(
     role: "main",
     agentId: "main",
     describe: () => ({
-      workspaceId: "76000000-0000-4000-8000-000000000006",
+      instanceId: "76000000-0000-4000-8000-000000000006",
       projectId: "77000000-0000-4000-8000-000000000007",
       taskId,
       generation: 0,

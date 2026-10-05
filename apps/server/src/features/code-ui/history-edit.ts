@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
-import type { AuthenticatedUser } from "../auth/types.js";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type { TrustedCodeInput } from "./attachments/input-types.js";
 import { createCodeUiConversation } from "./conversation.js";
 import type { CodeAdmittedInput } from "./input-intents.js";
@@ -27,30 +27,30 @@ type Deps = Pick<
   "repository" | "agentRuns" | "agentRunMetadata" | "threads"
 > & {
   inputOwner: { hostId: string; runtimeId: string };
-  load(actor: AuthenticatedUser, sessionId: string): Promise<Loaded>;
+  load(actor: LocalActor, sessionId: string): Promise<Loaded>;
   model(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     selection: protocol.SessionConfigState["modelSelection"],
   ): Promise<ModelPlan>;
   inputs(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     sessionId: string,
     attachments: protocol.AttachmentRef[],
   ): Promise<TrustedCodeInput[]>;
   beginRestore(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     taskId: string,
     generation: number,
     guard: Guard,
   ): Promise<ExecutionScopeHandle>;
   finishRestore(
     scope: ExecutionScopeHandle,
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     success: boolean,
   ): Promise<void>;
-  refresh(workspaceId: string, path: string, projectId: string): Promise<void>;
+  refresh(instanceId: string, path: string, projectId: string): Promise<void>;
   run(
-    actor: AuthenticatedUser,
+    actor: LocalActor,
     project: Loaded["project"],
     taskId: string,
     threadId: string,
@@ -93,7 +93,7 @@ function validBoundary(
     row.kind !== "userInput" ||
     pre.inputOrigin !== "userInput" ||
     pre.context.status !== "captured" ||
-    pre.workspaceId !== loaded.workspaceId ||
+    pre.instanceId !== loaded.instanceId ||
     pre.projectId !== loaded.project.projectId ||
     pre.taskId !== loaded.root.id ||
     pre.runId !== row.turnId ||
@@ -173,7 +173,7 @@ type EditProgress =
   | ({ phase: "fenced" } & FencedEdit)
   | ({ phase: "prepared" | "published" } & PublicationPlan);
 type EditOperation = {
-  actor: AuthenticatedUser;
+  actor: LocalActor;
   loaded: Loaded;
   envelope: protocol.CommandEnvelope;
   payload: EditPayload;
@@ -207,7 +207,7 @@ function requireRootSnapshot(root: CodeUiSessionRecord) {
 
 async function createOperation(
   deps: Deps,
-  actor: AuthenticatedUser,
+  actor: LocalActor,
   target: WorkspaceTarget,
   envelope: protocol.CommandEnvelope,
 ): Promise<EditOperation> {
@@ -507,7 +507,7 @@ async function finishCommittedEdit(
   }
   try {
     await deps.refresh(
-      operation.loaded.workspaceId,
+      operation.loaded.instanceId,
       operation.loaded.project.path,
       operation.loaded.project.projectId,
     );
@@ -581,7 +581,7 @@ function createEditResult(
 export function createCodeUiHistoryEdit(deps: Deps) {
   return {
     async decorate(
-      actor: AuthenticatedUser,
+      actor: LocalActor,
       loaded: Loaded,
       snapshot: protocol.ConversationSnapshot,
     ) {
@@ -602,13 +602,13 @@ export function createCodeUiHistoryEdit(deps: Deps) {
         row.actions = { ...row.actions, canEdit: true };
     },
     async command(
-      actor: AuthenticatedUser,
+      actor: LocalActor,
       target: WorkspaceTarget,
       envelope: protocol.CommandEnvelope,
     ) {
       const operation = await createOperation(deps, actor, target, envelope);
       const ack = await deps.repository.applyScopeCommand(
-        operation.loaded.workspaceId,
+        operation.loaded.instanceId,
         envelope,
         deps.fingerprint(envelope),
         (root) => cloneAndFenceEdit(deps, operation, root),
