@@ -599,7 +599,8 @@ export function createProcessSandbox(
         Math.max(minimumGenerations.get(next.taskId) ?? 0, next.generation),
       );
       const entry = tasks.get(next.taskId);
-      if (!entry) return;
+      // 已确认退出的helper不再接收RPC；保留新代际下限供下次真实spawn重建。
+      if (!entry || (entry.phase === "closed" && entry.closeConfirmed)) return;
       entry.generation = Math.max(entry.generation, next.generation);
       await runBarrier(entry, (connection) =>
         connection.rpc({ method: "scopechange", next, reason }),

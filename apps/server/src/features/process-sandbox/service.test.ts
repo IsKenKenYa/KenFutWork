@@ -452,6 +452,14 @@ test("关闭代际拒绝迟到启动，可信新代际重开且不被旧关闭�
   await expect(sandbox.spawn(firstInput)).rejects.toMatchObject({
     code: "process_closed",
   });
+  await sandbox.applyScopeChange(
+    scope,
+    { ...scope, generation: 2 },
+    "closed-task-permission-recovery",
+  );
+  await expect(sandbox.spawn(firstInput)).rejects.toMatchObject({
+    code: "process_closed",
+  });
   const nextInput = {
     ...request(
       'process.stdout.write("second");process.stdin.on("data",b=>process.stdout.write(b))',
