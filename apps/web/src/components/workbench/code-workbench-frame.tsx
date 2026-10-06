@@ -5,6 +5,7 @@ import {
   codeUiParentRequestSchema,
 } from "@kenfutwork/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AgentGovernanceSettingsPanel } from "@/components/agent-governance-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
 import { LOCAL_ACCESS_LOST_EVENT } from "@/lib/local-access";
@@ -79,6 +80,7 @@ export function CodeWorkbenchFrame({
           <DialogTitle>本地实例设置</DialogTitle>
           <LocalInstanceSection />
           <LocalAccessClientsSection />
+          <AgentGovernanceSettingsPanel enabled={instanceOpen} />
         </DialogContent>
       </Dialog>
     </>

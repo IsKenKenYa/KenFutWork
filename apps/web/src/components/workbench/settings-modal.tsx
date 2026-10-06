@@ -1,14 +1,13 @@
 "use client";
 
 import {
-  AGENT_GOVERNANCE_DEFAULTS,
   type InstanceSettings,
   instanceSettingsSchema,
 } from "@kenfutwork/shared";
 import { PanelsTopLeft } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { AgentGovernanceSection } from "@/components/agent-governance-section";
+import { AgentGovernanceSettingsView } from "@/components/agent-governance-settings";
 import { AgentSection } from "@/components/agent-section";
 import { PermissionSection } from "@/components/permission-section";
 import { ProviderSettings } from "@/components/provider-settings";
@@ -28,11 +27,8 @@ import { SubagentsSection } from "@/components/workbench/subagents-section";
 import { TerminalSettingsSection } from "@/components/workbench/terminal-settings-section";
 import { UsageStatsSection } from "@/components/workbench/usage-stats-section";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
-import {
-  fetchInstanceSettings,
-  fetchModels,
-  updateInstanceSettings,
-} from "@/lib/server-api";
+import { fetchModels } from "@/lib/server-api";
+import { useInstanceSettings } from "@/lib/use-instance-settings";
 
 export type SettingsTab =
   | "pluginPanels"
@@ -52,16 +48,6 @@ export type SettingsTab =
   | "index"
   | "onboarding"
   | "about";
-
-type AgentGovernanceSettings = Pick<
-  InstanceSettings,
-  | "subagentMaxDepth"
-  | "subagentMaxConcurrency"
-  | "llmRequestMaxRetries"
-  | "llmInfiniteRetry"
-  | "executeTimeoutMs"
-  | "subagentMaxContinuations"
->;
 
 /**
  * 侧栏分组（R5-1）：基础设置 / Agent 能力 / 数据与统计。
@@ -111,6 +97,14 @@ const TAB_GROUPS: Array<{
   },
 ];
 
+const INSTANCE_SETTINGS_TABS = new Set<SettingsTab>([
+  "model",
+  "agentGovernance",
+  "index",
+  "commands",
+  "hooks",
+]);
+
 /**
  * 设置（居中大模态，左侧分类导航 + 右侧内容）：
  * 通用/模型/供应商/权限走真实后端，浏览器/规则与记忆为本机偏好。
@@ -155,134 +149,108 @@ export function SettingsModal({
   const [agentMaxRetries, setAgentMaxRetries] = useState(
     instanceSettingsSchema.shape.agentMaxRetries.parse(undefined),
   );
-  const [governance, setGovernance] = useState<AgentGovernanceSettings>({
-    subagentMaxDepth: AGENT_GOVERNANCE_DEFAULTS.subagentMaxDepth,
-    subagentMaxConcurrency: AGENT_GOVERNANCE_DEFAULTS.subagentMaxConcurrency,
-    llmRequestMaxRetries: AGENT_GOVERNANCE_DEFAULTS.llmRequestMaxRetries,
-    llmInfiniteRetry: AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
-    executeTimeoutMs: AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs,
-    subagentMaxContinuations:
-      AGENT_GOVERNANCE_DEFAULTS.subagentMaxContinuations,
-  });
   const [codeIndexEnabled, setCodeIndexEnabled] = useState(false);
   const [codeIndexAutoNewFolder, setCodeIndexAutoNewFolder] = useState(true);
   const [autoCompactEnabled, setAutoCompactEnabled] = useState(true);
   const [commands, setCommands] = useState<InstanceSettings["commands"]>([]);
   const [hooks, setHooks] = useState<InstanceSettings["hooks"]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const settingsState = useInstanceSettings(open, accessToken);
+  const currentSettings = settingsState.settings;
+  const saveSettings = settingsState.save;
+  const loadData = settingsState.reload;
+  const loading = settingsState.status === "loading";
+  const loadError = settingsState.error;
 
   const accessTokenRef = useRef(accessToken);
   accessTokenRef.current = accessToken;
   const getToken = useCallback(() => accessTokenRef.current, []);
 
-  const loadData = useCallback(async () => {
-    const token = getToken();
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const settings = await fetchInstanceSettings(token);
-      setDefaultModel(settings.settings.defaultModel);
-      setAgentMaxRetries(settings.settings.agentMaxRetries);
-      setCodeIndexEnabled(settings.settings.codeIndexEnabled);
-      setCodeIndexAutoNewFolder(settings.settings.codeIndexAutoNewFolder);
-      setAutoCompactEnabled(settings.settings.autoCompactEnabled);
-      setGovernance({
-        subagentMaxDepth: settings.settings.subagentMaxDepth,
-        subagentMaxConcurrency: settings.settings.subagentMaxConcurrency,
-        llmRequestMaxRetries: settings.settings.llmRequestMaxRetries,
-        llmInfiniteRetry: settings.settings.llmInfiniteRetry,
-        executeTimeoutMs: settings.settings.executeTimeoutMs,
-        subagentMaxContinuations: settings.settings.subagentMaxContinuations,
-      });
-      setCommands(settings.settings.commands);
-      setHooks(settings.settings.hooks);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "设置加载失败。");
-    } finally {
-      setLoading(false);
-    }
-  }, [getToken]);
-
   useEffect(() => {
-    if (open) void loadData();
-  }, [open, loadData]);
+    if (!currentSettings) return;
+    setDefaultModel(currentSettings.defaultModel);
+    setAgentMaxRetries(currentSettings.agentMaxRetries);
+    setCodeIndexEnabled(currentSettings.codeIndexEnabled);
+    setCodeIndexAutoNewFolder(currentSettings.codeIndexAutoNewFolder);
+    setAutoCompactEnabled(currentSettings.autoCompactEnabled);
+    setCommands((previous) =>
+      previous.length === currentSettings.commands.length &&
+      previous.every((command, index) => {
+        const next = currentSettings.commands[index];
+        return (
+          next !== undefined &&
+          command.name === next.name &&
+          command.description === next.description &&
+          command.prompt === next.prompt
+        );
+      })
+        ? previous
+        : currentSettings.commands,
+    );
+    setHooks((previous) =>
+      previous.length === currentSettings.hooks.length &&
+      previous.every((hook, index) => {
+        const next = currentSettings.hooks[index];
+        return (
+          next !== undefined &&
+          hook.event === next.event &&
+          hook.command === next.command
+        );
+      })
+        ? previous
+        : currentSettings.hooks,
+    );
+  }, [currentSettings]);
 
   /** 索引库开关写实例设置（部分更新：只送这一个字段）。 */
   const handleIndexToggle = useCallback(
     async (next: boolean) => {
-      const token = getToken();
       setCodeIndexEnabled(next);
       try {
-        const result = await updateInstanceSettings(token, {
-          codeIndexEnabled: next,
-        });
-        setCodeIndexEnabled(result.settings.codeIndexEnabled);
+        const result = await saveSettings({ codeIndexEnabled: next });
+        if (result) setCodeIndexEnabled(result.codeIndexEnabled);
       } catch {
         setCodeIndexEnabled(!next);
       }
     },
-    [getToken],
+    [saveSettings],
   );
 
   /** 「索引新文件夹」开关：同样部分更新，只送这一个字段。 */
   const handleIndexAutoToggle = useCallback(
     async (next: boolean) => {
-      const token = getToken();
       setCodeIndexAutoNewFolder(next);
       try {
-        const result = await updateInstanceSettings(token, {
-          codeIndexAutoNewFolder: next,
-        });
-        setCodeIndexAutoNewFolder(result.settings.codeIndexAutoNewFolder);
+        const result = await saveSettings({ codeIndexAutoNewFolder: next });
+        if (result) setCodeIndexAutoNewFolder(result.codeIndexAutoNewFolder);
       } catch {
         setCodeIndexAutoNewFolder(!next);
       }
     },
-    [getToken],
+    [saveSettings],
   );
 
   /** 上下文自动压缩开关：立即写（部分更新），失败回滚。 */
   const handleAutoCompactToggle = useCallback(
     async (next: boolean) => {
-      const token = getToken();
       setAutoCompactEnabled(next);
       try {
-        const result = await updateInstanceSettings(token, {
-          autoCompactEnabled: next,
-        });
-        setAutoCompactEnabled(result.settings.autoCompactEnabled);
+        const result = await saveSettings({ autoCompactEnabled: next });
+        if (result) setAutoCompactEnabled(result.autoCompactEnabled);
       } catch {
         setAutoCompactEnabled(!next);
       }
     },
-    [getToken],
+    [saveSettings],
   );
 
   const handleModelSave = useCallback(
     async (next: { agentMaxRetries: number; defaultModel: string }) => {
-      const token = getToken();
-      const result = await updateInstanceSettings(token, next);
-      setDefaultModel(result.settings.defaultModel);
-      setAgentMaxRetries(result.settings.agentMaxRetries);
+      const result = await saveSettings(next);
+      if (!result) return;
+      setDefaultModel(result.defaultModel);
+      setAgentMaxRetries(result.agentMaxRetries);
     },
-    [getToken],
-  );
-
-  const handleGovernanceSave = useCallback(
-    async (next: AgentGovernanceSettings) => {
-      const token = getToken();
-      const result = await updateInstanceSettings(token, next);
-      setGovernance({
-        subagentMaxDepth: result.settings.subagentMaxDepth,
-        subagentMaxConcurrency: result.settings.subagentMaxConcurrency,
-        llmRequestMaxRetries: result.settings.llmRequestMaxRetries,
-        llmInfiniteRetry: result.settings.llmInfiniteRetry,
-        executeTimeoutMs: result.settings.executeTimeoutMs,
-        subagentMaxContinuations: result.settings.subagentMaxContinuations,
-      });
-    },
-    [getToken],
+    [saveSettings],
   );
 
   const stableFetchModels = useCallback(
@@ -352,7 +320,9 @@ export function SettingsModal({
             ) : null}
             {loading ? (
               <ListLoading label="正在加载设置…" rows={2} />
-            ) : activeTab === "general" ? (
+            ) : !currentSettings &&
+              INSTANCE_SETTINGS_TABS.has(activeTab) ? null : activeTab ===
+              "general" ? (
               <div className="space-y-8">
                 <LocalInstanceSection />
                 <TerminalSettingsSection accessToken={token} />
@@ -369,10 +339,12 @@ export function SettingsModal({
                 onToggleAutoCompact={handleAutoCompactToggle}
               />
             ) : activeTab === "agentGovernance" ? (
-              <AgentGovernanceSection
-                initial={governance}
-                onSave={handleGovernanceSave}
-              />
+              currentSettings ? (
+                <AgentGovernanceSettingsView
+                  settings={currentSettings}
+                  save={saveSettings}
+                />
+              ) : null
             ) : activeTab === "providers" ? (
               <ProviderSettings accessToken={token} />
             ) : activeTab === "permissions" ? (
