@@ -24,6 +24,7 @@ export async function createCodeUiHttpFixture(
     builtinPluginsDir?: string;
     allowThirdPartyPlugins?: boolean;
     governanceEnv?: AgentGovernanceOverrides;
+    gitBinDir?: string;
     databaseTransport?: (connectionString: string) => Promise<{
       connectionString: string;
       close(): Promise<void>;
@@ -67,6 +68,7 @@ export async function createCodeUiHttpFixture(
         blobDir: join(directory, "blobs"),
         sandboxRoot: join(directory, "sandbox"),
         checkpointRoot: join(directory, "checkpoints"),
+        ...(options.gitBinDir ? { gitBinDir: options.gitBinDir } : {}),
         webOrigin: origin,
         ...(options.governanceEnv
           ? { agentGovernance: options.governanceEnv }

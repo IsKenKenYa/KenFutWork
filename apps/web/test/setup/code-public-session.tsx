@@ -21,8 +21,10 @@ export type OriginalSessionView = {
 export async function renderOriginalSession(
   fixture: PublicFixture,
   host: Host,
+  prepareBrowser?: () => void,
 ): Promise<OriginalSessionView> {
   const releaseDom = await installCodePublicHostDom();
+  prepareBrowser?.();
   localStorage.setItem("zcode-v4-client-id:v1", host.clientId);
   const [pane, conversation, channel, workspace, Providers] = await Promise.all(
     [

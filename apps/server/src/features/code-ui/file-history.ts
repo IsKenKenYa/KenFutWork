@@ -59,6 +59,15 @@ type Deps = Pick<
 function parseRequest(value: Request): Request {
   return requestSchema.parse(value);
 }
+function normalizeFileRewindAck(ack: protocol.CommandAck): protocol.CommandAck {
+  if (ack.result?.type !== "applyFileRewind" || ack.result.applied) return ack;
+  return {
+    ...ack,
+    status: "rejected",
+    reasonCode: "guard.fileRewindUnsafe",
+    message: ack.result.response,
+  };
+}
 function assertTarget(loaded: Loaded, request: Request) {
   if (
     request.workspacePath !== loaded.project.path ||
@@ -295,8 +304,8 @@ export function createCodeUiFileHistory(deps: Deps) {
           });
         },
         (root) => ({
-          state: root.state!,
-          ack: {
+          state: restored ? root.state! : null,
+          ack: normalizeFileRewindAck({
             commandId: envelope.commandId,
             status: "accepted",
             revisionAtDecision: root.state!.snapshots.find(
@@ -310,7 +319,7 @@ export function createCodeUiFileHistory(deps: Deps) {
                 ? "已撤销所选轮次的文件变更，聊天历史已保留。"
                 : "文件不满足安全恢复条件，请查看预览原因。",
             },
-          },
+          }),
         }),
         async () => {
           if (restored) await deps.finishRestore(restored, actor, true);
@@ -318,7 +327,8 @@ export function createCodeUiFileHistory(deps: Deps) {
       );
       if (ack.status === "failed" && restored)
         await deps.finishRestore(restored, actor, false);
-      return { result: ack };
+      // 通用幂等层把已保存ACK标为duplicate；未恢复的结果重放仍须向原UI报告拒绝。
+      return { result: normalizeFileRewindAck(ack) };
     },
     async refreshAvailability(
       actor: LocalActor,
