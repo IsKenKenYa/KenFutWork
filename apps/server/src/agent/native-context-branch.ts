@@ -18,6 +18,7 @@ import {
   decodeNativeContextReference,
   encodeNativeContextReference,
 } from "./native-context-reference.js";
+import { createNativeContextResourceRebinder } from "./native-context-resources.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 
 type BranchLease = {
@@ -130,11 +131,12 @@ async function copyPendingWrites(
   checkpointer: BaseCheckpointSaver,
   config: RunnableConfig,
   tuple: CheckpointTuple,
+  resources: ReturnType<typeof createNativeContextResourceRebinder>,
 ) {
   const writesByTask = new Map<string, PendingWrite[]>();
   for (const [taskId, channel, value] of tuple.pendingWrites ?? []) {
     const writes = writesByTask.get(taskId) ?? [];
-    writes.push([channel, value]);
+    writes.push([channel, resources.channel(channel, value)]);
     writesByTask.set(taskId, writes);
   }
   for (const [taskId, writes] of writesByTask)
@@ -145,6 +147,7 @@ async function writeBranch(
   branch: NativeCheckpointTuple[],
   targetThreadId: string,
   lease: BranchLease,
+  resources: ReturnType<typeof createNativeContextResourceRebinder>,
 ) {
   let config: RunnableConfig = {
     configurable: { thread_id: targetThreadId, checkpoint_ns: "" },
@@ -154,7 +157,15 @@ async function writeBranch(
     config = await lease.checkpointer.put(
       config,
       // checkpoint/task IDs仅在thread内寻址；保留它们及全部native通道/对象。
-      tuple.checkpoint,
+      {
+        ...tuple.checkpoint,
+        channel_values: Object.fromEntries(
+          Object.entries(tuple.checkpoint.channel_values).map(([name, value]) => [
+            name,
+            resources.channel(name, value),
+          ]),
+        ),
+      },
       {
         ...tuple.metadata,
         ...(tuple === branch.at(-1) ? { source: "fork" as const } : {}),
@@ -162,7 +173,7 @@ async function writeBranch(
       tuple.checkpoint.channel_versions,
     );
     // DeltaChannel恢复依赖完整parent链及每步writes，不能只复制leaf或消息DTO。
-    await copyPendingWrites(lease.checkpointer, config, tuple);
+    await copyPendingWrites(lease.checkpointer, config, tuple, resources);
   }
   const reference = encodeNativeContextReference(targetThreadId, config);
   if (!reference || !(await lease.checkpointer.getTuple(config)))
@@ -199,6 +210,7 @@ export function createNativeContextBranchService(options: {
     input: AgentContextBranchHistoryCloneInput,
   ): Promise<AgentContextBranchHistoryCloneResult> => {
     const source = sourceConfig(input);
+    const resources = createNativeContextResourceRebinder(input.resourceBindings ?? []);
     if (cloning.has(input.targetThreadId) || leases.has(input.targetThreadId))
       throw new Error("上下文目标thread正在使用，不能重复克隆。");
     cloning.add(input.targetThreadId);
@@ -228,6 +240,7 @@ export function createNativeContextBranchService(options: {
           branch,
           input.targetThreadId,
           lease,
+          resources,
         );
         lease.reference = { ...reference };
         return { reference, boundaries };

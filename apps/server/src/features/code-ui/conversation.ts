@@ -13,6 +13,7 @@ import { type CodeAdmittedInput, codeGuideMessageId } from "./input-intents.js";
 import { codeInputRouting, resolveHeldQueue } from "./queue-control.js";
 import type { UserInputEvent } from "./user-input-types.js";
 import type { CodeApprovedPlan } from "./planning-types.js";
+import type { OwnedHistoryOutput } from "./output-history-types.js";
 
 type Snapshot = protocol.ConversationSnapshot;
 type Row = protocol.ConversationRow;
@@ -66,6 +67,7 @@ export interface CodeUiConversationState {
   completedTurnViews?: Array<[string, CodeUiCompletedTurnView]>;
   inheritedHistory?: import("./owned-history-types.js").CodeUiOwnedHistoryTurn[];
   inheritedSessions?: import("./owned-history-types.js").CodeUiInheritedSession[];
+  inheritedOutputs?: OwnedHistoryOutput[];
 }
 
 function cancelToolWaits(snapshot: Snapshot, at: number) {
@@ -167,8 +169,11 @@ function completeTool(
   )
     return;
   const text =
-    event.outputText ??
-    (event.output ? JSON.stringify(event.output) : (event.outputSummary ?? ""));
+    // TaskOutput的canonical页已受字节预算约束，原UI不能把模型预览冒充完整分页。
+    event.toolName === "TaskOutput" && event.output
+      ? JSON.stringify(event.output)
+      : event.outputText ??
+        (event.output ? JSON.stringify(event.output) : (event.outputSummary ?? ""));
   const output = protocol.toolOutputSchema.safeParse({
     text,
     ...(event.output?.display ? { display: event.output.display } : {}),
@@ -310,6 +315,7 @@ export function createCodeUiConversation(input: {
   );
   const inheritedHistory = structuredClone(input.state?.inheritedHistory ?? []);
   const inheritedSessions = structuredClone(input.state?.inheritedSessions ?? []);
+  const inheritedOutputs = structuredClone(input.state?.inheritedOutputs ?? []);
   const planningEpoch = input.state?.planningEpoch ?? 0;
   const approvedPlan = input.state?.approvedPlan;
   const config = protocol.sessionConfigStateSchema.parse(input.config);
@@ -416,6 +422,7 @@ export function createCodeUiConversation(input: {
         completedTurnViews: [...completedTurnViews],
         inheritedHistory,
         inheritedSessions,
+        inheritedOutputs,
         planningEpoch,
         ...(approvedPlan ? { approvedPlan } : {}),
         ...(inputOwner ? { inputOwner } : {}),

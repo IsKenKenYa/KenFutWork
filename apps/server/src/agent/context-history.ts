@@ -17,9 +17,15 @@ export interface AgentContextBranchBoundary {
   /** null只由可信消费者提供，表示已捕获的空上下文。 */
   reference: AgentContextHistoryReference | null;
 }
+/** 宿主已独立复制的只读历史输出；不签发执行或恢复权限。 */
+export interface AgentContextResourceBinding {
+  source: { id: string; outputRef: string; childSessionId?: string | undefined };
+  target: { id: string; outputRef: string; childSessionId?: string | undefined };
+}
 export interface AgentContextBranchHistoryCloneInput
   extends AgentContextBranchCloneInput {
   boundaries: readonly AgentContextBranchBoundary[];
+  resourceBindings?: readonly AgentContextResourceBinding[];
 }
 export interface AgentContextBranchHistoryCloneResult {
   reference: AgentContextHistoryReference | null;

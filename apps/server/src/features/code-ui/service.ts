@@ -126,6 +126,7 @@ import {
   createHumanWorkspaceRpc,
   type HumanWorkspaceRpc,
 } from "./workspace-rpc.js";
+import { createCodeUiOutputHistory } from "./output-history.js";
 
 export interface CodeUiServiceDeps {
   plugins?: PluginRegistryService;
@@ -221,6 +222,7 @@ export class CodeUiService {
   private readonly planning: ReturnType<typeof createCodePlanningControl>;
   private readonly approvedPlans: ReturnType<typeof createCodeApprovedPlanReader>;
   readonly userInputs: CodeUserInputService | undefined;
+  readonly outputHistory: ReturnType<typeof createCodeUiOutputHistory>;
   private readonly connections = new CodeUiConnections();
   private readonly controllers = new Map<
     string,
@@ -294,8 +296,17 @@ export class CodeUiService {
         this.refreshTaskProjection(instanceId, path, projectId),
       fingerprint: codeUiCommandFingerprint,
     });
+    this.outputHistory = createCodeUiOutputHistory({
+      repository: deps.repository,
+      taskWork: deps.taskWork,
+      settings: deps.settings,
+      localInstance: deps.localInstance,
+      ...(deps.blob ? { blob: deps.blob } : {}),
+      executionOutputRoot: join(dirname(resolve(deps.env.checkpointRoot ?? "data/checkpoints")), "execution-output"),
+    });
     this.historyFork = createCodeUiHistoryFork({
       repository: deps.repository,
+      outputs: () => this.outputHistory,
       attachments: () => {
         if (this.attachments) this.attachmentsUsed = true;
         return this.attachments;
@@ -1361,8 +1372,10 @@ export class CodeUiService {
     try {
       await this.deps.beforeCloseTask(user, root.id, reason);
       await this.attachments?.releaseTask(workspace.instanceId, root.id);
-      if (reason === "delete")
+      if (reason === "delete") {
         await this.attachments?.purgeTask(user, root.id, generation);
+        await this.outputHistory.purge(user, root, generation);
+      }
       forgetTaskFileState(workspace.instanceId, root.id);
       return { instanceId: workspace.instanceId, root };
     } catch (error) {

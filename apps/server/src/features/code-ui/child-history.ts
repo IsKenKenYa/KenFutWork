@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
+import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
+import type { AgentContextResourceBinding } from "../../agent/context-history.js";
+import { createContextResourceRebinder } from "../../agent/context-resource-bindings.js";
 import type { LocalActor } from "../local-instance/types.js";
 import { collectTurnFileChanges } from "./file-changes.js";
 import { requireStoredFileChanges } from "./owned-history.js";
@@ -47,6 +49,7 @@ export interface HistoryIdentityMap {
   rootId: string;
   sessions: ReadonlyMap<string, string>;
   turns: ReadonlyMap<string, string>;
+  resourceBindings?: readonly AgentContextResourceBinding[];
   attachments(
     refs: readonly protocol.AttachmentRef[],
     sourceSessionId: string,
@@ -59,6 +62,7 @@ export function remapHistoryRows(
   sourceSessionId: string,
   identity: HistoryIdentityMap,
 ): Row[] {
+  const resources = identity.resourceBindings?.length ? createContextResourceRebinder(identity.resourceBindings) : null;
   const entities = new Map(
     rows.flatMap((row, index) =>
       row.entityId
@@ -84,8 +88,10 @@ export function remapHistoryRows(
       }
     if ("assistantResponseId" in row && row.assistantResponseId)
       row.assistantResponseId = `${identity.rootId}:history-response:${row.assistantResponseId}`;
-    if (row.kind === "toolCall")
+    if (row.kind === "toolCall") {
       row.toolCallId = `${identity.rootId}:history-tool:${row.toolCallId}`;
+      remapToolResources(row, resources);
+    }
     if (row.kind === "subagent") {
       if (row.parentToolCallId)
         row.parentToolCallId = `${identity.rootId}:history-tool:${row.parentToolCallId}`;
@@ -106,6 +112,29 @@ export function remapHistoryRows(
     }
     return row;
   });
+}
+
+function remapToolResources(
+  row: Extract<Row, { kind: "toolCall" }>,
+  resources: ReturnType<typeof createContextResourceRebinder> | null,
+) {
+  if (!resources) return;
+  if (row.output?.display) {
+    const mapped = resources.payload(row.toolName, { display: row.output.display });
+    if (mapped && typeof mapped === "object" && "display" in mapped)
+      row.output = protocol.toolOutputSchema.parse({ ...row.output, display: mapped.display });
+  }
+  if (row.input && row.toolName === "TaskOutput") {
+    const mapped = resources.args(row.toolName, row.input);
+    if (mapped && typeof mapped === "object" && !Array.isArray(mapped)) {
+      row.input = { ...mapped };
+      row.inputText = JSON.stringify(row.input);
+    }
+  }
+  if (!row.output?.text || !["Task", "TaskOutput", "Bash"].includes(row.toolName)) return;
+  let payload: unknown;
+  try { payload = JSON.parse(row.output.text); } catch { return; } // 普通工具错误正文不包含结构化资源。
+  row.output.text = JSON.stringify(resources.payload(row.toolName, payload));
 }
 
 export function closeInheritedSnapshot(snapshot: Snapshot) {

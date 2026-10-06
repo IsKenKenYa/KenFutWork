@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import type { AgentContextHistoryReference } from "../../agent/context-history.js";
+import type { CodeUiOutputCopy, CodeUiOutputHistory } from "./output-history-types.js";
 import type { LocalActor } from "../local-instance/types.js";
 import type {
   CodeAttachmentHistoryCopy,
@@ -52,6 +53,7 @@ type Deps = Pick<
   | "settings"
 > & {
   attachments?: () => CodeAttachmentsService | undefined;
+  outputs?: () => CodeUiOutputHistory;
   load(actor: LocalActor, sessionId: string): Promise<Loaded>;
   refresh(instanceId: string, path: string, projectId: string): Promise<void>;
   fingerprint(envelope: protocol.CommandEnvelope): string;
@@ -170,10 +172,13 @@ function forkState(
   path: string,
   source: Selection,
   inherited: CodeUiOwnedHistoryTurn[],
-  turnIds: ReadonlyMap<string, string>,
   attachments: ReadonlyMap<string, protocol.AttachmentRef>,
   owner: { instanceId: string; projectId: string },
   files: ReadonlyMap<string, CodeUiInheritedSession["fileChanges"]>,
+  resources: {
+    identity: ReturnType<typeof childIdentityMap>;
+    outputs?: CodeUiOutputCopy;
+  },
 ) {
   const config = structuredClone(source.view.config);
   delete config.permissionGrant;
@@ -185,9 +190,9 @@ function forkState(
   }).exportState();
   const child = state.snapshots[0];
   if (!child) throw new Error("分叉Task初始化未生成根快照。");
-  const turns = new Map(turnIds);
   const identity = {
-    ...childIdentityMap(id, source.children, turns),
+    ...resources.identity,
+    resourceBindings: resources.outputs?.bindings ?? [],
     attachments: (refs: readonly protocol.AttachmentRef[]) =>
       mappedAttachments(refs, attachments),
   };
@@ -238,6 +243,7 @@ function forkState(
   };
   child.seq = rows.length;
   state.inheritedHistory = inherited;
+  state.inheritedOutputs = structuredClone(resources.outputs?.records ?? []);
   state.snapshots.push(...copiedChildren);
   state.inheritedSessions = source.children.map((original) => ({
     owner: {
@@ -339,6 +345,7 @@ type ForkOperation = {
     reference: AgentContextHistoryReference | null;
   };
   attachments?: CodeAttachmentHistoryCopy;
+  outputs?: CodeUiOutputCopy;
   child?: CodeUiRootInsert;
   source?: {
     scopeGeneration: number;
@@ -412,11 +419,21 @@ async function prepareFork(
     selected,
     turns,
   );
+  const identity = childIdentityMap(id, selected.children, new Map(turnIds));
+  const outputService = deps.outputs?.();
+  if (outputService)
+    operation.outputs = await outputService.prepare(operation.actor, root, {
+      instanceId: root.instance_id,
+      projectId: root.project_id,
+      taskId: id,
+      childSessionIds: identity.sessions,
+    }, [...selected.rows, ...selected.children.flatMap(child => child.rows.window)]);
   const mapped = await deps.agentRuns.cloneContextHistoryBranch({
     sourceThreadId: post.threadId,
     targetThreadId: threadId,
     reference: post.reference,
     boundaries: mappedHistoryBoundaries(turns),
+    resourceBindings: operation.outputs?.bindings ?? [],
   });
   operation.clone = { targetThreadId: threadId, reference: mapped.reference };
   operation.source = {
@@ -464,10 +481,10 @@ async function prepareFork(
       root.root_directory,
       selected,
       inherited,
-      turnIds,
       attachments,
       { instanceId: root.instance_id, projectId: root.project_id },
       childFiles,
+      { identity, ...(operation.outputs ? { outputs: operation.outputs } : {}) },
     ),
     ...(attachmentCopy
       ? { publishArtifacts: (scoped) => attachmentCopy.publish(scoped) }
@@ -482,11 +499,12 @@ async function discardUnpublishedFork(
   if (!operation || operation.published || operation.publicationUncertain)
     return;
   const failures: unknown[] = [];
-  try {
-    await operation.attachments?.discard();
-  } catch (error) {
-    failures.push(error);
-  }
+  for (const resource of [operation.attachments, operation.outputs])
+    try {
+      await resource?.discard();
+    } catch (error) {
+      failures.push(error);
+    }
   if (operation.clone)
     try {
       await deps.agentRuns.discardContextBranch(operation.clone);
@@ -531,6 +549,7 @@ async function finishFork(
   // child/state/ACK已原子发表，之后的通知或租约释放不能删掉已可使用的native分支。
   operation.published = true;
   operation.attachments?.release();
+  operation.outputs?.release();
   deps.agentRuns.releaseContextBranch(operation.clone);
   try {
     await deps.refresh(

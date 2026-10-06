@@ -33,6 +33,10 @@ export function createTaskWorkPlugin(): PluginDefinition {
           manager: ctx.get("taskWork"),
           sandbox: ctx.get("processSandbox"),
           settings: ctx.get("settings"),
+          historicalOutputs: {
+            read: (context, id, offset, maxBytes) => ctx.get("codeUi").outputHistory.read(context, id, offset, maxBytes),
+            manifest: (context) => ctx.get("codeUi").outputHistory.manifest(context),
+          },
         });
         return commands;
       };

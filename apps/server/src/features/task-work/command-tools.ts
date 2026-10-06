@@ -16,6 +16,7 @@ import type {
   ProcessSandbox,
 } from "../process-sandbox/types.js";
 import type { SettingsService } from "../settings/settings-service.js";
+import type { CodeUiOutputHistory } from "../code-ui/output-history-types.js";
 import type {
   TaskWorkContext,
   TaskWorkManager,
@@ -120,6 +121,7 @@ export function createTaskCommandTools(deps: {
   manager: TaskWorkManager;
   sandbox: ProcessSandbox;
   settings: SettingsService;
+  historicalOutputs?: Pick<CodeUiOutputHistory, "read" | "manifest">;
 }) {
   const commands = new Map<string, ManagedProcess>();
   const invocations = new Map<
@@ -349,12 +351,12 @@ export function createTaskCommandTools(deps: {
     "TaskOutput",
     outputSchema,
     "read",
-    "读取当前 Task 的后台工作状态和增量输出。task_id 跨 Run 有效，offset/nextOffset 为字节游标；无 task_id 列出 Task 工作。",
+    "读取当前 Task 工作或其只读历史输出。task_id 跨 Run 有效，offset/nextOffset 为字节游标；无 task_id 列出工作和只读输出，readOnly 项不能 TaskInput/TaskStop。",
     async (raw, execCtx) => {
       const input = outputSchema.parse(raw);
       const context = contextOf(execCtx);
-      if (!input.task_id)
-        return (await deps.manager.list(context)).map(
+      if (!input.task_id) {
+        const work = (await deps.manager.list(context)).map(
           ({ id, kind, label, status, startedAt, endedAt }) => ({
             taskId: id,
             kind,
@@ -364,31 +366,38 @@ export function createTaskCommandTools(deps: {
             endedAt,
           }),
         );
+        const inherited = await deps.historicalOutputs?.manifest(context) ?? [];
+        return [...work, ...inherited.map(record => ({
+          taskId: record.id, kind: record.kind, label: record.label,
+          status: record.status, readOnly: true,
+        }))];
+      }
       const record = await deps.manager.find(context, input.task_id);
-      if (!record) throw new Error("后台工作不属于当前 Task 或不存在。");
       const settings = await settingsFor(context);
       // UTF-8 最长四字节是编码常量；工具页限额来自用户的预览治理值。
       const pageBytes = Math.min(
         settings.processMaxOutputBytes,
         settings.processPreviewMaxChars * 4,
       );
-      const output = await readOutput(
-        record,
-        input.offset,
-        Math.min(input.max_bytes ?? pageBytes, pageBytes),
-      );
+      const pageSize = Math.min(input.max_bytes ?? pageBytes, pageBytes);
+      const inherited = !record
+        ? await deps.historicalOutputs?.read(context, input.task_id, input.offset, pageSize)
+        : null;
+      const result = record ?? inherited;
+      if (!result) throw new Error("输出不属于当前 Task 或不存在。");
+      const output = record ? await readOutput(record, input.offset, pageSize) : inherited?.output;
       const canonicalOutput = {
-        taskId: record.id,
-        status: record.status,
-        summary: record.summary,
+        taskId: result.id,
+        status: result.status,
+        summary: result.summary,
         output,
-        outputRef: record.outputRef,
-        statisticsComplete: record.status !== "interrupted",
+        outputRef: result.outputRef,
+        statisticsComplete: inherited?.statisticsComplete ?? result.status !== "interrupted",
         display: {
           kind: "task_output",
           retrievalStatus:
-            output || record.status !== "running" ? "success" : "not_ready",
-          taskStatus: record.status,
+            output || result.status !== "running" ? "success" : "not_ready",
+          taskStatus: result.status,
         },
       };
       const modelText =

@@ -10,7 +10,7 @@ import { buildApp } from "../../app.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createCodeUiTestClient } from "./host-client.fixture.js";
 
-function applicationEnvKey(key: string) {
+export function applicationEnvKey(key: string) {
   return (
     /^(KENFUTWORK_|LOOMIC_|OPENAI_|ANTHROPIC_|GOOGLE_|GEMINI_|REPLICATE_|METASO_|VOLCES_|LEMON_)/u.test(
       key,

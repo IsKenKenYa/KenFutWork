@@ -7,6 +7,7 @@ import {
   createSkillCatalogRepository,
 } from "../skills/repository.js";
 import { createTaskResourceCloser } from "../task-work/close-resources.js";
+import { createCodeHistoryOutputPrompt } from "./output-history-prompt.js";
 import { createAskUserQuestionToolDefinition } from "./ask-user-question.js";
 import { createEnterPlanModeToolDefinition } from "./enter-plan.js";
 import { createExitPlanModeToolDefinition } from "./exit-plan.js";
@@ -95,6 +96,9 @@ export function createCodeUiPlugin(): PluginDefinition {
       });
       ctx.get("systemPrompt").register(createApprovedPlanPromptSection({
         read: (context) => ctx.get("codeUi").readApprovedPlan(context),
+      }));
+      ctx.get("systemPrompt").register(createCodeHistoryOutputPrompt({
+        manifest: (context) => ctx.get("codeUi").outputHistory.manifest(context),
       }));
       ctx.get("tools").registerDynamic({
         id: "code.planning.exit",
