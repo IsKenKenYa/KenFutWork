@@ -165,9 +165,11 @@ async function fixture(
         return { ...previous.ack, status: "duplicate" };
       }
       const decision = decide(structuredClone(root));
-      root.state = decision.state;
-      root.active_run_id = decision.activeRunId;
-      root.revision = Number(root.revision) + 1;
+      if (decision.state) {
+        root.state = decision.state;
+        root.active_run_id = decision.activeRunId;
+        root.revision = Number(root.revision) + 1;
+      }
       const ack = protocol.commandAckSchema.parse(decision.ack);
       for (const settlement of decision.settlements ?? []) {
         const source = commands.get(
@@ -849,7 +851,7 @@ it("原setFollowupMode按Task CAS持久偏好，不造Run或宣称已提供guide
     before.revision,
   );
   expect(stale?.result).toMatchObject({
-    status: "rejected",
+    status: "stale",
     reasonCode: "proto.staleRevision",
   });
   expect(

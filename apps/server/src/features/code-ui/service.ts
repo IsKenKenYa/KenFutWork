@@ -2226,11 +2226,11 @@ export class CodeUiService {
             envelope.baseLogEpoch !== snapshot.logEpoch)
         )
           return {
-            state,
+            state: null,
             activeRunId: root.active_run_id,
             ack: {
               commandId: envelope.commandId,
-              status: "rejected",
+              status: "stale",
               reasonCode:
                 envelope.baseRevision !== snapshot.revision
                   ? "proto.staleRevision"
