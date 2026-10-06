@@ -887,8 +887,16 @@ export function createCodeUiConversation(input: {
               }
             }
         }
-        if (work.detached === false) return;
-        if (!work.consumed) {
+        const foreground = work.detached === false;
+        if (
+          foreground &&
+          (work.kind !== "subagent" ||
+            work.status !== "running" ||
+            !work.childSessionId)
+        )
+          return;
+        // 控制由根Task持有：真实work先于子目录发表，嵌套子pane也保持只读。
+        if (!work.consumed || foreground) {
           const anchor = root.rows.window.find(
             (row) =>
               row.kind === "toolCall" &&
