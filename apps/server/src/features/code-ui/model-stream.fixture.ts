@@ -1,10 +1,37 @@
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
-export async function heldModel() {
+export async function heldModel(
+  options: {
+    initialTool?: {
+      id: string;
+      name: string;
+      arguments: Record<string, unknown>;
+    };
+    usage?: { promptTokens: number; completionTokens: number };
+  } = {},
+) {
   const requests: Array<{ closed: boolean; body: Record<string, unknown> }> =
     [];
   const responses: ServerResponse[] = [];
+  const writeUsage = (response: ServerResponse, index: number) => {
+    if (!options.usage) return;
+    response.write(
+      `data: ${JSON.stringify({
+        id: `chatcmpl-${index + 1}`,
+        object: "chat.completion.chunk",
+        created: 1,
+        model: "stop-model",
+        choices: [],
+        usage: {
+          prompt_tokens: options.usage.promptTokens,
+          completion_tokens: options.usage.completionTokens,
+          total_tokens:
+            options.usage.promptTokens + options.usage.completionTokens,
+        },
+      })}\n\n`,
+    );
+  };
   let firstRequestReceived!: () => void;
   const firstRequest = new Promise<void>((resolve) => {
     firstRequestReceived = resolve;
@@ -24,6 +51,49 @@ export async function heldModel() {
       entry.closed = true;
     });
     response.writeHead(200, { "content-type": "text/event-stream" });
+    const tool = requests.length === 1 ? options.initialTool : undefined;
+    if (tool) {
+      response.write(
+        `data: ${JSON.stringify({
+          id: "chatcmpl-1",
+          object: "chat.completion.chunk",
+          created: 1,
+          model: "stop-model",
+          choices: [
+            {
+              index: 0,
+              delta: {
+                role: "assistant",
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: tool.id,
+                    type: "function",
+                    function: {
+                      name: tool.name,
+                      arguments: JSON.stringify(tool.arguments),
+                    },
+                  },
+                ],
+              },
+              finish_reason: null,
+            },
+          ],
+        })}\n\n`,
+      );
+      response.write(
+        `data: ${JSON.stringify({
+          id: "chatcmpl-1",
+          object: "chat.completion.chunk",
+          created: 1,
+          model: "stop-model",
+          choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+        })}\n\n`,
+      );
+      writeUsage(response, 0);
+      response.end("data: [DONE]\n\n");
+      return;
+    }
     response.write(
       `data: ${JSON.stringify({
         id: `chatcmpl-${requests.length}`,
@@ -69,6 +139,7 @@ export async function heldModel() {
           choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
         })}\n\n`,
       );
+      writeUsage(response, index);
       response.end("data: [DONE]\n\n");
     },
     close: () =>

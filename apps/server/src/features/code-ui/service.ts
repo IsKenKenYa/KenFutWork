@@ -78,6 +78,7 @@ import {
 import { createCodeUiFileHistory } from "./file-history.js";
 import { CodeUiFileIndex, codeUiViewerRpc } from "./files.js";
 import { createCodeUiHistoryEdit } from "./history-edit.js";
+import { createCodeUiHistoryFork } from "./history-fork.js";
 import { createCodeGuideInputs } from "./guide-input.js";
 import { createCodePlanningControl } from "./planning-control.js";
 import { createCodeApprovedPlanStore } from "./approved-plan-store.js";
@@ -235,6 +236,7 @@ export class CodeUiService {
   private readonly fileIndexes = new WeakMap<object, CodeUiFileIndex>();
   private readonly fileHistory: ReturnType<typeof createCodeUiFileHistory>;
   private readonly historyEdit: ReturnType<typeof createCodeUiHistoryEdit>;
+  private readonly historyFork: ReturnType<typeof createCodeUiHistoryFork>;
   private readonly workspaceConfig: ReturnType<
     typeof createCodeUiWorkspaceConfigHost
   >;
@@ -281,6 +283,17 @@ export class CodeUiService {
         ),
       finishRestore: (scope, actor, success) =>
         this.finishTaskRestore(scope, actor, success),
+      refresh: (instanceId, path, projectId) =>
+        this.refreshTaskProjection(instanceId, path, projectId),
+      fingerprint: codeUiCommandFingerprint,
+    });
+    this.historyFork = createCodeUiHistoryFork({
+      repository: deps.repository,
+      agentRuns: deps.agentRuns,
+      agentRunMetadata: deps.agentRunMetadata,
+      threads: deps.threads,
+      localInstance: deps.localInstance,
+      load: (actor, sessionId) => this.loadConversation(actor, sessionId),
       refresh: (instanceId, path, projectId) =>
         this.refreshTaskProjection(instanceId, path, projectId),
       fingerprint: codeUiCommandFingerprint,
@@ -1789,6 +1802,7 @@ export class CodeUiService {
           );
         const snapshot = loaded.host.getSnapshot(sessionId);
         await this.historyEdit.decorate(user, loaded, snapshot);
+        await this.historyFork.decorate(user, loaded, snapshot);
         return { snapshot, seq: snapshot.seq };
       };
       return this.connections.subscribe(workspace.instanceId, connectionId, {
@@ -1995,6 +2009,8 @@ export class CodeUiService {
         parsed.envelope.type === "retryTurn"
       )
         return this.historyEdit.command(user, target, parsed.envelope);
+      if (parsed.envelope.type === "forkAssistant")
+        return this.historyFork.command(user, target, parsed.envelope);
       if (parsed.envelope.type === "applyFileRewind")
         return this.fileHistory.command(user, target, parsed.envelope);
       if (CODE_QUEUE_COMMANDS.has(parsed.envelope.type))
@@ -3718,6 +3734,7 @@ export class CodeUiService {
     );
     const snapshot = loaded.host.getSnapshot(sessionId);
     await this.historyEdit.decorate(user, loaded, snapshot);
+    await this.historyFork.decorate(user, loaded, snapshot);
     if (snapshot.backgroundWorks.some((work) => work.status !== "running")) {
       void this.deps.taskWork
         .notifyReady(loaded.instanceId, loaded.root.id)

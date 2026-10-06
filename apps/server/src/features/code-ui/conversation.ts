@@ -44,6 +44,8 @@ function setManualCompactStatus(
   row.marker.status = status;
 }
 
+export type CodeUiCompletedTurnView = Pick<Snapshot, "config" | "plan" | "usage">;
+
 export interface CodeUiConversationState {
   version: 1;
   runId: string;
@@ -57,6 +59,7 @@ export interface CodeUiConversationState {
   childRunUsage?: Array<[string, Array<[string, RunUsageTotals]>]>;
   planningEpoch?: number;
   approvedPlan?: CodeApprovedPlan;
+  completedTurnViews?: Array<[string, CodeUiCompletedTurnView]>;
 }
 
 function cancelToolWaits(snapshot: Snapshot, at: number) {
@@ -296,6 +299,9 @@ export function createCodeUiConversation(input: {
   let inputOwner = input.state?.inputOwner;
   const runUsage = new Map(input.state?.runUsage ?? []);
   const childRunUsage = new Map(input.state?.childRunUsage ?? []);
+  const completedTurnViews = new Map(
+    structuredClone(input.state?.completedTurnViews ?? []),
+  );
   const planningEpoch = input.state?.planningEpoch ?? 0;
   const approvedPlan = input.state?.approvedPlan;
   const config = protocol.sessionConfigStateSchema.parse(input.config);
@@ -399,6 +405,7 @@ export function createCodeUiConversation(input: {
         inputs,
         runUsage: [...runUsage],
         childRunUsage: [...childRunUsage],
+        completedTurnViews: [...completedTurnViews],
         planningEpoch,
         ...(approvedPlan ? { approvedPlan } : {}),
         ...(inputOwner ? { inputOwner } : {}),
@@ -1042,6 +1049,24 @@ export function createCodeUiConversation(input: {
         root.seq += 1;
         root.revision += 1;
         completeSnapshot(root, at);
+        if (
+          !completedTurnViews.has(event.runId) &&
+          root.rows.window.some(
+            (row) =>
+              row.kind === "turnHeader" &&
+              row.turnId === event.runId &&
+              row.executionKind === "agent" &&
+              row.state === "completedSuccess",
+          )
+        )
+          completedTurnViews.set(
+            event.runId,
+            structuredClone({
+              config: root.config,
+              plan: root.plan,
+              usage: root.usage,
+            }),
+          );
         return;
       }
       const dispatchId = "agentCallId" in event ? event.agentCallId : undefined;

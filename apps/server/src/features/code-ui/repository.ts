@@ -50,9 +50,77 @@ export class CodeUiRepositoryError extends Error {
   }
 }
 
+/** 提交结果不能确认时，准备者不得把异常当作“未发表”而删除外部资源。 */
+export class CodeUiCommandOutcomeUnknownError extends CodeUiRepositoryError {
+  constructor() {
+    super(
+      "command_conflict",
+      "命令发表结果尚未确认；保留准备资源，请重新连接后查看持久状态。",
+    );
+  }
+}
+
+async function readPreparedCommandAck(
+  persistence: PersistenceService,
+  instanceId: string,
+  envelope: protocol.CommandEnvelope,
+  fingerprint: string,
+) {
+  return persistence.transaction(async (tx) => {
+    const scoped = tx.forInstance(instanceId);
+    // 与发表事务同一根锁，等其COMMIT/ROLLBACK终态，不能用旧MVCC pending判断未发表。
+    await scoped.query(
+      "select id from public.code_ui_sessions where instance_id=:instance and id=$1 for update",
+      [envelope.sessionId],
+    );
+    const row = await scoped.queryOne<
+      SqlRow & {
+        parameter_fingerprint: string | null;
+        ack: protocol.CommandAck | null;
+      }
+    >(
+      "select parameter_fingerprint, ack from public.code_ui_commands where instance_id=:instance and client_id=$1 and command_id=$2 for update",
+      [envelope.clientId, envelope.commandId],
+    );
+    if (row?.parameter_fingerprint !== fingerprint)
+      throw new CodeUiCommandOutcomeUnknownError();
+    return row.ack ? protocol.commandAckSchema.parse(row.ack) : null;
+  });
+}
+
 export interface CodeUiHumanPreferencesWriteOptions {
   referencedProjectIds?: readonly string[];
   removeKeys?: readonly string[];
+}
+
+export interface CodeUiRootInsert {
+  sessionId: string;
+  projectId: string;
+  scope: CodeExecutionScope;
+  createdByClientId: string | null;
+  threadId: string;
+  state: CodeUiConversationState;
+}
+
+async function insertRoot(scoped: InstanceSqlClient, input: CodeUiRootInsert) {
+  await scoped.execute(
+    `insert into public.chat_sessions (id, instance_id, project_id, mode, created_by_client_id, thread_id)
+     values ($1::uuid, :instance, $2::uuid, 'code', $3::uuid, $4::text)`,
+    [input.sessionId, input.projectId, input.createdByClientId, input.threadId],
+  );
+  await scoped.execute(
+    `insert into public.code_ui_sessions (id, instance_id, project_id, chat_session_id, root_session_id, state, root_directory, additional_directories, sandbox_mode, scope_generation)
+     values ($1, :instance, $2, $1, $1, $3::jsonb, $4, $5::jsonb, $6, $7)`,
+    [
+      input.sessionId,
+      input.projectId,
+      JSON.stringify(input.state),
+      input.scope.rootDirectory,
+      JSON.stringify(input.scope.additionalDirectories),
+      input.scope.sandboxMode,
+      input.scope.generation,
+    ],
+  );
 }
 
 async function writeState(
@@ -475,29 +543,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
             "Code 项目或 Task 工作域不存在",
           );
         }
-        await scoped.execute(
-          `insert into public.chat_sessions (id, instance_id, project_id, mode, created_by_client_id, thread_id)
-           values ($1::uuid, :instance, $2::uuid, 'code', $3::uuid, $4::text)`,
-          [
-            input.sessionId,
-            input.projectId,
-            input.createdByClientId,
-            input.threadId,
-          ],
-        );
-        await scoped.execute(
-          `insert into public.code_ui_sessions (id, instance_id, project_id, chat_session_id, root_session_id, state, root_directory, additional_directories, sandbox_mode, scope_generation)
-           values ($1, :instance, $2, $1, $1, $3::jsonb, $4, $5::jsonb, $6, $7)`,
-          [
-            input.sessionId,
-            input.projectId,
-            JSON.stringify(input.state),
-            input.scope.rootDirectory,
-            JSON.stringify(input.scope.additionalDirectories),
-            input.scope.sandboxMode,
-            input.scope.generation,
-          ],
-        );
+        await insertRoot(scoped, input);
         const ack = protocol.commandAckSchema.parse({
           commandId: input.command.commandId,
           status: "accepted",
@@ -643,8 +689,9 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       fingerprint: string,
       change: (root: CodeUiSessionRecord) => Promise<void>,
       decide: (root: CodeUiSessionRecord) => {
-        state: CodeUiConversationState;
+        state: CodeUiConversationState | null;
         ack: protocol.CommandAck;
+        newRoot?: CodeUiRootInsert;
         activeRunId?: string | null;
         threadBinding?: {
           previousThreadId: string;
@@ -653,6 +700,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
         };
       },
       afterCommit?: (ack: protocol.CommandAck) => Promise<void>,
+      failureReasonCode = "scope_update_failed",
     ): Promise<protocol.CommandAck> {
       if (!envelope.sessionId)
         throw new CodeUiRepositoryError("not_found", "授权命令缺少 Task 身份");
@@ -668,6 +716,30 @@ export function createCodeUiRepository(persistence: PersistenceService) {
           const root = await lockRoot(scoped, envelope.sessionId!);
           const decision = decide(root);
           const ack = protocol.commandAckSchema.parse(decision.ack);
+          if (decision.newRoot) {
+            const next = decision.newRoot;
+            if (
+              ack.status !== "accepted" ||
+              ack.result?.type !== "forkAssistant" ||
+              ack.result.sessionId !== next.sessionId ||
+              root.archived ||
+              root.execution_state !== "ready" ||
+              next.scope.instanceId !== instanceId ||
+              next.projectId !== root.project_id ||
+              next.scope.projectId !== root.project_id ||
+              next.scope.taskId !== next.sessionId ||
+              next.scope.rootDirectory !== root.root_directory ||
+              next.scope.sandboxMode !== root.sandbox_mode ||
+              JSON.stringify(next.scope.additionalDirectories) !==
+                JSON.stringify(root.additional_directories ?? []) ||
+              !(await lockActiveProject(scoped, root))
+            )
+              throw new CodeUiRepositoryError(
+                "revision_conflict",
+                "分叉Task的目录或授权已改变，未发布新Task。",
+              );
+            await insertRoot(scoped, next);
+          }
           if (decision.threadBinding) {
             const binding = decision.threadBinding;
             if (
@@ -711,14 +783,15 @@ export function createCodeUiRepository(persistence: PersistenceService) {
               );
             root.execution_state = "ready";
           }
-          await writeState(
-            scoped,
-            root,
-            decision.state,
-            decision.activeRunId === undefined
-              ? root.active_run_id
-              : decision.activeRunId,
-          );
+          if (decision.state)
+            await writeState(
+              scoped,
+              root,
+              decision.state,
+              decision.activeRunId === undefined
+                ? root.active_run_id
+                : decision.activeRunId,
+            );
           const written = await scoped.execute(
             `update public.code_ui_commands set ack = $3::jsonb, status = 'accepted'
               where instance_id = :instance and client_id = $1 and command_id = $2 and status = 'pending'`,
@@ -732,19 +805,33 @@ export function createCodeUiRepository(persistence: PersistenceService) {
           return ack;
         });
       } catch (error) {
-        const ack = protocol.commandAckSchema.parse({
-          commandId: envelope.commandId,
-          status: "failed",
-          reasonCode: "scope_update_failed",
-          message: error instanceof Error ? error.message : "Task 授权变更失败",
-          revisionAtDecision: Number(claimed.root!.revision),
-        });
-        await persistence.forInstance(instanceId).execute(
-          `update public.code_ui_commands set ack = $3::jsonb, status = 'failed'
+        let committed: protocol.CommandAck | null;
+        try {
+          committed = await readPreparedCommandAck(
+            persistence,
+            instanceId,
+            envelope,
+            fingerprint,
+          );
+        } catch {
+          throw new CodeUiCommandOutcomeUnknownError();
+        }
+        if (committed) persisted = committed;
+        else {
+          const ack = protocol.commandAckSchema.parse({
+            commandId: envelope.commandId,
+            status: "failed",
+            reasonCode: failureReasonCode,
+            message: error instanceof Error ? error.message : "Task 授权变更失败",
+            revisionAtDecision: Number(claimed.root!.revision),
+          });
+          await persistence.forInstance(instanceId).execute(
+            `update public.code_ui_commands set ack = $3::jsonb, status = 'failed'
             where instance_id = :instance and client_id = $1 and command_id = $2 and status = 'pending'`,
-          [envelope.clientId, envelope.commandId, JSON.stringify(ack)],
-        );
-        return ack;
+            [envelope.clientId, envelope.commandId, JSON.stringify(ack)],
+          );
+          return ack;
+        }
       }
       // 已落库的效果回执不能因readiness/通知失败被改报成未执行；重放也不再次执行effect。
       await afterCommit?.(persisted);

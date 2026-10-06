@@ -24,6 +24,10 @@ export async function createCodeUiHttpFixture(
     builtinPluginsDir?: string;
     allowThirdPartyPlugins?: boolean;
     governanceEnv?: AgentGovernanceOverrides;
+    databaseTransport?: (connectionString: string) => Promise<{
+      connectionString: string;
+      close(): Promise<void>;
+    }>;
   } = {},
 ) {
   const database = await createTaskWorkDatabase();
@@ -46,10 +50,17 @@ export async function createCodeUiHttpFixture(
       options.allowThirdPartyPlugins,
     );
   let app: ReturnType<typeof buildApp> | undefined;
+  let databaseTransport:
+    | Awaited<ReturnType<NonNullable<typeof options.databaseTransport>>>
+    | undefined;
   try {
+    databaseTransport = await options.databaseTransport?.(
+      database.connectionString,
+    );
     app = buildApp({
       env: {
-        databaseUrl: database.connectionString,
+        databaseUrl:
+          databaseTransport?.connectionString ?? database.connectionString,
         desktopDataDir: directory,
         queueDriver: "in-process",
         agentFilesRoot: join(directory, "agent-files"),
@@ -124,6 +135,7 @@ export async function createCodeUiHttpFixture(
         closing ??= (async () => {
           await client.close();
           await host.close();
+          await databaseTransport?.close();
           await database.close();
         })().catch((error: unknown) => {
           closing = undefined;
@@ -134,6 +146,7 @@ export async function createCodeUiHttpFixture(
     };
   } catch (error) {
     await app?.close();
+    await databaseTransport?.close();
     await database.close();
     throw error;
   } finally {

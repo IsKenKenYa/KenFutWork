@@ -115,9 +115,17 @@ function createPoolRunner(
     query: runOn(pool),
     async acquire() {
       const client = await pool.connect();
+      // pg-pool借出时移除idle错误监听；查询Promise拒绝之外，断连也会emit error。
+      const onConnectionError = (error: Error) => {
+        console.error("[persistence] 事务连接出错：", error.message);
+      };
+      client.on("error", onConnectionError);
       return {
         query: runOn(client),
-        release: () => client.release(),
+        release: () => {
+          client.release();
+          client.off("error", onConnectionError);
+        },
       };
     },
     acquireSession: () => createDedicatedSession(databaseUrl, runOn),
