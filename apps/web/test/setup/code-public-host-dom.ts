@@ -38,6 +38,7 @@ export async function installCodePublicHostDom() {
     "MouseEvent",
     "KeyboardEvent",
     "CustomEvent",
+    "customElements",
     "localStorage",
   ] as const) {
     vi.stubGlobal(key, browserWindow[key]);

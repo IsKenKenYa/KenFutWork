@@ -31,6 +31,14 @@ pnpm test
 node scripts/vendor-zcode.mjs
 ```
 
+## 原全文查看器实际文本验收补记
+
+同日继续沿原全文按钮的真实 CodeViewerSource 挂载原 PreviewPane，使用原 Store/Platform/Tooltip/Tab provider、真实广播服务及宿主文件 Channel，未替换 CodeViewer 或渲染器。独立 DOM 增加真实 customElements；首轮缺浏览器接口、缺 Store/broadcast，以及只查 light DOM 的失败均为夹具/观察问题，不算产品 RED。
+
+`27574` 实际一条通过，无 skip：原 @pierre/diffs 的公开 Shadow DOM 显示完整 ORIGINAL_GUI_BOOT 与中文emoji尾部。原端到端文件服务检查继续保留；`43075` 全类型13/13（server/web实际、11缓存）。这证明文本显示链，不扩张成原Root全交互、图片/PDF/大文件和视觉对照验收。
+
+最终 `81439` 原后台查看器及子停止两条实际交叉全部通过，无 skip；`44662` 完整pnpm test16/16（server/web实际、14缓存），server2024通过/248默认skip、web460通过/18默认skip，默认skip不计能力。来源3027零漂移、两测试源码完整Biome通过，类型与实际服务证据见上。
+
 ## 范围与剩余项
 
-本批证明原后台面板及其全文按钮的公共链。原 PreviewPane 的完整渲染、全场景视觉与全部 Code 操作、运行中历史分叉截点恢复、所有生成产物、巨大历史、Design/Flow 与三平台验收继续，整体 Goal 保持 active。原文本查看器和日志读取均遵守用户治理上限，超预算不伪装完整文件；历史副本不获得 stdin/stop 权限。
+本批证明原后台面板及其全文按钮的公共链。原 PreviewPane 其它文件类型与大文件、全场景视觉与全部 Code 操作、运行中历史分叉截点恢复、所有生成产物、巨大历史、Design/Flow 与三平台验收继续，整体 Goal 保持 active。原文本查看器和日志读取均遵守用户治理上限，超预算不伪装完整文件；历史副本不获得 stdin/stop 权限。
