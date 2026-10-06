@@ -42,7 +42,6 @@ export class CodeTerminalError extends Error {
 }
 interface TerminalRecord {
   instanceId: string;
-  userId: string;
   connectionId: string;
   id: string;
   request: TerminalOpenRequest;
@@ -89,8 +88,8 @@ export function createCodeTerminalService(deps: {
   const owned = async (actor: LocalActor, connectionId: string, id: string) => {
     const workspace = await deps.localInstance.resolve(actor);
     const record = records.get(key(workspace.instanceId, connectionId, id));
-    if (!record || record.userId !== actor.instanceId)
-      throw new CodeTerminalError("not_found", "终端不属于当前用户连接。", 404);
+    if (!record || record.instanceId !== actor.instanceId)
+      throw new CodeTerminalError("not_found", "终端不属于当前实例连接。", 404);
     return record;
   };
   const stopRecord = (
@@ -153,7 +152,7 @@ export function createCodeTerminalService(deps: {
       const existing = records.get(recordKey);
       if (existing) {
         if (
-          existing.userId !== actor.instanceId ||
+          existing.instanceId !== actor.instanceId ||
           existing.fingerprint !== fingerprint
         )
           throw new CodeTerminalError(
@@ -171,7 +170,6 @@ export function createCodeTerminalService(deps: {
       });
       const record: TerminalRecord = {
         instanceId: workspace.instanceId,
-        userId: actor.instanceId,
         connectionId,
         id,
         request,

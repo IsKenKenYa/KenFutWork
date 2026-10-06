@@ -181,7 +181,10 @@ it.skipIf(process.platform !== "darwin")(
             exit: async () => {},
           },
         ),
-      ).rejects.toMatchObject({ code: "not_found" });
+      ).rejects.toMatchObject({
+        code: "not_found",
+        message: "终端不属于当前实例连接。",
+      });
       await service.subscribe(actor, "connection", first.id, {
         output: async (value, cursor) => {
           data += value;
