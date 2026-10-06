@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { AsyncLocalStorageProviderSingleton } from "@langchain/core/singletons";
 import type { AgentRunService } from "../../agent/runtime.js";
 import type { AgentRunMetadataService } from "../agent-runs/agent-run-service.js";
 import type {
@@ -13,7 +14,7 @@ export function createCodeChildHarness(deps: {
   metadata: AgentRunMetadataService;
   sessions: CodeChildSessions;
 }) {
-  return async (
+  const executeChild = async (
     request: CodeChildRequest,
     signal: AbortSignal,
   ): Promise<CodeChildResult> => {
@@ -87,4 +88,11 @@ export function createCodeChildHarness(deps: {
       childRunId: runId,
     };
   };
+  // 独立子图不继承父Pregel内部abort/namespace/callback通道；归因仍由request/eventSink持有。
+  return (request: CodeChildRequest, signal: AbortSignal) =>
+    AsyncLocalStorageProviderSingleton.runWithConfig(
+      {},
+      () => executeChild(request, signal),
+      true,
+    );
 }
