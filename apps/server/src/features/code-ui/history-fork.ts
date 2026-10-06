@@ -7,6 +7,12 @@ import {
   createCodeUiConversation,
 } from "./conversation.js";
 import {
+  createCodeUiOwnedHistory,
+  mappedHistoryBoundaries,
+  rebindOwnedHistory,
+} from "./owned-history.js";
+import type { CodeUiOwnedHistoryTurn } from "./owned-history-types.js";
+import {
   CodeUiCommandOutcomeUnknownError,
   CodeUiRepositoryError,
   type CodeUiRootInsert,
@@ -80,9 +86,13 @@ function selectedTurn(
       )
   )
     return null;
-  const view = root.state?.completedTurnViews?.find(
-    ([turnId]) => turnId === assistant.turnId,
-  )?.[1];
+  const view =
+    root.state?.completedTurnViews?.find(
+      ([turnId]) => turnId === assistant.turnId,
+    )?.[1] ??
+    root.state?.inheritedHistory?.find(
+      (turn) => turn.owner.turnId === assistant.turnId,
+    )?.completedView;
   if (!view) return null;
   const rows = snapshot.rows.window.slice(0, index + 1);
   // 这些私有对象尚未迁移所有权，拒绝发表不可独立读取的副本。
@@ -103,24 +113,23 @@ async function ownedPost(
   loaded: Loaded,
   selected: Selection,
 ) {
-  const pair = await deps.agentRunMetadata.getOwnedTurnBoundaries(actor, {
-    taskId: loaded.root.id,
-    runId: selected.assistant.turnId,
-  });
-  const post = pair.post;
-  if (
-    post?.context.status !== "captured" ||
-    !post.context.reference ||
-    post.instanceId !== loaded.instanceId ||
-    post.projectId !== loaded.project.projectId ||
-    post.taskId !== loaded.root.id ||
-    post.runId !== selected.assistant.turnId
-  )
-    return null;
-  return { threadId: post.threadId, reference: post.context.reference };
+  const turn = await createCodeUiOwnedHistory(deps).resolve(
+    actor,
+    loaded.root,
+    selected.assistant.turnId,
+  );
+  const post = turn?.context.post;
+  if (post?.status !== "captured" || !post.reference || !turn) return null;
+  return { threadId: turn.context.threadId, reference: post.reference };
 }
 
-function forkState(id: string, path: string, source: Selection) {
+function forkState(
+  id: string,
+  path: string,
+  source: Selection,
+  inherited: CodeUiOwnedHistoryTurn[],
+  turnIds: ReadonlyMap<string, string>,
+) {
   const config = structuredClone(source.view.config);
   delete config.permissionGrant;
   delete config.planTransition;
@@ -132,12 +141,38 @@ function forkState(id: string, path: string, source: Selection) {
   const child = state.snapshots[0];
   if (!child) throw new Error("分叉Task初始化未生成根快照。");
   const rows = structuredClone(source.rows);
-  for (const row of rows) if ("actions" in row) delete row.actions;
+  const entities = new Map(
+    source.rows.flatMap((row, index) =>
+      row.entityId
+        ? [[row.entityId, `${id}:history-row:${index + 1}`] as const]
+        : [],
+    ),
+  );
+  for (const [index, row] of rows.entries()) {
+    delete row.actions;
+    row.turnId = turnIds.get(row.turnId) ?? row.turnId;
+    row.productTurnId = row.turnId;
+    row.rowId = index + 1;
+    row.createdAtSeq = index + 1;
+    row.entityId = `${id}:history-row:${index + 1}`;
+    if (row.kind === "turnHeader" && row.workSegments)
+      for (const [segmentIndex, segment] of row.workSegments.entries()) {
+        segment.segmentId = `${row.turnId}:history-segment:${segmentIndex + 1}`;
+        if (segment.triggerEntityId)
+          segment.triggerEntityId = entities.get(segment.triggerEntityId);
+      }
+    if ("assistantResponseId" in row && row.assistantResponseId)
+      row.assistantResponseId = `${id}:history-response:${row.assistantResponseId}`;
+    if (row.kind === "toolCall")
+      row.toolCallId = `${id}:history-tool:${row.toolCallId}`;
+  }
   child.rows = {
     window: rows,
     totalCount: source.rows.length,
-    firstRowId: source.rows[0]?.rowId ?? null,
+    firstRowId: rows[0]?.rowId ?? null,
   };
+  child.seq = rows.length;
+  state.inheritedHistory = inherited;
   child.plan = structuredClone(source.view.plan);
   // 新Task没有执行过父Task的Run；历史保留上下文占用，不重复计入父消费。
   child.usage.contextWindow = structuredClone(source.view.usage.contextWindow);
@@ -240,7 +275,7 @@ async function prepareFork(
   const selected = selectedTurn(root, operation.target);
   if (
     !selected ||
-    !deps.agentRuns.canCloneContextBranches?.() ||
+    !deps.agentRuns.canCloneContextHistoryBranches?.() ||
     !root.root_directory
   )
     return;
@@ -253,14 +288,27 @@ async function prepareFork(
   if (!post) return;
   const id = randomUUID();
   const threadId = deps.threads.createThreadId();
-  operation.clone = {
+  const resolver = createCodeUiOwnedHistory(deps);
+  const turns: CodeUiOwnedHistoryTurn[] = [];
+  const turnIds = new Map<string, string>();
+  // 维护Run只有marker，没有turnHeader；同样必须持有独立历史身份。
+  for (const turnId of new Set(selected.rows.map((row) => row.turnId))) {
+    const turn = await resolver.resolve(operation.actor, root, turnId);
+    if (!turn)
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "源前缀缺少可信历史归属，未创建分叉。",
+      );
+    turns.push(turn);
+    turnIds.set(turnId, randomUUID());
+  }
+  const mapped = await deps.agentRuns.cloneContextHistoryBranch({
+    sourceThreadId: post.threadId,
     targetThreadId: threadId,
-    reference: await deps.agentRuns.cloneContextBranch({
-      sourceThreadId: post.threadId,
-      targetThreadId: threadId,
-      reference: post.reference,
-    }),
-  };
+    reference: post.reference,
+    boundaries: mappedHistoryBoundaries(turns),
+  });
+  operation.clone = { targetThreadId: threadId, reference: mapped.reference };
   operation.source = {
     scopeGeneration: Number(root.scope_generation),
     branchGeneration: Number(root.branch_generation),
@@ -280,7 +328,23 @@ async function prepareFork(
       additionalDirectories: structuredClone(root.additional_directories ?? []),
       sandboxMode: root.sandbox_mode,
     },
-    state: forkState(id, root.root_directory, selected),
+    state: forkState(
+      id,
+      root.root_directory,
+      selected,
+      rebindOwnedHistory({
+        turns,
+        result: mapped,
+        threadId,
+        owner: {
+          instanceId: operation.loaded.instanceId,
+          projectId: root.project_id,
+          taskId: id,
+        },
+        turnIds,
+      }),
+      turnIds,
+    ),
   };
 }
 
@@ -335,7 +399,7 @@ export function createCodeUiHistoryFork(deps: Deps) {
     async decorate(actor: LocalActor, loaded: Loaded, snapshot: Snapshot) {
       const available =
         !loaded.entry.parent_session_id &&
-        deps.agentRuns.canCloneContextBranches?.();
+        deps.agentRuns.canCloneContextHistoryBranches?.();
       snapshot.availability.fork = available
         ? { allowed: true }
         : { allowed: false, reasonCode: "guard.capabilityUnavailable" };

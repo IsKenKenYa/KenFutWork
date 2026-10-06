@@ -6,6 +6,15 @@ import type { TrustedCodeInput } from "./attachments/input-types.js";
 import { createCodeUiConversation } from "./conversation.js";
 import type { CodeAdmittedInput } from "./input-intents.js";
 import {
+  createCodeUiOwnedHistory,
+  mappedHistoryBoundaries,
+  rebindOwnedHistory,
+} from "./owned-history.js";
+import type {
+  CodeReplayInput,
+  CodeUiOwnedHistoryTurn,
+} from "./owned-history-types.js";
+import {
   CodeUiRepositoryError,
   type CodeUiSessionRecord,
 } from "./repository.js";
@@ -99,7 +108,7 @@ function latestRetryInput(
     (row) => row.kind === "turnHeader" && row.turnId === assistant.turnId,
   );
   if (header?.kind !== "turnHeader" || header.state === "running") return null;
-  const row = [...snapshot.rows.window].reverse().find(
+  const row = snapshot.rows.window.find(
     (row) =>
       row.kind === "userInput" &&
       row.origin === "realUser" &&
@@ -109,27 +118,19 @@ function latestRetryInput(
 }
 
 function validBoundary(
-  loaded: Loaded,
   row: protocol.ConversationSnapshot["rows"]["window"][number],
-  pre: Awaited<
-    ReturnType<CodeUiServiceDeps["agentRunMetadata"]["getOwnedTurnBoundaries"]>
-  >["pre"],
+  turn: CodeUiOwnedHistoryTurn | null,
 ) {
   if (
-    !pre ||
+    !turn ||
     row.kind !== "userInput" ||
-    pre.inputOrigin !== "userInput" ||
-    pre.context.status !== "captured" ||
-    pre.instanceId !== loaded.instanceId ||
-    pre.projectId !== loaded.project.projectId ||
-    pre.taskId !== loaded.root.id ||
-    pre.runId !== row.turnId ||
-    !pre.inputIdentity ||
-    pre.inputIdentity.sourceCommandId !== row.sourceCommandId ||
-    pre.inputIdentity.clientId !== row.clientId
+    turn.context.pre.status !== "captured" ||
+    !turn.canonical ||
+    turn.canonical.intent.sourceCommandId !== row.sourceCommandId ||
+    turn.canonical.intent.clientId !== row.clientId
   )
     return null;
-  return pre;
+  return turn;
 }
 
 function cutLatestTurn(root: CodeUiSessionRecord, turnId: string) {
@@ -145,6 +146,13 @@ function cutLatestTurn(root: CodeUiSessionRecord, turnId: string) {
       "原输入缺少真实轮次边界",
     );
   snapshot.rows.window = snapshot.rows.window.slice(0, start);
+  const visibleTurns = new Set(snapshot.rows.window.map((row) => row.turnId));
+  state.inheritedHistory = (state.inheritedHistory ?? []).filter((turn) =>
+    visibleTurns.has(turn.owner.turnId),
+  );
+  state.completedTurnViews = (state.completedTurnViews ?? []).filter(([id]) =>
+    visibleTurns.has(id),
+  );
   snapshot.rows.totalCount = snapshot.rows.window.length;
   snapshot.rows.firstRowId = snapshot.rows.window[0]?.rowId ?? null;
   snapshot.logEpoch = randomUUID();
@@ -193,6 +201,7 @@ type PreparedEdit = {
   inputs: TrustedCodeInput[];
   previousThreadId: string;
   turnId: string;
+  history: CodeUiOwnedHistoryTurn[];
 };
 type FencedEdit = { clone: ClonedTarget; scope: ExecutionScopeHandle };
 type PublicationPlan = FencedEdit & { prepared: PreparedEdit };
@@ -221,7 +230,9 @@ type EditSource = {
   model: ModelPlan;
   inputs: TrustedCodeInput[];
   previousThreadId: string;
-  canonical?: CodeAdmittedInput;
+  canonical?: CodeReplayInput;
+  history: CodeUiOwnedHistoryTurn[];
+  sourceRunId?: string;
 };
 
 function requireState(root: CodeUiSessionRecord) {
@@ -349,7 +360,7 @@ function selectEditTarget(
     );
     return;
   }
-  if (!deps.agentRuns.canCloneContextBranches?.()) {
+  if (!deps.agentRuns.canCloneContextHistoryBranches?.()) {
     rejectOperation(
       operation,
       "guard.capabilityUnavailable",
@@ -368,14 +379,13 @@ async function prepareEditSource(
   const selected = selectEditTarget(deps, operation, root);
   if (!selected) return;
   const { row, snapshot } = selected;
-  const pair = await deps.agentRunMetadata.getOwnedTurnBoundaries(
-    operation.actor,
-    { taskId: root.id, runId: row.turnId },
+  const resolver = createCodeUiOwnedHistory(deps);
+  const turn = validBoundary(
+    row,
+    await resolver.resolve(operation.actor, root, row.turnId),
   );
-  const pre = validBoundary(operation.loaded, row, pair.pre);
   if (
-    !pre ||
-    pre.context.status !== "captured" ||
+    turn?.context.pre.status !== "captured" ||
     row.sourceCommandId === undefined
   ) {
     rejectOperation(
@@ -385,18 +395,11 @@ async function prepareEditSource(
     );
     return;
   }
-  const canonical =
-    operation.kind === "retryTurn"
-      ? root.state?.inputs?.find(
-          (input) =>
-            input.runId === row.turnId &&
-            input.intent.sourceCommandId === row.sourceCommandId &&
-            input.intent.clientId === row.clientId,
-        )
-      : undefined;
+  const canonical = operation.kind === "retryTurn" ? turn.canonical : undefined;
+  const originalSelection = canonical?.intent.modelSelection;
   if (
     operation.kind === "retryTurn" &&
-    (!canonical?.intent.modelSelection || canonical.intent.kind !== "sendText")
+    (!originalSelection || canonical?.intent.kind !== "sendText")
   ) {
     rejectOperation(
       operation,
@@ -407,36 +410,75 @@ async function prepareEditSource(
   }
   const attachments =
     operation.kind === "retryTurn"
-      ? canonical!.intent.attachments
+      ? (canonical?.intent.attachments ?? [])
       : (operation.payload.attachments ?? row.attachments ?? []);
   const text =
     operation.kind === "retryTurn"
-      ? canonical!.intent.text
+      ? (canonical?.intent.text ?? "")
       : operation.payload.newText;
   if (!text.trim() && !attachments.length) {
     rejectOperation(operation, "guard.emptyInput", "编辑内容不能为空。");
     return;
   }
   const [model, inputs, binding] = await Promise.all([
-    canonical
+    canonical && originalSelection
       ? Promise.resolve({
-          selection: canonical.intent.modelSelection!,
+          selection: originalSelection,
           modelInvocation: structuredClone(canonical.modelInvocation),
         })
       : deps.model(operation.actor, snapshot.config.modelSelection),
     deps.inputs(operation.actor, root.id, attachments),
     deps.threads.resolveOwnedSessionThread(operation.actor, root.id),
   ]);
+  const history = await retainedHistory(
+    resolver,
+    operation.actor,
+    root,
+    snapshot,
+    row.turnId,
+  );
   return {
     row: { ...row, sourceCommandId: row.sourceCommandId },
     snapshot,
-    threadId: pre.threadId,
-    reference: pre.context.reference,
+    threadId: turn.context.threadId,
+    reference: turn.context.pre.reference,
     model,
     inputs,
     previousThreadId: binding.threadId,
     ...(canonical ? { canonical: structuredClone(canonical) } : {}),
+    history,
+    ...(turn.source.runId ? { sourceRunId: turn.source.runId } : {}),
   };
+}
+
+async function retainedHistory(
+  resolver: ReturnType<typeof createCodeUiOwnedHistory>,
+  actor: LocalActor,
+  root: CodeUiSessionRecord,
+  snapshot: protocol.ConversationSnapshot,
+  turnId: string,
+) {
+  const start = snapshot.rows.window.findIndex(
+    (entry) => entry.kind === "turnHeader" && entry.turnId === turnId,
+  );
+  if (start < 0)
+    throw new CodeUiRepositoryError(
+      "command_conflict",
+      "原输入缺少真实轮次边界",
+    );
+  const history: CodeUiOwnedHistoryTurn[] = [];
+  for (const id of new Set(
+    snapshot.rows.window.slice(0, start).map((entry) => entry.turnId),
+  )) {
+    const retained = await resolver.resolve(actor, root, id);
+    if (!retained)
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "保留历史缺少当前Task持有的上下文边界，未发布新分支。",
+      );
+    history.push(retained);
+  }
+  return history;
 }
 
 function createEditedInput(
@@ -455,7 +497,8 @@ function createEditedInput(
       action: operation.kind,
       rootSourceCommandId:
         source.row.rootSourceCommandId ?? source.row.sourceCommandId,
-      sourceRunId: source.row.turnId,
+      sourceTurnId: source.row.turnId,
+      ...(source.sourceRunId ? { sourceRunId: source.sourceRunId } : {}),
     },
     intent: {
       sourceCommandId: operation.envelope.commandId,
@@ -492,15 +535,27 @@ async function cloneAndFenceEdit(
 ): Promise<void> {
   const source = await prepareEditSource(deps, operation, root);
   if (!source) return;
+  const result = await deps.agentRuns.cloneContextHistoryBranch({
+    sourceThreadId: source.threadId,
+    targetThreadId: operation.targetThreadId,
+    reference: source.reference,
+    boundaries: mappedHistoryBoundaries(source.history),
+  });
   const clone: ClonedTarget = {
     threadId: operation.targetThreadId,
-    reference: await deps.agentRuns.cloneContextBranch({
-      sourceThreadId: source.threadId,
-      targetThreadId: operation.targetThreadId,
-      reference: source.reference,
-    }),
+    reference: result.reference,
   };
   operation.progress = { phase: "cloned", clone };
+  const history = rebindOwnedHistory({
+    turns: source.history,
+    result,
+    threadId: clone.threadId,
+    owner: {
+      instanceId: root.instance_id,
+      projectId: root.project_id,
+      taskId: root.id,
+    },
+  });
   const scope = await deps.beginRestore(
     operation.actor,
     root.id,
@@ -516,6 +571,7 @@ async function cloneAndFenceEdit(
     inputs: source.inputs,
     previousThreadId: source.previousThreadId,
     turnId: source.row.turnId,
+    history,
   };
   operation.progress = { phase: "prepared", clone, scope, prepared };
 }
@@ -550,6 +606,7 @@ function decideEditPublication(
     );
   const { prepared } = progress;
   const state = cutLatestTurn(root, prepared.turnId);
+  state.inheritedHistory = prepared.history;
   const snapshot = state.snapshots.find((entry) => entry.sessionId === root.id);
   if (!snapshot) throw new CodeUiRepositoryError("not_found", "根Task快照缺失");
   const host = createCodeUiConversation({
@@ -692,27 +749,23 @@ export function createCodeUiHistoryEdit(deps: Deps) {
         }
       if (
         loaded.entry.parent_session_id ||
-        !deps.agentRuns.canCloneContextBranches?.()
+        !deps.agentRuns.canCloneContextHistoryBranches?.()
       )
         return;
       const row = latestEditableInput(loaded.root, snapshot);
       const retry = latestRetryInput(loaded.root, snapshot);
       if (!row && !retry) return;
       if (retry?.row.sourceCommandId && retry.row.clientId) {
-        const canonical = loaded.root.state?.inputs?.find(
-          (input) =>
-            input.runId === retry.row.turnId &&
-            input.intent.sourceCommandId === retry.row.sourceCommandId &&
-            input.intent.clientId === retry.row.clientId,
+        const turn = await createCodeUiOwnedHistory(deps).resolve(
+          actor,
+          loaded.root,
+          retry.row.turnId,
         );
-        const pair = await deps.agentRunMetadata.getOwnedTurnBoundaries(actor, {
-          taskId: loaded.root.id,
-          runId: retry.row.turnId,
-        });
+        const canonical = turn?.canonical;
         if (
           canonical?.intent.kind === "sendText" &&
           canonical.intent.modelSelection &&
-          validBoundary(loaded, retry.row, pair.pre)
+          validBoundary(retry.row, turn)
         )
           retry.assistant.actions = {
             ...retry.assistant.actions,
@@ -720,11 +773,12 @@ export function createCodeUiHistoryEdit(deps: Deps) {
           };
       }
       if (!row) return;
-      const pair = await deps.agentRunMetadata.getOwnedTurnBoundaries(actor, {
-        taskId: loaded.root.id,
-        runId: row.turnId,
-      });
-      if (validBoundary(loaded, row, pair.pre))
+      const turn = await createCodeUiOwnedHistory(deps).resolve(
+        actor,
+        loaded.root,
+        row.turnId,
+      );
+      if (validBoundary(row, turn))
         row.actions = { ...row.actions, canEdit: true };
     },
     async command(

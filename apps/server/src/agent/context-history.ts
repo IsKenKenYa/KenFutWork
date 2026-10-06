@@ -12,11 +12,28 @@ export interface AgentContextBranchTargetInput {
   targetThreadId: string;
   reference: AgentContextHistoryReference | null;
 }
+export interface AgentContextBranchBoundary {
+  id: string;
+  /** null只由可信消费者提供，表示已捕获的空上下文。 */
+  reference: AgentContextHistoryReference | null;
+}
+export interface AgentContextBranchHistoryCloneInput
+  extends AgentContextBranchCloneInput {
+  boundaries: readonly AgentContextBranchBoundary[];
+}
+export interface AgentContextBranchHistoryCloneResult {
+  reference: AgentContextHistoryReference | null;
+  boundaries: AgentContextBranchBoundary[];
+}
 /** 可信消费者提供owned轮次引用；adapter保留完整原生状态，产品不解码opaque key。 */
 export interface AgentContextBranchService {
   clone(
     input: AgentContextBranchCloneInput,
   ): Promise<AgentContextHistoryReference | null>;
+  /** 一次复制祖先链并重绑定边界；缺省表示adapter不支持独立继承历史。 */
+  cloneHistory?(
+    input: AgentContextBranchHistoryCloneInput,
+  ): Promise<AgentContextBranchHistoryCloneResult>;
   /** 只能清理本provider本次创建、尚未发布且引用匹配的目标。 */
   discard(input: AgentContextBranchTargetInput): Promise<void>;
   /** 产品事务发布成功后撤销该目标的清理所有权。 */

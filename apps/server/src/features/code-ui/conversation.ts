@@ -60,6 +60,7 @@ export interface CodeUiConversationState {
   planningEpoch?: number;
   approvedPlan?: CodeApprovedPlan;
   completedTurnViews?: Array<[string, CodeUiCompletedTurnView]>;
+  inheritedHistory?: import("./owned-history-types.js").CodeUiOwnedHistoryTurn[];
 }
 
 function cancelToolWaits(snapshot: Snapshot, at: number) {
@@ -302,6 +303,7 @@ export function createCodeUiConversation(input: {
   const completedTurnViews = new Map(
     structuredClone(input.state?.completedTurnViews ?? []),
   );
+  const inheritedHistory = structuredClone(input.state?.inheritedHistory ?? []);
   const planningEpoch = input.state?.planningEpoch ?? 0;
   const approvedPlan = input.state?.approvedPlan;
   const config = protocol.sessionConfigStateSchema.parse(input.config);
@@ -406,6 +408,7 @@ export function createCodeUiConversation(input: {
         runUsage: [...runUsage],
         childRunUsage: [...childRunUsage],
         completedTurnViews: [...completedTurnViews],
+        inheritedHistory,
         planningEpoch,
         ...(approvedPlan ? { approvedPlan } : {}),
         ...(inputOwner ? { inputOwner } : {}),

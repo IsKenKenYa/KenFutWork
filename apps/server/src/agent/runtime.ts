@@ -704,6 +704,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     canCloneContextBranches(): boolean {
       return options.contextBranchProvider !== undefined;
     },
+    canCloneContextHistoryBranches(): boolean {
+      return options.contextBranchProvider?.cloneHistory !== undefined;
+    },
+    async cloneContextHistoryBranch(
+      input: import("./context-history.js").AgentContextBranchHistoryCloneInput,
+    ) {
+      if (!options.contextBranchProvider?.cloneHistory)
+        throw new Error("当前Agent未装配独立历史边界映射能力。");
+      return options.contextBranchProvider.cloneHistory(input);
+    },
     async cloneContextBranch(input: AgentContextBranchCloneInput) {
       if (!options.contextBranchProvider)
         throw new Error("当前Agent未装配上下文分支能力。");

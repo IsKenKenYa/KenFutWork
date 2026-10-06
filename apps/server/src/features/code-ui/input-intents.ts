@@ -15,7 +15,8 @@ export interface CodeAdmittedInput {
   historyOf?: {
     action: "editUserQuery" | "retryTurn";
     rootSourceCommandId: string;
-    sourceRunId: string;
+    sourceTurnId: string;
+    sourceRunId?: string;
   };
 }
 

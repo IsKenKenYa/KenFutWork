@@ -6,7 +6,10 @@ import type {
   PendingWrite,
 } from "@langchain/langgraph-checkpoint";
 import type {
+  AgentContextBranchBoundary,
   AgentContextBranchCloneInput,
+  AgentContextBranchHistoryCloneInput,
+  AgentContextBranchHistoryCloneResult,
   AgentContextBranchService,
   AgentContextBranchTargetInput,
   AgentContextHistoryReference,
@@ -94,6 +97,35 @@ async function assertNewTarget(
     throw new Error("上下文目标thread已存在，不能覆盖。");
 }
 
+function rebaseBoundaries(
+  input: AgentContextBranchHistoryCloneInput,
+  branch: NativeCheckpointTuple[],
+): AgentContextBranchBoundary[] {
+  const checkpointIds = new Set(branch.map((tuple) => tuple.checkpoint.id));
+  const boundaryIds = new Set<string>();
+  return input.boundaries.map((boundary) => {
+    if (!boundary.id.trim()) throw new Error("上下文历史边界id不能为空。");
+    if (boundaryIds.has(boundary.id))
+      throw new Error("上下文历史边界id不能重复。");
+    boundaryIds.add(boundary.id);
+    if (boundary.reference === null) return { ...boundary };
+    const config = sourceConfig({ ...input, reference: boundary.reference });
+    if (!config) throw new Error("非空上下文历史边界缺少原生引用。");
+    const checkpointId = assertSourceConfig(config, input.sourceThreadId);
+    if (!checkpointIds.has(checkpointId))
+      throw new Error("上下文历史边界不在所选上下文的祖先链。");
+    const reference = encodeNativeContextReference(input.targetThreadId, {
+      configurable: {
+        thread_id: input.targetThreadId,
+        checkpoint_ns: "",
+        checkpoint_id: checkpointId,
+      },
+    });
+    if (!reference) throw new Error("上下文历史边界无法重绑定到目标thread。");
+    return { id: boundary.id, reference };
+  });
+}
+
 async function copyPendingWrites(
   checkpointer: BaseCheckpointSaver,
   config: RunnableConfig,
@@ -163,59 +195,67 @@ export function createNativeContextBranchService(options: {
       throw new Error("目标不属于本次尚未发布的上下文分支。");
     return lease;
   };
+  const cloneHistory = async (
+    input: AgentContextBranchHistoryCloneInput,
+  ): Promise<AgentContextBranchHistoryCloneResult> => {
+    const source = sourceConfig(input);
+    if (cloning.has(input.targetThreadId) || leases.has(input.targetThreadId))
+      throw new Error("上下文目标thread正在使用，不能重复克隆。");
+    cloning.add(input.targetThreadId);
+    let lease: BranchLease | undefined;
+    try {
+      const persistence =
+        await options.agentPersistenceService.getPersistence();
+      if (!persistence) throw new Error("原生上下文持久化能力未装配。");
+      const branch = source
+        ? await readBranch(
+            persistence.checkpointer,
+            source,
+            input.sourceThreadId,
+          )
+        : [];
+      // 全部引用在复制前验证；每个边界只重绑定key，不再次复制其prefix。
+      const boundaries = rebaseBoundaries(input, branch);
+      await assertNewTarget(persistence.checkpointer, input.targetThreadId);
+      lease = {
+        checkpointer: persistence.checkpointer,
+        reference: null,
+        writeAttempted: false,
+      };
+      leases.set(input.targetThreadId, lease);
+      if (source) {
+        const reference = await writeBranch(
+          branch,
+          input.targetThreadId,
+          lease,
+        );
+        lease.reference = { ...reference };
+        return { reference, boundaries };
+      }
+      return { reference: null, boundaries };
+    } catch (error) {
+      if (lease) {
+        try {
+          if (lease.writeAttempted)
+            await lease.checkpointer.deleteThread(input.targetThreadId);
+          leases.delete(input.targetThreadId);
+        } catch (cleanupError) {
+          throw new AggregateError(
+            [error, cleanupError],
+            "上下文分支创建失败，私有目标清理也失败。",
+          );
+        }
+      }
+      throw error;
+    } finally {
+      cloning.delete(input.targetThreadId);
+    }
+  };
   return {
     async clone(input) {
-      const source = sourceConfig(input);
-      if (cloning.has(input.targetThreadId) || leases.has(input.targetThreadId))
-        throw new Error("上下文目标thread正在使用，不能重复克隆。");
-      cloning.add(input.targetThreadId);
-      let lease: BranchLease | undefined;
-      try {
-        const persistence =
-          await options.agentPersistenceService.getPersistence();
-        if (!persistence) throw new Error("原生上下文持久化能力未装配。");
-        const branch = source
-          ? await readBranch(
-              persistence.checkpointer,
-              source,
-              input.sourceThreadId,
-            )
-          : [];
-        await assertNewTarget(persistence.checkpointer, input.targetThreadId);
-        lease = {
-          checkpointer: persistence.checkpointer,
-          reference: null,
-          writeAttempted: false,
-        };
-        leases.set(input.targetThreadId, lease);
-        if (source) {
-          const reference = await writeBranch(
-            branch,
-            input.targetThreadId,
-            lease,
-          );
-          lease.reference = { ...reference };
-          return reference;
-        }
-        return null;
-      } catch (error) {
-        if (lease) {
-          try {
-            if (lease.writeAttempted)
-              await lease.checkpointer.deleteThread(input.targetThreadId);
-            leases.delete(input.targetThreadId);
-          } catch (cleanupError) {
-            throw new AggregateError(
-              [error, cleanupError],
-              "上下文分支创建失败，私有目标清理也失败。",
-            );
-          }
-        }
-        throw error;
-      } finally {
-        cloning.delete(input.targetThreadId);
-      }
+      return (await cloneHistory({ ...input, boundaries: [] })).reference;
     },
+    cloneHistory,
     async discard(input) {
       const lease = ownedLease(input);
       cloning.add(input.targetThreadId);
