@@ -126,6 +126,112 @@ describe.skipIf(!enabled).each(["code", "design"] as const)(
 );
 
 describe.skipIf(!enabled)("Design 真实并发设置写入", () => {
+  it.each([
+    { collection: "commands", label: "命令" },
+    { collection: "hooks", label: "钩子" },
+  ] as const)(
+    "$label 保存与早索引回包交错后仍显示真实持久化内容",
+    async ({ collection, label }) => {
+      const original = await server.inspect();
+      const entry = await mountSurface("design", server);
+      await entry.open();
+      await assertDisplayed(original.values);
+      fireEvent.click(screen.getByRole("button", { name: "索引库" }));
+      const gate = `index-before-${collection}-save`;
+      await server.gate(gate, "PATCH", {
+        phase: "response",
+        match: {
+          key: "codeIndexAutoNewFolder",
+          value: !original.indexValues.autoNewFolder,
+        },
+      });
+      fireEvent.click(screen.getByRole("switch", { name: "索引新文件夹" }));
+      await server.waitGate(gate, "captured", 200);
+      fireEvent.click(screen.getByRole("button", { name: label }));
+      fireEvent.click(screen.getByRole("button", { name: `新增${label}` }));
+      const name = "review-fifo";
+      const prompt = "Review {{args}}";
+      const command = "echo saved-hook";
+      const inputName = collection === "commands" ? "命令名 1" : "钩子命令 1";
+      const expectedInput = collection === "commands" ? name : command;
+      const expected =
+        collection === "commands"
+          ? [{ name, description: "实际保存", prompt }]
+          : [{ event: "turn-start", command }];
+      if (collection === "commands") {
+        fireEvent.change(screen.getByRole("textbox", { name: "命令名 1" }), {
+          target: { value: name },
+        });
+        fireEvent.change(screen.getByRole("textbox", { name: "命令说明 1" }), {
+          target: { value: "实际保存" },
+        });
+        fireEvent.change(
+          screen.getByRole("textbox", { name: "命令提示词 1" }),
+          { target: { value: prompt } },
+        );
+      } else {
+        fireEvent.change(screen.getByRole("combobox", { name: "钩子时机 1" }), {
+          target: { value: "turn-start" },
+        });
+        fireEvent.change(screen.getByRole("textbox", { name: "钩子命令 1" }), {
+          target: { value: command },
+        });
+      }
+      fireEvent.click(screen.getByRole("button", { name: `保存${label}` }));
+      // 旧直连保存可先真实提交；新FIFO等待早响应放行，均不伪造结果。
+      const deadline = Date.now() + 1_500;
+      while (Date.now() < deadline) {
+        const current = await server.inspect();
+        if (
+          current.requests
+            .slice(original.requests.length)
+            .some(
+              (request) =>
+                request.patchKeys?.includes(collection) &&
+                request.status === 200,
+            )
+        )
+          break;
+        await delay(25);
+      }
+      await act(async () => {
+        await server.release(gate);
+        await server.waitGate(gate, "delivered", 200);
+        await delay(100);
+      });
+      await waitFor(
+        async () => {
+          const current = await server.inspect();
+          expect(current.collections[collection]).toEqual(expected);
+          expect(screen.getByRole("textbox", { name: inputName })).toHaveValue(
+            expectedInput,
+          );
+          if (collection === "commands")
+            expect(
+              screen.getByRole("textbox", { name: "命令提示词 1" }),
+            ).toHaveValue(prompt);
+          else
+            expect(
+              screen.getByRole("combobox", { name: "钩子时机 1" }),
+            ).toHaveValue("turn-start");
+        },
+        { timeout: UI_TIMEOUT_MS },
+      );
+      await entry.close();
+      await entry.open();
+      fireEvent.click(screen.getByRole("button", { name: label }));
+      expect(
+        await screen.findByRole(
+          "textbox",
+          { name: inputName },
+          { timeout: UI_TIMEOUT_MS },
+        ),
+      ).toHaveValue(expectedInput);
+      await entry.close();
+    },
+    90_000,
+  );
+
   it.each(["commands", "hooks"] as const)(
     "无关索引回包保留%s的未保存草稿",
     async (collection) => {

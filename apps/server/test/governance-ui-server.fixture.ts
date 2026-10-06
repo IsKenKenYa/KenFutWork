@@ -381,6 +381,7 @@ async function start() {
           enabled: settings.codeIndexEnabled,
           autoNewFolder: settings.codeIndexAutoNewFolder,
         },
+        collections: { commands: settings.commands, hooks: settings.hooks },
         stored: {
           subagentMaxDepth: depth,
           subagentMaxConcurrency: concurrency,

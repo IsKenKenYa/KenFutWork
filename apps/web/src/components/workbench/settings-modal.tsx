@@ -253,6 +253,22 @@ export function SettingsModal({
     [saveSettings],
   );
 
+  const handleCommandsSave = useCallback(
+    async (next: InstanceSettings["commands"]) => {
+      const saved = await saveSettings({ commands: next });
+      return saved?.commands ?? null;
+    },
+    [saveSettings],
+  );
+
+  const handleHooksSave = useCallback(
+    async (next: InstanceSettings["hooks"]) => {
+      const saved = await saveSettings({ hooks: next });
+      return saved?.hooks ?? null;
+    },
+    [saveSettings],
+  );
+
   const stableFetchModels = useCallback(
     () => fetchModels(getToken() ?? undefined),
     [getToken],
@@ -373,16 +389,11 @@ export function SettingsModal({
               />
             ) : activeTab === "commands" ? (
               <CommandsSection
-                accessToken={token}
                 commands={commands}
-                onSaved={setCommands}
+                onSave={handleCommandsSave}
               />
             ) : activeTab === "hooks" ? (
-              <HooksSection
-                accessToken={token}
-                hooks={hooks}
-                onSaved={setHooks}
-              />
+              <HooksSection hooks={hooks} onSave={handleHooksSave} />
             ) : activeTab === "apiTokens" ? (
               <LocalAccessClientsSection />
             ) : activeTab === "subagents" ? (

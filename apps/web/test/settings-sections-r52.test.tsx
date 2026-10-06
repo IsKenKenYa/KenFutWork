@@ -266,16 +266,13 @@ describe("插件市场：使用态", () => {
  */
 describe("设置 → 钩子", () => {
   it("空表：给示例；新增后可写时机与命令并整表保存", async () => {
-    updateInstanceSettings.mockResolvedValue({
-      settings: {
-        hooks: [{ event: "turn-end", command: "npx biome check ." }],
-      },
-    });
-    const onSaved = vi.fn();
+    const onSave = vi
+      .fn()
+      .mockResolvedValue([{ event: "turn-end", command: "npx biome check ." }]);
     const { HooksSection } = await import(
       "../src/components/workbench/hooks-section"
     );
-    render(<HooksSection accessToken="tok" hooks={[]} onSaved={onSaved} />);
+    render(<HooksSection hooks={[]} onSave={onSave} />);
     expect(screen.getByText(/还没有钩子/)).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: /新增钩子/ }));
@@ -285,28 +282,28 @@ describe("设置 → 钩子", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "保存钩子" }));
 
-    expect(updateInstanceSettings).toHaveBeenCalledWith("tok", {
-      hooks: [{ event: "turn-end", command: "npx biome check ." }],
-    });
-    expect(onSaved).toHaveBeenCalled();
+    expect(onSave).toHaveBeenCalledWith([
+      { event: "turn-end", command: "npx biome check ." },
+    ]);
   });
 
   it("空命令：就地报错，不发请求", async () => {
+    const onSave = vi.fn();
     const { HooksSection } = await import(
       "../src/components/workbench/hooks-section"
     );
-    render(<HooksSection accessToken="tok" hooks={[]} onSaved={() => {}} />);
+    render(<HooksSection hooks={[]} onSave={onSave} />);
     await userEvent.click(screen.getByRole("button", { name: /新增钩子/ }));
     await userEvent.click(screen.getByRole("button", { name: "保存钩子" }));
     expect(screen.getByText(/还没写命令/)).toBeVisible();
-    expect(updateInstanceSettings).not.toHaveBeenCalled();
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it("边界写在页面上：只有你能配置 / 在工作目录里跑 / 失败不影响本轮", async () => {
     const { HooksSection } = await import(
       "../src/components/workbench/hooks-section"
     );
-    render(<HooksSection accessToken="tok" hooks={[]} onSaved={() => {}} />);
+    render(<HooksSection hooks={[]} onSave={vi.fn()} />);
     expect(screen.getByText(/只有你能配置/)).toBeVisible();
     expect(screen.getByText(/工作目录/)).toBeVisible();
     expect(screen.getByText(/失败也不影响本轮对话/)).toBeVisible();

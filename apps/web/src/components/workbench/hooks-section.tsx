@@ -3,7 +3,6 @@
 import type { InstanceSettings } from "@kenfutwork/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { updateInstanceSettings } from "@/lib/server-api";
 
 /**
  * 设置 → 钩子（R5-2「钩子」条目）。
@@ -26,13 +25,13 @@ const withRowIds = (hooks: InstanceSettings["hooks"]): HookRow[] =>
   hooks.map((hook) => ({ id: crypto.randomUUID(), ...hook }));
 
 export function HooksSection({
-  accessToken,
   hooks,
-  onSaved,
+  onSave,
 }: {
-  accessToken: string | null;
   hooks: InstanceSettings["hooks"];
-  onSaved: (next: InstanceSettings["hooks"]) => void;
+  onSave: (
+    next: InstanceSettings["hooks"],
+  ) => Promise<InstanceSettings["hooks"] | null>;
 }) {
   const [rows, setRows] = useState<HookRow[]>(() => withRowIds(hooks));
   const [saving, setSaving] = useState(false);
@@ -53,14 +52,14 @@ export function HooksSection({
     }
     setSaving(true);
     try {
-      const result = await updateInstanceSettings(accessToken, {
-        hooks: rows.map((row) => ({
+      const saved = await onSave(
+        rows.map((row) => ({
           event: row.event,
           command: row.command.trim(),
         })),
-      });
-      onSaved(result.settings.hooks);
-      setRows(withRowIds(result.settings.hooks));
+      );
+      if (!saved) throw new Error("设置页面已变化，请重新加载后保存。");
+      setRows(withRowIds(saved));
       setFeedback({ type: "success", message: "已保存" });
     } catch (error) {
       setFeedback({

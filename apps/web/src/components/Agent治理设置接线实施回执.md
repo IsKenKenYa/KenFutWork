@@ -47,4 +47,16 @@ pnpm typecheck
 
 浏览器夹具无 WS upgrade，Design 显示断线重连，因此只证明本轮设置呈现/持久化与主区画布不变量，不计完整画布同步、生成、全场景视觉或原 ZCode 全操作验收。
 
-命令/钩子仍直连原 update API，尚未加入共享写屏障。下一独立切片将其保存 callback 接到同一 controller，并用真实迟到回包验证持久值与页面收敛；不以本轮草稿保留代替该验收。巨大历史/overflow、主子规划与冷恢复、媒体/文件/三平台、Task Work/MCP/插件发现等仍在完整 Goal 内。
+第一批提交 `cf60700e` 时命令/钩子仍直连原 update API，按下一独立切片处理。巨大历史/overflow、主子规划与冷恢复、媒体/文件/三平台、Task Work/MCP/插件发现等仍在完整 Goal 内。
+
+## 2026-10-06 命令与钩子保存消费者收口
+
+两页保存现在只调用由 SettingsModal 注入的 `onSave`；SettingsModal 经同一实例 controller 部分 PATCH，再将实际响应数组返回表单。移除表单直连 API、凭据参数与裸 `onSaved` setter。原整表替换、空表清空、trim 和校验规则保留；scope 变化的 null 结果拒绝成功提示，合法空数组仍可成功。
+
+- `15032` 命令真实 RED：公开 GET 已持久化新命令，早索引完整回包却抹掉页面；`19370` GREEN。首 `90706` 的持久化/当前页已通过，但重开测试未等实际 GET 导致失败，补等待后通过，未伪称第二个生产错误。
+- `12758` 钩子同族真实 RED → `48837` 两消费者 GREEN。首两次 `-t` 未匹配 Vitest 带引号的参数化标题，全 skip 不计 RED/GREEN；读取 `vitest list` 的实际名称后才执行。
+- `63255` 最终 16 条真实 HTTP/PG/UI 场景全部通过：两页保存后读回与重开、原 14 条治理/并发/生命周期/草稿场景保持。
+- `7148` 最终完整 `pnpm test` 实际退出 0，16/16（14 缓存），server 2010/Web 460 通过；默认 server 214/Web 16 skip 不计能力。`72488` 全 types 13/13 实际退出 0（11 缓存，server/web 实跑）；8 本域源码 Biome 实际退出 0。
+- 测试 `collections` 从原公开 HTTP schema 的 commands/hooks 投影，不合成响应、不调用新业务实现计算期望，也不执行配置的命令或钩子。原表单测试转为验证公开保存 callback，实际存储/时序由上述真实回归承接。
+
+本片未改 HTTP 契约，无 OpenAPI/Apifox 更新；未改原 ZCode 字节或 Design 画布入口。共享屏障的范围限于已接线的治理、模型、索引、命令与钩子消费者，不宣称其余独立设置面都迁移完毕。

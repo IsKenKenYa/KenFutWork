@@ -1,3 +1,4 @@
+import type { InstanceSettings } from "@kenfutwork/shared";
 import type { AgentGovernanceSettings } from "../../src/lib/agent-governance-settings.js";
 
 export type Values = AgentGovernanceSettings;
@@ -24,6 +25,7 @@ export type Inspection = {
   instanceId: string;
   values: Values;
   indexValues: { enabled: boolean; autoNewFolder: boolean };
+  collections: Pick<InstanceSettings, "commands" | "hooks">;
   stored: Partial<Record<keyof Values, number | boolean | null>>;
   gates: GateSummary[];
   requests: RequestSummary[];
