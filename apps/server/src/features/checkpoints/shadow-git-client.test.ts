@@ -131,14 +131,26 @@ describe("影子 git（Code 模式检查点核心）", () => {
   });
 
   describe("commitSnapshot", () => {
-    it("空目录（尚未有提交）返回 null，不产生提交", async () => {
+    it("空目录首次产生真实空树baseline，之后新文件可与pre比较，无变化不重复提交", async () => {
       const scope = makeScope();
       await setup(scope);
       expect(await client.hasCommits(scope)).toBe(false);
-      expect(await client.commitSnapshot({ ...scope, message: "空" })).toBe(
+      const baseline = await client.commitSnapshot({ ...scope, message: "空" });
+      expect(baseline?.sha).toMatch(/^[0-9a-f]{40}$/);
+      expect(await client.hasCommits(scope)).toBe(true);
+      if (!baseline) throw new Error("首次空树缺少真实baseline");
+      expect(await client.commitSnapshot({ ...scope, message: "仍然空" })).toBe(
         null,
       );
-      expect(await client.hasCommits(scope)).toBe(false);
+      writeFileSync(join(scope.workTree, "new.txt"), "new\n", "utf8");
+      const after = await client.commitSnapshot({
+        ...scope,
+        message: "新文件",
+      });
+      if (!after) throw new Error("新文件缺少真实post");
+      expect(
+        await client.numstat({ ...scope, from: baseline.sha, to: after.sha }),
+      ).toEqual([{ path: "new.txt", added: 1, deleted: 0 }]);
     });
 
     it("写入文件后返回 sha（无提交的目录也必须产出 baseline 提交）", async () => {

@@ -196,9 +196,9 @@ export function createShadowGitClient(deps: {
   };
 
   /**
-   * 打一个检查点：暂存全部 → 无可提交内容则跳过 → 提交并返回 HEAD sha。
+   * 打一个检查点：暂存全部 → 建立真实基线或提交变化 → 返回 HEAD sha。
    *
-   * - 空目录（还没有 baseline 的素材）返回 null：没有内容的「首次提交」不该发生；
+   * - 空目录首次建立空树 baseline：首轮新文件也有可恢复的「不存在」快照；
    * - 仓库已有提交且无变化也返回 null：跳过空检查点；
    * - 仓库尚无提交且目录非空：必须提交（这就是 baseline）。
    *
@@ -212,7 +212,8 @@ export function createShadowGitClient(deps: {
     if (staged.code > 1) {
       throw new Error(staged.stderr.trim() || "读取影子仓库暂存变化失败。");
     }
-    if (staged.code === 0) {
+    const emptyBaseline = staged.code === 0;
+    if (emptyBaseline && (await hasCommits(input))) {
       return null;
     }
     const committed = await exec(
@@ -222,6 +223,7 @@ export function createShadowGitClient(deps: {
         "-c",
         "user.email=checkpoint@kenfutwork.local",
         "commit",
+        ...(emptyBaseline ? ["--allow-empty"] : []),
         "-m",
         input.message,
       ],

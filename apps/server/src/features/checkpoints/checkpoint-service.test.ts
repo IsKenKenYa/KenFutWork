@@ -405,9 +405,18 @@ describe("Task 检查点", () => {
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
   });
-  it("外Task检查点拒绝，空目录无快照", async () => {
+  it("外Task检查点拒绝，空目录有零变更基线且无变化不重复快照", async () => {
     const { scope, service, repository } = await world();
-    expect(await service.beforeTurn({ scope, actor, runId: "r" })).toBeNull();
+    const baseline = await service.beforeTurn({ scope, actor, runId: "r" });
+    expect(baseline).toMatchObject({
+      taskId: scope.describe().taskId,
+      filesChanged: 0,
+      insertions: 0,
+      deletions: 0,
+    });
+    expect(
+      await service.beforeTurn({ scope, actor, runId: "next" }),
+    ).toBeNull();
     await repository.insert({
       id: "other",
       instanceId: INSTANCE_ID,
