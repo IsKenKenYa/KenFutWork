@@ -128,7 +128,9 @@
         "apps/server/src/config/env.ts",
         "apps/server/src/desktop/paths.ts",
         "apps/desktop/src-tauri/src/server_handle.rs",
-        "apps/server/src/features/computer-use/desktop.app.integration.test.ts"
+        "apps/server/src/features/computer-use/desktop.app.integration.test.ts",
+        "apps/server/src/ws/logger.ts",
+        "apps/server/src/ws/logger-packaged.test.ts"
       ],
       "inExamples": true,
       "status": "active",
