@@ -266,7 +266,7 @@ it.skipIf(!enabled)(
             ).control.phase,
           { timeout: AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs * 2 },
         )
-        .toBe("idle");
+        .toBe("completedSuccess");
       const final = protocol.conversationSnapshotSchema.parse(
         await host.snapshot(),
       );
