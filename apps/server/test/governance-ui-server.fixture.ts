@@ -388,6 +388,7 @@ async function start() {
           llmRequestMaxRetries: retries,
           llmInfiniteRetry: infinite,
           executeTimeoutMs: timeout,
+          agentStreamIdleTimeoutMs: governance.agentStreamIdleTimeoutMs ?? null,
           subagentMaxContinuations: continuations,
           compactKeepMessages: governance.compactKeepMessages ?? null,
           compactFallbackKeepMessages:

@@ -60,15 +60,10 @@ export type ServerEnv = {
   /** 插件安装目录；本机入口统一派生为数据根/plugins，底层测试可显式注入。 */
   pluginsDir?: string;
   /**
-   * agent 治理五项的 env 兜底（DEC-18；变量名清单与解析见 shared `governance.ts`）。
-   * 优先级 = workspace_settings 库值 ?? 本字段 ?? DEFAULTS；非法值已被忽略。
+   * agent 治理的 env 兜底（DEC-18；变量名清单与解析见 shared `governance.ts`）。
+   * 优先级 = instance_settings 库值 ?? 本字段 ?? DEFAULTS；非法值已被忽略。
    */
   agentGovernance?: AgentGovernanceOverrides;
-  /**
-   * 模型流空闲看门狗阈值（毫秒，`KENFUTWORK_AGENT_STREAM_IDLE_TIMEOUT_MS`）。
-   * 上游停滞超过该时长即按有界失败终止本轮（缺省 180s，见 stream-idle-guard）。
-   */
-  agentStreamIdleTimeoutMs?: number;
   /**
    * flow 宿主适配层共享密钥（`KENFUTWORK_FLOW_EMBED_SECRET`）。
    * 与 flow 侧 `HOST_SHARED_SECRET` 成对：flow 网关凭它调 `/api/flow/host/*`，
@@ -364,11 +359,6 @@ export function loadServerEnv(
       openAIApiKey,
     });
 
-  const agentStreamIdleTimeoutMs = parsePositiveInt(
-    overrides.agentStreamIdleTimeoutMs ??
-      source.KENFUTWORK_AGENT_STREAM_IDLE_TIMEOUT_MS,
-  );
-
   const agentGovernance =
     overrides.agentGovernance ?? resolveGovernanceEnvOverrides(source);
 
@@ -377,7 +367,6 @@ export function loadServerEnv(
       overrides.agentBackendMode ??
       parseAgentBackendMode(source.KENFUTWORK_AGENT_BACKEND_MODE),
     agentModel: resolvedAgentModel,
-    ...(agentStreamIdleTimeoutMs ? { agentStreamIdleTimeoutMs } : {}),
     port:
       overrides.port ?? parsePort(source.KENFUTWORK_SERVER_PORT ?? source.PORT),
     serverHost: overrides.serverHost ?? source.HOST ?? DEFAULT_SERVER_HOST,

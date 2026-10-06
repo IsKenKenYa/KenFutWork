@@ -19,6 +19,25 @@ export async function installCodePublicHostDom() {
     pretendToBeVisual: true,
   });
   const browserWindow = dom.window;
+  // JSDOM未实现PointerEvent时，只补鼠标型指针字段；产品PointerSensor保持原实现。
+  const pointerEvent =
+    browserWindow.PointerEvent ??
+    class extends browserWindow.MouseEvent {
+      readonly pointerId: number;
+      readonly isPrimary: boolean;
+      readonly pointerType: string;
+      constructor(type: string, init: PointerEventInit = {}) {
+        super(type, init);
+        this.pointerId = init.pointerId ?? 1;
+        this.isPrimary = init.isPrimary ?? true;
+        this.pointerType = init.pointerType ?? "mouse";
+      }
+    };
+  Object.defineProperty(browserWindow, "PointerEvent", {
+    configurable: true,
+    value: pointerEvent,
+  });
+  vi.stubGlobal("PointerEvent", pointerEvent);
   for (const key of [
     "window",
     "document",
@@ -27,6 +46,7 @@ export async function installCodePublicHostDom() {
     "HTMLElement",
     "HTMLButtonElement",
     "HTMLInputElement",
+    "HTMLFormElement",
     "SVGElement",
     "Node",
     "NodeFilter",

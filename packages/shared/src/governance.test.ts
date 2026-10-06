@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { instanceSettingsSchema } from "./contracts.js";
 
 import {
   AGENT_GOVERNANCE_DEFAULTS,
@@ -7,9 +8,20 @@ import {
   clampSubagentMaxConcurrency,
   clampSubagentMaxDepth,
   resolveGovernanceEnvOverrides,
+  resolveGovernanceNumber,
 } from "./governance.js";
 
 describe("agent 治理默认值与护栏（DEC-17/DEC-18）", () => {
+  it("模型无输出计时支持显式0关闭、库优先与严格env解析，非法值不关闭保护", () => {
+    expect(instanceSettingsSchema.parse({ defaultModel: "fixture" }).agentStreamIdleTimeoutMs).toBe(180_000);
+    expect(resolveGovernanceEnvOverrides({ KENFUTWORK_AGENT_STREAM_IDLE_TIMEOUT_MS: "0" })).toEqual({ agentStreamIdleTimeoutMs: 0 });
+    for (const value of ["-1", "abc", "250ms", "1.5", ""]) {
+      expect(resolveGovernanceEnvOverrides({ KENFUTWORK_AGENT_STREAM_IDLE_TIMEOUT_MS: value })).toEqual({});
+    }
+    expect(resolveGovernanceNumber("agentStreamIdleTimeoutMs", 0, { agentStreamIdleTimeoutMs: 500 })).toBe(0);
+    expect(resolveGovernanceNumber("agentStreamIdleTimeoutMs", undefined, { agentStreamIdleTimeoutMs: 500 })).toBe(500);
+    expect(instanceSettingsSchema.safeParse({ defaultModel: "fixture", agentStreamIdleTimeoutMs: -1 }).success).toBe(false);
+  });
   it("DEFAULTS 与用户拍板档一致", () => {
     expect(AGENT_GOVERNANCE_DEFAULTS).toMatchObject({
       subagentMaxDepth: 1,

@@ -164,6 +164,7 @@ export async function* adaptDeepAgentStream(
   /** Tracks active sub-agent parent runs so we can detect nested inner tools. */
   const activeSubAgentRuns = new Set<string>();
   const usageTracker = createModelCallUsageTracker();
+  const activeModelRuns = new Set<string>();
   /**
    * 派发栈（DEC-19 兜底归因）：metadata 传播在 createAgent 嵌套链上不可靠
    * （真机实测子代理嵌套工具事件缺 lc_agent_name）。前台派发是栈式嵌套——
@@ -196,6 +197,7 @@ export async function* adaptDeepAgentStream(
   try {
     // 空闲看门狗：上游停滞不再是无限挂起，且中止信号在等待期即可生效
     for await (const rawEvent of withStreamIdleGuard(options.stream, {
+      idleEnabled: () => activeModelRuns.size > 0,
       ...(options.idleTimeoutMs === undefined
         ? {}
         : { idleMs: options.idleTimeoutMs }),
@@ -214,6 +216,10 @@ export async function* adaptDeepAgentStream(
       if (options.canonicalToolEvents && rawEvent.event.startsWith("on_tool_"))
         continue;
       const evt = canonicalToolEvent(rawEvent) ?? rawEvent;
+      if (evt.event === "on_chat_model_start")
+        activeModelRuns.add(evt.run_id ?? "anonymous-model");
+      if (evt.event === "on_chat_model_end" || evt.event === "on_chat_model_error")
+        activeModelRuns.delete(evt.run_id ?? "anonymous-model");
       if (
         evt.event === "on_custom_event" &&
         evt.name === "kenfutwork.compaction.applied"

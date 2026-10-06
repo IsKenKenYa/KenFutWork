@@ -468,10 +468,10 @@
     },
     "KENFUTWORK_AGENT_STREAM_IDLE_TIMEOUT_MS": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": ["packages/shared/src/governance.ts"],
       "inExamples": true,
       "status": "active",
-      "note": "上游停滞看门狗"
+      "note": "实例治理的模型请求无输出计时兜底；0关闭，不含工具及人审等待"
     },
     "KENFUTWORK_AUTO_COMPACT_TRIGGER_TOKENS": {
       "surface": "server",

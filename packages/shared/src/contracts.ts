@@ -274,6 +274,8 @@ export const instanceSettingsSchema = z.object({
   llmInfiniteRetry: governanceBoolSetting("llmInfiniteRetry"),
   /** Code 模式 execute 命令超时（毫秒；下限 5s 上限 30min）。 */
   executeTimeoutMs: governanceSetting("executeTimeoutMs"),
+  /** 模型请求无输出上限；工具与人审等待分别治理，0关闭。 */
+  agentStreamIdleTimeoutMs: governanceSetting("agentStreamIdleTimeoutMs"),
   /** Code 宿主通知通道重连间隔；与执行超时分别治理。 */
   codeUiReconnectDelayMs: governanceSetting("codeUiReconnectDelayMs"),
   localAccessTicketTtlMs: governanceSetting("localAccessTicketTtlMs"),

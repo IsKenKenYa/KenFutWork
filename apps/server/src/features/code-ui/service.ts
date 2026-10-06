@@ -2422,7 +2422,9 @@ export class CodeUiService {
         state: root.state!,
         ack: {
           commandId: envelope.commandId,
-          status: resolution?.status === "rejected" ? "rejected" : "accepted",
+          status:
+            resolution?.status === "rejected" ? "rejected"
+              : resolution?.status === "alreadyResolved" ? "noop" : "accepted",
           revisionAtDecision: Number(root.revision),
           ...(resolution && "reasonCode" in resolution
             ? { reasonCode: resolution.reasonCode }

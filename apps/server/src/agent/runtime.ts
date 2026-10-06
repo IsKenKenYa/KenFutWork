@@ -1391,6 +1391,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       /** Code 长命令超时（DEC-18）。 */
       let governanceExecuteTimeoutMs: number =
         AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs;
+      let governanceStreamIdleTimeoutMs: number =
+        options.env.agentGovernance?.agentStreamIdleTimeoutMs ??
+        AGENT_GOVERNANCE_DEFAULTS.agentStreamIdleTimeoutMs;
       /** 后台任务续轮上限（DEC-15/18）：防挂死任务导致无限续轮。 */
       let governanceMaxContinuations: number =
         AGENT_GOVERNANCE_DEFAULTS.subagentMaxContinuations;
@@ -1666,6 +1669,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             governanceExecuteTimeoutMs =
               instanceSettings?.executeTimeoutMs ??
               AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs;
+            governanceStreamIdleTimeoutMs =
+              instanceSettings?.agentStreamIdleTimeoutMs ??
+              governanceStreamIdleTimeoutMs;
             governanceMaxContinuations = clampSubagentMaxContinuations(
               instanceSettings?.subagentMaxContinuations ??
                 AGENT_GOVERNANCE_DEFAULTS.subagentMaxContinuations,
@@ -2443,9 +2449,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               // 压缩口径与装配同一份：适配器据此检测摘要消息并发 run.compacted
               ...(autoCompact ? { autoCompact } : {}),
               signal: run.controller.signal,
-              ...(options.env.agentStreamIdleTimeoutMs
-                ? { idleTimeoutMs: options.env.agentStreamIdleTimeoutMs }
-                : {}),
+              idleTimeoutMs: governanceStreamIdleTimeoutMs,
               // 空闲超时即中止底层请求（释放上游连接），本轮按有界失败收尾
               abortRun: () => run.controller.abort(),
               stream,

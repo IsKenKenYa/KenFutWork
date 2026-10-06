@@ -10,6 +10,7 @@ export type AgentGovernanceSettings = Pick<
   | "llmRequestMaxRetries"
   | "llmInfiniteRetry"
   | "executeTimeoutMs"
+  | "agentStreamIdleTimeoutMs"
   | "subagentMaxContinuations"
   | "compactKeepMessages"
   | "compactFallbackKeepMessages"
@@ -37,6 +38,11 @@ export const AGENT_GOVERNANCE_FIELDS = [
     key: "executeTimeoutMs",
     label: "命令超时（毫秒）",
     hint: "Code 模式后台命令的超时上限。",
+  },
+  {
+    key: "agentStreamIdleTimeoutMs",
+    label: "模型流无输出超时（毫秒）",
+    hint: "仅计算真实模型请求的等待；工具执行和人工审批不计，0 表示关闭。",
   },
   {
     key: "subagentMaxContinuations",
