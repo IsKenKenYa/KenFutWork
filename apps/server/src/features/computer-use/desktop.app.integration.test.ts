@@ -5,6 +5,7 @@ import {
   cp,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   realpath,
   writeFile,
@@ -219,7 +220,7 @@ it.skipIf(!enabled)(
         ).status,
       ).toBe(200);
       const started = await host.command("sendText", {
-        text: "Inspect the owned native test window and verify its input field.",
+        text: "观察第一方验收窗口，截屏并输入Task中文🙂🚀。",
         modelSelection: idle.config.modelSelection,
         mode: "yolo",
         planEnabled: false,
@@ -305,6 +306,11 @@ it.skipIf(!enabled)(
       );
       expect(JSON.stringify(observed?.content)).toContain("Task中文🙂🚀");
       expect(JSON.stringify(final).includes(token)).toBe(false);
+      expect(
+        (await readdir(join(data, "logs"))).some((name) =>
+          name.startsWith("pipeline-"),
+        ),
+      ).toBe(true);
       await expect(
         mcp.callTool({
           name: "get_app_state",
@@ -362,6 +368,14 @@ it.skipIf(!enabled)(
           .toEqual([]);
       });
       await settle(async () => model?.close());
+      await settle(async () => {
+        await exec("codesign", [
+          "--verify",
+          "--deep",
+          "--strict",
+          installedApp,
+        ]);
+      });
       // 临时安装/数据与日志保留本机供失败审计；不覆盖或移除用户的数据。
       console.info(`实际.app验收资源：${root}`);
     }
