@@ -1,11 +1,11 @@
 // @vitest-environment node
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CodeUiTestClient } from "../../server/src/features/code-ui/host-client.fixture.js";
 import type { createCodeSessionFixture } from "../../server/src/features/code-ui/host-session.fixture.js";
+import { installCodePublicHostDom } from "./setup/code-public-host-dom";
 
 type Host = Awaited<ReturnType<typeof createCodeSessionFixture>>;
 type PublicFixture = { client: CodeUiTestClient; close(): Promise<void> };
@@ -35,79 +35,24 @@ type HistoryModule = {
   ): Promise<protocol.ConversationSnapshot>;
 };
 
-type TestDom = { window: Window & typeof globalThis & { close(): void } };
-let dom: TestDom | undefined;
-let restoreBrowserLayout: (() => void) | undefined;
+let releaseDom: (() => void) | undefined;
 
 afterEach(() => {
   cleanup();
-  restoreBrowserLayout?.();
-  restoreBrowserLayout = undefined;
-  dom?.window.close();
-  dom = undefined;
+  releaseDom?.();
+  releaseDom = undefined;
   vi.unstubAllGlobals();
 });
 
 async function loadOriginalUi() {
-  // 真实服务先在 Node 环境装配；仅给随后加载的原组件提供 DOM。
-  const {
-    JSDOM,
-  }: {
-    JSDOM: new (
-      html: string,
-      options: { url: string; pretendToBeVisual: boolean },
-    ) => TestDom;
-  } = createRequire(import.meta.url)("jsdom");
-  dom = new JSDOM("<!doctype html><html><body></body></html>", {
-    url: "http://localhost:3300",
-    pretendToBeVisual: true,
-  });
-  const browserWindow = dom.window;
-  for (const key of [
-    "window",
-    "document",
-    "navigator",
-    "Element",
-    "HTMLElement",
-    "HTMLButtonElement",
-    "HTMLInputElement",
-    "SVGElement",
-    "Node",
-    "NodeFilter",
-    "Document",
-    "DocumentFragment",
-    "ShadowRoot",
-    "MutationObserver",
-    "Event",
-    "MouseEvent",
-    "KeyboardEvent",
-    "CustomEvent",
-    "localStorage",
-  ] as const) {
-    vi.stubGlobal(key, browserWindow[key]);
-  }
-  vi.stubGlobal(
-    "getComputedStyle",
-    browserWindow.getComputedStyle.bind(browserWindow),
-  );
-  vi.stubGlobal(
-    "requestAnimationFrame",
-    browserWindow.requestAnimationFrame.bind(browserWindow),
-  );
-  vi.stubGlobal(
-    "cancelAnimationFrame",
-    browserWindow.cancelAnimationFrame.bind(browserWindow),
-  );
-  const [intl, tooltip, panel, trigger, status, browser] = await Promise.all([
+  releaseDom = await installCodePublicHostDom();
+  const [intl, tooltip, panel, trigger, status] = await Promise.all([
     import("@zui/i18n/IntlProvider"),
     import("@zui/components/ui/tooltip"),
     import("@zui/v4/ConversationStatusPanel"),
     import("@zui/v4/composer/ConversationBackgroundWorkTrigger"),
     import("@zui/v4/conversationStatusPanelModel"),
-    import("./setup/code-root-host-browser"),
   ]);
-  browser.installCodeRootBrowser();
-  restoreBrowserLayout = browser.restoreCodeRootBrowser;
   return {
     ZCodeIntlProvider: intl.ZCodeIntlProvider,
     TooltipProvider: tooltip.TooltipProvider,

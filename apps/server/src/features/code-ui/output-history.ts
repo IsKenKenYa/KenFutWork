@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { open, realpath, rm, stat } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import type { AgentContextResourceBinding } from "../../agent/context-history.js";
 import type { BlobStore } from "../blob/types.js";
@@ -12,6 +12,10 @@ import type {
 import type { ProcessOutput } from "../process-sandbox/types.js";
 import type { SettingsService } from "../settings/settings-service.js";
 import type { TaskWorkContext, TaskWorkManager } from "../task-work/types.js";
+import {
+  readCapturedOutputView,
+  resolveCapturedOutputPath,
+} from "./captured-output-reader.js";
 import {
   type CapturedOutputSource,
   type CodeUiOutputHistory,
@@ -308,23 +312,7 @@ async function readSourceFile(
 ) {
   if (!record.outputRef || !isAbsolute(record.outputRef) || !record.outputStats)
     throw conflict("任务缺少完整保留输出的可信路径或字节事实。");
-  const root = await realpath(resolve(executionOutputRoot));
-  const path = await realpath(record.outputRef);
-  const expected =
-    record.kind === "subagent"
-      ? join(root, record.instanceId, record.taskId, "children")
-      : join(
-          root,
-          createHash("sha256").update(record.taskId).digest("hex"),
-          "output",
-        );
-  if (
-    dirname(path) !== expected ||
-    (record.kind === "subagent" &&
-      (!record.childSessionId ||
-        path !== join(expected, `${record.childSessionId}.log`)))
-  )
-    throw conflict("源输出不在该Task的可信私有捕获目录。");
+  const path = await resolveCapturedOutputPath(executionOutputRoot, record);
   const file = await open(
     path,
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
@@ -688,6 +676,71 @@ export function createCodeUiOutputHistory(deps: {
     return { record, binding };
   }
   return {
+    async readView(actor, expected, id, input) {
+      const root = await currentRoot(actor, expected);
+      if (!ownedHistoryOutputSchema.shape.id.safeParse(id).success) return null;
+      if (root.execution_state === "revoking")
+        throw conflict("Task正在关闭，暂不能读取日志。");
+      const settings = await deps.settings.getInstanceSettings(
+        actor,
+        root.instance_id,
+      );
+      const budget = Math.min(input.maxBytes, settings.codeReadMaxBytes);
+      if (
+        !Number.isSafeInteger(input.offset) ||
+        input.offset < 0 ||
+        !Number.isSafeInteger(budget) ||
+        budget < 0
+      )
+        throw conflict("输出查看分页无效。");
+      const owned = ownedRecords(root).find((record) => record.id === id);
+      let value: Awaited<ReturnType<CodeUiOutputHistory["readView"]>>;
+      if (owned) {
+        const bytes = await ownedBytes(owned, settings.processMaxOutputBytes);
+        const offset = input.tail
+          ? Math.max(0, bytes.length - budget)
+          : input.offset;
+        if (offset > bytes.length) throw conflict("输出查看游标超过日志范围。");
+        let start = offset;
+        if (input.tail && start > 0)
+          while (start < bytes.length && ((bytes[start] ?? 0) & 0xc0) === 0x80)
+            start++;
+        value = {
+          id,
+          kind: owned.kind,
+          status: owned.status,
+          outputRef: owned.ref,
+          bytes: bytes.subarray(start, Math.min(bytes.length, offset + budget)),
+          offset: start,
+          ...owned.outputStats,
+        };
+      } else {
+        const record = await deps.taskWork.find(sourceContext(actor, root), id);
+        if (!record?.outputRef) return null;
+        if (
+          record.scope.instanceId !== root.instance_id ||
+          record.scope.projectId !== root.project_id ||
+          record.scope.taskId !== root.id
+        )
+          throw conflict("日志不属于该Task。");
+        value = {
+          id,
+          kind: record.kind,
+          status: record.status,
+          outputRef: refFor(root.id, id),
+          ...(await readCapturedOutputView(deps.executionOutputRoot, record, {
+            offset: input.offset,
+            maxBytes: budget,
+            tail: input.tail,
+            maxRetainedBytes: settings.processMaxOutputBytes,
+          })),
+        };
+      }
+      const after = await currentRoot(actor, root);
+      if (after.execution_state === "revoking")
+        throw conflict("Task已进入关闭，日志读取已失效。");
+      return value;
+    },
     async prepare(actor, sourceRoot, target, rows) {
       const root = await assertSource(actor, sourceRoot);
       if (

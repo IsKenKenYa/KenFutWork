@@ -288,6 +288,27 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           name: "TaskOutput",
           arguments: {},
         };
+        const copiedId = copiedResult.outputPath.split("/").at(-1);
+        const originalView = await host.stream.rpc("backgroundBashOutputV4", [{
+          workspacePath: host.workspacePath,
+          projectId: host.projectId,
+          sessionId: forkId,
+          workId: copiedId,
+        }]);
+        expect(originalView.status, JSON.stringify(originalView.body)).toBe(200);
+        expect(originalView.body.result).toMatchObject({
+          kind: "output", status: "completed", output: text,
+          outputPath: copiedResult.outputPath,
+        });
+        const fullFile = await host.client.request("/api/code-ui/rpc", {
+          service: "file", method: "readTextFile", args: [{
+            path: copiedResult.outputPath,
+            viewerScope: { kind: "task", taskId: forkId },
+            maxBytes: 4096,
+          }],
+        });
+        expect(fullFile.status).toBe(200);
+        expect(fullFile.body.result).toMatchObject({ content: text, truncated: false });
         await sendToTask(host, forkId, "LIST_READONLY_OUTPUTS");
         await vi.waitFor(() => expect(model.requests).toHaveLength(4), {
           timeout: 30_000,

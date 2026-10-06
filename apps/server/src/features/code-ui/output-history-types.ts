@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { AgentContextResourceBinding } from "../../agent/context-history.js";
 import type { LocalActor } from "../local-instance/types.js";
 import type { ProcessOutput } from "../process-sandbox/types.js";
-import type { TaskWorkContext } from "../task-work/types.js";
+import type { TaskWorkContext, TaskWorkStatus } from "../task-work/types.js";
 import type { CodeUiSessionRecord } from "./repository.js";
 
 export const historyOutputStatsSchema = z
@@ -100,6 +100,22 @@ export interface CodeUiHistoryOutputRead {
   statisticsComplete: boolean;
 }
 export interface CodeUiOutputHistory {
+  readView(
+    actor: LocalActor,
+    root: CodeUiSessionRecord,
+    id: string,
+    input: { offset: number; maxBytes: number; tail: boolean },
+  ): Promise<{
+    id: string;
+    kind: OwnedHistoryOutput["kind"];
+    status: TaskWorkStatus;
+    outputRef: string;
+    bytes: Uint8Array;
+    offset: number;
+    retainedBytes: number;
+    totalBytes: number;
+    discardedBytes: number;
+  } | null>;
   prepare(
     actor: LocalActor,
     sourceRoot: CodeUiSessionRecord,

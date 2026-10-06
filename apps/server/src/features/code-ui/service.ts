@@ -127,6 +127,7 @@ import {
   type HumanWorkspaceRpc,
 } from "./workspace-rpc.js";
 import { createCodeUiOutputHistory } from "./output-history.js";
+import { createCodeUiBackgroundOutputView } from "./background-output-view.js";
 
 export interface CodeUiServiceDeps {
   plugins?: PluginRegistryService;
@@ -223,6 +224,9 @@ export class CodeUiService {
   private readonly approvedPlans: ReturnType<typeof createCodeApprovedPlanReader>;
   readonly userInputs: CodeUserInputService | undefined;
   readonly outputHistory: ReturnType<typeof createCodeUiOutputHistory>;
+  private readonly backgroundOutput: ReturnType<
+    typeof createCodeUiBackgroundOutputView
+  >;
   private readonly connections = new CodeUiConnections();
   private readonly controllers = new Map<
     string,
@@ -303,6 +307,11 @@ export class CodeUiService {
       localInstance: deps.localInstance,
       ...(deps.blob ? { blob: deps.blob } : {}),
       executionOutputRoot: join(dirname(resolve(deps.env.checkpointRoot ?? "data/checkpoints")), "execution-output"),
+    });
+    this.backgroundOutput = createCodeUiBackgroundOutputView({
+      load: (actor, sessionId) => this.loadConversation(actor, sessionId),
+      outputs: this.outputHistory,
+      settings: deps.settings,
     });
     this.historyFork = createCodeUiHistoryFork({
       repository: deps.repository,
@@ -1584,6 +1593,12 @@ export class CodeUiService {
       const human = await this.humanWorkspace.call(user, service, method, args);
       if (human) return human;
       if (service === "file") {
+        const outputFile = await this.backgroundOutput.file(
+          user,
+          method,
+          args[0],
+        );
+        if (outputFile) return outputFile;
         const settings = await this.deps.settings.getInstanceSettings(
           user,
           owner.instanceId,
@@ -1981,6 +1996,8 @@ export class CodeUiService {
         }),
       };
     }
+    if (method === "backgroundBashOutputV4")
+      return this.backgroundOutput.query(user, args[0]);
     if (method === "listSessionSubagents") {
       const value = args[0] as {
         sessionId: string;
