@@ -100,13 +100,23 @@ export function createCodeAttachmentHost(deps: {
             : [],
         );
       });
-      if (matches.length !== 1)
+      const first = matches[0];
+      if (
+        !first ||
+        matches.some(
+          (attachment) =>
+            attachment.fileName !== first.fileName ||
+            attachment.mime !== first.mime ||
+            attachment.bytes !== first.bytes ||
+            attachment.previewRef !== first.previewRef,
+        )
+      )
         throw new CodeAttachmentError(
           "fault.attachment.notAuthorized",
           "附件引用与消息位置不匹配，或需要明确消息位置。",
           404,
         );
-      return matches[0]!;
+      return first;
     },
     limits: async (actor, instanceId) => {
       const settings = await deps.settings.getInstanceSettings(

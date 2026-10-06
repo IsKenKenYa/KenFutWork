@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import type { AgentContextHistoryReference } from "../../agent/context-history.js";
 import type { LocalActor } from "../local-instance/types.js";
+import type {
+  CodeAttachmentHistoryCopy,
+  CodeAttachmentsService,
+} from "./attachments/types.js";
 import {
   type CodeUiCompletedTurnView,
   createCodeUiConversation,
@@ -37,6 +41,7 @@ type Deps = Pick<
   | "localInstance"
   | "settings"
 > & {
+  attachments?: () => CodeAttachmentsService | undefined;
   load(actor: LocalActor, sessionId: string): Promise<Loaded>;
   refresh(instanceId: string, path: string, projectId: string): Promise<void>;
   fingerprint(envelope: protocol.CommandEnvelope): string;
@@ -54,6 +59,7 @@ type Selection = {
 function selectedTurn(
   root: CodeUiSessionRecord,
   target: protocol.CommandPayloadMap["forkAssistant"]["target"],
+  canCopyAttachments: boolean,
 ): Selection | null {
   const snapshot = root.state?.snapshots.find(
     (entry) => entry.sessionId === root.id,
@@ -106,7 +112,9 @@ function selectedTurn(
     rows.some(
       (row) =>
         row.kind === "subagent" ||
-        (row.kind === "userInput" && row.attachments?.length),
+        (!canCopyAttachments &&
+          row.kind === "userInput" &&
+          row.attachments?.length),
     )
   )
     return null;
@@ -135,6 +143,7 @@ function forkState(
   source: Selection,
   inherited: CodeUiOwnedHistoryTurn[],
   turnIds: ReadonlyMap<string, string>,
+  attachments: ReadonlyMap<string, protocol.AttachmentRef>,
 ) {
   const config = structuredClone(source.view.config);
   delete config.permissionGrant;
@@ -161,6 +170,8 @@ function forkState(
     row.rowId = index + 1;
     row.createdAtSeq = index + 1;
     row.entityId = `${id}:history-row:${index + 1}`;
+    if (row.kind === "userInput" && row.attachments)
+      row.attachments = mappedAttachments(row.attachments, attachments);
     if (row.kind === "turnHeader" && row.workSegments)
       for (const [segmentIndex, segment] of row.workSegments.entries()) {
         segment.segmentId = `${row.turnId}:history-segment:${segmentIndex + 1}`;
@@ -184,6 +195,21 @@ function forkState(
   child.usage.contextWindow = structuredClone(source.view.usage.contextWindow);
   child.meta = structuredClone(source.snapshot.meta);
   return state;
+}
+
+function mappedAttachments(
+  refs: readonly protocol.AttachmentRef[],
+  mapping: ReadonlyMap<string, protocol.AttachmentRef>,
+) {
+  return refs.map((attachment) => {
+    const mapped = mapping.get(attachment.ref);
+    if (!mapped)
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "附件历史映射不完整，未发表新Task。",
+      );
+    return structuredClone(mapped);
+  });
 }
 
 function assertTarget(loaded: Loaded, target: Target) {
@@ -236,6 +262,7 @@ type ForkOperation = {
     targetThreadId: string;
     reference: AgentContextHistoryReference | null;
   };
+  attachments?: CodeAttachmentHistoryCopy;
   child?: CodeUiRootInsert;
   source?: {
     scopeGeneration: number;
@@ -278,7 +305,8 @@ async function prepareFork(
   root: CodeUiSessionRecord,
 ) {
   if (checkForkGuard(operation, root)) return;
-  const selected = selectedTurn(root, operation.target);
+  const attachmentService = deps.attachments?.();
+  const selected = selectedTurn(root, operation.target, !!attachmentService);
   if (
     !selected ||
     !deps.agentRuns.canCloneContextHistoryBranches?.() ||
@@ -294,25 +322,18 @@ async function prepareFork(
   if (!post) return;
   const id = randomUUID();
   const threadId = deps.threads.createThreadId();
-  const resolver = createCodeUiOwnedHistory(deps);
-  const turns: CodeUiOwnedHistoryTurn[] = [];
-  const turnIds = new Map<string, string>();
-  // 维护Run只有marker，没有turnHeader；同样必须持有独立历史身份。
-  for (const turnId of new Set(selected.rows.map((row) => row.turnId))) {
-    const turn = await resolver.resolve(operation.actor, root, turnId);
-    if (!turn)
-      throw new CodeUiRepositoryError(
-        "command_conflict",
-        "源前缀缺少可信历史归属，未创建分叉。",
-      );
-    turns.push(turn);
-    turnIds.set(turnId, randomUUID());
-  }
-  await captureHistoryFileChanges(
+  const { turns, turnIds } = await collectForkHistory(
     deps,
-    operation.actor,
+    operation,
     root,
-    selected.snapshot,
+    selected,
+  );
+  await prepareForkAttachments(
+    attachmentService,
+    operation,
+    root,
+    id,
+    selected,
     turns,
   );
   const mapped = await deps.agentRuns.cloneContextHistoryBranch({
@@ -327,6 +348,27 @@ async function prepareFork(
     branchGeneration: Number(root.branch_generation),
     logEpoch: selected.snapshot.logEpoch,
   };
+  const inherited = rebindOwnedHistory({
+    turns,
+    result: mapped,
+    threadId,
+    owner: {
+      instanceId: operation.loaded.instanceId,
+      projectId: root.project_id,
+      taskId: id,
+    },
+    turnIds,
+  });
+  const attachments =
+    operation.attachments?.attachments ??
+    new Map<string, protocol.AttachmentRef>();
+  for (const turn of inherited)
+    if (turn.canonical)
+      turn.canonical.intent.attachments = mappedAttachments(
+        turn.canonical.intent.attachments,
+        attachments,
+      );
+  const attachmentCopy = operation.attachments;
   operation.child = {
     sessionId: id,
     projectId: root.project_id,
@@ -345,20 +387,36 @@ async function prepareFork(
       id,
       root.root_directory,
       selected,
-      rebindOwnedHistory({
-        turns,
-        result: mapped,
-        threadId,
-        owner: {
-          instanceId: operation.loaded.instanceId,
-          projectId: root.project_id,
-          taskId: id,
-        },
-        turnIds,
-      }),
+      inherited,
       turnIds,
+      attachments,
     ),
+    ...(attachmentCopy
+      ? { publishArtifacts: (scoped) => attachmentCopy.publish(scoped) }
+      : {}),
   };
+}
+
+async function discardUnpublishedFork(
+  deps: Deps,
+  operation: ForkOperation | undefined,
+) {
+  if (!operation || operation.published || operation.publicationUncertain)
+    return;
+  const failures: unknown[] = [];
+  try {
+    await operation.attachments?.discard();
+  } catch (error) {
+    failures.push(error);
+  }
+  if (operation.clone)
+    try {
+      await deps.agentRuns.discardContextBranch(operation.clone);
+    } catch (error) {
+      failures.push(error);
+    }
+  if (failures.length)
+    throw new AggregateError(failures, "未发表分叉的私有资源未全部确认清理。");
 }
 
 function decideFork(operation: ForkOperation, root: CodeUiSessionRecord) {
@@ -394,6 +452,7 @@ async function finishFork(
   if (ack.status !== "accepted" || !operation.clone || !operation.child) return;
   // child/state/ACK已原子发表，之后的通知或租约释放不能删掉已可使用的native分支。
   operation.published = true;
+  operation.attachments?.release();
   deps.agentRuns.releaseContextBranch(operation.clone);
   try {
     await deps.refresh(
@@ -420,10 +479,14 @@ export function createCodeUiHistoryFork(deps: Deps) {
         if (row.kind !== "assistantText") continue;
         const selected =
           available && row.entityId
-            ? selectedTurn(loaded.root, {
-                rowId: row.rowId,
-                entityId: row.entityId,
-              })
+            ? selectedTurn(
+                loaded.root,
+                {
+                  rowId: row.rowId,
+                  entityId: row.entityId,
+                },
+                !!deps.attachments?.(),
+              )
             : null;
         if (selected && (await ownedPost(deps, actor, loaded, selected)))
           row.actions = { ...row.actions, canFork: true };
@@ -469,16 +532,80 @@ export function createCodeUiHistoryFork(deps: Deps) {
         throw error;
       } finally {
         try {
-          if (
-            operation?.clone &&
-            !operation.published &&
-            !operation.publicationUncertain
-          )
-            await deps.agentRuns.discardContextBranch(operation.clone);
+          await discardUnpublishedFork(deps, operation);
         } finally {
           releaseAdmission();
         }
       }
     },
   };
+}
+
+async function collectForkHistory(
+  deps: Deps,
+  operation: ForkOperation,
+  root: CodeUiSessionRecord,
+  selected: Selection,
+) {
+  const resolver = createCodeUiOwnedHistory(deps);
+  const turns: CodeUiOwnedHistoryTurn[] = [];
+  const turnIds = new Map<string, string>();
+  // 维护Run只有marker，没有turnHeader；同样必须持有独立历史身份。
+  for (const turnId of new Set(selected.rows.map((row) => row.turnId))) {
+    const turn = await resolver.resolve(operation.actor, root, turnId);
+    if (!turn)
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "源前缀缺少可信历史归属，未创建分叉。",
+      );
+    turns.push(turn);
+    turnIds.set(turnId, randomUUID());
+  }
+  await captureHistoryFileChanges(
+    deps,
+    operation.actor,
+    root,
+    selected.snapshot,
+    turns,
+  );
+  return { turns, turnIds };
+}
+
+async function prepareForkAttachments(
+  service: CodeAttachmentsService | undefined,
+  operation: ForkOperation,
+  root: CodeUiSessionRecord,
+  id: string,
+  selected: Selection,
+  turns: CodeUiOwnedHistoryTurn[],
+) {
+  const refs = [
+    ...selected.rows.flatMap((row) =>
+      row.kind === "userInput" ? (row.attachments ?? []) : [],
+    ),
+    ...turns.flatMap((turn) => turn.canonical?.intent.attachments ?? []),
+  ];
+  if (refs.length) {
+    if (!service)
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "私有附件历史提供方不可用。",
+      );
+    operation.attachments = await service.prepareHistory(
+      operation.actor,
+      root.id,
+      {
+        instanceId: root.instance_id,
+        projectId: root.project_id,
+        taskId: id,
+        sessionId: id,
+        createdByClientId: operation.actor.accessClientId,
+        scopeGeneration: 0,
+        branchGeneration: 1,
+        revision: 0,
+        canUpload: true,
+      },
+      refs,
+    );
+  }
 }

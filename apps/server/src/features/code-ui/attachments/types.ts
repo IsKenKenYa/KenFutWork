@@ -1,6 +1,7 @@
 import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import type { BlobStore } from "../../blob/types.js";
 import type { LocalActor } from "../../local-instance/types.js";
+import type { InstanceSqlClient } from "../../persistence/types.js";
 
 export class CodeAttachmentError extends Error {
   constructor(
@@ -83,6 +84,12 @@ export interface CodeAttachmentTransaction {
 }
 
 export interface CodeAttachmentRepository {
+  /** 宿主已准备私有Blob；在创建目标根Task的同一事务关联其committed事实。 */
+  publishHistoryCopies(
+    scoped: InstanceSqlClient,
+    target: CodeAttachmentSession,
+    records: readonly Extract<CodeAttachmentRecord, { status: "committed" }>[],
+  ): Promise<void>;
   transact<T>(
     session: CodeAttachmentSession,
     key: string,
@@ -116,6 +123,14 @@ export interface CodeAttachmentRepository {
   close(): Promise<void>;
 }
 
+export interface CodeAttachmentHistoryCopy {
+  /** source ref→目标Task自己的正规附件，重复引用共享同一目标对象。 */
+  attachments: ReadonlyMap<string, protocol.AttachmentRef>;
+  publish(scoped: InstanceSqlClient): Promise<void>;
+  release(): void;
+  discard(): Promise<void>;
+}
+
 export interface CodeAttachmentRowRequest {
   sessionId: string;
   ref: string;
@@ -142,6 +157,12 @@ export interface CodeAttachmentsDeps {
 }
 
 export interface CodeAttachmentsService {
+  prepareHistory(
+    actor: LocalActor,
+    sourceSessionId: string,
+    target: CodeAttachmentSession,
+    attachments: readonly protocol.AttachmentRef[],
+  ): Promise<CodeAttachmentHistoryCopy>;
   initialize(): Promise<void>;
   budget(actor: LocalActor, sessionId?: string): Promise<CodeAttachmentLimits>;
   close(): Promise<void>;

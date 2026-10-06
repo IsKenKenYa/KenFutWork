@@ -249,6 +249,9 @@ async function fixture(
     async close() {},
     async releaseTask() {},
     async purgeTask() {},
+    async publishHistoryCopies() {
+      throw new Error("本输入fixture未装配历史发表能力");
+    },
   };
   const runs: Array<{ input: unknown; options: unknown }> = [];
   const finishes = new Map<string, () => void>();

@@ -7,6 +7,7 @@ import {
   attachmentKey,
   decodeAttachmentChunk,
 } from "./bytes.js";
+import { prepareAttachmentHistory } from "./history-copy.js";
 import { abortedAttachment } from "./repository.js";
 import {
   CodeAttachmentError,
@@ -199,6 +200,31 @@ export function createCodeAttachmentsService(
   }
   const service: CodeAttachmentsService = {
     initialize,
+    async prepareHistory(actor, sourceSessionId, target, attachments) {
+      const admittedBeforeRelease = releaseSerial;
+      const identity = await session(actor, sourceSessionId);
+      const assertOpen = () => {
+        if (
+          closed ||
+          !identity.canUpload ||
+          (releasedTasks.get(taskKey(identity.instanceId, identity.taskId)) ??
+            0) > admittedBeforeRelease
+        )
+          throw interrupted();
+      };
+      return exclusive(identity.instanceId, () =>
+        prepareAttachmentHistory({
+          source: identity,
+          target,
+          attachments,
+          bucket,
+          repository: deps.repository,
+          assertOpen,
+          committed: (ref) => committed(identity, ref),
+          bytes: (record) => bytesFor(actor, identity, record),
+        }),
+      );
+    },
     async budget(actor, sessionId) {
       const instanceId = sessionId
         ? (await ownedSession(actor, sessionId)).instanceId

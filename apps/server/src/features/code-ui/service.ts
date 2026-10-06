@@ -293,6 +293,10 @@ export class CodeUiService {
     });
     this.historyFork = createCodeUiHistoryFork({
       repository: deps.repository,
+      attachments: () => {
+        if (this.attachments) this.attachmentsUsed = true;
+        return this.attachments;
+      },
       settings: deps.settings,
       agentRuns: deps.agentRuns,
       agentRunMetadata: deps.agentRunMetadata,

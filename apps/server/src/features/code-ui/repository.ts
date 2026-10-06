@@ -100,6 +100,8 @@ export interface CodeUiRootInsert {
   createdByClientId: string | null;
   threadId: string;
   state: CodeUiConversationState;
+  /** 仅关联已准备私有资源的SQL事实，与根Task/state/ACK同事务；禁止外部I/O。 */
+  publishArtifacts?: (scoped: InstanceSqlClient) => Promise<void>;
 }
 
 async function insertRoot(scoped: InstanceSqlClient, input: CodeUiRootInsert) {
@@ -739,6 +741,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
                 "分叉Task的目录或授权已改变，未发布新Task。",
               );
             await insertRoot(scoped, next);
+            await next.publishArtifacts?.(scoped);
           }
           if (decision.threadBinding) {
             const binding = decision.threadBinding;

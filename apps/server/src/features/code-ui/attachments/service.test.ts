@@ -229,6 +229,9 @@ function repositoryFixture(): CodeAttachmentRepository {
     async close() {},
     async releaseTask() {},
     async purgeTask() {},
+    async publishHistoryCopies() {
+      throw new Error("本上传fixture未装配历史发表能力");
+    },
   };
 }
 
