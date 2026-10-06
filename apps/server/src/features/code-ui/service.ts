@@ -1636,6 +1636,7 @@ export class CodeUiService {
       "listPinnedTaskIds",
       "listDeletedTaskIds",
       "getTaskMeta",
+      "deleteTask",
     ]);
     if (!supported.has(method)) return null;
     const workspace = await this.deps.localInstance.resolve(user);
@@ -1644,7 +1645,27 @@ export class CodeUiService {
       workspacePath: string;
       taskId?: string;
       projectId?: string;
+      workspaceIdentity?: string;
     };
+    if (method === "deleteTask") {
+      if (!target?.taskId)
+        throw new CodeUiRepositoryError("not_found", "删除缺少根Task身份。");
+      const loaded = await this.loadConversation(user, target.taskId);
+      if (
+        loaded.entry.parent_session_id ||
+        loaded.project.path !== target.workspacePath ||
+        (target.projectId && target.projectId !== loaded.project.projectId) ||
+        (target.workspaceIdentity &&
+          target.workspaceIdentity !==
+            JSON.stringify([loaded.project.projectId, loaded.project.path]))
+      )
+        throw new CodeUiRepositoryError(
+          "not_found",
+          "删除目标不属于该Project与根Task固定目录。",
+        );
+      await this.deleteTask(user, loaded.root.id);
+      return { result: null };
+    }
     if (method === "getTaskMeta") {
       const found = target?.taskId
         ? await this.deps.repository.find(workspace.instanceId, target.taskId)
