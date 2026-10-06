@@ -48,37 +48,76 @@ function prepareTerminalBrowser() {
   }
 }
 
+function processAlive(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ESRCH"
+    )
+      return false;
+    throw error;
+  }
+}
+
+async function createTerminalHarness() {
+  const httpLoading: Promise<{
+    createCodeUiHttpFixture(): Promise<PublicFixture>;
+  }> = import(fixturePath);
+  const [http, sessions, streams] = await Promise.all([
+    httpLoading,
+    import("../../server/src/features/code-ui/host-session.fixture.js"),
+    import("../../server/src/features/code-ui/model-stream.fixture.js"),
+  ]);
+  const fixture = await http.createCodeUiHttpFixture();
+  const model = await streams.heldModel();
+  let host: Host | undefined;
+  try {
+    host = await sessions.createCodeSessionFixture(model.baseUrl, {
+      client: fixture.client,
+    });
+    expect(
+      (
+        await fixture.client.request(
+          "/api/instance/settings",
+          { terminalShell: "sh" },
+          "PATCH",
+        )
+      ).status,
+    ).toBe(200);
+    const bound = host;
+    return {
+      fixture,
+      model,
+      host: bound,
+      close: async () => {
+        await bound.dispose();
+        await model.close();
+        await fixture.close();
+      },
+    };
+  } catch (error) {
+    if (host) await host.dispose();
+    await model.close();
+    await fixture.close();
+    throw error;
+  }
+}
+
 describe.skipIf(
   process.env.RUN_CODE_UI_INTEGRATION !== "1" || process.platform !== "darwin",
 )("原TerminalSession真实PTY公开接线 integration", () => {
   it("原组件绑定Task并呈现真实输出，卸载重挂保留同一PTY和脱离期间输出，原退出回调等待真实退出", async () => {
-    const httpLoading: Promise<{
-      createCodeUiHttpFixture(): Promise<PublicFixture>;
-    }> = import(fixturePath);
-    const [http, sessions, streams] = await Promise.all([
-      httpLoading,
-      import("../../server/src/features/code-ui/host-session.fixture.js"),
-      import("../../server/src/features/code-ui/model-stream.fixture.js"),
-    ]);
-    const fixture = await http.createCodeUiHttpFixture();
-    const model = await streams.heldModel();
-    let host: Host | undefined;
+    const harness = await createTerminalHarness();
+    const { fixture, model, host } = harness;
     let session: OriginalSessionView | undefined;
     let terminalView: ReturnType<typeof render> | undefined;
     let releaseTerminal: (() => void) | undefined;
     try {
-      host = await sessions.createCodeSessionFixture(model.baseUrl, {
-        client: fixture.client,
-      });
-      expect(
-        (
-          await fixture.client.request(
-            "/api/instance/settings",
-            { terminalShell: "sh" },
-            "PATCH",
-          )
-        ).status,
-      ).toBe(200);
       session = await renderOriginalSession(
         fixture,
         host,
@@ -195,9 +234,133 @@ describe.skipIf(
       releaseTerminal?.();
       terminalView?.unmount();
       session?.dispose();
-      if (host) await host.dispose();
-      await model.close();
-      await fixture.close();
+      await harness.close();
+    }
+  }, 120_000);
+  it("实际SSE断线结束旧PTY，原服务恢复后重挂原终端创建新PTY而不复用失效身份", async () => {
+    const harness = await createTerminalHarness();
+    const { fixture, host, model } = harness;
+    const created: string[] = [];
+    const transfers: Array<{ abort: AbortController; done: Promise<void> }> =
+      [];
+    let session: OriginalSessionView | undefined;
+    let terminalView: ReturnType<typeof render> | undefined;
+    let releaseTerminal: (() => void) | undefined;
+    let releaseServices: (() => void) | undefined;
+    const nativeFetch = globalThis.fetch;
+    // 外部网络故障：真实SSE经过可截断的字节管道，取消会关闭实际HTTP连接。
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const response = await nativeFetch(input, init);
+      if (String(input).endsWith("/api/code-ui/events") && response.body) {
+        const abort = new AbortController();
+        init?.signal?.addEventListener(
+          "abort",
+          () => abort.abort(init.signal?.reason),
+          { once: true },
+        );
+        const transport = new TransformStream<Uint8Array, Uint8Array>();
+        const done = response.body.pipeTo(transport.writable, {
+          signal: abort.signal,
+        });
+        void done.catch(() => {});
+        transfers.push({ abort, done });
+        return new Response(transport.readable, {
+          status: response.status,
+          headers: response.headers,
+        });
+      }
+      if (typeof init?.body === "string") {
+        const request = JSON.parse(init.body);
+        if (
+          request.service === ServiceChannels.Terminal &&
+          request.method === "create" &&
+          response.ok
+        ) {
+          created.push((await response.clone().json()).result.id);
+        }
+      }
+      return response;
+    });
+    try {
+      session = await renderOriginalSession(
+        fixture,
+        host,
+        prepareTerminalBrowser,
+      );
+      releaseDom = session.releaseDom;
+      const [component, registry, providers] = await Promise.all([
+        import("@zui/terminal/TerminalSession"),
+        import("@zui/terminal/sidePaneTerminalSessionRegistry"),
+        import("./setup/code-public-host-ui"),
+      ]);
+      const Providers = await providers.loadCodePublicHostProviders();
+      const client = session.client;
+      const key = `reconnect-pty-${host.sessionId}`;
+      releaseTerminal = () =>
+        registry.sidePaneTerminalSessionRegistry.release(key);
+      const terminal = () => (
+        <Providers client={client}>
+          <component.TerminalSession
+            sessionId={key}
+            persistentKey={key}
+            workspaceKey={JSON.stringify([host.projectId, host.workspacePath])}
+            cwd={host.workspacePath}
+            services={client.services}
+            isVisible
+            onShellLabelChange={() => {}}
+            onOpenBrowserUrl={() => {}}
+          />
+        </Providers>
+      );
+      terminalView = render(terminal());
+      await vi.waitFor(() => expect(created).toHaveLength(1), {
+        timeout: 30_000,
+      });
+      const textarea = terminalView.container.querySelector(
+        "textarea.xterm-helper-textarea",
+      );
+      if (!textarea) throw new Error("原终端输入控件缺失");
+      fireEvent.paste(textarea, {
+        clipboardData: { getData: () => "echo $$ > reconnect-pty.pid\r" },
+      });
+      const path = join(host.workspacePath, "reconnect-pty.pid");
+      let pid = 0;
+      await vi.waitFor(
+        async () => {
+          const value = await readFile(path, "utf8");
+          expect(value.trim()).toMatch(/^[1-9]\d*$/);
+          pid = Number(value.trim());
+          expect(processAlive(pid)).toBe(true);
+        },
+        { timeout: 30_000 },
+      );
+      let restored = 0;
+      releaseServices = client.subscribeServices(() => {
+        restored += 1;
+      });
+      const first = transfers[0];
+      if (!first) throw new Error("没有捕获本测试的真实SSE连接");
+      first.abort.abort(new Error("本测试截断自己的SSE连接"));
+      await vi.waitFor(() => expect(processAlive(pid)).toBe(false), {
+        timeout: 30_000,
+      });
+      await vi.waitFor(() => expect(restored).toBeGreaterThan(0), {
+        timeout: 30_000,
+      });
+      terminalView.rerender(terminal());
+      await vi.waitFor(() => expect(created).toHaveLength(2), {
+        timeout: 30_000,
+      });
+      expect(created[1]).not.toBe(created[0]);
+      expect(model.requests).toHaveLength(0);
+    } finally {
+      releaseServices?.();
+      for (const transfer of transfers) transfer.abort.abort();
+      releaseTerminal?.();
+      terminalView?.unmount();
+      session?.dispose();
+      await Promise.allSettled(transfers.map((transfer) => transfer.done));
+      await harness.close();
     }
   }, 120_000);
 });

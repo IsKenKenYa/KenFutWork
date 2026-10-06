@@ -24,6 +24,126 @@ function clientWith(result: unknown = { content: "read" }) {
   };
 }
 describe("Code human viewer channel", () => {
+  it("终端归属只来自本客户端真实创建回执，不由相同Task或路径猜测", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, options: RequestInit) => {
+        if (url.endsWith("/events"))
+          return codeHostNotificationResponse(options.signal ?? undefined);
+        return new Response(
+          JSON.stringify({
+            result: {
+              id: url.includes("left.test")
+                ? "left-terminal"
+                : "right-terminal",
+            },
+          }),
+        );
+      }),
+    );
+    const left = new CodeHttpChannelClient({ apiBase: "http://left.test" });
+    const right = new CodeHttpChannelClient({ apiBase: "http://right.test" });
+    for (const client of [left, right])
+      client.setViewerContextResolver(() => ({
+        kind: "task",
+        taskId: "same-task",
+      }));
+    try {
+      const a = await left.services.terminalService.create({
+        cols: 80,
+        rows: 24,
+        cwd: "/same",
+      });
+      const b = await right.services.terminalService.create({
+        cols: 80,
+        rows: 24,
+        cwd: "/same",
+      });
+      expect(left.ownsTerminal(a.id)).toBe(true);
+      expect(left.ownsTerminal(b.id)).toBe(false);
+      expect(right.ownsTerminal(a.id)).toBe(false);
+      expect(right.ownsTerminal(b.id)).toBe(true);
+      left.dispose();
+      expect(left.ownsTerminal(a.id)).toBe(false);
+    } finally {
+      left.dispose();
+      right.dispose();
+    }
+  });
+  it("真实通知换代后迟到的创建回执被拒绝，旧终端身份不进入本客户端归属", async () => {
+    let disconnect!: () => void;
+    let release!: (response: Response) => void;
+    let received!: () => void;
+    const admitted = new Promise<void>((resolve) => {
+      received = resolve;
+    });
+    const held = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    let connections = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, options: RequestInit) => {
+        if (url.endsWith("/events")) {
+          let close!: () => void;
+          const body = new ReadableStream<Uint8Array>({
+            start(controller) {
+              let closed = false;
+              close = () => {
+                if (closed) return;
+                closed = true;
+                controller.close();
+              };
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({ event: "ready", hello: { connectionId: `connection-${++connections}` }, reconnectDelayMs: 10 })}\n\n`,
+                ),
+              );
+            },
+          });
+          disconnect = close;
+          options.signal?.addEventListener("abort", close, {
+            once: true,
+          });
+          return new Response(body);
+        }
+        const request = JSON.parse(String(options.body));
+        if (request.method === "create") {
+          received();
+          return held;
+        }
+        return new Response(JSON.stringify({ result: null }));
+      }),
+    );
+    const client = new CodeHttpChannelClient({ apiBase: "http://host.test" });
+    client.setViewerContextResolver(() => ({ kind: "task", taskId: "task" }));
+    let changed = 0;
+    const unlisten = client.subscribeServices(() => {
+      changed += 1;
+    });
+    try {
+      const pending = client.services.terminalService.create({
+        cols: 80,
+        rows: 24,
+      });
+      const outcome = Promise.allSettled([pending]);
+      await admitted;
+      disconnect();
+      await vi.waitFor(() => expect(changed).toBe(1));
+      release(
+        new Response(JSON.stringify({ result: { id: "late-terminal" } })),
+      );
+      const result = (await outcome)[0];
+      expect(result).toMatchObject({
+        status: "rejected",
+        reason: { message: "终端启动期间通知连接已改变，请重新打开终端。" },
+      });
+      expect(client.ownsTerminal("late-terminal")).toBe(false);
+    } finally {
+      unlisten();
+      client.dispose();
+    }
+  });
   it("原终端void销毁的取消被观察，显式await仍拒绝且不向关闭连接发送请求", async () => {
     const { client, requests } = clientWith(null);
     await client.connect();

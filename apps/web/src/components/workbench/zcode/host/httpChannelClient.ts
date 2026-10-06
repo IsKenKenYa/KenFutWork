@@ -139,6 +139,7 @@ export class CodeHttpChannelClient implements IChannelClient {
   private viewerContext: (() => CodeUiViewerScope | null) | null = null;
   private readonly terminalListeners = new Map<string, Map<string, number>>();
   private readonly activatedTerminals = new Set<string>();
+  private readonly ownedTerminals = new Set<string>();
 
   constructor(readonly config: CodeHostConfig) {
     const terminal = this.servicesSnapshot.terminalService;
@@ -170,6 +171,9 @@ export class CodeHttpChannelClient implements IChannelClient {
 
   registerWorkspaces(workspaces: CodeUiWorkspace[]) {
     this.workspaces.registerProjects(workspaces);
+  }
+  ownsTerminal(id: string): boolean {
+    return this.ownedTerminals.has(id);
   }
   projectForPath(path: string, workspaceIdentity?: string | null) {
     return this.workspaces.projectForPath(path, workspaceIdentity);
@@ -554,10 +558,23 @@ export class CodeHttpChannelClient implements IChannelClient {
       method === "initializeConversationV4"
     )
       this.clientHello = clientHelloSchema.parse((values as unknown[])[0]);
+    const connectionId = this.connectionId;
     const response = await this.request<{ result: TResult }>(
       "/api/code-ui/rpc",
-      { connectionId: this.connectionId, service, method, args: values },
+      { connectionId, service, method, args: values },
     );
+    if (service === ServiceChannels.Terminal && method === "create") {
+      if (this.controller.signal.aborted || connectionId !== this.connectionId)
+        throw new Error("终端启动期间通知连接已改变，请重新打开终端。");
+      const terminal = response.result;
+      if (
+        terminal &&
+        typeof terminal === "object" &&
+        "id" in terminal &&
+        typeof terminal.id === "string"
+      )
+        this.ownedTerminals.add(terminal.id);
+    }
     if (
       service === ServiceChannels.ZCodeTask ||
       service === IWindowControllerService.channelName
@@ -725,5 +742,6 @@ export class CodeHttpChannelClient implements IChannelClient {
     this.workspaceSubscriptions.clear();
     this.terminalListeners.clear();
     this.activatedTerminals.clear();
+    this.ownedTerminals.clear();
   }
 }
