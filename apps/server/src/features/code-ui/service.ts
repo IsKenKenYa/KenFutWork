@@ -79,6 +79,10 @@ import { createCodeUiFileHistory } from "./file-history.js";
 import { CodeUiFileIndex, codeUiViewerRpc } from "./files.js";
 import { createCodeUiHistoryEdit } from "./history-edit.js";
 import { createCodeUiHistoryFork } from "./history-fork.js";
+import {
+  createCodeUiOwnedHistory,
+  requireHistoryFileChanges,
+} from "./owned-history.js";
 import { createCodeGuideInputs } from "./guide-input.js";
 import { createCodePlanningControl } from "./planning-control.js";
 import { createCodeApprovedPlanStore } from "./approved-plan-store.js";
@@ -289,6 +293,7 @@ export class CodeUiService {
     });
     this.historyFork = createCodeUiHistoryFork({
       repository: deps.repository,
+      settings: deps.settings,
       agentRuns: deps.agentRuns,
       agentRunMetadata: deps.agentRunMetadata,
       threads: deps.threads,
@@ -300,6 +305,7 @@ export class CodeUiService {
     });
     this.historyEdit = createCodeUiHistoryEdit({
       repository: deps.repository,
+      settings: deps.settings,
       agentRuns: deps.agentRuns,
       agentRunMetadata: deps.agentRunMetadata,
       threads: deps.threads,
@@ -1988,6 +1994,23 @@ export class CodeUiService {
         user,
         loaded.instanceId,
       );
+      const owned =
+        loaded.root.state?.inheritedHistory?.some(
+          (turn) => turn.owner.turnId === header.turnId,
+        )
+        ? await createCodeUiOwnedHistory(this.deps).resolve(
+            user,
+            loaded.root,
+            header.turnId,
+          )
+        : null;
+      const inherited =
+        owned &&
+        requireHistoryFileChanges(owned, {
+          maxEvents: limits.codeSearchMaxResults,
+          maxBytes: limits.codePatchMaxBytes,
+        });
+      if (inherited) return { result: inherited };
       const events = await this.deps.repository.readToolCompletions(
         loaded.instanceId,
         loaded.root.id,

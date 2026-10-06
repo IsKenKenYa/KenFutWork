@@ -35,4 +35,10 @@ export interface CodeUiOwnedHistoryTurn {
   };
   canonical?: CodeReplayInput;
   completedView?: CodeUiCompletedTurnView;
+  /** 原journal验证出的完整只读结果，不携带文件恢复授权或伪Run事件。 */
+  fileChanges?: {
+    result: protocol.V4ConversationFileChangesResult;
+    eventCount: number;
+    bytes: number;
+  };
 }

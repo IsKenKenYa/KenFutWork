@@ -6,6 +6,7 @@ import type { TrustedCodeInput } from "./attachments/input-types.js";
 import { createCodeUiConversation } from "./conversation.js";
 import type { CodeAdmittedInput } from "./input-intents.js";
 import {
+  captureHistoryFileChanges,
   createCodeUiOwnedHistory,
   mappedHistoryBoundaries,
   rebindOwnedHistory,
@@ -33,7 +34,7 @@ type ModelPlan = {
 };
 type Deps = Pick<
   CodeUiServiceDeps,
-  "repository" | "agentRuns" | "agentRunMetadata" | "threads"
+  "repository" | "agentRuns" | "agentRunMetadata" | "threads" | "settings"
 > & {
   inputOwner: { hostId: string; runtimeId: string };
   load(actor: LocalActor, sessionId: string): Promise<Loaded>;
@@ -436,6 +437,13 @@ async function prepareEditSource(
     root,
     snapshot,
     row.turnId,
+  );
+  await captureHistoryFileChanges(
+    deps,
+    operation.actor,
+    root,
+    snapshot,
+    history,
   );
   return {
     row: { ...row, sourceCommandId: row.sourceCommandId },

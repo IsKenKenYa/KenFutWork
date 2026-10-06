@@ -7,6 +7,7 @@ import {
   createCodeUiConversation,
 } from "./conversation.js";
 import {
+  captureHistoryFileChanges,
   createCodeUiOwnedHistory,
   mappedHistoryBoundaries,
   rebindOwnedHistory,
@@ -29,7 +30,12 @@ type Target = {
 };
 type Deps = Pick<
   CodeUiServiceDeps,
-  "repository" | "agentRuns" | "agentRunMetadata" | "threads" | "localInstance"
+  | "repository"
+  | "agentRuns"
+  | "agentRunMetadata"
+  | "threads"
+  | "localInstance"
+  | "settings"
 > & {
   load(actor: LocalActor, sessionId: string): Promise<Loaded>;
   refresh(instanceId: string, path: string, projectId: string): Promise<void>;
@@ -302,6 +308,13 @@ async function prepareFork(
     turns.push(turn);
     turnIds.set(turnId, randomUUID());
   }
+  await captureHistoryFileChanges(
+    deps,
+    operation.actor,
+    root,
+    selected.snapshot,
+    turns,
+  );
   const mapped = await deps.agentRuns.cloneContextHistoryBranch({
     sourceThreadId: post.threadId,
     targetThreadId: threadId,

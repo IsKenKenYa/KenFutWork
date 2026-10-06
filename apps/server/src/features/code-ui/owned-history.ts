@@ -1,3 +1,4 @@
+import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import type {
   AgentContextBranchBoundary,
   AgentContextBranchHistoryCloneResult,
@@ -5,6 +6,7 @@ import type {
 import type { AgentRunMetadataService } from "../agent-runs/agent-run-service.js";
 import type { ThreadService } from "../chat/thread-service.js";
 import type { LocalActor } from "../local-instance/types.js";
+import { collectTurnFileChanges } from "./file-changes.js";
 import type { CodeAdmittedInput } from "./input-intents.js";
 import type {
   CodeReplayInput,
@@ -14,6 +16,78 @@ import {
   CodeUiRepositoryError,
   type CodeUiSessionRecord,
 } from "./repository.js";
+import type { CodeUiServiceDeps } from "./service.js";
+
+type FileChangesLimits = { maxEvents: number; maxBytes: number };
+
+/** 只读继承详情仍受当前治理约束；复制的journal大小不会赋予恢复权限。 */
+export function requireHistoryFileChanges(
+  turn: CodeUiOwnedHistoryTurn,
+  limits: FileChangesLimits,
+) {
+  const details = turn.fileChanges;
+  if (!details) return;
+  const result = protocol.v4ConversationFileChangesResultSchema.parse(
+    details.result,
+  );
+  if (
+    details.eventCount > limits.maxEvents ||
+    details.bytes > limits.maxBytes ||
+    Buffer.byteLength(JSON.stringify(result)) > limits.maxBytes
+  )
+    throw new CodeUiRepositoryError(
+      "command_conflict",
+      "完整文件详情超过当前读取预算，请调整配置后重试。",
+    );
+  return structuredClone(result);
+}
+
+/** 仅在复制历史时读取真实journal；普通snapshot与action探测不读取完整补丁。 */
+export async function captureHistoryFileChanges(
+  deps: Pick<CodeUiServiceDeps, "repository" | "settings">,
+  actor: LocalActor,
+  root: CodeUiSessionRecord,
+  snapshot: protocol.ConversationSnapshot,
+  turns: CodeUiOwnedHistoryTurn[],
+) {
+  const changed = turns.filter((turn) =>
+    snapshot.rows.window.some(
+      (row) =>
+        row.turnId === turn.owner.turnId &&
+        row.kind === "toolCall" &&
+        ["Write", "Edit", "ApplyPatch"].includes(row.toolName) &&
+        ["file_diff", "file_diffs"].includes(row.output?.display?.kind ?? ""),
+    ),
+  );
+  if (!changed.length) return;
+  const settings = await deps.settings.getInstanceSettings(
+    actor,
+    root.instance_id,
+  );
+  const limits = {
+    maxEvents: settings.codeSearchMaxResults,
+    maxBytes: settings.codePatchMaxBytes,
+  };
+  for (const turn of changed) {
+    if (turn.fileChanges) {
+      requireHistoryFileChanges(turn, limits);
+      continue;
+    }
+    const events = await deps.repository.readToolCompletions(
+      root.instance_id,
+      root.id,
+      turn.owner.turnId,
+      limits,
+    );
+    const result = collectTurnFileChanges(snapshot, turn.owner.turnId, events);
+    turn.fileChanges = {
+      result,
+      eventCount: events.length,
+      bytes: Buffer.byteLength(JSON.stringify(events)),
+    };
+    requireHistoryFileChanges(turn, limits);
+  }
+}
 
 function replayInput(input: CodeAdmittedInput): CodeReplayInput {
   const {
