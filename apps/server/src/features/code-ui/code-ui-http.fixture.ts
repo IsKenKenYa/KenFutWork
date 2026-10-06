@@ -135,10 +135,25 @@ export async function createCodeUiHttpFixture(
       actor,
       close() {
         closing ??= (async () => {
-          await client.close();
-          await host.close();
-          await databaseTransport?.close();
-          await database.close();
+          const failures: unknown[] = [];
+          // 各资源按原顺序收尾；宿主失败仍须关闭本fixture的传输/PG，并保留失败。
+          for (const close of [
+            () => client.close(),
+            () => host.close(),
+            () => databaseTransport?.close(),
+            () => database.close(),
+          ]) {
+            try {
+              await close();
+            } catch (error) {
+              failures.push(error);
+            }
+          }
+          if (failures.length)
+            throw new AggregateError(
+              failures,
+              "独占Code测试资源未全部确认关闭。",
+            );
         })().catch((error: unknown) => {
           closing = undefined;
           throw error;
