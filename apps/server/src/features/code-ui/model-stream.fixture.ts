@@ -8,6 +8,10 @@ export async function heldModel(
       name: string;
       arguments: Record<string, unknown>;
     };
+    toolsByRequest?: Record<
+      number,
+      { id: string; name: string; arguments: Record<string, unknown> }
+    >;
     usage?: { promptTokens: number; completionTokens: number };
   } = {},
 ) {
@@ -51,11 +55,13 @@ export async function heldModel(
       entry.closed = true;
     });
     response.writeHead(200, { "content-type": "text/event-stream" });
-    const tool = requests.length === 1 ? options.initialTool : undefined;
+    const tool =
+      options.toolsByRequest?.[requests.length - 1] ??
+      (requests.length === 1 ? options.initialTool : undefined);
     if (tool) {
       response.write(
         `data: ${JSON.stringify({
-          id: "chatcmpl-1",
+          id: `chatcmpl-${requests.length}`,
           object: "chat.completion.chunk",
           created: 1,
           model: "stop-model",
@@ -83,14 +89,14 @@ export async function heldModel(
       );
       response.write(
         `data: ${JSON.stringify({
-          id: "chatcmpl-1",
+          id: `chatcmpl-${requests.length}`,
           object: "chat.completion.chunk",
           created: 1,
           model: "stop-model",
           choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
         })}\n\n`,
       );
-      writeUsage(response, 0);
+      writeUsage(response, requests.length - 1);
       response.end("data: [DONE]\n\n");
       return;
     }
@@ -125,6 +131,22 @@ export async function heldModel(
     baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
     requests,
     firstRequest,
+    writeText(index: number, text: string) {
+      const response = responses[index];
+      if (!response || response.destroyed || response.writableEnded)
+        throw new Error("指定外部模型流不可写。");
+      response.write(
+        `data: ${JSON.stringify({
+          id: `chatcmpl-${index + 1}`,
+          object: "chat.completion.chunk",
+          created: 1,
+          model: "stop-model",
+          choices: [
+            { index: 0, delta: { content: text }, finish_reason: null },
+          ],
+        })}\n\n`,
+      );
+    },
     // index与requests一致，从0开始；旧消费者不调用时仍永久保留流。
     finish(index: number) {
       const response = responses[index];

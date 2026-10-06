@@ -8,6 +8,7 @@ import { deriveSessionTitle } from "../chat/session-title.js";
 import type { ApprovalEvent } from "../permissions/approval-types.js";
 import type { RunUsageTotals } from "../usage/run-usage-accumulator.js";
 import { updateTurnFileSummary } from "./file-changes.js";
+import { freezeChildSnapshots } from "./child-history.js";
 import { type CodeAdmittedInput, codeGuideMessageId } from "./input-intents.js";
 import { codeInputRouting, resolveHeldQueue } from "./queue-control.js";
 import type { UserInputEvent } from "./user-input-types.js";
@@ -44,7 +45,10 @@ function setManualCompactStatus(
   row.marker.status = status;
 }
 
-export type CodeUiCompletedTurnView = Pick<Snapshot, "config" | "plan" | "usage">;
+export type CodeUiCompletedTurnView = Pick<Snapshot, "config" | "plan" | "usage"> & {
+  childSnapshots?: Snapshot[];
+  frozenRows?: Row[];
+};
 
 export interface CodeUiConversationState {
   version: 1;
@@ -61,6 +65,7 @@ export interface CodeUiConversationState {
   approvedPlan?: CodeApprovedPlan;
   completedTurnViews?: Array<[string, CodeUiCompletedTurnView]>;
   inheritedHistory?: import("./owned-history-types.js").CodeUiOwnedHistoryTurn[];
+  inheritedSessions?: import("./owned-history-types.js").CodeUiInheritedSession[];
 }
 
 function cancelToolWaits(snapshot: Snapshot, at: number) {
@@ -304,6 +309,7 @@ export function createCodeUiConversation(input: {
     structuredClone(input.state?.completedTurnViews ?? []),
   );
   const inheritedHistory = structuredClone(input.state?.inheritedHistory ?? []);
+  const inheritedSessions = structuredClone(input.state?.inheritedSessions ?? []);
   const planningEpoch = input.state?.planningEpoch ?? 0;
   const approvedPlan = input.state?.approvedPlan;
   const config = protocol.sessionConfigStateSchema.parse(input.config);
@@ -409,6 +415,7 @@ export function createCodeUiConversation(input: {
         childRunUsage: [...childRunUsage],
         completedTurnViews: [...completedTurnViews],
         inheritedHistory,
+        inheritedSessions,
         planningEpoch,
         ...(approvedPlan ? { approvedPlan } : {}),
         ...(inputOwner ? { inputOwner } : {}),
@@ -604,6 +611,7 @@ export function createCodeUiConversation(input: {
       return child.sessionId;
     },
     recordChildRunEvent(childSessionId: string, event: StreamEvent) {
+      if (inheritedSessions.some((session) => session.owner.sessionId === childSessionId)) return;
       if (childSessionId === input.sessionId)
         throw new Error("子运行不能写入主转录目标");
       const child = requireSnapshot(childSessionId);
@@ -1068,6 +1076,7 @@ export function createCodeUiConversation(input: {
               config: root.config,
               plan: root.plan,
               usage: root.usage,
+              ...(snapshots.size > 1 ? { childSnapshots: freezeChildSnapshots(root, snapshots), frozenRows: root.rows.window } : {}),
             }),
           );
         return;

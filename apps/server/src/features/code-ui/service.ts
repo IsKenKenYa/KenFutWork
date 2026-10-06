@@ -14,6 +14,7 @@ import {
   appSettingsSchema,
   resolveExecutionState,
   zcodeWorkspacePresentationSchema,
+  zcodeSessionSubagentsParamsSchema,
 } from "@zcode/shared";
 import type { AgentRunService } from "../../agent/runtime.js";
 import { DEFAULT_SANDBOX_ROOT } from "../../agent/sandbox-dir.js";
@@ -82,7 +83,9 @@ import { createCodeUiHistoryFork } from "./history-fork.js";
 import {
   createCodeUiOwnedHistory,
   requireHistoryFileChanges,
+  requireStoredFileChanges,
 } from "./owned-history.js";
+import { listCodeSessionSubagents } from "./subagent-directory.js";
 import { createCodeGuideInputs } from "./guide-input.js";
 import { createCodePlanningControl } from "./planning-control.js";
 import { createCodeApprovedPlanStore } from "./approved-plan-store.js";
@@ -1965,6 +1968,37 @@ export class CodeUiService {
         }),
       };
     }
+    if (method === "listSessionSubagents") {
+      const value = args[0] as {
+        sessionId: string;
+        endedLimit?: number;
+        endedCursor?: string;
+      };
+      const parsed = zcodeSessionSubagentsParamsSchema.parse({
+        sessionId: value.sessionId,
+        ...(value.endedLimit !== undefined ? { endedLimit: value.endedLimit } : {}),
+        ...(value.endedCursor !== undefined ? { endedCursor: value.endedCursor } : {}),
+      });
+      const loaded = await this.loadConversation(user, parsed.sessionId);
+      if (
+        target.workspacePath !== loaded.project.path ||
+        (target.projectId && target.projectId !== loaded.project.projectId) ||
+        (target.workspaceIdentity &&
+          target.workspaceIdentity !==
+            JSON.stringify([loaded.project.projectId, loaded.project.path]))
+      )
+        throw new CodeUiRepositoryError(
+          "not_found",
+          "子会话目录不属于当前Task固定工作目录。",
+        );
+      return {
+        result: listCodeSessionSubagents(
+          loaded.host.getSnapshot(parsed.sessionId),
+          loaded.root.state?.snapshots ?? [],
+          parsed,
+        ),
+      };
+    }
     if (method === "conversationFileRewindPreviewV4")
       return this.fileHistory.preview(
         user,
@@ -1998,6 +2032,26 @@ export class CodeUiService {
         user,
         loaded.instanceId,
       );
+      const childDetails = loaded.root.state?.inheritedSessions?.find(
+        (session) => session.owner.sessionId === parsed.sessionId,
+      );
+      if (childDetails) {
+        if (
+          childDetails.owner.instanceId !== loaded.instanceId ||
+          childDetails.owner.projectId !== loaded.root.project_id ||
+          childDetails.owner.taskId !== loaded.root.id
+        )
+          throw new CodeUiRepositoryError("not_found", "子历史详情不属于当前Task。");
+        const stored = requireStoredFileChanges(
+          childDetails.fileChanges.find((file) => file.turnId === header.turnId)
+            ?.details,
+          {
+            maxEvents: limits.codeSearchMaxResults,
+            maxBytes: limits.codePatchMaxBytes,
+          },
+        );
+        if (stored) return { result: stored };
+      }
       const owned =
         loaded.root.state?.inheritedHistory?.some(
           (turn) => turn.owner.turnId === header.turnId,
@@ -2047,6 +2101,29 @@ export class CodeUiService {
       }
       if (parsed.envelope.type === "createSession")
         return { result: await this.createSession(user, parsed.envelope) };
+      if (parsed.envelope.sessionId) {
+        const historical = await this.loadConversation(
+          user,
+          parsed.envelope.sessionId,
+        );
+        if (
+          historical.root.state?.inheritedSessions?.some(
+            (session) => session.owner.sessionId === historical.entry.id,
+          )
+        )
+          return {
+            result: protocol.commandAckSchema.parse({
+              commandId: parsed.envelope.commandId,
+              status: "rejected",
+              reasonCode: "guard.historicalSessionReadOnly",
+              message:
+                "此子会话是分叉截点的只读历史，不继承运行、审批或文件恢复权限。",
+              revisionAtDecision: historical.host.getSnapshot(
+                historical.entry.id,
+              ).revision,
+            }),
+          };
+      }
       if (
         parsed.envelope.type === "sendText" ||
         parsed.envelope.type === "compact"

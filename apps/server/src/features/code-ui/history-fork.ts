@@ -7,6 +7,13 @@ import type {
   CodeAttachmentsService,
 } from "./attachments/types.js";
 import {
+  childFileChanges,
+  childIdentityMap,
+  freezeChildSnapshots,
+  remapChildSnapshot,
+  remapHistoryRows,
+} from "./child-history.js";
+import {
   type CodeUiCompletedTurnView,
   createCodeUiConversation,
 } from "./conversation.js";
@@ -16,7 +23,10 @@ import {
   mappedHistoryBoundaries,
   rebindOwnedHistory,
 } from "./owned-history.js";
-import type { CodeUiOwnedHistoryTurn } from "./owned-history-types.js";
+import type {
+  CodeUiInheritedSession,
+  CodeUiOwnedHistoryTurn,
+} from "./owned-history-types.js";
 import {
   CodeUiCommandOutcomeUnknownError,
   CodeUiRepositoryError,
@@ -54,6 +64,7 @@ type Selection = {
   >;
   view: CodeUiCompletedTurnView;
   rows: Snapshot["rows"]["window"];
+  children: Snapshot[];
 };
 
 function selectedTurn(
@@ -106,19 +117,36 @@ function selectedTurn(
       (turn) => turn.owner.turnId === assistant.turnId,
     )?.completedView;
   if (!view) return null;
-  const rows = snapshot.rows.window.slice(0, index + 1);
+  const frozenRows = view.frozenRows ?? snapshot.rows.window;
+  const frozenIndex = frozenRows.findIndex(
+    (row) => row.rowId === target.rowId && row.entityId === target.entityId,
+  );
+  if (frozenIndex < 0) return null;
+  const rows = frozenRows.slice(0, frozenIndex + 1);
+  const children = freezeChildSnapshots(
+    {
+      ...snapshot,
+      rows: {
+        window: rows,
+        totalCount: rows.length,
+        firstRowId: rows[0]?.rowId ?? null,
+      },
+    },
+    new Map(
+      (view.childSnapshots ?? []).map((child) => [child.sessionId, child]),
+    ),
+  );
   // 这些私有对象尚未迁移所有权，拒绝发表不可独立读取的副本。
   if (
     rows.some(
       (row) =>
-        row.kind === "subagent" ||
-        (!canCopyAttachments &&
-          row.kind === "userInput" &&
-          row.attachments?.length),
+        !canCopyAttachments &&
+        row.kind === "userInput" &&
+        row.attachments?.length,
     )
   )
     return null;
-  return { snapshot, assistant, view, rows };
+  return { snapshot, assistant, view, rows, children };
 }
 
 async function ownedPost(
@@ -144,6 +172,8 @@ function forkState(
   inherited: CodeUiOwnedHistoryTurn[],
   turnIds: ReadonlyMap<string, string>,
   attachments: ReadonlyMap<string, protocol.AttachmentRef>,
+  owner: { instanceId: string; projectId: string },
+  files: ReadonlyMap<string, CodeUiInheritedSession["fileChanges"]>,
 ) {
   const config = structuredClone(source.view.config);
   delete config.permissionGrant;
@@ -155,34 +185,52 @@ function forkState(
   }).exportState();
   const child = state.snapshots[0];
   if (!child) throw new Error("分叉Task初始化未生成根快照。");
-  const rows = structuredClone(source.rows);
-  const entities = new Map(
-    source.rows.flatMap((row, index) =>
-      row.entityId
-        ? [[row.entityId, `${id}:history-row:${index + 1}`] as const]
-        : [],
-    ),
+  const turns = new Map(turnIds);
+  const identity = {
+    ...childIdentityMap(id, source.children, turns),
+    attachments: (refs: readonly protocol.AttachmentRef[]) =>
+      mappedAttachments(refs, attachments),
+  };
+  const rows = remapHistoryRows(
+    source.rows,
+    id,
+    source.snapshot.sessionId,
+    identity,
   );
-  for (const [index, row] of rows.entries()) {
-    delete row.actions;
-    row.turnId = turnIds.get(row.turnId) ?? row.turnId;
-    row.productTurnId = row.turnId;
-    row.rowId = index + 1;
-    row.createdAtSeq = index + 1;
-    row.entityId = `${id}:history-row:${index + 1}`;
-    if (row.kind === "userInput" && row.attachments)
-      row.attachments = mappedAttachments(row.attachments, attachments);
-    if (row.kind === "turnHeader" && row.workSegments)
-      for (const [segmentIndex, segment] of row.workSegments.entries()) {
-        segment.segmentId = `${row.turnId}:history-segment:${segmentIndex + 1}`;
-        if (segment.triggerEntityId)
-          segment.triggerEntityId = entities.get(segment.triggerEntityId);
-      }
-    if ("assistantResponseId" in row && row.assistantResponseId)
-      row.assistantResponseId = `${id}:history-response:${row.assistantResponseId}`;
-    if (row.kind === "toolCall")
-      row.toolCallId = `${id}:history-tool:${row.toolCallId}`;
+  const copiedChildren = source.children.map((original) =>
+    remapChildSnapshot(original, identity),
+  );
+  for (const turn of inherited) {
+    const view = turn.completedView;
+    if (view?.frozenRows)
+      view.frozenRows = remapHistoryRows(
+        view.frozenRows,
+        id,
+        source.snapshot.sessionId,
+        identity,
+      );
+    if (view?.childSnapshots)
+      view.childSnapshots = view.childSnapshots.map((child) =>
+        remapChildSnapshot(child, identity),
+      );
   }
+  const closedById = new Map(
+    copiedChildren.map((snapshot) => [snapshot.sessionId, snapshot]),
+  );
+  for (const currentRows of [
+    rows,
+    ...copiedChildren.map((snapshot) => snapshot.rows.window),
+  ])
+    for (const row of currentRows)
+      if (
+        row.kind === "subagent" &&
+        row.status === "running" &&
+        row.childSessionId &&
+        closedById.has(row.childSessionId)
+      ) {
+        row.status = "cancelled";
+        row.summaryText = "分叉截点历史副本不继承执行；源子代理未被停止。";
+      }
   child.rows = {
     window: rows,
     totalCount: source.rows.length,
@@ -190,6 +238,34 @@ function forkState(
   };
   child.seq = rows.length;
   state.inheritedHistory = inherited;
+  state.snapshots.push(...copiedChildren);
+  state.inheritedSessions = source.children.map((original) => ({
+    owner: {
+      instanceId: owner.instanceId,
+      projectId: owner.projectId,
+      taskId: id,
+      sessionId: identity.sessions.get(original.sessionId) ?? "",
+    },
+    source: {
+      taskId: source.snapshot.sessionId,
+      sessionId: original.sessionId,
+    },
+    fileChanges: (files.get(original.sessionId) ?? []).map((file) => ({
+      turnId: identity.turns.get(file.turnId) ?? file.turnId,
+      details: structuredClone(file.details),
+    })),
+  }));
+  if (child.subagents)
+    child.subagents = {
+      revision: 0,
+      childSessionIds: rows.flatMap((row) =>
+        row.kind === "subagent" && row.childSessionId
+          ? [row.childSessionId]
+          : [],
+      ),
+      running: [],
+      endedTotal: rows.filter((row) => row.kind === "subagent").length,
+    };
   child.plan = structuredClone(source.view.plan);
   // 新Task没有执行过父Task的Run；历史保留上下文占用，不重复计入父消费。
   child.usage.contextWindow = structuredClone(source.view.usage.contextWindow);
@@ -322,7 +398,7 @@ async function prepareFork(
   if (!post) return;
   const id = randomUUID();
   const threadId = deps.threads.createThreadId();
-  const { turns, turnIds } = await collectForkHistory(
+  const { turns, turnIds, childFiles } = await collectForkHistory(
     deps,
     operation,
     root,
@@ -390,6 +466,8 @@ async function prepareFork(
       inherited,
       turnIds,
       attachments,
+      { instanceId: root.instance_id, projectId: root.project_id },
+      childFiles,
     ),
     ...(attachmentCopy
       ? { publishArtifacts: (scoped) => attachmentCopy.publish(scoped) }
@@ -568,7 +646,13 @@ async function collectForkHistory(
     selected.snapshot,
     turns,
   );
-  return { turns, turnIds };
+  const childFiles = new Map<string, CodeUiInheritedSession["fileChanges"]>();
+  for (const snapshot of selected.children)
+    childFiles.set(
+      snapshot.sessionId,
+      await childFileChanges(deps, operation.actor, root, snapshot),
+    );
+  return { turns, turnIds, childFiles };
 }
 
 async function prepareForkAttachments(

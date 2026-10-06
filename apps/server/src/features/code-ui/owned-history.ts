@@ -10,6 +10,7 @@ import { collectTurnFileChanges } from "./file-changes.js";
 import type { CodeAdmittedInput } from "./input-intents.js";
 import type {
   CodeReplayInput,
+  CodeUiFileChangesFact,
   CodeUiOwnedHistoryTurn,
 } from "./owned-history-types.js";
 import {
@@ -25,7 +26,13 @@ export function requireHistoryFileChanges(
   turn: CodeUiOwnedHistoryTurn,
   limits: FileChangesLimits,
 ) {
-  const details = turn.fileChanges;
+  return requireStoredFileChanges(turn.fileChanges, limits);
+}
+
+export function requireStoredFileChanges(
+  details: CodeUiFileChangesFact | undefined,
+  limits: FileChangesLimits,
+) {
   if (!details) return;
   const result = protocol.v4ConversationFileChangesResultSchema.parse(
     details.result,

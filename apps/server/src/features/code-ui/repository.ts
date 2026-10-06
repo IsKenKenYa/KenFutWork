@@ -104,15 +104,120 @@ export interface CodeUiRootInsert {
   publishArtifacts?: (scoped: InstanceSqlClient) => Promise<void>;
 }
 
+type ChildSessionIndex = {
+  childSessionId: string;
+  parentSessionId: string;
+  parentToolCallId: string;
+};
+
+function childSessionIndexes(rootId: string, state: CodeUiConversationState) {
+  const snapshots = new Map<string, protocol.ConversationSnapshot>();
+  const duplicates = new Set<string>();
+  for (const snapshot of state.snapshots) {
+    if (snapshots.has(snapshot.sessionId)) duplicates.add(snapshot.sessionId);
+    snapshots.set(snapshot.sessionId, snapshot);
+  }
+  const indexes = new Map<string, ChildSessionIndex>();
+  const dispatches = new Map<string, string>();
+  // 历史截断仍保留离线子转录；只物化根通过实际派发行可达的子索引。
+  const parents = [rootId];
+  for (const parentSessionId of parents) {
+    const snapshot = snapshots.get(parentSessionId);
+    if (!snapshot || duplicates.has(parentSessionId))
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "子会话归属图缺少唯一的父快照，未保存会话索引。",
+      );
+    for (const row of snapshot.rows.window) {
+      if (row.kind !== "subagent" || !row.childSessionId) continue;
+      if (!row.parentToolCallId || !snapshots.has(row.childSessionId))
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "子会话派发身份或独立转录缺失，未保存会话索引。",
+        );
+      const previous = indexes.get(row.childSessionId);
+      if (
+        row.childSessionId === rootId ||
+        (previous &&
+          (previous.parentSessionId !== parentSessionId ||
+            previous.parentToolCallId !== row.parentToolCallId))
+      )
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "子会话关联包含循环或冲突的父归属，未保存会话索引。",
+        );
+      const key = JSON.stringify([parentSessionId, row.parentToolCallId]);
+      const dispatched = dispatches.get(key);
+      if (dispatched && dispatched !== row.childSessionId)
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "同一父工具派发关联了多个子会话，未保存会话索引。",
+        );
+      dispatches.set(key, row.childSessionId);
+      if (previous) continue;
+      indexes.set(row.childSessionId, {
+        childSessionId: row.childSessionId,
+        parentSessionId,
+        parentToolCallId: row.parentToolCallId,
+      });
+      parents.push(row.childSessionId);
+    }
+  }
+  return [...indexes.values()];
+}
+
+async function writeChildSessionIndexes(
+  scoped: InstanceSqlClient,
+  root: CodeUiSessionRecord,
+  state: CodeUiConversationState,
+) {
+  for (const child of childSessionIndexes(root.id, state)) {
+    const inserted = await scoped.queryOne<SqlRow & { id: string }>(
+      `insert into public.code_ui_sessions (id, instance_id, project_id, root_session_id, parent_session_id, parent_tool_call_id, root_directory, additional_directories, sandbox_mode, scope_generation, execution_state, branch_generation)
+       values ($1, :instance, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11) on conflict do nothing returning id`,
+      [
+        child.childSessionId,
+        root.project_id,
+        root.id,
+        child.parentSessionId,
+        child.parentToolCallId,
+        root.root_directory,
+        JSON.stringify(root.additional_directories),
+        root.sandbox_mode,
+        root.scope_generation,
+        root.execution_state,
+        root.branch_generation,
+      ],
+    );
+    if (inserted) continue;
+    const existing = await scoped.queryOne<CodeUiSessionRecord>(
+      "select * from public.code_ui_sessions where instance_id=:instance and id=$1 for update",
+      [child.childSessionId],
+    );
+    if (
+      !existing ||
+      existing.deleted_at ||
+      existing.project_id !== root.project_id ||
+      existing.root_session_id !== root.id ||
+      existing.parent_session_id !== child.parentSessionId ||
+      existing.parent_tool_call_id !== child.parentToolCallId
+    )
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "子会话索引已属于其他 Task、Project 或派发，不能复用旧归属。",
+      );
+  }
+}
+
 async function insertRoot(scoped: InstanceSqlClient, input: CodeUiRootInsert) {
   await scoped.execute(
     `insert into public.chat_sessions (id, instance_id, project_id, mode, created_by_client_id, thread_id)
      values ($1::uuid, :instance, $2::uuid, 'code', $3::uuid, $4::text)`,
     [input.sessionId, input.projectId, input.createdByClientId, input.threadId],
   );
-  await scoped.execute(
+  const root = await scoped.queryOne<CodeUiSessionRecord>(
     `insert into public.code_ui_sessions (id, instance_id, project_id, chat_session_id, root_session_id, state, root_directory, additional_directories, sandbox_mode, scope_generation)
-     values ($1, :instance, $2, $1, $1, $3::jsonb, $4, $5::jsonb, $6, $7)`,
+     values ($1, :instance, $2, $1, $1, $3::jsonb, $4, $5::jsonb, $6, $7) returning *`,
     [
       input.sessionId,
       input.projectId,
@@ -123,6 +228,9 @@ async function insertRoot(scoped: InstanceSqlClient, input: CodeUiRootInsert) {
       input.scope.generation,
     ],
   );
+  if (!root)
+    throw new CodeUiRepositoryError("not_found", "新根 Task 未生成持久索引。");
+  await writeChildSessionIndexes(scoped, root, input.state);
 }
 
 async function writeState(
@@ -140,33 +248,7 @@ async function writeState(
       where instance_id = :instance and id = $1 and deleted_at is null`,
     [root.id, JSON.stringify(state), activeRunId],
   );
-  for (const snapshot of state.snapshots) {
-    for (const row of snapshot.rows.window) {
-      if (
-        row.kind !== "subagent" ||
-        !row.childSessionId ||
-        !row.parentToolCallId
-      )
-        continue;
-      await scoped.execute(
-        `insert into public.code_ui_sessions (id, instance_id, project_id, root_session_id, parent_session_id, parent_tool_call_id, root_directory, additional_directories, sandbox_mode, scope_generation, execution_state, branch_generation)
-         values ($1, :instance, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11) on conflict (id) do nothing`,
-        [
-          row.childSessionId,
-          root.project_id,
-          root.id,
-          snapshot.sessionId,
-          row.parentToolCallId,
-          root.root_directory,
-          JSON.stringify(root.additional_directories),
-          root.sandbox_mode,
-          root.scope_generation,
-          root.execution_state,
-          root.branch_generation,
-        ],
-      );
-    }
-  }
+  await writeChildSessionIndexes(scoped, root, state);
 }
 
 async function lockRoot(scoped: InstanceSqlClient, sessionId: string) {
