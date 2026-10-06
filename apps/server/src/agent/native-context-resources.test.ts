@@ -331,7 +331,7 @@ it.each([false, true])(
           "call-task",
         ).payload,
       ).toEqual(task);
-      f.provider.release({
+      await f.provider.release({
         targetThreadId: "child-thread",
         reference: copied.reference,
       });
@@ -428,11 +428,11 @@ it("已压缩原摘要和 pending summary 保留原文，后代 fork 组合别�
           ._summarizationEvent,
       ).content,
     ).toBe(original);
-    f.provider.release({
+    await f.provider.release({
       targetThreadId: "child-thread",
       reference: first.reference,
     });
-    f.provider.release({
+    await f.provider.release({
       targetThreadId: "grand-thread",
       reference: second.reference,
     });
@@ -685,7 +685,7 @@ it("冲突资源映射与未完成的受影响 JSON chunk 可读拒绝，失败�
         (await f.read("child-thread")).checkpoint.channel_values.messages,
       ),
     ).toHaveLength(1);
-    f.provider.release({
+    await f.provider.release({
       targetThreadId: "child-thread",
       reference: corrected.reference,
     });

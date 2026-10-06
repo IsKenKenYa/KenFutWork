@@ -160,7 +160,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         ]);
         expect(copied.boundaries[0]?.reference).toBe(null);
         expect(copied.boundaries[3]?.reference).toEqual(copied.reference);
-        provider.release({ targetThreadId, reference: copied.reference });
+        await provider.release({ targetThreadId, reference: copied.reference });
         const native = await persistence.getPersistence();
         if (!native) throw new Error("真实原生持久化未装配");
         await native.checkpointer.deleteThread(f.threadId);
@@ -192,7 +192,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           reference: copied.reference,
           boundaries: copied.boundaries,
         });
-        provider.release({
+        await provider.release({
           targetThreadId: grandchildThreadId,
           reference: grandchild.reference,
         });
@@ -280,7 +280,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         });
         if (!foreign || !invalidNamespace)
           throw new Error("真实跨thread与namespace引用未建立");
-        provider.release({
+        await provider.release({
           targetThreadId: foreignThreadId,
           reference: foreign,
         });
@@ -356,7 +356,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         expect(copy.boundaries[1]?.reference).toEqual(copy.reference);
         await provider.discard({ targetThreadId, reference: copy.reference });
         const replacement = await provider.cloneHistory(corrected);
-        provider.release({ targetThreadId, reference: replacement.reference });
+        await provider.release({ targetThreadId, reference: replacement.reference });
         await expect(
           provider.discard({
             targetThreadId,

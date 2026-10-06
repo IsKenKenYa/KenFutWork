@@ -660,7 +660,7 @@ async function finishCommittedEdit(
   // DB已原子发布thread/state/ready/ACK；后续租约释放或通知失败不能补偿已发布target。
   operation.progress = { ...progress, phase: "published" };
   try {
-    deps.agentRuns.releaseContextBranch({
+    await deps.agentRuns.releaseContextBranch({
       targetThreadId: progress.clone.threadId,
       reference: progress.clone.reference,
     });

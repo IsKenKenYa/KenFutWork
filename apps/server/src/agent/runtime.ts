@@ -724,10 +724,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         throw new Error("当前Agent未装配上下文分支能力。");
       await options.contextBranchProvider.discard(input);
     },
-    releaseContextBranch(input: AgentContextBranchTargetInput): void {
+    async releaseContextBranch(input: AgentContextBranchTargetInput): Promise<void> {
       if (!options.contextBranchProvider)
         throw new Error("当前Agent未装配上下文分支能力。");
-      options.contextBranchProvider.release(input);
+      await options.contextBranchProvider.release(input);
     },
     cancelRun(runId: string): RunCancelResponse | null {
       const run = runs.get(runId);

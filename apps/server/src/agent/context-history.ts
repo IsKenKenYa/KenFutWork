@@ -40,10 +40,10 @@ export interface AgentContextBranchService {
   cloneHistory?(
     input: AgentContextBranchHistoryCloneInput,
   ): Promise<AgentContextBranchHistoryCloneResult>;
-  /** 只能清理本provider本次创建、尚未发布且引用匹配的目标。 */
+  /** 只能清理本provider持久认领、尚未发布且引用匹配的目标。 */
   discard(input: AgentContextBranchTargetInput): Promise<void>;
   /** 产品事务发布成功后撤销该目标的清理所有权。 */
-  release(input: AgentContextBranchTargetInput): void;
+  release(input: AgentContextBranchTargetInput): void | Promise<void>;
 }
 export interface AgentContextMessage {
   id: string | null;

@@ -1,10 +1,12 @@
 import type { RunnableConfig } from "@langchain/core/runnables";
 import type {
   BaseCheckpointSaver,
+  BaseStore,
   CheckpointMetadata,
   CheckpointTuple,
   PendingWrite,
 } from "@langchain/langgraph-checkpoint";
+import { z } from "zod";
 import type {
   AgentContextBranchBoundary,
   AgentContextBranchCloneInput,
@@ -23,9 +25,20 @@ import type { AgentPersistenceService } from "./persistence/index.js";
 
 type BranchLease = {
   checkpointer: BaseCheckpointSaver;
+  store: BaseStore;
   reference: AgentContextHistoryReference | null;
   writeAttempted: boolean;
 };
+const leaseNamespace = ["kenfutwork", "native-context-preparations"];
+const leaseSchema = z
+  .object({
+    reference: z
+      .object({ adapter: z.string().min(1), key: z.string().min(1) })
+      .strict()
+      .nullable(),
+    writeAttempted: z.boolean(),
+  })
+  .strict();
 type NativeCheckpointTuple = CheckpointTuple & { metadata: CheckpointMetadata };
 
 function sourceConfig(input: AgentContextBranchCloneInput) {
@@ -195,23 +208,31 @@ export function createNativeContextBranchService(options: {
   agentPersistenceService: Pick<AgentPersistenceService, "getPersistence">;
 }): AgentContextBranchService {
   const cloning = new Set<string>();
-  const leases = new Map<string, BranchLease>();
-  const ownedLease = (input: AgentContextBranchTargetInput) => {
-    const lease = leases.get(input.targetThreadId);
+  const ownedLease = async (input: AgentContextBranchTargetInput) => {
+    const persistence = await options.agentPersistenceService.getPersistence();
+    if (!persistence) throw new Error("原生上下文持久化能力未装配。");
+    const stored = await persistence.store.get(
+      leaseNamespace,
+      input.targetThreadId,
+    );
+    const parsed = leaseSchema.safeParse(stored?.value);
     if (
-      cloning.has(input.targetThreadId) ||
-      !lease ||
-      !sameReference(lease.reference, input.reference)
+      !parsed.success ||
+      !sameReference(parsed.data.reference, input.reference)
     )
       throw new Error("目标不属于本次尚未发布的上下文分支。");
-    return lease;
+    return {
+      ...parsed.data,
+      checkpointer: persistence.checkpointer,
+      store: persistence.store,
+    };
   };
   const cloneHistory = async (
     input: AgentContextBranchHistoryCloneInput,
   ): Promise<AgentContextBranchHistoryCloneResult> => {
     const source = sourceConfig(input);
     const resources = createNativeContextResourceRebinder(input.resourceBindings ?? []);
-    if (cloning.has(input.targetThreadId) || leases.has(input.targetThreadId))
+    if (cloning.has(input.targetThreadId))
       throw new Error("上下文目标thread正在使用，不能重复克隆。");
     cloning.add(input.targetThreadId);
     let lease: BranchLease | undefined;
@@ -229,12 +250,19 @@ export function createNativeContextBranchService(options: {
       // 全部引用在复制前验证；每个边界只重绑定key，不再次复制其prefix。
       const boundaries = rebaseBoundaries(input, branch);
       await assertNewTarget(persistence.checkpointer, input.targetThreadId);
+      if (await persistence.store.get(leaseNamespace, input.targetThreadId))
+        throw new Error("上下文目标仍持有未发表准备租约，不能重复克隆。");
       lease = {
         checkpointer: persistence.checkpointer,
+        store: persistence.store,
         reference: null,
-        writeAttempted: false,
+        writeAttempted: !!source,
       };
-      leases.set(input.targetThreadId, lease);
+      // 写入目标前持久认领；重建Provider仍可核对并清理本次未发表分支。
+      await lease.store.put(leaseNamespace, input.targetThreadId, {
+        reference: null,
+        writeAttempted: lease.writeAttempted,
+      });
       if (source) {
         const reference = await writeBranch(
           branch,
@@ -243,6 +271,10 @@ export function createNativeContextBranchService(options: {
           resources,
         );
         lease.reference = { ...reference };
+        await lease.store.put(leaseNamespace, input.targetThreadId, {
+          reference: lease.reference,
+          writeAttempted: lease.writeAttempted,
+        });
         return { reference, boundaries };
       }
       return { reference: null, boundaries };
@@ -251,7 +283,7 @@ export function createNativeContextBranchService(options: {
         try {
           if (lease.writeAttempted)
             await lease.checkpointer.deleteThread(input.targetThreadId);
-          leases.delete(input.targetThreadId);
+          await lease.store.delete(leaseNamespace, input.targetThreadId);
         } catch (cleanupError) {
           throw new AggregateError(
             [error, cleanupError],
@@ -270,9 +302,11 @@ export function createNativeContextBranchService(options: {
     },
     cloneHistory,
     async discard(input) {
-      const lease = ownedLease(input);
+      if (cloning.has(input.targetThreadId))
+        throw new Error("上下文目标正在处理，不能并发清理。");
       cloning.add(input.targetThreadId);
       try {
+        const lease = await ownedLease(input);
         if (lease.writeAttempted) {
           const current = await lease.checkpointer.getTuple({
             configurable: {
@@ -287,14 +321,21 @@ export function createNativeContextBranchService(options: {
             throw new Error("目标上下文已被继续使用，不能丢弃。");
           await lease.checkpointer.deleteThread(input.targetThreadId);
         }
-        leases.delete(input.targetThreadId);
+        await lease.store.delete(leaseNamespace, input.targetThreadId);
       } finally {
         cloning.delete(input.targetThreadId);
       }
     },
-    release(input) {
-      ownedLease(input);
-      leases.delete(input.targetThreadId);
+    async release(input) {
+      if (cloning.has(input.targetThreadId))
+        throw new Error("上下文目标正在处理，不能并发发布。");
+      cloning.add(input.targetThreadId);
+      try {
+        const lease = await ownedLease(input);
+        await lease.store.delete(leaseNamespace, input.targetThreadId);
+      } finally {
+        cloning.delete(input.targetThreadId);
+      }
     },
   };
 }

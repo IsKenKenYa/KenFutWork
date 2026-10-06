@@ -550,7 +550,7 @@ async function finishFork(
   operation.published = true;
   operation.attachments?.release();
   operation.outputs?.release();
-  deps.agentRuns.releaseContextBranch(operation.clone);
+  await deps.agentRuns.releaseContextBranch(operation.clone);
   try {
     await deps.refresh(
       operation.loaded.instanceId,
