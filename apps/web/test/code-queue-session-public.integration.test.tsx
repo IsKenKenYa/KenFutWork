@@ -270,6 +270,31 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           },
           { timeout: 30_000 },
         );
+        // 服务端已消费恢复输入不等于SSE已应用到原组件；删除前等待真实DOM版本。
+        await waitFor(
+          async () => {
+            const ready = await history.snapshot(
+              fixture,
+              currentHost.sessionId,
+            );
+            expect(
+              Number(
+                view.container
+                  .querySelector("[data-projection-seq]")
+                  ?.getAttribute("data-projection-seq"),
+              ),
+            ).toBe(ready.seq);
+            expect(
+              view.queryByTestId(`v4-queue-item-${resume.queueItemId}`),
+            ).toBeNull();
+            expect(
+              view
+                .getByTestId(`v4-queue-item-delete-${remainder.queueItemId}`)
+                .hasAttribute("disabled"),
+            ).toBe(false);
+          },
+          { timeout: 30_000 },
+        );
         fireEvent.click(
           view.getByTestId(`v4-queue-item-delete-${remainder.queueItemId}`),
         );
