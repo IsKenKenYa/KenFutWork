@@ -24,6 +24,18 @@ function clientWith(result: unknown = { content: "read" }) {
   };
 }
 describe("Code human viewer channel", () => {
+  it("原终端void销毁的取消被观察，显式await仍拒绝且不向关闭连接发送请求", async () => {
+    const { client, requests } = clientWith(null);
+    await client.connect();
+    client.dispose();
+    // 对齐原TerminalSession的销毁消费方式；未观察的拒绝会使Vitest整次检查失败。
+    void client.services.terminalService.dispose({ id: "closed-terminal" });
+    await expect(
+      client.services.terminalService.dispose({ id: "closed-terminal" }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(requests).toEqual([]);
+  });
   it("原Git/Skills/watch请求携带明确viewer hint，Project不被伪造为Task", async () => {
     const { client, requests } = clientWith({ id: "watcher" });
     client.setViewerContextResolver(() => ({

@@ -1,6 +1,7 @@
 import { render } from "@testing-library/react";
 import type { CodeUiTestClient } from "../../../server/src/features/code-ui/host-client.fixture.js";
 import type { createCodeSessionFixture } from "../../../server/src/features/code-ui/host-session.fixture.js";
+import type { CodeHttpChannelClient } from "../../src/components/workbench/zcode/host/httpChannelClient";
 import { installCodePublicHostDom } from "./code-public-host-dom";
 import { loadCodePublicHostProviders } from "./code-public-host-ui";
 
@@ -14,6 +15,7 @@ export type PublicFixture = {
   close(): Promise<void>;
 };
 export type OriginalSessionView = {
+  client: CodeHttpChannelClient;
   view: ReturnType<typeof render>;
   dispose(): void;
   releaseDom(): void;
@@ -66,6 +68,7 @@ export async function renderOriginalSession(
     );
     let disposed = false;
     return {
+      client,
       view,
       releaseDom,
       dispose() {

@@ -140,7 +140,33 @@ export class CodeHttpChannelClient implements IChannelClient {
   private readonly terminalListeners = new Map<string, Map<string, number>>();
   private readonly activatedTerminals = new Set<string>();
 
-  constructor(readonly config: CodeHostConfig) {}
+  constructor(readonly config: CodeHostConfig) {
+    const terminal = this.servicesSnapshot.terminalService;
+    this.servicesSnapshot = {
+      ...this.servicesSnapshot,
+      terminalService: new Proxy(terminal, {
+        get: (target, member) => {
+          if (member !== "dispose") return Reflect.get(target, member);
+          return (params: Parameters<typeof terminal.dispose>[0]) => {
+            // 原RPC代理的async包装产生外层Promise，须在服务边界观察原void销毁回调。
+            const operation = target.dispose(params);
+            void operation.catch((error: unknown) => {
+              if (
+                this.controller.signal.aborted &&
+                error &&
+                typeof error === "object" &&
+                "name" in error &&
+                error.name === "AbortError"
+              )
+                return;
+              console.error("Code终端关闭失败", error);
+            });
+            return operation;
+          };
+        },
+      }),
+    };
+  }
 
   registerWorkspaces(workspaces: CodeUiWorkspace[]) {
     this.workspaces.registerProjects(workspaces);
