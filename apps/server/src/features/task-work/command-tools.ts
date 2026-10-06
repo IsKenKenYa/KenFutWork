@@ -370,6 +370,7 @@ export function createTaskCommandTools(deps: {
         return [...work, ...inherited.map(record => ({
           taskId: record.id, kind: record.kind, label: record.label,
           status: record.status, readOnly: true,
+          ...(record.frozenAt ? { frozenAt: record.frozenAt } : {}),
         }))];
       }
       const record = await deps.manager.find(context, input.task_id);
@@ -393,6 +394,8 @@ export function createTaskCommandTools(deps: {
         output,
         outputRef: result.outputRef,
         statisticsComplete: inherited?.statisticsComplete ?? result.status !== "interrupted",
+        ...(inherited ? { readOnly: true } : {}),
+        ...(inherited?.frozenAt ? { frozenAt: inherited.frozenAt } : {}),
         display: {
           kind: "task_output",
           retrievalStatus:

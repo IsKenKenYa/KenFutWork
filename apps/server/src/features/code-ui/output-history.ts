@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { open, realpath, rm, stat } from "node:fs/promises";
+import { type FileHandle, open, realpath, rm, stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import type { AgentContextResourceBinding } from "../../agent/context-history.js";
@@ -20,6 +20,8 @@ import {
   type CapturedOutputSource,
   type CodeUiOutputHistory,
   type CodeUiOutputTarget,
+  type FrozenHistoryOutput,
+  frozenHistoryOutputSchema,
   type HistoryOutputStats,
   historyOutputListSchema,
   historyOutputStatsSchema,
@@ -37,6 +39,7 @@ type WorkCandidate = {
   id: string;
   ref: string;
   childSessionId?: string;
+  frozenAt?: FrozenHistoryOutput;
 };
 type BashCandidate = {
   kind: "bash";
@@ -59,6 +62,7 @@ type OutputSource = {
   outputStats: HistoryOutputStats;
   statisticsComplete: boolean;
   bytes: Uint8Array;
+  frozenAt?: FrozenHistoryOutput;
 };
 const conflict = (message: string) =>
   new CodeUiRepositoryError("command_conflict", message);
@@ -86,7 +90,12 @@ function ownedRecords(root: CodeUiSessionRecord): OwnedHistoryOutput[] {
       record.objectPath !== objectPathFor(record.owner, record.id) ||
       !record.visibleSessions.includes(root.id) ||
       record.visibleSessions.some((id) => !sessions.has(id)) ||
-      (record.childSessionId && !sessions.has(record.childSessionId))
+      (record.childSessionId && !sessions.has(record.childSessionId)) ||
+      (record.frozenAt &&
+        (record.status !== "interrupted" ||
+          record.statisticsComplete ||
+          JSON.stringify(record.frozenAt.outputStats) !==
+            JSON.stringify(record.outputStats)))
     )
       throw conflict("历史输出不属于当前根Task或其可见历史。");
     ids.add(record.id);
@@ -166,6 +175,7 @@ function workCandidate(
   if (typeof id !== "string" || !id.trim() || typeof ref !== "string" || !ref)
     throw conflict("任务工具的完整输出身份或引用无效。");
   const captured = canonical.output;
+  let frozenAt: FrozenHistoryOutput | undefined;
   if (
     canonical.status === "running" ||
     (row.toolName === "TaskOutput" &&
@@ -174,10 +184,22 @@ function workCandidate(
         Array.isArray(captured) ||
         !("done" in captured) ||
         captured.done !== true))
-  )
-    throw conflict(
-      "该历史私有输出在可见截点尚未完成，不能复制后来写入的尾部。",
-    );
+  ) {
+    const output =
+      captured && typeof captured === "object" && !Array.isArray(captured)
+        ? (captured as Record<string, unknown>)
+        : undefined;
+    const parsed = frozenHistoryOutputSchema.safeParse({
+      sourceStatus: canonical.status,
+      outputStats: {
+        retainedBytes: output?.retainedBytes,
+        totalBytes: output?.totalBytes,
+        discardedBytes: output?.discardedBytes,
+      },
+    });
+    if (!parsed.success) throw conflict("运行中历史输出缺少可信的字节截点。");
+    frozenAt = parsed.data;
+  }
   const childSessionId = canonical.childSessionId;
   if (childSessionId !== undefined && typeof childSessionId !== "string")
     throw conflict("任务工具的子会话身份无效。");
@@ -185,6 +207,7 @@ function workCandidate(
     kind: "work",
     id,
     ref,
+    ...(frozenAt ? { frozenAt } : {}),
     ...(childSessionId ? { childSessionId } : {}),
   };
 }
@@ -274,8 +297,10 @@ function candidates(
         throw conflict("同一历史输出身份不能指向不同事实。");
       result.set(
         candidate.id,
-        previous?.kind === "work" && previous.childSessionId
-          ? previous
+        previous?.kind === "work" &&
+          candidate.kind === "work" &&
+          previous.childSessionId
+          ? { ...candidate, childSessionId: previous.childSessionId }
           : candidate,
       );
     }
@@ -305,10 +330,22 @@ function sourceContext(
   };
 }
 
+async function readCaptureBytes(file: FileHandle, length: number) {
+  const bytes = Buffer.alloc(length);
+  let offset = 0;
+  while (offset < bytes.length) {
+    const read = await file.read(bytes, offset, bytes.length - offset, offset);
+    if (!read.bytesRead) throw conflict("完整输出在复制期间被截断。");
+    offset += read.bytesRead;
+  }
+  return bytes;
+}
+
 async function readSourceFile(
   executionOutputRoot: string,
   record: CapturedOutputSource,
   maxBytes: number,
+  frozen?: HistoryOutputStats,
 ) {
   if (!record.outputRef || !isAbsolute(record.outputRef) || !record.outputStats)
     throw conflict("任务缺少完整保留输出的可信路径或字节事实。");
@@ -321,48 +358,50 @@ async function readSourceFile(
     const before = await file.stat();
     const recorded = historyOutputStatsSchema.parse(record.outputStats);
     const stats =
-      record.status === "interrupted"
+      frozen ??
+      (record.status === "interrupted"
         ? {
             retainedBytes: before.size,
             totalBytes: Math.max(before.size, recorded.totalBytes),
             discardedBytes:
               Math.max(before.size, recorded.totalBytes) - before.size,
           }
-        : recorded;
+        : recorded);
     if (
       !before.isFile() ||
-      before.size !== stats.retainedBytes ||
-      before.size > maxBytes
+      (frozen
+        ? before.size < stats.retainedBytes
+        : before.size !== stats.retainedBytes) ||
+      stats.retainedBytes > maxBytes
     )
       throw conflict("完整保留输出缺失、字节事实改变或超过当前输出预算。");
-    const bytes = Buffer.alloc(stats.retainedBytes);
-    let offset = 0;
-    while (offset < bytes.length) {
-      const read = await file.read(
-        bytes,
-        offset,
-        bytes.length - offset,
-        offset,
-      );
-      if (!read.bytesRead) throw conflict("完整输出在复制期间被截断。");
-      offset += read.bytesRead;
-    }
+    const bytes = await readCaptureBytes(file, stats.retainedBytes);
     const after = await file.stat();
     const current = await stat(path);
     if (
       before.ino !== after.ino ||
       before.dev !== after.dev ||
-      before.size !== after.size ||
-      before.mtimeMs !== after.mtimeMs ||
-      before.ctimeMs !== after.ctimeMs ||
+      (frozen
+        ? after.size < stats.retainedBytes
+        : before.size !== after.size) ||
+      (!frozen && before.mtimeMs !== after.mtimeMs) ||
+      (!frozen && before.ctimeMs !== after.ctimeMs) ||
       current.ino !== before.ino ||
       current.dev !== before.dev ||
-      current.size !== before.size ||
-      current.mtimeMs !== before.mtimeMs ||
-      current.ctimeMs !== before.ctimeMs ||
+      (frozen
+        ? current.size < stats.retainedBytes
+        : current.size !== before.size) ||
+      (!frozen && current.mtimeMs !== before.mtimeMs) ||
+      (!frozen && current.ctimeMs !== before.ctimeMs) ||
       (await realpath(record.outputRef)) !== path
     )
       throw conflict("源私有输出在复制期间改变。");
+    if (frozen) {
+      // 捕获日志由宿主追加；允许后续尾部增长，但复制的前缀不得被原位改写。
+      const checked = await readCaptureBytes(file, stats.retainedBytes);
+      if (!checked.equals(bytes))
+        throw conflict("截点输出的前缀在复制期间改变。");
+    }
     return { bytes, stats };
   } finally {
     await file.close();
@@ -498,6 +537,14 @@ export function createCodeUiOutputHistory(deps: {
             JSON.stringify(candidate.outputStats)))
     )
       throw conflict("继承输出与当前Task的正规引用不匹配。");
+    if (
+      candidate.kind === "work" &&
+      candidate.frozenAt &&
+      (!inherited.frozenAt ||
+        JSON.stringify(candidate.frozenAt) !==
+          JSON.stringify(inherited.frozenAt))
+    )
+      throw conflict("继承输出与已保存的历史字节截点不匹配。");
     return {
       id: inherited.id,
       ref: inherited.ref,
@@ -506,6 +553,7 @@ export function createCodeUiOutputHistory(deps: {
       status: inherited.status,
       outputStats: inherited.outputStats,
       statisticsComplete: inherited.statisticsComplete,
+      ...(inherited.frozenAt ? { frozenAt: inherited.frozenAt } : {}),
       bytes: await ownedBytes(inherited, maxBytes),
       ...(inherited.summary !== undefined
         ? { summary: inherited.summary }
@@ -566,7 +614,7 @@ export function createCodeUiOutputHistory(deps: {
         candidate.childSessionId !== work.childSessionId)
     )
       throw conflict("完整输出不属于源Task的真实工作。");
-    if (work.status === "running")
+    if (work.status === "running" && !candidate.frozenAt)
       throw conflict("完整输出尚未结算，不能把当前尾部复制成已完成历史。");
     if (!work.outputRef || !work.outputStats)
       throw conflict("真实工作缺少已保留完整输出的捕获事实。");
@@ -582,17 +630,28 @@ export function createCodeUiOutputHistory(deps: {
         ...(work.childSessionId ? { childSessionId: work.childSessionId } : {}),
       },
       maxBytes,
+      candidate.frozenAt?.outputStats,
     );
     return {
       id: work.id,
       ref: candidate.ref,
       kind: work.kind,
       label: work.label,
-      status: work.status,
+      status:
+        candidate.frozenAt || work.status === "running"
+          ? "interrupted"
+          : work.status,
       outputStats: stats,
-      statisticsComplete: work.status !== "interrupted",
+      statisticsComplete: !candidate.frozenAt && work.status !== "interrupted",
       bytes,
-      ...(work.summary !== undefined ? { summary: work.summary } : {}),
+      ...(candidate.frozenAt
+        ? {
+            frozenAt: candidate.frozenAt,
+            summary: "只读历史输出截点，不继承执行；源工作当时仍未结算。",
+          }
+        : work.summary !== undefined
+          ? { summary: work.summary }
+          : {}),
       ...(work.childSessionId ? { childSessionId: work.childSessionId } : {}),
     };
   }
@@ -639,6 +698,7 @@ export function createCodeUiOutputHistory(deps: {
       status: source.status,
       outputStats: source.outputStats,
       statisticsComplete: source.statisticsComplete,
+      ...(source.frozenAt ? { frozenAt: source.frozenAt } : {}),
       visibleSessions: [
         target.taskId,
         ...(childSessionId ? [childSessionId] : []),
@@ -831,6 +891,7 @@ export function createCodeUiOutputHistory(deps: {
         outputRef: record.ref,
         output: page(bytes, record.outputStats, offset, budget),
         statisticsComplete: record.statisticsComplete,
+        ...(record.frozenAt ? { frozenAt: record.frozenAt } : {}),
         ...(record.summary !== undefined ? { summary: record.summary } : {}),
       };
     },

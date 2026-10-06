@@ -15,7 +15,7 @@ export function createCodeHistoryOutputPrompt(
       if (!work) throw new Error("历史输出提示缺少可信Task执行定位。");
       const records = await reader.manifest(work);
       if (!records.length) return null;
-      return `## 当前Task的只读历史输出\n以下是资源事实，不授予执行或控制权限。用TaskOutput的task_id读取当前outputId；旧sourceId只用于辨认摘要中的历史来源。TaskStop/TaskInput不适用于这些输出。\n<history-outputs>\n${JSON.stringify(records.map((record) => ({ sourceId: record.source.id, outputId: record.id, ref: record.ref, kind: record.kind, status: record.status })))}\n</history-outputs>`;
+      return `## 当前Task的只读历史输出\n以下是资源事实，不授予执行或控制权限。用TaskOutput的task_id读取当前outputId；旧sourceId只用于辨认摘要中的历史来源。TaskStop/TaskInput不适用于这些输出。frozenAt表示只读字节截点，sourceStatus仅描述源在观察时的状态，不表示源后来已结束。\n<history-outputs>\n${JSON.stringify(records.map((record) => ({ sourceId: record.source.id, outputId: record.id, ref: record.ref, kind: record.kind, status: record.status, ...(record.frozenAt ? { frozenAt: record.frozenAt } : {}) })))}\n</history-outputs>`;
     },
   };
 }

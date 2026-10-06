@@ -22,6 +22,13 @@ export const historyOutputStatsSchema = z
       stats.discardedBytes === stats.totalBytes - stats.retainedBytes,
     "完整输出的保留、总计及丢弃字节事实不一致。",
   );
+export const frozenHistoryOutputSchema = z
+  .object({
+    sourceStatus: taskWorkStateSchema.shape.status,
+    outputStats: historyOutputStatsSchema,
+  })
+  .strict();
+export type FrozenHistoryOutput = z.infer<typeof frozenHistoryOutputSchema>;
 
 /** TaskOutput的已持久列表投影；普通工作不提供私有读取引用。 */
 export const historyOutputListSchema = z.array(
@@ -48,6 +55,7 @@ export const ownedHistoryOutputSchema = z
     checksum: z.string().regex(/^sha256:[0-9a-f]{64}$/u),
     outputStats: historyOutputStatsSchema,
     statisticsComplete: z.boolean(),
+    frozenAt: frozenHistoryOutputSchema.optional(),
     kind: z.enum(["command", "subagent"]),
     label: z.string(),
     status: z.enum(["completed", "failed", "canceled", "interrupted"]),
@@ -74,7 +82,7 @@ export interface CapturedOutputSource {
   kind: OwnedHistoryOutput["kind"];
   outputRef: string;
   outputStats: HistoryOutputStats;
-  status: OwnedHistoryOutput["status"];
+  status: TaskWorkStatus;
   childSessionId?: string;
 }
 export interface CodeUiOutputTarget {
@@ -98,6 +106,7 @@ export interface CodeUiHistoryOutputRead {
   outputRef: string;
   output: ProcessOutput;
   statisticsComplete: boolean;
+  frozenAt?: FrozenHistoryOutput;
 }
 export interface CodeUiOutputHistory {
   readView(
