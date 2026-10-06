@@ -3,7 +3,7 @@
  *
  * 命名 `mcp__computer-use__<action>`：与已照搬的 zcode CUA 渲染链解析约定
  * 一致（`isZCodeCuaToolName` 按名包含 computer-use 命中，连续行自动聚合成
- * 贴底操作组），且天然落入 permissions 的 `/^mcp__/` 危险工具审批档。
+ * 贴底操作组）。Task审批按实际副作用声明：只读发现为read，输入/拉起为execute。
  *
  * 用法纪律写进工具描述（里程碑 1 不注入独立技能文件）：
  * - **a11y 优先**：get_app_state 的文本树是主观察方式，坐标/截图是兜底；
@@ -210,6 +210,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
   const tools: ToolDefinition[] = [
     {
       name: `${CU_TOOL_PREFIX}request_access`,
+      access: "read",
       description:
         "检查 Computer Use 权限（辅助功能/屏幕录制）状态并返回引导。首次使用桌面控制前先调用它；permissionStatus 为 denied 时按提示去系统设置授权。",
       scope: "code",
@@ -219,6 +220,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
     },
     {
       name: `${CU_TOOL_PREFIX}list_apps`,
+      access: "read",
       description:
         "列出当前运行的应用（pid/bundle_id/名称/是否活跃）。要操作某个应用前先看它的准确标识——显示名必须逐字复制 OS 列出的名字，不要翻译或简写。",
       scope: "code",
@@ -228,6 +230,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
     },
     {
       name: `${CU_TOOL_PREFIX}list_windows`,
+      access: "read",
       description:
         "列出某应用的窗口（window_id/标题/subrole/main/focused）。多窗口应用要先选窗口；没有 subrole 的行是合成表面，不可绑定。",
       scope: "code",
@@ -385,6 +388,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
   });
   tools.push({
     name: `${CU_TOOL_PREFIX}list_displays`,
+    access: "read",
     description:
       "发现全部显示器：返回全局逻辑边界（可能为负）、缩放比例和主屏标识。",
     scope: "code",
@@ -476,6 +480,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
   if (backends) {
     tools.push({
       name: `${CU_TOOL_PREFIX}list_backends`,
+      access: "read",
       description:
         "列出实际已装配的桌面后端；外部MCP引用原库存连接，不复制启动配置。",
       scope: "code",
@@ -500,7 +505,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
   return tools.map((definition) => ({
     ...definition,
     exposure: "deferred",
-    access: "execute",
+    access: definition.access ?? "execute",
     execute: async (args, context) => {
       if (!context.runId || (context.delegationDepth ?? 0) > 0)
         return {
