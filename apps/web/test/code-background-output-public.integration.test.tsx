@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CodeUiTestClient } from "../../server/src/features/code-ui/host-client.fixture.js";
 import type { createCodeSessionFixture } from "../../server/src/features/code-ui/host-session.fixture.js";
 import { installCodePublicHostDom } from "./setup/code-public-host-dom";
+import { loadCodePublicHostProviders } from "./setup/code-public-host-ui";
 
 type Host = Awaited<ReturnType<typeof createCodeSessionFixture>>;
 type PublicFixture = {
@@ -96,31 +97,14 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         );
         if (!work) throw new Error("原组件验收缺少真实后台工作");
         releaseDom = await installCodePublicHostDom();
-        const [
-          pane,
-          intl,
-          services,
-          tabs,
-          channel,
-          workspace,
-          preview,
-          platformContext,
-          platformFactory,
-          tooltip,
-          store,
-        ] = await Promise.all([
-          import("@zui/app-shell/BackgroundBashOutputSidePane"),
-          import("@zui/i18n/IntlProvider"),
-          import("@zui/hooks/useServices"),
-          import("@zui/store/TabStoreProvider"),
-          import("../src/components/workbench/zcode/host/httpChannelClient"),
-          import("../src/components/workbench/zcode/host/workspaceServices"),
-          import("@zui/PreviewPane"),
-          import("@zui/hooks/usePlatform"),
-          import("../src/components/workbench/zcode/host/platform"),
-          import("@zui/components/ui/tooltip"),
-          import("@zui/store/StoreProvider"),
-        ]);
+        const [pane, channel, workspace, preview, Providers] =
+          await Promise.all([
+            import("@zui/app-shell/BackgroundBashOutputSidePane"),
+            import("../src/components/workbench/zcode/host/httpChannelClient"),
+            import("../src/components/workbench/zcode/host/workspaceServices"),
+            import("@zui/PreviewPane"),
+            loadCodePublicHostProviders(),
+          ]);
         const client = new channel.CodeHttpChannelClient({
           apiBase: fixture.baseUrl,
           accessToken: await fixture.app.kernel
@@ -158,36 +142,20 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
             path: source.path,
           });
         };
-        const platform = platformFactory.createCodePlatform(client);
         const originalPane = (
           visible: boolean,
           source: CodeViewerSource | null = null,
         ) => (
-          <intl.ZCodeIntlProvider initialLocale="zh-CN">
-            <services.ServiceProvider services={client.services}>
-              <platformContext.PlatformProvider platform={platform}>
-                <tooltip.TooltipProvider>
-                  <store.StoreProvider
-                    broadcastService={client.services.broadcastService}
-                  >
-                    <tabs.TabStoreProvider>
-                      <pane.BackgroundBashOutputSidePane
-                        tab={tab}
-                        visible={visible}
-                        onOpenCodeViewer={open}
-                      />
-                      {source ? (
-                        <preview.PreviewPane
-                          source={source}
-                          onClose={() => {}}
-                        />
-                      ) : null}
-                    </tabs.TabStoreProvider>
-                  </store.StoreProvider>
-                </tooltip.TooltipProvider>
-              </platformContext.PlatformProvider>
-            </services.ServiceProvider>
-          </intl.ZCodeIntlProvider>
+          <Providers client={client}>
+            <pane.BackgroundBashOutputSidePane
+              tab={tab}
+              visible={visible}
+              onOpenCodeViewer={open}
+            />
+            {source ? (
+              <preview.PreviewPane source={source} onClose={() => {}} />
+            ) : null}
+          </Providers>
         );
         const view = render(originalPane(true));
         await waitFor(
