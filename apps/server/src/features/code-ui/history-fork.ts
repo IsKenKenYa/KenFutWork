@@ -35,6 +35,7 @@ import {
   type CodeUiSessionRecord,
 } from "./repository.js";
 import type { CodeUiService, CodeUiServiceDeps } from "./service.js";
+import type { HistoryPreparationOwner } from "./history-preparation.js";
 
 type Loaded = Awaited<ReturnType<CodeUiService["loadConversation"]>>;
 type Snapshot = protocol.ConversationSnapshot;
@@ -52,6 +53,8 @@ type Deps = Pick<
   | "localInstance"
   | "settings"
 > & {
+  owner: HistoryPreparationOwner;
+  blob?: CodeUiServiceDeps["blob"];
   attachments?: () => CodeAttachmentsService | undefined;
   outputs?: () => CodeUiOutputHistory;
   load(actor: LocalActor, sessionId: string): Promise<Loaded>;
@@ -355,6 +358,7 @@ type ForkOperation = {
   decision?: protocol.CommandAck;
   published: boolean;
   publicationUncertain?: boolean;
+  preparationId?: string;
 };
 
 function checkForkGuard(operation: ForkOperation, root: CodeUiSessionRecord) {
@@ -405,6 +409,12 @@ async function prepareFork(
   if (!post) return;
   const id = randomUUID();
   const threadId = deps.threads.createThreadId();
+  operation.preparationId = await deps.repository.preparations.begin({
+    instanceId: root.instance_id, projectId: root.project_id, sourceTaskId: root.id,
+    targetTaskId: id, targetThreadId: threadId, clientId: operation.envelope.clientId,
+    commandId: operation.envelope.commandId, ...deps.owner,
+  });
+  const preparationId = operation.preparationId;
   const { turns, turnIds, childFiles } = await collectForkHistory(
     deps,
     operation,
@@ -418,6 +428,7 @@ async function prepareFork(
     id,
     selected,
     turns,
+    path => deps.repository.preparations.planObject(root.instance_id, preparationId, { bucket: "code-attachments", path }),
   );
   const identity = childIdentityMap(id, selected.children, new Map(turnIds));
   const outputService = deps.outputs?.();
@@ -427,7 +438,8 @@ async function prepareFork(
       projectId: root.project_id,
       taskId: id,
       childSessionIds: identity.sessions,
-    }, [...selected.rows, ...selected.children.flatMap(child => child.rows.window)]);
+    }, [...selected.rows, ...selected.children.flatMap(child => child.rows.window)],
+    path => deps.repository.preparations.planObject(root.instance_id, preparationId, { bucket: "task-output-history", path }));
   const mapped = await deps.agentRuns.cloneContextHistoryBranch({
     sourceThreadId: post.threadId,
     targetThreadId: threadId,
@@ -513,6 +525,7 @@ async function discardUnpublishedFork(
     }
   if (failures.length)
     throw new AggregateError(failures, "未发表分叉的私有资源未全部确认清理。");
+  if (operation.preparationId) await deps.repository.preparations.remove(operation.loaded.instanceId, operation.preparationId);
 }
 
 function decideFork(operation: ForkOperation, root: CodeUiSessionRecord) {
@@ -551,6 +564,7 @@ async function finishFork(
   operation.attachments?.release();
   operation.outputs?.release();
   await deps.agentRuns.releaseContextBranch(operation.clone);
+  if (operation.preparationId) await deps.repository.preparations.remove(operation.loaded.instanceId, operation.preparationId);
   try {
     await deps.refresh(
       operation.loaded.instanceId,
@@ -565,6 +579,9 @@ async function finishFork(
 /** 会话分叉只准备新的native thread与Task，不恢复文件、不撤销父执行资源。 */
 export function createCodeUiHistoryFork(deps: Deps) {
   return {
+    async recover() {
+      await deps.repository.preparations.recover(deps.owner, deps.agentRuns, deps.blob);
+    },
     async decorate(actor: LocalActor, loaded: Loaded, snapshot: Snapshot) {
       const available =
         !loaded.entry.parent_session_id &&
@@ -681,6 +698,7 @@ async function prepareForkAttachments(
   id: string,
   selected: Selection,
   turns: CodeUiOwnedHistoryTurn[],
+  planObject: (path: string) => Promise<void>,
 ) {
   const refs = [
     ...selected.rows.flatMap((row) =>
@@ -709,6 +727,7 @@ async function prepareForkAttachments(
         canUpload: true,
       },
       refs,
+      planObject,
     );
   }
 }

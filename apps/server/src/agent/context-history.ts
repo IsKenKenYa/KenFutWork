@@ -33,6 +33,8 @@ export interface AgentContextBranchHistoryCloneResult {
 }
 /** 可信消费者提供owned轮次引用；adapter保留完整原生状态，产品不解码opaque key。 */
 export interface AgentContextBranchService {
+  /** 仅列出本adapter持久认领的准备；产品核对发表结果后才可清理/释放。 */
+  preparation?(targetThreadId: string): Promise<AgentContextBranchTargetInput | null>;
   clone(
     input: AgentContextBranchCloneInput,
   ): Promise<AgentContextHistoryReference | null>;

@@ -674,6 +674,7 @@ export function createCodeUiOutputHistory(deps: {
     target: CodeUiOutputTarget,
     source: OutputSource,
     paths: string[],
+    planObject?: (path: string) => Promise<void>,
   ) {
     const childSessionId = source.childSessionId
       ? target.childSessionIds.get(source.childSessionId)
@@ -715,6 +716,7 @@ export function createCodeUiOutputHistory(deps: {
       ...(childSessionId ? { childSessionId } : {}),
     });
     paths.push(objectPath);
+    await planObject?.(objectPath);
     await bucket().upload(objectPath, source.bytes, {
       contentType: "text/plain; charset=utf-8",
       upsert: false,
@@ -801,7 +803,7 @@ export function createCodeUiOutputHistory(deps: {
         throw conflict("Task已进入关闭，日志读取已失效。");
       return value;
     },
-    async prepare(actor, sourceRoot, target, rows) {
+    async prepare(actor, sourceRoot, target, rows, planObject) {
       const root = await assertSource(actor, sourceRoot);
       if (
         target.instanceId !== root.instance_id ||
@@ -837,7 +839,7 @@ export function createCodeUiOutputHistory(deps: {
               throw conflict("同一已验证源输出不能映射多个引用。");
             continue;
           }
-          const copied = await prepareRecord(root, target, source, paths);
+          const copied = await prepareRecord(root, target, source, paths, planObject);
           copiedSources.set(source.id, source.ref);
           records.push(copied.record);
           bindings.push(copied.binding);

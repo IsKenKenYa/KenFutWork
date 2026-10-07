@@ -130,6 +130,7 @@ export interface CodeUiOutputHistory {
     sourceRoot: CodeUiSessionRecord,
     target: CodeUiOutputTarget,
     rows: readonly protocol.ConversationRow[],
+    planObject?: (path: string) => Promise<void>,
   ): Promise<CodeUiOutputCopy>;
   read(
     context: TaskWorkContext,

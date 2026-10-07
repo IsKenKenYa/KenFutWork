@@ -16,6 +16,7 @@ import {
   createCodeUiConversation,
 } from "./conversation.js";
 import type { CodeInputSettlement } from "./queue-control.js";
+import { createHistoryPreparations, publishHistoryPreparation } from "./history-preparation.js";
 
 export type CodeUiSessionRecord = SqlRow & {
   id: string;
@@ -323,6 +324,7 @@ async function lockActiveProject(
 /** 工作区隔离、事务内根会话锁；子会话索引只指向同一权威聚合状态。 */
 export function createCodeUiRepository(persistence: PersistenceService) {
   return {
+    preparations: createHistoryPreparations(persistence),
     async recoverRuntimeInputs(owner: {
       hostId: string;
       runtimeId: string;
@@ -824,6 +826,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
               );
             await insertRoot(scoped, next);
             await next.publishArtifacts?.(scoped);
+            await publishHistoryPreparation(scoped, { clientId: envelope.clientId, commandId: envelope.commandId, targetTaskId: next.sessionId, targetThreadId: next.threadId });
           }
           if (decision.threadBinding) {
             const binding = decision.threadBinding;

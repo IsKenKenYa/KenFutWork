@@ -50,6 +50,9 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
   if ((sslMode && sslMode !== "disable") || destination.searchParams.has("ssl"))
     throw new Error("该透明候选只支持显式无 TLS 的回环 PG。");
   let commandId;
+  let blackoutAfterCommit = false;
+  let rollbackBeforeCommit = false;
+  let unavailable = false;
   let closed = false;
   let injected;
   let observerError;
@@ -81,9 +84,22 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
     };
     const observeSql = (sql, parameters = []) => {
       const text = sql.toLowerCase().replace(/\s+/gu, " ").trim();
+      if (
+        unavailable &&
+        /public\.code_ui_commands/u.test(text) &&
+        /for update/u.test(text)
+      ) {
+        injected.readbackSuppressed = true;
+        frontend.destroy();
+        backend.destroy();
+        return;
+      }
       if (/^begin(?:\s|;|$)/u.test(text)) transaction = freshTransaction();
-      if (/\binsert into public\.chat_sessions\b/u.test(text))
+      if (/\binsert into public\.chat_sessions\b/u.test(text)) {
         transaction.chatRoot = true;
+        transaction.targetTaskId = parameters[0];
+        transaction.targetThreadId = parameters[3];
+      }
       if (/\binsert into public\.code_ui_sessions\b/u.test(text))
         transaction.codeRoot = true;
       if (
@@ -113,8 +129,24 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
         transaction.chatRoot &&
         transaction.codeRoot &&
         transaction.forkAck
-      )
+      ) {
+        if (rollbackBeforeCommit) {
+          injected = {
+            commitConfirmed: false,
+            replySuppressed: true,
+            commandId,
+            targetTaskId: transaction.targetTaskId,
+            targetThreadId: transaction.targetThreadId,
+          };
+          unavailable = true;
+          commandId = undefined;
+          resolveInjected(injected);
+          frontend.destroy();
+          backend.destroy();
+          return;
+        }
         withholdingCommit = true;
+      }
     };
     const observeFront = (chunk) => {
       frontBuffer = Buffer.concat([frontBuffer, chunk]);
@@ -183,6 +215,9 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
           commandId = undefined;
           heldFrames = [];
           resolveInjected(injected);
+          if (blackoutAfterCommit) {
+            unavailable = true;
+          }
           frontend.destroy();
           backend.destroy();
           return;
@@ -242,10 +277,15 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
   proxied.searchParams.set("sslmode", "disable");
   return {
     connectionString: proxied.toString(),
-    arm(expectedCommandId) {
+    arm(expectedCommandId, options = {}) {
       if (closed || commandId || injected || !expectedCommandId)
         throw new Error("故障候选只允许针对一个新 fork 命令注入一次。");
       commandId = expectedCommandId;
+      blackoutAfterCommit = options.blackoutAfterCommit === true;
+      rollbackBeforeCommit = options.rollbackBeforeCommit === true;
+    },
+    restore() {
+      unavailable = false;
     },
     evidence() {
       return { injected, observerError };

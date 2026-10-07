@@ -57,6 +57,45 @@ async function ownedRuntimePids(app: string) {
   });
 }
 
+async function assertActualAppNormalExit(
+  app: string,
+  executable: string,
+  data: string,
+) {
+  await exec("open", ["-n", app, "--env", `KENFUTWORK_DATA_DIR=${data}`]);
+  let pid: number | undefined;
+  await expect
+    .poll(
+      async () => {
+        pid = await ownedAppPid(executable);
+        try {
+          const log = await readFile(join(data, "desktop-shell.log"), "utf8");
+          if (log.includes("复用") || log.includes("启动失败"))
+            throw new Error(log);
+          return !!pid && log.includes("服务端已拉起（pid ");
+        } catch (error) {
+          if (error instanceof Error && /复用|启动失败/.test(error.message))
+            throw error;
+          return false;
+        }
+      },
+      { timeout: AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs },
+    )
+    .toBe(true);
+  if (!pid) throw new Error("正常启动验收未找到所属应用。");
+  process.kill(pid, "SIGTERM");
+  await expect
+    .poll(() => ownedAppPid(executable), {
+      timeout: AGENT_GOVERNANCE_DEFAULTS.computerUseActionTimeoutMs * 2,
+    })
+    .toBeUndefined();
+  await expect
+    .poll(() => ownedRuntimePids(app), {
+      timeout: AGENT_GOVERNANCE_DEFAULTS.computerUseActionTimeoutMs,
+    })
+    .toEqual([]);
+}
+
 // LaunchServices启动实际签名.app；独占安装/数据目录，原公开Task/RPC与模型HTTP，不替换内核。
 it.skipIf(!enabled)(
   "实际macOS.app通过持久Task/HTTP MCP控制窗口并确认TCC与PNG/Unicode",
@@ -381,6 +420,114 @@ it.skipIf(!enabled)(
     }
     if (failures.length)
       throw new AggregateError(failures, "实际.app验收或正常退出验证失败");
+  },
+  AGENT_GOVERNANCE_DEFAULTS.computerUseSessionMaxMs,
+);
+
+// 数据库暂停使壳停在启动中；退出前恢复，避免孤儿停止组的HUP/CONT替应用回收。
+it.skipIf(!enabled)(
+  "实际macOS.app在服务尚未就绪时退出也回收所属进程",
+  async () => {
+    const root = await realpath(
+      await mkdtemp(join(tmpdir(), "kfw-cua-early-exit-")),
+    );
+    const app = join(root, "KenFutWork.app");
+    const source = fileURLToPath(
+      new URL(
+        "../../../../desktop/src-tauri/target/release/bundle/macos/KenFutWork.app/",
+        import.meta.url,
+      ),
+    );
+    await writeFile(
+      join(root, "验收所属.json"),
+      JSON.stringify({
+        purpose: "computer-use-app-early-exit",
+        root,
+      }),
+    );
+    await cp(source, app, {
+      recursive: true,
+      dereference: false,
+      verbatimSymlinks: true,
+      mode: constants.COPYFILE_FICLONE,
+    });
+    const data = join(root, "数据");
+    await mkdir(data);
+    const executable = join(app, "Contents", "MacOS", "kenfutwork-desktop");
+    let appPid: number | undefined;
+    let stoppedPid: number | undefined;
+    try {
+      await exec("codesign", ["--verify", "--deep", "--strict", app]);
+      await exec("open", ["-n", app, "--env", `KENFUTWORK_DATA_DIR=${data}`]);
+      await expect
+        .poll(
+          async () => {
+            appPid = await ownedAppPid(executable);
+            const { stdout } = await exec("ps", ["-ww", "-axo", "pid=,args="]);
+            const postgres =
+              join(
+                app,
+                "Contents",
+                "Resources",
+                "app",
+                "pg",
+                "bin",
+                "postgres",
+              ) + " ";
+            const row = stdout
+              .split("\n")
+              .map((line) => line.trim().match(/^(\d+)\s+(.+)$/))
+              .find((entry) => entry?.[2]?.startsWith(postgres));
+            stoppedPid = row ? Number(row[1]) : undefined;
+            return !!appPid && !!stoppedPid;
+          },
+          { interval: 10, timeout: AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs },
+        )
+        .toBe(true);
+      if (!appPid || !stoppedPid) throw new Error("未启动本验收所属进程。");
+      process.kill(stoppedPid, "SIGSTOP");
+      const log = await readFile(join(data, "desktop-shell.log"), "utf8");
+      expect(log).not.toContain("服务端已拉起（pid ");
+      process.kill(stoppedPid, "SIGCONT");
+      stoppedPid = undefined;
+      process.kill(appPid, "SIGTERM");
+      await expect
+        .poll(() => ownedAppPid(executable), {
+          timeout: AGENT_GOVERNANCE_DEFAULTS.computerUseActionTimeoutMs * 2,
+        })
+        .toBeUndefined();
+      await expect
+        .poll(() => ownedRuntimePids(app), {
+          timeout: AGENT_GOVERNANCE_DEFAULTS.computerUseActionTimeoutMs,
+        })
+        .toEqual([]);
+      await assertActualAppNormalExit(
+        app,
+        executable,
+        await mkdtemp(join(root, "正常启动-")),
+      );
+    } finally {
+      // 失败后的精确回收只防污染，不算正常退出GREEN。
+      if (stoppedPid && (await ownedRuntimePids(app)).includes(stoppedPid)) {
+        try {
+          process.kill(stoppedPid, "SIGCONT");
+        } catch {}
+      }
+      const remainingApp = await ownedAppPid(executable);
+      if (remainingApp) process.kill(remainingApp, "SIGTERM");
+      for (const pid of await ownedRuntimePids(app)) {
+        try {
+          process.kill(pid, "SIGTERM");
+        } catch {}
+      }
+      await expect
+        .poll(() => ownedRuntimePids(app), {
+          timeout: AGENT_GOVERNANCE_DEFAULTS.computerUseActionTimeoutMs * 2,
+        })
+        .toEqual([]);
+      await exec("codesign", ["--verify", "--deep", "--strict", app]);
+      console.info(`实际.app早退验收资源：${root}`);
+    }
   },
   AGENT_GOVERNANCE_DEFAULTS.computerUseSessionMaxMs,
 );

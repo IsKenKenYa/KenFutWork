@@ -701,6 +701,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       }));
 
   const service = {
+    async getContextBranchPreparation(targetThreadId: string) {
+      if (!options.contextBranchProvider?.preparation)
+        throw new Error("当前Agent未装配持久原生准备查询能力。");
+      return options.contextBranchProvider.preparation(targetThreadId);
+    },
     canCloneContextBranches(): boolean {
       return options.contextBranchProvider !== undefined;
     },
