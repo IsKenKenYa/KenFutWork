@@ -37,6 +37,7 @@ const leaseSchema = z
       .strict()
       .nullable(),
     writeAttempted: z.boolean(),
+    complete: z.boolean().default(true),
   })
   .strict();
 type NativeCheckpointTuple = CheckpointTuple & { metadata: CheckpointMetadata };
@@ -262,6 +263,7 @@ export function createNativeContextBranchService(options: {
       await lease.store.put(leaseNamespace, input.targetThreadId, {
         reference: null,
         writeAttempted: lease.writeAttempted,
+        complete: false,
       });
       if (source) {
         const reference = await writeBranch(
@@ -274,9 +276,11 @@ export function createNativeContextBranchService(options: {
         await lease.store.put(leaseNamespace, input.targetThreadId, {
           reference: lease.reference,
           writeAttempted: lease.writeAttempted,
+          complete: true,
         });
         return { reference, boundaries };
       }
+      await lease.store.put(leaseNamespace, input.targetThreadId, { reference: null, writeAttempted: false, complete: true });
       return { reference: null, boundaries };
     } catch (error) {
       if (lease) {
@@ -297,6 +301,14 @@ export function createNativeContextBranchService(options: {
     }
   };
   return {
+    async preparation(targetThreadId) {
+      const persistence = await options.agentPersistenceService.getPersistence();
+      if (!persistence) throw new Error("原生上下文持久化能力未装配。");
+      const stored = await persistence.store.get(leaseNamespace, targetThreadId);
+      if (!stored) return null;
+      const lease = leaseSchema.parse(stored.value);
+      return { targetThreadId, reference: lease.reference };
+    },
     async clone(input) {
       return (await cloneHistory({ ...input, boundaries: [] })).reference;
     },
@@ -317,7 +329,7 @@ export function createNativeContextBranchService(options: {
           const reference = current
             ? encodeNativeContextReference(input.targetThreadId, current.config)
             : null;
-          if (current && !sameReference(reference, input.reference))
+          if (current && lease.complete && !sameReference(reference, input.reference))
             throw new Error("目标上下文已被继续使用，不能丢弃。");
           await lease.checkpointer.deleteThread(input.targetThreadId);
         }

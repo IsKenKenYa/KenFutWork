@@ -46,6 +46,7 @@ async function fixture() {
   });
   const service = new CodeUiService({
     repository: {
+      preparations: { recover: async () => {} },
       recoverRuntimeInputs,
       readHumanPreferences: async () => preferences,
       updateHumanPreferences: updates,

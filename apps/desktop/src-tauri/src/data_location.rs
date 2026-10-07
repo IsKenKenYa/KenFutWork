@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use tauri::Manager;
 
-use crate::{desktop_access, navigate_main_window, start_server, ServerLaunch, ServerState};
+use crate::{desktop_access, navigate_main_window, start_server, ServerState};
 
 pub struct DataLocationState(pub std::sync::Mutex<Location>);
 pub struct Location {
@@ -176,21 +176,13 @@ fn restart(
     port: u16,
     ui_base: &str,
 ) -> Result<(), String> {
-    let (launch, selected_port) = start_server(app, data_dir)?;
+    let (_, selected_port) = start_server(app, data_dir)?;
     let port = selected_port.unwrap_or(port);
     let ui_base = if selected_port.is_some() {
         format!("http://127.0.0.1:{port}/")
     } else {
         ui_base.into()
     };
-    let owned = match launch {
-        ServerLaunch::Spawned(handle) => Some(handle),
-        ServerLaunch::Reused => None,
-    };
-    *app.state::<ServerState>()
-        .0
-        .lock()
-        .map_err(|_| "保存服务端句柄失败。")? = owned;
     {
         let state = app.state::<DataLocationState>();
         let mut state = state.0.lock().map_err(|_| "保存桌面状态失败。")?;
@@ -258,13 +250,7 @@ fn move_directory(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => return Err(format!("读取原目录配置失败：{error}")),
     };
-    if app
-        .state::<ServerState>()
-        .0
-        .lock()
-        .map_err(|_| "读取服务端句柄失败。")?
-        .is_none()
-    {
+    if app.state::<ServerState>().0.pid().is_none() {
         return Err(
             "当前服务由外部进程管理，无法停库移动。请由桌面应用启动本机服务后再试。".into(),
         );
@@ -285,14 +271,8 @@ fn move_directory(
             "/api/instance/data-location/shutdown",
             &serde_json::json!({}),
         )?;
-        let mut handle = app
-            .state::<ServerState>()
+        app.state::<ServerState>()
             .0
-            .lock()
-            .map_err(|_| "读取服务端句柄失败。")?
-            .take()
-            .ok_or("服务端生命周期已由另一操作取得。")?;
-        handle
             .wait_for_clean_exit()
             .map_err(|error| format!("服务端未正常停机：{error}"))?;
         let relocated = offline_command(
@@ -310,15 +290,9 @@ fn move_directory(
         Ok(reply) => Ok(reply),
         Err(error) => {
             // 原目录保留；新目录启动失败也撤回配置，然后重新建立原实例连接。
-            if let Some(mut handle) = app
-                .state::<ServerState>()
+            app.state::<ServerState>()
                 .0
-                .lock()
-                .map_err(|_| "回滚服务端句柄失败。")?
-                .take()
-            {
-                handle.shutdown(crate::SHUTDOWN_GRACE);
-            }
+                .stop_current(crate::SHUTDOWN_GRACE);
             Err(recover_original_instance(
                 error,
                 pointer_is_unchanged(&pointer, &previous),

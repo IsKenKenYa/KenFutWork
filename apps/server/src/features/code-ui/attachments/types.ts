@@ -162,6 +162,7 @@ export interface CodeAttachmentsService {
     sourceSessionId: string,
     target: CodeAttachmentSession,
     attachments: readonly protocol.AttachmentRef[],
+    planObject?: (path: string) => Promise<void>,
   ): Promise<CodeAttachmentHistoryCopy>;
   initialize(): Promise<void>;
   budget(actor: LocalActor, sessionId?: string): Promise<CodeAttachmentLimits>;

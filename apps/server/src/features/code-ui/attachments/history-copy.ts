@@ -21,6 +21,7 @@ type HistoryCopyInput = {
   assertOpen(): void;
   committed(ref: string): Promise<Committed>;
   bytes(record: Committed): Promise<Uint8Array>;
+  planObject?: (path: string) => Promise<void>;
 };
 
 export async function prepareAttachmentHistory(
@@ -143,6 +144,7 @@ async function copyAttachment(
   const ref = `code-attachment:${key}`;
   const objectPath = `${target.instanceId}/${target.projectId}/${target.taskId}/${key}`;
   paths.push(objectPath); // I/O响应丢失也只清理本复制独占目标，不触碰源对象。
+  await input.planObject?.(objectPath);
   await input.bucket.upload(objectPath, bytes, {
     contentType: record.mime,
     upsert: false,

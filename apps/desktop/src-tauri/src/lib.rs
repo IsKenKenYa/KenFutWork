@@ -40,8 +40,8 @@ const PORT_CANDIDATES: u16 = 10;
 /// 退出宽限：SIGTERM 后等这么久，超时升级 SIGKILL（服务端 SIGTERM 会停 jobLoop 并停库）。
 const SHUTDOWN_GRACE: Duration = std::time::Duration::from_secs(10);
 
-/// 持有服务端句柄的托管状态；`Reused`（复用用户自己的 dev）时为 None。
-struct ServerState(std::sync::Mutex<Option<server_handle::ServerHandle>>);
+/// 启动线程与退出路径共用从spawn开始托管的资源；复用外部服务时不取得其句柄。
+struct ServerState(std::sync::Arc<server_handle::ServerLifecycle>);
 
 /**
  * 打包态（安装包装出来的形态）里那套「桌面形态」环境变量。
@@ -190,13 +190,17 @@ fn log_line(data_dir: &Path, message: &str) {
 fn launch_packaged_server(
     data_dir: &Path,
     launch: &(PathBuf, Vec<String>, PathBuf),
-) -> Result<(u16, ServerLaunch), String> {
+    owner: &server_handle::ServerLifecycle,
+) -> Result<(u16, Option<u32>), String> {
     for offset in 0..PORT_CANDIDATES {
+        if owner.is_stopping() {
+            return Err(LifecycleError::Stopped.to_string());
+        }
         let port = SERVER_PORT + offset;
         if probe_health(port, Duration::from_millis(300)).is_ok() {
             if probe_serves_ui(port, Duration::from_secs(2)) {
                 log_line(data_dir, &format!("端口 {port} 已有本工作台服务端，复用"));
-                return Ok((port, ServerLaunch::Reused));
+                return Ok((port, None));
             }
             log_line(
                 data_dir,
@@ -210,7 +214,7 @@ fn launch_packaged_server(
                 && probe_serves_ui(port, Duration::from_secs(2))
             {
                 log_line(data_dir, &format!("端口 {port} 稍后健康，复用"));
-                return Ok((port, ServerLaunch::Reused));
+                return Ok((port, None));
             }
             log_line(data_dir, &format!("端口 {port} 不可用，换端口"));
             continue;
@@ -225,9 +229,10 @@ fn launch_packaged_server(
                 launch.2.join("web").display().to_string()
             ),
         );
-        match ensure_server_running(config) {
+        match owner.ensure_running(config) {
             Ok(launch) => {
                 if !probe_serves_ui(port, Duration::from_secs(10)) {
+                    owner.stop_current(SHUTDOWN_GRACE);
                     return Err(format!(
                         "本机服务在端口 {port} 起来了，但它没有托管界面（KENFUTWORK_WEB_DIST 无效）。"
                     ));
@@ -248,7 +253,11 @@ fn launch_packaged_server(
 fn start_server(
     app: &tauri::AppHandle,
     data_dir: &Path,
-) -> Result<(ServerLaunch, Option<u16>), String> {
+) -> Result<(Option<u32>, Option<u16>), String> {
+    let owner = app.state::<ServerState>();
+    if owner.0.is_stopping() {
+        return Err(LifecycleError::Stopped.to_string());
+    }
     // dev 构建（cargo run / tauri dev）**永不执行随包快照**：`target/**/app/server.cjs`
     // 是上次打包的旧产物，优先执行会让人以为「改了源码没生效」（2026-09-27 事故：
     // 3001 一直跑 9/23 的快照，子代理路由修复全部不可见）。dev 的意义就是跑最新
@@ -258,11 +267,13 @@ fn start_server(
     #[cfg(not(debug_assertions))]
     {
         if let Some(server_launch) = bundled_server_launch(app) {
-            let (port, launch) = launch_packaged_server(data_dir, &server_launch)?;
+            let (port, launch) = launch_packaged_server(data_dir, &server_launch, &owner.0)?;
             return Ok((launch, Some(port)));
         }
     }
-    ensure_server_running(dev_spawn_config(data_dir.to_path_buf()))
+    owner
+        .0
+        .ensure_running(dev_spawn_config(data_dir.to_path_buf()))
         .map(|launch| (launch, None))
         .map_err(|error| error.to_string())
 }
@@ -376,17 +387,12 @@ fn show_startup_error(app: &tauri::AppHandle, data_dir: &Path, reason: &str) {
 #[cfg(unix)]
 fn register_signal_shutdown(app: tauri::AppHandle) {
     use signal_hook::consts::{SIGINT, SIGTERM};
+    let mut signals = signal_hook::iterator::Signals::new([SIGINT, SIGTERM]).expect("注册信号失败");
     std::thread::spawn(move || {
-        let mut signals =
-            signal_hook::iterator::Signals::new([SIGINT, SIGTERM]).expect("注册信号失败");
         for signal in signals.forever() {
             if let Some(state) = app.try_state::<ServerState>() {
-                if let Ok(mut guard) = state.0.lock() {
-                    if let Some(mut handle) = guard.take() {
-                        println!("[desktop] 收到信号 {signal}：优雅停服务端…");
-                        handle.shutdown(SHUTDOWN_GRACE);
-                    }
-                }
+                println!("[desktop] 收到信号 {signal}：优雅停服务端…");
+                state.0.shutdown(SHUTDOWN_GRACE);
             }
             std::process::exit(0);
         }
@@ -456,6 +462,11 @@ pub fn run() {
                     moving: false,
                 },
             )));
+            let owner = std::sync::Arc::new(server_handle::ServerLifecycle::default());
+            app.manage(ServerState(owner.clone()));
+            // 信号处理必须先注册，不能让服务端spawn早于退出路径。
+            #[cfg(unix)]
+            register_signal_shutdown(app.handle().clone());
             // **服务端在后台线程里起**：这条路径上有两段慢活——内嵌 Postgres 首启动要
             // `initdb`、服务端 SEA 冷启动要几秒到几十秒。以前 `setup` 里同步等健康检查，
             // 主线程被占住，窗口连重绘都不做 → 用户看到的是一大片白屏。
@@ -493,39 +504,36 @@ pub fn run() {
                         let url = desktop_access::connection_url(&thread_data_dir, port, &base)?;
                         Ok((launch, port, base, url))
                     });
+                if outcome.is_err() {
+                    owner.stop_current(SHUTDOWN_GRACE);
+                }
                 // 窗口操作要在主线程上做
                 let ui_handle = handle.clone();
-                let _ = handle.run_on_main_thread(move || match outcome {
-                    Ok((launch, port, base, url)) => {
-                        let owned = match launch {
-                            ServerLaunch::Spawned(handle) => Some(handle),
-                            ServerLaunch::Reused => None,
-                        };
-                        if let Some(ref handle) = owned {
-                            log_line(
-                                &thread_data_dir,
-                                &format!("服务端已拉起（pid {}）", handle.pid()),
-                            );
-                        }
-                        ui_handle.manage(ServerState(std::sync::Mutex::new(owned)));
-                        if let Ok(mut state) = ui_handle
-                            .state::<data_location::DataLocationState>()
-                            .0
-                            .lock()
-                        {
-                            state.port = port;
-                            state.ui_base = base;
-                        }
-                        navigate_main_window(&ui_handle, &url);
+                let _ = handle.run_on_main_thread(move || {
+                    if owner.is_stopping() {
+                        return;
                     }
-                    Err(reason) => {
-                        ui_handle.manage(ServerState(std::sync::Mutex::new(None)));
-                        show_startup_error(&ui_handle, &thread_data_dir, &reason);
+                    match outcome {
+                        Ok((launch, port, base, url)) => {
+                            if let Some(pid) = launch {
+                                log_line(&thread_data_dir, &format!("服务端已拉起（pid {pid}）"));
+                            }
+                            if let Ok(mut state) = ui_handle
+                                .state::<data_location::DataLocationState>()
+                                .0
+                                .lock()
+                            {
+                                state.port = port;
+                                state.ui_base = base;
+                            }
+                            navigate_main_window(&ui_handle, &url);
+                        }
+                        Err(reason) => {
+                            show_startup_error(&ui_handle, &thread_data_dir, &reason);
+                        }
                     }
                 });
             });
-            #[cfg(unix)]
-            register_signal_shutdown(app.handle().clone());
             Ok(())
         })
         .build(application_context())
@@ -534,10 +542,8 @@ pub fn run() {
             // 窗口关闭/应用退出 → 优雅停服务端（停 jobLoop + 停库），超时强杀
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Some(state) = app_handle.try_state::<ServerState>() {
-                    if let Some(mut handle) = state.0.lock().ok().and_then(|mut s| s.take()) {
-                        println!("[desktop] 退出：优雅停服务端…");
-                        handle.shutdown(SHUTDOWN_GRACE);
-                    }
+                    println!("[desktop] 退出：优雅停服务端…");
+                    state.0.shutdown(SHUTDOWN_GRACE);
                 }
             }
         });

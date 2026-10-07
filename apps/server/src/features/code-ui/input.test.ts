@@ -128,6 +128,7 @@ async function fixture(
     { fingerprint: string; ack: protocol.CommandAck }
   >();
   const repository = {
+    preparations: { recover: async () => {}, begin: async () => randomUUID(), remove: async () => {}, planObject: async () => {} },
     recoverRuntimeInputs: async () => {},
     readHumanPreferences: async () => ({}),
     find: async (workspace: string, id: string) =>

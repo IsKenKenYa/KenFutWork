@@ -24,7 +24,7 @@ export function createStartupPersistenceFixture(): PersistenceService & {
     async query<T extends SqlRow>(statement: string): Promise<T[]> {
       if (
         /^select\b/i.test(statement.trim()) &&
-        /\bfrom public\.(code_ui_sessions|mcp_servers|provider_instances)\b/i.test(
+        /\bfrom public\.(code_ui_sessions|code_history_preparations|mcp_servers|provider_instances)\b/i.test(
           statement,
         )
       )

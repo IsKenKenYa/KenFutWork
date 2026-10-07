@@ -71,6 +71,7 @@ async function fixture(multipleFiles = false, truncatePreview = false) {
   });
   const service = new CodeUiService({
     repository: {
+      preparations: { recover: async () => {} },
       recoverRuntimeInputs: async () => {},
       readHumanPreferences: async () => ({}),
       find: async (owner: string, id: string) =>

@@ -314,6 +314,8 @@ export class CodeUiService {
       settings: deps.settings,
     });
     this.historyFork = createCodeUiHistoryFork({
+      owner: this.inputOwner,
+      blob: deps.blob,
       repository: deps.repository,
       outputs: () => this.outputHistory,
       attachments: () => {
@@ -580,6 +582,7 @@ export class CodeUiService {
   initialize(): Promise<void> {
     this.initialization ??= (async () => {
       await this.deps.taskWork.initialize();
+      await this.historyFork.recover();
       await this.deps.repository.recoverRuntimeInputs(this.inputOwner);
     })();
     return this.initialization;

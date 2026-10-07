@@ -34,6 +34,7 @@ async function fixture(withTargets = false) {
       actual.directory,
     ).localInstance,
     repository: {
+      preparations: { recover: async () => {} },
       recoverRuntimeInputs: async () => {},
       listRoots: async () => [
         {

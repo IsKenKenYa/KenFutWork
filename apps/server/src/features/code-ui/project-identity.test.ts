@@ -120,6 +120,7 @@ async function fixture(
     },
   );
   const repository = {
+    preparations: { recover: async () => {} },
     recoverRuntimeInputs: async () => {},
     readHumanPreferences: async () => ({}),
     listRoots: async () => {

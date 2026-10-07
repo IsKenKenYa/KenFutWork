@@ -105,15 +105,18 @@ mod ui_probe {
 
     #[test]
     fn 托管界面的服务判为可用() {
-        let (port, _guard) = spawn_fake_server_with(200, "<!DOCTYPE html><html><body>UI</body></html>");
+        let (port, _guard) =
+            spawn_fake_server_with(200, "<!DOCTYPE html><html><body>UI</body></html>");
         assert!(probe_serves_ui(port, Duration::from_secs(2)));
     }
 
     #[test]
     fn 只回200但没界面的服务判为不可用() {
         // 用户自己起的 dev API：健康检查过、首页是 404 JSON
-        let (port, _guard) =
-            spawn_fake_server_with(404, r#"{"message":"Route GET:/ not found","error":"Not Found"}"#);
+        let (port, _guard) = spawn_fake_server_with(
+            404,
+            r#"{"message":"Route GET:/ not found","error":"Not Found"}"#,
+        );
         assert!(
             !probe_serves_ui(port, Duration::from_secs(1)),
             "没托管界面的服务不该被当成可用的 UI 来源"
@@ -157,6 +160,117 @@ mod ensure_server_running {
         );
         config.health_timeout = Duration::from_secs(5);
         config
+    }
+
+    #[test]
+    fn 退出先于启动时拒绝迟到spawn且不结束外部服务() {
+        use kenfutwork_desktop_lib::server_handle::ServerLifecycle;
+        let (port, _guard) = spawn_fake_server();
+        let owner = ServerLifecycle::default();
+        assert!(owner.ensure_running(config_for(port)).unwrap().is_none());
+        owner.shutdown(Duration::ZERO);
+        owner.shutdown(Duration::ZERO);
+        assert!(matches!(
+            owner.ensure_running(config_for(port)),
+            Err(kenfutwork_desktop_lib::LifecycleError::Stopped)
+        ));
+        assert!(probe_health(port, Duration::from_secs(1)).unwrap().healthy);
+    }
+
+    #[test]
+    fn 健康尚未就绪时退出立即回收已托管进程和后代() {
+        use kenfutwork_desktop_lib::server_handle::ServerLifecycle;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let pid_file = std::env::temp_dir().join(format!("kfw-startup-child-{port}.pid"));
+        let gate = std::env::temp_dir().join(format!("kfw-startup-gate-{port}"));
+        let _ = std::fs::remove_file(&pid_file);
+        let _ = std::fs::remove_file(&gate);
+        let mut config = config_for(port);
+        config.args.extend([
+            "--child-pid-file".into(),
+            pid_file.to_string_lossy().into(),
+            "--startup-gate".into(),
+            gate.to_string_lossy().into(),
+        ]);
+        let owner = std::sync::Arc::new(ServerLifecycle::default());
+        let startup_owner = owner.clone();
+        let startup = thread::spawn(move || startup_owner.ensure_running(config));
+        let child = wait_for_pid(&pid_file);
+        let parent = owner.pid().expect("健康前必须已经取得真实进程句柄");
+        assert!(process_alive(child));
+        assert!(TcpStream::connect(("127.0.0.1", port)).is_err());
+        owner.shutdown(Duration::from_millis(400));
+        assert!(matches!(
+            startup.join().unwrap(),
+            Err(kenfutwork_desktop_lib::LifecycleError::Stopped)
+        ));
+        assert!(!process_alive(parent));
+        assert_reaped(child);
+        let _ = std::fs::remove_file(pid_file);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn 健康超时同样回收进程组而不是只杀父进程() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let pid_file = std::env::temp_dir().join(format!("kfw-timeout-child-{port}.pid"));
+        let gate = std::env::temp_dir().join(format!("kfw-timeout-gate-{port}"));
+        let _ = std::fs::remove_file(&pid_file);
+        let _ = std::fs::remove_file(&gate);
+        let mut config = config_for(port);
+        config.args.extend([
+            "--child-pid-file".into(),
+            pid_file.to_string_lossy().into(),
+            "--startup-gate".into(),
+            gate.to_string_lossy().into(),
+        ]);
+        // 启动门始终阻止健康响应；复用启动预算，避免负载下后代尚未写PID就被终止。
+        assert!(ensure_server_running(config).is_err());
+        assert_reaped(wait_for_pid(&pid_file));
+        let _ = std::fs::remove_file(pid_file);
+    }
+
+    fn assert_reaped(pid: u32) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while std::time::Instant::now() < deadline && process_alive(pid) {
+            thread::sleep(Duration::from_millis(50));
+        }
+        assert!(!process_alive(pid), "测试所属后代{pid}仍存活");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn 等正常停库时应用退出仍能取得托管句柄() {
+        use kenfutwork_desktop_lib::server_handle::ServerLifecycle;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let owner = std::sync::Arc::new(ServerLifecycle::default());
+        let pid = owner.ensure_running(config_for(port)).unwrap().unwrap();
+        let waiter_owner = owner.clone();
+        let waiter = thread::spawn(move || waiter_owner.wait_for_clean_exit());
+        thread::sleep(Duration::from_millis(50));
+        let (finished, result) = std::sync::mpsc::channel();
+        let closer_owner = owner.clone();
+        let closer = thread::spawn(move || {
+            closer_owner.shutdown(Duration::from_millis(400));
+            finished.send(()).unwrap();
+        });
+        let closed = result.recv_timeout(Duration::from_secs(2)).is_ok();
+        if !closed {
+            // 只解救本测试创建的替身；手工回收不算正常退出通过。
+            let _ = std::process::Command::new("kill")
+                .args(["-TERM", &pid.to_string()])
+                .status();
+        }
+        closer.join().unwrap();
+        let _ = waiter.join().unwrap();
+        assert!(closed, "等待自然停库时不应持锁挡住应用关闭");
+        assert!(!process_alive(pid));
     }
 
     #[test]

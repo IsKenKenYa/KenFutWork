@@ -10,6 +10,7 @@ import { createCodeUiTestClient } from "./host-client.fixture.js";
 /** 同独占数据目录/PG/Blob冷装配真实服务；新脚本Bearer只留HTTP接入层。 */
 export async function restartCodeUiHttpFixture(
   fixture: Awaited<ReturnType<typeof createCodeUiHttpFixture>>,
+  options: { clientId?: string } = {},
 ) {
   await fixture.client.close();
   await fixture.app.close();
@@ -45,7 +46,7 @@ export async function restartCodeUiHttpFixture(
       headers: { authorization: `Bearer ${token}` },
     });
     const stream = await client.openCodeStream();
-    const clientId = randomUUID();
+    const clientId = options.clientId ?? randomUUID();
     const hello = await stream.rpc("initializeConversationV4", [
       {
         kind: "clientHello",
@@ -60,6 +61,7 @@ export async function restartCodeUiHttpFixture(
     // 仅变更外部HTTP地址，业务、认证与Task查询仍走真实新服务。
     fixture.client.request = activeClient.request;
     return {
+      app: activeApp,
       client: activeClient,
       stream,
       clientId,
