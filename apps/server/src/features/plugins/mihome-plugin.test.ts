@@ -63,6 +63,15 @@ interface QrRefreshModule {
   }) => "scanned" | "poll" | "refresh" | "give-up";
 }
 
+interface PanelHostMessageModule {
+  PANEL_TOKEN_MESSAGE_TYPE: string;
+  PANEL_READY_MESSAGE_TYPE: string;
+  isHostPanelTokenMessage: (
+    event: { source: unknown; data?: unknown },
+    parentWindow: unknown,
+  ) => boolean;
+}
+
 interface DeviceModelModule {
   propertySlug: (type: string) => string;
   controlKindOf: (property: {
@@ -691,6 +700,54 @@ describe("米家插件：二维码过期自动换码的判定", () => {
         autoRefreshes: qr.MAX_AUTO_REFRESHES - 1,
       }),
     ).toBe("refresh");
+  });
+});
+
+describe("米家插件：宿主令牌握手的判据", () => {
+  it("接受父窗口递来的合法令牌；拒绝非父窗口 / 错类型 / 空令牌（回归：同源判据丢令牌）", async () => {
+    const mod = await loadPluginModule<PanelHostMessageModule>(
+      "lib/panel-host-message.js",
+    );
+    const parent = { name: "host-window" };
+    const token = mod.PANEL_TOKEN_MESSAGE_TYPE;
+    // 与 apps/web/src/lib/plugin-panels.tsx 的两个同名常量**字面值必须一致**（跨包协议串，
+    // 漂移了握手就断——web 侧测试只锁自己的常量，这里锁插件侧这一半）
+    expect(token).toBe("kenfutwork:plugin-panel-token");
+    expect(mod.PANEL_READY_MESSAGE_TYPE).toBe(
+      "kenfutwork:plugin-panel-ready",
+    );
+    const ok = { source: parent, data: { type: token, accessToken: "at-1" } };
+
+    // 宿主（父窗口）递来的合法消息：接受——宿主 web 与面板页服务端在开发态
+    // （3000/3001）与分离部署下**不同源**，这条路径不能依赖 origin 判据
+    expect(mod.isHostPanelTokenMessage(ok, parent)).toBe(true);
+
+    // 非父窗口（同源/异源第三方向面板投递）：拒绝
+    expect(
+      mod.isHostPanelTokenMessage({ ...ok, source: {} }, parent),
+    ).toBe(false);
+    // 消息类型不对 / 载荷缺失 / 空令牌：拒绝
+    expect(
+      mod.isHostPanelTokenMessage(
+        { source: parent, data: { type: "other", accessToken: "at-1" } },
+        parent,
+      ),
+    ).toBe(false);
+    expect(mod.isHostPanelTokenMessage({ source: parent }, parent)).toBe(
+      false,
+    );
+    expect(
+      mod.isHostPanelTokenMessage(
+        { source: parent, data: { type: token, accessToken: "" } },
+        parent,
+      ),
+    ).toBe(false);
+    expect(
+      mod.isHostPanelTokenMessage(
+        { source: parent, data: { type: token, accessToken: 42 } },
+        parent,
+      ),
+    ).toBe(false);
   });
 });
 

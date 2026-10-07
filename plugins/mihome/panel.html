@@ -204,6 +204,42 @@
     <footer id="footer">
       <p id="note" hidden></p>
     </footer>
-    <script type="module" src="./panel.js"></script>
+    <!--
+      加载方式说明（不要改回 `<script type="module" src="./panel.js">`）：
+
+      实测部分宿主 WebView / 网络中间层会把**同源 module 请求**拒掉（响应 403、请求根本到不了
+      服务端；同一 URL 的 fetch 与经典 script 都正常）。面板曾因此在真机永远停在静态占位
+      「正在获取登录态…」。这里改为：fetch 文本 → objectURL 动态 import 两个 lib（lib 源码
+      保持 ESM，宿主侧单测仍可直接 import）→ 能力挂到 window → 以**经典脚本**加载 panel.js。
+    -->
+    <script>
+      (async () => {
+        const importText = async (path) => {
+          const text = await (await fetch(path, { cache: "no-store" })).text();
+          return import(
+            URL.createObjectURL(
+              new Blob([text], { type: "text/javascript" }),
+            )
+          );
+        };
+        try {
+          window.QRRefresh = await importText("./lib/qr-refresh.js");
+          window.PanelHostMessage = await importText(
+            "./lib/panel-host-message.js",
+          );
+        } catch (error) {
+          const state = document.getElementById("state");
+          if (state) {
+            state.textContent = `面板脚本加载失败：${
+              error instanceof Error ? error.message : String(error)
+            }`;
+          }
+          return;
+        }
+        const script = document.createElement("script");
+        script.src = "./panel.js";
+        document.body.appendChild(script);
+      })();
+    </script>
   </body>
 </html>

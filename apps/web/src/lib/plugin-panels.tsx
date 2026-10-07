@@ -108,6 +108,13 @@ export function resolvePanelUrl(url: string, pluginId?: string): string {
  */
 export const PANEL_TOKEN_MESSAGE_TYPE = "kenfutwork:plugin-panel-token";
 
+/**
+ * 面板 → 宿主的「就绪回执」（字面值须与 `plugins/mihome/lib/panel-host-message.js`
+ * 的同名常量一致）。面板脚本可能晚于 iframe `load` 才注册好监听，宿主在 load 时递的
+ * 令牌会丢失——收到这条回执后补递一次；只认**本弹层 iframe** 的 contentWindow 发来的。
+ */
+export const PANEL_READY_MESSAGE_TYPE = "kenfutwork:plugin-panel-ready";
+
 function originOf(value: string, fallback?: string): string | null {
   try {
     return new URL(value, fallback).origin;
@@ -209,6 +216,19 @@ export function PluginPanelOverlay({
 
   useEffect(() => {
     handOverToken();
+  }, [handOverToken]);
+
+  // 面板就绪回执 → 补递令牌：面板脚本可能晚于 iframe `load` 才注册好监听
+  // （引导脚本异步加载，见 plugins/mihome/panel.html），只认本弹层 iframe 发来的回执。
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== frameRef.current?.contentWindow) return;
+      const data = event.data as { type?: unknown } | null;
+      if (data?.type !== PANEL_READY_MESSAGE_TYPE) return;
+      handOverToken();
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
   }, [handOverToken]);
 
   return (
