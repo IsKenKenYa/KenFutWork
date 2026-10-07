@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, posix, win32 } from "node:path";
 
 /**
  * 随包分发的语言运行时（Node / Python / uv / JDK）。
@@ -197,11 +197,14 @@ export function hasSystemGit(options: {
   const isWindows = process.platform === "win32";
   const executable = options.executable ?? (isWindows ? "git.exe" : "git");
   const separator = options.separator ?? (isWindows ? ";" : ":");
+  // 拼接口径跟**注入的分隔符**走，而不是跟随宿主平台：Windows 上模拟 POSIX 探测时，
+  // `path.join` 会拼出 `\opt\homebrew\bin\git` 而永远探不到（回归测试锁过这一条）。
+  const joinFor = separator === ":" ? posix.join : win32.join;
   return (options.path ?? "")
     .split(separator)
     .map((part) => part.trim())
     .filter((part) => part.length > 0)
-    .some((dir) => exists(join(dir, executable)));
+    .some((dir) => exists(joinFor(dir, executable)));
 }
 
 export function resolveRuntimes(
