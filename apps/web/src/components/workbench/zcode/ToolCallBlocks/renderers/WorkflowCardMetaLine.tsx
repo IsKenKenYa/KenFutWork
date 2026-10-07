@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/WorkflowCardMetaLine.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/WorkflowCardMetaLine.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 
 /**
  * 工具卡卡体顶部的一行元信息：淡色标签 + 等宽值（来源文件名、run id……），可带一句淡色注记。
@@ -29,15 +24,10 @@ export function WorkflowCardMetaLine({
     <p
       className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-ui-sm"
       {...{ [`data-workflow-card-${marker}`]: "true" }}
-      {...(flag === undefined
-        ? {}
-        : { [`data-workflow-card-${marker}-${flag}`]: "true" })}
+      {...(flag === undefined ? {} : { [`data-workflow-card-${marker}-${flag}`]: "true" })}
     >
       <span className="shrink-0 text-foreground-subtlest">{label}</span>
-      <span
-        className="min-w-0 truncate font-mono text-foreground-subtle"
-        title={title ?? value}
-      >
+      <span className="min-w-0 truncate font-mono text-foreground-subtle" title={title ?? value}>
         {value}
       </span>
       {note === undefined ? null : (
@@ -70,9 +60,7 @@ export function WorkflowAmendsLine({
       value={runId}
       {...(scriptInherited
         ? {
-            note: intl.formatMessage({
-              id: "chat.toolCall.workflow.amend.scriptUnchanged",
-            }),
+            note: intl.formatMessage({ id: "chat.toolCall.workflow.amend.scriptUnchanged" }),
             flag: "script-inherited",
           }
         : {})}

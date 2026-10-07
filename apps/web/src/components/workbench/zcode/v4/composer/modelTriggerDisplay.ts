@@ -1,22 +1,14 @@
-/**
- * zcode 照搬：`@/v4/composer/modelTriggerDisplay.ts`（references/zcode/packages/ui/src/v4/composer/modelTriggerDisplay.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import type { IntlInstance } from "@zui/i18n/IntlProvider";
 import {
   BUILTIN_MODEL_PROVIDER_IDS,
   resolveModelProviderFamilyIdByProviderId,
-} from "@zui/lib/zcode-shared";
-import type { ModelSelectGroup } from "@zui/ModelConfigSelect";
+} from "@zcode/shared";
+import type { IntlInstance } from "@zui/i18n/IntlProvider.js";
+import type { ModelSelectGroup } from "@zui/ModelConfigSelect.js";
 
 interface V4ModelTriggerDisplay {
   fullLabel: string;
   modelLabel: string;
-  providerPrefix?: string | undefined;
+  providerPrefix?: string;
 }
 
 export function formatModelChangeLabel(
@@ -58,9 +50,7 @@ export function formatProviderModelLabel(
   }
 
   const normalizedProviderName = providerName?.trim();
-  return normalizedProviderName
-    ? `${normalizedProviderName}/${modelName}`
-    : modelName;
+  return normalizedProviderName ? `${normalizedProviderName}/${modelName}` : modelName;
 }
 
 export function resolveV4ModelTriggerLabel({
@@ -74,19 +64,22 @@ export function resolveV4ModelTriggerLabel({
   normalizedValue: string;
   fallbackLabel: string;
   providerId: string | undefined;
-  providerName?: string | undefined;
+  providerName?: string;
 }): string {
   const selectedGroup = modelGroups.find((group) =>
     group.items.some((item) => item.value === normalizedValue),
   );
-  const selectedItem = selectedGroup?.items.find(
-    (item) => item.value === normalizedValue,
-  );
+  const selectedItem = selectedGroup?.items.find((item) => item.value === normalizedValue);
   if (!selectedGroup || !selectedItem) {
     return fallbackLabel;
   }
 
-  return formatProviderModelLabel(providerId, providerName, selectedItem.name);
+  // 仅当前菜单中存在的连接按 ID 兜底；历史记录的通用格式化保留原有语义。
+  return formatProviderModelLabel(
+    providerId,
+    providerName?.trim() || providerId,
+    selectedItem.name,
+  );
 }
 
 export function resolveV4ModelTriggerDisplay({
@@ -100,7 +93,7 @@ export function resolveV4ModelTriggerDisplay({
   normalizedValue: string;
   fallbackLabel: string;
   providerId: string | undefined;
-  providerName?: string | undefined;
+  providerName?: string;
 }): V4ModelTriggerDisplay {
   // 把 provider/model 预先拼成单一字符串后，响应式布局只能整段隐藏或依赖
   // 平台 JS 分支裁剪；这里保留结构化前缀，让 composer 容器断点统一决定可见密度。
@@ -114,15 +107,13 @@ export function resolveV4ModelTriggerDisplay({
   const selectedGroup = modelGroups.find((group) =>
     group.items.some((item) => item.value === normalizedValue),
   );
-  const selectedItem = selectedGroup?.items.find(
-    (item) => item.value === normalizedValue,
-  );
+  const selectedItem = selectedGroup?.items.find((item) => item.value === normalizedValue);
   if (!selectedGroup || !selectedItem) {
     return { fullLabel, modelLabel: fallbackLabel };
   }
 
   const modelLabel = selectedItem.name;
-  const normalizedProviderName = providerName?.trim();
+  const normalizedProviderName = providerName?.trim() || providerId;
   if (
     !normalizedProviderName ||
     (providerId && resolveModelProviderFamilyIdByProviderId(providerId))

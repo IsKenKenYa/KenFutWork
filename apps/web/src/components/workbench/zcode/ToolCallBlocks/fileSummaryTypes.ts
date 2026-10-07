@@ -1,24 +1,15 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/fileSummaryTypes.ts`（references/zcode/packages/ui/src/ToolCallBlocks/fileSummaryTypes.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
-
-import type { MessageFileLinkTarget } from "@zui/components/ai-elements/message";
-import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings";
-import type { CodeViewerSource } from "@zui/lib/codeViewer";
-import { countPatchFileDiffs } from "@zui/lib/patchDiffPreview";
-import type { TaskChatToolCallTreeNode } from "@zui/lib/toolCallTree";
-import type { ToolDisplayModel } from "@zui/lib/toolDisplay";
-import type { OpenPlanDetailSideTabRequest } from "@zui/lib/workspaceSidePane";
-import type { WorkflowRunState } from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import type { Theme } from "@zui/useTheme";
 import type { ReactNode } from "react";
+import type { WorkflowRunState } from "@zcode/shared/zcode-protocol-v4";
+import type { MessageFileLinkTarget } from "@zui/components/ai-elements/message.js";
+import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings.js";
+import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
+import { countPatchFileDiffs } from "@zui/lib/patchDiffPreview.js";
+import type { TaskChatToolCallTreeNode } from "@zui/lib/toolCallTree.js";
+import type { ToolDisplayModel } from "@zui/lib/toolDisplay.js";
+import type { Theme } from "@zui/useTheme.js";
+import type { OpenPlanDetailSideTabRequest } from "@zui/lib/workspaceSidePane.js";
 
-export function isPlainRecord(
-  value: unknown,
-): value is Record<string, unknown> {
+export function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -41,12 +32,7 @@ export function readUnifiedDiffField(value: unknown): string | undefined {
     return undefined;
   }
 
-  return readStringField(value, [
-    "unified_diff",
-    "unifiedDiff",
-    "patch",
-    "diff",
-  ]);
+  return readStringField(value, ["unified_diff", "unifiedDiff", "patch", "diff"]);
 }
 
 export function normalizeSingleFilePatch(
@@ -74,9 +60,7 @@ export function normalizeSingleFilePatch(
   }
 
   if (trimmedPatch.startsWith("@@ ")) {
-    const firstHeader = trimmedPatch.match(
-      /^@@\s-(\d+)(?:,(\d+))?\s\+(\d+)(?:,(\d+))?\s@@/m,
-    );
+    const firstHeader = trimmedPatch.match(/^@@\s-(\d+)(?:,(\d+))?\s\+(\d+)(?:,(\d+))?\s@@/m);
     const deletedCount = Number(firstHeader?.[2] ?? firstHeader?.[1] ?? "1");
     const addedCount = Number(firstHeader?.[4] ?? firstHeader?.[3] ?? "1");
 
@@ -84,12 +68,8 @@ export function normalizeSingleFilePatch(
     // 对“新建文件”场景，如果继续补成 --- a/file，PatchDiff 会按普通变更解析，
     // 大整文件新增时更容易把页面拖死。这里根据首个 hunk 判断是否为纯新增，补成 /dev/null 头。
     return [
-      deletedCount === 0 && addedCount > 0
-        ? "--- /dev/null"
-        : `--- a/${fileLabel}`,
-      addedCount === 0 && deletedCount > 0
-        ? "+++ /dev/null"
-        : `+++ b/${fileLabel}`,
+      deletedCount === 0 && addedCount > 0 ? "--- /dev/null" : `--- a/${fileLabel}`,
+      addedCount === 0 && deletedCount > 0 ? "+++ /dev/null" : `+++ b/${fileLabel}`,
       trimmedPatch,
     ].join("\n");
   }
@@ -116,18 +96,12 @@ export function readRawToolCallInput(raw: unknown): unknown {
 export function readStructuredDiffBlock(
   value: unknown,
 ): { path?: string; oldText: string; newText: string } | null {
-  if (
-    !isPlainRecord(value) ||
-    value.type !== "diff" ||
-    typeof value.newText !== "string"
-  ) {
+  if (!isPlainRecord(value) || value.type !== "diff" || typeof value.newText !== "string") {
     return null;
   }
 
   return {
-    ...(typeof value.path === "string" && value.path.trim()
-      ? { path: value.path }
-      : {}),
+    path: typeof value.path === "string" && value.path.trim() ? value.path : undefined,
     oldText:
       typeof value.oldText === "string"
         ? value.oldText
@@ -153,10 +127,8 @@ export function readRawToolCallChanges(raw: unknown) {
 
   return {
     directChanges: isPlainRecord(raw.changes) ? raw.changes : null,
-    rawInputChanges:
-      rawInput && isPlainRecord(rawInput.changes) ? rawInput.changes : null,
-    rawOutputChanges:
-      rawOutput && isPlainRecord(rawOutput.changes) ? rawOutput.changes : null,
+    rawInputChanges: rawInput && isPlainRecord(rawInput.changes) ? rawInput.changes : null,
+    rawOutputChanges: rawOutput && isPlainRecord(rawOutput.changes) ? rawOutput.changes : null,
   };
 }
 
@@ -167,8 +139,9 @@ export interface RawToolCallFileSummary {
   fileName: string;
   filePath: string | null;
   fileIconSrc: string;
-  changeStat?: { added: number; removed: number } | undefined;
-  patch?: string | null | undefined;
+  changeStat?: { added: number; removed: number };
+  patch?: string | null;
+  truncated?: boolean;
 }
 
 /**
@@ -184,15 +157,19 @@ export interface WorkflowRunCardSummary {
    * 原文都挂在那条行上）。只在 byRunId 联接表里填充（byToolCallId 表的键即该值）；
    * resume 行自己的 toolCallId **不是**这个值（resume 行的 display 里没有图）。
    */
-  toolCallId?: string | undefined;
+  toolCallId?: string;
   status: WorkflowRunState["status"];
   /** `stopped` 的原因；投影带才带。 */
-  stopReason?: WorkflowRunState["stopReason"] | undefined;
-  /** 已结算（`phase === "settled"`）的节点数。 */
+  stopReason?: WorkflowRunState["stopReason"];
+  /** 已结算（`phase === "settled"`）的节点数，**含**撞界后没进表的那些。 */
   nodesSettled: number;
   /**
    * 已排程（observed）节点数，**不是**全程总数——动态工作流的节点数由脚本在运行时决定，
    * 静态总数不存在。所以进度读作「已排程的里结算了几个」，绝不冒充完成百分比。
+   *
+   * 两个数都出自 `workflowRunStepCounts`（@zcode/shared）：`nodes` 表内 + `usage.nodesUnlisted`
+   * 表外。撞过 1024 界的 run 在这里仍报真实步数，少的是**每一步的详情**，卡与详情页各有一句
+   * 「仅展示 n/m 步的详情」说这件事。
    */
   nodesTotal: number;
   /**
@@ -201,17 +178,17 @@ export interface WorkflowRunCardSummary {
    * 仍是可选的：联接表两个建表函数恒填它，但类型不强求——冷回放落地后
    * journal 兜底的两条 merge 已删除，今天没有第二个生产者；消费侧照旧对缺席宽容，不写计数。
    */
-  agents?: number | undefined;
+  agents?: number;
   /**
    * 活投影里的这条 run：卡片据此建
    * 时间线模型（灯、药丸、墨迹）。journal 兜底命中时缺席——那时只有状态词，时间线画静态的。
    */
-  run?: WorkflowRunState | undefined;
+  run?: WorkflowRunState;
   /**
    * 可恢复（活投影 `cancelled`，或 journal 摘要按 CLI 的 resume 门算出的 `resumable`）。
    * 卡片页脚的 Resume 只在它在场时渲染；UI 绝不自行按 status + failureCode 推导。
    */
-  resumable?: true | undefined;
+  resumable?: true;
 }
 
 /**
@@ -225,7 +202,7 @@ export interface WorkflowDraftPosition {
 }
 
 export interface ToolCallBlockRenderContext {
-  isOfficeMode?: boolean | undefined;
+  isOfficeMode?: boolean;
   toolCallNode: TaskChatToolCallTreeNode;
   workspacePath: string;
   /**
@@ -234,43 +211,39 @@ export interface ToolCallBlockRenderContext {
    * MessageResponse / EditInlineDiffContent 等展示组件做 light/dark 分流。
    * 缺省时展示组件按 "system" 兜底。
    */
-  theme?: Theme | undefined;
+  theme?: Theme;
   /** 代码预览设置（store 耦合剥离）：同上，由宿主传入并保持引用稳定。 */
-  codePreviewSettings?: CodePreviewSettings | undefined;
+  codePreviewSettings?: CodePreviewSettings;
   displayModel: ToolDisplayModel;
   viewerSource: CodeViewerSource | null;
   rawFileSummaries: RawToolCallFileSummary[];
   isRunning: boolean;
   statusLabel: string;
-  sourceLabel?: string | undefined;
-  errorText?: string | undefined;
+  sourceLabel?: string;
+  errorText?: string;
   childToolList: ReactNode;
-  showIcon?: boolean | undefined;
+  showIcon?: boolean;
   /** CUA Group 子项显式放大 App Icon；独立 CUA 保持默认尺寸。 */
-  cuaAppIconClassName?: "size-4" | "size-5" | undefined;
-  kindLabelOverride?: ReactNode | undefined;
-  showTodoToolCalls?: boolean | undefined;
-  disableSummaryContentAnimation?: boolean | undefined;
+  cuaAppIconClassName?: "size-4" | "size-5";
+  kindLabelOverride?: ReactNode;
+  showTodoToolCalls?: boolean;
+  disableSummaryContentAnimation?: boolean;
   /** Changes 子项可能在 diff 已存在后才挂载，首次数字也需要播放进入动画。 */
-  animateDiffCountOnMount?: boolean | undefined;
-  canToggle?: boolean | undefined;
-  forceOpen?: boolean | undefined;
+  animateDiffCountOnMount?: boolean;
+  canToggle?: boolean;
+  forceOpen?: boolean;
   /**
    * v4 subagent child session 的只读观察入口。Agent renderer 将摘要行改成
    * 直接打开右侧 tab 的动作；非 Agent 工具忽略。
    */
-  agentSummaryAction?:
-    | {
-        onActivate: () => void;
-        testId?: string | undefined;
-      }
-    | undefined;
+  agentSummaryAction?: {
+    onActivate: () => void;
+    testId?: string;
+  };
   /** v4 已配对 subagentRow 投影出的 runtime 权威类型；流式 input 尚未完整时优先使用。 */
-  authoritativeAgentType?: string | undefined;
+  authoritativeAgentType?: string;
   /** ExitPlanMode 计划卡片：由会话宿主绑定 parent/session scope 后打开 Side Pane。 */
-  onOpenPlanDetail?:
-    | ((request: Omit<OpenPlanDetailSideTabRequest, "parentSessionId">) => void)
-    | undefined;
+  onOpenPlanDetail?: (request: Omit<OpenPlanDetailSideTabRequest, "parentSessionId">) => void;
   /**
    * CreateWorkflow 运行详情入口。
    *
@@ -280,42 +253,34 @@ export interface ToolCallBlockRenderContext {
    * 刻意不从工具输出里读 `backgroundTaskId`：v4 行的 `output.text` 只有
    * `formatCreateWorkflowModelContent` 挑出来的那句 `response` 散文，结构化字段并不在行上。
    */
-  onOpenWorkflowRun?:
-    | ((request: { workflowName?: string; phaseId?: string }) => void)
-    | undefined;
+  onOpenWorkflowRun?: (request: { workflowName?: string; phaseId?: string }) => void;
   /**
    * 卡片页脚的 Resume：与详情页同一条
    * v4 `resumeWorkflowRun {workId}` 命令，宿主绑定 runId 与会话。缺席即不渲染按钮。
    */
-  onResumeWorkflowRun?:
-    | ((request: { workflowName?: string }) => void)
-    | undefined;
+  onResumeWorkflowRun?: (request: { workflowName?: string }) => void;
   /**
    * 点一枚子代理药丸直接开它的 transcript：卡片交出槽位身份（run、站点、序号、运行时名，会话 id 有则随行；
    * 还没启动的药丸也可开，落到占位 tab），会话与 workspace 身份由宿主绑定。缺席即药丸不可点。
    */
-  onOpenWorkflowActor?:
-    | ((request: {
-        runId: string;
-        actorSessionId?: string | undefined;
-        siteId: string;
-        ordinal: number;
-        actorName?: string | undefined;
-      }) => void)
-    | undefined;
+  onOpenWorkflowActor?: (request: {
+    runId: string;
+    actorSessionId?: string;
+    siteId: string;
+    ordinal: number;
+    actorName?: string;
+  }) => void;
   /**
    * 脚本药丸 → 脚本 transcript tab：卡片只交出
    * 这一站的阶段 id（落点）与展示名，run、发起行与会话身份由宿主绑定（同 `onOpenWorkflowRun`）。
    * 缺席即脚本药丸不可点。
    */
-  onOpenWorkflowWorkspace?:
-    | ((request: { phaseId: string; workflowName?: string }) => void)
-    | undefined;
+  onOpenWorkflowWorkspace?: (request: { phaseId: string; workflowName?: string }) => void;
   /**
    * 时间线下的产物药丸 → 产物 tab：
    * 卡片只交出产物 id，run 与会话身份由宿主绑定。缺席即药丸禁用。
    */
-  onOpenWorkflowArtifact?: ((artifactId: string) => void) | undefined;
+  onOpenWorkflowArtifact?: (artifactId: string) => void;
   /**
    * 该工具调用已联接到的 workflow run 摘要；存在即卡片进入 run 态（紧凑可点卡）。
    *
@@ -323,26 +288,24 @@ export interface ToolCallBlockRenderContext {
    * （`workflowRunCardJoin.ts`），renderer 只读。`nodesTotal` 是**已排程**（observed）节点数——
    * 动态工作流没有静态总数，所以进度读作「已排程的里结算了几个」，不是全程百分比。
    */
-  workflowRun?: WorkflowRunCardSummary | undefined;
+  workflowRun?: WorkflowRunCardSummary;
   /**
    * 该工具调用的草稿位置；缺席（宿主没有行窗口，如只读分享）时卡片不编号、灯保持警示色。
    * 与 `workflowRun` 一样不向子工具卡透传：位置按 toolCallId 联接，给别的行就是别人的稿号。
    */
-  workflowDraft?: WorkflowDraftPosition | undefined;
-  onOpenCodeViewer?: ((source: CodeViewerSource) => void) | undefined;
-  onOpenFileLink?: ((target: MessageFileLinkTarget) => void) | undefined;
-  onOpenBrowserUrl?: ((url: string) => void) | undefined;
+  workflowDraft?: WorkflowDraftPosition;
+  onOpenCodeViewer?: (source: CodeViewerSource) => void;
+  onOpenFileLink?: (target: MessageFileLinkTarget) => void;
+  onOpenBrowserUrl?: (url: string) => void;
   /** 定时任务工具卡片跳转到管理页；automationId 存在时直接打开详情。 */
-  onOpenAutomationsMain?: ((automationId?: string) => void) | undefined;
-  onLoadFullToolCallFields?:
-    | ((toolId: string) => Promise<boolean | void> | boolean | void)
-    | undefined;
+  onOpenAutomationsMain?: (automationId?: string) => void;
+  onLoadFullToolCallFields?: (toolId: string) => Promise<boolean | void> | boolean | void;
 }
 
 export interface EditKindSource {
-  toolName?: string | null | undefined;
-  kind?: string | null | undefined;
-  title?: string | null | undefined;
+  toolName?: string | null;
+  kind?: string | null;
+  title?: string | null;
   input?: unknown;
   output?: unknown;
   raw?: unknown;

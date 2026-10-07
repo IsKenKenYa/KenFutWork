@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/components/workflow-graph/use-now-ticker.ts`（references/zcode/packages/ui/src/components/workflow-graph/use-now-ticker.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀。
- */
 import { useEffect, useState } from "react";
 
 /** 倒计时的自然粒度：秒级文案再快一格文字也不会变。 */
@@ -16,10 +11,7 @@ export const NOW_TICKER_INTERVAL_MS = 1_000;
  * "现在"，不带着上一段的偏差起步。与 WorkflowRunPendingQuestionsSection 的等待时长同一取向，
  * 只是粒度从 30 秒收到 1 秒——这里显示的是秒。
  */
-export function useNowTicker(
-  active: boolean,
-  intervalMs: number = NOW_TICKER_INTERVAL_MS,
-): number {
+export function useNowTicker(active: boolean, intervalMs: number = NOW_TICKER_INTERVAL_MS): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!active) return undefined;

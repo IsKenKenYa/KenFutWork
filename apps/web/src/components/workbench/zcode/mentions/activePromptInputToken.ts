@@ -1,13 +1,7 @@
-/**
- * zcode 照搬：`@/mentions/activePromptInputToken.ts`（references/zcode/packages/ui/src/mentions/activePromptInputToken.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
 import {
-  type ActivePromptInputTrigger,
   extractActivePromptInputTrigger,
-} from "@zui/lib/promptInputTriggers";
+  type ActivePromptInputTrigger,
+} from "@zui/lib/promptInputTriggers.js";
 
 interface PromptInputTextSelectionSnapshot {
   cursorOffset: number;
@@ -16,8 +10,7 @@ interface PromptInputTextSelectionSnapshot {
   textBeforeCursor: string;
 }
 
-export interface ActivePromptInputTokenSnapshot
-  extends ActivePromptInputTrigger {
+export interface ActivePromptInputTokenSnapshot extends ActivePromptInputTrigger {
   nodeKey: string;
   tokenEnd: number;
   tokenStart: number;
@@ -28,17 +21,13 @@ function isCaretInsideToken(
   snapshot: ActivePromptInputTokenSnapshot,
   cursorOffset: number,
 ): boolean {
-  return (
-    cursorOffset >= snapshot.tokenStart + 1 && cursorOffset <= snapshot.tokenEnd
-  );
+  return cursorOffset >= snapshot.tokenStart + 1 && cursorOffset <= snapshot.tokenEnd;
 }
 
 function createActivePromptInputTokenSnapshot(
   selection: PromptInputTextSelectionSnapshot,
 ): ActivePromptInputTokenSnapshot | null {
-  const activeTrigger = extractActivePromptInputTrigger(
-    selection.textBeforeCursor,
-  );
+  const activeTrigger = extractActivePromptInputTrigger(selection.textBeforeCursor);
   if (!activeTrigger) {
     return null;
   }
@@ -67,10 +56,7 @@ export function reconcileActivePromptInputTokenSnapshot(
     return null;
   }
 
-  const currentTokenText = selection.text.slice(
-    previous.tokenStart,
-    previous.tokenEnd,
-  );
+  const currentTokenText = selection.text.slice(previous.tokenStart, previous.tokenEnd);
   if (currentTokenText !== previous.tokenText) {
     return createActivePromptInputTokenSnapshot(selection);
   }
@@ -92,8 +78,7 @@ export function getActivePromptInputTokenReplacementRange(
     !snapshot ||
     snapshot.nodeKey !== selection.nodeKey ||
     !isCaretInsideToken(snapshot, selection.cursorOffset) ||
-    selection.text.slice(snapshot.tokenStart, snapshot.tokenEnd) !==
-      snapshot.tokenText
+    selection.text.slice(snapshot.tokenStart, snapshot.tokenEnd) !== snapshot.tokenText
   ) {
     return null;
   }

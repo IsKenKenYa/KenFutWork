@@ -1,10 +1,11 @@
 "use client";
 
-import { cva, type VariantProps } from "class-variance-authority";
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
-import { Select as SelectPrimitive } from "radix-ui";
 import * as React from "react";
-import { cn } from "../lib/utils";
+import { Select as SelectPrimitive } from "radix-ui";
+import { cva, type VariantProps } from "class-variance-authority";
+
+import { cn } from "../lib/utils.js";
+import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react";
 
 // resize 大会话时 Select trigger 跟随基础控件批量重排，
 // transition-all 会把布局/滚动条相关属性也动画化；这里限定为颜色过渡。
@@ -15,8 +16,7 @@ const selectTriggerVariants = cva(
       variant: {
         input:
           "border-input-border bg-input text-foreground hover:border-input-border-hover focus-visible:border-input-border-focused focus-visible:bg-input-focused focus-visible:ring-0",
-        default:
-          "border-transparent bg-primary text-primary-foreground hover:bg-primary/80",
+        default: "border-transparent bg-primary text-primary-foreground hover:bg-primary/80",
         outline:
           "border-border bg-transparent text-foreground hover:bg-input/50 hover:text-foreground aria-expanded:bg-selected aria-expanded:text-foreground",
         secondary:
@@ -41,16 +41,11 @@ const selectTriggerVariants = cva(
   },
 );
 
-function Select({
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Root>) {
+function Select({ ...props }: React.ComponentProps<typeof SelectPrimitive.Root>) {
   return <SelectPrimitive.Root data-slot="select" {...props} />;
 }
 
-function SelectGroup({
-  className,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Group>) {
+function SelectGroup({ className, ...props }: React.ComponentProps<typeof SelectPrimitive.Group>) {
   return (
     <SelectPrimitive.Group
       data-slot="select-group"
@@ -60,9 +55,7 @@ function SelectGroup({
   );
 }
 
-function SelectValue({
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Value>) {
+function SelectValue({ ...props }: React.ComponentProps<typeof SelectPrimitive.Value>) {
   return <SelectPrimitive.Value data-slot="select-value" {...props} />;
 }
 
@@ -86,7 +79,7 @@ function SelectTrigger({
       {...props}
     >
       {children}
-      <SelectPrimitive.Icon asChild={true}>
+      <SelectPrimitive.Icon asChild>
         {indicator ?? (
           <ChevronDownIcon className="pointer-events-none size-3.5 text-foreground-subtle" />
         )}
@@ -137,17 +130,11 @@ function SelectContent({
   );
 }
 
-function SelectLabel({
-  className,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Label>) {
+function SelectLabel({ className, ...props }: React.ComponentProps<typeof SelectPrimitive.Label>) {
   return (
     <SelectPrimitive.Label
       data-slot="select-label"
-      className={cn(
-        "px-2 py-1.5 text-ui-base text-foreground-subtlest",
-        className,
-      )}
+      className={cn("px-2 py-1.5 text-ui-base text-foreground-subtlest", className)}
       {...props}
     />
   );
@@ -157,34 +144,33 @@ type SelectItemProps = React.ComponentProps<typeof SelectPrimitive.Item> & {
   trailing?: React.ReactNode;
 };
 
-const SelectItem = React.forwardRef<
-  React.ElementRef<typeof SelectPrimitive.Item>,
-  SelectItemProps
->(({ className, children, trailing, ...props }, ref) => {
-  return (
-    <SelectPrimitive.Item
-      ref={ref}
-      data-slot="select-item"
-      className={cn(
-        "relative flex min-h-7 w-full cursor-default items-center gap-2 rounded-md px-2 py-1 text-ui-base/relaxed text-foreground outline-hidden select-none data-[highlighted]:bg-menu-hover data-[highlighted]:text-foreground data-disabled:pointer-events-none data-disabled:text-foreground-subtlest data-disabled:opacity-100 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
-        className,
-      )}
-      {...props}
-    >
-      {trailing ? (
-        <span className="pointer-events-auto absolute right-2 flex items-center justify-center">
-          {trailing}
+const SelectItem = React.forwardRef<React.ElementRef<typeof SelectPrimitive.Item>, SelectItemProps>(
+  ({ className, children, trailing, ...props }, ref) => {
+    return (
+      <SelectPrimitive.Item
+        ref={ref}
+        data-slot="select-item"
+        className={cn(
+          "relative flex min-h-7 w-full cursor-default items-center gap-2 rounded-md px-2 py-1 text-ui-base/relaxed text-foreground outline-hidden select-none data-[highlighted]:bg-menu-hover data-[highlighted]:text-foreground data-disabled:pointer-events-none data-disabled:text-foreground-subtlest data-disabled:opacity-100 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+          className,
+        )}
+        {...props}
+      >
+        {trailing ? (
+          <span className="pointer-events-auto absolute right-2 flex items-center justify-center">
+            {trailing}
+          </span>
+        ) : null}
+        <span className="pointer-events-none absolute right-2 flex items-center justify-center">
+          <SelectPrimitive.ItemIndicator>
+            <CheckIcon className="pointer-events-none size-4 text-foreground-subtle" />
+          </SelectPrimitive.ItemIndicator>
         </span>
-      ) : null}
-      <span className="pointer-events-none absolute right-2 flex items-center justify-center">
-        <SelectPrimitive.ItemIndicator>
-          <CheckIcon className="pointer-events-none size-4 text-foreground-subtle" />
-        </SelectPrimitive.ItemIndicator>
-      </span>
-      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-    </SelectPrimitive.Item>
-  );
-});
+        <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      </SelectPrimitive.Item>
+    );
+  },
+);
 
 SelectItem.displayName = "SelectItem";
 

@@ -1,18 +1,14 @@
+import type { StreamEvent } from "@kenfutwork/shared";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeAny } from "zod";
-
 import type { AgentBackendFactory } from "../agent/backends/index.js";
 import type { AgentPersistenceService } from "../agent/persistence/index.js";
 import type { AgentRunService } from "../agent/runtime.js";
 import type { ServerEnv } from "../config/env.js";
-import type { AdminService } from "../features/admin/admin-service.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
-import type { ApiTokenService } from "../features/api-tokens/token-service.js";
-import type { RequestAuthenticator } from "../features/auth/types.js";
 import type { BlobStore } from "../features/blob/types.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
 import type { BrowserService } from "../features/browser/fetch-page.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
@@ -20,23 +16,41 @@ import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
 import type { CheckpointService } from "../features/checkpoints/checkpoint-service.js";
 import type { CodeGitService } from "../features/code-git/code-git-service.js";
-import type { CreditService } from "../features/credits/credit-service.js";
-import type { TierGuard } from "../features/credits/tier-guard.js";
+import type { CodeTerminalService } from "../features/code-terminal/types.js";
+import type { CodeUiService } from "../features/code-ui/service.js";
+import type {
+  ExecutionScopeHandle,
+  ExecutionScopes,
+} from "../features/execution/scope-service.js";
 import type {
   PersistImageFn,
   SubmitImageJobFn,
   SubmitVideoJobFn,
 } from "../features/generation/tool-types.js";
 import type { JobService } from "../features/jobs/job-service.js";
+import type { LocalAccessService } from "../features/local-access/types.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../features/local-instance/types.js";
 import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
-import type { PaymentService } from "../features/payments/payment-service.js";
+import type {
+  CodeApprovalMode,
+  CodePlanControl,
+  PermissionInvocation,
+} from "../features/permissions/approval-types.js";
 import type { PermissionService } from "../features/permissions/permission-service.js";
 import type { PersistenceService } from "../features/persistence/types.js";
 import type { PluginRegistryService } from "../features/plugins/plugin-registry-service.js";
+import type { ProcessSandbox } from "../features/process-sandbox/types.js";
 import type { ProjectService } from "../features/projects/project-service.js";
 import type { QueueClient } from "../features/queue/types.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
+import type {
+  TaskWorkContext,
+  TaskWorkManager,
+} from "../features/task-work/types.js";
 import type { AssetWriter } from "../features/uploads/asset-writer.js";
 import type { UploadService } from "../features/uploads/upload-service.js";
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
@@ -45,8 +59,10 @@ import type {
   AvailableModel,
   AvailableVideoModel,
 } from "../generation/types.js";
+import type { VoiceService } from "../features/voice/voice-service.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type { CanvasEventBuffer } from "../ws/event-buffer.js";
+import type { ResourceDisposer } from "./disposal.js";
 
 /**
  * 内核服务仓库（ctx key 表的唯一代码落点）。
@@ -61,12 +77,6 @@ export interface ServiceMap {
   agentPersistence: AgentPersistenceService;
   agentRunMetadata: AgentRunMetadataService;
   agentRuns: AgentRunService;
-  /** 计费三件套（目标态默认关闭，DEC-5） */
-  credits: CreditService;
-  tierGuard: TierGuard;
-  payments: PaymentService;
-  /** 平台管理后台（FORM-10：系统供应商分发 + 额度/套餐统一管理） */
-  admin: AdminService;
   /** 领域服务（design 侧为主） */
   brandKit: BrandKitService;
   canvas: CanvasService;
@@ -76,6 +86,11 @@ export interface ServiceMap {
    * 目录经 `resolveSandboxDir` 解析（与 agent 后端同一处），归属校验在服务内。
    */
   codeGit: CodeGitService;
+  codeUi: CodeUiService;
+  codeTerminal: CodeTerminalService;
+  executionScopes: ExecutionScopes;
+  processSandbox: ProcessSandbox;
+  taskWork: TaskWorkManager;
   /**
    * Code 模式检查点（影子 git 快照/预览/恢复）：runtime 轮次钩子与恢复路由消费。
    * 影子仓库在服务端数据目录（GIT_DIR），work-tree 指向沙箱工作目录
@@ -94,22 +109,17 @@ export interface ServiceMap {
   assetWriter: AssetWriter;
   /**
    * blob 缝（M3.1）：对象存储唯一入口；Provider 随形态替换
-   * （`local` 桌面本地 FS / `supabase` 过渡期与自托管现状 / 后续 MinIO）。
+   * （当前本地FS；远端对象存储按未来连接边界独立接入）。
    */
   blob: BlobStore;
-  viewer: ViewerService;
+  localInstance: LocalInstanceService;
   /**
-   * 自管 Postgres 存储缝（§4.2；`FORM-9`）：唯一 DB 入口，workspace 隔离在
+   * 自管 Postgres 存储缝（§4.2；`FORM-9`）：唯一 DB 入口，实例隔离在
    * 应用层强制（DB 层已无 RLS 兜底）。Provider 随形态替换（桌面捆绑 / 自托管）。
    */
   persistence: PersistenceService;
-  /** 认证缝（目标 local-trust / 自管 auth） */
-  auth: RequestAuthenticator;
-  /**
-   * 外部应用访问令牌（R5-2「外部应用授权」）：给外部应用/脚本/CI 用的 API 凭据。
-   * 认证缝的第二条路径由 auth 插件合成消费（见 auth/plugin.ts）。
-   */
-  apiTokens: ApiTokenService;
+  /** 回环本机Cookie/Bearer接入；不代表官方账户。 */
+  localAccess: LocalAccessService;
   /** JobService（PGMQ，Postgres 扩展） */
   jobs: JobService;
   /**
@@ -142,6 +152,11 @@ export interface ServiceMap {
   systemPrompt: SystemPromptRegistry;
   /** 浏览器能力缝（R3-4/R5-4）：受控网页抓取与元素提取（人用快照端点、agent 用 browser_open） */
   browser: BrowserService;
+  /**
+   * 语音能力缝（《语音助手插件规划》）：按工作区设置把「听 / 想 / 说」三段解析成具体
+   * Provider（内置 sherpa 离线 / BYOK 实例端点）。非模型可调用能力，故不进 `tools`。
+   */
+  voice: VoiceService;
   /** ConnectionManager + EventBuffer */
   ws: WsServices;
 }
@@ -173,9 +188,15 @@ export interface PreStepPayload {
   input: unknown;
   runId: string | undefined;
   threadId?: string | undefined;
+  /** Runtime已接受的run/Task事实，仅供指导hydrate；不作为工具执行授权。 */
+  preset?: "design" | "code" | undefined;
+  instanceId?: string | undefined;
+  taskId?: string | undefined;
+  sessionId?: string | undefined;
 }
 
 export interface ToolPreExecutePayload {
+  permissionInvocation?: PermissionInvocation | undefined;
   args: Record<string, unknown>;
   decision: "allow" | "deny";
   denyReason?: string | undefined;
@@ -224,13 +245,32 @@ export type PromptSectionScope = "always" | "design" | "code";
  * 持有服务引用，按 ctx 定位——ctx 不装「已取好的数据」，只装定位键。
  */
 export interface PromptCompositionContext {
+  /** 私有执行定位；从实际Run复制，不由模型或路径签发，不缓存业务正文。 */
+  execution?: PromptExecutionContext | undefined;
+  executionScope?: import("@kenfutwork/shared").CodeExecutionScope | undefined;
+  executionRole?:
+    | import("../features/execution/scope-service.js").ExecutionRole
+    | undefined;
+  approvalMode?: CodeApprovalMode | undefined;
+  approvalCeiling?: CodeApprovalMode | undefined;
+  planEnabled?: boolean | undefined;
+  roleInstructions?: string | undefined;
+  projectInstructions?:
+    | ReadonlyArray<
+        import("../features/code-tools/project-instructions-types.js").CodeProjectInstruction
+      >
+    | undefined;
+  projectContextIssues?:
+    | ReadonlyArray<{ path: string; message: string }>
+    | undefined;
+  projectContextTruncated?: boolean | undefined;
   preset: "design" | "code";
   /** 工作区 id：规则段等按工作区读取设置的定位键。 */
-  workspaceId?: string | undefined;
+  instanceId?: string | undefined;
   /** 项目绑定的品牌套件 id（品牌段出现与否的判定）。 */
   brandKitId?: string | undefined;
   /** 工作区技能清单（skills 段渲染；结构取 WorkspaceSkillEntry 的消费子集）。 */
-  workspaceSkills?: ReadonlyArray<{
+  instanceSkills?: ReadonlyArray<{
     name: string;
     description: string;
     path: string;
@@ -242,6 +282,11 @@ export interface PromptCompositionContext {
    */
   userRulesFragment?: readonly string[];
 }
+
+export type PromptExecutionContext = Pick<
+  ToolExecutionContext,
+  "actor" | "scopeHandle" | "taskWorkContext" | "runId" | "signal"
+>;
 
 /**
  * 系统提示段（dsh PromptSection 式）：插件向 `ctx.systemPrompt` 贡献，
@@ -267,23 +312,56 @@ export interface SystemPromptRegistry {
 }
 
 export interface ToolExecutionContext {
+  /** 真实Run持久事件消费方；出口工具复用此通路，不持有已结束的SDK子run回调。 */
+  publishToolEvent?:
+    | ((
+        event: Extract<
+          StreamEvent,
+          { type: "tool.started" | "tool.completed" }
+        >,
+      ) => Promise<void>)
+    | undefined;
+  /** 完成绑定审批的原调用事实；属主按原始效果收窄执行，不能把旧只读批准扩大。 */
+  permissionInvocation?: PermissionInvocation | undefined;
+  /** 最终claim固定的执行效果档；原plan或最终plan始终夹到只读。 */
+  approvedExecutionMode?: CodeApprovalMode | undefined;
+  /** 私有宿主事实：每次执行重新读 Task policy，worker ceiling 在派发时冻结。 */
+  codeApproval?:
+    | {
+        ceiling: CodeApprovalMode;
+        resolve(): Promise<{
+          mode: CodeApprovalMode;
+          /** 独立规划状态；mode是逐调用派生的有效权限档。 */
+          planEnabled?: boolean | undefined;
+          planningEpoch?: number | undefined;
+          scopeGeneration: number;
+          branchGeneration: number;
+        }>;
+      }
+    | undefined;
+  sessionId?: string | undefined;
+  modelSpecifier?: string | undefined;
+  delegationDepth?: number | undefined;
+  taskWorkContext?: TaskWorkContext | undefined;
   runId?: string | undefined;
+  /** 实际模型工具调用身份：幂等、真实 diff 与 UI 事件共用。 */
+  toolCallId?: string | undefined;
+  scopeHandle?: ExecutionScopeHandle | undefined;
   signal?: AbortSignal | undefined;
   /** 会话线程：tool-pre-execute 监听器（执行模式拦截）据此定位线程策略。 */
   threadId?: string | undefined;
-  workspaceId?: string | undefined;
+  instanceId?: string | undefined;
   /**
    * 运行方用户 id：需要用户身份的工具（画布截图 RPC 路由、品牌套件 `:user`
-   * 隔离谓词）据此构造调用方，与 workspaceId 同为 run 起始期一次性解析。
+   * 隔离谓词）据此构造调用方，与 instanceId 同为 run 起始期一次性解析。
    */
-  userId?: string | undefined;
+  actor?: LocalActor | undefined;
   /**
    * 本轮 run 绑定的画布：需要落点的工具（如 install_plugin 从工作目录安装）
    * 据此解析沙箱目录——解析口径与 agent/git 同一处（resolveSandboxDir）。
    */
   canvasId?: string | undefined;
   /** 运行方（agent 运行时）传入的请求级用户令牌；需要用户上下文的工具据此解析数据。 */
-  accessToken?: string | undefined;
   /**
    * 附件 assetId → data URI 映射（run 附件下载产物）：generate_image 的
    * 参考图解析经它。桥接层从 LangChain invoke 期的 configurable 透传——
@@ -301,7 +379,18 @@ export interface ToolDefinition {
   name: string;
   description: string;
   scope: ToolScope;
+  exposure?: "core" | "deferred" | undefined;
+  /** 执行效果由可信属主声明；未知外部工具不能进入只读角色。 */
+  access?: "read" | "write" | "execute" | undefined;
+  /** 有限Task控制；不得与资源access混合或从外部MCP字段签发。 */
+  planControl?: CodePlanControl | undefined;
+  /** 仅可信执行属主签发：只读文件域且网络禁用，不来自模型参数。 */
+  readonlyExecution?: boolean | undefined;
   parameters: Record<string, unknown>;
+  /** 仅用于公开事件/显示/日志；执行与审批仍使用原始参数。 */
+  projectArguments?:
+    | ((args: Record<string, unknown>) => Record<string, unknown>)
+    | undefined;
   /**
    * 原生 zod schema（内置工具专用逃生口）：桥接层优先用它构造 StructuredTool，
    * 避免 zod → JSON Schema → zod 往返丢精度（default/union/enum）。
@@ -348,6 +437,12 @@ export interface ToolRegistry {
 
 /** per-run 工具解析上下文：runtime 在 run 起始期构建，动态工具据此实例化。 */
 export interface RunToolResolutionContext {
+  sessionId?: string | undefined;
+  modelSpecifier?: string | undefined;
+  delegationDepth?: number | undefined;
+  taskWorkContext?: TaskWorkContext | undefined;
+  scopeHandle?: ExecutionScopeHandle | undefined;
+  modelCapabilities?: { image: boolean; pdf: boolean } | undefined;
   preset: "design" | "code";
   /** deepagents backend 工厂（project_search 的 grep 虚拟工作区经它）。 */
   backendFactory: AgentBackendFactory;
@@ -399,7 +494,7 @@ export interface PluginDefinition {
   name: string;
   inject: readonly ServiceKey[];
   enabled?: (env: ServerEnv) => boolean;
-  apply(ctx: PluginContext): undefined | (() => void);
+  apply(ctx: PluginContext): undefined | ResourceDisposer;
   /**
    * 全部插件 apply 完成、服务定例化就绪后按声明顺序调用。
    * 路由注册等「消费其他插件服务」的跨服务接线放这里，apply 只注册自己的服务。
@@ -418,7 +513,7 @@ export interface PluginContext {
   /** 可选解析：key 无人提供时返回 undefined（jobs 等条件装配服务用）。 */
   tryGet<K extends ServiceKey>(key: K): ServiceMap[K] | undefined;
   /** 登记可逆副作用，kernel dispose 时 LIFO 执行。 */
-  effect(fn: () => undefined | (() => void)): void;
+  effect(fn: () => undefined | ResourceDisposer): void;
   /** 订阅 agent-run 事件，返回取消订阅函数。 */
   on<E extends AgentRunEvent>(event: E, listener: ListenerOf<E>): () => void;
   /** Fastify 实例；worker 进程 compose 时不可用（访问即抛错）。 */
@@ -437,7 +532,7 @@ export interface KernelEvents {
 
 export interface KernelHandle {
   /** 逆序执行全部 disposer（apply 返回值 + effect + 工具/事件注销）。 */
-  dispose(): void;
+  dispose(): Promise<void>;
   get<K extends ServiceKey>(key: K): ServiceMap[K];
   tryGet<K extends ServiceKey>(key: K): ServiceMap[K] | undefined;
   readonly events: KernelEvents;

@@ -7,7 +7,7 @@ export type AssetRecord = {
   mime_type: string | null;
   /** `bigint` 列经驱动回来是字符串，统一归一为 number 以匹配契约。 */
   byte_size: number | null;
-  workspace_id: string;
+  instance_id: string;
   project_id: string | null;
   created_at: string;
 };
@@ -23,28 +23,28 @@ export type NewAssetInput = {
   mimeType: string;
   objectPath: string;
   projectId?: string | undefined;
-  /** `created_by` 可空：worker/executor 路径无用户身份（生成物元数据）。 */
-  userId?: string | undefined;
-  workspaceId: string;
+  /** `created_by_client_id` 可空：worker/executor 路径无接入客户端身份（生成物元数据）。 */
+  createdByClientId?: string | null | undefined;
+  instanceId: string;
 };
 
 /**
- * uploads 聚合的数据访问（`asset_objects`，带 `workspace_id`）。
+ * uploads 聚合的数据访问（`asset_objects`，带 `instance_id`）。
  * 对象存储本身走 blob 缝（M3 起），本 repository 只管元数据。
  */
 export interface UploadRepository {
   /** 删除元数据行；返回受影响行数。 */
-  deleteById(workspaceId: string, assetId: string): Promise<number>;
+  deleteById(instanceId: string, assetId: string): Promise<number>;
   /** 取对象位置（bucket + path），用于签发 URL 或删除对象。 */
   findLocation(
-    workspaceId: string,
+    instanceId: string,
     assetId: string,
   ): Promise<AssetLocation | null>;
   insert(input: NewAssetInput): Promise<AssetRecord | null>;
 }
 
 const ASSET_COLUMNS =
-  "id, bucket, object_path, mime_type, byte_size, workspace_id, project_id, created_at";
+  "id, bucket, object_path, mime_type, byte_size, instance_id, project_id, created_at";
 
 type RawAssetRow = {
   id: string;
@@ -52,7 +52,7 @@ type RawAssetRow = {
   object_path: string;
   mime_type: string | null;
   byte_size: string | number | null;
-  workspace_id: string;
+  instance_id: string;
   project_id: string | null;
   created_at: string;
 };
@@ -63,18 +63,19 @@ export function createUploadRepository(
   return {
     async insert(input) {
       const row = await persistence
-        .forWorkspace(input.workspaceId)
+        .forInstance(input.instanceId)
         .queryOne<RawAssetRow>(
           `insert into public.asset_objects
-                  (workspace_id, bucket, object_path, mime_type, byte_size, created_by, project_id)
-           values (:workspace, $1, $2, $3, $4, $5, $6)
+                  (instance_id, bucket, object_path, mime_type, byte_size, created_by_client_id, project_id)
+           select :instance, $1, $2, $3, $4, $5::uuid, $6::uuid
+           where $6::uuid is null or exists (select 1 from public.projects p where p.id = $6::uuid and p.instance_id = :instance)
            returning ${ASSET_COLUMNS}`,
           [
             input.bucket,
             input.objectPath,
             input.mimeType,
             input.byteSize,
-            input.userId ?? null,
+            input.createdByClientId ?? null,
             input.projectId ?? null,
           ],
         );
@@ -82,23 +83,23 @@ export function createUploadRepository(
       return row ? mapAsset(row) : null;
     },
 
-    async findLocation(workspaceId, assetId) {
+    async findLocation(instanceId, assetId) {
       const row = await persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .queryOne<AssetLocation>(
           `select bucket, object_path
              from public.asset_objects
-            where workspace_id = :workspace
+            where instance_id = :instance
               and id = $1`,
           [assetId],
         );
       return row ?? null;
     },
 
-    async deleteById(workspaceId, assetId) {
-      return persistence.forWorkspace(workspaceId).execute(
+    async deleteById(instanceId, assetId) {
+      return persistence.forInstance(instanceId).execute(
         `delete from public.asset_objects
-          where workspace_id = :workspace
+          where instance_id = :instance
             and id = $1`,
         [assetId],
       );
@@ -115,6 +116,6 @@ function mapAsset(row: RawAssetRow): AssetRecord {
     mime_type: row.mime_type,
     object_path: row.object_path,
     project_id: row.project_id,
-    workspace_id: row.workspace_id,
+    instance_id: row.instance_id,
   };
 }

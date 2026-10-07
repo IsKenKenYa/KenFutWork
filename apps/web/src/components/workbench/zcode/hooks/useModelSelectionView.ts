@@ -1,25 +1,11 @@
-/**
- * zcode 照搬：`@/hooks/useModelSelectionView.ts`（references/zcode/packages/ui/src/hooks/useModelSelectionView.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import { useWorkspaceServicesResolution } from "@zui/hooks/useWorkspaceServices";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type {
   IModelSelectionService,
   ModelSelectionView,
   ModelSelectionViewInput,
-} from "@zui/lib/zcode-services";
-import { logger } from "@zui/logger";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useReducer,
-  useRef,
-  useState,
-} from "react";
+} from "@zcode/services";
+import { useWorkspaceServicesResolution } from "@zui/hooks/useWorkspaceServices.js";
+import { logger } from "@zui/logger.js";
 
 export type ModelSelectionState =
   | { status: "loading" }
@@ -46,13 +32,9 @@ function isTransientReadError(cause: unknown): boolean {
   if (!cause || typeof cause !== "object") return false;
   const error = cause as { code?: unknown; name?: unknown; message?: unknown };
   return (
-    ["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "EAI_AGAIN"].includes(
-      String(error.code),
-    ) ||
+    ["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "EAI_AGAIN"].includes(String(error.code)) ||
     (error.name === "TypeError" &&
-      ["Failed to fetch", "fetch failed", "Load failed"].includes(
-        String(error.message),
-      ))
+      ["Failed to fetch", "fetch failed", "Load failed"].includes(String(error.message)))
   );
 }
 
@@ -71,7 +53,7 @@ export function useModelSelectionServiceView(
   service: IModelSelectionService | null | undefined,
   enabled = true,
   unavailableReason: "remote-waiting" | "missing-target" = "remote-waiting",
-  input?: ModelSelectionViewInput | undefined,
+  input?: ModelSelectionViewInput,
 ): ModelSelectionRead {
   const normalizedService = service ?? null;
   // 调用方可每次 render 创建参数对象；所有权按选择内容绑定，不按对象引用反复订阅。
@@ -114,9 +96,7 @@ export function useModelSelectionServiceView(
       enabled,
       unavailableReason,
       inputKey,
-      state:
-        retainedReady ??
-        initialState(normalizedService, enabled, unavailableReason),
+      state: retainedReady ?? initialState(normalizedService, enabled, unavailableReason),
     });
     if (!enabled || !normalizedService) return;
 
@@ -130,11 +110,7 @@ export function useModelSelectionServiceView(
       retryTimer = undefined;
     };
     const commit = (candidate: ModelSelectionView): void => {
-      if (
-        generation !== generationRef.current ||
-        candidate.revision < latestRevision
-      )
-        return;
+      if (generation !== generationRef.current || candidate.revision < latestRevision) return;
       latestRevision = candidate.revision;
       hasReadyView = true;
       cancelRetry();
@@ -154,10 +130,8 @@ export function useModelSelectionServiceView(
           if (request === requestId) commit(candidate);
         },
         (cause: unknown) => {
-          if (generation !== generationRef.current || request !== requestId)
-            return;
-          const error =
-            cause instanceof Error ? cause : new Error(String(cause));
+          if (generation !== generationRef.current || request !== requestId) return;
+          const error = cause instanceof Error ? cause : new Error(String(cause));
           logger.warn("[model-selection] 目标 Host View 读取失败", { error });
           // 读取失败不是选择失效。成功后的刷新失败保留原 View；首次失败可见且有界重读。
           if (!hasReadyView) {
@@ -192,14 +166,7 @@ export function useModelSelectionServiceView(
       cancelRetry();
       subscription.dispose();
     };
-  }, [
-    enabled,
-    normalizedService,
-    reloadVersion,
-    unavailableReason,
-    inputKey,
-    stableInput,
-  ]);
+  }, [enabled, normalizedService, reloadVersion, unavailableReason, inputKey, stableInput]);
 
   return { state: visibleState, reload: useCallback(() => reload(), []) };
 }
@@ -207,10 +174,10 @@ export function useModelSelectionServiceView(
 /** 模型候选只来自明确 Workspace Target；等待远端时不读取 Local/Base Host。 */
 export function useModelSelectionView(
   workspacePath: string | null | undefined,
-  remoteSessionId?: string | null | undefined,
-  workspaceIdentity?: string | null | undefined,
-  remoteTarget?: unknown | undefined,
-  input?: ModelSelectionViewInput | undefined,
+  remoteSessionId?: string | null,
+  workspaceIdentity?: string | null,
+  remoteTarget?: unknown,
+  input?: ModelSelectionViewInput,
 ): ModelSelectionRead {
   const hasTarget = Boolean(workspacePath?.trim() || workspaceIdentity?.trim());
   const resolution = useWorkspaceServicesResolution(
@@ -219,7 +186,7 @@ export function useModelSelectionView(
     workspaceIdentity,
     remoteTarget,
   );
-  const remoteWaiting = resolution.connectionKind === "remote-waiting";
+  const remoteWaiting = !resolution.rpcReady;
   return useModelSelectionServiceView(
     resolution.services.modelSelectionService,
     hasTarget && !remoteWaiting,

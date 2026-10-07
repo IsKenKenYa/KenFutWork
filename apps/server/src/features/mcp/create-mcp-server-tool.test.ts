@@ -3,22 +3,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AdminService } from "../admin/admin-service.js";
-import type { RequestAuthenticator } from "../auth/types.js";
+import type { LocalInstanceService } from "../local-instance/types.js";
 import { createCreateMcpServerTool } from "./create-mcp-server-tool.js";
 import type { McpService } from "./mcp-service.js";
 
-const USER = {
-  accessToken: "tok-1",
-  email: "admin@test.kenfutwork.com",
-  id: "u-admin",
-  userMetadata: {},
-};
+const ACTOR = { instanceId: "instance-1", accessClientId: null };
 const CANVAS_ID = "canvas-1";
 
 function makeDeps(
   overrides: {
-    requireAdmin?: () => Promise<void>;
+    resolveInstance?: () => Promise<void>;
     create?: (input: unknown) => Promise<unknown>;
   } = {},
 ) {
@@ -34,11 +28,14 @@ function makeDeps(
     sandboxRoot,
     deps: {
       service: { create } as unknown as McpService,
-      auth: { authenticate: async () => USER } as RequestAuthenticator,
-      admin: {
-        isAdmin: async () => true,
-        requireAdmin: overrides.requireAdmin ?? (async () => {}),
-      } as unknown as AdminService,
+      localInstance: {
+        resolve:
+          overrides.resolveInstance ??
+          (async () => ({
+            instanceId: ACTOR.instanceId,
+            dataDir: sandboxRoot,
+          })),
+      } as unknown as LocalInstanceService,
       sandboxRoot,
     },
   };
@@ -57,7 +54,7 @@ describe("create_mcp_server 工具（创造模式的 MCP 产物）", () => {
 
     const result = (await tool.execute(
       { name: "py_tools", path: "mcp/py_tools.py" },
-      { canvasId: CANVAS_ID, accessToken: "tok-1" },
+      { canvasId: CANVAS_ID, actor: ACTOR, instanceId: ACTOR.instanceId },
     )) as Record<string, unknown>;
 
     expect(result).toMatchObject({ registered: true, command: "python" });
@@ -73,18 +70,18 @@ describe("create_mcp_server 工具（创造模式的 MCP 产物）", () => {
 
     const explicit = (await tool.execute(
       { name: "x", path: "tools/srv.js", command: "bun" },
-      { canvasId: CANVAS_ID, accessToken: "tok-1" },
+      { canvasId: CANVAS_ID, actor: ACTOR, instanceId: ACTOR.instanceId },
     )) as Record<string, unknown>;
     expect(explicit.command).toBe("bun");
 
     const inferred = (await tool.execute(
       { name: "y", path: "tools/srv.js" },
-      { canvasId: CANVAS_ID, accessToken: "tok-1" },
+      { canvasId: CANVAS_ID, actor: ACTOR, instanceId: ACTOR.instanceId },
     )) as Record<string, unknown>;
     expect(inferred.command).toBe("node");
   });
 
-  it("非管理员 / 缺画布 / 越界路径都如实拒绝，且不注册任何 server", async () => {
+  it("实例拒绝 / 缺画布 / 越界路径都如实拒绝，且不注册任何 server", async () => {
     const create = vi.fn(async () => ({
       id: "s",
       name: "s",
@@ -93,8 +90,8 @@ describe("create_mcp_server 工具（创造模式的 MCP 产物）", () => {
 
     const denied = createCreateMcpServerTool(
       makeDeps({
-        requireAdmin: async () => {
-          throw new Error("forbidden");
+        resolveInstance: async () => {
+          throw new Error("实例不可用");
         },
         create,
       }).deps,
@@ -102,18 +99,21 @@ describe("create_mcp_server 工具（创造模式的 MCP 产物）", () => {
     await expect(
       denied.execute(
         { name: "a", path: "mcp/a.py" },
-        { canvasId: CANVAS_ID, accessToken: "tok-1" },
+        { canvasId: CANVAS_ID, actor: ACTOR, instanceId: ACTOR.instanceId },
       ),
-    ).rejects.toThrow(/管理员/);
+    ).rejects.toThrow(/实例/);
 
     const ok = createCreateMcpServerTool(makeDeps({ create }).deps);
     await expect(
-      ok.execute({ name: "a", path: "mcp/a.py" }, { accessToken: "tok-1" }),
+      ok.execute(
+        { name: "a", path: "mcp/a.py" },
+        { actor: ACTOR, instanceId: ACTOR.instanceId },
+      ),
     ).rejects.toThrow(/画布/);
     await expect(
       ok.execute(
         { name: "a", path: "../../etc/passwd" },
-        { canvasId: CANVAS_ID, accessToken: "tok-1" },
+        { canvasId: CANVAS_ID, actor: ACTOR, instanceId: ACTOR.instanceId },
       ),
     ).rejects.toThrow(/越出工作目录/);
     expect(create).not.toHaveBeenCalled();

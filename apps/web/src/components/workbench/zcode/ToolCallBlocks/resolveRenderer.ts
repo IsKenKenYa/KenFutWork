@@ -1,14 +1,3 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/resolveRenderer.ts`（references/zcode/packages/ui/src/ToolCallBlocks/resolveRenderer.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：本仓 P2 只迁移了 13 个 renderer（edit / agent / changes-group / explore /
- * execute / execute-group / fallback / read / search / skill / task-stop / todo / ask-question，
- * 外加 cua-group 直接依赖链带入的 cua）。上游注册表里其余 renderer（workflow 家族、goal、
- * node-repl、mcp、plan-guidance、read-session-context、respond-to-coordinator、send-message、
- * submit-result、switch-mode、task-output、escalate 等）尚未迁移，对应分流分支移除，
- * 这些工具名统一落到 FallbackToolCallBlock（raw JSON 兜底卡）；上游对应分支的注释保留在
- * 各分支原位以便后续迁移时恢复。其余逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
 // ============================================================
 // 工具卡 renderer 注册表：tool identity → 具体 renderer 组件
 // ============================================================
@@ -16,26 +5,54 @@
 // ToolCallBlocks.tsx 越过 oxlint max-lines(400)（rows.ts → toolDisplay.ts 是同一先例）。
 // 本文件只做纯分流，不含 JSX、不碰 context 装配，ToolCallBlocks.tsx 单向依赖它。
 
-import { resolveToolCallIdentity } from "@zui/lib/toolIdentity";
-import { AgentToolCallBlock } from "@zui/ToolCallBlocks/renderers/agent";
-import { AskQuestionToolCallBlock } from "@zui/ToolCallBlocks/renderers/ask-question";
-import { ChangesGroupToolCallBlock } from "@zui/ToolCallBlocks/renderers/changes-group";
+import { EditToolCallBlock } from "@zui/ToolCallBlocks/renderers/edit.js";
+import { AgentToolCallBlock } from "@zui/ToolCallBlocks/renderers/agent.js";
+import { ChangesGroupToolCallBlock } from "@zui/ToolCallBlocks/renderers/changes-group.js";
+import { CreateWorkflowToolCallBlock } from "@zui/ToolCallBlocks/renderers/create-workflow.js";
+import { EscalateToolCallBlock } from "@zui/ToolCallBlocks/renderers/escalate.js";
+import { EvalWorkflowSnippetToolCallBlock } from "@zui/ToolCallBlocks/renderers/eval-workflow-snippet.js";
+import { ExploreToolCallBlock } from "@zui/ToolCallBlocks/renderers/explore.js";
+import { ExecuteToolCallBlock } from "@zui/ToolCallBlocks/renderers/execute.js";
+import { ExecuteGroupToolCallBlock } from "@zui/ToolCallBlocks/renderers/execute-group.js";
+import { FallbackToolCallBlock } from "@zui/ToolCallBlocks/renderers/fallback.js";
+import { GetWorkflowRunToolCallBlock } from "@zui/ToolCallBlocks/renderers/get-workflow-run.js";
+import { ListModelsToolCallBlock } from "@zui/ToolCallBlocks/renderers/list-models.js";
+import { ListSavedWorkflowsToolCallBlock } from "@zui/ToolCallBlocks/renderers/list-saved-workflows.js";
+import { ListWorkflowRunsToolCallBlock } from "@zui/ToolCallBlocks/renderers/list-workflow-runs.js";
+import { ResumeWorkflowRunToolCallBlock } from "@zui/ToolCallBlocks/renderers/resume-workflow-run.js";
+import { ResolveWorkflowQuestionToolCallBlock } from "@zui/ToolCallBlocks/renderers/resolve-workflow-question.js";
+import { SaveWorkflowToolCallBlock } from "@zui/ToolCallBlocks/renderers/save-workflow.js";
 import {
-  CuaToolCallBlock,
-  isCuaToolCall,
-} from "@zui/ToolCallBlocks/renderers/cua";
-import { CuaGroupToolCallBlock } from "@zui/ToolCallBlocks/renderers/cua-group";
-import { EditToolCallBlock } from "@zui/ToolCallBlocks/renderers/edit";
-import { ExecuteToolCallBlock } from "@zui/ToolCallBlocks/renderers/execute";
-import { ExecuteGroupToolCallBlock } from "@zui/ToolCallBlocks/renderers/execute-group";
-import { ExploreToolCallBlock } from "@zui/ToolCallBlocks/renderers/explore";
-import { FallbackToolCallBlock } from "@zui/ToolCallBlocks/renderers/fallback";
-import { ReadToolCallBlock } from "@zui/ToolCallBlocks/renderers/read";
-import { SearchToolCallBlock } from "@zui/ToolCallBlocks/renderers/search";
-import { SkillToolCallBlock } from "@zui/ToolCallBlocks/renderers/skill";
-import { TaskStopToolCallBlock } from "@zui/ToolCallBlocks/renderers/task-stop";
-import { TodoToolCallBlock } from "@zui/ToolCallBlocks/renderers/todo";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
+  isEscalateToolCall,
+  isEvalWorkflowSnippetToolCall,
+  isGetWorkflowRunToolCall,
+  isListModelsToolCall,
+  isListSavedWorkflowsToolCall,
+  isListWorkflowRunsToolCall,
+  isResolveWorkflowQuestionToolCall,
+  isResumeWorkflowRunToolCall,
+  isSaveWorkflowToolCall,
+} from "@zui/lib/workflowToolNames.js";
+import { CuaToolCallBlock, isCuaToolCall } from "@zui/ToolCallBlocks/renderers/cua.js";
+import { CuaGroupToolCallBlock } from "@zui/ToolCallBlocks/renderers/cua-group.js";
+import { GoalToolCallBlock } from "@zui/ToolCallBlocks/renderers/goal.js";
+import { NodeReplToolCallBlock } from "@zui/ToolCallBlocks/renderers/node-repl.js";
+import { McpToolCallBlock, readMcpToolPresentation } from "@zui/ToolCallBlocks/renderers/mcp.js";
+import { PlanGuidanceToolCallBlock } from "@zui/ToolCallBlocks/renderers/plan-guidance.js";
+import { ReadToolCallBlock } from "@zui/ToolCallBlocks/renderers/read.js";
+import { ReadSessionContextToolCallBlock } from "@zui/ToolCallBlocks/renderers/read-session-context.js";
+import { RespondToCoordinatorToolCallBlock } from "@zui/ToolCallBlocks/renderers/respond-to-coordinator.js";
+import { SearchToolCallBlock } from "@zui/ToolCallBlocks/renderers/search.js";
+import { SendMessageToolCallBlock } from "@zui/ToolCallBlocks/renderers/send-message.js";
+import { SkillToolCallBlock } from "@zui/ToolCallBlocks/renderers/skill.js";
+import { SubmitResultToolCallBlock } from "@zui/ToolCallBlocks/renderers/submit-result.js";
+import { SwitchModeToolCallBlock } from "@zui/ToolCallBlocks/renderers/switch-mode.js";
+import { TaskOutputToolCallBlock } from "@zui/ToolCallBlocks/renderers/task-output.js";
+import { TaskStopToolCallBlock } from "@zui/ToolCallBlocks/renderers/task-stop.js";
+import { TodoToolCallBlock } from "@zui/ToolCallBlocks/renderers/todo.js";
+import { AskQuestionToolCallBlock } from "@zui/ToolCallBlocks/renderers/ask-question.js";
+import { resolveToolCallIdentity } from "@zui/lib/toolIdentity.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
 export function resolveToolCallRenderer(context: ToolCallBlockRenderContext) {
   if (context.toolCallNode.toolCall.kind === "changesGroup") {
@@ -53,44 +70,103 @@ export function resolveToolCallRenderer(context: ToolCallBlockRenderContext) {
 
   const identity = resolveToolCallIdentity(context.toolCallNode.toolCall);
 
-  // 上游按**工具名**先分流可复用工作流的两个工具（save_workflow / list_saved_workflows）及
-  // 观察类工作流三工具、Resume、模型目录、升级问答等——对应 renderer 本仓尚未迁移，
-  // 这些分支移除后统一落到文末 FallbackToolCallBlock（raw JSON 兜底卡），迁移时按上游
-  // resolveRenderer.ts 原分支恢复。
+  // 可复用工作流的两个工具按**工具名**先分流，刻意排在 family 之前。两个理由：
+  // 它们今天不在 shared 的已知工具表里（identity 回 unknown，会掉进 raw JSON 兜底卡）；
+  // 而一旦将来被登记进 `workflow` family，下面那条分支的兜底会把它们渲染成 CreateWorkflow 卡。
+  // 按名字先判定让两种世界都成立。
+  if (isSaveWorkflowToolCall(context.toolCallNode.toolCall)) {
+    return SaveWorkflowToolCallBlock;
+  }
+  if (isListSavedWorkflowsToolCall(context.toolCallNode.toolCall)) {
+    return ListSavedWorkflowsToolCallBlock;
+  }
 
-  // 上游此处还有 node-repl / 通用 MCP 两条按 presentation 分流的分支，对应 renderer
-  // 本仓尚未迁移，同样落到 FallbackToolCallBlock。
+  // 观察类工作流三工具同款按名分流、同样排在 family 之前：它们不在已知工具表里（identity
+  // 回 unknown → raw JSON 兜底卡），而 workflow family 的兜底是 CreateWorkflow 卡——
+  // 按名先判定让「登记前/登记后」两种世界都成立（workflowToolNames 的同款理由）。
+  if (isGetWorkflowRunToolCall(context.toolCallNode.toolCall)) {
+    return GetWorkflowRunToolCallBlock;
+  }
+  if (isListWorkflowRunsToolCall(context.toolCallNode.toolCall)) {
+    return ListWorkflowRunsToolCallBlock;
+  }
+  if (isEvalWorkflowSnippetToolCall(context.toolCallNode.toolCall)) {
+    return EvalWorkflowSnippetToolCallBlock;
+  }
+  // ResumeWorkflowRun 恢复入口同款按名分流（理由同上：不在已知工具表里，且 workflow family
+  // 兜底是 CreateWorkflow 卡——恢复卡必须抢在 family 之前认领自己的名字）。
+  if (isResumeWorkflowRunToolCall(context.toolCallNode.toolCall)) {
+    return ResumeWorkflowRunToolCallBlock;
+  }
+  // 模型目录同款按名分流：不按名认领，
+  // 兜底卡会把模型面那段以 providerId 开头的 `<models>` 文本原样摊进聊天区。
+  if (isListModelsToolCall(context.toolCallNode.toolCall)) {
+    return ListModelsToolCallBlock;
+  }
+
+  // 升级问答两工具同款按名分流、同样排在 family 之前：它们不在已知工具表里（identity 回
+  // unknown → raw JSON 兜底卡），而 workflow family 的兜底是 CreateWorkflow 卡——按名先判定让
+  // 「登记前/登记后」两种世界都成立。`escalate`（子代理提问）与 `ResolveWorkflowQuestion`
+  // （主代理作答）卡面完全不同，各认自己的名字。
+  if (isEscalateToolCall(context.toolCallNode.toolCall)) {
+    return EscalateToolCallBlock;
+  }
+  if (isResolveWorkflowQuestionToolCall(context.toolCallNode.toolCall)) {
+    return ResolveWorkflowQuestionToolCallBlock;
+  }
+
+  // 宿主 Node REPL 也通过 MCP 注册，因此同样带有 mcp_tool presentation。
+  // 通用 MCP 分流若先执行，会吞掉代码、错误栈和 artifact 等专用交互。
+  // 先按可信 tool identity 保留 Node REPL renderer，再让其余 MCP 使用通用展示。
+  if (identity.family === "node-repl") {
+    return NodeReplToolCallBlock;
+  }
+  if (readMcpToolPresentation(context)) {
+    return McpToolCallBlock;
+  }
 
   // 当前工具名已经是固定集合。继续用正则扫 kind/title 的话，
   // 会把 TodoWrite 里的 Write 当成文件写入。这里先解析固定 tool identity，再按 family 分流；
   // ZCode 历史投影的工具形态由 identity resolver 统一处理。
   switch (identity.family) {
-    // 上游 case "plan-guidance" / "goal" / "session-context" / "workflow" /
-    // "switch-mode" / "message"（SendMessage / RespondToCoordinator）/ "task-control"
-    // 的 TaskOutput 分支对应 renderer 未迁移；这些 family 落到 default 兜底卡。
+    case "plan-guidance":
+      return PlanGuidanceToolCallBlock;
     case "agent":
       return AgentToolCallBlock;
     case "todo":
       return TodoToolCallBlock;
     case "ask-user-question":
       return AskQuestionToolCallBlock;
+    case "message":
+      return identity.toolName === "RespondToCoordinator"
+        ? RespondToCoordinatorToolCallBlock
+        : SendMessageToolCallBlock;
     case "task-control":
-      // 上游同款 family 内按工具名分派；TaskOutput renderer 未迁移，落兜底卡。
-      return identity.toolName === "TaskOutput"
-        ? FallbackToolCallBlock
-        : TaskStopToolCallBlock;
+      return identity.toolName === "TaskOutput" ? TaskOutputToolCallBlock : TaskStopToolCallBlock;
     case "skill":
       return SkillToolCallBlock;
+    case "workflow":
+      // family 内按工具名分派（`message` family 对 RespondToCoordinator 的同款先例）：
+      // 工作流的两个工具卡面完全不同——一个是脚本/图，一个是 actor 提交的结果。
+      return identity.toolName === "submit_result"
+        ? SubmitResultToolCallBlock
+        : CreateWorkflowToolCallBlock;
+    case "session-context":
+      return ReadSessionContextToolCallBlock;
     case "file-read":
       return ReadToolCallBlock;
     case "file-write":
       return EditToolCallBlock;
     case "explore":
       return ExploreToolCallBlock;
+    case "switch-mode":
+      return SwitchModeToolCallBlock;
     case "search":
       return SearchToolCallBlock;
     case "shell":
       return ExecuteToolCallBlock;
+    case "goal":
+      return GoalToolCallBlock;
     default:
       return FallbackToolCallBlock;
   }

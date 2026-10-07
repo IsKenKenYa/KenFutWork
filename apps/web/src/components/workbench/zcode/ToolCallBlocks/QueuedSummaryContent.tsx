@@ -1,11 +1,5 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/QueuedSummaryContent.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/QueuedSummaryContent.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-
-import { AnimatePresence, motion } from "motion/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 
 const SUMMARY_ROLL_TRANSITION_MS = 300;
 const SUMMARY_ROLL_HOLD_MS = 500;
@@ -28,10 +22,7 @@ function resolveQueuedSummaryPlaybackQueue<T>(
   queuedContent: readonly T[],
   timerDriftMs: number,
 ): T[] {
-  if (
-    timerDriftMs > SUMMARY_ROLL_TIMER_DRIFT_SKIP_MS &&
-    queuedContent.length > 1
-  ) {
+  if (timerDriftMs > SUMMARY_ROLL_TIMER_DRIFT_SKIP_MS && queuedContent.length > 1) {
     return queuedContent.slice(-1);
   }
   return [...queuedContent];
@@ -43,7 +34,7 @@ function shouldAnimateQueuedSummaryContent({
   reducedMotion,
 }: {
   enabled: boolean;
-  disableAnimation?: boolean | undefined;
+  disableAnimation?: boolean;
   reducedMotion: boolean;
 }) {
   return enabled && disableAnimation !== true && !reducedMotion;
@@ -51,23 +42,19 @@ function shouldAnimateQueuedSummaryContent({
 
 interface SummaryContentSnapshot {
   key: string;
-  refreshVersion?: string | undefined;
+  refreshVersion?: string;
   primaryText: ReactNode;
-  secondaryText?: ReactNode | undefined;
-  trailingText?: ReactNode | undefined;
+  secondaryText?: ReactNode;
+  trailingText?: ReactNode;
 }
 
 function shouldRefreshQueuedSummaryContent(
-  current: Pick<
-    SummaryContentSnapshot,
-    "key" | "refreshVersion" | "trailingText"
-  >,
+  current: Pick<SummaryContentSnapshot, "key" | "refreshVersion" | "trailingText">,
   next: Pick<SummaryContentSnapshot, "key" | "refreshVersion" | "trailingText">,
 ) {
   return (
     current.key === next.key &&
-    (current.trailingText !== next.trailingText ||
-      current.refreshVersion !== next.refreshVersion)
+    (current.trailingText !== next.trailingText || current.refreshVersion !== next.refreshVersion)
   );
 }
 
@@ -75,10 +62,7 @@ function usePrefersReducedMotion() {
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
   useEffect(() => {
-    if (
-      typeof window === "undefined" ||
-      typeof window.matchMedia !== "function"
-    ) {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
       return;
     }
 
@@ -114,12 +98,12 @@ export function QueuedSummaryContent({
   disableAnimation = false,
 }: {
   contentKey: string;
-  contentRefreshVersion?: string | undefined;
+  contentRefreshVersion?: string;
   primaryText: ReactNode;
-  secondaryText?: ReactNode | undefined;
-  trailingText?: ReactNode | undefined;
+  secondaryText?: ReactNode;
+  trailingText?: ReactNode;
   enabled: boolean;
-  disableAnimation?: boolean | undefined;
+  disableAnimation?: boolean;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const shouldAnimate = shouldAnimateQueuedSummaryContent({
@@ -129,14 +113,10 @@ export function QueuedSummaryContent({
   });
   const createSnapshot = (): SummaryContentSnapshot => ({
     key: contentKey,
-    ...(contentRefreshVersion === undefined
-      ? {}
-      : { refreshVersion: contentRefreshVersion }),
+    refreshVersion: contentRefreshVersion,
     primaryText,
-    // biome-ignore lint/style/noTernary: exactOptionalPropertyTypes 的条件展开适配（手册 §2.4-1）
-    ...(secondaryText === undefined ? {} : { secondaryText }),
-    // biome-ignore lint/style/noTernary: 同上
-    ...(trailingText === undefined ? {} : { trailingText }),
+    secondaryText,
+    trailingText,
   });
   const [displayedContent, setDisplayedContent] = useState(createSnapshot);
   const displayedContentRef = useRef(displayedContent);
@@ -157,9 +137,7 @@ export function QueuedSummaryContent({
     };
     const enqueue = (snapshot: SummaryContentSnapshot) => {
       const queue = queuedContentRef.current;
-      const existingIndex = queue.findIndex(
-        (item) => item.key === snapshot.key,
-      );
+      const existingIndex = queue.findIndex((item) => item.key === snapshot.key);
       if (existingIndex >= 0) {
         // 文件摘要正在等待播放时，持续到达的 diff 只更新同一快照，不能因为 key 去重
         // 留下最早的 +N/-N，也不能为每次数值变化新增整条滚动项。
@@ -176,10 +154,7 @@ export function QueuedSummaryContent({
 
       // 摘要滚动总共只能有三格：当前显示、下一条、可插队条。
       // queuedContentRef 只保存后两格；第二条不能被覆盖，新摘要只能替换第三格。
-      queuedContentRef.current = [queue[0]!, snapshot].slice(
-        0,
-        SUMMARY_ROLL_MAX_PENDING,
-      );
+      queuedContentRef.current = [queue[0]!, snapshot].slice(0, SUMMARY_ROLL_MAX_PENDING);
     };
     const promote = (snapshot: SummaryContentSnapshot) => {
       displayedContentRef.current = snapshot;
@@ -194,10 +169,7 @@ export function QueuedSummaryContent({
         const timerDrift = getCurrentTimestamp() - expectedTimerAt;
         // 主线程繁忙时 timeout 会晚到；如果继续逐条补播旧摘要，
         // 用户会在卡顿恢复后看到过期状态排队播放，体感上会更卡。
-        const nextQueue = resolveQueuedSummaryPlaybackQueue(
-          queuedContent,
-          timerDrift,
-        );
+        const nextQueue = resolveQueuedSummaryPlaybackQueue(queuedContent, timerDrift);
         const [nextQueued, ...restQueued] = nextQueue;
         if (!nextQueued) {
           queuedContentRef.current = [];
@@ -221,12 +193,7 @@ export function QueuedSummaryContent({
     if (displayedContentRef.current.key === nextContent.key) {
       // 同一 Changes child 的 diff 和同一 streaming Assistant message 都不能重播整条摘要；
       // 前者更新尾部计数，后者用显式 version 原位刷新正文。
-      if (
-        shouldRefreshQueuedSummaryContent(
-          displayedContentRef.current,
-          nextContent,
-        )
-      ) {
+      if (shouldRefreshQueuedSummaryContent(displayedContentRef.current, nextContent)) {
         displayedContentRef.current = nextContent;
         setDisplayedContent(nextContent);
       }

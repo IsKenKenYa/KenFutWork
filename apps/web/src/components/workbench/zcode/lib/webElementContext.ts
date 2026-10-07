@@ -1,11 +1,4 @@
-/**
- * zcode 照搬：`@/lib/webElementContext.ts`（references/zcode/packages/ui/src/lib/webElementContext.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-export const WEB_ELEMENT_CONTEXT_ADD_TO_CHAT_EVENT =
-  "zcode:web-element-context-add-to-chat";
+export const WEB_ELEMENT_CONTEXT_ADD_TO_CHAT_EVENT = "zcode:web-element-context-add-to-chat";
 export const WEB_ELEMENT_CONTEXT_REMOVE_FROM_CHAT_EVENT =
   "zcode:web-element-context-remove-from-chat";
 
@@ -20,36 +13,35 @@ export interface WebElementRect {
 }
 
 export interface WebElementStyleSummary {
-  color?: string | undefined;
-  backgroundColor?: string | undefined;
-  fontFamily?: string | undefined;
-  fontSize?: string | undefined;
-  fontWeight?: string | undefined;
-  display?: string | undefined;
+  color?: string;
+  backgroundColor?: string;
+  fontFamily?: string;
+  fontSize?: string;
+  fontWeight?: string;
+  display?: string;
 }
 
 export interface WebElementContextPayload {
-  id?: string | undefined;
+  id?: string;
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
+  workspaceIdentity?: string;
   pageUrl: string;
   pageTitle: string;
   tagName: string;
-  role?: string | undefined;
-  accessibleName?: string | undefined;
-  selector?: string | undefined;
-  xpath?: string | undefined;
-  text?: string | undefined;
-  nearbyText?: string | undefined;
-  htmlExcerpt?: string | undefined;
-  attributes?: Record<string, string> | undefined;
-  rect?: WebElementRect | undefined;
-  style?: WebElementStyleSummary | undefined;
+  role?: string;
+  accessibleName?: string;
+  selector?: string;
+  xpath?: string;
+  text?: string;
+  nearbyText?: string;
+  htmlExcerpt?: string;
+  attributes?: Record<string, string>;
+  rect?: WebElementRect;
+  style?: WebElementStyleSummary;
   capturedAt: number;
 }
 
-export interface WebElementContextComposerAttachment
-  extends WebElementContextPayload {
+export interface WebElementContextComposerAttachment extends WebElementContextPayload {
   id: string;
 }
 
@@ -62,7 +54,7 @@ type WebElementContextAddToChatEvent = CustomEvent<WebElementContextPayload>;
 type WebElementContextRemoveFromChatEvent = CustomEvent<{
   id: string;
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
+  workspaceIdentity?: string;
 }>;
 
 export function createWebElementContextId() {
@@ -75,7 +67,7 @@ export function createWebElementContextId() {
 
 export function getWebElementContextWorkspaceKey(
   workspacePath: string,
-  workspaceIdentity?: string | undefined,
+  workspaceIdentity?: string,
 ) {
   return workspaceIdentity?.trim() || workspacePath;
 }
@@ -102,9 +94,7 @@ export function isWebElementContextRemoveFromChatEvent(
   );
 }
 
-export function isWebElementContextPayload(
-  payload: unknown,
-): payload is WebElementContextPayload {
+export function isWebElementContextPayload(payload: unknown): payload is WebElementContextPayload {
   const candidate = payload as WebElementContextPayload;
   return (
     typeof payload === "object" &&
@@ -133,11 +123,7 @@ function truncateMarkdownValue(value: string | undefined) {
     : normalized;
 }
 
-function appendOptionalLine(
-  lines: string[],
-  label: string,
-  value: string | undefined,
-) {
+function appendOptionalLine(lines: string[], label: string, value: string | undefined) {
   const normalized = truncateMarkdownValue(value);
   if (normalized) {
     lines.push(`${label}: ${normalized}`);
@@ -215,10 +201,7 @@ export function buildPromptWithWebElementContexts(
 
   const contextBlock = `${WEB_ELEMENT_CONTEXT_BLOCK_TITLE}\n\n${contexts
     .map((context, index) =>
-      buildWebElementContextMarkdown(context).replace(
-        "## Element",
-        `## Element ${index + 1}`,
-      ),
+      buildWebElementContextMarkdown(context).replace("## Element", `## Element ${index + 1}`),
     )
     .join("\n\n")}`;
 
@@ -239,9 +222,7 @@ function readFencedSection(rawItem: string, label: string) {
   return match?.[1]?.trim() ?? "";
 }
 
-function parseFontSummary(
-  font: string,
-): Pick<WebElementStyleSummary, "fontFamily" | "fontSize"> {
+function parseFontSummary(font: string): Pick<WebElementStyleSummary, "fontFamily" | "fontSize"> {
   const match = /^([0-9.]+(?:px|rem|em|pt|%))\s+(.+)$/iu.exec(font);
   if (!match) {
     return {
@@ -283,7 +264,7 @@ function parseElementItem(
   rawItem: string,
   index: number,
   workspacePath: string,
-  workspaceIdentity?: string | undefined,
+  workspaceIdentity?: string,
 ): WebElementContextComposerAttachment | null {
   const pageUrl = readField(rawItem, "URL");
   const pageTitle = readField(rawItem, "Title");
@@ -316,12 +297,10 @@ export function parsePromptWebElementContexts(
   content: string,
   options: {
     workspacePath: string;
-    workspaceIdentity?: string | undefined;
+    workspaceIdentity?: string;
   },
 ): ParsedWebElementContextPrompt {
-  const blockMatch = /(?:^|\n\n)# Web page elements:\s*\n\n([\s\S]*?)\s*$/.exec(
-    content,
-  );
+  const blockMatch = /(?:^|\n\n)# Web page elements:\s*\n\n([\s\S]*?)\s*$/.exec(content);
   if (!blockMatch || blockMatch.index < 0) {
     return {
       visibleContent: content,
@@ -343,16 +322,9 @@ export function parsePromptWebElementContexts(
     .filter(Boolean);
   const webElementContexts = rawItems
     .map((item, index) =>
-      parseElementItem(
-        item,
-        index,
-        options.workspacePath,
-        options.workspaceIdentity,
-      ),
+      parseElementItem(item, index, options.workspacePath, options.workspaceIdentity),
     )
-    .filter(
-      (item): item is WebElementContextComposerAttachment => item !== null,
-    );
+    .filter((item): item is WebElementContextComposerAttachment => item !== null);
 
   if (webElementContexts.length === 0) {
     return {
@@ -367,9 +339,7 @@ export function parsePromptWebElementContexts(
   };
 }
 
-export function dispatchWebElementContextAddToChat(
-  payload: WebElementContextPayload,
-) {
+export function dispatchWebElementContextAddToChat(payload: WebElementContextPayload) {
   window.dispatchEvent(
     new CustomEvent(WEB_ELEMENT_CONTEXT_ADD_TO_CHAT_EVENT, {
       detail: payload,

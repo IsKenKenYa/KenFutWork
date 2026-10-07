@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -318,6 +319,9 @@ const SUPABASE_SOURCE_ROOTS = ["apps/server/src", "apps/web/src", "packages"];
 const IGNORED_DIRS = new Set([
   "node_modules",
   "dist",
+  "dist-types",
+  "dist-host",
+  "dist-design",
   ".next",
   "out",
   ".turbo",
@@ -331,6 +335,14 @@ const IGNORED_DIRS = new Set([
  *  把一处存储调用从一个耦合文件挪到另一个，指标会凭空变化。 */
 function listSupabaseSources() {
   const files = [];
+  const inventoryPath = path.join(rootDir, "docs/源码来源/ZCode源码清单.json");
+  const upstreamSources = existsSync(inventoryPath)
+    ? new Map(
+        JSON.parse(readFileSync(inventoryPath, "utf8")).records.map(
+          (record) => [path.resolve(rootDir, record.target), record],
+        ),
+      )
+    : new Map();
 
   const walk = (dir) => {
     let entries;
@@ -352,6 +364,16 @@ function listSupabaseSources() {
         !/\.(ts|tsx)$/.test(entry.name) ||
         /\.test\.(ts|tsx)$/.test(entry.name)
       ) {
+        continue;
+      }
+      const upstream = upstreamSources.get(target);
+      if (
+        upstream?.source.startsWith("references/zcode/") &&
+        createHash("sha256").update(readFileSync(target)).digest("hex") ===
+          upstream.copiedSha256
+      ) {
+        // 经来源清单锁定的外部源码不是第一方 Supabase 迁移对象。
+        // 宿主代码及任何未登记改动仍纳入原棘轮，不放宽基线。
         continue;
       }
       files.push(target);

@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/lib/windowsFileLinkEscapeRemarkPlugin.ts`（references/zcode/packages/ui/src/lib/windowsFileLinkEscapeRemarkPlugin.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
 import type { Plugin } from "unified";
 
 interface MarkdownPoint {
@@ -39,10 +34,7 @@ function unescapeCommonMarkPunctuation(raw: string): string {
  * - `definition`：`[ref]: dest`，取 `]:` 之后的片段。引用式链接的 URL 由 definition
  *   提供，同一个转义丢失在这里同样成立，必须一起还原。
  */
-function extractRawDestination(
-  node: MarkdownNode,
-  slice: string,
-): string | null {
+function extractRawDestination(node: MarkdownNode, slice: string): string | null {
   if (node.type === "definition") {
     const marker = slice.indexOf("]:");
     return marker < 0 ? null : slice.slice(marker + 2).trim();
@@ -64,21 +56,16 @@ function extractRawDestination(
  * 只有「原文按 CommonMark 规则反转义后恰好等于 node.url」才认为切片正确且还原
  * 无歧义；否则宁可保持现状，不写入可能错误的路径。
  */
-function recoverRawDestination(
-  node: MarkdownNode,
-  source: string,
-): string | null {
+function recoverRawDestination(node: MarkdownNode, source: string): string | null {
   const url = node.url;
-  if (typeof url !== "string" || !windowsDestinationPattern.test(url))
-    return null;
+  if (typeof url !== "string" || !windowsDestinationPattern.test(url)) return null;
   // 带 title 的链接需要解析引号语法才能定位 destination 结尾，切错就会把引号算进
   // 路径；本场景不出现，直接放弃还原。
   if (node.title !== null && node.title !== undefined) return null;
 
   const start = node.position?.start?.offset;
   const end = node.position?.end?.offset;
-  if (typeof start !== "number" || typeof end !== "number" || end <= start)
-    return null;
+  if (typeof start !== "number" || typeof end !== "number" || end <= start) return null;
 
   const raw = extractRawDestination(node, source.slice(start, end));
   // 尖括号形式的转义规则与裸形式不同，同样按不还原处理。
@@ -95,11 +82,7 @@ export const windowsFileLinkEscapeRemarkPlugin: Plugin =
       if (!source) return;
 
       const visit = (node: MarkdownNode): void => {
-        if (
-          node.type === "link" ||
-          node.type === "image" ||
-          node.type === "definition"
-        ) {
+        if (node.type === "link" || node.type === "image" || node.type === "definition") {
           const raw = recoverRawDestination(node, source);
           if (raw !== null) node.url = raw;
         }

@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/use-timeline-viewport.ts`（references/zcode/packages/ui/src/components/workflow-timeline/use-timeline-viewport.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 import { useEffect, useLayoutEffect, useState } from "react";
 
 /**
@@ -27,12 +22,7 @@ export interface TimelineViewport {
 }
 
 const SCROLLING_MS = 800;
-const EMPTY: TimelineViewport = {
-  clientWidth: 0,
-  scrollLeft: 0,
-  scrollWidth: 0,
-  scrolling: false,
-};
+const EMPTY: TimelineViewport = { clientWidth: 0, scrollLeft: 0, scrollWidth: 0, scrolling: false };
 
 function measure(element: HTMLElement): Omit<TimelineViewport, "scrolling"> {
   return {
@@ -56,8 +46,7 @@ function merge(
     : { ...measured, scrolling };
 }
 
-const useIsomorphicLayoutEffect =
-  typeof window === "undefined" ? useEffect : useLayoutEffect;
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 export function useTimelineViewport(
   /** 滚动层元素；还没挂上（草稿首帧）或已卸下时为 null。 */

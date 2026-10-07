@@ -1,41 +1,30 @@
-/**
- * zcode 照搬：`@/v4/conversationTurnWorkSegments.ts`（references/zcode/packages/ui/src/v4/conversationTurnWorkSegments.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为；上游依赖运行时恒有值）。
- */
 import type {
   AssistantTextRow,
   ConversationRow,
   TurnHeaderRow,
   UserInputRow,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
+} from "@zcode/shared/zcode-protocol-v4";
 import {
   ENABLE_CUA_TOOL_CALL_GROUPING,
   prepareCuaGroupFlowItems,
-} from "@zui/v4/conversationCuaGroups";
-import type {
-  AssistantWorkRow,
-  ConversationTurnFlowItem,
-} from "@zui/v4/conversationTurnFlowItems";
-import { buildConversationFlowItems } from "@zui/v4/conversationTurnFlowItems";
+} from "@zui/v4/conversationCuaGroups.js";
+import { buildConversationFlowItems } from "@zui/v4/conversationTurnFlowItems.js";
+import type { AssistantWorkRow, ConversationTurnFlowItem } from "@zui/v4/conversationTurnFlowItems.js";
 
 export interface ConversationTurnWorkStatus {
   state: "running" | "completed" | "interrupted";
-  durationMs?: number | undefined;
+  durationMs?: number;
 }
 
 export interface ConversationTurnWorkSegment {
   key: string;
-  triggerRow?: UserInputRow | undefined;
+  triggerRow?: UserInputRow;
   flowItems: ConversationTurnFlowItem[];
   assistantWorkRows: AssistantWorkRow[];
   assistantHistoryRows: AssistantWorkRow[];
   assistantFollowingRows: AssistantWorkRow[];
   assistantHistoryDefaultOpen: boolean;
-  workStatus?: ConversationTurnWorkStatus | undefined;
+  workStatus?: ConversationTurnWorkStatus;
 }
 
 export function resolveConversationTurnWorkStatus(
@@ -49,25 +38,22 @@ export function resolveConversationTurnWorkStatus(
   const hasWork =
     isRunning ||
     workRows.length > 0 ||
-    (header?.executionKind === "agent"
-      ? durationMs !== undefined
-      : (durationMs ?? 0) > 0);
+    (header?.executionKind === "agent" ? durationMs !== undefined : (durationMs ?? 0) > 0);
   if (!hasWork) return undefined;
   return {
     state: isRunning ? "running" : isInterrupted ? "interrupted" : "completed",
-    ...(durationMs === undefined ? {} : { durationMs }),
+    ...(durationMs !== undefined ? { durationMs } : {}),
   };
 }
 
 export function resolveConversationTurnWorkDurationMs(
   header: TurnHeaderRow | undefined,
-  options: { nowMs?: number | undefined },
+  options: { nowMs?: number },
   isRunning: boolean,
 ): number | undefined {
   if (!header) return undefined;
   if (header.activeMs !== undefined) return header.activeMs;
-  if (header.endedAt !== undefined)
-    return Math.max(header.endedAt - header.startedAt, 0);
+  if (header.endedAt !== undefined) return Math.max(header.endedAt - header.startedAt, 0);
   // UI 每秒传入 nowMs 只用于运行中“工作中 N 秒”；完成态缺少
   // activeMs/endedAt 时不能继续吃当前时钟，否则历史“已工作”会随时间增长。
   if (isRunning && options.nowMs !== undefined) {
@@ -78,7 +64,7 @@ export function resolveConversationTurnWorkDurationMs(
 
 interface DraftVisualWorkSegment {
   orderedRows: ConversationRow[];
-  triggerRow?: UserInputRow | undefined;
+  triggerRow?: UserInputRow;
 }
 
 function isUserInputRow(row: ConversationRow): row is UserInputRow {
@@ -93,17 +79,11 @@ function isAssistantWorkRow(row: ConversationRow): row is AssistantWorkRow {
   return row.kind !== "turnHeader" && row.kind !== "userInput";
 }
 
-function splitVisualWorkSegments(
-  rows: readonly ConversationRow[],
-): DraftVisualWorkSegment[] {
+function splitVisualWorkSegments(rows: readonly ConversationRow[]): DraftVisualWorkSegment[] {
   const segments: DraftVisualWorkSegment[] = [];
   let current: DraftVisualWorkSegment = { orderedRows: [] };
   for (const row of rows) {
-    if (
-      isUserInputRow(row) &&
-      row.guided === true &&
-      current.orderedRows.length > 0
-    ) {
+    if (isUserInputRow(row) && row.guided === true && current.orderedRows.length > 0) {
       segments.push(current);
       current = { orderedRows: [], triggerRow: row };
     }
@@ -114,24 +94,22 @@ function splitVisualWorkSegments(
 }
 
 function resolveSegmentDurationMs(options: {
-  header?: TurnHeaderRow | undefined;
+  header?: TurnHeaderRow;
   segmentIndex: number;
-  triggerRow?: UserInputRow | undefined;
-  nextTriggerRow?: UserInputRow | undefined;
+  triggerRow?: UserInputRow;
+  nextTriggerRow?: UserInputRow;
   segmentRunning: boolean;
   segmentCount: number;
-  nowMs?: number | undefined;
+  nowMs?: number;
 }): number | undefined {
   const fact =
     (options.triggerRow?.entityId
       ? options.header?.workSegments?.find(
-          (candidate) =>
-            candidate.triggerEntityId === options.triggerRow?.entityId,
+          (candidate) => candidate.triggerEntityId === options.triggerRow?.entityId,
         )
       : undefined) ?? options.header?.workSegments?.[options.segmentIndex];
   if (fact?.activeMs !== undefined) return fact.activeMs;
-  if (fact?.endedAt !== undefined)
-    return Math.max(0, fact.endedAt - fact.startedAt);
+  if (fact?.endedAt !== undefined) return Math.max(0, fact.endedAt - fact.startedAt);
   if (fact && options.segmentRunning && options.nowMs !== undefined) {
     return Math.max(0, options.nowMs - fact.startedAt);
   }
@@ -146,13 +124,8 @@ function resolveSegmentDurationMs(options: {
   // guided row 的稳定时间边界恢复，避免刷新后又退回整个 turn 的单一工时。
   const startedAt = options.triggerRow?.createdAt ?? options.header?.startedAt;
   const endedAt = options.nextTriggerRow?.createdAt ?? options.header?.endedAt;
-  if (startedAt !== undefined && endedAt !== undefined)
-    return Math.max(0, endedAt - startedAt);
-  if (
-    startedAt !== undefined &&
-    options.segmentRunning &&
-    options.nowMs !== undefined
-  ) {
+  if (startedAt !== undefined && endedAt !== undefined) return Math.max(0, endedAt - startedAt);
+  if (startedAt !== undefined && options.segmentRunning && options.nowMs !== undefined) {
     return Math.max(0, options.nowMs - startedAt);
   }
   return undefined;
@@ -160,48 +133,36 @@ function resolveSegmentDurationMs(options: {
 
 export function buildConversationTurnWorkSegments(options: {
   key: string;
-  header?: TurnHeaderRow | undefined;
+  header?: TurnHeaderRow;
   orderedRows: readonly ConversationRow[];
   assistantTailRows: readonly AssistantWorkRow[];
-  latestAssistantTextRow?: AssistantTextRow | undefined;
+  latestAssistantTextRow?: AssistantTextRow;
   isRunning: boolean;
   isLastTurn: boolean;
   isInterrupted: boolean;
   forceOpenHistory: boolean;
   timelineOnly: boolean;
-  nowMs?: number | undefined;
+  nowMs?: number;
 }): ConversationTurnWorkSegment[] {
   const visualDrafts = splitVisualWorkSegments(options.orderedRows);
   const tailRowIds = new Set(options.assistantTailRows.map((row) => row.rowId));
   return visualDrafts.map((segment, segmentIndex) => {
     const segmentAssistantRows = segment.orderedRows.filter(isAssistantWorkRow);
-    const segmentTailRows = segmentAssistantRows.filter((row) =>
-      tailRowIds.has(row.rowId),
-    );
-    const segmentFlowRows = segmentAssistantRows.filter(
-      (row) => !tailRowIds.has(row.rowId),
-    );
+    const segmentTailRows = segmentAssistantRows.filter((row) => tailRowIds.has(row.rowId));
+    const segmentFlowRows = segmentAssistantRows.filter((row) => !tailRowIds.has(row.rowId));
     const lastSegmentFlowRow = segmentFlowRows.at(-1);
-    const segmentCompleted =
-      segmentIndex < visualDrafts.length - 1 || !options.isRunning;
+    const segmentCompleted = segmentIndex < visualDrafts.length - 1 || !options.isRunning;
     const productLatestAssistantTextRow = options.latestAssistantTextRow
-      ? segmentFlowRows.find(
-          (row) => row.rowId === options.latestAssistantTextRow?.rowId,
-        )
+      ? segmentFlowRows.find((row) => row.rowId === options.latestAssistantTextRow?.rowId)
       : undefined;
     const visibleAssistantTextRow =
-      productLatestAssistantTextRow &&
-      isAssistantTextRow(productLatestAssistantTextRow)
+      productLatestAssistantTextRow && isAssistantTextRow(productLatestAssistantTextRow)
         ? productLatestAssistantTextRow
-        : segmentCompleted &&
-            lastSegmentFlowRow &&
-            isAssistantTextRow(lastSegmentFlowRow)
+        : segmentCompleted && lastSegmentFlowRow && isAssistantTextRow(lastSegmentFlowRow)
           ? lastSegmentFlowRow
           : undefined;
     const visibleAssistantIndex = visibleAssistantTextRow
-      ? segmentFlowRows.findIndex(
-          (row) => row.rowId === visibleAssistantTextRow.rowId,
-        )
+      ? segmentFlowRows.findIndex((row) => row.rowId === visibleAssistantTextRow.rowId)
       : -1;
     const segmentHistoryRows = options.timelineOnly
       ? []
@@ -209,11 +170,8 @@ export function buildConversationTurnWorkSegments(options: {
         ? segmentFlowRows
         : segmentFlowRows.slice(0, visibleAssistantIndex);
     const segmentFollowingRows =
-      visibleAssistantIndex < 0
-        ? []
-        : segmentFlowRows.slice(visibleAssistantIndex + 1);
-    const segmentRunning =
-      segmentIndex === visualDrafts.length - 1 && options.isRunning;
+      visibleAssistantIndex < 0 ? [] : segmentFlowRows.slice(visibleAssistantIndex + 1);
+    const segmentRunning = segmentIndex === visualDrafts.length - 1 && options.isRunning;
     const segmentDurationMs = resolveSegmentDurationMs({
       header: options.header,
       segmentIndex,
@@ -266,4 +224,3 @@ export function buildConversationTurnWorkSegments(options: {
     };
   });
 }
-/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

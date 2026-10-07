@@ -1,4 +1,5 @@
-import type { StreamEvent } from "@kenfutwork/shared";
+import { tmpdir } from "node:os";
+import { instanceSettingsSchema, type StreamEvent } from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import type {
@@ -14,6 +15,8 @@ import {
   ToolDeniedError,
 } from "../../kernel/context.js";
 import { createAgentModesPlugin } from "../agent-modes/plugin.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
+import { createMemoryTaskWorkManager } from "../task-work/test-store.js";
 import { createAgentRunsPlugin } from "./plugin.js";
 
 /**
@@ -24,6 +27,11 @@ import { createAgentRunsPlugin } from "./plugin.js";
  * agent-runs 两个插件，断言：指令真的进了模型输入、工具门真的在拒绝工具。
  * 单测各自直接调 service/事件总线，覆盖不到这条装配缝——必须组合验证。
  */
+
+const SEAM_ACTOR = {
+  instanceId: "00000000-0000-4000-8000-000000000001",
+  accessClientId: null,
+};
 
 function makeEnv(): ServerEnv {
   return {
@@ -37,7 +45,7 @@ function makeEnv(): ServerEnv {
 
 const stubPersistence = {
   execute: async () => ({ rows: [] }),
-  forWorkspace: () => ({
+  forInstance: () => ({
     execute: async () => ({ rows: [] }),
     query: async () => [],
   }),
@@ -79,7 +87,7 @@ describe("agent-runs × agent-modes 装配缝（pre-step 指令 + 工具门）",
           conversationId: "conv-seam-1",
           prompt: "帮我搭一个 python 项目",
         },
-        { accessToken: "tok", threadId, userId: "u1" },
+        { actor: SEAM_ACTOR, threadId },
       );
       const events = await drainRun(runs.streamRun(runId));
       expect(events.at(-1)?.type).toBe("run.completed");
@@ -123,7 +131,7 @@ describe("agent-runs × agent-modes 装配缝（pre-step 指令 + 工具门）",
           conversationId: "conv-seam-2",
           prompt: "纯聊天",
         },
-        { accessToken: "tok", threadId, userId: "u1" },
+        { actor: SEAM_ACTOR, threadId },
       );
       await drainRun(runs.streamRun(runId));
 
@@ -181,22 +189,26 @@ function assembleSeamKernel(agentFactory: KenFutWorkAgentFactory) {
       app,
       events: bus,
       overrides: {
-        auth: { authenticate: async () => null },
+        taskWork: createMemoryTaskWorkManager(),
+        processSandbox: {} as never,
+        executionScopes: {} as never,
+        codeUi: {} as never,
+        localAccess: { authenticate: async () => null } as never,
         blob: {} as never,
         brandKit: {} as never,
         canvas: {} as never,
-        credits: {} as never,
         modelProviders: {} as never,
         persistence: stubPersistence as never,
         runUsage: {} as never,
-        settings: {} as never,
-        threads: {} as never,
-        tierGuard: {} as never,
-        viewer: {
-          resolveWorkspace: async () => {
-            throw new Error("no viewer in seam test");
-          },
+        settings: {
+          getInstanceSettings: async () =>
+            instanceSettingsSchema.parse({ defaultModel: "test-model" }),
         } as never,
+        threads: {} as never,
+        localInstance: createLocalInstanceService({
+          repository: { ensure: async () => SEAM_ACTOR.instanceId },
+          dataDir: tmpdir(),
+        }),
       },
     },
   );

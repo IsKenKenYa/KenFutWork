@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/lib/conversationShareContext.ts`（references/zcode/packages/ui/src/lib/conversationShareContext.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 const SHARE_CONTEXT_BLOCK_PATTERN =
   /(?:\n\n)?# zcode-share-context:\n```zcode-share-context\n([\s\S]*?)\n```\s*$/u;
 
@@ -28,40 +23,20 @@ export function resolveAttachableShareContext(
     | { title: string }
     | null
     | undefined,
-): {
-  contextId: string;
-  title: string;
-  shareUrl: string;
-  status: string;
-} | null {
-  if (!sharedContextImport || !("contextId" in sharedContextImport))
-    return null;
-  return sharedContextImport.status === "discarded"
-    ? null
-    : sharedContextImport;
+): { contextId: string; title: string; shareUrl: string; status: string } | null {
+  if (!sharedContextImport || !("contextId" in sharedContextImport)) return null;
+  return sharedContextImport.status === "discarded" ? null : sharedContextImport;
 }
 
-function isReference(
-  value: unknown,
-): value is ConversationShareContextReference {
+function isReference(value: unknown): value is ConversationShareContextReference {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const candidate = value as Record<string, unknown>;
-  if (
-    Object.keys(candidate).some(
-      (key) => key !== "contextId" && key !== "shareUrl",
-    )
-  )
-    return false;
-  if (
-    typeof candidate.contextId !== "string" ||
-    typeof candidate.shareUrl !== "string"
-  )
+  if (Object.keys(candidate).some((key) => key !== "contextId" && key !== "shareUrl")) return false;
+  if (typeof candidate.contextId !== "string" || typeof candidate.shareUrl !== "string")
     return false;
   try {
     const url = new URL(candidate.shareUrl);
-    return (
-      /^\/cn\/share\/[^/]+$/u.test(url.pathname) && !url.search && !url.hash
-    );
+    return /^\/cn\/share\/[^/]+$/u.test(url.pathname) && !url.search && !url.hash;
   } catch {
     return false;
   }
@@ -83,10 +58,7 @@ export function parseConversationShareContext(text: string): {
   try {
     const parsed: unknown = JSON.parse(match[1] ?? "");
     return isReference(parsed)
-      ? {
-          visibleContent: text.slice(0, match.index).trimEnd(),
-          reference: parsed,
-        }
+      ? { visibleContent: text.slice(0, match.index).trimEnd(), reference: parsed }
       : { visibleContent: text, reference: null };
   } catch {
     return { visibleContent: text, reference: null };

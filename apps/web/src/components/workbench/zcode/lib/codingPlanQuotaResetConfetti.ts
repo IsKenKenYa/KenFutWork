@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/lib/codingPlanQuotaResetConfetti.ts`（references/zcode/packages/ui/src/lib/codingPlanQuotaResetConfetti.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
 const PARTICLE_COUNT = 10;
 const PARTICLE_COLORS = [
   "var(--color-usage-chart-1)",
@@ -25,8 +20,7 @@ export function burstCodingPlanQuotaResetConfetti(origin: HTMLElement): void {
 
   for (let index = 0; index < PARTICLE_COUNT; index += 1) {
     const particle = ownerDocument.createElement("span");
-    const angle =
-      (-160 + (140 * index) / (PARTICLE_COUNT - 1)) * (Math.PI / 180);
+    const angle = (-160 + (140 * index) / (PARTICLE_COUNT - 1)) * (Math.PI / 180);
     const distance = 36 + Math.random() * 28;
     const offsetX = Math.cos(angle) * distance;
     const offsetY = Math.sin(angle) * distance;

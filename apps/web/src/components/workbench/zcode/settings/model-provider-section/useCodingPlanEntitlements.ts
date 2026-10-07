@@ -1,17 +1,6 @@
-/**
- * zcode 照搬：`@/settings/model-provider-section/useCodingPlanEntitlements.ts`（references/zcode/packages/ui/src/settings/model-provider-section/useCodingPlanEntitlements.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import {
-  type UsageEntitlementRefreshOptions,
-  useUsageEntitlement,
-} from "@zui/hooks/useUsageEntitlement";
-import { resolveAccountProviderInspectionAccess } from "@zui/lib/accountProviderAccess";
-import { buildStartPlanEntitlementOptions } from "@zui/lib/startPlanEntitlementOptions";
-import { buildUsageEntitlementCacheKey } from "@zui/lib/usageEntitlementCache";
-import type { ProviderSettingsView } from "@zui/lib/zcode-services";
+import { buildStartPlanEntitlementOptions } from "@zui/lib/startPlanEntitlementOptions.js";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import type { ProviderSettingsView } from "@zcode/services";
 import {
   getModelProviderFamilySpec,
   type ModelProviderFamilySpec,
@@ -19,9 +8,14 @@ import {
   type ProviderFamilyConnectionSelectionSettings,
   type ZCodeAccountAccess,
   type ZCodeProviderAccountAccess,
-} from "@zui/lib/zcode-shared";
-import type { CodingPlanEntitlementState } from "@zui/settings/model-provider-section/constants";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+} from "@zcode/shared";
+import {
+  useUsageEntitlement,
+  type UsageEntitlementRefreshOptions,
+} from "@zui/hooks/useUsageEntitlement.js";
+import type { CodingPlanEntitlementState } from "@zui/settings/model-provider-section/constants.js";
+import { buildUsageEntitlementCacheKey } from "@zui/lib/usageEntitlementCache.js";
+import { resolveAccountProviderInspectionAccess } from "@zui/lib/accountProviderAccess.js";
 
 function resolveCodingPlanProviderFingerprintAutoRefresh({
   loading,
@@ -76,9 +70,7 @@ function useProviderFamilyEntitlements(params: {
   const registryFingerprint = accountAccess
     ? JSON.stringify([params.providerSettingsView?.revision, accountAccess])
     : "";
-  const startProviderFingerprint = startOptions.enabled
-    ? (startOptions.cacheKey ?? "")
-    : "";
+  const startProviderFingerprint = startOptions.enabled ? (startOptions.cacheKey ?? "") : "";
   const entitlementAccess = resolveEntitlementAccountAccess(
     accountAccess?.access,
     params.selection,
@@ -142,18 +134,10 @@ function resolveEntitlementAccountAccess(
   access: ZCodeProviderAccountAccess | undefined,
   selection: ProviderFamilyConnectionSelection | undefined,
 ): ZCodeProviderAccountAccess | ZCodeAccountAccess | undefined {
-  if (
-    access?.mode !== "team-coding-plan" ||
-    selection?.kind !== "team-coding-plan"
-  ) {
+  if (access?.mode !== "team-coding-plan" || selection?.kind !== "team-coding-plan") {
     // 展示查询针对这个套餐自身，不让执行期的 current 解析器改成当前另一套餐。
-    return access &&
-      (access.mode === "start-plan" || access.mode === "individual-coding-plan")
-      ? {
-          type: "zhipu-account",
-          family: access.accountType,
-          planKind: access.mode,
-        }
+    return access && (access.mode === "start-plan" || access.mode === "individual-coding-plan")
+      ? { type: "zhipu-account", family: access.accountType, planKind: access.mode }
       : access;
   }
   return {
@@ -247,9 +231,7 @@ export function useCodingPlanEntitlements({
         zaiFamily.codingFingerprint,
         zaiFamily.startEnabled ? zaiFamily.startProviderFingerprint : "",
         bigmodelFamily.codingFingerprint,
-        bigmodelFamily.startEnabled
-          ? bigmodelFamily.startProviderFingerprint
-          : "",
+        bigmodelFamily.startEnabled ? bigmodelFamily.startProviderFingerprint : "",
       ]
         .filter(Boolean)
         .join("|"),
@@ -267,12 +249,10 @@ export function useCodingPlanEntitlements({
     const decision = resolveCodingPlanProviderFingerprintAutoRefresh({
       loading,
       providerFingerprint,
-      skippedProviderFingerprint:
-        skippedProviderFingerprintAutoRefreshRef.current,
+      skippedProviderFingerprint: skippedProviderFingerprintAutoRefreshRef.current,
       suppressAutoRefresh: suppressProviderFingerprintAutoRefresh,
     });
-    skippedProviderFingerprintAutoRefreshRef.current =
-      decision.skippedProviderFingerprint;
+    skippedProviderFingerprintAutoRefreshRef.current = decision.skippedProviderFingerprint;
     if (!decision.shouldRefresh) {
       return;
     }
@@ -280,12 +260,7 @@ export function useCodingPlanEntitlements({
     // provider 配置异步加载或保存后，首次 entitlement 快照可能还是旧的。
     // 连接方式同步会单独刷新 Account Access，不能把同一次变化再扩散成套餐/余额刷新。
     refresh({ force: true, silent: true, reason: "auth" });
-  }, [
-    providerFingerprint,
-    loading,
-    refresh,
-    suppressProviderFingerprintAutoRefresh,
-  ]);
+  }, [providerFingerprint, loading, refresh, suppressProviderFingerprintAutoRefresh]);
 
   return useMemo(
     () => ({
@@ -306,22 +281,14 @@ export function useCodingPlanEntitlements({
           error: bigmodelFamily.coding.error,
         },
         [bigmodelFamily.startPlanProviderId]: {
-          snapshot: bigmodelFamily.startEnabled
-            ? bigmodelFamily.start.snapshot
-            : null,
-          loading: bigmodelFamily.startEnabled
-            ? bigmodelFamily.start.loading
-            : false,
-          error: bigmodelFamily.startEnabled
-            ? bigmodelFamily.start.error
-            : null,
+          snapshot: bigmodelFamily.startEnabled ? bigmodelFamily.start.snapshot : null,
+          loading: bigmodelFamily.startEnabled ? bigmodelFamily.start.loading : false,
+          error: bigmodelFamily.startEnabled ? bigmodelFamily.start.error : null,
         },
       },
       enabledStartPlanProviderIds: [
         ...(zaiFamily.startEnabled ? [zaiFamily.startPlanProviderId] : []),
-        ...(bigmodelFamily.startEnabled
-          ? [bigmodelFamily.startPlanProviderId]
-          : []),
+        ...(bigmodelFamily.startEnabled ? [bigmodelFamily.startPlanProviderId] : []),
       ],
       refresh,
     }),

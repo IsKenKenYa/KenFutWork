@@ -2,10 +2,10 @@
 > 本文件是所有 coding Agent（Codex CLI / Claude Code / Trae IDE 等）的统一操作指南，是仓库的**唯一权威**。各 Agent 专用配置文件（`.codex/AGENTS.md`、`.claude/CLAUDE.md` 等）只保留各自的独占内容（如浏览器操作规范、框架文档索引），主体规范一律以本文件为准。
 
 ## 项目结构与模块组织
-本仓库是 **pnpm@10 workspace + Turborepo 的 monorepo**（KenFutWork：BYOK Work 平台——用户自定义供应商/模型的 AI 工作台，**design（画布创作）/ code（编码 agent）双模式**；多端形态：Tauri 桌面端（内嵌服务端 + 沙箱）为主，服务端 Docker 自托管，Web 与移动端为客户端；GPL-3.0 系开源）。产品与架构计划见 `docs/方案设计/改造计划.md`（服务端插件内核 + BYOK 供应商缝 + design/code 双模式）与 `docs/方案设计/多端产品设计.md`（桌面/自托管/Web/移动形态，**已去云托管**）。主要模块如下：
+本仓库是 **pnpm@10 workspace + Turborepo 的 monorepo**（KenFutWork：BYOK Work 平台——用户自定义供应商/模型的 AI 工作台，**design（画布创作）/ code（编码 agent）双模式**；多端形态：Tauri 桌面端（内嵌服务端 + 沙箱）为主，服务端 Docker 自托管，Web 与移动端为客户端；GPL-3.0 系开源）。产品与架构计划见 `docs/方案设计/改造计划.md`（服务端插件内核 + BYOK 供应商缝 + design/code 双模式）与 `docs/方案设计/多端产品设计.md`（桌面/自托管/Web/移动形态；本期本地免账户，未来官方服务仅写规格）。主要模块如下：
 - `apps/web` — 前端：Next.js 16（App Router，Turbopack）+ React 19 + Tailwind 4 + Base UI + Excalidraw 画布。路由在 `src/app/`，组件在 `src/components/`，客户端纯逻辑在 `src/lib/`；测试在 `test/*.test.ts(x)`。
 - `apps/server` — 后端：Fastify 5 + LangChain 1.x / deepagents agent 运行时 + PGMQ 队列 worker。装配层在 `src/app.ts` 与 `src/worker.ts`；agent 相关在 `src/agent/`（backends / tools / prompts / persistence / sub-agents）；领域服务在 `src/features/`；生成 provider 在 `src/generation/providers/`；HTTP 路由在 `src/http/`；WS 在 `src/ws/`；队列在 `src/queue/`；环境变量解析在 `src/config/env.ts`。
-- `packages/shared` — 跨端 zod 契约（HTTP API、WS 协议、job 事件、credits、skills 等），构建到 `dist/` 后被前后端引用；改契约先改这里，两端跟着编译器走。
+- `packages/shared` — 跨端 zod 契约（HTTP API、WS 协议、job 事件、usage、skills 等），构建到 `dist/` 后被前后端引用；改契约先改这里，两端跟着编译器走。
 - `packages/ui`、`packages/config` — 内部共享组件与 TS 配置。
 - `supabase/migrations/` — 唯一数据库 Schema 迁移源（原生 SQL）。
 - `references/` — 外部参考项目（deepseek-harness、langgraph、jaaz 等），**只作方向参考**，禁止直接复制代码/schema/字段名；不要批量删除或忽略该目录。**例外**：根级 `flow/` 是**待合并的 flow 子系统**（futureFlow 上游，作者 future73807 即本仓协作者，`DEC-10`…`DEC-13` 已拍板），不是纯参考——集成方案见 `docs/方案设计/flow集成方案.md`；其代码按方案分阶段并入（子模块指针跟随 → iframe 内嵌 → 收编），不受本节「禁止复制」约束。
@@ -32,8 +32,8 @@
 
 - **能力缝三元组完整才算完整**：一个可替换能力 = Service Definition（接口）+ Service Provider（实现）+ Consumer（消费方）。只写实现不声明接口与消费方的「半个缝」不允许合入。
 - **服务 key 是稳定契约**：ctx key 的唯一权威表是 `docs/方案设计/改造计划.md` §4.2（含 `agentRunMetadata`/`agentPersistence` 等完整清单与依赖拓扑；多端 key 落地时并入该表）。新增或更名 ctx key 只改 §4.2 一处，禁止在其他文档维护副本清单。
-- **BYOK 凭证红线**：用户 API Key 只写不读（前端永不回显）、服务端日志脱敏、按工作区 RLS 隔离；`ProviderInstanceConfig.protocol` 是封闭集合（openai-compatible / anthropic / gemini / 图视频协议），新增协议必须先扩契约再写适配器，禁止在业务代码里内联供应商判断。
-- **配置 fail loud**：feature 的启用条件（如 Lemon Squeezy 配置齐全才建 PaymentService）必须显式表达为 `enabled(env)` 判定，禁止静默跳过；misconfiguration 在启动期报错。
+- **BYOK 凭据边界**：唯一规范见《改造计划》§4.8（`DEC-7` 2026-10-05 修订）。本地凭据为数据目录明文文件，授权设置可查看/复制，日志与普通目录/事件不得泄漏；不得再引用旧“只写不读/永不回显/加密落库”限制。`ProviderInstanceConfig.protocol` 仍为封闭集合，新增协议先扩契约再写适配器，禁止业务内联供应商判断。
+- **配置 fail loud**：feature 的启用条件必须显式表达为 `enabled(env)` 判定，禁止静默跳过；misconfiguration 在启动期报错。
 - **改造期纪律**：迁移按计划 §4 的拓扑序逐 PR 进行，每个 PR 行为不变、测试护航；新写的 feature 直接按插件形状组织，不等内核落地。
 
 ## 构建、测试与开发命令
@@ -44,8 +44,7 @@
 - `pnpm build`：turbo 全量构建（shared/ui/config 出 `dist/`，web 出静态产物，server 走 `scripts/validate-foundation-app.mjs` 门禁）。
 - `pnpm test`：= `test:workspace`（`node --test tests/workspace.test.mjs`）+ `test:packages`（`turbo run test`，vitest）。
 - `pnpm typecheck`：turbo 全包 `tsc --noEmit`（web 先跑 `next typegen`）。
-- `pnpm lint`：`biome check .`（格式 + lint，Biome 2）。
-- `pnpm seed`：`pnpm --filter @kenfutwork/server seed:accounts` 经自管 Postgres 灌测试账号（幂等；账号与口令见 README「测试账号」表）。
+- `pnpm lint`：先校验 ZCode 来源，再对第一方与未登记源码运行 Biome 2；原源码保持字节保真，不批量改格式。
 
 命令必须是可直接复制执行的完整调用，包含 flags——「运行测试」这类模糊表述留给 Agent 自由发挥，是常见失败模式。
 
@@ -89,7 +88,7 @@ API 文档是单源链，任何一环脱节都会腐烂，纪律如下：
 
 - **Design 模式的主区恒为画布（canvas），永不被对话框取代**。工作台（`/workbench`）在 Design 模式下：选中项目即渲染画布（`/canvas?id=…` 的 iframe），对话走**画布页自带的助手面板**；工作台不得用「任务/会话对话框」占据主区。该判定集中在 `apps/web/src/lib/workbench-surface.ts` 的 `resolveWorkbenchSurface`（Design 分支永不返回 `conversation`），并由 `apps/web/test/workbench-surface.test.ts` 锁死。**历史事故**：主区判定曾内联在 JSX 里且把 `activeTask` 排在画布之前，导致「发一条消息画布就被对话框顶掉」，用户多次反馈。**验收**：Design 模式主区必须是画布 iframe；任何把 `conversation` 暴露到 Design 模式的改动都不许合入。
 - **Flow 模式：主区恒为工作流画布，入口按插件安装态出现**。`WorkbenchMode` 与主区判定（`apps/web/src/lib/workbench-surface.ts`）已含 `flow`：选中项目即渲染工作流画布（编排 / 发布 / 执行视图都在画布内），对话框不得占据主区——与 Design 同一条不变量，由 `apps/web/test/workbench-surface.test.ts` 的全矩阵用例锁死。**入口纪律**：flow 以插件形态交付（`FORM-11`），未安装 / 宿主适配层未接通时不出现 flow 入口、不加载 flow 能力（不摆空壳、不放假开关，模式切换器里不得提前加项）。**验收**：flow 模式主区必须是工作流画布；未装插件时侧栏、模式切换器与路由都不得出现 flow 空壳入口。
-- **Code 模式：工作目录 = 项目，run 必须绑定项目**。选定工作目录即按目录名解析出项目并选中，run 的作用域取该项目的**主画布**（`canvasId` 同时就是沙箱目录名，故同一项目的多轮运行共享同一个工作目录；追问必须沿用同一作用域，否则上一轮写的文件会「消失」）。目录名到项目的判定集中在 `apps/web/src/lib/work-directory.ts` 的 `resolveWorkDirProject`，run 侧口径在 `apps/web/src/components/workbench/workbench.tsx`，由 `apps/web/test/work-directory.test.ts` 锁死。**历史事故**：客户端曾用 `conversationId` 顶替 `canvasId`（每会话一个沙箱、项目是假的），而 run 不绑项目会**整轮秒失败**（`canvasId is required for production (state) backend mode`），且失败原因被客户端吞成「运行失败，请重试」。**验收**：Code 模式起 run 必须带项目作用域；run 失败必须透出服务端给出的可读原因。
+- **Code 模式：以编码为重点的通用工作，Run 必须绑定持久 Task 工作域**。Code 也承接调研、文档和数据处理；独立 Work 模式留待后续设计。本期 Code Project 的主目录与附加授权目录由服务端持有；Task 创建时固定自己的主目录，项目默认目录变更仅影响新 Task。Code Run 必须用 taskId 打开 executionScopes，由真实 Task 生成文件、命令和子任务权限；禁止用 canvasId、conversationId 或路径猜测替代执行身份。Code 不创建或借用 Design 画布。Design/Flow 主区画布不变量保持有效。验证由执行作用域、原 Code 宿主 RPC 与工作台主区公共接口测试覆盖；目录不可用、权限撤销及 Run 失败必须透出可读原因。
 
 > **项目类型由服务端一处持有**：`projects.kind ∈ {design, code, flow}`（design=画布项目，code=工作目录项目，flow=工作流项目；flow 的入口与画布随插件与宿主适配层落地，类型先落契约与库约束）。
 > 契约枚举与库 CHECK 必须同改，由 `tests/workspace.test.mjs` 的「库约束 ↔ 契约枚举一致」门禁对账。
@@ -97,6 +96,14 @@ API 文档是单源链，任何一环脱节都会腐烂，纪律如下：
 > `localStorage` 的 `codeProjects`，与服务端 `projects` 两套真相：选了工作目录列表里看不见、
 > 对话因 `projectId` 指向不存在的分组而「凭空消失」）。Code 侧栏的分组必须容忍孤儿
 > `projectId`——认不出的 id 一律归入「未分组」，否则对话会消失。
+
+## 本地实例与账户边界（硬约束）
+- 本期执行《用户与账户系统重构》（`DEC-20`）：免账户桌面及回环本机 Web，稳定实例拥有项目、Task、配置与插件；第一方用 LocalActor 区分 instanceId 与 accessClientId，不保留账户/成员/角色或 workspace/user 身份别名。
+- 原 ZCode wire 身份字段仅在宿主边界映射，保留可信绑定；Code 的持久 Task、执行作用域、授权代际和 Task Work 不能因身份替换退化。访问令牌不得进入工具参数、审批或持久事件。
+- 桌面自动获得本机接入凭据，本机浏览器用一次性入口兑换 HttpOnly 会话 cookie，脚本用明确授权 Bearer；HTTP/SSE/WS/RPC 统一验证，服务仅监听回环。实例主人可管理插件/MCP，沙箱、审批与安装检查保留。
+- 完整退役旧注册登录、平台管理员、套餐/额度/支付；usage 保留，不留假账户、假 session、空计费服务。项目尚无 release/真实用户，开发测试数据可重建；历史 SQL 不改写，最终 schema 用前向清理迁移收敛。
+- 数据目录迁移与停机文件夹备份恢复按该规格操作；应用管理数据统一归根，外部代码目录不移动，缺失路径提示重新关联，不自动重放任务。
+- 未来官方账户/远端服务边界见《官方账户与远端连接基础设施》（`DEC-21`）；本期仅写规格，不展示未接通入口，不实现 SaaS/团队/企业版。局域网配对进入下一独立阶段。
 
 ## 安全与配置提示
 禁止提交 provider keys、`.env`、`.env.local`、service account 凭据（`**/credentials/*.json` 已 gitignore）、构建产物、日志。`.env.local` 只放本机；CI 与生产密钥走平台环境变量。
@@ -220,6 +227,20 @@ API 文档是单源链，任何一环脱节都会腐烂，纪律如下：
 3. [步骤] → 验证: [检查方式]
 ```
 强成功标准让 Agent 能独立循环；弱标准（"让它工作"）需要不断澄清。
+### 界面文案（硬约束）
+用户口径（2026-09-27）：**界面上的字是给用户看的标签，不是文档、不是需求复述、不是实现说明。**
+
+- **只写标签，不写句子**：一眼看完是唯一标准。「只转文本」是标签；「松开后把文字填进输入框，你自己确认再发送」是把需求抄进界面——**禁止**。
+- **需求描述不是界面文案**：用户给你的是**要什么**，不是要你把那段话抄上去。把需求措辞、实现状态、验收口径原样搬进界面（例：要求「做个假的弹窗（先看版式）」→ 弹窗上写「假的弹窗」、按钮写「虚假提交」；要求「占位/演示数据」→ 内容里写「占位」「演示」）与「假开关」同罪。正确做法是做出那个**真的东西**：弹窗就是一个正常可用的弹窗，提交按钮就叫「提交」。理由、取舍、性能推导留在 `docs/` 与代码注释。
+- **一行一个配置项**：标签在左、控件在右，控件有宽度（`SETTINGS_CONTROL_WIDTH`）；能同一行放下的，禁止拆成上下两行（历史事故：控件 87px 被误判成「该拆两行」，正确解是同行放宽）。真正多行编辑（textarea / JSON 编辑器）例外：标签在上、控件铺满。
+- **副标题默认不写**：只有标签推不出来的事实才配一行说明，且 ≤ 12 字（数字/时机/去向）；复述标签的副标题一律删。
+- **禁止占位/虚假文案**：「即将上线」「假的…」「占位…」这类自我描述的占位词不写；要么能点能用，要么别放（不摆空壳、不放假开关）。如实转述服务端状态的（如注册表里确实装不了的条目）照实说。
+- **数字不写成句子**：性能给读数（`0.07× 首载 4.4s`），不给「实测 7 次的中位实时率 0.07，首次使用额外等 4.4 秒」。
+- **报错写人话**：错误信息是例外——它必须说清「哪里不对、去哪改」，一句话，不写堆栈与内部术语。
+- **改文案不做翻译**：不要为了"完整"把注释里的说明搬到界面；删掉比说清更重要。
+- **模板里同样只写短语**：`` `${}` `` 拼出来的提示/通知也受「不写句子」约束（禁止分句标点 `，`/`；`）；确实不是界面文案的（注入给模型的提示词）用 `copy-guard-ignore` 显式豁免，并在注释里写明理由。
+- 验收：新增/改动界面文案时，逐条问「这句是不是标签？能不能再删一半？」；设置页文案改动要**真机看图**，不看图不算完成（历史事故：整页文案写成方案文档，用户看不懂）。机械门禁由 `apps/web/test/settings-copy-guard.test.ts`（**全站** JSX 文本 + 文案属性 `hint`/`title`/`placeholder`/`emptyLabel`/`description` + **模板字符串**：句子标点 `。；，`（模板只禁 `，`/`；`）、中文字数 > 20、占位/虚假词；属性值字符串/三元/模板写法都扫；设置区另盯副标题/上下排布/字号/空壳）与 `apps/web/test/settings-rows-structure.test.tsx`（渲染后的结构：标签在左、控件在右，档位横排）组成，改 UI 必跑 `pnpm --filter @kenfutwork/web test`。
+
 ### 沟通与表达规范
 - **保持理性、克制、准确**：不进行情绪化迎合，不使用空洞安慰、过度夸赞或刻意拟人化表达。
 - **默认采用计算机与工程领域表达风格**：优先保证正确性而非迎合用户；优先给出结论，再给分析；避免冗长废话；减少低信息密度表达；不重复用户问题；不使用营销式语言；不使用 AI 套话。
@@ -233,26 +254,41 @@ API 文档是单源链，任何一环脱节都会腐烂，纪律如下：
 - **历史上下文核对**：当当前对话与历史对话存在明确关联时，可以参考历史上下文；若无直接关联，则禁止主动引入历史对话内容，避免上下文污染与错误联想。
 
 ## 运行时可调数值（硬约束，DEC-18）
+> 2026-10-05：以下设置名称为本轮重构的最终契约，实施及消费者迁移尚在进行；原 ZCode Workspace 设置保留其目录/原协议含义，不能作为账户工作区归属。
 桌面 BYOK 形态下 key 与算力都是用户自己的，一切限额必须用户可调——**运行时可调数值禁止在业务代码里写死字面量**（子代理派生深度/并发、LLM 请求重试次数与无限重试开关、工具/命令超时、批量与截断上限、退避间隔等）：
-- 默认值与区间护栏的唯一属主是 `packages/shared/src/governance.ts`（`AGENT_GOVERNANCE_DEFAULTS` / `AGENT_GOVERNANCE_LIMITS` / clamp 函数）；`workspaceSettingsSchema` 的对应字段直接引用它，禁止另写一份字面量。
-- 覆盖入口只有两个：`workspace_settings` 表（设置页 PATCH）与 env 兜底（`KENFUTWORK_*`，经 `resolveGovernanceEnvOverrides` 解析，非法值忽略不报错）。优先级一律 **库值 ?? env ?? DEFAULTS**；业务代码经 settings 服务读取，禁止直读 `process.env` 取治理值。
+- 默认值与区间护栏的唯一属主是 `packages/shared/src/governance.ts`（`AGENT_GOVERNANCE_DEFAULTS` / `AGENT_GOVERNANCE_LIMITS` / clamp 函数）；`instanceSettingsSchema` 的对应字段直接引用它，禁止另写一份字面量。
+- 覆盖入口只有两个：`instance_settings` 表（设置页 PATCH）与 env 兜底（`KENFUTWORK_*`，经 `resolveGovernanceEnvOverrides` 解析，非法值忽略不报错）。优先级一律 **库值 ?? env ?? DEFAULTS**；业务代码经 settings 服务读取，禁止直读 `process.env` 取治理值。
 - 新 PR 引入魔法数字（超时/上限/次数/间隔）即打回；确属一次性的局部常量须行内注释说明为何不进治理表。
 - 参照先例：kimi-code 的 `KIMI_LOOP_MAX_ATTEMPTS_PER_STEP` / `KIMI_CODE_INFINITE_RETRY`（重试档位可调 + 无限重试显式开启）。
 
 ## 数据库迁移（硬约束）
-> 方向说明：已决策去 Supabase 云（2026-09-11），存储统一自管 Postgres（桌面捆绑本机实例 / 自托管连用户 Postgres，见《多端产品设计》§5）；当前代码仍运行在 Supabase 上，迁移前本节规则照常生效。迁移后 `supabase/migrations/` 目录名沿用，内容为 Postgres SQL，且同样约束未来新增的存储适配器。
+> 方向说明：存储统一自管 Postgres（桌面捆绑本机实例 / 自部署连用户 Postgres，见《多端产品设计》§5）；代码与部署现状以《日志》为准。`supabase/migrations/` 目录名沿用，内容为 Postgres SQL，且同样约束未来新增的存储适配器。
 - `supabase/migrations/` 中的原生 SQL 是唯一 Schema 迁移来源；不要引入 ORM Schema 或第二套迁移历史。
 - 新迁移使用 `YYYYMMDDHHmmss_description.sql` UTC 时间戳命名（用 `supabase migration new <描述>` 生成）。迁移一旦被共享或执行就不可修改、重命名或删除；错误必须新增前向修复迁移。
 - 每次迁移必须通过历史 SHA-256、实际 Schema 契约、空数据库全量重放和二次 no-op 检查。禁止覆盖账本校验和或静默重跑已执行版本。
 - 本地开发（`supabase db reset` 等）仅允许在开发环境运行；Schema 校验保持只读严格校验，用于 CI 与发布前检查。生产迁移只能通过显式命令执行。
 - 生产迁移只能由发布流水线的一次性迁移任务执行；API 与 Worker 使用无 DDL 权限的运行角色，并在 Schema、迁移历史或权限不匹配时拒绝启动。
-- 破坏性变更采用 Expand/Contract：先扩展并保持旧代码兼容，完成回填与切流后再在后续发布收缩。不得把应用代码回滚到与已迁移数据库不兼容的版本。
+- 有真实部署兼容约束的破坏性变更采用 Expand/Contract；不得把应用代码回滚到与已迁移数据库不兼容的版本。本轮 `DEC-20` 已确认无 release/真实用户，测试数据无需保留，可以直接以前向迁移清理旧账户与商业对象；仍须检查历史 SHA、最终 schema、空库重放及二次 no-op，禁止改写旧迁移。
 - 发布必须先备份，再执行角色 bootstrap、迁移、运行权限授权、运行角色验证和 smoke test。迁移集合或校验和变化后禁止自动降级，只能前向修复或显式恢复匹配备份。
 
 ## 持久副作用与幂等性（硬约束）
 - 持久副作用的 Spec 必须定义：稳定业务幂等键、键的生成方、作用域、生命周期、规范化参数指纹、冲突响应、事务边界和并发保护。
 - 无法证明为 read-only 或 idempotent 的操作必须标记为 `unsafe`，禁止自动重试。随机请求 ID 不能替代稳定业务幂等键；幂等键不得包含用户内容或敏感数据。
-- 删除后用于阻止迟到请求复活数据的墓碑必须定义最小保留字段和保留策略，并定义账户或工作区物理删除时的级联清除；墓碑不得保留文件名、URL、内容哈希等可识别元数据。
+- 删除后用于阻止迟到请求复活数据的墓碑必须定义最小保留字段和保留策略，并定义实例资源物理删除时的级联清除；墓碑不得保留文件名、URL、内容哈希等可识别元数据。
 - 余额/配额变更必须在同一原子事务中提交余额更新与不可变交易流水，并使用稳定的业务交付键防止重复扣减、退款或发放。
 - 每个涉及持久副作用的 Spec 和测试必须覆盖：顺序重放、并发重放、响应丢失后的重放、同键参数冲突，以及删除后的迟到请求。
 **主链路稳定优先，对账重试兜底**：人工对账、孤儿任务对账、重试策略都是兜底机制——目标是提升系统稳定性和鲁棒性，提高多用户并发能力，而不是只会对账兜底。「有剑不用」：对账、重试、人工兜底是最后的剑，主目标是主链路本身稳定、并发扛得住，让剑永远不用出鞘。
+
+## Agent skills
+
+### Issue tracker
+工单使用 IsKenKenYa/KenFutWork 的 GitHub Issues。见 docs/agents/issue-tracker.md。
+
+### Triage labels
+使用五个默认 triage 标签。见 docs/agents/triage-labels.md。
+
+### Domain docs
+使用根级 CONTEXT.md 的单一领域上下文，遵循现有文档治理。见 docs/agents/domain.md。
+
+### ZCode 源码移植授权
+Code 模式按用户确认的全量移植方案直接复制 ZCode 3.14.3 开源源码；此项是 references 通用参考限制的明确例外。保留版权和第三方 notices，所有宿主适配登记来源与偏差。禁止手写仿制 Code UI，Design 界面与行为保持不变。

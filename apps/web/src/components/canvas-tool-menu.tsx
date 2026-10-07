@@ -119,7 +119,7 @@ const TOOL_LABELS: Record<ToolType, string> = {
 };
 
 type CanvasToolMenuProps = {
-  accessToken: string;
+  accessToken: string | null;
   excalidrawApi: ExcalidrawImperativeAPI | null;
   /** 当前画布会话（§4.8）：透给生成面板，实例自定义头的 {{sessionId}} 按它渲染。 */
   sessionId?: string | undefined;

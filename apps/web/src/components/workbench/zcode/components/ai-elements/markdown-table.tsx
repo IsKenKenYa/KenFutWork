@@ -1,22 +1,13 @@
-/**
- * zcode 照搬：`@/components/ai-elements/markdown-table.tsx`（references/zcode/packages/ui/src/components/ai-elements/markdown-table.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
 "use client";
 
-import { ControlHintTooltip } from "@zui/ControlHintTooltip";
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@zui/components/ui/dialog";
-import { toast } from "@zui/components/ui/toast";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import type {
+  ComponentProps,
+  CSSProperties,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+  WheelEvent as ReactWheelEvent,
+} from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowLeftFromLine,
   ArrowRightToLine,
@@ -24,20 +15,18 @@ import {
   DownloadIcon,
   Maximize2Icon,
 } from "lucide-react";
-import type {
-  ComponentProps,
-  CSSProperties,
-  ReactNode,
-  PointerEvent as ReactPointerEvent,
-  WheelEvent as ReactWheelEvent,
-} from "react";
+import { cn } from "@zui/components/lib/utils.js";
+import { Button } from "@zui/components/ui/button.js";
 import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@zui/components/ui/dialog.js";
+import { toast } from "@zui/components/ui/toast.js";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 
 type MarkdownTableNodeProp = {
   node?: unknown;
@@ -69,10 +58,8 @@ type MarkdownTableObservedRect = {
 
 const MARKDOWN_TABLE_ROOT_SELECTOR =
   '[data-markdown-table-layout-root="true"], [data-testid="chat-view"]';
-const MARKDOWN_TABLE_STICKY_DISABLED_SELECTOR =
-  '[data-markdown-table-sticky-scrollbar="disabled"]';
-const MARKDOWN_TABLE_V4_COMPOSER_DOCK_SELECTOR =
-  '[data-v4-composer-dock="true"]';
+const MARKDOWN_TABLE_STICKY_DISABLED_SELECTOR = '[data-markdown-table-sticky-scrollbar="disabled"]';
+const MARKDOWN_TABLE_V4_COMPOSER_DOCK_SELECTOR = '[data-v4-composer-dock="true"]';
 const MARKDOWN_TABLE_V4_BACK_TO_BOTTOM_SELECTOR =
   '[data-v4-back-to-bottom-anchor="composer-dock"] button';
 const MARKDOWN_TABLE_V4_BACK_TO_BOTTOM_GAP_PX = 8;
@@ -80,29 +67,21 @@ const MARKDOWN_TABLE_CONTENT_PADDING_DEFAULT_PX = 32;
 const MARKDOWN_TABLE_CONTENT_PADDING_LG_PX = 16;
 const MARKDOWN_TABLE_CONTENT_PADDING_MD_PX = 8;
 const MARKDOWN_TABLE_STICKY_SCROLLBAR_HEIGHT_RATIO = 0.8;
-const MARKDOWN_TABLE_LAYOUT_LEFT_INSET_PROPERTY =
-  "--markdown-table-layout-left-inset";
-const MARKDOWN_TABLE_LAYOUT_RIGHT_INSET_PROPERTY =
-  "--markdown-table-layout-right-inset";
+const MARKDOWN_TABLE_LAYOUT_LEFT_INSET_PROPERTY = "--markdown-table-layout-left-inset";
+const MARKDOWN_TABLE_LAYOUT_RIGHT_INSET_PROPERTY = "--markdown-table-layout-right-inset";
 
 function normalizeTableCellText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
 function escapeMarkdownTableCell(value: string): string {
-  return value
-    .replace(/\\/g, "\\\\")
-    .replace(/\|/g, "\\|")
-    .replace(/\r?\n/g, "<br>");
+  return value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
 }
 
 function escapeCsvCell(value: string): string {
   // assistant markdown 属于不可信输入，CSV 被 Excel/Numbers/LibreOffice
   // 打开时会解释公式前缀。下载前统一把公式型单元格降级成纯文本。
-  const safeValue =
-    /^[\t\r\n]/u.test(value) || /^[\s]*[=+\-@]/u.test(value)
-      ? `'${value}`
-      : value;
+  const safeValue = /^[\t\r\n]/u.test(value) || /^[\s]*[=+\-@]/u.test(value) ? `'${value}` : value;
 
   if (!/[",\r\n]/u.test(safeValue)) {
     return safeValue;
@@ -118,23 +97,17 @@ export function buildMarkdownTableText(rows: MarkdownTableRows): string {
 
   const columnCount = Math.max(...rows.map((row) => row.length), 1);
   const normalizedRows = rows.map((row) =>
-    Array.from({ length: columnCount }, (_, index) =>
-      escapeMarkdownTableCell(row[index] ?? ""),
-    ),
+    Array.from({ length: columnCount }, (_, index) => escapeMarkdownTableCell(row[index] ?? "")),
   );
   const header = normalizedRows[0] ?? [];
   const separator = Array.from({ length: columnCount }, () => "---");
   const body = normalizedRows.slice(1);
 
-  return [header, separator, ...body]
-    .map((row) => `| ${row.join(" | ")} |`)
-    .join("\n");
+  return [header, separator, ...body].map((row) => `| ${row.join(" | ")} |`).join("\n");
 }
 
 export function buildCsvTableText(rows: MarkdownTableRows): string {
-  const csv = rows
-    .map((row) => row.map((cell) => escapeCsvCell(cell)).join(","))
-    .join("\r\n");
+  const csv = rows.map((row) => row.map((cell) => escapeCsvCell(cell)).join(",")).join("\r\n");
   // Blob 的 charset 不会写入文件字节，Excel 会把无 BOM 的 UTF-8 CSV
   // 按本地代码页解析，导致中文乱码；显式添加 UTF-8 BOM 让表格软件可靠识别编码。
   return `\uFEFF${csv}`;
@@ -160,9 +133,7 @@ function resolveMarkdownTableRoot(
 ): HTMLElement | null {
   // V4 删除旧 ChatView 后不再渲染 data-testid="chat-view"，表格会退回自身宽度，
   // 因而误判增强横向滚动没有收益。优先使用跨版本的显式布局边界，旧选择器只保留兼容。
-  return (
-    frame?.closest<HTMLElement>(MARKDOWN_TABLE_ROOT_SELECTOR) ?? fallbackRoot
-  );
+  return frame?.closest<HTMLElement>(MARKDOWN_TABLE_ROOT_SELECTOR) ?? fallbackRoot;
 }
 
 function getMarkdownTableContentInlineInsetPx() {
@@ -184,19 +155,10 @@ function getMarkdownTableContentInlineInsetPx() {
 }
 
 function getMarkdownTableRootInlineInsets(root: HTMLElement) {
-  if (
-    typeof window !== "undefined" &&
-    root.matches('[data-markdown-table-layout-root="true"]')
-  ) {
+  if (typeof window !== "undefined" && root.matches('[data-markdown-table-layout-root="true"]')) {
     return {
-      leftInset: readCssPixelValue(
-        root,
-        MARKDOWN_TABLE_LAYOUT_LEFT_INSET_PROPERTY,
-      ),
-      rightInset: readCssPixelValue(
-        root,
-        MARKDOWN_TABLE_LAYOUT_RIGHT_INSET_PROPERTY,
-      ),
+      leftInset: readCssPixelValue(root, MARKDOWN_TABLE_LAYOUT_LEFT_INSET_PROPERTY),
+      rightInset: readCssPixelValue(root, MARKDOWN_TABLE_LAYOUT_RIGHT_INSET_PROPERTY),
     };
   }
 
@@ -254,15 +216,10 @@ function readMarkdownTableDockHeight(root: HTMLElement | null) {
 }
 
 function readMarkdownTableBackToBottomClearance(root: HTMLElement | null) {
-  const button = root?.querySelector<HTMLElement>(
-    MARKDOWN_TABLE_V4_BACK_TO_BOTTOM_SELECTOR,
-  );
+  const button = root?.querySelector<HTMLElement>(MARKDOWN_TABLE_V4_BACK_TO_BOTTOM_SELECTOR);
   if (!button) return 0;
 
-  return (
-    button.getBoundingClientRect().height +
-    MARKDOWN_TABLE_V4_BACK_TO_BOTTOM_GAP_PX
-  );
+  return button.getBoundingClientRect().height + MARKDOWN_TABLE_V4_BACK_TO_BOTTOM_GAP_PX;
 }
 
 function resolveMarkdownTableVerticalViewport(
@@ -279,13 +236,8 @@ function resolveMarkdownTableVerticalViewport(
     const canScrollY = /auto|scroll|overlay/u.test(style.overflowY);
     // 横向滚动 viewport 因 overflow-x-auto 可能让浏览器把 overflow-y 计算成 auto；
     // 如果不确认真的存在纵向滚动空间，短表格会把自身高度误当成可视区域高度，导致 80% 判定永远成立。
-    const hasVerticalScrollRange =
-      currentElement.scrollHeight > currentElement.clientHeight + 1;
-    if (
-      canScrollY &&
-      currentElement.clientHeight > 0 &&
-      hasVerticalScrollRange
-    ) {
+    const hasVerticalScrollRange = currentElement.scrollHeight > currentElement.clientHeight + 1;
+    if (canScrollY && currentElement.clientHeight > 0 && hasVerticalScrollRange) {
       return currentElement;
     }
     currentElement = currentElement.parentElement;
@@ -311,8 +263,7 @@ export function resolveMarkdownTableStickyScrollbarMode({
 
   const visibleHeight = Math.max(0, viewportHeight - dockHeight);
   return (
-    visibleHeight > 0 &&
-    tableHeight > visibleHeight * MARKDOWN_TABLE_STICKY_SCROLLBAR_HEIGHT_RATIO
+    visibleHeight > 0 && tableHeight > visibleHeight * MARKDOWN_TABLE_STICKY_SCROLLBAR_HEIGHT_RATIO
   );
 }
 
@@ -327,14 +278,8 @@ export function resolveMarkdownTableStickyScrollbarOffset({
   scrollbarHeight: number;
   viewportBottom: number;
 }) {
-  const minimumBottom = Math.min(
-    frameBottom,
-    frameTop + Math.max(0, scrollbarHeight),
-  );
-  const pinnedBottom = Math.min(
-    frameBottom,
-    Math.max(minimumBottom, viewportBottom),
-  );
+  const minimumBottom = Math.min(frameBottom, frameTop + Math.max(0, scrollbarHeight));
+  const pinnedBottom = Math.min(frameBottom, Math.max(minimumBottom, viewportBottom));
   return Math.min(0, pinnedBottom - frameBottom);
 }
 
@@ -360,8 +305,7 @@ function shouldUseMarkdownTableStickyScrollbar({
   // subagent prompt/output 会继承会话 dock 高度；如果也启用 sticky，虚拟滚动条会在
   // 嵌套容器内错误上抬到表格中段。显式 opt-out 不依赖容器当前是否已经产生纵向 overflow。
   return resolveMarkdownTableStickyScrollbarMode({
-    stickyScrollbarDisabled:
-      table.closest(MARKDOWN_TABLE_STICKY_DISABLED_SELECTOR) !== null,
+    stickyScrollbarDisabled: table.closest(MARKDOWN_TABLE_STICKY_DISABLED_SELECTOR) !== null,
     viewportHeight,
     dockHeight,
     tableHeight,
@@ -415,11 +359,7 @@ export function resolveMarkdownTableVirtualScrollbarMetrics({
   const safeScrollMax = Math.max(0, scrollMax);
   const contentWidth = Math.max(safeTrackWidth, safeTableWidth);
 
-  if (
-    safeTrackWidth <= 0 ||
-    safeScrollMax <= 1 ||
-    safeTableWidth <= safeTrackWidth
-  ) {
+  if (safeTrackWidth <= 0 || safeScrollMax <= 1 || safeTableWidth <= safeTrackWidth) {
     return {
       contentWidth: safeTrackWidth,
       thumbLeft: 0,
@@ -454,31 +394,23 @@ export function resolveMarkdownTableVirtualScrollMax({
   return Math.max(0, tableWidth - trackWidth);
 }
 
-export type MarkdownTableProps = ComponentProps<"table"> &
-  MarkdownTableNodeProp;
+export type MarkdownTableProps = ComponentProps<"table"> & MarkdownTableNodeProp;
 
-export function MarkdownTable({
-  className,
-  children,
-  node: _node,
-  ...props
-}: MarkdownTableProps) {
+export function MarkdownTable({ className, children, node: _node, ...props }: MarkdownTableProps) {
   const { intl } = useZCodeIntl();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [expandedScrollEnabled, setExpandedScrollEnabled] = useState(false);
   const [canToggleExpandedScroll, setCanToggleExpandedScroll] = useState(false);
-  const [edgeShadowState, setEdgeShadowState] =
-    useState<MarkdownTableEdgeShadowState>("none");
+  const [edgeShadowState, setEdgeShadowState] = useState<MarkdownTableEdgeShadowState>("none");
   const [viewportMaxWidth, setViewportMaxWidth] = useState<string>("100%");
   const [scrollbarWidth, setScrollbarWidth] = useState<string>("100%");
   const [viewportLeftOffset, setViewportLeftOffset] = useState(0);
   const [virtualScrollbarSticky, setVirtualScrollbarSticky] = useState(false);
   const [virtualScrollbarVisible, setVirtualScrollbarVisible] = useState(false);
-  const [virtualScrollThumbStyle, setVirtualScrollThumbStyle] =
-    useState<CSSProperties>({
-      transform: "translateX(0px)",
-      width: "100%",
-    });
+  const [virtualScrollThumbStyle, setVirtualScrollThumbStyle] = useState<CSSProperties>({
+    transform: "translateX(0px)",
+    width: "100%",
+  });
   const edgeShadowStateRef = useRef<MarkdownTableEdgeShadowState>("none");
   const expandedScrollEnabledRef = useRef(expandedScrollEnabled);
   const canToggleExpandedScrollRef = useRef(canToggleExpandedScroll);
@@ -511,28 +443,22 @@ export function MarkdownTable({
     },
     [],
   );
-  const commitExpandedScrollEnabled = useCallback(
-    (nextExpandedScrollEnabled: boolean) => {
-      if (expandedScrollEnabledRef.current === nextExpandedScrollEnabled) {
-        return;
-      }
+  const commitExpandedScrollEnabled = useCallback((nextExpandedScrollEnabled: boolean) => {
+    if (expandedScrollEnabledRef.current === nextExpandedScrollEnabled) {
+      return;
+    }
 
-      expandedScrollEnabledRef.current = nextExpandedScrollEnabled;
-      setExpandedScrollEnabled(nextExpandedScrollEnabled);
-    },
-    [],
-  );
-  const commitCanToggleExpandedScroll = useCallback(
-    (nextCanToggleExpandedScroll: boolean) => {
-      if (canToggleExpandedScrollRef.current === nextCanToggleExpandedScroll) {
-        return;
-      }
+    expandedScrollEnabledRef.current = nextExpandedScrollEnabled;
+    setExpandedScrollEnabled(nextExpandedScrollEnabled);
+  }, []);
+  const commitCanToggleExpandedScroll = useCallback((nextCanToggleExpandedScroll: boolean) => {
+    if (canToggleExpandedScrollRef.current === nextCanToggleExpandedScroll) {
+      return;
+    }
 
-      canToggleExpandedScrollRef.current = nextCanToggleExpandedScroll;
-      setCanToggleExpandedScroll(nextCanToggleExpandedScroll);
-    },
-    [],
-  );
+    canToggleExpandedScrollRef.current = nextCanToggleExpandedScroll;
+    setCanToggleExpandedScroll(nextCanToggleExpandedScroll);
+  }, []);
   const commitViewportMaxWidth = useCallback((nextViewportMaxWidth: string) => {
     if (viewportMaxWidthRef.current === nextViewportMaxWidth) {
       return;
@@ -549,39 +475,30 @@ export function MarkdownTable({
     scrollbarWidthRef.current = nextScrollbarWidth;
     setScrollbarWidth(nextScrollbarWidth);
   }, []);
-  const commitViewportLeftOffset = useCallback(
-    (nextViewportLeftOffset: number) => {
-      if (viewportLeftOffsetRef.current === nextViewportLeftOffset) {
-        return;
-      }
+  const commitViewportLeftOffset = useCallback((nextViewportLeftOffset: number) => {
+    if (viewportLeftOffsetRef.current === nextViewportLeftOffset) {
+      return;
+    }
 
-      viewportLeftOffsetRef.current = nextViewportLeftOffset;
-      setViewportLeftOffset(nextViewportLeftOffset);
-    },
-    [],
-  );
-  const commitVirtualScrollbarSticky = useCallback(
-    (nextVirtualScrollbarSticky: boolean) => {
-      if (virtualScrollbarStickyRef.current === nextVirtualScrollbarSticky) {
-        return;
-      }
+    viewportLeftOffsetRef.current = nextViewportLeftOffset;
+    setViewportLeftOffset(nextViewportLeftOffset);
+  }, []);
+  const commitVirtualScrollbarSticky = useCallback((nextVirtualScrollbarSticky: boolean) => {
+    if (virtualScrollbarStickyRef.current === nextVirtualScrollbarSticky) {
+      return;
+    }
 
-      virtualScrollbarStickyRef.current = nextVirtualScrollbarSticky;
-      setVirtualScrollbarSticky(nextVirtualScrollbarSticky);
-    },
-    [],
-  );
-  const commitVirtualScrollbarVisible = useCallback(
-    (nextVirtualScrollbarVisible: boolean) => {
-      if (virtualScrollbarVisibleRef.current === nextVirtualScrollbarVisible) {
-        return;
-      }
+    virtualScrollbarStickyRef.current = nextVirtualScrollbarSticky;
+    setVirtualScrollbarSticky(nextVirtualScrollbarSticky);
+  }, []);
+  const commitVirtualScrollbarVisible = useCallback((nextVirtualScrollbarVisible: boolean) => {
+    if (virtualScrollbarVisibleRef.current === nextVirtualScrollbarVisible) {
+      return;
+    }
 
-      virtualScrollbarVisibleRef.current = nextVirtualScrollbarVisible;
-      setVirtualScrollbarVisible(nextVirtualScrollbarVisible);
-    },
-    [],
-  );
+    virtualScrollbarVisibleRef.current = nextVirtualScrollbarVisible;
+    setVirtualScrollbarVisible(nextVirtualScrollbarVisible);
+  }, []);
   const commitVirtualScrollThumbStyle = useCallback(
     (nextVirtualScrollThumbStyle: CSSProperties) => {
       const currentStyle = virtualScrollThumbStyleRef.current;
@@ -598,20 +515,14 @@ export function MarkdownTable({
     [],
   );
   const resolveTableWidth = useCallback((viewport: HTMLDivElement) => {
-    return (
-      tableRef.current?.getBoundingClientRect().width ?? viewport.scrollWidth
-    );
+    return tableRef.current?.getBoundingClientRect().width ?? viewport.scrollWidth;
   }, []);
-  const resolveVirtualScrollLayoutWidth = useCallback(
-    (viewport: HTMLDivElement) => {
-      return virtualScrollTrackWidthRef.current || viewport.clientWidth;
-    },
-    [],
-  );
+  const resolveVirtualScrollLayoutWidth = useCallback((viewport: HTMLDivElement) => {
+    return virtualScrollTrackWidthRef.current || viewport.clientWidth;
+  }, []);
   const resolveRenderedVirtualScrollTrackWidth = useCallback(
     (viewport: HTMLDivElement) => {
-      const trackWidth =
-        virtualScrollTrackRef.current?.getBoundingClientRect().width ?? 0;
+      const trackWidth = virtualScrollTrackRef.current?.getBoundingClientRect().width ?? 0;
       if (trackWidth > 0) {
         return trackWidth;
       }
@@ -650,8 +561,7 @@ export function MarkdownTable({
         clampedVirtualScrollLeft,
         maxViewportLeftOffsetRef.current,
       );
-      const nextViewportScrollLeft =
-        clampedVirtualScrollLeft - nextViewportLeftOffset;
+      const nextViewportScrollLeft = clampedVirtualScrollLeft - nextViewportLeftOffset;
 
       virtualScrollLeftRef.current = clampedVirtualScrollLeft;
       commitViewportLeftOffset(nextViewportLeftOffset);
@@ -676,12 +586,8 @@ export function MarkdownTable({
     // 虚拟滚动条只在表格宽度超过可视槽时有意义；小表格如果也渲染 pill，
     // 会误导用户以为还有横向内容可滚。
     commitVirtualScrollbarVisible(virtualScrollMax > 1);
-    const nextVirtualScrollLeft =
-      viewportLeftOffsetRef.current + viewport.scrollLeft;
-    const clampedVirtualScrollLeft = Math.min(
-      Math.max(0, nextVirtualScrollLeft),
-      virtualScrollMax,
-    );
+    const nextVirtualScrollLeft = viewportLeftOffsetRef.current + viewport.scrollLeft;
+    const clampedVirtualScrollLeft = Math.min(Math.max(0, nextVirtualScrollLeft), virtualScrollMax);
     if (clampedVirtualScrollLeft !== nextVirtualScrollLeft) {
       // 状态面板收起/展开或窗口 resize 会改变槽宽，旧的虚拟滚动位置可能越过新边界。
       // 这里立即回写统一入口，避免 thumb 到边界而内容还停在旧的 DOM scrollLeft。
@@ -691,8 +597,7 @@ export function MarkdownTable({
 
     virtualScrollLeftRef.current = clampedVirtualScrollLeft;
     // 已渲染 track 的实际宽度只用于 thumb 比例和位置，不能反向决定 track 是否挂载。
-    const virtualScrollViewportWidth =
-      resolveRenderedVirtualScrollTrackWidth(viewport);
+    const virtualScrollViewportWidth = resolveRenderedVirtualScrollTrackWidth(viewport);
     const metrics = resolveMarkdownTableVirtualScrollbarMetrics({
       scrollLeft: clampedVirtualScrollLeft,
       scrollMax: virtualScrollMax,
@@ -765,8 +670,7 @@ export function MarkdownTable({
     // 开关只在普通 frame 宽度下确实横向溢出，并且增强模式能提供额外可视宽度或左借位时才有意义；
     // 已开启时仍保留按钮，让用户可以收回到普通滚动范围。
     commitCanToggleExpandedScroll(
-      expandedScrollEnabledRef.current ||
-        (hasFrameHorizontalOverflow && hasExpandedScrollBenefit),
+      expandedScrollEnabledRef.current || (hasFrameHorizontalOverflow && hasExpandedScrollBenefit),
     );
 
     maxViewportLeftOffsetRef.current = maxLeftOffset;
@@ -784,9 +688,7 @@ export function MarkdownTable({
     if (scrollViewportRef.current) {
       commitVirtualScrollLeft(virtualScrollLeftRef.current);
     } else {
-      commitViewportLeftOffset(
-        Math.min(viewportLeftOffsetRef.current, maxLeftOffset),
-      );
+      commitViewportLeftOffset(Math.min(viewportLeftOffsetRef.current, maxLeftOffset));
     }
     syncVirtualScrollMetrics();
   }, [
@@ -814,8 +716,7 @@ export function MarkdownTable({
       return;
     }
 
-    const currentVirtualScrollLeft =
-      viewportLeftOffsetRef.current + viewport.scrollLeft;
+    const currentVirtualScrollLeft = viewportLeftOffsetRef.current + viewport.scrollLeft;
     // 向左借位只是把表格区域扩到左侧，不代表表格内容已经在滚动容器左边被遮住；
     // 左侧阴影只应该在真实内部 scrollLeft 产生后出现，右侧阴影继续按虚拟总进度判断。
     const hasHiddenLeft = viewport.scrollLeft > 1;
@@ -946,8 +847,7 @@ export function MarkdownTable({
       latestMeasureEdgeShadowStateRef.current();
     };
     const handleWheel = (event: WheelEvent) => {
-      const horizontalDelta =
-        event.deltaX || (event.shiftKey ? event.deltaY : 0);
+      const horizontalDelta = event.deltaX || (event.shiftKey ? event.deltaY : 0);
       if (horizontalDelta === 0) {
         return;
       }
@@ -1035,17 +935,14 @@ export function MarkdownTable({
       const dockHeight = readMarkdownTableDockHeight(root);
       // 离底时“回到底部”按钮位于 composer dock 上方；只扣 dock 会让长表
       // sticky 滚动条与按钮占用同一条水平带，导致按钮被宽滚动槽遮挡。
-      const backToBottomClearance =
-        readMarkdownTableBackToBottomClearance(root);
+      const backToBottomClearance = readMarkdownTableBackToBottomClearance(root);
       const offset = resolveMarkdownTableStickyScrollbarOffset({
         frameTop: frameRect.top,
         frameBottom: frameRect.bottom,
         scrollbarHeight: wrapper.getBoundingClientRect().height,
-        viewportBottom:
-          viewportRect.bottom - dockHeight - backToBottomClearance,
+        viewportBottom: viewportRect.bottom - dockHeight - backToBottomClearance,
       });
-      wrapper.style.transform =
-        offset === 0 ? "" : `translateY(${Math.round(offset)}px)`;
+      wrapper.style.transform = offset === 0 ? "" : `translateY(${Math.round(offset)}px)`;
     };
     const scheduleStickyOffset = () => {
       if (rafId !== null) return;
@@ -1053,14 +950,10 @@ export function MarkdownTable({
     };
 
     const resizeObserver =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(scheduleStickyOffset);
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleStickyOffset);
     const syncDockObservation = () => {
       const nextDock =
-        root?.querySelector<HTMLElement>(
-          MARKDOWN_TABLE_V4_COMPOSER_DOCK_SELECTOR,
-        ) ?? null;
+        root?.querySelector<HTMLElement>(MARKDOWN_TABLE_V4_COMPOSER_DOCK_SELECTOR) ?? null;
       // MutationObserver 也负责感知 dock 内回到底部按钮的挂载/卸载；即使 dock
       // 节点本身未变化也必须安排一次几何更新。
       if (nextDock === observedDock) {
@@ -1076,9 +969,7 @@ export function MarkdownTable({
     // V4 virtual row 使用 transform 定位，原生 sticky 会被 transformed ancestor
     // 限制在自然位置。改为跟随 timeline scroll 计算纵向补偿，且仍受当前表格上下边界约束。
     updateStickyOffset();
-    verticalViewport.addEventListener("scroll", scheduleStickyOffset, {
-      passive: true,
-    });
+    verticalViewport.addEventListener("scroll", scheduleStickyOffset, { passive: true });
     window.addEventListener("resize", scheduleStickyOffset);
     resizeObserver?.observe(frame);
     resizeObserver?.observe(verticalViewport);
@@ -1126,20 +1017,13 @@ export function MarkdownTable({
           : clientX - trackRect.left - thumbDragOffset;
       const nextThumbLeft = Math.min(maxThumbLeft, Math.max(0, rawThumbLeft));
       const nextVirtualScrollLeft =
-        maxThumbLeft <= 0
-          ? 0
-          : (nextThumbLeft / maxThumbLeft) * virtualScrollMax;
+        maxThumbLeft <= 0 ? 0 : (nextThumbLeft / maxThumbLeft) * virtualScrollMax;
 
       commitVirtualScrollLeft(nextVirtualScrollLeft);
       measureViewportMaxWidth();
       latestMeasureEdgeShadowStateRef.current();
     },
-    [
-      commitVirtualScrollLeft,
-      measureViewportMaxWidth,
-      resolveTableWidth,
-      resolveVirtualScrollMax,
-    ],
+    [commitVirtualScrollLeft, measureViewportMaxWidth, resolveTableWidth, resolveVirtualScrollMax],
   );
   const handleVirtualScrollbarPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1154,10 +1038,7 @@ export function MarkdownTable({
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (!isVirtualScrollbarDraggingRef.current) return;
 
-      commitVirtualScrollLeftFromClientX(
-        event.clientX,
-        virtualScrollbarDragOffsetRef.current,
-      );
+      commitVirtualScrollLeftFromClientX(event.clientX, virtualScrollbarDragOffsetRef.current);
     },
     [commitVirtualScrollLeftFromClientX],
   );
@@ -1194,10 +1075,7 @@ export function MarkdownTable({
       event.stopPropagation();
       if (!isVirtualScrollbarDraggingRef.current) return;
 
-      commitVirtualScrollLeftFromClientX(
-        event.clientX,
-        virtualScrollbarDragOffsetRef.current,
-      );
+      commitVirtualScrollLeftFromClientX(event.clientX, virtualScrollbarDragOffsetRef.current);
     },
     [commitVirtualScrollLeftFromClientX],
   );
@@ -1210,8 +1088,7 @@ export function MarkdownTable({
   );
   const handleVirtualScrollbarWheel = useCallback(
     (event: ReactWheelEvent<HTMLDivElement>) => {
-      const horizontalDelta =
-        event.deltaX || (event.shiftKey ? event.deltaY : 0);
+      const horizontalDelta = event.deltaX || (event.shiftKey ? event.deltaY : 0);
       if (horizontalDelta === 0) return;
 
       const viewport = scrollViewportRef.current;
@@ -1228,10 +1105,7 @@ export function MarkdownTable({
   const handleCopyMarkdown = useCallback(async () => {
     if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
       toast(
-        intl.formatMessage(
-          { id: "markdownTable.copyFailed" },
-          { error: "clipboard-unavailable" },
-        ),
+        intl.formatMessage({ id: "markdownTable.copyFailed" }, { error: "clipboard-unavailable" }),
       );
       return;
     }
@@ -1291,11 +1165,7 @@ export function MarkdownTable({
       measureViewportMaxWidth();
       latestMeasureEdgeShadowStateRef.current();
     });
-  }, [
-    commitExpandedScrollEnabled,
-    commitViewportLeftOffset,
-    measureViewportMaxWidth,
-  ]);
+  }, [commitExpandedScrollEnabled, commitViewportLeftOffset, measureViewportMaxWidth]);
 
   const copyLabel = intl.formatMessage({ id: "markdownTable.copyMarkdown" });
   const downloadLabel = intl.formatMessage({ id: "markdownTable.downloadCsv" });
@@ -1318,10 +1188,7 @@ export function MarkdownTable({
 
   return (
     <div ref={rootRef} className="my-0 flex min-w-0 flex-col gap-2">
-      <div
-        className="flex items-center justify-end gap-1"
-        data-markdown-table-toolbar=""
-      >
+      <div className="flex items-center justify-end gap-1" data-markdown-table-toolbar="">
         <MarkdownTableActionButton
           label={copyLabel}
           onClick={() => {
@@ -1330,23 +1197,14 @@ export function MarkdownTable({
         >
           <CopyIcon className="size-3.5" />
         </MarkdownTableActionButton>
-        <MarkdownTableActionButton
-          label={downloadLabel}
-          onClick={handleDownloadCsv}
-        >
+        <MarkdownTableActionButton label={downloadLabel} onClick={handleDownloadCsv}>
           <DownloadIcon className="size-3.5" />
         </MarkdownTableActionButton>
-        <MarkdownTableActionButton
-          label={previewLabel}
-          onClick={() => setPreviewOpen(true)}
-        >
+        <MarkdownTableActionButton label={previewLabel} onClick={() => setPreviewOpen(true)}>
           <Maximize2Icon className="size-3.5" />
         </MarkdownTableActionButton>
         {canToggleExpandedScroll ? (
-          <MarkdownTableActionButton
-            label={scrollModeLabel}
-            onClick={handleToggleExpandedScroll}
-          >
+          <MarkdownTableActionButton label={scrollModeLabel} onClick={handleToggleExpandedScroll}>
             {expandedScrollEnabled ? (
               <ArrowLeftFromLine className="size-3.5" />
             ) : (
@@ -1359,9 +1217,7 @@ export function MarkdownTable({
         ref={frameRef}
         className="group/markdown-table-frame relative w-full"
         data-markdown-table-frame=""
-        data-markdown-table-virtual-scroll-sticky={
-          virtualScrollbarSticky ? "true" : "false"
-        }
+        data-markdown-table-virtual-scroll-sticky={virtualScrollbarSticky ? "true" : "false"}
       >
         <div
           className={cn(
@@ -1371,10 +1227,7 @@ export function MarkdownTable({
           )}
           style={{
             maxWidth: contentViewportMaxWidth,
-            transform:
-              viewportLeftOffset > 0
-                ? `translateX(-${viewportLeftOffset}px)`
-                : undefined,
+            transform: viewportLeftOffset > 0 ? `translateX(-${viewportLeftOffset}px)` : undefined,
           }}
         >
           <div
@@ -1407,12 +1260,8 @@ export function MarkdownTable({
           aria-hidden={!virtualScrollbarVisible}
           // V4 transformed virtual row 下 sticky 由 relative + translateY 模拟，
           // computed position 不能表达产品语义；显式状态供跨实现的 E2E 与可访问性诊断读取。
-          data-markdown-table-virtual-scroll-sticky={
-            virtualScrollbarSticky ? "true" : "false"
-          }
-          data-markdown-table-virtual-scroll-visible={
-            virtualScrollbarVisible ? "true" : "false"
-          }
+          data-markdown-table-virtual-scroll-sticky={virtualScrollbarSticky ? "true" : "false"}
+          data-markdown-table-virtual-scroll-visible={virtualScrollbarVisible ? "true" : "false"}
           // 滚动条槽宽必须等于 frameRect.width + rightDistance 再扣掉消息列响应式右 padding；
           // 长表格需要在纵向阅读时也能横向滚动，sticky 底部要避让 composer 和底部面板。
           // overflow 测量变化时只切换可见性，保留节点和纵向占位，避免扰动 timeline 高度。
@@ -1508,21 +1357,14 @@ function MarkdownTableActionButton({
 }) {
   return (
     <ControlHintTooltip title={label}>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-md"
-        aria-label={label}
-        onClick={onClick}
-      >
+      <Button type="button" variant="ghost" size="icon-md" aria-label={label} onClick={onClick}>
         {children}
       </Button>
     </ControlHintTooltip>
   );
 }
 
-export type MarkdownTableHeaderProps = ComponentProps<"thead"> &
-  MarkdownTableNodeProp;
+export type MarkdownTableHeaderProps = ComponentProps<"thead"> & MarkdownTableNodeProp;
 
 export function MarkdownTableHeader({
   className,
@@ -1532,44 +1374,26 @@ export function MarkdownTableHeader({
   return <thead className={cn("", className)} {...props} />;
 }
 
-export type MarkdownTableBodyProps = ComponentProps<"tbody"> &
-  MarkdownTableNodeProp;
+export type MarkdownTableBodyProps = ComponentProps<"tbody"> & MarkdownTableNodeProp;
 
-export function MarkdownTableBody({
-  className,
-  node: _node,
-  ...props
-}: MarkdownTableBodyProps) {
+export function MarkdownTableBody({ className, node: _node, ...props }: MarkdownTableBodyProps) {
   return <tbody className={cn("", className)} {...props} />;
 }
 
-export type MarkdownTableRowProps = ComponentProps<"tr"> &
-  MarkdownTableNodeProp;
+export type MarkdownTableRowProps = ComponentProps<"tr"> & MarkdownTableNodeProp;
 
-export function MarkdownTableRow({
-  className,
-  node: _node,
-  ...props
-}: MarkdownTableRowProps) {
+export function MarkdownTableRow({ className, node: _node, ...props }: MarkdownTableRowProps) {
   return (
     <tr
-      className={cn(
-        "transition-colors last:[&>td]:border-b-0 hover:bg-hover/20",
-        className,
-      )}
+      className={cn("transition-colors last:[&>td]:border-b-0 hover:bg-hover/20", className)}
       {...props}
     />
   );
 }
 
-export type MarkdownTableHeadProps = ComponentProps<"th"> &
-  MarkdownTableNodeProp;
+export type MarkdownTableHeadProps = ComponentProps<"th"> & MarkdownTableNodeProp;
 
-export function MarkdownTableHead({
-  className,
-  node: _node,
-  ...props
-}: MarkdownTableHeadProps) {
+export function MarkdownTableHead({ className, node: _node, ...props }: MarkdownTableHeadProps) {
   return (
     <th
       className={cn(
@@ -1581,14 +1405,9 @@ export function MarkdownTableHead({
   );
 }
 
-export type MarkdownTableCellProps = ComponentProps<"td"> &
-  MarkdownTableNodeProp;
+export type MarkdownTableCellProps = ComponentProps<"td"> & MarkdownTableNodeProp;
 
-export function MarkdownTableCell({
-  className,
-  node: _node,
-  ...props
-}: MarkdownTableCellProps) {
+export function MarkdownTableCell({ className, node: _node, ...props }: MarkdownTableCellProps) {
   return (
     <td
       className={cn(

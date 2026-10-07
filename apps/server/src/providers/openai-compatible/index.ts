@@ -2,10 +2,14 @@ import type { CallbackManagerForLLMRun } from "@langchain/core/callbacks/manager
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { ChatGenerationChunk, ChatResult } from "@langchain/core/outputs";
-import { ChatOpenAI } from "@langchain/openai";
+import { ChatOpenAICompletions, ChatOpenAIResponses } from "@langchain/openai";
 
 import { OpenAIImageProvider } from "../../generation/providers/openai-image.js";
 import type { ImageProvider } from "../../generation/types.js";
+import {
+  mergeInvocationParameters,
+  validateInstanceModelExtraBody,
+} from "../request-options.js";
 import type {
   InstanceCredentials,
   InstanceImageAdapterOptions,
@@ -15,6 +19,43 @@ import type {
 
 /** 探测缓存纠偏回调：运行期发现 Responses 不可用时触发（写探测缓存用）。 */
 export type OnResponsesFallback = () => void;
+
+class InstanceCompletionsModel extends ChatOpenAICompletions {
+  readonly requestBody: Record<string, unknown>;
+  constructor(
+    fields: ConstructorParameters<typeof ChatOpenAICompletions>[0],
+    body: Record<string, unknown>,
+  ) {
+    super(fields);
+    this.requestBody = structuredClone(body);
+  }
+  override invocationParams(
+    options?: this["ParsedCallOptions"],
+    extra?: Parameters<ChatOpenAICompletions["invocationParams"]>[1],
+  ) {
+    return mergeInvocationParameters(
+      super.invocationParams(options, extra),
+      this.requestBody,
+    );
+  }
+}
+
+class InstanceResponsesModel extends ChatOpenAIResponses {
+  readonly requestBody: Record<string, unknown>;
+  constructor(
+    fields: ConstructorParameters<typeof ChatOpenAIResponses>[0],
+    body: Record<string, unknown>,
+  ) {
+    super(fields);
+    this.requestBody = structuredClone(body);
+  }
+  override invocationParams(options?: this["ParsedCallOptions"]) {
+    return mergeInvocationParameters(
+      super.invocationParams(options),
+      this.requestBody,
+    );
+  }
+}
 
 /**
  * 「Responses 端点不可用」判定（宽松特征）：404/405 + 路径或名称含 responses。
@@ -34,21 +75,21 @@ export function isResponsesUnavailable(error: unknown): boolean {
  * 即永久切回 completions 实例并触发缓存纠偏回调。非端点类错误（限流/余额/
  * 审核等）原样抛出，不误回落。
  */
-class ResponsesFallbackChatModel extends ChatOpenAI {
-  private readonly completionsDelegate: ChatOpenAI;
+class ResponsesFallbackChatModel extends InstanceResponsesModel {
+  private readonly completionsDelegate: InstanceCompletionsModel;
   private readonly onResponsesFallback: OnResponsesFallback | undefined;
   private responsesActive: boolean;
 
   constructor(
-    fields: ConstructorParameters<typeof ChatOpenAI>[0],
-    completionsDelegate: ChatOpenAI,
+    fields: ConstructorParameters<typeof ChatOpenAIResponses>[0],
+    completionsDelegate: InstanceCompletionsModel,
+    body: Record<string, unknown>,
     onResponsesFallback?: OnResponsesFallback,
   ) {
-    super(fields);
+    super(fields, body);
     this.completionsDelegate = completionsDelegate;
     this.onResponsesFallback = onResponsesFallback;
-    // 主实例的 useResponsesApi 由调用方按探测结论设置
-    this.responsesActive = this.useResponsesApi;
+    this.responsesActive = true;
   }
 
   override async *_streamResponseChunks(
@@ -104,6 +145,7 @@ export function createInstanceChatModel(
   extraBody?: Record<string, unknown>,
   onResponsesFallback?: OnResponsesFallback,
 ): BaseLanguageModel {
+  validateInstanceModelExtraBody(extraBody);
   // 自定义头经 `configuration.defaultHeaders` 交给 OpenAI 客户端（§4.8）；
   // 保留头（authorization 等）由 SDK 按 apiKey 生成，契约层与渲染层都拒绝覆盖。
   const clientOptions = {
@@ -111,49 +153,40 @@ export function createInstanceChatModel(
     ...(credentials.headers ? { defaultHeaders: credentials.headers } : {}),
   };
   const useResponsesApi = credentials.responsesApi === true;
-
-  const responsesModel = new ChatOpenAI({
+  const fields = {
     model,
     apiKey: credentials.apiKey,
-    useResponsesApi,
-    ...(extraBody ? { modelKwargs: extraBody } : {}),
+    ...(credentials.invocationMaxRetries !== undefined
+      ? { maxRetries: credentials.invocationMaxRetries }
+      : {}),
     ...(Object.keys(clientOptions).length > 0
       ? { configuration: clientOptions }
       : {}),
-    streaming: true,
+    streaming: credentials.invocationStreaming ?? true,
     // 用量统计（DEC-6）：token 用量经 streamUsage 采集，落 usage 表
     streamUsage: true,
-  });
+  };
+  // ChatOpenAI的false仍允许模型名/参数触发Responses启发式；显式方言使用原生API类。
+  if (credentials.useResponsesApi !== undefined) {
+    return credentials.useResponsesApi
+      ? new InstanceResponsesModel(fields, extraBody ?? {})
+      : new InstanceCompletionsModel(fields, extraBody ?? {});
+  }
 
   // 探测未确认支持 → 单实例直出（fail open，默认 completions）
   if (!useResponsesApi) {
-    return responsesModel;
+    return new InstanceCompletionsModel(fields, extraBody ?? {});
   }
 
-  const completionsModel = new ChatOpenAI({
-    model,
-    apiKey: credentials.apiKey,
-    ...(extraBody ? { modelKwargs: extraBody } : {}),
-    ...(Object.keys(clientOptions).length > 0
-      ? { configuration: clientOptions }
-      : {}),
-    streaming: true,
-    streamUsage: true,
-  });
+  const completionsModel = new InstanceCompletionsModel(
+    fields,
+    extraBody ?? {},
+  );
 
   return new ResponsesFallbackChatModel(
-    {
-      model,
-      apiKey: credentials.apiKey,
-      useResponsesApi: true,
-      ...(extraBody ? { modelKwargs: extraBody } : {}),
-      ...(Object.keys(clientOptions).length > 0
-        ? { configuration: clientOptions }
-        : {}),
-      streaming: true,
-      streamUsage: true,
-    },
+    fields,
     completionsModel,
+    extraBody ?? {},
     onResponsesFallback,
   );
 }

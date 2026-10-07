@@ -1,6 +1,6 @@
 ---
 name: json-image-prompt
-description: Use structured JSON prompts for AI image generation instead of free-form text. Produces more consistent, controllable, and high-quality results. Activate when the user asks to generate, create, or design images, illustrations, photos, posters, or any visual content via the generate_image tool.
+description: 生成图片时用结构化 JSON 提示词（更稳、更可控）· 配合 generate_image 工具
 license: Apache-2.0
 metadata:
   author: kenfutwork

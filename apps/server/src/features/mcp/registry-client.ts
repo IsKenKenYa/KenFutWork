@@ -35,13 +35,17 @@ export interface RegistryServerView {
   repositoryUrl: string | null;
   packages: RegistryPackage[];
   remotes: RegistryRemote[];
-  /** 本客户端能否直接添加（stdio + npm/pypi）。 */
+  /** 传输类型：stdio = 本地子进程；http = 远程 Streamable HTTP/SSE（两者都可安装）。 */
+  kind: "stdio" | "http";
+  /** 本客户端能否直接添加（stdio 有 npm/pypi 包，或 http 有远程端点）。 */
   installable: boolean;
   /** 不能添加的原因（用于界面说明，不静默）。 */
   unsupportedReason: string | null;
-  /** 可直接填进「添加」表单的命令与参数。 */
+  /** 可直接填进「添加」表单的命令与参数（stdio）。 */
   suggestedCommand: string | null;
   suggestedArgs: string[];
+  /** http 类型的远程端点 URL。 */
+  suggestedUrl: string | null;
   /** 建议的 server 名（取注册表名的最后一段，合法化）。 */
   suggestedName: string;
   /** 注册表标记的「最新版本」（同一 server 会按版本各出一条，界面据此去重）。 */
@@ -108,14 +112,34 @@ export function toRegistryServerView(
   );
   const runnable = stdioPackage ? packageToCommand(stdioPackage) : null;
 
+  // 远程优先：有 HTTP/SSE 端点的 server 走 http 类型（无需本地运行时），
+  // 否则看 stdio 包。两者都缺才标记不可安装（原因只可能是「无包」或「生态不支持」）。
   let unsupportedReason: string | null = null;
   if (!stdioPackage) {
-    unsupportedReason =
-      remotes.length > 0
-        ? "该 server 只提供远程连接（HTTP/SSE），当前仅支持本地 stdio"
-        : "该 server 未声明可本地运行的包";
+    unsupportedReason = "该 server 未声明可本地运行的包";
   } else if (!runnable) {
     unsupportedReason = `暂不支持该包生态（${stdioPackage.registryType}），仅支持 npm / pypi`;
+  }
+  const remote = remotes.find((item) => Boolean(item.url));
+  if (remote?.url) {
+    return {
+      name: server.name,
+      description: server.description ?? "",
+      version: server.version ?? "",
+      repositoryUrl: server.repository?.url ?? null,
+      packages,
+      remotes,
+      kind: "http",
+      installable: true,
+      unsupportedReason: null,
+      suggestedCommand: null,
+      suggestedArgs: [],
+      suggestedUrl: remote.url,
+      suggestedName: registryNameToServerName(server.name),
+      isLatest:
+        entry._meta?.["io.modelcontextprotocol.registry/official"]?.isLatest ===
+        true,
+    };
   }
 
   return {
@@ -125,7 +149,9 @@ export function toRegistryServerView(
     repositoryUrl: server.repository?.url ?? null,
     packages,
     remotes,
+    kind: "stdio",
     installable: Boolean(runnable),
+    suggestedUrl: null,
     unsupportedReason,
     suggestedCommand: runnable?.command ?? null,
     suggestedArgs: runnable?.args ?? [],

@@ -1,26 +1,20 @@
-/**
- * zcode 照搬：`@/app-shell/workflow-artifacts/WorkflowArtifactTilePreview.tsx`（references/zcode/packages/ui/src/app-shell/workflow-artifacts/WorkflowArtifactTilePreview.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { ArtifactPresetBody } from "@zui/app-shell/workflow-artifacts/ArtifactPresetBody";
+import { useMemo } from "react";
+import { MessageResponse } from "@zui/components/ai-elements/message.js";
 import {
   artifactFileBadge,
   buildPresetLabels,
   isArtifactPresetKind,
-} from "@zui/app-shell/workflow-artifacts/artifactPresentation";
-import { MessageResponse } from "@zui/components/ai-elements/message";
-import { cn } from "@zui/components/lib/utils";
+} from "@zui/app-shell/workflow-artifacts/artifactPresentation.js";
+import { ArtifactPresetBody } from "@zui/app-shell/workflow-artifacts/ArtifactPresetBody.js";
+import { cn } from "@zui/components/lib/utils.js";
 import {
   ArtifactSheetGlyph,
   type WorkflowCompletionArtifact,
-} from "@zui/components/workflow-timeline/WorkflowArtifactTile";
-import { useWorkflowRunArtifactBytes } from "@zui/hooks/useWorkflowRunArtifactBytes";
-import { useWorkflowRunArtifactData } from "@zui/hooks/useWorkflowRunArtifactData";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { Theme } from "@zui/useTheme";
-import { useMemo } from "react";
+} from "@zui/components/workflow-timeline/WorkflowArtifactTile.js";
+import { useWorkflowRunArtifactBytes } from "@zui/hooks/useWorkflowRunArtifactBytes.js";
+import { useWorkflowRunArtifactData } from "@zui/hooks/useWorkflowRunArtifactData.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { Theme } from "@zui/useTheme.js";
 
 /**
  * 产物瓦片的预览区（侧板画廊同用）：产物**本身**的缩略。
@@ -52,25 +46,20 @@ type PreviewMode = "markdown" | "csv" | "text" | "image";
 
 function previewModeFor(artifact: {
   kind: WorkflowCompletionArtifact["kind"];
-  contentType?: string | undefined;
-  bytes?: number | undefined;
+  contentType?: string;
+  bytes?: number;
 }): PreviewMode | undefined {
   const contentType = artifact.contentType?.split(";")[0]?.trim() ?? "";
   const bytes = artifact.bytes;
   if (artifact.kind === "markdown" || contentType === "text/markdown") {
-    return bytes !== undefined && bytes > TEXT_PREVIEW_MAX_BYTES
-      ? undefined
-      : "markdown";
+    return bytes !== undefined && bytes > TEXT_PREVIEW_MAX_BYTES ? undefined : "markdown";
   }
   if (contentType.startsWith("image/")) {
-    return bytes !== undefined && bytes > IMAGE_PREVIEW_MAX_BYTES
-      ? undefined
-      : "image";
+    return bytes !== undefined && bytes > IMAGE_PREVIEW_MAX_BYTES ? undefined : "image";
   }
   if (bytes !== undefined && bytes > TEXT_PREVIEW_MAX_BYTES) return undefined;
   if (contentType === "text/csv") return "csv";
-  if (contentType === "text/plain" || contentType === "application/json")
-    return "text";
+  if (contentType === "text/plain" || contentType === "application/json") return "text";
   return undefined;
 }
 
@@ -111,24 +100,16 @@ function decodeHead(bytes: Uint8Array): string {
 
 /** 空白占位：字节在路上。测试与调用方据它区分「还没到」与「画不了」。 */
 function Pending() {
-  return (
-    <span
-      className="absolute inset-0"
-      data-testid="workflow-artifact-preview-pending"
-    />
-  );
+  return <span className="absolute inset-0" data-testid="workflow-artifact-preview-pending" />;
 }
 
 /** 文档缩略底部渐隐到面板色：截断的文档看起来是「还有」，不是「断了」。看板与图片不要它。 */
 function Fade() {
   return (
     <span
-      aria-hidden={true}
+      aria-hidden
       className="pointer-events-none absolute inset-x-0 bottom-0 h-[28%]"
-      style={{
-        background:
-          "linear-gradient(to bottom, transparent, var(--color-panel))",
-      }}
+      style={{ background: "linear-gradient(to bottom, transparent, var(--color-panel))" }}
     />
   );
 }
@@ -158,22 +139,16 @@ export function WorkflowArtifactTilePreview({
     sessionId,
     runId,
     artifactId: artifact.id,
-    ...(artifact.itemCount === undefined
-      ? {}
-      : { itemCount: artifact.itemCount }),
+    ...(artifact.itemCount === undefined ? {} : { itemCount: artifact.itemCount }),
     enabled: preset,
   });
   const labels = useMemo(
-    () =>
-      buildPresetLabels((descriptor, values) =>
-        intl.formatMessage(descriptor, values),
-      ),
+    () => buildPresetLabels((descriptor, values) => intl.formatMessage(descriptor, values)),
     [intl],
   );
   const text = useMemo(
     () =>
-      bytesState.bytes !== null &&
-      (mode === "markdown" || mode === "csv" || mode === "text")
+      bytesState.bytes !== null && (mode === "markdown" || mode === "csv" || mode === "text")
         ? decodeHead(bytesState.bytes)
         : undefined,
     [bytesState.bytes, mode],
@@ -183,11 +158,8 @@ export function WorkflowArtifactTilePreview({
     [mode, text],
   );
 
-  const badge =
-    artifact.kind === "file" ? artifactFileBadge(artifact) : undefined;
-  const glyph = (
-    <ArtifactSheetGlyph {...(badge === undefined ? {} : { badge })} />
-  );
+  const badge = artifact.kind === "file" ? artifactFileBadge(artifact) : undefined;
+  const glyph = <ArtifactSheetGlyph {...(badge === undefined ? {} : { badge })} />;
 
   if (preset) {
     // spec 只有 journal 带得回来；还没到时安静留白，不闪一句「无法渲染」。到了但坏了才说。
@@ -200,7 +172,7 @@ export function WorkflowArtifactTilePreview({
       >
         <ArtifactPresetBody
           artifact={{ kind: artifact.kind, spec: artifact.spec }}
-          compact={true}
+          compact
           invalidLabel={intl.formatMessage({
             id: "chat.toolCall.workflow.run.artifacts.presetInvalid",
           })}
@@ -212,10 +184,7 @@ export function WorkflowArtifactTilePreview({
   }
 
   if (mode === undefined) return glyph;
-  if (
-    bytesState.loading ||
-    (bytesState.bytes === null && bytesState.error === null)
-  ) {
+  if (bytesState.loading || (bytesState.bytes === null && bytesState.error === null)) {
     return <Pending />;
   }
   if (bytesState.error !== null) return glyph;
@@ -278,10 +247,7 @@ export function WorkflowArtifactTilePreview({
       >
         {mode === "markdown" ? (
           // markdown 必须**传 theme**（渲染器按 theme 选代码块配色）。
-          <MessageResponse
-            className="w-full min-w-0 break-words text-foreground"
-            theme={theme}
-          >
+          <MessageResponse className="w-full min-w-0 break-words text-foreground" theme={theme}>
             {text ?? ""}
           </MessageResponse>
         ) : (

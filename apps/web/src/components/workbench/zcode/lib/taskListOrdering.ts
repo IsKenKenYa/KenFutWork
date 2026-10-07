@@ -1,10 +1,5 @@
-/**
- * zcode 照搬：`@/lib/taskListOrdering.ts`（references/zcode/packages/ui/src/lib/taskListOrdering.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type { ZCodeTaskMeta } from "@zui/lib/zcode-shared";
-import { isTaskListRowActive } from "@zui/v4/taskListRowActivity";
+import type { ZCodeTaskMeta } from "@zcode/shared";
+import { isTaskListRowActive } from "@zui/v4/taskListRowActivity.js";
 
 type TaskListTimeSortBy = "created" | "updated";
 
@@ -72,10 +67,5 @@ export function compareZCodeTaskListItems(
   right: ZCodeTaskMeta,
   sortBy: TaskListTimeSortBy,
 ): number {
-  return compareTaskListItemsWithRunningFirst(
-    left,
-    right,
-    sortBy,
-    isTaskListRowActive,
-  );
+  return compareTaskListItemsWithRunningFirst(left, right, sortBy, isTaskListRowActive);
 }

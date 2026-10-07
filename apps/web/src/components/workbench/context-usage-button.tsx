@@ -4,9 +4,7 @@ import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "@zui/components/ui/hover-card";
-import { Popover as RadixPopover } from "radix-ui";
-import { useEffect } from "react";
+} from "@zcode/ui/design-shared";
 
 import { contextUsageView, type RunUsageSnapshot } from "@/lib/context-usage";
 
@@ -137,7 +135,7 @@ export function ContextUsageButton({
             {view.thresholdPercent !== null
               ? `窗口的 ${view.thresholdPercent}%`
               : ""}
-            ）：留给回复的空间已被占用，继续追问可能超出模型上限。建议新建对话，或换用窗口更大的模型。
+            ）· 新建对话或换更大窗口
           </p>
         ) : null}
 

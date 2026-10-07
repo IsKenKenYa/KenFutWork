@@ -1,20 +1,12 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/send-message.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/send-message.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
-import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay";
 import { SendIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
+import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay.js";
 
-const SEND_MESSAGE_TOOL_ICON = (
-  <SendIcon className="size-4 shrink-0 text-foreground-subtle" />
-);
+const SEND_MESSAGE_TOOL_ICON = <SendIcon className="size-4 shrink-0 text-foreground-subtle" />;
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {
   if (typeof value === "object" && value !== null && !Array.isArray(value)) {
@@ -26,9 +18,7 @@ function toRecord(value: unknown): Record<string, unknown> | undefined {
 
   try {
     const parsed: unknown = JSON.parse(value);
-    return typeof parsed === "object" &&
-      parsed !== null &&
-      !Array.isArray(parsed)
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : undefined;
   } catch {
@@ -67,9 +57,7 @@ function readRawRecord(raw: unknown, keys: readonly string[]) {
 }
 
 function readText(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0
-    ? value
-    : undefined;
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 function readRawResultContent(raw: unknown): unknown {
@@ -89,9 +77,7 @@ function DetailField({
 }) {
   return (
     <div className="space-y-1">
-      <dt className="text-ui-base font-medium text-foreground-subtle">
-        {label}
-      </dt>
+      <dt className="text-ui-base font-medium text-foreground-subtle">{label}</dt>
       <dd
         className={
           mono
@@ -109,18 +95,13 @@ export function SendMessageToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall } = context.toolCallNode;
   const display = readToolResultDisplay(toolCall.raw);
-  const messageDisplay =
-    display?.kind === "local_agent_message" ? display : undefined;
-  const input =
-    toRecord(toolCall.input) ??
-    readRawRecord(toolCall.raw, ["rawInput", "input"]);
+  const messageDisplay = display?.kind === "local_agent_message" ? display : undefined;
+  const input = toRecord(toolCall.input) ?? readRawRecord(toolCall.raw, ["rawInput", "input"]);
   const directOutput = toRecord(toolCall.output);
   const rawResultContent = readRawResultContent(toolCall.raw);
   const rawResultOutput = toRecord(rawResultContent);
   const output =
-    directOutput ??
-    readRawRecord(toolCall.raw, ["rawOutput", "output"]) ??
-    rawResultOutput;
+    directOutput ?? readRawRecord(toolCall.raw, ["rawOutput", "output"]) ?? rawResultOutput;
   const outputText =
     (directOutput ? undefined : readText(toolCall.output)) ??
     (rawResultOutput ? undefined : readText(rawResultContent));
@@ -159,11 +140,7 @@ export function SendMessageToolCallBlock(context: ToolCallBlockRenderContext) {
         ? "chat.toolCall.status.stopped"
         : undefined;
   const primaryText = useMemo(
-    () => (
-      <span className="min-w-0 truncate">
-        {summary ?? toolCall.title ?? "SendMessage"}
-      </span>
-    ),
+    () => <span className="min-w-0 truncate">{summary ?? toolCall.title ?? "SendMessage"}</span>,
     [summary, toolCall.title],
   );
   const secondaryText = useMemo(
@@ -184,26 +161,20 @@ export function SendMessageToolCallBlock(context: ToolCallBlockRenderContext) {
         <dl className="space-y-3">
           {target ? (
             <DetailField
-              label={intl.formatMessage({
-                id: "chat.toolCall.sendMessage.target",
-              })}
+              label={intl.formatMessage({ id: "chat.toolCall.sendMessage.target" })}
               value={target}
-              mono={true}
+              mono
             />
           ) : null}
           {summary ? (
             <DetailField
-              label={intl.formatMessage({
-                id: "chat.toolCall.sendMessage.summary",
-              })}
+              label={intl.formatMessage({ id: "chat.toolCall.sendMessage.summary" })}
               value={summary}
             />
           ) : null}
           {message ? (
             <DetailField
-              label={intl.formatMessage({
-                id: "chat.toolCall.sendMessage.message",
-              })}
+              label={intl.formatMessage({ id: "chat.toolCall.sendMessage.message" })}
               value={message}
             />
           ) : null}
@@ -221,14 +192,12 @@ export function SendMessageToolCallBlock(context: ToolCallBlockRenderContext) {
         showIcon={context.showIcon !== false}
         canToggle={hasDetails && (context.canToggle ?? true)}
         forceOpen={hasDetails && (context.forceOpen ?? false)}
-        hideSecondaryTextWhenOpen={true}
+        hideSecondaryTextWhenOpen
         kindLabel={intl.formatMessage({ id: kindLabelId })}
         sourceLabel={context.sourceLabel}
         primaryText={primaryText}
         secondaryText={secondaryText}
-        statusLabel={
-          statusLabelId ? intl.formatMessage({ id: statusLabelId }) : undefined
-        }
+        statusLabel={statusLabelId ? intl.formatMessage({ id: statusLabelId }) : undefined}
         showStatusLabel={statusLabelId != null}
         statusTooltip={isFailed ? failureMessage : undefined}
         showFailureStatus={isFailed}

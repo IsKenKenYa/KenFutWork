@@ -1,13 +1,7 @@
-/**
- * zcode 照搬：`@/hooks/useWorkflowRunArtifactBytes.ts`（references/zcode/packages/ui/src/hooks/useWorkflowRunArtifactBytes.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { PROTOCOL_V4_LIMITS } from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import { logger } from "@zui/logger";
-import { useV4Conversation } from "@zui/v4/V4ConversationContext";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { PROTOCOL_V4_LIMITS } from "@zcode/shared/zcode-protocol-v4";
+import { logger } from "@zui/logger.js";
+import { useV4Conversation } from "@zui/v4/V4ConversationContext.js";
 
 /**
  * 内容产物（`file` / `markdown`）的字节读取。
@@ -108,10 +102,7 @@ export function useWorkflowRunArtifactBytes(options: {
   useEffect(() => {
     const revokePrevious = () => {
       if (objectUrlRef.current !== null) {
-        if (
-          typeof URL !== "undefined" &&
-          typeof URL.revokeObjectURL === "function"
-        ) {
+        if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
           URL.revokeObjectURL(objectUrlRef.current);
         }
         objectUrlRef.current = null;
@@ -157,8 +148,7 @@ export function useWorkflowRunArtifactBytes(options: {
         // jsdom 里没有 createObjectURL：拿不到 URL 不是错误，只是 `<img>` 那条路走不了，
         // Blob / bytes 两条路仍然通（PdfViewer 与 office 查看器读的就是它们）。
         const objectUrl =
-          typeof URL !== "undefined" &&
-          typeof URL.createObjectURL === "function"
+          typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
             ? URL.createObjectURL(blob)
             : null;
         objectUrlRef.current = objectUrl;
@@ -173,8 +163,7 @@ export function useWorkflowRunArtifactBytes(options: {
         });
       } catch (caught) {
         if (!alive) return;
-        const message =
-          caught instanceof Error ? caught.message : String(caught);
+        const message = caught instanceof Error ? caught.message : String(caught);
         logger.warn("[workflow-artifacts] 读取产物字节失败", {
           artifactId,
           error: message,

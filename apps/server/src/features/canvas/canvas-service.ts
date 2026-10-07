@@ -1,8 +1,9 @@
 import type { CanvasContent, CanvasDetail, Json } from "@kenfutwork/shared";
-
-import type { AuthenticatedUser } from "../auth/types.js";
 import type { BlobStore } from "../blob/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import {
   type CanvasContentStore,
   insertImageElement,
@@ -48,29 +49,20 @@ export type VideoInsertRequest = {
   placement?: { x: number; y: number; width: number; height: number };
 };
 
-/**
- * 画布写入者：agent 运行时侧只有 userId + 令牌，故只要求这两项
- * （工作区经身份 id 解析，对象存储访问用令牌）。
- */
-export type CanvasActor = {
-  accessToken: string;
-  id: string;
-};
-
 export type CanvasService = {
-  getCanvas(user: AuthenticatedUser, canvasId: string): Promise<CanvasDetail>;
+  getCanvas(actor: LocalActor, canvasId: string): Promise<CanvasDetail>;
   saveCanvasContent(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     canvasId: string,
     content: CanvasContent,
   ): Promise<void>;
   /** 生成物落画布：读-改-写内容并追加元素（工作区作用域由服务解析）。 */
   insertImageElement(
-    actor: CanvasActor,
+    actor: LocalActor,
     request: ImageInsertRequest,
   ): Promise<{ elementId: string }>;
   insertVideoElement(
-    actor: CanvasActor,
+    actor: LocalActor,
     request: VideoInsertRequest,
   ): Promise<{ elementId: string }>;
 };
@@ -87,52 +79,40 @@ export function createCanvasService(options: {
   /** 对象存储走 blob 缝（画布文件本体：图片/视频等）。 */
   blob: BlobStore;
   repository: CanvasRepository;
-  viewerService: ViewerService;
+  localInstance: LocalInstanceService;
 }): CanvasService {
-  const { repository, viewerService } = options;
+  const { repository, localInstance } = options;
 
-  /** 工作区 id 一律由服务端从鉴权用户解析，不接受调用方传入（FORM-9）。 */
-  const resolveWorkspaceId = async (user: Pick<AuthenticatedUser, "id">) => {
-    const workspace = await viewerService
-      .resolveWorkspace(user)
-      .catch(() => null);
-
-    if (!workspace) {
-      throw new CanvasServiceError(
-        "canvas_not_found",
-        "Canvas not found.",
-        404,
-      );
-    }
-
-    return workspace.id;
-  };
+  const resolveId = async (actor: LocalActor) =>
+    (await localInstance.resolve(actor)).instanceId;
 
   /** 绑定工作区的画布内容读写缝（元素写入器据此访问）。 */
-  const createContentStore = (workspaceId: string): CanvasContentStore => {
+  const createContentStore = (instanceId: string): CanvasContentStore => {
     const blobBucket = options.blob.bucket(CANVAS_FILES_BUCKET);
 
     return {
       async readContent(canvasId) {
-        const row = await repository
-          .findById(workspaceId, canvasId)
-          .catch(() => null);
+        const row = await repository.findById(instanceId, canvasId);
         return row ? toCanvasContent(row.content) : null;
       },
 
       async writeContent(canvasId, content) {
-        const affected = await repository
-          .saveContent(workspaceId, canvasId, content)
-          .catch(() => 0);
+        const affected = await repository.saveContent(
+          instanceId,
+          canvasId,
+          content,
+        );
         if (affected === 0) {
           throw new Error(`Failed to write canvas: ${canvasId} not found`);
         }
       },
 
       async appendContent(canvasId, input) {
-        const affected = await repository
-          .appendContent(workspaceId, canvasId, input)
-          .catch(() => 0);
+        const affected = await repository.appendContent(
+          instanceId,
+          canvasId,
+          input,
+        );
         if (affected === 0) {
           throw new Error(`Failed to append to canvas: ${canvasId} not found`);
         }
@@ -145,11 +125,9 @@ export function createCanvasService(options: {
   };
 
   return {
-    async getCanvas(user, canvasId) {
-      const workspaceId = await resolveWorkspaceId(user);
-      const row = await repository
-        .findById(workspaceId, canvasId)
-        .catch(() => null);
+    async getCanvas(actor, canvasId) {
+      const instanceId = await resolveId(actor);
+      const row = await repository.findById(instanceId, canvasId);
 
       if (!row) {
         throw new CanvasServiceError(
@@ -175,8 +153,8 @@ export function createCanvasService(options: {
       };
     },
 
-    async saveCanvasContent(user, canvasId, content) {
-      const workspaceId = await resolveWorkspaceId(user);
+    async saveCanvasContent(actor, canvasId, content) {
+      const instanceId = await resolveId(actor);
       // Extract base64 files to Storage, replacing dataURLs with oss:// markers
       const leanContent = await extractFilesToStorage(
         options.blob,
@@ -185,7 +163,7 @@ export function createCanvasService(options: {
       );
 
       const affected = await repository
-        .saveContent(workspaceId, canvasId, leanContent as unknown as Json)
+        .saveContent(instanceId, canvasId, leanContent as unknown as Json)
         .catch(() => {
           throw new CanvasServiceError(
             "canvas_save_failed",
@@ -205,10 +183,10 @@ export function createCanvasService(options: {
     },
 
     async insertImageElement(actor, request) {
-      const workspaceId = await resolveWorkspaceId(actor);
+      const instanceId = await resolveId(actor);
 
       return insertImageElement(
-        createContentStore(workspaceId),
+        createContentStore(instanceId),
         {
           canvasId: request.canvasId,
           mimeType: request.mimeType,
@@ -222,10 +200,10 @@ export function createCanvasService(options: {
     },
 
     async insertVideoElement(actor, request) {
-      const workspaceId = await resolveWorkspaceId(actor);
+      const instanceId = await resolveId(actor);
 
       return insertVideoElement(
-        createContentStore(workspaceId),
+        createContentStore(instanceId),
         {
           canvasId: request.canvasId,
           mimeType: request.mimeType,

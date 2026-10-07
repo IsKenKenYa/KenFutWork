@@ -1,24 +1,13 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowRosterParts.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowRosterParts.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import type { StepRunStatus } from "@zui/components/workflow-graph/types";
-import type { RosterCounts } from "@zui/components/workflow-timeline/roster-model";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
 import { CircleCheckIcon, CircleXIcon, LoaderCircleIcon } from "lucide-react";
+import { cn } from "@zui/components/lib/utils.js";
+import type { StepRunStatus } from "@zui/components/workflow-graph/types.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { RosterCounts } from "./roster-model.js";
 
 /**
  * 阶段名册的两件小零件：计数行与量条。
  */
-const COUNT_ORDER: readonly StepRunStatus[] = [
-  "done",
-  "running",
-  "failed",
-  "pending",
-];
+const COUNT_ORDER: readonly StepRunStatus[] = ["done", "running", "failed", "pending"];
 
 function useCountLabels(counts: RosterCounts): Record<StepRunStatus, string> {
   const { intl } = useZCodeIntl();
@@ -36,13 +25,7 @@ function useCountLabels(counts: RosterCounts): Record<StepRunStatus, string> {
 }
 
 /** 计数行：`✓ n · ◌ n · ✕ n · ○ n`，为零的项缺席；每项的 title 是整句。 */
-export function RosterTally({
-  className,
-  counts,
-}: {
-  counts: RosterCounts;
-  className?: string;
-}) {
+export function RosterTally({ className, counts }: { counts: RosterCounts; className?: string }) {
   const labels = useCountLabels(counts);
   return (
     <div
@@ -66,19 +49,16 @@ export function RosterTally({
           title={labels[status]}
         >
           {status === "done" ? (
-            <CircleCheckIcon aria-hidden={true} className="size-2.5" />
+            <CircleCheckIcon aria-hidden className="size-2.5" />
           ) : status === "running" ? (
             <LoaderCircleIcon
-              aria-hidden={true}
+              aria-hidden
               className="size-2.5 animate-spin motion-reduce:animate-none"
             />
           ) : status === "failed" ? (
-            <CircleXIcon aria-hidden={true} className="size-2.5" />
+            <CircleXIcon aria-hidden className="size-2.5" />
           ) : (
-            <span
-              aria-hidden={true}
-              className="size-2 rounded-full border-[1.5px] border-current"
-            />
+            <span aria-hidden className="size-2 rounded-full border-[1.5px] border-current" />
           )}
           <span className="font-medium">{counts[status]}</span>
         </span>
@@ -101,12 +81,7 @@ export function RosterMeter({
   mini?: boolean;
 }) {
   const labels = useCountLabels(counts);
-  const order: readonly StepRunStatus[] = [
-    "done",
-    "failed",
-    "running",
-    "pending",
-  ];
+  const order: readonly StepRunStatus[] = ["done", "failed", "running", "pending"];
   return (
     <div
       aria-label={COUNT_ORDER.map((status) => labels[status]).join(", ")}
@@ -115,9 +90,7 @@ export function RosterMeter({
         mini && "w-11 shrink-0",
         className,
       )}
-      data-testid={
-        mini ? "workflow-roster-meter-mini" : "workflow-roster-meter"
-      }
+      data-testid={mini ? "workflow-roster-meter-mini" : "workflow-roster-meter"}
       role="img"
     >
       {order

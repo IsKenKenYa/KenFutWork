@@ -1,15 +1,7 @@
-/**
- * zcode 照搬：`@/lib/zcodeTaskMetaMerge.ts`（references/zcode/packages/ui/src/lib/zcodeTaskMetaMerge.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-import type { ZCodeTaskMeta } from "@zui/lib/zcode-shared";
+import type { ZCodeTaskMeta } from "@zcode/shared";
 
-function hasOwnTaskMetaField<T extends keyof ZCodeTaskMeta>(
-  task: ZCodeTaskMeta,
-  key: T,
-) {
-  return Object.hasOwn(task, key);
+function hasOwnTaskMetaField<T extends keyof ZCodeTaskMeta>(task: ZCodeTaskMeta, key: T) {
+  return Object.prototype.hasOwnProperty.call(task, key);
 }
 
 function isPlaceholderTaskTitle(title: string): boolean {
@@ -17,20 +9,14 @@ function isPlaceholderTaskTitle(title: string): boolean {
   return normalizedTitle.length === 0 || normalizedTitle === "new session";
 }
 
-function resolveMergedTaskTitle(
-  preferredTask: ZCodeTaskMeta,
-  fallbackTask: ZCodeTaskMeta,
-): string {
+function resolveMergedTaskTitle(preferredTask: ZCodeTaskMeta, fallbackTask: ZCodeTaskMeta): string {
   if (fallbackTask.titleOverridden && !preferredTask.titleOverridden) {
     return fallbackTask.title;
   }
   // session/send 是立即 ACK，首发 ACK 后的 readSession 可能早于后台 first_input title 投影。
   // 此时 snapshot 会带回 agent 默认占位 "New session"；如果它的 updatedAt 更新，旧合并逻辑会把
   // 用户 query 乐观标题短暂盖掉。这里仅把空标题/默认占位视为不可覆盖真实标题，generated title 仍照常覆盖。
-  if (
-    isPlaceholderTaskTitle(preferredTask.title) &&
-    !isPlaceholderTaskTitle(fallbackTask.title)
-  ) {
+  if (isPlaceholderTaskTitle(preferredTask.title) && !isPlaceholderTaskTitle(fallbackTask.title)) {
     return fallbackTask.title;
   }
   return preferredTask.title;
@@ -58,8 +44,7 @@ export function mergeTaskWithOptimisticMeta(
     provider: preferredTask.provider ?? fallbackTask.provider,
     title: resolveMergedTaskTitle(preferredTask, fallbackTask),
     titleOverridden:
-      preferredTask.titleOverridden === true ||
-      fallbackTask.titleOverridden === true
+      preferredTask.titleOverridden === true || fallbackTask.titleOverridden === true
         ? true
         : (preferredTask.titleOverridden ?? fallbackTask.titleOverridden),
     // 远控首页“运行中”依赖 task.meta.status 作为未订阅 runtime 时的兜底。
@@ -78,9 +63,7 @@ export function mergeTaskMetaCandidates(
     if (!candidate) {
       continue;
     }
-    merged = merged
-      ? mergeTaskWithOptimisticMeta(candidate, merged)
-      : candidate;
+    merged = merged ? mergeTaskWithOptimisticMeta(candidate, merged) : candidate;
   }
   return merged;
 }

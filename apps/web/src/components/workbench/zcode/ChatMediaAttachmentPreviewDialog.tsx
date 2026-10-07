@@ -1,28 +1,19 @@
-/**
- * zcode 照搬：`@/ChatMediaAttachmentPreviewDialog.tsx`（references/zcode/packages/ui/src/ChatMediaAttachmentPreviewDialog.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@zui/components/ui/dialog";
-import type {
-  PdfViewerLabels,
-  PdfViewerSource,
-} from "@zui/components/ui/pdf-viewer";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { lazy, Suspense, useEffect, useState } from "react";
+} from "@zui/components/ui/dialog.js";
+import type { PdfViewerLabels, PdfViewerSource } from "@zui/components/ui/pdf-viewer.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 
 // react-pdf/pdfjs 在模块导入阶段依赖浏览器 DOMMatrix；对话列表也会加载本组件，
 // 导致 Node 测试和非 PDF 对话在真正打开预览前就触发浏览器专属依赖。仅在渲染 PDF 时懒加载，
 // 保持图片/视频分支的加载行为不变，同时避免对话模块产生无条件的 PDF.js 副作用。
 const LazyPdfViewer = lazy(async () => {
-  const module = await import("@zui/components/ui/pdf-viewer");
+  const module = await import("@zui/components/ui/pdf-viewer.js");
   return { default: module.PdfViewer };
 });
 
@@ -48,12 +39,8 @@ export function ChatMediaAttachmentPreviewDialog({
 }) {
   const { intl } = useZCodeIntl();
   const isVideo = attachment?.mediaType.startsWith("video/") === true;
-  const isPdf =
-    attachment?.mediaType.split(";", 1)[0]?.trim().toLowerCase() ===
-    "application/pdf";
-  const [videoState, setVideoState] = useState<
-    "loading" | "ready" | "unsupported"
-  >("loading");
+  const isPdf = attachment?.mediaType.split(";", 1)[0]?.trim().toLowerCase() === "application/pdf";
+  const [videoState, setVideoState] = useState<"loading" | "ready" | "unsupported">("loading");
   useEffect(() => {
     setVideoState("loading");
   }, [attachment?.mediaType, attachment?.url, open]);
@@ -92,14 +79,9 @@ export function ChatMediaAttachmentPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="rounded-xl max-w-5xl gap-0 overflow-hidden p-0"
-        showCloseButton={true}
-      >
+      <DialogContent className="rounded-xl max-w-5xl gap-0 overflow-hidden p-0" showCloseButton>
         <DialogHeader className="gap-1 border-b border-popover-border px-4 py-3 pr-12">
-          <DialogTitle className="truncate">
-            {attachment?.filename ?? title}
-          </DialogTitle>
+          <DialogTitle className="truncate">{attachment?.filename ?? title}</DialogTitle>
           <DialogDescription className="truncate text-ui-base">
             {attachment?.mediaType ?? title}
           </DialogDescription>
@@ -109,10 +91,7 @@ export function ChatMediaAttachmentPreviewDialog({
             isPdf ? (
               <Suspense
                 fallback={
-                  <p
-                    className="text-ui-base text-muted-foreground"
-                    role="status"
-                  >
+                  <p className="text-ui-base text-muted-foreground" role="status">
                     {loadingLabel}
                   </p>
                 }
@@ -134,18 +113,15 @@ export function ChatMediaAttachmentPreviewDialog({
               ) : (
                 <>
                   {videoState === "loading" ? (
-                    <p
-                      className="text-ui-base text-muted-foreground"
-                      role="status"
-                    >
+                    <p className="text-ui-base text-muted-foreground" role="status">
                       {loadingLabel}
                     </p>
                   ) : null}
                   {/* MIME 可发送不代表当前 Chromium 能解码容器或 codec；
                   media error 只收口预览状态，不能反向修改附件或发送事实。 */}
                   <video
-                    controls={true}
-                    playsInline={true}
+                    controls
+                    playsInline
                     className={`max-h-[calc(72vh-2rem)] max-w-full rounded-lg ${
                       videoState === "loading" ? "invisible absolute" : ""
                     }`}
@@ -163,10 +139,7 @@ export function ChatMediaAttachmentPreviewDialog({
               />
             )
           ) : error ? (
-            <p
-              className="px-6 text-center text-ui-base text-destructive"
-              role="alert"
-            >
+            <p className="px-6 text-center text-ui-base text-destructive" role="alert">
               {unavailableLabel}
             </p>
           ) : loading ? (

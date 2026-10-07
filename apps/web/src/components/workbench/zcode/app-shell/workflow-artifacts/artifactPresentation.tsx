@@ -1,28 +1,11 @@
-/**
- * zcode 照搬：`@/app-shell/workflow-artifacts/artifactPresentation.tsx`（references/zcode/packages/ui/src/app-shell/workflow-artifacts/artifactPresentation.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
+import type { ReactNode } from "react";
+import { ChartLineIcon, FileIcon, GaugeIcon, SquareKanbanIcon, TableIcon } from "lucide-react";
+import type { WorkflowRunArtifactKind } from "@zcode/shared/zcode-protocol-v4";
+import { FileDisplayIcon, resolveFileDisplayDescriptor } from "@zui/lib/fileDisplay.js";
 import type {
   ArtifactPresetKind,
   PresetLabels,
-} from "@zui/app-shell/workflow-artifacts/presets/index";
-import {
-  FileDisplayIcon,
-  resolveFileDisplayDescriptor,
-} from "@zui/lib/fileDisplay";
-import type { WorkflowRunArtifactKind } from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import {
-  ChartLineIcon,
-  FileIcon,
-  GaugeIcon,
-  SquareKanbanIcon,
-  TableIcon,
-} from "lucide-react";
-import type { ReactNode } from "react";
+} from "@zui/app-shell/workflow-artifacts/presets/index.js";
 
 /**
  * 用户面产物在**几个表面**（run 侧板瓦片、完成卡瓦片、`workflow-artifact` tab、通知行药丸、中枢）
@@ -36,16 +19,9 @@ import type { ReactNode } from "react";
  */
 
 /** 四个预置看板成员。内容成员（file / markdown）有字节与版本，它们没有。 */
-const PRESET_KINDS = new Set<WorkflowRunArtifactKind>([
-  "chart",
-  "table",
-  "metrics",
-  "board",
-]);
+const PRESET_KINDS = new Set<WorkflowRunArtifactKind>(["chart", "table", "metrics", "board"]);
 
-export function isArtifactPresetKind(
-  kind: WorkflowRunArtifactKind,
-): kind is ArtifactPresetKind {
+export function isArtifactPresetKind(kind: WorkflowRunArtifactKind): kind is ArtifactPresetKind {
   return PRESET_KINDS.has(kind);
 }
 
@@ -55,10 +31,7 @@ export function artifactKindMessageId(kind: WorkflowRunArtifactKind): string {
 }
 
 const MARKDOWN_ICON = resolveFileDisplayDescriptor("artifact.md").fileIconSrc;
-const KIND_ICON: Record<
-  Exclude<WorkflowRunArtifactKind, "markdown">,
-  typeof FileIcon
-> = {
+const KIND_ICON: Record<Exclude<WorkflowRunArtifactKind, "markdown">, typeof FileIcon> = {
   file: FileIcon,
   chart: ChartLineIcon,
   table: TableIcon,
@@ -75,7 +48,7 @@ export function ArtifactKindIcon({
   className,
 }: {
   kind: WorkflowRunArtifactKind;
-  className?: string | undefined;
+  className?: string;
 }): ReactNode {
   if (kind === "markdown") {
     return <FileDisplayIcon src={MARKDOWN_ICON} className={className} />;
@@ -106,17 +79,15 @@ export function formatArtifactBytes(bytes: number): string {
  * 与正文分派用的 `textLanguageFor` 是两件事：那个决定用哪个 code viewer，这个只决定
  * 「能不能整份复制」。
  */
-export function isTextArtifactContentType(
-  contentType: string | undefined,
-): boolean {
+export function isTextArtifactContentType(contentType: string | undefined): boolean {
   if (contentType === undefined) return false;
   return contentType.startsWith("text/") || contentType === "application/json";
 }
 
 /** 文件的类型徽字：工作区原路径的扩展名优先（`out/book.pdf` → `PDF`），没有路径时退回 MIME 子类型。 */
 export function artifactFileBadge(artifact: {
-  sourcePath?: string | undefined;
-  contentType?: string | undefined;
+  sourcePath?: string;
+  contentType?: string;
 }): string | undefined {
   const extension = artifact.sourcePath?.match(/\.([a-z0-9]{1,5})$/iu)?.[1];
   if (extension !== undefined) return extension.toUpperCase();
@@ -131,9 +102,7 @@ export function artifactFileBadge(artifact: {
     html: "HTML",
     pdf: "PDF",
   };
-  return (
-    KNOWN[subtype] ?? (subtype.length <= 5 ? subtype.toUpperCase() : undefined)
-  );
+  return KNOWN[subtype] ?? (subtype.length <= 5 ? subtype.toUpperCase() : undefined);
 }
 
 /**
@@ -147,34 +116,29 @@ export function ArtifactDetail({
 }: {
   artifact: {
     kind: WorkflowRunArtifactKind;
-    bytes?: number | undefined;
-    itemCount?: number | undefined;
-    sourcePath?: string | undefined;
-    contentType?: string | undefined;
+    bytes?: number;
+    itemCount?: number;
+    sourcePath?: string;
+    contentType?: string;
   };
   labels: PresetLabels;
 }): ReactNode {
   if (isArtifactPresetKind(artifact.kind)) {
     return artifact.itemCount === undefined ? null : (
-      <span data-testid="workflow-run-artifact-items">
-        {labels.itemsCount(artifact.itemCount)}
-      </span>
+      <span data-testid="workflow-run-artifact-items">{labels.itemsCount(artifact.itemCount)}</span>
     );
   }
   if (artifact.bytes === undefined) return null;
-  const badge =
-    artifact.kind === "file" ? artifactFileBadge(artifact) : undefined;
+  const badge = artifact.kind === "file" ? artifactFileBadge(artifact) : undefined;
   return (
     <>
       {badge === undefined ? null : (
         <>
           <span data-testid="workflow-run-artifact-badge">{badge}</span>
-          <span aria-hidden={true}>·</span>
+          <span aria-hidden>·</span>
         </>
       )}
-      <span data-testid="workflow-run-artifact-bytes">
-        {formatArtifactBytes(artifact.bytes)}
-      </span>
+      <span data-testid="workflow-run-artifact-bytes">{formatArtifactBytes(artifact.bytes)}</span>
     </>
   );
 }
@@ -186,21 +150,18 @@ export function ArtifactDetail({
 export function artifactDetailText(
   artifact: {
     kind: WorkflowRunArtifactKind;
-    bytes?: number | undefined;
-    itemCount?: number | undefined;
-    sourcePath?: string | undefined;
-    contentType?: string | undefined;
+    bytes?: number;
+    itemCount?: number;
+    sourcePath?: string;
+    contentType?: string;
   },
   labels: PresetLabels,
 ): string | undefined {
   if (isArtifactPresetKind(artifact.kind)) {
-    return artifact.itemCount === undefined
-      ? undefined
-      : labels.itemsCount(artifact.itemCount);
+    return artifact.itemCount === undefined ? undefined : labels.itemsCount(artifact.itemCount);
   }
   if (artifact.bytes === undefined) return undefined;
-  const badge =
-    artifact.kind === "file" ? artifactFileBadge(artifact) : undefined;
+  const badge = artifact.kind === "file" ? artifactFileBadge(artifact) : undefined;
   const size = formatArtifactBytes(artifact.bytes);
   return badge === undefined ? size : `${badge} · ${size}`;
 }
@@ -210,9 +171,9 @@ export function artifactDetailText(
  * 只有一件时，那一件就是交付物——**单件规则只在 UI 上成立**，协议与引擎从不推断旗子。其余情形
  * 没有交付物：发布失败的 primary 不由别的产物顶替，两件以上无旗子就是今天的画法。
  */
-export function resolvePrimaryArtifact<
-  T extends { primary?: true | undefined },
->(artifacts: readonly T[]): T | undefined {
+export function resolvePrimaryArtifact<T extends { primary?: true }>(
+  artifacts: readonly T[],
+): T | undefined {
   const flagged = artifacts.find((artifact) => artifact.primary === true);
   if (flagged !== undefined) return flagged;
   return artifacts.length === 1 ? artifacts[0] : undefined;
@@ -227,18 +188,11 @@ export function orderArtifactsPrimaryFirst<T extends { primary?: true }>(
 ): T[] {
   const index = artifacts.findIndex((artifact) => artifact.primary === true);
   if (index <= 0) return [...artifacts];
-  return [
-    artifacts[index]!,
-    ...artifacts.slice(0, index),
-    ...artifacts.slice(index + 1),
-  ];
+  return [artifacts[index]!, ...artifacts.slice(0, index), ...artifacts.slice(index + 1)];
 }
 
 /** 卡片标题：作者写的 title 优先，缺席退回 id（facade 的缺省 title 本来就是 id）。 */
-export function artifactDisplayTitle(artifact: {
-  id: string;
-  title?: string | undefined;
-}): string {
+export function artifactDisplayTitle(artifact: { id: string; title?: string }): string {
   return artifact.title?.trim() || artifact.id;
 }
 
@@ -259,18 +213,13 @@ export function truncateArtifactChipTitle(title: string): string {
  * 所以每个表面在自己的 intl 语境里造一份。
  */
 export function buildPresetLabels(
-  formatMessage: (
-    descriptor: { id: string },
-    values?: Record<string, string>,
-  ) => string,
+  formatMessage: (descriptor: { id: string }, values?: Record<string, string>) => string,
 ): PresetLabels {
   return {
     otherColumn: formatMessage({
       id: "chat.toolCall.workflow.run.artifacts.preset.otherColumn",
     }),
-    empty: formatMessage({
-      id: "chat.toolCall.workflow.run.artifacts.preset.empty",
-    }),
+    empty: formatMessage({ id: "chat.toolCall.workflow.run.artifacts.preset.empty" }),
     itemsCount: (count: number) =>
       formatMessage(
         { id: "chat.toolCall.workflow.run.artifacts.preset.items" },
@@ -287,9 +236,9 @@ export function buildPresetLabels(
  * markdown 产物与预置看板天生就没有出处。
  */
 export function canRevealArtifactInWorkspace(params: {
-  sourcePath?: string | undefined;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  sourcePath?: string;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
 }): boolean {
   return (
     Boolean(params.sourcePath?.trim()) &&

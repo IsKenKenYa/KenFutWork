@@ -99,7 +99,7 @@ export function closeTab(
 }
 
 /**
- * 清掉已不存在的会话标签（在别处删了、或换账号）。**视图标签不受影响**。
+ * 清掉已不存在的会话标签（在别处删了、或切换实例）。**视图标签不受影响**。
  */
 export function pruneTabs(
   tabs: ChatTab[],

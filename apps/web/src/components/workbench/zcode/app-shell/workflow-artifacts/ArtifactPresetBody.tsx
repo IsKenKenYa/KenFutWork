@@ -1,26 +1,18 @@
-/**
- * zcode 照搬：`@/app-shell/workflow-artifacts/ArtifactPresetBody.tsx`（references/zcode/packages/ui/src/app-shell/workflow-artifacts/ArtifactPresetBody.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import { isArtifactPresetKind } from "@zui/app-shell/workflow-artifacts/artifactPresentation";
-import type { PresetLabels } from "@zui/app-shell/workflow-artifacts/presets/index";
 import {
   ArtifactBoard,
   ArtifactChart,
-  type ArtifactItem,
   ArtifactMetrics,
   ArtifactTable,
+  parseArtifactPresetSpec,
+  type ArtifactItem,
   type BoardSpec,
   type ChartSpec,
   type MetricsSpec,
-  parseArtifactPresetSpec,
   type TableSpec,
-} from "@zui/app-shell/workflow-artifacts/presets/index";
-import type { WorkflowRunArtifactView } from "@zui/hooks/useWorkflowRunArtifacts";
+} from "@zui/app-shell/workflow-artifacts/presets/index.js";
+import { isArtifactPresetKind } from "@zui/app-shell/workflow-artifacts/artifactPresentation.js";
+import type { PresetLabels } from "@zui/app-shell/workflow-artifacts/presets/index.js";
+import type { WorkflowRunArtifactView } from "@zui/hooks/useWorkflowRunArtifacts.js";
 
 /**
  * 预置看板的正文。
@@ -47,12 +39,12 @@ export function ArtifactPresetBody({
   artifact: Pick<WorkflowRunArtifactView, "kind" | "spec">;
   items: readonly ArtifactItem[];
   labels: PresetLabels;
-  compact?: boolean | undefined;
+  compact?: boolean;
   /** spec 在场但**解析不出来**时的降级文案；缺席即整块不渲染。 */
-  invalidLabel?: string | undefined;
+  invalidLabel?: string;
   /** spec **整个不在场**时的文案；缺席即整块不渲染（见下面那段关于加载中的注释）。 */
-  missingLabel?: string | undefined;
-  className?: string | undefined;
+  missingLabel?: string;
+  className?: string;
 }) {
   if (!isArtifactPresetKind(artifact.kind)) return null;
   // 「spec 不在场」与「spec 坏了」必须分开说。

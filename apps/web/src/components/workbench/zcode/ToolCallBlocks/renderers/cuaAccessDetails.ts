@@ -1,15 +1,9 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/cuaAccessDetails.ts`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/cuaAccessDetails.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
 interface CuaAccessRow {
   labelId: string;
   value: string;
-  status?: boolean | undefined;
+  status?: boolean;
 }
 
 interface CuaAccessDetails {
@@ -24,10 +18,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function readText(
-  record: Record<string, unknown> | null,
-  key: string,
-): string | null {
+function readText(record: Record<string, unknown> | null, key: string): string | null {
   const value = record?.[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -45,15 +36,11 @@ function parsePrimaryObject(value: unknown): Record<string, unknown> | null {
 
 function statusAfterToBoolean(status: string | null): boolean | undefined {
   if (status === "granted" || status === "not_required") return true;
-  if (status === "denied" || status === "not_granted" || status === "blocked")
-    return false;
+  if (status === "denied" || status === "not_granted" || status === "blocked") return false;
   return undefined;
 }
 
-function readPermissionStatus(
-  value: unknown,
-  fallback: unknown,
-): boolean | undefined {
+function readPermissionStatus(value: unknown, fallback: unknown): boolean | undefined {
   if (value === true || value === "granted") return true;
   if (value === false || value === "denied") return false;
   // The runtime request_access response puts each permission's status object
@@ -61,9 +48,7 @@ function readPermissionStatus(
   // the legacy shape nests it under `permission_request` (passed as `fallback`).
   // Read status_after from either. "not_required" is a satisfied (non-blocking)
   // state and maps to granted.
-  const fromValue = statusAfterToBoolean(
-    readText(asRecord(value), "status_after"),
-  );
+  const fromValue = statusAfterToBoolean(readText(asRecord(value), "status_after"));
   if (fromValue !== undefined) return fromValue;
   return statusAfterToBoolean(readText(asRecord(fallback), "status_after"));
 }
@@ -73,8 +58,7 @@ export function buildCuaAccessDetails(
   formatValue: (id: string) => string,
 ): CuaAccessDetails {
   const rawOutput = readText(asRecord(toolCall.raw), "rawOutput");
-  const result =
-    parsePrimaryObject(toolCall.output) ?? parsePrimaryObject(rawOutput) ?? {};
+  const result = parsePrimaryObject(toolCall.output) ?? parsePrimaryObject(rawOutput) ?? {};
   const permissionRequest = asRecord(result.permission_request);
   const accessibility = readPermissionStatus(
     result.accessibility,
@@ -87,8 +71,7 @@ export function buildCuaAccessDetails(
   // permission_guide lives at the top level in the runtime response and nested
   // under permission_request in the legacy shape — honor either.
   const permissionGuide =
-    asRecord(permissionRequest?.permission_guide) ??
-    asRecord(result.permission_guide);
+    asRecord(permissionRequest?.permission_guide) ?? asRecord(result.permission_guide);
   const ready =
     typeof permissionGuide?.all_required_granted === "boolean"
       ? permissionGuide.all_required_granted
@@ -127,17 +110,11 @@ export function buildCuaAccessDetails(
     });
   }
   if (backend) {
-    environmentRows.push({
-      labelId: "chat.toolCall.cua.details.backend",
-      value: backend,
-    });
+    environmentRows.push({ labelId: "chat.toolCall.cua.details.backend", value: backend });
   }
   const helper = readText(subject, "display_name");
   if (helper) {
-    environmentRows.push({
-      labelId: "chat.toolCall.cua.details.permissionOwner",
-      value: helper,
-    });
+    environmentRows.push({ labelId: "chat.toolCall.cua.details.permissionOwner", value: helper });
   }
   return { ready, permissionRows, environmentRows };
 }

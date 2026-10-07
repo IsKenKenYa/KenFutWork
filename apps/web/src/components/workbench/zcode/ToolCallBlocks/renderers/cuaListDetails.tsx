@@ -1,15 +1,9 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/cuaListDetails.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/cuaListDetails.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-
-import { useOptionalPlatform } from "@zui/hooks/usePlatform";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay";
 import { AppWindow } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
+import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay.js";
 
 interface CuaAppItem {
   name: string;
@@ -35,10 +29,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function readText(
-  record: Record<string, unknown> | null,
-  key: string,
-): string | null {
+function readText(record: Record<string, unknown> | null, key: string): string | null {
   const value = record?.[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -75,9 +66,7 @@ function readCuaResultList(
   const display = readToolResultDisplay(toolCall.raw);
   // v4/replayable 的稳定事实源是 display；legacy 文本可能已被 head/tail 裁剪。
   const displayRows =
-    display?.kind === "cua"
-      ? parseStructuredCuaResultList(display.structuredContent)
-      : null;
+    display?.kind === "cua" ? parseStructuredCuaResultList(display.structuredContent) : null;
   return (
     displayRows ??
     parseCuaResultList(toolCall.output) ??
@@ -134,13 +123,8 @@ function CuaAppList({ items }: { items: CuaAppItem[] }) {
 
   useEffect(() => {
     let active = true;
-    const bundleIds = [
-      ...new Set(
-        items.flatMap((item) => (item.bundleId ? [item.bundleId] : [])),
-      ),
-    ];
-    if (!platform?.getApplicationIcon || bundleIds.length === 0)
-      return () => undefined;
+    const bundleIds = [...new Set(items.flatMap((item) => (item.bundleId ? [item.bundleId] : [])))];
+    if (!platform?.getApplicationIcon || bundleIds.length === 0) return () => undefined;
     void Promise.all(
       bundleIds.map(async (bundleId) => {
         const result = await platform.getApplicationIcon?.(bundleId);
@@ -150,9 +134,7 @@ function CuaAppList({ items }: { items: CuaAppItem[] }) {
       if (!active) return;
       setIcons(
         Object.fromEntries(
-          results.filter((entry): entry is readonly [string, string] =>
-            Boolean(entry[1]),
-          ),
+          results.filter((entry): entry is readonly [string, string] => Boolean(entry[1])),
         ),
       );
     });
@@ -172,15 +154,13 @@ function CuaAppList({ items }: { items: CuaAppItem[] }) {
             <img
               src={icons[item.bundleId]}
               alt=""
-              aria-hidden={true}
+              aria-hidden
               className="size-4 shrink-0 object-contain"
             />
           ) : (
             <AppWindow className="size-4 shrink-0 text-foreground-subtle" />
           )}
-          <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-            {item.name}
-          </span>
+          <span className="min-w-0 flex-1 truncate text-sm text-foreground">{item.name}</span>
           {item.active ? (
             <span className="shrink-0 text-sm text-foreground-subtle">
               {intl.formatMessage({ id: "chat.toolCall.cua.details.active" })}
@@ -204,26 +184,15 @@ function CuaWindowList({ items }: { items: CuaWindowItem[] }) {
           <AppWindow className="size-4 shrink-0 text-foreground-subtle" />
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm text-foreground">
-              {item.title ??
-                intl.formatMessage({
-                  id: "chat.toolCall.cua.details.untitledWindow",
-                })}
+              {item.title ?? intl.formatMessage({ id: "chat.toolCall.cua.details.untitledWindow" })}
             </div>
             {item.main || item.focused ? (
               <div className="flex flex-wrap gap-x-2 text-sm text-foreground-subtle">
                 {item.main ? (
-                  <span>
-                    {intl.formatMessage({
-                      id: "chat.toolCall.cua.details.mainWindow",
-                    })}
-                  </span>
+                  <span>{intl.formatMessage({ id: "chat.toolCall.cua.details.mainWindow" })}</span>
                 ) : null}
                 {item.focused ? (
-                  <span>
-                    {intl.formatMessage({
-                      id: "chat.toolCall.cua.details.focused",
-                    })}
-                  </span>
+                  <span>{intl.formatMessage({ id: "chat.toolCall.cua.details.focused" })}</span>
                 ) : null}
               </div>
             ) : null}

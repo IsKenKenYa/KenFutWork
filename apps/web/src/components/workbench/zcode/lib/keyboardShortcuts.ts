@@ -41,9 +41,7 @@ export function isAppleKeyboardPlatform(
   return /Mac|iPhone|iPad|iPod/.test(userAgent);
 }
 
-function getCommandModifierLabel(
-  platformInfo?: KeyboardShortcutPlatformInfo,
-): string {
+function getCommandModifierLabel(platformInfo?: KeyboardShortcutPlatformInfo): string {
   return isAppleKeyboardPlatform(platformInfo) ? "⌘" : "Ctrl";
 }
 
@@ -93,15 +91,10 @@ function matchesPrimaryModifier(
   const isApple = isAppleKeyboardPlatform(platformInfo);
   // 主快捷键要按平台隔离。macOS 的 Ctrl 保留给系统 Emacs 风格文本编辑，
   // Windows/Linux 才使用 Ctrl；同时按下 Ctrl 和 Command 不视作主快捷键，避免误触发。
-  return isApple
-    ? event.metaKey && !event.ctrlKey
-    : event.ctrlKey && !event.metaKey;
+  return isApple ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
 }
 
-export function matchesCtrlShortcut(
-  event: PrimaryShortcutKeyboardEvent,
-  key: string,
-): boolean {
+export function matchesCtrlShortcut(event: PrimaryShortcutKeyboardEvent, key: string): boolean {
   return (
     event.ctrlKey &&
     !event.metaKey &&

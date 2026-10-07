@@ -1,10 +1,10 @@
-/**
- * zcode 照搬：`@/v4/ConversationFileRewindDialog.tsx`（references/zcode/packages/ui/src/v4/ConversationFileRewindDialog.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { Button } from "@zui/components/ui/button";
+import { Loader2Icon, Undo2Icon } from "lucide-react";
+import {
+  TID_V4_EDIT_WORKSPACE_CONFLICT_CONVERSATION_ONLY,
+  TID_V4_EDIT_WORKSPACE_CONFLICT_DIALOG,
+} from "@zcode/shared";
+import type { V4ConversationFileRewindPreviewResult } from "@zcode/shared/zcode-protocol-v4";
+import { Button } from "@zui/components/ui/button.js";
 import {
   Dialog,
   DialogContent,
@@ -12,14 +12,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@zui/components/ui/dialog";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  TID_V4_EDIT_WORKSPACE_CONFLICT_CONVERSATION_ONLY,
-  TID_V4_EDIT_WORKSPACE_CONFLICT_DIALOG,
-} from "@zui/lib/zcode-shared";
-import type { V4ConversationFileRewindPreviewResult } from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import { Loader2Icon, Undo2Icon } from "lucide-react";
+} from "@zui/components/ui/dialog.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 
 type FileRewindPreviewFile =
   | V4ConversationFileRewindPreviewResult["safeFiles"][number]
@@ -38,20 +32,13 @@ interface ConversationFileRewindDialogProps {
   onConversationOnly?: () => void;
 }
 
-function formatReason(
-  reason: string,
-  intl: ReturnType<typeof useZCodeIntl>["intl"],
-) {
-  const fallbackReasonKey =
-    "chat.changeSummary.rewindDialog.reason.unsupportedCheckpoint";
+function formatReason(reason: string, intl: ReturnType<typeof useZCodeIntl>["intl"]) {
+  const fallbackReasonKey = "chat.changeSummary.rewindDialog.reason.unsupportedCheckpoint";
   const keyByReason: Record<string, string> = {
     bash_ignored: "chat.changeSummary.rewindDialog.reason.bashIgnored",
-    checkpoint_missing:
-      "chat.changeSummary.rewindDialog.reason.checkpointMissing",
-    checkpoint_unreadable:
-      "chat.changeSummary.rewindDialog.reason.checkpointUnreadable",
-    external_modified:
-      "chat.changeSummary.rewindDialog.reason.externalModified",
+    checkpoint_missing: "chat.changeSummary.rewindDialog.reason.checkpointMissing",
+    checkpoint_unreadable: "chat.changeSummary.rewindDialog.reason.checkpointUnreadable",
+    external_modified: "chat.changeSummary.rewindDialog.reason.externalModified",
     file_read_failed: "chat.changeSummary.rewindDialog.reason.fileReadFailed",
     unsupported_checkpoint: fallbackReasonKey,
   };
@@ -74,9 +61,7 @@ function PreviewFileList({
           key={`${type}:${file.path}`}
           className="flex items-center justify-between gap-3 rounded-md border border-border bg-input/30 px-2 py-1.5"
         >
-          <span className="min-w-0 truncate font-mono text-ui-xs text-foreground">
-            {file.path}
-          </span>
+          <span className="min-w-0 truncate font-mono text-ui-xs text-foreground">{file.path}</span>
           <span className="shrink-0 text-ui-xs text-foreground-subtle">
             {"reason" in file
               ? formatReason(file.reason, intl)
@@ -111,11 +96,7 @@ export function ConversationFileRewindDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="max-w-lg"
-        data-testid={
-          variant === "editConflict"
-            ? TID_V4_EDIT_WORKSPACE_CONFLICT_DIALOG
-            : undefined
-        }
+        data-testid={variant === "editConflict" ? TID_V4_EDIT_WORKSPACE_CONFLICT_DIALOG : undefined}
       >
         <DialogHeader>
           <DialogTitle>
@@ -139,9 +120,7 @@ export function ConversationFileRewindDialog({
           {previewLoading ? (
             <div className="flex items-center gap-2 text-ui-base text-foreground-subtle">
               <Loader2Icon className="size-3.5 animate-spin" />
-              {intl.formatMessage({
-                id: "chat.changeSummary.rewindDialog.loading",
-              })}
+              {intl.formatMessage({ id: "chat.changeSummary.rewindDialog.loading" })}
             </div>
           ) : preview ? (
             <>
@@ -173,26 +152,19 @@ export function ConversationFileRewindDialog({
                       { count: String(ignoredCount) },
                     )}
                   </h3>
-                  <PreviewFileList
-                    files={preview.ignoredFiles}
-                    type="ignored"
-                  />
+                  <PreviewFileList files={preview.ignoredFiles} type="ignored" />
                 </section>
               ) : null}
             </>
           ) : (
             <p className="text-ui-base text-foreground-subtle">
-              {intl.formatMessage({
-                id: "chat.changeSummary.rewindDialog.noPreview",
-              })}
+              {intl.formatMessage({ id: "chat.changeSummary.rewindDialog.noPreview" })}
             </p>
           )}
           {error ? <p className="text-ui-base text-danger">{error}</p> : null}
           {variant === "fileRewind" && preview && !preview.canApply ? (
             <p className="text-ui-base text-foreground-subtle">
-              {intl.formatMessage({
-                id: "chat.changeSummary.rewindDialog.cannotApply",
-              })}
+              {intl.formatMessage({ id: "chat.changeSummary.rewindDialog.cannotApply" })}
             </p>
           ) : null}
         </div>
@@ -214,9 +186,7 @@ export function ConversationFileRewindDialog({
                 onClick={onConversationOnly}
               >
                 {applying ? <Loader2Icon className="animate-spin" /> : null}
-                {intl.formatMessage({
-                  id: "chat.edit.workspaceConflict.conversationOnly",
-                })}
+                {intl.formatMessage({ id: "chat.edit.workspaceConflict.conversationOnly" })}
               </Button>
             </>
           ) : (
@@ -226,14 +196,8 @@ export function ConversationFileRewindDialog({
               disabled={!preview?.canApply || applying || previewLoading}
               onClick={onApply}
             >
-              {applying ? (
-                <Loader2Icon className="animate-spin" />
-              ) : (
-                <Undo2Icon />
-              )}
-              {intl.formatMessage({
-                id: "chat.changeSummary.rewindDialog.confirm",
-              })}
+              {applying ? <Loader2Icon className="animate-spin" /> : <Undo2Icon />}
+              {intl.formatMessage({ id: "chat.changeSummary.rewindDialog.confirm" })}
             </Button>
           )}
         </DialogFooter>

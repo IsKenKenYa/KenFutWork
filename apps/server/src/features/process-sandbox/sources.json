@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "dependencies": [
+    {
+      "name": "@anthropic-ai/sandbox-runtime",
+      "version": "0.0.78",
+      "repository": "https://github.com/anthropics/sandbox-runtime",
+      "commit": "c7adb1e94c930bde56c3c011e4fe0df45b1e9d57",
+      "license": "Apache-2.0",
+      "consumers": ["task-helper.ts", "policy.ts"],
+      "method": "direct-package-dependency"
+    },
+    {
+      "name": "Microsoft MXC",
+      "repository": "https://github.com/microsoft/mxc",
+      "commit": "6cd3d58f05d3447e67109cfb75e042803b843ca4",
+      "license": "MIT",
+      "consumers": ["native/src/windows.rs"],
+      "method": "pinned-low-level-rust-dependency",
+      "licenseFile": "native/licenses/LICENSE-Microsoft-MXC.txt"
+    },
+    {
+      "name": "node-pty",
+      "version": "1.1.0",
+      "repository": "https://github.com/microsoft/node-pty",
+      "license": "MIT",
+      "consumers": ["pty-runtime.ts", "unix-process.ts", "build-helper.mjs"],
+      "method": "direct-package-dependency-private-native-materialization"
+    }
+  ],
+  "adaptations": [
+    {
+      "repository": "https://github.com/openai/codex",
+      "commit": "e53e932dc855927afb1cafab5f1ae6edf2695e81",
+      "license": "Apache-2.0",
+      "sourceFiles": [
+        {
+          "path": "codex-rs/mxc-sandbox/src/native.rs",
+          "sha256": "ec97c3bea1a360cc1e05e319a9408cc17fbab6a078a20987a85f8f4031d04e33"
+        },
+        {
+          "path": "codex-rs/mxc-sandbox/src/policy.rs",
+          "sha256": "6415f2c38a45656605c8edaa9bcc973f155d8a99bf151fac63f025dcd50edccb"
+        },
+        {
+          "path": "codex-rs/mxc-sandbox/src/windows.rs",
+          "sha256": "d68ad71e9a322b2e593d0bc18d994db21f24b7babef0e8a7d790521b40b6fa71"
+        }
+      ],
+      "target": "native/src/windows.rs",
+      "targetSha256": "cc8c1961586eb8d3d3a924c8489a440d6e8173835c09c26fd97d04482ac48095",
+      "changes": [
+        "KFW Task identity, generation and exact directory DTO replace Codex canonical permission/profile types",
+        "Per-command native PSEC read domain via fixed MXC, no global read ACL group or AgentCore",
+        "The same native binary creates trusted per-command controllers suspended and assigns an outer Job before any user launch DTO is sent",
+        "Before MXC wait/teardown the controller proves outer Job ActiveProcesses=1; broker proves ActiveProcesses=0 before physical rangeEmpty",
+        "ConPTY allocation/resize/raw input is separate from private inherited IPC handles; controller marks control and query handles non-inheritable before MXC user spawn",
+        "Each stdout/stderr raw stream waits for its own ACK; helper UTF8 frame ACK and EOF tail are independent from bounded capture",
+        "Pending spawn cancellation, output failure and physical Job termination have separate receipts; unconfirmed range never releases writer",
+        "No DACL fallback, permissive learning mode, pipes-as-PTY fallback, or network posture weakening"
+      ],
+      "licenseFile": "native/licenses/LICENSE-Codex.txt",
+      "noticeFile": "native/licenses/NOTICE-Codex.txt",
+      "targetFiles": [
+        {
+          "path": "native/src/windows.rs",
+          "sha256": "cc8c1961586eb8d3d3a924c8489a440d6e8173835c09c26fd97d04482ac48095"
+        },
+        {
+          "path": "native/src/windows_conpty.rs",
+          "sha256": "c5d2838df636636c354510ed24bb87e571e7bdbe37a1c8565c83e1f212db5eac"
+        },
+        {
+          "path": "native/src/windows_controller.rs",
+          "sha256": "3735ac59b327d91a5bd580bfca1b5131aefaffa6a6d14da7babd4fa78fd386da"
+        },
+        {
+          "path": "native/src/windows_handles.rs",
+          "sha256": "b1a0a94ca360348d6d458731ceb808c6708ee24e2745661e8142eca439becb95"
+        },
+        {
+          "path": "native/src/windows_launch.rs",
+          "sha256": "080808b13f1a8a98dc219e02087d6897efb1cc48779d7eae501aef111d2f5251"
+        },
+        {
+          "path": "native/src/windows_output.rs",
+          "sha256": "42d3cd1b6b26090a7bc0454f927027c77f71957bc4ab6c109bb3835f16241aaf"
+        },
+        {
+          "path": "native/src/windows_process.rs",
+          "sha256": "73e21d76e9e095349f64d4dc15f5305ff4cf6386f5db67a97d33b3c2dace249b"
+        },
+        {
+          "path": "native/src/windows_protocol.rs",
+          "sha256": "48fcc24f53ccc431f41d31fb886008949a8fb0c67fd63f73bc9b59ea3be89cf1"
+        }
+      ]
+    },
+    {
+      "repository": "https://github.com/microsoft/node-pty",
+      "version": "1.1.0",
+      "license": "MIT",
+      "sourceFiles": [
+        {
+          "path": "npm/lib/unixTerminal.js",
+          "sha256": "a62e3a60c3bc1b0e7261f58284856df748dcee6761a2bc7a5a5ba98b22660473"
+        }
+      ],
+      "target": "pty-native-tail.ts",
+      "changes": [
+        "Task-private native reaper event separates process exit from output drain",
+        "Active reader pause prevents upstream forced socket close from discarding unread tail",
+        "No-reader native exit resumes into bounded capture and keeps host pending frame for late activation",
+        "Original installed dependency and its license remain unchanged"
+      ],
+      "licenseFile": "node_modules/node-pty/LICENSE"
+    },
+    {
+      "repository": "https://github.com/anthropics/sandbox-runtime",
+      "commit": "c7adb1e94c930bde56c3c011e4fe0df45b1e9d57",
+      "version": "0.0.78",
+      "license": "Apache-2.0",
+      "sourceFiles": [
+        {
+          "path": "npm/dist/sandbox/linux-sandbox-utils.js",
+          "sha256": "b6edeb669bab3029d8d2d50a186208f8984311b39bcce6167dea44435e03b133"
+        }
+      ],
+      "target": "linux-launch.ts",
+      "changes": [
+        "Parse and validate the pinned simple shell-quote bwrap invocation, including args-file carrier; unknown shape fails closed",
+        "PTY keeps its private node-pty session by removing only the leading bwrap --new-session flag",
+        "Replay the same precise SRT observer/proxy socket binds after filesystem tmpfs masks without granting parent directory reads",
+        "Remount the private metadata tmpfs mask read-only after all mounts; keep PID/user/net/proc/seccomp restrictions intact"
+      ]
+    }
+  ]
+}

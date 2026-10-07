@@ -1,31 +1,22 @@
-/**
- * zcode 照搬：`@/v4/conversationAssistantWorkItems.ts`（references/zcode/packages/ui/src/v4/conversationAssistantWorkItems.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
+import type { SubagentRow, ToolCallRow } from "@zcode/shared/zcode-protocol-v4";
 import {
   isExecuteToolCall,
   isExploreToolCall,
   isShellToolCallAwaitingCommand,
-} from "@zui/lib/exploreToolCall";
-import type { TaskChatToolCallTreeNode } from "@zui/lib/toolCallTree";
-import { resolveToolCallIdentity } from "@zui/lib/toolIdentity";
-import type {
-  SubagentRow,
-  ToolCallRow,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
+} from "@zui/lib/exploreToolCall.js";
+import type { TaskChatToolCallTreeNode } from "@zui/lib/toolCallTree.js";
+import { resolveToolCallIdentity } from "@zui/lib/toolIdentity.js";
 import {
-  type ConversationCuaGroupRenderItem,
+  isConversationReasoningRowVisible,
+  type ConversationReasoningVisibility,
+} from "@zui/v4/conversationRowContext.js";
+import type { AssistantWorkRow } from "@zui/v4/conversationTurnRenderUnits.js";
+import { toolCallRowToLegacyNode } from "@zui/v4/toolCallRowAdapter.js";
+import {
   ENABLE_CUA_TOOL_CALL_GROUPING,
   prepareCuaGroups,
-} from "@zui/v4/conversationCuaGroups";
-import {
-  type ConversationReasoningVisibility,
-  isConversationReasoningRowVisible,
-} from "@zui/v4/conversationRowContext";
-import type { AssistantWorkRow } from "@zui/v4/conversationTurnRenderUnits";
-import { toolCallRowToLegacyNode } from "@zui/v4/toolCallRowAdapter";
+  type ConversationCuaGroupRenderItem,
+} from "@zui/v4/conversationCuaGroups.js";
 
 export type ConversationAssistantWorkRenderItem =
   | {
@@ -63,7 +54,7 @@ export type ConversationAssistantWorkRenderItem =
     };
 
 export const ENABLE_EXPLORE_TOOL_CALL_GROUPING = true;
-export { ENABLE_CUA_TOOL_CALL_GROUPING } from "@zui/v4/conversationCuaGroups";
+export { ENABLE_CUA_TOOL_CALL_GROUPING } from "@zui/v4/conversationCuaGroups.js";
 export const ENABLE_TERMINAL_TOOL_CALL_GROUPING = true;
 export const ENABLE_CHANGES_TOOL_CALL_GROUPING = false;
 
@@ -77,8 +68,7 @@ interface ConversationAssistantWorkRenderOptions {
 
 const SUBAGENT_TOOL_NAMES = new Set(["Agent", "Task", "subagent"]);
 
-const isToolCallRow = (row: AssistantWorkRow): row is ToolCallRow =>
-  row.kind === "toolCall";
+const isToolCallRow = (row: AssistantWorkRow): row is ToolCallRow => row.kind === "toolCall";
 
 const isAgentToolCallRow = (row: AssistantWorkRow): row is ToolCallRow =>
   isToolCallRow(row) && SUBAGENT_TOOL_NAMES.has(row.toolName);
@@ -107,17 +97,11 @@ function isExecuteToolCallRow(row: AssistantWorkRow): row is ToolCallRow {
 
 function isChangesToolCallRow(row: AssistantWorkRow): row is ToolCallRow {
   if (!isToolCallRow(row)) return false;
-  return (
-    resolveToolCallIdentity(toolCallRowToLegacyNode(row).toolCall).family ===
-    "file-write"
-  );
+  return resolveToolCallIdentity(toolCallRowToLegacyNode(row).toolCall).family === "file-write";
 }
 
 function shouldDeferUnclassifiedShellToolCall(row: AssistantWorkRow): boolean {
-  if (
-    !isToolCallRow(row) ||
-    (row.status !== "inputStreaming" && row.status !== "running")
-  ) {
+  if (!isToolCallRow(row) || (row.status !== "inputStreaming" && row.status !== "running")) {
     return false;
   }
   const legacyNode = toolCallRowToLegacyNode(row);
@@ -135,9 +119,7 @@ function resolveGroupStageStatus(
   // 子工具可能已经全部完成，但只要当前运行工作段尚未出现下一条可见边界，父阶段仍在继续；
   // 反之，后续非当前分组内容已经出现时，即使迟到的子状态仍是 running，父阶段也必须结束。
   if (stageTailIsRunning) return "in_progress";
-  return rows.some((row) => row.status === "cancelled")
-    ? "stopped"
-    : "completed";
+  return rows.some((row) => row.status === "cancelled") ? "stopped" : "completed";
 }
 
 function buildExploreGroup(rows: ToolCallRow[], stageTailIsRunning: boolean) {
@@ -162,10 +144,7 @@ function buildExploreGroup(rows: ToolCallRow[], stageTailIsRunning: boolean) {
         title: "Explore",
         input: {},
         status: resolveGroupStageStatus(rows, stageTailIsRunning),
-        startedAt:
-          typeof firstRow.startedAt === "number"
-            ? firstRow.startedAt
-            : undefined,
+        startedAt: typeof firstRow.startedAt === "number" ? firstRow.startedAt : undefined,
       },
       childToolCalls,
     },
@@ -189,10 +168,7 @@ function buildExecuteGroup(rows: ToolCallRow[], stageTailIsRunning: boolean) {
         title: "Execute",
         input: {},
         status: resolveGroupStageStatus(rows, stageTailIsRunning),
-        startedAt:
-          typeof firstRow.startedAt === "number"
-            ? firstRow.startedAt
-            : undefined,
+        startedAt: typeof firstRow.startedAt === "number" ? firstRow.startedAt : undefined,
       },
       childToolCalls: rows.map(toolCallRowToLegacyNode),
     },
@@ -254,14 +230,8 @@ function pairSubagentRows(rows: readonly AssistantWorkRow[]): {
       legacySubagentRows.push(row);
       continue;
     }
-    const host = agentToolByTurnAndCallId.get(
-      `${row.turnId}\0${row.parentToolCallId}`,
-    );
-    if (
-      host &&
-      host.turnId === row.turnId &&
-      !subagentByAgentToolRowId.has(host.rowId)
-    ) {
+    const host = agentToolByTurnAndCallId.get(`${row.turnId}\0${row.parentToolCallId}`);
+    if (host && host.turnId === row.turnId && !subagentByAgentToolRowId.has(host.rowId)) {
       subagentByAgentToolRowId.set(host.rowId, row);
       claimedSubagentRowIds.add(row.rowId);
     }
@@ -305,14 +275,11 @@ export function buildAssistantWorkRenderItems(
   options?: ConversationAssistantWorkRenderOptions,
 ): ConversationAssistantWorkRenderItem[] {
   const items: ConversationAssistantWorkRenderItem[] = [];
-  const enableExploreGrouping =
-    options?.enableExploreGrouping ?? ENABLE_EXPLORE_TOOL_CALL_GROUPING;
-  const enableCuaGrouping =
-    options?.enableCuaGrouping ?? ENABLE_CUA_TOOL_CALL_GROUPING;
+  const enableExploreGrouping = options?.enableExploreGrouping ?? ENABLE_EXPLORE_TOOL_CALL_GROUPING;
+  const enableCuaGrouping = options?.enableCuaGrouping ?? ENABLE_CUA_TOOL_CALL_GROUPING;
   const enableTerminalGrouping =
     options?.enableTerminalGrouping ?? ENABLE_TERMINAL_TOOL_CALL_GROUPING;
-  const enableChangesGrouping =
-    options?.enableChangesGrouping ?? ENABLE_CHANGES_TOOL_CALL_GROUPING;
+  const enableChangesGrouping = options?.enableChangesGrouping ?? ENABLE_CHANGES_TOOL_CALL_GROUPING;
   // Explore 的阶段边界和尾部状态必须基于用户实际可见的行序。等待 command 的 Shell
   // 若只在循环中跳过，仍会占据数组位置，导致前一个 Explore 被误判为已结束；
   // 隐藏 reasoning 也有相同问题。先统一剔除暂不可见行，再做配对、分组和尾部判断。
@@ -325,8 +292,7 @@ export function buildAssistantWorkRenderItems(
     }
     return !shouldDeferUnclassifiedShellToolCall(row);
   });
-  const { subagentByAgentToolRowId, claimedSubagentRowIds } =
-    pairSubagentRows(visibleRows);
+  const { subagentByAgentToolRowId, claimedSubagentRowIds } = pairSubagentRows(visibleRows);
   const preparedRows = prepareCuaGroups(
     visibleRows,
     enableCuaGrouping,
@@ -373,30 +339,20 @@ export function buildAssistantWorkRenderItems(
         index += 1;
         while (index < preparedRows.length) {
           const nextRow = preparedRows[index];
-          if (
-            !nextRow ||
-            nextRow.kind === "cuaGroup" ||
-            !isChangesToolCallRow(nextRow)
-          )
-            break;
+          if (!nextRow || nextRow.kind === "cuaGroup" || !isChangesToolCallRow(nextRow)) break;
           groupRows.push(nextRow);
           index += 1;
         }
         // 单个工具不需要额外的 UI 合成层；等第二个连续同类工具到达后再升级为父分组。
         if (groupRows.length === 1) {
           const singleRow = groupRows[0]!;
-          items.push({
-            kind: "row",
-            key: `row:${singleRow.rowId}`,
-            row: singleRow,
-          });
+          items.push({ kind: "row", key: `row:${singleRow.rowId}`, row: singleRow });
           continue;
         }
         items.push(
           buildChangesGroup(
             groupRows,
-            options?.stageTailIsRunning === true &&
-              index === preparedRows.length,
+            options?.stageTailIsRunning === true && index === preparedRows.length,
           ),
         );
         continue;
@@ -406,11 +362,7 @@ export function buildAssistantWorkRenderItems(
         index += 1;
         while (index < preparedRows.length) {
           const nextRow = preparedRows[index];
-          if (
-            !nextRow ||
-            nextRow.kind === "cuaGroup" ||
-            !isExecuteToolCallRow(nextRow)
-          ) {
+          if (!nextRow || nextRow.kind === "cuaGroup" || !isExecuteToolCallRow(nextRow)) {
             break;
           }
           groupRows.push(nextRow);
@@ -419,18 +371,13 @@ export function buildAssistantWorkRenderItems(
         // 单个工具保留自身语义和渲染，避免只包含一个子项的 Terminal 容器。
         if (groupRows.length === 1) {
           const singleRow = groupRows[0]!;
-          items.push({
-            kind: "row",
-            key: `row:${singleRow.rowId}`,
-            row: singleRow,
-          });
+          items.push({ kind: "row", key: `row:${singleRow.rowId}`, row: singleRow });
           continue;
         }
         items.push(
           buildExecuteGroup(
             groupRows,
-            options?.stageTailIsRunning === true &&
-              index === preparedRows.length,
+            options?.stageTailIsRunning === true && index === preparedRows.length,
           ),
         );
         continue;
@@ -458,11 +405,7 @@ export function buildAssistantWorkRenderItems(
     index += 1;
     while (index < preparedRows.length) {
       const nextRow = preparedRows[index];
-      if (
-        !nextRow ||
-        nextRow.kind === "cuaGroup" ||
-        !isExploreToolCallRow(nextRow)
-      ) {
+      if (!nextRow || nextRow.kind === "cuaGroup" || !isExploreToolCallRow(nextRow)) {
         break;
       }
       groupRows.push(nextRow);

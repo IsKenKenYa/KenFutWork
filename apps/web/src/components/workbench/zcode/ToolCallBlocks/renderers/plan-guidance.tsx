@@ -1,23 +1,14 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/plan-guidance.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/plan-guidance.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：MessageResponseProps（禁改件 message.tsx）可选属性不接受 undefined，调用点按手册 §4 条件展开。
- */
-
-import { MessageResponse } from "@zui/components/ai-elements/message";
-import { ToolOutput } from "@zui/components/ai-elements/tool";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { getToolCallErrorText } from "@zui/lib/toolError";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
 import { NotepadText } from "lucide-react";
 import { useCallback } from "react";
+import { MessageResponse } from "@zui/components/ai-elements/message.js";
+import { ToolOutput } from "@zui/components/ai-elements/tool.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { getToolCallErrorText } from "@zui/lib/toolError.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "../ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "../shared.js";
 
-const PLAN_GUIDANCE_TOOL_ICON = (
-  <NotepadText className="size-4 shrink-0 text-foreground-subtle" />
-);
+const PLAN_GUIDANCE_TOOL_ICON = <NotepadText className="size-4 shrink-0 text-foreground-subtle" />;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -46,11 +37,7 @@ function extractGuidanceMarkdown(
     }
 
     if (isRecord(candidate)) {
-      const directText = readStringField(candidate, [
-        "text",
-        "content",
-        "output",
-      ]);
+      const directText = readStringField(candidate, ["text", "content", "output"]);
       if (directText) {
         return directText;
       }
@@ -71,9 +58,7 @@ function extractGuidanceMarkdown(
     return rawOutputText;
   }
 
-  const content = Array.isArray(toolCall.raw.content)
-    ? toolCall.raw.content
-    : [];
+  const content = Array.isArray(toolCall.raw.content) ? toolCall.raw.content : [];
   for (const item of content) {
     if (!isRecord(item)) {
       continue;
@@ -100,31 +85,18 @@ export function PlanGuidanceToolCallBlock(context: ToolCallBlockRenderContext) {
         <div className="ml-2 space-y-2 border-border border-l pl-3.5 border-border">
           <MessageResponse
             className="min-w-0 break-words [&_h1]:text-foreground-subtlest [&_h2]:text-foreground-subtlest [&_h3]:text-foreground-subtlest [&_li]:text-foreground-subtlest [&_p]:text-foreground-subtlest"
-            {...(context.workspacePath === undefined
-              ? {}
-              : { workspacePath: context.workspacePath })}
-            {...(context.theme === undefined ? {} : { theme: context.theme })}
-            {...(context.codePreviewSettings === undefined
-              ? {}
-              : { codePreviewSettings: context.codePreviewSettings })}
-            {...(context.onOpenCodeViewer === undefined
-              ? {}
-              : { onOpenCodeViewer: context.onOpenCodeViewer })}
-            {...(context.onOpenFileLink === undefined
-              ? {}
-              : { onOpenFileLink: context.onOpenFileLink })}
-            {...(context.onOpenBrowserUrl === undefined
-              ? {}
-              : { onOpenExternalUrl: context.onOpenBrowserUrl })}
+            workspacePath={context.workspacePath}
+            theme={context.theme}
+            codePreviewSettings={context.codePreviewSettings}
+            onOpenCodeViewer={context.onOpenCodeViewer}
+            onOpenFileLink={context.onOpenFileLink}
+            onOpenExternalUrl={context.onOpenBrowserUrl}
           >
             {guidanceMarkdown}
           </MessageResponse>
         </div>
       ) : (
-        <ToolOutput
-          errorText={errorText}
-          output={errorText ? undefined : toolCall.output}
-        />
+        <ToolOutput errorText={errorText} output={errorText ? undefined : toolCall.output} />
       ),
     [
       context.codePreviewSettings,
@@ -151,9 +123,7 @@ export function PlanGuidanceToolCallBlock(context: ToolCallBlockRenderContext) {
         sourceLabel={context.sourceLabel}
         primaryText={null}
         secondaryText={undefined}
-        statusLabel={
-          toolCall.status === "failed" ? context.statusLabel : undefined
-        }
+        statusLabel={toolCall.status === "failed" ? context.statusLabel : undefined}
         statusTooltip={toolCall.status === "failed" ? errorText : undefined}
         showFailureStatus={toolCall.status === "failed"}
         isRunning={context.isRunning}

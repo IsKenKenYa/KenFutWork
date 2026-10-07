@@ -1,23 +1,10 @@
-/**
- * zcode 照搬：`@/mentions/providers/subagentsMentionProvider.ts`（references/zcode/packages/ui/src/mentions/providers/subagentsMentionProvider.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-import type { AgentSummary } from "@zui/lib/zcode-shared";
-import { buildSubagentMentionMarkdown } from "@zui/mentions/mentionMarkdown";
-import type { MentionItem } from "@zui/mentions/mentionTypes";
+import type { AgentSummary } from "@zcode/shared";
+import { buildSubagentMentionMarkdown } from "@zui/mentions/mentionMarkdown.js";
+import type { MentionItem } from "@zui/mentions/mentionTypes.js";
 
 type SubagentMentionInput = Pick<
   AgentSummary,
-  | "id"
-  | "name"
-  | "description"
-  | "path"
-  | "scope"
-  | "source"
-  | "enabled"
-  | "modelSelection"
+  "id" | "name" | "description" | "path" | "scope" | "source" | "enabled" | "modelSelection"
 >;
 
 function getSubagentSourcePriority(agent: SubagentMentionInput): number {
@@ -43,9 +30,7 @@ function getSubagentSourceLabel(agent: SubagentMentionInput): string {
   return "User";
 }
 
-export function mapSubagentsToMentionItemsForTest(
-  agents: SubagentMentionInput[],
-): MentionItem[] {
+export function mapSubagentsToMentionItemsForTest(agents: SubagentMentionInput[]): MentionItem[] {
   const uniqueAgentsByName = new Map<string, SubagentMentionInput>();
   for (const agent of agents) {
     if (!agent.enabled) {
@@ -56,10 +41,7 @@ export function mapSubagentsToMentionItemsForTest(
       continue;
     }
     const current = uniqueAgentsByName.get(key);
-    if (
-      !current ||
-      getSubagentSourcePriority(agent) < getSubagentSourcePriority(current)
-    ) {
+    if (!current || getSubagentSourcePriority(agent) < getSubagentSourcePriority(current)) {
       uniqueAgentsByName.set(key, agent);
     }
   }
@@ -73,9 +55,7 @@ export function mapSubagentsToMentionItemsForTest(
       id: `subagent:${agent.id}`,
       category: "subagents",
       label: agent.name,
-      description: agent.description
-        ? `${sourceLabel} · ${agent.description}`
-        : sourceLabel,
+      description: agent.description ? `${sourceLabel} · ${agent.description}` : sourceLabel,
       value: agent.name,
       markdown: buildSubagentMentionMarkdown(agent.name),
       keywords: [

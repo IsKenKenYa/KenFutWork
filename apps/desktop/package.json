@@ -1,6 +1,6 @@
 {
   "name": "@kenfutwork/desktop",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "private": true,
   "description": "KenFutWork 桌面壳（Tauri 2）：窗口 + 服务端 sidecar 生命周期，构建入口在 src-tauri。",
   "scripts": {
@@ -9,7 +9,7 @@
     "verify:wizard-art": "node scripts/probe-wizard-art.mjs",
     "tauri": "tauri",
     "typecheck": "node scripts/cargo.mjs check",
-    "test": "node scripts/cargo.mjs test"
+    "test": "node --test scripts/cargo-gate.test.mjs && node scripts/cargo.mjs test"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.5"

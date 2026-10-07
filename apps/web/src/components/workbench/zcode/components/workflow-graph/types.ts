@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/components/workflow-graph/types.ts`（references/zcode/packages/ui/src/components/workflow-graph/types.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-import type { ToolCallCreateWorkflowCausalityGraph } from "@zui/lib/zcode-shared/zcode-protocol-v4";
+import type { ToolCallCreateWorkflowCausalityGraph } from "@zcode/shared/zcode-protocol-v4";
 
 /**
  * The graph the renderer consumes is exactly the bounded display payload from the
@@ -24,21 +19,15 @@ import type { ToolCallCreateWorkflowCausalityGraph } from "@zui/lib/zcode-shared
 export type WorkflowCausalityGraphData = ToolCallCreateWorkflowCausalityGraph;
 export type WorkflowStepData = WorkflowCausalityGraphData["steps"][number];
 export type WorkflowLaneData = WorkflowCausalityGraphData["lanes"][number];
-export type WorkflowParticipantData =
-  WorkflowCausalityGraphData["participants"][number];
-export type WorkflowHandoffData =
-  WorkflowCausalityGraphData["handoffs"][number];
+export type WorkflowParticipantData = WorkflowCausalityGraphData["participants"][number];
+export type WorkflowHandoffData = WorkflowCausalityGraphData["handoffs"][number];
 /**
  * 作者用 `phase("…")` 施加的分组结构。板面的
  * 第一层就是它；无标记脚本由 UI 合成一个隐式阶段（participant-model.ts）。`phases` /
  * `phaseEdges` 是可选的，所以这两个别名先摘掉 undefined——消费者拿到的永远是数组元素类型。
  */
-export type WorkflowPhaseData = NonNullable<
-  WorkflowCausalityGraphData["phases"]
->[number];
-export type WorkflowPhaseEdgeData = NonNullable<
-  WorkflowCausalityGraphData["phaseEdges"]
->[number];
+export type WorkflowPhaseData = NonNullable<WorkflowCausalityGraphData["phases"]>[number];
+export type WorkflowPhaseEdgeData = NonNullable<WorkflowCausalityGraphData["phaseEdges"]>[number];
 
 /** Per-step run state for the live-execution view; keyed by step id. */
 export type StepRunStatus = "pending" | "running" | "done" | "failed";

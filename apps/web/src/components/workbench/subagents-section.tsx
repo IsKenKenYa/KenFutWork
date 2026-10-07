@@ -1,8 +1,8 @@
 "use client";
 
 import { Bot, ExternalLink } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { requestPanelView } from "@/lib/panel-open";
 import {
   type AgentSubagentListResponse,
   fetchSubagents,
@@ -15,8 +15,7 @@ import {
  * （`apps/server/src/agent/sub-agents.ts`）——所以这里列出的子代理真的会被派活，
  * 不是另写一遍的说明文字。
  *
- * 「运行中的子代理」不在这里：它是从本轮事件流推导的（工作台右栏「子智能体」目录），
- * 需要一个在跑的会话才有内容。这里给一个真入口直接跳过去，而不是复制一份空列表。
+ * 运行情况由原 Code 会话和子代理目录显示；此共享设置页只导航到真实工作台。
  */
 /** 声明的子代理（带 tools）与内置分发工具（不带）合成一行行同形状的展示条目。 */
 function subagentRows(data: AgentSubagentListResponse): Array<{
@@ -28,10 +27,14 @@ function subagentRows(data: AgentSubagentListResponse): Array<{
   return [...data.subagents, ...data.builtin];
 }
 
-export function SubagentsSection({ accessToken }: { accessToken: string }) {
+export function SubagentsSection({
+  accessToken,
+}: {
+  accessToken: string | null;
+}) {
   const [data, setData] = useState<AgentSubagentListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     let cancelled = false;
@@ -53,8 +56,7 @@ export function SubagentsSection({ accessToken }: { accessToken: string }) {
     <section aria-label="子智能体设置">
       <h3 className="mb-1 text-base font-medium">子智能体</h3>
       <p className="mb-3 text-sm text-muted-foreground">
-        主 Agent
-        可以把子任务交给下面这些子智能体执行，运行情况在右栏「子智能体」面板里看。
+        运行记录见 Code 子代理目录
       </p>
 
       {error ? (
@@ -75,7 +77,7 @@ export function SubagentsSection({ accessToken }: { accessToken: string }) {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm">
                     {entry.label}
-                    <code className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    <code className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                       {entry.name}
                     </code>
                   </p>
@@ -83,7 +85,7 @@ export function SubagentsSection({ accessToken }: { accessToken: string }) {
                     {entry.description}
                   </p>
                   {entry.tools && entry.tools.length > 0 ? (
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    <p className="mt-0.5 text-xs text-muted-foreground">
                       工具：{entry.tools.join("、")}
                     </p>
                   ) : null}
@@ -94,24 +96,12 @@ export function SubagentsSection({ accessToken }: { accessToken: string }) {
 
           <button
             type="button"
-            onClick={() => {
-              // 没有面板在监听（例如 Design 模式下工作台没挂右栏）时如实说明，不假装打开
-              setNotice(
-                requestPanelView("subagents")
-                  ? null
-                  : "当前界面没有右栏面板可打开，请到 Code 模式里查看「子智能体」。",
-              );
-            }}
+            onClick={() => router.push("/workbench")}
             className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
           >
             <ExternalLink className="h-3.5 w-3.5" />
-            打开右栏「子智能体」
+            前往 Code 查看子智能体
           </button>
-          {notice ? (
-            <p role="status" className="text-xs text-muted-foreground">
-              {notice}
-            </p>
-          ) : null}
         </div>
       )}
     </section>

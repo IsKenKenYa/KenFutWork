@@ -14,6 +14,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { parseHeadersJson, providerHeadersHint } from "@/lib/provider-headers";
+import {
+  SETTINGS_CONTROL_WIDTH,
+  SETTINGS_ROW,
+  SETTINGS_ROW_STACK,
+} from "@/lib/settings-layout";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
 
 const PROTOCOLS = [
   { value: "openai-compatible", label: "OpenAI 兼容" },
@@ -38,7 +46,7 @@ const DEFAULT_MODELS_JSON =
 /**
  * 供应商实例表单（新建 / 编辑同一张表，避免两套字段漂移）。
  *
- * 只写字段的口径（凭证红线）：
+ * 凭据更新行为：
  * - `apiKey` 编辑时留空 = 不改（服务端 `undefined` 即不写该列）；
  * - 自定义头值同理：留空 = 保留已存的（表单下方列出键名），填 `{}` = 清空。
  */
@@ -110,7 +118,7 @@ export function ProviderInstanceForm({
     }
 
     if (!apiKey.trim()) {
-      onError("请填写 API Key（保存后不可查看）");
+      onError("请填写 API Key");
       return;
     }
     await onSubmitCreate({
@@ -127,31 +135,28 @@ export function ProviderInstanceForm({
   return (
     <form
       aria-label={isEditing ? "编辑供应商实例" : "新建供应商实例"}
-      className="mb-4 space-y-3 rounded-md border p-4"
+      className={`mb-4 ${SETTINGS_ROW_STACK}`}
       onSubmit={(event) => {
         event.preventDefault();
         void handleSubmit();
       }}
     >
-      <div>
-        <label htmlFor="provider-name" className="text-sm">
-          实例名称
-        </label>
-        <input
+      {/* 单行字段一律「标签在左、控件在右」（用户口径 2026-09-27）；JSON 是多行编辑，标签在上 */}
+      <div className={`${SETTINGS_ROW} justify-between`}>
+        <Label htmlFor="provider-name">实例名称</Label>
+        <Input
           id="provider-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+          className={`${SETTINGS_CONTROL_WIDTH} h-auto py-1.5`}
         />
       </div>
-      <div>
-        <label htmlFor="provider-protocol" className="text-sm">
-          协议
-        </label>
+      <div className={`${SETTINGS_ROW} justify-between`}>
+        <Label htmlFor="provider-protocol">协议</Label>
         {isEditing ? (
-          <p className="mt-1 text-sm text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             {protocolLabel(protocol)}（协议不可修改）
-          </p>
+          </span>
         ) : (
           <Select
             value={protocol}
@@ -160,7 +165,10 @@ export function ProviderInstanceForm({
             }}
             items={PROTOCOLS.map((p) => ({ value: p.value, label: p.label }))}
           >
-            <SelectTrigger id="provider-protocol" className="mt-1 w-full">
+            <SelectTrigger
+              id="provider-protocol"
+              className={SETTINGS_CONTROL_WIDTH}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -173,75 +181,65 @@ export function ProviderInstanceForm({
           </Select>
         )}
       </div>
-      <div>
-        <label htmlFor="provider-base-url" className="text-sm">
-          Base URL（可选）
-        </label>
-        <input
+      <div className={`${SETTINGS_ROW} justify-between`}>
+        <Label htmlFor="provider-base-url">Base URL</Label>
+        <Input
           id="provider-base-url"
+          placeholder="可选"
           value={baseUrl}
           onChange={(e) => setBaseUrl(e.target.value)}
-          className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+          className={`${SETTINGS_CONTROL_WIDTH} h-auto py-1.5`}
         />
       </div>
-      <div>
-        <label htmlFor="provider-api-key" className="text-sm">
-          {isEditing ? "API Key（留空则不改）" : "API Key"}
-        </label>
-        <input
+      <div className={`${SETTINGS_ROW} justify-between`}>
+        <Label htmlFor="provider-api-key">API Key</Label>
+        <Input
           id="provider-api-key"
           type="password"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+          placeholder={isEditing ? "留空则不改" : ""}
+          className={`${SETTINGS_CONTROL_WIDTH} h-auto py-1.5`}
         />
       </div>
-      <div>
-        <label htmlFor="provider-models" className="text-sm">
-          模型清单（JSON）
-        </label>
+      <div className="space-y-1">
+        <Label htmlFor="provider-models">模型清单（JSON）</Label>
         <textarea
           id="provider-models"
           value={modelsJson}
           onChange={(e) => setModelsJson(e.target.value)}
           rows={3}
-          className="mt-1 w-full rounded-md border px-3 py-2 font-mono text-xs"
+          className="w-full rounded-md border bg-transparent px-3 py-2 font-mono text-xs outline-none"
         />
       </div>
-      <div>
-        <label htmlFor="provider-headers" className="text-sm">
-          自定义请求头（JSON，可选）
-        </label>
+      <div className="space-y-1">
+        <Label htmlFor="provider-headers">自定义请求头</Label>
         <textarea
           id="provider-headers"
           value={headersJson}
           onChange={(e) => setHeadersJson(e.target.value)}
           rows={2}
-          placeholder='{"x-opencode-session":"{{sessionId}}"}'
-          className="mt-1 w-full rounded-md border px-3 py-2 font-mono text-xs"
+          placeholder={
+            isEditing
+              ? "留空保留 · {} 清空"
+              : '{"x-opencode-session":"{{sessionId}}"}'
+          }
+          className="w-full rounded-md border bg-transparent px-3 py-2 font-mono text-xs outline-none"
         />
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {providerHeadersHint}
           {isEditing && editing && editing.headerKeys.length > 0
-            ? `已存：${editing.headerKeys.join("、")}（留空则保留；填 {} 清空）`
+            ? `已存：${editing.headerKeys.join("、")}`
             : ""}
         </p>
       </div>
-      <div className="flex items-center gap-2">
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
-        >
+      <div className="flex items-center gap-2 pt-1">
+        <Button type="submit" disabled={submitting} size="sm">
           {submitting ? "保存中…" : isEditing ? "保存修改" : "保存实例"}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-md border px-4 py-2 text-sm"
-        >
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={onCancel}>
           取消
-        </button>
+        </Button>
       </div>
     </form>
   );

@@ -1,18 +1,12 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/nodeReplImageGrid.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/nodeReplImageGrid.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { ImagePreviewDialog } from "@zui/components/ai-elements/image-preview-dialog";
+import { useMemo, useRef, useState } from "react";
+import { ImagePreviewDialog } from "@zui/components/ai-elements/image-preview-dialog.js";
 import {
   ImageThumbnailGallery,
   imageThumbnailClassName,
   imageThumbnailTriggerClassName,
-} from "@zui/components/ai-elements/image-thumbnail-gallery";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { NodeReplDisplayModel } from "@zui/lib/nodeReplToolDisplay";
-import { useMemo, useRef, useState } from "react";
+} from "@zui/components/ai-elements/image-thumbnail-gallery.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { NodeReplDisplayModel } from "@zui/lib/nodeReplToolDisplay.js";
 
 export function NodeReplImageGrid({
   images,
@@ -47,10 +41,7 @@ export function NodeReplImageGrid({
 
   return (
     <>
-      <ImageThumbnailGallery
-        data-node-repl-image-gallery=""
-        grouped={previewItems.length >= 2}
-      >
+      <ImageThumbnailGallery data-node-repl-image-gallery="" grouped={previewItems.length >= 2}>
         {previewItems.map((item, index) => (
           <button
             ref={(node) => {

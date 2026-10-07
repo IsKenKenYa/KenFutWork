@@ -17,7 +17,7 @@ import { join, resolve } from "node:path";
  *   `path / bytes / mtimeMs / language / 摘要`。**文本文件才有摘要**（前 200 字符，
  *   只在建索引时读一次）；二进制与超过 2MB 的文件**照常列出**（这样按文件名/路径照样能搜到，
  *   比如找一张图），只是 `summary` 为空。
- * - **存哪**：`<cwd>/.kenfutwork/index/<canvasId>.json`（与插件目录同一处 `.kenfutwork/`，
+ * - **存哪**：`<cwd>/.kenfutwork/index/<taskId>.json`（与插件目录同一处 `.kenfutwork/`，
  *   属服务端本机缓存，**不写进用户的工作目录**，也不进库表）。
  * - **增量时机**：① 手动「重建」（不受资格线限制，超限只截断）；② 设置「索引新文件夹」开着
  *   时，搜索若发现索引缺失就**自动建一份**——但目录文件数达到 50,000 时**不建**，抛
@@ -105,7 +105,7 @@ export interface CodeIndexEntry {
 }
 
 export interface CodeIndexFile {
-  canvasId: string;
+  taskId: string;
   root: string;
   /** 建索引的时刻（ISO）。 */
   builtAt: string;
@@ -179,12 +179,12 @@ export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
     options.indexDir ?? join(process.cwd(), ".kenfutwork", "index"),
   );
 
-  const fileFor = (canvasId: string) =>
-    join(indexDir, `${canvasId.replace(/[^a-zA-Z0-9_-]/g, "-")}.json`);
+  const fileFor = (taskId: string) =>
+    join(indexDir, `${taskId.replace(/[^a-zA-Z0-9_-]/g, "-")}.json`);
 
   /** 读索引文件；不存在/坏 JSON 视为「没有索引」（下次重建）。 */
-  const load = async (canvasId: string): Promise<CodeIndexFile | null> => {
-    const path = fileFor(canvasId);
+  const load = async (taskId: string): Promise<CodeIndexFile | null> => {
+    const path = fileFor(taskId);
     if (!existsSync(path)) return null;
     try {
       const raw = await readFile(path, "utf8");
@@ -204,7 +204,7 @@ export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
    * 手动「重建」不带这个标记，超限只截断（`truncated` 已在界面上标注）。
    */
   const build = async (
-    canvasId: string,
+    taskId: string,
     root: string,
     previous?: CodeIndexFile | null,
     buildOptions: { autoOnly?: boolean; entryLimit?: number } = {},
@@ -285,7 +285,7 @@ export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
 
     await walk(root, "");
     const index: CodeIndexFile = {
-      canvasId,
+      taskId,
       root,
       builtAt: new Date(startedAt).toISOString(),
       entries,
@@ -295,7 +295,7 @@ export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
     await mkdir(indexDir, { recursive: true });
     const payload = JSON.stringify(index);
     if (Buffer.byteLength(payload, "utf8") <= INDEX_MAX_INDEX_BYTES) {
-      await writeFile(fileFor(canvasId), payload, "utf8");
+      await writeFile(fileFor(taskId), payload, "utf8");
     } else {
       // 索引本身超上限：去掉摘要再存（元数据比摘要重要，搜索仍可按名字/路径）
       const slim: CodeIndexFile = {
@@ -303,7 +303,7 @@ export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
         truncated: true,
         entries: entries.map((entry) => ({ ...entry, summary: "" })),
       };
-      await writeFile(fileFor(canvasId), JSON.stringify(slim), "utf8");
+      await writeFile(fileFor(taskId), JSON.stringify(slim), "utf8");
     }
     return index;
   };
@@ -315,21 +315,21 @@ export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
    * 如实告诉用户「没有索引，请手动重建」——不偷偷建，也不假装搜过。
    */
   const ensure = async (
-    canvasId: string,
+    taskId: string,
     root: string,
     ensureOptions: { auto?: boolean } = {},
   ): Promise<CodeIndexFile | null> => {
-    const existing = await load(canvasId);
+    const existing = await load(taskId);
     if (existing) return existing;
     if (!ensureOptions.auto) return null;
-    return build(canvasId, root, null, { autoOnly: true });
+    return build(taskId, root, null, { autoOnly: true });
   };
 
-  const rebuild = async (canvasId: string, root: string) =>
-    build(canvasId, root, await load(canvasId));
+  const rebuild = async (taskId: string, root: string) =>
+    build(taskId, root, await load(taskId));
 
-  const clear = async (canvasId: string): Promise<void> => {
-    await rm(fileFor(canvasId), { force: true });
+  const clear = async (taskId: string): Promise<void> => {
+    await rm(fileFor(taskId), { force: true });
   };
 
   const stats = async (
@@ -338,7 +338,7 @@ export function createCodeIndexStore(options: CodeIndexStoreOptions = {}) {
     if (!index) return null;
     let indexBytes = 0;
     try {
-      indexBytes = (await stat(fileFor(index.canvasId))).size;
+      indexBytes = (await stat(fileFor(index.taskId))).size;
     } catch {
       indexBytes = 0;
     }

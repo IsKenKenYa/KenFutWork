@@ -1,10 +1,4 @@
-/**
- * zcode 照搬：`@/lib/nodeReplToolDisplay.ts`（references/zcode/packages/ui/src/lib/nodeReplToolDisplay.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-import type { TaskChatToolCall as ChatToolCall } from "@zui/lib/taskChatMessageTypes";
+import type { TaskChatToolCall as ChatToolCall } from "@zui/lib/taskChatMessageTypes.js";
 
 export type NodeReplOperation = "run" | "reset" | "add-module-dir";
 
@@ -31,19 +25,18 @@ export interface NodeReplCuaApp {
 
 export interface NodeReplDisplayModel {
   operation: NodeReplOperation;
-  userTitle?: string | undefined;
-  code?: string | undefined;
-  moduleDirectory?: string | undefined;
-  resultText?: string | undefined;
-  error?: NodeReplDisplayError | undefined;
+  userTitle?: string;
+  code?: string;
+  moduleDirectory?: string;
+  resultText?: string;
+  error?: NodeReplDisplayError;
   images: NodeReplDisplayImage[];
-  persistedResult?: NodeReplPersistedResult | undefined;
-  displaySource?: "browser_turn_end" | undefined;
-  app?: NodeReplCuaApp | undefined;
+  persistedResult?: NodeReplPersistedResult;
+  displaySource?: "browser_turn_end";
+  app?: NodeReplCuaApp;
 }
 
-const IMPLEMENTATION_TITLE_PATTERN =
-  /(?:\bjs\b|\bjavascript\b|node[\s_-]*repl)/i;
+const IMPLEMENTATION_TITLE_PATTERN = /(?:\bjs\b|\bjavascript\b|node[\s_-]*repl)/i;
 const LEADING_BLANK_LINES_PATTERN = /^(?:[ \t]*\r?\n)+/;
 const PROJECTED_COMPLETION_MARKER_PATTERN = /(^|\n)=> /g;
 const PROJECTED_IMAGE_PLACEHOLDER_PATTERN = /^\[Attached image\/[^\]]+\]$/u;
@@ -143,10 +136,7 @@ function readUserTitle(
   inputs: readonly Record<string, unknown>[],
 ): string | undefined {
   // 完成态快照可能只在 raw input 或顶层 title 保留用户标题，不能因主 input 只有 code 就丢失。
-  for (const candidate of [
-    ...inputs.map((input) => input.title),
-    toolCall.title,
-  ]) {
+  for (const candidate of [...inputs.map((input) => input.title), toolCall.title]) {
     const title = readNonEmptyString(candidate)?.trim();
     if (title && !IMPLEMENTATION_TITLE_PATTERN.test(title)) {
       return title;
@@ -179,11 +169,7 @@ function extractText(value: unknown, depth = 0): string | undefined {
     return directString;
   }
 
-  if (
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    typeof value === "bigint"
-  ) {
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
     return String(value);
   }
 
@@ -208,19 +194,10 @@ function extractText(value: unknown, depth = 0): string | undefined {
   const logs = readNonEmptyString(value.logs);
   const result = extractText(value.result, depth + 1);
   if (logs || result) {
-    return [logs, result]
-      .filter((item): item is string => item !== undefined)
-      .join("\n");
+    return [logs, result].filter((item): item is string => item !== undefined).join("\n");
   }
 
-  for (const key of [
-    "value",
-    "output",
-    "text",
-    "content",
-    "stdout",
-    "message",
-  ] as const) {
+  for (const key of ["value", "output", "text", "content", "stdout", "message"] as const) {
     const text = extractText(value[key], depth + 1);
     if (text) {
       return text;
@@ -230,9 +207,7 @@ function extractText(value: unknown, depth = 0): string | undefined {
   return undefined;
 }
 
-function removeProjectedCompletionMarkers(
-  text: string | undefined,
-): string | undefined {
+function removeProjectedCompletionMarkers(text: string | undefined): string | undefined {
   if (!text) {
     return text;
   }
@@ -267,10 +242,7 @@ function removeLeadingBlankLines(code: string | undefined): string | undefined {
   return code.replace(LEADING_BLANK_LINES_PATTERN, "");
 }
 
-function extractError(
-  value: unknown,
-  depth = 0,
-): NodeReplDisplayError | undefined {
+function extractError(value: unknown, depth = 0): NodeReplDisplayError | undefined {
   if (depth > 4) {
     return undefined;
   }
@@ -315,8 +287,7 @@ function extractImages(values: unknown[]): NodeReplDisplayImage[] {
   const addImage = (value: Record<string, unknown>) => {
     // 旧 built-in result 使用 {images:[{base64,mimeType}]}，真实 MCP
     // 使用 content 里的 {type:"image",data,mimeType}。专用 renderer 必须兼容两种历史形态。
-    const base64 =
-      readNonEmptyString(value.base64) ?? readNonEmptyString(value.data);
+    const base64 = readNonEmptyString(value.base64) ?? readNonEmptyString(value.data);
     const mimeType = readNonEmptyString(value.mimeType)?.trim();
     if (!base64 || !mimeType || !IMAGE_MIME_TYPE_PATTERN.test(mimeType)) {
       return;
@@ -354,12 +325,8 @@ function extractImages(values: unknown[]): NodeReplDisplayImage[] {
  * raw.result 内，终态 snapshot 则把 completed part 的 metadata 直接当作 raw，只扫一个固定位置
  * 会让对话结束后图标消失。
  */
-function findCuaApp(
-  value: unknown,
-  visited = new Set<object>(),
-): NodeReplCuaApp | undefined {
-  if (!value || typeof value !== "object" || visited.has(value))
-    return undefined;
+function findCuaApp(value: unknown, visited = new Set<object>()): NodeReplCuaApp | undefined {
+  if (!value || typeof value !== "object" || visited.has(value)) return undefined;
   visited.add(value);
   if (Array.isArray(value)) {
     for (const item of value) {
@@ -383,21 +350,15 @@ function findCuaApp(
   return undefined;
 }
 
-function hasBrowserTurnEndDisplay(
-  value: unknown,
-  visited = new Set<object>(),
-): boolean {
+function hasBrowserTurnEndDisplay(value: unknown, visited = new Set<object>()): boolean {
   if (!value || typeof value !== "object" || visited.has(value)) return false;
   visited.add(value);
   if (Array.isArray(value)) {
     return value.some((item) => hasBrowserTurnEndDisplay(item, visited));
   }
   if (!isRecord(value)) return false;
-  if (value.kind === "node_repl_images" && value.source === "browser_turn_end")
-    return true;
-  return Object.values(value).some((item) =>
-    hasBrowserTurnEndDisplay(item, visited),
-  );
+  if (value.kind === "node_repl_images" && value.source === "browser_turn_end") return true;
+  return Object.values(value).some((item) => hasBrowserTurnEndDisplay(item, visited));
 }
 
 function parsePersistedResult(text: string | undefined): {
@@ -427,14 +388,11 @@ function parsePersistedResult(text: string | undefined): {
   };
 }
 
-export function buildNodeReplDisplayModel(
-  toolCall: ChatToolCall,
-): NodeReplDisplayModel {
+export function buildNodeReplDisplayModel(toolCall: ChatToolCall): NodeReplDisplayModel {
   const inputs = readInputRecords(toolCall);
-  const outputCandidates = [
-    toolCall.output,
-    readRawOutput(toolCall.raw),
-  ].filter((value) => value !== undefined);
+  const outputCandidates = [toolCall.output, readRawOutput(toolCall.raw)].filter(
+    (value) => value !== undefined,
+  );
   const projectedText = outputCandidates
     .map((candidate) => extractText(candidate))
     .find((candidate) => candidate !== undefined);
@@ -462,9 +420,7 @@ export function buildNodeReplDisplayModel(
     error:
       extractError(toolCall.error) ??
       (toolCall.status === "failed"
-        ? outputCandidates
-            .map((candidate) => extractError(candidate))
-            .find(Boolean)
+        ? outputCandidates.map((candidate) => extractError(candidate)).find(Boolean)
         : undefined),
     images,
   };

@@ -1,23 +1,11 @@
-/**
- * zcode 照搬：`@/v4/ConversationAgentToolCallRow.tsx`（references/zcode/packages/ui/src/v4/ConversationAgentToolCallRow.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import { runUserAction } from "@zui/lib/userActionTelemetry";
-import {
-  TID_V4_ROW,
-  TID_V4_SUBAGENT_OPEN_SIDE_PANE,
-  testId,
-} from "@zui/lib/zcode-shared";
-import { ToolCallBlock } from "@zui/ToolCallBlocks";
-import { getAgentPrimaryText } from "@zui/ToolCallBlocks/renderers/agentHelpers";
-import type { ConversationAssistantWorkRenderItem } from "@zui/v4/conversationAssistantWorkItems";
-import type { ConversationRowRenderContext } from "@zui/v4/conversationRowContext";
-import { toolCallRowToLegacyNode } from "@zui/v4/toolCallRowAdapter";
 import { useCallback, useMemo } from "react";
+import { TID_V4_ROW, TID_V4_SUBAGENT_OPEN_SIDE_PANE, testId } from "@zcode/shared";
+import { ToolCallBlock } from "@zui/ToolCallBlocks.js";
+import { getAgentPrimaryText } from "@zui/ToolCallBlocks/renderers/agentHelpers.js";
+import type { ConversationAssistantWorkRenderItem } from "@zui/v4/conversationAssistantWorkItems.js";
+import type { ConversationRowRenderContext } from "@zui/v4/conversationRowContext.js";
+import { toolCallRowToLegacyNode } from "@zui/v4/toolCallRowAdapter.js";
+import { runUserAction } from "@zui/lib/userActionTelemetry.js";
 
 function openSubagentSessionFromSummary({
   backgrounded: _backgrounded = false,
@@ -26,8 +14,8 @@ function openSubagentSessionFromSummary({
   subagentType,
   title,
 }: {
-  backgrounded?: boolean | undefined;
-  childSessionId?: string | undefined;
+  backgrounded?: boolean;
+  childSessionId?: string;
   context: ConversationRowRenderContext;
   subagentType: string;
   title: string;
@@ -55,10 +43,7 @@ export function ConversationAgentToolCallRow({
   item: Extract<ConversationAssistantWorkRenderItem, { kind: "agentToolCall" }>;
   context: ConversationRowRenderContext;
 }) {
-  const toolCallNode = useMemo(
-    () => toolCallRowToLegacyNode(item.row),
-    [item.row],
-  );
+  const toolCallNode = useMemo(() => toolCallRowToLegacyNode(item.row), [item.row]);
   const childSessionId = item.subagentRow.childSessionId;
   const subagentType = item.subagentRow.subagentType;
   // 与 Agent 摘要行复用同一 title resolver，保证右侧 tab 和用户点击的可见标题逐字一致。
@@ -68,18 +53,9 @@ export function ConversationAgentToolCallRow({
   );
   const handleOpenChildSession = useCallback(() => {
     runUserAction({
-      input: {
-        featureId: "conversation.subagent",
-        action: "open_side_pane",
-        trigger: "button",
-      },
+      input: { featureId: "conversation.subagent", action: "open_side_pane", trigger: "button" },
       operation: () =>
-        openSubagentSessionFromSummary({
-          childSessionId,
-          context,
-          subagentType,
-          title,
-        }),
+        openSubagentSessionFromSummary({ childSessionId, context, subagentType, title }),
       completed: { resultSource: "local_commit" },
       failureStage: "subagent_open",
     });

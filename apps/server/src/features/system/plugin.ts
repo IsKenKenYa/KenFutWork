@@ -17,21 +17,22 @@ import { createNativeDirectoryPicker } from "./directory-picker.js";
 export function createSystemPlugin(): PluginDefinition {
   return {
     name: "system",
-    inject: ["auth"],
+    inject: ["localAccess"],
     apply() {
       // 无服务可注册：本插件的全部作用面是 mounted 里的路由。
     },
     mounted(ctx) {
       const desktop = isDesktopRuntime(ctx.env);
       void registerSystemRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         picker: createNativeDirectoryPicker(),
         desktop: desktop
           ? true
           : {
               available: false,
-              reason:
-                "当前不是桌面形态：服务端在另一台机器上，系统文件夹对话框开不到你面前。请用「填本机路径」手动填绝对路径（填运行服务端那台机器上的目录）。",
+              // 只说事实。别再指路「填本机路径」——那个入口已按用户口径从界面移除，
+              // 提它等于让人去找一个不存在的东西。
+              reason: "非桌面形态：系统文件夹对话框开不到你面前",
             },
       });
     },

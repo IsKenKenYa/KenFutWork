@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/lib/promptInputTriggers.ts`（references/zcode/packages/ui/src/lib/promptInputTriggers.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）。
- */
 export type PromptInputTrigger = "/" | "@" | "$" | "#";
 
 export interface ActivePromptInputTrigger {
@@ -13,9 +8,7 @@ export interface ActivePromptInputTrigger {
 export function getPromptInputTriggerSignature(
   activeTrigger: ActivePromptInputTrigger | null,
 ): string | null {
-  return activeTrigger
-    ? `${activeTrigger.trigger}:${activeTrigger.query}`
-    : null;
+  return activeTrigger ? `${activeTrigger.trigger}:${activeTrigger.query}` : null;
 }
 
 export interface PromptInputSuggestionItem {
@@ -24,15 +17,13 @@ export interface PromptInputSuggestionItem {
   value: string;
   label: string;
   description: string;
-  keywords?: string[] | undefined;
-  data?:
-    | {
-        path?: string | undefined;
-        scope?: "built-in" | "workspace" | "user" | "plugin" | undefined;
-        source?: "built-in" | "user" | "plugin" | undefined;
-        model?: string | undefined;
-      }
-    | undefined;
+  keywords?: string[];
+  data?: {
+    path?: string;
+    scope?: "built-in" | "workspace" | "user" | "plugin";
+    source?: "built-in" | "user" | "plugin";
+    model?: string;
+  };
 }
 
 type PromptInputReplacementCandidates = string | readonly string[];
@@ -111,10 +102,8 @@ function scorePromptInputSuggestion(
   );
   const bestScore = Math.min(
     valueScore ?? Number.POSITIVE_INFINITY,
-    labelScore === null ? Number.POSITIVE_INFINITY : labelScore + 50,
-    descriptionScore === null
-      ? Number.POSITIVE_INFINITY
-      : descriptionScore + 250,
+    labelScore !== null ? labelScore + 50 : Number.POSITIVE_INFINITY,
+    descriptionScore !== null ? descriptionScore + 250 : Number.POSITIVE_INFINITY,
     keywordScore,
   );
 
@@ -125,15 +114,11 @@ export function extractActivePromptInputTrigger(
   textBeforeCursor: string,
 ): ActivePromptInputTrigger | null {
   const match =
-    ACTIVE_MENTION_TRIGGER_RE.exec(textBeforeCursor) ??
-    ACTIVE_TRIGGER_RE.exec(textBeforeCursor);
+    ACTIVE_MENTION_TRIGGER_RE.exec(textBeforeCursor) ?? ACTIVE_TRIGGER_RE.exec(textBeforeCursor);
   if (!match) {
     return null;
   }
-  if (
-    HAN_PREFIX_RE.test(match[1] ?? "") &&
-    DOMAIN_LIKE_QUERY_RE.test(match[3] ?? "")
-  ) {
+  if (HAN_PREFIX_RE.test(match[1] ?? "") && DOMAIN_LIKE_QUERY_RE.test(match[3] ?? "")) {
     return null;
   }
 

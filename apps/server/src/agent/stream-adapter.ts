@@ -6,9 +6,13 @@ import {
   AIMessage as AIMessageClass,
   ToolMessage as ToolMessageClass,
 } from "@langchain/core/messages";
-
+import type { RunUsageTotals } from "../features/usage/run-usage-accumulator.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { CompactionPlan } from "./auto-compact.js";
+import {
+  createModelCallUsageTracker,
+  type ModelCallUsage,
+} from "./model-call-usage.js";
 import {
   type CompositionPart,
   measureMessages,
@@ -35,12 +39,7 @@ type AdaptDeepAgentStreamOptions = {
   conversationId: string;
   now?: () => string;
   /** 用量采集点（§4.5）：chunk 携带 usage_metadata（cumulative）时回调最新累计值。 */
-  onUsage?: (usage: {
-    inputTokens: number;
-    outputTokens: number;
-    /** 上游上报的「命中缓存的输入 token」；上游不报时为 undefined。 */
-    cachedInputTokens?: number | undefined;
-  }) => void;
+  onUsage?: (usage: ModelCallUsage) => RunUsageTotals | void;
   runId: string;
   sessionId: string;
   /** 主 agent 的 lc_agent_name（createDeepAgent name）：归因时排除主 run。 */
@@ -52,6 +51,8 @@ type AdaptDeepAgentStreamOptions = {
    */
   toolComposition?: readonly CompositionPart[] | undefined;
   stream: AsyncIterable<LangChainStreamEvent | unknown>;
+  /** 工具中间件提供模型 call id 的事实；SDK on_tool_* 仅是内部运行标识。 */
+  canonicalToolEvents?: boolean;
   /**
    * 空闲看门狗阈值（毫秒，见 `stream-idle-guard.ts`）：上游停滞超过该时长即
    * 有界失败。缺省用库内默认值。
@@ -60,7 +61,7 @@ type AdaptDeepAgentStreamOptions = {
   /** 空闲超时触发时调用（中止底层请求、释放上游连接）。 */
   abortRun?: () => void;
   /**
-   * 自动压缩口径（传了才检测压缩、才可能发 `run.compacted`）：
+   * 自动压缩口径（传了才消费已提交的新摘要事实并发 `run.compacted`）：
    * 与 agent 装配用的是同一份（见 agent/auto-compact.ts）。
    */
   autoCompact?: CompactionPlan | undefined;
@@ -94,6 +95,64 @@ function readSubagentCallId(evt: LangChainStreamEvent): string | undefined {
 /** Inner tools that may be suppressed when running inside a sub-agent. */
 const INNER_SUB_AGENT_TOOLS = new Set(["generate_video"]);
 
+export async function* projectCanonicalToolEvent(
+  data: Record<string, unknown>,
+  identity: { runId: string; sessionId: string; conversationId: string },
+): AsyncGenerator<
+  Extract<StreamEvent, { type: "tool.started" | "tool.completed" }>
+> {
+  const stream = (async function* () {
+    yield { event: "on_custom_event", name: "kenfutwork.tool", data };
+  })();
+  for await (const event of adaptDeepAgentStream({
+    ...identity,
+    stream,
+    canonicalToolEvents: true,
+  })) {
+    if (event.type === "tool.started" || event.type === "tool.completed")
+      yield event;
+  }
+}
+
+function canonicalToolEvent(
+  evt: LangChainStreamEvent,
+): LangChainStreamEvent | undefined {
+  if (evt.event !== "on_custom_event" || evt.name !== "kenfutwork.tool")
+    return undefined;
+  const data = evt.data;
+  const toolCallId = readString(data?.toolCallId);
+  const toolName = readString(data?.toolName);
+  if (!toolCallId || !toolName) throw new Error("工具生命周期事实缺少调用身份");
+  const phase = data?.phase;
+  if (phase !== "started" && phase !== "completed" && phase !== "failed") {
+    throw new Error("工具生命周期事实缺少有效阶段");
+  }
+  return {
+    event:
+      phase === "started"
+        ? "on_tool_start"
+        : phase === "completed"
+          ? "on_tool_end"
+          : "on_tool_error",
+    name: toolName,
+    run_id: toolCallId,
+    data:
+      phase === "started"
+        ? { input: data?.input }
+        : phase === "completed"
+          ? { output: data?.output }
+          : { error: data?.error },
+    metadata: {
+      ...(readString(data?.agentName)
+        ? { lc_agent_name: data?.agentName }
+        : {}),
+      ...(readString(data?.agentCallId)
+        ? { lc_agent_call_id: data?.agentCallId }
+        : {}),
+    },
+  };
+}
+
 export async function* adaptDeepAgentStream(
   options: AdaptDeepAgentStreamOptions,
 ): AsyncGenerator<StreamEvent> {
@@ -104,8 +163,8 @@ export async function* adaptDeepAgentStream(
   const seenStartedToolCalls = new Set<string>();
   /** Tracks active sub-agent parent runs so we can detect nested inner tools. */
   const activeSubAgentRuns = new Set<string>();
-  /** 上一次下发 run.usage 时的 input token 数（同一提示词大小不重复发）。 */
-  let lastUsageInputTokens = -1;
+  const usageTracker = createModelCallUsageTracker();
+  const activeModelRuns = new Set<string>();
   /**
    * 派发栈（DEC-19 兜底归因）：metadata 传播在 createAgent 嵌套链上不可靠
    * （真机实测子代理嵌套工具事件缺 lc_agent_name）。前台派发是栈式嵌套——
@@ -117,36 +176,10 @@ export async function* adaptDeepAgentStream(
   /** 本轮是否已报过「上下文已压缩」（每轮最多一条）。 */
   let compactionReported = false;
   /**
-   * 本轮 run 的累计用量（跨模型调用求和），用于「平均缓存命中率」。
-   *
-   * 口径：命中率 = 累计命中缓存输入 ÷ 累计输入（**按 token 加权**），而不是各次百分比的
-   * 算术平均——一轮里短调用多时后者会虚高。每次模型调用的用量在 chunk 上会反复出现同一
-   * 份（调用内累计值），故只在「输入侧变化 = 新调用开始」时把上一轮调用结算进累计。
-   */
-  /**
    * 分类占比（R4-1）：在 on_chat_model_start 时按模型**实际输入**量一次，
    * 与 runtime 传来的工具分段合并，随 run.usage 下发。**字符数口径**（不是 token 拆分）。
    */
   let composition: CompositionPart[] | undefined;
-
-  let completedCallsInput = 0;
-  let completedCallsCached = 0;
-  let sawCachedFromUpstream = false;
-  let lastCallInput: number | null = null;
-  let lastCallCached: number | undefined;
-
-  /** 当前累计（含正在进行的那次调用），供 run.usage 下发。 */
-  const runTotals = (currentInput: number, currentCached?: number) => {
-    const runInputTokens = completedCallsInput + currentInput;
-    const cachedKnown = sawCachedFromUpstream || currentCached !== undefined;
-    if (!cachedKnown) {
-      return { runInputTokens };
-    }
-    return {
-      runInputTokens,
-      runCachedInputTokens: completedCallsCached + (currentCached ?? 0),
-    };
-  };
 
   yield {
     conversationId: options.conversationId,
@@ -164,6 +197,7 @@ export async function* adaptDeepAgentStream(
   try {
     // 空闲看门狗：上游停滞不再是无限挂起，且中止信号在等待期即可生效
     for await (const rawEvent of withStreamIdleGuard(options.stream, {
+      idleEnabled: () => activeModelRuns.size > 0,
       ...(options.idleTimeoutMs === undefined
         ? {}
         : { idleMs: options.idleTimeoutMs }),
@@ -179,7 +213,77 @@ export async function* adaptDeepAgentStream(
         continue;
       }
 
-      const evt = rawEvent;
+      if (options.canonicalToolEvents && rawEvent.event.startsWith("on_tool_"))
+        continue;
+      const evt = canonicalToolEvent(rawEvent) ?? rawEvent;
+      if (evt.event === "on_chat_model_start")
+        activeModelRuns.add(evt.run_id ?? "anonymous-model");
+      if (evt.event === "on_chat_model_end" || evt.event === "on_chat_model_error")
+        activeModelRuns.delete(evt.run_id ?? "anonymous-model");
+      if (
+        evt.event === "on_custom_event" &&
+        evt.name === "kenfutwork.compaction.applied"
+      ) {
+        const fact = evt.data?.output as { checkpointId?: unknown } | undefined;
+        if (
+          !compactionReported &&
+          options.autoCompact &&
+          typeof fact?.checkpointId === "string"
+        ) {
+          compactionReported = true;
+          yield {
+            type: "run.compacted" as const,
+            runId: options.runId,
+            triggerTokens: options.autoCompact.trigger.value,
+            triggerSource: options.autoCompact.source,
+            keepMessages: options.autoCompact.keep.value,
+            timestamp: now(),
+          };
+        }
+        continue;
+      }
+
+      if (evt.event === "on_chat_model_start") usageTracker.start(evt);
+      if (
+        evt.event === "on_chat_model_stream" ||
+        evt.event === "on_chat_model_end"
+      ) {
+        const message =
+          evt.event === "on_chat_model_stream" ? evt.data?.chunk : evt.data?.output;
+        if (
+          AIMessageClass.isInstance(message) ||
+          AIMessageChunkClass.isInstance(message)
+        ) {
+          const observed = usageTracker.observe(evt, message);
+          if (observed) {
+            let totals = observed.totals;
+            try {
+              totals = options.onUsage?.(observed.usage) ?? totals;
+            } catch {
+              // 观测旁路不能把真实模型正文或完成变成运行失败；不记录潜在敏感异常。
+              console.warn("[model-usage] 用量采集失败，保留本次观测并继续运行。");
+            }
+            if (observed.emit)
+              yield {
+                type: "run.usage",
+                runId: options.runId,
+                modelCallId: observed.usage.modelCallId,
+                inputTokens: observed.usage.inputTokens,
+                outputTokens: observed.usage.outputTokens,
+                ...(observed.usage.cachedInputTokens === undefined
+                  ? {}
+                  : { cachedInputTokens: observed.usage.cachedInputTokens }),
+                runInputTokens: totals.inputTokens,
+                runOutputTokens: totals.outputTokens,
+                ...(totals.cachedInputTokens === undefined
+                  ? {}
+                  : { runCachedInputTokens: totals.cachedInputTokens }),
+                ...(composition?.length ? { composition } : {}),
+                timestamp: now(),
+              };
+          }
+        }
+      }
 
       // 模型输入就绪：量一次分类占比（系统提示词 / 消息 / 技能 …）
       if (evt.event === "on_chat_model_start") {
@@ -197,34 +301,6 @@ export async function* adaptDeepAgentStream(
           ...(options.toolComposition ?? []),
         ]);
 
-        /**
-         * 自动压缩发生了？中间件把被压掉的旧消息换成一条摘要消息
-         * （HumanMessage + `additional_kwargs.lc_source === "summarization"`），
-         * 它一定出现在**下一次模型调用的输入里**——这是唯一可靠、又不依赖私有 state 通道的观测点。
-         * 每轮最多报一次（用户知道「刚才压过一次」就够了）。
-         */
-        if (!compactionReported && options.autoCompact) {
-          const compacted = flat.some((message) => {
-            const kwargs = (message as { additional_kwargs?: unknown })
-              ?.additional_kwargs;
-            return (
-              typeof kwargs === "object" &&
-              kwargs !== null &&
-              (kwargs as { lc_source?: unknown }).lc_source === "summarization"
-            );
-          });
-          if (compacted) {
-            compactionReported = true;
-            yield {
-              type: "run.compacted" as const,
-              runId: options.runId,
-              triggerTokens: options.autoCompact.trigger.value,
-              triggerSource: options.autoCompact.source,
-              keepMessages: options.autoCompact.keep.value,
-              timestamp: now(),
-            };
-          }
-        }
         continue;
       }
 
@@ -245,59 +321,6 @@ export async function* adaptDeepAgentStream(
         ) {
           const msg = chunk as AIMessageChunk | AIMessage;
           if ((msg.tool_calls?.length ?? 0) > 0) continue;
-          const usageMeta = (
-            msg as unknown as {
-              usage_metadata?: {
-                input_tokens?: number;
-                output_tokens?: number;
-                input_token_details?: { cache_read?: number };
-              };
-            }
-          ).usage_metadata;
-          if (usageMeta) {
-            const inputTokens = usageMeta.input_tokens ?? 0;
-            const outputTokens = usageMeta.output_tokens ?? 0;
-            const cachedRaw = usageMeta.input_token_details?.cache_read;
-            const cachedInputTokens =
-              typeof cachedRaw === "number" && cachedRaw >= 0
-                ? cachedRaw
-                : undefined;
-            options.onUsage?.({
-              inputTokens,
-              outputTokens,
-              ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
-            });
-            // 用量快照发给前端（上下文容量/缓存命中浮层）。**只在输入侧变化时发**：
-            // input_tokens 是每次模型调用的提示词大小（一轮里随工具结果增长），
-            // output_tokens 则每个 chunk 都在涨——逐 chunk 下发会把 WS 灌满。
-            if (inputTokens !== lastUsageInputTokens) {
-              // 输入侧变了 = 这是一次新的模型调用：把上一次调用结算进累计
-              if (lastCallInput !== null) {
-                completedCallsInput += lastCallInput;
-                if (lastCallCached !== undefined) {
-                  completedCallsCached += lastCallCached;
-                  sawCachedFromUpstream = true;
-                }
-              }
-              lastCallInput = inputTokens;
-              lastCallCached = cachedInputTokens;
-              lastUsageInputTokens = inputTokens;
-              yield {
-                type: "run.usage" as const,
-                runId: options.runId,
-                inputTokens,
-                outputTokens,
-                ...(cachedInputTokens === undefined
-                  ? {}
-                  : { cachedInputTokens }),
-                ...runTotals(inputTokens, cachedInputTokens),
-                ...(composition && composition.length > 0
-                  ? { composition }
-                  : {}),
-                timestamp: now(),
-              };
-            }
-          }
         }
 
         const messageId =
@@ -498,6 +521,11 @@ export async function* adaptDeepAgentStream(
         seenCompletedToolCalls.add(toolCallId);
 
         const output = evt.data?.output;
+        const outputText = ToolMessageClass.isInstance(output)
+          ? extractChunkText(output)
+          : typeof output === "string"
+            ? output
+            : undefined;
 
         // When an inner tool runs inside an active sub-agent parent,
         // suppress its artifacts because the parent will re-emit them.
@@ -510,12 +538,14 @@ export async function* adaptDeepAgentStream(
           output,
           (extractedArtifacts?.length ?? 0) > 0,
         );
-        const completedSubagent =
-          readSubagentName(evt, mainAgentName) ?? dispatchStack.at(-1)?.name;
-        const completedCallId =
-          readSubagentCallId(evt) ?? dispatchStack.at(-1)?.callId;
         const completedIsDispatch =
           toolName === "subagent_task" || toolName === "subagent_background";
+        const completedSubagent =
+          readSubagentName(evt, mainAgentName) ??
+          (completedIsDispatch ? undefined : dispatchStack.at(-1)?.name);
+        const completedCallId =
+          readSubagentCallId(evt) ??
+          (completedIsDispatch ? undefined : dispatchStack.at(-1)?.callId);
         if (completedIsDispatch) {
           let stackIdx = -1;
           for (let i = dispatchStack.length - 1; i >= 0; i -= 1) {
@@ -531,6 +561,11 @@ export async function* adaptDeepAgentStream(
           : dispatchStack.at(-1);
         yield {
           output: extractedOutput,
+          ...(outputText !== undefined ? { outputText } : {}),
+          status:
+            ToolMessageClass.isInstance(output) && output.status === "error"
+              ? "error"
+              : "success",
           outputSummary: summarizeOutput(output),
           artifacts: extractedArtifacts,
           runId: options.runId,
@@ -584,6 +619,7 @@ export async function* adaptDeepAgentStream(
           readSubagentCallId(evt) ?? dispatchStack.at(-1)?.callId;
         yield {
           output: { error: reason },
+          status: "error",
           outputSummary: `失败：${reason}`,
           runId: options.runId,
           timestamp: now(),
@@ -684,7 +720,6 @@ const ARTIFACT_KEYS = new Set([
   "height",
   "placement",
 ]);
-const OUTPUT_SIZE_LIMIT = 10240; // 10KB
 
 function extractOutput(
   output: unknown,
@@ -692,7 +727,16 @@ function extractOutput(
 ): Record<string, unknown> | undefined {
   let text = "";
   if (ToolMessageClass.isInstance(output)) {
-    text = extractChunkText(output);
+    const canonical =
+      output.artifact && typeof output.artifact === "object"
+        ? (output.artifact as { canonicalOutput?: unknown }).canonicalOutput
+        : undefined;
+    text =
+      canonical === undefined
+        ? extractChunkText(output)
+        : typeof canonical === "string"
+          ? canonical
+          : JSON.stringify(canonical);
   } else if (typeof output === "string") {
     text = output;
   } else if (output && typeof output === "object") {
@@ -714,10 +758,6 @@ function extractOutput(
 
   // Skip if empty after stripping
   if (Object.keys(result).length === 0) return undefined;
-
-  // Size limit check
-  const serialized = JSON.stringify(result);
-  if (serialized.length > OUTPUT_SIZE_LIMIT) return undefined;
 
   return result;
 }

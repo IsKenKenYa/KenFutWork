@@ -7,12 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { UsageStatsSection } from "../src/components/workbench/usage-stats-section";
 
-const { useAuthMock } = vi.hoisted(() => ({
-  useAuthMock: vi.fn(),
+const { useLocalInstanceMock } = vi.hoisted(() => ({
+  useLocalInstanceMock: vi.fn(),
 }));
 
-vi.mock("@/lib/auth-context", () => ({
-  useAuth: useAuthMock,
+vi.mock("@/lib/local-instance-context", () => ({
+  useLocalInstance: useLocalInstanceMock,
 }));
 
 const STATS_7D = {
@@ -40,6 +40,11 @@ const STATS_7D = {
     { provider: "openai", model: "gpt-4.1", tokens: 1560 },
     { provider: "google", model: "gemini", tokens: 400 },
   ],
+  // 逐日 × 模型（趋势图按模型画多条线；与 daily 按下标对齐）
+  dailyByModel: [
+    { model: "gpt-4.1", tokens: [0, 0, 0, 0, 1560, 0, 0] },
+    { model: "gemini", tokens: [0, 0, 0, 0, 0, 0, 400] },
+  ],
 };
 
 function mockFetchWith(stats: unknown, ok = true) {
@@ -55,7 +60,9 @@ function mockFetchWith(stats: unknown, ok = true) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useAuthMock.mockReturnValue({ session: { access_token: "token" } });
+  useLocalInstanceMock.mockReturnValue({
+    instance: { instanceId: "instance" },
+  });
 });
 
 afterEach(() => {
@@ -69,9 +76,10 @@ describe("UsageStatsSection（R4-2 用户侧使用统计）", () => {
     render(<UsageStatsSection />);
 
     await waitFor(() => {
-      expect(screen.getByText("1960")).toBeInTheDocument();
+      expect(screen.getAllByText("1960")[0]).toBeInTheDocument();
     });
-    expect(screen.getByText("1560")).toBeInTheDocument();
+    // 1560 同时出现在汇总条与环图图例（同一数据两个视图）
+    expect(screen.getAllByText("1560").length).toBeGreaterThan(0);
     expect(screen.getByText("3 天")).toBeInTheDocument();
     expect(screen.getByText("4 天")).toBeInTheDocument();
     // 最长聊天时长（R4-2 剩下的那张卡）：42300 秒 = 11 小时 45 分钟
@@ -111,12 +119,14 @@ describe("UsageStatsSection（R4-2 用户侧使用统计）", () => {
     vi.stubGlobal("fetch", mockFetchWith(STATS_7D));
     render(<UsageStatsSection />);
 
-    await waitFor(() => {
-      expect(screen.getByText("gpt-4.1")).toBeInTheDocument();
+    const legend = await screen.findByRole("list", {
+      name: "模型用量图例",
     });
-    expect(screen.getByText(/80%/)).toBeInTheDocument();
-    expect(screen.getByText("gemini")).toBeInTheDocument();
-    expect(screen.getByText(/20%/)).toBeInTheDocument();
+    const text = legend.textContent ?? "";
+    expect(text).toContain("gpt-4.1");
+    expect(text).toContain("80%");
+    expect(text).toContain("gemini");
+    expect(text).toContain("20%");
   });
 
   it("接口失败时显示可读错误而不是空白", async () => {
@@ -126,5 +136,35 @@ describe("UsageStatsSection（R4-2 用户侧使用统计）", () => {
     await waitFor(() => {
       expect(screen.getByText(/统计加载失败/)).toBeInTheDocument();
     });
+  });
+
+  it("趋势图按模型出图例（参考图：彩色圆点 + 模型名，按用量降序）", async () => {
+    vi.stubGlobal("fetch", mockFetchWith(STATS_7D));
+    render(<UsageStatsSection />);
+
+    const legend = await screen.findByRole("list", { name: "模型图例" });
+    const items = Array.from(legend.querySelectorAll("li")).map(
+      (item) => item.textContent ?? "",
+    );
+    expect(items[0]).toContain("gpt-4.1");
+    expect(items[1]).toContain("gemini");
+  });
+
+  it("热力图不出横向滚动条：格子随容器伸缩，月份标签在网格下方（参考图同款）", async () => {
+    vi.stubGlobal("fetch", mockFetchWith(STATS_7D));
+    const { container } = render(<UsageStatsSection />);
+
+    await screen.findByText("Token 活动");
+    // 没有 overflow-x 容器（此前固定格宽 + overflow-x-auto 必出滚动条）
+    expect(container.querySelector(".overflow-x-auto")).toBeNull();
+  });
+
+  it("Token 活动支持 每日/累计 切换（累计视图文案随之变化）", async () => {
+    vi.stubGlobal("fetch", mockFetchWith(STATS_7D));
+    render(<UsageStatsSection />);
+
+    expect(await screen.findByText(/近一年 · 每日/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "累计" }));
+    expect(screen.getByText(/近一年 · 累计/)).toBeInTheDocument();
   });
 });

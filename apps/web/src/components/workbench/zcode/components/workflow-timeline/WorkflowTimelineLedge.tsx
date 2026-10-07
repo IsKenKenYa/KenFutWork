@@ -1,32 +1,17 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowTimelineLedge.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowTimelineLedge.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import { STATUS_DOT } from "@zui/components/workflow-graph/run-status-presentation";
-import type { StepRunStatus } from "@zui/components/workflow-graph/types";
 import {
-  LEDGE_LAMP,
-  LEDGE_PITCH,
-  ledgeLamps,
-  railKey,
-  scrollbarThumb,
-} from "@zui/components/workflow-timeline/timeline-ledge";
-import type {
-  TimelineRail,
-  TimelineStation,
-} from "@zui/components/workflow-timeline/timeline-model";
-import type { TimelineViewport } from "@zui/components/workflow-timeline/use-timeline-viewport";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
+  useRef,
+  useState,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
-  useRef,
-  useState,
 } from "react";
+import { cn } from "@zui/components/lib/utils.js";
+import { STATUS_DOT } from "@zui/components/workflow-graph/run-status-presentation.js";
+import type { StepRunStatus } from "@zui/components/workflow-graph/types.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { TimelineRail, TimelineStation } from "./timeline-model.js";
+import { LEDGE_PITCH, LEDGE_LAMP, ledgeLamps, railKey, scrollbarThumb } from "./timeline-ledge.js";
+import type { TimelineViewport } from "./use-timeline-viewport.js";
 
 /**
  * 边檐与滚动条。
@@ -61,17 +46,11 @@ export function prefersReducedMotion(): boolean {
 // 双线段：檐上两站并行时不是一条线，
 // 而是两条 1px、相距 2px——檐把带压扁了，分叉与汇合画不下，两条并排的线是这里唯一还说得出
 // 「同时」的记号。
-function Segment({
-  rail,
-  width,
-}: {
-  rail: TimelineRail | undefined;
-  width: number;
-}) {
+function Segment({ rail, width }: { rail: TimelineRail | undefined; width: number }) {
   if (rail?.kind === "twin") {
     return (
       <span
-        aria-hidden={true}
+        aria-hidden
         className="relative h-0 shrink-0"
         data-ledge-ink={rail.ink}
         data-ledge-twin="true"
@@ -90,7 +69,7 @@ function Segment({
   }
   return (
     <span
-      aria-hidden={true}
+      aria-hidden
       className={cn(
         "h-0 shrink-0 border-t border-foreground-subtlest",
         rail === undefined && "invisible",
@@ -129,15 +108,9 @@ export function WorkflowLedge({
   const { shown, more } = ledgeLamps(indexes, side);
   const stubRail =
     side === "left"
-      ? rails.get(
-          railKey(
-            indexes[indexes.length - 1]!,
-            indexes[indexes.length - 1]! + 1,
-          ),
-        )
+      ? rails.get(railKey(indexes[indexes.length - 1]!, indexes[indexes.length - 1]! + 1))
       : rails.get(railKey(indexes[0]! - 1, indexes[0]!));
-  const stub =
-    stubWidth > 0 ? <Segment rail={stubRail} width={stubWidth} /> : null;
+  const stub = stubWidth > 0 ? <Segment rail={stubRail} width={stubWidth} /> : null;
   const count =
     more > 0 ? (
       <span
@@ -170,7 +143,7 @@ export function WorkflowLedge({
           type="button"
         >
           <span
-            aria-hidden={true}
+            aria-hidden
             className={cn(stationLampClass(station.status), "wf-land")}
             data-lamp={station.status ?? "pending"}
           />
@@ -181,9 +154,7 @@ export function WorkflowLedge({
   return (
     <div
       aria-label={intl.formatMessage(
-        {
-          id: `chat.toolCall.workflow.timeline.ledge.${side === "left" ? "earlier" : "later"}`,
-        },
+        { id: `chat.toolCall.workflow.timeline.ledge.${side === "left" ? "earlier" : "later"}` },
         { count: indexes.length },
       )}
       className={cn(
@@ -219,16 +190,8 @@ export function WorkflowTimelineScrollbar({
 }) {
   const { intl } = useZCodeIntl();
   const [dragging, setDragging] = useState(false);
-  const drag = useRef<{
-    pointerId: number;
-    startX: number;
-    startLeft: number;
-  } | null>(null);
-  const thumb = scrollbarThumb(
-    viewport.scrollLeft,
-    viewport.clientWidth,
-    viewport.scrollWidth,
-  );
+  const drag = useRef<{ pointerId: number; startX: number; startLeft: number } | null>(null);
+  const thumb = scrollbarThumb(viewport.scrollLeft, viewport.clientWidth, viewport.scrollWidth);
   if (thumb === undefined) return null;
   const range = viewport.scrollWidth - viewport.clientWidth;
   const ratio = viewport.scrollWidth / viewport.clientWidth;
@@ -247,14 +210,8 @@ export function WorkflowTimelineScrollbar({
   const onThumbMove = (event: ReactPointerEvent<HTMLSpanElement>) => {
     const state = drag.current;
     const element = scrollRef.current;
-    if (
-      state === null ||
-      element === null ||
-      state.pointerId !== event.pointerId
-    )
-      return;
-    element.scrollLeft =
-      state.startLeft + (event.clientX - state.startX) * ratio;
+    if (state === null || element === null || state.pointerId !== event.pointerId) return;
+    element.scrollLeft = state.startLeft + (event.clientX - state.startX) * ratio;
   };
   const onThumbUp = (event: ReactPointerEvent<HTMLSpanElement>) => {
     if (drag.current?.pointerId !== event.pointerId) return;
@@ -275,15 +232,11 @@ export function WorkflowTimelineScrollbar({
   };
   return (
     <div
-      aria-label={intl.formatMessage({
-        id: "chat.toolCall.workflow.timeline.scrollbar",
-      })}
+      aria-label={intl.formatMessage({ id: "chat.toolCall.workflow.timeline.scrollbar" })}
       aria-orientation="horizontal"
       aria-valuemax={100}
       aria-valuemin={0}
-      aria-valuenow={Math.round(
-        (100 * Math.min(viewport.scrollLeft, range)) / range,
-      )}
+      aria-valuenow={Math.round((100 * Math.min(viewport.scrollLeft, range)) / range)}
       className="wf-sb absolute inset-x-0 bottom-0 h-0.5 cursor-pointer rounded-full bg-border"
       data-dragging={dragging ? "true" : undefined}
       data-scrolling={viewport.scrolling ? "true" : undefined}

@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/lib/rendererNavigation.ts`（references/zcode/packages/ui/src/lib/rendererNavigation.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 interface RendererNavigationEntry {
   readonly type?: string;
 }
@@ -12,9 +7,18 @@ function readRendererNavigationEntries(): RendererNavigationEntry[] {
     if (typeof globalThis.performance?.getEntriesByType !== "function") {
       return [];
     }
-    return globalThis.performance.getEntriesByType(
-      "navigation",
-    ) as RendererNavigationEntry[];
+    const entries = globalThis.performance.getEntriesByType("navigation") as RendererNavigationEntry[];
+    if (entries[0]?.type === "reload" || typeof window === "undefined" || window.parent === window) {
+      return entries;
+    }
+    // Code 独立文档随同源工作台重建；父或 iframe 自身 reload 均保留原恢复资格。
+    try {
+      const parentEntries = window.parent.performance.getEntriesByType("navigation") as RendererNavigationEntry[];
+      if (parentEntries[0]?.type === "reload") return parentEntries;
+    } catch {
+      // 跨源宿主不可读，保留当前 renderer 的原判定。
+    }
+    return entries;
   } catch {
     return [];
   }

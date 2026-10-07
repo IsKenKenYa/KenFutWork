@@ -1,13 +1,6 @@
-/**
- * zcode 照搬：`@/chat-input-toolbar/RollingToolbarLabel.tsx`（references/zcode/packages/ui/src/chat-input-toolbar/RollingToolbarLabel.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { cn } from "@zui/components/lib/utils.js";
 
 const LABEL_ROLL_TRANSITION = {
   duration: 0.2,
@@ -18,10 +11,7 @@ function usePrefersReducedMotion() {
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
   useEffect(() => {
-    if (
-      typeof window === "undefined" ||
-      typeof window.matchMedia !== "function"
-    ) {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
       return;
     }
 
@@ -55,10 +45,10 @@ export function RollingToolbarLabel({
   value,
 }: {
   label: string;
-  className?: string | undefined;
-  prefix?: string | undefined;
-  prefixClassName?: string | undefined;
-  value?: string | undefined;
+  className?: string;
+  prefix?: string;
+  prefixClassName?: string;
+  value?: string;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const content =
@@ -71,14 +61,6 @@ export function RollingToolbarLabel({
       label
     );
 
-  if (reducedMotion) {
-    return (
-      <span className={className} title={label}>
-        {content}
-      </span>
-    );
-  }
-
   return (
     <span
       className={cn(
@@ -87,18 +69,23 @@ export function RollingToolbarLabel({
       )}
       title={label}
     >
-      <AnimatePresence initial={false} mode="popLayout">
-        <motion.span
-          key={label}
-          className="inline-flex min-w-0 whitespace-nowrap leading-[1.25]"
-          initial={{ y: "0.75em", opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: "-0.75em", opacity: 0 }}
-          transition={LABEL_ROLL_TRANSITION}
-        >
-          {content}
-        </motion.span>
-      </AnimatePresence>
+      {/* 减少动画也保留同一层文字行：模型触发器的截断样式不能落到供应商／模型片段上。 */}
+      {reducedMotion ? (
+        <span className="inline-flex min-w-0 whitespace-nowrap leading-[1.25]">{content}</span>
+      ) : (
+        <AnimatePresence initial={false} mode="popLayout">
+          <motion.span
+            key={label}
+            className="inline-flex min-w-0 whitespace-nowrap leading-[1.25]"
+            initial={{ y: "0.75em", opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: "-0.75em", opacity: 0 }}
+            transition={LABEL_ROLL_TRANSITION}
+          >
+            {content}
+          </motion.span>
+        </AnimatePresence>
+      )}
     </span>
   );
 }

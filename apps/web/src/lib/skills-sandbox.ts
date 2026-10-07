@@ -1,4 +1,5 @@
 import type { SandboxSkillPackage, SkillDetail } from "@kenfutwork/shared";
+import { serverFetch } from "@/lib/local-access";
 
 /**
  * 「从工作目录导入」的客户端调用：列出当前画布沙箱里的技能包候选，并把选中的导入工作区。
@@ -31,7 +32,7 @@ export async function listSandboxSkillPackages(input: {
     return { packages: [], error: "请先在工作台选中一个项目（工作目录）。" };
   }
   try {
-    const response = await fetch(
+    const response = await serverFetch(
       `${input.baseUrl}/api/skills/sandbox-packages?canvasId=${encodeURIComponent(input.canvasId)}`,
       {
         headers: input.token ? { Authorization: `Bearer ${input.token}` } : {},
@@ -63,14 +64,17 @@ export async function importSandboxSkill(input: {
     return { ok: false, reason: "请先在工作台选中一个项目（工作目录）。" };
   }
   try {
-    const response = await fetch(`${input.baseUrl}/api/skills/sandbox-import`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(input.token ? { Authorization: `Bearer ${input.token}` } : {}),
+    const response = await serverFetch(
+      `${input.baseUrl}/api/skills/sandbox-import`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(input.token ? { Authorization: `Bearer ${input.token}` } : {}),
+        },
+        body: JSON.stringify({ canvasId: input.canvasId, path: input.path }),
       },
-      body: JSON.stringify({ canvasId: input.canvasId, path: input.path }),
-    });
+    );
     if (!response.ok) {
       return {
         ok: false,

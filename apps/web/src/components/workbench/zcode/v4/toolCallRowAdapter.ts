@@ -1,16 +1,10 @@
-/**
- * zcode 照搬：`@/v4/toolCallRowAdapter.ts`（references/zcode/packages/ui/src/v4/toolCallRowAdapter.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
 // v4 ToolCallRow → 旧 ToolCallBlocks 输入形态（TaskChatToolCallTreeNode）适配。
 // 纯函数：ToolCallBlock 及其 renderers（execute/read/edit/...）吃的是旧 ZCode Agent 的
 // TaskChatToolCall 形态；v4 row 自包含，字段一一映射即可，不需要看别的行。
-
-import type { TaskChatToolCallTreeNode } from "@zui/lib/toolCallTree";
-import { normalizeWrappedErrorText } from "@zui/lib/toolError";
-import { buildZCodeStreamingToolInputPreview } from "@zui/lib/zcode-shared";
-import type { ToolCallRow } from "@zui/lib/zcode-shared/zcode-protocol-v4";
+import { buildZCodeStreamingToolInputPreview } from "@zcode/shared";
+import type { ToolCallRow } from "@zcode/shared/zcode-protocol-v4";
+import type { TaskChatToolCallTreeNode } from "@zui/lib/toolCallTree.js";
+import { normalizeWrappedErrorText } from "@zui/lib/toolError.js";
 
 // v4 status → 旧 ChatToolCall.status（mapToolStatus 的输入词表：
 // pending/in_progress/completed/failed/stopped）。
@@ -45,9 +39,7 @@ function resolveToolInputPreview(row: ToolCallRow): ResolvedToolInputPreview {
     return {
       input: row.input,
       inputPreviewComplete: true,
-      ...(row.inputText.length > 0
-        ? { streamingRawInputLength: row.inputText.length }
-        : {}),
+      ...(row.inputText.length > 0 ? { streamingRawInputLength: row.inputText.length } : {}),
     };
   }
   if (!row.inputText) {
@@ -87,9 +79,7 @@ function resolveV4ToolErrorText(row: ToolCallRow): string | undefined {
   return readNonEmptyString(row.error?.code);
 }
 
-export function toolCallRowToLegacyNode(
-  row: ToolCallRow,
-): TaskChatToolCallTreeNode {
+export function toolCallRowToLegacyNode(row: ToolCallRow): TaskChatToolCallTreeNode {
   const legacyStatus = STATUS_MAP[row.status];
   const errorText = resolveV4ToolErrorText(row);
   const inputPreview = resolveToolInputPreview(row);
@@ -98,9 +88,7 @@ export function toolCallRowToLegacyNode(
   const display = row.output?.display ?? row.display;
   // CUA v1 历史 display 会重复保存 input；工具调用行已经持有唯一输入，桥接时丢弃旧副本。
   const legacyDisplay =
-    display?.kind === "cua"
-      ? (({ input: _legacyInput, ...rest }) => rest)(display)
-      : display;
+    display?.kind === "cua" ? (({ input: _legacyInput, ...rest }) => rest)(display) : display;
   return {
     toolCall: {
       toolId: row.toolCallId,
@@ -113,8 +101,7 @@ export function toolCallRowToLegacyNode(
       // V4 ToolCallRow 没有 legacy taskNotification raw；background Agent
       // 的终态摘要只落在 output。Agent renderer 读取 content 展示活动结果，因此在
       // Agent/Task 行显式桥接，避免失败详情虽已投影却仍只显示一张空卡。
-      ...((row.toolName === "Agent" || row.toolName === "Task") &&
-      row.output?.text
+      ...((row.toolName === "Agent" || row.toolName === "Task") && row.output?.text
         ? { content: row.output.text }
         : {}),
       // v4 row 是自包含投影，部分 provider 只把工具失败正文塞进 output，

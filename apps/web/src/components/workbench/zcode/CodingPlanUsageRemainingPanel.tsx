@@ -1,36 +1,30 @@
-/**
- * zcode 照搬：`@/CodingPlanUsageRemainingPanel.tsx`（references/zcode/packages/ui/src/CodingPlanUsageRemainingPanel.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）。
- */
 /* eslint-disable max-lines -- Coding Plan 用量视图集中维护来源选择、额度投影和重置入口；本阶段只迁移 Account Access，不拆分既有 UI 结构。 */
-
-import { Button } from "@zui/components/ui/button";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  findCodingPlanQuotaLimit,
-  formatQuotaRemainingPercentage,
-  formatQuotaResetTime,
-  resolveMcpQuotaLimit,
-} from "@zui/lib/codingPlanQuotaPresentation";
-import { renderOAuthProviderIcon } from "@zui/lib/oauthProviderIcon";
-import type {
-  SidebarUsageCodingPlanProviderId,
-  SidebarUsageCodingPlanSourceId,
-} from "@zui/lib/sidebarUsageCodingPlanProviderPreference";
 import type {
   UsageEntitlementSnapshot,
   ZCodeAccountAccess,
   ZCodeProviderAccountAccess,
-} from "@zui/lib/zcode-shared";
+} from "@zcode/shared";
 import {
   BIGMODEL_PROVIDER_ID,
   BUILTIN_MODEL_PROVIDER_IDS,
   type OAuthProviderId,
   ZAI_PROVIDER_ID,
-} from "@zui/lib/zcode-shared";
+} from "@zcode/shared";
 import { ChevronRightIcon, Loader2 } from "lucide-react";
 import { useMemo } from "react";
+import { Button } from "@zui/components/ui/button.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import {
+  findCodingPlanQuotaLimit,
+  formatQuotaRemainingPercentage,
+  formatQuotaResetTime,
+  resolveMcpQuotaLimit,
+} from "@zui/lib/codingPlanQuotaPresentation.js";
+import { renderOAuthProviderIcon } from "@zui/lib/oauthProviderIcon.js";
+import type {
+  SidebarUsageCodingPlanProviderId,
+  SidebarUsageCodingPlanSourceId,
+} from "@zui/lib/sidebarUsageCodingPlanProviderPreference.js";
 
 export interface CodingPlanUsageRemainingEntitlement {
   sourceId?: SidebarUsageCodingPlanSourceId;
@@ -49,9 +43,9 @@ export interface CodingPlanUsageAvailableProvider {
 }
 
 export interface CodingPlanUsageRemainingState {
-  activeProviderId?: SidebarUsageCodingPlanSourceId | undefined;
+  activeProviderId?: SidebarUsageCodingPlanSourceId;
   displayedEntitlement: CodingPlanUsageRemainingEntitlement | null;
-  displayedProviderId?: SidebarUsageCodingPlanSourceId | undefined;
+  displayedProviderId?: SidebarUsageCodingPlanSourceId;
   hasAnyActiveCodingPlan: boolean;
   loading: boolean;
   providerEntitlements: CodingPlanUsageRemainingEntitlement[];
@@ -72,32 +66,22 @@ function UsageLimitRow({
 }: {
   label: string;
   value: string;
-  resetTime?: string | undefined;
+  resetTime?: string;
 }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-1.5">
       <div className="min-w-0 truncate text-ui-sm text-foreground">{label}</div>
       <div className="flex min-w-0 max-w-36 items-center gap-2 text-right text-ui-sm">
-        <span className="min-w-0 truncate font-medium text-foreground">
-          {value}
-        </span>
+        <span className="min-w-0 truncate font-medium text-foreground">{value}</span>
         {resetTime ? (
-          <span className="min-w-0 truncate text-foreground-subtle">
-            {resetTime}
-          </span>
+          <span className="min-w-0 truncate text-foreground-subtle">{resetTime}</span>
         ) : null}
       </div>
     </div>
   );
 }
 
-function UsageDetailsButton({
-  label,
-  onUsageClick,
-}: {
-  label: string;
-  onUsageClick?: () => void;
-}) {
+function UsageDetailsButton({ label, onUsageClick }: { label: string; onUsageClick?: () => void }) {
   return (
     <Button
       type="button"
@@ -132,10 +116,7 @@ function formatCodingPlanProviderTabAriaLabel(providerId: string): string {
 }
 
 function getEntitlementSourceId(
-  entitlement: Pick<
-    CodingPlanUsageRemainingEntitlement,
-    "providerId" | "sourceId"
-  >,
+  entitlement: Pick<CodingPlanUsageRemainingEntitlement, "providerId" | "sourceId">,
 ): SidebarUsageCodingPlanSourceId {
   return entitlement.sourceId ?? entitlement.providerId;
 }
@@ -155,25 +136,19 @@ export function resolveCodingPlanUsageRemainingState(params: {
   availableProviders: CodingPlanUsageAvailableProvider[];
   entitlements: CodingPlanUsageRemainingEntitlement[];
   modelProvidersLoading: boolean;
-  selectedProviderId?: SidebarUsageCodingPlanSourceId | undefined;
+  selectedProviderId?: SidebarUsageCodingPlanSourceId;
 }): CodingPlanUsageRemainingState | null {
   const providerEntitlements = params.entitlements.filter(
     (entitlement) =>
       getEntitlementSourceId(entitlement).startsWith("team:") ||
-      params.availableProviders.some(
-        (provider) => provider.providerId === entitlement.providerId,
-      ),
+      params.availableProviders.some((provider) => provider.providerId === entitlement.providerId),
   );
   const selectedEntitlement = providerEntitlements.find(
-    (entitlement) =>
-      getEntitlementSourceId(entitlement) === params.selectedProviderId,
+    (entitlement) => getEntitlementSourceId(entitlement) === params.selectedProviderId,
   );
   const activeEntitlement =
     (selectedEntitlement &&
-    hasActiveCodingPlanSnapshot(
-      selectedEntitlement.snapshot,
-      selectedEntitlement.providerId,
-    )
+    hasActiveCodingPlanSnapshot(selectedEntitlement.snapshot, selectedEntitlement.providerId)
       ? selectedEntitlement
       : undefined) ??
     providerEntitlements.find((entitlement) =>
@@ -186,14 +161,10 @@ export function resolveCodingPlanUsageRemainingState(params: {
     : undefined;
   const displayedProviderId = activeProviderId ?? params.selectedProviderId;
   const loading =
-    params.modelProvidersLoading ||
-    providerEntitlements.some((entitlement) => entitlement.loading);
+    params.modelProvidersLoading || providerEntitlements.some((entitlement) => entitlement.loading);
   const visibleSnapshot =
     displayedEntitlement &&
-    hasActiveCodingPlanSnapshot(
-      displayedEntitlement.snapshot,
-      displayedEntitlement.providerId,
-    )
+    hasActiveCodingPlanSnapshot(displayedEntitlement.snapshot, displayedEntitlement.providerId)
       ? displayedEntitlement.snapshot
       : null;
   const activeCodingPlanProviderIds = providerEntitlements
@@ -256,7 +227,7 @@ export function CodingPlanUsageRemainingPanel({
   modelProvidersLoading: boolean;
   onProviderChange?: (providerId: SidebarUsageCodingPlanSourceId) => void;
   onUsageClick?: () => void;
-  selectedProviderId?: SidebarUsageCodingPlanSourceId | undefined;
+  selectedProviderId?: SidebarUsageCodingPlanSourceId;
 }) {
   const { intl, locale } = useZCodeIntl();
   const state = useMemo(
@@ -267,12 +238,7 @@ export function CodingPlanUsageRemainingPanel({
         modelProvidersLoading,
         selectedProviderId,
       }),
-    [
-      availableProviders,
-      entitlements,
-      modelProvidersLoading,
-      selectedProviderId,
-    ],
+    [availableProviders, entitlements, modelProvidersLoading, selectedProviderId],
   );
 
   if (!state) {
@@ -283,12 +249,7 @@ export function CodingPlanUsageRemainingPanel({
   const remaining = state.visibleSnapshot?.remaining;
   const unavailableReason = state.visibleSnapshot?.unavailableReason;
   const limits = state.visibleSnapshot?.quota?.limits ?? [];
-  const fiveHourTokenLimit = findCodingPlanQuotaLimit(
-    limits,
-    "TOKENS_LIMIT",
-    3,
-    5,
-  );
+  const fiveHourTokenLimit = findCodingPlanQuotaLimit(limits, "TOKENS_LIMIT", 3, 5);
   const weeklyTokenLimit = findCodingPlanQuotaLimit(limits, "TOKENS_LIMIT", 6);
   const monthlyToolLimit = findCodingPlanQuotaLimit(limits, "TIME_LIMIT", 5, 1);
   const mcpQuotaLimit = resolveMcpQuotaLimit(state.visibleSnapshot);
@@ -331,8 +292,7 @@ export function CodingPlanUsageRemainingPanel({
         : unavailableReason === "no_plan"
           ? intl.formatMessage({ id: "sidebar.usage.plan.noPlan" })
           : intl.formatMessage({ id: "sidebar.usage.plan.unavailable" });
-  const unavailable =
-    !state.loading && !remaining && limits.length === 0 && !planLevel;
+  const unavailable = !state.loading && !remaining && limits.length === 0 && !planLevel;
 
   return (
     <div className={className}>
@@ -366,9 +326,7 @@ export function CodingPlanUsageRemainingPanel({
                 onUsageClick={onUsageClick}
               />
             ) : null}
-            {!audience &&
-            state.tabProviders.length > 1 &&
-            state.displayedProviderId ? (
+            {!audience && state.tabProviders.length > 1 && state.displayedProviderId ? (
               <div className="flex min-w-0 items-center rounded-lg bg-surface p-0.5">
                 {state.tabProviders.map((provider) => {
                   const active = provider.id === state.displayedProviderId;
@@ -425,10 +383,7 @@ export function CodingPlanUsageRemainingPanel({
                 label={intl.formatMessage({
                   id: "sidebar.usage.plan.fiveHour",
                 })}
-                value={formatQuotaRemainingPercentage(
-                  locale,
-                  fiveHourTokenLimit,
-                )}
+                value={formatQuotaRemainingPercentage(locale, fiveHourTokenLimit)}
                 resetTime={fiveHourResetTime}
               />
             ) : null}

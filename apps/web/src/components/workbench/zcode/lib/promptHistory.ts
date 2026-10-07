@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/lib/promptHistory.ts`（references/zcode/packages/ui/src/lib/promptHistory.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
 export const MAX_PROMPT_HISTORY = 30;
 
 type PromptHistoryDirection = "up" | "down";
@@ -47,10 +42,7 @@ export function navigatePromptHistory(
   }
 
   if (direction === "up") {
-    const nextIndex =
-      currentIndex === null
-        ? entries.length - 1
-        : Math.max(currentIndex - 1, 0);
+    const nextIndex = currentIndex === null ? entries.length - 1 : Math.max(currentIndex - 1, 0);
     return {
       nextIndex,
       nextValue: entries[nextIndex] ?? "",

@@ -1,6 +1,6 @@
-import { cn } from "@zui/components/lib/utils";
 import type { ComponentProps } from "react";
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
+import { cn } from "@zui/components/lib/utils.js";
 
 type ScrollMaskState = "none" | "top" | "bottom" | "both";
 
@@ -13,12 +13,7 @@ const SCROLL_MASK_CLASS_BY_STATE: Record<ScrollMaskState, string> = {
   both: "[mask-image:linear-gradient(to_bottom,transparent_0,black_24px,black_calc(100%_-_24px),transparent_100%)] [-webkit-mask-image:linear-gradient(to_bottom,transparent_0,black_24px,black_calc(100%_-_24px),transparent_100%)]",
 };
 
-export function ScrollFadeViewport({
-  className,
-  children,
-  ref,
-  ...props
-}: ComponentProps<"div">) {
+export function ScrollFadeViewport({ className, children, ref, ...props }: ComponentProps<"div">) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [maskState, setMaskState] = useState<ScrollMaskState>("none");

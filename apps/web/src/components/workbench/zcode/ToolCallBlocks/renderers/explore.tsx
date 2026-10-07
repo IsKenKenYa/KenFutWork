@@ -1,49 +1,31 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/explore.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/explore.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）；源文件自带头注保留于下。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
 /* eslint-disable max-lines -- Explore 聚合渲染同时维护分类、父级摘要和可复用子工具摘要，拆开会让父子展示规则更难对齐 */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { TaskChatToolCallTreeNode } from "@zui/lib/toolCallTree";
-import { resolveToolCallIdentity } from "@zui/lib/toolIdentity";
-import type { ZCodePlanStep } from "@zui/lib/zcode-shared";
-import {
-  extractPlanStepsFromToolInput,
-  extractPlanStepsFromToolOutput,
-} from "@zui/lib/zcode-shared";
-import { ToolCallBlock } from "@zui/ToolCallBlocks";
-import { getExecuteSecondaryText } from "@zui/ToolCallBlocks/renderers/execute";
-import {
-  buildReadSummary,
-  ReadFileChip,
-} from "@zui/ToolCallBlocks/renderers/read";
-import { getSearchPrimaryText } from "@zui/ToolCallBlocks/renderers/search";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { renderFilePath } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
 import { SearchIcon } from "lucide-react";
-import { type ReactNode, useCallback } from "react";
+import { extractPlanStepsFromToolInput, extractPlanStepsFromToolOutput } from "@zcode/shared";
+import { ToolCallBlock } from "@zui/ToolCallBlocks.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { getExecuteSecondaryText } from "@zui/ToolCallBlocks/renderers/execute.js";
+import { buildReadSummary, ReadFileChip } from "@zui/ToolCallBlocks/renderers/read.js";
+import { getSearchPrimaryText } from "@zui/ToolCallBlocks/renderers/search.js";
+import { renderFilePath } from "@zui/ToolCallBlocks/shared.js";
+import { resolveToolCallIdentity } from "@zui/lib/toolIdentity.js";
+import { ToolLayout } from "../ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "../shared.js";
+import { useCallback, type ReactNode } from "react";
+import type { TaskChatToolCallTreeNode } from "@zui/lib/toolCallTree.js";
+import type { ZCodePlanStep } from "@zcode/shared";
 
-const EXPLORE_TOOL_ICON = (
-  <SearchIcon className="size-4 shrink-0 text-foreground-subtle" />
-);
+const EXPLORE_TOOL_ICON = <SearchIcon className="size-4 shrink-0 text-foreground-subtle" />;
 
 type IntlLike = {
-  formatMessage: (
-    descriptor: { id: string },
-    values?: Record<string, string>,
-  ) => string;
+  formatMessage: (descriptor: { id: string }, values?: Record<string, string>) => string;
 };
 
 type ExploreChildSummary = {
   animationKey: string;
   primaryText: ReactNode;
-  secondaryText?: ReactNode | undefined;
-  title?: string | undefined;
+  secondaryText?: ReactNode;
+  title?: string;
 };
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -52,9 +34,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 
 function unwrapShellCommand(command: string): string {
   const trimmed = command.trim();
-  const shellCommandMatch = trimmed.match(
-    /^(?:\/bin\/)?(?:zsh|bash|sh)\s+-lc\s+([\s\S]+)$/i,
-  );
+  const shellCommandMatch = trimmed.match(/^(?:\/bin\/)?(?:zsh|bash|sh)\s+-lc\s+([\s\S]+)$/i);
   if (!shellCommandMatch?.[1]) {
     return trimmed;
   }
@@ -88,13 +68,8 @@ function collectCommandStrings(input: unknown): string[] {
 
     if (value.every((item) => typeof item === "string")) {
       const commandParts = value as string[];
-      const shellCommandIndex = commandParts.findIndex(
-        (part) => part === "-lc",
-      );
-      if (
-        shellCommandIndex >= 0 &&
-        typeof commandParts[shellCommandIndex + 1] === "string"
-      ) {
+      const shellCommandIndex = commandParts.findIndex((part) => part === "-lc");
+      if (shellCommandIndex >= 0 && typeof commandParts[shellCommandIndex + 1] === "string") {
         const shellCommand = commandParts[shellCommandIndex + 1]!.trim();
         if (shellCommand.length > 0) {
           commandCandidates.push(shellCommand);
@@ -115,10 +90,7 @@ function collectCommandStrings(input: unknown): string[] {
       }
 
       const parsedCommand = item.cmd;
-      if (
-        typeof parsedCommand === "string" &&
-        parsedCommand.trim().length > 0
-      ) {
+      if (typeof parsedCommand === "string" && parsedCommand.trim().length > 0) {
         commandCandidates.push(parsedCommand.trim());
       }
     }
@@ -129,9 +101,7 @@ function collectCommandStrings(input: unknown): string[] {
   if (!isPlainRecord(input)) {
     return Array.from(
       new Set(
-        commandCandidates.flatMap((candidate) =>
-          unwrapShellCommand(candidate).split(/&&|\|\||;/g),
-        ),
+        commandCandidates.flatMap((candidate) => unwrapShellCommand(candidate).split(/&&|\|\||;/g)),
       ),
     )
       .map((item) => item.trim())
@@ -144,9 +114,7 @@ function collectCommandStrings(input: unknown): string[] {
 
   return Array.from(
     new Set(
-      commandCandidates.flatMap((candidate) =>
-        unwrapShellCommand(candidate).split(/&&|\|\||;/g),
-      ),
+      commandCandidates.flatMap((candidate) => unwrapShellCommand(candidate).split(/&&|\|\||;/g)),
     ),
   )
     .map((item) => item.trim())
@@ -189,16 +157,14 @@ function classifyExploreToolCall({
   input,
 }: {
   kind: string;
-  title?: string | undefined;
+  title?: string;
   input: unknown;
 }): ExploreBucket {
   const fingerprint = `${kind} ${title ?? ""}`.toLowerCase();
   const command = collectCommandStrings(input).join(" ; ").toLowerCase();
 
   if (
-    /(\bgrep\b|\bsearch\b|\bfetch\b|\bweb.?search\b|\bweb.?fetch\b)/i.test(
-      fingerprint,
-    ) ||
+    /(\bgrep\b|\bsearch\b|\bfetch\b|\bweb.?search\b|\bweb.?fetch\b)/i.test(fingerprint) ||
     /(^|\s)(rg|grep|ripgrep|git\s+grep)(\s|$)/i.test(command)
   ) {
     return "search";
@@ -214,26 +180,17 @@ function classifyExploreToolCall({
   return "file";
 }
 
-function formatExploreSummary(
-  intl: IntlLike,
-  counts: Record<ExploreBucket, number>,
-) {
+function formatExploreSummary(intl: IntlLike, counts: Record<ExploreBucket, number>) {
   const summaryParts: string[] = [];
 
   if (counts.search > 0) {
-    summaryParts.push(
-      `${counts.search} ${getBucketLabel(intl, "search", counts.search)}`,
-    );
+    summaryParts.push(`${counts.search} ${getBucketLabel(intl, "search", counts.search)}`);
   }
   if (counts.list > 0) {
-    summaryParts.push(
-      `${counts.list} ${getBucketLabel(intl, "list", counts.list)}`,
-    );
+    summaryParts.push(`${counts.list} ${getBucketLabel(intl, "list", counts.list)}`);
   }
   if (counts.file > 0) {
-    summaryParts.push(
-      `${counts.file} ${getBucketLabel(intl, "file", counts.file)}`,
-    );
+    summaryParts.push(`${counts.file} ${getBucketLabel(intl, "file", counts.file)}`);
   }
 
   return summaryParts.length > 0
@@ -257,10 +214,7 @@ function getChildActionKindLabel(
   }
 }
 
-function renderChildActionKindPrefix(
-  actionKindLabel: string | null,
-  content: ReactNode,
-) {
+function renderChildActionKindPrefix(actionKindLabel: string | null, content: ReactNode) {
   if (!actionKindLabel) {
     return content;
   }
@@ -307,23 +261,17 @@ function getTodoChildSummary(
     };
   }
 
-  const completedCount = plan.filter(
-    (step) => step.status === "completed",
-  ).length;
+  const completedCount = plan.filter((step) => step.status === "completed").length;
   const activeStep =
     plan.find((step) => step.status === "in_progress") ??
     plan.find((step) => step.status !== "completed") ??
     plan.at(-1);
   const isComplete = completedCount === plan.length;
   const actionLabel = intl.formatMessage({
-    id: isComplete
-      ? "chat.toolCall.todo.updated"
-      : "chat.toolCall.todo.updating",
+    id: isComplete ? "chat.toolCall.todo.updated" : "chat.toolCall.todo.updating",
   });
   const progressText = `${completedCount}/${plan.length}`;
-  const primaryText = activeStep?.title
-    ? `${progressText} · ${activeStep.title}`
-    : progressText;
+  const primaryText = activeStep?.title ? `${progressText} · ${activeStep.title}` : progressText;
 
   return {
     animationKey: `todo:${childToolCall.toolId}:${completedCount}:${plan.length}:${activeStep?.id ?? "none"}:${activeStep?.title ?? ""}`,
@@ -358,8 +306,7 @@ function getLatestExploreChildSummary(
     if (!readSummary) {
       return null;
     }
-    const canOpenPreview =
-      readSummary.entryType === "file" && Boolean(context.onOpenCodeViewer);
+    const canOpenPreview = readSummary.entryType === "file" && Boolean(context.onOpenCodeViewer);
     const openFilePreview = () => {
       if (readSummary.entryType !== "file") {
         return;
@@ -376,11 +323,7 @@ function getLatestExploreChildSummary(
       animationKey: `read:${childToolCall.toolId}:${actionKindLabel ?? "plain"}:${readSummary.path}`,
       primaryText: renderChildActionKindPrefix(
         actionKindLabel,
-        <ReadFileChip
-          summary={readSummary}
-          clickable={canOpenPreview}
-          onClick={openFilePreview}
-        />,
+        <ReadFileChip summary={readSummary} clickable={canOpenPreview} onClick={openFilePreview} />,
       ),
       secondaryText: renderFilePath(readSummary.filePath),
       title: readSummary.path,
@@ -402,22 +345,15 @@ function getLatestExploreChildSummary(
 
   if (childIdentity.family === "shell") {
     const secondaryText =
-      getExecuteSecondaryText(childToolCall.input) ??
-      childToolCall.title ??
-      childToolCall.kind;
+      getExecuteSecondaryText(childToolCall.input) ?? childToolCall.title ?? childToolCall.kind;
 
     return {
       animationKey: `shell:${childToolCall.toolId}:${actionKindLabel ?? "plain"}:${secondaryText}`,
       primaryText: actionKindLabel ? (
-        <span className="shrink-0 text-foreground-subtle">
-          {actionKindLabel}
-        </span>
+        <span className="shrink-0 text-foreground-subtle">{actionKindLabel}</span>
       ) : null,
-      secondaryText: (
-        <code className="min-w-0 truncate font-sans">{secondaryText}</code>
-      ),
-      title:
-        typeof secondaryText === "string" ? secondaryText : childToolCall.title,
+      secondaryText: <code className="min-w-0 truncate font-sans">{secondaryText}</code>,
+      title: typeof secondaryText === "string" ? secondaryText : childToolCall.title,
     };
   }
 
@@ -432,8 +368,7 @@ function getLatestExploreChildSummary(
       actionKindLabel,
       <span className="min-w-0 truncate">{fallbackText}</span>,
     ),
-    title:
-      typeof fallbackText === "string" ? fallbackText : childToolCall.title,
+    title: typeof fallbackText === "string" ? fallbackText : childToolCall.title,
   };
 }
 
@@ -449,12 +384,7 @@ export function getLatestExploreChildSummaryFromChildren(
       continue;
     }
 
-    const summary = getLatestExploreChildSummary(
-      intl,
-      childToolCall,
-      context,
-      options,
-    );
+    const summary = getLatestExploreChildSummary(intl, childToolCall, context, options);
     if (summary) {
       return summary;
     }
@@ -528,14 +458,12 @@ export function ExploreToolCallBlock(context: ToolCallBlockRenderContext) {
         kindLabel={kindLabel}
         expandedKindLabel={kindLabel}
         sourceLabel={context.sourceLabel}
-        primaryText={
-          collapsedChildSummary ? collapsedChildSummary.primaryText : summary
-        }
+        primaryText={collapsedChildSummary ? collapsedChildSummary.primaryText : summary}
         expandedPrimaryText={summary}
         secondaryText={collapsedChildSummary?.secondaryText}
         expandedSecondaryText={null}
         summaryContentSeparator="·"
-        animateSummaryContent={true}
+        animateSummaryContent
         disableSummaryContentAnimation={context.disableSummaryContentAnimation}
         summaryContentKey={
           collapsedChildSummary?.animationKey ??
@@ -545,9 +473,7 @@ export function ExploreToolCallBlock(context: ToolCallBlockRenderContext) {
         statusTooltip={toolCall.status === "failed" ? errorText : undefined}
         showFailureStatus={toolCall.status === "failed"}
         isRunning={isRunning}
-        title={
-          collapsedChildSummary?.title ?? (isRunning ? summary : toolCall.title)
-        }
+        title={collapsedChildSummary?.title ?? (isRunning ? summary : toolCall.title)}
         expandedTitle={toolCall.title}
         renderContent={renderContent}
       />

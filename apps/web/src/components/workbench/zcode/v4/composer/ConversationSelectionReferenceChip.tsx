@@ -1,19 +1,12 @@
-/**
- * zcode 照搬：`@/v4/composer/ConversationSelectionReferenceChip.tsx`（references/zcode/packages/ui/src/v4/composer/ConversationSelectionReferenceChip.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import type { AttachmentHoverCardContentProps } from "@zui/components/ai-elements/attachments";
-import { Button } from "@zui/components/ui/button";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  type ConversationSelectionDisplayReference,
-  isConversationSelectionReference,
-} from "@zui/lib/conversationSelectionReference";
-import { ContextAttachmentPill } from "@zui/v4/composer/ContextAttachmentPill";
 import { QuoteIcon, Trash2Icon } from "lucide-react";
+import type { AttachmentHoverCardContentProps } from "@zui/components/ai-elements/attachments.js";
+import { Button } from "@zui/components/ui/button.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import {
+  isConversationSelectionReference,
+  type ConversationSelectionDisplayReference,
+} from "@zui/lib/conversationSelectionReference.js";
+import { ContextAttachmentPill } from "@zui/v4/composer/ContextAttachmentPill.js";
 
 export function ConversationSelectionReferenceChip({
   references,
@@ -22,9 +15,9 @@ export function ConversationSelectionReferenceChip({
   onRemoveAll,
 }: {
   references: readonly ConversationSelectionDisplayReference[];
-  contentAlign?: AttachmentHoverCardContentProps["align"] | undefined;
-  onRemove?: (id: string) => void | undefined;
-  onRemoveAll?: () => void | undefined;
+  contentAlign?: AttachmentHoverCardContentProps["align"];
+  onRemove?: (id: string) => void;
+  onRemoveAll?: () => void;
 }) {
   const { intl } = useZCodeIntl();
   if (references.length === 0) return null;
@@ -66,9 +59,7 @@ export function ConversationSelectionReferenceChip({
         >
           <QuoteIcon className="mt-0.5 size-4 shrink-0 text-foreground-subtle" />
           <div className="min-w-0 flex-1">
-            <div className="line-clamp-3 whitespace-pre-wrap break-words">
-              {reference.text}
-            </div>
+            <div className="line-clamp-3 whitespace-pre-wrap break-words">{reference.text}</div>
             {reference.path || isConversationSelectionReference(reference) ? (
               <div className="mt-0.5 break-words text-ui-sm text-foreground-subtlest">
                 {reference.path ? (
@@ -79,10 +70,8 @@ export function ConversationSelectionReferenceChip({
                 ) : isConversationSelectionReference(reference) &&
                   reference.contentType !== "markdown" ? (
                   <>
-                    {intl.formatMessage({
-                      id: `chat.selections.type.${reference.contentType}`,
-                    })}{" "}
-                    · #{reference.sourceRowId}
+                    {intl.formatMessage({ id: `chat.selections.type.${reference.contentType}` })} ·
+                    #{reference.sourceRowId}
                   </>
                 ) : null}
               </div>

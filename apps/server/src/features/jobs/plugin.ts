@@ -13,7 +13,7 @@ import { createJobRepository } from "./repository.js";
 export function createJobsPlugin(
   deps: {
     injected?: JobService | undefined;
-    /** HTTP 进程挂路由（需 auth/credits/tierGuard/viewer）；worker 传 false。 */
+    /** HTTP 进程挂路由（需本机接入）；worker 传 false。 */
     withRoutes?: boolean;
   } = {},
 ): PluginDefinition {
@@ -22,19 +22,25 @@ export function createJobsPlugin(
   const withRoutes = deps.withRoutes ?? true;
   return {
     name: "jobs",
-    // worker 只走「按 id 迁移状态」路径（无用户身份、无 auth/viewer），
-    // 用户路径缺 viewer 时由服务 fail loud。
+    // worker 只走「按 id 迁移状态」路径（无用户身份、无 本机接入），
+    // 接入路径缺 localInstance 时由服务 fail loud。
     inject: withRoutes
-      ? ["auth", "credits", "persistence", "queue", "tierGuard", "viewer"]
+      ? [
+          "localAccess",
+          "persistence",
+          "queue",
+          "localInstance",
+          "modelProviders",
+        ]
       : ["persistence", "queue"],
     enabled: (env) => isEnabled(Boolean(env.databaseUrl)),
     apply(ctx) {
-      const viewerService = ctx.tryGet("viewer");
+      const localInstance = ctx.tryGet("localInstance");
       ctx.register("jobs", () => {
         return createJobService({
           queue: ctx.get("queue"),
           repository: createJobRepository(ctx.get("persistence")),
-          ...(viewerService ? { viewerService } : {}),
+          ...(localInstance ? { localInstance } : {}),
         });
       });
     },
@@ -44,11 +50,10 @@ export function createJobsPlugin(
       }
       const jobService = ctx.get("jobs");
       void registerJobRoutes(ctx.app, {
-        auth: ctx.get("auth"),
-        creditService: ctx.get("credits"),
+        localAccess: ctx.get("localAccess"),
         jobService,
-        tierGuard: ctx.get("tierGuard"),
-        viewerService: ctx.get("viewer"),
+        localInstance: ctx.get("localInstance"),
+        modelProviders: ctx.get("modelProviders"),
       });
     },
   };

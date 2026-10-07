@@ -1,14 +1,14 @@
+import { useEffect, useState, type ReactElement } from "react";
+import { getPathLeaf, isAbsoluteFilePath } from "@zui/lib/path.js";
 import {
-  buildInlineSvgDataUrl,
   DEFAULT_FILE_ICON_NAME,
-  getIconLabel,
-  getIconPalette,
   normalizePath,
-  resolveIconName,
   trimTrailingSeparator,
-} from "@zui/lib/fileDisplayHelpers";
-import { getPathLeaf, isAbsoluteFilePath } from "@zui/lib/path";
-import { type ReactElement, useEffect, useState } from "react";
+  resolveIconName,
+  getIconPalette,
+  getIconLabel,
+  buildInlineSvgDataUrl,
+} from "@zui/lib/fileDisplayHelpers.js";
 
 export const INLINE_FALLBACK_FILE_ICON_SRC =
   "data:image/svg+xml;utf8," +
@@ -26,14 +26,14 @@ export interface FileDisplayDescriptor {
 }
 
 export interface FileDisplayOptions {
-  basePath?: string | undefined;
-  kind?: "file" | "directory" | undefined;
-  showIcon?: boolean | undefined;
-  showFilePath?: boolean | undefined;
-  iconSize?: number | undefined;
-  className?: string | undefined;
-  fileNameClassName?: string | undefined;
-  filePathClassName?: string | undefined;
+  basePath?: string;
+  kind?: "file" | "directory";
+  showIcon?: boolean;
+  showFilePath?: boolean;
+  iconSize?: number;
+  className?: string;
+  fileNameClassName?: string;
+  filePathClassName?: string;
 }
 
 export function setDefaultFileDisplayBasePath(basePath: string | null) {
@@ -42,8 +42,7 @@ export function setDefaultFileDisplayBasePath(basePath: string | null) {
 
 function resolveMaterialIconBasePath(): string {
   const baseUrl =
-    typeof import.meta !== "undefined" &&
-    typeof import.meta.env?.BASE_URL === "string"
+    typeof import.meta !== "undefined" && typeof import.meta.env?.BASE_URL === "string"
       ? import.meta.env.BASE_URL
       : "/";
 
@@ -62,9 +61,7 @@ function buildIconSrc(iconName: string): string {
 }
 
 export const FOLDER_FILE_ICON_SRC = buildMaterialFileIconSrc("folder");
-export const DOCUMENT_FILE_ICON_SRC = buildMaterialFileIconSrc(
-  DEFAULT_FILE_ICON_NAME,
-);
+export const DOCUMENT_FILE_ICON_SRC = buildMaterialFileIconSrc(DEFAULT_FILE_ICON_NAME);
 
 function resolveFallbackFileIconSrc(currentSrc: string): string | null {
   const defaultIconSrc = DOCUMENT_FILE_ICON_SRC;
@@ -123,12 +120,10 @@ export function resolveFileDisplayDescriptor(
 ): FileDisplayDescriptor {
   const normalizedPath = normalizePath(filePath);
   const fileName = getPathLeaf(normalizedPath);
-  const effectiveBasePath =
-    options.basePath ?? defaultFileDisplayBasePath ?? undefined;
+  const effectiveBasePath = options.basePath ?? defaultFileDisplayBasePath ?? undefined;
   const relativePath = stripBasePath(normalizedPath, effectiveBasePath);
   const resolvedFilePath = buildFilePath(relativePath, fileName);
-  const fileIcon =
-    options.kind === "directory" ? "folder" : resolveIconName(fileName);
+  const fileIcon = options.kind === "directory" ? "folder" : resolveIconName(fileName);
 
   return {
     fileIcon,
@@ -149,8 +144,7 @@ export function createFileDisplayDom(
   });
   const container = document.createElement("span");
   container.className =
-    options.className ??
-    "inline-flex max-w-full items-center gap-1.5 align-middle";
+    options.className ?? "inline-flex max-w-full items-center gap-1.5 align-middle";
 
   if (options.showIcon !== false) {
     const icon = document.createElement("img");
@@ -171,16 +165,14 @@ export function createFileDisplayDom(
   }
 
   const primary = document.createElement("span");
-  primary.className =
-    options.fileNameClassName ?? "truncate text-[0.95em] leading-[1.6]";
+  primary.className = options.fileNameClassName ?? "truncate text-[0.95em] leading-[1.6]";
   primary.textContent = descriptor.fileName;
   container.append(primary);
 
   if (options.showFilePath && descriptor.filePath) {
     const secondary = document.createElement("span");
     secondary.className =
-      options.filePathClassName ??
-      "truncate text-[0.85em] text-muted-foreground";
+      options.filePathClassName ?? "truncate text-[0.85em] text-muted-foreground";
     secondary.textContent = descriptor.filePath;
     container.append(secondary);
   }
@@ -209,12 +201,8 @@ export function FileDisplayInline({
   }, [descriptor.fileIconSrc]);
 
   return (
-    <span
-      className={
-        options?.className ?? "inline-flex max-w-full items-center gap-1 "
-      }
-    >
-      {options?.showIcon === false ? null : (
+    <span className={options?.className ?? "inline-flex max-w-full items-center gap-1 "}>
+      {options?.showIcon !== false ? (
         <img
           src={fileIconSrc}
           alt=""
@@ -230,21 +218,17 @@ export function FileDisplayInline({
             setFileIconSrc(fallbackSrc);
           }}
         />
-      )}
+      ) : null}
       <span
         className={
-          options?.fileNameClassName ??
-          "truncate text-ui-base font-medium text-foreground"
+          options?.fileNameClassName ?? "truncate text-ui-base font-medium text-foreground"
         }
       >
         {descriptor.fileName}
       </span>
       {options?.showFilePath && descriptor.filePath ? (
         <span
-          className={
-            options.filePathClassName ??
-            "truncate text-ui-base text-foreground-subtlest"
-          }
+          className={options.filePathClassName ?? "truncate text-ui-base text-foreground-subtlest"}
         >
           {descriptor.filePath}
         </span>
@@ -259,8 +243,8 @@ export function FileDisplayIcon({
   className,
 }: {
   src: string;
-  size?: number | undefined;
-  className?: string | undefined;
+  size?: number;
+  className?: string;
 }): ReactElement {
   const [fileIconSrc, setFileIconSrc] = useState(src);
 
@@ -289,10 +273,7 @@ export function FileDisplayIcon({
   );
 }
 
-export function getFileDisplayPath(
-  filePath: string,
-  basePath?: string,
-): string {
+export function getFileDisplayPath(filePath: string, basePath?: string): string {
   const normalizedPath = normalizePath(filePath);
   const pathWithoutBase = stripBasePath(normalizedPath, basePath);
 
@@ -306,4 +287,3 @@ export function getFileDisplayPath(
 
   return normalizedPath;
 }
-/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

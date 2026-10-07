@@ -1,15 +1,31 @@
-import { isAutomationExecutionMode } from "@kenfutwork/shared";
+import {
+  isAutomationExecutionMode,
+  zcodeUiProtocol as protocol,
+} from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
+import type { AgentContextBranchService } from "../../agent/context-history.js";
 import type {
   KenFutWorkAgentFactory,
   ToolGate,
 } from "../../agent/deep-agent.js";
-import { createAgentPersistenceService } from "../../agent/persistence/index.js";
+import { createNativeContextBranchService } from "../../agent/native-context-branch.js";
+import {
+  type AgentPersistenceService,
+  createAgentPersistenceService,
+} from "../../agent/persistence/index.js";
+import type { AgentRunExtension } from "../../agent/run-extension.js";
 import { createAgentRunService } from "../../agent/runtime.js";
 import { composeToolGate } from "../../agent/tool-gate.js";
-import { createWorkspaceSkillsLoader } from "../../agent/workspace-skills.js";
+import {
+  createInstanceSkillsByInstanceLoader,
+  createInstanceSkillsLoader,
+} from "../../agent/workspace-skills.js";
 import { registerRunRoutes } from "../../http/runs.js";
-import type { KernelEvents, PluginDefinition } from "../../kernel/types.js";
+import type {
+  KernelEvents,
+  PluginDefinition,
+  PreStepPayload,
+} from "../../kernel/types.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
 import { evaluateToolPolicy } from "../agent-modes/execution-mode-service.js";
 import { createCanvasRepository } from "../canvas/repository.js";
@@ -22,6 +38,8 @@ import {
 } from "./agent-run-service.js";
 import {
   basePromptSection,
+  codeProjectPromptSection,
+  codeRolePromptSection,
   createRulesPromptSection,
   skillsPromptSection,
 } from "./prompt-sections.js";
@@ -32,12 +50,14 @@ export interface AgentRunsPluginDeps {
   /** 内核事件缝：turn 收尾发射 turn-stopping（用量结算挂钩点）。 */
   events: KernelEvents;
   /** 事件缝（DEC-1）：pre-step waterfall，执行模式/权限插件改写模型输入。 */
-  emitPreStep?: (payload: {
-    input: string;
-    runId: string;
-    threadId?: string | undefined;
-  }) => Promise<{ input: unknown }>;
+  emitPreStep?: (
+    payload: PreStepPayload & {
+      input: string;
+      runId: string;
+    },
+  ) => Promise<{ input: unknown }>;
   agentFactory?: KenFutWorkAgentFactory;
+  contextBranchProvider?: AgentContextBranchService;
   agentModel?: BaseLanguageModel | string;
   mockEventDelayMs?: number;
 }
@@ -50,25 +70,30 @@ export function createAgentRunsPlugin(
     name: "agent-runs",
     inject: [
       "agentModes",
-      "auth",
+      "localAccess",
       "brandKit",
       "canvas",
-      "credits",
       "persistence",
       "settings",
       "threads",
-      "tierGuard",
-      "viewer",
+      "localInstance",
+      "taskWork",
     ],
     apply(ctx) {
-      ctx.register("agentPersistence", () =>
-        createAgentPersistenceService(ctx.env),
-      );
+      let persistence: AgentPersistenceService | undefined;
+      ctx.register("agentPersistence", () => {
+        persistence = createAgentPersistenceService(ctx.env);
+        return persistence;
+      });
       const agentRunRepository = createAgentRunRepository(
         ctx.get("persistence"),
       );
       ctx.register("agentRunMetadata", () =>
-        createAgentRunMetadataService({ repository: agentRunRepository }),
+        createAgentRunMetadataService({
+          repository: agentRunRepository,
+          localInstance: ctx.get("localInstance"),
+          threadService: ctx.get("threads"),
+        }),
       );
       const canvasRepository = createCanvasRepository(ctx.get("persistence"));
 
@@ -76,6 +101,8 @@ export function createAgentRunsPlugin(
       // 规则与插件段（规则经 ctx 携带，插件段闭包自取——装/卸载下一轮即生效）。
       const systemPrompt = ctx.get("systemPrompt");
       systemPrompt.register(basePromptSection);
+      systemPrompt.register(codeRolePromptSection);
+      systemPrompt.register(codeProjectPromptSection);
       systemPrompt.register(skillsPromptSection);
       systemPrompt.register(
         createRulesPromptSection({
@@ -85,6 +112,7 @@ export function createAgentRunsPlugin(
       );
 
       ctx.register("agentRuns", (d) => {
+        const agentPersistence = d.get("agentPersistence");
         const jobService = ctx.tryGet("jobs");
         // 检查点缝（可选依赖）：有 checkpoints 服务时把轮次快照钩子接进 runtime；
         // 缺席（部分装配/未启用）则不打检查点，run 照常
@@ -128,39 +156,116 @@ export function createAgentRunsPlugin(
           });
         };
         return createAgentRunService({
-          agentPersistenceService: d.get("agentPersistence"),
+          codeProjectContextLoader: (scope, limits, signal) =>
+            ctx
+              .get("capabilities")
+              .require<
+                NonNullable<
+                  Parameters<
+                    typeof createAgentRunService
+                  >[0]["codeProjectContextLoader"]
+                >
+              >("code-project-context", "code-tools:project-context")(
+              scope,
+              limits,
+              signal,
+            ),
+          resolveCodeApprovalMode: async (handle) => {
+            const scope = handle.describe();
+            const row = await ctx
+              .get("persistence")
+              .forInstance(scope.instanceId)
+              .queryOne<{
+                state: import("../code-ui/conversation.js").CodeUiConversationState;
+                scope_generation: number | string;
+                branch_generation: number | string;
+              }>(
+                "select state, scope_generation, branch_generation from public.code_ui_sessions where instance_id = :instance and id = $1 and parent_session_id is null and deleted_at is null and archived = false and execution_state = 'ready'",
+                [scope.taskId],
+              );
+            if (!row) throw new Error("Code Task 已关闭或授权不可用。");
+            const config = row.state.snapshots.find(
+              (snapshot) => snapshot.sessionId === scope.taskId,
+            )?.config;
+            if (!config) throw new Error("Code Task 权限配置缺失。");
+            const mode =
+              protocol.commandPayloadSchemas.switchCollaborationMode.parse({
+                mode: config.mode,
+              }).mode;
+            const planEnabled =
+              protocol.sessionConfigStateSchema.shape.planEnabled.parse(
+                config.planEnabled,
+              ) ?? false;
+            return {
+              // Task保留基础mode；规划仅收窄本次实际权限，不改写配置。
+              mode: planEnabled ? "plan" : mode,
+              planEnabled,
+              planningEpoch: row.state.planningEpoch ?? 0,
+              scopeGeneration: Number(row.scope_generation),
+              branchGeneration: Number(row.branch_generation),
+            };
+          },
+          taskWork: ctx.get("taskWork"),
+          processSandbox: ctx.get("processSandbox"),
+          resolveTaskWorkContext: async (actor, scopeHandle, runId) => {
+            const scope = scopeHandle.describe();
+            const row = await ctx
+              .get("persistence")
+              .forInstance(scope.instanceId)
+              .queryOne<{ branch_generation: string | number }>(
+                "select branch_generation from public.code_ui_sessions where instance_id = :instance and id = $1 and deleted_at is null and archived = false and execution_state = 'ready'",
+                [scope.taskId],
+              );
+            if (!row) throw new Error("Code Task 已关闭或授权不可用。");
+            return {
+              actor,
+              scope,
+              agentId: scopeHandle.agentId,
+              runId,
+              branchGeneration: Number(row.branch_generation),
+            };
+          },
+          runExtensions: () =>
+            ctx
+              .get("capabilities")
+              .list<AgentRunExtension>("agent-run-extension")
+              .map((registration) => registration.value),
+          agentPersistenceService: agentPersistence,
+          contextBranchProvider:
+            deps.contextBranchProvider ??
+            createNativeContextBranchService({
+              agentPersistenceService: agentPersistence,
+            }),
           ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
           agentRunMetadataService: d.get("agentRunMetadata"),
           canvasRepository,
           canvasService: d.get("canvas"),
-          // 轮次快照钩子：显式包一层把行返回值折成 void（钩子失败由 runtime 兜底告警）
+          // 保留本次实际有效文件引用，runtime分别记录capture状态与run/phase。
           ...(checkpoints
             ? {
                 checkpointHooks: {
-                  beforeTurn: async (hookCtx: {
-                    canvasId: string;
-                    sandboxDir: string;
-                    runId: string;
-                  }) => {
-                    await checkpoints.beforeTurn(hookCtx);
-                  },
-                  afterTurn: async (hookCtx: {
-                    canvasId: string;
-                    sandboxDir: string;
-                    runId: string;
-                  }) => {
-                    await checkpoints.afterTurn(hookCtx);
-                  },
+                  beforeTurn: (hookCtx) =>
+                    checkpoints.captureTurnBoundary({
+                      ...hookCtx,
+                      phase: "pre",
+                    }),
+                  afterTurn: (hookCtx) =>
+                    checkpoints.captureTurnBoundary({
+                      ...hookCtx,
+                      phase: "post",
+                    }),
                 },
               }
             : {}),
-          workspaceSkillsLoader: createWorkspaceSkillsLoader({
+          instanceSkillsLoader: createInstanceSkillsLoader({
             canvases: canvasRepository,
+            skills: createSkillCatalogRepository(ctx.get("persistence")),
+          }),
+          instanceSkillsByInstanceLoader: createInstanceSkillsByInstanceLoader({
             skills: createSkillCatalogRepository(ctx.get("persistence")),
           }),
           // 项目绑定的本机工作目录（web 形态「填本机路径」）→ run 的沙箱作用域
           projectWorkDirLoader: createProjectWorkDirLoader({
-            canvases: canvasRepository,
             projects: createProjectRepository(ctx.get("persistence")),
           }),
           connectionManager: deps.connectionManager,
@@ -185,30 +290,34 @@ export function createAgentRunsPlugin(
           emitTurnStopping: (payload) => deps.events.emitTurnStopping(payload),
           ...(deps.emitPreStep ? { emitPreStep: deps.emitPreStep } : {}),
           toolGateFor,
-          creditService: d.get("credits"),
-          tierGuard: d.get("tierGuard"),
-          viewerService: d.get("viewer"),
+          localInstance: d.get("localInstance"),
         });
       });
+      return async () => {
+        await persistence?.dispose();
+      };
     },
     mounted(ctx) {
-      // chat 是可选依赖：缺席时（部分装配/测试）路由照常，只是不做 Code 会话供给
-      const chatService = ctx.tryGet("chat");
       void registerRunRoutes(ctx.app, ctx.get("agentRuns"), {
         // 活动查询：mounted 与 apply 是两段作用域，这里按需新建一个仓储包装
         // （仓储是无状态包装，重建不引入额外连接/状态）
         activityQuery: createAgentActivityQuery({
           repository: createAgentRunRepository(ctx.get("persistence")),
         }),
+        // 会话最近一轮 run 的终态（失败轮的原因）：与 activity 同一条仓储包装
+        latestRunQuery: (input) =>
+          createAgentRunRepository(ctx.get("persistence")).latestForSession(
+            input,
+          ),
         agentModes: ctx.get("agentModes"),
+        executionScopes: ctx.get("executionScopes"),
+        codeUi: ctx.get("codeUi"),
         agentRunMetadataService: ctx.get("agentRunMetadata"),
-        auth: ctx.get("auth"),
-        ...(chatService ? { chatService } : {}),
+        localAccess: ctx.get("localAccess"),
         settingsService: ctx.get("settings"),
         threadService: ctx.get("threads"),
-        viewerService: ctx.get("viewer"),
+        localInstance: ctx.get("localInstance"),
         // 平台池额度前置拦截（FORM-10）：走系统供应商且余额耗尽时拒绝启动
-        creditService: ctx.get("credits"),
         modelProviders: ctx.get("modelProviders"),
       });
     },

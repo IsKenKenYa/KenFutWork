@@ -1,19 +1,10 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowCompletionArtifacts.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowCompletionArtifacts.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { resolvePrimaryArtifact } from "@zui/app-shell/workflow-artifacts/artifactPresentation";
-import type { PresetLabels } from "@zui/app-shell/workflow-artifacts/presets/index";
-import { WorkflowArtifactIndex } from "@zui/components/workflow-timeline/WorkflowArtifactIndex";
-import { WorkflowArtifactRow } from "@zui/components/workflow-timeline/WorkflowArtifactRow";
-import {
-  ArtifactSheetGlyph,
-  type WorkflowCompletionArtifact,
-} from "@zui/components/workflow-timeline/WorkflowArtifactTile";
-import { PILL_STAGGER_MS } from "@zui/components/workflow-timeline/WorkflowTimeline";
 import type { ReactNode } from "react";
+import { resolvePrimaryArtifact } from "@zui/app-shell/workflow-artifacts/artifactPresentation.js";
+import type { PresetLabels } from "@zui/app-shell/workflow-artifacts/presets/index.js";
+import { WorkflowArtifactIndex } from "./WorkflowArtifactIndex.js";
+import { WorkflowArtifactRow } from "./WorkflowArtifactRow.js";
+import { ArtifactSheetGlyph, type WorkflowCompletionArtifact } from "./WorkflowArtifactTile.js";
+import { PILL_STAGGER_MS } from "./WorkflowTimeline.js";
 
 /**
  * 完成卡的产物区。
@@ -35,7 +26,7 @@ const COMPLETION_INDEX_WITH_MORE = COMPLETION_INDEX_MAX - 1;
 
 export interface CompletionArtifactLayout {
   /** 交付物；缺席即索引独占。 */
-  primary?: WorkflowCompletionArtifact | undefined;
+  primary?: WorkflowCompletionArtifact;
   /** 画成行的那些件（交付物之外）。 */
   lines: readonly WorkflowCompletionArtifact[];
   /** 没画出来的件数（「还有 N 个」的 N）。 */
@@ -51,14 +42,10 @@ export function completionArtifactLayout(
 ): CompletionArtifactLayout {
   if (artifacts.length === 0) return { lines: [], folded: 0, more: false };
   const primary = resolvePrimaryArtifact(artifacts);
-  const rest =
-    primary === undefined ? artifacts : artifacts.filter((a) => a !== primary);
+  const rest = primary === undefined ? artifacts : artifacts.filter((a) => a !== primary);
   // 砍过的清单（超 8）不知道真实件数：仍给一扇门，N 写 `…`——与产物条的省略号同一个诚实。
   const more = rest.length > COMPLETION_INDEX_MAX || truncated;
-  const lines = rest.slice(
-    0,
-    more ? COMPLETION_INDEX_WITH_MORE : COMPLETION_INDEX_MAX,
-  );
+  const lines = rest.slice(0, more ? COMPLETION_INDEX_WITH_MORE : COMPLETION_INDEX_MAX);
   return {
     ...(primary === undefined ? {} : { primary }),
     lines,
@@ -68,20 +55,12 @@ export function completionArtifactLayout(
 }
 
 /** 卡上画出来的格数（行算一格，每条索引行一格，「还有 N 个」一格）：四格数字的落地节拍接在它们之后。 */
-export function completionArtifactCellCount(
-  layout: CompletionArtifactLayout,
-): number {
-  return (
-    (layout.primary === undefined ? 0 : 1) +
-    layout.lines.length +
-    (layout.more ? 1 : 0)
-  );
+export function completionArtifactCellCount(layout: CompletionArtifactLayout): number {
+  return (layout.primary === undefined ? 0 : 1) + layout.lines.length + (layout.more ? 1 : 0);
 }
 
 /** 会读字节的那些件：只有交付物的框读；索引行与门从不读。 */
-export function completionPreviewIds(
-  layout: CompletionArtifactLayout,
-): ReadonlySet<string> {
+export function completionPreviewIds(layout: CompletionArtifactLayout): ReadonlySet<string> {
   return new Set(layout.primary === undefined ? [] : [layout.primary.id]);
 }
 

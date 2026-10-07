@@ -2,7 +2,9 @@
 /**
  * 开发库临时集群 —— 本机没有可用 Docker 时的替代（拉不到 `postgres:17-alpine` 时用）。
  *
- * 用依赖里自带的 `@embedded-postgres/windows-x64` 二进制在**仓库内**初始化一个集群：
+ * 用依赖里自带的 `@embedded-postgres/<按平台>` 二进制在**仓库内**初始化一个集群
+ *   （windows-x64 / darwin-arm64 / darwin-x64 / linux-arm64 / linux-x64，
+ *     apps/server 已全平台声明依赖，按本机 platform+arch 自动选）：
  *   - 数据目录 `.kenfutwork-data/pg-dev`（已 gitignore，删除即重置）
  *   - 只监听 127.0.0.1，端口默认 55432（避开 5432/5433 上的既有库）
  *   - 装 `pgmq` 最小 shim（与 `docker/pg-dev-shim` 同一份文件）：历史迁移
@@ -33,14 +35,32 @@ const PORT = process.env.KENFUTWORK_DEV_PG_PORT ?? "55433";
 const DB_NAME = "kenfutwork";
 const DB_USER = "kenfutwork";
 
+/** 平台 → embedded-postgres 的按平台二进制包（apps/server 已全平台声明依赖）。 */
+const PLATFORM_PACKAGES = {
+  "win32-x64": "@embedded-postgres/windows-x64",
+  "darwin-arm64": "@embedded-postgres/darwin-arm64",
+  "darwin-x64": "@embedded-postgres/darwin-x64",
+  "linux-arm64": "@embedded-postgres/linux-arm64",
+  "linux-x64": "@embedded-postgres/linux-x64",
+};
+
+const exeName = (name) => (process.platform === "win32" ? `${name}.exe` : name);
+
 function pgBinDir() {
+  const platformKey = `${process.platform}-${process.arch}`;
+  const packageName = PLATFORM_PACKAGES[platformKey];
+  if (!packageName) {
+    throw new Error(
+      `本机平台 ${platformKey} 没有对应的内嵌 PG 二进制包（已支持：${Object.values(PLATFORM_PACKAGES).join(" / ")}）`,
+    );
+  }
   const pnpmDir = join(ROOT, "node_modules", ".pnpm");
   const entry = readdirSync(pnpmDir).find((name) =>
-    name.startsWith("@embedded-postgres+windows-x64@"),
+    name.startsWith(`@embedded-postgres+${packageName.split("/")[1]}@`),
   );
   if (!entry) {
     throw new Error(
-      "找不到 @embedded-postgres/windows-x64（先 `pnpm install`；该包是桌面内嵌 PG 的依赖）",
+      `找不到 ${packageName}（先 \`pnpm install\`；该包是桌面内嵌 PG 的按平台依赖）`,
     );
   }
   const bin = join(
@@ -48,11 +68,11 @@ function pgBinDir() {
     entry,
     "node_modules",
     "@embedded-postgres",
-    "windows-x64",
+    packageName.split("/")[1],
     "native",
     "bin",
   );
-  if (!existsSync(join(bin, "initdb.exe"))) {
+  if (!existsSync(join(bin, exeName("initdb")))) {
     throw new Error(`内嵌 PG 二进制不完整：${bin}`);
   }
   return bin;
@@ -81,7 +101,7 @@ function initialise(bin) {
   if (existsSync(join(DATA_DIR, "PG_VERSION"))) return false;
   mkdirSync(dirname(DATA_DIR), { recursive: true });
   // trust 认证：只监听回环的本地开发库，不折腾口令文件
-  run(join(bin, "initdb.exe"), [
+  run(join(bin, exeName("initdb")), [
     "-D",
     DATA_DIR,
     "-U",
@@ -95,7 +115,7 @@ function initialise(bin) {
 
 function start(bin) {
   const started = run(
-    join(bin, "pg_ctl.exe"),
+    join(bin, exeName("pg_ctl")),
     [
       "-D",
       DATA_DIR,
@@ -112,7 +132,7 @@ function start(bin) {
     if (!/already running/i.test(out)) throw new Error(out);
   }
   const created = run(
-    join(bin, "createdb.exe"),
+    join(bin, exeName("createdb")),
     ["-h", "127.0.0.1", "-p", PORT, "-U", DB_USER, DB_NAME],
     { allowFailure: true },
   );
@@ -139,14 +159,14 @@ if (command === "start") {
     `  LOOMIC_DATABASE_URL=postgres://${DB_USER}@127.0.0.1:${PORT}/${DB_NAME} pnpm --filter @kenfutwork/server migrate apply`,
   );
 } else if (command === "stop") {
-  const stopped = run(join(bin, "pg_ctl.exe"), ["-D", DATA_DIR, "stop"], {
+  const stopped = run(join(bin, exeName("pg_ctl")), ["-D", DATA_DIR, "stop"], {
     allowFailure: true,
   });
   console.log(
     stopped.status === 0 ? "[开发库] 已停止" : "[开发库] 未在运行（或已停止）",
   );
 } else if (command === "status") {
-  const status = run(join(bin, "pg_ctl.exe"), ["-D", DATA_DIR, "status"], {
+  const status = run(join(bin, exeName("pg_ctl")), ["-D", DATA_DIR, "status"], {
     allowFailure: true,
   });
   console.log(`${status.stdout ?? ""}${status.stderr ?? ""}`.trim());

@@ -1,11 +1,4 @@
 /**
- * zcode 照搬：`@/app-shell/workflow-artifacts/presets/ArtifactTable.tsx`（references/zcode/packages/ui/src/app-shell/workflow-artifacts/presets/ArtifactTable.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-/**
  * `table` 预置渲染器：一行一条（或按 `key` upsert 的一行一实体）。
  *
  * 两种形态：
@@ -18,20 +11,20 @@
  * 而条目本身在投影侧已经是有界的。
  */
 
+import { memo, useMemo } from "react";
 import {
-  type ArtifactItem,
   applyArtifactItems,
-} from "@zui/app-shell/workflow-artifacts/presets/apply";
+  type ArtifactItem,
+} from "@zui/app-shell/workflow-artifacts/presets/apply.js";
 import {
   fieldHeading,
   PresetEmpty,
   PresetHeading,
-  type PresetLabels,
   REVEAL_ANIMATION_CLASS,
-} from "@zui/app-shell/workflow-artifacts/presets/parts";
-import type { TableSpec } from "@zui/app-shell/workflow-artifacts/presets/spec";
-import { cn } from "@zui/components/lib/utils";
-import { memo, useMemo } from "react";
+  type PresetLabels,
+} from "@zui/app-shell/workflow-artifacts/presets/parts.js";
+import type { TableSpec } from "@zui/app-shell/workflow-artifacts/presets/spec.js";
+import { cn } from "@zui/components/lib/utils.js";
 
 /** 小卡片里只露前几行——它是一个「有东西了」的信号，不是阅读面。 */
 const COMPACT_ROWS = 3;
@@ -47,14 +40,11 @@ export const ArtifactTable = memo(function ArtifactTable({
 }: {
   spec: TableSpec;
   items: readonly ArtifactItem[];
-  compact?: boolean | undefined;
+  compact?: boolean;
   labels: PresetLabels;
-  className?: string | undefined;
+  className?: string;
 }) {
-  const model = useMemo(
-    () => applyArtifactItems("table", spec, items),
-    [spec, items],
-  );
+  const model = useMemo(() => applyArtifactItems("table", spec, items), [spec, items]);
   const total = model.rows.length;
   const visible = compact
     ? model.rows.slice(0, COMPACT_ROWS)
@@ -64,11 +54,7 @@ export const ArtifactTable = memo(function ArtifactTable({
     return (
       <div className={className}>
         {compact ? null : (
-          <PresetHeading
-            className="mb-3"
-            description={spec.description}
-            title={spec.title}
-          />
+          <PresetHeading className="mb-3" description={spec.description} title={spec.title} />
         )}
         <PresetEmpty compact={compact} label={labels.empty} />
       </div>

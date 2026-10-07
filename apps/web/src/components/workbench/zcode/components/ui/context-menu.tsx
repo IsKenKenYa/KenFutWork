@@ -1,21 +1,17 @@
-import { ChevronRightIcon } from "lucide-react";
+import * as React from "react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
-import type * as React from "react";
+import { ChevronRightIcon } from "lucide-react";
 
-import { cn } from "../lib/utils";
+import { cn } from "../lib/utils.js";
 
-function ContextMenu({
-  ...props
-}: React.ComponentProps<typeof ContextMenuPrimitive.Root>) {
+function ContextMenu({ ...props }: React.ComponentProps<typeof ContextMenuPrimitive.Root>) {
   return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} />;
 }
 
 function ContextMenuTrigger({
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Trigger>) {
-  return (
-    <ContextMenuPrimitive.Trigger data-slot="context-menu-trigger" {...props} />
-  );
+  return <ContextMenuPrimitive.Trigger data-slot="context-menu-trigger" {...props} />;
 }
 
 // 圆角规范迁移：旧菜单沿用 xl/lg，统一为独立外壳 lg、内部选项 md；子菜单重新起算。
@@ -74,9 +70,7 @@ function ContextMenuSeparator({
   );
 }
 
-function ContextMenuSub({
-  ...props
-}: React.ComponentProps<typeof ContextMenuPrimitive.Sub>) {
+function ContextMenuSub({ ...props }: React.ComponentProps<typeof ContextMenuPrimitive.Sub>) {
   return <ContextMenuPrimitive.Sub data-slot="context-menu-sub" {...props} />;
 }
 

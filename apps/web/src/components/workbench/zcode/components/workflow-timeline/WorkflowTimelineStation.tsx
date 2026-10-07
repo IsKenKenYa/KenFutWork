@@ -1,10 +1,6 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowTimelineStation.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowTimelineStation.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { cn } from "@zui/components/lib/utils";
+import type { ReactNode } from "react";
+import { cn } from "@zui/components/lib/utils.js";
+import type { TimelineRail, TimelineStation } from "./timeline-model.js";
 import {
   CAPTION_X,
   PLATFORM_ROW,
@@ -13,16 +9,11 @@ import {
   STATION_WIDTH,
   stationX,
   type TimelineLayout,
-} from "@zui/components/workflow-timeline/timeline-geometry";
-import { railKey } from "@zui/components/workflow-timeline/timeline-ledge";
-import type {
-  TimelineRail,
-  TimelineStation,
-} from "@zui/components/workflow-timeline/timeline-model";
-import type { TypewriterState } from "@zui/components/workflow-timeline/use-typewriter";
-import { StationMeta } from "@zui/components/workflow-timeline/WorkflowStationMeta";
-import { stationLampClass } from "@zui/components/workflow-timeline/WorkflowTimelineLedge";
-import type { ReactNode } from "react";
+} from "./timeline-geometry.js";
+import { railKey } from "./timeline-ledge.js";
+import type { TypewriterState } from "./use-typewriter.js";
+import { StationMeta } from "./WorkflowStationMeta.js";
+import { stationLampClass } from "./WorkflowTimelineLedge.js";
 
 /**
  * 站头：名字 + 元数据，一枚没有背景的
@@ -124,10 +115,7 @@ export function WorkflowStationRow({
 }) {
   const n = stations.length;
   return (
-    <div
-      className="absolute left-0 flex"
-      style={{ height: RAIL_ROW, top, width }}
-    >
+    <div className="absolute left-0 flex" style={{ height: RAIL_ROW, top, width }}>
       {stations.map((station, i) => {
         const rail = rails.get(railKey(i, i + 1));
         const full = fullNames[i]!;
@@ -144,7 +132,7 @@ export function WorkflowStationRow({
             style={{ width: i < n - 1 ? STATION_PITCH : STATION_WIDTH }}
           >
             <span
-              aria-hidden={true}
+              aria-hidden
               className={cn(
                 stationLampClass(station.status),
                 "mx-3",
@@ -158,7 +146,7 @@ export function WorkflowStationRow({
                 penHere ? (
                   // 光标跟着笔：写字时稳住，追上流时闪烁。
                   <span
-                    aria-hidden={true}
+                    aria-hidden
                     className={cn(
                       "ml-px inline-block h-3 w-px bg-foreground align-[-1px]",
                       pen.idle && "wf-caret",
@@ -178,7 +166,7 @@ export function WorkflowStationRow({
             />
             {i < n - 1 ? (
               <span
-                aria-hidden={true}
+                aria-hidden
                 className={cn(
                   "wf-ink relative h-0 min-w-3 flex-1 rounded-full border-t border-foreground-subtlest",
                   draft && "wf-rail-grow",
@@ -235,9 +223,7 @@ export function WorkflowStationPlatform({
             name={fullNames[i]!}
             station={station}
             title={titleOf(station)}
-            {...(onSelectStation === undefined
-              ? {}
-              : { onSelect: () => onSelectStation(station) })}
+            {...(onSelectStation === undefined ? {} : { onSelect: () => onSelectStation(station) })}
           />
         </div>
       ))}

@@ -14,10 +14,7 @@ export function getContainingDirectoryPath(path: string): string | null {
     return null;
   }
 
-  const lastSeparatorIndex = Math.max(
-    trimmedPath.lastIndexOf("/"),
-    trimmedPath.lastIndexOf("\\"),
-  );
+  const lastSeparatorIndex = Math.max(trimmedPath.lastIndexOf("/"), trimmedPath.lastIndexOf("\\"));
 
   if (lastSeparatorIndex < 0) {
     return null;
@@ -36,11 +33,7 @@ export function getContainingDirectoryPath(path: string): string | null {
 }
 
 export function isAbsoluteFilePath(path: string): boolean {
-  return (
-    path.startsWith("/") ||
-    WINDOWS_ABSOLUTE_PATH_RE.test(path) ||
-    UNC_PATH_RE.test(path)
-  );
+  return path.startsWith("/") || WINDOWS_ABSOLUTE_PATH_RE.test(path) || UNC_PATH_RE.test(path);
 }
 
 export function decodeFilePathUriEscapes(path: string): string {
@@ -67,8 +60,7 @@ export function joinFilePath(basePath: string, childPath: string): string {
     return childPath;
   }
 
-  const separator =
-    basePath.includes("\\") && !basePath.includes("/") ? "\\" : "/";
+  const separator = basePath.includes("\\") && !basePath.includes("/") ? "\\" : "/";
   const normalizedBasePath = basePath.replace(/[\\/]+$/, "");
   const normalizedChildPath = childPath.replace(/^[\\/]+/, "");
   return `${normalizedBasePath}${separator}${normalizedChildPath}`;

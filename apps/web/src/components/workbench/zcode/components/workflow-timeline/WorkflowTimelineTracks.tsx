@@ -1,10 +1,11 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowTimelineTracks.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowTimelineTracks.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { cn } from "@zui/components/lib/utils";
+import { useId } from "react";
+import { cn } from "@zui/components/lib/utils.js";
+import type {
+  TimelineBand,
+  TimelineInk,
+  TimelineStation,
+  WorkflowTimelineModel,
+} from "./timeline-model.js";
 import {
   bandAt,
   bandForkX,
@@ -13,16 +14,9 @@ import {
   STUB,
   TAIL,
   type TimelineLayout,
-} from "@zui/components/workflow-timeline/timeline-geometry";
-import type {
-  TimelineBand,
-  TimelineInk,
-  TimelineStation,
-  WorkflowTimelineModel,
-} from "@zui/components/workflow-timeline/timeline-model";
-import { MarchLight } from "@zui/components/workflow-timeline/WorkflowMarchLight";
-import { stationLampClass } from "@zui/components/workflow-timeline/WorkflowTimelineLedge";
-import { useId } from "react";
+} from "./timeline-geometry.js";
+import { MarchLight } from "./WorkflowMarchLight.js";
+import { stationLampClass } from "./WorkflowTimelineLedge.js";
 
 /**
  * 轨道层。
@@ -89,11 +83,7 @@ export function timelineRailPieces(
     start: { x: x1, y },
   });
   // 分支轨道 t 在 forkX − 8(t−1) 处离开主线，两段四分之一圆升到自己的行，再横到第一枚灯前 8px。
-  const forkPath = (
-    band: TimelineBand,
-    track: number,
-    head: number,
-  ): RailShape => {
+  const forkPath = (band: TimelineBand, track: number, head: number): RailShape => {
     const xf = forkX(band) - 8 * (track - 1);
     const yt = rowOf(track);
     return {
@@ -103,11 +93,7 @@ export function timelineRailPieces(
     };
   };
   // 汇合是分叉的镜像：从末站的灯后 8px 横到 xm − 8，落回主线。带里轨道越高，落点越靠左。
-  const mergePath = (
-    band: TimelineBand,
-    track: number,
-    tail: number,
-  ): RailShape => {
+  const mergePath = (band: TimelineBand, track: number, tail: number): RailShape => {
     const xm = mergeX(band) - 8 * (band.tracks.length - 1 - track);
     const yt = rowOf(track);
     return {
@@ -169,20 +155,11 @@ export function timelineRailPieces(
   for (const rail of rails) {
     // 双线段只说「这两站并行」，卡上不画——分叉与汇合已经把并行说清楚了。
     if (rail.kind === "twin") continue;
-    const ends = {
-      from: rail.from,
-      ink: rail.ink,
-      key: `${rail.from}>${rail.to}`,
-      to: rail.to,
-    };
+    const ends = { from: rail.from, ink: rail.ink, key: `${rail.from}>${rail.to}`, to: rail.to };
     if (rail.kind === "fork") {
       const band = bandAt(bands, rail.to);
       if (band === undefined) continue;
-      pieces.push({
-        ...ends,
-        ...forkPath(band, trackOfStation(rail.to), rail.to),
-        kind: "fork",
-      });
+      pieces.push({ ...ends, ...forkPath(band, trackOfStation(rail.to), rail.to), kind: "fork" });
       continue;
     }
     if (rail.kind === "merge") {
@@ -202,10 +179,7 @@ export function timelineRailPieces(
       continue;
     }
     const yt = rowOf(trackOfStation(rail.from));
-    pieces.push({
-      ...ends,
-      ...straight(lx(rail.from) + 8, lx(rail.to) - 8, yt),
-    });
+    pieces.push({ ...ends, ...straight(lx(rail.from) + 8, lx(rail.to) - 8, yt) });
   }
   return pieces;
 }
@@ -294,7 +268,7 @@ export function WorkflowTimelineLamps({
     <>
       {stations.map((station, i) => (
         <span
-          aria-hidden={true}
+          aria-hidden
           className={cn(
             stationLampClass(station.status),
             "absolute",

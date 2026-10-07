@@ -22,9 +22,9 @@ export type BackgroundJobType = z.infer<typeof backgroundJobTypeSchema>;
 
 export const imageGenerationPayloadSchema = z.object({
   prompt: z.string().min(1),
-  model: z.string().optional(),
-  /** BYOK：任务携带的用户供应商实例 id（§5），worker 按其实例化协议适配器。 */
-  provider_instance_id: z.string().optional(),
+  model: z.string().min(1),
+  /** BYOK：任务携带的本地供应商实例 id（§5），worker 按其实例化协议适配器。 */
+  provider_instance_id: z.uuid(),
   aspect_ratio: z.string().optional(),
 });
 export type ImageGenerationPayload = z.infer<
@@ -33,9 +33,9 @@ export type ImageGenerationPayload = z.infer<
 
 export const videoGenerationPayloadSchema = z.object({
   prompt: z.string().min(1),
-  model: z.string().optional(),
-  /** BYOK：任务携带的用户供应商实例 id（§5），worker 按其实例化协议适配器。 */
-  provider_instance_id: z.string().optional(),
+  model: z.string().min(1),
+  /** BYOK：任务携带的本地供应商实例 id（§5），worker 按其实例化协议适配器。 */
+  provider_instance_id: z.uuid(),
   duration: z.number().int().optional(),
   resolution: z.string().optional(),
   aspect_ratio: z.string().optional(),
@@ -53,7 +53,8 @@ export const createVideoJobRequestSchema = z.object({
   session_id: z.uuid().optional(),
   thread_id: z.string().optional(),
   prompt: z.string().min(1),
-  model: z.string().optional(),
+  model: z.string().min(1),
+  provider_instance_id: z.uuid(),
   duration: z.number().int().optional(),
   resolution: z.string().optional(),
   aspect_ratio: z.string().optional(),
@@ -67,7 +68,7 @@ export type CreateVideoJobRequest = z.infer<typeof createVideoJobRequestSchema>;
 
 export const backgroundJobSchema = z.object({
   id: z.uuid(),
-  workspace_id: z.uuid(),
+  instance_id: z.uuid(),
   project_id: z.uuid().nullable(),
   canvas_id: z.uuid().nullable(),
   session_id: z.uuid().nullable(),
@@ -83,7 +84,7 @@ export const backgroundJobSchema = z.object({
   error_message: z.string().nullable(),
   attempt_count: z.number().int(),
   max_attempts: z.number().int(),
-  created_by: z.uuid(),
+  created_by_client_id: z.uuid().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
   started_at: z.string().nullable(),
@@ -101,7 +102,8 @@ export const createImageJobRequestSchema = z.object({
   session_id: z.uuid().optional(),
   thread_id: z.string().optional(),
   prompt: z.string().min(1),
-  model: z.string().optional(),
+  model: z.string().min(1),
+  provider_instance_id: z.uuid(),
   aspect_ratio: z.string().optional(),
 });
 export type CreateImageJobRequest = z.infer<typeof createImageJobRequestSchema>;
@@ -110,8 +112,8 @@ export type CreateImageJobRequest = z.infer<typeof createImageJobRequestSchema>;
 // 为让 API 文档管线（openapi/registry.ts）保持「契约一律出自 shared」而迁入。
 export const generateImageRequestSchema = z.object({
   prompt: z.string().min(1),
-  model: z.string().optional(),
-  /** BYOK：用户供应商实例 id；携带时按实例实例化协议适配器（P4）。 */
+  model: z.string().min(1),
+  /** BYOK：本地供应商实例 id；携带时按实例实例化协议适配器（P4）。 */
   providerInstanceId: z.string().uuid().optional(),
   aspectRatio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional(),
   quality: z.enum(["standard", "hd", "ultra"]).optional(),
@@ -133,8 +135,8 @@ export type GenerateImageRequest = z.infer<typeof generateImageRequestSchema>;
 
 export const generateVideoRequestSchema = z.object({
   prompt: z.string().min(1),
-  model: z.string().optional(),
-  /** BYOK：用户供应商实例 id；携带时任务载荷透传，worker 按实例实例化适配器。 */
+  model: z.string().min(1),
+  /** BYOK：本地供应商实例 id；携带时任务载荷透传，worker 按实例实例化适配器。 */
   providerInstanceId: z.string().uuid().optional(),
   duration: z.number().int().min(3).max(16).optional(),
   resolution: z.enum(["720p", "1080p", "4k"]).optional(),
@@ -157,3 +159,6 @@ export const jobListResponseSchema = z.object({
   jobs: z.array(backgroundJobSchema),
 });
 export type JobListResponse = z.infer<typeof jobListResponseSchema>;
+
+/** 视频通道的输出规格，与账户套餐无关。 */
+export type VideoResolution = "720p" | "1080p" | "4k";

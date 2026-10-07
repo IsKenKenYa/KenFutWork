@@ -1,13 +1,7 @@
-/**
- * zcode 照搬：`@/v4/SelectionActionMenu.tsx`（references/zcode/packages/ui/src/v4/SelectionActionMenu.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
 import { useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 
 // 问题原因：Markdown 曾复制一份固定宽度的竖排菜单，与对话流逐渐分叉。
 // 两处只传选区位置与动作，共用展示和尺寸测量，避免再次出现样式差异。
@@ -24,9 +18,9 @@ export function SelectionActionMenu({
   center: number;
   top: number;
   bottom: number;
-  singleLimit?: boolean | undefined;
-  sideActionDisabled?: boolean | undefined;
-  sideDisabledTitle?: string | undefined;
+  singleLimit?: boolean;
+  sideActionDisabled?: boolean;
+  sideDisabledTitle?: string;
   onAddToCurrentTask: () => void;
   onAskInSideChat: () => void;
 }) {
@@ -38,15 +32,11 @@ export function SelectionActionMenu({
     const position = () => {
       const rect = menu.getBoundingClientRect();
       menu.style.left = `${Math.max(12, Math.min(window.innerWidth - rect.width - 12, center - rect.width / 2))}px`;
-      const preferredTop =
-        top - rect.height - 8 >= 12 ? top - rect.height - 8 : bottom + 8;
+      const preferredTop = top - rect.height - 8 >= 12 ? top - rect.height - 8 : bottom + 8;
       menu.style.top = `${Math.max(12, Math.min(window.innerHeight - rect.height - 12, preferredTop))}px`;
     };
     position();
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(position);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(position);
     observer?.observe(menu);
     return () => observer?.disconnect();
   }, [center, top, bottom, singleLimit, locale]);
@@ -86,8 +76,7 @@ export function SelectionActionMenu({
             title={sideActionDisabled ? sideDisabledTitle : undefined}
             className={cn(
               "min-w-0 px-2.5 py-1.5 hover:bg-menu-hover",
-              sideActionDisabled &&
-                "cursor-not-allowed opacity-50 hover:bg-transparent",
+              sideActionDisabled && "cursor-not-allowed opacity-50 hover:bg-transparent",
             )}
             onClick={() => {
               if (!sideActionDisabled) onAskInSideChat();

@@ -1,12 +1,4 @@
-/**
- * zcode 照搬：`@/lib/providerSettingsSnapshot.ts`（references/zcode/packages/ui/src/lib/providerSettingsSnapshot.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type {
-  IProviderSettingsService,
-  ProviderSettingsView,
-} from "@zui/lib/zcode-services";
+import type { IProviderSettingsService, ProviderSettingsView } from "@zcode/services";
 
 type ProviderSettingsSnapshotListener = () => void;
 
@@ -38,10 +30,7 @@ export function subscribeProviderSettingsSnapshot(
 }
 
 export function reloadProviderSettingsSnapshot(): Promise<void> {
-  return (
-    activeReload?.() ??
-    Promise.reject(new Error("Provider Settings Service 尚未连接"))
-  );
+  return activeReload?.() ?? Promise.reject(new Error("Provider Settings Service 尚未连接"));
 }
 
 export function connectProviderSettingsSnapshot(
@@ -54,10 +43,8 @@ export function connectProviderSettingsSnapshot(
 
   const commit = (view: ProviderSettingsView): void => {
     if (generation !== connectionGeneration) return;
-    if (snapshot.status === "ready" && view.revision < snapshot.view.revision)
-      return;
-    if (snapshot.status === "ready" && snapshot.view.revision === view.revision)
-      return;
+    if (snapshot.status === "ready" && view.revision < snapshot.view.revision) return;
+    if (snapshot.status === "ready" && snapshot.view.revision === view.revision) return;
     snapshot = { status: "ready", view };
     publish();
   };

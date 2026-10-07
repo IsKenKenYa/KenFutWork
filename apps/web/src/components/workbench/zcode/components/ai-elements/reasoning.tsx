@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/components/ai-elements/reasoning.tsx`（references/zcode/packages/ui/src/components/ai-elements/reasoning.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）；源文件自带头注保留于下。
- */
 /*
  * Derived from vercel/ai-elements (packages/elements/src/reasoning.tsx).
  * Copyright 2023 Vercel, Inc. Licensed under Apache-2.0.
@@ -12,27 +7,20 @@
 "use client";
 
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
-import { cn } from "@zui/components/lib/utils";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@zui/components/ui/collapsible";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  TID_CHAT_REASONING_CONTENT,
-  TID_CHAT_REASONING_TRIGGER,
-} from "@zui/lib/zcode-shared";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible.js";
+import { cn } from "../lib/utils.js";
+import { TID_CHAT_REASONING_CONTENT, TID_CHAT_REASONING_TRIGGER } from "@zcode/shared";
+import { BrainIcon, ChevronRightIcon } from "lucide-react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { QueuedSummaryContent } from "@zui/ToolCallBlocks/QueuedSummaryContent.js";
+import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import {
   EMPTY_SCROLL_MASK_STATE,
   getVerticalScrollMaskStyle,
   resolveVerticalScrollMaskState,
-  type ScrollMaskState,
   type ScrollMetrics,
-} from "@zui/mentions/components/scrollMask";
-import { QueuedSummaryContent } from "@zui/ToolCallBlocks/QueuedSummaryContent";
-import { BrainIcon, ChevronRightIcon } from "lucide-react";
-import type { ComponentProps, CSSProperties, ReactNode } from "react";
+  type ScrollMaskState,
+} from "@zui/mentions/components/scrollMask.js";
 import {
   createContext,
   memo,
@@ -84,11 +72,7 @@ export function shouldAutoCollapseReasoning({
   previousAutoCollapseKey: string | number | null | undefined;
   userInteracted: boolean;
 }) {
-  return (
-    autoCollapseKey != null &&
-    autoCollapseKey !== previousAutoCollapseKey &&
-    !userInteracted
-  );
+  return autoCollapseKey != null && autoCollapseKey !== previousAutoCollapseKey && !userInteracted;
 }
 
 export function getReasoningBottomDistance({
@@ -100,9 +84,7 @@ export function getReasoningBottomDistance({
 }
 
 export function isReasoningScrollAtBottom(metrics: ScrollMetrics) {
-  return (
-    getReasoningBottomDistance(metrics) <= REASONING_BOTTOM_LOCK_DISTANCE_PX
-  );
+  return getReasoningBottomDistance(metrics) <= REASONING_BOTTOM_LOCK_DISTANCE_PX;
 }
 
 export const Reasoning = memo(
@@ -120,8 +102,8 @@ export const Reasoning = memo(
     const isOpenControlled = open !== undefined;
     const [isOpen, setIsOpen] = useControllableState<boolean>({
       defaultProp: defaultOpen,
-      ...(onOpenChange === undefined ? {} : { onChange: onOpenChange }),
-      ...(open === undefined ? {} : { prop: open }),
+      onChange: onOpenChange,
+      prop: open,
     });
     const [duration, setDuration] = useControllableState<number | undefined>({
       defaultProp: undefined,
@@ -132,9 +114,7 @@ export const Reasoning = memo(
     const contentUnmountDelayRef = useRef<number | null>(null);
     const userInteractedRef = useRef(false);
     const previousAutoCollapseKeyRef = useRef<string | number | null>(null);
-    const [shouldRenderContent, setShouldRenderContent] = useState(
-      () => isOpen,
-    );
+    const [shouldRenderContent, setShouldRenderContent] = useState(() => isOpen);
     const handleOpenChange = useCallback(
       (nextOpen: boolean) => {
         userInteractedRef.current = true;
@@ -169,9 +149,7 @@ export const Reasoning = memo(
         if (startTimeRef.current === null) {
           return;
         }
-        setDuration(
-          Math.max(1, Math.ceil((Date.now() - startTimeRef.current) / MS_IN_S)),
-        );
+        setDuration(Math.max(1, Math.ceil((Date.now() - startTimeRef.current) / MS_IN_S)));
       };
 
       updateDuration();
@@ -256,9 +234,7 @@ export const Reasoning = memo(
   },
 );
 
-export type ReasoningTriggerProps = ComponentProps<
-  typeof CollapsibleTrigger
-> & {
+export type ReasoningTriggerProps = ComponentProps<typeof CollapsibleTrigger> & {
   getThinkingMessage?: (isStreaming: boolean, duration?: number) => ReactNode;
   streamingText?: string;
 };
@@ -292,9 +268,7 @@ export function resolveReasoningStreamingSummary(
 const REASONING_SUMMARY_MASK =
   "linear-gradient(to right, transparent 0, black 16px, black calc(100% - 16px), transparent 100%)";
 
-export function getReasoningSummaryMaskStyle(
-  isOverflowing: boolean,
-): CSSProperties | undefined {
+export function getReasoningSummaryMaskStyle(isOverflowing: boolean): CSSProperties | undefined {
   if (!isOverflowing) {
     return undefined;
   }
@@ -319,13 +293,10 @@ export const ReasoningTrigger = memo(
     const { isStreaming, isOpen, duration } = useReasoning();
     const { intl } = useZCodeIntl();
     const streamingSummary =
-      isStreaming && !isOpen
-        ? resolveReasoningStreamingSummary(streamingText)
-        : null;
+      isStreaming && !isOpen ? resolveReasoningStreamingSummary(streamingText) : null;
     const streamingSummaryRef = useRef<HTMLSpanElement | null>(null);
     const streamingSummaryTextRef = useRef<HTMLSpanElement | null>(null);
-    const [isStreamingSummaryOverflowing, setIsStreamingSummaryOverflowing] =
-      useState(false);
+    const [isStreamingSummaryOverflowing, setIsStreamingSummaryOverflowing] = useState(false);
 
     useEffect(() => {
       const viewport = streamingSummaryRef.current;
@@ -404,27 +375,18 @@ export const ReasoningTrigger = memo(
             <BrainIcon className="size-4 shrink-0 text-foreground-subtlest" />
             {/* 右侧流式摘要是可伸缩内容；如果左侧标签也参与 flex shrink，
                 长摘要会把思考状态标签挤成多行。固定语义标签宽度，只让摘要占剩余空间。 */}
-            <span
-              className="shrink-0 whitespace-nowrap"
-              data-reasoning-label="true"
-            >
+            <span className="shrink-0 whitespace-nowrap" data-reasoning-label="true">
               {thinkingMessage}
             </span>
-            {streamingSummary ? (
-              <span className="shrink-0 text-foreground-subtlest">·</span>
-            ) : null}
+            {streamingSummary ? <span className="shrink-0 text-foreground-subtlest">·</span> : null}
             {streamingSummary ? (
               <span
                 ref={streamingSummaryRef}
                 className="min-w-0 flex-1 overflow-hidden whitespace-nowrap text-foreground-subtle"
-                data-reasoning-streaming-mask={
-                  isStreamingSummaryOverflowing ? "both" : "none"
-                }
+                data-reasoning-streaming-mask={isStreamingSummaryOverflowing ? "both" : "none"}
                 data-reasoning-streaming-line="true"
                 data-reasoning-streaming-roll="true"
-                style={getReasoningSummaryMaskStyle(
-                  isStreamingSummaryOverflowing,
-                )}
+                style={getReasoningSummaryMaskStyle(isStreamingSummaryOverflowing)}
               >
                 <QueuedSummaryContent
                   contentKey={`reasoning-line:${streamingSummary.key}`}
@@ -438,7 +400,7 @@ export const ReasoningTrigger = memo(
                       {streamingSummary.text}
                     </span>
                   }
-                  enabled={true}
+                  enabled
                 />
               </span>
             ) : null}
@@ -457,30 +419,20 @@ export const ReasoningTrigger = memo(
   },
 );
 
-export type ReasoningContentProps = ComponentProps<
-  typeof CollapsibleContent
-> & {
+export type ReasoningContentProps = ComponentProps<typeof CollapsibleContent> & {
   children: string;
-  variant?: "default" | "nested" | undefined;
+  variant?: "default" | "nested";
 };
 
 export const ReasoningContent = memo(
-  ({
-    className,
-    children,
-    forceMount,
-    variant = "default",
-    ...props
-  }: ReasoningContentProps) => {
+  ({ className, children, forceMount, variant = "default", ...props }: ReasoningContentProps) => {
     const { isOpen, shouldRenderContent } = useReasoning();
-    const shouldRenderChildren =
-      isOpen || shouldRenderContent || Boolean(forceMount);
+    const shouldRenderChildren = isOpen || shouldRenderContent || Boolean(forceMount);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const contentRef = useRef<HTMLDivElement | null>(null);
     const autoFollowBottomRef = useRef(true);
-    const [scrollMaskState, setScrollMaskState] = useState<ScrollMaskState>(
-      EMPTY_SCROLL_MASK_STATE,
-    );
+    const [scrollMaskState, setScrollMaskState] =
+      useState<ScrollMaskState>(EMPTY_SCROLL_MASK_STATE);
     const updateScrollMaskState = useCallback(() => {
       const scrollNode = scrollRef.current;
       if (!scrollNode) {
@@ -566,12 +518,7 @@ export const ReasoningContent = memo(
         return;
       }
       updateScrollMaskState();
-    }, [
-      children,
-      scrollToReasoningBottom,
-      shouldRenderChildren,
-      updateScrollMaskState,
-    ]);
+    }, [children, scrollToReasoningBottom, shouldRenderChildren, updateScrollMaskState]);
 
     const scrollMaskStyle = getVerticalScrollMaskStyle(scrollMaskState);
     const scrollMaskData =
@@ -588,8 +535,8 @@ export const ReasoningContent = memo(
         data-reasoning-content="true"
         data-reasoning-content-variant={variant}
         data-testid={TID_CHAT_REASONING_CONTENT}
-        {...(forceMount === undefined ? {} : { forceMount })}
-        {...(className === undefined ? {} : { className })}
+        forceMount={forceMount}
+        className={className}
         {...props}
       >
         {shouldRenderChildren ? (

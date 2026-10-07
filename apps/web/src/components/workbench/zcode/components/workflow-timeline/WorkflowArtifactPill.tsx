@@ -1,20 +1,14 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowArtifactPill.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowArtifactPill.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
+import type { CSSProperties, ReactNode } from "react";
+import { ArrowUpRightIcon } from "lucide-react";
+import type { WorkflowRunArtifactKind } from "@zcode/shared/zcode-protocol-v4";
 import {
   ArtifactKindIcon,
   artifactDisplayTitle,
   artifactKindMessageId,
   truncateArtifactChipTitle,
-} from "@zui/app-shell/workflow-artifacts/artifactPresentation";
-import { cn } from "@zui/components/lib/utils";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { WorkflowRunArtifactKind } from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import { ArrowUpRightIcon } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+} from "@zui/app-shell/workflow-artifacts/artifactPresentation.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 
 /**
  * 产物药丸：与子代理药丸同一套语法——
@@ -34,8 +28,8 @@ import type { CSSProperties, ReactNode } from "react";
 export interface ArtifactPillData {
   id: string;
   kind: WorkflowRunArtifactKind;
-  title?: string | undefined;
-  version?: number | undefined;
+  title?: string;
+  version?: number;
 }
 
 export type ArtifactPillSize = "md" | "sm";
@@ -73,12 +67,8 @@ export function WorkflowArtifactPill({
 }) {
   const { intl } = useZCodeIntl();
   const fullTitle = artifactDisplayTitle(artifact);
-  const label = truncateTitle
-    ? truncateArtifactChipTitle(fullTitle)
-    : fullTitle;
-  const kindLabel = intl.formatMessage({
-    id: artifactKindMessageId(artifact.kind),
-  });
+  const label = truncateTitle ? truncateArtifactChipTitle(fullTitle) : fullTitle;
+  const kindLabel = intl.formatMessage({ id: artifactKindMessageId(artifact.kind) });
   const openable = onOpen !== undefined;
   const version = artifact.version ?? 1;
   const showVersion = version >= 2;
@@ -110,9 +100,7 @@ export function WorkflowArtifactPill({
         <ArtifactKindIcon className="size-4 shrink-0" kind={artifact.kind} />
         <span className="min-w-0 truncate">{label}</span>
         {showVersion ? (
-          <span data-testid="workflow-run-artifact-version">
-            {versionLabel}
-          </span>
+          <span data-testid="workflow-run-artifact-version">{versionLabel}</span>
         ) : null}
       </button>
     );
@@ -146,16 +134,8 @@ export function WorkflowArtifactPill({
       title={title ?? `${kindLabel} · ${fullTitle}`}
       type="button"
     >
-      <ArtifactKindIcon
-        className="size-4 shrink-0 text-foreground-subtle"
-        kind={artifact.kind}
-      />
-      <span
-        className={cn(
-          "wf-pill-name min-w-0 truncate text-foreground",
-          fill && "flex-1",
-        )}
-      >
+      <ArtifactKindIcon className="size-4 shrink-0 text-foreground-subtle" kind={artifact.kind} />
+      <span className={cn("wf-pill-name min-w-0 truncate text-foreground", fill && "flex-1")}>
         {label}
       </span>
       {detail === undefined || detail === null ? null : (
@@ -187,7 +167,7 @@ export function WorkflowArtifactPill({
           ) : null}
           {openable ? (
             <span
-              aria-hidden={true}
+              aria-hidden
               className="wf-pill-go flex items-center justify-center text-foreground-subtlest"
               data-testid="workflow-artifact-pill-open"
             >
@@ -199,4 +179,3 @@ export function WorkflowArtifactPill({
     </button>
   );
 }
-/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

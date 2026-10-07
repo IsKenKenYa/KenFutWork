@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/components/ai-elements/tool.tsx`（references/zcode/packages/ui/src/components/ai-elements/tool.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射；源文件自带头注保留于下（手册 §2.1）。
- */
 /*
  * Derived from vercel/ai-elements (packages/elements/src/tool.tsx).
  * Copyright 2023 Vercel, Inc. Licensed under Apache-2.0.
@@ -11,14 +6,9 @@
  */
 "use client";
 
-import { CodeBlock } from "@zui/components/ai-elements/./code-block";
-import { cn } from "@zui/components/lib/utils";
-import { Badge } from "@zui/components/ui/badge";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@zui/components/ui/collapsible";
+import { Badge } from "../ui/badge.js";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible.js";
+import { cn } from "../lib/utils.js";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import {
   CheckCircleIcon,
@@ -30,6 +20,8 @@ import {
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { isValidElement } from "react";
+
+import { CodeBlock } from "./code-block.js";
 
 export type ToolProps = ComponentProps<typeof Collapsible>;
 
@@ -89,15 +81,11 @@ export const ToolHeader = ({
   toolName,
   ...props
 }: ToolHeaderProps) => {
-  const derivedName =
-    type === "dynamic-tool" ? toolName : type.split("-").slice(1).join("-");
+  const derivedName = type === "dynamic-tool" ? toolName : type.split("-").slice(1).join("-");
 
   return (
     <CollapsibleTrigger
-      className={cn(
-        "flex w-full items-center justify-between gap-4 p-3",
-        className,
-      )}
+      className={cn("flex w-full items-center justify-between gap-4 p-3", className)}
       {...props}
     >
       <div className="flex items-center gap-2">
@@ -142,12 +130,7 @@ export type ToolOutputProps = ComponentProps<"div"> & {
   errorText: ToolPart["errorText"];
 };
 
-export const ToolOutput = ({
-  className,
-  output,
-  errorText,
-  ...props
-}: ToolOutputProps) => {
+export const ToolOutput = ({ className, output, errorText, ...props }: ToolOutputProps) => {
   if (!(output || errorText)) {
     return null;
   }
@@ -157,9 +140,7 @@ export const ToolOutput = ({
   if (!errorText) {
     Output = <div>{output as ReactNode}</div>;
     if (typeof output === "object" && !isValidElement(output)) {
-      Output = (
-        <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />
-      );
+      Output = <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />;
     } else if (typeof output === "string") {
       Output = <CodeBlock code={output} language="json" />;
     }
@@ -173,9 +154,7 @@ export const ToolOutput = ({
       <div
         className={cn(
           "max-h-60 overflow-auto rounded-md text-ui-base [&_table]:w-full",
-          errorText
-            ? "bg-destructive/10 text-destructive"
-            : "bg-muted/50 text-foreground",
+          errorText ? "bg-destructive/10 text-destructive" : "bg-muted/50 text-foreground",
         )}
       >
         {errorText ? (

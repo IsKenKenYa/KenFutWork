@@ -4,11 +4,8 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-
-import type {
-  AuthenticatedUser,
-  RequestAuthenticator,
-} from "../features/auth/types.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import type { LocalActor } from "../features/local-instance/types.js";
 import type { NativeDirectoryPicker } from "../features/system/directory-picker.js";
 
 /**
@@ -20,7 +17,7 @@ import type { NativeDirectoryPicker } from "../features/system/directory-picker.
 export function registerSystemRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     picker: NativeDirectoryPicker;
     /** 桌面形态判定（非桌面形态时如实报不可用 + 原因）。 */
     desktop: boolean | { available: boolean; reason?: string };
@@ -43,10 +40,11 @@ export function registerSystemRoutes(
     return null;
   };
   const authenticate = async (
-    request: Parameters<RequestAuthenticator["authenticate"]>[0],
+    request: Parameters<LocalAccessVerifier["authenticate"]>[0],
     reply: FastifyReply,
-  ): Promise<AuthenticatedUser | null> =>
-    (await options.auth.authenticate(request)) ?? sendUnauthorized(reply);
+  ): Promise<LocalActor | null> =>
+    (await options.localAccess.authenticate(request)) ??
+    sendUnauthorized(reply);
 
   app.get("/api/system/directory-picker", async (request, reply) => {
     const user = await authenticate(request, reply);

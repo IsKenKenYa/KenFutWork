@@ -29,7 +29,7 @@ const screenshotCanvasSchema = z.object({
 
 /**
  * `screenshot_canvas`（design preset）：画布视觉验证工具，经内核工具注册表
- * （`ctx.tools`）贡献。截图 RPC 按用户路由（前端 canvas 页注册 handler），
+ * （`ctx.tools`）贡献。截图 RPC 按实例路由（前端 canvas 页注册 handler），
  * 产物经 blob 缝换持久 URL——与运行时 persistImage 同一落盘规则。
  */
 export function createScreenshotCanvasToolDefinition(deps: {
@@ -47,21 +47,22 @@ export function createScreenshotCanvasToolDefinition(deps: {
     zodSchema: screenshotCanvasSchema,
     parameters: z.toJSONSchema(screenshotCanvasSchema),
     execute: async (args, execCtx) => {
-      const userId = execCtx.userId;
-
-      if (typeof userId !== "string" || !userId) {
-        return JSON.stringify({
-          error: "no_user_context",
-          message:
-            "screenshot_canvas requires a user context to communicate with the browser.",
-        });
+      const actor = execCtx.actor;
+      if (!actor) throw new Error("画布截图缺少可信本地调用上下文。");
+      if (
+        actor.instanceId !== execCtx.instanceId ||
+        (execCtx.scopeHandle &&
+          execCtx.scopeHandle.describe().instanceId !== actor.instanceId)
+      ) {
+        throw new Error("截图实例与可信 Task 工作域不匹配。");
       }
+      const instanceId = actor.instanceId;
 
       const input = screenshotCanvasSchema.parse(args);
 
       try {
         const result = await deps.connectionManager.rpc<ScreenshotResult>(
-          userId,
+          instanceId,
           "canvas.screenshot",
           {
             mode: input.mode,
@@ -83,7 +84,7 @@ export function createScreenshotCanvasToolDefinition(deps: {
           try {
             screenshotUrl = await persistImageViaBlob(
               deps.blob,
-              execCtx.workspaceId ?? "default",
+              instanceId,
               result.url,
               "image/png",
               `canvas-screenshot-${input.mode}`,
@@ -122,7 +123,7 @@ export function createScreenshotCanvasToolDefinition(deps: {
  */
 async function persistImageViaBlob(
   blob: BlobStore,
-  workspaceId: string,
+  instanceId: string,
   sourceUrl: string,
   mimeType: string,
   prompt: string,
@@ -136,7 +137,7 @@ async function persistImageViaBlob(
     .replace(/[^a-zA-Z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
   const fileName = `gen-${slug}-${Date.now()}.${ext}`;
-  const objectPath = `${workspaceId}/${Date.now()}-${fileName}`;
+  const objectPath = `${instanceId}/${Date.now()}-${fileName}`;
 
   const assetBucket = blob.bucket("project-assets");
   await assetBucket.upload(objectPath, buffer, {

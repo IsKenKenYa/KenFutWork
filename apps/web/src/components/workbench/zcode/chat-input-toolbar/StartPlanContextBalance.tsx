@@ -1,21 +1,11 @@
-/**
- * zcode 照搬：`@/chat-input-toolbar/StartPlanContextBalance.tsx`（references/zcode/packages/ui/src/chat-input-toolbar/StartPlanContextBalance.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-
-import { getContextQuotaMeterGridClass } from "@zui/chat-input-toolbar/contextQuotaMeterGrid";
-import { cn } from "@zui/components/lib/utils";
-import type { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { formatStartPlanBucketResetTime } from "@zui/lib/codingPlanQuotaPresentation";
-import type {
-  UsageEntitlementSnapshot,
-  UsageQuotaLimit,
-} from "@zui/lib/zcode-shared";
-import { CodingPlanEntryButton } from "@zui/settings/CodingPlanEntryButton";
-import { formatQuotaModelDisplayName } from "@zui/settings/model-provider-section/quotaModelDisplayName";
+import { CodingPlanEntryButton } from "@zui/settings/CodingPlanEntryButton.js";
 import { Loader2Icon, RocketIcon } from "lucide-react";
+import type { UsageEntitlementSnapshot, UsageQuotaLimit } from "@zcode/shared";
+import { cn } from "@zui/components/lib/utils.js";
+import type { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { getContextQuotaMeterGridClass } from "@zui/chat-input-toolbar/contextQuotaMeterGrid.js";
+import { formatStartPlanBucketResetTime } from "@zui/lib/codingPlanQuotaPresentation.js";
+import { formatQuotaModelDisplayName } from "@zui/settings/model-provider-section/quotaModelDisplayName.js";
 
 export interface ChatStartPlanBalanceConfig {
   loading: boolean;
@@ -35,13 +25,8 @@ function resolveLimitRemaining(limit: UsageQuotaLimit): number {
   return limit.remaining ?? 0;
 }
 
-function formatStartPlanRemainingPercentage(
-  ratio: number,
-  locale: string,
-): string {
-  const boundedRatio = Number.isFinite(ratio)
-    ? Math.max(0, Math.min(1, ratio))
-    : 0;
+function formatStartPlanRemainingPercentage(ratio: number, locale: string): string {
+  const boundedRatio = Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : 0;
   return new Intl.NumberFormat(locale || undefined, {
     maximumFractionDigits: 0,
     style: "percent",
@@ -60,9 +45,7 @@ function formatLimitModels(limit: UsageQuotaLimit): string {
   const modelNames = limit.usageDetails
     .map((detail) => {
       const displayName = detail.displayName?.trim();
-      return formatQuotaModelDisplayName(
-        displayName || formatModelCode(detail.modelCode.trim()),
-      );
+      return formatQuotaModelDisplayName(displayName || formatModelCode(detail.modelCode.trim()));
     })
     .filter((modelName) => modelName.length > 0);
   if (modelNames.length === 0) {
@@ -72,9 +55,7 @@ function formatLimitModels(limit: UsageQuotaLimit): string {
   return modelNames.join(" / ");
 }
 
-function getVisibleStartPlanLimits(
-  snapshot: UsageEntitlementSnapshot | null,
-): UsageQuotaLimit[] {
+function getVisibleStartPlanLimits(snapshot: UsageEntitlementSnapshot | null): UsageQuotaLimit[] {
   return (snapshot?.quota?.limits ?? []).filter((limit) => {
     const total = resolveLimitTotal(limit);
     const remaining = resolveLimitRemaining(limit);
@@ -82,9 +63,7 @@ function getVisibleStartPlanLimits(
   });
 }
 
-export function hasChatStartPlanBalance(
-  config: ChatStartPlanBalanceConfig | undefined,
-): boolean {
+export function hasChatStartPlanBalance(config: ChatStartPlanBalanceConfig | undefined): boolean {
   if (!config) {
     return false;
   }
@@ -98,17 +77,10 @@ export function hasChatStartPlanBalance(
   );
 }
 
-function ChatStartPlanBalanceMeter({
-  limit,
-  locale,
-}: {
-  limit: UsageQuotaLimit;
-  locale: string;
-}) {
+function ChatStartPlanBalanceMeter({ limit, locale }: { limit: UsageQuotaLimit; locale: string }) {
   const total = resolveLimitTotal(limit);
   const remaining = resolveLimitRemaining(limit);
-  const remainingRatio =
-    total > 0 ? Math.max(0, Math.min(1, remaining / total)) : 0;
+  const remainingRatio = total > 0 ? Math.max(0, Math.min(1, remaining / total)) : 0;
   // 桶刷新时间只来自本桶 expires_at（nextResetTime）；不再用套餐级 renewTime
   // 或全局聚合时间兜底，否则多套餐下会把同一时间复制进每个桶。
   const renewTime = formatStartPlanBucketResetTime(locale, limit.nextResetTime);
@@ -116,16 +88,12 @@ function ChatStartPlanBalanceMeter({
   return (
     <div className="min-w-0 space-y-1.5">
       <div className="min-w-0 space-y-0.5 text-ui-sm">
-        <div className="min-w-0 truncate text-foreground-subtle">
-          {formatLimitModels(limit)}
-        </div>
+        <div className="min-w-0 truncate text-foreground-subtle">{formatLimitModels(limit)}</div>
         <div className="min-w-0 text-ui-sm tabular-nums">
           <span className="font-mono text-foreground">
             {formatStartPlanRemainingPercentage(remainingRatio, locale)}
           </span>
-          {renewTime ? (
-            <span className="text-foreground-subtle"> · {renewTime}</span>
-          ) : null}
+          {renewTime ? <span className="text-foreground-subtle"> · {renewTime}</span> : null}
         </div>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-surface-hover">
@@ -162,9 +130,7 @@ export function ChatStartPlanBalancePanel({
       <div className="mb-2 flex min-w-0 items-center gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="min-w-0 truncate text-ui-base font-medium text-foreground">
-            {intl.formatMessage({
-              id: "settings.modelProvider.startPlan.balance.title",
-            })}
+            {intl.formatMessage({ id: "settings.modelProvider.startPlan.balance.title" })}
           </span>
           {config.loading || config.refreshing === true ? (
             // 静默 access 刷新有缓存快照时不会把 entitlement.loading 置 true，
@@ -188,12 +154,7 @@ export function ChatStartPlanBalancePanel({
           </CodingPlanEntryButton>
         ) : null}
       </div>
-      <div
-        className={cn(
-          "grid gap-2",
-          getContextQuotaMeterGridClass(limits.length),
-        )}
-      >
+      <div className={cn("grid gap-2", getContextQuotaMeterGridClass(limits.length))}>
         {limits.map((limit) => (
           <ChatStartPlanBalanceMeter
             key={`${limit.type}:${formatLimitModels(limit)}`}

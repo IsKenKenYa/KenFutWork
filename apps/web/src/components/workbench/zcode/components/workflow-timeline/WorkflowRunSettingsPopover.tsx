@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowRunSettingsPopover.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowRunSettingsPopover.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 // ============================================================
 // 「配置」弹层
 // ============================================================
@@ -14,47 +9,39 @@
 // 一个弹层、多个触发点：锚点是**打开它的那个元素**（虚拟锚），所以详情页上两个入口各自对齐。
 // 表单只在打开时挂载——模型清单的订阅也随之只活在打开期间。
 
-import { Button } from "@zui/components/ui/button";
-import {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-  PopoverTitle,
-} from "@zui/components/ui/popover";
-import { Spinner } from "@zui/components/ui/spinner";
-import { describeWorkflowSubagentModel } from "@zui/components/workflow-timeline/subagent-model-label";
+import { useCallback, useMemo, useRef, useState, type RefObject } from "react";
+import { completeNewModelSelection } from "@zcode/provider";
+import { ZCODE_AGENT_PROVIDER } from "@zcode/shared";
+import type { CommandAck, WorkflowRunState } from "@zcode/shared/zcode-protocol-v4";
+import { Button } from "@zui/components/ui/button.js";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTitle } from "@zui/components/ui/popover.js";
+import { Spinner } from "@zui/components/ui/spinner.js";
+import { useModelSelectionView } from "@zui/hooks/useModelSelectionView.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { buildRegistryModelSelectGroups } from "@zui/lib/modelSelectionGroups.js";
+import { resolveModelThoughtOption } from "@zui/lib/modelThoughtOption.js";
+import { encodeCustomModelValue } from "@zui/lib/zcodeCustomModelValue.js";
+import { parseModelPickerValue } from "@zui/lib/zcodeSessionProjection.js";
+import { logger } from "@zui/logger.js";
+import { formatProviderModelLabel } from "@zui/v4/composer/modelTriggerDisplay.js";
+import { describeWorkflowSubagentModel } from "./subagent-model-label.js";
 import {
   WorkflowRunSettingsBoundField,
   WorkflowRunSettingsModelField,
-} from "@zui/components/workflow-timeline/WorkflowRunSettingsFields";
+} from "./WorkflowRunSettingsFields.js";
 import {
   describeWorkflowRunSettingsRejection,
   initialWorkflowRunSettingsDraft,
-  type WorkflowRunSettingsChange,
-  type WorkflowRunSettingsDraft,
-  type WorkflowRunSettingsRejection,
   workflowRunSettingsCeiling,
   workflowRunSettingsChange,
   workflowRunSettingsConsequenceId,
   workflowRunSettingsModelCanonical,
   workflowRunSettingsRejectionDetail,
   workflowRunSettingsRejectionMessageId,
-} from "@zui/components/workflow-timeline/workflowRunSettings";
-import { useModelSelectionView } from "@zui/hooks/useModelSelectionView";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { buildRegistryModelSelectGroups } from "@zui/lib/modelSelectionGroups";
-import { resolveModelThoughtOption } from "@zui/lib/modelThoughtOption";
-import { completeNewModelSelection } from "@zui/lib/zcode-provider";
-import { ZCODE_AGENT_PROVIDER } from "@zui/lib/zcode-shared";
-import type {
-  CommandAck,
-  WorkflowRunState,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import { encodeCustomModelValue } from "@zui/lib/zcodeCustomModelValue";
-import { parseModelPickerValue } from "@zui/lib/zcodeSessionProjection";
-import { logger } from "@zui/logger";
-import { formatProviderModelLabel } from "@zui/v4/composer/modelTriggerDisplay";
-import { type RefObject, useCallback, useMemo, useRef, useState } from "react";
+  type WorkflowRunSettingsChange,
+  type WorkflowRunSettingsDraft,
+  type WorkflowRunSettingsRejection,
+} from "./workflowRunSettings.js";
 
 /** 菜单里「会话模型」那一项的值：落在 encodeCustomModelValue 的值域之外，不会与真实模型相撞。 */
 const SESSION_MODEL_VALUE = "workflow-settings:session-model";
@@ -120,14 +107,12 @@ export function WorkflowRunSettingsPopover({
         // 点了卡身而收起（卡身整张是折叠开关），数字框里的回车也会被卡当成 Enter 切换。
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ")
-            event.stopPropagation();
+          if (event.key === "Enter" || event.key === " ") event.stopPropagation();
         }}
         // 点打开它的那个触发点本身不算「点在外面」：否则先被关掉、再被那一下点击重新打开。
         onInteractOutside={(event) => {
           const target = event.target;
-          if (target instanceof Node && anchorRef.current?.contains(target))
-            event.preventDefault();
+          if (target instanceof Node && anchorRef.current?.contains(target)) event.preventDefault();
         }}
       >
         <WorkflowRunSettingsForm
@@ -154,8 +139,7 @@ function WorkflowRunSettingsForm({
 }) {
   const { intl } = useZCodeIntl();
   const format = useCallback(
-    (id: string, values?: Record<string, string | number>) =>
-      intl.formatMessage({ id }, values),
+    (id: string, values?: Record<string, string | number>) => intl.formatMessage({ id }, values),
     [intl],
   );
   const modelRead = useModelSelectionView(
@@ -170,34 +154,20 @@ function WorkflowRunSettingsForm({
         ? []
         : buildRegistryModelSelectGroups(ZCODE_AGENT_PROVIDER, view, {
             apiKeyLabel: format("settings.modelProvider.apiKey"),
-            apiKeyBadgeLabel: format(
-              "settings.modelProvider.connectionMode.apiKeyBadge",
-            ),
-            codingPlanLabel: format(
-              "settings.modelProvider.connectionMode.codingPlan",
-            ),
-            codingPlanBadgeLabel: format(
-              "settings.modelProvider.connectionMode.codingPlanBadge",
-            ),
-            startPlanLabel: format(
-              "settings.modelProvider.connectionMode.startPlan",
-            ),
-            startPlanBadgeLabel: format(
-              "settings.modelProvider.connectionMode.startPlanBadge",
-            ),
-            teamPlanBadgeLabel: format(
-              "settings.modelProvider.connectionMode.teamPlanBadge",
-            ),
-            teamPlanFallbackLabel: format(
-              "settings.modelProvider.connectionMode.teamPlan",
-            ),
+            apiKeyBadgeLabel: format("settings.modelProvider.connectionMode.apiKeyBadge"),
+            codingPlanLabel: format("settings.modelProvider.connectionMode.codingPlan"),
+            codingPlanBadgeLabel: format("settings.modelProvider.connectionMode.codingPlanBadge"),
+            startPlanLabel: format("settings.modelProvider.connectionMode.startPlan"),
+            startPlanBadgeLabel: format("settings.modelProvider.connectionMode.startPlanBadge"),
+            teamPlanBadgeLabel: format("settings.modelProvider.connectionMode.teamPlanBadge"),
+            teamPlanFallbackLabel: format("settings.modelProvider.connectionMode.teamPlan"),
           }),
     [format, view],
   );
   const providerName = useCallback(
     (providerId: string) =>
-      view?.providers.find((provider) => provider.providerId === providerId)
-        ?.providerName ?? undefined,
+      view?.providers.find((provider) => provider.providerId === providerId)?.providerName ??
+      undefined,
     [view],
   );
 
@@ -205,9 +175,7 @@ function WorkflowRunSettingsForm({
   const [initial] = useState(() => initialWorkflowRunSettingsDraft(run));
   const [draft, setDraft] = useState<WorkflowRunSettingsDraft>(initial);
   const [pending, setPending] = useState(false);
-  const [rejection, setRejection] = useState<
-    WorkflowRunSettingsRejection | undefined
-  >(undefined);
+  const [rejection, setRejection] = useState<WorkflowRunSettingsRejection | undefined>(undefined);
   const ceiling = workflowRunSettingsCeiling(run);
   const change = workflowRunSettingsChange(initial, draft, ceiling);
   const updateDraft = (next: WorkflowRunSettingsDraft) => {
@@ -223,9 +191,7 @@ function WorkflowRunSettingsForm({
           providerName(host.sessionModel.providerId),
           host.sessionModel.modelId,
         );
-  const sessionBadge = format(
-    "chat.toolCall.workflow.run.settings.model.session",
-  );
+  const sessionBadge = format("chat.toolCall.workflow.run.settings.model.session");
   // 两个字段都是字符串，所以这一项只在文案真变了时换引用；下游的模型选择器是 memo 组件。
   const sessionModelItem = useMemo(
     () => ({
@@ -241,16 +207,10 @@ function WorkflowRunSettingsForm({
     draftModel.kind === "session"
       ? SESSION_MODEL_VALUE
       : encodeCustomModelValue(draftModel.providerId, draftModel.modelId);
-  const listed = groups.some((group) =>
-    group.items.some((item) => item.value === modelValue),
-  );
+  const listed = groups.some((group) => group.items.some((item) => item.value === modelValue));
   // 清单读好了、却找不到这个模型：它已被删或停用。Apply 等用户换一个——沿用它只会让 agent 回
   // model_unavailable（同工具「沿用的模型已不可用」那条失败，在点下去之前就说出来）。
-  const unavailable =
-    draftModel.kind === "model" &&
-    view !== null &&
-    groups.length > 0 &&
-    !listed;
+  const unavailable = draftModel.kind === "model" && view !== null && groups.length > 0 && !listed;
   const canonical = workflowRunSettingsModelCanonical(draftModel);
   const triggerLabel =
     draftModel.kind === "session" || canonical === undefined
@@ -265,9 +225,7 @@ function WorkflowRunSettingsForm({
           modelSelectionView: view,
           providerId: draftModel.providerId,
           modelId: draftModel.modelId,
-          ...(draftModel.level === undefined
-            ? {}
-            : { currentValue: draftModel.level }),
+          ...(draftModel.level === undefined ? {} : { currentValue: draftModel.level }),
         })
       : null;
 
@@ -322,10 +280,7 @@ function WorkflowRunSettingsForm({
         onClose();
       },
       (error: unknown) => {
-        logger.warn("[workflow-run] 调整设置命令失败", {
-          runId: run.runId,
-          error: String(error),
-        });
+        logger.warn("[workflow-run] 调整设置命令失败", { runId: run.runId, error: String(error) });
         setRejection({
           reason: "generic",
           code: error instanceof Error ? error.message : String(error),
@@ -336,14 +291,10 @@ function WorkflowRunSettingsForm({
   };
 
   const rejectionDetail =
-    rejection === undefined
-      ? undefined
-      : workflowRunSettingsRejectionDetail(rejection);
+    rejection === undefined ? undefined : workflowRunSettingsRejectionDetail(rejection);
   return (
     <>
-      <PopoverTitle>
-        {format("chat.toolCall.workflow.run.settings.title")}
-      </PopoverTitle>
+      <PopoverTitle>{format("chat.toolCall.workflow.run.settings.title")}</PopoverTitle>
       <WorkflowRunSettingsModelField
         disabled={pending || view === null}
         groups={groups}
@@ -362,9 +313,7 @@ function WorkflowRunSettingsForm({
           : unavailable
             ? {
                 badge: {
-                  text: format(
-                    "chat.toolCall.workflow.run.settings.model.unavailable",
-                  ),
+                  text: format("chat.toolCall.workflow.run.settings.model.unavailable"),
                   tone: "warning" as const,
                 },
               }
@@ -380,7 +329,7 @@ function WorkflowRunSettingsForm({
         className="text-ui-sm text-foreground-subtle"
         data-testid="workflow-run-settings-consequence"
       >
-        {format(workflowRunSettingsConsequenceId(run.status))}
+        {format(workflowRunSettingsConsequenceId(run.status, change))}
       </p>
       {rejection === undefined ? null : (
         <div

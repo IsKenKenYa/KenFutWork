@@ -1,34 +1,28 @@
 "use client";
 
 import type {
-  FileContents,
-  LineAnnotation,
-  SupportedLanguages,
-} from "@pierre/diffs";
-import { File, type FileOptions } from "@pierre/diffs/react";
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import { Textarea } from "@zui/components/ui/textarea";
-import type {
-  CodeCommentPreview,
-  CodeCommentRange,
-} from "@zui/lib/codeCommentContext";
-import { isDarkCodePreviewTheme } from "@zui/lib/codePreviewPreferences";
-import { DIFFS_PREFERRED_HIGHLIGHTER } from "@zui/lib/diffsHighlighterEngine";
-import {
-  formatCommandShortcutLabel,
-  isAppleKeyboardPlatform,
-  type KeyboardShortcutPlatformInfo,
-} from "@zui/lib/keyboardShortcuts";
-import { Trash2Icon } from "lucide-react";
-import type {
   CSSProperties,
   HTMLAttributes,
   KeyboardEvent as ReactKeyboardEvent,
   Ref,
 } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Trash2Icon } from "lucide-react";
+import type { FileContents, LineAnnotation, SupportedLanguages } from "@pierre/diffs";
+import { File, type FileOptions } from "@pierre/diffs/react";
 import type { BundledTheme } from "shiki";
+
+import { cn } from "@zui/components/lib/utils.js";
+import { Button } from "@zui/components/ui/button.js";
+import { Textarea } from "@zui/components/ui/textarea.js";
+import type { CodeCommentPreview, CodeCommentRange } from "@zui/lib/codeCommentContext.js";
+import { isDarkCodePreviewTheme } from "@zui/lib/codePreviewPreferences.js";
+import { DIFFS_PREFERRED_HIGHLIGHTER } from "@zui/lib/diffsHighlighterEngine.js";
+import {
+  formatCommandShortcutLabel,
+  isAppleKeyboardPlatform,
+  type KeyboardShortcutPlatformInfo,
+} from "@zui/lib/keyboardShortcuts.js";
 
 export interface CodeCommentLabels {
   addComment: string;
@@ -73,14 +67,9 @@ export interface CodeViewerProps extends HTMLAttributes<HTMLDivElement> {
   scrollContainerRef?: Ref<HTMLDivElement>;
 }
 
-export function resolveCodeViewerColorScheme(
-  theme?: BundledTheme,
-): "light" | "dark" {
+export function resolveCodeViewerColorScheme(theme?: BundledTheme): "light" | "dark" {
   if (!theme) {
-    if (
-      typeof document !== "undefined" &&
-      document.documentElement.classList.contains("dark")
-    ) {
+    if (typeof document !== "undefined" && document.documentElement.classList.contains("dark")) {
       return "dark";
     }
     return "light";
@@ -151,16 +140,10 @@ const CODE_VIEWER_UNSAFE_CSS = [
  * 外层 class 进不去，只能随 unsafeCSS 注入；颜色走应用 token（自定义属性穿透 shadow root），
  * 深浅主题自动跟随。非正整数与重复值丢弃，空集合返回空串。
  */
-export function codeViewerMarkedLinesCss(
-  lines: readonly number[] | undefined,
-): string {
-  const unique = [...new Set(lines ?? [])].filter(
-    (line) => Number.isInteger(line) && line > 0,
-  );
+export function codeViewerMarkedLinesCss(lines: readonly number[] | undefined): string {
+  const unique = [...new Set(lines ?? [])].filter((line) => Number.isInteger(line) && line > 0);
   if (unique.length === 0) return "";
-  const selector = unique
-    .map((line) => `[data-column-number="${line}"]`)
-    .join(",");
+  const selector = unique.map((line) => `[data-column-number="${line}"]`).join(",");
   return `${selector}{color:var(--color-warning);}`;
 }
 
@@ -189,10 +172,7 @@ function readCodeCommentShortcutPlatformInfo(): KeyboardShortcutPlatformInfo {
 }
 
 export function isCodeCommentSubmitShortcut(
-  event: Pick<
-    ReactKeyboardEvent<HTMLTextAreaElement>,
-    "ctrlKey" | "key" | "metaKey"
-  >,
+  event: Pick<ReactKeyboardEvent<HTMLTextAreaElement>, "ctrlKey" | "key" | "metaKey">,
   platformInfo: KeyboardShortcutPlatformInfo = readCodeCommentShortcutPlatformInfo(),
 ) {
   if (event.key !== "Enter") {
@@ -208,9 +188,7 @@ export function isCodeCommentCancelShortcut(
   return event.key === "Escape";
 }
 
-export function formatCodeCommentSubmitShortcutLabel(
-  platformInfo?: KeyboardShortcutPlatformInfo,
-) {
+export function formatCodeCommentSubmitShortcutLabel(platformInfo?: KeyboardShortcutPlatformInfo) {
   return formatCommandShortcutLabel("↵", platformInfo);
 }
 
@@ -219,18 +197,13 @@ export function formatCodeCommentCancelShortcutLabel() {
 }
 
 function patchCodeCommentUtilityButtons(root: ParentNode, label: string) {
-  for (const button of root.querySelectorAll<HTMLButtonElement>(
-    "button[data-utility-button]",
-  )) {
+  for (const button of root.querySelectorAll<HTMLButtonElement>("button[data-utility-button]")) {
     button.title = label;
     button.setAttribute("aria-label", label);
   }
 }
 
-function walkShadowRoots(
-  root: ParentNode,
-  callback: (root: ShadowRoot) => void,
-) {
+function walkShadowRoots(root: ParentNode, callback: (root: ShadowRoot) => void) {
   for (const element of root.querySelectorAll<HTMLElement>("*")) {
     if (!element.shadowRoot) {
       continue;
@@ -250,10 +223,7 @@ export function findCodeViewerLineElement(
 
   for (const element of root.querySelectorAll<HTMLElement>("*")) {
     if (!element.shadowRoot) continue;
-    const shadowTarget = findCodeViewerLineElement(
-      element.shadowRoot,
-      lineNumber,
-    );
+    const shadowTarget = findCodeViewerLineElement(element.shadowRoot, lineNumber);
     if (shadowTarget) return shadowTarget;
   }
   return null;
@@ -263,9 +233,7 @@ export function findCodeViewerCommentElement(
   root: ParentNode,
   commentId: string,
 ): HTMLElement | null {
-  for (const element of root.querySelectorAll<HTMLElement>(
-    "[data-code-comment-id]",
-  )) {
+  for (const element of root.querySelectorAll<HTMLElement>("[data-code-comment-id]")) {
     if (element.dataset.codeCommentId === commentId) {
       return element;
     }
@@ -273,10 +241,7 @@ export function findCodeViewerCommentElement(
 
   for (const element of root.querySelectorAll<HTMLElement>("*")) {
     if (!element.shadowRoot) continue;
-    const shadowTarget = findCodeViewerCommentElement(
-      element.shadowRoot,
-      commentId,
-    );
+    const shadowTarget = findCodeViewerCommentElement(element.shadowRoot, commentId);
     if (shadowTarget) return shadowTarget;
   }
   return null;
@@ -286,7 +251,7 @@ function createCodeViewerFile(params: {
   code: string;
   enableSyntaxHighlighting: boolean;
   language: string;
-  theme?: BundledTheme | undefined;
+  theme?: BundledTheme;
 }): FileContents {
   const lang = params.enableSyntaxHighlighting
     ? (params.language as SupportedLanguages)
@@ -332,18 +297,11 @@ function codeCommentRangeToSelectedRange(
   };
 }
 
-function getTextForLineRange(
-  code: string,
-  firstLineNumber: number,
-  range: CodeCommentRange,
-) {
+function getTextForLineRange(code: string, firstLineNumber: number, range: CodeCommentRange) {
   const lines = code.split("\n");
   const normalizedRange = normalizeRange(range);
   const startIndex = Math.max(normalizedRange.startLine - firstLineNumber, 0);
-  const endIndex = Math.min(
-    normalizedRange.endLine - firstLineNumber,
-    lines.length - 1,
-  );
+  const endIndex = Math.min(normalizedRange.endLine - firstLineNumber, lines.length - 1);
   if (startIndex > endIndex) {
     return "";
   }
@@ -351,16 +309,10 @@ function getTextForLineRange(
   return lines.slice(startIndex, endIndex + 1).join("\n");
 }
 
-function formatCommentRange(
-  labels: CodeCommentLabels,
-  range: CodeCommentRange,
-) {
+function formatCommentRange(labels: CodeCommentLabels, range: CodeCommentRange) {
   const normalizedRange = normalizeRange(range);
   if (normalizedRange.startLine === normalizedRange.endLine) {
-    return labels.commentLine.replaceAll(
-      "{line}",
-      String(normalizedRange.startLine),
-    );
+    return labels.commentLine.replaceAll("{line}", String(normalizedRange.startLine));
   }
 
   return labels.commentRange
@@ -425,7 +377,7 @@ function CommentDraft({
         placeholder={labels.commentPlaceholder}
         className="min-h-16 w-full resize-none rounded-lg border-input-border bg-input text-ui-base text-foreground placeholder:text-foreground-subtlest hover:border-input-border-hover focus-visible:border-input-border-focused focus-visible:bg-input-focused focus-visible:ring-0 md:text-ui-base"
         rows={3}
-        autoFocus={true}
+        autoFocus
       />
       <div className="mt-2 flex items-center justify-end gap-2">
         <Button
@@ -437,12 +389,7 @@ function CommentDraft({
         >
           {cancelLabel}
         </Button>
-        <Button
-          type="button"
-          title={submitLabel}
-          aria-label={submitLabel}
-          onClick={onSubmit}
-        >
+        <Button type="button" title={submitLabel} aria-label={submitLabel} onClick={onSubmit}>
           {submitLabel}
         </Button>
       </div>
@@ -458,7 +405,7 @@ export function CodeCommentAnnotation({
 }: {
   comment: CodeCommentPreview;
   labels: CodeCommentLabels;
-  onDelete?: ((commentId: string) => void) | undefined;
+  onDelete?: (commentId: string) => void;
   showRange?: boolean;
 }) {
   return (
@@ -522,8 +469,7 @@ export function CodeViewer({
   ...props
 }: CodeViewerProps) {
   const viewerRef = useRef<HTMLDivElement>(null);
-  const [activeDraftRange, setActiveDraftRange] =
-    useState<CodeCommentRange | null>(null);
+  const [activeDraftRange, setActiveDraftRange] = useState<CodeCommentRange | null>(null);
   const [draftText, setDraftText] = useState("");
   const canCreateComment = Boolean(onSubmitCodeComment);
   /* markdown 代码块也复用 CodeViewer。之前只关闭评论按钮但保留行 hover，
@@ -544,9 +490,7 @@ export function CodeViewer({
       }),
     [code, enableSyntaxHighlighting, language, theme],
   );
-  const lineAnnotations = useMemo<
-    LineAnnotation<CodeViewerAnnotationMetadata>[]
-  >(() => {
+  const lineAnnotations = useMemo<LineAnnotation<CodeViewerAnnotationMetadata>[]>(() => {
     const annotations: LineAnnotation<CodeViewerAnnotationMetadata>[] = [];
 
     for (const comment of comments) {
@@ -566,8 +510,7 @@ export function CodeViewer({
 
     if (canCreateComment && activeDraftRange) {
       annotations.push({
-        lineNumber:
-          normalizeRange(activeDraftRange).endLine - firstLineNumber + 1,
+        lineNumber: normalizeRange(activeDraftRange).endLine - firstLineNumber + 1,
         metadata: {
           kind: "draft",
           range: activeDraftRange,
@@ -581,9 +524,7 @@ export function CodeViewer({
     if (canCreateComment && activeDraftRange) {
       return codeCommentRangeToSelectedRange(activeDraftRange, firstLineNumber);
     }
-    return focusedRange
-      ? codeCommentRangeToSelectedRange(focusedRange, firstLineNumber)
-      : null;
+    return focusedRange ? codeCommentRangeToSelectedRange(focusedRange, firstLineNumber) : null;
   }, [activeDraftRange, canCreateComment, firstLineNumber, focusedRange]);
   const handleLineSelectionEnd = useCallback(
     (range: SelectedLineRange | null) => {
@@ -591,9 +532,7 @@ export function CodeViewer({
         return;
       }
 
-      setActiveDraftRange(
-        selectedRangeToCodeCommentRange(range, firstLineNumber),
-      );
+      setActiveDraftRange(selectedRangeToCodeCommentRange(range, firstLineNumber));
       setDraftText("");
     },
     [canCreateComment, firstLineNumber],
@@ -604,9 +543,7 @@ export function CodeViewer({
         return;
       }
 
-      setActiveDraftRange(
-        selectedRangeToCodeCommentRange(range, firstLineNumber),
-      );
+      setActiveDraftRange(selectedRangeToCodeCommentRange(range, firstLineNumber));
       setDraftText("");
     },
     [canCreateComment, firstLineNumber],
@@ -616,11 +553,7 @@ export function CodeViewer({
       return;
     }
 
-    const selectedText = getTextForLineRange(
-      code,
-      firstLineNumber,
-      activeDraftRange,
-    );
+    const selectedText = getTextForLineRange(code, firstLineNumber, activeDraftRange);
     if (!selectedText.trim()) {
       return;
     }
@@ -691,11 +624,7 @@ export function CodeViewer({
   const focusedStartLine = focusedRange?.startLine;
   const focusedEndLine = focusedRange?.endLine;
   useEffect(() => {
-    if (
-      !focusRequestId ||
-      focusedStartLine === undefined ||
-      !viewerRef.current
-    ) {
+    if (!focusRequestId || focusedStartLine === undefined || !viewerRef.current) {
       return;
     }
 
@@ -715,14 +644,10 @@ export function CodeViewer({
         const containerRect = container.getBoundingClientRect();
         const commentRect = comment.getBoundingClientRect();
         const horizontalScrollLeft = container.scrollLeft;
-        const commentBottom =
-          container.scrollTop + commentRect.bottom - containerRect.top;
+        const commentBottom = container.scrollTop + commentRect.bottom - containerRect.top;
         // 评论跟随代码滚动，但点击卡片时把评论底部放在可视区下沿，
         // 让目标行和其下评论同时出现；只写 scrollTop，避免 scrollIntoView 改变横向位置。
-        container.scrollTop = Math.max(
-          0,
-          commentBottom - container.clientHeight + 12,
-        );
+        container.scrollTop = Math.max(0, commentBottom - container.clientHeight + 12);
         container.scrollLeft = horizontalScrollLeft;
         return;
       }
@@ -731,14 +656,8 @@ export function CodeViewer({
         const lineRect = line.getBoundingClientRect();
         const horizontalScrollLeft = container.scrollLeft;
         const lineCenter =
-          container.scrollTop +
-          lineRect.top -
-          containerRect.top +
-          lineRect.height / 2;
-        container.scrollTop = Math.max(
-          0,
-          lineCenter - container.clientHeight / 2,
-        );
+          container.scrollTop + lineRect.top - containerRect.top + lineRect.height / 2;
+        container.scrollTop = Math.max(0, lineCenter - container.clientHeight / 2);
         container.scrollLeft = horizontalScrollLeft;
         return;
       }
@@ -755,13 +674,7 @@ export function CodeViewer({
     return () => {
       window.cancelAnimationFrame(animationFrame);
     };
-  }, [
-    file.cacheKey,
-    firstLineNumber,
-    focusedEndLine,
-    focusedStartLine,
-    focusRequestId,
-  ]);
+  }, [file.cacheKey, firstLineNumber, focusedEndLine, focusedStartLine, focusRequestId]);
   // 依赖是 CSS 字符串（内容）而不是数组引用：调用方每次渲染给一个新数组时，options 不该跟着换（File 会重排）。
   const markedLinesCss = codeViewerMarkedLinesCss(markedLines);
   const options = useMemo<FileOptions<CodeViewerAnnotationMetadata>>(
@@ -769,21 +682,16 @@ export function CodeViewer({
       disableFileHeader: true,
       disableLineNumbers: !showLineNumbers,
       overflow: wrapLongLines ? "wrap" : "scroll",
+      theme,
       preferredHighlighter: DIFFS_PREFERRED_HIGHLIGHTER,
       enableLineSelection: canUseCommentLineSelection,
       enableGutterUtility: canUseCommentGutterUtility,
       lineHoverHighlight:
-        canUseCommentLineSelection || canUseCommentGutterUtility
-          ? "both"
-          : "disabled",
+        canUseCommentLineSelection || canUseCommentGutterUtility ? "both" : "disabled",
       onLineSelectionEnd: handleLineSelectionEnd,
       // 自定义 renderGutterUtility 只能拿 hover 行，拖拽 comment + 时会退化成单行。
       // 使用 @pierre/diffs 的 gutter selection 回调，让点击和拖拽都走同一套 range 计算。
-      // exactOptionalPropertyTypes：可选字段缺省不能显式传 undefined，用条件展开代替。
-      ...(canUseCommentGutterUtility
-        ? { onGutterUtilityClick: handleGutterUtilitySelection }
-        : {}),
-      ...(theme === undefined ? {} : { theme }),
+      onGutterUtilityClick: canUseCommentGutterUtility ? handleGutterUtilitySelection : undefined,
       // 内建 comment + 默认贴在行号右侧，用户拖拽时容易和代码起点混在一起。
       // 这里只调整 Shadow DOM 内 gutter utility 的位置，不接管 pointer 事件，避免破坏多行拖拽 range。
       unsafeCSS: CODE_VIEWER_UNSAFE_CSS + markedLinesCss,
@@ -817,13 +725,7 @@ export function CodeViewer({
       ),
       ...style,
     }),
-    [
-      canUseCommentGutterUtility,
-      fontSizePx,
-      labels.addCommentTooltip,
-      style,
-      theme,
-    ],
+    [canUseCommentGutterUtility, fontSizePx, labels.addCommentTooltip, style, theme],
   );
   const assignCodeViewerScrollContainerRef = useCallback(
     (node: HTMLDivElement | null) => {
@@ -842,10 +744,7 @@ export function CodeViewer({
       {...props}
     >
       {topCommentNotice ? (
-        <div
-          data-code-review-target-warning={true}
-          className="px-3 pt-3 text-ui-sm text-warning"
-        >
+        <div data-code-review-target-warning className="px-3 pt-3 text-ui-sm text-warning">
           {topCommentNotice}
         </div>
       ) : null}

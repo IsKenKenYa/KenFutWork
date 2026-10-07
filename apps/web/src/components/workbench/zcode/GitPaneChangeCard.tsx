@@ -1,36 +1,22 @@
-/**
- * zcode 照搬：`@/GitPaneChangeCard.tsx`（references/zcode/packages/ui/src/GitPaneChangeCard.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀。
- */
-
-import { cn } from "@zui/components/lib/utils";
+import { useMemo } from "react";
+import type { GitDiffResult } from "@zcode/shared";
+import { ChevronDownIcon, CopyIcon, FolderOpenIcon, ListTreeIcon } from "lucide-react";
+import { DiffViewer } from "@zui/components/ui/diff-viewer.js";
+import { cn } from "@zui/components/lib/utils.js";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from "@zui/components/ui/context-menu";
-import { DiffViewer } from "@zui/components/ui/diff-viewer";
-import { LightweightDiffPreview } from "@zui/components/ui/lightweight-diff-preview";
-import {
-  getDiffFallbackMessageId,
-  getGitPaneDiffPreviewPlan,
-} from "@zui/GitPane/helpers";
-import type { GitPaneFileChange } from "@zui/hooks/useGitRepository";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { FileDisplayInline } from "@zui/lib/fileDisplay";
-import type { GitDiffResult } from "@zui/lib/zcode-shared";
-import type { CodePreviewSettings } from "@zui/store/index";
-import type { ResolvedTheme } from "@zui/useTheme";
-import {
-  ChevronDownIcon,
-  CopyIcon,
-  FolderOpenIcon,
-  ListTreeIcon,
-} from "lucide-react";
-import { useMemo } from "react";
+} from "@zui/components/ui/context-menu.js";
+import { getDiffFallbackMessageId, getGitPaneDiffPreviewPlan } from "@zui/GitPane/helpers.js";
+import { FileDisplayInline } from "@zui/lib/fileDisplay.js";
+import type { GitPaneFileChange } from "@zui/hooks/useGitRepository.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { CodePreviewSettings } from "@zui/store/index.js";
+import type { ResolvedTheme } from "@zui/useTheme.js";
+import { LightweightDiffPreview } from "@zui/components/ui/lightweight-diff-preview.js";
 
 export function GitPaneChangeCard({
   change,
@@ -67,15 +53,9 @@ export function GitPaneChangeCard({
   onRevealInFileTree?: (change: GitPaneFileChange) => void;
 }) {
   const { intl } = useZCodeIntl();
-  const diffPreviewPlan = useMemo(
-    () => getGitPaneDiffPreviewPlan(diffState),
-    [diffState],
-  );
+  const diffPreviewPlan = useMemo(() => getGitPaneDiffPreviewPlan(diffState), [diffState]);
   const multiFileDiffFiles = useMemo(() => {
-    if (
-      diffState?.availability !== "patch" ||
-      diffState.afterContent === null
-    ) {
+    if (diffState?.availability !== "patch" || diffState.afterContent === null) {
       return null;
     }
 
@@ -104,7 +84,7 @@ export function GitPaneChangeCard({
   return (
     <div className="w-full min-w-0">
       <ContextMenu>
-        <ContextMenuTrigger asChild={true}>
+        <ContextMenuTrigger asChild>
           <button
             type="button"
             aria-expanded={isExpanded}
@@ -123,11 +103,9 @@ export function GitPaneChangeCard({
                   path={change.workspaceRelativePath}
                   options={{
                     showFilePath: true,
-                    className:
-                      "inline-flex min-w-0 max-w-full items-center gap-2",
+                    className: "inline-flex min-w-0 max-w-full items-center gap-2",
                     fileNameClassName: "truncate text-ui-base text-foreground",
-                    filePathClassName:
-                      "truncate text-ui-base text-foreground-subtlest",
+                    filePathClassName: "truncate text-ui-base text-foreground-subtlest",
                   }}
                 />
               </div>
@@ -135,9 +113,7 @@ export function GitPaneChangeCard({
             <div className="flex shrink-0 items-center justify-end gap-3 pl-3">
               <div className="shrink-0 whitespace-nowrap text-ui-base">
                 <span className="text-diff-added">+{change.added}</span>
-                <span className="ml-2 text-diff-removed">
-                  -{change.removed}
-                </span>
+                <span className="ml-2 text-diff-removed">-{change.removed}</span>
               </div>
               <ChevronDownIcon
                 className={cn(
@@ -180,8 +156,7 @@ export function GitPaneChangeCard({
             <div className="flex items-center justify-center py-4 text-ui-base text-foreground-subtle">
               {intl.formatMessage({ id: "common.loading" })}
             </div>
-          ) : diffState?.availability === "patch" &&
-            diffPreviewPlan.kind === "plain-text" ? (
+          ) : diffState?.availability === "patch" && diffPreviewPlan.kind === "plain-text" ? (
             <div className="w-full min-w-0">
               <GitPanePlainTextDiffPreview
                 lines={diffPreviewPlan.lines}
@@ -222,9 +197,7 @@ export function GitPaneChangeCard({
           ) : (
             <div className="px-4 py-3 text-ui-base text-foreground-subtle">
               {intl.formatMessage({
-                id: getDiffFallbackMessageId(
-                  diffState?.availability ?? "unavailable",
-                ),
+                id: getDiffFallbackMessageId(diffState?.availability ?? "unavailable"),
               })}
             </div>
           )}
@@ -246,7 +219,7 @@ function GitPanePlainTextDiffPreview({
   return (
     <LightweightDiffPreview
       codePreviewSettings={codePreviewSettings}
-      data-git-plain-text-diff-preview={true}
+      data-git-plain-text-diff-preview
       lines={lines}
     />
   );

@@ -1,17 +1,13 @@
+import * as React from "react";
 import { Check, Minus } from "lucide-react";
 import { Checkbox as CheckboxPrimitive } from "radix-ui";
-import type * as React from "react";
-import { cn } from "../lib/utils";
+import { cn } from "../lib/utils.js";
 
 type CheckboxProps = React.ComponentProps<typeof CheckboxPrimitive.Root> & {
   checkIconStrokeWidth?: number;
 };
 
-function Checkbox({
-  className,
-  checkIconStrokeWidth,
-  ...props
-}: CheckboxProps) {
+function Checkbox({ className, checkIconStrokeWidth, ...props }: CheckboxProps) {
   return (
     <CheckboxPrimitive.Root
       data-slot="checkbox"
@@ -29,8 +25,7 @@ function Checkbox({
           data-slot="checkbox-checked-icon"
           className={cn(
             "size-3",
-            checkIconStrokeWidth !== undefined &&
-              "[&_path]:[vector-effect:non-scaling-stroke]",
+            checkIconStrokeWidth !== undefined && "[&_path]:[vector-effect:non-scaling-stroke]",
           )}
           strokeWidth={checkIconStrokeWidth}
         />
@@ -38,8 +33,7 @@ function Checkbox({
           data-slot="checkbox-indeterminate-icon"
           className={cn(
             "hidden size-3",
-            checkIconStrokeWidth !== undefined &&
-              "[&_path]:[vector-effect:non-scaling-stroke]",
+            checkIconStrokeWidth !== undefined && "[&_path]:[vector-effect:non-scaling-stroke]",
           )}
           strokeWidth={checkIconStrokeWidth}
         />

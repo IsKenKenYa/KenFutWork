@@ -1,9 +1,4 @@
 /**
- * zcode 照搬：`@/app-shell/workflow-artifacts/presets/palette.ts`（references/zcode/packages/ui/src/app-shell/workflow-artifacts/presets/palette.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-/**
  * 预置图表的序列调色板与**次级编码**。
  *
  * 颜色直接复用设计系统里既有的 `--color-usage-chart-1..6`（DESIGN.md「Color Usage Rules」：
@@ -39,18 +34,9 @@ export function artifactSeriesDash(index: number): string | undefined {
   return SERIES_DASH[index % SERIES_DASH.length];
 }
 
-const SERIES_SYMBOL = [
-  "circle",
-  "cross",
-  "diamond",
-  "square",
-  "triangle",
-  "star",
-] as const;
+const SERIES_SYMBOL = ["circle", "cross", "diamond", "square", "triangle", "star"] as const;
 
 /** 散点图的点形；与线型同理，是颜色之外的第二条身份线索。 */
-export function artifactSeriesSymbol(
-  index: number,
-): (typeof SERIES_SYMBOL)[number] {
+export function artifactSeriesSymbol(index: number): (typeof SERIES_SYMBOL)[number] {
   return SERIES_SYMBOL[index % SERIES_SYMBOL.length]!;
 }

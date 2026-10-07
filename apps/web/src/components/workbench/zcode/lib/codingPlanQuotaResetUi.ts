@@ -1,13 +1,8 @@
-/**
- * zcode 照搬：`@/lib/codingPlanQuotaResetUi.ts`（references/zcode/packages/ui/src/lib/codingPlanQuotaResetUi.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
 import type {
   CodingPlanResetStatusSnapshot,
   CodingPlanResetType,
   UsageQuotaLimit,
-} from "@zui/lib/zcode-shared";
+} from "@zcode/shared";
 // 完成后“额度已重置”提示的停留时长，随后自动收起提示（额度条保持 100%）。
 export const CODING_PLAN_QUOTA_RESET_DONE_DISPLAY_MS = 2_600;
 // 自动/运营重置在 Composer 触发器上先合成一小段“正在重置”的时长，随后切换为“已重置”。
@@ -17,19 +12,14 @@ const FIVE_HOURS_MS = 5 * 60 * 60 * 1_000;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1_000;
 
 // 完成后乐观改写“下一次重置时间”的周期：五小时额度按 5 小时，周额度按 7 天。
-function resolveCodingPlanQuotaResetDurationMs(
-  resetType: CodingPlanResetType,
-): number {
+function resolveCodingPlanQuotaResetDurationMs(resetType: CodingPlanResetType): number {
   return resetType === "WEEK" ? WEEK_MS : FIVE_HOURS_MS;
 }
 
 // available：服务端下发了可用的五小时重置机会。
 // processing：用户已发起手动核销，正在等待 use + status 对账。
 // completed：status 已返回服务端 used_at；自动/运营重置不会经过 processing。
-export type CodingPlanQuotaResetUiStatus =
-  | "available"
-  | "processing"
-  | "completed";
+export type CodingPlanQuotaResetUiStatus = "available" | "processing" | "completed";
 
 export interface CodingPlanQuotaResetUiEntry {
   status: CodingPlanQuotaResetUiStatus;
@@ -85,22 +75,18 @@ export function advanceCodingPlanQuotaResetCelebration(
   // 否则手动重置会叠加按钮和触发器两处动画。触发器只认自动完成的新 used_at，
   // source 切换时清空轨迹，避免 Team/个人套餐之间重复撒花或漏掉自动重置动效。
   const sourceChanged = previous?.sourceKey !== input.sourceKey;
-  const celebratedCompletedAt = sourceChanged
-    ? null
-    : (previous?.celebratedCompletedAt ?? null);
+  const celebratedCompletedAt = sourceChanged ? null : (previous?.celebratedCompletedAt ?? null);
   const shouldCelebrate = Boolean(
     input.sourceKey &&
-      input.automaticCompletion &&
-      input.completedAt !== null &&
-      input.completedAt !== celebratedCompletedAt,
+    input.automaticCompletion &&
+    input.completedAt !== null &&
+    input.completedAt !== celebratedCompletedAt,
   );
 
   return {
     state: {
       sourceKey: input.sourceKey,
-      celebratedCompletedAt: shouldCelebrate
-        ? input.completedAt
-        : celebratedCompletedAt,
+      celebratedCompletedAt: shouldCelebrate ? input.completedAt : celebratedCompletedAt,
     },
     shouldCelebrate,
   };
@@ -132,8 +118,7 @@ function createCompletedEntry(
   manualStartedAt: number | null,
   nextResetMs: number,
 ): CodingPlanQuotaResetUiEntry {
-  const isSameCompletion =
-    previous?.status === "completed" && previous.completedAt === completedAt;
+  const isSameCompletion = previous?.status === "completed" && previous.completedAt === completedAt;
   return {
     status: "completed",
     opportunityCount: 0,
@@ -149,12 +134,8 @@ function createCompletedEntry(
     completedAt,
     // 自动/运营重置可能在 used_at 之后最多 60 秒才被轮询发现。
     // 短提示必须从首次观察时刻起算；同一 used_at 的重复轮询则不能续期。
-    observedAt: isSameCompletion
-      ? (previous.observedAt ?? observedAt)
-      : observedAt,
-    quotaOverridePending: isSameCompletion
-      ? previous.quotaOverridePending
-      : true,
+    observedAt: isSameCompletion ? (previous.observedAt ?? observedAt) : observedAt,
+    quotaOverridePending: isSameCompletion ? previous.quotaOverridePending : true,
     nextResetAt: completedAt + nextResetMs,
     idempotencyKey: null,
     error: null,
@@ -179,9 +160,7 @@ export function applyCodingPlanQuotaResetStatus(
   resetType: CodingPlanResetType = "FIVE_HOUR",
 ): CodingPlanQuotaResetUiEntry | null {
   const availableResets =
-    resetType === "WEEK"
-      ? status.availableWeekResets
-      : status.availableFiveHourResets;
+    resetType === "WEEK" ? status.availableWeekResets : status.availableFiveHourResets;
   const latestUsedAt =
     (resetType === "WEEK"
       ? status.latestWeekResetHistory?.usedAt
@@ -208,12 +187,11 @@ export function applyCodingPlanQuotaResetStatus(
   const hasValidOpportunity = validOpportunities.length > 0;
   const shouldComplete = Boolean(
     latestUsedAt !== null &&
-      (ownsUnread ||
-        previous?.status === "processing" ||
-        ((manualStartedAt !== null ||
-          (previous?.status === "completed" &&
-            previous.completedAt === latestUsedAt)) &&
-          !hasValidOpportunity)),
+    (ownsUnread ||
+      previous?.status === "processing" ||
+      ((manualStartedAt !== null ||
+        (previous?.status === "completed" && previous.completedAt === latestUsedAt)) &&
+        !hasValidOpportunity)),
   );
   if (shouldComplete && latestUsedAt !== null) {
     return createCompletedEntry(
@@ -366,11 +344,7 @@ export function resolveCodingPlanQuotaResetStatusVisible(
   now: number,
   doneDisplayMs: number = CODING_PLAN_QUOTA_RESET_DONE_DISPLAY_MS,
 ): boolean {
-  if (
-    entry?.status !== "completed" ||
-    entry.startedAt !== null ||
-    entry.observedAt === null
-  ) {
+  if (entry?.status !== "completed" || entry.startedAt !== null || entry.observedAt === null) {
     return false;
   }
   return now - entry.observedAt < doneDisplayMs;
@@ -391,11 +365,7 @@ export function resolveCodingPlanQuotaResetAutomaticPhase(
   if (dismissed) {
     return null;
   }
-  if (
-    entry?.status !== "completed" ||
-    entry.startedAt !== null ||
-    entry.observedAt === null
-  ) {
+  if (entry?.status !== "completed" || entry.startedAt !== null || entry.observedAt === null) {
     return null;
   }
   return now - entry.observedAt < processingMs ? "processing" : "completed";

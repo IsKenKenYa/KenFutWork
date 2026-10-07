@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/lib/assistantPathQuotes.ts`（references/zcode/packages/ui/src/lib/assistantPathQuotes.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
 const ASSISTANT_PATH_QUOTE_PAIRS: Readonly<Record<string, string>> = {
   '"': '"',
   "'": "'",
@@ -18,16 +13,11 @@ const ASSISTANT_PATH_ENCODED_QUOTE_PAIRS: Readonly<Record<string, string>> = {
   "%E2%80%9C": "%E2%80%9D",
 };
 
-export function isBalancedAssistantPathQuotePair(
-  opening: string,
-  closing: string,
-): boolean {
+export function isBalancedAssistantPathQuotePair(opening: string, closing: string): boolean {
   return ASSISTANT_PATH_QUOTE_PAIRS[opening] === closing;
 }
 
-export function isAssistantPathQuoteCharacter(
-  character: string | undefined,
-): boolean {
+export function isAssistantPathQuoteCharacter(character: string | undefined): boolean {
   return (
     character === '"' ||
     character === "'" ||
@@ -50,12 +40,9 @@ export function stripBalancedAssistantPathQuotes(value: string): string {
   // rehype-harden 可能把带空格的相对 Markdown 目标规整成 `/“path”`；
   // 仅在引号内容仍是相对路径时还原这个保护层，不影响真正的绝对路径。
   if (trimmed.startsWith("/")) {
-    const protectedRelative = stripBalancedAssistantPathQuotes(
-      trimmed.slice(1),
-    );
+    const protectedRelative = stripBalancedAssistantPathQuotes(trimmed.slice(1));
     if (protectedRelative !== trimmed.slice(1)) {
-      return protectedRelative.startsWith("./") ||
-        protectedRelative.startsWith("/")
+      return protectedRelative.startsWith("./") || protectedRelative.startsWith("/")
         ? protectedRelative
         : `/${protectedRelative}`;
     }
@@ -66,10 +53,7 @@ export function stripBalancedAssistantPathQuotes(value: string): string {
   if (candidate.length < 2) return trimmed;
 
   const closingQuote = ASSISTANT_PATH_QUOTE_PAIRS[candidate[0]!];
-  if (
-    closingQuote &&
-    isBalancedAssistantPathQuotePair(candidate[0]!, candidate.at(-1)!)
-  ) {
+  if (closingQuote && isBalancedAssistantPathQuotePair(candidate[0]!, candidate.at(-1)!)) {
     return `${relativePrefix}${candidate.slice(1, -1).trim()}`;
   }
 

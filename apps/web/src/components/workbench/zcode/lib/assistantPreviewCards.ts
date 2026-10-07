@@ -1,47 +1,34 @@
-/**
- * zcode 照搬：`@/lib/assistantPreviewCards.ts`（references/zcode/packages/ui/src/lib/assistantPreviewCards.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
 import {
-  type AssistantFilePathResolveOptions,
-  type AssistantFileReference,
-  type AssistantPreviewFileKind,
-  type AssistantPreviewFileSubtitleId,
+  buildConversationPreviewArtifactCandidatesFromReferences,
+  CONVERSATION_PREVIEW_CARD_CANDIDATE_LIMIT,
+  CONVERSATION_PREVIEW_CARD_VISIBLE_LIMIT,
+} from "@zcode/shared";
+import {
   cleanAssistantFilePathCandidate,
   getAssistantPreviewFileTypeDefinition,
   isAssistantPreviewHtmlPath,
   parseAssistantFileUrlPath,
   resolveAssistantRawFilePath,
-} from "@zui/lib/assistantFileReferences";
-import type { CodeViewerSource } from "@zui/lib/codeViewer";
-import {
-  decodeFilePathUriEscapes,
-  getPathLeaf,
-  toFileUrl,
-} from "@zui/lib/path";
-import {
-  buildConversationPreviewArtifactCandidatesFromReferences,
-  CONVERSATION_PREVIEW_CARD_CANDIDATE_LIMIT,
-  CONVERSATION_PREVIEW_CARD_VISIBLE_LIMIT,
-} from "@zui/lib/zcode-shared";
+  type AssistantFileReference,
+  type AssistantFilePathResolveOptions,
+  type AssistantPreviewFileKind,
+  type AssistantPreviewFileSubtitleId,
+} from "@zui/lib/assistantFileReferences.js";
+import { decodeFilePathUriEscapes, getPathLeaf, toFileUrl } from "@zui/lib/path.js";
+import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
 
-export type {
-  AssistantFileReference,
-  AssistantPreviewFileKind,
-} from "@zui/lib/assistantFileReferences";
 export {
   extractAssistantFileReferences,
   hasAssistantPreviewFileChangeCandidates,
   isAssistantPreviewHtmlPath,
-} from "@zui/lib/assistantFileReferences";
+} from "@zui/lib/assistantFileReferences.js";
+export type {
+  AssistantFileReference,
+  AssistantPreviewFileKind,
+} from "@zui/lib/assistantFileReferences.js";
 
-export const ASSISTANT_PREVIEW_CARD_CANDIDATE_LIMIT =
-  CONVERSATION_PREVIEW_CARD_CANDIDATE_LIMIT;
-export const ASSISTANT_PREVIEW_CARD_VISIBLE_LIMIT =
-  CONVERSATION_PREVIEW_CARD_VISIBLE_LIMIT;
+export const ASSISTANT_PREVIEW_CARD_CANDIDATE_LIMIT = CONVERSATION_PREVIEW_CARD_CANDIDATE_LIMIT;
+export const ASSISTANT_PREVIEW_CARD_VISIBLE_LIMIT = CONVERSATION_PREVIEW_CARD_VISIBLE_LIMIT;
 
 export interface AssistantPreviewCardsAutoOpenRequest {
   key: string;
@@ -78,9 +65,7 @@ export type AssistantPreviewCard =
     };
 
 export interface AssistantPreviewCardFileStatService {
-  checkFilesExist(params: {
-    paths: string[];
-  }): Promise<Array<{ path: string; exists: boolean }>>;
+  checkFilesExist(params: { paths: string[] }): Promise<Array<{ path: string; exists: boolean }>>;
 }
 
 const LOCALHOST_URL_RE =
@@ -92,9 +77,9 @@ const STRICT_FILE_HTML_URL_RE =
 const MARKDOWN_LINK_RE = /\[([^\]\n]*)\]\(([^)\n]+)\)/g;
 
 interface AssistantPreviewCardOptions {
-  changedFilePaths?: readonly string[] | undefined;
-  homePath?: string | undefined;
-  suppressWebRemoteCards?: boolean | undefined;
+  changedFilePaths?: readonly string[];
+  homePath?: string;
+  suppressWebRemoteCards?: boolean;
 }
 
 interface PositionedCard {
@@ -123,8 +108,7 @@ export function isValidAssistantPreviewWebsiteUrl(url: string): boolean {
       (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:") &&
       parsedUrl.username.length === 0 &&
       parsedUrl.password.length === 0 &&
-      (parsedUrl.hostname === "localhost" ||
-        parsedUrl.hostname === "127.0.0.1") &&
+      (parsedUrl.hostname === "localhost" || parsedUrl.hostname === "127.0.0.1") &&
       (port === null || (port > 0 && port <= 65_535))
     );
   } catch {
@@ -153,8 +137,8 @@ function cleanMarkdownLinkTitle(title: string): string | null {
 
 export function shouldOpenAssistantHtmlInBrowser(params: {
   path: string;
-  workspaceIdentity?: string | undefined;
-  workspaceRemoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  workspaceRemoteSessionId?: string;
 }): boolean {
   return (
     isAssistantPreviewHtmlPath(params.path) &&
@@ -182,10 +166,7 @@ function findMatchingChangedFilePath(
   const normalizedReferencePath = normalizePathForCompare(reference.path);
   const normalizedChangedPaths = changedFilePaths.map((path) => {
     const resolvedPath = resolveChangedFilePath(workspacePath, path);
-    return {
-      path: resolvedPath,
-      normalized: normalizePathForCompare(resolvedPath),
-    };
+    return { path: resolvedPath, normalized: normalizePathForCompare(resolvedPath) };
   });
   const exact = normalizedChangedPaths.find(
     (candidate) => candidate.normalized === normalizedReferencePath,
@@ -193,11 +174,7 @@ function findMatchingChangedFilePath(
   if (exact) return exact.path;
 
   const cleanedRaw = cleanAssistantFilePathCandidate(reference.raw);
-  if (
-    cleanedRaw.includes("/") ||
-    cleanedRaw.includes("\\") ||
-    /^file:/i.test(cleanedRaw)
-  ) {
+  if (cleanedRaw.includes("/") || cleanedRaw.includes("\\") || /^file:/i.test(cleanedRaw)) {
     return null;
   }
   const leafMatches = normalizedChangedPaths.filter(
@@ -206,15 +183,10 @@ function findMatchingChangedFilePath(
   return leafMatches.length === 1 ? leafMatches[0]!.path : null;
 }
 
-function getWebsiteTitleFromMarkdownLink(
-  content: string,
-  url: string,
-): string | null {
+function getWebsiteTitleFromMarkdownLink(content: string, url: string): string | null {
   for (const match of content.matchAll(MARKDOWN_LINK_RE)) {
     const label = match[1] ? cleanMarkdownLinkTitle(match[1]) : null;
-    const href = match[2]
-      ? normalizeTrailingUrlText(normalizeMarkdownHref(match[2]))
-      : "";
+    const href = match[2] ? normalizeTrailingUrlText(normalizeMarkdownHref(match[2])) : "";
     if (label && href === url && !/^https?:\/\//i.test(label)) return label;
   }
   return null;
@@ -238,10 +210,7 @@ function resolveLocalhostHtmlChangedPath(
 ): string | null {
   try {
     const parsedUrl = new URL(url);
-    const pathname = decodeFilePathUriEscapes(parsedUrl.pathname).replace(
-      /^\/+/,
-      "",
-    );
+    const pathname = decodeFilePathUriEscapes(parsedUrl.pathname).replace(/^\/+/, "");
     if (!isAssistantPreviewHtmlPath(pathname)) return null;
     const path = resolveAssistantRawFilePath(workspacePath, pathname, options);
     if (!path) return null;
@@ -255,9 +224,7 @@ function resolveLocalhostHtmlChangedPath(
   }
 }
 
-function buildFileCard(
-  reference: AssistantFileReference,
-): AssistantPreviewCard {
+function buildFileCard(reference: AssistantFileReference): AssistantPreviewCard {
   const definition = getAssistantPreviewFileTypeDefinition(reference.path)!;
   if (reference.kind === "markdown") {
     return {
@@ -322,14 +289,9 @@ export function buildAssistantPreviewCardsFromReferences(
     if (!isValidAssistantPreviewWebsiteUrl(url)) continue;
     // Web 远控没有本地端口转发或 HTML 运行环境；在候选上限前过滤，避免隐藏卡片占位。
     if (options.suppressWebRemoteCards) continue;
-    const filePath = resolveLocalhostHtmlChangedPath(
-      url,
-      workspacePath,
-      changedFilePaths,
-      {
-        homePath: options.homePath,
-      },
-    );
+    const filePath = resolveLocalhostHtmlChangedPath(url, workspacePath, changedFilePaths, {
+      homePath: options.homePath,
+    });
     hasLocalHttpPreview = true;
     positionedCards.push({
       position: match.index ?? 0,
@@ -337,10 +299,9 @@ export function buildAssistantPreviewCardsFromReferences(
         id: `website:${url}`,
         type: "website",
         title:
-          filePath === null
-            ? (getWebsiteTitleFromMarkdownLink(content, url) ??
-              getWebsiteFallbackTitle(url))
-            : getPathLeaf(filePath),
+          filePath !== null
+            ? getPathLeaf(filePath)
+            : (getWebsiteTitleFromMarkdownLink(content, url) ?? getWebsiteFallbackTitle(url)),
         subtitleId: "chat.previewCards.website",
         url,
         ...(filePath ? { filePath } : {}),
@@ -355,40 +316,27 @@ export function buildAssistantPreviewCardsFromReferences(
 
     let resolvedReference = reference;
     if (reference.kind === "markdown" || reference.kind === "html") {
-      const changedPath = findMatchingChangedFilePath(
-        reference,
-        changedFilePaths,
-        workspacePath,
-      );
+      const changedPath = findMatchingChangedFilePath(reference, changedFilePaths, workspacePath);
       if (!changedPath) continue;
       resolvedReference = { ...reference, path: changedPath };
     }
     fileReferences.push(resolvedReference);
   }
 
-  const previewCandidates =
-    buildConversationPreviewArtifactCandidatesFromReferences({
-      references: fileReferences,
-      productTurnId: "",
-      workspacePath,
-      fileChanges: changedFilePaths.map((path) => ({
-        path,
-        state: "active" as const,
-      })),
-      // Renderer 仍需展示已解析的 Home-relative/file URL 卡片；Share Service 会在自己的
-      // Host source 上再次执行 workspace 边界校验。
-      enforceWorkspaceBoundary: false,
-    });
+  const previewCandidates = buildConversationPreviewArtifactCandidatesFromReferences({
+    references: fileReferences,
+    productTurnId: "",
+    workspacePath,
+    fileChanges: changedFilePaths.map((path) => ({ path, state: "active" as const })),
+    // Renderer 仍需展示已解析的 Home-relative/file URL 卡片；Share Service 会在自己的
+    // Host source 上再次执行 workspace 边界校验。
+    enforceWorkspaceBoundary: false,
+  });
   const referencesByPath = new Map(
-    fileReferences.map((reference) => [
-      normalizePathForCompare(reference.path),
-      reference,
-    ]),
+    fileReferences.map((reference) => [normalizePathForCompare(reference.path), reference]),
   );
   for (const candidate of previewCandidates) {
-    const reference = referencesByPath.get(
-      normalizePathForCompare(candidate.sourceRef),
-    );
+    const reference = referencesByPath.get(normalizePathForCompare(candidate.sourceRef));
     if (!reference) continue;
     positionedCards.push({
       position: reference.start,
@@ -409,16 +357,12 @@ export function buildAssistantPreviewCardsFromReferences(
   return cards;
 }
 
-export function getAssistantPreviewCardFilePath(
-  card: AssistantPreviewCard,
-): string | null {
+export function getAssistantPreviewCardFilePath(card: AssistantPreviewCard): string | null {
   return card.type === "website"
     ? (card.filePath ?? parseAssistantFileUrlPath(card.url))
     : card.path;
 }
 
-export function requiresAssistantPreviewCardFileStat(
-  card: AssistantPreviewCard,
-): boolean {
+export function requiresAssistantPreviewCardFileStat(card: AssistantPreviewCard): boolean {
   return getAssistantPreviewCardFilePath(card) !== null;
 }

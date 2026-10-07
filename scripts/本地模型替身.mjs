@@ -266,6 +266,56 @@ const server = createServer(async (req, res) => {
         data: [{ id: MODEL_ID, object: "model", created: 0, owned_by: "mock" }],
       });
     }
+    /**
+     * 语音合成替身（`/v1/audio/speech`）：回一段**真能播**的 16k 单声道 WAV。
+     *
+     * 为什么替身也要给真音频：语音播报的前端链路（取 blob → decodeAudioData → 播放 →
+     * 打断）只有拿到可解码的字节才走得通；回 JSON 或空体测不出接线对不对。
+     * 内容是 0.6 秒 440Hz 提示音、不是语音——本脚本不冒充模型，只验证本仓接线。
+     */
+    if (req.method === "POST" && req.url?.startsWith("/v1/audio/speech")) {
+      let speechRaw = "";
+      for await (const c of req) speechRaw += c;
+      const speechBody = JSON.parse(speechRaw || "{}");
+      const rate = 16_000;
+      // 时长可调：验收「打断」时需要一段够长的音频（默认 0.6 秒够听清即可）
+      const seconds = Number(process.env.MOCK_SPEECH_SECONDS ?? 0.6);
+      const frames = Math.max(1, Math.floor(seconds * rate));
+      const dataBytes = frames * 2;
+      const wav = Buffer.alloc(44 + dataBytes);
+      wav.write("RIFF", 0);
+      wav.writeUInt32LE(36 + dataBytes, 4);
+      wav.write("WAVE", 8);
+      wav.write("fmt ", 12);
+      wav.writeUInt32LE(16, 16);
+      wav.writeUInt16LE(1, 20);
+      wav.writeUInt16LE(1, 22);
+      wav.writeUInt32LE(rate, 24);
+      wav.writeUInt32LE(rate * 2, 28);
+      wav.writeUInt16LE(2, 32);
+      wav.writeUInt16LE(16, 34);
+      wav.write("data", 36);
+      wav.writeUInt32LE(dataBytes, 40);
+      for (let i = 0; i < frames; i += 1) {
+        // 440Hz 正弦 + 淡入淡出（避免爆音，也让「有没有真播」听得出来）
+        const envelope = Math.min(
+          1,
+          i / (rate * 0.05),
+          (frames - i) / (rate * 0.05),
+        );
+        const sample = Math.sin(2 * Math.PI * 440 * (i / rate)) * 0.3 * envelope;
+        wav.writeInt16LE(Math.round(sample * 32_767), 44 + i * 2);
+      }
+      console.log(
+        `[mock-model] speech「${String(speechBody.input ?? "").slice(0, 24)}」（${wav.length} 字节 WAV）`,
+      );
+      res.writeHead(200, {
+        "content-type": "audio/wav",
+        "content-length": String(wav.length),
+      });
+      res.end(wav);
+      return;
+    }
     if (req.method !== "POST" || !req.url?.startsWith("/v1/chat/completions")) {
       return json(res, 404, { error: { message: "not found" } });
     }

@@ -1,20 +1,12 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/task-output.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/task-output.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
-import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay";
 import { FileOutputIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
+import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay.js";
 
-const TASK_OUTPUT_TOOL_ICON = (
-  <FileOutputIcon className="size-4 shrink-0 text-foreground-subtle" />
-);
+const TASK_OUTPUT_TOOL_ICON = <FileOutputIcon className="size-4 shrink-0 text-foreground-subtle" />;
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {
   if (typeof value === "object" && value !== null && !Array.isArray(value)) {
@@ -26,9 +18,7 @@ function toRecord(value: unknown): Record<string, unknown> | undefined {
 
   try {
     const parsed: unknown = JSON.parse(value);
-    return typeof parsed === "object" &&
-      parsed !== null &&
-      !Array.isArray(parsed)
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : undefined;
   } catch {
@@ -38,9 +28,7 @@ function toRecord(value: unknown): Record<string, unknown> | undefined {
 
 function readTaskId(input: unknown): string | undefined {
   const taskId = toRecord(input)?.task_id;
-  return typeof taskId === "string" && taskId.trim().length > 0
-    ? taskId
-    : undefined;
+  return typeof taskId === "string" && taskId.trim().length > 0 ? taskId : undefined;
 }
 
 function isFailedTaskStatus(status: string | undefined): boolean {
@@ -50,19 +38,14 @@ function isFailedTaskStatus(status: string | undefined): boolean {
 
 function isStoppedTaskStatus(status: string | undefined): boolean {
   const normalized = status?.trim().toLowerCase();
-  return (
-    normalized === "cancelled" ||
-    normalized === "killed" ||
-    normalized === "stopped"
-  );
+  return normalized === "cancelled" || normalized === "killed" || normalized === "stopped";
 }
 
 export function TaskOutputToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall } = context.toolCallNode;
   const display = readToolResultDisplay(toolCall.raw);
-  const taskOutputDisplay =
-    display?.kind === "task_output" ? display : undefined;
+  const taskOutputDisplay = display?.kind === "task_output" ? display : undefined;
   const taskId = readTaskId(toolCall.input);
   const taskStatus = taskOutputDisplay?.taskStatus;
   const normalizedTaskStatus = taskStatus?.trim().toLowerCase();
@@ -70,8 +53,7 @@ export function TaskOutputToolCallBlock(context: ToolCallBlockRenderContext) {
   const isStopped = toolCall.status === "stopped";
   const isExecutionFailed = toolCall.status === "failed";
   const isTaskFailed = isFailedTaskStatus(taskStatus);
-  const showFailureStatus =
-    !isDenied && !isStopped && (isExecutionFailed || isTaskFailed);
+  const showFailureStatus = !isDenied && !isStopped && (isExecutionFailed || isTaskFailed);
   const output = taskOutputDisplay?.output;
   const hasOutput = output !== undefined;
 
@@ -83,47 +65,28 @@ export function TaskOutputToolCallBlock(context: ToolCallBlockRenderContext) {
   } else if (isStopped) {
     outcomeLabel = intl.formatMessage({ id: "chat.toolCall.status.stopped" });
   } else if (taskOutputDisplay?.retrievalStatus === "not_ready") {
-    outcomeLabel = intl.formatMessage({
-      id: "chat.toolCall.taskOutput.running",
-    });
+    outcomeLabel = intl.formatMessage({ id: "chat.toolCall.taskOutput.running" });
   } else if (taskOutputDisplay?.retrievalStatus === "timeout") {
-    outcomeLabel = intl.formatMessage({
-      id: "chat.toolCall.taskOutput.timeout",
-    });
+    outcomeLabel = intl.formatMessage({ id: "chat.toolCall.taskOutput.timeout" });
   } else if (isTaskFailed) {
-    outcomeLabel = intl.formatMessage({
-      id: "chat.toolCall.taskOutput.taskFailed",
-    });
+    outcomeLabel = intl.formatMessage({ id: "chat.toolCall.taskOutput.taskFailed" });
   } else if (isStoppedTaskStatus(taskStatus)) {
-    outcomeLabel = intl.formatMessage({
-      id: "chat.toolCall.taskOutput.taskStopped",
-    });
-  } else if (
-    normalizedTaskStatus === "pending" ||
-    normalizedTaskStatus === "running"
-  ) {
-    outcomeLabel = intl.formatMessage({
-      id: "chat.toolCall.taskOutput.running",
-    });
+    outcomeLabel = intl.formatMessage({ id: "chat.toolCall.taskOutput.taskStopped" });
+  } else if (normalizedTaskStatus === "pending" || normalizedTaskStatus === "running") {
+    outcomeLabel = intl.formatMessage({ id: "chat.toolCall.taskOutput.running" });
   } else if (normalizedTaskStatus && normalizedTaskStatus !== "completed") {
     outcomeLabel = taskStatus ?? normalizedTaskStatus;
   } else if (taskOutputDisplay?.retrievalStatus === "success") {
     // 类别标签只能说明这是 TaskOutput，不能替代 display 已确认的成功读取结果。
-    outcomeLabel = intl.formatMessage({
-      id: "chat.toolCall.taskOutput.retrieved",
-    });
+    outcomeLabel = intl.formatMessage({ id: "chat.toolCall.taskOutput.retrieved" });
   }
   const kindLabel = intl.formatMessage({
-    id: context.isRunning
-      ? "chat.toolCall.taskOutput.fetching"
-      : "chat.toolCall.kind.taskOutput",
+    id: context.isRunning ? "chat.toolCall.taskOutput.fetching" : "chat.toolCall.kind.taskOutput",
   });
 
   const primaryText = useMemo(
     () => (
-      <code className="min-w-0 truncate font-mono">
-        {taskId ?? toolCall.title ?? "TaskOutput"}
-      </code>
+      <code className="min-w-0 truncate font-mono">{taskId ?? toolCall.title ?? "TaskOutput"}</code>
     ),
     [taskId, toolCall.title],
   );

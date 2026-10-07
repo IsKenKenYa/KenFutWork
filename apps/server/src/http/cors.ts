@@ -12,6 +12,7 @@ export function registerCorsHook(app: FastifyInstance, webOrigin: string) {
 
     if (corsResult.allowOrigin) {
       reply.header("access-control-allow-origin", corsResult.allowOrigin);
+      reply.header("access-control-allow-credentials", "true");
       reply.header("vary", "Origin");
     }
 
@@ -65,7 +66,10 @@ function evaluateCors(request: FastifyRequest, webOrigin: string): CorsResult {
     };
   }
 
-  if (origin === "null" && isLoopbackHost(request.headers.host)) {
+  if (
+    origin === `http://${request.headers.host}` &&
+    isLoopbackHost(request.headers.host)
+  ) {
     return {
       allowed: true,
       allowOrigin: origin,
@@ -91,12 +95,13 @@ function isLoopbackHost(host: string | undefined) {
     return false;
   }
 
-  if (host.startsWith("[")) {
-    return host.startsWith("[::1]");
+  let hostname: string;
+  try {
+    hostname = new URL(`http://${host}`).hostname;
+  } catch {
+    return false;
   }
-
-  const [hostname] = host.split(":");
   return (
-    hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1"
+    hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]"
   );
 }

@@ -1,11 +1,5 @@
-/**
- * zcode 照搬：`@/components/workflow-graph/run-status-presentation.ts`（references/zcode/packages/ui/src/components/workflow-graph/run-status-presentation.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀。
- */
-
-import type { StepRunStatus } from "@zui/components/workflow-graph/types";
-import type { WorkflowRunState } from "@zui/lib/zcode-shared/zcode-protocol-v4";
+import type { WorkflowRunState } from "@zcode/shared/zcode-protocol-v4";
+import type { StepRunStatus } from "@zui/components/workflow-graph/types.js";
 
 /**
  * 状态灯的全部形与色。消费方自带尺寸与
@@ -83,16 +77,11 @@ export function readWorkflowRunStopReason(run: {
 }
 
 /** 原因词的 i18n key（`chat.toolCall.workflow.run.stopReason.*`）。 */
-export function workflowRunStopReasonMessageId(
-  reason: WorkflowRunStopReason,
-): string {
+export function workflowRunStopReasonMessageId(reason: WorkflowRunStopReason): string {
   return `chat.toolCall.workflow.run.stopReason.${reason}`;
 }
 
 /** run 是否被一次修订停下并替代：卡与详情页据此换种类词、藏 Resume 位、画指向后继的链接。 */
-export function isWorkflowRunSuperseded(run: {
-  status?: string;
-  stopReason?: unknown;
-}): boolean {
+export function isWorkflowRunSuperseded(run: { status?: string; stopReason?: unknown }): boolean {
   return readWorkflowRunStopReason(run) === "superseded";
 }

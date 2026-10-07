@@ -1,6 +1,5 @@
 "use client";
 
-import { Lock, Zap } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
@@ -153,8 +152,8 @@ export function ImageModelPreferencePopover({
           </div>
           <span className="text-[11px] text-muted-foreground">
             {currentPreference.mode === "auto"
-              ? `Agent 自动为每次${activeTab === "image" ? "图像" : "视频"}任务选择最合适的模型`
-              : `Agent 从你选定的模型中选择，用于${activeTab === "image" ? "图像" : "视频"}任务`}
+              ? `Agent 自动为每次${activeTab === "image" ? "图像" : "视频"}任务挑模型`
+              : `Agent 只从选定的模型里挑 · 用于${activeTab === "image" ? "图像" : "视频"}任务`}
           </span>
         </div>
 
@@ -184,21 +183,9 @@ export function ImageModelPreferencePopover({
                 <div className="flex flex-1 flex-col">
                   <span className="flex items-center gap-1.5 text-[13px] font-medium text-foreground">
                     {m.displayName}
-                    {m.accessible === false && (
-                      <span className="inline-flex items-center gap-0.5 rounded px-1 py-px text-[9px] font-semibold uppercase leading-tight tracking-wider bg-muted text-muted-foreground">
-                        <Lock className="h-2.5 w-2.5" />
-                        {m.minTier ?? "PRO"}
-                      </span>
-                    )}
                   </span>
                   <span className="flex items-center gap-1.5 text-[11px] leading-tight text-muted-foreground">
                     {m.description}
-                    {typeof m.creditCost === "number" && (
-                      <span className="inline-flex items-center gap-0.5 tabular-nums text-muted-foreground">
-                        <Zap className="h-2.5 w-2.5" />
-                        {m.creditCost}
-                      </span>
-                    )}
                   </span>
                 </div>
                 {selected && (

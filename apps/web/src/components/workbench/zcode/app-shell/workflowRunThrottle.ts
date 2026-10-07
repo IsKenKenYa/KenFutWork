@@ -1,33 +1,22 @@
 /**
- * zcode 照搬：`@/app-shell/workflowRunThrottle.ts`（references/zcode/packages/ui/src/app-shell/workflowRunThrottle.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-/**
- * workflow run 详情页的自适应并发观察面：
- * run 头的并发/冷却读数，以及事件日志里 `node-waiting` / `node-executing` / `concurrency-changed` 三条
- * 事件的行。子代理徽标**不在**这里：它只有三态一个词，直接由协议 actor 状态渲染。
+ * dwf run 详情页的自适应并发观察面：
+ * run 头的并发/冷却读数，以及事件日志里 `node-waiting` / `node-executing` / `concurrency-changed` /
+ * `run-caps-changed` 四条事件的行。子代理徽标**不在**这里：它只有三态一个词，直接由协议
+ * actor 状态渲染。
  *
- * 与 workflowRunPanel.ts 同族的纯规则（拆出来是为了守住 max-lines 门），加一件事：**收到时刻
- * 登记**。协议只带相对量（`cooldownMs`——引擎无时钟），deadline 只能由 UI 按
+ * 展示规则与 workflowRunPanel.ts 共用事件类型，另在本地记录状态的**首次收到时刻**。
+ * 协议只带相对量（`cooldownMs`——引擎无时钟），deadline 只能由 UI 按
  * "第一次见到这份状态的时刻"推。登记按对象身份（WeakMap）：归约对未变的 `concurrency` 保留同一对象
  * 引用，一被新事件替换就是新对象、重新登记。不放进协议，是因为它是本地观察，不是引擎事实。
  */
-
-import type {
-  WorkflowRunEventItem,
-  WorkflowRunEventLine,
-} from "@zui/app-shell/workflowRunPanel";
-import type { WorkflowRunConcurrency } from "@zui/lib/zcode-shared/zcode-protocol-v4";
+import type { WorkflowRunConcurrency } from "@zcode/shared/zcode-protocol-v4";
+import type { WorkflowRunEventItem, WorkflowRunEventLine } from "./workflowRunPanel.js";
 
 const MS_PER_SECOND = 1_000;
 const I18N_PREFIX = "chat.toolCall.workflow.run.";
 const EVENT_KEY_PREFIX = `${I18N_PREFIX}event.`;
 
-type FormatMessage = (
-  descriptor: { id: string },
-  values?: Record<string, string>,
-) => string;
+type FormatMessage = (descriptor: { id: string }, values?: Record<string, string>) => string;
 
 /**
  * 限流原因 → 短标签的 i18n 键（reason 是开放字符串，这里只映射已知的几类，其余
@@ -45,25 +34,16 @@ const REASON_LABEL_KEY: Readonly<Record<string, string>> = {
   proxy_error: "throttle.reason.transient",
 };
 
-export function throttleReasonLabel(
-  reason: string,
-  formatMessage: FormatMessage,
-): string {
+export function throttleReasonLabel(reason: string, formatMessage: FormatMessage): string {
   const key = REASON_LABEL_KEY[reason];
-  return key === undefined
-    ? reason
-    : formatMessage({ id: `${I18N_PREFIX}${key}` });
+  return key === undefined ? reason : formatMessage({ id: `${I18N_PREFIX}${key}` });
 }
 
 // ── 收到时刻登记 ──
 
 const concurrencyReceivedAt = new WeakMap<WorkflowRunConcurrency, number>();
 
-function stamp<T extends object>(
-  registry: WeakMap<T, number>,
-  subject: T,
-  now: number,
-): number {
+function stamp<T extends object>(registry: WeakMap<T, number>, subject: T, now: number): number {
   const seen = registry.get(subject);
   if (seen !== undefined) return seen;
   registry.set(subject, now);
@@ -92,18 +72,11 @@ export function workflowRunConcurrencyView(
   now: number,
 ): WorkflowRunConcurrencyView | undefined {
   if (concurrency === undefined) return undefined;
-  const effective = Math.min(
-    concurrency.cap,
-    concurrency.limit ?? concurrency.cap,
-  );
+  const effective = Math.min(concurrency.cap, concurrency.limit ?? concurrency.cap);
   if (effective >= concurrency.ceiling) return undefined;
-  const view: WorkflowRunConcurrencyView = {
-    cap: effective,
-    ceiling: concurrency.ceiling,
-  };
+  const view: WorkflowRunConcurrencyView = { cap: effective, ceiling: concurrency.ceiling };
   if (concurrency.cooldownMs !== undefined) {
-    const until =
-      stamp(concurrencyReceivedAt, concurrency, now) + concurrency.cooldownMs;
+    const until = stamp(concurrencyReceivedAt, concurrency, now) + concurrency.cooldownMs;
     if (until > now) view.cooldownUntil = until;
   }
   return view;
@@ -122,11 +95,17 @@ function refText(value: unknown): string | undefined {
   return typeof ordinal === "number" ? `${siteId}@${ordinal}` : siteId;
 }
 
+/** 引擎 caps（`{ maxConcurrency }`）的读数；读不动写「?」，与 previous/next 同一条兜底。 */
+function capsMaxConcurrency(value: unknown): string {
+  if (!isRecord(value)) return "?";
+  return typeof value.maxConcurrency === "number" ? String(value.maxConcurrency) : "?";
+}
+
 /**
- * 三条自适应并发事件（node-waiting / node-executing / concurrency-changed）→ 事件日志行；其余种类
- * 返回 undefined（交回主表的 default 兜底）。与 workflowRunEventLines 的其余分支同一条纪律：载荷
- * 防御性读取，一条读不动的事件绝不打挂整页。全部 tone default：等待不是失败，cap 变化也不是——
- * 它们是运行时在自我调节。
+ * 四条并发事件（node-waiting / node-executing / concurrency-changed / run-caps-changed）→ 事件日志行；
+ * 其余种类返回 undefined（交回主表的 default 兜底）。与 workflowRunEventLines 的其余分支同一条纪律：
+ * 载荷防御性读取，一条读不动的事件绝不打挂整页。全部 tone default：等待不是失败，cap 变化也不是——
+ * 前三条是运行时在自我调节，最后一条是用户在调它。
  */
 export function workflowRunConcurrencyEventLine(
   event: WorkflowRunEventItem,
@@ -139,10 +118,7 @@ export function workflowRunConcurrencyEventLine(
     ...(event.truncated ? { truncated: event.truncated as true } : {}),
     tone: "default" as const,
   };
-  const withDetail = (
-    label: string,
-    detail: string | undefined,
-  ): WorkflowRunEventLine => ({
+  const withDetail = (label: string, detail: string | undefined): WorkflowRunEventLine => ({
     ...base,
     label,
     ...(detail === undefined ? {} : { detail }),
@@ -166,10 +142,7 @@ export function workflowRunConcurrencyEventLine(
           ? String(Math.ceil(payload.delayMs / MS_PER_SECOND))
           : "?";
       return withDetail(
-        formatMessage(
-          { id: `${EVENT_KEY_PREFIX}nodeWaitingBackoff` },
-          { reason, seconds },
-        ),
+        formatMessage({ id: `${EVENT_KEY_PREFIX}nodeWaitingBackoff` }, { reason, seconds }),
         refText(payload.instance),
       );
     }
@@ -179,22 +152,29 @@ export function workflowRunConcurrencyEventLine(
         refText(payload.instance),
       );
     case "concurrency-changed": {
-      const previous =
-        typeof payload.previous === "number" ? String(payload.previous) : "?";
-      const next =
-        typeof payload.next === "number" ? String(payload.next) : "?";
+      const previous = typeof payload.previous === "number" ? String(payload.previous) : "?";
+      const next = typeof payload.next === "number" ? String(payload.next) : "?";
       const key =
-        typeof payload.key === "string" && payload.key.length > 0
-          ? payload.key
-          : undefined;
+        typeof payload.key === "string" && payload.key.length > 0 ? payload.key : undefined;
       return withDetail(
-        formatMessage(
-          { id: `${EVENT_KEY_PREFIX}concurrencyChanged` },
-          { previous, next },
-        ),
+        formatMessage({ id: `${EVENT_KEY_PREFIX}concurrencyChanged` }, { previous, next }),
         key,
       );
     }
+    // run-caps-changed：用户在 run 在飞时改了这次 run **自己**的那条界（就地生效，不另起一次 run）。
+    // 与上面那条分两行说：`concurrency-changed` 是治理器在压共享桶（provider key 的事），这一条是
+    // 用户的决定。没有 detail——它不属于任何 provider key，也不属于任何实例。
+    case "run-caps-changed":
+      return withDetail(
+        formatMessage(
+          { id: `${EVENT_KEY_PREFIX}runCapsChanged` },
+          {
+            previous: capsMaxConcurrency(payload.previous),
+            next: capsMaxConcurrency(payload.caps),
+          },
+        ),
+        undefined,
+      );
     default:
       return undefined;
   }

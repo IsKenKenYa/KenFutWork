@@ -25,16 +25,33 @@ import {
   DEFAULT_GOOGLE_AGENT_MODEL,
   type ServerEnv,
 } from "../config/env.js";
+import { createNativeToolExclusionMiddleware } from "../features/code-tools/native-tool-exclusion.js";
+import {
+  createTaskWorkNotificationMiddleware,
+  type TaskWorkBinding,
+} from "../features/task-work/model-mailbox.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
-import type { CompactionPlan } from "./auto-compact.js";
+import type { CompactionPlan, CompactionRetention } from "./auto-compact.js";
+import { resolveCompactionPlan } from "./auto-compact.js";
 import {
   type AgentBackendResult,
   createAgentBackend,
 } from "./backends/index.js";
+import type { AgentContextHistory } from "./context-history.js";
 import { createExecuteBackgroundTool } from "./execute-background.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
+import { attachNativeCheckpointDurability } from "./native-checkpoint-durability.js";
+import { createNativeCompactionTracker } from "./native-compaction.js";
+import {
+  createNativeContextHistory,
+  effectiveNativeMessages,
+} from "./native-context-history.js";
+import type {
+  AgentRunExtension,
+  AgentRunExtensionContext,
+} from "./run-extension.js";
 import {
   resolveChildToolbelt,
   resolveSubagentDefinitions,
@@ -50,7 +67,7 @@ import { createTaskNotificationMiddleware } from "./task-notifications.js";
 export type KenFutWorkAgent = Pick<
   ReturnType<typeof createDeepAgent>,
   "stream" | "streamEvents"
->;
+> & { canonicalToolEvents?: boolean; contextHistory?: AgentContextHistory };
 
 /**
  * 执行模式工具门（solo/plan 硬约束）：拦截 deepagents 内置工具
@@ -100,6 +117,7 @@ export function createToolGateMiddleware(
       return new ToolMessage({
         tool_call_id: request.toolCall.id ?? request.toolCall.name,
         content: `工具 ${request.toolCall.name} 被拒绝：${verdict.reason}`,
+        status: "error",
       });
     },
   };
@@ -257,6 +275,8 @@ function createModelResponseGuardMiddleware(): AgentMiddleware {
 }
 
 export type KenFutWorkAgentFactory = (options: {
+  runExtensions?: readonly AgentRunExtension[];
+  extensionContext?: AgentRunExtensionContext;
   backendResult?: AgentBackendResult;
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
@@ -266,7 +286,7 @@ export type KenFutWorkAgentFactory = (options: {
   store?: BaseStore;
   /** 内核 ctx.tools 贡献的工具（按 preset 过滤后），桥接为模型可调用工具。 */
   kernelTools?: ToolDefinition[];
-  /** 本次运行的工具执行上下文（runId/accessToken）。 */
+  /** 本次运行的工具执行上下文（runId/LocalActor）。 */
   runToolContext?: ToolExecutionContext;
   /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
   toolGate?: ToolGate;
@@ -277,6 +297,10 @@ export type KenFutWorkAgentFactory = (options: {
    * 传了才挂中间件——设置里关掉时**一个字都不挂**，不是挂上再短路。
    */
   autoCompact?: CompactionPlan;
+  /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
+  manualCompactPlan?: CompactionPlan;
+  /** 原生维护适配器缺省预算仍消费本 Run 已解析的实例保留目标。 */
+  compactionRetention?: CompactionRetention;
   /**
    * 装配完成时回吐工具清单（R4-1 分类占比要按 schema 量「系统工具 / MCP 工具」）。
    * 用回调而不是返回值：调用方（runtime）拿的是 agent 对象，工具清单只在装配期有。
@@ -297,6 +321,7 @@ export type KenFutWorkAgentFactory = (options: {
   backgroundTasks?: {
     registry: import("./background-tasks.js").BackgroundTaskRegistry;
   };
+  taskWork?: TaskWorkBinding;
   /** Code 长命令超时（毫秒，DEC-18）：治理设置值；缺省走 governance 默认。 */
   executeTimeoutMs?: number;
   /** LLM 请求级重试（DEC-18）：治理设置值；缺省走 governance 默认（不无限）。 */
@@ -304,6 +329,8 @@ export type KenFutWorkAgentFactory = (options: {
 }) => KenFutWorkAgent;
 
 export function createKenFutWorkDeepAgent(options: {
+  runExtensions?: readonly AgentRunExtension[];
+  extensionContext?: AgentRunExtensionContext;
   backendResult?: AgentBackendResult;
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
@@ -319,6 +346,9 @@ export function createKenFutWorkDeepAgent(options: {
   toolGateHooks?: ToolGateHooks;
   /** 上下文自动压缩的口径（见 agent/auto-compact.ts）。 */
   autoCompact?: CompactionPlan;
+  /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
+  manualCompactPlan?: CompactionPlan;
+  compactionRetention?: CompactionRetention;
   /**
    * 装配完成时回吐工具清单（R4-1 分类占比要按 schema 量「系统工具 / MCP 工具」）。
    * 用回调而不是返回值：调用方（runtime）拿到的是 agent 对象，工具清单只在装配期有。
@@ -328,6 +358,7 @@ export function createKenFutWorkDeepAgent(options: {
   backgroundTasks?: {
     registry: import("./background-tasks.js").BackgroundTaskRegistry;
   };
+  taskWork?: TaskWorkBinding;
   /** Code 长命令超时（毫秒，DEC-18）。 */
   executeTimeoutMs?: number;
   /** LLM 请求级重试（DEC-18）。 */
@@ -342,6 +373,12 @@ export function createKenFutWorkDeepAgent(options: {
 
   // 运行 preset（DEC-2）：本次装配的能力集口径——运行态工具、子代理清单共用
   const preset = options.preset;
+  // 权威生命周期包住工具目录/权限的提前返回，拒绝也必须进入原产品事件链。
+  const runExtensions = [...(options.runExtensions ?? [])].sort(
+    (left, right) =>
+      Number(Boolean(right.canonicalToolEvents)) -
+      Number(Boolean(left.canonicalToolEvents)),
+  );
 
   applyOpenAICompatEnv(options.env);
 
@@ -393,6 +430,14 @@ export function createKenFutWorkDeepAgent(options: {
             }) as unknown as AgentMiddleware,
           ]
         : [];
+      middleware.unshift(
+        ...runExtensions.map((extension) =>
+          extension.createMiddleware({
+            agentCallId: callId,
+            agentName: definition.name,
+          }),
+        ),
+      );
       const child = createAgent({
         model: resolvedModel,
         name: definition.name,
@@ -517,20 +562,49 @@ export function createKenFutWorkDeepAgent(options: {
    *   （见 stream-adapter 的 `run.compacted`）；
    * - **backend**：与 agent 同一个后端工厂（offload 落到用户自己的工作目录，可追溯）。
    */
-  const summarizationMiddleware: AgentMiddleware[] = options.autoCompact
-    ? [
-        createSummarizationMiddleware({
-          backend: backendResult.factory,
-          trigger: options.autoCompact.trigger,
-          keep: options.autoCompact.keep,
-        }) as unknown as AgentMiddleware,
-      ]
-    : [];
+  const nativeSummarization = createSummarizationMiddleware({
+    backend: backendResult.factory,
+    ...(options.autoCompact
+      ? { trigger: options.autoCompact.trigger, keep: options.autoCompact.keep }
+      : {}),
+  }) as unknown as AgentMiddleware;
+  const compactionTracker = options.autoCompact
+    ? createNativeCompactionTracker(nativeSummarization)
+    : undefined;
+  // 同名覆盖DA默认auto行为，仍保留summary state schema供显式维护operation。
+  const summaryExecution: AgentMiddleware = compactionTracker?.middleware ?? {
+    ...nativeSummarization,
+    wrapModelCall: (request, handler) =>
+      handler({
+        ...request,
+        messages: effectiveNativeMessages(request.messages, request.state),
+      }),
+  };
+  const summaryCall = summaryExecution.wrapModelCall;
+  if (!summaryCall) throw new Error("摘要模型请求入口未装配。");
+  const summarizationMiddleware: AgentMiddleware[] = [
+    {
+      ...summaryExecution,
+      async wrapModelCall(request, handler) {
+        // SDK默认摘要位于普通扩展之前；这里统一采用已消费输入的冻结模型。
+        const model =
+          await options.extensionContext?.modelControl?.resolveCurrent();
+        return summaryCall(
+          { ...request, ...(model ? { model } : {}) },
+          handler,
+        );
+      },
+    },
+  ];
 
   // 后台任务通知（DEC-15）：每次模型调用前注入已结算未消费的通知
-  const notificationMiddleware = options.backgroundTasks
-    ? subagentMiddleware
-    : [];
+  const notificationMiddleware: AgentMiddleware[] = [
+    ...(options.backgroundTasks ? subagentMiddleware : []),
+    ...(options.taskWork
+      ? [createTaskWorkNotificationMiddleware(options.taskWork)]
+      : []),
+    ...(preset === "code" ? [createNativeToolExclusionMiddleware()] : []),
+  ];
 
   // LLM 请求级重试（DEC-18）：maxAttempts 含首次；infinite 为用户显式开启。
   // 默认档（10 次/不无限）也挂——治上游抖动是基线行为，不是可选项。
@@ -542,7 +616,7 @@ export function createKenFutWorkDeepAgent(options: {
       options.llmRetry?.infinite ?? AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
   });
 
-  return createDeepAgent({
+  const agent = createDeepAgent({
     backend: backendResult.factory,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
     model: resolvedModel,
@@ -563,6 +637,9 @@ export function createKenFutWorkDeepAgent(options: {
     ...(options.toolGate
       ? {
           middleware: [
+            ...runExtensions.map((extension) =>
+              extension.createMiddleware({}, options.extensionContext),
+            ),
             ...summarizationMiddleware,
             ...notificationMiddleware,
             llmRetryMiddleware,
@@ -575,6 +652,9 @@ export function createKenFutWorkDeepAgent(options: {
         }
       : {
           middleware: [
+            ...runExtensions.map((extension) =>
+              extension.createMiddleware({}, options.extensionContext),
+            ),
             ...summarizationMiddleware,
             ...notificationMiddleware,
             llmRetryMiddleware,
@@ -585,6 +665,35 @@ export function createKenFutWorkDeepAgent(options: {
           ],
         }),
     tools,
+  });
+  if (options.checkpointer) attachNativeCheckpointDurability(agent);
+  if (compactionTracker && options.checkpointer)
+    compactionTracker.attach(agent);
+  return Object.assign(agent, {
+    ...(options.checkpointer
+      ? {
+          contextHistory: createNativeContextHistory(agent, {
+            model: resolvedModel,
+            backend: backendResult.factory,
+            ...(options.store ? { store: options.store } : {}),
+            plan:
+              options.manualCompactPlan ??
+              options.autoCompact ??
+              resolveCompactionPlan({
+                ...(options.compactionRetention
+                  ? { retention: options.compactionRetention }
+                  : {}),
+              }),
+            llmRetry: options.llmRetry ?? {
+              maxAttempts: AGENT_GOVERNANCE_DEFAULTS.llmRequestMaxRetries,
+              infinite: AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
+            },
+          }),
+        }
+      : {}),
+    canonicalToolEvents: runExtensions.some(
+      (extension) => extension.canonicalToolEvents,
+    ),
   });
 }
 

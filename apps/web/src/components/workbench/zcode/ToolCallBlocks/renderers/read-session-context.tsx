@@ -1,17 +1,10 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/read-session-context.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/read-session-context.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：MessageResponseProps（禁改件 message.tsx）可选属性不接受 undefined，调用点按手册 §4 条件展开。
- */
-
-import { MessageResponse } from "@zui/components/ai-elements/message";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
 import { BookOpenTextIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { MessageResponse } from "@zui/components/ai-elements/message.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
 const READ_SESSION_CONTEXT_TOOL_ICON = (
   <BookOpenTextIcon className="size-4 shrink-0 text-foreground-subtle" />
@@ -67,11 +60,7 @@ function extractTextContent(value: unknown): string | undefined {
   }
 
   if (!isPlainRecord(value)) {
-    if (
-      typeof value === "number" ||
-      typeof value === "boolean" ||
-      typeof value === "bigint"
-    ) {
+    if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
       return String(value);
     }
 
@@ -185,26 +174,17 @@ function extractResultContent(
   return extractTextContent(readRawOutput(toolCall.raw));
 }
 
-export function ReadSessionContextToolCallBlock(
-  context: ToolCallBlockRenderContext,
-) {
+export function ReadSessionContextToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCallNode, isRunning, statusLabel, errorText } = context;
   const { toolCall } = toolCallNode;
   const query = extractQuery(toolCall);
   const sessionId = extractSessionId(toolCall);
   const resultContent = extractResultContent(toolCall);
-  const visibleResult =
-    toolCall.status === "failed" ? errorText : resultContent;
-  const fallbackTitle = intl.formatMessage({
-    id: "chat.toolCall.sessionContext.title",
-  });
+  const visibleResult = toolCall.status === "failed" ? errorText : resultContent;
+  const fallbackTitle = intl.formatMessage({ id: "chat.toolCall.sessionContext.title" });
   const primaryText = useMemo(
-    () => (
-      <span className="min-w-0 truncate">
-        {query ?? toolCall.title ?? fallbackTitle}
-      </span>
-    ),
+    () => <span className="min-w-0 truncate">{query ?? toolCall.title ?? fallbackTitle}</span>,
     [fallbackTitle, query, toolCall.title],
   );
   const secondaryText = useMemo(
@@ -226,9 +206,7 @@ export function ReadSessionContextToolCallBlock(
                 id: "chat.toolCall.sessionContext.query",
               })}
             </h4>
-            <p className="whitespace-pre-wrap break-words text-ui-base text-foreground">
-              {query}
-            </p>
+            <p className="whitespace-pre-wrap break-words text-ui-base text-foreground">{query}</p>
           </section>
         ) : null}
         <section className="space-y-1.5">
@@ -240,22 +218,12 @@ export function ReadSessionContextToolCallBlock(
           {visibleResult ? (
             <MessageResponse
               className="min-w-0 break-words text-ui-base"
-              {...(context.workspacePath === undefined
-                ? {}
-                : { workspacePath: context.workspacePath })}
-              {...(context.theme === undefined ? {} : { theme: context.theme })}
-              {...(context.codePreviewSettings === undefined
-                ? {}
-                : { codePreviewSettings: context.codePreviewSettings })}
-              {...(context.onOpenCodeViewer === undefined
-                ? {}
-                : { onOpenCodeViewer: context.onOpenCodeViewer })}
-              {...(context.onOpenFileLink === undefined
-                ? {}
-                : { onOpenFileLink: context.onOpenFileLink })}
-              {...(context.onOpenBrowserUrl === undefined
-                ? {}
-                : { onOpenExternalUrl: context.onOpenBrowserUrl })}
+              workspacePath={context.workspacePath}
+              theme={context.theme}
+              codePreviewSettings={context.codePreviewSettings}
+              onOpenCodeViewer={context.onOpenCodeViewer}
+              onOpenFileLink={context.onOpenFileLink}
+              onOpenExternalUrl={context.onOpenBrowserUrl}
             >
               {visibleResult}
             </MessageResponse>
@@ -290,7 +258,7 @@ export function ReadSessionContextToolCallBlock(
         showIcon={context.showIcon !== false}
         canToggle={context.canToggle ?? true}
         forceOpen={context.forceOpen ?? false}
-        hideSecondaryTextWhenOpen={true}
+        hideSecondaryTextWhenOpen
         kindLabel={intl.formatMessage({
           id: isRunning
             ? "chat.toolCall.sessionContext.reading"

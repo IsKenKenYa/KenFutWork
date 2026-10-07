@@ -3,6 +3,7 @@ import { z } from "zod";
 import { toolArtifactSchema } from "./artifacts.js";
 import { brandKitAssetTypeSchema } from "./brand-kit-contracts.js";
 import { executionModeSchema } from "./capability-contracts.js";
+import { additionalDirectorySchema } from "./execution-contracts.js";
 import { governanceBoolSetting, governanceSetting } from "./governance.js";
 
 export const identifierSchema = z.string().min(1);
@@ -13,13 +14,9 @@ export const conversationIdSchema = identifierSchema;
 export const runIdSchema = identifierSchema;
 export const messageIdSchema = identifierSchema;
 export const toolCallIdSchema = identifierSchema;
-export const userIdSchema = identifierSchema;
-export const workspaceIdSchema = identifierSchema;
+export const instanceIdSchema = identifierSchema;
 export const projectIdSchema = identifierSchema;
 export const canvasIdSchema = identifierSchema;
-
-export const workspaceTypeSchema = z.enum(["personal", "team"]);
-export const workspaceRoleSchema = z.enum(["owner", "admin", "member"]);
 
 export const runStatusSchema = z.enum([
   "accepted",
@@ -76,6 +73,9 @@ export const videoGenerationPreferenceSchema = z.object({
 export const runCreateRequestSchema = z.object({
   sessionId: sessionIdSchema,
   conversationId: conversationIdSchema,
+  /** Code 的持久 Task/Project 声明；服务端核对归属，不从 Canvas 推导工作目录。 */
+  projectId: projectIdSchema.optional(),
+  taskId: sessionIdSchema.optional(),
   prompt: z.string(),
   canvasId: canvasIdSchema.optional(),
   attachments: z.array(imageAttachmentSchema).optional(),
@@ -86,7 +86,7 @@ export const runCreateRequestSchema = z.object({
   model: z.string().optional(),
   /**
    * agent preset（DEC-2，会话级）：design=画布工具集，code=编码工具集；
-   * 缺省由服务端推断（有 canvasId → design，否则 code）。
+   * 会话模式由服务端持久 Task 持有；preset 仅是声明，不能改变模式或授权。
    */
   preset: z.enum(["design", "code"]).optional(),
   /**
@@ -101,26 +101,6 @@ export const runCreateResponseSchema = z.object({
   sessionId: sessionIdSchema,
   conversationId: conversationIdSchema,
   status: z.literal("accepted"),
-});
-
-export const viewerProfileSchema = z.object({
-  id: userIdSchema,
-  email: z.email(),
-  displayName: z.string().min(1),
-  avatarUrl: z.url().nullable().optional(),
-});
-
-export const workspaceSummarySchema = z.object({
-  id: workspaceIdSchema,
-  name: z.string().min(1),
-  type: workspaceTypeSchema,
-  ownerUserId: userIdSchema,
-});
-
-export const workspaceMembershipSchema = z.object({
-  workspaceId: workspaceIdSchema,
-  userId: userIdSchema,
-  role: workspaceRoleSchema,
 });
 
 export const canvasSummarySchema = z.object({
@@ -141,23 +121,33 @@ export const canvasSummarySchema = z.object({
 export const projectKindSchema = z.enum(["design", "code", "flow"]);
 export type ProjectKind = z.infer<typeof projectKindSchema>;
 
-export const projectSummarySchema = z.object({
+const projectSummaryFields = {
   id: projectIdSchema,
   name: z.string().min(1),
   slug: z.string().min(1),
-  kind: projectKindSchema,
   description: z.string().nullable(),
-  /**
-   * 绑定的本机工作目录绝对路径（Code 项目）。桌面端由系统文件夹选择器给出，
-   * Web 端由「填本机路径」手填；为空表示走沙箱目录 `<sandboxRoot>/<canvasId>`。
-   */
+  /** Code 项目主目录；现有 Task 固定创建时的目录快照。 */
   workDir: z.string().min(1).nullable().optional(),
+  additionalDirectories: z.array(additionalDirectorySchema).default([]),
   thumbnailUrl: z.string().nullable().optional(),
-  workspace: workspaceSummarySchema,
-  primaryCanvas: canvasSummarySchema,
+  instanceId: instanceIdSchema,
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
-});
+};
+
+export const projectSummarySchema = z.discriminatedUnion("kind", [
+  z.object({
+    ...projectSummaryFields,
+    kind: z.literal("code"),
+    workDir: z.string().min(1),
+    primaryCanvas: z.never().optional(),
+  }),
+  z.object({
+    ...projectSummaryFields,
+    kind: z.enum(["design", "flow"]),
+    primaryCanvas: canvasSummarySchema,
+  }),
+]);
 
 export const canvasContentSchema = z.object({
   elements: z.array(z.record(z.string(), z.unknown())).default([]),
@@ -170,10 +160,6 @@ export const canvasDetailSchema = z.object({
   name: z.string().min(1),
   projectId: projectIdSchema,
   content: canvasContentSchema,
-});
-
-export const profileUpdateRequestSchema = z.object({
-  displayName: z.string().trim().min(1).max(100),
 });
 
 /**
@@ -194,8 +180,9 @@ export const terminalShellSchema = z.enum([
 
 export type TerminalShellId = z.infer<typeof terminalShellSchema>;
 
-export const workspaceSettingsSchema = z.object({
-  defaultModel: z.string().min(1),
+export const instanceSettingsSchema = z.object({
+  /** 未配置默认模型时为真实空值，局部设置保存不要求先选模型。 */
+  defaultModel: z.string(),
   /** 终端默认 shell（用户口径：「可以在设置里配置默认的」）。 */
   terminalShell: terminalShellSchema.default("auto"),
   /**
@@ -261,6 +248,10 @@ export const workspaceSettingsSchema = z.object({
    * 用户转录不变、原文 offload 到工作区 /conversation_history/）。关掉时中间件不挂。
    */
   autoCompactEnabled: z.boolean().default(true),
+  /** 摘要后近期原始消息的保留目标；工具配对和溢出恢复可能调整实际数量。 */
+  compactKeepMessages: governanceSetting("compactKeepMessages"),
+  /** 窗口未知时的保留目标；自动与手动维护共用，独立于自动压缩开关。 */
+  compactFallbackKeepMessages: governanceSetting("compactFallbackKeepMessages"),
   /**
    * run 失败自动重试上限（含首次尝试；0 = 不重试）。
    * 缺省 10；服务端对「已执行工具」的轮次一律不重试（副作用安全），见 agent/run-retry.ts。
@@ -283,6 +274,42 @@ export const workspaceSettingsSchema = z.object({
   llmInfiniteRetry: governanceBoolSetting("llmInfiniteRetry"),
   /** Code 模式 execute 命令超时（毫秒；下限 5s 上限 30min）。 */
   executeTimeoutMs: governanceSetting("executeTimeoutMs"),
+  /** 模型请求无输出上限；工具与人审等待分别治理，0关闭。 */
+  agentStreamIdleTimeoutMs: governanceSetting("agentStreamIdleTimeoutMs"),
+  /** Code 宿主通知通道重连间隔；与执行超时分别治理。 */
+  codeUiReconnectDelayMs: governanceSetting("codeUiReconnectDelayMs"),
+  localAccessTicketTtlMs: governanceSetting("localAccessTicketTtlMs"),
+  localAccessSessionMaxAgeMs: governanceSetting("localAccessSessionMaxAgeMs"),
+  localDataMigrationPollMs: governanceSetting("localDataMigrationPollMs"),
+  /** launcher冷启动接通前不能读取库设置，只采用env兜底或默认值。 */
+  localServiceStartupTimeoutMs: governanceSetting(
+    "localServiceStartupTimeoutMs",
+  ),
+  localServiceStartupPollMs: governanceSetting("localServiceStartupPollMs"),
+  codeReadMaxBytes: governanceSetting("codeReadMaxBytes"),
+  codeReadPageCharacters: governanceSetting("codeReadPageCharacters"),
+  codeSearchMaxResults: governanceSetting("codeSearchMaxResults"),
+  codeSearchMaxBytes: governanceSetting("codeSearchMaxBytes"),
+  codePatchMaxBytes: governanceSetting("codePatchMaxBytes"),
+  codePdfMaxPages: governanceSetting("codePdfMaxPages"),
+  codePdfRenderScale: governanceSetting("codePdfRenderScale"),
+  codeAttachmentMaxBytes: governanceSetting("codeAttachmentMaxBytes"),
+  codeAttachmentChunkMaxBytes: governanceSetting("codeAttachmentChunkMaxBytes"),
+  codeAttachmentMaxChunks: governanceSetting("codeAttachmentMaxChunks"),
+  codeAttachmentMaxConcurrent: governanceSetting("codeAttachmentMaxConcurrent"),
+  codeAttachmentStagedMaxBytes: governanceSetting(
+    "codeAttachmentStagedMaxBytes",
+  ),
+  codeAttachmentUploadTtlMs: governanceSetting("codeAttachmentUploadTtlMs"),
+  codeAttachmentMaxPerInput: governanceSetting("codeAttachmentMaxPerInput"),
+  codeAttachmentMaxRetries: governanceSetting("codeAttachmentMaxRetries"),
+  codeAttachmentRetryDelayMs: governanceSetting("codeAttachmentRetryDelayMs"),
+  processMaxOutputBytes: governanceSetting("processMaxOutputBytes"),
+  processPreviewMaxChars: governanceSetting("processPreviewMaxChars"),
+  processYieldMs: governanceSetting("processYieldMs"),
+  processKillGraceMs: governanceSetting("processKillGraceMs"),
+  terminalMaxSessions: governanceSetting("terminalMaxSessions"),
+  sandboxProbeTimeoutMs: governanceSetting("sandboxProbeTimeoutMs"),
   /** Computer Use：单个桌面动作超时（毫秒）。 */
   computerUseActionTimeoutMs: governanceSetting("computerUseActionTimeoutMs"),
   /** Computer Use：观察树文本预算（字节），超限按优先级裁剪。 */
@@ -295,6 +322,13 @@ export const workspaceSettingsSchema = z.object({
   computerUseMaxActionsPerRun: governanceSetting("computerUseMaxActionsPerRun"),
   /** Computer Use：控制租约会话时长上限（毫秒）。 */
   computerUseSessionMaxMs: governanceSetting("computerUseSessionMaxMs"),
+  computerUseAxMaxDepth: governanceSetting("computerUseAxMaxDepth"),
+  computerUseAxMaxChildren: governanceSetting("computerUseAxMaxChildren"),
+  computerUseAxTitleMaxChars: governanceSetting("computerUseAxTitleMaxChars"),
+  computerUseAxValueMaxChars: governanceSetting("computerUseAxValueMaxChars"),
+  computerUseAxMaxActions: governanceSetting("computerUseAxMaxActions"),
+  computerUseInputDelayMs: governanceSetting("computerUseInputDelayMs"),
+  computerUseMcpKeepAliveMs: governanceSetting("computerUseMcpKeepAliveMs"),
 });
 
 export const modelInfoSchema = z.object({
@@ -331,6 +365,8 @@ export const chatSessionSummarySchema = z.object({
   id: chatSessionIdSchema,
   title: z.string(),
   updatedAt: timestampSchema,
+  projectId: projectIdSchema,
+  mode: projectKindSchema,
 });
 
 export const textBlockSchema = z.object({
@@ -462,7 +498,7 @@ export const assetObjectSchema = z.object({
   objectPath: z.string().min(1),
   mimeType: z.string().min(1).nullable(),
   byteSize: z.number().int().nonnegative().nullable(),
-  workspaceId: workspaceIdSchema,
+  instanceId: instanceIdSchema,
   projectId: projectIdSchema.nullable(),
   createdAt: timestampSchema,
 });
@@ -490,14 +526,10 @@ export type ChatMessageCreateRequest = z.infer<
   typeof chatMessageCreateRequestSchema
 >;
 export type ChatToolActivity = z.infer<typeof chatToolActivitySchema>;
-export type ProfileUpdateRequest = z.infer<typeof profileUpdateRequestSchema>;
-export type WorkspaceSettings = z.infer<typeof workspaceSettingsSchema>;
+export type InstanceSettings = z.infer<typeof instanceSettingsSchema>;
 export type ModelInfo = z.infer<typeof modelInfoSchema>;
 export type RunCreateRequest = z.infer<typeof runCreateRequestSchema>;
 export type RunCreateResponse = z.infer<typeof runCreateResponseSchema>;
-export type ViewerProfile = z.infer<typeof viewerProfileSchema>;
-export type WorkspaceSummary = z.infer<typeof workspaceSummarySchema>;
-export type WorkspaceMembership = z.infer<typeof workspaceMembershipSchema>;
 export type CanvasSummary = z.infer<typeof canvasSummarySchema>;
 export type ProjectSummary = z.infer<typeof projectSummarySchema>;
 export type CanvasContent = z.infer<typeof canvasContentSchema>;

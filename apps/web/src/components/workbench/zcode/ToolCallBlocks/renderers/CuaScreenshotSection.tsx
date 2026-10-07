@@ -1,24 +1,9 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/CuaScreenshotSection.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/CuaScreenshotSection.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogTrigger,
-} from "@zui/components/ui/dialog";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { CuaScreenshotDetails } from "@zui/ToolCallBlocks/renderers/cuaScreenshotDetails";
 import { ImageIcon } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@zui/components/ui/dialog.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { CuaScreenshotDetails } from "@zui/ToolCallBlocks/renderers/cuaScreenshotDetails.js";
 
-export function CuaScreenshotSection({
-  screenshot,
-}: {
-  screenshot: CuaScreenshotDetails;
-}) {
+export function CuaScreenshotSection({ screenshot }: { screenshot: CuaScreenshotDetails }) {
   const { intl } = useZCodeIntl();
   const metadata: Array<[string, string]> = [];
   const titleId = screenshot.zoom
@@ -29,8 +14,7 @@ export function CuaScreenshotSection({
       "chat.toolCall.cua.details.scope",
       intl.formatMessage({ id: "chat.toolCall.cua.details.fullScreen" }),
     ]);
-  if (screenshot.region)
-    metadata.push(["chat.toolCall.cua.details.region", screenshot.region]);
+  if (screenshot.region) metadata.push(["chat.toolCall.cua.details.region", screenshot.region]);
   if (screenshot.width && screenshot.height)
     metadata.push([
       "chat.toolCall.cua.details.dimensions",
@@ -49,29 +33,23 @@ export function CuaScreenshotSection({
 
   return (
     <section className="space-y-2 border-t border-border pt-3">
-      <h4 className="text-sm text-foreground-subtle">
-        {intl.formatMessage({ id: titleId })}
-      </h4>
+      <h4 className="text-sm text-foreground-subtle">{intl.formatMessage({ id: titleId })}</h4>
       {screenshot.dataUrl ? (
         <Dialog>
-          <DialogTrigger asChild={true}>
+          <DialogTrigger asChild>
             <button
               type="button"
               className="block w-full overflow-hidden rounded-lg border border-border bg-surface outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <img
                 src={screenshot.dataUrl}
-                alt={intl.formatMessage({
-                  id: "chat.toolCall.cua.details.openScreenshot",
-                })}
+                alt={intl.formatMessage({ id: "chat.toolCall.cua.details.openScreenshot" })}
                 className="max-h-96 w-full object-contain"
               />
             </button>
           </DialogTrigger>
           <DialogContent className="rounded-xl max-h-[calc(100vh-2rem)] max-w-[calc(100vw-2rem)] overflow-auto p-3">
-            <DialogTitle className="sr-only">
-              {intl.formatMessage({ id: titleId })}
-            </DialogTitle>
+            <DialogTitle className="sr-only">{intl.formatMessage({ id: titleId })}</DialogTitle>
             <img
               src={screenshot.dataUrl}
               alt=""
@@ -95,9 +73,7 @@ export function CuaScreenshotSection({
         <dl className="grid grid-cols-[minmax(4rem,auto)_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
           {metadata.map(([labelId, value]) => (
             <div key={labelId} className="contents">
-              <dt className="text-foreground-subtlest">
-                {intl.formatMessage({ id: labelId })}
-              </dt>
+              <dt className="text-foreground-subtlest">{intl.formatMessage({ id: labelId })}</dt>
               <dd className="text-foreground">{value}</dd>
             </div>
           ))}

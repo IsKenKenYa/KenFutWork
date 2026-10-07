@@ -2,14 +2,15 @@ import type {
   UsageStatsResponse,
   UsageSummaryResponse,
 } from "@kenfutwork/shared";
-
-import type { AuthenticatedUser } from "../auth/types.js";
-import type { ViewerRepository } from "../bootstrap/repository.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import type { UsageRecordRow, UsageRepository } from "./repository.js";
 
 /**
- * usage 缝（DEC-6）：token/成本计量，按 workspace/provider/model/run 落账。
- * 写入与读取都经 `persistence` 缝的工作区作用域（隔离口径与其它聚合一致）。
+ * usage 缝（DEC-6）：token/成本计量，按 instance/provider/model/run 落账。
+ * 写入与读取都经 `persistence` 缝的实例作用域（隔离口径与其它聚合一致）。
  */
 
 const SUMMARY_ROW_LIMIT = 10000;
@@ -18,9 +19,9 @@ const STATS_ROW_LIMIT = 20000;
 const HEATMAP_DAYS = 365;
 
 export interface UsageEntry {
-  workspaceId: string;
-  /** 归属用户：平台池计费与管理后台按用户聚合都需要。 */
-  userId?: string;
+  instanceId: string;
+  /** 发起接入客户端只作为可选遥测，稳定归属始终是实例。 */
+  accessClientId?: string | null;
   provider: string;
   model: string;
   capability: "chat" | "image" | "video";
@@ -35,14 +36,9 @@ export interface UsageEntry {
 
 export interface UsageService {
   record(entry: UsageEntry): Promise<void>;
-  summarize(user: AuthenticatedUser): Promise<UsageSummaryResponse>;
+  summarize(user: LocalActor): Promise<UsageSummaryResponse>;
   /** 用户侧使用统计（R4-2）：按天活动/连续天数/按模型，窗口 rangeDays 天。 */
-  stats(
-    user: AuthenticatedUser,
-    rangeDays: number,
-  ): Promise<UsageStatsResponse>;
-  /** agent 链路结算：run 只有 userId，落账前解析个人工作区。 */
-  resolveWorkspaceIdByUser(userId: string): Promise<string | undefined>;
+  stats(user: LocalActor, rangeDays: number): Promise<UsageStatsResponse>;
 }
 
 type ModelBucket = {
@@ -56,12 +52,11 @@ type ModelBucket = {
 
 export function createUsageService(options: {
   repository: UsageRepository;
-  /** 复用 workspaces 域的数据访问（worker 进程无 auth，故不经 viewer 服务）。 */
-  workspaces: ViewerRepository;
+  localInstance: LocalInstanceService;
   /** 可注入时钟（测试固定「今天」）；缺省真实时间。 */
   now?: () => Date;
 }): UsageService {
-  const { repository, workspaces } = options;
+  const { repository, localInstance } = options;
 
   function aggregate(rows: UsageRecordRow[]) {
     const totals = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
@@ -120,6 +115,8 @@ export function createUsageService(options: {
 
     const dailyTotals = new Map<string, number>();
     const modelTotals = new Map<string, { provider: string; tokens: number }>();
+    /** 逐日 × 模型：趋势图按模型画多条线（与 daily 同窗口、按下标对齐）。 */
+    const modelDaily = new Map<string, Map<string, number>>();
     const totals = { tokens: 0, inputTokens: 0, outputTokens: 0 };
 
     // 热力图要铺满一年（参考图是一整年的格子），故另起一个窗口的逐日聚合
@@ -143,6 +140,9 @@ export function createUsageService(options: {
       };
       bucket.tokens += tokens;
       modelTotals.set(row.model, bucket);
+      const perDay = modelDaily.get(row.model) ?? new Map<string, number>();
+      perDay.set(date, (perDay.get(date) ?? 0) + tokens);
+      modelDaily.set(row.model, perDay);
     }
 
     const heatmap: UsageStatsResponse["heatmap"] = [];
@@ -173,6 +173,25 @@ export function createUsageService(options: {
       cursor = addUtcDays(cursor, -1);
     }
 
+    const byModel = [...modelTotals.entries()]
+      .map(([model, bucket]) => ({
+        provider: bucket.provider,
+        model,
+        tokens: bucket.tokens,
+      }))
+      .sort((a, b) => b.tokens - a.tokens);
+
+    // 逐日 × 模型：与 byModel 同序（用量降序），逐日数组与 daily 按下标对齐
+    const dailyByModel: UsageStatsResponse["dailyByModel"] = byModel.map(
+      (entry) => {
+        const perDay = modelDaily.get(entry.model);
+        return {
+          model: entry.model,
+          tokens: daily.map((day) => perDay?.get(day.date) ?? 0),
+        };
+      },
+    );
+
     return {
       rangeDays,
       totals,
@@ -182,33 +201,19 @@ export function createUsageService(options: {
       longestSessionSeconds,
       daily,
       heatmap,
-      byModel: [...modelTotals.entries()]
-        .map(([model, bucket]) => ({
-          provider: bucket.provider,
-          model,
-          tokens: bucket.tokens,
-        }))
-        .sort((a, b) => b.tokens - a.tokens),
+      byModel,
+      dailyByModel,
     };
   }
 
-  async function resolveWorkspaceIdByUser(
-    userId: string,
-  ): Promise<string | undefined> {
-    const workspace = await workspaces
-      .findPersonalWorkspace(userId)
-      .catch(() => null);
-    return workspace?.id;
-  }
-
   return {
-    resolveWorkspaceIdByUser,
-
     async record(entry) {
       try {
         await repository.insert({
-          workspaceId: entry.workspaceId,
-          ...(entry.userId ? { userId: entry.userId } : {}),
+          instanceId: entry.instanceId,
+          ...(entry.accessClientId
+            ? { accessClientId: entry.accessClientId }
+            : {}),
           provider: entry.provider,
           model: entry.model,
           capability: entry.capability,
@@ -234,13 +239,10 @@ export function createUsageService(options: {
     },
 
     async summarize(user): Promise<UsageSummaryResponse> {
-      const workspaceId = await resolveWorkspaceIdByUser(user.id);
-      if (!workspaceId) {
-        throw new Error("[usage] summary query failed: workspace not found");
-      }
+      const { instanceId } = await localInstance.resolve(user);
 
       const rows = await repository
-        .listRecent(workspaceId, SUMMARY_ROW_LIMIT)
+        .listRecent(instanceId, SUMMARY_ROW_LIMIT)
         .catch((error: unknown) => {
           throw new Error(
             `[usage] summary query failed: ${
@@ -269,12 +271,9 @@ export function createUsageService(options: {
     },
 
     async stats(user, rangeDays): Promise<UsageStatsResponse> {
-      const workspaceId = await resolveWorkspaceIdByUser(user.id);
-      if (!workspaceId) {
-        throw new Error("[usage] stats query failed: workspace not found");
-      }
+      const { instanceId } = await localInstance.resolve(user);
       const rows = await repository
-        .listRecent(workspaceId, STATS_ROW_LIMIT)
+        .listRecent(instanceId, STATS_ROW_LIMIT)
         .catch((error: unknown) => {
           throw new Error(
             `[usage] stats query failed: ${
@@ -285,7 +284,7 @@ export function createUsageService(options: {
       // 最长聊天时长来自会话/消息表（与 usage_records 无关的第二个数据源）：
       // 它失败不该把整页统计打成 500 —— 卡片显示 0 并在日志留痕，其余数字照常给。
       const longestSessionSeconds = await repository
-        .longestSessionSeconds(workspaceId)
+        .longestSessionSeconds(instanceId)
         .catch((error: unknown) => {
           console.error(
             "[usage] longestSessionSeconds query failed:",

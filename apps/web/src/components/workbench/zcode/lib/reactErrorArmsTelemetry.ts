@@ -1,14 +1,9 @@
-/**
- * zcode 照搬：`@/lib/reactErrorArmsTelemetry.ts`（references/zcode/packages/ui/src/lib/reactErrorArmsTelemetry.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 import {
+  redactTelemetryText,
   type ArmsCustomEventPayload,
   type IPlatformService,
-  redactTelemetryText,
-} from "@zui/lib/zcode-shared";
-import { logger } from "@zui/logger";
+} from "@zcode/shared";
+import { logger } from "@zui/logger.js";
 
 /** ARMS 自定义事件名：React 错误边界捕获的渲染层异常 */
 const REACT_ERROR_ARMS_EVENT_NAME = "perf_react_error";
@@ -52,12 +47,8 @@ function buildReactErrorArmsPayload(params: {
   componentStack: string;
   scope?: string;
 }): ArmsCustomEventPayload {
-  const errorStack = params.error.stack
-    ? redactStack(params.error.stack)
-    : undefined;
-  const componentStack = params.componentStack
-    ? redactStack(params.componentStack)
-    : undefined;
+  const errorStack = params.error.stack ? redactStack(params.error.stack) : undefined;
+  const componentStack = params.componentStack ? redactStack(params.componentStack) : undefined;
   return {
     name: REACT_ERROR_ARMS_EVENT_NAME,
     group: REACT_ERROR_ARMS_GROUP,
@@ -92,15 +83,13 @@ export function reportReactErrorToArms(params: {
 
   try {
     const payload = buildReactErrorArmsPayload(params);
-    void Promise.resolve(armsReporter.reportArmsCustomEvent(payload)).catch(
-      (error) => {
-        // 原因：ARMS 属观测链路，错误边界的 fallback 恢复流程不得因埋点失败而中断。
-        logger.warn("[react-error] ARMS 自定义事件上报失败", {
-          scope: params.scope ?? "app",
-          error: error instanceof Error ? error.message : String(error),
-        });
-      },
-    );
+    void Promise.resolve(armsReporter.reportArmsCustomEvent(payload)).catch((error) => {
+      // 原因：ARMS 属观测链路，错误边界的 fallback 恢复流程不得因埋点失败而中断。
+      logger.warn("[react-error] ARMS 自定义事件上报失败", {
+        scope: params.scope ?? "app",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
   } catch (error) {
     logger.warn("[react-error] ARMS 自定义事件上报异常", {
       scope: params.scope ?? "app",

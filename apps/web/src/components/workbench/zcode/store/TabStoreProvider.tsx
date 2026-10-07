@@ -1,24 +1,12 @@
 /**
- * zcode 照搬：`@/store/TabStoreProvider.tsx`（references/zcode/packages/ui/src/store/TabStoreProvider.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-/**
  * TabStoreProvider —— 初始化 Tab Zustand store 并通过 React Context 提供
  *
  * 每个窗口独立挂载，tab 状态不跨窗口广播。
  */
-
-import { shouldExposeE2EStoreBridge } from "@zui/lib/e2eStoreBridge";
-import {
-  createContext,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useRef,
-} from "react";
+import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
 import { useStore } from "zustand";
-import { createTabStore, type TabStore, type TabStoreState } from "./tabStore";
+import { shouldExposeE2EStoreBridge } from "@zui/lib/e2eStoreBridge.js";
+import { createTabStore, type TabStore, type TabStoreState } from "./tabStore.js";
 
 declare global {
   interface Window {
@@ -53,11 +41,7 @@ export function TabStoreProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  return (
-    <TabStoreContext.Provider value={storeRef.current}>
-      {children}
-    </TabStoreContext.Provider>
-  );
+  return <TabStoreContext.Provider value={storeRef.current}>{children}</TabStoreContext.Provider>;
 }
 
 /**
@@ -76,9 +60,7 @@ export function useTabStore<T>(selector: (state: TabStoreState) => T): T {
 }
 
 /** 供可独立渲染的展示组件读取；无 Root provider 时回退为空 tab 状态。 */
-export function useOptionalTabStore<T>(
-  selector: (state: TabStoreState) => T,
-): T {
+export function useOptionalTabStore<T>(selector: (state: TabStoreState) => T): T {
   const store = useContext(TabStoreContext);
   return useStore(store ?? fallbackTabStore, selector);
 }

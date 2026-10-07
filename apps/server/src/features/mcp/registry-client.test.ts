@@ -78,6 +78,8 @@ describe("官方注册表条目映射", () => {
       },
     });
     expect(view.installable).toBe(true);
+    expect(view.kind).toBe("stdio");
+    expect(view.suggestedUrl).toBeNull();
     expect(view.suggestedCommand).toBe("npx");
     expect(view.suggestedArgs).toEqual([
       "-y",
@@ -106,15 +108,37 @@ describe("官方注册表条目映射", () => {
     expect(view.suggestedArgs).toEqual(["mcp-server-fetch==0.6.0"]);
   });
 
-  it("只有远程（HTTP/SSE）：不可安装且给出原因（不静默）", () => {
+  it("只有远程（HTTP/SSE）：走 http 类型，可安装且给出建议端点", () => {
     const view = toRegistryServerView({
       server: {
         name: "com.example/remote",
         remotes: [{ type: "sse", url: "https://example.com/sse" }],
       },
     });
-    expect(view.installable).toBe(false);
-    expect(view.unsupportedReason).toContain("远程");
+    expect(view.kind).toBe("http");
+    expect(view.installable).toBe(true);
+    expect(view.unsupportedReason).toBeNull();
+    expect(view.suggestedUrl).toBe("https://example.com/sse");
+    expect(view.suggestedCommand).toBeNull();
+  });
+
+  it("远程优先：同时有 stdio 包与远程端点时按 http 处理", () => {
+    const view = toRegistryServerView({
+      server: {
+        name: "com.example/both",
+        packages: [
+          {
+            registryType: "npm",
+            identifier: "pkg",
+            version: "1.0.0",
+            transportType: "stdio",
+          },
+        ],
+        remotes: [{ type: "streamable-http", url: "https://example.com/mcp" }],
+      },
+    });
+    expect(view.kind).toBe("http");
+    expect(view.suggestedUrl).toBe("https://example.com/mcp");
   });
 
   it("不支持包生态（oci）与缺包：不可安装且原因可读", () => {

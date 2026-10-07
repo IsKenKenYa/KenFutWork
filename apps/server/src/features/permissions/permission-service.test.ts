@@ -6,6 +6,19 @@ import {
 } from "./permission-service.js";
 
 describe("permissions 缝（DEC-4）", () => {
+  it("不带调用绑定的 once 不再假装授权成功", () => {
+    const service = createPermissionService();
+    expect(() => service.approve("Write", { scope: "once" })).toThrow(/绑定/);
+    expect(service.evaluate({ toolName: "Write" }).decision).toBe("deny");
+  });
+
+  it("真实 Code 写入与命令工具在 default 档等待审批", () => {
+    const service = createPermissionService();
+    for (const toolName of ["Write", "Edit", "ApplyPatch", "Bash"]) {
+      expect(service.evaluate({ toolName }).decision, toolName).toBe("deny");
+    }
+  });
+
   it("安全工具在任意档位直接放行", () => {
     const svc = createPermissionService();
     expect(svc.evaluate({ toolName: "preview_file" }).decision).toBe("allow");
@@ -16,7 +29,8 @@ describe("permissions 缝（DEC-4）", () => {
     const svc = createPermissionService();
     const decision = svc.evaluate({ toolName: "mcp__fs__write" });
     expect(decision.decision).toBe("deny");
-    expect(decision.reason).toMatch(/等待用户审批/);
+    // 理由必须说清**去哪批准**（模型据此转述给用户，含糊会让它编出「审批弹窗」）
+    expect(decision.reason).toMatch(/设置 → 权限 → 工具审批/);
   });
 
   it("永久审批记忆放行；thread 记忆只影响该会话", () => {
@@ -116,7 +130,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
     );
     // 普通工具不受这条规则影响（execute 仍走 default 的审批要求）
     expect(svc.evaluate({ toolName: "execute" }).reason).toMatch(
-      /等待用户审批/,
+      /设置 → 权限 → 工具审批/,
     );
   });
 

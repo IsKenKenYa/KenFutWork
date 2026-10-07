@@ -1,16 +1,10 @@
-/**
- * zcode 照搬：`@/components/coding-plan-quota-reset/CodingPlanQuotaResetAction.tsx`（references/zcode/packages/ui/src/components/coding-plan-quota-reset/CodingPlanQuotaResetAction.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）。
- */
-
-import { ControlHintTooltip } from "@zui/ControlHintTooltip";
-import { Button } from "@zui/components/ui/button";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { burstCodingPlanQuotaResetConfetti } from "@zui/lib/codingPlanQuotaResetConfetti";
-import type { CodingPlanResetType } from "@zui/lib/zcode-shared";
 import { CheckIcon, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { CodingPlanResetType } from "@zcode/shared";
+import { Button } from "@zui/components/ui/button.js";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { burstCodingPlanQuotaResetConfetti } from "@zui/lib/codingPlanQuotaResetConfetti.js";
 
 const MANUAL_RESET_SUCCESS_DISPLAY_MS = 600;
 
@@ -30,10 +24,10 @@ export function LocalizedCodingPlanQuotaResetAction({
   completedAt: number | null;
   processing: boolean;
   /** 自动/运营完成时由 Composer 触发器在 hover 展开面板后要求补播撒花的 used_at；手动重置为 null。 */
-  autoCelebrateCompletedAt?: number | null | undefined;
-  onAutoCelebrated?: ((completedAt: number) => void) | undefined;
+  autoCelebrateCompletedAt?: number | null;
+  onAutoCelebrated?: (completedAt: number) => void;
   /** 五小时与周额度共用同一按钮组件，仅无障碍/处理中文案按类型区分。 */
-  resetType?: CodingPlanResetType | undefined;
+  resetType?: CodingPlanResetType;
 } & CodingPlanQuotaResetActionBehavior) {
   const { intl, locale } = useZCodeIntl();
   const completedTime = completedAt
@@ -59,10 +53,7 @@ export function LocalizedCodingPlanQuotaResetAction({
       })}
       completedTooltipLabel={
         completedTime
-          ? intl.formatMessage(
-              { id: "codingPlan.quotaReset.completedAt" },
-              { time: completedTime },
-            )
+          ? intl.formatMessage({ id: "codingPlan.quotaReset.completedAt" }, { time: completedTime })
           : undefined
       }
       processing={processing}
@@ -96,21 +87,19 @@ export function CodingPlanQuotaResetAction({
   onCelebrate = burstCodingPlanQuotaResetConfetti,
 }: {
   ariaLabel: string;
-  autoCelebrateCompletedAt?: number | null | undefined;
+  autoCelebrateCompletedAt?: number | null;
   completedAt: number | null;
   completedLabel: string;
-  completedTooltipLabel?: string | undefined;
+  completedTooltipLabel?: string;
   processing: boolean;
   processingLabel: string;
   resetLabel: string;
   successLabel: string;
-  onAutoCelebrated?: ((completedAt: number) => void) | undefined;
-  onCelebrate?: ((origin: HTMLElement) => void) | undefined;
+  onAutoCelebrated?: (completedAt: number) => void;
+  onCelebrate?: (origin: HTMLElement) => void;
 } & CodingPlanQuotaResetActionBehavior) {
   const [localProcessing, setLocalProcessing] = useState(false);
-  const [successCompletedAt, setSuccessCompletedAt] = useState<number | null>(
-    null,
-  );
+  const [successCompletedAt, setSuccessCompletedAt] = useState<number | null>(null);
   const previousCompletedAtRef = useRef(completedAt);
   const clickedOriginRef = useRef<HTMLElement | null>(null);
   const awaitingOwnCompletionRef = useRef(false);
@@ -178,12 +167,11 @@ export function CodingPlanQuotaResetAction({
 
   const awaitingSuccessRender = Boolean(
     completedAt !== null &&
-      awaitingOwnCompletionRef.current &&
-      completedAt !== previousCompletedAtRef.current,
+    awaitingOwnCompletionRef.current &&
+    completedAt !== previousCompletedAtRef.current,
   );
   const showSuccess =
-    completedAt !== null &&
-    (successCompletedAt === completedAt || awaitingSuccessRender);
+    completedAt !== null && (successCompletedAt === completedAt || awaitingSuccessRender);
 
   if (showSuccess) {
     return (
@@ -192,7 +180,7 @@ export function CodingPlanQuotaResetAction({
         variant="ghost"
         size="xs"
         aria-label={successLabel}
-        disabled={true}
+        disabled
         className="rounded-md px-1 text-ui-sm text-success hover:text-success"
       >
         <CheckIcon
@@ -217,9 +205,7 @@ export function CodingPlanQuotaResetAction({
     );
 
     return completedTooltipLabel ? (
-      <ControlHintTooltip title={completedTooltipLabel}>
-        {completedText}
-      </ControlHintTooltip>
+      <ControlHintTooltip title={completedTooltipLabel}>{completedText}</ControlHintTooltip>
     ) : (
       completedText
     );
@@ -256,10 +242,7 @@ export function CodingPlanQuotaResetAction({
       }}
     >
       {effectiveProcessing ? (
-        <Loader2
-          className="size-3 animate-spin motion-reduce:animate-none"
-          aria-hidden="true"
-        />
+        <Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
       ) : (
         resetLabel
       )}

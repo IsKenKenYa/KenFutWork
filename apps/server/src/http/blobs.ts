@@ -14,7 +14,7 @@ import { LOCAL_PUBLIC_BUCKETS } from "../features/blob/types.js";
  *
  * 桌面单用户形态下，`getPublicUrl` 指向这里；公开桶直接放行，非公开桶要求有效签名
  * （`?exp=<秒>&sig=<hmac>`）——签名由 `local-fs` Provider 生成，密钥是
- * `KENFUTWORK_CREDENTIAL_SECRET`，与上传侧同源。
+ * 数据目录内的独立 `blob-signing-key`，与上传侧同源。
  *
  * 路径经 `resolveBlobPath` 规范化并做前缀校验：拒绝 `..` 逃逸出对象根目录
  * （`bucket`/`path` 都来自 URL，属外部输入）。

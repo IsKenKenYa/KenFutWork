@@ -1,18 +1,10 @@
-/**
- * zcode 照搬：`@/hooks/useFileContextActions`（references/zcode/packages/ui/src/hooks/useFileContextActions.ts）。
- * 许可证：Apache-2.0（zcode）。
- * 适配：platform 走 @zui/hooks/usePlatform（stub 实现，文件管理器能力未接通时 canReveal=false，
- * 菜单自动降级只剩复制路径——与 zcode 远程工作区降级口径一致）。
- */
-"use client";
-
 import { useCallback } from "react";
-import { toast } from "../components/ui/toast";
-import { useZCodeIntl } from "../i18n/IntlProvider";
-import { getContainingDirectoryPath } from "../lib/path";
-import type { OpenInEditorRemoteTarget } from "../lib/zcode-shared";
-import { logger } from "../logger";
-import { usePlatform } from "./usePlatform";
+import type { OpenInEditorRemoteTarget } from "@zcode/shared";
+import { toast } from "@zui/components/ui/toast.js";
+import { usePlatform } from "@zui/hooks/usePlatform.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { getContainingDirectoryPath } from "@zui/lib/path.js";
+import { logger } from "@zui/logger.js";
 
 interface FileContextActionOptions {
   canOpenLocalFileManager?: boolean;
@@ -47,8 +39,7 @@ export function useFileContextActions(options: FileContextActionOptions = {}) {
   const remoteTarget = options.remoteTarget;
   const workspaceIdentity = options.workspaceIdentity;
   const openFailedMessage =
-    options.openFailedMessage ??
-    intl.formatMessage({ id: "appHeader.openInFileManagerFailed" });
+    options.openFailedMessage ?? intl.formatMessage({ id: "appHeader.openInFileManagerFailed" });
 
   const canRevealInFileManager = useCallback(
     (target: FileContextActionTarget) =>
@@ -82,8 +73,7 @@ export function useFileContextActions(options: FileContextActionOptions = {}) {
   );
   const copyAbsolutePath = copyPath;
   const copyRelativePath = useCallback(
-    (target: FileContextActionTarget) =>
-      copyPathText(target.relativePath ?? target.path),
+    (target: FileContextActionTarget) => copyPathText(target.relativePath ?? target.path),
     [copyPathText],
   );
 
@@ -102,7 +92,7 @@ export function useFileContextActions(options: FileContextActionOptions = {}) {
           ? await platform.openInEditor("explorer", openPath, {
               pathKind: "directory",
               remoteTarget,
-              ...(workspaceIdentity === undefined ? {} : { workspaceIdentity }),
+              workspaceIdentity,
             })
           : await platform.openInFileManager(openPath);
       if (result.success) {
@@ -115,13 +105,7 @@ export function useFileContextActions(options: FileContextActionOptions = {}) {
       });
       toast(openFailedMessage);
     },
-    [
-      canRevealInFileManager,
-      openFailedMessage,
-      platform,
-      remoteTarget,
-      workspaceIdentity,
-    ],
+    [canRevealInFileManager, openFailedMessage, platform, remoteTarget, workspaceIdentity],
   );
 
   return {

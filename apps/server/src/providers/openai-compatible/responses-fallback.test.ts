@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { HumanMessage } from "@langchain/core/messages";
-import { ChatOpenAI } from "@langchain/openai";
+import { ChatOpenAIResponses } from "@langchain/openai";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createInstanceChatModel, isResponsesUnavailable } from "./index.js";
@@ -122,13 +122,13 @@ describe("createInstanceChatModel（Responses 自动回落，真实 HTTP 桩）"
     expect(onResponsesFallback).not.toHaveBeenCalled();
   });
 
-  it("useResponsesApi 已启用（构造字段可读）", () => {
+  it("probe 确认 Responses 后构造原生 Responses 模型", () => {
     const model = createInstanceChatModel("gpt-x", {
       apiKey: "k",
       baseUrl,
       responsesApi: true,
     });
-    // 包装子类继承 ChatOpenAI——探测驱动的 Responses 主用路径
-    expect(model).toBeInstanceOf(ChatOpenAI);
+    // 原生 API 类不受 ChatOpenAI 模型名称的方言启发式影响。
+    expect(model).toBeInstanceOf(ChatOpenAIResponses);
   });
 });

@@ -1,10 +1,4 @@
-/**
- * zcode 照搬：`@/lib/planToolCall.ts`（references/zcode/packages/ui/src/lib/planToolCall.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；
- *           P6 适配：exactOptionalPropertyTypes——planFilePath 改条件展开（原样传 `string | undefined` 不过编译）。
- */
-import { getPathLeaf, isAbsoluteFilePath, joinFilePath } from "@zui/lib/path";
+import { getPathLeaf, isAbsoluteFilePath, joinFilePath } from "@zui/lib/path.js";
 
 interface PlanToolCallSource {
   input?: unknown;
@@ -41,10 +35,7 @@ function resolvePlanFilePath(path: string | undefined, workspacePath: string) {
   return isAbsoluteFilePath(path) ? path : joinFilePath(workspacePath, path);
 }
 
-function extractPlanMarkdown(
-  source: unknown,
-  workspacePath: string,
-): PlanToolCallContent {
+function extractPlanMarkdown(source: unknown, workspacePath: string): PlanToolCallContent {
   if (typeof source === "string" && source.trim().length > 0) {
     return { markdown: source.trim() };
   }
@@ -55,12 +46,7 @@ function extractPlanMarkdown(
     readStringField(source, ["planFilePath"]),
     workspacePath,
   );
-  return markdown
-    ? {
-        markdown,
-        ...(planFilePath === undefined ? {} : { planFilePath }),
-      }
-    : {};
+  return markdown ? { markdown, planFilePath } : {};
 }
 
 export function extractPlanToolCallContent(
@@ -72,10 +58,7 @@ export function extractPlanToolCallContent(
 
   if (toolCall.inputText?.trim()) {
     try {
-      const content = extractPlanMarkdown(
-        JSON.parse(toolCall.inputText),
-        workspacePath,
-      );
+      const content = extractPlanMarkdown(JSON.parse(toolCall.inputText), workspacePath);
       if (content.markdown) return content;
     } catch {
       // 流式 inputText 可能暂时不是完整 JSON；继续走 legacy raw fallback。
@@ -91,9 +74,7 @@ export function extractPlanToolCallContent(
     if (content.markdown) return content;
   }
 
-  const rawContent = Array.isArray(toolCall.raw.content)
-    ? toolCall.raw.content
-    : [];
+  const rawContent = Array.isArray(toolCall.raw.content) ? toolCall.raw.content : [];
   for (const entry of rawContent) {
     if (!isRecord(entry)) continue;
     const nested = isRecord(entry.content) ? entry.content : entry;

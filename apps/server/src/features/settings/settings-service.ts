@@ -1,11 +1,13 @@
 import type {
   AgentGovernanceOverrides,
+  InstanceSettings,
+  RuntimeGovernanceKey,
   TerminalShellId,
-  WorkspaceSettings,
 } from "@kenfutwork/shared";
 
 import {
   AGENT_GOVERNANCE_DEFAULTS,
+  clampCodeUiReconnectDelayMs,
   clampComputerUseActionTimeoutMs,
   clampComputerUseMaxActionsPerRun,
   clampComputerUseObserveMaxBytes,
@@ -17,17 +19,23 @@ import {
   clampSubagentMaxContinuations,
   clampSubagentMaxDepth,
   coerceLlmInfiniteRetry,
+  RUNTIME_GOVERNANCE_KEYS,
+  resolveGovernanceNumber,
 } from "@kenfutwork/shared";
 import {
   clampMaxRunRetries,
   DEFAULT_MAX_RUN_RETRIES,
 } from "../../agent/run-retry.js";
-import type { AuthenticatedUser } from "../auth/types.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import type { SettingsRepository } from "./repository.js";
 
 const FALLBACK_MODEL = "gpt-5.4-mini";
 
 type SettingsErrorCode =
+  | "settings_forbidden"
   | "settings_not_found"
   | "settings_read_failed"
   | "settings_update_failed";
@@ -48,17 +56,20 @@ export class SettingsServiceError extends Error {
  * 部分更新：只带要改的字段。
  *
  * 每个字段显式写 `| undefined`：zod 的 `.partial()` 产出就是「键可缺、值可为 undefined」，
- * 而项目开着 `exactOptionalPropertyTypes`，用 `Partial<WorkspaceSettings>` 接会不兼容。
+ * 而项目开着 `exactOptionalPropertyTypes`，用 `Partial<InstanceSettings>` 接会不兼容。
  */
-export type WorkspaceSettingsPatch = {
+export type InstanceSettingsPatch = Partial<
+  Record<RuntimeGovernanceKey, number | undefined>
+> & {
+  codeUiReconnectDelayMs?: number | undefined;
   defaultModel?: string | undefined;
   agentMaxRetries?: number | undefined;
   terminalShell?: TerminalShellId | undefined;
   codeIndexEnabled?: boolean | undefined;
   codeIndexAutoNewFolder?: boolean | undefined;
   autoCompactEnabled?: boolean | undefined;
-  commands?: WorkspaceSettings["commands"] | undefined;
-  hooks?: WorkspaceSettings["hooks"] | undefined;
+  commands?: InstanceSettings["commands"] | undefined;
+  hooks?: InstanceSettings["hooks"] | undefined;
   userRules?: string | undefined;
   ruleEntries?: string[] | undefined;
   subagentMaxDepth?: number | undefined;
@@ -70,26 +81,36 @@ export type WorkspaceSettingsPatch = {
 };
 
 export type SettingsService = {
-  getWorkspaceSettings(
-    user: AuthenticatedUser,
-    workspaceId: string,
-  ): Promise<WorkspaceSettings>;
+  onUpdated(
+    listener: (event: {
+      instanceId: string;
+      changedKeys: readonly (keyof InstanceSettingsPatch)[];
+    }) => void | Promise<void>,
+  ): () => void;
+  getCodeUiTransportSettings(
+    actor: LocalActor,
+    instanceId: string,
+  ): Promise<{ reconnectDelayMs: number }>;
+  getInstanceSettings(
+    actor: LocalActor,
+    instanceId: string,
+  ): Promise<InstanceSettings>;
   /** 部分更新：只写送来的字段（未送的一律不动），返回更新后的完整设置。 */
-  updateWorkspaceSettings(
-    user: AuthenticatedUser,
-    workspaceId: string,
-    patch: WorkspaceSettingsPatch,
-  ): Promise<WorkspaceSettings>;
+  updateInstanceSettings(
+    actor: LocalActor,
+    instanceId: string,
+    patch: InstanceSettingsPatch,
+  ): Promise<InstanceSettings>;
 };
 
 /**
  * 读命令表：库里的 jsonb 只信形状对的那部分（旧数据/手改过的行不该让整页崩）。
  * 名字重复时**保留先出现的**——命令按名字触发，重名只会有一个生效。
  */
-function parseCommands(raw: unknown): WorkspaceSettings["commands"] {
+function parseCommands(raw: unknown): InstanceSettings["commands"] {
   if (!Array.isArray(raw)) return [];
   const seen = new Set<string>();
-  const out: WorkspaceSettings["commands"] = [];
+  const out: InstanceSettings["commands"] = [];
   for (const entry of raw) {
     if (typeof entry !== "object" || entry === null) continue;
     const { name, prompt } = entry as { name?: unknown; prompt?: unknown };
@@ -116,9 +137,9 @@ function parseCommands(raw: unknown): WorkspaceSettings["commands"] {
  * 读钩子表：只信形状对的那部分（旧行/手改过的行不该让整页崩），最多 10 条。
  * 事件名认不出就丢——一个「不知道什么时候跑」的钩子比不跑更糟。
  */
-function parseHooks(raw: unknown): WorkspaceSettings["hooks"] {
+function parseHooks(raw: unknown): InstanceSettings["hooks"] {
   if (!Array.isArray(raw)) return [];
-  const out: WorkspaceSettings["hooks"] = [];
+  const out: InstanceSettings["hooks"] = [];
   for (const entry of raw) {
     if (typeof entry !== "object" || entry === null) continue;
     const { event, command } = entry as { event?: unknown; command?: unknown };
@@ -132,7 +153,8 @@ function parseHooks(raw: unknown): WorkspaceSettings["hooks"] {
 
 export function createSettingsService(options: {
   repository: SettingsRepository;
-  /** Override the fallback model when no workspace setting exists. */
+  localInstance: LocalInstanceService;
+  /** Override the fallback model when no instance setting exists. */
   defaultModel?: string;
   /**
    * agent 治理五项的 **env 兜底**（DEC-18）：优先级 = 库值 ?? env ?? DEFAULTS。
@@ -140,25 +162,53 @@ export function createSettingsService(options: {
    */
   governanceEnv?: AgentGovernanceOverrides;
   /**
-   * 无工作区设置时**动态解析**兜底模型（目录里首个可用的 chat 模型）。
+   * 无实例设置时**动态解析**兜底模型（目录里首个可用的 chat 模型）。
    *
    * 为什么不能只用静态兜底：静态值来自 env（内置目录名，如 `gpt-4.1`），而实际可用模型
-   * 由供应商实例决定——平台池只配了 GLM 时 `gpt-4.1` 在目录里根本不存在。不显式传 model
+   * 由供应商实例决定——供应商只配了 GLM 时 `gpt-4.1` 在目录里根本不存在。不显式传 model
    * 的客户端（画布助手）会拿它起 run，上游直接拒绝：客户端只看到「处理过程中遇到问题」，
    * 服务端按可重试处理并重试满 10 次（实测 Design 模式面板整段不可用）。
    */
-  resolveFallbackModel?: (
-    user: AuthenticatedUser,
-  ) => Promise<string | undefined>;
+  resolveFallbackModel?: (actor: LocalActor) => Promise<string | undefined>;
 }): SettingsService {
   const defaultModel = options.defaultModel ?? FALLBACK_MODEL;
   const governanceEnv = options.governanceEnv ?? {};
   const { repository } = options;
+  const listeners = new Set<Parameters<SettingsService["onUpdated"]>[0]>();
+
+  async function requireInstance(
+    actor: LocalActor,
+    instanceId: string,
+  ): Promise<void> {
+    if (actor.instanceId !== instanceId) {
+      throw new SettingsServiceError(
+        "settings_forbidden",
+        "只能访问当前本地实例的设置。",
+        403,
+      );
+    }
+    await options.localInstance.resolve(actor);
+  }
+
+  const getCodeUiTransportSettings = async (
+    actor: LocalActor,
+    instanceId: string,
+  ) => {
+    await requireInstance(actor, instanceId);
+    return {
+      reconnectDelayMs: clampCodeUiReconnectDelayMs(
+        (await repository.findCodeUiReconnectDelayMs(instanceId)) ??
+          governanceEnv.codeUiReconnectDelayMs ??
+          AGENT_GOVERNANCE_DEFAULTS.codeUiReconnectDelayMs,
+      ),
+    };
+  };
 
   const getSettings = async (
-    user: AuthenticatedUser,
-    workspaceId: string,
-  ): Promise<WorkspaceSettings> => {
+    actor: LocalActor,
+    instanceId: string,
+  ): Promise<InstanceSettings> => {
+    await requireInstance(actor, instanceId);
     const [
       storedModel,
       storedRetries,
@@ -175,37 +225,61 @@ export function createSettingsService(options: {
       storedLlmRequestMaxRetries,
       storedLlmInfiniteRetry,
       storedExecuteTimeoutMs,
+      storedRuntimeGovernance,
     ] = await Promise.all([
-      repository.findDefaultModel(workspaceId),
-      repository.findAgentMaxRetries(workspaceId),
-      repository.findTerminalShell(workspaceId),
-      repository.findCodeIndexEnabled(workspaceId),
-      repository.findCodeIndexAutoNewFolder(workspaceId),
-      repository.findAutoCompactEnabled(workspaceId),
-      repository.findUserRules(workspaceId),
-      repository.findCommands(workspaceId),
-      repository.findHooks(workspaceId),
-      repository.findSubagentMaxDepth(workspaceId),
-      repository.findSubagentMaxConcurrency(workspaceId),
-      repository.findSubagentMaxContinuations(workspaceId),
-      repository.findLlmRequestMaxRetries(workspaceId),
-      repository.findLlmInfiniteRetry(workspaceId),
-      repository.findExecuteTimeoutMs(workspaceId),
+      repository.findDefaultModel(instanceId),
+      repository.findAgentMaxRetries(instanceId),
+      repository.findTerminalShell(instanceId),
+      repository.findCodeIndexEnabled(instanceId),
+      repository.findCodeIndexAutoNewFolder(instanceId),
+      repository.findAutoCompactEnabled(instanceId),
+      repository.findUserRules(instanceId),
+      repository.findCommands(instanceId),
+      repository.findHooks(instanceId),
+      repository.findSubagentMaxDepth(instanceId),
+      repository.findSubagentMaxConcurrency(instanceId),
+      repository.findSubagentMaxContinuations(instanceId),
+      repository.findLlmRequestMaxRetries(instanceId),
+      repository.findLlmInfiniteRetry(instanceId),
+      repository.findExecuteTimeoutMs(instanceId),
+      repository.findRuntimeGovernance(instanceId),
     ]).catch(() => {
       throw new SettingsServiceError(
         "settings_read_failed",
-        "Unable to load workspace settings.",
+        "无法读取本地实例设置。",
         500,
       );
     });
 
-    // 只在无库值时问目录：已显式设置过的工作区不额外付一次目录读
+    // 只在无库值时问目录：已显式设置过的实例不额外付一次目录读
     const resolvedFallback =
       storedModel === null
-        ? await options.resolveFallbackModel?.(user)
+        ? await options.resolveFallbackModel?.(actor)
         : undefined;
 
+    const runtimeValues =
+      typeof storedRuntimeGovernance === "object" &&
+      storedRuntimeGovernance !== null
+        ? (storedRuntimeGovernance as Record<string, unknown>)
+        : {};
+    const runtimeGovernance = Object.fromEntries(
+      RUNTIME_GOVERNANCE_KEYS.map((key) => [
+        key,
+        resolveGovernanceNumber(
+          key,
+          typeof runtimeValues[key] === "number"
+            ? runtimeValues[key]
+            : undefined,
+          governanceEnv,
+        ),
+      ]),
+    ) as Pick<InstanceSettings, RuntimeGovernanceKey>;
+
     return {
+      ...runtimeGovernance,
+      codeUiReconnectDelayMs: (
+        await getCodeUiTransportSettings(actor, instanceId)
+      ).reconnectDelayMs,
       agentMaxRetries: clampMaxRunRetries(
         storedRetries ?? DEFAULT_MAX_RUN_RETRIES,
       ),
@@ -277,41 +351,53 @@ export function createSettingsService(options: {
   };
 
   return {
-    getWorkspaceSettings: getSettings,
+    onUpdated(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    getCodeUiTransportSettings,
+    getInstanceSettings: getSettings,
 
-    async updateWorkspaceSettings(user, workspaceId, patch) {
+    async updateInstanceSettings(actor, instanceId, patch) {
+      await requireInstance(actor, instanceId);
       // 逐列 upsert（各写各的列）：没送来的字段一个字都不动
       const writes: Array<Promise<void>> = [];
+      if (patch.codeUiReconnectDelayMs !== undefined)
+        writes.push(
+          repository.upsertCodeUiReconnectDelayMs(
+            instanceId,
+            clampCodeUiReconnectDelayMs(patch.codeUiReconnectDelayMs),
+          ),
+        );
       if (patch.defaultModel !== undefined) {
         writes.push(
-          repository.upsertDefaultModel(workspaceId, patch.defaultModel),
+          repository.upsertDefaultModel(instanceId, patch.defaultModel),
         );
       }
       if (patch.agentMaxRetries !== undefined) {
         writes.push(
           repository.upsertAgentMaxRetries(
-            workspaceId,
+            instanceId,
             clampMaxRunRetries(patch.agentMaxRetries),
           ),
         );
       }
       if (patch.terminalShell !== undefined) {
         writes.push(
-          repository.upsertTerminalShell(workspaceId, patch.terminalShell),
+          repository.upsertTerminalShell(instanceId, patch.terminalShell),
         );
       }
       if (patch.codeIndexEnabled !== undefined) {
         writes.push(
-          repository.upsertCodeIndexEnabled(
-            workspaceId,
-            patch.codeIndexEnabled,
-          ),
+          repository.upsertCodeIndexEnabled(instanceId, patch.codeIndexEnabled),
         );
       }
       if (patch.codeIndexAutoNewFolder !== undefined) {
         writes.push(
           repository.upsertCodeIndexAutoNewFolder(
-            workspaceId,
+            instanceId,
             patch.codeIndexAutoNewFolder,
           ),
         );
@@ -319,29 +405,29 @@ export function createSettingsService(options: {
       if (patch.autoCompactEnabled !== undefined) {
         writes.push(
           repository.upsertAutoCompactEnabled(
-            workspaceId,
+            instanceId,
             patch.autoCompactEnabled,
           ),
         );
       }
       if (patch.hooks !== undefined) {
-        writes.push(repository.upsertHooks(workspaceId, patch.hooks));
+        writes.push(repository.upsertHooks(instanceId, patch.hooks));
       }
       if (patch.commands !== undefined) {
-        writes.push(repository.upsertCommands(workspaceId, patch.commands));
+        writes.push(repository.upsertCommands(instanceId, patch.commands));
       }
       if (patch.userRules !== undefined) {
-        writes.push(repository.upsertUserRules(workspaceId, patch.userRules));
+        writes.push(repository.upsertUserRules(instanceId, patch.userRules));
       }
       if (patch.ruleEntries !== undefined) {
         writes.push(
-          repository.upsertRuleEntries(workspaceId, patch.ruleEntries),
+          repository.upsertRuleEntries(instanceId, patch.ruleEntries),
         );
       }
       if (patch.subagentMaxDepth !== undefined) {
         writes.push(
           repository.upsertSubagentMaxDepth(
-            workspaceId,
+            instanceId,
             clampSubagentMaxDepth(patch.subagentMaxDepth),
           ),
         );
@@ -349,7 +435,7 @@ export function createSettingsService(options: {
       if (patch.subagentMaxConcurrency !== undefined) {
         writes.push(
           repository.upsertSubagentMaxConcurrency(
-            workspaceId,
+            instanceId,
             clampSubagentMaxConcurrency(patch.subagentMaxConcurrency),
           ),
         );
@@ -357,7 +443,7 @@ export function createSettingsService(options: {
       if (patch.subagentMaxContinuations !== undefined) {
         writes.push(
           repository.upsertSubagentMaxContinuations(
-            workspaceId,
+            instanceId,
             clampSubagentMaxContinuations(patch.subagentMaxContinuations),
           ),
         );
@@ -365,37 +451,65 @@ export function createSettingsService(options: {
       if (patch.llmRequestMaxRetries !== undefined) {
         writes.push(
           repository.upsertLlmRequestMaxRetries(
-            workspaceId,
+            instanceId,
             clampLlmRequestMaxRetries(patch.llmRequestMaxRetries),
           ),
         );
       }
       if (patch.llmInfiniteRetry !== undefined) {
         writes.push(
-          repository.upsertLlmInfiniteRetry(
-            workspaceId,
-            patch.llmInfiniteRetry,
-          ),
+          repository.upsertLlmInfiniteRetry(instanceId, patch.llmInfiniteRetry),
         );
       }
       if (patch.executeTimeoutMs !== undefined) {
         writes.push(
           repository.upsertExecuteTimeoutMs(
-            workspaceId,
+            instanceId,
             clampExecuteTimeoutMs(patch.executeTimeoutMs),
           ),
+        );
+      }
+      const runtimePatch = Object.fromEntries(
+        RUNTIME_GOVERNANCE_KEYS.flatMap((key) =>
+          patch[key] === undefined
+            ? []
+            : [[key, resolveGovernanceNumber(key, patch[key])]],
+        ),
+      );
+      if (Object.keys(runtimePatch).length > 0) {
+        writes.push(
+          repository.upsertRuntimeGovernance(instanceId, runtimePatch),
         );
       }
       await Promise.all(writes).catch(() => {
         throw new SettingsServiceError(
           "settings_update_failed",
-          "Unable to update workspace settings.",
+          "无法更新本地实例设置。",
           500,
         );
       });
 
       // 回读真值：客户端拿到的是库里现在的事实，不是「我以为写成了什么」
-      return getSettings(user, workspaceId);
+      const result = await getSettings(actor, instanceId);
+      const changedKeys = (
+        Object.keys(patch) as Array<keyof InstanceSettingsPatch>
+      ).filter((key) => patch[key] !== undefined);
+      if (changedKeys.length) {
+        const notified = await Promise.allSettled(
+          [...listeners].map((listener) =>
+            Promise.resolve().then(() =>
+              listener({ instanceId, changedKeys: [...changedKeys] }),
+            ),
+          ),
+        );
+        for (const outcome of notified)
+          if (outcome.status === "rejected")
+            console.warn(
+              "[settings] 设置事实已保存，配置消费者刷新失败：",
+              outcome.reason,
+            );
+      }
+      return result;
     },
   };
 }

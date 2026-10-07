@@ -29,9 +29,34 @@ export type DesktopRuntime = {
   shutdown(): Promise<void>;
 };
 
-/** 是否桌面形态：内嵌数据库或免登录认证任一开启即算。 */
+/** 桌面供给持有内嵌数据库生命周期。 */
 export function isDesktopRuntime(env: ServerEnv): boolean {
-  return Boolean(env.embeddedPostgres) || env.authDriver === "local-trust";
+  return Boolean(env.embeddedPostgres);
+}
+
+/** API与独立worker共用目录归一；不启动服务、不创建目录、不接管数据库生命周期。 */
+export function resolveLocalRuntimeEnv(
+  env: ServerEnv,
+  processEnv: Record<string, string | undefined> = process.env,
+): ServerEnv & { desktopDataDir: string } {
+  const dataDir = resolveDesktopDataDir({
+    env: {
+      ...processEnv,
+      ...(env.desktopDataDir
+        ? { KENFUTWORK_DATA_DIR: env.desktopDataDir }
+        : {}),
+    },
+  });
+  const paths = resolveDesktopPaths(dataDir);
+  return {
+    ...env,
+    desktopDataDir: dataDir,
+    blobDir: paths.blobDir,
+    sandboxRoot: paths.sandboxDir,
+    checkpointRoot: paths.checkpointDir,
+    agentFilesRoot: paths.agentFilesDir,
+    pluginsDir: paths.pluginsDir,
+  };
 }
 
 /** 迁移集目录：`KENFUTWORK_MIGRATIONS_ROOT` → `<exeDir>/supabase` → `<repoRoot>/supabase`。 */
@@ -76,19 +101,17 @@ export async function prepareDesktopRuntime(options: {
   const exeDir = options.exeDir ?? process.cwd();
   const repoRoot = options.repoRoot ?? process.cwd();
   const env = options.env;
+  const processEnv = options.processEnv ?? process.env;
+  const localEnv = resolveLocalRuntimeEnv(env, processEnv);
+  const paths = resolveDesktopPaths(localEnv.desktopDataDir);
 
   if (!env.embeddedPostgres) {
     // 非内嵌形态（开发连外部库 / 自托管）：本函数不接管任何生命周期
-    return { env, shutdown: async () => {} };
+    return { env: localEnv, shutdown: async () => {} };
   }
 
   const { existsSync } = await import("node:fs");
   const exists = options.exists ?? existsSync;
-  const processEnv = options.processEnv ?? process.env;
-
-  const dataDir =
-    env.desktopDataDir ?? resolveDesktopDataDir({ env: processEnv });
-  const paths = resolveDesktopPaths(dataDir);
   await mkdir(paths.dataDir, { recursive: true });
 
   const binDir = env.pgBinDir ?? resolvePgBinDir({ env: processEnv, exeDir });
@@ -145,38 +168,14 @@ export async function prepareDesktopRuntime(options: {
 
   return {
     env: {
-      ...env,
-      // 显式配置优先：桌面下若用户自己配了库/队列/blob，尊重之
-      blobDir: env.blobDir ?? paths.blobDir,
-      // BYOK 凭证加密主密钥：桌面必须开箱可用，故首次生成并持久化（用户不配也不报错）
-      credentialSecret:
-        env.credentialSecret ??
-        (await readOrCreateSecret(paths.credentialSecretFile)),
-      databaseUrl: env.databaseUrl ?? postgres.connectionString,
+      ...localEnv,
+      // 内嵌形态的数据全由此根持有；自部署外部数据库走非内嵌分支。
+      blobDir: paths.blobDir,
+      databaseUrl: postgres.connectionString,
       queueDriver: env.queueDriver ?? "in-process",
     },
     shutdown,
   };
-}
-
-/**
- * 读取或生成持久化密钥（首次 48 字符随机）。
- * 与 PG 口令同样的处置：只在数据目录、不进仓库、不打印。
- */
-async function readOrCreateSecret(file: string): Promise<string> {
-  const { readFile, writeFile } = await import("node:fs/promises");
-  const { randomBytes } = await import("node:crypto");
-  try {
-    const existing = (await readFile(file, "utf8")).trim();
-    if (existing) {
-      return existing;
-    }
-  } catch {
-    // 不存在：走下面的生成
-  }
-  const secret = randomBytes(36).toString("base64url");
-  await writeFile(file, secret, { encoding: "utf8", mode: 0o600 });
-  return secret;
 }
 
 function toQueryable(pool: Pool) {

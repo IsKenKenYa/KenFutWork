@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/v4/messageTimeLabel.ts`（references/zcode/packages/ui/src/v4/messageTimeLabel.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type { IntlInstance } from "@zui/i18n/IntlProvider";
+import type { IntlInstance } from "@zui/i18n/IntlProvider.js";
 
 type DateTimeFormatterKind = "time" | "monthDayTime" | "yearMonthDayTime";
 
@@ -23,10 +18,7 @@ function getDayCacheKey(date: Date): string {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
-function getDateTimeFormatter(
-  locale: string,
-  kind: DateTimeFormatterKind,
-): Intl.DateTimeFormat {
+function getDateTimeFormatter(locale: string, kind: DateTimeFormatterKind): Intl.DateTimeFormat {
   const cacheKey = `${locale}:${kind}`;
   const cached = dateTimeFormatterCache.get(cacheKey);
   if (cached) return cached;
@@ -36,12 +28,7 @@ function getDateTimeFormatter(
     kind === "time"
       ? { hour: "2-digit", minute: "2-digit" }
       : kind === "monthDayTime"
-        ? {
-            month: "numeric",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          }
+        ? { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }
         : {
             year: "numeric",
             month: "numeric",
@@ -72,8 +59,7 @@ export function formatMessageTimeLabel(
 
   const messageDate = new Date(timestamp);
   const now = new Date(nowTimestamp);
-  if (Number.isNaN(messageDate.getTime()) || Number.isNaN(now.getTime()))
-    return null;
+  if (Number.isNaN(messageDate.getTime()) || Number.isNaN(now.getTime())) return null;
 
   const cacheKey = `${locale}:${timestamp}:${getDayCacheKey(now)}`;
   const cached = messageTimeLabelCache.get(cacheKey);
@@ -89,10 +75,7 @@ export function formatMessageTimeLabel(
   if (isSameDay(messageDate, yesterday)) {
     return cacheMessageTimeLabel(
       cacheKey,
-      intl.formatMessage(
-        { id: "chat.message.time.yesterday" },
-        { time: timeText },
-      ),
+      intl.formatMessage({ id: "chat.message.time.yesterday" }, { time: timeText }),
     );
   }
 

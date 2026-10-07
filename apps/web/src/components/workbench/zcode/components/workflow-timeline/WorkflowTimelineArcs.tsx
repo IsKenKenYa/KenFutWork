@@ -1,9 +1,5 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowTimelineArcs.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowTimelineArcs.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
+import type { ReactNode } from "react";
+import type { TimelineArc, TimelineBand, TimelineInk, TimelineStation } from "./timeline-model.js";
 import {
   ARC_BASE,
   ARC_LANE,
@@ -14,15 +10,8 @@ import {
   bandMergeX,
   lampX,
   type TimelineLayout,
-} from "@zui/components/workflow-timeline/timeline-geometry";
-import type {
-  TimelineArc,
-  TimelineBand,
-  TimelineInk,
-  TimelineStation,
-} from "@zui/components/workflow-timeline/timeline-model";
-import { MarchLight } from "@zui/components/workflow-timeline/WorkflowMarchLight";
-import type { ReactNode } from "react";
+} from "./timeline-geometry.js";
+import { MarchLight } from "./WorkflowMarchLight.js";
 
 /**
  * 弧层：时间线唯一的一层 SVG，只画
@@ -73,7 +62,7 @@ export function WorkflowTimelineArcs({
   const trackOf = (index: number): number => stations[index]?.track ?? 0;
   return (
     <svg
-      aria-hidden={true}
+      aria-hidden
       className="absolute left-0 top-0 overflow-visible"
       height={height}
       viewBox={`0 0 ${width} ${height}`}

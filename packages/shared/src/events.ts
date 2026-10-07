@@ -10,6 +10,7 @@ import {
   toolCallIdSchema,
 } from "./contracts.js";
 import { kenfutworkErrorSchema } from "./errors.js";
+import { taskWorkStateSchema } from "./execution-contracts.js";
 
 export type {
   ImageArtifact,
@@ -69,6 +70,10 @@ export const toolCompletedEventSchema = z.object({
   toolCallId: toolCallIdSchema,
   toolName: z.string().min(1),
   output: z.record(z.string(), z.unknown()).optional(),
+  /** 完整文本结果，与结构化 output 分开保留，不能用摘要代替正文。 */
+  outputText: z.string().optional(),
+  /** 权威工具终态；Code renderer 不得从摘要文案猜成功或失败。 */
+  status: z.enum(["success", "error", "cancelled"]).optional(),
   outputSummary: z.string().optional(),
   artifacts: z.array(toolArtifactSchema).optional(),
   /** 子代理归因，同 {@link toolStartedEventSchema.agentName}。 */
@@ -104,8 +109,23 @@ export const taskNotificationEventSchema = z.object({
   timestamp: timestampSchema,
 });
 
+export const taskWorkUpdatedEventSchema = z.object({
+  type: z.literal("task.work"),
+  runId: runIdSchema,
+  work: taskWorkStateSchema,
+  timestamp: timestampSchema,
+});
+
 export const runCompletedEventSchema = z.object({
   type: z.literal("run.completed"),
+  operationResult: z
+    .object({
+      kind: z.literal("compact"),
+      origin: z.literal("manual"),
+      status: z.enum(["applied", "unchanged"]),
+      reason: z.literal("insufficient_history").optional(),
+    })
+    .optional(),
   runId: runIdSchema,
   timestamp: timestampSchema,
 });
@@ -121,6 +141,8 @@ export const runCompletedEventSchema = z.object({
 export const runUsageEventSchema = z.object({
   type: z.literal("run.usage"),
   runId: runIdSchema,
+  /** SDK实际模型调用身份；同一次stream/end累计更新共用此键。 */
+  modelCallId: z.string().min(1).optional(),
   /** 本次模型调用的提示词大小（一轮里随工具结果增长）。 */
   inputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
@@ -134,6 +156,8 @@ export const runUsageEventSchema = z.object({
    * 与 `inputTokens` 一起下发，客户端不必自己累加，断线重连后也能立刻拿到正确分母。
    */
   runInputTokens: z.number().int().nonnegative().optional(),
+  /** 本轮各模型调用的累计输出token；由同一调用账本导出。 */
+  runOutputTokens: z.number().int().nonnegative().optional(),
   /** 本轮 run 累计命中缓存的输入 token；一次都没上报时为 undefined。 */
   runCachedInputTokens: z.number().int().nonnegative().optional(),
   /**
@@ -159,16 +183,30 @@ export const runUsageEventSchema = z.object({
  * 两者本来就会不一致。不给信号的话，用户只会觉得「模型突然忘了前面的事」。事件每轮最多发一次，
  * 客户端据此在转录里插一行说明（被压掉的消息原文在 `historyPath`）。
  */
-export const runCompactedEventSchema = z.object({
-  type: z.literal("run.compacted"),
-  runId: runIdSchema,
-  /** 触发线（token）与它的来源：reserved-output / fraction / fallback。 */
-  triggerTokens: z.number().int().positive(),
-  triggerSource: z.enum(["reserved-output", "fraction", "fallback"]),
-  /** 保留下来的最近消息条数。 */
-  keepMessages: z.number().int().positive(),
-  timestamp: timestampSchema,
-});
+export const runCompactedEventSchema = z
+  .object({
+    type: z.literal("run.compacted"),
+    origin: z.enum(["auto", "manual"]).optional(),
+    runId: runIdSchema,
+    /** 触发线（token）与它的来源：reserved-output / fraction / fallback。 */
+    triggerTokens: z.number().int().positive().optional(),
+    triggerSource: z
+      .enum(["reserved-output", "fraction", "fallback"])
+      .optional(),
+    /** 本次摘要配置的近期原始消息保留目标；不是 SDK 实际保留条数。 */
+    keepMessages: z.number().int().positive(),
+    timestamp: timestampSchema,
+  })
+  .superRefine((event, ctx) => {
+    if (
+      event.origin !== "manual" &&
+      (event.triggerTokens === undefined || event.triggerSource === undefined)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "自动压缩必须携带实际触发策略。",
+      });
+  });
 
 /**
  * 用户钩子跑过了（R5-2「钩子」）。事件在每个钩子点**逐条**发，退出码与输出摘要如实带上。
@@ -236,28 +274,6 @@ export const canvasSyncEventSchema = z.object({
   timestamp: timestampSchema,
 });
 
-export const billingErrorCodeSchema = z.enum([
-  "insufficient_credits",
-  "model_not_accessible",
-  "resolution_not_allowed",
-  "concurrency_limit",
-]);
-
-export type BillingErrorCode = z.infer<typeof billingErrorCodeSchema>;
-
-export const billingErrorEventSchema = z.object({
-  type: z.literal("billing.error"),
-  runId: runIdSchema,
-  timestamp: timestampSchema,
-  code: billingErrorCodeSchema,
-  message: z.string(),
-  // Credits-specific (only for insufficient_credits)
-  currentBalance: z.number().optional(),
-  requiredAmount: z.number().optional(),
-  plan: z.string().optional(),
-  dailyClaimed: z.boolean().optional(),
-});
-
 /**
  * flow 运行事件（P5，《flow 集成方案》事件缝）。
  *
@@ -291,6 +307,7 @@ export const streamEventSchema = z.discriminatedUnion("type", [
   toolStartedEventSchema,
   toolCompletedEventSchema,
   taskNotificationEventSchema,
+  taskWorkUpdatedEventSchema,
   runCanceledEventSchema,
   runCompletedEventSchema,
   runUsageEventSchema,
@@ -299,7 +316,6 @@ export const streamEventSchema = z.discriminatedUnion("type", [
   runFailedEventSchema,
   runRetryingEventSchema,
   canvasSyncEventSchema,
-  billingErrorEventSchema,
   flowRunEventSchema,
 ]);
 

@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/git-action-menu/display.ts`（references/zcode/packages/ui/src/git-action-menu/display.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-import type { GitRepositorySummary } from "@zui/lib/zcode-shared";
+import type { GitRepositorySummary } from "@zcode/shared";
 
 type GitActionMenuPrimaryActionId = "commit" | "push";
 

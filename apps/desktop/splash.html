@@ -117,7 +117,9 @@
     <div class="brand">
       <!-- 用**应用图标**本身（打包时随静态导出一起走），不再内联旧版 logo 的 SVG：
            图标换了、启动页跟着换，不会两处打架 -->
-      <img src="/logo-mark.png" width="32" height="32" alt="" style="width:auto;height:32px" />
+      <!-- 尺寸：标在 1024² 透明画布里墨迹占 80%（icons.mjs 统一口径），40px 盒 → 墨迹高 28.5px，
+           与下方 40px 字号的字标视觉等高（.brand span 注释同款口径）；换比例只改这里的高度 -->
+      <img src="/logo-mark.png" width="40" height="40" alt="" style="width:auto;height:40px" />
       <span>KenFutWork</span>
     </div>
     <div class="track"><div class="bar"></div></div>

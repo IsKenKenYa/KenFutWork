@@ -1,34 +1,25 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/edit.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/edit.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）；源文件自带头注保留于下。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
 /* eslint-disable max-lines -- Edit 工具块同时维护单文件、多文件子块和 diff 预览引用稳定性；当前变更先保持同文件收口，避免为行数拆分引入展示回归。 */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { CodeViewerSource } from "@zui/lib/codeViewer";
-import { getFileDisplayPath } from "@zui/lib/fileDisplay";
-import type { ToolInlinePreview } from "@zui/lib/toolDisplay";
-import { EditInlineDiffContent } from "@zui/ToolCallBlocks/renderers/EditInlineDiffContent";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import {
-  type EditKindSource,
-  getEditKindLabelMessageId,
-  renderDiffCount,
-  renderFileChip,
-  renderFilePath,
-  renderJoinedFileChips,
-} from "@zui/ToolCallBlocks/shared";
-import { ToolCallBody } from "@zui/ToolCallBlocks/ToolCallBody";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
 import { PencilIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { ToolCallBody } from "@zui/ToolCallBlocks/ToolCallBody.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { getFileDisplayPath } from "@zui/lib/fileDisplay.js";
+import type { ToolInlinePreview } from "@zui/lib/toolDisplay.js";
+import { ToolLayout } from "../ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "../shared.js";
+import { EditInlineDiffContent } from "@zui/ToolCallBlocks/renderers/EditInlineDiffContent.js";
+import {
+  getEditKindLabelMessageId,
+  renderDiffCount,
+  renderFilePath,
+  renderJoinedFileChips,
+  renderFileChip,
+  type EditKindSource,
+} from "../shared.js";
+import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 
-const EDIT_TOOL_ICON = (
-  <PencilIcon className="size-4 shrink-0 text-foreground-subtle" />
-);
+const EDIT_TOOL_ICON = <PencilIcon className="size-4 shrink-0 text-foreground-subtle" />;
 
 const EDIT_SINGLE_LAYOUT = {
   canToggle: true,
@@ -71,9 +62,7 @@ export function buildEditCodeViewerSource(
 }
 
 function buildEditInlinePreview(
-  summary:
-    | NonNullable<ToolCallBlockRenderContext["rawFileSummaries"]>[number]
-    | null,
+  summary: NonNullable<ToolCallBlockRenderContext["rawFileSummaries"]>[number] | null,
 ): ToolInlinePreview | undefined {
   if (!summary?.patch) {
     return undefined;
@@ -95,29 +84,17 @@ function buildEditInlinePreview(
 
 export function EditToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
-  const {
-    toolCallNode,
-    rawFileSummaries,
-    isRunning,
-    statusLabel,
-    errorText,
-    onOpenCodeViewer,
-  } = context;
+  const { toolCallNode, rawFileSummaries, isRunning, statusLabel, errorText, onOpenCodeViewer } =
+    context;
   const { toolCall } = toolCallNode;
   const hasMultipleFiles = rawFileSummaries.length > 1;
   const isFailed =
-    toolCall.status === "failed" ||
-    isRawToolCallFailed(toolCall.raw) ||
-    Boolean(errorText);
+    toolCall.status === "failed" || isRawToolCallFailed(toolCall.raw) || Boolean(errorText);
   const effectiveStatusLabel = isFailed
     ? intl.formatMessage({ id: "chat.toolCall.status.failed" })
     : statusLabel;
   const openFilePreview = useCallback(
-    (
-      summary: NonNullable<
-        ToolCallBlockRenderContext["rawFileSummaries"]
-      >[number],
-    ) => {
+    (summary: NonNullable<ToolCallBlockRenderContext["rawFileSummaries"]>[number]) => {
       if (!onOpenCodeViewer) {
         return;
       }
@@ -136,12 +113,7 @@ export function EditToolCallBlock(context: ToolCallBlockRenderContext) {
             onClick: openFilePreview,
           })
         : null,
-    [
-      context.workspacePath,
-      onOpenCodeViewer,
-      openFilePreview,
-      rawFileSummaries,
-    ],
+    [context.workspacePath, onOpenCodeViewer, openFilePreview, rawFileSummaries],
   );
   const secondaryText = useMemo(
     () =>
@@ -291,9 +263,7 @@ export function EditToolCallBlock(context: ToolCallBlockRenderContext) {
                 childToolList={context.childToolList}
                 displayModel={context.displayModel}
                 inlinePreviewOverride={
-                  singleFileInlinePreview?.type === "patch"
-                    ? { type: "none" }
-                    : undefined
+                  singleFileInlinePreview?.type === "patch" ? { type: "none" } : undefined
                 }
                 toolCall={toolCall}
                 workspacePath={context.workspacePath}
@@ -351,7 +321,7 @@ export function EditToolCallBlock(context: ToolCallBlockRenderContext) {
         kindLabel={context.kindLabelOverride ?? kindLabel}
         sourceLabel={context.sourceLabel}
         primaryText={primaryText}
-        prioritizePrimaryText={true}
+        prioritizePrimaryText
         expandedPrimaryText={expandedPrimaryText}
         secondaryText={secondaryText}
         diffCount={context.isOfficeMode ? undefined : diffCount}
@@ -363,6 +333,11 @@ export function EditToolCallBlock(context: ToolCallBlockRenderContext) {
         title={toolCall.title}
         renderContent={renderContent}
       />
+      {rawFileSummaries.some((summary) => summary.truncated) ? (
+        <div className="mt-2 rounded-xl border border-border/70 bg-muted/40 px-3 py-2 text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "chat.toolCall.edit.truncatedPatch" })}
+        </div>
+      ) : null}
       {/* <pre className="text-[8px]">{JSON.stringify(toolCall, null, 2)}</pre> */}
     </>
   );
@@ -391,31 +366,25 @@ function EditFileSummaryBlock({
   summary: NonNullable<ToolCallBlockRenderContext["rawFileSummaries"]>[number];
   isRunning: boolean;
   statusLabel: string;
-  errorText?: string | undefined;
+  errorText?: string;
   toolId: string;
   isFailed: boolean;
-  onOpenCodeViewer?: ToolCallBlockRenderContext["onOpenCodeViewer"] | undefined;
-  onOpenFileLink?: ToolCallBlockRenderContext["onOpenFileLink"] | undefined;
-  onOpenBrowserUrl?: ToolCallBlockRenderContext["onOpenBrowserUrl"] | undefined;
+  onOpenCodeViewer?: ToolCallBlockRenderContext["onOpenCodeViewer"];
+  onOpenFileLink?: ToolCallBlockRenderContext["onOpenFileLink"];
+  onOpenBrowserUrl?: ToolCallBlockRenderContext["onOpenBrowserUrl"];
   childToolList: ToolCallBlockRenderContext["childToolList"];
   displayModel: ToolCallBlockRenderContext["displayModel"];
   toolCall: ToolCallBlockRenderContext["toolCallNode"]["toolCall"];
   workspacePath: string;
-  theme?: ToolCallBlockRenderContext["theme"] | undefined;
-  codePreviewSettings?:
-    | ToolCallBlockRenderContext["codePreviewSettings"]
-    | undefined;
-  showIcon?: boolean | undefined;
-  sourceLabel?: string | undefined;
-  animateDiffCountOnMount?: boolean | undefined;
+  theme?: ToolCallBlockRenderContext["theme"];
+  codePreviewSettings?: ToolCallBlockRenderContext["codePreviewSettings"];
+  showIcon?: boolean;
+  sourceLabel?: string;
+  animateDiffCountOnMount?: boolean;
 }) {
   const { intl } = useZCodeIntl();
   const kindLabel = intl.formatMessage({
-    id: getEditKindLabelMessageId(
-      [summary.operationKind],
-      [summary.actionLabel],
-      isRunning,
-    ),
+    id: getEditKindLabelMessageId([summary.operationKind], [summary.actionLabel], isRunning),
   });
   const inlinePreviewOverride = buildEditInlinePreview(summary);
   const openFilePreview = useCallback(() => {
@@ -464,9 +433,7 @@ function EditFileSummaryBlock({
           childToolList={childToolList}
           displayModel={displayModel}
           inlinePreviewOverride={
-            inlinePreviewOverride?.type === "patch"
-              ? { type: "none" }
-              : undefined
+            inlinePreviewOverride?.type === "patch" ? { type: "none" } : undefined
           }
           toolCall={toolCall}
           workspacePath={workspacePath}
@@ -503,7 +470,7 @@ function EditFileSummaryBlock({
         kindLabel={kindLabel}
         sourceLabel={sourceLabel}
         primaryText={primaryText}
-        prioritizePrimaryText={true}
+        prioritizePrimaryText
         secondaryText={secondaryText}
         diffCount={diffCount}
         statusLabel={statusLabel}

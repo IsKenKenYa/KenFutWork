@@ -1,5 +1,5 @@
-import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings";
 import type { BundledTheme } from "shiki";
+import type { CodePreviewSettings } from "@zui/store/index.js";
 
 interface CodePreviewThemeOption {
   value: BundledTheme;

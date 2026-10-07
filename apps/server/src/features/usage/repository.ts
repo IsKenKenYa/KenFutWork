@@ -14,8 +14,8 @@ export type UsageRecordRow = {
 };
 
 export type NewUsageRecord = {
-  workspaceId: string;
-  userId?: string | undefined;
+  instanceId: string;
+  accessClientId?: string | null | undefined;
   provider: string;
   model: string;
   capability: "chat" | "image" | "video";
@@ -29,14 +29,14 @@ export type NewUsageRecord = {
 };
 
 /**
- * usage 聚合的数据访问（`usage_records`，带 `workspace_id`）。
- * 写入是遥测追加（原先经服务角色绕过 RLS）；迁移后统一走工作区作用域，
+ * usage 聚合的数据访问（`usage_records`，带 `instance_id`）。
+ * 写入是遥测追加（原先经服务角色绕过 RLS）；迁移后统一走实例作用域，
  * 追加与读取共用同一隔离口径。
  */
 export interface UsageRepository {
   insert(record: NewUsageRecord): Promise<void>;
   /** 最近记录（按发生时间倒序），供汇总聚合。 */
-  listRecent(workspaceId: string, limit: number): Promise<UsageRecordRow[]>;
+  listRecent(instanceId: string, limit: number): Promise<UsageRecordRow[]>;
   /**
    * 最长聊天时长（R4-2 剩下的那张卡）：**单会话首尾消息的时间跨度**（秒）。
    *
@@ -47,10 +47,10 @@ export interface UsageRepository {
    * - 只有一条消息的会话跨度为 0（真实含义就是「没来回」），照实计入。
    *
    * 为什么这条查询在 usage 域：它属于「使用统计」的口径派生。表在 chat 侧，
-   * 隔离谓词照 FORM-9 走父链 JOIN（`chat_sessions → canvases → projects.workspace_id`），
+   * 隔离谓词照 FORM-9 走父链 JOIN（`chat_sessions → canvases → projects.instance_id`），
    * 与 chat 仓储里同一条链一致。
    */
-  longestSessionSeconds(workspaceId: string): Promise<number>;
+  longestSessionSeconds(instanceId: string): Promise<number>;
 }
 
 type RawUsageRow = {
@@ -68,14 +68,14 @@ export function createUsageRepository(
 ): UsageRepository {
   return {
     async insert(record) {
-      await persistence.forWorkspace(record.workspaceId).query(
+      await persistence.forInstance(record.instanceId).query(
         `insert into public.usage_records
-                (workspace_id, user_id, provider, model, capability,
+                (instance_id, access_client_id, provider, model, capability,
                  provider_instance_id, run_id, job_id,
                  input_tokens, output_tokens, total_tokens, cost_usd)
-         values (:workspace, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+         values (:instance, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
-          record.userId ?? null,
+          record.accessClientId ?? null,
           record.provider,
           record.model,
           record.capability,
@@ -90,9 +90,9 @@ export function createUsageRepository(
       );
     },
 
-    async longestSessionSeconds(workspaceId) {
+    async longestSessionSeconds(instanceId) {
       const rows = await persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .query<{ seconds: string | number | null }>(
           `select coalesce(max(span_seconds), 0) as seconds
              from (
@@ -101,7 +101,7 @@ export function createUsageRepository(
                  join public.canvases c on c.id = s.canvas_id
                  join public.projects p on p.id = c.project_id
                  join public.chat_messages m on m.session_id = s.id
-                where p.workspace_id = :workspace
+                where p.instance_id = :instance
                 group by s.id
              ) spans`,
           [],
@@ -111,17 +111,15 @@ export function createUsageRepository(
       return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 0;
     },
 
-    async listRecent(workspaceId, limit) {
-      const rows = await persistence
-        .forWorkspace(workspaceId)
-        .query<RawUsageRow>(
-          `select provider, model, capability, input_tokens, output_tokens, cost_usd, occurred_at
+    async listRecent(instanceId, limit) {
+      const rows = await persistence.forInstance(instanceId).query<RawUsageRow>(
+        `select provider, model, capability, input_tokens, output_tokens, cost_usd, occurred_at
              from public.usage_records
-            where workspace_id = :workspace
+            where instance_id = :instance
             order by occurred_at desc
             limit $1`,
-          [limit],
-        );
+        [limit],
+      );
 
       return rows.map((row) => ({
         provider: row.provider,

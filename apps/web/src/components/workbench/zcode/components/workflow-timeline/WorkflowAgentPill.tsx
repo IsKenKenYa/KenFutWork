@@ -1,21 +1,4 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowAgentPill.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowAgentPill.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import type {
-  LaneClass,
-  StepRunStatus,
-} from "@zui/components/workflow-graph/types";
-import {
-  agentColor,
-  WorkflowAgentFace,
-} from "@zui/components/workflow-timeline/WorkflowAgentFace";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import type { CSSProperties, ReactNode } from "react";
 import {
   ArrowUpRightIcon,
   CircleCheckIcon,
@@ -24,12 +7,12 @@ import {
   LoaderCircleIcon,
   TerminalIcon,
 } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { LaneClass, StepRunStatus } from "@zui/components/workflow-graph/types.js";
+import { WorkflowAgentFace, agentColor } from "@zui/components/workflow-timeline/WorkflowAgentFace.js";
 
-export {
-  agentColor,
-  avatarColor,
-} from "@zui/components/workflow-timeline/WorkflowAgentFace";
+export { agentColor, avatarColor } from "@zui/components/workflow-timeline/WorkflowAgentFace.js";
 
 /**
  * 子代理药丸：带色头像 +
@@ -57,7 +40,7 @@ export function LaneGlyph({
   status,
 }: {
   laneClass: LaneClass;
-  className?: string | undefined;
+  className?: string;
   name: string;
   avatarIndex?: number | undefined;
   status?: StepRunStatus | undefined;
@@ -73,20 +56,14 @@ export function LaneGlyph({
     );
   }
   const Glyph = laneClass === "workspace" ? TerminalIcon : CircleHelpIcon;
-  return <Glyph aria-hidden={true} className={className} />;
+  return <Glyph aria-hidden className={className} />;
 }
 
 /** 状态标记：转圈 / 对勾 / 叉；`pending` 与 undefined 没有标记。状态变化时新标记弹入；可打开的药丸悬停时它让位给 ↗。 */
-export function PillStatusMark({
-  status,
-}: {
-  status: StepRunStatus | undefined;
-}) {
+export function PillStatusMark({ status }: { status: StepRunStatus | undefined }) {
   const { intl } = useZCodeIntl();
   if (status === undefined || status === "pending") return null;
-  const label = intl.formatMessage({
-    id: `chat.toolCall.workflow.graph.status.${status}`,
-  });
+  const label = intl.formatMessage({ id: `chat.toolCall.workflow.graph.status.${status}` });
   return (
     <span
       aria-label={label}
@@ -104,13 +81,13 @@ export function PillStatusMark({
     >
       {status === "running" ? (
         <LoaderCircleIcon
-          aria-hidden={true}
+          aria-hidden
           className="size-3.5 animate-spin motion-reduce:animate-none"
         />
       ) : status === "done" ? (
-        <CircleCheckIcon aria-hidden={true} className="size-3.5" />
+        <CircleCheckIcon aria-hidden className="size-3.5" />
       ) : (
-        <CircleXIcon aria-hidden={true} className="size-3.5" />
+        <CircleXIcon aria-hidden className="size-3.5" />
       )}
     </span>
   );
@@ -120,7 +97,7 @@ export function PillStatusMark({
 export interface WorkflowAgentPillOpen {
   onOpen: () => void;
   label: string;
-  testId?: string | undefined;
+  testId?: string;
   data?: Record<`data-${string}`, string>;
 }
 
@@ -140,23 +117,23 @@ export function WorkflowAgentPill({
 }: {
   avatarIndex?: number | undefined;
   /** 入场延迟（一列药丸依次落地，每枚错 30 ms）；缺席即立刻。 */
-  enterDelayMs?: number | undefined;
+  enterDelayMs?: number;
   /** 已本地化的显示名（运行时名 > 车道显示名）。 */
   name: string;
   laneClass: LaneClass;
   status: StepRunStatus | undefined;
-  title?: string | undefined;
-  className?: string | undefined;
+  title?: string;
+  className?: string;
   /** 在场即整枚药丸是按钮（回调的存在即门控）。 */
-  open?: WorkflowAgentPillOpen | undefined;
+  open?: WorkflowAgentPillOpen;
   /** 不可打开时的提示（「子代理启动后才有会话记录」）；缺席时退回 title / name。 */
-  inertTitle?: string | undefined;
+  inertTitle?: string;
   /** 名字之后、状态标记之前的附属信息（侧栏行的活动与计数）。 */
-  children?: ReactNode | undefined;
+  children?: ReactNode;
   /** 状态标记之后的控件。 */
-  trailing?: ReactNode | undefined;
+  trailing?: ReactNode;
   /** `row`（24 px、静止时没有底色、悬停才成药丸）给侧板名单的两列；缺省 32 px。 */
-  size?: "md" | "row" | undefined;
+  size?: "md" | "row";
 }) {
   const tinted = laneClass === "agent";
   // 有延迟的入场要 backwards 填充：等待期间保持起始帧，否则药丸先满显再闪一下重新进场。
@@ -165,10 +142,7 @@ export function WorkflowAgentPill({
     ...(tinted ? { "--wf-avatar": agentColor(avatarIndex, name) } : {}),
     ...(enterDelayMs === undefined || enterDelayMs <= 0
       ? {}
-      : {
-          animationDelay: `${enterDelayMs}ms`,
-          animationFillMode: "backwards" as const,
-        }),
+      : { animationDelay: `${enterDelayMs}ms`, animationFillMode: "backwards" as const }),
   } as CSSProperties;
   const settled = status !== undefined && status !== "pending";
   const hasMark = settled;
@@ -204,7 +178,7 @@ export function WorkflowAgentPill({
           <PillStatusMark status={status} />
           {open === undefined ? null : (
             <span
-              aria-hidden={true}
+              aria-hidden
               className="wf-pill-go flex size-3.5 items-center justify-center text-foreground-subtlest"
               data-testid={open.testId ?? "workflow-pill-open"}
               {...open.data}
@@ -235,9 +209,7 @@ export function WorkflowAgentPill({
       data-testid="workflow-agent-pill"
       onClick={open?.onOpen}
       style={style}
-      title={
-        open === undefined ? (inertTitle ?? title ?? name) : (title ?? name)
-      }
+      title={open === undefined ? (inertTitle ?? title ?? name) : (title ?? name)}
       {...(open === undefined ? {} : { type: "button" as const })}
     >
       {body}

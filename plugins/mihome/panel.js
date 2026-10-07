@@ -1,12 +1,8 @@
 /**
  * 米家面板页（插件自带，无构建、无外部依赖）。
  *
- * 登录态来源：宿主工作台在 iframe 加载完成/令牌刷新时用 `postMessage` 递
- * `{type:"kenfutwork:plugin-panel-token", accessToken}`（见 lib/plugin-panels.tsx）。
- * 只接受**同源**来的这条消息——面板页由服务端托管，宿主与它同源。
- *
- * 数据面：本插件自己的私有路由（`/api/plugins/<id>/…`），带 `Authorization` 调，
- * 因此拿得到 `request.workspaceId`（插件存储按工作区隔离）。
+ * 本机接入由浏览器HttpOnly cookie持有，面板不接收或保管宿主长期令牌。
+ * 数据面请求带credentials，由服务端从LocalActor解析稳定instanceId。
  *
  * 模块脚本：二维码的刷新判定从 `lib/qr-refresh.js` 静态引入，与宿主侧单测共用同一份逻辑
  * （小米二维码约 2 分钟过期——过期要自动换新码，不能让用户手动点）。
@@ -16,10 +12,8 @@ import { decideQrAction } from "./lib/qr-refresh.js";
 
 const BASE = location.pathname.replace(/\/assets\/[^/]*$/, "");
 const POLL_MS = 5000;
-const TOKEN_MESSAGE_TYPE = "kenfutwork:plugin-panel-token";
 
 const state = {
-  token: null,
   devices: [],
   total: 0,
   specErrors: [],
@@ -90,11 +84,11 @@ function setHeaderButtons(connected) {
 function api(path, options) {
   const opts = options || {};
   const headers = {};
-  if (state.token) headers.authorization = `Bearer ${state.token}`;
   if (opts.body !== undefined) headers["content-type"] = "application/json";
   return fetch(`${BASE}/${path}`, {
     method: opts.method || "GET",
     headers,
+    credentials: "include",
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   }).then((response) =>
     response
@@ -103,10 +97,12 @@ function api(path, options) {
       .then((payload) => {
         if (!response.ok) {
           const error = new Error(
-            payload?.error ?? `请求失败（HTTP ${response.status}）`,
+            payload?.error?.message ??
+              payload?.error ??
+              `请求失败（HTTP ${response.status}）`,
           );
           error.status = response.status;
-          error.code = payload?.code;
+          error.code = payload?.code ?? payload?.error?.code;
           throw error;
         }
         return payload;
@@ -559,12 +555,5 @@ els.disconnect.addEventListener("click", () => {
     });
 });
 
-// 宿主握手：只接受同源、且带我们约定类型的消息
-window.addEventListener("message", (event) => {
-  if (event.origin !== location.origin) return;
-  const data = event.data;
-  if (!data || data.type !== TOKEN_MESSAGE_TYPE) return;
-  if (typeof data.accessToken !== "string" || data.accessToken === "") return;
-  state.token = data.accessToken;
-  boot();
-});
+// module脚本在文档解析后执行；本机会话由HttpOnly cookie自动携带。
+boot();

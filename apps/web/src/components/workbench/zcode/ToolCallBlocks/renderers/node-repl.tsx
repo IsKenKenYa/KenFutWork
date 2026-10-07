@@ -1,12 +1,6 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/node-repl.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/node-repl.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为；上游依赖运行时恒有值）。
- */
-
+import { useCallback, useMemo } from "react";
+import { ChevronRightIcon, ExternalLinkIcon, SquareMousePointerIcon } from "lucide-react";
+import { Button } from "@zui/components/ui/button.js";
 import {
   CodeBlock,
   CodeBlockActions,
@@ -14,30 +8,20 @@ import {
   CodeBlockHeader,
   CodeBlockTitle,
   CodeBlockWrapButton,
-} from "@zui/components/ai-elements/code-block";
-import { Button } from "@zui/components/ui/button";
+} from "@zui/components/ai-elements/code-block.js";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@zui/components/ui/collapsible";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { cuaAppKeyToIconRequest } from "@zui/lib/cuaAppIconRequest";
-import {
-  buildNodeReplDisplayModel,
-  type NodeReplDisplayModel,
-} from "@zui/lib/nodeReplToolDisplay";
-import { CuaAppSummaryIcon } from "@zui/ToolCallBlocks/renderers/cuaAppSummaryIcon";
-import { NodeReplImageGrid } from "@zui/ToolCallBlocks/renderers/nodeReplImageGrid";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
-import {
-  ChevronRightIcon,
-  ExternalLinkIcon,
-  SquareMousePointerIcon,
-} from "lucide-react";
-import { useCallback, useMemo } from "react";
+} from "@zui/components/ui/collapsible.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { cuaAppKeyToIconRequest } from "@zui/lib/cuaAppIconRequest.js";
+import { buildNodeReplDisplayModel, type NodeReplDisplayModel } from "@zui/lib/nodeReplToolDisplay.js";
+import { CuaAppSummaryIcon } from "@zui/ToolCallBlocks/renderers/cuaAppSummaryIcon.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import { NodeReplImageGrid } from "@zui/ToolCallBlocks/renderers/nodeReplImageGrid.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
 const NODE_REPL_TOOL_ICON = (
   <SquareMousePointerIcon className="size-4 shrink-0 text-foreground-subtle" />
@@ -80,7 +64,7 @@ function getSummary(
   status: string,
   isRunning: boolean,
   formatMessage: (id: string) => string,
-): { title: string; status?: string | undefined; detail?: string | undefined } {
+): { title: string; status?: string; detail?: string } {
   const isFailed = status === "failed";
   const isDenied = status === "denied";
   const isStopped = status === "stopped";
@@ -88,9 +72,7 @@ function getSummary(
   if (isDenied || isStopped) {
     return {
       title: formatMessage(
-        isDenied
-          ? "chat.toolCall.nodeRepl.denied"
-          : "chat.toolCall.nodeRepl.stopped",
+        isDenied ? "chat.toolCall.nodeRepl.denied" : "chat.toolCall.nodeRepl.stopped",
       ),
     };
   }
@@ -150,10 +132,10 @@ function FriendlyCodeBlock({
   language,
   wrapLabel,
 }: {
-  cardSurface?: boolean | undefined;
+  cardSurface?: boolean;
   code: string;
   copyLabel: string;
-  eagerLayout?: boolean | undefined;
+  eagerLayout?: boolean;
   label: string;
   language: string;
   wrapLabel: string;
@@ -166,13 +148,11 @@ function FriendlyCodeBlock({
       language={language}
       renderMermaid={false}
       style={eagerLayout ? COLLAPSIBLE_CODE_LAYOUT_STYLE : undefined}
-      wrapLongLines={true}
+      wrapLongLines
     >
       <CodeBlockHeader className="pl-3 pr-2 pt-2">
         <CodeBlockTitle>
-          <span className="text-ui-base font-medium text-foreground-subtle">
-            {label}
-          </span>
+          <span className="text-ui-base font-medium text-foreground-subtle">{label}</span>
         </CodeBlockTitle>
         <CodeBlockActions>
           <CodeBlockWrapButton aria-label={wrapLabel} title={wrapLabel} />
@@ -187,10 +167,7 @@ export function NodeReplToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall } = context.toolCallNode;
   const model = useMemo(() => buildNodeReplDisplayModel(toolCall), [toolCall]);
-  const formatMessage = useCallback(
-    (id: string) => intl.formatMessage({ id }),
-    [intl],
-  );
+  const formatMessage = useCallback((id: string) => intl.formatMessage({ id }), [intl]);
   const summary = useMemo(
     () => getSummary(model, toolCall.status, context.isRunning, formatMessage),
     [context.isRunning, formatMessage, model, toolCall.status],
@@ -213,12 +190,8 @@ export function NodeReplToolCallBlock(context: ToolCallBlockRenderContext) {
   const resultLabel = formatMessage("chat.toolCall.nodeRepl.result");
   const noResultLabel = formatMessage("chat.toolCall.nodeRepl.noResult");
   const detailsLabel = formatMessage("chat.toolCall.nodeRepl.details");
-  const detailContentLabel = formatMessage(
-    "chat.toolCall.nodeRepl.detailContent",
-  );
-  const technicalDetailsLabel = formatMessage(
-    "chat.toolCall.nodeRepl.technicalDetails",
-  );
+  const detailContentLabel = formatMessage("chat.toolCall.nodeRepl.detailContent");
+  const technicalDetailsLabel = formatMessage("chat.toolCall.nodeRepl.technicalDetails");
   const copyResultLabel = formatMessage("chat.toolCall.nodeRepl.copyResult");
   const copyDetailsLabel = formatMessage("chat.toolCall.nodeRepl.copyDetails");
   const wrapLinesLabel = formatMessage("chat.toolCall.nodeRepl.wrapLines");
@@ -230,32 +203,22 @@ export function NodeReplToolCallBlock(context: ToolCallBlockRenderContext) {
       )
     : undefined;
   const visibleError =
-    toolCall.status === "failed"
-      ? (model.error?.summary ?? context.errorText)
-      : undefined;
+    toolCall.status === "failed" ? (model.error?.summary ?? context.errorText) : undefined;
   const hasTechnicalDetails = Boolean(model.code || model.error?.stack);
   const hasVisibleResult = Boolean(
-    visibleError ||
-      model.resultText ||
-      model.images.length > 0 ||
-      model.persistedResult,
+    visibleError || model.resultText || model.images.length > 0 || model.persistedResult,
   );
   const hasDetails =
     model.operation === "run"
       ? hasVisibleResult || hasTechnicalDetails
-      : toolCall.status === "failed" &&
-        (hasVisibleResult || hasTechnicalDetails);
+      : toolCall.status === "failed" && (hasVisibleResult || hasTechnicalDetails);
   const canToggle = context.canToggle ?? hasDetails;
   const summaryText = useMemo(
     () => (
       <span className="inline-flex min-w-0 items-center gap-2">
-        <span className="min-w-0 truncate font-medium text-foreground-subtle">
-          {summary.title}
-        </span>
+        <span className="min-w-0 truncate font-medium text-foreground-subtle">{summary.title}</span>
         {summary.status ? (
-          <span className="shrink-0 text-foreground-subtlest">
-            · {summary.status}
-          </span>
+          <span className="shrink-0 text-foreground-subtlest">· {summary.status}</span>
         ) : null}
         {summary.detail ? (
           <code className="min-w-0 truncate font-mono text-foreground-subtlest">
@@ -270,15 +233,10 @@ export function NodeReplToolCallBlock(context: ToolCallBlockRenderContext) {
     () => (
       // ToolLayout 已提供展开间距，Node REPL 再叠加横向 padding 会让 BUA
       // 结果相对摘要行二次缩进，在窄屏消息流里尤其突兀。
-      <div
-        className="mb-2 space-y-3 py-1"
-        data-testid="node-repl-expanded-content"
-      >
+      <div className="mb-2 space-y-3 py-1" data-testid="node-repl-expanded-content">
         {visibleError ? (
           <section className="space-y-1.5">
-            <h4 className="text-ui-base font-medium text-destructive">
-              {resultLabel}
-            </h4>
+            <h4 className="text-ui-base font-medium text-destructive">{resultLabel}</h4>
             <p className="whitespace-pre-wrap break-words rounded-lg bg-destructive/10 px-3 py-2 text-ui-base text-destructive">
               {visibleError}
             </p>
@@ -298,10 +256,10 @@ export function NodeReplToolCallBlock(context: ToolCallBlockRenderContext) {
             data-testid="node-repl-result-surface"
           >
             <FriendlyCodeBlock
-              cardSurface={true}
+              cardSurface
               code={model.resultText}
               copyLabel={copyResultLabel}
-              eagerLayout={true}
+              eagerLayout
               label={resultLabel}
               language={looksLikeJson(model.resultText) ? "json" : "log"}
               wrapLabel={wrapLinesLabel}
@@ -312,10 +270,7 @@ export function NodeReplToolCallBlock(context: ToolCallBlockRenderContext) {
         ) : null}
 
         {model.images.length > 0 ? (
-          <NodeReplImageGrid
-            images={model.images}
-            resultImageLabel={resultImageLabel}
-          />
+          <NodeReplImageGrid images={model.images} resultImageLabel={resultImageLabel} />
         ) : null}
 
         {model.persistedResult && fullResultLabel ? (
@@ -344,7 +299,7 @@ export function NodeReplToolCallBlock(context: ToolCallBlockRenderContext) {
 
         {hasTechnicalDetails ? (
           <Collapsible className="group/details">
-            <CollapsibleTrigger asChild={true}>
+            <CollapsibleTrigger asChild>
               <Button
                 type="button"
                 variant="ghost"
@@ -363,10 +318,10 @@ export function NodeReplToolCallBlock(context: ToolCallBlockRenderContext) {
                     data-testid="node-repl-detail-surface"
                   >
                     <FriendlyCodeBlock
-                      cardSurface={true}
+                      cardSurface
                       code={model.code}
                       copyLabel={copyDetailsLabel}
-                      eagerLayout={true}
+                      eagerLayout
                       label={detailContentLabel}
                       language="javascript"
                       wrapLabel={wrapLinesLabel}
@@ -379,10 +334,10 @@ export function NodeReplToolCallBlock(context: ToolCallBlockRenderContext) {
                     data-testid="node-repl-detail-surface"
                   >
                     <FriendlyCodeBlock
-                      cardSurface={true}
+                      cardSurface
                       code={model.error.stack}
                       copyLabel={copyDetailsLabel}
-                      eagerLayout={true}
+                      eagerLayout
                       label={technicalDetailsLabel}
                       language="log"
                       wrapLabel={wrapLinesLabel}
@@ -416,12 +371,7 @@ export function NodeReplToolCallBlock(context: ToolCallBlockRenderContext) {
   );
 
   if (model.displaySource === "browser_turn_end") {
-    return (
-      <NodeReplImageGrid
-        images={model.images}
-        resultImageLabel={resultImageLabel}
-      />
-    );
+    return <NodeReplImageGrid images={model.images} resultImageLabel={resultImageLabel} />;
   }
 
   return (
@@ -437,9 +387,7 @@ export function NodeReplToolCallBlock(context: ToolCallBlockRenderContext) {
         primaryText={summaryText}
         statusLabel={formatMessage("chat.toolCall.nodeRepl.failed")}
         statusTooltip={visibleError}
-        showFailureStatus={
-          toolCall.status === "failed" && Boolean(model.userTitle)
-        }
+        showFailureStatus={toolCall.status === "failed" && Boolean(model.userTitle)}
         isRunning={context.isRunning}
         title={summary.title}
         renderContent={hasDetails ? renderContent : undefined}
@@ -455,4 +403,3 @@ export function NodeReplToolCallBlock(context: ToolCallBlockRenderContext) {
     </>
   );
 }
-/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

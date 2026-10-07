@@ -1,22 +1,5 @@
-/**
- * zcode 照搬：`@/components/ai-elements/image-preview-dialog.tsx`（references/zcode/packages/ui/src/components/ai-elements/image-preview-dialog.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
 "use client";
 
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogTitle,
-} from "@zui/components/ui/dialog";
-import { toast } from "@zui/components/ui/toast";
-import { useOptionalPlatform } from "@zui/hooks/usePlatform";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { logger } from "@zui/logger";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -27,14 +10,21 @@ import {
 } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useRef, useState } from "react";
+import { cn } from "@zui/components/lib/utils.js";
+import { Button } from "@zui/components/ui/button.js";
+import { Dialog, DialogClose, DialogContent, DialogTitle } from "@zui/components/ui/dialog.js";
+import { toast } from "@zui/components/ui/toast.js";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { logger } from "@zui/logger.js";
 
 export interface ImagePreviewDialogItem {
   alt: string;
-  error?: boolean | undefined;
-  filename?: string | undefined;
-  loading?: boolean | undefined;
-  mediaType?: string | undefined;
-  src?: string | undefined;
+  error?: boolean;
+  filename?: string;
+  loading?: boolean;
+  mediaType?: string;
+  src?: string;
 }
 
 interface PreviewOffset {
@@ -66,10 +56,7 @@ export function clampImagePreviewOffset(
   viewportSize: PreviewSize,
 ): PreviewOffset {
   const maxX = Math.max(0, (imageSize.width * scale - viewportSize.width) / 2);
-  const maxY = Math.max(
-    0,
-    (imageSize.height * scale - viewportSize.height) / 2,
-  );
+  const maxY = Math.max(0, (imageSize.height * scale - viewportSize.height) / 2);
   return {
     x: maxX === 0 ? 0 : Math.min(maxX, Math.max(-maxX, offset.x)),
     y: maxY === 0 ? 0 : Math.min(maxY, Math.max(-maxY, offset.y)),
@@ -115,8 +102,7 @@ async function readBoundedImageBlob(source: string) {
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   try {
     const response = await fetch(source, { signal: controller.signal });
-    if (!response.ok || !response.body)
-      throw new ImageDownloadError("download_failed");
+    if (!response.ok || !response.body) throw new ImageDownloadError("download_failed");
     const contentLength = Number(response.headers.get("content-length"));
     if (Number.isFinite(contentLength) && contentLength > MAX_DOWNLOAD_BYTES) {
       throw new ImageDownloadError("file_too_large");
@@ -185,9 +171,7 @@ export function ImagePreviewDialog({
   const [previewScale, setPreviewScale] = useState(1);
   const [previewOffset, setPreviewOffset] = useState(defaultPreviewOffset);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [videoState, setVideoState] = useState<
-    "loading" | "ready" | "unsupported"
-  >("loading");
+  const [videoState, setVideoState] = useState<"loading" | "ready" | "unsupported">("loading");
   const previewViewportRef = useRef<HTMLDivElement>(null);
   const previewImageRef = useRef<HTMLImageElement>(null);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
@@ -196,12 +180,9 @@ export function ImagePreviewDialog({
     offset: PreviewOffset;
     pointer: PreviewOffset;
   } | null>(null);
-  const pinchStartRef = useRef<{ distance: number; scale: number } | null>(
-    null,
-  );
+  const pinchStartRef = useRef<{ distance: number; scale: number } | null>(null);
   const activeItem = items[activeIndex];
-  const activeItemIsVideo =
-    activeItem?.mediaType?.startsWith("video/") === true;
+  const activeItemIsVideo = activeItem?.mediaType?.startsWith("video/") === true;
   const hasMultiple = items.length > 1;
 
   const resetPreviewTransform = () => {
@@ -230,9 +211,7 @@ export function ImagePreviewDialog({
 
   useEffect(() => {
     if (!open) return;
-    setActiveIndex(
-      Math.min(Math.max(initialIndex, 0), Math.max(items.length - 1, 0)),
-    );
+    setActiveIndex(Math.min(Math.max(initialIndex, 0), Math.max(items.length - 1, 0)));
     resetPreviewTransform();
   }, [initialIndex, items.length, open]);
 
@@ -314,11 +293,7 @@ export function ImagePreviewDialog({
       const distance = Math.hypot(second.x - first.x, second.y - first.y);
       const nextScale = Math.min(
         3,
-        Math.max(
-          0.5,
-          pinchStartRef.current.scale *
-            (distance / pinchStartRef.current.distance),
-        ),
+        Math.max(0.5, pinchStartRef.current.scale * (distance / pinchStartRef.current.distance)),
       );
       setPreviewScale(nextScale);
       setPreviewOffset((current) => clampPreviewOffset(current, nextScale));
@@ -361,14 +336,8 @@ export function ImagePreviewDialog({
           suggestedName: `${safeDownloadBaseName(activeItem)}.png`,
         });
         if (result.canceled) return;
-        if (!result.success || !result.path)
-          throw new Error(result.error || "save_failed");
-        toast(
-          intl.formatMessage(
-            { id: "markdownImage.downloadSucceeded" },
-            { path: result.path },
-          ),
-        );
+        if (!result.success || !result.path) throw new Error(result.error || "save_failed");
+        toast(intl.formatMessage({ id: "markdownImage.downloadSucceeded" }, { path: result.path }));
         return;
       }
 
@@ -379,10 +348,7 @@ export function ImagePreviewDialog({
         if (
           !platform?.saveFile &&
           isHttpSource(activeItem.src) &&
-          !(
-            error instanceof ImageDownloadError &&
-            error.code === "file_too_large"
-          )
+          !(error instanceof ImageDownloadError && error.code === "file_too_large")
         ) {
           // <img> 可显示无 CORS 资源，但 fetch 无法读取；交给浏览器原生导航避免假失败。
           startBrowserNativeDownload(activeItem.src);
@@ -391,8 +357,7 @@ export function ImagePreviewDialog({
         }
         throw error;
       }
-      const extension =
-        imageExtensionByMediaType[blob.type.toLowerCase()] ?? "png";
+      const extension = imageExtensionByMediaType[blob.type.toLowerCase()] ?? "png";
       const filename = `${safeDownloadBaseName(activeItem)}.${extension}`;
       if (platform?.saveFile) {
         const result = await platform.saveFile({
@@ -400,14 +365,8 @@ export function ImagePreviewDialog({
           suggestedName: filename,
         });
         if (result.canceled) return;
-        if (!result.success || !result.path)
-          throw new Error(result.error || "save_failed");
-        toast(
-          intl.formatMessage(
-            { id: "markdownImage.downloadSucceeded" },
-            { path: result.path },
-          ),
-        );
+        if (!result.success || !result.path) throw new Error(result.error || "save_failed");
+        toast(intl.formatMessage({ id: "markdownImage.downloadSucceeded" }, { path: result.path }));
         return;
       }
       const objectUrl = URL.createObjectURL(blob);
@@ -441,11 +400,10 @@ export function ImagePreviewDialog({
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">
-          {activeItem?.alt ||
-            intl.formatMessage({ id: "chat.attachments.preview.title" })}
+          {activeItem?.alt || intl.formatMessage({ id: "chat.attachments.preview.title" })}
         </DialogTitle>
         <div className="pointer-events-auto absolute right-4 top-4 z-20 flex items-center gap-2 [app-region:no-drag] platform-mac-desktop:top-12 platform-linux-desktop:right-6 platform-linux-desktop:top-4 platform-windows-desktop:right-6 platform-windows-desktop:top-[calc(env(titlebar-area-height,48px)_+_0.5rem)]">
-          {activeItemIsVideo ? null : (
+          {!activeItemIsVideo ? (
             <Button
               type="button"
               aria-label={intl.formatMessage({ id: "markdownImage.download" })}
@@ -457,8 +415,8 @@ export function ImagePreviewDialog({
             >
               <DownloadIcon />
             </Button>
-          )}
-          <DialogClose asChild={true}>
+          ) : null}
+          <DialogClose asChild>
             <Button
               type="button"
               aria-label={intl.formatMessage({ id: "common.close" })}
@@ -510,10 +468,7 @@ export function ImagePreviewDialog({
                 ) : (
                   <>
                     {videoState === "loading" ? (
-                      <p
-                        className="text-ui-base text-foreground-subtle"
-                        role="status"
-                      >
+                      <p className="text-ui-base text-foreground-subtle" role="status">
                         {intl.formatMessage({
                           id: "chat.attachments.preview.videoLoading",
                         })}
@@ -522,8 +477,8 @@ export function ImagePreviewDialog({
                     {/* 可发送的 video MIME 不保证当前 Chromium 能解码其容器或 codec；
                 解码失败只收口当前 gallery item，不能关闭预览或影响相邻媒体。 */}
                     <video
-                      controls={true}
-                      playsInline={true}
+                      controls
+                      playsInline
                       className={cn(
                         "max-h-full max-w-full rounded-xl border border-border bg-background shadow-2xl",
                         videoState === "loading" && "invisible absolute",
@@ -536,19 +491,13 @@ export function ImagePreviewDialog({
                   </>
                 )
               ) : activeItem.error ? (
-                <p
-                  className="px-6 text-center text-ui-base text-destructive"
-                  role="alert"
-                >
+                <p className="px-6 text-center text-ui-base text-destructive" role="alert">
                   {intl.formatMessage({
                     id: "chat.attachments.preview.videoUnavailable",
                   })}
                 </p>
               ) : activeItem.loading ? (
-                <p
-                  className="text-ui-base text-foreground-subtle"
-                  role="status"
-                >
+                <p className="text-ui-base text-foreground-subtle" role="status">
                   {intl.formatMessage({
                     id: "chat.attachments.preview.videoLoading",
                   })}
@@ -580,7 +529,7 @@ export function ImagePreviewDialog({
             </div>
           ) : null
         ) : null}
-        {activeItemIsVideo ? null : (
+        {!activeItemIsVideo ? (
           <div className="pointer-events-auto absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-popover-border bg-popover/95 p-1 shadow-md [app-region:no-drag]">
             <Button
               type="button"
@@ -608,9 +557,8 @@ export function ImagePreviewDialog({
               <PlusIcon />
             </Button>
           </div>
-        )}
+        ) : null}
       </DialogContent>
     </Dialog>
   );
 }
-/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

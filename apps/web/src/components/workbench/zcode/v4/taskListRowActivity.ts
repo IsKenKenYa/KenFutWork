@@ -1,14 +1,9 @@
-/**
- * zcode 照搬：`@/v4/taskListRowActivity.ts`（references/zcode/packages/ui/src/v4/taskListRowActivity.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type { ZCodeTaskMeta } from "@zui/lib/zcode-shared";
+import type { ZCodeTaskMeta } from "@zcode/shared";
 import type {
   PendingInteractionSummary,
   SessionSummary,
   SessionWorkflowActivity,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
+} from "@zcode/shared/zcode-protocol-v4";
 
 // UI-only sidecar：不进入 shared task meta/schema，也不写回 tasks-index。
 // 字段名使用明确的内部前缀，避免调用方把它误当成持久化 task 属性。
@@ -37,12 +32,8 @@ export function attachTaskListRowActivity<T extends ZCodeTaskMeta>(
   };
 }
 
-export function getTaskListRowActivity(
-  task: ZCodeTaskMeta,
-): TaskListRowActivity | null {
-  const activity = (task as Partial<TaskListMetaWithActivity>)[
-    TASK_LIST_ROW_ACTIVITY_FIELD
-  ];
+export function getTaskListRowActivity(task: ZCodeTaskMeta): TaskListRowActivity | null {
+  const activity = (task as Partial<TaskListMetaWithActivity>)[TASK_LIST_ROW_ACTIVITY_FIELD];
   return activity ?? null;
 }
 
@@ -61,10 +52,7 @@ function isTaskListRowRunning(task: ZCodeTaskMeta): boolean {
  * 转圈图标仍只认 phase（isTaskListRowRunning），这里只决定排序层。
  */
 export function isTaskListRowActive(task: ZCodeTaskMeta): boolean {
-  return (
-    isTaskListRowRunning(task) ||
-    getTaskListRowActivity(task)?.hasBackgroundWork === true
-  );
+  return isTaskListRowRunning(task) || getTaskListRowActivity(task)?.hasBackgroundWork === true;
 }
 
 export function getTaskListAttention(
@@ -92,7 +80,7 @@ export function mergeTaskListMembershipFields(
   if (!activity) {
     return membershipTask;
   }
-  const membershipOwnsUnreadAt = Object.hasOwn(membershipTask, "unreadAt");
+  const membershipOwnsUnreadAt = Object.prototype.hasOwnProperty.call(membershipTask, "unreadAt");
   // rename/pin/archive/unread 的 tasks-index 响应会携带自己的 updatedAt/status，
   // 但侧栏 activity 与 Updated 排序只属于 sessions-index。mutation 只能覆盖 membership/meta
   // 字段，不能把整行替换后让任务无真实活动却跳序或丢掉实时 phase。
@@ -103,9 +91,7 @@ export function mergeTaskListMembershipFields(
       createdAt: activityTask.createdAt,
       updatedAt: activity.lastActivityAt,
       status: activityTask.status,
-      unreadAt: membershipOwnsUnreadAt
-        ? membershipTask.unreadAt
-        : activityTask.unreadAt,
+      unreadAt: membershipOwnsUnreadAt ? membershipTask.unreadAt : activityTask.unreadAt,
     },
     activity,
   );

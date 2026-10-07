@@ -21,7 +21,7 @@ import { resolveInstanceVideoProviderFromPayload } from "./instance-provider.js"
 
 /** 特殊信号：poll 消息已投递、本次执行到此为止（job-loop 据此只 archive 不落失败）。 */
 export const PROVIDER_POLL_SCHEDULED = "provider_poll_scheduled";
-/** 厂商明确失败：同输入重试必然再失败 → 死信退款（job-loop 的不可重试集合）。 */
+/** 厂商明确失败：同输入重试必然再失败 → 死信（job-loop 的不可重试集合）。 */
 export const PROVIDER_TASK_FAILED = "provider_task_failed";
 /** 跨修订拒绝：实例配置在任务落盘后已变更，旧句柄不得复用。 */
 export const PROVIDER_CONFIG_STALE = "provider_config_stale";
@@ -45,7 +45,7 @@ registerExecutor(
     // 经 jobService 取（按 id 的系统级读，与 worker 其它状态迁移同一入口）。
     let jobRow: BackgroundJob;
     try {
-      jobRow = await ctx.jobService.getJobAdmin(jobId);
+      jobRow = await ctx.jobService.getJobForWorker(jobId);
     } catch {
       throw new Error(`Job ${jobId} not found in database`);
     }
@@ -72,8 +72,8 @@ registerExecutor(
     if (!payload.prompt)
       throw new Error(`Job ${jobId} has no prompt in payload`);
 
-    const createdBy: string | null = jobRow.created_by ?? null;
-    const workspaceId: string = jobRow.workspace_id ?? jobId;
+    const createdBy: string | null = jobRow.created_by_client_id ?? null;
+    const instanceId: string = jobRow.instance_id;
 
     // BYOK-only：生成任务必须携带供应商实例（内置目录/遗留 env 注册已退役）。
     if (!payload.provider_instance_id || !payload.model) {
@@ -158,7 +158,7 @@ registerExecutor(
           { url: pollResult.videoUrl, mimeType: "video/mp4" },
           {
             jobId,
-            workspaceId,
+            instanceId,
             createdBy,
             providerLabel: instance.provider.name,
             model,
@@ -248,10 +248,10 @@ registerExecutor(
       lap(`${providerName}_call_done`);
 
       // 用量落账（DEC-6 直连生成链路）：视频 provider 不报 token，记 0 留痕不留盲区
-      if (workspaceId) {
+      if (instanceId) {
         ctx.usageService
           ?.record({
-            workspaceId,
+            instanceId,
             provider: providerName,
             model,
             capability: "video",
@@ -267,7 +267,7 @@ registerExecutor(
         generated,
         {
           jobId,
-          workspaceId,
+          instanceId,
           createdBy,
           providerLabel: providerName,
           model,
@@ -296,7 +296,7 @@ registerExecutor(
 
 interface FinishContext {
   jobId: string;
-  workspaceId: string;
+  instanceId: string;
   createdBy: string | null;
   providerLabel: string;
   model: string;
@@ -311,13 +311,13 @@ async function finishVideoJob(
   ctx: ExecutorContext,
   lap: (label: string) => void,
 ): Promise<Record<string, unknown>> {
-  const { jobId, workspaceId, createdBy } = meta;
+  const { jobId, instanceId, createdBy } = meta;
 
   // 用量落账（DEC-6 直连生成链路）：视频 provider 不报 token，记 0 留痕不留盲区
-  if (workspaceId) {
+  if (instanceId) {
     ctx.usageService
       ?.record({
-        workspaceId,
+        instanceId,
         provider: meta.providerInstanceId ? "instance" : meta.providerLabel,
         model: meta.model,
         capability: "video",
@@ -350,7 +350,7 @@ async function finishVideoJob(
 
   const ext = generated.mimeType === "video/webm" ? "webm" : "mp4";
   const timestamp = Date.now();
-  const objectPath = `${workspaceId}/generated/${timestamp}-${jobId}.${ext}`;
+  const objectPath = `${instanceId}/generated/${timestamp}-${jobId}.${ext}`;
 
   const bucket = ctx.blob.bucket("project-assets");
   await bucket.upload(objectPath, buffer, {
@@ -364,8 +364,8 @@ async function finishVideoJob(
     byteSize: buffer.length,
     mimeType: generated.mimeType ?? "video/mp4",
     objectPath,
-    ...(createdBy ? { userId: createdBy } : {}),
-    workspaceId,
+    ...(createdBy ? { accessClientId: createdBy } : {}),
+    instanceId,
   });
   lap("asset_record_done");
 

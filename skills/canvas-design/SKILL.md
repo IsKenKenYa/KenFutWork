@@ -1,6 +1,6 @@
 ---
 name: canvas-design
-description: Create beautiful visual art as .png and .pdf files using design philosophy. Use when the user asks to create a poster, visual artwork, design piece, or static visual output via code generation. Requires the execute tool and Python with Pillow/reportlab.
+description: 做海报、视觉稿、静态设计图 · 用代码生成 .png / .pdf（需 execute 与 Python Pillow / reportlab）
 license: Apache-2.0
 metadata:
   author: anthropic

@@ -1,14 +1,8 @@
-/**
- * zcode 照搬：`@/hooks/useWorkflowRunArtifactData.ts`（references/zcode/packages/ui/src/hooks/useWorkflowRunArtifactData.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import type { ArtifactItem } from "@zui/app-shell/workflow-artifacts/presets/index";
-import { WORKFLOW_ARTIFACT_LIMITS } from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import { logger } from "@zui/logger";
-import { useV4Conversation } from "@zui/v4/V4ConversationContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { WORKFLOW_ARTIFACT_LIMITS } from "@zcode/shared/zcode-protocol-v4";
+import type { ArtifactItem } from "@zui/app-shell/workflow-artifacts/presets/index.js";
+import { logger } from "@zui/logger.js";
+import { useV4Conversation } from "@zui/v4/V4ConversationContext.js";
 
 /**
  * 预置看板的取数。
@@ -51,10 +45,7 @@ interface WorkflowRunArtifactDataState {
 /** 能力缺席的判据同 `useWorkflowRunArtifacts`：跨 JSON-RPC 之后只剩 message 可靠。 */
 function isWorkflowRunArtifactDataCapabilityMissing(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.includes("capabilityUnsupported") ||
-    message.includes("ArtifactItems")
-  );
+  return message.includes("capabilityUnsupported") || message.includes("ArtifactItems");
 }
 
 function emptyState(): WorkflowRunArtifactDataState {
@@ -96,10 +87,7 @@ export function useWorkflowRunArtifactData(options: {
 
   const { artifactId, runId, sessionId } = options;
   const enabled =
-    options.enabled !== false &&
-    sessionId.length > 0 &&
-    runId.length > 0 &&
-    artifactId.length > 0;
+    options.enabled !== false && sessionId.length > 0 && runId.length > 0 && artifactId.length > 0;
 
   /**
    * 从游标一路翻到排空。`replace` 是整份重取（切产物 / 切 run），`append` 是增量追加。
@@ -144,10 +132,7 @@ export function useWorkflowRunArtifactData(options: {
           cursorRef.current = cursor;
           const settledMode = currentMode;
           setState((current) => ({
-            items:
-              settledMode === "replace"
-                ? collected
-                : [...current.items, ...collected],
+            items: settledMode === "replace" ? collected : [...current.items, ...collected],
             loading: false,
             unavailable: false,
             error: null,
@@ -167,8 +152,7 @@ export function useWorkflowRunArtifactData(options: {
           }));
           return;
         }
-        const message =
-          caught instanceof Error ? caught.message : String(caught);
+        const message = caught instanceof Error ? caught.message : String(caught);
         logger.warn("[workflow-artifacts] 读取看板条目失败", {
           artifactId,
           error: message,

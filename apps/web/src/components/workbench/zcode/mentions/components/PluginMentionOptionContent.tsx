@@ -1,11 +1,5 @@
-/**
- * zcode 照搬：`@/mentions/components/PluginMentionOptionContent.tsx`（references/zcode/packages/ui/src/mentions/components/PluginMentionOptionContent.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-import { PluginIcon } from "@zui/components/PluginIcon";
-import type { MentionItem } from "@zui/mentions/mentionTypes";
+import { PluginIcon } from "@zui/components/PluginIcon.js";
+import type { MentionItem } from "@zui/mentions/mentionTypes.js";
 
 export function PluginMentionOptionContent({ item }: { item: MentionItem }) {
   return (
@@ -21,9 +15,7 @@ export function PluginMentionOptionContent({ item }: { item: MentionItem }) {
       </span>
       <span className="min-w-0 truncate text-ui-xs text-foreground-subtlest">
         {/* 冲突禁选项优先展示原因，普通项展示当前语言的插件描述。 */}
-        {item.disabled && item.disabledReason
-          ? item.disabledReason
-          : item.description}
+        {item.disabled && item.disabledReason ? item.disabledReason : item.description}
       </span>
     </span>
   );

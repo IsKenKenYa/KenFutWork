@@ -1,38 +1,25 @@
-/**
- * zcode 照搬：`@/lib/usageEntitlementRefreshPolicy.ts`（references/zcode/packages/ui/src/lib/usageEntitlementRefreshPolicy.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-import type { IUsageStatsService } from "@zui/lib/zcode-services";
+import type { IUsageStatsService } from "@zcode/services";
 import type {
   UsageEntitlementSnapshot,
   ZCodeAccountAccess,
   ZCodeProviderAccountAccess,
-} from "@zui/lib/zcode-shared";
+} from "@zcode/shared";
 
 export interface UsageEntitlementRequestOptions {
-  invalidateBalanceCache?: boolean | undefined;
+  invalidateBalanceCache?: boolean;
   includeSubscription: boolean;
-  preferredProviderId?: string | undefined;
-  accountAccess?: ZCodeProviderAccountAccess | ZCodeAccountAccess | undefined;
+  preferredProviderId?: string;
+  accountAccess?: ZCodeProviderAccountAccess | ZCodeAccountAccess;
   allowDisabledPreferredProvider: boolean;
   requirePreferredProvider: boolean;
-  allowEnvApiKey?: boolean | undefined;
+  allowEnvApiKey?: boolean;
 }
 
-export type UsageEntitlementRefreshReason =
-  | "initial"
-  | "access"
-  | "manual"
-  | "purchase"
-  | "auth";
+export type UsageEntitlementRefreshReason = "initial" | "access" | "manual" | "purchase" | "auth";
 
 export const USAGE_ENTITLEMENT_ACCESS_REFRESH_MS = 60_000;
 
-const USAGE_ENTITLEMENT_ERROR_BACKOFF_MS = [
-  30_000, 60_000, 120_000, 300_000,
-] as const;
+const USAGE_ENTITLEMENT_ERROR_BACKOFF_MS = [30_000, 60_000, 120_000, 300_000] as const;
 
 interface SharedUsageEntitlementRecord {
   failureCount: number;
@@ -47,25 +34,16 @@ const entitlementSharedSnapshots = new WeakMap<
 >();
 const entitlementSubscribers = new WeakMap<
   IUsageStatsService,
-  Map<
-    string,
-    Set<(snapshot: UsageEntitlementSnapshot | null, error?: string) => void>
-  >
+  Map<string, Set<(snapshot: UsageEntitlementSnapshot | null, error?: string) => void>>
 >();
 const entitlementFailureBackoff = new WeakMap<
   IUsageStatsService,
   Map<string, { failureCount: number; nextAllowedAt: number }>
 >();
-const entitlementAccessRequests = new WeakMap<
-  IUsageStatsService,
-  Map<string, number>
->();
+const entitlementAccessRequests = new WeakMap<IUsageStatsService, Map<string, number>>();
 
 // 购买使同一身份的所有旧请求失效，不能仅依赖单个 hook 的 requestVersion。
-const entitlementGenerations = new WeakMap<
-  IUsageStatsService,
-  Map<string, number>
->();
+const entitlementGenerations = new WeakMap<IUsageStatsService, Map<string, number>>();
 
 export function beginSharedEntitlementRequest(params: {
   usageStatsService: IUsageStatsService;
@@ -77,8 +55,7 @@ export function beginSharedEntitlementRequest(params: {
     generations = new Map();
     entitlementGenerations.set(params.usageStatsService, generations);
   }
-  const generation =
-    (generations.get(params.freshnessKey) ?? 0) + (params.invalidate ? 1 : 0);
+  const generation = (generations.get(params.freshnessKey) ?? 0) + (params.invalidate ? 1 : 0);
   generations.set(params.freshnessKey, generation);
   return {
     requestKey: JSON.stringify([params.freshnessKey, generation]),
@@ -86,9 +63,7 @@ export function beginSharedEntitlementRequest(params: {
   };
 }
 
-function getAccessRequestMap(
-  usageStatsService: IUsageStatsService,
-): Map<string, number> {
+function getAccessRequestMap(usageStatsService: IUsageStatsService): Map<string, number> {
   let requests = entitlementAccessRequests.get(usageStatsService);
   if (!requests) {
     requests = new Map();
@@ -102,12 +77,9 @@ export function shouldDeferSharedEntitlementAccess(params: {
   now: number;
   usageStatsService: IUsageStatsService;
 }): boolean {
-  const requestedAt = getAccessRequestMap(params.usageStatsService).get(
-    params.freshnessKey,
-  );
+  const requestedAt = getAccessRequestMap(params.usageStatsService).get(params.freshnessKey);
   return (
-    requestedAt !== undefined &&
-    params.now - requestedAt < USAGE_ENTITLEMENT_ACCESS_REFRESH_MS
+    requestedAt !== undefined && params.now - requestedAt < USAGE_ENTITLEMENT_ACCESS_REFRESH_MS
   );
 }
 
@@ -116,15 +88,10 @@ export function recordSharedEntitlementAccess(params: {
   now: number;
   usageStatsService: IUsageStatsService;
 }): void {
-  getAccessRequestMap(params.usageStatsService).set(
-    params.freshnessKey,
-    params.now,
-  );
+  getAccessRequestMap(params.usageStatsService).set(params.freshnessKey, params.now);
 }
 
-function buildEntitlementRequestKey(
-  options: UsageEntitlementRequestOptions,
-): string {
+function buildEntitlementRequestKey(options: UsageEntitlementRequestOptions): string {
   return JSON.stringify({
     ...(options.invalidateBalanceCache ? { invalidateBalanceCache: true } : {}),
     includeSubscription: options.includeSubscription,
@@ -142,10 +109,7 @@ export function buildEntitlementFreshnessKey(params: {
 }): string {
   return JSON.stringify({
     cacheKey: params.cacheKey,
-    request: JSON.parse(buildEntitlementRequestKey(params.options)) as Record<
-      string,
-      unknown
-    >,
+    request: JSON.parse(buildEntitlementRequestKey(params.options)) as Record<string, unknown>,
   });
 }
 
@@ -175,10 +139,7 @@ export function readSharedEntitlementSnapshot(params: {
   usageStatsService: IUsageStatsService;
   freshnessKey: string;
 }): UsageEntitlementSnapshot | null {
-  return (
-    getSharedSnapshotMap(params.usageStatsService).get(params.freshnessKey)
-      ?.snapshot ?? null
-  );
+  return getSharedSnapshotMap(params.usageStatsService).get(params.freshnessKey)?.snapshot ?? null;
 }
 
 export function publishSharedEntitlementSnapshot(params: {
@@ -193,9 +154,7 @@ export function publishSharedEntitlementSnapshot(params: {
     updatedAt: Date.now(),
   });
   getFailureBackoffMap(params.usageStatsService).delete(params.freshnessKey);
-  const listeners = entitlementSubscribers
-    .get(params.usageStatsService)
-    ?.get(params.freshnessKey);
+  const listeners = entitlementSubscribers.get(params.usageStatsService)?.get(params.freshnessKey);
   if (!listeners) {
     return;
   }
@@ -212,17 +171,12 @@ export function recordSharedEntitlementFailure(params: {
   const failures = getFailureBackoffMap(params.usageStatsService);
   const current = snapshots.get(params.freshnessKey);
   const previousFailureCount =
-    current?.failureCount ??
-    failures.get(params.freshnessKey)?.failureCount ??
-    0;
+    current?.failureCount ?? failures.get(params.freshnessKey)?.failureCount ?? 0;
   const failureCount = previousFailureCount + 1;
   const backoffMs =
     USAGE_ENTITLEMENT_ERROR_BACKOFF_MS[
       Math.min(failureCount - 1, USAGE_ENTITLEMENT_ERROR_BACKOFF_MS.length - 1)
-    ] ??
-    USAGE_ENTITLEMENT_ERROR_BACKOFF_MS[
-      USAGE_ENTITLEMENT_ERROR_BACKOFF_MS.length - 1
-    ]!;
+    ] ?? USAGE_ENTITLEMENT_ERROR_BACKOFF_MS[USAGE_ENTITLEMENT_ERROR_BACKOFF_MS.length - 1]!;
   const nextAllowedAt = Date.now() + backoffMs;
   failures.set(params.freshnessKey, {
     failureCount,
@@ -277,9 +231,7 @@ export function shouldUseSharedEntitlementSnapshot(params: {
   now: number;
   usageStatsService: IUsageStatsService;
 }): UsageEntitlementSnapshot | null {
-  const record = getSharedSnapshotMap(params.usageStatsService).get(
-    params.freshnessKey,
-  );
+  const record = getSharedSnapshotMap(params.usageStatsService).get(params.freshnessKey);
   if (!record) {
     return null;
   }
@@ -294,9 +246,7 @@ export function hasSharedEntitlementFailure(params: {
   freshnessKey: string;
   usageStatsService: IUsageStatsService;
 }): boolean {
-  return getFailureBackoffMap(params.usageStatsService).has(
-    params.freshnessKey,
-  );
+  return getFailureBackoffMap(params.usageStatsService).has(params.freshnessKey);
 }
 
 export function shouldDeferSharedEntitlementRefresh(params: {
@@ -304,8 +254,6 @@ export function shouldDeferSharedEntitlementRefresh(params: {
   now: number;
   usageStatsService: IUsageStatsService;
 }): boolean {
-  const failure = getFailureBackoffMap(params.usageStatsService).get(
-    params.freshnessKey,
-  );
+  const failure = getFailureBackoffMap(params.usageStatsService).get(params.freshnessKey);
   return Boolean(failure && failure.nextAllowedAt > params.now);
 }

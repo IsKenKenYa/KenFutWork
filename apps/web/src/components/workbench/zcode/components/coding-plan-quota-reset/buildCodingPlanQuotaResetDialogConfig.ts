@@ -1,17 +1,11 @@
-/**
- * zcode 照搬：`@/components/coding-plan-quota-reset/buildCodingPlanQuotaResetDialogConfig.ts`（references/zcode/packages/ui/src/components/coding-plan-quota-reset/buildCodingPlanQuotaResetDialogConfig.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-
+import type { CodingPlanResetType } from "@zcode/shared";
 import type {
   CodingPlanQuotaResetDialogConfig,
   CodingPlanQuotaResetDialogResetItem,
   CodingPlanQuotaResetDialogUsageItem,
-} from "@zui/components/coding-plan-quota-reset/CodingPlanQuotaResetDialog";
-import type { useCodingPlanQuotaResetUi } from "@zui/hooks/useCodingPlanQuotaResetUi";
-import type { CodingPlanQuotaResetUiEntry } from "@zui/lib/codingPlanQuotaResetUi";
-import type { CodingPlanResetType } from "@zui/lib/zcode-shared";
+} from "@zui/components/coding-plan-quota-reset/CodingPlanQuotaResetDialog.js";
+import type { useCodingPlanQuotaResetUi } from "@zui/hooks/useCodingPlanQuotaResetUi.js";
+import type { CodingPlanQuotaResetUiEntry } from "@zui/lib/codingPlanQuotaResetUi.js";
 
 type CodingPlanQuotaResetUi = ReturnType<typeof useCodingPlanQuotaResetUi>;
 
@@ -28,9 +22,7 @@ function createResetItem(params: {
   if (
     !enabled ||
     !entry ||
-    (!processing &&
-      entry.status !== "completed" &&
-      (!opportunityVisible || quotaFull))
+    (!processing && entry.status !== "completed" && (!opportunityVisible || quotaFull))
   ) {
     return null;
   }
@@ -71,8 +63,6 @@ export function buildCodingPlanQuotaResetDialogConfig(params: {
       quotaFull: params.weekQuotaFull,
       resetType: "WEEK",
     }),
-  ].filter(
-    (item): item is CodingPlanQuotaResetDialogResetItem => item !== null,
-  );
+  ].filter((item): item is CodingPlanQuotaResetDialogResetItem => item !== null);
   return { resetItems, usageItems: params.usageItems };
 }

@@ -1,11 +1,6 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/cuaResultState.ts`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/cuaResultState.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-import { readCuaErrorDetails } from "@zui/ToolCallBlocks/renderers/cuaErrorDetails";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay";
+import { readCuaErrorDetails } from "@zui/ToolCallBlocks/renderers/cuaErrorDetails.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
+import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay.js";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -24,18 +19,13 @@ function parseRecord(value: unknown): Record<string, unknown> | null {
   }
 }
 
-function readText(
-  record: Record<string, unknown> | null,
-  key: string,
-): string | null {
+function readText(record: Record<string, unknown> | null, key: string): string | null {
   const value = record?.[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function parseCuaTextAppState(value: string): Record<string, unknown> | null {
-  const match = /^app:\s+([A-Za-z0-9.-]+)\s+pid=\d+\s+"([^"\r\n]+)"\s*$/mu.exec(
-    value,
-  );
+  const match = /^app:\s+([A-Za-z0-9.-]+)\s+pid=\d+\s+"([^"\r\n]+)"\s*$/mu.exec(value);
   if (!match) return null;
   const [, bundleId, name] = match;
   return { app: { bundle_id: bundleId, name } };
@@ -91,8 +81,7 @@ export function readCuaResultBundleId(
   const errorBundleId = readCuaErrorDetails(toolCall)?.targetBundleId;
   if (errorBundleId) return errorBundleId;
   const rawOutput = readText(asRecord(toolCall.raw), "rawOutput");
-  const result =
-    parseCuaResultState(toolCall.output) ?? parseCuaResultState(rawOutput);
+  const result = parseCuaResultState(toolCall.output) ?? parseCuaResultState(rawOutput);
   const resultApp = asRecord(result?.app) ?? asRecord(result?.owner) ?? result;
   return readText(resultApp, "bundle_id") ?? readText(resultApp, "bundleId");
 }
@@ -105,9 +94,7 @@ function readCuaInputApp(input: unknown): Record<string, unknown> | null {
 function parseCuaResultArrayLength(value: unknown): number | null {
   if (typeof value !== "string") return null;
   const markerStart = value.lastIndexOf("\n\nStructured content:");
-  const candidate = (
-    markerStart >= 0 ? value.slice(0, markerStart) : value
-  ).trim();
+  const candidate = (markerStart >= 0 ? value.slice(0, markerStart) : value).trim();
   if (!candidate) return null;
   try {
     const parsed = JSON.parse(candidate);
@@ -126,10 +113,7 @@ export function readCuaResultListCount(
     if (displayCount !== null) return displayCount;
   }
   const rawOutput = readText(asRecord(toolCall.raw), "rawOutput");
-  return (
-    parseCuaResultArrayLength(toolCall.output) ??
-    parseCuaResultArrayLength(rawOutput)
-  );
+  return parseCuaResultArrayLength(toolCall.output) ?? parseCuaResultArrayLength(rawOutput);
 }
 
 function readCuaOutputText(
@@ -137,8 +121,7 @@ function readCuaOutputText(
 ): string | null {
   const display = readToolResultDisplay(toolCall.raw);
   if (display?.kind === "cua" && display.text) return display.text;
-  if (typeof toolCall.output === "string" && toolCall.output.trim())
-    return toolCall.output;
+  if (typeof toolCall.output === "string" && toolCall.output.trim()) return toolCall.output;
   return readText(asRecord(toolCall.raw), "rawOutput");
 }
 
@@ -229,8 +212,7 @@ export function readCuaAppName(
     readText(resultApp, "display_name") ??
     readText(inputApp, "name");
   if (name) return name;
-  const bundleId =
-    readText(resultApp, "bundle_id") ?? readText(inputApp, "bundle_id");
+  const bundleId = readText(resultApp, "bundle_id") ?? readText(inputApp, "bundle_id");
   // Finder 的 list_windows 等结果只返回稳定的系统 bundle ID，不返回 app.name；
   // 这里使用 macOS 标准名称，避免摘要和详情暴露 com.apple.finder。
   return bundleId === "com.apple.finder" ? "Finder" : bundleId;

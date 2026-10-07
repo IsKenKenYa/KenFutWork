@@ -1,17 +1,22 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowTimeline.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowTimeline.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import { laneDisplayName } from "@zui/components/workflow-graph/lane-name";
-import { phaseDisplayName } from "@zui/components/workflow-graph/phase-name";
 import {
-  ROSTER_PINS_CARD,
-  rosterMore,
-  stationRoster,
-} from "@zui/components/workflow-timeline/roster-model";
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
+import { cn } from "@zui/components/lib/utils.js";
+import { laneDisplayName } from "@zui/components/workflow-graph/lane-name.js";
+import { phaseDisplayName } from "@zui/components/workflow-graph/phase-name.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { TimelinePill, TimelineStation, WorkflowTimelineModel } from "./timeline-model.js";
+import { ROSTER_PINS_CARD, rosterMore, stationRosterOf } from "./roster-model.js";
+import { useTypewriter } from "./use-typewriter.js";
+import { WorkflowAgentPill } from "./WorkflowAgentPill.js";
+import { WorkflowMoreRow } from "./WorkflowMoreRow.js";
 import {
   PILL_GAP,
   PILL_HEIGHT,
@@ -21,58 +26,28 @@ import {
   stationX,
   timelineLayout,
   timelineWidth,
-} from "@zui/components/workflow-timeline/timeline-geometry";
+} from "./timeline-geometry.js";
+import { WorkflowTimelineArcs } from "./WorkflowTimelineArcs.js";
+import { WorkflowStationPlatform, WorkflowStationRow } from "./WorkflowTimelineStation.js";
+import { WorkflowTimelineLamps, WorkflowTimelineTracks } from "./WorkflowTimelineTracks.js";
 import {
-  type CameraFlight,
+  NO_FOLD,
   flightAfterScroll,
   foldStations,
   ledgeStubWidth,
-  NO_FOLD,
   railKey,
   stationCameraLeft,
   timelineMaskStyle,
-} from "@zui/components/workflow-timeline/timeline-ledge";
-import type {
-  TimelinePill,
-  TimelineStation,
-  WorkflowTimelineModel,
-} from "@zui/components/workflow-timeline/timeline-model";
-import { useTimelineViewport } from "@zui/components/workflow-timeline/use-timeline-viewport";
-import { useTypewriter } from "@zui/components/workflow-timeline/use-typewriter";
-import { WorkflowAgentPill } from "@zui/components/workflow-timeline/WorkflowAgentPill";
-import { WorkflowMoreRow } from "@zui/components/workflow-timeline/WorkflowMoreRow";
-import { WorkflowTimelineArcs } from "@zui/components/workflow-timeline/WorkflowTimelineArcs";
+  type CameraFlight,
+} from "./timeline-ledge.js";
+import { useTimelineViewport } from "./use-timeline-viewport.js";
 import {
-  prefersReducedMotion,
   WorkflowLedge,
   WorkflowTimelineScrollbar,
-} from "@zui/components/workflow-timeline/WorkflowTimelineLedge";
-import {
-  WorkflowStationPlatform,
-  WorkflowStationRow,
-} from "@zui/components/workflow-timeline/WorkflowTimelineStation";
-import {
-  WorkflowTimelineLamps,
-  WorkflowTimelineTracks,
-} from "@zui/components/workflow-timeline/WorkflowTimelineTracks";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  type KeyboardEvent,
-  memo,
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+  prefersReducedMotion,
+} from "./WorkflowTimelineLedge.js";
 
-export {
-  STATION_GAP,
-  STATION_PITCH,
-  STATION_WIDTH,
-  timelineWidth,
-} from "@zui/components/workflow-timeline/timeline-geometry";
+export { STATION_GAP, STATION_PITCH, STATION_WIDTH, timelineWidth } from "./timeline-geometry.js";
 
 /**
  * 横向时间线：一根轨道、站在轨道上、
@@ -93,9 +68,8 @@ export {
 function stationHeight(station: TimelineStation): number {
   // 过了阈值的站是五枚钉住的药丸加一行「还有 n 个」：那一行就是第六枚
   // 药丸，所以一站永远不高于六枚药丸。
-  const roster = stationRoster(station.pills, { pins: ROSTER_PINS_CARD });
-  const n =
-    roster === undefined ? station.pills.length : roster.pinned.length + 1;
+  const roster = stationRosterOf(station, ROSTER_PINS_CARD);
+  const n = roster === undefined ? station.pills.length : roster.pinned.length + 1;
   return n === 0 ? 0 : n * PILL_HEIGHT + (n - 1) * PILL_GAP;
 }
 
@@ -113,10 +87,7 @@ export function timelineHeight(model: WorkflowTimelineModel): number {
 /** 药丸依次落地的间隔（与设计画布同值）。 */
 export const PILL_STAGGER_MS = 30;
 
-function pillName(
-  pill: TimelinePill,
-  format: Parameters<typeof laneDisplayName>[1],
-): string {
+function pillName(pill: TimelinePill, format: Parameters<typeof laneDisplayName>[1]): string {
   return pill.runtimeName ?? laneDisplayName(pill.lane, format);
 }
 
@@ -164,13 +135,9 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
 
   const { arcs } = model;
   const draft = model.draft !== undefined;
-  const fullNames = model.stations.map((station) =>
-    phaseDisplayName(station.naming, format),
-  );
+  const fullNames = model.stations.map((station) => phaseDisplayName(station.naming, format));
   const pen = useTypewriter(draft ? fullNames : undefined);
-  const stations = draft
-    ? model.stations.slice(0, pen.visible)
-    : model.stations;
+  const stations = draft ? model.stations.slice(0, pen.visible) : model.stations;
   const n = stations.length;
   const rails = draft ? model.rails.filter((rail) => rail.to < n) : model.rails;
   // 行的排布：有带时主线落在最下面
@@ -201,41 +168,28 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
   useEffect(() => {
     setFlight((current) => flightAfterScroll(current, viewport.scrollLeft));
   }, [viewport.scrollLeft]);
-  const overflow =
-    viewport.clientWidth > 0 && viewport.scrollWidth > viewport.clientWidth;
+  const overflow = viewport.clientWidth > 0 && viewport.scrollWidth > viewport.clientWidth;
   const fold = overflow
-    ? foldStations(
-        n,
-        viewport.scrollLeft,
-        viewport.clientWidth,
-        flight?.index,
-        inset,
-      )
+    ? foldStations(n, viewport.scrollLeft, viewport.clientWidth, flight?.index, inset)
     : NO_FOLD;
   const folded = useMemo(() => new Set([...fold.left, ...fold.right]), [fold]);
   // 遮罩分两带：轨道带在檐旁渐隐，药丸带只在视口真正的边界渐隐。
   const mask = overflow
     ? timelineMaskStyle(fold, pillsTop - 8, {
         left: viewport.scrollLeft > 0,
-        right:
-          viewport.scrollLeft < viewport.scrollWidth - viewport.clientWidth - 1,
+        right: viewport.scrollLeft < viewport.scrollWidth - viewport.clientWidth - 1,
       })
     : undefined;
 
   const scrollTo = useCallback((left: number) => {
     const element = scrollRef.current;
     if (element === null) return;
-    element.scrollTo({
-      behavior: prefersReducedMotion() ? "auto" : "smooth",
-      left,
-    });
+    element.scrollTo({ behavior: prefersReducedMotion() ? "auto" : "smooth", left });
   }, []);
   // 檐上的灯：镜头把那一站带回正中（与运行站的镜头同一条规则）。
   const selectFolded = useCallback(
     (index: number) =>
-      scrollTo(
-        stationCameraLeft(index, scrollRef.current?.clientWidth ?? 0, inset),
-      ),
+      scrollTo(stationCameraLeft(index, scrollRef.current?.clientWidth ?? 0, inset)),
     [inset, scrollTo],
   );
   // 焦点在站头或檐上的灯时，← → 各滚一站。
@@ -243,20 +197,11 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
     (event: KeyboardEvent<HTMLDivElement>) => {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
       const target = event.target as HTMLElement;
-      if (
-        target.closest(
-          "[data-testid='workflow-timeline-station'], .wf-ledge",
-        ) === null
-      )
-        return;
+      if (target.closest("[data-testid='workflow-timeline-station'], .wf-ledge") === null) return;
       const element = scrollRef.current;
-      if (element === null || element.scrollWidth <= element.clientWidth)
-        return;
+      if (element === null || element.scrollWidth <= element.clientWidth) return;
       event.preventDefault();
-      scrollTo(
-        element.scrollLeft +
-          (event.key === "ArrowLeft" ? -STATION_PITCH : STATION_PITCH),
-      );
+      scrollTo(element.scrollLeft + (event.key === "ArrowLeft" ? -STATION_PITCH : STATION_PITCH));
     },
     [scrollTo],
   );
@@ -270,34 +215,20 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
     if (element === null || focusIndex === undefined) return;
     if (element.scrollWidth <= element.clientWidth) return;
     const left = draft
-      ? Math.max(
-          0,
-          stationX(focusIndex, inset) + STATION_WIDTH - element.clientWidth,
-        )
+      ? Math.max(0, stationX(focusIndex, inset) + STATION_WIDTH - element.clientWidth)
       : stationCameraLeft(focusIndex, element.clientWidth, inset);
     // 起飞：目标按可滚范围夹紧；已在目标上就不算飞。
     const target = Math.min(left, element.scrollWidth - element.clientWidth);
     const from = element.scrollLeft;
-    setFlight(
-      Math.abs(from - target) <= 1
-        ? undefined
-        : { from, index: focusIndex, target },
-    );
-    element.scrollTo({
-      behavior: prefersReducedMotion() ? "auto" : "smooth",
-      left,
-    });
+    setFlight(Math.abs(from - target) <= 1 ? undefined : { from, index: focusIndex, target });
+    element.scrollTo({ behavior: prefersReducedMotion() ? "auto" : "smooth", left });
   }, [draft, focusIndex, inset]);
 
   if (n === 0) return null;
 
   const stationTitleOf = (phaseId: string): string => {
-    const station = model.stations.find(
-      (candidate) => candidate.id === phaseId,
-    );
-    return station === undefined
-      ? phaseId
-      : phaseDisplayName(station.naming, format);
+    const station = model.stations.find((candidate) => candidate.id === phaseId);
+    return station === undefined ? phaseId : phaseDisplayName(station.naming, format);
   };
   const stationTitle = (station: TimelineStation): string => {
     const name = phaseDisplayName(station.naming, format);
@@ -316,10 +247,7 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
     const open =
       onOpenPill !== undefined && pill.slot !== undefined
         ? {
-            label: format(
-              { id: "chat.toolCall.workflow.timeline.openAgent" },
-              { name: label },
-            ),
+            label: format({ id: "chat.toolCall.workflow.timeline.openAgent" }, { name: label }),
             onOpen: () => onOpenPill(pill),
             testId: "workflow-timeline-pill-open",
           }
@@ -431,16 +359,13 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
             )}
 
             {stations.map((station, i) => {
-              if (station.pills.length === 0) return null;
-              const roster = stationRoster(station.pills, {
-                pins: ROSTER_PINS_CARD,
-              });
+              const roster = stationRosterOf(station, ROSTER_PINS_CARD);
+              // 名册在就还有话说：一站的药丸全被界淘汰掉时剩下「还有 n 个」那一行，而不是凭空消失。
+              if (station.pills.length === 0 && roster === undefined) return null;
               return (
                 <div
                   className="absolute flex flex-col"
-                  data-station-roster={
-                    roster === undefined ? undefined : "true"
-                  }
+                  data-station-roster={roster === undefined ? undefined : "true"}
                   data-testid="workflow-timeline-pills"
                   key={station.id}
                   style={{
@@ -460,9 +385,7 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
                       <WorkflowMoreRow
                         enterDelayMs={nextDelay()}
                         more={rosterMore(roster)}
-                        {...(onOpenMore === undefined
-                          ? {}
-                          : { onOpen: () => onOpenMore(station) })}
+                        {...(onOpenMore === undefined ? {} : { onOpen: () => onOpenMore(station) })}
                       />
                     </>
                   )}
@@ -475,13 +398,7 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
         <WorkflowLedge
           indexes={fold.left}
           side="left"
-          stubWidth={ledgeStubWidth(
-            fold,
-            "left",
-            viewport.scrollLeft,
-            viewport.clientWidth,
-            inset,
-          )}
+          stubWidth={ledgeStubWidth(fold, "left", viewport.scrollLeft, viewport.clientWidth, inset)}
           {...ledgeProps}
         />
         <WorkflowLedge
@@ -496,12 +413,7 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
           )}
           {...ledgeProps}
         />
-        {overflow ? (
-          <WorkflowTimelineScrollbar
-            scrollRef={scrollRef}
-            viewport={viewport}
-          />
-        ) : null}
+        {overflow ? <WorkflowTimelineScrollbar scrollRef={scrollRef} viewport={viewport} /> : null}
       </div>
     </div>
   );

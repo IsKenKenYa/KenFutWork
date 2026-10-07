@@ -8,8 +8,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 import { useToast } from "@/components/toast";
 import type { ReadyAttachment } from "@/hooks/use-image-attachments";
-import { useAuth } from "@/lib/auth-context";
-import { ApiAuthError, createProject } from "@/lib/server-api";
+import { ApiAccessError, createProject } from "@/lib/server-api";
 
 /** sessionStorage key used to pass attachments from Home → Canvas auto-send. */
 export const INITIAL_ATTACHMENTS_KEY = "kenfutwork:initial-attachments";
@@ -24,13 +23,10 @@ export const INITIAL_AGENT_MODEL_KEY = "kenfutwork:initial-agent-model";
  * Used by Home page, Projects page, and Canvas logo menu.
  */
 export function useCreateProject() {
-  const { session, signOut } = useAuth();
   const router = useRouter();
   const { error: toastError } = useToast();
   const [creating, setCreating] = useState(false);
 
-  const signOutRef = useRef(signOut);
-  signOutRef.current = signOut;
   const routerRef = useRef(router);
   routerRef.current = router;
 
@@ -42,8 +38,8 @@ export function useCreateProject() {
       videoGenerationPreference?: VideoGenerationPreference;
       model?: string;
     }) => {
-      const token = session?.access_token;
-      if (!token || creating) return;
+      const token = null;
+      if (creating) return;
 
       // Persist attachments in sessionStorage BEFORE window.open so the
       // new tab's cloned sessionStorage already contains them.
@@ -113,6 +109,9 @@ export function useCreateProject() {
       try {
         // 名称统一为「未命名画布」：侧栏/画布标题同口径（此前是 Untitled，与画布页的默认名不一致）
         const result = await createProject(token, { name: "未命名画布" });
+        if (result.project.kind === "code") {
+          throw new Error("新建画布返回了工作目录项目。");
+        }
         const canvasId = result.project.primaryCanvas.id;
         // 嵌入工作台 iframe：通知宿主刷新项目列表并切到新画布
         if (embedded) {
@@ -142,16 +141,15 @@ export function useCreateProject() {
       } catch (err) {
         // Close the blank tab on failure
         newTab?.close();
-        if (err instanceof ApiAuthError) {
-          await signOutRef.current();
-          routerRef.current.replace("/login");
+        if (err instanceof ApiAccessError) {
+          setCreating(false);
           return;
         }
         toastError("项目创建失败");
         setCreating(false);
       }
     },
-    [session?.access_token, creating, toastError],
+    [creating, toastError],
   );
 
   return { create, creating };

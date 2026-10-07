@@ -180,11 +180,11 @@ export function ModelEditDialog({
         </div>
 
         <div className="space-y-4">
-          <div>
-            <p className="text-xs text-muted-foreground">模型 ID</p>
-            <p className="mt-0.5 font-mono text-sm">{model.id}</p>
+          <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+            <p>模型 ID</p>
+            <p className="font-mono text-sm text-foreground">{model.id}</p>
           </div>
-          <label className="block text-xs text-muted-foreground">
+          <label className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
             上下文窗口（token）
             <input
               inputMode="numeric"
@@ -196,10 +196,10 @@ export function ModelEditDialog({
                 }))
               }
               placeholder="如 128000"
-              className="mt-1 w-full rounded-md border px-3 py-2 font-mono text-sm"
+              className="w-44 rounded-md border px-3 py-1.5 font-mono text-sm"
             />
           </label>
-          <label className="block text-xs text-muted-foreground">
+          <label className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
             最大输出 Token
             <input
               inputMode="numeric"
@@ -211,7 +211,7 @@ export function ModelEditDialog({
                 }))
               }
               placeholder="如 32000"
-              className="mt-1 w-full rounded-md border px-3 py-2 font-mono text-sm"
+              className="w-44 rounded-md border px-3 py-1.5 font-mono text-sm"
             />
           </label>
 
@@ -336,8 +336,8 @@ export function ModelEditDialog({
               <div>
                 <p className="text-xs text-muted-foreground">推理参数映射</p>
                 <p className="mb-1 text-xs text-muted-foreground">
-                  JSON 对象，键值原样并入该模型的请求体顶层（如{" "}
-                  <code>{'{"thinking":{"type":"enabled"}}'}</code>）。
+                  键值并入请求体顶层 · 如{" "}
+                  <code>{'{"thinking":{"type":"enabled"}}'}</code>
                 </p>
                 <textarea
                   aria-label="推理参数映射"

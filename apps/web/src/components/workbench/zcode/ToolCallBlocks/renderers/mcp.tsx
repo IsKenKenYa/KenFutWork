@@ -1,9 +1,5 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/mcp.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/mcp.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
+import { ChevronRightIcon, PlugIcon } from "lucide-react";
+import { useCallback } from "react";
 import {
   CodeBlock,
   CodeBlockActions,
@@ -11,19 +7,17 @@ import {
   CodeBlockHeader,
   CodeBlockTitle,
   CodeBlockWrapButton,
-} from "@zui/components/ai-elements/code-block";
-import { Button } from "@zui/components/ui/button";
+} from "@zui/components/ai-elements/code-block.js";
+import { Button } from "@zui/components/ui/button.js";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@zui/components/ui/collapsible";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
-import { ChevronRightIcon, PlugIcon } from "lucide-react";
-import { useCallback } from "react";
+} from "@zui/components/ui/collapsible.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
 interface McpToolPresentation {
   kind: "mcp_tool";
@@ -32,9 +26,7 @@ interface McpToolPresentation {
   description?: string;
 }
 
-const MCP_TOOL_ICON = (
-  <PlugIcon className="size-4 shrink-0 text-foreground-subtle" />
-);
+const MCP_TOOL_ICON = <PlugIcon className="size-4 shrink-0 text-foreground-subtle" />;
 const COMPACT_RESULT_MAX_LENGTH = 160;
 const COLLAPSIBLE_CODE_LAYOUT_STYLE = {
   containIntrinsicSize: "none",
@@ -84,18 +76,10 @@ function isMcpToolPresentation(value: unknown): value is McpToolPresentation {
   );
 }
 
-function readLegacyMcpToolPresentation(
-  toolName: string | undefined,
-): McpToolPresentation | null {
+function readLegacyMcpToolPresentation(toolName: string | undefined): McpToolPresentation | null {
   if (!toolName) return null;
   const segments = toolName.split("__");
-  if (
-    segments.length !== 3 ||
-    segments[0] !== "mcp" ||
-    !segments[1] ||
-    !segments[2]
-  )
-    return null;
+  if (segments.length !== 3 || segments[0] !== "mcp" || !segments[1] || !segments[2]) return null;
 
   const encodedServerName = segments[1];
   const encodedToolName = segments[2];
@@ -155,8 +139,7 @@ function formatMcpServerLabel(value: string): string {
   // 插件 MCP 的 configured server key 带有 plugin:<plugin>:<server> 命名空间，
   // 直接作为 UI 文案会暴露内部路由标识。末段才是用户配置的 server 名称。
   const displayIdentifier =
-    namespaceSegments[0]?.toLocaleLowerCase() === "plugin" &&
-    namespaceSegments.length > 1
+    namespaceSegments[0]?.toLocaleLowerCase() === "plugin" && namespaceSegments.length > 1
       ? namespaceSegments.at(-1)!
       : value;
   return formatMcpIdentifier(displayIdentifier);
@@ -167,9 +150,7 @@ function formatMcpToolLabel(toolName: string, serverLabel: string): string {
   const repeatedPrefix = `${serverLabel} `;
   // 不少 MCP 工具会再次用 server 名作为 tool 前缀；summary 同时展示 server
   // 来源文字时会出现 Firebase / Firebase get environment。只做大小写无关的机械去重。
-  return formattedToolName
-    .toLocaleLowerCase()
-    .startsWith(repeatedPrefix.toLocaleLowerCase())
+  return formattedToolName.toLocaleLowerCase().startsWith(repeatedPrefix.toLocaleLowerCase())
     ? formatMcpIdentifier(formattedToolName.slice(repeatedPrefix.length))
     : formattedToolName;
 }
@@ -184,33 +165,18 @@ export function McpToolCallBlock(context: ToolCallBlockRenderContext) {
   const toolLabel = presentation
     ? formatMcpToolLabel(presentation.toolName, serverLabel ?? "")
     : toolCall.title;
-  const callDetailsLabel = intl.formatMessage({
-    id: "chat.toolCall.mcp.callDetails",
-  });
+  const callDetailsLabel = intl.formatMessage({ id: "chat.toolCall.mcp.callDetails" });
   const resultLabel = intl.formatMessage({ id: "chat.toolCall.mcp.result" });
-  const copyResultLabel = intl.formatMessage({
-    id: "chat.toolCall.mcp.copyResult",
-  });
-  const wrapLinesLabel = intl.formatMessage({
-    id: "chat.toolCall.mcp.wrapLines",
-  });
-  const descriptionLabel = intl.formatMessage({
-    id: "chat.toolCall.mcp.description",
-  });
-  const parametersLabel = intl.formatMessage({
-    id: "chat.toolCall.mcp.parameters",
-  });
-  const hasCallDetails = Boolean(
-    presentation?.description || toolCall.input !== undefined,
-  );
+  const copyResultLabel = intl.formatMessage({ id: "chat.toolCall.mcp.copyResult" });
+  const wrapLinesLabel = intl.formatMessage({ id: "chat.toolCall.mcp.wrapLines" });
+  const descriptionLabel = intl.formatMessage({ id: "chat.toolCall.mcp.description" });
+  const parametersLabel = intl.formatMessage({ id: "chat.toolCall.mcp.parameters" });
+  const hasCallDetails = Boolean(presentation?.description || toolCall.input !== undefined);
   const resultText = stringifyMcpResult(toolCall.output);
   const visibleError =
-    toolCall.status === "failed"
-      ? (toolCall.error ?? context.errorText)
-      : undefined;
+    toolCall.status === "failed" ? (toolCall.error ?? context.errorText) : undefined;
   const hasPrimaryResult = Boolean(resultText || visibleError);
-  const isSummaryOnlyLifecycle =
-    toolCall.status === "pending" || toolCall.status === "stopped";
+  const isSummaryOnlyLifecycle = toolCall.status === "pending" || toolCall.status === "stopped";
   const stoppedSummaryStatus =
     toolCall.status === "stopped" ? (
       <span className="inline-flex items-center gap-2">
@@ -233,9 +199,7 @@ export function McpToolCallBlock(context: ToolCallBlockRenderContext) {
       <div className="mb-2 space-y-3 py-1" data-testid="mcp-expanded-content">
         {visibleError ? (
           <section className="space-y-1.5">
-            <h4 className="text-ui-base font-medium text-destructive">
-              {resultLabel}
-            </h4>
+            <h4 className="text-ui-base font-medium text-destructive">{resultLabel}</h4>
             <p
               className="whitespace-pre-wrap break-words rounded-lg bg-destructive/10 px-3 py-2 text-ui-base text-destructive"
               data-testid="mcp-error-surface"
@@ -263,7 +227,7 @@ export function McpToolCallBlock(context: ToolCallBlockRenderContext) {
               language={looksLikeJson(resultText) ? "json" : "log"}
               renderMermaid={false}
               style={COLLAPSIBLE_CODE_LAYOUT_STYLE}
-              wrapLongLines={true}
+              wrapLongLines
             >
               <CodeBlockHeader className="pl-3 pr-2 pt-2">
                 <CodeBlockTitle>
@@ -272,14 +236,8 @@ export function McpToolCallBlock(context: ToolCallBlockRenderContext) {
                   </span>
                 </CodeBlockTitle>
                 <CodeBlockActions>
-                  <CodeBlockWrapButton
-                    aria-label={wrapLinesLabel}
-                    title={wrapLinesLabel}
-                  />
-                  <CodeBlockCopyButton
-                    aria-label={copyResultLabel}
-                    title={copyResultLabel}
-                  />
+                  <CodeBlockWrapButton aria-label={wrapLinesLabel} title={wrapLinesLabel} />
+                  <CodeBlockCopyButton aria-label={copyResultLabel} title={copyResultLabel} />
                 </CodeBlockActions>
               </CodeBlockHeader>
             </CodeBlock>
@@ -294,13 +252,11 @@ export function McpToolCallBlock(context: ToolCallBlockRenderContext) {
         ) : (
           // 无 result 的 pending/running/stopped MCP 展开后 ToolCallBody 为空，
           // 用户无法判断当前阶段。这里沿用 summary 的国际化状态，不另造生命周期文案。
-          <p className="text-ui-base text-foreground-subtle">
-            {context.statusLabel}
-          </p>
+          <p className="text-ui-base text-foreground-subtle">{context.statusLabel}</p>
         )}
         {hasCallDetails ? (
           <Collapsible className="group/details">
-            <CollapsibleTrigger asChild={true}>
+            <CollapsibleTrigger asChild>
               <Button
                 type="button"
                 variant="ghost"
@@ -323,7 +279,7 @@ export function McpToolCallBlock(context: ToolCallBlockRenderContext) {
                     </p>
                   </section>
                 ) : null}
-                {toolCall.input === undefined ? null : (
+                {toolCall.input !== undefined ? (
                   <section className="space-y-1.5">
                     <h4 className="text-ui-sm font-medium text-foreground-subtlest">
                       {parametersLabel}
@@ -336,7 +292,7 @@ export function McpToolCallBlock(context: ToolCallBlockRenderContext) {
                       />
                     </div>
                   </section>
-                )}
+                ) : null}
               </div>
             </CollapsibleContent>
           </Collapsible>
@@ -382,9 +338,7 @@ export function McpToolCallBlock(context: ToolCallBlockRenderContext) {
       forceOpen={!isSummaryOnlyLifecycle && (context.forceOpen ?? false)}
       kindLabel="MCP"
       kindDetail={
-        serverLabel ? (
-          <span className="text-foreground-subtle">{serverLabel}</span>
-        ) : undefined
+        serverLabel ? <span className="text-foreground-subtle">{serverLabel}</span> : undefined
       }
       primaryText={toolLabel}
       summaryContentSeparator="·"
@@ -392,9 +346,7 @@ export function McpToolCallBlock(context: ToolCallBlockRenderContext) {
       // 用显式分隔节点避免非动画摘要的两个文本节点粘连。Failed 使用专用错误状态槽位。
       secondaryText={stoppedSummaryStatus}
       statusLabel={failedSummaryStatus}
-      statusTooltip={
-        toolCall.status === "failed" ? context.errorText : undefined
-      }
+      statusTooltip={toolCall.status === "failed" ? context.errorText : undefined}
       showFailureStatus={toolCall.status === "failed"}
       isRunning={context.isRunning}
       title={presentation.description ?? presentation.toolName}

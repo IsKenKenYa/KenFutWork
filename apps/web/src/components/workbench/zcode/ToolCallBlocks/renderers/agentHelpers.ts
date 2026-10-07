@@ -1,21 +1,12 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/agentHelpers.ts`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/agentHelpers.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-import type { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { isSubagentColor } from "@zui/lib/subagentColors";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
+import type { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
+import { isSubagentColor } from "@zui/lib/subagentColors.js";
 
 type AgentIntl = ReturnType<typeof useZCodeIntl>["intl"];
 type AgentToolCall = ToolCallBlockRenderContext["toolCallNode"]["toolCall"];
 const DEFAULT_AGENT_TYPE_LABEL = "general-purpose";
 
-export function formatAgentMessage(
-  intl: AgentIntl,
-  id: string,
-  fallback: string,
-) {
+export function formatAgentMessage(intl: AgentIntl, id: string, fallback: string) {
   const message = intl.formatMessage({ id });
   // agent 工具块的语言包一旦漏配，SSR/静态渲染会把内部 i18n key 原样打到 UI 上，
   // 不但测试断言会失败，真实界面也会直接暴露实现细节。这里统一回退到稳定术语。
@@ -53,9 +44,7 @@ function readTextFromUnknown(value: unknown): string | undefined {
   if (Array.isArray(value)) {
     const text = value
       .map((item) => readTextFromUnknown(item))
-      .filter(
-        (item): item is string => typeof item === "string" && item.length > 0,
-      )
+      .filter((item): item is string => typeof item === "string" && item.length > 0)
       .join("\n");
     return text || undefined;
   }
@@ -72,10 +61,7 @@ function readTextFromUnknown(value: unknown): string | undefined {
   return readTextFromUnknown(value.content);
 }
 
-function readStringFromNestedRecord(
-  value: unknown,
-  path: readonly string[],
-): string | undefined {
+function readStringFromNestedRecord(value: unknown, path: readonly string[]): string | undefined {
   let current: unknown = value;
   for (const key of path) {
     if (!isPlainRecord(current)) {
@@ -84,9 +70,7 @@ function readStringFromNestedRecord(
     current = current[key];
   }
 
-  return typeof current === "string" && current.trim().length > 0
-    ? current.trim()
-    : undefined;
+  return typeof current === "string" && current.trim().length > 0 ? current.trim() : undefined;
 }
 
 function parseJsonObject(value: string): Record<string, unknown> | null {
@@ -115,9 +99,7 @@ function isImplementationToolTitle(title: string): boolean {
   return normalized === "agent" || normalized === "task";
 }
 
-function readAgentNameFromRecord(
-  value: Record<string, unknown> | null,
-): string | undefined {
+function readAgentNameFromRecord(value: Record<string, unknown> | null): string | undefined {
   return value
     ? readStringField(value, [
         "agentType",
@@ -130,12 +112,8 @@ function readAgentNameFromRecord(
     : undefined;
 }
 
-function readAgentPrimaryDescription(
-  value: Record<string, unknown> | null,
-): string | undefined {
-  return value
-    ? readStringField(value, ["description", "summary", "message"])
-    : undefined;
+function readAgentPrimaryDescription(value: Record<string, unknown> | null): string | undefined {
+  return value ? readStringField(value, ["description", "summary", "message"]) : undefined;
 }
 
 export function getAgentKindLabel(
@@ -148,16 +126,8 @@ export function getAgentKindLabel(
   const rawRecord = isPlainRecord(toolCall.raw) ? toolCall.raw : null;
   const rawName =
     readStringFromNestedRecord(toolCall.raw, ["_meta", "zcode", "agentType"]) ??
-    readStringFromNestedRecord(toolCall.raw, [
-      "_meta",
-      "zcode",
-      "agent_type",
-    ]) ??
-    readStringFromNestedRecord(toolCall.raw, [
-      "_meta",
-      "zcode",
-      "subagent_type",
-    ]);
+    readStringFromNestedRecord(toolCall.raw, ["_meta", "zcode", "agent_type"]) ??
+    readStringFromNestedRecord(toolCall.raw, ["_meta", "zcode", "subagent_type"]);
 
   // 流式 input 的半截 JSON 暂时读不到 subagent_type，若一读不到就按“模型省略字段”
   // 回退 general-purpose，首帧会误报、之后再跳成真实类型。只有 inputPreviewComplete 明确为 true
@@ -171,9 +141,7 @@ export function getAgentKindLabel(
     return explicitName;
   }
 
-  return rawRecord?.inputPreviewComplete === true
-    ? fallbackLabel || DEFAULT_AGENT_TYPE_LABEL
-    : "";
+  return rawRecord?.inputPreviewComplete === true ? fallbackLabel || DEFAULT_AGENT_TYPE_LABEL : "";
 }
 
 export function getAgentColor(toolCall: AgentToolCall) {
@@ -188,12 +156,8 @@ export function getAgentColor(toolCall: AgentToolCall) {
   return rawColor && isSubagentColor(rawColor) ? rawColor : undefined;
 }
 
-function readAgentColorFromRecord(
-  value: Record<string, unknown> | null,
-): string | undefined {
-  return value
-    ? readStringField(value, ["color", "agentColor", "agent_color"])
-    : undefined;
+function readAgentColorFromRecord(value: Record<string, unknown> | null): string | undefined {
+  return value ? readStringField(value, ["color", "agentColor", "agent_color"]) : undefined;
 }
 
 export function readBackgroundAgentInfo(toolCall: AgentToolCall) {
@@ -201,28 +165,18 @@ export function readBackgroundAgentInfo(toolCall: AgentToolCall) {
   const meta = raw && isPlainRecord(raw._meta) ? raw._meta : null;
   const zcode = meta && isPlainRecord(meta.zcode) ? meta.zcode : null;
   const zcodeBackgroundAgent =
-    zcode && isPlainRecord(zcode.backgroundAgent)
-      ? zcode.backgroundAgent
-      : null;
+    zcode && isPlainRecord(zcode.backgroundAgent) ? zcode.backgroundAgent : null;
   const taskNotification =
-    zcode && isPlainRecord(zcode.taskNotification)
-      ? zcode.taskNotification
-      : null;
+    zcode && isPlainRecord(zcode.taskNotification) ? zcode.taskNotification : null;
   const backgroundAgent = zcodeBackgroundAgent;
   const input = isPlainRecord(toolCall.input) ? toolCall.input : null;
   const outputText = readTextFromUnknown(toolCall.output);
   const outputFile =
-    (taskNotification &&
-      readStringField(taskNotification, ["outputFile", "output_file"])) ??
-    (backgroundAgent &&
-      readStringField(backgroundAgent, ["outputFile", "output_file"])) ??
+    (taskNotification && readStringField(taskNotification, ["outputFile", "output_file"])) ??
+    (backgroundAgent && readStringField(backgroundAgent, ["outputFile", "output_file"])) ??
     outputText?.match(/output_file:\s*([^\s]+)/i)?.[1];
 
-  if (
-    input?.run_in_background !== true &&
-    input?.runInBackground !== true &&
-    !outputFile
-  ) {
+  if (input?.run_in_background !== true && input?.runInBackground !== true && !outputFile) {
     return null;
   }
 
@@ -231,18 +185,8 @@ export function readBackgroundAgentInfo(toolCall: AgentToolCall) {
 
 export function getAgentActivityContent(toolCall: AgentToolCall) {
   const taskNotificationResult =
-    readStringFromNestedRecord(toolCall.raw, [
-      "_meta",
-      "zcode",
-      "taskNotification",
-      "result",
-    ]) ??
-    readStringFromNestedRecord(toolCall.raw, [
-      "_meta",
-      "zcode",
-      "taskNotification",
-      "summary",
-    ]);
+    readStringFromNestedRecord(toolCall.raw, ["_meta", "zcode", "taskNotification", "result"]) ??
+    readStringFromNestedRecord(toolCall.raw, ["_meta", "zcode", "taskNotification", "summary"]);
   if (taskNotificationResult) {
     // background Agent 的 output_file 是完整 sidechain transcript，
     // task-notification result 才是适合用户阅读的完成摘要。优先展示摘要，避免展开后被 JSONL 淹没。
@@ -252,10 +196,7 @@ export function getAgentActivityContent(toolCall: AgentToolCall) {
   return toolCall.content?.trim();
 }
 
-export function getAgentPrimaryText(
-  toolCall: AgentToolCall,
-  fallbackLabel: string,
-) {
+export function getAgentPrimaryText(toolCall: AgentToolCall, fallbackLabel: string) {
   if (typeof toolCall.title === "string" && toolCall.title.trim().length > 0) {
     const title = toolCall.title.trim();
     if (!isImplementationToolTitle(title)) {
@@ -291,11 +232,7 @@ export function getAgentPrimaryText(
 
 export function getAgentPrompt(toolCall: AgentToolCall) {
   if (isPlainRecord(toolCall.input)) {
-    const prompt = readStringField(toolCall.input, [
-      "prompt",
-      "message",
-      "description",
-    ]);
+    const prompt = readStringField(toolCall.input, ["prompt", "message", "description"]);
     if (prompt) {
       return prompt;
     }

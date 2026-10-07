@@ -1,21 +1,10 @@
-/**
- * zcode 照搬：`@/components/ui/command.tsx`（references/zcode/packages/ui/src/components/ui/command.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；cmdk 已加入 apps/web 依赖。
- */
-
+import * as React from "react";
 import { Command as CommandPrimitive } from "cmdk";
-import { CheckIcon, SearchIcon } from "lucide-react";
-import type * as React from "react";
-import { cn } from "../lib/utils";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "./dialog";
-import { InputGroup, InputGroupAddon } from "./input-group";
+
+import { cn } from "../lib/utils.js";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./dialog.js";
+import { InputGroup, InputGroupAddon } from "./input-group.js";
+import { SearchIcon, CheckIcon } from "lucide-react";
 
 function Command({
   className,
@@ -72,10 +61,7 @@ function CommandInput({
   inputGroupClassName?: string;
 }) {
   return (
-    <div
-      data-slot="command-input-wrapper"
-      className="p-1 border-b border-border"
-    >
+    <div data-slot="command-input-wrapper" className="p-1 border-b border-border">
       <InputGroup
         className={cn(
           "h-8 border-0 !bg-transparent hover:border-input-border-hover",
@@ -98,10 +84,7 @@ function CommandInput({
   );
 }
 
-function CommandList({
-  className,
-  ...props
-}: React.ComponentProps<typeof CommandPrimitive.List>) {
+function CommandList({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.List>) {
   return (
     <CommandPrimitive.List
       data-slot="command-list"
@@ -178,10 +161,7 @@ function CommandItem({
   );
 }
 
-function CommandShortcut({
-  className,
-  ...props
-}: React.ComponentProps<"span">) {
+function CommandShortcut({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span
       data-slot="command-shortcut"
@@ -197,11 +177,11 @@ function CommandShortcut({
 export {
   Command,
   CommandDialog,
+  CommandInput,
+  CommandList,
   CommandEmpty,
   CommandGroup,
-  CommandInput,
   CommandItem,
-  CommandList,
-  CommandSeparator,
   CommandShortcut,
+  CommandSeparator,
 };

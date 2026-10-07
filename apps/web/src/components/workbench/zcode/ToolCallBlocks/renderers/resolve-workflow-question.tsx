@@ -1,15 +1,9 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/resolve-workflow-question.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/resolve-workflow-question.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
 import { MessageCircleReply } from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
 const RESOLVE_QUESTION_TOOL_ICON = (
   <MessageCircleReply className="size-4 shrink-0 text-foreground-subtle" />
@@ -28,9 +22,7 @@ function toRecord(value: unknown): Record<string, unknown> | undefined {
   }
   try {
     const parsed: unknown = JSON.parse(value);
-    return typeof parsed === "object" &&
-      parsed !== null &&
-      !Array.isArray(parsed)
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : undefined;
   } catch {
@@ -39,9 +31,7 @@ function toRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 function readText(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0
-    ? value
-    : undefined;
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 /** 折叠头部的单行概要：换行折叠成空格，超长截断。 */
@@ -64,9 +54,7 @@ function toInlinePreview(value: string | undefined): string | undefined {
  * 关键：拒绝（未知 qid / 已作答 / run 不在飞 / 本会话无应答能力）走的是结构化失败，会带上
  * `status==="failed"`，此时才走失败样式；成功确认是普通结果。
  */
-export function ResolveWorkflowQuestionToolCallBlock(
-  context: ToolCallBlockRenderContext,
-) {
+export function ResolveWorkflowQuestionToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall } = context.toolCallNode;
   const input = toRecord(toolCall.input);
@@ -76,9 +64,7 @@ export function ResolveWorkflowQuestionToolCallBlock(
   const isFailed = toolCall.status === "failed";
   const isAnswering =
     !isFailed &&
-    (context.isRunning ||
-      toolCall.status === "pending" ||
-      toolCall.status === "in_progress");
+    (context.isRunning || toolCall.status === "pending" || toolCall.status === "in_progress");
 
   const kindLabel = intl.formatMessage({
     id: isAnswering
@@ -88,9 +74,7 @@ export function ResolveWorkflowQuestionToolCallBlock(
   const questionIdHeading = intl.formatMessage({
     id: "chat.toolCall.workflow.resolveQuestion.questionId",
   });
-  const answerHeading = intl.formatMessage({
-    id: "chat.toolCall.workflow.resolveQuestion.answer",
-  });
+  const answerHeading = intl.formatMessage({ id: "chat.toolCall.workflow.resolveQuestion.answer" });
   const outcomeHeading = intl.formatMessage({
     id: "chat.toolCall.workflow.resolveQuestion.outcome",
   });
@@ -100,9 +84,7 @@ export function ResolveWorkflowQuestionToolCallBlock(
 
   // 结果文本：成功的确认文案（普通结果 → output），或结构化拒绝（错误通道优先）。
   const outcomeText = isFailed
-    ? (context.errorText ??
-      readText(toolCall.error) ??
-      readText(toolCall.output))
+    ? (context.errorText ?? readText(toolCall.error) ?? readText(toolCall.output))
     : isAnswering
       ? undefined
       : readText(toolCall.output);
@@ -110,47 +92,36 @@ export function ResolveWorkflowQuestionToolCallBlock(
   const inlinePreview = useMemo(() => toInlinePreview(answer), [answer]);
   const primaryText = useMemo(
     () => (
-      <span className="min-w-0 truncate">
-        {inlinePreview ?? toolCall.title ?? fallbackName}
-      </span>
+      <span className="min-w-0 truncate">{inlinePreview ?? toolCall.title ?? fallbackName}</span>
     ),
     [inlinePreview, toolCall.title, fallbackName],
   );
 
-  const hasDetails =
-    questionId !== undefined ||
-    answer !== undefined ||
-    outcomeText !== undefined;
+  const hasDetails = questionId !== undefined || answer !== undefined || outcomeText !== undefined;
 
   const renderContent = useCallback(
     () => (
       <div className="space-y-3">
-        {questionId === undefined ? null : (
+        {questionId !== undefined ? (
           <section className="space-y-1.5">
-            <h4 className="text-ui-sm font-medium text-foreground-subtlest">
-              {questionIdHeading}
-            </h4>
+            <h4 className="text-ui-sm font-medium text-foreground-subtlest">{questionIdHeading}</h4>
             {/* qid 是不透明标识键 → mono。 */}
             <code className="block break-all rounded-lg border border-border bg-panel px-4 py-2 font-mono text-ui-sm text-foreground-subtle">
               {questionId}
             </code>
           </section>
-        )}
-        {answer === undefined ? null : (
+        ) : null}
+        {answer !== undefined ? (
           <section className="space-y-1.5">
-            <h4 className="text-ui-sm font-medium text-foreground-subtlest">
-              {answerHeading}
-            </h4>
+            <h4 className="text-ui-sm font-medium text-foreground-subtlest">{answerHeading}</h4>
             <p className="whitespace-pre-wrap break-words rounded-lg border border-border bg-panel px-4 py-3 text-ui-base leading-5 text-foreground">
               {answer}
             </p>
           </section>
-        )}
-        {outcomeText === undefined ? null : (
+        ) : null}
+        {outcomeText !== undefined ? (
           <section className="space-y-1.5">
-            <h4 className="text-ui-sm font-medium text-foreground-subtlest">
-              {outcomeHeading}
-            </h4>
+            <h4 className="text-ui-sm font-medium text-foreground-subtlest">{outcomeHeading}</h4>
             <p
               className={
                 isFailed
@@ -161,18 +132,10 @@ export function ResolveWorkflowQuestionToolCallBlock(
               {outcomeText}
             </p>
           </section>
-        )}
+        ) : null}
       </div>
     ),
-    [
-      questionId,
-      answer,
-      outcomeText,
-      isFailed,
-      questionIdHeading,
-      answerHeading,
-      outcomeHeading,
-    ],
+    [questionId, answer, outcomeText, isFailed, questionIdHeading, answerHeading, outcomeHeading],
   );
 
   return (
@@ -183,14 +146,12 @@ export function ResolveWorkflowQuestionToolCallBlock(
         showIcon={context.showIcon !== false}
         canToggle={hasDetails && (context.canToggle ?? true)}
         forceOpen={hasDetails && (context.forceOpen ?? false)}
-        hideSecondaryTextWhenOpen={true}
+        hideSecondaryTextWhenOpen
         kindLabel={kindLabel}
         sourceLabel={context.sourceLabel}
         primaryText={primaryText}
         statusLabel={
-          isFailed
-            ? intl.formatMessage({ id: "chat.toolCall.status.failed" })
-            : undefined
+          isFailed ? intl.formatMessage({ id: "chat.toolCall.status.failed" }) : undefined
         }
         statusTooltip={isFailed ? outcomeText : undefined}
         showFailureStatus={isFailed}

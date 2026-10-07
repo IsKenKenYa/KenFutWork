@@ -7,6 +7,7 @@
     "@ai-sdk/bytedance": "^2.0.46",
     "@ai-sdk/openai-compatible": "^3.0.51",
     "@ai-sdk/provider": "^4.0.17",
+    "@anthropic-ai/sandbox-runtime": "0.0.78",
     "@computer-use/node-mac-permissions": "^2.2.2",
     "@computer-use/nut-js": "4.2.0",
     "@fastify/multipart": "^10.1.1",
@@ -22,8 +23,17 @@
     "@langchain/langgraph-checkpoint-postgres": "^1.0.5",
     "@langchain/openai": "^1.5.13",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@napi-rs/canvas": "0.1.100",
+    "@vscode/ripgrep": "1.18.0",
+    "@zcode/model-option-map": "workspace:*",
+    "@zcode/provider": "workspace:*",
+    "@zcode/rpc": "workspace:*",
+    "@zcode/services": "workspace:*",
+    "@zcode/shared": "workspace:*",
+    "@zcode/window-controller": "workspace:*",
     "ai": "^7.0.105",
     "deepagents": "^1.14.0",
+    "diff": "8.0.4",
     "embedded-postgres": "17.10.0-beta.17",
     "fastify": "^5.12.5",
     "google-auth-library": "^11.1.0",
@@ -32,9 +42,11 @@
     "langchain": "^1.5.11",
     "node-pty": "^1.1.0",
     "openai": "^7.20.0",
+    "pdfjs-dist": "5.4.296",
     "pg": "^8.23.0",
     "pngjs": "^7.0.0",
     "sharp": "^0.35.4",
+    "sherpa-onnx-node": "^1.13.8",
     "tar": "^7.5.22",
     "undici": "^8.10.2",
     "zod": "^4.6.5"
@@ -54,7 +66,7 @@
     "build": "node ../../scripts/validate-foundation-app.mjs build",
     "predev": "pnpm --filter @kenfutwork/shared build",
     "dev": "node --watch --env-file=../../.env.local --import tsx ./src/server.ts & WORKER_ID=w1 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & wait",
-    "dev:server": "node --watch --env-file=../../.env.local --import tsx ./src/server.ts",
+    "dev:server": "node --env-file=../../.env.local scripts/dev-server.mjs",
     "dev:worker": "node --watch --env-file=../../.env.local --import tsx ./src/worker.ts",
     "dev:workers:2": "WORKER_ID=w1 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & WORKER_ID=w2 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & wait",
     "dev:workers:3": "WORKER_ID=w1 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & WORKER_ID=w2 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & WORKER_ID=w3 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & wait",
@@ -62,9 +74,7 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node --env-file=../../.env.local --import tsx ./src/server.ts",
-    "migrate": "node --env-file=../../.env.local --import tsx ./src/migrate.ts",
-    "auth:seed": "node --env-file=../../.env.local --import tsx ./src/seed-auth-credentials.ts",
-    "seed:accounts": "node --env-file=../../.env.local --import tsx ./src/seed-test-accounts.ts"
+    "migrate": "node --env-file=../../.env.local --import tsx ./src/migrate.ts"
   },
   "start:worker": "node --env-file=../../.env.local --import tsx ./src/worker.ts",
   "optionalDependencies": {
@@ -74,6 +84,12 @@
     "@embedded-postgres/linux-x64": "17.10.0-beta.17",
     "@embedded-postgres/windows-x64": "17.10.0-beta.17",
     "@img/sharp-darwin-arm64": "0.35.4",
-    "@img/sharp-win32-x64": "0.35.4"
+    "@img/sharp-win32-x64": "0.35.4",
+    "sherpa-onnx-darwin-arm64": "^1.13.8",
+    "sherpa-onnx-darwin-x64": "^1.13.8",
+    "sherpa-onnx-linux-arm64": "^1.13.8",
+    "sherpa-onnx-linux-x64": "^1.13.8",
+    "sherpa-onnx-win-ia32": "^1.13.8",
+    "sherpa-onnx-win-x64": "^1.13.8"
   }
 }

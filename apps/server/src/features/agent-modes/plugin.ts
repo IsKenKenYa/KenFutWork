@@ -19,7 +19,7 @@ import { createExecutionModeStore } from "./execution-mode-store.js";
 export function createAgentModesPlugin(): PluginDefinition {
   return {
     name: "agent-modes",
-    inject: ["auth", "persistence", "viewer"],
+    inject: ["localAccess", "persistence", "localInstance"],
     apply(ctx) {
       const service = createExecutionModeService({
         store: createExecutionModeStore(ctx.get("persistence")),
@@ -35,9 +35,13 @@ export function createAgentModesPlugin(): PluginDefinition {
 
       // pre-step：按模式给模型输入注入引导（plan 规划、solo 禁工具提示等）
       ctx.on("pre-step", async (payload, next) => {
-        const mode = payload.threadId
-          ? service.getMode(payload.threadId)
-          : "agent";
+        const mode = !payload.threadId
+          ? "agent"
+          : payload.preset === "code" && payload.instanceId && payload.taskId
+            ? await service.hydrate(payload.threadId, {
+                instanceId: payload.instanceId,
+              })
+            : service.getMode(payload.threadId);
         const directive = BUILTIN_EXECUTION_MODES.find(
           (m) => m.id === mode,
         )?.inputDirective;
@@ -49,6 +53,8 @@ export function createAgentModesPlugin(): PluginDefinition {
 
       // tool-pre-execute：solo 全禁、plan 只读（内核注册表路径的硬约束）
       ctx.on("tool-pre-execute", async (payload, next) => {
+        // Code Task 的 V4 mode/worker ceiling 由 permissions 的可信调用事实裁决。
+        if (payload.permissionInvocation) return next(payload);
         if (!payload.threadId) {
           return next(payload);
         }
@@ -66,8 +72,8 @@ export function createAgentModesPlugin(): PluginDefinition {
     },
     mounted(ctx) {
       void registerExecutionModeRoutes(ctx.app, {
-        auth: ctx.get("auth"),
-        viewer: ctx.get("viewer"),
+        localAccess: ctx.get("localAccess"),
+        viewer: ctx.get("localInstance"),
         agentModes: ctx.get("agentModes"),
       });
     },

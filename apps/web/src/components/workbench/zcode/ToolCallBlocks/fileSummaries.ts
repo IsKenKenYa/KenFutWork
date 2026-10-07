@@ -1,32 +1,26 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/fileSummaries.ts`（references/zcode/packages/ui/src/ToolCallBlocks/fileSummaries.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-
-import { resolveFileDisplayDescriptor } from "@zui/lib/fileDisplay";
-import { getPathLeaf } from "@zui/lib/path";
-import { buildUnifiedDiff } from "@zui/lib/toolDiffPreview";
-import { computeLineChangeStat } from "@zui/lib/zcode-shared";
+import { computeLineChangeStat } from "@zcode/shared";
+import { getPathLeaf } from "@zui/lib/path.js";
+import { resolveFileDisplayDescriptor } from "@zui/lib/fileDisplay.js";
+import { buildUnifiedDiff } from "@zui/lib/toolDiffPreview.js";
 import {
   buildFallbackRawToolCallFileSummary,
-  type EditKindSource,
   hasWritableToolSemantic,
   inferEditOperation,
-} from "@zui/ToolCallBlocks/fileSummaryHeuristics";
+  type EditKindSource,
+} from "@zui/ToolCallBlocks/fileSummaryHeuristics.js";
 import {
   type EditOperationKind,
+  type RawToolCallFileSummary,
   isPlainRecord,
   normalizeSingleFilePatch,
-  type RawToolCallFileSummary,
-  readRawToolCallChanges,
   readRawToolCallInput,
+  readRawToolCallChanges,
   readStringField,
   readStructuredDiffBlock,
   readUnifiedDiffField,
-} from "@zui/ToolCallBlocks/fileSummaryTypes";
+} from "@zui/ToolCallBlocks/fileSummaryTypes.js";
 
-export { inferEditOperation } from "@zui/ToolCallBlocks/fileSummaryHeuristics";
+export { inferEditOperation } from "@zui/ToolCallBlocks/fileSummaryHeuristics.js";
 
 function readFileDiffDisplays(value: unknown): Record<string, unknown>[] {
   if (!isPlainRecord(value)) {
@@ -43,10 +37,7 @@ function readFileDiffDisplays(value: unknown): Record<string, unknown>[] {
   return display.files.filter(isPlainRecord);
 }
 
-function readDisplayStructuredPatch(
-  display: Record<string, unknown>,
-  fileLabel: string,
-) {
+function readDisplayStructuredPatch(display: Record<string, unknown>, fileLabel: string) {
   const structuredPatch = display.structuredPatch;
   if (!Array.isArray(structuredPatch)) {
     return null;
@@ -62,9 +53,7 @@ function readDisplayStructuredPatch(
     const oldLines = typeof hunk.oldLines === "number" ? hunk.oldLines : 1;
     const newStart = typeof hunk.newStart === "number" ? hunk.newStart : 1;
     const newLines = typeof hunk.newLines === "number" ? hunk.newLines : 1;
-    const lines = hunk.lines.filter(
-      (line): line is string => typeof line === "string",
-    );
+    const lines = hunk.lines.filter((line): line is string => typeof line === "string");
     hunks.push(`@@ -${oldStart},${oldLines} +${newStart},${newLines} @@`);
     hunks.push(...lines);
   }
@@ -74,9 +63,7 @@ function readDisplayStructuredPatch(
     : null;
 }
 
-function readDisplayFileDiffSummaries(
-  ...values: unknown[]
-): RawToolCallFileSummary[] {
+function readDisplayFileDiffSummaries(...values: unknown[]): RawToolCallFileSummary[] {
   const summaries: RawToolCallFileSummary[] = [];
   const seenPaths = new Set<string>();
 
@@ -101,15 +88,12 @@ function readDisplayFileDiffSummaries(
         fileIconSrc: descriptor.fileIconSrc,
         changeStat: {
           added:
-            typeof display.additions === "number"
-              ? Math.max(0, Math.round(display.additions))
-              : 0,
+            typeof display.additions === "number" ? Math.max(0, Math.round(display.additions)) : 0,
           removed:
-            typeof display.deletions === "number"
-              ? Math.max(0, Math.round(display.deletions))
-              : 0,
+            typeof display.deletions === "number" ? Math.max(0, Math.round(display.deletions)) : 0,
         },
         patch: readDisplayStructuredPatch(display, getPathLeaf(path)),
+        ...(display.truncated === true ? { truncated: true } : {}),
       });
     }
   }
@@ -137,12 +121,7 @@ export function readRawToolCallFileSummaries(
 
   const rawInput = readRawToolCallInput(raw);
   const rawOutput = isPlainRecord(raw.rawOutput) ? raw.rawOutput : null;
-  const displaySummaries = readDisplayFileDiffSummaries(
-    raw,
-    rawInput,
-    rawOutput,
-    source?.output,
-  );
+  const displaySummaries = readDisplayFileDiffSummaries(raw, rawInput, rawOutput, source?.output);
   if (displaySummaries.length > 0) {
     return displaySummaries;
   }
@@ -156,8 +135,7 @@ export function readRawToolCallFileSummaries(
         )
     : [];
 
-  const { directChanges, rawInputChanges, rawOutputChanges } =
-    readRawToolCallChanges(raw);
+  const { directChanges, rawInputChanges, rawOutputChanges } = readRawToolCallChanges(raw);
 
   const orderedPaths = new Set<string>();
   for (const diff of rawDiffs) {
@@ -184,14 +162,9 @@ export function readRawToolCallFileSummaries(
   const summaries: RawToolCallFileSummary[] = [];
   for (const path of orderedPaths) {
     const diff = rawDiffs.find((item) => item.path === path);
-    const change =
-      rawOutputChanges?.[path] ??
-      rawInputChanges?.[path] ??
-      directChanges?.[path];
+    const change = rawOutputChanges?.[path] ?? rawInputChanges?.[path] ?? directChanges?.[path];
     const changeType =
-      isPlainRecord(change) && typeof change.type === "string"
-        ? change.type
-        : undefined;
+      isPlainRecord(change) && typeof change.type === "string" ? change.type : undefined;
     const operationKind: EditOperationKind =
       changeType === "add"
         ? "write"
@@ -201,11 +174,7 @@ export function readRawToolCallFileSummaries(
             ? "delete"
             : "edit";
     const actionLabel =
-      changeType === "add"
-        ? "Created"
-        : changeType === "delete"
-          ? "Deleted"
-          : "Edited";
+      changeType === "add" ? "Created" : changeType === "delete" ? "Deleted" : "Edited";
     const oldText =
       diff?.oldText ??
       (isPlainRecord(change)
@@ -240,10 +209,7 @@ export function readRawToolCallFileSummaries(
     } else if (changeType === "delete" && oldText !== undefined) {
       changeStat = computeLineChangeStat(oldText, "");
     }
-    const explicitPatch = normalizeSingleFilePatch(
-      readUnifiedDiffField(change),
-      getPathLeaf(path),
-    );
+    const explicitPatch = normalizeSingleFilePatch(readUnifiedDiffField(change), getPathLeaf(path));
     const patch =
       explicitPatch ??
       (oldText !== undefined || newText !== undefined
@@ -262,7 +228,5 @@ export function readRawToolCallFileSummaries(
     });
   }
 
-  return summaries.length > 0
-    ? summaries
-    : buildFallbackRawToolCallFileSummary(source);
+  return summaries.length > 0 ? summaries : buildFallbackRawToolCallFileSummary(source);
 }

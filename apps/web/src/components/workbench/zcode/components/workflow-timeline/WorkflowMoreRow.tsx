@@ -1,21 +1,12 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowMoreRow.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowMoreRow.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import { laneDisplayName } from "@zui/components/workflow-graph/lane-name";
-import type {
-  RosterCounts,
-  RosterMore,
-} from "@zui/components/workflow-timeline/roster-model";
-import type { TimelinePill } from "@zui/components/workflow-timeline/timeline-model";
-import { LaneGlyph } from "@zui/components/workflow-timeline/WorkflowAgentPill";
-import { RosterTally } from "@zui/components/workflow-timeline/WorkflowRosterParts";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { ArrowUpRightIcon, ChevronDownIcon, CircleXIcon } from "lucide-react";
 import type { CSSProperties } from "react";
+import { ArrowUpRightIcon, ChevronDownIcon, CircleXIcon } from "lucide-react";
+import { cn } from "@zui/components/lib/utils.js";
+import { laneDisplayName } from "@zui/components/workflow-graph/lane-name.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { RosterCounts, RosterMore } from "./roster-model.js";
+import type { TimelinePill } from "./timeline-model.js";
+import { LaneGlyph } from "./WorkflowAgentPill.js";
+import { RosterTally } from "./WorkflowRosterParts.js";
 
 /**
  * 「还有 n 个」那一行：卡上名册站
@@ -45,8 +36,7 @@ export function WorkflowMoreRow({
 }) {
   const { intl } = useZCodeIntl();
   const format = intl.formatMessage.bind(intl);
-  const nameOf = (pill: TimelinePill) =>
-    pill.runtimeName ?? laneDisplayName(pill.lane, format);
+  const nameOf = (pill: TimelinePill) => pill.runtimeName ?? laneDisplayName(pill.lane, format);
   const label = format(
     { id: "chat.toolCall.workflow.timeline.roster.more" },
     { count: more.count },
@@ -66,10 +56,7 @@ export function WorkflowMoreRow({
   const style =
     enterDelayMs === undefined || enterDelayMs <= 0
       ? undefined
-      : ({
-          animationDelay: `${enterDelayMs}ms`,
-          animationFillMode: "backwards",
-        } as CSSProperties);
+      : ({ animationDelay: `${enterDelayMs}ms`, animationFillMode: "backwards" } as CSSProperties);
   const Root = onOpen === undefined ? "span" : "button";
   return (
     <Root
@@ -89,10 +76,7 @@ export function WorkflowMoreRow({
       title={title}
       {...(onOpen === undefined ? {} : { type: "button" as const })}
     >
-      <span
-        className="wf-more-deck flex shrink-0 items-center"
-        data-testid="workflow-more-deck"
-      >
+      <span className="wf-more-deck flex shrink-0 items-center" data-testid="workflow-more-deck">
         {more.deck.map((pill) => (
           <LaneGlyph
             className="wf-more-face size-4 shrink-0 text-foreground-subtle"
@@ -124,7 +108,7 @@ export function WorkflowMoreRow({
             { count: more.failed },
           )}
         >
-          <CircleXIcon aria-hidden={true} className="size-2.5" />
+          <CircleXIcon aria-hidden className="size-2.5" />
           <span className="font-medium">{more.failed}</span>
         </span>
       )}
@@ -134,7 +118,7 @@ export function WorkflowMoreRow({
       >
         {door === undefined ? (
           <span
-            aria-hidden={true}
+            aria-hidden
             className="wf-pill-go wf-pill-go-rest flex size-3.5 items-center justify-center text-foreground-subtlest"
             data-testid="workflow-more-open"
           >
@@ -142,7 +126,7 @@ export function WorkflowMoreRow({
           </span>
         ) : (
           <span
-            aria-hidden={true}
+            aria-hidden
             className={cn(
               "wf-pill-go wf-pill-go-rest flex size-3.5 items-center justify-center text-foreground-subtlest transition-transform",
               door.open && "rotate-180",

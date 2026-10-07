@@ -1,14 +1,5 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/timeline-geometry.ts`（references/zcode/packages/ui/src/components/workflow-timeline/timeline-geometry.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import { arcLaneCount } from "@zui/components/workflow-timeline/timeline-bands";
-import type {
-  TimelineArc,
-  TimelineBand,
-  TimelineStation,
-} from "@zui/components/workflow-timeline/timeline-model";
+import { arcLaneCount } from "./timeline-bands.js";
+import type { TimelineArc, TimelineBand, TimelineStation } from "./timeline-model.js";
 
 /**
  * 横向时间线的几何常量。与设计画布逐字相同：
@@ -72,20 +63,14 @@ export function bandForkX(band: Pick<TimelineBand, "from">, inset = 0): number {
 }
 
 /** 一条带在主线上汇合的 x；没有汇合站时落在末站槽尾之后 6px——那里仍是 strand 相遇的地方。 */
-export function bandMergeX(
-  band: Pick<TimelineBand, "join" | "to">,
-  inset = 0,
-): number {
+export function bandMergeX(band: Pick<TimelineBand, "join" | "to">, inset = 0): number {
   return band.join === undefined
     ? stationX(band.to, inset) + STATION_WIDTH + STUB
     : stationX(band.join, inset) - MERGE_BACK;
 }
 
 /** 第 i 站所在的带；带外 undefined（`timeline-bands.ts` 的同名函数只认下标带，这里认模型的带）。 */
-export function bandAt(
-  bands: readonly TimelineBand[],
-  index: number,
-): TimelineBand | undefined {
+export function bandAt(bands: readonly TimelineBand[], index: number): TimelineBand | undefined {
   return bands.find((band) => band.from <= index && index <= band.to);
 }
 
@@ -161,28 +146,17 @@ export function arcTerminalOffsets(
   arcs.forEach((arc, j) => {
     const ends = arcEnds(arc, bands, stations);
     if (!ends.fromBand) {
-      add(arc.from, {
-        arc: j,
-        end: "takeoff",
-        lane: arc.lane,
-        side: arc.to > arc.from ? 1 : -1,
-      });
+      add(arc.from, { arc: j, end: "takeoff", lane: arc.lane, side: arc.to > arc.from ? 1 : -1 });
     }
     if (!ends.toBand) {
-      add(arc.to, {
-        arc: j,
-        end: "landing",
-        lane: arc.lane,
-        side: arc.from > arc.to ? 1 : -1,
-      });
+      add(arc.to, { arc: j, end: "landing", lane: arc.lane, side: arc.from > arc.to ? 1 : -1 });
     }
   });
   for (const list of byStation.values()) {
     // 同一站、同一层空里的弧两两相交（闭区间），车道必不相同；稳定排序让弧序兜底。
     list.sort(
       (left, right) =>
-        left.side - right.side ||
-        (left.side < 0 ? left.lane - right.lane : right.lane - left.lane),
+        left.side - right.side || (left.side < 0 ? left.lane - right.lane : right.lane - left.lane),
     );
     list.forEach((terminal, k) => {
       const offset = (k - (list.length - 1) / 2) * TERMINAL_PITCH;
@@ -218,9 +192,7 @@ export function timelineLayout(
   bands: readonly TimelineBand[],
 ): TimelineLayout {
   const banded = bands.length > 0;
-  const tracks = banded
-    ? Math.max(2, ...bands.map((band) => band.tracks.length))
-    : 1;
+  const tracks = banded ? Math.max(2, ...bands.map((band) => band.tracks.length)) : 1;
   const rowY: number[] = [];
   let y = 0;
   for (let t = tracks - 1; t >= 0; t -= 1) {

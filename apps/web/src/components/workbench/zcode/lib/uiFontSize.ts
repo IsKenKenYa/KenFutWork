@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/lib/uiFontSize.ts`（references/zcode/packages/ui/src/lib/uiFontSize.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import { readSafeLocalStorage } from "@zui/lib/browserEnvironment";
+import { readSafeLocalStorage } from "@zui/lib/browserEnvironment.js";
 
 const DEFAULT_UI_FONT_SIZE_PX = 14;
 export const MIN_UI_FONT_SIZE_PX = 12;
@@ -12,34 +7,23 @@ export const UI_FONT_SIZE_STORAGE_KEY = "zcode-ui-font-size-px";
 
 export function normalizeUiFontSizePx(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value)
-    ? Math.min(
-        MAX_UI_FONT_SIZE_PX,
-        Math.max(MIN_UI_FONT_SIZE_PX, Math.round(value)),
-      )
+    ? Math.min(MAX_UI_FONT_SIZE_PX, Math.max(MIN_UI_FONT_SIZE_PX, Math.round(value)))
     : DEFAULT_UI_FONT_SIZE_PX;
 }
 
 export function loadUiFontSizePx(): number {
   const rawValue = readSafeLocalStorage(UI_FONT_SIZE_STORAGE_KEY);
   const storedValue = rawValue === null ? Number.NaN : Number(rawValue);
-  return normalizeUiFontSizePx(
-    Number.isFinite(storedValue) ? storedValue : undefined,
-  );
+  return normalizeUiFontSizePx(Number.isFinite(storedValue) ? storedValue : undefined);
 }
 
 export function applyUiFontSizePx(fontSizePx: number): void {
-  const rootStyle =
-    typeof document === "undefined"
-      ? undefined
-      : document.documentElement?.style;
+  const rootStyle = typeof document === "undefined" ? undefined : document.documentElement?.style;
   if (!rootStyle?.setProperty) {
     return;
   }
   // 只更新 UI 字号 Token 的基准变量，避免根 font-size 连带缩放图标、间距和圆角。
-  rootStyle.setProperty(
-    "--ui-font-size",
-    `${normalizeUiFontSizePx(fontSizePx)}px`,
-  );
+  rootStyle.setProperty("--ui-font-size", `${normalizeUiFontSizePx(fontSizePx)}px`);
 }
 
 export function subscribeToUiFontSizeStorageChanges(): () => void {
@@ -48,11 +32,8 @@ export function subscribeToUiFontSizeStorageChanges(): () => void {
       return;
     }
 
-    const storedValue =
-      event.newValue === null ? Number.NaN : Number(event.newValue);
-    applyUiFontSizePx(
-      Number.isFinite(storedValue) ? storedValue : DEFAULT_UI_FONT_SIZE_PX,
-    );
+    const storedValue = event.newValue === null ? Number.NaN : Number(event.newValue);
+    applyUiFontSizePx(Number.isFinite(storedValue) ? storedValue : DEFAULT_UI_FONT_SIZE_PX);
   };
 
   window.addEventListener("storage", handleStorage);

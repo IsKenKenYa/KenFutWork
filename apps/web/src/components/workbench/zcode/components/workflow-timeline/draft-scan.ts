@@ -1,12 +1,4 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/draft-scan.ts`（references/zcode/packages/ui/src/components/workflow-timeline/draft-scan.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type {
-  TimelineStation,
-  WorkflowTimelineModel,
-} from "@zui/components/workflow-timeline/timeline-model";
+import type { TimelineStation, WorkflowTimelineModel } from "./timeline-model.js";
 
 /**
  * 流式草稿：模型还在写
@@ -77,9 +69,7 @@ export function draftTimeline(draft: WorkflowDraft): WorkflowTimelineModel {
     bands: [],
     draft: { agents: draft.agents.length },
     live: false,
-    rails: stations
-      .slice(1)
-      .map((_, i) => ({ from: i, ink: "faint" as const, to: i + 1 })),
+    rails: stations.slice(1).map((_, i) => ({ from: i, ink: "faint" as const, to: i + 1 })),
     runningIndex: undefined,
     stations,
   };

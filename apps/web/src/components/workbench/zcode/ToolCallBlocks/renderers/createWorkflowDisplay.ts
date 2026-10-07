@@ -1,13 +1,8 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/createWorkflowDisplay.ts`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/createWorkflowDisplay.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 import {
-  type ToolCallCreateWorkflowDisplay,
   toolCallCreateWorkflowDisplaySchema,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import { isPlainRecord } from "@zui/ToolCallBlocks/renderers/createWorkflowInput";
+  type ToolCallCreateWorkflowDisplay,
+} from "@zcode/shared/zcode-protocol-v4";
+import { isPlainRecord } from "@zui/ToolCallBlocks/renderers/createWorkflowInput.js";
 
 /**
  * CreateWorkflow 工具输出侧的读取规则（display 载荷与纯文本兜底）。从 `create-workflow.tsx`
@@ -15,9 +10,7 @@ import { isPlainRecord } from "@zui/ToolCallBlocks/renderers/createWorkflowInput
  */
 // 结构化诊断只走 display 通道；用 packages/shared 的 schema 安全解析 raw.display，
 // 缺失或形态不符时退回纯文本兜底，绝不 JSON dump，绝不崩溃。
-export function readWorkflowDisplay(
-  raw: unknown,
-): ToolCallCreateWorkflowDisplay | null {
+export function readWorkflowDisplay(raw: unknown): ToolCallCreateWorkflowDisplay | null {
   if (!isPlainRecord(raw)) {
     return null;
   }
@@ -64,8 +57,7 @@ export function formatWorkflowFeedbackTooltip(
   return [
     lede,
     ...diagnostics.map(
-      (diagnostic) =>
-        `L${diagnostic.line}:C${diagnostic.column} ${diagnostic.message}`,
+      (diagnostic) => `L${diagnostic.line}:C${diagnostic.column} ${diagnostic.message}`,
     ),
   ].join("\n");
 }
@@ -74,8 +66,6 @@ export function formatWorkflowFeedbackTooltip(
 export function workflowDiagnosticLines(
   diagnostics: readonly WorkflowDiagnosticPosition[],
 ): number[] {
-  const lines = diagnostics
-    .map((diagnostic) => diagnostic.line)
-    .filter((line) => line > 0);
+  const lines = diagnostics.map((diagnostic) => diagnostic.line).filter((line) => line > 0);
   return [...new Set(lines)];
 }

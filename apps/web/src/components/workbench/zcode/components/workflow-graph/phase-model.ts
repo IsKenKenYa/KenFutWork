@@ -1,19 +1,11 @@
-/**
- * zcode 照搬：`@/components/workflow-graph/phase-model.ts`（references/zcode/packages/ui/src/components/workflow-graph/phase-model.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import {
-  collapseStatuses,
-  hasPhaseVocabulary,
-} from "@zui/components/workflow-graph/participant-model";
+import { collapseStatuses, hasPhaseVocabulary } from "./participant-model.js";
 import type {
   StepRunStatus,
   StepStatusTable,
   WorkflowCausalityGraphData,
   WorkflowPhaseData,
   WorkflowStepData,
-} from "@zui/components/workflow-graph/types";
+} from "./types.js";
 
 /**
  * 阶段层的纯选择器。阶段是图**上面的一层商**：
@@ -30,9 +22,7 @@ export { hasPhaseVocabulary };
  * 阶段 id → 成员 step，按 `phases` 的顺序建桶（阶段表的顺序就是画面上的先后语义）。
  * 跨阶段拷贝各自算它所在阶段的成员。
  */
-export function phaseMembers(
-  graph: WorkflowCausalityGraphData,
-): Map<string, WorkflowStepData[]> {
+export function phaseMembers(graph: WorkflowCausalityGraphData): Map<string, WorkflowStepData[]> {
   const members = new Map<string, WorkflowStepData[]>(
     (graph.phases ?? []).map((phase) => [phase.id, []]),
   );

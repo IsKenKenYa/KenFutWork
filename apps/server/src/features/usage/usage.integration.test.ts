@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createViewerRepository } from "../bootstrap/repository.js";
+import { createLocalInstanceRepository } from "../local-instance/repository.js";
 import { createPostgresPersistence } from "../persistence/providers/postgres.js";
 import { createUsageRepository } from "./repository.js";
 
@@ -13,27 +13,18 @@ import { createUsageRepository } from "./repository.js";
  *       pnpm --filter @kenfutwork/server exec vitest run usage.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
-const FOREIGN_WORKSPACE = "00000000-0000-0000-0000-000000000000";
-
-type IdRow = { id: string };
+const FOREIGN_INSTANCE = "00000000-0000-0000-0000-000000000000";
 
 describe.skipIf(!DATABASE_URL)("usage 真实库集成", () => {
-  it("写入后读回：token 列与 cost_usd 都是 number，且按工作区隔离", async () => {
+  it("写入后读回：token 列与 cost_usd 都是 number，且按实例隔离", async () => {
     const persistence = createPostgresPersistence({
       databaseUrl: DATABASE_URL as string,
     });
 
     try {
-      const profile = await persistence.queryOne<IdRow>(
-        "select id from public.profiles order by created_at limit 1",
-      );
-      expect(profile, "需要至少一个已引导的 profile 作夹具").not.toBeNull();
-
-      const workspace = await createViewerRepository(
-        persistence,
-      ).findPersonalWorkspace((profile as IdRow).id);
-      const workspaceId = workspace?.id as string;
-      expect(workspaceId).toBeTruthy();
+      const instanceId =
+        await createLocalInstanceRepository(persistence).ensure();
+      expect(instanceId).toBeTruthy();
 
       // 用可识别的 provider 标记本夹具，便于精确清理。
       const marker = `integration-${Date.now().toString(36)}`;
@@ -41,8 +32,8 @@ describe.skipIf(!DATABASE_URL)("usage 真实库集成", () => {
 
       try {
         await usage.insert({
-          workspaceId,
-          userId: (profile as IdRow).id,
+          instanceId,
+          accessClientId: null,
           provider: marker,
           model: "gpt-4.1",
           capability: "chat",
@@ -53,7 +44,7 @@ describe.skipIf(!DATABASE_URL)("usage 真实库集成", () => {
           costUsd: 0.0123,
         });
 
-        const rows = await usage.listRecent(workspaceId, 100);
+        const rows = await usage.listRecent(instanceId, 100);
         const row = rows.find((entry) => entry.provider === marker);
 
         expect(row).toBeDefined();
@@ -63,8 +54,8 @@ describe.skipIf(!DATABASE_URL)("usage 真实库集成", () => {
         expect(typeof row?.input_tokens).toBe("number");
         expect(typeof row?.cost_usd).toBe("number");
 
-        // 跨工作区读不到
-        const foreign = await usage.listRecent(FOREIGN_WORKSPACE, 100);
+        // 跨实例读不到
+        const foreign = await usage.listRecent(FOREIGN_INSTANCE, 100);
         expect(foreign.some((entry) => entry.provider === marker)).toBe(false);
       } finally {
         await persistence.query(
@@ -83,26 +74,21 @@ describe.skipIf(!DATABASE_URL)("usage 真实库集成", () => {
     });
 
     try {
-      const profile = await persistence.queryOne<IdRow>(
-        "select id from public.profiles order by created_at limit 1",
-      );
-      const workspace = await createViewerRepository(
-        persistence,
-      ).findPersonalWorkspace((profile as IdRow).id);
-      const workspaceId = workspace?.id as string;
+      const instanceId =
+        await createLocalInstanceRepository(persistence).ensure();
 
       const marker = `integration-nocost-${Date.now().toString(36)}`;
       const usage = createUsageRepository(persistence);
 
       try {
         await usage.insert({
-          workspaceId,
+          instanceId,
           provider: marker,
           model: "gemini",
           capability: "image",
         });
 
-        const rows = await usage.listRecent(workspaceId, 100);
+        const rows = await usage.listRecent(instanceId, 100);
         const row = rows.find((entry) => entry.provider === marker);
         expect(row?.cost_usd).toBeNull();
         expect(row?.input_tokens).toBe(0);

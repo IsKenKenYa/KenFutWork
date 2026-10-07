@@ -1,10 +1,13 @@
 import type { StreamEvent } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
-
 import type { ServerEnv } from "../config/env.js";
 import type { BackgroundTaskRegistry } from "./background-tasks.js";
 import type { KenFutWorkAgent, KenFutWorkAgentFactory } from "./deep-agent.js";
 import { createAgentRunService } from "./runtime.js";
+import {
+  createRuntimeTestInstance,
+  RUNTIME_TEST_ACTOR,
+} from "./runtime-test-fixtures.js";
 
 /**
  * 轮末闸门（continuation 循环，`DEC-15`）的行为测试——接缝④。
@@ -81,15 +84,12 @@ function makeRuntime(agentFactory: KenFutWorkAgentFactory) {
     blob: { upload: async () => ({}) } as never,
     env: makeEnv(),
     modelProviders: {
-      getInstanceScope: async () => "workspace",
       resolveCredentials: async () => ({
         apiKey: "sk-test",
         protocol: "openai-compatible",
       }),
     } as never,
-    viewerService: {
-      resolveWorkspace: async () => ({ id: "ws-continuation-test" }),
-    } as never,
+    localInstance: createRuntimeTestInstance(),
     agentPersistenceService: {
       getPersistence: async () => ({ checkpointer: null, store: null }),
     } as never,
@@ -108,10 +108,9 @@ function makeRun(runtime: ReturnType<typeof createAgentRunService>) {
       sessionId: "sess-cont-1",
     },
     {
-      accessToken: "tok",
       model: "workspace-instance:test-model",
       threadId: "thread-cont-1",
-      userId: "u-cont",
+      actor: RUNTIME_TEST_ACTOR,
     },
   );
   return runId;
@@ -276,21 +275,18 @@ describe("轮末闸门上限：挂死后台任务不产生无限续轮（DEC-18�
       blob: { upload: async () => ({}) } as never,
       env: makeEnv(),
       modelProviders: {
-        getInstanceScope: async () => "workspace",
         resolveCredentials: async () => ({
           apiKey: "sk-test",
           protocol: "openai-compatible",
         }),
       } as never,
-      viewerService: {
-        resolveWorkspace: async () => ({ id: "ws-cap-test" }),
-      } as never,
+      localInstance: createRuntimeTestInstance(),
       agentPersistenceService: {
         getPersistence: async () => ({ checkpointer: null, store: null }),
       } as never,
       agentRunMetadataService: { updateRun: async () => {} } as never,
       settingsService: {
-        getWorkspaceSettings: async () => ({
+        getInstanceSettings: async () => ({
           defaultModel: "test-model",
           agentMaxRetries: 0,
           terminalShell: "auto",

@@ -107,7 +107,7 @@ describe("内置提示段的模式互斥（装配契约）", () => {
     const prompt = await registryWithBuiltinSections().compose({
       preset: "code",
       brandKitId: "kit-1",
-      workspaceSkills: [],
+      instanceSkills: [],
     });
 
     for (const forbidden of [
@@ -125,10 +125,10 @@ describe("内置提示段的模式互斥（装配契约）", () => {
       );
     }
     for (const required of [
-      "工作目录就是项目本身",
-      "execute_background",
+      "Task 的主目录跨轮保持稳定",
+      "后台工作归 Task",
       "检查点",
-      "始终用用户的语言回复",
+      "跟随用户的语言回复",
     ]) {
       expect(prompt, `code 提示应包含「${required}」`).toContain(required);
     }
@@ -138,12 +138,12 @@ describe("内置提示段的模式互斥（装配契约）", () => {
     const prompt = await registryWithBuiltinSections().compose({
       preset: "design",
       brandKitId: "kit-1",
-      workspaceSkills: [],
+      instanceSkills: [],
     });
 
     for (const forbidden of [
-      "工作目录就是项目本身",
-      "execute_background",
+      "Task 的主目录跨轮保持稳定",
+      "后台工作归 Task",
       "影子 git",
       "diff_files",
     ]) {
@@ -163,7 +163,7 @@ describe("内置提示段的模式互斥（装配契约）", () => {
     // 未绑定品牌 → 品牌段隐去
     const unbound = await registryWithBuiltinSections().compose({
       preset: "design",
-      workspaceSkills: [],
+      instanceSkills: [],
     });
     expect(unbound).not.toContain("当前项目已绑定品牌套件");
   });
@@ -173,7 +173,7 @@ describe("内置提示段的模式互斥（装配契约）", () => {
     for (const preset of ["design", "code"] as const) {
       const prompt = await registry.compose({
         preset,
-        workspaceSkills: [
+        instanceSkills: [
           {
             name: "调研",
             description: "查资料",
@@ -201,7 +201,7 @@ describe("内置提示段的模式互斥（装配契约）", () => {
     bare.register(skillsPromptSection);
     bare.register(createRulesPromptSection({ pluginFragments: () => [] }));
     for (const preset of ["design", "code"] as const) {
-      const prompt = await bare.compose({ preset, workspaceSkills: [] });
+      const prompt = await bare.compose({ preset, instanceSkills: [] });
       expect(prompt).not.toContain("## Skills");
       expect(prompt).not.toContain("## 用户规则");
       expect(prompt).not.toContain("## 插件提示段");

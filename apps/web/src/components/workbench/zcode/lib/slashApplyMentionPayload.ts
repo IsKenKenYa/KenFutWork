@@ -1,15 +1,10 @@
-/**
- * zcode 照搬：`@/lib/slashApplyMentionPayload.ts`（references/zcode/packages/ui/src/lib/slashApplyMentionPayload.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-import type { PromptInputSuggestionItem } from "@zui/lib/promptInputTriggers";
+import type { PromptInputSuggestionItem } from "@zui/lib/promptInputTriggers.js";
 import {
   buildSkillMentionMarkdown,
   buildSubagentMentionMarkdown,
-} from "@zui/mentions/mentionMarkdown";
-import type { PromptMentionPayload } from "@zui/mentions/nodes/PromptMentionNode";
-import { normalizeSlashCommandValue } from "@zui/slashCommandHelpers";
+} from "@zui/mentions/mentionMarkdown.js";
+import { normalizeSlashCommandValue } from "@zui/slashCommandHelpers.js";
+import type { PromptMentionPayload } from "@zui/mentions/nodes/PromptMentionNode.js";
 
 /** 将 `/` 面板选中的建议转成 PromptMention 载荷；skill/subagent 仍复用既有 $skill 与 @agent markdown 语义。 */
 export function buildSlashApplyMentionPayload(
@@ -21,10 +16,7 @@ export function buildSlashApplyMentionPayload(
       category: "skills",
       label: suggestion.value,
       value: suggestion.value,
-      markdown: buildSkillMentionMarkdown(
-        suggestion.value,
-        suggestion.data?.path,
-      ),
+      markdown: buildSkillMentionMarkdown(suggestion.value, suggestion.data?.path),
       description: suggestion.description,
       data: suggestion.data,
     };

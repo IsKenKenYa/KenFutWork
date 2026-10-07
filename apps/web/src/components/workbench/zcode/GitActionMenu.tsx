@@ -1,23 +1,23 @@
-/**
- * zcode 照搬：`@/GitActionMenu.tsx`（references/zcode/packages/ui/src/GitActionMenu.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀；源文件自带头注保留于下。
- * Git 缝适配（P6）：zcode 经 useServices().gitService（RPC）读写 git；本仓宿主 git 走自己的
- * 服务端 API（apps/web/src/lib/code-git-api.ts），不经 zcode RPC，且 hooks/useServices 宿主
- * stub 不含 gitService——故组件内注入「未接通」stub gitService（IGitService 切片，见
- * lib/zcode-services）：纯展示逻辑照常（props 驱动），commit/push 等写操作抛错即能力缺失，
- * 走组件既有 commitError/pushError 降级路径。后续接通宿主 git API 时替换注入即可，其余零改动。
- */
 /* eslint-disable max-lines -- 顶部 Git 操作当前集中承载 trigger、commit dialog 和 push dialog；先按工作流边界收口，避免为了拆行数把状态机打散。 */
-
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
 import {
-  Command,
-  CommandItem,
-  CommandList,
-  CommandShortcut,
-} from "@zui/components/ui/command";
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
+import type {
+  GitCommitMessageConversationContext,
+  GitIdentity,
+  GitRepositorySummary,
+  ZCodeTaskChangeSummary,
+} from "@zcode/shared";
+import { cn } from "@zui/components/lib/utils.js";
+import { Button } from "@zui/components/ui/button.js";
+import { Command, CommandItem, CommandList, CommandShortcut } from "@zui/components/ui/command.js";
 import {
   Dialog,
   DialogContent,
@@ -25,45 +25,32 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@zui/components/ui/dialog";
-import { Textarea } from "@zui/components/ui/textarea";
-import { toast } from "@zui/components/ui/toast";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@zui/components/ui/tooltip";
-import { GitBranchSwitcher } from "@zui/GitBranchSwitcher";
-import {
-  filterCommitPreviewFilesByCurrentSession,
-  getCurrentSessionFilePaths,
-} from "@zui/git-action-menu/currentSessionFileScope";
-import {
-  canPushGitBranch,
-  canUseGitActionMenu,
-  resolveGitActionMenuPrimaryAction,
-} from "@zui/git-action-menu/display";
+} from "@zui/components/ui/dialog.js";
+import { Textarea } from "@zui/components/ui/textarea.js";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@zui/components/ui/tooltip.js";
+import { toast } from "@zui/components/ui/toast.js";
 import {
   buildGitBranchCommitPreviewFiles,
   getGitBranchCommitTotals,
   resolveGitBranchTriggerLabel,
-} from "@zui/git-branch-switcher/display";
-import { hasGitCommitIdentity } from "@zui/git-branch-switcher/switchAssist";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { getErrorMessage } from "@zui/lib/errorMessage";
+} from "@zui/git-branch-switcher/display.js";
+import { GitBranchSwitcher } from "@zui/GitBranchSwitcher.js";
+import { hasGitCommitIdentity } from "@zui/git-branch-switcher/switchAssist.js";
 import {
-  formatCommandShortcutLabel,
-  matchesPrimaryShortcut,
-} from "@zui/lib/keyboardShortcuts";
-import { runUserAction } from "@zui/lib/userActionTelemetry";
-import type { IGitService } from "@zui/lib/zcode-services";
-import type {
-  GitCommitMessageConversationContext,
-  GitIdentity,
-  GitRepositorySummary,
-  ZCodeTaskChangeSummary,
-} from "@zui/lib/zcode-shared";
-import { logger } from "@zui/logger";
+  canUseGitActionMenu,
+  canPushGitBranch,
+  resolveGitActionMenuPrimaryAction,
+} from "@zui/git-action-menu/display.js";
+import {
+  filterCommitPreviewFilesByCurrentSession,
+  getCurrentSessionFilePaths,
+} from "@zui/git-action-menu/currentSessionFileScope.js";
+import { useServices } from "@zui/hooks/useServices.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { getErrorMessage } from "@zui/lib/errorMessage.js";
+import { runUserAction } from "@zui/lib/userActionTelemetry.js";
+import { formatCommandShortcutLabel, matchesPrimaryShortcut } from "@zui/lib/keyboardShortcuts.js";
+import { logger } from "@zui/logger.js";
 import {
   AlertCircleIcon,
   ArrowUpFromLine,
@@ -74,16 +61,6 @@ import {
   LoaderIcon,
   SparklesIcon,
 } from "lucide-react";
-import {
-  type FormEvent,
-  type KeyboardEvent,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
 
 interface GitActionMenuProps {
   workspacePath: string;
@@ -97,49 +74,7 @@ interface GitActionMenuProps {
   triggerLayout?: "header" | "status-row";
 }
 
-type GitCommitPreviewFile = ReturnType<
-  typeof buildGitBranchCommitPreviewFiles
->[number];
-
-/**
- * Git 缝 stub：写操作（refresh/commit/push/生成提交信息）未接通宿主 git API，恒抛
- * 「未接通」——被组件既有 try/catch 捕获后落入 commitError/pushError 展示，UI 降级。
- */
-const unavailableGitService: IGitService = {
-  async refresh() {
-    throw new Error("gitService.refresh 未接通");
-  },
-  async getChanges() {
-    throw new Error("gitService.getChanges 未接通");
-  },
-  async getIdentity() {
-    throw new Error("gitService.getIdentity 未接通");
-  },
-  async getLocalBranches() {
-    throw new Error("gitService.getLocalBranches 未接通");
-  },
-  async switchBranch() {
-    throw new Error("gitService.switchBranch 未接通");
-  },
-  async createBranchAndSwitch() {
-    throw new Error("gitService.createBranchAndSwitch 未接通");
-  },
-  async stagePaths() {
-    throw new Error("gitService.stagePaths 未接通");
-  },
-  async discardPaths() {
-    throw new Error("gitService.discardPaths 未接通");
-  },
-  async commit() {
-    throw new Error("gitService.commit 未接通");
-  },
-  async generateCommitMessage() {
-    throw new Error("gitService.generateCommitMessage 未接通");
-  },
-  async push() {
-    throw new Error("gitService.push 未接通");
-  },
-};
+type GitCommitPreviewFile = ReturnType<typeof buildGitBranchCommitPreviewFiles>[number];
 
 const COMMIT_DIALOG_ACTION_IDS = ["commit", "commitAndPush", "push"] as const;
 const GIT_COMMIT_MESSAGE_TEXTAREA_ID = "git-action-menu-commit-message";
@@ -161,13 +96,8 @@ function isCommitDialogActionId(value: string): value is CommitDialogActionId {
   return COMMIT_DIALOG_ACTION_IDS.includes(value as CommitDialogActionId);
 }
 
-function isCommitMessageTextAreaTarget(
-  target: EventTarget | null,
-): target is HTMLTextAreaElement {
-  return (
-    target instanceof HTMLTextAreaElement &&
-    target.id === GIT_COMMIT_MESSAGE_TEXTAREA_ID
-  );
+function isCommitMessageTextAreaTarget(target: EventTarget | null): target is HTMLTextAreaElement {
+  return target instanceof HTMLTextAreaElement && target.id === GIT_COMMIT_MESSAGE_TEXTAREA_ID;
 }
 
 interface GitCommitDialogState {
@@ -203,9 +133,7 @@ function getCommitDialogFiles(
   state: GitCommitDialogState,
   includeUnstaged: boolean,
 ): GitCommitPreviewFile[] {
-  return includeUnstaged
-    ? [...state.unstagedFiles, ...state.stagedFiles]
-    : state.stagedFiles;
+  return includeUnstaged ? [...state.unstagedFiles, ...state.stagedFiles] : state.stagedFiles;
 }
 
 function getCommitDialogStagePaths(
@@ -213,11 +141,7 @@ function getCommitDialogStagePaths(
   includeUnstaged: boolean,
 ): string[] {
   return Array.from(
-    new Set(
-      getCommitDialogFiles(state, includeUnstaged).map(
-        (file) => file.stagePath,
-      ),
-    ),
+    new Set(getCommitDialogFiles(state, includeUnstaged).map((file) => file.stagePath)),
   );
 }
 
@@ -242,7 +166,7 @@ function CommitCommandActionItem({
     <CommandItem
       data-testid={gitCommitActionItemTestId(id)}
       value={id}
-      {...(disabled === undefined ? {} : { disabled })}
+      disabled={disabled}
       onSelect={() => {
         if (!disabled) {
           onSelect();
@@ -250,18 +174,14 @@ function CommitCommandActionItem({
       }}
       className={cn(
         "h-9 px-2.5 py-1.5 font-medium",
-        disabled
-          ? "cursor-default text-foreground-subtlest"
-          : "text-foreground",
+        disabled ? "cursor-default text-foreground-subtlest" : "text-foreground",
       )}
     >
       <span className="flex size-5 shrink-0 items-center justify-center">
         {loading ? <LoaderIcon className="size-4 animate-spin" /> : icon}
       </span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {shortcutLabel ? (
-        <CommandShortcut>{shortcutLabel}</CommandShortcut>
-      ) : null}
+      {shortcutLabel ? <CommandShortcut>{shortcutLabel}</CommandShortcut> : null}
     </CommandItem>
   );
 }
@@ -287,34 +207,24 @@ function GitCommitDialog({
   onPushOnly,
 }: GitCommitDialogProps) {
   const { intl, locale } = useZCodeIntl();
-  const [selectedActionId, setSelectedActionId] =
-    useState<CommitDialogActionId>("commit");
+  const [selectedActionId, setSelectedActionId] = useState<CommitDialogActionId>("commit");
   const messageTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messageInputFocusedOnOpenRef = useRef(false);
   const numberFormatter = new Intl.NumberFormat(locale);
   const hasIdentity = hasGitCommitIdentity(state?.identity ?? null);
   const messageReady = message.trim().length > 0;
   const actionPending = mutationPending || generationPending;
-  const selectedFiles = state
-    ? getCommitDialogFiles(state, includeUnstaged)
-    : [];
-  const stagePaths = state
-    ? getCommitDialogStagePaths(state, includeUnstaged)
-    : [];
-  const dirtyFileCount = state
-    ? getCommitDialogStagePaths(state, true).length
-    : 0;
-  const { fileCount, totalAdded, totalRemoved } =
-    getGitBranchCommitTotals(selectedFiles);
+  const selectedFiles = state ? getCommitDialogFiles(state, includeUnstaged) : [];
+  const stagePaths = state ? getCommitDialogStagePaths(state, includeUnstaged) : [];
+  const dirtyFileCount = state ? getCommitDialogStagePaths(state, true).length : 0;
+  const { fileCount, totalAdded, totalRemoved } = getGitBranchCommitTotals(selectedFiles);
   const displayChangeSummary = state?.activeTaskChangeSummary ?? null;
   const displayAdded = displayChangeSummary?.added ?? totalAdded;
   const displayRemoved = displayChangeSummary?.removed ?? totalRemoved;
   const hasSelectedChanges = stagePaths.length > 0;
   const hasUnstagedChanges = Boolean(state?.unstagedFiles.length);
   const commitActionDisabled =
-    actionPending ||
-    !hasSelectedChanges ||
-    (!hasIdentity && state?.identity !== null);
+    actionPending || !hasSelectedChanges || (!hasIdentity && state?.identity !== null);
   const pushOnlyDisabled = actionPending || !pushEnabled;
   const commitShortcutLabel = formatCommandShortcutLabel("⏎");
   const commitActions = useMemo(
@@ -372,12 +282,7 @@ function GitCommitDialog({
       messageInputFocusedOnOpenRef.current = false;
       return;
     }
-    if (
-      loading ||
-      !state ||
-      actionPending ||
-      messageInputFocusedOnOpenRef.current
-    ) {
+    if (loading || !state || actionPending || messageInputFocusedOnOpenRef.current) {
       return;
     }
 
@@ -395,9 +300,7 @@ function GitCommitDialog({
       return;
     }
 
-    const selectedAction = commitActions.find(
-      (action) => action.id === selectedActionId,
-    );
+    const selectedAction = commitActions.find((action) => action.id === selectedActionId);
     if (selectedAction && !selectedAction.disabled) {
       return;
     }
@@ -409,9 +312,7 @@ function GitCommitDialog({
   }, [actionPending, commitActions, loading, open, selectedActionId, state]);
 
   const triggerSelectedAction = useCallback(() => {
-    const selectedAction = commitActions.find(
-      (action) => action.id === selectedActionId,
-    );
+    const selectedAction = commitActions.find((action) => action.id === selectedActionId);
     if (!selectedAction || selectedAction.disabled) {
       return;
     }
@@ -421,23 +322,18 @@ function GitCommitDialog({
   const selectAdjacentAction = useCallback(
     (direction: 1 | -1) => {
       setSelectedActionId((currentActionId) => {
-        const enabledActions = commitActions.filter(
-          (action) => !action.disabled,
-        );
+        const enabledActions = commitActions.filter((action) => !action.disabled);
         if (enabledActions.length === 0) {
           return currentActionId;
         }
 
-        const currentIndex = enabledActions.findIndex(
-          (action) => action.id === currentActionId,
-        );
+        const currentIndex = enabledActions.findIndex((action) => action.id === currentActionId);
         if (currentIndex === -1) {
           return enabledActions[0]?.id ?? currentActionId;
         }
 
         const nextIndex =
-          (currentIndex + direction + enabledActions.length) %
-          enabledActions.length;
+          (currentIndex + direction + enabledActions.length) % enabledActions.length;
         return enabledActions[nextIndex]?.id ?? currentActionId;
       });
     },
@@ -519,20 +415,13 @@ function GitCommitDialog({
                 showFooterActions={false}
               />
               <div className="flex shrink-0 items-center gap-1.5 font-mono text-ui-base">
-                <span className="text-diff-added">
-                  +{numberFormatter.format(displayAdded)}
-                </span>
-                <span className="text-diff-removed">
-                  -{numberFormatter.format(displayRemoved)}
-                </span>
+                <span className="text-diff-added">+{numberFormatter.format(displayAdded)}</span>
+                <span className="text-diff-removed">-{numberFormatter.format(displayRemoved)}</span>
               </div>
             </div>
 
             <div className="min-h-36 px-4 pb-2">
-              <label
-                htmlFor={GIT_COMMIT_MESSAGE_TEXTAREA_ID}
-                className="sr-only"
-              >
+              <label htmlFor={GIT_COMMIT_MESSAGE_TEXTAREA_ID} className="sr-only">
                 {intl.formatMessage({
                   id: "git.actionMenu.commitDialog.messageLabel",
                 })}
@@ -553,7 +442,7 @@ function GitCommitDialog({
                   }}
                 />
                 <Tooltip>
-                  <TooltipTrigger asChild={true}>
+                  <TooltipTrigger asChild>
                     <Button
                       data-testid={TID_GIT_COMMIT_GENERATE_BUTTON}
                       type="button"
@@ -636,7 +525,7 @@ function GitCommitDialog({
             </div>
 
             <div className="border-t border-border/50 px-2.5 py-2">
-              {hasIdentity ? null : (
+              {!hasIdentity ? (
                 <div className="mb-1.5 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-ui-base text-warning">
                   <AlertCircleIcon className="mt-0.5 size-4 shrink-0" />
                   <p>
@@ -645,18 +534,14 @@ function GitCommitDialog({
                     })}
                   </p>
                 </div>
-              )}
-
-              {error ? (
-                <p className="px-3 py-1.5 text-ui-base text-destructive">
-                  {error}
-                </p>
               ) : null}
+
+              {error ? <p className="px-3 py-1.5 text-ui-base text-destructive">{error}</p> : null}
 
               <Command
                 data-testid={TID_GIT_COMMIT_ACTION_COMMAND}
                 shouldFilter={false}
-                loop={true}
+                loop
                 tabIndex={0}
                 value={selectedActionId}
                 onValueChange={(nextValue) => {
@@ -677,10 +562,9 @@ function GitCommitDialog({
                       id={action.id}
                       icon={action.icon}
                       label={action.label}
-                      {...(selectedActionId === action.id &&
-                      commitShortcutLabel !== undefined
-                        ? { shortcutLabel: commitShortcutLabel }
-                        : {})}
+                      shortcutLabel={
+                        selectedActionId === action.id ? commitShortcutLabel : undefined
+                      }
                       disabled={action.disabled}
                       loading={action.loading}
                       onSelect={action.onSelect}
@@ -747,8 +631,7 @@ function GitPushDialog({
         }, 1500);
       },
       (copyError: unknown) => {
-        const message =
-          copyError instanceof Error ? copyError.message : String(copyError);
+        const message = copyError instanceof Error ? copyError.message : String(copyError);
         toast(
           intl.formatMessage(
             { id: "git.actionMenu.pushDialog.error.copyFailed" },
@@ -838,7 +721,7 @@ function GitPushDialog({
             </div>
           )}
 
-          {pushEnabled ? null : (
+          {!pushEnabled ? (
             <div className="flex items-start gap-3 rounded-xl bg-warning/10 px-4 py-3 text-ui-base text-warning">
               <AlertCircleIcon className="mt-0.5 size-4 shrink-0" />
               <span>
@@ -847,7 +730,7 @@ function GitPushDialog({
                 })}
               </span>
             </div>
-          )}
+          ) : null}
 
           {error ? (
             <>
@@ -884,7 +767,7 @@ function GitPushDialog({
                   // Textarea 默认带 field-sizing-content，长错误文本会按内容扩张并把弹窗横向撑爆。
                   // 这里改成固定尺寸模式，并允许长内容换行，保证错误详情始终被限制在弹窗宽度内。
                   className="field-sizing-fixed w-full max-w-full min-h-56 rounded-lg border-input-border bg-background/50 px-3 py-3 text-ui-base text-foreground whitespace-pre-wrap break-words placeholder:text-foreground-subtlest focus-visible:border-input-border-focused focus-visible:bg-input-focused focus-visible:ring-0 md:text-ui-base"
-                  readOnly={true}
+                  readOnly
                 >
                   {error}
                 </Textarea>
@@ -922,9 +805,7 @@ function GitPushDialog({
                   disabled={mutationPending || !pushEnabled}
                   className="h-10 min-w-0 px-5"
                 >
-                  {mutationPending ? (
-                    <LoaderIcon className="size-4 animate-spin" />
-                  ) : null}
+                  {mutationPending ? <LoaderIcon className="size-4 animate-spin" /> : null}
                   {intl.formatMessage({
                     id: "git.actionMenu.pushDialog.confirm",
                   })}
@@ -949,18 +830,15 @@ export function GitActionMenu({
   triggerIconOnly = false,
   triggerLayout = "header",
 }: GitActionMenuProps) {
-  // Git 缝适配：宿主不经 zcode RPC，git 写能力恒「未接通」（见文件头注记）。
-  const gitService = unavailableGitService;
+  const { gitService } = useServices();
   const { intl, locale } = useZCodeIntl();
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
   const [commitDialogLoading, setCommitDialogLoading] = useState(false);
-  const [commitDialogState, setCommitDialogState] =
-    useState<GitCommitDialogState | null>(null);
+  const [commitDialogState, setCommitDialogState] = useState<GitCommitDialogState | null>(null);
   const [commitMessage, setCommitMessage] = useState("");
   const [commitError, setCommitError] = useState<string | null>(null);
   const [commitIncludeUnstaged, setCommitIncludeUnstaged] = useState(true);
-  const [commitMessageGenerationPending, setCommitMessageGenerationPending] =
-    useState(false);
+  const [commitMessageGenerationPending, setCommitMessageGenerationPending] = useState(false);
   const [pushDialogOpen, setPushDialogOpen] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
   const [mutationPending, setMutationPending] = useState(false);
@@ -978,8 +856,7 @@ export function GitActionMenu({
   );
   const commitEnabled = gitSummary.isDirty;
   const pushEnabled = canPushGitBranch(gitSummary);
-  const triggerPending =
-    mutationPending || commitMessageGenerationPending || commitDialogLoading;
+  const triggerPending = mutationPending || commitMessageGenerationPending || commitDialogLoading;
   const primaryActionId = useMemo(
     () =>
       resolveGitActionMenuPrimaryAction({
@@ -989,8 +866,7 @@ export function GitActionMenu({
       }),
     [actionAvailable, commitEnabled, pushEnabled],
   );
-  const primaryActionDisabled =
-    !actionAvailable || triggerPending || primaryActionId === null;
+  const primaryActionDisabled = !actionAvailable || triggerPending || primaryActionId === null;
   const isStatusRowTrigger = triggerLayout === "status-row";
 
   useEffect(() => {
@@ -1055,12 +931,8 @@ export function GitActionMenu({
           workspacePath,
           includeIdentity: true,
         });
-        const rawUnstagedFiles = buildGitBranchCommitPreviewFiles(
-          refreshResult.unstagedChanges,
-        );
-        const rawStagedFiles = buildGitBranchCommitPreviewFiles(
-          refreshResult.stagedChanges,
-        );
+        const rawUnstagedFiles = buildGitBranchCommitPreviewFiles(refreshResult.unstagedChanges);
+        const rawStagedFiles = buildGitBranchCommitPreviewFiles(refreshResult.stagedChanges);
         const unstagedFiles = filterCommitPreviewFilesByCurrentSession({
           files: rawUnstagedFiles,
           summary: activeTaskChangeSummary,
@@ -1097,13 +969,7 @@ export function GitActionMenu({
         closeCommitDialog();
       }
     },
-    [
-      activeTaskChangeSummary,
-      closeCommitDialog,
-      gitService,
-      intl,
-      workspacePath,
-    ],
+    [activeTaskChangeSummary, closeCommitDialog, gitService, intl, workspacePath],
   );
 
   const openCommitDialog = useCallback(async () => {
@@ -1121,22 +987,16 @@ export function GitActionMenu({
   }, [loadCommitDialogState, onRefreshGit]);
 
   const generateCommitMessage = useCallback(
-    async (
-      state: GitCommitDialogState,
-      includeUnstaged: boolean,
-    ): Promise<string> => {
+    async (state: GitCommitDialogState, includeUnstaged: boolean): Promise<string> => {
       const files = getCommitDialogFiles(state, includeUnstaged);
-      const currentSessionFilePaths = getCurrentSessionFilePaths(
-        state.activeTaskChangeSummary,
-      );
+      const currentSessionFilePaths = getCurrentSessionFilePaths(state.activeTaskChangeSummary);
       logger.info("[GitActionMenu] 开始生成提交消息", {
         workspacePath,
         branchName: gitSummary.branchName,
         selectedFileCount: files.length,
         currentSessionFileCount: currentSessionFilePaths?.length ?? 0,
         includeUnstaged,
-        conversationMessageCount:
-          commitMessageConversationContext?.messages.length ?? 0,
+        conversationMessageCount: commitMessageConversationContext?.messages.length ?? 0,
       });
 
       const result = await gitService.generateCommitMessage({
@@ -1173,10 +1033,7 @@ export function GitActionMenu({
       return;
     }
 
-    const stagePaths = getCommitDialogStagePaths(
-      commitDialogState,
-      commitIncludeUnstaged,
-    );
+    const stagePaths = getCommitDialogStagePaths(commitDialogState, commitIncludeUnstaged);
     if (stagePaths.length === 0) {
       setCommitError(
         intl.formatMessage({
@@ -1263,10 +1120,7 @@ export function GitActionMenu({
       }
 
       const includeUnstaged = commitIncludeUnstaged;
-      const stagePaths = getCommitDialogStagePaths(
-        commitDialogState,
-        includeUnstaged,
-      );
+      const stagePaths = getCommitDialogStagePaths(commitDialogState, includeUnstaged);
       const pathsToStage = includeUnstaged ? stagePaths : [];
       if (stagePaths.length === 0) {
         setCommitError(
@@ -1282,10 +1136,7 @@ export function GitActionMenu({
         setCommitError(null);
         setCommitMessageGenerationPending(true);
         try {
-          nextCommitMessage = await generateCommitMessage(
-            commitDialogState,
-            includeUnstaged,
-          );
+          nextCommitMessage = await generateCommitMessage(commitDialogState, includeUnstaged);
           setCommitMessage(nextCommitMessage);
         } catch (error: unknown) {
           const message = getErrorMessage(error);
@@ -1426,14 +1277,7 @@ export function GitActionMenu({
     } finally {
       setMutationPending(false);
     }
-  }, [
-    closePushDialog,
-    intl,
-    onRefreshGit,
-    pushCurrentBranch,
-    pushEnabled,
-    workspacePath,
-  ]);
+  }, [closePushDialog, intl, onRefreshGit, pushCurrentBranch, pushEnabled, workspacePath]);
 
   const handlePrimaryAction = useCallback(() => {
     if (primaryActionDisabled) {
@@ -1452,12 +1296,7 @@ export function GitActionMenu({
       completed: { resultSource: "local_commit" },
       failureStage: "git_action_open",
     });
-  }, [
-    openCommitDialog,
-    openPushDialog,
-    primaryActionId,
-    primaryActionDisabled,
-  ]);
+  }, [openCommitDialog, openPushDialog, primaryActionId, primaryActionDisabled]);
 
   const handleStatusRowContainerClick = useCallback(() => {
     handlePrimaryAction();
@@ -1466,11 +1305,7 @@ export function GitActionMenu({
   return (
     <>
       <div
-        onClick={
-          isStatusRowTrigger && !triggerIconOnly
-            ? handleStatusRowContainerClick
-            : undefined
-        }
+        onClick={isStatusRowTrigger && !triggerIconOnly ? handleStatusRowContainerClick : undefined}
         className={cn(
           // macOS/Windows 小窗口下，顶部 Git 主按钮的中文文案会和分支入口、窗口控制区挤在同一行。
           // 在 header 容器变窄时只隐藏主按钮文字，保留图标入口，避免丢失核心 Git 操作。
@@ -1498,11 +1333,7 @@ export function GitActionMenu({
             isStatusRowTrigger &&
               "h-8 min-w-0 w-full justify-start gap-2 px-2 text-left text-ui-base hover:bg-transparent hover:text-foreground @max-[560px]/workspace-header:w-auto @max-[560px]/workspace-header:[&>span]:inline",
           )}
-          onClick={
-            isStatusRowTrigger && !triggerIconOnly
-              ? undefined
-              : handlePrimaryAction
-          }
+          onClick={isStatusRowTrigger && !triggerIconOnly ? undefined : handlePrimaryAction}
         >
           {/* 主按钮进入 pending 时直接替换左侧动作图标，避免在紧凑头部里额外追加 loading 图标把按钮挤宽。*/}
           {triggerPending ? (

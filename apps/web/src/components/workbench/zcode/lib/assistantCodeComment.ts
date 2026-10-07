@@ -1,19 +1,14 @@
-/**
- * zcode 照搬：`@/lib/assistantCodeComment.ts`（references/zcode/packages/ui/src/lib/assistantCodeComment.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 import {
   extractAssistantDirectives,
   findAssistantDirectivePrefixStart,
   findMarkdownCodeRanges,
   findUnclosedAssistantDirectiveStart,
   overlapsAssistantTextRanges,
-} from "@zui/lib/assistantDirectiveParser";
+} from "@zui/lib/assistantDirectiveParser.js";
 import {
-  type AssistantFilePathResolveOptions,
   resolveAssistantRawFilePath,
-} from "@zui/lib/assistantFileReferences";
+  type AssistantFilePathResolveOptions,
+} from "@zui/lib/assistantFileReferences.js";
 
 export type AssistantCodeCommentPriority = 0 | 1 | 2 | 3;
 
@@ -47,26 +42,17 @@ function parsePositiveInteger(value: string | undefined): number | undefined {
   return parsed > 0 ? parsed : undefined;
 }
 
-function parsePriority(
-  value: string | undefined,
-): AssistantCodeCommentPriority | undefined {
+function parsePriority(value: string | undefined): AssistantCodeCommentPriority | undefined {
   if (!value || !/^[0-3]$/.test(value)) return undefined;
   return Number.parseInt(value, 10) as AssistantCodeCommentPriority;
 }
 
 function extractAssistantCodeComments(content: string): AssistantCodeComment[] {
   const protectedRanges = findMarkdownCodeRanges(content);
-  return extractAssistantDirectives(
-    content,
-    CODE_COMMENT_DIRECTIVE_NAME,
-  ).flatMap((directive) => {
+  return extractAssistantDirectives(content, CODE_COMMENT_DIRECTIVE_NAME).flatMap((directive) => {
     if (
       !directive.parameters ||
-      overlapsAssistantTextRanges(
-        directive.start,
-        directive.start + 1,
-        protectedRanges,
-      )
+      overlapsAssistantTextRanges(directive.start, directive.start + 1, protectedRanges)
     ) {
       return [];
     }
@@ -79,8 +65,7 @@ function extractAssistantCodeComments(content: string): AssistantCodeComment[] {
     const startLine = parsePositiveInteger(directive.parameters.start);
     const parsedEndLine = parsePositiveInteger(directive.parameters.end);
     const hasValidRange =
-      startLine !== undefined &&
-      (parsedEndLine === undefined || parsedEndLine >= startLine);
+      startLine !== undefined && (parsedEndLine === undefined || parsedEndLine >= startLine);
     const priority = parsePriority(directive.parameters.priority);
 
     return [
@@ -96,7 +81,7 @@ function extractAssistantCodeComments(content: string): AssistantCodeComment[] {
               endLine: parsedEndLine ?? startLine,
             }
           : {}),
-        ...(priority === undefined ? {} : { priority }),
+        ...(priority !== undefined ? { priority } : {}),
       },
     ];
   });
@@ -130,9 +115,7 @@ export function projectAssistantCodeComments(
   options: { streaming: boolean },
 ): AssistantCodeCommentProjection {
   const comments = extractAssistantCodeComments(content);
-  const replacements = comments.map((comment) =>
-    replacementForComment(content, comment),
-  );
+  const replacements = comments.map((comment) => replacementForComment(content, comment));
 
   if (options.streaming) {
     const protectedRanges = findMarkdownCodeRanges(content);
@@ -141,7 +124,10 @@ export function projectAssistantCodeComments(
       CODE_COMMENT_DIRECTIVE_NAME,
       protectedRanges,
     );
-    if (unclosedStart === null) {
+    if (unclosedStart !== null) {
+      // 流式尾部如果直接交给 Markdown，会在闭合前把内部协议原文闪给用户。
+      replacements.push({ start: unclosedStart, end: content.length, replacement: "" });
+    } else {
       const prefixStart = findAssistantDirectivePrefixStart(
         content,
         [CODE_COMMENT_DIRECTIVE_NAME, "zcode-file-citation"],
@@ -153,26 +139,13 @@ export function projectAssistantCodeComments(
         },
       );
       if (prefixStart !== null) {
-        replacements.push({
-          start: prefixStart,
-          end: content.length,
-          replacement: "",
-        });
+        replacements.push({ start: prefixStart, end: content.length, replacement: "" });
       }
-    } else {
-      // 流式尾部如果直接交给 Markdown，会在闭合前把内部协议原文闪给用户。
-      replacements.push({
-        start: unclosedStart,
-        end: content.length,
-        replacement: "",
-      });
     }
   }
 
   let visibleText = content;
-  for (const replacement of replacements.sort(
-    (left, right) => right.start - left.start,
-  )) {
+  for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
     visibleText =
       visibleText.slice(0, replacement.start) +
       replacement.replacement +
@@ -190,16 +163,11 @@ function isWindowsWorkspacePath(path: string): boolean {
   return /^[a-zA-Z]:[\\/]/.test(path) || path.startsWith("\\\\");
 }
 
-function resolveWorkspaceRelativePath(
-  workspacePath: string,
-  filePath: string,
-): string | null {
+function resolveWorkspaceRelativePath(workspacePath: string, filePath: string): string | null {
   const normalizedWorkspace = normalizePath(workspacePath);
   const normalizedFile = normalizePath(filePath);
   const windows = isWindowsWorkspacePath(workspacePath);
-  const comparedWorkspace = windows
-    ? normalizedWorkspace.toLowerCase()
-    : normalizedWorkspace;
+  const comparedWorkspace = windows ? normalizedWorkspace.toLowerCase() : normalizedWorkspace;
   const comparedFile = windows ? normalizedFile.toLowerCase() : normalizedFile;
   if (!comparedFile.startsWith(`${comparedWorkspace}/`)) return null;
   return normalizedFile.slice(normalizedWorkspace.length + 1);
@@ -213,14 +181,8 @@ export function buildAssistantCodeCommentCards(
 ): AssistantCodeCommentCard[] {
   return extractAssistantCodeComments(content)
     .flatMap((comment) => {
-      const path = resolveAssistantRawFilePath(
-        workspacePath,
-        comment.file,
-        options,
-      );
-      const displayPath = path
-        ? resolveWorkspaceRelativePath(workspacePath, path)
-        : null;
+      const path = resolveAssistantRawFilePath(workspacePath, comment.file, options);
+      const displayPath = path ? resolveWorkspaceRelativePath(workspacePath, path) : null;
       if (!path || !displayPath) return [];
       return [
         {

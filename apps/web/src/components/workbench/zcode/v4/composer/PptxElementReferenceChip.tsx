@@ -1,24 +1,12 @@
-/**
- * zcode 照搬：`@/v4/composer/PptxElementReferenceChip.tsx`（references/zcode/packages/ui/src/v4/composer/PptxElementReferenceChip.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import type { AttachmentHoverCardContentProps } from "@zui/components/ai-elements/attachments";
-import { Button } from "@zui/components/ui/button";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { PptxElementReference } from "@zui/lib/pptxElementReference";
-import { ContextAttachmentPill } from "@zui/v4/composer/ContextAttachmentPill";
 import { PresentationIcon, Trash2Icon } from "lucide-react";
+import type { AttachmentHoverCardContentProps } from "@zui/components/ai-elements/attachments.js";
+import { Button } from "@zui/components/ui/button.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { PptxElementReference } from "@zui/lib/pptxElementReference.js";
+import { ContextAttachmentPill } from "@zui/v4/composer/ContextAttachmentPill.js";
 
 function getReferenceText(reference: PptxElementReference) {
-  return (
-    reference.selectedText ||
-    reference.text ||
-    reference.nodeName ||
-    reference.nodeType
-  );
+  return reference.selectedText || reference.text || reference.nodeName || reference.nodeType;
 }
 
 export function PptxElementReferenceChip({
@@ -29,10 +17,10 @@ export function PptxElementReferenceChip({
   onRemoveAll,
 }: {
   references: readonly PptxElementReference[];
-  contentAlign?: AttachmentHoverCardContentProps["align"] | undefined;
-  onOpen?: ((reference: PptxElementReference) => void | undefined) | undefined;
-  onRemove?: (id: string) => void | undefined;
-  onRemoveAll?: () => void | undefined;
+  contentAlign?: AttachmentHoverCardContentProps["align"];
+  onOpen?: (reference: PptxElementReference) => void;
+  onRemove?: (id: string) => void;
+  onRemoveAll?: () => void;
 }) {
   const { intl } = useZCodeIntl();
   if (references.length === 0) {
@@ -40,10 +28,7 @@ export function PptxElementReferenceChip({
   }
   const label = intl.formatMessage(
     {
-      id:
-        references.length === 1
-          ? "chat.pptxElements.one"
-          : "chat.pptxElements.many",
+      id: references.length === 1 ? "chat.pptxElements.one" : "chat.pptxElements.many",
     },
     { count: String(references.length) },
   );
@@ -51,9 +36,7 @@ export function PptxElementReferenceChip({
   return (
     <ContextAttachmentPill
       contentAlign={contentAlign}
-      icon={
-        <PresentationIcon className="size-4 shrink-0 text-foreground-subtle" />
-      }
+      icon={<PresentationIcon className="size-4 shrink-0 text-foreground-subtle" />}
       label={label}
       onRemoveAll={onRemoveAll}
       removeLabel={removeLabel}
@@ -71,12 +54,9 @@ export function PptxElementReferenceChip({
             >
               <PresentationIcon className="mt-1 size-4 shrink-0 text-foreground-subtle" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">
-                  {getReferenceText(reference)}
-                </span>
+                <span className="block truncate font-medium">{getReferenceText(reference)}</span>
                 <span className="block truncate font-mono text-ui-sm text-foreground-subtle">
-                  {reference.sourceTitle} · {reference.slideIndex + 1} ·{" "}
-                  {reference.nodeId}
+                  {reference.sourceTitle} · {reference.slideIndex + 1} · {reference.nodeId}
                 </span>
                 {reference.comment?.trim() ? (
                   <span className="line-clamp-2 text-ui-base/relaxed text-foreground-subtle">
@@ -89,12 +69,9 @@ export function PptxElementReferenceChip({
             <div className="flex min-w-0 flex-1 items-start gap-2 px-1 py-0.5">
               <PresentationIcon className="mt-1 size-4 shrink-0 text-foreground-subtle" />
               <div className="min-w-0 flex-1">
-                <div className="truncate font-medium">
-                  {getReferenceText(reference)}
-                </div>
+                <div className="truncate font-medium">{getReferenceText(reference)}</div>
                 <div className="truncate font-mono text-ui-sm text-foreground-subtle">
-                  {reference.sourceTitle} · {reference.slideIndex + 1} ·{" "}
-                  {reference.nodeId}
+                  {reference.sourceTitle} · {reference.slideIndex + 1} · {reference.nodeId}
                 </div>
                 {reference.comment?.trim() ? (
                   <div className="line-clamp-2 text-ui-base/relaxed text-foreground-subtle">

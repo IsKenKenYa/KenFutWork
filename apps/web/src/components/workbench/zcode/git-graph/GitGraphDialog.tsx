@@ -1,27 +1,210 @@
-/**
- * zcode 照搬 + 宿主适配 stub：`@/git-graph/GitGraphDialog.tsx`
- * （references/zcode/packages/ui/src/git-graph/GitGraphDialog.tsx）
- * 许可证：Apache-2.0（zcode）。
- *
- * 数据源差异：zcode 的提交图经其 RPC gitService.getCommitGraph 分页拉取；本仓宿主
- * git 走自己的服务端 API（apps/web/src/lib/code-git-api.ts），不经 zcode RPC。
- * 故本组件按 stub 模式落地：导出签名（props）逐字保持，渲染恒 null——UI 降级隐藏，
- * 消费方（GitBranchSwitcher 底部「查看提交图」入口）打开后呈现空对话框即整体不可见。
- * 后续接通宿主 git 提交图 API 时在此替换实现，照搬组件零改动。
- */
-"use client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { GitCommitGraphCommit } from "@zcode/shared";
+import { Button } from "@zui/components/ui/button.js";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@zui/components/ui/dialog.js";
+import { toast } from "@zui/components/ui/toast.js";
+import { GitGraphPane } from "@zui/git-graph/GitGraphPane.js";
+import { useServices } from "@zui/hooks/useServices.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { getErrorMessage } from "@zui/lib/errorMessage.js";
+import { logger } from "@zui/logger.js";
+import { AlertCircleIcon, LoaderIcon, XIcon } from "lucide-react";
 
-export interface GitGraphDialogProps {
+interface GitGraphDialogProps {
   open: boolean;
   workspacePath: string;
   onOpenChange: (nextOpen: boolean) => void;
 }
 
-export function GitGraphDialog({
-  open: _open,
-  workspacePath: _workspacePath,
-  onOpenChange: _onOpenChange,
-}: GitGraphDialogProps) {
-  // stub：提交图未接通，恒不渲染（UI 降级隐藏）。
-  return null;
+const GIT_GRAPH_PAGE_SIZE = 50;
+
+export function GitGraphDialog({ open, workspacePath, onOpenChange }: GitGraphDialogProps) {
+  const { gitService } = useServices();
+  const { intl } = useZCodeIntl();
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [commits, setCommits] = useState<GitCommitGraphCommit[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
+  const loadingMoreRef = useRef(false);
+
+  const resetGraphState = useCallback(() => {
+    setLoading(false);
+    setLoadingMore(false);
+    setRefreshing(false);
+    loadingMoreRef.current = false;
+    setErrorMessage(null);
+  }, []);
+
+  const loadInitialCommits = useCallback(async () => {
+    setLoading(true);
+    setLoadingMore(false);
+    setRefreshing(false);
+    loadingMoreRef.current = false;
+    setErrorMessage(null);
+    setCommits([]);
+    setHasMore(false);
+    setSelectedCommitHash(null);
+
+    try {
+      const result = await gitService.getCommitGraph({
+        workspacePath,
+        maxCount: GIT_GRAPH_PAGE_SIZE,
+        skip: 0,
+      });
+      setCommits(result.commits);
+      setHasMore(result.hasMore);
+      setSelectedCommitHash(result.commits[0]?.hash ?? null);
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      logger.warn("[GitGraphDialog] 读取 Git Graph 失败", {
+        workspacePath,
+        error: message,
+      });
+      setErrorMessage(
+        intl.formatMessage({ id: "gitGraph.error.requestFailed" }, { error: message }),
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [gitService, intl, workspacePath]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    void loadInitialCommits();
+  }, [loadInitialCommits, open]);
+
+  const refreshCommits = useCallback(async () => {
+    if (loading || loadingMore || refreshing) {
+      return;
+    }
+
+    setRefreshing(true);
+    setErrorMessage(null);
+
+    try {
+      const result = await gitService.getCommitGraph({
+        workspacePath,
+        maxCount: GIT_GRAPH_PAGE_SIZE,
+        skip: 0,
+      });
+      setCommits(result.commits);
+      setHasMore(result.hasMore);
+      setSelectedCommitHash(result.commits[0]?.hash ?? null);
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      logger.warn("[GitGraphDialog] 刷新 Git Graph 失败", {
+        workspacePath,
+        error: message,
+      });
+      toast(intl.formatMessage({ id: "gitGraph.refreshFailed" }, { error: message }));
+    } finally {
+      setRefreshing(false);
+    }
+  }, [gitService, intl, loading, loadingMore, refreshing, workspacePath]);
+
+  const loadMoreCommits = useCallback(async () => {
+    if (loading || loadingMore || refreshing || loadingMoreRef.current || !hasMore) {
+      return;
+    }
+
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    setErrorMessage(null);
+
+    try {
+      const result = await gitService.getCommitGraph({
+        workspacePath,
+        maxCount: GIT_GRAPH_PAGE_SIZE,
+        skip: commits.length,
+      });
+      setCommits((currentCommits) => [...currentCommits, ...result.commits]);
+      setHasMore(result.hasMore);
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      logger.warn("[GitGraphDialog] 读取更多 Git Graph 失败", {
+        workspacePath,
+        loadedCommitCount: commits.length,
+        error: message,
+      });
+      setErrorMessage(
+        intl.formatMessage({ id: "gitGraph.error.requestFailed" }, { error: message }),
+      );
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [commits.length, gitService, hasMore, intl, loading, loadingMore, refreshing, workspacePath]);
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          resetGraphState();
+        }
+        onOpenChange(nextOpen);
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        className="h-[min(78vh,720px)] max-w-5xl gap-0 overflow-hidden rounded-2xl p-0"
+      >
+        <DialogHeader className="sr-only">
+          <DialogTitle>{intl.formatMessage({ id: "gitGraph.title" })}</DialogTitle>
+          <DialogDescription>
+            {intl.formatMessage({ id: "gitGraph.dialogDescription" })}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogClose asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={intl.formatMessage({ id: "common.close" })}
+            className="absolute right-2 top-2 z-30 bg-background/80 text-foreground-subtle hover:bg-hover hover:text-foreground [app-region:no-drag]"
+          >
+            <XIcon className="size-3.5" />
+          </Button>
+        </DialogClose>
+        {loading ? (
+          <div className="flex h-full items-center justify-center bg-background text-foreground-subtle">
+            <LoaderIcon className="size-5 animate-spin" />
+          </div>
+        ) : errorMessage ? (
+          <div className="flex h-full items-center justify-center bg-background p-6">
+            <div className="max-w-md rounded-xl border border-border bg-card p-4 text-ui-base text-foreground">
+              <div className="flex items-start gap-3">
+                <AlertCircleIcon className="mt-0.5 size-4 shrink-0 text-warning" />
+                <p className="break-words text-foreground-subtle">{errorMessage}</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <GitGraphPane
+            commits={commits}
+            hasMore={hasMore}
+            loadingMore={loadingMore}
+            refreshing={refreshing}
+            selectedCommitHash={selectedCommitHash}
+            onSelectCommit={setSelectedCommitHash}
+            onLoadMore={loadMoreCommits}
+            onRefresh={refreshCommits}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
 }

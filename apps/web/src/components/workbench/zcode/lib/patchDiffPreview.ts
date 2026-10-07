@@ -1,8 +1,4 @@
-import {
-  getFiletypeFromFileName,
-  getSingularPatch,
-  parsePatchFiles,
-} from "@pierre/diffs";
+import { getFiletypeFromFileName, getSingularPatch, parsePatchFiles } from "@pierre/diffs";
 
 const MAX_PATCH_DIFF_SAFE_LINE_COUNT = 1_200;
 const MAX_PATCH_DIFF_SAFE_CHAR_COUNT = 180_000;
@@ -32,16 +28,12 @@ function buildTruncatedMarkerLine(omittedLineCount: number): string {
 
 export function countPatchFileDiffs(patch: string): number {
   const lines = patch.split(/\r?\n/);
-  const gitDiffHeaderCount = lines.filter((line) =>
-    line.startsWith("diff --git "),
-  ).length;
+  const gitDiffHeaderCount = lines.filter((line) => line.startsWith("diff --git ")).length;
   if (gitDiffHeaderCount > 0) {
     return gitDiffHeaderCount;
   }
 
-  const parseHunkRange = (
-    line: string,
-  ): { oldLines: number; newLines: number } | null => {
+  const parseHunkRange = (line: string): { oldLines: number; newLines: number } | null => {
     const match = line.match(/^@@\s-\d+(?:,(\d+))?\s\+\d+(?:,(\d+))?\s@@/);
     if (!match) {
       return null;
@@ -54,16 +46,11 @@ export function countPatchFileDiffs(patch: string): number {
 
   const isFileHeaderPair = (index: number): boolean => {
     return (
-      (lines[index]?.startsWith("--- ") ?? false) &&
-      (lines[index + 1]?.startsWith("+++ ") ?? false)
+      (lines[index]?.startsWith("--- ") ?? false) && (lines[index + 1]?.startsWith("+++ ") ?? false)
     );
   };
 
-  const consumeHunkBody = (
-    start: number,
-    oldLines: number,
-    newLines: number,
-  ): number | null => {
+  const consumeHunkBody = (start: number, oldLines: number, newLines: number): number | null => {
     let cursor = start;
     let remainingOld = oldLines;
     let remainingNew = newLines;
@@ -135,11 +122,7 @@ export function countPatchFileDiffs(patch: string): number {
       }
       sawHunkHeader = true;
 
-      const nextCursor = consumeHunkBody(
-        hunkCursor + 1,
-        hunkRange.oldLines,
-        hunkRange.newLines,
-      );
+      const nextCursor = consumeHunkBody(hunkCursor + 1, hunkRange.oldLines, hunkRange.newLines);
       if (nextCursor === null) {
         break;
       }
@@ -164,9 +147,7 @@ export function countPatchFileDiffs(patch: string): number {
   return diffCount;
 }
 
-export function parseTruncatedMarkerOmittedLineCount(
-  line: string,
-): number | null {
+export function parseTruncatedMarkerOmittedLineCount(line: string): number | null {
   const markerMatch = FALLBACK_TRUNCATED_MARKER_REGEX.exec(line);
   if (!markerMatch) {
     return null;
@@ -209,10 +190,8 @@ function getMaxHunkLineNumber(lines: readonly string[]): number {
     const oldCount = Number.parseInt(match[2] ?? "1", 10);
     const newStart = Number.parseInt(match[3] ?? "0", 10);
     const newCount = Number.parseInt(match[4] ?? "1", 10);
-    const oldEnd =
-      oldStart + Math.max(0, Number.isNaN(oldCount) ? 1 : oldCount) - 1;
-    const newEnd =
-      newStart + Math.max(0, Number.isNaN(newCount) ? 1 : newCount) - 1;
+    const oldEnd = oldStart + Math.max(0, Number.isNaN(oldCount) ? 1 : oldCount) - 1;
+    const newEnd = newStart + Math.max(0, Number.isNaN(newCount) ? 1 : newCount) - 1;
 
     maxLineNumber = Math.max(maxLineNumber, oldEnd, newEnd);
   }
@@ -266,20 +245,16 @@ function isPackageManagerLockfile(fileName: string | null): boolean {
   }
 
   return PACKAGE_MANAGER_LOCKFILE_NAMES.has(
-    normalizePatchFileName(fileName).split("/").at(-1)?.toLocaleLowerCase() ??
-      "",
+    normalizePatchFileName(fileName).split("/").at(-1)?.toLocaleLowerCase() ?? "",
   );
 }
 
-function shouldForcePlainTextPatchPreviewByFileName(
-  fileName: string | null,
-): boolean {
+function shouldForcePlainTextPatchPreviewByFileName(fileName: string | null): boolean {
   if (!fileName) {
     return false;
   }
 
-  const normalizedFileName =
-    normalizePatchFileName(fileName).toLocaleLowerCase();
+  const normalizedFileName = normalizePatchFileName(fileName).toLocaleLowerCase();
 
   return PATCH_DIFF_FORCE_PLAIN_TEXT_PATH_SUFFIXES.some((suffix) =>
     normalizedFileName.endsWith(suffix),
@@ -299,9 +274,7 @@ function shouldForcePlainTextPatchPreview(fileName: string | null): boolean {
     return false;
   }
 
-  return PATCH_DIFF_FORCE_PLAIN_TEXT_FILE_TYPES.has(
-    getFiletypeFromFileName(fileName),
-  );
+  return PATCH_DIFF_FORCE_PLAIN_TEXT_FILE_TYPES.has(getFiletypeFromFileName(fileName));
 }
 
 function collectPatchMetadataPreviewLines(lines: readonly string[]): string[] {
@@ -380,13 +353,10 @@ export function getPlainTextPatchFallbackLines(patch: string): string[] | null {
   const isDeletedFile = lines.some((line) => line === "+++ /dev/null");
   const maxHunkLineNumber = getMaxHunkLineNumber(lines);
   const isOversizedPatch =
-    lines.length > MAX_PATCH_DIFF_SAFE_LINE_COUNT ||
-    patch.length > MAX_PATCH_DIFF_SAFE_CHAR_COUNT;
-  const isDeepHunkLinePatch =
-    maxHunkLineNumber > MAX_PATCH_DIFF_SAFE_HUNK_LINE_NUMBER;
+    lines.length > MAX_PATCH_DIFF_SAFE_LINE_COUNT || patch.length > MAX_PATCH_DIFF_SAFE_CHAR_COUNT;
+  const isDeepHunkLinePatch = maxHunkLineNumber > MAX_PATCH_DIFF_SAFE_HUNK_LINE_NUMBER;
   const patchFileName = getPatchContentFileName(lines);
-  const shouldForcePlainTextPreview =
-    shouldForcePlainTextPatchPreview(patchFileName);
+  const shouldForcePlainTextPreview = shouldForcePlainTextPatchPreview(patchFileName);
 
   const metadataOnlyPreviewLines = collectPatchMetadataPreviewLines(lines);
   const isMetadataOnlyPatch =
@@ -435,11 +405,7 @@ export function getPlainTextPatchFallbackLines(patch: string): string[] | null {
     return normalizePlainTextPreviewLines(collectPlainTextPreviewLines(lines));
   }
 
-  if (
-    (isCreatedFile || isDeletedFile) &&
-    !isOversizedPatch &&
-    !isDeepHunkLinePatch
-  ) {
+  if ((isCreatedFile || isDeletedFile) && !isOversizedPatch && !isDeepHunkLinePatch) {
     // 文件变更面板展开“非纯文本”新增/删除文件时，PatchDiff 可能只渲染空壳，
     // 用户看到的是展开后没有任何内容。新增/删除文件本来就是整文件快照，
     // 这里不再按扩展名分流，统一走轻量文本 fallback，优先保证展开态始终有可读内容。
@@ -448,8 +414,7 @@ export function getPlainTextPatchFallbackLines(patch: string): string[] | null {
 
   if (!hasMultipleFileDiffs && !isOversizedPatch && !isDeepHunkLinePatch) {
     try {
-      const resolvedPatchFileName =
-        patchFileName ?? getSingularPatch(patch).name;
+      const resolvedPatchFileName = patchFileName ?? getSingularPatch(patch).name;
       const patchFileType = getFiletypeFromFileName(resolvedPatchFileName);
 
       // 新建/删除的纯文本文件即使 patch 很小，
@@ -463,9 +428,7 @@ export function getPlainTextPatchFallbackLines(patch: string): string[] | null {
     } catch {
       // 单文件数量检测只能过滤明显的畸形输入；真正交给 @pierre/diffs 前仍要尊重
       // 解析器结果。解析失败说明它无法确认“恰好一个 file diff”，继续渲染会触发错误边界。
-      return normalizePlainTextPreviewLines(
-        collectPlainTextPreviewLines(lines),
-      );
+      return normalizePlainTextPreviewLines(collectPlainTextPreviewLines(lines));
     }
   }
 

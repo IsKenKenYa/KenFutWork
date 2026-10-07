@@ -1,6 +1,6 @@
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import { cn } from "../lib/utils.js";
 import { LoaderIcon } from "lucide-react";
-import { cn } from "../lib/utils";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 
 function Spinner({ className, ...props }: React.ComponentProps<"svg">) {
   const { intl } = useZCodeIntl();

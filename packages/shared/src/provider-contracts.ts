@@ -1,8 +1,9 @@
+import { modelConfigDataSchema } from "@zcode/shared/model-config";
 import { z } from "zod";
 
 /**
  * BYOK 供应商缝契约（《改造计划》§4.8 / §5）。
- * 红线：apiKey 只写不读——所有响应 schema 一律不含 apiKey 字段（由本文件测试锁死）。
+ * 本地 Key 明文保存在实例数据目录；授权设置可按需读取，普通目录/事件不携带 Key。
  */
 
 /**
@@ -24,16 +25,22 @@ export const providerProtocolSchema = z.enum([
 ]);
 export type ProviderProtocol = z.infer<typeof providerProtocolSchema>;
 
+/**
+ * 模型能力词汇表。`audio` 是语音助手插件的「听 / 说」段（ASR / TTS）：一个音频模型
+ * 只能被语音链路消费，与 chat/image/video 不通用，故独立成一档。
+ * 与 `providerProtocolSchema` 同规矩：封闭集合，新增先扩这里。
+ */
 export const modelCapabilitySchema = z.enum([
   "chat",
   "image",
   "image-edit",
   "video",
+  "audio",
 ]);
 export type ModelCapability = z.infer<typeof modelCapabilitySchema>;
 
 /**
- * 模型级任务能力声明（BYOK 用户/管理员对单个模型的可选细化，docs/future/05 §6）。
+ * 模型级任务能力声明（实例主人对单个模型的可选细化，docs/future/05 §6）。
  * 语义红线：**字段缺省 = 未知，不是不支持**——目录与 UI 不得把「没声明」当「肯定不行」
  * 处理（kimi-code 的 UNKNOWN 语义）；只有显式声明的取值才可参与运行期裁剪。
  */
@@ -69,8 +76,40 @@ export const videoGenerationCapsSchema = z.object({
 });
 export type VideoGenerationCaps = z.infer<typeof videoGenerationCapsSchema>;
 
+/** 原 Code 设置的安全元数据；连接与凭证仍由供应商实例持有。 */
+export const codeUiProviderMetadataSchema = z
+  .object({
+    templateId: z.string().min(1).optional(),
+    group: z
+      .enum(["standard-personal", "zai-family", "bigmodel-family"])
+      .optional(),
+    logo: z
+      .object({ type: z.literal("builtin"), key: z.string().min(1) })
+      .strict()
+      .optional(),
+    modelOrder: z.array(z.string().min(1)).optional(),
+    models: z
+      .record(
+        z.string().min(1),
+        z
+          .object({
+            config: modelConfigDataSchema,
+            useRecommendedConfig: z.boolean(),
+          })
+          .strict(),
+      )
+      .optional(),
+  })
+  .strict();
+export type CodeUiProviderMetadata = z.infer<
+  typeof codeUiProviderMetadataSchema
+>;
+
 /** OpenAI 兼容网关的兼容性开关（按实例覆盖默认行为）。 */
 export const providerCompatSchema = z.object({
+  /** 显式线协议优先于探测结果；缺省才使用自动纠偏。 */
+  chatApi: z.enum(["completions", "responses"]).optional(),
+  codeUi: codeUiProviderMetadataSchema.optional(),
   supportsToolCalling: z.boolean().optional(),
   supportsJsonResponseFormat: z.boolean().optional(),
   supportsJsonSchemaResponseFormat: z.boolean().optional(),
@@ -89,7 +128,7 @@ export type ProviderHeaderPlaceholder =
 
 /**
  * 保留头（大小写不敏感）：由适配器/运行时按凭证与线协议持有，自定义头**不得覆盖**。
- * 不加这条，就能用自定义头顶掉凭证头，等于绕开「apiKey 只写不读」的整个模型。
+ * 凭证头由适配器统一生成，自定义头不能顶掉当前 Key 的授权。
  */
 export const reservedProviderHeaderNames = [
   // 凭证类：由 apiKey 解析生成，或线协议的 key 头
@@ -226,14 +265,14 @@ export type ProviderInstanceModel = z.infer<typeof providerInstanceModelSchema>;
 
 const identifier = z.string().min(1);
 
-/** 用户供应商实例（BYOK 核心）：Key 以 apiKeyRef 间接引用，永不回传前端。 */
+/** 本地供应商配置：Key 以 apiKeyRef 引用凭据文件，普通目录不携带明文。 */
 export const providerInstanceConfigSchema = z.object({
   id: identifier,
-  workspaceId: identifier,
+  instanceId: identifier,
   name: z.string().min(1),
   protocol: providerProtocolSchema,
   baseUrl: z.string().optional(),
-  apiKeyRef: identifier,
+  apiKeyRef: identifier.nullable(),
   models: z.array(providerInstanceModelSchema).min(1),
   compat: providerCompatSchema.optional(),
   /** 自定义请求头（值含占位符，只写不读）。 */
@@ -246,48 +285,35 @@ export type ProviderInstanceConfig = z.infer<
 
 // --- HTTP 请求/响应（服务端 provider 设置 CRUD） ---
 
-export const providerInstanceCreateRequestSchema = z
-  .object({
-    name: z.string().min(1),
-    protocol: providerProtocolSchema,
-    baseUrl: z.string().optional(),
-    /** 只写不读：创建时提交明文 Key，服务端加密落库后仅存 ref。 */
-    apiKey: z.string().min(1),
-    /** 缺省视为空列表：模型型实例会被 superRefine 拒（见下），dify-engine 合法省略。 */
-    models: z.array(providerInstanceModelSchema).default([]),
-    compat: providerCompatSchema.optional(),
-    /**
-     * 自定义请求头：值只写不读（响应只回 `headerKeys`）。
-     * 显式传 `{}` 即清空；缺省表示不设置/不修改。
-     */
-    headers: providerInstanceHeadersSchema.optional(),
-    enabled: z.boolean().optional(),
-  })
+export const providerInstanceCreateRequestSchema = z.object({
+  name: z.string().min(1),
+  protocol: providerProtocolSchema,
+  baseUrl: z.string().optional(),
+  /** 创建时提交明文 Key；数据库仅存本地凭据文件的引用。 */
+  apiKey: z.string().min(1).optional(),
+  /** 缺省视为空列表：模型型实例会被 superRefine 拒（见下），dify-engine 合法省略。 */
+  models: z.array(providerInstanceModelSchema).default([]),
+  compat: providerCompatSchema.optional(),
   /**
-   * models 的最低数量按协议收口：模型型实例（聊天/图视频）至少声明一个模型才可用；
-   * `dify-engine` 是引擎凭证（宿主不消费其模型，见 providerProtocolSchema 注释），
-   * 允许空列表——不为它编造占位模型。
+   * 自定义请求头：值只写不读（响应只回 `headerKeys`）。
+   * 显式传 `{}` 即清空；缺省表示不设置/不修改。
    */
-  .superRefine((value, ctx) => {
-    if (value.protocol === "dify-engine") return;
-    if (value.models.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["models"],
-        message: "模型型实例至少声明一个模型",
-      });
-    }
-  });
+  headers: providerInstanceHeadersSchema.optional(),
+  enabled: z.boolean().optional(),
+});
 export type ProviderInstanceCreateRequest = z.infer<
   typeof providerInstanceCreateRequestSchema
 >;
 
 export const providerInstanceUpdateRequestSchema = z.object({
   name: z.string().min(1).optional(),
+  protocol: providerProtocolSchema.optional(),
   baseUrl: z.string().optional(),
-  /** 只写不读：更新即覆盖，永不回显旧值。 */
-  apiKey: z.string().min(1).optional(),
-  models: z.array(providerInstanceModelSchema).min(1).optional(),
+  /** undefined 保留旧值，null 真实清除，非空字符串更新凭据文件。 */
+  apiKey: z.string().min(1).nullable().optional(),
+  models: z.array(providerInstanceModelSchema).optional(),
+  /** 可选CAS；由响应configRevision取得，冲突返回409。 */
+  expectedRevision: z.number().int().positive().safe().optional(),
   compat: providerCompatSchema.optional(),
   /** 只写不读：更新即整体覆盖（`{}` = 清空）。 */
   headers: providerInstanceHeadersSchema.optional(),
@@ -297,12 +323,12 @@ export type ProviderInstanceUpdateRequest = z.infer<
   typeof providerInstanceUpdateRequestSchema
 >;
 
-/** 实例作用域：workspace = 用户自带（BYOK）；system = 平台池（管理员配置、分发给用户）。 */
-export const providerScopeSchema = z.enum(["workspace", "system"]);
+/** 供应商只属于当前本地实例，不存在平台池或账户作用域。 */
+export const providerScopeSchema = z.enum(["local"]);
 export type ProviderScope = z.infer<typeof providerScopeSchema>;
 
 /**
- * 实例响应：只有 apiKeyRef 语义的 hasCredential 标记，绝无 key 本体。
+ * 普通实例响应仅含 hasCredential 标记；授权设置明文读取走独立按需方法。
  * `headerKeys` 同理——自定义头的**键名**可见，值一律不回显（与 MCP `env`/`envKeys` 同口径）。
  */
 /**
@@ -362,6 +388,8 @@ export const providerInstanceResponseSchema = z.object({
   protocol: providerProtocolSchema,
   baseUrl: z.string().optional(),
   hasCredential: z.boolean(),
+  /** 服务端生成的只读修订号，更新时可作为 expectedRevision。 */
+  configRevision: z.number().int().positive().safe(),
   models: z.array(providerInstanceModelSchema),
   compat: providerCompatSchema.optional(),
   headerKeys: z.array(z.string()),
@@ -413,7 +441,7 @@ export const modelCatalogEntrySchema = z.object({
     instanceId: identifier,
     name: z.string().min(1),
     protocol: providerProtocolSchema,
-    /** workspace = 用户自带（不计费）；system = 平台池（按 token 计费）。 */
+    /** 本地实例的 BYOK 供应商。 */
     scope: providerScopeSchema,
   }),
 });

@@ -1,19 +1,14 @@
-/**
- * zcode 照搬：`@/components/ai-elements/mermaid-block.tsx`（references/zcode/packages/ui/src/components/ai-elements/mermaid-block.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
 "use client";
 
 import { createMermaidPlugin, type MermaidConfig } from "@streamdown/mermaid";
-import { cn } from "@zui/components/lib/utils";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { logger } from "@zui/logger";
-import type { Theme } from "@zui/useTheme";
-import { resolveTheme } from "@zui/useTheme";
 import { Loader2Icon } from "lucide-react";
 import type { HTMLAttributes } from "react";
 import { useEffect, useId, useMemo, useState } from "react";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { logger } from "@zui/logger.js";
+import type { Theme } from "@zui/useTheme.js";
+import { resolveTheme } from "@zui/useTheme.js";
 
 type MermaidRenderState =
   | {
@@ -47,8 +42,7 @@ const MERMAID_COLOR_CANVAS_SENTINEL = "#010203";
 // Web 远程控制的启动测试只提供了最小 document mock，SSR/预渲染环境也可能没有 DOM 工厂；
 // 颜色归一化是增强能力，不能让 MessageResponse 的静态导入在这些环境中直接崩溃。
 const canCreateDomElements =
-  typeof document !== "undefined" &&
-  typeof document.createElement === "function";
+  typeof document !== "undefined" && typeof document.createElement === "function";
 const mermaidColorResolverEl: HTMLSpanElement | null = canCreateDomElements
   ? document.createElement("span")
   : null;
@@ -87,12 +81,7 @@ function hashMermaidCode(code: string): string {
 }
 
 function normalizeCssColorForMermaid(raw: string, fallback: string): string {
-  if (
-    !raw ||
-    !mermaidColorResolverEl ||
-    !mermaidColorNormalizeCtx ||
-    !document.body
-  ) {
+  if (!raw || !mermaidColorResolverEl || !mermaidColorNormalizeCtx || !document.body) {
     return raw || fallback;
   }
 
@@ -115,12 +104,9 @@ function normalizeCssColorForMermaid(raw: string, fallback: string): string {
     }
 
     mermaidColorNormalizeCtx.fillRect(0, 0, 1, 1);
-    const [r = 0, g = 0, b = 0, a = 255] =
-      mermaidColorNormalizeCtx.getImageData(0, 0, 1, 1).data;
+    const [r = 0, g = 0, b = 0, a = 255] = mermaidColorNormalizeCtx.getImageData(0, 0, 1, 1).data;
     const roundedAlpha = +(a / 255).toFixed(3);
-    return roundedAlpha >= 1
-      ? `rgb(${r}, ${g}, ${b})`
-      : `rgba(${r}, ${g}, ${b}, ${roundedAlpha})`;
+    return roundedAlpha >= 1 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${roundedAlpha})`;
   } catch {
     return fallback;
   } finally {
@@ -307,21 +293,11 @@ export function MermaidBlock({
       cancelled = true;
       onPreviewSvgChange?.(null);
     };
-  }, [
-    intl,
-    mermaidConfig,
-    onPreviewSvgChange,
-    renderIdPrefix,
-    renderKey,
-    trimmedCode,
-  ]);
+  }, [intl, mermaidConfig, onPreviewSvgChange, renderIdPrefix, renderKey, trimmedCode]);
 
   return (
     <div
-      className={cn(
-        "group/mermaid relative min-h-32 w-full bg-card",
-        className,
-      )}
+      className={cn("group/mermaid relative min-h-32 w-full bg-card", className)}
       data-mermaid-block=""
       {...props}
     >
@@ -329,9 +305,7 @@ export function MermaidBlock({
         {renderState.status === "loading" ? (
           <div className="flex min-h-28 items-center justify-center gap-2 text-foreground-subtle text-ui-base">
             <Loader2Icon className="size-4 animate-spin" />
-            <span>
-              {intl.formatMessage({ id: "codeBlock.mermaid.loading" })}
-            </span>
+            <span>{intl.formatMessage({ id: "codeBlock.mermaid.loading" })}</span>
           </div>
         ) : null}
         {renderState.status === "plaintext" ? (
@@ -341,9 +315,7 @@ export function MermaidBlock({
         ) : null}
         {renderState.status === "ready" ? (
           <div
-            aria-label={intl.formatMessage({
-              id: "codeBlock.mermaid.ariaLabel",
-            })}
+            aria-label={intl.formatMessage({ id: "codeBlock.mermaid.ariaLabel" })}
             className="flex min-h-28 min-w-max items-center justify-center [&_svg]:h-auto [&_svg]:max-w-none"
             dangerouslySetInnerHTML={{ __html: renderState.svg }}
             onDoubleClick={onOpenPreview}

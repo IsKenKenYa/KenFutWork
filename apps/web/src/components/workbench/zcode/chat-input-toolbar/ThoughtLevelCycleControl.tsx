@@ -1,50 +1,33 @@
-/**
- * zcode 照搬：`@/chat-input-toolbar/ThoughtLevelCycleControl.tsx`（references/zcode/packages/ui/src/chat-input-toolbar/ThoughtLevelCycleControl.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-
-import { ControlHintTooltip } from "@zui/ControlHintTooltip";
-import { RollingToolbarLabel } from "@zui/chat-input-toolbar/RollingToolbarLabel";
-import {
-  getThoughtLevelLabel,
-  isNoThoughtLevel,
-} from "@zui/chat-input-toolbar/thoughtLevelOptions";
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from "@zui/components/ui/select";
-import type { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  isCoarseTouchDevice,
-  shouldRestoreChatInputFocusAfterPickerClose,
-} from "@zui/lib/pickerFocus";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import {
   TID_CHAT_THOUGHT_LEVEL_SELECT_ITEM,
   TID_CHAT_THOUGHT_LEVEL_SELECT_TRIGGER,
   testId,
   type ZCodeConfigOption,
   type ZCodeProvider,
-} from "@zui/lib/zcode-shared";
+} from "@zcode/shared";
 import { BrainIcon, ChevronDownIcon } from "lucide-react";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { Button } from "@zui/components/ui/button.js";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@zui/components/ui/select.js";
+import type { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import {
-  type RefObject,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+  isCoarseTouchDevice,
+  shouldRestoreChatInputFocusAfterPickerClose,
+} from "@zui/lib/pickerFocus.js";
+import {
+  getThoughtLevelLabel,
+  isNoThoughtLevel,
+} from "@zui/chat-input-toolbar/thoughtLevelOptions.js";
+import { RollingToolbarLabel } from "@zui/chat-input-toolbar/RollingToolbarLabel.js";
 
 type ThoughtLevelInteractionMode = "select" | "cycle";
 
 export function ThoughtLevelCycleControl({
   disabled,
   disabledReason,
+  composerCollapsePriority,
   interactionMode = "select",
   indicatorClassName,
   intl,
@@ -63,6 +46,8 @@ export function ThoughtLevelCycleControl({
 }: {
   disabled?: boolean;
   disabledReason?: string;
+  /** 聊天输入框由统一布局 owner 收起文字，其他调用方保留原断点规则。 */
+  composerCollapsePriority?: number;
   interactionMode?: ThoughtLevelInteractionMode;
   indicatorClassName?: string;
   intl: ReturnType<typeof useZCodeIntl>["intl"];
@@ -79,24 +64,25 @@ export function ThoughtLevelCycleControl({
   onCurrentValueCommit?: (value: string) => void;
   onValueChange: (value: string) => void;
 }) {
+  const composerTriggerClassName =
+    composerCollapsePriority !== undefined
+      ? "group/thought shrink-0 data-[composer-compact=icon]:size-7 data-[composer-compact=icon]:justify-center data-[composer-compact=icon]:gap-0 data-[composer-compact=icon]:p-0"
+      : undefined;
   const labelRef = useRef<HTMLSpanElement | null>(null);
   const pendingCurrentValueCommitRef = useRef<string | null>(null);
   const [inlineLabelVisible, setInlineLabelVisible] = useState(true);
 
-  const updateInlineLabelVisible = useCallback(
-    (element: HTMLSpanElement | null) => {
-      if (!element) {
-        return;
-      }
-      const style = window.getComputedStyle(element);
-      const visible =
-        style.display !== "none" &&
-        style.visibility !== "hidden" &&
-        element.getClientRects().length > 0;
-      setInlineLabelVisible(visible);
-    },
-    [],
-  );
+  const updateInlineLabelVisible = useCallback((element: HTMLSpanElement | null) => {
+    if (!element) {
+      return;
+    }
+    const style = window.getComputedStyle(element);
+    const visible =
+      style.display !== "none" &&
+      style.visibility !== "hidden" &&
+      element.getClientRects().length > 0;
+    setInlineLabelVisible(visible);
+  }, []);
 
   // RAF-based debounce to coalesce resize events
   let rafId: number | null = null;
@@ -110,9 +96,7 @@ export function ThoughtLevelCycleControl({
 
   const entries = option.type === "select" ? (option.options ?? []) : [];
 
-  const selectedEntryIndex = entries.findIndex(
-    (entry) => entry.value === option.currentValue,
-  );
+  const selectedEntryIndex = entries.findIndex((entry) => entry.value === option.currentValue);
   const currentValueIsValid = selectedEntryIndex >= 0;
   const shouldShowInvalidCurrentValue =
     showInvalidCurrentValue &&
@@ -175,9 +159,7 @@ export function ThoughtLevelCycleControl({
   }
 
   const handleClick = () => {
-    const nextIndex = currentValueIsValid
-      ? (currentIndex + 1) % entries.length
-      : 0;
+    const nextIndex = !currentValueIsValid ? 0 : (currentIndex + 1) % entries.length;
     const nextEntry = entries[nextIndex];
     if (!nextEntry) {
       return;
@@ -223,7 +205,9 @@ export function ThoughtLevelCycleControl({
       <span
         className={cn(
           "relative w-1 self-stretch overflow-hidden rounded-full bg-current/10",
-          "hidden @sm/composer:inline-flex @xl/composer:hidden",
+          composerCollapsePriority !== undefined
+            ? "hidden group-data-[composer-compact=true]/thought:inline-flex"
+            : "hidden @sm/composer:inline-flex @xl/composer:hidden",
         )}
         aria-hidden="true"
       >
@@ -237,7 +221,11 @@ export function ThoughtLevelCycleControl({
       </span>
       <span
         ref={labelRef}
-        className={cn("min-w-0 whitespace-nowrap", labelVisibilityClassName)}
+        className={cn(
+          "min-w-0 whitespace-nowrap",
+          labelVisibilityClassName,
+          composerCollapsePriority !== undefined && "group-data-[composer-compact]/thought:hidden",
+        )}
       >
         <RollingToolbarLabel label={currentLabel} />
       </span>
@@ -250,10 +238,13 @@ export function ThoughtLevelCycleControl({
         <span
           className={cn(
             "inline-flex h-7 items-center gap-1 rounded-lg px-1.5 py-1.5 text-ui-base text-foreground",
+            composerTriggerClassName,
             triggerClassName,
           )}
           aria-label={currentLabel}
           data-thought-level-fixed="true"
+          data-composer-thought-control={composerCollapsePriority !== undefined || undefined}
+          data-composer-collapse-priority={composerCollapsePriority}
           data-testid={TID_CHAT_THOUGHT_LEVEL_SELECT_TRIGGER}
         >
           {/* 单档模型（如 Kimi K3）没有可切换状态，不能继续渲染带箭头的 Select。*/}
@@ -266,8 +257,7 @@ export function ThoughtLevelCycleControl({
   if (interactionMode === "select") {
     return (
       <Select
-        // exactOptionalPropertyTypes：open/disabled 缺省表示非受控/未禁用，不能显式传 undefined
-        {...(open === undefined ? {} : { open })}
+        open={open}
         onOpenChange={handleSelectOpenChange}
         value={String(option.currentValue)}
         onValueChange={(value) => {
@@ -278,12 +268,12 @@ export function ThoughtLevelCycleControl({
           }
           onValueChange(value);
         }}
-        {...(disabled === undefined ? {} : { disabled })}
+        disabled={disabled}
       >
         <ControlHintTooltip
           title={effectiveTooltipTitle}
           shortcut={shortcutLabel}
-          {...(triggerRef === undefined ? {} : { triggerRef })}
+          triggerRef={triggerRef}
         >
           <SelectTrigger
             variant="ghost"
@@ -293,15 +283,20 @@ export function ThoughtLevelCycleControl({
                 className={cn(
                   "pointer-events-none size-3.5 text-foreground-subtle",
                   indicatorClassName,
+                  composerCollapsePriority !== undefined &&
+                    "group-data-[composer-compact]/thought:hidden",
                 )}
               />
             }
             className={cn(
               "gap-1 rounded-lg px-1.5 py-1.5 text-ui-base",
+              composerTriggerClassName,
               triggerClassName,
             )}
             aria-label={currentLabel}
             data-chat-toolbar-popover-trigger="true"
+            data-composer-thought-control={composerCollapsePriority !== undefined || undefined}
+            data-composer-collapse-priority={composerCollapsePriority}
             data-testid={TID_CHAT_THOUGHT_LEVEL_SELECT_TRIGGER}
           >
             {triggerContent}
@@ -327,8 +322,7 @@ export function ThoughtLevelCycleControl({
             ) {
               return;
             }
-            const input =
-              document.querySelector<HTMLElement>(restoreFocusSelector);
+            const input = document.querySelector<HTMLElement>(restoreFocusSelector);
             input?.focus();
           }}
         >
@@ -336,11 +330,7 @@ export function ThoughtLevelCycleControl({
             <SelectItem
               key={entry.value}
               value={entry.value}
-              onClick={
-                onCurrentValueCommit
-                  ? () => armCurrentValueCommit(entry.value)
-                  : undefined
-              }
+              onClick={onCurrentValueCommit ? () => armCurrentValueCommit(entry.value) : undefined}
               onPointerUp={
                 onCurrentValueCommit
                   ? (event) => {
@@ -359,10 +349,7 @@ export function ThoughtLevelCycleControl({
                     }
                   : undefined
               }
-              data-testid={testId(
-                TID_CHAT_THOUGHT_LEVEL_SELECT_ITEM,
-                entry.value,
-              )}
+              data-testid={testId(TID_CHAT_THOUGHT_LEVEL_SELECT_ITEM, entry.value)}
             >
               <span className="first-letter:uppercase">
                 {getThoughtLevelLabel(intl, provider, option, entry)}
@@ -386,9 +373,12 @@ export function ThoughtLevelCycleControl({
         size="default"
         disabled={disabled}
         data-chat-toolbar-popover-trigger="true"
+        data-composer-thought-control={composerCollapsePriority !== undefined || undefined}
+        data-composer-collapse-priority={composerCollapsePriority}
         data-testid={TID_CHAT_THOUGHT_LEVEL_SELECT_TRIGGER}
         className={cn(
           "gap-1 rounded-lg px-1.5 py-1.5 text-ui-base",
+          composerTriggerClassName,
           triggerClassName,
         )}
         aria-label={currentLabel}

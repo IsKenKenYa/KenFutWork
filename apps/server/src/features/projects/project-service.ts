@@ -1,16 +1,29 @@
+import { createHash, randomUUID } from "node:crypto";
+import { realpath } from "node:fs/promises";
+import { basename, join, resolve } from "node:path";
 import type {
+  AdditionalDirectory,
   ProjectCreateRequest,
   ProjectKind,
   ProjectSummary,
   ProjectUpdateRequest,
 } from "@kenfutwork/shared";
-import type { AuthenticatedUser } from "../auth/types.js";
 import type { BlobStore } from "../blob/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
-import { BootstrapError } from "../bootstrap/errors.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import { SQLSTATE_UNIQUE_VIOLATION } from "../persistence/errors.js";
-import type { ProjectRepository, ProjectUpdatePatch } from "./repository.js";
-import { validateWorkDir } from "./work-dir.js";
+import type {
+  ProjectDetailRow,
+  ProjectRepository,
+  ProjectUpdatePatch,
+} from "./repository.js";
+import {
+  normalizeAdditionalDirectories,
+  resolveProjectWorkDirectory,
+  validateWorkDir,
+} from "./work-dir.js";
 
 const THUMBNAIL_BUCKET = "project-assets";
 const PROJECT_QUERY_FAILED_MESSAGE = "Unable to load projects.";
@@ -18,8 +31,7 @@ const PROJECT_CREATE_FAILED_MESSAGE = "Unable to create project.";
 const PROJECT_DELETE_FAILED_MESSAGE = "Unable to delete project.";
 const PROJECT_NOT_FOUND_MESSAGE = "Project not found.";
 const PROJECT_UPDATE_FAILED_MESSAGE = "Unable to update project.";
-const PROJECT_SLUG_TAKEN_MESSAGE =
-  "Project slug is already taken in this workspace.";
+const PROJECT_SLUG_TAKEN_MESSAGE = "当前实例内已存在同名项目。";
 
 type ProjectErrorCode =
   | "invalid_work_dir"
@@ -31,37 +43,25 @@ type ProjectErrorCode =
   | "project_update_failed";
 
 export type ProjectService = {
-  archiveProject(user: AuthenticatedUser, projectId: string): Promise<void>;
+  openCodeDirectory(actor: LocalActor, path: string): Promise<ProjectSummary>;
+  archiveProject(actor: LocalActor, projectId: string): Promise<void>;
   createProject(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     input: ProjectCreateRequest,
   ): Promise<ProjectSummary>;
-  getProject(
-    user: AuthenticatedUser,
-    projectId: string,
-  ): Promise<{
-    id: string;
-    name: string;
-    slug: string;
-    description: string | null;
-    workspace_id: string;
-    brand_kit_id: string | null;
-    created_at: string;
-    updated_at: string;
-    work_dir: string | null;
-  }>;
+  getProject(actor: LocalActor, projectId: string): Promise<ProjectDetailRow>;
   listProjects(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     kind?: ProjectKind,
   ): Promise<ProjectSummary[]>;
   saveThumbnail(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     projectId: string,
     buffer: Buffer,
     mimeType: string,
   ): Promise<{ thumbnailUrl: string }>;
   updateProject(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     projectId: string,
     input: ProjectUpdateRequest,
   ): Promise<void>;
@@ -84,31 +84,106 @@ export function createProjectService(options: {
   /** 对象存储（缩略图）：走 blob 缝，不再直连 Supabase Storage。 */
   blob: BlobStore;
   repository: ProjectRepository;
-  viewerService: ViewerService;
+  localInstance: LocalInstanceService;
+  sandboxRoot?: string | undefined;
+  beforeArchiveCodeProject?: (
+    actor: LocalActor,
+    projectId: string,
+  ) => Promise<void>;
 }): ProjectService {
-  const { repository, viewerService } = options;
-
-  const resolveWorkspace = (
-    user: AuthenticatedUser,
-    errorCode: keyof typeof WORKSPACE_FAILURE_MESSAGES,
-  ) =>
-    viewerService.resolveWorkspace(user).catch((error: unknown) => {
-      if (error instanceof BootstrapError) {
-        throw new ProjectServiceError(
-          errorCode,
-          WORKSPACE_FAILURE_MESSAGES[errorCode],
-          500,
-        );
-      }
-      throw error;
-    });
+  const { repository, localInstance } = options;
 
   return {
-    async archiveProject(user, projectId) {
-      const workspace = await resolveWorkspace(user, "project_query_failed");
+    async openCodeDirectory(actor, path) {
+      const context = await localInstance.resolve(actor);
+      const workDir = await realpath(requireWorkDir(path)).catch((error) => {
+        throw new ProjectServiceError(
+          "invalid_work_dir",
+          `工作目录不可用：${error instanceof Error ? error.message : String(error)}`,
+          400,
+        );
+      });
+      const existing = await repository.findActiveCodeDirectory(
+        context.instanceId,
+        workDir,
+      );
+      if (existing)
+        return mapProjectSummary({
+          ...existing,
+          instanceId: context.instanceId,
+        });
+      try {
+        const created = await repository.createProject({
+          canvasName: "Main Canvas",
+          description: null,
+          kind: "code",
+          name: basename(workDir) || workDir,
+          slug: `code-directory-${createHash("sha256").update(workDir).digest("hex")}`,
+          workDir,
+          createdByClientId: actor.accessClientId,
+          instanceId: context.instanceId,
+        });
+        return mapProjectSummary({
+          canvas: created.canvas,
+          project: created.project,
+          instanceId: context.instanceId,
+        });
+      } catch (error) {
+        if ((error as { code?: string })?.code === SQLSTATE_UNIQUE_VIOLATION) {
+          const concurrent = await repository.findActiveCodeDirectory(
+            context.instanceId,
+            workDir,
+          );
+          if (concurrent)
+            return mapProjectSummary({
+              ...concurrent,
+              instanceId: context.instanceId,
+            });
+          throw new ProjectServiceError(
+            "project_slug_taken",
+            "工作目录对应的项目已归档，无法重新打开。",
+            409,
+          );
+        }
+        throw mapProjectCreateError(error);
+      }
+    },
+    async archiveProject(actor, projectId) {
+      const context = await localInstance.resolve(actor);
+      const project = await repository.findActiveById(
+        context.instanceId,
+        projectId,
+      );
+      if (!project)
+        throw new ProjectServiceError(
+          "project_not_found",
+          PROJECT_NOT_FOUND_MESSAGE,
+          404,
+        );
+      if (project.kind === "code") {
+        if (!options.beforeArchiveCodeProject)
+          throw new ProjectServiceError(
+            "project_delete_failed",
+            "Code 执行资源关闭器不可用，项目未归档。",
+            503,
+          );
+        await repository.beginCloseProject(context.instanceId, projectId);
+        try {
+          await options.beforeArchiveCodeProject(actor, projectId);
+        } catch (error) {
+          await repository.failCloseProject(context.instanceId, projectId);
+          throw new ProjectServiceError(
+            "project_delete_failed",
+            error instanceof Error
+              ? error.message
+              : "Code 执行资源尚未确认关闭。",
+            503,
+          );
+        }
+      }
 
       const archived = await repository
-        .archive(workspace.id, projectId)
+        .archive(context.instanceId, projectId)
         .catch(() => {
           throw new ProjectServiceError(
             "project_delete_failed",
@@ -126,11 +201,11 @@ export function createProjectService(options: {
       }
     },
 
-    async getProject(user, projectId) {
-      const workspace = await resolveWorkspace(user, "project_query_failed");
+    async getProject(actor, projectId) {
+      const context = await localInstance.resolve(actor);
 
       const project = await repository
-        .findActiveById(workspace.id, projectId)
+        .findActiveById(context.instanceId, projectId)
         .catch(() => {
           throw new ProjectServiceError(
             "project_query_failed",
@@ -150,26 +225,43 @@ export function createProjectService(options: {
       return project;
     },
 
-    async createProject(user, input) {
-      await ensureFoundation(viewerService, user, "project_create_failed");
-      const workspace = await resolveWorkspace(user, "project_create_failed");
+    async createProject(actor, input) {
+      const context = await localInstance.resolve(actor);
       const normalizedName = input.name.trim();
       // 手填的本机工作目录先校验（绝对路径 + 存在 + 是目录）：不合格直接 400，
       // 不留到 run 时才发现「目录不存在」——那时用户已经等了一轮。
-      const workDir = input.work_dir
-        ? requireWorkDir(input.work_dir)
-        : undefined;
+      const projectId = randomUUID();
+      const kind = input.kind ?? "design";
+      const workDir =
+        kind === "code"
+          ? await resolveProjectWorkDirectory({
+              instanceId: context.instanceId,
+              projectId,
+              sandboxRoot:
+                options.sandboxRoot ?? join(context.dataDir, "sandbox"),
+              workDir: input.work_dir
+                ? requireWorkDir(input.work_dir)
+                : undefined,
+            })
+          : input.work_dir
+            ? requireWorkDir(input.work_dir)
+            : undefined;
+      const additionalDirectories = requireAdditionalDirectories(
+        input.additional_directories ?? [],
+      );
 
       const created = await repository
-        .createWithCanvas({
+        .createProject({
+          id: projectId,
+          additionalDirectories,
           canvasName: "Main Canvas",
           description: normalizeDescription(input.description),
           // 缺省 design：存量调用方（Design 建项目）语义不变
-          kind: input.kind ?? "design",
+          kind,
           name: normalizedName,
           slug: slugify(normalizedName),
-          userId: user.id,
-          workspaceId: workspace.id,
+          createdByClientId: actor.accessClientId,
+          instanceId: context.instanceId,
           ...(workDir ? { workDir } : {}),
         })
         .catch((error: unknown) => {
@@ -179,16 +271,16 @@ export function createProjectService(options: {
       return mapProjectSummary({
         canvas: created.canvas,
         project: created.project,
-        workspace,
+        instanceId: context.instanceId,
       });
     },
 
-    async listProjects(user, kind) {
-      // 只读路径不做引导：用户已认证，引导由 /api/viewer 在页面加载时完成。
-      const workspace = await resolveWorkspace(user, "project_query_failed");
+    async listProjects(actor, kind) {
+      // 归属只由稳定本地实例解析，接入客户端不改变项目列表。
+      const context = await localInstance.resolve(actor);
 
       const projects = await repository
-        .listActive(workspace.id, kind ?? "design")
+        .listActive(context.instanceId, kind ?? "design")
         .catch(() => {
           throw new ProjectServiceError(
             "project_query_failed",
@@ -201,9 +293,29 @@ export function createProjectService(options: {
         return [];
       }
 
+      if (kind === "code") {
+        return Promise.all(
+          projects.map(async (project) =>
+            mapProjectSummary({
+              project: {
+                ...project,
+                work_dir:
+                  project.work_dir ??
+                  resolve(
+                    options.sandboxRoot ?? join(context.dataDir, "sandbox"),
+                    context.instanceId,
+                    project.id,
+                  ),
+              },
+              instanceId: context.instanceId,
+            }),
+          ),
+        );
+      }
+
       const canvases = await repository
         .listPrimaryCanvases(
-          workspace.id,
+          context.instanceId,
           projects.map((project) => project.id),
         )
         .catch(() => {
@@ -244,16 +356,16 @@ export function createProjectService(options: {
           },
           project,
           thumbnailUrl: thumbnailUrls.get(project.id) ?? null,
-          workspace,
+          instanceId: context.instanceId,
         }),
       );
     },
 
-    async saveThumbnail(user, projectId, buffer, mimeType) {
-      const workspace = await resolveWorkspace(user, "project_create_failed");
+    async saveThumbnail(actor, projectId, buffer, mimeType) {
+      const context = await localInstance.resolve(actor);
 
       const project = await repository
-        .findActiveById(workspace.id, projectId)
+        .findActiveById(context.instanceId, projectId)
         .catch(() => null);
 
       if (!project) {
@@ -265,7 +377,7 @@ export function createProjectService(options: {
       }
 
       const ext = mimeType === "image/webp" ? "webp" : "png";
-      const objectPath = `${workspace.id}/${projectId}/thumbnail.${ext}`;
+      const objectPath = `${context.instanceId}/${projectId}/thumbnail.${ext}`;
 
       try {
         await options.blob
@@ -282,7 +394,7 @@ export function createProjectService(options: {
       }
 
       await repository
-        .setThumbnailPath(workspace.id, projectId, objectPath)
+        .setThumbnailPath(context.instanceId, projectId, objectPath)
         .catch(() => {
           throw new ProjectServiceError(
             "project_create_failed",
@@ -298,7 +410,8 @@ export function createProjectService(options: {
       };
     },
 
-    async updateProject(user, projectId, input) {
+    async updateProject(actor, projectId, input) {
+      const context = await localInstance.resolve(actor);
       const patch: ProjectUpdatePatch = {};
       if (input.brand_kit_id !== undefined) {
         patch.brandKitId = input.brand_kit_id;
@@ -311,19 +424,23 @@ export function createProjectService(options: {
         patch.workDir =
           input.work_dir === null ? null : requireWorkDir(input.work_dir);
       }
+      if (input.additional_directories !== undefined) {
+        patch.additionalDirectories = requireAdditionalDirectories(
+          input.additional_directories,
+        );
+      }
 
       if (
         patch.name === undefined &&
         patch.brandKitId === undefined &&
-        patch.workDir === undefined
+        patch.workDir === undefined &&
+        patch.additionalDirectories === undefined
       ) {
         return;
       }
 
-      const workspace = await resolveWorkspace(user, "project_update_failed");
-
       const updated = await repository
-        .update(workspace.id, projectId, patch)
+        .update(context.instanceId, projectId, patch)
         .catch(() => {
           throw new ProjectServiceError(
             "project_update_failed",
@@ -343,14 +460,6 @@ export function createProjectService(options: {
   };
 }
 
-/** 工作区解析失败时的错误码 → 用户可见消息（按调用场景选择错误码）。 */
-const WORKSPACE_FAILURE_MESSAGES = {
-  invalid_work_dir: "工作目录不可用。",
-  project_create_failed: PROJECT_CREATE_FAILED_MESSAGE,
-  project_query_failed: PROJECT_QUERY_FAILED_MESSAGE,
-  project_update_failed: PROJECT_UPDATE_FAILED_MESSAGE,
-} as const;
-
 /**
  * 用户填的工作目录：不合格抛 400（可读原因直接给界面）。
  * 校验口径集中在 `work-dir.ts`（与 agent/git/索引三处的消费点同一份判定）。
@@ -363,22 +472,17 @@ function requireWorkDir(raw: string): string {
   return verdict.path;
 }
 
-async function ensureFoundation(
-  viewerService: ViewerService,
-  user: AuthenticatedUser,
-  errorCode: keyof typeof WORKSPACE_FAILURE_MESSAGES,
-) {
+function requireAdditionalDirectories(
+  directories: AdditionalDirectory[],
+): AdditionalDirectory[] {
   try {
-    await viewerService.ensureViewer(user);
+    return normalizeAdditionalDirectories(directories);
   } catch (error) {
-    if (error instanceof BootstrapError) {
-      throw new ProjectServiceError(
-        errorCode,
-        WORKSPACE_FAILURE_MESSAGES[errorCode],
-        500,
-      );
-    }
-    throw error;
+    throw new ProjectServiceError(
+      "invalid_work_dir",
+      error instanceof Error ? error.message : "附加目录不可用。",
+      400,
+    );
   }
 }
 
@@ -403,11 +507,11 @@ function mapProjectCreateError(error: unknown) {
 }
 
 function mapProjectSummary(options: {
-  canvas: {
+  canvas?: {
     id: string;
     is_primary: boolean;
     name: string;
-  };
+  } | null;
   project: {
     created_at: string;
     description: string | null;
@@ -417,36 +521,46 @@ function mapProjectSummary(options: {
     slug: string;
     updated_at: string;
     work_dir?: string | null;
+    additional_directories?: AdditionalDirectory[];
   };
   thumbnailUrl?: string | null;
-  workspace: {
-    id: string;
-    name: string;
-    ownerUserId: string;
-    type: "personal" | "team";
-  };
+  instanceId: string;
 }): ProjectSummary {
-  return {
+  const base = {
     createdAt: options.project.created_at,
     description: options.project.description,
     id: options.project.id,
-    kind: options.project.kind,
     name: options.project.name,
+    slug: options.project.slug,
+    // 显式 null 也回传：界面要能区分「未绑定」与「字段缺省」（列表里显示绑定状态）
+    workDir: options.project.work_dir ?? null,
+    additionalDirectories: options.project.additional_directories ?? [],
+    ...(options.thumbnailUrl ? { thumbnailUrl: options.thumbnailUrl } : {}),
+    updatedAt: options.project.updated_at,
+    instanceId: options.instanceId,
+  };
+  if (options.project.kind === "code") {
+    if (!options.project.work_dir)
+      throw new ProjectServiceError(
+        "invalid_work_dir",
+        "Code 项目缺少主工作目录。",
+        500,
+      );
+    return { ...base, kind: "code", workDir: options.project.work_dir };
+  }
+  if (!options.canvas)
+    throw new ProjectServiceError(
+      "project_query_failed",
+      "画布项目缺少主画布。",
+      500,
+    );
+  return {
+    ...base,
+    kind: options.project.kind,
     primaryCanvas: {
       id: options.canvas.id,
       isPrimary: options.canvas.is_primary,
       name: options.canvas.name,
-    },
-    slug: options.project.slug,
-    // 显式 null 也回传：界面要能区分「未绑定」与「字段缺省」（列表里显示绑定状态）
-    workDir: options.project.work_dir ?? null,
-    ...(options.thumbnailUrl ? { thumbnailUrl: options.thumbnailUrl } : {}),
-    updatedAt: options.project.updated_at,
-    workspace: {
-      id: options.workspace.id,
-      name: options.workspace.name,
-      ownerUserId: options.workspace.ownerUserId,
-      type: options.workspace.type,
     },
   };
 }

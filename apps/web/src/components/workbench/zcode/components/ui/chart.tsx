@@ -1,13 +1,8 @@
-/**
- * zcode 照搬：`@/components/ui/chart.tsx`（references/zcode/packages/ui/src/components/ui/chart.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { cn } from "@zui/components/lib/utils";
 import * as React from "react";
-import type { TooltipValueType } from "recharts";
 import * as RechartsPrimitive from "recharts";
+import type { TooltipValueType } from "recharts";
+
+import { cn } from "@zui/components/lib/utils.js";
 
 // Format: { THEME_NAME: CSS_SELECTOR }
 const THEMES = { light: "", dark: ".dark" } as const;
@@ -51,9 +46,7 @@ function ChartContainer({
   ...props
 }: React.ComponentProps<"div"> & {
   config: ChartConfig;
-  children: React.ComponentProps<
-    typeof RechartsPrimitive.ResponsiveContainer
-  >["children"];
+  children: React.ComponentProps<typeof RechartsPrimitive.ResponsiveContainer>["children"];
   initialDimension?: {
     width: number;
     height: number;
@@ -77,9 +70,7 @@ function ChartContainer({
         {...props}
       >
         <ChartStyle id={chartId} config={config} />
-        <RechartsPrimitive.ResponsiveContainer
-          initialDimension={initialDimension}
-        >
+        <RechartsPrimitive.ResponsiveContainer initialDimension={initialDimension}>
           {children}
         </RechartsPrimitive.ResponsiveContainer>
       </div>
@@ -88,9 +79,7 @@ function ChartContainer({
 }
 
 const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
-  const colorConfig = Object.entries(config).filter(
-    ([, config]) => config.theme ?? config.color,
-  );
+  const colorConfig = Object.entries(config).filter(([, config]) => config.theme ?? config.color);
 
   if (!colorConfig.length) {
     return null;
@@ -105,9 +94,7 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
 ${prefix} [data-chart=${id}] {
 ${colorConfig
   .map(([key, itemConfig]) => {
-    const color =
-      itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ??
-      itemConfig.color;
+    const color = itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ?? itemConfig.color;
     return color ? `  --color-${key}: ${color};` : null;
   })
   .join("\n")}
@@ -144,10 +131,7 @@ function ChartTooltipContent({
     nameKey?: string;
     labelKey?: string;
   } & Omit<
-    RechartsPrimitive.DefaultTooltipContentProps<
-      TooltipValueType,
-      TooltipNameType
-    >,
+    RechartsPrimitive.DefaultTooltipContentProps<TooltipValueType, TooltipNameType>,
     "accessibilityLayer"
   >) {
   const { config } = useChart();
@@ -161,15 +145,11 @@ function ChartTooltipContent({
     const key = `${labelKey ?? item?.dataKey ?? item?.name ?? "value"}`;
     const itemConfig = getPayloadConfigFromPayload(config, item, key);
     const value =
-      !labelKey && typeof label === "string"
-        ? (config[label]?.label ?? label)
-        : itemConfig?.label;
+      !labelKey && typeof label === "string" ? (config[label]?.label ?? label) : itemConfig?.label;
 
     if (labelFormatter) {
       return (
-        <div className={cn("font-medium", labelClassName)}>
-          {labelFormatter(value, payload)}
-        </div>
+        <div className={cn("font-medium", labelClassName)}>{labelFormatter(value, payload)}</div>
       );
     }
 
@@ -178,15 +158,7 @@ function ChartTooltipContent({
     }
 
     return <div className={cn("font-medium", labelClassName)}>{value}</div>;
-  }, [
-    label,
-    labelFormatter,
-    payload,
-    hideLabel,
-    labelClassName,
-    config,
-    labelKey,
-  ]);
+  }, [label, labelFormatter, payload, hideLabel, labelClassName, config, labelKey]);
 
   if (!active || !payload?.length) {
     return null;
@@ -201,7 +173,7 @@ function ChartTooltipContent({
         className,
       )}
     >
-      {nestLabel ? null : tooltipLabel}
+      {!nestLabel ? tooltipLabel : null}
       <div className="grid gap-1.5">
         {payload
           .filter((item) => item.type !== "none")
@@ -333,37 +305,26 @@ function ChartLegendContent({
   );
 }
 
-function getPayloadConfigFromPayload(
-  config: ChartConfig,
-  payload: unknown,
-  key: string,
-) {
+function getPayloadConfigFromPayload(config: ChartConfig, payload: unknown, key: string) {
   if (typeof payload !== "object" || payload === null) {
     return undefined;
   }
 
   const payloadPayload =
-    "payload" in payload &&
-    typeof payload.payload === "object" &&
-    payload.payload !== null
+    "payload" in payload && typeof payload.payload === "object" && payload.payload !== null
       ? payload.payload
       : undefined;
 
   let configLabelKey: string = key;
 
-  if (
-    key in payload &&
-    typeof payload[key as keyof typeof payload] === "string"
-  ) {
+  if (key in payload && typeof payload[key as keyof typeof payload] === "string") {
     configLabelKey = payload[key as keyof typeof payload] as string;
   } else if (
     payloadPayload &&
     key in payloadPayload &&
     typeof payloadPayload[key as keyof typeof payloadPayload] === "string"
   ) {
-    configLabelKey = payloadPayload[
-      key as keyof typeof payloadPayload
-    ] as string;
+    configLabelKey = payloadPayload[key as keyof typeof payloadPayload] as string;
   }
 
   return configLabelKey in config ? config[configLabelKey] : config[key];
@@ -371,9 +332,9 @@ function getPayloadConfigFromPayload(
 
 export {
   ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
   ChartLegend,
   ChartLegendContent,
   ChartStyle,
-  ChartTooltip,
-  ChartTooltipContent,
 };

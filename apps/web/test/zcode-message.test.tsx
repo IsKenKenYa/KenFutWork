@@ -1,13 +1,25 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { cleanup, render as renderReact, screen } from "@testing-library/react";
 import { MessageResponse } from "@zui/components/ai-elements/message.js";
 import {
   Reasoning,
   ReasoningContent,
   ReasoningTrigger,
 } from "@zui/components/ai-elements/reasoning.js";
+import { TooltipProvider } from "@zui/components/ui/tooltip";
+import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@zui/lib/codePreviewSettings.js";
-import { describe, expect, it } from "vitest";
+import type { ReactNode } from "react";
+import { afterEach, describe, expect, it } from "vitest";
+
+function render(ui: ReactNode) {
+  return renderReact(
+    <ZCodeIntlProvider initialLocale="zh-CN">
+      <TooltipProvider>{ui}</TooltipProvider>
+    </ZCodeIntlProvider>,
+  );
+}
+afterEach(cleanup);
 
 /**
  * P1 照搬接线回归（手册 §3.2-4）：@zui 原件 MessageResponse/Reasoning 在

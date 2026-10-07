@@ -1,18 +1,13 @@
-/**
- * zcode 照搬：`@/v4/ConversationWorkflowDigests.tsx`（references/zcode/packages/ui/src/v4/ConversationWorkflowDigests.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type { TimelinePill } from "@zui/components/workflow-timeline/timeline-model";
-import { WorkflowRunDigest } from "@zui/components/workflow-timeline/WorkflowRunDigest";
-import type { WorkflowRunSettingsHost } from "@zui/components/workflow-timeline/WorkflowRunSettingsPopover";
-import { WorkflowSettingsChangeRow } from "@zui/components/workflow-timeline/WorkflowSettingsChangeRow";
-import { isWorkflowRunConfigurable } from "@zui/components/workflow-timeline/workflowRunSettings";
-import { useWorkflowSubagentModelProviderName } from "@zui/hooks/useWorkflowSubagentModelProviderName";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ConversationRowRenderContext } from "@zui/v4/conversationRowContext";
-import { resolveWorkflowRunOpenToolCallId } from "@zui/v4/workflowRunCardJoin";
-import type { WorkflowTurnDigest } from "@zui/v4/workflowTurnDigests";
+import type { TimelinePill } from "@zui/components/workflow-timeline/timeline-model.js";
+import { WorkflowRunDigest } from "@zui/components/workflow-timeline/WorkflowRunDigest.js";
+import type { WorkflowRunSettingsHost } from "@zui/components/workflow-timeline/WorkflowRunSettingsPopover.js";
+import { WorkflowSettingsChangeRow } from "@zui/components/workflow-timeline/WorkflowSettingsChangeRow.js";
+import { isWorkflowRunConfigurable } from "@zui/components/workflow-timeline/workflowRunSettings.js";
+import { useWorkflowSubagentModelProviderName } from "@zui/hooks/useWorkflowSubagentModelProviderName.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { ConversationRowRenderContext } from "@zui/v4/conversationRowContext.js";
+import type { WorkflowTurnDigest } from "@zui/v4/workflowTurnDigests.js";
+import { resolveWorkflowRunOpenToolCallId } from "@zui/v4/workflowRunCardJoin.js";
 
 /**
  * 轮尾摘要的落位：把解析出的摘要接上
@@ -36,33 +31,38 @@ export function ConversationWorkflowDigests({
     context.workspaceIdentity,
   );
   if (digests.length === 0) return null;
-  const fallbackName = intl.formatMessage({
-    id: "chat.toolCall.workflow.fallbackName",
-  });
+  const fallbackName = intl.formatMessage({ id: "chat.toolCall.workflow.fallbackName" });
   return (
-    <div
-      className="flex flex-col gap-3"
-      data-testid={`workflow-run-digests-${turnKey}`}
-    >
+    <div className="flex flex-col gap-3" data-testid={`workflow-run-digests-${turnKey}`}>
       {digests.map((digest) => {
         const { runId, summary } = digest;
         const name = digest.name ?? fallbackName;
         const sessionId = context.sessionId;
-        // 「还有 n 个」那一行带落点；⤢ 与问题芯片不带。
+        // 就地生效的设置轮：那一行就是
+        // 全部呈现。提前返回，下面整套卡的接线（打开、Resume、Stop、药丸、「配置」）一条都不建——
+        // 那些都是卡上的控件，而这一轮没有卡。
+        if (digest.rowOnly && digest.settings !== undefined) {
+          return (
+            <WorkflowSettingsChangeRow
+              amend={digest.settings.amend}
+              key={digest.key}
+              {...(digest.settings.at === undefined ? {} : { at: digest.settings.at })}
+              {...(subagentModelProviderName === undefined
+                ? {}
+                : { providerName: subagentModelProviderName })}
+            />
+          );
+        }
+        // 「还有 n 个」那一行带落点（追记「五枚药丸与一扇门」）；⤢ 与问题芯片不带。
         const onOpenRun =
           context.onOpenWorkflowRun && sessionId
             ? (landing?: { phaseId: string }) =>
                 context.onOpenWorkflowRun?.({
                   parentSessionId: sessionId,
-                  toolCallId: resolveWorkflowRunOpenToolCallId(
-                    digest.toolCallId,
-                    summary,
-                  ),
+                  toolCallId: resolveWorkflowRunOpenToolCallId(digest.toolCallId, summary),
                   runId,
                   workflowName: name,
-                  ...(landing === undefined
-                    ? {}
-                    : { phaseId: landing.phaseId }),
+                  ...(landing === undefined ? {} : { phaseId: landing.phaseId }),
                 })
             : undefined;
         const onResume =
@@ -100,10 +100,7 @@ export function ConversationWorkflowDigests({
                 if (phaseId === undefined) return;
                 context.onOpenWorkflowWorkspace?.({
                   parentSessionId: sessionId,
-                  toolCallId: resolveWorkflowRunOpenToolCallId(
-                    digest.toolCallId,
-                    summary,
-                  ),
+                  toolCallId: resolveWorkflowRunOpenToolCallId(digest.toolCallId, summary),
                   runId,
                   workflowName: name,
                   phaseId,
@@ -122,17 +119,14 @@ export function ConversationWorkflowDigests({
                   parentSessionId: sessionId,
                   runId,
                   artifactId,
-                  ...(artifact?.title === undefined
-                    ? {}
-                    : { title: artifact.title }),
+                  ...(artifact?.title === undefined ? {} : { title: artifact.title }),
                   ...(artifact?.contentType === undefined
                     ? {}
                     : { contentType: artifact.contentType }),
                 });
               }
             : undefined;
-        const pendingQuestions =
-          context.workflowRunPendingQuestionsByRunId?.get(runId)?.size ?? 0;
+        const pendingQuestions = context.workflowRunPendingQuestionsByRunId?.get(runId)?.size ?? 0;
         // 「配置」：宿主回调在场（只读 /
         // 灰度两道门已在宿主裁过）且这条 run 能配置时才有。弹层的模型清单按本会话的作用域读。
         const amendSettings = context.onAmendWorkflowRunSettings;
@@ -161,9 +155,7 @@ export function ConversationWorkflowDigests({
             runId={runId}
             summary={summary}
             testIdKey={`${turnKey}-${digest.toolCallId}`}
-            {...(subagentModelProviderName === undefined
-              ? {}
-              : { subagentModelProviderName })}
+            {...(subagentModelProviderName === undefined ? {} : { subagentModelProviderName })}
             {...(onOpenRun === undefined ? {} : { onOpenRun })}
             {...(onResume === undefined ? {} : { onResume })}
             {...(onCancel === undefined ? {} : { onCancel })}
@@ -179,9 +171,7 @@ export function ConversationWorkflowDigests({
           <div className="flex flex-col gap-1.5" key={digest.key}>
             <WorkflowSettingsChangeRow
               amend={digest.settings.amend}
-              {...(digest.settings.at === undefined
-                ? {}
-                : { at: digest.settings.at })}
+              {...(digest.settings.at === undefined ? {} : { at: digest.settings.at })}
               {...(subagentModelProviderName === undefined
                 ? {}
                 : { providerName: subagentModelProviderName })}

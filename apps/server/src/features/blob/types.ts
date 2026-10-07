@@ -4,10 +4,10 @@
  * 对象存储的**唯一入口**：消费方（uploads / brand-kit / canvas / projects / agent 运行时 /
  * 生成 executor）只依赖本接口，不再直接触达 Supabase Storage 或任何具体实现。
  *
- * **只有一个作用域（系统）**：按 `FORM-9`，隔离由应用层承担——对象路径一律以
- * `workspaceId/`（或个人 `userId/`）开头，由调用方在服务端拼好且不接受客户端传入；
- * 存储侧不再依赖 RLS 判定（存量实现是用户 token + storage 策略）。这样 blob 缝天然
- * 适配桌面（无令牌）与自托管，不必把「用户令牌」这一 Supabase 概念渗进接口。
+ * **只有一个作用域（系统）**：按 `FORM-9`，实例隔离由应用层承担——对象路径一律以
+ * `instanceId/`开头，由调用方在服务端拼好且不接受客户端传入；
+ * 存储侧不依赖账户/RLS；本地读取路由另外验证本机接入。Blob签名密钥独立于接入凭据，
+ * 适配桌面与未来自部署存储，不把访问令牌渗进执行或存储接口。
  *
  * 桶名不是契约的一部分（Provider 自行解释）；`bucket()` 只做命名空间分组。
  */
@@ -99,7 +99,7 @@ export type BlobBucket = {
     expiresInSeconds: number,
   ): Promise<SignedUrlEntry[]>;
   /** 读回对象内容。 */
-  download(path: string): Promise<Uint8Array>;
+  download(path: string, options?: { maxBytes: number }): Promise<Uint8Array>;
   /** 桶内复制（源与目标同桶）。 */
   copy(fromPath: string, toPath: string): Promise<void>;
   /** 删除对象；不存在的路径不报错（幂等）。 */

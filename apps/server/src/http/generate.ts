@@ -1,28 +1,22 @@
-// @credits-system — Direct generation routes with credit deduction and tier checks
-
 import {
   applicationErrorResponseSchema,
   generateImageRequestSchema,
   generateVideoRequestSchema,
-  type ImageQualityLevel,
   unauthenticatedErrorResponseSchema,
-  type VideoResolution,
 } from "@kenfutwork/shared";
 import type { FastifyInstance } from "fastify";
 import type { z } from "zod";
-import type {
-  AuthenticatedUser,
-  RequestAuthenticator,
-} from "../features/auth/types.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
-import type { CreditService } from "../features/credits/credit-service.js";
-import { CreditServiceError } from "../features/credits/credit-service.js";
-import type { TierGuard } from "../features/credits/tier-guard.js";
-import { TierGuardError } from "../features/credits/tier-guard.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import { JobServiceError } from "../features/jobs/job-service.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import { LocalInstanceMaintenanceError } from "../features/local-instance/service.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../features/local-instance/types.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { UploadService } from "../features/uploads/upload-service.js";
+import type { UsageService } from "../features/usage/usage-service.js";
 import type { GeneratedImage } from "../generation/types.js";
 import { instanceHeadersOption } from "../providers/instance-headers.js";
 import { resolveInstanceImageProvider } from "../providers/resolve.js";
@@ -30,24 +24,23 @@ import { resolveInstanceImageProvider } from "../providers/resolve.js";
 export async function registerGenerateRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
-    creditService?: CreditService;
+    localAccess: LocalAccessVerifier;
     jobService?: JobService;
     /** BYOK 实例凭证解析（直连生成按实例实例化适配器）。 */
     modelProviders?: ModelProviderService;
-    tierGuard?: TierGuard;
     uploadService: UploadService;
-    viewerService: ViewerService;
+    localInstance: LocalInstanceService;
+    usage: UsageService;
   },
 ) {
   app.post("/api/agent/generate-image", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) {
       return reply.code(401).send(
         unauthenticatedErrorResponseSchema.parse({
           error: {
             code: "unauthorized",
-            message: "Missing or invalid bearer token.",
+            message: "本机接入凭据缺失或无效。",
           },
         }),
       );
@@ -91,41 +84,14 @@ export async function registerGenerateRoutes(
       );
     }
 
+    let releaseAdmission: (() => void) | undefined;
     try {
-      // ── Tier guard + credit checks ──
-      const viewer = await options.viewerService.ensureViewer(user);
-      let creditsCost = 0;
-
-      if (options.creditService && options.tierGuard) {
-        const sub = await options.creditService.getSubscription(
-          viewer.workspace.id,
-        );
-        const quality: ImageQualityLevel = payload.quality ?? "hd";
-        options.tierGuard.checkModelAccess(sub.plan, model);
-        // Throws TierGuardError (resolution_not_allowed) if plan doesn't allow this quality
-        options.tierGuard.checkResolution(sub.plan, quality);
-        await options.tierGuard.checkConcurrency(viewer.workspace.id, sub.plan);
-        creditsCost = options.tierGuard.calculateCreditCost(
-          model,
-          "image_generation",
-          { quality },
-        );
-
-        // Deduct credits before generation
-        if (creditsCost > 0) {
-          await options.creditService.deductCredits(
-            viewer.workspace.id,
-            user.id,
-            creditsCost,
-            undefined,
-            `Direct image generation: ${model}`,
-          );
-        }
-      }
-
+      releaseAdmission = options.localInstance.beginAdmission();
+      const { instanceId } = await options.localInstance.resolve(user);
       let result: GeneratedImage;
       {
-        const credentials = await options.modelProviders.resolveCredentialsById(
+        const credentials = await options.modelProviders.resolveCredentials(
+          user,
           payload.providerInstanceId,
         );
         const provider = resolveInstanceImageProvider(credentials.protocol, {
@@ -156,7 +122,16 @@ export async function registerGenerateRoutes(
         });
       }
 
-      // Download and persist to Supabase Storage
+      await options.usage.record({
+        instanceId,
+        accessClientId: user.accessClientId,
+        provider: "instance",
+        providerInstanceId: payload.providerInstanceId,
+        model,
+        capability: "image",
+      });
+
+      // 下载供应商产物并经本机存储缝持久化。
       const { signedUrl, assetId } = await downloadAndUpload(
         result.url,
         result.mimeType,
@@ -174,22 +149,10 @@ export async function registerGenerateRoutes(
         height: result.height,
       });
     } catch (error) {
-      // Handle tier/credit errors
-      if (error instanceof TierGuardError) {
-        return reply.code(error.statusCode).send(
-          applicationErrorResponseSchema.parse({
-            error: { code: error.code, message: error.message },
-          }),
-        );
-      }
-      if (error instanceof CreditServiceError) {
-        return reply.code(error.statusCode).send(
-          applicationErrorResponseSchema.parse({
-            error: { code: error.code, message: error.message },
-          }),
-        );
-      }
-
+      if (error instanceof LocalInstanceMaintenanceError)
+        return reply
+          .code(503)
+          .send({ error: { code: error.code, message: error.message } });
       const message =
         error instanceof Error ? error.message : "Image generation failed.";
 
@@ -212,18 +175,20 @@ export async function registerGenerateRoutes(
           },
         }),
       );
+    } finally {
+      releaseAdmission?.();
     }
   });
 
   // ── POST /api/agent/generate-video ──────────────────────────
   app.post("/api/agent/generate-video", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) {
       return reply.code(401).send(
         unauthenticatedErrorResponseSchema.parse({
           error: {
             code: "unauthorized",
-            message: "Missing or invalid bearer token.",
+            message: "本机接入凭据缺失或无效。",
           },
         }),
       );
@@ -283,33 +248,16 @@ export async function registerGenerateRoutes(
     }
     const model = payload.model;
 
+    let releaseAdmission: (() => void) | undefined;
     try {
-      // ── Tier guard + credit checks ──
-      const viewer = await options.viewerService.ensureViewer(user);
-      const workspaceId = viewer.workspace.id;
-      let creditsCost = 0;
-
-      if (options.creditService && options.tierGuard) {
-        const sub = await options.creditService.getSubscription(workspaceId);
-        options.tierGuard.checkModelAccess(sub.plan, model);
-        if (payload.resolution) {
-          options.tierGuard.checkVideoResolution(
-            sub.plan,
-            payload.resolution as VideoResolution,
-          );
-        }
-        await options.tierGuard.checkConcurrency(workspaceId, sub.plan);
-        creditsCost = options.tierGuard.calculateCreditCost(
-          model,
-          "video_generation",
-          {
-            ...(payload.duration != null ? { duration: payload.duration } : {}),
-            ...(payload.resolution
-              ? { resolution: payload.resolution as VideoResolution }
-              : {}),
-          },
-        );
-      }
+      releaseAdmission = options.localInstance.beginAdmission();
+      await options.localInstance.resolve(user);
+      if (!options.modelProviders || !payload.providerInstanceId)
+        throw new Error("请先选择本地供应商实例。");
+      await options.modelProviders.resolveCredentials(
+        user,
+        payload.providerInstanceId,
+      );
 
       // ── Create job ──
       const job = await options.jobService.createJob(user, {
@@ -331,23 +279,6 @@ export async function registerGenerateRoutes(
         },
       });
 
-      // ── Deduct credits BEFORE generation ──
-      if (options.creditService && creditsCost > 0) {
-        try {
-          const txId = await options.creditService.deductCredits(
-            workspaceId,
-            user.id,
-            creditsCost,
-            job.id,
-            `Direct video generation: ${model}`,
-          );
-          await options.jobService.setCreditsInfo(job.id, creditsCost, txId);
-        } catch (deductError) {
-          await options.jobService.cancelJob(user, job.id).catch(() => {});
-          throw deductError;
-        }
-      }
-
       // ── 异步受理（S6）：任务由 worker 执行（异步任务面 submit + 队列轮询），
       // HTTP 请求不在请求内挂起等结果（台账遗留：5 分钟内联轮询退役）。
       // 进度经 GET /api/jobs/:id 轮询。
@@ -357,20 +288,10 @@ export async function registerGenerateRoutes(
         prompt: payload.prompt,
       });
     } catch (error) {
-      if (error instanceof TierGuardError) {
-        return reply.code(error.statusCode).send(
-          applicationErrorResponseSchema.parse({
-            error: { code: error.code, message: error.message },
-          }),
-        );
-      }
-      if (error instanceof CreditServiceError) {
-        return reply.code(error.statusCode).send(
-          applicationErrorResponseSchema.parse({
-            error: { code: error.code, message: error.message },
-          }),
-        );
-      }
+      if (error instanceof LocalInstanceMaintenanceError)
+        return reply
+          .code(503)
+          .send({ error: { code: error.code, message: error.message } });
       if (error instanceof JobServiceError) {
         return reply.code(error.statusCode).send(
           applicationErrorResponseSchema.parse({
@@ -390,6 +311,8 @@ export async function registerGenerateRoutes(
           },
         }),
       );
+    } finally {
+      releaseAdmission?.();
     }
   });
 }
@@ -400,8 +323,8 @@ async function downloadAndUpload(
   sourceUrl: string,
   mimeType: string,
   prompt: string,
-  user: AuthenticatedUser,
-  deps: { uploadService: UploadService; viewerService: ViewerService },
+  user: LocalActor,
+  deps: { uploadService: UploadService; localInstance: LocalInstanceService },
 ): Promise<{ signedUrl: string; assetId: string }> {
   const response = await fetch(sourceUrl);
   if (!response.ok) {
@@ -416,8 +339,8 @@ async function downloadAndUpload(
     .replace(/^-|-$/g, "");
   const fileName = `gen-${slug}-${Date.now()}.${ext}`;
 
-  // 引导工作区（幂等）；工作区 id 由 uploadService 内部解析。
-  await deps.viewerService.ensureViewer(user);
+  // 验证本地实例；持久化使用同一个 LocalActor。
+  await deps.localInstance.resolve(user);
 
   const result = await deps.uploadService.uploadFile(user, {
     bucket: "project-assets",

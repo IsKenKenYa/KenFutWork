@@ -14,18 +14,17 @@ import { SettingsModal } from "../src/components/workbench/settings-modal";
  * （「这两个合并为一个菜单」「这个让你合并的东西怎么又出来了」）之后别名行整体下线——
  * 这条测试锁住它不再回来：导航里不许出现「→ 目标页」这种两段式跳转项。
  */
-vi.mock("../src/lib/auth-context.js", () => ({
-  useAuth: () => ({ session: { access_token: "tok" } }),
+vi.mock("../src/lib/local-instance-context", () => ({
+  useLocalInstance: () => ({
+    status: "ready",
+    instance: { instanceId: "instance", dataDir: "/data" },
+  }),
 }));
 
 vi.mock("../src/lib/server-api.js", () => ({
   fetchModels: vi.fn(async () => ({ models: [] })),
-  fetchViewer: vi.fn(async () => ({
-    profile: { displayName: "本机用户", email: "" },
-  })),
-  fetchWorkspaceSettings: vi.fn(async () => ({ settings: {} })),
-  updateProfile: vi.fn(async () => ({})),
-  updateWorkspaceSettings: vi.fn(async () => ({ settings: {} })),
+  fetchInstanceSettings: vi.fn(async () => ({ settings: {} })),
+  updateInstanceSettings: vi.fn(async () => ({ settings: {} })),
 }));
 
 afterEach(cleanup);

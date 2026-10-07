@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/lib/assistantDirectiveParser.ts`（references/zcode/packages/ui/src/lib/assistantDirectiveParser.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
 interface ParsedAssistantDirective {
   end: number;
   name: string;
@@ -132,8 +127,7 @@ function parseDirectiveParameters(
   let index = 0;
 
   while (index < source.length) {
-    while (index < source.length && /[\s,]/.test(source[index] ?? ""))
-      index += 1;
+    while (index < source.length && /[\s,]/.test(source[index] ?? "")) index += 1;
     if (index >= source.length) return parameters;
 
     const nameMatch = /^[a-zA-Z_][a-zA-Z\d_-]*/.exec(source.slice(index));
@@ -156,14 +150,12 @@ function parseDirectiveParameters(
       index = parsedValue.nextIndex;
     } else {
       const valueStart = index;
-      while (index < source.length && !/[\s,]/.test(source[index] ?? ""))
-        index += 1;
+      while (index < source.length && !/[\s,]/.test(source[index] ?? "")) index += 1;
       value = source.slice(valueStart, index);
       if (!value) return null;
     }
 
-    if (index < source.length && !/[\s,]/.test(source[index] ?? ""))
-      return null;
+    if (index < source.length && !/[\s,]/.test(source[index] ?? "")) return null;
     parameters[name] = value;
   }
 
@@ -186,11 +178,7 @@ export function extractAssistantDirectives(
     const openBraceIndex = start + (match[0]?.lastIndexOf("{") ?? -1);
     if (openBraceIndex < start) continue;
 
-    const closingBraceIndex = findDirectiveClosingBrace(
-      content,
-      openBraceIndex,
-      options,
-    );
+    const closingBraceIndex = findDirectiveClosingBrace(content, openBraceIndex, options);
     if (closingBraceIndex < 0) continue;
     const end = closingBraceIndex + 1;
     consumedUntil = end;
@@ -226,17 +214,13 @@ function mergeRanges(ranges: AssistantTextRange[]): AssistantTextRange[] {
 export function findMarkdownCodeRanges(content: string): AssistantTextRange[] {
   const ranges: Array<[number, number]> = [];
   const fencedRanges: Array<[number, number]> = [];
-  let fence: { character: "`" | "~"; length: number; start: number } | null =
-    null;
+  let fence: { character: "`" | "~"; length: number; start: number } | null = null;
   let lineStart = 0;
 
   while (lineStart < content.length) {
     const newlineIndex = content.indexOf("\n", lineStart);
     const lineEnd = newlineIndex < 0 ? content.length : newlineIndex + 1;
-    const line = content.slice(
-      lineStart,
-      newlineIndex < 0 ? content.length : newlineIndex,
-    );
+    const line = content.slice(lineStart, newlineIndex < 0 ? content.length : newlineIndex);
     const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
     if (marker) {
       if (!fence) {
@@ -245,10 +229,7 @@ export function findMarkdownCodeRanges(content: string): AssistantTextRange[] {
           length: marker.length,
           start: lineStart,
         };
-      } else if (
-        marker[0] === fence.character &&
-        marker.length >= fence.length
-      ) {
+      } else if (marker[0] === fence.character && marker.length >= fence.length) {
         fencedRanges.push([fence.start, lineEnd]);
         fence = null;
       }
@@ -258,9 +239,7 @@ export function findMarkdownCodeRanges(content: string): AssistantTextRange[] {
   if (fence) fencedRanges.push([fence.start, content.length]);
   ranges.push(...fencedRanges);
 
-  for (const match of content.matchAll(
-    /<(code|pre)(?:\s[^>]*)?>[\s\S]*?<\/\1\s*>/gi,
-  )) {
+  for (const match of content.matchAll(/<(code|pre)(?:\s[^>]*)?>[\s\S]*?<\/\1\s*>/gi)) {
     const start = match.index ?? 0;
     ranges.push([start, start + (match[0]?.length ?? 0)]);
   }
@@ -289,9 +268,7 @@ export function overlapsAssistantTextRanges(
   end: number,
   ranges: readonly AssistantTextRange[],
 ): boolean {
-  return ranges.some(
-    ([rangeStart, rangeEnd]) => start < rangeEnd && end > rangeStart,
-  );
+  return ranges.some(([rangeStart, rangeEnd]) => start < rangeEnd && end > rangeStart);
 }
 
 export function findUnclosedAssistantDirectiveStart(
@@ -318,12 +295,12 @@ export function findUnclosedAssistantDirectiveStart(
       let quote: DirectiveQuoteState | null = null;
       let escaped = false;
       for (const character of parameterPrefix) {
-        if (quote === null) {
-          quote = getDirectiveQuoteState(character, options);
-        } else {
+        if (quote !== null) {
           if (escaped) escaped = false;
           else if (character === "\\") escaped = true;
           else if (character === quote.close) quote = null;
+        } else {
+          quote = getDirectiveQuoteState(character, options);
         }
       }
       const isParameterPrefix =
@@ -348,14 +325,12 @@ export function findAssistantDirectivePrefixStart(
 ): number | null {
   const singleColonNames = new Set(options.singleColonDirectiveNames ?? []);
   const tripleColonNames = new Set(options.tripleColonDirectiveNames ?? []);
-  const minimumSingleColonPrefixLength =
-    options.minimumSingleColonPrefixLength ?? 2;
+  const minimumSingleColonPrefixLength = options.minimumSingleColonPrefixLength ?? 2;
 
   for (let index = content.length - 1; index >= 0; index -= 1) {
     if (content[index] !== ":") continue;
     if (content[index - 1] === ":") continue;
-    if (overlapsAssistantTextRanges(index, index + 1, protectedRanges))
-      continue;
+    if (overlapsAssistantTextRanges(index, index + 1, protectedRanges)) continue;
 
     const suffix = content.slice(index);
     const isPrefix = directiveNames.some((directiveName) => {
@@ -373,23 +348,18 @@ export function findAssistantDirectivePrefixStart(
       if (
         suffix.startsWith("::") &&
         (canonicalName.startsWith(suffix) ||
-          (suffix.startsWith(canonicalName) &&
-            /^\s*$/.test(suffix.slice(canonicalName.length))))
+          (suffix.startsWith(canonicalName) && /^\s*$/.test(suffix.slice(canonicalName.length))))
       ) {
         return true;
       }
 
-      if (
-        !singleColonNames.has(directiveName) ||
-        suffix.length < minimumSingleColonPrefixLength
-      ) {
+      if (!singleColonNames.has(directiveName) || suffix.length < minimumSingleColonPrefixLength) {
         return false;
       }
       const compatibilityName = `:${directiveName}`;
       if (compatibilityName.startsWith(suffix)) return true;
       return (
-        suffix.startsWith(compatibilityName) &&
-        /^\s*$/.test(suffix.slice(compatibilityName.length))
+        suffix.startsWith(compatibilityName) && /^\s*$/.test(suffix.slice(compatibilityName.length))
       );
     });
     if (isPrefix) return index;

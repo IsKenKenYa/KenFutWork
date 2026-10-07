@@ -5,7 +5,6 @@ import {
   type GitCommandResult,
   isSafeBranchName,
   parseBranchList,
-  parseWorktrees,
   toChangedFiles,
   toDiffStat,
   toGraph,
@@ -579,65 +578,5 @@ describe("变更清单（纯解析）", () => {
       ["diff", "--no-color", "HEAD", "--", "a.ts"],
       "/sandbox/x",
     );
-  });
-});
-
-/**
- * 工作树（R5-2「工作树」条目）：`git worktree list --porcelain` 的解析与路径约束。
- *
- * 解析必须稳：git 加字段不该让整页崩；detached 的工作树没有分支名，界面要显示得出来。
- */
-describe("工作树解析", () => {
-  it("空行分隔的块：第一条是仓库本体，第二条是工作树（剥掉 refs/heads 前缀）", () => {
-    const stdout = [
-      "worktree D:/Desktop/KenFutWork",
-      "HEAD 1111111111111111111111111111111111111111",
-      "branch refs/heads/main",
-      "",
-      "worktree D:/Desktop/kfw-wt",
-      "HEAD 2222222222222222222222222222222222222222",
-      "branch refs/heads/feature/x",
-      "",
-    ].join("\n");
-    expect(parseWorktrees(stdout)).toEqual([
-      {
-        path: "D:/Desktop/KenFutWork",
-        branch: "main",
-        main: true,
-        detached: false,
-      },
-      {
-        path: "D:/Desktop/kfw-wt",
-        branch: "feature/x",
-        main: false,
-        detached: false,
-      },
-    ]);
-  });
-
-  it("detached 工作树：不给分支名（界面显示「游离 HEAD」而不是空白）", () => {
-    const stdout = [
-      "worktree /repo",
-      "HEAD abc",
-      "branch refs/heads/main",
-      "",
-      "worktree /repo-wt",
-      "HEAD def",
-      "detached",
-      "",
-    ].join("\n");
-    expect(parseWorktrees(stdout)[1]).toMatchObject({
-      branch: null,
-      detached: true,
-    });
-  });
-
-  it("认不出的键忽略；没有 worktree 行的块丢弃（空输出给空数组）", () => {
-    expect(parseWorktrees("")).toEqual([]);
-    expect(
-      parseWorktrees(
-        "locked\nHEAD abc\n\nworktree /x\nHEAD d\nbranch refs/heads/b",
-      ),
-    ).toEqual([{ path: "/x", branch: "b", main: true, detached: false }]);
   });
 });

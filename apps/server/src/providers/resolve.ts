@@ -1,6 +1,9 @@
 import type { ProviderProtocol } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 
+import type { InstanceAudioAdapterOptions } from "../features/voice/providers/openai-audio.js";
+import * as openaiAudio from "../features/voice/providers/openai-audio.js";
+import type { VoiceProvider } from "../features/voice/types.js";
 import type { ImageProvider, VideoProvider } from "../generation/types.js";
 import * as anthropic from "./anthropic/index.js";
 import * as gemini from "./gemini/index.js";
@@ -8,12 +11,15 @@ import * as googleImage from "./google-image/index.js";
 import * as metaso from "./metaso/index.js";
 import * as openaiCompatible from "./openai-compatible/index.js";
 import * as replicate from "./replicate/index.js";
+import { validateInstanceModelExtraBody } from "./request-options.js";
 import type {
   InstanceCredentials,
   InstanceImageAdapterOptions,
   InstanceVideoAdapterOptions,
 } from "./types.js";
 import * as volces from "./volces/index.js";
+
+export { validateInstanceModelExtraBody } from "./request-options.js";
 
 /**
  * `generation` 缝的运行期适配器注册表（§4.8）：
@@ -24,7 +30,7 @@ import * as volces from "./volces/index.js";
 type ChatAdapterFactory = (
   model: string,
   credentials: InstanceCredentials,
-  /** 模型级请求体注入（extraBody）；仅 openai-compatible 消费，其余忽略。 */
+  /** 三种聊天协议消费同一本轮模型参数快照。 */
   extraBody?: Record<string, unknown>,
 ) => BaseLanguageModel;
 
@@ -57,14 +63,30 @@ const VIDEO_ADAPTERS: Partial<
   volces: volces.createInstanceVideoProvider,
 };
 
+/**
+ * 音频适配器面（语音助手「听 / 说」段）：只有 openai-compatible 一族
+ * ——在线档就是既有 BYOK 实例，凭证与自定义头复用，协议封闭集合不动。
+ */
+const AUDIO_ADAPTERS: Partial<
+  Record<
+    ProviderProtocol,
+    (options: InstanceAudioAdapterOptions) => VoiceProvider
+  >
+> = {
+  "openai-compatible": openaiAudio.createInstanceAudioProvider,
+};
+
 /** 按用户实例实例化聊天模型；协议不支持聊天即 fail loud。 */
 export function resolveInstanceChatModel(
   protocol: ProviderProtocol,
   model: string,
   credentials: InstanceCredentials,
-  /** 模型级请求体注入（推理参数映射 extraBody）；仅 openai-compatible 消费。 */
+  /** 模型级请求体参数，包含宿主编译的本轮选项。 */
   extraBody?: Record<string, unknown>,
 ): BaseLanguageModel {
+  if (!credentials.apiKey.trim())
+    throw new Error("[providers] 未配置 API Key，无法调用供应商模型。");
+  validateInstanceModelExtraBody(extraBody);
   const factory = CHAT_ADAPTERS[protocol];
   if (!factory) {
     throw new Error(
@@ -95,6 +117,20 @@ export function resolveInstanceVideoProvider(
   if (!factory) {
     throw new Error(
       `[providers] 协议 ${protocol} 不支持视频生成实例化（fail loud）。`,
+    );
+  }
+  return factory(options);
+}
+
+/** 按用户实例实例化音频 Provider（听 / 说）；协议不支持音频即 fail loud。 */
+export function resolveInstanceAudioProvider(
+  protocol: ProviderProtocol,
+  options: InstanceAudioAdapterOptions,
+): VoiceProvider {
+  const factory = AUDIO_ADAPTERS[protocol];
+  if (!factory) {
+    throw new Error(
+      `[providers] 协议 ${protocol} 不支持音频转写/合成实例化（fail loud）。`,
     );
   }
   return factory(options);

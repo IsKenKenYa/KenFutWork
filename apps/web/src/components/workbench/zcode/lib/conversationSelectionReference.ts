@@ -1,19 +1,10 @@
-/**
- * zcode 照搬：`@/lib/conversationSelectionReference.ts`（references/zcode/packages/ui/src/lib/conversationSelectionReference.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import { createUuid } from "@zui/lib/zcode-shared";
+import { createUuid } from "@zcode/shared";
 
 export const CONVERSATION_SELECTION_MAX_TEXT_LENGTH = 8_000;
 const CONVERSATION_SELECTION_MAX_COUNT = 8;
 const CONVERSATION_SELECTION_MAX_TOTAL_LENGTH = 16_000;
 
-export type ConversationSelectionContentType =
-  | "user"
-  | "assistant"
-  | "reasoning"
-  | "tool";
+export type ConversationSelectionContentType = "user" | "assistant" | "reasoning" | "tool";
 
 export interface ConversationSelectionText {
   text: string;
@@ -34,9 +25,7 @@ export interface MarkdownSelectionReference extends ConversationSelectionText {
   sourceTitle: string;
 }
 
-export type ConversationSelectionReference =
-  | MessageSelectionReference
-  | MarkdownSelectionReference;
+export type ConversationSelectionReference = MessageSelectionReference | MarkdownSelectionReference;
 
 export interface MarkdownSelectionTarget {
   sessionId: string | null;
@@ -64,20 +53,13 @@ type ConversationSelectionAppendResult =
   | { ok: false; reason: ConversationSelectionLimitReason };
 
 const ADD_EVENT = "zcode:conversation-selection-add";
-const USER_SELECT_BLOCK_PATTERN =
-  /(?:\n\n)?# userselect:\n```userselect\n([\s\S]*?)\n```\s*$/;
+const USER_SELECT_BLOCK_PATTERN = /(?:\n\n)?# userselect:\n```userselect\n([\s\S]*?)\n```\s*$/;
 const LEGACY_BLOCK_PATTERN =
   /(?:\n\n)?# Conversation selections:\n```zcode-conversation-selections\n([\s\S]*?)\n```\s*$/;
-const referencesByScope = new Map<
-  string,
-  readonly ConversationSelectionReference[]
->();
+const referencesByScope = new Map<string, readonly ConversationSelectionReference[]>();
 const limitReasonByScope = new Map<string, ConversationSelectionLimitReason>();
 
-function referenceScopeKey(
-  sessionId: string | null,
-  workspaceKey: string,
-): string {
+function referenceScopeKey(sessionId: string | null, workspaceKey: string): string {
   return `${workspaceKey}\0${sessionId ?? "__draft__"}`;
 }
 
@@ -85,9 +67,7 @@ export function getConversationSelectionReferenceScope(
   sessionId: string | null,
   workspaceKey: string,
 ): readonly ConversationSelectionReference[] {
-  return (
-    referencesByScope.get(referenceScopeKey(sessionId, workspaceKey)) ?? []
-  );
+  return referencesByScope.get(referenceScopeKey(sessionId, workspaceKey)) ?? [];
 }
 
 export function setConversationSelectionReferenceScope(
@@ -105,9 +85,7 @@ export function getConversationSelectionReferenceLimitReason(
   sessionId: string | null,
   workspaceKey: string,
 ): ConversationSelectionLimitReason | null {
-  return (
-    limitReasonByScope.get(referenceScopeKey(sessionId, workspaceKey)) ?? null
-  );
+  return limitReasonByScope.get(referenceScopeKey(sessionId, workspaceKey)) ?? null;
 }
 
 export function clearConversationSelectionReferenceScope(
@@ -126,16 +104,12 @@ export function clearConversationSelectionReferenceLimitReason(
 }
 
 export function createConversationSelectionReference(
-  input:
-    | Omit<MessageSelectionReference, "id">
-    | Omit<MarkdownSelectionReference, "id">,
+  input: Omit<MessageSelectionReference, "id"> | Omit<MarkdownSelectionReference, "id">,
 ): ConversationSelectionReference {
   return { ...input, id: createUuid() };
 }
 
-function getConversationSelectionDedupeKey(
-  reference: ConversationSelectionReference,
-): string {
+function getConversationSelectionDedupeKey(reference: ConversationSelectionReference): string {
   if (reference.contentType === "markdown") {
     return ["markdown", reference.sourceKey, reference.text].join("\0");
   }
@@ -162,10 +136,7 @@ function appendConversationSelectionReference(
     return { ok: false, reason: "count" };
   }
   const totalLength = current.reduce((sum, item) => sum + item.text.length, 0);
-  if (
-    totalLength + reference.text.length >
-    CONVERSATION_SELECTION_MAX_TOTAL_LENGTH
-  ) {
+  if (totalLength + reference.text.length > CONVERSATION_SELECTION_MAX_TOTAL_LENGTH) {
     return { ok: false, reason: "total" };
   }
   return { ok: true, references: [...current, reference], duplicate: false };
@@ -180,11 +151,7 @@ export function buildPromptWithConversationSelections(
   const block = [
     "# userselect:",
     "```userselect",
-    JSON.stringify(
-      references.map(({ text, path }) =>
-        path?.trim() ? { path, text } : { text },
-      ),
-    ),
+    JSON.stringify(references.map(({ text, path }) => (path?.trim() ? { path, text } : { text }))),
     "```",
   ].join("\n");
   return visibleContent ? `${visibleContent}\n\n${block}` : block;
@@ -199,9 +166,7 @@ export function parsePromptConversationSelections(text: string): {
     return parseConversationSelectionBlock(text, userSelectMatch, (value) => {
       if (!isConversationSelectionText(value)) return null;
       // 与发送合同一致，历史保留文件路径，普通对话继续只恢复正文。
-      return value.path
-        ? { path: value.path, text: value.text }
-        : { text: value.text };
+      return value.path ? { path: value.path, text: value.text } : { text: value.text };
     });
   }
   const legacyMatch = text.match(LEGACY_BLOCK_PATTERN);
@@ -211,17 +176,14 @@ export function parsePromptConversationSelections(text: string): {
   );
 }
 
-function parseConversationSelectionBlock<
-  T extends ConversationSelectionDisplayReference,
->(
+function parseConversationSelectionBlock<T extends ConversationSelectionDisplayReference>(
   text: string,
   match: RegExpMatchArray,
   parseItem: (value: unknown) => T | null,
 ): { visibleContent: string; references: readonly T[] } {
   try {
     const parsed = JSON.parse(match[1] ?? "[]");
-    if (!Array.isArray(parsed))
-      throw new Error("selection block is not an array");
+    if (!Array.isArray(parsed)) throw new Error("selection block is not an array");
     const references: T[] = [];
     for (const value of parsed) {
       const reference = parseItem(value);
@@ -244,10 +206,7 @@ export function dispatchConversationSelectionAdd(
     detail.targetSessionId,
     detail.workspaceKey,
   );
-  const result = appendConversationSelectionReference(
-    current,
-    detail.reference,
-  );
+  const result = appendConversationSelectionReference(current, detail.reference);
   if (result.ok) {
     setConversationSelectionReferenceScope(
       detail.targetSessionId,
@@ -260,9 +219,7 @@ export function dispatchConversationSelectionAdd(
       result.reason,
     );
   }
-  window.dispatchEvent(
-    new CustomEvent(ADD_EVENT, { detail: { ...detail, result } }),
-  );
+  window.dispatchEvent(new CustomEvent(ADD_EVENT, { detail: { ...detail, result } }));
   return result;
 }
 
@@ -276,16 +233,13 @@ export function getConversationSelectionAddEventName(): string {
   return ADD_EVENT;
 }
 
-function isConversationSelectionText(
-  value: unknown,
-): value is ConversationSelectionText {
+function isConversationSelectionText(value: unknown): value is ConversationSelectionText {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const candidate = value as Partial<ConversationSelectionText>;
   return (
     typeof candidate.text === "string" &&
     (!("path" in value) ||
-      (typeof candidate.path === "string" &&
-        candidate.path.trim().length > 0)) &&
+      (typeof candidate.path === "string" && candidate.path.trim().length > 0)) &&
     Object.keys(value).every((key) => key === "text" || key === "path")
   );
 }
@@ -310,8 +264,6 @@ export function isConversationSelectionReference(
     "sourceRowId" in candidate &&
     typeof candidate.sourceRowId === "number" &&
     typeof candidate.text === "string" &&
-    ["user", "assistant", "reasoning", "tool"].includes(
-      candidate.contentType ?? "",
-    )
+    ["user", "assistant", "reasoning", "tool"].includes(candidate.contentType ?? "")
   );
 }

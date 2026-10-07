@@ -1,5 +1,7 @@
 import { z } from "zod";
 import type { ToolDefinition } from "../../../kernel/types.js";
+import type { LocalInstanceService } from "../../local-instance/types.js";
+import { resolveCanvasActor } from "../canvas-actor.js";
 import type { CanvasRepository } from "../repository.js";
 import {
   BINDING_GAP,
@@ -814,6 +816,7 @@ const handlers: Record<
 export function createManipulateCanvasToolDefinition(deps: {
   /** 画布数据访问（工作区作用域）：内容读写不再直连 SDK。 */
   canvasRepository?: CanvasRepository;
+  localInstance: LocalInstanceService;
 }): ToolDefinition {
   return {
     name: "manipulate_canvas",
@@ -836,14 +839,13 @@ export function createManipulateCanvasToolDefinition(deps: {
       const input = manipulateCanvasSchema.parse(args);
 
       // --- Read current canvas -------------------------------------------------
-      const workspaceId = await deps.canvasRepository
-        ?.findWorkspaceIdByCanvas(canvasId)
-        .catch(() => null);
-      const canvasRow = workspaceId
-        ? await deps.canvasRepository
-            ?.findById(workspaceId, canvasId)
-            .catch(() => null)
-        : null;
+      const actor = await resolveCanvasActor(deps.localInstance, execCtx);
+      const instanceId = actor.instanceId;
+      const canvasRow = await deps.canvasRepository?.findById(
+        instanceId,
+        canvasId,
+      );
+
       const data = canvasRow
         ? { content: canvasRow.content as { elements?: unknown[] } }
         : null;
@@ -890,9 +892,9 @@ export function createManipulateCanvasToolDefinition(deps: {
       // --- Write back ----------------------------------------------------------
       const updatedContent = { ...content, elements };
       const writeError =
-        workspaceId &&
+        instanceId &&
         (await deps.canvasRepository
-          ?.saveContent(workspaceId, canvasId, updatedContent)
+          ?.saveContent(instanceId, canvasId, updatedContent)
           .catch(() => 0)) === 0
           ? new Error("write_failed")
           : null;

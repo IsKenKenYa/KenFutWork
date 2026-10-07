@@ -10,6 +10,8 @@
  */
 
 export interface AxNode {
+  /** 远端provider保持原观察索引；本地节点不设置，由遍历分配。 */
+  index?: number;
   /** 归一化角色（executor 侧把 AX role 映射为 kind）。 */
   role: string;
   title?: string | null;
@@ -63,13 +65,14 @@ export interface FormattedAxTree {
   text: string;
   structuredContent: AxStructuredContent;
   truncated: boolean;
+  rows: Array<{ index: number; depth: number; node: Omit<AxNode, "children"> }>;
 }
 
 /** 深度优先展平，分配连续索引。 */
 export function flattenAxTree(root: AxNode): FlattenedAxRow[] {
   const rows: FlattenedAxRow[] = [];
   const walk = (node: AxNode, depth: number): void => {
-    rows.push({ index: rows.length, depth, node });
+    rows.push({ index: node.index ?? rows.length, depth, node });
     for (const child of node.children ?? []) {
       walk(child, depth + 1);
     }
@@ -83,7 +86,9 @@ function elementLine(row: FlattenedAxRow): string {
   let identity: string;
   if (n.title && n.value != null && n.value !== "") {
     identity =
-      n.role === "text" ? `${n.title} = ${n.value}` : `${n.title};value:${n.value}`;
+      n.role === "text"
+        ? `${n.title} = ${n.value}`
+        : `${n.title};value:${n.value}`;
   } else if (n.value != null && n.value !== "") {
     identity = `= ${n.value}`;
   } else {
@@ -114,7 +119,9 @@ export function formatAxTree(input: {
       .trim();
     const windowPart = [
       input.window.title ? `"${input.window.title}"` : "(无标题)",
-      input.window.windowId != null ? ` window_id=${input.window.windowId}` : "",
+      input.window.windowId != null
+        ? ` window_id=${input.window.windowId}`
+        : "",
     ].join("");
     const trimNote =
       trimmed > 0
@@ -132,7 +139,10 @@ export function formatAxTree(input: {
   // 超预算：按深度降序丢弃（先裁最深），祖先行天然保留。
   let kept = rows;
   let trimmed = 0;
-  if (byteLength([...header(rows.length, 0), ...rows.map(elementLine)]) > input.maxBytes) {
+  if (
+    byteLength([...header(rows.length, 0), ...rows.map(elementLine)]) >
+    input.maxBytes
+  ) {
     const byDepthDesc = [...rows].sort((a, b) => b.depth - a.depth);
     const dropped = new Set<FlattenedAxRow>();
     for (const row of byDepthDesc) {
@@ -180,5 +190,9 @@ export function formatAxTree(input: {
       ...(trimmed > 0 ? { trimmed } : {}),
     },
     truncated: trimmed > 0,
+    rows: kept.map(({ index, depth, node }) => {
+      const { children: _children, ...value } = node;
+      return { index, depth, node: value };
+    }),
   };
 }

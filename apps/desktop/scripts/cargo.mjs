@@ -13,6 +13,9 @@ import { join } from "node:path";
 
 const task = process.argv[2] === "test" ? "test" : "check";
 const manifest = join(import.meta.dirname, "..", "src-tauri", "Cargo.toml");
+const config = process.env.TAURI_CONFIG
+  ? JSON.parse(process.env.TAURI_CONFIG)
+  : {};
 
 /** PATH 里的 cargo 能不能跑通（跑不通返回 null）。 */
 function cargoOnPath() {
@@ -48,6 +51,17 @@ const result = spawnSync(
     // 生命周期测试要的子进程替身只在 test-fixture 下编（默认不编，免得进安装包）
     ...(task === "test" ? ["--features", "test-fixture"] : []),
   ],
-  { stdio: "inherit" },
+  {
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      // check/test只编译壳与夹具，生产sidecar资源由tauri build严格校验。
+      // 保留显式TAURI_CONFIG中的其他覆盖，不能要求开发检查先产出完整发行包。
+      TAURI_CONFIG: JSON.stringify({
+        ...config,
+        bundle: { ...config.bundle, resources: [] },
+      }),
+    },
+  },
 );
 process.exit(result.status ?? 1);

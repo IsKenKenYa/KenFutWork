@@ -72,11 +72,11 @@ export function tierIcon(value: string): ReactNode {
 }
 
 export const THINKING_OPTIONS = [
-  { value: "default", label: "默认", hint: "不额外要求，用模型自己的默认" },
+  { value: "default", label: "默认", hint: "用模型自己的默认" },
   {
     value: "关闭",
     label: "关闭",
-    hint: "不展开推理，直接给结论（更快、更省）",
+    hint: "直接给结论 · 更快更省",
   },
   { value: "低", label: "低", hint: "想得少、回得快" },
   { value: "中", label: "中", hint: "常规推理" },

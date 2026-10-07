@@ -1,9 +1,4 @@
 /**
- * zcode 照搬：`@/lib/chatComposerDraftStorage.ts`（references/zcode/packages/ui/src/lib/chatComposerDraftStorage.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-/**
  * 旧 composer 草稿的 localStorage 持久化清理。
  *
  * store 收尾：composer 草稿的内存态（composerDraftByScopeId）与持久化写入
@@ -11,7 +6,7 @@
  * v4 composer 不做本地持久化。这里仅保留删除 task 时清理历史版本残留草稿键的
  * janitor 逻辑，避免旧安装升级后 localStorage 里的已删任务草稿永久残留。
  */
-import { logger } from "@zui/logger";
+import { logger } from "@zui/logger.js";
 
 interface StorageLike {
   getItem(key: string): string | null;
@@ -39,10 +34,7 @@ function getBrowserStorage(): StorageLike | null {
   }
 }
 
-function getComposerDraftStorageKey(
-  workspacePath: string,
-  workspaceIdentity?: string,
-) {
+function getComposerDraftStorageKey(workspacePath: string, workspaceIdentity?: string) {
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
   return `${STORAGE_KEY_PREFIX}${encodeURIComponent(workspaceKey)}`;
 }
@@ -66,11 +58,7 @@ function readPersistedDraftFile(
 
   try {
     const parsed = JSON.parse(rawValue) as Partial<PersistedComposerDraftFile>;
-    if (
-      parsed.version !== 1 ||
-      typeof parsed.scopes !== "object" ||
-      parsed.scopes === null
-    ) {
+    if (parsed.version !== 1 || typeof parsed.scopes !== "object" || parsed.scopes === null) {
       return null;
     }
     return { version: 1, scopes: parsed.scopes };

@@ -1,12 +1,4 @@
-/**
- * zcode 照搬：`@/lib/codingPlanOwnedEntryPlans.ts`（references/zcode/packages/ui/src/lib/codingPlanOwnedEntryPlans.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import {
-  BUILTIN_MODEL_PROVIDER_IDS,
-  type UsageEntitlementSnapshot,
-} from "@zui/lib/zcode-shared";
+import { BUILTIN_MODEL_PROVIDER_IDS, type UsageEntitlementSnapshot } from "@zcode/shared";
 
 const startIds: readonly string[] = [
   BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan,
@@ -28,11 +20,7 @@ export function buildOwnedEntryPlanList({
   teamProducts,
 }: {
   snapshots: readonly (UsageEntitlementSnapshot | null | undefined)[];
-  teamProducts: readonly {
-    subscribed?: boolean | null | undefined;
-    tier: string;
-    productId: string;
-  }[];
+  teamProducts: readonly { subscribed?: boolean | null; tier: string; productId: string }[];
 }): string {
   const plans = snapshots.flatMap((snapshot) => {
     if (
@@ -45,8 +33,7 @@ export function buildOwnedEntryPlanList({
     const isStart = startIds.includes(providerId);
     if (!isStart && !personalIds.includes(providerId)) return [];
     return (snapshot.subscription?.details ?? []).flatMap((detail) => {
-      if (detail.expireTime && Date.parse(detail.expireTime) <= Date.now())
-        return [];
+      if (detail.expireTime && Date.parse(detail.expireTime) <= Date.now()) return [];
       const key = normalize(detail.productId || detail.productName);
       if (!key) return [];
       // 原实现把被点击卡片的套餐状态应用到整组数据；每个连接必须独立分类。
@@ -58,9 +45,7 @@ export function buildOwnedEntryPlanList({
   });
   for (const product of teamProducts) {
     const key = normalize(product.tier || product.productId);
-    if (product.subscribed === true && key)
-      plans.push(`coding_plan__team_${key}`);
+    if (product.subscribed === true && key) plans.push(`coding_plan__team_${key}`);
   }
   return [...new Set(plans)].sort().join(",");
 }
-/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

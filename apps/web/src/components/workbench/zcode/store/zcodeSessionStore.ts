@@ -1,78 +1,53 @@
 /**
- * zcode 宿主适配 stub：`@/store/zcodeSessionStore` 的最小等价。
- * 来源：references/zcode/packages/ui/src/store/zcodeSessionStore.ts
+ * ZCode session UI 状态 store
  *
- * zcode 的会话 store 由 Agent RPC 运行时驱动（任务/草稿/模型切换/导航历史等全套状态与 setter）。
- * 本仓无该运行时，故只提供照搬件实际消费的**读取面**：workspaces 恒空桶，任何 workspace 查询
- * 经 zcodeSessionStoreSelectors 的原版 `getWorkspaceState` 落到默认 workspace 状态（provider、
- * 任务缓存等全为默认值）；全部 setter 为空操作（无数据源可写）。
- * 消费面：v4/activeTaskProvider（当前任务 provider 解析）、hooks/useSlashCommands stub 等。
- * 后续接通 agent 运行时状态源时替换本实现即可，照搬组件零改动。
- * 适配注记：导出签名与原文件一致；读恒默认态、写恒空操作（stub 降级）。
+ * 一个 tab 对应一个 workspace，所以聊天相关状态也必须按 workspace 分桶保存。
+ * 这样切换标签页时，当前任务、输入中的草稿态和初始化状态才不会互相串台。
  */
-"use client";
-
-import { selectWorkspaceZCodeState } from "@zui/store/zcodeSessionStoreSelectors";
-import type { ZCodeSessionStoreState } from "@zui/store/zcodeSessionStoreTypes";
-import { getDefaultWorkspaceState } from "@zui/store/zcodeSessionStoreTypes";
 import { create } from "zustand";
+import { shouldExposeE2EStoreBridge } from "@zui/lib/e2eStoreBridge.js";
+import { type ZCodeSessionStoreState } from "./zcodeSessionStoreTypes.js";
+import { getWorkspaceState } from "./zcodeSessionStoreSelectors.js";
+import { createNavigationSlice } from "./zcodeSessionStoreNavigation.js";
+import { createTaskSlice } from "./zcodeSessionStoreTaskSlice.js";
+import { createWorkspaceSlice } from "./zcodeSessionStoreWorkspaceSlice.js";
+import { uiMemoryDiagnosticsRegistry } from "@zui/lib/memoryDiagnostics.js";
 
-/** 空操作集合：类型对齐 ZCodeSessionStoreState 的全部 setter；无数据源可写。 */
-const noop = () => {};
-
-export const useZCodeSessionStore = create<ZCodeSessionStoreState>()(() => ({
+export const useZCodeSessionStore = create<ZCodeSessionStoreState>()((set, get) => ({
   workspaces: {},
-  getWorkspaceState: () => getDefaultWorkspaceState(),
-  setActiveTaskId: noop,
-  promoteGroupedDraftTask: noop,
-  clearPromotedGroupedDraftTask: noop,
-  setDraftSessionId: noop,
-  invalidateDraftRuntime: noop,
-  requestComposerTextInsert: () => 0,
-  clearComposerTextInsertRequest: noop,
-  requestTimelineBottom: () => 0,
-  clearTimelineBottomRequest: noop,
-  startDraft: noop,
-  clearGroupedDraftTask: noop,
-  bindRuntimeProvider: noop,
-  setModelSelectionResolution: noop,
-  setWorkspaceInitState: noop,
-  setWorkspaceInitAttempts: noop,
-  setTaskState: noop,
-  setTaskRuntimeState: noop,
-  setTaskUsage: noop,
-  setTaskContextWindow: noop,
-  setTaskApiRetryStatus: noop,
-  setTaskPermissionRequest: noop,
-  removeTaskPermissionRequest: noop,
-  setTaskElicitationRequest: noop,
-  removeTaskElicitationRequest: noop,
-  setTaskElicitationFormDraft: noop,
-  removeTaskElicitationFormDraft: noop,
-  setTaskError: noop,
-  setDraftError: noop,
-  startModelSwitch: noop,
-  updateModelSwitchStage: noop,
-  finishModelSwitch: noop,
-  setTaskConfigOptions: noop,
-  initializeBackgroundTaskRuntime: noop,
-  upsertOptimisticTaskListItem: noop,
-  removeOptimisticTaskListItem: noop,
-  removeTaskState: noop,
-  setConfigOptions: noop,
-  setConfigOptionsStatus: noop,
-  setSlashCommands: noop,
-  setCurrentModeId: noop,
-  bumpTaskListVersion: noop,
-  setTaskListCache: noop,
-  setTaskUnreadIndicator: noop,
-  taskNavHistory: { entries: [], cursor: -1 },
-  taskNavPushAutomations: noop,
-  taskNavPushPluginStore: noop,
-  taskNavGoBack: () => null,
-  taskNavGoForward: () => null,
-  removeTaskFromNavHistory: noop,
+  ...createNavigationSlice(set, get),
+  ...createWorkspaceSlice(set),
+  ...createTaskSlice(set),
+  getWorkspaceState: (workspacePath: string, workspaceIdentity?: string) =>
+    getWorkspaceState(get(), workspacePath, workspaceIdentity),
 }));
 
-/** 选择器与原文件同源（zcodeSessionStoreSelectors）；照搬件从 store 模块面导入。 */
-export { selectWorkspaceZCodeState };
+type ZCodeSessionStoreE2EBridge = typeof useZCodeSessionStore;
+
+declare global {
+  interface Window {
+    __zcodeSessionStoreE2E?: ZCodeSessionStoreE2EBridge;
+  }
+}
+
+if (shouldExposeE2EStoreBridge()) {
+  // E2E 诊断入口必须由 WDIO 显式打开，不能复用 ZCODE_ENV=test，避免产品测试环境暴露可变全局 store。
+  window.__zcodeSessionStoreE2E = useZCodeSessionStore;
+}
+
+// ────────────────────────────────────────────
+// Re-exports: 保持外部 `from '@zui/store/zcodeSessionStore'` 的导入路径继续工作
+// ────────────────────────────────────────────
+export * from "./zcodeSessionStoreTypes.js";
+export * from "./zcodeSessionStoreSelectors.js";
+// Re-export navigation types used externally:
+export type {
+  TaskNavigationHistory,
+  TaskNavEntry,
+  WorkspaceNavEntry,
+} from "@zui/lib/taskNavigationHistory.js";
+
+// 内存诊断计数器：workspace 桶全仓无删除路径，先落日志。
+uiMemoryDiagnosticsRegistry.register("sessionStore", () => ({
+  workspaces: Object.keys(useZCodeSessionStore.getState().workspaces).length,
+}));

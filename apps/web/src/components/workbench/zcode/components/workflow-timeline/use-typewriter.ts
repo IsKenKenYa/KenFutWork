@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/use-typewriter.ts`（references/zcode/packages/ui/src/components/workflow-timeline/use-typewriter.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 import { useEffect, useRef, useState } from "react";
 
 /**
@@ -77,19 +72,11 @@ function reconcile(
  * 站名每个 delta 都在变长，effect 里的那次 setState 恰好落在投影帧的同步提交里，每帧都给嵌套更新计数
  * 记一笔。
  */
-function shownOf(
-  state: PenState,
-  names: readonly string[],
-  reduced: boolean,
-): readonly number[] {
-  return reduced
-    ? state.shown.map((_, i) => names[i]?.length ?? 0)
-    : state.shown;
+function shownOf(state: PenState, names: readonly string[], reduced: boolean): readonly number[] {
+  return reduced ? state.shown.map((_, i) => names[i]?.length ?? 0) : state.shown;
 }
 
-export function useTypewriter(
-  names: readonly string[] | undefined,
-): TypewriterState {
+export function useTypewriter(names: readonly string[] | undefined): TypewriterState {
   const [state, setState] = useState<PenState>({ shown: [], visible: 0 });
   // 分隔符是 NUL（站名里不会出现），["a b"] 与 ["a", "b"] 才不会撞成同一个键。源码里不能直接写一个
   // 裸 NUL 字节，git 把整个文件当二进制看；改成转义写法，内容不变。
@@ -111,8 +98,7 @@ export function useTypewriter(
     const reduced = prefersReducedMotion();
     const at = pen.visible - 1;
     const target = at >= 0 ? current[at]! : undefined;
-    const written =
-      target === undefined ? 0 : (shownOf(pen, current, reduced)[at] ?? 0);
+    const written = target === undefined ? 0 : (shownOf(pen, current, reduced)[at] ?? 0);
     if (target !== undefined && written < target.length) {
       // 逐字写当前站（reduced-motion 下 written 已经是整站，不会进到这里）。
       const timer = setTimeout(() => {
@@ -124,8 +110,7 @@ export function useTypewriter(
     }
     // 当前站写完了（或还没有站）：**有下一站才揭示**——空草稿什么都不做。
     if (current.length <= pen.visible) return undefined;
-    const reveal = () =>
-      setState({ shown: [...pen.shown, 0], visible: pen.visible + 1 });
+    const reveal = () => setState({ shown: [...pen.shown, 0], visible: pen.visible + 1 });
     if (target === undefined) {
       reveal();
       return undefined;
@@ -137,9 +122,6 @@ export function useTypewriter(
   if (names === undefined) return SILENT;
   const shown = shownOf(state, names, prefersReducedMotion());
   const at = state.visible - 1;
-  const idle =
-    at >= 0 &&
-    state.visible === names.length &&
-    (shown[at] ?? 0) >= names[at]!.length;
+  const idle = at >= 0 && state.visible === names.length && (shown[at] ?? 0) >= names[at]!.length;
   return { idle, shown, visible: state.visible };
 }

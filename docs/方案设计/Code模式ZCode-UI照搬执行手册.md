@@ -1,245 +1,175 @@
-# Code 模式 ZCode UI 照搬执行手册（Agent 施工单）
+# Code 模式 ZCode 全量源码移植执行手册
 
-> **角色：执行手册**。本文是《Code模式ZCode-UI照搬方案.md》（差异分析与决策，下称「方案」）的配套施工单，供执行 Agent 逐阶段照单施工，**不需要重新做差异分析**。
-> 总目标（用户口径）：**完全照搬 ZCode 的 Code 模式 UI，不留自己的实现**；数据侧经适配层接 DeepAgents 事件模型，「一切皆插件」理念不变。
-> 许可证：zcode 为 Apache-2.0（`references/zcode/LICENSE`），照搬文件保留来源注释；NOTICE 登记在方案 §5.5 跟踪。
+> 状态：实施中，2026-10-02 用户确认。此稿替换旧 P0–P8 施工单及其收口结论。
+> 唯一源码基线：ZCode 3.14.3，29628c9acdb81b703bbd4080c207a0e7ce5e276e。
+> Code 全部 UI 直接搬源；Design 保持不变；DSH 仅参考插件机制。旧调试数据不兼容、不转换、不恢复。
 
-## 0. 给执行 Agent 的元说明
+## 1. 移植边界与来源
 
-1. **照单施工，不要重新分析**。方案 §2 的差异表已定案；本手册给出逐文件的 source→target 清单与适配注记。
-2. **每阶段一个 PR**：只搬本阶段清单内的文件，跑通本阶段门禁即收尾，不夹带后续阶段内容。
-3. **禁止改动的区域**：`packages/ui`（Design 模式共用）、`apps/web/src/components/chat/tool-block-view.tsx`（Design 画布助手）、`lib/workbench-tools.ts`（DeepAgents 事件归约层，适配层只读它不改它）、`lib/workbench-surface.ts`（主区不变量）。
-4. **先查已就位清单（§1）再动手**——已就位的文件直接 import，不要重复搬运。
-5. 照搬=**视觉/交互/文案逐字一致**。允许且仅允许两类偏差：① import 路径映射（§2.1）；② 宿主能力适配（§2.2 已列明的适配点）。每一处偏差必须写进文件头的「适配注记」。
+完整复制原 UI 树，保留 App、workspace shell、SessionPane、消息时间线、Markdown、全部工具 renderer、输入器、左右栏、设置和插件市场的真实装配关系。子代理详情复用只读 SessionPane。
 
-## 1. 当前进度快照（已完成，切勿重做）
+来源清单为 `docs/源码来源/ZCode源码清单.json`：源路径、目标路径、源 SHA-256、复制 SHA-256、适配记录。保留原版权及第三方 notices。
 
-### 1.1 已提交（commit `0f6e73d9`，P0.5）
+允许偏差仅限导入映射、构建/类型兼容、公共资源路径、宿主接口、品牌与模式文案、真实能力显隐。禁止手写用户气泡、工具卡、消息装配、子代理目录、动作行、分隔线等仿制组件。
 
-`@zui`（= `apps/web/src/components/workbench/zcode/`，tsconfig paths `@zui/*` → `./src/components/workbench/zcode/*`）下已就位：
+上游 UI 由独立 TypeScript/Vite 工程检查和构建，Next 消费构建产物；宿主 adapter 保持 strict/exactOptionalPropertyTypes。不扩充手写 zcode-shared stub，不搬原 Node 服务实现和 Agent CLI。
 
-- `components/ui/`：30 个视觉原语（button、button-group、card、dialog、alert-dialog、context-menu、dropdown-menu、popover、hover-card、tooltip、select、tabs、accordion、alert、avatar、badge、checkbox、collapsible、input、input-group、kbd、label、progress、scroll-area、scroll-fade-viewport、separator、spinner、switch、textarea、toast、code-viewer(891 行)、flip-metric-value、lightweight-diff-preview、highlighted-lightweight-diff-preview）
-- `components/lib/utils.ts`（cn）
-- `i18n/`：`IntlProvider.tsx`（`useZCodeIntl()`，locale 恒 zh-CN 透传）+ `zh-CN.ts`（zcode zh-CN locale **6722 行整表照搬**——照搬组件里的 `intl.formatMessage({id})` 调用**原样保留**，键已齐）
-- `lib/`：codeCommentContext、codePreviewPreferences、codePreviewSettings（含 `DEFAULT_CODE_PREVIEW_SETTINGS`）、diffsHighlighterEngine、fileDisplay（含 `FileDisplayIcon`/`FOLDER_FILE_ICON_SRC`/`resolveFileDisplayDescriptor`）、fileDisplayHelpers、keyboardShortcuts、memoryDiagnostics、mermaidLanguage、mermaidRenderBudget、patchDiffPreview、path（含 `getPathLeaf`/`getContainingDirectoryPath`）、shikiHighlighter
-- 根级：`logger.ts`（`logger`）、`useTheme.ts`（`Theme`/`ResolvedTheme`/`useTheme`/`resolveTheme`，zai 变体折叠到 light/dark）、`ControlHintTooltip.tsx`
-- `apps/web/src/app/globals.css`：zcode 语义 token 全集 + 动画集（`animated-gradient-text`、`data-zcode-stream-animate` 等）+ `text-ui-*` 字号阶 + 滚动条样式
-- `biome.json`：zcode 目录 override（a11y 三条降为 warn）
-- 依赖已装：`radix-ui`、`@pierre/diffs@1.1.22`（**精确钉版，勿升**，1.5.x API 已变）、`@streamdown/{cjk,code,math,mermaid}`、`@tanstack/react-virtual`、`use-stick-to-bottom`、`lexical`、`@lexical/react`、`shiki`、`motion`、`framer-motion`、`katex`、`next-themes`
+## 2. 宿主与模式隔离
 
-### 1.2 已落盘未提交（本轮地基，P0 收尾 + P1 前置适配层）
+`/workbench` 采用客户端 mode 导航，默认 code。Code 挂完整原界面；Design/Flow 挂保留的原界面。Code 原菜单的 office 入口仅映射为进入 Design，Code store 保持 coding，不激活原 office 功能。
 
-- 依赖新增：`remark-cjk-friendly-gfm-strikethrough`、`@radix-ui/react-use-controllable-state`（pnpm 严格隔离，直接 import 必须是直接依赖）
-- `@zui/lib/zcode-shared.ts`：`@zcode/shared` 最小等价——`EditorInfo`/`FileStat`/`FileMediaPreview`/`OpenInEditorOptions`/`OpenInEditorRemoteTarget`/`RemoteTarget`/`SSHConnectOptions`/`WSLConnectOptions`/`DockerConnectOptions`/`createOpenInEditorRemoteTarget`/artifact 图片三函数（`rewriteMarkdownArtifactImageSources`/`decodeMarkdownArtifactImageSource`/`extractMarkdownArtifactImageRefs`）/`TID_CHAT_REASONING_TRIGGER`/`TID_CHAT_REASONING_CONTENT`
-- `@zui/lib/ai-types.ts`：`UIMessage` stub（只含 `role` 联合——zcode message.tsx 仅消费 `UIMessage["role"]`）
-- `@zui/hooks/usePlatform.tsx`：`PlatformProvider`/`usePlatform`/`useOptionalPlatform`/`useSelectDirectory`/`useConnectRemote` + `ZCodePlatformSlice`（stub：`getInstalledEditors`→`[]`、`openInEditor`/`openInFileManager`→`{success:false}`、`selectDirectory`→`null`、`openExternal`→系统浏览器。UI 据此自动降级隐藏「在编辑器/文件管理器打开」入口，符合「未接通不出现」纪律；Tauri 桌面接通时**只换 stub 实现**，照搬组件零改动）
-- `@zui/hooks/useServices.tsx`：`ServiceProvider`/`useServices`/`useOptionalServices` + `ZCodeServiceSlice`（`fileService.stat` 抛「未接通」——消费方都有 optional 兜底）
-- `@zui/hooks/useFileContextActions.ts`：照搬（复制路径可用；revealInFileManager 随 platform stub 降级）
-- `@zui/hooks/useWorkspaceOpenInEditorTarget.ts`：恒 `{isRemoteWorkspace:false, remoteTarget:undefined}`（我们无远程工作区）
-- `@zui/store/StoreProvider.tsx`：`useZCodeStoreWithDefault` 恒回 `defaultValue`（theme/codePreviewSettings 由调用方 props 注入，不经 store）；`useZCodeStore` 保留同签名抛错口径
-- `@zui/embeddedBrowserHelpers.ts`：`resolveMessageLinkOpenTarget`（本机/私网启发式）+ `MessageLinkOpenTarget` + `DEFAULT_BROWSER_URL`（webview guest 生命周期等 Electron 专属逻辑**不搬**）
-- `@zui/workspace-file-tree/model.ts`：`getWorkspaceFileRelativePath`/`areWorkspaceFilePathsEqual`/`isWorkspaceFilePathInside`；`helpers.ts`：`sortInstalledEditorsForFileTree`/`isFileManagerOpenTarget`
+隔离 Code CSS、主题/字号 DOM 目标与 portal 容器。Store 初始化也不得修改 Design 的 document theme。ZCode 云账户/套餐移除；远程、CUA、定时任务等按真实插件能力隐藏。
 
-### 1.3 待替换的旧实现（9-28/29 骨架级参照，P1/P2 接线时删除）
+真实 store、services、transport、projection 必须接通。禁止以恒空租约、恒空列表、无效回调或抛“未接通”的必需服务宣称接入完成。
 
-| 旧文件 | 消费点 | 删除时机 |
-| --- | --- | --- |
-| `zcode/message-response.tsx`（102 行） | `workbench.tsx:92,321` | P1 接线 |
-| `zcode/reasoning.tsx`（110 行） | `workbench.tsx:93,331` | P1 接线 |
-| `zcode/tool-renderers.tsx`（445 行，导出 `resolveToolRenderer`/`AgentPromptSection`/`AgentActivitySection`） | `workbench.tsx:94,378`；`subagent-directory-view.tsx:8` | P2 接线 |
-| `zcode/tool-layout.tsx`（372 行） | 仅被 tool-renderers.tsx 引用 | P2 接线 |
+## 3. 后端及公开契约
 
-## 2. 照搬规则总纲
+保留 DeepAgents，新增 codeUi 插件的 Definition/Provider/Consumer，服务 key 登记《改造计划》§4.2。禁止在 app.ts/worker.ts 手工堆装配。
 
-### 2.1 import 路径映射表（机械执行）
+原 V4 ConversationTransport、SessionDataLayer、rows/snapshot/command/frame 为 UI 契约。首屏初始化原 workspace tab/draft 与模型 view；V4 subscribe 返回 ACK-only，snapshot 经所属 frame 通知发送。
 
-| zcode 源 import | 照搬后 |
-| --- | --- |
-| `@/X.js`（`@/` = zcode `packages/ui/src/`） | `@zui/X.js` |
-| `../ui/X.js`（ai-elements 内的相对引用） | `@zui/components/ui/X.js` |
-| `../lib/utils.js`（= zcode `components/lib/utils`） | `@zui/components/lib/utils.js` |
-| `@zcode/shared` | `@zui/lib/zcode-shared.js`（符号已在 §1.2 就位；**缺新符号时先补进 zcode-shared.ts 再引用**，禁止直接 import `@zcode/shared`） |
-| `ai`（仅 `UIMessage` 类型） | `@zui/lib/ai-types.js` |
-| `@zcode/services` / `@zcode/rpc` / `@zcode/provider` | **禁止出现**。platform 能力走 `@zui/hooks/usePlatform.js`，RPC 服务走 `@zui/hooks/useServices.js` |
-| `radix-ui` | 保持（zcode 源就用聚合包） |
-| `@radix-ui/react-use-controllable-state` | 保持（已装直接依赖） |
-| 其余 npm 包（react/lucide-react/streamdown/@streamdown/*/shiki/unified/remark-cjk-friendly-gfm-strikethrough/@pierre/diffs/motion/next-themes/class-variance-authority/clsx/tailwind-merge） | 保持 |
+根 session 对应 Task；运行绑定 Project 的固定工作目录。每次子派发建立稳定 childSessionId，按 parentToolCallId 关联，禁用名字/派发顺序兜底。主/子正文、思考、工具和终态独立持久化。
 
-### 2.2 宿主能力适配点（全方案仅此几处，其余逐字照搬）
+工具结果保留完整文本、结构化 output/display、真实 diff、实时输出预览及 success/error/cancelled。长输出按引用读取，不能整段丢弃。事件/命令有稳定身份、单调序号、幂等重放、终态保护与删除墓碑。
 
-1. **链接打开**（message.tsx）：`resolveMessageLinkOpenTarget` 返回 `"app-browser"` 时，调用我方 `@/lib/browser-panel` 的 `canOpenInBrowserPanel()`/`requestBrowserOpen(url)`（已有，旧 message-response.tsx 的 onClick 口径即参照）；`"external-browser"` 时走 `platform.openExternal`（stub=系统浏览器）。保留 zcode 组件结构，只替换「打开 app 内浏览器」的实现体。
-2. **文件链接打开**（message.tsx 的 `onOpenFileLink`/`onOpenCodeViewer` props）：由调用方（workbench 装配处）注入；P1 阶段 workbench 侧先传 `undefined`（zcode 组件内部有可选兜底），**接通 code viewer 侧栏属 P4 接线项**。
-3. **theme / codePreviewSettings**：workbench 装配处经 `@zui/useTheme.js` 取 theme、以 `DEFAULT_CODE_PREVIEW_SETTINGS` 默认值注入 props（zcode MessageResponse 已支持 props 注入，勿动组件内实现）。
-4. **未接通能力**（编辑器枚举、文件管理器、fileService、远程工作区）：一律经 §1.2 stub 降级，照搬文件**禁止**自行新增宿主调用。
+必须接通发送/停止、排队、编辑/分叉、文件查看/回退、终端、子代理独立停止、权限请求-应答-恢复及结构化提问。新 Schema 仅新增前向 SQL 迁移；治理值沿用 shared 的单一配置来源；BYOK key 只写不读。
 
-### 2.3 文件头注释模板（每个照搬文件必带）
+## 4. TDD 与完整验收
 
-```ts
-/**
- * zcode 照搬：`<原 zcode import 路径>`（references/zcode/packages/ui/src/<相对路径>）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：<与源文件的每一处偏差，逐条列；无偏差写「逐字照搬，仅 import 路径映射（手册 §2.1）」>
- */
-"use client";  // 源文件有则保留，首行顺序：注释 → "use client" → imports
-```
+用户已确认四个测试接口：Agent 公共运行事件；Code 宿主快照/订阅/命令/文件服务；原组件真实用户操作；Design 画布与助手不变量。
 
-### 2.4 TS / lint 陷阱（已踩过，勿重蹈）
+逐条 red→green，覆盖并发同类型子代理、父派发收尾、失败/取消、关闭侧栏后继续运行、刷新/断线、重复与迟到事件、删除后迟到请求、空/Unicode/超长输出和真实 diff。
 
-1. **`exactOptionalPropertyTypes: true`**（本仓 tsconfig.base）：可选属性不能显式赋 `undefined`；对象字面量里写 `prop: maybeUndefined` 直接报错。修法：`...(v !== undefined ? { v } : {})` 条件展开；若联合类型上展开推断不稳，显式构造（先例：`zcode-shared.ts` wsl 分支、`useFileContextActions.ts` workspaceIdentity）。
-2. **ESM `.js` 后缀**：`@zui/**` 与相对导入一律带 `.js` 后缀（含 `.tsx` 源文件，写 `.js`）。
-3. **死导入清理**：源文件 import 但未使用的符号删除并记进适配注记（已确认案例：zcode `message.tsx:92` 的 `useZCodeStore` 是死导入）。
-4. **biome**：两空格缩进、双引号、分号；收尾跑 `pnpm exec biome check --write apps/web/src/components/workbench/zcode`（仅本目录，勿全仓 `--write`）。
-5. **`data-testid`**：zcode 用 `TID_*` 常量（已在 zcode-shared.ts 就位），不要内联字面量。
-6. **导出保真**：所有 export 名称/签名与源文件逐字一致——后续阶段与其他文件按原名 import。
+真实模型冒烟使用本机公共模型目录所列 glm-4.5-air；不读取或输出 API key。确定性回归在外部模型边界使用替身。
 
-### 2.5 每阶段验收门禁（PR 收尾前必跑，顺序执行）
+在相同浏览器/视口/字体/语言/主题中，与同一 ZCode 提交使用相同数据逐场景截图及交互对照。源码来源、视觉/交互、真实后端、旧 Code 清零、Design 回归全部满足后才算完成。
 
-```bash
-# 1. 类型（web 包）
-pnpm --filter @kenfutwork/web typecheck
-# 2. web 包测试
-pnpm --filter @kenfutwork/web test
-# 3. 照搬目录 lint/格式
-pnpm exec biome check apps/web/src/components/workbench/zcode
-# 4. 全仓门禁（workspace 棘轮 + 文档门禁 + 全包测试；禁止与其他测试实例并行）
-pnpm test
-```
+## 5. 实施顺序与交付
 
-## 3. P1 施工单：markdown 全量照搬
+1. 已确认技能配置、更新方案/手册、来源清单与测试场景。
+2. 子派发→原 Agent 行→目录→子 SessionPane 的首个完整切片，再逐条接通工具和运行交互。
+3. 完整工作台、设置、右栏与真实宿主服务。
+4. 删除所有旧 Code 分支、组件、展示归约、空 stub、旧测试及无用引用；共享 Design 实现保留，不设旧界面回退开关。
+5. 顺序执行 pnpm test、pnpm typecheck、pnpm lint、pnpm build、pnpm api:spec；同步 HTTP/WS 文档。HTTP 契约变化按既有规则导入 Apifox AI 分支，合并由用户确认。
 
-**目标产物**：`@zui/components/ai-elements/` 完整 markdown 渲染栈 + 其 lib 依赖；接线替换 workbench 两处 import；删除旧 `message-response.tsx`/`reasoning.tsx`。
+交付一个完整替换 PR，按可验证切片提交；每次提交遵守显式路径暂存与门禁规则，日志同步记录实际证据及未完成项。
 
-### 3.1 文件清单（source → target；行数为源文件规模，供工作量预估）
+## 6. 实时实施记录（2026-10-03）
 
-| # | 源（`references/zcode/packages/ui/src/`） | 行数 | 目标（`@zui/`） | 适配注记 |
-| --- | --- | --- | --- | --- |
-| 1 | `lib/markdownFileLink.ts` | 316 | `lib/markdownFileLink.ts` | 纯函数；仅路径映射 |
-| 2 | `lib/assistantPathQuotes.ts` | 73 | 同名 | 纯函数 |
-| 3 | `lib/windowsFileLinkEscapeRemarkPlugin.ts` | 95 | 同名 | remark 插件 |
-| 4 | `lib/zcodeFileCitation.ts` | 154 | 同名 | 纯函数 |
-| 5 | `lib/zcodeFileCitationRemarkPlugin.ts` | 79 | 同名 | remark 插件，依赖 #4 |
-| 6 | `lib/editorPreference.ts` | 36 | 同名 | localStorage 读写，照搬 |
-| 7 | `lib/openWithEditors.ts` | 18 | 同名 | 纯函数（与 `workspace-file-tree/helpers.ts` 已就位的排序同实现，**保留同名导出**勿合并） |
-| 8 | `lib/workspaceEditorSelection.ts` | 89 | 同名 | 纯函数，依赖 #7 |
-| 9 | `lib/codeViewer.ts` | 602 | 同名 | 类型 + 语言/媒体类型推断纯函数。注意 `export { buildUnifiedDiff } from "@/lib/toolDiffPreview.js"`——**`lib/toolDiffPreview.ts` 一并搬运**（属 P2 共用件，先搬不接线） |
-| 10 | `mentions/components/scrollMask.ts` | 62 | `mentions/components/scrollMask.ts` | 纯函数（滚动渐隐 mask） |
-| 11 | `components/ai-elements/streamdown-controls.ts` | 7 | 同路径 | 常量表 |
-| 12 | `components/ai-elements/code-block.tsx` | 550 | 同路径 | 自研代码块（语言标签/复制/换行钮；流式关高亮）；依赖 shikiHighlighter（已就位） |
-| 13 | `components/ai-elements/markdown-blockquote.tsx` | 22 | 同路径 | |
-| 14 | `components/ai-elements/markdown-list.tsx` | 64 | 同路径 | |
-| 15 | `components/ai-elements/markdown-table.tsx` | 1420 | 同路径 | 大文件；消费 code-viewer、store stub、toast（均已就位） |
-| 16 | `components/ai-elements/markdown-image.tsx` | 391 | 同路径 | `services.fileService` 媒体预览在 stub 下自动降级为外链图 |
-| 17 | `components/ai-elements/mermaid-block.tsx` | 328 | 同路径 | mermaidLanguage/mermaidRenderBudget 已就位 |
-| 18 | `components/ai-elements/image-thumbnail-gallery.tsx` | 31 | 同路径 | |
-| 19 | `components/ai-elements/image-preview-dialog.tsx` | 564 | 同路径 | |
-| 20 | `components/ai-elements/diagram-preview-dialog.tsx` | 702 | 同路径 | mermaid 大图预览 |
-| 21 | `ToolCallBlocks/QueuedSummaryContent.tsx` | 254 | `ToolCallBlocks/QueuedSummaryContent.tsx` | reasoning.tsx 的依赖；只依赖 react+motion，属 P2 共用件先搬 |
-| 22 | `components/ai-elements/message.tsx` | 1670 | 同路径 | 核心。**死导入 `useZCodeStore` 删除**；链接打开走 §2.2-1 适配；platform/services/store hooks 全部已就位（§1.2） |
-| 23 | `components/ai-elements/reasoning.tsx` | 577 | 同路径 | `useControllableState`（依赖已装）；QueuedSummaryContent（#21）；TID 常量在 zcode-shared |
+- 分支：`codex/完整移植ZCode-Code界面`，目标 active。已按独立切片提交：`613ed706` 产物忽略、`dae8ee1b` 技能配置、`fca5bab9` 原契约依赖、`5c9dd46b` 运行事实、`1574d031` V4 会话宿主。另已提交 `07d8657d` 完整原 UI 恢复检查点、`65d1097e` 认证/模式接口。尚未推送、未创建 PR。
+- 来源核对 3051 条、零漂移。完整原 UI、资源、契约源码及模型规则已随检查点入库。原版权/notices 保留，独立 vendor 检查与 strict/exactOptional 宿主检查通过。
+- 原 UI 整树和真实 host/main 已存在，独立 Vite 文档构建通过。使用原 RemoteServiceAccess/ProxyChannel、providers/store、RootWorkspaceContent/App/SessionPane；Code CSS/portal/主题在独立文档内。原 diff worker 构建副作用设置与 PDF CMap 插件已补齐，产物含非空 worker 和 168 个 CMap。
+- 原输入器已实际发送 GLM 4.5 Air 请求；真实子代理派发后，原 Agent 行打开右侧只读子 SessionPane，独立 Markdown/工具转录可读，原文件 chip 呈现。真实文本、幂等、主区刷新恢复已验证。完整 source-vs-host 视觉/交互对照尚未进行。
+- codeUi 插件持有真实 Task/Project 主画布绑定、固定工作目录、命令去重与事务 ACK、原快照/行、owned SSE 订阅、恢复、Task 索引、安全模型 view 与文本文件读取。原 subscribe 服务入参为 sessionId，返回 ACK-only；不传项目 UUID 作 workspaceIdentity。
+- 事件日志与主/子快照同事务持久化。已覆盖正文/思考、成功/失败/取消、重复派发、主/子分流、前台子终态、恢复与迟到保护。真实参数在事件日志保留，UI 文件工具路径适配为实际项目路径。
+- SQL `20261002133704_code_ui_projection.sql` 已执行且不可修改。前轮历史 SHA、71 条迁移临时库重放及二次 0 条验证通过。
+- 最近检查：server 1478 测试通过，shared 80 测试通过，原事件窄回归 38、会话/model view 范围另通过；server/shared、vendor/host 类型检查通过；四项公开接口 integration（含 GLM 真实文本）通过；暂存独立快照 workspace/API 文档门禁和 frozen-lockfile 通过。不能将范围检查称为最终全仓完成。
 
-### 3.2 P1 接线（workbench.tsx，逐 hunk 复核）
+### 所有权与下一步
 
-1. `workbench.tsx:92` `import { MessageResponse } from "@/components/workbench/zcode/message-response"` → `from "@zui/components/ai-elements/message.js"`。**props 形状变化**：zcode `MessageResponseProps` 用 **`children` 传 markdown**（不是 `text`），另有 `streaming`/`theme`/`codePreviewSettings`/`workspacePath`/`onOpenCodeViewer`/`onOpenFileLink`/`onOpenExternalUrl`（全可选）。调用点（:321）改为 `<MessageResponse streaming={…} theme={…} codePreviewSettings={DEFAULT_CODE_PREVIEW_SETTINGS}>{group.text}</MessageResponse>`；theme 经 `@zui/useTheme.js` 的 `useTheme()` 取。
-2. `workbench.tsx:93` `Reasoning` → `from "@zui/components/ai-elements/reasoning.js"`。props 变化：`text`→**`children`**；`streaming`→**`isStreaming`**；`durationSeconds`→**`duration`**；可选 `autoCollapseKey`（传消息 id 即可，流完自动收起）。调用点 :331 同步改写。
-3. 删除 `zcode/message-response.tsx`、`zcode/reasoning.tsx`；全仓 grep 确认零引用。
-4. **回归测试**：`apps/web/test/` 下若存在引用旧文件路径的测试一并改接；为 `MessageResponse`/`Reasoning` 各补一个渲染冒烟测试（流式/静态两态），放 `apps/web/test/zcode-message.test.tsx`。
+用户安排其他 Agent 接续后端（主要 Agent 运行时）。本 Agent 聚焦前端原件接线、宿主适配、模式隔离、Code 旧实现清零及视觉/Design 回归，不再并行改 Agent 核心。后端现有改动已经提交，后续按明确接口集成。
 
-### 3.3 P1 建议分工（可多 Agent 并行，目标路径互不重叠）
+1. `/workbench` 已默认挂原 Code 文档，Design/Flow 独立客户端导航；旧 Code 自有装配、本地转录、归约、右栏及其测试共 53 个文件已退役。Design 侧栏/画布和共享设置保留，原共享输入叶子单独编译；web 368 测试和类型检查通过。继续原版视觉、长会话与服务集成回归。
+2. 宿主仍未接全部命令：停止、队列、编辑/分叉、权限/结构化提问恢复、文件回退、终端等必须由真实能力实现。availability 目前仍有待纠正的预设 true；不能把未实现能力宣称可用。
+3. 后端需继续：官方 LangGraph interrupt/Command.resume、waiting/checkpoint 恢复、Code PG fail loud、GraphInterrupt 穿透、精确 child 停止与后台终态；Code 不依赖名称/顺序兜底。
+4. 设置写入/原市场与插件服务、模型选项执行、Gemini 适配、真实 before/after diff 与完整长输出引用仍未完成。BYOK 表单保持原件，成功保存后只清对应未继续编辑的 key 草稿，服务端不回传 key。
+5. Code store 恒为 coding；原 office 菜单仅导航 Design。Footer 云登录/账户/套餐及购买查询已按真实平台能力隐藏；模型设置预置云账户/套餐导航与无模型套餐提示也已从原组件装配按 supportsCloudAccounts 隐藏，停止云凭据/权益查询，原 BYOK 配置/刷新保留。自动化/浏览器控制等不可用入口仍待真实能力显隐，不能认定全局显隐完成。
+6. 原版同场景截图/交互、GLM 工具链锁定回归、旧 Code 清零、Design 回归、完整 pnpm test/typecheck/lint/build/API spec 与 Apifox AI 分支仍必须完成，之后一个完整 PR。
 
-- **Agent-A（lib 批）**：#1-#10（纯函数库，约 1800 行）
-- **Agent-B（叶子组件批）**：#11-#21（约 3400 行）
-- **Agent-C（核心编排批）**：#22-#23（约 2500 行；import 按本手册路径表写，B 的产物路径已固定，无需等 B 完成）
+### 供应商设置宿主的已核实前置契约
 
-## 4. P2 施工单：工具调用全量照搬
+原 `IProviderSettingsService` 方法面必须完整接入，不能用现有执行模型目录代替设置候选。固定版本的原 `ProviderSettingsFacade` 在 `packages/provider/src/facades.ts`，草稿写入语义在 `config-service.ts`：
 
-### 4.1 骨架文件（全搬）
+- `createPersonalProvider` 立即持久化无凭证/无模型草稿并返回 `{providerId,view}`；未完整配置仍显示在 Settings，执行 Registry 只收完整可执行项。
+- 保存稀疏 provider overlay，保留未编辑叶子；omit Key 保留旧凭证，新 Key 加密替换，明确 clear 移除凭证。所有读面、通知和 mutation response 剥离 Key 与 headers 值，返回真实 presence；禁止伪 Key/星号占位。
+- 模型 add/rename/delete/reorder/enabled 和 `savePersonalModelDraft` 更新成员、顺序、精确配置必须原子化；`basedOnRevision` 作冲突检测。删除后迟到保存必须拒绝而不重建。
+- Settings View 的 revision 是整个 workspace Registry 的单调修订，持久 mutation 成功后推进，commit 后广播相同 View；没有配置变化的 refresh 不增修订。禁止 Date.now、数组长度、各实例 revision 求和。
+- 原 Key 表单依赖旧明文作脏比较，宿主不回读后必须在原组件增加最小 presence/明确 clear 接线；不重新手写供应商 UI。
 
-| 源 | 行数 | 目标 |
-| --- | --- | --- |
-| `ToolCallBlocks.tsx` | 393 | 同名 |
-| `ToolCallBlocks/ToolLayout.tsx` | 363 | 同名 |
-| `ToolCallBlocks/ToolSummaryRow.tsx` | 235 | 同名 |
-| `ToolCallBlocks/ToolCallBody.tsx` | 204 | 同名 |
-| `ToolCallBlocks/shared.tsx` | 17 | 同名 |
-| `ToolCallBlocks/ToolSnapshotFieldNotice.tsx` | 80 | 同名 |
-| `ToolCallBlocks/fileSummaries.ts` | 231 | 同名 |
-| `ToolCallBlocks/fileSummaryTypes.ts` | 317 | 同名 |
-| `ToolCallBlocks/renderers.tsx` | 175 | 同名（注册表；按 4.2 裁剪 case） |
-| `lib/toolCallTree.ts` | 6 | 同名 |
-| `lib/taskChatMessageTypes.ts` | 100 | 同名 |
-| `lib/toolDiffPreview.ts` | — | 同名（P1 #9 若已搬则跳过） |
+KenFutWork `modelProviders` 持有身份、workspace 隔离、加密和真实实例库，扩此聚合承接上述语义。草稿切片已新增前向迁移 `20261002210045_provider_draft_registry.sql`：凭证允许真实 NULL，读面 hasCredential 反映实际配置；workspace 修订随配置写入同事务推进，探测缓存及同值写入不推进。原宿主已接无 Key/无模型的创建、读取、刷新和删除。既有 HTTP create/update 仍要求完整实例；完整原 overlay、模型原子操作/CAS、顺序、通知和凭证 clear 继续实施，不另建明文 ZCode 配置文件或第二套模型真相。原 `providerFacades` 的原样 serializer 会含 Key，不能直接跨网络返回。
 
-### 4.2 renderer 选择性照搬（对齐我方 DeepAgents 工具集）
+草稿公开 RPC red（未实现时 501）→green 已在独占临时数据库验证，含创建/删除 revision +1、读取/刷新不增修订、不可执行和凭证不回读。72 条迁移空库重放、历史 SHA、二次 no-op 和实际可空字段检查通过；server 1478 回归、server 类型检查与 25 项 workspace/API 门禁通过。该切片只证明空草稿链路。
 
-**必搬**（13+5 个配套）：`edit.tsx`(480)+`EditInlineDiffContent.tsx`(85)、`execute.tsx`(380)+`ExecuteOutput.tsx`(50)+`execute-group.tsx`(140)、`read.tsx`(316)、`search.tsx`(134)、`todo.tsx`(154)、`ask-question.tsx`(92)、`agent.tsx`(413)+`agentPromptSection.tsx`(51)、`explore.tsx`(490)、`fallback.tsx`(112)、`skill.tsx`(224)、`task-stop.tsx`(215)、`changes-group.tsx`(319)
+后续快照/通知切片已将完整实例配置与 workspace revision 合为单一 MVCC 查询；模型目录只补该快照的元信息，不二次查询实例。原 Settings 保留停用供应商与模型，Selection 按实际启用与凭证资格过滤。create/delete 提交后向 owned SSE 广播原两服务的 `onDidChange`，数据与 mutation response 同源。两条新增公开宿主测试分别从缺失通知、误把停用模型标为可执行的 red 到 green；包含同值保存不推进修订。其他保存入口的事件、全量 overlay/CAS 与原表单仍继续实施。
 
-**不搬**（zcode 专有 CUA/工作流/cron 等，我方无对应工具；渲染注册表相应 case 删除）：`cua*.tsx`、`*workflow*.tsx`、`cron-create.tsx`、`offpeak-create.tsx`、`list-models.tsx`、`node-repl*.tsx`、`nodeReplImageGrid.tsx`、`read-session-context.tsx`、`send-message.tsx`、`submit-result.tsx`、`goal.tsx`、`escalate.tsx`、`respond-to-coordinator.tsx`、`switch-mode.tsx`、`task-output.tsx`、`plan-guidance.tsx`、`resolve-workflow-question.tsx`
+Provider 保存切片已接 `savePersonalProviderOverlay`，复用原 ProviderConfig parser/overlay，保留 API 格式、品牌、Key 管理地址及未编辑字段。前向 `20261002215830_provider_code_settings.sql` 只保存非敏感扩展叶子，DB 约束禁止 Key、headers、endpoint、模型成员在扩展列复制，原规范列仍唯一属主。显式 Key/null 清除与 headers/null 清除、真实 credentialConfigured、提交后原通知和删除后迟到保存 404 已通过公开接口；原 Key 组件 presence/明确 clear 与模型完整操作/CAS、模板基线仍继续。73 条空库重放、历史 SHA、二次 no-op 和实际 schema 约束检查通过，迁移执行后不可修改。
 
-### 4.3 数据适配层（新写，非照搬）
+原 Key 控件的宿主接线已完成：原 Input/Button、卡片/投影/稀疏保存链保留，增加可选 credentialConfigured 与原按钮的明确 clear；不返回旧 Key、不用假星号。按 Key 草稿修订和 providerId 只清成功提交且未继续编辑的字段，失败、重试、迟到应答不覆盖新草稿。原模型/Provider/View 类型从 packages/shared 直接导出；9 处允许偏差逐项登记，3051 来源校验零漂移。原组件操作 red→green 及三项回归、全量 pnpm test/typecheck、原 UI 构建通过。隔离真实数据库的完整原页面验证创建→保存→空输入/真实 presence→clear→刷新；截图见 `docs/验收/Code模式ZCode/原供应商只写凭证.jpg` 与 `原供应商凭证清除.jpg`，仅使用无外部效力的测试文本，未验证模型执行。模型原子操作/CAS、模板基线与全局能力显隐继续实施。
 
-- 参照 `references/zcode/packages/ui/src/v4/toolCallRowAdapter.ts`（130 行）的 **status 映射表**与 `lib/taskChatMessageTypes.ts` 的 `TaskChatToolCallTreeNode` 形状，新写 `apps/web/src/lib/zcode-adapter.ts`：把我方 `TaskToolEntry`（`apps/web/src/lib/workbench-tools.ts`，**只读不改**）投影为 `TaskChatToolCallTreeNode`。附单测 `apps/web/test/zcode-adapter.test.ts`（覆盖：running→in_progress 等全状态映射、子代理树嵌套、diff 计数透传）。
+完整模型设置/错误横幅的云能力显隐：沿原 ModelProviderSection、导航/权益 Hook、套餐入口和 ChatErrorBanner 判断宿主能力，未提供云账户时不展示预置账户/套餐、不查询凭据/权益、不显示“正在查询套餐”，保留原自定义供应商及配置操作。没有声明能力的原宿主仍保留原套餐入口语义。两项原组件操作 red→green，Web 374 回归/类型与原 UI 构建通过；真实完整页面截图 `docs/验收/Code模式ZCode/原设置云入口隐藏.jpg`。此证据不覆盖自动化/CUA/远程等能力。
 
-### 4.4 P2 接线
+原模型解析/添加宿主切片已接 resolveModelConfig/addPersonalModel。原推荐 JSON 内容不变，移到 modelProviders 域；原 ModelConfigRules 负责精确/手动合成。配置与模式标记保存于实际 models 成员，不另存一套 UI 模型；运行侧容量由同一规则推导。公开接口覆盖原通配推荐 200000/32000、个人覆盖 256000/8192、Unicode ID、刷新恢复、并发成员不丢失、同键一次成功/409、删除后迟到添加 404。六项供应商/模型 integration、server 1478 回归/类型、25 门禁、3051 来源校验通过。此切片未证明原模型保存/CAS、启停/改名/排序/删除、指定模型测试或真实模型执行完成。
 
-1. `workbench.tsx:94,378` `resolveToolRenderer` → ToolCallBlocks 渲染路径（`<ToolCallBlocks nodes={…} />` 或按 zcode 调用形态；以照搬组件的实际导出签名为准）。
-2. `subagent-directory-view.tsx:8` 的 `AgentPromptSection`/`AgentActivitySection` 改从 `@zui/ToolCallBlocks/renderers/agent.js` 导入（若 zcode agent.tsx 导出名不同，以照搬件为准并同步改调用处）。
-3. 删除 `zcode/tool-layout.tsx`、`zcode/tool-renderers.tsx`；grep 确认零引用。
-4. `workbench-tools.test.ts` **不动**（归约层不变）；新增 adapter 单测。
+只读审计基线仍为 `29628c9acdb81b703bbd4080c207a0e7ce5e276e`。上述缺口说明当前模型读取冒烟不证明原设置写入完成；服务接线验收必须覆盖空草稿→模型配置→写 Key→真实 executable、清 Key、删除最后模型、并发/CAS、通知和刷新恢复。
 
-## 5. P3 施工单：子代理（agent renderer 已含 P2，本阶段为体验补全）
+原模型草稿保存/CAS 切片已接 `savePersonalModelDraft`：改名、精确规则和成员位置同事务写入，保留兄弟模型；所有 HTTP/原宿主配置写入口统一先锁 workspace revision，再修改实例。公开宿主从 501 red→green，验证原成员改名与 260000/9000 配置、同修订重放/并发、跨供应商过期修订及目标重名均不部分写入。七项原供应商/模型 integration、server 158 文件/1478 回归与类型检查、25 workspace/API 门禁通过。恢复智能规则的空配置语义、独立成员操作与指定模型测试仍未完成，不能认定模型设置完整。
 
-1. **live ticker**：zcode 父对话子代理单行摘要在运行中滚动显示子代理最新动作——照 `ToolCallBlocks/renderers/agent.tsx` 内实现接线（数据源：我方 `SubagentEntry` 的最新工具行，`lib/subagent-directory.ts`）。
-2. **agent 名 hash 着色**：照 zcode 配色函数（在 agent.tsx / agentPromptSection.tsx 内）逐字搬。
-3. **侧栏目录面板**：`subagent-directory-view.tsx` 的 running/ended 分组 + 状态图标映射对齐 zcode 的 SessionPane 子代理视图样式（施工时先在 zcode 源定位侧栏组件：`WorkspaceSidebar`/Session 相关，按其视觉规格改 subagent-directory-view）。
-4. 回归：`apps/web/test/subagent-directory.test.ts` 保持绿并按新交互补用例。
+恢复智能规则已补齐：仅导出原 `isStructurallyEmpty` 供宿主复用，原函数不变，偏差登记来源清单；recommended + 结构空配置不持有个人精确规则，Code 模型身份仍保留，继续从原推荐推导容量。同值重存不增修订，手动空配置仍按原 schema 拒绝。公开接口 red→green 与八项供应商/模型 integration、server 1478 回归、全量 typecheck 通过；原完整模型弹窗实际完成添加 260K→重置表单→保存 200K→刷新，截图 `docs/验收/Code模式ZCode/原模型推荐恢复.png`。此证据不代表启停/删除等剩余模型操作和真实外部模型执行完成。
 
-## 6. P4 施工单：用户消息行 / 时间线 marker / 操作行
+### 验收进程与文件审计
 
-施工时先在 zcode 源定位（关键词：`UserInputRow`、`MarkerDivider`、`AssistantTextActions`，可能在 `v4/` 或会话行组件内）：
+- 本任务临时 API 3301、生产静态 preview 3300；只连接现存开发 PG，不管理其生命周期。开发主服务监听源码变化时可能停/起 PG 并换端口；临时回环转发 3332 跟随当前 PG 端口。临时脚本位于 `/tmp/ken-code-api.mts` 与 `/tmp/ken-code-db-proxy.mjs`，不入库；先检查实时监听再使用，PID/exec handle 不作为长期事实。
+- 公开接口命令：`RUN_CODE_UI_INTEGRATION=1 RUN_CODE_UI_MODEL_SMOKE=1 CODE_UI_TEST_BASE=http://127.0.0.1:3301 CODE_UI_TEST_ORIGIN=http://localhost:3300 pnpm --filter @kenfutwork/server exec vitest run src/features/code-ui/host.integration.test.ts`。测试临时建项目/目录并归档清理。
+- 前端浏览器验收目录 `/tmp/ken-code-ui-browser-6T6wxE`（临时项目 id `f6387289-4da8-44c2-ac94-96aea078984a`）尚保留供后续交互，需要结束时清理；不恢复或迁移其他旧调试数据。
+- 本轮审计发现 121 个 `apps/server/data/checkpoints/` 影子 Git 运行文件并补忽略；约 3109 个新增/修改源文件与必要资源应入库。dist/types/host/design 编译产物、node_modules、public/code-ui 静态产物、.env.local 已被忽略，凭据模式扫描 0 匹配。不能忽略原源码、图标、许可证、契约、来源清单或前向迁移来减少文件数。
 
-1. **用户消息行**：`rounded-xl rounded-tr-xs border bg-surface` + 容器查询限宽 + hover 复制/编辑操作行。替换 workbench.tsx 内联的用户气泡 JSX。
-2. **MarkerDividerRow**：替换 workbench.tsx :340-366 的内联 notification 分隔线（现状已是近似仿制，换 zcode 原件）。
-3. **ConversationAssistantTextActions**：助手正文 hover 操作行（复制/重试入口）。
-4. workbench.tsx 消息渲染段（:300-395）内联 JSX 收敛进对应照搬组件。
+原模型启停已接 setPersonalModelEnabled，事务内只叠加最新 enabled，保留手动/智能模式与全部精确叶子；停用成员仍在 Settings，移出 Selection，同值保存不增修订，未知成员 404，非法布尔 400。公开接口 501 red→green 与九项真实 integration、server 1478 回归/类型通过；原开关实际停用并刷新仍未选中，截图 `docs/验收/Code模式ZCode/原模型停用.png`。改名/排序/删除、连通性与其它设置仍继续。
 
-## 7. P5 施工单：composer（全方案最重，独立 PR）
+原模型删除已接 deletePersonalModel：同事务删除成员与精确规则，保留兄弟模型；并发删不同成员不丢失，刷新不复活，迟到的保存/启用及重复删除返回 404，非法空 ID 400。十项真实宿主 integration、server 1478 回归/类型通过；原删除按钮实际删除最后成员且刷新仍为空，截图 `docs/验收/Code模式ZCode/原模型删除.png`。临时 API 重启后原 SSE 连接关闭仍需手动重载，此缺口尚未修复，不能计为断线自动恢复通过。
 
-| 源 | 规模 | 目标 |
-| --- | --- | --- |
-| `LexicalChatInput.tsx` | 1531 行 | 同名 |
-| `prompt-editor/` 目录（ChatPromptEditor 壳等） | 施工时盘点 | 同路径 |
-| `chat-input-toolbar/` 目录 | 施工时盘点 | 同路径 |
-| `mentions/` 目录（mention 插件 + scrollMask 已在 P1 #10） | 施工时盘点 | 同路径 |
-| `SlashCommandPlugin.tsx` + `slashCommandHelpers.ts` + `slashCommandPanelSections.tsx` | — | 同名 |
+通知恢复前置策略已接：新增前向 20261003035733_code_ui_reconnect_setting.sql，workspace_settings 库值优先于 env/default，原 hello 不改，宿主 ready 单独提供 reconnectDelayMs。公开宿主测试覆盖真实持久化、刷新、ready 读面与非法范围拒绝；74 条独占空库重放、历史 SHA、二次 no-op 和实际 schema 约束通过，迁移执行后不可修改。
 
-适配决策（方案 §3 已拍板）：mention 数据源接我方服务端文件搜索 API（无则先接工作目录文件列表）；slash 命令接现有 `slash-commands`。替换 workbench.tsx 两处内联 composer（textarea + CompactSelect 簇），视觉壳 = zcode `rounded-2xl`（focus-within/拖拽态换边色）+ 发送/停止状态机 + 附件卡。
-**可选项**：若 PR 过大，拆 P5a（视觉壳 + Lexical 纯文本输入 + 发送/停止状态机）/ P5b（mention+slash 数据源接线）两个 PR——拆分时须保证 P5a 单独可用（mention/slash 入口隐藏，不摆空壳）。
+API 单源链已生成 SSE 媒体类型与完整原快照引用组件；不裁剪原契约。Apifox 批量导入曾因内联原快照过长失败，改为原 snapshot/row/toolCall 实例的复用引用后，同一 AI 分支 ai/20261003-from-main-code-ui-recovery 最终接口/schema errorCount 均为 0。该分支主线合并仍需用户确认；并不代表整个 Code UI 验收或 PR 完成。
 
-## 8. P6 施工单：浮动状态面板 + 队列面板
+HTTP 通知恢复接线已完成：物理断线先转原 unavailable，新连接沿同一客户端握手、刷新原两种模型 view，再转原 restarted/available；原 transport 与 SessionDataLayer 自行清 ownership/重订阅。四条宿主测试含同主/子连接、独立恢复、子面板释放、认证失败和关闭取消；原组件的外部 HTTP 夹具补真实通知握手，没有改组件。全量 web 378 测试/类型、原 UI 构建、3051 来源核对通过。真实页面主动切断一条预览通知流，在离线窗口更新供应商，原设置页无需重载/刷新便追上最新 view；截图 docs/验收/Code模式ZCode/原通知断线恢复.png。此证据不代表实际 Agent 运行断线、全部命令对账、长会话或视觉全矩阵已完成。
 
-- `ConversationStatusPanel.tsx`（zcode 源定位）：todo 分区 + Git ± 分区 + 后台任务停止按钮；`rounded-2xl`。数据源我方已有（todo 条目 / git diff 统计 / 后台任务列表），经 props 注入。
-- `ConversationQueuePanel.tsx`：排队消息面板。
-- 装配进 workbench Code 模式对话区（悬浮位与 zcode 一致）。
+原 DirectoryBrowser 的 readdir 已接真实 FS 元信息；原组件、隐藏开关、错误显示与图标保持原件。共享接口导出原 FileEntry 和参数 schema，宿主复用既有 Project 本机路径校验；不放宽正文读取的归属边界。公开接口 501 red→green，十二项宿主 integration 通过，包含隐藏/Unicode/空目录/符号链接/损坏链接和不可用路径。真实原弹窗导航及隐藏切换已实证，截图 docs/验收/Code模式ZCode/原目录浏览.png。目录选择后的 Project/主画布绑定、最近项目写入与实际 run 工作目录继续实施。
 
-## 9. P7 施工单：虚拟滚动时间线（✅ 性能基线评估完成，正式暂缓归档——2026-10-01）
+目录绑定切片已接原 platform.activateOrSetWorkspace → workspace.open → Project 聚合与固定主画布。真实路径规范化后按目录身份复用；冷并发、目录 symlink/.. 别名同一项目，同名不同目录各自独立。recentProjects 沿原 setting 接口持久化，过滤已归档目录，非法归属写入整条拒绝；前向迁移 20261003060836_code_ui_recent_projects.sql 已执行，禁止改写。原 DirectoryBrowser 仅拓宽异步宿主回调并沿用原 loading/error 状态，原 Root hook 可把选择错误交回宿主，失败不关闭弹窗。源码偏差登记且 3051 项零漂移。
 
-> **评估结论**（真机 51 轮长对话：scrollHeight 14138px / DOM 1789 nodes）：滚动帧率 136fps 满帧、输入延迟中位 101ms——当前与可预见量级无卡顿，虚拟滚动三件复杂度（高度缓存/滚动锚定/live tail 特判）无对应收益，**暂缓归档**。触发条件：单会话消息 DOM >1 万 nodes 或实测掉帧，届时再按本节施工。
+十三项公开宿主 integration、原组件失败/重试 red→green、pnpm test（15 任务；web 64 文件/379 测试）、pnpm typecheck（12 包）及原 UI build 通过；独占临时库 75 条空库重放、历史 SHA/缺失零漂移、二次 0 条与实际 text[]/NULL/default 核对通过。原完整页面中文目录选择、刷新恢复、归档错误保留弹窗实证见 docs/验收/Code模式ZCode/原目录项目绑定.png 与 原目录绑定失败.png。两根真实会话共用该主画布已通过，实际活动 Agent/child 工作目录与工具运行尚未验证；整体目标 active。
 
-`@tanstack/react-virtual` 时间线 + 高度缓存 + live tail 移出虚拟列表 + 回到底部按钮（zcode 会话主列表实现，施工时定位）。**独立 PR**，先做性能基线截图再动工；若当前消息量级无卡顿可暂缓。
+当前验收使用本任务独占临时 Postgres/API 3341，经回环转发 3301 与静态 preview 3300 接浏览器，不管理共享开发 PG。临时数据和脚本不入库。工作树审计的剩余源码、测试、迁移、文档、许可证、截图及参考指针应入库；依赖/构建/本地凭据/运行数据已忽略。并行 Agent 的 README/许可证/调研与参考指针不由本切片代提交。
 
-## 10. P8 施工单：PermissionDialog（✅ 台账确认另立项——2026-10-01）
+宿主能力显隐已接原平台接口：当前未接通的自动化/嵌入浏览器/CUA/远程工作区明确关闭，原组件、设置分区、统一远程门与 CUA 前置平台门消费支持态。自动化的原侧栏、分组入口、主视图、草稿/行上下文回调、Cron/OffPeak 跳转按钮和闲时通知轮询均受门控；保留工具结果正文与全部原实现供后续接通。原设置隐式跳转到隐藏分区保持当前可见页；未声明能力的原宿主语义不变。原接口/schema 从 shared 直接再导出；10 处偏差登记、3051 来源零漂移，原装配/CSS 不变。
 
-> **台账**：依赖服务端 DeepAgents interrupt/HITL 权限协议（run 事件流需先产出 permission_request 事件与 always-allow 语义），属服务端契约工作，已另立项跟踪；UI 照搬与协议适配待该立项落地后按本节施工。P1–P7 施工单至此全部收口。
+原完整 App 与原组件用户操作 red→green 覆盖额外闲时查询、Windows Web CUA 插件查询、工具卡按钮、设置跳转及默认宿主点击。pnpm test（web 381 测试）、pnpm typecheck、原 UI build 与双轴审查通过；真实页面证据见 docs/验收/Code模式ZCode/原能力显隐主界面.png、原能力显隐设置.png。完整 lint 的既有 Agent/Computer Use 错误仍未通过；插件市场/设置服务、核心运行交互、活动 Agent/child、完整视觉与 Design 验收继续，不以能力显隐代替完整接线。
 
-- `PermissionDialog.tsx`（zcode 源根目录）：序号选项 + 数字键应答 + always-allow 文案归一（无倒计时条）。
-- 协议侧：DeepAgents interrupt/HITL 事件 → PermissionDialog props 的适配属服务端契约工作，**另立项跟踪**；未接通前不渲染入口（方案 §3 纪律：不摆空壳）。
+根停止切片已接原 stop 命令与既有 cancelRun。固定原版 expectedForegroundExecutionId 变化返回 noop/guard.stopTargetChanged，无目标空闲停止 accepted 且快照不变；命令 ACK、关闭状态和重放同事务。启动句柄登记与停止共用根锁，延迟登记期间已停止的运行不再执行模型；命令裁决在根锁后锁定活跃 Code 项目，归档先完成则拒绝迟到请求，不记录 accepted。旧事件回写用当前权威 runId，避免污染新一轮。没有修改原 UI 装配、Agent 核心、历史 SQL 或 Design。
 
-## 11. 风险登记（施工前必读）
+五项真实数据库/DeepAgents/本机模型替身接口测试通过，覆盖空闲/重放/对账、流式真取消、迟到停止、新 ACK 后旧取消结算、启动前取消及在途归档；延迟场景以独占 PG 作外部故障注入，行为断言仍走 HTTP/SSE/模型边界。基础命令：RUN_CODE_UI_INTEGRATION=1 CODE_UI_TEST_BASE=http://127.0.0.1:3341 CODE_UI_TEST_ORIGIN=http://localhost:3300 pnpm --filter @kenfutwork/server exec vitest run src/features/code-ui/stop.integration.test.ts；三个延迟场景还须以环境注入独占 CODE_UI_TEST_DATABASE_URL，实际验收已注入并全部通过，不输出连接凭据。
 
-1. **workbench.tsx 3887 行巨组件**：接线改动集中 :92-94（import）与 :300-395（消息渲染段）；提交前 `git diff` 逐 hunk 复核，共享文件勿夹带他人改动（AGENTS.md 提交纪律 #3）。
-2. **行为不变量**：`lib/workbench-surface.ts`（Design 主区恒画布）与 `workbench-surface.test.ts` 必须保持绿；本照搬不动该文件。
-3. **测试护栏**：全仓 `pnpm test` 不得与其他测试实例并行；确需串行用 `pnpm exec turbo run test --concurrency=1`（勿用 `--` 透传）。
-4. **导出保真**：后续阶段按符号名 import 前序产物；改名=断链。
-5. **依赖钉版**：`@pierre/diffs@1.1.22` 勿升；新增依赖先查 zcode `packages/ui/package.json` 对齐版本区间再 `pnpm --filter @kenfutwork/web add <pkg>`。
-6. **文档同步**：每阶段 PR 在 `docs/日志.md` 同提交记账（问题/方案/验证命令/遗留项）；本手册与方案已登记 `docs/README.md` 文档地图，新增文档须同步登记。
-7. **NOTICE**：首次合入照搬代码的 PR 需在仓库 NOTICE/THIRD-PARTY 登记 zcode Apache-2.0 attribution（方案 §5.5）。
+最终 pnpm test、pnpm typecheck、server build、pnpm api:spec（生成零差异）、来源 3051 零漂移及范围 Biome 通过；原默认并发出现的既有 Vitest 日志 RPC teardown 未计通过。VITEST_MAX_WORKERS 被 Turbo strict 过滤，server 单一测试资源配置改默认 maxWorkers=2 后标准命令退出成功，CLI 可覆盖、不忽略错误、不改业务绕过。原页面点击停止后显示原“已停止”；刷新后从原目录重开可恢复两轮转录，证据为 docs/验收/Code模式ZCode/原停止运行中.png、原停止已取消.png、原停止刷新重开.png。静默模型替身触发既有停滞保护的错误状态另存原模型停滞错误.png，未将该次超时冒充按钮取消。新任务/标题热同步和刷新自动焦点仍待原 controller 接线；子独立停止、队列/权限/提问等其它运行面与完整视觉/Design/GLM 工具验收继续，目标 active。
+
+
+原 Controller 读面切片已搬入 desktop/host 的 windowHostControllerService、Projection、SessionsIndexObserver 与许可证，原件零偏差。宿主只提供真实 Task/Agent ProxyChannel、工作区目录和 owned SSE 载体；不重新实现集合/标题/游标。首输入事务后广播 task_created，原目录无需刷新即可重读任务；空 thoughtLevel 省略符合原 schema。每个外部连接独占 Runtime/源订阅，关闭释放，非法目录和跨连接/释放后 resync 拒绝。原帧先于 ACK 的装配保留。源码清单 3055 项漂移 0，范围 Biome 与全量 test/typecheck/build 通过，api:spec 生成零差异。真实数据库 Controller + Stop 共 9 项通过（目录查询在途关闭公开接口 red→green，迟到订阅 404 且无 ACK），原完整页面在桌面验收视口（截图 1248×900）连续新建两任务后，项目侧栏立即显示任务与标题，停止后保留转录，证据为 docs/验收/Code模式ZCode/原目录任务热更新.jpg。分组视图此次仍为空，不计验收通过；Controller mutate/search、断线租约恢复、刷新自动焦点继续实施。完整 lint 的 Agent/Computer Use 既有错误未通过，整体目标 active。
+
+
+Controller/Task 目录恢复已接真实 HTTP 连接换代：原 Controller registry 不消费 Agent lifecycle，故宿主在握手与模型 view 追平后换真实 Controller proxy，更新原 ServiceProvider 与 base services；Agent 等代理保持稳定。项目视图的 Task 左表沿原 membership 版本函数重读，补断线期间丢失的成员事件，不伪造事件或另写目录投影。公开原 Hook red→green 覆盖全局目录两次断线、空 sessions-index 下项目成员恢复、恢复握手/view 的 401/403 立即拒绝与不重连；与主/子会话原恢复共 10 项通过。原完整页面暂停通知、真实命令创建独立Task、恢复后目录自动补入且正文保留，原停止按钮显示已停止；新连接两类Controller租约经200/原ACK记录对账，公共快照确认停止终态completedInterrupted，见 docs/验收/Code模式ZCode/原Controller重连租约.json 与三个原Controller截图。首次场景的静默模型停滞错误未冒充停止成功，最终场景已真实点击。源码 3055 项零漂移，未改原registry/Hook/UI装配或后端核心。分组/mutate/search、刷新自动焦点和其它运行能力仍未完整接通，整体目标 active。
+
+原 App 装配审计已确认：host/main.tsx → RootWorkspaceContent → memo(App) → WorkspaceShellLayout 保留完整消息流、主/子SessionPane、设置覆盖与两栏，不应再写一套App。下一步直接复用原Root的缺失非云生命周期：RootShell（Alert/Confirm）、useRootPlatformEffects、useTabPersistence、fileDisplay base path与初始Task定位；设置引导的可见入口需真实consumer或按宿主能力隐藏。不得扩充WorkspaceHost仿写RootInner，也不得把web-remote-replayable伪装成desktop-continuous以绕过恢复规则。
+
+
+原 Root 设置前置已接完整原 AppSettings get/update：仅真实非敏感 UI 偏好保存到 workspace_settings.code_ui_app_preferences，recentProjects 原列仍为单源；原 schema 校验，单 MVCC 读取和原子稀疏 merge。Project 引用在写入中持有活跃 Code 行共享锁，归档先完成则无部分写入。归档 tab 过滤同时重映射激活索引/清焦点；最近项目沿固定原 UI 去重/前10语义。新前向迁移20261003153631已执行，不可再改；76条空库重放、历史SHA、二次no-op及实际JSONB/NULL/default/约束核对通过。6项公共设置 red→green及现有宿主/Controller/Stop合计31项通过，真实GLM一项未启用。旧recent四个死接口已删除，写参数改具名对象；原Root尚未直接挂载，云能力门/默认工作目录/onboarding及运行偏好消费者继续接线，不以设置存储代替完整设置/UI验收。
+
+原 Root 直接挂载切片已接入：host/main 删除自有 WorkspaceHost 与重复 Provider 装配，直接消费固定原 Root→RootWorkspaceContent→App→SessionPane。原 RootShell、全局提示/确认、目录/设置覆盖层、快捷键、tab 持久化与文件显示基准沿原生命周期运行。真实宿主身份与 hello.clientMode 透传；Code store 保持 coding，原 office 菜单仅导航 Design。无云宿主停止 OAuth/旧账户迁移/套餐查询；未接引导、设置导入和运行偏好服务按可选能力门关闭，保留原实现与缺省行为，后续需接真实 consumer。
+
+file.ensureConversationWorkspace 按真实 Workspace 身份在配置的 sandboxRoot 下建共享目录，经既有 Project 服务绑定单一 Code Project/固定主画布；不造空路径、不转换旧数据。全新独占库冷并发只创建一个目录/Project，warm 重放保留身份和文件；归档后的迟到 ensure 返回 409，不复活。原目录选择 await resolvePath 与绑定成功后才关闭，失败在原错误区保留重试；同源父工作台和 Code 文档自身 reload 均保留原恢复资格，普通冷启动不误判。
+
+公开组件 red→green 锁定默认/指定目录、目录失败重试与规范化、原全局提示应答；真实默认目录接口验收命令：`RUN_CODE_UI_INTEGRATION=1 CODE_UI_TEST_FRESH_DATABASE=1 CODE_UI_TEST_BASE=http://127.0.0.1:3341 CODE_UI_TEST_ORIGIN=http://localhost:3300 pnpm --filter @kenfutwork/server exec vitest run src/features/code-ui/conversation-workspace.integration.test.ts`。该用例归档自己创建的默认项目，只允许全新独占开发库，普通测试默认 skipped。真实页面经 DeepAgents 与本机外部模型替身验证默认目录运行、父工作台刷新恢复并停止、⌘N、独立文档自身刷新、原设置保存和跨文档读取、原菜单导航 Design 的 canvas iframe。不把这些证据认定为 GLM 工具链、原版全场景对照或完整 Design 画布验收。
+
+原主标题已接真实轻量元信息。此前目录标题正确，但原 active header 的 session/readSession 尚未接通，导致显示“新建任务”。宿主明确 `sessionMetadataSource: task-index`，原 Hook 消费原 Task.getTaskMeta；原标题组件、App、SessionPane、消息原V4数据层与renderer无改。元信息来自同一真实Code快照，按Workspace/Project归属读取；不构造第二套消息DTO，不兼容旧调试数据。未声明策略时保留固定原session snapshot/converter；取消、空与失败分支仍沿原生命周期。原契约/Schema直接从shared再导出，定义仍属固定源码，无HTTP/WS schema变化。
+
+原插件市场库存读面已接通：Definition 的 `readPackageInventory` 保留真实 installed 与 enabled 的区别，Provider 读取本机记录与自带 bundle，Code Consumer 沿原 `plugin-management` 两个读取方法输出原协议。未把内核 feature 装成市场包，未把工具装成 MCP，未改原 Page/store/card/detail/CSS。项目层配置尚未接通时返回明确诊断；安装、卸载、启停、describe、来源维护等写面仍待实施，不能计为市场完成。公开读面 red→green，真实安装→停用→原库存→卸载通过；损坏 JSON、错误 installed 类型、缺失必需安装字段均从假空 200 改为明确 500，恢复原文件后读取成功。原组件测试使用外部 HTTP/SSE 替身，按原名称格式化显示 Probe、版本 1.2.3 与原详情，不误报未安装或孤立。真实独立宿主经原目录选择器绑定隔离目录后，在原个人分段显示五个真实自带包，截图为 docs/验收/Code模式ZCode/原插件市场真实库存.jpg；公开分段仍沿固定原版官方市场身份，不把本机包冒充 ZCode 官方目录。
+
+完整集成调用：`RUN_CODE_UI_INTEGRATION=1 CODE_UI_TEST_ISOLATED_PLUGINS=1 CODE_UI_TEST_BASE=http://127.0.0.1:3341 CODE_UI_TEST_ORIGIN=http://localhost:3300 pnpm --filter @kenfutwork/server exec vitest run src/features/code-ui/plugins.integration.test.ts`。隔离插件标记只允许本任务独占临时宿主，不得在共享开发插件目录执行损坏库存测试。全量源码、视觉、运行交互、GLM 工具链和完整 Design 验收继续。
+
+原包操作切片：自带包安装、用户层启停、彻底卸载已接既有注册服务与管理员门；原卡/已安装管理/开关/确认弹窗均未改。原完整params/result schema由shared再导出，扁平宿主寻址只转换workspace引用；原启停结果的顶层enabled与plugin同时返回。并发两包安装曾均200但只剩一份记录，公开接口red→green后所有旧HTTP/原Code/工具写入口共享宿主库存队列，失败不毒化队列，JSON以临时文件原子替换。真实managed用户读取200、三项变更403；local-trust仍消费既有管理员策略。
+
+浏览器在独占临时PG/API通过原安装按钮、原User开关与原确认弹窗验证安装→停用（数量仍1）→卸载（数量0/安装按钮恢复）；证据为原插件按钮真实安装.jpg、原插件开关真实停用.jpg、原插件确认真实卸载.jpg。数据库重启前的旧目录上下文未作兼容，使用原选择器重建当前临时库的真实绑定后验收。仍未计为完整来源/describe/项目覆盖/更新/取消操作或完整市场验收。完整调用：`RUN_CODE_UI_INTEGRATION=1 CODE_UI_TEST_ISOLATED_PLUGINS=1 CODE_UI_TEST_BASE=http://127.0.0.1:3341 CODE_UI_TEST_ORIGIN=http://localhost:3300 pnpm --filter @kenfutwork/server exec vitest run src/features/code-ui/plugins-actions.integration.test.ts src/features/code-ui/plugins.integration.test.ts --no-file-parallelism`；多个真实库存文件故障场景禁止并行，以免测试互相覆盖。managed权限用例另需注入独占CODE_UI_TEST_DATABASE_URL，令牌/连接地址不输出；该用例创建独立插件目录、真实注册用户和完整managed app，不mock内部权限服务。
+
+原安装重放沿用用户停用选择，Definition的activation明确区分ensure-package与原HTTP安装启用意图，Code选择preserve，Design入口原默认启用不变。原removeCache=false卸载保留缓存/数据，移除安装/贡献并返回enabled:false，默认彻底卸载行为不变。宿主真实ready等待原插件恢复；preClose等待全部恢复/写队列和卸载释放，关闭后拒绝新变更。完整app/真实TCP断开/外部阻塞包夹具公开关闭回归已red→green，不再使用void shutdown冒充释放完成；命令 `RUN_CODE_UI_INTEGRATION=1 pnpm --filter @kenfutwork/server exec vitest run src/features/code-ui/plugins-lifecycle.integration.test.ts --no-file-parallelism`，需另以环境安全注入独占CODE_UI_TEST_DATABASE_URL。
+
+自带包的真实重启恢复已锁定：禁止第三方的宿主仍装载原命令安装的可信自带包；可信性必须同时符合安装source与本次自带目录id，不能只按名称/id。公开完整app关闭重建后，自带路由200及实际注册工具导出可读；同名URL包不恢复，原启用接口也明确失败，不绕过实际策略。原目录的enabled配置不作为运行恢复的充分证据。本项未改原GUI或引入自有卡片，详情与完整插件发现仍继续。
+
+自带目录统一采用原安装器的ID规范化，包括scoped npm名称。原overview与安装记录按同一稳定id关联，资产、恢复与启用不另猜身份；公开scoped包目录installed:true、重启路由和启用均通过。与自带同名同id的URL来源包仍被策略阻止，不以目录命中替代真实source。

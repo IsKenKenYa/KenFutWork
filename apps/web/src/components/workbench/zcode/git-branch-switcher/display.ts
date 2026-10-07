@@ -1,15 +1,10 @@
-/**
- * zcode 照搬：`@/git-branch-switcher/display.ts`（references/zcode/packages/ui/src/git-branch-switcher/display.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
 import type {
-  GitBranchMutationIssue,
   GitBranchMutationIssueCode,
+  GitBranchMutationIssue,
   GitBranchMutationResult,
   GitFileChange,
   GitHeadRefType,
-} from "@zui/lib/zcode-shared";
+} from "@zcode/shared";
 
 interface GitDirtySectionLike {
   changes: Array<{
@@ -59,15 +54,10 @@ export function resolveGitBranchTriggerLabel(options: {
   }
 
   const normalizedBranchName = options.currentBranchName?.trim() ?? "";
-  return normalizedBranchName.length > 0
-    ? normalizedBranchName
-    : options.fallbackLabel;
+  return normalizedBranchName.length > 0 ? normalizedBranchName : options.fallbackLabel;
 }
 
-export function matchesGitBranchSearch(
-  branchName: string,
-  searchText: string,
-): boolean {
+export function matchesGitBranchSearch(branchName: string, searchText: string): boolean {
   const normalizedSearchText = searchText.trim().toLocaleLowerCase();
   if (normalizedSearchText.length === 0) {
     return true;
@@ -137,9 +127,7 @@ export function summarizeGitBranchIssuePaths(
   visiblePaths: string[];
   remainingCount: number;
 } {
-  const normalizedPaths = (paths ?? []).filter(
-    (path) => path.trim().length > 0,
-  );
+  const normalizedPaths = (paths ?? []).filter((path) => path.trim().length > 0);
   return {
     visiblePaths: normalizedPaths.slice(0, limit),
     remainingCount: Math.max(0, normalizedPaths.length - limit),
@@ -180,9 +168,7 @@ export function buildGitBranchCommitPreviewFiles(
   );
 }
 
-export function getGitBranchCommitTotals(
-  files: readonly GitBranchCommitPreviewFile[],
-): {
+export function getGitBranchCommitTotals(files: readonly GitBranchCommitPreviewFile[]): {
   fileCount: number;
   totalAdded: number;
   totalRemoved: number;
@@ -209,9 +195,7 @@ export function selectGitBranchAffectedFiles(options: {
   const fileByRepoPath = new Map(
     options.files.map((file) => [file.repoRelativePath, file] as const),
   );
-  const normalizedIssuePaths = (options.issuePaths ?? []).filter(
-    (path) => path.trim().length > 0,
-  );
+  const normalizedIssuePaths = (options.issuePaths ?? []).filter((path) => path.trim().length > 0);
 
   return normalizedIssuePaths.map(
     (repoRelativePath) =>
@@ -226,9 +210,7 @@ export function selectGitBranchAffectedFiles(options: {
   );
 }
 
-export function buildGitBranchAutoCommitMessage(
-  targetBranchName: string,
-): string {
+export function buildGitBranchAutoCommitMessage(targetBranchName: string): string {
   const normalizedBranchName = targetBranchName.trim();
   return normalizedBranchName.length > 0
     ? `chore: checkpoint before switching to ${normalizedBranchName}`

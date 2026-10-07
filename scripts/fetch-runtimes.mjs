@@ -68,12 +68,13 @@ const SPECS = {
       /** 目标 CPython **系列**；补丁号与构建号从最新发布里挑（挑不到即 fail loud）。 */
       series: "3.12",
       probe: "python.exe",
-      resolve: async (series) => resolvePythonAsset(series),
+      resolve: async (series) =>
+        resolvePythonAsset(series, "x86_64-pc-windows-msvc"),
     },
     uv: {
       /** uv 版本随最新发布走（资产名只含平台不含版本，故从 latest 解析）。 */
       probe: "uvx.exe",
-      resolve: async () => resolveUvAsset(),
+      resolve: async () => resolveUvAsset("uv-x86_64-pc-windows-msvc.zip"),
     },
     jdk: {
       version: "21",

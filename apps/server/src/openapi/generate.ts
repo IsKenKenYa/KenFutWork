@@ -24,19 +24,13 @@ const SPEC_TITLE = "KenFutWork Community API";
 // 域 → 中文目录名（x-apifox-folder，Apifox 导入时的目录树）与中文说明。
 // 封闭清单的对账裁判在 tests/api-spec-consistency.test.mjs 的 CLOSED_TAGS，两处同改。
 const TAG_META: Record<string, { folder: string; description: string }> = {
-  admin: {
-    folder: "管理后台",
-    description:
-      "平台级管理端点：用户、套餐额度、系统供应商实例。除身份查询外均需管理员权限。",
+  instance: {
+    folder: "本地实例",
+    description: "本机实例身份、数据位置及受控生命周期。",
   },
-  "api-tokens": {
-    folder: "访问令牌",
-    description: "外部应用访问令牌的签发与管理，仅登录会话可操作。",
-  },
-  auth: {
-    folder: "认证",
-    description:
-      "口令注册/登录/登出与会话探活。仅 managed 认证驱动下挂载（local-trust 桌面形态不挂载）。",
+  "local-access": {
+    folder: "本机接入",
+    description: "一次性连接入口、HttpOnly会话与脚本授权。",
   },
   blobs: {
     folder: "对象存储",
@@ -59,22 +53,17 @@ const TAG_META: Record<string, { folder: string; description: string }> = {
     description:
       "Code 模式工作目录能力：git（状态/暂存/提交/工作树/分支）、文件浏览、终端、检查点与索引。",
   },
-  credits: {
-    folder: "积分额度",
-    description: "积分余额、流水、每日领取与套餐切换。",
-  },
   "execution-modes": {
     folder: "执行模式",
     description: "线程级执行模式（六档）的查询与切换。",
   },
   flow: {
     folder: "Flow 集成",
-    description:
-      "flow 子系统宿主缝：状态探针、引擎承载探测、凭证下发、计费三段事务与事件回流。credentials/billing/events 以服务间共享密钥鉴权。",
+    description: "Flow宿主状态与未来连接边界；本期未接通的身份交换明确不可用。",
   },
   fonts: {
     folder: "字体",
-    description: "Google Fonts 代理检索（带缓存，免鉴权）。",
+    description: "授权本机字体检索与缓存。",
   },
   generate: {
     folder: "同步生成",
@@ -91,16 +80,11 @@ const TAG_META: Record<string, { folder: string; description: string }> = {
   },
   mcp: {
     folder: "MCP 服务器",
-    description: "MCP server 配置管理（变更类操作需管理员）与注册表检索。",
+    description: "MCP server 配置管理（已授权本机客户端管理）与注册表检索。",
   },
   models: {
     folder: "模型",
     description: "对话/图像/视频模型清单与动态模型目录。",
-  },
-  payments: {
-    folder: "订阅支付",
-    description:
-      "Lemon Squeezy 订阅结账、变更、取消与回调（回调以 X-Signature 验签）。",
   },
   permissions: {
     folder: "权限",
@@ -109,7 +93,7 @@ const TAG_META: Record<string, { folder: string; description: string }> = {
   plugins: {
     folder: "插件",
     description:
-      "第三方插件安装/卸载/启停（变更类需管理员）、预检与自定义路由派发。",
+      "第三方插件安装/卸载/启停（已授权本机客户端管理）、预检与自定义路由派发。",
   },
   projects: {
     folder: "项目",
@@ -117,15 +101,16 @@ const TAG_META: Record<string, { folder: string; description: string }> = {
   },
   "provider-instances": {
     folder: "供应商实例",
-    description: "BYOK 模型供应商实例管理；apiKey 只写不读，永不回显。",
+    description:
+      "本地BYOK配置与CAS；已授权设置可按需读取Key，模型目录不包含Key。",
   },
   runs: {
     folder: "智能体运行",
     description: "智能体 run 的创建、取消、子代理清单与工作区活动统计。",
   },
   settings: {
-    folder: "工作区设置",
-    description: "工作区级设置（含默认模型）的读取与更新。",
+    folder: "本地设置",
+    description: "实例设置（含默认模型）的读取与更新。",
   },
   skills: {
     folder: "技能",
@@ -141,7 +126,7 @@ const TAG_META: Record<string, { folder: string; description: string }> = {
     description: "项目图片资产上传、签名 URL 与删除。",
   },
   usage: { folder: "用量", description: "工作区用量汇总与使用统计。" },
-  viewer: { folder: "用户视图", description: "当前用户工作区视图与资料更新。" },
+  voice: { folder: "语音助手", description: "本地实例的听、想、说、模型下载与性能检测。" },
 };
 
 function isZodSchema(value: unknown): value is z.ZodType {
@@ -190,6 +175,32 @@ interface Ctx {
   components: { name: string; json: object }[];
 }
 
+/** 只机械分解原快照；共享契约原件不变，每份模型小于导入平台的单模型限制。 */
+function codeUiSnapshotComponents() {
+  const registry = z.registry<{ id: string }>();
+  const schemas = {
+    codeUiSnapshotResponseSchema: sharedContracts.codeUiSnapshotResponseSchema,
+    "zcodeUiProtocol.conversationSnapshotSchema":
+      sharedContracts.zcodeUiProtocol.conversationSnapshotSchema,
+    "zcodeUiProtocol.conversationRowSchema":
+      sharedContracts.zcodeUiProtocol.conversationRowSchema,
+    "zcodeUiProtocol.toolCallRowSchema":
+      sharedContracts.zcodeUiProtocol.toolCallRowSchema,
+  };
+  for (const [id, schema] of Object.entries(schemas))
+    registry.add(schema, { id });
+  const converted = z.toJSONSchema(registry, {
+    io: "output",
+    target: "draft-2020-12",
+    uri: (id) => `#/components/schemas/${id}`,
+  });
+  return Object.entries(converted.schemas).map(([name, json]) => {
+    // component $ref 以完整文档为基准；移除 converter 生成的 fragment-only $id。
+    const { $id: _id, ...schema } = json;
+    return { name, json: schema };
+  });
+}
+
 // 优先 $ref 具名组件；派生 schema（.pick / z.object 包装）内联。
 function schemaRefOrInline(
   ctx: Ctx,
@@ -198,14 +209,20 @@ function schemaRefOrInline(
 ): object {
   const name = ctx.schemaNames.get(schema);
   if (!name) return toJson(schema, io);
+  if (
+    name === "codeUiSnapshotResponseSchema" &&
+    !ctx.components.some((entry) => entry.name === name)
+  ) {
+    ctx.components.push(...codeUiSnapshotComponents());
+  }
   if (!ctx.components.some((entry) => entry.name === name)) {
     ctx.components.push({ name, json: toJson(schema, io) });
   }
   return { $ref: `#/components/schemas/${name}` };
 }
 
-function jsonContent(schema: object) {
-  return { "application/json": { schema } };
+function jsonContent(schema: object, mediaType = "application/json") {
+  return { [mediaType]: { schema } };
 }
 
 function pathParameters(openApiPath: string): object[] {
@@ -297,23 +314,37 @@ function buildOperation(ctx: Ctx, entry: OpenApiRouteEntry) {
         ? {
             content: jsonContent(
               schemaRefOrInline(ctx, entry.responseSchema, "output"),
+              entry.responseMediaType,
             ),
           }
         : {}),
     };
   }
-  if (entry.auth === "user" || entry.auth === "optional-user") {
+  for (const status of entry.additionalSuccessStatuses ?? []) {
+    responses[String(status)] = { description: "已受理，无响应体" };
+  }
+  if (entry.auth === "local") {
     responses["401"] = {
       description: "未认证或令牌无效",
       content: jsonContent(
-        schemaRefOrInline(ctx, unauthenticatedErrorResponseSchema, "output"),
+        schemaRefOrInline(
+          ctx,
+          entry.errorResponseSchema ?? unauthenticatedErrorResponseSchema,
+          "output",
+        ),
       ),
     };
   }
   responses.default = {
-    description: "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+    description: entry.errorResponseSchema
+      ? "协议或业务错误，见本端点错误响应契约"
+      : "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
     content: jsonContent(
-      schemaRefOrInline(ctx, applicationErrorResponseSchema, "output"),
+      schemaRefOrInline(
+        ctx,
+        entry.errorResponseSchema ?? applicationErrorResponseSchema,
+        "output",
+      ),
     ),
   };
 
@@ -324,7 +355,12 @@ function buildOperation(ctx: Ctx, entry: OpenApiRouteEntry) {
       summary: entry.summary,
       description: entry.description,
       tags: [entry.tag],
-      security: entry.auth === "public" ? [] : [{ bearerAuth: [] }],
+      security:
+        entry.auth === "public"
+          ? []
+          : entry.auth === "local"
+            ? [{ localCookie: [] }, { bearerAuth: [] }]
+            : [{ bearerAuth: [] }],
       ...(parameters.length > 0 ? { parameters } : {}),
       ...(requestBody ? { requestBody } : {}),
       responses,
@@ -372,21 +408,27 @@ export function buildOpenApiSpec() {
       title: SPEC_TITLE,
       version: "1.0.0",
       description:
-        "KenFutWork（BYOK Work 平台）社区版服务端 HTTP API。BYOK：用户自带模型供应商密钥，apiKey 只写不读。鉴权：除标注「免鉴权」的端点外均需 `Authorization: Bearer <token>`（managed 驱动的会话令牌 / API 令牌；桌面 local-trust 形态由回环信任替代）。tag 目录与源码 apps/server/src/http/*.ts 域一一对应；本 spec 由中央路由表生成（pnpm api:spec），勿手改。",
+        "KenFutWork 本地 BYOK 实例 HTTP API。浏览器通过一次性入口建立 HttpOnly cookie；脚本使用明确授权的 Bearer 凭据；不依赖官方账户或订阅。此规范由共享契约与中央路由表生成，勿手改。",
     },
     servers: [
       { url: "http://localhost:3001", description: "本地开发（dev 默认端口）" },
     ],
     tags,
-    security: [{ bearerAuth: [] }],
+    security: [{ localCookie: [] }, { bearerAuth: [] }],
     paths,
     components: {
       securitySchemes: {
+        localCookie: {
+          type: "apiKey",
+          in: "cookie",
+          name: "kfw_local_access",
+          description: "由一次性本机连接票据兑换的HttpOnly会话。",
+        },
         bearerAuth: {
           type: "http",
           scheme: "bearer",
           description:
-            "用户会话令牌（managed 驱动签发）或外部应用 API 令牌；flow 宿主缝端点此处为服务间共享密钥。",
+            "明确授权的本机脚本或桌面启动凭据；Flow服务间端点使用独立共享密钥。",
         },
       },
       schemas,

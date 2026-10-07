@@ -179,32 +179,17 @@ describe("@kenfutwork/shared contracts", () => {
     expect(parsed.status).toBe("canceling");
   });
 
-  it("shares the viewer bootstrap contract for GET /api/viewer", () => {
-    const viewerResponseSchema = getExportedSchema("viewerResponseSchema");
+  it("shares the local instance contract for GET /api/instance", () => {
+    const instanceResponseSchema = getExportedSchema("instanceResponseSchema");
 
-    const parsed = viewerResponseSchema.parse({
-      profile: {
-        id: "user_123",
-        email: "maker@kenfutwork.test",
-        displayName: "KenFutWork Maker",
-        avatarUrl: "https://example.com/avatar.png",
-      },
-      workspace: {
-        id: "workspace_123",
-        name: "KenFutWork Maker",
-        type: "personal",
-        ownerUserId: "user_123",
-      },
-      membership: {
-        workspaceId: "workspace_123",
-        userId: "user_123",
-        role: "owner",
-      },
+    const parsed = instanceResponseSchema.parse({
+      instanceId: "00000000-0000-4000-8000-000000000001",
+      dataDir: "/local/kenfutwork/data",
     });
 
-    expect(parsed.profile.id).toBe("user_123");
-    expect(parsed.workspace.ownerUserId).toBe("user_123");
-    expect(parsed.membership.workspaceId).toBe("workspace_123");
+    expect(parsed.instanceId).toBe("00000000-0000-4000-8000-000000000001");
+    expect(parsed.dataDir).toBe("/local/kenfutwork/data");
+    expect(Object.keys(parsed)).toEqual(["instanceId", "dataDir"]);
   });
 
   it("shares project list and create contracts for GET/POST /api/projects", () => {
@@ -249,12 +234,7 @@ describe("@kenfutwork/shared contracts", () => {
           slug: "brand-system",
           kind: "design",
           description: createRequest.description,
-          workspace: {
-            id: "workspace_123",
-            name: "KenFutWork Maker",
-            type: "personal",
-            ownerUserId: "user_123",
-          },
+          instanceId: "00000000-0000-4000-8000-000000000001",
           primaryCanvas: {
             id: "canvas_123",
             name: "Main Canvas",
@@ -270,7 +250,9 @@ describe("@kenfutwork/shared contracts", () => {
     });
 
     expect(parsedList.projects[0].id).toBe("project_123");
-    expect(parsedList.projects[0].workspace.ownerUserId).toBe("user_123");
+    expect(parsedList.projects[0].instanceId).toBe(
+      "00000000-0000-4000-8000-000000000001",
+    );
     expect(parsedList.projects[0].primaryCanvas.id).toBe("canvas_123");
     expect(createdProject.project.primaryCanvas.isPrimary).toBe(true);
   });
@@ -353,13 +335,9 @@ describe("@kenfutwork/shared contracts", () => {
             id: "project_123",
             name: "Brand System",
             slug: "brand-system",
+            kind: "design",
             description: "Primary workspace project",
-            workspace: {
-              id: "workspace_123",
-              name: "KenFutWork Maker",
-              type: "personal",
-              ownerUserId: "user_123",
-            },
+            instanceId: "00000000-0000-4000-8000-000000000001",
             createdAt: "2026-03-23T12:00:00.000Z",
             updatedAt: "2026-03-23T12:00:00.000Z",
           },

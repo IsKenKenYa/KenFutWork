@@ -1,11 +1,6 @@
-/**
- * zcode 照搬：`@/GitBranchSwitcher.tsx`（references/zcode/packages/ui/src/GitBranchSwitcher.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import type { GitRepositorySummary } from "@zcode/shared";
+import { Button } from "@zui/components/ui/button.js";
 import {
   Command,
   CommandEmpty,
@@ -13,43 +8,25 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from "@zui/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@zui/components/ui/popover";
-import {
-  matchesGitBranchSearch,
-  resolveGitBranchTriggerLabel,
-} from "@zui/git-branch-switcher/display";
+} from "@zui/components/ui/command.js";
+import { Popover, PopoverContent, PopoverTrigger } from "@zui/components/ui/popover.js";
+import { cn } from "@zui/components/lib/utils.js";
 import {
   GitBranchCreateDialog,
   GitBranchSwitchAssistDialog,
-} from "@zui/git-branch-switcher/GitBranchDialogs";
-import { GitGraphDialog } from "@zui/git-graph/GitGraphDialog";
-import { useGitBranchSwitcher } from "@zui/hooks/useGitBranchSwitcher";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+} from "@zui/git-branch-switcher/GitBranchDialogs.js";
+import { GitGraphDialog } from "@zui/git-graph/GitGraphDialog.js";
+import { useGitBranchSwitcher } from "@zui/hooks/useGitBranchSwitcher.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import {
+  matchesGitBranchSearch,
+  resolveGitBranchTriggerLabel,
+} from "@zui/git-branch-switcher/display.js";
 import {
   isCoarseTouchDevice,
   shouldRestoreChatInputFocusAfterPickerClose,
-} from "@zui/lib/pickerFocus";
-import type { GitRepositorySummary } from "@zui/lib/zcode-shared";
-import {
-  ChevronDownIcon,
-  GitBranchIcon,
-  GitGraph,
-  LoaderIcon,
-  PlusIcon,
-} from "lucide-react";
-import {
-  type KeyboardEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+} from "@zui/lib/pickerFocus.js";
+import { ChevronDownIcon, GitBranchIcon, GitGraph, LoaderIcon, PlusIcon } from "lucide-react";
 
 interface GitBranchSwitcherProps {
   workspacePath: string;
@@ -112,8 +89,7 @@ export function GitBranchSwitcher({
   });
 
   const isVisible = gitSummary.isGitAvailable && gitSummary.isRepository;
-  const displayedCurrentBranchName =
-    branchesResult?.currentBranchName ?? gitSummary.branchName;
+  const displayedCurrentBranchName = branchesResult?.currentBranchName ?? gitSummary.branchName;
   const triggerLabel = useMemo(
     () =>
       resolveGitBranchTriggerLabel({
@@ -147,8 +123,7 @@ export function GitBranchSwitcher({
     });
   }, [gitSummary.headRefType, intl, switchAssistState, triggerLabel]);
   const branchSearchFilter = useCallback(
-    (value: string, search: string) =>
-      matchesGitBranchSearch(value, search) ? 1 : 0,
+    (value: string, search: string) => (matchesGitBranchSearch(value, search) ? 1 : 0),
     [],
   );
 
@@ -159,9 +134,7 @@ export function GitBranchSwitcher({
 
     const frameId = window.requestAnimationFrame(() => {
       const selectedItem =
-        commandListRef.current?.querySelector<HTMLElement>(
-          '[data-branch-current="true"]',
-        ) ?? null;
+        commandListRef.current?.querySelector<HTMLElement>('[data-branch-current="true"]') ?? null;
       selectedItem?.scrollIntoView({ block: "nearest" });
     });
 
@@ -170,29 +143,26 @@ export function GitBranchSwitcher({
     };
   }, [branchesResult, open]);
 
-  const handleContentKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLDivElement>) => {
-      if (event.key !== "Tab") {
-        return;
-      }
+  const handleContentKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Tab") {
+      return;
+    }
 
-      const highlightedItem =
-        event.currentTarget.querySelector<HTMLElement>(
-          '[data-slot="command-item"][data-selected="true"]:not([data-disabled=true])',
-        ) ??
-        event.currentTarget.querySelector<HTMLElement>(
-          '[data-slot="command-item"]:not([data-disabled=true])',
-        );
+    const highlightedItem =
+      event.currentTarget.querySelector<HTMLElement>(
+        '[data-slot="command-item"][data-selected="true"]:not([data-disabled=true])',
+      ) ??
+      event.currentTarget.querySelector<HTMLElement>(
+        '[data-slot="command-item"]:not([data-disabled=true])',
+      );
 
-      if (!highlightedItem) {
-        return;
-      }
+    if (!highlightedItem) {
+      return;
+    }
 
-      event.preventDefault();
-      highlightedItem.click();
-    },
-    [],
-  );
+    event.preventDefault();
+    highlightedItem.click();
+  }, []);
 
   if (!isVisible) {
     return null;
@@ -201,13 +171,11 @@ export function GitBranchSwitcher({
   return (
     <>
       <div
-        data-workspace-header-branch={
-          markAsWorkspaceHeaderBranch ? "true" : undefined
-        }
+        data-workspace-header-branch={markAsWorkspaceHeaderBranch ? "true" : undefined}
         className={cn("flex items-center px-1 pt-2", className)}
       >
         <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger asChild={true}>
+          <PopoverTrigger asChild>
             <Button
               type="button"
               variant="ghost"
@@ -227,9 +195,7 @@ export function GitBranchSwitcher({
                 className="size-4 text-foreground-subtle"
               />
               <>
-                <span className="min-w-0 max-w-25 truncate text-left">
-                  {triggerLabel}
-                </span>
+                <span className="min-w-0 max-w-25 truncate text-left">{triggerLabel}</span>
                 {loadingBranches || mutationPending ? (
                   <LoaderIcon
                     data-branch-switcher-trailing-icon="true"
@@ -261,9 +227,7 @@ export function GitBranchSwitcher({
               if (!(target instanceof HTMLElement)) {
                 return;
               }
-              const searchInput = target.querySelector<HTMLElement>(
-                '[data-slot="command-input"]',
-              );
+              const searchInput = target.querySelector<HTMLElement>('[data-slot="command-input"]');
               searchInput?.focus();
             }}
             onCloseAutoFocus={(event) => {
@@ -275,9 +239,7 @@ export function GitBranchSwitcher({
               ) {
                 return;
               }
-              const input = document.querySelector<HTMLElement>(
-                '[data-testid="chat-input"]',
-              );
+              const input = document.querySelector<HTMLElement>('[data-testid="chat-input"]');
               input?.focus();
             }}
           >
@@ -292,10 +254,7 @@ export function GitBranchSwitcher({
                 })}
                 className="h-8"
               />
-              <CommandList
-                ref={commandListRef}
-                className={cn("max-h-72", branchListClassName)}
-              >
+              <CommandList ref={commandListRef} className={cn("max-h-72", branchListClassName)}>
                 <CommandEmpty className="px-4 py-5 text-foreground-subtle">
                   {loadingBranches
                     ? intl.formatMessage({ id: "common.loading" })
@@ -308,8 +267,7 @@ export function GitBranchSwitcher({
                   className="space-y-0.5 p-1 **:[[cmdk-group-heading]]:px-3 **:[[cmdk-group-heading]]:py-2 **:[[cmdk-group-heading]]:text-ui-base **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group-heading]]:text-foreground-subtle"
                 >
                   {(branchesResult?.branches ?? []).map((branch) => {
-                    const isCurrent =
-                      branch.name === displayedCurrentBranchName;
+                    const isCurrent = branch.name === displayedCurrentBranchName;
                     return (
                       <CommandItem
                         key={branch.name}
@@ -317,9 +275,7 @@ export function GitBranchSwitcher({
                         data-checked={isCurrent ? "true" : undefined}
                         data-branch-current={isCurrent ? "true" : undefined}
                         disabled={mutationPending}
-                        className={cn(
-                          "items-start gap-3 rounded-lg px-3 py-2 text-ui-base",
-                        )}
+                        className={cn("items-start gap-3 rounded-lg px-3 py-2 text-ui-base")}
                         onSelect={() => {
                           void switchBranch(branch.name);
                         }}

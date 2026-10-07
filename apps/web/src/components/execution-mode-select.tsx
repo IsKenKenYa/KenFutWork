@@ -24,7 +24,7 @@ export function ExecutionModeSelect({
   accessToken,
   threadId,
 }: {
-  accessToken: string;
+  accessToken: string | null;
   threadId: string;
 }) {
   const [modes, setModes] = useState<Array<{

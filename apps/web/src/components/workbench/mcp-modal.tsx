@@ -7,9 +7,9 @@ import type {
 } from "@kenfutwork/shared";
 import { Loader2, Plus, RefreshCw, Search, Server, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
+import { serverFetch } from "@/lib/local-access";
 import { buildCuratedServerPayload } from "@/lib/mcp-catalog";
 import {
   buildMcpServerPayload,
@@ -20,21 +20,33 @@ import { ListEmpty, ListError, ListLoading } from "./list-state";
 
 const EMPTY_FORM: McpServerFormInput = {
   name: "",
+  kind: "stdio",
   command: "",
+  url: "",
   argsText: "",
   envText: "",
 };
 
 type McpTab = "configured" | "curated" | "registry";
 
+/** 直接创建配置的载荷（stdio/http 两类，推荐与市场页签共用）。 */
+type McpCreatePayload = {
+  name: string;
+  kind: "stdio" | "http";
+  command?: string;
+  url?: string;
+  args?: string[];
+  env?: Record<string, string>;
+};
+
 /**
  * MCP 管理弹窗（从「设置」挪到侧栏，与技能并列）。
  *
  * 三个页签：**已配置**（列表/启停/重连/编辑/删除 + 手动添加）、
  * **推荐**（内置精选目录，一键添加，参数就地填）、
- * **官方 MCP 市场**（registry.modelcontextprotocol.io 检索，仅 stdio+npm/pypi 可添加）。
+ * **官方 MCP 市场**（registry.modelcontextprotocol.io 检索；stdio 包与远程端点都可添加）。
  *
- * 安全：MCP server 会在本机以子进程执行命令——变更类操作服务端有管理员门，
+ * 安全：MCP server 会在本机以子进程执行命令——变更类操作服务端验证本机接入，
  * 界面也逐条提示，不做静默安装。
  */
 export function McpModal({
@@ -63,7 +75,7 @@ export function McpModal({
 
   const refresh = useCallback(() => {
     setLoading(true);
-    void fetch(`${getServerBaseUrl()}/api/mcp/servers`, {
+    void serverFetch(`${getServerBaseUrl()}/api/mcp/servers`, {
       headers: authHeaders(),
     })
       .then((response) => (response.ok ? response.json() : { servers: [] }))
@@ -88,26 +100,24 @@ export function McpModal({
 
   /** 直接创建配置（推荐/注册表两个页签共用）。 */
   const createServer = useCallback(
-    async (payload: {
-      name: string;
-      command: string;
-      args: string[];
-      env?: Record<string, string>;
-    }) => {
+    async (payload: McpCreatePayload) => {
       setBusy(payload.name);
       setError(null);
       setNotice(null);
       try {
-        const response = await fetch(`${getServerBaseUrl()}/api/mcp/servers`, {
-          method: "POST",
-          headers: { "content-type": "application/json", ...authHeaders() },
-          body: JSON.stringify({ ...payload, enabled: true }),
-        });
+        const response = await serverFetch(
+          `${getServerBaseUrl()}/api/mcp/servers`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json", ...authHeaders() },
+            body: JSON.stringify({ ...payload, enabled: true }),
+          },
+        );
         if (!response.ok) {
-          setError(await readError(response, "添加失败（需要管理员权限）。"));
+          setError(await readError(response, "添加失败。"));
           return false;
         }
-        setNotice(`已添加「${payload.name}」，可在「已配置」查看连接状态。`);
+        setNotice(`已添加「${payload.name}」· 在「已配置」查看连接状态`);
         setTab("configured");
         refresh();
         return true;
@@ -232,12 +242,12 @@ function ConfiguredTab({
       const base = getServerBaseUrl();
       const response =
         action === "delete"
-          ? await fetch(`${base}/api/mcp/servers/${server.id}`, {
+          ? await serverFetch(`${base}/api/mcp/servers/${server.id}`, {
               method: "DELETE",
               headers: authHeaders(),
             })
           : action === "toggle"
-            ? await fetch(`${base}/api/mcp/servers/${server.id}`, {
+            ? await serverFetch(`${base}/api/mcp/servers/${server.id}`, {
                 method: "PATCH",
                 headers: {
                   "content-type": "application/json",
@@ -245,14 +255,14 @@ function ConfiguredTab({
                 },
                 body: JSON.stringify({ enabled: !server.enabled }),
               })
-            : await fetch(
+            : await serverFetch(
                 `${base}/api/mcp/servers/${encodeURIComponent(
                   server.id ?? server.name,
                 )}/reconnect`,
                 { method: "POST", headers: authHeaders() },
               );
       if (!response.ok) {
-        setError(await readError(response, "操作失败（需要管理员权限）。"));
+        setError(await readError(response, "操作失败。"));
         return;
       }
       setNotice(
@@ -285,20 +295,18 @@ function ConfiguredTab({
     try {
       const base = getServerBaseUrl();
       const response = editing
-        ? await fetch(`${base}/api/mcp/servers/${editing.id}`, {
+        ? await serverFetch(`${base}/api/mcp/servers/${editing.id}`, {
             method: "PATCH",
             headers: { "content-type": "application/json", ...authHeaders() },
             body: JSON.stringify(payload),
           })
-        : await fetch(`${base}/api/mcp/servers`, {
+        : await serverFetch(`${base}/api/mcp/servers`, {
             method: "POST",
             headers: { "content-type": "application/json", ...authHeaders() },
             body: JSON.stringify(payload),
           });
       if (!response.ok) {
-        setError(
-          await readError(response, "保存失败（变更类操作需要管理员）。"),
-        );
+        setError(await readError(response, "保存失败。"));
         return;
       }
       setNotice(editing ? "已保存并重连。" : `已添加「${payload.name}」。`);
@@ -316,17 +324,13 @@ function ConfiguredTab({
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        MCP 服务在本机运行，它的工具会提供给 Agent
-        使用；添加、修改与删除需要管理员权限。
+        本地进程或远程 MCP · 本机授权可管理
       </p>
 
       {loading ? (
         <ListLoading label="正在加载已配置的 MCP 服务…" rows={2} />
       ) : servers.length === 0 ? (
-        <ListEmpty
-          title="尚未配置 MCP 服务"
-          hint="去「推荐」一键添加，或在下方手动添加。"
-        />
+        <ListEmpty title="尚未配置 MCP 服务" hint="在「推荐」里一键添加" />
       ) : (
         <ul className="space-y-2">
           {servers.map((server) => {
@@ -341,6 +345,7 @@ function ConfiguredTab({
                       <Tag>
                         {server.source === "env" ? "环境变量" : "界面配置"}
                       </Tag>
+                      <Tag>{server.kind === "http" ? "远程" : "本地"}</Tag>
                       <Tag
                         tone={
                           server.status === "connected"
@@ -358,7 +363,9 @@ function ConfiguredTab({
                       </Tag>
                     </div>
                     <p className="mt-1 font-mono text-xs break-all text-muted-foreground">
-                      {server.command} {server.args.join(" ")}
+                      {server.kind === "http"
+                        ? (server.url ?? "")
+                        : `${server.command} ${server.args.join(" ")}`}
                     </p>
                     {server.envKeys.length > 0 ? (
                       <p className="mt-1 text-xs text-muted-foreground">
@@ -375,7 +382,7 @@ function ConfiguredTab({
                     <button
                       type="button"
                       onClick={() => void act(server, "reconnect")}
-                      /* 环境变量提供的条目是只读的：重连会打到需要管理员 id 的端点上（点了必失败） */
+                      /* 环境变量提供的条目是只读的：重连会打到不能改写环境配置的端点上（点了必失败） */
                       disabled={busy === key || !server.id}
                       title={
                         server.id ? "重连" : "由环境变量配置，在这里无法重连"
@@ -401,7 +408,9 @@ function ConfiguredTab({
                             setEnvTouched(false);
                             setForm({
                               name: server.name,
+                              kind: server.kind,
                               command: server.command,
+                              url: server.url ?? "",
                               argsText: formatArgsText(server.args),
                               envText: "",
                             });
@@ -441,6 +450,25 @@ function ConfiguredTab({
         <h3 className="text-sm font-medium">
           {editing ? `编辑「${editing.name}」` : "手动添加"}
         </h3>
+        <div className="flex items-center gap-1.5">
+          {(
+            [
+              { id: "stdio", label: "本地命令" },
+              { id: "http", label: "远程端点" },
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              disabled={Boolean(editing)}
+              data-active={form.kind === item.id}
+              onClick={() => setForm((prev) => ({ ...prev, kind: item.id }))}
+              className="rounded-md border px-2 py-1 text-xs transition-colors data-[active=true]:border-foreground data-[active=true]:bg-foreground data-[active=true]:text-background disabled:opacity-60"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <input
             aria-label="MCP 名称"
@@ -452,41 +480,57 @@ function ConfiguredTab({
             }
             className="rounded-md border px-2 py-1.5 text-sm outline-none disabled:opacity-60"
           />
-          <input
-            aria-label="MCP 启动命令"
-            placeholder="启动命令（npx / uvx / node …）"
-            value={form.command}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, command: event.target.value }))
-            }
-            className="rounded-md border px-2 py-1.5 text-sm outline-none"
-          />
+          {form.kind === "http" ? (
+            <input
+              aria-label="MCP 远程端点 URL"
+              placeholder="远程端点 URL（https://…）"
+              value={form.url}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, url: event.target.value }))
+              }
+              className="rounded-md border px-2 py-1.5 font-mono text-sm outline-none"
+            />
+          ) : (
+            <input
+              aria-label="MCP 启动命令"
+              placeholder="启动命令（npx / uvx / node …）"
+              value={form.command}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, command: event.target.value }))
+              }
+              className="rounded-md border px-2 py-1.5 text-sm outline-none"
+            />
+          )}
         </div>
-        <textarea
-          aria-label="MCP 参数"
-          placeholder={"参数（一行一个，含空格的值直接写整行）"}
-          value={form.argsText}
-          onChange={(event) =>
-            setForm((prev) => ({ ...prev, argsText: event.target.value }))
-          }
-          rows={3}
-          className="w-full rounded-md border px-2 py-1.5 font-mono text-xs outline-none"
-        />
-        <textarea
-          aria-label="MCP 环境变量"
-          placeholder={
-            editing && editing.envKeys.length > 0
-              ? `环境变量（一行 KEY=VALUE；留空则保留已存的 ${editing.envKeys.join(", ")}）`
-              : "环境变量（一行 KEY=VALUE，可留空）"
-          }
-          value={form.envText}
-          onChange={(event) => {
-            setEnvTouched(true);
-            setForm((prev) => ({ ...prev, envText: event.target.value }));
-          }}
-          rows={2}
-          className="w-full rounded-md border px-2 py-1.5 font-mono text-xs outline-none"
-        />
+        {form.kind === "stdio" ? (
+          <>
+            <textarea
+              aria-label="MCP 参数"
+              placeholder="每行一个参数"
+              value={form.argsText}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, argsText: event.target.value }))
+              }
+              rows={3}
+              className="w-full rounded-md border px-2 py-1.5 font-mono text-xs outline-none"
+            />
+            <textarea
+              aria-label="MCP 环境变量"
+              placeholder={
+                editing && editing.envKeys.length > 0
+                  ? `每行 KEY=VALUE · 留空保留 ${editing.envKeys.join("、")}`
+                  : "每行 KEY=VALUE"
+              }
+              value={form.envText}
+              onChange={(event) => {
+                setEnvTouched(true);
+                setForm((prev) => ({ ...prev, envText: event.target.value }));
+              }}
+              rows={2}
+              className="w-full rounded-md border px-2 py-1.5 font-mono text-xs outline-none"
+            />
+          </>
+        ) : null}
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -534,12 +578,7 @@ function CuratedTab({
 }: {
   busy: string | null;
   authHeaders: () => Record<string, string>;
-  onCreate: (payload: {
-    name: string;
-    command: string;
-    args: string[];
-    env?: Record<string, string>;
-  }) => Promise<boolean>;
+  onCreate: (payload: McpCreatePayload) => Promise<boolean>;
 }) {
   const [entries, setEntries] = useState<McpCuratedServer[]>([]);
   const [values, setValues] = useState<Record<string, Record<string, string>>>(
@@ -548,7 +587,7 @@ function CuratedTab({
   const [localError, setLocalError] = useState<string | null>(null);
 
   useEffect(() => {
-    void fetch(`${getServerBaseUrl()}/api/mcp/catalog`, {
+    void serverFetch(`${getServerBaseUrl()}/api/mcp/catalog`, {
       headers: authHeaders(),
     })
       .then(async (response) => {
@@ -566,8 +605,7 @@ function CuratedTab({
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        内置的常用服务，离线可用。添加后在本机运行，需要本机已安装 Node（npx）或
-        Python（uv/uvx）。
+        离线可用 · 需本机装 Node（npx）或 Python（uv/uvx）
       </p>
       {localError ? (
         <p className="text-xs text-destructive">{localError}</p>
@@ -660,12 +698,7 @@ function RegistryTab({
 }: {
   busy: string | null;
   authHeaders: () => Record<string, string>;
-  onCreate: (payload: {
-    name: string;
-    command: string;
-    args: string[];
-    env?: Record<string, string>;
-  }) => Promise<boolean>;
+  onCreate: (payload: McpCreatePayload) => Promise<boolean>;
 }) {
   const [query, setQuery] = useState("");
   const [servers, setServers] = useState<McpRegistryServer[]>([]);
@@ -693,7 +726,7 @@ function RegistryTab({
         }
         setError(message);
       };
-      void fetch(`${getServerBaseUrl()}/api/mcp/registry?${params}`, {
+      void serverFetch(`${getServerBaseUrl()}/api/mcp/registry?${params}`, {
         headers: authHeaders(),
       })
         .then(async (response) => {
@@ -724,8 +757,7 @@ function RegistryTab({
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        官方 MCP 市场。目前支持本地运行的 npm / Python
-        包，远程服务暂不支持，已在列表里标注。
+        本地包（npm / Python）与远程端点（HTTP/SSE）都可添加
       </p>
 
       <div className="flex items-center gap-2">
@@ -733,7 +765,7 @@ function RegistryTab({
           <Search className="h-3.5 w-3.5 text-muted-foreground" />
           <input
             aria-label="搜索官方注册表"
-            placeholder="搜索 MCP 服务名称（如 filesystem / github / fetch）"
+            placeholder="搜索服务名（如 github）"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
@@ -756,17 +788,14 @@ function RegistryTab({
       {loading ? (
         <ListLoading label="正在检索 MCP 市场…" rows={3} />
       ) : error ? (
-        <ListError
-          message={error}
-          hint="网络不可用时，可在「推荐」里添加内置的常用服务。"
-        />
+        <ListError message={error} hint="网络不可用时用「推荐」" />
       ) : (
         <>
           {count > 0 ? (
             <p className="text-xs text-muted-foreground">共 {count} 条</p>
           ) : null}
           {servers.length === 0 ? (
-            <ListEmpty title="没有匹配的服务" hint="换个更短的关键词再试。" />
+            <ListEmpty title="没有匹配的服务" hint="换个更短的关键词" />
           ) : (
             <ul className="space-y-2">
               {servers.map((server) => (
@@ -782,7 +811,10 @@ function RegistryTab({
                         </span>
                         {server.version ? <Tag>v{server.version}</Tag> : null}
                         {server.installable ? (
-                          <Tag tone="on">可添加</Tag>
+                          <>
+                            {server.kind === "http" ? <Tag>远程</Tag> : null}
+                            <Tag tone="on">可添加</Tag>
+                          </>
                         ) : (
                           <Tag tone="err">暂不支持</Tag>
                         )}
@@ -790,9 +822,11 @@ function RegistryTab({
                       <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                         {server.description || "（无描述）"}
                       </p>
-                      <p className="mt-1 font-mono text-[11px] text-muted-foreground/70">
+                      <p className="mt-1 font-mono text-[11px] break-all text-muted-foreground/70">
                         {server.installable
-                          ? `${server.suggestedCommand} ${server.suggestedArgs.join(" ")}`
+                          ? server.kind === "http"
+                            ? (server.suggestedUrl ?? "")
+                            : `${server.suggestedCommand} ${server.suggestedArgs.join(" ")}`
                           : (server.unsupportedReason ?? "")}
                       </p>
                     </div>
@@ -805,9 +839,19 @@ function RegistryTab({
                           : (server.unsupportedReason ?? "")
                       }
                       onClick={() => {
+                        if (server.kind === "http") {
+                          if (!server.suggestedUrl) return;
+                          void onCreate({
+                            name: server.suggestedName,
+                            kind: "http",
+                            url: server.suggestedUrl,
+                          });
+                          return;
+                        }
                         if (!server.suggestedCommand) return;
                         void onCreate({
                           name: server.suggestedName,
+                          kind: "stdio",
                           command: server.suggestedCommand,
                           args: server.suggestedArgs,
                         });

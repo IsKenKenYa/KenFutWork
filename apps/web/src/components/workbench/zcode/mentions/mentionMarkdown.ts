@@ -1,19 +1,10 @@
-/**
- * zcode 照搬：`@/mentions/mentionMarkdown.ts`（references/zcode/packages/ui/src/mentions/mentionMarkdown.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
 const LINK_MENTION_MARKDOWN_PATTERN =
   /\[((?:\\.|[^\\\]])*)\]\((?:<((?:\\.|[^>])*?)>|((?:\\.|[^)])*))\)/g;
 const INLINE_MENTION_TOKEN_PATTERN =
   /(^|\s)(\$[a-zA-Z0-9._-]+|\/[a-zA-Z0-9._-]+|@[a-zA-Z0-9._-]+|#sess_[a-zA-Z0-9._-]+)(?=$|\s)/g;
 
 function escapeMarkdownLabel(label: string): string {
-  return label
-    .replaceAll("\\", "\\\\")
-    .replaceAll("[", "\\[")
-    .replaceAll("]", "\\]");
+  return label.replaceAll("\\", "\\\\").replaceAll("[", "\\[").replaceAll("]", "\\]");
 }
 
 function escapeMarkdownDestination(destination: string): string {
@@ -70,17 +61,11 @@ export function buildFileMentionMarkdown(
   label: string,
   kind: "file" | "directory" = "file",
 ): string {
-  const normalizedRelativePath = normalizeFileMentionRelativePath(
-    relativePath,
-    kind,
-  );
+  const normalizedRelativePath = normalizeFileMentionRelativePath(relativePath, kind);
   return `[${escapeMarkdownLabel(label)}](${escapeMarkdownDestination(normalizeMarkdownDestination(normalizedRelativePath))})`;
 }
 
-export function buildSkillMentionMarkdown(
-  label: string,
-  skillPath?: string,
-): string {
+export function buildSkillMentionMarkdown(label: string, skillPath?: string): string {
   if (!skillPath) {
     return `$${label}`;
   }
@@ -92,10 +77,7 @@ export function buildSubagentMentionMarkdown(label: string): string {
   return `@${label}`;
 }
 
-export function buildSessionMentionMarkdown(
-  sessionId: string,
-  label?: string,
-): string {
+export function buildSessionMentionMarkdown(sessionId: string, label?: string): string {
   const trimmedLabel = label?.trim();
   if (!trimmedLabel || trimmedLabel === sessionId) {
     return `#${sessionId}`;
@@ -105,10 +87,7 @@ export function buildSessionMentionMarkdown(
 
 // Plugin 引用的 canonical 持久化载体：
 // `[@Label](plugin://stable-id)`。身份只在 destination；label 仅用于展示。
-export function buildPluginMentionMarkdown(
-  label: string,
-  pluginId: string,
-): string {
+export function buildPluginMentionMarkdown(label: string, pluginId: string): string {
   return `[${escapeMarkdownLabel(`@${label}`)}](plugin://${escapeMarkdownDestination(pluginId)})`;
 }
 
@@ -122,8 +101,7 @@ type MentionTextPart =
   | { type: "session"; label: string }
   | { type: "plugin"; label: string; pluginId?: string };
 
-const PLUGIN_STABLE_ID_PATTERN =
-  /^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const PLUGIN_STABLE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 function parsePluginStableId(destination: string): string | undefined {
   if (!destination.startsWith("plugin://")) return undefined;
@@ -149,9 +127,7 @@ export function formatSkillMentionDisplayLabel(label: string): string {
   if (words.length === 0) {
     return label;
   }
-  return words
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
+  return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(" ");
 }
 
 function isDirectoryMentionDestination(destination: string): boolean {
@@ -209,15 +185,10 @@ export function parseMentionMarkdown(content: string): MentionTextPart[] {
     const destination = match[2] ?? match[3] ?? "";
     const matchStart = match.index ?? 0;
     if (matchStart > cursor) {
-      parts.push(
-        ...parseInlineMentionTokens(content.slice(cursor, matchStart)),
-      );
+      parts.push(...parseInlineMentionTokens(content.slice(cursor, matchStart)));
     }
     if (/^#sess_[a-zA-Z0-9._-]+$/.test(destination)) {
-      parts.push({
-        type: "session",
-        label: label.startsWith("#") ? label.slice(1) : label,
-      });
+      parts.push({ type: "session", label: label.startsWith("#") ? label.slice(1) : label });
     } else if (destination.startsWith("plugin://")) {
       // Plugin 引用链接绝不能落入 file 分支或被当外链处理；
       // 发送后曾只保留 label，消息层失去 stable ID，只能固定显示兜底图标。
@@ -234,15 +205,9 @@ export function parseMentionMarkdown(content: string): MentionTextPart[] {
     } else if (isDirectoryMentionDestination(destination)) {
       // 目录 mention 之前只按普通 file 还原，消息回显层拿不到 folder 语义，
       // 于是文件夹候选在气泡里会继续显示成普通文件图标。这里根据链接目标是否以斜杠结尾恢复目录类型。
-      parts.push({
-        type: "directory",
-        label: label.startsWith("@") ? label.slice(1) : label,
-      });
+      parts.push({ type: "directory", label: label.startsWith("@") ? label.slice(1) : label });
     } else {
-      parts.push({
-        type: "file",
-        label: label.startsWith("@") ? label.slice(1) : label,
-      });
+      parts.push({ type: "file", label: label.startsWith("@") ? label.slice(1) : label });
     }
     cursor = matchStart + fullMatch.length;
   }

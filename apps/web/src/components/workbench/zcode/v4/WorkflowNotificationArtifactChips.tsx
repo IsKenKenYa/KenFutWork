@@ -1,13 +1,6 @@
-/**
- * zcode 照搬：`@/v4/WorkflowNotificationArtifactChips.tsx`（references/zcode/packages/ui/src/v4/WorkflowNotificationArtifactChips.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import { WorkflowArtifactStrip } from "@zui/components/workflow-timeline/WorkflowArtifactStrip";
-import { TID_CHAT_WORKFLOW_ARTIFACT_CHIP } from "@zui/lib/zcode-shared";
-import type { WorkflowNotificationMeta } from "@zui/lib/zcode-shared/zcode-protocol-v4";
+import { TID_CHAT_WORKFLOW_ARTIFACT_CHIP } from "@zcode/shared";
+import type { WorkflowNotificationMeta } from "@zcode/shared/zcode-protocol-v4";
+import { WorkflowArtifactStrip } from "@zui/components/workflow-timeline/WorkflowArtifactStrip.js";
 
 /**
  * 终态通知行折叠头部尾部的产物条：小号产物药丸，≤ 3 枚 + `+N`。
@@ -24,12 +17,10 @@ export function WorkflowNotificationArtifactChips({
   truncated,
   onOpenArtifact,
 }: {
-  artifacts: NonNullable<
-    Extract<WorkflowNotificationMeta, { kind: "terminal" }>["artifacts"]
-  >;
+  artifacts: NonNullable<Extract<WorkflowNotificationMeta, { kind: "terminal" }>["artifacts"]>;
   /** 发射侧砍过（超 8 或被过滤）——「+N」因此可能少报，用「…」而不是数字。 */
-  truncated?: boolean | undefined;
-  onOpenArtifact?: (artifactId: string) => void | undefined;
+  truncated?: boolean;
+  onOpenArtifact?: (artifactId: string) => void;
 }) {
   return (
     <WorkflowArtifactStrip

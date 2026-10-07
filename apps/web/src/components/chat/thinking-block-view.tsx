@@ -36,7 +36,7 @@ export const ThinkingBlockView = React.memo(function ThinkingBlockView({
         onClick={() => setExpanded((v) => !v)}
         className="flex items-center gap-2 text-xs text-muted-foreground/70 hover:text-muted-foreground transition-colors"
         aria-expanded={expanded || isStreaming}
-        aria-label={isStreaming ? "AI is thinking" : "Toggle thinking content"}
+        aria-label={isStreaming ? "正在思考" : "展开思考内容"}
       >
         {isStreaming ? (
           <motion.div
@@ -59,7 +59,7 @@ export const ThinkingBlockView = React.memo(function ThinkingBlockView({
             >
               <path d="M7.314 1.451a5.527 5.527 0 0 0 5.519 5.242v.614a5.527 5.527 0 0 0-5.519 5.242l-.007.284h-.614l-.007-.284a5.527 5.527 0 0 0-5.519-5.242v-.614a5.527 5.527 0 0 0 5.519-5.242l.007-.284h.614zm4.31 8.125c.042.835.733 1.5 1.58 1.5v.176c-.847 0-1.538.664-1.58 1.5l-.002.081h-.176l-.002-.081a1.58 1.58 0 0 0-1.579-1.5v-.176c.846 0 1.537-.665 1.58-1.5l.001-.08h.176zM7 4.204A6.6 6.6 0 0 1 4.205 7 6.6 6.6 0 0 1 7 9.795 6.6 6.6 0 0 1 9.794 7 6.6 6.6 0 0 1 7 4.204" />
             </svg>
-            <span>Thinking...</span>
+            <span>思考中…</span>
           </motion.div>
         ) : (
           <>
@@ -79,7 +79,7 @@ export const ThinkingBlockView = React.memo(function ThinkingBlockView({
                 strokeLinejoin="round"
               />
             </motion.svg>
-            <span>Thought for a moment</span>
+            <span>已思考</span>
           </>
         )}
       </button>

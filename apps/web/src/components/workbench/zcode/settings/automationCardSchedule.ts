@@ -1,19 +1,12 @@
-/**
- * zcode 照搬：`@/settings/automationCardSchedule.ts`（references/zcode/packages/ui/src/settings/automationCardSchedule.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type { ZCodeAutomationScheduleRule } from "@zui/lib/zcode-shared";
+import type { ZCodeAutomationScheduleRule } from "@zcode/shared";
 import {
-  type CronBuilderState,
   describeCron,
   describeCronBuilder,
+  type CronBuilderState,
   type IntlLike,
-} from "@zui/settings/automationFormat";
+} from "@zui/settings/automationFormat.js";
 
-function scheduleRuleToBuilder(
-  rule: ZCodeAutomationScheduleRule,
-): CronBuilderState {
+function scheduleRuleToBuilder(rule: ZCodeAutomationScheduleRule): CronBuilderState {
   return {
     frequency: "custom",
     hour: rule.hour,
@@ -48,10 +41,7 @@ export function describeAutomationCardSchedule(
   }
   // 长月度间隔的兼容 cron 固定为每月候选；只解析 cron 会把“每 30 个月”误显为“每月”。
   if (automation.scheduleRule) {
-    return describeCronBuilder(
-      scheduleRuleToBuilder(automation.scheduleRule),
-      intl,
-    );
+    return describeCronBuilder(scheduleRuleToBuilder(automation.scheduleRule), intl);
   }
   return describeCron(automation.cronExpr, intl);
 }

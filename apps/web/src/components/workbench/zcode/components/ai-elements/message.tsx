@@ -1,10 +1,3 @@
-/**
- * zcode 照搬：`@/components/ai-elements/message.tsx`（references/zcode/packages/ui/src/components/ai-elements/message.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）；源文件自带头注保留于下。
- * 适配注记（P9）：导出接口与文件内函数参数的可选成员放宽 `| undefined`（纯类型注记，
- * 运行时逐字不动；exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
 /*
  * Derived from vercel/ai-elements (packages/elements/src/message.tsx).
  * Copyright 2023 Vercel, Inc. Licensed under Apache-2.0.
@@ -13,96 +6,23 @@
  */
 "use client";
 
+import { Button } from "../ui/button.js";
+import { ButtonGroup, ButtonGroupText } from "../ui/button-group.js";
+import { cn } from "../lib/utils.js";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { createMathPlugin } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
-import { ControlHintTooltip } from "@zui/ControlHintTooltip";
-import {
-  CodeBlock,
-  CodeBlockHeader,
-} from "@zui/components/ai-elements/code-block";
-import { MarkdownBlockquote } from "@zui/components/ai-elements/markdown-blockquote";
-import {
-  MarkdownImage,
-  MarkdownImageParagraph,
-  type MarkdownImageProps,
-  normalizeConsecutiveMarkdownImageBlocks,
-} from "@zui/components/ai-elements/markdown-image";
-import {
-  MarkdownListItem,
-  MarkdownOrderedList,
-  MarkdownUnorderedList,
-} from "@zui/components/ai-elements/markdown-list";
-import {
-  MarkdownTable,
-  MarkdownTableBody,
-  MarkdownTableCell,
-  MarkdownTableHead,
-  MarkdownTableHeader,
-  MarkdownTableRow,
-} from "@zui/components/ai-elements/markdown-table";
-import { STREAMDOWN_CONTROLS } from "@zui/components/ai-elements/streamdown-controls";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@zui/components/ui/context-menu";
-import { resolveMessageLinkOpenTarget } from "@zui/embeddedBrowserHelpers";
-import { useFileContextActions } from "@zui/hooks/useFileContextActions";
-import { useOptionalPlatform, usePlatform } from "@zui/hooks/usePlatform";
-import { useOptionalServices } from "@zui/hooks/useServices";
-import { useWorkspaceOpenInEditorTarget } from "@zui/hooks/useWorkspaceOpenInEditorTarget";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { stripBalancedAssistantPathQuotes } from "@zui/lib/assistantPathQuotes";
-import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings";
-import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@zui/lib/codePreviewSettings";
-import type { CodeViewerSource } from "@zui/lib/codeViewer";
-import {
-  persistLastSelectedEditorId,
-  readLastSelectedEditorId,
-} from "@zui/lib/editorPreference";
-import {
-  FileDisplayIcon,
-  FOLDER_FILE_ICON_SRC,
-  resolveFileDisplayDescriptor,
-} from "@zui/lib/fileDisplay";
-import {
-  normalizeWorkspaceRelativeFilePath,
-  parseMarkdownFileLinkTarget,
-  resolveMarkdownFileLink,
-} from "@zui/lib/markdownFileLink";
-import { getPathLeaf } from "@zui/lib/path";
-import { windowsFileLinkEscapeRemarkPlugin } from "@zui/lib/windowsFileLinkEscapeRemarkPlugin";
-import { resolveWorkspaceEditorSelection } from "@zui/lib/workspaceEditorSelection";
-import type {
-  EditorInfo,
-  FileStat,
-  OpenInEditorOptions,
-} from "@zui/lib/zcode-shared";
-import { rewriteMarkdownArtifactImageSources } from "@zui/lib/zcode-shared";
-import { projectZCodeFileCitations } from "@zui/lib/zcodeFileCitation";
-import { createZCodeFileCitationRemarkPlugin } from "@zui/lib/zcodeFileCitationRemarkPlugin";
-import { logger } from "@zui/logger";
-import { useZCodeStore } from "@zui/store/StoreProvider";
-import type { Theme } from "@zui/useTheme";
-import { sortInstalledEditorsForFileTree } from "@zui/workspace-file-tree/helpers";
-import { getWorkspaceFileRelativePath } from "@zui/workspace-file-tree/model";
+import type { EditorInfo, FileStat, OpenInEditorOptions } from "@zcode/shared";
 import type { UIMessage } from "ai";
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  CopyIcon,
-  ExternalLinkIcon,
-} from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, CopyIcon, ExternalLinkIcon } from "lucide-react";
+import remarkCjkFriendlyGfmStrikethrough from "remark-cjk-friendly-gfm-strikethrough";
 import type {
   ComponentProps,
   ErrorInfo,
   HTMLAttributes,
-  ReactElement,
   MouseEvent as ReactMouseEvent,
+  ReactElement,
   ReactNode,
 } from "react";
 import {
@@ -117,17 +37,71 @@ import {
   useMemo,
   useState,
 } from "react";
-import remarkCjkFriendlyGfmStrikethrough from "remark-cjk-friendly-gfm-strikethrough";
 import type { BundledTheme } from "shiki";
-import {
-  defaultRehypePlugins,
-  defaultRemarkPlugins,
-  Streamdown,
-} from "streamdown";
+import { defaultRehypePlugins, defaultRemarkPlugins, Streamdown } from "streamdown";
 import type { Pluggable, PluggableList } from "unified";
-import { cn } from "../lib/utils";
-import { Button } from "../ui/button";
-import { ButtonGroup, ButtonGroupText } from "../ui/button-group";
+import { CodeBlock, CodeBlockHeader } from "@zui/components/ai-elements/code-block.js";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@zui/components/ui/context-menu.js";
+import { MarkdownBlockquote } from "@zui/components/ai-elements/markdown-blockquote.js";
+import {
+  MarkdownListItem,
+  MarkdownOrderedList,
+  MarkdownUnorderedList,
+} from "@zui/components/ai-elements/markdown-list.js";
+import {
+  MarkdownTable,
+  MarkdownTableBody,
+  MarkdownTableCell,
+  MarkdownTableHead,
+  MarkdownTableHeader,
+  MarkdownTableRow,
+} from "@zui/components/ai-elements/markdown-table.js";
+import {
+  MarkdownImage,
+  MarkdownImageParagraph,
+  normalizeConsecutiveMarkdownImageBlocks,
+  type MarkdownImageProps,
+} from "@zui/components/ai-elements/markdown-image.js";
+import { STREAMDOWN_CONTROLS } from "@zui/components/ai-elements/streamdown-controls.js";
+import { resolveMessageLinkOpenTarget } from "@zui/embeddedBrowserHelpers.js";
+import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
+import { persistLastSelectedEditorId, readLastSelectedEditorId } from "@zui/lib/editorPreference.js";
+import {
+  FileDisplayIcon,
+  FOLDER_FILE_ICON_SRC,
+  resolveFileDisplayDescriptor,
+} from "@zui/lib/fileDisplay.js";
+import {
+  normalizeWorkspaceRelativeFilePath,
+  parseMarkdownFileLinkTarget,
+  resolveMarkdownFileLink,
+} from "@zui/lib/markdownFileLink.js";
+import { stripBalancedAssistantPathQuotes } from "@zui/lib/assistantPathQuotes.js";
+import { getPathLeaf } from "@zui/lib/path.js";
+import { getWorkspaceFileRelativePath } from "@zui/workspace-file-tree/model.js";
+import { resolveWorkspaceEditorSelection } from "@zui/lib/workspaceEditorSelection.js";
+import { sortInstalledEditorsForFileTree } from "@zui/workspace-file-tree/helpers.js";
+import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings.js";
+import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@zui/lib/codePreviewSettings.js";
+import { useZCodeStore } from "@zui/store/StoreProvider.js";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { useOptionalPlatform, usePlatform } from "@zui/hooks/usePlatform.js";
+import { useFileContextActions } from "@zui/hooks/useFileContextActions.js";
+import { useWorkspaceOpenInEditorTarget } from "@zui/hooks/useWorkspaceOpenInEditorTarget.js";
+import { useOptionalServices } from "@zui/hooks/useServices.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { logger } from "@zui/logger.js";
+import type { Theme } from "@zui/useTheme.js";
+import { createZCodeFileCitationRemarkPlugin } from "@zui/lib/zcodeFileCitationRemarkPlugin.js";
+import { windowsFileLinkEscapeRemarkPlugin } from "@zui/lib/windowsFileLinkEscapeRemarkPlugin.js";
+import { projectZCodeFileCitations } from "@zui/lib/zcodeFileCitation.js";
+import { rewriteMarkdownArtifactImageSources } from "@zcode/shared";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -146,11 +120,7 @@ export const Message = ({ className, from, ...props }: MessageProps) => (
 
 export type MessageContentProps = HTMLAttributes<HTMLDivElement>;
 
-export const MessageContent = ({
-  children,
-  className,
-  ...props
-}: MessageContentProps) => (
+export const MessageContent = ({ children, className, ...props }: MessageContentProps) => (
   <div
     className={cn(
       "is-user:dark flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden text-ui-base",
@@ -166,11 +136,7 @@ export const MessageContent = ({
 
 export type MessageActionsProps = ComponentProps<"div">;
 
-export const MessageActions = ({
-  className,
-  children,
-  ...props
-}: MessageActionsProps) => (
+export const MessageActions = ({ className, children, ...props }: MessageActionsProps) => (
   <div className={cn("flex items-center gap-1", className)} {...props}>
     {children}
   </div>
@@ -216,17 +182,13 @@ interface MessageBranchContextType {
   setBranches: (branches: ReactElement[]) => void;
 }
 
-const MessageBranchContext = createContext<MessageBranchContextType | null>(
-  null,
-);
+const MessageBranchContext = createContext<MessageBranchContextType | null>(null);
 
 const useMessageBranch = () => {
   const context = useContext(MessageBranchContext);
 
   if (!context) {
-    throw new Error(
-      "MessageBranch components must be used within MessageBranch",
-    );
+    throw new Error("MessageBranch components must be used within MessageBranch");
   }
 
   return context;
@@ -255,14 +217,12 @@ export const MessageBranch = ({
   );
 
   const goToPrevious = useCallback(() => {
-    const newBranch =
-      currentBranch > 0 ? currentBranch - 1 : branches.length - 1;
+    const newBranch = currentBranch > 0 ? currentBranch - 1 : branches.length - 1;
     handleBranchChange(newBranch);
   }, [currentBranch, branches.length, handleBranchChange]);
 
   const goToNext = useCallback(() => {
-    const newBranch =
-      currentBranch < branches.length - 1 ? currentBranch + 1 : 0;
+    const newBranch = currentBranch < branches.length - 1 ? currentBranch + 1 : 0;
     handleBranchChange(newBranch);
   }, [currentBranch, branches.length, handleBranchChange]);
 
@@ -280,20 +240,14 @@ export const MessageBranch = ({
 
   return (
     <MessageBranchContext.Provider value={contextValue}>
-      <div
-        className={cn("grid w-full gap-2 [&>div]:pb-0", className)}
-        {...props}
-      />
+      <div className={cn("grid w-full gap-2 [&>div]:pb-0", className)} {...props} />
     </MessageBranchContext.Provider>
   );
 };
 
 export type MessageBranchContentProps = HTMLAttributes<HTMLDivElement>;
 
-export const MessageBranchContent = ({
-  children,
-  ...props
-}: MessageBranchContentProps) => {
+export const MessageBranchContent = ({ children, ...props }: MessageBranchContentProps) => {
   const { currentBranch, setBranches, branches } = useMessageBranch();
   const childrenArray = useMemo(
     () => (Array.isArray(children) ? children : [children]),
@@ -323,10 +277,7 @@ export const MessageBranchContent = ({
 
 export type MessageBranchSelectorProps = ComponentProps<typeof ButtonGroup>;
 
-export const MessageBranchSelector = ({
-  className,
-  ...props
-}: MessageBranchSelectorProps) => {
+export const MessageBranchSelector = ({ className, ...props }: MessageBranchSelectorProps) => {
   const { totalBranches } = useMessageBranch();
 
   // Don't render if there's only one branch
@@ -348,10 +299,7 @@ export const MessageBranchSelector = ({
 
 export type MessageBranchPreviousProps = ComponentProps<typeof Button>;
 
-export const MessageBranchPrevious = ({
-  children,
-  ...props
-}: MessageBranchPreviousProps) => {
+export const MessageBranchPrevious = ({ children, ...props }: MessageBranchPreviousProps) => {
   const { goToPrevious, totalBranches } = useMessageBranch();
 
   return (
@@ -371,10 +319,7 @@ export const MessageBranchPrevious = ({
 
 export type MessageBranchNextProps = ComponentProps<typeof Button>;
 
-export const MessageBranchNext = ({
-  children,
-  ...props
-}: MessageBranchNextProps) => {
+export const MessageBranchNext = ({ children, ...props }: MessageBranchNextProps) => {
   const { goToNext, totalBranches } = useMessageBranch();
 
   return (
@@ -394,18 +339,12 @@ export const MessageBranchNext = ({
 
 export type MessageBranchPageProps = HTMLAttributes<HTMLSpanElement>;
 
-export const MessageBranchPage = ({
-  className,
-  ...props
-}: MessageBranchPageProps) => {
+export const MessageBranchPage = ({ className, ...props }: MessageBranchPageProps) => {
   const { currentBranch, totalBranches } = useMessageBranch();
 
   return (
     <ButtonGroupText
-      className={cn(
-        "border-none bg-transparent text-muted-foreground shadow-none",
-        className,
-      )}
+      className={cn("border-none bg-transparent text-muted-foreground shadow-none", className)}
       {...props}
     >
       {currentBranch + 1} of {totalBranches}
@@ -429,10 +368,7 @@ export type MessageResponseProps = {
   readAttachment?: (params: {
     sessionId: string;
     ref: string;
-  }) => Promise<
-    | { bytes: Uint8Array; mediaType: string }
-    | { url: string; mediaType: string }
-  >;
+  }) => Promise<{ bytes: Uint8Array; mediaType: string } | { url: string; mediaType: string }>;
   /**
    * 应用主题（store 耦合剥离）：决定代码块高亮取 light/dark 主题。
    * 由调用方从上层状态传入；默认 "system" 跟随操作系统，供待删旧调用点兜底。
@@ -454,11 +390,11 @@ export interface MessageFileLinkTarget {
   path: string;
   label: string;
   /** 仅用于显式尾随斜杠的目录展示提示；打开第三方应用前必须重新 stat。 */
-  pathKind?: NonNullable<OpenInEditorOptions["pathKind"]> | undefined;
-  relativePath?: string | undefined;
-  workspacePath?: string | undefined;
-  workspaceIdentity?: string | undefined;
-  workspaceRemoteSessionId?: string | undefined;
+  pathKind?: NonNullable<OpenInEditorOptions["pathKind"]>;
+  relativePath?: string;
+  workspacePath?: string;
+  workspaceIdentity?: string;
+  workspaceRemoteSessionId?: string;
 }
 
 // @streamdown/math 默认不解析 `$...$` 行内公式，导致客户消息里块级 `$$...$$`
@@ -467,18 +403,14 @@ const messageMathPlugin = createMathPlugin({ singleDollarTextMath: true });
 
 function disableSingleTilde(plugin: Pluggable): Pluggable {
   if (!Array.isArray(plugin)) {
-    return typeof plugin === "function"
-      ? [plugin, { singleTilde: false }]
-      : plugin;
+    return typeof plugin === "function" ? [plugin, { singleTilde: false }] : plugin;
   }
 
   const [attacher, existingOptions] = plugin;
   return [
     attacher,
     {
-      ...(typeof existingOptions === "object" && existingOptions !== null
-        ? existingOptions
-        : {}),
+      ...(typeof existingOptions === "object" && existingOptions !== null ? existingOptions : {}),
       singleTilde: false,
     },
   ];
@@ -486,21 +418,14 @@ function disableSingleTilde(plugin: Pluggable): Pluggable {
 
 const messageCjkRemarkPluginsAfter = cjk.remarkPluginsAfter.map((plugin) => {
   const attacher = Array.isArray(plugin) ? plugin[0] : plugin;
-  return attacher === remarkCjkFriendlyGfmStrikethrough
-    ? disableSingleTilde(plugin)
-    : plugin;
+  return attacher === remarkCjkFriendlyGfmStrikethrough ? disableSingleTilde(plugin) : plugin;
 });
 const messageCjkPlugin: typeof cjk = {
   ...cjk,
   remarkPlugins: [...cjk.remarkPluginsBefore, ...messageCjkRemarkPluginsAfter],
   remarkPluginsAfter: messageCjkRemarkPluginsAfter,
 };
-const streamdownPlugins = {
-  cjk: messageCjkPlugin,
-  code,
-  math: messageMathPlugin,
-  mermaid,
-};
+const streamdownPlugins = { cjk: messageCjkPlugin, code, math: messageMathPlugin, mermaid };
 const messageLinkSafety = { enabled: false } as const;
 // `decoration-dashed` 会把原有的细圆点下划线绘制成短线段；这里只改变下划线的
 // 出现时机，继续使用 `dotted` 保留原视觉形态。
@@ -533,10 +458,8 @@ const knownExtensionlessFileNames = new Set([
 const markdownFencePattern = /^(?: {0,3})(`{3,}|~{3,})/;
 const likelyMathSyntaxPattern = /[\\{}^_=+\-*/<>|()[\]∇∂∫∑√∞≈≠≤≥±×÷πΠα-ωΑ-Ω]/u;
 const texCommandPattern = /\\[A-Za-z]+/;
-const simpleMathIdentifierPattern =
-  /^(?:[A-Za-z]|[a-z][A-Za-z0-9]{1,2}|\d+(?:\.\d+)?)$/;
-const compactCurrencyRangePrefixPattern =
-  /^(?:\d[\d,]*(?:\.\d+)?|\.\d+)[+\-*/]$/;
+const simpleMathIdentifierPattern = /^(?:[A-Za-z]|[a-z][A-Za-z0-9]{1,2}|\d+(?:\.\d+)?)$/;
+const compactCurrencyRangePrefixPattern = /^(?:\d[\d,]*(?:\.\d+)?|\.\d+)[+\-*/]$/;
 const compactCurrencyAmountStartPattern = /^(?:\d|\.\d)/;
 
 type MarkdownCodeProps = ComponentProps<"code"> & {
@@ -587,14 +510,10 @@ function hashMarkdownCacheKey(markdown: string): string {
 function normalizeMarkdownRenderError(error: unknown): Error {
   return error instanceof Error
     ? error
-    : new Error(
-        typeof error === "string" ? error : "Unknown markdown render error",
-      );
+    : new Error(typeof error === "string" ? error : "Unknown markdown render error");
 }
 
-function getMarkdownFence(
-  line: string,
-): { marker: string; length: number } | null {
+function getMarkdownFence(line: string): { marker: string; length: number } | null {
   const match = markdownFencePattern.exec(line);
 
   if (!match) {
@@ -627,10 +546,7 @@ function isSingleDollarDelimiter(text: string, index: number): boolean {
   );
 }
 
-function findClosingSingleDollarDelimiter(
-  text: string,
-  startIndex: number,
-): number {
+function findClosingSingleDollarDelimiter(text: string, startIndex: number): number {
   for (let index = startIndex; index < text.length; index++) {
     if (isSingleDollarDelimiter(text, index)) {
       return index;
@@ -645,10 +561,7 @@ function isLikelySingleDollarMath(content: string): boolean {
     return false;
   }
 
-  if (
-    texCommandPattern.test(content) ||
-    likelyMathSyntaxPattern.test(content)
-  ) {
+  if (texCommandPattern.test(content) || likelyMathSyntaxPattern.test(content)) {
     return true;
   }
 
@@ -767,11 +680,7 @@ function normalizeMessageSingleDollarMath(markdown: string): string {
     if (activeFence) {
       output += line + newline;
 
-      if (
-        fence &&
-        fence.marker === activeFence.marker &&
-        fence.length >= activeFence.length
-      ) {
+      if (fence && fence.marker === activeFence.marker && fence.length >= activeFence.length) {
         activeFence = null;
       }
     } else {
@@ -788,9 +697,7 @@ function normalizeMessageSingleDollarMath(markdown: string): string {
   return output;
 }
 
-export function resolveMessageStreamdownMode(
-  renderStreaming: boolean,
-): MessageStreamdownMode {
+export function resolveMessageStreamdownMode(renderStreaming: boolean): MessageStreamdownMode {
   // 生产包里有用户命中 React #185，堆栈落在 MessageResponse -> Streamdown。
   // 之前完成态长消息也会为了分块缓存走 streaming mode，Streamdown 内部 block state
   // 在某些历史 markdown 上会反复同步状态。现在只有真实流式输出进入 streaming，
@@ -804,9 +711,7 @@ class MessageResponseMarkdownBoundary extends Component<
 > {
   state: MessageResponseMarkdownBoundaryState = { error: null };
 
-  static getDerivedStateFromError(
-    error: unknown,
-  ): MessageResponseMarkdownBoundaryState {
+  static getDerivedStateFromError(error: unknown): MessageResponseMarkdownBoundaryState {
     return { error: normalizeMarkdownRenderError(error) };
   }
 
@@ -822,9 +727,7 @@ class MessageResponseMarkdownBoundary extends Component<
     });
   }
 
-  override componentDidUpdate(
-    previousProps: MessageResponseMarkdownBoundaryProps,
-  ) {
+  override componentDidUpdate(previousProps: MessageResponseMarkdownBoundaryProps) {
     if (this.state.error && previousProps.resetKey !== this.props.resetKey) {
       this.setState({ error: null });
     }
@@ -898,8 +801,7 @@ function shouldRewriteMarkdownFileLinkHref(href: string): boolean {
 function rewriteLocalFileMarkdownTargetsRehypePlugin() {
   return (tree: HastElementNode) => {
     const visitNode = (node: HastElementNode) => {
-      const targetProperty =
-        node.tagName === "a" ? "href" : node.tagName === "img" ? "src" : null;
+      const targetProperty = node.tagName === "a" ? "href" : node.tagName === "img" ? "src" : null;
       if (
         node.type === "element" &&
         targetProperty &&
@@ -925,17 +827,17 @@ const messageRehypePlugins: PluggableList = [
   ...Object.values(defaultRehypePlugins),
 ];
 
-const messageDefaultRemarkPlugins: PluggableList = Object.entries(
-  defaultRemarkPlugins,
-).map(([name, plugin]) => {
-  if (name !== "gfm") {
-    return plugin;
-  }
+const messageDefaultRemarkPlugins: PluggableList = Object.entries(defaultRemarkPlugins).map(
+  ([name, plugin]) => {
+    if (name !== "gfm") {
+      return plugin;
+    }
 
-  // remark-gfm 与 Streamdown CJK 删除线扩展都默认开启 singleTilde，
-  // 后者还会覆盖前者的解析结果；两处必须同时关闭，才能让 `~text~` 按 GFM 规范保留原文。
-  return disableSingleTilde(plugin);
-});
+    // remark-gfm 与 Streamdown CJK 删除线扩展都默认开启 singleTilde，
+    // 后者还会覆盖前者的解析结果；两处必须同时关闭，才能让 `~text~` 按 GFM 规范保留原文。
+    return disableSingleTilde(plugin);
+  },
+);
 
 function resolveMessageCodeTheme(
   theme: Theme,
@@ -953,15 +855,15 @@ function resolveMessageCodeTheme(
 }
 
 export function buildMessageStreamdownRenderKey(params: {
-  attachmentReaderEpoch?: number | undefined;
+  attachmentReaderEpoch?: number;
   codeBlockTheme: BundledTheme;
   fontSizePx: number;
-  renderZCodeFileCitations?: boolean | undefined;
-  sessionId?: string | undefined;
-  workspacePath?: string | undefined;
-  workspaceHomePath?: string | undefined;
-  workspaceIdentity?: string | undefined;
-  workspaceRemoteSessionId?: string | undefined;
+  renderZCodeFileCitations?: boolean;
+  sessionId?: string;
+  workspacePath?: string;
+  workspaceHomePath?: string;
+  workspaceIdentity?: string;
+  workspaceRemoteSessionId?: string;
   wrapLongLines: boolean;
 }): string {
   // streaming/static 只是解析模式，不应参与 React key；否则流式状态抖动会卸载
@@ -986,9 +888,7 @@ const attachmentReaderEpochs = new WeakMap<
 >();
 let nextAttachmentReaderEpoch = 1;
 
-function getAttachmentReaderEpoch(
-  readAttachment: MessageResponseProps["readAttachment"],
-): number {
+function getAttachmentReaderEpoch(readAttachment: MessageResponseProps["readAttachment"]): number {
   if (!readAttachment) return 0;
   const existing = attachmentReaderEpochs.get(readAttachment);
   if (existing !== undefined) return existing;
@@ -1034,9 +934,9 @@ export function buildMessageFileLinkTarget(input: {
   href: string;
   label: string;
   path: string;
-  workspacePath?: string | undefined;
-  workspaceIdentity?: string | undefined;
-  workspaceRemoteSessionId?: string | undefined;
+  workspacePath?: string;
+  workspaceIdentity?: string;
+  workspaceRemoteSessionId?: string;
 }): MessageFileLinkTarget {
   // 文件名是否带扩展名不能代表文件系统类型；env、hosts、config 等无扩展名文件
   // 过去会被误判为目录。这里只保留显式尾随斜杠作为图标提示，打开方式必须再 stat。
@@ -1148,7 +1048,7 @@ function MessageExternalLink({
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild={true}>
+      <ContextMenuTrigger asChild>
         <button
           type="button"
           className={cn(
@@ -1172,9 +1072,7 @@ function MessageExternalLink({
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={() => handleOpen({ forceExternal: true })}>
           <ExternalLinkIcon className="size-4" />
-          <span>
-            {intl.formatMessage({ id: "chat.previewCards.openExternal" })}
-          </span>
+          <span>{intl.formatMessage({ id: "chat.previewCards.openExternal" })}</span>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -1187,45 +1085,35 @@ interface MessageFileLinkButtonProps extends ComponentProps<"button"> {
   onOpen: () => void;
 }
 
-const MessageFileLinkButton = forwardRef<
-  HTMLButtonElement,
-  MessageFileLinkButtonProps
->(function MessageFileLinkButton(
-  { children, className, fileIconSrc, fileLink, onOpen, ...props },
-  ref,
-) {
-  return (
-    <button
-      ref={ref}
-      type="button"
-      className={cn(messageFileLinkClassName, "cursor-pointer", className)}
-      title={fileLink.path}
-      onClick={onOpen}
-      {...props}
-    >
-      <FileDisplayIcon
-        src={fileIconSrc}
-        size={16}
-        className="ml-0.5 shrink-0 self-center"
-      />
-      <span className="min-w-0 self-baseline truncate">{children}</span>
-    </button>
-  );
-});
+const MessageFileLinkButton = forwardRef<HTMLButtonElement, MessageFileLinkButtonProps>(
+  function MessageFileLinkButton(
+    { children, className, fileIconSrc, fileLink, onOpen, ...props },
+    ref,
+  ) {
+    return (
+      <button
+        ref={ref}
+        type="button"
+        className={cn(messageFileLinkClassName, "cursor-pointer", className)}
+        title={fileLink.path}
+        onClick={onOpen}
+        {...props}
+      >
+        <FileDisplayIcon src={fileIconSrc} size={16} className="ml-0.5 shrink-0 self-center" />
+        <span className="min-w-0 self-baseline truncate">{children}</span>
+      </button>
+    );
+  },
+);
 
 interface MessageFileLinkProps {
-  className?: string | undefined;
+  className?: string;
   fileIconSrc: string;
   fileLink: MessageFileLinkTarget;
   onOpen: () => void;
 }
 
-function MessageFileLink({
-  className,
-  fileIconSrc,
-  fileLink,
-  onOpen,
-}: MessageFileLinkProps) {
+function MessageFileLink({ className, fileIconSrc, fileLink, onOpen }: MessageFileLinkProps) {
   const { intl } = useZCodeIntl();
   const platform = usePlatform();
   const services = useOptionalServices();
@@ -1252,9 +1140,7 @@ function MessageFileLink({
   const selectedEditor = useMemo(() => {
     const selectedEditorId = readLastSelectedEditorId();
     return (
-      sortedEditors.find((editor) => editor.id === selectedEditorId) ??
-      sortedEditors[0] ??
-      null
+      sortedEditors.find((editor) => editor.id === selectedEditorId) ?? sortedEditors[0] ?? null
     );
   }, [sortedEditors]);
 
@@ -1292,8 +1178,7 @@ function MessageFileLink({
     void openMessageFileLinkInEditor({
       editorId: editor.id,
       fileLink,
-      openInEditor: (editorId, path, options) =>
-        platform.openInEditor(editorId, path, options),
+      openInEditor: (editorId, path, options) => platform.openInEditor(editorId, path, options),
       remoteTarget: openInEditorContext.remoteTarget,
       statFile: (params) => services.fileService.stat(params),
     })
@@ -1319,7 +1204,7 @@ function MessageFileLink({
 
   return (
     <ContextMenu onOpenChange={(open) => open && void loadEditors()}>
-      <ContextMenuTrigger asChild={true}>
+      <ContextMenuTrigger asChild>
         <MessageFileLinkButton
           className={className}
           fileIconSrc={fileIconSrc}
@@ -1336,32 +1221,21 @@ function MessageFileLink({
         <ContextMenuSeparator />
         {selectedEditor ? (
           sortedEditors.map((editor) => (
-            <ContextMenuItem
-              key={editor.id}
-              onSelect={() => handleOpenInEditor(editor)}
-            >
-              <img
-                src={editor.iconDataUrl}
-                alt={editor.name}
-                className="size-4 shrink-0"
-              />
+            <ContextMenuItem key={editor.id} onSelect={() => handleOpenInEditor(editor)}>
+              <img src={editor.iconDataUrl} alt={editor.name} className="size-4 shrink-0" />
               <span>{editor.name}</span>
             </ContextMenuItem>
           ))
         ) : (
-          <ContextMenuItem disabled={true}>
+          <ContextMenuItem disabled>
             {intl.formatMessage({
-              id: loadingEditors
-                ? "common.loading"
-                : "chat.previewCards.noOpenApps",
+              id: loadingEditors ? "common.loading" : "chat.previewCards.noOpenApps",
             })}
           </ContextMenuItem>
         )}
         <ContextMenuSeparator />
         <ContextMenuItem
-          onSelect={() =>
-            void fileActions.copyAbsolutePath({ path: fileLink.path })
-          }
+          onSelect={() => void fileActions.copyAbsolutePath({ path: fileLink.path })}
         >
           <CopyIcon className="size-4" />
           {intl.formatMessage({ id: "fileActions.copyAbsolutePath" })}
@@ -1390,69 +1264,30 @@ function MessageMarkdownHeading({
 }: MarkdownHeadingProps & {
   headingLevel: keyof typeof messageMarkdownHeadingClassNames;
 }) {
-  const headingClassName = cn(
-    messageMarkdownHeadingClassNames[headingLevel],
-    className,
-  );
+  const headingClassName = cn(messageMarkdownHeadingClassNames[headingLevel], className);
   const dataStreamdown = `heading-${headingLevel.slice(1)}`;
 
   if (headingLevel === "h1") {
-    return (
-      <h1
-        className={headingClassName}
-        data-streamdown={dataStreamdown}
-        {...props}
-      />
-    );
+    return <h1 className={headingClassName} data-streamdown={dataStreamdown} {...props} />;
   }
 
   if (headingLevel === "h2") {
-    return (
-      <h2
-        className={headingClassName}
-        data-streamdown={dataStreamdown}
-        {...props}
-      />
-    );
+    return <h2 className={headingClassName} data-streamdown={dataStreamdown} {...props} />;
   }
 
   if (headingLevel === "h3") {
-    return (
-      <h3
-        className={headingClassName}
-        data-streamdown={dataStreamdown}
-        {...props}
-      />
-    );
+    return <h3 className={headingClassName} data-streamdown={dataStreamdown} {...props} />;
   }
 
   if (headingLevel === "h4") {
-    return (
-      <h4
-        className={headingClassName}
-        data-streamdown={dataStreamdown}
-        {...props}
-      />
-    );
+    return <h4 className={headingClassName} data-streamdown={dataStreamdown} {...props} />;
   }
 
   if (headingLevel === "h5") {
-    return (
-      <h5
-        className={headingClassName}
-        data-streamdown={dataStreamdown}
-        {...props}
-      />
-    );
+    return <h5 className={headingClassName} data-streamdown={dataStreamdown} {...props} />;
   }
 
-  return (
-    <h6
-      className={headingClassName}
-      data-streamdown={dataStreamdown}
-      {...props}
-    />
-  );
+  return <h6 className={headingClassName} data-streamdown={dataStreamdown} {...props} />;
 }
 
 export const messageResponsePropsAreEqual = (
@@ -1501,9 +1336,7 @@ export const MessageResponse = memo(
     const projectedCitationMarkdown = useMemo(
       () =>
         renderZCodeFileCitations
-          ? projectZCodeFileCitations(rawMarkdown, {
-              streaming: renderStreaming,
-            }).visibleText
+          ? projectZCodeFileCitations(rawMarkdown, { streaming: renderStreaming }).visibleText
           : rawMarkdown,
       [rawMarkdown, renderStreaming, renderZCodeFileCitations],
     );
@@ -1526,12 +1359,7 @@ export const MessageResponse = memo(
         // rehype 阶段已经看不到原文。这条还原必须无条件生效，不能挂在 citation 开关下。
         windowsFileLinkEscapeRemarkPlugin,
         ...(renderZCodeFileCitations && workspacePath
-          ? [
-              createZCodeFileCitationRemarkPlugin(
-                workspacePath,
-                workspaceHomePath,
-              ),
-            ]
+          ? [createZCodeFileCitationRemarkPlugin(workspacePath, workspaceHomePath)]
           : []),
       ],
       [renderZCodeFileCitations, workspaceHomePath, workspacePath],
@@ -1540,21 +1368,13 @@ export const MessageResponse = memo(
       "size-full text-ui-base leading-[1.75] tracking-wide [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
       className,
     );
-    const fallbackClassName = cn(
-      responseClassName,
-      "whitespace-pre-wrap break-words",
-    );
+    const fallbackClassName = cn(responseClassName, "whitespace-pre-wrap break-words");
     const boundaryResetKey = useMemo(
       () =>
         renderStreaming
           ? `streaming:${streamdownMode}`
           : `${streamdownMode}:${renderZCodeFileCitations ? "citations" : "plain"}:${hashMarkdownCacheKey(targetMarkdown)}`,
-      [
-        renderStreaming,
-        renderZCodeFileCitations,
-        streamdownMode,
-        targetMarkdown,
-      ],
+      [renderStreaming, renderZCodeFileCitations, streamdownMode, targetMarkdown],
     );
     const boundaryScope = useMemo<MessageResponseBoundaryScope>(
       () => ({
@@ -1613,16 +1433,10 @@ export const MessageResponse = memo(
           node: _node,
         }: ComponentProps<"a"> & { node?: unknown }) => {
           const resolvedHref =
-            typeof href === "string"
-              ? stripBalancedAssistantPathQuotes(href)
-              : "";
-          const fileLink = resolveMarkdownFileLink(
-            workspacePath,
-            resolvedHref,
-            {
-              homePath: workspaceHomePath,
-            },
-          );
+            typeof href === "string" ? stripBalancedAssistantPathQuotes(href) : "";
+          const fileLink = resolveMarkdownFileLink(workspacePath, resolvedHref, {
+            homePath: workspaceHomePath,
+          });
 
           if (fileLink && (onOpenFileLink || onOpenCodeViewer)) {
             const descriptor = resolveFileDisplayDescriptor(fileLink.path);
@@ -1717,10 +1531,7 @@ export const MessageResponse = memo(
           node: _node,
           ...strongProps
         }: MarkdownStrongProps) => (
-          <strong
-            className={cn("font-medium", strongClassName)}
-            {...strongProps}
-          />
+          <strong className={cn("font-medium", strongClassName)} {...strongProps} />
         ),
         code: ({
           children,
@@ -1744,9 +1555,7 @@ export const MessageResponse = memo(
             );
           }
 
-          const codeText = trimCodeFenceTrailingNewlines(
-            extractCodeText(children),
-          );
+          const codeText = trimCodeFenceTrailingNewlines(extractCodeText(children));
           const language = getCodeLanguage(codeClassName);
 
           return (
@@ -1854,18 +1663,8 @@ MessageResponse.displayName = "MessageResponse";
 
 export type MessageToolbarProps = ComponentProps<"div">;
 
-export const MessageToolbar = ({
-  className,
-  children,
-  ...props
-}: MessageToolbarProps) => (
-  <div
-    className={cn(
-      "mt-4 flex w-full items-center justify-between gap-4",
-      className,
-    )}
-    {...props}
-  >
+export const MessageToolbar = ({ className, children, ...props }: MessageToolbarProps) => (
+  <div className={cn("mt-4 flex w-full items-center justify-between gap-4", className)} {...props}>
     {children}
   </div>
 );

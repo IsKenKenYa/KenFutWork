@@ -1,35 +1,10 @@
-/**
- * zcode 照搬：`@/v4/workflowRunCardJoin.ts`（references/zcode/packages/ui/src/v4/workflowRunCardJoin.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-
-import type { WorkflowCausalityGraphData } from "@zui/components/workflow-graph/types";
-import type {
-  ConversationRow,
-  WorkflowRunState,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import type { WorkflowRunCardSummary } from "@zui/ToolCallBlocks/shared";
+import { workflowRunStepCounts, type WorkflowRunState } from "@zcode/shared/zcode-protocol-v4";
+import type { ConversationRow } from "@zcode/shared/zcode-protocol-v4";
+import type { WorkflowCausalityGraphData } from "@zui/components/workflow-graph/types.js";
+import type { WorkflowRunCardSummary } from "@zui/ToolCallBlocks/shared.js";
 
 /**
- * 步数进度：**已结算 / 已排程**（settled / observed）。动态工作流没有静态总数，所以分母是
- * 已排程节点数，绝不冒充全程百分比。
- *
- * 导出而不是留在建表函数里：状态胶囊的 Workflows 分区读的是同一条规则。此文件是该规则的唯一实现。
- */
-export function workflowRunStepCounts(run: WorkflowRunState): {
-  nodesSettled: number;
-  nodesTotal: number;
-} {
-  let nodesSettled = 0;
-  for (const node of run.nodes) {
-    if (node.phase === "settled") nodesSettled += 1;
-  }
-  return { nodesSettled, nodesTotal: run.nodes.length };
-}
-
-/**
- * 工具卡 → workflow run 的联接。
+ * 工具卡 → dwf run 的联接。
  *
  * 权威来源是 `workflowRuns` 投影里每条 run 的 `toolCallId`（schema 注释就写着它是
  * 「工具卡 → 详情页的关联键」）；工具行自己的 output 在 v4 下只剩
@@ -46,14 +21,14 @@ export function buildWorkflowRunByToolCallId(
   for (const run of runs ?? []) {
     // 没有 toolCallId 的 run 没有可点的卡片，不进表。
     if (!run.toolCallId) continue;
-    const { nodesSettled, nodesTotal } = workflowRunStepCounts(run);
+    const { settled, total } = workflowRunStepCounts(run);
     byToolCallId.set(run.toolCallId, {
       runId: run.runId,
       status: run.status,
       ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
-      nodesSettled,
+      nodesSettled: settled,
       // 已排程（observed）而不是全程总数：动态工作流的节点数由脚本在运行时决定。
-      nodesTotal,
+      nodesTotal: total,
       agents: run.actors.length,
       // 活投影整条带上：卡片内联的时间线要灯、药丸与墨迹。
       run,
@@ -77,13 +52,13 @@ export function buildWorkflowRunByRunId(
 ): ReadonlyMap<string, WorkflowRunCardSummary> {
   const byRunId = new Map<string, WorkflowRunCardSummary>();
   for (const run of runs ?? []) {
-    const { nodesSettled, nodesTotal } = workflowRunStepCounts(run);
+    const { settled, total } = workflowRunStepCounts(run);
     byRunId.set(run.runId, {
       runId: run.runId,
       status: run.status,
       ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
-      nodesSettled,
-      nodesTotal,
+      nodesSettled: settled,
+      nodesTotal: total,
       agents: run.actors.length,
       run,
       ...(run.resumable === true ? { resumable: true as const } : {}),
@@ -125,10 +100,7 @@ export function buildWorkflowRunPendingQuestionsByRunId(
 ): ReadonlyMap<string, ReadonlySet<string>> {
   const byRunId = new Map<string, ReadonlySet<string>>();
   for (const run of runs ?? []) {
-    byRunId.set(
-      run.runId,
-      new Set((run.pendingQuestions ?? []).map((question) => question.qid)),
-    );
+    byRunId.set(run.runId, new Set((run.pendingQuestions ?? []).map((question) => question.qid)));
   }
   return byRunId;
 }
@@ -156,8 +128,7 @@ function workflowGraphOfRow(
   if (row.kind === "turnHeader" || row.kind === "userInput") {
     const launch = row.workflowLaunch;
     const display = launch?.display;
-    if (launch === undefined || display?.kind !== "create_workflow")
-      return undefined;
+    if (launch === undefined || display?.kind !== "create_workflow") return undefined;
     const graph = display.causalityGraph;
     return graph !== undefined && graph.steps.length > 0
       ? { toolCallId: launch.toolCallId, graph }
@@ -206,8 +177,7 @@ export function resolveWorkflowRunGraph(
     visited.add(current);
     const graph = graphs.get(current);
     if (graph !== undefined) return graph;
-    if (!current.startsWith(WORKFLOW_SETTINGS_TOOL_CALL_PREFIX))
-      return undefined;
+    if (!current.startsWith(WORKFLOW_SETTINGS_TOOL_CALL_PREFIX)) return undefined;
     const settingsToolCallId: string = current;
     const run: WorkflowRunState | undefined = runs?.find(
       (candidate) => candidate.toolCallId === settingsToolCallId,
@@ -216,8 +186,7 @@ export function resolveWorkflowRunGraph(
     current =
       predecessorId === undefined
         ? undefined
-        : runs?.find((candidate) => candidate.runId === predecessorId)
-            ?.toolCallId;
+        : runs?.find((candidate) => candidate.runId === predecessorId)?.toolCallId;
   }
   return undefined;
 }

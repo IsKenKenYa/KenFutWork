@@ -15,15 +15,11 @@ const rootDir = path.resolve(dirname, "..");
 // 域（tag）封闭清单在这里独立维护，作为「分组清晰、零重复」的唯一裁判：
 // 生成器里 tags 从路由表聚合，路由表 tag 打错域时，这里对不上即红。
 const CLOSED_TAGS = [
-  "admin",
-  "api-tokens",
-  "auth",
   "blobs",
   "brand-kits",
   "canvases",
   "chat",
   "code",
-  "credits",
   "execution-modes",
   "flow",
   "fonts",
@@ -31,9 +27,10 @@ const CLOSED_TAGS = [
   "health",
   "image-proxy",
   "jobs",
+  "instance",
+  "local-access",
   "mcp",
   "models",
-  "payments",
   "permissions",
   "plugins",
   "projects",
@@ -44,7 +41,7 @@ const CLOSED_TAGS = [
   "system",
   "uploads",
   "usage",
-  "viewer",
+  "voice",
 ];
 
 const SPEC_PATH = "docs/api/openapi.json";
@@ -59,6 +56,7 @@ function enumerateSourceRoutes() {
       .filter((name) => name.endsWith(".ts"))
       .map((name) => path.join(httpDir, name)),
     path.join(rootDir, "apps/server/src/app.ts"),
+    path.join(rootDir, "apps/server/src/features/local-access/routes.ts"),
   ];
   const routePattern =
     /app\.(get|post|put|patch|delete)(?:<[^>]*>)?\(\s*"(\/api\/[^"]+)"/g;

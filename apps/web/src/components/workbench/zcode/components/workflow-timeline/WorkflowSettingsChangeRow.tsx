@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowSettingsChangeRow.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowSettingsChangeRow.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 // ============================================================
 // 设置轮的那一行
 // ============================================================
@@ -10,11 +5,11 @@
 // 改了什么——工具行的单行样式：滑杆图标、「已调整设置」、每项改动一段、时刻，以 `·` 相隔。
 // 它是记录，不是控件。
 
-import { workflowSettingsChangeSegments } from "@zui/components/workflow-timeline/workflowSettingsChange";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { WorkflowSettingsAmendMeta } from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import { SlidersHorizontalIcon } from "lucide-react";
 import { Fragment } from "react";
+import { SlidersHorizontalIcon } from "lucide-react";
+import type { WorkflowSettingsAmendMeta } from "@zcode/shared/zcode-protocol-v4";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { workflowSettingsChangeSegments } from "./workflowSettingsChange.js";
 
 export function WorkflowSettingsChangeRow({
   amend,
@@ -50,12 +45,12 @@ export function WorkflowSettingsChangeRow({
       className="flex min-w-0 items-center gap-2 py-0.5 text-ui-base text-foreground-subtle"
       data-testid="workflow-settings-change-row"
     >
-      <SlidersHorizontalIcon aria-hidden={true} className="size-4 shrink-0" />
+      <SlidersHorizontalIcon aria-hidden className="size-4 shrink-0" />
       <span className="flex min-w-0 flex-wrap items-center gap-x-2">
         {parts.map((part, index) => (
           <Fragment key={index}>
             {index > 0 ? (
-              <span aria-hidden={true} className="text-foreground-subtlest">
+              <span aria-hidden className="text-foreground-subtlest">
                 ·
               </span>
             ) : null}

@@ -1,13 +1,8 @@
-/**
- * zcode 照搬：`@/v4/chatLoadingVisibility.ts`（references/zcode/packages/ui/src/v4/chatLoadingVisibility.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 import type {
   ActiveWorkSummary,
   ConversationRow,
   PendingInteraction,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
+} from "@zcode/shared/zcode-protocol-v4";
 
 /**
  * 等待用户操作时，弹窗/问答卡已经是唯一进度反馈，不能再显示 loading。
@@ -28,14 +23,10 @@ export function hasChatLoadingBlockingInteraction(
 export function hasChatLoadingBlockingActiveWork(
   activeWorks: readonly ActiveWorkSummary[],
 ): boolean {
-  return activeWorks.some(
-    (work) => work.kind === "compact" || work.kind === "goalVerifier",
-  );
+  return activeWorks.some((work) => work.kind === "compact" || work.kind === "goalVerifier");
 }
 
-function hasChatLoadingBlockingMaintenanceRow(
-  rows: readonly ConversationRow[],
-): boolean {
+function hasChatLoadingBlockingMaintenanceRow(rows: readonly ConversationRow[]): boolean {
   return rows.some(
     (row) =>
       row.kind === "timelineMarker" &&
@@ -57,12 +48,7 @@ export function shouldShowTurnChatLoading({
   isRunning: boolean;
   rows: readonly ConversationRow[];
 }): boolean {
-  if (
-    !isLastTurn ||
-    !isRunning ||
-    blockedByActiveWork ||
-    blockedByInteraction
-  ) {
+  if (!isLastTurn || !isRunning || blockedByActiveWork || blockedByInteraction) {
     return false;
   }
 
@@ -70,8 +56,7 @@ export function shouldShowTurnChatLoading({
   // 可能先只有行状态；行级 fallback 避免权限、compact、goal verifier 已出现时
   // 底部 loading 短暂闪回。
   return (
-    !rows.some(
-      (row) => row.kind === "toolCall" && row.status === "pendingApproval",
-    ) && !hasChatLoadingBlockingMaintenanceRow(rows)
+    !rows.some((row) => row.kind === "toolCall" && row.status === "pendingApproval") &&
+    !hasChatLoadingBlockingMaintenanceRow(rows)
   );
 }

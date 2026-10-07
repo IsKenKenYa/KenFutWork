@@ -1,36 +1,28 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowRunSettingsFields.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowRunSettingsFields.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 // ============================================================
 // 「配置」弹层的两个字段
 // ============================================================
 // 从 WorkflowRunSettingsPopover.tsx 拆出：那边管表单状态、命令与后果句，这里只画两个受控字段——
 // 子代理模型（composer 的模型菜单 + 思考档）与「同时运行上限」步进器。props 全是烹熟的值。
 
-import { ThoughtLevelCycleControl } from "@zui/chat-input-toolbar/ThoughtLevelCycleControl";
-import { cn } from "@zui/components/lib/utils";
+import { useMemo, useRef, useState } from "react";
+import { MinusIcon, PlusIcon } from "lucide-react";
+import { ZCODE_AGENT_PROVIDER, type ZCodeConfigOption } from "@zcode/shared";
+import { ThoughtLevelCycleControl } from "@zui/chat-input-toolbar/ThoughtLevelCycleControl.js";
+import { cn } from "@zui/components/lib/utils.js";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupInput,
-} from "@zui/components/ui/input-group";
-import { clampWorkflowRunSettingsBound } from "@zui/components/workflow-timeline/workflowRunSettings";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  ZCODE_AGENT_PROVIDER,
-  type ZCodeConfigOption,
-} from "@zui/lib/zcode-shared";
+} from "@zui/components/ui/input-group.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import {
   MODEL_CONFIG_SELECT_BADGE_CLASS_NAME,
   ModelConfigSelect,
   type ModelSelectGroup,
   type ModelSelectGroupItem,
-} from "@zui/ModelConfigSelect";
-import { MinusIcon, PlusIcon } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+} from "@zui/ModelConfigSelect.js";
+import { clampWorkflowRunSettingsBound } from "./workflowRunSettings.js";
 
 const MODEL_ITEM_NEVER_LOCKED = () => false;
 
@@ -72,37 +64,24 @@ export function WorkflowRunSettingsModelField({
   const { intl } = useZCodeIntl();
   const levelTriggerRef = useRef<HTMLSpanElement | null>(null);
   const [levelOpen, setLevelOpen] = useState(false);
-  const label = intl.formatMessage({
-    id: "chat.toolCall.workflow.run.settings.model",
-  });
+  const label = intl.formatMessage({ id: "chat.toolCall.workflow.run.settings.model" });
   // ModelConfigSelect 是 memo 组件：内联数组每次渲染都是新引用，会让它的 memo 形同虚设。
   const leadingItems = useMemo(() => [leadingItem], [leadingItem]);
   if (noCatalog) {
     return (
-      <div
-        className="flex flex-col gap-1"
-        data-testid="workflow-run-settings-model"
-      >
+      <div className="flex flex-col gap-1" data-testid="workflow-run-settings-model">
         <FieldLabel>{label}</FieldLabel>
         <p className="text-ui-sm text-foreground-subtle">
-          {intl.formatMessage({
-            id: "chat.toolCall.workflow.run.settings.model.noCatalog",
-          })}
+          {intl.formatMessage({ id: "chat.toolCall.workflow.run.settings.model.noCatalog" })}
         </p>
       </div>
     );
   }
   return (
-    <div
-      className="flex flex-col gap-1"
-      data-testid="workflow-run-settings-model"
-    >
+    <div className="flex flex-col gap-1" data-testid="workflow-run-settings-model">
       <FieldLabel>{label}</FieldLabel>
       <div className="flex min-w-0 items-center gap-1.5">
-        <span
-          className="inline-flex min-w-0 flex-1"
-          data-model-current-value={value}
-        >
+        <span className="inline-flex min-w-0 flex-1" data-model-current-value={value}>
           <ModelConfigSelect
             modelGroups={groups}
             normalizedValue={value}
@@ -143,7 +122,7 @@ export function WorkflowRunSettingsModelField({
             option={thoughtOption}
             provider={ZCODE_AGENT_PROVIDER}
             onCurrentValueCommit={onLevelChange}
-            showInvalidCurrentValue={true}
+            showInvalidCurrentValue
             disabled={disabled}
             open={disabled ? false : levelOpen}
             onOpenChange={setLevelOpen}
@@ -179,22 +158,15 @@ export function WorkflowRunSettingsBoundField({
     ceiling === undefined
       ? undefined
       : bound !== null && bound >= ceiling
-        ? intl.formatMessage({
-            id: "chat.toolCall.workflow.run.settings.limit.atCeiling",
-          })
+        ? intl.formatMessage({ id: "chat.toolCall.workflow.run.settings.limit.atCeiling" })
         : intl.formatMessage(
             { id: "chat.toolCall.workflow.run.settings.limit.ceiling" },
             { n: ceiling },
           );
   return (
-    <div
-      className="flex flex-col gap-1"
-      data-testid="workflow-run-settings-bound"
-    >
+    <div className="flex flex-col gap-1" data-testid="workflow-run-settings-bound">
       <FieldLabel>
-        {intl.formatMessage({
-          id: "chat.toolCall.workflow.run.settings.limit",
-        })}
+        {intl.formatMessage({ id: "chat.toolCall.workflow.run.settings.limit" })}
       </FieldLabel>
       <div className="flex items-center gap-2">
         <InputGroup className="w-auto shrink-0">
@@ -206,8 +178,7 @@ export function WorkflowRunSettingsBoundField({
               data-testid="workflow-run-settings-bound-decrease"
               disabled={disabled || bound === null || bound <= 1}
               onClick={() =>
-                bound !== null &&
-                onChange(clampWorkflowRunSettingsBound(bound - 1, ceiling))
+                bound !== null && onChange(clampWorkflowRunSettingsBound(bound - 1, ceiling))
               }
               size="icon-xs"
             >
@@ -215,17 +186,14 @@ export function WorkflowRunSettingsBoundField({
             </InputGroupButton>
           </InputGroupAddon>
           <InputGroupInput
-            aria-label={intl.formatMessage({
-              id: "chat.toolCall.workflow.run.settings.limit",
-            })}
+            aria-label={intl.formatMessage({ id: "chat.toolCall.workflow.run.settings.limit" })}
             className="h-7 w-9 px-0 text-center font-mono tabular-nums"
             data-testid="workflow-run-settings-bound-value"
             disabled={disabled}
             inputMode="numeric"
             onChange={(event) => {
               const parsed = Number.parseInt(event.target.value, 10);
-              if (Number.isFinite(parsed))
-                onChange(clampWorkflowRunSettingsBound(parsed, ceiling));
+              if (Number.isFinite(parsed)) onChange(clampWorkflowRunSettingsBound(parsed, ceiling));
             }}
             placeholder="—"
             value={bound === null ? "" : String(bound)}
@@ -236,14 +204,9 @@ export function WorkflowRunSettingsBoundField({
                 id: "chat.toolCall.workflow.run.settings.limit.increase",
               })}
               data-testid="workflow-run-settings-bound-increase"
-              disabled={
-                disabled ||
-                bound === null ||
-                (ceiling !== undefined && bound >= ceiling)
-              }
+              disabled={disabled || bound === null || (ceiling !== undefined && bound >= ceiling)}
               onClick={() =>
-                bound !== null &&
-                onChange(clampWorkflowRunSettingsBound(bound + 1, ceiling))
+                bound !== null && onChange(clampWorkflowRunSettingsBound(bound + 1, ceiling))
               }
               size="icon-xs"
             >
@@ -252,9 +215,7 @@ export function WorkflowRunSettingsBoundField({
           </InputGroupAddon>
         </InputGroup>
         {hint === undefined ? null : (
-          <span className="min-w-0 truncate text-ui-sm text-foreground-subtle">
-            {hint}
-          </span>
+          <span className="min-w-0 truncate text-ui-sm text-foreground-subtle">{hint}</span>
         )}
       </div>
     </div>

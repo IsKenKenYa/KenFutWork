@@ -159,7 +159,7 @@ export function SessionSelector({
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="请输入搜索关键词"
+                  placeholder="搜索对话"
                   className="w-full rounded-md border border-input bg-muted py-1.5 pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground/70 outline-none focus:border-input-border focus:bg-background transition-colors"
                 />
               </div>

@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/components/ai-elements/code-block.tsx`（references/zcode/packages/ui/src/components/ai-elements/code-block.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）；源文件自带头注保留于下。
- */
 /*
  * Derived from vercel/ai-elements (packages/elements/src/code-block.tsx).
  * Copyright 2023 Vercel, Inc. Licensed under Apache-2.0.
@@ -11,34 +6,9 @@
  */
 "use client";
 
-import { ControlHintTooltip } from "@zui/ControlHintTooltip";
-import { DiagramPreviewDialog } from "@zui/components/ai-elements/diagram-preview-dialog";
-import { MermaidBlock } from "@zui/components/ai-elements/mermaid-block";
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import { CodeViewer } from "@zui/components/ui/code-viewer";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@zui/components/ui/select";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import {
-  FileDisplayIcon,
-  resolveFileDisplayDescriptor,
-} from "@zui/lib/fileDisplay";
-import {
-  isMermaidLanguage,
-  shouldRenderMermaidCodeBlock,
-} from "@zui/lib/mermaidLanguage";
-import {
-  getCurrentMermaidDocumentVisibility,
-  resolveMermaidAutoRenderDecision,
-} from "@zui/lib/mermaidRenderBudget";
-import { logger } from "@zui/logger";
-import type { Theme } from "@zui/useTheme";
+import { Button } from "../ui/button.js";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select.js";
+import { cn } from "../lib/utils.js";
 import { CheckIcon, CopyIcon, Maximize2Icon, WrapTextIcon } from "lucide-react";
 import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
 import {
@@ -51,32 +21,45 @@ import {
   useState,
 } from "react";
 import type { BundledTheme } from "shiki";
+import { CodeViewer } from "@zui/components/ui/code-viewer.js";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { FileDisplayIcon, resolveFileDisplayDescriptor } from "@zui/lib/fileDisplay.js";
+import { isMermaidLanguage, shouldRenderMermaidCodeBlock } from "@zui/lib/mermaidLanguage.js";
+import {
+  getCurrentMermaidDocumentVisibility,
+  resolveMermaidAutoRenderDecision,
+} from "@zui/lib/mermaidRenderBudget.js";
+import { MermaidBlock } from "@zui/components/ai-elements/mermaid-block.js";
+import { DiagramPreviewDialog } from "@zui/components/ai-elements/diagram-preview-dialog.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { logger } from "@zui/logger.js";
+import type { Theme } from "@zui/useTheme.js";
 
 // Types
 type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string;
   language: string;
-  enableSyntaxHighlighting?: boolean | undefined;
-  showLineNumbers?: boolean | undefined;
-  theme?: BundledTheme | undefined;
+  enableSyntaxHighlighting?: boolean;
+  showLineNumbers?: boolean;
+  theme?: BundledTheme;
   /**
    * 应用主题（store 耦合剥离）：仅透传给 Mermaid 渲染分支；
    * `theme` 已被 shiki 高亮主题占用，故另起名 appTheme。缺省时 Mermaid 按 "system" 兜底。
    */
-  appTheme?: Theme | undefined;
-  wrapLongLines?: boolean | undefined;
-  fontSizePx?: number | undefined;
-  renderMermaid?: boolean | undefined;
+  appTheme?: Theme;
+  wrapLongLines?: boolean;
+  fontSizePx?: number;
+  renderMermaid?: boolean;
   /** 正文独立限高，避免滚动时把 Header 的复制/换行按钮一起卷走。 */
-  contentClassName?: string | undefined;
+  contentClassName?: string;
   /**
    * 行定位透传（CodeViewer 已实现滚动+高亮，CodeBlock 也一并暴露）：
    * focusedRange 高亮行区间，focusRequestId 变化时触发滚动到该区间。
    */
-  focusedRange?: { startLine: number; endLine: number } | null | undefined;
-  focusRequestId?: string | undefined;
+  focusedRange?: { startLine: number; endLine: number } | null;
+  focusRequestId?: string;
   /** 行号着警示色的行（透传 CodeViewer `markedLines`），编译反馈卡标出被诊断指到的行。 */
-  markedLines?: readonly number[] | undefined;
+  markedLines?: readonly number[];
 };
 
 interface CodeBlockContextType {
@@ -135,10 +118,7 @@ function useDocumentVisibilityRevision(enabled: boolean): number {
       return;
     }
 
-    if (
-      typeof document === "undefined" ||
-      typeof document.addEventListener !== "function"
-    ) {
+    if (typeof document === "undefined" || typeof document.addEventListener !== "function") {
       return;
     }
 
@@ -186,9 +166,9 @@ export const CodeBlockContainer = ({
 );
 
 export type CodeBlockHeaderProps = HTMLAttributes<HTMLDivElement> & {
-  showWrapButton?: boolean | undefined;
-  displayFile?: string | undefined;
-  language?: string | undefined;
+  showWrapButton?: boolean;
+  displayFile?: string;
+  language?: string;
 };
 
 export const CodeBlockHeader = ({
@@ -215,14 +195,8 @@ export const CodeBlockHeader = ({
       {children ?? (
         <>
           <CodeBlockTitle className="min-w-0">
-            <FileDisplayIcon
-              src={descriptor.fileIconSrc}
-              size={16}
-              className="shrink-0"
-            />
-            <CodeBlockFilename className="truncate lowercase">
-              {languageLabel}
-            </CodeBlockFilename>
+            <FileDisplayIcon src={descriptor.fileIconSrc} size={16} className="shrink-0" />
+            <CodeBlockFilename className="truncate lowercase">{languageLabel}</CodeBlockFilename>
           </CodeBlockTitle>
           <CodeBlockActions>
             {isMermaidLanguage(languageLabel) ? (
@@ -263,10 +237,7 @@ export const CodeBlockActions = ({
   className,
   ...props
 }: HTMLAttributes<HTMLDivElement>) => (
-  <div
-    className={cn("-my-1 -mr-1 flex items-center gap-1", className)}
-    {...props}
-  >
+  <div className={cn("-my-1 -mr-1 flex items-center gap-1", className)} {...props}>
     {children}
   </div>
 );
@@ -291,14 +262,10 @@ export const CodeBlock = ({
 }: CodeBlockProps) => {
   const { intl } = useZCodeIntl();
   const [isWrapped, setIsWrapped] = useState(wrapLongLines);
-  const [mermaidPreviewSvg, setMermaidPreviewSvg] = useState<string | null>(
-    null,
-  );
+  const [mermaidPreviewSvg, setMermaidPreviewSvg] = useState<string | null>(null);
   const [mermaidPreviewOpen, setMermaidPreviewOpen] = useState(false);
-  const canRenderMermaidCode =
-    renderMermaid && shouldRenderMermaidCodeBlock(language, code);
-  const documentVisibilityRevision =
-    useDocumentVisibilityRevision(canRenderMermaidCode);
+  const canRenderMermaidCode = renderMermaid && shouldRenderMermaidCodeBlock(language, code);
+  const documentVisibilityRevision = useDocumentVisibilityRevision(canRenderMermaidCode);
   const mermaidAutoRenderDecision = useMemo(() => {
     if (!canRenderMermaidCode) {
       return null;
@@ -349,13 +316,7 @@ export const CodeBlock = ({
       toggleWrapLongLines,
       wrapLongLines: isWrapped,
     }),
-    [
-      code,
-      isWrapped,
-      mermaidPreviewSvg,
-      openMermaidPreview,
-      toggleWrapLongLines,
-    ],
+    [code, isWrapped, mermaidPreviewSvg, openMermaidPreview, toggleWrapLongLines],
   );
 
   return (
@@ -366,7 +327,7 @@ export const CodeBlock = ({
           {shouldRenderMermaid ? (
             <MermaidBlock
               code={code}
-              {...(appTheme === undefined ? {} : { theme: appTheme })}
+              theme={appTheme}
               onOpenPreview={openMermaidPreview}
               onPreviewSvgChange={setMermaidPreviewSvg}
               // className={cn(children ? "border-t border-border" : null)}
@@ -377,11 +338,11 @@ export const CodeBlock = ({
               enableSyntaxHighlighting={enableSyntaxHighlighting}
               language={language}
               showLineNumbers={showLineNumbers}
-              {...(theme === undefined ? {} : { theme })}
+              theme={theme}
               wrapLongLines={isWrapped}
               focusedRange={focusedRange}
-              {...(focusRequestId === undefined ? {} : { focusRequestId })}
-              {...(markedLines === undefined ? {} : { markedLines })}
+              focusRequestId={focusRequestId}
+              markedLines={markedLines}
               className="bg-transparent"
               fontSizePx={fontSizePx}
               // markdown 代码块外层是 bg-card，但 CodeViewer 默认把 @pierre/diffs 背景设成 background。
@@ -458,10 +419,8 @@ export const CodeBlockMermaidPreviewButton = ({
   ...props
 }: CodeBlockMermaidPreviewButtonProps) => {
   const { intl } = useZCodeIntl();
-  const { mermaidPreviewAvailable, openMermaidPreview } =
-    useContext(CodeBlockContext);
-  const label =
-    title ?? intl.formatMessage({ id: "codeBlock.mermaid.openPreview" });
+  const { mermaidPreviewAvailable, openMermaidPreview } = useContext(CodeBlockContext);
+  const label = title ?? intl.formatMessage({ id: "codeBlock.mermaid.openPreview" });
 
   return (
     <ControlHintTooltip title={label} side="top">
@@ -487,9 +446,9 @@ export const CodeBlockMermaidPreviewButton = ({
 };
 
 export type CodeBlockCopyButtonProps = ComponentProps<typeof Button> & {
-  onCopy?: (() => void) | undefined;
-  onError?: ((error: Error) => void) | undefined;
-  timeout?: number | undefined;
+  onCopy?: () => void;
+  onError?: (error: Error) => void;
+  timeout?: number;
 };
 
 export const CodeBlockCopyButton = ({
@@ -519,10 +478,7 @@ export const CodeBlockCopyButton = ({
         await navigator.clipboard.writeText(code);
         setIsCopied(true);
         onCopy?.();
-        timeoutRef.current = window.setTimeout(
-          () => setIsCopied(false),
-          timeout,
-        );
+        timeoutRef.current = window.setTimeout(() => setIsCopied(false), timeout);
       }
     } catch (error) {
       onError?.(error as Error);
@@ -557,51 +513,38 @@ export const CodeBlockCopyButton = ({
 
 export type CodeBlockLanguageSelectorProps = ComponentProps<typeof Select>;
 
-export const CodeBlockLanguageSelector = (
-  props: CodeBlockLanguageSelectorProps,
-) => <Select {...props} />;
+export const CodeBlockLanguageSelector = (props: CodeBlockLanguageSelectorProps) => (
+  <Select {...props} />
+);
 
-export type CodeBlockLanguageSelectorTriggerProps = ComponentProps<
-  typeof SelectTrigger
->;
+export type CodeBlockLanguageSelectorTriggerProps = ComponentProps<typeof SelectTrigger>;
 
 export const CodeBlockLanguageSelectorTrigger = ({
   className,
   ...props
 }: CodeBlockLanguageSelectorTriggerProps) => (
   <SelectTrigger
-    className={cn(
-      "h-7 border-none bg-transparent px-2 text-ui-base shadow-none",
-      className,
-    )}
+    className={cn("h-7 border-none bg-transparent px-2 text-ui-base shadow-none", className)}
     size="sm"
     {...props}
   />
 );
 
-export type CodeBlockLanguageSelectorValueProps = ComponentProps<
-  typeof SelectValue
->;
+export type CodeBlockLanguageSelectorValueProps = ComponentProps<typeof SelectValue>;
 
-export const CodeBlockLanguageSelectorValue = (
-  props: CodeBlockLanguageSelectorValueProps,
-) => <SelectValue {...props} />;
+export const CodeBlockLanguageSelectorValue = (props: CodeBlockLanguageSelectorValueProps) => (
+  <SelectValue {...props} />
+);
 
-export type CodeBlockLanguageSelectorContentProps = ComponentProps<
-  typeof SelectContent
->;
+export type CodeBlockLanguageSelectorContentProps = ComponentProps<typeof SelectContent>;
 
 export const CodeBlockLanguageSelectorContent = ({
   align = "end",
   ...props
-}: CodeBlockLanguageSelectorContentProps) => (
-  <SelectContent align={align} {...props} />
+}: CodeBlockLanguageSelectorContentProps) => <SelectContent align={align} {...props} />;
+
+export type CodeBlockLanguageSelectorItemProps = ComponentProps<typeof SelectItem>;
+
+export const CodeBlockLanguageSelectorItem = (props: CodeBlockLanguageSelectorItemProps) => (
+  <SelectItem {...props} />
 );
-
-export type CodeBlockLanguageSelectorItemProps = ComponentProps<
-  typeof SelectItem
->;
-
-export const CodeBlockLanguageSelectorItem = (
-  props: CodeBlockLanguageSelectorItemProps,
-) => <SelectItem {...props} />;

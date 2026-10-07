@@ -1,12 +1,4 @@
-/**
- * zcode 照搬：`@/lib/codingPlanQuotaPresentation.ts`（references/zcode/packages/ui/src/lib/codingPlanQuotaPresentation.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-import type {
-  UsageEntitlementSnapshot,
-  UsageQuotaLimit,
-} from "@zui/lib/zcode-shared";
+import type { UsageEntitlementSnapshot, UsageQuotaLimit } from "@zcode/shared";
 
 type CodingPlanQuotaResetFormat = "date" | "dateTime" | "adaptive";
 
@@ -72,13 +64,8 @@ export function resolveMcpQuotaLimit(
   return snapshot?.mcpQuota?.aggregate ?? null;
 }
 
-export function getQuotaRemainingPercentage(
-  limit: UsageQuotaLimit | null,
-): number | null {
-  if (
-    typeof limit?.percentage !== "number" ||
-    !Number.isFinite(limit.percentage)
-  ) {
+export function getQuotaRemainingPercentage(limit: UsageQuotaLimit | null): number | null {
+  if (typeof limit?.percentage !== "number" || !Number.isFinite(limit.percentage)) {
     return null;
   }
 
@@ -92,9 +79,7 @@ export function getQuotaRemainingPercentage(
  * 纯展示层门控：不影响服务端发放、status 轮询与机会状态本身；
  * processing / completed 展示不走此判断，手动重置的完成反馈仍完整播放。
  */
-export function isCodingPlanQuotaLimitFull(
-  limit: UsageQuotaLimit | null | undefined,
-): boolean {
+export function isCodingPlanQuotaLimitFull(limit: UsageQuotaLimit | null | undefined): boolean {
   return getQuotaRemainingPercentage(limit ?? null) === 100;
 }
 

@@ -1,16 +1,9 @@
-/**
- * zcode 照搬：`@/v4/composer/CodeCommentAttachmentChip.tsx`（references/zcode/packages/ui/src/v4/composer/CodeCommentAttachmentChip.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import type { AttachmentHoverCardContentProps } from "@zui/components/ai-elements/attachments";
-import { Button } from "@zui/components/ui/button";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { CodeCommentComposerAttachment } from "@zui/lib/codeCommentContext";
-import { ContextAttachmentPill } from "@zui/v4/composer/ContextAttachmentPill";
 import { Code2Icon, MessageSquareTextIcon, Trash2Icon } from "lucide-react";
+import type { AttachmentHoverCardContentProps } from "@zui/components/ai-elements/attachments.js";
+import { Button } from "@zui/components/ui/button.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { CodeCommentComposerAttachment } from "@zui/lib/codeCommentContext.js";
+import { ContextAttachmentPill } from "@zui/v4/composer/ContextAttachmentPill.js";
 
 function getContextKey(comment: CodeCommentComposerAttachment) {
   return `${comment.workspaceIdentity?.trim() || comment.workspacePath}\0${comment.id}`;
@@ -23,19 +16,16 @@ export function CodeCommentAttachmentChip({
   onRemoveAll,
 }: {
   comments: readonly CodeCommentComposerAttachment[];
-  contentAlign?: AttachmentHoverCardContentProps["align"] | undefined;
-  onRemove?: (comment: CodeCommentComposerAttachment) => void | undefined;
-  onRemoveAll?: () => void | undefined;
+  contentAlign?: AttachmentHoverCardContentProps["align"];
+  onRemove?: (comment: CodeCommentComposerAttachment) => void;
+  onRemoveAll?: () => void;
 }) {
   const { intl } = useZCodeIntl();
   if (comments.length === 0) return null;
 
   const label = intl.formatMessage(
     {
-      id:
-        comments.length === 1
-          ? "chat.codeComments.one"
-          : "chat.codeComments.many",
+      id: comments.length === 1 ? "chat.codeComments.one" : "chat.codeComments.many",
     },
     { count: String(comments.length) },
   );
@@ -44,9 +34,7 @@ export function CodeCommentAttachmentChip({
   return (
     <ContextAttachmentPill
       contentAlign={contentAlign}
-      icon={
-        <MessageSquareTextIcon className="size-4 shrink-0 text-foreground-subtle" />
-      }
+      icon={<MessageSquareTextIcon className="size-4 shrink-0 text-foreground-subtle" />}
       label={label}
       onRemoveAll={onRemoveAll}
       removeLabel={removeLabel}
@@ -64,9 +52,7 @@ export function CodeCommentAttachmentChip({
             <Code2Icon className="mt-1 size-4 shrink-0 text-foreground-subtle" />
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 items-center gap-2">
-                <span className="truncate font-medium">
-                  {comment.sourceTitle}
-                </span>
+                <span className="truncate font-medium">{comment.sourceTitle}</span>
                 <span className="shrink-0 font-mono text-ui-base text-foreground-subtle">
                   {lineLabel}
                 </span>

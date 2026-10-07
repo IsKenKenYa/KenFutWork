@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/lib/cuaAppIconRequest.ts`（references/zcode/packages/ui/src/lib/cuaAppIconRequest.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type { ApplicationIconRequest } from "@zui/lib/zcode-shared";
+import type { ApplicationIconRequest } from "@zcode/shared";
 
 /**
  * producer 的 `appKey` → 平台图标 locator。
@@ -19,10 +14,7 @@ const APP_KEY_LOCATOR_KINDS = {
   darwin: "darwin-bundle-id",
   "windows-aumid": "windows-aumid",
   "windows-exe": "windows-executable-path",
-} as const satisfies Record<
-  string,
-  ApplicationIconRequest["locators"][number]["kind"]
->;
+} as const satisfies Record<string, ApplicationIconRequest["locators"][number]["kind"]>;
 
 export function cuaAppKeyToIconRequest(
   appKey: string | undefined | null,
@@ -34,11 +26,7 @@ export function cuaAppKeyToIconRequest(
   const scheme = appKey.slice(0, separator);
   const value = appKey.slice(separator + 1).trim();
   if (!value) return null;
-  const kind = (APP_KEY_LOCATOR_KINDS as Record<string, string | undefined>)[
-    scheme
-  ];
+  const kind = (APP_KEY_LOCATOR_KINDS as Record<string, string | undefined>)[scheme];
   if (!kind) return null;
-  return {
-    locators: [{ kind, value } as ApplicationIconRequest["locators"][number]],
-  };
+  return { locators: [{ kind, value } as ApplicationIconRequest["locators"][number]] };
 }

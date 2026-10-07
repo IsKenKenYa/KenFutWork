@@ -1,6 +1,6 @@
 import type { PersistenceService } from "../persistence/types.js";
 
-export type WorkspaceSkillRecord = {
+export type InstanceSkillRecord = {
   enabled: boolean;
   skillId: string;
   slug: string;
@@ -10,8 +10,8 @@ export type WorkspaceSkillRecord = {
 };
 
 /**
- * skills 聚合的数据访问（`workspace_skills` JOIN `skills`）。
- * `workspace_skills` 带 `workspace_id`，故隔离谓词直接落在本表。
+ * skills 聚合的数据访问（`instance_skills` JOIN `skills`）。
+ * `instance_skills` 带 `instance_id`，故隔离谓词直接落在本表。
  */
 export type SkillFileRecord = {
   skillId: string;
@@ -29,38 +29,39 @@ export type InstalledSkillRow = {
 
 export type UpsertInstallationInput = {
   enabled: boolean;
-  installedBy: string;
+  installedByClientId: string | null;
   skillId: string;
-  workspaceId: string;
+  instanceId: string;
 };
 
 export interface SkillCatalogRepository {
   /**
    * 指定 skill 的附带文件（scripts/references/assets）。
-   * 仍带工作区谓词（经 workspace_skills JOIN）——skill_files 本身没有
-   * workspace_id 列，不接受「裸 skill id」取数，避免越界读到别家文件。
+   * 仍带实例谓词（经 instance_skills JOIN）——skill_files 本身没有
+   * instance_id 列，不接受「裸 skill id」取数，避免越界读到别家文件。
    */
   listSkillFiles(
-    workspaceId: string,
+    instanceId: string,
     skillIds: readonly string[],
   ): Promise<SkillFileRecord[]>;
-  // ── 目录侧（`skills` / `skill_files`，均为全局表：读走「或」式可见性、写限本人） ──
+  // 目录及包文件均通过本地实例归属校验；创建客户端仅作审计。
   /** 可见目录（内置/社区 + 自建），按精选与名称排序。 */
-  listVisible(userId: string): Promise<Record<string, unknown>[]>;
+  listVisible(instanceId: string): Promise<Record<string, unknown>[]>;
   /** 可见 skill 明细；不可见或不存在均为 null。 */
   findVisibleById(
-    userId: string,
+    instanceId: string,
     skillId: string,
   ): Promise<Record<string, unknown> | null>;
   /**
-   * 建 skill（`source='user'` 且 `created_by=本人` —— 与 RLS 写策略同义）。
+   * 建 skill（`source='user'` 且 `instance_id=实例` —— 与 RLS 写策略同义）。
    * 缺省字段沿用**列默认值**（`author='system'`/`version='1.0'`/`metadata='{}'`）：
    * 旧 PostgREST insert 不传的列即不出现，故此处用 `coalesce` 复刻同一语义，
    * 不能直接传 `null`（会写进 NULL 覆盖掉列默认）。
    */
   insertOwned(
-    userId: string,
+    instanceId: string,
     input: {
+      createdByClientId?: string | null | undefined;
       author?: string | null | undefined;
       category: string;
       description: string;
@@ -76,22 +77,22 @@ export interface SkillCatalogRepository {
       version?: string | null | undefined;
     },
   ): Promise<Record<string, unknown> | null>;
-  /** 改 skill：仅本人创建的行（`created_by=本人` 写在语句里，不靠 RLS）。 */
+  /** 改 skill：仅实例创建的行（`instance_id=实例` 写在语句里，不靠 RLS）。 */
   updateOwnedById(
-    userId: string,
+    instanceId: string,
     skillId: string,
     patch: Record<string, unknown>,
   ): Promise<Record<string, unknown> | null>;
-  /** 删 skill：仅本人创建的行；返回受影响行数。 */
-  deleteOwnedById(userId: string, skillId: string): Promise<number>;
+  /** 删 skill：仅实例创建的行；返回受影响行数。 */
+  deleteOwnedById(instanceId: string, skillId: string): Promise<number>;
   /** skill 的附带文件（经父链可见性）。 */
   listFilesForVisibleSkill(
-    userId: string,
+    instanceId: string,
     skillId: string,
   ): Promise<Record<string, unknown>[]>;
-  /** 写附带文件：仅当父 skill 属于本人（父子校验内联在一条语句里）。 */
+  /** 写附带文件：仅当父 skill 属于实例（父子校验内联在一条语句里）。 */
   insertFilesForOwnedSkill(
-    userId: string,
+    instanceId: string,
     skillId: string,
     rows: readonly {
       content: string;
@@ -99,22 +100,48 @@ export interface SkillCatalogRepository {
       mimeType?: string | undefined;
     }[],
   ): Promise<number>;
-  /** 工作区已安装 skill（含停用；工具侧自行过滤启用项）。 */
-  listWorkspaceSkills(workspaceId: string): Promise<WorkspaceSkillRecord[]>;
+  /** 实例已安装 skill（含停用；工具侧自行过滤启用项）。 */
+  listInstanceSkills(instanceId: string): Promise<InstanceSkillRecord[]>;
   /** 已安装列表（含 skill 明细，供管理视图；嵌套形状与旧 PostgREST 查询一致）。 */
-  listInstalled(workspaceId: string): Promise<InstalledSkillRow[]>;
-  /**
-   * 该用户**可见**的 skill（`source in ('system','community')` 或自己创建的）。
-   * 这是 RLS 读策略的等价物：不能简化成纯 `created_by`，否则内置目录会消失。
-   */
+  listInstalled(instanceId: string): Promise<InstalledSkillRow[]>;
+  /** 当前实例的本地目录，包括内置/社区缓存及自定义技能。 */
   findVisibleSkill(
-    userId: string,
+    instanceId: string,
     skillId: string,
   ): Promise<{ id: string } | null>;
-  /** 安装/启停：按 (workspace_id, skill_id) 冲突即更新。 */
+  /** 安装/启停：按 (instance_id, skill_id) 冲突即更新。 */
   upsertInstallation(input: UpsertInstallationInput): Promise<void>;
+  setEnabled(
+    instanceId: string,
+    skillId: string,
+    enabled: boolean,
+  ): Promise<boolean>;
   /** 卸载；返回受影响行数（0 = 未安装）。 */
-  uninstall(workspaceId: string, skillId: string): Promise<number>;
+  uninstall(instanceId: string, skillId: string): Promise<number>;
+}
+
+/** 实例安装态更新口径：只更新已有安装，卸载后的迟到启停不得重新安装。 */
+export interface InstanceSkillSettingsRepository {
+  setEnabled(
+    instanceId: string,
+    skillId: string,
+    enabled: boolean,
+  ): Promise<boolean>;
+}
+
+export function createInstanceSkillSettingsRepository(
+  persistence: PersistenceService,
+): InstanceSkillSettingsRepository {
+  return {
+    async setEnabled(instanceId, skillId, enabled) {
+      const changed = await persistence.forInstance(instanceId).execute(
+        `update public.instance_skills set enabled = $2
+        where instance_id = :instance and skill_id = $1`,
+        [skillId, enabled],
+      );
+      return changed > 0;
+    },
+  };
 }
 
 type JoinedSkillRow = {
@@ -129,19 +156,22 @@ type JoinedSkillRow = {
 export function createSkillCatalogRepository(
   persistence: PersistenceService,
 ): SkillCatalogRepository {
+  const settings = createInstanceSkillSettingsRepository(persistence);
   return {
-    async listSkillFiles(workspaceId, skillIds) {
+    setEnabled: settings.setEnabled,
+    async listSkillFiles(instanceId, skillIds) {
       if (skillIds.length === 0) {
         return [];
       }
 
       const rows = await persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .query<{ skill_id: string; file_path: string; content: string }>(
           `select sf.skill_id, sf.file_path, sf.content
              from public.skill_files sf
-             join public.workspace_skills ws on ws.skill_id = sf.skill_id
-            where ws.workspace_id = :workspace
+             join public.instance_skills ws on ws.skill_id = sf.skill_id
+             join public.skills s on s.id = sf.skill_id
+            where ws.instance_id = :instance and s.instance_id = :instance
               and sf.skill_id = any($1::uuid[])`,
           [skillIds],
         );
@@ -153,14 +183,14 @@ export function createSkillCatalogRepository(
       }));
     },
 
-    async listInstalled(workspaceId) {
+    async listInstalled(instanceId) {
       const rows = await persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .query<Record<string, unknown>>(
           `select ws.skill_id, ws.enabled, ws.installed_at, s.*
-             from public.workspace_skills ws
+             from public.instance_skills ws
              join public.skills s on s.id = ws.skill_id
-            where ws.workspace_id = :workspace
+            where ws.instance_id = :instance and s.instance_id = :instance
             order by ws.installed_at desc`,
         );
 
@@ -176,85 +206,93 @@ export function createSkillCatalogRepository(
       });
     },
 
-    async findVisibleSkill(userId, skillId) {
-      const row = await persistence.forUser(userId).queryOne<{ id: string }>(
-        `select id
+    async findVisibleSkill(instanceId, skillId) {
+      const row = await persistence
+        .forInstance(instanceId)
+        .queryOne<{ id: string }>(
+          `select id
            from public.skills
           where id = $1
-            and (source in ('system', 'community') or created_by = :user)`,
-        [skillId],
-      );
+            and (instance_id = :instance)`,
+          [skillId],
+        );
       return row ?? null;
     },
 
     async upsertInstallation(input) {
-      await persistence.forWorkspace(input.workspaceId).query(
-        `insert into public.workspace_skills
-                (workspace_id, skill_id, enabled, installed_by)
-         values (:workspace, $1, $2, $3)
-         on conflict (workspace_id, skill_id)
+      await persistence.forInstance(input.instanceId).query(
+        `insert into public.instance_skills
+                (instance_id, skill_id, enabled, installed_by_client_id)
+         select :instance, s.id, $2::boolean, $3::uuid from public.skills s
+         where s.id = $1::uuid and s.instance_id = :instance
+         on conflict (instance_id, skill_id)
          do update set enabled = excluded.enabled`,
-        [input.skillId, input.enabled, input.installedBy],
+        [input.skillId, input.enabled, input.installedByClientId],
       );
     },
 
-    async uninstall(workspaceId, skillId) {
-      return persistence.forWorkspace(workspaceId).execute(
-        `delete from public.workspace_skills
-          where workspace_id = :workspace
+    async uninstall(instanceId, skillId) {
+      return persistence.forInstance(instanceId).execute(
+        `delete from public.instance_skills
+          where instance_id = :instance
             and skill_id = $1`,
         [skillId],
       );
     },
 
-    async listVisible(userId) {
-      return persistence.forUser(userId).query<Record<string, unknown>>(
+    async listVisible(instanceId) {
+      return persistence.forInstance(instanceId).query<Record<string, unknown>>(
         `select *
            from public.skills
-          where source in ('system', 'community') or created_by = :user
+          where instance_id = :instance
           order by is_featured desc, name asc`,
       );
     },
 
-    async findVisibleById(userId, skillId) {
-      return persistence.forUser(userId).queryOne<Record<string, unknown>>(
-        `select *
+    async findVisibleById(instanceId, skillId) {
+      return persistence
+        .forInstance(instanceId)
+        .queryOne<Record<string, unknown>>(
+          `select *
            from public.skills
           where id = $1
-            and (source in ('system', 'community') or created_by = :user)`,
-        [skillId],
-      );
+            and (instance_id = :instance)`,
+          [skillId],
+        );
     },
 
-    async insertOwned(userId, input) {
-      return persistence.forUser(userId).queryOne<Record<string, unknown>>(
-        `insert into public.skills
+    async insertOwned(instanceId, input) {
+      return persistence
+        .forInstance(instanceId)
+        .queryOne<Record<string, unknown>>(
+          `insert into public.skills
                 (name, slug, description, category, skill_content, icon_name,
-                 source, created_by, author, version, license, metadata,
-                 source_url, package_name)
-         values ($1, $2, $3, $4, $5, $6, $7, :user,
+                 source, instance_id, author, version, license, metadata,
+                 source_url, package_name, created_by_client_id)
+         values ($1, $2, $3, $4, $5, $6, $7, :instance,
                  coalesce($8, 'system'), coalesce($9, '1.0'), $10,
-                 coalesce($11::jsonb, '{}'::jsonb), $12, $13)
+                 coalesce($11::jsonb, '{}'::jsonb), $12, $13, $14)
          returning *`,
-        [
-          input.name,
-          input.slug,
-          input.description,
-          input.category,
-          input.skillContent,
-          input.iconName ?? null,
-          input.source ?? "user",
-          input.author ?? null,
-          input.version ?? null,
-          input.license ?? null,
-          input.metadata ? JSON.stringify(input.metadata) : null,
-          input.sourceUrl ?? null,
-          input.packageName ?? null,
-        ],
-      );
+          [
+            input.name,
+            input.slug,
+            input.description,
+            input.category,
+            input.skillContent,
+            input.iconName ?? null,
+            input.source ?? "user",
+            input.author ?? null,
+            input.version ?? null,
+            input.license ?? null,
+            input.metadata ? JSON.stringify(input.metadata) : null,
+            input.sourceUrl ?? null,
+            input.packageName ?? null,
+            input.createdByClientId ?? null,
+          ],
+        );
     },
 
-    async updateOwnedById(userId, skillId, patch) {
+    async updateOwnedById(instanceId, skillId, patch) {
       const assignments: string[] = [];
       const values: unknown[] = [skillId];
 
@@ -272,38 +310,40 @@ export function createSkillCatalogRepository(
         return null;
       }
 
-      return persistence.forUser(userId).queryOne<Record<string, unknown>>(
-        `update public.skills
+      return persistence
+        .forInstance(instanceId)
+        .queryOne<Record<string, unknown>>(
+          `update public.skills
             set ${assignments.join(", ")}
           where id = $1
-            and created_by = :user
+            and instance_id = :instance and source = 'user'
         returning *`,
-        values,
-      );
+          values,
+        );
     },
 
-    async deleteOwnedById(userId, skillId) {
-      return persistence.forUser(userId).execute(
+    async deleteOwnedById(instanceId, skillId) {
+      return persistence.forInstance(instanceId).execute(
         `delete from public.skills
           where id = $1
-            and created_by = :user`,
+            and instance_id = :instance and source = 'user'`,
         [skillId],
       );
     },
 
-    async listFilesForVisibleSkill(userId, skillId) {
-      return persistence.forUser(userId).query<Record<string, unknown>>(
+    async listFilesForVisibleSkill(instanceId, skillId) {
+      return persistence.forInstance(instanceId).query<Record<string, unknown>>(
         `select sf.*
            from public.skill_files sf
            join public.skills s on s.id = sf.skill_id
           where sf.skill_id = $1
-            and (s.source in ('system', 'community') or s.created_by = :user)
+            and (s.instance_id = :instance)
           order by sf.file_path asc`,
         [skillId],
       );
     },
 
-    async insertFilesForOwnedSkill(userId, skillId, rows) {
+    async insertFilesForOwnedSkill(instanceId, skillId, rows) {
       if (rows.length === 0) {
         return 0;
       }
@@ -319,27 +359,27 @@ export function createSkillCatalogRepository(
         return `($1::uuid, $${end - 2}, $${end - 1}, $${end})`;
       });
 
-      return persistence.forUser(userId).execute(
+      return persistence.forInstance(instanceId).execute(
         `insert into public.skill_files (skill_id, file_path, content, mime_type)
          select v.*
            from (values ${tuples.join(", ")})
                   as v(skill_id, file_path, content, mime_type)
           where exists (
             select 1 from public.skills s
-             where s.id = $1::uuid and s.created_by = :user
+             where s.id = $1::uuid and s.instance_id = :instance and s.source = 'user'
           )`,
         values,
       );
     },
 
-    async listWorkspaceSkills(workspaceId) {
+    async listInstanceSkills(instanceId) {
       const rows = await persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .query<JoinedSkillRow>(
           `select ws.enabled, s.id, s.slug, s.name, s.description, s.skill_content
-             from public.workspace_skills ws
+             from public.instance_skills ws
              join public.skills s on s.id = ws.skill_id
-            where ws.workspace_id = :workspace`,
+            where ws.instance_id = :instance and s.instance_id = :instance`,
         );
 
       return rows.map((row) => ({

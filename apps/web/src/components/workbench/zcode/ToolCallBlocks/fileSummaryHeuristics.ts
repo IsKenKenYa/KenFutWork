@@ -1,24 +1,18 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/fileSummaryHeuristics.ts`（references/zcode/packages/ui/src/ToolCallBlocks/fileSummaryHeuristics.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-
-import { resolveFileDisplayDescriptor } from "@zui/lib/fileDisplay";
-import { getPathLeaf } from "@zui/lib/path";
-import { buildUnifiedDiff } from "@zui/lib/toolDiffPreview";
-import { resolveToolCallIdentity } from "@zui/lib/toolIdentity";
-import { computeLineChangeStat } from "@zui/lib/zcode-shared";
+import { computeLineChangeStat } from "@zcode/shared";
+import { resolveFileDisplayDescriptor } from "@zui/lib/fileDisplay.js";
+import { getPathLeaf } from "@zui/lib/path.js";
+import { buildUnifiedDiff } from "@zui/lib/toolDiffPreview.js";
+import { resolveToolCallIdentity } from "@zui/lib/toolIdentity.js";
 import {
   type EditKindSource,
   type EditOperationKind,
-  isPlainRecord,
   type RawToolCallFileSummary,
+  isPlainRecord,
   readRawToolCallInput,
   readStringField,
-} from "@zui/ToolCallBlocks/fileSummaryTypes";
+} from "@zui/ToolCallBlocks/fileSummaryTypes.js";
 
-export type { EditKindSource } from "@zui/ToolCallBlocks/fileSummaryTypes";
+export type { EditKindSource } from "@zui/ToolCallBlocks/fileSummaryTypes.js";
 
 function normalizeActionText(value: string) {
   return value.trim().toLowerCase();
@@ -48,9 +42,7 @@ function inferEditOperationFromText(value: string): EditOperationKind | null {
     return null;
   }
 
-  if (
-    /(delete|deleted|remov(e|ed)|eras(e|ed)|unlink|destroy|rm)\b/.test(text)
-  ) {
+  if (/(delete|deleted|remov(e|ed)|eras(e|ed)|unlink|destroy|rm)\b/.test(text)) {
     return "delete";
   }
 
@@ -58,11 +50,7 @@ function inferEditOperationFromText(value: string): EditOperationKind | null {
     return "update";
   }
 
-  if (
-    /(write|wrote|written|create|creating|created|add|added|save|saved|new)\b/.test(
-      text,
-    )
-  ) {
+  if (/(write|wrote|written|create|creating|created|add|added|save|saved|new)\b/.test(text)) {
     return "write";
   }
 
@@ -89,14 +77,7 @@ function readEditOperationCandidates(source: EditKindSource): string[] {
   }
 
   if (isPlainRecord(source.input)) {
-    for (const key of [
-      "description",
-      "action",
-      "operation",
-      "mode",
-      "title",
-      "kind",
-    ] as const) {
+    for (const key of ["description", "action", "operation", "mode", "title", "kind"] as const) {
       const value = source.input[key];
       if (typeof value === "string" && value.trim().length > 0) {
         candidates.add(value);
@@ -117,14 +98,7 @@ function readEditOperationCandidates(source: EditKindSource): string[] {
 
     const rawInput = readRawToolCallInput(source.raw);
     if (isPlainRecord(rawInput)) {
-      for (const key of [
-        "description",
-        "action",
-        "operation",
-        "mode",
-        "title",
-        "kind",
-      ] as const) {
+      for (const key of ["description", "action", "operation", "mode", "title", "kind"] as const) {
         const value = rawInput[key];
         if (typeof value === "string" && value.trim().length > 0) {
           candidates.add(value);
@@ -172,9 +146,7 @@ function readRawContentTexts(raw: unknown): string[] {
   return [...texts];
 }
 
-function readToolCallPathCandidate(
-  source?: EditKindSource,
-): string | undefined {
+function readToolCallPathCandidate(source?: EditKindSource): string | undefined {
   if (!source) {
     return undefined;
   }
@@ -206,9 +178,7 @@ function readToolCallPathCandidate(
   return undefined;
 }
 
-function readToolCallContentCandidate(
-  source?: EditKindSource,
-): string | undefined {
+function readToolCallContentCandidate(source?: EditKindSource): string | undefined {
   if (!source) {
     return undefined;
   }
@@ -328,11 +298,7 @@ export function buildFallbackRawToolCallFileSummary(
     actionLabel === "Created" && content !== undefined
       ? buildUnifiedDiff("", content, getPathLeaf(path))
       : actionLabel === "Edited" && beforeAfter
-        ? buildUnifiedDiff(
-            beforeAfter.oldText,
-            beforeAfter.newText,
-            getPathLeaf(path),
-          )
+        ? buildUnifiedDiff(beforeAfter.oldText, beforeAfter.newText, getPathLeaf(path))
         : null;
 
   return [
@@ -356,11 +322,7 @@ function readEditOperationCandidatesByPhase(source: EditKindSource): string[] {
   const isCompleted = isPlainRecord(raw) && raw.status === "completed";
   const shouldIgnoreCompletedContent = hasReadLikeToolSemantic(source);
 
-  if (
-    isRunning &&
-    typeof source.title === "string" &&
-    source.title.trim().length > 0
-  ) {
+  if (isRunning && typeof source.title === "string" && source.title.trim().length > 0) {
     prioritized.add(source.title);
   }
 

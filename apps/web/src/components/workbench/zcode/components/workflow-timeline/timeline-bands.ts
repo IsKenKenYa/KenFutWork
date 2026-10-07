@@ -1,9 +1,4 @@
 /**
- * zcode 照搬：`@/components/workflow-timeline/timeline-bands.ts`（references/zcode/packages/ui/src/components/workflow-timeline/timeline-bands.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-/**
  * 带与轨道。
  *
  * 分析器报的 `alongside` 是**节点事实**：进入这一阶段时，还没 join 的其他阶段的 strand 仍在跑。
@@ -35,14 +30,10 @@ export function foldPhaseBands(
   count: number,
   alongside: readonly (readonly number[])[],
 ): PhaseBand[] {
-  const near = Array.from(
-    { length: Math.max(0, count) },
-    () => new Set<number>(),
-  );
+  const near = Array.from({ length: Math.max(0, count) }, () => new Set<number>());
   for (let i = 0; i < near.length; i += 1) {
     for (const j of alongside[i] ?? []) {
-      if (!Number.isInteger(j) || j < 0 || j >= near.length || j === i)
-        continue;
+      if (!Number.isInteger(j) || j < 0 || j >= near.length || j === i) continue;
       near[i]!.add(j);
       near[j]!.add(i);
     }
@@ -73,17 +64,14 @@ export function foldPhaseBands(
   const merged: { from: number; to: number }[] = [];
   for (const span of spans) {
     const last = merged[merged.length - 1];
-    if (last !== undefined && span.from <= last.to)
-      last.to = Math.max(last.to, span.to);
+    if (last !== undefined && span.from <= last.to) last.to = Math.max(last.to, span.to);
     else merged.push({ ...span });
   }
 
   return merged.map((span) => {
     const tracks: number[][] = [];
     for (let i = span.from; i <= span.to; i += 1) {
-      const free = tracks.find(
-        (members) => !members.some((member) => near[i]!.has(member)),
-      );
+      const free = tracks.find((members) => !members.some((member) => near[i]!.has(member)));
       if (free === undefined) tracks.push([i]);
       else free.push(i);
     }
@@ -92,18 +80,13 @@ export function foldPhaseBands(
 }
 
 /** 第 i 站所在的带；带外 undefined。 */
-export function bandOf<T extends PhaseBand>(
-  bands: readonly T[],
-  i: number,
-): T | undefined {
+export function bandOf<T extends PhaseBand>(bands: readonly T[], i: number): T | undefined {
   return bands.find((band) => band.from <= i && i <= band.to);
 }
 
 /** 第 i 站所在的轨道；带外一律 0（主线）。 */
 export function trackOf(bands: readonly PhaseBand[], i: number): number {
-  const track = bandOf(bands, i)?.tracks.findIndex((members) =>
-    members.includes(i),
-  );
+  const track = bandOf(bands, i)?.tracks.findIndex((members) => members.includes(i));
   return track === undefined || track < 0 ? 0 : track;
 }
 
@@ -141,21 +124,16 @@ function bindBands(
   bands: readonly PhaseBand[],
   edges: readonly { from: number; to: number }[],
 ): BoundBand[] {
-  const outside = (i: number): boolean =>
-    i >= 0 && i < count && bandOf(bands, i) === undefined;
+  const outside = (i: number): boolean => i >= 0 && i < count && bandOf(bands, i) === undefined;
   return bands.map((band) => {
     const before = band.from - 1;
     const after = band.to + 1;
     const pred =
       outside(before) &&
-      edges.some(
-        (edge) => edge.from === before && bandOf(bands, edge.to) === band,
-      );
+      edges.some((edge) => edge.from === before && bandOf(bands, edge.to) === band);
     const join =
       outside(after) &&
-      edges.some(
-        (edge) => edge.to === after && bandOf(bands, edge.from) === band,
-      );
+      edges.some((edge) => edge.to === after && bandOf(bands, edge.from) === band);
     return {
       ...band,
       ...(join ? { join: after } : {}),
@@ -213,8 +191,7 @@ export function foldPhaseEdges(
     const source = bandOf(bands, edge.from);
     const target = bandOf(bands, edge.to);
     if (source === undefined && target === undefined) {
-      if (edge.to === edge.from + 1)
-        rails.push({ from: edge.from, to: edge.to });
+      if (edge.to === edge.from + 1) rails.push({ from: edge.from, to: edge.to });
       else arcs.push({ air: top, from: edge.from, to: edge.to });
       continue;
     }
@@ -222,8 +199,7 @@ export function foldPhaseEdges(
       const track = trackOf(bands, edge.from);
       if (track !== trackOf(bands, edge.to)) {
         // 跨轨道：向前的边分叉已经说过了；向后的是整条带的自环。
-        if (edge.to < edge.from)
-          arcs.push({ air: top, from: source.to, to: source.from });
+        if (edge.to < edge.from) arcs.push({ air: top, from: source.to, to: source.from });
         continue;
       }
       const members = source.tracks[track]!;
@@ -234,25 +210,11 @@ export function foldPhaseEdges(
       continue;
     }
     // 出带 / 入带：紧邻的那一条已经被汇合 / 分叉吸收，其余重挂到带的两端。
-    if (
-      source !== undefined &&
-      target === undefined &&
-      edge.to === source.to + 1
-    )
-      continue;
-    if (
-      source === undefined &&
-      target !== undefined &&
-      edge.from === target.from - 1
-    )
-      continue;
+    if (source !== undefined && target === undefined && edge.to === source.to + 1) continue;
+    if (source === undefined && target !== undefined && edge.from === target.from - 1) continue;
     const from = source === undefined ? edge.from : source.to;
     const to = target === undefined ? edge.to : target.from;
-    if (
-      source !== undefined &&
-      target !== undefined &&
-      source.to + 1 === target.from
-    ) {
+    if (source !== undefined && target !== undefined && source.to + 1 === target.from) {
       rails.push({ from, to });
       continue;
     }
@@ -265,10 +227,7 @@ export function foldPhaseEdges(
   };
 }
 
-function dedupe<T extends { from: number; to: number }>(
-  items: T[],
-  key: (item: T) => string,
-): T[] {
+function dedupe<T extends { from: number; to: number }>(items: T[], key: (item: T) => string): T[] {
   const seen = new Set<string>();
   return items.filter((item) => {
     if (item.from === item.to || seen.has(key(item))) return false;
@@ -279,10 +238,9 @@ function dedupe<T extends { from: number; to: number }>(
 
 /** 轨道段按左端、再按右端排；没有带时与从前逐站推出来的顺序逐条相同。 */
 function order(rails: RailSpec[]): RailSpec[] {
-  return dedupe(
-    rails,
-    (rail) => `${rail.from}>${rail.to}:${rail.kind ?? ""}`,
-  ).sort((left, right) => left.from - right.from || left.to - right.to);
+  return dedupe(rails, (rail) => `${rail.from}>${rail.to}:${rail.kind ?? ""}`).sort(
+    (left, right) => left.from - right.from || left.to - right.to,
+  );
 }
 
 /** 弧道的数量（最高的车道 + 1）；渲染层据它给弧留高度。 */
@@ -325,9 +283,7 @@ export function assignArcLanes(
 export function assignAirLanes(arcs: readonly ArcSpec[]): number[] {
   const lanes = Array.from({ length: arcs.length }, () => 0);
   for (const air of new Set(arcs.map((arc) => arc.air))) {
-    const group = arcs.flatMap((arc, at) =>
-      arc.air === air ? [{ ...arc, at }] : [],
-    );
+    const group = arcs.flatMap((arc, at) => (arc.air === air ? [{ ...arc, at }] : []));
     assignArcLanes(group).forEach((placed, k) => {
       lanes[group[k]!.at] = placed.lane;
     });

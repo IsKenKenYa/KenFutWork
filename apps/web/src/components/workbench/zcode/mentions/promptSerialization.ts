@@ -1,11 +1,3 @@
-/**
- * zcode 照搬：`@/mentions/promptSerialization.ts`（references/zcode/packages/ui/src/mentions/promptSerialization.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-
-import { $isPromptMentionNode } from "@zui/mentions/nodes/PromptMentionNode";
 import {
   $getCharacterOffsets,
   $getRoot,
@@ -14,6 +6,7 @@ import {
   type LexicalNode,
   type RangeSelection,
 } from "lexical";
+import { $isPromptMentionNode } from "@zui/mentions/nodes/PromptMentionNode.js";
 
 /** 编辑器文本用于光标；业务输出显式读取 canonical，不能覆写 TextNode 文本语义。 */
 export function $getPromptMarkdown(node: LexicalNode = $getRoot()): string {
@@ -24,11 +17,7 @@ export function $getPromptMarkdown(node: LexicalNode = $getRoot()): string {
     .map(
       (child, index) =>
         $getPromptMarkdown(child) +
-        ($isElementNode(child) &&
-        !child.isInline() &&
-        index < children.length - 1
-          ? "\n\n"
-          : ""),
+        ($isElementNode(child) && !child.isInline() && index < children.length - 1 ? "\n\n" : ""),
     )
     .join("");
 }
@@ -73,9 +62,7 @@ export function $getPromptSelectionMarkdown(selection: RangeSelection): string {
 }
 
 /** 剪切与复制都将相交 token 视为整体，但不能扩张仅触碰边界的选区。 */
-export function $getAtomicPromptSelection(
-  selection: RangeSelection,
-): RangeSelection {
+export function $getAtomicPromptSelection(selection: RangeSelection): RangeSelection {
   const normalized = selection.clone();
   if (normalized.isCollapsed()) return normalized;
   const [start, end] = normalized.isBackward()

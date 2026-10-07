@@ -84,7 +84,7 @@ export function createProjectSearchToolDefinition(deps: {
     name: "project_search",
     description:
       "Search the KenFutWork workspace for matching project text without using shell execution.",
-    scope: "shared",
+    scope: "design",
     zodSchema: projectSearchSchema,
     parameters: z.toJSONSchema(projectSearchSchema),
     execute: async (args) =>

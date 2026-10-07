@@ -1,22 +1,16 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/WorkflowArtifactRow.tsx`（references/zcode/packages/ui/src/components/workflow-timeline/WorkflowArtifactRow.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
+import type { CSSProperties, ReactNode } from "react";
+import { ArrowUpRightIcon } from "lucide-react";
 import {
   ArtifactDetail,
   ArtifactKindIcon,
   artifactDetailText,
   artifactDisplayTitle,
   artifactKindMessageId,
-} from "@zui/app-shell/workflow-artifacts/artifactPresentation";
-import type { PresetLabels } from "@zui/app-shell/workflow-artifacts/presets/index";
-import { cn } from "@zui/components/lib/utils";
-import type { WorkflowCompletionArtifact } from "@zui/components/workflow-timeline/WorkflowArtifactTile";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { ArrowUpRightIcon } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+} from "@zui/app-shell/workflow-artifacts/artifactPresentation.js";
+import type { PresetLabels } from "@zui/app-shell/workflow-artifacts/presets/index.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { WorkflowCompletionArtifact } from "./WorkflowArtifactTile.js";
 
 /**
  * 交付物行（侧板）：run 的 primary 产物在完成卡与 run 侧板上的样子。
@@ -56,9 +50,7 @@ export function WorkflowArtifactRow({
 }) {
   const { intl } = useZCodeIntl();
   const title = artifactDisplayTitle(artifact);
-  const kindLabel = intl.formatMessage({
-    id: artifactKindMessageId(artifact.kind),
-  });
+  const kindLabel = intl.formatMessage({ id: artifactKindMessageId(artifact.kind) });
   const hasDetail = artifactDetailText(artifact, labels) !== undefined;
   const description = artifact.description?.trim();
   const openable = onOpen !== undefined;
@@ -75,10 +67,10 @@ export function WorkflowArtifactRow({
       data-variant="row"
     >
       <div
-        aria-hidden={true}
+        aria-hidden
         className="wf-tile-frame wf-arrive relative h-[100px] w-[160px] overflow-hidden rounded-lg border border-border bg-panel @max-[380px]/wf-artifacts:h-[85px] @max-[380px]/wf-artifacts:w-[136px]"
         data-testid="workflow-artifact-row-frame"
-        inert={true}
+        inert
         style={style}
       >
         {preview}
@@ -136,7 +128,7 @@ export function WorkflowArtifactRow({
               ) : null}
               {openable ? (
                 <span
-                  aria-hidden={true}
+                  aria-hidden
                   className="wf-pill-go flex items-center justify-center text-foreground-subtlest"
                   data-testid="workflow-artifact-tile-open"
                 >
@@ -162,7 +154,7 @@ export function WorkflowArtifactRow({
           <span>{kindLabel}</span>
           {hasDetail ? (
             <>
-              <span aria-hidden={true}>·</span>
+              <span aria-hidden>·</span>
               <span className="flex min-w-0 items-center gap-1 truncate">
                 <ArtifactDetail artifact={artifact} labels={labels} />
               </span>

@@ -1,11 +1,4 @@
 /**
- * zcode 照搬：`@/app-shell/workflow-artifacts/presets/ArtifactMetrics.tsx`（references/zcode/packages/ui/src/app-shell/workflow-artifacts/presets/ArtifactMetrics.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-/**
  * `metrics` 预置渲染器：一排瓦片，每块显示**最后一条带该字段**的条目里的值。
  *
  * 两种形态：
@@ -13,31 +6,25 @@
  * - 全尺寸：`workflow-artifact` tab 里的网格，值更大、带单位。
  */
 
+import { memo, useMemo } from "react";
 import {
-  type ArtifactItem,
   applyArtifactItems,
+  type ArtifactItem,
   type MetricTileModel,
-} from "@zui/app-shell/workflow-artifacts/presets/apply";
+} from "@zui/app-shell/workflow-artifacts/presets/apply.js";
 import {
   PresetEmpty,
   PresetHeading,
-  type PresetLabels,
   REVEAL_ANIMATION_CLASS,
-} from "@zui/app-shell/workflow-artifacts/presets/parts";
-import type { MetricsSpec } from "@zui/app-shell/workflow-artifacts/presets/spec";
-import { cn } from "@zui/components/lib/utils";
-import { memo, useMemo } from "react";
+  type PresetLabels,
+} from "@zui/app-shell/workflow-artifacts/presets/parts.js";
+import type { MetricsSpec } from "@zui/app-shell/workflow-artifacts/presets/spec.js";
+import { cn } from "@zui/components/lib/utils.js";
 
 /** 还没有值的瓦片。用破折号而不是 0——「没测到」和「测出来是 0」不是一回事。 */
 const EMPTY_VALUE = "—";
 
-function MetricTile({
-  tile,
-  compact,
-}: {
-  tile: MetricTileModel;
-  compact: boolean;
-}) {
+function MetricTile({ tile, compact }: { tile: MetricTileModel; compact: boolean }) {
   return (
     <div
       className={cn(
@@ -48,10 +35,7 @@ function MetricTile({
       data-metric-field={tile.field}
     >
       <span
-        className={cn(
-          "truncate text-foreground-subtlest",
-          compact ? "text-ui-xs" : "text-ui-sm",
-        )}
+        className={cn("truncate text-foreground-subtlest", compact ? "text-ui-xs" : "text-ui-sm")}
         title={tile.label}
       >
         {tile.label}
@@ -73,10 +57,7 @@ function MetricTile({
         </span>
         {tile.unit && tile.value !== undefined ? (
           <span
-            className={cn(
-              "shrink-0 text-foreground-subtle",
-              compact ? "text-ui-xs" : "text-ui-sm",
-            )}
+            className={cn("shrink-0 text-foreground-subtle", compact ? "text-ui-xs" : "text-ui-sm")}
           >
             {tile.unit}
           </span>
@@ -95,25 +76,18 @@ export const ArtifactMetrics = memo(function ArtifactMetrics({
 }: {
   spec: MetricsSpec;
   items: readonly ArtifactItem[];
-  compact?: boolean | undefined;
+  compact?: boolean;
   labels: PresetLabels;
-  className?: string | undefined;
+  className?: string;
 }) {
-  const model = useMemo(
-    () => applyArtifactItems("metrics", spec, items),
-    [spec, items],
-  );
+  const model = useMemo(() => applyArtifactItems("metrics", spec, items), [spec, items]);
   const hasAnyValue = model.metrics.some((tile) => tile.value !== undefined);
 
   if (!hasAnyValue) {
     return (
       <div className={className}>
         {compact ? null : (
-          <PresetHeading
-            className="mb-3"
-            description={spec.description}
-            title={spec.title}
-          />
+          <PresetHeading className="mb-3" description={spec.description} title={spec.title} />
         )}
         <PresetEmpty compact={compact} label={labels.empty} />
       </div>
@@ -123,11 +97,7 @@ export const ArtifactMetrics = memo(function ArtifactMetrics({
   return (
     <div className={className} data-testid="artifact-metrics">
       {compact ? null : (
-        <PresetHeading
-          className="mb-3"
-          description={spec.description}
-          title={spec.title}
-        />
+        <PresetHeading className="mb-3" description={spec.description} title={spec.title} />
       )}
       {/* 窄侧板（~372px）里瓦片会换行，不横向溢出；全尺寸下按内容宽度自动铺满。 */}
       <div

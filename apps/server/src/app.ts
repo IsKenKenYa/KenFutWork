@@ -1,5 +1,4 @@
 import multipart from "@fastify/multipart";
-import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { KenFutWorkAgentFactory } from "./agent/deep-agent.js";
 import { loadServerEnv, type ServerEnv } from "./config/env.js";
@@ -12,7 +11,6 @@ import type { KernelHandle, ServiceMap } from "./kernel/types.js";
 import { serverProfile } from "./profiles/server.js";
 import { ConnectionManager } from "./ws/connection-manager.js";
 import { CanvasEventBuffer } from "./ws/event-buffer.js";
-import { registerWsRoute } from "./ws/handler.js";
 
 /** app.ts（P8 退役形态）：选 profile → composePlugins；清单属主 profiles/server.ts。 */
 export type AppOptions = {
@@ -37,7 +35,9 @@ export function buildApp(
   const connectionManager =
     options.connectionManager ?? new ConnectionManager();
   const eventBuffer = new CanvasEventBuffer();
-  setInterval(() => eventBuffer.cleanup(), 5 * 60 * 1000);
+  const eventCleanup = setInterval(() => eventBuffer.cleanup(), 5 * 60 * 1000);
+  eventCleanup.unref();
+  app.addHook("onClose", async () => clearInterval(eventCleanup));
   const eventBus = new AgentRunEventBus();
 
   const kernel = composePlugins(
@@ -45,7 +45,6 @@ export function buildApp(
     serverProfile({
       connectionManager,
       events: createKernelEvents(eventBus),
-      credentialEnv: env,
       env,
       ...(options.agentFactory ? { agentFactory: options.agentFactory } : {}),
       ...(options.agentModel ? { agentModel: options.agentModel } : {}),
@@ -57,9 +56,6 @@ export function buildApp(
         : {}),
       ...(options.overrides?.modelProviders
         ? { overrideModelProviders: options.overrides.modelProviders }
-        : {}),
-      ...(options.overrides?.payments
-        ? { overridePayments: options.overrides.payments }
         : {}),
     }),
     {
@@ -77,23 +73,6 @@ export function buildApp(
     },
   );
 
-  void app.register(async (instance) => {
-    await instance.register(websocket);
-    await registerWsRoute(instance, {
-      agentRuns: kernel.get("agentRuns"),
-      agentModes: kernel.get("agentModes"),
-      agentRunMetadataService: kernel.get("agentRunMetadata"),
-      auth: kernel.get("auth"),
-      chatService: kernel.get("chat"),
-      codeGitService: kernel.get("codeGit"),
-      connectionManager,
-      eventBuffer,
-      settingsService: kernel.get("settings"),
-      threadService: kernel.get("threads"),
-      viewerService: kernel.get("viewer"),
-    });
-  });
-
   registerInfraRoutes(app, env);
   // 静态 UI 托管（自托管/桌面包）：配置 KENFUTWORK_WEB_DIST 后 server 直接托管前端
   if (env.webDist) {
@@ -102,7 +81,9 @@ export function buildApp(
 
   // HTTP 关闭即释放内核资源（连接池等 effect disposer）——否则停库时连接池还握着连接
   app.addHook("onClose", async () => {
-    kernel.dispose();
+    console.log("[shutdown] 开始卸载内核资源。");
+    await kernel.dispose();
+    console.log("[shutdown] 内核资源卸载完成。");
   });
 
   // 内核句柄随 app 一起返回：桌面单进程形态要在同一内核上起任务消费循环

@@ -1,9 +1,4 @@
 /**
- * zcode 照搬：`@/ToolCallBlocks/renderers/createWorkflowInput.ts`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/createWorkflowInput.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-/**
  * CreateWorkflow 工具入参的读取规则。
  *
  * 从 `create-workflow.tsx` 拆出：这些是纯函数，而卡片组件本身随 run 态/诊断/图交互线性增长，
@@ -14,9 +9,7 @@
  * 都不会被各自解析出不同的结果。
  */
 
-export function isPlainRecord(
-  value: unknown,
-): value is Record<string, unknown> {
+export function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -40,6 +33,13 @@ export function readWorkflowKindMessageId(
   raw: unknown,
   isRunning: boolean,
   amend = false,
+  /**
+   * 这次调用只在调并发上限（`isWorkflowRetuneInput`）：不写脚本、也不编译，所以在途期一个字都不
+   * 能提「校验」。修订词表的 `writing`「正在调整工作流」
+   * 对它恒真——无论最后是就地生效还是（run 已结算时）退回一次真修订——所以整个在途期都用它，
+   * 不为一个只活几百毫秒的相位新造一个词。待确认另说：那一相在场时它自己的词更有信息量。
+   */
+  retuning = false,
 ): string {
   const ids = amend ? AMEND_KIND_IDS : CREATE_KIND_IDS;
   if (!isRunning) {
@@ -47,11 +47,11 @@ export function readWorkflowKindMessageId(
   }
 
   const v4Status = isPlainRecord(raw) ? raw.v4Status : undefined;
-  if (v4Status === "inputStreaming") {
-    return ids.writing;
-  }
   if (v4Status === "pendingApproval") {
     return ids.awaitingConfirmation;
+  }
+  if (v4Status === "inputStreaming" || retuning) {
+    return ids.writing;
   }
 
   return ids.running;
@@ -66,12 +66,7 @@ export function readWorkflowKindMessageId(
  * 与 `readWorkflowKindMessageId` 同一张词表，只是相位由渲染器算好了传进来。
  */
 export function readWorkflowPrelaunchKindMessageId(
-  phase: {
-    compileErrors: boolean;
-    failed: boolean;
-    writing: boolean;
-    revising: boolean;
-  },
+  phase: { compileErrors: boolean; failed: boolean; writing: boolean; revising: boolean },
   amend: boolean,
 ): string {
   const ids = amend ? AMEND_KIND_IDS : CREATE_KIND_IDS;
@@ -123,11 +118,7 @@ export function readWorkflowName(input: unknown): string | undefined {
 
 /** CreateWorkflow 工具入参里的脚本原文；聊天卡片与运行确认窗共用同一读取规则。 */
 export function readWorkflowScript(input: unknown): string | undefined {
-  if (
-    isPlainRecord(input) &&
-    typeof input.script === "string" &&
-    input.script.length > 0
-  ) {
+  if (isPlainRecord(input) && typeof input.script === "string" && input.script.length > 0) {
     return input.script;
   }
 
@@ -154,9 +145,7 @@ interface WorkflowAmendPredecessor {
   name: string | undefined;
 }
 
-export function readWorkflowAmendPredecessor(
-  input: unknown,
-): WorkflowAmendPredecessor | undefined {
+export function readWorkflowAmendPredecessor(input: unknown): WorkflowAmendPredecessor | undefined {
   if (!isPlainRecord(input) || !isPlainRecord(input.predecessor)) {
     return undefined;
   }
@@ -180,9 +169,47 @@ export function readWorkflowMaxConcurrency(input: unknown): number | undefined {
     return undefined;
   }
   const value = input.max_concurrency;
-  return typeof value === "number" && Number.isInteger(value) && value > 0
-    ? value
-    : undefined;
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+/**
+ * 这次 `AmendWorkflow` 调用**只在调并发上限**：`run_id` + `max_concurrency`，没有任何脚本来源、
+ * 也不改模型、不改名字。run 还在飞时这样的调用就地生效：
+ * 不停这次 run、不铸新 run、不编译，结果只有一句话，连 display 都没有。
+ *
+ * **入参是这条事实在线上的唯一落点**：工具的结构化输出不过 v4（只有 `text` 与 `display`），而
+ * 三处 `create_workflow` display schema 都是 `.strict()` 的冻结字段集——多一个键会让旧端把整条
+ * 工具结果丢掉。所以呈现按入参形状裁，零协议改动。
+ *
+ * 只看**形状**，不预言结果：run 已经结算时同一个调用会退回一次真修订（带上前驱的脚本去编译）。
+ * 那条路会留下 display、也会铸出一条按 toolCallId 联接得上的 run，两者都是接线层的判据。
+ * 流式中入参只到了一半时这个形状也会短暂成立（脚本还没流到），所以在途只用它挑一个对两种结局
+ * 都真的词，不据它改变行的形态。
+ */
+export interface WorkflowRetuneCall {
+  runId: string;
+  /**
+   * 用户要求的上限；`null` = 解除本 run 自己的界（回到本机上限）。
+   *
+   * ⚠ **未经钳制**：CLI 的 `resolveInput` 会把它钳进 `[1, 天花板]`，而这里读到的是模型发出的那个
+   * 数。所以展示方必须拿本机天花板去比，绝不能把这个数当成「实际生效的并发」原样念出来。
+   */
+  requested: number | null;
+}
+
+export function readWorkflowRetuneCall(input: unknown): WorkflowRetuneCall | undefined {
+  if (!isPlainRecord(input)) return undefined;
+  const runId = readWorkflowAmendTarget(input);
+  if (runId === undefined) return undefined;
+  const bound = input.max_concurrency;
+  const requested = bound === null ? null : readWorkflowMaxConcurrency(input);
+  if (requested === undefined) return undefined;
+  // 任何一个别的意图在场都不是「只调并发上限」：脚本与 path 要编译，模型与名字要换一条 run。
+  if (readWorkflowScript(input) !== undefined || readTrimmedString(input.path) !== undefined) {
+    return undefined;
+  }
+  if (input.subagent_model !== undefined || input.name !== undefined) return undefined;
+  return { runId, requested };
 }
 
 /**
@@ -195,9 +222,7 @@ export function readWorkflowMaxConcurrency(input: unknown): number | undefined {
  * 解析不了的调用根本走不到窗前。所以这里不做任何形状校验——UI 不是第二个解析器。
  */
 export function readWorkflowSubagentModel(input: unknown): string | undefined {
-  return isPlainRecord(input)
-    ? readTrimmedString(input.subagent_model)
-    : undefined;
+  return isPlainRecord(input) ? readTrimmedString(input.subagent_model) : undefined;
 }
 
 /**
@@ -217,16 +242,10 @@ export function readWorkflowAmendScriptInherited(input: unknown): boolean {
   if (!isPlainRecord(input)) {
     return false;
   }
-  if (
-    isPlainRecord(input.predecessor) &&
-    input.predecessor.script_inherited === true
-  ) {
+  if (isPlainRecord(input.predecessor) && input.predecessor.script_inherited === true) {
     return true;
   }
-  return (
-    readWorkflowScript(input) === undefined &&
-    readTrimmedString(input.path) === undefined
-  );
+  return readWorkflowScript(input) === undefined && readTrimmedString(input.path) === undefined;
 }
 
 /**
@@ -236,11 +255,9 @@ export function readWorkflowAmendScriptInherited(input: unknown): boolean {
  */
 export function readWorkflowCardKeptScript(toolCall: {
   input: unknown;
-  snapshotRefs?: readonly { field: string }[] | undefined;
+  snapshotRefs?: readonly { field: string }[];
 }): boolean {
-  const trimmed = (toolCall.snapshotRefs ?? []).some(
-    (ref) => ref.field === "input",
-  );
+  const trimmed = (toolCall.snapshotRefs ?? []).some((ref) => ref.field === "input");
   return !trimmed && readWorkflowAmendScriptInherited(toolCall.input);
 }
 
@@ -267,9 +284,7 @@ export interface WorkflowSavedSource {
   args: Record<string, unknown>;
 }
 
-export function readWorkflowSaved(
-  input: unknown,
-): WorkflowSavedSource | undefined {
+export function readWorkflowSaved(input: unknown): WorkflowSavedSource | undefined {
   if (!isPlainRecord(input) || !isPlainRecord(input.saved)) {
     return undefined;
   }
@@ -305,4 +320,3 @@ export function formatWorkflowArgValue(value: unknown): string {
     return String(value);
   }
 }
-/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

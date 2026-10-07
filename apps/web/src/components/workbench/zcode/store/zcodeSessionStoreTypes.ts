@@ -1,46 +1,37 @@
-/**
- * zcode 照搬：`@/store/zcodeSessionStoreTypes.ts`（references/zcode/packages/ui/src/store/zcodeSessionStoreTypes.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）。
- */
 /* oxlint-disable eslint(max-lines) -- ZCode Agent store 类型和默认状态集中导出，避免切片间重复定义共享结构。 */
 /**
  * ZCode Session Store 类型定义、接口、常量与默认值工厂
  *
  * 从 zcodeSessionStore.ts 拆分出来，供 store 本体和 selectors / navigation 等子模块共享。
  */
-
+import {
+  buildNativeSupplierKey,
+  ZCODE_AGENT_PROVIDER,
+  type ZCodeApiRetryStatus,
+  type ModelSelectionGhostReason,
+  type ModelSelectionResolution,
+  type ZCodeWorkspaceInitStatus,
+  type ZCodeTaskRuntimeStatus,
+  type ZCodeProvider,
+  type ZCodeTaskMeta,
+  type ZCodeContextCacheUsage,
+  type ZCodeConfigOption,
+  type ZCodeSlashCommand,
+  type ZCodePermissionRequest,
+  type ZCodeElicitationRequest,
+  type ZCodeBackgroundTaskControlItem,
+  type ZCodeSessionActiveTurnKind,
+  type ZCodeContextUsageBreakdownItem,
+  type InputId,
+  type SessionCreateSource,
+} from "@zcode/shared";
+import type { ZCodeUiError } from "@zui/lib/zcodeUiError.js";
 import type {
   AutomationsNavigationTab,
   TaskNavigationHistory,
   WorkspaceNavEntry,
-} from "@zui/lib/taskNavigationHistory";
-import {
-  buildNativeSupplierKey,
-  type InputId,
-  type ModelSelectionGhostReason,
-  type ModelSelectionResolution,
-  type SessionCreateSource,
-  ZCODE_AGENT_PROVIDER,
-  type ZCodeApiRetryStatus,
-  type ZCodeBackgroundTaskControlItem,
-  type ZCodeConfigOption,
-  type ZCodeContextCacheUsage,
-  type ZCodeContextUsageBreakdownItem,
-  type ZCodeElicitationRequest,
-  type ZCodePermissionRequest,
-  type ZCodeProvider,
-  type ZCodeSessionActiveTurnKind,
-  type ZCodeSlashCommand,
-  type ZCodeTaskMeta,
-  type ZCodeTaskRuntimeStatus,
-  type ZCodeWorkspaceInitStatus,
-} from "@zui/lib/zcode-shared";
-import type { ZCodeUiError } from "@zui/lib/zcodeUiError";
-import type {
-  MentionCategory,
-  MentionItemData,
-} from "@zui/mentions/mentionTypes";
+} from "@zui/lib/taskNavigationHistory.js";
+import type { MentionCategory, MentionItemData } from "@zui/mentions/mentionTypes.js";
 
 // ────────────────────────────────────────────
 // Interfaces
@@ -52,9 +43,7 @@ export interface WorkspaceInitState {
   attempts: number;
 }
 
-export type GroupedDraftTaskPlacement =
-  | { type: "top" }
-  | { type: "group"; groupId: string };
+export type GroupedDraftTaskPlacement = { type: "top" } | { type: "group"; groupId: string };
 
 export interface GroupedDraftTaskState {
   draftId: string;
@@ -68,7 +57,7 @@ export interface TaskRuntimeState {
   status: ZCodeTaskRuntimeStatus;
   error: string | null;
   /** 该 task 当前运行态绑定的 ZCode Agent 进程 provider，用于 workspace 级进程重建 busy lock。 */
-  provider?: ZCodeProvider | undefined;
+  provider?: ZCodeProvider;
   /** 当前模型上下文窗口容量；模型状态事件只更新这里，不覆盖真实 usage.used。 */
   contextWindow: number | null;
   usage: TaskUsageState | null;
@@ -76,9 +65,9 @@ export interface TaskRuntimeState {
   /** Agent 明确上报的后台任务控制项；host 运行期状态，不落盘持久化。 */
   backgroundTaskControls: ZCodeBackgroundTaskControlItem[];
   /** 当前 session active turn 的类型；用于区分普通生成和 compact 维护态。 */
-  activeTurnKind?: ZCodeSessionActiveTurnKind | undefined;
-  activeInputId?: InputId | undefined;
-  activeInputOwnerClientId?: string | undefined;
+  activeTurnKind?: ZCodeSessionActiveTurnKind;
+  activeInputId?: InputId;
+  activeInputOwnerClientId?: string;
 }
 
 export interface DraftRuntimeState {
@@ -140,8 +129,8 @@ export interface ComposerMentionPrefill {
   label: string;
   value: string;
   markdown: string;
-  description?: string | undefined;
-  data?: MentionItemData | undefined;
+  description?: string;
+  data?: MentionItemData;
 }
 
 export interface ComposerTextInsertRequest {
@@ -229,16 +218,9 @@ export interface WorkspaceZCodeUIState {
 export interface ZCodeSessionStoreState {
   /** 按 workspace 维护聊天相关 UI 状态 */
   workspaces: Record<string, WorkspaceZCodeUIState>;
-  getWorkspaceState: (
-    workspacePath: string,
-    workspaceIdentity?: string,
-  ) => WorkspaceZCodeUIState;
+  getWorkspaceState: (workspacePath: string, workspaceIdentity?: string) => WorkspaceZCodeUIState;
 
-  setActiveTaskId: (
-    workspacePath: string,
-    id: string | null,
-    workspaceIdentity?: string,
-  ) => void;
+  setActiveTaskId: (workspacePath: string, id: string | null, workspaceIdentity?: string) => void;
   promoteGroupedDraftTask: (
     workspacePath: string,
     taskId: string,
@@ -255,10 +237,7 @@ export interface ZCodeSessionStoreState {
     sessionId: string | null,
     workspaceIdentity?: string,
   ) => void;
-  invalidateDraftRuntime: (
-    workspacePath: string,
-    workspaceIdentity?: string,
-  ) => void;
+  invalidateDraftRuntime: (workspacePath: string, workspaceIdentity?: string) => void;
   requestComposerTextInsert: (
     workspacePath: string,
     text: string,
@@ -290,10 +269,7 @@ export interface ZCodeSessionStoreState {
       createSource?: SessionCreateSource;
     },
   ) => void;
-  clearGroupedDraftTask: (
-    workspacePath: string,
-    workspaceIdentity?: string,
-  ) => void;
+  clearGroupedDraftTask: (workspacePath: string, workspaceIdentity?: string) => void;
   bindRuntimeProvider: (
     workspacePath: string,
     provider: ZCodeProvider,
@@ -411,11 +387,7 @@ export interface ZCodeSessionStoreState {
     stage: ModelSwitchStage,
     workspaceIdentity?: string,
   ) => void;
-  finishModelSwitch: (
-    workspacePath: string,
-    requestId: string,
-    workspaceIdentity?: string,
-  ) => void;
+  finishModelSwitch: (workspacePath: string, requestId: string, workspaceIdentity?: string) => void;
   setTaskConfigOptions: (
     workspacePath: string,
     taskId: string,
@@ -443,11 +415,7 @@ export interface ZCodeSessionStoreState {
     workspaceIdentity?: string,
   ) => void;
   /** 删除任务后同步回收选中态和乐观态，避免右侧继续展示已删除任务 */
-  removeTaskState: (
-    workspacePath: string,
-    taskId: string,
-    workspaceIdentity?: string,
-  ) => void;
+  removeTaskState: (workspacePath: string, taskId: string, workspaceIdentity?: string) => void;
 
   setConfigOptions: (
     workspacePath: string,
@@ -470,10 +438,7 @@ export interface ZCodeSessionStoreState {
     workspaceIdentity?: string,
   ) => void;
   /** 任务列表变更时调用（创建/删除任务），驱动 zcodeTaskMetaMerge 重新拉取列表 */
-  bumpTaskListVersion: (
-    workspacePath: string,
-    workspaceIdentity?: string,
-  ) => void;
+  bumpTaskListVersion: (workspacePath: string, workspaceIdentity?: string) => void;
   /** 更新已拉取的任务列表缓存 */
   setTaskListCache: (
     workspacePath: string,
@@ -498,10 +463,7 @@ export interface ZCodeSessionStoreState {
     automationTab?: AutomationsNavigationTab,
   ) => void;
   /** 记录插件市场主视图导航。 */
-  taskNavPushPluginStore: (
-    workspacePath: string,
-    workspaceIdentity?: string,
-  ) => void;
+  taskNavPushPluginStore: (workspacePath: string, workspaceIdentity?: string) => void;
   /** 后退，返回目标 entry；到头了返回 null */
   taskNavGoBack: () => WorkspaceNavEntry | null;
   /** 前进，返回目标 entry；到头了返回 null */

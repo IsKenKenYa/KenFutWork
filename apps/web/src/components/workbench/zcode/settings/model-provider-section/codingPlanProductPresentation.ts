@@ -1,16 +1,6 @@
-/**
- * zcode 照搬：`@/settings/model-provider-section/codingPlanProductPresentation.ts`（references/zcode/packages/ui/src/settings/model-provider-section/codingPlanProductPresentation.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import type {
-  CodingPlanCardCopyItem,
-  CodingPlanProductPreviewPayment,
-} from "@zui/lib/zcode-shared";
+import type { CodingPlanCardCopyItem, CodingPlanProductPreviewPayment } from "@zcode/shared";
 
-export function normalizeCodingPlanCardCopyItems(
-  items: unknown,
-): CodingPlanCardCopyItem[] {
+export function normalizeCodingPlanCardCopyItems(items: unknown): CodingPlanCardCopyItem[] {
   if (!Array.isArray(items)) {
     return [];
   }
@@ -28,8 +18,7 @@ export function normalizeCodingPlanCardCopyItems(
       return [];
     }
     const tooltip =
-      typeof item === "string" ||
-      typeof (item as { tooltip?: unknown }).tooltip !== "string"
+      typeof item === "string" || typeof (item as { tooltip?: unknown }).tooltip !== "string"
         ? ""
         : (item as { tooltip: string }).tooltip.trim();
     return [{ text, ...(tooltip ? { tooltip } : {}) }];
@@ -46,23 +35,16 @@ export type CodingPlanProductDisplay = CodingPlanProductPreviewPayment & {
   descriptionItems?: CodingPlanCardCopyItem[];
 };
 
-const CODING_PLAN_CURRENCY_LABELS_ZH: Record<CodingPlanPriceCurrency, string> =
-  {
-    CNY: "人民币",
-    USD: "美元",
-  };
+const CODING_PLAN_CURRENCY_LABELS_ZH: Record<CodingPlanPriceCurrency, string> = {
+  CNY: "人民币",
+  USD: "美元",
+};
 
-export function pickProductPrice(
-  product: CodingPlanProductPreviewPayment,
-): number | null {
-  return (
-    product.payAmount ?? product.discountAmount ?? product.renewAmount ?? null
-  );
+export function pickProductPrice(product: CodingPlanProductPreviewPayment): number | null {
+  return product.payAmount ?? product.discountAmount ?? product.renewAmount ?? null;
 }
 
-function normalizeCodingPlanCurrency(
-  currency: string | null | undefined,
-): CodingPlanPriceCurrency {
+function normalizeCodingPlanCurrency(currency: string | null | undefined): CodingPlanPriceCurrency {
   return currency?.trim().toUpperCase() === "USD" ? "USD" : "CNY";
 }
 

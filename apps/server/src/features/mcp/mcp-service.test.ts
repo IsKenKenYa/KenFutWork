@@ -14,7 +14,9 @@ function fakeStore(rows: StoredMcpServer[]): McpServerStore {
       return rows.map((row) => ({
         id: row.id,
         name: row.name,
+        kind: row.kind,
         command: row.command,
+        url: row.url,
         args: row.args,
         envKeys: Object.keys(row.env),
         enabled: row.enabled,
@@ -28,7 +30,13 @@ function fakeStore(rows: StoredMcpServer[]): McpServerStore {
     async create(input) {
       const created: StoredMcpServer = {
         id: `id-${input.name}`,
-        ...input,
+        name: input.name,
+        kind: input.kind ?? "stdio",
+        command: input.command ?? "",
+        args: input.args,
+        url: input.url,
+        env: input.env,
+        enabled: input.enabled,
         createdAt: "2026-09-14T00:00:00.000Z",
         updatedAt: "2026-09-14T00:00:00.000Z",
       };
@@ -74,7 +82,9 @@ function stored(
 ): StoredMcpServer {
   return {
     id: over.id ?? `id-${over.name}`,
+    kind: over.kind ?? "stdio",
     command: over.command ?? "definitely-not-a-real-binary-xyz",
+    url: over.url ?? null,
     args: over.args ?? [],
     env: over.env ?? {},
     enabled: over.enabled ?? false,
@@ -172,6 +182,7 @@ describe("MCP 运行态管理", () => {
       name: "new-server",
       command: "definitely-not-a-real-binary-xyz",
       args: ["--flag"],
+      url: null,
       env: { TOKEN: "secret-value" },
       enabled: false,
     });
@@ -183,6 +194,64 @@ describe("MCP 运行态管理", () => {
     ]);
     expect(await service.remove(created.id)).toBe(1);
     expect(await service.listStatuses()).toEqual([]);
+  });
+
+  it("http 类型：归一化入列（command 空串、url 承载端点），状态带 kind/url", async () => {
+    const store = fakeStore([]);
+    const { registry } = fakeRegistry();
+    const service = createMcpService({ env: EMPTY_ENV, registry, store });
+
+    const created = await service.create({
+      name: "remote",
+      kind: "http",
+      url: "https://127.0.0.1:9/unreachable/mcp",
+      args: [],
+      env: {},
+      enabled: false, // 不触发真实连接，只验归一化与落库形态
+    });
+    expect(created).toMatchObject({
+      kind: "http",
+      command: "",
+      url: "https://127.0.0.1:9/unreachable/mcp",
+    });
+
+    // stdio 缺省 kind：url 归一化为 null
+    const stdio = await service.create({
+      name: "local",
+      command: "definitely-not-a-real-binary-xyz",
+      args: [],
+      env: {},
+      enabled: false,
+    });
+    expect(stdio).toMatchObject({ kind: "stdio", url: null });
+
+    const [remoteStatus, localStatus] = await service.listStatuses();
+    expect(remoteStatus).toMatchObject({ kind: "http", status: "disabled" });
+    expect(localStatus).toMatchObject({ kind: "stdio", status: "disabled" });
+  });
+
+  it("http 类型启用后连不上是运行态 error（不抛错、不注册工具）", async () => {
+    const store = fakeStore([]);
+    const { registry, registered } = fakeRegistry();
+    const service = createMcpService({ env: EMPTY_ENV, registry, store });
+
+    await service.create({
+      name: "remote-dead",
+      kind: "http",
+      // 保留地址端口立即 ECONNREFUSED，不等待超时
+      url: "https://127.0.0.1:9/mcp",
+      args: [],
+      env: {},
+      enabled: true,
+    });
+    const [status] = await service.listStatuses();
+    expect(status).toMatchObject({
+      kind: "http",
+      status: "error",
+      toolCount: 0,
+    });
+    expect(status?.error).toBeTruthy();
+    expect(registered.size).toBe(0);
   });
 
   it("setEnabled 生效并回流公开形态；重连不存在的 id 返回 null", async () => {

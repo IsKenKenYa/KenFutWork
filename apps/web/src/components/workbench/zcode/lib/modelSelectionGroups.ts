@@ -1,23 +1,14 @@
-/**
- * zcode 照搬：`@/lib/modelSelectionGroups.ts`（references/zcode/packages/ui/src/lib/modelSelectionGroups.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { shouldShowModelVisionBadge } from "@zui/lib/modelVisionBadge";
-import type { ModelSelectionView } from "@zui/lib/zcode-services";
 import {
   isZCodeAgentProvider,
   resolveModelProviderFamilySpecByProviderId,
-  type ZCodeProvider,
-  type ZCodeProviderAccountAccess,
   zcodeProviderAccountAccessSchema,
-} from "@zui/lib/zcode-shared";
-import {
-  decodeCustomModelValue,
-  encodeCustomModelValue,
-} from "@zui/lib/zcodeCustomModelValue";
-import type { ModelSelectGroup } from "@zui/ModelConfigSelect";
+  type ZCodeProviderAccountAccess,
+  type ZCodeProvider,
+} from "@zcode/shared";
+import type { ModelSelectionView } from "@zcode/services";
+import type { ModelSelectGroup } from "@zui/ModelConfigSelect.js";
+import { decodeCustomModelValue, encodeCustomModelValue } from "@zui/lib/zcodeCustomModelValue.js";
+import { shouldShowModelVisionBadge } from "@zui/lib/modelVisionBadge.js";
 
 export interface ModelProviderGroupLabelOptions {
   apiKeyLabel?: string;
@@ -45,33 +36,20 @@ export function buildRegistryModelSelectGroups(
   labels: ModelProviderGroupLabelOptions = {},
 ): ModelSelectGroup[] {
   return view.providers.flatMap((provider) => {
-    if (
-      !supportsRegistryApiFormat(selectedProvider, provider.config.api?.type)
-    ) {
+    if (!supportsRegistryApiFormat(selectedProvider, provider.config.api?.type)) {
       return [];
     }
 
-    const accountAccess = zcodeProviderAccountAccessSchema.safeParse(
-      provider.config.access,
-    );
+    const accountAccess = zcodeProviderAccountAccessSchema.safeParse(provider.config.access);
     const accountPresentation = accountAccess.success
-      ? getRegistryAccountProviderGroupPresentation(
-          provider.providerId,
-          accountAccess.data,
-          labels,
-        )
+      ? getRegistryAccountProviderGroupPresentation(provider.providerId, accountAccess.data, labels)
       : null;
 
     return [
       {
         key: `registry-provider:${provider.providerId}`,
-        label:
-          accountPresentation?.label ||
-          provider.providerName?.trim() ||
-          provider.providerId,
-        ...(accountPresentation?.labelBadge
-          ? { labelBadge: accountPresentation.labelBadge }
-          : {}),
+        label: accountPresentation?.label || provider.providerName?.trim() || provider.providerId,
+        ...(accountPresentation?.labelBadge ? { labelBadge: accountPresentation.labelBadge } : {}),
         ...(accountPresentation ? { directItems: true } : {}),
         items: provider.models.map(({ modelId, config }) => ({
           key: `registry-provider:${provider.providerId}:${modelId}`,
@@ -98,10 +76,7 @@ function getRegistryAccountProviderGroupPresentation(
   const familySpec = resolveModelProviderFamilySpecByProviderId(providerId);
   const label = familySpec?.label ?? providerId;
   if (access.mode === "start-plan") {
-    return {
-      label: "Start Plan",
-      labelBadge: labels.startPlanBadgeLabel ?? "Free",
-    };
+    return { label: "Start Plan", labelBadge: labels.startPlanBadgeLabel ?? "Free" };
   }
   if (access.mode === "team-coding-plan") {
     return { label, labelBadge: labels.teamPlanBadgeLabel ?? "Team" };

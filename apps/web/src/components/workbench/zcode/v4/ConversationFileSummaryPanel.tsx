@@ -1,38 +1,30 @@
-/**
- * zcode 照搬：`@/v4/ConversationFileSummaryPanel.tsx`（references/zcode/packages/ui/src/v4/ConversationFileSummaryPanel.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为；上游依赖运行时恒有值）。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@zui/components/ui/collapsible";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { FileDisplayInline } from "@zui/lib/fileDisplay";
-import { toWorkspaceRelativePath } from "@zui/lib/taskChangeSummary";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronRightIcon, Loader2Icon, Undo2Icon } from "lucide-react";
 import type {
   CommandAck,
   ConversationRowTarget,
   TurnHeaderRow,
   V4ConversationFileChangesResult,
   V4ConversationFileRewindPreviewResult,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import { logger } from "@zui/logger";
-import { buildChangeSummaryFilePreviewSource } from "@zui/messageChangeSummaryPreview";
-import { OpenSplitButton } from "@zui/OpenSplitButton";
-import { ConversationFileRewindDialog } from "@zui/v4/ConversationFileRewindDialog";
+} from "@zcode/shared/zcode-protocol-v4";
+import { Button } from "@zui/components/ui/button.js";
+import { cn } from "@zui/components/lib/utils.js";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@zui/components/ui/collapsible.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { FileDisplayInline } from "@zui/lib/fileDisplay.js";
+import { toWorkspaceRelativePath } from "@zui/lib/taskChangeSummary.js";
+import { buildChangeSummaryFilePreviewSource } from "@zui/messageChangeSummaryPreview.js";
+import { OpenSplitButton } from "@zui/OpenSplitButton.js";
+import { logger } from "@zui/logger.js";
+import { ConversationFileRewindDialog } from "@zui/v4/ConversationFileRewindDialog.js";
 import type {
   ConversationFileChangesRequestOptions,
   ConversationRowRenderContext,
-} from "@zui/v4/conversationRowContext";
-import { ChevronRightIcon, Loader2Icon, Undo2Icon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+} from "@zui/v4/conversationRowContext.js";
 
 type FileChangeItem = V4ConversationFileChangesResult["items"][number];
 
@@ -57,19 +49,11 @@ function openDiff(
   item: FileChangeItem,
   context: Pick<
     ConversationRowRenderContext,
-    | "workspacePath"
-    | "workspaceIdentity"
-    | "workspaceRemoteSessionId"
-    | "onOpenCodeViewer"
+    "workspacePath" | "workspaceIdentity" | "workspaceRemoteSessionId" | "onOpenCodeViewer"
   >,
 ) {
   const patch = formatPatch(item.path, item.patches);
-  const {
-    workspacePath,
-    workspaceIdentity,
-    workspaceRemoteSessionId,
-    onOpenCodeViewer,
-  } = context;
+  const { workspacePath, workspaceIdentity, workspaceRemoteSessionId, onOpenCodeViewer } = context;
   if (!patch || !onOpenCodeViewer) return;
   const relativePath = toWorkspaceRelativePath(workspacePath, item.path);
   onOpenCodeViewer({
@@ -90,12 +74,10 @@ export function ConversationFileSummaryPanel({
   const { intl } = useZCodeIntl();
   const summary = header.fileChanges;
   const [open, setOpen] = useState(false);
-  const [details, setDetails] =
-    useState<V4ConversationFileChangesResult | null>(null);
+  const [details, setDetails] = useState<V4ConversationFileChangesResult | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [preview, setPreview] =
-    useState<V4ConversationFileRewindPreviewResult | null>(null);
+  const [preview, setPreview] = useState<V4ConversationFileRewindPreviewResult | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,10 +98,7 @@ export function ConversationFileSummaryPanel({
     !isReverted;
   const items = details?.items ?? [];
   const target = useMemo<ConversationRowTarget | null>(
-    () =>
-      header.entityId
-        ? { rowId: header.rowId, entityId: header.entityId }
-        : null,
+    () => (header.entityId ? { rowId: header.rowId, entityId: header.entityId } : null),
     [header.entityId, header.rowId],
   );
   const cachePolicy: ConversationFileChangesRequestOptions["cachePolicy"] =
@@ -148,10 +127,7 @@ export function ConversationFileSummaryPanel({
         (loadError: unknown) => {
           if (disposed) return;
           logger.warn("[ConversationFileSummaryPanel] 读取文件变更详情失败", {
-            error:
-              loadError instanceof Error
-                ? loadError.message
-                : String(loadError),
+            error: loadError instanceof Error ? loadError.message : String(loadError),
             rowId: target.rowId,
           });
           setLoadingDetails(false);
@@ -171,9 +147,7 @@ export function ConversationFileSummaryPanel({
     try {
       setPreview(await context.previewFileRewind(target));
     } catch {
-      setError(
-        intl.formatMessage({ id: "chat.changeSummary.rewindDialog.error" }),
-      );
+      setError(intl.formatMessage({ id: "chat.changeSummary.rewindDialog.error" }));
     } finally {
       setPreviewLoading(false);
     }
@@ -189,26 +163,18 @@ export function ConversationFileSummaryPanel({
         setDialogOpen(false);
       } else {
         setError(
-          ack.message ??
-            intl.formatMessage({ id: "chat.changeSummary.rewindDialog.error" }),
+          ack.message ?? intl.formatMessage({ id: "chat.changeSummary.rewindDialog.error" }),
         );
       }
     } catch {
-      setError(
-        intl.formatMessage({ id: "chat.changeSummary.rewindDialog.error" }),
-      );
+      setError(intl.formatMessage({ id: "chat.changeSummary.rewindDialog.error" }));
     } finally {
       setApplying(false);
     }
   }, [context, intl, preview?.canApply, target]);
 
   useEffect(() => {
-    if (
-      !details ||
-      !summary ||
-      summary.files <= 0 ||
-      details.items.length > 0
-    ) {
+    if (!details || !summary || summary.files <= 0 || details.items.length > 0) {
       return;
     }
     logger.warn("[ConversationFileSummaryPanel] 文件摘要详情为空", {
@@ -228,26 +194,22 @@ export function ConversationFileSummaryPanel({
         className="overflow-hidden rounded-xl border border-border bg-card shadow-none"
       >
         <div className="flex h-10 items-center justify-between gap-3 px-2 transition-colors hover:bg-hover">
-          <CollapsibleTrigger asChild={true}>
+          <CollapsibleTrigger asChild>
             <button
               type="button"
               className="flex h-full min-w-0 flex-1 items-center gap-2 px-1 text-left text-ui-base text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused"
               aria-label={intl.formatMessage({
-                id: open
-                  ? "chat.changeSummary.collapse"
-                  : "chat.changeSummary.expand",
+                id: open ? "chat.changeSummary.collapse" : "chat.changeSummary.expand",
               })}
             >
               <ChevronRightIcon
-                aria-hidden={true}
+                aria-hidden
                 className={cn(
                   "size-3.5 shrink-0 text-foreground-subtlest transition-transform",
                   open ? "rotate-90" : "rotate-0",
                 )}
               />
-              <span className="min-w-0 truncate font-medium">
-                {filesChangedLabel}
-              </span>
+              <span className="min-w-0 truncate font-medium">{filesChangedLabel}</span>
               <span className="shrink-0 tabular-nums">
                 <span className="text-diff-added">+{summary.additions}</span>{" "}
                 <span className="text-diff-removed">-{summary.deletions}</span>
@@ -267,14 +229,8 @@ export function ConversationFileSummaryPanel({
             onClick={handlePreviewRewind}
             title={intl.formatMessage({ id: "chat.changeSummary.rewind" })}
           >
-            {previewLoading || applying ? (
-              <Loader2Icon className="animate-spin" />
-            ) : (
-              <Undo2Icon />
-            )}
-            <span>
-              {intl.formatMessage({ id: "chat.changeSummary.rewind" })}
-            </span>
+            {previewLoading || applying ? <Loader2Icon className="animate-spin" /> : <Undo2Icon />}
+            <span>{intl.formatMessage({ id: "chat.changeSummary.rewind" })}</span>
           </Button>
         </div>
         <CollapsibleContent>
@@ -294,12 +250,8 @@ export function ConversationFileSummaryPanel({
               </div>
             ) : (
               items.map((item) => {
-                const relativePath = toWorkspaceRelativePath(
-                  context.workspacePath,
-                  item.path,
-                );
-                const canReview =
-                  item.patches.length > 0 && Boolean(context.onOpenCodeViewer);
+                const relativePath = toWorkspaceRelativePath(context.workspacePath, item.path);
+                const canReview = item.patches.length > 0 && Boolean(context.onOpenCodeViewer);
                 const filePreviewSource = buildChangeSummaryFilePreviewSource({
                   path: item.path,
                   relativePath,
@@ -308,17 +260,12 @@ export function ConversationFileSummaryPanel({
                   workspaceRemoteSessionId: context.workspaceRemoteSessionId,
                 });
                 return (
-                  <div
-                    key={item.path}
-                    className="w-full bg-background/50 overflow-hidden"
-                  >
+                  <div key={item.path} className="w-full bg-background/50 overflow-hidden">
                     <div
                       aria-disabled={!canReview}
                       className={cn(
                         "flex w-full items-center gap-1 px-2 py-2 text-left transition-colors",
-                        canReview
-                          ? "cursor-pointer hover:bg-hover/30"
-                          : "cursor-default",
+                        canReview ? "cursor-pointer hover:bg-hover/30" : "cursor-default",
                       )}
                       onClick={() => openDiff(item, context)}
                       onKeyDown={(event) => {
@@ -337,12 +284,10 @@ export function ConversationFileSummaryPanel({
                             options={{
                               basePath: context.workspacePath,
                               showFilePath: true,
-                              className:
-                                "inline-flex min-w-0 max-w-full items-center gap-1.5",
+                              className: "inline-flex min-w-0 max-w-full items-center gap-1.5",
                               fileNameClassName:
                                 "truncate text-ui-base font-medium text-foreground",
-                              filePathClassName:
-                                "truncate text-ui-base text-foreground-subtlest",
+                              filePathClassName: "truncate text-ui-base text-foreground-subtlest",
                             }}
                           />
                         </div>
@@ -350,14 +295,10 @@ export function ConversationFileSummaryPanel({
                             在这里展示会把内部操作次数误当成变更指标，因此只在撤销弹窗保留。 */}
                         <span className="flex shrink-0 items-center gap-2 tabular-nums text-ui-base">
                           {item.additions > 0 ? (
-                            <span className="text-diff-added">
-                              +{item.additions}
-                            </span>
+                            <span className="text-diff-added">+{item.additions}</span>
                           ) : null}
                           {item.deletions > 0 ? (
-                            <span className="text-diff-removed">
-                              -{item.deletions}
-                            </span>
+                            <span className="text-diff-removed">-{item.deletions}</span>
                           ) : null}
                         </span>
                       </div>
@@ -395,7 +336,7 @@ export function ConversationFileSummaryPanel({
                             previewSource: filePreviewSource,
                           }}
                           onOpenCodeViewer={context.onOpenCodeViewer}
-                          stopPropagation={true}
+                          stopPropagation
                         />
                       </div>
                     </div>

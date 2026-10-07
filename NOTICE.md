@@ -12,3 +12,7 @@
   路径映射与宿主能力 stub（详见仓库 `docs/方案设计/Code模式ZCode-UI照搬执行手册.md`）
 - 上游版权与许可证文本：`references/zcode/LICENSE`（Apache-2.0）、
   `references/zcode/NOTICE.md`
+
+## LangChain 发行入口补丁
+
+本仓库通过标准 pnpm 补丁修复官方 npm **langchain 1.5.11** 的 afterModel 显式模型续跑路由。ESM/CJS 发行入口的原代码采用 MIT；原许可完整保存在 `patches/LICENSE-langchain.txt`，来源哈希、修改与验证见 `patches/LangChain路由修复说明.md`。

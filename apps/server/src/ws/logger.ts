@@ -1,5 +1,6 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { resolveDesktopDataDir } from "../desktop/paths.js";
 
 /**
  * Structured logger for WebSocket + Agent pipeline.
@@ -7,11 +8,11 @@ import { join } from "node:path";
  * - stdout: human-readable one-liner with color-coded level
  * - file: JSON lines, one file per day (pipeline-YYYY-MM-DD.log)
  *
- * Log directory: apps/server/logs/
+ * Log directory: explicit application data directory, otherwise apps/server/logs/.
  *
  * Usage:
  *   const log = createPipelineLogger("ws");
- *   log.info("connected", { userId });
+ *   log.info("connected", { instanceId });
  *   log.warn("auth_failed", { reason: "token expired" });
  *   log.lap("thread_resolved");  // auto-tracks elapsed ms
  */
@@ -26,7 +27,9 @@ const LEVEL_LABEL: Record<LogLevel, string> = {
 };
 
 // Ensure log directory exists
-const LOG_DIR = join(import.meta.dirname ?? ".", "..", "..", "logs");
+const LOG_DIR = process.env.KENFUTWORK_DATA_DIR?.trim()
+  ? join(resolveDesktopDataDir({ env: process.env }), "logs")
+  : join(import.meta.dirname ?? ".", "..", "..", "logs");
 try {
   mkdirSync(LOG_DIR, { recursive: true });
 } catch {

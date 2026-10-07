@@ -1,7 +1,7 @@
-import { statSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
+import { mkdir, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { CanvasRepository } from "../canvas/repository.js";
-import { createCanvasRepository } from "../canvas/repository.js";
+import type { AdditionalDirectory } from "@kenfutwork/shared";
 import type { PersistenceService } from "../persistence/types.js";
 import type { ProjectRepository } from "./repository.js";
 import { createProjectRepository } from "./repository.js";
@@ -89,7 +89,38 @@ export function validateWorkDir(raw: string): WorkDirValidation {
     };
   }
 
-  return { ok: true, path: normalized };
+  return { ok: true, path: realpathSync(normalized) };
+}
+
+/** Code 项目默认目录由服务端身份稳定生成；显式目录不可吞错换落点。 */
+export async function resolveProjectWorkDirectory(input: {
+  instanceId: string;
+  projectId: string;
+  sandboxRoot: string;
+  workDir?: string | null | undefined;
+}): Promise<string> {
+  if (input.workDir) {
+    const verdict = validateWorkDir(input.workDir);
+    if (!verdict.ok) throw new Error(verdict.reason);
+    return verdict.path;
+  }
+  const directory = resolve(
+    input.sandboxRoot,
+    input.instanceId,
+    input.projectId,
+  );
+  await mkdir(directory, { recursive: true });
+  return realpath(directory);
+}
+
+export function normalizeAdditionalDirectories(
+  directories: AdditionalDirectory[],
+): AdditionalDirectory[] {
+  return directories.map((directory) => {
+    const verdict = validateWorkDir(directory.path);
+    if (!verdict.ok) throw new Error(verdict.reason);
+    return { path: verdict.path, access: directory.access };
+  });
 }
 
 /** 归一化（仅用于已通过 `isAbsoluteWorkDir` 的值）。 */
@@ -97,39 +128,19 @@ export function normalizeWorkDir(raw: string): string {
   return resolve(raw.trim());
 }
 
-/**
- * 画布 → 绑定工作目录（agent 运行时用：它手里只有 canvasId）。
- *
- * 读不到（画布不属于任何工作区、项目未绑定、查询失败）一律返回 null：工作目录是
- * **增强**而不是前置条件，读数失败不该让整轮 run 失败——回落到沙箱目录即可。
- */
+/** 只在调用者的可信实例内读取画布所绑定的项目目录，不从资源反推身份。 */
 export function createProjectWorkDirLoader(options: {
-  canvases: Pick<CanvasRepository, "findWorkspaceIdByCanvas">;
   projects: Pick<ProjectRepository, "findWorkDirByCanvas">;
-}): (canvasId: string) => Promise<string | null> {
-  return async (canvasId) => {
-    const workspaceId = await options.canvases
-      .findWorkspaceIdByCanvas(canvasId)
-      .catch(() => null);
-    if (!workspaceId) return null;
-    return options.projects
-      .findWorkDirByCanvas(workspaceId, canvasId)
-      .catch(() => null);
-  };
+}): (instanceId: string, canvasId: string) => Promise<string | null> {
+  return (instanceId, canvasId) =>
+    options.projects.findWorkDirByCanvas(instanceId, canvasId);
 }
 
-/**
- * 从 persistence 直接装配加载器——插件里的统一入口。
- *
- * 有 5 个消费点（agent 运行时、git/终端、技能包导入、插件安装、MCP 脚本注册）都要这份
- * 判定，各写一遍 `createCanvasRepository + createProjectRepository` 只是重复；判定逻辑
- * 仍然只有上面一处（谁也不会各自去读 work_dir）。
- */
+/** 插件统一装配入口；调用方必须提供真实 Actor 的稳定实例归属。 */
 export function projectWorkDirLoaderFor(
   persistence: PersistenceService,
-): (canvasId: string) => Promise<string | null> {
+): (instanceId: string, canvasId: string) => Promise<string | null> {
   return createProjectWorkDirLoader({
-    canvases: createCanvasRepository(persistence),
     projects: createProjectRepository(persistence),
   });
 }

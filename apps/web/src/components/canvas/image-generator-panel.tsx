@@ -5,7 +5,7 @@ import type {
   BinaryFileData,
   ExcalidrawImperativeAPI,
 } from "@excalidraw/excalidraw/types";
-import { ImageUp, Lock, Zap } from "lucide-react";
+import { ImageUp } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useGenerationErrorHandler } from "../../hooks/use-generation-error-handler";
@@ -26,7 +26,7 @@ type ImageGeneratorPanelProps = {
   elementBounds: { x: number; y: number; width: number; height: number };
   data: ImageGeneratorData;
   excalidrawApi: ExcalidrawImperativeAPI;
-  accessToken: string;
+  accessToken: string | null;
   /** 当前画布会话（§4.8）：实例自定义头的 `{{sessionId}}` 按它渲染；无会话时缺省。 */
   sessionId?: string | undefined;
   canvasScrollZoom: { scrollX: number; scrollY: number; zoom: number };
@@ -347,7 +347,7 @@ export function ImageGeneratorPanel({
                     key={m.id}
                     type="button"
                     onClick={() => handleModelChange(m.id)}
-                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted ${m.id === model ? "bg-muted" : ""} ${m.accessible === false ? "opacity-60" : ""}`}
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted ${m.id === model ? "bg-muted" : ""}`}
                   >
                     {m.iconUrl && (
                       // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
@@ -359,16 +359,7 @@ export function ImageGeneratorPanel({
                     )}
                     <span className="flex-1 text-foreground">
                       {m.displayName}
-                      {m.accessible === false && (
-                        <Lock className="ml-1 inline h-2.5 w-2.5 text-muted-foreground" />
-                      )}
                     </span>
-                    {typeof m.creditCost === "number" && (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] tabular-nums text-muted-foreground">
-                        <Zap className="h-2.5 w-2.5" />
-                        {m.creditCost}
-                      </span>
-                    )}
                     {m.id === model && (
                       <svg
                         aria-hidden="true"

@@ -13,6 +13,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 const HEALTH_PATH: &str = "/api/health";
@@ -271,6 +272,7 @@ pub enum ServerLaunch {
 
 #[derive(Debug)]
 pub enum LifecycleError {
+    Stopped,
     Probe(ProbeError),
     /// 探活超时，且已取得子进程退出状态——这是「spawn 后立刻死」的可诊断信号
     /// （包名拼错、依赖未构建等），与「还在启动中」的超时区分开（2026-09-17 事故）。
@@ -285,6 +287,7 @@ pub enum LifecycleError {
 impl std::fmt::Display for LifecycleError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            LifecycleError::Stopped => write!(f, "桌面应用正在退出，服务端启动已取消。"),
             LifecycleError::Probe(error) => write!(f, "{error}"),
             LifecycleError::ProbeChildExited {
                 probe,
@@ -319,13 +322,19 @@ fn open_spawn_log(data_dir: &std::path::Path) -> Option<std::fs::File> {
  * 确保服务端在 `config.port` 上健康：已健康 → 复用不 spawn；
  * 未健康 → spawn 子进程（注入 `KENFUTWORK_DATA_DIR`）并探活等待，失败即回收子进程。
  */
-pub fn ensure_server_running(
-    config: ServerSpawnConfig,
-) -> Result<ServerLaunch, LifecycleError> {
+pub fn ensure_server_running(config: ServerSpawnConfig) -> Result<ServerLaunch, LifecycleError> {
     if health_once(config.port) {
         return Ok(ServerLaunch::Reused);
     }
 
+    let mut handle = spawn_server(&config)?;
+    match probe_health(config.port, config.health_timeout) {
+        Ok(_) => Ok(ServerLaunch::Spawned(handle)),
+        Err(probe) => Err(probe_failure(&config, &mut handle, probe)),
+    }
+}
+
+fn spawn_server(config: &ServerSpawnConfig) -> Result<ServerHandle, LifecycleError> {
     let spawn_log = open_spawn_log(&config.data_dir);
     let stderr = match &spawn_log {
         Some(file) => Stdio::from(file.try_clone().map_err(LifecycleError::Spawn)?),
@@ -359,14 +368,16 @@ pub fn ensure_server_running(
         use std::os::windows::process::CommandExt;
         command.creation_flags(CREATE_NO_WINDOW);
     }
-    let mut child = command.spawn().map_err(LifecycleError::Spawn)?;
+    let child = command.spawn().map_err(LifecycleError::Spawn)?;
 
     // 立刻绑进 job：越早越好——绑上之后服务端再拉起的任何后代（内嵌 Postgres）都自动入 job
     #[cfg(windows)]
     let job = {
         use std::os::windows::io::AsRawHandle;
         match job::ProcessJob::create() {
-            Ok(job) => match job.assign(child.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE) {
+            Ok(job) => match job
+                .assign(child.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE)
+            {
                 Ok(()) => Some(job),
                 Err(error) => {
                     eprintln!("[desktop] 绑定作业对象失败（后代回收降级为 taskkill /T）：{error}");
@@ -380,26 +391,141 @@ pub fn ensure_server_running(
         }
     };
 
-    match probe_health(config.port, config.health_timeout) {
-        Ok(_) => Ok(ServerLaunch::Spawned(ServerHandle {
-            child,
-            #[cfg(windows)]
-            job,
-        })),
-        Err(probe) => {
-            // 探活失败不留半启动态：回收子进程；若子进程早已退出，把退出状态
-            // 写进错误（「包名拼错/依赖没建」这类秒死故障一眼可诊，不再干等盲猜）
-            let child_status = child
-                .try_wait()
-                .map(|status| status.map_or("仍在运行".to_string(), |s| s.to_string()))
-                .unwrap_or_else(|_| "未知（wait 失败）".to_string());
-            let _ = child.kill();
-            let _ = child.wait();
-            Err(LifecycleError::ProbeChildExited {
-                probe,
-                child_status,
-                log_path: config.data_dir.join("logs").join("server-spawn.log"),
-            })
+    Ok(ServerHandle {
+        child,
+        #[cfg(windows)]
+        job,
+    })
+}
+
+fn probe_failure(
+    config: &ServerSpawnConfig,
+    handle: &mut ServerHandle,
+    probe: ProbeError,
+) -> LifecycleError {
+    let child_status = handle
+        .child
+        .try_wait()
+        .map(|status| status.map_or("仍在运行".to_string(), |s| s.to_string()))
+        .unwrap_or_else(|_| "未知（wait 失败）".to_string());
+    LifecycleError::ProbeChildExited {
+        probe,
+        child_status,
+        log_path: config.data_dir.join("logs").join("server-spawn.log"),
+    }
+}
+
+#[derive(Default)]
+struct LifecycleState {
+    stopping: bool,
+    handle: Option<ServerHandle>,
+}
+
+/// 壳在后台启动前托管此资源；spawn与关闭共用锁，不把所有权推迟到健康/界面就绪。
+#[derive(Default)]
+pub struct ServerLifecycle {
+    state: Mutex<LifecycleState>,
+}
+
+impl ServerLifecycle {
+    fn state(&self) -> MutexGuard<'_, LifecycleState> {
+        // 退出必须回收句柄，即使之前的启动线程曾panic并污染互斥锁。
+        self.state.lock().unwrap_or_else(|error| error.into_inner())
+    }
+
+    pub fn is_stopping(&self) -> bool {
+        self.state().stopping
+    }
+    pub fn pid(&self) -> Option<u32> {
+        self.state().handle.as_ref().map(ServerHandle::pid)
+    }
+
+    /// None代表外部健康服务；Some为本壳从spawn开始持有的PID。
+    pub fn ensure_running(&self, config: ServerSpawnConfig) -> Result<Option<u32>, LifecycleError> {
+        let pid = {
+            let mut state = self.state();
+            if state.stopping {
+                return Err(LifecycleError::Stopped);
+            }
+            if state.handle.is_some() {
+                return Err(LifecycleError::Spawn(std::io::Error::other(
+                    "已有托管服务端，不能重复启动。",
+                )));
+            }
+            if health_once(config.port) {
+                return Ok(None);
+            }
+            let handle = spawn_server(&config)?;
+            let pid = handle.pid();
+            state.handle = Some(handle);
+            pid
+        };
+        let deadline = Instant::now() + config.health_timeout;
+        loop {
+            if self.is_stopping() {
+                return Err(LifecycleError::Stopped);
+            }
+            if health_once(config.port) {
+                return if self.is_stopping() {
+                    Err(LifecycleError::Stopped)
+                } else {
+                    Ok(Some(pid))
+                };
+            }
+            if Instant::now() >= deadline {
+                let mut state = self.state();
+                let mut handle = state.handle.take().ok_or(LifecycleError::Stopped)?;
+                return Err(probe_failure(
+                    &config,
+                    &mut handle,
+                    ProbeError {
+                        port: config.port,
+                        timeout: config.health_timeout,
+                    },
+                ));
+            }
+            std::thread::sleep(PROBE_INTERVAL);
+        }
+    }
+
+    /// 数据目录移动时停旧服务，允许同一壳随后重启；退出则永久关闭准入。
+    pub fn stop_current(&self, grace: Duration) {
+        let mut state = self.state();
+        if let Some(mut handle) = state.handle.take() {
+            handle.shutdown(grace);
+        }
+    }
+
+    pub fn shutdown(&self, grace: Duration) {
+        let mut state = self.state();
+        state.stopping = true;
+        // 清理完成前保持锁，另一路Exit/信号不得抢先结束整个壳进程。
+        if let Some(mut handle) = state.handle.take() {
+            handle.shutdown(grace);
+        }
+    }
+
+    pub fn wait_for_clean_exit(&self) -> std::io::Result<()> {
+        loop {
+            let mut state = self.state();
+            if state.stopping {
+                return Err(std::io::Error::other("桌面应用正在退出。"));
+            }
+            let handle = state
+                .handle
+                .as_mut()
+                .ok_or_else(|| std::io::Error::other("没有托管服务端句柄。"))?;
+            if let Some(status) = handle.child.try_wait()? {
+                state.handle.take();
+                return if status.success() {
+                    Ok(())
+                } else {
+                    Err(std::io::Error::other(format!("服务端退出状态：{status}")))
+                };
+            }
+            // 保留句柄但不跨wait持锁，移动目录的正常停库等待不能阻塞应用退出。
+            drop(state);
+            std::thread::sleep(PROBE_INTERVAL);
         }
     }
 }
@@ -414,6 +540,16 @@ pub struct ServerHandle {
 }
 
 impl ServerHandle {
+    /// 宿主已通过可信HTTP请求停服务/停库；此处只等自然退出，不提前强杀数据库。
+    pub fn wait_for_clean_exit(&mut self) -> std::io::Result<()> {
+        let status = self.child.wait()?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(std::io::Error::other(format!("服务端退出状态：{status}")))
+        }
+    }
+
     pub fn pid(&self) -> u32 {
         self.child.id()
     }
@@ -487,7 +623,9 @@ impl ServerHandle {
         {
             // 子进程继承壳的进程组时 kill(-pid) 会连带收掉它的后代
             let pid = self.child.id();
-            let _ = Command::new("kill").args(["-KILL", &format!("-{pid}")]).status();
+            let _ = Command::new("kill")
+                .args(["-KILL", &format!("-{pid}")])
+                .status();
         }
         let _ = self.child.kill();
     }

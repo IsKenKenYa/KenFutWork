@@ -4,8 +4,8 @@ import { defineConfig } from "vitest/config";
 // .mjs on purpose: avoids .vite-temp TS-config bundling inside node_modules
 // (which trips the dev sandbox when a package has no local node_modules).
 export default defineConfig({
-  esbuild: {
-    jsx: "automatic",
+  oxc: {
+    jsx: { runtime: "automatic" },
   },
   resolve: {
     alias: {

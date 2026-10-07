@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/v4/timelineRowHeightCache.ts`（references/zcode/packages/ui/src/v4/timelineRowHeightCache.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 // 虚拟滚动核心：v4 timeline 行高缓存（纯数据结构，无 DOM/React 依赖）。
 //
 // 为什么需要它：@tanstack/react-virtual 自身的 measurementsCache 按 itemKey 缓存，
@@ -23,9 +18,7 @@ type TimelineRowHeightCacheKey = string | number;
 export class TimelineRowHeightCache {
   private readonly sizes = new Map<TimelineRowHeightCacheKey, number>();
 
-  constructor(
-    private readonly maxEntries: number = MAX_ROW_HEIGHT_CACHE_ENTRIES,
-  ) {}
+  constructor(private readonly maxEntries: number = MAX_ROW_HEIGHT_CACHE_ENTRIES) {}
 
   get size(): number {
     return this.sizes.size;

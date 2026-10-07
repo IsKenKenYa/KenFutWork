@@ -1,9 +1,4 @@
 /**
- * zcode 照搬：`@/lib/workDuration.ts`（references/zcode/packages/ui/src/lib/workDuration.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-/**
  * 「工作了 1 分 42 秒」的时长写法（`chat.history.workedFor`），从 `ConversationTurnGroup` 抽出，
  * 好让工作流完成卡的「时间」格与轮头的折叠标签
  * 一字不差：同一段时间在两处必须写成同一个样子。
@@ -37,20 +32,11 @@ export function workDurationParts(
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
   const seconds = totalSeconds % 60;
   const parts: WorkDurationPart[] = [];
-  if (days > 0)
-    parts.push({ value: days, unit: formatMessage({ id: UNIT_IDS.day }) });
-  if (hours > 0)
-    parts.push({ value: hours, unit: formatMessage({ id: UNIT_IDS.hour }) });
-  if (minutes > 0)
-    parts.push({
-      value: minutes,
-      unit: formatMessage({ id: UNIT_IDS.minute }),
-    });
+  if (days > 0) parts.push({ value: days, unit: formatMessage({ id: UNIT_IDS.day }) });
+  if (hours > 0) parts.push({ value: hours, unit: formatMessage({ id: UNIT_IDS.hour }) });
+  if (minutes > 0) parts.push({ value: minutes, unit: formatMessage({ id: UNIT_IDS.minute }) });
   if (seconds > 0 || parts.length === 0) {
-    parts.push({
-      value: seconds,
-      unit: formatMessage({ id: UNIT_IDS.second }),
-    });
+    parts.push({ value: seconds, unit: formatMessage({ id: UNIT_IDS.second }) });
   }
   return parts.slice(0, 2);
 }

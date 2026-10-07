@@ -13,7 +13,6 @@ const env = {
   databaseUrl: "postgres://localhost:5432/kenfutwork-test",
   // blob 缝是必需能力且只有本地 FS 形态（M1.5 已删 Supabase Provider）
   blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
-  credentialSecret: "test-secret",
   port: 0,
   version: "t",
   webOrigin: "http://x",
@@ -65,24 +64,16 @@ describe("profiles（P7 单一插件清单）", async () => {
 
   it("server/worker profile 均可装配（无 app 时 ctx.app 访问抛错但不崩）", () => {
     const deps = {
-      auth: { authenticate: async () => null },
       connectionManager: {} as never,
       events: {
         emitPreStep: (payload) => Promise.resolve(payload),
         emitToolPreExecute: (payload) => Promise.resolve(payload),
         emitTurnStopping: () => Promise.resolve(),
       } satisfies KernelEvents,
-      credentialEnv: {},
       env,
     };
-    expect(() =>
-      composePlugins(env, workerProfile(deps), {
-        overrides: {
-          auth: deps.auth,
-        },
-      }),
-    ).not.toThrow();
-    // server profile 需要真实依赖（agentRuns 构造），无 app/凭证环境下允许失败——
+    expect(() => composePlugins(env, workerProfile())).not.toThrow();
+    // server profile 需要真实依赖（agentRuns 构造），无 app 时只校验清单——
     // 这里只断言清单本身可被引用与展开（插件清单漂移在编译期消失）。
     expect(() => serverProfile(deps)).not.toThrow();
   });

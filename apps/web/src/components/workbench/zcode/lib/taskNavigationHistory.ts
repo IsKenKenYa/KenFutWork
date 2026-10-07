@@ -1,9 +1,4 @@
 /**
- * zcode 照搬：`@/lib/taskNavigationHistory.ts`（references/zcode/packages/ui/src/lib/taskNavigationHistory.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-/**
  * Workspace 导航历史 —— 浏览器式前进/后退栈
  *
  * 纯数据结构 + 不可变更新函数，不含 React 依赖。
@@ -39,10 +34,7 @@ export interface PluginStoreNavEntry extends WorkspaceNavEntryBase {
   kind: "plugin-store";
 }
 
-export type WorkspaceNavEntry =
-  | TaskNavEntry
-  | AutomationsNavEntry
-  | PluginStoreNavEntry;
+export type WorkspaceNavEntry = TaskNavEntry | AutomationsNavEntry | PluginStoreNavEntry;
 
 export interface TaskNavigationHistory {
   entries: WorkspaceNavEntry[];
@@ -60,22 +52,15 @@ function isTaskNavEntry(entry: WorkspaceNavEntry): entry is TaskNavEntry {
   return entry.kind === "task";
 }
 
-export function isAutomationsNavEntry(
-  entry: WorkspaceNavEntry,
-): entry is AutomationsNavEntry {
+export function isAutomationsNavEntry(entry: WorkspaceNavEntry): entry is AutomationsNavEntry {
   return entry.kind === "automations";
 }
 
-export function isPluginStoreNavEntry(
-  entry: WorkspaceNavEntry,
-): entry is PluginStoreNavEntry {
+export function isPluginStoreNavEntry(entry: WorkspaceNavEntry): entry is PluginStoreNavEntry {
   return entry.kind === "plugin-store";
 }
 
-function isSameNavEntry(
-  left: WorkspaceNavEntry,
-  right: WorkspaceNavEntry,
-): boolean {
+function isSameNavEntry(left: WorkspaceNavEntry, right: WorkspaceNavEntry): boolean {
   if (
     left.kind !== right.kind ||
     left.workspacePath !== right.workspacePath ||
@@ -84,8 +69,7 @@ function isSameNavEntry(
     return false;
   }
 
-  if (left.kind === "task")
-    return left.taskId === (right as TaskNavEntry).taskId;
+  if (left.kind === "task") return left.taskId === (right as TaskNavEntry).taskId;
   if (left.kind === "automations") {
     const rightAutomations = right as AutomationsNavEntry;
     return (
@@ -222,8 +206,7 @@ export function removeTaskFromHistory(
   history: TaskNavigationHistory,
   taskId: string,
 ): TaskNavigationHistory {
-  const currentEntry =
-    history.cursor >= 0 ? history.entries[history.cursor] : null;
+  const currentEntry = history.cursor >= 0 ? history.entries[history.cursor] : null;
   const filtered = history.entries.filter(
     (entry) => !isTaskNavEntry(entry) || entry.taskId !== taskId,
   );
@@ -239,9 +222,7 @@ export function removeTaskFromHistory(
   // 当前条目未被删除时保持指向它；被删时沿用旧位置选择最近目标。
   const currentEntryIndex = currentEntry ? filtered.indexOf(currentEntry) : -1;
   const cursor =
-    currentEntryIndex >= 0
-      ? currentEntryIndex
-      : Math.min(history.cursor, filtered.length - 1);
+    currentEntryIndex >= 0 ? currentEntryIndex : Math.min(history.cursor, filtered.length - 1);
 
   return { entries: filtered, cursor };
 }

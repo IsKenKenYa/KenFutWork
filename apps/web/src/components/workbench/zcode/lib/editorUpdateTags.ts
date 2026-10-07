@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/lib/editorUpdateTags.ts`（references/zcode/packages/ui/src/lib/editorUpdateTags.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
 /** 程序化更新（setText、setEditorStateJson 等）的通用标记 */
 export const PROGRAMMATIC_UPDATE_TAG = "zcode-programmatic";
 

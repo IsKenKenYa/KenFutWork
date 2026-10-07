@@ -1,36 +1,55 @@
-/**
- * zcode 移植层宿主适配：`@/hooks/useWorkspaceOpenInEditorTarget` 的最小等价。
- * 来源：references/zcode/packages/ui/src/hooks/useWorkspaceOpenInEditorTarget.ts
- *
- * zcode 从窗口 tab store 里反查工作区的远程连接（SSH/WSL/Docker），决定 openInEditor
- * 要不要带 remoteTarget。我们宿主没有远程工作区，恒返回本地口径；
- * 接口形状保持与 zcode 一致，照搬组件零改动。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-"use client";
-
+import { createOpenInEditorRemoteTarget } from "@zcode/shared";
 import { useMemo } from "react";
-
-import type { OpenInEditorRemoteTarget } from "../lib/zcode-shared";
+import { useOptionalTabStore } from "@zui/store/TabStoreProvider.js";
+import { isWorkspaceTab, type WindowTabState, type WorkspaceTabState } from "@zui/store/tabStore.js";
 
 interface WorkspaceOpenInEditorScope {
-  workspacePath?: string | undefined;
-  workspaceIdentity?: string | undefined;
-  workspaceRemoteSessionId?: string | undefined;
+  workspacePath?: string;
+  workspaceIdentity?: string;
+  workspaceRemoteSessionId?: string;
 }
 
-interface WorkspaceOpenInEditorTarget {
-  isRemoteWorkspace: boolean;
-  remoteTarget?: OpenInEditorRemoteTarget | undefined;
+function resolveWorkspaceOpenInEditorTarget(
+  tabs: readonly WindowTabState[],
+  scope: WorkspaceOpenInEditorScope,
+) {
+  if (!scope.workspacePath) {
+    return { isRemoteWorkspace: false, remoteTarget: undefined };
+  }
+
+  const requestedIdentity = scope.workspaceIdentity?.trim() || undefined;
+  const requestedRemoteSessionId = scope.workspaceRemoteSessionId?.trim() || undefined;
+  const workspaceKey = requestedIdentity || scope.workspacePath;
+  const matches = tabs.filter((tab): tab is WorkspaceTabState => {
+    if (!isWorkspaceTab(tab) || tab.workspacePath !== scope.workspacePath) {
+      return false;
+    }
+
+    const tabWorkspaceKey = tab.workspaceIdentity?.trim() || tab.workspacePath;
+    const tabRemoteSessionId = tab.remoteSessionId?.trim() || undefined;
+    return (
+      (!requestedIdentity || tabWorkspaceKey === workspaceKey) &&
+      (!requestedRemoteSessionId || tabRemoteSessionId === requestedRemoteSessionId)
+    );
+  });
+  // 远程文件动作以前只携带 Linux path，renderer 无法判断它属于哪个 SSH/WSL 目标；
+  // identity/session 已提供时精确匹配，旧调用仅在工作区匹配唯一时提取既有脱敏目标。
+  const matchedTab = matches.length === 1 ? matches[0] : undefined;
+  const hasRemoteMatch = matches.some((tab) =>
+    Boolean(tab.workspaceIdentity || tab.remoteSessionId || tab.remoteTarget),
+  );
+  const remoteTarget = matchedTab?.remoteTarget;
+  return {
+    isRemoteWorkspace: hasRemoteMatch,
+    remoteTarget: remoteTarget ? createOpenInEditorRemoteTarget(remoteTarget) : undefined,
+  };
 }
 
-const LOCAL_TARGET: WorkspaceOpenInEditorTarget = {
-  isRemoteWorkspace: false,
-  remoteTarget: undefined,
-};
+export function useWorkspaceOpenInEditorTarget(scope: WorkspaceOpenInEditorScope) {
+  const tabs = useOptionalTabStore((state) => state.tabs);
 
-export function useWorkspaceOpenInEditorTarget(
-  _scope: WorkspaceOpenInEditorScope,
-): WorkspaceOpenInEditorTarget {
-  return useMemo(() => LOCAL_TARGET, []);
+  return useMemo(
+    () => resolveWorkspaceOpenInEditorTarget(tabs, scope),
+    [scope.workspaceIdentity, scope.workspacePath, scope.workspaceRemoteSessionId, tabs],
+  );
 }

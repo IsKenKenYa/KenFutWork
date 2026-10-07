@@ -106,7 +106,7 @@ export function mapServerMessages(
 
 type UseChatSessionsOptions = {
   canvasId: string;
-  accessToken: string;
+  accessToken: string | null;
   initialSessionId?: string | undefined;
   onSessionChange?: ((sessionId: string) => void) | undefined;
 };

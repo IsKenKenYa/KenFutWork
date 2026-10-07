@@ -1,27 +1,19 @@
-/**
- * zcode 照搬：`@/lib/assistantFileReferences.ts`（references/zcode/packages/ui/src/lib/assistantFileReferences.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-
 import {
-  isAssistantPathQuoteCharacter,
-  isBalancedAssistantPathQuotePair,
-  stripBalancedAssistantPathQuotes,
-} from "@zui/lib/assistantPathQuotes";
-import {
-  type MarkdownFileLinkResolveOptions,
   resolveMarkdownFileLink,
-} from "@zui/lib/markdownFileLink";
-import { decodeFilePathUriEscapes, joinFilePath } from "@zui/lib/path";
-import {
-  extractConversationPreviewFileReferences,
-  MEDIA_PREVIEW_FORMATS,
-} from "@zui/lib/zcode-shared";
+  type MarkdownFileLinkResolveOptions,
+} from "@zui/lib/markdownFileLink.js";
+import { extractConversationPreviewFileReferences } from "@zcode/shared";
+import { decodeFilePathUriEscapes, joinFilePath } from "@zui/lib/path.js";
+import { MEDIA_PREVIEW_FORMATS } from "@zcode/shared";
 import {
   extractZCodeFileCitationDirectives,
   resolveZCodeFileCitationPreviewKind,
-} from "@zui/lib/zcodeFileCitation";
+} from "@zui/lib/zcodeFileCitation.js";
+import {
+  isBalancedAssistantPathQuotePair,
+  isAssistantPathQuoteCharacter,
+  stripBalancedAssistantPathQuotes,
+} from "@zui/lib/assistantPathQuotes.js";
 
 export type AssistantPreviewFileKind =
   | "markdown"
@@ -60,45 +52,25 @@ export interface AssistantFileReference {
 export type AssistantFilePathResolveOptions = MarkdownFileLinkResolveOptions;
 
 // 新增文件类型只需登记扩展名和展示文案；正文抽取、卡片排序和批量校验复用同一路径。
-const ASSISTANT_PREVIEW_FILE_TYPES: readonly AssistantPreviewFileTypeDefinition[] =
-  [
-    {
-      extensions: [".md"],
-      kind: "markdown",
-      subtitleId: "chat.previewCards.markdown",
-    },
-    {
-      extensions: [".html", ".htm"],
-      kind: "html",
-      subtitleId: "chat.previewCards.htmlWebsite",
-    },
-    {
-      extensions: [".docx"],
-      kind: "docx",
-      subtitleId: "chat.previewCards.docx",
-    },
-    {
-      extensions: [".xlsx"],
-      kind: "xlsx",
-      subtitleId: "chat.previewCards.xlsx",
-    },
-    {
-      extensions: [".pptx"],
-      kind: "pptx",
-      subtitleId: "chat.previewCards.pptx",
-    },
-    { extensions: [".pdf"], kind: "pdf", subtitleId: "chat.previewCards.pdf" },
-    ...MEDIA_PREVIEW_FORMATS.map(
-      ({ extension, kind }): AssistantPreviewFileTypeDefinition => ({
-        extensions: [extension],
-        kind,
-        subtitleId:
-          kind === "video"
-            ? "chat.previewCards.video"
-            : "chat.previewCards.audio",
-      }),
-    ),
-  ];
+const ASSISTANT_PREVIEW_FILE_TYPES: readonly AssistantPreviewFileTypeDefinition[] = [
+  { extensions: [".md"], kind: "markdown", subtitleId: "chat.previewCards.markdown" },
+  {
+    extensions: [".html", ".htm"],
+    kind: "html",
+    subtitleId: "chat.previewCards.htmlWebsite",
+  },
+  { extensions: [".docx"], kind: "docx", subtitleId: "chat.previewCards.docx" },
+  { extensions: [".xlsx"], kind: "xlsx", subtitleId: "chat.previewCards.xlsx" },
+  { extensions: [".pptx"], kind: "pptx", subtitleId: "chat.previewCards.pptx" },
+  { extensions: [".pdf"], kind: "pdf", subtitleId: "chat.previewCards.pdf" },
+  ...MEDIA_PREVIEW_FORMATS.map(
+    ({ extension, kind }): AssistantPreviewFileTypeDefinition => ({
+      extensions: [extension],
+      kind,
+      subtitleId: kind === "video" ? "chat.previewCards.video" : "chat.previewCards.audio",
+    }),
+  ),
+];
 
 const FILE_URL_RE = /\bfile:\/\/[^\s<>()\]`"'*“”‘’，。！？；：、]+/gi;
 const MARKDOWN_LINK_RE = /\[([^\]\n]*)\]\(([^)\n]+)\)/g;
@@ -120,9 +92,7 @@ export function getAssistantPreviewFileTypeDefinition(
   const normalizedPath = cleanAssistantFilePathCandidate(path).toLowerCase();
   return (
     ASSISTANT_PREVIEW_FILE_TYPES.find((definition) =>
-      definition.extensions.some((extension) =>
-        normalizedPath.endsWith(extension),
-      ),
+      definition.extensions.some((extension) => normalizedPath.endsWith(extension)),
     ) ?? null
   );
 }
@@ -155,19 +125,13 @@ export function resolveAssistantRawFilePath(
   if (/^file:\/\//i.test(rawPath)) return parseAssistantFileUrlPath(rawPath);
 
   const cleanedPath = cleanAssistantFilePathCandidate(rawPath);
-  if (
-    !cleanedPath ||
-    cleanedPath.startsWith("http://") ||
-    cleanedPath.startsWith("https://")
-  ) {
+  if (!cleanedPath || cleanedPath.startsWith("http://") || cleanedPath.startsWith("https://")) {
     return null;
   }
   // `~` 是 Home-relative 语义；Host Home 尚未注入或使用了 `~other` 时必须失败关闭，
   // 不能继续走 `./${cleanedPath}` 的 workspace-relative 兜底分支。
   if (/^~(?:[\\/]|[^\\/]+[\\/])/.test(cleanedPath)) {
-    return (
-      resolveMarkdownFileLink(workspacePath, cleanedPath, options)?.path ?? null
-    );
+    return resolveMarkdownFileLink(workspacePath, cleanedPath, options)?.path ?? null;
   }
 
   const parsedLink = resolveMarkdownFileLink(workspacePath, rawPath, options);
@@ -176,24 +140,15 @@ export function resolveAssistantRawFilePath(
   if (!cleanedPath.includes("/") && !cleanedPath.includes("\\")) {
     return joinFilePath(workspacePath, cleanedPath);
   }
-  return (
-    resolveMarkdownFileLink(workspacePath, `./${cleanedPath}`, options)?.path ??
-    null
-  );
+  return resolveMarkdownFileLink(workspacePath, `./${cleanedPath}`, options)?.path ?? null;
 }
 
 function normalizeMarkdownHref(href: string): string {
   return stripBalancedAssistantPathQuotes(href.trim().replace(/^<|>$/g, ""));
 }
 
-function overlapsRanges(
-  start: number,
-  end: number,
-  ranges: readonly [number, number][],
-): boolean {
-  return ranges.some(
-    ([rangeStart, rangeEnd]) => start < rangeEnd && end > rangeStart,
-  );
+function overlapsRanges(start: number, end: number, ranges: readonly [number, number][]): boolean {
+  return ranges.some(([rangeStart, rangeEnd]) => start < rangeEnd && end > rangeStart);
 }
 
 export function extractAssistantFileReferences(
@@ -211,16 +166,10 @@ export function extractAssistantFileReferences(
     // 从而绕过 citation 只允许 Office/PDF 卡片的产品边界。
     protectedRanges.push([citation.start, citation.end]);
     if (!citation.path) continue;
-    const path = resolveAssistantRawFilePath(
-      workspacePath,
-      citation.path,
-      options,
-    );
+    const path = resolveAssistantRawFilePath(workspacePath, citation.path, options);
     const kind = path
       ? resolveZCodeFileCitationPreviewKind({
-          ...(citation.artifactKind === undefined
-            ? {}
-            : { artifactKind: citation.artifactKind }),
+          artifactKind: citation.artifactKind,
           path,
         })
       : null;
@@ -238,9 +187,7 @@ export function extractAssistantFileReferences(
   for (const match of content.matchAll(MARKDOWN_LINK_RE)) {
     const href = match[2] ? normalizeMarkdownHref(match[2]) : "";
     const path = resolveAssistantRawFilePath(workspacePath, href, options);
-    const definition = path
-      ? getAssistantPreviewFileTypeDefinition(path)
-      : null;
+    const definition = path ? getAssistantPreviewFileTypeDefinition(path) : null;
     const start = match.index ?? 0;
     const end = start + (match[0]?.length ?? 0);
     if (overlapsRanges(start, end, protectedRanges)) continue;
@@ -251,14 +198,9 @@ export function extractAssistantFileReferences(
   }
 
   for (const match of content.matchAll(FILE_URL_RE)) {
-    const raw = (match[0] ?? "").replace(
-      /(?:[*_`]+|[.,;:!?，。！？；：、]+)+$/g,
-      "",
-    );
+    const raw = (match[0] ?? "").replace(/(?:[*_`]+|[.,;:!?，。！？；：、]+)+$/g, "");
     const path = parseAssistantFileUrlPath(raw);
-    const definition = path
-      ? getAssistantPreviewFileTypeDefinition(path)
-      : null;
+    const definition = path ? getAssistantPreviewFileTypeDefinition(path) : null;
     const start = match.index ?? 0;
     const end = start + (match[0]?.length ?? 0);
     if (overlapsRanges(start, end, protectedRanges)) continue;
@@ -281,18 +223,13 @@ export function extractAssistantFileReferences(
       continue;
     }
 
-    if (
-      /^~[^\\/]+[\\/]/.test(raw) ||
-      (/^~[\\/]/.test(raw) && !options.homePath)
-    ) {
+    if (/^~[^\\/]+[\\/]/.test(raw) || (/^~[\\/]/.test(raw) && !options.homePath)) {
       protectedRanges.push([fullStart, fullEnd]);
       continue;
     }
 
     const path = resolveAssistantRawFilePath(workspacePath, raw, options);
-    const definition = path
-      ? getAssistantPreviewFileTypeDefinition(path)
-      : null;
+    const definition = path ? getAssistantPreviewFileTypeDefinition(path) : null;
     if (path && definition) {
       const start = fullStart + fullMatch.indexOf(raw);
       const end = start + raw.length;
@@ -322,10 +259,7 @@ export function extractAssistantFileReferences(
       isAssistantPathQuoteCharacter(followingCharacter);
     if (
       hasQuoteBoundary &&
-      !isBalancedAssistantPathQuotePair(
-        precedingCharacter ?? "",
-        followingCharacter ?? "",
-      )
+      !isBalancedAssistantPathQuotePair(precedingCharacter ?? "", followingCharacter ?? "")
     ) {
       // 单侧或错配引号不能让内部路径绕过定界符保护而生成卡片。
       protectedRanges.push([start, end]);
@@ -333,29 +267,20 @@ export function extractAssistantFileReferences(
     }
 
     const path = resolveAssistantRawFilePath(workspacePath, raw, options);
-    const definition = path
-      ? getAssistantPreviewFileTypeDefinition(path)
-      : null;
+    const definition = path ? getAssistantPreviewFileTypeDefinition(path) : null;
     if (path && definition) {
       references.push({ start, end, kind: definition.kind, path, raw });
     }
   }
 
-  const genericReferences = extractConversationPreviewFileReferences(
-    content,
-    workspacePath,
-  );
+  const genericReferences = extractConversationPreviewFileReferences(content, workspacePath);
   for (const reference of genericReferences) {
-    if (overlapsRanges(reference.start, reference.end, protectedRanges))
-      continue;
-    if (references.some((candidate) => candidate.path === reference.path))
-      continue;
+    if (overlapsRanges(reference.start, reference.end, protectedRanges)) continue;
+    if (references.some((candidate) => candidate.path === reference.path)) continue;
     references.push(reference);
   }
 
-  return references.sort(
-    (left, right) => left.start - right.start || left.end - right.end,
-  );
+  return references.sort((left, right) => left.start - right.start || left.end - right.end);
 }
 
 export function hasAssistantPreviewFileChangeCandidates(

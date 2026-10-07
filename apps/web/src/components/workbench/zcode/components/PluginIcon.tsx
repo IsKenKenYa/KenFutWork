@@ -1,13 +1,7 @@
-/**
- * zcode 照搬：`@/components/PluginIcon.tsx`（references/zcode/packages/ui/src/components/PluginIcon.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）。
- */
-
-import { cn } from "@zui/components/lib/utils";
-import { resolvePluginIconSource } from "@zui/lib/pluginIconSource";
+import { useState, type ReactNode } from "react";
 import { Blocks } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { cn } from "@zui/components/lib/utils.js";
+import { resolvePluginIconSource } from "@zui/lib/pluginIconSource.js";
 
 /** Plugin 原始图标；支持官方内置图标与 HTTPS，缺失或失败时使用调用方兜底，默认回退 Blocks。 */
 export function PluginIcon({
@@ -17,11 +11,11 @@ export function PluginIcon({
   iconClassName,
   fallbackIcon,
 }: {
-  src?: string | undefined;
-  pluginId?: string | undefined;
-  className?: string | undefined;
-  iconClassName?: string | undefined;
-  fallbackIcon?: ReactNode | undefined;
+  src?: string;
+  pluginId?: string;
+  className?: string;
+  iconClassName?: string;
+  fallbackIcon?: ReactNode;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const resolvedSrc = resolvePluginIconSource(pluginId, src);

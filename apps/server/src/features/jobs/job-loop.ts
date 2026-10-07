@@ -1,11 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import type { BackgroundJobType } from "@kenfutwork/shared";
-
+import type { BackgroundJob, BackgroundJobType } from "@kenfutwork/shared";
 import type { ServerEnv } from "../../config/env.js";
-import type { CreditService } from "../credits/credit-service.js";
 import type { QueueClient } from "../queue/types.js";
 import { type ExecutorContext, getExecutor } from "./job-executor.js";
+import { JobServiceError } from "./job-service.js";
 
 // 副作用导入：executor 在模块加载时自注册（进程级注册表）
 import "./executors/image-generation.js";
@@ -18,7 +17,7 @@ import "./executors/video-generation.js";
  * 的生产者与消费者必须是**同一个实例**（M3.2：消息只在内存里，两个内核实例互相看不见）。
  * 故循环不能藏在 `worker.ts` 里，必须能被「已有内核」的调用方复用。
  *
- * 行为与抽出前一致：并发上限、可见性超时、长轮询、失败重试/死信、死信退款、优雅退出。
+ * 行为与抽出前一致：并发上限、可见性超时、长轮询、失败重试/死信、死信、优雅退出。
  * `process.exit` 留给调用方（worker 退出进程，桌面只停循环）。
  */
 
@@ -131,7 +130,6 @@ export function startJobLoop(
               queueName,
               msg,
               messageCtx,
-              ctx.creditService,
               tag,
             ).finally(() => inFlight.delete(task));
             inFlight.add(task);
@@ -165,7 +163,6 @@ async function processMessage(
   queue: string,
   msg: { message: Record<string, unknown>; msg_id: number },
   ctx: ExecutorContext,
-  creditService: CreditService,
   tag: string,
 ) {
   const jobId = msg.message.job_id as string;
@@ -195,6 +192,24 @@ async function processMessage(
       "no_executor",
       `No executor registered for ${jobType}`,
     );
+    await ctx.queue.archive(queue, msg.msg_id);
+    return;
+  }
+
+  let current: BackgroundJob;
+  try {
+    current = await ctx.jobService.getJobForWorker(jobId);
+  } catch (error) {
+    if (error instanceof JobServiceError && error.code === "job_not_found")
+      await ctx.queue.archive(queue, msg.msg_id);
+    else console.error(`${tag} Unable to read job ${jobId}:`, error);
+    return;
+  }
+  if (
+    current.status === "canceled" ||
+    current.status === "succeeded" ||
+    current.status === "dead_letter"
+  ) {
     await ctx.queue.archive(queue, msg.msg_id);
     return;
   }
@@ -244,7 +259,6 @@ async function processMessage(
     if (shouldDeadLetter) {
       await ctx.jobService.markDeadLetter(jobId, errorCode, errorMessage);
       await ctx.queue.archive(queue, msg.msg_id);
-      await refundDeadLetteredJob(jobId, ctx, creditService, tag);
 
       console.error(
         `${tag} Job ${jobId} dead-lettered after ${attempt_count} attempts +${Date.now() - startTime}ms: ${errorMessage}`,
@@ -256,41 +270,6 @@ async function processMessage(
         `${tag} Job ${jobId} failed (attempt ${attempt_count}/${max_attempts}) +${Date.now() - startTime}ms: ${errorMessage}`,
       );
     }
-  }
-}
-
-/**
- * 死信任务退款（仅永久失败的任务；取消的任务不退）。
- */
-async function refundDeadLetteredJob(
-  jobId: string,
-  ctx: ExecutorContext,
-  creditService: CreditService,
-  tag: string,
-) {
-  try {
-    const creditsInfo = await ctx.jobService.getCreditsInfo(jobId);
-    if (!creditsInfo) return;
-
-    const { creditsCost, workspaceId, createdBy } = creditsInfo;
-    if (creditsCost <= 0 || !workspaceId || !createdBy) return;
-
-    const txId = await creditService.refundCredits(
-      workspaceId,
-      createdBy,
-      creditsCost,
-      jobId,
-      "Auto-refund: job failed",
-    );
-    console.log(
-      `${tag} Refunded ${creditsCost} credits for job ${jobId} (tx: ${txId})`,
-    );
-  } catch (refundError) {
-    // 只记日志：任务已死信，退款失败不该拖垮 worker
-    console.error(
-      `${tag} Failed to refund credits for job ${jobId}:`,
-      refundError,
-    );
   }
 }
 

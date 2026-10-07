@@ -1,26 +1,17 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/read.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/read.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import { SearchIcon } from "lucide-react";
+import { useCallback, useMemo } from "react";
 import {
   FileDisplayIcon,
   FOLDER_FILE_ICON_SRC,
   resolveFileDisplayDescriptor,
-} from "@zui/lib/fileDisplay";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { renderFilePath } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
-import { SearchIcon } from "lucide-react";
-import { useCallback, useMemo } from "react";
+} from "@zui/lib/fileDisplay.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolLayout } from "../ToolLayout.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import type { ToolCallBlockRenderContext } from "../shared.js";
+import { renderFilePath } from "../shared.js";
 
-const READ_TOOL_ICON = (
-  <SearchIcon className="size-4 shrink-0 text-foreground-subtle" />
-);
+const READ_TOOL_ICON = <SearchIcon className="size-4 shrink-0 text-foreground-subtle" />;
 
 export type ReadSummary = {
   path: string;
@@ -49,22 +40,14 @@ function readStringField(
 }
 
 function extractTaggedValue(text: string, tagName: string): string | undefined {
-  const matched = text.match(
-    new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`, "i"),
-  );
+  const matched = text.match(new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`, "i"));
   const value = matched?.[1]?.trim();
   return value ? value : undefined;
 }
 
-function normalizeReadEntryType(
-  value: string | undefined,
-): "file" | "directory" {
+function normalizeReadEntryType(value: string | undefined): "file" | "directory" {
   const normalized = value?.trim().toLowerCase();
-  if (
-    normalized === "dir" ||
-    normalized === "directory" ||
-    normalized === "folder"
-  ) {
+  if (normalized === "dir" || normalized === "directory" || normalized === "folder") {
     return "directory";
   }
 
@@ -72,7 +55,7 @@ function normalizeReadEntryType(
 }
 
 function readReadMetadataFromRaw(raw: unknown): {
-  path?: string | undefined;
+  path?: string;
   entryType: "file" | "directory";
 } {
   if (!isPlainRecord(raw)) {
@@ -91,12 +74,8 @@ function readReadMetadataFromRaw(raw: unknown): {
   const outputText = rawOutput
     ? readStringField(rawOutput, ["output", "text", "content"])
     : undefined;
-  const taggedOutputPath = outputText
-    ? extractTaggedValue(outputText, "path")
-    : undefined;
-  const taggedOutputType = outputText
-    ? extractTaggedValue(outputText, "type")
-    : undefined;
+  const taggedOutputPath = outputText ? extractTaggedValue(outputText, "path") : undefined;
+  const taggedOutputType = outputText ? extractTaggedValue(outputText, "type") : undefined;
   if (taggedOutputPath) {
     return {
       path: taggedOutputPath ?? directPath,
@@ -138,7 +117,7 @@ function readReadMetadataFromRaw(raw: unknown): {
 }
 
 function readReadMetadataFromValue(value: unknown): {
-  path?: string | undefined;
+  path?: string;
   entryType: "file" | "directory";
 } {
   if (!isPlainRecord(value)) {
@@ -147,17 +126,15 @@ function readReadMetadataFromValue(value: unknown): {
 
   return {
     path: readStringField(value, ["filePath", "file_path", "path", "filename"]),
-    entryType: normalizeReadEntryType(
-      readStringField(value, ["type", "fileType", "entryType"]),
-    ),
+    entryType: normalizeReadEntryType(readStringField(value, ["type", "fileType", "entryType"])),
   };
 }
 
 function createReadSummary(
   path: string,
   options: {
-    fileName?: string | undefined;
-    entryType?: "file" | "directory" | undefined;
+    fileName?: string;
+    entryType?: "file" | "directory";
   } = {},
 ): ReadSummary {
   const entryType = options.entryType ?? "file";
@@ -167,8 +144,7 @@ function createReadSummary(
     path,
     fileName: options.fileName ?? descriptor.fileName,
     filePath: descriptor.filePath,
-    fileIconSrc:
-      entryType === "directory" ? FOLDER_FILE_ICON_SRC : descriptor.fileIconSrc,
+    fileIconSrc: entryType === "directory" ? FOLDER_FILE_ICON_SRC : descriptor.fileIconSrc,
     entryType,
   };
 }
@@ -189,9 +165,7 @@ export function buildReadSummary(
       }
 
       const relativePath =
-        typeof item.path === "string" && item.path.trim().length > 0
-          ? item.path.trim()
-          : undefined;
+        typeof item.path === "string" && item.path.trim().length > 0 ? item.path.trim() : undefined;
       const fileName =
         typeof item.name === "string" && item.name.trim().length > 0
           ? item.name.trim()
@@ -243,7 +217,7 @@ export function ReadFileChip({
 }: {
   summary: ReadSummary;
   clickable: boolean;
-  onClick?: (() => void) | undefined;
+  onClick?: () => void;
 }) {
   if (clickable) {
     return (
@@ -260,11 +234,7 @@ export function ReadFileChip({
           onClick?.();
         }}
       >
-        <FileDisplayIcon
-          src={summary.fileIconSrc}
-          size={16}
-          className="size-4 shrink-0"
-        />
+        <FileDisplayIcon src={summary.fileIconSrc} size={16} className="size-4 shrink-0" />
         <span className="min-w-0 truncate">{summary.fileName}</span>
       </button>
     );
@@ -275,11 +245,7 @@ export function ReadFileChip({
       className="inline-flex min-w-0 text-foreground-subtle max-w-full items-center gap-1.5"
       title={summary.path}
     >
-      <FileDisplayIcon
-        src={summary.fileIconSrc}
-        size={16}
-        className="size-4 shrink-0"
-      />
+      <FileDisplayIcon src={summary.fileIconSrc} size={16} className="size-4 shrink-0" />
       <span className="min-w-0 truncate">{summary.fileName}</span>
     </span>
   );
@@ -287,12 +253,10 @@ export function ReadFileChip({
 
 export function ReadToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
-  const { toolCallNode, isRunning, statusLabel, errorText, onOpenCodeViewer } =
-    context;
+  const { toolCallNode, isRunning, statusLabel, errorText, onOpenCodeViewer } = context;
   const { toolCall } = toolCallNode;
   const summary = buildReadSummary(toolCall);
-  const canOpenPreview =
-    summary?.entryType === "file" && Boolean(onOpenCodeViewer);
+  const canOpenPreview = summary?.entryType === "file" && Boolean(onOpenCodeViewer);
   const openFilePreview = useCallback(() => {
     if (!summary || summary.entryType !== "file" || !onOpenCodeViewer) {
       return;
@@ -307,24 +271,11 @@ export function ReadToolCallBlock(context: ToolCallBlockRenderContext) {
   const primaryText = useMemo(
     () =>
       summary ? (
-        <ReadFileChip
-          summary={summary}
-          clickable={canOpenPreview}
-          onClick={openFilePreview}
-        />
+        <ReadFileChip summary={summary} clickable={canOpenPreview} onClick={openFilePreview} />
       ) : (
-        (toolCall.title ??
-        toolCall.kind ??
-        intl.formatMessage({ id: "chat.toolCall.read.read" }))
+        (toolCall.title ?? toolCall.kind ?? intl.formatMessage({ id: "chat.toolCall.read.read" }))
       ),
-    [
-      canOpenPreview,
-      intl,
-      openFilePreview,
-      summary,
-      toolCall.kind,
-      toolCall.title,
-    ],
+    [canOpenPreview, intl, openFilePreview, summary, toolCall.kind, toolCall.title],
   );
 
   return (
@@ -335,13 +286,11 @@ export function ReadToolCallBlock(context: ToolCallBlockRenderContext) {
         showIcon={context.showIcon !== false}
         canToggle={false}
         kindLabel={intl.formatMessage({
-          id: isRunning
-            ? "chat.toolCall.read.reading"
-            : "chat.toolCall.kind.read",
+          id: isRunning ? "chat.toolCall.read.reading" : "chat.toolCall.kind.read",
         })}
         sourceLabel={context.sourceLabel}
         primaryText={primaryText}
-        prioritizePrimaryText={true}
+        prioritizePrimaryText
         secondaryText={summary ? renderFilePath(summary.filePath) : undefined}
         statusLabel={statusLabel}
         statusTooltip={toolCall.status === "failed" ? errorText : undefined}

@@ -27,6 +27,12 @@ import {
   fetchPermissionSettings,
   updatePermissionSettings,
 } from "@/lib/server-api";
+import {
+  SETTINGS_CONTROL_WIDTH,
+  SETTINGS_ROW_MIN_HEIGHT,
+  SETTINGS_SECTION_GAP,
+  SETTINGS_TITLE,
+} from "@/lib/settings-layout";
 
 /**
  * 浏览器设置（R5-4 按参考图分区：内置浏览器 / 外部浏览器 / 通用）。
@@ -81,31 +87,32 @@ function saveSettings(settings: BrowserSettings) {
   }
 }
 
+/**
+ * 单个开关行：标签 + 开关。**没有副标题**——复述标签的副标题按 2026-09-27 口径一律不写；
+ * 时机这类一句话事实走操作回执（`setMessage`），不常驻在行里。
+ */
 function Toggle({
   label,
-  hint,
   checked,
   onChange,
   disabled = false,
 }: {
   label: string;
-  hint: string;
   checked: boolean;
   onChange?: (next: boolean) => void;
   disabled?: boolean;
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-4 py-3">
-      <span>
-        <span className="block text-sm">
-          {label}
-          {disabled ? (
-            <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              暂不可用
-            </span>
-          ) : null}
-        </span>
-        <span className="block text-xs text-muted-foreground">{hint}</span>
+    <label
+      className={`flex cursor-pointer items-center justify-between gap-4 px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
+    >
+      <span className="text-sm">
+        {label}
+        {disabled ? (
+          <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+            暂不可用
+          </span>
+        ) : null}
       </span>
       <button
         type="button"
@@ -157,7 +164,7 @@ export function BrowserSettingsSection({
 
   // 「允许 AI 控制浏览器」「自动截图」「无头」都是服务端开关（工具门控必须在服务端生效）
   useEffect(() => {
-    if (!accessToken) return;
+
     let cancelled = false;
     fetchPermissionSettings(accessToken)
       .then((view) => {
@@ -183,7 +190,7 @@ export function BrowserSettingsSection({
   }, [accessToken]);
 
   const cdpConnect = async () => {
-    if (!accessToken) return;
+
     setCdpBusy(true);
     setMessage(null);
     try {
@@ -204,7 +211,7 @@ export function BrowserSettingsSection({
   };
 
   const cdpDisconnect = async () => {
-    if (!accessToken) return;
+
     setCdpBusy(true);
     try {
       setCdp(await disconnectCdp(accessToken));
@@ -224,7 +231,7 @@ export function BrowserSettingsSection({
       | "browserDevtoolsReadEnabled",
     next: boolean,
   ) => {
-    if (!accessToken) return;
+
     const setter =
       key === "browserAutoScreenshot"
         ? setBrowserAutoScreenshot
@@ -263,7 +270,7 @@ export function BrowserSettingsSection({
   };
 
   const toggleAgentControl = async (next: boolean) => {
-    if (!accessToken) return;
+
     setMessage(null);
     try {
       const view = await updatePermissionSettings(accessToken, {
@@ -294,201 +301,201 @@ export function BrowserSettingsSection({
 
   const cdpLabel =
     cdp === null
-      ? "状态：读取中…"
+      ? "读取中…"
       : cdp.status === "connected"
-        ? `状态：已连接（${cdp.headless ? "后台" : "有窗口"}）`
+        ? `已连接（${cdp.headless ? "后台" : "有窗口"}）`
         : cdp.status === "connecting"
-          ? "状态：连接中…"
+          ? "连接中…"
           : cdp.status === "error"
-            ? "状态：连接失败"
-            : "状态：未连接";
+            ? "连接失败"
+            : "未连接";
 
   return (
-    <section aria-label="浏览器设置">
-      <h3 className="mb-1 text-base font-medium">内置浏览器</h3>
-      <p className="mb-2 text-sm text-muted-foreground">右栏面板里的浏览器。</p>
-      <div className="divide-y">
-        <Toggle
-          label="允许 AI 控制浏览器"
-          hint="让 Agent 能读网页并操作页面"
-          checked={agentControl}
-          onChange={(next) => void toggleAgentControl(next)}
-        />
-        <div className="flex flex-wrap items-center justify-between gap-3 py-3">
-          <span>
-            <span className="block text-sm">浏览器数据</span>
-            <span className="block text-xs text-muted-foreground">
-              面板历史（本机保存，共 {historyCount} 条）
+    <section aria-label="浏览器设置" className={SETTINGS_SECTION_GAP}>
+      <div>
+        <h3 className={SETTINGS_TITLE}>内置浏览器</h3>
+        <div className="divide-y rounded-lg border">
+          <Toggle
+            label="允许 AI 控制浏览器"
+            checked={agentControl}
+            onChange={(next) => void toggleAgentControl(next)}
+          />
+          <div
+            className={`flex flex-wrap items-center justify-between gap-3 px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
+          >
+            <span className="flex items-center gap-2">
+              <span className="text-sm">浏览器数据</span>
+              <span className="text-xs text-muted-foreground">
+                {historyCount} 条
+              </span>
             </span>
-          </span>
-          <span className="flex shrink-0 items-center gap-2">
-            <label className="cursor-pointer rounded-md border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground">
-              导入…
-              <input
-                type="file"
-                accept="application/json,.json"
-                className="hidden"
-                aria-label="导入浏览器历史"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) void handleImport(file);
-                  event.target.value = "";
+            <span className="flex shrink-0 items-center gap-2">
+              <label className="cursor-pointer rounded-md border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground">
+                导入…
+                <input
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  aria-label="导入浏览器历史"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void handleImport(file);
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  clearHistory();
+                  setHistoryCount(0);
+                  setMessage("已清除面板历史");
                 }}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => {
-                clearHistory();
-                setHistoryCount(0);
-                setMessage("已清除面板历史");
-              }}
-              className="rounded-md border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive"
-            >
-              清除
-            </button>
-          </span>
-        </div>
-      </div>
-
-      <h3 className="mt-5 mb-1 text-base font-medium">外部浏览器</h3>
-      <p className="mb-2 text-sm text-muted-foreground">
-        连接一个独立的浏览器实例，Agent 可以读页面、截图、点击与输入。
-      </p>
-      <div className="rounded-md border px-3 py-2 text-xs">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-muted-foreground">{cdpLabel}</span>
-          <span className="flex items-center gap-2">
-            {cdp?.status === "connected" ? (
-              <button
-                type="button"
-                onClick={() => void cdpDisconnect()}
-                disabled={cdpBusy}
-                className="rounded-md border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
+                className="rounded-md border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive"
               >
-                断开
+                清除
               </button>
-            ) : (
-              <button
-                type="button"
-                disabled={cdpBusy || !accessToken}
-                onClick={() => void cdpConnect()}
-                className="rounded-md bg-primary px-2.5 py-1 text-xs text-primary-foreground disabled:opacity-50"
-              >
-                {cdpBusy ? "连接中…" : "连接到 Chrome"}
-              </button>
-            )}
-          </span>
-        </div>
-        {cdp?.status === "connected" ? (
-          <div className="mt-1 text-[11px] text-muted-foreground">
-            {cdp.browser} · {cdp.tabs} 个标签
-            {cdp.currentUrl && cdp.currentUrl !== "about:blank"
-              ? ` · 当前 ${cdp.currentUrl}`
-              : ""}
+            </span>
           </div>
-        ) : null}
-        {cdp?.status === "error" ? (
-          <div className="mt-1 text-[11px] text-destructive">{cdp.message}</div>
-        ) : null}
+        </div>
       </div>
 
-      <h3 className="mt-5 mb-1 text-base font-medium">通用</h3>
-      <div className="divide-y">
-        {/* biome-ignore lint/a11y/noLabelWithoutControl: 控件是内嵌的 Base UI SelectTrigger（自定义组件），规则无法静态识别包裹关联 */}
-        <label className="flex items-center justify-between gap-4 py-3">
-          <span>
-            <span className="block text-sm">默认搜索引擎</span>
-            <span className="block text-xs text-muted-foreground">
-              Agent 联网搜索使用的引擎
+      <div>
+        <h3 className={SETTINGS_TITLE}>外部浏览器</h3>
+        <div className="rounded-lg border px-3 py-2 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-muted-foreground">{cdpLabel}</span>
+            <span className="flex items-center gap-2">
+              {cdp?.status === "connected" ? (
+                <button
+                  type="button"
+                  onClick={() => void cdpDisconnect()}
+                  disabled={cdpBusy}
+                  className="rounded-md border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
+                >
+                  断开
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={cdpBusy || !accessToken}
+                  onClick={() => void cdpConnect()}
+                  className="rounded-md bg-primary px-2.5 py-1 text-xs text-primary-foreground disabled:opacity-50"
+                >
+                  {cdpBusy ? "连接中…" : "连接到 Chrome"}
+                </button>
+              )}
             </span>
-          </span>
-          <Select
-            value={settings.searchEngine}
-            onValueChange={(next) => {
-              if (typeof next === "string") {
-                update({
-                  searchEngine: next as BrowserSettings["searchEngine"],
-                });
-              }
-            }}
-            items={SEARCH_ENGINES.map((e) => ({
-              value: e.value,
-              label: e.label,
-            }))}
-          >
-            <SelectTrigger aria-label="默认搜索引擎">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SEARCH_ENGINES.map((engine) => (
-                <SelectItem key={engine.value} value={engine.value}>
-                  {engine.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </label>
+          </div>
+          {cdp?.status === "connected" ? (
+            <div className="mt-1 text-xs text-muted-foreground">
+              {cdp.browser} · {cdp.tabs} 个标签
+              {cdp.currentUrl && cdp.currentUrl !== "about:blank"
+                ? ` · 当前 ${cdp.currentUrl}`
+                : ""}
+            </div>
+          ) : null}
+          {cdp?.status === "error" ? (
+            <div className="mt-1 text-xs text-destructive">{cdp.message}</div>
+          ) : null}
+        </div>
+      </div>
 
-        {/* biome-ignore lint/a11y/noLabelWithoutControl: 同上一处（内嵌自定义 SelectTrigger） */}
-        <label className="flex items-center justify-between gap-4 py-3">
-          <span>
-            <span className="block text-sm">AI 任务默认浏览器</span>
-            <span className="block text-xs text-muted-foreground">
-              对话里的链接在哪打开
-            </span>
-          </span>
-          <Select
-            value={openTarget}
-            onValueChange={(next) => {
-              if (typeof next !== "string") return;
-              setOpenTarget(next as BrowserOpenTarget);
-              setBrowserOpenTarget(next as BrowserOpenTarget);
-            }}
-            items={OPEN_TARGETS.map((t) => ({
-              value: t.value,
-              label: t.label,
-            }))}
+      <div>
+        <h3 className={SETTINGS_TITLE}>通用</h3>
+        <div className="divide-y rounded-lg border">
+          {/* biome-ignore lint/a11y/noLabelWithoutControl: 控件是内嵌的 Base UI SelectTrigger（自定义组件），规则无法静态识别包裹关联 */}
+          <label
+            className={`flex w-full items-center justify-between gap-4 px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
           >
-            <SelectTrigger aria-label="AI 任务默认浏览器">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {OPEN_TARGETS.map((target) => (
-                <SelectItem key={target.value} value={target.value}>
-                  {target.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </label>
+            <span className="text-sm">默认搜索引擎</span>
+            <Select
+              value={settings.searchEngine}
+              onValueChange={(next) => {
+                if (typeof next === "string") {
+                  update({
+                    searchEngine: next as BrowserSettings["searchEngine"],
+                  });
+                }
+              }}
+              items={SEARCH_ENGINES.map((e) => ({
+                value: e.value,
+                label: e.label,
+              }))}
+            >
+              <SelectTrigger
+                aria-label="默认搜索引擎"
+                className={SETTINGS_CONTROL_WIDTH}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SEARCH_ENGINES.map((engine) => (
+                  <SelectItem key={engine.value} value={engine.value}>
+                    {engine.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
 
-        <Toggle
-          label="无头浏览器"
-          hint="后台运行，不弹窗口（下次连接生效）"
-          checked={browserHeadless}
-          onChange={(next) => void toggleServerFlag("browserHeadless", next)}
-        />
-        <Toggle
-          label="自动截图"
-          hint="每次动作后自动截图，作为附件进对话"
-          checked={browserAutoScreenshot}
-          onChange={(next) =>
-            void toggleServerFlag("browserAutoScreenshot", next)
-          }
-        />
-        <Toggle
-          label="允许 AI 读取开发者工具数据"
-          hint="Agent 可读控制台日志与网络请求"
-          checked={browserDevtoolsRead}
-          onChange={(next) =>
-            void toggleServerFlag("browserDevtoolsReadEnabled", next)
-          }
-        />
+          {/* biome-ignore lint/a11y/noLabelWithoutControl: 同上一处（内嵌自定义 SelectTrigger） */}
+          <label
+            className={`flex w-full items-center justify-between gap-4 px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
+          >
+            <span className="text-sm">AI 任务默认浏览器</span>
+            <Select
+              value={openTarget}
+              onValueChange={(next) => {
+                if (typeof next !== "string") return;
+                setOpenTarget(next as BrowserOpenTarget);
+                setBrowserOpenTarget(next as BrowserOpenTarget);
+              }}
+              items={OPEN_TARGETS.map((t) => ({
+                value: t.value,
+                label: t.label,
+              }))}
+            >
+              <SelectTrigger
+                aria-label="AI 任务默认浏览器"
+                className={SETTINGS_CONTROL_WIDTH}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {OPEN_TARGETS.map((target) => (
+                  <SelectItem key={target.value} value={target.value}>
+                    {target.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+
+          <Toggle
+            label="无头浏览器"
+            checked={browserHeadless}
+            onChange={(next) => void toggleServerFlag("browserHeadless", next)}
+          />
+          <Toggle
+            label="自动截图"
+            checked={browserAutoScreenshot}
+            onChange={(next) =>
+              void toggleServerFlag("browserAutoScreenshot", next)
+            }
+          />
+          <Toggle
+            label="允许 AI 读取开发者工具数据"
+            checked={browserDevtoolsRead}
+            onChange={(next) =>
+              void toggleServerFlag("browserDevtoolsReadEnabled", next)
+            }
+          />
+        </div>
       </div>
 
       {message ? (
-        <p role="status" className="mt-2 text-sm text-muted-foreground">
+        <p role="status" className="text-sm text-muted-foreground">
           {message}
         </p>
       ) : null}

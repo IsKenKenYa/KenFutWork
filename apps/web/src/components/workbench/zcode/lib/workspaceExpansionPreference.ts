@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/lib/workspaceExpansionPreference.ts`（references/zcode/packages/ui/src/lib/workspaceExpansionPreference.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
 interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
@@ -24,9 +19,7 @@ function getBrowserStorage(): StorageLike | null {
 
 export type WorkspaceExpansionState = Record<string, boolean>;
 
-function normalizeWorkspaceExpansionState(
-  value: unknown,
-): WorkspaceExpansionState {
+function normalizeWorkspaceExpansionState(value: unknown): WorkspaceExpansionState {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
   }
@@ -87,9 +80,5 @@ export function resolveExpandedWorkspacePaths(
   workspacePaths: readonly string[],
   expansionState: WorkspaceExpansionState,
 ): Set<string> {
-  return new Set(
-    workspacePaths.filter(
-      (workspacePath) => expansionState[workspacePath] !== false,
-    ),
-  );
+  return new Set(workspacePaths.filter((workspacePath) => expansionState[workspacePath] !== false));
 }

@@ -9,20 +9,20 @@
     "package:win": "node scripts/package-win.mjs",
     "package:mac": "node scripts/package-mac.mjs",
     "build": "turbo run build",
-    "lint": "biome check .",
+    "lint": "node scripts/lint-biome.mjs",
     "test:docs": "node scripts/check-docs.mjs",
     "test:env": "node scripts/check-env.mjs",
     "test:workspace": "node --test tests/workspace.test.mjs tests/api-spec-consistency.test.mjs",
     "api:spec": "pnpm --filter @kenfutwork/server api:spec",
     "test:packages": "turbo run test",
     "test": "pnpm run test:workspace && pnpm run test:packages",
-    "seed": "pnpm --filter @kenfutwork/server seed:accounts",
     "typecheck": "turbo run typecheck",
     "smoke:desktop": "node scripts/desktop-offline-smoke.mjs",
     "verify:desktop": "node scripts/验收打包桌面端.mjs",
     "fetch:runtimes": "node scripts/fetch-runtimes.mjs"
   },
   "devDependencies": {
+    "@babel/parser": "^7.29.0",
     "@biomejs/biome": "^2.5.14",
     "appdmg": "^0.6.6",
     "esbuild": "^0.28.2",
@@ -39,6 +39,10 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "macos-alias"
-    ]
+    ],
+    "patchedDependencies": {
+      "langchain@1.5.11": "patches/langchain@1.5.11.patch",
+      "@modelcontextprotocol/sdk@1.30.0": "patches/@modelcontextprotocol__sdk@1.30.0.patch"
+    }
   }
 }

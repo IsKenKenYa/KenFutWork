@@ -1,28 +1,12 @@
-/**
- * zcode 照搬：`@/hooks/useProviderSettingsView.ts`（references/zcode/packages/ui/src/hooks/useProviderSettingsView.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
+import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
+import type { IProviderSettingsService, ProviderSettingsView } from "@zcode/services";
+import { logger } from "@zui/logger.js";
 import {
   getProviderSettingsSnapshot,
-  type ProviderSettingsState,
   reloadProviderSettingsSnapshot,
   subscribeProviderSettingsSnapshot,
-} from "@zui/lib/providerSettingsSnapshot";
-import type {
-  IProviderSettingsService,
-  ProviderSettingsView,
-} from "@zui/lib/zcode-services";
-import { logger } from "@zui/logger";
-import {
-  useCallback,
-  useEffect,
-  useReducer,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+  type ProviderSettingsState,
+} from "@zui/lib/providerSettingsSnapshot.js";
 
 interface ProviderSettingsRead {
   state: ProviderSettingsState;
@@ -44,9 +28,7 @@ export function useProviderSettingsView(): ProviderSettingsRead {
     state,
     reload: useCallback(() => {
       void reloadProviderSettingsSnapshot().catch((error) => {
-        logger.warn("[ProviderSettings] 重试加载根 Environment 失败", {
-          error,
-        });
+        logger.warn("[ProviderSettings] 重试加载根 Environment 失败", { error });
       });
     }, []),
   };
@@ -72,26 +54,18 @@ export function useProviderSettingsServiceView(
   serviceRef.current = service;
   const generationRef = useRef(0);
   const latestRevisionRef = useRef(-1);
-  const visibleState =
-    owned.service === service ? owned.state : ({ status: "loading" } as const);
+  const visibleState = owned.service === service ? owned.state : ({ status: "loading" } as const);
 
   const commitView = useCallback(
     (view: ProviderSettingsView): boolean => {
       // 远端 workspace attachment 换代时，旧 mutation 可能晚于新 Service 返回。
       // 只允许当前 Service 的最新 revision 提交，避免旧 Environment 回写新页面。
-      if (
-        serviceRef.current !== service ||
-        ownedRef.current.service !== service
-      ) {
+      if (serviceRef.current !== service || ownedRef.current.service !== service) {
         return false;
       }
       const current = ownedRef.current.state;
-      const currentRevision =
-        current.status === "ready" ? current.view.revision : -1;
-      const latestRevision = Math.max(
-        currentRevision,
-        latestRevisionRef.current,
-      );
+      const currentRevision = current.status === "ready" ? current.view.revision : -1;
+      const latestRevision = Math.max(currentRevision, latestRevisionRef.current);
       if (view.revision < latestRevision) {
         return false;
       }
@@ -111,9 +85,7 @@ export function useProviderSettingsServiceView(
     const generation = generationRef.current;
     const previous = ownedRef.current;
     const retainedReady =
-      previous.service === service && previous.state.status === "ready"
-        ? previous.state
-        : null;
+      previous.service === service && previous.state.status === "ready" ? previous.state : null;
     setOwned({ service, state: retainedReady ?? { status: "loading" } });
     latestRevisionRef.current = retainedReady?.view.revision ?? -1;
     let hasReadyView = retainedReady !== null;
@@ -128,8 +100,7 @@ export function useProviderSettingsServiceView(
       if (generation !== generationRef.current) return;
       const error = cause instanceof Error ? cause : new Error(String(cause));
       logger.warn("[ProviderSettings] 加载目标 Environment 失败", { error });
-      if (!hasReadyView)
-        setOwned({ service, state: { status: "error", error } });
+      if (!hasReadyView) setOwned({ service, state: { status: "error", error } });
     });
     return () => {
       generationRef.current += 1;

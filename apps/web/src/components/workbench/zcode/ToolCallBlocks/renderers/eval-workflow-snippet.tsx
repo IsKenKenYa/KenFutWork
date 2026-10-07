@@ -1,47 +1,33 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/eval-workflow-snippet.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/eval-workflow-snippet.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
+import { FlaskConical } from "lucide-react";
+import { useCallback, useMemo } from "react";
+import type { ToolCallEvalWorkflowSnippetDisplay } from "@zcode/shared/zcode-protocol-v4";
 import {
   CodeBlock,
-  CodeBlockCopyButton,
   CodeBlockHeader,
-} from "@zui/components/ai-elements/code-block";
-import { useNowTicker } from "@zui/components/workflow-graph/use-now-ticker";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallEvalWorkflowSnippetDisplay } from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import { WorkflowDiagnosticsSection } from "@zui/ToolCallBlocks/renderers/workflow-diagnostics";
+  CodeBlockCopyButton,
+} from "@zui/components/ai-elements/code-block.js";
+import { useNowTicker } from "@zui/components/workflow-graph/use-now-ticker.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
+import { WorkflowDiagnosticsSection } from "@zui/ToolCallBlocks/renderers/workflow-diagnostics.js";
 import {
   snippetResponse,
   snippetValue,
-} from "@zui/ToolCallBlocks/renderers/workflow-snippet-presentation";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
-import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay";
-import { FlaskConical } from "lucide-react";
-import { useCallback, useMemo } from "react";
+} from "@zui/ToolCallBlocks/renderers/workflow-snippet-presentation.js";
 
-const ICON = (
-  <FlaskConical className="size-4 shrink-0 text-foreground-subtle" />
-);
+const ICON = <FlaskConical className="size-4 shrink-0 text-foreground-subtle" />;
 
 /** 三态摘要不放结果预览，展开内容按执行状态排序。 */
-export function EvalWorkflowSnippetToolCallBlock(
-  context: ToolCallBlockRenderContext,
-) {
+export function EvalWorkflowSnippetToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall } = context.toolCallNode;
   const display = readToolResultDisplay(toolCall.raw);
-  const snippet =
-    display?.kind === "eval_workflow_snippet" ? display : undefined;
+  const snippet = display?.kind === "eval_workflow_snippet" ? display : undefined;
   const running = context.isRunning;
-  const failed =
-    !running && (toolCall.status === "failed" || snippet?.ok === false);
+  const failed = !running && (toolCall.status === "failed" || snippet?.ok === false);
   const startedAt = toolCall.startedAt;
   // 进行中按整秒走、每秒一格（与面板里其他计时同一粒度）；终态定格在工具结果的精确毫秒。
   // 不能每 100ms 显示一次毫秒——尾数肉眼读不了，却是聊天区里最频繁的待处理更新
@@ -62,10 +48,7 @@ export function EvalWorkflowSnippetToolCallBlock(
     [durationText, failed],
   );
   const input = toolCall.input as { code?: unknown } | undefined;
-  const code =
-    typeof input?.code === "string" && input.code.trim()
-      ? input.code
-      : undefined;
+  const code = typeof input?.code === "string" && input.code.trim() ? input.code : undefined;
   const response = useMemo(
     () =>
       snippet
@@ -77,9 +60,7 @@ export function EvalWorkflowSnippetToolCallBlock(
   );
   const error =
     context.errorText ||
-    (failed
-      ? response || snippet?.diagnostics.map((d) => d.message).join("\n")
-      : undefined);
+    (failed ? response || snippet?.diagnostics.map((d) => d.message).join("\n") : undefined);
   // 展开入口与当前实际展示的内容一致，不能因隐藏的代码/日志留下空面板。
   const hasDetails = running
     ? code !== undefined
@@ -98,9 +79,7 @@ export function EvalWorkflowSnippetToolCallBlock(
         running={running}
         failed={failed}
         response={
-          failed
-            ? response || (snippet?.diagnostics.length ? undefined : error)
-            : response
+          failed ? response || (!snippet?.diagnostics.length ? error : undefined) : response
         }
         theme={context.theme}
       />
@@ -127,11 +106,7 @@ export function EvalWorkflowSnippetToolCallBlock(
         sourceLabel={context.sourceLabel}
         primaryText={durationNode}
         summaryContentSeparator="·"
-        statusLabel={
-          failed
-            ? intl.formatMessage({ id: "chat.toolCall.status.failed" })
-            : undefined
-        }
+        statusLabel={failed ? intl.formatMessage({ id: "chat.toolCall.status.failed" }) : undefined}
         statusTooltip={failed ? error : undefined}
         showFailureStatus={failed}
         isRunning={running}
@@ -157,11 +132,11 @@ function SnippetBody({
   response,
   theme,
 }: {
-  code?: string | undefined;
-  display?: ToolCallEvalWorkflowSnippetDisplay | undefined;
+  code?: string;
+  display?: ToolCallEvalWorkflowSnippetDisplay;
   running: boolean;
   failed: boolean;
-  response?: string | undefined;
+  response?: string;
   theme: ToolCallBlockRenderContext["theme"];
 }) {
   const { intl } = useZCodeIntl();
@@ -185,16 +160,14 @@ function SnippetBody({
     );
   }
 
-  const codeLabel = intl.formatMessage({
-    id: "chat.toolCall.workflow.snippet.section.code",
-  });
+  const codeLabel = intl.formatMessage({ id: "chat.toolCall.workflow.snippet.section.code" });
   const codeBlock =
     code === undefined ? null : (
       <CodeBlock
         code={code}
         language="typescript"
         appTheme={theme}
-        showLineNumbers={true}
+        showLineNumbers
         renderMermaid={false}
       />
     );
@@ -230,9 +203,7 @@ function SnippetBody({
       {display?.logs.some((line) => line.trim()) ? (
         <section className="space-y-1.5" data-testid="snippet-logs">
           <h4 className="text-ui-sm font-medium text-foreground-subtlest">
-            {intl.formatMessage({
-              id: "chat.toolCall.workflow.snippet.section.logs",
-            })}
+            {intl.formatMessage({ id: "chat.toolCall.workflow.snippet.section.logs" })}
           </h4>
           <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-panel px-3 py-2 font-mono text-ui-sm text-foreground-subtle">
             {display.logs.join("\n")}
@@ -277,7 +248,7 @@ function SnippetTextPanel({
           language={language}
           className="border border-border bg-card"
           contentClassName="max-h-80 overflow-auto"
-          wrapLongLines={true}
+          wrapLongLines
           renderMermaid={false}
         >
           <CodeBlockHeader className="pl-3 pr-2 pt-2" language={language} />

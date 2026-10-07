@@ -462,7 +462,7 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
         {/* biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用 */}
         <img
           src={artifact.url}
-          alt={artifact.title ?? "Generated image"}
+          alt={artifact.title ?? "生成的图片"}
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
           loading="lazy"
         />
@@ -651,7 +651,7 @@ function ToolDetailPanel({
                     <ChatImage
                       key={artifact.url}
                       src={artifact.url}
-                      alt={artifact.title ?? "Generated image"}
+                      alt={artifact.title ?? "生成的图片"}
                       className="max-w-[200px] rounded-lg border border-border"
                     />
                   ) : null,

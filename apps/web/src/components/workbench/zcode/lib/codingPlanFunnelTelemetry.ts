@@ -1,20 +1,14 @@
-/**
- * zcode 照搬：`@/lib/codingPlanFunnelTelemetry.ts`（references/zcode/packages/ui/src/lib/codingPlanFunnelTelemetry.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { reportAppTelemetryEvent } from "@zui/lib/appTelemetry";
-import type { ProviderSettingsView } from "@zui/lib/zcode-services";
 import {
   BIGMODEL_PROVIDER_ID,
   BUILTIN_MODEL_PROVIDER_IDS,
-  type IPlatformService,
   isZaiCodingPlanProviderId,
-  type UsageEntitlementSnapshot,
   ZAI_PROVIDER_ID,
-} from "@zui/lib/zcode-shared";
-import { logger } from "@zui/logger";
+  type IPlatformService,
+  type UsageEntitlementSnapshot,
+} from "@zcode/shared";
+import type { ProviderSettingsView } from "@zcode/services";
+import { logger } from "@zui/logger.js";
+import { reportAppTelemetryEvent } from "@zui/lib/appTelemetry.js";
 
 export type CodingPlanUpgradeSource =
   | "profile_menu"
@@ -26,11 +20,7 @@ export type CodingPlanUpgradeSource =
   | "setting_personal_plan_banner"
   | "setting_team_plan_banner";
 
-export type CodingPlanEntryPlanStatus =
-  | "no_plan"
-  | "start_plan"
-  | "coding_plan"
-  | "unknown";
+export type CodingPlanEntryPlanStatus = "no_plan" | "start_plan" | "coding_plan" | "unknown";
 
 export type CodingPlanPurchaseAudience = "" | "personal" | "team";
 export type CodingPlanProviderFamily = "bigmodel" | "zai" | "unknown";
@@ -117,9 +107,7 @@ export function resolveCodingPlanEntryPlanState(params: {
     }
     if (params.snapshot.subscription?.details.length) {
       return {
-        entryPlanStatus: isStartPlanLevel(entryPlanLevel)
-          ? "start_plan"
-          : "coding_plan",
+        entryPlanStatus: isStartPlanLevel(entryPlanLevel) ? "start_plan" : "coding_plan",
         entryPlanLevel,
       };
     }
@@ -129,17 +117,11 @@ export function resolveCodingPlanEntryPlanState(params: {
   }
   if (params.displayStatus === "purchased") {
     return {
-      entryPlanStatus: isStartPlanLevel(entryPlanLevel)
-        ? "start_plan"
-        : "coding_plan",
+      entryPlanStatus: isStartPlanLevel(entryPlanLevel) ? "start_plan" : "coding_plan",
       entryPlanLevel,
     };
   }
-  if (
-    params.providerId &&
-    isStartPlanProviderId(params.providerId) &&
-    entryPlanLevel
-  ) {
+  if (params.providerId && isStartPlanProviderId(params.providerId) && entryPlanLevel) {
     return { entryPlanStatus: "start_plan", entryPlanLevel };
   }
   return { entryPlanStatus: "unknown", entryPlanLevel: "" };
@@ -158,10 +140,8 @@ export function resolveCodingPlanEntryPlanStateFromProviderSettings(
   );
   const codingPlanProvider = accountProviders.find(
     (provider) =>
-      provider.providerId ===
-        BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan ||
-      provider.providerId ===
-        BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan ||
+      provider.providerId === BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan ||
+      provider.providerId === BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan ||
       // Team 同样持有 Coding Plan；不能用包含 Start 的宽泛 helper 判断套餐。
       provider.providerId === BUILTIN_MODEL_PROVIDER_IDS.zaiTeamCodingPlan ||
       provider.providerId === BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan,
@@ -205,9 +185,7 @@ export function reportCodingPlanUpgradeClick(
   );
 }
 
-function buildFunnelBaseDetail(
-  context: CodingPlanFunnelContext,
-): Record<string, string> {
+function buildFunnelBaseDetail(context: CodingPlanFunnelContext): Record<string, string> {
   return stringifyDetail({
     purchase_funnel_id: context.purchaseFunnelId,
     upgrade_source: context.upgradeSource,
@@ -220,9 +198,7 @@ function buildFunnelBaseDetail(
   });
 }
 
-function resolveCodingPlanProviderFamily(
-  providerId: string,
-): CodingPlanProviderFamily {
+function resolveCodingPlanProviderFamily(providerId: string): CodingPlanProviderFamily {
   if (
     providerId === BIGMODEL_PROVIDER_ID ||
     providerId === BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan ||
@@ -237,15 +213,11 @@ function resolveCodingPlanProviderFamily(
   return "unknown";
 }
 
-function resolveCodingPlanChannel(
-  providerFamily: CodingPlanProviderFamily,
-): string {
+function resolveCodingPlanChannel(providerFamily: CodingPlanProviderFamily): string {
   return { bigmodel: "MaaS", zai: "Z_AI", unknown: "" }[providerFamily];
 }
 
-function stringifyDetail(
-  detail: Record<string, unknown>,
-): Record<string, string> {
+function stringifyDetail(detail: Record<string, unknown>): Record<string, string> {
   return Object.fromEntries(
     Object.entries(detail).map(([key, value]) => [
       key,
@@ -266,8 +238,6 @@ function isStartPlanLevel(value: string): boolean {
 }
 
 function createFallbackFunnelId(): string {
-  logger.warn(
-    "[codingPlanFunnelTelemetry] crypto.randomUUID unavailable, using fallback id",
-  );
+  logger.warn("[codingPlanFunnelTelemetry] crypto.randomUUID unavailable, using fallback id");
   return `funnel_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }

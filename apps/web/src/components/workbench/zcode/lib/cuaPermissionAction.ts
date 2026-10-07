@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/lib/cuaPermissionAction.ts`（references/zcode/packages/ui/src/lib/cuaPermissionAction.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-import type { CuaAccessibilitySettingsResult } from "@zui/lib/zcode-shared";
+import type { CuaAccessibilitySettingsResult } from "@zcode/shared";
 
 function normalizeToolName(value: string | null | undefined): string {
   return value?.trim().toLowerCase().replace(/_/g, "-") ?? "";
@@ -38,10 +33,7 @@ export function shouldRestartHelperAfterCuaPermissionReturn(
 ): boolean {
   // restartHelperAfterReturn 是 additive main ABI。旧版 main 不返回该字段，仍按过去的单窗口 owner
   // 处理；新版 main 只对同一 renderer/host 的重复 join 返回 false，不同窗口的独立 Helper 各自恢复。
-  return (
-    didReturnFromCuaPermissionSettings(result) &&
-    result?.restartHelperAfterReturn !== false
-  );
+  return didReturnFromCuaPermissionSettings(result) && result?.restartHelperAfterReturn !== false;
 }
 
 export interface CuaPermissionReturnRecoveryState {
@@ -75,9 +67,7 @@ export function createCuaPermissionReturnRecoveryState(
   };
 }
 
-function recoveryClaim(
-  state: CuaPermissionReturnRecoveryState,
-): CuaPermissionReturnRecoveryClaim {
+function recoveryClaim(state: CuaPermissionReturnRecoveryState): CuaPermissionReturnRecoveryClaim {
   return {
     state,
     generation: state.generation,

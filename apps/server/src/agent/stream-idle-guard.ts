@@ -1,3 +1,5 @@
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
+
 /**
  * 流空闲看门狗（stream idle watchdog）。
  *
@@ -12,11 +14,12 @@
  *   同时回调 `onIdle` 中止底层请求（释放上游连接）；
  * - 中止 → 结束迭代，适配器照旧走 canceled 分支（界面「停止」按钮真正生效）。
  *
- * 阈值依据：流事件在工具执行期间也会发（tools 的 start/end），最长静默发生在
- * 单个工具执行期间——沙箱命令超时为 120s，故默认 180s 留出余量。
+ * 调用方只在真实模型请求期间启用计时；工具和人审等待不属于模型停滞。
+ * 默认与护栏由shared governance持有，实例设置与env经settings服务解析。
  */
 
-export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 180_000;
+export const DEFAULT_STREAM_IDLE_TIMEOUT_MS =
+  AGENT_GOVERNANCE_DEFAULTS.agentStreamIdleTimeoutMs;
 
 /** 面向用户的错误（文案可直接展示）：error-sanitizer 据此透传而非套用通用文案。 */
 export class StreamIdleTimeoutError extends Error {
@@ -35,6 +38,8 @@ export class StreamIdleTimeoutError extends Error {
 export interface StreamIdleGuardOptions {
   /** 空闲上限（毫秒）；<= 0 或非有限值表示不启用超时。 */
   idleMs?: number;
+  /** 仅在调用方确认等待受监控的上游时计时；取消保护始终保留。 */
+  idleEnabled?: () => boolean;
   signal?: AbortSignal;
   /** 空闲超时触发时调用（用于中止底层请求）。抛错不影响终止。 */
   onIdle?: () => void;
@@ -66,7 +71,11 @@ async function stepWithGuard<T>(
       iterator.next(),
     ];
 
-    if (idleMs > 0 && Number.isFinite(idleMs)) {
+    if (
+      (options.idleEnabled?.() ?? true) &&
+      idleMs > 0 &&
+      Number.isFinite(idleMs)
+    ) {
       racers.push(
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => {

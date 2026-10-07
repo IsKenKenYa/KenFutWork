@@ -1,9 +1,9 @@
 "use client";
 
-import type { WorkspaceSettings } from "@kenfutwork/shared";
+import type { InstanceSettings } from "@kenfutwork/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { updateWorkspaceSettings } from "@/lib/server-api";
+import { SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
  * 设置 → 命令（R5-2 的「命令」条目）。
@@ -20,18 +20,18 @@ import { updateWorkspaceSettings } from "@/lib/server-api";
  * 删除/插入时 React 会复用错行的输入框（把上一条的文本挪到下一条）。
  */
 type Row = { id: string; name: string; description: string; prompt: string };
-const withRowIds = (list: WorkspaceSettings["commands"]): Row[] =>
+const withRowIds = (list: InstanceSettings["commands"]): Row[] =>
   list.map((command) => ({ id: crypto.randomUUID(), ...command }));
 
 export function CommandsSection({
-  accessToken,
   commands,
-  onSaved,
+  onSave,
 }: {
-  accessToken: string;
-  /** 工作区设置里的命令表（由设置模态统一读写，避免两处真相）。 */
-  commands: WorkspaceSettings["commands"];
-  onSaved: (next: WorkspaceSettings["commands"]) => void;
+  /** 实例设置里的命令表（由设置模态统一读写，避免两处真相）。 */
+  commands: InstanceSettings["commands"];
+  onSave: (
+    next: InstanceSettings["commands"],
+  ) => Promise<InstanceSettings["commands"] | null>;
 }) {
   const [rows, setRows] = useState<Row[]>(() => withRowIds(commands));
   const [saving, setSaving] = useState(false);
@@ -76,15 +76,15 @@ export function CommandsSection({
     }
     setSaving(true);
     try {
-      const result = await updateWorkspaceSettings(accessToken, {
-        commands: rows.map((row) => ({
+      const saved = await onSave(
+        rows.map((row) => ({
           name: row.name.trim(),
           description: row.description.trim(),
           prompt: row.prompt.trim(),
         })),
-      });
-      onSaved(result.settings.commands);
-      setRows(withRowIds(result.settings.commands));
+      );
+      if (!saved) throw new Error("设置页面已变化，请重新加载后保存。");
+      setRows(withRowIds(saved));
       setFeedback({ type: "success", message: "已保存" });
     } catch (error) {
       setFeedback({
@@ -98,20 +98,11 @@ export function CommandsSection({
 
   return (
     <section aria-label="命令设置">
-      <h3 className="mb-1 text-base font-medium">命令</h3>
-      <p className="mb-3 text-sm text-muted-foreground">
-        自定义斜杠命令：在输入框里打
-        <code className="mx-1 rounded bg-muted px-1">/名字 参数</code>
-        ，发送时会展开成下面的提示词。
-        <code className="mx-1 rounded bg-muted px-1">{"{{args}}"}</code>
-        会被替换成参数；没写就追加到末尾。
-      </p>
+      <h3 className={SETTINGS_TITLE}>命令</h3>
 
       <div className="space-y-2">
         {rows.length === 0 ? (
-          <p className="rounded-lg border px-3 py-2 text-sm text-muted-foreground">
-            还没有自定义命令，点下面的「新增命令」加一条。
-          </p>
+          <p className="text-sm text-muted-foreground">没有命令</p>
         ) : null}
 
         {rows.map((row, index) => (
@@ -158,7 +149,7 @@ export function CommandsSection({
         ))}
       </div>
 
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-2 flex items-center gap-2">
         <button
           type="button"
           onClick={() => {

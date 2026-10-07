@@ -1,38 +1,22 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/cua-group.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/cua-group.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import {
   EMPTY_SCROLL_MASK_STATE,
   getVerticalScrollMaskStyle,
   resolveVerticalScrollMaskState,
   type ScrollMaskState,
-} from "@zui/mentions/components/scrollMask";
-import { ToolCallBlock } from "@zui/ToolCallBlocks";
-import { buildCuaSummaryPresentation } from "@zui/ToolCallBlocks/renderers/cua";
-import { CUA_TOOL_ICON } from "@zui/ToolCallBlocks/renderers/cuaIcon";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import type { ConversationCuaGroupEvent } from "@zui/v4/conversationCuaGroups";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+} from "@zui/mentions/components/scrollMask.js";
+import { ToolCallBlock } from "@zui/ToolCallBlocks.js";
+import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout.js";
+import { buildCuaSummaryPresentation } from "@zui/ToolCallBlocks/renderers/cua.js";
+import { CUA_TOOL_ICON } from "@zui/ToolCallBlocks/renderers/cuaIcon.js";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
+import type { ConversationCuaGroupEvent } from "@zui/v4/conversationCuaGroups.js";
 
 const TERMINAL_CUA_STATUSES = new Set(["completed", "failed", "stopped"]);
 const STICK_TO_BOTTOM_THRESHOLD_PX = 8;
 
-function scrollCuaGroupToBottom(
-  viewport: Pick<HTMLElement, "scrollHeight" | "scrollTop">,
-) {
+function scrollCuaGroupToBottom(viewport: Pick<HTMLElement, "scrollHeight" | "scrollTop">) {
   viewport.scrollTop = viewport.scrollHeight;
 }
 
@@ -46,17 +30,11 @@ function isCuaGroupViewportAtBottom(
 }
 
 interface CuaGroupRenderProps extends ToolCallBlockRenderContext {
-  events?: readonly ConversationCuaGroupEvent[] | undefined;
-  renderAssistantMessage?:
-    | ((
-        event: Extract<ConversationCuaGroupEvent, { kind: "assistantMessage" }>,
-      ) => ReactNode)
-    | undefined;
-  renderReasoning?:
-    | ((
-        event: Extract<ConversationCuaGroupEvent, { kind: "reasoning" }>,
-      ) => ReactNode)
-    | undefined;
+  events?: readonly ConversationCuaGroupEvent[];
+  renderAssistantMessage?: (
+    event: Extract<ConversationCuaGroupEvent, { kind: "assistantMessage" }>,
+  ) => ReactNode;
+  renderReasoning?: (event: Extract<ConversationCuaGroupEvent, { kind: "reasoning" }>) => ReactNode;
 }
 
 function CuaGroupChildren({
@@ -67,17 +45,13 @@ function CuaGroupChildren({
 }: {
   events: readonly ConversationCuaGroupEvent[];
   context: ToolCallBlockRenderContext;
-  renderAssistantMessage?:
-    | CuaGroupRenderProps["renderAssistantMessage"]
-    | undefined;
-  renderReasoning?: CuaGroupRenderProps["renderReasoning"] | undefined;
+  renderAssistantMessage?: CuaGroupRenderProps["renderAssistantMessage"];
+  renderReasoning?: CuaGroupRenderProps["renderReasoning"];
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
-  const [scrollMaskState, setScrollMaskState] = useState<ScrollMaskState>(
-    EMPTY_SCROLL_MASK_STATE,
-  );
+  const [scrollMaskState, setScrollMaskState] = useState<ScrollMaskState>(EMPTY_SCROLL_MASK_STATE);
   const updateScrollState = useCallback(() => {
     const viewport = viewportRef.current;
     if (!viewport) {
@@ -136,10 +110,7 @@ function CuaGroupChildren({
       onScroll={updateScrollState}
       style={getVerticalScrollMaskStyle(scrollMaskState)}
     >
-      <div
-        ref={contentRef}
-        className="ml-2 space-y-2 border-border border-l pl-3.5"
-      >
+      <div ref={contentRef} className="ml-2 space-y-2 border-border border-l pl-3.5">
         {events.map((event) =>
           event.kind === "tool" ? (
             <ToolCallBlock
@@ -148,7 +119,7 @@ function CuaGroupChildren({
               workspacePath={context.workspacePath}
               theme={context.theme}
               codePreviewSettings={context.codePreviewSettings}
-              showIcon={true}
+              showIcon
               cuaAppIconClassName="size-5"
               onOpenCodeViewer={context.onOpenCodeViewer}
               onOpenFileLink={context.onOpenFileLink}
@@ -163,18 +134,14 @@ function CuaGroupChildren({
             >
               <div className="min-w-0">
                 {renderAssistantMessage?.(event) ?? (
-                  <span className="whitespace-pre-wrap break-words">
-                    {event.row.text}
-                  </span>
+                  <span className="whitespace-pre-wrap break-words">{event.row.text}</span>
                 )}
               </div>
             </div>
           ) : (
             <div key={`reasoning:${event.row.rowId}`} className="min-w-0 py-1">
               {renderReasoning?.(event) ?? (
-                <span className="whitespace-pre-wrap break-words">
-                  {event.row.text}
-                </span>
+                <span className="whitespace-pre-wrap break-words">{event.row.text}</span>
               )}
             </div>
           ),
@@ -198,8 +165,7 @@ export function CuaGroupToolCallBlock(context: CuaGroupRenderProps) {
         createdAtSeq: 0,
         kind: "toolCall" as const,
         toolCallId: node.toolCall.toolId,
-        toolName:
-          node.toolCall.toolName ?? node.toolCall.kind ?? "Computer Use",
+        toolName: node.toolCall.toolName ?? node.toolCall.kind ?? "Computer Use",
         status: "success" as const,
         input: node.toolCall.input,
         inputText: "",
@@ -208,20 +174,17 @@ export function CuaGroupToolCallBlock(context: CuaGroupRenderProps) {
     }));
   const latestSummaryEvent = events.findLast(
     (event): event is Extract<ConversationCuaGroupEvent, { kind: "tool" }> =>
-      event.kind === "tool" &&
-      TERMINAL_CUA_STATUSES.has(event.node.toolCall.status),
+      event.kind === "tool" && TERMINAL_CUA_STATUSES.has(event.node.toolCall.status),
   );
   const latestToolSummary =
-    latestSummaryEvent === undefined
-      ? null
-      : buildCuaSummaryPresentation(latestSummaryEvent.node.toolCall, intl, {
+    latestSummaryEvent !== undefined
+      ? buildCuaSummaryPresentation(latestSummaryEvent.node.toolCall, intl, {
           appIconClassName: "size-5",
-        });
+        })
+      : null;
   const isRunning = context.isRunning || toolCall.status === "in_progress";
   const eventCount = events.length;
-  const messageCount = events.filter(
-    (event) => event.kind === "assistantMessage",
-  ).length;
+  const messageCount = events.filter((event) => event.kind === "assistantMessage").length;
   const eventCountText = intl.formatMessage(
     {
       id:
@@ -254,12 +217,8 @@ export function CuaGroupToolCallBlock(context: CuaGroupRenderProps) {
       <span className={animatedTextClass}>
         {latestToolSummary ? (
           <span className="inline-flex min-w-0 items-center gap-1.5">
-            <span className="shrink-0 font-medium">
-              {latestToolSummary.appName}
-            </span>
-            <span className="min-w-0 truncate">
-              {latestToolSummary.primaryText}
-            </span>
+            <span className="shrink-0 font-medium">{latestToolSummary.appName}</span>
+            <span className="min-w-0 truncate">{latestToolSummary.primaryText}</span>
           </span>
         ) : null}
       </span>
@@ -299,12 +258,10 @@ export function CuaGroupToolCallBlock(context: CuaGroupRenderProps) {
       canToggle={context.canToggle ?? true}
       forceOpen={!isRunning && (context.forceOpen ?? false)}
       kindLabel={
-        isRunning
-          ? null
-          : intl.formatMessage({ id: "chat.toolCall.cua.group.completedLabel" })
+        isRunning ? null : intl.formatMessage({ id: "chat.toolCall.cua.group.completedLabel" })
       }
       primaryText={isRunning ? primaryText : null}
-      prioritizePrimaryText={true}
+      prioritizePrimaryText
       diffCount={diffCount}
       animateSummaryContent={isRunning}
       disableSummaryContentAnimation={context.disableSummaryContentAnimation}

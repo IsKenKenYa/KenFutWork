@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/AssistantCodeCommentFeatureProvider.tsx`（references/zcode/packages/ui/src/AssistantCodeCommentFeatureProvider.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-import { createContext, type ReactNode, useContext } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 
 const DEFAULT_ASSISTANT_CODE_COMMENT_CARDS_ENABLED = false;
 const AssistantCodeCommentFeatureContext = createContext(

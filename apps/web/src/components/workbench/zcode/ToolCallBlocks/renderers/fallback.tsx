@@ -1,27 +1,18 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/fallback.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/fallback.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- * 适配注记：接口可选属性放宽 | undefined 以等价 zcode tsconfig 行为（exactOptionalPropertyTypes）。
- */
-
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolCallBody } from "@zui/ToolCallBlocks/ToolCallBody";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
 import { WrenchIcon } from "lucide-react";
-import { type ReactNode, useCallback } from "react";
+import { useCallback, type ReactNode } from "react";
+import { ToolCallBody } from "@zui/ToolCallBlocks/ToolCallBody.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolLayout } from "../ToolLayout.js";
+import type { ToolCallBlockRenderContext } from "../shared.js";
 
-const FALLBACK_TOOL_ICON = (
-  <WrenchIcon className="size-4 shrink-0 text-foreground-subtle" />
-);
+const FALLBACK_TOOL_ICON = <WrenchIcon className="size-4 shrink-0 text-foreground-subtle" />;
 
 interface FallbackToolCallBlockProps extends ToolCallBlockRenderContext {
-  iconOverride?: ReactNode | undefined;
-  hideRawFallback?: boolean | undefined;
-  summaryOnly?: boolean | undefined;
-  summaryTextOverride?: ReactNode | undefined;
+  iconOverride?: ReactNode;
+  hideRawFallback?: boolean;
+  summaryOnly?: boolean;
+  summaryTextOverride?: ReactNode;
 }
 
 export function FallbackToolCallBlock(context: FallbackToolCallBlockProps) {
@@ -98,21 +89,14 @@ export function FallbackToolCallBlock(context: FallbackToolCallBlockProps) {
       showIcon={context.showIcon !== false}
       canToggle={context.canToggle ?? true}
       forceOpen={context.forceOpen ?? false}
-      kindLabel={
-        context.summaryOnly ? null : (context.kindLabelOverride ?? kindLabel)
-      }
+      kindLabel={context.summaryOnly ? null : (context.kindLabelOverride ?? kindLabel)}
       sourceLabel={context.sourceLabel}
       primaryText={
         context.summaryOnly
           ? (context.summaryTextOverride ?? null)
-          : (toolCall.title ??
-            intl.formatMessage({ id: "chat.toolCall.toolCall" }))
+          : (toolCall.title ?? intl.formatMessage({ id: "chat.toolCall.toolCall" }))
       }
-      secondaryText={
-        context.summaryOnly || toolCall.status === "failed"
-          ? undefined
-          : statusLabel
-      }
+      secondaryText={context.summaryOnly || toolCall.status === "failed" ? undefined : statusLabel}
       statusLabel={toolCall.status === "failed" ? statusLabel : undefined}
       statusTooltip={toolCall.status === "failed" ? errorText : undefined}
       showFailureStatus={toolCall.status === "failed"}

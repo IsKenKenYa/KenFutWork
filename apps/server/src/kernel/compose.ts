@@ -9,6 +9,7 @@ import {
   SystemPromptRegistryImpl,
   ToolRegistryImpl,
 } from "./context.js";
+import { createResourceDisposer, type ResourceDisposer } from "./disposal.js";
 import type {
   DepsOf,
   KernelEvents,
@@ -71,8 +72,8 @@ export function composePlugins(
   }
 
   const factories = new Map<ServiceKey, ServiceState>();
-  const disposers: Array<() => void> = [];
-  const addDisposer = (disposer: () => void) => {
+  const disposers: ResourceDisposer[] = [];
+  const addDisposer = (disposer: ResourceDisposer) => {
     disposers.push(disposer);
   };
 
@@ -138,7 +139,7 @@ export function composePlugins(
   if (!overrides.tools) {
     factories.set("tools", {
       kind: "ready",
-      service: new ToolRegistryImpl(events),
+      service: new ToolRegistryImpl(events, () => tryGet("permissions")),
     });
   }
   if (!overrides.capabilities) {
@@ -211,13 +212,7 @@ export function composePlugins(
   const kernelEvents: KernelEvents = createKernelEvents(events);
 
   return {
-    dispose() {
-      for (const disposer of disposers.reverse()) {
-        disposer();
-      }
-      disposers.length = 0;
-      factories.clear();
-    },
+    dispose: createResourceDisposer(disposers, () => factories.clear()),
     get,
     tryGet,
     events: kernelEvents,

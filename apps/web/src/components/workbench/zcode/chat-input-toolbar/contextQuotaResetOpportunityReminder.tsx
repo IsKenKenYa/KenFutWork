@@ -1,14 +1,7 @@
-/**
- * zcode 照搬：`@/chat-input-toolbar/contextQuotaResetOpportunityReminder.tsx`（references/zcode/packages/ui/src/chat-input-toolbar/contextQuotaResetOpportunityReminder.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-
-import { formatCodingPlanQuotaResetCountdown } from "@zui/components/coding-plan-quota-reset/CodingPlanQuotaResetDialog";
-import { Button } from "@zui/components/ui/button";
-import type { useZCodeIntl } from "@zui/i18n/IntlProvider";
 import { AlarmClock, GiftIcon, XIcon } from "lucide-react";
+import type { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { formatCodingPlanQuotaResetCountdown } from "@zui/components/coding-plan-quota-reset/CodingPlanQuotaResetDialog.js";
+import { Button } from "@zui/components/ui/button.js";
 
 export const CONTEXT_QUOTA_RESET_URGENT_SECONDS = 180;
 
@@ -44,8 +37,7 @@ function createContextQuotaResetOpportunityDismissalStore() {
 
   return {
     dismiss(reminder: ContextQuotaResetOpportunityReminder) {
-      const sameOpportunity =
-        snapshot.opportunityKey === reminder.opportunityKey;
+      const sameOpportunity = snapshot.opportunityKey === reminder.opportunityKey;
       snapshot = {
         initial: sameOpportunity
           ? snapshot.initial || reminder.phase === "initial"
@@ -55,9 +47,7 @@ function createContextQuotaResetOpportunityDismissalStore() {
           ? snapshot.urgent || reminder.phase === "urgent"
           : reminder.phase === "urgent",
       };
-      listeners.forEach((listener) => {
-        listener();
-      });
+      listeners.forEach((listener) => listener());
     },
     getSnapshot: () => snapshot,
     subscribe(listener: () => void) {
@@ -82,18 +72,10 @@ export function resolveContextQuotaResetOpportunityTriggerTone({
   opportunity: ContextQuotaResetOpportunity;
 }): ContextQuotaResetOpportunityTriggerTone | null {
   const { count, expiresAt, sourceKey, visible } = opportunity;
-  if (
-    !visible ||
-    count <= 0 ||
-    expiresAt === null ||
-    !sourceKey ||
-    expiresAt <= now
-  ) {
+  if (!visible || count <= 0 || expiresAt === null || !sourceKey || expiresAt <= now) {
     return null;
   }
-  return expiresAt - now <= CONTEXT_QUOTA_RESET_URGENT_SECONDS * 1_000
-    ? "urgent"
-    : "available";
+  return expiresAt - now <= CONTEXT_QUOTA_RESET_URGENT_SECONDS * 1_000 ? "urgent" : "available";
 }
 
 export function resolveContextQuotaResetOpportunityReminder({
@@ -106,13 +88,7 @@ export function resolveContextQuotaResetOpportunityReminder({
   opportunity: ContextQuotaResetOpportunity;
 }): ContextQuotaResetOpportunityReminder | null {
   const { count, expiresAt, sourceKey, visible } = opportunity;
-  if (
-    !visible ||
-    count <= 0 ||
-    expiresAt === null ||
-    !sourceKey ||
-    expiresAt <= now
-  ) {
+  if (!visible || count <= 0 || expiresAt === null || !sourceKey || expiresAt <= now) {
     return null;
   }
 
@@ -120,9 +96,7 @@ export function resolveContextQuotaResetOpportunityReminder({
   const sameOpportunity = dismissal.opportunityKey === opportunityKey;
   const remainingSeconds = Math.max(0, Math.ceil((expiresAt - now) / 1_000));
   const phase: ContextQuotaResetOpportunityReminderPhase =
-    remainingSeconds <= CONTEXT_QUOTA_RESET_URGENT_SECONDS
-      ? "urgent"
-      : "initial";
+    remainingSeconds <= CONTEXT_QUOTA_RESET_URGENT_SECONDS ? "urgent" : "initial";
   if (sameOpportunity && dismissal[phase]) {
     return null;
   }
@@ -144,8 +118,7 @@ export function shouldDismissContextQuotaResetOpportunityReminder(
   if (!(target instanceof Node) || trigger?.contains(target)) {
     return false;
   }
-  const targetElement =
-    target instanceof Element ? target : target.parentElement;
+  const targetElement = target instanceof Element ? target : target.parentElement;
   return !targetElement?.closest("[data-context-reset-reminder]");
 }
 
@@ -169,38 +142,23 @@ export function ContextQuotaResetOpportunityReminderContent({
         className="inline-flex items-center gap-1.5 text-ui-sm"
         data-context-reset-reminder="initial"
       >
-        <GiftIcon
-          className="size-3.5 shrink-0 text-success"
-          aria-hidden="true"
-        />
+        <GiftIcon className="size-3.5 shrink-0 text-success" aria-hidden="true" />
         <span>
-          {intl.formatMessage(
-            { id: "codingPlan.quotaReset.contextReminder.available" },
-            { count },
-          )}
+          {intl.formatMessage({ id: "codingPlan.quotaReset.contextReminder.available" }, { count })}
         </span>
-        <ContextQuotaResetOpportunityDismissButton
-          intl={intl}
-          onDismiss={onDismiss}
-        />
+        <ContextQuotaResetOpportunityDismissButton intl={intl} onDismiss={onDismiss} />
       </span>
     );
   }
 
-  const countdown = formatCodingPlanQuotaResetCountdown(
-    remainingSeconds,
-    intl.formatMessage,
-  );
+  const countdown = formatCodingPlanQuotaResetCountdown(remainingSeconds, intl.formatMessage);
   return (
     <span
       role="status"
       className="inline-flex items-center gap-0 text-ui-sm"
       data-context-reset-reminder="urgent"
     >
-      <span
-        className="inline-flex items-center gap-1.5"
-        data-context-reset-reminder-copy={true}
-      >
+      <span className="inline-flex items-center gap-1.5" data-context-reset-reminder-copy>
         <span
           className="inline-flex shrink-0 origin-bottom animate-zcode-alarm-ring text-warning motion-reduce:animate-none"
           aria-hidden="true"
@@ -208,18 +166,13 @@ export function ContextQuotaResetOpportunityReminderContent({
           <AlarmClock className="size-3.5" />
         </span>
         <span>
-          {intl.formatMessage({
-            id: "codingPlan.quotaReset.contextReminder.expiresIn",
-          })}{" "}
+          {intl.formatMessage({ id: "codingPlan.quotaReset.contextReminder.expiresIn" })}{" "}
           <span className="inline-flex h-3.5 items-center rounded-full bg-warning/10 px-1.5 text-ui-xs leading-none font-medium tabular-nums text-warning">
             {countdown}
           </span>
         </span>
       </span>
-      <ContextQuotaResetOpportunityDismissButton
-        intl={intl}
-        onDismiss={onDismiss}
-      />
+      <ContextQuotaResetOpportunityDismissButton intl={intl} onDismiss={onDismiss} />
     </span>
   );
 }
@@ -237,10 +190,8 @@ function ContextQuotaResetOpportunityDismissButton({
       variant="ghost"
       size="icon-xs"
       className="rounded-full text-foreground-subtle"
-      aria-label={intl.formatMessage({
-        id: "codingPlan.quotaReset.contextReminder.dismiss",
-      })}
-      data-context-reset-reminder-dismiss={true}
+      aria-label={intl.formatMessage({ id: "codingPlan.quotaReset.contextReminder.dismiss" })}
+      data-context-reset-reminder-dismiss
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => {
         event.stopPropagation();

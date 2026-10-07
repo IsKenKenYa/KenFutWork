@@ -1,15 +1,10 @@
-/**
- * zcode 照搬：`@/lib/uiPerfArmsTelemetry.ts`（references/zcode/packages/ui/src/lib/uiPerfArmsTelemetry.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined），仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
 import {
+  sanitizeTelemetryModelValue,
   type ArmsCustomEventPayload,
   type IPlatformService,
   type LaunchMarks,
-  sanitizeTelemetryModelValue,
-} from "@zui/lib/zcode-shared";
-import { logger } from "@zui/logger";
+} from "@zcode/shared";
+import { logger } from "@zui/logger.js";
 
 const UI_PERF_ARMS_GROUP = "ui_perf";
 
@@ -68,11 +63,9 @@ function emit(payload: ArmsCustomEventPayload): void {
     properties: sanitizeModelProperty(payload.properties),
   };
   try {
-    void Promise.resolve(armsReporter.reportArmsCustomEvent(sanitized)).catch(
-      (error) => {
-        logger.warn("[ui-perf] ARMS 上报失败", { name: payload.name, error });
-      },
-    );
+    void Promise.resolve(armsReporter.reportArmsCustomEvent(sanitized)).catch((error) => {
+      logger.warn("[ui-perf] ARMS 上报失败", { name: payload.name, error });
+    });
   } catch (error) {
     logger.warn("[ui-perf] ARMS 上报异常", { name: payload.name, error });
   }
@@ -123,13 +116,10 @@ export function reportUiLaunchToInput(timings: LaunchToInputTimings): void {
   // 否则 sum(6 段) != total,破坏看板依赖的恒等式。与总时长哨兵保持全有或全无。
   const negativeStage = Object.entries(stageMs).find(([, ms]) => ms < 0);
   if (negativeStage) {
-    logger.warn(
-      "[ui-perf] launch_to_input 某段为负(跨进程时钟偏移/回拨),整批丢弃",
-      {
-        stage: negativeStage[0],
-        ms: negativeStage[1],
-      },
-    );
+    logger.warn("[ui-perf] launch_to_input 某段为负(跨进程时钟偏移/回拨),整批丢弃", {
+      stage: negativeStage[0],
+      ms: negativeStage[1],
+    });
     return;
   }
   const properties = { session_id: sessionId };
@@ -376,10 +366,7 @@ function shouldReportInputLag(args: {
   if (args.isProgrammatic || args.isComposing) {
     return false;
   }
-  return (
-    args.lagMs > INPUT_LAG_REPORT_THRESHOLD_MS &&
-    args.lagMs <= INPUT_LAG_SANITY_MAX_MS
-  );
+  return args.lagMs > INPUT_LAG_REPORT_THRESHOLD_MS && args.lagMs <= INPUT_LAG_SANITY_MAX_MS;
 }
 
 export function recordInputLag(params: {
@@ -387,7 +374,7 @@ export function recordInputLag(params: {
   textLength: number;
   isProgrammatic: boolean;
   isComposing: boolean;
-  taskId?: string | undefined;
+  taskId?: string;
 }): void {
   if (
     !shouldReportInputLag({

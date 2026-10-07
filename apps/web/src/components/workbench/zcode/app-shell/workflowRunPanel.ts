@@ -1,24 +1,15 @@
 /**
- * zcode 照搬：`@/app-shell/workflowRunPanel.ts`（references/zcode/packages/ui/src/app-shell/workflowRunPanel.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-/**
  * workflow run 详情页的纯逻辑：Cancel 可用性、结果/失败面板判定、事件日志行摘要。
  *
  * 抽成纯函数是因为详情页里唯一有"规则"的部分就是这些，而它们全都能被穷举单测，
  * 不必渲染一张 React Flow 画布。组件只负责把这里的结果贴到 DOM 上。
  */
-
-import { workflowRunConcurrencyEventLine } from "@zui/app-shell/workflowRunThrottle";
 import {
   readWorkflowRunStopReason,
   type WorkflowRunStopReason,
-} from "@zui/components/workflow-graph/run-status-presentation";
-import type {
-  WorkflowRunActor,
-  WorkflowRunState,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
+} from "@zui/components/workflow-graph/run-status-presentation.js";
+import type { WorkflowRunActor, WorkflowRunState } from "@zcode/shared/zcode-protocol-v4";
+import { workflowRunConcurrencyEventLine } from "@zui/app-shell/workflowRunThrottle.js";
 
 /** 未知事件种类的兜底原文上限：事件日志绝不把整条 journal 灌进 DOM。 */
 const UNKNOWN_PAYLOAD_MAX_LENGTH = 200;
@@ -31,9 +22,7 @@ const UNKNOWN_PAYLOAD_MAX_LENGTH = 200;
  * 不给出一个点下去毫无反应的控件，不是为了兜底。run 缺席（被 8-run 上限淘汰或冷启动
  * 尚未投影）时同样不可取消：此时我们对它的在飞状态一无所知。
  */
-export function isWorkflowRunCancellable(
-  run: WorkflowRunState | undefined,
-): boolean {
+export function isWorkflowRunCancellable(run: WorkflowRunState | undefined): boolean {
   return run?.status === "running";
 }
 
@@ -44,9 +33,7 @@ export function isWorkflowRunCancellable(
  *
  * 投影缺席（被 8-run 上限淘汰）一律不可恢复：宁可少一个按钮，不给出一个点下去必被拒的控件。
  */
-export function isWorkflowRunResumable(
-  run: WorkflowRunState | undefined,
-): boolean {
+export function isWorkflowRunResumable(run: WorkflowRunState | undefined): boolean {
   return run?.resumable === true;
 }
 
@@ -72,9 +59,7 @@ type WorkflowRunResultView =
       message?: string;
     };
 
-export function workflowRunResultView(
-  run: WorkflowRunState | undefined,
-): WorkflowRunResultView {
+export function workflowRunResultView(run: WorkflowRunState | undefined): WorkflowRunResultView {
   if (!run) return { kind: "absent" };
   if (run.status === "errored" || run.status === "stopped") {
     const stopReason = readWorkflowRunStopReason(run);
@@ -86,10 +71,7 @@ export function workflowRunResultView(
     };
   }
   if (run.status === "completed") {
-    return {
-      kind: "completed",
-      ...(run.resultPreview ? { preview: run.resultPreview } : {}),
-    };
+    return { kind: "completed", ...(run.resultPreview ? { preview: run.resultPreview } : {}) };
   }
   return { kind: "none" };
 }
@@ -114,10 +96,7 @@ export interface WorkflowRunEventLine {
   truncated?: boolean;
 }
 
-type FormatMessage = (
-  descriptor: { id: string },
-  values?: Record<string, string>,
-) => string;
+type FormatMessage = (descriptor: { id: string }, values?: Record<string, string>) => string;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -138,15 +117,11 @@ function nonEmptyText(value: unknown): string | undefined {
 
 function errorMessage(value: unknown): string | undefined {
   if (!isRecord(value)) return undefined;
-  return typeof value.message === "string" && value.message.length > 0
-    ? value.message
-    : undefined;
+  return typeof value.message === "string" && value.message.length > 0 ? value.message : undefined;
 }
 
 function joinDetail(...parts: (string | undefined)[]): string | undefined {
-  const kept = parts.filter(
-    (part): part is string => part !== undefined && part.length > 0,
-  );
+  const kept = parts.filter((part): part is string => part !== undefined && part.length > 0);
   return kept.length > 0 ? kept.join(" · ") : undefined;
 }
 
@@ -164,15 +139,11 @@ function truncate(text: string, max: number): string {
 function reportItemSummary(item: unknown): string | undefined {
   if (item === undefined) return undefined;
   if (typeof item === "string") {
-    return item.length > 0
-      ? truncate(item, UNKNOWN_PAYLOAD_MAX_LENGTH)
-      : undefined;
+    return item.length > 0 ? truncate(item, UNKNOWN_PAYLOAD_MAX_LENGTH) : undefined;
   }
   try {
     const serialized = JSON.stringify(item);
-    return serialized === undefined
-      ? undefined
-      : truncate(serialized, UNKNOWN_PAYLOAD_MAX_LENGTH);
+    return serialized === undefined ? undefined : truncate(serialized, UNKNOWN_PAYLOAD_MAX_LENGTH);
   } catch {
     // 载荷已在 CLI 侧规范化成可 JSON 序列化的形态；真到不了这里也不能打挂一整页日志。
     return undefined;
@@ -224,15 +195,10 @@ export function workflowRunEventLines(
     switch (event.type) {
       case "run-started":
         // caps 不进这一行：并发度不是可操作信息。
-        return {
-          ...base,
-          label: formatMessage(key("runStarted")),
-          tone: "default",
-        };
+        return { ...base, label: formatMessage(key("runStarted")), tone: "default" };
 
       case "actor-created": {
-        const name =
-          typeof payload.name === "string" ? payload.name : undefined;
+        const name = typeof payload.name === "string" ? payload.name : undefined;
         return {
           ...base,
           label: formatMessage(key("actorCreated")),
@@ -244,8 +210,7 @@ export function workflowRunEventLines(
       }
 
       case "node-queued": {
-        const kind =
-          typeof payload.kind === "string" ? payload.kind : undefined;
+        const kind = typeof payload.kind === "string" ? payload.kind : undefined;
         const detail = joinDetail(refText(payload.instance), kind);
         return {
           ...base,
@@ -260,17 +225,14 @@ export function workflowRunEventLines(
         const detail = refText(payload.instance);
         return {
           ...base,
-          label: formatMessage(
-            key(event.type === "node-nudged" ? "nodeNudged" : "nodeDispatched"),
-          ),
+          label: formatMessage(key(event.type === "node-nudged" ? "nodeNudged" : "nodeDispatched")),
           ...(detail === undefined ? {} : { detail }),
           tone: "default",
         };
       }
 
       case "node-repairing": {
-        const attempt =
-          typeof payload.attempt === "number" ? String(payload.attempt) : "?";
+        const attempt = typeof payload.attempt === "number" ? String(payload.attempt) : "?";
         const detail = refText(payload.instance);
         return {
           ...base,
@@ -288,37 +250,24 @@ export function workflowRunEventLines(
             ? payload.outcome
             : undefined;
         const outcomeLabel = outcome
-          ? formatMessage({
-              id: `chat.toolCall.workflow.run.outcome.${outcome}`,
-            })
+          ? formatMessage({ id: `chat.toolCall.workflow.run.outcome.${outcome}` })
           : "";
-        const detail = joinDetail(
-          refText(payload.instance),
-          errorMessage(payload.error),
-        );
+        const detail = joinDetail(refText(payload.instance), errorMessage(payload.error));
         return {
           ...base,
-          label: formatMessage(
-            key(payload.cached === true ? "nodeSettledCached" : "nodeSettled"),
-            {
-              outcome: outcomeLabel,
-            },
-          ),
+          label: formatMessage(key(payload.cached === true ? "nodeSettledCached" : "nodeSettled"), {
+            outcome: outcomeLabel,
+          }),
           ...(detail === undefined ? {} : { detail }),
           // journal 里 failed 与 cancelled 语义不同，但这一行只需要「这步没成」。
-          tone:
-            outcome === "failed" || outcome === "cancelled"
-              ? "failed"
-              : "default",
+          tone: outcome === "failed" || outcome === "cancelled" ? "failed" : "default",
         };
       }
 
       case "usage-updated": {
         // 事件直接携带已花总量；权威值在状态头的用量行上。
         const spentTokens =
-          typeof payload.spentTokens === "number"
-            ? payload.spentTokens
-            : undefined;
+          typeof payload.spentTokens === "number" ? payload.spentTokens : undefined;
         return {
           ...base,
           label: formatMessage(key("usageUpdated")),
@@ -330,8 +279,7 @@ export function workflowRunEventLines(
       }
 
       case "log": {
-        const message =
-          typeof payload.message === "string" ? payload.message : undefined;
+        const message = typeof payload.message === "string" ? payload.message : undefined;
         return {
           ...base,
           label: formatMessage(key("log")),
@@ -344,8 +292,7 @@ export function workflowRunEventLines(
       case "import-cache-closed": {
         // amend-resume 的导入缓存关门：谁的第一笔写入关的门。
         // detail = 子代理名（有则）+ 实例；world.run 关的门没有名字，只有实例。
-        const actorName =
-          typeof payload.actorName === "string" ? payload.actorName : undefined;
+        const actorName = typeof payload.actorName === "string" ? payload.actorName : undefined;
         const detail = joinDetail(actorName, refText(payload.instance));
         return {
           ...base,
@@ -356,16 +303,12 @@ export function workflowRunEventLines(
       }
 
       case "phase-entered": {
-        const name =
-          typeof payload.name === "string" ? payload.name : undefined;
-        const ordinal =
-          typeof payload.ordinal === "number" ? payload.ordinal : 1;
+        const name = typeof payload.name === "string" ? payload.name : undefined;
+        const ordinal = typeof payload.ordinal === "number" ? payload.ordinal : 1;
         return {
           ...base,
           label: formatMessage(key("phaseEntered")),
-          ...(name === undefined
-            ? {}
-            : { detail: ordinal >= 2 ? `${name} · ${ordinal}` : name }),
+          ...(name === undefined ? {} : { detail: ordinal >= 2 ? `${name} · ${ordinal}` : name }),
           tone: "default",
         };
       }
@@ -376,10 +319,7 @@ export function workflowRunEventLines(
        * 事件日志的职责是"引擎发过什么、什么时候"，不是第二个产物视图。
        */
       case "report": {
-        const detail = joinDetail(
-          refText(payload.instance),
-          reportItemSummary(payload.item),
-        );
+        const detail = joinDetail(refText(payload.instance), reportItemSummary(payload.item));
         return {
           ...base,
           label: formatMessage(key("report")),
@@ -400,17 +340,13 @@ export function workflowRunEventLines(
        * 完整的问题正文另有主场——上面的「待答问题」区。
        */
       case "escalation-raised": {
-        const question =
-          typeof payload.question === "string" ? payload.question : undefined;
+        const question = typeof payload.question === "string" ? payload.question : undefined;
         // actor 名缺席（匿名 actor）时退回站点实例：这一行宁可说 `actor#1@1`，也不能不说是谁。
-        const actorName =
-          typeof payload.actorName === "string" ? payload.actorName : undefined;
+        const actorName = typeof payload.actorName === "string" ? payload.actorName : undefined;
         const detail = joinDetail(
           nonEmptyText(payload.qid),
           actorName ?? refText(payload.actor),
-          question === undefined
-            ? undefined
-            : truncate(question, UNKNOWN_PAYLOAD_MAX_LENGTH),
+          question === undefined ? undefined : truncate(question, UNKNOWN_PAYLOAD_MAX_LENGTH),
         );
         return {
           ...base,
@@ -422,13 +358,10 @@ export function workflowRunEventLines(
       }
 
       case "escalation-resolved": {
-        const answer =
-          typeof payload.answer === "string" ? payload.answer : undefined;
+        const answer = typeof payload.answer === "string" ? payload.answer : undefined;
         const detail = joinDetail(
           nonEmptyText(payload.qid),
-          answer === undefined
-            ? undefined
-            : truncate(answer, UNKNOWN_PAYLOAD_MAX_LENGTH),
+          answer === undefined ? undefined : truncate(answer, UNKNOWN_PAYLOAD_MAX_LENGTH),
         );
         return {
           ...base,
@@ -451,18 +384,14 @@ export function workflowRunEventLines(
           ...base,
           label: formatMessage(key("runSettled"), { status: statusLabel }),
           ...(detail === undefined ? {} : { detail }),
-          tone:
-            status === "errored" || status === "stopped" ? "failed" : "default",
+          tone: status === "errored" || status === "stopped" ? "failed" : "default",
         };
       }
 
       default: {
-        // 自适应并发的三条观察事件（node-waiting / node-executing / concurrency-changed）
+        // 并发的四条事件（node-waiting / node-executing / concurrency-changed / run-caps-changed）
         // 住在同族的 workflowRunThrottle.ts（max-lines 门）。
-        const concurrencyLine = workflowRunConcurrencyEventLine(
-          event,
-          formatMessage,
-        );
+        const concurrencyLine = workflowRunConcurrencyEventLine(event, formatMessage);
         if (concurrencyLine !== undefined) return concurrencyLine;
         // 例如引擎为长上下文压缩预留的 `compaction`（v1 从不发出）。它将来一出现，
         // 这里必须仍给出一条有信息量的行，而不是空白。
@@ -555,16 +484,12 @@ export function workflowActorStartState(
 ): WorkflowActorGate {
   const run = runs?.find((candidate) => candidate.runId === slot.runId);
   const actor = run?.actors.find(
-    (candidate) =>
-      candidate.siteId === slot.siteId && candidate.ordinal === slot.ordinal,
+    (candidate) => candidate.siteId === slot.siteId && candidate.ordinal === slot.ordinal,
   );
   const sessionId = actor?.sessionId ?? slot.actorSessionId;
   const withSession = sessionId === undefined ? {} : { sessionId };
   if (run === undefined || actor === undefined) {
-    return {
-      state: sessionId === undefined ? "notStarted" : "unknown",
-      ...withSession,
-    };
+    return { state: sessionId === undefined ? "notStarted" : "unknown", ...withSession };
   }
   // 归属按 `siteId` + `ordinal`（journal 的键）比对：序号错了就是另一个实例，而
   // world-read 节点两个字段都缺席，于是从不给任何人开门。

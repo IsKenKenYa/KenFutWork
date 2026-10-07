@@ -1,15 +1,6 @@
-/**
- * zcode 照搬：`@/hooks/useWorkflowSubagentModelProviderName.ts`（references/zcode/packages/ui/src/hooks/useWorkflowSubagentModelProviderName.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import type { ZCodeConfigOption } from "@zui/lib/zcode-shared";
-import {
-  selectWorkspaceZCodeState,
-  useZCodeSessionStore,
-} from "@zui/store/zcodeSessionStore";
 import { useMemo } from "react";
+import type { ZCodeConfigOption } from "@zcode/shared";
+import { selectWorkspaceZCodeState, useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 
 /**
  * 子代理模型的 provider 名从哪儿来：会话的模型清单
@@ -23,9 +14,7 @@ import { useMemo } from "react";
 function workflowSubagentProviderNameLookup(
   configOptions: readonly ZCodeConfigOption[] | null | undefined,
 ): ((providerId: string) => string | undefined) | undefined {
-  const entries = configOptions?.find(
-    (option) => option.category === "model",
-  )?.options;
+  const entries = configOptions?.find((option) => option.category === "model")?.options;
   if (entries === undefined) {
     return undefined;
   }
@@ -40,9 +29,7 @@ function workflowSubagentProviderNameLookup(
       names.set(providerId, providerName);
     }
   }
-  return names.size === 0
-    ? undefined
-    : (providerId: string) => names.get(providerId);
+  return names.size === 0 ? undefined : (providerId: string) => names.get(providerId);
 }
 
 /**
@@ -56,11 +43,7 @@ export function useWorkflowSubagentModelProviderName(
   const configOptions = useZCodeSessionStore((state) =>
     workspacePath === undefined
       ? undefined
-      : selectWorkspaceZCodeState(state, workspacePath, workspaceIdentity)
-          .configOptions,
+      : selectWorkspaceZCodeState(state, workspacePath, workspaceIdentity).configOptions,
   );
-  return useMemo(
-    () => workflowSubagentProviderNameLookup(configOptions),
-    [configOptions],
-  );
+  return useMemo(() => workflowSubagentProviderNameLookup(configOptions), [configOptions]);
 }

@@ -1,18 +1,13 @@
 /**
- * zcode 照搬：`@/shortcuts/label.ts`（references/zcode/packages/ui/src/shortcuts/label.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-/**
  * 快捷键展示 label——绑定串 → 平台展示格式化。
  * 从 bindings.ts 拆出（展示层独立于匹配/录制/冲突，且 bindings.ts 有 max-lines 门禁）。
  */
-import { parseShortcutBinding } from "@zui/lib/zcode-shared";
+import { parseShortcutBinding } from "@zcode/shared";
 
 import {
   isAppleKeyboardPlatform,
   type KeyboardShortcutPlatformInfo,
-} from "../lib/keyboardShortcuts";
+} from "../lib/keyboardShortcuts.js";
 
 /**
  * 绑定串 → 逐键 token（设置页键帽渲染用）：macOS ["⇧","⌘","P"]、
@@ -29,11 +24,7 @@ export function formatShortcutBindingLabelParts(
   }
 
   const displayKey =
-    parsed.key === "="
-      ? "+"
-      : parsed.key.length === 1
-        ? parsed.key.toUpperCase()
-        : parsed.key;
+    parsed.key === "=" ? "+" : parsed.key.length === 1 ? parsed.key.toUpperCase() : parsed.key;
   const isApple = isAppleKeyboardPlatform(platformInfo);
 
   if (isApple) {

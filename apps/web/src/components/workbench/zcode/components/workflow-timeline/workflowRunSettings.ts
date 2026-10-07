@@ -1,8 +1,3 @@
-/**
- * zcode 照搬：`@/components/workflow-timeline/workflowRunSettings.ts`（references/zcode/packages/ui/src/components/workflow-timeline/workflowRunSettings.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
 // ============================================================
 // 「配置」弹层的纯规则
 // ============================================================
@@ -10,16 +5,13 @@
 // 被拒的 ACK 说哪句话。纯函数、不碰 store，逐条可穷举。
 
 import {
+  WORKFLOW_RUN_SETTINGS_REJECTED_FAULT_PREFIX,
+  workflowRunSettingsRejectionReasonSchema,
   type AmendWorkflowRunSettingsPayload,
   type CommandAck,
-  WORKFLOW_RUN_SETTINGS_REJECTED_FAULT_PREFIX,
   type WorkflowRunState,
-  workflowRunSettingsRejectionReasonSchema,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import {
-  formatModelPickerValue,
-  parseModelPickerValue,
-} from "@zui/lib/zcodeSessionProjection";
+} from "@zcode/shared/zcode-protocol-v4";
+import { formatModelPickerValue, parseModelPickerValue } from "@zui/lib/zcodeSessionProjection.js";
 
 /**
  * 会话当前模型（「会话模型」那一项的名字从它来）：优先会话持久的稀疏选择，退回 UI effective 的
@@ -27,11 +19,7 @@ import {
  */
 export function workflowSessionModelOf(
   config:
-    | {
-        modelSelection?: { providerId: string; modelId: string };
-        provider: string;
-        model: string;
-      }
+    | { modelSelection?: { providerId: string; modelId: string }; provider: string; model: string }
     | null
     | undefined,
 ): { providerId: string; modelId: string } | undefined {
@@ -56,10 +44,7 @@ export interface WorkflowRunSettingsDraft {
 }
 
 /** Apply 发出去的那部分载荷（workId 由宿主补）。 */
-export type WorkflowRunSettingsChange = Omit<
-  AmendWorkflowRunSettingsPayload,
-  "workId"
->;
+export type WorkflowRunSettingsChange = Omit<AmendWorkflowRunSettingsPayload, "workId">;
 
 /**
  * 哪些 run 能配置：
@@ -67,9 +52,7 @@ export type WorkflowRunSettingsChange = Omit<
  * 后继）；errored 能（换个模型重试是最常见的修复）；completed 不能（每个 ask 都会从缓存重放，没有
  * 东西会在新设置下跑）；不在投影里的 run 没有设置可显示。宿主回调与灰度门由调用方另叠。
  */
-export function isWorkflowRunConfigurable(
-  run: WorkflowRunState | undefined,
-): boolean {
+export function isWorkflowRunConfigurable(run: WorkflowRunState | undefined): boolean {
   if (run === undefined) return false;
   switch (run.status) {
     case "pending":
@@ -87,9 +70,7 @@ export function isWorkflowRunConfigurable(
  * 本机的并发天花板：优先 `run.concurrencyCeiling`（`run-started` 随带、恒在），老 CLI 没发它时退回
  * 读数芯片自己的水位 `concurrency.ceiling`。都没有即未知——步进器没有上限、不写提示。
  */
-export function workflowRunSettingsCeiling(
-  run: WorkflowRunState,
-): number | undefined {
+export function workflowRunSettingsCeiling(run: WorkflowRunState): number | undefined {
   return run.concurrencyCeiling ?? run.concurrency?.ceiling;
 }
 
@@ -122,16 +103,12 @@ export function workflowRunSettingsModelCanonical(
   return formatModelPickerValue({
     providerId: model.providerId,
     modelId: model.modelId,
-    ...(model.level === undefined
-      ? {}
-      : { options: { reasoningLevel: model.level } }),
+    ...(model.level === undefined ? {} : { options: { reasoningLevel: model.level } }),
   });
 }
 
 /** 打开弹层时的起点：两项都取 run 自己的当前设置。界缺席时停在天花板上（天花板也未知则为 null）。 */
-export function initialWorkflowRunSettingsDraft(
-  run: WorkflowRunState,
-): WorkflowRunSettingsDraft {
+export function initialWorkflowRunSettingsDraft(run: WorkflowRunState): WorkflowRunSettingsDraft {
   const limit = run.concurrency?.limit;
   return {
     model: workflowRunSettingsModelOf(run.subagentModel),
@@ -140,10 +117,7 @@ export function initialWorkflowRunSettingsDraft(
 }
 
 /** 界的归一：达到或超过天花板即「没有自己的界」。 */
-function normalizedBound(
-  bound: number | null,
-  ceiling: number | undefined,
-): number | null {
+function normalizedBound(bound: number | null, ceiling: number | undefined): number | null {
   if (bound === null) return null;
   return ceiling !== undefined && bound >= ceiling ? null : bound;
 }
@@ -169,18 +143,33 @@ export function workflowRunSettingsChange(
 }
 
 /** 步进器夹界：下限 1，上限天花板（未知则不设上限）。 */
-export function clampWorkflowRunSettingsBound(
-  value: number,
-  ceiling: number | undefined,
-): number {
+export function clampWorkflowRunSettingsBound(value: number, ceiling: number | undefined): number {
   const floor = Math.max(1, Math.floor(value));
   return ceiling === undefined ? floor : Math.min(floor, ceiling);
 }
 
-/** 后果句的文案 key：随 run 状态换最后一句（completed 不会走到这里）。 */
+/**
+ * 只动了并发上限（`null` = 解除本 run 自己的界，也算）。判据是载荷里**只有**这一个键——
+ * 与 agent 侧的路由同一条：那里也只认这一种载荷，多一个字段就走原来的修订。
+ */
+function isConcurrencyOnlyChange(change: WorkflowRunSettingsChange | undefined): boolean {
+  if (change === undefined) return false;
+  return Object.keys(change).length === 1 && change.maxConcurrency !== undefined;
+}
+
+/**
+ * 后果句的文案 key：随 run 状态换最后一句（completed 不会走到这里）。
+ *
+ * **正在跑**的 run 只改并发上限时会就地生效，不停止或另起 run，
+ * 因此这里显示并发调整的后果说明。`pending` 不算在内：它的引擎可能还没建起来，就地设不上就照旧退回一次
+ * 真正的修订，那时原句仍然是对的。
+ */
 export function workflowRunSettingsConsequenceId(
   status: WorkflowRunState["status"],
+  change?: WorkflowRunSettingsChange,
 ): string {
+  if (status === "running" && isConcurrencyOnlyChange(change))
+    return "chat.toolCall.workflow.run.settings.consequence.concurrencyLive";
   switch (status) {
     case "pending":
       return "chat.toolCall.workflow.run.settings.consequence.pending";
@@ -216,12 +205,8 @@ export function describeWorkflowRunSettingsRejection(
   const code = ack.reasonCode ?? ack.status;
   let reason = "generic";
   if (ack.reasonCode === CAPABILITY_UNSUPPORTED_FAULT) reason = "unsupported";
-  else if (
-    ack.reasonCode?.startsWith(WORKFLOW_RUN_SETTINGS_REJECTED_FAULT_PREFIX)
-  ) {
-    const suffix = ack.reasonCode.slice(
-      WORKFLOW_RUN_SETTINGS_REJECTED_FAULT_PREFIX.length,
-    );
+  else if (ack.reasonCode?.startsWith(WORKFLOW_RUN_SETTINGS_REJECTED_FAULT_PREFIX)) {
+    const suffix = ack.reasonCode.slice(WORKFLOW_RUN_SETTINGS_REJECTED_FAULT_PREFIX.length);
     if (KNOWN_REASONS.has(suffix)) reason = suffix;
   }
   return { reason, code, ...(ack.message ? { message: ack.message } : {}) };

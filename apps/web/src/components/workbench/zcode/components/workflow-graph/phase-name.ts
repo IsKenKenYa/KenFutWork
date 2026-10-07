@@ -1,14 +1,5 @@
-/**
- * zcode 照搬：`@/components/workflow-graph/phase-name.ts`（references/zcode/packages/ui/src/components/workflow-graph/phase-name.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import type { LaneNameFormatter } from "@zui/components/workflow-graph/lane-name";
-import {
-  IMPLICIT_PHASE_ID,
-  UNPHASED_PHASE_ID,
-} from "@zui/components/workflow-graph/types";
+import { IMPLICIT_PHASE_ID, UNPHASED_PHASE_ID } from "./types.js";
+import type { LaneNameFormatter } from "./lane-name.js";
 
 /**
  * 阶段显示名的唯一策略点，与 lane-name.ts 逐条同构（同一件事只有一套规则）：
@@ -26,10 +17,7 @@ export interface PhaseNaming {
   name?: string;
 }
 
-export function phaseDisplayName(
-  phase: PhaseNaming,
-  formatMessage: LaneNameFormatter,
-): string {
+export function phaseDisplayName(phase: PhaseNaming, formatMessage: LaneNameFormatter): string {
   if (phase.name !== undefined) return phase.name;
   if (phase.id === UNPHASED_PHASE_ID) {
     return formatMessage({ id: "chat.toolCall.workflow.graph.phase.unphased" });
@@ -64,8 +52,5 @@ export function phaseNameMatches(
 ): boolean {
   if (displayName === undefined || runtimeName === undefined) return false;
   if (displayName === runtimeName) return true;
-  return (
-    displayName.length >= DISPLAY_PHASE_NAME_BOUND &&
-    runtimeName.startsWith(displayName)
-  );
+  return displayName.length >= DISPLAY_PHASE_NAME_BOUND && runtimeName.startsWith(displayName);
 }

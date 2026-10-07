@@ -1,9 +1,12 @@
 import type { BrandKitDetail } from "@kenfutwork/shared";
 import { z } from "zod";
 import type { ToolDefinition } from "../../kernel/types.js";
-import type { AuthenticatedUser } from "../auth/types.js";
 import type { CanvasRepository } from "../canvas/repository.js";
-import type { BrandKitService } from "./brand-kit-service.js";
+import type { LocalInstanceService } from "../local-instance/types.js";
+import {
+  type BrandKitService,
+  BrandKitServiceError,
+} from "./brand-kit-service.js";
 
 const brandKitSchema = z.object({});
 
@@ -11,12 +14,13 @@ const brandKitSchema = z.object({});
  * `get_brand_kit`（design preset）：复用 brand-kit 服务读取套件（含签名 URL
  * 解析），经内核工具注册表（`ctx.tools`）贡献。
  *
- * 身份与套件绑定都在 execute 期从 `execCtx` 解析：`accessToken`/`userId`
- * 构造服务侧 `:user` 隔离谓词；`brandKitId` 由画布 → 项目单条 JOIN 重推导
+ * 身份与套件绑定都在 execute 期从 `execCtx` 解析：可信 `instanceId`
+ * 构造服务侧 `:instance` 隔离谓词；`brandKitId` 由画布 → 项目单条 JOIN 重推导
  * （与 runtime 起始期解析同一口径），绑定不存在时如实告知。
  */
 export function createBrandKitToolDefinition(deps: {
   brandKitService: BrandKitService;
+  localInstance: LocalInstanceService;
   canvasRepository?: CanvasRepository;
 }): ToolDefinition {
   return {
@@ -27,21 +31,24 @@ export function createBrandKitToolDefinition(deps: {
     zodSchema: brandKitSchema,
     parameters: z.toJSONSchema(brandKitSchema),
     execute: async (_args, execCtx) => {
-      const accessToken = execCtx.accessToken;
-      const userId = execCtx.userId;
-
-      if (typeof accessToken !== "string" || typeof userId !== "string") {
-        return JSON.stringify({
-          error: "Missing access token or user id in run context",
-        });
+      const actor = execCtx.actor;
+      if (!actor) throw new Error("品牌工具缺少可信本地调用上下文。");
+      if (
+        actor.instanceId !== execCtx.instanceId ||
+        (execCtx.scopeHandle &&
+          execCtx.scopeHandle.describe().instanceId !== actor.instanceId)
+      ) {
+        throw new Error("品牌实例与可信 Task 工作域不匹配。");
       }
+      await deps.localInstance.resolve(actor);
 
       // 画布 → 项目 → 绑定的品牌套件（单条 JOIN，工作区作用域）
       const brandKitId =
-        execCtx.canvasId && execCtx.workspaceId && deps.canvasRepository
-          ? await deps.canvasRepository
-              .findProjectBrandKitId(execCtx.workspaceId, execCtx.canvasId)
-              .catch(() => null)
+        execCtx.canvasId && execCtx.instanceId && deps.canvasRepository
+          ? await deps.canvasRepository.findProjectBrandKitId(
+              execCtx.instanceId,
+              execCtx.canvasId,
+            )
           : null;
 
       if (!brandKitId) {
@@ -51,18 +58,13 @@ export function createBrandKitToolDefinition(deps: {
         });
       }
 
-      const user: AuthenticatedUser = {
-        accessToken,
-        email: "",
-        id: userId,
-        userMetadata: {},
-      };
-
       let kit: BrandKitDetail;
       try {
-        kit = await deps.brandKitService.getKit(user, brandKitId);
-      } catch {
-        return JSON.stringify({ error: "Brand kit not found" });
+        kit = await deps.brandKitService.getKit(actor, brandKitId);
+      } catch (error) {
+        if (error instanceof BrandKitServiceError && error.statusCode === 404)
+          return JSON.stringify({ error: "Brand kit not found" });
+        throw error;
       }
 
       const assets = kit.assets;

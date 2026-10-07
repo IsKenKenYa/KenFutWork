@@ -1,15 +1,20 @@
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 import type { ServerEnv } from "../../config/env.js";
-import type { ToolRegistry } from "../../kernel/types.js";
+import type { ToolExecutionContext, ToolRegistry } from "../../kernel/types.js";
+import type { ComputerUseMcpConnection } from "../computer-use/mcp-backend.js";
 import { type McpClientLike, registerMcpServerTools } from "./mcp-tools.js";
 import type {
+  McpServerCreateRaw,
   McpServerPatch,
   McpServerStore,
-  McpServerUpsertInput,
   PublicMcpServer,
 } from "./server-store.js";
+import { mcpFailure } from "./task-mcp-context.js";
 
 /**
  * MCP server 运行态管理（连接生命周期 + 配置变更后的收敛）。
@@ -32,8 +37,11 @@ export interface McpServerStatus {
   source: "env" | "managed";
   enabled: boolean;
   status: McpServerStatusState;
+  kind: "stdio" | "http";
   command: string;
   args: string[];
+  /** http 类型的远程端点 URL（stdio 为 null）。 */
+  url: string | null;
   envKeys: string[];
   toolCount: number;
   /** 上次连接失败原因（status=error 时有值）。 */
@@ -41,10 +49,11 @@ export interface McpServerStatus {
 }
 
 export interface McpService {
+  computerUseConnections(): Promise<ComputerUseMcpConnection[]>;
   listStatuses(): Promise<McpServerStatus[]>;
   /** 启动期连接：环境变量 + 库内启用项。 */
   connectAll(): Promise<void>;
-  create(input: McpServerUpsertInput): Promise<PublicMcpServer>;
+  create(input: McpServerCreateRaw): Promise<PublicMcpServer>;
   update(id: string, patch: McpServerPatch): Promise<PublicMcpServer | null>;
   setEnabled(id: string, enabled: boolean): Promise<PublicMcpServer | null>;
   remove(id: string): Promise<number>;
@@ -57,17 +66,31 @@ interface Connection {
   client: Client;
   disposeTools: () => void;
   toolCount: number;
+  call: McpClientLike["callTool"];
 }
 
 export function createMcpService(options: {
   env: ServerEnv;
   registry: ToolRegistry;
   store: McpServerStore;
+  resolveTimeoutMs?: () => Promise<number>;
 }): McpService {
   /** name → 已连接（含工具注销器）。 */
   const connections = new Map<string, Connection>();
   /** name → 上次失败原因（连接成功时清除）。 */
   const failures = new Map<string, string>();
+  const pending = new Map<string, Promise<void>>();
+  const initializing = new Set<Client>();
+  let closed = false;
+  const ensureOpen = () => {
+    if (closed) throw new Error("MCP服务已关闭，禁止迟到连接或配置变更。");
+  };
+  const requestOptions = async (signal?: AbortSignal) => {
+    const timeout =
+      (await options.resolveTimeoutMs?.()) ??
+      AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs;
+    return { timeout, maxTotalTimeout: timeout, ...(signal ? { signal } : {}) };
+  };
 
   function envServers() {
     return options.env.mcpServers ?? [];
@@ -75,34 +98,64 @@ export function createMcpService(options: {
 
   async function connect(
     name: string,
-    command: string,
-    args: string[],
-    env: Record<string, string>,
+    spec: { kind: "stdio" | "http"; command: string; url: string | null; args: string[]; env: Record<string, string> },
   ) {
+    ensureOpen();
     await disconnect(name);
+    const mcpClient = new Client({
+      name: "kenfutwork-server",
+      version: options.env.version,
+    });
+    let closedDuringConnect = false;
+    mcpClient.onclose = () => {
+      closedDuringConnect = true;
+      const connection = connections.get(name);
+      if (connection?.client !== mcpClient) return;
+      connections.delete(name);
+      connection.disposeTools();
+      if (!closed) failures.set(name, "MCP连接已断开，请在库存中重连。");
+    };
+    initializing.add(mcpClient);
     try {
-      const transport = new StdioClientTransport({
-        command,
-        args,
-        env,
-      });
-      const mcpClient = new Client({
-        name: "kenfutwork-server",
-        version: options.env.version,
-      });
-      await mcpClient.connect(transport);
+      if (spec.kind === "http" && spec.url) {
+        const url = new URL(spec.url);
+        try {
+          await mcpClient.connect(new StreamableHTTPClientTransport(url) as Parameters<Client["connect"]>[0], await requestOptions());
+        } catch (streamableError) {
+          ensureOpen();
+          try {
+            closedDuringConnect = false;
+            await mcpClient.connect(new SSEClientTransport(url), await requestOptions());
+          } catch {
+            throw streamableError;
+          }
+        }
+      } else {
+        await mcpClient.connect(new StdioClientTransport({
+          command: spec.command, args: spec.args, env: spec.env,
+        }), await requestOptions());
+      }
       const client: McpClientLike = {
         listTools: async () => {
-          const result = await mcpClient.listTools();
+          const result = await mcpClient.listTools(
+            undefined,
+            await requestOptions(),
+          );
           return { tools: result.tools };
         },
-        callTool: async (callArgs) =>
-          await mcpClient.callTool({
-            name: callArgs.name,
-            ...(callArgs.arguments ? { arguments: callArgs.arguments } : {}),
-          }),
+        callTool: async (callArgs, signal) =>
+          await mcpClient.callTool(
+            {
+              name: callArgs.name,
+              ...(callArgs.arguments ? { arguments: callArgs.arguments } : {}),
+            },
+            undefined,
+            await requestOptions(signal),
+          ),
       };
       const { tools } = await client.listTools();
+      ensureOpen();
+      if (closedDuringConnect) throw new Error("MCP握手期间连接已经关闭。");
       const disposeTools = registerMcpServerTools(
         options.registry,
         name,
@@ -113,15 +166,19 @@ export function createMcpService(options: {
         client: mcpClient,
         disposeTools,
         toolCount: tools.length,
+        call: client.callTool,
       });
       failures.delete(name);
       console.log(
         `[mcp] server ${name} connected, ${tools.length} tools registered.`,
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      await mcpClient.close().catch(() => {});
+      const message = mcpFailure(error, spec.env, "mcp_connect_failed").message;
       failures.set(name, message);
       console.warn(`[mcp] server ${name} 连接失败，跳过其工具：${message}`);
+    } finally {
+      initializing.delete(mcpClient);
     }
   }
 
@@ -145,16 +202,33 @@ export function createMcpService(options: {
 
   async function reconcile(server: {
     name: string;
+    kind: "stdio" | "http";
     command: string;
+    url: string | null;
     args: string[];
     env: Record<string, string>;
     enabled: boolean;
   }) {
-    if (!server.enabled) {
-      await disconnect(server.name);
-      return;
-    }
-    await connect(server.name, server.command, server.args, server.env);
+    ensureOpen();
+    const prior = pending.get(server.name) ?? Promise.resolve();
+    const next = prior
+      .catch(() => {})
+      .then(async () => {
+        ensureOpen();
+        const current = (await effectiveServers()).find(
+          (candidate) => candidate.name === server.name,
+        );
+        if (!current?.enabled) {
+          await disconnect(server.name);
+          return;
+        }
+        await connect(current.name, current);
+      });
+    const tracked = next.finally(() => {
+      if (pending.get(server.name) === tracked) pending.delete(server.name);
+    });
+    pending.set(server.name, tracked);
+    await tracked;
   }
 
   async function toStatus(server: {
@@ -162,7 +236,9 @@ export function createMcpService(options: {
     name: string;
     source: "env" | "managed";
     enabled: boolean;
+    kind: "stdio" | "http";
     command: string;
+    url: string | null;
     args: string[];
     envKeys: string[];
   }): Promise<McpServerStatus> {
@@ -190,7 +266,9 @@ export function createMcpService(options: {
       .map((server) => ({
         id: null,
         name: server.name,
+        kind: "stdio" as const,
         command: server.command,
+        url: null,
         args: server.args ?? [],
         env: server.env ?? {},
         enabled: true,
@@ -203,6 +281,37 @@ export function createMcpService(options: {
   }
 
   return {
+    async computerUseConnections() {
+      const statuses = await this.listStatuses();
+      return [...connections].flatMap(([name, connection]) => {
+        const capability = connection.client.getServerCapabilities()
+          ?.experimental?.["kenfutwork.computer-use"] as
+          | { version?: number }
+          | undefined;
+        if (capability?.version !== 1) return [];
+        const status = statuses.find((row) => row.name === name);
+        return [
+          {
+            id: status?.id ?? `env:${name}`,
+            name,
+            call: async (
+              tool: string,
+              args: Record<string, unknown>,
+              context: ToolExecutionContext,
+            ) => {
+              ensureOpen();
+              context.signal?.throwIfAborted();
+              if (connections.get(name) !== connection)
+                throw new Error("所选桌面MCP连接已断开或被替换，请重新选择");
+              return connection.call(
+                { name: tool, arguments: args },
+                context.signal,
+              );
+            },
+          },
+        ];
+      });
+    },
     async listStatuses() {
       const servers = await effectiveServers();
       return Promise.all(
@@ -212,7 +321,9 @@ export function createMcpService(options: {
             name: server.name,
             source: server.source,
             enabled: server.enabled,
+            kind: server.kind,
             command: server.command,
+            url: server.url,
             args: server.args,
             envKeys: Object.keys(server.env),
           }),
@@ -249,7 +360,14 @@ export function createMcpService(options: {
       }
     },
 
-    async create(input) {
+    async create(rawInput) {
+      ensureOpen();
+      const kind = rawInput.kind ?? "stdio";
+      const input = {
+        ...rawInput, kind,
+        command: kind === "http" ? "" : (rawInput.command ?? ""),
+        url: kind === "http" ? (rawInput.url ?? null) : null,
+      };
       const created = await options.store.create(input);
       await reconcile(created);
       // 回读公开形态（env 值不下发）
@@ -258,6 +376,7 @@ export function createMcpService(options: {
     },
 
     async update(id, patch) {
+      ensureOpen();
       const updated = await options.store.update(id, patch);
       if (!updated) {
         return null;
@@ -268,6 +387,7 @@ export function createMcpService(options: {
     },
 
     async setEnabled(id, enabled) {
+      ensureOpen();
       const updated = await options.store.setEnabled(id, enabled);
       if (!updated) {
         return null;
@@ -278,16 +398,17 @@ export function createMcpService(options: {
     },
 
     async remove(id) {
+      ensureOpen();
       const stored = (await options.store.list()).find(
         (server) => server.id === id,
       );
-      if (stored) {
-        await disconnect(stored.name);
-      }
-      return options.store.remove(id);
+      const removed = await options.store.remove(id);
+      if (stored) await reconcile({ ...stored, enabled: false });
+      return removed;
     },
 
     async reconnect(idOrName) {
+      ensureOpen();
       // 库内条目按 id 定位；环境变量条目没有 id（只读），允许按名称重连
       const statuses = await this.listStatuses();
       const target =
@@ -309,7 +430,9 @@ export function createMcpService(options: {
         (envFallback
           ? {
               name: envFallback.name,
+              kind: "stdio" as const,
               command: envFallback.command,
+              url: null,
               args: envFallback.args ?? [],
               env: envFallback.env ?? {},
               enabled: true,
@@ -328,6 +451,11 @@ export function createMcpService(options: {
     },
 
     async shutdown() {
+      closed = true;
+      await Promise.allSettled(
+        [...initializing].map((client) => client.close()),
+      );
+      await Promise.allSettled([...pending.values()]);
       for (const name of [...connections.keys()]) {
         await disconnect(name);
       }

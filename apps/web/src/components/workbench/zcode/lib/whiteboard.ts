@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/lib/whiteboard.ts`（references/zcode/packages/ui/src/lib/whiteboard.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined），仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-import { createUuid } from "@zui/lib/zcode-shared";
+import { createUuid } from "@zcode/shared";
 
 export type WhiteboardTool = "pen" | "eraser";
 
@@ -48,7 +43,7 @@ export function buildWhiteboardWorkspaceKey({
   workspaceIdentity,
 }: {
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
+  workspaceIdentity?: string;
 }): string {
   return workspaceIdentity?.trim() || workspacePath;
 }
@@ -60,10 +55,7 @@ export function createWhiteboardDocument(params: {
   const now = Date.now();
   return {
     id: `whiteboard:${createUuid()}`,
-    name: createUniqueWhiteboardName(
-      params.existingNames,
-      params.defaultNamePrefix,
-    ),
+    name: createUniqueWhiteboardName(params.existingNames, params.defaultNamePrefix),
     width: WHITEBOARD_CANVAS_WIDTH,
     height: WHITEBOARD_CANVAS_HEIGHT,
     strokes: [],
@@ -111,17 +103,13 @@ export function drawWhiteboardDocument(
   } = {},
 ) {
   const scale = options.scale ?? 1;
-  const backgroundColor =
-    options.backgroundColor ?? WHITEBOARD_BACKGROUND_COLOR;
+  const backgroundColor = options.backgroundColor ?? WHITEBOARD_BACKGROUND_COLOR;
   context.save();
   context.setTransform(scale, 0, 0, scale, 0, 0);
   context.clearRect(0, 0, board.width, board.height);
   context.fillStyle = backgroundColor;
   context.fillRect(0, 0, board.width, board.height);
-  for (const stroke of [
-    ...board.strokes,
-    ...(options.draftStroke ? [options.draftStroke] : []),
-  ]) {
+  for (const stroke of [...board.strokes, ...(options.draftStroke ? [options.draftStroke] : [])]) {
     drawWhiteboardStroke(context, stroke, backgroundColor);
   }
   context.restore();
@@ -139,8 +127,7 @@ function drawWhiteboardStroke(
 
   context.save();
   context.globalCompositeOperation = "source-over";
-  context.strokeStyle =
-    stroke.tool === "eraser" ? backgroundColor : stroke.color;
+  context.strokeStyle = stroke.tool === "eraser" ? backgroundColor : stroke.color;
   context.fillStyle = stroke.tool === "eraser" ? backgroundColor : stroke.color;
   context.lineWidth = stroke.width;
   context.lineCap = "round";
@@ -204,9 +191,7 @@ export function isWhiteboardAddToChatEvent(
   );
 }
 
-export function dispatchWhiteboardAddToChat(
-  payload: WhiteboardAddToChatPayload,
-): boolean {
+export function dispatchWhiteboardAddToChat(payload: WhiteboardAddToChatPayload): boolean {
   if (typeof window === "undefined") {
     return false;
   }
@@ -225,9 +210,7 @@ function sanitizeWhiteboardFilename(name: string): string {
   return normalizedName.replace(/^\.+|\.+$/gu, "") || "whiteboard";
 }
 
-function isWhiteboardAddToChatPayload(
-  value: unknown,
-): value is WhiteboardAddToChatPayload {
+function isWhiteboardAddToChatPayload(value: unknown): value is WhiteboardAddToChatPayload {
   if (typeof value !== "object" || value === null) {
     return false;
   }
@@ -238,7 +221,6 @@ function isWhiteboardAddToChatPayload(
     payload.workspacePath.length > 0 &&
     typeof payload.boardId === "string" &&
     payload.boardId.length > 0 &&
-    (payload.workspaceIdentity === undefined ||
-      typeof payload.workspaceIdentity === "string")
+    (payload.workspaceIdentity === undefined || typeof payload.workspaceIdentity === "string")
   );
 }

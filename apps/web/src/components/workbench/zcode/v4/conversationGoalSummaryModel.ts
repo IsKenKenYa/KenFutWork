@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/v4/conversationGoalSummaryModel.ts`（references/zcode/packages/ui/src/v4/conversationGoalSummaryModel.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀。
- */
-import type { GoalState } from "@zui/lib/zcode-shared/zcode-protocol-v4";
+import type { GoalState } from "@zcode/shared/zcode-protocol-v4";
 
 const INTERNAL_GOAL_VERIFICATION_FALLBACK_NEXT_ACTION =
   "Continue verifying and completing the goal.";
@@ -20,10 +15,7 @@ interface ConversationGoalIterationSummary {
 
 function visibleNextAction(value: string | undefined): string | null {
   const nextAction = value?.trim();
-  if (
-    !nextAction ||
-    nextAction === INTERNAL_GOAL_VERIFICATION_FALLBACK_NEXT_ACTION
-  ) {
+  if (!nextAction || nextAction === INTERNAL_GOAL_VERIFICATION_FALLBACK_NEXT_ACTION) {
     return null;
   }
   return nextAction;
@@ -44,17 +36,9 @@ function requiredIterationCount(goal: GoalState): number {
   const continuationIsOpen =
     goal.status === "active" ||
     goal.status === "notSatisfied" ||
-    (goal.status === "paused" &&
-      latestVerification?.outcome === "notSatisfied");
-  const statusIteration = continuationIsOpen
-    ? goal.iteration + 1
-    : Math.max(1, goal.iteration);
-  return Math.max(
-    1,
-    statusIteration,
-    maxTodoIteration,
-    maxVerificationIteration,
-  );
+    (goal.status === "paused" && latestVerification?.outcome === "notSatisfied");
+  const statusIteration = continuationIsOpen ? goal.iteration + 1 : Math.max(1, goal.iteration);
+  return Math.max(1, statusIteration, maxTodoIteration, maxVerificationIteration);
 }
 
 /** 从 V4 权威 goal 投影构造右上角逐轮摘要；不从 renderer timeline 反推轮次。 */
@@ -62,24 +46,16 @@ export function buildConversationGoalIterationSummaries(
   goal: GoalState,
 ): ConversationGoalIterationSummary[] {
   const todoByIteration = new Map(
-    (goal.iterations ?? []).map(
-      (entry) => [entry.iteration, entry.items] as const,
-    ),
+    (goal.iterations ?? []).map((entry) => [entry.iteration, entry.items] as const),
   );
   const verificationByIteration = new Map(
     goal.verifications.map((entry) => [entry.iteration, entry] as const),
   );
   const rows: ConversationGoalIterationSummary[] = [];
 
-  for (
-    let iteration = 1;
-    iteration <= requiredIterationCount(goal);
-    iteration += 1
-  ) {
+  for (let iteration = 1; iteration <= requiredIterationCount(goal); iteration += 1) {
     const items = todoByIteration.get(iteration) ?? [];
-    const completedCount = items.filter(
-      (item) => item.status === "completed",
-    ).length;
+    const completedCount = items.filter((item) => item.status === "completed").length;
     const previousVerification = verificationByIteration.get(iteration - 1);
     rows.push({
       iteration,
@@ -91,8 +67,7 @@ export function buildConversationGoalIterationSummaries(
       completedCount,
       totalCount: items.length,
       completed: items.length > 0 && completedCount >= items.length,
-      verificationOutcome:
-        verificationByIteration.get(iteration)?.outcome ?? null,
+      verificationOutcome: verificationByIteration.get(iteration)?.outcome ?? null,
     });
   }
 
@@ -102,18 +77,10 @@ export function buildConversationGoalIterationSummaries(
   });
 }
 
-export function getConversationGoalElapsedSeconds(
-  goal: GoalState,
-  now: number,
-): number {
+export function getConversationGoalElapsedSeconds(goal: GoalState, now: number): number {
   const baseSeconds = Math.max(0, Math.floor(goal.timeUsedSeconds ?? 0));
   const isRunning =
-    goal.status === "active" ||
-    goal.status === "verifying" ||
-    goal.status === "notSatisfied";
+    goal.status === "active" || goal.status === "verifying" || goal.status === "notSatisfied";
   if (!isRunning || goal.activeRunStartedAtMs == null) return baseSeconds;
-  return (
-    baseSeconds +
-    Math.max(0, Math.floor((now - goal.activeRunStartedAtMs) / 1000))
-  );
+  return baseSeconds + Math.max(0, Math.floor((now - goal.activeRunStartedAtMs) / 1000));
 }

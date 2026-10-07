@@ -2,6 +2,67 @@ import { describe, expect, it } from "vitest";
 
 import { loadServerEnv, parseCanvasWorkDirs } from "./env.js";
 
+describe("本地实例配置退役", () => {
+  it("插件目录注入只由统一env读取，显式测试覆盖优先", () => {
+    expect(
+      loadServerEnv({}, { KENFUTWORK_PLUGINS_DIR: " /tmp/plugins " })
+        .pluginsDir,
+    ).toBe("/tmp/plugins");
+    expect(
+      loadServerEnv(
+        { pluginsDir: "/tmp/injected" },
+        { KENFUTWORK_PLUGINS_DIR: "/tmp/from-env" },
+      ).pluginsDir,
+    ).toBe("/tmp/injected");
+  });
+  it("旧账户、计费与加密配置不再进入运行时，供应商及worker配置继续读取", () => {
+    const env = loadServerEnv(
+      {},
+      {
+        KENFUTWORK_AUTH_DRIVER: "managed",
+        KENFUTWORK_CREDENTIAL_SECRET: "retired-master-secret",
+        LEMONSQUEEZY_API_KEY: "retired-payment-key",
+        LEMONSQUEEZY_STORE_ID: "retired-store",
+        LEMONSQUEEZY_WEBHOOK_SECRET: "retired-hook",
+        LEMONSQUEEZY_VARIANT_BUSINESS_YEARLY: "retired-variant",
+        OPENAI_API_KEY: "provider-key",
+        KENFUTWORK_SANDBOX_ROOT: "/owned/sandbox",
+        KENFUTWORK_CHECKPOINT_ROOT: "/owned/checkpoints",
+        WORKER_POLL_INTERVAL_MS: "750",
+      },
+    );
+    expect(env.openAIApiKey).toBe("provider-key");
+    expect(env.sandboxRoot).toBe("/owned/sandbox");
+    expect(env.checkpointRoot).toBe("/owned/checkpoints");
+    expect(env.workerPollIntervalMs).toBe(750);
+    expect(
+      Object.keys(env).some(
+        (key) =>
+          key === "authDriver" ||
+          key === "credentialSecret" ||
+          key.startsWith("lemonSqueezy"),
+      ),
+    ).toBe(false);
+    expect(JSON.stringify(env)).not.toContain("retired-");
+  });
+
+  it("新本机接入与迁移治理从统一env解析，不创建第二套默认值", () => {
+    const env = loadServerEnv(
+      {},
+      {
+        KENFUTWORK_LOCAL_ACCESS_TICKET_TTL_MS: "5000",
+        KENFUTWORK_LOCAL_ACCESS_SESSION_MAX_AGE_MS: "60000",
+        KENFUTWORK_LOCAL_DATA_MIGRATION_POLL_MS: "50",
+      },
+    );
+    expect(env.agentGovernance).toMatchObject({
+      localAccessTicketTtlMs: 5000,
+      localAccessSessionMaxAgeMs: 60000,
+      localDataMigrationPollMs: 50,
+    });
+  });
+});
+
 describe("KENFUTWORK_CANVAS_WORK_DIRS 解析", () => {
   it("空值返回 undefined", () => {
     expect(parseCanvasWorkDirs(undefined)).toBeUndefined();

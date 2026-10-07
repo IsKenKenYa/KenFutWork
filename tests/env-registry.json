@@ -1,5 +1,5 @@
 {
-  "$comment": "env 名唯一权威机械表。新增/改名 env 先登记这里再使用——scripts/check-env.mjs（pnpm test:env 与 tests/workspace.test.mjs）会扫描全仓引用逐名对表：表外即 fail。surface: server|shell|script|test|build；status: active|test-gate|external；inExamples=true 表示应在 .env.example 出现。第三方既有约定（OPENAI_/GOOGLE_ 等）标 external，允许不出现在 .env.example。",
+  "$comment": "env 名唯一权威机械表。新增/改名 env 先登记这里再使用——scripts/check-env.mjs（pnpm test:env 与 tests/workspace.test.mjs）会扫描全仓引用逐名对表：表外即 fail。surface: server|shell|script|test|build；status: active|test-gate|external|retired；inExamples=true 表示应在 .env.example 出现。第三方既有约定（OPENAI_/GOOGLE_ 等）标 external，允许不出现在 .env.example。",
   "vars": {
     "KENFUTWORK_DEPLOYMENT": {
       "surface": "server",
@@ -26,9 +26,7 @@
       "surface": "server",
       "readers": [
         "apps/server/src/config/env.ts",
-        "apps/server/src/features/flow/plugin.ts",
-        "apps/server/src/features/flow/flow-host.test.ts",
-        "apps/server/src/http/flow-host.ts"
+        "apps/server/src/features/flow/plugin.ts"
       ],
       "inExamples": false,
       "status": "active",
@@ -38,9 +36,7 @@
       "surface": "server",
       "readers": [
         "apps/server/src/config/env.ts",
-        "apps/server/src/config/env.test.ts",
-        "apps/server/src/features/flow/flow-host.test.ts",
-        "apps/server/src/http/flow-host.ts"
+        "apps/server/src/config/env.test.ts"
       ],
       "inExamples": false,
       "status": "active",
@@ -93,48 +89,48 @@
     },
     "KENFUTWORK_AUTH_DRIVER": {
       "surface": "server",
-      "readers": [
-        "apps/server/src/config/env.ts",
-        "apps/server/src/features/auth/local-trust.ts"
-      ],
-      "inExamples": true,
-      "status": "active",
-      "note": "managed（自管账号）| local-trust（桌面回环免登录）"
+      "readers": [],
+      "inExamples": false,
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "KENFUTWORK_TEST_ACCOUNT_PASSWORD": {
       "surface": "script",
-      "readers": ["apps/server/src/seed-test-accounts.ts"],
-      "inExamples": true,
-      "status": "active",
-      "note": "pnpm seed 测试账号口令"
+      "readers": [],
+      "inExamples": false,
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "KENFUTWORK_ADMIN_EMAIL": {
       "surface": "script",
-      "readers": ["apps/server/src/seed-test-accounts.ts"],
-      "inExamples": true,
-      "status": "active",
-      "note": "管理员账号"
+      "readers": [],
+      "inExamples": false,
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "KENFUTWORK_ADMIN_PASSWORD": {
       "surface": "script",
-      "readers": ["apps/server/src/seed-test-accounts.ts"],
-      "inExamples": true,
-      "status": "active",
-      "note": "管理员口令"
+      "readers": [],
+      "inExamples": false,
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "KENFUTWORK_CREDENTIAL_SECRET": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
-      "inExamples": true,
-      "status": "active",
-      "note": "BYOK 凭证加密主密钥（必填；桌面缺省自动生成）"
+      "readers": [],
+      "inExamples": false,
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "KENFUTWORK_DATA_DIR": {
       "surface": "server",
       "readers": [
         "apps/server/src/config/env.ts",
         "apps/server/src/desktop/paths.ts",
-        "apps/desktop/src-tauri/src/server_handle.rs"
+        "apps/desktop/src-tauri/src/server_handle.rs",
+        "apps/server/src/features/computer-use/desktop.app.integration.test.ts",
+        "apps/server/src/ws/logger.ts",
+        "apps/server/src/ws/logger-packaged.test.ts"
       ],
       "inExamples": true,
       "status": "active",
@@ -156,14 +152,14 @@
     },
     "KENFUTWORK_SANDBOX_ROOT": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts", "apps/server/src/server.ts"],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "沙箱根目录"
     },
     "KENFUTWORK_CHECKPOINT_ROOT": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts", "apps/server/src/server.ts"],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
       "note": "检查点影子仓库根目录"
@@ -180,7 +176,7 @@
       "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
-      "note": "agent 文件后端根目录"
+      "note": "独立服务缝/测试的agent文件根注入；正式本机入口统一为数据根/sandbox/agent-files"
     },
     "KENFUTWORK_SKILLS_ROOT": {
       "surface": "server",
@@ -191,10 +187,38 @@
     },
     "KENFUTWORK_PLUGINS_DIR": {
       "surface": "server",
-      "readers": ["apps/server/src/features/plugins/plugin.ts"],
+      "readers": ["apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "active",
-      "note": "插件落盘目录（缺省 <cwd>/.kenfutwork/plugins）"
+      "note": "独立kernel/测试的插件目录注入；正式本机入口统一为数据根/plugins"
+    },
+    "RUN_LOCAL_INSTANCE_SCHEMA_INTEGRATION": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/local-instance/schema.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "=1 启用独占测试PG的本地实例最终schema/全量重放回归；生产无读者"
+    },
+    "KENFUTWORK_LOCAL_ROOT_PG_TEST": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/local-instance/root-binding.integration.test.ts",
+        "apps/server/src/features/local-instance/idle.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "=1 启用独占测试PG与真实Git的数据根重绑定/精确回滚回归；生产无读者"
+    },
+    "KENFUTWORK_SETTINGS_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/settings/settings.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "=1 启用真实PG的实例设置/CAS回归；生产无读者"
     },
     "KENFUTWORK_MCP_SERVERS": {
       "surface": "server",
@@ -202,6 +226,53 @@
       "inExamples": true,
       "status": "active",
       "note": "MCP server JSON 数组（stdio 命令型）"
+    },
+    "KENFUTWORK_TEST_DESKTOP": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/computer-use/desktop.native.integration.test.ts",
+        "apps/server/src/features/computer-use/agent.native.integration.test.ts",
+        "apps/server/src/features/computer-use/desktop.linux.integration.test.ts",
+        "apps/server/src/features/computer-use/desktop.windows.integration.test.ts",
+        "apps/server/src/features/computer-use/desktop.app.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "真实桌面验收入口，只有明确开启才操作第一方测试窗口；skip不代表能力通过"
+    },
+    "KENFUTWORK_TEST_APP_ROOT": {
+      "surface": "test",
+      "readers": ["apps/server/src/features/computer-use/desktop.app.integration.test.ts"],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "复用有本验收所属标记的临时.app安装根，保持系统TCC权限主体；每次另建数据目录，不接管既有进程"
+    },
+    "KENFUTWORK_MCP_HTTP_TEST": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/computer-use/http.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "=1启用真实隔离PG/Task/Agent/HTTP/SDK/stdio协议测试，默认skip不计验收"
+    },
+    "KENFUTWORK_VOICE_REAL_MODEL": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/voice/sherpa.integration.test.ts"
+      ],
+      "inExamples": true,
+      "status": "test-gate",
+      "note": "=1 启用语音内置模型的真机验收（会下载 228MB 模型）；生产无读者"
+    },
+    "KENFUTWORK_VOICE_MODELS_ROOT": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/voice/sherpa.integration.test.ts"
+      ],
+      "inExamples": true,
+      "status": "test-gate",
+      "note": "覆盖真机验收用的模型目录（默认 ~/.kenfutwork/models）"
     },
     "KENFUTWORK_MCP_LIFECYCLE": {
       "surface": "test",
@@ -226,6 +297,20 @@
       "inExamples": true,
       "status": "active",
       "note": "agent 治理：子代理派生深度上限（DEC-17/18）；优先级 库值 ?? env ?? DEFAULTS"
+    },
+    "KENFUTWORK_COMPACT_KEEP_MESSAGES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "已知窗口的近期原始消息保留目标；自动与手动共用，库值 ?? env ?? DEFAULTS"
+    },
+    "KENFUTWORK_COMPACT_FALLBACK_KEEP_MESSAGES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "未知窗口的近期原始消息保留目标；目标不是SDK实际保留条数"
     },
     "KENFUTWORK_SUBAGENT_MAX_CONCURRENCY": {
       "surface": "server",
@@ -266,6 +351,16 @@
       "inExamples": true,
       "status": "active",
       "note": "agent 治理：Code 模式 execute 命令超时毫秒（DEC-18）"
+    },
+    "KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS": {
+      "surface": "server",
+      "readers": [
+        "packages/shared/src/governance.ts",
+        "packages/shared/src/code-ui-reconnect-governance.test.ts"
+      ],
+      "inExamples": true,
+      "status": "active",
+      "note": "Code 宿主通知通道重连间隔毫秒；库值优先，非法 env 值忽略（DEC-18）"
     },
     "KENFUTWORK_SUBAGENT_MAX_CONTINUATIONS": {
       "surface": "server",
@@ -312,6 +407,55 @@
       "status": "active",
       "note": "agent 治理：Computer Use 控制租约会话时长上限毫秒（CU 插件）"
     },
+    "KENFUTWORK_COMPUTER_USE_AX_MAX_DEPTH": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：AX树最大深度，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_AX_MAX_CHILDREN": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：AX节点子项上限，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_AX_TITLE_MAX_CHARS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：AX标题文字上限，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_AX_VALUE_MAX_CHARS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：AX值文字上限，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_AX_MAX_ACTIONS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：AX语义动作列表上限，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_INPUT_DELAY_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "Computer Use：输入事件间隔毫秒，实例设置优先于env兜底"
+    },
+    "KENFUTWORK_COMPUTER_USE_MCP_KEEP_ALIVE_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "桌面MCP HTTP的SSE心跳间隔，0关闭；实例设置优先于env兜底"
+    },
     "KENFUTWORK_SEARCH_API_KEY": {
       "surface": "server",
       "readers": ["apps/server/src/config/env.ts"],
@@ -342,10 +486,10 @@
     },
     "KENFUTWORK_AGENT_STREAM_IDLE_TIMEOUT_MS": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": ["packages/shared/src/governance.ts"],
       "inExamples": true,
       "status": "active",
-      "note": "上游停滞看门狗"
+      "note": "实例治理的模型请求无输出计时兜底；0关闭，不含工具及人审等待"
     },
     "KENFUTWORK_AUTO_COMPACT_TRIGGER_TOKENS": {
       "surface": "server",
@@ -623,66 +767,66 @@
     },
     "LEMONSQUEEZY_API_KEY": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "Lemon Squeezy 支付（配置齐全才建 PaymentService）"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "LEMONSQUEEZY_STORE_ID": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "店铺 ID"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "LEMONSQUEEZY_WEBHOOK_SECRET": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "webhook 签名"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "LEMONSQUEEZY_VARIANT_STARTER_MONTHLY": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "套餐变体映射"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "LEMONSQUEEZY_VARIANT_STARTER_YEARLY": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "套餐变体映射"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "LEMONSQUEEZY_VARIANT_PRO_MONTHLY": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "套餐变体映射"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "LEMONSQUEEZY_VARIANT_PRO_YEARLY": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "套餐变体映射"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "LEMONSQUEEZY_VARIANT_ULTRA_MONTHLY": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "套餐变体映射"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "LEMONSQUEEZY_VARIANT_ULTRA_YEARLY": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [],
       "inExamples": false,
-      "status": "active",
-      "note": "套餐变体映射"
+      "status": "retired",
+      "note": "免账户本地BYOK重构后退役；仅登记历史名称与负向回归，不提供生产配置读取。"
     },
     "WORKER_CONCURRENCY": {
       "surface": "server",
@@ -791,6 +935,380 @@
       "inExamples": false,
       "status": "active",
       "note": "自带插件目录覆盖（缺省仓库/安装目录内置位置；目录不存在时没有自带插件，不报错）"
+    },
+    "KENFUTWORK_CODE_READ_MAX_BYTES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "文件全文读取预算字节；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_CODE_READ_PAGE_CHARACTERS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "文件分页字符预算；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_CODE_SEARCH_MAX_RESULTS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "文件搜索条目预算；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_CODE_SEARCH_MAX_BYTES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "文件搜索输出字节预算；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_CODE_PATCH_MAX_BYTES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "补丁请求字节预算；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_CODE_PDF_MAX_PAGES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "PDF模型读取页数预算；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_CODE_PDF_RENDER_SCALE": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "PDF渲染比例；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_TERMINAL_MAX_SESSIONS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "每个人类连接真实PTY并发上限，优先级库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_PTY_TEST_HELPER_PATH": {
+      "surface": "test",
+      "readers": ["apps/server/src/features/code-terminal/service.test.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "真实PTY终端测试可覆盖本轮私有发布helper，缺省源码helper"
+    },
+    "KENFUTWORK_PROVIDER_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/model-providers/provider-draft.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "active",
+      "note": "=1仅启用测试私有PostgreSQL，验证NULL草稿与原子CAS，不连接运行数据库"
+    },
+    "KENFUTWORK_PROCESS_MAX_OUTPUT_BYTES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "进程日志保留字节预算；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_PROCESS_PREVIEW_MAX_CHARS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "进程模型摘要字符预算；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_PROCESS_YIELD_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "进程等待输出yield毫秒；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_PROCESS_KILL_GRACE_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "进程退出宽限毫秒；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_SANDBOX_PROBE_TIMEOUT_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "沙箱能力探测毫秒；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_TASK_WORK_PG_TEST": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/persistence/session-lock.integration.test.ts",
+        "apps/server/src/features/task-work/repository.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "显式启动隔离临时Postgres的TaskWork/SessionLock集成回归，不连接现存数据库"
+    },
+    "KENFUTWORK_CODE_INPUT_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/code-ui/input-restart.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "仅启用私有临时Postgres Code输入重启验证，不读取运行库凭据"
+    },
+    "KENFUTWORK_CONTROLLER_HOST_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/code-ui/controller.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "仅创建临时localhost Postgres验证Controller生产消费者与来源生命周期，不读取运行库凭据"
+    },
+    "KENFUTWORK_SETTINGS_HOST_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/code-ui/settings.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "显式启动私有临时Postgres验证原UI设置在途归档，绝不读运行数据库"
+    },
+    "KENFUTWORK_ATTACHMENT_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/code-ui/attachments/repository.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "仅启用私有临时Postgres附件事务验证，重放/noop，不读运行库凭据"
+    },
+    "KENFUTWORK_MCP_NATIVE_TEST": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/mcp/task-mcp-native.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "显式开启真实SRT/Task MCP私有临时目录验证，不读运行库"
+    },
+    "KENFUTWORK_MCP_TEST_HELPER": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/mcp/task-mcp-native.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "本轮已构建helper绝对路径，不重编、不替换用户安装"
+    },
+    "KENFUTWORK_CODE_ATTACHMENT_MAX_BYTES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "Code附件总字节预算，库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_CODE_ATTACHMENT_CHUNK_MAX_BYTES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "Code附件分块预算，与固定frame共同协商"
+    },
+    "KENFUTWORK_CODE_ATTACHMENT_MAX_CHUNKS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "Code附件分块数量预算"
+    },
+    "KENFUTWORK_CODE_ATTACHMENT_MAX_CONCURRENT": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "Code附件并发staging预算"
+    },
+    "KENFUTWORK_CODE_ATTACHMENT_STAGED_MAX_BYTES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "Code附件全部staging累计字节预算"
+    },
+    "KENFUTWORK_CODE_ATTACHMENT_UPLOAD_TTL_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "Code附件staging超时毫秒"
+    },
+    "KENFUTWORK_CODE_ATTACHMENT_MAX_PER_INPUT": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "单次Code模型输入附件数量预算，库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_CODE_ATTACHMENT_MAX_RETRIES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "Code附件上传自动重试预算，库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_CODE_ATTACHMENT_RETRY_DELAY_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "Code附件上传重试间隔毫秒，库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_WINDOWS_NATIVE_TESTS": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/process-sandbox/windows-native.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "真实 Windows PSEC/ConPTY/Job/stdio 集成验收显式开启；source/crosscompile 不计实机证据"
+    },
+    "KENFUTWORK_WINDOWS_BROKER_PATH": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/process-sandbox/windows-native.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "真实 Windows 集成验收可选指定已构建 native broker 绝对路径；不改变产品运行配置"
+    },
+    "KENFUTWORK_HARNESS_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/agent-runs/turn-boundaries.integration.test.ts",
+        "apps/server/src/features/code-ui/manual-compact-v4.integration.test.ts",
+        "apps/server/src/features/agent-modes/execution-mode-store.integration.test.ts",
+        "apps/server/src/features/agent-modes/execution-mode-cache.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "仅启用Harness轮次边界的一次性本机Postgres集成回归；不连接现有数据库"
+    },
+    "KENFUTWORK_RUN_MODE_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/http/runs-execution-mode.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "独占临时Postgres验证Run模式读写失败阻止启动；不读取现有数据库"
+    },
+    "KENFUTWORK_AGENT_MODE_GUIDANCE_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/agent-runs/code-mode-guidance.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "独占临时Postgres与真实Harness验证Code冷恢复及换线程后的模式指导"
+    },
+    "KENFUTWORK_CODE_PLUGINS_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/code-ui/plugins-uninstall.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "插件卸载施工规格使用独占临时Postgres与真实加密存储；默认跳过，尚未实现的卸载不计GREEN"
+    },
+    "KENFUTWORK_CONFIG_DIR": {
+      "surface": "server",
+      "readers": [
+        "apps/server/src/desktop/paths.ts",
+        "apps/desktop/src-tauri/src/lib.rs"
+      ],
+      "inExamples": true,
+      "status": "active",
+      "note": "系统配置目录绝对路径；数据位置指针留在此处，不随应用数据根移动。"
+    },
+    "KENFUTWORK_LOCAL_ACCESS_TICKET_TTL_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "本机一次性连接票据有效期毫秒；设置值优先于env兜底。"
+    },
+    "KENFUTWORK_LOCAL_ACCESS_SESSION_MAX_AGE_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "浏览器本机接入会话有效期毫秒；不涉及官方账户。"
+    },
+    "KENFUTWORK_LOCAL_DATA_MIGRATION_POLL_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "目录迁移等待真实在途工作的复核间隔毫秒；设置值优先。"
+    },
+    "KENFUTWORK_LOCAL_SERVICE_STARTUP_TIMEOUT_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "launcher冷启动等待总预算；接通前只能采用env ?? DEFAULTS，统一clamp"
+    },
+    "KENFUTWORK_LOCAL_SERVICE_STARTUP_POLL_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "launcher冷启动健康复核间隔与单请求等待预算；启动期env ?? DEFAULTS"
+    },
+    "KENFUTWORK_CRUD_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/uploads/uploads.integration.test.ts",
+        "apps/server/src/features/projects/projects.integration.test.ts",
+        "apps/server/src/features/skills/skills.integration.test.ts",
+        "apps/server/src/features/brand-kit/brand-kit.integration.test.ts",
+        "apps/server/src/features/chat/chat.integration.test.ts",
+        "apps/server/src/features/canvas/canvas.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "仅开启本地实例CRUD的独占临时Postgres回归，不连接开发或生产数据库。"
+    },
+    "KENFUTWORK_PERSISTENCE_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/persistence/persistence.integration.test.ts",
+        "apps/server/src/features/voice/instance-repositories.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "显式开启本地实例schema与作用域的独占Postgres回归，不读取现存库配置。"
+    },
+    "LEMONSQUEEZY_VARIANT_BUSINESS_MONTHLY": {
+      "surface": "server",
+      "readers": [],
+      "inExamples": false,
+      "status": "retired",
+      "note": "付费套餐映射已退役，不再提供生产配置读取。"
+    },
+    "LEMONSQUEEZY_VARIANT_BUSINESS_YEARLY": {
+      "surface": "server",
+      "readers": [],
+      "inExamples": false,
+      "status": "retired",
+      "note": "付费套餐映射已退役，仅供负向回归登记历史名称。"
     }
   },
   "legacy": {

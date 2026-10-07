@@ -1,16 +1,11 @@
-/**
- * zcode 照搬：`@/lib/workspaceServiceResolver.ts`（references/zcode/packages/ui/src/lib/workspaceServiceResolver.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）。
- */
-
-import { buildTaskWorkspaceKey } from "@zui/lib/taskQueryCache";
-import type { IServiceAccessor } from "@zui/lib/zcode-services";
+import type { IServiceAccessor } from "@zcode/services";
+import { isLocalWorkspaceTarget } from "@zcode/shared";
+import { buildTaskWorkspaceKey } from "@zui/lib/taskQueryCache.js";
 
 interface WorkspaceServiceTarget {
   workspacePath: string;
-  workspaceIdentity?: string | undefined;
-  remoteSessionId?: string | undefined;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
   remoteTarget?: unknown;
 }
 
@@ -22,7 +17,7 @@ export interface WorkspaceServiceResolverState<TServices = IServiceAccessor> {
 
 interface ResolvedWorkspaceServices {
   services: IServiceAccessor;
-  remoteSessionId?: string | undefined;
+  remoteSessionId?: string;
   isRemoteWorkspace: boolean;
 }
 
@@ -30,12 +25,11 @@ export function resolveWorkspaceRemoteSessionId<TServices>(
   target: WorkspaceServiceTarget,
   state: WorkspaceServiceResolverState<TServices>,
 ): string | undefined {
+  if (isLocalWorkspaceTarget(target)) return undefined;
   const workspaceIdentity = target.workspaceIdentity?.trim();
   const candidateSessionIds = [
     target.remoteSessionId,
-    workspaceIdentity
-      ? state.sessionIdByWorkspaceIdentity[workspaceIdentity]
-      : undefined,
+    workspaceIdentity ? state.sessionIdByWorkspaceIdentity[workspaceIdentity] : undefined,
     // 同一路径可能同时存在于多个 SSH/WSL/Docker endpoint。已有 identity 时若
     // 精确绑定尚未恢复，按 path fallback 会借用另一 endpoint 的 services，导致 sessions-index、
     // provider 和 task RPC 串到错误 Host。identity 缺失时保持 remote-waiting；只有旧版无
@@ -54,9 +48,7 @@ export function isRemoteWorkspaceTarget(
   target: WorkspaceServiceTarget,
   resolvedRemoteSessionId?: string,
 ): boolean {
-  return Boolean(
-    target.workspaceIdentity || target.remoteTarget || resolvedRemoteSessionId,
-  );
+  return !isLocalWorkspaceTarget({ ...target, remoteSessionId: target.remoteSessionId ?? resolvedRemoteSessionId });
 }
 
 export function resolveWorkspaceServices(
@@ -64,6 +56,12 @@ export function resolveWorkspaceServices(
   baseServices: IServiceAccessor,
   state: WorkspaceServiceResolverState,
 ): ResolvedWorkspaceServices | null {
+  const localIdentity = target.workspaceIdentity?.trim();
+  if (isLocalWorkspaceTarget(target) && localIdentity) {
+    const bindingId = state.sessionIdByWorkspaceIdentity[localIdentity];
+    const services = bindingId ? state.sessionsById[bindingId]?.services : undefined;
+    return services ? { services, isRemoteWorkspace: false } : null;
+  }
   const remoteSessionId = resolveWorkspaceRemoteSessionId(target, state);
   const isRemoteWorkspace = isRemoteWorkspaceTarget(target, remoteSessionId);
 
@@ -71,9 +69,7 @@ export function resolveWorkspaceServices(
   // 这种状态不能落回 baseServices，否则会用本机 sqlite 查询远端 workspace 并缓存空结果；
   // 这里统一要求远端目标必须解析到远端 session 后才返回 services。
   if (isRemoteWorkspace) {
-    const services = remoteSessionId
-      ? state.sessionsById[remoteSessionId]?.services
-      : undefined;
+    const services = remoteSessionId ? state.sessionsById[remoteSessionId]?.services : undefined;
     return services
       ? {
           services,
@@ -102,10 +98,7 @@ export function buildWorkspaceServiceLookup(
       continue;
     }
 
-    lookup.set(
-      buildTaskWorkspaceKey(tab.workspacePath, tab.workspaceIdentity),
-      resolved,
-    );
+    lookup.set(buildTaskWorkspaceKey(tab.workspacePath, tab.workspaceIdentity), resolved);
   }
 
   return lookup;

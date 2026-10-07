@@ -1,22 +1,16 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/resume-workflow-run.tsx`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/resume-workflow-run.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import { cn } from "@zui/components/lib/utils";
+import { RotateCcw, Workflow } from "lucide-react";
+import { useCallback, useMemo } from "react";
+import { cn } from "@zui/components/lib/utils.js";
 import {
   RUN_STATUS_DOT,
   RUN_STATUS_TEXT,
-} from "@zui/components/workflow-graph/run-status-presentation";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import { WorkflowRunCompactCard } from "@zui/ToolCallBlocks/renderers/workflow-run-compact-card";
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
-import { ToolLayout } from "@zui/ToolCallBlocks/ToolLayout";
-import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice";
-import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay";
-import { RotateCcw, Workflow } from "lucide-react";
-import { useCallback, useMemo } from "react";
+} from "@zui/components/workflow-graph/run-status-presentation.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { ToolSnapshotFieldNotice } from "@zui/ToolCallBlocks/ToolSnapshotFieldNotice.js";
+import { readToolResultDisplay } from "@zui/ToolCallBlocks/toolResultDisplay.js";
+import { ToolLayout } from "../ToolLayout.js";
+import { WorkflowRunCompactCard } from "./workflow-run-compact-card.js";
+import type { ToolCallBlockRenderContext } from "../shared.js";
 
 /** 紧凑 run 态卡的图标与 CreateWorkflow 同一枚（族内一致）；折叠态保留 RotateCcw 讲「恢复」。 */
 const RESUME_WORKFLOW_RUN_TOOL_ICON = (
@@ -41,15 +35,12 @@ const FALLBACK_OUTPUT_MAX_HEIGHT_CLASS = "max-h-60";
  *   runId（mono）+「后台运行中」状态点词（run 状态词汇表 running 档）+ 展开的本地化续跑
  *   说明；无 display 时有界纯文本面板，绝不 raw JSON dump。
  */
-export function ResumeWorkflowRunToolCallBlock(
-  context: ToolCallBlockRenderContext,
-) {
+export function ResumeWorkflowRunToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall } = context.toolCallNode;
 
   const display = readToolResultDisplay(toolCall.raw);
-  const runDisplay =
-    display?.kind === "resume_workflow_run" ? display : undefined;
+  const runDisplay = display?.kind === "resume_workflow_run" ? display : undefined;
 
   const kindLabel = intl.formatMessage({
     id: context.isRunning
@@ -59,9 +50,7 @@ export function ResumeWorkflowRunToolCallBlock(
   const backgroundLabel = intl.formatMessage({
     id: "chat.toolCall.workflow.resumeRun.inBackground",
   });
-  const hintLabel = intl.formatMessage({
-    id: "chat.toolCall.workflow.resumeRun.hint",
-  });
+  const hintLabel = intl.formatMessage({ id: "chat.toolCall.workflow.resumeRun.hint" });
 
   const snapshotNotice = (
     <ToolSnapshotFieldNotice
@@ -83,10 +72,7 @@ export function ResumeWorkflowRunToolCallBlock(
     });
     const runStepsLabel = intl.formatMessage(
       { id: "chat.toolCall.workflow.card.steps" },
-      {
-        done: context.workflowRun.nodesSettled,
-        total: context.workflowRun.nodesTotal,
-      },
+      { done: context.workflowRun.nodesSettled, total: context.workflowRun.nodesTotal },
     );
     return (
       <WorkflowRunCompactCard
@@ -97,11 +83,7 @@ export function ResumeWorkflowRunToolCallBlock(
         workflowRun={context.workflowRun}
         statusLabel={runStatusLabel}
         stepsLabel={runStepsLabel}
-        onOpen={
-          onOpenWorkflowRun === undefined
-            ? undefined
-            : () => onOpenWorkflowRun({})
-        }
+        onOpen={onOpenWorkflowRun !== undefined ? () => onOpenWorkflowRun({}) : undefined}
         showIcon={context.showIcon !== false}
       >
         {snapshotNotice}
@@ -115,10 +97,7 @@ export function ResumeWorkflowRunToolCallBlock(
   const primaryText = useMemo(
     () =>
       runId === undefined ? undefined : (
-        <span
-          className="min-w-0 truncate font-mono text-foreground-subtlest"
-          title={runId}
-        >
+        <span className="min-w-0 truncate font-mono text-foreground-subtlest" title={runId}>
           {runId}
         </span>
       ),
@@ -135,9 +114,7 @@ export function ResumeWorkflowRunToolCallBlock(
             aria-hidden="true"
             className={cn("size-1.5 rounded-full", RUN_STATUS_DOT.running)}
           />
-          <span className={cn("text-ui-sm", RUN_STATUS_TEXT.running)}>
-            {backgroundLabel}
-          </span>
+          <span className={cn("text-ui-sm", RUN_STATUS_TEXT.running)}>{backgroundLabel}</span>
         </span>
       ),
     [backgroundLabel, runDisplay],

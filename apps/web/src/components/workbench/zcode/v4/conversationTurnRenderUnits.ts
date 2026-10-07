@@ -1,11 +1,3 @@
-/**
- * zcode 照搬：`@/v4/conversationTurnRenderUnits.ts`（references/zcode/packages/ui/src/v4/conversationTurnRenderUnits.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为；上游依赖运行时恒有值）。
- */
 import type {
   AssistantTextRow,
   ConversationRow,
@@ -15,38 +7,32 @@ import type {
   TurnHeaderRow,
   UserInputRow,
   WorkflowLaunchMeta,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import type {
-  AssistantWorkRow,
-  ConversationTurnFlowItem,
-} from "@zui/v4/conversationTurnFlowItems";
-import type {
-  ConversationTurnWorkSegment,
-  ConversationTurnWorkStatus,
-} from "@zui/v4/conversationTurnWorkSegments";
+} from "@zcode/shared/zcode-protocol-v4";
+import type { AssistantWorkRow, ConversationTurnFlowItem } from "@zui/v4/conversationTurnFlowItems.js";
+import {
+  isWorkflowLaunchUserInputRow,
+  resolveWorkflowLaunchMeta,
+} from "@zui/v4/workflowLaunchTurn.js";
 import {
   buildConversationTurnWorkSegments,
   resolveConversationTurnWorkDurationMs,
   resolveConversationTurnWorkStatus,
-} from "@zui/v4/conversationTurnWorkSegments";
-import {
-  isWorkflowLaunchUserInputRow,
-  resolveWorkflowLaunchMeta,
-} from "@zui/v4/workflowLaunchTurn";
+} from "@zui/v4/conversationTurnWorkSegments.js";
+import type {
+  ConversationTurnWorkSegment,
+  ConversationTurnWorkStatus,
+} from "@zui/v4/conversationTurnWorkSegments.js";
 
-export type {
-  AssistantWorkRow,
-  ConversationTurnFlowItem,
-} from "@zui/v4/conversationTurnFlowItems";
+export type { AssistantWorkRow, ConversationTurnFlowItem } from "@zui/v4/conversationTurnFlowItems.js";
 export type {
   ConversationTurnWorkSegment,
   ConversationTurnWorkStatus,
-} from "@zui/v4/conversationTurnWorkSegments";
+} from "@zui/v4/conversationTurnWorkSegments.js";
 
 export interface ConversationTurnRenderUnit {
   key: string;
   turnId: string;
-  header?: TurnHeaderRow | undefined;
+  header?: TurnHeaderRow;
   visibleUserInputs: UserInputRow[];
   assistantWorkRows: AssistantWorkRow[];
   /**
@@ -66,32 +52,32 @@ export interface ConversationTurnRenderUnit {
   /** 轻边界（modelChange）：渲染在 user 输入之前的轮顶分隔。 */
   leadingBoundaryRows: TimelineMarkerRow[];
   /** 完成态轮尾最终正文；fork/retry/action/preview 只挂这一段。 */
-  latestAssistantTextRow?: AssistantTextRow | undefined;
+  latestAssistantTextRow?: AssistantTextRow;
   /** 同一 product turn 内 user/assistant 的可见交错顺序；相邻工作行保持成组。 */
   flowItems: ConversationTurnFlowItem[];
   /** 原始输入与每条 accepted guide 分别对应一个独立视觉工作段。 */
-  workSegments?: ConversationTurnWorkSegment[] | undefined;
+  workSegments?: ConversationTurnWorkSegment[];
   renderRows: ConversationRow[];
   isLastTurn: boolean;
   isRunning: boolean;
   assistantHistoryDefaultOpen: boolean;
   timelineOnly: boolean;
   /** turn 级聚合工作状态，仅供旧调用兼容；新组件消费 workSegments[].workStatus。 */
-  workStatus?: ConversationTurnWorkStatus | undefined;
-  startedAt?: number | undefined;
+  workStatus?: ConversationTurnWorkStatus;
+  startedAt?: number;
   /** 中枢直接启动轮的启动元数据（规则见 `workflowLaunchTurn.ts`）；在场时轮由 run 卡呈现、无用户气泡。 */
-  workflowLaunch?: WorkflowLaunchMeta | undefined;
+  workflowLaunch?: WorkflowLaunchMeta;
 }
 
 interface BuildConversationTurnRenderUnitsOptions {
-  nowMs?: number | undefined;
-  sessionPhase?: SessionPhase | undefined;
+  nowMs?: number;
+  sessionPhase?: SessionPhase;
 }
 
 interface DraftTurnRenderUnit {
   key: string;
   turnId: string;
-  header?: TurnHeaderRow | undefined;
+  header?: TurnHeaderRow;
   userInputs: UserInputRow[];
   assistantWorkRows: AssistantWorkRow[];
   hookInvocations: HookInvocationRow[];
@@ -139,9 +125,7 @@ function isVisibleConversationRow(row: ConversationRow): boolean {
 
 // 落位语义（lane）由 CLI 投影裁决下发（UI 不得按 marker type 自行推断）。
 // lane 缺省（不应发生）按 assistantWork 兜底——降级进折叠组，不丢行。
-function isTurnEndingTimelineMarkerRow(
-  row: AssistantWorkRow,
-): row is TimelineMarkerRow {
+function isTurnEndingTimelineMarkerRow(row: AssistantWorkRow): row is TimelineMarkerRow {
   return row.kind === "timelineMarker" && row.lane === "turnTailBoundary";
 }
 
@@ -187,9 +171,7 @@ function isBrowserTurnEndRow(row: AssistantWorkRow): boolean {
   );
 }
 
-function isLightBoundaryMarkerRow(
-  row: AssistantWorkRow,
-): row is TimelineMarkerRow {
+function isLightBoundaryMarkerRow(row: AssistantWorkRow): row is TimelineMarkerRow {
   return row.kind === "timelineMarker" && row.lane === "lightBoundary";
 }
 
@@ -253,19 +235,14 @@ function materializeDraftUnit(
   total: number,
   options: BuildConversationTurnRenderUnitsOptions,
 ): ConversationTurnRenderUnit {
-  const workflowLaunch = resolveWorkflowLaunchMeta(
-    draft.header,
-    draft.userInputs,
-  );
+  const workflowLaunch = resolveWorkflowLaunchMeta(draft.header, draft.userInputs);
   // 启动轮的用户行由 run 卡代言，不进可见输入也不进流。
   const renderedRows =
     workflowLaunch === undefined
       ? draft.orderedRows
       : draft.orderedRows.filter((row) => !isWorkflowLaunchUserInputRow(row));
   const visibleUserInputs = renderedRows.filter(isUserInputRow);
-  const visibleAssistantWorkRows = draft.assistantWorkRows.filter(
-    isVisibleAssistantWorkRow,
-  );
+  const visibleAssistantWorkRows = draft.assistantWorkRows.filter(isVisibleAssistantWorkRow);
   const visibleOrderedRows = renderedRows.filter(isVisibleConversationRow);
   const timelineOnly =
     visibleUserInputs.length === 0 &&
@@ -276,9 +253,7 @@ function materializeDraftUnit(
   const leadingBoundaryRows = timelineOnly
     ? []
     : visibleAssistantWorkRows.filter(isLightBoundaryMarkerRow);
-  const leadingBoundaryRowIds = new Set(
-    leadingBoundaryRows.map((row) => row.rowId),
-  );
+  const leadingBoundaryRowIds = new Set(leadingBoundaryRows.map((row) => row.rowId));
   const bodyRows = timelineOnly
     ? visibleAssistantWorkRows
     : visibleAssistantWorkRows.filter((row) => !isLightBoundaryMarkerRow(row));
@@ -309,10 +284,7 @@ function materializeDraftUnit(
   // 旧展开规则只看 running 和最终正文，异常终态一旦保留 partial assistant text
   // 就会被当作正常完成而收起，隐藏中断/失败上下文。终态必须以 header 为权威；冷恢复
   // 尾窗缺 header 时才回退 session phase，desktop continuous 与 mobile replayable 共用此边界。
-  const forceOpenHistory = shouldForceOpenAbnormalHistory(
-    draft.header,
-    options.sessionPhase,
-  );
+  const forceOpenHistory = shouldForceOpenAbnormalHistory(draft.header, options.sessionPhase);
 
   // product turn 的最终正文仍是唯一 action target；视觉工作段只改变折叠边界。
   const assistantTextRows = flowRows.filter(isAssistantTextRow);
@@ -322,14 +294,8 @@ function materializeDraftUnit(
   const lastFlowRow = flowRows.at(-1);
   const latestAssistantTextRow =
     actionAssistantTextRow ??
-    (!isRunning && lastFlowRow && isAssistantTextRow(lastFlowRow)
-      ? lastFlowRow
-      : undefined);
-  const workDurationMs = resolveConversationTurnWorkDurationMs(
-    draft.header,
-    options,
-    isRunning,
-  );
+    (!isRunning && lastFlowRow && isAssistantTextRow(lastFlowRow) ? lastFlowRow : undefined);
+  const workDurationMs = resolveConversationTurnWorkDurationMs(draft.header, options, isRunning);
   const workStatus = resolveConversationTurnWorkStatus(
     draft.header,
     bodyRows,
@@ -337,15 +303,11 @@ function materializeDraftUnit(
     workDurationMs,
     isInterrupted,
   );
-  const browserTurnEndRowIds = new Set(
-    browserTurnEndRows.map((row) => row.rowId),
-  );
+  const browserTurnEndRowIds = new Set(browserTurnEndRows.map((row) => row.rowId));
   const orderedBodyRows = visibleOrderedRows.filter(
     // main 的 workSegments 会从 orderedRows 重建 flow；如果这里只从
     // bodyRows 抽取截图，它仍会被塞回正文流并在轮尾再次渲染，造成重复和顺序错乱。
-    (row) =>
-      !leadingBoundaryRowIds.has(row.rowId) &&
-      !browserTurnEndRowIds.has(row.rowId),
+    (row) => !leadingBoundaryRowIds.has(row.rowId) && !browserTurnEndRowIds.has(row.rowId),
   );
   const workSegments = buildConversationTurnWorkSegments({
     key: draft.key,
@@ -363,12 +325,9 @@ function materializeDraftUnit(
   const orderedAssistantHistoryRows = workSegments.flatMap(
     (segment) => segment.assistantHistoryRows,
   );
-  const assistantFollowingRows = workSegments.flatMap(
-    (segment) => segment.assistantFollowingRows,
-  );
+  const assistantFollowingRows = workSegments.flatMap((segment) => segment.assistantFollowingRows);
   const flowItems = workSegments.flatMap((segment) => segment.flowItems);
-  const mustOpenHistory =
-    workSegments.at(-1)?.assistantHistoryDefaultOpen ?? false;
+  const mustOpenHistory = workSegments.at(-1)?.assistantHistoryDefaultOpen ?? false;
   return {
     key: draft.key,
     turnId: draft.turnId,
@@ -418,9 +377,7 @@ function shouldKeepRenderUnit(unit: ConversationTurnRenderUnit): boolean {
   return (
     unit.visibleUserInputs.length > 0 ||
     unit.assistantWorkRows.length > 0 ||
-    unit.hookInvocations.some((row) =>
-      row.executions.some((execution) => execution.didExecute),
-    ) ||
+    unit.hookInvocations.some((row) => row.executions.some((execution) => execution.didExecute)) ||
     unit.leadingBoundaryRows.length > 0 ||
     // 直接启动轮：用户行不可见、无助手内容，轮由 run 卡呈现——它当然要留下。
     unit.workflowLaunch !== undefined ||
@@ -435,38 +392,32 @@ function normalizeRenderUnitPosition(
   options: BuildConversationTurnRenderUnitsOptions,
 ): ConversationTurnRenderUnit {
   const isLastTurn = index === total - 1;
-  const forceOpenHistory = shouldForceOpenAbnormalHistory(
-    unit.header,
-    options.sessionPhase,
-  );
+  const forceOpenHistory = shouldForceOpenAbnormalHistory(unit.header, options.sessionPhase);
   const assistantHistoryDefaultOpen =
     unit.workSegments && unit.workSegments.length > 0
       ? !unit.timelineOnly &&
         (forceOpenHistory ||
-          (isLastTurn &&
-            unit.workSegments.at(-1)?.workStatus?.state === "running") ||
+          (isLastTurn && unit.workSegments.at(-1)?.workStatus?.state === "running") ||
           (unit.workSegments.length === 1 &&
             unit.latestAssistantTextRow === undefined &&
             unit.assistantWorkRows.length > 0))
       : !unit.timelineOnly &&
         (forceOpenHistory ||
           (isLastTurn && unit.workStatus?.state === "running") ||
-          (unit.latestAssistantTextRow === undefined &&
-            unit.assistantWorkRows.length > 0));
-  const workSegments = unit.workSegments?.map(
-    (segment, segmentIndex, segments) =>
-      segmentIndex === segments.length - 1
-        ? {
-            ...segment,
-            assistantHistoryDefaultOpen:
-              !unit.timelineOnly &&
-              (forceOpenHistory ||
-                (isLastTurn && segment.workStatus?.state === "running") ||
-                (segments.length === 1 &&
-                  unit.latestAssistantTextRow === undefined &&
-                  segment.assistantWorkRows.length > 0)),
-          }
-        : segment,
+          (unit.latestAssistantTextRow === undefined && unit.assistantWorkRows.length > 0));
+  const workSegments = unit.workSegments?.map((segment, segmentIndex, segments) =>
+    segmentIndex === segments.length - 1
+      ? {
+          ...segment,
+          assistantHistoryDefaultOpen:
+            !unit.timelineOnly &&
+            (forceOpenHistory ||
+              (isLastTurn && segment.workStatus?.state === "running") ||
+              (segments.length === 1 &&
+                unit.latestAssistantTextRow === undefined &&
+                segment.assistantWorkRows.length > 0)),
+        }
+      : segment,
   );
   if (
     unit.isLastTurn === isLastTurn &&

@@ -1,18 +1,11 @@
-/**
- * zcode 照搬：`@/v4/workflowTurnDigests.ts`（references/zcode/packages/ui/src/v4/workflowTurnDigests.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
-
-import type { WorkflowCausalityGraphData } from "@zui/components/workflow-graph/types";
 import type {
   WorkflowLaunchMeta,
   WorkflowSettingsAmendMeta,
-} from "@zui/lib/zcode-shared/zcode-protocol-v4";
-import type { WorkflowRunCardSummary } from "@zui/ToolCallBlocks/fileSummaryTypes";
-import { readWorkflowName } from "@zui/ToolCallBlocks/renderers/createWorkflowInput";
-import type { AssistantWorkRow } from "@zui/v4/conversationTurnFlowItems";
+} from "@zcode/shared/zcode-protocol-v4";
+import type { WorkflowCausalityGraphData } from "@zui/components/workflow-graph/types.js";
+import type { WorkflowRunCardSummary } from "@zui/ToolCallBlocks/fileSummaryTypes.js";
+import { readWorkflowName } from "@zui/ToolCallBlocks/renderers/createWorkflowInput.js";
+import type { AssistantWorkRow } from "@zui/v4/conversationTurnFlowItems.js";
 
 /**
  * 轮尾 run 卡的解析：这一轮里哪些**来源**点名了
@@ -29,6 +22,9 @@ import type { AssistantWorkRow } from "@zui/v4/conversationTurnFlowItems";
  * 图是 run 的属性：按 run 的**发起** toolCallId 到宿主建的图表里取，不问卡挂在哪种行上——resume 行
  * 因此与发起行同一张图。联接不到活投影（淘汰 / 冷恢复）的来源仍出卡，`summary` 缺席，卡退成中性
  * 单行。同一轮里同 run 只出一张（首见来源）。
+ *
+ * 一个例外：**就地生效的设置轮**（`rowOnly`）点名了一条 run，却既没启动它也没恢复它——它只是改了
+ * 那条 run 的并发上限。那条 run 的卡已经在它启动的那一轮里，所以这条来源只出上方那一行。
  */
 export interface WorkflowTurnDigest {
   key: string;
@@ -45,21 +41,24 @@ export interface WorkflowTurnDigest {
    * 从哪个 run 修订来的、改了什么。在场时卡上方多一行「已调整设置 · …」；`at` 是那一轮的时刻。
    */
   settings?: { amend: WorkflowSettingsAmendMeta; at?: number };
+  /**
+   * **只出那一行、不出卡**：就地生效的设置轮（只改并发上限、run 仍在运行，`amend` 不带 `predecessorRunId`）。它点名的 run 没有被替代、身份没变，
+   * 卡已经在它启动的那一轮里——这里再画一张会读成第二次运行。恒与 `settings` 同在。
+   */
+  rowOnly?: true;
 }
 
 interface WorkflowTurnDigestSource {
-  workflowLaunch?: WorkflowLaunchMeta | undefined;
+  workflowLaunch?: WorkflowLaunchMeta;
   assistantWorkRows: readonly AssistantWorkRow[];
   /** 这一轮的开始时刻（设置轮那一行的时间）。 */
-  startedAt?: number | undefined;
+  startedAt?: number;
 }
 
 interface WorkflowTurnDigestJoin {
-  byToolCallId?: ReadonlyMap<string, WorkflowRunCardSummary> | undefined;
-  byRunId?: ReadonlyMap<string, WorkflowRunCardSummary> | undefined;
-  graphByToolCallId?:
-    | ReadonlyMap<string, WorkflowCausalityGraphData>
-    | undefined;
+  byToolCallId?: ReadonlyMap<string, WorkflowRunCardSummary>;
+  byRunId?: ReadonlyMap<string, WorkflowRunCardSummary>;
+  graphByToolCallId?: ReadonlyMap<string, WorkflowCausalityGraphData>;
 }
 
 export function resolveWorkflowTurnDigests(
@@ -69,13 +68,15 @@ export function resolveWorkflowTurnDigests(
   const digests: WorkflowTurnDigest[] = [];
   const seen = new Set<string>();
   const graphOf = (originToolCallId: string | undefined) =>
-    originToolCallId === undefined
-      ? undefined
-      : join.graphByToolCallId?.get(originToolCallId);
+    originToolCallId === undefined ? undefined : join.graphByToolCallId?.get(originToolCallId);
 
   const launch = unit.workflowLaunch;
   if (launch !== undefined) {
-    seen.add(launch.runId);
+    // 就地生效的设置轮：`amend` 不带 predecessorRunId（缺席即「没有前驱、改的就是自己」，
+    // workflow-row-meta.ts）。它是唯一一个点名了 run 却不是「启动 / 恢复了它」的来源，所以
+    // **不占**这一轮的出卡名额——同一轮里真的发起了这条 run 的来源照常出它的卡。
+    const rowOnly = launch.amend !== undefined && launch.amend.predecessorRunId === undefined;
+    if (!rowOnly) seen.add(launch.runId);
     digests.push({
       graph: graphOf(launch.toolCallId),
       key: `launch:${launch.toolCallId}`,
@@ -83,6 +84,7 @@ export function resolveWorkflowTurnDigests(
       runId: launch.runId,
       summary: join.byRunId?.get(launch.runId),
       toolCallId: launch.toolCallId,
+      ...(rowOnly ? { rowOnly: true as const } : {}),
       ...(launch.amend === undefined
         ? {}
         : {
@@ -127,4 +129,3 @@ export function resolveWorkflowTurnDigests(
   }
   return digests;
 }
-/* 适配注记（P9）：接口可选属性放宽 | undefined（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。 */

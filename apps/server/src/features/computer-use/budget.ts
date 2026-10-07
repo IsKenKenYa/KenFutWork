@@ -1,3 +1,6 @@
+import { inflateSync } from "node:zlib";
+import { PNG } from "pngjs";
+
 /**
  * 截图预算与黑帧检测（Computer Use 插件）。
  *
@@ -52,4 +55,50 @@ export function planImageInline(input: {
     inline: false,
     reason: `截图 base64 长度 ${input.base64Length} 超出内联预算 ${input.maxInlineBytes}（可在设置里调 computerUseScreenshotMaxBytes）。本次仅返回文字摘要。`,
   };
+}
+
+/** PNG声明尺寸先过实例资源预算；Adam7路径也先做有界inflate，避免库的无界分支。 */
+export function readPngWithinBudget(bytes: Buffer, maxBytes: number) {
+  const invalid = () =>
+    Object.assign(new Error("截图不是完整、合法的PNG"), {
+      code: "image_invalid",
+      actionSent: false,
+    });
+  if (
+    bytes.length < 33 ||
+    bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a" ||
+    bytes.toString("ascii", 12, 16) !== "IHDR"
+  )
+    throw invalid();
+  const width = bytes.readUInt32BE(16),
+    height = bytes.readUInt32BE(20);
+  if (!width || !height) throw invalid();
+  if (bytes.length > maxBytes || width * height * 4 > maxBytes)
+    throw Object.assign(
+      new Error("截图解码超出当前processMaxOutputBytes设置，请调整实例设置"),
+      { code: "image_budget_exceeded", actionSent: false },
+    );
+  if (bytes[28] === 1) {
+    const parts: Buffer[] = [];
+    let offset = 8;
+    while (offset < bytes.length) {
+      if (offset + 12 > bytes.length) throw invalid();
+      const length = bytes.readUInt32BE(offset),
+        end = offset + length + 12;
+      if (end > bytes.length) throw invalid();
+      if (bytes.toString("ascii", offset + 4, offset + 8) === "IDAT")
+        parts.push(bytes.subarray(offset + 8, end - 4));
+      offset = end;
+    }
+    try {
+      inflateSync(Buffer.concat(parts), { maxOutputLength: maxBytes });
+    } catch {
+      throw invalid();
+    }
+  }
+  try {
+    return PNG.sync.read(bytes, { checkCRC: true });
+  } catch {
+    throw invalid();
+  }
 }

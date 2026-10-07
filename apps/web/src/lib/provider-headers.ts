@@ -29,6 +29,6 @@ export function parseHeadersJson(
   return parsed as ProviderInstanceHeaders;
 }
 
-/** 表单里的输入提示（用户与管理员两处表单共用同一句，避免两处口径漂移）。 */
+/** 表单里的输入提示（供应商设置表单共用同一句，避免两处口径漂移）。 */
 export const providerHeadersHint =
-  "值可用 {{sessionId}} / {{threadId}} 占位符；保存后不再显示值。";
+  "值可用 {{sessionId}} / {{threadId}} 占位符；普通列表仅展示头名，凭据保存在本机数据目录。";

@@ -1,33 +1,20 @@
-/**
- * zcode 照搬：`@/settings/CodingPlanEmbeddedWebviewDialog.tsx`（references/zcode/packages/ui/src/settings/CodingPlanEmbeddedWebviewDialog.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件接口可选属性放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- * 适配注记（P9）：getDeviceId 宿主切片未声明，消费侧按可选能力判空降级（见 CodingPlanDevicePlatform）。
- */
 /* oxlint-disable eslint(max-lines) -- Coding Plan webview 容器集中维护凭据注入、购买完成回传、三方支付导航和错误兜底。 */
-
-import { EmbeddedWebsiteHeader } from "@zui/components/EmbeddedWebsiteHeader";
-import { cn } from "@zui/components/lib/utils";
-import { Button } from "@zui/components/ui/button";
-import { usePlatform, type ZCodePlatformSlice } from "@zui/hooks/usePlatform";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
-import type { CodingPlanFunnelContext } from "@zui/lib/codingPlanFunnelTelemetry";
-import { RENDERER_ZCODE_ENDPOINT_URLS } from "@zui/lib/rendererZCodeEndpoint";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ExternalLinkIcon, RefreshCwIcon } from "lucide-react";
+import { usePlatform } from "@zui/hooks/usePlatform.js";
+import { RENDERER_ZCODE_ENDPOINT_URLS } from "@zui/lib/rendererZCodeEndpoint.js";
+import { logger } from "@zui/logger.js";
+import { cn } from "@zui/components/lib/utils.js";
+import { Button } from "@zui/components/ui/button.js";
+import { EmbeddedWebsiteHeader } from "@zui/components/EmbeddedWebsiteHeader.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { useZCodeStoreWithDefault } from "@zui/store/StoreProvider.js";
+import { normalizeThemePreference, resolveTheme } from "@zui/useTheme.js";
+import type { CodingPlanProviderId } from "@zui/settings/model-provider-section/constants.js";
+import type { CodingPlanFunnelContext } from "@zui/lib/codingPlanFunnelTelemetry.js";
 import {
-  type CodingPlanPurchaseCompletePayload,
-  CodingPlanWebviewChannels,
-  ZCODE_VERSION,
-} from "@zui/lib/zcode-shared";
-import { logger } from "@zui/logger";
-import {
-  buildCodingPlanEmbeddedReportContext,
   buildCodingPlanEmbeddedWebviewUrl,
-  CODING_PLAN_WEBVIEW_OVERRIDE_ENV_KEY,
-  type CodingPlanEmbeddedCredentials,
-  type CodingPlanEmbeddedTheme,
-  type CodingPlanPurchaseAudience,
+  buildCodingPlanEmbeddedReportContext,
   createCodingPlanAuthInjectionScript,
   createCodingPlanCredentialClearScript,
   createCodingPlanLangInjectionScript,
@@ -36,12 +23,16 @@ import {
   isTrustedCodingPlanEmbeddedWebviewUrl,
   resolveCodingPlanEmbeddedOrigin,
   resolveCodingPlanWebsiteProvider,
-} from "@zui/settings/model-provider-section/codingPlanEmbeddedWebview";
-import type { CodingPlanProviderId } from "@zui/settings/model-provider-section/constants";
-import { useZCodeStoreWithDefault } from "@zui/store/StoreProvider";
-import { normalizeThemePreference, resolveTheme } from "@zui/useTheme";
-import { ExternalLinkIcon, RefreshCwIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+  type CodingPlanEmbeddedCredentials,
+  type CodingPlanEmbeddedTheme,
+  type CodingPlanPurchaseAudience,
+  CODING_PLAN_WEBVIEW_OVERRIDE_ENV_KEY,
+} from "@zui/settings/model-provider-section/codingPlanEmbeddedWebview.js";
+import {
+  CodingPlanWebviewChannels,
+  type CodingPlanPurchaseCompletePayload,
+  ZCODE_VERSION,
+} from "@zcode/shared";
 
 interface CodingPlanEmbeddedWebviewDialogProps {
   credentialService: {
@@ -49,11 +40,11 @@ interface CodingPlanEmbeddedWebviewDialogProps {
   };
   onOpenChange: (open: boolean) => void;
   open: boolean;
-  onOpenResult?: ((opened: boolean) => void | undefined) | undefined;
+  onOpenResult?: (opened: boolean) => void;
   providerId: CodingPlanProviderId;
-  funnelContext?: CodingPlanFunnelContext | null | undefined;
-  audience?: CodingPlanPurchaseAudience | undefined;
-  teamPlanKey?: string | null | undefined;
+  funnelContext?: CodingPlanFunnelContext | null;
+  audience?: CodingPlanPurchaseAudience;
+  teamPlanKey?: string | null;
   /**
    * 官网页购买成功后的回调。
    *
@@ -62,20 +53,12 @@ interface CodingPlanEmbeddedWebviewDialogProps {
    * ipc-message 事件里识别该频道并触发此回调（经 onPurchaseCompleteRef 防 stale closure）。
    * 上层（CodingPlanUpgradeDialog）在此回调里刷新 entitlements/providers 并关闭 webview。
    */
-  onPurchaseComplete?: (() => void) | undefined;
+  onPurchaseComplete?: () => void;
 }
 
-/**
- * zcode 照搬（P9 补充）：getDeviceId 的消费切片（签名逐字取自 references/zcode/packages/shared
- * platform.ts）。宿主 stub 未实现，缺席时按 undefined 降级。
- */
-type CodingPlanDevicePlatform = ZCodePlatformSlice & {
-  getDeviceId?: () => string | undefined;
-};
-
 interface CodingPlanWebviewImportMetaEnv {
-  VITE_CODING_PLAN_WEBVIEW_ORIGIN?: string | undefined;
-  VITE_ZCODE_E2E_STORE_BRIDGE?: string | undefined;
+  VITE_CODING_PLAN_WEBVIEW_ORIGIN?: string;
+  VITE_ZCODE_E2E_STORE_BRIDGE?: string;
 }
 
 interface CodingPlanWebviewNavigationState {
@@ -85,8 +68,8 @@ interface CodingPlanWebviewNavigationState {
 }
 
 function readCodingPlanWebviewImportMetaEnv(): CodingPlanWebviewImportMetaEnv {
-  return ((import.meta as ImportMeta & { env?: CodingPlanWebviewImportMetaEnv })
-    .env ?? {}) as CodingPlanWebviewImportMetaEnv;
+  return ((import.meta as ImportMeta & { env?: CodingPlanWebviewImportMetaEnv }).env ??
+    {}) as CodingPlanWebviewImportMetaEnv;
 }
 
 export function CodingPlanEmbeddedWebviewDialog({
@@ -103,10 +86,7 @@ export function CodingPlanEmbeddedWebviewDialog({
   const { intl, locale } = useZCodeIntl();
   const platform = usePlatform();
   const theme = useZCodeStoreWithDefault((state) => state.theme, "zai-dark");
-  const userId = useZCodeStoreWithDefault(
-    (state) => state.user?.id ?? null,
-    null,
-  );
+  const userId = useZCodeStoreWithDefault((state) => state.user?.id ?? null, null);
   const webviewRef = useRef<ElectronWebviewTag | null>(null);
   const onOpenResultRef = useRef(onOpenResult);
   onOpenResultRef.current = onOpenResult;
@@ -117,14 +97,12 @@ export function CodingPlanEmbeddedWebviewDialog({
   // 否则会抛 "WebView must be attached to the DOM and dom-ready emitted"。
   const webviewReadyRef = useRef(false);
   const frozenWebviewUrlRef = useRef<string | null>(null);
-  const injectAuthRef = useRef<
-    (webview: ElectronWebviewTag | null) => Promise<void>
-  >(async () => {});
+  const injectAuthRef = useRef<(webview: ElectronWebviewTag | null) => Promise<void>>(
+    async () => {},
+  );
   // onPurchaseComplete 通过 ref 在 ref callback / 事件监听器里访问，避免 stale closure
   // （handleWebviewRef 用 useCallback([],) 只绑定一次事件，不依赖 onPurchaseComplete 最新值）。
-  const onPurchaseCompleteRef = useRef<(() => void) | undefined>(
-    onPurchaseComplete,
-  );
+  const onPurchaseCompleteRef = useRef<(() => void) | undefined>(onPurchaseComplete);
   useEffect(() => {
     onPurchaseCompleteRef.current = onPurchaseComplete;
   }, [onPurchaseComplete]);
@@ -132,16 +110,14 @@ export function CodingPlanEmbeddedWebviewDialog({
   // loadError: webview 加载失败/崩溃时的兜底态。
   // 按用户决策，webview 不可用时只报错并引导去官网购买，不回退到老 Dialog。
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [navigationState, setNavigationState] =
-    useState<CodingPlanWebviewNavigationState>({
-      canGoBack: false,
-      canGoForward: false,
-      isLoading: false,
-    });
+  const [navigationState, setNavigationState] = useState<CodingPlanWebviewNavigationState>({
+    canGoBack: false,
+    canGoForward: false,
+    isLoading: false,
+  });
   const provider = resolveCodingPlanWebsiteProvider(providerId);
   const embeddedTheme: CodingPlanEmbeddedTheme =
-    normalizeThemePreference(theme) === "zai-dark" ||
-    resolveTheme(theme) === "dark"
+    normalizeThemePreference(theme) === "zai-dark" || resolveTheme(theme) === "dark"
       ? "zai-dark"
       : "zai-light";
   const computedWebviewUrl = useMemo(() => {
@@ -179,8 +155,7 @@ export function CodingPlanEmbeddedWebviewDialog({
       setAuthError(null);
       try {
         const env = readCodingPlanWebviewImportMetaEnv();
-        const currentUrl =
-          typeof webview.getURL === "function" ? webview.getURL() : "";
+        const currentUrl = typeof webview.getURL === "function" ? webview.getURL() : "";
         if (
           !isTrustedCodingPlanEmbeddedWebviewUrl(currentUrl, {
             e2eStoreBridgeEnabled: env.VITE_ZCODE_E2E_STORE_BRIDGE === "1",
@@ -188,19 +163,14 @@ export function CodingPlanEmbeddedWebviewDialog({
         ) {
           // dom-ready 会在后续主 frame 导航时再次触发，初始 src 可信不代表
           // 当前页面仍是官网购买页。离开可信页后只能做本 origin 清理，不能注入 App 凭据。
-          await webview.executeJavaScript(
-            createCodingPlanCredentialClearScript(),
-            true,
-          );
+          await webview.executeJavaScript(createCodingPlanCredentialClearScript(), true);
           return;
         }
         const keys = getCodingPlanCredentialKeys(provider);
         const [values, deviceMid] = await Promise.all([
           Promise.all(keys.map((key) => credentialService.load(key))),
-          // 适配注记（P9）：宿主切片（hooks/usePlatform 禁改件）未声明 getDeviceId；
-          // 消费侧按可选能力访问，缺席时 deviceMid=null（上报埋点少一个维度，不阻断注入）。
           Promise.resolve()
-            .then(() => (platform as CodingPlanDevicePlatform).getDeviceId?.())
+            .then(() => platform.getDeviceId())
             .catch(() => null),
         ]);
         const credentials: CodingPlanEmbeddedCredentials =
@@ -244,15 +214,7 @@ export function CodingPlanEmbeddedWebviewDialog({
         });
       }
     },
-    [
-      credentialService,
-      embeddedTheme,
-      funnelContext,
-      platform,
-      provider,
-      userId,
-      webviewLocale,
-    ],
+    [credentialService, embeddedTheme, funnelContext, platform, provider, userId, webviewLocale],
   );
 
   // App locale 运行时变化时，对已 dom-ready 的 webview 注入 lang 更新脚本，
@@ -274,35 +236,29 @@ export function CodingPlanEmbeddedWebviewDialog({
     injectAuthRef.current = injectAuth;
   }, [injectAuth]);
 
-  const syncNavigationState = useCallback(
-    (webview: ElectronWebviewTag | null) => {
-      if (!webview) {
-        setNavigationState({
-          canGoBack: false,
-          canGoForward: false,
-          isLoading: false,
-        });
-        return;
-      }
-      try {
-        setNavigationState((current) => ({
-          ...current,
-          canGoBack: webview.canGoBack(),
-          canGoForward: webview.canGoForward(),
-        }));
-      } catch (error) {
-        // 三方支付页导航 churn 中 webview 可能短暂未 attach。
-        // 导航按钮只是辅助控件，同步失败不应影响支付流程。
-        logger.debug(
-          "[CodingPlanEmbeddedWebviewDialog] 同步 webview 导航状态失败",
-          {
-            error: error instanceof Error ? error.message : String(error),
-          },
-        );
-      }
-    },
-    [],
-  );
+  const syncNavigationState = useCallback((webview: ElectronWebviewTag | null) => {
+    if (!webview) {
+      setNavigationState({
+        canGoBack: false,
+        canGoForward: false,
+        isLoading: false,
+      });
+      return;
+    }
+    try {
+      setNavigationState((current) => ({
+        ...current,
+        canGoBack: webview.canGoBack(),
+        canGoForward: webview.canGoForward(),
+      }));
+    } catch (error) {
+      // 三方支付页导航 churn 中 webview 可能短暂未 attach。
+      // 导航按钮只是辅助控件，同步失败不应影响支付流程。
+      logger.debug("[CodingPlanEmbeddedWebviewDialog] 同步 webview 导航状态失败", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }, []);
 
   const handleGoBack = useCallback(() => {
     const webview = webviewRef.current;
@@ -345,12 +301,9 @@ export function CodingPlanEmbeddedWebviewDialog({
         void element
           .executeJavaScript(createCodingPlanScrollbarHideScript(), true)
           .catch((error) => {
-            logger.debug(
-              "[CodingPlanEmbeddedWebviewDialog] 隐藏 webview 滚动条失败",
-              {
-                error: error instanceof Error ? error.message : String(error),
-              },
-            );
+            logger.debug("[CodingPlanEmbeddedWebviewDialog] 隐藏 webview 滚动条失败", {
+              error: error instanceof Error ? error.message : String(error),
+            });
           });
         void injectAuthRef.current(element);
         onOpenResultRef.current?.(true);
@@ -387,9 +340,7 @@ export function CodingPlanEmbeddedWebviewDialog({
         setNavigationState((current) => ({ ...current, isLoading: false }));
       };
       // render-process-gone: 渲染进程崩溃/OOM/被杀，webview 已无法恢复，同样进入错误态。
-      const handleRenderProcessGone = (
-        event: ElectronWebviewRenderProcessGoneEvent,
-      ) => {
+      const handleRenderProcessGone = (event: ElectronWebviewRenderProcessGoneEvent) => {
         logger.warn("[CodingPlanEmbeddedWebviewDialog] webview 渲染进程崩溃", {
           provider,
           reason: event.details.reason,
@@ -405,27 +356,19 @@ export function CodingPlanEmbeddedWebviewDialog({
         if (event.channel !== CodingPlanWebviewChannels.PurchaseComplete) {
           return;
         }
-        const raw = event.args[0] as
-          | CodingPlanPurchaseCompletePayload
-          | undefined;
+        const raw = event.args[0] as CodingPlanPurchaseCompletePayload | undefined;
         if (raw?.provider !== "zai" && raw?.provider !== "bigmodel") {
           // payload 不合法，忽略，避免伪造或脏数据触发刷新。
-          logger.warn(
-            "[CodingPlanEmbeddedWebviewDialog] 收到非法的购买完成 payload",
-            {
-              channel: event.channel,
-              args: event.args,
-            },
-          );
+          logger.warn("[CodingPlanEmbeddedWebviewDialog] 收到非法的购买完成 payload", {
+            channel: event.channel,
+            args: event.args,
+          });
           return;
         }
-        logger.info(
-          "[CodingPlanEmbeddedWebviewDialog] 收到官网购买完成信号，触发刷新",
-          {
-            provider: raw.provider,
-            timestamp: raw.timestamp,
-          },
-        );
+        logger.info("[CodingPlanEmbeddedWebviewDialog] 收到官网购买完成信号，触发刷新", {
+          provider: raw.provider,
+          timestamp: raw.timestamp,
+        });
         onPurchaseCompleteRef.current?.();
       };
 
@@ -447,10 +390,7 @@ export function CodingPlanEmbeddedWebviewDialog({
         element.removeEventListener("did-navigate", handleNavigation);
         element.removeEventListener("did-navigate-in-page", handleNavigation);
         element.removeEventListener("did-fail-load", handleDidFailLoad);
-        element.removeEventListener(
-          "render-process-gone",
-          handleRenderProcessGone,
-        );
+        element.removeEventListener("render-process-gone", handleRenderProcessGone);
         element.removeEventListener("ipc-message", handleIpcMessage);
       };
     },
@@ -462,11 +402,9 @@ export function CodingPlanEmbeddedWebviewDialog({
       const webview = webviewRef.current;
       if (webviewReadyRef.current && webview) {
         // 关闭购买页时主动清掉持久 partition 内的凭据 key，降低跨账号残留窗口。
-        void webview
-          .executeJavaScript(createCodingPlanCredentialClearScript(), true)
-          .catch(() => {
-            // webview 可能已销毁，主进程 clear-all-data 会兜底清理 partition。
-          });
+        void webview.executeJavaScript(createCodingPlanCredentialClearScript(), true).catch(() => {
+          // webview 可能已销毁，主进程 clear-all-data 会兜底清理 partition。
+        });
       }
       webviewCleanupRef.current?.();
       webviewCleanupRef.current = null;
@@ -503,9 +441,7 @@ export function CodingPlanEmbeddedWebviewDialog({
     >
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <EmbeddedWebsiteHeader
-          title={intl.formatMessage({
-            id: "settings.modelProvider.codingPlan.webview.title",
-          })}
+          title={intl.formatMessage({ id: "settings.modelProvider.codingPlan.webview.title" })}
           loading={navigationState.isLoading}
           canGoBack={navigationState.canGoBack}
           canGoForward={navigationState.canGoForward}
@@ -528,11 +464,7 @@ export function CodingPlanEmbeddedWebviewDialog({
                   id: "settings.modelProvider.codingPlan.webview.authInjectFailed",
                 })}
               </span>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void injectAuth()}
-              >
+              <Button size="sm" variant="outline" onClick={() => void injectAuth()}>
                 <RefreshCwIcon className="size-3.5" />
                 {intl.formatMessage({
                   id: "settings.modelProvider.codingPlan.webview.retry",
@@ -550,9 +482,7 @@ export function CodingPlanEmbeddedWebviewDialog({
                   id: "settings.modelProvider.codingPlan.webview.loadFailed",
                 })}
               </span>
-              <span className="text-ui-sm text-foreground-subtle">
-                {loadError}
-              </span>
+              <span className="text-ui-sm text-foreground-subtle">{loadError}</span>
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="outline" onClick={handleOpenWebsite}>
                   <ExternalLinkIcon className="size-3.5" />

@@ -1,20 +1,14 @@
-/**
- * zcode 照搬：`@/components/coding-plan-quota-reset/CodingPlanQuotaResetOpportunity.tsx`（references/zcode/packages/ui/src/components/coding-plan-quota-reset/CodingPlanQuotaResetOpportunity.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-
-import { ControlHintTooltip } from "@zui/ControlHintTooltip";
-import {
-  CodingPlanQuotaResetDialog,
-  type CodingPlanQuotaResetDialogConfig,
-  formatCodingPlanQuotaResetCountdown,
-} from "@zui/components/coding-plan-quota-reset/CodingPlanQuotaResetDialog";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider";
 import { GiftIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import {
+  CodingPlanQuotaResetDialog,
+  formatCodingPlanQuotaResetCountdown,
+  type CodingPlanQuotaResetDialogConfig,
+} from "@zui/components/coding-plan-quota-reset/CodingPlanQuotaResetDialog.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 
-export type { CodingPlanQuotaResetDialogConfig } from "@zui/components/coding-plan-quota-reset/CodingPlanQuotaResetDialog";
+export type { CodingPlanQuotaResetDialogConfig } from "@zui/components/coding-plan-quota-reset/CodingPlanQuotaResetDialog.js";
 
 function getRemainingSeconds(expiresAt: number | null): number {
   if (expiresAt == null) {
@@ -41,9 +35,7 @@ export function CodingPlanQuotaResetOpportunity({
   visible: boolean;
 }) {
   const { intl } = useZCodeIntl();
-  const [remainingSeconds, setRemainingSeconds] = useState(() =>
-    getRemainingSeconds(expiresAt),
-  );
+  const [remainingSeconds, setRemainingSeconds] = useState(() => getRemainingSeconds(expiresAt));
   const [uncontrolledDialogOpen, setUncontrolledDialogOpen] = useState(false);
   const resolvedDialogOpen = dialogOpen ?? uncontrolledDialogOpen;
   const setDialogOpen = onDialogOpenChange ?? setUncontrolledDialogOpen;
@@ -68,30 +60,19 @@ export function CodingPlanQuotaResetOpportunity({
   );
   const countdownLabel = intl.formatMessage(
     { id: "codingPlan.quotaReset.expiresIn" },
-    {
-      time: formatCodingPlanQuotaResetCountdown(
-        remainingSeconds,
-        intl.formatMessage,
-      ),
-    },
+    { time: formatCodingPlanQuotaResetCountdown(remainingSeconds, intl.formatMessage) },
   );
   // 多机会入口复用了不带参数的固定文案，用户无法直接确认当前可用次数。
   // 这里让可见文案与 aria-label 共用同一个动态结果，避免视觉和无障碍名称再次不一致。
-  const openDialogLabel = intl.formatMessage(
-    { id: "codingPlan.quotaReset.openDialog" },
-    { count },
-  );
+  const openDialogLabel = intl.formatMessage({ id: "codingPlan.quotaReset.openDialog" }, { count });
   const label = hasMultipleOpportunities ? openDialogLabel : opportunityLabel;
   // 弹框存活期间徽标不收起：单机会在弹框打开后过期时，入口不能从按钮位置塌缩。
   const effectiveVisible =
-    visible &&
-    (hasMultipleOpportunities || resolvedDialogOpen || remainingSeconds > 0);
+    visible && (hasMultipleOpportunities || resolvedDialogOpen || remainingSeconds > 0);
   const commonClassName = [
     "inline-flex h-5 shrink-0 items-center overflow-hidden whitespace-nowrap rounded-full bg-interaction-confirmation-surface px-1.5 text-ui-sm font-medium text-interaction-confirmation-foreground",
     "transition-[max-width,opacity,padding,background-color] duration-200 motion-reduce:transition-none",
-    effectiveVisible
-      ? "max-w-64 opacity-100"
-      : "pointer-events-none max-w-0 px-0 opacity-0",
+    effectiveVisible ? "max-w-64 opacity-100" : "pointer-events-none max-w-0 px-0 opacity-0",
   ].join(" ");
   const badgeBody = (
     <>
@@ -129,9 +110,7 @@ export function CodingPlanQuotaResetOpportunity({
     return (
       <>
         {placement === "tooltip" && !hasMultipleOpportunities ? (
-          <ControlHintTooltip title={countdownLabel}>
-            {button}
-          </ControlHintTooltip>
+          <ControlHintTooltip title={countdownLabel}>{button}</ControlHintTooltip>
         ) : (
           button
         )}
@@ -145,11 +124,7 @@ export function CodingPlanQuotaResetOpportunity({
   }
 
   const content = (
-    <span
-      aria-hidden={!effectiveVisible}
-      data-reset-opportunity="true"
-      className={commonClassName}
-    >
+    <span aria-hidden={!effectiveVisible} data-reset-opportunity="true" className={commonClassName}>
       {badgeBody}
     </span>
   );
@@ -158,7 +133,5 @@ export function CodingPlanQuotaResetOpportunity({
     return content;
   }
 
-  return (
-    <ControlHintTooltip title={countdownLabel}>{content}</ControlHintTooltip>
-  );
+  return <ControlHintTooltip title={countdownLabel}>{content}</ControlHintTooltip>;
 }

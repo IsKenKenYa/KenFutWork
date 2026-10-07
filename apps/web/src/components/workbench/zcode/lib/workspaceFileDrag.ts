@@ -1,15 +1,8 @@
-/**
- * zcode 照搬：`@/lib/workspaceFileDrag.ts`（references/zcode/packages/ui/src/lib/workspaceFileDrag.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-import { buildFileMentionMarkdown } from "@zui/mentions/mentionMarkdown";
+import { buildFileMentionMarkdown } from "@zui/mentions/mentionMarkdown.js";
 
 export const WORKSPACE_FILE_DRAG_MIME = "application/x-zcode-workspace-file";
-export const WORKSPACE_FILE_ADD_TO_CHAT_EVENT =
-  "zcode:add-workspace-file-to-chat";
-export const WORKSPACE_FILE_DRAG_STATE_EVENT =
-  "zcode:workspace-file-drag-state";
+export const WORKSPACE_FILE_ADD_TO_CHAT_EVENT = "zcode:add-workspace-file-to-chat";
+export const WORKSPACE_FILE_DRAG_STATE_EVENT = "zcode:workspace-file-drag-state";
 
 export interface WorkspaceFileDragPayload {
   type: "file" | "directory";
@@ -38,9 +31,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-export function serializeWorkspaceFileDragPayload(
-  payload: WorkspaceFileDragPayload,
-): string {
+export function serializeWorkspaceFileDragPayload(payload: WorkspaceFileDragPayload): string {
   return JSON.stringify(payload);
 }
 
@@ -96,14 +87,10 @@ export function readWorkspaceFileDragPayload(
     return null;
   }
 
-  return parseWorkspaceFileDragPayload(
-    dataTransfer.getData(WORKSPACE_FILE_DRAG_MIME),
-  );
+  return parseWorkspaceFileDragPayload(dataTransfer.getData(WORKSPACE_FILE_DRAG_MIME));
 }
 
-export function hasWorkspaceFileDragPayload(
-  dataTransfer: DataTransfer,
-): boolean {
+export function hasWorkspaceFileDragPayload(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.types).includes(WORKSPACE_FILE_DRAG_MIME);
 }
 
@@ -119,12 +106,9 @@ export function dispatchWorkspaceFileDragState(dragging: boolean): void {
   }
 
   window.dispatchEvent(
-    new CustomEvent<WorkspaceFileDragStateDetail>(
-      WORKSPACE_FILE_DRAG_STATE_EVENT,
-      {
-        detail: { dragging },
-      },
-    ),
+    new CustomEvent<WorkspaceFileDragStateDetail>(WORKSPACE_FILE_DRAG_STATE_EVENT, {
+      detail: { dragging },
+    }),
   );
 }
 
@@ -134,9 +118,7 @@ export function isWorkspaceFileAddToChatEvent(
   return event.type === WORKSPACE_FILE_ADD_TO_CHAT_EVENT;
 }
 
-export function dispatchWorkspaceFileAddToChat(
-  payload: WorkspaceFileDragPayload,
-): boolean {
+export function dispatchWorkspaceFileAddToChat(payload: WorkspaceFileDragPayload): boolean {
   if (typeof window === "undefined") {
     return false;
   }
@@ -149,10 +131,7 @@ export function dispatchWorkspaceFileAddToChat(
 }
 
 function isWorkspaceFilePayloadForWorkspace(
-  payload: Pick<
-    WorkspaceFileDragPayload,
-    "workspacePath" | "workspaceIdentity"
-  >,
+  payload: Pick<WorkspaceFileDragPayload, "workspacePath" | "workspaceIdentity">,
   workspacePath: string,
   workspaceIdentity?: string,
 ): boolean {
@@ -175,11 +154,7 @@ export function createWorkspaceFileComposerMention(
   const mentionTarget = sameWorkspace ? payload.relativePath : payload.path;
 
   return {
-    markdown: buildFileMentionMarkdown(
-      mentionTarget,
-      payload.name,
-      payload.type,
-    ),
+    markdown: buildFileMentionMarkdown(mentionTarget, payload.name, payload.type),
     value: mentionTarget,
     data: {
       kind: payload.type,

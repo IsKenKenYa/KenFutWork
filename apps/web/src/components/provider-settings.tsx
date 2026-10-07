@@ -12,12 +12,17 @@ import {
   fetchProviderInstances,
   updateProviderInstance,
 } from "@/lib/server-api";
+import { SETTINGS_TITLE_TEXT } from "@/lib/settings-layout";
 
 /**
  * 供应商设置（P5 BYOK）：用户供应商实例 CRUD。
- * 凭证红线：apiKey 与自定义头值都只写不读——列表只有 hasCredential 与 headerKeys（键名）。
+ * 普通列表只含凭据状态；查看/复制凭据使用原 Code 供应商设置。
  */
-export function ProviderSettings({ accessToken }: { accessToken: string }) {
+export function ProviderSettings({
+  accessToken,
+}: {
+  accessToken: string | null;
+}) {
   const [instances, setInstances] = useState<ProviderInstanceResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,13 +79,8 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
 
   return (
     <section aria-label="供应商设置">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h3 className="text-base font-medium">供应商设置</h3>
-          <p className="text-sm text-muted-foreground">
-            使用你自己的 API Key，Key 加密保存、不回显。
-          </p>
-        </div>
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className={SETTINGS_TITLE_TEXT}>供应商设置</h3>
         <button
           type="button"
           onClick={() =>
@@ -129,7 +129,7 @@ export function ProviderSettings({ accessToken }: { accessToken: string }) {
           {instances.map((instance) => (
             <li
               key={instance.id}
-              className="flex items-center justify-between rounded-md border px-4 py-3"
+              className="flex items-center justify-between rounded-lg border px-4 py-3"
             >
               <div>
                 <p className="text-sm font-medium">{instance.name}</p>

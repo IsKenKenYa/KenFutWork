@@ -17,6 +17,13 @@ export const BROWSER_FETCH_TIMEOUT_MS = 8_000;
 export const BROWSER_FETCH_MAX_BYTES = 512 * 1024;
 export const BROWSER_FETCH_MAX_REDIRECTS = 3;
 
+/**
+ * 抓取请求的 UA（单一出处）：搜索插件的网页通道（Bing RSS）与这里的快照抓取
+ * 用同一张脸，免得两条功能对同一站点表现不一致。
+ */
+export const BROWSER_FETCH_USER_AGENT =
+  "KenFutWork/1.0 (+local agent workspace)";
+
 /** 云元数据地址：抓它没有任何产品价值，只有 SSRF 风险。 */
 const BLOCKED_HOSTS = new Set([
   "169.254.169.254",
@@ -276,7 +283,7 @@ export async function fetchPageSnapshot(
       signal: controller.signal,
       headers: {
         // 明确的 UA：不少站点对无 UA 的请求直接回兜底页
-        "user-agent": "KenFutWork/1.0 (+local agent workspace)",
+        "user-agent": BROWSER_FETCH_USER_AGENT,
         accept: "text/html,application/xhtml+xml",
       },
     });

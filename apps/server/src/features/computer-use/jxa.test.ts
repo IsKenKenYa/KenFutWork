@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  normalizeAxNode,
-  normalizeRole,
-  toJxaAppSelector,
-} from "./jxa.js";
+import { normalizeAxNode, normalizeRole, toJxaAppSelector } from "./jxa.js";
 
 describe("normalizeRole（AX role → kind）", () => {
   it("常见 role 映射为短名", () => {

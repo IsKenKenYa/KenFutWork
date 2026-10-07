@@ -161,7 +161,7 @@ export function resolveTerminalShell(
 }
 
 /** shell 本体 + 参数：「执行一条命令」的开关各家不同，`shell: true` 表达不了。 */
-function shellInvocation(
+export function shellInvocation(
   shell: TerminalShellOption,
   command: string,
 ): { executable: string; args: string[] } {

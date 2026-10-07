@@ -1,14 +1,5 @@
-/**
- * zcode 照搬：`@/hooks/useStableAccountAccess.ts`（references/zcode/packages/ui/src/hooks/useStableAccountAccess.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- */
-
-import type {
-  ZCodeAccountAccess,
-  ZCodeProviderAccountAccess,
-} from "@zui/lib/zcode-shared";
 import { useRef } from "react";
+import type { ZCodeAccountAccess, ZCodeProviderAccountAccess } from "@zcode/shared";
 
 type StableAccountAccess = ZCodeProviderAccountAccess | ZCodeAccountAccess;
 

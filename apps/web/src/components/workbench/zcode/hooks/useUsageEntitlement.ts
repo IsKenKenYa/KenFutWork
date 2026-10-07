@@ -1,41 +1,34 @@
-/**
- * zcode 照搬：`@/hooks/useUsageEntitlement.ts`（references/zcode/packages/ui/src/hooks/useUsageEntitlement.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）；源文件自带头注保留于下。
- * 适配注记：本文件类型可选成员放宽 `| undefined`（exactOptionalPropertyTypes 下等价 zcode tsconfig 行为）。
- */
 /* eslint-disable max-lines -- entitlement hook 集中处理缓存、共享 in-flight、轮询和 Team Plan 上下文，后续拆分需保持刷新策略一致。 */
-
-import { useStableAccountAccess } from "@zui/hooks/useStableAccountAccess";
-import { useOptionalBaseWorkspaceServices } from "@zui/hooks/useWorkspaceServices";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  UsageEntitlementSnapshot,
+  ZCodeAccountAccess,
+  ZCodeProviderAccountAccess,
+} from "@zcode/shared";
+import type { IUsageStatsService } from "@zcode/services";
+import { useOptionalBaseWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
+import { useStableAccountAccess } from "@zui/hooks/useStableAccountAccess.js";
+import { logger } from "@zui/logger.js";
 import {
   readCachedUsageEntitlementSnapshot,
   writeCachedUsageEntitlementSnapshot,
-} from "@zui/lib/usageEntitlementCache";
+} from "@zui/lib/usageEntitlementCache.js";
 import {
-  beginSharedEntitlementRequest,
-  buildEntitlementFreshnessKey,
   hasSharedEntitlementFailure,
+  buildEntitlementFreshnessKey,
+  beginSharedEntitlementRequest,
   publishSharedEntitlementSnapshot,
   readSharedEntitlementSnapshot,
   recordSharedEntitlementAccess,
   recordSharedEntitlementFailure,
-  shouldDeferSharedEntitlementAccess,
   shouldDeferSharedEntitlementRefresh,
+  shouldDeferSharedEntitlementAccess,
   shouldUseSharedEntitlementSnapshot,
   subscribeSharedEntitlementSnapshot,
   USAGE_ENTITLEMENT_ACCESS_REFRESH_MS,
   type UsageEntitlementRefreshReason,
   type UsageEntitlementRequestOptions,
-} from "@zui/lib/usageEntitlementRefreshPolicy";
-import type { IUsageStatsService } from "@zui/lib/zcode-services";
-import type {
-  UsageEntitlementSnapshot,
-  ZCodeAccountAccess,
-  ZCodeProviderAccountAccess,
-} from "@zui/lib/zcode-shared";
-import { logger } from "@zui/logger";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+} from "@zui/lib/usageEntitlementRefreshPolicy.js";
 
 interface UsageEntitlementState {
   snapshot: UsageEntitlementSnapshot | null;
@@ -52,9 +45,9 @@ const INITIAL_STATE: UsageEntitlementState = {
 const USAGE_ENTITLEMENT_REFRESH_TIMEOUT_MS = 20_000;
 
 export interface UsageEntitlementRefreshOptions {
-  silent?: boolean | undefined;
-  force?: boolean | undefined;
-  reason?: UsageEntitlementRefreshReason | undefined;
+  silent?: boolean;
+  force?: boolean;
+  reason?: UsageEntitlementRefreshReason;
 }
 
 const entitlementInflightRequests = new WeakMap<
@@ -67,9 +60,7 @@ function getSharedEntitlementSnapshot(params: {
   options: UsageEntitlementRequestOptions;
   requestKey: string;
 }): Promise<UsageEntitlementSnapshot> {
-  let serviceRequests = entitlementInflightRequests.get(
-    params.usageStatsService,
-  );
+  let serviceRequests = entitlementInflightRequests.get(params.usageStatsService);
   if (!serviceRequests) {
     serviceRequests = new Map();
     entitlementInflightRequests.set(params.usageStatsService, serviceRequests);
@@ -85,14 +76,11 @@ function getSharedEntitlementSnapshot(params: {
   // Coding Plan entitlement。生产日志里同一分钟出现 12 个相同 quota RPC，直接拖慢 renderer。
   // 这里按服务实例 + 请求参数合并 in-flight 请求，保留各组件自己的状态更新语义。
   const upstreamRequest = params.usageStatsService.getEntitlementSnapshot({
-    ...(params.options.invalidateBalanceCache
-      ? { invalidateBalanceCache: true }
-      : {}),
+    ...(params.options.invalidateBalanceCache ? { invalidateBalanceCache: true } : {}),
     includeSubscription: params.options.includeSubscription,
     preferredProviderId: params.options.preferredProviderId,
     accountAccess: params.options.accountAccess,
-    allowDisabledPreferredProvider:
-      params.options.allowDisabledPreferredProvider,
+    allowDisabledPreferredProvider: params.options.allowDisabledPreferredProvider,
     requirePreferredProvider: params.options.requirePreferredProvider,
     allowEnvApiKey: params.options.allowEnvApiKey,
   });
@@ -145,16 +133,16 @@ function withUsageEntitlementTimeout<T>(
 }
 
 export interface UseUsageEntitlementOptions {
-  enabled?: boolean | undefined;
-  includeSubscription?: boolean | undefined;
-  preferredProviderId?: string | undefined;
-  accountAccess?: ZCodeProviderAccountAccess | ZCodeAccountAccess | undefined;
-  allowDisabledPreferredProvider?: boolean | undefined;
-  requirePreferredProvider?: boolean | undefined;
-  allowEnvApiKey?: boolean | undefined;
-  cacheKey?: string | undefined;
-  refreshOnMount?: boolean | undefined;
-  mountRefreshReason?: "initial" | "access" | undefined;
+  enabled?: boolean;
+  includeSubscription?: boolean;
+  preferredProviderId?: string;
+  accountAccess?: ZCodeProviderAccountAccess | ZCodeAccountAccess;
+  allowDisabledPreferredProvider?: boolean;
+  requirePreferredProvider?: boolean;
+  allowEnvApiKey?: boolean;
+  cacheKey?: string;
+  refreshOnMount?: boolean;
+  mountRefreshReason?: "initial" | "access";
 }
 
 export function useUsageEntitlement(options: UseUsageEntitlementOptions = {}) {
@@ -177,8 +165,7 @@ export function useUsageEntitlementWithService(
   const preferredProviderId = options.preferredProviderId;
   // Provider Settings schema 每次解析会产生等值新对象，不能因引用变化重启权益请求。
   const accountAccess = useStableAccountAccess(options.accountAccess);
-  const allowDisabledPreferredProvider =
-    options.allowDisabledPreferredProvider === true;
+  const allowDisabledPreferredProvider = options.allowDisabledPreferredProvider === true;
   const requirePreferredProvider = options.requirePreferredProvider === true;
   const allowEnvApiKey = options.allowEnvApiKey;
   const cacheKey = options.cacheKey?.trim() ?? "";
@@ -314,10 +301,7 @@ export function useUsageEntitlementWithService(
               ? { ...requestOptions, invalidateBalanceCache: true }
               : requestOptions,
         });
-        if (
-          requestVersionRef.current !== requestVersion ||
-          !sharedRequest.isCurrent()
-        ) {
+        if (requestVersionRef.current !== requestVersion || !sharedRequest.isCurrent()) {
           return;
         }
         publishSharedEntitlementSnapshot({
@@ -342,10 +326,7 @@ export function useUsageEntitlementWithService(
         });
         writeCachedUsageEntitlementSnapshot({ cacheKey, snapshot });
       } catch (error) {
-        if (
-          requestVersionRef.current !== requestVersion ||
-          !sharedRequest.isCurrent()
-        ) {
+        if (requestVersionRef.current !== requestVersion || !sharedRequest.isCurrent()) {
           return;
         }
         recordSharedEntitlementFailure({
@@ -366,8 +347,7 @@ export function useUsageEntitlementWithService(
         setState((current) => {
           if (
             current.snapshot &&
-            (refreshOptions.silent ||
-              current.snapshot.subscription?.details.length)
+            (refreshOptions.silent || current.snapshot.subscription?.details.length)
           ) {
             return {
               // 后台刷新或已确认订阅的手动刷新失败时，保留上次成功结果。
@@ -445,8 +425,7 @@ export function useUsageEntitlementWithService(
         snapshot: initialSnapshot,
         loading: false,
         error:
-          usageStatsService &&
-          hasSharedEntitlementFailure({ usageStatsService, freshnessKey })
+          usageStatsService && hasSharedEntitlementFailure({ usageStatsService, freshnessKey })
             ? "usage_entitlement_refresh_failed"
             : null,
       });

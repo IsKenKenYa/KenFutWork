@@ -2,13 +2,20 @@ import type { BrandKitDetail } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { ToolExecutionContext } from "../../kernel/types.js";
 import type { CanvasRepository } from "../canvas/repository.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type { BrandKitService } from "./brand-kit-service.js";
+import { BrandKitServiceError } from "./brand-kit-service.js";
 import { createBrandKitToolDefinition } from "./brand-kit-tool.js";
 
 const KIT_ID = "kit-1";
-const USER_ID = "user-1";
+const ACTOR = { instanceId: "instance-1", accessClientId: "client-1" };
+const localInstance = createLocalInstanceService({
+  repository: { ensure: async () => ACTOR.instanceId },
+  dataDir: "/tmp/brand-tool-test",
+});
 const CANVAS_ID = "canvas-1";
-const WORKSPACE_ID = "ws-1";
+const INSTANCE_ID = ACTOR.instanceId;
 
 function kitDetail(): BrandKitDetail {
   return {
@@ -66,7 +73,6 @@ function canvasRepo(
   return {
     findById: async () => null,
     findProjectBrandKitId,
-    findWorkspaceIdByCanvas: async () => WORKSPACE_ID,
     saveContent: async () => 1,
     appendContent: async () => 1,
   };
@@ -79,6 +85,7 @@ function buildTool(
 ) {
   return createBrandKitToolDefinition({
     brandKitService: service as BrandKitService,
+    localInstance,
     canvasRepository: canvasRepo(findProjectBrandKitId),
   });
 }
@@ -93,29 +100,28 @@ async function invoke(
 }
 
 const FULL_CTX: ToolExecutionContext = {
-  accessToken: "token-1",
-  userId: USER_ID,
+  actor: ACTOR,
   canvasId: CANVAS_ID,
-  workspaceId: WORKSPACE_ID,
+  instanceId: INSTANCE_ID,
 };
 
 describe("get_brand_kit 工具（身份与绑定取自执行上下文）", () => {
   it("用 execCtx 里的身份调服务、画布重推导套件绑定，并把资产按类型分组", async () => {
-    const seen: Array<{ accessToken: string; userId: string; kitId: string }> =
-      [];
+    const seen: Array<{ actor: LocalActor; kitId: string }> = [];
     const tool = buildTool({
       getKit: vi.fn(async (user, kitId) => {
-        seen.push({ accessToken: user.accessToken, kitId, userId: user.id });
+        seen.push({
+          actor: user,
+          kitId,
+        });
         return kitDetail();
       }),
     });
 
     const output = await invoke(tool, FULL_CTX);
 
-    // 回归锁：user_id 必须从运行上下文取到并传给服务（:user 隔离谓词所需）
-    expect(seen).toEqual([
-      { accessToken: "token-1", kitId: KIT_ID, userId: USER_ID },
-    ]);
+    // 回归锁：只把可信 Actor 传入实例服务，模型参数不能签发身份。
+    expect(seen).toEqual([{ actor: ACTOR, kitId: KIT_ID }]);
 
     expect(output).toEqual({
       kit_name: "品牌 A",
@@ -150,29 +156,26 @@ describe("get_brand_kit 工具（身份与绑定取自执行上下文）", () =>
     expect(output.fonts[0]?.weight).toBe("400");
   });
 
-  it("缺 accessToken 或 userId 时明示原因，不调服务", async () => {
+  it("缺 Actor 或实例不一致明确失败，且不调用资源服务", async () => {
     const getKit = vi.fn();
     const tool = buildTool({ getKit });
-
-    const noToken = await invoke(tool, {
-      ...FULL_CTX,
-      accessToken: undefined,
-    });
-    expect(noToken.error).toContain("access token");
-    const noUser = await invoke(tool, { ...FULL_CTX, userId: undefined });
-    expect(noUser.error).toContain("user id");
-    const neither = await invoke(tool, {
-      canvasId: CANVAS_ID,
-      workspaceId: WORKSPACE_ID,
-    });
-    expect(neither.error).toContain("access token");
+    await expect(
+      invoke(tool, { canvasId: CANVAS_ID, instanceId: INSTANCE_ID }),
+    ).rejects.toThrow(/可信/);
+    await expect(
+      invoke(tool, { ...FULL_CTX, instanceId: "foreign" }),
+    ).rejects.toThrow(/不匹配/);
     expect(getKit).not.toHaveBeenCalled();
   });
 
   it("服务抛错（套件不存在/越权）时返回 not found，不外泄内部错误", async () => {
     const tool = buildTool({
       getKit: async () => {
-        throw new Error("permission denied for table brand_kits");
+        throw new BrandKitServiceError(
+          "brand_kit_not_found",
+          "套件不存在",
+          404,
+        );
       },
     });
 

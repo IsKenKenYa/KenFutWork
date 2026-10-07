@@ -1,9 +1,4 @@
-/**
- * zcode 照搬：`@/ToolCallBlocks/renderers/cuaScreenshotDetails.ts`（references/zcode/packages/ui/src/ToolCallBlocks/renderers/cuaScreenshotDetails.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1）。
- */
-import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared";
+import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 
 export interface CuaScreenshotDetails {
   dataUrl: string | null;
@@ -67,14 +62,10 @@ export function buildCuaScreenshotDetails(
 ): CuaScreenshotDetails {
   const rawOutput = asRecord(toolCall.raw)?.rawOutput;
   const text = `${collectText(toolCall.output)}\n${collectText(rawOutput)}`;
-  const dimensions =
-    /(?:(?:Full-screen\s+)?screenshot|Zoom image)\s+(\d+)x(\d+)px/iu.exec(text);
-  const attachedMime =
-    /\[Attached\s+(image\/[a-z0-9.+-]+):/iu.exec(text)?.[1] ?? null;
-  const dataUrl =
-    findImageDataUrl(toolCall.output) ?? findImageDataUrl(toolCall.raw);
-  const dataMime =
-    /^data:(image\/[a-z0-9.+-]+);base64,/iu.exec(dataUrl ?? "")?.[1] ?? null;
+  const dimensions = /(?:(?:Full-screen\s+)?screenshot|Zoom image)\s+(\d+)x(\d+)px/iu.exec(text);
+  const attachedMime = /\[Attached\s+(image\/[a-z0-9.+-]+):/iu.exec(text)?.[1] ?? null;
+  const dataUrl = findImageDataUrl(toolCall.output) ?? findImageDataUrl(toolCall.raw);
+  const dataMime = /^data:(image\/[a-z0-9.+-]+);base64,/iu.exec(dataUrl ?? "")?.[1] ?? null;
 
   const input = asRecord(toolCall.input);
   const region =

@@ -1,5 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, win32 } from "node:path";
+import {
+  resolveGovernanceEnvOverrides,
+  resolveGovernanceNumber,
+} from "@kenfutwork/shared";
 
 /**
  * 随包分发的语言运行时（Node / Python / uv / JDK）。
@@ -184,24 +189,80 @@ export interface ResolvedRuntimes {
  *
  * 纯函数（注入 exists）便于测试；`pathValue` 为 undefined 视为「本地没有」。
  */
-export function hasSystemGit(options: {
+export interface SystemGitSearchInput {
   path?: string | undefined;
   exists?: (path: string) => boolean;
+  platform?: NodeJS.Platform;
   separator?: string;
   executable?: string;
-}): boolean {
+}
+
+function findSystemGitExecutable(options: SystemGitSearchInput): string | null {
   const exists = options.exists ?? existsSync;
   // 探测参数按平台取默认：Windows 是 git.exe + `;` 分隔，POSIX 是 git + `:`
   // （此前写死 Windows 参数，macOS/Linux 上永远探不到宿主 git——检查点与 git
   // 面板在非 Windows 桌面/自托管形态全部误判 unavailable，2026-09-22 真机抓到）。
-  const isWindows = process.platform === "win32";
+  const isWindows = (options.platform ?? process.platform) === "win32";
   const executable = options.executable ?? (isWindows ? "git.exe" : "git");
   const separator = options.separator ?? (isWindows ? ";" : ":");
-  return (options.path ?? "")
+  const joinFor = separator === ":" ? posix.join : win32.join;
+  const directories = (options.path ?? "")
     .split(separator)
     .map((part) => part.trim())
-    .filter((part) => part.length > 0)
-    .some((dir) => exists(join(dir, executable)));
+    .filter((part) => part.length > 0);
+  for (const directory of directories) {
+    const candidate = joinFor(directory, executable);
+    if (exists(candidate)) return candidate;
+  }
+  return null;
+}
+
+export function hasSystemGit(options: SystemGitSearchInput): boolean {
+  return findSystemGitExecutable(options) !== null;
+}
+
+/** 宿主启动期解析Apple启动器；Task只消费真实Git，不能在沙箱里调用开发工具selector。 */
+export function resolveSystemGitExecutable(
+  options: SystemGitSearchInput & {
+    env?: Record<string, string | undefined>;
+    /** 测试只替换Apple工具查询，PATH搜索仍走真实实现。 */
+    resolveAppleGit?: (timeoutMs: number) => string;
+  },
+): string | null {
+  const executable = findSystemGitExecutable(options);
+  if (
+    (options.platform ?? process.platform) !== "darwin" ||
+    executable?.replaceAll("\\", "/") !== "/usr/bin/git"
+  )
+    return executable;
+  // 宿主启动探测继承OS环境，再应用显式覆盖；这不是Task子进程的环境授权。
+  const env = { ...process.env, ...options.env };
+  const timeoutMs = resolveGovernanceNumber(
+    "localServiceStartupTimeoutMs",
+    undefined,
+    resolveGovernanceEnvOverrides(env),
+  );
+  const resolveAppleGit =
+    options.resolveAppleGit ??
+    ((budgetMs: number) =>
+      execFileSync("/usr/bin/xcrun", ["--find", "git"], {
+        encoding: "utf8",
+        timeout: budgetMs,
+        env,
+      }));
+  try {
+    const actual = resolveAppleGit(timeoutMs).trim();
+    if (
+      !isAbsolute(actual) ||
+      basename(actual) !== "git" ||
+      actual === "/usr/bin/git" ||
+      !(options.exists ?? existsSync)(actual)
+    )
+      return null;
+    return actual;
+  } catch {
+    return null;
+  }
 }
 
 export function resolveRuntimes(
@@ -219,6 +280,7 @@ export function resolveRuntimes(
     gitExplicit ||
     !hasSystemGit({
       path: input.systemPath ?? process.env.PATH,
+      platform: input.platform ?? process.platform,
       ...(input.exists ? { exists: input.exists } : {}),
     })
   ) {

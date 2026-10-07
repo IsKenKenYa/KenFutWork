@@ -1,17 +1,11 @@
-/**
- * zcode 照搬：`@/GitPane/helpers.ts`（references/zcode/packages/ui/src/GitPane/helpers.ts）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬，仅 import 路径映射（手册 §2.1；本地 import 无 .js 后缀）。
- */
-
+import type { GitChangeSourceId, GitDiffResult } from "@zcode/shared";
 import { getFiletypeFromFileName } from "@pierre/diffs";
 import {
   getPatchPreviewLineContent,
   getPlainTextPatchContentLines,
   getPlainTextPatchFallbackLines,
   parseTruncatedMarkerOmittedLineCount,
-} from "@zui/lib/patchDiffPreview";
-import type { GitChangeSourceId, GitDiffResult } from "@zui/lib/zcode-shared";
+} from "@zui/lib/patchDiffPreview.js";
 
 const MAX_RICH_DIFF_FULL_CONTENT_CHAR_COUNT = 180_000;
 const MAX_RICH_DIFF_FULL_CONTENT_LINE_COUNT = 1_200;
@@ -43,9 +37,7 @@ export function getSourceMessageId(sourceId: GitChangeSourceId): string {
   }
 }
 
-export function getDiffFallbackMessageId(
-  availability: GitDiffResult["availability"],
-): string {
+export function getDiffFallbackMessageId(availability: GitDiffResult["availability"]): string {
   switch (availability) {
     case "binary":
       return "git.diff.binaryTitle";
@@ -56,16 +48,11 @@ export function getDiffFallbackMessageId(
   }
 }
 
-export function getDiffCacheKey(
-  sourceId: GitChangeSourceId,
-  path: string,
-): string {
+export function getDiffCacheKey(sourceId: GitChangeSourceId, path: string): string {
   return `${sourceId}:${path}`;
 }
 
-export function getGitPaneDiffFindContent(
-  diff: GitDiffResult | null,
-): string | null {
+export function getGitPaneDiffFindContent(diff: GitDiffResult | null): string | null {
   if (diff?.availability !== "patch") {
     return null;
   }
@@ -137,8 +124,7 @@ function shouldRenderPatchOnlyGitDiffPreview(diff: GitDiffResult): boolean {
     return true;
   }
 
-  const fullContentCharCount =
-    (diff.beforeContent?.length ?? 0) + (diff.afterContent?.length ?? 0);
+  const fullContentCharCount = (diff.beforeContent?.length ?? 0) + (diff.afterContent?.length ?? 0);
   if (fullContentCharCount > MAX_RICH_DIFF_FULL_CONTENT_CHAR_COUNT) {
     return true;
   }
@@ -151,9 +137,7 @@ function shouldRenderPatchOnlyGitDiffPreview(diff: GitDiffResult): boolean {
   return fullContentLineCount > MAX_RICH_DIFF_FULL_CONTENT_LINE_COUNT;
 }
 
-export function getGitPaneDiffPreviewPlan(
-  diff: GitDiffResult | null,
-): GitPaneDiffPreviewPlan {
+export function getGitPaneDiffPreviewPlan(diff: GitDiffResult | null): GitPaneDiffPreviewPlan {
   if (diff?.availability !== "patch" || !diff.patch) {
     return { kind: "rich" };
   }
@@ -206,9 +190,7 @@ function shouldRenderPlainTextDiffPreview(patch: string): string[] | null {
   // review 面板只该把纯文本新增/删除文件降级成轻量 preview。
   // 底层通用 fallback 为了避免文件变更展开空白，会覆盖 JSON 等结构化文件；
   // 这里重新按文件类型收口，避免结构化文件绕过 PatchDiff 的语义化渲染路径。
-  return getFiletypeFromFileName(patchFileName) === "text"
-    ? fallbackLines
-    : null;
+  return getFiletypeFromFileName(patchFileName) === "text" ? fallbackLines : null;
 }
 
 function getPatchContentFileName(lines: readonly string[]): string | null {

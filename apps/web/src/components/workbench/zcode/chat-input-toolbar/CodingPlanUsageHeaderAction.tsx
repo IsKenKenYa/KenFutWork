@@ -1,14 +1,7 @@
-/**
- * zcode 照搬：`@/chat-input-toolbar/CodingPlanUsageHeaderAction.tsx`（references/zcode/packages/ui/src/chat-input-toolbar/CodingPlanUsageHeaderAction.tsx）
- * 许可证：Apache-2.0（zcode）。
- * 适配注记：逐字照搬；import 路径映射（手册 §2.1）+ 本地 import 去 .js 后缀；P5 适配：可选属性放宽 `| undefined`（exactOptionalPropertyTypes，照搬调用点显式传 undefined）
- *（本仓 Turbopack 不做 .js→.ts/.tsx 试探，手册 §2.4-2 在本仓构建链的等价适配）。
- */
-
-import { ControlHintTooltip } from "@zui/ControlHintTooltip";
-import { TooltipProvider } from "@zui/components/ui/tooltip";
 import { CheckIcon, ChevronRightIcon, InfoIcon, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { TooltipProvider } from "@zui/components/ui/tooltip.js";
 
 const CONTEXT_USAGE_REFRESH_SUCCESS_MS = 1_000;
 
@@ -23,15 +16,13 @@ export function CodingPlanUsageHeaderAction({
 }: {
   error: string | null | undefined;
   loading: boolean;
-  onUsageClick?: (() => void) | undefined;
+  onUsageClick?: () => void;
   openLabel: string;
   refreshingLabel: string;
   updatedLabel: string;
-  warningLabel?: string | undefined;
+  warningLabel?: string;
 }) {
-  const [refreshActionState, setRefreshActionState] = useState<
-    "idle" | "success"
-  >("idle");
+  const [refreshActionState, setRefreshActionState] = useState<"idle" | "success">("idle");
   const previousLoadingRef = useRef<boolean | null>(null);
 
   useEffect(() => {

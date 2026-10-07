@@ -1,74 +1,94 @@
+import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { createViewerRepository } from "../bootstrap/repository.js";
-import { createPostgresPersistence } from "../persistence/providers/postgres.js";
+import { createLocalInstanceRepository } from "../local-instance/repository.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
+import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createSettingsRepository } from "./repository.js";
+import { createSettingsService } from "./settings-service.js";
 
-/**
- * settings 聚合真实库集成测试（默认 skipped：需要 DATABASE_URL）。
- * 目的：验证 upsert 的 ON CONFLICT (workspace_id) 语法与读回在真库成立。
- *
- * 运行：DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
- *       pnpm --filter @kenfutwork/server exec vitest run settings.integration
- */
-const DATABASE_URL = process.env.DATABASE_URL;
-
-type IdRow = { id: string };
-
-describe.skipIf(!DATABASE_URL)("settings 真实库集成", () => {
-  it("upsert 可重复执行且读回最新值，原值随后还原", async () => {
-    const persistence = createPostgresPersistence({
-      databaseUrl: DATABASE_URL as string,
-    });
-
-    try {
-      const profile = await persistence.queryOne<IdRow>(
-        "select id from public.profiles order by created_at limit 1",
-      );
-      expect(profile, "需要至少一个已引导的 profile 作夹具").not.toBeNull();
-
-      const workspace = await createViewerRepository(
-        persistence,
-      ).findPersonalWorkspace((profile as IdRow).id);
-      const workspaceId = workspace?.id as string;
-      expect(workspaceId).toBeTruthy();
-
-      const settings = createSettingsRepository(persistence);
-      const original = await settings.findDefaultModel(workspaceId);
-
+/** 默认跳过；只创建临时集群、重放唯一 SQL 历史，不接入开发或用户数据库。 */
+describe.skipIf(process.env.KENFUTWORK_SETTINGS_TEST_PG !== "1")(
+  "实例设置真实 Postgres",
+  () => {
+    it("单实例 upsert、不同列并发、JSON 治理合并、回调读回及越界拒绝成立", async () => {
+      const database = await createTaskWorkDatabase();
       try {
-        await settings.upsertDefaultModel(workspaceId, "integration-model-a");
-        await expect(settings.findDefaultModel(workspaceId)).resolves.toBe(
-          "integration-model-a",
+        const localInstance = createLocalInstanceService({
+          repository: createLocalInstanceRepository(database.persistence),
+          dataDir: join(database.directory, "local-data"),
+        });
+        const actor = await localInstance.serviceActor();
+        const repository = createSettingsRepository(database.persistence);
+        const service = createSettingsService({ localInstance, repository });
+        const events: unknown[] = [];
+        const dispose = service.onUpdated(async (event) => {
+          events.push({
+            event,
+            settings: await service.getInstanceSettings(
+              actor,
+              event.instanceId,
+            ),
+          });
+        });
+        const value = [
+          { name: "inspect", description: "检查", prompt: "检查项目" },
+        ];
+        await service.updateInstanceSettings(actor, actor.instanceId, {
+          commands: value,
+          hooks: [{ event: "turn-end", command: "echo done" }],
+          userRules: "中文",
+          ruleEntries: ["保留配置"],
+        });
+        expect(await repository.findCommands(actor.instanceId)).toEqual(value);
+        expect(events).toHaveLength(1);
+        dispose();
+        await Promise.all([
+          service.updateInstanceSettings(actor, actor.instanceId, {
+            defaultModel: "model-a",
+          }),
+          service.updateInstanceSettings(actor, actor.instanceId, {
+            codeIndexEnabled: true,
+          }),
+        ]);
+        await Promise.all([
+          service.updateInstanceSettings(actor, actor.instanceId, {
+            localAccessTicketTtlMs: 45_000,
+          }),
+          service.updateInstanceSettings(actor, actor.instanceId, {
+            localAccessSessionMaxAgeMs: 180_000,
+          }),
+        ]);
+        const settings = await service.getInstanceSettings(
+          actor,
+          actor.instanceId,
         );
-
-        // 幂等：同键再次 upsert 走更新分支而非报冲突。
-        await settings.upsertDefaultModel(workspaceId, "integration-model-b");
-        await expect(settings.findDefaultModel(workspaceId)).resolves.toBe(
-          "integration-model-b",
+        expect(settings).toMatchObject({
+          defaultModel: "model-a",
+          codeIndexEnabled: true,
+          localAccessTicketTtlMs: 45_000,
+          localAccessSessionMaxAgeMs: 180_000,
+          commands: value,
+          userRules: "中文",
+          ruleEntries: ["保留配置"],
+        });
+        expect(events).toHaveLength(1);
+        expect(await repository.findDefaultModel(randomUUID())).toBeNull();
+        await expect(
+          service.updateInstanceSettings(actor, randomUUID(), {
+            defaultModel: "foreign",
+          }),
+        ).rejects.toMatchObject({
+          code: "settings_forbidden",
+          statusCode: 403,
+        });
+        expect(await repository.findDefaultModel(actor.instanceId)).toBe(
+          "model-a",
         );
       } finally {
-        if (original !== null) {
-          await settings.upsertDefaultModel(workspaceId, original);
-        }
+        await database.close();
       }
-    } finally {
-      await persistence.close();
-    }
-  });
-
-  it("跨工作区读不到设置（隔离门禁）", async () => {
-    const persistence = createPostgresPersistence({
-      databaseUrl: DATABASE_URL as string,
     });
-
-    try {
-      const settings = createSettingsRepository(persistence);
-      await expect(
-        settings.findDefaultModel("00000000-0000-0000-0000-000000000000"),
-      ).resolves.toBeNull();
-    } finally {
-      await persistence.close();
-    }
-  });
-});
+  },
+);
