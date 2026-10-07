@@ -50,7 +50,7 @@
     "build": "node ../../scripts/validate-foundation-app.mjs build",
     "predev": "pnpm --filter @kenfutwork/shared build",
     "dev": "node --watch --env-file=../../.env.local --import tsx ./src/server.ts & WORKER_ID=w1 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & wait",
-    "dev:server": "node --watch --env-file=../../.env.local --import tsx ./src/server.ts",
+    "dev:server": "node --env-file=../../.env.local scripts/dev-server.mjs",
     "dev:worker": "node --watch --env-file=../../.env.local --import tsx ./src/worker.ts",
     "dev:workers:2": "WORKER_ID=w1 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & WORKER_ID=w2 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & wait",
     "dev:workers:3": "WORKER_ID=w1 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & WORKER_ID=w2 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & WORKER_ID=w3 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & wait",
