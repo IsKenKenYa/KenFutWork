@@ -6,12 +6,11 @@
  * 模型各自**有哪些文件**不在这里，在 `catalog.ts`（那张表同时供下载与界面用）。
  */
 
-import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import type { ServerEnv } from "../../config/env.js";
 
-const VOICE_MODELS_DIR = ".kenfutwork";
 const VOICE_MODELS_SUBDIR = "models";
 
 /**
@@ -21,10 +20,9 @@ const VOICE_MODELS_SUBDIR = "models";
 export function resolveVoiceModelsRoot(
   env: Pick<ServerEnv, "desktopDataDir">,
 ): string {
-  if (env.desktopDataDir) {
-    return join(env.desktopDataDir, VOICE_MODELS_SUBDIR);
-  }
-  return join(homedir(), VOICE_MODELS_DIR, VOICE_MODELS_SUBDIR);
+  return join(resolveDesktopDataDir({
+    env: { KENFUTWORK_DATA_DIR: env.desktopDataDir },
+  }), VOICE_MODELS_SUBDIR);
 }
 
 /** 某个内置模型的目录绝对路径。 */

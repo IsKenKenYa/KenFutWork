@@ -67,7 +67,7 @@ describe("resolveInstance*ProviderFromPayload（capability 过滤）", () => {
     expect(result?.provider.models.map((m) => m.id)).toEqual(["vid-1"]);
   });
 
-  it("无实例 id 返回 undefined（内置目录路径不受影响）", async () => {
+  it("无供应商引用不尝试解析凭据", async () => {
     expect(
       await resolveInstanceImageProviderFromPayload(undefined, {}),
     ).toBeUndefined();

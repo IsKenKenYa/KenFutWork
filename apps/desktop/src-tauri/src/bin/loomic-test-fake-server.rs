@@ -13,15 +13,23 @@ fn main() {
         .parse()
         .expect("端口必须是数字");
 
-    if let Some(flag) = args.next() {
-        assert_eq!(flag, "--child-pid-file", "未知参数：{flag}");
-        let path = args.next().expect("--child-pid-file 需要路径");
-        let child = spawn_long_lived_child();
-        std::fs::write(path, child.to_string()).expect("写后代 pid 失败");
+    while let Some(flag) = args.next() {
+        let path = args.next().expect("测试参数需要路径");
+        match flag.as_str() {
+            "--child-pid-file" => {
+                let child = spawn_long_lived_child();
+                std::fs::write(path, child.to_string()).expect("写后代 pid 失败");
+            }
+            "--startup-gate" => {
+                while !std::path::Path::new(&path).exists() {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+            }
+            _ => panic!("未知参数：{flag}"),
+        }
     }
 
-    let listener = std::net::TcpListener::bind(("127.0.0.1", port))
-        .expect("绑定端口失败");
+    let listener = std::net::TcpListener::bind(("127.0.0.1", port)).expect("绑定端口失败");
     eprintln!("fake-server listening on {port}");
     for stream in listener.incoming() {
         let Ok(mut stream) = stream else { break };

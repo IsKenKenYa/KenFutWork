@@ -12,6 +12,19 @@ import { createAssistantBlockCollector } from "./assistant-block-collector.js";
  */
 
 describe("createAssistantBlockCollector", () => {
+  it("子代理正文不进入主会话历史，主正文保持连续", () => {
+    const collector = createAssistantBlockCollector();
+    collector.onEvent({ type: "message.delta", delta: "主会话开始。" });
+    collector.onEvent({
+      type: "message.delta",
+      delta: "只属于子代理的正文。",
+      agentCallId: "dispatch-explore-1",
+    });
+    collector.onEvent({ type: "message.delta", delta: "主会话结束。" });
+
+    expect(collector.text).toBe("主会话开始。主会话结束。");
+  });
+
   it("文本增量续写同一 text 块；工具打段后新起一段并打 at", () => {
     const collector = createAssistantBlockCollector();
     collector.onEvent({

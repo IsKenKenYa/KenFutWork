@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -48,6 +54,35 @@ describe("local-fs Provider", () => {
     await expect(bucket.download("x.bin")).resolves.toEqual(
       new Uint8Array([1]),
     );
+  });
+
+  it("私有对象有界读取拒绝超长与 symlink，允许准确预算和零字节", async () => {
+    const root = tempRoot();
+    try {
+      const bucket = localStore(root).bucket("code-attachments");
+      await bucket.upload("task/content", new Uint8Array([0, 255, 2, 3]));
+      await expect(
+        bucket.download("task/content", { maxBytes: 3 }),
+      ).rejects.toBeInstanceOf(BlobError);
+      expect(
+        Array.from(await bucket.download("task/content", { maxBytes: 4 })),
+      ).toEqual([0, 255, 2, 3]);
+      await bucket.upload("task/empty", new Uint8Array());
+      expect(
+        (await bucket.download("task/empty", { maxBytes: 0 })).length,
+      ).toBe(0);
+      writeFileSync(join(root, "outside.bin"), new Uint8Array([9]));
+      symlinkSync(
+        join(root, "outside.bin"),
+        join(root, "code-attachments", "task", "link"),
+      );
+      await expect(
+        bucket.download("task/link", { maxBytes: 4 }),
+      ).rejects.toBeInstanceOf(BlobError);
+      await expect(bucket.isPublic()).resolves.toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("upsert=true 覆盖", async () => {

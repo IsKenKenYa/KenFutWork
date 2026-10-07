@@ -1,5 +1,6 @@
 import type { ProviderInstanceResponse } from "@kenfutwork/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { createLocalInstanceService } from "../local-instance/service.js";
 import {
   createModelCatalogService,
   parseInstanceSpecifier,
@@ -7,22 +8,22 @@ import {
 } from "./model-catalog-service.js";
 import { buildModelsDevSnapshot } from "./models-dev-snapshot.js";
 
-const user = {
-  accessToken: "token",
-  email: "u@example.com",
-  id: "user-1",
-  userMetadata: {},
-};
+const actor = { instanceId: "local-1", accessClientId: "desktop" };
+const localInstance = createLocalInstanceService({
+  repository: { ensure: async () => actor.instanceId },
+  dataDir: "/tmp/catalog-test",
+});
 
 function instance(
   overrides: Partial<ProviderInstanceResponse> = {},
 ): ProviderInstanceResponse {
   return {
     id: "11111111-1111-1111-1111-111111111111",
-    scope: "workspace",
+    scope: "local",
     name: "我的网关",
     protocol: "openai-compatible",
     hasCredential: true,
+    configRevision: 1,
     models: [
       { id: "gpt-x", name: "GPT X", capability: "chat" },
       { id: "img-1", name: "IMG 1", capability: "image" },
@@ -36,6 +37,7 @@ function instance(
 describe("modelCatalog（目录推导）", () => {
   it("从启用实例推导目录条目，禁用实例被跳过", async () => {
     const catalog = createModelCatalogService({
+      localInstance,
       modelProviders: {
         listInstances: async () => [
           instance(),
@@ -45,60 +47,61 @@ describe("modelCatalog（目录推导）", () => {
             enabled: false,
           }),
         ],
-        listSystemInstances: async () => [],
-      } as never,
+      },
     });
-    const entries = await catalog.listCatalog(user);
+    const entries = await catalog.listCatalog(actor);
     expect(entries).toHaveLength(2);
     expect(entries.every((e) => e.provider.instanceId === instance().id)).toBe(
       true,
     );
     expect(entries.map((e) => e.capability).sort()).toEqual(["chat", "image"]);
-    expect(entries.every((e) => e.provider.scope === "workspace")).toBe(true);
+    expect(entries.every((e) => e.provider.scope === "local")).toBe(true);
   });
 
   it("空实例列表返回空目录", async () => {
     const catalog = createModelCatalogService({
+      localInstance,
       modelProviders: {
         listInstances: async () => [],
-        listSystemInstances: async () => [],
-      } as never,
+      },
     });
-    expect(await catalog.listCatalog(user)).toEqual([]);
+    expect(await catalog.listCatalog(actor)).toEqual([]);
   });
 
-  it("平台池（system）实例并入目录并标记 scope，供前端与计费区分", async () => {
+  it("拒绝其他实例 Actor，目录故障不会被平台池降级掩盖", async () => {
+    const listInstances = vi.fn(async () => [instance()]);
     const catalog = createModelCatalogService({
-      modelProviders: {
-        listInstances: async () => [],
-        listSystemInstances: async () => [
-          instance({
-            id: "33333333-3333-3333-3333-333333333333",
-            scope: "system",
-            name: "平台池",
-            models: [{ id: "pool-model", name: "Pool", capability: "chat" }],
-          }),
-        ],
-      } as never,
+      localInstance,
+      modelProviders: { listInstances },
     });
-    const entries = await catalog.listCatalog(user);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.provider.scope).toBe("system");
-    expect(entries[0]?.provider.name).toBe("平台池");
+    await expect(
+      catalog.listCatalog({ instanceId: "foreign", accessClientId: "desktop" }),
+    ).rejects.toMatchObject({ code: "instance_forbidden" });
+    expect(listInstances).not.toHaveBeenCalled();
+    const failure = new Error("目录存储失败");
+    listInstances.mockRejectedValueOnce(failure);
+    await expect(catalog.listCatalog(actor)).rejects.toBe(failure);
   });
 
-  it("平台池读取失败不拖垮用户自有目录（降级）", async () => {
+  it("模型级停用过滤，完整配置快照仍保留停用条目且无凭据", async () => {
+    const models = [
+      { id: "on", name: "启用", capability: "chat" as const },
+      { id: "off", name: "停用", capability: "chat" as const, enabled: false },
+    ];
+    const configured = instance({ models });
     const catalog = createModelCatalogService({
-      modelProviders: {
-        listInstances: async () => [instance()],
-        listSystemInstances: async () => {
-          throw new Error("admin client missing");
-        },
-      } as never,
+      localInstance,
+      modelProviders: { listInstances: async () => [configured] },
     });
-    const entries = await catalog.listCatalog(user);
-    expect(entries).toHaveLength(2);
-    expect(entries.every((e) => e.provider.scope === "workspace")).toBe(true);
+    expect((await catalog.listCatalog(actor)).map((entry) => entry.id)).toEqual(
+      ["on"],
+    );
+    expect(
+      catalog.describeInstanceModels([configured]).map((entry) => entry.id),
+    ).toEqual(["on", "off"]);
+    expect(
+      JSON.stringify(catalog.describeInstanceModels([configured])),
+    ).not.toContain("apiKey");
   });
 });
 
@@ -140,10 +143,10 @@ describe("modelCatalog 快照 hints（三层合并）", () => {
 
   function catalogWith(models: ProviderInstanceResponse["models"]) {
     return createModelCatalogService({
+      localInstance,
       modelProviders: {
         listInstances: async () => [instance({ models })],
-        listSystemInstances: async () => [],
-      } as never,
+      },
       snapshot,
     });
   }
@@ -152,7 +155,7 @@ describe("modelCatalog 快照 hints（三层合并）", () => {
     const catalog = catalogWith([
       { id: "gpt-x", name: "GPT X", capability: "chat" },
     ]);
-    const [entry] = await catalog.listCatalog(user);
+    const [entry] = await catalog.listCatalog(actor);
     expect(entry?.hints).toEqual({
       source: "models-dev",
       snapshotProvider: "openai",
@@ -177,7 +180,7 @@ describe("modelCatalog 快照 hints（三层合并）", () => {
         contextWindow: 8000,
       },
     ]);
-    const [entry] = await catalog.listCatalog(user);
+    const [entry] = await catalog.listCatalog(actor);
     expect(entry?.hints).toEqual({
       source: "models-dev",
       snapshotProvider: "openai",
@@ -193,7 +196,7 @@ describe("modelCatalog 快照 hints（三层合并）", () => {
     const catalog = catalogWith([
       { id: "my-private-model", name: "私有模型", capability: "chat" },
     ]);
-    const [entry] = await catalog.listCatalog(user);
+    const [entry] = await catalog.listCatalog(actor);
     expect(entry?.hints).toBeUndefined();
   });
 
@@ -201,11 +204,12 @@ describe("modelCatalog 快照 hints（三层合并）", () => {
     const openaiCatalog = catalogWith([
       { id: "gpt-x", name: "G", capability: "chat" },
     ]);
-    const [openaiEntry] = await openaiCatalog.listCatalog(user);
+    const [openaiEntry] = await openaiCatalog.listCatalog(actor);
     expect(openaiEntry?.hints?.snapshotProvider).toBe("openai");
     expect(openaiEntry?.hints?.contextWindow).toBe(400000);
 
     const anthropicCatalog = createModelCatalogService({
+      localInstance,
       modelProviders: {
         listInstances: async () => [
           instance({
@@ -213,23 +217,22 @@ describe("modelCatalog 快照 hints（三层合并）", () => {
             protocol: "anthropic",
           }),
         ],
-        listSystemInstances: async () => [],
-      } as never,
+      },
       snapshot,
     });
-    const [anthropicEntry] = await anthropicCatalog.listCatalog(user);
+    const [anthropicEntry] = await anthropicCatalog.listCatalog(actor);
     expect(anthropicEntry?.hints?.snapshotProvider).toBe("anthropic");
     expect(anthropicEntry?.hints?.contextWindow).toBe(1000);
   });
 
   it("不传快照 → 全部条目无 hints，目录照常（fail-open）", async () => {
     const catalog = createModelCatalogService({
+      localInstance,
       modelProviders: {
         listInstances: async () => [instance()],
-        listSystemInstances: async () => [],
-      } as never,
+      },
     });
-    const entries = await catalog.listCatalog(user);
+    const entries = await catalog.listCatalog(actor);
     expect(entries).toHaveLength(2);
     expect(entries.every((e) => e.hints === undefined)).toBe(true);
   });

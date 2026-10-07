@@ -6,17 +6,18 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
 import {
   type CanvasService,
   CanvasServiceError,
 } from "../features/canvas/canvas-service.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import { LocalInstanceError } from "../features/local-instance/service.js";
 import { isZodError } from "./zod-error.js";
 
 export async function registerCanvasRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     canvasService: CanvasService;
   },
 ) {
@@ -24,7 +25,7 @@ export async function registerCanvasRoutes(
     "/api/canvases/:canvasId",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
+        const user = await options.localAccess.authenticate(request);
         if (!user) return sendUnauthorized(reply);
         const canvas = await options.canvasService.getCanvas(
           user,
@@ -42,7 +43,7 @@ export async function registerCanvasRoutes(
     { bodyLimit: 50 * 1024 * 1024 }, // 50 MB — canvas content includes base64 image data
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
+        const user = await options.localAccess.authenticate(request);
         if (!user) return sendUnauthorized(reply);
         const payload = canvasSaveRequestSchema.parse(request.body);
         await options.canvasService.saveCanvasContent(
@@ -74,14 +75,17 @@ function sendUnauthorized(reply: FastifyReply) {
     unauthenticatedErrorResponseSchema.parse({
       error: {
         code: "unauthorized",
-        message: "Missing or invalid bearer token.",
+        message: "缺少或无效的本机接入凭据。",
       },
     }),
   );
 }
 
 function sendCanvasError(error: unknown, reply: FastifyReply) {
-  if (error instanceof CanvasServiceError) {
+  if (
+    error instanceof CanvasServiceError ||
+    error instanceof LocalInstanceError
+  ) {
     return reply.code(error.statusCode).send(
       applicationErrorResponseSchema.parse({
         error: {

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-
-import type { AuthenticatedUser } from "../auth/types.js";
-import type { ViewerRepository } from "../bootstrap/repository.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
@@ -9,15 +10,10 @@ import {
 import { createUsageRepository, type UsageRepository } from "./repository.js";
 import { createUsageService } from "./usage-service.js";
 
-const USER_ID = "user-1";
-const WORKSPACE_ID = "ws-1";
+const CLIENT_ID = "client-1";
+const INSTANCE_ID = "instance-1";
 
-const USER: AuthenticatedUser = {
-  accessToken: "token",
-  email: "user@example.com",
-  id: USER_ID,
-  userMetadata: {},
-};
+const USER: LocalActor = { instanceId: INSTANCE_ID, accessClientId: CLIENT_ID };
 
 type FakeResult = { rowCount: number | null; rows: unknown[] } | Error;
 
@@ -48,6 +44,9 @@ function createRunner(
         release: () => {},
       };
     },
+    async acquireSession() {
+      throw new Error("此查询夹具不提供真实执行宿主会话。");
+    },
     async end() {},
   };
 
@@ -58,19 +57,16 @@ function createRunner(
   };
 }
 
-const WORKSPACES_STUB: ViewerRepository = {
-  bootstrap: async () => {},
-  findMembership: async () => null,
-  findPersonalWorkspace: async () => ({
-    id: WORKSPACE_ID,
-    name: "Personal Workspace",
-    ownerUserId: USER_ID,
-    type: "personal",
-  }),
-  findProfile: async () => null,
-  findPlatformRole: async () => null,
-  updatePlatformRole: async () => 0,
-  updateDisplayName: async () => null,
+const INSTANCE_STUB: LocalInstanceService = {
+  getContext: async () => ({ instanceId: INSTANCE_ID, dataDir: "/data" }),
+  resolve: async () => ({ instanceId: INSTANCE_ID, dataDir: "/data" }),
+  serviceActor: async () => ({ instanceId: INSTANCE_ID, accessClientId: null }),
+  isDraining: () => false,
+  assertReady() {},
+  beginAdmission: () => () => {},
+  activeAdmissionCount: () => 0,
+  beginMaintenance: async () => {},
+  cancelMaintenance() {},
 };
 
 function createFakeRepository(
@@ -85,11 +81,11 @@ function createFakeRepository(
 }
 
 describe("usage repository（workspace 作用域 + 驱动数值归一）", () => {
-  it("写入按工作区绑定，缺省可选字段落 NULL、token 缺省落 0", async () => {
+  it("写入按实例绑定，缺省可选字段落 NULL、token 缺省落 0", async () => {
     const { calls, runner } = createRunner();
 
     await createUsageRepository(createPersistenceFromRunner(runner)).insert({
-      workspaceId: WORKSPACE_ID,
+      instanceId: INSTANCE_ID,
       provider: "openai",
       model: "gpt-4.1",
       capability: "chat",
@@ -112,7 +108,7 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
       0,
       null,
       null,
-      WORKSPACE_ID,
+      INSTANCE_ID,
     ]);
   });
 
@@ -120,8 +116,8 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
     const { calls, runner } = createRunner();
 
     await createUsageRepository(createPersistenceFromRunner(runner)).insert({
-      workspaceId: WORKSPACE_ID,
-      userId: USER_ID,
+      instanceId: INSTANCE_ID,
+      accessClientId: CLIENT_ID,
       provider: "anthropic",
       model: "claude",
       capability: "image",
@@ -135,7 +131,7 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
     });
 
     expect(calls[0]?.values).toEqual([
-      USER_ID,
+      CLIENT_ID,
       "anthropic",
       "claude",
       "image",
@@ -146,11 +142,11 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
       20,
       30,
       0.5,
-      WORKSPACE_ID,
+      INSTANCE_ID,
     ]);
   });
 
-  it("读取按工作区限定，bigint/numeric 字符串归一为 number，occurred_at 归一为 ISO", async () => {
+  it("读取按实例限定，bigint/numeric 字符串归一为 number，occurred_at 归一为 ISO", async () => {
     const { calls, runner } = createRunner(() => ({
       rowCount: 2,
       rows: [
@@ -178,7 +174,7 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
 
     const rows = await createUsageRepository(
       createPersistenceFromRunner(runner),
-    ).listRecent(WORKSPACE_ID, 10000);
+    ).listRecent(INSTANCE_ID, 10000);
 
     expect(rows[0]?.input_tokens).toBe(120);
     expect(rows[0]?.output_tokens).toBe(80);
@@ -189,16 +185,16 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
     expect(rows[1]?.occurred_at).toBe("2026-09-15T08:00:00.000Z");
 
     const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
-    expect(sql).toContain("where workspace_id = $2");
+    expect(sql).toContain("where instance_id = $2");
     expect(sql).toContain("order by occurred_at desc");
     expect(sql).toContain("limit $1");
-    expect(calls[0]?.values).toEqual([10000, WORKSPACE_ID]);
+    expect(calls[0]?.values).toEqual([10000, INSTANCE_ID]);
   });
 
   /**
    * 最长聊天时长（R4-2 剩下的卡）。这条口径最容易写错成「所有消息的首尾差」——
    * 那会把跨天的多条对话算成一条。这里锁死「先按会话分组取跨度、再取最大值」，
-   * 以及 FORM-9 的父链谓词（chat_sessions 没有 workspace_id 列）。
+   * 以及 FORM-9 的父链谓词（chat_sessions 没有 instance_id 列）。
    */
   it("最长聊天时长：按会话分组取首尾跨度，谓词走 canvases → projects 父链", async () => {
     const { calls, runner } = createRunner(() => ({
@@ -208,16 +204,16 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
 
     const seconds = await createUsageRepository(
       createPersistenceFromRunner(runner),
-    ).longestSessionSeconds(WORKSPACE_ID);
+    ).longestSessionSeconds(INSTANCE_ID);
 
     expect(seconds).toBe(42300);
     const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
     expect(sql).toContain("max(m.created_at) - min(m.created_at)");
     expect(sql).toContain("group by s.id");
     expect(sql).toContain("join public.canvases c on c.id = s.canvas_id");
-    // `:workspace` 由 persistence 层重写成位置参数；本条语句只有它一个参数，故是 $1
-    expect(sql).toContain("p.workspace_id = $1");
-    expect(calls[0]?.values).toEqual([WORKSPACE_ID]);
+    // `:instance` 由 persistence 层重写成位置参数；本条语句只有它一个参数，故是 $1
+    expect(sql).toContain("p.instance_id = $1");
+    expect(calls[0]?.values).toEqual([INSTANCE_ID]);
     // 没有任何会话时 coalesce 兜 0，而不是把 null 透出去
     expect(sql).toContain("coalesce(max(span_seconds), 0)");
   });
@@ -230,7 +226,7 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
       }));
       const seconds = await createUsageRepository(
         createPersistenceFromRunner(runner),
-      ).longestSessionSeconds(WORKSPACE_ID);
+      ).longestSessionSeconds(INSTANCE_ID);
       expect(seconds).toBe(0);
     }
   });
@@ -270,7 +266,7 @@ describe("usage service", () => {
           },
         ],
       }),
-      workspaces: WORKSPACES_STUB,
+      localInstance: INSTANCE_STUB,
     });
 
     const summary = await service.summarize(USER);
@@ -299,39 +295,18 @@ describe("usage service", () => {
     ]);
   });
 
-  it("工作区解析不到时汇总报错（不静默返回空）", async () => {
+  it("实例解析不到时汇总报错（不静默返回空）", async () => {
     const service = createUsageService({
       repository: createFakeRepository(),
-      workspaces: {
-        ...WORKSPACES_STUB,
-        findPersonalWorkspace: async () => null,
+      localInstance: {
+        ...INSTANCE_STUB,
+        resolve: async () => {
+          throw new Error("本地实例不可用");
+        },
       },
     });
 
-    await expect(service.summarize(USER)).rejects.toThrow(
-      /summary query failed/,
-    );
-  });
-
-  it("resolveWorkspaceIdByUser 复用 workspaces 域查询（worker 无 auth 也能用）", async () => {
-    const service = createUsageService({
-      repository: createFakeRepository(),
-      workspaces: WORKSPACES_STUB,
-    });
-    await expect(service.resolveWorkspaceIdByUser(USER_ID)).resolves.toBe(
-      WORKSPACE_ID,
-    );
-
-    const missing = createUsageService({
-      repository: createFakeRepository(),
-      workspaces: {
-        ...WORKSPACES_STUB,
-        findPersonalWorkspace: async () => null,
-      },
-    });
-    await expect(
-      missing.resolveWorkspaceIdByUser(USER_ID),
-    ).resolves.toBeUndefined();
+    await expect(service.summarize(USER)).rejects.toThrow(/本地实例不可用/);
   });
 
   it("落账失败只告警不抛错（计量是旁路，不阻断主链路）", async () => {
@@ -341,12 +316,12 @@ describe("usage service", () => {
           throw new Error("connection reset");
         },
       }),
-      workspaces: WORKSPACES_STUB,
+      localInstance: INSTANCE_STUB,
     });
 
     await expect(
       service.record({
-        workspaceId: WORKSPACE_ID,
+        instanceId: INSTANCE_ID,
         provider: "openai",
         model: "gpt-4.1",
         capability: "chat",
@@ -361,7 +336,7 @@ describe("usage service", () => {
           throw new Error("permission denied");
         },
       }),
-      workspaces: WORKSPACES_STUB,
+      localInstance: INSTANCE_STUB,
     });
 
     await expect(service.summarize(USER)).rejects.toThrow(
@@ -403,7 +378,7 @@ describe("usage stats（R4-2 用户侧使用统计）", () => {
       repository: createFakeRepository({
         listRecent: async () => listRecent(),
       }),
-      workspaces: WORKSPACES_STUB,
+      localInstance: INSTANCE_STUB,
       now: () => NOW,
     });
   }
@@ -520,7 +495,7 @@ describe("usage stats（R4-2 用户侧使用统计）", () => {
         listRecent: async () => [],
         longestSessionSeconds: async () => 42_300,
       }),
-      workspaces: WORKSPACES_STUB,
+      localInstance: INSTANCE_STUB,
       now: () => NOW,
     });
 
@@ -540,7 +515,7 @@ describe("usage stats（R4-2 用户侧使用统计）", () => {
           throw new Error("relation does not exist");
         },
       }),
-      workspaces: WORKSPACES_STUB,
+      localInstance: INSTANCE_STUB,
       now: () => NOW,
     });
 
@@ -587,7 +562,7 @@ describe("usage stats 热力图窗口", () => {
           },
         ],
       }),
-      workspaces: WORKSPACES_STUB,
+      localInstance: INSTANCE_STUB,
       now: () => NOW,
     });
 

@@ -1,8 +1,9 @@
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
 import { composePlugins } from "../../kernel/compose.js";
 import type { ToolRegistry } from "../../kernel/types.js";
+import { createConsumerLocalAccessService } from "../local-access/test-consumer-service.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
 import { createSkillsPlugin } from "./plugin.js";
 import type { SkillCatalogRepository } from "./repository.js";
 import {
@@ -47,6 +48,7 @@ const CATALOG_DEFAULTS = {
   uninstall: async () => 0,
   updateOwnedById: async () => null,
   upsertInstallation: async () => {},
+  setEnabled: async () => false,
 };
 
 function fakeRepository(
@@ -54,7 +56,7 @@ function fakeRepository(
 ): SkillCatalogRepository {
   return {
     ...CATALOG_DEFAULTS,
-    listWorkspaceSkills: async () => rows,
+    listInstanceSkills: async () => rows,
   };
 }
 
@@ -78,17 +80,28 @@ const rawSkillRows = [
   },
 ];
 
-/** 记录型假 persistence：断言工具把 execCtx.workspaceId 透传到了数据访问。 */
-function fakePersistence() {
+/** 记录型假 persistence：断言工具把 execCtx.instanceId 透传到了数据访问。 */
+function fakePersistence(
+  options: {
+    listRows?: () => typeof rawSkillRows;
+    readFiles?: () => Array<{
+      skill_id: string;
+      file_path: string;
+      content: string;
+    }>;
+  } = {},
+) {
   const scopes: string[] = [];
 
-  const makeClient = (workspaceId?: string) => ({
-    ...(workspaceId === undefined ? {} : { workspaceId }),
-    async query() {
-      if (workspaceId !== undefined) {
-        scopes.push(workspaceId);
+  const makeClient = (instanceId?: string) => ({
+    ...(instanceId === undefined ? {} : { instanceId }),
+    async query(sql: string) {
+      if (instanceId !== undefined) {
+        scopes.push(instanceId);
       }
-      return rawSkillRows;
+      if (sql.includes("from public.skill_files"))
+        return options.readFiles?.() ?? [];
+      return options.listRows?.() ?? rawSkillRows;
     },
     async queryOne() {
       return null;
@@ -102,9 +115,9 @@ function fakePersistence() {
     scopes,
     service: {
       ...makeClient(),
-      forWorkspace: (workspaceId: string) => makeClient(workspaceId),
+      forInstance: (instanceId: string) => makeClient(instanceId),
       transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
-        fn({ ...makeClient(), forWorkspace: (id: string) => makeClient(id) }),
+        fn({ ...makeClient(), forInstance: (id: string) => makeClient(id) }),
       ping: async () => {},
       close: async () => {},
     } as never,
@@ -112,8 +125,12 @@ function fakePersistence() {
 }
 
 describe("skill 目录服务（SKILL.md 发现缝）", () => {
-  it("按工作区列出 skill（含停用，工具侧自行过滤）", async () => {
+  it("按实例列出 skill（含停用，工具侧自行过滤）", async () => {
     const catalog = createSkillCatalogService({
+      localInstance: createLocalInstanceService({
+        repository: { ensure: async () => "ws-1" },
+        dataDir: "/tmp/skill-catalog-test",
+      }),
       repository: fakeRepository(),
     });
     const entries: SkillCatalogEntry[] = await catalog.listSkills("ws-1");
@@ -129,6 +146,10 @@ describe("skill 目录服务（SKILL.md 发现缝）", () => {
 
   it("getSkill 返回启用的 SKILL.md 全文；停用/未知返回 undefined", async () => {
     const catalog = createSkillCatalogService({
+      localInstance: createLocalInstanceService({
+        repository: { ensure: async () => "ws-1" },
+        dataDir: "/tmp/skill-catalog-test",
+      }),
       repository: fakeRepository(),
     });
 
@@ -138,33 +159,45 @@ describe("skill 目录服务（SKILL.md 发现缝）", () => {
     expect(await catalog.getSkill("ws-1", "ghost")).toBeUndefined();
 
     const empty = createSkillCatalogService({
+      localInstance: createLocalInstanceService({
+        repository: { ensure: async () => "ws-1" },
+        dataDir: "/tmp/skill-catalog-test",
+      }),
       repository: fakeRepository([]),
     });
     expect(await empty.listSkills("ws-1")).toEqual([]);
     expect(await empty.getSkill("ws-1", "canvas-design")).toBeUndefined();
   });
 
-  it("数据访问失败按「无 skill」降级，不炸工具链", async () => {
+  it("数据访问故障如实传播，不伪装成空目录", async () => {
     const catalog = createSkillCatalogService({
+      localInstance: createLocalInstanceService({
+        repository: { ensure: async () => "ws-1" },
+        dataDir: "/tmp/skill-catalog-test",
+      }),
       repository: {
         ...CATALOG_DEFAULTS,
-        listWorkspaceSkills: async () => {
+        listInstanceSkills: async () => {
           throw new Error("connection reset");
         },
       },
     });
 
-    await expect(catalog.listSkills("ws-1")).resolves.toEqual([]);
-    await expect(
-      catalog.getSkill("ws-1", "canvas-design"),
-    ).resolves.toBeUndefined();
+    await expect(catalog.listSkills("ws-1")).rejects.toThrow(
+      "connection reset",
+    );
+    await expect(catalog.getSkill("ws-1", "canvas-design")).rejects.toThrow(
+      "connection reset",
+    );
   });
 });
 
 describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
-  function kernelWithSkillsPlugin() {
+  function kernelWithSkillsPlugin(
+    options: Parameters<typeof fakePersistence>[0] = {},
+  ) {
     const app = Fastify({ logger: false });
-    const persistence = fakePersistence();
+    const persistence = fakePersistence(options);
     const kernel = composePlugins(
       {
         agentBackendMode: "state" as const,
@@ -177,16 +210,29 @@ describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
       {
         app,
         overrides: {
-          auth: { authenticate: async () => null },
+          localAccess: createConsumerLocalAccessService(),
           persistence: persistence.service,
-          viewer: {} as never,
+          localInstance: createLocalInstanceService({
+            repository: { ensure: async () => "ws-7" },
+            dataDir: "/tmp/skill-plugin-test",
+          }),
+          projects: {
+            getProject: async () => {
+              throw new Error("未配置项目");
+            },
+          } as never,
+          executionScopes: {
+            openTask: async () => {
+              throw new Error("未配置 Task");
+            },
+          } as never,
         },
       },
     );
     return { kernel, persistence };
   }
 
-  it("注册 list_skills / use_skill（shared scope）并按执行上下文的工作区取数", async () => {
+  it("注册 list_skills / use_skill（shared scope）并按执行上下文的实例取数", async () => {
     const { kernel, persistence } = kernelWithSkillsPlugin();
     const tools: ToolRegistry = kernel.get("tools");
     expect(tools.get("list_skills")?.scope).toBe("shared");
@@ -195,7 +241,10 @@ describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
     const listed = await tools.execute(
       "list_skills",
       {},
-      { workspaceId: "ws-7" },
+      {
+        instanceId: "ws-7",
+        actor: { instanceId: "ws-7", accessClientId: null },
+      },
     );
     expect(listed).toEqual({
       skills: [{ name: "canvas-design", description: "海报生成技能" }],
@@ -204,26 +253,26 @@ describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
     const detail = await tools.execute(
       "use_skill",
       { name: "canvas-design" },
-      { workspaceId: "ws-7" },
+      {
+        instanceId: "ws-7",
+        actor: { instanceId: "ws-7", accessClientId: null },
+      },
     );
     expect((detail as { content: string }).content).toContain("步骤");
 
-    // 回归锁：执行上下文里的工作区必须真的传到数据访问（曾因传空用户 id 恒空）
+    // 回归锁：执行上下文里的实例必须真的传到数据访问（曾因传空用户 id 恒空）
     expect(persistence.scopes).toEqual(["ws-7", "ws-7"]);
     kernel.dispose();
   });
 
-  it("缺少工作区上下文时明示原因，不再静默返回空", async () => {
+  it("缺少实例上下文时明示原因，不再静默返回空", async () => {
     const { kernel, persistence } = kernelWithSkillsPlugin();
     const tools: ToolRegistry = kernel.get("tools");
 
-    expect(await tools.execute("list_skills", {}, {})).toEqual({
-      skills: [],
-      hint: expect.stringContaining("工作区"),
-    });
+    await expect(tools.execute("list_skills", {}, {})).rejects.toThrow(/可信/);
     await expect(
       tools.execute("use_skill", { name: "canvas-design" }, {}),
-    ).rejects.toThrow(/工作区/);
+    ).rejects.toThrow(/可信/);
     expect(persistence.scopes).toEqual([]);
     kernel.dispose();
   });
@@ -231,8 +280,124 @@ describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
   it("use_skill 缺 name 参数即报错", async () => {
     const { kernel } = kernelWithSkillsPlugin();
     await expect(
-      kernel.get("tools").execute("use_skill", {}, { workspaceId: "ws-1" }),
+      kernel.get("tools").execute("use_skill", {}, { instanceId: "ws-1" }),
     ).rejects.toThrow(/name/);
     kernel.dispose();
+  });
+
+  it("原use_skill消费真实DB附属资源，路径与可信Task实例均核对", async () => {
+    const { kernel, persistence } = kernelWithSkillsPlugin({
+      readFiles: () => [
+        {
+          skill_id: "s1",
+          file_path: "scripts/check.ts",
+          content: "真实只读脚本",
+        },
+      ],
+    });
+    const tools = kernel.get("tools");
+    try {
+      expect(
+        await tools.execute(
+          "use_skill",
+          { name: "canvas-design", resource_path: "scripts/check.ts" },
+          {
+            instanceId: "ws-7",
+            actor: { instanceId: "ws-7", accessClientId: null },
+          },
+        ),
+      ).toEqual({
+        name: "canvas-design",
+        resourceRef: "kenfutwork-skill:s1",
+        resourcePath: "scripts/check.ts",
+        content: "真实只读脚本",
+      });
+      expect(
+        await tools.execute(
+          "use_skill",
+          { name: "canvas-design", resource_path: "SKILL.md" },
+          {
+            instanceId: "ws-7",
+            actor: { instanceId: "ws-7", accessClientId: null },
+          },
+        ),
+      ).toMatchObject({ content: expect.stringContaining("步骤") });
+      const before = persistence.scopes.length;
+      const useSkill = tools.get("use_skill");
+      if (!useSkill) throw new Error("use_skill工具未注册。");
+      await expect(
+        useSkill.execute(
+          { name: "canvas-design", resource_path: "scripts/check.ts" },
+          {
+            instanceId: "ws-7",
+            actor: { instanceId: "ws-7", accessClientId: null },
+            scopeHandle: {
+              describe: () => ({ instanceId: "foreign" }),
+            } as never,
+          },
+        ),
+      ).rejects.toThrow(/实例|工作域/);
+      for (const path of [
+        "../outside",
+        "/absolute",
+        "C:/outside",
+        "scripts//check.ts",
+        "scripts/./check.ts",
+        "scripts/check.ts\0",
+      ]) {
+        await expect(
+          tools.execute(
+            "use_skill",
+            { name: "canvas-design", resource_path: path },
+            {
+              instanceId: "ws-7",
+              actor: { instanceId: "ws-7", accessClientId: null },
+            },
+          ),
+        ).rejects.toThrow(/路径|资源/);
+      }
+      expect(persistence.scopes.length).toBe(before);
+    } finally {
+      await kernel.dispose();
+    }
+  });
+
+  it("资源查询完成前卸载或停用技能，迟到use_skill不能返回已撤回正文", async () => {
+    for (const uninstall of [false, true]) {
+      let installed = true;
+      let enabled = true;
+      const { kernel } = kernelWithSkillsPlugin({
+        listRows: () => {
+          const row = rawSkillRows[0];
+          if (!row) throw new Error("技能fixture缺少启用行。");
+          return installed ? [{ ...row, enabled }] : [];
+        },
+        readFiles: () => {
+          if (uninstall) installed = false;
+          else enabled = false;
+          return [
+            {
+              skill_id: "s1",
+              file_path: "scripts/check.ts",
+              content: "不得返回的迟到资源",
+            },
+          ];
+        },
+      });
+      try {
+        await expect(
+          kernel.get("tools").execute(
+            "use_skill",
+            { name: "canvas-design", resource_path: "scripts/check.ts" },
+            {
+              instanceId: "ws-7",
+              actor: { instanceId: "ws-7", accessClientId: null },
+            },
+          ),
+        ).rejects.toThrow(/安装|停用|存在/);
+      } finally {
+        await kernel.dispose();
+      }
+    }
   });
 });

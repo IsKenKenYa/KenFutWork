@@ -2,7 +2,9 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { Parser as TarParser } from "tar";
-
+import { readBinary } from "../code-tools/file-media.js";
+import type { ExecutionScopeHandle } from "../execution/scope-service.js";
+import { scopedPackageFiles } from "../execution/scoped-package-files.js";
 import type { BundleFiles } from "./bundle-manifest.js";
 
 /**
@@ -131,8 +133,12 @@ export function parseGitHubUrl(input: string): {
   return { owner, repo };
 }
 
-function isTextFile(relativePath: string, size: number): boolean {
-  if (size > MAX_FILE_BYTES) return false;
+function isTextFile(
+  relativePath: string,
+  size: number,
+  maxBytes: number = MAX_FILE_BYTES,
+): boolean {
+  if (size > maxBytes) return false;
   const extension = path.extname(relativePath).toLowerCase();
   return TEXT_EXTENSIONS.has(extension);
 }
@@ -159,7 +165,38 @@ function stripSubdir(files: BundleFiles, subdir: string | null): BundleFiles {
 async function readLocalBundle(
   directory: string,
   subdir: string | null,
+  localSource?: ScopedBundleSource,
 ): Promise<BundleFiles> {
+  if (localSource) {
+    const root = await localSource.resolvePath(directory);
+    const files: BundleFiles = {};
+    let totalBytes = 0;
+    let fileCount = 0;
+    for await (const absolutePath of localSource.listFiles(root)) {
+      const relativePath = path
+        .relative(root, absolutePath)
+        .split(path.sep)
+        .join("/");
+      if (!TEXT_EXTENSIONS.has(path.extname(relativePath).toLowerCase()))
+        continue;
+      if (fileCount >= localSource.maxFiles)
+        throw new BundleSourceError(
+          "插件 bundle 文件数量超过工作区读取预算。",
+          "too_large",
+        );
+      const content = await localSource.readText(absolutePath);
+      totalBytes += Buffer.byteLength(content);
+      if (totalBytes > localSource.maxTotalBytes)
+        throw new BundleSourceError(
+          "插件 bundle 总字节数超过工作区读取预算。",
+          "too_large",
+        );
+      files[relativePath] = content;
+      fileCount++;
+    }
+    await localSource.resolvePath(root);
+    return stripSubdir(files, subdir);
+  }
   let root: string;
   try {
     const info = await stat(directory);
@@ -176,8 +213,8 @@ async function readLocalBundle(
   }
 
   const files: BundleFiles = {};
+  let fileCount = 0;
   const walk = async (current: string, relative: string): Promise<void> => {
-    if (Object.keys(files).length >= MAX_FILES) return;
     const entries = await readdir(current, { withFileTypes: true });
     for (const entry of entries) {
       const childRelative = relative ? `${relative}/${entry.name}` : entry.name;
@@ -189,10 +226,15 @@ async function readLocalBundle(
       if (!entry.isFile()) continue;
       const info = await stat(path.join(current, entry.name));
       if (!isTextFile(childRelative, info.size)) continue;
-      files[childRelative] = await readFile(
-        path.join(current, entry.name),
-        "utf8",
-      );
+      if (fileCount >= MAX_FILES)
+        throw new BundleSourceError(
+          "插件 bundle 文件数量超过读取预算。",
+          "path_invalid",
+        );
+      const filePath = path.join(current, entry.name);
+      const content = await readFile(filePath, "utf8");
+      files[childRelative] = content;
+      fileCount++;
     }
   };
 
@@ -301,6 +343,44 @@ export interface FetchBundleOptions {
   token?: string;
   /** GitHub 仓库内子目录（monorepo 包路径） */
   subdir?: string | null;
+  localSource?: ScopedBundleSource;
+}
+
+export interface ScopedBundleSource {
+  resolvePath(path: string): Promise<string>;
+  listFiles(root: string): AsyncIterable<string>;
+  readText(path: string): Promise<string>;
+  maxFiles: number;
+  maxFileBytes: number;
+  maxTotalBytes: number;
+}
+export function createScopedBundleSource(
+  scope: ExecutionScopeHandle,
+  signal?: AbortSignal,
+): ScopedBundleSource {
+  return {
+    resolvePath: (path) => {
+      signal?.throwIfAborted();
+      return scope.resolvePath(path, "read");
+    },
+    listFiles: (root) =>
+      scopedPackageFiles(scope, root, {
+        skipDirectories: SKIP_DIRECTORIES,
+        ...(signal ? { signal } : {}),
+      }),
+    readText: async (path) => {
+      const file = await readBinary(
+        scope,
+        path,
+        scope.backend.limits.codeReadMaxBytes,
+        signal,
+      );
+      return new TextDecoder("utf-8", { fatal: true }).decode(file.bytes);
+    },
+    maxFiles: scope.backend.limits.codeSearchMaxResults,
+    maxFileBytes: scope.backend.limits.codeReadMaxBytes,
+    maxTotalBytes: scope.backend.limits.codeSearchMaxBytes,
+  };
 }
 
 /** 解析来源并取出文件集合（不校验、不安装）。 */
@@ -310,7 +390,11 @@ export async function fetchBundleFiles(
 ): Promise<BundleSourceResult> {
   const local = looksLikeLocalPath(input);
   if (local) {
-    const files = await readLocalBundle(local, options.subdir ?? null);
+    const files = await readLocalBundle(
+      local,
+      options.subdir ?? null,
+      options.localSource,
+    );
     return {
       files,
       origin: {

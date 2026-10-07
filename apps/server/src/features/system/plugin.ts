@@ -17,14 +17,14 @@ import { createNativeDirectoryPicker } from "./directory-picker.js";
 export function createSystemPlugin(): PluginDefinition {
   return {
     name: "system",
-    inject: ["auth"],
+    inject: ["localAccess"],
     apply() {
       // 无服务可注册：本插件的全部作用面是 mounted 里的路由。
     },
     mounted(ctx) {
       const desktop = isDesktopRuntime(ctx.env);
       void registerSystemRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         picker: createNativeDirectoryPicker(),
         desktop: desktop
           ? true

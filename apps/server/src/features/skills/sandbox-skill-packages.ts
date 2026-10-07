@@ -1,7 +1,9 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
-
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { resolveInsideRoot } from "../../utils/inside-root.js";
+import { readBinary } from "../code-tools/file-media.js";
+import type { ExecutionScopeHandle } from "../execution/scope-service.js";
+import { scopedPackageFiles } from "../execution/scoped-package-files.js";
 
 import { parseSkillManifest } from "./skill-import-service.js";
 
@@ -186,4 +188,92 @@ export function readSandboxSkillPackage(
   }
 
   return files;
+}
+
+/** Code 读取只经 Task 授权与字节预算，不把导入读取计作模型全文观察。 */
+export async function readScopedSkillPackage(
+  scope: ExecutionScopeHandle,
+  input: string,
+): Promise<SandboxSkillFileEntry[]> {
+  const packageRoot = await scope.resolvePath(input, "read");
+  const files: SandboxSkillFileEntry[] = [];
+  let totalBytes = 0;
+  for await (const file of scopedPackageFiles(scope, packageRoot, {
+    skipDirectories: SKIP_DIRS,
+  })) {
+    const path = relative(packageRoot, file).split(sep).join("/");
+    if (
+      !path ||
+      path.startsWith("../") ||
+      path
+        .split("/")
+        .some((part) => part.startsWith(".") || SKIP_DIRS.has(part))
+    )
+      continue;
+    const binary = await readBinary(
+      scope,
+      file,
+      scope.backend.limits.codeReadMaxBytes,
+    );
+    if (binary.bytes.includes(0)) continue;
+    totalBytes += binary.bytes.length;
+    if (totalBytes > scope.backend.limits.codeSearchMaxBytes)
+      throw new Error("技能包总字节数超过工作区读取预算。");
+    files.push({
+      path,
+      content: new TextDecoder("utf-8", { fatal: true }).decode(binary.bytes),
+    });
+    if (files.length > scope.backend.limits.codeSearchMaxResults)
+      throw new Error("技能包文件数量超过工作区预算。");
+  }
+  if (!files.some((file) => isSkillMd(file.path)))
+    throw new Error("技能包缺少 SKILL.md。");
+  return files;
+}
+
+export async function listScopedSkillPackages(
+  scope: ExecutionScopeHandle,
+): Promise<SandboxSkillPackageCandidate[]> {
+  const identity = scope.describe();
+  const roots = [
+    identity.rootDirectory,
+    ...identity.additionalDirectories.map((entry) => entry.path),
+  ];
+  const candidates: SandboxSkillPackageCandidate[] = [];
+  const visited = new Set<string>();
+  let bytesRead = 0;
+  for (const root of roots) {
+    for await (const path of scopedPackageFiles(scope, root, {
+      skipDirectories: SKIP_DIRS,
+    })) {
+      if (!isSkillMd(basename(path)) || visited.has(path)) continue;
+      visited.add(path);
+      const directory = dirname(path);
+      if (
+        candidates.some((candidate) =>
+          directory.startsWith(`${candidate.path}${sep}`),
+        )
+      )
+        continue;
+      const binary = await readBinary(
+        scope,
+        path,
+        scope.backend.limits.codeReadMaxBytes,
+      );
+      bytesRead += binary.bytes.length;
+      if (bytesRead > scope.backend.limits.codeSearchMaxBytes)
+        throw new Error("技能扫描总字节数超过工作区预算。");
+      let name = basename(directory);
+      let description = "";
+      try {
+        const manifest = parseSkillManifest(binary.bytes.toString("utf8"));
+        name = manifest.name || name;
+        description = manifest.description ?? "";
+      } catch {}
+      candidates.push({ path: directory, name, description });
+      if (candidates.length > scope.backend.limits.codeSearchMaxResults)
+        throw new Error("技能候选数量超过工作区预算。");
+    }
+  }
+  return candidates.sort((a, b) => a.path.localeCompare(b.path));
 }

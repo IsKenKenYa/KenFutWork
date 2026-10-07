@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "BYOK 凭证与计费数据流",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [1080, 560],
+    "views": [
+      {
+        "id": "write-path",
+        "label": "写入路径",
+        "focus": ["ui", "api", "enc", "tbl"],
+        "note": "明文只在提交一跳出现，落库前完成 AES-256-GCM 加密。"
+      },
+      {
+        "id": "consume-path",
+        "label": "消费路径",
+        "focus": ["tbl", "dec", "proto", "llm"],
+        "note": "解密只在服务端内存发生，明文止步于协议适配器。"
+      },
+      {
+        "id": "billing",
+        "label": "计费闸口",
+        "focus": ["deduct", "proto", "llm"],
+        "note": "扣减与流水在同一事务提交，失败走 refund_credits 退款。"
+      }
+    ]
+  },
+  "stages": [
+    {
+      "label": "输入"
+    },
+    {
+      "label": "传输"
+    },
+    {
+      "label": "加密存储"
+    },
+    {
+      "label": "服务端消费"
+    },
+    {
+      "label": "出站"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "ui",
+      "type": "frontend",
+      "label": "供应商设置",
+      "sublabel": "provider-settings",
+      "stage": 0,
+      "row": 1,
+      "tag": "只写不读"
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "provider-instances",
+      "sublabel": "Bearer · workspace 解析",
+      "stage": 1,
+      "row": 1,
+      "width": 124
+    },
+    {
+      "id": "enc",
+      "type": "security",
+      "label": "secret-store 加密",
+      "sublabel": "AES-256-GCM",
+      "stage": 2,
+      "row": 0
+    },
+    {
+      "id": "tbl",
+      "type": "database",
+      "label": "provider_instances",
+      "sublabel": "encrypted_api_key",
+      "stage": 2,
+      "row": 2,
+      "tag": "密文落库"
+    },
+    {
+      "id": "dec",
+      "type": "security",
+      "label": "resolveCredentials",
+      "sublabel": "解密 · 仅内存",
+      "stage": 3,
+      "row": 0
+    },
+    {
+      "id": "deduct",
+      "type": "backend",
+      "label": "deduct_credits",
+      "sublabel": "余额 + 流水同事务",
+      "stage": 3,
+      "row": 2,
+      "tag": "SECURITY DEFINER"
+    },
+    {
+      "id": "proto",
+      "type": "backend",
+      "label": "协议适配器",
+      "sublabel": "openai/anthropic/gemini",
+      "stage": 4,
+      "row": 0,
+      "tag": "明文止于此",
+      "width": 124
+    },
+    {
+      "id": "llm",
+      "type": "external",
+      "label": "上游模型 API",
+      "sublabel": "chat / image / video",
+      "stage": 4,
+      "row": 2
+    }
+  ],
+  "flows": [
+    {
+      "id": "submit-key",
+      "from": "ui",
+      "to": "api",
+      "label": "明文 apiKey · Authorization Bearer",
+      "classification": "唯一一次明文传输",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [207, 318]
+    },
+    {
+      "id": "receipt-only",
+      "from": "api",
+      "to": "ui",
+      "label": "回执仅 hasCredential / headerKeys",
+      "classification": "永不回显",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "right",
+      "labelAt": [207, 225]
+    },
+    {
+      "id": "fail-loud",
+      "from": "api",
+      "to": "enc",
+      "label": "缺主密钥 fail loud（500）",
+      "classification": "KENFUTWORK_CREDENTIAL_SECRET",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "encrypt-store",
+      "from": "enc",
+      "to": "tbl",
+      "label": "encrypted_api_key 写入",
+      "classification": "密文静态存储",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 55
+    },
+    {
+      "id": "read-cipher",
+      "from": "tbl",
+      "to": "dec",
+      "label": "按实例 id 读取密文",
+      "classification": "workspace 谓词隔离",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "decrypt-memory",
+      "from": "dec",
+      "to": "proto",
+      "label": "内存明文 → 适配器",
+      "classification": "仅服务端内存",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight",
+      "labelDy": -45
+    },
+    {
+      "id": "charge-first",
+      "from": "deduct",
+      "to": "proto",
+      "label": "扣减放行后调用",
+      "classification": "失败 refund_credits",
+      "variant": "default"
+    },
+    {
+      "id": "egress",
+      "from": "proto",
+      "to": "llm",
+      "label": "出站 HTTPS",
+      "classification": "密钥仅此一跳",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "主路径",
+      "items": [
+        "明文只出现两次：提交一跳、解密一跳",
+        "存储永远是密文（AES-256-GCM，主密钥 scrypt 派生）",
+        "platform 池实例 scope=system 可被全工作区消费"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "安全边界",
+      "items": [
+        "响应只回 hasCredential / headerKeys，前端永不回显",
+        "缺 KENFUTWORK_CREDENTIAL_SECRET 时写入直接失败",
+        "日志经 maskSecret / redactSecrets 脱敏后才出站"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "计费闸口",
+      "items": [
+        "deduct_credits 单事务：锁余额行 + 写 credit_transactions",
+        "生成前扣减；任务死信自动 refund_credits",
+        "BYOK 自带 key 不扣费，平台池按 token 计量 usage_records"
+      ]
+    }
+  ]
+}

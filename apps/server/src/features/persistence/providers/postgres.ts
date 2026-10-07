@@ -1,24 +1,17 @@
-import { Pool, types } from "pg";
+import { Client, Pool, types } from "pg";
 
-import {
-  SqlError,
-  UserIsolationError,
-  WorkspaceIsolationError,
-} from "../errors.js";
+import { InstanceIsolationError, SqlError } from "../errors.js";
 import type {
+  InstanceSqlClient,
   PersistenceService,
+  PersistenceSessionLock,
   SqlClient,
   SqlRow,
   SqlTransaction,
-  UserSqlClient,
-  WorkspaceSqlClient,
 } from "../types.js";
 
-/** 工作区谓词占位符：workspace 作用域语句必须显式引用它（`FORM-9`）。 */
-export const WORKSPACE_MARKER = ":workspace";
-
-/** 用户谓词占位符：按 `user_id` 定权的表（无 workspace_id）必须显式引用它。 */
-export const USER_MARKER = ":user";
+/** 实例谓词占位符：实例作用域语句必须显式引用它（DEC-20）。 */
+export const INSTANCE_MARKER = ":instance";
 
 const DEFAULT_POOL_MAX = 10;
 const PING_SQL = "select 1 as ok";
@@ -59,10 +52,17 @@ export interface PostgresConnection {
   release(): void;
 }
 
+export interface PostgresSessionConnection {
+  query(text: string, values: unknown[]): Promise<PostgresResult>;
+  onLost(listener: (cause: unknown) => void): () => void;
+  release(): Promise<void>;
+}
+
 /** 连接池抽象：生产用 pg `Pool`，测试与桌面内嵌实例注入自定义 runner。 */
 export interface PostgresQueryRunner {
   query(text: string, values: unknown[]): Promise<PostgresResult>;
   acquire(): Promise<PostgresConnection>;
+  acquireSession(): Promise<PostgresSessionConnection>;
   end(): Promise<void>;
 }
 
@@ -79,7 +79,7 @@ type Queryable = {
 
 /**
  * 自管 Postgres Provider（`FORM-2`/`FORM-9`）：单一信任 DB 角色、参数化查询、
- * 工作区隔离在应用层强制。数据库地址来源见 `ServerEnv.databaseUrl`。
+ * 实例隔离在应用层强制。数据库地址来源见 `ServerEnv.databaseUrl`。
  */
 export function createPostgresPersistence(options: {
   databaseUrl: string;
@@ -95,10 +95,15 @@ export function createPostgresPersistence(options: {
     console.error("[persistence] 连接池空闲连接出错：", error.message);
   });
 
-  return createPersistenceFromRunner(createPoolRunner(pool));
+  return createPersistenceFromRunner(
+    createPoolRunner(pool, options.databaseUrl),
+  );
 }
 
-function createPoolRunner(pool: Pool): PostgresQueryRunner {
+function createPoolRunner(
+  pool: Pool,
+  databaseUrl: string,
+): PostgresQueryRunner {
   const runOn = (target: Queryable): QueryFn => {
     return async (text, values) => {
       const result = await target.query(text, values as never[]);
@@ -110,12 +115,113 @@ function createPoolRunner(pool: Pool): PostgresQueryRunner {
     query: runOn(pool),
     async acquire() {
       const client = await pool.connect();
+      // pg-pool借出时移除idle错误监听；查询Promise拒绝之外，断连也会emit error。
+      const onConnectionError = (error: Error) => {
+        console.error("[persistence] 事务连接出错：", error.message);
+      };
+      client.on("error", onConnectionError);
       return {
         query: runOn(client),
-        release: () => client.release(),
+        release: () => {
+          client.release();
+          client.off("error", onConnectionError);
+        },
       };
     },
+    acquireSession: () => createDedicatedSession(databaseUrl, runOn),
     end: () => pool.end(),
+  };
+}
+
+async function createDedicatedSession(
+  databaseUrl: string,
+  runOn: (target: Queryable) => QueryFn,
+): Promise<PostgresSessionConnection> {
+  const client = new Client({ connectionString: databaseUrl });
+  const listeners = new Set<(cause: unknown) => void>();
+  let lost: unknown;
+  let released = false;
+  let releasePromise: Promise<void> | undefined;
+  const publishLoss = (cause: unknown) => {
+    if (released || lost !== undefined) return;
+    lost = cause;
+    for (const listener of listeners) listener(cause);
+  };
+  client.on("error", publishLoss);
+  client.on("end", () => publishLoss(new Error("Postgres 独占会话已断开。")));
+  try {
+    await client.connect();
+  } catch (error) {
+    released = true;
+    await client.end();
+    throw toSqlError(error);
+  }
+  return {
+    query: runOn(client),
+    onLost(listener) {
+      listeners.add(listener);
+      if (lost !== undefined) listener(lost);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    release() {
+      releasePromise ??= (async () => {
+        released = true;
+        await client.end();
+      })();
+      return releasePromise;
+    },
+  };
+}
+
+async function acquireSessionLock(
+  runner: PostgresQueryRunner,
+  key: string,
+): Promise<PersistenceSessionLock | null> {
+  const connection = await runner.acquireSession();
+  const query = normalizeQuery(connection.query);
+  const controller = new AbortController();
+  let physicalLoss = false;
+  const removeListener = connection.onLost((cause) => {
+    physicalLoss = true;
+    controller.abort(toSqlError(cause));
+  });
+  try {
+    // 固定 seed 是 advisory key 的哈希结构常量，不是运行时治理限额。
+    const result = await query(
+      "select pg_try_advisory_lock(hashtextextended($1, 0)) as acquired",
+      [key],
+    );
+    controller.signal.throwIfAborted();
+    if (!(result.rows[0] as { acquired: boolean } | undefined)?.acquired) {
+      removeListener();
+      await connection.release();
+      return null;
+    }
+  } catch (error) {
+    removeListener();
+    await connection.release();
+    throw error;
+  }
+  let releasePromise: Promise<void> | undefined;
+  return {
+    signal: controller.signal,
+    release() {
+      releasePromise ??= (async () => {
+        controller.abort(new Error("Postgres 独占会话已释放。"));
+        try {
+          if (!physicalLoss)
+            await query("select pg_advisory_unlock(hashtextextended($1, 0))", [
+              key,
+            ]);
+        } finally {
+          removeListener();
+          await connection.release();
+        }
+      })();
+      return releasePromise;
+    },
   };
 }
 
@@ -124,18 +230,57 @@ export function createPersistenceFromRunner(
   runner: PostgresQueryRunner,
 ): PersistenceService {
   const root = createClient(normalizeQuery(runner.query));
+  const locks = new Set<PersistenceSessionLock>();
+  let closing = false;
+  let closePromise: Promise<void> | undefined;
 
   return {
     ...root,
-    forUser: (userId) =>
-      createUserScopedClient(normalizeQuery(runner.query), userId),
-    forWorkspace: (workspaceId) =>
-      createWorkspaceClient(normalizeQuery(runner.query), workspaceId),
+    forInstance: (instanceId) =>
+      createInstanceClient(normalizeQuery(runner.query), instanceId),
     transaction: (fn) => runTransaction(runner, fn),
+    async acquireSessionLock(key) {
+      if (closing) throw new Error("存储服务已关闭，不能认领执行宿主。");
+      const lock = await acquireSessionLock(runner, key);
+      if (!lock) return null;
+      const wrapped: PersistenceSessionLock = {
+        signal: lock.signal,
+        async release() {
+          try {
+            await lock.release();
+          } finally {
+            locks.delete(wrapped);
+          }
+        },
+      };
+      if (closing) {
+        await wrapped.release();
+        throw new Error("存储服务已关闭，不能认领执行宿主。");
+      }
+      locks.add(wrapped);
+      return wrapped;
+    },
     async ping() {
       await root.query(PING_SQL);
     },
-    close: () => runner.end(),
+    close() {
+      closing = true;
+      closePromise ??= (async () => {
+        const outcomes = await Promise.allSettled(
+          [...locks].map((lock) => lock.release()),
+        );
+        await runner.end();
+        const failures = outcomes.flatMap((outcome) =>
+          outcome.status === "rejected" ? [outcome.reason] : [],
+        );
+        if (failures.length)
+          throw new AggregateError(
+            failures,
+            "部分 Postgres 独占会话未正常释放。",
+          );
+      })();
+      return closePromise;
+    },
   };
 }
 
@@ -154,8 +299,7 @@ async function runTransaction<T>(
     await query("begin", []);
     const result = await fn({
       ...createClient(query),
-      forUser: (userId) => createUserScopedClient(query, userId),
-      forWorkspace: (workspaceId) => createWorkspaceClient(query, workspaceId),
+      forInstance: (instanceId) => createInstanceClient(query, instanceId),
     });
     await query("commit", []);
     return result;
@@ -215,7 +359,7 @@ function createBind(
   };
 }
 
-/** 作用域客户端的三个查询方法（工作区/用户两种作用域共用，仅绑定器不同）。 */
+/** 作用域客户端的三个查询方法（三种方法共享同一实例绑定器）。 */
 function createScopedMethods(bind: BindFn, query: QueryFn) {
   return {
     async query<T extends SqlRow = SqlRow>(
@@ -242,27 +386,17 @@ function createScopedMethods(bind: BindFn, query: QueryFn) {
   };
 }
 
-function createWorkspaceClient(
+function createInstanceClient(
   query: QueryFn,
-  workspaceId: string,
-): WorkspaceSqlClient {
+  instanceId: string,
+): InstanceSqlClient {
   const bind = createBind(
-    WORKSPACE_MARKER,
-    workspaceId,
-    (operation) => new WorkspaceIsolationError(operation),
+    INSTANCE_MARKER,
+    instanceId,
+    (operation) => new InstanceIsolationError(operation),
   );
 
-  return { workspaceId, ...createScopedMethods(bind, query) };
-}
-
-function createUserScopedClient(query: QueryFn, userId: string): UserSqlClient {
-  const bind = createBind(
-    USER_MARKER,
-    userId,
-    (operation) => new UserIsolationError(operation),
-  );
-
-  return { userId, ...createScopedMethods(bind, query) };
+  return { instanceId, ...createScopedMethods(bind, query) };
 }
 
 /** 把「可能抛驱动错误」的查询函数包成归一错误的 `QueryFn`。 */

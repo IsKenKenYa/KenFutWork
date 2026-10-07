@@ -5,6 +5,8 @@
 //! 服务端生命周期管理见 `server_handle`（spawn / 探活 / 复用 / 优雅退出）。
 
 pub mod browser_embed;
+pub mod data_location;
+pub mod desktop_access;
 pub mod desktop_system;
 pub mod server_handle;
 
@@ -33,28 +35,28 @@ const SERVER_PORT: u16 = 3001;
  * `{"message":"Route GET:/ not found"}`）——**Design 模式因此整块失效**（画布没了）。
  * 换端口的前提是前端按「同源」解析 API base（见 apps/web/src/lib/env.ts）。
  */
+#[cfg_attr(debug_assertions, allow(dead_code))]
 const PORT_CANDIDATES: u16 = 10;
 /// 退出宽限：SIGTERM 后等这么久，超时升级 SIGKILL（服务端 SIGTERM 会停 jobLoop 并停库）。
 const SHUTDOWN_GRACE: Duration = std::time::Duration::from_secs(10);
 
-/// 持有服务端句柄的托管状态；`Reused`（复用用户自己的 dev）时为 None。
-struct ServerState(std::sync::Mutex<Option<server_handle::ServerHandle>>);
+/// 启动线程与退出路径共用从spawn开始托管的资源；复用外部服务时不取得其句柄。
+struct ServerState(std::sync::Arc<server_handle::ServerLifecycle>);
 
 /**
  * 打包态（安装包装出来的形态）里那套「桌面形态」环境变量。
  *
  * 与 `release/启动.bat` 同一套：内嵌 PG、本机免登录、进程内队列、静态 UI 由服务端托管。
- * **为什么要把窗口指向 `http://127.0.0.1:<port>` 而不是加载打包进壳里的 UI**：local-trust 的
- * 可信来源只认**回环页面**（见 `features/auth/local-trust.ts`）——壳自带的 `tauri://localhost`
- * 不是回环，会被 401/403；而且 Tauri 的资源协议**不认 `/canvas` 这种无扩展名路由**
+ * **为什么把窗口指向 `http://127.0.0.1:<port>`**：本机接入只信明确的回环HTTP Origin；
+ * 壳自带的资源来源没有接入会话，而且Tauri资源协议**不认 `/canvas` 这种无扩展名路由**
  * （服务端托管那份走 `canvas.html` 回退，见 `http/static-web.ts`）——Design 模式的画布 iframe
  * 正是 `/canvas?id=…`，所以在壳自带 UI 上**画布永远是空白**（用户 2026-09-17 报的
  * 「design 模式是画布啊，怎么又给我改坏了」就是这个）。
  */
+#[cfg_attr(debug_assertions, allow(dead_code))]
 fn desktop_env(data_dir: &Path, web_dir: &Path, port: u16) -> Vec<(String, String)> {
     let mut env = vec![
         ("KENFUTWORK_EMBEDDED_PG".into(), "1".into()),
-        ("KENFUTWORK_AUTH_DRIVER".into(), "local-trust".into()),
         ("KENFUTWORK_QUEUE_DRIVER".into(), "in-process".into()),
         // 监听端口必须与壳挑中的一致：不改它，服务端仍去抢 3001
         ("KENFUTWORK_SERVER_PORT".into(), port.to_string()),
@@ -67,16 +69,11 @@ fn desktop_env(data_dir: &Path, web_dir: &Path, port: u16) -> Vec<(String, Strin
             web_dir.to_string_lossy().to_string(),
         ),
     ];
-    // macOS 打包态：.app 包内（Contents/Resources）只读且受签名保护——检查点影子仓库
-    // 与 agent 沙箱的缺省落点是 <exeDir>/data/checkpoints、<exeDir>/tmp/sandbox，会写进
-    // 包内毁签名（首次写入还可能直接 EROFS）。注入数据目录下的落点；Windows 安装在
-    // 可写目录、现状可用，故不动（与 main 侧对齐后再统一）。
-    #[cfg(target_os = "macos")]
+    // 所有平台的检查点与沙箱统一落在数据根，安装目录只持有不可变程序。
     env.push((
         "KENFUTWORK_CHECKPOINT_ROOT".into(),
         data_dir.join("checkpoints").to_string_lossy().to_string(),
     ));
-    #[cfg(target_os = "macos")]
     env.push((
         "KENFUTWORK_SANDBOX_ROOT".into(),
         data_dir.join("sandbox").to_string_lossy().to_string(),
@@ -95,9 +92,8 @@ fn desktop_env(data_dir: &Path, web_dir: &Path, port: u16) -> Vec<(String, Strin
  *   随包静态 node 拉起 CJS 入口：`app/runtime/node/bin/node app/server/server.cjs`
  *   （node 官方发行版签名天然有效，且该 node 本来就要随包给运行时用）。
  */
-fn bundled_server_launch(
-    app: &tauri::AppHandle,
-) -> Option<(PathBuf, Vec<String>, PathBuf)> {
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn bundled_server_launch(app: &tauri::AppHandle) -> Option<(PathBuf, Vec<String>, PathBuf)> {
     use tauri::Manager;
     let dir = app.path().resource_dir().ok()?.join("app");
 
@@ -130,6 +126,7 @@ fn bundled_server_launch(
 }
 
 /// 打包态的拉起配置：随包服务端载体 + 桌面环境变量 + 指定端口。
+#[cfg_attr(debug_assertions, allow(dead_code))]
 fn packaged_spawn_config(
     program: &Path,
     args: Vec<String>,
@@ -162,6 +159,7 @@ fn dev_spawn_config(data_dir: PathBuf) -> ServerSpawnConfig {
     if let Ok(cwd) = std::env::var("KENFUTWORK_DESKTOP_SERVER_CWD") {
         config.cwd = cwd.into();
     }
+    // 开发态与打包态共享本地实例准入，启动完成后由私有凭据换取浏览器票据。
     config
 }
 
@@ -188,16 +186,21 @@ fn log_line(data_dir: &Path, message: &str) {
  * 顺序（每个候选端口）：探活 → 有东西在听时再验它托管的首页是不是 HTML。
  * 是 → 复用；不是（别人的服务/dev API）→ 换下一个端口；没人听且可绑 → 拉自己的服务端。
  */
+#[cfg_attr(debug_assertions, allow(dead_code))]
 fn launch_packaged_server(
     data_dir: &Path,
     launch: &(PathBuf, Vec<String>, PathBuf),
-) -> Result<(u16, ServerLaunch), String> {
+    owner: &server_handle::ServerLifecycle,
+) -> Result<(u16, Option<u32>), String> {
     for offset in 0..PORT_CANDIDATES {
+        if owner.is_stopping() {
+            return Err(LifecycleError::Stopped.to_string());
+        }
         let port = SERVER_PORT + offset;
         if probe_health(port, Duration::from_millis(300)).is_ok() {
             if probe_serves_ui(port, Duration::from_secs(2)) {
                 log_line(data_dir, &format!("端口 {port} 已有本工作台服务端，复用"));
-                return Ok((port, ServerLaunch::Reused));
+                return Ok((port, None));
             }
             log_line(
                 data_dir,
@@ -211,13 +214,12 @@ fn launch_packaged_server(
                 && probe_serves_ui(port, Duration::from_secs(2))
             {
                 log_line(data_dir, &format!("端口 {port} 稍后健康，复用"));
-                return Ok((port, ServerLaunch::Reused));
+                return Ok((port, None));
             }
             log_line(data_dir, &format!("端口 {port} 不可用，换端口"));
             continue;
         }
-        let config =
-            packaged_spawn_config(&launch.0, launch.1.clone(), &launch.2, data_dir, port);
+        let config = packaged_spawn_config(&launch.0, launch.1.clone(), &launch.2, data_dir, port);
         log_line(
             data_dir,
             &format!(
@@ -227,9 +229,10 @@ fn launch_packaged_server(
                 launch.2.join("web").display().to_string()
             ),
         );
-        match ensure_server_running(config) {
+        match owner.ensure_running(config) {
             Ok(launch) => {
                 if !probe_serves_ui(port, Duration::from_secs(10)) {
+                    owner.stop_current(SHUTDOWN_GRACE);
                     return Err(format!(
                         "本机服务在端口 {port} 起来了，但它没有托管界面（KENFUTWORK_WEB_DIST 无效）。"
                     ));
@@ -246,15 +249,31 @@ fn launch_packaged_server(
 }
 
 /// 启动服务端；返回窗口该指向的端口（dev 形态返回 None：窗口交给 devUrl / 壳自带 UI）。
+#[cfg_attr(debug_assertions, allow(unused_variables))]
 fn start_server(
     app: &tauri::AppHandle,
     data_dir: &Path,
-) -> Result<(ServerLaunch, Option<u16>), String> {
-    if let Some(server_launch) = bundled_server_launch(app) {
-        let (port, launch) = launch_packaged_server(data_dir, &server_launch)?;
-        return Ok((launch, Some(port)));
+) -> Result<(Option<u32>, Option<u16>), String> {
+    let owner = app.state::<ServerState>();
+    if owner.0.is_stopping() {
+        return Err(LifecycleError::Stopped.to_string());
     }
-    ensure_server_running(dev_spawn_config(data_dir.to_path_buf()))
+    // dev 构建（cargo run / tauri dev）**永不执行随包快照**：`target/**/app/server.cjs`
+    // 是上次打包的旧产物，优先执行会让人以为「改了源码没生效」（2026-09-27 事故：
+    // 3001 一直跑 9/23 的快照，子代理路由修复全部不可见）。dev 的意义就是跑最新
+    // 源码——一律走 dev 拉起路径（`dev:server` = node --watch + tsx，改文件自动重载）。
+    // release 打包形态不受影响：随包服务端正是打包形态的交付物。
+    #[cfg(not(debug_assertions))]
+    #[cfg(not(debug_assertions))]
+    {
+        if let Some(server_launch) = bundled_server_launch(app) {
+            let (port, launch) = launch_packaged_server(data_dir, &server_launch, &owner.0)?;
+            return Ok((launch, Some(port)));
+        }
+    }
+    owner
+        .0
+        .ensure_running(dev_spawn_config(data_dir.to_path_buf()))
         .map(|launch| (launch, None))
         .map_err(|error| error.to_string())
 }
@@ -268,7 +287,7 @@ fn navigate_main_window(app: &tauri::AppHandle, url: &str) {
             }
             Err(error) => log_line(
                 &app.path().app_data_dir().unwrap_or_default(),
-                &format!("窗口跳转失败（{url}）：{error}"),
+                &format!("窗口跳转失败：{error}"),
             ),
         }
     }
@@ -349,9 +368,7 @@ fn show_startup_error(app: &tauri::AppHandle, data_dir: &Path, reason: &str) {
         log = data_dir.join("desktop-shell.log").display()
     );
     let literal = serde_json::to_string(&html).unwrap_or_else(|_| "\"\"".into());
-    let script = format!(
-        "document.title='KenFutWork 启动失败';document.body.innerHTML={literal};"
-    );
+    let script = format!("document.title='KenFutWork 启动失败';document.body.innerHTML={literal};");
     for _ in 0..5 {
         if window.eval(&script).is_ok() {
             break;
@@ -370,17 +387,12 @@ fn show_startup_error(app: &tauri::AppHandle, data_dir: &Path, reason: &str) {
 #[cfg(unix)]
 fn register_signal_shutdown(app: tauri::AppHandle) {
     use signal_hook::consts::{SIGINT, SIGTERM};
+    let mut signals = signal_hook::iterator::Signals::new([SIGINT, SIGTERM]).expect("注册信号失败");
     std::thread::spawn(move || {
-        let mut signals =
-            signal_hook::iterator::Signals::new([SIGINT, SIGTERM]).expect("注册信号失败");
         for signal in signals.forever() {
             if let Some(state) = app.try_state::<ServerState>() {
-                if let Ok(mut guard) = state.0.lock() {
-                    if let Some(mut handle) = guard.take() {
-                        println!("[desktop] 收到信号 {signal}：优雅停服务端…");
-                        handle.shutdown(SHUTDOWN_GRACE);
-                    }
-                }
+                println!("[desktop] 收到信号 {signal}：优雅停服务端…");
+                state.0.shutdown(SHUTDOWN_GRACE);
             }
             std::process::exit(0);
         }
@@ -388,6 +400,10 @@ fn register_signal_shutdown(app: tauri::AppHandle) {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+fn application_context<R: tauri::Runtime>() -> tauri::Context<R> {
+    tauri::generate_context!()
+}
+
 pub fn run() {
     let builder = tauri::Builder::default()
         // 单实例：第二个启动实例立即退出并唤起已有窗口——否则两个壳会竞态
@@ -397,68 +413,214 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
-        .invoke_handler(tauri::generate_handler![ping]);
-    // 系统缝（下载落盘 / 文件管理器定位 / 外链）——见 desktop_system.rs
-    let builder = desktop_system::register_system_commands(builder);
+        // Tauri的invoke_handler会覆盖前一个；全部命令在唯一入口装配。
+        .invoke_handler(tauri::generate_handler![
+            ping,
+            desktop_system::save_file,
+            desktop_system::reveal_path,
+            desktop_system::open_external,
+            data_location::open_in_browser,
+            data_location::open_data_directory,
+            data_location::move_data_directory,
+            browser_embed::browser_embed_open,
+            browser_embed::browser_embed_bounds,
+            browser_embed::browser_embed_visible,
+            browser_embed::browser_embed_console,
+            browser_embed::browser_embed_devtools,
+            browser_embed::browser_embed_close,
+        ]);
     // 右栏浏览器的真内核嵌入（子 webview + WebView2 DevTools）——见 browser_embed.rs
     browser_embed::register_embed_commands(builder)
         .setup(|app| {
-            let data_dir = app.path().app_data_dir()?;
+            let config_dir = std::env::var("KENFUTWORK_CONFIG_DIR")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .map(|value| PathBuf::from(value.trim()))
+                .unwrap_or(app.path().app_config_dir()?);
+            if !config_dir.is_absolute() {
+                return Err(std::io::Error::other("系统配置目录必须是绝对路径。").into());
+            }
+            let data_dir = data_location::resolve_data_dir(
+                &app.path().app_data_dir()?.join("data"),
+                &config_dir.join("data-location.json"),
+            )
+            .map_err(std::io::Error::other)?;
+            std::fs::create_dir_all(&data_dir)?;
+            let ui_base = app
+                .config()
+                .build
+                .dev_url
+                .as_ref()
+                .map(|url| url.as_str().to_string())
+                .unwrap_or(format!("http://127.0.0.1:{SERVER_PORT}/"));
+            app.manage(data_location::DataLocationState(std::sync::Mutex::new(
+                data_location::Location {
+                    data_dir: data_dir.clone(),
+                    config_dir,
+                    port: SERVER_PORT,
+                    ui_base: ui_base.clone(),
+                    moving: false,
+                },
+            )));
+            let owner = std::sync::Arc::new(server_handle::ServerLifecycle::default());
+            app.manage(ServerState(owner.clone()));
+            // 信号处理必须先注册，不能让服务端spawn早于退出路径。
+            #[cfg(unix)]
+            register_signal_shutdown(app.handle().clone());
             // **服务端在后台线程里起**：这条路径上有两段慢活——内嵌 Postgres 首启动要
             // `initdb`、服务端 SEA 冷启动要几秒到几十秒。以前 `setup` 里同步等健康检查，
             // 主线程被占住，窗口连重绘都不做 → 用户看到的是一大片白屏。
             // 现在：先画启动中页面（打包态才画，dev 形态窗口归 devUrl），后台起服务，
             // 起来了再把它叫到主线程跳转。
+            // 与 start_server 同口径：dev 构建不画打包启动页（窗口归 devUrl）
+            #[cfg(not(debug_assertions))]
             let packaged = bundled_server_launch(app.handle()).is_some();
+            #[cfg(debug_assertions)]
+            let packaged = false;
             if packaged {
                 show_startup_splash(app.handle());
+            } else {
+                // dev 形态：主窗口按 tauri.conf 的 `url: "_splash.html"` 会加载
+                // `devUrl + _splash.html`——该文件只存在于打包产物 frontendDist
+                // （web/out），Next dev 没有 → 窗口落 404 页；而 dev 的 start_server
+                // 返回端口 None，server 端口那条导航永不触发，404 就一直停在那
+                // （2026-09-28 真机：每次 `pnpm desktop` 都进 404）。这里把窗口带
+                // 回 devUrl 根：Next 根路径 307 → /workbench，未登录由前端守卫接手。
+                if let Some(dev_url) = app.config().build.dev_url.clone() {
+                    navigate_main_window(app.handle(), dev_url.as_str());
+                }
             }
             let handle = app.handle().clone();
             let thread_data_dir = data_dir.clone();
             std::thread::spawn(move || {
-                let outcome = start_server(&handle, &thread_data_dir);
+                let outcome =
+                    start_server(&handle, &thread_data_dir).and_then(|(launch, selected)| {
+                        let port = selected.unwrap_or(SERVER_PORT);
+                        let base = if selected.is_some() {
+                            format!("http://127.0.0.1:{port}/")
+                        } else {
+                            ui_base.clone()
+                        };
+                        let url = desktop_access::connection_url(&thread_data_dir, port, &base)?;
+                        Ok((launch, port, base, url))
+                    });
+                if outcome.is_err() {
+                    owner.stop_current(SHUTDOWN_GRACE);
+                }
                 // 窗口操作要在主线程上做
                 let ui_handle = handle.clone();
-                let _ = handle.run_on_main_thread(move || match outcome {
-                    Ok((launch, port)) => {
-                        let owned = match launch {
-                            ServerLaunch::Spawned(handle) => Some(handle),
-                            ServerLaunch::Reused => None,
-                        };
-                        if let Some(ref handle) = owned {
-                            log_line(
-                                &thread_data_dir,
-                                &format!("服务端已拉起（pid {}）", handle.pid()),
-                            );
-                        }
-                        ui_handle.manage(ServerState(std::sync::Mutex::new(owned)));
-                        if let Some(port) = port {
-                            navigate_main_window(&ui_handle, &format!("http://127.0.0.1:{port}/"));
-                        }
+                let _ = handle.run_on_main_thread(move || {
+                    if owner.is_stopping() {
+                        return;
                     }
-                    Err(reason) => {
-                        ui_handle.manage(ServerState(std::sync::Mutex::new(None)));
-                        show_startup_error(&ui_handle, &thread_data_dir, &reason);
+                    match outcome {
+                        Ok((launch, port, base, url)) => {
+                            if let Some(pid) = launch {
+                                log_line(&thread_data_dir, &format!("服务端已拉起（pid {pid}）"));
+                            }
+                            if let Ok(mut state) = ui_handle
+                                .state::<data_location::DataLocationState>()
+                                .0
+                                .lock()
+                            {
+                                state.port = port;
+                                state.ui_base = base;
+                            }
+                            navigate_main_window(&ui_handle, &url);
+                        }
+                        Err(reason) => {
+                            show_startup_error(&ui_handle, &thread_data_dir, &reason);
+                        }
                     }
                 });
             });
-            #[cfg(unix)]
-            register_signal_shutdown(app.handle().clone());
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(application_context())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             // 窗口关闭/应用退出 → 优雅停服务端（停 jobLoop + 停库），超时强杀
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Some(state) = app_handle.try_state::<ServerState>() {
-                    if let Some(mut handle) = state.0.lock().ok().and_then(|mut s| s.take()) {
-                        println!("[desktop] 退出：优雅停服务端…");
-                        handle.shutdown(SHUTDOWN_GRACE);
-                    }
+                    println!("[desktop] 退出：优雅停服务端…");
+                    state.0.shutdown(SHUTDOWN_GRACE);
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod local_ipc_permissions {
+    use super::ping;
+    use tauri::{LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl};
+
+    struct Child<'a>(&'a tauri::Webview<tauri::test::MockRuntime>);
+    impl AsRef<tauri::Webview<tauri::test::MockRuntime>> for Child<'_> {
+        fn as_ref(&self) -> &tauri::Webview<tauri::test::MockRuntime> {
+            self.0
+        }
+    }
+
+    fn request(url: &str) -> tauri::webview::InvokeRequest {
+        tauri::webview::InvokeRequest {
+            cmd: "ping".into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: url.parse().unwrap(),
+            body: tauri::ipc::InvokeBody::default(),
+            headers: Default::default(),
+            invoke_key: tauri::test::INVOKE_KEY.to_string(),
+        }
+    }
+
+    #[test]
+    fn loopback_main_has_explicit_ipc_but_external_origin_and_child_do_not() {
+        let app = tauri::test::mock_builder()
+            .invoke_handler(tauri::generate_handler![ping])
+            .build(super::application_context())
+            .unwrap();
+        let main = tauri::WebviewWindowBuilder::new(
+            &app,
+            "main",
+            WebviewUrl::External("http://127.0.0.1:3002/workbench".parse().unwrap()),
+        )
+        .build()
+        .unwrap();
+        for url in [
+            "http://127.0.0.1:3002/workbench",
+            "http://localhost:4567/workbench",
+        ] {
+            assert_eq!(
+                tauri::test::get_ipc_response(&main, request(url))
+                    .unwrap()
+                    .deserialize::<String>()
+                    .unwrap(),
+                ping()
+            );
+        }
+        assert!(tauri::test::get_ipc_response(
+            &main,
+            request("https://untrusted.example/workbench")
+        )
+        .is_err());
+        let child = app
+            .get_window("main")
+            .unwrap()
+            .add_child(
+                WebviewBuilder::new(
+                    "browser-embed",
+                    WebviewUrl::External("http://127.0.0.1:3002/".parse().unwrap()),
+                ),
+                LogicalPosition::new(0.0, 0.0),
+                LogicalSize::new(100.0, 100.0),
+            )
+            .unwrap();
+        assert!(tauri::test::get_ipc_response(
+            &Child(&child),
+            request("http://127.0.0.1:3002/workbench")
+        )
+        .is_err());
+    }
 }
 
 #[cfg(test)]
@@ -468,12 +630,13 @@ mod desktop_env_tests {
     /**
      * macOS 打包态数据落点回归（2026-09-23）：检查点影子仓库与 agent 沙箱的缺省
      * 落点是 <exeDir>/data|tmp——在 .app 包内，只读且受签名保护。desktop_env 必须
-     * 把两者注入数据目录下的子目录；基线 env（嵌入式 PG / local-trust / 端口）不变。
+     * 把两者注入数据目录下的子目录；基线env为内嵌PG、队列与端口。
      */
     #[cfg(target_os = "macos")]
     #[test]
     fn macos_packaged_env_points_checkpoint_and_sandbox_to_data_dir() {
-        let data_dir = std::path::Path::new("/Users/me/Library/Application Support/com.kenfutwork.desktop");
+        let data_dir =
+            std::path::Path::new("/Users/me/Library/Application Support/com.kenfutwork.desktop");
         let env = desktop_env(
             data_dir,
             &std::path::Path::new("/Applications/KenFutWork.app/Contents/Resources/app/web"),
@@ -496,7 +659,6 @@ mod desktop_env_tests {
         // 基线不变
         assert_eq!(get("KENFUTWORK_SERVER_PORT"), "3002");
         assert_eq!(get("KENFUTWORK_EMBEDDED_PG"), "1");
-        assert_eq!(get("KENFUTWORK_AUTH_DRIVER"), "local-trust");
         assert_eq!(
             get("KENFUTWORK_WEB_DIST"),
             "/Applications/KenFutWork.app/Contents/Resources/app/web"
@@ -505,14 +667,19 @@ mod desktop_env_tests {
 
     #[cfg(not(target_os = "macos"))]
     #[test]
-    fn windows_packaged_env_omits_mac_only_keys() {
+    fn all_platforms_point_owned_state_to_data_root() {
         let env = desktop_env(
             std::path::Path::new("C:/data"),
             std::path::Path::new("C:/app/web"),
             3001,
         );
-        assert!(env.iter().all(|(k, _)| k != "KENFUTWORK_CHECKPOINT_ROOT"));
-        assert!(env.iter().all(|(k, _)| k != "KENFUTWORK_SANDBOX_ROOT"));
-        assert_eq!(env.len(), 6);
+        assert!(env
+            .iter()
+            .any(|(k, v)| k == "KENFUTWORK_CHECKPOINT_ROOT" && v.ends_with("checkpoints")));
+        assert!(env
+            .iter()
+            .any(|(k, v)| k == "KENFUTWORK_SANDBOX_ROOT" && v.ends_with("sandbox")));
+        assert!(env.iter().all(|(k, _)| k != "KENFUTWORK_AUTH_DRIVER"));
+        assert_eq!(env.len(), 7);
     }
 }

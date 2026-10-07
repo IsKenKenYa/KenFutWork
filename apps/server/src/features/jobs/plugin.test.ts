@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ServerEnv } from "../../config/env.js";
 import { composePlugins } from "../../kernel/compose.js";
+import { createConsumerLocalAccessService } from "../local-access/test-consumer-service.js";
 import type { JobService } from "./job-service.js";
 import { createJobsPlugin } from "./plugin.js";
 
@@ -23,13 +24,12 @@ describe("jobs 插件（enabled 条件装配）", () => {
       {
         app,
         overrides: {
-          auth: { authenticate: async () => null },
-          credits: {} as never,
+          localAccess: createConsumerLocalAccessService(),
           persistence: {} as never,
           // jobs 插件经队列缝投递（M3.2）
           queue: {} as never,
-          tierGuard: {} as never,
-          viewer: {} as never,
+          localInstance: {} as never,
+          modelProviders: {} as never,
         },
       },
     );
@@ -57,12 +57,11 @@ describe("jobs 插件（enabled 条件装配）", () => {
       app,
       overrides: {
         jobs: injected,
-        auth: { authenticate: async () => null },
-        credits: {} as never,
+        localAccess: createConsumerLocalAccessService(),
         persistence: {} as never,
         queue: {} as never,
-        tierGuard: {} as never,
-        viewer: {} as never,
+        localInstance: {} as never,
+        modelProviders: {} as never,
       },
     });
     expect(kernel.tryGet("jobs")).toBe(injected);

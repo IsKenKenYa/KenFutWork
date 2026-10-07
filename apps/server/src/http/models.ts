@@ -2,7 +2,7 @@ import { type ModelInfo, modelListResponseSchema } from "@kenfutwork/shared";
 import type { FastifyInstance } from "fastify";
 
 import type { ServerEnv } from "../config/env.js";
-import type { RequestAuthenticator } from "../features/auth/types.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import {
   type ModelCatalogService,
   toInstanceSpecifier,
@@ -54,52 +54,46 @@ export async function registerModelRoutes(
   app: FastifyInstance,
   options: {
     env: ServerEnv;
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     modelCatalog?: ModelCatalogService;
   },
 ) {
   const { env } = options;
   app.get("/api/models", async (request, reply) => {
+    const actor = await options.localAccess.authenticate(request);
+    if (!actor)
+      return reply.code(401).send({
+        error: { code: "unauthorized", message: "本机连接凭据缺失或无效。" },
+      });
     const models: ModelInfo[] = [];
     if (env.openAIApiKey) models.push(...OPENAI_MODELS);
     if (env.googleApiKey || env.googleVertexProject)
       models.push(...GOOGLE_MODELS);
 
-    // P5：并入用户供应商实例目录（BYOK，specifier = <instanceId>:<model>）。
-    // 目录读取失败不阻断内置目录返回（降级为内置于预）。
     if (options.modelCatalog) {
-      try {
-        const user = await options.auth.authenticate(request);
-        if (user) {
-          const entries = await options.modelCatalog.listCatalog(user);
-          models.push(
-            ...entries
-              .filter((entry) => entry.capability === "chat")
-              .map((entry) => {
-                // hints 是快照对未声明字段的补缺（声明优先已在目录层保证：
-                // hints 里只会有模型行上没有的字段），此处 ?? 只是兜底合并。
-                const vision = entry.model.vision ?? entry.hints?.imageInput;
-                const contextWindow =
-                  entry.model.contextWindow ?? entry.hints?.contextWindow;
-                const maxOutputTokens =
-                  entry.model.maxOutputTokens ?? entry.hints?.maxOutputTokens;
-                const reasoningEfforts = entry.model.reasoningEfforts;
-                return {
-                  id: toInstanceSpecifier(entry),
-                  name: entry.name,
-                  provider: entry.provider.instanceId,
-                  providerName: entry.provider.name,
-                  ...(vision ? { vision: true } : {}),
-                  ...(contextWindow ? { contextWindow } : {}),
-                  ...(maxOutputTokens ? { maxOutputTokens } : {}),
-                  ...(reasoningEfforts ? { reasoningEfforts } : {}),
-                };
-              }),
-          );
-        }
-      } catch (error) {
-        console.warn("[models] instance catalog merge failed:", error);
-      }
+      const entries = await options.modelCatalog.listCatalog(actor);
+      models.push(
+        ...entries
+          .filter((entry) => entry.capability === "chat")
+          .map((entry) => {
+            const vision = entry.model.vision ?? entry.hints?.imageInput;
+            const contextWindow =
+              entry.model.contextWindow ?? entry.hints?.contextWindow;
+            const maxOutputTokens =
+              entry.model.maxOutputTokens ?? entry.hints?.maxOutputTokens;
+            const reasoningEfforts = entry.model.reasoningEfforts;
+            return {
+              id: toInstanceSpecifier(entry),
+              name: entry.name,
+              provider: entry.provider.instanceId,
+              providerName: entry.provider.name,
+              ...(vision ? { vision: true } : {}),
+              ...(contextWindow ? { contextWindow } : {}),
+              ...(maxOutputTokens ? { maxOutputTokens } : {}),
+              ...(reasoningEfforts ? { reasoningEfforts } : {}),
+            };
+          }),
+      );
     }
 
     return reply.code(200).send(modelListResponseSchema.parse({ models }));

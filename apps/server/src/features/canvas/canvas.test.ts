@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-
-import type { AuthenticatedUser } from "../auth/types.js";
 import { BlobError } from "../blob/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
-import { BootstrapError } from "../bootstrap/errors.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import { SqlError } from "../persistence/errors.js";
 import {
   createPersistenceFromRunner,
@@ -12,15 +13,13 @@ import {
 import { CanvasServiceError, createCanvasService } from "./canvas-service.js";
 import { type CanvasRepository, createCanvasRepository } from "./repository.js";
 
-const USER_ID = "user-1";
-const WORKSPACE_ID = "ws-1";
+const CLIENT_ID = "client-1";
+const INSTANCE_ID = "instance-1";
 const CANVAS_ID = "canvas-1";
 
-const USER: AuthenticatedUser = {
-  accessToken: "token",
-  email: "user@example.com",
-  id: USER_ID,
-  userMetadata: {},
+const ACTOR: LocalActor = {
+  instanceId: INSTANCE_ID,
+  accessClientId: CLIENT_ID,
 };
 
 type FakeResult = { rowCount: number | null; rows: unknown[] } | Error;
@@ -52,6 +51,9 @@ function createRunner(
         release: () => {},
       };
     },
+    async acquireSession() {
+      throw new Error("此查询夹具不提供真实执行宿主会话。");
+    },
     async end() {},
   };
 
@@ -62,20 +64,10 @@ function createRunner(
   };
 }
 
-const VIEWER_STUB: ViewerService = {
-  ensureViewer: async () => {
-    throw new Error("not used");
-  },
-  resolveWorkspace: async () => ({
-    id: WORKSPACE_ID,
-    name: "Personal Workspace",
-    ownerUserId: USER_ID,
-    type: "personal",
-  }),
-  updateProfile: async () => {
-    throw new Error("not used");
-  },
-};
+const LOCAL_INSTANCE = createLocalInstanceService({
+  repository: { ensure: async () => INSTANCE_ID },
+  dataDir: "/tmp/canvas-instance-test",
+});
 
 /** 未知值的对象收窄：repository 的 content 参数与 elements 元素都是 unknown。 */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -140,8 +132,8 @@ const CANVAS_ROW = {
   content: { elements: [], appState: {} },
 };
 
-describe("canvas repository（canvases 无 workspace_id 列 → JOIN projects）", () => {
-  it("读取画布经项目父链施加工作区谓词", async () => {
+describe("canvas repository（canvases 无 instance_id 列 → JOIN projects）", () => {
+  it("读取画布经项目父链施加实例谓词", async () => {
     const { calls, runner } = createRunner(() => ({
       rowCount: 1,
       rows: [CANVAS_ROW],
@@ -149,14 +141,14 @@ describe("canvas repository（canvases 无 workspace_id 列 → JOIN projects）
 
     const row = await createCanvasRepository(
       createPersistenceFromRunner(runner),
-    ).findById(WORKSPACE_ID, CANVAS_ID);
+    ).findById(INSTANCE_ID, CANVAS_ID);
 
     expect(row?.id).toBe(CANVAS_ID);
     const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
     expect(sql).toContain("from public.canvases c");
     expect(sql).toContain("join public.projects p on p.id = c.project_id");
-    expect(sql).toContain("where c.id = $1 and p.workspace_id = $2");
-    expect(calls[0]?.values).toEqual([CANVAS_ID, WORKSPACE_ID]);
+    expect(sql).toContain("where c.id = $1 and p.instance_id = $2");
+    expect(calls[0]?.values).toEqual([CANVAS_ID, INSTANCE_ID]);
   });
 
   it("写入画布同样带父链谓词，jsonb 显式序列化", async () => {
@@ -165,7 +157,7 @@ describe("canvas repository（canvases 无 workspace_id 列 → JOIN projects）
 
     await expect(
       createCanvasRepository(createPersistenceFromRunner(runner)).saveContent(
-        WORKSPACE_ID,
+        INSTANCE_ID,
         CANVAS_ID,
         content,
       ),
@@ -174,32 +166,15 @@ describe("canvas repository（canvases 无 workspace_id 列 → JOIN projects）
     const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
     expect(sql).toContain("update public.canvases c set content = $2::jsonb");
     expect(sql).toContain("from public.projects p");
-    expect(sql).toContain("and p.workspace_id = $3");
+    expect(sql).toContain("and p.instance_id = $3");
     expect(calls[0]?.values).toEqual([
       CANVAS_ID,
       JSON.stringify(content),
-      WORKSPACE_ID,
+      INSTANCE_ID,
     ]);
   });
 
-  it("按画布反查工作区/品牌套件：走同一父链，且用工作区谓词", async () => {
-    const byCanvas = createRunner(() => ({
-      rowCount: 1,
-      rows: [{ workspace_id: WORKSPACE_ID }],
-    }));
-    await expect(
-      createCanvasRepository(
-        createPersistenceFromRunner(byCanvas.runner),
-      ).findWorkspaceIdByCanvas(CANVAS_ID),
-    ).resolves.toBe(WORKSPACE_ID);
-    const byCanvasSql = byCanvas.sqls()[0] ?? "";
-    expect(byCanvasSql).toContain(
-      "join public.projects p on p.id = c.project_id",
-    );
-    expect(byCanvasSql).toContain("where c.id = $1");
-    // 反查工作区时还不知道工作区，故无谓词（画布 id 来自本次运行）
-    expect(byCanvasSql).not.toContain("workspace_id =");
-
+  it("按实例读取画布绑定品牌套件：走同一父链，且用实例谓词", async () => {
     const brandKit = createRunner(() => ({
       rowCount: 1,
       rows: [{ brand_kit_id: "kit-1" }],
@@ -207,26 +182,26 @@ describe("canvas repository（canvases 无 workspace_id 列 → JOIN projects）
     await expect(
       createCanvasRepository(
         createPersistenceFromRunner(brandKit.runner),
-      ).findProjectBrandKitId(WORKSPACE_ID, CANVAS_ID),
+      ).findProjectBrandKitId(INSTANCE_ID, CANVAS_ID),
     ).resolves.toBe("kit-1");
     expect(brandKit.sqls()[0]).toContain(
-      "where c.id = $1 and p.workspace_id = $2",
+      "where c.id = $1 and p.instance_id = $2",
     );
-    expect(brandKit.calls[0]?.values).toEqual([CANVAS_ID, WORKSPACE_ID]);
+    expect(brandKit.calls[0]?.values).toEqual([CANVAS_ID, INSTANCE_ID]);
 
     const empty = createRunner();
     await expect(
       createCanvasRepository(
         createPersistenceFromRunner(empty.runner),
-      ).findProjectBrandKitId(WORKSPACE_ID, CANVAS_ID),
+      ).findProjectBrandKitId(INSTANCE_ID, CANVAS_ID),
     ).resolves.toBeNull();
   });
 
-  it("0 行受影响即未命中（不属本工作区或不存在）", async () => {
+  it("0 行受影响即未命中（不属本实例或不存在）", async () => {
     const { runner } = createRunner();
     await expect(
       createCanvasRepository(createPersistenceFromRunner(runner)).saveContent(
-        WORKSPACE_ID,
+        INSTANCE_ID,
         CANVAS_ID,
         { elements: [] },
       ),
@@ -240,7 +215,6 @@ function createFakeRepository(
   return {
     findById: async () => CANVAS_ROW,
     findProjectBrandKitId: async () => null,
-    findWorkspaceIdByCanvas: async () => WORKSPACE_ID,
     saveContent: async () => 1,
     appendContent: async () => 1,
     ...overrides,
@@ -250,14 +224,14 @@ function createFakeRepository(
 function buildService(options: {
   repository?: Partial<CanvasRepository>;
   storage?: ReturnType<typeof createStorageStub>;
-  viewerService?: ViewerService;
+  localInstance?: LocalInstanceService;
 }) {
   const storage = options.storage ?? createStorageStub();
   return {
     service: createCanvasService({
       blob: storage.blob,
       repository: createFakeRepository(options.repository),
-      viewerService: options.viewerService ?? VIEWER_STUB,
+      localInstance: options.localInstance ?? LOCAL_INSTANCE,
     }),
     storage,
   };
@@ -287,7 +261,7 @@ describe("canvas service", () => {
       },
     });
 
-    const detail = await service.getCanvas(USER, CANVAS_ID);
+    const detail = await service.getCanvas(ACTOR, CANVAS_ID);
 
     expect(detail.id).toBe(CANVAS_ID);
     expect(detail.projectId).toBe("project-1");
@@ -305,11 +279,11 @@ describe("canvas service", () => {
     ).toBe(true);
   });
 
-  it("画布不存在（或不属本工作区）返回 404", async () => {
+  it("画布不存在（或不属本实例）返回 404", async () => {
     const { service } = buildService({
       repository: { findById: async () => null },
     });
-    await expect(service.getCanvas(USER, CANVAS_ID)).rejects.toMatchObject({
+    await expect(service.getCanvas(ACTOR, CANVAS_ID)).rejects.toMatchObject({
       code: "canvas_not_found",
       statusCode: 404,
     });
@@ -319,14 +293,14 @@ describe("canvas service", () => {
     let writtenContent: unknown;
     const { service, storage } = buildService({
       repository: {
-        saveContent: async (_workspaceId, _canvasId, content) => {
+        saveContent: async (_instanceId, _canvasId, content) => {
           writtenContent = content;
           return 1;
         },
       },
     });
 
-    await service.saveCanvasContent(USER, CANVAS_ID, {
+    await service.saveCanvasContent(ACTOR, CANVAS_ID, {
       appState: {},
       elements: [],
       files: {
@@ -348,7 +322,7 @@ describe("canvas service", () => {
     let writtenContent: unknown;
     const { service } = buildService({
       repository: {
-        saveContent: async (_workspaceId, _canvasId, content) => {
+        saveContent: async (_instanceId, _canvasId, content) => {
           writtenContent = content;
           return 1;
         },
@@ -358,7 +332,7 @@ describe("canvas service", () => {
       }),
     });
 
-    await service.saveCanvasContent(USER, CANVAS_ID, {
+    await service.saveCanvasContent(ACTOR, CANVAS_ID, {
       appState: {},
       elements: [],
       files: { "f-1": { id: "f-1", dataURL: "data:image/png;base64,AAAA" } },
@@ -374,7 +348,7 @@ describe("canvas service", () => {
       repository: { saveContent: async () => 0 },
     });
     await expect(
-      notFound.service.saveCanvasContent(USER, CANVAS_ID, {
+      notFound.service.saveCanvasContent(ACTOR, CANVAS_ID, {
         appState: {},
         elements: [],
       } as never),
@@ -388,7 +362,7 @@ describe("canvas service", () => {
       },
     });
     const error = await failing.service
-      .saveCanvasContent(USER, CANVAS_ID, {
+      .saveCanvasContent(ACTOR, CANVAS_ID, {
         appState: {},
         elements: [],
       } as never)
@@ -400,7 +374,7 @@ describe("canvas service", () => {
     });
   });
 
-  it("工作区解析失败时不落到画布数据访问（fail loud）", async () => {
+  it("实例解析失败时不落到画布数据访问（fail loud）", async () => {
     let reads = 0;
     const { service } = buildService({
       repository: {
@@ -409,17 +383,17 @@ describe("canvas service", () => {
           return CANVAS_ROW;
         },
       },
-      viewerService: {
-        ...VIEWER_STUB,
-        resolveWorkspace: async () => {
-          throw new BootstrapError();
+      localInstance: {
+        ...LOCAL_INSTANCE,
+        resolve: async () => {
+          throw new Error("本地实例暂不可用");
         },
       },
     });
 
-    await expect(service.getCanvas(USER, CANVAS_ID)).rejects.toMatchObject({
-      code: "canvas_not_found",
-    });
+    await expect(service.getCanvas(ACTOR, CANVAS_ID)).rejects.toThrow(
+      "本地实例暂不可用",
+    );
     expect(reads).toBe(0);
   });
 
@@ -434,7 +408,7 @@ describe("canvas service", () => {
             elements: [{ id: "el-old", x: 0, width: 10 }],
           },
         }),
-        appendContent: async (_workspaceId, _canvasId, input) => {
+        appendContent: async (_instanceId, _canvasId, input) => {
           appended = input;
           return 1;
         },
@@ -442,17 +416,14 @@ describe("canvas service", () => {
       storage: createStorageStub({ downloadBytes: Buffer.from("img") }),
     });
 
-    const { elementId } = await service.insertImageElement(
-      { accessToken: "token", id: USER_ID },
-      {
-        canvasId: CANVAS_ID,
-        mimeType: "image/png",
-        objectPath: "gen/shot.png",
-        height: 512,
-        width: 512,
-        title: "生成图",
-      },
-    );
+    const { elementId } = await service.insertImageElement(ACTOR, {
+      canvasId: CANVAS_ID,
+      mimeType: "image/png",
+      objectPath: "gen/shot.png",
+      height: 512,
+      width: 512,
+      title: "生成图",
+    });
 
     expect(storage.calls[0]).toBe("download:project-assets:gen/shot.png");
     if (!appended) {
@@ -494,16 +465,13 @@ describe("canvas service", () => {
     });
 
     await expect(
-      service.insertImageElement(
-        { accessToken: "token", id: USER_ID },
-        {
-          canvasId: CANVAS_ID,
-          mimeType: "image/png",
-          objectPath: "gen/missing.png",
-          height: 10,
-          width: 10,
-        },
-      ),
+      service.insertImageElement(ACTOR, {
+        canvasId: CANVAS_ID,
+        mimeType: "image/png",
+        objectPath: "gen/missing.png",
+        height: 10,
+        width: 10,
+      }),
     ).rejects.toThrow(/Failed to download image from storage/);
     expect(writes).toBe(0);
   });
@@ -513,25 +481,22 @@ describe("canvas service", () => {
     const { service } = buildService({
       repository: {
         findById: async () => CANVAS_ROW,
-        appendContent: async (_workspaceId, _canvasId, input) => {
+        appendContent: async (_instanceId, _canvasId, input) => {
           written = input;
           return 1;
         },
       },
     });
 
-    const { elementId } = await service.insertVideoElement(
-      { accessToken: "token", id: USER_ID },
-      {
-        canvasId: CANVAS_ID,
-        mimeType: "video/mp4",
-        signedUrl: "https://blob.test/v.mp4",
-        durationSeconds: 5,
-        height: 720,
-        width: 1280,
-        prompt: "海浪",
-      },
-    );
+    const { elementId } = await service.insertVideoElement(ACTOR, {
+      canvasId: CANVAS_ID,
+      mimeType: "video/mp4",
+      signedUrl: "https://blob.test/v.mp4",
+      durationSeconds: 5,
+      height: 720,
+      width: 1280,
+      prompt: "海浪",
+    });
 
     if (!written) {
       throw new Error("未记录到 appendContent 调用");
@@ -561,16 +526,43 @@ describe("canvas service", () => {
     });
 
     await expect(
-      service.insertVideoElement(
-        { accessToken: "token", id: USER_ID },
-        {
-          canvasId: CANVAS_ID,
-          mimeType: "video/mp4",
-          signedUrl: "https://blob.test/v.mp4",
-          height: 10,
-          width: 10,
-        },
-      ),
+      service.insertVideoElement(ACTOR, {
+        canvasId: CANVAS_ID,
+        mimeType: "video/mp4",
+        signedUrl: "https://blob.test/v.mp4",
+        height: 10,
+        width: 10,
+      }),
     ).rejects.toThrow(/Failed to append to canvas/);
   });
+});
+
+it("画布服务的实例 Actor 在内容读取和写入前复验", async () => {
+  let reads = 0;
+  let writes = 0;
+  const { service } = buildService({
+    repository: {
+      findById: async () => {
+        reads += 1;
+        return CANVAS_ROW;
+      },
+      saveContent: async () => {
+        writes += 1;
+        return 1;
+      },
+    },
+  });
+  const actor = { instanceId: "foreign", accessClientId: ACTOR.accessClientId };
+  await expect(service.getCanvas(actor, CANVAS_ID)).rejects.toMatchObject({
+    code: "instance_forbidden",
+    statusCode: 403,
+  });
+  await expect(
+    service.saveCanvasContent(actor, CANVAS_ID, {
+      elements: [],
+      files: {},
+      appState: {},
+    }),
+  ).rejects.toMatchObject({ code: "instance_forbidden" });
+  expect([reads, writes]).toEqual([0, 0]);
 });

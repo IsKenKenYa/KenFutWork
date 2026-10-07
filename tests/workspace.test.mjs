@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -318,15 +319,30 @@ const SUPABASE_SOURCE_ROOTS = ["apps/server/src", "apps/web/src", "packages"];
 const IGNORED_DIRS = new Set([
   "node_modules",
   "dist",
+  "dist-types",
+  "dist-host",
+  "dist-design",
   ".next",
   "out",
   ".turbo",
+  // i18n 目录是纯文案键值表（如 zcode 移植的 zh-CN.ts），键名里的 `.storage.`
+  // （"resourceManager.storage.summaryTotal"）会被 storageRefs 误计为存储客户端
+  // 访问——文案不是代码，与 ctx/deps 接收者同一条误报排除原则（口径修正 2026-09-30）。
+  "i18n",
 ]);
 
 /** 全部源文件（排除测试）——按全量统计才能同口径比较：只统计「已耦合文件」时，
  *  把一处存储调用从一个耦合文件挪到另一个，指标会凭空变化。 */
 function listSupabaseSources() {
   const files = [];
+  const inventoryPath = path.join(rootDir, "docs/源码来源/ZCode源码清单.json");
+  const upstreamSources = existsSync(inventoryPath)
+    ? new Map(
+        JSON.parse(readFileSync(inventoryPath, "utf8")).records.map(
+          (record) => [path.resolve(rootDir, record.target), record],
+        ),
+      )
+    : new Map();
 
   const walk = (dir) => {
     let entries;
@@ -348,6 +364,16 @@ function listSupabaseSources() {
         !/\.(ts|tsx)$/.test(entry.name) ||
         /\.test\.(ts|tsx)$/.test(entry.name)
       ) {
+        continue;
+      }
+      const upstream = upstreamSources.get(target);
+      if (
+        upstream?.source.startsWith("references/zcode/") &&
+        createHash("sha256").update(readFileSync(target)).digest("hex") ===
+          upstream.copiedSha256
+      ) {
+        // 经来源清单锁定的外部源码不是第一方 Supabase 迁移对象。
+        // 宿主代码及任何未登记改动仍纳入原棘轮，不放宽基线。
         continue;
       }
       files.push(target);
@@ -518,25 +544,34 @@ test("provider_instances.protocol 的库约束与共享契约枚举一致", asyn
   const enumMatch = contracts.match(
     /providerProtocolSchema = z\.enum\(\[([^\]]*)\]\)/,
   );
-  assert.ok(enumMatch, "provider-contracts.ts 里应有 providerProtocolSchema 的封闭枚举");
+  assert.ok(
+    enumMatch,
+    "provider-contracts.ts 里应有 providerProtocolSchema 的封闭枚举",
+  );
   const contractProtocols = [...enumMatch[1].matchAll(/"([^"]+)"/g)].map(
     (match) => match[1],
   );
 
   // 迁移按文件名顺序执行，取**最后一处**定义（前向迁移的 drop/add 覆盖建表时的初值）。
   let constraintProtocols = null;
-  for (const name of readdirSync(path.join(rootDir, "supabase/migrations")).sort()) {
+  for (const name of readdirSync(
+    path.join(rootDir, "supabase/migrations"),
+  ).sort()) {
     if (!name.endsWith(".sql")) continue;
-    const sql = readFileSync(path.join(rootDir, "supabase/migrations", name), "utf8");
-    for (const match of sql.matchAll(
-      /CHECK \(protocol IN \(([^)]*)\)\)/gi,
-    )) {
+    const sql = readFileSync(
+      path.join(rootDir, "supabase/migrations", name),
+      "utf8",
+    );
+    for (const match of sql.matchAll(/CHECK \(protocol IN \(([^)]*)\)\)/gi)) {
       constraintProtocols = [...match[1].matchAll(/'([^']+)'/g)].map(
         (literal) => literal[1],
       );
     }
   }
-  assert.ok(constraintProtocols, "应存在 provider_instances 协议 CHECK 约束定义");
+  assert.ok(
+    constraintProtocols,
+    "应存在 provider_instances 协议 CHECK 约束定义",
+  );
   assert.deepEqual(
     [...contractProtocols].sort(),
     [...constraintProtocols].sort(),

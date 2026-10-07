@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/components/toast";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
+import { serverFetch } from "@/lib/local-access";
 import { PluginIcon } from "@/lib/plugin-panels";
 import { ListEmpty, ListLoading } from "./list-state";
 import { PluginExportDialog } from "./plugin-export-dialog";
@@ -45,7 +46,7 @@ type MarketTab = "discover" | "installed";
 
 /**
  * 插件市场（模态）：发现 / 已安装 + 搜索 + 从链接安装 + 导出。
- * 数据来自 GET /api/plugins（内置清单 + 已安装插件）；第三方插件的变更端点需管理员。
+ * 数据来自 GET /api/plugins（内置清单 + 已安装插件）；已授权本机接入可管理插件。
  */
 /**
  * 「使用」能跳到哪儿：**显式表**，只列真有消费界面的插件。
@@ -65,7 +66,6 @@ export function PluginMarketModal({
   onClose,
   accessToken,
   canvasId = null,
-  isAdmin = false,
   onUse,
   onPluginsChanged,
 }: {
@@ -74,8 +74,7 @@ export function PluginMarketModal({
   accessToken: string | null;
   /** 当前工作目录的画布 id（「从工作目录安装」用）。 */
   canvasId?: string | null;
-  /** 安装端点要管理员：非管理员时两个安装入口都前置说明并禁用。 */
-  isAdmin?: boolean;
+  /** 安装保留兼容性检查。 */
   /**
    * 「使用」：已装的插件跳到**真正消费它的那个界面**（参考图里已装插件显示「使用」而不是「安装」）。
    * 没给回调时按「这个插件没有可跳的界面」处理——不摆一个点了没反应的键。
@@ -107,7 +106,9 @@ export function PluginMarketModal({
 
   const refresh = useCallback(() => {
     setLoading(true);
-    void fetch(`${getServerBaseUrl()}/api/plugins`, { headers: authHeaders() })
+    void serverFetch(`${getServerBaseUrl()}/api/plugins`, {
+      headers: authHeaders(),
+    })
       .then((response) => (response.ok ? response.json() : { plugins: [] }))
       .then((data: { plugins: PluginMarketEntry[] }) =>
         setPlugins(data.plugins),
@@ -129,7 +130,7 @@ export function PluginMarketModal({
       : installingBuiltin
         ? `${getServerBaseUrl()}/api/plugins/install`
         : `${getServerBaseUrl()}/api/plugins/${encodeURIComponent(entry.id)}/toggle`;
-    const response = await fetch(url, {
+    const response = await serverFetch(url, {
       method: "POST",
       headers: { "content-type": "application/json", ...authHeaders() },
       body: JSON.stringify(
@@ -144,10 +145,7 @@ export function PluginMarketModal({
       const payload = (await response.json().catch(() => ({}))) as {
         error?: { message?: string };
       };
-      toast.error(
-        payload.error?.message ??
-          "操作失败（变更类操作需要管理员权限，可在设置 → 管理后台调整）。",
-      );
+      toast.error(payload.error?.message ?? "插件操作失败。");
       return;
     }
     toast.success(entry.installed ? "已卸载。" : "已安装。");
@@ -283,7 +281,6 @@ export function PluginMarketModal({
               <>
                 <PluginInstallByUrl
                   accessToken={accessToken}
-                  isAdmin={isAdmin}
                   onInstalled={() => {
                     refresh();
                     onPluginsChanged?.();
@@ -292,7 +289,6 @@ export function PluginMarketModal({
                 <PluginInstallFromWorkdir
                   accessToken={accessToken}
                   canvasId={canvasId}
-                  isAdmin={isAdmin}
                   onInstalled={() => {
                     refresh();
                     onPluginsChanged?.();

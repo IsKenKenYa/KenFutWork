@@ -1,17 +1,22 @@
 import { randomUUID } from "node:crypto";
-
-import type { AuthenticatedUser } from "../auth/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import type { ChatRepository } from "./repository.js";
 
 export class ThreadServiceError extends Error {
   readonly statusCode: number;
-  readonly code: "session_not_found";
+  readonly code: "session_not_found" | "session_unavailable";
 
-  constructor(message: string, statusCode: number) {
+  constructor(
+    message: string,
+    statusCode: number,
+    code: ThreadServiceError["code"] = "session_not_found",
+  ) {
     super(message);
     this.name = "ThreadServiceError";
-    this.code = "session_not_found";
+    this.code = code;
     this.statusCode = statusCode;
   }
 }
@@ -19,30 +24,25 @@ export class ThreadServiceError extends Error {
 export type SessionThreadBinding = {
   sessionId: string;
   threadId: string;
-  /**
-   * 会话所属画布 id。
-   *
-   * 用途：agent 的沙箱目录名取「画布 UUID」（`tmp/sandbox/<画布UUID>`）。无工作目录的
-   * Code 会话，客户端只能拿会话 UUID 当 canvasId 发上来，直接落盘会得到
-   * `tmp/sandbox/<会话UUID>`——与服务端懒供给的「Code 工作台」画布对不上。故运行入口
-   * 用它把沙箱作用域改回真实画布（事件路由仍按客户端给的 canvasId，不受影响）。
-   */
-  canvasId: string;
+  /** 可视化模式的视图身份；Code 作用域只使用 projectId/sessionId。 */
+  canvasId?: string;
+  projectId: string;
+  mode: "design" | "code" | "flow";
 };
 
 export type ThreadService = {
   createThreadId(): string;
   resolveOwnedSessionThread(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     sessionId: string,
   ): Promise<SessionThreadBinding>;
 };
 
 export function createThreadService(options: {
-  /** 会话属主校验经持久层（`chat_sessions → canvases → projects` 链）。 */
+  /** 会话属主经 project/instance 身份校验；Code 不再经 Canvas。 */
   repository: ChatRepository;
   threadIdFactory?: () => string;
-  viewerService: ViewerService;
+  localInstance: LocalInstanceService;
 }): ThreadService {
   const threadIdFactory =
     options.threadIdFactory ?? (() => `thread_${randomUUID()}`);
@@ -52,18 +52,13 @@ export function createThreadService(options: {
       return threadIdFactory();
     },
 
-    async resolveOwnedSessionThread(user, sessionId) {
-      const workspace = await options.viewerService
-        .resolveWorkspace(user)
-        .catch(() => null);
+    async resolveOwnedSessionThread(actor, sessionId) {
+      const context = await options.localInstance.resolve(actor);
 
-      if (!workspace) {
-        throw new ThreadServiceError("Session not found.", 404);
-      }
-
-      const row = await options.repository
-        .findSessionThread(workspace.id, sessionId)
-        .catch(() => null);
+      const row = await options.repository.findSessionThread(
+        context.instanceId,
+        sessionId,
+      );
 
       if (!row) {
         throw new ThreadServiceError("Session not found.", 404);
@@ -77,7 +72,11 @@ export function createThreadService(options: {
       }
 
       return {
-        canvasId: row.canvas_id,
+        ...(row.mode !== "code" && row.canvas_id
+          ? { canvasId: row.canvas_id }
+          : {}),
+        projectId: row.project_id,
+        mode: row.mode,
         sessionId: row.id,
         threadId: row.thread_id,
       };

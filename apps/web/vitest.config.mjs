@@ -4,12 +4,17 @@ import { defineConfig } from "vitest/config";
 // .mjs on purpose: avoids .vite-temp TS-config bundling inside node_modules
 // (which trips the dev sandbox when a package has no local node_modules).
 export default defineConfig({
-  esbuild: {
-    jsx: "automatic",
+  oxc: {
+    jsx: { runtime: "automatic" },
   },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
+      // zcode 照搬层路径映射（tsconfig paths 同口径；vitest 不读 tsconfig paths）
+      "@zui": path.resolve(
+        import.meta.dirname,
+        "src/components/workbench/zcode",
+      ),
     },
   },
   test: {

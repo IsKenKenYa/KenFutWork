@@ -21,3 +21,6 @@
 
 # 锁文件与快照不参与 diff 噪音优化（只声明文本属性，保持可读 diff）
 pnpm-lock.yaml text
+
+# 上游版权通知按字节保留，来源清单的 SHA-256 不受行尾转换影响。
+apps/web/src/components/workbench/zcode/THIRD-PARTY-NOTICES.md -text

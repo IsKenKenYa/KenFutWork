@@ -134,11 +134,11 @@ function setup(options: SetupOptions = {}) {
 }
 
 describe("useComposerVoice", () => {
-  it("未登录（无 token）：手势不接线，按住不录音也不报错", async () => {
+  it("本机 cookie 接入：无 JS token 仍可录音并回填文本", async () => {
     const h = setup({ accessToken: null });
     await h.hold();
-    expect(h.calls).toEqual([]);
-    expect(h.received).toEqual([]);
+    expect(h.calls).toEqual(["start", "stop"]);
+    expect(h.received).toEqual(["把首页按钮改成蓝色"]);
     expect(h.queryByRole("status")).toBeNull();
   });
 

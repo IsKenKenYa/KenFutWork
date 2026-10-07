@@ -33,7 +33,7 @@ export function createDevelopmentBackend(
     /** Canvas ID — used for workspace-skills Store namespace when available. */
     canvasId?: string;
     /** When true, add a /workspace-skills/ route backed by the Store. */
-    hasWorkspaceSkills?: boolean;
+    hasInstanceSkills?: boolean;
     /** 随包运行时 bin 目录（前置到 sandbox PATH）。 */
     runtimePathAdditions?: string[];
     /** 随包 JDK 根目录（JAVA_HOME）。 */
@@ -91,11 +91,7 @@ export function createDevelopmentBackend(
     };
 
     // In dev mode, workspace skills are served from the Store when available.
-    if (
-      options?.hasWorkspaceSkills &&
-      options.canvasId &&
-      stateAndStore.store
-    ) {
+    if (options?.hasInstanceSkills && options.canvasId && stateAndStore.store) {
       routes["/workspace-skills/"] = new StoreBackend(stateAndStore, {
         namespace: ["projects", options.canvasId, "workspace-skills"],
       });

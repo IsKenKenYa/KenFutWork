@@ -2,6 +2,8 @@ import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 
 import { composePlugins } from "../../kernel/compose.js";
+import { createConsumerLocalAccessService } from "../local-access/test-consumer-service.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
 import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
@@ -10,8 +12,8 @@ import { createAssetWriter } from "./asset-writer.js";
 import { createUploadsPlugin } from "./plugin.js";
 import { createUploadRepository } from "./repository.js";
 
-const WORKSPACE_ID = "ws-1";
-const USER_ID = "user-1";
+const INSTANCE_ID = "instance-1";
+const CLIENT_ID = "client-1";
 
 function createRunner(
   respond: () => { rowCount: number; rows: unknown[] } = () => ({
@@ -23,9 +25,9 @@ function createRunner(
         created_at: "2026-09-13T00:00:00.000Z",
         id: "asset-1",
         mime_type: "image/png",
-        object_path: "ws-1/generated/1.png",
+        object_path: "instance-1/generated/1.png",
         project_id: null,
-        workspace_id: WORKSPACE_ID,
+        instance_id: INSTANCE_ID,
       },
     ],
   }),
@@ -47,6 +49,9 @@ function createRunner(
         release: () => {},
       };
     },
+    async acquireSession() {
+      throw new Error("此查询夹具不提供真实执行宿主会话。");
+    },
     async end() {},
   };
 
@@ -57,8 +62,8 @@ function createRunner(
   };
 }
 
-describe("assetWriter：生成物元数据写入（工作区口径）", () => {
-  it("按工作区写 asset_objects，并带上创建者", async () => {
+describe("assetWriter：生成物元数据写入（实例口径）", () => {
+  it("按实例写 asset_objects，并带上创建者", async () => {
     const { calls, runner } = createRunner();
     const writer = createAssetWriter(
       createUploadRepository(createPersistenceFromRunner(runner)),
@@ -67,29 +72,30 @@ describe("assetWriter：生成物元数据写入（工作区口径）", () => {
     const assetId = await writer.recordGeneratedAsset({
       byteSize: 12,
       mimeType: "image/png",
-      objectPath: "ws-1/generated/1.png",
-      userId: USER_ID,
-      workspaceId: WORKSPACE_ID,
+      objectPath: "instance-1/generated/1.png",
+      createdByClientId: CLIENT_ID,
+      instanceId: INSTANCE_ID,
     });
 
     expect(assetId).toBe("asset-1");
     const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
     expect(sql).toContain("insert into public.asset_objects");
-    // `:workspace` 必须出现在语句里（FORM-9 第二道防线：漏写即 WorkspaceIsolationError）
-    expect(sql).toContain("values ($7, $1, $2, $3, $4, $5, $6)");
-    // bucket 固定为 project-assets（生成物桶），工作区 id 由标记绑定为末位参数
+    // `:instance` 必须出现在语句里（FORM-9 第二道防线：漏写即 InstanceIsolationError）
+    expect(sql).toContain("select $7, $1, $2, $3, $4, $5::uuid, $6::uuid");
+    expect(sql).toContain("p.id = $6::uuid and p.instance_id = $7");
+    // bucket 固定为 project-assets（生成物桶），实例 id 由标记绑定为末位参数
     expect(calls[0]?.values).toEqual([
       "project-assets",
-      "ws-1/generated/1.png",
+      "instance-1/generated/1.png",
       "image/png",
       12,
-      USER_ID,
+      CLIENT_ID,
       null,
-      WORKSPACE_ID,
+      INSTANCE_ID,
     ]);
   });
 
-  it("无用户身份时 created_by 落 NULL（列可空，不伪造用户）", async () => {
+  it("后台没有接入客户端时 created_by_client_id 落 NULL（列可空，不伪造客户端）", async () => {
     const { calls, runner } = createRunner();
     const writer = createAssetWriter(
       createUploadRepository(createPersistenceFromRunner(runner)),
@@ -98,18 +104,18 @@ describe("assetWriter：生成物元数据写入（工作区口径）", () => {
     await writer.recordGeneratedAsset({
       byteSize: 12,
       mimeType: "video/mp4",
-      objectPath: "ws-1/generated/1.mp4",
-      workspaceId: WORKSPACE_ID,
+      objectPath: "instance-1/generated/1.mp4",
+      instanceId: INSTANCE_ID,
     });
 
     expect(calls[0]?.values).toEqual([
       "project-assets",
-      "ws-1/generated/1.mp4",
+      "instance-1/generated/1.mp4",
       "video/mp4",
       12,
       null,
       null,
-      WORKSPACE_ID,
+      INSTANCE_ID,
     ]);
   });
 
@@ -124,7 +130,7 @@ describe("assetWriter：生成物元数据写入（工作区口径）", () => {
         byteSize: 1,
         mimeType: "image/png",
         objectPath: "p",
-        workspaceId: WORKSPACE_ID,
+        instanceId: INSTANCE_ID,
       }),
     ).rejects.toThrow(/no row/);
   });
@@ -144,12 +150,11 @@ describe("uploads 插件：两条路径的装配形状", () => {
       {
         app: Fastify({ logger: false }),
         overrides: {
-          auth: { authenticate: async () => null },
+          localAccess: createConsumerLocalAccessService(),
           // 路由形态的 uploads 服务依赖 blob 缝
           blob: { bucket: () => ({}) } as never,
           persistence: {
-            forUser: () => ({}) as never,
-            forWorkspace: () => ({}) as never,
+            forInstance: () => ({}) as never,
             close: async () => {},
             ping: async () => {},
             query: async () => [],
@@ -157,7 +162,10 @@ describe("uploads 插件：两条路径的装配形状", () => {
             execute: async () => 0,
             transaction: async (fn: never) => fn as never,
           } as never,
-          viewer: {} as never,
+          localInstance: createLocalInstanceService({
+            repository: { ensure: async () => INSTANCE_ID },
+            dataDir: "/tmp/asset-writer-test",
+          }),
         },
       },
     );

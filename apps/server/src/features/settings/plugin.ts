@@ -4,25 +4,23 @@ import { toInstanceSpecifier } from "../model-providers/model-catalog-service.js
 import { createSettingsRepository } from "./repository.js";
 import { createSettingsService } from "./settings-service.js";
 
-/**
- * settings 插件：用户偏好/默认模型设置服务 + HTTP 路由（路由消费 viewer）。
- *
- * 兜底默认模型取自**模型目录**（首个可用 chat 模型）而不是 env 里的内置目录名：
- * 目录是「本部署实际能调用的模型」的唯一事实源，env 名可能根本不存在于供应商实例
- * （平台池只配 GLM 时 `gpt-4.1` 会 404）。目录为空时再退回 `env.agentModel`。
- */
+/** 设置服务只依赖实例、模型目录及存储；本机访问门可据此读取治理值。 */
 export function createSettingsPlugin(): PluginDefinition {
   return {
     name: "settings",
-    inject: ["auth", "modelCatalog", "persistence", "viewer"],
+    inject: ["localInstance", "modelCatalog", "persistence"],
     apply(ctx) {
       ctx.register("settings", () =>
         createSettingsService({
+          localInstance: ctx.get("localInstance"),
           defaultModel: ctx.env.agentModel,
-          resolveFallbackModel: async (user) => {
+          ...(ctx.env.agentGovernance
+            ? { governanceEnv: ctx.env.agentGovernance }
+            : {}),
+          resolveFallbackModel: async (actor) => {
             const entries = await ctx
               .get("modelCatalog")
-              .listCatalog(user)
+              .listCatalog(actor)
               .catch(() => []);
             const chatModel = entries.find(
               (entry) => entry.capability === "chat",
@@ -33,11 +31,21 @@ export function createSettingsPlugin(): PluginDefinition {
         }),
       );
     },
+  };
+}
+
+/** HTTP 消费方在服务图就绪后挂载，不进入设置服务的依赖图。 */
+export function createSettingsRoutesPlugin(): PluginDefinition {
+  return {
+    name: "settings:http",
+    inject: ["settings", "localAccess", "localInstance", "modelCatalog"],
+    apply() {},
     mounted(ctx) {
       void registerSettingsRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
+        localInstance: ctx.get("localInstance"),
         settingsService: ctx.get("settings"),
-        viewerService: ctx.get("viewer"),
+        modelCatalog: ctx.get("modelCatalog"),
       });
     },
   };

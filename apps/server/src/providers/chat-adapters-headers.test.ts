@@ -25,9 +25,14 @@ afterEach(async () => {
 async function startRejectingStub(): Promise<{
   baseUrl: string;
   requests: Array<Record<string, string | string[] | undefined>>;
+  bodies: Array<Record<string, unknown>>;
 }> {
   const requests: Array<Record<string, string | string[] | undefined>> = [];
-  server = createServer((req, res) => {
+  const bodies: Array<Record<string, unknown>> = [];
+  server = createServer(async (req, res) => {
+    let body = "";
+    for await (const part of req) body += part;
+    bodies.push(JSON.parse(body));
     requests.push({ ...req.headers });
     res.writeHead(400, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: { message: "stub" } }));
@@ -37,7 +42,7 @@ async function startRejectingStub(): Promise<{
     stub.listen(0, "127.0.0.1", () => resolve());
   });
   const { port } = stub.address() as AddressInfo;
-  return { baseUrl: `http://127.0.0.1:${port}`, requests };
+  return { baseUrl: `http://127.0.0.1:${port}`, requests, bodies };
 }
 
 describe("anthropic 适配器：自定义头上线（§4.8）", () => {
@@ -55,6 +60,61 @@ describe("anthropic 适配器：自定义头上线（§4.8）", () => {
     const headers = stub.requests[0] ?? {};
     expect(headers["x-tenant-id"]).toBe("ws-42");
     expect(headers["x-api-key"]).toBe("sk-ant-instance");
+  });
+});
+
+it("Anthropic原生调用实际消费本轮冻结的输出和思考参数，保留SDK输入", async () => {
+  const stub = await startRejectingStub();
+  const model = createAnthropicModel(
+    "claude-test",
+    {
+      apiKey: "fixture",
+      baseUrl: stub.baseUrl,
+      invocationStreaming: false,
+      invocationMaxRetries: 0,
+    },
+    {
+      max_tokens: 321,
+      thinking: { type: "disabled" },
+      output_config: { effort: "low" },
+    },
+  );
+  await model.invoke("原始输入").catch(() => undefined);
+  expect(stub.bodies).toHaveLength(1);
+  expect(stub.bodies[0]).toMatchObject({
+    model: "claude-test",
+    max_tokens: 321,
+    thinking: { type: "disabled" },
+    output_config: { effort: "low" },
+    messages: [{ role: "user", content: "原始输入" }],
+  });
+});
+
+it("Gemini原生调用实际消费本轮generationConfig，保留SDK输入和工具参数", async () => {
+  const stub = await startRejectingStub();
+  const model = createGeminiModel(
+    "gemini-test",
+    {
+      apiKey: "fixture",
+      baseUrl: stub.baseUrl,
+      invocationStreaming: false,
+      invocationMaxRetries: 0,
+    },
+    {
+      generationConfig: {
+        maxOutputTokens: 321,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    },
+  );
+  await model.invoke("原始输入").catch(() => undefined);
+  expect(stub.bodies).toHaveLength(1);
+  expect(stub.bodies[0]).toMatchObject({
+    generationConfig: {
+      maxOutputTokens: 321,
+      thinkingConfig: { thinkingBudget: 0 },
+    },
+    contents: [{ role: "user", parts: [{ text: "原始输入" }] }],
   });
 });
 

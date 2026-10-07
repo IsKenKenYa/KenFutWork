@@ -1,0 +1,56 @@
+{
+  "scene": "独占PG与本机模型替身；原完整页面暂停通知、创建独立Task、恢复通知",
+  "before": [
+    {
+      "connectionId": "4535c61f-d0fb-4f4a-acfb-f1ed5986d7c1",
+      "topic": "controller/workspaces"
+    },
+    {
+      "connectionId": "4535c61f-d0fb-4f4a-acfb-f1ed5986d7c1",
+      "topic": "controller/tasks-index"
+    }
+  ],
+  "after": [
+    {
+      "connectionId": "2d85cf2d-7c98-4ac1-84b6-35a056b81754",
+      "topic": "controller/workspaces"
+    },
+    {
+      "connectionId": "2d85cf2d-7c98-4ac1-84b6-35a056b81754",
+      "topic": "controller/tasks-index"
+    }
+  ],
+  "verified": {
+    "newConnectionOwnsBothTopics": true,
+    "projectTaskAppearedWithoutReload": true,
+    "conversationTextRetained": true,
+    "stopButtonReachedInterrupted": true
+  },
+  "acknowledgements": [
+    {
+      "connectionId": "d3a94693-5b3b-4292-9626-2ffc5e181584",
+      "topic": "controller/workspaces",
+      "status": 200,
+      "ack": {
+        "subscriptionId": "5b4b0817-f665-44b2-abad-1cf5d71989d6",
+        "mode": "snapshot",
+        "logEpoch": "aadc1327-5232-4ab0-9cf7-544a8467f8cd"
+      }
+    },
+    {
+      "connectionId": "d3a94693-5b3b-4292-9626-2ffc5e181584",
+      "topic": "controller/tasks-index",
+      "status": 200,
+      "ack": {
+        "subscriptionId": "3b87e02c-ea8d-47a1-b743-27d051b87696",
+        "mode": "snapshot",
+        "logEpoch": "2684b2d6-30a2-45a0-9fd4-b9633cfedb3e"
+      }
+    }
+  ],
+  "currentSession": {
+    "sessionId": "6aba2b7d-6445-4397-b069-7cd2e73023b1",
+    "phase": "completedInterrupted",
+    "canStop": false
+  }
+}

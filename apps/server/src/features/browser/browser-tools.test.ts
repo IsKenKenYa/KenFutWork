@@ -1,5 +1,8 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import { loadServerEnv } from "../../config/env.js";
 import type { ToolDefinition } from "../../kernel/types.js";
 import { createBrowserPlugin } from "./plugin.js";
 
@@ -50,6 +53,9 @@ function buildPluginTools(options: {
     browserAutoScreenshot: false,
   };
   const ctx = {
+    env: loadServerEnv({
+      desktopDataDir: join(tmpdir(), "kfw-browser-tools-test"),
+    }),
     register(key: string, factory: () => unknown) {
       services.set(key, factory());
     },

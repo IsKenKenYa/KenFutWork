@@ -5,8 +5,9 @@ import {
   uploadResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import { LocalInstanceError } from "../features/local-instance/service.js";
+import type { LocalInstanceService } from "../features/local-instance/types.js";
 import {
   type UploadService,
   UploadServiceError,
@@ -23,15 +24,15 @@ const ALLOWED_MIME_TYPES = new Set([
 export async function registerUploadRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     uploadService: UploadService;
-    viewerService: ViewerService;
+    localInstance: LocalInstanceService;
   },
 ) {
   // Upload a file
   app.post("/api/uploads", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthorized(reply);
 
       const file = await request.file();
@@ -60,8 +61,8 @@ export async function registerUploadRoutes(
 
       const fileBuffer = await file.toBuffer();
 
-      // 引导工作区（幂等）；工作区 id 由 uploadService 内部自行解析，不从请求传入。
-      await options.viewerService.ensureViewer(user);
+      // 核验本地实例；实例 id 由 uploadService 内部自行解析，不从请求传入。
+      await options.localInstance.resolve(user);
 
       // Extract projectId from fields if provided
       const projectId =
@@ -90,7 +91,7 @@ export async function registerUploadRoutes(
     "/api/uploads/:assetId/url",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
+        const user = await options.localAccess.authenticate(request);
         if (!user) return sendUnauthorized(reply);
 
         const url = await options.uploadService.getAssetUrl(
@@ -112,7 +113,7 @@ export async function registerUploadRoutes(
     "/api/uploads/:assetId",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
+        const user = await options.localAccess.authenticate(request);
         if (!user) return sendUnauthorized(reply);
 
         await options.uploadService.deleteAsset(user, request.params.assetId);
@@ -130,14 +131,17 @@ function sendUnauthorized(reply: FastifyReply) {
     unauthenticatedErrorResponseSchema.parse({
       error: {
         code: "unauthorized",
-        message: "Missing or invalid bearer token.",
+        message: "缺少或无效的本机接入凭据。",
       },
     }),
   );
 }
 
 function sendUploadError(error: unknown, reply: FastifyReply) {
-  if (error instanceof UploadServiceError) {
+  if (
+    error instanceof UploadServiceError ||
+    error instanceof LocalInstanceError
+  ) {
     return reply.code(error.statusCode).send(
       applicationErrorResponseSchema.parse({
         error: {

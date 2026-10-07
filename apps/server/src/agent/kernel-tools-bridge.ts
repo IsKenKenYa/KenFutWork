@@ -1,4 +1,9 @@
-import { type StructuredTool, tool } from "@langchain/core/tools";
+import {
+  type StructuredTool,
+  type ToolRunnableConfig,
+  type ToolRuntime,
+  tool,
+} from "@langchain/core/tools";
 import { type ZodTypeAny, z } from "zod";
 import { ToolDeniedError } from "../kernel/context.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
@@ -10,57 +15,9 @@ import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
  * 模型每次调用经此桥透传回 ToolRegistry.execute 的语义（含 guarded 执行由注册表侧保证）。
  */
 
-/** 支持子集的 JSON Schema → zod（深度封顶 4 层，超出降级为 record）。 */
-export function jsonSchemaToZod(
-  schema: Record<string, unknown>,
-  depth = 0,
-): ZodTypeAny {
-  const type = typeof schema.type === "string" ? schema.type : "object";
-  const description =
-    typeof schema.description === "string" ? schema.description : undefined;
-  const withMeta = (base: ZodTypeAny): ZodTypeAny =>
-    description ? base.describe(description) : base;
-
-  switch (type) {
-    case "string":
-      return withMeta(z.string());
-    case "number":
-    case "integer":
-      return withMeta(z.number());
-    case "boolean":
-      return withMeta(z.boolean());
-    case "array": {
-      if (depth > 4) {
-        return withMeta(z.array(z.unknown()));
-      }
-      const items =
-        (schema.items as Record<string, unknown> | undefined) ?? undefined;
-      return withMeta(
-        z.array(
-          items
-            ? (jsonSchemaToZod(items, depth + 1) as ZodTypeAny)
-            : z.unknown(),
-        ),
-      );
-    }
-    default: {
-      // 递归深度封顶：超过 4 层的嵌套对象降级为 record（防恶意/失控 schema）
-      if (depth > 4) {
-        return withMeta(z.record(z.string(), z.unknown()));
-      }
-      const properties =
-        (schema.properties as Record<string, Record<string, unknown>>) ?? {};
-      const required = Array.isArray(schema.required)
-        ? (schema.required as string[])
-        : [];
-      const shape: Record<string, ZodTypeAny> = {};
-      for (const [key, propSchema] of Object.entries(properties)) {
-        const base = jsonSchemaToZod(propSchema, depth + 1);
-        shape[key] = required.includes(key) ? base : base.optional();
-      }
-      return withMeta(z.object(shape));
-    }
-  }
+/** 与 guarded 入口共用 Zod 的 JSON Schema 语义，不另丢 enum/default/union。 */
+export function jsonSchemaToZod(schema: Record<string, unknown>): ZodTypeAny {
+  return z.fromJSONSchema({ type: "object", ...schema });
 }
 
 /** ToolDefinition → LangChain StructuredTool（透传 execute 与执行上下文）。 */
@@ -68,14 +25,44 @@ export function kernelToolToStructuredTool(
   definition: ToolDefinition,
   execCtx: ToolExecutionContext = {},
 ): StructuredTool {
-  const schema = jsonSchemaToZod(definition.parameters);
+  // 内置工具带原生 zod schema：直用，避免 JSON Schema 往返丢 default/union/enum
+  const schema: ZodTypeAny =
+    definition.zodSchema ?? jsonSchemaToZod(definition.parameters);
   const dynamic = tool(
-    async (args: Record<string, unknown>) => {
+    async (args: Record<string, unknown>, runtime: ToolRuntime) => {
+      // invoke 期的 run 级输入（附件 assetId→dataURI）在装配期不可得：
+      // 从 LangChain RunnableConfig（func 第二参）透传进 execCtx（副本，不污染装配期对象）
+      const config =
+        runtime.config ?? (runtime as unknown as ToolRunnableConfig);
+      const attachmentMap = config.configurable?.user_attachment_map as
+        | Record<string, string>
+        | undefined;
+      const toolCallId = runtime.toolCallId || config.toolCall?.id;
+      const effectiveCtx: ToolExecutionContext = {
+        ...execCtx,
+        ...(attachmentMap ? { userAttachmentMap: attachmentMap } : {}),
+        ...(toolCallId ? { toolCallId } : {}),
+        ...(config.signal ? { signal: config.signal } : {}),
+      };
       try {
-        return await definition.execute(
+        const output = await definition.execute(
           args as Record<string, unknown>,
-          execCtx,
+          effectiveCtx,
         );
+        const record =
+          output && typeof output === "object" && !Array.isArray(output)
+            ? (output as Record<string, unknown>)
+            : undefined;
+        const content = Array.isArray(record?.modelContent)
+          ? record.modelContent
+          : output;
+        return [
+          content,
+          {
+            canonicalOutput: record?.canonicalOutput ?? output,
+            ...(record?.display ? { display: record.display } : {}),
+          },
+        ];
       } catch (error) {
         /**
          * 权限拒绝是**工具级结果**，不是运行级失败。
@@ -87,11 +74,8 @@ export function kernelToolToStructuredTool(
         if (error instanceof ToolDeniedError) {
           // 用纯字符串：工具结果的最兼容形态。结构化对象虽也能用，但在
           // 「模型偶发返回异常工具调用」时更易触发上游中间件的消息校验问题。
-          //
-          // 措辞必须说清**去哪批准**：此前只说「等待用户审批」，模型据此编出
-          // 「审批弹窗 / 审批面板」（实测真机上根本没有）——界面里只有
-          // 「设置 → 权限 → 工具审批」这一个入口。
-          return `工具 ${definition.name} 被拒绝：当前权限档下它需要审批。让用户在「设置 → 权限 → 工具审批」里批准它（可选仅本次 / 本会话 / 永久），或把本会话权限档切到「自动审批」。界面没有审批弹窗，别让用户去找。原因：${error.message}`;
+          const text = `工具 ${definition.name} 被拒绝（当前权限档位需审批，需用户批准或改用它法）。原因：${error.message}`;
+          return [text, { canonicalOutput: { error: text, status: "denied" } }];
         }
         throw error;
       }
@@ -100,6 +84,7 @@ export function kernelToolToStructuredTool(
       name: definition.name,
       description: definition.description,
       schema: schema as z.ZodObject<Record<string, ZodTypeAny>>,
+      responseFormat: "content_and_artifact",
     },
   );
   return dynamic as unknown as StructuredTool;

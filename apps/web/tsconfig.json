@@ -10,7 +10,8 @@
     "isolatedModules": true,
     "noEmit": true,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@zui/*": ["./src/components/workbench/zcode/dist-types/*"]
     },
     "plugins": [
       {
@@ -26,5 +27,5 @@
     "test/**/*.tsx",
     ".next/types/**/*.ts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "src/components/workbench/zcode"]
 }

@@ -1,6 +1,6 @@
 # 米家插件（kenfutwork-mihome）
 
-把米家设备接进工作台：**侧栏面板**可看可控制，**agent** 也能直接操作。扫码登录一次，会话加密落库——服务端重启后不需要重扫。
+把米家设备接进工作台：**侧栏面板**可看可控制，**agent** 也能直接操作。扫码登录一次，会话保存在实例私有存储——服务端重启后不需要重扫。
 
 ## 安装
 
@@ -21,7 +21,7 @@
 - 能力声明：`tools` + `routes` + `ui` + `storage`。
 - 路由（私有，需登录）：`login/qr`、`login/poll`、`status`、`devices`、`control`、`disconnect`，
   面板经宿主 `postMessage` 拿到令牌后带 `Authorization` 调用。
-- 会话（`mijia` 登录字段 + callback cookies + `ssecurity` + 设备标识）存在插件存储里：**按工作区隔离、值加密落库、HTTP 永不回显**；
+- 会话（`mijia` 登录字段 + callback cookies + `ssecurity` + 设备标识）存在插件存储里：**按实例隔离、值在本机明文保存、HTTP 永不回显**；
   API 请求只带参考实现规定的 CookieJar（`cUserId`、两份 serviceToken、时区/地区、`PassportDeviceId`）；
   卸载插件会一并清空（重装需重新扫码），只「停用」则保留。
 - 设备模型走 MIoT-Spec（`miot-spec.org`，匿名可读）：按属性类型 URN 的语义段判定开关/亮度/读数，

@@ -1,9 +1,8 @@
 "use client";
 
-import type { WorkspaceSettings } from "@kenfutwork/shared";
+import type { InstanceSettings } from "@kenfutwork/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { updateWorkspaceSettings } from "@/lib/server-api";
 import { SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
@@ -21,18 +20,18 @@ import { SETTINGS_TITLE } from "@/lib/settings-layout";
  * 删除/插入时 React 会复用错行的输入框（把上一条的文本挪到下一条）。
  */
 type Row = { id: string; name: string; description: string; prompt: string };
-const withRowIds = (list: WorkspaceSettings["commands"]): Row[] =>
+const withRowIds = (list: InstanceSettings["commands"]): Row[] =>
   list.map((command) => ({ id: crypto.randomUUID(), ...command }));
 
 export function CommandsSection({
-  accessToken,
   commands,
-  onSaved,
+  onSave,
 }: {
-  accessToken: string;
-  /** 工作区设置里的命令表（由设置模态统一读写，避免两处真相）。 */
-  commands: WorkspaceSettings["commands"];
-  onSaved: (next: WorkspaceSettings["commands"]) => void;
+  /** 实例设置里的命令表（由设置模态统一读写，避免两处真相）。 */
+  commands: InstanceSettings["commands"];
+  onSave: (
+    next: InstanceSettings["commands"],
+  ) => Promise<InstanceSettings["commands"] | null>;
 }) {
   const [rows, setRows] = useState<Row[]>(() => withRowIds(commands));
   const [saving, setSaving] = useState(false);
@@ -77,15 +76,15 @@ export function CommandsSection({
     }
     setSaving(true);
     try {
-      const result = await updateWorkspaceSettings(accessToken, {
-        commands: rows.map((row) => ({
+      const saved = await onSave(
+        rows.map((row) => ({
           name: row.name.trim(),
           description: row.description.trim(),
           prompt: row.prompt.trim(),
         })),
-      });
-      onSaved(result.settings.commands);
-      setRows(withRowIds(result.settings.commands));
+      );
+      if (!saved) throw new Error("设置页面已变化，请重新加载后保存。");
+      setRows(withRowIds(saved));
       setFeedback({ type: "success", message: "已保存" });
     } catch (error) {
       setFeedback({

@@ -1,0 +1,7 @@
+# computer-use 插件：产品入口条目。
+# 安装态决定 Computer Use 工具组是否可用；能力实现在
+# apps/server/src/features/computer-use/（内核代码级插件）。
+- insert:
+    - id: kenfutwork-computer-use
+      name: kenfutwork-computer-use
+      inject: []

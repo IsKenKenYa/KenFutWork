@@ -34,7 +34,7 @@ import type { VoiceRecorder } from "@/lib/voice-audio";
 
 export interface ComposerVoiceOptions {
   /** 无 token（未登录/纯本地演示态）时不接线：手势退化为普通点击。 */
-  accessToken: string | undefined;
+  accessToken: string | null | undefined;
   /** 方案 A（只转文本）：拿到文本填进输入框（**保证非空**）。 */
   onTranscript: (text: string) => void;
   /**
@@ -121,9 +121,6 @@ export function useComposerVoice({
       if (transcribe) {
         return transcribe(wav);
       }
-      if (!accessToken) {
-        throw new Error("请先登录后再使用语音输入。");
-      }
       return transcribeVoice(accessToken, wav);
     },
     [accessToken, transcribe],
@@ -136,9 +133,6 @@ export function useComposerVoice({
     }) => {
       if (refine) {
         return refine(input);
-      }
-      if (!accessToken) {
-        throw new Error("请先登录后再使用语音输入。");
       }
       return refineVoice(accessToken, input);
     },
@@ -263,7 +257,7 @@ export function useComposerVoice({
   }, [cancelLoop, loop]);
 
   const voice = useHoldToTalk({
-    enabled: Boolean(accessToken),
+    enabled: true,
     onTranscript: handleTranscript,
     onError: showNotice,
     transcribe: runTranscribe,
@@ -333,7 +327,7 @@ export function useComposerVoice({
  * 读不到就按**默认档**（只转文本）处理：这是规划 §4.1 的默认，也是更保守的一侧
  * ——宁可不自动执行，也不要因为一次读失败就去替用户起 run。
  */
-export function useVoiceMode(accessToken: string | undefined): VoiceMode {
+export function useVoiceMode(accessToken: string | null | undefined): VoiceMode {
   const [mode, setMode] = useState<VoiceMode>("transcribe");
   // 设置页保存后广播：同页输入框立刻换档，不必重载页面
   useEffect(() => {
@@ -348,12 +342,8 @@ export function useVoiceMode(accessToken: string | undefined): VoiceMode {
       window.removeEventListener(VOICE_SETTINGS_CHANGED_EVENT, onChange);
   }, []);
   useEffect(() => {
-    if (!accessToken) {
-      setMode("transcribe");
-      return;
-    }
     let cancelled = false;
-    void dedupeRequest(`voice-settings:${accessToken}`, () =>
+    void dedupeRequest(`voice-settings:${accessToken ?? "local"}`, () =>
       fetchVoiceSettings(accessToken),
     )
       .then((response) => {

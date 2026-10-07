@@ -11,15 +11,22 @@ async function setupProxy() {
   }
 }
 
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname } from "node:path";
 
 import { buildApp } from "./app.js";
 import { loadServerEnv } from "./config/env.js";
 import { resolveEntryRoot } from "./desktop/entry-root.js";
 import { isDesktopRuntime, prepareDesktopRuntime } from "./desktop/runtime.js";
-import { hasSystemGit, resolveRuntimes } from "./desktop/runtimes.js";
+import {
+  resolveRuntimes,
+  resolveSystemGitExecutable,
+} from "./desktop/runtimes.js";
 import { reconcileInterruptedRuns } from "./features/agent-runs/reconcile.js";
 import { startJobLoop } from "./features/jobs/job-loop.js";
+import { createLocalConnectionUrl } from "./features/local-access/connection-url.js";
+import { registerDataLocationControl } from "./features/local-instance/data-control.js";
+import { runDataLocationCommand } from "./features/local-instance/data-location.js";
+import { waitForLocalInstanceIdle } from "./features/local-instance/idle.js";
 
 /**
  * HTTP 进程入口。
@@ -42,6 +49,18 @@ process.on("unhandledRejection", (reason) => {
 });
 
 async function main() {
+  if (process.argv[2] === "--local-connection-url") {
+    const env = loadServerEnv();
+    console.log(
+      await createLocalConnectionUrl({
+        env: process.env,
+        port: env.port,
+        uiBase: env.webDist ? `http://127.0.0.1:${env.port}` : env.webOrigin,
+      }),
+    );
+    return;
+  }
+  if (await runDataLocationCommand(process.argv.slice(2))) return;
   await setupProxy();
 
   /** 进程启动时刻：孤儿对账只碰**早于它**创建的非终态 run（本进程不可能在跑那些）。 */
@@ -53,9 +72,14 @@ async function main() {
   // git 与其余运行时优先级相反：宿主自带优先，随包只兜底（runtimes 里出现 git 即表示
   // 宿主没有）。三者都没有时明确标记 unavailable，界面据此说明「为什么没有分支可切」。
   const bundledGit = runtimes.roots.find((root) => root.name === "git");
+  const systemGit = bundledGit
+    ? null
+    : resolveSystemGitExecutable({ path: process.env.PATH, env: process.env });
+  const gitBinDir =
+    bundledGit?.binDir ?? (systemGit ? dirname(systemGit) : undefined);
   const gitSource: "system" | "bundled" | "unavailable" = bundledGit
     ? "bundled"
-    : hasSystemGit({ path: process.env.PATH })
+    : systemGit
       ? "system"
       : "unavailable";
   if (runtimes.bundled.length > 0) {
@@ -64,11 +88,12 @@ async function main() {
     );
   }
   const baseEnv = loadServerEnv({
-    sandboxRoot: resolveSandboxRoot(exeDir),
-    checkpointRoot: resolveCheckpointRoot(exeDir),
-    runtimePathAdditions: runtimes.pathAdditions,
+    runtimePathAdditions: [
+      ...runtimes.pathAdditions,
+      ...(systemGit && gitBinDir ? [gitBinDir] : []),
+    ],
     ...(runtimes.javaHome ? { javaHome: runtimes.javaHome } : {}),
-    ...(bundledGit ? { gitBinDir: bundledGit.binDir } : {}),
+    ...(gitBinDir ? { gitBinDir } : {}),
     gitSource,
   });
   const desktop = await prepareDesktopRuntime({
@@ -92,7 +117,6 @@ async function main() {
         {
           assetWriter: app.kernel.get("assetWriter"),
           blob: app.kernel.get("blob"),
-          creditService: app.kernel.get("credits"),
           env,
           jobService: app.kernel.get("jobs"),
           modelProviders: app.kernel.get("modelProviders"),
@@ -105,15 +129,18 @@ async function main() {
 
   const host = env.serverHost ?? "127.0.0.1";
 
-  let shuttingDown = false;
-  const shutdown = async () => {
-    if (shuttingDown) {
-      return;
-    }
-    shuttingDown = true;
-    await jobLoop?.shutdown();
-    await app.close();
-    await desktop.shutdown();
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = () => {
+    shutdownPromise ??= (async () => {
+      console.log("[shutdown] 等待生成任务收尾。");
+      await jobLoop?.shutdown();
+      console.log("[shutdown] 关闭HTTP与内核资源。");
+      await app.close();
+      console.log("[shutdown] 停止本机数据库。");
+      await desktop.shutdown();
+      console.log("[shutdown] 服务与数据库已停止。");
+    })();
+    return shutdownPromise;
   };
   process.on("SIGINT", () => {
     void shutdown().then(() => process.exit(0));
@@ -123,6 +150,36 @@ async function main() {
   });
 
   try {
+    const disposeDataControl = registerDataLocationControl(
+      app.kernel.get("localInstance"),
+      {
+        canMove: Boolean(env.embeddedPostgres),
+        waitUntilIdle: () =>
+          waitForLocalInstanceIdle({
+            instance: app.kernel.get("localInstance"),
+            runs: app.kernel.get("agentRuns"),
+            persistence: app.kernel.get("persistence"),
+            settings: app.kernel.get("settings"),
+            inFlightJobs: () => jobLoop?.inFlightCount() ?? 0,
+          }),
+        shutdown: async () => {
+          try {
+            await shutdown();
+            process.exit(0);
+          } catch (error) {
+            console.error(
+              "本机迁移停机失败：",
+              error instanceof Error ? error.message : "未知错误",
+            );
+            process.exit(1);
+          }
+        },
+      },
+    );
+    app.addHook("onClose", async () => {
+      disposeDataControl();
+    });
+    await app.ready();
     await app.listen({
       host,
       port: env.port,
@@ -166,32 +223,7 @@ function resolveExeDir(): string {
   });
 }
 
-/**
- * 沙箱根目录：`KENFUTWORK_SANDBOX_ROOT`（可为相对路径，按入口目录解析）优先；
- * 缺省 `<项目根（dev）/ exe 安装目录（打包）>/tmp/sandbox`。
- * 画布工作目录 = `<sandboxRoot>/<画布UUID>`（真实目录映射命中时走映射，见
- * `KENFUTWORK_CANVAS_WORK_DIRS` — 产品决策 2026-09-14）。
- */
-function resolveSandboxRoot(exeDir: string): string {
-  const explicit = process.env.KENFUTWORK_SANDBOX_ROOT?.trim();
-  if (explicit) {
-    return isAbsolute(explicit) ? explicit : resolve(exeDir, explicit);
-  }
-  return join(exeDir, "tmp", "sandbox");
-}
-
-/**
- * 检查点影子仓库根：`KENFUTWORK_CHECKPOINT_ROOT`（可为相对路径，按入口目录解析）
- * 优先；缺省 `<项目根（dev）/ exe 安装目录（打包）>/data/checkpoints`。
- * 画布影子仓库 = `<checkpointRoot>/<画布UUID>.git`（GIT_DIR），work-tree 指向
- * 沙箱工作目录（与 resolveSandboxRoot 同一套入口注入方式）。
- */
-function resolveCheckpointRoot(exeDir: string): string {
-  const explicit = process.env.KENFUTWORK_CHECKPOINT_ROOT?.trim();
-  if (explicit) {
-    return isAbsolute(explicit) ? explicit : resolve(exeDir, explicit);
-  }
-  return join(exeDir, "data", "checkpoints");
-}
-
-void main();
+void main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : "本机服务启动失败。");
+  process.exitCode = 1;
+});

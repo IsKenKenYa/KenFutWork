@@ -25,12 +25,15 @@ import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";
 import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
 import { useWebSocket } from "../../hooks/use-websocket";
-import { useAuth } from "../../lib/auth-context";
 import {
   insertImageOnCanvas,
   insertVideoOnCanvas,
 } from "../../lib/canvas-elements";
-import { ApiAuthError, fetchCanvas, fetchProject } from "../../lib/server-api";
+import {
+  ApiAccessError,
+  fetchCanvas,
+  fetchProject,
+} from "../../lib/server-api";
 
 function CanvasPageContent() {
   const searchParams = useSearchParams();
@@ -41,7 +44,6 @@ function CanvasPageContent() {
   const [initialPrompt] = useState(
     () => searchParams.get("prompt") ?? undefined,
   );
-  const { user, session, loading: authLoading, signOut } = useAuth();
   const router = useRouter();
 
   const [canvasData, setCanvasData] = useState<{
@@ -85,8 +87,6 @@ function CanvasPageContent() {
   const [excalidrawApi, setExcalidrawApi] =
     useState<ExcalidrawImperativeAPI | null>(null);
 
-  const signOutRef = useRef(signOut);
-  signOutRef.current = signOut;
   const routerRef = useRef(router);
   routerRef.current = router;
 
@@ -97,12 +97,11 @@ function CanvasPageContent() {
   }, []);
   const handleToggleChat = useCallback(() => setChatOpen((v) => !v), []);
 
-  const accessToken = session?.access_token;
+  const accessToken = null;
   const accessTokenRef = useRef(accessToken);
   accessTokenRef.current = accessToken;
 
-  const getToken = useCallback(() => accessTokenRef.current ?? null, []);
-  const ws = useWebSocket(getToken);
+  const ws = useWebSocket();
 
   const handleApiReady = useCallback((api: ExcalidrawImperativeAPI) => {
     excalidrawApiRef.current = api;
@@ -129,7 +128,7 @@ function CanvasPageContent() {
   const handleCanvasSync = useCallback(async () => {
     const api = excalidrawApiRef.current;
     const token = accessTokenRef.current;
-    if (!api || !token || !canvasData) return;
+    if (!api || !canvasData) return;
     try {
       const { canvas } = await fetchCanvas(token, canvasData.id);
       const elements = canvas.content.elements ?? [];
@@ -206,19 +205,9 @@ function CanvasPageContent() {
     return images;
   }, []);
 
-  // Only re-fetch when canvasId changes or on initial auth resolution.
-  // Token refreshes (e.g. tab switch back) should NOT trigger a reload —
-  // we depend on user.id (stable string) instead of the user object ref.
-  const userId = user?.id;
-
   useEffect(() => {
-    if (authLoading) return;
-    if (!userId) {
-      routerRef.current.replace("/login");
-      return;
-    }
     const token = accessTokenRef.current;
-    if (!canvasId || !token) return;
+    if (!canvasId) return;
 
     setPageLoading(true);
     fetchCanvas(token, canvasId)
@@ -246,18 +235,13 @@ function CanvasPageContent() {
           );
       })
       .catch((err) => {
-        if (err instanceof ApiAuthError) {
-          signOutRef.current().then(() => routerRef.current.replace("/login"));
+        if (err instanceof ApiAccessError) {
           return;
         }
         setError("Failed to load canvas.");
         setPageLoading(false);
       });
-    // Intentionally omitting accessTokenRef (stable ref) and signOutRef/routerRef
-    // (ref wrappers) from deps — only re-run when auth resolves, user changes, or
-    // canvasId changes. Token refresh (e.g. tab switch) must NOT trigger a reload.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, userId, canvasId]);
+  }, [canvasId]);
 
   if (!canvasId) {
     return (
@@ -267,7 +251,7 @@ function CanvasPageContent() {
     );
   }
 
-  if (authLoading || pageLoading) {
+  if (pageLoading) {
     return <LoadingScreen />;
   }
 
@@ -279,7 +263,7 @@ function CanvasPageContent() {
     );
   }
 
-  if (!canvasData || !accessToken) return null;
+  if (!canvasData) return null;
 
   return (
     <div className="flex h-screen w-screen overflow-hidden">

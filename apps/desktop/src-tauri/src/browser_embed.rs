@@ -23,7 +23,7 @@ const EMBED_LABEL: &str = "browser-embed";
 
 /// 子 webview 的句柄托管状态（`None` = 没开）。
 #[derive(Default)]
-struct EmbedState(Mutex<Option<tauri::Webview>>);
+pub struct EmbedState(Mutex<Option<tauri::Webview>>);
 
 #[derive(Debug, Deserialize)]
 pub struct EmbedBounds {
@@ -51,7 +51,7 @@ fn main_window(app: &tauri::AppHandle) -> Result<Window, String> {
 
 /// 打开（或换址）嵌入的浏览器：已存在就导航过去并挪到新位置。
 #[tauri::command]
-fn browser_embed_open(
+pub fn browser_embed_open(
   app: tauri::AppHandle,
   state: tauri::State<'_, EmbedState>,
   url: String,
@@ -91,7 +91,7 @@ fn browser_embed_open(
 
 /// 同步边界：前端占位块的 `getBoundingClientRect()` 变了就调它（滚轮/拖面板/切标签都算）。
 #[tauri::command]
-fn browser_embed_bounds(
+pub fn browser_embed_bounds(
   state: tauri::State<'_, EmbedState>,
   bounds: EmbedBounds,
 ) -> Result<(), String> {
@@ -111,7 +111,7 @@ fn browser_embed_bounds(
 
 /// 显隐：面板收起/切标签时隐藏（隐藏比销毁便宜；真要离开就 `close`）。
 #[tauri::command]
-fn browser_embed_visible(
+pub fn browser_embed_visible(
   state: tauri::State<'_, EmbedState>,
   visible: bool,
 ) -> Result<(), String> {
@@ -132,7 +132,7 @@ fn browser_embed_visible(
 /// 脚本由前端传来（服务端 `/api/browser/debug-console.js`，与 Web 形态同一份）：
 /// 桌面面板里的页面就在我们自己的 WebView2 里，注入进去就**浮在页面上**、可拖可关。
 #[tauri::command]
-fn browser_embed_console(
+pub fn browser_embed_console(
   state: tauri::State<'_, EmbedState>,
   script: String,
 ) -> Result<(), String> {
@@ -150,7 +150,7 @@ fn browser_embed_console(
 /// 面板里的页面就在**我们自己的 WebView2** 里，这个 DevTools 是同一个内核的真身；
 /// Web 形态走不了（浏览器不给 iframe 挂调试器），那边用注入的页面内控制台（Eruda）。
 #[tauri::command]
-fn browser_embed_devtools(state: tauri::State<'_, EmbedState>) -> Result<(), String> {
+pub fn browser_embed_devtools(state: tauri::State<'_, EmbedState>) -> Result<(), String> {
   let guard = state.0.lock().map_err(|_| "嵌入状态锁失败".to_string())?;
   let webview = guard
     .as_ref()
@@ -161,7 +161,7 @@ fn browser_embed_devtools(state: tauri::State<'_, EmbedState>) -> Result<(), Str
 
 /// 关掉嵌入实例（离开面板/换会话时调，别让页面在后台一直跑）。
 #[tauri::command]
-fn browser_embed_close(state: tauri::State<'_, EmbedState>) -> Result<(), String> {
+pub fn browser_embed_close(state: tauri::State<'_, EmbedState>) -> Result<(), String> {
   let mut guard = state.0.lock().map_err(|_| "嵌入状态锁失败".to_string())?;
   if let Some(webview) = guard.take() {
     webview
@@ -175,14 +175,5 @@ fn browser_embed_close(state: tauri::State<'_, EmbedState>) -> Result<(), String
 pub fn register_embed_commands(
   builder: tauri::Builder<tauri::Wry>,
 ) -> tauri::Builder<tauri::Wry> {
-  builder
-    .manage(EmbedState::default())
-    .invoke_handler(tauri::generate_handler![
-      browser_embed_open,
-      browser_embed_bounds,
-      browser_embed_visible,
-      browser_embed_console,
-      browser_embed_devtools,
-      browser_embed_close
-    ])
+  builder.manage(EmbedState::default())
 }

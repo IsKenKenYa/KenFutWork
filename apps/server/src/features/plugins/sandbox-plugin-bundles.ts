@@ -1,5 +1,8 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { readBinary } from "../code-tools/file-media.js";
+import type { ExecutionScopeHandle } from "../execution/scope-service.js";
+import { scopedPackageFiles } from "../execution/scoped-package-files.js";
 
 /**
  * 沙箱工作目录里的**插件 bundle**扫描（「从工作目录安装插件」+ 创造模式的插件产物）。
@@ -53,15 +56,20 @@ function readBundleDeclaration(
   } catch {
     return null;
   }
-  let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<
-      string,
-      unknown
-    >;
+    return parseBundleDeclaration(readFileSync(manifestPath, "utf8"), dir);
   } catch {
     return null;
   }
+}
+
+function parseBundleDeclaration(
+  content: string,
+  dir: string,
+): { name: string; version: string; declaredBy: "kenfutwork" | "dsh" } | null {
+  const value: unknown = JSON.parse(content);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const parsed = value as Record<string, unknown>;
   const kenfutwork = parsed.kenfutwork as { bundle?: unknown } | undefined;
   const dsh = parsed.dsh as { bundle?: unknown } | undefined;
   const declaredBy = kenfutwork?.bundle
@@ -129,5 +137,52 @@ export function listSandboxPluginBundles(
     }
   }
 
+  return found.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/** Code 候选扫描通过同一 Task backend，绝对路径可定位显式附加目录。 */
+export async function listScopedPluginBundles(
+  scope: ExecutionScopeHandle,
+): Promise<SandboxPluginBundleCandidate[]> {
+  const identity = scope.describe();
+  const roots = [
+    identity.rootDirectory,
+    ...identity.additionalDirectories.map((entry) => entry.path),
+  ];
+  const found: SandboxPluginBundleCandidate[] = [];
+  const visited = new Set<string>();
+  let bytesRead = 0;
+  for (const root of roots) {
+    for await (const path of scopedPackageFiles(scope, root, {
+      skipDirectories: SKIP_DIRS,
+    })) {
+      if (basename(path) !== "package.json" || visited.has(path)) continue;
+      visited.add(path);
+      const directory = dirname(path);
+      if (found.some((bundle) => directory.startsWith(`${bundle.path}${sep}`)))
+        continue;
+      const binary = await readBinary(
+        scope,
+        path,
+        scope.backend.limits.codeReadMaxBytes,
+      );
+      bytesRead += binary.bytes.length;
+      if (bytesRead > scope.backend.limits.codeSearchMaxBytes)
+        throw new Error("插件扫描总字节数超过工作区预算。");
+      let declaration: ReturnType<typeof parseBundleDeclaration>;
+      try {
+        declaration = parseBundleDeclaration(
+          binary.bytes.toString("utf8"),
+          directory,
+        );
+      } catch {
+        continue;
+      }
+      if (!declaration) continue;
+      found.push({ path: directory, ...declaration });
+      if (found.length > scope.backend.limits.codeSearchMaxResults)
+        throw new Error("插件候选数量超过工作区预算。");
+    }
+  }
   return found.sort((a, b) => a.path.localeCompare(b.path));
 }

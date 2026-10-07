@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-import { useAuth } from "@/lib/auth-context";
 import { getServerBaseUrl } from "@/lib/env";
+import { bearerHeaders, serverFetch } from "@/lib/local-access";
 import {
   SETTINGS_SECTION_GAP,
   SETTINGS_TITLE_TEXT,
@@ -523,7 +522,6 @@ function UsageDonut({ byModel }: { byModel: UsageStats["byModel"] }) {
 }
 
 export function UsageStatsSection() {
-  const { session } = useAuth();
   const [days, setDays] = useState<7 | 30>(7);
   const [heatMode, setHeatMode] = useState<"daily" | "cumulative">("daily");
   const [stats, setStats] = useState<UsageStats | null>(null);
@@ -531,13 +529,12 @@ export function UsageStatsSection() {
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
-    const token = session?.access_token;
-    if (!token) return;
+    const token = null;
     setLoading(true);
     try {
-      const response = await fetch(
+      const response = await serverFetch(
         `${getServerBaseUrl()}/api/usage/stats?days=${days}`,
-        { headers: { Authorization: `Bearer ${token}` } },
+        { headers: bearerHeaders(token) },
       );
       if (!response.ok) throw new Error("统计加载失败。");
       setStats((await response.json()) as UsageStats);
@@ -547,7 +544,7 @@ export function UsageStatsSection() {
     } finally {
       setLoading(false);
     }
-  }, [session, days]);
+  }, [days]);
 
   useEffect(() => {
     void load();

@@ -13,8 +13,8 @@ import {
 import type { ModelProviderService } from "../../model-providers/model-provider-service.js";
 
 /**
- * BYOK：任务载荷带 provider_instance_id 时，按用户供应商实例实例化协议适配器。
- * 无实例 id（内置目录）返回 undefined，走遗留全局注册表路径。
+ * BYOK：任务载荷带 provider_instance_id 时，按本地供应商实例实例化协议适配器。
+ * 无供应商引用返回 undefined，由消费者明确拒绝提交。
  *
  * 自定义请求头（§4.8）：会话上下文取自 **job 行**的 session_id/thread_id——
  * 必须逐会话取值，否则亲和类头会塌成实例级常量。

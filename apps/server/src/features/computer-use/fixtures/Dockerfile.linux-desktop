@@ -1,0 +1,10 @@
+FROM node:24-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  python3 python3-gi python3-pyatspi gir1.2-gtk-3.0 \
+  xvfb openbox dbus-x11 xdotool x11-utils x11-xserver-utils imagemagick \
+  fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji rsync ripgrep \
+  && rm -rf /var/lib/apt/lists/*
+RUN corepack enable
+ENV DISPLAY=:99 NO_AT_BRIDGE=0 LANG=C.UTF-8
+COPY apps/server/src/features/computer-use/fixtures/run-linux-desktop.sh /usr/local/bin/run-linux-desktop
+ENTRYPOINT ["/bin/bash", "/usr/local/bin/run-linux-desktop"]

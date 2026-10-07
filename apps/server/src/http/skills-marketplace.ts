@@ -5,8 +5,8 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import type { LocalInstanceService } from "../features/local-instance/types.js";
 import {
   SQLSTATE_UNIQUE_VIOLATION,
   SqlError,
@@ -37,7 +37,7 @@ type SkillRow = {
   skill_content: string;
   metadata: Record<string, unknown> | null;
   is_featured: boolean;
-  created_by: string | null;
+  created_by_client_id: string | null;
   created_at: string;
   updated_at: string;
   source_url: string | null;
@@ -67,7 +67,7 @@ function mapSkillDetailRow(row: SkillRow) {
     ...mapSkillRow(row),
     license: row.license,
     skillContent: row.skill_content,
-    createdBy: row.created_by,
+    createdByClientId: row.created_by_client_id,
     sourceUrl: row.source_url ?? null,
     packageName: row.package_name ?? null,
   };
@@ -100,16 +100,16 @@ function generateSlug(name: string): string {
 export async function registerMarketplaceRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     /** 安装态与目录的数据访问（persistence 缝）。 */
     skillsRepository: SkillCatalogRepository;
-    viewerService: ViewerService;
+    localInstance: LocalInstanceService;
   },
 ) {
   // GET /api/skills/marketplace/search — search skills.sh via npm registry
   app.get("/api/skills/marketplace/search", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
 
       const {
@@ -144,7 +144,7 @@ export async function registerMarketplaceRoutes(
   // GET /api/skills/marketplace/detail — get package detail from npm registry
   app.get("/api/skills/marketplace/detail", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
 
       const { name } = request.query as { name?: string };
@@ -182,14 +182,14 @@ export async function registerMarketplaceRoutes(
   // POST /api/skills/marketplace/install — install a skill from skills.sh
   app.post("/api/skills/marketplace/install", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
 
       const { packageName } = marketplaceInstallRequestSchema.parse(
         request.body,
       );
-      const viewer = await options.viewerService.ensureViewer(user);
-      const workspaceId = viewer.workspace.id;
+      const viewer = await options.localInstance.resolve(user);
+      const instanceId = viewer.instanceId;
 
       // Download and parse from npm registry
       const { imported, packageName: pkgName } =
@@ -199,21 +199,25 @@ export async function registerMarketplaceRoutes(
       // Insert skill
       let skillData: Record<string, unknown> | null;
       try {
-        skillData = await options.skillsRepository.insertOwned(user.id, {
-          author: imported.manifest.author ?? "unknown",
-          category: "custom",
-          description: imported.manifest.description,
-          license: imported.manifest.license ?? null,
-          metadata: {
-            ...(imported.manifest.metadata ?? {}),
-            source_url: `https://www.npmjs.com/package/${packageName}`,
-            package_name: pkgName,
+        skillData = await options.skillsRepository.insertOwned(
+          user.instanceId,
+          {
+            createdByClientId: user.accessClientId,
+            author: imported.manifest.author ?? "unknown",
+            category: "custom",
+            description: imported.manifest.description,
+            license: imported.manifest.license ?? null,
+            metadata: {
+              ...(imported.manifest.metadata ?? {}),
+              source_url: `https://www.npmjs.com/package/${packageName}`,
+              package_name: pkgName,
+            },
+            name: imported.manifest.name,
+            skillContent: imported.skillContent,
+            slug,
+            version: imported.manifest.version ?? "1.0",
           },
-          name: imported.manifest.name,
-          skillContent: imported.skillContent,
-          slug,
-          version: imported.manifest.version ?? "1.0",
-        });
+        );
       } catch (error) {
         request.log.error(
           { err: error },
@@ -250,7 +254,7 @@ export async function registerMarketplaceRoutes(
       // Insert files
       if (imported.files.length > 0) {
         const fileError = await options.skillsRepository
-          .insertFilesForOwnedSkill(user.id, skillId, imported.files)
+          .insertFilesForOwnedSkill(user.instanceId, skillId, imported.files)
           .then(() => null)
           .catch((caught: unknown) => caught);
         if (fileError) {
@@ -264,14 +268,14 @@ export async function registerMarketplaceRoutes(
       // Auto-install to workspace
       await options.skillsRepository.upsertInstallation({
         enabled: true,
-        installedBy: user.id,
+        installedByClientId: user.accessClientId,
         skillId,
-        workspaceId,
+        instanceId,
       });
 
       // Return full skill detail with files
       const fileData = await options.skillsRepository.listFilesForVisibleSkill(
-        user.id,
+        user.instanceId,
         skillId,
       );
 

@@ -1,61 +1,64 @@
 "use client";
 
-import type { WorkspaceSettings } from "@kenfutwork/shared";
+import {
+  type InstanceSettings,
+  instanceSettingsSchema,
+} from "@kenfutwork/shared";
 import { PanelsTopLeft } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { AgentGovernanceSettingsView } from "@/components/agent-governance-settings";
 import { AgentSection } from "@/components/agent-section";
 import { PermissionSection } from "@/components/permission-section";
-import { ProfileSection } from "@/components/profile-section";
 import { ProviderSettings } from "@/components/provider-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { AboutSection } from "@/components/workbench/about-section";
-import { AccountSection } from "@/components/workbench/account-section";
 import { AppearanceSection } from "@/components/workbench/appearance-section";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
 import { CommandsSection } from "@/components/workbench/commands-section";
 import { HooksSection } from "@/components/workbench/hooks-section";
 import { IndexLibrarySection } from "@/components/workbench/index-library-section";
 import { ListLoading } from "@/components/workbench/list-state";
+import { LocalAccessClientsSection } from "@/components/workbench/local-access-clients-section";
+import { LocalInstanceSection } from "@/components/workbench/local-instance-section";
 import { OnboardingSection } from "@/components/workbench/onboarding-section";
 import { RulesMemorySection } from "@/components/workbench/rules-memory-section";
 import { SubagentsSection } from "@/components/workbench/subagents-section";
 import { TerminalSettingsSection } from "@/components/workbench/terminal-settings-section";
+import { VoiceSettingsSection } from "./voice-settings-section";
 import { UsageStatsSection } from "@/components/workbench/usage-stats-section";
-import { VoiceSettingsSection } from "@/components/workbench/voice-settings-section";
-import { useAuth } from "@/lib/auth-context";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
-import {
-  fetchModels,
-  fetchViewer,
-  fetchWorkspaceSettings,
-  updateProfile,
-  updateWorkspaceSettings,
-} from "@/lib/server-api";
-import { SETTINGS_SECTION_GAP, SETTINGS_TITLE } from "@/lib/settings-layout";
+import { fetchModels } from "@/lib/server-api";
+import { useInstanceSettings } from "@/lib/use-instance-settings";
 
 export type SettingsTab =
   | "pluginPanels"
   | "general"
+  | "appearance"
   | "commands"
   | "hooks"
+  | "apiTokens"
+  | "model"
+  | "agentGovernance"
+  | "voice"
   | "providers"
   | "permissions"
   | "browser"
-  | "voice"
   | "rules"
   | "subagents"
   | "usage"
   | "index"
   | "onboarding"
-  | "account"
   | "about";
 
 /**
- * 侧栏分组：基础设置 / Agent 能力 / 数据与统计。
+ * 侧栏分组（R5-1）：基础设置 / Agent 能力 / 数据与统计。
  *
- * 用户口径（2026-09-26）：「外观和模型合并到通用」「外部应用授权去掉」——
- * 通用页 = 外观 + 模型 + 个人资料 + 终端；apiTokens 页整体下线（组件同删）。
+ * 参考图（`agent-设置-权限.png` / `设置添加使用统计以及索引相关内容.png`）里点名、
+ * 且本产品**真有对应页面**的条目，作为**别名行**列在对应分组下（点击跳到那一页）——
+ * 用户按参考图的名字能找得到，又不复制出第二份内容。
+ * 没做的那几条（外观/命令/钩子/工作树/对话流/外部应用授权/Beta/云端运行环境）在
+ * `docs/日志.md` §二十二里逐条写明不做的原因。
  */
 const TAB_GROUPS: Array<{
   label: string;
@@ -65,6 +68,9 @@ const TAB_GROUPS: Array<{
     label: "基础设置",
     tabs: [
       { id: "general", label: "通用" },
+      { id: "appearance", label: "外观" },
+      { id: "model", label: "模型" },
+      { id: "agentGovernance", label: "Agent 治理" },
       { id: "providers", label: "供应商" },
       { id: "browser", label: "浏览器" },
       { id: "voice", label: "语音" },
@@ -77,6 +83,7 @@ const TAB_GROUPS: Array<{
       { id: "rules", label: "规则与记忆" },
       { id: "commands", label: "命令" },
       { id: "hooks", label: "钩子" },
+      { id: "apiTokens", label: "外部应用授权" },
       { id: "subagents", label: "子智能体" },
     ],
   },
@@ -88,11 +95,18 @@ const TAB_GROUPS: Array<{
       { id: "onboarding", label: "引导" },
       // 插件面板（能力 `ui` 的 settings 槽位）：装了带面板的插件才出现内容
       { id: "pluginPanels", label: "插件面板" },
-      { id: "account", label: "账号" },
       { id: "about", label: "关于" },
     ],
   },
 ];
+
+const INSTANCE_SETTINGS_TABS = new Set<SettingsTab>([
+  "model",
+  "agentGovernance",
+  "index",
+  "commands",
+  "hooks",
+]);
 
 /**
  * 设置（居中大模态，左侧分类导航 + 右侧内容）：
@@ -109,28 +123,23 @@ export function SettingsModal({
   initialTab,
   onClose,
   accessToken = null,
-  activeCanvasId = null,
+  activeTaskId = null,
   hasWorkDir = false,
   conversationCount = 0,
-  isAdmin = false,
-  onOpenAdmin,
 }: {
   open: boolean;
   /** 打开时定位的分类（如「管理模型」直达供应商页）。 */
   initialTab?: SettingsTab | undefined;
-  /** 插件面板需要它取 `/api/plugins`（未登录时为空 → 面板列表为空）。 */
+  /** 插件面板需要它取 `/api/plugins`（本机Cookie会话用于授权）。 */
   accessToken?: string | null;
-  /** 当前项目主画布（索引库按画布=工作目录建；没有项目时为 null）。 */
-  activeCanvasId?: string | null;
+  /** 当前 Code Task（索引取 Task 固定目录；视觉模式或未创建 Task 时为 null）。 */
+  activeTaskId?: string | null;
   /** 「引导」页用：是否已有工作目录项目、已有多少会话。 */
   hasWorkDir?: boolean;
   conversationCount?: number;
-  /** 「账号」页用：管理员才给「管理后台」入口（服务端仍独立鉴权）。 */
-  isAdmin?: boolean;
-  onOpenAdmin?: (() => void) | undefined;
+  /**  */
   onClose: () => void;
 }) {
-  const { session } = useAuth();
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     initialTab ?? "general",
   );
@@ -139,156 +148,128 @@ export function SettingsModal({
   useEffect(() => {
     if (open && initialTab) setActiveTab(initialTab);
   }, [open, initialTab]);
-  const [profile, setProfile] = useState<{
-    displayName: string;
-    email: string;
-  } | null>(null);
-  /** 「账号」页用：套餐与额度（未装配计费时为 null）。 */
-  const [account, setAccount] = useState<{
-    plan: string | null;
-    balance: number | null;
-  }>({ plan: null, balance: null });
   const [defaultModel, setDefaultModel] = useState("");
-  const [agentMaxRetries, setAgentMaxRetries] = useState(10);
+  const [agentMaxRetries, setAgentMaxRetries] = useState(
+    instanceSettingsSchema.shape.agentMaxRetries.parse(undefined),
+  );
   const [codeIndexEnabled, setCodeIndexEnabled] = useState(false);
   const [codeIndexAutoNewFolder, setCodeIndexAutoNewFolder] = useState(true);
   const [autoCompactEnabled, setAutoCompactEnabled] = useState(true);
-  const [commands, setCommands] = useState<WorkspaceSettings["commands"]>([]);
-  const [hooks, setHooks] = useState<WorkspaceSettings["hooks"]>([]);
-  const [subagents, setSubagents] = useState<WorkspaceSettings["subagents"]>(
-    [],
-  );
-  const [loading, setLoading] = useState(false);
+  const [commands, setCommands] = useState<InstanceSettings["commands"]>([]);
+  const [hooks, setHooks] = useState<InstanceSettings["hooks"]>([]);
+  const settingsState = useInstanceSettings(open, accessToken);
+  const currentSettings = settingsState.settings;
+  const saveSettings = settingsState.save;
+  const loadData = settingsState.reload;
+  const loading = settingsState.status === "loading";
+  const loadError = settingsState.error;
 
-  const accessTokenRef = useRef(session?.access_token);
-  accessTokenRef.current = session?.access_token;
+  const accessTokenRef = useRef(accessToken);
+  accessTokenRef.current = accessToken;
   const getToken = useCallback(() => accessTokenRef.current, []);
 
-  const loadData = useCallback(async () => {
-    const token = getToken();
-    if (!token) return;
-    setLoading(true);
-    try {
-      const [viewer, settings] = await Promise.all([
-        fetchViewer(token),
-        fetchWorkspaceSettings(token),
-      ]);
-      setProfile({
-        displayName: viewer.profile.displayName,
-        email: viewer.profile.email,
-      });
-      setAccount({
-        plan: viewer.credits?.plan ?? null,
-        balance: viewer.credits?.balance ?? null,
-      });
-      setDefaultModel(settings.settings.defaultModel);
-      setAgentMaxRetries(settings.settings.agentMaxRetries);
-      setCodeIndexEnabled(settings.settings.codeIndexEnabled);
-      setCodeIndexAutoNewFolder(settings.settings.codeIndexAutoNewFolder);
-      setAutoCompactEnabled(settings.settings.autoCompactEnabled);
-      setCommands(settings.settings.commands);
-      setHooks(settings.settings.hooks);
-      setSubagents(settings.settings.subagents);
-    } catch {
-      // 加载失败时保留空态，各分区自行提示
-    } finally {
-      setLoading(false);
-    }
-  }, [getToken]);
-
   useEffect(() => {
-    if (open) void loadData();
-  }, [open, loadData]);
+    if (!currentSettings) return;
+    setDefaultModel(currentSettings.defaultModel);
+    setAgentMaxRetries(currentSettings.agentMaxRetries);
+    setCodeIndexEnabled(currentSettings.codeIndexEnabled);
+    setCodeIndexAutoNewFolder(currentSettings.codeIndexAutoNewFolder);
+    setAutoCompactEnabled(currentSettings.autoCompactEnabled);
+    setCommands((previous) =>
+      previous.length === currentSettings.commands.length &&
+      previous.every((command, index) => {
+        const next = currentSettings.commands[index];
+        return (
+          next !== undefined &&
+          command.name === next.name &&
+          command.description === next.description &&
+          command.prompt === next.prompt
+        );
+      })
+        ? previous
+        : currentSettings.commands,
+    );
+    setHooks((previous) =>
+      previous.length === currentSettings.hooks.length &&
+      previous.every((hook, index) => {
+        const next = currentSettings.hooks[index];
+        return (
+          next !== undefined &&
+          hook.event === next.event &&
+          hook.command === next.command
+        );
+      })
+        ? previous
+        : currentSettings.hooks,
+    );
+  }, [currentSettings]);
 
-  const handleProfileSave = useCallback(
-    async (displayName: string) => {
-      const token = getToken();
-      if (!token) return;
-      const result = await updateProfile(token, { displayName });
-      setProfile({
-        displayName: result.profile.displayName,
-        email: result.profile.email,
-      });
-    },
-    [getToken],
-  );
-
-  /** 索引库开关写工作区设置（部分更新：只送这一个字段）。 */
+  /** 索引库开关写实例设置（部分更新：只送这一个字段）。 */
   const handleIndexToggle = useCallback(
     async (next: boolean) => {
-      const token = getToken();
-      if (!token) return;
       setCodeIndexEnabled(next);
       try {
-        const result = await updateWorkspaceSettings(token, {
-          codeIndexEnabled: next,
-        });
-        setCodeIndexEnabled(result.settings.codeIndexEnabled);
+        const result = await saveSettings({ codeIndexEnabled: next });
+        if (result) setCodeIndexEnabled(result.codeIndexEnabled);
       } catch {
         setCodeIndexEnabled(!next);
       }
     },
-    [getToken],
+    [saveSettings],
   );
 
   /** 「索引新文件夹」开关：同样部分更新，只送这一个字段。 */
   const handleIndexAutoToggle = useCallback(
     async (next: boolean) => {
-      const token = getToken();
-      if (!token) return;
       setCodeIndexAutoNewFolder(next);
       try {
-        const result = await updateWorkspaceSettings(token, {
-          codeIndexAutoNewFolder: next,
-        });
-        setCodeIndexAutoNewFolder(result.settings.codeIndexAutoNewFolder);
+        const result = await saveSettings({ codeIndexAutoNewFolder: next });
+        if (result) setCodeIndexAutoNewFolder(result.codeIndexAutoNewFolder);
       } catch {
         setCodeIndexAutoNewFolder(!next);
       }
     },
-    [getToken],
+    [saveSettings],
   );
 
   /** 上下文自动压缩开关：立即写（部分更新），失败回滚。 */
   const handleAutoCompactToggle = useCallback(
     async (next: boolean) => {
-      const token = getToken();
-      if (!token) return;
       setAutoCompactEnabled(next);
       try {
-        const result = await updateWorkspaceSettings(token, {
-          autoCompactEnabled: next,
-        });
-        setAutoCompactEnabled(result.settings.autoCompactEnabled);
+        const result = await saveSettings({ autoCompactEnabled: next });
+        if (result) setAutoCompactEnabled(result.autoCompactEnabled);
       } catch {
         setAutoCompactEnabled(!next);
       }
     },
-    [getToken],
+    [saveSettings],
   );
 
   const handleModelSave = useCallback(
     async (next: { agentMaxRetries: number; defaultModel: string }) => {
-      const token = getToken();
-      if (!token) return;
-      const result = await updateWorkspaceSettings(token, next);
-      setDefaultModel(result.settings.defaultModel);
-      setAgentMaxRetries(result.settings.agentMaxRetries);
+      const result = await saveSettings(next);
+      if (!result) return;
+      setDefaultModel(result.defaultModel);
+      setAgentMaxRetries(result.agentMaxRetries);
     },
-    [getToken],
+    [saveSettings],
   );
 
-  /** 自定义子智能体增删后回写（PUT 部分更新只送这一个字段）。 */
-  const handleSubagentsSave = useCallback(
-    async (next: WorkspaceSettings["subagents"]) => {
-      const token = getToken();
-      if (!token) return;
-      const result = await updateWorkspaceSettings(token, {
-        subagents: next,
-      });
-      setSubagents(result.settings.subagents);
+  const handleCommandsSave = useCallback(
+    async (next: InstanceSettings["commands"]) => {
+      const saved = await saveSettings({ commands: next });
+      return saved?.commands ?? null;
     },
-    [getToken],
+    [saveSettings],
+  );
+
+  const handleHooksSave = useCallback(
+    async (next: InstanceSettings["hooks"]) => {
+      const saved = await saveSettings({ hooks: next });
+      return saved?.hooks ?? null;
+    },
+    [saveSettings],
   );
 
   const stableFetchModels = useCallback(
@@ -341,104 +322,88 @@ export function SettingsModal({
             ref={contentScrollRef}
             className="min-w-0 flex-1 overflow-y-auto px-6 py-4"
           >
-            {loading && !profile ? (
-              <ListLoading label="正在加载设置…" rows={2} />
-            ) : activeTab === "general" ? (
-              /* 「通用」一页里并排四块（外观/模型/个人资料/终端）：间距用统一版式常量，
-                 不再各自 mt-* / space-y-8（实测弹窗里曾同时存在 8 种块间距） */
-              <div className={SETTINGS_SECTION_GAP}>
-                <AppearanceSection />
-                <AgentSection
-                  agentMaxRetries={agentMaxRetries}
-                  defaultModel={defaultModel}
-                  fetchModels={stableFetchModels}
-                  onSave={handleModelSave}
-                  autoCompactEnabled={autoCompactEnabled}
-                  onToggleAutoCompact={handleAutoCompactToggle}
-                />
-                {profile ? (
-                  <ProfileSection
-                    displayName={profile.displayName}
-                    email={profile.email}
-                    onSave={handleProfileSave}
-                  />
-                ) : null}
-                {token ? <TerminalSettingsSection accessToken={token} /> : null}
+            {loadError ? (
+              <div
+                role="status"
+                className="mb-4 flex items-center gap-3 text-sm text-destructive"
+              >
+                <span>{loadError}</span>
+                <button
+                  type="button"
+                  className="rounded-md border px-2 py-1"
+                  onClick={() => void loadData()}
+                >
+                  重试
+                </button>
               </div>
+            ) : null}
+            {loading ? (
+              <ListLoading label="正在加载设置…" rows={2} />
+            ) : !currentSettings &&
+              INSTANCE_SETTINGS_TABS.has(activeTab) ? null : activeTab ===
+              "general" ? (
+              <div className="space-y-8">
+                <LocalInstanceSection />
+                <TerminalSettingsSection accessToken={token} />
+              </div>
+            ) : activeTab === "appearance" ? (
+              <AppearanceSection />
+            ) : activeTab === "model" ? (
+              <AgentSection
+                agentMaxRetries={agentMaxRetries}
+                defaultModel={defaultModel}
+                fetchModels={stableFetchModels}
+                onSave={handleModelSave}
+                autoCompactEnabled={autoCompactEnabled}
+                onToggleAutoCompact={handleAutoCompactToggle}
+              />
+            ) : activeTab === "agentGovernance" ? (
+              currentSettings ? (
+                <AgentGovernanceSettingsView
+                  settings={currentSettings}
+                  save={saveSettings}
+                />
+              ) : null
             ) : activeTab === "providers" ? (
-              token ? (
-                <ProviderSettings accessToken={token} />
-              ) : null
+              <ProviderSettings accessToken={token} />
             ) : activeTab === "permissions" ? (
-              token ? (
-                <PermissionSection accessToken={token} />
-              ) : null
+              <PermissionSection accessToken={token} />
             ) : activeTab === "browser" ? (
               <BrowserSettingsSection accessToken={accessToken} />
-            ) : activeTab === "voice" ? (
-              token ? (
-                <VoiceSettingsSection accessToken={token} />
-              ) : null
             ) : activeTab === "pluginPanels" ? (
               <PluginPanelsSettings accessToken={accessToken} />
             ) : activeTab === "usage" ? (
               <UsageStatsSection />
             ) : activeTab === "index" ? (
-              token ? (
-                <IndexLibrarySection
-                  accessToken={token}
-                  canvasId={activeCanvasId}
-                  enabled={codeIndexEnabled}
-                  autoNewFolder={codeIndexAutoNewFolder}
-                  onToggle={handleIndexToggle}
-                  onToggleAuto={handleIndexAutoToggle}
-                />
-              ) : null
+              <IndexLibrarySection
+                accessToken={token}
+                taskId={activeTaskId}
+                enabled={codeIndexEnabled}
+                autoNewFolder={codeIndexAutoNewFolder}
+                onToggle={handleIndexToggle}
+                onToggleAuto={handleIndexAutoToggle}
+              />
             ) : activeTab === "onboarding" ? (
-              token ? (
-                <OnboardingSection
-                  accessToken={token}
-                  hasWorkDir={hasWorkDir}
-                  conversationCount={conversationCount}
-                  onGoToTab={(next) => setActiveTab(next)}
-                  onLeaveSettings={onClose}
-                />
-              ) : null
+              <OnboardingSection
+                accessToken={token}
+                hasWorkDir={hasWorkDir}
+                conversationCount={conversationCount}
+                onLeaveSettings={onClose}
+                onGoToTab={(next) => setActiveTab(next)}
+              />
             ) : activeTab === "commands" ? (
-              token ? (
-                <CommandsSection
-                  accessToken={token}
-                  commands={commands}
-                  onSaved={setCommands}
-                />
-              ) : null
+              <CommandsSection
+                commands={commands}
+                onSave={handleCommandsSave}
+              />
             ) : activeTab === "hooks" ? (
-              token ? (
-                <HooksSection
-                  accessToken={token}
-                  hooks={hooks}
-                  onSaved={setHooks}
-                />
-              ) : null
+              <HooksSection hooks={hooks} onSave={handleHooksSave} />
+            ) : activeTab === "apiTokens" ? (
+              <LocalAccessClientsSection />
             ) : activeTab === "subagents" ? (
-              token ? (
-                <SubagentsSection
-                  accessToken={token}
-                  subagents={subagents}
-                  onSaved={handleSubagentsSave}
-                />
-              ) : null
-            ) : activeTab === "account" ? (
-              profile ? (
-                <AccountSection
-                  displayName={profile.displayName}
-                  email={profile.email}
-                  plan={account.plan}
-                  balance={account.balance}
-                  isAdmin={isAdmin}
-                  {...(onOpenAdmin ? { onOpenAdmin } : {})}
-                />
-              ) : null
+              <SubagentsSection accessToken={token} />
+            ) : activeTab === "voice" ? (
+              <VoiceSettingsSection accessToken={token} />
             ) : activeTab === "about" ? (
               <AboutSection />
             ) : (
@@ -454,17 +419,17 @@ export function SettingsModal({
 /**
  * 「插件面板」设置页：列出 settings 槽位的插件面板。
  * 没有插件声明该槽位时，明确说明「当前没有插件提供设置面板」——不放空壳。
- * 页面标题与其它设置页同一规格（`SETTINGS_TITLE`）：曾经只有这一页和语音页没有标题。
  */
 function PluginPanelsSettings({ accessToken }: { accessToken: string | null }) {
   return (
-    <div>
-      <h3 className={SETTINGS_TITLE}>插件面板</h3>
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        已启用插件的设置面板
+      </p>
       <div className="flex flex-wrap gap-2">
         <PluginPanelButtons
           accessToken={accessToken}
           slot="settings"
-          emptyLabel="暂无插件面板"
           renderButton={(panel, open) => (
             <button
               key={panel.id}

@@ -1,0 +1,223 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Agent Run 请求时序：消息发送 → 回复渲染",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [960, 533],
+    "column_fit": "spread",
+    "views": [
+      {
+        "id": "accept",
+        "label": "受理不阻塞",
+        "focus": ["browser", "ws", "runsvc", "pg"],
+        "note": "run 在服务端内存建立并落 agent_runs 簿记行，ack 先行返回 runId。"
+      },
+      {
+        "id": "stream",
+        "label": "流式执行",
+        "focus": ["runsvc", "agent", "llm", "buf"],
+        "note": "LangGraph 流式事件经适配器转 StreamEvent，delta 只驻留内存广播。"
+      },
+      {
+        "id": "settle",
+        "label": "终态与恢复",
+        "focus": ["runsvc", "pg", "browser"],
+        "note": "终态整条落 chat_messages；可重试失败以新 runId 重新 ack。"
+      }
+    ]
+  },
+  "participants": [
+    {
+      "id": "browser",
+      "type": "external",
+      "label": "浏览器",
+      "sublabel": "Workbench"
+    },
+    {
+      "id": "ws",
+      "type": "backend",
+      "label": "WS 网关",
+      "sublabel": "ws/handler.ts"
+    },
+    {
+      "id": "runsvc",
+      "type": "backend",
+      "label": "Run 服务",
+      "sublabel": "agent/runtime.ts"
+    },
+    {
+      "id": "buf",
+      "type": "messagebus",
+      "label": "事件缓冲",
+      "sublabel": "CanvasEventBuffer"
+    },
+    {
+      "id": "agent",
+      "type": "backend",
+      "label": "Deep Agent",
+      "sublabel": "deepagents · LangGraph"
+    },
+    {
+      "id": "llm",
+      "type": "cloud",
+      "label": "LLM 供应商",
+      "sublabel": "BYOK 实例"
+    },
+    {
+      "id": "pg",
+      "type": "database",
+      "label": "Postgres",
+      "sublabel": "run · 消息簿记"
+    }
+  ],
+  "segments": [
+    {
+      "from": 144,
+      "to": 230,
+      "label": "受理"
+    },
+    {
+      "from": 236,
+      "to": 370,
+      "label": "流式执行"
+    },
+    {
+      "from": 374,
+      "to": 432,
+      "label": "终态与恢复"
+    }
+  ],
+  "messages": [
+    {
+      "from": "browser",
+      "to": "ws",
+      "y": 160,
+      "label": "agent.run {prompt, canvasId, sessionId}",
+      "variant": "emphasis"
+    },
+    {
+      "from": "ws",
+      "to": "runsvc",
+      "y": 188,
+      "label": "handleRunCommand · 作用域解析 · 簿记 agent_runs"
+    },
+    {
+      "from": "ws",
+      "to": "browser",
+      "y": 216,
+      "label": "command.ack {runId}",
+      "variant": "return"
+    },
+    {
+      "from": "runsvc",
+      "to": "agent",
+      "y": 244,
+      "label": "streamRun → agent.streamEvents",
+      "variant": "emphasis"
+    },
+    {
+      "from": "agent",
+      "to": "pg",
+      "y": 272,
+      "label": "beforeTurn 影子 git · LangGraph thread 检查点"
+    },
+    {
+      "from": "agent",
+      "to": "llm",
+      "y": 300,
+      "label": "流式补全（BYOK 密钥服务端解密）",
+      "variant": "security"
+    },
+    {
+      "from": "agent",
+      "to": "runsvc",
+      "y": 328,
+      "label": "StreamEvent：delta · tool.* · canvas.sync"
+    },
+    {
+      "from": "runsvc",
+      "to": "browser",
+      "y": 356,
+      "label": "event：delta 实时渲染（eventBuffer 支持断线重放）",
+      "variant": "emphasis"
+    },
+    {
+      "from": "runsvc",
+      "to": "pg",
+      "y": 384,
+      "label": "终态：INSERT chat_messages · run.completed/failed"
+    },
+    {
+      "from": "ws",
+      "to": "browser",
+      "y": 412,
+      "label": "可重试：run.retrying（新 runId 重新 ack）",
+      "variant": "dashed"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "ws",
+      "from": 154,
+      "to": 226
+    },
+    {
+      "participant": "runsvc",
+      "from": 182,
+      "to": 424
+    },
+    {
+      "participant": "buf",
+      "from": 350,
+      "to": 362
+    },
+    {
+      "participant": "agent",
+      "from": 238,
+      "to": 342
+    },
+    {
+      "participant": "llm",
+      "from": 294,
+      "to": 306
+    },
+    {
+      "participant": "pg",
+      "from": 266,
+      "to": 280
+    },
+    {
+      "participant": "pg",
+      "from": 378,
+      "to": 392
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "受理不阻塞",
+      "items": [
+        "run 是服务端内存对象 + agent_runs 簿记行，不入队列",
+        "Code 模式必须带 canvasId（state 后端硬约束）"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "流式执行",
+      "items": [
+        "delta 事件只驻留内存：eventBuffer 重放 + WS 广播",
+        "BYOK 密钥仅在服务端解密后进协议适配器"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "终态与恢复",
+      "items": [
+        "终态整条写入 chat_messages（content_blocks 口径）",
+        "可重试失败以新 runId 重新 ack（预算缺省 10）"
+      ]
+    }
+  ]
+}

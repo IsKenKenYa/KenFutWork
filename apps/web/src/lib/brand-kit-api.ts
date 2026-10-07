@@ -7,26 +7,27 @@ import type {
   BrandKitListResponse,
   BrandKitUpdateRequest,
 } from "@kenfutwork/shared";
+import { bearerHeaders, serverFetch } from "@/lib/local-access";
 import { dedupeRequest } from "./dedupe-request";
 import { getServerBaseUrl } from "./env";
-import { ApiApplicationError, ApiAuthError } from "./server-api";
+import { ApiAccessError, ApiApplicationError } from "./server-api";
 
 // --- Internal helpers (mirrored from server-api.ts, not exported there) ---
 
-function authHeaders(accessToken: string): Record<string, string> {
-  return { Authorization: `Bearer ${accessToken}` };
+function authHeaders(accessToken: string | null): Record<string, string> {
+  return bearerHeaders(accessToken);
 }
 
-function authJsonHeaders(accessToken: string): Record<string, string> {
+function authJsonHeaders(accessToken: string | null): Record<string, string> {
   return {
-    Authorization: `Bearer ${accessToken}`,
+    ...bearerHeaders(accessToken),
     "content-type": "application/json",
   };
 }
 
 async function handleErrorResponse(response: Response): Promise<never> {
   if (response.status === 401) {
-    throw new ApiAuthError();
+    throw new ApiAccessError();
   }
   const body = await response.json().catch(() => null);
   const code = body?.error?.code ?? "application_error";
@@ -37,10 +38,10 @@ async function handleErrorResponse(response: Response): Promise<never> {
 // --- Brand Kit CRUD ---
 
 export function fetchBrandKits(
-  accessToken: string,
+  accessToken: string | null,
 ): Promise<BrandKitListResponse> {
   return dedupeRequest("brand-kits:list", async () => {
-    const response = await fetch(`${getServerBaseUrl()}/api/brand-kits`, {
+    const response = await serverFetch(`${getServerBaseUrl()}/api/brand-kits`, {
       headers: authHeaders(accessToken),
     });
     if (!response.ok) return handleErrorResponse(response);
@@ -49,10 +50,10 @@ export function fetchBrandKits(
 }
 
 export async function fetchBrandKit(
-  accessToken: string,
+  accessToken: string | null,
   kitId: string,
 ): Promise<BrandKitDetailResponse> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/brand-kits/${kitId}`,
     { headers: authHeaders(accessToken) },
   );
@@ -61,10 +62,10 @@ export async function fetchBrandKit(
 }
 
 export async function createBrandKit(
-  accessToken: string,
+  accessToken: string | null,
   data?: BrandKitCreateRequest,
 ): Promise<BrandKitDetailResponse> {
-  const response = await fetch(`${getServerBaseUrl()}/api/brand-kits`, {
+  const response = await serverFetch(`${getServerBaseUrl()}/api/brand-kits`, {
     method: "POST",
     headers: authJsonHeaders(accessToken),
     body: JSON.stringify(data ?? {}),
@@ -74,11 +75,11 @@ export async function createBrandKit(
 }
 
 export async function updateBrandKit(
-  accessToken: string,
+  accessToken: string | null,
   kitId: string,
   data: BrandKitUpdateRequest,
 ): Promise<BrandKitDetailResponse> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/brand-kits/${kitId}`,
     {
       method: "PATCH",
@@ -91,10 +92,10 @@ export async function updateBrandKit(
 }
 
 export async function duplicateBrandKit(
-  accessToken: string,
+  accessToken: string | null,
   kitId: string,
 ): Promise<BrandKitDetailResponse> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/brand-kits/${kitId}/duplicate`,
     {
       method: "POST",
@@ -106,10 +107,10 @@ export async function duplicateBrandKit(
 }
 
 export async function deleteBrandKit(
-  accessToken: string,
+  accessToken: string | null,
   kitId: string,
 ): Promise<void> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/brand-kits/${kitId}`,
     {
       method: "DELETE",
@@ -122,11 +123,11 @@ export async function deleteBrandKit(
 // --- Brand Kit Asset CRUD ---
 
 export async function createBrandKitAsset(
-  accessToken: string,
+  accessToken: string | null,
   kitId: string,
   data: BrandKitAssetCreateRequest,
 ): Promise<BrandKitAssetResponse> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/brand-kits/${kitId}/assets`,
     {
       method: "POST",
@@ -139,12 +140,12 @@ export async function createBrandKitAsset(
 }
 
 export async function updateBrandKitAsset(
-  accessToken: string,
+  accessToken: string | null,
   kitId: string,
   assetId: string,
   data: BrandKitAssetUpdateRequest,
 ): Promise<BrandKitAssetResponse> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/brand-kits/${kitId}/assets/${assetId}`,
     {
       method: "PATCH",
@@ -157,11 +158,11 @@ export async function updateBrandKitAsset(
 }
 
 export async function deleteBrandKitAsset(
-  accessToken: string,
+  accessToken: string | null,
   kitId: string,
   assetId: string,
 ): Promise<void> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/brand-kits/${kitId}/assets/${assetId}`,
     {
       method: "DELETE",
@@ -172,7 +173,7 @@ export async function deleteBrandKitAsset(
 }
 
 export async function uploadBrandKitAsset(
-  accessToken: string,
+  accessToken: string | null,
   kitId: string,
   assetType: "logo" | "image",
   file: File,
@@ -181,7 +182,7 @@ export async function uploadBrandKitAsset(
   formData.append("asset_type", assetType);
   formData.append("file", file);
 
-  const response = await fetch(
+  const response = await serverFetch(
     `${getServerBaseUrl()}/api/brand-kits/${kitId}/assets/upload`,
     {
       method: "POST",

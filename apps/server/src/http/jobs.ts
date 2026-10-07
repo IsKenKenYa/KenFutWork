@@ -1,74 +1,52 @@
-// @credits-system — Job creation routes with credit balance checks and tier enforcement
-
 import type {
   BackgroundJobStatus,
   BackgroundJobType,
-  ImageQualityLevel,
 } from "@kenfutwork/shared";
 import {
   applicationErrorResponseSchema,
   createImageJobRequestSchema,
   createVideoJobRequestSchema,
-  getPlanConfig,
   jobListResponseSchema,
   jobResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
-import {
-  type CreditService,
-  CreditServiceError,
-} from "../features/credits/credit-service.js";
-import {
-  type TierGuard,
-  TierGuardError,
-} from "../features/credits/tier-guard.js";
 import {
   type JobService,
   JobServiceError,
 } from "../features/jobs/job-service.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import { LocalInstanceMaintenanceError } from "../features/local-instance/service.js";
+import type { LocalInstanceService } from "../features/local-instance/types.js";
+import {
+  type ModelProviderService,
+  ModelProviderServiceError,
+} from "../features/model-providers/model-provider-service.js";
 import { isZodError } from "./zod-error.js";
 
 export async function registerJobRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
-    creditService?: CreditService;
+    localAccess: LocalAccessVerifier;
     jobService: JobService;
-    tierGuard?: TierGuard;
-    viewerService: ViewerService;
+    localInstance: LocalInstanceService;
+    modelProviders: ModelProviderService;
   },
 ) {
   // POST /api/jobs/image-generation — create image generation job
   app.post("/api/jobs/image-generation", async (request, reply) => {
+    let releaseAdmission: (() => void) | undefined;
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
 
       const payload = createImageJobRequestSchema.parse(request.body);
-      const viewer = await options.viewerService.ensureViewer(user);
-
-      // Credit checks (skip if credit system not configured)
-      const model = payload.model ?? "black-forest-labs/flux-kontext-pro";
-      let creditsCost = 0;
-
-      if (options.creditService && options.tierGuard) {
-        const sub = await options.creditService.getSubscription(
-          viewer.workspace.id,
-        );
-        const planConfig = getPlanConfig(sub.plan);
-        // Use the plan's max resolution as the quality for cost calculation
-        const quality: ImageQualityLevel = planConfig.maxResolution;
-        options.tierGuard.checkModelAccess(sub.plan, model);
-        await options.tierGuard.checkConcurrency(viewer.workspace.id, sub.plan);
-        creditsCost = options.tierGuard.calculateCreditCost(
-          model,
-          "image_generation",
-          { quality },
-        );
-      }
+      releaseAdmission = options.localInstance.beginAdmission();
+      await options.localInstance.resolve(user);
+      await options.modelProviders.resolveCredentials(
+        user,
+        payload.provider_instance_id,
+      );
 
       const job = await options.jobService.createJob(user, {
         ...(payload.project_id !== undefined
@@ -86,30 +64,13 @@ export async function registerJobRoutes(
         jobType: "image_generation",
         payload: {
           prompt: payload.prompt,
+          provider_instance_id: payload.provider_instance_id,
           ...(payload.model !== undefined ? { model: payload.model } : {}),
           ...(payload.aspect_ratio !== undefined
             ? { aspect_ratio: payload.aspect_ratio }
             : {}),
         },
       });
-
-      // Deduct credits after job creation (we need the job ID for tracking)
-      if (options.creditService && creditsCost > 0) {
-        try {
-          const txId = await options.creditService.deductCredits(
-            viewer.workspace.id,
-            user.id,
-            creditsCost,
-            job.id,
-            `Image generation: ${model}`,
-          );
-          await options.jobService.setCreditsInfo(job.id, creditsCost, txId);
-        } catch (deductError) {
-          // Deduction failed — cancel the job and re-throw
-          await options.jobService.cancelJob(user, job.id).catch(() => {});
-          throw deductError;
-        }
-      }
 
       return reply.code(201).send(jobResponseSchema.parse({ job }));
     } catch (error) {
@@ -119,34 +80,25 @@ export async function registerJobRoutes(
           .send({ issues: error.issues, message: "Invalid request body" });
       }
       return sendJobError(error, reply, "job_create_failed");
+    } finally {
+      releaseAdmission?.();
     }
   });
 
   // POST /api/jobs/video-generation — create video generation job
   app.post("/api/jobs/video-generation", async (request, reply) => {
+    let releaseAdmission: (() => void) | undefined;
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
 
       const payload = createVideoJobRequestSchema.parse(request.body);
-      const viewer = await options.viewerService.ensureViewer(user);
-
-      // Credit checks (skip if credit system not configured)
-      const model = payload.model ?? "wan-video/wan-2.6";
-      let creditsCost = 0;
-
-      if (options.creditService && options.tierGuard) {
-        const sub = await options.creditService.getSubscription(
-          viewer.workspace.id,
-        );
-        options.tierGuard.checkModelAccess(sub.plan, model);
-        await options.tierGuard.checkConcurrency(viewer.workspace.id, sub.plan);
-        creditsCost = options.tierGuard.calculateCreditCost(
-          model,
-          "video_generation",
-          payload.duration != null ? { duration: payload.duration } : {},
-        );
-      }
+      releaseAdmission = options.localInstance.beginAdmission();
+      await options.localInstance.resolve(user);
+      await options.modelProviders.resolveCredentials(
+        user,
+        payload.provider_instance_id,
+      );
 
       const job = await options.jobService.createJob(user, {
         ...(payload.project_id !== undefined
@@ -164,6 +116,7 @@ export async function registerJobRoutes(
         jobType: "video_generation",
         payload: {
           prompt: payload.prompt,
+          provider_instance_id: payload.provider_instance_id,
           ...(payload.model !== undefined ? { model: payload.model } : {}),
           ...(payload.duration !== undefined
             ? { duration: payload.duration }
@@ -186,23 +139,6 @@ export async function registerJobRoutes(
         },
       });
 
-      // Deduct credits after job creation
-      if (options.creditService && creditsCost > 0) {
-        try {
-          const txId = await options.creditService.deductCredits(
-            viewer.workspace.id,
-            user.id,
-            creditsCost,
-            job.id,
-            `Video generation: ${model}`,
-          );
-          await options.jobService.setCreditsInfo(job.id, creditsCost, txId);
-        } catch (deductError) {
-          await options.jobService.cancelJob(user, job.id).catch(() => {});
-          throw deductError;
-        }
-      }
-
       return reply.code(201).send(jobResponseSchema.parse({ job }));
     } catch (error) {
       if (isZodError(error)) {
@@ -211,13 +147,15 @@ export async function registerJobRoutes(
           .send({ issues: error.issues, message: "Invalid request body" });
       }
       return sendJobError(error, reply, "job_create_failed");
+    } finally {
+      releaseAdmission?.();
     }
   });
 
   // GET /api/jobs/:jobId — get job status
   app.get("/api/jobs/:jobId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
 
       const { jobId } = request.params as { jobId: string };
@@ -232,7 +170,7 @@ export async function registerJobRoutes(
   // GET /api/jobs — list jobs
   app.get("/api/jobs", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
 
       const query = request.query as { status?: string; job_type?: string };
@@ -253,7 +191,7 @@ export async function registerJobRoutes(
   // POST /api/jobs/:jobId/cancel — cancel job
   app.post("/api/jobs/:jobId/cancel", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
 
       const { jobId } = request.params as { jobId: string };
@@ -271,7 +209,7 @@ function sendUnauthenticated(reply: FastifyReply) {
     unauthenticatedErrorResponseSchema.parse({
       error: {
         code: "unauthorized",
-        message: "Missing or invalid bearer token.",
+        message: "本机接入凭据缺失或无效。",
       },
     }),
   );
@@ -288,21 +226,17 @@ function sendJobError(
   reply: FastifyReply,
   fallbackCode: JobErrorFallbackCode,
 ) {
-  if (error instanceof JobServiceError) {
+  if (
+    error instanceof JobServiceError ||
+    error instanceof LocalInstanceMaintenanceError
+  ) {
     return reply.code(error.statusCode).send(
       applicationErrorResponseSchema.parse({
         error: { code: error.code, message: error.message },
       }),
     );
   }
-  if (error instanceof TierGuardError) {
-    return reply.code(error.statusCode).send(
-      applicationErrorResponseSchema.parse({
-        error: { code: error.code, message: error.message },
-      }),
-    );
-  }
-  if (error instanceof CreditServiceError) {
+  if (error instanceof ModelProviderServiceError) {
     return reply.code(error.statusCode).send(
       applicationErrorResponseSchema.parse({
         error: { code: error.code, message: error.message },

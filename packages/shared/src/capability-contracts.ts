@@ -113,7 +113,7 @@ export type AgentRunEventName = z.infer<typeof agentRunEventNameSchema>;
 // --- 用量记录（DEC-6：BYOK v1 必备；credits 关闭后是唯一计量） ---
 
 export const usageRecordSchema = z.object({
-  workspaceId: z.string().min(1),
+  instanceId: z.string().min(1),
   providerInstanceId: z.string().min(1).optional(),
   /** 目录来源名（如 "openai-compatible"），实例缺失时兜底标识。 */
   provider: z.string().min(1),

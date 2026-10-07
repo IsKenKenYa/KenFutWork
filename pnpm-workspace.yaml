@@ -1,6 +1,7 @@
 packages:
   - apps/*
   - packages/*
+  - apps/web/src/components/workbench/zcode
 
 ignoredBuiltDependencies:
   - '@biomejs/biome'

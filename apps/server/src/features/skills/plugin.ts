@@ -16,6 +16,8 @@ import {
   createSkillCatalogService,
   type SkillCatalogService,
 } from "./skill-catalog-service.js";
+import { resolveSkillActor } from "./skill-context.js";
+import { createInstanceSkillResourceReader } from "./skill-resource-service.js";
 
 /**
  * skills 插件：技能导入 + 市场路由（HTTP 面）+ **skill 工具缝**（P5）。
@@ -29,27 +31,37 @@ export function createSkillsPlugin(): PluginDefinition {
   let skillsRepository: SkillCatalogRepository;
   return {
     name: "skills",
-    inject: ["auth", "persistence", "viewer"],
+    inject: [
+      "localAccess",
+      "persistence",
+      "localInstance",
+      "projects",
+      "executionScopes",
+    ],
     apply(ctx) {
       skillsRepository = createSkillCatalogRepository(ctx.get("persistence"));
       const catalog: SkillCatalogService = createSkillCatalogService({
         repository: skillsRepository,
+        localInstance: ctx.get("localInstance"),
+      });
+      const resources = createInstanceSkillResourceReader({
+        repository: skillsRepository,
+        localInstance: ctx.get("localInstance"),
       });
 
       const listSkillsTool: ToolDefinition = {
         name: "list_skills",
-        description: "列出当前工作区已安装并启用的 skill（名称与描述）。",
+        access: "read",
+        exposure: "deferred",
+        description: "列出当前实例已安装并启用的 skill（名称与描述）。",
         scope: "shared",
         parameters: { type: "object", properties: {} },
         execute: async (_args, execCtx: ToolExecutionContext) => {
-          if (!execCtx.workspaceId) {
-            // 不再静默返回空列表：缺工作区上下文必须说清原因
-            return {
-              skills: [],
-              hint: "当前执行上下文缺少工作区，无法读取 skill 目录。",
-            };
-          }
-          const skills = await catalog.listSkills(execCtx.workspaceId);
+          const actor = await resolveSkillActor(
+            ctx.get("localInstance"),
+            execCtx,
+          );
+          const skills = await catalog.listSkills(actor.instanceId);
           return {
             skills: skills
               .filter((s) => s.enabled)
@@ -60,13 +72,20 @@ export function createSkillsPlugin(): PluginDefinition {
 
       const useSkillTool: ToolDefinition = {
         name: "use_skill",
+        access: "read",
+        exposure: "deferred",
         description:
-          "读取指定 skill 的 SKILL.md 全文，按其指引完成任务。先用 list_skills 查看可用项。",
+          "读取实例已安装并启用的skill正文，或resource_path指定的包内只读附属资源。先list_skills；安装包不是本机路径，脚本须在Task授权目录审阅副本后通过受控Bash执行。",
         scope: "shared",
         parameters: {
           type: "object",
           properties: {
             name: { type: "string", description: "skill slug" },
+            resource_path: {
+              type: "string",
+              description:
+                "可选，技能包内canonical相对路径，如scripts/check.ts；不接受绝对路径或../",
+            },
           },
           required: ["name"],
         },
@@ -75,10 +94,23 @@ export function createSkillsPlugin(): PluginDefinition {
           if (!name) {
             throw new Error("use_skill 需要 name 参数");
           }
-          if (!execCtx.workspaceId) {
-            throw new Error("当前执行上下文缺少工作区，无法读取 skill。");
+          const actor = await resolveSkillActor(
+            ctx.get("localInstance"),
+            execCtx,
+          );
+          if (args.resource_path !== undefined) {
+            if (typeof args.resource_path !== "string")
+              throw new Error("resource_path需要包内相对路径字符串。");
+            const resource = await resources.read(
+              actor.instanceId,
+              name,
+              args.resource_path,
+            );
+            if (!resource)
+              throw new Error(`skill ${name} 的资源未安装、已停用或不存在`);
+            return resource;
           }
-          const detail = await catalog.getSkill(execCtx.workspaceId, name);
+          const detail = await catalog.getSkill(actor.instanceId, name);
           if (!detail) {
             throw new Error(`skill ${name} 未安装或未启用`);
           }
@@ -86,10 +118,10 @@ export function createSkillsPlugin(): PluginDefinition {
         },
       };
 
-      // 创造模式的收尾动作：把技能包发布到当前工作区技能库（工厂在 create-skill-tool.ts）
+      // 创造模式的收尾动作：把技能包发布到当前实例技能库（工厂在 create-skill-tool.ts）
       const createSkillTool: ToolDefinition = createCreateSkillTool({
         repository: skillsRepository,
-        auth: ctx.get("auth"),
+        localInstance: ctx.get("localInstance"),
       });
 
       ctx.get("tools").register(listSkillsTool);
@@ -98,18 +130,20 @@ export function createSkillsPlugin(): PluginDefinition {
     },
     mounted(ctx) {
       void registerSkillRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         skillsRepository,
-        viewerService: ctx.get("viewer"),
+        localInstance: ctx.get("localInstance"),
         canvasRepository: createCanvasRepository(ctx.get("persistence")),
+        projects: ctx.get("projects"),
+        executionScopes: ctx.get("executionScopes"),
         sandboxRoot: ctx.env.sandboxRoot,
         canvasWorkDirs: ctx.env.canvasWorkDirs,
         projectWorkDirLoader: projectWorkDirLoaderFor(ctx.get("persistence")),
       });
       void registerMarketplaceRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         skillsRepository,
-        viewerService: ctx.get("viewer"),
+        localInstance: ctx.get("localInstance"),
       });
     },
   };

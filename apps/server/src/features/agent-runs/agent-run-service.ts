@@ -1,5 +1,12 @@
+import type { ThreadService } from "../chat/thread-service.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import type { AgentRunRepository } from "./repository.js";
 import type {
+  AgentTurnBoundaries,
+  AgentTurnBoundary,
   CreateAcceptedAgentRunInput,
   UpdateAgentRunInput,
 } from "./types.js";
@@ -15,7 +22,23 @@ export class AgentRunPersistenceError extends Error {
   }
 }
 
+export class AgentTurnBoundaryError extends Error {
+  constructor(
+    readonly code: "turn_boundary_conflict" | "not_found",
+    message: string,
+    readonly statusCode: number,
+  ) {
+    super(message);
+    this.name = "AgentTurnBoundaryError";
+  }
+}
+
 export type AgentRunMetadataService = {
+  recordTurnBoundary(input: AgentTurnBoundary): Promise<void>;
+  getOwnedTurnBoundaries(
+    actor: LocalActor,
+    input: { taskId: string; runId: string },
+  ): Promise<AgentTurnBoundaries>;
   createAcceptedRun(input: CreateAcceptedAgentRunInput): Promise<void>;
   updateRun(input: UpdateAgentRunInput): Promise<void>;
 };
@@ -33,14 +56,14 @@ export function createAgentActivityQuery(options: {
 }) {
   const now = options.now ?? (() => new Date());
   return async function workspaceActivity(input: {
-    workspaceId: string;
+    instanceId: string;
   }): Promise<{ runs: number; totalSeconds: number; windowDays: number }> {
     const since = new Date(
       now().getTime() - AGENT_ACTIVITY_WINDOW_DAYS * 24 * 60 * 60 * 1000,
     );
     const activity = await options.repository.workspaceActivity({
       since,
-      workspaceId: input.workspaceId,
+      instanceId: input.instanceId,
     });
     return { windowDays: AGENT_ACTIVITY_WINDOW_DAYS, ...activity };
   };
@@ -48,10 +71,45 @@ export function createAgentActivityQuery(options: {
 
 export function createAgentRunMetadataService(options: {
   repository: AgentRunRepository;
+  localInstance?: Pick<LocalInstanceService, "resolve">;
+  threadService?: Pick<ThreadService, "resolveOwnedSessionThread">;
 }): AgentRunMetadataService {
   const { repository } = options;
 
   return {
+    async recordTurnBoundary(input) {
+      if (!(await repository.recordTurnBoundary(input)))
+        throw new AgentTurnBoundaryError(
+          "turn_boundary_conflict",
+          "同一Run/phase不能保存不同轮次事实，或其Task归属已不可用。",
+          409,
+        );
+    },
+    async getOwnedTurnBoundaries(actor, input) {
+      if (!options.localInstance || !options.threadService)
+        throw new AgentRunPersistenceError("轮次历史读取服务未装配。");
+      const workspace = await options.localInstance
+        .resolve(actor)
+        .catch(() => null);
+      const binding = workspace
+        ? await options.threadService
+            .resolveOwnedSessionThread(actor, input.taskId)
+            .catch(() => null)
+        : null;
+      if (!workspace || !binding || binding.mode !== "code")
+        throw new AgentTurnBoundaryError(
+          "not_found",
+          "Code Task不存在或不属于当前用户。",
+          404,
+        );
+      return repository.getTurnBoundaries({
+        instanceId: workspace.instanceId,
+        projectId: binding.projectId,
+        taskId: input.taskId,
+        runId: input.runId,
+        threadId: binding.threadId,
+      });
+    },
     async createAcceptedRun(input) {
       await repository
         .insert({

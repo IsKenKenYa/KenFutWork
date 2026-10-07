@@ -6,8 +6,10 @@ import {
   CapabilityRegistryImpl,
   createKernelEvents,
   createPluginContext,
+  SystemPromptRegistryImpl,
   ToolRegistryImpl,
 } from "./context.js";
+import { createResourceDisposer, type ResourceDisposer } from "./disposal.js";
 import type {
   DepsOf,
   KernelEvents,
@@ -70,8 +72,8 @@ export function composePlugins(
   }
 
   const factories = new Map<ServiceKey, ServiceState>();
-  const disposers: Array<() => void> = [];
-  const addDisposer = (disposer: () => void) => {
+  const disposers: ResourceDisposer[] = [];
+  const addDisposer = (disposer: ResourceDisposer) => {
     disposers.push(disposer);
   };
 
@@ -133,17 +135,23 @@ export function composePlugins(
     mountTree.push({ plugin: currentPlugin, key });
   };
 
-  // 内核自持的两个注册表型 key：在插件 apply 之前就绪（插件要在 apply 内向其贡献）。
+  // 内核自持的注册表型 key：在插件 apply 之前就绪（插件要在 apply 内向其贡献）。
   if (!overrides.tools) {
     factories.set("tools", {
       kind: "ready",
-      service: new ToolRegistryImpl(events),
+      service: new ToolRegistryImpl(events, () => tryGet("permissions")),
     });
   }
   if (!overrides.capabilities) {
     factories.set("capabilities", {
       kind: "ready",
       service: new CapabilityRegistryImpl(),
+    });
+  }
+  if (!overrides.systemPrompt) {
+    factories.set("systemPrompt", {
+      kind: "ready",
+      service: new SystemPromptRegistryImpl(),
     });
   }
 
@@ -204,13 +212,7 @@ export function composePlugins(
   const kernelEvents: KernelEvents = createKernelEvents(events);
 
   return {
-    dispose() {
-      for (const disposer of disposers.reverse()) {
-        disposer();
-      }
-      disposers.length = 0;
-      factories.clear();
-    },
+    dispose: createResourceDisposer(disposers, () => factories.clear()),
     get,
     tryGet,
     events: kernelEvents,

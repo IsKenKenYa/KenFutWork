@@ -1,6 +1,6 @@
 "use client";
 
-import type { WorkspaceSettings } from "@kenfutwork/shared";
+import type { InstanceSettings } from "@kenfutwork/shared";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -10,7 +10,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { updateWorkspaceSettings } from "@/lib/server-api";
 import { SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
@@ -30,17 +29,17 @@ type HookRow = {
   command: string;
 };
 
-const withRowIds = (hooks: WorkspaceSettings["hooks"]): HookRow[] =>
+const withRowIds = (hooks: InstanceSettings["hooks"]): HookRow[] =>
   hooks.map((hook) => ({ id: crypto.randomUUID(), ...hook }));
 
 export function HooksSection({
-  accessToken,
   hooks,
-  onSaved,
+  onSave,
 }: {
-  accessToken: string;
-  hooks: WorkspaceSettings["hooks"];
-  onSaved: (next: WorkspaceSettings["hooks"]) => void;
+  hooks: InstanceSettings["hooks"];
+  onSave: (
+    next: InstanceSettings["hooks"],
+  ) => Promise<InstanceSettings["hooks"] | null>;
 }) {
   const [rows, setRows] = useState<HookRow[]>(() => withRowIds(hooks));
   const [saving, setSaving] = useState(false);
@@ -61,14 +60,14 @@ export function HooksSection({
     }
     setSaving(true);
     try {
-      const result = await updateWorkspaceSettings(accessToken, {
-        hooks: rows.map((row) => ({
+      const saved = await onSave(
+        rows.map((row) => ({
           event: row.event,
           command: row.command.trim(),
         })),
-      });
-      onSaved(result.settings.hooks);
-      setRows(withRowIds(result.settings.hooks));
+      );
+      if (!saved) throw new Error("设置页面已变化，请重新加载后保存。");
+      setRows(withRowIds(saved));
       setFeedback({ type: "success", message: "已保存" });
     } catch (error) {
       setFeedback({

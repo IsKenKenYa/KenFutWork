@@ -49,27 +49,32 @@ describe("composePlugins 装配", () => {
   it("按声明顺序挂载，工厂依赖经 ctx.get 惰性解析", () => {
     const mounted: string[] = [];
     const kernel = composePlugins(makeEnv(), [
-      plugin("viewer-plugin", {
+      plugin("localInstance-plugin", {
         onApply(ctx) {
-          mounted.push("viewer-plugin");
-          ctx.register("viewer", () => ({ tag: "viewer-1" }) as never);
+          mounted.push("localInstance-plugin");
+          ctx.register(
+            "localInstance",
+            () => ({ tag: "localInstance-1" }) as never,
+          );
         },
       }),
       plugin("projects-plugin", {
-        inject: ["viewer"],
+        inject: ["localInstance"],
         onApply(ctx) {
           mounted.push("projects-plugin");
           ctx.register("projects", (deps) => {
-            const viewer = deps.get("viewer") as unknown as { tag: string };
-            return { tag: viewer.tag } as never;
+            const localInstance = deps.get("localInstance") as unknown as {
+              tag: string;
+            };
+            return { tag: localInstance.tag } as never;
           });
         },
       }),
     ]);
 
-    expect(mounted).toEqual(["viewer-plugin", "projects-plugin"]);
+    expect(mounted).toEqual(["localInstance-plugin", "projects-plugin"]);
     expect((kernel.get("projects") as unknown as { tag: string }).tag).toBe(
-      "viewer-1",
+      "localInstance-1",
     );
     kernel.dispose();
   });
@@ -106,16 +111,16 @@ describe("composePlugins 装配", () => {
   it("同一服务 key 被重复注册 fail loud", () => {
     const a = plugin("a", {
       onApply(ctx) {
-        ctx.register("viewer", () => ({}) as never);
+        ctx.register("localInstance", () => ({}) as never);
       },
     });
     const b = plugin("b", {
       onApply(ctx) {
-        ctx.register("viewer", () => ({}) as never);
+        ctx.register("localInstance", () => ({}) as never);
       },
     });
     expect(() => composePlugins(makeEnv(), [a, b])).toThrow(
-      /服务 key viewer 被重复注册/,
+      /服务 key localInstance 被重复注册/,
     );
   });
 
@@ -130,17 +135,17 @@ describe("composePlugins 装配", () => {
     const a = plugin("a", {
       inject: ["brandKit"],
       onApply(ctx) {
-        ctx.register("viewer", (deps) => {
+        ctx.register("localInstance", (deps) => {
           deps.get("brandKit");
           return {} as never;
         });
       },
     });
     const b = plugin("b", {
-      inject: ["viewer"],
+      inject: ["localInstance"],
       onApply(ctx) {
         ctx.register("brandKit", (deps) => {
-          deps.get("viewer");
+          deps.get("localInstance");
           return {} as never;
         });
       },
@@ -161,8 +166,8 @@ describe("composePlugins 装配", () => {
 
   it("get 未注册 key fail loud", () => {
     const kernel = composePlugins(makeEnv(), [plugin("empty")]);
-    expect(() => kernel.get("payments")).toThrow(/服务 key payments 未注册/);
-    expect(kernel.tryGet("payments")).toBeUndefined();
+    expect(() => kernel.get("settings")).toThrow(/服务 key settings 未注册/);
+    expect(kernel.tryGet("settings")).toBeUndefined();
     kernel.dispose();
   });
 
@@ -172,16 +177,16 @@ describe("composePlugins 装配", () => {
       [
         plugin("a", {
           onApply(ctx) {
-            expect(ctx.tryGet("viewer")).toBeUndefined();
-            ctx.register("viewer", () => ({ tag: "factory" }) as never);
+            expect(ctx.tryGet("localInstance")).toBeUndefined();
+            ctx.register("localInstance", () => ({ tag: "factory" }) as never);
           },
         }),
       ],
       { overrides: { canvas: { tag: "override" } as never } },
     );
-    expect((kernel.tryGet("viewer") as unknown as { tag: string }).tag).toBe(
-      "factory",
-    );
+    expect(
+      (kernel.tryGet("localInstance") as unknown as { tag: string }).tag,
+    ).toBe("factory");
     expect((kernel.tryGet("canvas") as unknown as { tag: string }).tag).toBe(
       "override",
     );
@@ -207,20 +212,22 @@ describe("composePlugins 装配", () => {
     const kernel = composePlugins(makeEnv(), [
       plugin("a", {
         onApply(ctx) {
-          ctx.register("viewer", () => {
-            order.push("factory-viewer");
+          ctx.register("localInstance", () => {
+            order.push("factory-localInstance");
             return { tag: "v" } as never;
           });
         },
       }),
       plugin("b", {
-        inject: ["viewer"],
+        inject: ["localInstance"],
         onApply(ctx) {
           ctx.register("canvas", () => ({}) as never);
         },
         onMounted(ctx) {
-          const viewer = ctx.get("viewer") as unknown as { tag: string };
-          expect(viewer.tag).toBe("v");
+          const localInstance = ctx.get("localInstance") as unknown as {
+            tag: string;
+          };
+          expect(localInstance.tag).toBe("v");
           order.push("mounted-b");
           ctx.effect(() => () => {
             order.push("dispose-mounted-effect");
@@ -233,7 +240,7 @@ describe("composePlugins 装配", () => {
         },
       }),
     ]);
-    expect(order).toEqual(["factory-viewer", "mounted-b", "mounted-c"]);
+    expect(order).toEqual(["factory-localInstance", "mounted-b", "mounted-c"]);
     kernel.dispose();
     expect(order[order.length - 1]).toBe("dispose-mounted-effect");
   });
@@ -244,17 +251,17 @@ describe("composePlugins 装配", () => {
       makeEnv(),
       [
         plugin("p", {
-          inject: ["viewer"],
+          inject: ["localInstance"],
           onApply(ctx) {
-            ctx.register("viewer", factorySpy);
+            ctx.register("localInstance", factorySpy);
           },
         }),
       ],
-      { overrides: { viewer: { tag: "override" } as never } },
+      { overrides: { localInstance: { tag: "override" } as never } },
     );
-    expect((kernel.get("viewer") as unknown as { tag: string }).tag).toBe(
-      "override",
-    );
+    expect(
+      (kernel.get("localInstance") as unknown as { tag: string }).tag,
+    ).toBe("override");
     expect(factorySpy).not.toHaveBeenCalled();
     kernel.dispose();
   });

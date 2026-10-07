@@ -14,6 +14,7 @@ export interface ToolGateSources {
   /** 执行模式硬约束（solo 全禁 / plan 只读）。 */
   modeVerdict: (
     toolName: string,
+    detail?: { subagentReadOnly?: boolean },
   ) => { allowed: true } | { allowed: false; reason: string };
   /** 权限档判定；未挂载权限缝时省略（该维度不设限）。 */
   permissionVerdict?: (
@@ -22,8 +23,8 @@ export interface ToolGateSources {
 }
 
 export function composeToolGate(sources: ToolGateSources): ToolGate {
-  return (toolName) => {
-    const mode = sources.modeVerdict(toolName);
+  return (toolName, detail) => {
+    const mode = sources.modeVerdict(toolName, detail);
     if (!mode.allowed) {
       return mode;
     }

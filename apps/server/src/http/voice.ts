@@ -11,9 +11,11 @@ import {
   voiceSpeakRequestSchema,
   voiceTranscribeResponseSchema,
 } from "@kenfutwork/shared";
-import type { FastifyInstance, FastifyReply } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { LocalAccessError } from "../features/local-access/types.js";
+import { LocalInstanceError } from "../features/local-instance/service.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import type { LocalInstanceService } from "../features/local-instance/types.js";
 import { VoiceAudioError } from "../features/voice/audio.js";
 import {
   VoiceModelError,
@@ -48,9 +50,9 @@ const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
 export async function registerVoiceRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     voiceService: VoiceService;
-    viewerService: ViewerService;
+    localInstance: LocalInstanceService;
     /**
      * 内置模型的下载 / 删除（规划 §5）。缺席时只提供目录与设置读写
      * ——"未装"要表现在路由不存在（404）而不是给个会炸的假接口。
@@ -60,9 +62,15 @@ export async function registerVoiceRoutes(
 ) {
   const { modelStore } = options;
 
+  async function authenticate(request: FastifyRequest) {
+    const actor = await options.localAccess.authenticate(request);
+    if (actor) await options.localInstance.resolve(actor);
+    return actor;
+  }
+
   /** 单条候选（下载 / 取消 / 删除后回的那条）。 */
   async function findCandidate(
-    user: Awaited<ReturnType<RequestAuthenticator["authenticate"]>>,
+    user: Awaited<ReturnType<LocalAccessVerifier["authenticate"]>>,
     modelId: string,
   ) {
     if (!user) throw new VoiceUnavailableError("未认证。");
@@ -81,7 +89,7 @@ export async function registerVoiceRoutes(
 
     app.get("/api/voice/models", async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
+        const user = await authenticate(request);
         if (!user) return sendUnauthorized(reply);
         const models = await options.voiceService.listCandidates(user);
         return reply
@@ -98,7 +106,7 @@ export async function registerVoiceRoutes(
       "/api/voice/models/:modelId/download",
       async (request, reply) => {
         try {
-          const user = await options.auth.authenticate(request);
+          const user = await authenticate(request);
           if (!user) return sendUnauthorized(reply);
           // **先校验再动手**：路由自己挡住未知/非内置 id，不把「能不能下」这件事
           // 交给 store 的副作用路径去发现（那里的失败发生在已经开下载之后）
@@ -120,7 +128,7 @@ export async function registerVoiceRoutes(
       "/api/voice/models/:modelId/download",
       async (request, reply) => {
         try {
-          const user = await options.auth.authenticate(request);
+          const user = await authenticate(request);
           if (!user) return sendUnauthorized(reply);
           store.cancel(request.params.modelId);
           const model = await findCandidate(user, request.params.modelId);
@@ -137,7 +145,7 @@ export async function registerVoiceRoutes(
       "/api/voice/models/:modelId",
       async (request, reply) => {
         try {
-          const user = await options.auth.authenticate(request);
+          const user = await authenticate(request);
           if (!user) return sendUnauthorized(reply);
           await store.remove(request.params.modelId);
           const model = await findCandidate(user, request.params.modelId);
@@ -157,7 +165,7 @@ export async function registerVoiceRoutes(
    */
   app.get("/api/voice/diagnose", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await authenticate(request);
       if (!user) return sendUnauthorized(reply);
       return reply.code(200).send(
         voiceDiagnoseResponseSchema.parse({
@@ -171,15 +179,14 @@ export async function registerVoiceRoutes(
 
   app.post("/api/voice/diagnose", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await authenticate(request);
       if (!user) return sendUnauthorized(reply);
-      const viewer = await options.viewerService.ensureViewer(user);
       const controller = new AbortController();
       // 客户端断开即中止（含「取消检测」）：别让探针在没人等的时候继续跑
       request.raw.once("close", () => controller.abort());
       const report = await options.voiceService.diagnose(
         user,
-        viewer.workspace.id,
+        user.instanceId,
         controller.signal,
       );
       return reply
@@ -192,12 +199,11 @@ export async function registerVoiceRoutes(
 
   app.get("/api/voice/settings", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await authenticate(request);
       if (!user) return sendUnauthorized(reply);
-      const viewer = await options.viewerService.ensureViewer(user);
       const settings = await options.voiceService.getSettings(
         user,
-        viewer.workspace.id,
+        user.instanceId,
       );
       return reply
         .code(200)
@@ -209,13 +215,12 @@ export async function registerVoiceRoutes(
 
   app.put("/api/voice/settings", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await authenticate(request);
       if (!user) return sendUnauthorized(reply);
       const payload = voiceSettingsUpdateRequestSchema.parse(request.body);
-      const viewer = await options.viewerService.ensureViewer(user);
       const settings = await options.voiceService.updateSettings(
         user,
-        viewer.workspace.id,
+        user.instanceId,
         payload,
       );
       return reply
@@ -228,7 +233,7 @@ export async function registerVoiceRoutes(
 
   app.post("/api/voice/transcribe", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await authenticate(request);
       if (!user) return sendUnauthorized(reply);
 
       const file = await request.file();
@@ -265,11 +270,10 @@ export async function registerVoiceRoutes(
         );
       }
 
-      const viewer = await options.viewerService.ensureViewer(user);
       const { impl: transcriber, label } =
         await options.voiceService.resolveTranscriber(
           user,
-          viewer.workspace.id,
+          user.instanceId,
         );
       const { text } = await transcriber.transcribe(audio);
       request.log.info(
@@ -294,16 +298,15 @@ export async function registerVoiceRoutes(
    */
   app.post("/api/voice/speak", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await authenticate(request);
       if (!user) return sendUnauthorized(reply);
       const payload = voiceSpeakRequestSchema.parse(request.body);
-      const viewer = await options.viewerService.ensureViewer(user);
       const controller = new AbortController();
       request.raw.once("close", () => controller.abort());
       const { impl: synthesizer } =
         await options.voiceService.resolveSynthesizer(
           user,
-          viewer.workspace.id,
+          user.instanceId,
         );
       const { audio, mimeType } = await synthesizer.synthesize(payload.text, {
         signal: controller.signal,
@@ -329,16 +332,15 @@ export async function registerVoiceRoutes(
    */
   app.post("/api/voice/refine", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await authenticate(request);
       if (!user) return sendUnauthorized(reply);
       const payload = voiceRefineRequestSchema.parse(request.body);
-      const viewer = await options.viewerService.ensureViewer(user);
       const controller = new AbortController();
       // 客户端断开即中止（用户在撤销窗口里取消时不必再等模型）
       request.raw.once("close", () => controller.abort());
       const prompt = await options.voiceService.refine(
         user,
-        viewer.workspace.id,
+        user.instanceId,
         {
           text: payload.text,
           ...(payload.recentMessages
@@ -374,6 +376,11 @@ function sendInvalidInput(reply: FastifyReply, message: string) {
 }
 
 function sendVoiceError(error: unknown, reply: FastifyReply) {
+  if (error instanceof LocalAccessError || error instanceof LocalInstanceError) {
+    return reply.code(error.statusCode).send(applicationErrorResponseSchema.parse({
+      error: { code: error.code, message: error.message },
+    }));
+  }
   // 包体不符合契约 → 400（判错的代价是「把客户端错误报成 500」，见 zod-error 的注释）
   if (isZodError(error)) {
     return sendInvalidInput(reply, describeZodIssues(error.issues));

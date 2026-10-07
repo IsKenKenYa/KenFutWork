@@ -4,7 +4,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAgentModel } from "@/hooks/use-agent-model";
 import { fetchModels } from "@/lib/server-api";
-import { loadSession } from "@/lib/session";
 
 type ModelOption = {
   id: string;
@@ -67,15 +66,8 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
   // Fetch available models（带凭证时并入 BYOK 实例目录；失败回退匿名目录）
   useEffect(() => {
     const load = async () => {
-      let token: string | undefined;
       try {
-        const sessionFromStore = await loadSession();
-        token = sessionFromStore?.access_token;
-      } catch {
-        token = undefined;
-      }
-      try {
-        const data = await fetchModels(token);
+        const data = await fetchModels();
         setModels(data.models);
       } catch {
         setModels([]);

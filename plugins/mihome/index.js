@@ -2,14 +2,14 @@
  * 米家插件：把米家设备接进工作台——侧栏面板可看可控制，agent 也能直接操作。
  *
  * 能力面：`tools`（agent 工具）+ `routes`（面板用的 HTTP 面）+ `ui`（侧栏入口）
- * + `storage`（米家会话加密落库，服务端重启后免扫码）。
+ * + `storage`（米家会话持久保存，服务端重启后免扫码）。
  *
  * 与内核的约定：
  * - 路由**默认私有**（要求登录）：面板是同源 iframe，宿主会经 `postMessage` 把令牌递进来
  *   （`apps/web/src/lib/plugin-panels.tsx` 的握手），面板带 `Authorization` 调这里的路由；
- * - 工作区由调用方显式传入：路由取 `request.workspaceId`、工具取执行上下文 `exec.workspaceId`，
- *   插件存储按工作区隔离（多用户自托管时各连各的米家账号）；
- * - 米家会话只落在插件存储里（值加密落库、HTTP 永不回显），进程内另存一份内存副本省往返。
+ * - 实例由调用方显式传入：路由取 `request.instanceId`、工具取执行上下文 `exec.instanceId`，
+ *   插件存储按实例隔离（多用户自托管时各连各的米家账号）；
+ * - 米家会话只落在插件存储里（值保存在实例私有存储、HTTP 永不回显），进程内另存一份内存副本省往返。
  */
 
 import {
@@ -50,66 +50,66 @@ export function apply(ctx) {
   const client = createMihomeClient({ logger: ctx.logger });
   const specs = createSpecResolver({ logger: ctx.logger });
 
-  /** 会话内存副本（键=工作区）：省掉每次面板轮询的存储解密。 */
+  /** 会话内存副本（键=实例）：省掉每次面板轮询的存储解密。 */
   const sessions = new Map();
-  /** 设备列表缓存（键=工作区）。 */
+  /** 设备列表缓存（键=实例）。 */
   const deviceCache = new Map();
   /** 二维码登录会话（键=随机 id）。 */
   const qrSessions = new Map();
 
-  function requireWorkspace(workspaceId, where) {
-    if (typeof workspaceId !== "string" || workspaceId.trim() === "") {
+  function requireInstance(instanceId, where) {
+    if (typeof instanceId !== "string" || instanceId.trim() === "") {
       throw new Error(
-        `${where}缺少工作区上下文（路由需登录态、工具需 agent 运行上下文）——插件存储按工作区隔离，不能凭空取一个。`,
+        `${where}缺少实例上下文（路由需本机接入上下文、工具需 agent 运行上下文）——插件存储按实例隔离，不能凭空取一个。`,
       );
     }
-    return workspaceId;
+    return instanceId;
   }
 
-  async function readSession(workspaceId) {
-    const cached = sessions.get(workspaceId);
+  async function readSession(instanceId) {
+    const cached = sessions.get(instanceId);
     if (cached) return cached;
-    const raw = await ctx.storage.get(workspaceId, SESSION_KEY);
+    const raw = await ctx.storage.get(instanceId, SESSION_KEY);
     if (!raw) return null;
     const session = JSON.parse(raw);
     // 旧 `xiaomiio` 会话不能迁移成现代 `mijia` 会话（serviceToken 绑定 sid）。
     // 与其显示「已连接 + 0 设备」这种假成功，不如自动清掉，让用户只重扫一次正确的码。
     if (session.authVersion !== MIHOME_AUTH_VERSION) {
-      await ctx.storage.remove(workspaceId, SESSION_KEY);
+      await ctx.storage.remove(instanceId, SESSION_KEY);
       return null;
     }
-    sessions.set(workspaceId, session);
+    sessions.set(instanceId, session);
     return session;
   }
 
-  async function writeSession(workspaceId, session) {
-    sessions.set(workspaceId, session);
+  async function writeSession(instanceId, session) {
+    sessions.set(instanceId, session);
     await ctx.storage.set(
-      workspaceId,
+      instanceId,
       SESSION_KEY,
       JSON.stringify({ ...session, savedAt: new Date().toISOString() }),
     );
-    deviceCache.delete(workspaceId);
+    deviceCache.delete(instanceId);
   }
 
-  async function clearSession(workspaceId) {
-    sessions.delete(workspaceId);
-    deviceCache.delete(workspaceId);
-    await ctx.storage.remove(workspaceId, SESSION_KEY);
+  async function clearSession(instanceId) {
+    sessions.delete(instanceId);
+    deviceCache.delete(instanceId);
+    await ctx.storage.remove(instanceId, SESSION_KEY);
   }
 
   /**
    * 设备 API 用的就是扫码登录会话本身（CookieJar 见 `apiCookieJar`），无需任何兑换步骤；
    * 这里只做读取与缓存。
    */
-  async function loadDevices(workspaceId, session, { refresh = false } = {}) {
-    const cached = deviceCache.get(workspaceId);
+  async function loadDevices(instanceId, session, { refresh = false } = {}) {
+    const cached = deviceCache.get(instanceId);
     if (!refresh && cached && Date.now() - cached.at < DEVICE_CACHE_TTL_MS) {
       return cached;
     }
     const { devices, homeCount } = await client.listDevices(session);
     const entry = { at: Date.now(), list: devices, homeCount };
-    deviceCache.set(workspaceId, entry);
+    deviceCache.set(instanceId, entry);
     return entry;
   }
 
@@ -191,12 +191,12 @@ export function apply(ctx) {
     };
   }
 
-  // === 路由（私有：面板经宿主握手拿到令牌后带 Authorization 调用）===
+  // === 路由（私有：面板使用本机HttpOnly会话cookie，实例由服务端解析）===
 
   ctx.routes.register({
     path: "login/qr",
     handler: async (request) => {
-      const workspaceId = requireWorkspace(request.workspaceId, "获取二维码");
+      const instanceId = requireInstance(request.instanceId, "获取二维码");
       const { qrUrl, lp, timeout, auth } = await client.createQrLogin();
       const sessionId = `qr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
       for (const [id, item] of qrSessions) {
@@ -206,7 +206,7 @@ export function apply(ctx) {
       qrSessions.set(sessionId, {
         lp,
         auth,
-        workspaceId,
+        instanceId,
         at: Date.now(),
       });
       return { status: 200, body: { sessionId, qrUrl, timeout } };
@@ -216,10 +216,10 @@ export function apply(ctx) {
   ctx.routes.register({
     path: "login/poll",
     handler: async (request) => {
-      const workspaceId = requireWorkspace(request.workspaceId, "轮询扫码结果");
+      const instanceId = requireInstance(request.instanceId, "轮询扫码结果");
       const sessionId = request.query.sessionId ?? "";
       const entry = qrSessions.get(sessionId);
-      if (!entry || entry.workspaceId !== workspaceId) {
+      if (!entry || entry.instanceId !== instanceId) {
         return {
           status: 410,
           body: { error: "二维码会话已失效，请重新获取。", code: "qr_expired" },
@@ -237,7 +237,7 @@ export function apply(ctx) {
           },
         };
       }
-      await writeSession(workspaceId, result.session);
+      await writeSession(instanceId, result.session);
       qrSessions.delete(sessionId);
       return { status: 200, body: { status: "ok" } };
     },
@@ -246,8 +246,8 @@ export function apply(ctx) {
   ctx.routes.register({
     path: "status",
     handler: async (request) => {
-      const workspaceId = requireWorkspace(request.workspaceId, "读取连接状态");
-      const session = await readSession(workspaceId);
+      const instanceId = requireInstance(request.instanceId, "读取连接状态");
+      const session = await readSession(instanceId);
       return {
         status: 200,
         body: {
@@ -264,10 +264,10 @@ export function apply(ctx) {
   ctx.routes.register({
     path: "devices",
     handler: async (request) => {
-      const workspaceId = requireWorkspace(request.workspaceId, "列设备");
-      const session = await readSession(workspaceId);
+      const instanceId = requireInstance(request.instanceId, "列设备");
+      const session = await readSession(instanceId);
       if (!session) return notConnectedError();
-      const { list, homeCount } = await loadDevices(workspaceId, session, {
+      const { list, homeCount } = await loadDevices(instanceId, session, {
         refresh: request.query.refresh === "1",
       });
       const view = await buildDeviceView(session, list, {
@@ -296,8 +296,8 @@ export function apply(ctx) {
     path: "control",
     method: "POST",
     handler: async (request) => {
-      const workspaceId = requireWorkspace(request.workspaceId, "控制设备");
-      const session = await readSession(workspaceId);
+      const instanceId = requireInstance(request.instanceId, "控制设备");
+      const session = await readSession(instanceId);
       if (!session) return notConnectedError();
       const body = request.body ?? {};
       const did = typeof body.did === "string" ? body.did : "";
@@ -340,8 +340,8 @@ export function apply(ctx) {
     path: "disconnect",
     method: "POST",
     handler: async (request) => {
-      const workspaceId = requireWorkspace(request.workspaceId, "断开连接");
-      await clearSession(workspaceId);
+      const instanceId = requireInstance(request.instanceId, "断开连接");
+      await clearSession(instanceId);
       return { status: 200, body: { ok: true } };
     },
   });
@@ -371,14 +371,14 @@ export function apply(ctx) {
       },
     },
     execute: async (args, exec) => {
-      const workspaceId = requireWorkspace(exec?.workspaceId, "工具调用");
-      const session = await readSession(workspaceId);
+      const instanceId = requireInstance(exec?.instanceId, "工具调用");
+      const session = await readSession(instanceId);
       if (!session) {
         throw new Error(
           "尚未连接米家账号：请在工作台侧栏打开「米家」面板扫码连接一次（之后服务端重启也无需重扫）。",
         );
       }
-      const { list, homeCount } = await loadDevices(workspaceId, session, {
+      const { list, homeCount } = await loadDevices(instanceId, session, {
         refresh: args?.refresh === true,
       });
       const view = await buildDeviceView(session, list, {
@@ -437,8 +437,8 @@ export function apply(ctx) {
       required: ["did", "siid", "piid", "value"],
     },
     execute: async (args, exec) => {
-      const workspaceId = requireWorkspace(exec?.workspaceId, "工具调用");
-      const session = await readSession(workspaceId);
+      const instanceId = requireInstance(exec?.instanceId, "工具调用");
+      const session = await readSession(instanceId);
       if (!session) {
         throw new Error(
           "尚未连接米家账号：请在工作台侧栏打开「米家」面板扫码连接一次（之后服务端重启也无需重扫）。",

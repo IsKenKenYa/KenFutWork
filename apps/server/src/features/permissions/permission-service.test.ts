@@ -6,6 +6,19 @@ import {
 } from "./permission-service.js";
 
 describe("permissions 缝（DEC-4）", () => {
+  it("不带调用绑定的 once 不再假装授权成功", () => {
+    const service = createPermissionService();
+    expect(() => service.approve("Write", { scope: "once" })).toThrow(/绑定/);
+    expect(service.evaluate({ toolName: "Write" }).decision).toBe("deny");
+  });
+
+  it("真实 Code 写入与命令工具在 default 档等待审批", () => {
+    const service = createPermissionService();
+    for (const toolName of ["Write", "Edit", "ApplyPatch", "Bash"]) {
+      expect(service.evaluate({ toolName }).decision, toolName).toBe("deny");
+    }
+  });
+
   it("安全工具在任意档位直接放行", () => {
     const svc = createPermissionService();
     expect(svc.evaluate({ toolName: "preview_file" }).decision).toBe("allow");

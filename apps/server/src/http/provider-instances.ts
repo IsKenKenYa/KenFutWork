@@ -9,7 +9,7 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import {
   type ModelProviderService,
   ModelProviderServiceError,
@@ -54,14 +54,14 @@ function sendError(
 export async function registerProviderInstanceRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     modelProviders: ModelProviderService;
   },
 ) {
   // GET /api/provider-instances — 列出实例（凭证红线：只含 hasCredential）
   app.get("/api/provider-instances", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) {
         return reply.code(401).send(
           unauthenticatedErrorResponseSchema.parse({
@@ -84,7 +84,7 @@ export async function registerProviderInstanceRoutes(
   // POST /api/provider-instances — 创建实例（apiKey 只写）
   app.post("/api/provider-instances", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) {
         return reply.code(401).send(
           unauthenticatedErrorResponseSchema.parse({
@@ -108,7 +108,7 @@ export async function registerProviderInstanceRoutes(
   // PATCH /api/provider-instances/:instanceId — 更新（apiKey 缺省即不改，更新即覆盖）
   app.patch("/api/provider-instances/:instanceId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) {
         return reply.code(401).send(
           unauthenticatedErrorResponseSchema.parse({
@@ -150,7 +150,7 @@ export async function registerProviderInstanceRoutes(
     "/api/provider-instances/:instanceId/probe",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
+        const user = await options.localAccess.authenticate(request);
         if (!user) {
           return reply.code(401).send(
             unauthenticatedErrorResponseSchema.parse({
@@ -176,7 +176,7 @@ export async function registerProviderInstanceRoutes(
   // DELETE /api/provider-instances/:instanceId
   app.delete("/api/provider-instances/:instanceId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) {
         return reply.code(401).send(
           unauthenticatedErrorResponseSchema.parse({

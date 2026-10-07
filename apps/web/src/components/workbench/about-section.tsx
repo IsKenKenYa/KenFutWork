@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
 import { getServerBaseUrl } from "@/lib/env";
+import { serverFetch } from "@/lib/local-access";
 import { SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
@@ -47,7 +48,7 @@ export function AboutSection() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${base}/api/health`)
+    serverFetch(`${base}/api/health`)
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((payload: { ok: boolean; version: string; service: string }) => {
         if (!cancelled) setHealth(payload);

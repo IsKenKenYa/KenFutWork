@@ -1,5 +1,7 @@
 import {
   applicationErrorResponseSchema,
+  instanceSkillListResponseSchema,
+  instanceSkillToggleRequestSchema,
   sandboxSkillImportRequestSchema,
   sandboxSkillPackageListResponseSchema,
   skillCreateRequestSchema,
@@ -8,24 +10,31 @@ import {
   skillListResponseSchema,
   skillUpdateRequestSchema,
   unauthenticatedErrorResponseSchema,
-  workspaceSkillListResponseSchema,
-  workspaceSkillToggleRequestSchema,
+  workDirectoryTargetSchema,
 } from "@kenfutwork/shared";
-import type { FastifyInstance, FastifyReply } from "fastify";
-import type {
-  AuthenticatedUser,
-  RequestAuthenticator,
-} from "../features/auth/types.js";
-import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { CanvasRepository } from "../features/canvas/repository.js";
+import {
+  ExecutionScopeError,
+  type ExecutionScopes,
+} from "../features/execution/scope-service.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import { LocalInstanceError } from "../features/local-instance/service.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../features/local-instance/types.js";
 import {
   SQLSTATE_UNIQUE_VIOLATION,
   SqlError,
 } from "../features/persistence/errors.js";
+import type { ProjectService } from "../features/projects/project-service.js";
 import type { SkillCatalogRepository } from "../features/skills/repository.js";
 import {
   listSandboxSkillPackages,
+  listScopedSkillPackages,
   readSandboxSkillPackage,
+  readScopedSkillPackage,
 } from "../features/skills/sandbox-skill-packages.js";
 import {
   buildSkillFromFiles,
@@ -34,7 +43,7 @@ import {
   SkillImportError,
 } from "../features/skills/skill-import-service.js";
 import { generateSlug } from "../features/skills/slug.js";
-import { resolveSandboxForCanvas } from "./sandbox-scope.js";
+import { resolveWorkDirectoryTarget } from "./sandbox-scope.js";
 import { isZodError } from "./zod-error.js";
 
 type SkillErrorCode =
@@ -52,28 +61,53 @@ type SkillErrorCode =
 export async function registerSkillRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     /** 安装态与目录的数据访问（persistence 缝）。 */
     skillsRepository: SkillCatalogRepository;
-    viewerService: ViewerService;
+    localInstance: LocalInstanceService;
     /** 「从工作目录导入」需要：画布归属校验 + 沙箱目录解析（与 agent/git 同一处）。 */
     canvasRepository: CanvasRepository;
+    projects: Pick<ProjectService, "getProject">;
+    executionScopes: Pick<ExecutionScopes, "openTask">;
     sandboxRoot?: string | undefined;
     canvasWorkDirs?: Record<string, string> | undefined;
     /** 项目绑定的本机工作目录（`projects.work_dir`）；界面绑定优先于环境变量映射。 */
     projectWorkDirLoader?:
-      | ((canvasId: string) => Promise<string | null>)
+      | ((instanceId: string, canvasId: string) => Promise<string | null>)
       | undefined;
   },
 ) {
+  async function authenticate(
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<LocalActor | null> {
+    const actor = await options.localAccess.authenticate(request);
+    if (!actor) {
+      sendUnauthenticated(reply);
+      return null;
+    }
+    try {
+      await options.localInstance.resolve(actor);
+    } catch (error) {
+      if (!(error instanceof LocalInstanceError)) throw error;
+      reply.code(error.statusCode).send(
+        applicationErrorResponseSchema.parse({
+          error: { code: error.code, message: error.message },
+        }),
+      );
+      return null;
+    }
+    return actor;
+  }
+
   /**
-   * 落库 + 装进当前工作区（URL 导入与工作目录导入共用，避免两套持久化路径漂移）。
+   * 落库 + 装进当前实例（URL 导入与工作目录导入共用，避免两套持久化路径漂移）。
    *
    * 同名 slug 冲突时抛 SqlError（由路由转 409）；返回读回的技能行与文件列表。
    */
   const persistImportedSkill = async (
-    user: { id: string },
-    workspaceId: string,
+    user: LocalActor,
+    instanceId: string,
     imported: ImportedSkill,
   ): Promise<{
     skillRow: Record<string, unknown>;
@@ -81,20 +115,24 @@ export async function registerSkillRoutes(
     files: ReturnType<typeof mapSkillFileRow>[];
   }> => {
     const slug = generateSlug(imported.manifest.name);
-    const skillRow = await options.skillsRepository.insertOwned(user.id, {
-      author: imported.manifest.author ?? "unknown",
-      category: "custom",
-      description: imported.manifest.description,
-      license: imported.manifest.license ?? null,
-      metadata: {
-        ...(imported.manifest.metadata ?? {}),
-        source_url: imported.sourceUrl,
+    const skillRow = await options.skillsRepository.insertOwned(
+      user.instanceId,
+      {
+        createdByClientId: user.accessClientId,
+        author: imported.manifest.author ?? "unknown",
+        category: "custom",
+        description: imported.manifest.description,
+        license: imported.manifest.license ?? null,
+        metadata: {
+          ...(imported.manifest.metadata ?? {}),
+          source_url: imported.sourceUrl,
+        },
+        name: imported.manifest.name,
+        skillContent: imported.skillContent,
+        slug,
+        version: imported.manifest.version ?? "1.0",
       },
-      name: imported.manifest.name,
-      skillContent: imported.skillContent,
-      slug,
-      version: imported.manifest.version ?? "1.0",
-    });
+    );
     if (!skillRow) {
       throw new SkillImportError(
         "save_failed",
@@ -105,7 +143,7 @@ export async function registerSkillRoutes(
 
     if (imported.files.length > 0) {
       await options.skillsRepository
-        .insertFilesForOwnedSkill(user.id, skillId, imported.files)
+        .insertFilesForOwnedSkill(user.instanceId, skillId, imported.files)
         .catch((error: unknown) => {
           // 非致命：技能本体已建，附带文件失败只记日志
           app.log.error({ err: error }, "skill file insert failed (non-fatal)");
@@ -113,34 +151,20 @@ export async function registerSkillRoutes(
         });
     }
 
-    // 自动装进当前工作区：导入即启用，用户不必再去点一次「安装」
+    // 自动装进当前实例：导入即启用，用户不必再去点一次「安装」
     await options.skillsRepository.upsertInstallation({
       enabled: true,
-      installedBy: user.id,
+      installedByClientId: user.accessClientId,
       skillId,
-      workspaceId,
+      instanceId,
     });
 
     const fileData = await options.skillsRepository.listFilesForVisibleSkill(
-      user.id,
+      user.instanceId,
       skillId,
     );
     return { skillRow, skillId, files: fileData.map(mapSkillFileRow) };
   };
-
-  /** canvasId → 已校验归属的沙箱目录（与插件安装共用同一判定）。 */
-  const sandboxDirFor = (user: AuthenticatedUser, canvasId: string) =>
-    resolveSandboxForCanvas(
-      {
-        viewerService: options.viewerService,
-        canvasRepository: options.canvasRepository,
-        sandboxRoot: options.sandboxRoot,
-        canvasWorkDirs: options.canvasWorkDirs,
-        projectWorkDirLoader: options.projectWorkDirLoader,
-      },
-      user,
-      canvasId,
-    );
 
   // =========================================================================
   // Skills Registry (public catalog)
@@ -149,14 +173,14 @@ export async function registerSkillRoutes(
   // GET /api/skills — list all available skills
   app.get("/api/skills", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-      if (!user) return sendUnauthenticated(reply);
+      const user = await authenticate(request, reply);
+      if (!user) return reply;
 
       let data: Awaited<
         ReturnType<typeof options.skillsRepository.listVisible>
       >;
       try {
-        data = await options.skillsRepository.listVisible(user.id);
+        data = await options.skillsRepository.listVisible(user.instanceId);
       } catch (error) {
         request.log.error({ err: error }, "skills list query failed");
         return sendSkillError(
@@ -181,15 +205,18 @@ export async function registerSkillRoutes(
   // GET /api/skills/:id — get skill detail
   app.get("/api/skills/:id", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-      if (!user) return sendUnauthenticated(reply);
+      const user = await authenticate(request, reply);
+      if (!user) return reply;
 
       const { id } = request.params as { id: string };
       let data: Awaited<
         ReturnType<typeof options.skillsRepository.findVisibleById>
       >;
       try {
-        data = await options.skillsRepository.findVisibleById(user.id, id);
+        data = await options.skillsRepository.findVisibleById(
+          user.instanceId,
+          id,
+        );
       } catch (error) {
         request.log.error({ err: error }, "skill detail query failed");
         return sendSkillError(
@@ -210,7 +237,7 @@ export async function registerSkillRoutes(
 
       // Fetch associated files（经父链可见性；不含跨用户 skill 的文件）
       const fileData = await options.skillsRepository.listFilesForVisibleSkill(
-        user.id,
+        user.instanceId,
         id,
       );
 
@@ -232,8 +259,8 @@ export async function registerSkillRoutes(
   // GET /api/skills/:id/files — list all files for a skill
   app.get("/api/skills/:id/files", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-      if (!user) return sendUnauthenticated(reply);
+      const user = await authenticate(request, reply);
+      if (!user) return reply;
 
       const { id } = request.params as { id: string };
 
@@ -242,7 +269,7 @@ export async function registerSkillRoutes(
       >;
       try {
         data = await options.skillsRepository.listFilesForVisibleSkill(
-          user.id,
+          user.instanceId,
           id,
         );
       } catch (error) {
@@ -268,16 +295,17 @@ export async function registerSkillRoutes(
   // POST /api/skills — create custom skill
   app.post("/api/skills", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-      if (!user) return sendUnauthenticated(reply);
+      const user = await authenticate(request, reply);
+      if (!user) return reply;
 
       const payload = skillCreateRequestSchema.parse(request.body);
       const slug = generateSlug(payload.name);
 
       let data: Record<string, unknown> | null;
       try {
-        data = await options.skillsRepository.insertOwned(user.id, {
+        data = await options.skillsRepository.insertOwned(user.instanceId, {
           category: payload.category,
+          createdByClientId: user.accessClientId,
           description: payload.description,
           iconName: payload.iconName ?? null,
           name: payload.name,
@@ -317,7 +345,7 @@ export async function registerSkillRoutes(
       // Insert associated files if provided
       if (payload.files?.length) {
         const fileError = await options.skillsRepository
-          .insertFilesForOwnedSkill(user.id, skillId, payload.files)
+          .insertFilesForOwnedSkill(user.instanceId, skillId, payload.files)
           .then(() => null)
           .catch((caught: unknown) => caught);
         if (fileError) {
@@ -331,7 +359,7 @@ export async function registerSkillRoutes(
 
       // Fetch files back so the response includes them
       const fileData = await options.skillsRepository.listFilesForVisibleSkill(
-        user.id,
+        user.instanceId,
         skillId,
       );
 
@@ -360,17 +388,16 @@ export async function registerSkillRoutes(
   // POST /api/skills/import — import skill from external URL (GitHub / npm tarball / zip)
   app.post("/api/skills/import", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-      if (!user) return sendUnauthenticated(reply);
+      const user = await authenticate(request, reply);
+      if (!user) return reply;
 
       const { url } = skillImportRequestSchema.parse(request.body);
-      const viewer = await options.viewerService.ensureViewer(user);
-      const workspaceId = viewer.workspace.id;
+      const { instanceId } = await options.localInstance.resolve(user);
 
       // Import skill from external URL (downloads SKILL.md + associated files)
       const imported = await importSkillFromUrl(url);
 
-      const persisted = await persistImportedSkill(user, workspaceId, imported);
+      const persisted = await persistImportedSkill(user, instanceId, imported);
 
       const skill = {
         ...mapSkillDetailRow(persisted.skillRow as unknown as SkillRow),
@@ -418,76 +445,70 @@ export async function registerSkillRoutes(
 
   // GET /api/skills/sandbox-packages?canvasId=… — 列出工作目录里的技能包候选
   // （「从工作目录导入」用：agent 在沙箱里造出来的技能包就在这儿被发现）
-  app.get<{ Querystring: { canvasId?: string } }>(
+  app.get<{ Querystring: { canvasId?: string; taskId?: string } }>(
     "/api/skills/sandbox-packages",
     async (request, reply) => {
       try {
-        const user = await options.auth.authenticate(request);
-        if (!user) return sendUnauthenticated(reply);
-        const canvasId = request.query.canvasId ?? "";
-        if (!canvasId) {
+        const user = await authenticate(request, reply);
+        if (!user) return reply;
+        const target = workDirectoryTargetSchema.safeParse(request.query);
+        if (!target.success)
           return sendSkillError(
             reply,
             "skill_query_failed",
-            "缺少 canvasId。",
+            "请明确提供 Task 或可视化 Canvas 身份。",
             400,
           );
-        }
-        const sandboxDir = await sandboxDirFor(user, canvasId);
-        if (!sandboxDir) {
-          return sendSkillError(
-            reply,
-            "skill_not_found",
-            "画布不存在或不属于当前工作区。",
-            404,
-          );
-        }
-        return reply.code(200).send(
-          sandboxSkillPackageListResponseSchema.parse({
-            packages: listSandboxSkillPackages(sandboxDir),
-          }),
+        const directory = await resolveWorkDirectoryTarget(
+          options,
+          user,
+          target.data,
         );
+        const packages = directory.scope
+          ? await listScopedSkillPackages(directory.scope)
+          : listSandboxSkillPackages(directory.rootDirectory);
+        return reply
+          .code(200)
+          .send(sandboxSkillPackageListResponseSchema.parse({ packages }));
       } catch (error) {
         request.log.error({ err: error }, "sandbox skill package scan failed");
         return sendSkillError(
           reply,
           "skill_query_failed",
-          "扫描工作目录失败。",
+          error instanceof Error ? error.message : "扫描工作目录失败。",
+          error instanceof ExecutionScopeError ? error.statusCode : 400,
         );
       }
     },
   );
 
-  // POST /api/skills/sandbox-import — 把工作目录里的技能包导入并装进当前工作区
+  // POST /api/skills/sandbox-import — 把工作目录里的技能包导入并装进当前实例
   app.post("/api/skills/sandbox-import", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-      if (!user) return sendUnauthenticated(reply);
+      const user = await authenticate(request, reply);
+      if (!user) return reply;
 
       const payload = sandboxSkillImportRequestSchema.parse(request.body);
-      const viewer = await options.viewerService.ensureViewer(user);
-      const workspaceId = viewer.workspace.id;
+      const { instanceId } = await options.localInstance.resolve(user);
 
-      const sandboxDir = await sandboxDirFor(user, payload.canvasId);
-      if (!sandboxDir) {
-        return sendSkillError(
-          reply,
-          "skill_not_found",
-          "画布不存在或不属于当前工作区。",
-          404,
-        );
-      }
+      const target =
+        "taskId" in payload
+          ? { taskId: payload.taskId }
+          : { canvasId: payload.canvasId };
+      const directory = await resolveWorkDirectoryTarget(options, user, target);
 
       // 服务端自己读盘（不信任前端传内容）；越界/缺 SKILL.md 在这里报错
       let files: Array<{ path: string; content: string }>;
       try {
-        files = readSandboxSkillPackage(sandboxDir, payload.path);
+        files = directory.scope
+          ? await readScopedSkillPackage(directory.scope, payload.path)
+          : readSandboxSkillPackage(directory.rootDirectory, payload.path);
       } catch (error) {
         return sendSkillError(
           reply,
           "skill_import_failed",
           error instanceof Error ? error.message : "读取技能包失败。",
-          400,
+          error instanceof ExecutionScopeError ? error.statusCode : 400,
         );
       }
 
@@ -495,7 +516,7 @@ export async function registerSkillRoutes(
         label: "sandbox",
         url: `sandbox:${payload.path}`,
       });
-      const persisted = await persistImportedSkill(user, workspaceId, imported);
+      const persisted = await persistImportedSkill(user, instanceId, imported);
       const skill = {
         ...mapSkillDetailRow(persisted.skillRow as unknown as SkillRow),
         files: persisted.files,
@@ -527,6 +548,14 @@ export async function registerSkillRoutes(
       if (error instanceof SkillImportError) {
         return sendSkillError(reply, "skill_import_failed", error.message, 400);
       }
+      if (error instanceof ExecutionScopeError) {
+        return sendSkillError(
+          reply,
+          "skill_import_failed",
+          error.message,
+          error.statusCode,
+        );
+      }
       request.log.error({ err: error }, "sandbox skill import failed");
       return sendSkillError(
         reply,
@@ -539,8 +568,8 @@ export async function registerSkillRoutes(
   // PUT /api/skills/:id — update custom skill
   app.put("/api/skills/:id", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-      if (!user) return sendUnauthenticated(reply);
+      const user = await authenticate(request, reply);
+      if (!user) return reply;
 
       const { id } = request.params as { id: string };
       const payload = skillUpdateRequestSchema.parse(request.body);
@@ -572,9 +601,9 @@ export async function registerSkillRoutes(
       let data: Record<string, unknown> | null;
       let error: unknown;
       try {
-        // 仅本人创建的行；created_by 谓词写在语句里，不靠 RLS
+        // 仅当前实例的自定义技能，归属不依赖接入客户端。
         data = await options.skillsRepository.updateOwnedById(
-          user.id,
+          user.instanceId,
           id,
           updates,
         );
@@ -632,14 +661,17 @@ export async function registerSkillRoutes(
   // DELETE /api/skills/:id — delete custom skill
   app.delete("/api/skills/:id", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-      if (!user) return sendUnauthenticated(reply);
+      const user = await authenticate(request, reply);
+      if (!user) return reply;
 
       const { id } = request.params as { id: string };
       let count: number;
       try {
-        // 仅本人创建的行（created_by 谓词写在语句里，不靠 RLS）
-        count = await options.skillsRepository.deleteOwnedById(user.id, id);
+        // 仅当前实例的自定义技能，归属不依赖接入客户端。
+        count = await options.skillsRepository.deleteOwnedById(
+          user.instanceId,
+          id,
+        );
       } catch (error) {
         request.log.error({ err: error }, "skill delete failed");
         return sendSkillError(
@@ -670,28 +702,27 @@ export async function registerSkillRoutes(
   });
 
   // =========================================================================
-  // Workspace Skills (per-workspace installation)
+  // Instance Skills (per-instance installation)
   // =========================================================================
 
-  // GET /api/workspaces/skills — list installed skills for current workspace
-  app.get("/api/workspaces/skills", async (request, reply) => {
+  // GET /api/instance/skills — list installed skills for current instance
+  app.get("/api/instance/skills", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-      if (!user) return sendUnauthenticated(reply);
+      const user = await authenticate(request, reply);
+      if (!user) return reply;
 
-      const viewer = await options.viewerService.ensureViewer(user);
-      const workspaceId = viewer.workspace.id;
+      const { instanceId } = await options.localInstance.resolve(user);
       let data: Awaited<
         ReturnType<typeof options.skillsRepository.listInstalled>
       >;
       try {
-        data = await options.skillsRepository.listInstalled(workspaceId);
+        data = await options.skillsRepository.listInstalled(instanceId);
       } catch (error) {
-        request.log.error({ err: error }, "workspace skills list query failed");
+        request.log.error({ err: error }, "instance skills list query failed");
         return sendSkillError(
           reply,
           "skill_query_failed",
-          "Unable to load workspace skills.",
+          "Unable to load instance skills.",
         );
       }
 
@@ -715,22 +746,22 @@ export async function registerSkillRoutes(
 
       return reply
         .code(200)
-        .send(workspaceSkillListResponseSchema.parse({ skills }));
+        .send(instanceSkillListResponseSchema.parse({ skills }));
     } catch (error) {
-      request.log.error({ err: error }, "workspace skills list error");
+      request.log.error({ err: error }, "instance skills list error");
       return sendSkillError(
         reply,
         "skill_query_failed",
-        "Unable to load workspace skills.",
+        "Unable to load instance skills.",
       );
     }
   });
 
-  // POST /api/workspaces/skills — install a skill
-  app.post("/api/workspaces/skills", async (request, reply) => {
+  // POST /api/instance/skills — install a skill
+  app.post("/api/instance/skills", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-      if (!user) return sendUnauthenticated(reply);
+      const user = await authenticate(request, reply);
+      if (!user) return reply;
 
       const body = request.body as { skillId?: string };
       if (!body.skillId || typeof body.skillId !== "string") {
@@ -744,13 +775,12 @@ export async function registerSkillRoutes(
         );
       }
 
-      const viewer = await options.viewerService.ensureViewer(user);
-      const workspaceId = viewer.workspace.id;
+      const { instanceId } = await options.localInstance.resolve(user);
       // Verify skill exists（可见 = 内置/社区 或 自己创建，与 RLS 读策略同义）
       let skill: { id: string } | null;
       try {
         skill = await options.skillsRepository.findVisibleSkill(
-          user.id,
+          user.instanceId,
           body.skillId,
         );
       } catch {
@@ -769,9 +799,9 @@ export async function registerSkillRoutes(
       const installError = await options.skillsRepository
         .upsertInstallation({
           enabled: true,
-          installedBy: user.id,
+          installedByClientId: user.accessClientId,
           skillId: body.skillId,
-          workspaceId,
+          instanceId,
         })
         .then(() => null)
         .catch((error: unknown) => error);
@@ -796,18 +826,17 @@ export async function registerSkillRoutes(
     }
   });
 
-  // DELETE /api/workspaces/skills/:skillId — uninstall a skill
-  app.delete("/api/workspaces/skills/:skillId", async (request, reply) => {
+  // DELETE /api/instance/skills/:skillId — uninstall a skill
+  app.delete("/api/instance/skills/:skillId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-      if (!user) return sendUnauthenticated(reply);
+      const user = await authenticate(request, reply);
+      if (!user) return reply;
 
       const { skillId } = request.params as { skillId: string };
-      const viewer = await options.viewerService.ensureViewer(user);
-      const workspaceId = viewer.workspace.id;
+      const { instanceId } = await options.localInstance.resolve(user);
       let count: number;
       try {
-        count = await options.skillsRepository.uninstall(workspaceId, skillId);
+        count = await options.skillsRepository.uninstall(instanceId, skillId);
       } catch (error) {
         request.log.error({ err: error }, "skill uninstall failed");
         return sendSkillError(
@@ -821,7 +850,7 @@ export async function registerSkillRoutes(
         return sendSkillError(
           reply,
           "skill_not_found",
-          "Skill is not installed in this workspace.",
+          "Skill is not installed in this instance.",
           404,
         );
       }
@@ -837,21 +866,20 @@ export async function registerSkillRoutes(
     }
   });
 
-  // PATCH /api/workspaces/skills/:skillId — toggle enable/disable
-  app.patch("/api/workspaces/skills/:skillId", async (request, reply) => {
+  // PATCH /api/instance/skills/:skillId — toggle enable/disable
+  app.patch("/api/instance/skills/:skillId", async (request, reply) => {
     try {
-      const user = await options.auth.authenticate(request);
-      if (!user) return sendUnauthenticated(reply);
+      const user = await authenticate(request, reply);
+      if (!user) return reply;
 
       const { skillId } = request.params as { skillId: string };
-      const payload = workspaceSkillToggleRequestSchema.parse(request.body);
-      const viewer = await options.viewerService.ensureViewer(user);
-      const workspaceId = viewer.workspace.id;
+      const payload = instanceSkillToggleRequestSchema.parse(request.body);
+      const { instanceId } = await options.localInstance.resolve(user);
       // Verify skill exists in the catalog（可见性 = RLS 读策略等价物）
       let skill: { id: string } | null;
       try {
         skill = await options.skillsRepository.findVisibleSkill(
-          user.id,
+          user.instanceId,
           skillId,
         );
       } catch {
@@ -867,23 +895,17 @@ export async function registerSkillRoutes(
         );
       }
 
-      // Upsert: create workspace_skills row if not installed, or update enabled state
-      const toggleError = await options.skillsRepository
-        .upsertInstallation({
-          enabled: payload.enabled,
-          installedBy: user.id,
-          skillId,
-          workspaceId,
-        })
-        .then(() => null)
-        .catch((error: unknown) => error);
-
-      if (toggleError) {
-        request.log.error({ err: toggleError }, "skill toggle failed");
+      const changed = await options.skillsRepository.setEnabled(
+        instanceId,
+        skillId,
+        payload.enabled,
+      );
+      if (!changed) {
         return sendSkillError(
           reply,
-          "skill_toggle_failed",
-          "Unable to toggle skill.",
+          "skill_not_found",
+          "该技能未安装或已经卸载。",
+          404,
         );
       }
 
@@ -925,7 +947,7 @@ type SkillRow = {
   skill_content: string;
   metadata: Record<string, unknown> | null;
   is_featured: boolean;
-  created_by: string | null;
+  created_by_client_id: string | null;
   created_at: string;
   updated_at: string;
   // Added by 20260403100000_skill_files migration
@@ -970,7 +992,7 @@ function mapSkillDetailRow(row: SkillRow) {
     ...mapSkillRow(row),
     license: row.license,
     skillContent: row.skill_content,
-    createdBy: row.created_by,
+    createdByClientId: row.created_by_client_id,
     sourceUrl: row.source_url ?? null,
     packageName: row.package_name ?? null,
   };
@@ -981,7 +1003,7 @@ function sendUnauthenticated(reply: FastifyReply) {
     unauthenticatedErrorResponseSchema.parse({
       error: {
         code: "unauthorized",
-        message: "Missing or invalid bearer token.",
+        message: "缺少或无效的本机接入凭据。",
       },
     }),
   );

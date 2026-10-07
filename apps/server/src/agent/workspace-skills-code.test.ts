@@ -1,0 +1,156 @@
+import { expect, it } from "vitest";
+import { renderSkillsSection } from "../features/agent-runs/prompt-sections.js";
+import type { SkillCatalogRepository } from "../features/skills/repository.js";
+import { createInstanceSkillResourceReader } from "../features/skills/skill-resource-service.js";
+import { buildUserMessage } from "./runtime.js";
+import {
+  createRuntimeTestInstance,
+  RUNTIME_TEST_INSTANCE_ID,
+} from "./runtime-test-fixtures.js";
+import { createInstanceSkillsByInstanceLoader } from "./workspace-skills.js";
+
+function fixture() {
+  let enabled = true;
+  const queries: Array<{ instanceId: string; ids?: readonly string[] }> = [];
+  const repository: Pick<
+    SkillCatalogRepository,
+    "listInstanceSkills" | "listSkillFiles"
+  > = {
+    listInstanceSkills: async (instanceId) => {
+      queries.push({ instanceId });
+      return instanceId === RUNTIME_TEST_INSTANCE_ID
+        ? [
+            {
+              skillId: "actual-skill-id",
+              name: "实际技能",
+              slug: "installed-skill",
+              description: "Code真实正文",
+              skillContent: "---\nname: installed-skill\n---\n完整正文",
+              enabled,
+            },
+          ]
+        : [];
+    },
+    listSkillFiles: async (instanceId, ids) => {
+      queries.push({ instanceId, ids });
+      return instanceId === RUNTIME_TEST_INSTANCE_ID &&
+        ids.includes("actual-skill-id")
+        ? [
+            {
+              skillId: "actual-skill-id",
+              path: "scripts/check.ts",
+              content: "只读脚本正文",
+            },
+          ]
+        : [];
+    },
+  };
+  return {
+    repository,
+    queries,
+    disable: () => {
+      enabled = false;
+    },
+  };
+}
+
+it("Code实例安装技能不用Canvas JOIN，提示使用真实use_skill而非Native Read虚假路径", async () => {
+  const f = fixture();
+  const loader = createInstanceSkillsByInstanceLoader({
+    skills: f.repository,
+  });
+  const entries = await loader(RUNTIME_TEST_INSTANCE_ID);
+  expect(entries).toMatchObject([
+    {
+      name: "installed-skill",
+      path: "kenfutwork-skill:actual-skill-id",
+      content: expect.stringContaining("完整正文"),
+      files: [{ path: "scripts/check.ts" }],
+    },
+  ]);
+  const prompt = renderSkillsSection(entries);
+  expect(prompt).toContain("use_skill");
+  expect(prompt).not.toContain("Read `kenfutwork-skill:");
+  expect(
+    f.queries.every((entry) => entry.instanceId === RUNTIME_TEST_INSTANCE_ID),
+  ).toBe(true);
+});
+
+it("只读DB resource seam提供真实正文与附属资源，跨实例/停用/路径逃逸均不可读", async () => {
+  const f = fixture();
+  const reader = createInstanceSkillResourceReader({
+    localInstance: createRuntimeTestInstance(),
+    repository: f.repository,
+  });
+  expect(
+    await reader.read(RUNTIME_TEST_INSTANCE_ID, "installed-skill"),
+  ).toMatchObject({
+    resourceRef: "kenfutwork-skill:actual-skill-id",
+    resourcePath: "SKILL.md",
+    content: expect.stringContaining("完整正文"),
+  });
+  expect(
+    await reader.read(
+      RUNTIME_TEST_INSTANCE_ID,
+      "installed-skill",
+      "scripts/check.ts",
+    ),
+  ).toMatchObject({ content: "只读脚本正文" });
+  await expect(
+    reader.read(
+      "00000000-0000-4000-8000-000000000099",
+      "installed-skill",
+      "scripts/check.ts",
+    ),
+  ).rejects.toMatchObject({ code: "instance_forbidden" });
+  await expect(
+    reader.read(RUNTIME_TEST_INSTANCE_ID, "installed-skill", "../outside"),
+  ).rejects.toThrow(/路径|资源/);
+  f.disable();
+  expect(
+    await reader.read(RUNTIME_TEST_INSTANCE_ID, "installed-skill"),
+  ).toBeUndefined();
+});
+
+it("本机项目Skill路径仍使用Task Native Read，Design既有virtualStore路径保留", () => {
+  const prompt = renderSkillsSection([
+    {
+      name: "local",
+      description: "本机技能",
+      path: "/authorized/.agents/skills/local/SKILL.md",
+      files: [],
+    },
+    {
+      name: "design",
+      description: "Design Store",
+      path: "/workspace-skills/design/SKILL.md",
+      files: [],
+    },
+  ]);
+  expect(prompt).toContain("Read `/authorized/.agents/skills/local/SKILL.md`");
+  expect(prompt).toContain("Read `/workspace-skills/design/SKILL.md`");
+});
+
+it("Code明确skill mention使用use_skill，Design原Store读取提示保留", () => {
+  const mentions = [
+    {
+      mentionType: "skill" as const,
+      id: "installed-id",
+      label: "安装技能",
+      slug: "installed-skill",
+    },
+  ];
+  const code = buildUserMessage(
+    "按技能执行",
+    [],
+    undefined,
+    mentions,
+    undefined,
+    undefined,
+    "database",
+  ).text;
+  expect(code).toContain('use_skill with name "installed-skill"');
+  expect(code).not.toContain("/workspace-skills/");
+  const design = buildUserMessage("按技能执行", [], undefined, mentions).text;
+  expect(design).toContain("Read `/workspace-skills/installed-skill/SKILL.md`");
+});

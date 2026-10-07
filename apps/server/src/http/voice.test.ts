@@ -1,3 +1,4 @@
+import { createRuntimeTestInstance, RUNTIME_TEST_ACTOR } from "../agent/runtime-test-fixtures.js";
 import multipart from "@fastify/multipart";
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
@@ -43,6 +44,7 @@ function buildApp(
     audioError?: string;
     /** 无 token 场景。 */
     unauthenticated?: boolean;
+    foreignInstance?: boolean;
     /** 挂上模型下载路由（不挂时应为 404）。 */
     withModelStore?: boolean;
     /** start 抛「未知模型」。 */
@@ -109,21 +111,10 @@ function buildApp(
   const app = Fastify();
   void app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
   registerVoiceRoutes(app, {
-    auth: {
-      authenticate: async () =>
-        options.unauthenticated
-          ? null
-          : {
-              accessToken: "tok",
-              email: "u@example.com",
-              id: "user-1",
-              userMetadata: {},
-            },
-      resolveUser: async () => null,
+    localAccess: {
+      authenticate: async () => options.unauthenticated ? null : options.foreignInstance ? { ...RUNTIME_TEST_ACTOR, instanceId: "foreign-instance" } : RUNTIME_TEST_ACTOR,
     } as never,
-    viewerService: {
-      ensureViewer: async () => ({ workspace: { id: "ws-1" } }),
-    } as never,
+    localInstance: createRuntimeTestInstance(),
     voiceService: {
       getSettings: async () => {
         receivedSettingsReads += 1;
@@ -878,6 +869,20 @@ describe("POST /api/voice/speak（说段：回复播报）", () => {
     } finally {
       await app.close();
       await anon.app.close();
+    }
+  });
+});
+
+
+describe("voice 本机归属", () => {
+  it("错误实例在读取语音设置前被拒绝", async () => {
+    const fixture = buildApp({ foreignInstance: true });
+    try {
+      const response = await fixture.app.inject({ url: "/api/voice/settings" });
+      expect(response.statusCode).toBe(403);
+      expect(response.json().error.code).toBe("instance_forbidden");
+    } finally {
+      await fixture.app.close();
     }
   });
 });

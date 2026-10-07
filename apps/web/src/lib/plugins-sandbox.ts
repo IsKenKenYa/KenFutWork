@@ -1,10 +1,11 @@
 import type { CompatReport, SandboxPluginBundle } from "@kenfutwork/shared";
+import { serverFetch } from "./local-access";
 
 /**
  * 「从工作目录安装插件」的客户端调用：列出当前画布沙箱里的 bundle 候选，并把选中的安装到本实例。
  *
  * 沙箱目录由**服务端**解析（工作目录映射优先，否则 `<沙箱根>/<画布UUID>`）；前端只传
- * canvasId 与相对路径。安装与「从链接安装」同一条服务端事务：管理员门 + 兼容性门禁都不绕过。
+ * canvasId 与相对路径。安装与「从链接安装」同一条服务端事务：本机接入与兼容性门禁都不绕过。
  */
 
 export type SandboxPluginInstallResult =
@@ -34,7 +35,7 @@ export async function listSandboxPluginBundles(input: {
     return { bundles: [], error: "请先在工作台选中一个项目（工作目录）。" };
   }
   try {
-    const response = await fetch(
+    const response = await serverFetch(
       `${input.baseUrl}/api/plugins/sandbox-bundles?canvasId=${encodeURIComponent(input.canvasId)}`,
       {
         headers: input.token ? { Authorization: `Bearer ${input.token}` } : {},
@@ -67,7 +68,7 @@ export async function installSandboxPlugin(input: {
     };
   }
   try {
-    const response = await fetch(
+    const response = await serverFetch(
       `${input.baseUrl}/api/plugins/sandbox-install`,
       {
         method: "POST",

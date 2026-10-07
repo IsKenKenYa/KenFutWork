@@ -8,6 +8,7 @@ import type {
   WsRpcRequest,
 } from "@kenfutwork/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LOCAL_ACCESS_LOST_EVENT } from "@/lib/local-access";
 import { getServerBaseUrl } from "../lib/env";
 
 type EventCallback = (event: StreamEvent) => void;
@@ -73,7 +74,7 @@ export type WebSocketHandle = {
   reconnectNow: () => void;
 };
 
-export function useWebSocket(getToken: () => string | null): WebSocketHandle {
+export function useWebSocket(): WebSocketHandle {
   const wsRef = useRef<WebSocket | null>(null);
   const connectionIdRef = useRef(
     (() => {
@@ -143,7 +144,6 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
   );
 
   const connect = useCallback(() => {
-    const token = getToken();
     if (disposed.current) return;
     // Skip if already connected -- prevents React Strict Mode double-mount
     // from replacing an active connection mid-stream
@@ -156,19 +156,13 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
       wsRef.current.close();
       wsRef.current = null;
     }
-    if (!token) {
-      // Token not yet available (auth loading) -- retry shortly
-      reconnectTimer.current = setTimeout(connect, 500);
-      return;
-    }
-
     const serverBase = getServerBaseUrl();
     const wsBase = serverBase
       ? serverBase.replace(/^http/, "ws")
       : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`;
     const wsUrl =
       wsBase +
-      `/api/ws?token=${encodeURIComponent(token)}&connectionId=${encodeURIComponent(connectionIdRef.current)}`;
+      `/api/ws?connectionId=${encodeURIComponent(connectionIdRef.current)}`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -275,7 +269,8 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
       wsRef.current = null;
 
       if (event.code === 4001) {
-        console.warn("[ws] Auth rejected, will retry with fresh token");
+        window.dispatchEvent(new Event(LOCAL_ACCESS_LOST_EVENT));
+        return;
       }
 
       if (!disposed.current) {
@@ -292,7 +287,7 @@ export function useWebSocket(getToken: () => string | null): WebSocketHandle {
     ws.onerror = () => {
       ws.close();
     };
-  }, [getToken, handleRpcRequest]);
+  }, [handleRpcRequest]);
 
   useEffect(() => {
     disposed.current = false;
