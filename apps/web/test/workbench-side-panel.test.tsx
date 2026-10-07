@@ -842,4 +842,65 @@ describe("右栏浏览器（点链接自动打开）", () => {
       ).toBeInTheDocument(),
     );
   }, 20_000);
+
+  it("页面自己跳走：地址栏与面板历史跟着走；不重开导航、不打断正在编辑的草稿", async () => {
+    render(<Harness />);
+    await openBrowserTab();
+    const input = screen.getByLabelText("地址");
+    await userEvent.type(input, "localhost:8000{Enter}");
+    await screen.findByRole("img", {
+      name: "浏览器画面：http://localhost:8000",
+    });
+
+    const statusWith = (currentUrl: string) => ({
+      status: "connected" as const,
+      browser: "Chrome",
+      port: 9333,
+      tabs: 1,
+      currentUrl,
+      owned: true,
+      headless: true,
+    });
+    /** 打开菜单即刷新一次受控浏览器状态（`onOpenChange` 里就是干这个的），Esc 收起。 */
+    const refresh = async () => {
+      await userEvent.click(screen.getByLabelText("浏览器菜单"));
+      await screen.findByRole("option", { name: "打开调试工具" });
+      await userEvent.keyboard("{Escape}");
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("option", { name: "打开调试工具" }),
+        ).not.toBeInTheDocument(),
+      );
+    };
+
+    // ① 请求的导航还没落地：状态里的旧地址不会把地址栏拉回去
+    fetchCdpStatusMock.mockResolvedValue(statusWith("http://before.example/"));
+    await refresh();
+    expect(input).toHaveValue("http://localhost:8000");
+
+    // ② 落地（状态与地址一致，护栏撤掉）→ 页面自己跳到新地址：地址栏跟过去
+    fetchCdpStatusMock.mockResolvedValue(statusWith("http://localhost:8000"));
+    await refresh();
+    fetchCdpStatusMock.mockResolvedValue(
+      statusWith("http://localhost:8000/next"),
+    );
+    await refresh();
+    await waitFor(() =>
+      expect(input).toHaveValue("http://localhost:8000/next"),
+    );
+    // 跟随**不是**一次新的导航：不会拿新地址再去 /view 把页面重放一遍
+    expect(openCdpViewMock).not.toHaveBeenCalledWith(
+      "token",
+      expect.objectContaining({ url: "http://localhost:8000/next" }),
+    );
+
+    // ③ 用户正在改地址栏（草稿已不是当前地址）时不打断
+    await userEvent.clear(input);
+    await userEvent.type(input, "editing");
+    fetchCdpStatusMock.mockResolvedValue(
+      statusWith("http://localhost:8000/later"),
+    );
+    await refresh();
+    expect(input).toHaveValue("editing");
+  }, 20_000);
 });

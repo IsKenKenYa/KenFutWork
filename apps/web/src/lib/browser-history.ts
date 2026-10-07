@@ -36,6 +36,23 @@ export function openUrl(
   return { entries, index: entries.length - 1 };
 }
 
+/**
+ * 页面**自己跳走**时（点链接、脚本跳转、重定向）更新当前那一项：面板栈记的是
+ * 「用户在本面板里打开过的地址」，页面内的跳转不是一次新的打开——替换而不是入栈，
+ * 否则重定向链会把栈灌满、后退键也会在跳转中间打转。没打开过任何页面时按一次普通打开。
+ */
+export function replaceCurrent(
+  state: BrowserHistoryState,
+  url: string,
+): BrowserHistoryState {
+  if (!url) return state;
+  if (currentUrl(state) === url) return state;
+  if (state.index < 0) return openUrl(state, url);
+  const entries = [...state.entries];
+  entries[state.index] = url;
+  return { ...state, entries };
+}
+
 export function canGoBack(state: BrowserHistoryState): boolean {
   return state.index > 0;
 }

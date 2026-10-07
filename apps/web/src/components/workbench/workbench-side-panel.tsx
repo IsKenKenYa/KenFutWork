@@ -22,6 +22,7 @@ import {
   goBack,
   goForward,
   openUrl,
+  replaceCurrent,
 } from "@/lib/browser-history";
 import { onBrowserOpen } from "@/lib/browser-panel";
 import {
@@ -133,6 +134,11 @@ export function WorkbenchSidePanel({
   const [urlDraft, setUrlDraft] = useState("");
   /** 刷新用的计数：改 key 让 iframe 真的重新加载（同 src 不会重载）。 */
   const [reloadToken, setReloadToken] = useState(0);
+  /**
+   * 「用户主动打开」计数：只有它变化才代表**要浏览器真的去加载那个地址**。
+   * 页面自己跳走（地址栏跟随）只替换当前项、不动它——否则跟随会把页面导航回去。
+   */
+  const [navigateToken, setNavigateToken] = useState(0);
 
   /** 转录里点链接 → 打开浏览器标签并加载该 URL（见 lib/browser-panel）。 */
   const openRef = useRef(open);
@@ -152,6 +158,7 @@ export function WorkbenchSidePanel({
         );
         setBrowserHistory((current) => openUrl(current, url));
         setUrlDraft(url);
+        setNavigateToken((token) => token + 1);
         if (!openRef.current) requestOpenRef.current?.();
       }),
     [],
@@ -302,12 +309,27 @@ export function WorkbenchSidePanel({
                 url: browserUrl,
                 draft: urlDraft,
                 reloadToken,
+                navigateToken,
                 canBack: canGoBack(browserHistory),
                 canForward: canGoForward(browserHistory),
                 onDraftChange: setUrlDraft,
                 onNavigate: (next) => {
                   setBrowserHistory((current) => openUrl(current, next));
                   setUrlDraft(next);
+                  setNavigateToken((token) => token + 1);
+                },
+                /**
+                 * 页面**自己跳走**：地址栏与面板历史跟着走。只替换当前项、不加
+                 * `navigateToken`——地址栏显示的是「页面实际在哪」，不是一次新的打开，
+                 * 拿它去 `/view` 只会把浏览器导航回去。
+                 */
+                onUrlChange: (next) => {
+                  const previous = browserUrl;
+                  setBrowserHistory((current) => replaceCurrent(current, next));
+                  // 正在编辑的草稿（已不是当前地址）不打断
+                  setUrlDraft((draft) =>
+                    draft === previous || draft === "" ? next : draft,
+                  );
                 },
                 onBack: () => {
                   setBrowserHistory((current) => {
@@ -315,6 +337,7 @@ export function WorkbenchSidePanel({
                     setUrlDraft(currentUrl(next));
                     return next;
                   });
+                  setNavigateToken((token) => token + 1);
                 },
                 onForward: () => {
                   setBrowserHistory((current) => {
@@ -322,6 +345,7 @@ export function WorkbenchSidePanel({
                     setUrlDraft(currentUrl(next));
                     return next;
                   });
+                  setNavigateToken((token) => token + 1);
                 },
                 onReload: () => setReloadToken((token) => token + 1),
               }}

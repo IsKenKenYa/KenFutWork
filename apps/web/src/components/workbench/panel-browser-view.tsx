@@ -107,11 +107,13 @@ export function BrowserPane({
   url,
   draft,
   reloadToken,
+  navigateToken,
   canBack,
   canForward,
   accessToken = null,
   onPickElement,
   onDraftChange,
+  onUrlChange,
   onNavigate,
   onBack,
   onForward,
@@ -120,6 +122,8 @@ export function BrowserPane({
   url: string;
   draft: string;
   reloadToken: number;
+  /** 「用户主动打开」计数：变一次 = 让受控浏览器真的去加载新地址（页面自跳不计数）。 */
+  navigateToken: number;
   canBack: boolean;
   canForward: boolean;
   /** 读取页面快照（元素拾取）用；缺省时拾取入口禁用。 */
@@ -127,6 +131,8 @@ export function BrowserPane({
   /** 拾取到元素后交给对话（工作台把它写进输入框）。 */
   onPickElement?: ((picked: PickedElement) => void) | undefined;
   onDraftChange: (value: string) => void;
+  /** 页面自己跳走时拿到新地址（交给上层跟随；**不代表要重新导航**）。 */
+  onUrlChange?: ((url: string) => void) | undefined;
   onNavigate: (url: string) => void;
   onBack: () => void;
   onForward: () => void;
@@ -266,22 +272,76 @@ export function BrowserPane({
       ? Math.min(1, paneWidth / viewportWidth, paneHeight / viewportHeight)
       : 1;
   /**
-   * 受控浏览器状态：只影响菜单里那行提示文案（这一项**不再置灰**——没连时点它就先连上再开
-   * 调试工具，用户口径是「点一下就该能用」）。每 20 秒刷新一次，另外**菜单一打开也刷一次**，
-   * 免得刚在设置页连上却要等轮询。
+   * 受控浏览器状态：既驱动菜单里那行提示（这一项**不再置灰**——没连时点它就先连上再开
+   * 调试工具，用户口径是「点一下就该能用」），也把**页面自己跳走**接进地址栏。
+   *
+   * 没连时 20 秒一次就够（只为提示）；连上后 3 秒一次——页面里的跳转（点链接、脚本跳转）
+   * 没有推送通道，地址栏要跟着走只能勤看两眼。菜单一打开也会刷一次，免得刚在设置页
+   * 连上还要等轮询。
    */
+  const urlRef = useRef(url);
+  urlRef.current = url;
+  const onUrlChangeRef = useRef(onUrlChange);
+  onUrlChangeRef.current = onUrlChange;
+  /**
+   * 「刚请求过、还没落地」的导航目标：状态追上它（或超时）之前不信 `currentUrl`——
+   * 否则地址栏会被还没走完的旧页面拉回去。只在**用户主动打开**（`navigateToken` 变）
+   * 时设护栏；跟随页面自跳本身不设（它只改地址栏，不会引起导航）。
+   */
+  const pendingUrlRef = useRef<string | null>(null);
+  const pendingUrlAtRef = useRef(0);
+  const lastNavigateTokenRef = useRef(navigateToken);
+  useEffect(() => {
+    pendingUrlRef.current = urlRef.current || null;
+    pendingUrlAtRef.current = Date.now();
+  }, []);
+  // 只认 navigateToken（请求目标从 urlRef 读）：跟随引起的 url 变化不该重新设护栏。
+  useEffect(() => {
+    if (navigateToken === lastNavigateTokenRef.current) return;
+    lastNavigateTokenRef.current = navigateToken;
+    pendingUrlRef.current = urlRef.current || null;
+    pendingUrlAtRef.current = Date.now();
+  }, [navigateToken]);
+
   const refreshCdp = useCallback(() => {
     if (!accessToken) return;
     fetchCdpStatus(accessToken)
-      .then((status) => setCdpConnected(status.status === "connected"))
+      .then((status) => {
+        if (status.status !== "connected") {
+          setCdpConnected(false);
+          return;
+        }
+        setCdpConnected(true);
+        const serverUrl = status.currentUrl.trim();
+        if (!serverUrl || serverUrl === "about:blank") return;
+        if (pendingUrlRef.current !== null) {
+          if (serverUrl === pendingUrlRef.current) {
+            pendingUrlRef.current = null;
+          } else if (
+            Date.now() - pendingUrlAtRef.current <
+            NAV_SETTLE_TIMEOUT_MS
+          ) {
+            return;
+          } else {
+            // 导航失败 / 落到了别的地址（重定向链吞掉）：不再拦，按实际情况跟随
+            pendingUrlRef.current = null;
+          }
+        }
+        if (serverUrl !== urlRef.current) {
+          onUrlChangeRef.current?.(serverUrl);
+        }
+      })
       .catch(() => setCdpConnected(false));
   }, [accessToken]);
 
   useEffect(() => {
     refreshCdp();
-    const timer = window.setInterval(refreshCdp, 20_000);
+    const timer = window.setInterval(
+      refreshCdp,
+      cdpConnected ? CDP_FOLLOW_POLL_MS : 20_000,
+    );
     return () => window.clearInterval(timer);
-  }, [refreshCdp]);
+  }, [refreshCdp, cdpConnected]);
 
   // 挂载后再判断形态（SSR 无 window）
   useEffect(() => {
@@ -722,6 +782,7 @@ export function BrowserPane({
                   frameWidth={viewportWidth}
                   frameHeight={viewportHeight}
                   reloadToken={reloadToken}
+                  navigateToken={navigateToken}
                   onReload={onReload}
                 />
               </div>
@@ -832,6 +893,11 @@ function clampViewport(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, Math.round(value)));
 }
+
+/** 连上受控浏览器后轮询 `currentUrl` 的间隔（地址栏跟随页面自跳）。 */
+const CDP_FOLLOW_POLL_MS = 3_000;
+/** 「刚请求的导航」最多容忍多久没落地：超时就按状态里的实际地址跟随。 */
+const NAV_SETTLE_TIMEOUT_MS = 5_000;
 
 /** 缩放预设（参考图：适应窗口 / 50% / 75% / 100%）。`scale: null` = 适应视口。 */
 const ZOOM_PRESETS = [

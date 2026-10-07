@@ -36,6 +36,7 @@ export function BrowserLiveView({
   frameWidth,
   frameHeight,
   reloadToken,
+  navigateToken,
   onReload,
 }: {
   accessToken: string | null;
@@ -44,6 +45,8 @@ export function BrowserLiveView({
   frameWidth: number;
   frameHeight: number;
   reloadToken: number;
+  /** 「用户主动打开」计数：变一次 = 重开流并让浏览器真的去加载 url（页面自跳不计数）。 */
+  navigateToken: number;
   /** 画面流断了要用户手动重来时：请上层把地址重新加载一遍。 */
   onReload?: (() => void) | undefined;
 }) {
@@ -119,9 +122,15 @@ export function BrowserLiveView({
   }, [accessToken, url, frameWidth, frameHeight, reloadToken]);
   openRef.current = open;
 
+  /**
+   * 重开流只在「用户主动打开（`navigateToken`）/ 换尺寸 / 手动刷新 / 换 token」时发生——
+   * **不停在 `url` 上**：地址栏跟随页面自跳时会改 url，但那时画面本来就是页面本身，
+   * 重开流只会把受控浏览器导航回去。
+   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 触发器组（open 从 ref 取，读到的还是最新 url）
   useEffect(() => {
-    void open();
-  }, [open]);
+    void openRef.current();
+  }, [accessToken, navigateToken, frameWidth, frameHeight, reloadToken]);
 
   /** 画面流断了：先自己重开两次，还不行就如实说（不假装还在跑）。 */
   const handleFrameError = useCallback(() => {
