@@ -77,16 +77,17 @@ describe("FlowCanvasFrame（ff-embed 宿主握手）", () => {
     expect(postMessage).not.toHaveBeenCalled();
   });
 
-  it("iframe 未加载完成 → 显示画布同款加载层（不白屏）；load 后出现握手提示", () => {
+  it("iframe 未加载完成 → 显示全站同款品牌加载屏（logo 动画，不白屏）；load 后出现握手提示", () => {
     render(
       <FlowCanvasFrame frontendUrl={FLOW_ORIGIN} getToken={() => "tok"} />,
     );
-    expect(screen.getByText("加载工作流…")).toBeInTheDocument();
+    // 品牌加载屏（与画布/登录页同一份 LoadingScreen）：logo 图 + 渐隐的三点
+    expect(screen.getByAltText("KenFutWork")).toBeInTheDocument();
     expect(screen.queryByText("正在与 flow 画布握手…")).not.toBeInTheDocument();
 
     fireEvent.load(screen.getByTitle("Flow 工作流画布"));
 
-    expect(screen.queryByText("加载工作流…")).not.toBeInTheDocument();
+    expect(screen.queryByAltText("KenFutWork")).not.toBeInTheDocument();
     expect(screen.getByText("正在与 flow 画布握手…")).toBeInTheDocument();
   });
 

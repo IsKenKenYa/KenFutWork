@@ -1,7 +1,6 @@
 "use client";
 
 import { FLOW_EMBED_PROTOCOL_VERSION } from "@kenfutwork/shared";
-import { Loader2 } from "lucide-react";
 import {
   forwardRef,
   useEffect,
@@ -11,6 +10,7 @@ import {
   useState,
 } from "react";
 
+import { LoadingScreen } from "@/components/loading-screen";
 import {
   buildHelloAck,
   buildIdentity,
@@ -132,14 +132,10 @@ export const FlowCanvasFrame = forwardRef<
         onLoad={() => setFrameLoaded(true)}
         allow="clipboard-read; clipboard-write; fullscreen"
       />
-      {/* 画布同款加载层：iframe 资源加载期间不再白屏（flow 画布页 canvas-loading 同款布局） */}
+      {/* 画布同款加载层：iframe 资源加载期间不再白屏（复用全站品牌加载屏，
+          内嵌位置用 inline 变体——不做第二套加载动画） */}
       {!frameLoaded ? (
-        <div className="absolute inset-0 grid place-items-center bg-card">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-            <span>加载工作流…</span>
-          </div>
-        </div>
+        <LoadingScreen variant="inline" />
       ) : !connected ? (
         <div
           aria-hidden="true"
