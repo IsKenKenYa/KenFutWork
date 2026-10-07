@@ -11,12 +11,22 @@ import { getServerBaseUrl } from "@/lib/env";
 import type { FlowEngineInstallState } from "@/lib/use-flow-engine-install";
 
 /**
- * Flow 模式「引擎」页（宿主侧渲染）：状态 / 承载路径 / 地址 / 容器，一眼看完。
+ * Flow 模式「引擎」页（宿主侧渲染）：资源管理器式排版——标题行 + 分段页签 +
+ * 概览卡 + 表格，一屏一块表，不堆卡片。
  *
  * 数据面 `GET /api/flow/host/engine/info` 一次取全；安装动作与侧栏共用
- * `useFlowEngineInstall`。呈现纪律：只列宿主真正知道的（不确定的不编）；长文案压一行、
- * 悬停看全文；容器与端口来自 `docker compose ps` 的运行期事实。
+ * `useFlowEngineInstall`。呈现纪律：只列宿主真正知道的（不确定的不编）；长值单行
+ * 省略、悬停看全文；容器与端口来自 `docker compose ps` 的运行期事实。
  */
+
+type TabId = "containers" | "paths" | "addresses";
+
+const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
+  { id: "containers", label: "容器" },
+  { id: "paths", label: "承载路径" },
+  { id: "addresses", label: "地址" },
+];
+
 export function FlowEnginePage({
   accessToken,
   engineState,
@@ -29,6 +39,7 @@ export function FlowEnginePage({
   const [info, setInfo] = useState<FlowHostEngineInfoResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabId>("containers");
 
   const refresh = useCallback(async () => {
     if (!accessToken) return;
@@ -67,13 +78,30 @@ export function FlowEnginePage({
       ? engineState
       : ((info?.install.state ?? "idle") as FlowEngineInstallState);
 
+  const recommendation = info?.probe.paths.find(
+    (path) => path.id === info.probe.recommended,
+  );
+
   return (
     <div className="h-full overflow-y-auto bg-background">
-      <div className="mx-auto flex max-w-2xl flex-col gap-3 px-6 py-5">
-        <header className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold">引擎</h1>
-          <StatePill state={state} loading={loading && !info} />
-          <div className="ml-auto flex items-center gap-2">
+      <div className="mx-auto flex max-w-2xl flex-col px-6 py-5">
+        <header className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-semibold">引擎</h1>
+              <StatePill state={state} loading={loading && !info} />
+            </div>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {info
+                ? `${info.stack.containers.length} 个容器${
+                    recommendation ? ` · ${recommendation.label}` : ""
+                  }`
+                : loading
+                  ? "读取中…"
+                  : "暂无数据"}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 pt-1">
             <button
               type="button"
               onClick={() => void refresh()}
@@ -102,13 +130,13 @@ export function FlowEnginePage({
         </header>
 
         {loadError ? (
-          <p className="text-xs text-destructive">{loadError}</p>
+          <p className="mt-3 text-xs text-destructive">{loadError}</p>
         ) : null}
         {info?.install.error ? (
-          <p className="text-xs text-destructive">{info.install.error}</p>
+          <p className="mt-3 text-xs text-destructive">{info.install.error}</p>
         ) : null}
         {info && info.install.logTail.length > 0 ? (
-          <details>
+          <details className="mt-3">
             <summary className="cursor-pointer text-xs text-muted-foreground">
               安装日志
             </summary>
@@ -118,104 +146,235 @@ export function FlowEnginePage({
           </details>
         ) : null}
 
-        <Section title="承载路径">
-          {info?.probe.paths.map((path) => (
-            <Row key={path.id} label={path.label || path.id}>
-              <span
-                className={
-                  path.available ? "text-emerald-600" : "text-muted-foreground"
-                }
-              >
-                {path.available ? "可用" : "不可用"}
-              </span>
-              {info.probe.recommended === path.id ? (
-                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">
-                  推荐
-                </span>
-              ) : null}
-              <span
-                className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
-                title={path.detail ?? path.reason ?? ""}
-              >
-                {path.detail ?? path.reason ?? ""}
-              </span>
-            </Row>
+        <nav className="mt-4 flex w-fit items-center gap-1 rounded-full bg-muted/60 p-1">
+          {TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setTab(item.id)}
+              data-active={tab === item.id}
+              className="rounded-full px-3 py-1 text-xs text-muted-foreground transition-colors data-[active=true]:bg-background data-[active=true]:text-foreground data-[active=true]:shadow-sm"
+            >
+              {item.label}
+            </button>
           ))}
-        </Section>
+        </nav>
 
-        <Section title="地址">
-          {info ? (
-            <>
-              <Row label="工作流画布">
-                <Address value={info.addresses.frontendUrl} />
-              </Row>
-              <Row label="身份校验回调">
-                <Address value={info.addresses.hostIdentityUrl} />
-              </Row>
-              <Row label="compose 文件">
-                <Address value={info.addresses.composeFile} />
-              </Row>
-              <Row label="数据目录">
-                <Address value={info.addresses.dataDir} />
-              </Row>
-            </>
-          ) : null}
-        </Section>
-
-        <Section title="容器">
-          {info?.stack.error ? (
-            <p className="text-xs text-destructive">{info.stack.error}</p>
-          ) : info && info.stack.containers.length > 0 ? (
-            info.stack.containers.map((container) => (
-              <ContainerRow key={container.name} container={container} />
-            ))
-          ) : (
-            <p className="text-xs text-muted-foreground">没有运行中的容器</p>
-          )}
-        </Section>
+        <div className="mt-3 rounded-xl border">
+          {tab === "containers" ? <ContainersTab info={info} /> : null}
+          {tab === "paths" ? <PathsTab info={info} /> : null}
+          {tab === "addresses" ? <AddressesTab info={info} /> : null}
+        </div>
       </div>
     </div>
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function TableHead({ columns }: { readonly columns: readonly string[] }) {
   return (
-    <section className="flex flex-col gap-1.5 rounded-xl border px-4 py-3">
-      <h2 className="text-xs text-muted-foreground">{title}</h2>
-      {children}
-    </section>
+    <div className="flex items-center gap-3 border-b px-4 py-2 text-xs text-muted-foreground">
+      {columns.map((column, index) => (
+        <span
+          key={column}
+          className={
+            index === 0 ? "w-28 shrink-0" : index === 1 ? "w-20 shrink-0" : "flex-1"
+          }
+        >
+          {column}
+        </span>
+      ))}
+    </div>
   );
 }
 
-function Row({
-  label,
+function TableRow({
   children,
+  last,
 }: {
-  label: string;
   children: React.ReactNode;
+  last?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-2 text-sm">
-      <span className="w-24 shrink-0 text-muted-foreground">{label}</span>
+    <div
+      className={`flex items-center gap-3 px-4 py-2.5 text-sm ${
+        last ? "" : "border-b"
+      }`}
+    >
       {children}
     </div>
   );
 }
 
-function Address({ value }: { value: string | null }) {
-  if (!value)
-    return <span className="text-xs text-muted-foreground">未配置</span>;
+function ContainersTab({ info }: { info: FlowHostEngineInfoResponse | null }) {
+  if (!info) return <Empty />;
+  if (info.stack.error) {
+    return <p className="px-4 py-3 text-xs text-destructive">{info.stack.error}</p>;
+  }
+  const containers = info.stack.containers;
+  if (containers.length === 0) {
+    return <p className="px-4 py-3 text-xs text-muted-foreground">没有运行中的容器</p>;
+  }
+  const running = containers.filter((item) => item.state === "running").length;
+  const healthy = containers.filter((item) => item.health === "healthy").length;
   return (
-    <span className="min-w-0 flex-1 truncate font-mono text-xs" title={value}>
-      {value}
-    </span>
+    <>
+      <Summary
+        label="容器"
+        value={`${running} / ${containers.length}`}
+        suffix="运行中"
+        ratio={containers.length ? running / containers.length : 0}
+        legend={[
+          { text: `健康 ${healthy}` },
+          { text: `无探针 ${containers.length - healthy}` },
+        ]}
+      />
+      <TableHead columns={["服务", "健康", "端口"]} />
+      {containers.map((container, index) => (
+        <ContainerRow
+          key={container.name}
+          container={container}
+          last={index === containers.length - 1}
+        />
+      ))}
+    </>
   );
+}
+
+function Summary({
+  label,
+  value,
+  suffix,
+  ratio,
+  legend,
+}: {
+  label: string;
+  value: string;
+  suffix: string;
+  ratio: number;
+  legend: ReadonlyArray<{ text: string }>;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-b px-4 py-4">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <p className="text-2xl font-semibold tracking-tight">
+        {value} <span className="text-sm font-normal text-muted-foreground">{suffix}</span>
+      </p>
+      <div className="h-2 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full bg-primary/80"
+          style={{ width: `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%` }}
+        />
+      </div>
+      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        {legend.map((item) => (
+          <span key={item.text} className="flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-foreground/40" />
+            {item.text}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ContainerRow({
+  container,
+  last,
+}: {
+  container: FlowEngineStackContainer;
+  last: boolean;
+}) {
+  const tone =
+    container.health === "healthy"
+      ? "text-emerald-600"
+      : container.health
+        ? "text-destructive"
+        : "text-muted-foreground";
+  return (
+    <TableRow last={last}>
+      <span
+        className="w-28 shrink-0 truncate font-mono text-xs"
+        title={container.name}
+      >
+        {container.service}
+      </span>
+      <span className={`w-20 shrink-0 text-xs ${tone}`}>
+        {container.health ?? container.state}
+      </span>
+      <span
+        className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground"
+        title={container.ports.join("  ")}
+      >
+        {container.ports.join("  ")}
+      </span>
+    </TableRow>
+  );
+}
+
+function PathsTab({ info }: { info: FlowHostEngineInfoResponse | null }) {
+  if (!info) return <Empty />;
+  const paths = info.probe.paths;
+  return (
+    <>
+      <TableHead columns={["路径", "可用性", "说明"]} />
+      {paths.map((path, index) => (
+        <TableRow key={path.id} last={index === paths.length - 1}>
+          <span className="flex w-28 shrink-0 items-center gap-1.5">
+            {path.label || path.id}
+            {info.probe.recommended === path.id ? (
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                推荐
+              </span>
+            ) : null}
+          </span>
+          <span
+            className={`w-20 shrink-0 text-xs ${
+              path.available ? "text-emerald-600" : "text-muted-foreground"
+            }`}
+          >
+            {path.available ? "可用" : "不可用"}
+          </span>
+          <span
+            className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
+            title={path.detail ?? path.reason ?? ""}
+          >
+            {path.detail ?? path.reason ?? ""}
+          </span>
+        </TableRow>
+      ))}
+    </>
+  );
+}
+
+function AddressesTab({ info }: { info: FlowHostEngineInfoResponse | null }) {
+  if (!info) return <Empty />;
+  const rows: ReadonlyArray<{ label: string; value: string | null }> = [
+    { label: "工作流画布", value: info.addresses.frontendUrl },
+    { label: "身份校验回调", value: info.addresses.hostIdentityUrl },
+    { label: "compose 文件", value: info.addresses.composeFile },
+    { label: "数据目录", value: info.addresses.dataDir },
+  ];
+  return (
+    <>
+      <TableHead columns={["项", "", "值"]} />
+      {rows.map((row, index) => (
+        <TableRow key={row.label} last={index === rows.length - 1}>
+          <span className="w-28 shrink-0 text-muted-foreground">{row.label}</span>
+          <span className="w-20 shrink-0" />
+          <span
+            className="min-w-0 flex-1 truncate font-mono text-xs"
+            title={row.value ?? ""}
+          >
+            {row.value ?? "未配置"}
+          </span>
+        </TableRow>
+      ))}
+    </>
+  );
+}
+
+function Empty() {
+  return <p className="px-4 py-3 text-xs text-muted-foreground">读取中…</p>;
 }
 
 const STATE_META: Record<
@@ -249,30 +408,5 @@ function StatePill({
       ) : null}
       {loading ? "读取中…" : meta.label}
     </span>
-  );
-}
-
-function ContainerRow({ container }: { container: FlowEngineStackContainer }) {
-  const tone =
-    container.health === "healthy"
-      ? "text-emerald-600"
-      : container.health
-        ? "text-destructive"
-        : "text-muted-foreground";
-  return (
-    <div className="flex items-center gap-2 text-sm">
-      <span
-        className="w-24 shrink-0 truncate font-mono text-xs"
-        title={container.name}
-      >
-        {container.service}
-      </span>
-      <span className={`text-xs ${tone}`}>
-        {container.health ?? container.state}
-      </span>
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
-        {container.ports.join("  ")}
-      </span>
-    </div>
   );
 }
