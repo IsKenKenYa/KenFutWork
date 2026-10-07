@@ -237,7 +237,7 @@ export function BrowserPane({
     setPicking("idle");
     setHoveredElement(null);
   };
-  /** 截图叠框要三个数都对得上：视口尺寸（换算比例）+ 截图 + 至少一个盒子。 */
+  /** 叠框要三个数都对得上：视口尺寸 + 至少一个盒子（截图只在桌面形态那条路用）。 */
   const overlay =
     picked?.viewport &&
     picked.viewport.width > 0 &&
@@ -248,6 +248,13 @@ export function BrowserPane({
           elements: picked.elements,
         }
       : null;
+  /**
+   * 拾取叠框直接画在**实时画面**上（R3-4 的合并口径）：几何来自 `DOM.getBoxModel`、
+   * 坐标就是视口 CSS px，而画面帧本身就是「视口尺寸 × 缩放」——按 px 叠即可，
+   * 不再另拉一张截图当底图。截图那条路只留给桌面形态：原生 WebView2 会盖住 HTML 浮层。
+   */
+  const liveOverlay =
+    !desktopShell && picking === "ready" && overlay ? overlay : null;
   /** 面板里这块预览区有多大（「适应面板」时的视口尺寸 = 它）。 */
   const frameRef = useRef<HTMLDivElement>(null);
   const [paneWidth, setPaneWidth] = useState(0);
@@ -652,9 +659,8 @@ export function BrowserPane({
                   : "来源：页面快照（可能缺少动态内容）"}
               </p>
 
-              {/* 截图叠框：几何来自 DOM.getBoxModel，坐标是视口 CSS px，
-                  换算成百分比后与截图（同一视口尺寸）严丝合缝 */}
-              {overlay && picked.screenshotUrl ? (
+              {/* 截图叠框（仅桌面形态：实时画面那条路把框直接画在画面帧上，见 liveOverlay） */}
+              {overlay && picked.screenshotUrl && !liveOverlay ? (
                 <div className="relative mb-2 overflow-hidden border">
                   {/* biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用 */}
                   <img
@@ -785,6 +791,39 @@ export function BrowserPane({
                   navigateToken={navigateToken}
                   onReload={onReload}
                 />
+                {liveOverlay ? (
+                  <div data-role="pick-overlay" className="absolute inset-0">
+                    {keyed(liveOverlay.elements, (element) => element.hint).map(
+                      ({ key, item: element }, index) =>
+                        element.box ? (
+                          <button
+                            key={key}
+                            type="button"
+                            aria-label={`拾取元素 ${index + 1}：${element.tag} ${element.text}`}
+                            title={`<${element.tag}> ${element.text || "(无文字)"}`}
+                            onMouseEnter={() => setHoveredElement(index)}
+                            onMouseLeave={() => setHoveredElement(null)}
+                            onClick={() => pickElement(element)}
+                            style={{
+                              left: `${element.box.x}px`,
+                              top: `${element.box.y}px`,
+                              width: `${element.box.width}px`,
+                              height: `${element.box.height}px`,
+                            }}
+                            className={`absolute cursor-crosshair border transition-colors ${
+                              hoveredElement === index
+                                ? "border-info bg-info/30"
+                                : "border-info/70 bg-info/10 hover:bg-info/30"
+                            }`}
+                          >
+                            <span className="absolute -top-3 -left-px bg-info px-1 text-[9px] leading-3 text-white">
+                              {index + 1}
+                            </span>
+                          </button>
+                        ) : null,
+                    )}
+                  </div>
+                ) : null}
               </div>
             )}
             {freeSizeOn ? (

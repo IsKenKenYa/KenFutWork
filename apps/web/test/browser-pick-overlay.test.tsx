@@ -12,9 +12,10 @@ import { withAppProviders } from "./test-providers";
 
 /**
  * 元素拾取浮层（R3-4）：受控浏览器（CDP）连着时，服务端回来的元素带**真实几何**
- * （`DOM.getBoxModel` 的边框盒）+ 一张视口截图，浮层在截图上叠框点选。
+ * （`DOM.getBoxModel` 的边框盒），叠框直接画在**实时画面帧**上（视口 CSS px，
+ * 与画面流同一套坐标；桌面形态才退回截图底图）。
  *
- * 锁三件事：① 框按「盒 ÷ 视口」换算成百分比（截图与几何同一套坐标）；
+ * 锁三件事：① 框落在实时画面帧里的 `[data-role="pick-overlay"]` 上、按视口 px 定位；
  * ② 点框与点列表行是同一个动作（都交给对话）；③ 没有几何（静态抓取那条路）时
  * 不出叠框，列表照旧可用。
  */
@@ -57,6 +58,7 @@ function renderPane(
         url="https://example.com/"
         draft="https://example.com/"
         reloadToken={0}
+        navigateToken={0}
         canBack={false}
         canForward={false}
         accessToken="tok"
@@ -87,7 +89,7 @@ describe("元素拾取浮层", () => {
   });
   afterEach(cleanup);
 
-  it("CDP 路径：截图 + 按视口换算的叠框 + 带坐标的列表", async () => {
+  it("CDP 路径：叠框直接画在实时画面上（视口 px），不再另拉截图", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
@@ -96,27 +98,27 @@ describe("元素拾取浮层", () => {
     renderPane();
     await openPicking();
 
-    // 截图当底图
-    expect(await screen.findByAltText("Example 的视口截图")).toHaveAttribute(
-      "src",
-      "https://blob.test/browser/shot.png",
-    );
+    // 不再有截图底图——底图就是实时画面本身
+    expect(screen.queryByAltText("Example 的视口截图")).not.toBeInTheDocument();
 
-    // 叠框：200/1000 = 20%、100/500 = 20%、100/1000 = 10%、50/500 = 10%
+    // 叠框落在实时画面帧的拾取层里，坐标就是视口 CSS px
     const hotspot = screen.getByRole("button", {
       name: "拾取元素 1：button 立即开始",
     });
     expect(hotspot).toHaveStyle({
-      left: "20%",
-      top: "20%",
-      width: "10%",
-      height: "10%",
+      left: "200px",
+      top: "100px",
+      width: "100px",
+      height: "50px",
     });
+    const layer = document.querySelector('[data-role="pick-overlay"]');
+    expect(layer).not.toBeNull();
+    expect(layer?.contains(hotspot)).toBe(true);
     // 静态那条路的说明不该出现在 CDP 路径里
     expect(screen.queryByText(/来源：页面快照/)).not.toBeInTheDocument();
   });
 
-  it("点截图上的框 = 点列表行：交给对话的元素带 box（浮层收起）", async () => {
+  it("点画面上的框 = 点列表行：交给对话的元素带 box（浮层收起）", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
@@ -161,6 +163,7 @@ describe("元素拾取浮层", () => {
     await openPicking();
 
     expect(screen.queryByAltText("Example 的视口截图")).not.toBeInTheDocument();
+    expect(document.querySelector('[data-role="pick-overlay"]')).toBeNull();
     expect(screen.getByText(/来源：页面快照/)).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: /Learn more/ }));
