@@ -75,15 +75,20 @@ export async function listEngineStackContainers(
   const containers = rows
     .map((row): FlowEngineStackContainer => {
       const ports = (row.Publishers ?? [])
-        // PublishedPort=0 = 只 expose 未 publish（如 compose 里的内部端口），不是真实映射
         .filter(
           (item) =>
-            typeof item.PublishedPort === "number" && item.PublishedPort > 0,
+            typeof item.TargetPort === "number" && item.TargetPort > 0,
         )
         .map((item) => {
-          const host = item.URL && item.URL !== "0.0.0.0" ? item.URL : "127.0.0.1";
           const protocol = item.Protocol || "tcp";
-          return `${host}:${item.PublishedPort}->${item.TargetPort ?? "?"}/${protocol}`;
+          // PublishedPort=0 = 只 expose 未发布到宿主：按 docker ps 自己的口径给
+          // `5001/tcp`（而不是编一个 `127.0.0.1:0->…` 的假映射）；发布了的给完整映射。
+          if (!item.PublishedPort) {
+            return `${item.TargetPort}/${protocol}`;
+          }
+          const host =
+            item.URL && item.URL !== "0.0.0.0" ? item.URL : "127.0.0.1";
+          return `${host}:${item.PublishedPort}->${item.TargetPort}/${protocol}`;
         });
       return {
         service: row.Service ?? "(unknown)",

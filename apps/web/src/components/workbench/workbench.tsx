@@ -3135,12 +3135,13 @@ export function Workbench() {
                 </button>
               ))}
               {/* 引擎（FORM-11 托管）：独立信息页——状态 / 承载路径 / 地址 / 栈容器事实；
-                  安装与重试在页内（侧栏不再单独摆一个动作按钮，避免同一个东西两处入口）。 */}
+                  安装与重试在页内。样式与上面三个导航项**完全同款**（用户口径：参考工作流
+                  那边的样式——不多间距、不加选中底；内嵌协议不上报 iframe 内路由，单给这一项
+                  做高亮反而与其余三项不一致）。 */}
               <button
                 type="button"
                 onClick={() => setFlowView("engine")}
-                data-active={flowView === "engine"}
-                className="mt-1 flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[active=true]:bg-muted data-[active=true]:text-foreground"
+                className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <Cpu className="h-4 w-4 shrink-0" />
                 引擎

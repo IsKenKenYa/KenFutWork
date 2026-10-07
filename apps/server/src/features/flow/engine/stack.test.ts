@@ -97,7 +97,7 @@ describe("引擎栈容器清单：docker compose ps 解析", () => {
 });
 
 describe("引擎栈容器清单：端口口径与状态校正材料", () => {
-  it("PublishedPort=0（仅 expose 未 publish）不出现在端口映射里", async () => {
+  it("PublishedPort=0（仅 expose 未发布）按 docker ps 口径给「端口/协议」，不编假映射", async () => {
     const ps = JSON.stringify([
       {
         Service: "db",
@@ -113,6 +113,9 @@ describe("引擎栈容器清单：端口口径与状态校正材料", () => {
     const { containers } = await listEngineStackContainers("compose.yml", {
       run: runWith(ps),
     });
-    expect(containers[0]?.ports).toEqual(["127.0.0.1:15001->5001/tcp"]);
+    expect(containers[0]?.ports).toEqual([
+      "5432/tcp",
+      "127.0.0.1:15001->5001/tcp",
+    ]);
   });
 });
