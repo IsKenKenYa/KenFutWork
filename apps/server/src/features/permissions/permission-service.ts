@@ -90,7 +90,9 @@ export interface PermissionService {
 export function createPermissionService(): PermissionService {
   let settings: PermissionSettings = { ...DEFAULT_PERMISSION_SETTINGS };
   const threadTiers = new Map<string, PermissionTier>();
-  const foreverApproved = new Set<string>();
+  // 「永久」批准的快速判定集：与 settings.approvedForever 同步（applySettings 覆盖，
+  // approve(forever) 增补后由调用方经 tier-store 写穿持久化）。
+  const foreverApproved = new Set<string>(settings.approvedForever);
   const threadApproved = new Set<string>();
 
   /** 场景对应的档位：自动化任务用 automationTier（线程显式设过档的优先）。 */
@@ -116,10 +118,13 @@ export function createPermissionService(): PermissionService {
       }
     },
     getSettings() {
-      return settings;
+      // approvedForever 以运行集为准（approve 增补后、applySettings 覆盖前也要读得到）
+      return { ...settings, approvedForever: [...foreverApproved] };
     },
     applySettings(next) {
       settings = next;
+      foreverApproved.clear();
+      for (const toolName of next.approvedForever) foreverApproved.add(toolName);
     },
     evaluate({ toolName, threadId, scenario = "interactive" }) {
       const tier = tierFor(threadId, scenario);
