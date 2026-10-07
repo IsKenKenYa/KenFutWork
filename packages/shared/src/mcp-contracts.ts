@@ -9,6 +9,10 @@ import { applicationErrorResponseSchema } from "./http.js";
 /** 标准MCP wire直接采用官方SDK契约；不另造工具、Task或身份DTO。 */
 export const computerUseMcpMessageSchema = JSONRPCMessageSchema;
 export const computerUseMcpQuerySchema = z.object({ runId: runIdSchema });
+export const computerUseSnapshotQuerySchema = z.object({
+  taskId: z.uuid(),
+  digest: z.string().regex(/^[0-9a-f]{64}$/),
+});
 /** SDK HTTP层的解析/会话错误用null id；标准MCP消息的RequestId仍保持原SDK约束。 */
 export const computerUseMcpTransportErrorSchema =
   JSONRPCErrorResponseSchema.extend({

@@ -9,7 +9,19 @@ export default defineConfig({
   publicDir: "public",
   plugins: [pdfJsCMapsPlugin(), react(), tailwindcss()],
   resolve: {
-    alias: { "@zui": fileURLToPath(new URL(".", import.meta.url)) },
+    alias: {
+      "@zui/ToolCallBlocks/renderers/cuaAccessDetails.js": fileURLToPath(
+        new URL("./host/cuaAccessDetailsAdapter.ts", import.meta.url),
+      ),
+      "@zui/ToolCallBlocks/renderers/cuaScreenshotDetails.js": fileURLToPath(
+        new URL("./host/cuaScreenshotDetailsAdapter.ts", import.meta.url),
+      ),
+      "@zui/ToolCallBlocks/renderers/cuaSummaryMessages.js": fileURLToPath(
+        new URL("./host/cuaSummaryMessagesAdapter.ts", import.meta.url),
+      ),
+      "@zui-original": fileURLToPath(new URL(".", import.meta.url)),
+      "@zui": fileURLToPath(new URL(".", import.meta.url)),
+    },
     dedupe: ["react", "react-dom"],
   },
   // 上游 Web 同一构建配置：diffs worker 入口必须保留其 message 监听副作用。

@@ -5,6 +5,16 @@ final class ProbeView: NSView {
   var label = NSTextField(labelWithString: "点击数：0")
   var count = 0
   override var acceptsFirstResponder: Bool { true }
+  override func draw(_ dirtyRect: NSRect) {
+    super.draw(dirtyRect)
+    if let tokenIndex = CommandLine.arguments.firstIndex(of: "--visual-token"), tokenIndex + 1 < CommandLine.arguments.count {
+      let token = CommandLine.arguments[tokenIndex + 1]
+      token.draw(at: NSPoint(x: 220, y: 230), withAttributes: [
+        .font: NSFont.monospacedSystemFont(ofSize: 22, weight: .bold),
+        .foregroundColor: NSColor.labelColor,
+      ])
+    }
+  }
   override init(frame: NSRect) {
     super.init(frame: frame)
     let button = NSButton(title: "验收按钮", target: self, action: #selector(clicked))

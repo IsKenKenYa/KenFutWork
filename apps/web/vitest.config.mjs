@@ -9,6 +9,19 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      "@zui/ToolCallBlocks/renderers/cuaAccessDetails.js": path.resolve(
+        import.meta.dirname,
+        "src/components/workbench/zcode/host/cuaAccessDetailsAdapter.ts",
+      ),
+      "@zui/ToolCallBlocks/renderers/cuaScreenshotDetails.js": path.resolve(
+        import.meta.dirname,
+        "src/components/workbench/zcode/host/cuaScreenshotDetailsAdapter.ts",
+      ),
+      "@zui/ToolCallBlocks/renderers/cuaSummaryMessages.js": path.resolve(
+        import.meta.dirname,
+        "src/components/workbench/zcode/host/cuaSummaryMessagesAdapter.ts",
+      ),
+      "@zui-original": path.resolve(import.meta.dirname, "src/components/workbench/zcode"),
       "@": path.resolve(import.meta.dirname, "src"),
       // zcode 照搬层路径映射（tsconfig paths 同口径；vitest 不读 tsconfig paths）
       "@zui": path.resolve(

@@ -23,6 +23,7 @@ import {
 } from "@kenfutwork/shared";
 import type { ServerEnv } from "../../config/env.js";
 import { registerComputerUseMcpRoutes } from "../../http/computer-use-mcp.js";
+import { registerComputerUseSnapshotRoutes } from "../../http/computer-use-snapshots.js";
 import type {
   PluginDefinition,
   ToolExecutionContext,
@@ -41,6 +42,7 @@ import {
   type CuGovernanceValues,
   createComputerUseService,
 } from "./service.js";
+import { createCuSnapshotArchive } from "./snapshot-archive.js";
 import {
   CU_BUNDLE_ID,
   type CuGateVerdict,
@@ -138,9 +140,18 @@ export function createComputerUsePlugin(options?: {
 }): PluginDefinition {
   return {
     name: "computer-use",
-    inject: ["settings", "localAccess", "localInstance"],
+    inject: ["settings", "localAccess", "localInstance", "blob", "persistence"],
     apply(ctx) {
       const runGovernance = new AsyncLocalStorage<CuGovernanceValues>();
+      const archive = createCuSnapshotArchive({
+        blob: ctx.get("blob"),
+        persistence: ctx.get("persistence"),
+      });
+      registerComputerUseSnapshotRoutes(ctx.app, {
+        archive,
+        localAccess: ctx.get("localAccess"),
+        settings: ctx.get("settings"),
+      });
       const executionContext = new AsyncLocalStorage<ToolExecutionContext>();
       let disposed = false;
       let selected = "native";
@@ -306,10 +317,14 @@ export function createComputerUsePlugin(options?: {
                 inputDelayMs: settings.computerUseInputDelayMs,
                 processMaxOutputBytes: settings.processMaxOutputBytes,
               };
-              return executionContext.run(context, () =>
+              const result = await executionContext.run(context, () =>
                 runGovernance.run(governance, () =>
                   definition.execute(args, context),
                 ),
+              );
+              return archive.project(
+                result as import("./service.js").CuToolResult,
+                context,
               );
             },
           }),

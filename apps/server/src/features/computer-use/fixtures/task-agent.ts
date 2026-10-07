@@ -107,6 +107,11 @@ export async function installedKernel(
         localInstance: database.localInstance,
         localAccess: database.localAccess,
         persistence: database.persistence,
+        blob: createLocalFsBlobStore({
+          rootDir: join(database.directory, "blob"),
+          publicBaseUrl: "http://127.0.0.1/unused-blobs",
+          signingSecret: "desktop-fixture-signing",
+        }),
       },
     },
   );

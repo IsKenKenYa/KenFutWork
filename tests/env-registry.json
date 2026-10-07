@@ -234,7 +234,8 @@
         "apps/server/src/features/computer-use/agent.native.integration.test.ts",
         "apps/server/src/features/computer-use/desktop.linux.integration.test.ts",
         "apps/server/src/features/computer-use/desktop.windows.integration.test.ts",
-        "apps/server/src/features/computer-use/desktop.app.integration.test.ts"
+        "apps/server/src/features/computer-use/desktop.app.integration.test.ts",
+        "apps/server/src/features/computer-use/snapshot-archive.integration.test.ts"
       ],
       "inExamples": false,
       "status": "test-gate",
@@ -610,7 +611,8 @@
       "surface": "test",
       "readers": [
         "apps/server/src/desktop/desktop-postgres.integration.test.ts",
-        "apps/server/src/desktop/desktop-runtime.integration.test.ts"
+        "apps/server/src/desktop/desktop-runtime.integration.test.ts",
+        "apps/server/src/features/persistence/migrations-retirement.integration.test.ts"
       ],
       "inExamples": false,
       "status": "test-gate",

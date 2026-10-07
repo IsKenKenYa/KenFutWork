@@ -31,7 +31,8 @@ function publicToolOutput(output: unknown): unknown {
     content: output.content,
     tool_call_id: output.tool_call_id,
     ...(output.name ? { name: output.name } : {}),
-    ...(failures.length
+    ...(failures.length ||
+    ("isError" in canonical && canonical.isError === true)
       ? { status: "error" as const }
       : output.status
         ? { status: output.status }

@@ -62,6 +62,7 @@ import {
   computerUseMcpEventStreamSchema,
   computerUseMcpMessageSchema,
   computerUseMcpQuerySchema,
+  computerUseSnapshotQuerySchema,
   createImageJobRequestSchema,
   createVideoJobRequestSchema,
   directoryPickerStatusSchema,
@@ -318,6 +319,19 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     description: "使用当前实例选择的说段合成音频字节，实际 MIME 由 Provider 决定；请求中止时取消合成。",
     requestSchema: voiceSpeakRequestSchema,
     binaryResponse: "application/octet-stream",
+  },
+
+  {
+    method: "get",
+    path: "/api/computer-use/snapshots",
+    tag: "mcp",
+    auth: "local",
+    successStatus: 200,
+    querySchema: computerUseSnapshotQuerySchema,
+    binaryResponse: "image/png",
+    summary: "读取当前实例Task持有的桌面截图",
+    description:
+      "大图保存在原blob服务；每次读取重新校验本机凭据与Task实例归属，已删除Task或不存在的截图返回404。引用不含访问令牌，读取字节受实例processMaxOutputBytes预算约束。",
   },
 
   {

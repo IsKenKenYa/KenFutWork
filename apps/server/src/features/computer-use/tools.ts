@@ -506,6 +506,12 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
     ...definition,
     exposure: "deferred",
     access: definition.access ?? "execute",
+    projectArguments: (args) =>
+      definition.name === `${CU_TOOL_PREFIX}key` &&
+      Array.isArray(args.keys) &&
+      args.keys.every((key) => typeof key === "string")
+        ? { ...args, key: args.keys.join("+") }
+        : args,
     execute: async (args, context) => {
       if (!context.runId || (context.delegationDepth ?? 0) > 0)
         return {

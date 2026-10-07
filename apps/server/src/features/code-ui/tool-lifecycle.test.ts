@@ -2,12 +2,61 @@ import { HumanMessage } from "@langchain/core/messages";
 import { createAgent, FakeToolCallingModel, tool } from "langchain";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-
+import { kernelToolToStructuredTool } from "../../agent/kernel-tools-bridge.js";
 import { adaptDeepAgentStream } from "../../agent/stream-adapter.js";
 import { AgentRunEventBus, ToolRegistryImpl } from "../../kernel/context.js";
+import { createUnavailableExecutor } from "../computer-use/executor.js";
+import { createComputerUseService } from "../computer-use/service.js";
+import { createComputerUseTools } from "../computer-use/tools.js";
 import { createToolLifecycleMiddleware } from "./tool-lifecycle.js";
 
 describe("Agent 公共工具生命周期", () => {
+  it("CUA真实不可用结果沿桥和模型事件投影为error，不能显示success", async () => {
+    const service = createComputerUseService({
+      executor: createUnavailableExecutor("验收后端不可用"),
+      governance: () => ({
+        actionTimeoutMs: 1000,
+        observeMaxBytes: 4096,
+        screenshotMaxBytes: 4096,
+        maxActionsPerRun: 20,
+        sessionMaxMs: 10000,
+      }),
+    });
+    const definition = createComputerUseTools({
+      service,
+      gate: async () => ({ ok: true }),
+    }).find((entry) => entry.name.endsWith("list_apps"));
+    if (!definition) throw new Error("缺少真实CUA发现工具");
+    const agent = createAgent({
+      model: new FakeToolCallingModel({
+        toolCalls: [
+          [{ id: "cu-unavailable", name: definition.name, args: {} }],
+          [],
+        ],
+      }),
+      tools: [kernelToolToStructuredTool(definition, { runId: "cu-status" })],
+      middleware: [createToolLifecycleMiddleware()],
+    });
+    const events = [];
+    for await (const event of adaptDeepAgentStream({
+      conversationId: "c",
+      sessionId: "s",
+      runId: "r",
+      canonicalToolEvents: true,
+      stream: agent.streamEvents(
+        { messages: [new HumanMessage("发现应用")] },
+        { version: "v2" },
+      ),
+    }))
+      events.push(event);
+    expect(
+      events.find((event) => event.type === "tool.completed"),
+    ).toMatchObject({
+      status: "error",
+      output: { isError: true, display: { kind: "cua", status: "failed" } },
+    });
+    await service.dispose();
+  });
   it("公开工具事件只投影envKeys，执行仍得到原始环境，投影不能改写调用", async () => {
     const args = { name: "local", env: { TASK_SECRET: "private-value" } };
     let executed: unknown;

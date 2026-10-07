@@ -945,6 +945,78 @@
         }
       }
     },
+    "/api/computer-use/snapshots": {
+      "get": {
+        "operationId": "getComputerUseSnapshots",
+        "summary": "读取当前实例Task持有的桌面截图",
+        "description": "大图保存在原blob服务；每次读取重新校验本机凭据与Task实例归属，已删除Task或不存在的截图返回404。引用不含访问令牌，读取字节受实例processMaxOutputBytes预算约束。",
+        "tags": [
+          "mcp"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "digest",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/computer-use/mcp": {
       "post": {
         "operationId": "postComputerUseMcp",
