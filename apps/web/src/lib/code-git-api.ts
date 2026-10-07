@@ -1,4 +1,7 @@
-import type { AgentRunLatestResponse, TerminalShellId } from "@kenfutwork/shared";
+import type {
+  AgentRunLatestResponse,
+  TerminalShellId,
+} from "@kenfutwork/shared";
 
 import { getServerBaseUrl } from "./env";
 import { ApiApplicationError, ApiAuthError } from "./server-api";
@@ -44,6 +47,30 @@ export interface GitStatus {
   branches: GitBranch[];
   dirty: boolean;
   source: "system" | "bundled" | "unavailable";
+}
+
+// --- Code 模式工作目录的生效绑定（env 映射） ---
+
+/**
+ * 无项目绑定时 run 的生效工作目录。
+ *
+ * - `env`：`KENFUTWORK_CANVAS_WORK_DIRS` 映射到本机目录——工作目录 chip 要把它显示出来
+ *   并标出来源，不能装作「未绑定」（agent 实际落在映射目录里）；
+ * - `none`：没有映射（界面保持既有显示）。
+ */
+export type CodeWorkDirBinding =
+  | { source: "env"; path: string }
+  | { source: "none" };
+
+export async function fetchCodeWorkDir(
+  accessToken: string,
+): Promise<CodeWorkDirBinding> {
+  const response = await fetch(`${getServerBaseUrl()}/api/code/work-dir`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as { binding: CodeWorkDirBinding };
+  return payload.binding;
 }
 
 export async function fetchGitStatus(

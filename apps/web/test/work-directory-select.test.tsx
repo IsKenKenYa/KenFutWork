@@ -149,6 +149,59 @@ describe("WorkDirectorySelect：入口收敛", () => {
 });
 
 /**
+ * env 映射的生效目录（`GET /api/code/work-dir`）：无项目绑定时不能再显示「未绑定」——
+ * agent 实际落在映射目录里。chip 显示目录名，用 FolderSymlink 图标与 title 标出来源。
+ */
+describe("WorkDirectorySelect：env 映射的生效目录", () => {
+  it("未选中 + 有映射：显示映射目录名，title 标出来源", () => {
+    renderSelect({
+      selectedProjectId: null,
+      mappedWorkDir: "D:\\Desktop\\test",
+    });
+    const trigger = screen.getByRole("button", { name: "工作目录" });
+    expect(trigger).toHaveTextContent("test");
+    expect(trigger).toHaveAttribute(
+      "title",
+      "环境变量映射 · D:\\Desktop\\test",
+    );
+    expect(trigger.querySelector(".lucide-folder-symlink")).not.toBeNull();
+  });
+
+  it("锁定（对话未绑项目）也显示映射目录而不是「未绑定」", () => {
+    renderSelect({
+      selectedProjectId: null,
+      mappedWorkDir: "D:\\Desktop\\test",
+      lockedHint: "环境变量映射 · D:\\Desktop\\test",
+    });
+    const trigger = screen.getByRole("button", { name: "工作目录" });
+    expect(trigger).toHaveTextContent("test");
+    expect(trigger).toBeDisabled();
+    expect(trigger).toHaveAttribute(
+      "title",
+      "环境变量映射 · D:\\Desktop\\test",
+    );
+  });
+
+  it("选中的项目优先于映射（项目名照旧，不显示映射目录）", () => {
+    renderSelect({ mappedWorkDir: "D:\\Desktop\\test" });
+    const trigger = screen.getByRole("button", { name: "工作目录" });
+    expect(trigger).toHaveTextContent("kenfutwork");
+    expect(trigger.querySelector(".lucide-folder-symlink")).toBeNull();
+  });
+
+  it("映射路径取不出目录名（盘符根）：回退既有占位，不给空 chip", () => {
+    renderSelect({
+      selectedProjectId: null,
+      mappedWorkDir: "D:\\",
+      lockedHint: "本次对话没有绑定工作目录",
+    });
+    expect(screen.getByRole("button", { name: "工作目录" })).toHaveTextContent(
+      "未绑定工作目录",
+    );
+  });
+});
+
+/**
  * 「打开文件夹」的副标题：桌面形态走服务端系统对话框（真绑定），其它形态是浏览器选择器
  * （按目录名复用/新建）。说清差别，用户才知道选的目录有没有被用上。
  */

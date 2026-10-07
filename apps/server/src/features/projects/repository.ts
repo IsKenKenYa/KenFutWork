@@ -131,6 +131,14 @@ export interface ProjectRepository {
     workspaceId: string,
     canvasId: string,
   ): Promise<string | null>;
+  /**
+   * 工作区「Code 工作台」的主画布（**只读**，与 ensureCodeWorkbench 不同：不创建）。
+   *
+   * 无项目绑定的 Code 会话，run 作用域解析到这张隐藏画布；界面据此判断它有没有被
+   * `KENFUTWORK_CANVAS_WORK_DIRS` 映射（映射存在时工作目录 chip 要显示生效目录与来源）。
+   * 从未跑过 Code 的工作区还没有这张画布——返回 null 即可，不是错误。
+   */
+  findCodeWorkbenchCanvas(workspaceId: string): Promise<string | null>;
   update(
     workspaceId: string,
     projectId: string,
@@ -363,6 +371,23 @@ export function createProjectRepository(
         [canvasId],
       );
       return row?.work_dir ?? null;
+    },
+
+    async findCodeWorkbenchCanvas(workspaceId) {
+      const row = await persistence.forWorkspace(workspaceId).queryOne<{
+        id: string;
+      }>(
+        `select c.id
+           from public.canvases c
+           join public.projects p on p.id = c.project_id
+          where p.workspace_id = :workspace
+            and p.slug = $1
+            and c.is_primary = true
+            and p.archived_at is null
+          limit 1`,
+        [CODE_WORKBENCH_SLUG],
+      );
+      return row?.id ?? null;
     },
   };
 }

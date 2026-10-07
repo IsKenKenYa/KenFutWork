@@ -114,7 +114,11 @@ import { useAuth } from "@/lib/auth-context";
 import { onBrowserOpen } from "@/lib/browser-panel";
 import { pickCheckpointForRun } from "@/lib/checkpoint-select";
 import { fetchCheckpoints } from "@/lib/code-checkpoints-api";
-import { commitGitAll, fetchLatestRun } from "@/lib/code-git-api";
+import {
+  commitGitAll,
+  fetchCodeWorkDir,
+  fetchLatestRun,
+} from "@/lib/code-git-api";
 import {
   loadCodeWorkDir,
   reconcileCodeWorkDir,
@@ -1071,6 +1075,40 @@ export function Workbench() {
     mode === "code" && activeTask?.projectId
       ? (codeProjects.find((p) => p.id === activeTask.projectId) ?? null)
       : null;
+
+  /**
+   * 无项目绑定时服务端的**生效工作目录**（env 映射）：工作目录 chip 要显示它并标出来源——
+   * 映射存在时 agent 落在映射目录里，界面显示「未绑定工作目录」就是在撒谎。
+   * 有项目绑定时不查（项目名优先，且解析时界面绑定覆盖 env 映射）。
+   */
+  const [envWorkDir, setEnvWorkDir] = useState<string | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `activeTask?.status` 是**触发器**——run 结束后再查一次，接住第一轮 run 才懒创建的「Code 工作台」画布
+  useEffect(() => {
+    const token = session?.access_token;
+    const projectId = conversationProject?.id ?? null;
+    if (mode !== "code" || !token || projectId) {
+      setEnvWorkDir(null);
+      return;
+    }
+    let cancelled = false;
+    fetchCodeWorkDir(token)
+      .then((binding) => {
+        if (!cancelled) {
+          setEnvWorkDir(binding.source === "env" ? binding.path : null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setEnvWorkDir(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    mode,
+    session?.access_token,
+    conversationProject?.id,
+    activeTask?.status,
+  ]);
 
   /** 最近一次「本轮自动提交」的时间戳（仅用于给用户一个可见回执 + 刷新分支 chip）。 */
   const [lastAutoCommitAt, setLastAutoCommitAt] = useState<string | null>(null);
@@ -3509,10 +3547,13 @@ export function Workbench() {
                       <WorkDirectorySelect
                         projects={codeProjects}
                         selectedProjectId={conversationProject?.id ?? null}
+                        mappedWorkDir={envWorkDir ?? undefined}
                         lockedHint={
                           conversationProject
                             ? `本次对话已绑定工作目录「${conversationProject.name}」`
-                            : "本次对话没有绑定工作目录"
+                            : envWorkDir
+                              ? `环境变量映射 · ${envWorkDir}`
+                              : "本次对话没有绑定工作目录"
                         }
                         busy={creatingProject}
                         onSelect={() => undefined}
@@ -4086,6 +4127,9 @@ ${formatElementReference(picked)}`
                 <WorkDirectorySelect
                   projects={codeProjects}
                   selectedProjectId={selectedProjectId}
+                  mappedWorkDir={
+                    selectedProjectId ? undefined : (envWorkDir ?? undefined)
+                  }
                   busy={creatingProject}
                   onSelect={(projectId) => {
                     const project = codeProjects.find(

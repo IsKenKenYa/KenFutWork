@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 import { registerCodeGitRoutes } from "../../http/code-git.js";
 import { registerCodeIndexRoutes } from "../../http/code-index.js";
+import { registerCodeWorkDirRoutes } from "../../http/code-work-dir.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { createCanvasRepository } from "../canvas/repository.js";
 import { createCodeIndexStore } from "../code-index/index-store.js";
@@ -53,6 +54,13 @@ export function createCodeGitPlugin(): PluginDefinition {
         codeGitService: ctx.get("codeGit"),
         settingsService: ctx.get("settings"),
         indexStore: createCodeIndexStore({}),
+      });
+      // 工作目录的生效绑定（env 映射）：无项目绑定时界面要显示生效目录与来源
+      void registerCodeWorkDirRoutes(ctx.app, {
+        auth: ctx.get("auth"),
+        viewerService: ctx.get("viewer"),
+        projectRepository: createProjectRepository(ctx.get("persistence")),
+        canvasWorkDirs: ctx.env.canvasWorkDirs,
       });
     },
   };

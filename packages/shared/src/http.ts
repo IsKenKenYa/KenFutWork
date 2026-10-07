@@ -106,6 +106,20 @@ export const codeGitCheckoutRequestSchema = z.object({
   branch: z.string().min(1),
 });
 
+/**
+ * Code 模式工作目录的**生效绑定**（读取侧）。
+ *
+ * 无项目绑定时，run 落到工作区隐藏的「Code 工作台」画布——若它被
+ * `KENFUTWORK_CANVAS_WORK_DIRS` 映射到本机目录，界面必须显示**生效目录与来源**，
+ * 不能显示成「未绑定工作目录」（agent 实际落在映射目录里，用户从界面上看不出差别）。
+ */
+export const codeWorkDirResponseSchema = z.object({
+  binding: z.discriminatedUnion("source", [
+    z.object({ source: z.literal("env"), path: z.string().min(1) }),
+    z.object({ source: z.literal("none") }),
+  ]),
+});
+
 // --- Code 模式 git 写操作（R2-1：更改统计 / 提交 / 推送 / 新建分支） ---
 
 export const codeGitDiffStatResponseSchema = z.object({

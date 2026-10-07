@@ -6,9 +6,11 @@ import {
   ChevronDown,
   Folder,
   FolderOpen,
+  FolderSymlink,
   MessageSquare,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { workDirNameFromPath } from "@/lib/work-directory";
 
 /**
  * 工作目录选择器（Code 模式 composer 底部）。
@@ -31,6 +33,12 @@ export interface WorkDirectorySelectProps {
    * 「消失」），所以这里把 chip 锁成展示态，而不是给一个按了不生效的下拉。
    */
   lockedHint?: string | undefined;
+  /**
+   * 无项目绑定时服务端给出的**生效目录**（env 映射，`GET /api/code/work-dir`）：
+   * chip 显示它的目录名并用 FolderSymlink 标出来源，不再显示成「未绑定」；
+   * 有项目选中时忽略（项目名优先）。
+   */
+  mappedWorkDir?: string | undefined;
   /** 正在创建项目（新建/自动补建）时为 true，禁用以避免并发重复建。 */
   busy?: boolean;
   /** 「打开文件夹」的副标题：说清会开系统对话框还是浏览器选择器（见 folderPickerHint）。 */
@@ -46,6 +54,7 @@ export function WorkDirectorySelect({
   projects,
   selectedProjectId,
   lockedHint,
+  mappedWorkDir,
   busy = false,
   folderHint,
   onSelect,
@@ -91,6 +100,9 @@ export function WorkDirectorySelect({
     : projects;
   /** 只读（已绑定对话）：chip 仍然显示目录名，但不给下拉——按了不生效才是坑。 */
   const locked = lockedHint !== undefined;
+  /** env 映射的生效目录名（拿不到目录名就照旧显示占位，不给空 chip）。 */
+  const mappedName = mappedWorkDir ? workDirNameFromPath(mappedWorkDir) : "";
+  const showMapped = !selected && Boolean(mappedName);
 
   return (
     <div ref={containerRef} className="relative">
@@ -99,18 +111,28 @@ export function WorkDirectorySelect({
         aria-label="工作目录"
         aria-haspopup={locked ? undefined : "listbox"}
         aria-expanded={locked ? undefined : open}
-        title={lockedHint ?? selected?.workDir ?? undefined}
+        title={
+          lockedHint ??
+          selected?.workDir ??
+          (mappedWorkDir ? `环境变量映射 · ${mappedWorkDir}` : undefined)
+        }
         disabled={busy || locked}
         onClick={() => setOpen((current) => !current)}
         className="flex max-w-[12rem] items-center gap-1.5 rounded-lg border px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-60"
       >
-        <Folder className="h-3.5 w-3.5 shrink-0" />
+        {showMapped ? (
+          <FolderSymlink className="h-3.5 w-3.5 shrink-0" />
+        ) : (
+          <Folder className="h-3.5 w-3.5 shrink-0" />
+        )}
         <span className="truncate">
           {selected
             ? selected.name
-            : locked
-              ? "未绑定工作目录"
-              : "选择工作目录"}
+            : showMapped
+              ? mappedName
+              : locked
+                ? "未绑定工作目录"
+                : "选择工作目录"}
         </span>
         {locked ? null : <ChevronDown className="h-3 w-3 shrink-0" />}
       </button>
