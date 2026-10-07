@@ -12,6 +12,7 @@ import {
   Blocks,
   Brain,
   Code2,
+  Cpu,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -3141,7 +3142,7 @@ export function Workbench() {
                 data-active={flowView === "engine"}
                 className="mt-1 flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[active=true]:bg-muted data-[active=true]:text-foreground"
               >
-                <Server className="h-4 w-4 shrink-0" />
+                <Cpu className="h-4 w-4 shrink-0" />
                 引擎
               </button>
             </nav>
