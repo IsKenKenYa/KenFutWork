@@ -84,7 +84,7 @@ export function FlowEnginePage({
 
   return (
     <div className="h-full overflow-y-auto bg-background">
-      <div className="mx-auto flex max-w-2xl flex-col px-6 py-5">
+      <div className="flex w-full flex-col px-8 pt-8 pb-8">
         <header className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
