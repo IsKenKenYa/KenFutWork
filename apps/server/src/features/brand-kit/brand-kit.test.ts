@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { AuthenticatedUser } from "../auth/types.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
+import type { LocalActor } from "../local-instance/types.js";
 import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
@@ -14,16 +15,18 @@ import {
   createBrandKitRepository,
 } from "./repository.js";
 
-const USER_ID = "user-1";
+const INSTANCE_ID = "instance-1";
 const KIT_ID = "kit-1";
 const ASSET_ID = "asset-1";
 
-const USER: AuthenticatedUser = {
-  accessToken: "token",
-  email: "user@example.com",
-  id: USER_ID,
-  userMetadata: {},
+const ACTOR: LocalActor = {
+  instanceId: INSTANCE_ID,
+  accessClientId: "client-1",
 };
+const localInstance = createLocalInstanceService({
+  repository: { ensure: async () => INSTANCE_ID },
+  dataDir: "/tmp/brand-instance-test",
+});
 
 type FakeResult = { rowCount: number | null; rows: unknown[] } | Error;
 
@@ -54,6 +57,9 @@ function createRunner(
         release: () => {},
       };
     },
+    async acquireSession() {
+      throw new Error("此查询夹具不提供真实执行宿主会话。");
+    },
     async end() {},
   };
 
@@ -74,47 +80,47 @@ const KIT_ROW = {
   updated_at: "2026-09-13T00:00:00+00:00",
 };
 
-describe("brand-kit repository（brand_kits 走 :user，assets 走父链）", () => {
-  it("套件读写把用户绑定为末位参数（:user 谓词）", async () => {
+describe("brand-kit repository（brand_kits 走 :instance，assets 走父链）", () => {
+  it("套件读写把实例绑定为末位参数（:instance 谓词）", async () => {
     const list = createRunner(() => ({ rowCount: 1, rows: [KIT_ROW] }));
     await createBrandKitRepository(
       createPersistenceFromRunner(list.runner),
-    ).listKits(USER_ID);
+    ).listKits(INSTANCE_ID);
     expect(list.sqls()[0]).toContain(
-      "from public.brand_kits where user_id = $1 order by created_at asc",
+      "from public.brand_kits where instance_id = $1 order by created_at asc",
     );
-    expect(list.calls[0]?.values).toEqual([USER_ID]);
+    expect(list.calls[0]?.values).toEqual([INSTANCE_ID]);
 
     const find = createRunner(() => ({ rowCount: 1, rows: [KIT_ROW] }));
     await createBrandKitRepository(
       createPersistenceFromRunner(find.runner),
-    ).findKit(USER_ID, KIT_ID);
-    expect(find.sqls()[0]).toContain("where user_id = $2 and id = $1");
-    expect(find.calls[0]?.values).toEqual([KIT_ID, USER_ID]);
+    ).findKit(INSTANCE_ID, KIT_ID);
+    expect(find.sqls()[0]).toContain("where instance_id = $2 and id = $1");
+    expect(find.calls[0]?.values).toEqual([KIT_ID, INSTANCE_ID]);
 
     const del = createRunner(() => ({ rowCount: 1, rows: [] }));
     await createBrandKitRepository(
       createPersistenceFromRunner(del.runner),
-    ).deleteKit(USER_ID, KIT_ID);
-    expect(del.sqls()[0]).toContain("where user_id = $2 and id = $1");
+    ).deleteKit(INSTANCE_ID, KIT_ID);
+    expect(del.sqls()[0]).toContain("where instance_id = $2 and id = $1");
   });
 
-  it("资产的每条语句都带父链归属校验（exists … k.user_id = :user）", async () => {
+  it("资产的每条语句都带父链归属校验（exists … k.instance_id = :instance）", async () => {
     const list = createRunner();
     await createBrandKitRepository(
       createPersistenceFromRunner(list.runner),
-    ).listAssets(USER_ID, KIT_ID);
+    ).listAssets(INSTANCE_ID, KIT_ID);
     const listSql = list.sqls()[0] ?? "";
     expect(listSql).toContain("from public.brand_kit_assets a");
     expect(listSql).toContain(
-      "exists (select 1 from public.brand_kits k where k.id = a.kit_id and k.user_id = $2)",
+      "exists (select 1 from public.brand_kits k where k.id = a.kit_id and k.instance_id = $2)",
     );
     expect(listSql).toContain("order by a.sort_order asc, a.created_at asc");
 
     const insert = createRunner(() => ({ rowCount: 1, rows: [KIT_ROW] }));
     await createBrandKitRepository(
       createPersistenceFromRunner(insert.runner),
-    ).insertAsset(USER_ID, KIT_ID, {
+    ).insertAsset(INSTANCE_ID, KIT_ID, {
       asset_type: "color",
       display_name: "主色",
       sort_order: 0,
@@ -124,16 +130,16 @@ describe("brand-kit repository（brand_kits 走 :user，assets 走父链）", ()
     // 归属校验内联在 insert…select 的 WHERE 里：归属与写入是同一条语句
     expect(insertSql).toContain("insert into public.brand_kit_assets");
     expect(insertSql).toContain(
-      "where exists (select 1 from public.brand_kits k where k.id = $1 and k.user_id = $9)",
+      "where exists (select 1 from public.brand_kits k where k.id = $1 and k.instance_id = $9)",
     );
-    expect(insert.calls[0]?.values.at(-1)).toBe(USER_ID);
+    expect(insert.calls[0]?.values.at(-1)).toBe(INSTANCE_ID);
 
     const del = createRunner(() => ({ rowCount: 1, rows: [] }));
     await createBrandKitRepository(
       createPersistenceFromRunner(del.runner),
-    ).deleteAsset(USER_ID, KIT_ID, ASSET_ID);
+    ).deleteAsset(INSTANCE_ID, KIT_ID, ASSET_ID);
     expect(del.sqls()[0]).toContain(
-      "where a.id = $1 and a.kit_id = $2 and exists (select 1 from public.brand_kits k where k.id = a.kit_id and k.user_id = $3)",
+      "where a.id = $1 and a.kit_id = $2 and exists (select 1 from public.brand_kits k where k.id = a.kit_id and k.instance_id = $3)",
     );
   });
 
@@ -142,7 +148,7 @@ describe("brand-kit repository（brand_kits 走 :user，assets 走父链）", ()
 
     await createBrandKitRepository(
       createPersistenceFromRunner(runner),
-    ).insertAssets(USER_ID, KIT_ID, [
+    ).insertAssets(INSTANCE_ID, KIT_ID, [
       {
         asset_type: "color",
         display_name: "a",
@@ -162,7 +168,7 @@ describe("brand-kit repository（brand_kits 走 :user，assets 走父链）", ()
     expect(sql).toContain("from (values");
     expect(sql).toContain("::public.brand_kit_asset_type");
     expect(sql).toContain(
-      "where exists (select 1 from public.brand_kits k where k.id = $1 and k.user_id = $16)",
+      "where exists (select 1 from public.brand_kits k where k.id = $1 and k.instance_id = $16)",
     );
   });
 
@@ -170,7 +176,7 @@ describe("brand-kit repository（brand_kits 走 :user，assets 走父链）", ()
     const { calls, runner } = createRunner(() => ({ rowCount: 1, rows: [] }));
     await createBrandKitRepository(
       createPersistenceFromRunner(runner),
-    ).updateAsset(USER_ID, KIT_ID, ASSET_ID, {
+    ).updateAsset(INSTANCE_ID, KIT_ID, ASSET_ID, {
       display_name: "新名",
       metadata: { weight: "700" },
       role: undefined,
@@ -185,7 +191,7 @@ describe("brand-kit repository（brand_kits 走 :user，assets 走父链）", ()
       KIT_ID,
       "新名",
       JSON.stringify({ weight: "700" }),
-      USER_ID,
+      INSTANCE_ID,
     ]);
   });
 });
@@ -202,7 +208,7 @@ function createFakeRepository(
     findKit: async () => KIT_ROW,
     findKitRef: async () => KIT_ID,
     findKitSource: async () => ({ guidance_text: "指南", name: "品牌 A" }),
-    insertAsset: async (_userId, _kitId, input) => ({
+    insertAsset: async (_instanceId, _kitId, input) => ({
       asset_type: input.asset_type,
       created_at: KIT_ROW.created_at,
       display_name: input.display_name,
@@ -262,6 +268,7 @@ function buildService(options: {
   const storage = options.storage ?? createStorageStub();
   return {
     service: createBrandKitService({
+      localInstance,
       blob: storage.blob,
       repository: createFakeRepository(options.repository),
     }),
@@ -281,7 +288,7 @@ describe("brand-kit service（校验与错误码保持）", () => {
       },
     });
 
-    const kits = await service.listKits(USER);
+    const kits = await service.listKits(ACTOR);
     expect(kits[0]?.asset_counts).toEqual({
       color: 2,
       font: 0,
@@ -292,7 +299,7 @@ describe("brand-kit service（校验与错误码保持）", () => {
 
   it("读取：缺少行 404、数据访问失败 500（两种码都保持）", async () => {
     const missing = buildService({ repository: { findKit: async () => null } });
-    await expect(missing.service.getKit(USER, KIT_ID)).rejects.toMatchObject({
+    await expect(missing.service.getKit(ACTOR, KIT_ID)).rejects.toMatchObject({
       code: "brand_kit_not_found",
       statusCode: 404,
     });
@@ -305,7 +312,7 @@ describe("brand-kit service（校验与错误码保持）", () => {
       },
     });
     const error = await failing.service
-      .getKit(USER, KIT_ID)
+      .getKit(ACTOR, KIT_ID)
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(BrandKitServiceError);
     expect(error).toMatchObject({ statusCode: 500 });
@@ -315,14 +322,14 @@ describe("brand-kit service（校验与错误码保持）", () => {
     const seen: string[] = [];
     const { service } = buildService({
       repository: {
-        insertKit: async (_userId, input) => {
+        insertKit: async (_instanceId, input) => {
           seen.push(input.name);
           return KIT_ID;
         },
       },
     });
 
-    await service.createKit(USER, { name: "   " } as never);
+    await service.createKit(ACTOR, { name: "   " } as never);
     expect(seen).toEqual(["未命名"]);
   });
 
@@ -337,10 +344,10 @@ describe("brand-kit service（校验与错误码保持）", () => {
       },
     });
 
-    await service.updateKit(USER, KIT_ID, { is_default: true });
+    await service.updateKit(ACTOR, KIT_ID, { is_default: true });
     expect(cleared).toBe(1);
 
-    await service.updateKit(USER, KIT_ID, {});
+    await service.updateKit(ACTOR, KIT_ID, {});
     expect(cleared).toBe(1);
   });
 
@@ -348,17 +355,17 @@ describe("brand-kit service（校验与错误码保持）", () => {
     const missing = buildService({
       repository: { findKitRef: async () => null },
     });
-    await expect(missing.service.deleteKit(USER, KIT_ID)).rejects.toMatchObject(
-      {
-        code: "brand_kit_not_found",
-        statusCode: 404,
-      },
-    );
+    await expect(
+      missing.service.deleteKit(ACTOR, KIT_ID),
+    ).rejects.toMatchObject({
+      code: "brand_kit_not_found",
+      statusCode: 404,
+    });
 
     const { service, storage } = buildService({
       repository: { listAssetFilePaths: async () => ["u/k/a.png"] },
     });
-    await service.deleteKit(USER, KIT_ID);
+    await service.deleteKit(ACTOR, KIT_ID);
     expect(storage.calls).toContain("remove:brand-kit-assets:u/k/a.png");
   });
 
@@ -367,7 +374,7 @@ describe("brand-kit service（校验与错误码保持）", () => {
       repository: { findKitRef: async () => null },
     });
     await expect(
-      missing.service.createAsset(USER, KIT_ID, {
+      missing.service.createAsset(ACTOR, KIT_ID, {
         asset_type: "color",
         display_name: "x",
       } as never),
@@ -376,7 +383,7 @@ describe("brand-kit service（校验与错误码保持）", () => {
     const orders: number[] = [];
     const { service } = buildService({
       repository: {
-        insertAsset: async (_userId, _kitId, input) => {
+        insertAsset: async (_instanceId, _kitId, input) => {
           orders.push(input.sort_order);
           return null;
         },
@@ -384,7 +391,7 @@ describe("brand-kit service（校验与错误码保持）", () => {
       },
     });
     await expect(
-      service.createAsset(USER, KIT_ID, {
+      service.createAsset(ACTOR, KIT_ID, {
         asset_type: "color",
         display_name: "x",
       } as never),
@@ -399,7 +406,7 @@ describe("brand-kit service（校验与错误码保持）", () => {
 
     await expect(
       service.uploadAsset(
-        USER,
+        ACTOR,
         KIT_ID,
         "logo",
         "logo.png",
@@ -417,11 +424,11 @@ describe("brand-kit service（校验与错误码保持）", () => {
     const kitInserts: string[] = [];
     const { service, storage } = buildService({
       repository: {
-        insertAssets: async (_userId, kitId, rows) => {
+        insertAssets: async (_instanceId, kitId, rows) => {
           inserted.push({ kitId, rows });
           return rows.length;
         },
-        insertKit: async (_userId, input) => {
+        insertKit: async (_instanceId, input) => {
           kitInserts.push(input.name);
           return "kit-2";
         },
@@ -442,7 +449,7 @@ describe("brand-kit service（校验与错误码保持）", () => {
       },
     });
 
-    await service.duplicateKit(USER, KIT_ID);
+    await service.duplicateKit(ACTOR, KIT_ID);
 
     expect(kitInserts).toEqual(["品牌 A (副本)"]);
     expect(storage.calls.some((call) => call.startsWith("copy:"))).toBe(true);
@@ -454,9 +461,34 @@ describe("brand-kit service（校验与错误码保持）", () => {
     const { service } = buildService({
       repository: { findKitSource: async () => null },
     });
-    await expect(service.duplicateKit(USER, KIT_ID)).rejects.toMatchObject({
+    await expect(service.duplicateKit(ACTOR, KIT_ID)).rejects.toMatchObject({
       code: "brand_kit_not_found",
       statusCode: 404,
     });
   });
+});
+
+it("品牌实例 Actor 在父资源读取前验证，创建客户端不是归属", async () => {
+  let reads = 0;
+  const { service } = buildService({
+    repository: {
+      listKits: async () => {
+        reads += 1;
+        return [];
+      },
+    },
+  });
+  await expect(
+    service.listKits({
+      instanceId: "foreign",
+      accessClientId: ACTOR.accessClientId,
+    }),
+  ).rejects.toMatchObject({ code: "instance_forbidden", statusCode: 403 });
+  expect(reads).toBe(0);
+  expect(
+    await service.listKits({
+      instanceId: ACTOR.instanceId,
+      accessClientId: "other-browser",
+    }),
+  ).toEqual([]);
 });

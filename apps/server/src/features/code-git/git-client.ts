@@ -49,57 +49,6 @@ export function isSafeBranchName(name: string): boolean {
   return /^[A-Za-z0-9._/-]+$/.test(name);
 }
 
-/**
- * 工作树（R5-2「工作树」条目）：一个仓库可以同时检出多份工作副本。
- *
- * 我们的用法是「在别处的分支上并行干活」——每份工作树是一个真实目录，
- * 可以由项目把它绑成工作目录（`projects.work_dir`），于是 agent / 终端 / git 都在那份里跑。
- */
-export interface GitWorktree {
-  /** 绝对路径（git 给的就是绝对路径）。 */
-  path: string;
-  /** 检出的分支（detached 时为 null）。 */
-  branch: string | null;
-  /** 仓库本体（`git worktree list` 的第一条）。 */
-  main: boolean;
-  detached: boolean;
-}
-
-/**
- * 解析 `git worktree list --porcelain`：空行分隔的块，每块是 `key value` 行。
- * 认不出的键忽略（git 加字段不该让整页崩），路径缺失的块丢弃。
- */
-export function parseWorktrees(stdout: string): GitWorktree[] {
-  const blocks = stdout
-    .split(/\r?\n\s*\r?\n/)
-    .map((block) => block.trim())
-    .filter((block) => block.length > 0);
-  const worktrees: GitWorktree[] = [];
-  for (const block of blocks) {
-    let path = "";
-    let branch: string | null = null;
-    let detached = false;
-    for (const line of block.split(/\r?\n/)) {
-      const [key, ...rest] = line.trim().split(" ");
-      const value = rest.join(" ");
-      if (key === "worktree") path = value;
-      else if (key === "branch")
-        branch = value.replace(/^refs\/heads\//, "") || null;
-      else if (key === "detached") detached = true;
-    }
-    if (!path) continue;
-    worktrees.push({
-      path,
-      branch: detached ? null : branch,
-      // `git worktree list` 的**第一条**就是仓库本体：按「已收下的第一条」判，
-      // 而不是原始块序号（万一某个块被丢弃，序号会把工作树误标成本体）
-      main: worktrees.length === 0,
-      detached,
-    });
-  }
-  return worktrees;
-}
-
 /** 解析 `git branch --format=%(refname:short)%00%(HEAD)` 的输出（NUL 分隔）。 */
 export function parseBranchList(stdout: string): GitBranchView[] {
   return stdout
@@ -180,21 +129,6 @@ export interface GitClient {
   discardFile(cwd: string, path: string, untracked: boolean): Promise<void>;
   /** 撤销全部未提交改动（`restore` + `clean -fd`）。 */
   discardAll(cwd: string): Promise<void>;
-  /** 列出工作树（含仓库本体，第一条）。 */
-  listWorktrees(cwd: string): Promise<GitWorktree[]>;
-  /**
-   * 新建工作树：`git worktree add [-b <branch>] <path> [<branch>]`。
-   * `create=true` 时建新分支（`-b`），否则检出已有分支。
-   */
-  addWorktree(
-    cwd: string,
-    input: { path: string; branch: string; create: boolean },
-  ): Promise<void>;
-  /** 删除工作树（`--force` 用于丢弃里面未提交的改动；只删工作树目录，不删分支）。 */
-  removeWorktree(
-    cwd: string,
-    input: { path: string; force: boolean },
-  ): Promise<void>;
 }
 
 /** 变更清单（R3-2 参考图「24 个文件已更改 +1022 −396」的逐行形态）。 */
@@ -714,81 +648,6 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
       : text;
   };
 
-  /** 工作树清单：`git worktree list --porcelain`（第一条是仓库本体）。 */
-  const listWorktrees = async (cwd: string): Promise<GitWorktree[]> => {
-    const result = await exec(["worktree", "list", "--porcelain"], cwd);
-    if (result.code !== 0) {
-      const reason = result.stderr.trim() || result.stdout.trim();
-      throw new Error(
-        /not a git repository/i.test(reason)
-          ? "这个目录不是 Git 仓库。"
-          : reason || "读取工作树失败。",
-      );
-    }
-    return parseWorktrees(result.stdout);
-  };
-
-  /**
-   * 新建工作树。参数一律经白名单与 `--` 之外的显式位置传入（无 shell，注入面只在选项前缀上）。
-   * `create` 为真时建新分支；为假时检出已有分支——两种失败都折叠成可读原因。
-   */
-  const addWorktree = async (
-    cwd: string,
-    input: { path: string; branch: string; create: boolean },
-  ): Promise<void> => {
-    if (!isSafeBranchName(input.branch)) {
-      throw new Error(`非法分支名：${input.branch}`);
-    }
-    if (input.path.startsWith("-")) {
-      throw new Error("工作树路径不能以 - 开头。");
-    }
-    const args = input.create
-      ? ["worktree", "add", "-b", input.branch, input.path]
-      : ["worktree", "add", input.path, input.branch];
-    const result = await exec(args, cwd);
-    if (result.code !== 0) {
-      const reason = result.stderr.trim() || result.stdout.trim();
-      if (/already exists/i.test(reason) && /branch/i.test(reason)) {
-        throw new Error(
-          `分支「${input.branch}」已存在：可以不带「新建分支」再试一次（检出已有分支）。`,
-        );
-      }
-      if (/already exists/i.test(reason)) {
-        throw new Error(`目标目录已存在且不为空：${input.path}`);
-      }
-      if (/not a git repository/i.test(reason)) {
-        throw new Error("这个目录不是 Git 仓库。");
-      }
-      throw new Error(reason || "创建工作树失败。");
-    }
-  };
-
-  /** 删除工作树：只删这份工作副本，不动分支；带未提交改动时先要求确认（force）。 */
-  const removeWorktree = async (
-    cwd: string,
-    input: { path: string; force: boolean },
-  ): Promise<void> => {
-    if (input.path.startsWith("-")) {
-      throw new Error("工作树路径不能以 - 开头。");
-    }
-    const result = await exec(
-      ["worktree", "remove", ...(input.force ? ["--force"] : []), input.path],
-      cwd,
-    );
-    if (result.code !== 0) {
-      const reason = result.stderr.trim() || result.stdout.trim();
-      if (/modified or untracked|is dirty/i.test(reason)) {
-        throw new Error(
-          "这份工作树里有未提交的改动：确认要丢的话，勾选「强制删除」再删一次。",
-        );
-      }
-      if (/is not a working tree|no such/i.test(reason)) {
-        throw new Error("这份工作树已经不存在了（可能被手工删过目录）。");
-      }
-      throw new Error(reason || "删除工作树失败。");
-    }
-  };
-
   return {
     checkout,
     describe,
@@ -800,9 +659,6 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     stageFile,
     push,
     createBranch,
-    listWorktrees,
-    addWorktree,
-    removeWorktree,
     init,
     graph,
     changedFiles,

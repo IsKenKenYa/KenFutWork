@@ -30,7 +30,7 @@ import {
   resolveInstanceChatModel,
 } from "../../providers/resolve.js";
 
-import type { AuthenticatedUser } from "../auth/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type { ModelProviderService } from "../model-providers/model-provider-service.js";
 import { decodeWav, encodeWav, floatToPcm16Array, probeWav } from "./audio.js";
 import {
@@ -99,14 +99,14 @@ export interface VoiceServiceDeps {
   collectHardware?: () => Promise<VoiceDiagnoseHardware>;
   /** 测试注入：想段改写（默认打用户的 BYOK 对话模型）。 */
   refine?: (
-    user: AuthenticatedUser,
+    user: LocalActor,
     selection: VoiceSelection,
     input: { text: string; recentMessages?: VoiceRefineContextMessage[] },
     signal?: AbortSignal,
   ) => Promise<string>;
   /** 测试注入：想段 TTFT 探针（默认打用户的 BYOK 对话模型）。 */
   probeThink?: (
-    user: AuthenticatedUser,
+    user: LocalActor,
     selection: VoiceSelection,
     signal?: AbortSignal,
   ) => Promise<{ ttftSeconds: number; tokensPerSecond?: number }>;
@@ -114,25 +114,25 @@ export interface VoiceServiceDeps {
 
 export interface VoiceService {
   getSettings(
-    user: AuthenticatedUser,
-    workspaceId: string,
+    user: LocalActor,
+    instanceId: string,
   ): Promise<VoiceSettings>;
   updateSettings(
-    user: AuthenticatedUser,
-    workspaceId: string,
+    user: LocalActor,
+    instanceId: string,
     patch: VoiceSettingsUpdateRequest,
   ): Promise<VoiceSettings>;
   /** 解析「听」段；未就绪即抛 `VoiceUnavailableError`（可读原因）。 */
   resolveTranscriber(
-    user: AuthenticatedUser,
-    workspaceId: string,
+    user: LocalActor,
+    instanceId: string,
   ): Promise<ResolvedSegment<VoiceTranscriber>>;
   /**
    * 三段的候选卡片（规划 §5）：内置离线模型（含下载状态）+ 该用户自己的音频/对话
    * 模型实例。**只列真能用的**：不可用的带 `unavailableReason` 置灰并写明原因。
    */
   listCandidates(
-    user: AuthenticatedUser,
+    user: LocalActor,
     segment?: "listen" | "think" | "speak",
   ): Promise<VoiceModelCandidate[]>;
   /**
@@ -141,8 +141,8 @@ export interface VoiceService {
    * 静默回落会让用户以为模型改写过，实际什么都没发生。
    */
   refine(
-    user: AuthenticatedUser,
-    workspaceId: string,
+    user: LocalActor,
+    instanceId: string,
     input: { text: string; recentMessages?: VoiceRefineContextMessage[] },
     signal?: AbortSignal,
   ): Promise<string>;
@@ -151,8 +151,8 @@ export interface VoiceService {
    * 当前只有 BYOK 端点档（内置档待定，见 catalog 注释）。
    */
   resolveSynthesizer(
-    user: AuthenticatedUser,
-    workspaceId: string,
+    user: LocalActor,
+    instanceId: string,
   ): Promise<ResolvedSegment<VoiceSynthesizer>>;
   /** 真实使用的「听」实测汇总（检测页与检测报告共用）。 */
   getListenTimings(): VoiceListenSummary;
@@ -160,8 +160,8 @@ export interface VoiceService {
   getLastDiagnose(): VoiceDiagnoseReport | null;
   /** 跑一次检测并持久化（规划 §6）。 */
   diagnose(
-    user: AuthenticatedUser,
-    workspaceId: string,
+    user: LocalActor,
+    instanceId: string,
     signal?: AbortSignal,
   ): Promise<VoiceDiagnoseReport>;
 }
@@ -189,8 +189,11 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
     return provider;
   }
 
-  async function readSettings(workspaceId: string): Promise<VoiceSettings> {
-    const raw = await deps.repository.findVoice(workspaceId);
+  async function readSettings(actor: LocalActor, instanceId: string): Promise<VoiceSettings> {
+    if (actor.instanceId !== instanceId) {
+      throw new VoiceUnavailableError("语音设置不属于当前本地实例。");
+    }
+    const raw = await deps.repository.findVoice(instanceId);
     return raw === null ? DEFAULT_VOICE_SETTINGS : parseVoiceSettings(raw);
   }
 
@@ -221,9 +224,9 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
     return builtinProvider(selection);
   }
 
-  /** 实例段：按**用户作用域**解析凭证（不是 worker 的 resolveCredentialsById）。 */
+  /** 实例段：按**本地实例作用域**解析凭证（不是 worker 的 resolveCredentialsById）。 */
   async function instanceProvider(
-    user: AuthenticatedUser,
+    user: LocalActor,
     selection: VoiceSelection,
     segmentLabel: string,
   ): Promise<VoiceProvider> {
@@ -253,7 +256,7 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
   }
 
   async function resolveProvider(
-    user: AuthenticatedUser,
+    user: LocalActor,
     selection: VoiceSelection | null,
     segment: "listen" | "speak",
     segmentLabel: string,
@@ -291,22 +294,20 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
   })();
 
   return {
-    getSettings(user, workspaceId) {
-      void user;
-      return readSettings(workspaceId);
+    getSettings(user, instanceId) {
+      return readSettings(user, instanceId);
     },
 
-    async updateSettings(user, workspaceId, patch) {
-      void user;
-      const current = await readSettings(workspaceId);
+    async updateSettings(user, instanceId, patch) {
+      const current = await readSettings(user, instanceId);
       const next = mergeVoiceSettings(current, patch);
       // 先写库再返回：读回的是库里的事实，不是「我以为写成了什么」
-      await deps.repository.upsertVoice(workspaceId, next);
-      return parseVoiceSettings(await deps.repository.findVoice(workspaceId));
+      await deps.repository.upsertVoice(instanceId, next);
+      return parseVoiceSettings(await deps.repository.findVoice(instanceId));
     },
 
-    async resolveTranscriber(user, workspaceId) {
-      const settings = await readSettings(workspaceId);
+    async resolveTranscriber(user, instanceId) {
+      const settings = await readSettings(user, instanceId);
       const providerKey = settings.listen
         ? `${settings.listen.kind}:${settings.listen.id}`
         : "none";
@@ -429,8 +430,8 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
       return [...builtin, ...instanceCandidates];
     },
 
-    async refine(user, workspaceId, input, signal) {
-      const settings = await readSettings(workspaceId);
+    async refine(user, instanceId, input, signal) {
+      const settings = await readSettings(user, instanceId);
       if (!settings.think) {
         throw new VoiceUnavailableError(
           "未选择「想」模型：完整回路需要一个对话模型（到「设置 → 语音」选一个）。",
@@ -445,8 +446,8 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
       return run(user, settings.think, input, signal);
     },
 
-    async resolveSynthesizer(user, workspaceId) {
-      const settings = await readSettings(workspaceId);
+    async resolveSynthesizer(user, instanceId) {
+      const settings = await readSettings(user, instanceId);
       const selection = settings.speak;
       if (!selection) {
         throw new VoiceUnavailableError(
@@ -511,8 +512,8 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
       return lastDiagnose;
     },
 
-    async diagnose(user, workspaceId, signal) {
-      const settings = await readSettings(workspaceId);
+    async diagnose(user, instanceId, signal) {
+      const settings = await readSettings(user, instanceId);
       const hardware = await (deps.collectHardware ?? collectHardware)();
 
       // 听：用真实使用的实测汇总（首次载入另计）；未选模型则明确置灰
@@ -570,7 +571,7 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
         try {
           const { impl: synthesizer } = await this.resolveSynthesizer(
             user,
-            workspaceId,
+            instanceId,
           );
           const started = Date.now();
           const { audio } = await synthesizer.synthesize(probeText, {
@@ -762,7 +763,7 @@ function withTranscriptionTiming(
  */
 function probeThinkTtft(deps: VoiceServiceDeps) {
   return async (
-    user: AuthenticatedUser,
+    user: LocalActor,
     selection: VoiceSelection,
     signal?: AbortSignal,
   ): Promise<{ ttftSeconds: number; tokensPerSecond?: number }> => {
@@ -824,7 +825,7 @@ function probeThinkTtft(deps: VoiceServiceDeps) {
  */
 function refineWithInstanceChat(deps: VoiceServiceDeps) {
   return async (
-    user: AuthenticatedUser,
+    user: LocalActor,
     selection: VoiceSelection,
     input: { text: string; recentMessages?: VoiceRefineContextMessage[] },
     signal?: AbortSignal,

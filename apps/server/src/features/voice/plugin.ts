@@ -32,7 +32,8 @@ export function createVoicePlugin(
 
   return {
     name: "voice",
-    inject: ["auth", "modelProviders", "persistence", "viewer"],
+    enabled: () => true,
+    inject: ["localAccess", "localInstance", "modelProviders", "persistence"],
     apply(ctx) {
       const modelsRoot = options.modelsRoot ?? resolveVoiceModelsRoot(ctx.env);
       const store = createVoiceModelStore({ modelsRoot });
@@ -49,9 +50,9 @@ export function createVoicePlugin(
     },
     mounted(ctx) {
       void registerVoiceRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         voiceService: ctx.get("voice"),
-        viewerService: ctx.get("viewer"),
+        localInstance: ctx.get("localInstance"),
         ...(modelStore ? { modelStore } : {}),
       });
     },

@@ -1,6 +1,8 @@
+import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import { registerBlobRoutes } from "../../http/blobs.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { createLocalFsBlobStore } from "./providers/local-fs.js";
+import { ensureBlobSigningKey } from "./signing-key.js";
 import type { BlobStore } from "./types.js";
 
 /**
@@ -23,28 +25,33 @@ export function createBlobPlugin(
 ): PluginDefinition {
   const withRoutes = deps.withRoutes ?? true;
   let blob: BlobStore | undefined;
+  let signingSecret: string;
 
   return {
     name: "blob",
     inject: ["persistence"],
     apply(ctx) {
       const rootDir = ctx.env.blobDir;
-      const signingSecret = ctx.env.credentialSecret;
+      signingSecret = ensureBlobSigningKey(
+        resolveDesktopDataDir({
+          env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
+        }),
+      );
 
       if (!rootDir) {
         throw new Error(
           "[blob] 缺少 KENFUTWORK_BLOB_DIR（本地对象根目录）——对象存储是必需能力，配置缺失即失败。",
         );
       }
-      if (!signingSecret) {
-        throw new Error(
-          "[blob] 缺少 KENFUTWORK_CREDENTIAL_SECRET（blob 签名密钥）。",
-        );
-      }
 
       blob = createLocalFsBlobStore({
         publicBaseUrl:
-          ctx.env.blobPublicBaseUrl ?? "http://127.0.0.1:3001/api/blobs",
+          ctx.env.blobPublicBaseUrl ??
+          `${
+            ctx.env.webDist
+              ? `http://${ctx.env.serverHost === "::1" ? "[::1]" : (ctx.env.serverHost ?? "127.0.0.1")}:${ctx.env.port}`
+              : ctx.env.webOrigin
+          }/api/blobs`,
         rootDir,
         signingSecret,
       });
@@ -58,12 +65,9 @@ export function createBlobPlugin(
         return;
       }
       const rootDir = ctx.env.blobDir;
-      const signingSecret = ctx.env.credentialSecret;
       if (!rootDir || !signingSecret) {
         // apply 已 fail loud；此处只是类型收窄（同一次启动不会走到这里）
-        throw new Error(
-          "[blob] 缺少 KENFUTWORK_BLOB_DIR / KENFUTWORK_CREDENTIAL_SECRET。",
-        );
+        throw new Error("[blob] 本地对象根目录或签名密钥未初始化。");
       }
       void registerBlobRoutes(ctx.app, { rootDir, signingSecret });
     },

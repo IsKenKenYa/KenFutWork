@@ -1,23 +1,21 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import websocket from "@fastify/websocket";
+import { instanceSettingsSchema } from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
+import { createCodeTerminalService } from "../features/code-terminal/service.js";
+import { createExecutionScopes } from "../features/execution/scope-service.js";
+import { createLocalAccessFixture } from "../features/local-access/test-fixture.js";
+import type { LocalAccessRequest } from "../features/local-access/types.js";
+import { createProcessSandbox } from "../features/process-sandbox/service.js";
 
 import { registerWsRoute } from "./handler.js";
 
-// 环境预检：node-pty 在沙箱/部分 CI 里无法创建 pty（posix_spawnp failed）——
-// 不可用即跳过终端会话用例（真机/正常终端不受影响）。
-let ptyAvailable = true;
-try {
-  const { spawn } = await import("node-pty");
-  const probe = spawn("/bin/true", [], { name: "xterm-256color" });
-  probe.kill();
-} catch {
-  ptyAvailable = false;
-}
+// 真实受控PTY目前已在macOS验收。
+const ptyAvailable = process.platform === "darwin";
 
 /**
  * WS 早期消息回归测试。
@@ -29,7 +27,8 @@ try {
  * 这些用例发送的时机是 **open 回调内同步发出**，即最坏时序；修复前必然超时。
  */
 
-function makeStubs() {
+async function makeStubs() {
+  const access = await createLocalAccessFixture();
   const sockets = new Map<
     string,
     { readyState: number; send: (d: string) => void }
@@ -45,7 +44,7 @@ function makeStubs() {
         if (prop === "register") {
           return (
             connectionId: string,
-            _userId: string,
+            _instanceId: string,
             socket: { readyState: number; send: (d: string) => void },
           ) => {
             sockets.set(connectionId, socket);
@@ -74,56 +73,108 @@ function makeStubs() {
     // eslint-disable-next-line require-yield
     streamRun: async function* () {},
   };
-  const auth = {
-    authenticate: async () => ({ id: "user-1", accessToken: "token" }),
-  };
-  /**
-   * 终端会话的 cwd 解析替身。默认落到调用方给的临时目录；
-   * `deny: true` 时抛错（模拟「画布不属于这个工作区」的 404）。
-   */
-  const workDirState = { dir: "", deny: false };
-  const codeGitService = {
-    terminalWorkDir: async () => {
-      if (workDirState.deny) throw new Error("画布不存在。");
-      return workDirState.dir;
+  const authRequests: LocalAccessRequest[] = [];
+  const localAccess = {
+    onRevoked: access.service.onRevoked.bind(access.service),
+    authenticate: async (request: LocalAccessRequest) => {
+      authRequests.push(request);
+      return access.service.authenticate(request);
     },
   };
+  const workDirState = {
+    dir: mkdtempSync(join(tmpdir(), "kfw-ws-domain-")),
+    deny: false,
+  };
+  const captureRoot = workDirState.dir;
+  const instanceId = access.instanceId;
+  const taskId = "00000000-0000-4000-8000-000000000003";
+  const localInstance = access.options.instance;
+  const sandbox = createProcessSandbox({
+    captureRoot: join(workDirState.dir, "capture"),
+    network: { allowedDomains: [], deniedDomains: [] },
+  });
+  const terminals = createCodeTerminalService({
+    scopes: createExecutionScopes({
+      localInstance,
+      repository: {
+        load: async () => {
+          if (workDirState.deny) throw new Error("Task不属于当前实例。");
+          return {
+            scope: {
+              instanceId,
+              projectId: "00000000-0000-4000-8000-000000000002",
+              taskId,
+              generation: 1,
+              rootDirectory: realpathSync(workDirState.dir),
+              additionalDirectories: [],
+              sandboxMode: "workspace-write" as const,
+            },
+            state: "ready",
+            branchGeneration: 1,
+          };
+        },
+      },
+    }),
+    sandbox,
+    localInstance,
+    settings: {
+      getInstanceSettings: async () =>
+        instanceSettingsSchema.parse({
+          defaultModel: "fixture",
+          terminalShell: "sh",
+        }),
+    } as never,
+  });
   return {
     connectionManager,
     agentRuns,
-    auth,
+    localAccess,
+    authRequests,
+    access,
     sockets,
-    codeGitService,
+    terminals,
+    sandbox,
+    localInstance,
+    taskId,
+    captureRoot,
     workDirState,
   };
 }
 
-async function startServer(overrides?: {
-  auth?: { authenticate: (request: unknown) => Promise<unknown> };
-}) {
+async function startServer() {
   const app = Fastify();
   await app.register(websocket);
-  const stubs = makeStubs();
+  const stubs = await makeStubs();
   registerWsRoute(app, {
     connectionManager: stubs.connectionManager as never,
     agentRuns: stubs.agentRuns as never,
-    auth: (overrides?.auth ?? stubs.auth) as never,
-    codeGitService: stubs.codeGitService as never,
+    localAccess: stubs.localAccess,
+    codeTerminal: stubs.terminals,
+    localInstance: stubs.localInstance,
+  });
+  app.addHook("onClose", async () => {
+    await stubs.terminals.close("test_cleanup");
+    await stubs.sandbox.close("test_cleanup");
+    await stubs.access.cleanup();
+    rmSync(stubs.workDirState.dir, { recursive: true, force: true });
+    rmSync(stubs.captureRoot, { recursive: true, force: true });
   });
   await app.listen({ port: 0, host: "127.0.0.1" });
   const address = app.server.address();
   const port =
     typeof address === "object" && address !== null ? address.port : 0;
-  return { app, port, stubs };
+  return { app, port, stubs, headers: stubs.access.request.headers };
 }
 
 /** 连上后立刻发送 raw，返回服务端第一条回传消息。 */
 async function sendImmediatelyOnOpen(
   port: number,
   raw: string,
+  headers: LocalAccessRequest["headers"],
 ): Promise<{ got: string | null }> {
   const client = new WebSocket(
-    `ws://127.0.0.1:${port}/api/ws?token=t&connectionId=c-${Date.now()}`,
+    `ws://127.0.0.1:${port}/api/ws?connectionId=c-${Date.now()}`,
+    { headers },
   );
   const got = await new Promise<string | null>((resolve) => {
     const timer = setTimeout(() => resolve(null), 6000);
@@ -146,9 +197,9 @@ async function sendImmediatelyOnOpen(
 
 describe("WS 早期消息不丢失（回归）", () => {
   it("open 后立即发送的非法 JSON 会被处理并回错误", async () => {
-    const { app, port } = await startServer();
+    const { app, port, headers } = await startServer();
     try {
-      const { got } = await sendImmediatelyOnOpen(port, "not-json");
+      const { got } = await sendImmediatelyOnOpen(port, "not-json", headers);
       expect(got).not.toBeNull();
       expect(got).toContain("Invalid JSON");
     } finally {
@@ -157,7 +208,7 @@ describe("WS 早期消息不丢失（回归）", () => {
   });
 
   it("open 后立即发送的合法 action + 非法 payload 会回命令格式错误", async () => {
-    const { app, port } = await startServer();
+    const { app, port, headers } = await startServer();
     try {
       const { got } = await sendImmediatelyOnOpen(
         port,
@@ -166,6 +217,7 @@ describe("WS 早期消息不丢失（回归）", () => {
           action: "agent.cancel",
           payload: {},
         }),
+        headers,
       );
       expect(got).not.toBeNull();
       expect(got).toContain("Invalid command format");
@@ -175,7 +227,7 @@ describe("WS 早期消息不丢失（回归）", () => {
   });
 
   it("open 后立即发送的合法 agent.run 会被受理（出现 command.ack 或失败事件）", async () => {
-    const { app, port } = await startServer();
+    const { app, port, headers } = await startServer();
     try {
       const { got } = await sendImmediatelyOnOpen(
         port,
@@ -188,6 +240,7 @@ describe("WS 早期消息不丢失（回归）", () => {
             prompt: "hi",
           },
         }),
+        headers,
       );
       expect(got).not.toBeNull();
       if (got === null) throw new Error("未在超时前收到任何 WS 消息");
@@ -209,9 +262,10 @@ describe("WS 早期消息不丢失（回归）", () => {
  */
 describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
   /** 连上并返回一个「发命令 + 等消息」的小客户端。 */
-  async function connect(port: number) {
+  async function connect(port: number, headers: LocalAccessRequest["headers"]) {
     const client = new WebSocket(
-      `ws://127.0.0.1:${port}/api/ws?token=t&connectionId=c-${Date.now()}`,
+      `ws://127.0.0.1:${port}/api/ws?connectionId=c-${Date.now()}`,
+      { headers },
     );
     const received: Array<Record<string, unknown>> = [];
     const waiters: Array<{
@@ -268,27 +322,19 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
   const isAck = (msg: Record<string, unknown>) =>
     msg.type === "command.ack" && msg.action === "terminal.start";
 
-  it("免登录形态（桌面）：没有 token 也能连——鉴权按 ip + Origin 判", async () => {
-    /**
-     * 回归背景：WS 入口以前写死「没有 token 就 4001」，而桌面 local-trust 形态本来就没有
-     * token；伪造给鉴权器的请求又只带了 authorization、没带 Origin，于是打包后的桌面端
-     * **run / 终端全都连不上**。这条按 local-trust 的判据（回环 + 可信 Origin）造替身来锁。
-     */
-    const seenOrigins: Array<string | undefined> = [];
-    const { app, port } = await startServer({
-      auth: {
-        authenticate: async (request: unknown) => {
-          const req = request as { headers: { origin?: string } };
-          seenOrigins.push(req.headers.origin);
-          return req.headers.origin === "http://localhost:3000"
-            ? { id: "local-user", accessToken: "local" }
-            : null;
-        },
-      },
-    });
+  it("本机浏览器用真实会话cookie连接，Origin原样交给统一接入校验", async () => {
+    const { app, port, stubs } = await startServer();
+    const origin = "http://localhost:3000";
+    const { ticket } = await stubs.access.service.issueTicket(
+      stubs.access.request,
+    );
+    const connected = await stubs.access.service.consumeTicket(
+      { ip: "127.0.0.1", headers: { origin } },
+      { ticket, label: "WS测试浏览器" },
+    );
     const client = new WebSocket(
-      `ws://127.0.0.1:${port}/api/ws?connectionId=no-token-${Date.now()}`,
-      { headers: { Origin: "http://localhost:3000" } } as never,
+      `ws://127.0.0.1:${port}/api/ws?connectionId=browser-${Date.now()}`,
+      { headers: { origin, cookie: connected.cookie.split(";")[0] } },
     );
     try {
       const opened = await new Promise<boolean>((resolve) => {
@@ -302,31 +348,23 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
           resolve(false);
         });
       });
-      // 连上之后等一会儿：确认不是「连上就被 4001 踢掉」
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((done) => setTimeout(done, 500));
       expect(opened).toBe(true);
       expect(client.readyState).toBe(1);
-      // Origin 真的传到了鉴权器（不是被伪造请求吞掉）
-      expect(seenOrigins).toContain("http://localhost:3000");
+      expect(
+        stubs.authRequests.map((request) => request.headers.origin),
+      ).toContain(origin);
     } finally {
       client.close();
       await app.close();
     }
   });
 
-  it("没有可信 Origin：仍然拒绝（免登录不等于不鉴权）", async () => {
-    const { app, port } = await startServer({
-      auth: {
-        authenticate: async (request: unknown) => {
-          const req = request as { headers: { origin?: string } };
-          return req.headers.origin === "http://localhost:3000"
-            ? { id: "local-user", accessToken: "local" }
-            : null;
-        },
-      },
-    });
+  it("可信Origin仍需真实凭据，回环不能替代本机授权", async () => {
+    const { app, port } = await startServer();
     const client = new WebSocket(
-      `ws://127.0.0.1:${port}/api/ws?connectionId=bad-origin-${Date.now()}`,
+      `ws://127.0.0.1:${port}/api/ws?connectionId=missing-credential-${Date.now()}`,
+      { headers: { origin: "http://localhost:3000" } },
     );
     try {
       const code = await new Promise<number>((resolve) => {
@@ -343,36 +381,41 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
     }
   });
 
-  it("不带 canvasId 也能起会话：cwd 落到服务端启动目录（终端不被工作目录限制）", async () => {
-    const { app, port } = await startServer();
-    void app;
-    const session = await connect(port);
+  it("未带Task身份的终端拒绝，不能借用服务端启动目录", async () => {
+    const { app, port, headers } = await startServer();
+    const session = await connect(port, headers);
     try {
-      const ack = await session.sendAndWait(
+      const rejected = await session.sendAndWait(
         {
           type: "command",
           action: "terminal.start",
-          payload: { sessionId: "t-no-dir" },
+          payload: { sessionId: "t-no-task", cols: 80, rows: 24 },
         },
-        isAck,
+        (message) => message.type === "error",
       );
-      expect((ack.payload as { sessionId: string }).sessionId).toBe("t-no-dir");
+      expect(rejected.message).toBe("Invalid command format");
     } finally {
       session.client.close();
+      await app.close();
     }
   });
 
   it("起会话拿到 ack；输入的命令原样回到输出；stop 后回 exit", async () => {
-    const { app, port, stubs } = await startServer();
+    const { app, port, stubs, headers } = await startServer();
     const dir = mkdtempSync(join(tmpdir(), "kfw-ws-term-"));
     stubs.workDirState.dir = dir;
-    const session = await connect(port);
+    const session = await connect(port, headers);
     try {
       const ack = await session.sendAndWait(
         {
           type: "command",
           action: "terminal.start",
-          payload: { sessionId: "t1", canvasId: "canvas-1" },
+          payload: {
+            sessionId: "t1",
+            taskId: stubs.taskId,
+            cols: 80,
+            rows: 24,
+          },
         },
         isAck,
       );
@@ -383,7 +426,10 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
         {
           type: "command",
           action: "terminal.input",
-          payload: { sessionId: "t1", data: "echo WS_TERM_OK" },
+          payload: {
+            sessionId: "t1",
+            data: "printf '\\127\\123\\137\\124\\105\\122\\115\\137\\117\\113\\n'\r",
+          },
         },
         (msg) =>
           msg.type === "terminal.output" &&
@@ -413,16 +459,21 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
   }, 30_000);
 
   it("同一个 sessionId 重复 start 复用会话（重连重放不该多起一条 shell）", async () => {
-    const { app, port, stubs } = await startServer();
+    const { app, port, stubs, headers } = await startServer();
     const dir = mkdtempSync(join(tmpdir(), "kfw-ws-term-"));
     stubs.workDirState.dir = dir;
-    const session = await connect(port);
+    const session = await connect(port, headers);
     try {
       await session.sendAndWait(
         {
           type: "command",
           action: "terminal.start",
-          payload: { sessionId: "t1", canvasId: "canvas-1" },
+          payload: {
+            sessionId: "t1",
+            taskId: stubs.taskId,
+            cols: 80,
+            rows: 24,
+          },
         },
         isAck,
       );
@@ -430,7 +481,12 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
         {
           type: "command",
           action: "terminal.start",
-          payload: { sessionId: "t1", canvasId: "canvas-1" },
+          payload: {
+            sessionId: "t1",
+            taskId: stubs.taskId,
+            cols: 80,
+            rows: 24,
+          },
         },
         isAck,
       );
@@ -439,7 +495,7 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
       session.client.close();
       await app.close();
       // 断开后服务端异步收会话：等进程退干净再删目录（否则 EBUSY）
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await app.close();
       rmSync(dir, {
         recursive: true,
         force: true,
@@ -449,20 +505,25 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
     }
   }, 45_000);
 
-  it("画布不属于这个工作区：起会话被拒并给出可读原因（不摆一个空终端）", async () => {
-    const { app, port, stubs } = await startServer();
+  it("Task不属于这个实例：起会话被拒并给出可读原因", async () => {
+    const { app, port, stubs, headers } = await startServer();
     stubs.workDirState.deny = true;
-    const session = await connect(port);
+    const session = await connect(port, headers);
     try {
       const exit = await session.sendAndWait(
         {
           type: "command",
           action: "terminal.start",
-          payload: { sessionId: "t1", canvasId: "别人的画布" },
+          payload: {
+            sessionId: "t1",
+            taskId: stubs.taskId,
+            cols: 80,
+            rows: 24,
+          },
         },
         (msg) => msg.type === "terminal.exit",
       );
-      expect(String(exit.reason)).toContain("画布不存在");
+      expect(String(exit.reason)).toContain("Task不属于当前实例");
     } finally {
       session.client.close();
       await app.close();
@@ -470,22 +531,27 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
   }, 30_000);
 
   it("连接断开：会话被收掉（不留孤儿 shell 进程）", async () => {
-    const { app, port, stubs } = await startServer();
+    const { app, port, stubs, headers } = await startServer();
     const dir = mkdtempSync(join(tmpdir(), "kfw-ws-term-"));
     stubs.workDirState.dir = dir;
-    const session = await connect(port);
+    const session = await connect(port, headers);
     try {
       await session.sendAndWait(
         {
           type: "command",
           action: "terminal.start",
-          payload: { sessionId: "t1", canvasId: "canvas-1" },
+          payload: {
+            sessionId: "t1",
+            taskId: stubs.taskId,
+            cols: 80,
+            rows: 24,
+          },
         },
         isAck,
       );
       session.client.close();
       // 断开后服务端收会话：等一小会儿再删目录，删得掉即说明进程退了
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await app.close();
       rmSync(dir, {
         recursive: true,
         force: true,

@@ -92,7 +92,7 @@ describe("钩子执行", () => {
       shell: "cmd",
       exitCode: 0,
       timedOut: false,
-      stdout: "y".repeat(5_000),
+      stdout: "y".repeat(HOOK_OUTPUT_CHARS + 1),
       stderr: "",
       truncated: false,
       durationMs: 1,

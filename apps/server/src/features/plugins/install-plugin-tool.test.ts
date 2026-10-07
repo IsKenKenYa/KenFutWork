@@ -3,24 +3,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AdminService } from "../admin/admin-service.js";
-import type { RequestAuthenticator } from "../auth/types.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
 import { createInstallPluginTool } from "./install-plugin-tool.js";
 import type { PluginRegistryService } from "./plugin-registry-service.js";
 
-const USER = {
-  accessToken: "tok-1",
-  email: "admin@test.kenfutwork.com",
-  id: "u-admin",
-  userMetadata: {},
+const ACTOR = {
+  instanceId: "11111111-1111-4111-8111-111111111111",
+  accessClientId: null,
 };
 const CANVAS_ID = "canvas-1";
 
 function makeDeps(
-  overrides: {
-    admin?: Partial<AdminService>;
-    install?: (input: unknown) => Promise<unknown>;
-  } = {},
+  overrides: { install?: (input: unknown) => Promise<unknown> } = {},
 ) {
   const install =
     overrides.install ??
@@ -34,19 +28,17 @@ function makeDeps(
     sandboxRoot,
     deps: {
       registry: { install } as unknown as PluginRegistryService,
-      auth: { authenticate: async () => USER } as RequestAuthenticator,
-      admin: {
-        isAdmin: async () => true,
-        requireAdmin: async () => {},
-        ...overrides.admin,
-      } as AdminService,
+      localInstance: createLocalInstanceService({
+        repository: { ensure: async () => ACTOR.instanceId },
+        dataDir: sandboxRoot,
+      }),
       sandboxRoot,
     },
   };
 }
 
 describe("install_plugin 工具（创造模式的插件产物收尾）", () => {
-  it("管理员从工作目录安装：把沙箱内路径传给注册表（不越界）", async () => {
+  it("实例主人从工作目录安装：把沙箱内路径传给注册表（不越界）", async () => {
     const calls: unknown[] = [];
     const { deps } = makeDeps({
       install: async (input) => {
@@ -61,7 +53,7 @@ describe("install_plugin 工具（创造模式的插件产物收尾）", () => {
 
     const result = (await tool.execute(
       { path: "my-plugin" },
-      { canvasId: CANVAS_ID, accessToken: "tok-1" },
+      { canvasId: CANVAS_ID, actor: ACTOR },
     )) as Record<string, unknown>;
 
     expect(result).toMatchObject({
@@ -73,34 +65,29 @@ describe("install_plugin 工具（创造模式的插件产物收尾）", () => {
     expect(String((calls[0] as { url: string }).url)).toContain("my-plugin");
   });
 
-  it("非管理员 / 缺画布 / 缺凭据 / 路径越界都如实拒绝", async () => {
-    const { deps } = makeDeps({
-      admin: {
-        requireAdmin: async () => {
-          throw new Error("forbidden");
-        },
-      } as Partial<AdminService>,
-    });
+  it("外来实例 / 缺画布 / 缺actor / 路径越界都如实拒绝", async () => {
+    const { deps } = makeDeps();
     const tool = createInstallPluginTool(deps);
-
     await expect(
       tool.execute(
         { path: "my-plugin" },
-        { canvasId: CANVAS_ID, accessToken: "tok-1" },
+        {
+          canvasId: CANVAS_ID,
+          actor: { ...ACTOR, instanceId: "foreign-instance" },
+        },
       ),
-    ).rejects.toThrow(/管理员/);
-
+    ).rejects.toThrow(/当前本地实例/);
     const okAdmin = createInstallPluginTool(makeDeps().deps);
     await expect(
-      okAdmin.execute({ path: "my-plugin" }, { accessToken: "tok-1" }),
+      okAdmin.execute({ path: "my-plugin" }, { actor: ACTOR }),
     ).rejects.toThrow(/画布/);
     await expect(
       okAdmin.execute({ path: "my-plugin" }, { canvasId: CANVAS_ID }),
-    ).rejects.toThrow(/用户凭据/);
+    ).rejects.toThrow(/可信本地实例/);
     await expect(
       okAdmin.execute(
         { path: "../../etc" },
-        { canvasId: CANVAS_ID, accessToken: "tok-1" },
+        { canvasId: CANVAS_ID, actor: ACTOR },
       ),
     ).rejects.toThrow(/越出工作目录/);
   });
@@ -122,7 +109,7 @@ describe("install_plugin 工具（创造模式的插件产物收尾）", () => {
     await expect(
       tool.execute(
         { path: "my-plugin" },
-        { canvasId: CANVAS_ID, accessToken: "tok-1" },
+        { canvasId: CANVAS_ID, actor: ACTOR },
       ),
     ).rejects.toThrow(/门禁报告/);
   });
@@ -138,7 +125,7 @@ describe("install_plugin 工具（创造模式的插件产物收尾）", () => {
     await expect(
       tool.execute(
         { path: "../outside" },
-        { canvasId: CANVAS_ID, accessToken: "tok-1" },
+        { canvasId: CANVAS_ID, actor: ACTOR },
       ),
     ).rejects.toThrow();
     expect(install).not.toHaveBeenCalled();

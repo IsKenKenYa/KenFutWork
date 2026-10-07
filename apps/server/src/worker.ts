@@ -1,4 +1,4 @@
-// @credits-system — Worker process: handles job failure refunds (credit refund on generation error)
+// 后台生成任务消费进程；BYOK记录usage，不检查账户或余额。
 import { bootstrap } from "global-agent";
 
 // Enable HTTP proxy for all outbound requests if GLOBAL_AGENT_HTTP_PROXY is set
@@ -13,6 +13,7 @@ async function setupProxy() {
 }
 
 import { loadServerEnv } from "./config/env.js";
+import { resolveLocalRuntimeEnv } from "./desktop/runtime.js";
 import { startJobLoop } from "./features/jobs/job-loop.js";
 // Register all image/video providers via shared helper (keeps parity with app.ts)
 import { composePlugins } from "./kernel/compose.js";
@@ -26,7 +27,7 @@ import { workerProfile } from "./profiles/worker.js";
 async function main() {
   await setupProxy();
 
-  const env = loadServerEnv();
+  const env = resolveLocalRuntimeEnv(loadServerEnv());
 
   if (!env.databaseUrl) {
     console.error(
@@ -36,12 +37,12 @@ async function main() {
   }
 
   // P7：worker 走内核装配（profiles/worker.ts 唯一插件清单）
-  const kernel = composePlugins(env, workerProfile({ credentialEnv: env }));
+  const kernel = composePlugins(env, workerProfile());
+  await kernel.get("localInstance").getContext();
 
   const loop = startJobLoop({
     assetWriter: kernel.get("assetWriter"),
     blob: kernel.get("blob"),
-    creditService: kernel.get("credits"),
     env,
     jobService: kernel.get("jobs"),
     modelProviders: kernel.get("modelProviders"),
@@ -52,6 +53,7 @@ async function main() {
   // Graceful shutdown — wait for in-flight jobs then exit
   const shutdown = async () => {
     await loop.shutdown();
+    await kernel.dispose();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);

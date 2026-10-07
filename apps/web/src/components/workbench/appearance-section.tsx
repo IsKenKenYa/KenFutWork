@@ -14,7 +14,7 @@ import { SETTINGS_ROW, SETTINGS_TITLE } from "@/lib/settings-layout";
  * 说明哪些地方会跟着变（含画布）。
  *
  * 偏好存**本机**（next-themes 默认 localStorage，键 `theme`）：外观是设备级的——
- * 同一账号在手机与桌面上想要的主题本来就可以不同，不该跟工作区设置绑在一起。
+ * 不同接入客户端想要的主题本来就可以不同，不该跟实例设置绑在一起。
  */
 export function AppearanceSection() {
   const { theme, setTheme } = useTheme();

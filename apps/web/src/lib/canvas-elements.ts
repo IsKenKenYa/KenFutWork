@@ -8,6 +8,7 @@ import type {
   ExcalidrawImperativeAPI,
 } from "@excalidraw/excalidraw/types";
 import type { ImageArtifact, VideoArtifact } from "@kenfutwork/shared";
+import { serverFetch } from "@/lib/local-access";
 
 import { getServerBaseUrl } from "./env";
 
@@ -151,7 +152,7 @@ export function createExcalidrawImageElement(opts: {
 export async function fetchAsDataURL(url: string): Promise<string> {
   const proxyUrl = `${getServerBaseUrl()}/api/proxy-image?url=${encodeURIComponent(url)}`;
 
-  const response = await fetch(proxyUrl);
+  const response = await serverFetch(proxyUrl);
   if (!response.ok) {
     throw new Error(`Failed to fetch image: ${response.status}`);
   }

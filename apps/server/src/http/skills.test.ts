@@ -1,10 +1,20 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import Fastify, { type FastifyInstance } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
+import {
+  createExecutionScopes,
+  type ExecutionScopes,
+} from "../features/execution/scope-service.js";
+import { createLocalInstanceService } from "../features/local-instance/service.js";
 import { SqlError } from "../features/persistence/errors.js";
 import type { SkillCatalogRepository } from "../features/skills/repository.js";
 import { registerSkillRoutes } from "./skills.js";
@@ -31,13 +41,12 @@ vi.mock("../features/skills/marketplace-service.js", async (importOriginal) => {
   return { ...actual, installFromMarketplace: vi.fn() };
 });
 
-const USER = {
-  accessToken: "token-1",
-  email: "pro@test.kenfutwork.com",
-  id: "user-1",
-  userMetadata: {},
-};
-const WORKSPACE_ID = "ws-1";
+const INSTANCE_ID = "1b18ef1f-1d78-4469-bbfe-9a245e73636b";
+const ACTOR = { instanceId: INSTANCE_ID, accessClientId: "client-1" };
+const localInstance = createLocalInstanceService({
+  repository: { ensure: async () => INSTANCE_ID },
+  dataDir: "/tmp/skills-http-test",
+});
 const SKILL_ID = "skill-1";
 
 /** 目录行按 repository 的裸行形状（snake_case + ISO 字符串时间戳）。 */
@@ -55,7 +64,7 @@ const SKILL_ROW = {
   skill_content: "# SKILL",
   metadata: {},
   is_featured: true,
-  created_by: null,
+  created_by_client_id: null,
   created_at: "2026-09-13T00:00:00.000Z",
   updated_at: "2026-09-13T00:00:00.000Z",
   source_url: null,
@@ -85,10 +94,11 @@ function fakeRepository(
     listInstalled: async () => [],
     listSkillFiles: async () => [],
     listVisible: async () => [],
-    listWorkspaceSkills: async () => [],
+    listInstanceSkills: async () => [],
     uninstall: async () => 0,
     updateOwnedById: async () => null,
     upsertInstallation: async () => {},
+    setEnabled: async () => true,
     ...overrides,
   };
 }
@@ -98,27 +108,37 @@ async function buildApp(
   options: {
     unauthenticated?: boolean;
     /** 工作目录导入相关：假画布仓库 + 沙箱根（默认「画布找不到」）。 */
-    canvas?: { id: string } | null;
+    canvas?: { id: string; project_id?: string } | null;
     sandboxRoot?: string;
+    executionScopes?: Pick<ExecutionScopes, "openTask">;
+    projectKind?: "design" | "code";
   } = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   const deps = {
-    auth: {
-      authenticate: async () => (options.unauthenticated ? null : USER),
+    localAccess: {
+      authenticate: async () => (options.unauthenticated ? null : ACTOR),
     },
     skillsRepository: fakeRepository(repository),
-    viewerService: {
-      ensureViewer: async () => ({ workspace: { id: WORKSPACE_ID } }),
-      resolveWorkspace: async () => ({ id: WORKSPACE_ID }),
-    } as never,
+    localInstance,
     // 工作目录导入相关：默认「画布找不到」；用例可传入假画布与沙箱根
     canvasRepository: {
       findById: async () =>
         options.canvas === undefined || options.canvas === null
           ? null
-          : options.canvas,
+          : {
+              ...options.canvas,
+              project_id: options.canvas.project_id ?? "visual-project",
+            },
     } as never,
+    projects: {
+      getProject: async () => ({ kind: options.projectKind ?? "design" }),
+    } as never,
+    executionScopes: options.executionScopes ?? {
+      openTask: async () => {
+        throw new Error("测试未配置 Code Task。");
+      },
+    },
     ...(options.sandboxRoot ? { sandboxRoot: options.sandboxRoot } : {}),
   };
   await registerSkillRoutes(app, deps);
@@ -206,8 +226,8 @@ describe("GET /api/skills/:id（明细 + 附带文件）", () => {
     const calls: Array<[string, string]> = [];
     const app = await buildApp({
       findVisibleById: async () => SKILL_ROW,
-      listFilesForVisibleSkill: async (userId, skillId) => {
-        calls.push([userId, skillId]);
+      listFilesForVisibleSkill: async (instanceId, skillId) => {
+        calls.push([instanceId, skillId]);
         return [FILE_ROW];
       },
     });
@@ -218,7 +238,7 @@ describe("GET /api/skills/:id（明细 + 附带文件）", () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(calls).toEqual([[USER.id, SKILL_ID]]);
+    expect(calls).toEqual([[ACTOR.instanceId, SKILL_ID]]);
     expect(res.json().skill.skillContent).toBe("# SKILL");
     expect(res.json().skill.files).toEqual([
       {
@@ -285,7 +305,7 @@ describe("POST /api/skills（新建）", () => {
   it("建成功 → 201，且缺省列（author/version/metadata）交由列默认承担", async () => {
     const inserted: unknown[] = [];
     const app = await buildApp({
-      insertOwned: async (_userId, input) => {
+      insertOwned: async (_instanceId, input) => {
         inserted.push(input);
         return SKILL_ROW;
       },
@@ -301,6 +321,7 @@ describe("POST /api/skills（新建）", () => {
     expect(inserted).toEqual([
       {
         category: "custom",
+        createdByClientId: ACTOR.accessClientId,
         description: "自建技能",
         iconName: null,
         name: "My Skill",
@@ -380,7 +401,7 @@ describe("POST /api/skills（新建）", () => {
 });
 
 describe("POST /api/skills/import（URL 导入）", () => {
-  it("导入成功 → 201，且 author/version/license/metadata 逐字段落库并自动安装到工作区", async () => {
+  it("导入成功 → 201，且 author/version/license/metadata 逐字段落库并自动安装到实例", async () => {
     const { importSkillFromUrl } = await import(
       "../features/skills/skill-import-service.js"
     );
@@ -390,7 +411,7 @@ describe("POST /api/skills/import（URL 导入）", () => {
     const installs: unknown[] = [];
     const app = await buildApp({
       insertFilesForOwnedSkill: async () => 1,
-      insertOwned: async (_userId, input) => {
+      insertOwned: async (_instanceId, input) => {
         inserted.push(input);
         return SKILL_ROW;
       },
@@ -410,6 +431,7 @@ describe("POST /api/skills/import（URL 导入）", () => {
       {
         author: "someone",
         category: "custom",
+        createdByClientId: ACTOR.accessClientId,
         description: "导入的技能",
         license: "MIT",
         metadata: { source_url: IMPORTED.sourceUrl, tag: "x" },
@@ -422,9 +444,9 @@ describe("POST /api/skills/import（URL 导入）", () => {
     expect(installs).toEqual([
       {
         enabled: true,
-        installedBy: USER.id,
+        installedByClientId: ACTOR.accessClientId,
         skillId: SKILL_ID,
-        workspaceId: WORKSPACE_ID,
+        instanceId: INSTANCE_ID,
       },
     ]);
   });
@@ -441,7 +463,7 @@ describe("POST /api/skills/import（URL 导入）", () => {
 
     const inserted: Array<Record<string, unknown>> = [];
     const app = await buildApp({
-      insertOwned: async (_userId, input) => {
+      insertOwned: async (_instanceId, input) => {
         inserted.push(input as Record<string, unknown>);
         return SKILL_ROW;
       },
@@ -498,7 +520,7 @@ describe("POST /api/skills/marketplace/install", () => {
     const inserted: Array<Record<string, unknown>> = [];
     const app = await buildApp({
       insertFilesForOwnedSkill: async () => 1,
-      insertOwned: async (_userId, input) => {
+      insertOwned: async (_instanceId, input) => {
         inserted.push(input as Record<string, unknown>);
         return SKILL_ROW;
       },
@@ -513,6 +535,7 @@ describe("POST /api/skills/marketplace/install", () => {
     expect(res.statusCode).toBe(201);
     expect(inserted[0]).toMatchObject({
       author: "someone",
+      createdByClientId: ACTOR.accessClientId,
       metadata: {
         package_name: "@acme/skill",
         source_url: "https://www.npmjs.com/package/@acme/skill",
@@ -612,7 +635,7 @@ describe("PUT / DELETE /api/skills/:id", () => {
   });
 });
 
-describe("/api/workspaces/skills（安装态）", () => {
+describe("/api/instance/skills（安装态）", () => {
   it("列表：只出带 skill 明细的行，并带 installed/enabled 标记", async () => {
     const app = await buildApp({
       listInstalled: async () => [
@@ -633,7 +656,7 @@ describe("/api/workspaces/skills（安装态）", () => {
 
     const res = await app.inject({
       method: "GET",
-      url: "/api/workspaces/skills",
+      url: "/api/instance/skills",
     });
 
     expect(res.statusCode).toBe(200);
@@ -647,12 +670,12 @@ describe("/api/workspaces/skills（安装态）", () => {
     ]);
   });
 
-  it("安装：先查可见性，再 upsert 到当前工作区", async () => {
+  it("安装：先查可见性，再 upsert 到当前实例", async () => {
     const visible: Array<[string, string]> = [];
     const installs: unknown[] = [];
     const app = await buildApp({
-      findVisibleSkill: async (userId, skillId) => {
-        visible.push([userId, skillId]);
+      findVisibleSkill: async (instanceId, skillId) => {
+        visible.push([instanceId, skillId]);
         return { id: skillId };
       },
       upsertInstallation: async (input) => {
@@ -662,18 +685,18 @@ describe("/api/workspaces/skills（安装态）", () => {
 
     const res = await app.inject({
       method: "POST",
-      url: "/api/workspaces/skills",
+      url: "/api/instance/skills",
       payload: { skillId: SKILL_ID },
     });
 
     expect(res.statusCode).toBe(204);
-    expect(visible).toEqual([[USER.id, SKILL_ID]]);
+    expect(visible).toEqual([[ACTOR.instanceId, SKILL_ID]]);
     expect(installs).toEqual([
       {
         enabled: true,
-        installedBy: USER.id,
+        installedByClientId: ACTOR.accessClientId,
         skillId: SKILL_ID,
-        workspaceId: WORKSPACE_ID,
+        instanceId: INSTANCE_ID,
       },
     ]);
   });
@@ -689,7 +712,7 @@ describe("/api/workspaces/skills（安装态）", () => {
 
     const res = await app.inject({
       method: "POST",
-      url: "/api/workspaces/skills",
+      url: "/api/instance/skills",
       payload: { skillId: "someone-elses" },
     });
 
@@ -703,11 +726,11 @@ describe("/api/workspaces/skills（安装态）", () => {
 
     const ok = await hit.inject({
       method: "DELETE",
-      url: `/api/workspaces/skills/${SKILL_ID}`,
+      url: `/api/instance/skills/${SKILL_ID}`,
     });
     const gone = await miss.inject({
       method: "DELETE",
-      url: `/api/workspaces/skills/${SKILL_ID}`,
+      url: `/api/instance/skills/${SKILL_ID}`,
     });
 
     expect(ok.statusCode).toBe(204);
@@ -717,15 +740,16 @@ describe("/api/workspaces/skills（安装态）", () => {
   it("启停：按请求体写入 enabled", async () => {
     const installs: Array<{ enabled: boolean }> = [];
     const app = await buildApp({
-      findVisibleSkill: async (_userId, skillId) => ({ id: skillId }),
-      upsertInstallation: async (input) => {
-        installs.push(input);
+      findVisibleSkill: async (_instanceId, skillId) => ({ id: skillId }),
+      setEnabled: async (_instanceId, _skillId, enabled) => {
+        installs.push({ enabled });
+        return true;
       },
     });
 
     const res = await app.inject({
       method: "PATCH",
-      url: `/api/workspaces/skills/${SKILL_ID}`,
+      url: `/api/instance/skills/${SKILL_ID}`,
       payload: { enabled: false },
     });
 
@@ -735,7 +759,7 @@ describe("/api/workspaces/skills（安装态）", () => {
 });
 
 /**
- * 「从工作目录导入」：agent 在沙箱里造出来的技能包（创造模式产物）要能一键装进工作区。
+ * 「从工作目录导入」：agent 在沙箱里造出来的技能包（创造模式产物）要能一键装进实例。
  * 这两条路由是创造模式的最后一段路：列出候选 → 读取并导入（自动安装 + 启用）。
  */
 describe("工作目录里的技能包（从工作目录导入）", () => {
@@ -782,13 +806,13 @@ describe("工作目录里的技能包（从工作目录导入）", () => {
     });
   });
 
-  it("导入：读取磁盘内容 → 落库 → 自动装进当前工作区（附带文件一并写入）", async () => {
+  it("导入：读取磁盘内容 → 落库 → 自动装进当前实例（附带文件一并写入）", async () => {
     const sandboxRoot = makeSandbox();
     const inserts: unknown[] = [];
     const installs: unknown[] = [];
     const app = await buildApp(
       {
-        insertOwned: async (_userId, input) => {
+        insertOwned: async (_instanceId, input) => {
           inserts.push(input);
           return { ...SKILL_ROW, id: SKILL_ID };
         },
@@ -815,12 +839,12 @@ describe("工作目录里的技能包（从工作目录导入）", () => {
     expect(installs[0]).toMatchObject({
       enabled: true,
       skillId: SKILL_ID,
-      workspaceId: WORKSPACE_ID,
+      instanceId: INSTANCE_ID,
     });
     expect(res.json().skill.files).toHaveLength(1);
   });
 
-  it("路径越界 / 缺 SKILL.md / 画布不属于本工作区都如实拒绝", async () => {
+  it("路径越界 / 缺 SKILL.md / 画布不属于本实例都如实拒绝", async () => {
     const sandboxRoot = makeSandbox();
     const app = await buildApp({}, { canvas: { id: CANVAS_ID }, sandboxRoot });
 
@@ -840,7 +864,7 @@ describe("工作目录里的技能包（从工作目录导入）", () => {
     expect(missing.statusCode).toBe(400);
     expect(missing.json().error.message).toContain("SKILL.md");
 
-    // 画布查询默认返回 null（不属于当前工作区）
+    // 画布查询默认返回 null（不属于当前实例）
     const foreign = await buildApp({}, { sandboxRoot });
     const denied = await foreign.inject({
       method: "POST",
@@ -849,4 +873,111 @@ describe("工作目录里的技能包（从工作目录导入）", () => {
     });
     expect(denied.statusCode).toBe(404);
   });
+
+  it("Code候选与导入绑定明确Task真实目录，旧Canvas与双身份请求拒绝", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "kfw-task-skill-")));
+    const taskId = "fb6d510a-5bf0-4870-8ec4-f4ce4e2d37e2";
+    const scopeIdentity = {
+      instanceId: INSTANCE_ID,
+      projectId: "993e015e-0ee1-40e9-9d91-f5327556cdde",
+      taskId,
+      generation: 0,
+      rootDirectory: root,
+      additionalDirectories: [],
+      sandboxMode: "read-only" as const,
+    };
+    const scopes = createExecutionScopes({
+      repository: {
+        load: async (_instanceId, id) =>
+          id === taskId
+            ? { scope: scopeIdentity, state: "ready", branchGeneration: 1 }
+            : null,
+      },
+      localInstance,
+    });
+    try {
+      mkdirSync(join(root, "from-task"));
+      writeFileSync(
+        join(root, "from-task", "SKILL.md"),
+        "---\nname: from-task\ndescription: Task目录\n---\n正文",
+      );
+      const inserts = vi.fn(async () => ({ ...SKILL_ROW, id: SKILL_ID }));
+      const app = await buildApp(
+        { insertOwned: inserts, insertFilesForOwnedSkill: async () => 0 },
+        {
+          executionScopes: scopes,
+          canvas: { id: CANVAS_ID },
+          projectKind: "code",
+        },
+      );
+      const candidates = await app.inject({
+        method: "GET",
+        url: `/api/skills/sandbox-packages?taskId=${taskId}`,
+      });
+      expect(candidates.statusCode).toBe(200);
+      expect(candidates.json().packages).toEqual([
+        expect.objectContaining({
+          path: join(root, "from-task"),
+          name: "from-task",
+        }),
+      ]);
+      const imported = await app.inject({
+        method: "POST",
+        url: "/api/skills/sandbox-import",
+        payload: { taskId, path: "from-task" },
+      });
+      expect(imported.statusCode).toBe(201);
+      expect(inserts).toHaveBeenCalledWith(
+        ACTOR.instanceId,
+        expect.objectContaining({
+          name: "from-task",
+          skillContent: expect.stringContaining("Task目录"),
+        }),
+      );
+      const canvas = await app.inject({
+        method: "GET",
+        url: `/api/skills/sandbox-packages?canvasId=${CANVAS_ID}`,
+      });
+      expect(canvas.statusCode).toBe(400);
+      expect(canvas.json().error.message).toContain("不能用 Canvas");
+      const ambiguous = await app.inject({
+        method: "POST",
+        url: "/api/skills/sandbox-import",
+        payload: { canvasId: CANVAS_ID, taskId, path: "from-task" },
+      });
+      expect(ambiguous.statusCode).toBe(400);
+      const foreign = await app.inject({
+        method: "GET",
+        url: "/api/skills/sandbox-packages?taskId=948839a7-a8cc-4390-9e24-4dd0ae1902d5",
+      });
+      expect(foreign.statusCode).toBe(404);
+      const escaped = await app.inject({
+        method: "POST",
+        url: "/api/skills/sandbox-import",
+        payload: { taskId, path: "/etc" },
+      });
+      expect(escaped.statusCode).toBe(403);
+      expect(escaped.json().error.message).toContain("授权目录");
+      expect(inserts).toHaveBeenCalledTimes(1);
+      await app.close();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+it("卸载后的迟到技能 PATCH 明确拒绝，不能偷偷重新安装", async () => {
+  const install = vi.fn(async () => {});
+  const app = await buildApp({
+    findVisibleSkill: async () => ({ id: SKILL_ID }),
+    setEnabled: async () => false,
+    upsertInstallation: install,
+  });
+  const response = await app.inject({
+    method: "PATCH",
+    url: `/api/instance/skills/${SKILL_ID}`,
+    payload: { enabled: true },
+  });
+  expect(response.statusCode).toBe(404);
+  expect(install).not.toHaveBeenCalled();
 });

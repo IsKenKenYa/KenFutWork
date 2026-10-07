@@ -3,8 +3,8 @@
 import type { CompatReport, PluginBundleManifest } from "@kenfutwork/shared";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
-
 import { getServerBaseUrl } from "@/lib/env";
+import { serverFetch } from "@/lib/local-access";
 import { CompatReportView, hasLifecycleIssue } from "./plugin-compat-report";
 
 /**
@@ -15,12 +15,10 @@ import { CompatReportView, hasLifecycleIssue } from "./plugin-compat-report";
  */
 export function PluginInstallByUrl({
   accessToken,
-  isAdmin = false,
   onInstalled,
 }: {
   accessToken: string | null;
-  /** 安装要过管理员门：非管理员直接说清（校验兼容性仍然可用）。 */
-  isAdmin?: boolean;
+  /** 安装保留兼容性检查。 */
   onInstalled: () => void;
 }) {
   const [source, setSource] = useState("");
@@ -47,7 +45,7 @@ export function PluginInstallByUrl({
     setBusy("inspect");
     reset();
     try {
-      const response = await fetch(
+      const response = await serverFetch(
         `${getServerBaseUrl()}/api/plugins/inspect`,
         {
           method: "POST",
@@ -79,7 +77,7 @@ export function PluginInstallByUrl({
     setError(null);
     setMessage(null);
     try {
-      const response = await fetch(
+      const response = await serverFetch(
         `${getServerBaseUrl()}/api/plugins/install`,
         {
           method: "POST",
@@ -119,12 +117,6 @@ export function PluginInstallByUrl({
         填 GitHub 链接或本机目录 · 安装前先校验
       </p>
 
-      {!isAdmin ? (
-        <p className="mt-1 text-xs text-amber-600">
-          安装需管理员权限 · 校验不受影响
-        </p>
-      ) : null}
-
       <div className="mt-3 flex gap-2">
         <input
           aria-label="插件来源"
@@ -155,7 +147,7 @@ export function PluginInstallByUrl({
           onClick={() => {
             void install();
           }}
-          disabled={!isAdmin || busy !== null || !report?.compatible}
+          disabled={busy !== null || !report?.compatible}
           data-testid="install-button"
           className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-40"
         >

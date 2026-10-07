@@ -108,6 +108,8 @@ export function createWebSearchTool(deps: {
     description:
       "联网搜索：按查询词检索公开网页，返回标题/链接/摘要列表。需要实时信息时使用。",
     scope: "shared",
+    exposure: "deferred",
+    access: "read",
     parameters: {
       type: "object",
       properties: {
@@ -388,6 +390,8 @@ export function createWebChannelSearchTool(deps: {
       "未配置搜索供应商 Key 时走这条路：Bing 走结果页的 RSS（结构化、含摘要），百度走静态抓取——" +
       "碰到反爬 / 验证页时会返回 0 条并说明原因，那时改用 browser_navigate（连上受控浏览器后是真实渲染页）或让 execute 抓取。",
     scope: "shared",
+    exposure: "deferred",
+    access: "read",
     parameters: {
       type: "object",
       properties: {

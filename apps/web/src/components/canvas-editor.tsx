@@ -1,5 +1,7 @@
 "use client";
 
+import { bearerHeaders, serverFetch } from "@/lib/local-access";
+
 import "@excalidraw/excalidraw/index.css";
 
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
@@ -62,7 +64,7 @@ type SaveOutcome = "saved" | "empty" | "error";
 type CanvasEditorProps = {
   canvasId: string;
   projectId: string;
-  accessToken: string;
+  accessToken: string | null;
   initialContent: {
     elements: Record<string, unknown>[];
     appState: Record<string, unknown>;
@@ -149,7 +151,7 @@ export function CanvasEditor({
       await Promise.all(
         pendingUrls.map(async ({ fileId, url, meta }) => {
           try {
-            const resp = await fetch(url);
+            const resp = await serverFetch(url);
             if (!resp.ok) {
               console.warn(
                 `[canvas-editor] Failed to fetch file ${fileId}: ${resp.status}`,
@@ -660,10 +662,10 @@ export function CanvasEditor({
       // it's the best-effort approach -- sendBeacon has the same constraint.
       const url = `${getServerBaseUrl()}/api/canvases/${canvasIdRef.current}`;
       try {
-        fetch(url, {
+        serverFetch(url, {
           method: "PUT",
           headers: {
-            Authorization: `Bearer ${accessTokenRef.current}`,
+            ...bearerHeaders(accessTokenRef.current),
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ content: payload }),

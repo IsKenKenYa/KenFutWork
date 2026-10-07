@@ -65,7 +65,7 @@ pub fn validate_external_url(url: &str) -> Result<(), String> {
 
 /// 下载落盘：base64 字节 → 系统下载目录（重名顺延）。返回最终绝对路径（前端拿它定位）。
 #[tauri::command]
-fn save_file(
+pub fn save_file(
     app: tauri::AppHandle,
     name: String,
     data_base64: String,
@@ -86,7 +86,7 @@ fn save_file(
 
 /// 在系统文件管理器里定位文件（macOS Finder / Windows 资源管理器 / Linux 桌面）。
 #[tauri::command]
-fn reveal_path(path: String) -> Result<(), String> {
+pub fn reveal_path(path: String) -> Result<(), String> {
     let target = PathBuf::from(&path);
     if !target.exists() {
         return Err(format!("文件不存在：{path}"));
@@ -112,7 +112,7 @@ fn reveal_path(path: String) -> Result<(), String> {
 
 /// 外链交给系统默认浏览器（WKWebView 里 `target="_blank"` 开不了新窗口）。
 #[tauri::command]
-fn open_external(url: String) -> Result<(), String> {
+pub fn open_external(url: String) -> Result<(), String> {
     validate_external_url(&url)?;
     #[cfg(target_os = "macos")]
     let (command, args): (&str, Vec<String>) = ("open", vec![url]);
@@ -127,18 +127,6 @@ fn open_external(url: String) -> Result<(), String> {
         .spawn()
         .map(|_| ())
         .map_err(|error| format!("打开系统浏览器失败：{error}"))
-}
-
-/// 挂上系统缝命令（`generate_handler!` 不能在泛型上下文里展开，故固定 Wry 运行时；
-/// Tauri 2 的 `invoke_handler` 按注册顺序链式尝试，不会顶掉 ping / browser_embed）。
-pub fn register_system_commands(
-    builder: tauri::Builder<tauri::Wry>,
-) -> tauri::Builder<tauri::Wry> {
-    builder.invoke_handler(tauri::generate_handler![
-        save_file,
-        reveal_path,
-        open_external
-    ])
 }
 
 #[cfg(test)]

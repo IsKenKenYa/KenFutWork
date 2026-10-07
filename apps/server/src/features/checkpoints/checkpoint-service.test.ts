@@ -1,607 +1,440 @@
+import { execFileSync } from "node:child_process";
 import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-
+import type { CodeExecutionScope } from "@kenfutwork/shared";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createRuntimeTestInstance } from "../../agent/runtime-test-fixtures.js";
+import type { ScopeState } from "../execution/scope-repository.js";
 import {
+  createExecutionScopes,
+  type ExecutionScopeHandle,
+} from "../execution/scope-service.js";
+import { acquireTaskFileRestoreBarrier } from "../execution/scoped-filesystem.js";
+import type { LocalActor } from "../local-instance/types.js";
+import {
+  type CheckpointFileTransactions,
   createCheckpointService,
-  EMPTY_TREE_SHA,
 } from "./checkpoint-service.js";
 import { createInMemoryCheckpointRepository } from "./repository.js";
-import type { ShadowGitClient } from "./shadow-git-client.js";
-import { createShadowGitClient } from "./shadow-git-client.js";
-import { createShadowGitExec } from "./shadow-git-exec.js";
+import {
+  createShadowGitClient,
+  type ExecShadowGit,
+} from "./shadow-git-client.js";
 
-/**
- * 检查点服务（切片2）：真实 git + 内存仓储 + 内存 canvas 替身。
- *
- * 锁的行为契约：轮次钩子落行与 run_id 关联、可用性门 fail loud、恢复三态、
- * 预览与恢复一致、每画布互斥串行、空目录跳过、归属校验 404。
- */
-
-const WORKSPACE_ID = "ws-checkpoints";
-const CANVAS_ID = "canvas-checkpoints";
-
-describe("检查点服务", () => {
-  const dirs: string[] = [];
-  const write = (workTree: string, name: string, content: string): void => {
-    writeFileSync(join(workTree, name), content, "utf8");
-  };
-
-  const makeWorld = (
-    options: {
-      gitSource?: "system" | "bundled" | "unavailable";
-      wrapGit?: (git: ShadowGitClient) => ShadowGitClient;
-    } = {},
-  ): {
-    workTree: string;
-    repository: ReturnType<typeof createInMemoryCheckpointRepository>;
-    service: ReturnType<typeof createCheckpointService>;
-  } => {
-    const root = mkdtempSync(join(tmpdir(), "kfw-checkpoint-svc-"));
-    dirs.push(root);
-    const workTree = join(root, "work");
-    mkdirSync(workTree);
-    const repository = createInMemoryCheckpointRepository();
-    const canvasRepository = {
-      findById: async (workspaceId: string, canvasId: string) =>
-        workspaceId === WORKSPACE_ID && canvasId === CANVAS_ID
-          ? { id: canvasId, name: "画布", project_id: "p1", content: null }
-          : null,
-      findWorkspaceIdByCanvas: async (canvasId: string) =>
-        canvasId === CANVAS_ID ? WORKSPACE_ID : null,
-    };
-    const realGit = createShadowGitClient({
-      exec: createShadowGitExec({ binary: "git" }),
-      writeTextFile: async (path, content) => {
-        writeFileSync(path, content, "utf8");
-      },
-    });
-    const service = createCheckpointService({
-      repository,
-      canvasRepository,
-      git: options.wrapGit ? options.wrapGit(realGit) : realGit,
-      gitSource: options.gitSource ?? "system",
-      checkpointRoot: join(root, "checkpoints"),
-      resolveSandboxDirFn: () => workTree,
-    });
-    return { workTree, repository, service };
-  };
-
-  afterEach(() => {
-    for (const dir of dirs.splice(0)) {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("beforeTurn → afterTurn 落两行 turn 检查点，run_id 关联、增量统计只算本轮", async () => {
-    const { workTree, service } = makeWorld();
-    write(workTree, "a.txt", "v1\n");
-
-    const before = await service.beforeTurn({
-      canvasId: CANVAS_ID,
-      sandboxDir: workTree,
-      runId: "run-1",
-    });
-    expect(before?.kind).toBe("turn");
-    expect(before?.label).toBe("轮次开始快照");
-    expect(before?.runId).toBe("run-1");
-    expect(before?.workspaceId).toBe(WORKSPACE_ID);
-    // 基线相对空树：只有 a.txt 的 1 行
-    expect(before?.filesChanged).toBe(1);
-    expect(before?.insertions).toBe(1);
-    expect(before?.deletions).toBe(0);
-
-    write(workTree, "a.txt", "v1\nv2\n");
-    write(workTree, "b.txt", "b\n");
-    const after = await service.afterTurn({
-      canvasId: CANVAS_ID,
-      sandboxDir: workTree,
-      runId: "run-1",
-    });
-
-    const rows = await service.list({
-      workspaceId: WORKSPACE_ID,
-      canvasId: CANVAS_ID,
-    });
-    expect(rows).toHaveLength(2);
-    expect(rows[0]?.id).toBe(before?.id);
-    expect(rows[1]?.id).toBe(after?.id);
-    expect(rows.every((r) => r.runId === "run-1")).toBe(true);
-    expect(rows[0]?.shadowCommit).not.toBe(rows[1]?.shadowCommit);
-    // 增量口径：第二行只统计本轮变化（a.txt +1、b.txt +1）
-    expect(rows[1]?.filesChanged).toBe(2);
-    expect(rows[1]?.insertions).toBe(2);
-    expect(rows[1]?.deletions).toBe(0);
-  });
-
-  it("失败场景：run 只走到 beforeTurn 也留下轮次开始快照", async () => {
-    const { workTree, service } = makeWorld();
-    write(workTree, "a.txt", "v1\n");
-    const before = await service.beforeTurn({
-      canvasId: CANVAS_ID,
-      sandboxDir: workTree,
-      runId: "run-9",
-    });
-    expect(before).not.toBeNull();
-    const rows = await service.list({
-      workspaceId: WORKSPACE_ID,
-      canvasId: CANVAS_ID,
-    });
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.runId).toBe("run-9");
-    expect(rows[0]?.label).toBe("轮次开始快照");
-  });
-
-  it("gitSource=unavailable：所有操作 fail loud 抛 503 git_unavailable", async () => {
-    const { service } = makeWorld({ gitSource: "unavailable" });
-    const ops = [
-      () =>
-        service.beforeTurn({
-          canvasId: CANVAS_ID,
-          sandboxDir: "/tmp/x",
-          runId: "r",
-        }),
-      () =>
-        service.afterTurn({
-          canvasId: CANVAS_ID,
-          sandboxDir: "/tmp/x",
-          runId: "r",
-        }),
-      () => service.list({ workspaceId: WORKSPACE_ID, canvasId: CANVAS_ID }),
-      () => service.diffFor({ workspaceId: WORKSPACE_ID, checkpointId: "id" }),
-      () =>
-        service.previewRestore({
-          workspaceId: WORKSPACE_ID,
-          checkpointId: "id",
-        }),
-      () => service.restore({ workspaceId: WORKSPACE_ID, checkpointId: "id" }),
-    ];
-    for (const op of ops) {
-      await expect(op()).rejects.toMatchObject({
-        name: "CodeCheckpointError",
-        code: "git_unavailable",
-        statusCode: 503,
-      });
-    }
-  });
-
-  it("空目录首跳过：beforeTurn/afterTurn 都不落行", async () => {
-    const { workTree, service } = makeWorld();
-    expect(
-      await service.beforeTurn({
-        canvasId: CANVAS_ID,
-        sandboxDir: workTree,
-        runId: "run-1",
-      }),
-    ).toBeNull();
-    expect(
-      await service.afterTurn({
-        canvasId: CANVAS_ID,
-        sandboxDir: workTree,
-        runId: "run-1",
-      }),
-    ).toBeNull();
-    expect(
-      await service.list({ workspaceId: WORKSPACE_ID, canvasId: CANVAS_ID }),
-    ).toEqual([]);
-  });
-
-  it("restore：工作区回到目标且多出一个 kind=restore 的检查点", async () => {
-    const { workTree, service } = makeWorld();
-    write(workTree, "a.txt", "v1\n");
-    write(workTree, "gone.txt", "gone\n");
-    const first = await service.beforeTurn({
-      canvasId: CANVAS_ID,
-      sandboxDir: workTree,
-      runId: "run-1",
-    });
-
-    write(workTree, "a.txt", "v2\n");
-    write(workTree, "new.txt", "n\n");
-    rmSync(join(workTree, "gone.txt"));
-    await service.afterTurn({
-      canvasId: CANVAS_ID,
-      sandboxDir: workTree,
-      runId: "run-1",
-    });
-
-    const restored = await service.restore({
-      workspaceId: WORKSPACE_ID,
-      checkpointId: first?.id as string,
-    });
-    // 工作区精确回到目标
-    expect(readFileSync(join(workTree, "a.txt"), "utf8")).toBe("v1\n");
-    expect(readFileSync(join(workTree, "gone.txt"), "utf8")).toBe("gone\n");
-    expect(existsSync(join(workTree, "new.txt"))).toBe(false);
-    // 恢复本身成为一个新检查点（回滚恢复点），与目标提交不同
-    expect(restored?.kind).toBe("restore");
-    expect(restored?.label).toBe("回滚恢复点");
-    expect(restored?.runId).toBeNull();
-    expect(restored?.shadowCommit).not.toBe(first?.shadowCommit);
-
-    const rows = await service.list({
-      workspaceId: WORKSPACE_ID,
-      canvasId: CANVAS_ID,
-    });
-    expect(rows).toHaveLength(3);
-    expect(rows[2]?.kind).toBe("restore");
-    // 恢复行的增量：相对恢复前状态 = 3 个文件（a 改、new 删、gone 复活）
-    expect(rows[2]?.filesChanged).toBe(3);
-    expect(rows[2]?.insertions).toBe(2);
-    expect(rows[2]?.deletions).toBe(2);
-  });
-
-  it("previewRestore：受影响清单与实际恢复结果一致", async () => {
-    const { workTree, service } = makeWorld();
-    write(workTree, "a.txt", "v1\n");
-    write(workTree, "gone.txt", "gone\n");
-    const first = await service.beforeTurn({
-      canvasId: CANVAS_ID,
-      sandboxDir: workTree,
-      runId: "run-1",
-    });
-
-    write(workTree, "a.txt", "v2\n");
-    write(workTree, "b.txt", "b\n");
-    await service.afterTurn({
-      canvasId: CANVAS_ID,
-      sandboxDir: workTree,
-      runId: "run-1",
-    });
-
-    // 未提交改动：改 a.txt、增 extra.txt、删 b.txt
-    write(workTree, "a.txt", "dirty\n");
-    write(workTree, "extra.txt", "extra\n");
-    rmSync(join(workTree, "b.txt"));
-
-    const preview = await service.previewRestore({
-      workspaceId: WORKSPACE_ID,
-      checkpointId: first?.id as string,
-    });
-    // 相对目标（first）：a.txt 变了、extra.txt 是多的；b.txt 在两边都不存在，不算差异
-    expect(preview.files.map((f) => f.path).sort()).toEqual([
-      "a.txt",
-      "extra.txt",
-    ]);
-    expect(preview.filesChanged).toBe(2);
-    expect(preview.insertions).toBeGreaterThan(0);
-
-    await service.restore({
-      workspaceId: WORKSPACE_ID,
-      checkpointId: first?.id as string,
-    });
-    // 清单里的每一项都按预览归位
-    expect(readFileSync(join(workTree, "a.txt"), "utf8")).toBe("v1\n");
-    expect(existsSync(join(workTree, "extra.txt"))).toBe(false);
-    expect(existsSync(join(workTree, "b.txt"))).toBe(false);
-    expect(readFileSync(join(workTree, "gone.txt"), "utf8")).toBe("gone\n");
-  });
-
-  it("每画布互斥：并发两次 afterTurn 串行落行，增量互不吞并", async () => {
-    let releaseFirst = () => {};
-    let numstatEnteredResolve = () => {};
-    const numstatEntered = new Promise<void>((resolve) => {
-      numstatEnteredResolve = resolve;
-    });
-    let numstatCalls = 0;
-    const { workTree, service } = makeWorld({
-      wrapGit: (git) => ({
-        ...git,
-        numstat: async (input) => {
-          numstatCalls += 1;
-          if (numstatCalls === 1) {
-            // 第一笔停在统计前（commit 已完成）：放行时机由测试掌控
-            numstatEnteredResolve();
-            await new Promise<void>((resolve) => {
-              releaseFirst = resolve;
-            });
-          }
-          return git.numstat(input);
+const INSTANCE_ID = "2cdb5c27-a1f7-4109-9927-40e0b0822956";
+const PROJECT_ID = "c15b75a5-b7ef-46b5-8b0c-d543dd7769d5";
+const TASK_ID = "0432143f-e2b8-4ea6-adea-01f706f537d3";
+const actor: LocalActor = {
+  instanceId: INSTANCE_ID,
+  accessClientId: "00000000-0000-4000-8000-000000000009",
+};
+const temporary: string[] = [];
+afterEach(async () => {
+  await Promise.all(
+    temporary
+      .splice(0)
+      .map((path) => rm(path, { recursive: true, force: true })),
+  );
+});
+// Git 存储语义的测试执行替身；不作为真实 ProcessSandbox enforcement 证据。
+const exec: ExecShadowGit = async (args, directory, input) => {
+  try {
+    return {
+      code: 0,
+      stderr: "",
+      stdout: execFileSync("git", ["--no-optional-locks", ...args], {
+        cwd: directory.workTree,
+        env: {
+          ...process.env,
+          GIT_DIR: directory.gitDir,
+          GIT_WORK_TREE: directory.workTree,
         },
+        encoding: "utf8",
+        ...(input === undefined ? {} : { input }),
+        stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
       }),
+    };
+  } catch (error) {
+    const failure = error as { status?: number; stderr?: Buffer };
+    return {
+      code: failure.status ?? 1,
+      stderr: failure.stderr?.toString() ?? "失败",
+      stdout: "",
+    };
+  }
+};
+async function world() {
+  const base = await realpath(
+    await mkdtemp(join(tmpdir(), "kfw-checkpoint-task-")),
+  );
+  temporary.push(base);
+  const root = join(base, "primary");
+  const extra = join(base, "extra");
+  const readonly = join(root, "readonly");
+  await Promise.all([mkdir(root), mkdir(extra)]);
+  await mkdir(readonly);
+  let identity: CodeExecutionScope = {
+    instanceId: INSTANCE_ID,
+    projectId: PROJECT_ID,
+    taskId: TASK_ID,
+    generation: 1,
+    rootDirectory: root,
+    additionalDirectories: [
+      { path: extra, access: "read-write" },
+      { path: readonly, access: "read-only" },
+    ],
+    sandboxMode: "workspace-write",
+  };
+  let branch = 1;
+  let state: ScopeState = "ready";
+  const scopes = createExecutionScopes({
+    repository: {
+      load: async (_instanceId, task) =>
+        task === TASK_ID
+          ? { scope: identity, state, branchGeneration: branch }
+          : null,
+    },
+    localInstance: createRuntimeTestInstance(INSTANCE_ID),
+  });
+  const scope = await scopes.openTask(actor, TASK_ID);
+  const git = createShadowGitClient({
+    exec,
+    writeTextFile: (path, text) => writeFile(path, text, "utf8"),
+  });
+  const beforeRestore = vi.fn(async () => {
+    branch++;
+    identity = { ...identity, generation: identity.generation + 1 };
+    state = "revoking";
+    return scopes.openRestoringTask(actor, TASK_ID, identity.generation);
+  });
+  const afterRestore = vi.fn(
+    async (
+      _scope: ExecutionScopeHandle,
+      _actor: LocalActor,
+      success: boolean,
+    ) => {
+      state = success ? "ready" : "failed";
+    },
+  );
+  const files: CheckpointFileTransactions = {
+    observe: (handle, path) => handle.backend.observeBinary(path),
+    commit: async (handle, entries, beforeCommit) => {
+      const result = await handle.backend.commitBatch(entries, async () => {
+        const next = await beforeCommit();
+        await expect(scopes.openTask(actor, TASK_ID)).rejects.toMatchObject({
+          code: "scope_unavailable",
+        });
+        return next;
+      });
+      if (!result.complete || !result.newScope)
+        throw new Error(
+          result.failures.map((failure) => failure.error).join("\n"),
+        );
+      return result.newScope;
+    },
+  };
+  const repository = createInMemoryCheckpointRepository();
+  const service = createCheckpointService({
+    repository,
+    gitForScope: async () => git,
+    gitSource: "system",
+    checkpointRoot: join(base, "checkpoints"),
+    files,
+    acquireRestoreBarrier: acquireTaskFileRestoreBarrier,
+    onBeforeRestore: beforeRestore,
+    onAfterRestore: afterRestore,
+  });
+  return {
+    base,
+    root,
+    extra,
+    readonly,
+    scope,
+    scopes,
+    service,
+    repository,
+    beforeRestore,
+    afterRestore,
+  };
+}
+describe("Task 检查点", () => {
+  it("按精确pre引用读取选定文件原始字节，保留UTF16与BOM且不猜相邻检查点", async () => {
+    const { root, service, scope } = await world();
+    const path = join(root, "encoded.txt");
+    const original = Buffer.concat([
+      Buffer.from([0xff, 0xfe]),
+      Buffer.from("before\n", "utf16le"),
+    ]);
+    await writeFile(path, original);
+    const pre = await service.captureTurnBoundary({
+      scope,
+      actor,
+      runId: "encoded-run",
+      phase: "pre",
     });
-
-    write(workTree, "a.txt", "a\n");
-    const p1 = service.afterTurn({
-      canvasId: CANVAS_ID,
-      sandboxDir: workTree,
-      runId: "run-1",
+    if (!pre.effective) throw new Error("真实pre引用未保存");
+    await scope.backend.readPage({ path });
+    await scope.backend.editFile({
+      path,
+      oldString: "before",
+      newString: "after",
     });
-    // 等 p1 真正跑到统计一步（已持有锁、已完成提交），再写第二个文件并发第二笔
-    await numstatEntered;
-    write(workTree, "b.txt", "b\n");
-    const p2 = service.afterTurn({
-      canvasId: CANVAS_ID,
-      sandboxDir: workTree,
-      runId: "run-2",
+    await service.captureTurnBoundary({
+      scope,
+      actor,
+      runId: "encoded-run",
+      phase: "post",
     });
-    releaseFirst();
-
-    const [r1, r2] = await Promise.all([p1, p2]);
-    expect(r1?.runId).toBe("run-1");
-    expect(r2?.runId).toBe("run-2");
-    expect(r1?.filesChanged).toBe(1);
-    expect(r2?.filesChanged).toBe(1);
-    expect(r1?.shadowCommit).not.toBe(r2?.shadowCommit);
+    const bytes = await service.readFileSnapshot({
+      scope,
+      actor,
+      checkpointId: pre.effective.id,
+      path,
+    });
+    expect(Buffer.from(bytes.bytes!)).toEqual(original);
+    expect(await readFile(path)).toEqual(
+      Buffer.concat([
+        Buffer.from([0xff, 0xfe]),
+        Buffer.from("after\n", "utf16le"),
+      ]),
+    );
+  });
+  it("captureTurnBoundary无变化按本次真实shadow版本返回post有效引用，不猜数据库最新行", async () => {
+    const { root, service, scope } = await world();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-10-04T02:00:00.000Z"));
+      await writeFile(join(root, "a.txt"), "one\n");
+      const first = await service.beforeTurn({
+        scope,
+        actor,
+        runId: "run-first",
+      });
+      vi.setSystemTime(new Date("2026-10-04T01:00:00.000Z"));
+      await writeFile(join(root, "a.txt"), "two\n");
+      const current = await service.afterTurn({
+        scope,
+        actor,
+        runId: "run-current",
+      });
+      if (!current) throw new Error("文件已变更，应创建检查点");
+      expect(current.shadowCommit).not.toBe(first?.shadowCommit);
+      expect((await service.list({ scope, actor })).at(-1)?.id).toBe(first?.id);
+      vi.setSystemTime(new Date("2026-10-04T03:00:00.000Z"));
+      const boundary = await service.captureTurnBoundary({
+        scope,
+        actor,
+        runId: "run-next",
+        phase: "post",
+      });
+      expect(boundary).toMatchObject({
+        phase: "post",
+        created: null,
+        effective: {
+          id: current.id,
+          shadowCommit: current.shadowCommit,
+          kind: "turn",
+        },
+      });
+      expect(await service.list({ scope, actor })).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("diffFor：首个检查点与空树比，后续与上一检查点比，可按 path 过滤", async () => {
-    const { workTree, service } = makeWorld();
-    write(workTree, "a.txt", "v1\n");
-    const first = await service.beforeTurn({
-      canvasId: CANVAS_ID,
-      sandboxDir: workTree,
-      runId: "run-1",
+  it("只读边界不会被用户.gitignore反向规则覆盖，恢复保留只读内容", async () => {
+    const { root, readonly, scope, scopes, service } = await world();
+    await writeFile(join(root, ".gitignore"), "!readonly/\n!readonly/**\n");
+    await writeFile(join(root, "main.txt"), "before");
+    await writeFile(join(readonly, "reference.txt"), "只读内容");
+    const checkpoint = await service.beforeTurn({ scope, actor, runId: "run" });
+    expect(
+      (
+        await service.turnFiles({ scope, actor, checkpointId: checkpoint!.id })
+      ).files.map((file) => file.path),
+    ).not.toContain("readonly/reference.txt");
+    await writeFile(join(root, "main.txt"), "after");
+    const preview = await service.previewRestore({
+      scope,
+      actor,
+      checkpointId: checkpoint!.id,
     });
-    write(workTree, "a.txt", "v2\n");
-    write(workTree, "b.txt", "b\n");
-    const second = await service.afterTurn({
-      canvasId: CANVAS_ID,
-      sandboxDir: workTree,
-      runId: "run-1",
+    await service.restore({
+      scope,
+      actor,
+      checkpointId: checkpoint!.id,
+      expectedVersion: preview.expectedVersion,
     });
-
-    const firstDiff = await service.diffFor({
-      workspaceId: WORKSPACE_ID,
-      checkpointId: first?.id as string,
-    });
-    expect(firstDiff.from).toBe(EMPTY_TREE_SHA);
-    expect(firstDiff.to).toBe(first?.shadowCommit);
-    expect(firstDiff.text).toContain("+v1");
-    expect(firstDiff.text).not.toContain("b.txt");
-
-    const secondDiff = await service.diffFor({
-      workspaceId: WORKSPACE_ID,
-      checkpointId: second?.id as string,
-    });
-    expect(secondDiff.from).toBe(first?.shadowCommit);
-    expect(secondDiff.text).toContain("b.txt");
-    expect(secondDiff.text).toContain("+v2");
-
-    const onlyA = await service.diffFor({
-      workspaceId: WORKSPACE_ID,
-      checkpointId: second?.id as string,
-      path: "a.txt",
-    });
-    expect(onlyA.text).toContain("a.txt");
-    expect(onlyA.text).not.toContain("b.txt");
+    expect(await readFile(join(readonly, "reference.txt"), "utf8")).toBe(
+      "只读内容",
+    );
+    expect(await readFile(join(root, "main.txt"), "utf8")).toBe("before");
+    expect((await scopes.openTask(actor, TASK_ID)).describe().sandboxMode).toBe(
+      "workspace-write",
+    );
   });
 
-  it("归属校验：外工作区/缺失检查点一律 404", async () => {
-    const { workTree, service } = makeWorld();
-    write(workTree, "a.txt", "v1\n");
-    const before = await service.beforeTurn({
-      canvasId: CANVAS_ID,
-      sandboxDir: workTree,
-      runId: "run-1",
+  it("快照覆盖主目录和可写额外目录，排除只读子目录与用户 .git", async () => {
+    const { root, extra, readonly, service, scope } = await world();
+    await writeFile(join(root, "main.txt"), "主目录\n");
+    await writeFile(join(extra, "extra.txt"), "额外目录\n");
+    await writeFile(join(readonly, "private.txt"), "只读\n");
+    await mkdir(join(root, ".git"));
+    await writeFile(join(root, ".git", "config"), "用户配置");
+    const before = await service.beforeTurn({ scope, actor, runId: "run" });
+    expect(before?.taskId).toBe(TASK_ID);
+    expect(before?.projectId).toBe(PROJECT_ID);
+    expect(
+      before?.directorySnapshots.map((entry) => entry.rootDirectory),
+    ).toEqual([root, extra]);
+    const files = await service.turnFiles({
+      scope,
+      actor,
+      checkpointId: before!.id,
     });
-
-    await expect(
-      service.list({ workspaceId: "other-ws", canvasId: CANVAS_ID }),
-    ).rejects.toMatchObject({ code: "not_found", statusCode: 404 });
-    await expect(
-      service.diffFor({ workspaceId: WORKSPACE_ID, checkpointId: "missing" }),
-    ).rejects.toMatchObject({ code: "not_found", statusCode: 404 });
+    expect(files.files.map((entry) => entry.path).sort()).toEqual([
+      "extra.txt",
+      "main.txt",
+    ]);
+    expect(await readFile(join(root, ".git", "config"), "utf8")).toBe(
+      "用户配置",
+    );
+  });
+  it("无变化不追加行，afterTurn保留run关联与增量统计", async () => {
+    const { root, service, scope } = await world();
+    await writeFile(join(root, "a.txt"), "one\n");
+    await service.beforeTurn({ scope, actor, runId: "run" });
+    expect(await service.afterTurn({ scope, actor, runId: "run" })).toBeNull();
+    await writeFile(join(root, "a.txt"), "one\ntwo\n");
+    const after = await service.afterTurn({ scope, actor, runId: "run" });
+    expect(after?.runId).toBe("run");
+    expect(after?.insertions).toBe(1);
+    expect(await service.list({ scope, actor })).toHaveLength(2);
+  });
+  it("预览后其他 Task 改同文件，恢复409且不停止/覆盖其他工作", async () => {
+    const { root, scope, service, beforeRestore } = await world();
+    const path = join(root, "a.txt");
+    await writeFile(path, "initial");
+    const checkpoint = await service.beforeTurn({ scope, actor, runId: "r" });
+    await writeFile(path, "current");
+    const preview = await service.previewRestore({
+      scope,
+      actor,
+      checkpointId: checkpoint!.id,
+    });
+    await writeFile(path, "另一Task刚写的");
     await expect(
       service.restore({
-        workspaceId: "other-ws",
-        checkpointId: before?.id as string,
+        scope,
+        actor,
+        checkpointId: checkpoint!.id,
+        expectedVersion: preview.expectedVersion,
       }),
-    ).rejects.toMatchObject({ code: "not_found", statusCode: 404 });
-    await expect(
-      service.previewRestore({
-        workspaceId: WORKSPACE_ID,
-        checkpointId: "missing",
-      }),
-    ).rejects.toMatchObject({ code: "not_found", statusCode: 404 });
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(beforeRestore).not.toHaveBeenCalled();
+    expect(await readFile(path, "utf8")).toBe("另一Task刚写的");
   });
-
-  describe("检查点服务 · 每轮文件清单与每文件撤销", () => {
-    it("turnFiles 只列该轮（相对上一检查点）的变更文件", async () => {
-      const { workTree, service } = makeWorld();
-      write(workTree, "base.txt", "基础内容\n");
-      await service.beforeTurn({
-        canvasId: CANVAS_ID,
-        sandboxDir: workTree,
-        runId: "run-0",
-      });
-      await service.afterTurn({
-        canvasId: CANVAS_ID,
-        sandboxDir: workTree,
-        runId: "run-0",
-      });
-
-      write(workTree, "new-in-turn.txt", "本轮新增\n");
-      write(workTree, "base.txt", "本轮修改\n");
-      const endRow = await service.afterTurn({
-        canvasId: CANVAS_ID,
-        sandboxDir: workTree,
-        runId: "run-1",
-      });
-      if (!endRow) throw new Error("应落轮次结束快照");
-      if (!endRow) throw new Error("应落轮次结束快照");
-
-      const { files } = await service.turnFiles({
-        workspaceId: WORKSPACE_ID,
-        checkpointId: endRow.id,
-      });
-      const paths = files.map((f) => f.path).sort();
-      expect(paths).toEqual(["base.txt", "new-in-turn.txt"]);
+  it("二进制恢复保持字节、撤销新增/恢复删除，旧scope永久失效", async () => {
+    const { root, extra, readonly, scope, scopes, service } = await world();
+    const bytes = Buffer.from([0, 255, 128, 10]);
+    await writeFile(join(root, "binary.dat"), bytes);
+    await writeFile(join(extra, "gone.txt"), "restore");
+    await writeFile(join(readonly, "keep.txt"), "keep");
+    const checkpoint = await service.beforeTurn({ scope, actor, runId: "r" });
+    await writeFile(join(root, "binary.dat"), "changed");
+    await rm(join(extra, "gone.txt"));
+    await writeFile(join(root, "new.txt"), "new");
+    const preview = await service.previewRestore({
+      scope,
+      actor,
+      checkpointId: checkpoint!.id,
     });
-
-    it("restoreFile 把该轮修改的文件恢复到轮开始前，并落一条 restore 检查点", async () => {
-      const { workTree, repository, service } = makeWorld();
-      write(workTree, "doc.md", "原始内容\n");
-      await service.beforeTurn({
-        canvasId: CANVAS_ID,
-        sandboxDir: workTree,
-        runId: "run-1",
-      });
-      write(workTree, "doc.md", "被改坏的内容\n");
-      const endRow = await service.afterTurn({
-        canvasId: CANVAS_ID,
-        sandboxDir: workTree,
-        runId: "run-1",
-      });
-      if (!endRow) throw new Error("应落轮次结束快照");
-      if (!endRow) throw new Error("应落轮次结束快照");
-
-      const restored = await service.restoreFile({
-        workspaceId: WORKSPACE_ID,
-        checkpointId: endRow.id,
-        path: "doc.md",
-      });
-      expect(restored.kind).toBe("restore");
-      expect(readFileSync(join(workTree, "doc.md"), "utf8")).toBe("原始内容\n");
-      // 恢复本身落了可查的检查点行（变更面板据此刷新）
-      const rows = await repository.listByCanvas(WORKSPACE_ID, CANVAS_ID);
-      expect(rows[rows.length - 1]?.id).toBe(restored.id);
+    await service.restore({
+      scope,
+      actor,
+      checkpointId: checkpoint!.id,
+      expectedVersion: preview.expectedVersion,
     });
-
-    it("restoreFile 删除该轮新建的文件（回到该轮开始前不存在）", async () => {
-      const { workTree, service } = makeWorld();
-      write(workTree, "kept.txt", "轮前就有\n");
-      await service.beforeTurn({
-        canvasId: CANVAS_ID,
-        sandboxDir: workTree,
-        runId: "run-1",
-      });
-      write(workTree, "created.md", "本轮新建\n");
-      const endRow = await service.afterTurn({
-        canvasId: CANVAS_ID,
-        sandboxDir: workTree,
-        runId: "run-1",
-      });
-      if (!endRow) throw new Error("应落轮次结束快照");
-
-      await service.restoreFile({
-        workspaceId: WORKSPACE_ID,
-        checkpointId: endRow.id,
-        path: "created.md",
-      });
-      expect(existsSync(join(workTree, "created.md"))).toBe(false);
-      expect(existsSync(join(workTree, "kept.txt"))).toBe(true);
+    expect(await readFile(join(root, "binary.dat"))).toEqual(bytes);
+    expect(await readFile(join(extra, "gone.txt"), "utf8")).toBe("restore");
+    await expect(readFile(join(root, "new.txt"))).rejects.toMatchObject({
+      code: "ENOENT",
     });
-
-    it("restoreFile 复活该轮删除的文件", async () => {
-      const { workTree, service } = makeWorld();
-      write(workTree, "doomed.txt", "将被删除\n");
-      await service.beforeTurn({
-        canvasId: CANVAS_ID,
-        sandboxDir: workTree,
-        runId: "run-1",
-      });
-      rmSync(join(workTree, "doomed.txt"));
-      const endRow = await service.afterTurn({
-        canvasId: CANVAS_ID,
-        sandboxDir: workTree,
-        runId: "run-1",
-      });
-      if (!endRow) throw new Error("应落轮次结束快照");
-
-      await service.restoreFile({
-        workspaceId: WORKSPACE_ID,
-        checkpointId: endRow.id,
-        path: "doomed.txt",
-      });
-      expect(readFileSync(join(workTree, "doomed.txt"), "utf8")).toBe(
-        "将被删除\n",
-      );
+    expect(await readFile(join(readonly, "keep.txt"), "utf8")).toBe("keep");
+    await expect(scope.resolvePath(".", "read")).rejects.toMatchObject({
+      code: "branch_changed",
     });
-
-    it("restoreFile 只动目标文件，其余文件不受影响", async () => {
-      const { workTree, service } = makeWorld();
-      write(workTree, "a.txt", "a-原始\n");
-      write(workTree, "b.txt", "b-原始\n");
-      await service.beforeTurn({
-        canvasId: CANVAS_ID,
-        sandboxDir: workTree,
-        runId: "run-1",
-      });
-      write(workTree, "a.txt", "a-改\n");
-      write(workTree, "b.txt", "b-改\n");
-      const endRow = await service.afterTurn({
-        canvasId: CANVAS_ID,
-        sandboxDir: workTree,
-        runId: "run-1",
-      });
-      if (!endRow) throw new Error("应落轮次结束快照");
-
-      await service.restoreFile({
-        workspaceId: WORKSPACE_ID,
-        checkpointId: endRow.id,
+    expect((await scopes.openTask(actor, TASK_ID)).describe().generation).toBe(
+      2,
+    );
+  });
+  it("预览版本不能重放、跨检查点或误用于文件撤销", async () => {
+    const { root, scope, service } = await world();
+    await writeFile(join(root, "a.txt"), "first");
+    const first = await service.beforeTurn({ scope, actor, runId: "r" });
+    await writeFile(join(root, "a.txt"), "second");
+    const second = await service.afterTurn({ scope, actor, runId: "r" });
+    const preview = await service.previewRestore({
+      scope,
+      actor,
+      checkpointId: first!.id,
+    });
+    await expect(
+      service.restore({
+        scope,
+        actor,
+        checkpointId: second!.id,
+        expectedVersion: preview.expectedVersion,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    await expect(
+      service.restoreFile({
+        scope,
+        actor,
+        checkpointId: first!.id,
+        expectedVersion: preview.expectedVersion,
         path: "a.txt",
-      });
-      expect(readFileSync(join(workTree, "a.txt"), "utf8")).toBe("a-原始\n");
-      expect(readFileSync(join(workTree, "b.txt"), "utf8")).toBe("b-改\n");
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+  it("外Task检查点拒绝，空目录有零变更基线且无变化不重复快照", async () => {
+    const { scope, service, repository } = await world();
+    const baseline = await service.beforeTurn({ scope, actor, runId: "r" });
+    expect(baseline).toMatchObject({
+      taskId: scope.describe().taskId,
+      filesChanged: 0,
+      insertions: 0,
+      deletions: 0,
     });
-
-    it("restoreFile 拒绝绝对路径与 `..` 段（400，fail loud）", async () => {
-      const { workTree, service } = makeWorld();
-      write(workTree, "x.txt", "x\n");
-      const row = await service.afterTurn({
-        canvasId: CANVAS_ID,
-        sandboxDir: workTree,
-        runId: "run-1",
-      });
-      if (!row) throw new Error("应落轮次快照");
-      for (const bad of ["/etc/passwd", "../escape.txt", "a/../../b.txt"]) {
-        await expect(
-          service.restoreFile({
-            workspaceId: WORKSPACE_ID,
-            checkpointId: row.id,
-            path: bad,
-          }),
-        ).rejects.toMatchObject({ statusCode: 400 });
-      }
+    expect(
+      await service.beforeTurn({ scope, actor, runId: "next" }),
+    ).toBeNull();
+    await repository.insert({
+      id: "other",
+      instanceId: INSTANCE_ID,
+      projectId: PROJECT_ID,
+      taskId: "other-task",
+      rootDirectory: scope.describe().rootDirectory,
+      directorySnapshots: [],
+      shadowCommit: "a".repeat(40),
+      runId: null,
+      kind: "turn",
+      label: "其他Task",
+      filesChanged: 0,
+      insertions: 0,
+      deletions: 0,
+      createdAt: new Date().toISOString(),
     });
-
-    it("restoreFile 重复撤销同一文件：第二次无可恢复差异，不新落检查点", async () => {
-      const { workTree, repository, service } = makeWorld();
-      write(workTree, "doc.md", "原始\n");
-      await service.beforeTurn({
-        canvasId: CANVAS_ID,
-        sandboxDir: workTree,
-        runId: "run-1",
-      });
-      write(workTree, "doc.md", "改\n");
-      const endRow = await service.afterTurn({
-        canvasId: CANVAS_ID,
-        sandboxDir: workTree,
-        runId: "run-1",
-      });
-      if (!endRow) throw new Error("应落轮次结束快照");
-      if (!endRow) throw new Error("应落轮次结束快照");
-
-      // 第一次撤销：恢复 + 落 restore 行
-      const first = await service.restoreFile({
-        workspaceId: WORKSPACE_ID,
-        checkpointId: endRow.id,
-        path: "doc.md",
-      });
-      expect(first.kind).toBe("restore");
-      const afterFirst = (
-        await repository.listByCanvas(WORKSPACE_ID, CANVAS_ID)
-      ).length;
-
-      // 第二次撤销：文件已与基准一致 → 无操作，不新落行（返回目标是本轮的 end 行）
-      const second = await service.restoreFile({
-        workspaceId: WORKSPACE_ID,
-        checkpointId: endRow.id,
-        path: "doc.md",
-      });
-      expect(second.kind).not.toBe("restore");
-      expect(
-        await repository.listByCanvas(WORKSPACE_ID, CANVAS_ID),
-      ).toHaveLength(afterFirst);
-    });
+    await expect(
+      service.previewRestore({ scope, actor, checkpointId: "other" }),
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 });

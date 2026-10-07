@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ZodType } from "zod";
 import * as sharedExports from "./index.js";
 import {
+  contentBlockSchema,
   errorCodeValues,
   healthResponseSchema,
   runCancelResponseSchema,
@@ -178,32 +179,17 @@ describe("@kenfutwork/shared contracts", () => {
     expect(parsed.status).toBe("canceling");
   });
 
-  it("shares the viewer bootstrap contract for GET /api/viewer", () => {
-    const viewerResponseSchema = getExportedSchema("viewerResponseSchema");
+  it("shares the local instance contract for GET /api/instance", () => {
+    const instanceResponseSchema = getExportedSchema("instanceResponseSchema");
 
-    const parsed = viewerResponseSchema.parse({
-      profile: {
-        id: "user_123",
-        email: "maker@kenfutwork.test",
-        displayName: "KenFutWork Maker",
-        avatarUrl: "https://example.com/avatar.png",
-      },
-      workspace: {
-        id: "workspace_123",
-        name: "KenFutWork Maker",
-        type: "personal",
-        ownerUserId: "user_123",
-      },
-      membership: {
-        workspaceId: "workspace_123",
-        userId: "user_123",
-        role: "owner",
-      },
+    const parsed = instanceResponseSchema.parse({
+      instanceId: "00000000-0000-4000-8000-000000000001",
+      dataDir: "/local/kenfutwork/data",
     });
 
-    expect(parsed.profile.id).toBe("user_123");
-    expect(parsed.workspace.ownerUserId).toBe("user_123");
-    expect(parsed.membership.workspaceId).toBe("workspace_123");
+    expect(parsed.instanceId).toBe("00000000-0000-4000-8000-000000000001");
+    expect(parsed.dataDir).toBe("/local/kenfutwork/data");
+    expect(Object.keys(parsed)).toEqual(["instanceId", "dataDir"]);
   });
 
   it("shares project list and create contracts for GET/POST /api/projects", () => {
@@ -248,12 +234,7 @@ describe("@kenfutwork/shared contracts", () => {
           slug: "brand-system",
           kind: "design",
           description: createRequest.description,
-          workspace: {
-            id: "workspace_123",
-            name: "KenFutWork Maker",
-            type: "personal",
-            ownerUserId: "user_123",
-          },
+          instanceId: "00000000-0000-4000-8000-000000000001",
           primaryCanvas: {
             id: "canvas_123",
             name: "Main Canvas",
@@ -269,7 +250,9 @@ describe("@kenfutwork/shared contracts", () => {
     });
 
     expect(parsedList.projects[0].id).toBe("project_123");
-    expect(parsedList.projects[0].workspace.ownerUserId).toBe("user_123");
+    expect(parsedList.projects[0].instanceId).toBe(
+      "00000000-0000-4000-8000-000000000001",
+    );
     expect(parsedList.projects[0].primaryCanvas.id).toBe("canvas_123");
     expect(createdProject.project.primaryCanvas.isPrimary).toBe(true);
   });
@@ -352,13 +335,9 @@ describe("@kenfutwork/shared contracts", () => {
             id: "project_123",
             name: "Brand System",
             slug: "brand-system",
+            kind: "design",
             description: "Primary workspace project",
-            workspace: {
-              id: "workspace_123",
-              name: "KenFutWork Maker",
-              type: "personal",
-              ownerUserId: "user_123",
-            },
+            instanceId: "00000000-0000-4000-8000-000000000001",
             createdAt: "2026-03-23T12:00:00.000Z",
             updatedAt: "2026-03-23T12:00:00.000Z",
           },
@@ -657,5 +636,117 @@ describe("run.usage 事件（上下文容量 / 缓存命中）", () => {
         }),
       ).toThrow();
     }
+  });
+});
+
+describe("子代理与后台任务契约（DEC-14…DEC-19）", () => {
+  const baseToolEvent = {
+    runId: "run_123",
+    toolCallId: "call_1",
+    toolName: "task",
+    timestamp: "2026-09-26T12:00:00.000Z",
+  };
+
+  it("tool.started/completed 接受可选 agentName（子代理归因，来源 metadata.lc_agent_name）", () => {
+    const started = streamEventSchema.parse({
+      type: "tool.started",
+      ...baseToolEvent,
+      input: { subagent_type: "explore", description: "调研登录链路" },
+      agentName: "explore",
+    });
+    expect(started.agentName).toBe("explore");
+
+    const completed = streamEventSchema.parse({
+      type: "tool.completed",
+      ...baseToolEvent,
+      agentName: "explore",
+    });
+    expect(completed.agentName).toBe("explore");
+  });
+
+  it("不带 agentName 的旧事件照常解析（字段纯增量，无 fallback 分支）", () => {
+    const started = streamEventSchema.parse({
+      type: "tool.started",
+      ...baseToolEvent,
+    });
+    expect(started).not.toHaveProperty("agentName");
+  });
+
+  it("task.notification 事件：后台任务终态通知载荷完整解析", () => {
+    const event = streamEventSchema.parse({
+      type: "task.notification",
+      runId: "run_123",
+      taskId: "task_abc123",
+      kind: "subagent",
+      label: "explore · 调研登录链路",
+      status: "completed",
+      summary: "定位到 3 处相关文件",
+      nextStep: "可再次派生或直接继续主线",
+      timestamp: "2026-09-26T12:05:00.000Z",
+    });
+    expect(event.type).toBe("task.notification");
+    expect(event.kind).toBe("subagent");
+    expect(event.nextStep).toContain("派生");
+  });
+
+  it("task.notification 拒绝非法 kind 与非终态 status", () => {
+    const base = {
+      runId: "run_123",
+      taskId: "task_abc123",
+      label: "x",
+      summary: "s",
+      timestamp: "2026-09-26T12:05:00.000Z",
+    };
+    expect(() =>
+      streamEventSchema.parse({
+        ...base,
+        type: "task.notification",
+        kind: "shell",
+        status: "completed",
+      }),
+    ).toThrow();
+    expect(() =>
+      streamEventSchema.parse({
+        ...base,
+        type: "task.notification",
+        kind: "subagent",
+        status: "running",
+      }),
+    ).toThrow();
+  });
+
+  it("task_notification 消息块：转录落库与前端渲染共用同一形状", () => {
+    const block = contentBlockSchema.parse({
+      type: "task_notification",
+      taskId: "task_abc123",
+      kind: "command",
+      label: "pnpm test",
+      status: "failed",
+      summary: "2 个用例失败",
+      at: "2026-09-26T12:06:00.000Z",
+    });
+    expect(block.type).toBe("task_notification");
+  });
+
+  it("task_notification 块拒绝未知 status 与缺省 summary", () => {
+    expect(() =>
+      contentBlockSchema.parse({
+        type: "task_notification",
+        taskId: "task_abc123",
+        kind: "subagent",
+        label: "x",
+        status: "pending",
+        summary: "s",
+      }),
+    ).toThrow();
+    expect(() =>
+      contentBlockSchema.parse({
+        type: "task_notification",
+        taskId: "task_abc123",
+        kind: "subagent",
+        label: "x",
+        status: "completed",
+      }),
+    ).toThrow();
   });
 });

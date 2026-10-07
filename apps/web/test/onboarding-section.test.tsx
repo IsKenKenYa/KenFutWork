@@ -21,12 +21,12 @@ import { OnboardingSection } from "../src/components/workbench/onboarding-sectio
  * 这里锁 ①② —— 行高要靠真机量（jsdom 没有布局），见台账六十六·补3。
  */
 const providerInstances = vi.fn();
-const workspaceSettings = vi.fn();
+const instanceSettings = vi.fn();
 const permissionSettings = vi.fn();
 
 vi.mock("@/lib/server-api", () => ({
   fetchProviderInstances: (...args: unknown[]) => providerInstances(...args),
-  fetchWorkspaceSettings: (...args: unknown[]) => workspaceSettings(...args),
+  fetchInstanceSettings: (...args: unknown[]) => instanceSettings(...args),
   fetchPermissionSettings: (...args: unknown[]) => permissionSettings(...args),
 }));
 
@@ -41,7 +41,7 @@ function mount({
       id: `p${i}`,
     })),
   });
-  workspaceSettings.mockResolvedValue({ defaultModel: "m" });
+  instanceSettings.mockResolvedValue({ defaultModel: "m" });
   permissionSettings.mockResolvedValue({ tier: permissionTier });
   const onGoToTab = vi.fn();
   const onLeaveSettings = vi.fn();
@@ -134,7 +134,7 @@ describe("设置 → 引导", () => {
 
   it("读不到状态时如实报错，不留空清单", async () => {
     providerInstances.mockRejectedValue(new Error("boom"));
-    workspaceSettings.mockResolvedValue(null);
+    instanceSettings.mockResolvedValue(null);
     permissionSettings.mockResolvedValue({ tier: "default" });
     render(
       <OnboardingSection

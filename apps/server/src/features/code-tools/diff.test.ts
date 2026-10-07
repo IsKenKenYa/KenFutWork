@@ -2,7 +2,17 @@ import { describe, expect, it } from "vitest";
 
 import { diffLines, summarizeDiff } from "./diff.js";
 
-describe("diffLines（行级 LCS diff）", () => {
+describe("diffLines（行级 diff）", () => {
+  it("长文件中的单点变更保持真实差异", () => {
+    const before = Array.from({ length: 5_000 }, (_, index) => `line ${index}`);
+    const after = [...before];
+    after[2_500] = "changed";
+    const lines = diffLines(before.join("\n"), after.join("\n"));
+    expect(lines.filter((line) => line.type !== "context")).toEqual([
+      { type: "removed", text: "line 2500" },
+      { type: "added", text: "changed" },
+    ]);
+  });
   it("识别新增/删除/上下文", () => {
     const lines = diffLines("a\nb\nc", "a\nB\nc");
     expect(lines).toEqual([

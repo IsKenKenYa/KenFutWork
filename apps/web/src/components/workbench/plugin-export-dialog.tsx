@@ -3,10 +3,10 @@
 import type { PluginExportArtifact } from "@kenfutwork/shared";
 import { Check, Copy, Download, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { triggerDownload } from "@/lib/download";
 import { getServerBaseUrl } from "@/lib/env";
+import { serverFetch } from "@/lib/local-access";
 
 /**
  * 导出插件为 bundle：产物**双声明**（`dsh.bundle` + `kenfutwork.bundle`），
@@ -36,7 +36,7 @@ export function PluginExportDialog({
     setBusy(true);
     setError(null);
     setArtifact(null);
-    void fetch(`${getServerBaseUrl()}/api/plugins/export`, {
+    void serverFetch(`${getServerBaseUrl()}/api/plugins/export`, {
       method: "POST",
       headers: {
         "content-type": "application/json",

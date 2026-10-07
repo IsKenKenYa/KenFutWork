@@ -5,14 +5,14 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import type { PermissionService } from "../features/permissions/permission-service.js";
 import type { PermissionSettingsStore } from "../features/permissions/tier-store.js";
 
 export async function registerPermissionRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     permissions: PermissionService;
     /** 设置写穿（app_config）；缺省时仅内存生效（部分装配/单测）。 */
     tierStore?: PermissionSettingsStore;
@@ -20,7 +20,7 @@ export async function registerPermissionRoutes(
 ) {
   // GET /api/permissions/tier — 当前权限设置（档位 / 自动化档位 / 自定义规则 / 浏览器控制）
   app.get("/api/permissions/tier", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) {
       return reply.code(401).send(
         unauthenticatedErrorResponseSchema.parse({
@@ -46,7 +46,7 @@ export async function registerPermissionRoutes(
 
   // PUT /api/permissions/tier — 部分更新（只改送来的字段；写库失败即不改内存）
   app.put("/api/permissions/tier", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) {
       return reply.code(401).send(
         unauthenticatedErrorResponseSchema.parse({
@@ -146,7 +146,7 @@ export async function registerPermissionRoutes(
 
   // POST /api/permissions/approve — 人审放行（agent 无自我授权路径）
   app.post("/api/permissions/approve", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) {
       return reply.code(401).send(
         unauthenticatedErrorResponseSchema.parse({
@@ -193,10 +193,13 @@ export async function registerPermissionRoutes(
         }
       }
       return reply.code(204).send();
-    } catch {
+    } catch (error) {
       return reply.code(400).send(
         applicationErrorResponseSchema.parse({
-          error: { code: "invalid_request", message: "Invalid body." },
+          error: {
+            code: "invalid_request",
+            message: error instanceof Error ? error.message : "Invalid body.",
+          },
         }),
       );
     }

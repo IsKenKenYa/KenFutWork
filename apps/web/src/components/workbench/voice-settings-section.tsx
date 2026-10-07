@@ -48,7 +48,7 @@ const SEGMENTS: Array<{ key: SegmentKey; label: string }> = [
   { key: "speak", label: "说" },
 ];
 
-export function VoiceSettingsSection({ accessToken }: { accessToken: string }) {
+export function VoiceSettingsSection({ accessToken }: { accessToken: string | null }) {
   const [settings, setSettings] = useState<VoiceSettings | null>(null);
   const [models, setModels] = useState<VoiceModelCandidate[]>([]);
   const [report, setReport] = useState<VoiceDiagnoseReport | null>(null);

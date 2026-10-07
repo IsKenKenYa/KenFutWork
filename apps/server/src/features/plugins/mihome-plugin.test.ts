@@ -1,4 +1,10 @@
-import { readdirSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -8,6 +14,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { ServerEnv } from "../../config/env.js";
 import { composePlugins } from "../../kernel/compose.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import { buildBundleManifest } from "./bundle-manifest.js";
 import { validateBundleFiles } from "./compat-validator.js";
 import {
@@ -22,7 +33,7 @@ import {
  *    这些用「资产向量（golden vector）+ 性质」锁行为，防的是**日后改坏**（协议细节本身
  *    无法在本机对着真米家云验证——没有账号，且接口是社区逆向的私有接口）。
  * 2. **全链路**：真的走门禁安装到临时目录，再用**假米家云**（服务端侧复算签名、RC4 解密
- *    请求、加密响应）跑通 登录 → 设备列表 → 控制，以及未连接 / 未登录 / 跨工作区隔离等错误面。
+ *    请求、加密响应）跑通 登录 → 设备列表 → 控制，以及未连接 / 未登录 / 跨实例隔离等错误面。
  *
  * 假云与客户端共用同一份 crypto 原语，因此它验证的是**收发一致性**（签名口径、参数顺序、
  * 加解密方向），不构成对真实服务的验证——这一点在插件 README 与台账里都写明了。
@@ -30,6 +41,9 @@ import {
 
 const REPO_ROOT = path.resolve(process.cwd(), "..", "..");
 const MIHOME_DIR = path.join(REPO_ROOT, "plugins", "mihome");
+const INSTANCE_ID = "b0ad3f92-036b-43d2-a3f4-9142c7ad48e1";
+const INSTANCE_A = "68759604-4d15-45d7-80ba-e2909c06b2f6";
+const INSTANCE_B = "288b9396-4bcf-4e57-8d74-ce05fa09c88d";
 
 interface MicloudModule {
   MIHOME_SID: string;
@@ -63,14 +77,6 @@ interface QrRefreshModule {
   }) => "scanned" | "poll" | "refresh" | "give-up";
 }
 
-interface PanelHostMessageModule {
-  PANEL_TOKEN_MESSAGE_TYPE: string;
-  PANEL_READY_MESSAGE_TYPE: string;
-  isHostPanelTokenMessage: (
-    event: { source: unknown; data?: unknown },
-    parentWindow: unknown,
-  ) => boolean;
-}
 
 interface DeviceModelModule {
   propertySlug: (type: string) => string;
@@ -703,54 +709,6 @@ describe("米家插件：二维码过期自动换码的判定", () => {
   });
 });
 
-describe("米家插件：宿主令牌握手的判据", () => {
-  it("接受父窗口递来的合法令牌；拒绝非父窗口 / 错类型 / 空令牌（回归：同源判据丢令牌）", async () => {
-    const mod = await loadPluginModule<PanelHostMessageModule>(
-      "lib/panel-host-message.js",
-    );
-    const parent = { name: "host-window" };
-    const token = mod.PANEL_TOKEN_MESSAGE_TYPE;
-    // 与 apps/web/src/lib/plugin-panels.tsx 的两个同名常量**字面值必须一致**（跨包协议串，
-    // 漂移了握手就断——web 侧测试只锁自己的常量，这里锁插件侧这一半）
-    expect(token).toBe("kenfutwork:plugin-panel-token");
-    expect(mod.PANEL_READY_MESSAGE_TYPE).toBe(
-      "kenfutwork:plugin-panel-ready",
-    );
-    const ok = { source: parent, data: { type: token, accessToken: "at-1" } };
-
-    // 宿主（父窗口）递来的合法消息：接受——宿主 web 与面板页服务端在开发态
-    // （3000/3001）与分离部署下**不同源**，这条路径不能依赖 origin 判据
-    expect(mod.isHostPanelTokenMessage(ok, parent)).toBe(true);
-
-    // 非父窗口（同源/异源第三方向面板投递）：拒绝
-    expect(
-      mod.isHostPanelTokenMessage({ ...ok, source: {} }, parent),
-    ).toBe(false);
-    // 消息类型不对 / 载荷缺失 / 空令牌：拒绝
-    expect(
-      mod.isHostPanelTokenMessage(
-        { source: parent, data: { type: "other", accessToken: "at-1" } },
-        parent,
-      ),
-    ).toBe(false);
-    expect(mod.isHostPanelTokenMessage({ source: parent }, parent)).toBe(
-      false,
-    );
-    expect(
-      mod.isHostPanelTokenMessage(
-        { source: parent, data: { type: token, accessToken: "" } },
-        parent,
-      ),
-    ).toBe(false);
-    expect(
-      mod.isHostPanelTokenMessage(
-        { source: parent, data: { type: token, accessToken: 42 } },
-        parent,
-      ),
-    ).toBe(false);
-  });
-});
-
 describe("米家插件：规格 → 控件模型", () => {
   it("按属性类型 URN 识别语义段，可写的排前面，超限截断", async () => {
     const model = await loadPluginModule<DeviceModelModule>(
@@ -928,7 +886,52 @@ describe("米家插件：规格 → 控件模型", () => {
 
 // === 2. 全链路（真门禁 + 假云） ===
 
+class PersistentTestStorage extends Map<string, string> {
+  constructor(private readonly file: string) {
+    super();
+    if (!existsSync(file)) return;
+    const entries: unknown = JSON.parse(readFileSync(file, "utf8"));
+    if (!Array.isArray(entries)) throw new Error("持久插件夹具格式无效。");
+    for (const entry of entries) {
+      if (
+        !Array.isArray(entry) ||
+        typeof entry[0] !== "string" ||
+        typeof entry[1] !== "string"
+      ) {
+        throw new Error("持久插件夹具条目无效。");
+      }
+      super.set(entry[0], entry[1]);
+    }
+  }
+
+  private persist() {
+    const temporary = `${this.file}.tmp`;
+    writeFileSync(temporary, JSON.stringify([...this]), { mode: 0o600 });
+    renameSync(temporary, this.file);
+  }
+
+  override set(key: string, value: string): this {
+    super.set(key, value);
+    this.persist();
+    return this;
+  }
+
+  override delete(key: string): boolean {
+    const removed = super.delete(key);
+    if (removed) this.persist();
+    return removed;
+  }
+}
+
 let pluginsDir: string;
+let localInstances: Map<string, LocalInstanceService>;
+
+async function fixtureActor(instanceId: string): Promise<LocalActor> {
+  const service = localInstances.get(instanceId);
+  if (!service) throw new Error("夹具未定义该本地实例。");
+  return service.serviceActor();
+}
+
 const kernels: Array<{ dispose(): void }> = [];
 const realFetch = globalThis.fetch;
 
@@ -953,7 +956,9 @@ function installPlugin(
     ...(options.pollThrows ? { pollThrows: options.pollThrows } : {}),
   });
   globalThis.fetch = cloud.fetchImpl as typeof fetch;
-  const storage = new Map<string, string>();
+  const storage = new PersistentTestStorage(
+    path.join(pluginsDir, "test-session-storage.json"),
+  );
   const purged: string[] = [];
   const service = createPluginRegistryService({
     pluginsDir,
@@ -965,26 +970,34 @@ function installPlugin(
       ? { bundledBundles: options.bundledBundles }
       : {}),
     storage: {
-      async get(workspaceId, pluginId, key) {
-        return (
-          storage.get(JSON.stringify([workspaceId, pluginId, key])) ?? null
-        );
+      async get(instanceId, pluginId, key) {
+        return storage.get(JSON.stringify([instanceId, pluginId, key])) ?? null;
       },
-      async set(workspaceId, pluginId, key, value) {
-        storage.set(JSON.stringify([workspaceId, pluginId, key]), value);
+      async set(instanceId, pluginId, key, value) {
+        storage.set(JSON.stringify([instanceId, pluginId, key]), value);
       },
-      async remove(workspaceId, pluginId, key) {
-        return storage.delete(JSON.stringify([workspaceId, pluginId, key]));
+      async remove(instanceId, pluginId, key) {
+        return storage.delete(JSON.stringify([instanceId, pluginId, key]));
       },
-      async keys(workspaceId, pluginId) {
+      async keys(instanceId, pluginId) {
         return [...storage.keys()]
           .map((raw) => JSON.parse(raw) as [string, string, string])
-          .filter(([ws, id]) => ws === workspaceId && id === pluginId)
+          .filter(([ws, id]) => ws === instanceId && id === pluginId)
           .map(([, , key]) => key);
       },
       async purgePlugin(pluginId) {
         purged.push(pluginId);
-        return 0;
+        let removed = 0;
+        for (const key of [...storage.keys()]) {
+          const identity: unknown = JSON.parse(key);
+          if (
+            Array.isArray(identity) &&
+            identity[1] === pluginId &&
+            storage.delete(key)
+          )
+            removed += 1;
+        }
+        return removed;
       },
     },
   });
@@ -999,10 +1012,18 @@ async function dispatch(
     path: string;
     query?: Record<string, string>;
     body?: unknown;
-    workspaceId?: string;
+    instanceId?: string;
     isAuthenticated?: boolean;
   },
 ) {
+  const instance = request.instanceId
+    ? localInstances.get(request.instanceId)
+    : undefined;
+  if (request.instanceId && !instance) {
+    throw new Error("夹具未定义该本地实例。");
+  }
+  const actor = instance ? await instance.serviceActor() : null;
+  const context = actor && instance ? await instance.resolve(actor) : null;
   const result = await service.dispatchRoute({
     pluginId,
     method: request.method ?? "GET",
@@ -1011,7 +1032,7 @@ async function dispatch(
     body: request.body ?? null,
     headers: {},
     isAuthenticated: request.isAuthenticated ?? true,
-    ...(request.workspaceId ? { workspaceId: request.workspaceId } : {}),
+    ...(context ? { instanceId: context.instanceId } : {}),
   });
   return result;
 }
@@ -1023,6 +1044,16 @@ function bodyOf<T>(result: { body?: unknown } | undefined): T {
 
 beforeEach(async () => {
   pluginsDir = await mkdtemp(path.join(tmpdir(), "kenfutwork-mihome-"));
+  localInstances = new Map();
+  for (const instanceId of [INSTANCE_ID, INSTANCE_A, INSTANCE_B]) {
+    localInstances.set(
+      instanceId,
+      createLocalInstanceService({
+        repository: { ensure: async () => instanceId },
+        dataDir: path.join(pluginsDir, "instances", instanceId),
+      }),
+    );
+  }
 });
 
 afterEach(async () => {
@@ -1121,7 +1152,7 @@ describe("米家插件：安装与门禁", () => {
 
     const anonymous = await dispatch(service, installed.id, {
       path: "devices",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
       isAuthenticated: false,
     });
     expect(anonymous).toMatchObject({ status: 401 });
@@ -1137,7 +1168,7 @@ describe("米家插件：安装与门禁", () => {
 
     const result = await dispatch(service, installed.id, { path: "devices" });
     expect(result?.status).toBe(500);
-    expect(JSON.stringify(result?.body)).toContain("缺少工作区上下文");
+    expect(JSON.stringify(result?.body)).toContain("缺少实例上下文");
   });
 });
 
@@ -1153,14 +1184,14 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     // 未连接时如实报错，而不是假装成功
     const before = await dispatch(first.service, installed.id, {
       path: "devices",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     expect(before?.status).toBe(401);
     expect(before?.body).toMatchObject({ code: "not_connected" });
 
     const qr = await dispatch(first.service, installed.id, {
       path: "login/qr",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     expect(qr?.status).toBe(200);
     const qrBody = bodyOf<{
@@ -1175,7 +1206,7 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     const pending = await dispatch(first.service, installed.id, {
       path: "login/poll",
       query: { sessionId: qrBody.sessionId },
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     expect(pending?.body).toMatchObject({ status: "pending" });
 
@@ -1183,15 +1214,18 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     const done = await dispatch(first.service, installed.id, {
       path: "login/poll",
       query: { sessionId: qrBody.sessionId },
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     expect(done?.body).toMatchObject({ status: "ok" });
     const stored = [...first.storage.values()].join("");
     expect(stored).toContain("TOKEN-1");
+    expect(
+      readFileSync(path.join(pluginsDir, "test-session-storage.json"), "utf8"),
+    ).toContain("TOKEN-1");
 
     const status = await dispatch(first.service, installed.id, {
       path: "status",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     expect(status?.body).toMatchObject({ connected: true, userId: "u-1" });
     // 状态接口不得回显令牌/ssecurity
@@ -1201,7 +1235,7 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     // 设备列表：规格驱动的属性 + 离线置灰 + 未知型号如实报规格错误
     const devices = await dispatch(first.service, installed.id, {
       path: "devices",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     expect(devices?.status).toBe(200);
     const view = devices?.body as {
@@ -1238,16 +1272,15 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     // 模拟服务端重启：全新注册表实例 + 全新内存，但插件存储同一个 → 免扫码
     globalThis.fetch = realFetch;
     const second = installPlugin(micloud);
-    for (const [key, value] of first.storage) second.storage.set(key, value);
     await second.service.restore();
     const afterRestart = await dispatch(second.service, installed.id, {
       path: "status",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     expect(afterRestart?.body).toMatchObject({ connected: true });
     const devicesAgain = await dispatch(second.service, installed.id, {
       path: "devices",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     expect(devicesAgain?.status).toBe(200);
   });
@@ -1262,18 +1295,18 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
 
     const qr = await dispatch(first.service, installed.id, {
       path: "login/qr",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     const sessionId = bodyOf<{ sessionId: string }>(qr).sessionId;
     await dispatch(first.service, installed.id, {
       path: "login/poll",
       query: { sessionId },
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     await dispatch(first.service, installed.id, {
       path: "login/poll",
       query: { sessionId },
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
 
     // 篡改落库的 ssecurity（模拟坏凭证），并换一个新实例从存储读回（等同于服务端重启）
@@ -1287,12 +1320,11 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     }
     globalThis.fetch = realFetch;
     const second = installPlugin(micloud);
-    for (const [key, value] of first.storage) second.storage.set(key, value);
     await second.service.restore();
 
     const devices = await dispatch(second.service, installed.id, {
       path: "devices",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     expect(devices?.status).toBe(500);
     const message = JSON.stringify(devices?.body);
@@ -1310,18 +1342,18 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
 
     const qr = await dispatch(service, installed.id, {
       path: "login/qr",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     const sessionId = bodyOf<{ sessionId: string }>(qr).sessionId;
     await dispatch(service, installed.id, {
       path: "login/poll",
       query: { sessionId },
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     await dispatch(service, installed.id, {
       path: "login/poll",
       query: { sessionId },
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
 
     // serviceLogin → longPolling 的现代米家登录口径（旧 xiaomiio 码不再允许）
@@ -1357,7 +1389,7 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
 
     const devices = await dispatch(service, installed.id, {
       path: "devices",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     expect(devices?.status).toBe(200);
     const view = devices?.body as { devices: Array<Record<string, unknown>> };
@@ -1387,7 +1419,8 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     );
     // 会话里没有也不需要任何「兑换产物」
     const storedApi = JSON.parse(
-      storage.get(JSON.stringify(["ws-1", installed.id, "session"])) ?? "{}",
+      storage.get(JSON.stringify([INSTANCE_ID, installed.id, "session"])) ??
+        "{}",
     ) as Record<string, unknown>;
     expect(storedApi.apiCookies).toBeUndefined();
   });
@@ -1402,23 +1435,23 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
 
     const qr = await dispatch(service, installed.id, {
       path: "login/qr",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     const sessionId = bodyOf<{ sessionId: string }>(qr).sessionId;
     await dispatch(service, installed.id, {
       path: "login/poll",
       query: { sessionId },
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     await dispatch(service, installed.id, {
       path: "login/poll",
       query: { sessionId },
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
 
     const devices = await dispatch(service, installed.id, {
       path: "devices",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     expect(devices?.status).toBe(200);
     const view = devices?.body as { devices: Array<Record<string, unknown>> };
@@ -1434,7 +1467,7 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
       allowLifecycleScripts: false,
     });
 
-    const key = JSON.stringify(["ws-1", installed.id, "session"]);
+    const key = JSON.stringify([INSTANCE_ID, installed.id, "session"]);
     storage.set(
       key,
       JSON.stringify({
@@ -1449,7 +1482,7 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
 
     const devices = await dispatch(service, installed.id, {
       path: "devices",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     expect(devices?.status).toBe(401);
     expect(devices?.body).toMatchObject({ code: "not_connected" });
@@ -1464,7 +1497,7 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
       allowLifecycleScripts: false,
     });
 
-    const key = JSON.stringify(["ws-1", installed.id, "session"]);
+    const key = JSON.stringify([INSTANCE_ID, installed.id, "session"]);
     storage.set(
       key,
       JSON.stringify({
@@ -1479,7 +1512,7 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
 
     const devices = await dispatch(service, installed.id, {
       path: "devices",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     expect(devices?.status).toBe(401);
     expect(devices?.body).toMatchObject({ code: "not_connected" });
@@ -1496,13 +1529,13 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
 
     const qr = await dispatch(service, installed.id, {
       path: "login/qr",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     const sessionId = bodyOf<{ sessionId: string }>(qr).sessionId;
     const poll = await dispatch(service, installed.id, {
       path: "login/poll",
       query: { sessionId },
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     // 不抛 500、也不把面板卡在轮询上：状态是 expired，面板据此换新码
     expect(poll?.status).toBe(200);
@@ -1511,7 +1544,7 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     const again = await dispatch(service, installed.id, {
       path: "login/poll",
       query: { sessionId },
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     expect(again?.status).toBe(410);
   });
@@ -1592,23 +1625,23 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
 
     const qr = await dispatch(service, installed.id, {
       path: "login/qr",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     const sessionId = bodyOf<{ sessionId: string }>(qr).sessionId;
     await dispatch(service, installed.id, {
       path: "login/poll",
       query: { sessionId },
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     await dispatch(service, installed.id, {
       path: "login/poll",
       query: { sessionId },
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
 
     const devices = await dispatch(service, installed.id, {
       path: "devices",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     expect(devices?.status).toBe(200);
     const view = devices?.body as {
@@ -1621,7 +1654,7 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     expect(view.authHint).toBe("该米家账号的家庭下没有设备。");
   });
 
-  it("控制写入把值传给云端并读回真值（离线/跨工作区另有隔离）", async () => {
+  it("控制写入把值传给云端并读回真值（离线/跨实例另有隔离）", async () => {
     const micloud = await loadPluginModule<MicloudModule>("lib/micloud.js");
     const { service, cloud } = installPlugin(micloud);
     const { installed } = await service.install({
@@ -1631,24 +1664,24 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
 
     const qr = await dispatch(service, installed.id, {
       path: "login/qr",
-      workspaceId: "ws-A",
+      instanceId: INSTANCE_A,
     });
     const sessionId = bodyOf<{ sessionId: string }>(qr).sessionId;
     await dispatch(service, installed.id, {
       path: "login/poll",
       query: { sessionId },
-      workspaceId: "ws-A",
+      instanceId: INSTANCE_A,
     });
     await dispatch(service, installed.id, {
       path: "login/poll",
       query: { sessionId },
-      workspaceId: "ws-A",
+      instanceId: INSTANCE_A,
     });
 
     const controlled = await dispatch(service, installed.id, {
       method: "POST",
       path: "control",
-      workspaceId: "ws-A",
+      instanceId: INSTANCE_A,
       body: { did: "d1", siid: 2, piid: 1, value: false },
     });
     expect(controlled?.status).toBe(200);
@@ -1660,10 +1693,10 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     expect(cloud.state.signedRequests).toBeGreaterThan(0);
     expect(cloud.state.badSignature).toBe(0);
 
-    // 另一个工作区没登录过 → 各自隔离
+    // 另一个实例没登录过 → 各自隔离
     const other = await dispatch(service, installed.id, {
       path: "devices",
-      workspaceId: "ws-B",
+      instanceId: INSTANCE_B,
     });
     expect(other?.status).toBe(401);
     expect(other?.body).toMatchObject({ code: "not_connected" });
@@ -1672,7 +1705,7 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     const bad = await dispatch(service, installed.id, {
       method: "POST",
       path: "control",
-      workspaceId: "ws-A",
+      instanceId: INSTANCE_A,
       body: { did: "d1" },
     });
     expect(bad?.status).toBe(400);
@@ -1681,11 +1714,11 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     await dispatch(service, installed.id, {
       method: "POST",
       path: "disconnect",
-      workspaceId: "ws-A",
+      instanceId: INSTANCE_A,
     });
     const afterDisconnect = await dispatch(service, installed.id, {
       path: "status",
-      workspaceId: "ws-A",
+      instanceId: INSTANCE_A,
     });
     expect(afterDisconnect?.body).toMatchObject({ connected: false });
   });
@@ -1701,26 +1734,42 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     const controlTool = kernel.get("tools").require("mihome_control");
 
     await expect(
-      devicesTool.execute({}, { workspaceId: "ws-1" }),
+      devicesTool.execute(
+        {},
+        {
+          actor: await fixtureActor(INSTANCE_ID),
+          instanceId: INSTANCE_B,
+        },
+      ),
+    ).rejects.toThrow("不属于同一本地实例");
+
+    await expect(
+      devicesTool.execute(
+        {},
+        { actor: await fixtureActor(INSTANCE_ID), instanceId: INSTANCE_ID },
+      ),
     ).rejects.toThrow(/尚未连接米家账号/);
 
     const qr = await dispatch(service, installed.id, {
       path: "login/qr",
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     const sessionId = bodyOf<{ sessionId: string }>(qr).sessionId;
     await dispatch(service, installed.id, {
       path: "login/poll",
       query: { sessionId },
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
     await dispatch(service, installed.id, {
       path: "login/poll",
       query: { sessionId },
-      workspaceId: "ws-1",
+      instanceId: INSTANCE_ID,
     });
 
-    const listed = (await devicesTool.execute({}, { workspaceId: "ws-1" })) as {
+    const listed = (await devicesTool.execute(
+      {},
+      { actor: await fixtureActor(INSTANCE_ID) },
+    )) as {
       devices: Array<Record<string, unknown>>;
     };
     const light = listed.devices.find((item) => item.did === "d1");
@@ -1733,7 +1782,7 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
 
     const written = (await controlTool.execute(
       { did: "d1", siid: 2, piid: 2, value: 80 },
-      { workspaceId: "ws-1" },
+      { actor: await fixtureActor(INSTANCE_ID), instanceId: INSTANCE_ID },
     )) as Record<string, unknown>;
     expect(written).toMatchObject({ ok: true, key: "2.2", value: 80 });
   });

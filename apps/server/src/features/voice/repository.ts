@@ -1,7 +1,7 @@
 import type { PersistenceService } from "../persistence/types.js";
 
 /**
- * 语音设置的数据访问（`workspace_settings.voice`，JSON 列）。
+ * 语音设置的数据访问（`instance_settings.voice`，JSON 列）。
  *
  * 边界说明：语音设置住在 settings 聚合的同一张表上，但**只碰自己这一列**
  * （`voice`），与 settings feature 的逐列 upsert 口径一致——同表不同列各自写各的，
@@ -11,9 +11,9 @@ import type { PersistenceService } from "../persistence/types.js";
  */
 export interface VoiceRepository {
   /** 读取原始 jsonb；无行返回 null（由服务落缺省）。 */
-  findVoice(workspaceId: string): Promise<unknown>;
+  findVoice(instanceId: string): Promise<unknown>;
   /** 整列覆盖（语音设置是「一次编辑、整体保存」的形态）。 */
-  upsertVoice(workspaceId: string, voice: unknown): Promise<void>;
+  upsertVoice(instanceId: string, voice: unknown): Promise<void>;
 }
 
 type VoiceRow = { voice: unknown };
@@ -22,22 +22,22 @@ export function createVoiceRepository(
   persistence: PersistenceService,
 ): VoiceRepository {
   return {
-    async findVoice(workspaceId) {
+    async findVoice(instanceId) {
       const row = await persistence
-        .forWorkspace(workspaceId)
+        .forInstance(instanceId)
         .queryOne<VoiceRow>(
           `select voice
-             from public.workspace_settings
-            where workspace_id = :workspace`,
+             from public.instance_settings
+            where instance_id = :instance`,
         );
       return row?.voice ?? null;
     },
 
-    async upsertVoice(workspaceId, voice) {
-      await persistence.forWorkspace(workspaceId).query(
-        `insert into public.workspace_settings (workspace_id, voice)
-         values (:workspace, $1::jsonb)
-         on conflict (workspace_id)
+    async upsertVoice(instanceId, voice) {
+      await persistence.forInstance(instanceId).query(
+        `insert into public.instance_settings (instance_id, voice)
+         values (:instance, $1::jsonb)
+         on conflict (instance_id)
          do update set voice = excluded.voice`,
         [JSON.stringify(voice)],
       );

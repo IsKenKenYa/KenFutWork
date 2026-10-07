@@ -31,53 +31,11 @@ describe("语音接线守卫", () => {
     expect(WORKBENCH).not.toMatch(/^\s*Mic,\s*$/m);
   });
 
-  it("三处输入框都接上了按住说话手势", () => {
-    // workbench 两处（追问 followUpVoice / 空态 promptVoice）+ 画布助手 chat-input
-    expect(WORKBENCH).toContain("useComposerVoice({");
-    // workbench 两处在手势前先打断播报（用户碰输入框即闭嘴），故是包装后的调用
-    expect(WORKBENCH).toContain("followUpVoice.onPointerDown(event)");
-    expect(WORKBENCH).toContain("promptVoice.onPointerDown(event)");
-    expect(WORKBENCH).toContain("interruptPlayback()");
+  it("画布助手保留手势、状态行与受控文本写回", () => {
     expect(CHAT_INPUT).toContain("onPointerDown={voice.onPointerDown}");
-  });
-
-  it("播报只在方案 B + 朗读开关打开时发生，且能被打断", () => {
-    // 开关判定收在 ref 里（流事件 effect 的依赖表是收敛过的）
-    expect(WORKBENCH).toContain('mode === "loop"');
-    expect(WORKBENCH).toContain("speakConfig.enabled && speakConfig.token");
-    // 念的是**去掉代码块后**的正文（念代码没有意义）
-    expect(WORKBENCH).toContain("extractSpeakableText(");
-    // 打断入口：碰输入框 / 卸载时都停
-    expect(WORKBENCH).toContain("voicePlayback.stop()");
-  });
-
-  it("三处都渲染了状态行（录音中/转写中/失败原因要能被看见）", () => {
-    expect(WORKBENCH).toContain("{followUpVoice.status}");
-    expect(WORKBENCH).toContain("{promptVoice.status}");
     expect(CHAT_INPUT).toContain("{voice.status}");
-  });
-
-  it("转写写回走受控 state（画布助手必须经 setValue，否则撤销历史脱钩）", () => {
-    // workbench：直接交给 setFollowUp / setPrompt
-    expect(WORKBENCH).toMatch(
-      /useComposerVoice\(\{\s*accessToken:\s*session\?\.access_token,\s*onTranscript:\s*setFollowUp,/,
-    );
-    expect(WORKBENCH).toMatch(/onTranscript:\s*setPrompt,/);
-    // chat-input：必须 setValue（受控），不能改 DOM
-    expect(CHAT_INPUT).toMatch(
-      /onTranscript:\s*\(text\)\s*=>\s*\{\s*setValue\(/,
-    );
-  });
-
-  it("两处 workbench 回车提交都带 IME 判定（中文输入法回车不再误提交）", () => {
-    const guards = WORKBENCH.match(/!e\.nativeEvent\.isComposing/g) ?? [];
-    expect(guards).toHaveLength(2);
-    // 追问框与空态框的提交都要在 IME 判定之后
-    expect(WORKBENCH).toMatch(
-      /!e\.nativeEvent\.isComposing\s*\)\s*\{\s*e\.preventDefault\(\);\s*const value = followUp;/,
-    );
-    expect(WORKBENCH).toMatch(
-      /!e\.nativeEvent\.isComposing\s*\)\s*\{\s*e\.preventDefault\(\);\s*\/\/ 斜杠命令在提交前展开/,
-    );
+    expect(CHAT_INPUT).toMatch(/onTranscript:\s*\(text\)\s*=>\s*\{\s*setValue\(/);
+    expect(WORKBENCH).toContain("CodeWorkbenchFrame");
+    expect(WORKBENCH).not.toContain("useComposerVoice({");
   });
 });

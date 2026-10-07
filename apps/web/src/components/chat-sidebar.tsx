@@ -38,10 +38,9 @@ import {
   upsertTab,
   VIEW_TAB_TITLES,
 } from "../lib/chat-tabs";
-import { claimDailyCredits } from "../lib/credits-api";
 import {
   fetchImageModels,
-  fetchWorkspaceSkills,
+  fetchInstanceSkills,
   saveMessage,
 } from "../lib/server-api";
 import type { CanvasSelectedElement } from "./canvas-editor";
@@ -57,8 +56,6 @@ import { ChatContextMenu, useChatContextMenu } from "./chat/chat-context-menu";
 import { ChatInput } from "./chat-input";
 import { ChatMessage } from "./chat-message";
 import { ChatSkills } from "./chat-skills";
-import { CreditInsufficientDialog } from "./credits/credit-insufficient-dialog";
-import { useTierLimitToast } from "./credits/tier-limit-toast";
 import { ErrorBoundary } from "./error-boundary";
 import { ExecutionModeSelect } from "./execution-mode-select";
 import { SessionSelector } from "./session-selector";
@@ -106,7 +103,7 @@ function GeneratedFileIcon({ className }: { className?: string }) {
 export type SidePanelTab = "chat" | "layers" | "files";
 
 type ChatSidebarProps = {
-  accessToken: string;
+  accessToken: string | null;
   canvasId: string;
   open: boolean;
   onToggle: () => void;
@@ -308,13 +305,6 @@ export function ChatSidebar({
   const [skillMentionItems, setSkillMentionItems] = useState<
     SkillMentionItem[]
   >([]);
-  const [creditDialog, setCreditDialog] = useState<{
-    open: boolean;
-    currentBalance: number;
-    requiredAmount: number;
-    plan: string;
-    dailyClaimed: boolean;
-  } | null>(null);
   const chatInputRef = useRef<import("./chat-input").ChatInputHandle>(null);
   // 对话区右键菜单（原生菜单在应用内浏览器里不弹，用户无法复制/粘贴）
   const chatMenu = useChatContextMenu();
@@ -364,7 +354,6 @@ export function ChatSidebar({
   const agentModelRef = useRef(agentModel);
   agentModelRef.current = agentModel;
 
-  const { showTierLimit } = useTierLimitToast();
   const { toast: showToast } = useToast();
 
   // ── Sidebar resize ──
@@ -490,10 +479,9 @@ export function ChatSidebar({
 
   // Fetch enabled workspace skills for @ mention
   useEffect(() => {
-    if (!accessToken) return;
     let cancelled = false;
 
-    fetchWorkspaceSkills(accessToken)
+    fetchInstanceSkills(accessToken)
       .then((data) => {
         if (cancelled) return;
         const allSkills = data.skills ?? [];
@@ -711,22 +699,6 @@ export function ChatSidebar({
             );
           }
 
-          // Billing error: route to appropriate UI, run.canceled will follow
-          if (event.type === "billing.error") {
-            if (event.code === "insufficient_credits") {
-              setCreditDialog({
-                open: true,
-                currentBalance: event.currentBalance ?? 0,
-                requiredAmount: event.requiredAmount ?? 0,
-                plan: event.plan ?? "free",
-                dailyClaimed: event.dailyClaimed ?? false,
-              });
-            } else {
-              // model_not_accessible, resolution_not_allowed, concurrency_limit
-              showTierLimit({ code: event.code, message: event.message });
-            }
-          }
-
           // Apply event to messages (single source of truth — shared with reconnect)
           applyStreamEvent(event, assistantId, currentSessionId);
 
@@ -793,7 +765,6 @@ export function ChatSidebar({
               conversationId: canvasId,
               prompt: text,
               canvasId,
-              accessToken: accessTokenRef.current,
               ...(currentAttachments.length > 0
                 ? { attachments: currentAttachments }
                 : {}),
@@ -857,7 +828,6 @@ export function ChatSidebar({
       canvasId,
       applyStreamEvent,
       setStreaming,
-      showTierLimit,
       showToast,
       updateSessionMessages,
       onImageGenerated,
@@ -1269,7 +1239,7 @@ export function ChatSidebar({
       </div>
       {/* 第二行：模式 + 历史/新建 + 视图切换（对话/图层/文件）+ 收起（间距收紧，别留空档） */}
       <div className="flex min-h-[40px] shrink-0 items-center gap-1 border-b border-border pl-3 pr-2">
-        {panelTab === "chat" && activeSessionId && accessToken ? (
+        {panelTab === "chat" && activeSessionId ? (
           <ExecutionModeSelect
             accessToken={accessToken}
             threadId={activeSessionId}
@@ -1447,20 +1417,6 @@ export function ChatSidebar({
     </>
   );
 
-  const creditDialogEl = creditDialog && (
-    <CreditInsufficientDialog
-      open={creditDialog.open}
-      onClose={() => setCreditDialog(null)}
-      currentBalance={creditDialog.currentBalance}
-      requiredAmount={creditDialog.requiredAmount}
-      plan={creditDialog.plan}
-      dailyClaimed={creditDialog.dailyClaimed}
-      onClaimDaily={async () => {
-        await claimDailyCredits(accessTokenRef.current);
-      }}
-    />
-  );
-
   // ── Mobile / Tablet: full-screen overlay with backdrop ──
   if (isOverlay) {
     return (
@@ -1482,7 +1438,6 @@ export function ChatSidebar({
         >
           {panelContent}
         </div>
-        {creditDialogEl}
       </>
     );
   }
@@ -1510,7 +1465,6 @@ export function ChatSidebar({
         onKeyDown={handleResizeKeyDown}
       />
       <div className="flex flex-1 flex-col bg-card min-w-0">{panelContent}</div>
-      {creditDialogEl}
       <ChatContextMenu
         state={chatMenu.state}
         messages={toChatMenuMessages(messages)}

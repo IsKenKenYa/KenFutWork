@@ -12,10 +12,11 @@
  */
 
 import { getServerBaseUrl } from "./env";
+import { bearerHeaders, serverFetch } from "./local-access";
 
 export interface VoicePlayback {
   /** 念一段文本；返回是否念完（被新的播报/打断取代时为 false）。 */
-  speak(accessToken: string, text: string): Promise<boolean>;
+  speak(accessToken: string | null | undefined, text: string): Promise<boolean>;
   /** 立刻停掉当前播报（含在途请求）。 */
   stop(): void;
   /** 是否正在播。 */
@@ -34,7 +35,7 @@ const MAX_SPEAK_CHARS = 500;
 export function createVoicePlayback(
   deps: VoicePlaybackDeps = {},
 ): VoicePlayback {
-  const doFetch = deps.fetchFn ?? fetch;
+  const doFetch = deps.fetchFn ?? serverFetch;
   const createAudio = deps.createAudio ?? (() => new Audio());
   let audio: HTMLAudioElement | null = null;
   let url: string | null = null;
@@ -83,8 +84,9 @@ export function createVoicePlayback(
       controller = new AbortController();
       const response = await doFetch(`${getServerBaseUrl()}/api/voice/speak`, {
         method: "POST",
+        credentials: "include",
         headers: {
-          authorization: `Bearer ${accessToken}`,
+          ...bearerHeaders(accessToken),
           "content-type": "application/json",
         },
         body: JSON.stringify({ text: trimmed.slice(0, MAX_SPEAK_CHARS) }),

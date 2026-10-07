@@ -1,0 +1,54 @@
+import type { IPlatformService } from "@zcode/shared";
+import type { CodeHttpChannelClient } from "./httpChannelClient.js";
+import { createWebPlatform } from "./upstream/browserPlatform.js";
+
+/** e58fe8ce宿主能力缝；目录仍经真实Project UUID解析，不建立Canvas或隐式Task。 */
+export function createCodePlatform(
+  client: CodeHttpChannelClient,
+): IPlatformService {
+  return {
+    ...createWebPlatform(),
+    supportsCloudAccounts: false,
+    supportsAutomations: false,
+    supportsEmbeddedBrowser: false,
+    supportsComputerUse: false,
+    supportsRemoteWorkspaces: false,
+    supportsUserOnboarding: false,
+    supportsSettingsImport: false,
+    supportsAppRuntimePreferences: false,
+    sessionMetadataSource: "task-index",
+    async activateOrSetWorkspace(path) {
+      const workspace = await client.openWorkspace(
+        path,
+        client.projectForPath(path)?.projectId,
+      );
+      const workspaceIdentity = client.workspaces.identityFor(
+        workspace.projectId,
+        workspace.path,
+      );
+      return {
+        activated: false,
+        workspacePath: workspace.path,
+        ...(workspaceIdentity ? { workspaceIdentity } : {}),
+      };
+    },
+    async resolveNewTaskWorkspace(target) {
+      await client.refreshWorkspaces();
+      const project = client.workspaces.defaultFor(
+        target.workspacePath,
+        target.taskId,
+        target.workspaceIdentity,
+      );
+      if (!project)
+        throw new Error("项目已经不可用，请重新选择 Code 工作目录。");
+      const workspaceIdentity = client.workspaces.identityFor(
+        project.projectId,
+        project.path,
+      );
+      if (!workspaceIdentity)
+        throw new Error("项目目录身份尚未就绪，请重新选择项目。");
+      client.workspaces.selectProject(project.projectId);
+      return { workspacePath: project.path, workspaceIdentity };
+    },
+  };
+}

@@ -11,6 +11,12 @@ export interface InstanceCredentials {
    * 缺省 = 未探测或探测为不支持 → 聊天走 chat/completions（fail open）。
    */;
   responsesApi?: boolean;
+  /** 用户显式选择的原生OpenAI方言；false同样权威，不参与自动回落。 */
+  useResponsesApi?: boolean;
+  /** 单次原生调用的SDK重试次数；连接测试按治理总尝试次数转换，运行时缺省由现有治理链控制。 */
+  invocationMaxRetries?: number;
+  /** 连接测试使用真实非流式调用；普通run缺省仍流式。 */
+  invocationStreaming?: boolean;
 }
 
 export interface InstanceImageAdapterOptions {
@@ -21,3 +27,14 @@ export interface InstanceImageAdapterOptions {
 
 export interface InstanceVideoAdapterOptions
   extends InstanceImageAdapterOptions {}
+
+/** 宿主冻结的单轮模型配置；不接受公网请求或模型文本签发。 */
+export interface ModelInvocationSnapshot {
+  providerId: string;
+  modelId: string;
+  configRevision: number;
+  /** 冻结实际界面选定的OpenAI方言；缺省调用方仍可使用探测。 */
+  useResponsesApi?: boolean;
+  body: Record<string, unknown>;
+  inputCapabilities: { image: boolean; pdf: boolean };
+}

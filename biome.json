@@ -29,7 +29,12 @@
       "!**/gen",
       "!**/data",
       "!**/logs",
-      "!**/runtime"
+      "!**/runtime",
+      "!**/flow",
+      "!**/docs/api/openapi.json",
+      "!**/dist-types",
+      "!**/dist-host",
+      "!**/dist-design"
     ]
   },
   "formatter": {

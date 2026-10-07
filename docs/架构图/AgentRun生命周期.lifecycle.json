@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Agent Run 生命周期",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [1030, 566],
+    "views": [
+      {
+        "id": "main-rail",
+        "label": "主状态轨",
+        "focus": ["accepted", "running", "settle", "completed"],
+        "note": "agent_runs.status 的主链路：受理即落库，流式执行后统一结算。"
+      },
+      {
+        "id": "retry-loop",
+        "label": "恢复回路",
+        "focus": ["failed", "accepted", "running"],
+        "note": "可重试失败以新 runId 重新 ack，预算内循环直到成功或终态。"
+      },
+      {
+        "id": "exits",
+        "label": "终态出口",
+        "focus": ["canceled", "failed", "completed"],
+        "note": "取消与不可重试失败互斥于成功终态。"
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "主状态轨（agent_runs.status）"
+    },
+    {
+      "id": "exceptions",
+      "label": "恢复回路"
+    },
+    {
+      "id": "terminal",
+      "label": "终态出口"
+    }
+  ],
+  "states": [
+    {
+      "id": "accepted",
+      "type": "start",
+      "label": "accepted",
+      "sublabel": "createRun + WS ack",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "入口"
+    },
+    {
+      "id": "running",
+      "type": "active",
+      "label": "running",
+      "sublabel": "streamEvents 流式",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "执行"
+    },
+    {
+      "id": "settle",
+      "type": "decision",
+      "label": "终态判定",
+      "sublabel": "decideRunRetry",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "闸口"
+    },
+    {
+      "id": "completed",
+      "type": "success",
+      "label": "completed",
+      "sublabel": "chat_messages 整条落库",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "成功"
+    },
+    {
+      "id": "failed",
+      "type": "failure",
+      "label": "failed",
+      "sublabel": "error_message 落库",
+      "lane": "exceptions",
+      "col": 0,
+      "tag": "可重试"
+    },
+    {
+      "id": "canceled",
+      "type": "failure",
+      "label": "canceled",
+      "sublabel": "agent.cancel 中止",
+      "lane": "terminal",
+      "col": 2,
+      "tag": "终态",
+      "yOffset": -70
+    }
+  ],
+  "transitions": [
+    {
+      "id": "start-run",
+      "from": "accepted",
+      "to": "running",
+      "label": "streamRun · beforeTurn 影子 git 快照",
+      "route": "straight",
+      "labelAt": [171, 205]
+    },
+    {
+      "id": "to-settle",
+      "from": "running",
+      "to": "settle",
+      "label": "流结束 / 异常",
+      "route": "straight",
+      "labelAt": [280, 240]
+    },
+    {
+      "id": "to-completed",
+      "from": "settle",
+      "to": "completed",
+      "label": "有可见内容即结算",
+      "labelAt": [479, 202]
+    },
+    {
+      "id": "to-failed",
+      "from": "settle",
+      "to": "failed",
+      "label": "不可重试（已执行工具 / 超预算）",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelAt": [520, 240]
+    },
+    {
+      "id": "retry",
+      "from": "failed",
+      "to": "accepted",
+      "label": "重试：新 runId · run.retrying",
+      "variant": "emphasis",
+      "fromSide": "left",
+      "toSide": "top",
+      "via": [[15, 307], [15, 95], [94, 95]],
+      "labelAt": [80, 88]
+    },
+    {
+      "id": "cancel",
+      "from": "running",
+      "to": "canceled",
+      "label": "用户中止 · 收尾补终态",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "top",
+      "labelAt": [630, 300],
+      "route": "top-channel"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "主链路",
+      "items": [
+        "accepted → running → completed 四段主轨，状态即落 agent_runs",
+        "billing.error 会中止 run 并补写 run.failed，防止悬挂",
+        "终态整条保留消息（content_blocks 口径），刷新后从 HTTP 读回"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "恢复回路",
+      "items": [
+        "可重试失败广播 run.retrying，以新 runId 重新 ack",
+        "重试预算缺省 10；工具已执行即不重试，防重复副作用",
+        "空轮次判失败并给可读原因，不静默重放"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "终态出口",
+      "items": [
+        "agent.cancel 用户中止，收尾补终态",
+        "不重试的 failed 即终态，error_message 落库",
+        "canceled / failed / completed 互斥，无复活路径"
+      ]
+    }
+  ]
+}

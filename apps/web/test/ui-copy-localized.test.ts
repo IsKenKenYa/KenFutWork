@@ -44,8 +44,6 @@ const FILES = [
   join("brand-kit", "guidance-section.tsx"),
   join("brand-kit", "color-picker-popover.tsx"),
   join("brand-kit", "empty-state.tsx"),
-  join("credits", "credit-insufficient-dialog.tsx"),
-  join("credits", "tier-limit-toast.tsx"),
 ];
 
 /** 已汉化的英文串（出现即回归）。 */

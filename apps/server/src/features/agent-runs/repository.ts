@@ -1,4 +1,5 @@
 import type { PersistenceService } from "../persistence/types.js";
+import type { AgentTurnBoundaries, AgentTurnBoundary } from "./types.js";
 
 export type AgentRunRecord = {
   id: string;
@@ -28,12 +29,20 @@ export type AgentRunTerminal = {
 /**
  * agent-runs 聚合的数据访问（`agent_runs`）。
  *
- * `agent_runs` **没有 `workspace_id` 列**，其隔离边界是 `session_id → canvas →
+ * `agent_runs` **没有 `instance_id` 列**，其隔离边界是 `session_id → canvas →
  * project → workspace` 这条链；本聚合的写入是运行生命周期的元数据（run id 由
  * 服务端生成、随本次运行传递），故按 id 走根客户端——调用方是已鉴权的 runtime，
  * run id 不是外部输入。若将来需要按工作区列出运行历史，应经会话链加谓词。
  */
 export interface AgentRunRepository {
+  recordTurnBoundary(input: AgentTurnBoundary): Promise<boolean>;
+  getTurnBoundaries(input: {
+    instanceId: string;
+    projectId: string;
+    taskId: string;
+    runId: string;
+    threadId: string;
+  }): Promise<AgentTurnBoundaries>;
   insert(input: NewAgentRun): Promise<void>;
   updateById(runId: string, patch: Record<string, unknown>): Promise<number>;
   /**
@@ -57,11 +66,11 @@ export interface AgentRunRepository {
    *   run 挂的又是会话的载体画布而非项目画布（按项目画布查恒为 0）；
    * - 时长 = 各轮 `completed_at - created_at` 求和；仍在跑的按「到现在」计
    *   （`coalesce(completed_at, now())`），数字不会在运行中冻住；
-   * - 隔离：`agent_runs` 无 workspace_id，谓词走 `chat_sessions → canvases → projects`
+   * - 隔离：`agent_runs` 无 instance_id，谓词走 `chat_sessions → canvases → projects`
    *   父链（与 chat 仓储同一条链）。
    */
   workspaceActivity(input: {
-    workspaceId: string;
+    instanceId: string;
     since: Date;
   }): Promise<{ runs: number; totalSeconds: number }>;
   /**
@@ -74,7 +83,7 @@ export interface AgentRunRepository {
    */
   latestForSession(input: {
     sessionId: string;
-    workspaceId: string;
+    instanceId: string;
   }): Promise<AgentRunTerminal | null>;
 }
 
@@ -82,6 +91,56 @@ export function createAgentRunRepository(
   persistence: PersistenceService,
 ): AgentRunRepository {
   return {
+    async recordTurnBoundary(input) {
+      const rows = await persistence.forInstance(input.instanceId).query(
+        `insert into public.agent_turn_boundaries (run_id,phase,instance_id,project_id,task_id,boundary)
+         select r.id,$2,:instance,s.project_id,s.id,$5::jsonb
+           from public.agent_runs r
+           join public.code_ui_sessions s on s.chat_session_id=r.session_id
+           join public.chat_sessions c on c.id=r.session_id
+          where r.id=$1 and r.thread_id=$6 and s.id=$3
+            and s.instance_id=:instance and c.instance_id=:instance
+            and s.project_id=$4 and c.project_id=$4 and c.mode='code'
+            and s.parent_session_id is null
+         on conflict (run_id,phase) do update
+           set boundary=agent_turn_boundaries.boundary
+           where agent_turn_boundaries.instance_id=excluded.instance_id
+             and agent_turn_boundaries.project_id=excluded.project_id
+             and agent_turn_boundaries.task_id=excluded.task_id
+             and agent_turn_boundaries.boundary=excluded.boundary
+         returning run_id`,
+        [
+          input.runId,
+          input.phase,
+          input.taskId,
+          input.projectId,
+          JSON.stringify(input),
+          input.threadId,
+        ],
+      );
+      return rows.length === 1;
+    },
+    async getTurnBoundaries(input) {
+      const rows = await persistence
+        .forInstance(input.instanceId)
+        .query<{ boundary: AgentTurnBoundary }>(
+          `select b.boundary from public.agent_turn_boundaries b
+           join public.agent_runs r on r.id=b.run_id
+           join public.code_ui_sessions s on s.id=b.task_id and s.instance_id=b.instance_id
+           join public.chat_sessions c on c.id=s.chat_session_id and c.id=r.session_id
+           join public.projects p on p.id=s.project_id and p.instance_id=s.instance_id
+          where b.instance_id=:instance and b.project_id=$1 and b.task_id=$2 and b.run_id=$3
+            and r.thread_id=$4 and c.thread_id=$4 and c.instance_id=:instance
+            and c.project_id=$1 and c.mode='code' and p.kind='code' and p.archived_at is null
+            and s.deleted_at is null and s.archived=false and s.parent_session_id is null`,
+          [input.projectId, input.taskId, input.runId, input.threadId],
+        );
+      return {
+        pre: rows.find((row) => row.boundary.phase === "pre")?.boundary ?? null,
+        post:
+          rows.find((row) => row.boundary.phase === "post")?.boundary ?? null,
+      };
+    },
     async insert(input) {
       await persistence.query(
         `insert into public.agent_runs (id, model, session_id, status, thread_id)
@@ -122,7 +181,7 @@ export function createAgentRunRepository(
 
     async workspaceActivity(input) {
       const rows = await persistence
-        .forWorkspace(input.workspaceId)
+        .forInstance(input.instanceId)
         .query<{ seconds: string | number | null; runs: string | number }>(
           `select count(*)::int as runs,
                   coalesce(sum(extract(epoch from (coalesce(r.completed_at, now()) - r.created_at))), 0) as seconds
@@ -130,7 +189,7 @@ export function createAgentRunRepository(
              join public.chat_sessions s on s.id = r.session_id
              join public.canvases c on c.id = s.canvas_id
              join public.projects p on p.id = c.project_id
-            where p.workspace_id = :workspace
+            where p.instance_id = :instance
               and r.created_at >= $1`,
           [input.since.toISOString()],
         );
@@ -158,7 +217,7 @@ export function createAgentRunRepository(
 
     async latestForSession(input) {
       const rows = await persistence
-        .forWorkspace(input.workspaceId)
+        .forInstance(input.instanceId)
         .query<{
           status: string;
           error_code: string | null;
@@ -170,10 +229,8 @@ export function createAgentRunRepository(
                   r.created_at, r.completed_at
              from public.agent_runs r
              join public.chat_sessions s on s.id = r.session_id
-             join public.canvases c on c.id = s.canvas_id
-             join public.projects p on p.id = c.project_id
             where r.session_id = $1
-              and p.workspace_id = :workspace
+              and s.instance_id = :instance
             order by r.created_at desc
             limit 1`,
           [input.sessionId],

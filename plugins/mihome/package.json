@@ -1,7 +1,7 @@
 {
   "name": "kenfutwork-mihome",
   "version": "1.0.0",
-  "description": "米家设备插件：侧栏面板查看与控制米家设备，agent 也能直接操作；扫码登录一次，会话加密落库（服务端重启免扫）。",
+  "description": "米家设备插件：侧栏面板查看与控制米家设备，agent 也能直接操作；扫码登录一次，会话保存在实例私有存储（服务端重启免扫）。",
   "type": "module",
   "main": "index.js",
   "files": [

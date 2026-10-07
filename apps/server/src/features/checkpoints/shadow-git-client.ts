@@ -9,16 +9,17 @@ import { join } from "node:path";
  * （生产是 `createShadowGitExec`，测试可换替身）；落 excludes 清单的 fs 能力
  * 同样注入（`writeTextFile`），本模块不直接 import fs。
  *
- * 安全前提：调用方必须传入已校验归属的目录（gitDir 在服务端数据目录内、
- * workTree 是沙箱目录），本模块不做路径校验。restoreTo 会覆盖工作区内容，
- * 属丢数据操作，由上层负责确认。
+ * 调用方提供 Task 授权目录与精确私有 gitDir。恢复只在私有 staging 生成字节，
+ * 工作目录提交统一经过版本校验的文件写入协调器。
  */
 
 export interface ShadowGitScope {
-  /** 影子仓库目录（如 `<数据目录>/checkpoints/<canvasId>.git`）。 */
+  /** 影子仓库目录（精确 Task 私有根内）。 */
   gitDir: string;
-  /** 被快照的沙箱工作目录；restoreTo 会把其中已跟踪内容切到目标时点。 */
+  /** 被快照的明确授权目录。 */
   workTree: string;
+  /** 执行授权边界，不能被用户 .gitignore 的反向规则覆盖。 */
+  excludedPaths?: readonly string[];
 }
 
 export interface ShadowGitCommandResult {
@@ -113,6 +114,59 @@ export function createShadowGitClient(deps: {
     }
   };
 
+  const stageCurrent = async (scope: ShadowGitScope) => {
+    const excluded = scope.excludedPaths ?? [];
+    // 只强制清理私有 index，不删用户文件；旧暂存内容不能阻止收紧目录边界。
+    if (excluded.length)
+      await expectOk(
+        [
+          "rm",
+          "-r",
+          "-f",
+          "--cached",
+          "--ignore-unmatch",
+          "--",
+          ...excluded.map((path) => `:(top,literal)${path}`),
+        ],
+        scope,
+        "清理授权边界外的影子索引失败。",
+      );
+    const listed = await exec(
+      ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+      scope,
+    );
+    if (listed.code !== 0)
+      throw new Error(listed.stderr.trim() || "读取影子仓库文件清单失败。");
+    const paths = [
+      ...new Set(
+        listed.stdout
+          .split("\0")
+          .filter(
+            (path) =>
+              path &&
+              !excluded.some(
+                (boundary) =>
+                  path === boundary || path.startsWith(`${boundary}/`),
+              ),
+          ),
+      ),
+    ];
+    if (!paths.length) return;
+    const staged = await exec(
+      [
+        "--literal-pathspecs",
+        "add",
+        "-A",
+        "--pathspec-from-file=-",
+        "--pathspec-file-nul",
+      ],
+      scope,
+      `${paths.join("\0")}\0`,
+    );
+    if (staged.code !== 0)
+      throw new Error(staged.stderr.trim() || "影子仓库暂存失败。");
+  };
+
   /**
    * 确保影子仓库存在并配好忽略清单。幂等：重复调用不报错、无副作用
    * （已初始化时连 init 都不再跑，config/excludes 重写为相同内容）。
@@ -152,9 +206,9 @@ export function createShadowGitClient(deps: {
   };
 
   /**
-   * 打一个检查点：暂存全部 → 无可提交内容则跳过 → 提交并返回 HEAD sha。
+   * 打一个检查点：暂存全部 → 建立真实基线或提交变化 → 返回 HEAD sha。
    *
-   * - 空目录（还没有 baseline 的素材）返回 null：没有内容的「首次提交」不该发生；
+   * - 空目录首次建立空树 baseline：首轮新文件也有可恢复的「不存在」快照；
    * - 仓库已有提交且无变化也返回 null：跳过空检查点；
    * - 仓库尚无提交且目录非空：必须提交（这就是 baseline）。
    *
@@ -163,12 +217,13 @@ export function createShadowGitClient(deps: {
   const commitSnapshot = async (
     input: ShadowGitScope & { message: string },
   ): Promise<{ sha: string } | null> => {
-    await expectOk(["add", "-A"], input, "影子仓库暂存失败。");
-    const status = await exec(["status", "--porcelain"], input);
-    if (status.code !== 0) {
-      throw new Error(status.stderr.trim() || "读取影子仓库状态失败。");
+    await stageCurrent(input);
+    const staged = await exec(["diff", "--cached", "--quiet"], input);
+    if (staged.code > 1) {
+      throw new Error(staged.stderr.trim() || "读取影子仓库暂存变化失败。");
     }
-    if (status.stdout.trim() === "") {
+    const emptyBaseline = staged.code === 0;
+    if (emptyBaseline && (await hasCommits(input))) {
       return null;
     }
     const committed = await exec(
@@ -178,6 +233,7 @@ export function createShadowGitClient(deps: {
         "-c",
         "user.email=checkpoint@kenfutwork.local",
         "commit",
+        ...(emptyBaseline ? ["--allow-empty"] : []),
         "-m",
         input.message,
       ],
@@ -197,6 +253,11 @@ export function createShadowGitClient(deps: {
   const hasCommits = async (scope: ShadowGitScope): Promise<boolean> => {
     const head = await exec(["rev-parse", "HEAD"], scope);
     return head.code === 0;
+  };
+
+  const head = async (scope: ShadowGitScope): Promise<string | null> => {
+    const result = await exec(["rev-parse", "HEAD"], scope);
+    return result.code === 0 ? result.stdout.trim() : null;
   };
 
   // diff 族命令的路径要原样进结构化结果：git 默认 core.quotePath=true 会把
@@ -245,7 +306,7 @@ export function createShadowGitClient(deps: {
   const changedAgainst = async (
     input: ShadowGitScope & { sha: string },
   ): Promise<ShadowNumstatFile[]> => {
-    await expectOk(["add", "-A"], input, "影子仓库暂存失败。");
+    await stageCurrent(input);
     const result = await exec(
       [...QUOTE_PATH_OFF, "diff", "--numstat", input.sha],
       input,
@@ -256,59 +317,54 @@ export function createShadowGitClient(deps: {
     return parseNumstat(result.stdout);
   };
 
-  /**
-   * 恢复到目标时点：先 `add -A` 把 index 对齐当前工作区，再
-   * `read-tree --reset -u <sha>` 让 index 与工作区一起切到目标树（含删除）。
-   * 被 ignore 的文件不在 index 里，原样保留（node_modules 等不受恢复影响）；
-   * 恢复后 HEAD 不动，下一次 commitSnapshot 会把「回退」本身记成一个新检查点。
-   */
-  const restoreTo = async (
-    input: ShadowGitScope & { sha: string },
+  /** 在私有 staging materialize；绝不让 Git 直接覆盖真实工作目录。 */
+  const materialize = async (
+    input: ShadowGitScope & {
+      sha: string;
+      stagingDirectory: string;
+      path?: string;
+    },
   ): Promise<void> => {
-    await expectOk(["add", "-A"], input, "影子仓库暂存失败。");
-    const reset = await exec(["read-tree", "--reset", "-u", input.sha], input);
-    if (reset.code !== 0) {
-      throw new Error(reset.stderr.trim() || "恢复到检查点失败。");
-    }
-  };
-
-  /**
-   * 按路径恢复到目标时点（每文件撤销的内核）：路径在目标树里存在 →
-   * `checkout <sha> -- <path>` 恢复；不存在 → 该文件是检查点之后新建的，
-   * 撤销 = `rm -f` 删除。逐路径执行，调用方（服务层）负责画布锁与路径校验。
-   */
-  const restorePaths = async (
-    input: ShadowGitScope & { sha: string; paths: readonly string[] },
-  ): Promise<void> => {
-    for (const path of input.paths) {
-      const exists = await exec(
-        ["cat-file", "-e", `${input.sha}:${path}`],
+    await expectOk(["read-tree", input.sha], input, "读取检查点树失败。");
+    if (input.path) {
+      const listed = await exec(
+        ["--literal-pathspecs", "ls-files", "-z", "--", input.path],
         input,
       );
-      if (exists.code === 0) {
-        await expectOk(
-          ["checkout", input.sha, "--", path],
-          input,
-          `恢复文件失败：${path}`,
-        );
-      } else {
-        const removed = await exec(["rm", "-f", "--", path], input);
-        if (removed.code !== 0) {
-          throw new Error(removed.stderr.trim() || `删除文件失败：${path}`);
-        }
-      }
+      if (listed.code !== 0)
+        throw new Error(listed.stderr.trim() || "读取检查点文件失败。");
+      if (!listed.stdout.split("\0").includes(input.path)) return;
     }
+    await expectOk(
+      [
+        "checkout-index",
+        "--force",
+        `--prefix=${input.stagingDirectory}/`,
+        ...(input.path ? ["--", input.path] : ["-a"]),
+      ],
+      input,
+      "生成检查点恢复内容失败。",
+    );
+  };
+
+  const currentPaths = async (input: ShadowGitScope): Promise<string[]> => {
+    await stageCurrent(input);
+    const result = await exec(["ls-files", "-z"], input);
+    if (result.code !== 0)
+      throw new Error(result.stderr.trim() || "读取检查点文件清单失败。");
+    return result.stdout.split("\0").filter(Boolean);
   };
 
   return {
     ensureRepo,
     commitSnapshot,
     hasCommits,
+    head,
     numstat,
     diffText,
     changedAgainst,
-    restoreTo,
-    restorePaths,
+    materialize,
+    currentPaths,
   };
 }
 

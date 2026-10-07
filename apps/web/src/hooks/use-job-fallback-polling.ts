@@ -24,7 +24,7 @@ type UseJobFallbackPollingOptions = {
   /** Called when a timed-out job succeeds — trigger canvas re-fetch */
   onJobSucceeded: (jobId: string, jobType: string) => void;
   /** Ref to the current access token — avoids stale closure issues */
-  accessTokenRef: React.RefObject<string | undefined>;
+  accessTokenRef: React.RefObject<string | null | undefined>;
 };
 
 type ActivePoll = {
@@ -43,7 +43,7 @@ type ActivePoll = {
  * timeout from the `tool.completed` stream event and starts polling the job
  * API until the worker finishes, then notifies the caller to re-fetch the canvas.
  *
- * This prevents users from losing both their result and credits when the
+ * This prevents users from losing their result when the
  * backend times out but the worker eventually succeeds.
  *
  * Since the backend now inserts elements into the canvas directly, this hook
@@ -112,15 +112,6 @@ export function useJobFallbackPolling({
         }
 
         const token = accessTokenRef.current;
-        if (!token) {
-          // Token not available (e.g. user logged out) — stop polling
-          console.warn(
-            `[job-fallback] No access token available, stopping poll for job ${jobId}`,
-          );
-          stopPolling(jobId);
-          return;
-        }
-
         try {
           const { job } = await fetchJob(token, jobId);
 

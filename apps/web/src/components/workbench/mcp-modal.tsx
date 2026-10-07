@@ -7,9 +7,9 @@ import type {
 } from "@kenfutwork/shared";
 import { Loader2, Plus, RefreshCw, Search, Server, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
+import { serverFetch } from "@/lib/local-access";
 import { buildCuratedServerPayload } from "@/lib/mcp-catalog";
 import {
   buildMcpServerPayload,
@@ -46,7 +46,7 @@ type McpCreatePayload = {
  * **推荐**（内置精选目录，一键添加，参数就地填）、
  * **官方 MCP 市场**（registry.modelcontextprotocol.io 检索；stdio 包与远程端点都可添加）。
  *
- * 安全：MCP server 会在本机以子进程执行命令——变更类操作服务端有管理员门，
+ * 安全：MCP server 会在本机以子进程执行命令——变更类操作服务端验证本机接入，
  * 界面也逐条提示，不做静默安装。
  */
 export function McpModal({
@@ -75,7 +75,7 @@ export function McpModal({
 
   const refresh = useCallback(() => {
     setLoading(true);
-    void fetch(`${getServerBaseUrl()}/api/mcp/servers`, {
+    void serverFetch(`${getServerBaseUrl()}/api/mcp/servers`, {
       headers: authHeaders(),
     })
       .then((response) => (response.ok ? response.json() : { servers: [] }))
@@ -105,13 +105,16 @@ export function McpModal({
       setError(null);
       setNotice(null);
       try {
-        const response = await fetch(`${getServerBaseUrl()}/api/mcp/servers`, {
-          method: "POST",
-          headers: { "content-type": "application/json", ...authHeaders() },
-          body: JSON.stringify({ ...payload, enabled: true }),
-        });
+        const response = await serverFetch(
+          `${getServerBaseUrl()}/api/mcp/servers`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json", ...authHeaders() },
+            body: JSON.stringify({ ...payload, enabled: true }),
+          },
+        );
         if (!response.ok) {
-          setError(await readError(response, "添加失败（需要管理员权限）。"));
+          setError(await readError(response, "添加失败。"));
           return false;
         }
         setNotice(`已添加「${payload.name}」· 在「已配置」查看连接状态`);
@@ -239,12 +242,12 @@ function ConfiguredTab({
       const base = getServerBaseUrl();
       const response =
         action === "delete"
-          ? await fetch(`${base}/api/mcp/servers/${server.id}`, {
+          ? await serverFetch(`${base}/api/mcp/servers/${server.id}`, {
               method: "DELETE",
               headers: authHeaders(),
             })
           : action === "toggle"
-            ? await fetch(`${base}/api/mcp/servers/${server.id}`, {
+            ? await serverFetch(`${base}/api/mcp/servers/${server.id}`, {
                 method: "PATCH",
                 headers: {
                   "content-type": "application/json",
@@ -252,14 +255,14 @@ function ConfiguredTab({
                 },
                 body: JSON.stringify({ enabled: !server.enabled }),
               })
-            : await fetch(
+            : await serverFetch(
                 `${base}/api/mcp/servers/${encodeURIComponent(
                   server.id ?? server.name,
                 )}/reconnect`,
                 { method: "POST", headers: authHeaders() },
               );
       if (!response.ok) {
-        setError(await readError(response, "操作失败（需要管理员权限）。"));
+        setError(await readError(response, "操作失败。"));
         return;
       }
       setNotice(
@@ -292,20 +295,18 @@ function ConfiguredTab({
     try {
       const base = getServerBaseUrl();
       const response = editing
-        ? await fetch(`${base}/api/mcp/servers/${editing.id}`, {
+        ? await serverFetch(`${base}/api/mcp/servers/${editing.id}`, {
             method: "PATCH",
             headers: { "content-type": "application/json", ...authHeaders() },
             body: JSON.stringify(payload),
           })
-        : await fetch(`${base}/api/mcp/servers`, {
+        : await serverFetch(`${base}/api/mcp/servers`, {
             method: "POST",
             headers: { "content-type": "application/json", ...authHeaders() },
             body: JSON.stringify(payload),
           });
       if (!response.ok) {
-        setError(
-          await readError(response, "保存失败（变更类操作需要管理员）。"),
-        );
+        setError(await readError(response, "保存失败。"));
         return;
       }
       setNotice(editing ? "已保存并重连。" : `已添加「${payload.name}」。`);
@@ -323,7 +324,7 @@ function ConfiguredTab({
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        添加、修改与删除需要管理员权限
+        本地进程或远程 MCP · 本机授权可管理
       </p>
 
       {loading ? (
@@ -381,7 +382,7 @@ function ConfiguredTab({
                     <button
                       type="button"
                       onClick={() => void act(server, "reconnect")}
-                      /* 环境变量提供的条目是只读的：重连会打到需要管理员 id 的端点上（点了必失败） */
+                      /* 环境变量提供的条目是只读的：重连会打到不能改写环境配置的端点上（点了必失败） */
                       disabled={busy === key || !server.id}
                       title={
                         server.id ? "重连" : "由环境变量配置，在这里无法重连"
@@ -586,7 +587,7 @@ function CuratedTab({
   const [localError, setLocalError] = useState<string | null>(null);
 
   useEffect(() => {
-    void fetch(`${getServerBaseUrl()}/api/mcp/catalog`, {
+    void serverFetch(`${getServerBaseUrl()}/api/mcp/catalog`, {
       headers: authHeaders(),
     })
       .then(async (response) => {
@@ -725,7 +726,7 @@ function RegistryTab({
         }
         setError(message);
       };
-      void fetch(`${getServerBaseUrl()}/api/mcp/registry?${params}`, {
+      void serverFetch(`${getServerBaseUrl()}/api/mcp/registry?${params}`, {
         headers: authHeaders(),
       })
         .then(async (response) => {

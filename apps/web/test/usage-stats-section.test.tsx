@@ -7,12 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { UsageStatsSection } from "../src/components/workbench/usage-stats-section";
 
-const { useAuthMock } = vi.hoisted(() => ({
-  useAuthMock: vi.fn(),
+const { useLocalInstanceMock } = vi.hoisted(() => ({
+  useLocalInstanceMock: vi.fn(),
 }));
 
-vi.mock("@/lib/auth-context", () => ({
-  useAuth: useAuthMock,
+vi.mock("@/lib/local-instance-context", () => ({
+  useLocalInstance: useLocalInstanceMock,
 }));
 
 const STATS_7D = {
@@ -60,7 +60,9 @@ function mockFetchWith(stats: unknown, ok = true) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useAuthMock.mockReturnValue({ session: { access_token: "token" } });
+  useLocalInstanceMock.mockReturnValue({
+    instance: { instanceId: "instance" },
+  });
 });
 
 afterEach(() => {

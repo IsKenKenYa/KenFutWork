@@ -1,33 +1,23 @@
 /**
  * 米家面板页（插件自带，无构建、无外部依赖）。
  *
- * 登录态来源：宿主工作台在 iframe 加载完成/令牌刷新时用 `postMessage` 递
- * `{type:"kenfutwork:plugin-panel-token", accessToken}`（见 lib/plugin-panels.tsx）。
- * 只接受**父窗口**来的这条消息——宿主与面板在 web/API 分离部署下并不同源，
- * 同源判据会漏掉合法令牌（判据说明见文件末尾的 message 监听）。
+ * 本机接入由浏览器 HttpOnly cookie 持有，面板不接收或保管宿主令牌；数据面请求带
+ * credentials，由服务端解析稳定身份（本地形态）。
  *
- * 数据面：本插件自己的私有路由（`/api/plugins/<id>/…`），带 `Authorization` 调，
- * 因此拿得到 `request.workspaceId`（插件存储按工作区隔离）。
+ * 数据面：本插件自己的私有路由（`/api/plugins/<id>/…`）。
  *
  * 加载方式：**本文件不是 ES module**（无 import/export），由 panel.html 的引导脚本
  * 以经典脚本注入，依赖从 window 上取（见 panel.html 的加载方式说明——为什么不直接用
- * `<script type="module">` 跨文件 import）。两个 lib 的源码仍是 ESM：
- * `lib/qr-refresh.js`（二维码过期自动换码判定）与 `lib/panel-host-message.js`
- * （宿主令牌握手判据），宿主侧单测直接 import 这两份。
+ * `<script type="module">` 跨文件 import）。lib 源码仍是 ESM：`lib/qr-refresh.js`
+ * （二维码过期自动换码判定），宿主侧单测直接 import 它。
  */
 
 const { decideQrAction } = window.QRRefresh;
-const {
-  PANEL_TOKEN_MESSAGE_TYPE: TOKEN_MESSAGE_TYPE,
-  PANEL_READY_MESSAGE_TYPE,
-  isHostPanelTokenMessage,
-} = window.PanelHostMessage;
 
 const BASE = location.pathname.replace(/\/assets\/[^/]*$/, "");
 const POLL_MS = 5000;
 
 const state = {
-  token: null,
   devices: [],
   total: 0,
   specErrors: [],
@@ -98,11 +88,11 @@ function setHeaderButtons(connected) {
 function api(path, options) {
   const opts = options || {};
   const headers = {};
-  if (state.token) headers.authorization = `Bearer ${state.token}`;
   if (opts.body !== undefined) headers["content-type"] = "application/json";
   return fetch(`${BASE}/${path}`, {
     method: opts.method || "GET",
     headers,
+    credentials: "include",
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   }).then((response) =>
     response
@@ -111,10 +101,12 @@ function api(path, options) {
       .then((payload) => {
         if (!response.ok) {
           const error = new Error(
-            payload?.error ?? `请求失败（HTTP ${response.status}）`,
+            payload?.error?.message ??
+              payload?.error ??
+              `请求失败（HTTP ${response.status}）`,
           );
           error.status = response.status;
-          error.code = payload?.code;
+          error.code = payload?.code ?? payload?.error?.code;
           throw error;
         }
         return payload;
@@ -570,15 +562,5 @@ els.disconnect.addEventListener("click", () => {
     });
 });
 
-// 宿主握手：判据是「父窗口 + 约定类型 + 非空令牌」（见 lib/panel-host-message.js
-// 的说明——为什么不能判同源：宿主 web 与面板页服务端在开发态/分离部署下不同源）。
-window.addEventListener("message", (event) => {
-  if (!isHostPanelTokenMessage(event, window.parent)) return;
-  state.token = event.data.accessToken;
-  boot();
-});
-
-// 就绪回执：本脚本可能晚于 iframe `load` 才跑到这里（引导脚本异步加载 lib 再注入），
-// 宿主 onLoad 时递的令牌会丢失——注册完监听主动回执一次，让宿主补递。
-// 目标 origin 用 `*`：回执不含任何数据，面板也不需要事先知道宿主 origin（分离部署下不同源）。
-window.parent.postMessage({ type: PANEL_READY_MESSAGE_TYPE }, "*");
+// 引导脚本已保证依赖就位；会话由 HttpOnly cookie 自动携带，直接开工。
+boot();

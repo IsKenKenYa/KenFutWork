@@ -35,6 +35,7 @@ const countMatches = (text, re) => (text.match(re) ?? []).length;
  * （见 docs/方案设计/改造计划.md §4.13）。
  */
 const NEUTRALIZER_MIGRATIONS = new Set([
+  "20261004195331_local_instance_schema.sql", // 仅前向退役旧身份对象，最终catalog由真实重放验证。
   "20260914120000_localize_home_seed_urls.sql",
   "20260914180000_accounts_replace_auth_users.sql",
   "20260914190000_drop_rls_policies.sql",

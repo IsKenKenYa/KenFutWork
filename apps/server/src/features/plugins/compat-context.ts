@@ -1,4 +1,8 @@
 import type { PluginUiSlot } from "@kenfutwork/shared";
+import {
+  createResourceDisposer,
+  type ResourceDisposer,
+} from "../../kernel/disposal.js";
 
 import type {
   ToolDefinition,
@@ -40,7 +44,7 @@ export interface CompatRouteSpec {
   method?: "GET" | "POST";
   /** 插件内路径（不含插件前缀），如 `panel` 或 `data/list`。 */
   path: string;
-  /** 默认 false = 需要登录；面板页面本身（iframe 带不上头）通常声明 true。 */
+  /** 默认false需本机接入；public仅用于不读取实例私有数据的页面或资源。 */
   public?: boolean;
   handler: (request: {
     method: string;
@@ -49,10 +53,10 @@ export interface CompatRouteSpec {
     body: unknown;
     headers: Record<string, string | undefined>;
     /**
-     * 调用者所属工作区（未登录的公共路由为 undefined）。
-     * `ctx.storage` 需要它——工作区是插件的**显式**入参，内核不代选默认值。
+     * 已验证LocalActor的稳定实例；公共路由没有此上下文时为undefined。
+     * ctx.storage需要显式实例，内核不代选默认值。
      */
-    workspaceId?: string | undefined;
+    instanceId?: string | undefined;
   }) => unknown | Promise<unknown>;
 }
 
@@ -85,19 +89,19 @@ export interface CompatContext {
     register(entry: CompatUiEntry): () => void;
   };
   /**
-   * 存储贡献（能力名 `storage`）：按工作区隔离的键值存取，值加密落库、HTTP 永不回显。
+   * 存储贡献（能力名storage）：按实例隔离，值在本机明文持久保存，HTTP不回显。
    *
-   * 工作区由插件**显式传入**：路由 handler 从 `request.workspaceId` 取，
-   * 工具从执行上下文（`exec.workspaceId`）取。加载期没有该上下文，故不设默认值——
-   * 缺工作区时内核直接报错（fail loud），不静默落到某个「默认工作区」。
+   * 实例由宿主显式传入：路由handler从request.instanceId取，
+   * 工具从执行上下文（`exec.instanceId`）取。加载期没有该上下文，故不设默认值——
+   * 缺实例时内核直接报错，不静默选择默认归属。
    */
   readonly storage: {
-    get(workspaceId: string, key: string): Promise<string | null>;
-    set(workspaceId: string, key: string, value: string): Promise<void>;
-    remove(workspaceId: string, key: string): Promise<boolean>;
-    keys(workspaceId: string): Promise<string[]>;
+    get(instanceId: string, key: string): Promise<string | null>;
+    set(instanceId: string, key: string, value: string): Promise<void>;
+    remove(instanceId: string, key: string): Promise<boolean>;
+    keys(instanceId: string): Promise<string[]>;
   };
-  effect(fn: () => undefined | (() => void)): void;
+  effect(fn: () => undefined | ResourceDisposer): void;
   on(
     event: string,
     listener: (payload: unknown, next?: unknown) => unknown,
@@ -142,15 +146,15 @@ export interface CompatHostDeps {
   /** UI 入口 sink（返回注销函数）。 */
   ui: (entry: CompatUiEntry) => () => void;
   /**
-   * 存储 sink（调用方实现时已绑定插件 id）；工作区由插件显式传入。
+   * 存储sink绑定插件id；实例由宿主调用上下文显式持有。
    * 与其它 sink 不同，这里返回的是**数据通道**而不是注销函数——存储归插件生命周期管，
    * 由 registry 在卸载时 purge。
    */
   storage: {
-    get(workspaceId: string, key: string): Promise<string | null>;
-    set(workspaceId: string, key: string, value: string): Promise<void>;
-    remove(workspaceId: string, key: string): Promise<boolean>;
-    keys(workspaceId: string): Promise<string[]>;
+    get(instanceId: string, key: string): Promise<string | null>;
+    set(instanceId: string, key: string, value: string): Promise<void>;
+    remove(instanceId: string, key: string): Promise<boolean>;
+    keys(instanceId: string): Promise<string[]>;
   };
   /** 插件标识，用于日志前缀与错误信息。 */
   label: string;
@@ -160,7 +164,7 @@ export interface CompatLoadResult {
   pluginName: string;
   /** 本插件注册的工具名（卸载与展示用）。 */
   toolNames: string[];
-  dispose(): void;
+  dispose(): Promise<void>;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -207,11 +211,19 @@ export function normalizeToolResult(value: unknown): unknown {
 function buildExecutionShim(
   execCtx: ToolExecutionContext,
 ): Record<string, unknown> {
+  const instanceId = execCtx.actor?.instanceId ?? execCtx.instanceId;
+  if (
+    execCtx.actor &&
+    execCtx.instanceId &&
+    execCtx.actor.instanceId !== execCtx.instanceId
+  ) {
+    throw new Error("插件工具的调用者与执行作用域不属于同一本地实例。");
+  }
   return {
     signal: execCtx.signal,
     callId: execCtx.runId,
     runId: execCtx.runId,
-    workspaceId: execCtx.workspaceId,
+    instanceId,
   };
 }
 
@@ -251,6 +263,9 @@ function normalizeToolDefinition(raw: unknown, label: string): ToolDefinition {
     name,
     description,
     scope: "shared",
+    exposure: "deferred",
+    // 兼容bundle没有可信只读证明，不能进入explore/review。
+    access: "execute",
     parameters,
     execute: async (args, execCtx) =>
       normalizeToolResult(
@@ -297,7 +312,7 @@ export async function loadCompatPlugin(
   }
 
   const toolDisposers: Array<() => void> = [];
-  const effectDisposers: Array<() => void> = [];
+  const effectDisposers: ResourceDisposer[] = [];
   const contributionDisposers: Array<() => void> = [];
   const toolNames: string[] = [];
 
@@ -363,11 +378,10 @@ export async function loadCompatPlugin(
       },
     },
     storage: {
-      get: (workspaceId, key) => deps.storage.get(workspaceId, key),
-      set: (workspaceId, key, value) =>
-        deps.storage.set(workspaceId, key, value),
-      remove: (workspaceId, key) => deps.storage.remove(workspaceId, key),
-      keys: (workspaceId) => deps.storage.keys(workspaceId),
+      get: (instanceId, key) => deps.storage.get(instanceId, key),
+      set: (instanceId, key, value) => deps.storage.set(instanceId, key, value),
+      remove: (instanceId, key) => deps.storage.remove(instanceId, key),
+      keys: (instanceId) => deps.storage.keys(instanceId),
     },
     // 副作用由本适配层自己调用并登记：不能同时委托给 kernel 的 effect，
     // 否则 fn 会被执行两次（kernel 的 effect 也会调用它）。
@@ -410,28 +424,20 @@ export async function loadCompatPlugin(
     },
   };
 
-  const rollback = () => {
-    for (const dispose of toolDisposers.reverse()) {
-      try {
-        dispose();
-      } catch (error) {
-        console.warn(`[plugin:${deps.label}] 回滚工具注册失败：`, error);
-      }
+  // 保留组间注销次序；失败时真实资源仍可重试，不把异步close丢到后台。
+  const disposeStack: ResourceDisposer[] = [];
+  const drain = createResourceDisposer(disposeStack);
+  let prepared = false;
+  const rollback = (): Promise<void> => {
+    if (!prepared) {
+      prepared = true;
+      disposeStack.push(
+        ...contributionDisposers,
+        ...effectDisposers,
+        ...toolDisposers,
+      );
     }
-    for (const dispose of effectDisposers.reverse()) {
-      try {
-        dispose();
-      } catch (error) {
-        console.warn(`[plugin:${deps.label}] 回滚副作用失败：`, error);
-      }
-    }
-    for (const dispose of contributionDisposers.reverse()) {
-      try {
-        dispose();
-      } catch (error) {
-        console.warn(`[plugin:${deps.label}] 回滚贡献物失败：`, error);
-      }
-    }
+    return drain();
   };
 
   try {
@@ -439,7 +445,7 @@ export async function loadCompatPlugin(
   } catch (error) {
     // 装载失败必须整体回滚：否则实例只装了一半，注册表里留下孤儿工具，
     // 而插件又不在「已安装」列表里，无人能卸载它。
-    rollback();
+    await rollback();
     toolNames.length = 0;
     if (error instanceof CompatLoadError) throw error;
     throw new CompatLoadError(

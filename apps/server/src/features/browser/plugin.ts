@@ -1,8 +1,11 @@
+import { join } from "node:path";
 import { unauthenticatedErrorResponseSchema } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { resolveDesktopDataDir } from "../../desktop/paths.js";
 
 import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
-import type { AuthenticatedUser, RequestAuthenticator } from "../auth/types.js";
+import type { LocalAccessVerifier } from "../local-access/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import { createCdpBrowserSession } from "./cdp-session.js";
 import {
   BrowserFetchError,
@@ -36,6 +39,12 @@ export function createBrowserPlugin(): PluginDefinition {
     inject: [],
     apply(ctx) {
       const cdp = createCdpBrowserSession({
+        dataDir: join(
+          resolveDesktopDataDir({
+            env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
+          }),
+          "browser",
+        ),
         get blob() {
           return ctx.tryGet("blob");
         },
@@ -92,6 +101,8 @@ export function createBrowserPlugin(): PluginDefinition {
         description:
           "打开一个 http/https 网页并读取它的静态内容（标题、正文文本、链接/按钮/输入等元素）。适合读文档、抓页面结构；**没有配 web_search 时，用它打开搜索引擎结果页（如 https://www.bing.com/search?q=关键词）就是「搜索+抓取」那条路**。脚本渲染出来的内容与登录态页面读不到（那两种用 browser_navigate 走 CDP）。",
         scope: "shared",
+        exposure: "deferred",
+        access: "read",
         parameters: {
           type: "object",
           properties: {
@@ -127,6 +138,8 @@ export function createBrowserPlugin(): PluginDefinition {
         description:
           "在受控浏览器（CDP，见「设置 → 浏览器 → 外部浏览器」）里打开网址，返回真实渲染后的标题、正文与可交互元素。适合脚本渲染的页面与需要登录态的站点。",
         scope: "shared",
+        exposure: "deferred",
+        access: "execute",
         parameters: {
           type: "object",
           properties: {
@@ -147,6 +160,8 @@ export function createBrowserPlugin(): PluginDefinition {
         description:
           "读取受控浏览器当前页面的真实 DOM（标题 / 正文 / 可交互元素）。比 browser_open 更准：拿到的是脚本渲染后的结果。",
         scope: "shared",
+        exposure: "deferred",
+        access: "read",
         parameters: { type: "object", properties: {} },
         execute: async () => {
           requireBrowserControl("browser_snapshot");
@@ -159,6 +174,8 @@ export function createBrowserPlugin(): PluginDefinition {
         description:
           "给受控浏览器的当前页面截一张图，返回可直接查看的图片地址（用于确认页面外观/布局）。",
         scope: "shared",
+        exposure: "deferred",
+        access: "read",
         parameters: { type: "object", properties: {} },
         execute: async () => {
           requireBrowserControl("browser_screenshot");
@@ -172,6 +189,8 @@ export function createBrowserPlugin(): PluginDefinition {
         description:
           "读取受控浏览器**当前页面**的控制台输出：页面里的 console.log/warn/error、未捕获异常、浏览器错误（网络失败 / CSP 违规）。调试网页时先用它看「这页报了什么错」。传 since 只看新增（上一次结果里的 nextSeq）。",
         scope: "shared",
+        exposure: "deferred",
+        access: "read",
         parameters: {
           type: "object",
           properties: {
@@ -235,6 +254,8 @@ export function createBrowserPlugin(): PluginDefinition {
         description:
           "列出受控浏览器**当前页面**发出的网络请求（方法、URL、状态码、失败原因）。用来确认「点了按钮有没有真的发请求 / 哪个请求失败了」。",
         scope: "shared",
+        exposure: "deferred",
+        access: "read",
         parameters: {
           type: "object",
           properties: {
@@ -298,6 +319,8 @@ export function createBrowserPlugin(): PluginDefinition {
         description:
           "在受控浏览器里操作页面：click（点元素，给 selector 或坐标）/ type（向焦点输入文本）/ key（按键，如 Enter）。用完后建议 browser_snapshot 看结果。",
         scope: "shared",
+        exposure: "deferred",
+        access: "execute",
         parameters: {
           type: "object",
           properties: {
@@ -340,7 +363,7 @@ export function createBrowserPlugin(): PluginDefinition {
     },
     mounted(ctx) {
       registerBrowserRoutes(ctx.app, {
-        auth: ctx.get("auth"),
+        localAccess: ctx.get("localAccess"),
         browser: ctx.get("browser"),
         settingsForHeadless: () =>
           ctx.tryGet("permissions")?.getSettings().browserHeadless ?? false,
@@ -353,7 +376,7 @@ export function createBrowserPlugin(): PluginDefinition {
 export function registerBrowserRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     browser: BrowserService;
     /** CDP 连接时是否无头（读实例设置；缺省有窗口）。 */
     settingsForHeadless?: () => boolean;
@@ -376,10 +399,11 @@ export function registerBrowserRoutes(
    */
   const tickets = createViewTicketStore();
   const authenticate = async (
-    request: Parameters<RequestAuthenticator["authenticate"]>[0],
+    request: Parameters<LocalAccessVerifier["authenticate"]>[0],
     reply: FastifyReply,
-  ): Promise<AuthenticatedUser | null> =>
-    (await options.auth.authenticate(request)) ?? sendUnauthorized(reply);
+  ): Promise<LocalActor | null> =>
+    (await options.localAccess.authenticate(request)) ??
+    sendUnauthorized(reply);
 
   app.post("/api/browser/snapshot", async (request, reply) => {
     const user = await authenticate(request, reply);

@@ -6,16 +6,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentSection } from "../src/components/agent-section";
 import { PermissionSection } from "../src/components/permission-section";
-import { ProfileSection } from "../src/components/profile-section";
 import { ProviderSettings } from "../src/components/provider-settings";
-import { AccountSection } from "../src/components/workbench/account-section";
 import { BrowserSettingsSection } from "../src/components/workbench/browser-settings-section";
 import { CommandsSection } from "../src/components/workbench/commands-section";
 import { HooksSection } from "../src/components/workbench/hooks-section";
 import { IndexLibrarySection } from "../src/components/workbench/index-library-section";
 import { OnboardingSection } from "../src/components/workbench/onboarding-section";
 import { RulesMemorySection } from "../src/components/workbench/rules-memory-section";
-import { SubagentsSection } from "../src/components/workbench/subagents-section";
 import { TerminalSettingsSection } from "../src/components/workbench/terminal-settings-section";
 import { VoiceSettingsSection } from "../src/components/workbench/voice-settings-section";
 
@@ -44,7 +41,7 @@ function stubApi(
     "fetch",
     vi.fn(async (url: string | URL) => {
       const path = String(url);
-      if (path.includes("/api/workspace/settings")) {
+      if (path.includes("/api/instance/settings")) {
         return json({
           settings: { terminalShell: "auto", defaultModel: "", ...overrides },
         });
@@ -254,34 +251,12 @@ describe("设置区结构：标签在左、控件在右（横排）", () => {
       "上下文自动压缩",
     );
 
-    render(
-      <ProfileSection
-        displayName="阿远"
-        email="a@example.com"
-        onSave={async () => undefined}
-      />,
-    );
-    expectControlRight(screen.getByLabelText("显示名称"), "显示名称");
-    expectControlRight(screen.getByLabelText("邮箱"), "邮箱");
-
     // 通栏检查：这一批设置行里没有任何上下排布的容器
     expect(document.querySelectorAll(".justify-between.flex-col")).toHaveLength(
       0,
     );
   });
 });
-
-/** 只读值行（账号页那种）：标签在第一个子元素、值在最后一个，且不是竖排。 */
-function expectTextRight(labelText: string, valueText: string) {
-  const label = screen.getByText(labelText);
-  const row = label.closest(".justify-between") as HTMLElement | null;
-  expect(row, `「${labelText}」不在左右行里`).not.toBeNull();
-  const rowElement = row as HTMLElement;
-  expect(rowElement.className).not.toMatch(/flex-col/);
-  const children = Array.from(rowElement.children);
-  expect(children[0]?.textContent).toContain(labelText);
-  expect(children.at(-1)?.textContent).toContain(valueText);
-}
 
 /** 一行里塞了多个控件的行（命令 / 钩子那种）：同一行、横排、末位是指定控件。 */
 function expectSingleRow(row: HTMLElement | null, tail: HTMLElement) {
@@ -296,31 +271,12 @@ function expectSingleRow(row: HTMLElement | null, tail: HTMLElement) {
  * 其余各页同样按「标签左 / 值右」核对（真机截图核过一遍，这里把口径固化成断言）。
  */
 describe("设置区结构（二）：其余各页也是「标签左 / 值右」", () => {
-  it("账号：四行都是标签左、值右", () => {
-    render(
-      <AccountSection
-        displayName="阿远"
-        email="a@example.com"
-        plan="Pro"
-        balance={12.5}
-      />,
-    );
-    for (const [label, value] of [
-      ["显示名", "阿远"],
-      ["邮箱", "a@example.com"],
-      ["套餐", "Pro"],
-      ["平台额度余额", "12.5"],
-    ] as const) {
-      expectTextRight(label, value);
-    }
-  });
-
   it("索引库：两个开关都在行的最右", async () => {
     stubApi();
     render(
       <IndexLibrarySection
         accessToken="tok"
-        canvasId="c1"
+        taskId="c1"
         enabled
         autoNewFolder
         onToggle={async () => undefined}
@@ -361,11 +317,10 @@ describe("设置区结构（二）：其余各页也是「标签左 / 值右」"
   it("命令 / 钩子：名称、说明与删除同处一行；提示词整行（多行编辑例外）", async () => {
     render(
       <CommandsSection
-        accessToken="tok"
         commands={[
           { name: "review", description: "审查改动", prompt: "看看改动" },
         ]}
-        onSaved={() => undefined}
+        onSave={async (next) => next}
       />,
     );
     const nameInput = screen.getByLabelText("命令名 1");
@@ -380,9 +335,8 @@ describe("设置区结构（二）：其余各页也是「标签左 / 值右」"
 
     render(
       <HooksSection
-        accessToken="tok"
         hooks={[{ event: "turn-start", command: "npm test" }]}
-        onSaved={() => undefined}
+        onSave={async (next) => next}
       />,
     );
     const commandInput = screen.getByDisplayValue("npm test");
@@ -392,7 +346,7 @@ describe("设置区结构（二）：其余各页也是「标签左 / 值右」"
     );
   });
 
-  it("规则条目与子智能体：× / 删除都在行尾", async () => {
+  it("规则条目：删除在行尾", async () => {
     stubApi({ userRules: "", ruleEntries: ["先给结论"] }, [
       {
         name: "translator",
@@ -409,24 +363,6 @@ describe("设置区结构（二）：其余各页也是「标签左 / 值右」"
       screen.getByLabelText("删除规则 先给结论"),
     );
 
-    render(
-      <SubagentsSection
-        accessToken="tok"
-        subagents={[
-          {
-            name: "translator",
-            label: "翻译官",
-            description: "把文本翻成中文",
-            systemPrompt: "你是翻译。",
-          },
-        ]}
-        onSaved={() => undefined}
-      />,
-    );
-    const customDelete = await screen.findByLabelText("删除 翻译官");
-    const customRow = customDelete.closest("li") as HTMLElement;
-    expect(customRow.className).toMatch(/\bflex\b/);
-    expect(customRow.className).not.toMatch(/flex-col/);
-    expect(customRow.lastElementChild).toBe(customDelete);
+
   });
 });

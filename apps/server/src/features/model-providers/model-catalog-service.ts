@@ -3,10 +3,14 @@ import type {
   ModelCatalogEntry,
   ModelCatalogHints,
   ProviderInstanceModel,
+  ProviderInstanceResponse,
   ProviderProtocol,
 } from "@kenfutwork/shared";
 
-import type { AuthenticatedUser } from "../auth/types.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import type { ModelProviderService } from "./model-provider-service.js";
 import {
   findModelsDevModel,
@@ -20,13 +24,17 @@ import {
  */
 
 export interface ModelCatalogService {
-  listCatalog(user: AuthenticatedUser): Promise<ModelCatalogEntry[]>;
+  listCatalog(actor: LocalActor): Promise<ModelCatalogEntry[]>;
+  /** 为已鉴权的完整配置快照补模型元信息；候选保留停用项，不二次查询实例。 */
+  describeInstanceModels(
+    instances: readonly ProviderInstanceResponse[],
+  ): ModelCatalogEntry[];
   /**
    * 校验「实例:模型」是否真的在这个用户的目录里（R5-2/E：模型名不在目录时 fail loud）。
    * 返回可读原因 + 可用清单摘要，供保存期与 run 起始期直接透出。
    */
   validateSpecifier(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     specifier: string,
   ): Promise<{ ok: true } | { ok: false; message: string }>;
 }
@@ -108,7 +116,7 @@ interface CatalogInstance {
 function toCatalogEntry(
   model: ProviderInstanceModel,
   instance: CatalogInstance,
-  scope: "workspace" | "system",
+  scope: "local",
   snapshot: ModelsDevSnapshot | undefined,
 ): ModelCatalogEntry {
   const protocol = instance.protocol as ProviderProtocol;
@@ -129,14 +137,23 @@ function toCatalogEntry(
 }
 
 export function createModelCatalogService(options: {
-  modelProviders: ModelProviderService;
+  modelProviders: Pick<ModelProviderService, "listInstances">;
+  localInstance: LocalInstanceService;
   /** models.dev 快照（可选）：缺席 = 无 hints，目录照常（fail-open）。 */
   snapshot?: ModelsDevSnapshot;
 }): ModelCatalogService {
-  const { modelProviders, snapshot } = options;
+  const { modelProviders, localInstance, snapshot } = options;
   return {
-    async listCatalog(user) {
-      const instances = await modelProviders.listInstances(user);
+    describeInstanceModels(instances) {
+      return instances.flatMap((instance) =>
+        instance.models.map((model) =>
+          toCatalogEntry(model, instance, instance.scope, snapshot),
+        ),
+      );
+    },
+    async listCatalog(actor) {
+      await localInstance.resolve(actor);
+      const instances = await modelProviders.listInstances(actor);
       const entries: ModelCatalogEntry[] = [];
       for (const instance of instances) {
         if (!instance.enabled) {
@@ -145,35 +162,18 @@ export function createModelCatalogService(options: {
         for (const model of instance.models) {
           // 模型级开关：false = 用户在供应商详情里隐藏（缺省启用）
           if (model.enabled === false) continue;
-          entries.push(toCatalogEntry(model, instance, "workspace", snapshot));
+          entries.push(toCatalogEntry(model, instance, "local", snapshot));
         }
-      }
-
-      // 平台池（scope='system'）：管理员配置一次，分发给全体用户。
-      // 目录读取失败不阻断用户自有实例目录（降级为空）。
-      try {
-        const systemInstances = await modelProviders.listSystemInstances();
-        for (const instance of systemInstances) {
-          if (!instance.enabled) {
-            continue;
-          }
-          for (const model of instance.models) {
-            if (model.enabled === false) continue;
-            entries.push(toCatalogEntry(model, instance, "system", snapshot));
-          }
-        }
-      } catch (error) {
-        console.warn("[modelCatalog] system instance merge failed:", error);
       }
 
       return entries;
     },
 
-    async validateSpecifier(user, specifier) {
+    async validateSpecifier(actor, specifier) {
       const parsed = parseInstanceSpecifier(specifier);
-      const entries = await this.listCatalog(user);
+      const entries = await this.listCatalog(actor);
       if (!parsed) {
-        // 不带实例前缀：按 id 同名匹配（平台池/内置协议词走这条）
+        // 不带实例前缀：按目录中的模型 id 同名匹配。
         const match = entries.find((entry) => entry.id === specifier);
         if (match) return { ok: true };
         return {

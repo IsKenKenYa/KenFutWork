@@ -1,8 +1,5 @@
-// @credits-system — Image generation executor: applies watermark for free-tier users
-
-import type { BackgroundJob, SubscriptionPlan } from "@kenfutwork/shared";
+import type { BackgroundJob } from "@kenfutwork/shared";
 import type { GeneratedImage } from "../../../generation/types.js";
-import { applyWatermark } from "../../credits/watermark.js";
 import { type ExecutorContext, registerExecutor } from "../job-executor.js";
 import { resolveInstanceImageProviderFromPayload } from "./instance-provider.js";
 
@@ -12,12 +9,12 @@ registerExecutor(
     const t0 = Date.now();
 
     // Read the full job row including payload from the database.
-    // The PGMQ message only contains { job_id, job_type, workspace_id },
+    // The PGMQ message only contains { job_id, job_type, instance_id },
     // so we must fetch prompt/model/aspect_ratio from background_jobs.payload.
     // 经 jobService 取（按 id 的系统级读，与 worker 其它状态迁移同一入口）。
     let jobRow: BackgroundJob;
     try {
-      jobRow = await ctx.jobService.getJobAdmin(jobId);
+      jobRow = await ctx.jobService.getJobForWorker(jobId);
     } catch {
       throw new Error(`Job ${jobId} not found in database`);
     }
@@ -41,8 +38,8 @@ registerExecutor(
     if (!payload.prompt)
       throw new Error(`Job ${jobId} has no prompt in payload`);
 
-    const createdBy: string | null = jobRow.created_by ?? null;
-    const workspaceId: string = jobRow.workspace_id ?? jobId;
+    const createdBy: string | null = jobRow.created_by_client_id ?? null;
+    const instanceId: string = jobRow.instance_id;
 
     // BYOK-only：生成任务必须携带供应商实例（内置目录/遗留 env 注册已退役）。
     const model = payload.model;
@@ -117,10 +114,11 @@ registerExecutor(
       lap(`${providerName}_call_done`);
 
       // 用量落账（DEC-6 直连生成链路）：图像 provider 不报 token，记 0 留痕不留盲区
-      if (workspaceId) {
+      if (instanceId) {
         ctx.usageService
           ?.record({
-            workspaceId,
+            instanceId,
+            ...(createdBy ? { accessClientId: createdBy } : {}),
             provider: instanceProvider ? "instance" : providerName,
             model,
             capability: "image",
@@ -140,31 +138,12 @@ registerExecutor(
         );
       }
       const arrayBuffer = await response.arrayBuffer();
-      let buffer: Buffer = Buffer.from(arrayBuffer);
+      const buffer: Buffer = Buffer.from(arrayBuffer);
       lap("image_download_done");
-
-      // Apply watermark for free-plan users
-      if (workspaceId) {
-        try {
-          const subscription =
-            await ctx.creditService.getSubscription(workspaceId);
-          const plan: SubscriptionPlan = subscription.plan;
-          if (plan === "free") {
-            buffer = await applyWatermark(
-              buffer,
-              generated.mimeType ?? "image/png",
-            );
-            lap("watermark_applied");
-          }
-        } catch (wmErr) {
-          // Non-fatal: log and continue without watermark rather than failing the job
-          console.warn(`${tag} Watermark failed, continuing without:`, wmErr);
-        }
-      }
 
       // Upload to object storage under the project-assets bucket（经 blob 缝）
       const timestamp = Date.now();
-      const objectPath = `${workspaceId}/generated/${timestamp}-${jobId}.png`;
+      const objectPath = `${instanceId}/generated/${timestamp}-${jobId}.png`;
 
       const bucket = ctx.blob.bucket("project-assets");
       await bucket.upload(objectPath, buffer, {
@@ -174,13 +153,13 @@ registerExecutor(
       lap("storage_upload_done");
 
       // Insert asset_objects record（经 assetWriter 缝：executor 无用户身份，
-      // 按任务记录的工作区写入；`created_by` 可空）
+      // 按任务记录的工作区写入；`created_by_client_id` 可空）
       const assetId = await ctx.assetWriter.recordGeneratedAsset({
         byteSize: buffer.length,
         mimeType: generated.mimeType ?? "image/png",
         objectPath,
-        ...(createdBy ? { userId: createdBy } : {}),
-        workspaceId,
+        ...(createdBy ? { accessClientId: createdBy } : {}),
+        instanceId,
       });
 
       lap("asset_record_done");

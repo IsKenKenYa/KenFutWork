@@ -26,6 +26,8 @@ export type AssistantStreamEventLike = {
   outputSummary?: string | undefined;
   artifacts?: ToolArtifact[] | undefined;
   runId?: string | undefined;
+  /** 子代理归因：带 agentCallId 的增量/工具属于子代理视图，不进主对话持久化。 */
+  agentCallId?: string | undefined;
   /** ISO 时刻；缺省（测试/旧事件）就不打时间戳。 */
   timestamp?: string | undefined;
 };
@@ -57,6 +59,8 @@ export function createAssistantBlockCollector(): AssistantBlockCollector {
       return blocks.some((block) => block.type !== "thinking");
     },
     onEvent(event) {
+      // 主、子会话必须先分流：正文与思考也属于派发对应的独立转录。
+      if (event.agentCallId) return;
       const at = event.timestamp;
       if (event.type === "message.delta") {
         if (!event.delta) return;

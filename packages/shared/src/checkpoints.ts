@@ -19,6 +19,8 @@ export const checkpointKindSchema = z.enum(["baseline", "turn", "restore"]);
 
 export const checkpointSummarySchema = z.object({
   id: z.string().min(1),
+  projectId: z.string().min(1),
+  taskId: z.string().min(1),
   /** 产生该检查点的 run；回滚恢复点没有 run，为 null。 */
   runId: z.string().nullable(),
   kind: checkpointKindSchema,
@@ -31,7 +33,7 @@ export const checkpointSummarySchema = z.object({
 });
 
 export const checkpointListQuerySchema = z.object({
-  canvasId: z.string().min(1),
+  taskId: z.string().min(1),
 });
 
 export const checkpointListResponseSchema = z.object({
@@ -40,6 +42,7 @@ export const checkpointListResponseSchema = z.object({
 
 /** 单文件增删行数（numstat 口径；二进制文件两行数为 null）。 */
 export const checkpointFileChangeSchema = z.object({
+  rootDirectory: z.string().min(1),
   path: z.string().min(1),
   added: z.number().int().min(0).nullable(),
   deleted: z.number().int().min(0).nullable(),
@@ -53,6 +56,7 @@ export const checkpointDiffResponseSchema = z.object({
 
 /** 恢复预览：工作区相对目标检查点的未提交差异（含增删汇总）。 */
 export const checkpointPreviewResponseSchema = z.object({
+  expectedVersion: z.string().min(1),
   /** 恢复目标的影子提交 sha。 */
   targetSha: shadowCommitSchema,
   files: z.array(checkpointFileChangeSchema),
@@ -73,8 +77,15 @@ export const checkpointFilesResponseSchema = z.object({
 
 /** 每文件撤销：把单个文件恢复到该检查点的状态（检查点之后新建的文件则删除）。 */
 export const checkpointRestoreFileRequestSchema = z.object({
+  expectedVersion: z.string().min(1),
+  /** 未给时取 Task 主目录；额外可写目录须明确指定。 */
+  rootDirectory: z.string().min(1).optional(),
   /** 相对工作目录根的路径（不允许绝对路径与 `..` 段）。 */
   path: z.string().min(1),
+});
+
+export const checkpointRestoreRequestSchema = z.object({
+  expectedVersion: z.string().min(1),
 });
 
 // 供前端/API 封装直接引用的推断类型（schema 单源，类型跟随，与 admin-contracts 同一口径）。

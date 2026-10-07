@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  codeWorkDirectoryTargetSchema,
+  visualWorkDirectoryTargetSchema,
+} from "./execution-contracts.js";
 
 // === Enums ===
 
@@ -53,7 +57,7 @@ export type SkillFileEntry = z.infer<typeof skillFileEntrySchema>;
 export const skillDetailSchema = skillListItemSchema.extend({
   license: z.string().nullable(),
   skillContent: z.string(),
-  createdBy: z.string().nullable(),
+  createdByClientId: z.string().nullable(),
   sourceUrl: z.string().nullable().optional(),
   packageName: z.string().nullable().optional(),
   files: z.array(skillFileEntrySchema).optional(),
@@ -89,11 +93,11 @@ export const skillUpdateRequestSchema = z.object({
 });
 export type SkillUpdateRequest = z.infer<typeof skillUpdateRequestSchema>;
 
-export const workspaceSkillToggleRequestSchema = z.object({
+export const instanceSkillToggleRequestSchema = z.object({
   enabled: z.boolean(),
 });
-export type WorkspaceSkillToggleRequest = z.infer<
-  typeof workspaceSkillToggleRequestSchema
+export type InstanceSkillToggleRequest = z.infer<
+  typeof instanceSkillToggleRequestSchema
 >;
 
 export const skillImportRequestSchema = z.object({
@@ -108,10 +112,10 @@ export type SkillImportRequest = z.infer<typeof skillImportRequestSchema>;
  * `<沙箱根>/<画布UUID>`）；`path` 是**相对沙箱根**的技能包目录（内含 SKILL.md）。
  * 服务端校验画布归属与路径不越界——不信任前端传来的路径。
  */
-export const sandboxSkillImportRequestSchema = z.object({
-  canvasId: z.string().min(1),
-  path: z.string().min(1),
-});
+export const sandboxSkillImportRequestSchema = z.union([
+  codeWorkDirectoryTargetSchema.extend({ path: z.string().min(1) }),
+  visualWorkDirectoryTargetSchema.extend({ path: z.string().min(1) }),
+]);
 export type SandboxSkillImportRequest = z.infer<
   typeof sandboxSkillImportRequestSchema
 >;
@@ -144,11 +148,11 @@ export const skillDetailResponseSchema = z.object({
 });
 export type SkillDetailResponse = z.infer<typeof skillDetailResponseSchema>;
 
-export const workspaceSkillListResponseSchema = z.object({
+export const instanceSkillListResponseSchema = z.object({
   skills: z.array(skillListItemSchema),
 });
-export type WorkspaceSkillListResponse = z.infer<
-  typeof workspaceSkillListResponseSchema
+export type InstanceSkillListResponse = z.infer<
+  typeof instanceSkillListResponseSchema
 >;
 
 export const skillFilesResponseSchema = z.object({

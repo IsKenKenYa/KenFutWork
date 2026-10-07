@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import type { ServerEnv } from "../../config/env.js";
 import { composePlugins } from "../../kernel/compose.js";
-import type { AuthenticatedUser, RequestAuthenticator } from "../auth/types.js";
+import { createConsumerLocalAccessService } from "../local-access/test-consumer-service.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
+import type { LocalActor } from "../local-instance/types.js";
 import type { BrandKitService } from "./brand-kit-service.js";
 import { brandKitPlugin } from "./plugin.js";
 
@@ -15,12 +17,14 @@ const testEnv: ServerEnv = {
   webOrigin: "http://localhost:3000",
 };
 
-const fakeUser: AuthenticatedUser = {
-  accessToken: "token",
-  email: "user@example.com",
-  id: "user-1",
-  userMetadata: {},
+const fakeUser: LocalActor = {
+  instanceId: "instance-1",
+  accessClientId: "client-1",
 };
+const localInstance = createLocalInstanceService({
+  repository: { ensure: async () => fakeUser.instanceId },
+  dataDir: "/tmp/brand-plugin-test",
+});
 
 function fakeBrandKitService(listResult: unknown[]): BrandKitService {
   return {
@@ -31,14 +35,13 @@ function fakeBrandKitService(listResult: unknown[]): BrandKitService {
 describe("brandKitPlugin（P2 插件化试点）", () => {
   it("经内核装配后注册 /api/brand-kits 路由并消费 overrides 的服务实例", async () => {
     const app = Fastify({ logger: false });
-    const auth: RequestAuthenticator = {
-      authenticate: async () => fakeUser,
-    };
+    const localAccess = createConsumerLocalAccessService(async () => fakeUser);
     const brandKit = fakeBrandKitService([]);
     const kernel = composePlugins(testEnv, [brandKitPlugin], {
       app,
       overrides: {
-        auth,
+        localAccess,
+        localInstance,
         blob: { bucket: () => ({}) } as never,
         brandKit,
         persistence: {} as never,
@@ -58,9 +61,7 @@ describe("brandKitPlugin（P2 插件化试点）", () => {
 
   it("认证失败返回 401，不触达服务", async () => {
     const app = Fastify({ logger: false });
-    const auth: RequestAuthenticator = {
-      authenticate: async () => null,
-    };
+    const localAccess = createConsumerLocalAccessService();
     const listKitsCalls: number[] = [];
     const brandKit = {
       listKits: async () => {
@@ -71,7 +72,8 @@ describe("brandKitPlugin（P2 插件化试点）", () => {
     const kernel = composePlugins(testEnv, [brandKitPlugin], {
       app,
       overrides: {
-        auth,
+        localAccess,
+        localInstance,
         blob: { bucket: () => ({}) } as never,
         brandKit,
         persistence: {} as never,
@@ -89,14 +91,20 @@ describe("brandKitPlugin（P2 插件化试点）", () => {
     kernel.dispose();
   });
 
-  it("未提供 auth 依赖时装配 fail loud（能力缝三元组不完整即拒绝启动）", () => {
+  it("未提供 localAccess 依赖时装配 fail loud（能力缝三元组不完整即拒绝启动）", () => {
     const app = Fastify({ logger: false });
     expect(() =>
       composePlugins(testEnv, [brandKitPlugin], {
         app,
-        overrides: { brandKit: fakeBrandKitService([]) },
+        // persistence 供 apply 期建 canvasRepository（工具的套件 JOIN 反查），
+        // 缺它同样 fail loud——这里测的是 localAccess 缺席的那条
+        overrides: {
+          brandKit: fakeBrandKitService([]),
+          persistence: {} as never,
+          localInstance,
+        },
       }),
-    ).toThrow(/服务 key auth 未注册/);
+    ).toThrow(/brand-kit 声明依赖 localAccess，但没有任何插件提供它/);
     return app.close();
   });
 });

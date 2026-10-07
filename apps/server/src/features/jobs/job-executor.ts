@@ -1,7 +1,6 @@
 import type { BackgroundJobType } from "@kenfutwork/shared";
 import type { ServerEnv } from "../../config/env.js";
 import type { BlobStore } from "../blob/types.js";
-import type { CreditService } from "../credits/credit-service.js";
 import type { ModelProviderService } from "../model-providers/model-provider-service.js";
 import type { QueueClient } from "../queue/types.js";
 import type { AssetWriter } from "../uploads/asset-writer.js";
@@ -17,8 +16,6 @@ export type ExecutorContext = {
   modelProviders?: ModelProviderService;
   /** 用量落账（DEC-6 直连生成链路采集点）。 */
   usageService?: UsageService;
-  /** 套餐读取（水印判定）：executor 无用户身份，按任务记录的工作区取。 */
-  creditService: CreditService;
   /** 生成物元数据写入：executor 无用户身份，按任务记录的工作区写。 */
   assetWriter: AssetWriter;
   /** 对象存储（blob 缝）：生成物上传与 URL，executor 不再直连 Supabase Storage。 */

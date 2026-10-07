@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-
 import { buildApp } from "../../app.js";
+import { createStartupPersistenceFixture } from "../../test-startup-persistence.js";
+import { createMemoryTaskWorkManager } from "../task-work/test-store.js";
 
 /**
  * `POST /api/browser/snapshot` 的两条路（右栏「选择网页元素加入聊天」的接口）。
@@ -10,33 +11,28 @@ import { buildApp } from "../../app.js";
  * 改这里必须同步改 `panel-browser-view.tsx`。
  */
 
-const USER = {
-  accessToken: "tok",
-  email: "u@example.com",
-  id: "user-1",
-  userMetadata: {},
-};
-
-function buildBrowserApp(browser: Record<string, unknown>) {
-  return buildApp({
+async function buildBrowserApp(browser: Record<string, unknown>) {
+  const persistence = createStartupPersistenceFixture();
+  const app = buildApp({
     env: {
       databaseUrl: "postgres://localhost:5432/loenfut-test",
       blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
-      credentialSecret: "test-secret",
+      desktopDataDir: persistence.dataDir,
     },
     overrides: {
-      auth: {
-        authenticate: async () => USER,
-        resolveUser: async () => USER,
-      } as never,
+      taskWork: createMemoryTaskWorkManager(),
+      persistence,
       browser: browser as never,
     },
   });
+  await app.ready();
+  const token = await app.kernel.get("localAccess").getDesktopToken();
+  return { app, headers: { authorization: `Bearer ${token}` } };
 }
 
 describe("POST /api/browser/snapshot", () => {
   it("CDP 连着：回来真实渲染页 + 盒模型几何 + 视口 + 截图，source=cdp", async () => {
-    const app = buildBrowserApp({
+    const { app, headers } = await buildBrowserApp({
       cdp: {
         isConnected: () => true,
         // 受控浏览器停在别处：这一页要真的导航过去
@@ -68,6 +64,7 @@ describe("POST /api/browser/snapshot", () => {
     });
     try {
       const response = await app.inject({
+        headers,
         method: "POST",
         url: "/api/browser/snapshot",
         payload: { url: "https://example.com" },
@@ -100,7 +97,7 @@ describe("POST /api/browser/snapshot", () => {
   });
 
   it("CDP 读页失败：回落静态抓取，source=static（不给半截几何）", async () => {
-    const app = buildBrowserApp({
+    const { app, headers } = await buildBrowserApp({
       cdp: {
         isConnected: () => true,
         navigate: async () => {
@@ -116,6 +113,7 @@ describe("POST /api/browser/snapshot", () => {
     });
     try {
       const response = await app.inject({
+        headers,
         method: "POST",
         url: "/api/browser/snapshot",
         payload: { url: "https://example.com" },
@@ -139,7 +137,7 @@ describe("POST /api/browser/snapshot", () => {
 
   it("CDP 没连：直接走静态抓取（不用等 CDP 超时）", async () => {
     let cdpCalled = false;
-    const app = buildBrowserApp({
+    const { app, headers } = await buildBrowserApp({
       cdp: {
         isConnected: () => false,
         navigate: async () => {
@@ -156,6 +154,7 @@ describe("POST /api/browser/snapshot", () => {
     });
     try {
       const response = await app.inject({
+        headers,
         method: "POST",
         url: "/api/browser/snapshot",
         payload: { url: "https://example.com" },
@@ -169,7 +168,7 @@ describe("POST /api/browser/snapshot", () => {
 
   it("受控浏览器已经在这一页：只读、不重复导航（面板里的一切不该被刷掉）", async () => {
     let navigated = false;
-    const app = buildBrowserApp({
+    const { app, headers } = await buildBrowserApp({
       cdp: {
         isConnected: () => true,
         status: () => ({
@@ -199,6 +198,7 @@ describe("POST /api/browser/snapshot", () => {
     });
     try {
       const response = await app.inject({
+        headers,
         method: "POST",
         url: "/api/browser/snapshot",
         payload: { url: "https://example.com" },
@@ -221,11 +221,12 @@ describe("POST /api/browser/snapshot", () => {
  */
 describe("面板画面流接口", () => {
   it("/view：没连接受控浏览器 → 409 + 可读原因（不给半截票据）", async () => {
-    const app = buildBrowserApp({
+    const { app, headers } = await buildBrowserApp({
       cdp: { isConnected: () => false },
     });
     try {
       const response = await app.inject({
+        headers,
         method: "POST",
         url: "/api/browser/cdp/view",
         payload: { url: "https://example.com" },
@@ -240,7 +241,7 @@ describe("面板画面流接口", () => {
   it("/view：换票顺带设视口；同一页不重复导航（换地址才导航）", async () => {
     const navigated: string[] = [];
     const resized: Array<{ width: number; height: number } | null> = [];
-    const app = buildBrowserApp({
+    const { app, headers } = await buildBrowserApp({
       cdp: {
         isConnected: () => true,
         status: () => ({
@@ -259,6 +260,7 @@ describe("面板画面流接口", () => {
     });
     try {
       const same = await app.inject({
+        headers,
         method: "POST",
         url: "/api/browser/cdp/view",
         payload: { url: "https://example.com", width: 900, height: 600 },
@@ -274,6 +276,7 @@ describe("面板画面流接口", () => {
       expect(body.viewport).toEqual({ width: 900, height: 600, scale: 1 });
 
       const moved = await app.inject({
+        headers,
         method: "POST",
         url: "/api/browser/cdp/view",
         payload: { url: "https://example.com/other" },
@@ -288,7 +291,7 @@ describe("面板画面流接口", () => {
   });
 
   it("/devtools：透出窗口信息；打不开时 502 带可读原因", async () => {
-    const opened = buildBrowserApp({
+    const { app: opened, headers: openedHeaders } = await buildBrowserApp({
       cdp: {
         openDevToolsWindow: async (options: { left?: number }) => ({
           windowId: 4242,
@@ -303,6 +306,7 @@ describe("面板画面流接口", () => {
     });
     try {
       const response = await opened.inject({
+        headers: openedHeaders,
         method: "POST",
         url: "/api/browser/cdp/devtools",
         payload: { left: 20 },
@@ -313,7 +317,7 @@ describe("面板画面流接口", () => {
       await opened.close();
     }
 
-    const failing = buildBrowserApp({
+    const { app: failing, headers: failingHeaders } = await buildBrowserApp({
       cdp: {
         openDevToolsWindow: async () => {
           throw new Error("没能在受控浏览器窗口里唤起开发者工具");
@@ -322,6 +326,7 @@ describe("面板画面流接口", () => {
     });
     try {
       const response = await failing.inject({
+        headers: failingHeaders,
         method: "POST",
         url: "/api/browser/cdp/devtools",
         payload: {},
@@ -335,7 +340,7 @@ describe("面板画面流接口", () => {
 
   it("/input：形状不对 → 400；对的形状原样转给会话", async () => {
     const events: unknown[] = [];
-    const app = buildBrowserApp({
+    const { app, headers } = await buildBrowserApp({
       cdp: {
         isConnected: () => true,
         input: async (event: unknown) => {
@@ -345,6 +350,7 @@ describe("面板画面流接口", () => {
     });
     try {
       const bad = await app.inject({
+        headers,
         method: "POST",
         url: "/api/browser/cdp/input",
         payload: { type: "mouse", action: "pressed" },
@@ -352,6 +358,7 @@ describe("面板画面流接口", () => {
       expect(bad.statusCode).toBe(400);
 
       const ok = await app.inject({
+        headers,
         method: "POST",
         url: "/api/browser/cdp/input",
         payload: { type: "key", key: "Enter" },
@@ -366,7 +373,7 @@ describe("面板画面流接口", () => {
   it("/stream：真推 MJPEG 分帧（`<img>` 直接能渲染）；票据一次性；坏票据 401", async () => {
     let stopped = false;
     const frame = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
-    const app = buildBrowserApp({
+    const { app, headers } = await buildBrowserApp({
       cdp: {
         isConnected: () => true,
         status: () => ({ status: "connected", currentUrl: "about:blank" }),
@@ -394,6 +401,7 @@ describe("面板画面流接口", () => {
     const port = typeof address === "object" && address ? address.port : 0;
     try {
       const minted = await app.inject({
+        headers,
         method: "POST",
         url: "/api/browser/cdp/view",
         payload: { url: "https://example.com", width: 800, height: 600 },
@@ -402,6 +410,7 @@ describe("面板画面流接口", () => {
 
       const response = await fetch(
         `http://127.0.0.1:${port}/api/browser/cdp/stream?ticket=${ticket}`,
+        { headers },
       );
       expect(response.headers.get("content-type")).toContain(
         "multipart/x-mixed-replace",
@@ -419,6 +428,7 @@ describe("面板画面流接口", () => {
       // 票据一次性：同一张再开一次就是 401
       const again = await fetch(
         `http://127.0.0.1:${port}/api/browser/cdp/stream?ticket=${ticket}`,
+        { headers },
       );
       expect(again.status).toBe(401);
     } finally {

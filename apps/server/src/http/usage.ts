@@ -5,7 +5,7 @@ import {
   usageSummaryResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import type { RequestAuthenticator } from "../features/auth/types.js";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import type { UsageService } from "../features/usage/usage-service.js";
 
 /** 统计窗口口径（R4-2 参考图「近 7 日 / 近 30 日」）。 */
@@ -14,7 +14,7 @@ const STATS_RANGES = [7, 30] as const;
 export async function registerUsageRoutes(
   app: FastifyInstance,
   options: {
-    auth: RequestAuthenticator;
+    localAccess: LocalAccessVerifier;
     usage: UsageService;
   },
 ) {
@@ -41,7 +41,7 @@ export async function registerUsageRoutes(
 
   // GET /api/usage/summary — 工作区用量汇总（RLS 隔离）
   app.get("/api/usage/summary", async (request, reply) => {
-    const user = await options.auth.authenticate(request);
+    const user = await options.localAccess.authenticate(request);
     if (!user) return unauthorized(reply);
     try {
       const summary = await options.usage.summarize(user);
@@ -55,7 +55,7 @@ export async function registerUsageRoutes(
   app.get<{ Querystring: { days?: string } }>(
     "/api/usage/stats",
     async (request, reply) => {
-      const user = await options.auth.authenticate(request);
+      const user = await options.localAccess.authenticate(request);
       if (!user) return unauthorized(reply);
       const days = Number(request.query.days ?? 7);
       if (

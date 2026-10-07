@@ -1,8 +1,10 @@
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
-
 import { buildApp } from "../app.js";
+import type { LocalActor } from "../features/local-instance/types.js";
 import type { NativeDirectoryPicker } from "../features/system/directory-picker.js";
+import { createMemoryTaskWorkManager } from "../features/task-work/test-store.js";
+import { createStartupPersistenceFixture } from "../test-startup-persistence.js";
 import { registerSystemRoutes } from "./system.js";
 
 /**
@@ -14,11 +16,9 @@ import { registerSystemRoutes } from "./system.js";
  * - 四种结果按 `status` 分流回 200（取消不是错误，失败要带可读原因）。
  */
 
-const USER = {
-  accessToken: "tok",
-  email: "u@example.com",
-  id: "user-1",
-  userMetadata: {},
+const ACTOR: LocalActor = {
+  instanceId: "00000000-0000-4000-8000-000000000001",
+  accessClientId: "00000000-0000-4000-8000-000000000009",
 };
 
 function buildRouteApp(options: {
@@ -27,10 +27,9 @@ function buildRouteApp(options: {
 }) {
   const app = Fastify();
   registerSystemRoutes(app, {
-    auth: {
-      authenticate: async () => USER,
-      resolveUser: async () => USER,
-    } as never,
+    localAccess: {
+      authenticate: async () => ACTOR,
+    },
     picker: {
       availability: () => ({ available: true }),
       pick: async () => ({ status: "cancelled" }),
@@ -128,13 +127,12 @@ describe("POST /api/system/pick-directory", () => {
     }
   });
 
-  it("未登录：401（不泄露任何形态信息）", async () => {
+  it("未获得本机接入授权：401（不泄露任何形态信息）", async () => {
     const app = Fastify();
     registerSystemRoutes(app, {
-      auth: {
+      localAccess: {
         authenticate: async () => null,
-        resolveUser: async () => null,
-      } as never,
+      },
       picker: createStubPicker(),
       desktop: true,
     });
@@ -187,28 +185,32 @@ describe("GET /api/system/directory-picker（能力探测）", () => {
 
 /** 真装配下的接线检查：system 插件要真的把路由挂上，且按形态给出可用性。 */
 describe("system 插件接线", () => {
-  const boot = (env: Record<string, unknown>) =>
-    buildApp({
+  const boot = async (env: Record<string, unknown>) => {
+    const persistence = createStartupPersistenceFixture();
+    const app = buildApp({
       env: {
         databaseUrl: "postgres://localhost:5432/loenfut-test",
         blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
-        credentialSecret: "test-secret",
+        desktopDataDir: persistence.dataDir,
         ...env,
       },
       overrides: {
-        auth: {
-          authenticate: async () => USER,
-          resolveUser: async () => USER,
-        } as never,
+        taskWork: createMemoryTaskWorkManager(),
+        persistence,
       },
     });
+    await app.ready();
+    const token = await app.kernel.get("localAccess").getDesktopToken();
+    return { app, headers: { authorization: `Bearer ${token}` } };
+  };
 
-  it("服务端形态（自托管）：路由在，探测报不可用，且不指路已移除的入口", async () => {
-    const app = boot({});
+  it("服务端形态（自托管）：路由在，探测报不可用并指路「填本机路径」", async () => {
+    const { app, headers } = await boot({});
     try {
       const response = await app.inject({
         method: "GET",
         url: "/api/system/directory-picker",
+        headers,
       });
       expect(response.statusCode).toBe(200);
       const body = response.json() as { available: boolean; reason?: string };
@@ -222,11 +224,12 @@ describe("system 插件接线", () => {
   });
 
   it("桌面形态（内嵌 Postgres）：探测报可用", async () => {
-    const app = boot({ embeddedPostgres: true });
+    const { app, headers } = await boot({ embeddedPostgres: true });
     try {
       const response = await app.inject({
         method: "GET",
         url: "/api/system/directory-picker",
+        headers,
       });
       expect(response.json()).toEqual({ available: true });
     } finally {

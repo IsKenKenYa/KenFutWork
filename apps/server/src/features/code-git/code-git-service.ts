@@ -1,13 +1,15 @@
-import { existsSync } from "node:fs";
-import { dirname, resolve as resolvePath, sep } from "node:path";
-
-import { resolveSandboxDir } from "../../agent/sandbox-dir.js";
+import { randomUUID } from "node:crypto";
+import { dirname, join } from "node:path";
 import { resolveInsideRoot } from "../../utils/inside-root.js";
-import type { AuthenticatedUser } from "../auth/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
-import type { CanvasRepository } from "../canvas/repository.js";
-import type { ProjectRepository } from "../projects/repository.js";
-import { isAbsoluteWorkDir } from "../projects/work-dir.js";
+import type {
+  ExecutionScopeHandle,
+  ExecutionScopes,
+} from "../execution/scope-service.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
+import type { ProcessSandbox } from "../process-sandbox/types.js";
 import type { SettingsService } from "../settings/settings-service.js";
 import type {
   GitChangedFiles,
@@ -15,7 +17,6 @@ import type {
   GitDiffStat,
   GitGraph,
   GitRepoView,
-  GitWorktree,
 } from "./git-client.js";
 import { patchTargetsOnly } from "./hunk-patch.js";
 import {
@@ -24,10 +25,10 @@ import {
   type SandboxDirListing,
   type SandboxFileView,
 } from "./sandbox-file.js";
+import { collectManagedOutput } from "./scoped-git-exec.js";
 import {
   detectTerminalShells,
   resolveTerminalShell,
-  runTerminalCommand,
   type TerminalResult,
   type TerminalShellId,
   type TerminalShellOption,
@@ -36,16 +37,14 @@ import {
 /**
  * git 分支视图服务（Code 模式）。
  *
- * **鉴权与归属校验在这里**：客户端只给 `canvasId`，服务端必须先确认它属于**当前用户的
- * 工作区**（画布 → 项目 → 工作区链），再据此算沙箱目录。否则任何登录用户凭一个 uuid 就能
- * 读别人的沙箱仓库状态（沙箱目录名就是画布 id，属可枚举面）。缺了这条校验就是越权。
+ * **鉴权与归属校验在这里**：客户端只给 `taskId`，服务端必须先确认它属于**当前用户的
+ * 工作区**（Task → 项目 → 工作区链），再读取 Task 创建时绑定的真实目录。
+ * 缺少这条校验会让已知 Task id 变成跨工作区读取目录的入口。
  *
- * 目录一律经 `resolveSandboxDir` 解析——与 agent 后端**同一处**判定，保证「git 操作的分支
+ * 目录一律经 `ExecutionScopeHandle.resolvePath` 解析——与 agent 后端**同一处**判定，保证「git 操作的分支
  * 目录」就是「agent 读写文件的目录」，不会各算各的。
  */
 /** 差异文本与清单的响应上限：界面是给人看的，超出的部分截断并如实标注。 */
-const MAX_DIFF_BYTES = 400 * 1024;
-const MAX_DIFF_SCAN_FILES = 500;
 
 export type GitSource = "system" | "bundled" | "unavailable";
 
@@ -82,46 +81,42 @@ export type CodeGitFileView = SandboxFileView;
 export type CodeFileListing = SandboxDirListing;
 
 export type CodeGitService = {
-  status(user: AuthenticatedUser, canvasId: string): Promise<CodeGitStatus>;
+  status(user: LocalActor, taskId: string): Promise<CodeGitStatus>;
   checkout(
-    user: AuthenticatedUser,
-    canvasId: string,
+    user: LocalActor,
+    taskId: string,
     branch: string,
   ): Promise<CodeGitStatus>;
   /** 更改统计（R2-1）：相对 HEAD 的增删行数 + 未跟踪数。 */
-  diffStat(user: AuthenticatedUser, canvasId: string): Promise<CodeGitDiffStat>;
+  diffStat(user: LocalActor, taskId: string): Promise<CodeGitDiffStat>;
   /** git 图谱（R2-1 条目 6）：只读；非仓库或还没有提交时给空图，不抛错。 */
-  graph(
-    user: AuthenticatedUser,
-    canvasId: string,
-    limit: number,
-  ): Promise<CodeGitGraph>;
+  graph(user: LocalActor, taskId: string, limit: number): Promise<CodeGitGraph>;
   /** 变更文件清单（R3-2）：逐文件增删行数与状态；非仓库给空清单。 */
   changes(
-    user: AuthenticatedUser,
-    canvasId: string,
+    user: LocalActor,
+    taskId: string,
     maxFiles: number,
   ): Promise<CodeGitChanges>;
   /** 单文件差异（R3-2「审查」）：未跟踪文件合成「按新增行」的视图。 */
   fileDiff(
-    user: AuthenticatedUser,
-    canvasId: string,
+    user: LocalActor,
+    taskId: string,
     path: string,
   ): Promise<CodeGitFileDiff>;
   /** 单文件内容（R3-2「打开」/ R3-3「文档入口」）：只读、有字节上限、二进制只回元信息。 */
   readFile(
-    user: AuthenticatedUser,
-    canvasId: string,
+    user: LocalActor,
+    taskId: string,
     path: string,
   ): Promise<CodeGitFileView>;
   /**
-   * 在**该画布的工作目录**里执行用户自己敲的命令（R3-1「终端」标签）。
+   * 在**该Task的工作目录**里执行用户自己敲的命令（R3-1「终端」标签）。
    * 权限口径见 `terminal-runner.ts`：这是用户操作自己的机器，不是 agent 工具调用；
-   * 因此没有工具门，但同样受「登录 + 画布归属 + 沙箱 cwd + 超时/输出上限」约束。
+   * 因此没有工具门，但同样受「登录 + Task归属 + 沙箱 cwd + 超时/输出上限」约束。
    */
   runTerminal(
-    user: AuthenticatedUser,
-    canvasId: string,
+    user: LocalActor,
+    taskId: string,
     command: string,
     shell?: TerminalShellId,
   ): Promise<TerminalResult>;
@@ -129,124 +124,72 @@ export type CodeGitService = {
    * 本机可用的 shell + 工作区默认（终端下拉与设置页共用）。
    * `resolvedShell` 是默认值在这台机器上实际会用的那个（`auto` 时尤其需要说清）。
    */
-  listTerminalShells(user: AuthenticatedUser): Promise<{
+  listTerminalShells(user: LocalActor): Promise<{
     shells: TerminalShellOption[];
     defaultShell: TerminalShellId;
     resolvedShell: TerminalShellId;
   }>;
   /**
    * 交互式终端会话的落点：**已校验归属**的工作目录（WS 那条路用它起常驻 shell）。
-   * 与一次性执行同一处解析（`resolveSandboxDir`）——会话里的命令和 agent 读写的
+   * 与一次性执行同一处解析（`ExecutionScopeHandle.resolvePath`）——会话里的命令和 agent 读写的
    * 是同一个目录。
    */
-  terminalWorkDir(user: AuthenticatedUser, canvasId: string): Promise<string>;
+  terminalWorkDir(user: LocalActor, taskId: string): Promise<string>;
   /**
    * 索引库（R4-3）的作用域：已校验归属的工作目录 + 工作区 id（开关按工作区读）。
    * 与 terminalWorkDir 同一处解析，保证「索引里的路径」与 agent 写的是同一个目录。
    */
   indexScope(
-    user: AuthenticatedUser,
-    canvasId: string,
-  ): Promise<{ workspaceId: string; dir: string }>;
+    user: LocalActor,
+    taskId: string,
+  ): Promise<{ instanceId: string; dir: string }>;
   /** 列一层目录（R3-1「文件目录」标签）：只列一层，子目录由界面点进去。 */
   listFiles(
-    user: AuthenticatedUser,
-    canvasId: string,
+    user: LocalActor,
+    taskId: string,
     path: string,
   ): Promise<CodeFileListing>;
   /** 暂存 / 取消暂存单个文件（参考图审查视图的「暂存」）。 */
   setFileStaged(
-    user: AuthenticatedUser,
-    canvasId: string,
+    user: LocalActor,
+    taskId: string,
     path: string,
     staged: boolean,
   ): Promise<{ path: string; staged: boolean }>;
   /** 应用 / 反向应用**一个块**（参考图审查视图的「暂存块 / 撤销块」）。 */
   applyFileHunk(
-    user: AuthenticatedUser,
-    canvasId: string,
+    user: LocalActor,
+    taskId: string,
     path: string,
     patch: string,
     options?: { reverse?: boolean; target?: "index" | "worktree" },
   ): Promise<{ path: string; applied: true }>;
   /** 撤销单个文件的改动（二次确认在界面）；未跟踪 = 删除该文件。 */
   discardFile(
-    user: AuthenticatedUser,
-    canvasId: string,
+    user: LocalActor,
+    taskId: string,
     path: string,
     untracked: boolean,
   ): Promise<{ path: string }>;
   /** 撤销全部未提交改动（二次确认在界面）。 */
-  discardAllChanges(
-    user: AuthenticatedUser,
-    canvasId: string,
-  ): Promise<{ ok: true }>;
+  discardAllChanges(user: LocalActor, taskId: string): Promise<{ ok: true }>;
   /** 提交全部改动（写操作：git 不可用即 503，未仓库/空改动 409）。 */
   /** 初始化仓库（幂等）。 */
-  init(user: AuthenticatedUser, canvasId: string): Promise<CodeGitStatus>;
+  init(user: LocalActor, taskId: string): Promise<CodeGitStatus>;
   commit(
-    user: AuthenticatedUser,
-    canvasId: string,
+    user: LocalActor,
+    taskId: string,
     message: string,
   ): Promise<CodeGitStatus>;
   /** 推送当前分支（写操作，同上纪律）。 */
-  push(user: AuthenticatedUser, canvasId: string): Promise<CodeGitStatus>;
+  push(user: LocalActor, taskId: string): Promise<CodeGitStatus>;
   /** 创建并检出新分支（写操作，同上纪律）。 */
   createBranch(
-    user: AuthenticatedUser,
-    canvasId: string,
+    user: LocalActor,
+    taskId: string,
     name: string,
   ): Promise<CodeGitStatus>;
-  /**
-   * 工作树（R5-2「工作树」条目）：列出 / 新建 / 删除。
-   * 目录解析与其它 git 操作**同一处**（`sandboxDirFor` → `resolveSandboxDir`），
-   * 否则会出现「界面上看的是这份、git 操作的是另一份」。
-   */
-  listWorktrees(
-    user: AuthenticatedUser,
-    canvasId: string,
-  ): Promise<{ worktrees: GitWorktree[] }>;
-  createWorktree(
-    user: AuthenticatedUser,
-    canvasId: string,
-    input: { path: string; branch: string; create: boolean },
-  ): Promise<{ worktrees: GitWorktree[] }>;
-  removeWorktree(
-    user: AuthenticatedUser,
-    canvasId: string,
-    input: { path: string; force: boolean },
-  ): Promise<{ worktrees: GitWorktree[] }>;
 };
-
-/**
- * 工作树目标路径的**服务端唯一校验**：绝对路径、不在仓库里面、父目录存在。
- *
- * 为什么不在客户端校验：路径最终由服务端这台机器上的 git 执行（自托管形态下可能不是
- * 用户手边那台），客户端给的相对路径含义完全不同——所以只认绝对路径，并在这里一次说清。
- */
-export function validateWorktreePath(
-  raw: string,
-  repoDir: string,
-): string | null {
-  const trimmed = raw.trim();
-  if (!trimmed) return "请填写工作树目录（绝对路径）。";
-  if (!isAbsoluteWorkDir(trimmed)) {
-    return `工作树目录要写绝对路径（当前填的是「${trimmed}」）。`;
-  }
-  const target = resolvePath(trimmed);
-  const repo = resolvePath(repoDir);
-  if (target === repo) return "工作树目录不能就是仓库本体。";
-  if (target.startsWith(repo.endsWith(sep) ? repo : repo + sep)) {
-    return "工作树目录不能放在仓库里面（git 会把它当成仓库内容）。";
-  }
-  if (!existsSync(dirname(target))) {
-    return `上级目录不存在：${dirname(target)}`;
-  }
-  if (existsSync(target)) {
-    return `目标目录已经存在：${target}（git 需要它不存在或为空）。`;
-  }
-  return null;
-}
 
 export class CodeGitError extends Error {
   readonly code:
@@ -265,84 +208,39 @@ export class CodeGitError extends Error {
 }
 
 export function createCodeGitService(options: {
-  viewerService: Pick<ViewerService, "resolveWorkspace">;
-  canvasRepository: Pick<CanvasRepository, "findById">;
-  /** 已解析好的 git 客户端；`source` 用于界面说明来源。 */
-  git: GitClient;
+  scopes: Pick<ExecutionScopes, "openTask">;
+  gitForScope: (
+    scope: ExecutionScopeHandle,
+    actor: LocalActor,
+  ) => Promise<GitClient>;
+  processSandbox: ProcessSandbox;
+  localInstance: Pick<LocalInstanceService, "resolve">;
+  settingsService: Pick<SettingsService, "getInstanceSettings">;
   source: GitSource;
-  sandboxRoot?: string | undefined;
-  /** 画布 → 真实目录映射（与 agent 后端同一张表，保证 git 操作的就是 agent 读写的目录）。 */
-  canvasWorkDirs?: Record<string, string> | undefined;
-  /**
-   * 项目绑定的本机工作目录（`projects.work_dir`，web 形态「填本机路径」）。
-   * 优先于 `canvasWorkDirs`：界面里绑的目录比运维的环境变量映射更具体。
-   */
-  projectRepository?:
-    | Pick<ProjectRepository, "findWorkDirByCanvas">
-    | undefined;
-  /**
-   * 读工作区的默认终端 shell（设置页配的那个）。缺省时用 `auto`（按平台取默认）。
-   * 只依赖 `getWorkspaceSettings` 一个方法，避免把整个 settings 服务拖进这个 feature。
-   */
-  settingsService?: Pick<SettingsService, "getWorkspaceSettings"> | undefined;
-  /** 测试注入：本机可用 shell 清单（真实环境由 detectTerminalShells 探测）。 */
   availableShells?: readonly TerminalShellOption[] | undefined;
 }): CodeGitService {
-  const { canvasRepository, git, source, viewerService } = options;
-
-  /**
-   * 工作区设置的默认终端 shell（读不到就当没配：落 `auto`）。
-   * 设置是跨机器同步的，本机没有所选 shell 时由 resolveTerminalShell 落回平台默认。
-   */
-  const workspaceShell = async (
-    user: AuthenticatedUser,
-  ): Promise<TerminalShellId | undefined> => {
-    if (!options.settingsService) return undefined;
-    try {
-      const workspace = await viewerService.resolveWorkspace(user);
-      if (!workspace) return undefined;
-      const settings = await options.settingsService.getWorkspaceSettings(
-        user,
-        workspace.id,
-      );
-      return settings.terminalShell;
-    } catch {
-      return undefined;
-    }
-  };
-
-  /**
-   * canvasId → 已校验归属的沙箱目录。不可见即 404（不区分「不存在」与「不属于你」，
-   * 不给账号/资源枚举留信号）。
-   */
-  const sandboxDirFor = async (user: AuthenticatedUser, canvasId: string) => {
-    const workspace = await viewerService
-      .resolveWorkspace(user)
-      .catch(() => null);
-    if (!workspace) {
-      throw new CodeGitError("not_found", "工作区不可用。", 404);
-    }
-    const canvas = await canvasRepository
-      .findById(workspace.id, canvasId)
-      .catch(() => null);
-    if (!canvas) {
-      throw new CodeGitError(
-        "not_found",
-        "画布不存在或不属于当前工作区。",
-        404,
-      );
-    }
-    return resolveSandboxDir(
-      canvasId,
-      options.sandboxRoot,
-      // 项目绑定优先（读不到就当没绑：绑定是增强，不是前置条件）
-      (await options.projectRepository
-        ?.findWorkDirByCanvas(workspace.id, canvasId)
-        .catch(() => null)) ?? options.canvasWorkDirs?.[canvasId],
+  const { source, localInstance } = options;
+  const instanceSettings = async (user: LocalActor) => {
+    const workspace = await localInstance.resolve(user);
+    return options.settingsService.getInstanceSettings(
+      user,
+      workspace.instanceId,
     );
   };
+  const workspaceShell = async (user: LocalActor): Promise<TerminalShellId> =>
+    (await instanceSettings(user)).terminalShell;
+  const scopeFor = async (
+    user: LocalActor,
+    taskId: string,
+    operation: "read" | "write" = "read",
+  ) => {
+    const scope = await options.scopes.openTask(user, taskId);
+    const dir = await scope.resolvePath(".", operation);
+    const git = await options.gitForScope(scope, user);
+    return { scope, dir, git, limits: scope.backend.limits };
+  };
 
-  const read = async (dir: string): Promise<CodeGitStatus> => {
+  const read = async (git: GitClient, dir: string): Promise<CodeGitStatus> => {
     const view = await git.describe(dir);
     return {
       branch: view.branch,
@@ -364,7 +262,7 @@ export function createCodeGitService(options: {
     }
   };
 
-  const requireRepo = async (dir: string): Promise<void> => {
+  const requireRepo = async (git: GitClient, dir: string): Promise<void> => {
     const view = await git.describe(dir);
     if (!view.isRepo) {
       throw new CodeGitError(
@@ -376,65 +274,13 @@ export function createCodeGitService(options: {
   };
 
   return {
-    async status(user, canvasId) {
-      return read(await sandboxDirFor(user, canvasId));
+    async status(user, taskId) {
+      const { dir, git } = await scopeFor(user, taskId);
+      return read(git, dir);
     },
 
-    async listWorktrees(user, canvasId) {
-      const dir = await sandboxDirFor(user, canvasId);
-      try {
-        return { worktrees: await git.listWorktrees(dir) };
-      } catch (error) {
-        throw new CodeGitError(
-          "git_write_failed",
-          error instanceof Error ? error.message : String(error),
-          409,
-        );
-      }
-    },
-
-    async createWorktree(user, canvasId, input) {
-      const dir = await sandboxDirFor(user, canvasId);
-      requireGitForWrite();
-      const invalid = validateWorktreePath(input.path, dir);
-      if (invalid) throw new CodeGitError("git_write_failed", invalid, 400);
-      try {
-        await git.addWorktree(dir, input);
-      } catch (error) {
-        throw new CodeGitError(
-          "git_write_failed",
-          error instanceof Error ? error.message : String(error),
-          409,
-        );
-      }
-      return { worktrees: await git.listWorktrees(dir) };
-    },
-
-    async removeWorktree(user, canvasId, input) {
-      const dir = await sandboxDirFor(user, canvasId);
-      requireGitForWrite();
-      // 仓库本体不能删（删了等于删仓库）
-      if (resolvePath(input.path) === resolvePath(dir)) {
-        throw new CodeGitError(
-          "git_write_failed",
-          "仓库本体不是工作树，不能这样删。",
-          400,
-        );
-      }
-      try {
-        await git.removeWorktree(dir, input);
-      } catch (error) {
-        throw new CodeGitError(
-          "git_write_failed",
-          error instanceof Error ? error.message : String(error),
-          409,
-        );
-      }
-      return { worktrees: await git.listWorktrees(dir) };
-    },
-
-    async checkout(user, canvasId, branch) {
-      const dir = await sandboxDirFor(user, canvasId);
+    async checkout(user, taskId, branch) {
+      const { dir, git } = await scopeFor(user, taskId, "write");
       requireGitForWrite();
       try {
         await git.checkout(dir, branch);
@@ -445,21 +291,21 @@ export function createCodeGitService(options: {
           409,
         );
       }
-      return read(dir);
+      return read(git, dir);
     },
 
-    async diffStat(user, canvasId) {
-      const dir = await sandboxDirFor(user, canvasId);
+    async diffStat(user, taskId) {
+      const { dir, git } = await scopeFor(user, taskId);
       return git.diffStat(dir);
     },
 
     /**
      * 图谱是**只读视图**：非仓库、仓库还没有任何提交都返回空图 + `isRepo`
      * ——这两种情况界面各自有话说（初始化引导 / 还没有提交），抛错反而把「状态」
-     * 说成「故障」。越权仍在 `sandboxDirFor` 一轮挡住（404）。
+     * 说成「故障」。越权仍在 `scopeFor` 一轮挡住（404）。
      */
-    async graph(user, canvasId, limit) {
-      const dir = await sandboxDirFor(user, canvasId);
+    async graph(user, taskId, limit) {
+      const { dir, git } = await scopeFor(user, taskId);
       const view = await git.describe(dir);
       if (!view.isRepo) {
         return { isRepo: false, entries: [], truncated: false };
@@ -469,8 +315,8 @@ export function createCodeGitService(options: {
     },
 
     /** 变更清单：与图谱同样「状态不是故障」——非仓库给空清单。 */
-    async changes(user, canvasId, maxFiles) {
-      const dir = await sandboxDirFor(user, canvasId);
+    async changes(user, taskId, maxFiles) {
+      const { dir, git } = await scopeFor(user, taskId);
       const view = await git.describe(dir);
       if (!view.isRepo) {
         return { isRepo: false, files: [], truncated: false };
@@ -484,12 +330,13 @@ export function createCodeGitService(options: {
      * 直接抛「没有差异」会让用户以为文件没改过；这里改为读内容、每行前加 `+`，
      * 并在响应里标 `untracked: true`，界面上要如实写「未跟踪文件（按新增展示）」。
      */
-    async fileDiff(user, canvasId, path) {
-      const dir = await sandboxDirFor(user, canvasId);
-      const changes = await git.changedFiles(dir, MAX_DIFF_SCAN_FILES);
+    async fileDiff(user, taskId, path) {
+      const { dir, git, scope, limits } = await scopeFor(user, taskId);
+      await scope.resolvePath(path, "read");
+      const changes = await git.changedFiles(dir, limits.codeSearchMaxResults);
       const entry = changes.files.find((file) => file.path === path);
       if (entry?.status === "untracked") {
-        const view = readSandboxTextFile(dir, path);
+        const view = readSandboxTextFile(dir, path, limits.codeReadMaxBytes);
         if (view.binary) {
           return {
             path,
@@ -504,12 +351,12 @@ export function createCodeGitService(options: {
         const body = lines.map((line) => `+${line}`).join("\n");
         return {
           path,
-          text: `${view.truncated ? "…（文件过大，仅显示前 256 KB）\n" : ""}${body}`,
+          text: `${view.truncated ? "…（文件过大，仅显示配置的字节上限）\n" : ""}${body}`,
           truncated: view.truncated,
           untracked: true,
         };
       }
-      const text = await git.fileDiff(dir, path, MAX_DIFF_BYTES);
+      const text = await git.fileDiff(dir, path, limits.codeSearchMaxBytes);
       return {
         path,
         text,
@@ -518,22 +365,64 @@ export function createCodeGitService(options: {
       };
     },
 
-    async runTerminal(user, canvasId, command, shell) {
+    async runTerminal(user, taskId, command, shell) {
       const trimmed = command.trim();
       if (!trimmed) {
         throw new CodeGitError("git_write_failed", "命令不能为空。", 400);
       }
-      const dir = await sandboxDirFor(user, canvasId);
-      // 本次显式选了就用它；否则用工作区设置里的默认（读不到就 auto）
-      const requested = shell ?? (await workspaceShell(user));
-      return runTerminalCommand({
+      const { dir, scope } = await scopeFor(user, taskId);
+      const settings = await instanceSettings(user);
+      const selected = resolveTerminalShell(
+        shell ?? settings.terminalShell,
+        options.availableShells ?? detectTerminalShells(),
+      );
+      if (!selected)
+        throw new CodeGitError(
+          "git_unavailable",
+          "所选终端 shell 不可用。",
+          503,
+        );
+      const started = Date.now();
+      const child = await options.processSandbox.spawn({
+        scope: scope.describe(),
+        agentId: scope.agentId,
+        invocationId: randomUUID(),
         command: trimmed,
         cwd: dir,
-        ...(requested ? { shell: requested } : {}),
-        ...(options.availableShells
-          ? { availableShells: options.availableShells }
-          : {}),
+        shell: selected.executable,
+        background: false,
+        timeoutMs: settings.executeTimeoutMs,
+        limits: {
+          maxOutputBytes: settings.processMaxOutputBytes,
+          previewMaxChars: settings.processPreviewMaxChars,
+          yieldMs: settings.processYieldMs,
+          killGraceMs: settings.processKillGraceMs,
+        },
       });
+      await child.endStdin();
+      const exit = await child.waitForExit();
+      if (!exit.rangeEmpty)
+        throw new CodeGitError("git_write_failed", "终端尚未确认退出。", 503);
+      const stdout = await collectManagedOutput(
+        child,
+        settings.processMaxOutputBytes,
+        "stdout",
+      );
+      const stderr = await collectManagedOutput(
+        child,
+        settings.processMaxOutputBytes,
+        "stderr",
+      );
+      return {
+        command: trimmed,
+        shell: selected.id,
+        exitCode: exit.exitCode,
+        timedOut: exit.reason === "timeout",
+        stdout,
+        stderr,
+        truncated: child.snapshot().discardedBytes > 0,
+        durationMs: Date.now() - started,
+      };
     },
 
     async listTerminalShells(user) {
@@ -547,26 +436,25 @@ export function createCodeGitService(options: {
     },
 
     /** 交互式会话的 cwd：与一次性执行同一处归属校验（越权即 404）。 */
-    async terminalWorkDir(user, canvasId) {
-      return sandboxDirFor(user, canvasId);
+    async terminalWorkDir(user, taskId) {
+      return (await scopeFor(user, taskId)).dir;
     },
 
     /** 索引库作用域：目录 + 工作区（开关在工作区设置里）。 */
-    async indexScope(user, canvasId) {
-      const workspace = await viewerService
-        .resolveWorkspace(user)
-        .catch(() => null);
+    async indexScope(user, taskId) {
+      const workspace = await localInstance.resolve(user).catch(() => null);
       if (!workspace) {
         throw new CodeGitError("not_found", "找不到工作区。", 404);
       }
-      const dir = await sandboxDirFor(user, canvasId);
-      return { workspaceId: workspace.id, dir };
+      const { dir } = await scopeFor(user, taskId);
+      return { instanceId: workspace.instanceId, dir };
     },
 
     /** 暂存单个文件：路径先过「必须落在工作目录内」这道门（与读文件同一处判定）。 */
-    async setFileStaged(user, canvasId, path, staged) {
-      const dir = await sandboxDirFor(user, canvasId);
+    async setFileStaged(user, taskId, path, staged) {
+      const { dir, git, scope } = await scopeFor(user, taskId, "write");
       try {
+        await scope.resolvePath(path, "write");
         resolveInsideRoot(dir, path);
       } catch (error) {
         throw new CodeGitError(
@@ -575,7 +463,7 @@ export function createCodeGitService(options: {
           400,
         );
       }
-      await requireRepo(dir);
+      await requireRepo(git, dir);
       try {
         await git.stageFile(dir, path, staged);
       } catch (error) {
@@ -592,9 +480,16 @@ export function createCodeGitService(options: {
      * 暂存单个块：先过「路径落在工作目录内」，再**核对 patch 里改的确实只有这个文件**，
      * 最后才交给 git apply（见 hunk-patch.ts 的注释：patch 里的路径才是 git 真会动的路径）。
      */
-    async applyFileHunk(user, canvasId, path, patch, options = {}) {
-      const dir = await sandboxDirFor(user, canvasId);
+    async applyFileHunk(user, taskId, path, patch, options = {}) {
+      const { dir, git, scope, limits } = await scopeFor(user, taskId, "write");
+      if (Buffer.byteLength(patch) > limits.codePatchMaxBytes)
+        throw new CodeGitError(
+          "git_write_failed",
+          "补丁超过工作区字节预算。",
+          400,
+        );
       try {
+        await scope.resolvePath(path, "write");
         resolveInsideRoot(dir, path);
       } catch (error) {
         throw new CodeGitError(
@@ -610,7 +505,7 @@ export function createCodeGitService(options: {
           400,
         );
       }
-      await requireRepo(dir);
+      await requireRepo(git, dir);
       try {
         await git.applyHunk(dir, patch, options);
       } catch (error) {
@@ -624,9 +519,10 @@ export function createCodeGitService(options: {
     },
 
     /** 撤销单个文件：与暂存同一道门（路径在工作目录内 + 是仓库）。 */
-    async discardFile(user, canvasId, path, untracked) {
-      const dir = await sandboxDirFor(user, canvasId);
+    async discardFile(user, taskId, path, untracked) {
+      const { dir, git, scope } = await scopeFor(user, taskId, "write");
       try {
+        await scope.resolvePath(path, "write");
         resolveInsideRoot(dir, path);
       } catch (error) {
         throw new CodeGitError(
@@ -635,7 +531,7 @@ export function createCodeGitService(options: {
           400,
         );
       }
-      await requireRepo(dir);
+      await requireRepo(git, dir);
       try {
         await git.discardFile(dir, path, untracked);
       } catch (error) {
@@ -649,9 +545,9 @@ export function createCodeGitService(options: {
     },
 
     /** 撤销全部未提交改动。 */
-    async discardAllChanges(user, canvasId) {
-      const dir = await sandboxDirFor(user, canvasId);
-      await requireRepo(dir);
+    async discardAllChanges(user, taskId) {
+      const { dir, git } = await scopeFor(user, taskId, "write");
+      await requireRepo(git, dir);
       try {
         await git.discardAll(dir);
       } catch (error) {
@@ -665,10 +561,20 @@ export function createCodeGitService(options: {
     },
 
     /** 列一层目录：路径越界/不存在/不是目录都折成 400 可读原因。 */
-    async listFiles(user, canvasId, path) {
-      const dir = await sandboxDirFor(user, canvasId);
+    async listFiles(user, taskId, path) {
+      const { scope, limits } = await scopeFor(user, taskId);
       try {
-        return listSandboxDir(dir, path);
+        const target = await scope.resolvePath(path || ".", "read");
+        const listed = listSandboxDir(target, "", limits.codeSearchMaxResults);
+        await scope.resolvePath(path || ".", "read");
+        return {
+          ...listed,
+          path,
+          entries: listed.entries.map((entry) => ({
+            ...entry,
+            path: join(path || ".", entry.name),
+          })),
+        };
       } catch (error) {
         throw new CodeGitError(
           "git_write_failed",
@@ -679,10 +585,18 @@ export function createCodeGitService(options: {
     },
 
     /** 文件内容：路径越界/不存在/是目录都折成 400 的可读原因（`sendCodeGitError` 兜底 500）。 */
-    async readFile(user, canvasId, path) {
-      const dir = await sandboxDirFor(user, canvasId);
+    async readFile(user, taskId, path) {
+      const { scope, limits } = await scopeFor(user, taskId);
       try {
-        return readSandboxTextFile(dir, path);
+        const target = await scope.resolvePath(path, "read");
+        const result = readSandboxTextFile(
+          dirname(target),
+          target.slice(dirname(target).length + 1),
+          limits.codeReadMaxBytes,
+        );
+        if ((await scope.resolvePath(path, "read")) !== target)
+          throw new Error("文件路径或授权在读取期间变化。");
+        return { ...result, path };
       } catch (error) {
         throw new CodeGitError(
           "git_write_failed",
@@ -696,20 +610,20 @@ export function createCodeGitService(options: {
      * 把工作目录初始化成仓库（「每次对话用 git 跟踪」的前置；已有仓库则无副作用）。
      * 失败时给可读原因（git 不可用 / 目录不可写）。
      */
-    async init(user, canvasId) {
+    async init(user, taskId) {
       requireGitForWrite();
-      const dir = await sandboxDirFor(user, canvasId);
+      const { dir, git } = await scopeFor(user, taskId, "write");
       const view = await git.describe(dir);
       if (!view.isRepo) {
         await git.init(dir);
       }
-      return read(dir);
+      return read(git, dir);
     },
 
-    async commit(user, canvasId, message) {
-      const dir = await sandboxDirFor(user, canvasId);
+    async commit(user, taskId, message) {
+      const { dir, git } = await scopeFor(user, taskId, "write");
       requireGitForWrite();
-      await requireRepo(dir);
+      await requireRepo(git, dir);
       try {
         await git.commitAll(dir, message);
       } catch (error) {
@@ -719,13 +633,13 @@ export function createCodeGitService(options: {
           409,
         );
       }
-      return read(dir);
+      return read(git, dir);
     },
 
-    async push(user, canvasId) {
-      const dir = await sandboxDirFor(user, canvasId);
+    async push(user, taskId) {
+      const { dir, git } = await scopeFor(user, taskId, "write");
       requireGitForWrite();
-      await requireRepo(dir);
+      await requireRepo(git, dir);
       try {
         await git.push(dir);
       } catch (error) {
@@ -735,13 +649,13 @@ export function createCodeGitService(options: {
           409,
         );
       }
-      return read(dir);
+      return read(git, dir);
     },
 
-    async createBranch(user, canvasId, name) {
-      const dir = await sandboxDirFor(user, canvasId);
+    async createBranch(user, taskId, name) {
+      const { dir, git } = await scopeFor(user, taskId, "write");
       requireGitForWrite();
-      await requireRepo(dir);
+      await requireRepo(git, dir);
       try {
         await git.createBranch(dir, name);
       } catch (error) {
@@ -751,7 +665,7 @@ export function createCodeGitService(options: {
           409,
         );
       }
-      return read(dir);
+      return read(git, dir);
     },
   };
 }

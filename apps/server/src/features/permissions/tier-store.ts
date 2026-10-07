@@ -10,7 +10,7 @@ import type { PersistenceService } from "../persistence/types.js";
 
 /**
  * 权限相关配置的持久化（app_config 单行表，DEC-4 / R5-3 / R5-4）。
- * 实例级配置，无租户维度：直接走 persistence 根客户端（不涉 `:workspace` 谓词）。
+ * 实例级配置，无租户维度：直接走 persistence 根客户端（不涉 `:instance` 谓词）。
  *
  * 一张表里现在放四件事（都是「本安装实例的信任级别」）：
  * - `permission_tier`：常规任务档位；

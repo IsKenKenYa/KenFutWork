@@ -1,5 +1,7 @@
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
+import type { Callbacks } from "@langchain/core/callbacks/manager";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import { AIMessage, ToolMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatVertexAI } from "@langchain/google-vertexai";
 import { isCommand } from "@langchain/langgraph";
@@ -8,45 +10,64 @@ import type {
   BaseStore,
 } from "@langchain/langgraph-checkpoint";
 import { ChatOpenAI } from "@langchain/openai";
-import { createDeepAgent, createSummarizationMiddleware } from "deepagents";
-import { type AgentMiddleware, todoListMiddleware } from "langchain";
+import {
+  createDeepAgent,
+  createFilesystemMiddleware,
+  createSummarizationMiddleware,
+} from "deepagents";
+import {
+  type AgentMiddleware,
+  createAgent,
+  todoListMiddleware,
+} from "langchain";
 import {
   DEFAULT_AGENT_MODEL,
   DEFAULT_GOOGLE_AGENT_MODEL,
   type ServerEnv,
 } from "../config/env.js";
-import type { BlobStore } from "../features/blob/types.js";
-import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
-import type { CanvasRepository } from "../features/canvas/repository.js";
-import type {
-  AvailableModel,
-  AvailableVideoModel,
-} from "../generation/types.js";
+import { createNativeToolExclusionMiddleware } from "../features/code-tools/native-tool-exclusion.js";
+import {
+  createTaskWorkNotificationMiddleware,
+  type TaskWorkBinding,
+} from "../features/task-work/model-mailbox.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
-import type { CompactionPlan } from "./auto-compact.js";
+import type { CompactionPlan, CompactionRetention } from "./auto-compact.js";
+import { resolveCompactionPlan } from "./auto-compact.js";
 import {
   type AgentBackendResult,
   createAgentBackend,
 } from "./backends/index.js";
+import type { AgentContextHistory } from "./context-history.js";
+import { createExecuteBackgroundTool } from "./execute-background.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
-import { KENFUTWORK_SYSTEM_PROMPT } from "./prompts/kenfutwork-main.js";
+import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
+import { attachNativeCheckpointDurability } from "./native-checkpoint-durability.js";
+import { createNativeCompactionTracker } from "./native-compaction.js";
 import {
-  type CustomSubagentSpec,
-  declaredSubAgentSpecs,
-} from "./sub-agents.js";
+  createNativeContextHistory,
+  effectiveNativeMessages,
+} from "./native-context-history.js";
 import type {
-  PersistImageFn,
-  SubmitImageJobFn,
-} from "./tools/image-generate.js";
-import { createMainAgentTools } from "./tools/index.js";
-import type { SubmitVideoJobFn } from "./tools/video-generate.js";
-import type { WorkspaceSkillEntry } from "./workspace-skills.js";
+  AgentRunExtension,
+  AgentRunExtensionContext,
+} from "./run-extension.js";
+import {
+  resolveChildToolbelt,
+  resolveSubagentDefinitions,
+  type SubagentDefinition,
+} from "./subagent-definitions.js";
+import {
+  createBuiltinTaskExclusionMiddleware,
+  createSubagentTaskTools,
+  type SubagentChildRunner,
+} from "./subagent-tools.js";
+import { createTaskNotificationMiddleware } from "./task-notifications.js";
 
 export type KenFutWorkAgent = Pick<
   ReturnType<typeof createDeepAgent>,
   "stream" | "streamEvents"
->;
+> & { canonicalToolEvents?: boolean; contextHistory?: AgentContextHistory };
 
 /**
  * 执行模式工具门（solo/plan 硬约束）：拦截 deepagents 内置工具
@@ -54,6 +75,8 @@ export type KenFutWorkAgent = Pick<
  */
 export type ToolGate = (
   toolName: string,
+  /** 子代理派发细节（DEC-17）：plan 档按目标定义只读性放行 task/task_background。 */
+  detail?: { subagentReadOnly?: boolean },
 ) => { allowed: true } | { allowed: false; reason: string };
 
 /**
@@ -94,6 +117,7 @@ export function createToolGateMiddleware(
       return new ToolMessage({
         tool_call_id: request.toolCall.id ?? request.toolCall.name,
         content: `工具 ${request.toolCall.name} 被拒绝：${verdict.reason}`,
+        status: "error",
       });
     },
   };
@@ -251,81 +275,80 @@ function createModelResponseGuardMiddleware(): AgentMiddleware {
 }
 
 export type KenFutWorkAgentFactory = (options: {
+  runExtensions?: readonly AgentRunExtension[];
+  extensionContext?: AgentRunExtensionContext;
   backendResult?: AgentBackendResult;
-  brandKitId?: string | null;
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
   connectionManager?: ConnectionManager;
   env: ServerEnv;
   model?: BaseLanguageModel | string;
-  persistImage?: PersistImageFn;
-
-  submitImageJob?: SubmitImageJobFn;
-  submitVideoJob?: SubmitVideoJobFn;
-  /** 工作区实例模型清单（BYOK specifier）：生成工具的 schema 与校验来源。 */
-  availableImageModels?: AvailableModel[];
-  availableVideoModels?: AvailableVideoModel[];
   store?: BaseStore;
-  workspaceSkills?: WorkspaceSkillEntry[];
   /** 内核 ctx.tools 贡献的工具（按 preset 过滤后），桥接为模型可调用工具。 */
   kernelTools?: ToolDefinition[];
-  /** 本次运行的工具执行上下文（runId/accessToken）。 */
+  /** 本次运行的工具执行上下文（runId/LocalActor）。 */
   runToolContext?: ToolExecutionContext;
   /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
   toolGate?: ToolGate;
   /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
   toolGateHooks?: ToolGateHooks;
-  /** 插件贡献的提示段（能力 `systemPrompt`）：追加在系统提示之后。 */
-  systemPromptExtras?: readonly string[];
-  /** 用户自定义子智能体（工作区设置）：追加进 deepagents 的 subagents。 */
-  customSubagents?: CustomSubagentSpec[];
   /**
    * 上下文自动压缩的口径（阈值/保留条数，见 agent/auto-compact.ts）。
    * 传了才挂中间件——设置里关掉时**一个字都不挂**，不是挂上再短路。
    */
   autoCompact?: CompactionPlan;
+  /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
+  manualCompactPlan?: CompactionPlan;
+  /** 原生维护适配器缺省预算仍消费本 Run 已解析的实例保留目标。 */
+  compactionRetention?: CompactionRetention;
   /**
    * 装配完成时回吐工具清单（R4-1 分类占比要按 schema 量「系统工具 / MCP 工具」）。
    * 用回调而不是返回值：调用方（runtime）拿的是 agent 对象，工具清单只在装配期有。
    */
   onToolInventory?: (tools: readonly unknown[]) => void;
+  /**
+   * 运行 preset（DEC-2，会话级能力集）：运行态工具与子代理清单按它装配——
+   * 生图生频仅 design（Code 会话无画布落点），execute_background 仅 code。
+   */
+  preset: "design" | "code";
+  /** 本 run 的系统提示：runtime 经内核段注册表组装后传入（deep-agent 只消费）。 */
+  systemPrompt: string;
+  /**
+   * 子代理派发缝（DEC-14/15/16）：注册表由 runtime 按 run 创建（并发上限来自治理设置）。
+   * 传入即挂 task / task_background / task_output 三工具与后台通知中间件；
+   * 缺席（部分装配/测试）则完全不出现派发能力。
+   */
+  backgroundTasks?: {
+    registry: import("./background-tasks.js").BackgroundTaskRegistry;
+  };
+  taskWork?: TaskWorkBinding;
+  /** Code 长命令超时（毫秒，DEC-18）：治理设置值；缺省走 governance 默认。 */
+  executeTimeoutMs?: number;
+  /** LLM 请求级重试（DEC-18）：治理设置值；缺省走 governance 默认（不无限）。 */
+  llmRetry?: { maxAttempts: number; infinite: boolean };
 }) => KenFutWorkAgent;
 
 export function createKenFutWorkDeepAgent(options: {
+  runExtensions?: readonly AgentRunExtension[];
+  extensionContext?: AgentRunExtensionContext;
   backendResult?: AgentBackendResult;
-  brandKitId?: string | null;
-  /** 品牌套件服务（工具 get_brand_kit 经它取数，不再直连 SDK）。 */
-  brandKitService?: BrandKitService;
-  /** 对象存储（blob 缝）：沙箱文件持久化、生成物落盘经它（必需能力）。 */
-  blob: BlobStore;
-  /** 画布数据访问（工作区作用域）：工具的画布读写经它。 */
-  canvasRepository?: CanvasRepository;
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
   connectionManager?: ConnectionManager;
   env: ServerEnv;
   model?: BaseLanguageModel | string;
-  persistImage?: PersistImageFn;
-
-  submitImageJob?: SubmitImageJobFn;
-  submitVideoJob?: SubmitVideoJobFn;
-  /** 工作区实例模型清单（BYOK specifier）：生成工具的 schema 与校验来源。 */
-  availableImageModels?: AvailableModel[];
-  availableVideoModels?: AvailableVideoModel[];
   store?: BaseStore;
-  workspaceSkills?: WorkspaceSkillEntry[];
   kernelTools?: ToolDefinition[];
   runToolContext?: ToolExecutionContext;
   /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
   toolGate?: ToolGate;
   /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
   toolGateHooks?: ToolGateHooks;
-  /** 插件贡献的提示段（能力 `systemPrompt`）：追加在系统提示之后。 */
-  systemPromptExtras?: readonly string[];
-  /** 用户自定义子智能体（工作区设置）：追加进 deepagents 的 subagents。 */
-  customSubagents?: CustomSubagentSpec[];
   /** 上下文自动压缩的口径（见 agent/auto-compact.ts）。 */
   autoCompact?: CompactionPlan;
+  /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
+  manualCompactPlan?: CompactionPlan;
+  compactionRetention?: CompactionRetention;
   /** BYOK 模型声明的单次输出上限（maxOutputTokens）：转发上游，避免 reasoning 模型被上游默认 max_tokens 掐断。 */
   declaredMaxOutputTokens?: number | null;
   /**
@@ -333,9 +356,31 @@ export function createKenFutWorkDeepAgent(options: {
    * 用回调而不是返回值：调用方（runtime）拿到的是 agent 对象，工具清单只在装配期有。
    */
   onToolInventory?: (tools: readonly unknown[]) => void;
+  /** 子代理派发缝（DEC-14/15/16），同 {@link KenFutWorkAgentFactory.backgroundTasks}。 */
+  backgroundTasks?: {
+    registry: import("./background-tasks.js").BackgroundTaskRegistry;
+  };
+  taskWork?: TaskWorkBinding;
+  /** Code 长命令超时（毫秒，DEC-18）。 */
+  executeTimeoutMs?: number;
+  /** LLM 请求级重试（DEC-18）。 */
+  llmRetry?: { maxAttempts: number; infinite: boolean };
+  /** 运行 preset（DEC-2），同 {@link KenFutWorkAgentFactory.preset}。 */
+  preset: "design" | "code";
+  /** 本 run 的系统提示：runtime 经内核段注册表组装后传入（deep-agent 只消费）。 */
+  systemPrompt: string;
 }): KenFutWorkAgent {
   const backendResult =
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
+
+  // 运行 preset（DEC-2）：本次装配的能力集口径——运行态工具、子代理清单共用
+  const preset = options.preset;
+  // 权威生命周期包住工具目录/权限的提前返回，拒绝也必须进入原产品事件链。
+  const runExtensions = [...(options.runExtensions ?? [])].sort(
+    (left, right) =>
+      Number(Boolean(right.canonicalToolEvents)) -
+      Number(Boolean(left.canonicalToolEvents)),
+  );
 
   applyOpenAICompatEnv(options.env);
 
@@ -345,82 +390,167 @@ export function createKenFutWorkDeepAgent(options: {
       ? createStreamingChatModel(modelSpec, options.declaredMaxOutputTokens)
       : modelSpec;
 
-  let systemPrompt = options.brandKitId
-    ? KENFUTWORK_SYSTEM_PROMPT +
-      "\n\n当前项目已绑定品牌套件。在进行设计相关工作时，请先使用 get_brand_kit 工具查询品牌信息，确保设计符合品牌规范。"
-    : KENFUTWORK_SYSTEM_PROMPT;
-
-  // Inject enabled skills (both system and user-created) into the system prompt.
-  // All skills are loaded from the database via loadWorkspaceSkills() in runtime.ts.
-  const wsSkills = options.workspaceSkills ?? [];
-  if (wsSkills.length > 0) {
-    const skillsList = wsSkills
-      .map((s) => {
-        let line = `- **${s.name}**: ${s.description}\n  → Read \`${s.path}\` for full instructions`;
-        if (s.files.length > 0) {
-          const counts: Record<string, number> = {};
-          for (const f of s.files) {
-            const dir = f.path.split("/")[0] ?? "other";
-            counts[dir] = (counts[dir] ?? 0) + 1;
-          }
-          const summary = Object.entries(counts)
-            .map(([dir, n]) => `${dir}/ (${n})`)
-            .join(", ");
-          line += `\n  → Has: ${summary}`;
-        }
-        return line;
-      })
-      .join("\n");
-    systemPrompt += `\n\n## Skills\n\nThe following skills are enabled in this workspace:\n${skillsList}`;
-  }
-
-  // 插件提示段（能力 systemPrompt）：接在品牌/技能之后——插件是外部贡献，
-  // 不该覆盖内置规则，只追加行为引导。
-  const extras = (options.systemPromptExtras ?? []).filter(
-    (section) => section.trim().length > 0,
-  );
-  if (extras.length > 0) {
-    systemPrompt += `\n\n## 插件提示段\n\n${extras.join("\n\n")}`;
-  }
+  // 系统提示由调用方（runtime）经内核段注册表组装后传入——deep-agent 只消费，
+  // 不再自带组装逻辑（提示段属主是各 feature 插件，挂载即出现）。
+  const systemPrompt = options.systemPrompt;
 
   // 工具清单先落地成变量：R4-1 的分类占比要按 schema 量「系统工具 / MCP 工具」，
   // 而调用方（runtime）拿到的是 agent 对象，只有这里才知道装配了什么工具。
+  // 全部工具经内核注册表（runtime 已按 preset 解析静态+动态后经 kernelTools 传入）。
   const tools = [
-    ...createMainAgentTools(backendResult.factory, {
-      ...(options.brandKitService
-        ? { brandKitService: options.brandKitService }
-        : {}),
-      blob: options.blob,
-      ...(options.canvasRepository
-        ? { canvasRepository: options.canvasRepository }
-        : {}),
-      ...(options.brandKitId != null ? { brandKitId: options.brandKitId } : {}),
-      ...(options.connectionManager
-        ? { connectionManager: options.connectionManager }
-        : {}),
-      ...(options.persistImage ? { persistImage: options.persistImage } : {}),
-      ...(backendResult.sandboxDir
-        ? { sandboxDir: backendResult.sandboxDir }
-        : {}),
-
-      ...(options.submitImageJob
-        ? { submitImageJob: options.submitImageJob }
-        : {}),
-      ...(options.submitVideoJob
-        ? { submitVideoJob: options.submitVideoJob }
-        : {}),
-      ...(options.availableImageModels
-        ? { availableImageModels: options.availableImageModels }
-        : {}),
-      ...(options.availableVideoModels
-        ? { availableVideoModels: options.availableVideoModels }
-        : {}),
-    }),
     ...bridgeKernelTools(
       options.kernelTools ?? [],
       options.runToolContext ?? {},
     ),
   ];
+
+  /**
+   * 子代理派发缝（DEC-14/15/16）：后台任务注册表在传入时挂三件套——
+   * task（前台并行）、task_background（后台 + 通知）、task_output（结果查询）。
+   * 子代理按定义经 createAgent 组装：模型同父、工具按定义白名单拾取、
+   * 只读定义挂文件工具白名单中间件（结构性无 execute）；子代理不挂任何
+   * 派发工具——深度上限 1 是结构性的（DEC-17）。
+   */
+  let subagentMiddleware: AgentMiddleware[] = [];
+  if (options.backgroundTasks) {
+    const { registry } = options.backgroundTasks;
+    const toolGateForDispatch = options.toolGate;
+    const childRunner: SubagentChildRunner = async ({
+      definition,
+      description,
+      signal,
+      callId,
+      parentCallbacks,
+    }) => {
+      const { tools: picked } = resolveChildToolbelt(definition, tools);
+      const middleware: AgentMiddleware[] = definition.filesystemTools?.length
+        ? [
+            createFilesystemMiddleware({
+              backend: backendResult.factory,
+              // 允许清单即白名单：read_file 必带；execute 不在列表 = 只读子代理无执行能力
+              tools: [...definition.filesystemTools],
+            }) as unknown as AgentMiddleware,
+          ]
+        : [];
+      middleware.unshift(
+        ...runExtensions.map((extension) =>
+          extension.createMiddleware({
+            agentCallId: callId,
+            agentName: definition.name,
+          }),
+        ),
+      );
+      const child = createAgent({
+        model: resolvedModel,
+        name: definition.name,
+        // 语言规则单点追加（子代理结论回填主对话，英文结论会带偏主对话语言）：
+        // 定义里的 systemPrompt 是中文，但其工具面（deepagents 文件工具等）描述是英文
+        systemPrompt:
+          definition.systemPrompt +
+          "\n\n始终用中文思考、工作与汇报（用户消息为其他语言时跟随用户语言）；" +
+          "代码、命令、路径、专有名词保留原文。",
+        tools: picked,
+        middleware,
+      });
+      const result = (await child.invoke(
+        { messages: [new HumanMessage(description)] },
+        {
+          signal,
+          // 事件归因与路由（DEC-19）：name 供识别、call_id 供前端路由进对应子代理视图
+          metadata: {
+            lc_agent_name: definition.name,
+            lc_agent_call_id: callId,
+          },
+          configurable: { ls_agent_type: "subagent" },
+          // 继承父 run 的 callbacks：子代理内部事件（模型流/工具行）冒泡进父流，
+          // stream-adapter 按 metadata 归因路由进右栏子代理线程；不带 = 静默执行
+          ...(parentCallbacks
+            ? { callbacks: parentCallbacks as Callbacks }
+            : {}),
+        },
+      )) as { messages?: Array<{ content: unknown; getType?: () => string }> };
+      const messages = result?.messages ?? [];
+      const lastAi = [...messages]
+        .reverse()
+        .find((message) => message.getType?.() === "ai");
+      const content = lastAi?.content;
+      const text =
+        typeof content === "string"
+          ? content
+          : Array.isArray(content)
+            ? content
+                .filter(
+                  (part): part is { text: string } =>
+                    typeof part === "object" &&
+                    part !== null &&
+                    typeof (part as { text?: unknown }).text === "string",
+                )
+                .map((part) => part.text)
+                .join("\n")
+            : "";
+      if (!text.trim()) {
+        throw new Error("子代理结束但没有产出任何结论");
+      }
+      return text;
+    };
+
+    const dispatchTools = createSubagentTaskTools({
+      registry,
+      definitions: resolveSubagentDefinitions(preset),
+      childRunner,
+      // plan 档派发门（DEC-17）：按目标定义只读性判定——复用同一把工具门，
+      // solo/plan 的拒绝理由与普通工具一致
+      ...(toolGateForDispatch
+        ? {
+            dispatchGate: (def: SubagentDefinition) =>
+              toolGateForDispatch("task", { subagentReadOnly: def.readOnly }),
+          }
+        : {}),
+    });
+    tools.push(
+      dispatchTools.taskTool as never,
+      dispatchTools.taskBackgroundTool as never,
+      dispatchTools.taskOutputTool as never,
+    );
+    subagentMiddleware = [
+      createTaskNotificationMiddleware(registry) as unknown as AgentMiddleware,
+      // deepagents 无条件内建 `task` 工具（无关闭开关）：从模型工具清单整体排除——
+      // 派发只走受治理的 subagent_task/subagent_background（DEC-16/17）
+      createBuiltinTaskExclusionMiddleware(),
+    ];
+
+    // Code 长命令（DEC-15）：与子代理共用注册表与通知通道；execute 能力探测失败
+    // （非 shell 后端）则不挂，不给模型一个必然失败的工具
+    if (preset === "code") {
+      const backendInstance = backendResult.factory({
+        store: options.store,
+        state: {},
+      } as never) as unknown as {
+        execute?: (command: string) => Promise<{
+          output: string;
+          exitCode: number | null;
+          truncated: boolean;
+        }>;
+      };
+      if (typeof backendInstance?.execute === "function") {
+        tools.push(
+          createExecuteBackgroundTool({
+            registry,
+            backend: backendInstance as {
+              execute: (command: string) => Promise<{
+                output: string;
+                exitCode: number | null;
+                truncated: boolean;
+              }>;
+            },
+            timeoutMs:
+              options.executeTimeoutMs ??
+              AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs,
+          }) as never,
+        );
+      }
+    }
+  }
 
   options.onToolInventory?.(tools);
 
@@ -434,28 +564,69 @@ export function createKenFutWorkDeepAgent(options: {
    *   （见 stream-adapter 的 `run.compacted`）；
    * - **backend**：与 agent 同一个后端工厂（offload 落到用户自己的工作目录，可追溯）。
    */
-  const summarizationMiddleware: AgentMiddleware[] = options.autoCompact
-    ? [
-        createSummarizationMiddleware({
-          backend: backendResult.factory,
-          trigger: options.autoCompact.trigger,
-          keep: options.autoCompact.keep,
-        }) as unknown as AgentMiddleware,
-      ]
-    : [];
+  const nativeSummarization = createSummarizationMiddleware({
+    backend: backendResult.factory,
+    ...(options.autoCompact
+      ? { trigger: options.autoCompact.trigger, keep: options.autoCompact.keep }
+      : {}),
+  }) as unknown as AgentMiddleware;
+  const compactionTracker = options.autoCompact
+    ? createNativeCompactionTracker(nativeSummarization)
+    : undefined;
+  // 同名覆盖DA默认auto行为，仍保留summary state schema供显式维护operation。
+  const summaryExecution: AgentMiddleware = compactionTracker?.middleware ?? {
+    ...nativeSummarization,
+    wrapModelCall: (request, handler) =>
+      handler({
+        ...request,
+        messages: effectiveNativeMessages(request.messages, request.state),
+      }),
+  };
+  const summaryCall = summaryExecution.wrapModelCall;
+  if (!summaryCall) throw new Error("摘要模型请求入口未装配。");
+  const summarizationMiddleware: AgentMiddleware[] = [
+    {
+      ...summaryExecution,
+      async wrapModelCall(request, handler) {
+        // SDK默认摘要位于普通扩展之前；这里统一采用已消费输入的冻结模型。
+        const model =
+          await options.extensionContext?.modelControl?.resolveCurrent();
+        return summaryCall(
+          { ...request, ...(model ? { model } : {}) },
+          handler,
+        );
+      },
+    },
+  ];
 
-  return createDeepAgent({
+  // 后台任务通知（DEC-15）：每次模型调用前注入已结算未消费的通知
+  const notificationMiddleware: AgentMiddleware[] = [
+    ...(options.backgroundTasks ? subagentMiddleware : []),
+    ...(options.taskWork
+      ? [createTaskWorkNotificationMiddleware(options.taskWork)]
+      : []),
+    ...(preset === "code" ? [createNativeToolExclusionMiddleware()] : []),
+  ];
+
+  // LLM 请求级重试（DEC-18）：maxAttempts 含首次；infinite 为用户显式开启。
+  // 默认档（10 次/不无限）也挂——治上游抖动是基线行为，不是可选项。
+  const llmRetryMiddleware = createLlmRequestRetryMiddleware({
+    maxAttempts:
+      options.llmRetry?.maxAttempts ??
+      AGENT_GOVERNANCE_DEFAULTS.llmRequestMaxRetries,
+    infinite:
+      options.llmRetry?.infinite ?? AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
+  });
+
+  const agent = createDeepAgent({
     backend: backendResult.factory,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
     model: resolvedModel,
     name: "kenfutwork",
     ...(options.store ? { store: options.store } : {}),
-    // 与设置页「子智能体」同一份清单（见 sub-agents.ts），界面与装配不允许漂移；
-    // 用户自定义项按工作区设置追加（与内置撞名的已在装配侧丢弃）
-    subagents: declaredSubAgentSpecs(
-      options.availableVideoModels ?? [],
-      options.customSubagents ?? [],
-    ),
+    // 子代理派发改走自有 task/task_background 工具（DEC-14/15，见 backgroundTasks）：
+    // 不再传 deepagents 的 `subagents:` —— 内置 task 的 2 字段 schema、同步阻塞与
+    // 固定装配满足不了后台化与目录治理，自建缝声明/装配/消费三元组齐备。
     systemPrompt,
     // 待办表（`write_todos`）：deepagents 只在它的 Codex profile 里挂 todoListMiddleware，
     // 非 Codex 模型默认**没有这个工具**——不挂的话「目标 + 进度」面板永远没有数据源，
@@ -468,7 +639,12 @@ export function createKenFutWorkDeepAgent(options: {
     ...(options.toolGate
       ? {
           middleware: [
+            ...runExtensions.map((extension) =>
+              extension.createMiddleware({}, options.extensionContext),
+            ),
             ...summarizationMiddleware,
+            ...notificationMiddleware,
+            llmRetryMiddleware,
             todoListMiddleware() as unknown as AgentMiddleware,
             createToolErrorGuardMiddleware(),
             createModelResponseGuardMiddleware(),
@@ -478,7 +654,12 @@ export function createKenFutWorkDeepAgent(options: {
         }
       : {
           middleware: [
+            ...runExtensions.map((extension) =>
+              extension.createMiddleware({}, options.extensionContext),
+            ),
             ...summarizationMiddleware,
+            ...notificationMiddleware,
+            llmRetryMiddleware,
             todoListMiddleware() as unknown as AgentMiddleware,
             createToolErrorGuardMiddleware(),
             createModelResponseGuardMiddleware(),
@@ -486,6 +667,35 @@ export function createKenFutWorkDeepAgent(options: {
           ],
         }),
     tools,
+  });
+  if (options.checkpointer) attachNativeCheckpointDurability(agent);
+  if (compactionTracker && options.checkpointer)
+    compactionTracker.attach(agent);
+  return Object.assign(agent, {
+    ...(options.checkpointer
+      ? {
+          contextHistory: createNativeContextHistory(agent, {
+            model: resolvedModel,
+            backend: backendResult.factory,
+            ...(options.store ? { store: options.store } : {}),
+            plan:
+              options.manualCompactPlan ??
+              options.autoCompact ??
+              resolveCompactionPlan({
+                ...(options.compactionRetention
+                  ? { retention: options.compactionRetention }
+                  : {}),
+              }),
+            llmRetry: options.llmRetry ?? {
+              maxAttempts: AGENT_GOVERNANCE_DEFAULTS.llmRequestMaxRetries,
+              infinite: AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
+            },
+          }),
+        }
+      : {}),
+    canonicalToolEvents: runExtensions.some(
+      (extension) => extension.canonicalToolEvents,
+    ),
   });
 }
 

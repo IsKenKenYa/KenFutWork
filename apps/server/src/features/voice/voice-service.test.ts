@@ -16,17 +16,13 @@ import {
  * 而不是回空文本让用户以为「说了没反应」。
  */
 
-const USER = {
-  id: "user-1",
-  email: "u@example.com",
-  accessToken: "tok",
-} as never;
+const USER = { instanceId: "ws-1", accessClientId: null };
 
 function settingsRepo(voice: unknown) {
   let stored: unknown = voice;
   return {
     findVoice: async () => stored,
-    upsertVoice: async (_workspaceId: string, next: unknown) => {
+    upsertVoice: async (_instanceId: string, next: unknown) => {
       stored = next;
     },
     current: () => stored,

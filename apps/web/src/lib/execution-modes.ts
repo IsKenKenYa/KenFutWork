@@ -3,7 +3,7 @@ import type { ExecutionMode } from "@kenfutwork/shared";
 /**
  * 六档执行模式的中文标签（本地兜底；唯一权威仍是服务端 `GET /api/execution-modes`）。
  *
- * 为什么前端也要有一份：模式选择器的标签来自服务端词表，而词表要等会话（`/api/viewer`）
+ * 为什么前端也要有一份：模式选择器的标签来自服务端词表，而词表要等本机实例连接（`/api/instance`）
  * 就绪后才拉得动——首屏那一小段时间 `executionModes` 是空数组，选择器**只能渲染原始 id**，
  * 于是用户看到的是英文 `agent`、点开还是空列表（2026-09-19 用户反馈：「它变成英文还是空的」）。
  * 这里与 `apps/server/src/features/agent-modes/execution-mode-service.ts` 的内置六档对齐：

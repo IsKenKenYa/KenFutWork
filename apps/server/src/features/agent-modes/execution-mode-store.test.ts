@@ -17,7 +17,7 @@ import { createExecutionModeStore } from "./execution-mode-store.js";
 function createRecordingPersistence() {
   const statements: Array<{ sql: string; params?: readonly unknown[] }> = [];
   const client = {
-    workspaceId: "ws-1",
+    instanceId: "ws-1",
     query: async (sql: string, params?: readonly unknown[]) => {
       statements.push({ sql, ...(params ? { params } : {}) });
       return [] as Record<string, unknown>[];
@@ -29,7 +29,7 @@ function createRecordingPersistence() {
     },
   };
   const persistence = {
-    forWorkspace: () => client,
+    forInstance: () => client,
   } as unknown as PersistenceService;
   return { persistence, statements };
 }
@@ -44,7 +44,7 @@ describe("执行模式持久化：入参兼容 thread_id 与会话 id", () => {
     expect(statements).toHaveLength(1);
     expect(statements[0]?.sql).toContain("s.thread_id = $1");
     expect(statements[0]?.sql).toContain("s.id::text = $1");
-    expect(statements[0]?.sql).toContain(":workspace");
+    expect(statements[0]?.sql).toContain(":instance");
   });
 
   it("save 的语句同样按两者匹配，且仍带工作区归属校验", async () => {
@@ -57,14 +57,14 @@ describe("执行模式持久化：入参兼容 thread_id 与会话 id", () => {
     const sql = statements[0]?.sql;
     expect(sql).toContain("s.thread_id = $1");
     expect(sql).toContain("s.id::text = $1");
-    expect(sql).toContain(":workspace");
+    expect(sql).toContain(":instance");
     expect(statements[0]?.params).toEqual(["session-或-thread-id", "plan"]);
   });
 
   it("行存在时把持久化模式读回（未知/空值回落 null，由上层落 agent）", async () => {
     const persistence = {
-      forWorkspace: () => ({
-        workspaceId: "ws-1",
+      forInstance: () => ({
+        instanceId: "ws-1",
         query: async () => [{ execution_mode: "plan" }],
         queryOne: async () => null,
         execute: async () => 0,
@@ -78,8 +78,8 @@ describe("执行模式持久化：入参兼容 thread_id 与会话 id", () => {
     });
 
     const weird = {
-      forWorkspace: () => ({
-        workspaceId: "ws-1",
+      forInstance: () => ({
+        instanceId: "ws-1",
         query: async () => [{ execution_mode: "not-a-mode" }],
         queryOne: async () => null,
         execute: async () => 0,

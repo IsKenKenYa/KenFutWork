@@ -33,10 +33,11 @@ import type { ProviderInstanceResponse } from "@kenfutwork/shared";
 
 const instance: ProviderInstanceResponse = {
   id: "inst-1",
-  scope: "workspace",
+  scope: "local",
   name: "我的网关",
   protocol: "openai-compatible",
   hasCredential: true,
+  configRevision: 1,
   models: [{ id: "gpt-x", name: "GPT X", capability: "chat" }],
   headerKeys: [],
   enabled: true,

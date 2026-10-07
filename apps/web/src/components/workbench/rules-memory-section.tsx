@@ -3,8 +3,8 @@
 import { Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
-  fetchWorkspaceSettings,
-  updateWorkspaceSettings,
+  fetchInstanceSettings,
+  updateInstanceSettings,
 } from "@/lib/server-api";
 import { SETTINGS_SECTION_GAP, SETTINGS_TITLE } from "@/lib/settings-layout";
 
@@ -28,10 +28,9 @@ export function RulesMemorySection({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!accessToken) return;
     let cancelled = false;
     setLoading(true);
-    fetchWorkspaceSettings(accessToken)
+    fetchInstanceSettings(accessToken)
       .then((payload) => {
         if (cancelled) return;
         const view = payload.settings;
@@ -51,10 +50,9 @@ export function RulesMemorySection({
   }, [accessToken]);
 
   const handleSaveRules = async () => {
-    if (!accessToken) return;
     setStatus(null);
     try {
-      const payload = await updateWorkspaceSettings(accessToken, {
+      const payload = await updateInstanceSettings(accessToken, {
         userRules: rules,
       });
       const saved = payload.settings.userRules ?? "";
@@ -67,12 +65,11 @@ export function RulesMemorySection({
   };
 
   const persistEntries = async (next: string[], message: string) => {
-    if (!accessToken) return;
     const previous = entries;
     setEntries(next);
     setStatus(null);
     try {
-      const payload = await updateWorkspaceSettings(accessToken, {
+      const payload = await updateInstanceSettings(accessToken, {
         ruleEntries: next,
       });
       setEntries(payload.settings.ruleEntries ?? []);

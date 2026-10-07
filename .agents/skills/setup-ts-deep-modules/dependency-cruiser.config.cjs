@@ -67,7 +67,9 @@ module.exports = {
     },
     {
       name: "no-circular",
-      comment: "No dependency cycles. Scope to `^${R}/` if you want to allow cycles outside packages.",
+      comment:
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: 技能模板刻意保留 ${R} 占位符字面量，供使用者替换
+        "No dependency cycles. Scope to `^${R}/` if you want to allow cycles outside packages.",
       severity: "error",
       from: {},
       to: { circular: true },

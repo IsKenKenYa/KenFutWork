@@ -16,9 +16,13 @@ import { SETTINGS_TITLE_TEXT } from "@/lib/settings-layout";
 
 /**
  * 供应商设置（P5 BYOK）：用户供应商实例 CRUD。
- * 凭证红线：apiKey 与自定义头值都只写不读——列表只有 hasCredential 与 headerKeys（键名）。
+ * 普通列表只含凭据状态；查看/复制凭据使用原 Code 供应商设置。
  */
-export function ProviderSettings({ accessToken }: { accessToken: string }) {
+export function ProviderSettings({
+  accessToken,
+}: {
+  accessToken: string | null;
+}) {
   const [instances, setInstances] = useState<ProviderInstanceResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

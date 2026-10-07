@@ -1,42 +1,57 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { KenFutWorkAgentFactory } from "../agent/deep-agent.js";
 import type { ServerEnv } from "../config/env.js";
-import { createAdminPlugin } from "../features/admin/plugin.js";
 import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
-import { createApiTokensPlugin } from "../features/api-tokens/plugin.js";
-import { createAuthPlugin } from "../features/auth/plugin.js";
 import { createBlobPlugin } from "../features/blob/plugin.js";
-import { createViewerPlugin } from "../features/bootstrap/plugin.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
 import { createBrowserPlugin } from "../features/browser/plugin.js";
 import { createCanvasPlugin } from "../features/canvas/plugin.js";
 import { createChatPlugin } from "../features/chat/plugin.js";
+import { createRealtimePlugin } from "../features/chat/realtime-plugin.js";
 import { createCheckpointsPlugin } from "../features/checkpoints/plugin.js";
 import { createCodeGitPlugin } from "../features/code-git/plugin.js";
+import { createCodeSubagentsPlugin } from "../features/code-subagents/plugin.js";
+import { createCodeTerminalPlugin } from "../features/code-terminal/plugin.js";
 import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
-import { createCreditsPlugin } from "../features/credits/plugin.js";
+import { createCodeUiAgentEventsPlugin } from "../features/code-ui/agent-events-plugin.js";
+import { createCodeUiPlugin } from "../features/code-ui/plugin.js";
+import { createComputerUsePlugin } from "../features/computer-use/plugin.js";
+import { createExecutionScopesPlugin } from "../features/execution/plugin.js";
 import { createFlowHostPlugin } from "../features/flow/plugin.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import { createJobsPlugin } from "../features/jobs/plugin.js";
+import {
+  createLocalAccessPlugin,
+  createLocalAccessRoutesPlugin,
+} from "../features/local-access/plugin.js";
+import { createInstanceRoutesPlugin } from "../features/local-instance/http-plugin.js";
+import { createLocalInstancePlugin } from "../features/local-instance/plugin.js";
 import { createMcpPlugin } from "../features/mcp/plugin.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
-import { createModelProvidersPlugin } from "../features/model-providers/plugin.js";
-import type { PaymentService } from "../features/payments/payment-service.js";
-import { createPaymentsPlugin } from "../features/payments/plugin.js";
+import {
+  createModelProviderRoutesPlugin,
+  createModelProvidersPlugin,
+} from "../features/model-providers/plugin.js";
 import { createPermissionsPlugin } from "../features/permissions/plugin.js";
 import { persistencePlugin } from "../features/persistence/plugin.js";
 import {
   createPluginsPlugin,
   type PluginCatalogEntry,
 } from "../features/plugins/plugin.js";
+import { createProcessSandboxPlugin } from "../features/process-sandbox/plugin.js";
 import { createProjectsPlugin } from "../features/projects/plugin.js";
 import { createQueuePlugin } from "../features/queue/plugin.js";
 import { createSearchPlugin } from "../features/search/plugin.js";
-import { createSettingsPlugin } from "../features/settings/plugin.js";
+import {
+  createSettingsPlugin,
+  createSettingsRoutesPlugin,
+} from "../features/settings/plugin.js";
 import { createSkillsPlugin } from "../features/skills/plugin.js";
 import { createSystemPlugin } from "../features/system/plugin.js";
+import { createTaskWorkPlugin } from "../features/task-work/plugin.js";
+import { createToolCatalogPlugin } from "../features/tool-catalog/plugin.js";
 import { createUploadsPlugin } from "../features/uploads/plugin.js";
 import { createUsagePlugin } from "../features/usage/plugin.js";
 import { createVoicePlugin } from "../features/voice/plugin.js";
@@ -51,14 +66,12 @@ import type { ConnectionManager } from "../ws/connection-manager.js";
 export interface ServerProfileDeps {
   connectionManager: ConnectionManager;
   events: KernelEvents;
-  credentialEnv: { credentialSecret?: string };
   env: ServerEnv;
   agentFactory?: KenFutWorkAgentFactory;
   agentModel?: BaseLanguageModel | string;
   mockEventDelayMs?: number;
   /** overrides 直填的条件装配插件需感知注入实例（enabled 判定，保持历史行为）。 */
   overrideJobs?: JobService;
-  overridePayments?: PaymentService;
   /** 测试替身：modelProviders 缝的注入实例（app.test/generate.test 用）。 */
   overrideModelProviders?: ModelProviderService;
   /** GitHub token（可选）：插件从仓库安装时提升匿名速率上限。 */
@@ -71,7 +84,8 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     name: "model-providers",
     title: "BYOK 供应商",
     category: "模型与供应商",
-    description: "添加自己的模型实例 · Key 加密保存",
+    description:
+      "添加你自己的模型实例（OpenAI 兼容 / Anthropic / Gemini / 图像 / 视频协议），Key 在本地明文文件保存。",
     capabilities: ["llm"],
   },
   {
@@ -149,48 +163,54 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
 export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
   return [
     persistencePlugin,
+    createLocalInstancePlugin(),
+    createLocalAccessPlugin(),
+    createLocalAccessRoutesPlugin(),
+    createInstanceRoutesPlugin(),
     createQueuePlugin(),
     createBlobPlugin(),
-    createAuthPlugin(),
-    createApiTokensPlugin(),
     brandKitPlugin,
-    createCreditsPlugin(),
-    createViewerPlugin(),
     createCanvasPlugin(),
     createCodeGitPlugin(),
     // 检查点（影子 git）在 agent-runs 之前装配：后者的轮次钩子经 tryGet 消费它
     createCheckpointsPlugin(),
     createChatPlugin(),
     createSettingsPlugin(),
+    createSettingsRoutesPlugin(),
+    createExecutionScopesPlugin(),
+    createProcessSandboxPlugin(),
+    createCodeTerminalPlugin(),
+    createTaskWorkPlugin(),
+    createCodeSubagentsPlugin(),
+    createToolCatalogPlugin(),
     createUploadsPlugin(),
     createProjectsPlugin(),
     createJobsPlugin({
       ...(deps.overrideJobs ? { injected: deps.overrideJobs } : {}),
-    }),
-    createPaymentsPlugin({
-      ...(deps.overridePayments ? { injected: deps.overridePayments } : {}),
     }),
     createSkillsPlugin(),
     createUsagePlugin(),
     createPermissionsPlugin({ events: deps.events }),
     createAgentModesPlugin(),
     createCodeToolsPlugin(),
+    createCodeUiAgentEventsPlugin(),
+    // Computer Use（CU 插件重活层）：工具面按安装态门控，非 darwin 显式 unavailable
+    createComputerUsePlugin(),
     createMcpPlugin(),
     createSearchPlugin(),
     createSystemPlugin(),
     createModelProvidersPlugin({
-      credentialEnv: deps.credentialEnv,
       ...(deps.overrideModelProviders
         ? { injectedModelProviders: deps.overrideModelProviders }
         : {}),
     }),
+    createModelProviderRoutesPlugin(),
     createGenerationPlugin({ env: deps.env }),
     // flow 宿主适配层：配了共享密钥才注册 /api/flow/host/*（见 features/flow/plugin.ts）
     createFlowHostPlugin({
       secret: deps.env.flowEmbedSecret,
       frontendUrl: deps.env.flowFrontendUrl,
     }),
-    createAdminPlugin(),
     createBrowserPlugin(),
     // 语音助手（内建插件，默认开启）：听/说走内置 sherpa 或 BYOK 实例端点
     createVoicePlugin(),
@@ -209,5 +229,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
         ? {}
         : { mockEventDelayMs: deps.mockEventDelayMs }),
     }),
+    createCodeUiPlugin(),
+    createRealtimePlugin(),
   ];
 }

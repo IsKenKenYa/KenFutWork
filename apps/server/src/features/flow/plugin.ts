@@ -3,9 +3,9 @@ import os from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import { registerFlowHostRoutes } from "../../http/flow-host.js";
 import type { PluginDefinition } from "../../kernel/types.js";
-import { createViewerRepository } from "../bootstrap/repository.js";
 import { createProcessRunCommand } from "./engine/exec.js";
 import {
   type EngineInstallOptions,
@@ -29,10 +29,7 @@ function stackEnvFile(options: EngineInstallOptions): string {
 }
 
 /** 引擎栈托管选项（compose 文件 + env/日志的数据目录）。 */
-function engineInstallOptions(): EngineInstallOptions {
-  const dataRoot =
-    process.env.KENFUTWORK_DATA_DIR?.trim() ||
-    join(repoRoot(), ".kenfutwork-data");
+function engineInstallOptions(dataRoot: string): EngineInstallOptions {
   return {
     composeFile: join(repoRoot(), "docker-compose.dify.yml"),
     dataDir: dataRoot,
@@ -44,13 +41,13 @@ function engineInstallOptions(): EngineInstallOptions {
  *
  * 能力缝三元组：
  * - Service Definition：`ff-embed/v1` 契约（`packages/shared/src/flow-host.ts`）
- * - Service Provider：本插件注册的宿主侧路由（身份交换 + 凭证下发 + 计费三段事务 +
- *   引擎栈托管）
+ * - Service Provider：本插件注册的宿主侧路由（本地能力探针 + 凭证下发；
+ *   事件随 P5 接上）
  * - Consumer：flow 网关的 embedded Provider（`flow/gateway/src/host/embedded-*.provider.ts`）
  *
  * 与 `plugins/flow` 的分工（FORM-11）：**这里**是基础设施（flow 网关回调宿主），
  * **插件**是产品入口（工作台 Flow 模式 + 引擎托管）。路由始终注册：status 是能力探针，
- * 未配齐也要如实回答 disabled 与缺失原因；身份/凭证/计费在未配密钥时按请求回 503
+ * 未配齐也要如实回答 disabled 与缺失原因；凭证回调在未配密钥时按请求回 503
  * （不假装能用）。
  */
 export function createFlowHostPlugin(deps: {
@@ -62,11 +59,9 @@ export function createFlowHostPlugin(deps: {
   return {
     name: "flow-host",
     inject: [
-      "auth",
-      "viewer",
+      "localAccess",
+      "localInstance",
       "modelProviders",
-      "credits",
-      "persistence",
       "ws",
     ],
     apply(ctx) {
@@ -83,30 +78,10 @@ export function createFlowHostPlugin(deps: {
       });
     },
     mounted(ctx) {
-      // 宿主 subject（身份缝下发的宿主用户 id）→ 账号与个人工作区：
-      // 身份缝的 subject 就是宿主 accounts.id，计费归属据此解析。
-      const viewerRepository = createViewerRepository(ctx.get("persistence"));
-      const accounts = {
-        async findBySubject(subject: string) {
-          const account = await ctx
-            .get("persistence")
-            .queryOne<{ id: string }>(
-              "select id from public.accounts where id = $1",
-              [subject],
-            );
-          if (!account) return null;
-          const workspace =
-            await viewerRepository.findPersonalWorkspace(subject);
-          return { userId: subject, workspaceId: workspace?.id ?? null };
-        },
-      };
-
       void registerFlowHostRoutes(ctx.app, {
-        auth: ctx.get("auth"),
-        viewer: ctx.get("viewer"),
+        localAccess: ctx.get("localAccess"),
+        localInstance: ctx.get("localInstance"),
         providers: ctx.get("modelProviders"),
-        credits: ctx.get("credits"),
-        accounts,
         // 事件缝透出走内核声明的 ws 缝（app.ts 装配时注册 connectionManager/eventBuffer）。
         ws: { connectionManager: ctx.get("ws").connectionManager },
         // 引擎探测层 + 托管（FORM-11）：探测路径，确认后拉镜像起栈，状态可轮询。
@@ -116,18 +91,21 @@ export function createFlowHostPlugin(deps: {
               platform: process.platform,
               release: os.release(),
               run: createProcessRunCommand(),
-              listSystemInstances: () =>
-                ctx.get("modelProviders").listSystemInstances(),
+              listInstances: async () => ctx.get("modelProviders").listInstances(await ctx.get("localInstance").serviceActor()),
             }),
         },
         engineInstall: {
-          start: () => startEngineInstall(engineInstallOptions()),
+          start: () => startEngineInstall(engineInstallOptions(resolveDesktopDataDir({ env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir } }))),
           status: () => getEngineInstallSnapshot(),
         },
         // 引擎信息页数据面：一次取全（状态 + 承载探测 + 栈容器事实 + 地址/路径）。
         engineInfo: {
           info: async () => {
-            const options = engineInstallOptions();
+            const options = engineInstallOptions(
+              resolveDesktopDataDir({
+                env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
+              }),
+            );
             // 密钥 env 不存在 = 从未安装过：没有可查的栈，空清单即可（不拿 compose 的
             // 插值报错当答案）；存在则与安装同一口径查询运行期事实。
             const envFile = stackEnvFile(options);
@@ -136,8 +114,12 @@ export function createFlowHostPlugin(deps: {
                 platform: process.platform,
                 release: os.release(),
                 run: createProcessRunCommand(),
-                listSystemInstances: () =>
-                  ctx.get("modelProviders").listSystemInstances(),
+                listInstances: async () =>
+                  ctx
+                    .get("modelProviders")
+                    .listInstances(
+                      await ctx.get("localInstance").serviceActor(),
+                    ),
               }),
               envFile
                 ? listEngineStackContainers(options.composeFile, { envFile })

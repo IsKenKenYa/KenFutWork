@@ -14,8 +14,8 @@ import type { FlowEngineInstallState } from "@/lib/use-flow-engine-install";
  * Flow 模式「引擎」页（宿主侧渲染）：资源管理器式排版——标题行 + 分段页签 +
  * 概览卡 + 表格，一屏一块表，不堆卡片。
  *
- * 数据面 `GET /api/flow/host/engine/info` 一次取全；安装动作与侧栏共用
- * `useFlowEngineInstall`。呈现纪律：只列宿主真正知道的（不确定的不编）；长值单行
+ * 数据面 `GET /api/flow/host/engine/info` 一次取全（本机接入 cookie，credentials: include）；
+ * 安装动作与侧栏共用 `useFlowEngineInstall`。呈现纪律：只列宿主真正知道的（不确定的不编）；长值单行
  * 省略、悬停看全文；容器与端口来自 `docker compose ps` 的运行期事实。
  */
 
@@ -28,12 +28,13 @@ const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
 ];
 
 export function FlowEnginePage({
-  accessToken,
   engineState,
+  engineNotice,
   onInstall,
 }: {
-  accessToken: string | null;
   engineState: FlowEngineInstallState;
+  /** 安装失败 / 超时的可读原因（hook 返回；成功为 null）。 */
+  engineNotice: string | null;
   onInstall: () => Promise<void>;
 }) {
   const [info, setInfo] = useState<FlowHostEngineInfoResponse | null>(null);
@@ -42,12 +43,11 @@ export function FlowEnginePage({
   const [tab, setTab] = useState<TabId>("containers");
 
   const refresh = useCallback(async () => {
-    if (!accessToken) return;
     setLoading(true);
     try {
       const response = await fetch(
         `${getServerBaseUrl()}/api/flow/host/engine/info`,
-        { headers: { Authorization: `Bearer ${accessToken}` } },
+        { credentials: "include" },
       );
       if (!response.ok) {
         throw new Error(
@@ -62,7 +62,7 @@ export function FlowEnginePage({
     } finally {
       setLoading(false);
     }
-  }, [accessToken]);
+  }, []);
 
   useEffect(() => {
     void refresh();
@@ -131,6 +131,9 @@ export function FlowEnginePage({
 
         {loadError ? (
           <p className="mt-3 text-xs text-destructive">{loadError}</p>
+        ) : null}
+        {engineNotice ? (
+          <p className="mt-3 text-xs text-destructive">{engineNotice}</p>
         ) : null}
         {info?.install.error ? (
           <p className="mt-3 text-xs text-destructive">{info.install.error}</p>

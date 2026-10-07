@@ -58,17 +58,9 @@ function audioResponse() {
 }
 
 beforeEach(() => {
-  // jsdom 有 URL.createObjectURL 吗？没有就补一个桩（只测我们的调用口径）
-  if (typeof URL.createObjectURL !== "function") {
-    Object.defineProperty(URL, "createObjectURL", {
-      value: vi.fn(() => "blob:fake"),
-      writable: true,
-    });
-    Object.defineProperty(URL, "revokeObjectURL", {
-      value: vi.fn(),
-      writable: true,
-    });
-  }
+  // Response.blob() 来自 Node fetch，jsdom 的兼容 URL 桥不能读取其内部字段。
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:fake");
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
 });
 
 afterEach(() => {

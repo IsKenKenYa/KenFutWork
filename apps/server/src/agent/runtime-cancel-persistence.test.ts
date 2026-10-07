@@ -1,9 +1,12 @@
 import type { StreamEvent } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
-
 import type { ServerEnv } from "../config/env.js";
 import type { KenFutWorkAgent, KenFutWorkAgentFactory } from "./deep-agent.js";
 import { createAgentRunService } from "./runtime.js";
+import {
+  createRuntimeTestInstance,
+  RUNTIME_TEST_ACTOR,
+} from "./runtime-test-fixtures.js";
 
 /**
  * 取消要落终态（GUI 实测抓到的缺陷）。
@@ -56,15 +59,12 @@ function makeRuntime() {
     blob: { upload: async () => ({}) } as never,
     env: makeEnv(),
     modelProviders: {
-      getInstanceScope: async () => "workspace",
       resolveCredentials: async () => ({
         apiKey: "sk-test",
         protocol: "openai-compatible",
       }),
     } as never,
-    viewerService: {
-      resolveWorkspace: async () => ({ id: "ws-cancel-test" }),
-    } as never,
+    localInstance: createRuntimeTestInstance(),
     agentPersistenceService: {
       getPersistence: async () => ({ checkpointer: null, store: null }),
     } as never,
@@ -88,10 +88,9 @@ describe("取消的终态落库（run.canceled）", () => {
         sessionId: "sess-cancel-1",
       },
       {
-        accessToken: "tok",
         model: "workspace-instance:test-model",
         threadId: "thread-cancel-1",
-        userId: "u-cancel",
+        actor: RUNTIME_TEST_ACTOR,
       },
     );
 

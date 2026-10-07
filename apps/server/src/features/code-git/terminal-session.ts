@@ -71,7 +71,7 @@ export interface StartTerminalSessionInput {
  * - cmd：裸参就是交互式；
  * - bash / sh：有 TTY 时自动进交互模式，不需要 `-i`。
  */
-function interactiveInvocation(shell: TerminalShellOption): string[] {
+export function interactiveInvocation(shell: TerminalShellOption): string[] {
   switch (shell.id) {
     case "powershell":
     case "pwsh":

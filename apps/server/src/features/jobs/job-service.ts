@@ -3,14 +3,12 @@ import type {
   BackgroundJobStatus,
   BackgroundJobType,
 } from "@kenfutwork/shared";
-import type { AuthenticatedUser } from "../auth/types.js";
-import type { ViewerService } from "../bootstrap/ensure-user-foundation.js";
-import type { QueueClient } from "../queue/types.js";
 import type {
-  BackgroundJobRecord,
-  JobCreditsInfo,
-  JobRepository,
-} from "./repository.js";
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
+import type { QueueClient } from "../queue/types.js";
+import type { BackgroundJobRecord, JobRepository } from "./repository.js";
 
 // Queue name mapping
 const QUEUE_MAP: Record<BackgroundJobType, string> = {
@@ -38,7 +36,7 @@ export class JobServiceError extends Error {
   }
 }
 
-/** 工作区由服务端从鉴权用户解析（`FORM-9`），故不由调用方传入。 */
+/** 实例归属由本地服务验证（`FORM-9`），故不由调用方传入。 */
 export type CreateJobInput = {
   projectId?: string;
   canvasId?: string;
@@ -49,24 +47,16 @@ export type CreateJobInput = {
 };
 
 export type JobService = {
-  createJob(
-    user: AuthenticatedUser,
-    input: CreateJobInput,
-  ): Promise<BackgroundJob>;
-  getJob(user: AuthenticatedUser, jobId: string): Promise<BackgroundJob>;
+  createJob(actor: LocalActor, input: CreateJobInput): Promise<BackgroundJob>;
+  getJob(actor: LocalActor, jobId: string): Promise<BackgroundJob>;
   listJobs(
-    user: AuthenticatedUser,
+    actor: LocalActor,
     filters?: { status?: BackgroundJobStatus; jobType?: BackgroundJobType },
   ): Promise<BackgroundJob[]>;
-  cancelJob(user: AuthenticatedUser, jobId: string): Promise<BackgroundJob>;
-  getJobAdmin(jobId: string): Promise<BackgroundJob>;
+  cancelJob(actor: LocalActor, jobId: string): Promise<BackgroundJob>;
+  getJobForWorker(jobId: string): Promise<BackgroundJob>;
 
-  // Admin-only methods (worker/executor 路径，无用户身份，按 id 取数)
-  setCreditsInfo(
-    jobId: string,
-    creditsCost: number,
-    transactionId: string,
-  ): Promise<void>;
+  // Worker 状态迁移不依赖接入客户端。
   markRunning(jobId: string): Promise<void>;
   markSucceeded(jobId: string, result: Record<string, unknown>): Promise<void>;
   markFailed(
@@ -89,17 +79,12 @@ export type JobService = {
   incrementAttempt(
     jobId: string,
   ): Promise<{ attempt_count: number; max_attempts: number }>;
-  /**
-   * 死信退款所需的扣费信息（worker 路径，按 id 取数）。
-   * 不存在返回 null；查询失败抛 `job_query_failed`。
-   */
-  getCreditsInfo(jobId: string): Promise<JobCreditsInfo | null>;
 };
 
 function mapJobRow(row: BackgroundJobRecord): BackgroundJob {
   return {
     id: row.id,
-    workspace_id: row.workspace_id,
+    instance_id: row.instance_id,
     project_id: row.project_id ?? null,
     canvas_id: row.canvas_id ?? null,
     session_id: row.session_id ?? null,
@@ -114,7 +99,7 @@ function mapJobRow(row: BackgroundJobRecord): BackgroundJob {
     attempt_count: row.attempt_count,
     max_attempts: row.max_attempts,
     provider_job_id: row.provider_job_id ?? null,
-    created_by: row.created_by,
+    created_by_client_id: row.created_by_client_id,
     created_at: row.created_at,
     updated_at: row.updated_at,
     started_at: row.started_at ?? null,
@@ -129,47 +114,44 @@ export function createJobService(options: {
   queue: QueueClient;
   repository: JobRepository;
   /**
-   * 用户路径（建/查/列/取消）需要它解析工作区；worker 进程只走按 id 的
-   * 状态迁移路径，可缺省。缺省时用户方法**立即 fail loud**。
+   * 接入路径（建/查/列/取消）需要它验证实例归属；worker 进程只走按 id 的
+   * 状态迁移路径，可缺省。缺省时接入方法**立即 fail loud**。
    */
-  viewerService?: ViewerService | undefined;
+  localInstance?: LocalInstanceService | undefined;
 }): JobService {
   const { queue, repository } = options;
 
-  function requireViewer(): ViewerService {
-    if (!options.viewerService) {
+  function requireLocalInstance(): LocalInstanceService {
+    if (!options.localInstance) {
       throw new JobServiceError(
         "job_query_failed",
-        "用户级任务操作需要 ViewerService（worker 进程不提供）。",
+        "本机任务操作需要 LocalInstanceService（worker 进程不提供）。",
         500,
       );
     }
-    return options.viewerService;
+    return options.localInstance;
   }
 
-  /** 工作区 id 一律由服务端从鉴权用户解析（`FORM-9`）。 */
-  async function requireWorkspaceId(
-    user: AuthenticatedUser,
+  /** 实例 id 一律由服务端验证（`FORM-9`）。 */
+  async function requireInstanceId(
+    actor: LocalActor,
     errorCode: JobServiceError["code"],
   ): Promise<string> {
-    const workspace = await requireViewer()
-      .resolveWorkspace(user)
+    const workspace = await requireLocalInstance()
+      .resolve(actor)
       .catch(() => null);
 
     if (!workspace) {
-      throw new JobServiceError(
-        errorCode,
-        "Unable to resolve workspace for job.",
-        500,
-      );
+      throw new JobServiceError(errorCode, "无法解析任务所属本地实例。", 500);
     }
 
-    return workspace.id;
+    return workspace.instanceId;
   }
 
   return {
-    async createJob(user, input) {
-      const workspaceId = await requireWorkspaceId(user, "job_create_failed");
+    async createJob(actor, input) {
+      // 新请求在HTTP准入处认领；在途Run提交的生成工作仍须正常完成。
+      const instanceId = await requireInstanceId(actor, "job_create_failed");
       const queueName = QUEUE_MAP[input.jobType];
 
       const job = await repository
@@ -181,8 +163,8 @@ export function createJobService(options: {
           queueName,
           ...(input.sessionId ? { sessionId: input.sessionId } : {}),
           ...(input.threadId ? { threadId: input.threadId } : {}),
-          userId: user.id,
-          workspaceId,
+          createdByClientId: actor.accessClientId,
+          instanceId,
         })
         .catch(() => null);
 
@@ -199,13 +181,13 @@ export function createJobService(options: {
         await queue.send(queueName, {
           job_id: job.id,
           job_type: input.jobType,
-          workspace_id: workspaceId,
+          instance_id: instanceId,
           ...(input.canvasId ? { canvas_id: input.canvasId } : {}),
           ...(input.sessionId ? { session_id: input.sessionId } : {}),
         });
       } catch (enqueueErr) {
         console.error("[job-service] queue.send failed:", enqueueErr);
-        await repository.delete(workspaceId, job.id).catch(() => 0);
+        await repository.delete(instanceId, job.id).catch(() => 0);
         throw new JobServiceError(
           "job_create_failed",
           "Failed to enqueue job.",
@@ -216,11 +198,11 @@ export function createJobService(options: {
       return mapJobRow(job);
     },
 
-    async getJob(user, jobId) {
-      const workspaceId = await requireWorkspaceId(user, "job_query_failed");
+    async getJob(actor, jobId) {
+      const instanceId = await requireInstanceId(actor, "job_query_failed");
 
       const job = await repository
-        .findByIdInWorkspace(workspaceId, jobId)
+        .findByIdInInstance(instanceId, jobId)
         .catch(() => {
           throw new JobServiceError(
             "job_query_failed",
@@ -235,11 +217,11 @@ export function createJobService(options: {
       return mapJobRow(job);
     },
 
-    async listJobs(user, filters) {
-      const workspaceId = await requireWorkspaceId(user, "job_query_failed");
+    async listJobs(actor, filters) {
+      const instanceId = await requireInstanceId(actor, "job_query_failed");
 
       const jobs = await repository
-        .listByCreator(workspaceId, user.id, {
+        .listForInstance(instanceId, {
           ...(filters?.jobType ? { jobType: filters.jobType } : {}),
           ...(filters?.status ? { status: filters.status } : {}),
         })
@@ -254,10 +236,10 @@ export function createJobService(options: {
       return jobs.map(mapJobRow);
     },
 
-    async cancelJob(user, jobId) {
-      const workspaceId = await requireWorkspaceId(user, "job_cancel_failed");
+    async cancelJob(actor, jobId) {
+      const instanceId = await requireInstanceId(actor, "job_cancel_failed");
 
-      const job = await repository.cancel(workspaceId, jobId).catch(() => {
+      const job = await repository.cancel(instanceId, jobId).catch(() => {
         throw new JobServiceError(
           "job_cancel_failed",
           "Failed to cancel job.",
@@ -275,7 +257,7 @@ export function createJobService(options: {
       return mapJobRow(job);
     },
 
-    async getJobAdmin(jobId) {
+    async getJobForWorker(jobId) {
       const job = await repository.findById(jobId).catch(() => {
         throw new JobServiceError(
           "job_query_failed",
@@ -288,24 +270,6 @@ export function createJobService(options: {
         throw new JobServiceError("job_not_found", "Job not found.", 404);
       }
       return mapJobRow(job);
-    },
-
-    async getCreditsInfo(jobId) {
-      return repository.findCreditsInfo(jobId).catch(() => {
-        throw new JobServiceError(
-          "job_query_failed",
-          "Failed to query job credits.",
-          500,
-        );
-      });
-    },
-
-    // --- worker/executor 路径：按 id 改状态（无用户身份） ---
-
-    async setCreditsInfo(jobId, creditsCost, transactionId) {
-      await repository
-        .setCreditsInfo(jobId, creditsCost, transactionId)
-        .catch(() => 0);
     },
 
     async markRunning(jobId) {

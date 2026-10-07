@@ -1,0 +1,18 @@
+[[permission]]
+identifier = "allow-local-desktop"
+description = "授权可信主窗口使用本机桌面命令；外部嵌入网页不授予此权限。"
+commands.allow = [
+  "ping",
+  "save_file",
+  "reveal_path",
+  "open_external",
+  "open_in_browser",
+  "open_data_directory",
+  "move_data_directory",
+  "browser_embed_open",
+  "browser_embed_bounds",
+  "browser_embed_visible",
+  "browser_embed_console",
+  "browser_embed_devtools",
+  "browser_embed_close",
+]

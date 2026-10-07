@@ -4,6 +4,8 @@ import type {
   PermissionTier,
 } from "@kenfutwork/shared";
 import { anyPermissionRuleMatches } from "@kenfutwork/shared";
+import type { CodeApprovalService } from "./approval-types.js";
+import { createCodeApprovalService } from "./code-approval.js";
 
 import {
   DEFAULT_PERMISSION_SETTINGS,
@@ -29,6 +31,7 @@ import {
  * 导致「写文件需审批」的政策实际从未生效——改动此表请以 `isDangerousTool` 的回归测试为准。
  */
 export const DANGEROUS_TOOL_PATTERNS = [
+  /^(Write|Edit|ApplyPatch|Bash|TaskInput|TaskStop)$/,
   /^mcp__/,
   /^diff_patch$/,
   // deepagents FilesystemMiddleware 内置写工具
@@ -66,7 +69,7 @@ export interface PermissionDecision {
   reason?: string;
 }
 
-export interface PermissionService {
+export interface PermissionService extends CodeApprovalService {
   getTier(threadId?: string): PermissionTier;
   setTier(threadId: string | undefined, tier: PermissionTier): void;
   /** 当前完整设置（档位 / 自动化档位 / 自定义规则 / 浏览器控制）。 */
@@ -107,6 +110,7 @@ export function createPermissionService(): PermissionService {
   };
 
   const service: PermissionService = {
+    ...createCodeApprovalService(),
     getTier(threadId) {
       return (threadId && threadTiers.get(threadId)) || settings.tier;
     },
@@ -164,12 +168,16 @@ export function createPermissionService(): PermissionService {
       };
     },
     approve(toolName, approval) {
+      if (approval.scope === "once") {
+        throw new Error(
+          "本次审批必须绑定真实工具调用，请通过当前 V4 审批请求回应。",
+        );
+      }
       if (approval.scope === "forever") {
         foreverApproved.add(toolName);
       } else if (approval.scope === "thread" && approval.threadId) {
         threadApproved.add(`${approval.threadId}:${toolName}`);
       }
-      // "once"：不记忆，本次放行由调用方直接执行
     },
     listApprovedForever() {
       return [...foreverApproved];

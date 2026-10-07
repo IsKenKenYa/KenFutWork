@@ -17,7 +17,7 @@ const JOB_ID = "aaaaaaaa-1111-1111-1111-111111111111";
 function jobRow(overrides: Partial<BackgroundJob> = {}): BackgroundJob {
   return {
     id: JOB_ID,
-    workspace_id: "ws-1",
+    instance_id: "ws-1",
     project_id: null,
     canvas_id: null,
     session_id: null,
@@ -36,7 +36,7 @@ function jobRow(overrides: Partial<BackgroundJob> = {}): BackgroundJob {
     attempt_count: 1,
     max_attempts: 3,
     provider_job_id: null,
-    created_by: "user-1",
+    created_by_client_id: "user-1",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     started_at: new Date().toISOString(),
@@ -54,7 +54,7 @@ function makeCtx(job: BackgroundJob) {
   }> = [];
   const ctx = {
     jobService: {
-      getJobAdmin: vi.fn(async () => job),
+      getJobForWorker: vi.fn(async () => job),
       setProviderJobId: vi.fn(async () => {}),
       appendJobPayload: vi.fn(async () => {}),
       markSucceeded: vi.fn(async () => {}),
@@ -85,7 +85,6 @@ function makeCtx(job: BackgroundJob) {
     assetWriter: {
       recordGeneratedAsset: vi.fn(async () => "asset-1"),
     },
-    creditService: {},
     usageService: undefined,
     sent,
   } as unknown as ExecutorContext & {
