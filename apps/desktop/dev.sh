@@ -19,7 +19,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-port_up() { curl -s -o /dev/null -m 3 "http://127.0.0.1:$1" 2>/dev/null; }
+port_up() { curl --noproxy '*' -s -o /dev/null -m 3 "http://127.0.0.1:$1" 2>/dev/null; }
 
 # 注意：macOS 自带 /bin/bash 为 3.2，其分词器缺陷会把「紧邻全角标点的未加括号
 # 变量」（如 $pid 后直接跟全角右括号）整体并入变量名，报 "pid: unbound
@@ -69,7 +69,7 @@ for _ in $(seq 1 90); do
   sleep 1
 done
 port_up 3001 || { echo "[dev] 服务端未能就绪，看 .kenfutwork-data/server-dev.log"; exit 1; }
-curl -sf -m 5 "http://127.0.0.1:3001/api/health" \
+curl --noproxy '*' -sf -m 5 "http://127.0.0.1:3001/api/health" \
   -o /dev/null || { echo "[dev] 服务端尚未就绪，请检查服务端日志"; exit 1; }
 echo "[dev] 服务端就绪（3001，本地实例）"
 
