@@ -1,0 +1,12 @@
+{
+  "20260926110000": {
+    "byVersion": "20261004195331",
+    "absentRelation": "public.workspace_settings",
+    "presentRelation": "public.instance_settings"
+  },
+  "20260926120000": {
+    "byVersion": "20261004195331",
+    "absentRelation": "public.workspace_settings",
+    "presentRelation": "public.instance_settings"
+  }
+}
