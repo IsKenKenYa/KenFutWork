@@ -168,6 +168,14 @@ async function createApp(options: {
     start(): { started: boolean; snapshot: unknown };
     status(): unknown;
   };
+  engineInfo?: {
+    info(): Promise<{
+      install: unknown;
+      probe: unknown;
+      stack: { containers: unknown[]; error?: string };
+      addresses: { composeFile: string; dataDir: string };
+    }>;
+  };
 }) {
   const app = Fastify();
   await registerFlowHostRoutes(app, {
@@ -192,6 +200,7 @@ async function createApp(options: {
         }),
         status: () => ({ state: "idle", logTail: [] }),
       } as never),
+    ...(options.engineInfo ? { engineInfo: options.engineInfo as never } : {}),
     engine:
       (options.engine as never) ??
       ({
@@ -924,5 +933,116 @@ describe("flow 引擎承载路径探测（/api/flow/host/engine，P6 探测层�
       ],
       recommended: "wsl2",
     });
+  });
+});
+
+describe("flow 引擎信息页（/api/flow/host/engine/info，FORM-11）", () => {
+  it("一次取全：托管状态 + 承载探测 + 栈容器 + 地址（身份回调按请求主机名拼）", async () => {
+    const app = await createApp({
+      auth: createAuth({ user: { id: "user-123" } as never }),
+      frontendUrl: "http://127.0.0.1:8090",
+      engineInfo: {
+        async info() {
+          return {
+            install: { state: "ready", logTail: ["up ok"] },
+            probe: {
+              platform: "win32",
+              paths: [
+                { id: "container", label: "本机容器", available: true },
+              ],
+              recommended: "container",
+            },
+            stack: {
+              containers: [
+                {
+                  service: "dify-api",
+                  name: "futureflow-dify-api-1",
+                  state: "running",
+                  health: "healthy",
+                  ports: ["127.0.0.1:15001->5001/tcp"],
+                },
+              ],
+            },
+            addresses: {
+              composeFile: "D:/repo/docker-compose.dify.yml",
+              dataDir: "D:/repo/.kenfutwork-data",
+            },
+          };
+        },
+      },
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/flow/host/engine/info",
+      headers: {
+        authorization: `Bearer ${HOST_TOKEN}`,
+        host: "127.0.0.1:3301",
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.install.state).toBe("ready");
+    expect(body.stack.containers[0].ports).toEqual(["127.0.0.1:15001->5001/tcp"]);
+    expect(body.addresses.frontendUrl).toBe("http://127.0.0.1:8090");
+    // 身份回调按本次请求的主机名拼（不写死端口/主机）
+    expect(body.addresses.hostIdentityUrl).toBe(
+      "http://127.0.0.1:3301/api/flow/host/identity",
+    );
+    expect(body.addresses.composeFile).toContain("docker-compose.dify.yml");
+  });
+
+  it("快照 idle 但有运行中容器：按容器事实校正为已就绪（重启归零的口径）", async () => {
+    const app = await createApp({
+      auth: createAuth({ user: { id: "user-123" } as never }),
+      engineInfo: {
+        async info() {
+          return {
+            install: { state: "idle", logTail: [] },
+            probe: { platform: "win32", paths: [], recommended: null },
+            stack: {
+              containers: [
+                {
+                  service: "api",
+                  name: "api-1",
+                  state: "running",
+                  health: "healthy",
+                  ports: [],
+                },
+              ],
+            },
+            addresses: { composeFile: "c.yml", dataDir: "d" },
+          };
+        },
+      },
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/flow/host/engine/info",
+      headers: { authorization: `Bearer ${HOST_TOKEN}` },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().install.state).toBe("ready");
+  });
+
+  it("未装配数据面：503 如实说明，不留假数据", async () => {
+    const app = await createApp({
+      auth: createAuth({ user: { id: "user-123" } as never }),
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/flow/host/engine/info",
+      headers: { authorization: `Bearer ${HOST_TOKEN}` },
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.message).toContain("引擎信息数据面未装配");
+  });
+
+  it("未登录：401", async () => {
+    const app = await createApp({ auth: createAuth({ user: null }) });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/flow/host/engine/info",
+    });
+    expect(response.statusCode).toBe(401);
   });
 });

@@ -4,12 +4,14 @@ import {
   applicationErrorResponseSchema,
   FLOW_EMBED_PROTOCOL_VERSION,
   type FlowEngineInstallStatus,
+  type FlowEngineStackContainer,
   type FlowHostEngineResponse,
   flowEngineInstallStatusSchema,
   flowHostBillingRequestSchema,
   flowHostBillingResponseSchema,
   flowHostCredentialsRequestSchema,
   flowHostCredentialsResponseSchema,
+  flowHostEngineInfoResponseSchema,
   flowHostEventsRequestSchema,
   flowHostEventsResponseSchema,
   flowHostIdentityRequestSchema,
@@ -88,6 +90,18 @@ export async function registerFlowHostRoutes(
     engineInstall: {
       start(): { started: boolean; snapshot: FlowEngineInstallStatus };
       status(): FlowEngineInstallStatus;
+    };
+    /**
+     * 引擎信息页的数据面（`GET /api/flow/host/engine/info`）：托管状态 + 承载探测 +
+     * 栈容器事实 + 地址/路径一次取全。由装配层实现（compose 文件与数据目录只在它那里）。
+     */
+    engineInfo?: {
+      info(): Promise<{
+        install: FlowEngineInstallStatus;
+        probe: FlowHostEngineResponse;
+        stack: { containers: FlowEngineStackContainer[]; error?: string };
+        addresses: { composeFile: string; dataDir: string };
+      }>;
     };
     /** 共享密钥；缺省表示本实例未启用 flow 宿主能力。 */
     secret?: string | undefined;
@@ -237,6 +251,44 @@ export async function registerFlowHostRoutes(
       .send(
         flowEngineInstallStatusSchema.parse(options.engineInstall.status()),
       );
+  });
+
+  app.get("/api/flow/host/engine/info", async (request, reply) => {
+    const user = await options.auth.authenticate(request);
+    if (!user) {
+      return sendUnauthorized(reply, "Missing or invalid bearer token.");
+    }
+    // 未装配数据面时如实回不可用（老装配不留假数据）。
+    if (!options.engineInfo) {
+      return sendUnavailable(reply, "引擎信息数据面未装配。");
+    }
+    const info = await options.engineInfo.info();
+    // 状态校正：安装状态快照是**进程内**的（服务重启归零为 idle），而栈可能仍在跑——
+    // 有运行中的容器就按「已就绪」呈现（schema 注释里「由调用方按 compose ps 重新探测」
+    // 指的就是这一步），否则用户会看到「未安装」与九个运行中容器同屏的矛盾画面。
+    const stackRunning = info.stack.containers.some(
+      (container) => container.state === "running",
+    );
+    const install =
+      info.install.state === "idle" && stackRunning
+        ? { ...info.install, state: "ready" as const }
+        : info.install;
+    // 宿主身份回调按**本次请求的主机名**拼：本实例可能是 127.0.0.1 / 局域网 IP / 域名，
+    // 写死任一个都会在另一种入口下给出错地址。
+    const hostIdentityUrl = `${request.protocol}://${request.headers.host ?? "127.0.0.1"}/api/flow/host/identity`;
+    return reply.code(200).send(
+      flowHostEngineInfoResponseSchema.parse({
+        install,
+        probe: info.probe,
+        stack: info.stack,
+        addresses: {
+          frontendUrl: options.frontendUrl?.trim() || null,
+          hostIdentityUrl,
+          composeFile: info.addresses.composeFile,
+          dataDir: info.addresses.dataDir,
+        },
+      }),
+    );
   });
 
   app.post("/api/flow/host/credentials", async (request, reply) => {

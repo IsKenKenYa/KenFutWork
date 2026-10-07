@@ -253,3 +253,46 @@ export const flowEngineInstallStatusSchema = z.object({
 export type FlowEngineInstallStatus = z.infer<
   typeof flowEngineInstallStatusSchema
 >;
+
+/**
+ * 引擎栈容器（`docker compose ps --format json` 的**运行期事实**，不猜配置文件）。
+ * `ports` 是 docker 报告原文（如 `127.0.0.1:15001->5001/tcp`），查询失败时容器清单为空
+ * 且 `error` 说明原因（docker 不可用等）。
+ */
+export const flowEngineStackContainerSchema = z.object({
+  service: z.string().min(1),
+  name: z.string().min(1),
+  state: z.string().min(1),
+  health: z.string().nullable(),
+  ports: z.array(z.string()),
+});
+export type FlowEngineStackContainer = z.infer<
+  typeof flowEngineStackContainerSchema
+>;
+
+/**
+ * 引擎信息页（`GET /api/flow/host/engine/info`）：工作台「引擎」页一次取全 ——
+ * 托管状态（install）+ 承载路径探测（probe）+ 栈容器事实（stack）+ 地址/路径（addresses）。
+ * 不编不确定的信息：地址只列宿主真正知道的（flow 前端地址、宿主身份回调、compose 与数据目录）。
+ */
+export const flowHostEngineInfoResponseSchema = z.object({
+  install: flowEngineInstallStatusSchema,
+  probe: flowHostEngineResponseSchema,
+  stack: z.object({
+    containers: z.array(flowEngineStackContainerSchema),
+    error: z.string().optional(),
+  }),
+  addresses: z.object({
+    /** flow 画布（前端）地址；未配置为 null。 */
+    frontendUrl: z.string().nullable(),
+    /** 宿主身份交换回调（flow 侧 HOST_IDENTITY_VERIFY_URL 应指向它）。 */
+    hostIdentityUrl: z.string().min(1),
+    /** 引擎栈 compose 文件路径。 */
+    composeFile: z.string().min(1),
+    /** 安装数据目录（自动生成的密钥 env 与安装日志都在这里）。 */
+    dataDir: z.string().min(1),
+  }),
+});
+export type FlowHostEngineInfoResponse = z.infer<
+  typeof flowHostEngineInfoResponseSchema
+>;

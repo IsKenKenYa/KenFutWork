@@ -11,7 +11,6 @@ import { VOICE_REFINE_CONTEXT_LIMIT } from "@kenfutwork/shared";
 import {
   Blocks,
   Brain,
-  CircleCheck,
   Code2,
   Folder,
   FolderOpen,
@@ -20,7 +19,6 @@ import {
   ListChecks,
   Loader2,
   MessageSquare,
-  PackagePlus,
   Palette,
   PanelLeftClose,
   PanelLeftOpen,
@@ -30,7 +28,6 @@ import {
   Send,
   Server,
   ShieldAlert,
-  TriangleAlert,
   Workflow,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -56,7 +53,6 @@ import {
   VOICE_SETTINGS_CHANGED_EVENT,
 } from "@/components/composer-voice";
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
-import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -89,8 +85,10 @@ import {
   FlowCanvasFrame,
   type FlowCanvasFrameHandle,
 } from "@/components/workbench/flow-canvas-frame";
+import { FlowEnginePage } from "@/components/workbench/flow-engine-page";
 import { GitBranchSelect } from "@/components/workbench/git-branch-select";
 import { McpModal } from "@/components/workbench/mcp-modal";
+import { useFlowEngineInstall } from "@/lib/use-flow-engine-install";
 import { formatElementReference } from "@/components/workbench/panel-browser-view";
 import { PluginMarketModal } from "@/components/workbench/plugin-market-modal";
 import {
@@ -723,59 +721,18 @@ export function Workbench() {
   const flowFrameRef = useRef<FlowCanvasFrameHandle>(null);
 
   // ── 引擎栈托管（FORM-11）：确认后拉镜像起栈，轮询到 ready ──
-  const { toast } = useToast();
-  const [engineState, setEngineState] = useState<
-    "idle" | "installing" | "ready" | "error" | "unsupported"
-  >("idle");
-  const runEngineInstall = useCallback(async () => {
-    const token = session?.access_token;
-    if (!token || engineState === "installing") return;
-    setEngineState("installing");
-    try {
-      const base = getServerBaseUrl();
-      const start = await fetch(`${base}/api/flow/host/engine/install`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!start.ok && start.status !== 409) {
-        throw new Error(
-          (await start.json().catch(() => ({})))?.error?.message ??
-            `HTTP ${start.status}`,
-        );
-      }
-      // 轮询安装状态（拉镜像分钟级；上限 30 分钟防挂死）
-      const deadline = Date.now() + 30 * 60 * 1000;
-      let snapshot: { state: string; error?: string } = { state: "installing" };
-      while (Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        const response = await fetch(
-          `${base}/api/flow/host/engine/install/status`,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-        if (!response.ok) continue;
-        snapshot = (await response.json()) as {
-          state: string;
-          error?: string;
-        };
-        if (snapshot.state === "ready" || snapshot.state === "error") break;
-      }
-      if (snapshot.state === "ready") {
-        toast("引擎栈已就绪（Dify 无头栈运行中）");
-        setEngineState("ready");
-      } else if (snapshot.state === "error") {
-        toast(`引擎栈安装失败：${snapshot.error ?? "详见服务端日志"}`, "error");
-        setEngineState("error");
-      } else {
-        toast("引擎栈安装超时，请稍后重试或查看服务端日志", "error");
-        setEngineState("error");
-      }
-    } catch (error: any) {
-      toast(`引擎栈安装失败：${error.message ?? "未知错误"}`, "error");
-      setEngineState("error");
-    }
-  }, [session, engineState]);
+  // 安装逻辑抽进 hook：侧栏快捷按钮与「引擎」信息页共用同一份状态（从哪边点安装，
+  // 两边的状态都跟着走）；toast 也在 hook 里，两个入口的反馈一致。
+  const { state: engineState, install: runEngineInstall } =
+    useFlowEngineInstall(session?.access_token ?? null);
 
   const [mode, setMode] = useState<WorkbenchMode>("code");
+  /**
+   * Flow 模式的子视图：`canvas` = 工作流画布（默认主界面）；`engine` = 「引擎」信息页
+   * （显式导航目的地：状态 / 承载路径 / 地址 / 栈容器事实，见 FlowEnginePage）。
+   * 与 Design 的主区不变量同一条纪律：只被**用户点侧栏导航**切换，不被对话框顶掉。
+   */
+  const [flowView, setFlowView] = useState<"canvas" | "engine">("canvas");
   /** 任务列表按模式分开存；flow 模式主区是工作流画布，没有会话列表（故恒为空）。 */
   const [tasksByMode, setTasksByMode] = useState<
     Record<WorkbenchMode, WorkbenchTask[]>
@@ -3165,48 +3122,28 @@ export function Workbench() {
                   key={item.path}
                   type="button"
                   disabled={!flowEntry?.available}
-                  onClick={() => flowFrameRef.current?.navigate(item.path)}
+                  onClick={() => {
+                    // 从「引擎」页回到画布导航项：切回画布再让 iframe 内路由跳转
+                    setFlowView("canvas");
+                    flowFrameRef.current?.navigate(item.path);
+                  }}
                   className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {item.icon}
                   {item.label}
                 </button>
               ))}
-              {/* 引擎栈安装（FORM-11）：Docker 可用时点此拉起无头栈；拉镜像分钟级。
-                  四态各自给图标（与上方导航项同一套 h-4 w-4 口径）：安装 / 转圈 / 对勾 / 警示——
-                  此前全态都是一句裸文字，安装中没有任何活动指示，看着像卡死。 */}
-              {flowEntry?.available && (
-                <button
-                  type="button"
-                  disabled={
-                    engineState === "installing" || engineState === "ready"
-                  }
-                  onClick={() => void runEngineInstall()}
-                  className="mt-1 flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {engineState === "installing" ? (
-                    <>
-                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                      引擎栈安装中…
-                    </>
-                  ) : engineState === "ready" ? (
-                    <>
-                      <CircleCheck className="h-4 w-4 shrink-0 text-emerald-600" />
-                      引擎栈已就绪
-                    </>
-                  ) : engineState === "error" ? (
-                    <>
-                      <TriangleAlert className="h-4 w-4 shrink-0 text-destructive" />
-                      重试安装引擎栈
-                    </>
-                  ) : (
-                    <>
-                      <PackagePlus className="h-4 w-4 shrink-0" />
-                      安装引擎栈
-                    </>
-                  )}
-                </button>
-              )}
+              {/* 引擎（FORM-11 托管）：独立信息页——状态 / 承载路径 / 地址 / 栈容器事实；
+                  安装与重试在页内（侧栏不再单独摆一个动作按钮，避免同一个东西两处入口）。 */}
+              <button
+                type="button"
+                onClick={() => setFlowView("engine")}
+                data-active={flowView === "engine"}
+                className="mt-1 flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[active=true]:bg-muted data-[active=true]:text-foreground"
+              >
+                <Server className="h-4 w-4 shrink-0" />
+                引擎
+              </button>
             </nav>
           ) : mode === "design" ? (
             /* Design：项目列表（+ 直接创建，无任务列表） */
@@ -3496,10 +3433,17 @@ export function Workbench() {
           / Code＝任务视图 或 居中编排器 */}
       <main className="min-w-0 flex-1 overflow-hidden bg-card">
         {mode === "flow" ? (
-          /* Flow：主区恒为 flow 画布（iframe 内含列表 / 编排 / 发布 / 执行全部视图），
-             与 Design 同一条不变量——不被任务/会话对话框顶掉。入口消失（如插件被卸载）
-             时如实说明，不放半截 iframe。 */
-          flowEntry === null ? (
+          /* Flow：主区为 flow 内容面——默认恒为工作流画布（iframe 内含列表 / 编排 / 发布 /
+             执行全部视图），与 Design 同一条不变量（不被任务/会话对话框顶掉）；「引擎」是
+             侧栏导航的显式目的地（状态 / 承载路径 / 地址 / 栈容器事实），不是对话框。
+             入口消失（如插件被卸载）时如实说明，不放半截 iframe。 */
+          flowView === "engine" ? (
+            <FlowEnginePage
+              accessToken={session?.access_token ?? null}
+              engineState={engineState}
+              onInstall={runEngineInstall}
+            />
+          ) : flowEntry === null ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               正在检查 flow 可用性…
             </div>

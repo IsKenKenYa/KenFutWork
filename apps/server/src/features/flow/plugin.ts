@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,11 +13,19 @@ import {
   startEngineInstall,
 } from "./engine/install.js";
 import { probeEnginePaths } from "./engine/probe.js";
+import { listEngineStackContainers } from "./engine/stack.js";
 
 /** 仓库根（探测 compose 文件与数据目录用；打包态由 KENFUTWORK_DATA_DIR 覆盖数据目录）。 */
 function repoRoot(): string {
   // plugin.ts = apps/server/src/features/flow/ → 上溯 5 层到仓库根
   return fileURLToPath(new URL("../../../../..", import.meta.url));
+}
+
+/** 安装生成的密钥 env（存在才用于 compose 查询；信息页是只读路径，不创建）。 */
+function stackEnvFile(options: EngineInstallOptions): string {
+  return existsSync(join(options.dataDir, "dify-stack.env"))
+    ? join(options.dataDir, "dify-stack.env")
+    : "";
 }
 
 /** 引擎栈托管选项（compose 文件 + env/日志的数据目录）。 */
@@ -114,6 +123,36 @@ export function createFlowHostPlugin(deps: {
         engineInstall: {
           start: () => startEngineInstall(engineInstallOptions()),
           status: () => getEngineInstallSnapshot(),
+        },
+        // 引擎信息页数据面：一次取全（状态 + 承载探测 + 栈容器事实 + 地址/路径）。
+        engineInfo: {
+          info: async () => {
+            const options = engineInstallOptions();
+            // 密钥 env 不存在 = 从未安装过：没有可查的栈，空清单即可（不拿 compose 的
+            // 插值报错当答案）；存在则与安装同一口径查询运行期事实。
+            const envFile = stackEnvFile(options);
+            const [probe, stack] = await Promise.all([
+              probeEnginePaths({
+                platform: process.platform,
+                release: os.release(),
+                run: createProcessRunCommand(),
+                listSystemInstances: () =>
+                  ctx.get("modelProviders").listSystemInstances(),
+              }),
+              envFile
+                ? listEngineStackContainers(options.composeFile, { envFile })
+                : Promise.resolve({ containers: [] }),
+            ]);
+            return {
+              install: getEngineInstallSnapshot(),
+              probe,
+              stack,
+              addresses: {
+                composeFile: options.composeFile,
+                dataDir: options.dataDir,
+              },
+            };
+          },
         },
         secret: deps.secret,
         frontendUrl: deps.frontendUrl,
