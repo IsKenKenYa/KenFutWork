@@ -138,16 +138,25 @@ describe("withWorkDirAlias × FilesystemBackend（virtualMode）", () => {
     expect(JSON.stringify(read)).toContain("hello");
   });
 
-  it("未加别名层的同一个后端：绝对路径静默空列表（bug 本体，锁死不回归）", async () => {
-    const root = makeRoot();
-    const realRoot = resolve(root);
-    const bare = new FilesystemBackend({
-      rootDir: realRoot,
-      virtualMode: true,
-    });
+  /**
+   * 这条锁的是 **POSIX** 上虚拟模式的「静默空列表」：`/Volumes/…` 被当成虚拟根下的
+   * 相对段拼到 cwd 下面、查无此物。Windows 上盘符绝对路径走 `path.resolve` 短路——
+   * 根内直达、根外直接抛越界错（没有「静默」这一态），所以本用例只在 POSIX 宿主上有意
+   * 义（2026-10-06 真机核对时标注）。
+   */
+  it.skipIf(process.platform === "win32")(
+    "未加别名层的同一个后端：绝对路径静默空列表（bug 本体，锁死不回归）",
+    async () => {
+      const root = makeRoot();
+      const realRoot = resolve(root);
+      const bare = new FilesystemBackend({
+        rootDir: realRoot,
+        virtualMode: true,
+      });
 
-    vi.stubGlobal("console", console);
-    const listed = await bare.ls(`${realRoot}`);
-    expect(listed.files).toEqual([]);
-  });
+      vi.stubGlobal("console", console);
+      const listed = await bare.ls(`${realRoot}`);
+      expect(listed.files).toEqual([]);
+    },
+  );
 });
