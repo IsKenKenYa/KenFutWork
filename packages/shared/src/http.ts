@@ -299,6 +299,7 @@ export const agentSubagentListResponseSchema = z.object({
       description: z.string(),
     }),
   ),
+
 });
 
 export type AgentSubagentListResponse = z.infer<
@@ -347,6 +348,35 @@ export const agentRunActivityResponseSchema = z.object({
     totalSeconds: z.number().int().nonnegative(),
   }),
 });
+
+// --- 会话最近一轮 run 的终态（失败轮的原因要给界面看服务端原文） ---
+
+/**
+ * `GET /api/agent/runs/latest?sessionId=…` 的响应。
+ *
+ * 用途：Code 模式的转录存在客户端本地任务仓，只记收到的事件；断线/重启会让
+ * 「本轮为什么结束」在本地丢失（实测：界面只剩「已工作 N 秒」）。服务端
+ * `agent_runs` 里一直有终态与原因（`error_message`），这个只读端点把它交给界面兜底。
+ * 会话不属于调用方本地实例、或该会话还没有任何一轮 run 时，`run` 为 null。
+ */
+export const agentRunLatestResponseSchema = z.object({
+  run: z
+    .object({
+      /** 运行状态（`accepted` / `running` / `completed` / `failed` / `canceled`）。 */
+      status: z.string().min(1),
+      errorCode: z.string().nullable(),
+      /** 面向用户的失败原因原文（服务端写的可读文案）。 */
+      errorMessage: z.string().nullable(),
+      /** ISO 时间。 */
+      startedAt: z.string().min(1),
+      completedAt: z.string().nullable(),
+    })
+    .nullable(),
+});
+
+export type AgentRunLatestResponse = z.infer<
+  typeof agentRunLatestResponseSchema
+>;
 
 export const codeGitFileResponseSchema = z.object({
   file: z.object({
@@ -484,6 +514,8 @@ export const applicationErrorCodeSchema = z.enum([
   "flow_billing_conflict",
   /** flow 计费缝（P4）：其余失败 → 500。 */
   "flow_billing_failed",
+  /** flow 引擎托管（FORM-11）：安装已在进行中（409），轮询 status 即可。 */
+  "flow_engine_install_running",
 ]);
 
 export const applicationErrorResponseSchema = z.object({

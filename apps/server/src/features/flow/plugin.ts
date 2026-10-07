@@ -1,9 +1,31 @@
 import os from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
+import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import { registerFlowHostRoutes } from "../../http/flow-host.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { createProcessRunCommand } from "./engine/exec.js";
+import {
+  type EngineInstallOptions,
+  getEngineInstallSnapshot,
+  startEngineInstall,
+} from "./engine/install.js";
 import { probeEnginePaths } from "./engine/probe.js";
+
+/** 仓库根（探测 compose 文件与数据目录用；打包态由 KENFUTWORK_DATA_DIR 覆盖数据目录）。 */
+function repoRoot(): string {
+  // plugin.ts = apps/server/src/features/flow/ → 上溯 5 层到仓库根
+  return fileURLToPath(new URL("../../../../..", import.meta.url));
+}
+
+/** 引擎栈托管选项（compose 文件 + env/日志的数据目录）。 */
+function engineInstallOptions(dataRoot: string): EngineInstallOptions {
+  return {
+    composeFile: join(repoRoot(), "docker-compose.dify.yml"),
+    dataDir: dataRoot,
+  };
+}
 
 /**
  * flow-host 插件：宿主适配层的宿主侧端点（`/api/flow/host/*`，`ff-embed/v1`）。
@@ -53,7 +75,7 @@ export function createFlowHostPlugin(deps: {
         providers: ctx.get("modelProviders"),
         // 事件缝透出走内核声明的 ws 缝（app.ts 装配时注册 connectionManager/eventBuffer）。
         ws: { connectionManager: ctx.get("ws").connectionManager },
-        // 引擎探测层：只探测可用路径（下载与生命周期托管待 §9.1 拍板后落地）。
+        // 引擎探测层 + 托管（FORM-11）：探测路径，确认后拉镜像起栈，状态可轮询。
         engine: {
           probe: () =>
             probeEnginePaths({
@@ -62,6 +84,10 @@ export function createFlowHostPlugin(deps: {
               run: createProcessRunCommand(),
               listInstances: async () => ctx.get("modelProviders").listInstances(await ctx.get("localInstance").serviceActor()),
             }),
+        },
+        engineInstall: {
+          start: () => startEngineInstall(engineInstallOptions(resolveDesktopDataDir({ env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir } }))),
+          status: () => getEngineInstallSnapshot(),
         },
         secret: deps.secret,
         frontendUrl: deps.frontendUrl,

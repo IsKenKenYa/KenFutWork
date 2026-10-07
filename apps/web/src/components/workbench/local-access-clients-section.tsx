@@ -33,8 +33,7 @@ export function LocalAccessClientsSection() {
     <section aria-label="外部应用授权设置">
       <h3 className="mb-1 text-base font-medium">外部应用授权</h3>
       <p className="mb-3 text-sm text-muted-foreground">
-        给外部应用、脚本或 CI
-        使用的本机访问令牌，可操作此实例的项目、配置与插件。令牌只显示一次，可随时撤销。
+        外部应用 · 脚本 · CI 本机授权
       </p>
 
       <div className="flex items-center gap-2">
@@ -42,7 +41,7 @@ export function LocalAccessClientsSection() {
           aria-label="令牌名字"
           value={name}
           onChange={(event) => setName(event.target.value)}
-          placeholder="名字，如：CI 部署"
+          placeholder="名称 · 如 CI 部署"
           className="min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1 text-sm outline-none"
         />
         <Button
@@ -76,7 +75,7 @@ export function LocalAccessClientsSection() {
       {created ? (
         <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
           <p className="mb-1 text-xs text-amber-700 dark:text-amber-400">
-            令牌只显示这一次，复制保存好；关闭后需要重新生成。
+            令牌仅显示一次 · 请复制保存
           </p>
           <code className="block break-all font-mono text-xs">{created}</code>
           <button
@@ -95,7 +94,7 @@ export function LocalAccessClientsSection() {
       <ul className="mt-3 divide-y rounded-lg border">
         {tokens.length === 0 ? (
           <li className="px-3 py-2 text-sm text-muted-foreground">
-            还没有令牌。
+            没有令牌
           </li>
         ) : null}
         {tokens.map((token) => (
@@ -105,12 +104,12 @@ export function LocalAccessClientsSection() {
               <span className="block truncate text-sm">
                 {token.label}
                 {token.revokedAt ? (
-                  <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     已吊销
                   </span>
                 ) : null}
               </span>
-              <span className="block font-mono text-[11px] text-muted-foreground">
+              <span className="block font-mono text-xs text-muted-foreground">
                 {token.kind === "api"
                   ? "脚本"
                   : token.kind === "browser"
@@ -156,7 +155,7 @@ export function LocalAccessClientsSection() {
       </ul>
 
       <p className="mt-2 text-xs text-muted-foreground">
-        已授权本机接入可创建和撤销客户端。撤销后该客户端需重新连接。
+        撤销后需要重新连接
       </p>
 
       {notice ? (

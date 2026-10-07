@@ -12,8 +12,12 @@ import type { PersistenceService } from "../persistence/types.js";
 export interface StoredMcpServer {
   id: string;
   name: string;
+  /** 传输类型：stdio = 本地子进程；http = 远程 Streamable HTTP/SSE。 */
+  kind: "stdio" | "http";
   command: string;
   args: string[];
+  /** http 类型的远程端点 URL（stdio 为空）。 */
+  url: string | null;
   env: Record<string, string>;
   enabled: boolean;
   createdAt: string;
@@ -24,8 +28,10 @@ export interface StoredMcpServer {
 export interface PublicMcpServer {
   id: string;
   name: string;
+  kind: "stdio" | "http";
   command: string;
   args: string[];
+  url: string | null;
   envKeys: string[];
   enabled: boolean;
   createdAt: string;
@@ -34,11 +40,30 @@ export interface PublicMcpServer {
 
 export interface McpServerUpsertInput {
   name: string;
-  command: string;
+  /** 传输类型：stdio = 本地子进程，http = 远程端点。缺省 stdio。 */
+  kind?: "stdio" | "http";
+  /** stdio 的本地命令（http 类型为空串，由归一化层写入）。 */
+  command?: string;
   args: string[];
+  /** http 类型的远程端点 URL（stdio 为 null）。 */
+  url: string | null;
   env: Record<string, string>;
   enabled: boolean;
 }
+
+/**
+ * HTTP 层原始输入：zod `.optional()` 解析结果的属性可能显式为 `undefined`，
+ * exactOptionalPropertyTypes 下与 UpsertInput（可选但不可 undefined）分型。
+ */
+export type McpServerCreateRaw = {
+  name: string;
+  kind?: "stdio" | "http" | undefined;
+  command?: string | undefined;
+  args: string[];
+  url?: string | null | undefined;
+  env: Record<string, string>;
+  enabled: boolean;
+};
 
 /** 部分更新（exactOptionalPropertyTypes 下显式允许 undefined 值）。 */
 export type McpServerPatch = {
@@ -60,8 +85,10 @@ export interface McpServerStore {
 type Row = {
   id: string;
   name: string;
+  kind: string;
   command: string;
   args: unknown;
+  url: string | null;
   env: unknown;
   enabled: boolean;
   created_at: string;
@@ -91,8 +118,10 @@ function toStored(row: Row): StoredMcpServer {
   return {
     id: row.id,
     name: row.name,
+    kind: row.kind === "http" ? "http" : "stdio",
     command: row.command,
     args: asStringArray(row.args),
+    url: row.url,
     env: asStringRecord(row.env),
     enabled: row.enabled,
     createdAt: row.created_at,
@@ -104,8 +133,10 @@ function toPublic(row: Row): PublicMcpServer {
   return {
     id: row.id,
     name: row.name,
+    kind: row.kind === "http" ? "http" : "stdio",
     command: row.command,
     args: asStringArray(row.args),
+    url: row.url,
     envKeys: Object.keys(asStringRecord(row.env)),
     enabled: row.enabled,
     createdAt: row.created_at,
@@ -113,7 +144,8 @@ function toPublic(row: Row): PublicMcpServer {
   };
 }
 
-const COLUMNS = "id, name, command, args, env, enabled, created_at, updated_at";
+const COLUMNS =
+  "id, name, kind, command, args, url, env, enabled, created_at, updated_at";
 
 export function createMcpServerStore(
   persistence: PersistenceService,
@@ -146,13 +178,15 @@ export function createMcpServerStore(
 
     async create(input) {
       const row = await (await scoped()).queryOne<Row>(
-        `insert into public.mcp_servers (instance_id, name, command, args, env, enabled)
-         values (:instance, $1, $2, $3::jsonb, $4::jsonb, $5)
+        `insert into public.mcp_servers (instance_id, name, kind, command, args, url, env, enabled)
+         values (:instance, $1, $2, $3, $4::jsonb, $5, $6::jsonb, $7)
          returning ${COLUMNS}`,
         [
           input.name,
+          input.kind ?? "stdio",
           input.command,
           JSON.stringify(input.args),
+          input.url,
           JSON.stringify(input.env),
           input.enabled,
         ],
@@ -172,7 +206,9 @@ export function createMcpServerStore(
         sets.push(fragment.replace("$?", `$${params.length}`));
       };
       if (patch.name !== undefined) push("name = $?", patch.name);
+      if (patch.kind !== undefined) push("kind = $?", patch.kind);
       if (patch.command !== undefined) push("command = $?", patch.command);
+      if (patch.url !== undefined) push("url = $?", patch.url);
       if (patch.args !== undefined)
         push("args = $?::jsonb", JSON.stringify(patch.args));
       if (patch.env !== undefined)

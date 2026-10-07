@@ -124,26 +124,31 @@ export function LocalInstanceSection() {
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            数据目录迁移和打开目录请在桌面应用中操作。
+            请在桌面应用中迁移或打开目录
           </p>
         )}
         {desktop && locationLoaded && !canMove ? (
           <p className="text-sm text-muted-foreground">
-            当前服务未由桌面管理，数据目录迁移不可用。
+            非桌面托管服务 · 无法迁移目录
           </p>
         ) : null}
         <p className="text-sm text-muted-foreground">
-          迁移会等待在途任务结束，停机复制并校验应用数据后重启。失败时继续使用原目录；项目代码目录不会移动。
+          迁移前等待任务结束
+          <br />停机复制并校验后重启
+          <br />失败保留原目录 · 项目代码目录不移动
         </p>
       </div>
       <div className="space-y-2">
         <h4 className="text-sm font-medium">备份与恢复</h4>
         <p className="text-sm text-muted-foreground">
-          退出桌面应用并确认服务与数据库已停止，再复制整个数据目录作为备份。恢复时使用完整备份目录启动。供应商
-          Key 以明文保存在目录中，请妥善保管备份。
+          停机后复制完整数据目录
+          <br />使用完整备份目录恢复
+          <br />供应商 Key 以明文保存 · 妥善保管备份
         </p>
         <p className="text-sm text-muted-foreground">
-          恢复保留项目与会话。外部项目目录缺失时需重新关联；已有任务不会自动重放。
+          项目与会话保留
+          <br />外部目录缺失需重新关联
+          <br />已有任务不自动重放
         </p>
       </div>
       {notice ? (

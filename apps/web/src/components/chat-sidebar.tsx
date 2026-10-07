@@ -1330,9 +1330,7 @@ export function ChatSidebar({
           {!ws.connected && (
             <div className="flex items-center gap-2 px-4 py-2 bg-muted border-b border-border">
               <div className="h-2 w-2 rounded-full bg-red-500 animate-[pulse_1.2s_ease-in-out_infinite]" />
-              <span className="text-[11px] text-muted-foreground">
-                连接已断开，正在重连...
-              </span>
+              <span className="text-[11px] text-muted-foreground">重连中…</span>
             </div>
           )}
 
@@ -1407,6 +1405,7 @@ export function ChatSidebar({
               mentions={messageMentions}
               onRemoveMention={handleRemoveMention}
               {...(selectedCanvasElements ? { selectedCanvasElements } : {})}
+              {...(accessToken ? { accessToken } : {})}
             />
           </div>
         </>

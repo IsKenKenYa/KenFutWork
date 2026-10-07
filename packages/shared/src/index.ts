@@ -21,4 +21,5 @@ export * from "./model-context-windows.js";
 export * from "./plugin-contracts.js";
 export * from "./provider-contracts.js";
 export * from "./skill-contracts.js";
+export * from "./voice-contracts.js";
 export * from "./ws-protocol.js";

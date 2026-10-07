@@ -82,6 +82,9 @@ pub fn connection_url(data_dir: &Path, port: u16, ui_base: &str) -> Result<Strin
 mod tests {
     use super::*;
     use std::net::TcpListener;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
     fn data_dir() -> std::path::PathBuf {
         let suffix = std::time::SystemTime::now()
@@ -89,7 +92,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let path =
-            std::env::temp_dir().join(format!("kfw-native-access-{}-{suffix}", std::process::id()));
+            std::env::temp_dir().join(format!("kfw-native-access-{}-{suffix}-{}", std::process::id(), NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)));
         std::fs::create_dir_all(path.join("local-access")).unwrap();
         path
     }

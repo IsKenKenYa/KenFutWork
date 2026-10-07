@@ -10,6 +10,13 @@ import type {
 import { Blocks, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { getServerBaseUrl } from "@/lib/env";
 import { serverFetch } from "@/lib/local-access";
 import {
@@ -245,7 +252,7 @@ export function SkillsModal({
             <SkillsMarketPanel
               accessToken={accessToken}
               onInstalled={(name) => {
-                setNotice(`已安装「${name}」，可在「技能库」启用。`);
+                setNotice(`已安装「${name}」· 在「技能库」启用`);
                 refresh();
               }}
             />
@@ -569,15 +576,13 @@ function SkillsCreatePanel({
           </button>
         </div>
         <p className="text-xs text-muted-foreground">
-          工作目录里的技能包会出现在这里，可一键导入当前工作区。
+          工作目录里的技能包会出现在这里
         </p>
         {packagesError ? (
           <p className="text-xs text-destructive">{packagesError}</p>
         ) : null}
         {!packagesError && !packagesLoading && packages.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            当前工作目录里没有技能包。
-          </p>
+          <p className="text-xs text-muted-foreground">没有技能包</p>
         ) : null}
         {packages.length > 0 ? (
           <ul className="space-y-2">
@@ -641,20 +646,27 @@ function SkillsCreatePanel({
             onChange={(event) => setName(event.target.value)}
             className="rounded-md border px-2 py-1.5 text-sm outline-none"
           />
-          <select
-            aria-label="技能分类"
+          <Select
             value={category}
-            onChange={(event) =>
-              setCategory(event.target.value as SkillCategory)
-            }
-            className="rounded-md border px-2 py-1.5 text-sm outline-none"
+            onValueChange={(next) => {
+              if (typeof next === "string") setCategory(next as SkillCategory);
+            }}
+            items={CATEGORIES.map((item) => ({
+              value: item,
+              label: skillCategoryLabel(item),
+            }))}
           >
-            {CATEGORIES.map((item) => (
-              <option key={item} value={item}>
-                {skillCategoryLabel(item)}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger aria-label="技能分类" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CATEGORIES.map((item) => (
+                <SelectItem key={item} value={item}>
+                  {skillCategoryLabel(item)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <input
           aria-label="技能描述"
@@ -784,7 +796,7 @@ function SkillsMarketPanel({
       <div className="flex items-center gap-2">
         <input
           aria-label="搜索市场"
-          placeholder="搜索技能（英文关键词更准，如 pdf / browser / seo）"
+          placeholder="如 pdf / browser / seo"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
@@ -805,7 +817,8 @@ function SkillsMarketPanel({
 
       <p className="text-xs text-muted-foreground">
         来自 npm 技能市场
-        {total > 0 ? `，共 ${total} 个（显示前 ${items.length} 个）` : ""}。
+        {total > 0 ? ` · 共 ${total} 个` : ""}
+        {items.length < total ? ` · 显示前 ${items.length} 个` : ""}
       </p>
 
       {message ? <p className="text-xs text-emerald-600">{message}</p> : null}
@@ -813,15 +826,9 @@ function SkillsMarketPanel({
       {loading && items.length === 0 ? (
         <ListLoading label="正在检索技能市场…" rows={3} />
       ) : error ? (
-        <ListError
-          message={error}
-          hint="也可以跳过市场，用「导入 / 新建」从链接安装。"
-        />
+        <ListError message={error} hint="也可用「导入 / 新建」从链接安装" />
       ) : items.length === 0 ? (
-        <ListEmpty
-          title="没有匹配的技能"
-          hint="换英文关键词再试（如 pdf / browser / seo）。"
-        />
+        <ListEmpty title="没有匹配的技能" hint="换英文关键词再试" />
       ) : (
         <ul className="space-y-2">
           {items.map((item) => (

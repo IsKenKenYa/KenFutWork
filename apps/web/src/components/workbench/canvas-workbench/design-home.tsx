@@ -66,7 +66,7 @@ export function DesignHome({
   const mode = "design";
   const meta = {
     title: "Design with KenFutWork",
-    placeholder: "从想法到设计，生成可交付的页面原型。",
+    placeholder: "从想法到页面原型",
     chips: ["设计还原", "概念成稿", "规范出图"],
   };
   const submitting = false;
@@ -124,7 +124,7 @@ export function DesignHome({
                       taskId={null}
                       placeholder={
                         mode === "design"
-                          ? "从想法到设计，生成可交付的页面原型。先在左侧创建一个项目。"
+                          ? "先创建项目再开始设计"
                           : meta.placeholder
                       }
                       submitting={submitting}

@@ -7,7 +7,9 @@ import { createSearchPlugin } from "./plugin.js";
 import {
   createWebChannelSearchTool,
   createWebSearchTool,
+  decodeHtmlEntities,
   hrefFromHint,
+  parseBingRss,
   parseSearchError,
   parseSearchResponse,
 } from "./web-search.js";
@@ -285,12 +287,13 @@ describe("网页通道搜索（没配 Key 时的执行面）", () => {
     elements,
   });
 
-  it("抓结果页 → 只留外部链接（引擎自己的导航链接剔掉）", async () => {
+  it("HTML 路径（百度）：抓结果页 → 只留外部链接（引擎自己的导航链接剔掉）", async () => {
     const tool = createWebChannelSearchTool({
+      engine: "baidu",
       snapshot: async () =>
         snapshotOf([
-          anchor("登录", "https://www.bing.com/login"),
-          anchor("下一个", "https://cn.bing.com/search?q=x&first=10"),
+          anchor("百度首页", "https://www.baidu.com/"),
+          anchor("下一页", "https://www.baidu.com/s?wd=x&pn=10"),
           anchor("KenFutWork 官网", "https://kenfut.example/"),
           anchor("文档", "https://docs.kenfut.example/start"),
         ]),
@@ -301,7 +304,7 @@ describe("网页通道搜索（没配 Key 时的执行面）", () => {
       engine: string;
     };
     expect(result.channel).toBe("web");
-    expect(result.engine).toBe("Bing");
+    expect(result.engine).toBe("百度");
     expect(result.results.map((r) => r.link)).toEqual([
       "https://kenfut.example/",
       "https://docs.kenfut.example/start",
@@ -324,6 +327,7 @@ describe("网页通道搜索（没配 Key 时的执行面）", () => {
 
   it("相对链接 / javascript: / 无文字链接都不当成结果（拿不到绝对地址就不编）", async () => {
     const tool = createWebChannelSearchTool({
+      engine: "baidu",
       snapshot: async () =>
         snapshotOf([
           anchor("相对链接", "/search?q=x"),
@@ -345,6 +349,7 @@ describe("网页通道搜索（没配 Key 时的执行面）", () => {
       anchor(`结果${i}`, `https://site${i}.example/`),
     );
     const tool = createWebChannelSearchTool({
+      engine: "baidu",
       snapshot: async () =>
         snapshotOf([
           anchor("重复", "https://kenfut.example/"),
@@ -365,17 +370,19 @@ describe("网页通道搜索（没配 Key 时的执行面）", () => {
 
   it("一条都没解析出来时如实说明（不假装搜到了，且给出可行的替代）", async () => {
     const tool = createWebChannelSearchTool({
+      engine: "baidu",
       snapshot: async () =>
-        snapshotOf([anchor("登录", "https://www.bing.com/login")]),
+        snapshotOf([anchor("百度首页", "https://www.baidu.com/")]),
     });
     const result = (await tool.execute({ query: "x" }, {})) as {
       results: unknown[];
       note: string;
     };
     expect(result.results).toEqual([]);
-    expect(result.note).toContain("没解析出可用的结果链接");
+    expect(result.note).toContain("没解析出结果");
     // 要点出「不是搜不到」以及三条替代路
     expect(result.note).toContain("不是「搜不到」");
+    expect(result.note).toContain("安全验证");
     expect(result.note).toContain("browser_navigate");
     expect(result.note).toContain("搜索供应商 Key");
   });
@@ -406,6 +413,89 @@ describe("网页通道搜索（没配 Key 时的执行面）", () => {
     await expect(tool.execute({ query: "  " }, {})).rejects.toThrow(
       "web_search 需要 query 参数",
     );
+  });
+});
+
+/**
+ * RSS 通道（Bing，默认引擎）。真机实测（2026-10-06）：Bing 结果页 HTML 里结果链接全是
+ * `bing.com/ck/a?…` 重定向（引擎域）——HTML 路径按「剔掉引擎链接」的口径恒 0 条；
+ * `&format=rss` 是可行解（结构化条目：标题 / 直链 / 摘要）。
+ */
+describe("网页通道搜索（Bing RSS）", () => {
+  const RSS = `<?xml version="1.0" encoding="utf-8" ?>
+<rss version="2.0"><channel><title>Bing: KenFutWork</title>
+<item><title>KenFutWork &amp; BYOK</title><link>https://kenfut.example/</link><description>&lt;b&gt;BYOK&lt;/b&gt; 平台 &amp; 工作台</description></item>
+<item><title><![CDATA[文档 · 快速开始]]></title><link>https://docs.kenfut.example/start</link><description><![CDATA[从零跑一遍 <em>quickstart</em>]]></description></item>
+<item><title>重复</title><link>https://kenfut.example/</link><description>dup</description></item>
+<item><title>非 http</title><link>ftp://x.example/a</link><description>nope</description></item>
+</channel></rss>`;
+
+  it("解析：标题/直链/摘要（解实体、剥 CDATA 与标签），去重、滤非 http、按 num 截断", () => {
+    expect(parseBingRss(RSS, 10)).toEqual([
+      {
+        title: "KenFutWork & BYOK",
+        link: "https://kenfut.example/",
+        content: "BYOK 平台 & 工作台",
+      },
+      {
+        title: "文档 · 快速开始",
+        link: "https://docs.kenfut.example/start",
+        content: "从零跑一遍 quickstart",
+      },
+    ]);
+    expect(parseBingRss(RSS, 1)).toHaveLength(1);
+    expect(parseBingRss("<rss><channel></channel></rss>", 10)).toEqual([]);
+    expect(decodeHtmlEntities("a &amp; b &#39;c&#x27; &lt;d&gt;")).toBe(
+      "a & b 'c' <d>",
+    );
+  });
+
+  it("工具默认（bing）走 RSS：取 RSS 地址、不碰 HTML 快照、结果带摘要", async () => {
+    const snapshot = vi.fn(async () => ({
+      title: "",
+      text: "",
+      elements: [],
+    }));
+    const fetchText = vi.fn(async () => RSS);
+    const tool = createWebChannelSearchTool({ snapshot, fetchText });
+    const result = (await tool.execute(
+      { query: "kenfut byok", num: 5 },
+      {},
+    )) as {
+      results: { title: string; link: string; content: string }[];
+      channel: string;
+      engine: string;
+      note: string;
+    };
+    expect(snapshot).not.toHaveBeenCalled();
+    expect(fetchText).toHaveBeenCalledWith(
+      "https://www.bing.com/search?q=kenfut%20byok&format=rss",
+      "application/rss+xml,text/xml,*/*",
+    );
+    expect(result.channel).toBe("web");
+    expect(result.engine).toBe("Bing");
+    expect(result.results).toHaveLength(2);
+    expect(result.results[0]).toMatchObject({
+      title: "KenFutWork & BYOK",
+      link: "https://kenfut.example/",
+      content: "BYOK 平台 & 工作台",
+    });
+    expect(result.note).toContain("RSS");
+  });
+
+  it("RSS 解析不出条目时如实说明（点出被限流/改格式，仍给替代路）", async () => {
+    const tool = createWebChannelSearchTool({
+      snapshot: async () => ({ title: "", text: "", elements: [] }),
+      fetchText: async () => "<rss><channel></channel></rss>",
+    });
+    const result = (await tool.execute({ query: "x" }, {})) as {
+      results: unknown[];
+      note: string;
+    };
+    expect(result.results).toEqual([]);
+    expect(result.note).toContain("Bing 的 RSS 没有返回可解析的条目");
+    expect(result.note).toContain("不是「搜不到」");
+    expect(result.note).toContain("browser_navigate");
   });
 });
 

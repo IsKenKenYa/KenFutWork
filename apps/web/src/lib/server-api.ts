@@ -27,6 +27,14 @@ import type {
   SessionCreateResponse,
   SessionListResponse,
   UploadResponse,
+  VoiceDiagnoseResponse,
+  VoiceModelListResponse,
+  VoiceModelResponse,
+  VoiceRefineRequest,
+  VoiceRefineResponse,
+  VoiceSettingsResponse,
+  VoiceSettingsUpdateRequest,
+  VoiceTranscribeResponse,
 } from "@kenfutwork/shared";
 import { bearerHeaders, serverFetch } from "@/lib/local-access";
 
@@ -226,6 +234,53 @@ export async function uploadThumbnail(
     },
   );
   if (!response.ok) return handleErrorResponse(response);
+}
+
+// --- 语音 API ---
+
+/**
+ * 转写一段 16k 单声道 WAV（语音助手「听」）。
+ *
+ * 失败原因原样来自服务端（`ApiApplicationError.message`）：未选/未下载模型是 503 +
+ * 可读中文，音频非法是 400 —— 界面直接显示这句话，不要再另写一套泛化文案。
+ * 空文本是**正常结果**（用户没说），不是错误。
+ */
+export async function transcribeVoice(
+  accessToken: string | null | undefined,
+  wav: Uint8Array,
+): Promise<string> {
+  const formData = new FormData();
+  formData.append(
+    "file",
+    new Blob([new Uint8Array(wav)], { type: "audio/wav" }),
+    "audio.wav",
+  );
+  const response = await serverFetch(`${getServerBaseUrl()}/api/voice/transcribe`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    body: formData,
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as VoiceTranscribeResponse;
+  return payload.text;
+}
+
+/**
+ * 「想」段：把口述补成完整需求（方案 B）。失败原因原样来自服务端
+ * （未选模型 → 503 + 可读中文），界面直接显示，不另写泛化文案。
+ */
+export async function refineVoice(
+  accessToken: string | null | undefined,
+  input: VoiceRefineRequest,
+): Promise<string> {
+  const response = await serverFetch(`${getServerBaseUrl()}/api/voice/refine`, {
+    method: "POST",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  const payload = (await response.json()) as VoiceRefineResponse;
+  return payload.prompt;
 }
 
 // --- Settings API ---
@@ -1183,6 +1238,7 @@ export async function pickDirectory(
 }
 
 // --- 子智能体（设置 →「子智能体」；清单与 agent 装配同源） ---
+// 类型直接取共享契约（手写副本曾漏字段：custom 上线时漂了一次）
 
 export type AgentSubagentListResponse = {
   subagents: Array<{
@@ -1192,6 +1248,7 @@ export type AgentSubagentListResponse = {
     tools: string[];
   }>;
   builtin: Array<{ name: string; label: string; description: string }>;
+
 };
 
 export async function fetchSubagents(
@@ -1205,4 +1262,105 @@ export async function fetchSubagents(
   );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as AgentSubagentListResponse;
+}
+
+/** 语音设置（模式 / 三段选择 / 语音回复开关）。 */
+export async function fetchVoiceSettings(
+  accessToken: string | null | undefined,
+): Promise<VoiceSettingsResponse> {
+  const response = await serverFetch(`${getServerBaseUrl()}/api/voice/settings`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceSettingsResponse;
+}
+
+/** 部分更新：只送要改的字段（未送的一律不动）。 */
+export async function updateVoiceSettings(
+  accessToken: string | null | undefined,
+  patch: VoiceSettingsUpdateRequest,
+): Promise<VoiceSettingsResponse> {
+  const response = await serverFetch(`${getServerBaseUrl()}/api/voice/settings`, {
+    method: "PUT",
+    headers: authJsonHeaders(accessToken),
+    body: JSON.stringify(patch),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceSettingsResponse;
+}
+
+/** 三段候选目录（内置模型含下载状态；BYOK 实例候选零下载）。 */
+export async function fetchVoiceModels(
+  accessToken: string | null | undefined,
+): Promise<VoiceModelListResponse> {
+  const response = await serverFetch(`${getServerBaseUrl()}/api/voice/models`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceModelListResponse;
+}
+
+/** 开始下载（立刻返回 202；进度靠轮询 fetchVoiceModels）。 */
+export async function downloadVoiceModel(
+  accessToken: string | null | undefined,
+  modelId: string,
+): Promise<VoiceModelResponse> {
+  // 路径必须带 `/download` 后缀：真机点出来过——漏了它就打到 /api/voice/models/:id
+  // （那里没有 POST 路由）→ 404，界面只显示「Request failed」，按钮看着能点、其实一次也没成。
+  return voiceModelAction(accessToken, modelId, "POST", "/download");
+}
+
+/** 取消下载中的模型。 */
+export async function cancelVoiceModelDownload(
+  accessToken: string | null | undefined,
+  modelId: string,
+): Promise<VoiceModelResponse> {
+  return voiceModelAction(accessToken, modelId, "DELETE", "/download");
+}
+
+/** 删除已下载的模型文件。 */
+export async function removeVoiceModel(
+  accessToken: string | null | undefined,
+  modelId: string,
+): Promise<VoiceModelResponse> {
+  return voiceModelAction(accessToken, modelId, "DELETE");
+}
+
+async function voiceModelAction(
+  accessToken: string | null | undefined,
+  modelId: string,
+  method: "POST" | "DELETE",
+  suffix = "",
+): Promise<VoiceModelResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/voice/models/${encodeURIComponent(modelId)}${suffix}`,
+    { method, headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceModelResponse;
+}
+
+/** 上次检测报告（没测过为 null）。 */
+export async function fetchVoiceDiagnose(
+  accessToken: string | null | undefined,
+): Promise<VoiceDiagnoseResponse> {
+  const response = await serverFetch(`${getServerBaseUrl()}/api/voice/diagnose`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceDiagnoseResponse;
+}
+
+/** 跑一次检测（可取消：把 signal 传进来即可中止）。 */
+export async function runVoiceDiagnose(
+  accessToken: string | null | undefined,
+  signal?: AbortSignal,
+): Promise<VoiceDiagnoseResponse> {
+  const response = await serverFetch(`${getServerBaseUrl()}/api/voice/diagnose`, {
+    method: "POST",
+    headers: authHeaders(accessToken),
+    ...(signal ? { signal } : {}),
+  });
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as VoiceDiagnoseResponse;
 }

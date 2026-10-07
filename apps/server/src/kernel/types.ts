@@ -59,6 +59,7 @@ import type {
   AvailableModel,
   AvailableVideoModel,
 } from "../generation/types.js";
+import type { VoiceService } from "../features/voice/voice-service.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type { CanvasEventBuffer } from "../ws/event-buffer.js";
 import type { ResourceDisposer } from "./disposal.js";
@@ -151,6 +152,11 @@ export interface ServiceMap {
   systemPrompt: SystemPromptRegistry;
   /** 浏览器能力缝（R3-4/R5-4）：受控网页抓取与元素提取（人用快照端点、agent 用 browser_open） */
   browser: BrowserService;
+  /**
+   * 语音能力缝（《语音助手插件规划》）：按工作区设置把「听 / 想 / 说」三段解析成具体
+   * Provider（内置 sherpa 离线 / BYOK 实例端点）。非模型可调用能力，故不进 `tools`。
+   */
+  voice: VoiceService;
   /** ConnectionManager + EventBuffer */
   ws: WsServices;
 }

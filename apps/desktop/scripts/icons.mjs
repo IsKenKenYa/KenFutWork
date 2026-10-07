@@ -47,7 +47,11 @@ if (!source) {
  *   - 94% → 89%：用户「现在边距又太小了，再大一点」，左右白边回到约 5.5%；
  *   - 89% → 85%：用户指着桌面图标「我要这个大小稍微小一点的那种，85 吧」——左右白边约 7.5%；
  *   - 85% → **80%**：用户「图标改成 0.8 吧」——左右白边约 10%
- *     （1024 画布上墨迹约 819px，36px 任务栏图标上约 3.6px）。
+ *     （1024 画布上墨迹约 819px，36px 任务栏图标上约 3.6px）；
+ *   - 80% → 90% → **80%**（2026-09-26 一日两调）：用户先「全部改成 90%」，看到 90% 的
+ *     桌面标与向导观感差异后又拍板「改成 80%，不要隐形框！！！」——**墨迹一律以可见
+ *     白块为尺**：桌面 = 白块的 80%、应用内 = 框的 80%、向导 = 白块的 80%（installer-art
+ *     的图框 = 白块本身，隐形小框废除）。白边约 10%。
  *
  * 校验方式：量 `docs/视觉设计/logo/应用图标-白底圆角.png` 的「墨迹宽度 / 1024」。注意标是
  * 805×721、比高宽，`fit: contain` 下**左右是受限边**，这里的百分比说的都是左右那一侧；
@@ -104,9 +108,26 @@ for (const [name, size] of [
     .png({ compressionLevel: 9 })
     .toFile(join(publicDir, name));
 }
+/**
+ * logo-mark.png（应用内裸标记）也并入这条链：**同一份 mark** 居中放进 1024² 透明画布——
+ * 墨迹与桌面图标逐像素同位（宽 80%，标是宽标、高自然 ~71.6%），应用内和桌面观感一致
+ * （2026-09-26 用户口径「所有图标都保持占比 80%」；此前的 805×721 裁边版在 size-* 方框里
+ * 还会被水平拉伸 ~11%，正方形画布顺带治掉）。
+ */
+await sharp({
+  create: {
+    width: CANVAS,
+    height: CANVAS,
+    channels: 4,
+    background: { r: 0, g: 0, b: 0, alpha: 0 },
+  },
+})
+  .composite([{ input: mark, gravity: "center" }])
+  .png({ compressionLevel: 9 })
+  .toFile(join(publicDir, "logo-mark.png"));
 console.log(
   `应用图标已合成（白底圆角 ${RADIUS}/${CANVAS}）：${composedPath}\n` +
-    `  同时写入 apps/web/public/{logo.png, app-icon.png, favicon.png, apple-touch-icon.png}`,
+    `  同时写入 apps/web/public/{logo.png, app-icon.png, favicon.png, apple-touch-icon.png, logo-mark.png}`,
 );
 
 console.log(`再用 tauri icon 出整套平台图标 → ${iconsDir}`);

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
   agentRunActivityResponseSchema,
+  type AgentRunLatestResponse,
+  agentRunLatestResponseSchema,
   agentSubagentListResponseSchema,
   applicationErrorResponseSchema,
   runCancelResponseSchema,
@@ -45,6 +47,7 @@ export async function registerRunRoutes(
     activityQuery?: (input: {
       instanceId: string;
     }) => Promise<{ runs: number; totalSeconds: number; windowDays: number }>;
+    latestRunQuery?: (input: { sessionId: string; instanceId: string }) => Promise<AgentRunLatestResponse["run"]>;
     agentModes?: ExecutionModeService;
     agentRunMetadataService?: AgentRunMetadataService;
     localAccess: LocalAccessVerifier;
@@ -123,6 +126,19 @@ export async function registerRunRoutes(
     return reply
       .code(200)
       .send(agentRunActivityResponseSchema.parse({ activity }));
+  });
+
+  app.get("/api/agent/runs/latest", async (request, reply) => {
+    const actor = await options.localAccess.authenticate(request);
+    if (!actor) return sendUnauthorized(reply);
+    const sessionId = (request.query as { sessionId?: string }).sessionId ?? "";
+    const instance = sessionId
+      ? await options.localInstance.resolve(actor).catch(() => null)
+      : null;
+    const run = instance && options.latestRunQuery
+      ? await options.latestRunQuery({ sessionId, instanceId: instance.instanceId })
+      : null;
+    return reply.send(agentRunLatestResponseSchema.parse({ run }));
   });
 
   app.post("/api/agent/runs", async (request, reply) => {

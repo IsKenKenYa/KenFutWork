@@ -25,7 +25,9 @@ export function FullAccessDialog({
             开启「完全访问」？
           </DialogTitle>
           <DialogDescription>
-            这一档不再逐条询问：改文件、跑命令、调用外部工具都会直接执行，出问题无法回滚。
+            无需逐项审批
+            <br />文件修改 · 命令执行 · 外部工具
+            <br />执行结果无法回滚
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

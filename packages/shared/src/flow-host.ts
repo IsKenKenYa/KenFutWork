@@ -147,3 +147,20 @@ export const flowHostEngineResponseSchema = z.object({
 export type FlowHostEngineResponse = z.infer<
   typeof flowHostEngineResponseSchema
 >;
+
+/**
+ * 引擎栈安装状态（FORM-11 探测后的「确认 → 下载 → 托管」）。
+ *
+ * `installing` = 拉镜像/起栈进行中（长任务，轮询本端点）；`ready` = 栈已起且健康；
+ * `error` = 失败（logTail 给出可读原因）；`idle` = 尚未发起。重启服务后状态归零，
+ * 由调用方按 `docker compose ps` 重新探测（后续增量）。
+ */
+export const flowEngineInstallStatusSchema = z.object({
+  state: z.enum(["idle", "installing", "ready", "error"]),
+  logTail: z.array(z.string()),
+  error: z.string().optional(),
+  startedAt: z.string().optional(),
+});
+export type FlowEngineInstallStatus = z.infer<
+  typeof flowEngineInstallStatusSchema
+>;

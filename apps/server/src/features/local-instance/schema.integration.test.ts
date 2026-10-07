@@ -8,6 +8,7 @@ import {
   ensurePgmqAvailable,
   resolvePgmqShimDir,
 } from "../../desktop/pgmq-shim.js";
+import { createCodeUiConversation } from "../code-ui/conversation.js";
 import { createCodeUiRepository } from "../code-ui/repository.js";
 import { createModelProviderRepository } from "../model-providers/repository.js";
 import {
@@ -269,13 +270,11 @@ describe.skipIf(process.env.RUN_LOCAL_INSTANCE_SCHEMA_INTEGRATION !== "1")(
             additionalDirectories: [],
             sandboxMode: "workspace-write",
           },
-          state: {
-            version: 1,
-            runId: "",
-            snapshots: [],
-            dispatches: [],
-            closedRuns: [],
-          },
+          state: createCodeUiConversation({
+            sessionId: taskId,
+            workspacePath: directory,
+            config: { provider: "zcode", model: "schema-test", thought: "", followupMode: "queue" },
+          }).exportState(),
           command: {
             clientId: "original-sdk-client",
             commandId: "create-schema-task",

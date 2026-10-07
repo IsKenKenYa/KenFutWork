@@ -159,7 +159,7 @@ export function createPermissionService(): PermissionService {
       }
       return {
         decision: "deny",
-        reason: `工具 ${toolName} 属危险操作，等待用户审批（${TIER_LABELS[tier]}）`,
+        reason: `工具 ${toolName} 属危险操作，需在「设置 → 权限 → 工具审批」批准（${TIER_LABELS[tier]}）`,
       };
     },
     approve(toolName, approval) {

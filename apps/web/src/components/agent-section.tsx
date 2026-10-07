@@ -9,6 +9,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  SETTINGS_CONTROL_WIDTH,
+  SETTINGS_ROW,
+  SETTINGS_TITLE,
+} from "@/lib/settings-layout";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 
@@ -92,13 +97,11 @@ export function AgentSection({
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-1">模型</h2>
-      <p className="text-sm text-muted-foreground mb-6">
-        配置工作区的默认 AI 模型。
-      </p>
+      <h2 className={SETTINGS_TITLE}>模型</h2>
 
-      <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
-        <div className="space-y-2">
+      <form onSubmit={handleSubmit} className="w-full space-y-2">
+        {/* 一个配置项 = 一行：标签在左、控件靠右（用户口径 2026-09-27「可以设置成左右的」） */}
+        <div className={`${SETTINGS_ROW} justify-between`}>
           <Label htmlFor="defaultModel">默认模型</Label>
           {modelsLoading ? (
             <p className="text-sm text-muted-foreground">模型加载中…</p>
@@ -110,7 +113,10 @@ export function AgentSection({
               }}
               items={models.map((m) => ({ value: m.id, label: m.name }))}
             >
-              <SelectTrigger id="defaultModel" className="w-full">
+              <SelectTrigger
+                id="defaultModel"
+                className={SETTINGS_CONTROL_WIDTH}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -122,13 +128,13 @@ export function AgentSection({
               </SelectContent>
             </Select>
           )}
-          <p className="text-xs text-muted-foreground">
-            该模型用于工作区里所有新对话。
-          </p>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="agentMaxRetries">失败自动重试次数</Label>
+        <div className={`${SETTINGS_ROW} justify-between`}>
+          <span className="flex items-center gap-2">
+            <Label htmlFor="agentMaxRetries">失败自动重试次数</Label>
+            <span className="text-xs text-muted-foreground">0 = 不重试</span>
+          </span>
           <input
             id="agentMaxRetries"
             aria-label="失败自动重试次数"
@@ -137,33 +143,26 @@ export function AgentSection({
             max={50}
             value={maxRetries}
             onChange={(event) => setMaxRetries(event.target.value)}
-            className="w-24 rounded-md border px-2 py-1 text-sm outline-none"
+            className="w-32 shrink-0 rounded-md border px-3 py-1.5 text-sm outline-none"
           />
-          <p className="text-xs text-muted-foreground">
-            失败后最多尝试几次（含首次），0 表示不重试。
-          </p>
         </div>
 
         {onToggleAutoCompact ? (
-          <div className="space-y-1 rounded-lg border p-3">
-            <label className="flex items-center justify-between gap-3">
-              <span className="text-sm">上下文自动压缩</span>
-              <input
-                type="checkbox"
-                role="switch"
-                aria-label="上下文自动压缩"
-                aria-checked={autoCompactEnabled}
-                checked={autoCompactEnabled}
-                onChange={(event) =>
-                  void onToggleAutoCompact(event.target.checked)
-                }
-                className="h-4 w-8 shrink-0 appearance-none rounded-full bg-muted transition-colors checked:bg-foreground/80 before:block before:h-3.5 before:w-3.5 before:translate-x-0.5 before:rounded-full before:background before:bg-background before:transition-transform checked:before:translate-x-4"
-              />
-            </label>
-            <p className="text-xs text-muted-foreground">
-              对话接近模型上下文上限时，自动把较早的消息压缩成摘要，长对话可以一直继续。关掉后超长对话会被模型拒绝。
-            </p>
-          </div>
+          /* 与同页的外观卡片同为 py-2：同一页里的行不同高就是「排版不合理」 */
+          <label className={`${SETTINGS_ROW} cursor-pointer justify-between`}>
+            <span className="text-sm">上下文自动压缩</span>
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label="上下文自动压缩"
+              aria-checked={autoCompactEnabled}
+              checked={autoCompactEnabled}
+              onChange={(event) =>
+                void onToggleAutoCompact(event.target.checked)
+              }
+              className="h-4 w-8 shrink-0 appearance-none rounded-full bg-muted transition-colors checked:bg-foreground/80 before:block before:h-3.5 before:w-3.5 before:translate-x-0.5 before:rounded-full before:background before:bg-background before:transition-transform checked:before:translate-x-4"
+            />
+          </label>
         ) : null}
 
         {feedback && (

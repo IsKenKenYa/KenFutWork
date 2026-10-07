@@ -21,7 +21,7 @@ function fixture(options: { secret?: string; authorized?: boolean; configured?: 
   const credentials: ResolvedInstanceCredentials = { instanceId: PROVIDER_ID, name: "Dify", protocol: "dify-engine", apiKey: "byok-secret", baseUrl: options.baseUrl ?? "http://127.0.0.1:8080/", configRevision: 1, models: [] };
   const listInstances = vi.fn(async () => options.configured === false ? [] : [provider]);
   const pushed: Array<{ instanceId: string; event: StreamEvent }> = [];
-  void registerFlowHostRoutes(app, { localAccess: { authenticate: async () => options.authorized === false ? null : actor }, localInstance, providers: { listInstances, resolveCredentialsById: async () => credentials }, ws: { connectionManager: { pushToInstance: (instanceId, event) => { pushed.push({ instanceId, event }); } } }, engine: { probe: async () => ({ platform: "darwin", paths: [], recommended: null }) }, ...(options.secret ? { secret: options.secret } : {}), frontendUrl: "http://127.0.0.1:8081" });
+  void registerFlowHostRoutes(app, { localAccess: { authenticate: async () => options.authorized === false ? null : actor }, localInstance, providers: { listInstances, resolveCredentialsById: async () => credentials }, ws: { connectionManager: { pushToInstance: (instanceId, event) => { pushed.push({ instanceId, event }); } } }, engine: { probe: async () => ({ platform: "darwin", paths: [], recommended: null }) }, engineInstall: { start: () => ({ started: true, snapshot: { state: "ready", logTail: [] } }), status: () => ({ state: "ready", logTail: [] }) }, ...(options.secret ? { secret: options.secret } : {}), frontendUrl: "http://127.0.0.1:8081" });
   return { app, pushed, listInstances };
 }
 

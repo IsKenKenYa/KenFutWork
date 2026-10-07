@@ -24,9 +24,8 @@
 #        -H 'content-type: application/json'                       # 建管理员（201）
 #   之后 flow 网关的自动授权（DIFY_AUTO_BOOTSTRAP=true + DIFY_ADMIN_EMAIL/PASSWORD）即可接管。
 #
-# 端口：默认 5001（Dify 惯例）。**Windows 上 5001 常落在 Hyper-V/WSL 动态排除段**
-# （`netsh interface ipv4 show excludedportrange protocol=tcp` 可查；实测本机 4918–5017 被占），
-# 此时用 `DIFY_PORT=15001 docker compose … up -d` 换端口，并同步改 flow/.env 的两个地址。
+# 端口：默认 15001（**不是** Dify 惯例的 5001——Windows 上 5001 落在 Hyper-V/WSL 动态排除段
+# 4918–5017，实测 bind 直接被拒）。flow/.env 对接：DIFY_API_BASE=http://127.0.0.1:15001/v1。
 #
 # 体积（实测，供「按需下载」明示体积用）：本栈镜像合计 **≈8.3GB**（dify-plugin-daemon
 # 2.28GB、dify-sandbox 848MB、squid 303MB、weaviate 300MB、postgres 417MB、dify-api 等）；
@@ -49,9 +48,9 @@ x-dify-shared-env: &dify-shared-env
   LOG_LEVEL: ${DIFY_LOG_LEVEL:-INFO}
   MIGRATION_ENABLED: "true"
   # ── 对外地址（无头栈只有 API 面板：Console API 与 Service API 同端口）──
-  CONSOLE_API_URL: ${DIFY_CONSOLE_API_URL:-http://127.0.0.1:5001}
-  SERVICE_API_URL: ${DIFY_SERVICE_API_URL:-http://127.0.0.1:5001}
-  FILES_URL: ${DIFY_FILES_URL:-http://127.0.0.1:5001}
+  CONSOLE_API_URL: ${DIFY_CONSOLE_API_URL:-http://127.0.0.1:15001}
+  SERVICE_API_URL: ${DIFY_SERVICE_API_URL:-http://127.0.0.1:15001}
+  FILES_URL: ${DIFY_FILES_URL:-http://127.0.0.1:15001}
   # ── 库 ──
   DB_TYPE: postgresql
   DB_USERNAME: ${DIFY_DB_USERNAME:-dify}
@@ -245,7 +244,7 @@ services:
       INNER_API_KEY_FOR_PLUGIN: ${DIFY_PLUGIN_INNER_API_KEY:-kenfutwork-inner-api}
     ports:
       # 只绑回环：flow 网关在本机/内网访问；要对外暴露请显式改绑定地址
-      - "127.0.0.1:${DIFY_PORT:-5001}:5001"
+      - "127.0.0.1:${DIFY_PORT:-15001}:5001"
     volumes:
       - dify_app_storage:/app/api/storage
     depends_on:

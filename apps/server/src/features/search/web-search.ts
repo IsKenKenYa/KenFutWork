@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "../../kernel/types.js";
+import { BROWSER_FETCH_USER_AGENT } from "../browser/fetch-page.js";
 
 /**
  * 联网搜索工具（§4.5 基础能力层，BYOK 搜索供应商）。
@@ -165,29 +166,31 @@ export function createWebSearchTool(deps: {
 }
 
 /**
- * 不配搜索供应商 Key 时的**网页通道**实现：把搜索引擎结果页抓回来，从链接里还原结果列表。
+ * 不配搜索供应商 Key 时的**网页通道**实现。两条引擎各走自己可行的路：
  *
- * **为什么要有它**：文档口径是「不配 Key 也能搜（走网页通道）」，但此前唯一的执行面是
- * `browser_open`——而它受「允许 AI 控制浏览器」门控，该开关**默认关**。于是开箱状态下
- * 「没配 Key 也搜不了」（2026-09-20 真机走查实测：`web_search` 不装配 + `browser_open`
- * 被拒，模型只能改用沙箱 curl 兜底）。这里把那条路做进搜索工具本身：
- * **只读一次网页**，复用与 `browser_open` 同一个 `fetchPageSnapshot`（同时限、同大小上限、
- * 同云元数据拦截），因此不引入「让 agent 操作页面」的能力，也就不需要那个开关。
+ * - **Bing → RSS（`&format=rss`）**：真机实测（2026-10-06）Bing 对非浏览器请求返回的
+ *   结果页 HTML 里，结果链接全是 `bing.com/ck/a?…` 重定向（引擎域），按「剔掉引擎自己
+ *   的链接」的口径会被整个过滤掉 → 恒 0 条；而 RSS 给的是**结构化条目**（标题 / 直链 /
+ *   摘要），几 KB、稳定——这是 Bing 上的正路。
+ * - **百度 → 静态抓快照**（原路）：本机实测它常返回「安全验证」页（反爬），这条路只能
+ *   尽力而为；0 条时如实说明。
  *
- * 边界如实写在返回值里：拿到的是 HTML 里的链接，**不是结构化结果**；带反爬/验证码的
- * 引擎会失败（实测 Bing / Baidu 可以，Google 基本不行）。
+ * 两条都不需要「允许 AI 控制浏览器」开关（只读抓取），也不要 Key——这是
+ * 「不配 Key 也能搜」的兜底执行面（2026-09-20 真机走查发现此前实际搜不了）。
  */
 
 export const WEB_CHANNEL_ENGINES = [
   {
     id: "bing",
     label: "Bing",
+    kind: "rss",
     url: (query: string) =>
-      `https://www.bing.com/search?q=${encodeURIComponent(query)}`,
+      `https://www.bing.com/search?q=${encodeURIComponent(query)}&format=rss`,
   },
   {
     id: "baidu",
     label: "百度",
+    kind: "html",
     url: (query: string) =>
       `https://www.baidu.com/s?wd=${encodeURIComponent(query)}`,
   },
@@ -248,23 +251,144 @@ export interface PageSnapshotLike {
  */
 export const SEARCH_PAGE_ELEMENT_LIMIT = 300;
 
+/**
+ * 解析 Bing 的 RSS 结果（`<item>` 块：title / link / description）。
+ *
+ * 只认 http(s) 直链；标题与摘要去标签、解 HTML 实体（RSS 里是转义文本）。
+ * 与 HTML 路径共用 `num` 上限与「重复链接只留第一条」的口径。
+ */
+export function parseBingRss(xml: string, limit: number): WebSearchResult[] {
+  const results: WebSearchResult[] = [];
+  const seen = new Set<string>();
+  for (const match of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+    const item = match[1] ?? "";
+    const link = decodeHtmlEntities(rawOfTag(item, "link")).trim();
+    if (!/^https?:\/\//i.test(link)) continue;
+    if (seen.has(link)) continue;
+    seen.add(link);
+    results.push({
+      title: cleanText(rawOfTag(item, "title")),
+      link,
+      content: cleanText(rawOfTag(item, "description")),
+    });
+    if (results.length >= limit) break;
+  }
+  return results;
+}
+
+/**
+ * 取标签内**原始**文本：只剥 CDATA 包裹，不做别的清洗。
+ * 清洗必须交给 `cleanText` 按固定顺序做——RSS 里的 HTML 有时被实体编码
+ * （`&lt;b&gt;`）、有时是真的标签（CDATA 里的 `<b>`），两种都要能收干净。
+ */
+function rawOfTag(block: string, tag: string): string {
+  const raw =
+    new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`).exec(block)?.[1] ?? "";
+  const trimmed = raw.trim();
+  return trimmed.startsWith("<![CDATA[") && trimmed.endsWith("]]>")
+    ? trimmed.slice(9, -3)
+    : trimmed;
+}
+
+/** 结果文本清洗：剥标签 → 解实体 → 再剥一次（实体编码出来的标签）→ 收空白。 */
+function cleanText(value: string): string {
+  return decodeHtmlEntities(value.replace(/<[^>]*>/g, " "))
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** 最小 HTML 实体解码（RSS 的标题/摘要里是转义文本）。 */
+export function decodeHtmlEntities(value: string): string {
+  const named: Record<string, string> = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: '"',
+    apos: "'",
+    nbsp: " ",
+  };
+  return value
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => codePointOf(hex, 16))
+    .replace(/&#(\d+);/g, (_, dec: string) => codePointOf(dec, 10))
+    .replace(
+      /&([a-z]+);/gi,
+      (whole, name: string) => named[name.toLowerCase()] ?? whole,
+    );
+}
+
+function codePointOf(raw: string, base: number): string {
+  const value = Number.parseInt(raw, base);
+  if (!Number.isFinite(value) || value <= 0 || value > 0x10ffff) return "";
+  try {
+    return String.fromCodePoint(value);
+  } catch {
+    return "";
+  }
+}
+
+/** RSS 通道的超时与大小上限（RSS 只有几 KB；上限是防御性的）。 */
+const WEB_CHANNEL_TIMEOUT_MS = 12_000;
+const WEB_CHANNEL_MAX_CHARS = 256 * 1024;
+
+/**
+ * RSS 通道的默认取文本：超时 + 大小上限 + 与快照抓取同一张脸
+ * （UA 单一出处见 `browser/fetch-page`）。只在固定引擎地址上使用，无 SSRF 面。
+ */
+async function defaultFetchText(url: string, accept: string): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WEB_CHANNEL_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      redirect: "follow",
+      signal: controller.signal,
+      headers: { "user-agent": BROWSER_FETCH_USER_AGENT, accept },
+    });
+    if (!response.ok) {
+      throw new WebSearchError(
+        `web_search 抓取失败（${response.status}），引擎可能拒绝了这次请求。`,
+      );
+    }
+    const text = await response.text();
+    return text.slice(0, WEB_CHANNEL_MAX_CHARS);
+  } catch (error) {
+    if (error instanceof WebSearchError) throw error;
+    throw new WebSearchError(
+      error instanceof Error && error.name === "AbortError"
+        ? "web_search 抓取超时（引擎没有及时响应）。"
+        : `web_search 抓取失败：${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function createWebChannelSearchTool(deps: {
   snapshot(
     url: string,
     options?: { elementLimit?: number },
   ): Promise<PageSnapshotLike>;
+  /** RSS 通道取文本（默认走全局 fetch：超时 + 大小上限 + 同一张脸；测试注入）。 */
+  fetchText?: (url: string, accept: string) => Promise<string>;
   engine?: WebChannelEngineId;
 }): ToolDefinition {
   const engine =
     WEB_CHANNEL_ENGINES.find((item) => item.id === deps.engine) ??
     WEB_CHANNEL_ENGINES[0];
   const engineHost = new URL(engine.url("x")).hostname.replace(/^www\./, "");
+  const fetchText = deps.fetchText ?? defaultFetchText;
+  /** 0 条要说清「是引擎没给可解析的结果」，而不是让人以为「真的没结果」，并给可行的替代。 */
+  const zeroResultNote = (reason: string) =>
+    `网页通道没解析出结果：${reason}，不是「搜不到」。可行的替代：` +
+    "① 设置 → 供应商里配一个搜索供应商 Key（走结构化 API）；" +
+    "② 设置 → 浏览器里打开「允许 AI 控制浏览器」并连接受控浏览器后用 browser_navigate" +
+    "（拿到的是脚本渲染后的真实页面）；③ 用 execute 自己抓取。";
   return {
     name: "web_search",
     description:
-      `联网搜索：抓取 ${WEB_CHANNEL_ENGINES.map((e) => e.label).join(" / ")} 的结果页，返回标题与链接列表。` +
-      "未配置搜索供应商 Key 时走这条路。**它只做静态抓取**：结果页若由脚本渲染或触发反爬，会返回 0 条并说明原因" +
-      "（那两条真机实测都会发生）——这时改用 browser_navigate（连上受控浏览器后是真实渲染页）或让 execute 抓取。",
+      `联网搜索：抓取 ${WEB_CHANNEL_ENGINES.map((e) => e.label).join(" / ")} 的结果页，返回标题 / 链接 / 摘要列表。` +
+      "未配置搜索供应商 Key 时走这条路：Bing 走结果页的 RSS（结构化、含摘要），百度走静态抓取——" +
+      "碰到反爬 / 验证页时会返回 0 条并说明原因，那时改用 browser_navigate（连上受控浏览器后是真实渲染页）或让 execute 抓取。",
     scope: "shared",
     exposure: "deferred",
     access: "read",
@@ -283,6 +407,26 @@ export function createWebChannelSearchTool(deps: {
         Math.max(Math.floor(Number(args.num ?? 8)) || 8, 1),
         20,
       );
+      if (engine.kind === "rss") {
+        const xml = await fetchText(
+          engine.url(query),
+          "application/rss+xml,text/xml,*/*",
+        );
+        const results = parseBingRss(xml, num);
+        return {
+          query,
+          results,
+          channel: "web",
+          engine: engine.label,
+          ...(results.length > 0
+            ? { note: "以上是网页通道结果（引擎 RSS：标题 / 直链 / 摘要）。" }
+            : {
+                note: zeroResultNote(
+                  "Bing 的 RSS 没有返回可解析的条目（可能被限流或改了格式）",
+                ),
+              }),
+        };
+      }
       const snapshot = await deps.snapshot(engine.url(query), {
         elementLimit: SEARCH_PAGE_ELEMENT_LIMIT,
       });
@@ -298,17 +442,9 @@ export function createWebChannelSearchTool(deps: {
         ...(results.length > 0
           ? { note: "以上是网页通道结果（页面链接，无结构化摘要）。" }
           : {
-              /**
-               * 0 条要说清「是引擎没给可解析的结果」，而不是让人以为「真的没结果」。
-               * 2026-09-20 真机实测：Bing 的结果链接不落在静态 HTML 的锚点里（正文有结果
-               * 文字、但没有外部链接的 href），百度直接回空白页——两者都抓不到。
-               */
-              note:
-                "网页通道没解析出可用的结果链接：引擎对非浏览器请求返回的是脚本渲染页或反爬页" +
-                "（真机实测 Bing / 百度都会这样），不是「搜不到」。可行的替代：" +
-                "① 设置 → 供应商里配一个搜索供应商 Key（走结构化 API）；" +
-                "② 设置 → 浏览器里打开「允许 AI 控制浏览器」并连接受控浏览器后用 browser_navigate" +
-                "（拿到的是脚本渲染后的真实页面）；③ 用 execute 自己抓取。",
+              note: zeroResultNote(
+                `${engine.label}返回的是脚本渲染页或反爬页（本机实测是「安全验证」页）`,
+              ),
             }),
       };
     },

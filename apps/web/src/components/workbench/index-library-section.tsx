@@ -7,6 +7,11 @@ import {
   fetchCodeIndex,
   rebuildCodeIndex,
 } from "@/lib/server-api";
+import {
+  SETTINGS_ROW_MIN_HEIGHT,
+  SETTINGS_SECTION_GAP,
+  SETTINGS_TITLE,
+} from "@/lib/settings-layout";
 
 /**
  * 设置 → 索引库（R4-3）。
@@ -50,7 +55,7 @@ export function IndexLibrarySection({
   onToggleAuto,
 }: {
   accessToken: string | null;
-  /** 当前 Code Task（目录取该 Task 创建时的快照）。 */
+  /** 当前 Code Task（目录取 Task 的持久快照）。 */
   taskId: string | null;
   /** ② 「索引存储库以实现即时搜索」：搜索走索引。 */
   enabled: boolean;
@@ -103,105 +108,89 @@ export function IndexLibrarySection({
 
   return (
     <section aria-label="索引库设置">
-      <h3 className="mb-1 text-base font-medium">索引库</h3>
-      <p className="mb-3 text-sm text-muted-foreground">
-        为工作目录建立本地索引，右栏「文件目录」的搜索靠它按文件名、路径和内容找文件。
-      </p>
+      <h3 className={SETTINGS_TITLE}>索引库</h3>
 
-      <p className="mb-1 text-xs text-muted-foreground">代码库</p>
-      <div className="divide-y rounded-lg border">
-        <IndexToggle
-          title="索引新文件夹"
-          hint="自动索引文件数少于 50,000 的新文件夹。"
-          checked={autoNewFolder}
-          onChange={(next) => void onToggleAuto(next)}
-        />
-        <IndexToggle
-          title="索引存储库以实现即时搜索（测试版）"
-          hint="自动为仓库建索引，加快文件搜索。数据保存在本地。"
-          checked={enabled}
-          onChange={(next) => void onToggle(next)}
-        />
-      </div>
-      <p className="mt-1.5 text-xs text-muted-foreground">
-        索引保存在本机，不会写进你的工作目录。
-      </p>
-
-      <div className="mt-3 rounded-lg border p-3 text-sm">
-        {taskId === null ? (
-          <p className="text-muted-foreground">
-            当前会话没有绑定工作目录——绑定后这里会显示索引统计。
-          </p>
-        ) : stats ? (
-          <ul className="space-y-1 text-xs text-muted-foreground">
-            <li>
-              已索引 <span className="text-foreground">{stats.files}</span>{" "}
-              个文件 · {formatBytes(stats.bytes)}
-            </li>
-            <li>索引文件 {formatBytes(stats.indexBytes)}</li>
-            <li>上次构建 {formatBuiltAt(stats.builtAt)}</li>
-            {stats.skipped > 0 ? (
-              <li>已跳过 {stats.skipped} 个无法读取的文件</li>
-            ) : null}
-            {stats.truncated ? (
-              <li>已达到条数/体积上限，只索引了前一部分</li>
-            ) : null}
-          </ul>
-        ) : (
-          <p className="text-muted-foreground">
-            还没有索引——
-            {autoNewFolder && enabled
-              ? "在「文件目录」里搜一次会自动建立。"
-              : "点下面的「重建索引」建立一份。"}
-          </p>
-        )}
-        <div className="mt-3 flex items-center gap-2">
-          <button
-            type="button"
-            disabled={busy || !taskId}
-            onClick={() => void run("rebuild")}
-            className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
-          >
-            {busy ? "处理中…" : "重建索引"}
-          </button>
-          <button
-            type="button"
-            disabled={busy || !taskId || !stats}
-            onClick={() => void run("clear")}
-            className="rounded-md border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
-          >
-            清空
-          </button>
+      <div className={`${SETTINGS_SECTION_GAP} w-full`}>
+        <div>
+          <p className="mb-2 text-xs text-muted-foreground">代码库</p>
+          <div className="divide-y rounded-lg border">
+            <IndexToggle
+              title="索引新文件夹"
+              checked={autoNewFolder}
+              onChange={(next) => void onToggleAuto(next)}
+            />
+            <IndexToggle
+              title="索引存储库（测试版）"
+              checked={enabled}
+              onChange={(next) => void onToggle(next)}
+            />
+          </div>
         </div>
-      </div>
 
-      {message ? (
-        <p role="status" className="mt-2 text-sm text-muted-foreground">
-          {message}
-        </p>
-      ) : null}
+        <div className="rounded-lg border p-3 text-sm">
+          {taskId === null ? (
+            <p className="text-muted-foreground">未绑定工作目录</p>
+          ) : stats ? (
+            <ul className="space-y-1 text-xs text-muted-foreground">
+              <li>
+                已索引 <span className="text-foreground">{stats.files}</span>{" "}
+                个文件 · {formatBytes(stats.bytes)}
+              </li>
+              <li>索引文件 {formatBytes(stats.indexBytes)}</li>
+              <li>上次构建 {formatBuiltAt(stats.builtAt)}</li>
+              {stats.skipped > 0 ? (
+                <li>已跳过 {stats.skipped} 个无法读取的文件</li>
+              ) : null}
+              {stats.truncated ? <li>已达上限，部分未索引</li> : null}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground">还没有索引</p>
+          )}
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              disabled={busy || !taskId}
+              onClick={() => void run("rebuild")}
+              className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+            >
+              {busy ? "处理中…" : "重建索引"}
+            </button>
+            <button
+              type="button"
+              disabled={busy || !taskId || !stats}
+              onClick={() => void run("clear")}
+              className="rounded-md border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-40"
+            >
+              清空
+            </button>
+          </div>
+        </div>
+
+        {message ? (
+          <p role="status" className="mt-2 text-sm text-muted-foreground">
+            {message}
+          </p>
+        ) : null}
+      </div>
     </section>
   );
 }
 
-/** 一行参考图式开关：整行可点，标题 + 说明在左、开关在右。 */
+/** 单个开关行：标签 + 开关。标签只写名字，不复述行为（2026-09-27 用户口径）。 */
 function IndexToggle({
   title,
-  hint,
   checked,
   onChange,
 }: {
   title: string;
-  hint: string;
   checked: boolean;
   onChange: (next: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-4 px-3 py-2.5">
-      <span className="min-w-0">
-        <span className="block text-sm">{title}</span>
-        <span className="block text-xs text-muted-foreground">{hint}</span>
-      </span>
+    <label
+      className={`flex cursor-pointer items-center justify-between gap-4 px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
+    >
+      <span className="min-w-0 text-sm">{title}</span>
       <input
         type="checkbox"
         role="switch"

@@ -152,8 +152,8 @@ export function ImageModelPreferencePopover({
           </div>
           <span className="text-[11px] text-muted-foreground">
             {currentPreference.mode === "auto"
-              ? `Agent 自动为每次${activeTab === "image" ? "图像" : "视频"}任务选择最合适的模型`
-              : `Agent 从你选定的模型中选择，用于${activeTab === "image" ? "图像" : "视频"}任务`}
+              ? `Agent 自动为每次${activeTab === "image" ? "图像" : "视频"}任务挑模型`
+              : `Agent 只从选定的模型里挑 · 用于${activeTab === "image" ? "图像" : "视频"}任务`}
           </span>
         </div>
 

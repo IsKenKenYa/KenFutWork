@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, win32 } from "node:path";
 import {
   resolveGovernanceEnvOverrides,
   resolveGovernanceNumber,
@@ -205,12 +205,13 @@ function findSystemGitExecutable(options: SystemGitSearchInput): string | null {
   const isWindows = (options.platform ?? process.platform) === "win32";
   const executable = options.executable ?? (isWindows ? "git.exe" : "git");
   const separator = options.separator ?? (isWindows ? ";" : ":");
+  const joinFor = separator === ":" ? posix.join : win32.join;
   const directories = (options.path ?? "")
     .split(separator)
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
   for (const directory of directories) {
-    const candidate = join(directory, executable);
+    const candidate = joinFor(directory, executable);
     if (exists(candidate)) return candidate;
   }
   return null;

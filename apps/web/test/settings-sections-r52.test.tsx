@@ -65,7 +65,7 @@ describe("设置 → 子智能体", () => {
   it("子代理运行入口导航到完整原 Code 工作台", async () => {
     fetchSubagents.mockResolvedValue({ subagents: [], builtin: [] });
     render(<SubagentsSection accessToken="tok" />);
-    await screen.findByText(/主 Agent 可以把子任务/);
+    await screen.findByText("运行记录见 Code 子代理目录");
     await userEvent.click(
       screen.getByRole("button", { name: "前往 Code 查看子智能体" }),
     );
@@ -103,9 +103,9 @@ describe("设置 → 模型：上下文自动压缩开关", () => {
     expect(
       screen.getByRole("switch", { name: "上下文自动压缩" }),
     ).toBeChecked();
-    expect(screen.getByText(/接近模型上下文上限/)).toBeVisible();
-    expect(screen.getByText(/压缩成摘要/)).toBeVisible();
-    expect(screen.getByText(/超长对话会被模型拒绝/)).toBeVisible();
+    expect(screen.getByRole("switch", { name: "上下文自动压缩" })).toBeVisible();
+    expect(screen.queryByText(/压缩成摘要/)).toBeNull();
+    expect(screen.queryByText(/超长对话会被模型拒绝/)).toBeNull();
   });
 
   it("关掉时立即回调（部分更新），不依赖「保存」按钮", async () => {
@@ -273,7 +273,7 @@ describe("设置 → 钩子", () => {
       "../src/components/workbench/hooks-section"
     );
     render(<HooksSection hooks={[]} onSave={onSave} />);
-    expect(screen.getByText(/还没有钩子/)).toBeVisible();
+    expect(screen.getByText("没有钩子")).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: /新增钩子/ }));
     await userEvent.type(
@@ -304,8 +304,8 @@ describe("设置 → 钩子", () => {
       "../src/components/workbench/hooks-section"
     );
     render(<HooksSection hooks={[]} onSave={vi.fn()} />);
-    expect(screen.getByText(/只有你能配置/)).toBeVisible();
-    expect(screen.getByText(/工作目录/)).toBeVisible();
-    expect(screen.getByText(/失败也不影响本轮对话/)).toBeVisible();
+    expect(screen.queryByText(/只有你能配置/)).toBeNull();
+    expect(screen.getByRole("button", { name: "保存钩子" })).toBeVisible();
+    expect(screen.queryByText(/失败也不影响本轮对话/)).toBeNull();
   });
 });

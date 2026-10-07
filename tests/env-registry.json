@@ -256,6 +256,24 @@
       "status": "test-gate",
       "note": "=1启用真实隔离PG/Task/Agent/HTTP/SDK/stdio协议测试，默认skip不计验收"
     },
+    "KENFUTWORK_VOICE_REAL_MODEL": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/voice/sherpa.integration.test.ts"
+      ],
+      "inExamples": true,
+      "status": "test-gate",
+      "note": "=1 启用语音内置模型的真机验收（会下载 228MB 模型）；生产无读者"
+    },
+    "KENFUTWORK_VOICE_MODELS_ROOT": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/voice/sherpa.integration.test.ts"
+      ],
+      "inExamples": true,
+      "status": "test-gate",
+      "note": "覆盖真机验收用的模型目录（默认 ~/.kenfutwork/models）"
+    },
     "KENFUTWORK_MCP_LIFECYCLE": {
       "surface": "test",
       "readers": ["apps/server/src/features/mcp/mcp-service.lifecycle.test.ts"],
@@ -1271,7 +1289,8 @@
     "KENFUTWORK_PERSISTENCE_TEST_PG": {
       "surface": "test",
       "readers": [
-        "apps/server/src/features/persistence/persistence.integration.test.ts"
+        "apps/server/src/features/persistence/persistence.integration.test.ts",
+        "apps/server/src/features/voice/instance-repositories.integration.test.ts"
       ],
       "inExamples": false,
       "status": "test-gate",

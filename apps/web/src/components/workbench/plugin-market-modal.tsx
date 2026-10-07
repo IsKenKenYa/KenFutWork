@@ -3,15 +3,16 @@
 import type { PluginMarketEntry } from "@kenfutwork/shared";
 import {
   BarChart3,
+  Blocks,
   Bot,
   Code2,
-  Folder,
   Layers,
   Palette,
   Plug,
   Search,
   Server,
   ShieldCheck,
+  Workflow,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/components/toast";
@@ -36,8 +37,9 @@ const ICONS: Record<
   mcp: Server,
   usage: BarChart3,
   canvas: Palette,
-  skills: Folder,
+  skills: Blocks,
   "plugin-registry": Layers,
+  "kenfutwork-flow": Workflow,
 };
 
 type MarketTab = "discover" | "installed";
@@ -307,7 +309,7 @@ export function PluginMarketModal({
                   tab === "installed" ? "暂无已安装插件" : "未找到匹配的插件"
                 }
                 {...(tab === "installed"
-                  ? { hint: "可在「发现」里按来源链接安装。" }
+                  ? { hint: "在「发现」里按链接安装" }
                   : {})}
               />
             ) : (

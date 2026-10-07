@@ -141,6 +141,11 @@
       "name": "usage",
       "description": "工作区用量汇总与使用统计。",
       "x-apifox-folder": "用量"
+    },
+    {
+      "name": "voice",
+      "description": "本地实例的听、想、说、模型下载与性能检测。",
+      "x-apifox-folder": "语音助手"
     }
   ],
   "security": [
@@ -152,6 +157,794 @@
     }
   ],
   "paths": {
+    "/api/agent/runs/latest": {
+      "get": {
+        "operationId": "getAgentRunsLatest",
+        "summary": "查询会话最近一轮运行终态",
+        "description": "按持久会话和当前本地实例隔离，返回原始失败原因；没有可见运行时返回 null。",
+        "tags": [
+          "runs"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/agentRunLatestResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/flow/host/engine/install": {
+      "post": {
+        "operationId": "postFlowHostEngineInstall",
+        "summary": "开始托管安装 Flow 引擎栈",
+        "description": "本机授权后启动引擎栈安装；安装已在进行中返回 409，客户端通过状态端点观察结果。",
+        "tags": [
+          "flow"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/flowEngineInstallStatusSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/flow/host/engine/install/status": {
+      "get": {
+        "operationId": "getFlowHostEngineInstallStatus",
+        "summary": "查询 Flow 引擎栈安装状态",
+        "description": "返回安装阶段、日志尾部及失败原因；不触发安装。",
+        "tags": [
+          "flow"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/flowEngineInstallStatusSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/voice/models": {
+      "get": {
+        "operationId": "getVoiceModels",
+        "summary": "列出语音模型候选",
+        "description": "列出内置离线模型及当前实例的 BYOK 候选，包含真实下载状态。",
+        "tags": [
+          "voice"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/voiceModelListResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/voice/models/{modelId}/download": {
+      "post": {
+        "operationId": "postVoiceModelsByModelIdDownload",
+        "summary": "下载内置语音模型",
+        "description": "校验目录 ID、体积与 SHA-256，返回 202 后由候选目录查询进度。",
+        "tags": [
+          "voice"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "modelId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "已受理（异步执行）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/voiceModelResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteVoiceModelsByModelIdDownload",
+        "summary": "取消内置语音模型下载",
+        "description": "取消正在进行的下载并返回当前候选状态。",
+        "tags": [
+          "voice"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "modelId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/voiceModelResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/voice/models/{modelId}": {
+      "delete": {
+        "operationId": "deleteVoiceModelsByModelId",
+        "summary": "删除内置语音模型",
+        "description": "删除当前实例管理的模型文件并返回候选状态。",
+        "tags": [
+          "voice"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "modelId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/voiceModelResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/voice/diagnose": {
+      "get": {
+        "operationId": "getVoiceDiagnose",
+        "summary": "读取语音性能检测报告",
+        "description": "读取本机上次检测报告；尚未检测时返回 null。",
+        "tags": [
+          "voice"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/voiceDiagnoseResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postVoiceDiagnose",
+        "summary": "检测语音性能",
+        "description": "检测硬件与听、想、说三段，保存报告；请求中止时取消探针。",
+        "tags": [
+          "voice"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/voiceDiagnoseResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/voice/settings": {
+      "get": {
+        "operationId": "getVoiceSettings",
+        "summary": "读取本地实例语音设置",
+        "description": "读取当前实例的功能模式、三段模型选择与语音回复开关。",
+        "tags": [
+          "voice"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/voiceSettingsResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putVoiceSettings",
+        "summary": "更新本地实例语音设置",
+        "description": "仅覆盖请求提供的字段，支持显式清空模型选择，持久化后读回。",
+        "tags": [
+          "voice"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/voiceSettingsUpdateRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/voiceSettingsResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/voice/transcribe": {
+      "post": {
+        "operationId": "postVoiceTranscribe",
+        "summary": "转写录音为文本",
+        "description": "上传 WAV 音频，最大 8 MiB；使用当前实例选择的内置或 BYOK 听段，空文本表示没有识别到语音。",
+        "tags": [
+          "voice"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/voiceTranscribeResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/voice/refine": {
+      "post": {
+        "operationId": "postVoiceRefine",
+        "summary": "整理口述需求",
+        "description": "使用当前实例选择的想段和可选最近上下文，将转写文本整理为完整需求；未选择模型返回可读错误。",
+        "tags": [
+          "voice"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/voiceRefineRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/voiceRefineResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/voice/speak": {
+      "post": {
+        "operationId": "postVoiceSpeak",
+        "summary": "合成语音回复",
+        "description": "使用当前实例选择的说段合成音频字节，实际 MIME 由 Provider 决定；请求中止时取消合成。",
+        "tags": [
+          "voice"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/voiceSpeakRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/computer-use/mcp": {
       "post": {
         "operationId": "postComputerUseMcp",
@@ -8821,6 +9614,62 @@
         ],
         "additionalProperties": false
       },
+      "agentRunLatestResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "run": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "errorCode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "errorMessage": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "startedAt": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "completedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "status",
+                  "errorCode",
+                  "errorMessage",
+                  "startedAt",
+                  "completedAt"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "run"
+        ],
+        "additionalProperties": false
+      },
       "agentSubagentListResponseSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -8986,7 +9835,8 @@
                   "flow_engine_not_configured",
                   "flow_engine_invalid",
                   "flow_billing_conflict",
-                  "flow_billing_failed"
+                  "flow_billing_failed",
+                  "flow_engine_install_running"
                 ]
               },
               "message": {
@@ -11780,7 +12630,8 @@
                       "flow_engine_not_configured",
                       "flow_engine_invalid",
                       "flow_billing_conflict",
-                      "flow_billing_failed"
+                      "flow_billing_failed",
+                      "flow_engine_install_running"
                     ]
                   },
                   "message": {
@@ -12172,6 +13023,38 @@
           "solo",
           "creative"
         ]
+      },
+      "flowEngineInstallStatusSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "installing",
+              "ready",
+              "error"
+            ]
+          },
+          "logTail": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "logTail"
+        ],
+        "additionalProperties": false
       },
       "flowHostCredentialsRequestSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -14200,9 +15083,20 @@
             "maxLength": 64,
             "pattern": "^[a-zA-Z0-9_-]+$"
           },
+          "kind": {
+            "default": "stdio",
+            "type": "string",
+            "enum": [
+              "stdio",
+              "http"
+            ]
+          },
           "command": {
             "type": "string",
-            "minLength": 1,
+            "maxLength": 500
+          },
+          "url": {
+            "type": "string",
             "maxLength": 500
           },
           "args": {
@@ -14230,8 +15124,7 @@
           }
         },
         "required": [
-          "name",
-          "command"
+          "name"
         ]
       },
       "mcpServerUpdateRequestSchema": {
@@ -14245,6 +15138,11 @@
             "pattern": "^[a-zA-Z0-9_-]+$"
           },
           "command": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "url": {
             "type": "string",
             "minLength": 1,
             "maxLength": 500
@@ -15743,7 +16641,8 @@
                     "chat",
                     "image",
                     "image-edit",
-                    "video"
+                    "video",
+                    "audio"
                   ]
                 },
                 "model": {
@@ -15763,7 +16662,8 @@
                         "chat",
                         "image",
                         "image-edit",
-                        "video"
+                        "video",
+                        "audio"
                       ]
                     },
                     "vision": {
@@ -17773,7 +18673,8 @@
                     "chat",
                     "image",
                     "image-edit",
-                    "video"
+                    "video",
+                    "audio"
                   ]
                 },
                 "vision": {
@@ -18291,7 +19192,8 @@
                           "chat",
                           "image",
                           "image-edit",
-                          "video"
+                          "video",
+                          "audio"
                         ]
                       },
                       "vision": {
@@ -18848,7 +19750,8 @@
                     "chat",
                     "image",
                     "image-edit",
-                    "video"
+                    "video",
+                    "audio"
                   ]
                 },
                 "vision": {
@@ -19391,7 +20294,8 @@
                     "chat",
                     "image",
                     "image-edit",
-                    "video"
+                    "video",
+                    "audio"
                   ]
                 },
                 "vision": {
@@ -21141,6 +22045,31 @@
               ],
               "additionalProperties": false
             }
+          },
+          "dailyByModel": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string"
+                },
+                "tokens": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                }
+              },
+              "required": [
+                "model",
+                "tokens"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -21152,7 +22081,8 @@
           "longestSessionSeconds",
           "daily",
           "heatmap",
-          "byModel"
+          "byModel",
+          "dailyByModel"
         ],
         "additionalProperties": false
       },
@@ -21232,6 +22162,837 @@
         "required": [
           "totals",
           "byModel"
+        ],
+        "additionalProperties": false
+      },
+      "voiceDiagnoseResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "report": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "hardware": {
+                    "type": "object",
+                    "properties": {
+                      "cpuModel": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "cpuCores": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "totalMemoryBytes": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "platform": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "gpu": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "cpuModel",
+                      "cpuCores",
+                      "totalMemoryBytes",
+                      "platform"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "listen": {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "measured",
+                          "pending",
+                          "unavailable"
+                        ]
+                      },
+                      "summary": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "listen": {
+                        "type": "object",
+                        "properties": {
+                          "rtfMedian": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "samples": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "modelLoadMs": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "lastClipSeconds": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "required": [
+                          "samples"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "think": {
+                        "type": "object",
+                        "properties": {
+                          "ttftSeconds": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "tokensPerSecond": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "ttftSeconds"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "summary"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "think": {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "measured",
+                          "pending",
+                          "unavailable"
+                        ]
+                      },
+                      "summary": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "listen": {
+                        "type": "object",
+                        "properties": {
+                          "rtfMedian": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "samples": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "modelLoadMs": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "lastClipSeconds": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "required": [
+                          "samples"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "think": {
+                        "type": "object",
+                        "properties": {
+                          "ttftSeconds": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "tokensPerSecond": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "ttftSeconds"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "summary"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "speak": {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "measured",
+                          "pending",
+                          "unavailable"
+                        ]
+                      },
+                      "summary": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "listen": {
+                        "type": "object",
+                        "properties": {
+                          "rtfMedian": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "samples": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "modelLoadMs": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "lastClipSeconds": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "required": [
+                          "samples"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "think": {
+                        "type": "object",
+                        "properties": {
+                          "ttftSeconds": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "tokensPerSecond": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "ttftSeconds"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "summary"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "measuredAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  }
+                },
+                "required": [
+                  "hardware",
+                  "listen",
+                  "think",
+                  "speak",
+                  "measuredAt"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "report"
+        ],
+        "additionalProperties": false
+      },
+      "voiceModelListResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "segment": {
+                  "type": "string",
+                  "enum": [
+                    "listen",
+                    "think",
+                    "speak"
+                  ]
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "builtin",
+                    "instance"
+                  ]
+                },
+                "location": {
+                  "type": "string",
+                  "enum": [
+                    "cpu",
+                    "gpu",
+                    "remote"
+                  ]
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sizeBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "needsDownload": {
+                  "type": "boolean"
+                },
+                "download": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "ready",
+                        "missing",
+                        "downloading"
+                      ]
+                    },
+                    "downloadedBytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "totalBytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "downloadedBytes",
+                    "totalBytes"
+                  ],
+                  "additionalProperties": false
+                },
+                "unavailableReason": {
+                  "type": "string"
+                },
+                "performanceNote": {
+                  "type": "string"
+                },
+                "license": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "segment",
+                "label",
+                "kind",
+                "location",
+                "sizeBytes",
+                "needsDownload",
+                "download"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "models"
+        ],
+        "additionalProperties": false
+      },
+      "voiceModelResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "segment": {
+                "type": "string",
+                "enum": [
+                  "listen",
+                  "think",
+                  "speak"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "builtin",
+                  "instance"
+                ]
+              },
+              "location": {
+                "type": "string",
+                "enum": [
+                  "cpu",
+                  "gpu",
+                  "remote"
+                ]
+              },
+              "model": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sizeBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "needsDownload": {
+                "type": "boolean"
+              },
+              "download": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "ready",
+                      "missing",
+                      "downloading"
+                    ]
+                  },
+                  "downloadedBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "totalBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "error": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "state",
+                  "downloadedBytes",
+                  "totalBytes"
+                ],
+                "additionalProperties": false
+              },
+              "unavailableReason": {
+                "type": "string"
+              },
+              "performanceNote": {
+                "type": "string"
+              },
+              "license": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "segment",
+              "label",
+              "kind",
+              "location",
+              "sizeBytes",
+              "needsDownload",
+              "download"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "additionalProperties": false
+      },
+      "voiceRefineRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "recentMessages": {
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "assistant"
+                  ]
+                },
+                "content": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "role",
+                "content"
+              ]
+            }
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "voiceRefineResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "additionalProperties": false
+      },
+      "voiceSettingsResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "settings": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "default": "transcribe",
+                "type": "string",
+                "enum": [
+                  "transcribe",
+                  "loop"
+                ]
+              },
+              "listen": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "builtin",
+                          "instance"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "voice": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "think": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "builtin",
+                          "instance"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "voice": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "speak": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "builtin",
+                          "instance"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "voice": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "speakReplies": {
+                "default": false,
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "mode",
+              "listen",
+              "think",
+              "speak",
+              "speakReplies"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "settings"
+        ],
+        "additionalProperties": false
+      },
+      "voiceSettingsUpdateRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "transcribe",
+              "loop"
+            ]
+          },
+          "listen": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "builtin",
+                      "instance"
+                    ]
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "voice": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "think": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "builtin",
+                      "instance"
+                    ]
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "voice": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "speak": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "builtin",
+                      "instance"
+                    ]
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "voice": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "speakReplies": {
+            "type": "boolean"
+          }
+        }
+      },
+      "voiceSpeakRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "voiceTranscribeResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
         ],
         "additionalProperties": false
       },

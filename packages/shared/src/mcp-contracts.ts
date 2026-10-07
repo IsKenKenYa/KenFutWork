@@ -35,6 +35,9 @@ export type McpServerSource = z.infer<typeof mcpServerSourceSchema>;
 export const mcpServerStatusSchema = z.enum(["connected", "error", "disabled"]);
 export type McpServerStatusValue = z.infer<typeof mcpServerStatusSchema>;
 
+export const mcpServerKindSchema = z.enum(["stdio", "http"]);
+export type McpServerKind = z.infer<typeof mcpServerKindSchema>;
+
 export const mcpServerViewSchema = z.object({
   /** 库内配置才有 id；来源为 env 的条目为 null（只读）。 */
   id: z.string().nullable(),
@@ -42,7 +45,11 @@ export const mcpServerViewSchema = z.object({
   source: mcpServerSourceSchema,
   enabled: z.boolean(),
   status: mcpServerStatusSchema,
-  command: z.string().min(1),
+  /** 传输类型：stdio = 本地子进程（command/args），http = 远程端点（url）。 */
+  kind: mcpServerKindSchema.default("stdio"),
+  /** http 类型的远程端点 URL。 */
+  url: z.string().nullable(),
+  command: z.string(),
   args: z.array(z.string()),
   /** 仅键名，值不外发。 */
   envKeys: z.array(z.string()),
@@ -58,18 +65,49 @@ export type McpServerListResponse = z.infer<typeof mcpServerListResponseSchema>;
 
 const mcpEnvSchema = z.record(z.string(), z.string());
 
-export const mcpServerCreateRequestSchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(1)
-    .max(64)
-    .regex(/^[a-zA-Z0-9_-]+$/, "名称只允许字母数字与 - _"),
-  command: z.string().trim().min(1).max(500),
-  args: z.array(z.string().max(500)).max(50).default([]),
-  env: mcpEnvSchema.default({}),
-  enabled: z.boolean().default(true),
-});
+export const mcpServerCreateRequestSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(64)
+      .regex(/^[a-zA-Z0-9_-]+$/, "名称只允许字母数字与 - _"),
+    kind: mcpServerKindSchema.default("stdio"),
+    /** stdio：本地可执行命令。http：远程端点 URL（http/https）。 */
+    command: z.string().trim().max(500).optional(),
+    /** http 类型的远程端点 URL。 */
+    url: z.string().trim().max(500).optional(),
+    args: z.array(z.string().max(500)).max(50).default([]),
+    env: mcpEnvSchema.default({}),
+    enabled: z.boolean().default(true),
+  })
+  .superRefine((value, ctx) => {
+    if (value.kind === "stdio" && !value.command?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["command"],
+        message: "stdio 类型必须提供本地命令",
+      });
+    }
+    if (value.kind === "http") {
+      if (value.command?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["command"],
+          message: "http 类型不需要本地命令（用 url 表示远程端点）",
+        });
+      }
+      const url = value.url?.trim();
+      if (!url || !/^https?:\/\//.test(url)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["url"],
+          message: "http 类型必须提供 http(s) 远程端点 URL",
+        });
+      }
+    }
+  });
 export type McpServerCreateRequest = z.infer<
   typeof mcpServerCreateRequestSchema
 >;
@@ -83,6 +121,8 @@ export const mcpServerUpdateRequestSchema = z.object({
     .regex(/^[a-zA-Z0-9_-]+$/, "名称只允许字母数字与 - _")
     .optional(),
   command: z.string().trim().min(1).max(500).optional(),
+  /** http 类型的远程端点 URL（编辑 http 行时改它；kind 本身不支持就地切换）。 */
+  url: z.string().trim().min(1).max(500).optional(),
   args: z.array(z.string().max(500)).max(50).optional(),
   env: mcpEnvSchema.optional(),
   enabled: z.boolean().optional(),
@@ -141,10 +181,14 @@ export const mcpRegistryServerSchema = z.object({
     }),
   ),
   remotes: z.array(z.object({ type: z.string(), url: z.string().optional() })),
+  /** 建议的接入类型：http = 远程端点（suggestedUrl），stdio = 本地包（suggestedCommand）。 */
+  kind: mcpServerKindSchema.default("stdio"),
   installable: z.boolean(),
   unsupportedReason: z.string().nullable(),
   suggestedCommand: z.string().nullable(),
   suggestedArgs: z.array(z.string()),
+  /** http 类型的建议端点 URL（stdio 为 null）。 */
+  suggestedUrl: z.string().nullable(),
   suggestedName: z.string(),
   isLatest: z.boolean(),
 });

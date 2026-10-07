@@ -114,7 +114,7 @@ export function PluginInstallByUrl({
         <ShieldCheck className="h-4 w-4" /> 从链接安装
       </h3>
       <p className="mt-1 text-xs text-muted-foreground">
-        填 GitHub 仓库链接或本机目录路径，安装前会先校验兼容性。
+        填 GitHub 链接或本机目录 · 安装前先校验
       </p>
 
       <div className="mt-3 flex gap-2">
@@ -180,9 +180,7 @@ export function PluginInstallByUrl({
                 className="mt-0.5"
                 data-testid="allow-lifecycle"
               />
-              <span>
-                我了解该插件会在<b>安装时执行任意代码</b>，并授权执行。
-              </span>
+              <span>我了解并授权：该插件会执行任意代码</span>
             </label>
           ) : null}
         </div>
@@ -193,7 +191,7 @@ export function PluginInstallByUrl({
           className="mt-2 text-xs text-destructive"
           data-testid="install-blocked"
         >
-          兼容性校验未通过，安装已被阻止。
+          校验未通过 · 安装已阻止
         </p>
       ) : null}
       {message ? (

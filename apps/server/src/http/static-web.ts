@@ -61,9 +61,21 @@ export function registerStaticWebRoutes(
 
   const sendFile = (reply: FastifyReply, file: string, code = 200) => {
     const isHtml = extname(file) === ".html";
-    // favicon 也要 no-cache：WebView2 拿**页面 favicon** 当窗口/任务栏图标，缓存一天的话
-    // 换了图标要等缓存过期才生效（2026-09-20 实测：exe 图标都换了，任务栏还是老图）。
-    const isFavicon = basename(file).toLowerCase().startsWith("favicon.");
+    // HTML 与品牌图必须 no-cache：WebView2 对 max-age 的图缓存一天且跨重装保留，
+    // 换标后应用里一直渲染老图。两次真实事故：
+    //   2026-09-20 favicon（exe 图标换了，任务栏还是老图）；
+    //   2026-09-26 logo-mark（安装包与向导都已是新标，应用内侧栏/加载页还是旧裁边大图，
+    //   用户看到「只有向导是对的」）。
+    // 这些文件由 apps/desktop/scripts/icons.mjs 换标链统一重出：文件名稳定、内容会变，
+    // 长缓存必然踩坑；no-cache 只是协商请求，图小量少，代价可忽略。其余照旧长缓存。
+    const base = basename(file).toLowerCase();
+    const noCache =
+      isHtml ||
+      base.startsWith("favicon.") ||
+      base.startsWith("logo-mark.") ||
+      base.startsWith("logo.") ||
+      base.startsWith("app-icon.") ||
+      base.startsWith("apple-touch-icon.");
     reply
       .code(code)
       .header(
@@ -72,7 +84,7 @@ export function registerStaticWebRoutes(
       )
       .header(
         "cache-control",
-        isHtml || isFavicon ? "no-cache" : "public, max-age=86400",
+        noCache ? "no-cache" : "public, max-age=86400",
       );
     return reply.send(createReadStream(file));
   };

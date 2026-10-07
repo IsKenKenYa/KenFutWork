@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
@@ -267,14 +267,14 @@ describe("git 运行时的优先级（本地优先，打包兜底；Windows 桌�
     expect(
       hasSystemGit({
         path: ["C:/Windows", "C:/Program Files/Git/cmd"].join(";"),
-        exists: fakeFs([join("C:/Program Files/Git/cmd", "git.exe")]),
+        exists: fakeFs([win32.join("C:/Program Files/Git/cmd", "git.exe")]),
       }),
     ).toBe(true);
 
     const resolved = resolveRuntimes({
       env: {},
       exeDir: app,
-      exists: fakeFs([bundledGit, join("C:/Program Files/Git/cmd", "git.exe")]),
+      exists: fakeFs([bundledGit, win32.join("C:/Program Files/Git/cmd", "git.exe")]),
       platform: "win32",
       systemPath: "C:/Program Files/Git/cmd",
     });
@@ -322,7 +322,7 @@ describe("git 运行时的优先级（本地优先，打包兜底；Windows 桌�
     expect(
       hasSystemGit({
         path: "C:/Git",
-        exists: fakeFs([join("C:/Git", "git.exe")]),
+        exists: fakeFs([win32.join("C:/Git", "git.exe")]),
       }),
     ).toBe(true);
   });
@@ -441,7 +441,7 @@ describe("Darwin 系统 Git 选择", () => {
     {
       platform: "win32",
       path: "C:/tools/git;C:/Windows",
-      git: join("C:/tools/git", "git.exe"),
+      git: win32.join("C:/tools/git", "git.exe"),
     },
     {
       platform: "linux",

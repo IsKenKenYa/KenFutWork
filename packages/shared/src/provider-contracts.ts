@@ -25,11 +25,17 @@ export const providerProtocolSchema = z.enum([
 ]);
 export type ProviderProtocol = z.infer<typeof providerProtocolSchema>;
 
+/**
+ * 模型能力词汇表。`audio` 是语音助手插件的「听 / 说」段（ASR / TTS）：一个音频模型
+ * 只能被语音链路消费，与 chat/image/video 不通用，故独立成一档。
+ * 与 `providerProtocolSchema` 同规矩：封闭集合，新增先扩这里。
+ */
 export const modelCapabilitySchema = z.enum([
   "chat",
   "image",
   "image-edit",
   "video",
+  "audio",
 ]);
 export type ModelCapability = z.infer<typeof modelCapabilitySchema>;
 

@@ -185,21 +185,30 @@ export function PluginPanelOverlay({
 /**
  * 槽位入口按钮组：渲染该槽位的全部面板按钮，并内置弹层状态。
  * `renderButton` 让调用方决定外观（侧栏行 / 标题栏小按钮 / 设置里的卡片）。
+ *
+ * `emptyLabel` 只有「列表页」才该传（设置 → 插件面板）：入口点空着就该整个不出现
+ * （见 AGENTS.md「Flow 模式」的不摆空壳），但**列表页空着必须说出来**——否则整页
+ * 只剩一个关闭按钮，用户看到的是白板而不是「这里没有东西」。
  */
 export function PluginPanelButtons({
   accessToken,
   slot,
   renderButton,
+  emptyLabel,
 }: {
   accessToken: string | null;
   slot: string;
   renderButton: (panel: PluginPanelEntry, open: () => void) => React.ReactNode;
+  emptyLabel?: string | undefined;
 }) {
   const { panels } = usePluginPanels(accessToken, slot);
   const [active, setActive] = useState<PluginPanelEntry | null>(null);
 
   return (
     <>
+      {panels.length === 0 && emptyLabel ? (
+        <p className="text-sm text-muted-foreground">{emptyLabel}</p>
+      ) : null}
       {panels.map((panel) => renderButton(panel, () => setActive(panel)))}
       <PluginPanelOverlay panel={active} onClose={() => setActive(null)} />
     </>

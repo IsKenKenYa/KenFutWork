@@ -95,16 +95,14 @@ export function PluginInstallFromWorkdir({
         </button>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        工作目录里的插件会出现在这里，安装前同样会先校验兼容性。
+        工作目录里的插件会出现在这里
       </p>
 
       {scanError ? (
         <p className="mt-2 text-xs text-destructive">{scanError}</p>
       ) : null}
       {!scanError && !scanning && bundles.length === 0 ? (
-        <p className="mt-2 text-xs text-muted-foreground">
-          当前工作目录里没有插件。
-        </p>
+        <p className="mt-2 text-xs text-muted-foreground">没有插件</p>
       ) : null}
 
       {bundles.length > 0 ? (

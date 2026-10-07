@@ -12,6 +12,7 @@ import {
   MAX_HISTORY_ENTRIES,
   openUrl,
   parseImportedHistory,
+  replaceCurrent,
   saveHistory,
 } from "../src/lib/browser-history";
 
@@ -77,6 +78,24 @@ describe("浏览器面板历史栈", () => {
   it("空地址不入栈（地址栏空串不产生一条历史）", () => {
     const state = createHistory();
     expect(openUrl(state, "")).toBe(state);
+  });
+
+  it("页面自己跳走：替换当前那一项，不新增历史（后退仍回上一个打开过的地址）", () => {
+    let state = createHistory();
+    state = openUrl(state, "http://a.com/");
+    state = openUrl(state, "http://b.com/");
+    state = replaceCurrent(state, "http://b.com/next");
+    expect(state.entries).toEqual(["http://a.com/", "http://b.com/next"]);
+    expect(currentUrl(state)).toBe("http://b.com/next");
+    expect(canGoBack(state)).toBe(true);
+    expect(currentUrl(goBack(state))).toBe("http://a.com/");
+
+    // 同一地址 / 空地址不动（返回原引用）；没打开过页面时按一次普通打开
+    expect(replaceCurrent(state, "http://b.com/next")).toBe(state);
+    expect(replaceCurrent(state, "")).toBe(state);
+    expect(currentUrl(replaceCurrent(createHistory(), "http://c.com/"))).toBe(
+      "http://c.com/",
+    );
   });
 
   it("超过上限时丢最旧的（只留最近 N 条）", () => {

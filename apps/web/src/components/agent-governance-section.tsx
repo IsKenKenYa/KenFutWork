@@ -9,6 +9,7 @@ import {
   governanceInputValues,
   parseAgentGovernanceInputs,
 } from "@/lib/agent-governance-settings";
+import { SETTINGS_TITLE } from "@/lib/settings-layout";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 
@@ -115,7 +116,7 @@ function GovernanceNumericField({
         className="w-28 rounded-md border px-2 py-1 text-sm outline-none"
       />
       <p className="text-xs text-muted-foreground">
-        {field.hint} 范围：{min}–{max}。
+        {field.hint} · 范围 {min}–{max}
       </p>
     </div>
   );
@@ -146,7 +147,7 @@ function InfiniteRetryField({
         />
       </label>
       <p className="text-xs text-muted-foreground">
-        开启后，可重试的失败（429/5xx/超时）会持续重试，取消立即生效。
+        可重试失败持续重试 · 取消即停止
       </p>
     </div>
   );
@@ -159,14 +160,7 @@ export function AgentGovernanceSection(props: AgentGovernanceSectionProps) {
     form.setValues((previous) => ({ ...previous, [key]: value }));
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-1">Agent 治理</h2>
-      <p className="text-sm text-muted-foreground mb-3">
-        子代理、模型请求、命令与上下文压缩的实例设置。
-      </p>
-      <p className="text-xs text-muted-foreground mb-6">
-        压缩保留目标供新一轮使用；运行中切换模型沿用当前轮已读取的值。
-        自动和手动压缩共用，实际保留量可因工具配对和溢出恢复而调整。
-      </p>
+      <h2 className={SETTINGS_TITLE}>Agent 治理</h2>
       <form onSubmit={form.handleSubmit} className="space-y-4 max-w-md">
         {AGENT_GOVERNANCE_FIELDS.map((field) => (
           <GovernanceNumericField

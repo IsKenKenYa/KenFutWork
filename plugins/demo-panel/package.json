@@ -45,6 +45,7 @@
         "slot": "settings",
         "url": "assets/panel.html?slot=settings"
       }
-    ]
+    ],
+    "title": "演示插件"
   }
 }

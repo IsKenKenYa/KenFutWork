@@ -3,6 +3,7 @@
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
+import { SETTINGS_ROW, SETTINGS_TITLE } from "@/lib/settings-layout";
 
 /**
  * 设置 → 外观（R5-2：参考图里的「外观」条目）。
@@ -16,39 +17,31 @@ import { useEffect, useState } from "react";
  * 不同接入客户端想要的主题本来就可以不同，不该跟实例设置绑在一起。
  */
 export function AppearanceSection() {
-  const { theme, resolvedTheme, setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   /** next-themes 在挂载前拿不到真值（服务端渲染没有 localStorage），先不渲染选中态以免闪烁 */
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
   const options = [
-    { value: "light", label: "浅色", hint: "始终用浅色", Icon: Sun },
-    { value: "dark", label: "深色", hint: "始终用深色", Icon: Moon },
-    {
-      value: "system",
-      label: "跟随系统",
-      hint: "跟随系统设置",
-      Icon: Monitor,
-    },
+    { value: "light", label: "浅色", Icon: Sun },
+    { value: "dark", label: "深色", Icon: Moon },
+    { value: "system", label: "跟随系统", Icon: Monitor },
   ] as const;
 
   return (
     <section aria-label="外观设置">
-      <h3 className="mb-1 text-base font-medium">外观</h3>
-      <p className="mb-3 text-sm text-muted-foreground">
-        主题保存在本机，画布与代码预览会跟着切换。
-      </p>
+      <h3 className={SETTINGS_TITLE}>外观</h3>
 
       <fieldset className="grid gap-2 sm:grid-cols-3">
         <legend className="sr-only">主题</legend>
-        {options.map(({ value, label, hint, Icon }) => {
+        {options.map(({ value, label, Icon }) => {
           const active = mounted && (theme ?? "system") === value;
           return (
             /* 真的 radio（不是 role="radio" 的按钮）：分组、方向键、读屏语义由浏览器给 */
             <label
               key={value}
               data-active={active}
-              className="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2.5 transition-colors hover:bg-muted/60 data-[active=true]:border-foreground/40 data-[active=true]:bg-muted"
+              className={`${SETTINGS_ROW} cursor-pointer transition-colors hover:bg-muted/60 data-[active=true]:border-foreground/40 data-[active=true]:bg-muted`}
             >
               <input
                 type="radio"
@@ -58,23 +51,12 @@ export function AppearanceSection() {
                 onChange={() => setTheme(value)}
                 className="sr-only"
               />
-              <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="min-w-0">
-                <span className="block text-sm">{label}</span>
-                <span className="block text-xs text-muted-foreground">
-                  {hint}
-                </span>
-              </span>
+              <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span>{label}</span>
             </label>
           );
         })}
       </fieldset>
-
-      <p className="mt-3 text-xs text-muted-foreground">
-        当前生效：
-        {mounted ? (resolvedTheme === "dark" ? "深色" : "浅色") : "…"}
-        {(theme ?? "system") === "system" ? "（跟随系统）" : ""}
-      </p>
     </section>
   );
 }

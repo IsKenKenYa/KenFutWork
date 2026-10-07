@@ -193,6 +193,16 @@ export function createShadowGitClient(deps: {
     if (config.code !== 0) {
       throw new Error(config.stderr.trim() || "配置影子仓库忽略清单失败。");
     }
+    /**
+     * 行尾转换必须关掉：影子仓库要**逐字节**还原用户文件，而 Git for Windows 的全局
+     * 默认 `core.autocrlf=true` 会让 checkout 把 LF 写成 CRLF（真机实测：恢复后文件
+     * 行尾变 `\r\n`，内容算「被改过」，锁字节的回归测试全红）。写进影子仓库的**本地**
+     * config——本地覆盖全局，用户自己的 git 配置不受影响。
+     */
+    const autocrlf = await exec(["config", "core.autocrlf", "false"], input);
+    if (autocrlf.code !== 0) {
+      throw new Error(autocrlf.stderr.trim() || "配置影子仓库行尾转换失败。");
+    }
   };
 
   /**

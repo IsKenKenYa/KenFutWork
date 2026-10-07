@@ -66,6 +66,19 @@ const TOOL_CONFIG: Record<string, ToolDisplayConfig> = {
     showCard: true,
   },
   task: { label: "\u6267\u884c\u4efb\u52a1", icon: "tool", showCard: false },
+  /**
+   * Code 模式的工具（deepagents 内置件 + 执行）：**必须在表里**——漏一个就会走
+   * `formatToolName` 回落成英文标题（实测：Read File / Run Terminal Command 直接进了转录）。
+   */
+  ls: { label: "查看目录", icon: "tool", showCard: false },
+  read_file: { label: "读取文件", icon: "tool", showCard: false },
+  write_file: { label: "写入文件", icon: "tool", showCard: false },
+  edit_file: { label: "修改文件", icon: "tool", showCard: false },
+  glob: { label: "查找文件", icon: "search", showCard: false },
+  grep: { label: "搜索内容", icon: "search", showCard: false },
+  execute: { label: "执行命令", icon: "tool", showCard: false },
+  write_todos: { label: "更新任务", icon: "tool", showCard: false },
+  persist_sandbox_file: { label: "保存文件", icon: "tool", showCard: false },
 };
 
 export function getToolConfig(toolName: string): ToolDisplayConfig {

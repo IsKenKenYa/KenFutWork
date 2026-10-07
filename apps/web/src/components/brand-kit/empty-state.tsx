@@ -10,14 +10,9 @@ export function EmptyState({ onCreateKit }: EmptyStateProps) {
       <div className="rounded-2xl bg-muted p-4">
         <Palette className="h-8 w-8 text-muted-foreground" />
       </div>
-      <div>
-        <h2 className="text-base font-semibold text-foreground sm:text-lg">
-          还没有品牌套件
-        </h2>
-        <p className="mt-1 max-w-[280px] text-sm text-muted-foreground">
-          创建一个品牌套件，集中管理配色、字体与 Logo。
-        </p>
-      </div>
+      <h2 className="text-base font-semibold text-foreground sm:text-lg">
+        还没有品牌套件
+      </h2>
       <button
         type="button"
         onClick={onCreateKit}

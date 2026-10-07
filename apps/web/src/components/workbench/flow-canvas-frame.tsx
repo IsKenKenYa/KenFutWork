@@ -114,8 +114,8 @@ export const FlowCanvasFrame = forwardRef<
         role="status"
         className="flex h-full items-center justify-center bg-card text-sm text-muted-foreground"
       >
-        flow 前端地址不合法（{props.frontendUrl}），请检查
-        KENFUTWORK_FLOW_FRONTEND_URL。
+        flow 前端地址不合法（{props.frontendUrl}）· 检查
+        KENFUTWORK_FLOW_FRONTEND_URL
       </div>
     );
   }

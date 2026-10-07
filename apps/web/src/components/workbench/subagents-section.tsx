@@ -56,8 +56,7 @@ export function SubagentsSection({
     <section aria-label="子智能体设置">
       <h3 className="mb-1 text-base font-medium">子智能体</h3>
       <p className="mb-3 text-sm text-muted-foreground">
-        主 Agent 可以把子任务交给下面这些子智能体执行，运行情况在 Code
-        会话的子智能体目录里看。
+        运行记录见 Code 子代理目录
       </p>
 
       {error ? (
@@ -78,7 +77,7 @@ export function SubagentsSection({
                 <div className="min-w-0 flex-1">
                   <p className="text-sm">
                     {entry.label}
-                    <code className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    <code className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                       {entry.name}
                     </code>
                   </p>
@@ -86,7 +85,7 @@ export function SubagentsSection({
                     {entry.description}
                   </p>
                   {entry.tools && entry.tools.length > 0 ? (
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    <p className="mt-0.5 text-xs text-muted-foreground">
                       工具：{entry.tools.join("、")}
                     </p>
                   ) : null}

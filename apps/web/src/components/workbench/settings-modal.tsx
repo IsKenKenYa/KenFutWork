@@ -25,6 +25,7 @@ import { OnboardingSection } from "@/components/workbench/onboarding-section";
 import { RulesMemorySection } from "@/components/workbench/rules-memory-section";
 import { SubagentsSection } from "@/components/workbench/subagents-section";
 import { TerminalSettingsSection } from "@/components/workbench/terminal-settings-section";
+import { VoiceSettingsSection } from "./voice-settings-section";
 import { UsageStatsSection } from "@/components/workbench/usage-stats-section";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
 import { fetchModels } from "@/lib/server-api";
@@ -39,6 +40,7 @@ export type SettingsTab =
   | "apiTokens"
   | "model"
   | "agentGovernance"
+  | "voice"
   | "providers"
   | "permissions"
   | "browser"
@@ -71,6 +73,7 @@ const TAB_GROUPS: Array<{
       { id: "agentGovernance", label: "Agent 治理" },
       { id: "providers", label: "供应商" },
       { id: "browser", label: "浏览器" },
+      { id: "voice", label: "语音" },
     ],
   },
   {
@@ -385,6 +388,7 @@ export function SettingsModal({
                 accessToken={token}
                 hasWorkDir={hasWorkDir}
                 conversationCount={conversationCount}
+                onLeaveSettings={onClose}
                 onGoToTab={(next) => setActiveTab(next)}
               />
             ) : activeTab === "commands" ? (
@@ -398,6 +402,8 @@ export function SettingsModal({
               <LocalAccessClientsSection />
             ) : activeTab === "subagents" ? (
               <SubagentsSection accessToken={token} />
+            ) : activeTab === "voice" ? (
+              <VoiceSettingsSection accessToken={token} />
             ) : activeTab === "about" ? (
               <AboutSection />
             ) : (
@@ -418,7 +424,7 @@ function PluginPanelsSettings({ accessToken }: { accessToken: string | null }) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        已启用插件提供的设置面板会显示在这里。
+        已启用插件的设置面板
       </p>
       <div className="flex flex-wrap gap-2">
         <PluginPanelButtons

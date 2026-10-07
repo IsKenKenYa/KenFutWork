@@ -27,7 +27,7 @@ describe("设置 → 命令", () => {
       { name: "review", description: "审查", prompt: "请审查：{{args}}" },
     ]);
     render(<CommandsSection commands={[]} onSave={onSave} />);
-    expect(screen.getByText(/还没有自定义命令/)).toBeVisible();
+    expect(screen.getByText("没有命令")).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: /新增命令/ }));
     await userEvent.type(screen.getByLabelText("命令名 1"), "review");

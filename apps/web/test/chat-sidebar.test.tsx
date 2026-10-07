@@ -45,6 +45,19 @@ vi.mock("../src/lib/server-api", () => ({
   fetchModels: fetchModelsMock,
   fetchSessions: fetchSessionsMock,
   fetchInstanceSkills: fetchInstanceSkillsMock,
+
+  // 语音：输入框挂载时会读一次功能模式（读不到按默认档，不影响本文件用例）
+  fetchVoiceSettings: vi.fn(async () => ({
+    settings: {
+      mode: "transcribe",
+      listen: null,
+      think: null,
+      speak: null,
+      speakReplies: false,
+    },
+  })),
+  transcribeVoice: vi.fn(async () => ""),
+  refineVoice: vi.fn(async () => ""),
   saveMessage: saveMessageMock,
   updateSessionTitle: updateSessionTitleMock,
 }));

@@ -459,6 +459,36 @@ describe("usage stats（R4-2 用户侧使用统计）", () => {
     expect(stats.byModel.map((entry) => entry.model)).toEqual(["big", "small"]);
   });
 
+  it("逐日 × 模型序列：与 daily 等长对齐、按用量降序、缺数据的天补 0", async () => {
+    const service = createStatsService(() =>
+      rowsFor([
+        { offsetFromToday: 0, model: "small", input: 10, output: 0 },
+        { offsetFromToday: -2, model: "big", input: 500, output: 0 },
+        { offsetFromToday: 0, model: "big", input: 90, output: 0 },
+      ]),
+    );
+
+    const stats = await service.stats(USER, 7);
+    expect(stats.daily).toHaveLength(7);
+    expect(stats.dailyByModel.map((entry) => entry.model)).toEqual([
+      "big",
+      "small",
+    ]);
+    const big = stats.dailyByModel[0];
+    expect(big?.tokens).toHaveLength(stats.daily.length);
+    // big：今天 90，前天 500，其余天 0
+    const todayTokens = big?.tokens[6] ?? -1;
+    const twoDaysAgo = big?.tokens[4] ?? -1;
+    expect(todayTokens).toBe(90);
+    expect(twoDaysAgo).toBe(500);
+    expect(big?.tokens.filter((tokens) => tokens === 0)).toHaveLength(5);
+    // small：只有今天 10
+    expect(stats.dailyByModel[1]?.tokens[6]).toBe(10);
+    expect(stats.dailyByModel[1]?.tokens.filter((t) => t === 0)).toHaveLength(
+      6,
+    );
+  });
+
   it("最长聊天时长透出到响应（来自会话表的第二个数据源）", async () => {
     const service = createUsageService({
       repository: createFakeRepository({

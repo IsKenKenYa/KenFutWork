@@ -4,8 +4,9 @@ import type { CSSProperties } from "react";
  * KenFutWork 品牌 logo（2026-09-15 换版：GPT 生成图定稿）。
  * 源图：docs/视觉设计/logo/新版.png；桌面应用图标（apps/desktop/src-tauri/icons/）
  * 与 web 端同源。权威说明与变更登记：docs/视觉设计/旧版/品牌Logo说明.md。
- * 应用内一律用 **裁掉透明边的纯标记**（public/logo-mark.png）：自带留白的贴片图会让
- * 「图标与字标」之间看着有空隙、图标也显小（用户 2026-09-19 两次反馈）。
+ * 应用内用 public/logo-mark.png：1024² 透明画布、墨迹占 80%，与桌面图标**同一份墨迹**
+ * （由 apps/desktop/scripts/icons.mjs 一并生成；2026-09-26 用户口径「所有图标都保持
+ * 占比 80%」，早前「裁掉透明边贴满」的旧口径作废）。调用处 size-* 方框直接用。
  * 带白底圆角贴片的那份（public/logo.png）给「需要像应用图标」的地方用。
  * 默认 aria-hidden（调用处旁边必有「KenFutWork」字标）；需要独立可访问名的调用方
  * 自行传 alt 覆盖。
