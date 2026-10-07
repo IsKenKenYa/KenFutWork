@@ -11,6 +11,7 @@ import { VOICE_REFINE_CONTEXT_LIMIT } from "@kenfutwork/shared";
 import {
   Blocks,
   Brain,
+  CircleCheck,
   Code2,
   Folder,
   FolderOpen,
@@ -19,6 +20,7 @@ import {
   ListChecks,
   Loader2,
   MessageSquare,
+  PackagePlus,
   Palette,
   PanelLeftClose,
   PanelLeftOpen,
@@ -28,6 +30,7 @@ import {
   Send,
   Server,
   ShieldAlert,
+  TriangleAlert,
   Workflow,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -3169,19 +3172,39 @@ export function Workbench() {
                   {item.label}
                 </button>
               ))}
-              {/* 引擎栈安装（FORM-11）：Docker 可用时点此拉起无头栈；拉镜像分钟级 */}
+              {/* 引擎栈安装（FORM-11）：Docker 可用时点此拉起无头栈；拉镜像分钟级。
+                  四态各自给图标（与上方导航项同一套 h-4 w-4 口径）：安装 / 转圈 / 对勾 / 警示——
+                  此前全态都是一句裸文字，安装中没有任何活动指示，看着像卡死。 */}
               {flowEntry?.available && (
                 <button
                   type="button"
-                  disabled={engineState === "installing"}
+                  disabled={
+                    engineState === "installing" || engineState === "ready"
+                  }
                   onClick={() => void runEngineInstall()}
                   className="mt-1 flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {engineState === "installing"
-                    ? "引擎栈安装中…"
-                    : engineState === "ready"
-                      ? "引擎栈已就绪"
-                      : "安装引擎栈"}
+                  {engineState === "installing" ? (
+                    <>
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                      引擎栈安装中…
+                    </>
+                  ) : engineState === "ready" ? (
+                    <>
+                      <CircleCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+                      引擎栈已就绪
+                    </>
+                  ) : engineState === "error" ? (
+                    <>
+                      <TriangleAlert className="h-4 w-4 shrink-0 text-destructive" />
+                      重试安装引擎栈
+                    </>
+                  ) : (
+                    <>
+                      <PackagePlus className="h-4 w-4 shrink-0" />
+                      安装引擎栈
+                    </>
+                  )}
                 </button>
               )}
             </nav>
