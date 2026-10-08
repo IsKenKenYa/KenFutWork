@@ -31,10 +31,9 @@ import {
 
 import {
   createBrowserRecorder,
-  VOICE_SAMPLE_RATE,
   type VoiceRecorder,
   type VoiceRecording,
-} from "./voice-audio";
+} from "./voice-audio.js";
 
 /** 按住多久算录音（规划 §7）。 */
 const DEFAULT_HOLD_MS = 200;
@@ -406,5 +405,3 @@ export function useHoldToTalk(options: HoldToTalkOptions): HoldToTalk {
     dismissError,
   };
 }
-
-export { VOICE_SAMPLE_RATE };

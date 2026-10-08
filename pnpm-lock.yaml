@@ -283,6 +283,9 @@ importers:
       '@kenfutwork/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@kenfutwork/voice-ui':
+        specifier: workspace:*
+        version: link:../../packages/voice-ui
       '@lexical/react':
         specifier: ^0.42.0
         version: 0.42.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(yjs@13.6.33)
@@ -677,6 +680,22 @@ importers:
       '@kenfutwork/config':
         specifier: workspace:*
         version: link:../config
+
+  packages/voice-ui:
+    dependencies:
+      '@kenfutwork/shared':
+        specifier: workspace:*
+        version: link:../shared
+      react:
+        specifier: ^19.2.0
+        version: 19.3.0
+    devDependencies:
+      '@kenfutwork/config':
+        specifier: workspace:*
+        version: link:../config
+      '@types/react':
+        specifier: ^19.2.14
+        version: 19.3.0
 
   packages/zcode-cua: {}
 

@@ -51,6 +51,7 @@
     "use-stick-to-bottom": "^1.1.6",
     "zod": "^4.6.5",
     "zustand": "^5.0.15",
+    "@kenfutwork/voice-ui": "workspace:*",
     "@zcode/ui": "workspace:*"
   },
   "devDependencies": {

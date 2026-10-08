@@ -6,7 +6,7 @@ import {
   useVoiceMode,
   VOICE_SETTINGS_CHANGED_EVENT,
 } from "../src/components/composer-voice.js";
-import type { VoiceRecorder } from "../src/lib/voice-audio.js";
+import type { VoiceRecorder } from "@kenfutwork/voice-ui";
 
 /**
  * 三处输入框共用的语音接线：手势 → 状态行 → 文本落进受控 state。

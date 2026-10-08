@@ -2,8 +2,8 @@ import { act, renderHook } from "@testing-library/react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useHoldToTalk } from "../src/lib/use-hold-to-talk.js";
-import type { VoiceRecorder, VoiceRecording } from "../src/lib/voice-audio.js";
+import { useHoldToTalk } from "@kenfutwork/voice-ui";
+import type { VoiceRecorder, VoiceRecording } from "@kenfutwork/voice-ui";
 
 /**
  * 手势状态机。这块最容易伤到既有行为（光标定位、拖选、IME），
