@@ -99,9 +99,28 @@ export function resolvePanelUrl(url: string, pluginId?: string): string {
  * 插件入口图标：**单色渲染**（CSS mask + `bg-current`），跟随所在行/标题的文字色，
  * 与宿主自己的线条图标同一套视觉语言（彩色贴图塞进菜单行会格格不入）。
  *
+ * **图标必须先经带凭据的 fetch 取回再喂 mask**：CSS `mask-image: url()` 的跨源请求
+ * 默认不带凭据（同源代理消失后页面与 API 分属 3300/3301 两个源），直接引用资源 URL
+ * 会 401、mask 空白——表现为「插件入口的 logo 不见了」（resource timing 实测：
+ * `initiatorType: css` → 401，带 credentials 的 fetch → 200）。blob URL 与页面同源，
+ * mask 可用；结果按 URL 缓存，失败落 fallback。
+ *
  * 槽位与图标分开：`slotClass` 固定占位（保证文字左对齐不被图标大小挤动），
  * `iconClass` 决定图标本体大小（窄字形/空心描边可以放大或缩小一档做视觉配重）。
  */
+const iconObjectUrlCache = new Map<string, Promise<string | null>>();
+
+function loadIconObjectUrl(url: string): Promise<string | null> {
+  const cached = iconObjectUrlCache.get(url);
+  if (cached) return cached;
+  const pending = fetch(url, { credentials: "include" })
+    .then((response) => (response.ok ? response.blob() : null))
+    .then((blob) => (blob ? URL.createObjectURL(blob) : null))
+    .catch(() => null);
+  iconObjectUrlCache.set(url, pending);
+  return pending;
+}
+
 export function PluginIcon({
   icon,
   pluginId,
@@ -117,25 +136,46 @@ export function PluginIcon({
   fallback?: React.ReactNode;
 }) {
   const url = icon ? resolvePanelUrl(icon, pluginId) : null;
+  const [maskUrl, setMaskUrl] = useState<string | null>(null);
+  const [iconFailed, setIconFailed] = useState(false);
+  useEffect(() => {
+    if (!url) return;
+    let alive = true;
+    void loadIconObjectUrl(url).then((objectUrl) => {
+      if (!alive) return;
+      if (objectUrl) setMaskUrl(objectUrl);
+      else setIconFailed(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [url]);
   return (
     <span
       className={`flex shrink-0 items-center justify-center ${slotClass}`}
       aria-hidden="true"
     >
       {url ? (
-        <span
-          className={`${iconClass} bg-current`}
-          style={{
-            maskImage: `url(${url})`,
-            maskSize: "contain",
-            maskRepeat: "no-repeat",
-            maskPosition: "center",
-            WebkitMaskImage: `url(${url})`,
-            WebkitMaskSize: "contain",
-            WebkitMaskRepeat: "no-repeat",
-            WebkitMaskPosition: "center",
-          }}
-        />
+        maskUrl ? (
+          <span
+            className={`${iconClass} bg-current`}
+            style={{
+              maskImage: `url(${maskUrl})`,
+              maskSize: "contain",
+              maskRepeat: "no-repeat",
+              maskPosition: "center",
+              WebkitMaskImage: `url(${maskUrl})`,
+              WebkitMaskSize: "contain",
+              WebkitMaskRepeat: "no-repeat",
+              WebkitMaskPosition: "center",
+            }}
+          />
+        ) : iconFailed ? (
+          (fallback ?? <PanelsTopLeft className={iconClass} />)
+        ) : (
+          // 加载中：空占位（slotClass 已撑住布局，不闪 fallback）
+          <span className={iconClass} />
+        )
       ) : (
         (fallback ?? <PanelsTopLeft className={iconClass} />)
       )}
