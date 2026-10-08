@@ -422,6 +422,8 @@ pub fn run() {
             desktop_system::save_file,
             desktop_system::reveal_path,
             desktop_system::open_external,
+            desktop_system::cua_permission_owner,
+            desktop_system::open_cua_permission_settings,
             data_location::open_in_browser,
             data_location::open_data_directory,
             data_location::move_data_directory,

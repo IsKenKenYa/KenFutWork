@@ -1,4 +1,8 @@
 import type { ApplicationIconInfo, IPlatformService } from "@zcode/shared";
+import {
+  createCuaPermissionOnboarding,
+  localCuaDesktopInvoke,
+} from "./cuaPermissionPlatform.js";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 import { createWebPlatform } from "./upstream/browserPlatform.js";
 
@@ -6,12 +10,26 @@ import { createWebPlatform } from "./upstream/browserPlatform.js";
 export function createCodePlatform(
   client: CodeHttpChannelClient,
 ): IPlatformService {
+  const desktop = localCuaDesktopInvoke();
+  const macDesktop =
+    desktop &&
+    /Macintosh|Mac OS X/u.test(navigator.userAgent) &&
+    !/iPhone|iPad/u.test(navigator.userAgent);
   return {
     ...createWebPlatform(),
     supportsCloudAccounts: false,
     supportsAutomations: false,
     supportsEmbeddedBrowser: false,
-    supportsComputerUse: false,
+    supportsComputerUse: Boolean(macDesktop),
+    ...(macDesktop
+      ? {
+          ...createCuaPermissionOnboarding(desktop),
+          executeDesktopCommand: async (command: string) => {
+            if (command === "getCuaOsSupport") return { kind: "supported" };
+            throw new Error("当前桌面宿主未提供该操作。");
+          },
+        }
+      : {}),
     supportsRemoteWorkspaces: false,
     supportsUserOnboarding: false,
     supportsSettingsImport: false,

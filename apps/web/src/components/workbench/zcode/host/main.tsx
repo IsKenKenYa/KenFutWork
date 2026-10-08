@@ -64,6 +64,7 @@ function CodeHost({
           <Root
             services={services}
             platform={platform}
+            isMacDesktop={platform.supportsComputerUse === true}
             directoryServices={client.directoryServices()}
             onWorkspaceContextChange={onWorkspaceContextChange}
             initialUserInfo={user}

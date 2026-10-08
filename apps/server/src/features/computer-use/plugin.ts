@@ -32,6 +32,7 @@ import {
   CODE_UI_HOST_RPC_CAPABILITY,
   type CodeUiHostRpcHandler,
 } from "../code-ui/host-rpc-handler.js";
+import { createMacosPermissionStatusRpc } from "./permission-status-rpc.js";
 import { createActiveComputerUseRuns } from "./active-runs.js";
 import { createMacosApplicationIconResolver } from "./application-icon.js";
 import { createUnavailableExecutor } from "./executor.js";
@@ -196,6 +197,19 @@ export function createComputerUsePlugin(options?: {
       const gate = createBundleGate(
         () => ctx.tryGet("plugins") as PluginsServiceLike | undefined,
       );
+      if ((options?.platform ?? process.platform) === "darwin") {
+        const permissionRpc = createMacosPermissionStatusRpc({
+          gate,
+          executor: () => native,
+          timeoutMs: async (actor) => (await ctx.get("settings").getInstanceSettings(actor, actor.instanceId)).computerUseActionTimeoutMs,
+        });
+        ctx.effect(() =>
+          ctx.get("capabilities").register(CODE_UI_HOST_RPC_CAPABILITY, {
+            id: "cua-permission.getStatus",
+            value: permissionRpc,
+          }),
+        );
+      }
       const tools = ctx.get("tools");
       const activeRuns = createActiveComputerUseRuns(tools);
       ctx.effect(() =>
