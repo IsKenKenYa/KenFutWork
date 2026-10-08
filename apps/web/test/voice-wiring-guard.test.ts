@@ -63,7 +63,11 @@ describe("语音接线守卫", () => {
     expect(CODE_COMPOSER).toContain("onPointerDown={voice?.onPointerDown}");
     expect(CODE_COMPOSER).toContain("{voice?.status}");
     expect(CODE_COMPOSER).toContain("inputApiRef.current?.appendText(");
-    // 完整回路：写回后走 composer 自己的提交路径（不是另起一条发送通道）
+    // 完整回路：写回后走 composer 自己的提交路径（不是另起一条发送通道）；
+    // 且必须等 appendText 回传草稿后再提交——立即 submit 会读到旧文本而空转
+    //（真机验收抓到的缺陷：文本留在草稿里但不执行）
+    expect(CODE_COMPOSER).toContain("voiceAutoSubmitRef.current = prompt;");
+    expect(CODE_COMPOSER).toContain("text.includes(pending)");
     expect(CODE_COMPOSER).toContain("void submit();");
     // 宿主桥：Provider + 核心编排复用 + multipart 转写通道
     expect(CODE_VOICE_BINDING).toContain("CodeVoiceProvider");

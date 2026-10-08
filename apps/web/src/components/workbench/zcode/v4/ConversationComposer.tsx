@@ -1519,8 +1519,9 @@ function ConversationComposerImpl({
    * 语音接线（宿主桥 `@zui/voice/binding.js`；transport 由 `host/main.tsx` 注入）：
    * 按住输入卡说话 → 转写填入（只转文本档）；完整回路档经「改写 → 2 秒撤销窗口」
    * 自动提交。写回走 `inputApiRef.appendText`——程序化改写经 TextContentPlugin →
-   * handleEditorChange 落入草稿与受控 state，不再需要别的接线。
+   * handleEditorChange 落入草稿与受控 state。
    */
+  const voiceAutoSubmitRef = useRef<string | null>(null);
   const voice = useCodeComposerVoice({
     enabled: !disabled && mode !== "reject",
     onTranscript: (text) => {
@@ -1528,12 +1529,20 @@ function ConversationComposerImpl({
       inputApiRef.current?.focus();
     },
     onAutoSubmit: (prompt) => {
-      // 撤回窗口走完才到这里；改写后的完整需求先落进输入框再走同一提交路径——
-      // 即使 submit 因未就绪 no-op，文本也留在草稿里，不会丢。
+      // 撤回窗口走完才到这里。注意 appendText 经 Lexical 更新事件**异步**回传草稿，
+      // 立即 submit 会读到旧文本而空转（真机验收抓到的缺陷）——先记下待提交文本，
+      // 等它真的出现在 composer 文本里再走与回车完全相同的提交路径。
+      voiceAutoSubmitRef.current = prompt;
       inputApiRef.current?.appendText(prompt);
-      void submit();
+      inputApiRef.current?.focus();
     },
   });
+  useEffect(() => {
+    const pending = voiceAutoSubmitRef.current;
+    if (!pending || !text.includes(pending)) return;
+    voiceAutoSubmitRef.current = null;
+    void submit();
+  }, [text, submit]);
 
   // Lexical onChange（首字符也稳定回传，见 LexicalChatInput.TextContentPlugin）。
   const handleEditorChange = useCallback(
