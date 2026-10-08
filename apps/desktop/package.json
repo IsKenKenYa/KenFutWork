@@ -9,7 +9,7 @@
     "verify:wizard-art": "node scripts/probe-wizard-art.mjs",
     "tauri": "tauri",
     "typecheck": "node scripts/cargo.mjs check",
-    "test": "node --test scripts/cargo-gate.test.mjs scripts/dev-startup.test.mjs && node scripts/cargo.mjs test"
+    "test": "node --test scripts/cargo-gate.test.mjs scripts/dev-startup.test.mjs scripts/macos-signing.test.mjs && node scripts/cargo.mjs test"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.5"

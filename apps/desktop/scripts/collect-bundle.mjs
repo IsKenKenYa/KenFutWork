@@ -25,6 +25,7 @@ import {
 } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, dirname, join } from "node:path";
+import { ensureMacosAppSeal } from "./macos-signing.mjs";
 
 const repoRoot = join(import.meta.dirname, "..", "..", "..");
 const bundleBase = join(
@@ -80,17 +81,13 @@ if (process.platform === "win32") {
     console.error(`[collect] 没找到应用包：${appDir}（先跑 tauri build）`);
     process.exit(1);
   }
-  // tauri 的默认 ad-hoc 签名不封 Resources（verify 报 "code has no resources"）——
-  // 深签一遍把 Resources/seal 补上（ad-hoc 身份，本机可开；对外分发需 Developer ID + 公证）。
-  const resign = spawnSync(
-    "/usr/bin/codesign",
-    ["--force", "--deep", "--sign", "-", appPath],
-    { stdio: "inherit" },
+  // 沿用已有有效身份；只为未签名/ad-hoc包补Resources，不能把证书签名降级。
+  const seal = ensureMacosAppSeal(appPath);
+  console.log(
+    seal.repaired
+      ? "[collect] 本机资源封印已补全"
+      : "[collect] 沿用已有有效签名",
   );
-  if (resign.status !== 0) {
-    console.error("[collect] 深签名失败");
-    process.exit(resign.status ?? 1);
-  }
   const version = JSON.parse(
     readFileSync(
       join(import.meta.dirname, "..", "src-tauri", "tauri.conf.json"),
