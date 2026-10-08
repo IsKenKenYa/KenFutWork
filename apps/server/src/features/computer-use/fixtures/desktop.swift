@@ -82,6 +82,14 @@ DispatchQueue.global().async {
         window.close()
       } else if command == "rename-main-button" {
         window.contentView?.subviews.compactMap { $0 as? NSButton }.first?.title = "变更后的按钮"
+      } else if command.hasPrefix("display-main ") {
+        let displayId = String(command.dropFirst("display-main ".count))
+        if let screen = NSScreen.screens.first(where: {
+          ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.stringValue == displayId
+        }) {
+          window.setFrameOrigin(NSPoint(x: screen.frame.minX + 150, y: screen.frame.minY + 150))
+          window.makeKeyAndOrderFront(nil)
+        }
       }
       print("COMMAND \(command)"); fflush(stdout)
     }

@@ -15,6 +15,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it } from "vitest";
 import { kernelToolToStructuredTool } from "../../agent/kernel-tools-bridge.js";
 import { AgentRunEventBus, ToolRegistryImpl } from "../../kernel/context.js";
+import type { CuDisplay } from "./executor.js";
 import { createMacosExecutor } from "./executor-macos.js";
 import { runJxa } from "./jxa.js";
 import { withMacosClipboardText } from "./macos-clipboard.js";
@@ -26,6 +27,102 @@ const exec = promisify(execFile);
 const defaults = AGENT_GOVERNANCE_DEFAULTS;
 const enabled =
   process.env.KENFUTWORK_TEST_DESKTOP === "1" && process.platform === "darwin";
+
+type NativeResult = {
+  content: Array<{ type: string; text?: string }>;
+  structuredContent?: Record<string, unknown>;
+};
+type NativeRaster = {
+  frameId: string;
+  width: number;
+  height: number;
+  bounds: [number, number, number, number];
+};
+
+async function verifySecondaryDisplay(input: {
+  form: string;
+  displays: CuDisplay[];
+  app: { pid: number; windowId: number };
+  client: Client;
+  call(name: string, args: Record<string, unknown>): Promise<NativeResult>;
+  command(name: string): Promise<void>;
+}) {
+  const secondary = input.displays.find((display) => !display.primary);
+  const primary = input.displays.find((display) => display.primary);
+  if (!secondary || !primary) {
+    console.info("当前只有单屏，本轮没有双屏效果证据");
+    return;
+  }
+  const old = await input.call("screenshot", { app: input.app });
+  const previous = old.structuredContent?.image as NativeRaster;
+  await input.command(`display-main ${secondary.id}`);
+  try {
+    const stale = await input.client.callTool({
+      name: "click",
+      arguments: {
+        app: input.app,
+        target: {
+          type: "coordinate",
+          x: previous.width / 4,
+          y: previous.height * 0.32,
+          frameId: previous.frameId,
+        },
+      },
+    });
+    expect(stale.isError).toBe(true);
+    expect(stale.structuredContent).toMatchObject({
+      error: { code: "element_stale", actionSent: false },
+    });
+    const shot = await input.call("screenshot", { app: input.app });
+    const image = shot.structuredContent?.image as NativeRaster;
+    expect(image.bounds[0]).toBeGreaterThanOrEqual(secondary.bounds[0]);
+    expect(image.bounds[0] + image.bounds[2]).toBeLessThanOrEqual(
+      secondary.bounds[0] + secondary.bounds[2],
+    );
+    expect(image.bounds[1]).toBeGreaterThanOrEqual(secondary.bounds[1]);
+    expect(image.bounds[1] + image.bounds[3]).toBeLessThanOrEqual(
+      secondary.bounds[1] + secondary.bounds[3],
+    );
+    expect(image.width / image.bounds[2]).toBeCloseTo(secondary.scaleFactor, 2);
+    expect(image.height / image.bounds[3]).toBeCloseTo(
+      secondary.scaleFactor,
+      2,
+    );
+    await input.call("click", {
+      app: input.app,
+      target: {
+        type: "coordinate",
+        x: image.width / 4,
+        y: image.height * 0.32,
+        frameId: image.frameId,
+      },
+    });
+    expect(
+      JSON.stringify(
+        (await input.call("get_app_state", { app: input.app })).content,
+      ),
+    ).toContain("点击数：5");
+    const receipt = {
+      verifiedAt: new Date().toISOString(),
+      primary,
+      secondary,
+      raster: {
+        width: image.width,
+        height: image.height,
+        bounds: image.bounds,
+      },
+      actualClickCount: 5,
+      staleFrameRejected: true,
+    };
+    console.info("双屏实际截图/坐标点击/旧帧拒绝", JSON.stringify(receipt));
+    await writeFile(
+      `/private/tmp/kfw-cu-dual-display-${input.form === "源码" ? "source" : "cjs"}.json`,
+      JSON.stringify(receipt),
+    );
+  } finally {
+    await input.command(`display-main ${primary.id}`);
+  }
+}
 
 describe.skipIf(!enabled).each(["源码", "打包"])(
   "真实macOS%s窗口→Harness→MCP公共协议",
@@ -532,6 +629,14 @@ JSON.stringify(rows);`,
               (await call("get_app_state", { app: main })).content,
             ),
           ).toContain("点击数：4");
+          await verifySecondaryDisplay({
+            form,
+            displays: displays.structuredContent?.displays as CuDisplay[],
+            app: main,
+            client,
+            call,
+            command,
+          });
           await command("close-main");
           const closed = await client.callTool({
             name: "key",
