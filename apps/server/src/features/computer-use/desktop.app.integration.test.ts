@@ -362,9 +362,13 @@ it.skipIf(!enabled)(
         "-o",
         probe,
       ]);
-      fixture = spawn(probe, [], { stdio: ["pipe", "pipe", "pipe"] });
+      fixture = spawn(probe, ["--noisy-background"], {
+        stdio: ["pipe", "pipe", "pipe"],
+      });
       await once(fixture.stdout!, "data");
       model = await createDesktopModelServer(fixture.pid!, {
+        screenshotRecovery: true,
+        omitRole: true,
         beforeResponse: async (stage) => {
           if (stage === 0) {
             modelStarted();
@@ -447,6 +451,34 @@ it.skipIf(!enabled)(
           postEvents: "granted",
         },
       });
+      const coordinateShot = CallToolResultSchema.parse(
+        await mcp.callTool({
+          name: "screenshot",
+          arguments: { app: { pid: fixture.pid } },
+        }),
+      );
+      const coordinateImage = z
+        .object({ width: z.number(), height: z.number(), frameId: z.string() })
+        .parse(coordinateShot.structuredContent?.image);
+      expect(coordinateImage.width).toBeLessThan(840);
+      const clicked = await mcp.callTool({
+        name: "click",
+        arguments: {
+          app: { pid: fixture.pid },
+          target: {
+            type: "coordinate",
+            frameId: coordinateImage.frameId,
+            x: coordinateImage.width * 0.25,
+            y: coordinateImage.height * 0.32,
+          },
+        },
+      });
+      expect(clicked.isError).not.toBe(true);
+      const clickedState = await mcp.callTool({
+        name: "get_app_state",
+        arguments: { app: { pid: fixture.pid } },
+      });
+      expect(JSON.stringify(clickedState.content)).toContain("点击数：1");
       resumeModel();
       const currentHost = host;
       await expect
@@ -464,20 +496,41 @@ it.skipIf(!enabled)(
       const shot = final.rows.window.find(
         (row) =>
           row.kind === "toolCall" &&
-          row.toolName === `${CU_TOOL_PREFIX}screenshot`,
+          row.toolName === `${CU_TOOL_PREFIX}screenshot` &&
+          row.toolCallId.includes("desktop-model-4") &&
+          row.status === "success",
       );
       if (
         !shot ||
         shot.kind !== "toolCall" ||
         shot.output?.display?.kind !== "cua"
       )
-        throw new Error("实际.app原V4缺少真实CUA图片行");
+        throw new Error(
+          `实际.app原V4缺少真实CUA图片行：${JSON.stringify(final.rows.window.filter((row) => row.kind === "toolCall").map((row) => (row.kind === "toolCall" ? { tool: row.toolName, status: row.status, text: row.output?.text?.slice(0, 300) } : null)))}`,
+        );
       expect(
         shot.output.display.media?.some(
           (block) =>
             block.mimeType === "image/png" &&
             typeof block.data === "string" &&
             block.data.length > 0,
+        ),
+      ).toBe(true);
+      const preview = shot.output.display.media?.find(
+        (block) => typeof block.data === "string",
+      );
+      if (!preview?.data) throw new Error("超预算截图未提供完整预览");
+      expect(preview.data.length).toBeLessThanOrEqual(
+        AGENT_GOVERNANCE_DEFAULTS.computerUseScreenshotMaxBytes,
+      );
+      const decoded = PNG.sync.read(Buffer.from(preview.data, "base64"));
+      expect(decoded.width).toBeLessThan(840);
+      expect(
+        final.rows.window.some(
+          (row) =>
+            row.kind === "toolCall" &&
+            row.toolName === `${CU_TOOL_PREFIX}screenshot` &&
+            row.status === "error",
         ),
       ).toBe(true);
       expect(JSON.stringify(model.requests)).toContain(
@@ -492,7 +545,7 @@ it.skipIf(!enabled)(
         )
         .parse(model.requests.at(-1)?.messages);
       const observed = messages.find(
-        (message) => message.tool_call_id === "desktop-model-5",
+        (message) => message.tool_call_id === "desktop-model-6",
       );
       expect(JSON.stringify(observed?.content)).toContain("Task中文🙂🚀");
       expect(JSON.stringify(final).includes(token)).toBe(false);

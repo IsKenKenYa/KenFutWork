@@ -25,7 +25,10 @@ import {
   DEFAULT_GOOGLE_AGENT_MODEL,
   type ServerEnv,
 } from "../config/env.js";
-import { createNativeToolExclusionMiddleware } from "../features/code-tools/native-tool-exclusion.js";
+import {
+  createCodeFilesystemMiddleware,
+  createNativeToolExclusionMiddleware,
+} from "../features/code-tools/native-tool-exclusion.js";
 import {
   createTaskWorkNotificationMiddleware,
   type TaskWorkBinding,
@@ -616,7 +619,12 @@ export function createKenFutWorkDeepAgent(options: {
     ...(options.taskWork
       ? [createTaskWorkNotificationMiddleware(options.taskWork)]
       : []),
-    ...(preset === "code" ? [createNativeToolExclusionMiddleware()] : []),
+    ...(preset === "code"
+      ? [
+          createCodeFilesystemMiddleware(backendResult.factory),
+          createNativeToolExclusionMiddleware(),
+        ]
+      : []),
   ];
 
   // LLM 请求级重试（DEC-18）：maxAttempts 含首次；infinite 为用户显式开启。

@@ -4,9 +4,11 @@ import AppKit
 final class ProbeView: NSView {
   var label = NSTextField(labelWithString: "点击数：0")
   var count = 0
+  var noisyBackground: NSImage?
   override var acceptsFirstResponder: Bool { true }
   override func draw(_ dirtyRect: NSRect) {
     super.draw(dirtyRect)
+    noisyBackground?.draw(in: bounds)
     if let tokenIndex = CommandLine.arguments.firstIndex(of: "--visual-token"), tokenIndex + 1 < CommandLine.arguments.count {
       let token = CommandLine.arguments[tokenIndex + 1]
       token.draw(at: NSPoint(x: 220, y: 230), withAttributes: [
@@ -17,6 +19,18 @@ final class ProbeView: NSView {
   }
   override init(frame: NSRect) {
     super.init(frame: frame)
+    if CommandLine.arguments.contains("--noisy-background") {
+      let width = 840, height = 600
+      let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: width * 4, bitsPerPixel: 32)!
+      var seed: UInt32 = 42
+      for index in 0..<(width * height * 4) {
+        seed = seed &* 1664525 &+ 1013904223
+        bitmap.bitmapData![index] = index % 4 == 3 ? 255 : UInt8(seed >> 24)
+      }
+      let image = NSImage(size: frame.size)
+      image.addRepresentation(bitmap)
+      noisyBackground = image
+    }
     let button = NSButton(title: "验收按钮", target: self, action: #selector(clicked))
     button.frame = NSRect(x: 40, y: 200, width: 150, height: 40)
     addSubview(button)
