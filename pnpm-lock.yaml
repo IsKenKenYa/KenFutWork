@@ -473,6 +473,9 @@ importers:
       '@kenfutwork/shared':
         specifier: workspace:*
         version: link:../../../../../../packages/shared
+      '@kenfutwork/voice-ui':
+        specifier: workspace:*
+        version: link:../../../../../../packages/voice-ui
       '@lexical/react':
         specifier: ^0.42.0
         version: 0.42.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(yjs@13.6.33)

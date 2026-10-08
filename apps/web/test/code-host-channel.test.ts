@@ -502,3 +502,65 @@ describe("Code human viewer channel", () => {
     client.dispose();
   });
 });
+
+describe("Code 宿主语音转写通道", () => {
+  it("multipart POST /api/voice/transcribe：cookie 认证、不手写 content-type、原样返回文本", async () => {
+    const calls: Array<{ url: string; options: RequestInit }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, options: RequestInit) => {
+        calls.push({ url, options });
+        return new Response(JSON.stringify({ text: "你好" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+    const client = new CodeHttpChannelClient({ apiBase: "http://host.test/" });
+    try {
+      await expect(
+        client.transcribeVoice(new Uint8Array([1, 2, 3])),
+      ).resolves.toBe("你好");
+      expect(calls[0]?.url).toBe("http://host.test/api/voice/transcribe");
+      expect(calls[0]?.options.method).toBe("POST");
+      expect(calls[0]?.options.credentials).toBe("include");
+      expect(calls[0]?.options.body).toBeInstanceOf(FormData);
+      // content-type 必须交给浏览器生成（boundary），手写会破坏 multipart 解析
+      const headerNames = Object.keys(
+        (calls[0]?.options.headers ?? {}) as Record<string, string>,
+      ).map((name) => name.toLowerCase());
+      expect(headerNames).not.toContain("content-type");
+    } finally {
+      client.dispose();
+    }
+  });
+
+  it("服务端失败原因原样透出（设置页那类可读提示不吞成通用错误）", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error: {
+                message: "未选择「听」模型。到「设置 → 语音」选一个（内置模型需先下载）。",
+              },
+            }),
+            { status: 422, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+    const client = new CodeHttpChannelClient({ apiBase: "http://host.test" });
+    try {
+      await expect(
+        client.transcribeVoice(new Uint8Array(4)),
+      ).rejects.toMatchObject({
+        status: 422,
+        message:
+          "未选择「听」模型。到「设置 → 语音」选一个（内置模型需先下载）。",
+      });
+    } finally {
+      client.dispose();
+    }
+  });
+});

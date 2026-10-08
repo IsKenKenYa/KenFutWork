@@ -94,6 +94,7 @@ import { usePromptEditorDragState } from "@zui/prompt-editor/usePromptEditorDrag
 import type { AppSlashCommand } from "@zui/slashCommandHelpers.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import type { ComposerMentionPrefill } from "@zui/store/zcodeSessionStoreTypes.js";
+import { useCodeComposerVoice } from "@zui/voice/binding.js";
 import type { AttachmentPutFn } from "@zui/v4/composer/attachmentUpload.js";
 import { CodeCommentAttachmentChip } from "@zui/v4/composer/CodeCommentAttachmentChip.js";
 import { ConversationBackgroundWorkTrigger } from "@zui/v4/composer/ConversationBackgroundWorkTrigger.js";
@@ -1514,6 +1515,26 @@ function ConversationComposerImpl({
     ],
   );
 
+  /**
+   * 语音接线（宿主桥 `@zui/voice/binding.js`；transport 由 `host/main.tsx` 注入）：
+   * 按住输入卡说话 → 转写填入（只转文本档）；完整回路档经「改写 → 2 秒撤销窗口」
+   * 自动提交。写回走 `inputApiRef.appendText`——程序化改写经 TextContentPlugin →
+   * handleEditorChange 落入草稿与受控 state，不再需要别的接线。
+   */
+  const voice = useCodeComposerVoice({
+    enabled: !disabled && mode !== "reject",
+    onTranscript: (text) => {
+      inputApiRef.current?.appendText(text);
+      inputApiRef.current?.focus();
+    },
+    onAutoSubmit: (prompt) => {
+      // 撤回窗口走完才到这里；改写后的完整需求先落进输入框再走同一提交路径——
+      // 即使 submit 因未就绪 no-op，文本也留在草稿里，不会丢。
+      inputApiRef.current?.appendText(prompt);
+      void submit();
+    },
+  });
+
   // Lexical onChange（首字符也稳定回传，见 LexicalChatInput.TextContentPlugin）。
   const handleEditorChange = useCallback(
     (value: string) => {
@@ -2293,6 +2314,8 @@ function ConversationComposerImpl({
           "chat-composer-input-surface w-full",
           contextHeader && "rounded-2xl bg-surface shadow-xl/5",
         )}
+        onPointerDown={voice?.onPointerDown}
+        style={voice?.lockSelection ? { userSelect: "none" } : undefined}
       >
         {contextHeader ? (
           // 旧 ChatViewComposer contextHeaderContent 同款包装（workspace 菜单 + Git 分支）。
@@ -2358,6 +2381,7 @@ function ConversationComposerImpl({
             <span>{attachmentsApi.attachmentError}</span>
           </p>
         ) : null}
+        {voice?.status}
       </div>
       <ImagePreviewDialog
         initialIndex={attachmentPreviewIndex}

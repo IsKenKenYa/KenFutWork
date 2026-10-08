@@ -6,6 +6,8 @@
 
 /* streamdown 的运行时类名不在本仓源码里，显式扫描防 Tailwind 漏编（照搬 zcode styles.css 的接法） */
 @source "../../node_modules/streamdown/dist/*.js";
+/* 共享语音包（@kenfutwork/voice-ui）的状态行在画布助手里渲染，显式补扫描面防漏编 */
+@source "../../../../packages/voice-ui/src/**/*.{ts,tsx}";
 
 /**
  * 字标字体：Momo Trust Display（Google Fonts，OFL 免费可商用）——自托管一份

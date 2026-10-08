@@ -252,6 +252,41 @@ export class CodeHttpChannelClient implements IChannelClient {
     return result as T;
   }
 
+  /**
+   * 语音转写（语音助手「听」段）：multipart WAV → `{ text }`。
+   * 与 `request` 分开：multipart 不能带 JSON content-type（boundary 交给浏览器）。
+   */
+  async transcribeVoice(wav: Uint8Array): Promise<string> {
+    const form = new FormData();
+    // 复制到独立 ArrayBuffer：BlobPart 不接受 ArrayBufferLike（可能为 SharedArrayBuffer）口径
+    form.append(
+      "file",
+      new Blob([new Uint8Array(wav)], { type: "audio/wav" }),
+      "audio.wav",
+    );
+    const response = await fetch(
+      `${this.config.apiBase.replace(/\/$/u, "")}/api/voice/transcribe`,
+      {
+        method: "POST",
+        credentials: "include",
+        signal: this.controller.signal,
+        headers: this.headers(),
+        body: form,
+      },
+    );
+    reportAccessLost(response.status);
+    const result = (await response.json()) as {
+      text?: string;
+      error?: { message?: string };
+    };
+    if (!response.ok)
+      throw new CodeHostHttpError(
+        response.status,
+        result.error?.message ?? `语音转写失败：${response.status}`,
+      );
+    return result.text ?? "";
+  }
+
   connect(): Promise<void> {
     if (this.controller.signal.aborted)
       return Promise.reject(new DOMException("Code 宿主已关闭", "AbortError"));

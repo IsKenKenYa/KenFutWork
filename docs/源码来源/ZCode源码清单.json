@@ -11552,10 +11552,11 @@
       "source": "references/zcode/packages/ui/src/styles.css",
       "target": "apps/web/src/components/workbench/zcode/styles.css",
       "sha256": "22d5b58e44cdebdbe7154c418ee05fef6dde689e384f0dd590d4057739487be7",
-      "copiedSha256": "f671e626143ee3c71bb490bba0ac49b82e954901bc55adf614f7b7e14c38dda7",
+      "copiedSha256": "fb305b9bce068cfadfc478ead32c2851b252cfe3a723046271276684213fc7a7",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "机械调整 streamdown source 路径适配包位置"
+        "机械调整 streamdown source 路径适配包位置",
+        "机械追加共享语音包扫描面（@source packages/voice-ui/src）：语音状态行在共享包渲染，漏扫会只剩「碰巧命中」的通用类。"
       ]
     },
     {
@@ -11707,10 +11708,11 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationComposer.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationComposer.tsx",
       "sha256": "9bfa3d1365cfa7bf10e45d521a3d7201381aa27697c79b4f33b356cd2f4a3c2d",
-      "copiedSha256": "2c9a6d1a17a45c698d00320d939ea6a562b3b33140e119492ddce475f3436787",
+      "copiedSha256": "5d433cd3612e1a331d40581e5309cd0306d6794c50f6de39a1182aaef2c77486",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。"
+        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
+        "宿主接线：输入卡摊语音手势（onPointerDown）与状态行，转写经 inputApiRef.appendText 受控写回；完整回路在撤销窗口后走组件自身 submit（文本先落入草稿，submit 未就绪也不丢）。transport 由 @zui/voice/binding.js 宿主桥注入（host/main.tsx 装配），验证见 voice-wiring-guard 与 code-voice.test。"
       ]
     },
     {

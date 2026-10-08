@@ -233,7 +233,7 @@ export function useComposerVoice({
       <p
         role="status"
         className={`mt-1 text-xs ${
-          voice.phase === "error" ? "text-destructive" : "text-muted-foreground"
+          voice.phase === "error" ? "text-destructive" : "text-foreground-subtle"
         }`}
       >
         {voice.phase === "recording"
@@ -245,7 +245,7 @@ export function useComposerVoice({
   /** 方案 B 的状态行：完整需求 + 倒计时 + 「等等」——**显示的就是将要发出的那句话**。 */
   const loopStatus =
     loop === null ? null : loop.kind === "refining" ? (
-      <p role="status" className="mt-1 text-xs text-muted-foreground">
+      <p role="status" className="mt-1 text-xs text-foreground-subtle">
         正在整理成完整需求…
       </p>
     ) : (
@@ -254,7 +254,7 @@ export function useComposerVoice({
         className="mt-1 flex items-start gap-2 rounded-md border border-dashed px-2 py-1.5 text-xs"
       >
         <span className="min-w-0 flex-1">
-          <span className="text-muted-foreground">即将执行：</span>
+          <span className="text-foreground-subtle">即将执行：</span>
           {loop.prompt}
         </span>
         <button
@@ -273,7 +273,7 @@ export function useComposerVoice({
     status: loopStatus ?? (
       <>
         {notice ? (
-          <p role="status" className="mt-1 text-xs text-muted-foreground">
+          <p role="status" className="mt-1 text-xs text-foreground-subtle">
             {notice}
           </p>
         ) : (

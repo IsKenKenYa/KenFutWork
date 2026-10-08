@@ -40,6 +40,9 @@
  * 这里显式补一条 @source，让 Tailwind 始终扫描 UI 包源码，避免下拉框、菜单这类组件渲染成半残状态。
  */
 @source "./**/*.{ts,tsx}";
+/* 共享语音包（@kenfutwork/voice-ui）在宿主接线里渲染语音状态行，同上补一条扫描面，
+ * 否则状态行会只剩「碰巧命中」的通用类。 */
+@source "../../../../../../packages/voice-ui/src/**/*.{ts,tsx}";
 /* 云端模板常用样式的构建保障，不是运行时 class 白名单。 */
 @source inline("text-center text-ui-base/relaxed text-foreground-subtle font-semibold font-normal text-foreground whitespace-nowrap underline decoration-foreground-subtle decoration-dashed underline-offset-4");
 
