@@ -1,13 +1,64 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { once } from "node:events";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createServer } from "node:http";
 import { test } from "node:test";
 import { promisify } from "node:util";
-import { freePort } from "./dev-macos.mjs";
+import {
+  acquireLauncherLock,
+  freePort,
+  isSourceDevelopmentLaunch,
+} from "./dev-macos.mjs";
 
 const exec = promisify(execFile);
+
+test("开发入口锁只允许一个持有者，空锁不抢占，退出遗留锁可恢复", async () => {
+  const root = await mkdtemp(join(tmpdir(), "kfw-launcher-lock-"));
+  const path = join(root, "launcher.json");
+  try {
+    const acquired = await Promise.all([
+      acquireLauncherLock(path),
+      acquireLauncherLock(path),
+    ]);
+    assert.equal(acquired.filter(Boolean).length, 1);
+    assert.equal(await acquireLauncherLock(path), false);
+    assert.equal(JSON.parse(await readFile(path, "utf8")).pid, process.pid);
+    await writeFile(path, "");
+    assert.equal(await acquireLauncherLock(path), false);
+    const { stdout } = await exec(process.execPath, [
+      "-e",
+      "process.stdout.write(String(process.pid))",
+    ]);
+    await writeFile(path, JSON.stringify({ pid: Number(stdout) }));
+    assert.equal(await acquireLauncherLock(path), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("系统重开丢失源码启动参数时不能当成现有开发实例复用", () => {
+  assert.equal(
+    isSourceDevelopmentLaunch(
+      "/repo/KenFutWork.app/Contents/MacOS/kenfutwork-desktop",
+    ),
+    false,
+  );
+  assert.equal(
+    isSourceDevelopmentLaunch(
+      "app KENFUTWORK_DESKTOP_WEB_URL=http://127.0.0.1:3400 KENFUTWORK_SERVER_PORT=3301",
+    ),
+    true,
+  );
+  assert.equal(
+    isSourceDevelopmentLaunch(
+      "app KENFUTWORK_DESKTOP_WEB_URL=http://127.0.0.1:3400",
+    ),
+    false,
+  );
+});
 
 test("macOS开发入口跳过占用端口并保留原服务", async () => {
   const occupied = createServer((_request, response) => response.end("原服务"));

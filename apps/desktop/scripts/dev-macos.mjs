@@ -4,6 +4,7 @@ import { constants } from "node:fs";
 import {
   cp,
   mkdir,
+  open,
   readdir,
   readFile,
   rename,
@@ -22,6 +23,38 @@ const stateRoot = join(repo, ".kenfutwork-data", "desktop-development");
 const stampFile = join(stateRoot, "shell.json");
 let web, ownedPid;
 let stopping = false;
+const launcherLock = join(stateRoot, "launcher.json");
+let ownsLauncherLock = false;
+
+export async function acquireLauncherLock(path = launcherLock) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const file = await open(path, "wx", 0o600);
+      try {
+        await file.writeFile(JSON.stringify({ pid: process.pid }));
+      } finally {
+        await file.close();
+      }
+      return true;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      const previous = await readFile(path, "utf8");
+      // 另一个启动器可能刚创建锁文件，尚未写完PID，此时保守地不重复启动。
+      if (!previous.trim()) return false;
+      const pid = JSON.parse(previous).pid;
+      if (!Number.isSafeInteger(pid) || pid <= 0)
+        throw new Error("开发启动器锁无效，请核对后重试。");
+      try {
+        process.kill(pid, 0);
+        return false;
+      } catch (error) {
+        if (error.code !== "ESRCH") throw error;
+      }
+      if ((await readFile(path, "utf8")) === previous) await rm(path);
+    }
+  }
+  throw new Error("无法取得开发启动器锁。");
+}
 
 function stop() {
   stopping = true;
@@ -76,6 +109,72 @@ function appPid() {
     .split("\n")
     .map((line) => line.trim().match(/^(\d+)\s+(.+)$/u))
     .find((row) => row?.[2] === executable)?.[1];
+}
+
+export function isSourceDevelopmentLaunch(environment) {
+  return (
+    /(?:^|\s)KENFUTWORK_DESKTOP_WEB_URL=http:\/\/(?:127\.0\.0\.1|localhost):\d+(?:\s|$)/u.test(
+      environment,
+    ) && /(?:^|\s)KENFUTWORK_SERVER_PORT=\d+(?:\s|$)/u.test(environment)
+  );
+}
+
+function sourceDevelopmentApp(pid) {
+  // 仅判断非敏感启动标志；ps结果留在内存，不输出完整环境。
+  const result = spawnSync("ps", ["eww", "-p", pid, "-o", "command="], {
+    encoding: "utf8",
+  });
+  if (result.status !== 0) throw new Error("无法确认固定应用的启动方式。");
+  return isSourceDevelopmentLaunch(result.stdout);
+}
+
+async function closeApp(pid) {
+  if (appPid() !== pid) return;
+  process.kill(Number(pid), "SIGTERM");
+  const deadline = Date.now() + 20_000;
+  while (appPid() === pid && Date.now() < deadline)
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  if (appPid() === pid) throw new Error("固定应用未能退出，请关闭后重试。");
+}
+
+async function openSourceApp(values) {
+  command("open", [
+    "-n",
+    app,
+    ...Object.entries(values).flatMap(([key, value]) => [
+      "--env",
+      `${key}=${value}`,
+    ]),
+  ]);
+  const deadline = Date.now() + 15_000;
+  while (!stopping && Date.now() < deadline) {
+    const pid = appPid();
+    if (pid) return pid;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (!stopping) throw new Error("固定应用未能启动。");
+}
+
+async function followSystemReopens(values) {
+  let closedAt;
+  while (!stopping) {
+    const pid = appPid();
+    if (pid === ownedPid) closedAt = undefined;
+    else if (pid) {
+      // macOS隐私设置的重开不保留open --env；保持原数据/端口与Web进程。
+      console.log("检测到系统重开，恢复源码启动配置。");
+      if (!sourceDevelopmentApp(pid)) {
+        await closeApp(pid);
+        if (stopping) return;
+        ownedPid = await openSourceApp(values);
+      } else ownedPid = pid;
+      closedAt = undefined;
+    } else {
+      closedAt ??= Date.now();
+      if (Date.now() - closedAt >= 5_000) return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 }
 
 async function prepareApp() {
@@ -170,11 +269,25 @@ async function run() {
     process.once("SIGTERM", stop);
     process.once("SIGINT", stop);
     if (process.platform !== "darwin") throw new Error("该入口只用于 macOS。");
+    if (!process.argv.includes("--prepare-only")) {
+      await mkdir(stateRoot, { recursive: true });
+      if (!(await acquireLauncherLock())) {
+        console.log("开发入口已在运行。");
+        if (appPid()) command("open", [app]);
+        return;
+      }
+      ownsLauncherLock = true;
+    }
     await prepareApp();
     if (process.argv.includes("--prepare-only")) return;
-    if (appPid()) {
-      command("open", [app]);
-      return;
+    const existing = appPid();
+    if (existing) {
+      if (sourceDevelopmentApp(existing)) {
+        command("open", [app]);
+        return;
+      }
+      console.log("固定应用缺少源码启动配置，恢复开发入口。");
+      await closeApp(existing);
     }
     command("pnpm", ["--filter", "@kenfutwork/shared", "build"]);
     command("pnpm", ["--filter", "@zcode/ui", "build"]);
@@ -221,23 +334,10 @@ async function run() {
       values.KENFUTWORK_DATA_DIR = process.env.KENFUTWORK_DATA_DIR;
     if (process.env.KENFUTWORK_CONFIG_DIR)
       values.KENFUTWORK_CONFIG_DIR = process.env.KENFUTWORK_CONFIG_DIR;
-    command("open", [
-      "-n",
-      app,
-      ...Object.entries(values).flatMap(([key, value]) => [
-        "--env",
-        `${key}=${value}`,
-      ]),
-    ]);
-    const launched = Date.now() + 15_000;
-    while (!stopping && !ownedPid && Date.now() < launched) {
-      ownedPid = appPid();
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
+    ownedPid = await openSourceApp(values);
     if (stopping) return;
     if (!ownedPid) throw new Error("固定应用未能启动。");
-    while (!stopping && appPid() === ownedPid)
-      await new Promise((resolve) => setTimeout(resolve, 500));
+    await followSystemReopens(values);
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
@@ -250,6 +350,7 @@ async function run() {
         else web.once("exit", resolve);
       });
     }
+    if (ownsLauncherLock) await rm(launcherLock, { force: true });
   }
 }
 
