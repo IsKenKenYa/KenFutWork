@@ -813,3 +813,51 @@ test.each([1, 2, 3, 4, 5, 6, 7, 8])(
     );
   },
 );
+
+test("初始化失败后的命令报沙箱初始化失败原因，不再伪装成授权代际失效", async () => {
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), "kfw-init-failure-")),
+  );
+  cleanups.push(() => rm(root, { recursive: true, force: true }));
+  const sandbox = createProcessSandbox({
+    captureRoot: join(root, "capture"),
+    // 指向不存在的 helper：初始化必然失败（helper 进程无法启动）。
+    helperPath: join(root, "missing-helper.mjs"),
+    nodePath: process.execPath,
+    network: { allowedDomains: [], deniedDomains: [] },
+  });
+  cleanups.push(() => sandbox.close("cleanup").catch(() => {}));
+  const scope: CodeExecutionScope = {
+    instanceId: "test-workspace",
+    projectId: "test-project",
+    taskId: "init-failure-task",
+    generation: 1,
+    rootDirectory: root,
+    additionalDirectories: [],
+    sandboxMode: "workspace-write",
+  };
+  const base: Omit<ProcessSpawnRequest, "invocationId"> = {
+    scope,
+    agentId: "main",
+    command: "echo unreachable",
+    background: false,
+    timeoutMs: null,
+    limits: {
+      maxOutputBytes: 65536,
+      previewMaxChars: 8000,
+      yieldMs: 20,
+      killGraceMs: 2000,
+    },
+  };
+  // 第一次调用暴露原始初始化错误（helper 启动失败）。
+  await expect(
+    sandbox.spawn({ ...base, invocationId: "init-failure-1" }),
+  ).rejects.toThrow();
+  // 后续调用必须指出「初始化失败」并带上原因，而不是冒充授权代际失效。
+  await expect(
+    sandbox.spawn({ ...base, invocationId: "init-failure-2" }),
+  ).rejects.toMatchObject({
+    code: "enforcement_unavailable",
+    message: expect.stringContaining("初始化失败"),
+  });
+});
