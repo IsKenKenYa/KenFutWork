@@ -201,6 +201,15 @@ ${advice}`,
  * 便于追根（lc 序列化对象 / 供应商原始响应等）。
  */
 function createModelResponseGuardMiddleware(): AgentMiddleware {
+  const requireResponse = (message: AIMessage) => {
+    const hasContent =
+      typeof message.content === "string"
+        ? Boolean(message.content.trim())
+        : message.content.length > 0;
+    if (!hasContent && !message.tool_calls?.length)
+      throw new Error("模型返回空响应，请重试或更换模型。");
+    return message;
+  };
   return {
     name: "kenfutwork-model-response-guard",
     wrapModelCall: async (request, handler) => {
@@ -209,14 +218,14 @@ function createModelResponseGuardMiddleware(): AgentMiddleware {
         result = await handler(request);
       } catch (error) {
         // 内层已抛「Invalid response from wrapModelCall」形状校验错：原始对象
-        // 不可得，但整轮 run 不必陪葬——以降级消息收尾，错误细节进日志。
+        // 不可得，必须透出运行错误，不能生成一条AI答复冒充成功结束。
         const message = error instanceof Error ? error.message : String(error);
         if (/Invalid response from "wrapModelCall"/.test(message)) {
           console.warn(
-            `[model-response-guard] 内层模型响应形状校验失败（降级收尾）：${message}`,
+            `[model-response-guard] 内层模型响应形状校验失败：${message}`,
           );
-          return new AIMessage({
-            content: "（本轮模型响应异常，系统已降级收尾；请重试或换模型。）",
+          throw new Error("模型响应格式异常，请重试或更换模型。", {
+            cause: error,
           });
         }
         throw error;
@@ -229,7 +238,9 @@ function createModelResponseGuardMiddleware(): AgentMiddleware {
           "structuredResponse" in result &&
           "messages" in result);
       if (valid) {
-        return result as AIMessage;
+        return AIMessage.isInstance(result)
+          ? requireResponse(result)
+          : (result as AIMessage);
       }
       const shape =
         result instanceof Error
@@ -252,24 +263,26 @@ function createModelResponseGuardMiddleware(): AgentMiddleware {
       const toolCalls = Array.isArray(raw.tool_calls)
         ? raw.tool_calls
         : undefined;
-      return new AIMessage({
-        content:
-          typeof raw.content === "string"
-            ? raw.content
-            : Array.isArray(raw.content)
+      return requireResponse(
+        new AIMessage({
+          content:
+            typeof raw.content === "string"
               ? raw.content
-              : "",
-        ...(toolCalls ? { tool_calls: toolCalls as never } : {}),
-        ...(typeof raw.id === "string" ? { id: raw.id } : {}),
-        ...(raw.additional_kwargs && typeof raw.additional_kwargs === "object"
-          ? {
-              additional_kwargs: raw.additional_kwargs as Record<
-                string,
-                unknown
-              >,
-            }
-          : {}),
-      });
+              : Array.isArray(raw.content)
+                ? raw.content
+                : "",
+          ...(toolCalls ? { tool_calls: toolCalls as never } : {}),
+          ...(typeof raw.id === "string" ? { id: raw.id } : {}),
+          ...(raw.additional_kwargs && typeof raw.additional_kwargs === "object"
+            ? {
+                additional_kwargs: raw.additional_kwargs as Record<
+                  string,
+                  unknown
+                >,
+              }
+            : {}),
+        }),
+      );
     },
   };
 }
