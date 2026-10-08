@@ -7,15 +7,15 @@ import type {
 /**
  * 技能管理页的纯视图逻辑（列表合并 / 过滤 / 标签）。
  *
- * 背景：后端把「可见技能」与「本工作区已启用技能」分成两个端点
- * （`GET /api/skills` 不含启用态，`GET /api/workspaces/skills` 才有
+ * 背景：后端把「可见技能」与「本实例已启用技能」分成两个端点
+ * （`GET /api/skills` 不含启用态，`GET /api/instance/skills` 才有
  * installed/enabled），页面需要把它们合成一份可操作列表——放入 lib 便于单测。
  */
 
 export interface SkillView extends SkillListItem {
-  /** 本工作区已启用（启用后才会注入 agent 的技能清单）。 */
+  /** 本实例已启用（启用后才会注入 agent 的技能清单）。 */
   enabled: boolean;
-  /** 本工作区已安装（含被停用）。 */
+  /** 本实例已安装（含被停用）。 */
   installed: boolean;
   /** 仅本人创建的技能可删除（服务端按 created_by 判定）。 */
   deletable: boolean;
@@ -47,7 +47,7 @@ export function skillCategoryLabel(category: SkillCategory): string {
 }
 
 /**
- * 合并可见技能与工作区已启用技能。
+ * 合并可见技能与实例已启用技能。
  * 排序：已启用在前 → 名称升序（保证渲染稳定，便于测试与视觉一致）。
  */
 export function mergeSkillViews(
