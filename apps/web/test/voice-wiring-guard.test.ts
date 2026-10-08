@@ -10,10 +10,10 @@ import { describe, expect, it } from "vitest";
  * 「**接线有没有接上**」——少接一处，功能就是静默消失（用户按住没反应，没有任何报错）。
  * 这类回归只有源码级断言最可靠，与仓库既有的 ui-copy-localized 守卫同一路数。
  *
- * 锁三件事：
- * 1. 占位麦克风按钮已删（「语音（即将上线）」一个字都不许留）；
- * 2. 三处输入容器都摊上了 `onPointerDown` 语音手势；
- * 3. 两处 workbench 回车提交都带 IME 判定（中文输入法确认候选词不该提交）。
+ * 锁两件事（Code 界面整合后的现状——旧 workbench 输入框已随整合退役）：
+ * 1. 占位麦克风按钮已删（「语音（即将上线）」一个字都不许留，图标 import 同步清）；
+ * 2. 画布助手（Design）保留手势、状态行与受控文本写回，且 workbench 壳不再自接语音
+ *    （Code 模式的入口在 ZCode composer 一侧，适配登记见《ZCode源码清单》与阶段同步记录）。
  */
 
 const COMPONENTS = join(import.meta.dirname, "..", "src", "components");
