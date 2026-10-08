@@ -21,6 +21,7 @@ import {
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
+import { PNG } from "pngjs";
 import { expect, it } from "vitest";
 import { z } from "zod";
 import { createCodeUiTestClient } from "../code-ui/host-client.fixture.js";
@@ -245,6 +246,26 @@ it.skipIf(!enabled)(
         client: transport,
       });
       console.info("实际.app：原公开RPC已创建持久Task与模型配置");
+      const icon = await transport.request("/api/code-ui/rpc", {
+        connectionId: host.stream.ready.hello.connectionId,
+        service: "platform",
+        method: "getApplicationIcon",
+        args: [
+          {
+            locators: [{ kind: "darwin-bundle-id", value: "com.apple.finder" }],
+          },
+        ],
+      });
+      expect(icon.status, JSON.stringify(icon.body)).toBe(200);
+      const iconUrl = z
+        .string()
+        .startsWith("data:image/png;base64,")
+        .parse(icon.body.result.iconDataUrl);
+      const iconPng = PNG.sync.read(
+        Buffer.from(iconUrl.slice("data:image/png;base64,".length), "base64"),
+      );
+      expect([iconPng.width, iconPng.height]).toEqual([32, 32]);
+      console.info("实际.app：原RPC系统图标32×32已验证");
       const idle = protocol.conversationSnapshotSchema.parse(
         await host.snapshot(),
       );
