@@ -126,7 +126,7 @@ export class CodeHttpChannelClient implements IChannelClient {
     AGENT_GOVERNANCE_DEFAULTS.codeUiReconnectDelayMs;
   private readonly workspaceSubscriptions = new Map<
     string,
-    { path: string; references: number }
+    { path: string; workspaceIdentity?: string; references: number }
   >();
   private ready: {
     promise: Promise<void>;
@@ -360,11 +360,15 @@ export class CodeHttpChannelClient implements IChannelClient {
               ),
           };
           this.servicesChanges.fire();
-          for (const key of this.workspaceSubscriptions.keys())
+          for (const [key, scope] of this.workspaceSubscriptions)
             this.notifications.fire({
               event: "service",
               service: "zcodeAgentService",
               name: "onAgentRuntimeRestarted",
+              workspacePath: scope.path,
+              ...(scope.workspaceIdentity
+                ? { workspaceIdentity: scope.workspaceIdentity }
+                : {}),
               data: { workspaceKey: key },
             });
           this.publishLifecycle("available");
@@ -422,11 +426,14 @@ export class CodeHttpChannelClient implements IChannelClient {
   }
 
   private publishLifecycle(state: "available" | "unavailable") {
-    for (const [workspaceKey, { path }] of this.workspaceSubscriptions)
+    for (const [workspaceKey, { path, workspaceIdentity }] of this
+      .workspaceSubscriptions)
       this.notifications.fire({
         event: "service",
         service: "zcodeAgentService",
         name: "onAgentRuntimeLifecycle",
+        workspacePath: path,
+        ...(workspaceIdentity ? { workspaceIdentity } : {}),
         data: {
           workspaceKey,
           workspacePath: path,
@@ -685,6 +692,9 @@ export class CodeHttpChannelClient implements IChannelClient {
           if (workspacePath && workspaceKey) {
             const reference = this.workspaceSubscriptions.get(workspaceKey) ?? {
               path: workspacePath,
+              ...(target?.workspaceIdentity
+                ? { workspaceIdentity: target.workspaceIdentity }
+                : {}),
               references: 0,
             };
             reference.references += 1;
