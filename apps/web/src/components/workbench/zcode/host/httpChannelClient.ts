@@ -252,6 +252,34 @@ export class CodeHttpChannelClient implements IChannelClient {
     return result as T;
   }
 
+  async readCuaSnapshot(uri: string, signal: AbortSignal): Promise<Blob> {
+    if (
+      !/^\/api\/computer-use\/snapshots\?taskId=[0-9a-f-]{36}&digest=[0-9a-f]{64}$/u.test(
+        uri,
+      )
+    )
+      throw new Error("截图引用无效。");
+    const response = await fetch(
+      `${this.config.apiBase.replace(/\/$/u, "")}${uri}`,
+      {
+        credentials: "include",
+        headers: this.headers(),
+        cache: "no-store",
+        redirect: "error",
+        signal: AbortSignal.any([signal, this.controller.signal]),
+      },
+    );
+    reportAccessLost(response.status);
+    if (
+      !response.ok ||
+      response.headers.get("content-type")?.split(";")[0] !== "image/png"
+    ) {
+      await response.body?.cancel();
+      throw new CodeHostHttpError(response.status, "截图已不可用。");
+    }
+    return response.blob();
+  }
+
   connect(): Promise<void> {
     if (this.controller.signal.aborted)
       return Promise.reject(new DOMException("Code 宿主已关闭", "AbortError"));

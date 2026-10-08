@@ -19,7 +19,8 @@ export function buildCuaAccessDetails(
       all_required_granted:
         permissions.accessibility === "granted" &&
         permissions.screen === "granted" &&
-        permissions.postEvents !== "denied",
+        (permissions.postEvents === undefined ||
+          permissions.postEvents === "granted"),
     },
   };
   return original({ ...call, output: JSON.stringify(projected) }, format);

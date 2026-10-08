@@ -8,6 +8,7 @@ import { RootStartupLoading } from "@zui/root/RootStartupLoading.js";
 import { ensureAgentV4ConnectionHandshake } from "@zui/v4/agentV4ConnectionHandshake.js";
 import { useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
+import { CuaSnapshotReader } from "./cuaScreenshotSectionAdapter.js";
 import {
   type CodeHostConfig,
   CodeHttpChannelClient,
@@ -28,6 +29,7 @@ const config: CodeHostConfig = {
   ...(workspacePath ? { workspacePath } : {}),
 };
 const client = new CodeHttpChannelClient(config);
+const readCuaSnapshot = client.readCuaSnapshot.bind(client);
 const platform = createCodePlatform(client);
 const onWorkspaceContextChange = createCodeWorkspaceContextResolver(client);
 const element = document.getElementById("root");
@@ -52,37 +54,39 @@ function CodeHost({
     ? client.workspaces.identityFor(workspace.projectId, workspace.path)
     : null;
   return (
-    <ZCodeIntlProvider
-      initialLocale="zh-CN"
-      settingService={services.settingService}
-      broadcastService={services.broadcastService}
-    >
-      <ScopedErrorBoundary scope="kenfutwork-code-host">
-        <Root
-          services={services}
-          platform={platform}
-          directoryServices={client.directoryServices()}
-          onWorkspaceContextChange={onWorkspaceContextChange}
-          initialUserInfo={user}
-          {...(workspace ? { initialWorkspaceAbsPath: workspace.path } : {})}
-          {...(workspaceIdentity
-            ? { initialWorkspaceIdentity: workspaceIdentity }
-            : {})}
-          workbenchGroupClientMode={clientMode}
-          onInterfaceModeChange={(mode) => {
-            if (mode === "office") navigateToDesign();
-          }}
-          preferDirectoryBrowser
-          restoreSession
-          allowRemoteWorkspace={false}
-          supportsEmbeddedBrowser={false}
-          assistantCodeCommentCardsEnabled
-          initialWorkspaceLoadingFallback={
-            <RootStartupLoading label="打开 Code 工作目录" />
-          }
-        />
-      </ScopedErrorBoundary>
-    </ZCodeIntlProvider>
+    <CuaSnapshotReader value={readCuaSnapshot}>
+      <ZCodeIntlProvider
+        initialLocale="zh-CN"
+        settingService={services.settingService}
+        broadcastService={services.broadcastService}
+      >
+        <ScopedErrorBoundary scope="kenfutwork-code-host">
+          <Root
+            services={services}
+            platform={platform}
+            directoryServices={client.directoryServices()}
+            onWorkspaceContextChange={onWorkspaceContextChange}
+            initialUserInfo={user}
+            {...(workspace ? { initialWorkspaceAbsPath: workspace.path } : {})}
+            {...(workspaceIdentity
+              ? { initialWorkspaceIdentity: workspaceIdentity }
+              : {})}
+            workbenchGroupClientMode={clientMode}
+            onInterfaceModeChange={(mode) => {
+              if (mode === "office") navigateToDesign();
+            }}
+            preferDirectoryBrowser
+            restoreSession
+            allowRemoteWorkspace={false}
+            supportsEmbeddedBrowser={false}
+            assistantCodeCommentCardsEnabled
+            initialWorkspaceLoadingFallback={
+              <RootStartupLoading label="打开 Code 工作目录" />
+            }
+          />
+        </ScopedErrorBoundary>
+      </ZCodeIntlProvider>
+    </CuaSnapshotReader>
   );
 }
 

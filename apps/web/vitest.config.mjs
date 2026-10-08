@@ -9,6 +9,18 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      "@zui/i18n/IntlProvider.js": path.resolve(
+        import.meta.dirname,
+        "src/components/workbench/zcode/host/cuaIntlAdapter.ts",
+      ),
+      "@zui/ToolCallBlocks/renderers/cuaDetails.js": path.resolve(
+        import.meta.dirname,
+        "src/components/workbench/zcode/host/cuaDetailsAdapter.tsx",
+      ),
+      "@zui/ToolCallBlocks/renderers/CuaScreenshotSection.js": path.resolve(
+        import.meta.dirname,
+        "src/components/workbench/zcode/host/cuaScreenshotSectionAdapter.tsx",
+      ),
       "@zui/ToolCallBlocks/renderers/cuaAccessDetails.js": path.resolve(
         import.meta.dirname,
         "src/components/workbench/zcode/host/cuaAccessDetailsAdapter.ts",
@@ -21,7 +33,10 @@ export default defineConfig({
         import.meta.dirname,
         "src/components/workbench/zcode/host/cuaSummaryMessagesAdapter.ts",
       ),
-      "@zui-original": path.resolve(import.meta.dirname, "src/components/workbench/zcode"),
+      "@zui-original": path.resolve(
+        import.meta.dirname,
+        "src/components/workbench/zcode",
+      ),
       "@": path.resolve(import.meta.dirname, "src"),
       // zcode 照搬层路径映射（tsconfig paths 同口径；vitest 不读 tsconfig paths）
       "@zui": path.resolve(

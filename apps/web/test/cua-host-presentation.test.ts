@@ -48,6 +48,18 @@ it("原权限详情读取第一方实际状态，输入事件拒绝时不能显�
       (id) => id,
     ).ready,
   ).toBe(false);
+  expect(
+    buildCuaAccessDetails(
+      call({
+        permissionStatus: {
+          accessibility: "granted",
+          screen: "granted",
+          postEvents: "not_determined",
+        },
+      }),
+      (id) => id,
+    ).ready,
+  ).toBe(false);
 });
 it("原截图组件获得真实尺寸和受控附件地址，不接受任意外部地址", () => {
   const uri =

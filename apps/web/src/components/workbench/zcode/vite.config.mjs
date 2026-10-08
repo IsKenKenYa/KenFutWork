@@ -10,6 +10,15 @@ export default defineConfig({
   plugins: [pdfJsCMapsPlugin(), react(), tailwindcss()],
   resolve: {
     alias: {
+      "@zui/i18n/IntlProvider.js": fileURLToPath(
+        new URL("./host/cuaIntlAdapter.ts", import.meta.url),
+      ),
+      "@zui/ToolCallBlocks/renderers/cuaDetails.js": fileURLToPath(
+        new URL("./host/cuaDetailsAdapter.tsx", import.meta.url),
+      ),
+      "@zui/ToolCallBlocks/renderers/CuaScreenshotSection.js": fileURLToPath(
+        new URL("./host/cuaScreenshotSectionAdapter.tsx", import.meta.url),
+      ),
       "@zui/ToolCallBlocks/renderers/cuaAccessDetails.js": fileURLToPath(
         new URL("./host/cuaAccessDetailsAdapter.ts", import.meta.url),
       ),
