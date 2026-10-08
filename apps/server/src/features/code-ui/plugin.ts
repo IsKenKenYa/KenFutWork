@@ -16,6 +16,10 @@ import { createCodeAttachmentRepository } from "./attachments/repository.js";
 import { createCodeGuideMiddleware } from "./guide-model-mailbox.js";
 import { createCodeUiRepository } from "./repository.js";
 import { createCodeUiService } from "./service.js";
+import {
+  CODE_UI_HOST_RPC_CAPABILITY,
+  type CodeUiHostRpcHandler,
+} from "./host-rpc-handler.js";
 import { createUserInputBroker } from "./user-input-broker.js";
 
 export function createCodeUiPlugin(): PluginDefinition {
@@ -45,6 +49,11 @@ export function createCodeUiPlugin(): PluginDefinition {
       ctx.register("codeUi", () => {
         const userInputs = createUserInputBroker();
         return createCodeUiService({
+          hostRpcHandler: (service, method) =>
+            ctx.get("capabilities").get<CodeUiHostRpcHandler>(
+              CODE_UI_HOST_RPC_CAPABILITY,
+              `${service}.${method}`,
+            ),
           userInputs,
           repository: createCodeUiRepository(ctx.get("persistence")),
           executionScopes: ctx.get("executionScopes"),

@@ -1,4 +1,4 @@
-import type { IPlatformService } from "@zcode/shared";
+import type { ApplicationIconInfo, IPlatformService } from "@zcode/shared";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 import { createWebPlatform } from "./upstream/browserPlatform.js";
 
@@ -17,6 +17,10 @@ export function createCodePlatform(
     supportsSettingsImport: false,
     supportsAppRuntimePreferences: false,
     sessionMetadataSource: "task-index",
+    getApplicationIcon: (request) =>
+      client
+        .getChannel("platform")
+        .call<ApplicationIconInfo | null>("getApplicationIcon", [request]),
     async activateOrSetWorkspace(path) {
       const workspace = await client.openWorkspace(
         path,

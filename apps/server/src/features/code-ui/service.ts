@@ -128,8 +128,13 @@ import {
 } from "./workspace-rpc.js";
 import { createCodeUiOutputHistory } from "./output-history.js";
 import { createCodeUiBackgroundOutputView } from "./background-output-view.js";
+import type { CodeUiHostRpcHandler } from "./host-rpc-handler.js";
 
 export interface CodeUiServiceDeps {
+  hostRpcHandler?: (
+    service: string,
+    method: string,
+  ) => CodeUiHostRpcHandler | undefined;
   plugins?: PluginRegistryService;
   checkpoints?: CheckpointService;
   permissions?: PermissionService;
@@ -1444,7 +1449,8 @@ export class CodeUiService {
     args: unknown[],
     connectionId?: string,
   ) {
-    if (connectionId !== undefined) {
+    const contributed = this.deps.hostRpcHandler?.(service, method);
+    if (connectionId !== undefined || contributed) {
       const owner = await this.deps.localInstance.resolve(user);
       this.connections.require(
         owner.instanceId,
@@ -1452,6 +1458,9 @@ export class CodeUiService {
         false,
         user.accessClientId,
       );
+    }
+    if (contributed) {
+      return { result: await contributed.call(user, args) };
     }
     if (service === "window-controller") {
       const owner = await this.deps.localInstance.resolve(user);

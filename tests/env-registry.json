@@ -231,6 +231,7 @@
       "surface": "test",
       "readers": [
         "apps/server/src/features/computer-use/desktop.native.integration.test.ts",
+        "apps/server/src/features/computer-use/application-icon.native.integration.test.ts",
         "apps/server/src/features/computer-use/agent.native.integration.test.ts",
         "apps/server/src/features/computer-use/desktop.linux.integration.test.ts",
         "apps/server/src/features/computer-use/desktop.windows.integration.test.ts",

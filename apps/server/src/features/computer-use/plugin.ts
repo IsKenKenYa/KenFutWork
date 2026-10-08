@@ -12,7 +12,6 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-
 import {
   AGENT_GOVERNANCE_DEFAULTS,
   clampComputerUseActionTimeoutMs,
@@ -21,6 +20,7 @@ import {
   clampComputerUseScreenshotMaxBytes,
   clampComputerUseSessionMaxMs,
 } from "@kenfutwork/shared";
+import { z } from "zod";
 import type { ServerEnv } from "../../config/env.js";
 import { registerComputerUseMcpRoutes } from "../../http/computer-use-mcp.js";
 import { registerComputerUseSnapshotRoutes } from "../../http/computer-use-snapshots.js";
@@ -28,7 +28,12 @@ import type {
   PluginDefinition,
   ToolExecutionContext,
 } from "../../kernel/types.js";
+import {
+  CODE_UI_HOST_RPC_CAPABILITY,
+  type CodeUiHostRpcHandler,
+} from "../code-ui/host-rpc-handler.js";
 import { createActiveComputerUseRuns } from "./active-runs.js";
+import { createMacosApplicationIconResolver } from "./application-icon.js";
 import { createUnavailableExecutor } from "./executor.js";
 import {
   type ComputerUseMcpSource,
@@ -142,6 +147,32 @@ export function createComputerUsePlugin(options?: {
     name: "computer-use",
     inject: ["settings", "localAccess", "localInstance", "blob", "persistence"],
     apply(ctx) {
+      if ((options?.platform ?? process.platform) === "darwin") {
+        const icons = createMacosApplicationIconResolver();
+        const controller = new AbortController();
+        const iconRpc: CodeUiHostRpcHandler = {
+          async call(actor, args) {
+            const [request] = z.tuple([z.unknown()]).parse(args);
+            const settings = await ctx
+              .get("settings")
+              .getInstanceSettings(actor, actor.instanceId);
+            return icons.read(request, {
+              signal: controller.signal,
+              timeoutMs: settings.computerUseActionTimeoutMs,
+              maxBytes: settings.processMaxOutputBytes,
+            });
+          },
+        };
+        ctx.effect(() =>
+          ctx
+            .get("capabilities")
+            .register(CODE_UI_HOST_RPC_CAPABILITY, {
+              id: "platform.getApplicationIcon",
+              value: iconRpc,
+            }),
+        );
+        ctx.effect(() => () => controller.abort());
+      }
       const runGovernance = new AsyncLocalStorage<CuGovernanceValues>();
       const archive = createCuSnapshotArchive({
         blob: ctx.get("blob"),
