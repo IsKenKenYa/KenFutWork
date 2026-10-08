@@ -5176,6 +5176,56 @@
         }
       }
     },
+    "/api/flow/host/engine/info": {
+      "get": {
+        "operationId": "getFlowHostEngineInfo",
+        "summary": "查询 flow 引擎信息页数据",
+        "description": "汇总安装状态、环境探测与引擎栈容器运行态（安装态为进程内快照，有运行中容器时按已就绪校正）；身份回调地址按本次请求主机名拼。数据面未装配时 503。",
+        "tags": [
+          "flow"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/flowHostEngineInfoResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/flow/host/credentials": {
       "post": {
         "operationId": "postFlowHostCredentials",
@@ -13088,6 +13138,197 @@
         "required": [
           "apiBase",
           "apiKey"
+        ],
+        "additionalProperties": false
+      },
+      "flowHostEngineInfoResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "install": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "idle",
+                  "installing",
+                  "ready",
+                  "error"
+                ]
+              },
+              "logTail": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "error": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "logTail"
+            ],
+            "additionalProperties": false
+          },
+          "probe": {
+            "type": "object",
+            "properties": {
+              "platform": {
+                "type": "string",
+                "minLength": 1
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "enum": [
+                        "wsl2",
+                        "container",
+                        "remote"
+                      ]
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "available"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "recommended": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "wsl2",
+                      "container",
+                      "remote"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "platform",
+              "paths",
+              "recommended"
+            ],
+            "additionalProperties": false
+          },
+          "stack": {
+            "type": "object",
+            "properties": {
+              "containers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "service": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "state": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "health": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "ports": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "service",
+                    "name",
+                    "state",
+                    "health",
+                    "ports"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "containers"
+            ],
+            "additionalProperties": false
+          },
+          "addresses": {
+            "type": "object",
+            "properties": {
+              "frontendUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "hostIdentityUrl": {
+                "type": "string",
+                "minLength": 1
+              },
+              "composeFile": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dataDir": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "frontendUrl",
+              "hostIdentityUrl",
+              "composeFile",
+              "dataDir"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "install",
+          "probe",
+          "stack",
+          "addresses"
         ],
         "additionalProperties": false
       },

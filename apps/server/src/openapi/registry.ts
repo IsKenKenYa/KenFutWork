@@ -69,6 +69,7 @@ import {
   flowEngineInstallStatusSchema,
   flowHostCredentialsRequestSchema,
   flowHostCredentialsResponseSchema,
+  flowHostEngineInfoResponseSchema,
   flowHostEventsRequestSchema,
   flowHostEventsResponseSchema,
   flowHostStatusResponseSchema,
@@ -1128,6 +1129,17 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "探测 flow 引擎承载环境",
     description:
       "只读探测引擎可承载路径（平台 / WSL2 / 本机容器 / 自管地址），不做安装、下载或拉起。",
+  },
+  {
+    method: "get",
+    path: "/api/flow/host/engine/info",
+    tag: "flow",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: flowHostEngineInfoResponseSchema,
+    summary: "查询 flow 引擎信息页数据",
+    description:
+      "汇总安装状态、环境探测与引擎栈容器运行态（安装态为进程内快照，有运行中容器时按已就绪校正）；身份回调地址按本次请求主机名拼。数据面未装配时 503。",
   },
   {
     method: "post",
