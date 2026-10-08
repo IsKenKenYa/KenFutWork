@@ -91,6 +91,18 @@ mod spawn_config {
     }
 }
 
+#[test]
+fn 专属开发壳拒绝复用已健康的其他服务且不终止它() {
+    let (port, _guard) = spawn_fake_server();
+    let owner = kenfutwork_desktop_lib::server_handle::ServerLifecycle::default();
+    let mut config = ServerSpawnConfig::new("不存在的程序", vec![], "/tmp/data".into(), port);
+    config.require_owned = true;
+    assert!(owner.ensure_running(config).is_err());
+    assert_eq!(owner.pid(), None);
+    owner.shutdown(Duration::from_millis(50));
+    assert!(probe_health(port, Duration::from_millis(100)).is_ok());
+}
+
 /**
  * 打包态窗口该指向谁：**只认托管着界面的自己人**。
  *

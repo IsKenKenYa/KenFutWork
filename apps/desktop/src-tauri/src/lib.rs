@@ -55,30 +55,22 @@ struct ServerState(std::sync::Arc<server_handle::ServerLifecycle>);
  */
 #[cfg_attr(debug_assertions, allow(dead_code))]
 fn desktop_env(data_dir: &Path, web_dir: &Path, port: u16) -> Vec<(String, String)> {
-    let mut env = vec![
+    let mut env = desktop_runtime_env(data_dir, port);
+    env.extend([
+        ("KENFUTWORK_WEB_ORIGIN".into(), format!("http://127.0.0.1:{port}")),
+        ("KENFUTWORK_WEB_DIST".into(), web_dir.to_string_lossy().to_string()),
+    ]);
+    env
+}
+
+fn desktop_runtime_env(data_dir: &Path, port: u16) -> Vec<(String, String)> {
+    vec![
         ("KENFUTWORK_EMBEDDED_PG".into(), "1".into()),
         ("KENFUTWORK_QUEUE_DRIVER".into(), "in-process".into()),
-        // 监听端口必须与壳挑中的一致：不改它，服务端仍去抢 3001
         ("KENFUTWORK_SERVER_PORT".into(), port.to_string()),
-        (
-            "KENFUTWORK_WEB_ORIGIN".into(),
-            format!("http://127.0.0.1:{port}"),
-        ),
-        (
-            "KENFUTWORK_WEB_DIST".into(),
-            web_dir.to_string_lossy().to_string(),
-        ),
-    ];
-    // 所有平台的检查点与沙箱统一落在数据根，安装目录只持有不可变程序。
-    env.push((
-        "KENFUTWORK_CHECKPOINT_ROOT".into(),
-        data_dir.join("checkpoints").to_string_lossy().to_string(),
-    ));
-    env.push((
-        "KENFUTWORK_SANDBOX_ROOT".into(),
-        data_dir.join("sandbox").to_string_lossy().to_string(),
-    ));
-    env
+        ("KENFUTWORK_CHECKPOINT_ROOT".into(), data_dir.join("checkpoints").to_string_lossy().to_string()),
+        ("KENFUTWORK_SANDBOX_ROOT".into(), data_dir.join("sandbox").to_string_lossy().to_string()),
+    ]
 }
 
 /** 随包服务端的启动载体：程序 + 参数（存在且可运行时返回；仓库里跑时为 None）。
@@ -146,7 +138,7 @@ fn packaged_spawn_config(
 }
 
 /// 开发形态的拉起配置：命令与 cwd 可用 env 覆盖（dev.sh 注入 `KENFUTWORK_DESKTOP_SERVER_CWD`）。
-fn dev_spawn_config(data_dir: PathBuf) -> ServerSpawnConfig {
+fn dev_spawn_config(data_dir: PathBuf, port: u16) -> ServerSpawnConfig {
     let command = std::env::var("KENFUTWORK_DESKTOP_SERVER_CMD").unwrap_or_else(|_| "pnpm".into());
     let args = std::env::var("KENFUTWORK_DESKTOP_SERVER_ARGS")
         // 包名按品牌改过（`@kenfutwork/*`）：这里以前还写着旧作用域 `@loomic/server`，
@@ -155,9 +147,15 @@ fn dev_spawn_config(data_dir: PathBuf) -> ServerSpawnConfig {
         .split_whitespace()
         .map(str::to_string)
         .collect();
-    let mut config = ServerSpawnConfig::new(&command, args, data_dir, SERVER_PORT);
+    let mut config = ServerSpawnConfig::new(&command, args, data_dir.clone(), port);
     if let Ok(cwd) = std::env::var("KENFUTWORK_DESKTOP_SERVER_CWD") {
         config.cwd = cwd.into();
+    }
+    config.env.push(("KENFUTWORK_SERVER_PORT".into(), port.to_string()));
+    #[cfg(target_os = "macos")]
+    if std::env::var_os("KENFUTWORK_DESKTOP_WEB_URL").is_some() {
+        config.env = desktop_runtime_env(&data_dir, port);
+        config.require_owned = true;
     }
     // 开发态与打包态共享本地实例准入，启动完成后由私有凭据换取浏览器票据。
     config
@@ -264,17 +262,22 @@ fn start_server(
     // 源码——一律走 dev 拉起路径（`dev:server` = node --watch + tsx，改文件自动重载）。
     // release 打包形态不受影响：随包服务端正是打包形态的交付物。
     #[cfg(not(debug_assertions))]
-    #[cfg(not(debug_assertions))]
     {
         if let Some(server_launch) = bundled_server_launch(app) {
             let (port, launch) = launch_packaged_server(data_dir, &server_launch, &owner.0)?;
             return Ok((launch, Some(port)));
         }
     }
+    let port = match std::env::var("KENFUTWORK_SERVER_PORT") {
+        Ok(value) => value.parse::<u16>().ok().filter(|port| *port > 0)
+            .ok_or_else(|| "开发服务端端口无效。".to_string())?,
+        Err(std::env::VarError::NotPresent) => SERVER_PORT,
+        Err(_) => return Err("开发服务端端口无效。".into()),
+    };
     owner
         .0
-        .ensure_running(dev_spawn_config(data_dir.to_path_buf()))
-        .map(|launch| (launch, None))
+        .ensure_running(dev_spawn_config(data_dir.to_path_buf(), port))
+        .map(|launch| (launch, Some(port)))
         .map_err(|error| error.to_string())
 }
 
@@ -453,6 +456,10 @@ pub fn run() {
                 .as_ref()
                 .map(|url| url.as_str().to_string())
                 .unwrap_or(format!("http://127.0.0.1:{SERVER_PORT}/"));
+            #[cfg(debug_assertions)]
+            let ui_base = std::env::var("KENFUTWORK_DESKTOP_WEB_URL").unwrap_or(ui_base);
+            let ui_base = desktop_access::validated_ui_url(&ui_base)
+                .map_err(std::io::Error::other)?.to_string();
             app.manage(data_location::DataLocationState(std::sync::Mutex::new(
                 data_location::Location {
                     data_dir: data_dir.clone(),
@@ -486,9 +493,7 @@ pub fn run() {
                 // 返回端口 None，server 端口那条导航永不触发，404 就一直停在那
                 // （2026-09-28 真机：每次 `pnpm desktop` 都进 404）。这里把窗口带
                 // 回 devUrl 根：Next 根路径 307 → /workbench，未登录由前端守卫接手。
-                if let Some(dev_url) = app.config().build.dev_url.clone() {
-                    navigate_main_window(app.handle(), dev_url.as_str());
-                }
+                navigate_main_window(app.handle(), &ui_base);
             }
             let handle = app.handle().clone();
             let thread_data_dir = data_dir.clone();
@@ -496,7 +501,7 @@ pub fn run() {
                 let outcome =
                     start_server(&handle, &thread_data_dir).and_then(|(launch, selected)| {
                         let port = selected.unwrap_or(SERVER_PORT);
-                        let base = if selected.is_some() {
+                        let base = if !cfg!(debug_assertions) && selected.is_some() {
                             format!("http://127.0.0.1:{port}/")
                         } else {
                             ui_base.clone()

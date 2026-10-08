@@ -1,6 +1,16 @@
 {
   "$comment": "env 名唯一权威机械表。新增/改名 env 先登记这里再使用——scripts/check-env.mjs（pnpm test:env 与 tests/workspace.test.mjs）会扫描全仓引用逐名对表：表外即 fail。surface: server|shell|script|test|build；status: active|test-gate|external|retired；inExamples=true 表示应在 .env.example 出现。第三方既有约定（OPENAI_/GOOGLE_ 等）标 external，允许不出现在 .env.example。",
   "vars": {
+    "KENFUTWORK_DESKTOP_WEB_URL": {
+      "surface": "shell",
+      "readers": [
+        "apps/desktop/scripts/dev-macos.mjs",
+        "apps/desktop/src-tauri/src/lib.rs"
+      ],
+      "inExamples": false,
+      "status": "active",
+      "note": "固定开发壳的源码Web回环地址，由macOS开发入口注入"
+    },
     "KENFUTWORK_DEPLOYMENT": {
       "surface": "server",
       "readers": ["apps/server/src/config/env.ts"],
@@ -17,7 +27,11 @@
     },
     "KENFUTWORK_SERVER_PORT": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [
+        "apps/server/src/config/env.ts",
+        "apps/desktop/scripts/dev-macos.mjs",
+        "apps/desktop/src-tauri/src/lib.rs"
+      ],
       "inExamples": true,
       "status": "active",
       "note": "兜底通用 PORT"
@@ -44,14 +58,21 @@
     },
     "KENFUTWORK_WEB_ORIGIN": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts"],
+      "readers": [
+        "apps/server/src/config/env.ts",
+        "apps/desktop/scripts/dev-macos.mjs"
+      ],
       "inExamples": true,
       "status": "active",
       "note": "CORS 允许来源"
     },
     "NEXT_PUBLIC_SERVER_BASE_URL": {
       "surface": "web",
-      "readers": ["apps/web/src/lib/env.ts", "apps/web/next.config.ts"],
+      "readers": [
+        "apps/web/src/lib/env.ts",
+        "apps/web/next.config.ts",
+        "apps/desktop/scripts/dev-macos.mjs"
+      ],
       "inExamples": true,
       "status": "active",
       "note": "浏览器请求后端的唯一 env；空则 dev 代理 /api/* 到 3001"
@@ -130,7 +151,8 @@
         "apps/desktop/src-tauri/src/server_handle.rs",
         "apps/server/src/features/computer-use/desktop.app.integration.test.ts",
         "apps/server/src/ws/logger.ts",
-        "apps/server/src/ws/logger-packaged.test.ts"
+        "apps/server/src/ws/logger-packaged.test.ts",
+        "apps/desktop/scripts/dev-macos.mjs"
       ],
       "inExamples": true,
       "status": "active",
@@ -603,7 +625,11 @@
     },
     "KENFUTWORK_DESKTOP_SERVER_CWD": {
       "surface": "shell",
-      "readers": ["apps/desktop/src-tauri/src/lib.rs", "apps/desktop/dev.sh"],
+      "readers": [
+        "apps/desktop/src-tauri/src/lib.rs",
+        "apps/desktop/dev.sh",
+        "apps/desktop/scripts/dev-macos.mjs"
+      ],
       "inExamples": true,
       "status": "active",
       "note": "dev.sh 注入仓库根（pnpm --filter 需在 workspace 内）"
@@ -1234,7 +1260,8 @@
       "surface": "server",
       "readers": [
         "apps/server/src/desktop/paths.ts",
-        "apps/desktop/src-tauri/src/lib.rs"
+        "apps/desktop/src-tauri/src/lib.rs",
+        "apps/desktop/scripts/dev-macos.mjs"
       ],
       "inExamples": true,
       "status": "active",

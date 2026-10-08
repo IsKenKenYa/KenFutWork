@@ -5,8 +5,27 @@ import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { test } from "node:test";
 import { promisify } from "node:util";
+import { freePort } from "./dev-macos.mjs";
 
 const exec = promisify(execFile);
+
+test("macOS开发入口跳过占用端口并保留原服务", async () => {
+  const occupied = createServer((_request, response) => response.end("原服务"));
+  occupied.listen(0);
+  await once(occupied, "listening");
+  try {
+    const port = occupied.address().port;
+    const selected = await freePort(port, port);
+    assert.notEqual(selected, port);
+    assert.equal(
+      await (await fetch(`http://127.0.0.1:${port}`)).text(),
+      "原服务",
+    );
+  } finally {
+    occupied.close();
+    await once(occupied, "close");
+  }
+});
 
 test("桌面回环探活直接到达本机服务，不向环境代理发送请求", {
   skip: process.platform === "win32",

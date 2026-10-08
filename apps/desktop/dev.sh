@@ -10,6 +10,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+if [ "$(uname -s)" = "Darwin" ]; then
+  exec node apps/desktop/scripts/dev-macos.mjs "$@"
+fi
+
 PIDS=()
 export KENFUTWORK_DESKTOP_SERVER_CWD="$ROOT"
 cleanup() {
