@@ -55,13 +55,18 @@ let result=null;
 for(const id of ids) {
   const url=workspace.URLForApplicationWithBundleIdentifier($(id));
   if(url.isNil()) continue;
-  const icon=workspace.iconForFile(url.path);
+  const bundle=$.NSBundle.bundleWithURL(url);
+  const name=bundle.objectForInfoDictionaryKey($('CFBundleIconFile'));
+  // NSWorkspace的IconServices缓存可能返回花屏（Docker嵌套app实测）；优先读应用声明的资源。
+  let icon=name.isNil() ? null : bundle.imageForResource(name);
+  if(!icon || icon.isNil()) icon=workspace.iconForFile(url.path);
   const bitmap=$.NSBitmapImageRep.alloc.initWithBitmapDataPlanesPixelsWidePixelsHighBitsPerSampleSamplesPerPixelHasAlphaIsPlanarColorSpaceNameBytesPerRowBitsPerPixel(null,32,32,8,4,true,false,$.NSDeviceRGBColorSpace,0,0);
   const graphics=$.NSGraphicsContext.graphicsContextWithBitmapImageRep(bitmap);
   $.NSGraphicsContext.saveGraphicsState;
   try {
     $.NSGraphicsContext.setCurrentContext(graphics);
     icon.drawInRectFromRectOperationFraction($.NSMakeRect(0,0,32,32),$.NSMakeRect(0,0,0,0),$.NSCompositingOperationCopy,1);
+    graphics.flushGraphics;
   } finally { $.NSGraphicsContext.restoreGraphicsState; }
   const png=bitmap.representationUsingTypeProperties($.NSBitmapImageFileTypePNG,$({}));
   result={data:ObjC.unwrap(png.base64EncodedStringWithOptions(0))};

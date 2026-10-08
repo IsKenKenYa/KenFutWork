@@ -1,9 +1,11 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { PNG } from "pngjs";
+import sharp from "sharp";
 import { expect, it } from "vitest";
 import { createCodeUiHttpFixture } from "../code-ui/code-ui-http.fixture.js";
 import { createMacosApplicationIconResolver } from "./application-icon.js";
@@ -11,6 +13,58 @@ import { createMacosApplicationIconResolver } from "./application-icon.js";
 const exec = promisify(execFile);
 const enabled =
   process.env.KENFUTWORK_TEST_DESKTOP === "1" && process.platform === "darwin";
+
+it.skipIf(!enabled || !existsSync("/Applications/Docker.app"))(
+  "Docker嵌套应用原RPC图标与声明资源的像素一致，不能把可解码花屏当成功",
+  async () => {
+    const directory = await mkdtemp(join(tmpdir(), "kfw-docker-icon-"));
+    const fixture = await createCodeUiHttpFixture();
+    try {
+      const resource =
+        "/Applications/Docker.app/Contents/MacOS/Docker Desktop.app/Contents/Resources/icon.icns";
+      const expectedPath = join(directory, "expected.png");
+      await exec("sips", [
+        "-s",
+        "format",
+        "png",
+        resource,
+        "--out",
+        expectedPath,
+      ]);
+      const expected = await sharp(expectedPath)
+        .resize(32, 32)
+        .ensureAlpha()
+        .raw()
+        .toBuffer();
+      const stream = await fixture.client.openCodeStream();
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const response = await fixture.client.request("/api/code-ui/rpc", {
+          connectionId: stream.ready.hello.connectionId,
+          service: "platform",
+          method: "getApplicationIcon",
+          args: ["com.electron.dockerdesktop"],
+        });
+        expect(response.status).toBe(200);
+        const image = PNG.sync.read(
+          Buffer.from(response.body.result.iconDataUrl.split(",")[1], "base64"),
+        );
+        expect([image.width, image.height]).toEqual([32, 32]);
+        let difference = 0,
+          pixels = 0;
+        for (let index = 0; index < image.data.length; index++) {
+          if (index % 4 === 3 || expected[index - (index % 4) + 3]! < 250)
+            continue;
+          difference += Math.abs(image.data[index]! - expected[index]!);
+          pixels++;
+        }
+        expect(difference / pixels).toBeLessThan(12);
+      }
+    } finally {
+      await fixture.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
 
 it.skipIf(!enabled)(
   "真实原宿主RPC读取系统应用图标并守住认证与连接边界",
