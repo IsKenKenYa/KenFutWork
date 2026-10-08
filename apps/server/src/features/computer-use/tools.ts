@@ -83,6 +83,13 @@ function projectResult(name: string, result: CuToolResult): CuToolResult {
     | Record<string, unknown>
     | undefined;
   const structured = { ...result.structuredContent };
+  const app =
+    structured.app &&
+    typeof structured.app === "object" &&
+    !Array.isArray(structured.app)
+      ? (structured.app as Record<string, unknown>)
+      : undefined;
+  const bundleId = app?.bundle_id ?? app?.bundleId;
   const image = structured.image as Record<string, unknown> | undefined;
   if (image) {
     const { data: _data, ...metadata } = image;
@@ -116,6 +123,19 @@ function projectResult(name: string, result: CuToolResult): CuToolResult {
       kind: "cua",
       schemaVersion: 1,
       toolName: name,
+      // 仅来自已确认的后端结果；空locators显式阻止原renderer回退到模型app参数。
+      targetApp: {
+        schemaVersion: 1,
+        ...(typeof app?.name === "string"
+          ? { displayName: app.name.slice(0, 512) }
+          : {}),
+        iconLocators:
+          typeof bundleId === "string" &&
+          bundleId.length <= 255 &&
+          /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/u.test(bundleId)
+            ? [{ kind: "darwin-bundle-id", value: bundleId }]
+            : [],
+      },
       status: result.isError ? "failed" : "success",
       text: result.content
         .filter((block) => block.type === "text")

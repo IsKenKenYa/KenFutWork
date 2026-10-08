@@ -54,6 +54,8 @@ export const CU_AX_DEFAULT_LIMITS: CuTreeLimits = {
 };
 
 export interface CuRaster {
+  /** 执行器在捕获时确认的应用身份；不得从请求参数回填。 */
+  app?: AxAppRef;
   frameId: string;
   mimeType: "image/png";
   width: number;

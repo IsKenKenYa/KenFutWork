@@ -276,7 +276,11 @@ export function createComputerUseService(options: {
     const maximum = governance().maxActionsPerRun;
     const count = actionCounts.get(runId) ?? 0;
     return count >= maximum
-      ? errorResult("action_limit", `本轮 run 已执行 ${count} 个动作，达到上限 ${maximum}（设置可调 computerUseMaxActionsPerRun）。`, { retry: "never" })
+      ? errorResult(
+          "action_limit",
+          `本轮 run 已执行 ${count} 个动作，达到上限 ${maximum}（设置可调 computerUseMaxActionsPerRun）。`,
+          { retry: "never" },
+        )
       : undefined;
   };
 
@@ -722,6 +726,7 @@ export function createComputerUseService(options: {
         observations.set(key, latest);
         const attached = attachRaster(raster, {
           state_id: latest?.stateId ?? null,
+          ...(raster.app ? { app: raster.app } : {}),
         });
         return okResult(
           `已截取目标窗口 ${raster.width}x${raster.height}（frameId=${raster.frameId}）。${attached.text}`,
@@ -774,6 +779,7 @@ export function createComputerUseService(options: {
         );
         return okResult(`${result.detail}（actionSent=${result.actionSent}）`, {
           actionSent: result.actionSent,
+          ...(latest?.binding ? { app: latest.app } : {}),
         });
       } catch (error) {
         return failureOf(error);
@@ -824,6 +830,7 @@ export function createComputerUseService(options: {
         );
         return okResult(`${result.detail}（actionSent=${result.actionSent}）`, {
           actionSent: result.actionSent,
+          ...(latest?.binding ? { app: latest.app } : {}),
         });
       } catch (error) {
         return failureOf(error);
@@ -902,7 +909,10 @@ export function createComputerUseService(options: {
           true,
           latest?.binding,
         );
-        return okResult(result.detail, { actionSent: result.actionSent });
+        return okResult(result.detail, {
+          actionSent: result.actionSent,
+          ...(latest?.binding ? { app: latest.app } : {}),
+        });
       } catch (error) {
         return failureOf(error);
       } finally {

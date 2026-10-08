@@ -133,6 +133,7 @@ async function observeWithLaunch(
 }
 
 interface WindowBoundsResult {
+  app?: import("./ax-tree.js").AxAppRef;
   binding?: string;
   bounds?: [number, number, number, number] | null;
 }
@@ -408,7 +409,7 @@ win.actions.byName('AXRaise').perform(); JSON.stringify({ok:true});`,
       const directory = await mkdtemp(join(tmpdir(), "kenfutwork-cu-"));
       try {
         if (context) await focus(appRef, context);
-        const metadata = appRef.displayId
+        const metadata: WindowBoundsResult = appRef.displayId
           ? { bounds: await geometry(appRef, context) }
           : await jxaJson<WindowBoundsResult>(
               buildWindowBoundsScript(appRef, context?.binding),
@@ -448,6 +449,7 @@ win.actions.byName('AXRaise').perform(); JSON.stringify({ok:true});`,
           });
         return {
           frameId: `frame-${++frameSeq}`,
+          ...(metadata.app ? { app: metadata.app } : {}),
           mimeType: "image/png",
           width: image.width,
           height: image.height,

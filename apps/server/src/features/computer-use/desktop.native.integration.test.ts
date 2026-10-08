@@ -6,7 +6,10 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
+import {
+  AGENT_GOVERNANCE_DEFAULTS,
+  zcodeUiProtocol as protocol,
+} from "@kenfutwork/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it } from "vitest";
@@ -167,6 +170,7 @@ JSON.stringify(rows);`,
               isError?: boolean;
               content: Array<{ type: string; text?: string }>;
               structuredContent?: Record<string, unknown>;
+              display?: unknown;
             };
             expect(result.isError, JSON.stringify(result.content)).not.toBe(
               true,
@@ -227,6 +231,22 @@ JSON.stringify(rows);`,
             app,
             include_screenshot: true,
           });
+          const verifiedApp = state.structuredContent?.app as {
+            name: string;
+            pid: number;
+          };
+          expect(verifiedApp.pid).toBe(app.pid);
+          const stateDisplay = protocol.toolOutputSchema.parse({
+            text: "",
+            display: state.display,
+          }).display;
+          expect(stateDisplay).toMatchObject({
+            targetApp: {
+              schemaVersion: 1,
+              displayName: verifiedApp.name,
+              iconLocators: [],
+            },
+          });
           const tree = state.content.find((block) => block.type === "text")!
             .text!;
           const index = Number(tree.match(/\[(\d+)\] button 验收按钮/)?.[1]);
@@ -235,6 +255,18 @@ JSON.stringify(rows);`,
           expect(
             JSON.stringify((await call("get_app_state", { app })).content),
           ).toContain("点击数：1");
+          const forgedShot = await call("screenshot", {
+            app: { ...app, name: "伪造应用名", bundleId: "com.apple.finder" },
+          });
+          const shotDisplay = protocol.toolOutputSchema.parse({
+            text: "",
+            display: forgedShot.display,
+          }).display;
+          expect(shotDisplay).toMatchObject({
+            targetApp: { displayName: verifiedApp.name, iconLocators: [] },
+          });
+          expect(JSON.stringify(shotDisplay)).not.toContain("伪造应用名");
+          // 帧按请求目标引用隔离；身份展示不能使其它引用借用该帧。
           const shot = await call("screenshot", { app });
           const image = shot.structuredContent!.image as {
             width: number;
