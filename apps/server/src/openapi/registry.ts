@@ -1749,7 +1749,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: instanceSettingsResponseSchema,
     summary: "读取实例设置",
     description:
-      "解析当前本地实例后返回其已解析设置；未配置默认模型时 defaultModel 可为空字符串。压缩保留字段表示近期原始消息的配置目标，不表示 SDK 实际保留量。模型流无输出阈值仅计真实模型请求，不含工具执行和人工审批等待；0表示关闭。",
+      "解析当前本地实例后返回其已解析设置；modelDefaults 独立持有聊天引用、图像和视频自动或手动候选，未配置聊天默认可为 null。压缩保留字段表示近期原始消息的配置目标，不表示 SDK 实际保留量。模型流无输出阈值仅计真实模型请求，不含工具执行和人工审批等待；0表示关闭。",
   },
   {
     method: "patch",
@@ -1761,7 +1761,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: instanceSettingsResponseSchema,
     summary: "更新实例设置",
     description:
-      "仅更新送来的实例设置字段，未配置默认模型也可保存其他设置。压缩保留目标按窗口已知/未知分别设置，自动与手动维护共用。模型流无输出阈值由实例设置优先于env解析，仅计真实模型请求，0表示关闭。显式设置默认模型必须提供非空标识，并校验其是否在目录中；不存在返回 400 invalid_model 及可用清单。",
+      "仅更新送来的实例设置字段，未配置默认模型也可保存其他设置。modelDefaults 使用规范化的 providerId 与 modelId 精确引用；手动候选非空且不重复，必须属于当前实例可用的对应能力目录，Flow 连接不能作为候选。结构错误返回 400 invalid_request，候选不可用返回 400 invalid_model；数据库写入失败整个 patch 回滚。压缩保留目标按窗口已知/未知分别设置，自动与手动维护共用。模型流无输出阈值由实例设置优先于env解析，仅计真实模型请求，0表示关闭。",
   },
   // ---- skills.ts（技能；含实例安装态）----
   {

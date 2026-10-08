@@ -5,6 +5,7 @@ import { brandKitAssetTypeSchema } from "./brand-kit-contracts.js";
 import { executionModeSchema } from "./capability-contracts.js";
 import { additionalDirectorySchema } from "./execution-contracts.js";
 import { governanceBoolSetting, governanceSetting } from "./governance.js";
+import { modelDefaultsSchema } from "./model-policy.js";
 
 export const identifierSchema = z.string().min(1);
 export const timestampSchema = z.iso.datetime({ offset: true });
@@ -181,6 +182,7 @@ export const terminalShellSchema = z.enum([
 export type TerminalShellId = z.infer<typeof terminalShellSchema>;
 
 export const instanceSettingsSchema = z.object({
+  modelDefaults: modelDefaultsSchema.optional(),
   /** 未配置默认模型时为真实空值，局部设置保存不要求先选模型。 */
   defaultModel: z.string(),
   /** 终端默认 shell（用户口径：「可以在设置里配置默认的」）。 */

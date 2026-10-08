@@ -71,7 +71,12 @@ function createRunner(
 function createRepositoryFake(
   overrides: Partial<SettingsRepository> = {},
 ): SettingsRepository {
-  return {
+  const repository: SettingsRepository = {
+    async atomicUpdate(operation) {
+      await operation(this);
+    },
+    findModelDefaults: async () => null,
+    upsertModelDefaults: async () => {},
     findRuntimeGovernance: async () => ({}),
     upsertRuntimeGovernance: async () => {},
     findDefaultModel: async () => null,
@@ -109,6 +114,7 @@ function createRepositoryFake(
     upsertSubagentMaxContinuations: async () => {},
     ...overrides,
   };
+  return repository;
 }
 
 it("设置事实保存并回读后通知实例配置消费者，释放租约后不再推送且不暴露完整设置", async () => {
@@ -197,6 +203,11 @@ describe("settings service", () => {
       fallback.getInstanceSettings(ACTOR, INSTANCE_ID),
     ).resolves.toEqual(
       instanceSettingsSchema.parse({
+        modelDefaults: {
+          chat: null,
+          image: { mode: "auto" },
+          video: { mode: "auto" },
+        },
         agentMaxRetries: 10,
         defaultModel: "fallback-model",
         terminalShell: "auto",
@@ -232,6 +243,11 @@ describe("settings service", () => {
       stored.getInstanceSettings(ACTOR, INSTANCE_ID),
     ).resolves.toEqual(
       instanceSettingsSchema.parse({
+        modelDefaults: {
+          chat: null,
+          image: { mode: "auto" },
+          video: { mode: "auto" },
+        },
         agentMaxRetries: 10,
         defaultModel: "stored-model",
         terminalShell: "auto",
@@ -276,6 +292,11 @@ describe("settings service", () => {
       withCatalog.getInstanceSettings(ACTOR, INSTANCE_ID),
     ).resolves.toEqual(
       instanceSettingsSchema.parse({
+        modelDefaults: {
+          chat: null,
+          image: { mode: "auto" },
+          video: { mode: "auto" },
+        },
         agentMaxRetries: 10,
         defaultModel: "inst-1:glm-5.3-flash",
         terminalShell: "auto",
@@ -310,6 +331,11 @@ describe("settings service", () => {
       emptyCatalog.getInstanceSettings(ACTOR, INSTANCE_ID),
     ).resolves.toEqual(
       instanceSettingsSchema.parse({
+        modelDefaults: {
+          chat: null,
+          image: { mode: "auto" },
+          video: { mode: "auto" },
+        },
         agentMaxRetries: 10,
         defaultModel: "gpt-4.1",
         terminalShell: "auto",
@@ -348,6 +374,11 @@ describe("settings service", () => {
       stored.getInstanceSettings(ACTOR, INSTANCE_ID),
     ).resolves.toEqual(
       instanceSettingsSchema.parse({
+        modelDefaults: {
+          chat: null,
+          image: { mode: "auto" },
+          video: { mode: "auto" },
+        },
         agentMaxRetries: 10,
         defaultModel: "stored-model",
         terminalShell: "auto",
@@ -491,6 +522,11 @@ describe("settings service", () => {
       }),
     ).resolves.toEqual(
       instanceSettingsSchema.parse({
+        modelDefaults: {
+          chat: null,
+          image: { mode: "auto" },
+          video: { mode: "auto" },
+        },
         agentMaxRetries: 3,
         defaultModel: "gemini-2.5-flash",
         terminalShell: "git-bash",
@@ -522,6 +558,11 @@ describe("settings service", () => {
       }),
     ).resolves.toEqual(
       instanceSettingsSchema.parse({
+        modelDefaults: {
+          chat: null,
+          image: { mode: "auto" },
+          video: { mode: "auto" },
+        },
         agentMaxRetries: 3,
         codeIndexEnabled: false,
         codeIndexAutoNewFolder: true,

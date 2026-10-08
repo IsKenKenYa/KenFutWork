@@ -1,4 +1,4 @@
-import type { TerminalShellId } from "@kenfutwork/shared";
+import type { ModelDefaults, TerminalShellId } from "@kenfutwork/shared";
 
 import type { PersistenceService } from "../persistence/types.js";
 
@@ -6,7 +6,9 @@ import type { PersistenceService } from "../persistence/types.js";
  * settings 聚合的数据访问（`instance_settings`）。
  * 表以 `instance_id` 为主键，故 upsert 天然是「一实例一行」。
  */
-export interface SettingsRepository {
+export interface SettingsOperations {
+  findModelDefaults(instanceId: string): Promise<unknown>;
+  upsertModelDefaults(instanceId: string, value: ModelDefaults): Promise<void>;
   findRuntimeGovernance(instanceId: string): Promise<unknown>;
   upsertRuntimeGovernance(
     instanceId: string,
@@ -90,10 +92,42 @@ type LlmInfiniteRetryRow = { llm_infinite_retry: boolean };
 type ExecuteTimeoutMsRow = { execute_timeout_ms: number };
 type SubagentMaxContinuationsRow = { subagent_max_continuations: number };
 
+export interface SettingsRepository extends SettingsOperations {
+  atomicUpdate(
+    operation: (repository: SettingsOperations) => Promise<void>,
+  ): Promise<void>;
+}
+
 export function createSettingsRepository(
   persistence: PersistenceService,
 ): SettingsRepository {
   return {
+    ...createSettingsOperations(persistence),
+    atomicUpdate: (operation) =>
+      persistence.transaction((tx) => operation(createSettingsOperations(tx))),
+  };
+}
+
+function createSettingsOperations(
+  persistence: Pick<PersistenceService, "forInstance">,
+): SettingsOperations {
+  return {
+    async findModelDefaults(instanceId) {
+      const row = await persistence
+        .forInstance(instanceId)
+        .queryOne<{ model_defaults: unknown }>(
+          "select model_defaults from public.instance_settings where instance_id = :instance",
+        );
+      return row?.model_defaults ?? null;
+    },
+    async upsertModelDefaults(instanceId, value) {
+      await persistence.forInstance(instanceId).execute(
+        `insert into public.instance_settings (instance_id, model_defaults)
+         values (:instance, $1::jsonb)
+         on conflict (instance_id) do update set model_defaults = excluded.model_defaults`,
+        [JSON.stringify(value)],
+      );
+    },
     async findRuntimeGovernance(instanceId) {
       const row = await persistence
         .forInstance(instanceId)
