@@ -481,22 +481,9 @@ pub fn run() {
             // 主线程被占住，窗口连重绘都不做 → 用户看到的是一大片白屏。
             // 现在：先画启动中页面（打包态才画，dev 形态窗口归 devUrl），后台起服务，
             // 起来了再把它叫到主线程跳转。
-            // 与 start_server 同口径：dev 构建不画打包启动页（窗口归 devUrl）
-            #[cfg(not(debug_assertions))]
-            let packaged = bundled_server_launch(app.handle()).is_some();
-            #[cfg(debug_assertions)]
-            let packaged = false;
-            if packaged {
-                show_startup_splash(app.handle());
-            } else {
-                // dev 形态：主窗口按 tauri.conf 的 `url: "_splash.html"` 会加载
-                // `devUrl + _splash.html`——该文件只存在于打包产物 frontendDist
-                // （web/out），Next dev 没有 → 窗口落 404 页；而 dev 的 start_server
-                // 返回端口 None，server 端口那条导航永不触发，404 就一直停在那
-                // （2026-09-28 真机：每次 `pnpm desktop` 都进 404）。这里把窗口带
-                // 回 devUrl 根：Next 根路径 307 → /workbench，未登录由前端守卫接手。
-                navigate_main_window(app.handle(), &ui_base);
-            }
+            // 源码开发和发行包都先留在启动页，不能在API/票据就绪前挂载准入守卫。
+            // 同一URL只添加#connect不保证WebView重载，提前打开会永久保留首次连接错误。
+            show_startup_splash(app.handle());
             let handle = app.handle().clone();
             let thread_data_dir = data_dir.clone();
             std::thread::spawn(move || {
