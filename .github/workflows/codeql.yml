@@ -53,10 +53,11 @@ jobs:
             runs_on: ubuntu-latest
             build_mode: none
           # 19 个第一方 .rs：换票（desktop_access.rs）、进程沙箱与并发控制。
-          # Rust 必须按编译过程取真值，故走 autobuild（需要 cargo，runner 镜像自带）。
+          # 官方文档：Rust 的提取按解释型语言处理，build-mode: none 即可，
+          # 不需要跑 cargo 构建（autobuild 只是白烧一次编译，还会因依赖树失败）。
           - language: rust
             runs_on: ubuntu-latest
-            build_mode: autobuild
+            build_mode: none
 
     steps:
       - uses: actions/checkout@v4
