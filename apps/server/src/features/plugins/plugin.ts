@@ -148,7 +148,7 @@ function loadBundledBundles(
         continue;
       }
       out.push({
-        id: `local__${manifest.name}`,
+        id: `bundled__${manifest.name}`,
         name: manifest.name,
         files,
         manifest,

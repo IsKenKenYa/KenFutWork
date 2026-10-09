@@ -6807,8 +6807,8 @@
     "/api/plugins": {
       "get": {
         "operationId": "getPlugins",
-        "summary": "列出已安装插件",
-        "description": "返回本实例已安装插件的清单，供插件市场面板展示。",
+        "summary": "列出本机插件目录与安装状态",
+        "description": "返回真实系统能力、随发行包及本机安装清单；installed与enabled独立，停用仍为已安装，未安装或未启用不提供运行面板入口。",
         "tags": [
           "plugins"
         ],
@@ -6822,7 +6822,14 @@
         ],
         "responses": {
           "200": {
-            "description": "成功"
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pluginMarketListResponseSchema"
+                }
+              }
+            }
           },
           "401": {
             "description": "未认证或令牌无效",
@@ -7306,7 +7313,7 @@
       "post": {
         "operationId": "postPluginsByIdToggle",
         "summary": "切换插件启停",
-        "description": "按 id 启用/禁用插件，body.enabled 必须为布尔值；未安装返回 404。需已授权的本机接入。",
+        "description": "按 id 启用/禁用已安装插件；返回installed=true及真实enabled，停用不删除包，未安装返回404。需已授权的本机接入。",
         "tags": [
           "plugins"
         ],
@@ -7329,9 +7336,26 @@
             "description": "路径参数"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/pluginToggleRequestSchema"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "成功"
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pluginToggleResponseSchema"
+                }
+              }
+            }
           },
           "401": {
             "description": "未认证或令牌无效",
@@ -18846,6 +18870,176 @@
         "required": [
           "installed",
           "report"
+        ],
+        "additionalProperties": false
+      },
+      "pluginMarketListResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "title": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "builtin",
+                    "registry",
+                    "url"
+                  ]
+                },
+                "repositoryUrl": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "headSha": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "installability": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "category": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "system": {
+                  "default": false,
+                  "type": "boolean"
+                },
+                "installed": {
+                  "default": false,
+                  "type": "boolean"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "ui": {
+                  "default": [],
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "slot": {
+                        "default": "sidebar",
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "icon": {
+                        "default": null,
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "title",
+                      "slot",
+                      "url",
+                      "icon"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "title",
+                "description",
+                "source",
+                "repositoryUrl",
+                "headSha",
+                "installability",
+                "category",
+                "system",
+                "installed",
+                "enabled",
+                "ui"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "plugins"
+        ],
+        "additionalProperties": false
+      },
+      "pluginToggleRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "pluginToggleResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "installed": {
+            "type": "boolean",
+            "const": true
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "installed",
+          "enabled"
         ],
         "additionalProperties": false
       },

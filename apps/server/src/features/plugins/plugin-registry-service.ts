@@ -16,6 +16,7 @@ import { pathToFileURL } from "node:url";
 
 import {
   type CompatReport,
+  createPluginIconResourceReference,
   type InstalledPlugin,
   installedPluginSchema,
   PLUGIN_UI_SLOTS,
@@ -740,6 +741,7 @@ export function createPluginRegistryService(
         category: entry.category ?? null,
         system: SYSTEM_PLUGIN_NAMES.has(entry.name),
         installed: true,
+        enabled: true,
         // 系统插件不带 UI 入口（它们本来就有专门的界面）
         ui: [],
       }));
@@ -756,7 +758,8 @@ export function createPluginRegistryService(
           installability: record.report.compatible ? "verified" : "failed",
           category: record.manifest.category ?? null,
           system: false,
-          installed: record.enabled,
+          installed: true,
+          enabled: record.enabled,
           // 停用即收回入口（侧栏不该出现点不开的插件）
           ui: record.enabled ? (record.manifest.ui ?? []) : [],
         });
@@ -778,7 +781,8 @@ export function createPluginRegistryService(
           category: bundle.manifest.category ?? null,
           system: false,
           installed: false,
-          ui: bundle.manifest.ui ?? [],
+          enabled: false,
+          ui: [],
         });
       }
       return entries;
@@ -883,7 +887,24 @@ export function createPluginRegistryService(
           contentType: contentTypeOf(normalized),
         };
       }
-      if (!record.enabled || record.manifest.assets !== true) {
+      const requestedIcon = createPluginIconResourceReference(
+        pluginId,
+        `assets/${normalized}`,
+      );
+      const declaredIcon =
+        requestedIcon &&
+        contentTypeOf(normalized).startsWith("image/") &&
+        record.manifest.ui.some(
+          (entry) =>
+            entry.icon &&
+            createPluginIconResourceReference(pluginId, entry.icon) ===
+              requestedIcon,
+        );
+      // 停用收回运行面板；已安装卡片的声明图标仍是只读元信息。
+      if (
+        record.manifest.assets !== true ||
+        (!record.enabled && !declaredIcon)
+      ) {
         return undefined;
       }
       const bundleDir = bundleDirOf(pluginId);

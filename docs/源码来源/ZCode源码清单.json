@@ -3079,9 +3079,10 @@
       "source": "references/zcode/packages/ui/src/components/PluginIcon.tsx",
       "target": "apps/web/src/components/workbench/zcode/components/PluginIcon.tsx",
       "sha256": "4bdb6a78e9839770411c765fb6ea95691fdb2ce3d69ac52d467ba7ebfc08d604",
-      "copiedSha256": "28102de1f41b457f9524f7f1650e1fa2eae955dd299b196bcd2638284b6f4c93",
+      "copiedSha256": "663d7c11a1df7edf7602911389a7244e9c997b9ed0b7fbc19b7eca902eaa5901",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主资源适配：原span/img及失败回退保留，原Platform取认证图片引用；异步结果按当前资源守卫"
       ]
     },
     {
@@ -5679,7 +5680,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "5292f9f22d67cbfc2950a2274f4061150d06d409d7d074f2e194fb6011859127",
+      "copiedSha256": "f944b2923e0cb0f7b3bf73d0dfa290797c61f634e06b0b32c7c75d451e31c9bc",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5688,14 +5689,15 @@
         "品牌适配：用户可见文案 ZCode→KenFutWork（不做产品品牌呈现，归属保留）",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "原Edit工具卡补丁预览预算截断提示英文本地化",
-        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
+        "本机文案：原Personal分段改Local；空目录标签与真实本机来源一致"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "343df832b7b13bcc9e9b283374d7f5dce57806e9a137cd4dc10e9973dcdebb1c",
+      "copiedSha256": "a9f316aca5cf16bcddfba87f3fae10a557039b8e071088713fbe4520d05258c4",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5704,7 +5706,8 @@
         "品牌适配：用户可见文案 ZCode→KenFutWork（不做产品品牌呈现，归属保留）",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "原Edit工具卡补丁预览预算截断提示中文本地化",
-        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
+        "本机文案：原个人分段改本机；空目录短标签，不宣称未接市场源可创建"
       ]
     },
     {
@@ -6643,9 +6646,10 @@
       "source": "references/zcode/packages/ui/src/lib/pluginIconSource.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/pluginIconSource.ts",
       "sha256": "0c2067d3ce5326a3d9c778cea189e4534127a4e469388b0c94e10c2b0c6cdd5d",
-      "copiedSha256": "441f9f202656d8d408114bcc4b791b3f5a09f20e82e73a95f60cbf4a6156d32b",
+      "copiedSha256": "dd5bc661edea588dcbad9548805cc9f729358687975868f8c6919e88f3611790",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主资源适配：按完整pluginId校验包图标引用，不放行任意本机URL；原HTTPS及打包图标保持"
       ]
     },
     {
@@ -9558,9 +9562,10 @@
       "source": "references/zcode/packages/ui/src/settings/PluginStoreCard.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/PluginStoreCard.tsx",
       "sha256": "aad8f08f60f2df6d47afced3cb3633af0ab7e21494ab17f285eb424d5f213dce",
-      "copiedSha256": "05a134b3737a833aa09f4bd8ef1620174ae5c76cf9995babcc0986ca782cdca3",
+      "copiedSha256": "c330cc9ccc81f3eecd7a5242fa760889ec10975ed32756d877628a646f40ee47",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主来源标识：可信发行目录在原卡片通过原Badge标官方，不重新装配市场卡片"
       ]
     },
     {
@@ -10650,9 +10655,10 @@
       "source": "references/zcode/packages/ui/src/settings/pluginStoreListing.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/pluginStoreListing.ts",
       "sha256": "f63b9b51c17766f7d6bf9b46d700eaaf502063b26b5ea2b6a345b65900071511",
-      "copiedSha256": "86b739579ccaa5b457ed6eca12d099e47c0cad7398664dafdc09da92c12a66cd",
+      "copiedSha256": "c6acbef7063e3822475f71c755e0b39fdf1f7a1b16351b29b2567a2189fcf93b",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主元信息适配：本机包按完整ID合入真实installedMeta.listing，原商店装配/排序/身份关联保持"
       ]
     },
     {
@@ -14527,7 +14533,7 @@
       "source": "references/zcode/packages/shared/src/platform.ts",
       "target": "packages/zcode-shared/src/platform.ts",
       "sha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "copiedSha256": "013721beb5c3f5e7fc103ab6539634fdbba9fae9db9114b33350c5c2071ea81f",
+      "copiedSha256": "73c628b6c753a3f2b22fb5324f4529fc278279cb1334a6ee1ebac8d5d52b44fb",
       "adaptations": [
         "宿主能力接口：增加可选云账户支持标记；未声明的原宿主行为不变",
         "宿主接口：可选自动化/嵌入浏览器/CUA/远程能力声明；未声明保持原平台语义",
@@ -14536,7 +14542,8 @@
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
         "阶段同步3f5c3873: 可选sessionMetadataSource与原Root轻量真实标题；Task-index只读metainfo，未声明保持原session投影",
-        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
+        "宿主接口：可选认证包图标解析，沿现有平台Provider；不扩大通用图片URL许可"
       ]
     },
     {
@@ -14550,8 +14557,10 @@
       "source": "references/zcode/packages/shared/src/plugin-marketplaces.ts",
       "target": "packages/zcode-shared/src/plugin-marketplaces.ts",
       "sha256": "e4e42c6122c1f732928a403b7f67b6941927de361daa39dd52e21d74ea7c04db",
-      "copiedSha256": "e4e42c6122c1f732928a403b7f67b6941927de361daa39dd52e21d74ea7c04db",
-      "adaptations": []
+      "copiedSha256": "51ea481271265ccf5bea90ac3a5fd96fb1a53f052f0db1c6c1d93db0157809fc",
+      "adaptations": [
+        "宿主发行清单身份加入原公开分段；默认ZCode目录与其他原分类逻辑不改"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/plugin-sync.ts",

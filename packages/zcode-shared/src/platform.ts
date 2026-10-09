@@ -527,6 +527,8 @@ export type CuaOsSupport =
  * 业务服务（文件、终端、凭据等）走 IServiceAccessor 的 RPC 通道。
  */
 export interface IPlatformService {
+  /** 宿主声明的包资源经现有认证取回；结果是当前文档拥有的图片引用。 */
+  resolvePluginIcon?(resource: string): Promise<string | undefined>;
   /** 宿主是否提供 ZCode 云账户/套餐服务；未声明时保持原平台行为。 */
   supportsCloudAccounts?: boolean;
 

@@ -174,13 +174,15 @@ export async function createCodeUiHttpFixture(
 }
 
 /** 既有外部HTTP场景逐例取得独占DB及真实浏览器连接，不读取共享DSN。 */
-export function useCodeUiHttpFixture() {
+export function useCodeUiHttpFixture(
+  options: Parameters<typeof createCodeUiHttpFixture>[0] = {},
+) {
   const enabled = process.env.RUN_CODE_UI_INTEGRATION === "1";
   let active: Awaited<ReturnType<typeof createCodeUiHttpFixture>> | undefined;
   let connectionId: string | undefined;
   beforeEach(async () => {
     if (!enabled) return;
-    active = await createCodeUiHttpFixture();
+    active = await createCodeUiHttpFixture(options);
     const stream = await active.client.openCodeStream();
     connectionId = stream.ready.hello.connectionId;
     const initialized = await stream.rpc("initializeConversationV4", [
@@ -206,6 +208,7 @@ export function useCodeUiHttpFixture() {
     return active;
   }
   return {
+    readResource: (path: string) => current().client.readResource(path),
     request: (
       ...args: Parameters<ReturnType<typeof createCodeUiTestClient>["request"]>
     ) => {

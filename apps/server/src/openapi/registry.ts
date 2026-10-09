@@ -111,6 +111,9 @@ import {
   pluginInspectResponseSchema,
   pluginInstallRequestSchema,
   pluginInstallResponseSchema,
+  pluginMarketListResponseSchema,
+  pluginToggleRequestSchema,
+  pluginToggleResponseSchema,
   projectCreateRequestSchema,
   projectCreateResponseSchema,
   projectListQuerySchema,
@@ -1492,8 +1495,10 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "plugins",
     auth: "local",
     successStatus: 200,
-    summary: "列出已安装插件",
-    description: "返回本实例已安装插件的清单，供插件市场面板展示。",
+    responseSchema: pluginMarketListResponseSchema,
+    summary: "列出本机插件目录与安装状态",
+    description:
+      "返回真实系统能力、随发行包及本机安装清单；installed与enabled独立，停用仍为已安装，未安装或未启用不提供运行面板入口。",
   },
   {
     method: "post",
@@ -1589,9 +1594,11 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "plugins",
     auth: "local",
     successStatus: 200,
+    requestSchema: pluginToggleRequestSchema,
+    responseSchema: pluginToggleResponseSchema,
     summary: "切换插件启停",
     description:
-      "按 id 启用/禁用插件，body.enabled 必须为布尔值；未安装返回 404。需已授权的本机接入。",
+      "按 id 启用/禁用已安装插件；返回installed=true及真实enabled，停用不删除包，未安装返回404。需已授权的本机接入。",
   },
   {
     method: "post",

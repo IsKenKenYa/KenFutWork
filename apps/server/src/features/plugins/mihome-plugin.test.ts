@@ -1565,7 +1565,7 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     walk("");
 
     const bundled: BundledBundle = {
-      id: "local__kenfutwork-mihome",
+      id: "bundled__kenfutwork-mihome",
       name: "kenfutwork-mihome",
       files,
       manifest: buildBundleManifest(files).manifest,
@@ -1579,20 +1579,21 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
       bundledBundles: [bundled],
     });
 
-    // 未安装：市场按 builtin 来源列出（installed=false、带 ui 与图标、标题用展示名）
+    // 未安装：市场显示真实安装与启用状态，运行入口为空，图标仍可读
     const listed = (await service.list()).find(
       (entry) => entry.source === "builtin",
     );
     expect(listed).toMatchObject({
-      id: "local__kenfutwork-mihome",
+      id: "bundled__kenfutwork-mihome",
       name: "kenfutwork-mihome",
       title: "米家",
       installed: false,
+      enabled: false,
     });
-    expect(listed?.ui?.[0]?.icon).toBe("assets/icon.svg");
+    expect(listed?.ui).toEqual([]);
     // 未安装也能读自带资产（市场卡片图标的来源）
     const icon = await service.readAsset({
-      pluginId: "local__kenfutwork-mihome",
+      pluginId: "bundled__kenfutwork-mihome",
       relativePath: "icon.svg",
     });
     expect(icon?.contentType).toBe("image/svg+xml");
@@ -1606,7 +1607,7 @@ describe("米家插件：登录 → 设备 → 控制（假云全链路）", () 
     expect(
       service
         .listUiEntries()
-        .find((entry) => entry.pluginId === "local__kenfutwork-mihome"),
+        .find((entry) => entry.pluginId === "bundled__kenfutwork-mihome"),
     ).toMatchObject({ icon: "assets/icon.svg", slot: "sidebar" });
     // 安装后：市场不再出现「未安装」的自带条目（已安装的那条来自安装记录本身）
     expect(

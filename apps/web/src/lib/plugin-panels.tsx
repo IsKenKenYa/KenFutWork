@@ -54,7 +54,7 @@ export function usePluginPanels(
       .then((data) => {
         setPanels(
           data.plugins
-            .filter((plugin) => plugin.installed)
+            .filter((plugin) => plugin.installed && plugin.enabled)
             .flatMap((plugin) =>
               (plugin.ui ?? [])
                 .filter((entry) => (entry.slot ?? "sidebar") === slot)

@@ -39,6 +39,7 @@ export function createCodePlatform(
       client
         .getChannel("platform")
         .call<ApplicationIconInfo | null>("getApplicationIcon", [request]),
+    resolvePluginIcon: (resource) => client.resolvePluginIcon(resource),
     async activateOrSetWorkspace(path) {
       const workspace = await client.openWorkspace(
         path,

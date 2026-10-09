@@ -4,6 +4,7 @@ import {
   type CodeUiWorkspace,
   clampCodeUiReconnectDelayMs,
   codeUiWorkspaceSchema,
+  isPluginIconResourceReference,
 } from "@kenfutwork/shared";
 import {
   Emitter,
@@ -252,6 +253,43 @@ export class CodeHttpChannelClient implements IChannelClient {
     return result as T;
   }
 
+  private readonly pluginIcons = new Map<string, Promise<string | undefined>>();
+  private readonly pluginIconUrls = new Set<string>();
+  async resolvePluginIcon(resource: string): Promise<string | undefined> {
+    if (
+      !isPluginIconResourceReference(resource) ||
+      this.controller.signal.aborted
+    )
+      return undefined;
+    const cached = this.pluginIcons.get(resource);
+    if (cached) return cached;
+    const pending = this.readHostImage(
+      resource,
+      this.controller.signal,
+      [
+        "image/svg+xml",
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "image/gif",
+        "image/avif",
+      ],
+      "插件图标已不可用。",
+    )
+      .then((blob) => {
+        if (this.controller.signal.aborted) return undefined;
+        const image = URL.createObjectURL(blob);
+        this.pluginIconUrls.add(image);
+        return image;
+      })
+      .catch(() => {
+        this.pluginIcons.delete(resource);
+        return undefined;
+      });
+    this.pluginIcons.set(resource, pending);
+    return pending;
+  }
+
   async readCuaSnapshot(uri: string, signal: AbortSignal): Promise<Blob> {
     if (
       !/^\/api\/computer-use\/snapshots\?taskId=[0-9a-f-]{36}&digest=[0-9a-f]{64}$/u.test(
@@ -259,8 +297,17 @@ export class CodeHttpChannelClient implements IChannelClient {
       )
     )
       throw new Error("截图引用无效。");
+    return this.readHostImage(uri, signal, ["image/png"], "截图已不可用。");
+  }
+
+  private async readHostImage(
+    path: string,
+    signal: AbortSignal,
+    contentTypes: readonly string[],
+    errorMessage: string,
+  ): Promise<Blob> {
     const response = await fetch(
-      `${this.config.apiBase.replace(/\/$/u, "")}${uri}`,
+      `${this.config.apiBase.replace(/\/$/u, "")}${path}`,
       {
         credentials: "include",
         headers: this.headers(),
@@ -272,10 +319,12 @@ export class CodeHttpChannelClient implements IChannelClient {
     reportAccessLost(response.status);
     if (
       !response.ok ||
-      response.headers.get("content-type")?.split(";")[0] !== "image/png"
+      !contentTypes.includes(
+        response.headers.get("content-type")?.split(";")[0] ?? "",
+      )
     ) {
       await response.body?.cancel();
-      throw new CodeHostHttpError(response.status, "截图已不可用。");
+      throw new CodeHostHttpError(response.status, errorMessage);
     }
     return response.blob();
   }
@@ -838,6 +887,9 @@ export class CodeHttpChannelClient implements IChannelClient {
 
   dispose() {
     this.controller.abort();
+    for (const image of this.pluginIconUrls) URL.revokeObjectURL(image);
+    this.pluginIconUrls.clear();
+    this.pluginIcons.clear();
     this.connected = false;
     this.ready?.reject(new DOMException("Code 宿主已关闭", "AbortError"));
     this.ready = null;

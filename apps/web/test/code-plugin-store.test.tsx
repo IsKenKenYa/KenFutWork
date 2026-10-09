@@ -132,6 +132,7 @@ async function renderPluginDetailsFixture(input: {
   list: ReturnType<typeof zcodePluginsListResultSchema.parse>;
   overview: ReturnType<typeof zcodePluginsOverviewResultSchema.parse>;
   describe?: () => Promise<PluginDescription>;
+  resource?: string;
 }) {
   const calls: PluginRpcCall[] = [];
   const workspaceIdentity = JSON.stringify([
@@ -139,6 +140,10 @@ async function renderPluginDetailsFixture(input: {
     input.workspacePath,
   ]);
   vi.stubGlobal("fetch", async (url: string, options?: RequestInit) => {
+    if (input.resource && url.endsWith(input.resource))
+      return new Response("<svg/>", {
+        headers: { "content-type": "image/svg+xml" },
+      });
     if (url.endsWith("/events"))
       return codeHostNotificationResponse(options?.signal ?? undefined);
     const call: PluginRpcCall = JSON.parse(String(options?.body));
@@ -421,4 +426,107 @@ it("原候选详情才按名称与来源describe，加载失败可重试，成�
       ),
     ),
   ).toBe(false);
+});
+
+it("原公开市场展示随发行的官方插件，本机分段不重复列出", async () => {
+  await renderPluginDetailsFixture({
+    workspacePath: "/official-fixture",
+    list: zcodePluginsListResultSchema.parse({ plugins: [], diagnostics: [] }),
+    overview: zcodePluginsOverviewResultSchema.parse({
+      marketplaces: [
+        {
+          id: "kenfutwork-bundled",
+          name: "KenFutWork 官方插件",
+          source: { type: "builtin" },
+          pluginCount: 1,
+        },
+      ],
+      availablePlugins: [
+        {
+          id: "builtin__mihome",
+          name: "kenfutwork-mihome",
+          marketplace: "kenfutwork-bundled",
+          installed: false,
+          version: "1.0.0",
+          listing: { displayName: "米家" },
+        },
+      ],
+      installedPlugins: [],
+      restorableBuiltins: [],
+      diagnostics: [],
+      capability: { supported: true },
+    }),
+  });
+  expect(screen.getByTestId("plugin-store-segment-personal").textContent).toBe(
+    "本机",
+  );
+  expect(screen.queryByText("米家", { exact: true })).toBeNull();
+  await userEvent.click(screen.getByTestId("plugin-store-segment-public"));
+  expect(await screen.findByText("米家", { exact: true })).not.toBeNull();
+  expect(screen.getByText("官方", { exact: true })).not.toBeNull();
+});
+
+it("停用的本机包仍显示安装记录中的真实图标及名称", async () => {
+  vi.stubGlobal(
+    "URL",
+    class extends URL {
+      static createObjectURL = vi.fn(
+        () => "blob:https://host.example/local-icon",
+      );
+      static revokeObjectURL = vi.fn();
+    },
+  );
+  const id = "local__native-icon";
+  const resource = `/api/plugins/${id}/assets/icon.svg`;
+  const info = {
+    id,
+    name: "native-icon",
+    marketplace: "kenfutwork-local",
+    version: "1.0.0",
+    enabled: false,
+    source: "url",
+    rootPath: "/packages/native-icon",
+    skillRootCount: 0,
+    commandRootCount: 0,
+    mcpServerNames: [],
+  };
+  await renderPluginDetailsFixture({
+    workspacePath: "/local-icon-fixture",
+    resource,
+    list: zcodePluginsListResultSchema.parse({
+      plugins: [info],
+      diagnostics: [],
+    }),
+    overview: zcodePluginsOverviewResultSchema.parse({
+      marketplaces: [
+        {
+          id: "kenfutwork-local",
+          name: "本机插件",
+          source: { type: "local", path: "/packages" },
+          pluginCount: 1,
+        },
+      ],
+      availablePlugins: [],
+      installedPlugins: [
+        {
+          id,
+          name: info.name,
+          marketplace: info.marketplace,
+          version: "1.0.0",
+          enabled: false,
+          scope: "user",
+          listing: { displayName: "本机图标", icon: resource },
+        },
+      ],
+      restorableBuiltins: [],
+      diagnostics: [],
+      capability: { supported: true },
+    }),
+  });
+  await screen.findByText("本机图标", { exact: true });
+  await waitFor(() =>
+    expect(
+      document.querySelector('img[src="blob:https://host.example/local-icon"]'),
+    ).not.toBeNull(),
+  );
 });

@@ -85,3 +85,8 @@ Code 的原 `plugin-management` 通道现已将 `listPlugins` 与 `getPluginsOve
 原 `plugin-management` 写面已接 `installPlugin`（真实自带包）、`setPluginEnabled` 与 `uninstallPlugin`。原扁平 service 寻址仅转换为原 schema 的 workspace 引用；结果沿原 schema（启停同时包含 plugin 与 enabled）。变更消费既有管理员门：managed 普通用户403，local-trust 本机主人沿既有策略。项目层写入、外部来源、更新/describe及带operationId的取消恢复仍待接通，不以本机自带包链路代替完整市场。库存变更与旧HTTP/工具入口共享同一宿主写队列，文件原子替换；卸载后迟到启用404，不重装已删包。
 
 自带包的原安装重放保留用户已有启停选择；显式removeCache=false卸载只移除安装与贡献，保留缓存/数据，返回removedPlugin.enabled=false。Host ready/close消费原服务恢复与写队列，关闭不提前报告资源释放完成。
+
+
+原插件市场宿主接线（2026-10-09）：发行目录使用固定 kenfutwork-bundled 身份并归公开，本机来源归 kenfutwork-local；官方安装包同时核 trusted发行目录与record.source=builtin，不按同名猜归属。随发行包使用bundled__命名空间，与local__本机包区分，不维护旧调试ID别名。原overview／installed listing提供已声明包图标引用，仍由原组件及认证平台读取；停用只保留清单声明的图片元信息可读，运行面板和贡献继续收回。实例层原installPlugin/setPluginEnabled/uninstallPlugin无需Project或Task；若带项目引用仍须真实验证，workspace安装态尚未接入，不伪造工作目录。页面端无项目操作在共用管理文档切片完成。
+
+公共GET /api/plugins独立返回installed与enabled，未安装／停用不返回运行面板入口；POST /api/plugins/:id/toggle保留installed=true并返回实际enabled。它们消费同一registry，不增加配置或安装服务。完整侧栏、MCP／技能、子定义双模式消费与共用管理页进度见《现有能力接线与入口统一》，当前目录／图标切片不表示完整目标完成。

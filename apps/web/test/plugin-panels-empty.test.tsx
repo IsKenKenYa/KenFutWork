@@ -71,6 +71,7 @@ describe("插件面板空态", () => {
       {
         id: "local__demo",
         installed: true,
+        enabled: true,
         ui: [{ id: "panel", title: "演示面板", slot: "settings", url: "p" }],
       },
     ]);
@@ -95,6 +96,7 @@ describe("插件面板空态", () => {
       {
         id: "owner__repo",
         installed: false,
+        enabled: false,
         ui: [{ id: "panel", title: "未装面板", slot: "settings", url: "p" }],
       },
     ]);
@@ -121,6 +123,7 @@ describe("插件面板空态", () => {
       {
         id: "local__demo",
         installed: true,
+        enabled: true,
         ui: [{ id: "panel", title: "侧栏面板", slot: "sidebar", url: "p" }],
       },
     ]);
