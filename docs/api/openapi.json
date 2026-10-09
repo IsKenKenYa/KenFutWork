@@ -13328,6 +13328,9 @@
                     },
                     "detail": {
                       "type": "string"
+                    },
+                    "distro": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -13413,6 +13416,41 @@
             ],
             "additionalProperties": false
           },
+          "runtime": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "host"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "wsl2"
+                  },
+                  "distro": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "distro"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
           "addresses": {
             "type": "object",
             "properties": {
@@ -13448,6 +13486,7 @@
           "install",
           "probe",
           "stack",
+          "runtime",
           "addresses"
         ],
         "additionalProperties": false
@@ -15548,6 +15587,19 @@
               "type": "string"
             }
           },
+          "headers": {
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9-]+$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
           "enabled": {
             "default": true,
             "type": "boolean"
@@ -15592,6 +15644,18 @@
             },
             "additionalProperties": {
               "type": "string"
+            }
+          },
+          "headers": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9-]+$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 4096
             }
           },
           "enabled": {

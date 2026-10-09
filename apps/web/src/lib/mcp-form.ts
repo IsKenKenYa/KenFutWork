@@ -1,16 +1,18 @@
 /**
  * MCP server 表单的纯逻辑（解析/校验/密钥保留），供设置页与单测共用。
  *
- * 三个易错点在这里处理掉：
+ * 四个易错点在这里处理掉：
  * 1. **参数含空格**：`args` 用「一行一个」而不是空格分隔（`--path /a b` 这类值
  *    用空格切分会碎）；
- * 2. **密钥只写不读**：接口只回 `envKeys`，编辑时若不重填 env，请求必须
- *    **不带 env 字段**（带了就等于用空对象覆盖掉已存的密钥）；
- * 3. **两类传输互斥**：stdio 用 command/args/env，http 只用 url——校验按 kind
- *    分开做，不混着要求。
+ * 2. **密钥只写不读**：接口只回 `envKeys` / `headerKeys`，编辑时若不重填，请求必须
+ *    **不带 env / headers 字段**（带了就等于用空对象覆盖掉已存的密钥）；
+ * 3. **两类传输互斥**：stdio 用 command/args/env，http 用 url/headers——校验按 kind
+ *    分开做，不混着要求；
+ * 4. **请求头名按 HTTP token 收窄**（Authorization / X-Api-Key），与 shared 契约同一条正则。
  */
 
 export const MCP_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
+export const MCP_HEADER_NAME_PATTERN = /^[A-Za-z0-9-]+$/;
 
 /** 参数文本 → 数组（一行一个，去空行）。 */
 export function parseArgsText(text: string): string[] {
@@ -52,6 +54,29 @@ export function parseEnvText(text: string): EnvParseResult {
   return { env, errors };
 }
 
+/** 请求头文本 → 记录（同一行格式；值内的 `=` 归值，如 base64 令牌）。 */
+export function parseHeadersText(text: string): EnvParseResult {
+  const headers: Record<string, string> = {};
+  const errors: string[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const index = line.indexOf("=");
+    if (index <= 0) {
+      errors.push(`请求头行缺少 KEY=：${line}`);
+      continue;
+    }
+    const key = line.slice(0, index).trim();
+    const value = line.slice(index + 1).trim();
+    if (!MCP_HEADER_NAME_PATTERN.test(key)) {
+      errors.push(`请求头名不合法：${key}`);
+      continue;
+    }
+    headers[key] = value;
+  }
+  return { env: headers, errors };
+}
+
 export interface McpServerFormInput {
   name: string;
   /** 传输类型：stdio = 本地子进程；http = 远程端点。 */
@@ -62,11 +87,13 @@ export interface McpServerFormInput {
   url: string;
   argsText: string;
   envText: string;
+  /** http 的自定义请求头文本（stdio 类型不填）。 */
+  headersText: string;
 }
 
 export interface McpServerFormResult {
   errors: string[];
-  /** 可直接发请求的 payload（编辑态可能不含 env/name；http 不含 command/args/env）。 */
+  /** 可直接发请求的 payload（编辑态可能不含 env/headers/name；http 不含 command/args/env）。 */
   payload: {
     name?: string;
     kind: "stdio" | "http";
@@ -74,6 +101,7 @@ export interface McpServerFormResult {
     url?: string;
     args?: string[];
     env?: Record<string, string>;
+    headers?: Record<string, string>;
   };
 }
 
@@ -81,10 +109,15 @@ export interface McpServerFormResult {
  * 校验并构造请求载荷。
  * @param mode create 时 name 必填且校验格式；edit 时 name 不参与（改名走不到此处）
  * @param envTouched 用户是否在编辑态改动过 env 输入（未改动则不下发 env，保住已存密钥）
+ * @param headersTouched 同上，针对 http 的请求头
  */
 export function buildMcpServerPayload(
   input: McpServerFormInput,
-  options: { mode: "create" | "edit"; envTouched: boolean },
+  options: {
+    mode: "create" | "edit";
+    envTouched: boolean;
+    headersTouched: boolean;
+  },
 ): McpServerFormResult {
   const errors: string[] = [];
   const name = input.name.trim();
@@ -104,12 +137,18 @@ export function buildMcpServerPayload(
     } else if (!/^https?:\/\//.test(url)) {
       errors.push("远程端点 URL 必须以 http(s):// 开头。");
     }
+    const { env: headers, errors: headerErrors } = parseHeadersText(
+      input.headersText,
+    );
+    errors.push(...headerErrors);
+    const shouldSendHeaders = options.mode === "create" || options.headersTouched;
     return {
       errors,
       payload: {
         ...(options.mode === "create" ? { name } : {}),
         kind: "http",
         ...(url ? { url } : {}),
+        ...(shouldSendHeaders ? { headers } : {}),
       },
     };
   }

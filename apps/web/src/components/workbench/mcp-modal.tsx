@@ -25,6 +25,7 @@ const EMPTY_FORM: McpServerFormInput = {
   url: "",
   argsText: "",
   envText: "",
+  headersText: "",
 };
 
 type McpTab = "configured" | "curated" | "registry";
@@ -37,6 +38,7 @@ type McpCreatePayload = {
   url?: string;
   args?: string[];
   env?: Record<string, string>;
+  headers?: Record<string, string>;
 };
 
 /**
@@ -229,6 +231,7 @@ function ConfiguredTab({
   const [form, setForm] = useState<McpServerFormInput>(EMPTY_FORM);
   const [editing, setEditing] = useState<McpServerView | null>(null);
   const [envTouched, setEnvTouched] = useState(false);
+  const [headersTouched, setHeadersTouched] = useState(false);
 
   async function act(
     server: McpServerView,
@@ -284,6 +287,7 @@ function ConfiguredTab({
     const { errors, payload } = buildMcpServerPayload(form, {
       mode: editing ? "edit" : "create",
       envTouched: editing ? envTouched : true,
+      headersTouched: editing ? headersTouched : true,
     });
     if (errors.length > 0) {
       setError(errors.join(" "));
@@ -313,6 +317,7 @@ function ConfiguredTab({
       setForm(EMPTY_FORM);
       setEditing(null);
       setEnvTouched(false);
+      setHeadersTouched(false);
       onChanged();
     } catch {
       setError("保存请求失败。");
@@ -372,6 +377,11 @@ function ConfiguredTab({
                         环境变量：{server.envKeys.join(", ")}（值不回显）
                       </p>
                     ) : null}
+                    {server.headerKeys.length > 0 ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        请求头：{server.headerKeys.join(", ")}（值不回显）
+                      </p>
+                    ) : null}
                     {server.error ? (
                       <p className="mt-1 text-xs text-destructive">
                         {server.error}
@@ -406,6 +416,7 @@ function ConfiguredTab({
                           onClick={() => {
                             setEditing(server);
                             setEnvTouched(false);
+                            setHeadersTouched(false);
                             setForm({
                               name: server.name,
                               kind: server.kind,
@@ -413,6 +424,7 @@ function ConfiguredTab({
                               url: server.url ?? "",
                               argsText: formatArgsText(server.args),
                               envText: "",
+                              headersText: "",
                             });
                           }}
                           disabled={busy === key}
@@ -530,7 +542,26 @@ function ConfiguredTab({
               className="w-full rounded-md border px-2 py-1.5 font-mono text-xs outline-none"
             />
           </>
-        ) : null}
+        ) : (
+          <textarea
+            aria-label="MCP 请求头"
+            placeholder={
+              editing && editing.headerKeys.length > 0
+                ? `每行 KEY=VALUE · 留空保留 ${editing.headerKeys.join("、")}`
+                : "每行 KEY=VALUE（Authorization 等）"
+            }
+            value={form.headersText}
+            onChange={(event) => {
+              setHeadersTouched(true);
+              setForm((prev) => ({
+                ...prev,
+                headersText: event.target.value,
+              }));
+            }}
+            rows={2}
+            className="w-full rounded-md border px-2 py-1.5 font-mono text-xs outline-none"
+          />
+        )}
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -548,6 +579,7 @@ function ConfiguredTab({
                 setEditing(null);
                 setForm(EMPTY_FORM);
                 setEnvTouched(false);
+                setHeadersTouched(false);
               }}
               className="rounded-md border px-3 py-1.5 text-sm"
             >

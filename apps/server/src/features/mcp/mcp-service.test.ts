@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { ServerEnv } from "../../config/env.js";
 import type { ToolDefinition, ToolRegistry } from "../../kernel/types.js";
@@ -19,6 +21,7 @@ function fakeStore(rows: StoredMcpServer[]): McpServerStore {
         url: row.url,
         args: row.args,
         envKeys: Object.keys(row.env),
+        headerKeys: Object.keys(row.headers),
         enabled: row.enabled,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
@@ -36,6 +39,7 @@ function fakeStore(rows: StoredMcpServer[]): McpServerStore {
         args: input.args,
         url: input.url,
         env: input.env,
+        headers: input.headers,
         enabled: input.enabled,
         createdAt: "2026-09-14T00:00:00.000Z",
         updatedAt: "2026-09-14T00:00:00.000Z",
@@ -87,6 +91,7 @@ function stored(
     url: over.url ?? null,
     args: over.args ?? [],
     env: over.env ?? {},
+    headers: over.headers ?? {},
     enabled: over.enabled ?? false,
     createdAt: "2026-09-14T00:00:00.000Z",
     updatedAt: "2026-09-14T00:00:00.000Z",
@@ -95,6 +100,33 @@ function stored(
 }
 
 const EMPTY_ENV = { version: "test" } as ServerEnv;
+
+/** 截获真实 HTTP 请求的桩（http 类型的请求头必须在本机线上验证，不看构造代码）。 */
+let stub: Server | undefined;
+afterEach(async () => {
+  await new Promise<void>((resolve) => {
+    if (!stub) return resolve();
+    stub.close(() => resolve());
+    stub = undefined;
+  });
+});
+async function startHttpStub(): Promise<{
+  url: string;
+  requests: Array<Record<string, string | string[] | undefined>>;
+}> {
+  const requests: Array<Record<string, string | string[] | undefined>> = [];
+  const server = createServer((request, response) => {
+    requests.push({ ...request.headers });
+    response.writeHead(401, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: "unauthorized" }));
+  });
+  stub = server;
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const { port } = server.address() as AddressInfo;
+  return { url: `http://127.0.0.1:${port}/mcp`, requests };
+}
 
 /**
  * MCP 运行态管理：配置来源合并（库内优先）+ 连接失败是运行态而非配置错误 +
@@ -187,6 +219,7 @@ describe("MCP 运行态管理", () => {
       enabled: false,
     });
     expect(created.envKeys).toEqual(["TOKEN"]);
+    expect(created.headerKeys).toEqual([]);
     expect(JSON.stringify(created)).not.toContain("secret-value");
 
     expect((await service.listStatuses()).map((s) => s.name)).toEqual([
@@ -252,6 +285,67 @@ describe("MCP 运行态管理", () => {
     });
     expect(status?.error).toBeTruthy();
     expect(registered.size).toBe(0);
+  });
+
+  it("http 类型的自定义请求头真的发到线上（HA 的 Authorization 靠这条）", async () => {
+    const httpStub = await startHttpStub();
+    const store = fakeStore([]);
+    const { registry } = fakeRegistry();
+    const service = createMcpService({ env: EMPTY_ENV, registry, store });
+
+    await service.create({
+      name: "ha-mcp",
+      kind: "http",
+      url: httpStub.url,
+      args: [],
+      env: {},
+      headers: { Authorization: "Bearer ha-token", "X-Api-Key": "k-1" },
+      enabled: true,
+    });
+
+    // 桩回 401：连接失败是运行态，但两次尝试（Streamable HTTP + SSE 回退）都必须带自定义头
+    expect(httpStub.requests.length).toBeGreaterThan(0);
+    for (const headers of httpStub.requests) {
+      expect(headers.authorization).toBe("Bearer ha-token");
+      expect(headers["x-api-key"]).toBe("k-1");
+    }
+
+    // 值不外发：状态与响应只回键名
+    const [status] = await service.listStatuses();
+    expect(status?.status).toBe("error");
+    expect([...(status?.headerKeys ?? [])].sort()).toEqual([
+      "Authorization",
+      "X-Api-Key",
+    ]);
+    expect(JSON.stringify(status)).not.toContain("ha-token");
+
+    const updated = await service.update("id-ha-mcp", {
+      headers: { Authorization: "Bearer rotated" },
+    });
+    expect(updated?.headerKeys).toEqual(["Authorization"]);
+    expect(JSON.stringify(updated)).not.toContain("rotated");
+    // 改头后重连：新令牌同样发到线上
+    await service.reconnect("id-ha-mcp");
+    expect(httpStub.requests.at(-1)?.authorization).toBe("Bearer rotated");
+  });
+
+  it("stdio 类型不吃请求头：归一化为空对象（库里不留用不上的密钥）", async () => {
+    const store = fakeStore([]);
+    const { registry } = fakeRegistry();
+    const service = createMcpService({ env: EMPTY_ENV, registry, store });
+
+    const created = await service.create({
+      name: "local-with-headers",
+      command: "definitely-not-a-real-binary-xyz",
+      args: [],
+      env: {},
+      headers: { Authorization: "Bearer should-not-persist" },
+      enabled: false,
+    });
+
+    expect(created.headerKeys).toEqual([]);
+    expect(JSON.stringify(created)).not.toContain("should-not-persist");
+    expect((await store.list())[0]?.headers).toEqual({});
   });
 
   it("setEnabled 生效并回流公开形态；重连不存在的 id 返回 null", async () => {
