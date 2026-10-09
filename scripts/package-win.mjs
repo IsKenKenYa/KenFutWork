@@ -214,12 +214,26 @@ function main() {
   // 打到 stdout，spawnSync 超 maxBuffer 直接杀掉子进程，报 exit=null（离根因极远）。
   const seaBanner = `(() => { const path = require("node:path"); const { pathToFileURL } = require("node:url"); let isSea = false; try { isSea = require("node:sea").isSea(); } catch {} const base = isSea ? path.join(path.dirname(process.execPath), "server.cjs") : __filename; globalThis.__kfwModuleUrl = pathToFileURL(base).href; if (isSea) require = require("node:module").createRequire(base); })();`;
 
+  // esbuild 的 CLI 是原生二进制（0.28 起 bin/esbuild 不是 JS 壳），直接 spawn 它：
+  // 绕开 pnpm 的 .cmd shim 就用不着 shell——banner 是 JS 源码，经 cmd.exe 传参会被它
+  // 自己解释（实测 `const was unexpected at this time.`，exit=255）。
+  const esbuildDir = dirname(
+    createRequire(join(ROOT, "apps", "server", "package.json")).resolve(
+      "esbuild/package.json",
+    ),
+  );
+  const esbuildBin = join(
+    esbuildDir,
+    process.platform === "win32" ? "esbuild.exe" : "bin/esbuild",
+  );
+  if (!existsSync(esbuildBin)) {
+    console.error(`[package] 找不到 esbuild 可执行文件：${esbuildBin}`);
+    process.exit(1);
+  }
   run(
     "打包服务端（esbuild）",
-    "pnpm",
+    esbuildBin,
     [
-      "exec",
-      "esbuild",
       "apps/server/src/server.ts",
       "--bundle",
       "--platform=node",
@@ -241,7 +255,7 @@ function main() {
       `--outfile=${join(BUILD, "server.cjs")}`,
       "--log-level=warning",
     ],
-    { trimLongLines: true },
+    { trimLongLines: true, shell: false },
   );
 
   // 3) Node SEA：生成 blob → 注入 node.exe 副本
