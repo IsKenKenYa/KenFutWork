@@ -2,9 +2,26 @@ import { execFile } from "node:child_process";
 import { once } from "node:events";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
-import { rgPath } from "@vscode/ripgrep";
+import { createRequire } from "node:module";
 import type { ScopedFilesystemScope } from "../execution/scoped-filesystem.js";
 import type { FileLimits, GrepPageInput } from "./file-types.js";
+
+/**
+ * 懒加载 `@vscode/ripgrep`（**不能在模块顶层静态 import**）。
+ *
+ * 与 node-pty / @napi-rs/canvas 同一套：随包分发时它是 external，必须在运行时从
+ * `<exe>/node_modules/` 解析；顶层静态 import 会被换成 SEA 的内建 require（只认内置
+ * 模块），**加载期**就抛 `ERR_UNKNOWN_BUILTIN_MODULE` 把整个服务端拖死
+ * （2026-10-09 打包冒烟实测：装好的桌面端起不来）。
+ */
+let cachedRgPath: string | undefined;
+
+function rgBinary(): string {
+  cachedRgPath ??= (
+    createRequire(import.meta.url)("@vscode/ripgrep") as { rgPath: string }
+  ).rgPath;
+  return cachedRgPath;
+}
 
 export interface RipgrepRow {
   type: string;
@@ -31,7 +48,7 @@ export async function matchesFileType(
   if (!fileTypes)
     fileTypes = new Promise((resolve, reject) => {
       execFile(
-        rgPath,
+        rgBinary(),
         ["--type-list"],
         {
           maxBuffer: limits.codeReadMaxBytes,
@@ -210,7 +227,7 @@ export async function runRipgrep(
   let exited: Promise<void> = Promise.resolve();
   const result = new Promise<RipgrepOutput>((resolve, reject) => {
     const child = execFile(
-      rgPath,
+      rgBinary(),
       args,
       {
         maxBuffer: maxBytes,

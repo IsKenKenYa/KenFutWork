@@ -1,4 +1,4 @@
-import { createCanvas } from "@napi-rs/canvas";
+import { createRequire } from "node:module";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { FileLimits, MediaFile, MediaReadInput } from "./file-types.js";
@@ -7,6 +7,35 @@ export interface BinaryFile {
   path: string;
   bytes: Buffer;
   version: string;
+}
+
+/**
+ * 懒加载 `@napi-rs/canvas`（**不能在模块顶层静态 import**）。
+ *
+ * 与 node-pty / sharp 同一套办法：随包分发时它是 external 原生模块，必须走
+ * `<exe>/node_modules/` 在运行时解析；打包成单文件 SEA 后，顶层静态 import 会被换成
+ * SEA 的内建 `require`——它只认内置模块，加载期直接抛 `ERR_UNKNOWN_BUILTIN_MODULE`
+ * **把整个服务端拖死**（2026-10-09 打包冒烟实测：装好的桌面端起不来）。
+ * 懒加载后影响只落在「PDF 渲染成图」这一条路径：真缺组件时给可读原因，文本读取照常。
+ */
+let cachedCanvas: typeof import("@napi-rs/canvas") | null | undefined;
+
+function loadCanvas(): typeof import("@napi-rs/canvas") {
+  if (cachedCanvas === undefined) {
+    try {
+      cachedCanvas = createRequire(import.meta.url)(
+        "@napi-rs/canvas",
+      ) as typeof import("@napi-rs/canvas");
+    } catch {
+      cachedCanvas = null;
+    }
+  }
+  if (!cachedCanvas) {
+    throw new Error(
+      "本机缺少 PDF 图片渲染组件（@napi-rs/canvas），请改用文本方式读取该 PDF。",
+    );
+  }
+  return cachedCanvas;
 }
 
 type RenderInput = Parameters<PDFPageProxy["render"]>[0];
@@ -20,6 +49,7 @@ async function rasterPages(
   result: MediaFile,
   signal?: AbortSignal,
 ): Promise<MediaFile> {
+  const { createCanvas } = loadCanvas();
   const maxPage = Math.min(end, start + limits.codePdfMaxPages - 1);
   let bytes = 0;
   result.modelContent = [
