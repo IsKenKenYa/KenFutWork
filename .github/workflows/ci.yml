@@ -111,18 +111,25 @@ jobs:
         run: pnpm install --frozen-lockfile
       # Linux 侧的「真起子进程」用例走 @anthropic-ai/sandbox-runtime（SRT），它在
       # `task-helper.ts:189-197` 先做依赖预检，缺工具就直接抛
-      # `enforcement_unavailable：真实沙箱不可用：ripgrep (rg) not found；socat not installed`
-      # ——首轮 CI 有 36 条用例死在这一句上。bwrap 镜像里已带，缺的是这两个。
+      # `enforcement_unavailable：真实沙箱不可用：…`——首轮 CI 有 36 条用例死在这句上。
+      # 实测托管 ubuntu runner 缺三样：ripgrep、socat、bubblewrap(bwrap)。
       # 补齐依赖而不是跳过用例：这条代码路径只有 Linux runner 能真验，跳过等于永久零覆盖。
-      - name: 安装 SRT 沙箱依赖（ripgrep + socat）
+      - name: 安装 SRT 沙箱依赖（ripgrep + socat + bubblewrap）
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ripgrep socat
+          sudo apt-get install -y --no-install-recommends ripgrep socat bubblewrap
           for tool in rg socat bwrap; do
             command -v "$tool" >/dev/null || { echo "· 仍缺 $tool：沙箱用例会红，先修环境"; exit 1; }
             echo "· $tool → $(command -v $tool)"
           done
+          # 装上了不等于能用：bwrap 还依赖非特权用户命名空间。当场真跑一次，不行就说清原因。
+          if bwrap --unshare-user --unshare-pid --ro-bind / / --dev /dev /bin/true 2>/tmp/srt-bwrap.err; then
+            echo "· bwrap 可用（非特权命名空间正常）"
+          else
+            echo "· bwrap 跑不起来（非特权用户命名空间被禁）：$(cat /tmp/srt-bwrap.err || true)"
+            exit 1
+          fi
 
       # AGENTS.md 的测试资源护栏：确需串行用 turbo --concurrency=1（不是把参数塞给 pnpm run，
       # `--` 之后的会被各包任务当成自己的选项而报错）。
@@ -162,6 +169,27 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
+
+      # 历史迁移里有 `CREATE EXTENSION IF NOT EXISTS pgmq`
+      #（supabase/migrations/20260325200000_background_jobs.sql:73），而官方 postgres:17 镜像
+      # 不带 pgmq，空库重放会停在 `extension "pgmq" is not available`。桌面形态同一口径：
+      # 打包期把最小兼容 shim 预装进该集群的 share/extension（scripts/package-mac.mjs:219-229），
+      # CI 这里对服务容器做同一件事——装的是兼容层，不是真 pgmq，语义与桌面包一致。
+      - name: 给 Postgres 服务容器装上 pgmq 兼容 shim
+        run: |
+          set -euo pipefail
+          cid="$(docker ps --format '{{.ID}} {{.Image}}' | awk '/postgres:17/{print $1}' | head -1)"
+          if [ -z "$cid" ]; then
+            echo "· 找不到 postgres:17 服务容器"
+            exit 1
+          fi
+          ext="$(docker exec "$cid" sh -c 'pg_config --sharedir')/extension"
+          docker exec "$cid" mkdir -p "$ext"
+          for file in pgmq.control pgmq--1.0.sql; do
+            docker cp "docker/pg-dev-shim/$file" "$cid:$ext/$file"
+          done
+          # 不重启也可见：pg_available_extensions 是按需扫目录的。
+          echo "· 已装入 $ext：$(docker exec "$cid" sh -c "ls -1 $ext | grep -c '^pgmq'") 个 pgmq 文件"
 
       # `migrate.ts` 经 `config/env.ts` 引 `@kenfutwork/shared` 的产物；先建 shared 及其上游，
       # 否则干净检出上报 `Cannot find module .../shared/dist/index.js`（首轮实测）。
