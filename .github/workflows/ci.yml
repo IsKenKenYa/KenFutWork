@@ -349,6 +349,26 @@ jobs:
           fi
           echo "· 篡改已被拦下（历史 SHA-256 账本对账生效）"
 
+  # 免费且零配置：只对**本次 PR 变更的依赖**做审查（不是全仓扫描，既存告警不会让它常红）。
+  # 与 Dependabot 的差别：Dependabot 看的是「已知漏洞的既有依赖」，这里看的是
+  # 「这次 diff 新引入/换版本的依赖有没有漏洞、许可证是否变化」，PR 里直接留评论。
+  dependency-review:
+    name: 依赖变更审查（只在 PR 上跑）
+    if: github.repository == 'IsKenKenYa/KenFutWork' && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: always
+
   health-check:
     name: 服务端健康检查（真库启动 + /api/health + 未授权边界）
     if: github.repository == 'IsKenKenYa/KenFutWork'
