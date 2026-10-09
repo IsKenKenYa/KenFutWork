@@ -6,7 +6,16 @@ on:
   pull_request:
     branches: [main, 啃啃在开发]
   push:
-    branches: [main, 啃啃在开发]
+    # 分支命名约定（AGENTS.md）里的 agent 分支也要跑门禁：只在 main / 主开发分支上跑，
+    # 等于「修 CI 的分支自己不被 CI 检查」——本轮就是这么漏掉三次假绿的。
+    branches:
+      - main
+      - 啃啃在开发
+      - "qoder/**"
+      - "codex/**"
+      - "claude/**"
+      - "trae/**"
+      - "人/**"
   workflow_dispatch:
 
 permissions:
