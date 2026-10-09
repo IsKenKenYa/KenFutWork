@@ -491,8 +491,14 @@ describe("voice 服务：候选目录（三段卡片）", () => {
         .filter((item) => item.kind === "instance")
         .map((item) => item.model),
     ).toEqual(["glm-5"]);
-    // 想段目前没有内置档（离线 GGUF 需要额外推理运行时，见 catalog 注释）
-    expect(think.some((item) => item.kind === "builtin")).toBe(false);
+    // 想段的内置档：离线 llamafile（未下载 → 标「预估」的 tok/s，不是 ASR 的 RTF 口径）
+    const builtinThink = think.find((item) => item.kind === "builtin");
+    expect(builtinThink).toMatchObject({
+      id: "qwen3-0.6b-llamafile",
+      segment: "think",
+      needsDownload: true,
+      performanceNote: "预估 10–20 tok/s",
+    });
   });
 
   it("实例停用：候选仍在但带不可选原因（不摆空壳，也不静默消失）", async () => {
@@ -791,5 +797,110 @@ describe("voice 服务：说段解析（内置档已落地）", () => {
     await expect(service.resolveSynthesizer(USER, "ws-1")).rejects.toThrow(
       /模型文件缺失/,
     );
+  });
+});
+
+/**
+ * 离线「想」档（llamafile，规划 §3.2 的降级档）：与在线档共用同一份 refine 提示词，
+ * 差别只在承载。这里锁三件事：未就绪如实拒绝并指路、就位走内置 provider、
+ * 诊断走真首 token 读数（provider.probe）。
+ */
+describe("voice 服务：离线「想」档", () => {
+  const THINK = { kind: "builtin" as const, id: "qwen3-0.6b-llamafile" };
+  const stubProvider = (overrides: {
+    ready?: () => Promise<{ ok: boolean; reason?: string }>;
+    refine?: (input: { text: string }) => Promise<string>;
+    probe?: () => Promise<{ ttftSeconds: number; tokensPerSecond?: number }>;
+  }) => ({
+    ready: overrides.ready ?? (async () => ({ ok: true })),
+    refine: overrides.refine ?? (async () => "补全后的需求。"),
+    probe: overrides.probe ?? (async () => ({ ttftSeconds: 0.5 })),
+    dispose: async () => undefined,
+  });
+
+  it("未下载：如实拒绝并指路（不静默落到在线档、不回原文本）", async () => {
+    const refine = vi.fn(async () => "不该被调用");
+    const service = createVoiceService(
+      deps({
+        voice: { think: THINK },
+        createThinkProvider: () =>
+          stubProvider({
+            ready: async () => ({
+              ok: false,
+              reason: "离线「想」模型未下载（/models/qwen3-0.6b-llamafile/…）。",
+            }),
+            refine,
+          }),
+      }),
+    );
+    await expect(service.refine(USER, "ws-1", { text: "x" })).rejects.toThrow(
+      /未下载/,
+    );
+    expect(refine).not.toHaveBeenCalled();
+  });
+
+  it("就位：走内置 provider（输入原样透传）", async () => {
+    const refine = vi.fn(async () => "把首页按钮改成蓝色。");
+    const service = createVoiceService(
+      deps({
+        voice: { think: THINK },
+        createThinkProvider: () => stubProvider({ refine }),
+      }),
+    );
+    await expect(
+      service.refine(USER, "ws-1", { text: "把那个按钮改蓝一点" }),
+    ).resolves.toBe("把首页按钮改成蓝色。");
+    expect(refine).toHaveBeenCalledWith({ text: "把那个按钮改蓝一点" }, undefined);
+  });
+
+  it("provider 抛错：包成可读的不可用原因（不是裸 Error 冒到路由）", async () => {
+    const service = createVoiceService(
+      deps({
+        voice: { think: THINK },
+        createThinkProvider: () =>
+          stubProvider({
+            refine: async () => {
+              throw new Error("离线「想」服务 180 秒内没就绪");
+            },
+          }),
+      }),
+    );
+    await expect(service.refine(USER, "ws-1", { text: "x" })).rejects.toThrow(
+      /没就绪/,
+    );
+  });
+
+  it("内置 id 不是 think 档：拒绝并指路（不拿听/说模型当「想」用）", async () => {
+    const service = createVoiceService(
+      deps({ voice: { think: { kind: "builtin", id: "sensevoice-small-int8" } } }),
+    );
+    await expect(service.refine(USER, "ws-1", { text: "x" })).rejects.toThrow(
+      /内置「想」模型不存在/,
+    );
+  });
+
+  it("诊断：离线档用 provider.probe 的真首 token 读数", async () => {
+    const probe = vi.fn(async () => ({
+      ttftSeconds: 0.42,
+      tokensPerSecond: 11,
+    }));
+    const service = createVoiceService(
+      deps({
+        voice: { mode: "loop", think: THINK },
+        createThinkProvider: () => stubProvider({ probe }),
+        collectHardware: async () => ({
+          cpuModel: "test",
+          cpuCores: 8,
+          totalMemoryBytes: 16 * 1024 ** 3,
+          platform: "win32",
+        }),
+      }),
+    );
+    const report = await service.diagnose(USER, "ws-1");
+    expect(probe).toHaveBeenCalled();
+    expect(report.think).toMatchObject({
+      state: "measured",
+      think: { ttftSeconds: 0.42, tokensPerSecond: 11 },
+    });
   });
 });

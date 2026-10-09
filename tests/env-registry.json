@@ -268,11 +268,21 @@
     "KENFUTWORK_VOICE_MODELS_ROOT": {
       "surface": "test",
       "readers": [
-        "apps/server/src/features/voice/sherpa.integration.test.ts"
+        "apps/server/src/features/voice/sherpa.integration.test.ts",
+        "apps/server/src/features/voice/providers/llamafile.integration.test.ts"
       ],
       "inExamples": true,
       "status": "test-gate",
       "note": "覆盖真机验收用的模型目录（默认 ~/.kenfutwork/models）"
+    },
+    "KENFUTWORK_VOICE_REAL_LLM": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/voice/providers/llamafile.integration.test.ts"
+      ],
+      "inExamples": true,
+      "status": "test-gate",
+      "note": "=1 启用离线「想」档（llamafile）真机验收；需模型已下载，生产无读者"
     },
     "KENFUTWORK_MCP_LIFECYCLE": {
       "surface": "test",

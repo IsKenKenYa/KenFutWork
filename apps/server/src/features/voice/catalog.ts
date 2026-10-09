@@ -7,13 +7,10 @@
  * 代价是上游版本更新要同步改本表——与 `scripts/fetch-runtimes.mjs` 同一取舍。
  *
  * **未入选的候选与原因**（不摆空壳，故不登记）：
- * - 内置「想」（离线 LLM）：体现为一个 GGUF 文件（规划 §3.2 的 Qwen3-4B-Instruct-2507
- *   Q4_K_M，2.5GB），但要跑它必须再引一个 GGUF 推理运行时（llama.cpp 一类）——
- *   `sherpa-onnx` 跑不了 LLM。加运行时是**新的依赖决策**，不是接线细节，故本轮不引；
- *   离线「想」当前的可走路径：本机起 llama.cpp / ollama，把它的 OpenAI 兼容地址加成一个
- *   BYOK 实例，再在「想」段选它（与 GPU 端点同一条路，见《多语言》外的 §3.4 口径）。
  * - sherpa 的 zh 系列 TTS（vits-zh-ll 等）：仓库未声明许可，与 GPL-3.0 的兼容性
  *   无从确认，故选许可明确的 Kokoro（Apache-2.0）。
+ * - 更大的离线「想」档（Qwen3-4B llamafile 2.7GB）：与 0.6B 同形（同一份 provider、
+ *   同一个下载器），加一条目录条目即可，等有实测吞吐数据再上（规划 §3.2 的降级档）。
  */
 
 import type { VoiceSegmentKind } from "@kenfutwork/shared";
@@ -136,11 +133,42 @@ export const KOKORO_MULTI_LANG: BuiltinVoiceModelSpec = {
   files: [...KOKORO_MULTI_LANG_FILES],
 };
 
+/**
+ * 想：Qwen3-0.6B llamafile（离线降级档，规划 §3.2 的「更小档」）。
+ *
+ * llamafile = 权重 + llama.cpp 运行时**打包在同一个文件里**（Mozilla 打包，APE 可执行体，
+ * Windows/Linux/macOS 直接跑），所以既不用另引 GGUF 推理运行时，也不用解压——
+ * 单个文件正好贴 model-store 的「按文件下载 + sha256 校验」形状（其他档位的
+ * zip/tar 都要额外解压依赖）。校验值与体积 2026-10-09 从 HF 仓库实地取回
+ * （`lfs.oid` 即 sha256）。
+ *
+ * 选 0.6B 的理由：用户口径「找一个小模型」先把链路跑通（792MB，含运行时）；
+ * 规划 §3.2 的 Qwen3-4B 档（2.7GB llamafile）等有实测吞吐再加一条目，代码不用动。
+ * 许可：Qwen3 权重 Apache-2.0；llamafile 运行时 Apache-2.0。
+ */
+export const QWEN3_0_6B_LLAMAFILE: BuiltinVoiceModelSpec = {
+  id: "qwen3-0.6b-llamafile",
+  segment: "think",
+  label: "Qwen3 0.6B（离线）",
+  license: "Apache-2.0（Qwen3 权重 + llamafile 运行时）；署名见设置 → 关于",
+  layout: { model: "qwen3-0.6b-q4_k_m.llamafile" },
+  files: [
+    {
+      path: "qwen3-0.6b-q4_k_m.llamafile",
+      url: "https://huggingface.co/mozilla-ai/Qwen3-0.6B-llamafile/resolve/main/Qwen_Qwen3-0.6B-Q4_K_M.llamafile",
+      sizeBytes: 792_025_109,
+      sha256:
+        "3c00406e1b621e955e4bc5035ea8cfe8e6efd55b104ce884c373974431de5d0c",
+    },
+  ],
+};
+
 /** 全部内置模型（下载/删除只认这张表里的 id——别的 id 一律拒，不做任意 URL 下载器）。 */
 export const BUILTIN_VOICE_MODELS: readonly BuiltinVoiceModelSpec[] = [
   SENSE_VOICE,
   KOKORO_MULTI_LANG,
   SILERO_VAD_MODEL,
+  QWEN3_0_6B_LLAMAFILE,
 ];
 
 export function findBuiltinModel(
