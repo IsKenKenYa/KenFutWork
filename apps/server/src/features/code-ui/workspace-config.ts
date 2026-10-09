@@ -8,7 +8,7 @@ import { z } from "zod";
 import type { LocalActor } from "../local-instance/types.js";
 import type { CodeUiConnections } from "./connections.js";
 import type { CodeUiHostConnection } from "./host-service-rpc.js";
-import type { CodeUiProviderViews } from "./provider-settings-rpc.js";
+import type { CodeUiProviderViews } from "../model-providers/provider-settings-rpc.js";
 import { CodeUiRepositoryError } from "./repository.js";
 
 const targetSchema = z

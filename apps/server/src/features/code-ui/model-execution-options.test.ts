@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { providerInstanceResponseSchema } from "@kenfutwork/shared";
 import { expect, it } from "vitest";
 import { compileCodeUiModelExecution } from "./model-execution-options.js";
-import { buildCodeUiModelViews } from "./model-views.js";
+import { buildCodeUiModelViews } from "../model-providers/model-views.js";
 
 function fixture(
   reasoningMap = 'reasoningLevel == "low" ? {"thinking": {"enabled": false, "legacy": null}} : {"thinking": {"enabled": true}}',

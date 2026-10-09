@@ -13,11 +13,11 @@ import {
 } from "@zcode/provider";
 import { z } from "zod";
 import { validateInstanceModelExtraBody } from "../../providers/request-options.js";
-import { codeUiModelEntry, resolveCodeUiModelConfig } from "./model-views.js";
+import { codeUiModelEntry, resolveCodeUiModelConfig } from "../model-providers/model-views.js";
 import {
   codeUiApiType,
   isCodeChatProtocol,
-} from "./provider-settings-rpc-config.js";
+} from "../model-providers/provider-settings-rpc-config.js";
 import { CodeUiRepositoryError } from "./repository.js";
 
 export interface CodeUiModelExecutionSnapshot {

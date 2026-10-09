@@ -6,7 +6,7 @@ import {
 import { expect, it, vi } from "vitest";
 import type { LocalActor } from "../local-instance/types.js";
 import { CodeUiConnections } from "./connections.js";
-import { buildCodeUiModelViews } from "./model-views.js";
+import { buildCodeUiModelViews } from "../model-providers/model-views.js";
 import {
   type CodeUiWorkspaceConfigRequest,
   createCodeUiWorkspaceConfigHost,

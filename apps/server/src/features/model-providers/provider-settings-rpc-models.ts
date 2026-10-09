@@ -9,12 +9,13 @@ import {
 } from "@zcode/provider";
 import { modelConfigDataSchema } from "@zcode/shared/model-config";
 import { z } from "zod";
+import { CodeUiRepositoryError } from "../code-ui/repository.js";
 import type { LocalActor } from "../local-instance/types.js";
 import {
   codeUiNativeModel,
   codeUiProviderMetadata,
+  isCodeChatProtocol,
 } from "./provider-settings-rpc-config.js";
-import { CodeUiRepositoryError } from "./repository.js";
 
 export interface ProviderModelMutationContext {
   load(
@@ -40,13 +41,11 @@ const methods = new Set([
 ]);
 
 function requireModel(instance: ProviderInstanceResponse, modelId: string) {
-  const model = instance.models.find(
-    (entry) => entry.id === modelId && entry.capability === "chat",
-  );
+  const model = instance.models.find((entry) => entry.id === modelId);
   if (!model)
     throw new CodeUiRepositoryError(
       "not_found",
-      "Code 模型不存在或不属于该供应商。",
+      "模型已删除，请刷新模型设置。",
     );
   return model;
 }
@@ -66,6 +65,11 @@ function replaceModel(
   recommended: boolean,
 ) {
   const current = requireModel(instance, modelId);
+  if (!isCodeChatProtocol(instance.protocol) || current.capability !== "chat")
+    throw new CodeUiRepositoryError(
+      "command_conflict",
+      "该模型需要使用生成配置编辑。",
+    );
   if (
     nextId !== modelId &&
     instance.models.some((entry) => entry.id === nextId)
@@ -148,6 +152,11 @@ async function addModel(
     .tuple([providerId, id, modelConfigDataSchema, z.boolean().optional()])
     .parse([args[0], args[1], args[2], args[3]]);
   const instance = await context.load(actor, owner);
+  if (!isCodeChatProtocol(instance.protocol))
+    throw new CodeUiRepositoryError(
+      "command_conflict",
+      "该连接需要使用生成配置添加模型。",
+    );
   if (instance.models.some((entry) => entry.id === modelId))
     throw new CodeUiRepositoryError("command_conflict", "模型 ID 已存在。");
   const config = validateConfig(value, recommended ?? true);
@@ -225,6 +234,14 @@ async function toggleModel(
     .parse(args);
   const instance = await context.load(actor, owner);
   requireModel(instance, modelId);
+  if (!isCodeChatProtocol(instance.protocol)) {
+    await context.save(actor, instance, {
+      models: instance.models.map((entry) =>
+        entry.id === modelId ? { ...entry, enabled } : entry,
+      ),
+    });
+    return;
+  }
   const metadata = codeUiProviderMetadata(instance);
   const saved = metadata.models?.[modelId];
   await context.save(actor, instance, {
@@ -253,7 +270,7 @@ async function reorderModels(
 ) {
   const [owner, requested] = z.tuple([providerId, z.array(id)]).parse(args);
   const instance = await context.load(actor, owner);
-  const models = instance.models.filter((entry) => entry.capability === "chat");
+  const models = instance.models;
   if (
     requested.length !== models.length ||
     new Set(requested).size !== requested.length ||
@@ -265,10 +282,7 @@ async function reorderModels(
     );
   const metadata = codeUiProviderMetadata(instance);
   await context.save(actor, instance, {
-    models: [
-      ...requested.map((modelId) => requireModel(instance, modelId)),
-      ...instance.models.filter((entry) => entry.capability !== "chat"),
-    ],
+    models: [...requested.map((modelId) => requireModel(instance, modelId))],
     compat: {
       ...instance.compat,
       codeUi: { ...metadata, modelOrder: requested },

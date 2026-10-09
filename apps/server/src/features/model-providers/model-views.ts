@@ -12,20 +12,19 @@ import {
   type ModelSelection,
   type ModelSelectionView,
   normalizeModelSelection,
+  type ProviderConfigObject,
   type ProviderSettingsModelView,
   type ProviderSettingsView,
   parseZCodeBuiltinModelConfigRules,
   serializeRegistryModelConfig,
 } from "@zcode/provider";
-import modelRules from "../model-providers/zcode-model-config-rules.json" with {
-  type: "json",
-};
 import {
   codeUiProviderIssues,
   codeUiProviderMetadata,
   codeUiPublicProviderConfig,
   isCodeChatProtocol,
 } from "./provider-settings-rpc-config.js";
+import modelRules from "./zcode-model-config-rules.json" with { type: "json" };
 
 const rules = parseZCodeBuiltinModelConfigRules(modelRules);
 
@@ -256,6 +255,44 @@ export function codeUiModelEntry(
   };
 }
 
+/** 原编辑器共同字段，不给生成协议伪造聊天 API 类型。 */
+function nonChatProviderConfig(
+  instance: ProviderInstanceResponse,
+): ProviderConfigObject {
+  return {
+    group: "standard-personal",
+    access: { type: "api-key" },
+    api: { ...(instance.baseUrl ? { baseUrl: instance.baseUrl } : {}) },
+    personalModelIds: instance.models.map((model) => model.id),
+    visibility: instance.enabled ? "visible" : "hidden",
+  };
+}
+
+function nonChatModelView(
+  instance: ProviderInstanceResponse,
+  model: ProviderInstanceModel,
+): ProviderSettingsModelView {
+  const enabled = model.enabled !== false;
+  return {
+    modelId: model.id,
+    kind: "candidate",
+    builtin: false,
+    effectiveBuiltinConfig: {},
+    personalExactConfig: {},
+    effectiveConfig: { enabled },
+    useRecommendedConfig: false,
+    enabled,
+    executable:
+      instance.enabled &&
+      instance.hasCredential &&
+      enabled &&
+      model.capability !== "chat" &&
+      instance.protocol !== "dify-engine",
+    selectable: false,
+    issues: [],
+  };
+}
+
 /** 安全 view：执行资格来自后端，原推荐数据负责模型元信息，凭证永不回传。 */
 export function buildCodeUiModelViews(input: {
   instances: ProviderInstanceResponse[];
@@ -267,38 +304,41 @@ export function buildCodeUiModelViews(input: {
   providerTemplates?: ProviderSettingsView["providerTemplates"];
 }): { settings: ProviderSettingsView; selection: ModelSelectionView } {
   const revision = input.revision ?? 0;
-  const providers = input.instances
-    .filter((instance) => isCodeChatProtocol(instance.protocol))
-    .map((instance) => {
-      const issues = codeUiProviderIssues(instance);
-      return {
-        providerId: instance.id,
-        providerName: instance.name,
-        enabled: instance.enabled,
-        executable:
-          instance.enabled && instance.hasCredential && issues.length === 0,
-        credentialConfigured: instance.hasCredential,
-        configRevision: instance.configRevision,
-        ...(codeUiProviderMetadata(instance).templateId
-          ? { templateId: codeUiProviderMetadata(instance).templateId }
-          : {}),
-        effectiveConfig: codeUiPublicProviderConfig(instance),
-        personalConfig: codeUiPublicProviderConfig(instance),
-        issues,
-        models: instance.models
-          .filter((model) => model.capability === "chat")
-          .map((model) =>
-            modelView(
+  const providers = input.instances.map((instance) => {
+    const chatProtocol = isCodeChatProtocol(instance.protocol);
+    const issues = chatProtocol ? codeUiProviderIssues(instance) : [];
+    const config = chatProtocol
+      ? codeUiPublicProviderConfig(instance)
+      : nonChatProviderConfig(instance);
+    return {
+      native: instance,
+      providerId: instance.id,
+      providerName: instance.name,
+      enabled: instance.enabled,
+      executable:
+        instance.enabled && instance.hasCredential && issues.length === 0,
+      credentialConfigured: instance.hasCredential,
+      configRevision: instance.configRevision,
+      ...(codeUiProviderMetadata(instance).templateId
+        ? { templateId: codeUiProviderMetadata(instance).templateId }
+        : {}),
+      effectiveConfig: config,
+      personalConfig: config,
+      issues,
+      models: instance.models.map((model) =>
+        chatProtocol && model.capability === "chat"
+          ? modelView(
               instance,
               input.catalog.find(
                 (entry) =>
                   entry.provider.instanceId === instance.id &&
                   entry.id === model.id,
               ) ?? codeUiModelEntry(instance, model),
-            ),
-          ),
-      };
-    });
+            )
+          : nonChatModelView(instance, model),
+      ),
+    };
+  });
   const order = new Map(
     (
       input.providerOrder ?? providers.map((provider) => provider.providerId)
@@ -316,13 +356,16 @@ export function buildCodeUiModelViews(input: {
     providers,
   };
   const selectionProviders = providers
-    .filter((provider) => provider.executable)
+    .filter(
+      (provider) =>
+        provider.executable && isCodeChatProtocol(provider.native.protocol),
+    )
     .map((provider) => ({
       providerId: provider.providerId,
       providerName: provider.providerName,
       config: provider.effectiveConfig,
       models: provider.models
-        .filter((model) => model.executable)
+        .filter((model) => model.executable && model.selectable)
         .map((model) => {
           const complete = createRegistryModelConfig(
             ModelConfig.fromData(model.effectiveConfig),

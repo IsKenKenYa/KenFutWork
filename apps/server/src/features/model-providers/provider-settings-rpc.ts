@@ -3,6 +3,10 @@ import type {
   ProviderInstanceResponse,
   ProviderInstanceUpdateRequest,
 } from "@kenfutwork/shared";
+import {
+  managedProviderPatchSchema,
+  modelDefaultsSchema,
+} from "@kenfutwork/shared";
 import { type ModelSelection, parseProviderConfig } from "@zcode/provider";
 import {
   type ModelConnectivityResult,
@@ -10,10 +14,13 @@ import {
 } from "@zcode/shared";
 import { modelConfigDataSchema } from "@zcode/shared/model-config";
 import { z } from "zod";
+import type { CodeUiRepository } from "../code-ui/repository.js";
+import { CodeUiRepositoryError } from "../code-ui/repository.js";
 import type { LocalActor } from "../local-instance/types.js";
-import type { ModelCatalogService } from "../model-providers/model-catalog-service.js";
-import type { ModelProviderService } from "../model-providers/model-provider-service.js";
 import type { SettingsService } from "../settings/settings-service.js";
+import type { ModelCatalogService } from "./model-catalog-service.js";
+import { saveManagedModel } from "./model-management.js";
+import type { ModelProviderService } from "./model-provider-service.js";
 import {
   buildCodeUiModelViews,
   codeUiModelEntry,
@@ -27,8 +34,6 @@ import {
   isCodeChatProtocol,
 } from "./provider-settings-rpc-config.js";
 import { createProviderModelMutations } from "./provider-settings-rpc-models.js";
-import type { CodeUiRepository } from "./repository.js";
-import { CodeUiRepositoryError } from "./repository.js";
 
 export type CodeUiProviderViews = ReturnType<typeof buildCodeUiModelViews>;
 export interface CodeUiProviderSettingsRpc {
@@ -54,7 +59,10 @@ export interface CodeUiProviderSettingsRpcDeps {
     | "deleteInstance"
   >;
   modelCatalog: Pick<ModelCatalogService, "listCatalog">;
-  settings: Pick<SettingsService, "getInstanceSettings">;
+  settings: Pick<
+    SettingsService,
+    "getInstanceSettings" | "updateInstanceSettings"
+  >;
   instanceId(actor: LocalActor): Promise<string>;
   preferences: Pick<
     CodeUiRepository,
@@ -176,12 +184,21 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
 
   private async load(actor: LocalActor, id: string) {
     const instance = (await this.deps.modelProviders.listInstances(actor)).find(
-      (entry) => entry.id === id && isCodeChatProtocol(entry.protocol),
+      (entry) => entry.id === id,
     );
     if (!instance)
       throw new CodeUiRepositoryError(
         "not_found",
-        "Code 供应商不存在或不属于当前工作区。",
+        "供应商已删除，请刷新模型设置。",
+      );
+    return instance;
+  }
+  private async loadChat(actor: LocalActor, id: string) {
+    const instance = await this.load(actor, id);
+    if (!isCodeChatProtocol(instance.protocol))
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "该连接不支持聊天模型，请在生成配置中编辑。",
       );
     return instance;
   }
@@ -320,13 +337,16 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
         ...(config.modelOrder ? { modelOrder: [...config.modelOrder] } : {}),
       },
     };
-    if (config.api?.type === "openai-responses") compat.chatApi = "responses";
-    else if (config.api?.type === "openai-chat-completions")
-      compat.chatApi = "completions";
-    else if (config.api === null || config.api?.type) delete compat.chatApi;
+    const chatProtocol = isCodeChatProtocol(instance.protocol);
+    if (chatProtocol) {
+      if (config.api?.type === "openai-responses") compat.chatApi = "responses";
+      else if (config.api?.type === "openai-chat-completions")
+        compat.chatApi = "completions";
+      else if (config.api === null || config.api?.type) delete compat.chatApi;
+    }
     await this.save(actor, instance, {
       ...(metadata.providerName ? { name: metadata.providerName } : {}),
-      ...(config.api?.type
+      ...(chatProtocol && config.api?.type
         ? { protocol: codeUiNativeProtocol(config.api.type) }
         : {}),
       ...(config.api === null
@@ -358,9 +378,7 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
   }
   private async reorder(actor: LocalActor, value: unknown) {
     const ids = z.array(providerId).parse(value);
-    const current = (
-      await this.deps.modelProviders.listInstances(actor)
-    ).filter((instance) => isCodeChatProtocol(instance.protocol));
+    const current = await this.deps.modelProviders.listInstances(actor);
     if (
       ids.length !== current.length ||
       new Set(ids).size !== ids.length ||
@@ -386,7 +404,7 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
       })
       .strict()
       .parse(value);
-    const instance = await this.load(actor, input.providerId);
+    const instance = await this.loadChat(actor, input.providerId);
     const model = instance.models.find(
       (entry) =>
         entry.id === (input.originalModelId ?? input.modelId) &&
@@ -421,7 +439,7 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
         projectId: providerId.optional(),
       })
       .parse(value);
-    const instance = await this.load(actor, input.providerId);
+    const instance = await this.loadChat(actor, input.providerId);
     if (!instance.enabled || !instance.hasCredential)
       return {
         success: false,
@@ -471,6 +489,37 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
     if (method === "getView") return { result: await this.settingsView(actor) };
     if (method === "refresh")
       return { result: await this.afterMutation(actor) };
+    if (method === "getModelDefaults") {
+      const settings = await this.deps.settings.getInstanceSettings(
+        actor,
+        await this.deps.instanceId(actor),
+      );
+      return { result: modelDefaultsSchema.parse(settings.modelDefaults) };
+    }
+    if (method === "saveModelDefaults") {
+      const settings = await this.deps.settings.updateInstanceSettings(
+        actor,
+        await this.deps.instanceId(actor),
+        { modelDefaults: modelDefaultsSchema.parse(args[0]) },
+      );
+      await this.afterMutation(actor);
+      return { result: modelDefaultsSchema.parse(settings.modelDefaults) };
+    }
+    if (method === "saveManagedProvider")
+      return this.serialized(actor, async () => {
+        const input = managedProviderPatchSchema.parse(args[0]);
+        await this.deps.modelProviders.updateInstance(
+          actor,
+          input.providerId,
+          input.patch,
+        );
+        return { result: await this.afterMutation(actor) };
+      });
+    if (method === "saveManagedModel")
+      return this.serialized(actor, async () => {
+        await saveManagedModel(this.deps.modelProviders, actor, args[0]);
+        return { result: await this.afterMutation(actor) };
+      });
     if (method === "resolveModelConfig")
       return { result: await this.resolveModel(actor, args[0]) };
     if (method === "testModelConnectivity")

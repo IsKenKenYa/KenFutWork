@@ -107,7 +107,7 @@ import { createCodeUiPluginsHost } from "./plugins.js";
 import {
   type CodeUiProviderSettingsRpc,
   createCodeUiProviderSettingsRpc,
-} from "./provider-settings-rpc.js";
+} from "../model-providers/provider-settings-rpc.js";
 import type { CodeInputSettlement } from "./queue-control.js";
 import { applyCodeQueueCommand, CODE_QUEUE_COMMANDS, codeInputRouting } from "./queue-control.js";
 import { type CodeUiRepository, CodeUiRepositoryError } from "./repository.js";
