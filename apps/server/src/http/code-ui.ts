@@ -8,6 +8,7 @@ import {
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { CodeTerminalError } from "../features/code-terminal/service.js";
 import { CodeAttachmentError } from "../features/code-ui/attachments/types.js";
+import { CodeUiHostRpcError } from "../features/code-ui/host-rpc-handler.js";
 import { CodeUiRepositoryError } from "../features/code-ui/repository.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
 import { ExecutionScopeError } from "../features/execution/scope-service.js";
@@ -22,6 +23,10 @@ import { ProjectServiceError } from "../features/projects/project-service.js";
 import { isZodError } from "./zod-error.js";
 
 function sendError(reply: FastifyReply, error: unknown) {
+  if (error instanceof CodeUiHostRpcError)
+    return reply
+      .code(error.statusCode)
+      .send({ error: { code: error.code, message: error.message } });
   if (error instanceof LocalInstanceMaintenanceError)
     return reply
       .code(503)

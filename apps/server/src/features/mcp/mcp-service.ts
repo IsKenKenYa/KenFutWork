@@ -49,6 +49,8 @@ export interface McpServerStatus {
 }
 
 export interface McpService {
+  /** 仅供已授权本机设置编辑器；普通目录仍使用listStatuses。 */
+  readSettingsConfigurations(): Promise<McpSettingsConfiguration[]>;
   computerUseConnections(): Promise<ComputerUseMcpConnection[]>;
   listStatuses(): Promise<McpServerStatus[]>;
   /** 启动期连接：环境变量 + 库内启用项。 */
@@ -60,6 +62,18 @@ export interface McpService {
   /** 手动重连（配置未变但连接掉线时用）；`idOrName` 允许环境变量条目按名称传入。 */
   reconnect(idOrName: string): Promise<McpServerStatus | null>;
   shutdown(): Promise<void>;
+}
+
+export interface McpSettingsConfiguration {
+  id: string | null;
+  name: string;
+  source: "env" | "managed";
+  enabled: boolean;
+  kind: "stdio" | "http";
+  command: string;
+  args: string[];
+  url: string | null;
+  env: Record<string, string>;
 }
 
 interface Connection {
@@ -281,6 +295,20 @@ export function createMcpService(options: {
   }
 
   return {
+    async readSettingsConfigurations() {
+      ensureOpen();
+      return (await effectiveServers()).map((server) => ({
+        id: server.id,
+        name: server.name,
+        source: server.source,
+        enabled: server.enabled,
+        kind: server.kind,
+        command: server.command,
+        args: [...server.args],
+        url: server.url,
+        env: { ...server.env },
+      }));
+    },
     async computerUseConnections() {
       const statuses = await this.listStatuses();
       return [...connections].flatMap(([name, connection]) => {

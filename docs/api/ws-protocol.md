@@ -92,3 +92,9 @@ Code 的原 `plugin-management` 通道现已将 `listPlugins` 与 `getPluginsOve
 公共GET /api/plugins独立返回installed与enabled，未安装／停用不返回运行面板入口；POST /api/plugins/:id/toggle保留installed=true并返回实际enabled。它们消费同一registry，不增加配置或安装服务。完整侧栏、MCP／技能、子定义双模式消费与共用管理页进度见《现有能力接线与入口统一》，当前目录／图标切片不表示完整目标完成。
 
 插件入口接线（2026-10-09）：GET /api/plugins同时投影真实scope（code/design/shared/null），ui合并清单与运行时贡献，按pluginId＋entryId去重，同键运行时优先。Code原侧栏及Design各运行槽沿作用域过滤；写入返回或失败后读取对账，旧读取晚到不复活收回入口。Code父窗口桥只接收当前同源文档的code-open-plugin（pluginId/entryId）与code-plugins-changed；面板地址由父宿主重新核已安装、启用且适用的库存，沿现有PluginPanelOverlay与私有路由打开，不接收消息中的URL或凭据。实例settings槽不按工作模式缩窄。
+
+### 原 MCP 管理宿主
+
+`mcp-sync.loadMcpFromUserDirectory`、`readMcpServerConfiguration`、`saveMcpToUserDirectory` 和 `listWorkspaceMcpServerStatuses` 由 MCP feature 贡献，复用 REST／运行工具的同一 `McpService`。本机配置为实例数据库记录；原接口名称保留，不伪造文件夹或位置，也不创建 Project／Task。普通列表只返回 `envKeys`，本机授权编辑按 `hostRecordId` 单独读取完整配置；不将凭据写入共享 UI inventory 或普通事件。
+
+创建传 `hostRecordId:null`；编辑、启停与删除传原记录 UUID。删除后迟到请求返回404，不能按同名记录重新绑定。写入响应未知时只读刷新，不自动重放；写入成功但刷新失败保留表单并报告读取错误。环境来源只读。当前服务承接 stdio／HTTP 与真实状态／重连；项目文件配置、OAuth、显式 SSE 类型、HTTP 请求头、超时及协议覆盖未接入，原表单禁用对应操作。外部 Agent 扫描／同步与市场检索仍继续接线，不计本片完成。

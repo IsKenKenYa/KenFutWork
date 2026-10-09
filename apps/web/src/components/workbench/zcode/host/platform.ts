@@ -45,6 +45,21 @@ export function createCodePlatform(
         .getChannel("platform")
         .call<ApplicationIconInfo | null>("getApplicationIcon", [request]),
     resolvePluginIcon: (resource) => client.resolvePluginIcon(resource),
+    mcpSettingsCapabilities: {
+      databaseRecords: true,
+      projectScope: false,
+      oauth: false,
+      httpHeaders: false,
+      serverParameters: false,
+      sse: false,
+    },
+    loadMcpFromUserDirectory: (input) =>
+      client.services.mcpSyncService.loadMcpFromUserDirectory(input),
+    saveMcpToUserDirectory: async (input) => {
+      await client.services.mcpSyncService.saveMcpToUserDirectory(input);
+      return { success: true };
+    },
+    migrateLegacyCommonMcp: () => Promise.reject(new Error("旧MCP数据不迁移")),
     pluginSidebar: {
       read: async () =>
         projectPluginPanels(

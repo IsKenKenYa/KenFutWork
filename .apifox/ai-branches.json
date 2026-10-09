@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-09T13:42:16.402Z",
+  "updatedAt": "2026-10-09T18:31:25.115Z",
   "projects": {
     "8892388": {
       "branches": {
@@ -27,7 +27,7 @@
           "isAiWritableBranch": false,
           "automationLifecycleStatus": "ARCHIVED",
           "isArchived": true,
-          "fetchedAt": "2026-10-09T13:40:26.055Z",
+          "fetchedAt": "2026-10-09T18:31:25.114Z",
           "lastKnownStatus": "ARCHIVED"
         },
         "8695594": {
@@ -41,7 +41,7 @@
           "isAiWritableBranch": false,
           "automationLifecycleStatus": "ARCHIVED",
           "isArchived": true,
-          "fetchedAt": "2026-10-09T13:40:26.056Z",
+          "fetchedAt": "2026-10-09T18:31:25.114Z",
           "lastKnownStatus": "ARCHIVED"
         },
         "8696874": {
@@ -55,7 +55,7 @@
           "isAiWritableBranch": false,
           "automationLifecycleStatus": "ARCHIVED",
           "isArchived": true,
-          "fetchedAt": "2026-10-09T13:40:26.056Z",
+          "fetchedAt": "2026-10-09T18:31:25.114Z",
           "lastKnownStatus": "ARCHIVED"
         },
         "8696888": {
@@ -69,7 +69,7 @@
           "isAiWritableBranch": false,
           "automationLifecycleStatus": "ARCHIVED",
           "isArchived": true,
-          "fetchedAt": "2026-10-09T13:40:26.057Z",
+          "fetchedAt": "2026-10-09T18:31:25.114Z",
           "lastKnownStatus": "ARCHIVED"
         },
         "8697551": {
@@ -83,7 +83,7 @@
           "isAiWritableBranch": false,
           "automationLifecycleStatus": "ARCHIVED",
           "isArchived": true,
-          "fetchedAt": "2026-10-09T13:40:26.058Z",
+          "fetchedAt": "2026-10-09T18:31:25.115Z",
           "lastKnownStatus": "ARCHIVED"
         },
         "8697647": {
@@ -97,7 +97,7 @@
           "isAiWritableBranch": false,
           "automationLifecycleStatus": "ARCHIVED",
           "isArchived": true,
-          "fetchedAt": "2026-10-09T13:40:26.059Z",
+          "fetchedAt": "2026-10-09T18:31:25.115Z",
           "lastKnownStatus": "ARCHIVED"
         },
         "8699100": {
@@ -111,7 +111,7 @@
           "isAiWritableBranch": false,
           "automationLifecycleStatus": "ARCHIVED",
           "isArchived": true,
-          "fetchedAt": "2026-10-09T13:40:26.059Z",
+          "fetchedAt": "2026-10-09T18:31:25.115Z",
           "lastKnownStatus": "ARCHIVED"
         },
         "8699426": {
@@ -125,7 +125,7 @@
           "isAiWritableBranch": false,
           "automationLifecycleStatus": "ARCHIVED",
           "isArchived": true,
-          "fetchedAt": "2026-10-09T13:40:26.059Z",
+          "fetchedAt": "2026-10-09T18:31:25.115Z",
           "lastKnownStatus": "ARCHIVED"
         },
         "8703011": {
@@ -139,7 +139,7 @@
           "isAiWritableBranch": false,
           "automationLifecycleStatus": "ARCHIVED",
           "isArchived": true,
-          "fetchedAt": "2026-10-09T13:40:26.060Z",
+          "fetchedAt": "2026-10-09T18:31:25.115Z",
           "lastKnownStatus": "ARCHIVED"
         },
         "8708676": {
@@ -153,7 +153,7 @@
           "isAiWritableBranch": true,
           "automationLifecycleStatus": "ACTIVE",
           "isArchived": false,
-          "fetchedAt": "2026-10-09T13:42:16.402Z",
+          "fetchedAt": "2026-10-09T18:31:25.115Z",
           "lastKnownStatus": "ACTIVE"
         }
       },
@@ -168,129 +168,66 @@
           "type": "branch_recorded",
           "projectId": 8892388,
           "branchId": 8691400,
-          "createdAt": "2026-10-09T13:40:26.055Z"
+          "createdAt": "2026-10-09T18:31:25.114Z"
         },
         {
           "type": "branch_recorded",
           "projectId": 8892388,
           "branchId": 8695594,
-          "createdAt": "2026-10-09T13:40:26.056Z"
+          "createdAt": "2026-10-09T18:31:25.114Z"
         },
         {
           "type": "branch_recorded",
           "projectId": 8892388,
           "branchId": 8696874,
-          "createdAt": "2026-10-09T13:40:26.056Z"
+          "createdAt": "2026-10-09T18:31:25.114Z"
         },
         {
           "type": "branch_recorded",
           "projectId": 8892388,
           "branchId": 8696888,
-          "createdAt": "2026-10-09T13:40:26.057Z"
+          "createdAt": "2026-10-09T18:31:25.114Z"
         },
         {
           "type": "branch_recorded",
           "projectId": 8892388,
           "branchId": 8697551,
-          "createdAt": "2026-10-09T13:40:26.058Z"
+          "createdAt": "2026-10-09T18:31:25.115Z"
         },
         {
           "type": "branch_recorded",
           "projectId": 8892388,
           "branchId": 8697647,
-          "createdAt": "2026-10-09T13:40:26.059Z"
+          "createdAt": "2026-10-09T18:31:25.115Z"
         },
         {
           "type": "branch_recorded",
           "projectId": 8892388,
           "branchId": 8699100,
-          "createdAt": "2026-10-09T13:40:26.059Z"
+          "createdAt": "2026-10-09T18:31:25.115Z"
         },
         {
           "type": "branch_recorded",
           "projectId": 8892388,
           "branchId": 8699426,
-          "createdAt": "2026-10-09T13:40:26.059Z"
+          "createdAt": "2026-10-09T18:31:25.115Z"
         },
         {
           "type": "branch_recorded",
           "projectId": 8892388,
           "branchId": 8703011,
-          "createdAt": "2026-10-09T13:40:26.060Z"
+          "createdAt": "2026-10-09T18:31:25.115Z"
         },
         {
           "type": "branch_recorded",
           "projectId": 8892388,
           "branchId": 8708676,
-          "sourceBranchId": 8691397,
-          "createdAt": "2026-10-09T13:42:16.402Z"
+          "createdAt": "2026-10-09T18:31:25.115Z"
         }
       ]
     }
   },
   "recentEvents": [
-    {
-      "type": "branch_recorded",
-      "projectId": 8892388,
-      "branchId": 8696874,
-      "sourceBranchId": 8691397,
-      "createdAt": "2026-10-04T18:04:59.038Z"
-    },
-    {
-      "type": "branch_recorded",
-      "projectId": 8892388,
-      "branchId": 8691400,
-      "createdAt": "2026-10-04T20:42:46.231Z"
-    },
-    {
-      "type": "branch_recorded",
-      "projectId": 8892388,
-      "branchId": 8695594,
-      "createdAt": "2026-10-04T20:42:46.231Z"
-    },
-    {
-      "type": "branch_recorded",
-      "projectId": 8892388,
-      "branchId": 8696874,
-      "createdAt": "2026-10-04T20:42:46.231Z"
-    },
-    {
-      "type": "branch_recorded",
-      "projectId": 8892388,
-      "branchId": 8696888,
-      "sourceBranchId": 8691397,
-      "createdAt": "2026-10-04T20:47:22.316Z"
-    },
-    {
-      "type": "branch_recorded",
-      "projectId": 8892388,
-      "branchId": 8696888,
-      "createdAt": "2026-10-04T22:30:25.817Z"
-    },
-    {
-      "type": "branch_recorded",
-      "projectId": 8892388,
-      "branchId": 8696888,
-      "createdAt": "2026-10-05T05:55:51.789Z"
-    },
-    {
-      "type": "branch_recorded",
-      "projectId": 8892388,
-      "branchId": 8691397,
-      "createdAt": "2026-10-05T14:16:31.732Z"
-    },
-    {
-      "type": "branch_recorded",
-      "projectId": 8892388,
-      "branchId": 8691400,
-      "createdAt": "2026-10-05T14:16:31.732Z"
-    },
-    {
-      "type": "branch_recorded",
-      "projectId": 8892388,
-      "branchId": 8695594,
-      "createdAt": "2026-10-05T14:16:31.732Z"
-    },
     {
       "type": "branch_recorded",
       "projectId": 8892388,
@@ -536,6 +473,66 @@
       "branchId": 8708676,
       "sourceBranchId": 8691397,
       "createdAt": "2026-10-09T13:42:16.402Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8691400,
+      "createdAt": "2026-10-09T18:31:25.114Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8695594,
+      "createdAt": "2026-10-09T18:31:25.114Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8696874,
+      "createdAt": "2026-10-09T18:31:25.114Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8696888,
+      "createdAt": "2026-10-09T18:31:25.114Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8697551,
+      "createdAt": "2026-10-09T18:31:25.115Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8697647,
+      "createdAt": "2026-10-09T18:31:25.115Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8699100,
+      "createdAt": "2026-10-09T18:31:25.115Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8699426,
+      "createdAt": "2026-10-09T18:31:25.115Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8703011,
+      "createdAt": "2026-10-09T18:31:25.115Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8708676,
+      "createdAt": "2026-10-09T18:31:25.115Z"
     }
   ]
 }

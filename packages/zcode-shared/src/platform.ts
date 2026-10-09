@@ -535,6 +535,15 @@ export interface HostPluginSidebarEntry {
 }
 
 export interface IPlatformService {
+  /** 宿主已接通的原MCP设置能力；不将数据库记录视为目录或符号链接。 */
+  mcpSettingsCapabilities?: {
+    databaseRecords: boolean;
+    projectScope: boolean;
+    oauth: boolean;
+    httpHeaders: boolean;
+    serverParameters: boolean;
+    sse: boolean;
+  };
   /** 宿主的插件入口；库存仍由既有插件服务持有，面板由宿主打开。 */
   pluginSidebar?: {
     read(): Promise<HostPluginSidebarEntry[]>;

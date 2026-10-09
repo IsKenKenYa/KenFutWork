@@ -29,6 +29,8 @@ export type {
   AppSettings,
   FileEntry,
   IPlatformService,
+  LoadCliMcpFromUserDirectoryResult,
+  NativeMcpServerRecord,
   ZCodeSessionStateSnapshot,
   ZCodeTaskMeta,
 } from "@zcode/shared";
@@ -38,6 +40,8 @@ export {
   ZCODE_PROTOCOL_NAME,
   ZCODE_PROTOCOL_VERSION,
   zcodeInstalledPluginSummarySchema,
+  zcodeMcpListParamsSchema,
+  zcodeMcpListResultSchema,
   zcodePluginsInstallParamsSchema,
   zcodePluginsInstallResultSchema,
   zcodePluginsListResultSchema,

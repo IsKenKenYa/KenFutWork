@@ -2,9 +2,26 @@ import {
   JSONRPCErrorResponseSchema,
   JSONRPCMessageSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { zcodeMcpListParamsSchema } from "@zcode/shared";
 import { z } from "zod";
 import { runIdSchema } from "./contracts.js";
 import { applicationErrorResponseSchema } from "./http.js";
+
+/** 原用户层读取只承接UI上下文；本机MCP由实例持有，不建立Project或Task。 */
+export const codeUiMcpSettingsLoadRequestSchema = z
+  .object({
+    workspacePath: z.string().optional(),
+  })
+  .strict();
+export const codeUiMcpSettingsReadRequestSchema = z
+  .object({ hostRecordId: z.uuid() })
+  .strict();
+export const codeUiMcpStatusRequestSchema =
+  codeUiMcpSettingsLoadRequestSchema.extend({
+    workspaceIdentity: z.string().optional(),
+    mode: zcodeMcpListParamsSchema.shape.mode,
+    mcpServers: zcodeMcpListParamsSchema.shape.mcpServers,
+  });
 
 /** 标准MCP wire直接采用官方SDK契约；不另造工具、Task或身份DTO。 */
 export const computerUseMcpMessageSchema = JSONRPCMessageSchema;
@@ -30,7 +47,7 @@ export const computerUseMcpEventStreamSchema = z
  * MCP server 管理契约（`/api/mcp/servers*`）。
  *
  * 密钥纪律：请求可携带 `env`（含值），**响应只回 `envKeys`**——
- * 与 BYOK 同口径，Key 类值只写不读、永不回显前端。
+ * 授权设置经原宿主按稳定记录ID读取env；目录、工具参数和事件不携带值。
  */
 
 export const mcpServerSourceSchema = z.enum(["env", "managed"]);
@@ -134,6 +151,34 @@ export const mcpServerUpdateRequestSchema = z.object({
 export type McpServerUpdateRequest = z.infer<
   typeof mcpServerUpdateRequestSchema
 >;
+
+/** 原配置表单的本机宿主写边界；原件不另建文件配置或安装数据。 */
+export const codeUiMcpSettingsSaveRequestSchema = z
+  .object({
+    action: z.enum(["upsert", "delete", "set-enabled"]),
+    source: z.literal("zcodeagentmcp"),
+    name: mcpServerCreateRequestSchema.shape.name,
+    hostRecordId: z.uuid().nullable(),
+    projectPath: z.string().optional(),
+    location: z.unknown().optional(),
+    enabled: z.boolean().optional(),
+    config: z
+      .object({
+        type: z.enum(["stdio", "http"]).optional(),
+        command: z.string().optional(),
+        url: z.string().optional(),
+        args: z.array(z.string()).optional(),
+        env: mcpEnvSchema.optional(),
+        enable: z.boolean().optional(),
+        headers: mcpEnvSchema.optional(),
+        oauth: z.unknown().optional(),
+        timeoutMs: z.number().optional(),
+        protocolVersion: z.string().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 export const mcpServerResponseSchema = z.object({
   server: mcpServerViewSchema,

@@ -9388,28 +9388,31 @@
       "source": "references/zcode/packages/ui/src/settings/McpServerForm.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/McpServerForm.tsx",
       "sha256": "67c9ca3284c69baee8c674542203e12f749fd6675e3da555395857ef75cd2fe8",
-      "copiedSha256": "0d564240583439f5f460e012a28b8d4ea3b7c28a9937730edae21d8e383e667a",
+      "copiedSha256": "dd23cba662e56be9d8e9c9cf6a473c3db762f115df224c7fc1a22c60f2a498c3",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：异步写入保留草稿；非法env及JSON模式转换显式校验；按真实MCP能力禁用项目/请求头/服务参数/SSE配置，保留原表单装配"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/McpServerList.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/McpServerList.tsx",
       "sha256": "b6d995f8b215f1db768abdff486da8e36e9ac5c729ddef225e9966609cd21794",
-      "copiedSha256": "37b40251c99f8ce2cbd2b8f9c9f2ce7bafe272cc4967621f065ab05e2306a798",
+      "copiedSha256": "c321cc10c6806451af3d17857e640a4d67e418895e690d261316daa33167df55",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：环境来源记录只读，复用原列表及开关，不将环境配置伪装可写数据库记录"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/McpSettingsSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/McpSettingsSection.tsx",
       "sha256": "7dd648f1b79e674b714a9f025420f8519741d2b6327b52600fe077b3ea6a4e69",
-      "copiedSha256": "4d06d9f877d1fc1dc9d3ace5d5fc65c10190770319244dbf90ee6880eb579be9",
+      "copiedSha256": "124b3304c2c466b849fd6e96e303ffd57e7b8fb738585172601e3f77bb5f8da8",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "类型兼容：原 segmented tab 回调值收窄到原 McpEditorMode"
+        "类型兼容：原 segmented tab 回调值收窄到原 McpEditorMode",
+        "宿主接口：实例无Project管理、固定编辑快照ID、授权读代际保护、失败提示与真实连接状态；保持原列表/分组/表单装配"
       ]
     },
     {
@@ -10023,9 +10026,10 @@
       "source": "references/zcode/packages/ui/src/settings/mcpSettingsShared.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/mcpSettingsShared.ts",
       "sha256": "a4241c93167b087afebe9d669ffe4fa5b5137a4768cb0045d8eeb8a4f220ab98",
-      "copiedSha256": "a4241c93167b087afebe9d669ffe4fa5b5137a4768cb0045d8eeb8a4f220ab98",
+      "copiedSha256": "eb206a6ba3f795ca2d740ed579c1fc64a96edd67291a4616213a77129bace9d7",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主类型兼容：保持结构化argv与空参数；env清空显式提交，非法env拒绝而不清除凭据"
       ]
     },
     {
@@ -11313,27 +11317,30 @@
       "source": "references/zcode/packages/ui/src/store/mcpStore.ts",
       "target": "apps/web/src/components/workbench/zcode/store/mcpStore.ts",
       "sha256": "ae3a9a2f0513969ae680be94777d4275a0fe33c2010bbafd5c8d138ed62b9e49",
-      "copiedSha256": "0153c203973553c504146aec79d779baa5ff776b8996997f26aaec5224ac80f6",
+      "copiedSha256": "5419ceca8af1204fed4d2474c825f8aef3ed3f2b9f416de355361b1175052d35",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：数据库记录固定ID，秘密只留授权草稿；写入响应未知只读对账不自动重试，刷新失败不报成功，不执行旧数据迁移"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/store/mcpStoreDesktop.ts",
       "target": "apps/web/src/components/workbench/zcode/store/mcpStoreDesktop.ts",
       "sha256": "1362f1da2c9345ece3837d908bda33037434e9f900952f80e3358da8b1ceae33",
-      "copiedSha256": "fb8e77b0ac96e4b1ca4b15691e4d4cc7fe4b228a88391b9941999d43d3b722ee",
+      "copiedSha256": "66e7666bff6171b87966017c9a99aa7f7522869320bbd4af2561e386e0ee9ca5",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：沿原平台调用读取真实本机记录，宿主能力仅决定原配置迁移路径"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/store/mcpStoreHelpers.ts",
       "target": "apps/web/src/components/workbench/zcode/store/mcpStoreHelpers.ts",
       "sha256": "4db0d74a9d24421414a5e3cce342cdd77b3dd794bb188c885456dd36ea38cba7",
-      "copiedSha256": "4db0d74a9d24421414a5e3cce342cdd77b3dd794bb188c885456dd36ea38cba7",
+      "copiedSha256": "fbca8a6bc94bd03f2e745e1dd1aa3554ed690665e08098d4b964dc8fb89ba3ed",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主类型兼容：稳定记录ID、来源、envKeys；数据库启用态来自服务端，不绑定同名重建记录"
       ]
     },
     {
@@ -14402,8 +14409,10 @@
       "source": "references/zcode/packages/shared/src/mcp.ts",
       "target": "packages/zcode-shared/src/mcp.ts",
       "sha256": "20903fb8806923434dcf5c319cb1becc5cbaa3418bc6c6e9bcf56848ad9312ac",
-      "copiedSha256": "20903fb8806923434dcf5c319cb1becc5cbaa3418bc6c6e9bcf56848ad9312ac",
-      "adaptations": []
+      "copiedSha256": "65ea7ef6030d1a25db28a32b155fa562e41623434d80dc9c64ade81119519ec8",
+      "adaptations": [
+        "宿主类型兼容：原记录携带稳定hostRecordId、来源与envKeys，不虚构文件/目录"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/media-preview.ts",
@@ -14535,7 +14544,7 @@
       "source": "references/zcode/packages/shared/src/platform.ts",
       "target": "packages/zcode-shared/src/platform.ts",
       "sha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "copiedSha256": "59cd809965fce67c7a40b6b7e6ae8c308bae84899a87ac377bc086834fc9a4da",
+      "copiedSha256": "0a65327659f056bfe342a707f1386f65df2f538447d2f0d2b31298411e485c73",
       "adaptations": [
         "宿主能力接口：增加可选云账户支持标记；未声明的原宿主行为不变",
         "宿主接口：可选自动化/嵌入浏览器/CUA/远程能力声明；未声明保持原平台语义",
@@ -14546,7 +14555,8 @@
         "阶段同步3f5c3873: 可选sessionMetadataSource与原Root轻量真实标题；Task-index只读metainfo，未声明保持原session投影",
         "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
         "宿主接口：可选认证包图标解析，沿现有平台Provider；不扩大通用图片URL许可",
-        "宿主接口：声明插件侧栏读取、变化订阅及仅传插件/入口身份的打开接口，不携带面板地址或凭据"
+        "宿主接口：声明插件侧栏读取、变化订阅及仅传插件/入口身份的打开接口，不携带面板地址或凭据",
+        "宿主接口：声明现有MCP记录、项目/OAuth/请求头/参数/SSE支持态，未声明保持原平台行为"
       ]
     },
     {
@@ -15717,8 +15727,10 @@
       "source": "references/zcode/packages/services/src/mcp-sync/mcpSync.ts",
       "target": "packages/zcode-services/src/mcp-sync/mcpSync.ts",
       "sha256": "5d889611389bf900262a94be0e4a9daaa7b19950eeb7ed3f02ee9f344d2291ee",
-      "copiedSha256": "5d889611389bf900262a94be0e4a9daaa7b19950eeb7ed3f02ee9f344d2291ee",
-      "adaptations": []
+      "copiedSha256": "1306fbba1926896827833b4d96a0d88834dcb1e1aaf88b231ee9e0fab707a5a9",
+      "adaptations": [
+        "宿主接口：授权编辑按记录ID读取；实例状态读取允许无工作目录，不创建Project/Task"
+      ]
     },
     {
       "source": "references/zcode/packages/services/src/media-preview/mediaPreview.ts",

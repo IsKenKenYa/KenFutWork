@@ -55,6 +55,8 @@ export interface CliMcpConfig {
 }
 
 export interface SaveCliMcpToUserDirectoryRequest {
+  /** 宿主记录引用：null表示新建，已有记录必须按稳定ID修改/删除。 */
+  hostRecordId?: string | null;
   action: "upsert" | "delete" | "set-enabled";
   source: CliMcpSource;
   name: string;
@@ -70,6 +72,10 @@ export interface NativeMcpFileReference {
 }
 
 export interface NativeMcpServerRecord {
+  /** 宿主数据库身份与来源，不表示文件或目录。 */
+  hostRecordId?: string;
+  origin?: "managed" | "env";
+  envKeys?: string[];
   source: McpSource;
   scope: McpScope;
   name: string;
@@ -111,6 +117,9 @@ export interface McpConfig {
 }
 
 export interface ZCodeMcpServer {
+  hostRecordId?: string;
+  origin?: "managed" | "env";
+  envKeys?: string[];
   id: string;
   name: string;
   config: McpServerConfig;
