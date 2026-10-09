@@ -16,3 +16,13 @@
 ## LangChain 发行入口补丁
 
 本仓库通过标准 pnpm 补丁修复官方 npm **langchain 1.5.11** 的 afterModel 显式模型续跑路由。ESM/CJS 发行入口的原代码采用 MIT；原许可完整保存在 `patches/LICENSE-langchain.txt`，来源哈希、修改与验证见 `patches/LangChain路由修复说明.md`。
+
+## flow 子系统（聚合接入，不含衍生代码）
+
+flow 模式（`features/flow/` + `plugins/flow/`）依赖两个外部组件，均**以独立进程 / 容器 + API 通信**接入，属聚合（aggregation）而非衍生作品——**本仓库不复制它们的代码**：
+
+- **Dify**（`langgenius/dify`）：**Apache-2.0 附加条款的 source-available 项目**，不是纯开源许可。接入方式 = 用户按需拉取官方镜像、以 `dify/docker-compose.dify.yml` 的无头 profile 起栈（`DEC-11`），版本保持可升级、不锁版本（`DEC-13`）。
+  - 多租户限制条款：本产品为单用户 / 单 workspace 的本机部署，不触发；未来若做多 workspace 的 SaaS，须先取得书面商业授权。
+  - logo / 版权条款仅约束其前端：无头部署不跑 `dify-web` / `nginx`，明文不适用。
+  - 分发与升级口径见 `docs/插件/flow插件集成规划.md` §7。
+- **futureFlow**（`future73807/futureFlow`，MIT）：以 git 子模块挂载于根级 `flow/`（作者即本仓协作者）；其代码按集成方案分阶段并入，子模块内容不在此文件重复声明。
