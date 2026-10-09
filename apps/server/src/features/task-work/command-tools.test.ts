@@ -22,6 +22,14 @@ import { createTaskWorkManager } from "./service.js";
 import { createMemoryTaskWorkStore } from "./test-store.js";
 import type { TaskWorkContext } from "./types.js";
 
+/**
+ * 真沙箱里冷启动一个 node 进程（bwrap + apply-seccomp + seccomp 过滤器）在 CI 容器上
+ * 明显慢于本机：`expect.poll` 默认 1s 会在进程还没吐出第一行时就判红（实测
+ * `expected '' to contain 'ready'`）。这里给的是**进程启动预算**，不是掩盖同步错误——
+ * 沙箱启动失败由 failFast 立刻抛出原始原因，不会等满这个预算。
+ */
+const SANDBOX_STARTUP_MS = 30_000;
+
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -141,17 +149,20 @@ async function fixture() {
       ),
     );
     await expect
-      .poll(async () => {
-        await failFast(work.taskId);
-        return (
-          outputResult.parse(
-            await tool("TaskOutput").execute(
-              { task_id: work.taskId },
-              execution(main, "output"),
-            ),
-          ).canonicalOutput.output?.data ?? ""
-        );
-      })
+      .poll(
+        async () => {
+          await failFast(work.taskId);
+          return (
+            outputResult.parse(
+              await tool("TaskOutput").execute(
+                { task_id: work.taskId },
+                execution(main, "output"),
+              ),
+            ).canonicalOutput.output?.data ?? ""
+          );
+        },
+        { timeout: SANDBOX_STARTUP_MS },
+      )
       .toContain("ready");
     return work.taskId;
   };
@@ -221,19 +232,22 @@ it("worker可向自身派发的命令输入并停止，TaskOutput仍能读取整
       ),
   ).toMatchObject({ inputSent: true });
   await expect
-    .poll(async () => {
-      await state.failFast(own);
-      return (
-        outputResult.parse(
-          await state
-            .tool("TaskOutput")
-            .execute(
-              { task_id: own },
-              state.execution(state.main, "read-child"),
-            ),
-        ).canonicalOutput.output?.data ?? ""
-      );
-    })
+    .poll(
+      async () => {
+        await state.failFast(own);
+        return (
+          outputResult.parse(
+            await state
+              .tool("TaskOutput")
+              .execute(
+                { task_id: own },
+                state.execution(state.main, "read-child"),
+              ),
+          ).canonicalOutput.output?.data ?? ""
+        );
+      },
+      { timeout: SANDBOX_STARTUP_MS },
+    )
     .toContain("echo:owned");
   expect(
     await state
@@ -303,6 +317,7 @@ it.each([
       .poll(
         async () =>
           (await state.manager.find(state.context, work.taskId))?.status,
+        { timeout: SANDBOX_STARTUP_MS },
       )
       .toBe("failed");
     expect(await state.manager.find(state.context, work.taskId)).toMatchObject({
