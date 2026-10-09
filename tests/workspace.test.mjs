@@ -749,7 +749,7 @@ test("runtime-lock：无条目放行、哈希不符与改名必拦、按目标�
 // `concurrency` 拿不到 `matrix` 上下文，表达式不报错只取空值；复用工作流的顶层 `permissions`
 // 只能收窄会把调用方给的 write 压回 read；`pnpm dev` 在 CI 里因 --env-file 缺文件必死。
 // 本轮在同一次提交里撞中三种，所以护栏必须带**反例夹具**——只验真仓通过等于没验。
-test("Actions 护栏：真仓通过，四类「静默不干活」各自被拦", async () => {
+test("Actions 护栏：真仓通过，六类「静默不干活」各自被拦", async () => {
   const real = checkActions({ rootDir });
   assert.ok(
     real.files.length >= 4,
@@ -771,6 +771,9 @@ on: push
 jobs:
   a:
     if: github.repository == 'IsKenKenYa/KenFutWork'
+    defaults:
+      run:
+        shell: bash
     runs-on: ubuntu-latest
     steps:
       - name: 干活
@@ -894,11 +897,81 @@ jobs:
     );
     rmSync(path.join(dir, "a5.yml"));
 
+    put(
+      "a6",
+      `name: a6
+on: push
+jobs:
+  a:
+    runs-on: windows-latest
+    steps:
+      - name: 干活
+        run: |
+          set -euo pipefail
+          echo hi
+`,
+    );
+    result = checkActions({ rootDir: fixtureRoot });
+    assert.ok(
+      result.errors.some((line) => /没有任何显式 shell/.test(line)),
+      `A6 应拦住「整 job 没声明 shell」的 bash 写法：${JSON.stringify(result.errors)}`,
+    );
+    rmSync(path.join(dir, "a6.yml"));
+
     // 回到干净态必须再次全绿（证明上面每条都是「这一处」引起的，不是常驻误报）
     assert.deepEqual(checkActions({ rootDir: fixtureRoot }).errors, []);
   } finally {
     rmSync(fixtureRoot, { recursive: true, force: true });
   }
+});
+
+// --- 外部原生包不许顶层静态 import ---
+//
+// Windows 打包走 Node SEA：`require` 在 SEA 内只认内建模块。esbuild 把
+// `--external` 的包（node-pty / @vscode/ripgrep / @napi-rs/canvas / sherpa-onnx-node）
+// 的顶层静态 import 打成**启动期** require，于是整个服务端启动即抛
+// `ERR_UNKNOWN_BUILTIN_MODULE`（实测：canvas 让 win 安装包 1 秒退出；ripgrep 同形）。
+// 正确写法是懒解析 `createRequire(import.meta.url)`——`import type` 会被编译器擦除，放行。
+test("SEA 外部原生包只能懒解析，禁止顶层值导入", async () => {
+  const SEA_EXTERNAL = [
+    "node-pty",
+    "@vscode/ripgrep",
+    "@napi-rs/canvas",
+    "sherpa-onnx-node",
+  ];
+  const pattern = new RegExp(
+    `^import\\s+(?!type\\b)[^;]*?from\\s+"(${SEA_EXTERNAL.join("|")})"`,
+    "mu",
+  );
+  // 先自证规则抓得住：这两条必须被识别，否则门禁是摆设。
+  assert.match(
+    'import { rgPath } from "@vscode/ripgrep";\n',
+    pattern,
+    "值级顶层 import 必须被抓到",
+  );
+  assert.doesNotMatch('import type * as pty from "node-pty";\n', pattern);
+
+  const offenders = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name))
+        continue;
+      const source = readFileSync(full, "utf8");
+      if (pattern.test(source))
+        offenders.push(path.relative(rootDir, full).replaceAll("\\", "/"));
+    }
+  };
+  walk(path.join(rootDir, "apps/server/src"));
+  assert.deepEqual(
+    offenders,
+    [],
+    `以下文件顶层静态 import 了 SEA 外部原生包，会让 Windows 包启动即死：\n  ${offenders.join("\n  ")}`,
+  );
 });
 
 // 安装向导的品牌图必须**超采样**出图，不能按名义尺寸（页头 150×57 / 侧边 164×314）出：

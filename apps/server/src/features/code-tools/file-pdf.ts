@@ -1,7 +1,28 @@
-import { createCanvas } from "@napi-rs/canvas";
+import { createRequire } from "node:module";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { FileLimits, MediaFile, MediaReadInput } from "./file-types.js";
+
+/**
+ * `@napi-rs/canvas` 是 esbuild `--external` 的**外部原生包**：Windows 打包走 Node SEA，
+ * SEA 里的 `require` 只认内建模块，顶层静态 import 会被打结成启动期的一次 require，
+ * 于是整个服务端在启动时就抛 `ERR_UNKNOWN_BUILTIN_MODULE: @napi-rs/canvas`
+ * （win 安装包启动即死，CI 实测）。与 node-pty / sherpa 同一口径：等真要用 PDF 栅格化时，
+ * 再按入口文件位置解析——打包态解析到 `<exeDir>/node_modules/@napi-rs/canvas`。
+ */
+type CanvasModule = typeof import("@napi-rs/canvas");
+
+function loadCanvasModule(): CanvasModule {
+  try {
+    return createRequire(import.meta.url)("@napi-rs/canvas") as CanvasModule;
+  } catch (error) {
+    throw new Error(
+      `PDF 栅格化不可用：缺少 canvas 原生运行时（${
+        error instanceof Error ? error.message : String(error)
+      }）`,
+    );
+  }
+}
 
 export interface BinaryFile {
   path: string;
@@ -21,6 +42,7 @@ async function rasterPages(
   signal?: AbortSignal,
 ): Promise<MediaFile> {
   const maxPage = Math.min(end, start + limits.codePdfMaxPages - 1);
+  const { createCanvas } = loadCanvasModule();
   let bytes = 0;
   result.modelContent = [
     {
