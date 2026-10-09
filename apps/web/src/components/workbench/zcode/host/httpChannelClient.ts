@@ -23,6 +23,7 @@ import {
   clientHelloSchema,
   windowHostControllerTaskFrameSchema,
 } from "@zcode/shared/zcode-protocol-v4";
+import { notifyPluginInventoryChanged } from "./parentBridge.js";
 import { TaskWorkspaceRegistry } from "./taskWorkspaceRegistry.js";
 import { RemoteServiceAccess } from "./upstream/remoteServiceAccess.js";
 
@@ -113,6 +114,8 @@ export class CodeHttpChannelClient implements IChannelClient {
     return this.servicesSnapshot;
   }
   private readonly notifications = new Emitter<Notification>();
+  private readonly pluginInventoryChanges = new Emitter<void>();
+  readonly onPluginInventoryChanged = this.pluginInventoryChanges.event;
   private readonly servicesChanges = new Emitter<void>();
   readonly subscribeServices = (listener: () => void) => {
     const subscription = this.servicesChanges.event(listener);
@@ -709,10 +712,26 @@ export class CodeHttpChannelClient implements IChannelClient {
     )
       this.clientHello = clientHelloSchema.parse((values as unknown[])[0]);
     const connectionId = this.connectionId;
-    const response = await this.request<{ result: TResult }>(
-      "/api/code-ui/rpc",
-      { connectionId, service, method, args: values },
-    );
+    let response: { result: TResult };
+    try {
+      response = await this.request<{ result: TResult }>("/api/code-ui/rpc", {
+        connectionId,
+        service,
+        method,
+        args: values,
+      });
+    } finally {
+      // 未知写入结果同样读取库存对账；不重试写操作。
+      if (
+        service === ServiceChannels.PluginManagement &&
+        ["installPlugin", "setPluginEnabled", "uninstallPlugin"].includes(
+          method,
+        )
+      ) {
+        this.pluginInventoryChanges.fire();
+        notifyPluginInventoryChanged();
+      }
+    }
     if (service === ServiceChannels.Terminal && method === "create") {
       if (this.controller.signal.aborted || connectionId !== this.connectionId)
         throw new Error("终端启动期间通知连接已改变，请重新打开终端。");
@@ -894,6 +913,7 @@ export class CodeHttpChannelClient implements IChannelClient {
     this.ready?.reject(new DOMException("Code 宿主已关闭", "AbortError"));
     this.ready = null;
     this.notifications.dispose();
+    this.pluginInventoryChanges.dispose();
     this.servicesChanges.dispose();
     this.workspaceSubscriptions.clear();
     this.terminalListeners.clear();

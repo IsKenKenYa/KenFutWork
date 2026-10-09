@@ -1654,11 +1654,12 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebar.tsx",
       "sha256": "312065bd80ff3a74b498dde96270a9f430f86808933625b02e4a1a6cbd56bf49",
-      "copiedSha256": "ba936a62ca192934c79092e0ce4d36ed2fb011bd4e2b5de5b2dede3fd2201c50",
+      "copiedSha256": "df83af732bb9328f913830f3f541458c76010a113f00eb4921730d24c0ee024f",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原自动化按钮及分组快捷入口仅在宿主服务可用时显示",
-        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
+        "宿主接口：原市场下扩展插件入口槽，沿用原Button及PluginIcon，入口数据和面板由现有库存及宿主提供"
       ]
     },
     {
@@ -14327,10 +14328,11 @@
       "source": "references/zcode/packages/shared/src/index.ts",
       "target": "packages/zcode-shared/src/index.ts",
       "sha256": "6fe33b1fdc42af4449155a13c540d137731d723bde3fa639e47bbca0f403a725",
-      "copiedSha256": "8119cbe7d685e926e6ae700765e22346d5e27ac211797b40e8e80862aa1b3d31",
+      "copiedSha256": "67354ee7bf0aa3bbc61f7d64db894977f283b4d00a568ec849a3bad158f40d4d",
       "adaptations": [
         "本机Project与固定Task目录的qualified身份按local路由、持久化和恢复；保留原远程身份及权限校验。",
-        "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。"
+        "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。",
+        "宿主接口：导出插件入口身份类型，供原侧栏与Platform边界消费"
       ]
     },
     {
@@ -14533,7 +14535,7 @@
       "source": "references/zcode/packages/shared/src/platform.ts",
       "target": "packages/zcode-shared/src/platform.ts",
       "sha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "copiedSha256": "73c628b6c753a3f2b22fb5324f4529fc278279cb1334a6ee1ebac8d5d52b44fb",
+      "copiedSha256": "59cd809965fce67c7a40b6b7e6ae8c308bae84899a87ac377bc086834fc9a4da",
       "adaptations": [
         "宿主能力接口：增加可选云账户支持标记；未声明的原宿主行为不变",
         "宿主接口：可选自动化/嵌入浏览器/CUA/远程能力声明；未声明保持原平台语义",
@@ -14543,7 +14545,8 @@
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
         "阶段同步3f5c3873: 可选sessionMetadataSource与原Root轻量真实标题；Task-index只读metainfo，未声明保持原session投影",
         "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
-        "宿主接口：可选认证包图标解析，沿现有平台Provider；不扩大通用图片URL许可"
+        "宿主接口：可选认证包图标解析，沿现有平台Provider；不扩大通用图片URL许可",
+        "宿主接口：声明插件侧栏读取、变化订阅及仅传插件/入口身份的打开接口，不携带面板地址或凭据"
       ]
     },
     {

@@ -218,6 +218,7 @@ export function CanvasSidebar({
             <PluginPanelButtons
               accessToken={null}
               slot="sidebar"
+              mode={mode}
               renderButton={(panel, open) => (
                 <button
                   key={panel.id}

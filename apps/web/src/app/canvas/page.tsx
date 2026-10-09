@@ -290,6 +290,7 @@ function CanvasPageContent() {
         />
         {/* 插件面板（能力 `ui`）：画布槽位 */}
         <PluginPanelButtons
+          mode="design"
           accessToken={accessToken}
           slot="canvas"
           renderButton={(panel, open) => (

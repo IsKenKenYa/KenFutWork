@@ -277,6 +277,7 @@ export const pluginMarketEntrySchema = z.object({
   installed: z.boolean().default(false),
   /** 安装与启用是独立事实；停用不能伪装成卸载。 */
   enabled: z.boolean(),
+  scope: z.enum(["design", "code", "shared"]).nullable(),
   /** 插件贡献的 UI 面板入口（仅已安装且启用时非空）。 */
   ui: z
     .array(
@@ -291,6 +292,43 @@ export const pluginMarketEntrySchema = z.object({
     .default([]),
 });
 export type PluginMarketEntry = z.infer<typeof pluginMarketEntrySchema>;
+
+export interface PluginPanelEntry {
+  id: string;
+  entryId: string;
+  pluginId: string;
+  title: string;
+  slot: string;
+  url: string;
+  icon: string | null;
+}
+
+/** 同一安装库存供各工作区消费；空作用域沿既有通用插件语义。 */
+export function projectPluginPanels(
+  plugins: PluginMarketEntry[],
+  slot: string,
+  mode?: "code" | "design" | "flow",
+): PluginPanelEntry[] {
+  return plugins
+    .filter((plugin) => plugin.installed && plugin.enabled)
+    .filter(
+      (plugin) =>
+        !mode ||
+        !plugin.scope ||
+        plugin.scope === "shared" ||
+        plugin.scope === mode,
+    )
+    .flatMap((plugin) =>
+      plugin.ui
+        .filter((entry) => entry.slot === slot)
+        .map((entry) => ({
+          ...entry,
+          id: `${plugin.id}:${entry.id}`,
+          entryId: entry.id,
+          pluginId: plugin.id,
+        })),
+    );
+}
 
 export const installedPluginSchema = z.object({
   id: z.string().min(1),

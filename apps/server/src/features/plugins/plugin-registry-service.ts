@@ -742,6 +742,7 @@ export function createPluginRegistryService(
         system: SYSTEM_PLUGIN_NAMES.has(entry.name),
         installed: true,
         enabled: true,
+        scope: null,
         // 系统插件不带 UI 入口（它们本来就有专门的界面）
         ui: [],
       }));
@@ -760,8 +761,23 @@ export function createPluginRegistryService(
           system: false,
           installed: true,
           enabled: record.enabled,
+          scope: record.manifest.scope,
           // 停用即收回入口（侧栏不该出现点不开的插件）
-          ui: record.enabled ? (record.manifest.ui ?? []) : [],
+          ui: record.enabled
+            ? [
+                ...new Map([
+                  ...record.manifest.ui.map(
+                    (entry) => [entry.id, entry] as const,
+                  ),
+                  ...contributions.ui
+                    .filter((entry) => entry.pluginId === record.id)
+                    .map(
+                      ({ pluginId: _pluginId, ...entry }) =>
+                        [entry.id, entry] as const,
+                    ),
+                ]).values(),
+              ]
+            : [],
         });
       }
 
@@ -782,6 +798,7 @@ export function createPluginRegistryService(
           system: false,
           installed: false,
           enabled: false,
+          scope: bundle.manifest.scope,
           ui: [],
         });
       }

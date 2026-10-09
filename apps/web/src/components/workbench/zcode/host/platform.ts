@@ -1,9 +1,14 @@
+import {
+  type PluginMarketEntry,
+  projectPluginPanels,
+} from "@kenfutwork/shared";
 import type { ApplicationIconInfo, IPlatformService } from "@zcode/shared";
 import {
   createCuaPermissionOnboarding,
   localCuaDesktopInvoke,
 } from "./cuaPermissionPlatform.js";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
+import { openPluginPanel } from "./parentBridge.js";
 import { createWebPlatform } from "./upstream/browserPlatform.js";
 
 /** e58fe8ce宿主能力缝；目录仍经真实Project UUID解析，不建立Canvas或隐式Task。 */
@@ -40,6 +45,23 @@ export function createCodePlatform(
         .getChannel("platform")
         .call<ApplicationIconInfo | null>("getApplicationIcon", [request]),
     resolvePluginIcon: (resource) => client.resolvePluginIcon(resource),
+    pluginSidebar: {
+      read: async () =>
+        projectPluginPanels(
+          (
+            await client.request<{ plugins: PluginMarketEntry[] }>(
+              "/api/plugins",
+            )
+          ).plugins,
+          "sidebar",
+          "code",
+        ),
+      subscribe: (handler) => {
+        const subscription = client.onPluginInventoryChanged(handler);
+        return () => subscription.dispose();
+      },
+      open: (entry) => openPluginPanel(entry.pluginId, entry.entryId),
+    },
     async activateOrSetWorkspace(path) {
       const workspace = await client.openWorkspace(
         path,

@@ -526,7 +526,21 @@ export type CuaOsSupport =
  * 比如 native dialog、窗口生命周期控制等。
  * 业务服务（文件、终端、凭据等）走 IServiceAccessor 的 RPC 通道。
  */
+export interface HostPluginSidebarEntry {
+  id: string;
+  pluginId: string;
+  entryId: string;
+  title: string;
+  icon: string | null;
+}
+
 export interface IPlatformService {
+  /** 宿主的插件入口；库存仍由既有插件服务持有，面板由宿主打开。 */
+  pluginSidebar?: {
+    read(): Promise<HostPluginSidebarEntry[]>;
+    subscribe(handler: () => void): () => void;
+    open(entry: HostPluginSidebarEntry): void;
+  };
   /** 宿主声明的包资源经现有认证取回；结果是当前文档拥有的图片引用。 */
   resolvePluginIcon?(resource: string): Promise<string | undefined>;
   /** 宿主是否提供 ZCode 云账户/套餐服务；未声明时保持原平台行为。 */

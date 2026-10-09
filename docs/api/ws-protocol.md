@@ -90,3 +90,5 @@ Code 的原 `plugin-management` 通道现已将 `listPlugins` 与 `getPluginsOve
 原插件市场宿主接线（2026-10-09）：发行目录使用固定 kenfutwork-bundled 身份并归公开，本机来源归 kenfutwork-local；官方安装包同时核 trusted发行目录与record.source=builtin，不按同名猜归属。随发行包使用bundled__命名空间，与local__本机包区分，不维护旧调试ID别名。原overview／installed listing提供已声明包图标引用，仍由原组件及认证平台读取；停用只保留清单声明的图片元信息可读，运行面板和贡献继续收回。实例层原installPlugin/setPluginEnabled/uninstallPlugin无需Project或Task；若带项目引用仍须真实验证，workspace安装态尚未接入，不伪造工作目录。页面端无项目操作在共用管理文档切片完成。
 
 公共GET /api/plugins独立返回installed与enabled，未安装／停用不返回运行面板入口；POST /api/plugins/:id/toggle保留installed=true并返回实际enabled。它们消费同一registry，不增加配置或安装服务。完整侧栏、MCP／技能、子定义双模式消费与共用管理页进度见《现有能力接线与入口统一》，当前目录／图标切片不表示完整目标完成。
+
+插件入口接线（2026-10-09）：GET /api/plugins同时投影真实scope（code/design/shared/null），ui合并清单与运行时贡献，按pluginId＋entryId去重，同键运行时优先。Code原侧栏及Design各运行槽沿作用域过滤；写入返回或失败后读取对账，旧读取晚到不复活收回入口。Code父窗口桥只接收当前同源文档的code-open-plugin（pluginId/entryId）与code-plugins-changed；面板地址由父宿主重新核已安装、启用且适用的库存，沿现有PluginPanelOverlay与私有路由打开，不接收消息中的URL或凭据。实例settings槽不按工作模式缩窄。

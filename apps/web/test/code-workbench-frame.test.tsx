@@ -1,4 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { CodeWorkbenchFrame } from "../src/components/workbench/code-workbench-frame";
 import { LOCAL_ACCESS_LOST_EVENT } from "../src/lib/local-access";
@@ -16,6 +23,156 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   localStorage.clear();
+});
+
+it("插件入口只接受当前Code窗口，并按已启用且适用的库存打开现有面板", async () => {
+  vi.stubGlobal("fetch", async () =>
+    Response.json({
+      plugins: [
+        {
+          id: "bundled__mihome",
+          installed: true,
+          enabled: true,
+          scope: "shared",
+          ui: [
+            {
+              id: "devices",
+              slot: "sidebar",
+              title: "米家",
+              url: "panel",
+              icon: null,
+            },
+          ],
+        },
+      ],
+    }),
+  );
+  render(<CodeWorkbenchFrame onModeChange={vi.fn()} />);
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  const data = {
+    type: "kenfutwork:code-open-plugin",
+    pluginId: "bundled__mihome",
+    entryId: "devices",
+    url: "https://untrusted.example",
+  };
+  for (const source of [window, null])
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        origin: window.location.origin,
+        source,
+        data,
+      }),
+    );
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: "https://untrusted.example",
+      source: frame.contentWindow,
+      data,
+    }),
+  );
+  expect(screen.queryByTitle("米家")).toBeNull();
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: frame.contentWindow,
+      data,
+    }),
+  );
+  const panel = await screen.findByTitle("米家");
+  expect(panel.getAttribute("src")).toBe(
+    `${window.location.origin}/api/plugins/bundled__mihome/panel`,
+  );
+  expect(screen.getByTitle("Code 工作台")).toBe(frame);
+});
+
+it("窗口聚焦刷新交错时，插件打开仍读取最新库存，不静默取消", async () => {
+  const payload = {
+    plugins: [
+      {
+        id: "bundled__mihome",
+        installed: true,
+        enabled: true,
+        scope: "shared",
+        ui: [
+          {
+            id: "devices",
+            slot: "sidebar",
+            title: "米家",
+            url: "panel",
+            icon: null,
+          },
+        ],
+      },
+    ],
+  };
+  let reads = 0;
+  let finishOpen: ((response: Response) => void) | undefined;
+  vi.stubGlobal("fetch", async () => {
+    reads++;
+    if (reads === 2)
+      return new Promise<Response>((resolve) => {
+        finishOpen = resolve;
+      });
+    return Response.json(payload);
+  });
+  render(<CodeWorkbenchFrame onModeChange={vi.fn()} />);
+  await waitFor(() => expect(reads).toBe(1));
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: frame.contentWindow,
+      data: {
+        type: "kenfutwork:code-open-plugin",
+        pluginId: "bundled__mihome",
+        entryId: "devices",
+      },
+    }),
+  );
+  fireEvent(window, new Event("focus"));
+  await waitFor(() => expect(reads).toBe(3));
+  if (!finishOpen) throw new Error("未建立插件打开目录请求");
+  finishOpen(Response.json(payload));
+  expect(await screen.findByTitle("米家")).not.toBeNull();
+});
+
+it("Code宿主退出后，晚到的打开读取不再补发请求或打开面板", async () => {
+  let reads = 0;
+  let finishOpen: ((response: Response) => void) | undefined;
+  vi.stubGlobal("fetch", async () => {
+    reads++;
+    if (reads === 2)
+      return new Promise<Response>((resolve) => {
+        finishOpen = resolve;
+      });
+    return Response.json({ plugins: [] });
+  });
+  const view = render(<CodeWorkbenchFrame onModeChange={vi.fn()} />);
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: frame.contentWindow,
+      data: {
+        type: "kenfutwork:code-open-plugin",
+        pluginId: "bundled__mihome",
+        entryId: "devices",
+      },
+    }),
+  );
+  await waitFor(() => expect(reads).toBe(2));
+  view.unmount();
+  if (!finishOpen) throw new Error("未建立插件打开目录请求");
+  await act(async () => {
+    finishOpen?.(Response.json({ plugins: [] }));
+  });
+  expect(reads).toBe(2);
+  expect(screen.queryByTitle("米家")).toBeNull();
 });
 
 it("仅向当前 Code 文档发送宿主配置；原 Design 菜单请求交回模式导航，没有伪账户或接入令牌", async () => {

@@ -227,6 +227,7 @@ export function useCodeUiHttpFixture(
       >
     ) => current().client.openCodeStream(...args),
     databaseUrl: () => current().database.connectionString,
+    pluginsDirectory: () => current().pluginsDir,
   };
 }
 

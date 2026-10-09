@@ -209,6 +209,7 @@ export type {
   EmbeddedBrowserDataClearResult,
   EmbeddedBrowserOpenUrlRequest,
   IPlatformService,
+  HostPluginSidebarEntry,
   OpenInEditorRemoteTarget,
   OpenInEditorOptions,
   PostUpdateReleaseNotesPayload,

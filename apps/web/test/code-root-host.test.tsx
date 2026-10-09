@@ -162,6 +162,150 @@ function installViewerContext(
   });
 }
 
+it("原侧栏从真实安装目录展示Code入口，生命周期操作后刷新且不串入Design入口", async () => {
+  installBrowserLayout();
+  vi.stubGlobal(
+    "URL",
+    class extends URL {
+      static createObjectURL = vi.fn(
+        () => "blob:https://host.example/sidebar-icon",
+      );
+      static revokeObjectURL = vi.fn();
+    },
+  );
+  const calls: Array<{ service: string; method: string; args: unknown[] }> = [];
+  const fixture = createCodeRootHostFetch(calls, { rejectOpen: false });
+  let enabled = true;
+  let installed = true;
+  vi.stubGlobal("fetch", async (url: string, options?: RequestInit) => {
+    if (url.endsWith("/api/plugins/bundled__mihome/assets/icon.svg"))
+      return new Response("<svg/>", {
+        headers: { "content-type": "image/svg+xml" },
+      });
+    if (url.endsWith("/api/plugins"))
+      return Response.json({
+        plugins: [
+          {
+            id: "bundled__mihome",
+            installed,
+            enabled,
+            scope: "shared",
+            ui: [
+              {
+                id: "devices",
+                title: "米家",
+                slot: "sidebar",
+                url: "panel",
+                icon: "assets/icon.svg",
+              },
+            ],
+          },
+          {
+            id: "local__design",
+            installed: true,
+            enabled: true,
+            scope: "design",
+            ui: [
+              {
+                id: "canvas",
+                title: "画布专用",
+                slot: "sidebar",
+                url: "panel",
+              },
+            ],
+          },
+        ],
+      });
+    if (url.endsWith("/rpc")) {
+      const call = JSON.parse(String(options?.body));
+      if (
+        call.service === "plugin-management" &&
+        call.method === "setPluginEnabled"
+      ) {
+        enabled = call.args[0].enabled;
+        return Response.json({ result: { enabled } });
+      }
+      if (
+        call.service === "plugin-management" &&
+        call.method === "uninstallPlugin"
+      ) {
+        installed = false;
+        return Response.json({ result: { removed: true, diagnostics: [] } });
+      }
+    }
+    return fixture(url, options);
+  });
+  const client = new CodeHttpChannelClient({ apiBase: "https://host.example" });
+  clients.push(client);
+  await client.connect();
+  client.registerWorkspaces([rootWorkspace]);
+  releases.push(bindCodeWorkspaceServices(client));
+  render(
+    <ZCodeIntlProvider initialLocale="zh-CN">
+      <Root
+        services={client.services}
+        platform={createCodePlatform(client)}
+        initialWorkspaceAbsPath="/code"
+        initialWorkspaceIdentity={JSON.stringify([rootProjectId, "/code"])}
+        directoryServices={client.directoryServices()}
+        onWorkspaceContextChange={(target) =>
+          installViewerContext(client, target)
+        }
+        restoreSession={false}
+        allowRemoteWorkspace={false}
+      />
+    </ZCodeIntlProvider>,
+  );
+  expect(await screen.findByRole("button", { name: "米家" })).not.toBeNull();
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole("button", { name: "米家" })
+        .querySelector('img[src="blob:https://host.example/sidebar-icon"]'),
+    ).not.toBeNull(),
+  );
+  expect(screen.queryByRole("button", { name: "画布专用" })).toBeNull();
+  const send = vi.spyOn(window, "postMessage");
+  fireEvent.click(screen.getByRole("button", { name: "米家" }));
+  expect(send).toHaveBeenCalledWith(
+    {
+      type: "kenfutwork:code-open-plugin",
+      pluginId: "bundled__mihome",
+      entryId: "devices",
+    },
+    window.location.origin,
+  );
+  await act(async () => {
+    await client.services.pluginManagementService.setPluginEnabled({
+      pluginId: "bundled__mihome",
+      enabled: false,
+      scope: "user",
+      workspacePath: "/code",
+    });
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "米家" })).toBeNull(),
+  );
+  await act(async () => {
+    await client.services.pluginManagementService.setPluginEnabled({
+      pluginId: "bundled__mihome",
+      enabled: true,
+      scope: "user",
+      workspacePath: "/code",
+    });
+  });
+  await screen.findByRole("button", { name: "米家" });
+  await act(async () => {
+    await client.services.pluginManagementService.uninstallPlugin({
+      pluginId: "bundled__mihome",
+      workspacePath: "/code",
+    });
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "米家" })).toBeNull(),
+  );
+});
+
 it("原Root新建任务动作读取Project新默认B，已选旧Task及其文件上下文仍固定A", async () => {
   installBrowserLayout();
   const calls: Array<{ service: string; method: string; args: unknown[] }> = [];

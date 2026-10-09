@@ -262,7 +262,7 @@ export function buildBundleManifest(files: BundleFiles): {
     patchPath: declaration.patchPath,
     entry,
     requiredCapabilities: [...requirementNames],
-    scope: null,
+    scope: kenfutworkBlock.scope ?? null,
     category:
       typeof kenfutworkBlock.category === "string" && kenfutworkBlock.category
         ? kenfutworkBlock.category

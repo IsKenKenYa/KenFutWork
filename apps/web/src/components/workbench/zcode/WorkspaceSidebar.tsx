@@ -137,6 +137,7 @@ import {
   workspaceVerticalListSortingStrategy,
 } from "@zui/lib/workspaceSidebarDrag.js";
 import { createPortal } from "react-dom";
+import { PluginSidebarNavigation } from "./host/PluginSidebarNavigation.js";
 
 function WorkspaceNewTaskTooltip({
   children,
@@ -1351,6 +1352,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               <Blocks className="size-4" />
               {intl.formatMessage({ id: "workspace.openPluginsSettings" })}
             </Button>
+            <PluginSidebarNavigation />
           </div>
 
           <div className="relative flex min-h-0 flex-1 flex-col">

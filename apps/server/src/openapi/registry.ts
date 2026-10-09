@@ -1498,7 +1498,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: pluginMarketListResponseSchema,
     summary: "列出本机插件目录与安装状态",
     description:
-      "返回真实系统能力、随发行包及本机安装清单；installed与enabled独立，停用仍为已安装，未安装或未启用不提供运行面板入口。",
+      "返回真实系统能力、随发行包及本机安装清单；installed与enabled独立，scope表示Code/Design/共享作用域，ui合并清单及运行时贡献且同键运行时优先。停用仍为已安装，未安装或未启用不提供运行面板入口。",
   },
   {
     method: "post",
