@@ -1,8 +1,8 @@
 import type { PluginDefinition } from "../../kernel/types.js";
 
 /**
- * 动态 UI（《未做需求》R5-2「对话流」的落地）：允许 AI 在对话流里渲染**可视化组件**
- * ——流程图 / 架构图（mermaid）与数据图表（viz）。
+ * 动态 UI（原《未做需求》R5-2「对话流」的落地，台账已退役、收口见《日志》一百四十一）：
+ * 允许 AI 在对话流里渲染**可视化组件**——流程图 / 架构图（mermaid）与数据图表（viz）。
  *
  * 本插件只贡献**提示段**：告诉模型这两种块的存在与形状。渲染在两端各自接（Design 的
  * react-markdown 与 Code 的 @zcode/ui 都认这两个语言标记，图表由共享组件

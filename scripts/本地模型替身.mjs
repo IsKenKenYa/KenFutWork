@@ -16,6 +16,8 @@
  *   - 上下文里已有工具结果        → 用工具结果收尾（证明工具真的执行过）
  *   - 消息里提到 MCP / mcp__      → 发一次工具调用 mcp__py-helper__add(2024, 4888)
  *   - 消息里提到 技能 / SKILL      → 文本回执（技能注入由服务端完成，这里只回话）
+ *   - 消息里出现「图表」/「画个图」→ 回一段 ```viz 数据图表块（验收动态 UI 渲染端）
+ *   - 消息里出现「流程图」        → 回一段 ```mermaid 流程图块（同上）
  *   - 其它                        → 回显 PONG:<用户消息前 30 字符>
  */
 import { createServer } from "node:http";
@@ -228,6 +230,38 @@ function pickScenario(messages) {
         file_path: "kfw-mock-check.txt",
         content: "mock 模型替身写入：计划模式应被拦，自主模式应落盘。",
       },
+    };
+  }
+  // 动态 UI 验收：让替身回一段可视化块，用来验证两端的渲染端接线
+  if (/图表|画个图|画一张图/.test(user)) {
+    return {
+      kind: "text",
+      text: [
+        "这是本轮的阶段耗时：",
+        "```viz",
+        JSON.stringify({
+          type: "bar",
+          title: "阶段耗时",
+          unit: "ms",
+          data: [
+            { label: "转写", value: 320 },
+            { label: "改写", value: 900 },
+            { label: "执行", value: 1450 },
+          ],
+        }),
+        "```",
+      ].join("\n"),
+    };
+  }
+  if (/流程图/.test(user)) {
+    return {
+      kind: "text",
+      text: [
+        "流程如下：",
+        "```mermaid",
+        "graph TD; A[口述] --> B[转写]; B --> C[改写]; C --> D[执行];",
+        "```",
+      ].join("\n"),
     };
   }
   return {
