@@ -5,8 +5,10 @@ import {
   copyFile,
   cp,
   mkdir,
+  readdir,
   readFile,
   realpath,
+  rm,
   writeFile,
 } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -143,6 +145,17 @@ await materializeDependency(
 );
 const pty = await packageRoot("node-pty", require);
 await materializeDependency("node-pty", require, join(output, "node_modules"));
+// 只保留与本机构筑对应的 node-pty 预编译：arm64 包里躺一份 darwin-x64 的
+// pty.node + spawn-helper 没人会加载，还会让逐二进制造假检查多报两个未封印目标
+//（CI 实测就是这个）。
+const prebuilds = join(output, "node_modules", "node-pty", "prebuilds");
+const keepPrebuild = `${process.platform}-${process.arch}`;
+for (const entry of await readdir(prebuilds, { withFileTypes: true }).catch(
+  () => [],
+)) {
+  if (entry.isDirectory() && entry.name !== keepPrebuild)
+    await rm(join(prebuilds, entry.name), { recursive: true, force: true });
+}
 await writeFile(
   join(output, "package.json"),
   JSON.stringify(

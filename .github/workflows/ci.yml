@@ -93,7 +93,7 @@ jobs:
         run: pnpm exec turbo run typecheck --filter=!@kenfutwork/desktop --concurrency=1
 
   packages-test:
-    name: 各包测试（vitest 串行）
+    name: 各包测试（shared / web / ui / config）
     if: github.repository == 'IsKenKenYa/KenFutWork'
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -109,32 +109,69 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
-      # Linux 侧的「真起子进程」用例走 @anthropic-ai/sandbox-runtime（SRT），它在
-      # `task-helper.ts:189-197` 先做依赖预检，缺工具就直接抛
-      # `enforcement_unavailable：真实沙箱不可用：…`——首轮 CI 有 36 条用例死在这句上。
-      # 实测托管 ubuntu runner 缺三样：ripgrep、socat、bubblewrap(bwrap)。
-      # 补齐依赖而不是跳过用例：这条代码路径只有 Linux runner 能真验，跳过等于永久零覆盖。
-      - name: 安装 SRT 沙箱依赖（ripgrep + socat + bubblewrap）
+      # 桌面壳（cargo）在 mac lane，`apps/server` 在 server-sandbox job（真沙箱需要
+      # bwrap，托管 runner 主环境里非特权命名空间被禁）。AGENTS.md 的测试资源护栏：
+      # 确需串行用 turbo --concurrency=1（不是把参数塞给 pnpm run，`--` 之后的会被各包
+      # 任务当成自己的选项而报错）。
+      - name: turbo 跑各包测试
+        run: pnpm exec turbo run test --filter=!@kenfutwork/desktop --filter=!@kenfutwork/server --concurrency=1
+
+  # Linux 进程沙箱只有 Linux 能真验：`@anthropic-ai/sandbox-runtime` 在
+  # `task-helper.ts:189-197` 预检依赖（ripgrep / socat / bubblewrap），缺则抛
+  # `enforcement_unavailable`（实测 36 条用例死在这）。实测托管 runner 的主环境里
+  # 三个工具都能装齐，但 bwrap 仍报 `setting up uid map: Permission denied`
+  # ——Ubuntu 24.04 限制非特权用户命名空间。故把这批用例放进 `--privileged` 容器 job：
+  # 探针先给结论，能用就跑真沙箱，不能用就红在这里说清，而不是把 36 条用例静默跳过。
+  server-sandbox:
+    name: server 测试（Linux 真沙箱 · privileged 容器）
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    runs-on: ubuntu-latest
+    container:
+      image: node:24-bookworm
+      options: --privileged
+    timeout-minutes: 45
+    env:
+      # 容器内没有 Actions 的 setup-node，pnpm 由 corepack 按 packageManager 字段取版本
+      CI: "true"
+      TURBO_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: 安装沙箱依赖（ripgrep + socat + bubblewrap）
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ripgrep socat bubblewrap
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends ripgrep socat bubblewrap
           for tool in rg socat bwrap; do
-            command -v "$tool" >/dev/null || { echo "· 仍缺 $tool：沙箱用例会红，先修环境"; exit 1; }
+            command -v "$tool" >/dev/null || { echo "· 容器里缺 $tool"; exit 1; }
             echo "· $tool → $(command -v $tool)"
           done
-          # 装上了不等于能用：bwrap 还依赖非特权用户命名空间。当场真跑一次，不行就说清原因。
-          if bwrap --unshare-user --unshare-pid --ro-bind / / --dev /dev /bin/true 2>/tmp/srt-bwrap.err; then
-            echo "· bwrap 可用（非特权命名空间正常）"
+
+      - name: bwrap 能力探针（先给结论再跑用例）
+        run: |
+          set -euo pipefail
+          if bwrap --unshare-user --unshare-pid --ro-bind / / --dev /dev --proc /proc \
+            /bin/true 2>/tmp/srt-bwrap.err; then
+            echo "· privileged 容器内 bwrap 可用：这批用例走真实进程沙箱"
           else
-            echo "· bwrap 跑不起来（非特权用户命名空间被禁）：$(cat /tmp/srt-bwrap.err || true)"
+            echo "· privileged 容器内 bwrap 仍不可用：$(cat /tmp/srt-bwrap.err || true)"
+            echo "  → 托管 runner 无法满足非特权用户命名空间；不要改成跳过，改走自建 Linux runner"
             exit 1
           fi
 
-      # AGENTS.md 的测试资源护栏：确需串行用 turbo --concurrency=1（不是把参数塞给 pnpm run，
-      # `--` 之后的会被各包任务当成自己的选项而报错）。
-      - name: turbo 跑各包测试
-        run: pnpm exec turbo run test --filter=!@kenfutwork/desktop --concurrency=1
+      - name: 启用 pnpm
+        run: corepack enable && pnpm --version
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建 server 的上游依赖
+        run: pnpm exec turbo run build --filter=@kenfutwork/server^... --concurrency=1
+
+      - name: server 测试（串行，避免内存踩踏）
+        run: pnpm exec turbo run test --filter=@kenfutwork/server --concurrency=1
 
   db-replay:
     name: 迁移空库重放 + 二次 no-op

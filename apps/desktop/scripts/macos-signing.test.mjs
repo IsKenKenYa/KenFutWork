@@ -14,19 +14,36 @@ import { ensureMacosAppSeal } from "./macos-signing.mjs";
 
 const options = { skip: process.platform === "win32" };
 
-/** 外部codesign CLI协议夹具；自家收集器/策略模块直接执行，不mock。 */
-async function fixture(input) {
+/**
+ * 外部codesign CLI协议夹具；自家收集器/策略模块直接执行，不mock。
+ * `nested` 给出要伪装成 Mach-O 的相对路径（写死 64 位 Mach-O 魔数），用来断言
+ * 「先逐个封嵌套二进制、再封外层 bundle」这个顺序。
+ */
+async function fixture(input, options = {}) {
   const root = await mkdtemp(join(tmpdir(), "kfw-signing-"));
   const app = join(root, "KenFutWork.app");
   const command = join(root, "codesign");
   await mkdir(app);
+  for (const relative of options.nested ?? []) {
+    const file = join(app, relative);
+    await mkdir(join(file, ".."), { recursive: true });
+    await writeFile(file, Buffer.from([0xcf, 0xfa, 0xed, 0xfe, 0, 0, 0, 0]));
+  }
   const statePath = join(app, "signature-fixture.json");
   await writeFile(statePath, JSON.stringify({ ...input, calls: [] }));
   await writeFile(
     command,
     `#!${process.execPath}
-const fs=require('node:fs'),path=require('node:path'),args=process.argv.slice(2),file=path.join(args.at(-1),'signature-fixture.json'),state=JSON.parse(fs.readFileSync(file,'utf8'));
+const fs=require('node:fs'),path=require('node:path'),args=process.argv.slice(2);
+const APP=${JSON.stringify(app)};
+const target=args.at(-1);
+const file=path.join(APP,'signature-fixture.json');
+const state=JSON.parse(fs.readFileSync(file,'utf8'));
 const save=()=>fs.writeFileSync(file,JSON.stringify(state));
+if(target!==APP){
+ state.calls.push('sign:'+path.relative(APP,target));
+ save();process.exit(state.nestedFails?1:0);
+}
 if(args.includes('--verify')){state.calls.push('verify');save();process.exit(state.sealed?0:1);}
 if(args.includes('--display')){
  state.calls.push('display');save();
@@ -108,5 +125,54 @@ test("签名执行失败或补封印后仍无效时明确失败", options, async
     } finally {
       await current.close();
     }
+  }
+});
+
+test(
+  "补封印先逐个封嵌套 Mach-O（自内向外）再封外层 bundle",
+  options,
+  async () => {
+    const current = await fixture(
+      { kind: "unsigned", sealed: false },
+      {
+        nested: [
+          "Contents/Resources/app/node_modules/libnut.node",
+          "Contents/Resources/app/process-helper/node_modules/node-pty/prebuilds/darwin-arm64/pty.node",
+        ],
+      },
+    );
+    try {
+      const result = ensureMacosAppSeal(current.app, current.command);
+      assert.equal(result.repaired, true);
+      assert.equal(result.nestedSigned, 2);
+      assert.deepEqual((await current.read()).calls, [
+        "verify",
+        "display",
+        // 深的先签：先 prebuilds 里的 pty.node，再浅一层的 libnut.node
+        "sign:Contents/Resources/app/process-helper/node_modules/node-pty/prebuilds/darwin-arm64/pty.node",
+        "sign:Contents/Resources/app/node_modules/libnut.node",
+        "sign",
+        "verify",
+      ]);
+    } finally {
+      await current.close();
+    }
+  },
+);
+
+test("嵌套二进制签不动时报错到具体文件，不假装封印完成", options, async () => {
+  const current = await fixture(
+    { kind: "unsigned", sealed: false, nestedFails: true },
+    { nested: ["Contents/Resources/app/permissions.node"] },
+  );
+  try {
+    assert.throws(
+      () => ensureMacosAppSeal(current.app, current.command),
+      /permissions\.node/,
+      "报错要指到签不动的那个二进制，否则排查只能靠猜",
+    );
+    assert.equal((await current.read()).sealed, false, "不许把失败标成已封印");
+  } finally {
+    await current.close();
   }
 });
