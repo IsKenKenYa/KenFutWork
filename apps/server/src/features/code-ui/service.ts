@@ -53,10 +53,6 @@ import type { ProjectService } from "../projects/project-service.js";
 import { resolveProjectWorkDirectory } from "../projects/work-dir.js";
 import type { SettingsService } from "../settings/settings-service.js";
 import type {
-  InstanceSkillSettingsRepository,
-  SkillCatalogRepository,
-} from "../skills/repository.js";
-import type {
   TaskWorkContext,
   TaskWorkManager,
   TaskWorkRecord,
@@ -96,11 +92,7 @@ import {
   type CodeUiHostGitRpc,
   createCodeUiHostGitRpc,
 } from "./host-git-rpc.js";
-import {
-  type CodeUiHostServicesRpc,
-  type CodeUiHostTargetRequest,
-  createCodeUiHostServicesRpc,
-} from "./host-service-rpc.js";
+import type { CodeUiHostTargetRequest } from "./host-service-rpc.js";
 import type { CodeAdmittedInput } from "./input-intents.js";
 import { compileCodeUiModelExecution } from "./model-execution-options.js";
 import { createCodeUiPluginsHost } from "./plugins.js";
@@ -142,8 +134,6 @@ export interface CodeUiServiceDeps {
   terminals?: CodeTerminalService;
   blob?: BlobStore;
   attachmentRepository?: CodeAttachmentRepository;
-  skillRepository?: SkillCatalogRepository;
-  skillSettingsRepository?: InstanceSkillSettingsRepository;
   processSandbox?: ProcessSandbox;
   beforeCloseTask?: (
     actor: LocalActor,
@@ -244,7 +234,6 @@ export class CodeUiService {
   private readonly humanWorkspace: HumanWorkspaceRpc;
   private readonly providerSettings: CodeUiProviderSettingsRpc;
   private readonly attachments: CodeAttachmentsService | undefined;
-  private readonly hostServices: CodeUiHostServicesRpc | undefined;
   private readonly watchers: ReturnType<typeof createCodeUiFileWatchers>;
   private readonly git: CodeUiHostGitRpc | undefined;
   private closing = false;
@@ -477,15 +466,6 @@ export class CodeUiService {
           },
         })
       : undefined;
-    this.hostServices =
-      deps.skillRepository && deps.skillSettingsRepository
-        ? createCodeUiHostServicesRpc({
-            skills: deps.skillRepository,
-            skillSettings: deps.skillSettingsRepository,
-            resolveTarget: (actor, request) =>
-              this.resolveHostTarget(actor, request),
-          })
-        : undefined;
     this.attachments =
       deps.blob && deps.attachmentRepository
         ? createCodeAttachmentHost({
@@ -1535,14 +1515,6 @@ export class CodeUiService {
       return service === "file-watcher"
         ? this.watchers.call(user, method, args, connection)
         : (this.git?.call(user, method, args, connection) ?? null);
-    }
-    if (service === "skills" && this.hostServices) {
-      const owner = await this.deps.localInstance.resolve(user);
-      this.connections.require(owner.instanceId, connectionId, false);
-      return this.hostServices.call(user, service, method, args, {
-        connectionId: connectionId!,
-        instanceId: owner.instanceId,
-      });
     }
     if (
       service === "providerSettingsService" ||

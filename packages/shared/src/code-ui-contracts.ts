@@ -31,6 +31,10 @@ export type {
   IPlatformService,
   LoadCliMcpFromUserDirectoryResult,
   NativeMcpServerRecord,
+  SkillSummary,
+  SkillsCapability,
+  SkillsListResult,
+  SkillsPromptContext,
   ZCodeSessionStateSnapshot,
   ZCodeTaskMeta,
 } from "@zcode/shared";

@@ -28,6 +28,7 @@ import type { CreateTaskRequest } from "@zui/app-shell/types.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { toast } from "@zui/components/ui/toast.js";
 import { usePlatform } from "@zui/hooks/usePlatform.js";
+import { MessageResponse } from "@zui/components/ai-elements/message.js";
 import { useZCodeSessionService } from "@zui/hooks/useZCodeSessionService.js";
 import {
   useBaseWorkspaceServices,
@@ -173,6 +174,7 @@ export function SkillsSection({
 }: SkillsSectionProps) {
   const { intl, locale } = useZCodeIntl();
   const platform = usePlatform();
+  const databaseRecords = platform.skillsSettingsCapabilities?.databaseRecords === true;
   const baseServices = useBaseWorkspaceServices();
   const plugins = usePluginManagementStore((state) => state.plugins);
   const installedPlugins = usePluginManagementStore((state) => state.installedPlugins);
@@ -207,10 +209,12 @@ export function SkillsSection({
   );
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [capability, setCapability] = useState<SkillsCapability | null>(null);
-  const [loadedSkillTargetKey, setLoadedSkillTargetKey] = useState("");
+  const [loadedSkillTargetKey, setLoadedSkillTargetKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const query = searchQuery;
+  const uninstallLabel = databaseRecords ? intl.formatMessage({ id: "settings.plugins.detail.uninstall" }) : intl.formatMessage({ id: "common.delete" });
+  const scopeUnavailable = databaseRecords && scopeFilter === "workspace" && capability?.workspaceScopeAvailable === false;
   const [selectedSkill, setSelectedSkill] = useState<SkillSummary | null>(null);
   useEffect(() => {
     onDetailOpenChange?.(selectedSkill !== null);
@@ -221,7 +225,18 @@ export function SkillsSection({
   const [remoteSkillSyncOpen, setRemoteSkillSyncOpen] = useState(false);
   const latestRequestIdRef = useRef(0);
   const activeSkillTargetKey = activeWorkspaceIdentity?.trim() || activeWorkspacePath || "";
+  const latestSkillTarget = useRef({ key: activeSkillTargetKey, service: skillsService });
+  latestSkillTarget.current = { key: activeSkillTargetKey, service: skillsService };
+  const pageMounted = useRef(true);
+  useEffect(() => {
+    pageMounted.current = true;
+    return () => { pageMounted.current = false; latestRequestIdRef.current += 1; };
+  }, []);
+  const isCurrentTarget = useCallback(() => pageMounted.current &&
+    latestSkillTarget.current.key === activeSkillTargetKey && latestSkillTarget.current.service === skillsService,
+  [activeSkillTargetKey, skillsService]);
   const projectionMatchesTarget =
+    databaseRecords ? loadedSkillTargetKey === activeSkillTargetKey :
     !activeWorkspacePath || loadedSkillTargetKey === activeSkillTargetKey;
 
   useEffect(() => {
@@ -296,8 +311,8 @@ export function SkillsSection({
 
   const loadSkills = useCallback(
     async (showBlockingLoading: boolean) => {
-      if (!targetServiceResolution.rpcReady) return;
-      if (!activeWorkspacePath) {
+      if (!targetServiceResolution.rpcReady || !isCurrentTarget()) return;
+      if (!activeWorkspacePath && !databaseRecords) {
         setSkills([]);
         setCapability(null);
         setDiagnostics([]);
@@ -306,26 +321,27 @@ export function SkillsSection({
         setLoadedSkillTargetKey("");
         return;
       }
-      const requestTargetKey = activeWorkspaceIdentity?.trim() || activeWorkspacePath;
+      const requestTargetKey = activeWorkspaceIdentity?.trim() || activeWorkspacePath || "";
       setLoading(showBlockingLoading);
       setError(null);
       const requestId = ++latestRequestIdRef.current;
       try {
         const result = await skillsService.list({
-          workspacePath: activeWorkspacePath,
+          workspacePath: activeWorkspacePath ?? undefined,
           workspaceIdentity: activeWorkspaceIdentity,
           provider: ZCODE_AGENT_PROVIDER,
         });
-        if (requestId !== latestRequestIdRef.current) {
+        if (requestId !== latestRequestIdRef.current || !isCurrentTarget()) {
           return;
         }
         setSkills(result.skills);
+        setSelectedSkill((selected) => selected ? result.skills.find((skill) => skill.id === selected.id) ?? null : null);
         setCapability(result.capability);
         setDiagnostics(result.diagnostics);
         setLoadedSkillTargetKey(requestTargetKey);
         setLoading(false);
       } catch (loadError) {
-        if (requestId !== latestRequestIdRef.current) {
+        if (requestId !== latestRequestIdRef.current || !isCurrentTarget()) {
           return;
         }
         setLoadedSkillTargetKey(requestTargetKey);
@@ -333,7 +349,7 @@ export function SkillsSection({
         setError(loadError instanceof Error ? loadError.message : String(loadError));
       }
     },
-    [activeWorkspaceIdentity, activeWorkspacePath, skillsService, targetServiceResolution.rpcReady],
+    [isCurrentTarget, databaseRecords, activeWorkspaceIdentity, activeWorkspacePath, skillsService, targetServiceResolution.rpcReady],
   );
 
   useEffect(() => {
@@ -364,35 +380,41 @@ export function SkillsSection({
 
   const setEnabled = useCallback(
     async (skillId: string, enabled: boolean) => {
-      if (!activeWorkspacePath) {
-        return;
-      }
+      if (!activeWorkspacePath && !databaseRecords) return;
+      latestRequestIdRef.current += 1;
       // 移除三方来源后，技能状态统一写入 ZCode Agent 上下文，避免旧 provider 前缀带来分桶漂移。
       const targetSkill = skills.find((skill) => skill.id === skillId);
       const effectiveProvider: ZCodeProvider = ZCODE_AGENT_PROVIDER;
       try {
         await skillsService.setEnabled({
-          workspacePath: activeWorkspacePath,
+          workspacePath: activeWorkspacePath ?? undefined,
           workspaceIdentity: activeWorkspaceIdentity,
           provider: effectiveProvider,
           scope: targetSkill?.scope,
           skillId,
+          ...(targetSkill?.installationRevision ? { installationRevision: targetSkill.installationRevision } : {}),
           enabled,
         });
+        if (!isCurrentTarget()) return;
         await invalidateDeferredDraftSessionForSkillChange({
           zcodeSessionService,
-          workspacePath: activeWorkspacePath,
+          workspacePath: activeWorkspacePath ?? undefined,
           workspaceIdentity: activeWorkspaceIdentity,
           reason: "settings-skill-enabled",
         });
         await Promise.all([loadSkills(false), refreshSharedSkillStoreForCurrentWorkspace()]);
       } catch (setEnabledError) {
+        if (!isCurrentTarget()) return;
+        if (databaseRecords) await loadSkills(false);
+        if (!isCurrentTarget()) return;
         setError(
           setEnabledError instanceof Error ? setEnabledError.message : String(setEnabledError),
         );
       }
     },
     [
+      isCurrentTarget,
+      databaseRecords,
       activeWorkspaceIdentity,
       activeWorkspacePath,
       loadSkills,
@@ -407,47 +429,51 @@ export function SkillsSection({
   // 复用应用根部已挂载的确认弹窗 store（useConfirmDialog），与子智能体删除流程保持一致。
   const handleDeleteSkill = useCallback(
     async (skill: SkillSummary) => {
-      if (!activeWorkspacePath || skill.scope === "plugin") {
+      if ((!activeWorkspacePath && !databaseRecords) || skill.scope === "plugin") {
         return;
       }
       const confirmed = await confirmDialog({
-        title: intl.formatMessage({ id: "settings.skills.delete.title" }),
-        description: intl.formatMessage(
+        title: databaseRecords ? "卸载技能" : intl.formatMessage({ id: "settings.skills.delete.title" }),
+        description: databaseRecords ? "从本机移除" : intl.formatMessage(
           { id: "settings.skills.delete.description" },
           { name: skill.name },
         ),
-        confirmLabel: intl.formatMessage({ id: "common.delete" }),
+        confirmLabel: uninstallLabel,
       });
-      if (!confirmed) {
-        return;
-      }
+      if (!confirmed || !isCurrentTarget()) return;
+      latestRequestIdRef.current += 1;
       try {
         await skillsService.deleteSkill({
-          workspacePath: activeWorkspacePath,
+          workspacePath: activeWorkspacePath ?? undefined,
           workspaceIdentity: activeWorkspaceIdentity,
           skillId: skill.id,
+          ...(skill.installationRevision ? { installationRevision: skill.installationRevision } : {}),
         });
+        if (!isCurrentTarget()) return;
         await invalidateDeferredDraftSessionForSkillChange({
           zcodeSessionService,
-          workspacePath: activeWorkspacePath,
+          workspacePath: activeWorkspacePath ?? undefined,
           workspaceIdentity: activeWorkspaceIdentity,
           reason: "settings-skill-delete",
         });
-        if (selectedSkill?.id === skill.id) {
-          setSelectedSkill(null);
-        }
+        setSelectedSkill((selected) => selected?.id === skill.id && selected.installationRevision === skill.installationRevision ? null : selected);
         await loadSkills(false);
       } catch (deleteError) {
+        if (!isCurrentTarget()) return;
+        if (databaseRecords) await loadSkills(false);
+        if (!isCurrentTarget()) return;
         setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
       }
     },
     [
+      isCurrentTarget,
+      databaseRecords,
       activeWorkspaceIdentity,
       activeWorkspacePath,
       confirmDialog,
+      uninstallLabel,
       intl,
       loadSkills,
-      selectedSkill,
       skillsService,
       zcodeSessionService,
     ],
@@ -631,8 +657,8 @@ export function SkillsSection({
                 variant="ghost"
                 size="icon-sm"
                 className="shrink-0 text-foreground-subtle hover:bg-destructive/10 hover:text-destructive"
-                aria-label={intl.formatMessage({ id: "common.delete" })}
-                title={intl.formatMessage({ id: "common.delete" })}
+                aria-label={uninstallLabel}
+                title={uninstallLabel}
                 onClick={() => void handleDeleteSkill(skill)}
               >
                 <Trash2 className="size-3.5" aria-hidden="true" />
@@ -657,7 +683,8 @@ export function SkillsSection({
       onRefresh={() => void Promise.all([refresh(), refreshSharedSkillStoreForCurrentWorkspace()])}
       onImport={() => setImportDialogOpen(true)}
       onNew={handleCreateSkill}
-      importDisabled={!capability?.userScopeAvailable}
+      importDisabled={scopeUnavailable || capability?.userScopeAvailable === false}
+      newDisabled={scopeUnavailable || !activeWorkspacePath || !onCreateTask}
       importActionId="settings.skills.import.open"
       newActionId="settings.skills.create.open"
     />
@@ -776,12 +803,13 @@ export function SkillsSection({
         </div>
       ) : null}
 
-      {targetServiceResolution.rpcReady && !capability?.userScopeAvailable ? (
+      {targetServiceResolution.rpcReady && capability?.userScopeAvailable === false ? (
         <div className="rounded-lg border border-border bg-card px-3 py-2 text-ui-base text-foreground-subtle">
           {intl.formatMessage({ id: "settings.skills.userScopeDesktopOnly" })}
         </div>
       ) : null}
 
+      {scopeUnavailable ? <p role="status" className="text-ui-base text-foreground-subtle">未接入</p> : null}
       {targetServiceResolution.rpcReady && error ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-base text-destructive">
           {error}
@@ -792,7 +820,7 @@ export function SkillsSection({
         <PluginLoadingState label={intl.formatMessage({ id: "common.connecting" })} />
       ) : loading || !projectionMatchesTarget ? (
         <PluginLoadingState label={intl.formatMessage({ id: "common.loading" })} />
-      ) : hasEmptySearchResult ? (
+      ) : error && skills.length === 0 ? null : hasEmptySearchResult ? (
         <PluginSearchEmptyState
           label={intl.formatMessage({
             id: "settings.plugin.skills.searchEmpty",
@@ -800,7 +828,7 @@ export function SkillsSection({
         />
       ) : (
         <div className="space-y-6">
-          <section className={hideInstalledGroup ? "hidden" : "space-y-4"}>
+          <section className={scopeUnavailable || hideInstalledGroup ? "hidden" : "space-y-4"}>
             <div data-skills-plugin-direct-actions="true">
               <SettingsResourceGroupHeader
                 actions={skillHeaderActions}
@@ -812,7 +840,7 @@ export function SkillsSection({
             </div>
             {groupedSkills.local.length > 0 ? (
               renderSkillList(groupedSkills.local)
-            ) : directInstalledSkillCount === 0 && !query.trim() ? (
+            ) : directInstalledSkillCount === 0 && !query.trim() && !scopeUnavailable ? (
               <PluginInstallEmptyState
                 title={intl.formatMessage({
                   id: "settings.plugin.skills.emptyInstalledTitle",
@@ -822,7 +850,7 @@ export function SkillsSection({
                 })}
                 actions={
                   <>
-                    <Button type="button" variant="default" size="lg" onClick={handleCreateSkill}>
+                    <Button type="button" variant="default" size="lg" disabled={!activeWorkspacePath || !onCreateTask} onClick={handleCreateSkill}>
                       <Plus data-icon="inline-start" aria-hidden="true" />
                       {intl.formatMessage({
                         id: "settings.plugin.skills.newSkill",
@@ -832,7 +860,7 @@ export function SkillsSection({
                       type="button"
                       variant="outline"
                       size="lg"
-                      disabled={!capability?.userScopeAvailable}
+                      disabled={capability?.userScopeAvailable === false}
                       onClick={() => setImportDialogOpen(true)}
                     >
                       <Import data-icon="inline-start" aria-hidden="true" />
@@ -944,7 +972,7 @@ export function SkillsSection({
                     mono
                     className="col-span-2"
                   />
-                  <SkillPathDetailField
+                  {detailSkill.path ? <SkillPathDetailField
                     label={intl.formatMessage({
                       id: "settings.skills.detail.path",
                     })}
@@ -953,8 +981,9 @@ export function SkillsSection({
                       id: "settings.skills.detail.openPath",
                     })}
                     onOpen={() => void openSkillFilePath(detailSkill.path)}
-                  />
+                  /> : null}
                 </div>
+                {detailSkill.resourceRef ? <MessageResponse>{detailSkill.body}</MessageResponse> : null}
               </div>
             </div>
           ) : null}

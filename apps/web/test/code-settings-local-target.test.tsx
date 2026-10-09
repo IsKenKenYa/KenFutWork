@@ -287,7 +287,14 @@ it("原插件管理页接受已绑定的本机Project，读取真实库存RPC并
       });
     if (call.service === "mcp-configuration")
       return Response.json({ result: { servers: [], disabledServers: [] } });
-    if (call.service === "skills") return Response.json({ result: [] });
+    if (call.service === "skills")
+      return Response.json({
+        result: {
+          skills: [],
+          diagnostics: [],
+          capability: { userScopeAvailable: true },
+        },
+      });
     return Response.json({ result: {} });
   });
   const channel = new CodeHttpChannelClient({

@@ -93,6 +93,47 @@ const servicesByChannel: Record<string, string> = {
   [ServiceChannels.ProviderSettings]: "providerSettingsService",
 };
 
+function validateSkillsListResponse(result: unknown) {
+  if (
+    !result ||
+    typeof result !== "object" ||
+    !("skills" in result) ||
+    !Array.isArray(result.skills) ||
+    !("diagnostics" in result) ||
+    !Array.isArray(result.diagnostics) ||
+    !("capability" in result) ||
+    !result.capability ||
+    typeof result.capability !== "object" ||
+    !("userScopeAvailable" in result.capability) ||
+    typeof result.capability.userScopeAvailable !== "boolean" ||
+    result.skills.some(
+      (skill) =>
+        !skill ||
+        typeof skill !== "object" ||
+        typeof skill.id !== "string" ||
+        typeof skill.name !== "string" ||
+        typeof skill.path !== "string" ||
+        typeof skill.body !== "string" ||
+        typeof skill.description !== "string" ||
+        typeof skill.enabled !== "boolean" ||
+        !["user", "workspace", "plugin"].includes(skill.scope),
+    ) ||
+    result.diagnostics.some(
+      (diagnostic) =>
+        !diagnostic ||
+        typeof diagnostic !== "object" ||
+        typeof diagnostic.code !== "string" ||
+        !["warning", "error"].includes(diagnostic.severity) ||
+        typeof diagnostic.message !== "string" ||
+        (diagnostic.path !== undefined &&
+          typeof diagnostic.path !== "string") ||
+        (diagnostic.skillName !== undefined &&
+          typeof diagnostic.skillName !== "string"),
+    )
+  )
+    throw new Error("技能目录响应无效，请重新连接。");
+}
+
 /** ChannelClient 只替换载体；原 RemoteServiceAccess/ProxyChannel 保留服务和事件语义。 */
 const viewerMethods = new Set([
   "readTextFile",
@@ -682,8 +723,7 @@ export class CodeHttpChannelClient implements IChannelClient {
     const viewerRequest =
       (service === ServiceChannels.File && viewerMethods.has(method)) ||
       service === ServiceChannels.Git ||
-      (service === ServiceChannels.FileWatcher && method === "watch") ||
-      service === ServiceChannels.Skills;
+      (service === ServiceChannels.FileWatcher && method === "watch");
     if (!viewerRequest) return values;
     const first = values[0] as Record<string, unknown> | undefined;
     if (first?.humanPurpose === "directory-picker") return values;
@@ -761,6 +801,8 @@ export class CodeHttpChannelClient implements IChannelClient {
       for (const task of tasks) this.workspaces.registerTask(task);
     }
     let result = response.result;
+    if (service === ServiceChannels.Skills && method === "list")
+      validateSkillsListResponse(result);
     if (
       service === ServiceChannels.File &&
       [

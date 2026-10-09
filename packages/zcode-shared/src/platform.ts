@@ -535,7 +535,10 @@ export interface HostPluginSidebarEntry {
 }
 
 export interface IPlatformService {
-  /** 宿主已接通的原MCP设置能力；不将数据库记录视为目录或符号链接。 */
+  /** 外部Agent扫描/同步的实际支持态；不将安装包伪装文件目录。 */
+  supportsExternalAgentSettingsSync?: boolean;
+  /** 宿主已接通的原设置能力；不将数据库记录视为目录或符号链接。 */
+  skillsSettingsCapabilities?: { databaseRecords: boolean };
   mcpSettingsCapabilities?: {
     databaseRecords: boolean;
     projectScope: boolean;

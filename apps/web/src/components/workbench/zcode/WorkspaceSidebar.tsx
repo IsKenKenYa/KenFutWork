@@ -15,6 +15,8 @@ import {
   Archive,
   Blocks,
   CalendarClock,
+  Cable,
+  WandSparkles,
   Clock3,
   Cloud,
   Folder,
@@ -318,7 +320,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onFileTreeOpenChange?: (open: boolean) => void;
 }) {
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
-  const supportsAutomations = useOptionalPlatform()?.supportsAutomations !== false;
+  const platform = useOptionalPlatform();
+  const supportsAutomations = platform?.supportsAutomations !== false;
   const handleTaskRowSelect = useCallback(
     (
       targetWorkspacePath: string,
@@ -1352,6 +1355,24 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               <Blocks className="size-4" />
               {intl.formatMessage({ id: "workspace.openPluginsSettings" })}
             </Button>
+            {platform?.skillsSettingsCapabilities?.databaseRecords ? (
+              <Button variant="ghost" size="lg" className="w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground" onClick={() => {
+                setPendingSettingsSectionIntent("skill", { pluginScopeKey: "user" });
+                openSettingsTab();
+              }}>
+                <WandSparkles className="size-4" />
+                {intl.formatMessage({ id: "settings.skills.title" })}
+              </Button>
+            ) : null}
+            {platform?.mcpSettingsCapabilities?.databaseRecords ? (
+              <Button variant="ghost" size="lg" className="w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground" onClick={() => {
+                setPendingSettingsSectionIntent("mcp", { pluginScopeKey: "user" });
+                openSettingsTab();
+              }}>
+                <Cable className="size-4" />
+                {intl.formatMessage({ id: "settings.mcpTitle" })}
+              </Button>
+            ) : null}
             <PluginSidebarNavigation />
           </div>
 

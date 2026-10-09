@@ -225,8 +225,13 @@ describe("Code human viewer channel", () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(requests).toEqual([]);
   });
-  it("原Git/Skills/watch请求携带明确viewer hint，Project不被伪造为Task", async () => {
-    const { client, requests } = clientWith({ id: "watcher" });
+  it("原Git/watch请求保留Project viewer hint，本机技能不借用Task身份", async () => {
+    const { client, requests } = clientWith({
+      id: "watcher",
+      skills: [],
+      diagnostics: [],
+      capability: { userScopeAvailable: true },
+    });
     client.setViewerContextResolver(() => ({
       kind: "project",
       projectId: "project",
@@ -246,12 +251,7 @@ describe("Code human viewer channel", () => {
           viewerScope: { kind: "project", projectId: "project" },
         },
       ],
-      [
-        {
-          workspacePath: "/same",
-          viewerScope: { kind: "project", projectId: "project" },
-        },
-      ],
+      [{ workspacePath: "/same" }],
       [
         {
           path: "/same/subdir",

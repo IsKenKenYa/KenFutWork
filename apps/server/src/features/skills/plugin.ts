@@ -6,7 +6,9 @@ import type {
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import { createCanvasRepository } from "../canvas/repository.js";
+import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
 import { projectWorkDirLoaderFor } from "../projects/work-dir.js";
+import { createCodeUiSkillsHost } from "./code-ui-host.js";
 import { createCreateSkillTool } from "./create-skill-tool.js";
 import {
   createSkillCatalogRepository,
@@ -129,6 +131,18 @@ export function createSkillsPlugin(): PluginDefinition {
       ctx.get("tools").register(createSkillTool);
     },
     mounted(ctx) {
+      for (const [id, value] of Object.entries(
+        createCodeUiSkillsHost({
+          localInstance: ctx.get("localInstance"),
+          repository: skillsRepository,
+        }),
+      )) {
+        ctx.effect(() =>
+          ctx
+            .get("capabilities")
+            .register(CODE_UI_HOST_RPC_CAPABILITY, { id, value }),
+        );
+      }
       void registerSkillRoutes(ctx.app, {
         localAccess: ctx.get("localAccess"),
         skillsRepository,

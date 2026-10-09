@@ -98,3 +98,11 @@ Code 的原 `plugin-management` 通道现已将 `listPlugins` 与 `getPluginsOve
 `mcp-sync.loadMcpFromUserDirectory`、`readMcpServerConfiguration`、`saveMcpToUserDirectory` 和 `listWorkspaceMcpServerStatuses` 由 MCP feature 贡献，复用 REST／运行工具的同一 `McpService`。本机配置为实例数据库记录；原接口名称保留，不伪造文件夹或位置，也不创建 Project／Task。普通列表只返回 `envKeys`，本机授权编辑按 `hostRecordId` 单独读取完整配置；不将凭据写入共享 UI inventory 或普通事件。
 
 创建传 `hostRecordId:null`；编辑、启停与删除传原记录 UUID。删除后迟到请求返回404，不能按同名记录重新绑定。写入响应未知时只读刷新，不自动重放；写入成功但刷新失败保留表单并报告读取错误。环境来源只读。当前服务承接 stdio／HTTP 与真实状态／重连；项目文件配置、OAuth、显式 SSE 类型、HTTP 请求头、超时及协议覆盖未接入，原表单禁用对应操作。外部 Agent 扫描／同步与市场检索仍继续接线，不计本片完成。
+
+### 原技能管理宿主
+
+原 `skills.list/setEnabled/deleteSkill/buildPromptContext` 在 skills feature 贡献，复用现有技能仓库、REST与运行目录数据。实例包返回 `scope:user`、真实 `resourceRef` 与空物理 `path`；不需要Project，不假作项目安装、文件目录或软链。原详情沿MessageResponse显示正文。原删除入口在本机包边界标为卸载并仅移除安装，保留可见定义；定义CRUD、目录及链接安装／市场检索仍在接线，不计本片完成。
+
+启停及卸载需回传 `installationRevision`，由既有安装时间的UTC精确文本派生，并在原仓库SQL条件中原子匹配；卸载重装后旧请求404，不能改新安装。无新增配置库或SQL迁移。旧集中Skills桥及其项目/Task绑定退役；文件、Git与终端继续沿真实Project/Task权限边界。外部Agent扫描/同步原页面标未接入、禁用操作且不发送扫描/导入请求；不返回假空数据。设置页与共享技能消费接口都保护目标/服务/读取代际，写入响应未知只读对账不自动重放。当前Composer的原 `getSkillReferenceCatalog` 与会话冻结目录接线另行继续，不能用管理页列表替代运行消费。
+
+`provider` 复用原 `zcodeAgentProviderSchema` 的 `glm` wire 标识，表示原 Agent 协议身份，不是 BYOK 供应商选择。技能列表与诊断条目无效时宿主通道明确拒绝，原页面显示读取错误，不转成假空目录。

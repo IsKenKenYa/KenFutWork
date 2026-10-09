@@ -2,10 +2,6 @@ import { resolve } from "node:path";
 import type { AgentRunExtension } from "../../agent/run-extension.js";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
 import type { PluginDefinition } from "../../kernel/types.js";
-import {
-  createInstanceSkillSettingsRepository,
-  createSkillCatalogRepository,
-} from "../skills/repository.js";
 import { createTaskResourceCloser } from "../task-work/close-resources.js";
 import { createCodeHistoryOutputPrompt } from "./output-history-prompt.js";
 import { createAskUserQuestionToolDefinition } from "./ask-user-question.js";
@@ -66,10 +62,6 @@ export function createCodeUiPlugin(): PluginDefinition {
           attachmentRepository: createCodeAttachmentRepository(
             ctx.get("persistence"),
             resolve(ctx.env.checkpointRoot ?? "data/checkpoints"),
-          ),
-          skillRepository: createSkillCatalogRepository(ctx.get("persistence")),
-          skillSettingsRepository: createInstanceSkillSettingsRepository(
-            ctx.get("persistence"),
           ),
           beforeCloseTask: createTaskResourceCloser({
             localInstance: ctx.get("localInstance"),

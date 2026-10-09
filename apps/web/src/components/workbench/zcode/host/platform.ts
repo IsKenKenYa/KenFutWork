@@ -38,6 +38,7 @@ export function createCodePlatform(
     supportsRemoteWorkspaces: false,
     supportsUserOnboarding: false,
     supportsSettingsImport: false,
+    supportsExternalAgentSettingsSync: false,
     supportsAppRuntimePreferences: false,
     sessionMetadataSource: "task-index",
     getApplicationIcon: (request) =>
@@ -45,6 +46,7 @@ export function createCodePlatform(
         .getChannel("platform")
         .call<ApplicationIconInfo | null>("getApplicationIcon", [request]),
     resolvePluginIcon: (resource) => client.resolvePluginIcon(resource),
+    skillsSettingsCapabilities: { databaseRecords: true },
     mcpSettingsCapabilities: {
       databaseRecords: true,
       projectScope: false,
