@@ -36,6 +36,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # `jobs.<id>.permissions` 的取值只能是 read / write / none，**不支持表达式**（本轮实测：
+  # 写 `${{ ... && 'write' || 'read' }}` 会让整个文件解析失败，工作流名退化成文件路径、
+  # 0 秒失败且没有日志）。能触发 workflow_dispatch 的人本来就有写权限，所以这里静态给 write，
+  # 实际只有 rc 那一步会用到它。
   macos:
     name: macOS
     if: github.repository == 'IsKenKenYa/KenFutWork' && github.event.inputs.platform != 'windows'
@@ -45,7 +49,7 @@ jobs:
       channel: ${{ github.event.inputs.channel }}
       checkout_ref: ${{ github.event.inputs.ref }}
     permissions:
-      contents: ${{ github.event.inputs.channel == 'rc' && 'write' || 'read' }}
+      contents: write
 
   windows:
     name: Windows
@@ -56,4 +60,4 @@ jobs:
       channel: ${{ github.event.inputs.channel }}
       checkout_ref: ${{ github.event.inputs.ref }}
     permissions:
-      contents: ${{ github.event.inputs.channel == 'rc' && 'write' || 'read' }}
+      contents: write

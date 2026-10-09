@@ -870,6 +870,28 @@ jobs:
     );
     rmSync(path.join(dir, "a4.yml"));
 
+    put(
+      "a5",
+      `name: a5
+on: push
+permissions:
+  contents: read
+jobs:
+  a:
+    permissions:
+      contents: \${{ github.event_name == 'push' && 'write' || 'read' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`,
+    );
+    result = checkActions({ rootDir: fixtureRoot });
+    assert.ok(
+      result.errors.some((line) => /permissions 的 contents 写了表达式/.test(line)),
+      `A5 应拦住 permissions 里的表达式：${JSON.stringify(result.errors)}`,
+    );
+    rmSync(path.join(dir, "a5.yml"));
+
     // 回到干净态必须再次全绿（证明上面每条都是「这一处」引起的，不是常驻误报）
     assert.deepEqual(checkActions({ rootDir: fixtureRoot }).errors, []);
   } finally {

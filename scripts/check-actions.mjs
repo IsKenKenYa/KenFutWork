@@ -10,11 +10,14 @@
  *   - `pnpm dev` / `pnpm desktop` 在 CI 里必死：脚本写死 `--env-file=../../.env.local`，
  *     文件不存在 node 直接报错退出；且 dev 是 persistent 任务，会挂到超时。
  *
- * 规则（`--only` 可单跑一条，便于排障）：
+ * 规则：
  *   A1 job 级 `if:` 不得引用 `matrix.`
  *   A2 workflow 级 `concurrency.group` 不得引用 `matrix.`
  *   A3 `on: workflow_call` 的工作流不得写顶层 `permissions:`
  *   A4 不得在 run 里调用 `pnpm dev` / `pnpm desktop`
+ *   A5 `permissions` 的取值不得是表达式，且只能是 read / write / none
+ *      （本轮实测：写 `${{ ... && 'write' || 'read' }}` 会让整个文件解析失败——工作流名退化成
+ *       文件路径、0 秒失败、连日志都没有，非查 API 看不出问题在哪）
  *
  * 双入口：`pnpm test:actions` 直接跑；`tests/workspace.test.mjs` 导入 checkActions 挂门禁，
  * 并用夹具验「正例通过 / 每条负例各自被拦」——一个永远 PASS 的检查等于没有检查。
@@ -35,13 +38,30 @@ function indentOf(line) {
   return line.length - line.trimStart().length;
 }
 
-/** 读出一个工作流文件的四种结构信号：顶层键、job 级 if、concurrency.group、workflow_call。 */
+/** permissions 里可能出现的权限作用域名。 */
+const SCOPE_KEYS = new Set([
+  "actions",
+  "attestations",
+  "checks",
+  "contents",
+  "deployments",
+  "discussions",
+  "id-token",
+  "issues",
+  "pages",
+  "pull-requests",
+  "security-events",
+  "statuses",
+]);
+
+/** 读出一个工作流文件的结构信号：顶层键、job 级 if、concurrency.group、permissions 取值、workflow_call。 */
 function inspectWorkflow(text) {
   const signals = {
     topLevelKeys: new Set(),
     hasWorkflowCall: false,
     jobIfs: [],
     concurrencyGroups: [],
+    permissionLines: [],
     runBlobs: [],
   };
   let inOn = false;
@@ -67,6 +87,14 @@ function inspectWorkflow(text) {
       currentJob = null;
       currentStepRun = null;
       continue;
+    }
+    // permissions 的作用域行：值必须是 read / write / none，且不许是表达式。
+    const permissionMatch = /^([a-z-]+):\s*(.+)$/.exec(trimmed);
+    if (permissionMatch && SCOPE_KEYS.has(permissionMatch[1])) {
+      signals.permissionLines.push({
+        scope: permissionMatch[1],
+        value: permissionMatch[2].trim(),
+      });
     }
     if (inOn && indent >= 2 && trimmed.startsWith("workflow_call")) {
       signals.hasWorkflowCall = true;
@@ -145,6 +173,19 @@ export function checkActions({ rootDir }) {
       if (bad) {
         errors.push(
           `${rel}: run 里调了 \`pnpm ${bad[1]}\`——dev/desktop 写死 --env-file=../../.env.local，CI 里必失败（且 dev 是 persistent 任务）`,
+        );
+      }
+    }
+    for (const permission of signals.permissionLines) {
+      if (permission.value.includes("${{")) {
+        errors.push(
+          `${rel}: permissions 的 ${permission.scope} 写了表达式——该键只接受 read / write / none，含表达式会让整个文件解析失败（工作流名退化成文件路径、0 秒失败且无日志）`,
+        );
+        continue;
+      }
+      if (!["read", "write", "none"].includes(permission.value)) {
+        errors.push(
+          `${rel}: permissions 的 ${permission.scope} 取值「${permission.value}」不在 read / write / none 之内`,
         );
       }
     }

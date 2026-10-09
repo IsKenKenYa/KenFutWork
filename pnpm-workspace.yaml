@@ -14,7 +14,7 @@ onlyBuiltDependencies:
   - sharp
   # 真实交互终端要的是 PTY（conpty），必须让它跑 native 构建/预编译下载
   - node-pty
-  # appdmg 出 DMG 要这两个原生件；上游 tarball 不带产物、pnpm 默认拦 install 脚本，
-  # 缺了它们 appdmg 首次必挂，只能靠 collect-bundle.mjs 现场 node-gyp 重编兜底。
-  - macos-alias
-  - fs-xattr
+  # 不要往这里加 appdmg 的原生件（macos-alias / fs-xattr）：`os` 字段只对**可选依赖**生效，
+  # 而 appdmg 是普通 devDependency，白名单一开，Linux runner 也会照样 node-gyp 编译并炸
+  # （实测 `#error This platform is not implemented yet`，CI 三个 job 全卡在 pnpm install）。
+  # mac 侧由 scripts/collect-bundle.mjs 的 rebuildNativeDeps() 在需要时用当前 node 现编。
