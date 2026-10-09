@@ -60,8 +60,9 @@ jobs:
       - name: actionlint + ShellCheck（工作流与脚本静态检查）
         run: |
           set -euo pipefail
-          apt-get update -qq
-          apt-get install -y -qq --no-install-recommends shellcheck
+          # 宿主 runner（非容器）里当前用户不是 root，apt 必须 sudo（runner 有免密 sudo）。
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends shellcheck
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) latest /usr/local/bin
           actionlint -version
           pnpm run test:actions
@@ -161,7 +162,10 @@ jobs:
       # 而仓库锁的是 24.11.1——测试环境与 SEA 宿主/桌面捆绑的 Node 不是同一份，
       # 「CI 绿了」就不能作为发布运行时的证据。由 check-actions 的 A7 对账 .nvmrc。
       image: node:24.11.1-bookworm
-      options: --privileged
+      # --init：容器 PID 1 换成 tini 这类会 reap 的 init。沙箱的停止确认要「命名空间内
+      # 进程数归零」，而 job 容器的 PID 1 不会收养并回收孤儿僵尸，杀完最后一层后僵尸
+      # 永远挂在 /proc 里，实测报 stop_unconfirmed（范围里仍有进程）。
+      options: --privileged --init
     timeout-minutes: 45
     # 容器 job 的默认 shell 是 sh（dash），不认 `set -o pipefail`——实测第一步就报
     # `Illegal option -o pipefail` 退 2。与 Windows 那次 PowerShell 默认 shell 同一类错误。

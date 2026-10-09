@@ -39,12 +39,30 @@ const SHIM_DIR = join(ROOT, "docker", "pg-dev-shim");
 
 function run(label, command, args, options = {}) {
   console.log(`[package] ${label}…`);
+  const { trimLongLines = false, ...spawn } = options;
   const result = spawnSync(command, args, {
     cwd: ROOT,
     shell: process.platform === "win32",
-    stdio: options.quiet ? "ignore" : "inherit",
-    ...options,
+    // 打包含单行 18MB 的产物：报错时 Node 会把整行源码打出来，Actions 按行长截断后
+    // **真正的错误信息被吃掉**（实测只剩一段 wasmBase64）。需要看报错的步骤一律
+    // 捕获后按行截断输出，保留错误行本身。
+    stdio: trimLongLines ? "pipe" : spawn.quiet ? "ignore" : "inherit",
+    ...(trimLongLines ? { encoding: "utf8" } : {}),
+    ...spawn,
   });
+  if (trimLongLines) {
+    const shorten = (text) =>
+      String(text ?? "")
+        .split("\n")
+        .map((line) =>
+          line.length > 300
+            ? `${line.slice(0, 160)} …<单行 ${line.length} 字符，已截断>… ${line.slice(-60)}`
+            : line,
+        )
+        .join("\n");
+    if (result.stdout) process.stdout.write(shorten(result.stdout));
+    if (result.stderr) process.stderr.write(shorten(result.stderr));
+  }
   if (result.status !== 0) {
     console.error(`[package] ${label} 失败（exit=${result.status}）`);
     process.exit(result.status ?? 1);
@@ -204,30 +222,35 @@ function main() {
   if (isSea) require = require("node:module").createRequire(base);
 })();
 `;
-  run("打包服务端（esbuild）", "pnpm", [
-    "exec",
-    "esbuild",
-    "apps/server/src/server.ts",
-    "--bundle",
-    "--platform=node",
-    "--format=cjs",
-    // ESM-only 依赖（sharp 等）在模块顶层用 createRequire(import.meta.url) 定位自身；
-    // CJS/SEA 打包下 import.meta 是空对象 → createRequire(undefined) 直接抛，包根本起不来。
-    // 基准由上面的 banner 给出：SEA 里 __filename 是构建机路径，不能直接用。
-    "--define:import.meta.url=globalThis.__kfwModuleUrl",
-    "--define:import.meta.dirname=__dirname",
-    `--banner:js=${seaBanner}`,
-    // node-pty 是原生模块（conpty.node + conpty.dll/OpenConsole.exe）：**不能打进单文件**，
-    // 运行时从 <exe>/node_modules/node-pty 解析（同 sharp 的办法）。
-    "--external:node-pty",
-    "--external:@napi-rs/canvas",
-    "--external:@vscode/ripgrep",
-    // sherpa-onnx-node 同理（语音助手的内置「听」）：它 require 平台包（sherpa-onnx-win-x64）
-    // 里的 .node，打进单文件后既丢了 .node 也丢了平台包解析路径。
-    "--external:sherpa-onnx-node",
-    `--outfile=${join(BUILD, "server.cjs")}`,
-    "--log-level=warning",
-  ]);
+  run(
+    "打包服务端（esbuild）",
+    "pnpm",
+    [
+      "exec",
+      "esbuild",
+      "apps/server/src/server.ts",
+      "--bundle",
+      "--platform=node",
+      "--format=cjs",
+      // ESM-only 依赖（sharp 等）在模块顶层用 createRequire(import.meta.url) 定位自身；
+      // CJS/SEA 打包下 import.meta 是空对象 → createRequire(undefined) 直接抛，包根本起不来。
+      // 基准由上面的 banner 给出：SEA 里 __filename 是构建机路径，不能直接用。
+      "--define:import.meta.url=globalThis.__kfwModuleUrl",
+      "--define:import.meta.dirname=__dirname",
+      `--banner:js=${seaBanner}`,
+      // node-pty 是原生模块（conpty.node + conpty.dll/OpenConsole.exe）：**不能打进单文件**，
+      // 运行时从 <exe>/node_modules/node-pty 解析（同 sharp 的办法）。
+      "--external:node-pty",
+      "--external:@napi-rs/canvas",
+      "--external:@vscode/ripgrep",
+      // sherpa-onnx-node 同理（语音助手的内置「听」）：它 require 平台包（sherpa-onnx-win-x64）
+      // 里的 .node，打进单文件后既丢了 .node 也丢了平台包解析路径。
+      "--external:sherpa-onnx-node",
+      `--outfile=${join(BUILD, "server.cjs")}`,
+      "--log-level=warning",
+    ],
+    { trimLongLines: true },
+  );
 
   // 3) Node SEA：生成 blob → 注入 node.exe 副本
   const nodeExe = process.execPath;
@@ -244,7 +267,9 @@ function main() {
       2,
     ),
   );
-  run("生成 SEA blob", nodeExe, ["--experimental-sea-config", seaConfig]);
+  run("生成 SEA blob", nodeExe, ["--experimental-sea-config", seaConfig], {
+    trimLongLines: true,
+  });
 
   const exePath = join(RELEASE, EXE_NAME);
   copyFileSync(nodeExe, exePath);

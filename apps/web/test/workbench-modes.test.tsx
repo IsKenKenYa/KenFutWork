@@ -98,15 +98,18 @@ it("Code默认主区仍是原iframe，可信原菜单Design请求同时更新URL
   )) as HTMLIFrameElement;
   expect(frame.getAttribute("src")).toBe("/code-ui/index.html");
   expect(screen.queryByRole("radiogroup", { name: "模式切换" })).toBeNull();
-  // 懒加载首包与消息监听注册之间有天然时序差：重发同一事件直到导航被触发
-  // （消息幂等，重发无害），避免满负载全量并发下的「事件早于监听」假红。
+  // 懒加载首包与消息监听注册之间有天然时序差；重发同一事件直到导航被触发（消息幂等，
+  // 重发无害）。每轮重新查一次活着的 iframe：CI 满负载下 Workbench 会重挂 frame，
+  // 攥着已卸载元素的 contentWindow 发消息会被 `event.source !== frame.current?.contentWindow`
+  // 静默丢弃，看起来就像「监听没注册」。
   await waitFor(
     () => {
+      const live = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
       fireEvent(
         window,
         new MessageEvent("message", {
           origin: window.location.origin,
-          source: frame.contentWindow,
+          source: live.contentWindow,
           data: { type: "kenfutwork:code-navigate", mode: "design" },
         }),
       );

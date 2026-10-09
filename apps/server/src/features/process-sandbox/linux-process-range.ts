@@ -152,11 +152,13 @@ export class LinuxProcessRange {
     }
   }
 
-  private async emptyWithin(): Promise<boolean> {
+  /** 返回仍未清空的最后一次扫描（含计数，报错要能看出还剩几个）；清空则返回 null。 */
+  private async remainingWithin(): Promise<RangeSnapshot | null> {
     const started = Date.now();
     for (;;) {
-      if ((await this.query()).memberCount === 0) return true;
-      if (Date.now() - started >= this.limits.killGraceMs) return false;
+      const snapshot = await this.query();
+      if (snapshot.memberCount === 0) return null;
+      if (Date.now() - started >= this.limits.killGraceMs) return snapshot;
       await delay(this.limits.yieldMs);
     }
   }
@@ -167,13 +169,14 @@ export class LinuxProcessRange {
       // TERM 先到叶子命令，保留 namespace reaper / launcher，让 handler 能完成清理。
       await this.query("SIGTERM");
       await this.query("SIGCONT");
-      if (!(await this.emptyWithin())) {
+      if (await this.remainingWithin()) {
         await this.freeze();
         await this.query("SIGKILL");
-        if (!(await this.emptyWithin()))
+        const left = await this.remainingWithin();
+        if (left)
           throw new ProcessSandboxError(
             "stop_unconfirmed",
-            "Linux PID namespace 仍有进程，停止未确认。",
+            `Linux PID namespace 在 SIGKILL 后 ${this.limits.killGraceMs}ms 内仍有 ${left.memberCount} 个进程（活跃 ${left.activeCount}），停止未确认——若活跃数为 0 则是没人回收的僵尸，容器 PID 1 必须是会 reap 的 init。`,
           );
       }
     }
