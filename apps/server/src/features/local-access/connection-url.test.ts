@@ -178,10 +178,15 @@ describe("launcher本机连接：真实回环HTTP", () => {
 
   it("健康就绪后缺失token立即报文件故障，不继续轮询或创建第二个凭据", async () => {
     let healthCalls = 0;
+    let firstReadyAt = 0;
     let ticketCalls = 0;
     const port = await listen((request, response) => {
       if (request.url === "/api/health") {
         healthCalls += 1;
+        // 只记第一次就绪时的计数：CI 满负载下首个健康请求可能超过 pollMs 被自己
+        // 的超时截断而重试（那是正确行为），断言若数总次数就会把「重试」误判成
+        // 「就绪后还在轮询」。要拦的是后者。
+        if (firstReadyAt === 0) firstReadyAt = healthCalls;
         return json(response, 200, healthy);
       }
       ticketCalls += 1;
@@ -190,7 +195,7 @@ describe("launcher本机连接：真实回环HTTP", () => {
     await expect(createLocalConnectionUrl(options(port))).rejects.toMatchObject(
       { code: "ENOENT" },
     );
-    expect(healthCalls).toBe(1);
+    expect(healthCalls).toBe(firstReadyAt);
     expect(ticketCalls).toBe(0);
   });
 
