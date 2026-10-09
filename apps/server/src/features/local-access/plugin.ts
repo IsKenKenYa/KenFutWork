@@ -4,6 +4,29 @@ import { registerLocalAccessRoutes } from "./routes.js";
 import { createLocalAccessService, isLoopbackAddress } from "./service.js";
 import { createLocalAccessStore } from "./store.js";
 
+/**
+ * 本机接入总门要放行的请求。
+ *
+ * 除健康检查与一次性连接入口外，有一类**机器对机器路由**（flow 网关回调等）自带
+ * 共享密钥门，没有也不该有本机接入凭据——它们在路由注册时声明
+ * `config.skipLocalAccess = true`，由本函数统一识别（路由自己声明，总门不反向认识各 feature）。
+ */
+export function isLocalAccessExempt(request: {
+  method: string;
+  url: string;
+  routeConfig?: unknown;
+}): boolean {
+  if (request.method === "OPTIONS") return true;
+  const pathname = request.url.split("?", 1)[0];
+  if (!pathname?.startsWith("/api/")) return true;
+  if (pathname === "/api/health" || pathname === "/api/local-access/connect")
+    return true;
+  const config = request.routeConfig as
+    | { skipLocalAccess?: unknown }
+    | undefined;
+  return config?.skipLocalAccess === true;
+}
+
 export function createLocalAccessPlugin(): PluginDefinition {
   return {
     name: "local-access",
@@ -50,12 +73,12 @@ export function createLocalAccessPlugin(): PluginDefinition {
     mounted(ctx) {
       registerLocalHttpLifecycle(ctx.app);
       ctx.app.addHook("onRequest", async (request, reply) => {
-        const pathname = request.url.split("?", 1)[0];
         if (
-          request.method === "OPTIONS" ||
-          !pathname?.startsWith("/api/") ||
-          pathname === "/api/health" ||
-          pathname === "/api/local-access/connect"
+          isLocalAccessExempt({
+            method: request.method,
+            url: request.url,
+            routeConfig: request.routeOptions?.config,
+          })
         )
           return;
         const actor = await ctx.get("localAccess").authenticate(request);

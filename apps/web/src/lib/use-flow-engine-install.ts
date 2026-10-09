@@ -21,6 +21,11 @@ export function useFlowEngineInstall(): {
   /** 失败 / 超时的可读原因；成功与进行中为 null。 */
   notice: string | null;
   install: () => Promise<void>;
+  /**
+   * 停止／取消引擎栈（FORM-11 生命周期）：安装中调用即取消（杀 `up` 后 `down` 清干净）；
+   * `deleteData` **显式**才 `down --volumes` 全删容器卷（默认保留，§9.1③）。
+   */
+  stop: (options: { deleteData: boolean }) => Promise<void>;
 } {
   const [state, setState] = useState<FlowEngineInstallState>("idle");
   const [notice, setNotice] = useState<string | null>(null);
@@ -74,5 +79,32 @@ export function useFlowEngineInstall(): {
     }
   }, [state]);
 
-  return { state, notice, install };
+  const stop = useCallback(async ({ deleteData }: { deleteData: boolean }) => {
+    setNotice(null);
+    try {
+      const response = await fetch(
+        `${getServerBaseUrl()}/api/flow/host/engine/stop`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ deleteData }),
+        },
+      );
+      const body = (await response.json().catch(() => ({}))) as {
+        error?: { message?: string };
+      };
+      if (!response.ok) {
+        throw new Error(body.error?.message ?? `HTTP ${response.status}`);
+      }
+      // 服务端已 down：快照归 idle；就绪/安装中两个入口都收敛回未安装。
+      setState("idle");
+    } catch (error) {
+      setNotice(
+        `停止失败：${error instanceof Error ? error.message : "未知错误"}`,
+      );
+    }
+  }, []);
+
+  return { state, notice, install, stop };
 }

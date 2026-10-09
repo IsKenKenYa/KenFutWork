@@ -11,9 +11,11 @@ import {
   type EngineInstallOptions,
   getEngineInstallSnapshot,
   startEngineInstall,
+  stopEngineStack,
 } from "./engine/install.js";
 import { probeEnginePaths } from "./engine/probe.js";
 import { listEngineStackContainers } from "./engine/stack.js";
+import { createFlowIdentityTickets } from "./identity.js";
 
 /** 仓库根（探测 compose 文件与数据目录用；打包态由 KENFUTWORK_DATA_DIR 覆盖数据目录）。 */
 function repoRoot(): string {
@@ -62,6 +64,7 @@ export function createFlowHostPlugin(deps: {
       "localAccess",
       "localInstance",
       "modelProviders",
+      "settings",
       "ws",
     ],
     apply(ctx) {
@@ -78,12 +81,39 @@ export function createFlowHostPlugin(deps: {
       });
     },
     mounted(ctx) {
+      // 本地实例身份缝（DEC-20）：一次性短时票据在内存里存哈希（同本机接入 connect 票据）。
+      const identityTickets = createFlowIdentityTickets();
       void registerFlowHostRoutes(ctx.app, {
         localAccess: ctx.get("localAccess"),
         localInstance: ctx.get("localInstance"),
         providers: ctx.get("modelProviders"),
         // 事件缝透出走内核声明的 ws 缝（app.ts 装配时注册 connectionManager/eventBuffer）。
-        ws: { connectionManager: ctx.get("ws").connectionManager },
+        ws: {
+          connectionManager: ctx.get("ws").connectionManager,
+          // P5：flowRun 事件入缓冲，断线走 `flow.resume` 补发
+          eventBuffer: ctx.get("ws").eventBuffer,
+        },
+        // 身份缝：宿主前端换票（本机接入）→ flow 网关回验（共享密钥）→ 稳定 subject。
+        identity: {
+          issue: async (actor) => {
+            const settings = await ctx
+              .get("settings")
+              .getInstanceSettings(actor, actor.instanceId);
+            return identityTickets.issue({
+              instanceId: actor.instanceId,
+              accessClientId: actor.accessClientId,
+              ttlMs: settings.localAccessTicketTtlMs,
+            });
+          },
+          verify: async (token) => {
+            const entry = identityTickets.consume(token);
+            if (!entry) return null;
+            // 票据只在本实例签发：归属必须与当前实例一致（防跨实例拼装）。
+            const context = await ctx.get("localInstance").getContext();
+            if (entry.instanceId !== context.instanceId) return null;
+            return { subject: context.instanceId, displayName: "本机" };
+          },
+        },
         // 引擎探测层 + 托管（FORM-11）：探测路径，确认后拉镜像起栈，状态可轮询。
         engine: {
           probe: () =>
@@ -97,6 +127,17 @@ export function createFlowHostPlugin(deps: {
         engineInstall: {
           start: () => startEngineInstall(engineInstallOptions(resolveDesktopDataDir({ env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir } }))),
           status: () => getEngineInstallSnapshot(),
+        },
+        engineStop: {
+          stop: ({ deleteData }) =>
+            stopEngineStack({
+              ...engineInstallOptions(
+                resolveDesktopDataDir({
+                  env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
+                }),
+              ),
+              deleteData,
+            }),
         },
         // 引擎信息页数据面：一次取全（状态 + 承载探测 + 栈容器事实 + 地址/路径）。
         engineInfo: {

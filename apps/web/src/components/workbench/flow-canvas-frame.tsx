@@ -11,12 +11,39 @@ import {
 } from "react";
 
 import { LoadingScreen } from "@/components/loading-screen";
+import { getServerBaseUrl } from "@/lib/env";
 import {
   buildHelloAck,
   buildIdentity,
   buildNavigate,
   parseFlowInbound,
 } from "@/lib/flow-embed";
+import { serverFetch } from "@/lib/local-access";
+
+/**
+ * 换一张一次性身份票据（本地实例身份缝）：宿主前端凭本机接入（cookie）换票，
+ * 随 `ff-embed/identity` 注入 flow；票据由 flow 网关带回宿主验签。
+ * 换票失败返回 null——不拿假身份硬握，flow 侧会如实降级并给出原因。
+ */
+async function fetchIdentityTicket(): Promise<string | null> {
+  try {
+    const response = await serverFetch(
+      `${getServerBaseUrl()}/api/flow/host/identity-ticket`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      },
+    );
+    if (!response.ok) return null;
+    const body = (await response.json()) as { token?: unknown };
+    return typeof body.token === "string" && body.token.length > 0
+      ? body.token
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 /** 宿主对 flow 画布的命令句柄：侧栏导航项让 iframe 内的 flow 路由跳转。 */
 export interface FlowCanvasFrameHandle {
@@ -27,8 +54,8 @@ export interface FlowCanvasFrameHandle {
  * Flow 模式主区：内嵌 flow 前端（iframe）+ `ff-embed/v1` 宿主侧握手。
  *
  * 宿主承担的事（协议唯一权威 `flow/docs/ff-embed-v1.md`）：
- *  ① 回 `hello-ack`（版本协商）→ 发 `identity`（宿主会话令牌，flow 只交给它自己的
- *     网关去服务端验签，前端不解析）；
+ *  ① 回 `hello-ack`（版本协商）→ 发 `identity`（本机接入换的一次性身份票据，
+ *     flow 只交给它自己的网关去宿主服务端验签，前端不解析）；
  *  ② 提供 iframe 容器（flow 自带全部画布 UI：列表 / 编排 / 发布 / 执行都在里面）；
  *  ③ 收 `ready`（握手完成）；`navigate`（宿主侧栏 → flow 站内跳转）；
  *  ④ 侧栏导航归宿主（内嵌形态 flow 自己的侧栏隐藏），账号归宿主（身份缝互通）。
@@ -40,8 +67,6 @@ export const FlowCanvasFrame = forwardRef<
   FlowCanvasFrameHandle,
   {
     frontendUrl: string;
-    /** 宿主会话令牌（登录态）；握手时作为 hostToken 下发。 */
-    getToken: () => string | null;
     title?: string;
   }
 >(function FlowCanvasFrame(props, ref) {
@@ -76,10 +101,14 @@ export const FlowCanvasFrame = forwardRef<
 
       if (message.type === "ff-embed/hello") {
         frame.postMessage(buildHelloAck(version), flowOrigin);
-        const hostToken = props.getToken();
-        if (hostToken) {
-          frame.postMessage(buildIdentity(version, hostToken), flowOrigin);
-        }
+        // 身份缝（本地实例）：先换一次性票据，再注入 identity；换票失败就不注入
+        //（flow 侧会停在自己的降级面并给出原因，不拿假身份继续）。
+        void fetchIdentityTicket().then((hostToken) => {
+          const target = frameRef.current?.contentWindow;
+          if (hostToken && target) {
+            target.postMessage(buildIdentity(version, hostToken), flowOrigin);
+          }
+        });
         return;
       }
       if (message.type === "ff-embed/ready") {
@@ -90,7 +119,7 @@ export const FlowCanvasFrame = forwardRef<
 
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [flowOrigin, props]);
+  }, [flowOrigin]);
 
   // 侧栏导航项 → iframe 内的 flow 路由（握手前点击是 no-op，flow 会按默认页落地）。
   useImperativeHandle(

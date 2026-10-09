@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useFlowHostEntry } from "@/hooks/use-flow-host";
 import { installDesktopExternalLinks } from "@/lib/desktop-system";
 import { SIDEBAR_RAIL_WIDTH } from "@/lib/panel-layout";
+import { useFlowEngineInstall } from "@/lib/use-flow-engine-install";
 import {
   resolveWorkbenchSurface,
   type WorkbenchMode,
@@ -23,7 +24,6 @@ import { McpModal } from "./mcp-modal";
 import { PluginMarketModal } from "./plugin-market-modal";
 import { SettingsModal, type SettingsTab } from "./settings-modal";
 import { SkillsModal } from "./skills-modal";
-import { useFlowEngineInstall } from "@/lib/use-flow-engine-install";
 
 /** 保留画布工作台。对话与运行均在画布页，Code 由独立原宿主负责。 */
 export function CanvasWorkbench({
@@ -34,7 +34,6 @@ export function CanvasWorkbench({
   onModeChange: (mode: WorkbenchMode) => void;
 }) {
   const accessToken = null;
-  const getToken = useCallback(() => accessToken, []);
   const { entry: flowEntry, refresh: refreshFlowEntry } = useFlowHostEntry();
   const flowFrameRef = useRef<FlowCanvasFrameHandle>(null);
   const projects = useDesignProjects(accessToken, mode);
@@ -54,6 +53,7 @@ export function CanvasWorkbench({
     state: engineState,
     notice: engineNotice,
     install: runEngineInstall,
+    stop: runEngineStop,
   } = useFlowEngineInstall();
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
@@ -121,12 +121,12 @@ export function CanvasWorkbench({
               engineState={engineState}
               engineNotice={engineNotice}
               onInstall={runEngineInstall}
+              onStop={runEngineStop}
             />
           ) : (
             <FlowCanvasFrame
               ref={flowFrameRef}
               frontendUrl={flowEntry.frontendUrl}
-              getToken={getToken}
             />
           )
         ) : surface === "canvas" ? (

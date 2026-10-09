@@ -1,8 +1,8 @@
 "use client";
 
-import {
-  type FlowEngineStackContainer,
-  type FlowHostEngineInfoResponse,
+import type {
+  FlowEngineStackContainer,
+  FlowHostEngineInfoResponse,
 } from "@kenfutwork/shared";
 import { CircleCheck, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -31,16 +31,21 @@ export function FlowEnginePage({
   engineState,
   engineNotice,
   onInstall,
+  onStop,
 }: {
   engineState: FlowEngineInstallState;
   /** 安装失败 / 超时的可读原因（hook 返回；成功为 null）。 */
   engineNotice: string | null;
   onInstall: () => Promise<void>;
+  /** 停止／取消引擎栈：`deleteData` 显式选择才全删容器卷（§9.1③）。 */
+  onStop: (input: { deleteData: boolean }) => Promise<void>;
 }) {
   const [info, setInfo] = useState<FlowHostEngineInfoResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("containers");
+  // 「停止引擎」先亮出「保留数据 / 删除数据」两个选项再动手——不静默删数据。
+  const [stopAsk, setStopAsk] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -112,20 +117,63 @@ export function FlowEnginePage({
             >
               <RefreshCw className="h-3.5 w-3.5" />
             </button>
-            <button
-              type="button"
-              onClick={() => void onInstall()}
-              disabled={state === "installing" || state === "ready"}
-              className="rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {state === "installing"
-                ? "安装中…"
-                : state === "ready"
-                  ? "已就绪"
-                  : state === "error"
-                    ? "重试安装"
-                    : "安装引擎栈"}
-            </button>
+            {state === "installing" ? (
+              <button
+                type="button"
+                onClick={() => void onStop({ deleteData: false })}
+                className="rounded-lg border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+              >
+                取消安装
+              </button>
+            ) : state === "ready" ? (
+              stopAsk ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStopAsk(false);
+                      void onStop({ deleteData: false });
+                    }}
+                    className="rounded-lg border px-3 py-1.5 text-xs transition-colors hover:border-foreground/30"
+                  >
+                    停止并保留数据
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStopAsk(false);
+                      void onStop({ deleteData: true });
+                    }}
+                    className="rounded-lg border border-destructive/40 px-3 py-1.5 text-xs text-destructive transition-colors hover:border-destructive"
+                  >
+                    停止并删除数据
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStopAsk(false)}
+                    className="px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    返回
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setStopAsk(true)}
+                  className="rounded-lg border px-3 py-1.5 text-xs text-foreground transition-colors hover:border-foreground/30"
+                >
+                  停止引擎
+                </button>
+              )
+            ) : (
+              <button
+                type="button"
+                onClick={() => void onInstall()}
+                className="rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {state === "error" ? "重试安装" : "安装引擎栈"}
+              </button>
+            )}
           </div>
         </header>
 
@@ -180,7 +228,11 @@ function TableHead({ columns }: { readonly columns: readonly string[] }) {
         <span
           key={column}
           className={
-            index === 0 ? "w-28 shrink-0" : index === 1 ? "w-20 shrink-0" : "flex-1"
+            index === 0
+              ? "w-28 shrink-0"
+              : index === 1
+                ? "w-20 shrink-0"
+                : "flex-1"
           }
         >
           {column}
@@ -211,11 +263,17 @@ function TableRow({
 function ContainersTab({ info }: { info: FlowHostEngineInfoResponse | null }) {
   if (!info) return <Empty />;
   if (info.stack.error) {
-    return <p className="px-4 py-3 text-xs text-destructive">{info.stack.error}</p>;
+    return (
+      <p className="px-4 py-3 text-xs text-destructive">{info.stack.error}</p>
+    );
   }
   const containers = info.stack.containers;
   if (containers.length === 0) {
-    return <p className="px-4 py-3 text-xs text-muted-foreground">没有运行中的容器</p>;
+    return (
+      <p className="px-4 py-3 text-xs text-muted-foreground">
+        没有运行中的容器
+      </p>
+    );
   }
   const running = containers.filter((item) => item.state === "running").length;
   const healthy = containers.filter((item) => item.health === "healthy").length;
@@ -260,12 +318,17 @@ function Summary({
     <div className="flex flex-col gap-3 border-b px-4 py-4">
       <span className="text-xs text-muted-foreground">{label}</span>
       <p className="text-2xl font-semibold tracking-tight">
-        {value} <span className="text-sm font-normal text-muted-foreground">{suffix}</span>
+        {value}{" "}
+        <span className="text-sm font-normal text-muted-foreground">
+          {suffix}
+        </span>
       </p>
       <div className="h-2 overflow-hidden rounded-full bg-muted">
         <div
           className="h-full rounded-full bg-primary/80"
-          style={{ width: `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%` }}
+          style={{
+            width: `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%`,
+          }}
         />
       </div>
       <div className="flex items-center gap-4 text-xs text-muted-foreground">
@@ -362,7 +425,9 @@ function AddressesTab({ info }: { info: FlowHostEngineInfoResponse | null }) {
       <TableHead columns={["项", "", "值"]} />
       {rows.map((row, index) => (
         <TableRow key={row.label} last={index === rows.length - 1}>
-          <span className="w-28 shrink-0 text-muted-foreground">{row.label}</span>
+          <span className="w-28 shrink-0 text-muted-foreground">
+            {row.label}
+          </span>
           <span className="w-20 shrink-0" />
           <span
             className="min-w-0 flex-1 truncate font-mono text-xs"

@@ -50,6 +50,21 @@ export const wsResumeCommandSchema = z.object({
 });
 
 /**
+ * flow 事件续传（P5，《flow 集成方案》「flow 画布纳入 EventBuffer」）。
+ *
+ * flowRun 事件没有 canvasId（归属是本地实例，与 `pushToInstance` 同一口径），
+ * 故不进画布缓冲、单独按实例缓冲；重连后客户端带 `lastSeq` 从这里补发缺失事件
+ * （信封 seq 由宿主侧缓冲生成，payload 里的 seq 仍是 flow 的 run 内序号）。
+ */
+export const wsFlowResumeCommandSchema = z.object({
+  type: z.literal("command"),
+  action: z.literal("flow.resume"),
+  payload: z.object({
+    lastSeq: z.number().int().min(0).default(0),
+  }),
+});
+
+/**
  * 终端会话（R3-1「终端」标签的交互式形态）：一条**持久 shell**（cd 保留、REPL 可用），
  * 输入输出都走这条已有的 WS 连接——不再为每条命令起一个进程。
  *
@@ -113,6 +128,7 @@ export const wsCommandSchema = z.discriminatedUnion("action", [
   wsRunCommandSchema,
   wsCancelCommandSchema,
   wsResumeCommandSchema,
+  wsFlowResumeCommandSchema,
   wsTerminalStartCommandSchema,
   wsTerminalInputCommandSchema,
   wsTerminalResizeCommandSchema,
@@ -137,6 +153,7 @@ export const wsClientMessageSchema = z.union([
   wsRunCommandSchema,
   wsCancelCommandSchema,
   wsResumeCommandSchema,
+  wsFlowResumeCommandSchema,
   wsTerminalStartCommandSchema,
   wsTerminalInputCommandSchema,
   wsTerminalResizeCommandSchema,
@@ -184,6 +201,7 @@ export type WsCommandAck = z.infer<typeof wsCommandAckSchema>;
 export type WsRunCommand = z.infer<typeof wsRunCommandSchema>;
 export type WsCancelCommand = z.infer<typeof wsCancelCommandSchema>;
 export type WsResumeCommand = z.infer<typeof wsResumeCommandSchema>;
+export type WsFlowResumeCommand = z.infer<typeof wsFlowResumeCommandSchema>;
 export type WsTerminalResizeCommand = z.infer<
   typeof wsTerminalResizeCommandSchema
 >;

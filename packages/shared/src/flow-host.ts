@@ -9,7 +9,9 @@ import { z } from "zod";
  * 与 `flow/docs/ff-embed-v1.md` 对齐。
  *
  * 方向约定：
- * - 本地身份适配尚未接通；identity 端点明确返回不可用，不交换接入凭据。
+ * - 本地身份适配（DEC-20 免账户模型）：宿主前端凭本机接入换**短时身份票据**，
+ *   经 `ff-embed/identity` 交给 flow 前端；flow 网关带票据回宿主验签，拿回稳定
+ *   `subject`（= 本实例 instanceId）。宿主接入凭据本身不出宿主进程。
  * - 凭证 / 事件：同为 flow 网关 → 宿主（P3/P4/P5 逐个接上，形状同样落在这里）。
  *
  * 鉴权约定：调用方（flow 网关）用**共享密钥**做 bearer（`KENFUTWORK_FLOW_EMBED_SECRET`
@@ -28,8 +30,8 @@ export const FLOW_PLUGIN_BUNDLE_NAME = "kenfutwork-flow";
  * flow 宿主能力探针（`GET /api/flow/host/status`，宿主自己的前端调用，本机接入验证）。
  *
  * 工作台据此决定 Flow 模式入口是否出现（入口纪律：未安装插件或适配层未接通时不摆空壳）。
- * 本期 `enabled` 为 false：本地身份适配尚未接通。配置缺失与接线原因写进 `reasons`，
- * 界面把原因如实透出（fail loud，不放无提示的假开关）。
+ * 本期身份缝已按本地实例（DEC-20）接通：共享密钥 + 前端地址配齐即 `enabled: true`；
+ * 缺项写进 `reasons`，界面把原因如实透出（fail loud，不放无提示的假开关）。
  */
 export const flowHostStatusResponseSchema = z.object({
   enabled: z.boolean(),
@@ -40,6 +42,43 @@ export const flowHostStatusResponseSchema = z.object({
 });
 export type FlowHostStatusResponse = z.infer<
   typeof flowHostStatusResponseSchema
+>;
+
+/**
+ * 宿主身份票据（本地实例身份适配）：宿主前端调用 `POST /api/flow/host/identity-ticket`
+ * （本机接入验证）换取一次性的短时票据，经 `ff-embed/identity` 交给 flow 前端；
+ * flow 网关再回传给宿主验签（见下）。
+ *
+ * 一次性 + 短 TTL（沿用本机接入票据的治理值 `localAccessTicketTtlMs`）：消费即失效，
+ * 重放无效；服务重启票据作废（iframe 重载会重新握手、重新签发）。
+ */
+export const flowHostIdentityTicketResponseSchema = z.object({
+  token: z.string().min(1).max(2048),
+  expiresAt: z.string().min(1).max(64),
+});
+export type FlowHostIdentityTicketResponse = z.infer<
+  typeof flowHostIdentityTicketResponseSchema
+>;
+
+/**
+ * 身份验签（`POST /api/flow/host/identity`，flow 网关 → 宿主，共享密钥门）。
+ * 请求形状与 flow 侧 `EmbeddedIdentityProvider` 对齐（token ≤ 8KB 后拒绝）。
+ */
+export const flowHostIdentityRequestSchema = z.object({
+  token: z.string().min(1).max(8192),
+  protocolVersion: z.string().min(1).max(16).optional(),
+});
+
+/**
+ * 身份验签响应（与 flow 侧 `HostIdentityPayload` 对齐）：`subject` 是稳定外部标识，
+ * flow 侧按它 get-or-create 账户；本地实例模型下 subject = 实例 instanceId。
+ */
+export const flowHostIdentityResponseSchema = z.object({
+  subject: z.string().min(1).max(256),
+  displayName: z.string().min(1).max(128).optional(),
+});
+export type FlowHostIdentityResponse = z.infer<
+  typeof flowHostIdentityResponseSchema
 >;
 
 /**
@@ -163,6 +202,19 @@ export const flowEngineInstallStatusSchema = z.object({
 });
 export type FlowEngineInstallStatus = z.infer<
   typeof flowEngineInstallStatusSchema
+>;
+
+/**
+ * 引擎栈停止/卸载（FORM-11 生命周期，`POST /api/flow/host/engine/stop`）。
+ *
+ * `deleteData` 缺省 false = 只 `down` 保容器卷数据（下次起栈沿用）；
+ * `true` = 追加 `--volumes` 全删（§9.1③ 的卸载策略：**显式选择全删才动数据**）。
+ */
+export const flowHostEngineStopRequestSchema = z.object({
+  deleteData: z.boolean().optional(),
+});
+export type FlowHostEngineStopRequest = z.infer<
+  typeof flowHostEngineStopRequestSchema
 >;
 
 /**
