@@ -945,7 +945,10 @@ jobs:
 test("SEA 产物头部建立 exe 锚点的文件型 require", async () => {
   const script = await readText("scripts/package-win.mjs");
   const banner = /const seaBanner = `([\s\S]*?)`;/.exec(script)?.[1];
-  assert.ok(banner, "package-win.mjs 里找不到 seaBanner——external 会退回启动期裸 require");
+  assert.ok(
+    banner,
+    "package-win.mjs 里找不到 seaBanner——external 会退回启动期裸 require",
+  );
   assert.match(
     banner,
     /createRequire\(base\)/,

@@ -196,17 +196,24 @@ jobs:
       - name: 沙箱能力探针（先给结论再跑用例）
         run: |
           set -euo pipefail
-          # 验的是**失败的那个原语**，不是「bwrap 能不能起」：
-          # 1) bwrap 起得来；2) bwrap 内嵌 userns 拿得到能力（apply-seccomp 的前提）。
-          if ! bwrap --unshare-user --unshare-pid --ro-bind / / --dev /dev --proc /proc \
-            --cap-drop ALL --cap-add CAP_SETFCAP \
-            /bin/sh -c 'unshare -U sh -c "echo deny > /proc/self/setgroups"' \
-            2>/tmp/srt-probe.err; then
-            echo "· 沙箱前置能力不足：$(cat /tmp/srt-probe.err)"
-            echo "  → 这批用例走不了真实进程沙箱。禁止跳过或削弱沙箱；换用允许能力型 userns 的 runner。"
+          # 探针必须验**沙箱真正依赖的那件事**：apply-seccomp 在 bwrap 内再嵌一层
+          # userns 取 CAP_SYS_ADMIN 来上 seccomp 与锁挂载。所以看嵌套命名空间的 CapEff：
+          # 全 0 = 无能力 userns（AppArmor 限制没解除），非 0 = 可用。
+          # 反例自查：早期版本探针写 /proc/self/setgroups，那个原语即使在健康环境里
+          # 也要 init_user_ns 的 CAP_SETGID，永远 EPERM——探针自己假红，比不写更糟。
+          capeff="$(bwrap --ro-bind / / --dev /dev --proc /proc \
+            --unshare-user --unshare-pid --cap-drop ALL --cap-add CAP_SETFCAP \
+            /bin/sh -c 'unshare -U sh -c "grep ^CapEff: /proc/self/status"' 2>/tmp/srt-probe.err | awk '{print $2}')" || {
+              echo "· bwrap 起不来：$(cat /tmp/srt-probe.err)"
+              echo "  → 这批用例走不了真实进程沙箱。禁止跳过或削弱沙箱；换用允许能力型 userns 的 runner。"
+              exit 1
+            }
+          if [ "${capeff}" = "0000000000000000" ]; then
+            echo "· 嵌套 userns 无能力（CapEff=0）：隔离层拿不到 CAP_SYS_ADMIN，沙箱起不来"
+            echo "  → 禁止跳过或削弱沙箱；换用允许能力型 userns 的 runner。"
             exit 1
           fi
-          echo "· 能力型嵌套 userns 可用：这批用例走真实进程沙箱"
+          echo "· 嵌套 userns 有能力（CapEff=${capeff}）：这批用例走真实进程沙箱"
           bwrap --version
           node --version
 
@@ -218,6 +225,16 @@ jobs:
 
       - name: 构建 server 的上游依赖
         run: pnpm exec turbo run build --filter=@kenfutwork/server^... --concurrency=1
+
+      - name: 真沙箱预检（一条真实用例先跑，失败日志就在最前面）
+        run: |
+          set -euo pipefail
+          # 预检走产品代码路径（SRT + bwrap + apply-seccomp + 读写隔离探针），而不是手工拼
+          # bwrap 参数：手工拼的探针会和真实用例给出不同结论（本轮就撞过一次假红）。
+          # 失败时把 helper 的原始 stderr 留在这一段的输出里，别让它在 45 分钟的整包日志里翻不到。
+          pnpm --filter @kenfutwork/server exec vitest run \
+            src/features/process-sandbox/service.test.ts \
+            -t "真实命令的输出可继续读取"
 
       - name: server 测试（串行，避免内存踩踏）
         run: pnpm exec turbo run test --filter=@kenfutwork/server --concurrency=1

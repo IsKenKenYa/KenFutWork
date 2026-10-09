@@ -40,11 +40,18 @@ const target=args.at(-1);
 const file=path.join(APP,'signature-fixture.json');
 const state=JSON.parse(fs.readFileSync(file,'utf8'));
 const save=()=>fs.writeFileSync(file,JSON.stringify(state));
-if(target!==APP){
- state.calls.push('sign:'+path.relative(APP,target));
+const rel=path.relative(APP,target), isNested=target!==APP;
+const relList=()=>[...new Set(state.sealedNested??[])];
+if(args.includes('--verify')){
+ state.calls.push(isNested?'verify:'+rel:'verify');save();
+ // 外层与内部各文件分开记账：真实 codesign 就是「外层 --deep 过了，散装 Mach-O 仍未封印」。
+ process.exit(isNested?(relList().includes(rel)?0:1):(state.sealed?0:1));
+}
+if(isNested){
+ state.calls.push('sign:'+rel);
+ state.sealedNested=[...new Set([...relList(),rel])];
  save();process.exit(state.nestedFails?1:0);
 }
-if(args.includes('--verify')){state.calls.push('verify');save();process.exit(state.sealed?0:1);}
 if(args.includes('--display')){
  state.calls.push('display');save();
  if(state.kind==='unsigned'){console.error('code object is not signed at all');process.exit(1);}
@@ -132,33 +139,85 @@ test(
   "补封印先逐个封嵌套 Mach-O（自内向外）再封外层 bundle",
   options,
   async () => {
+    const deep =
+      "Contents/Resources/app/process-helper/node_modules/node-pty/prebuilds/darwin-arm64/pty.node";
+    const shallow = "Contents/Resources/app/node_modules/libnut.node";
     const current = await fixture(
       { kind: "unsigned", sealed: false },
-      {
-        nested: [
-          "Contents/Resources/app/node_modules/libnut.node",
-          "Contents/Resources/app/process-helper/node_modules/node-pty/prebuilds/darwin-arm64/pty.node",
-        ],
-      },
+      { nested: [shallow, deep] },
     );
     try {
       const result = ensureMacosAppSeal(current.app, current.command);
       assert.equal(result.repaired, true);
       assert.equal(result.nestedSigned, 2);
-      assert.deepEqual((await current.read()).calls, [
+      const calls = (await current.read()).calls;
+      // 逐文件先验（发现两个都没封）→ 外层验 → 判身份 → 深的先签 → 浅的后签 →
+      // 重封外层 → 外层严格校验 → 再逐文件复验（这才允许放行）。
+      assert.deepEqual(calls, [
+        `verify:${shallow}`,
+        `verify:${deep}`,
         "verify",
         "display",
-        // 深的先签：先 prebuilds 里的 pty.node，再浅一层的 libnut.node
-        "sign:Contents/Resources/app/process-helper/node_modules/node-pty/prebuilds/darwin-arm64/pty.node",
-        "sign:Contents/Resources/app/node_modules/libnut.node",
+        `sign:${deep}`,
+        `sign:${shallow}`,
         "sign",
         "verify",
+        `verify:${shallow}`,
+        `verify:${deep}`,
       ]);
     } finally {
       await current.close();
     }
   },
 );
+
+test(
+  "外层 --deep 校验通过但散装 Mach-O 未封印时仍逐个补封，最终失败数必须为 0",
+  options,
+  async () => {
+    // CI 实测形态：外层 ad-hoc 封印有效（--deep 不覆盖 Resources 下的 .node），
+    // 逐文件校验却有 4 个未封印。早退就是把这 4 个带着未封印发出去。
+    const loose = "Contents/Resources/app/sidecar/spawn-helper";
+    const current = await fixture(
+      { kind: "adhoc", sealed: true },
+      { nested: [loose] },
+    );
+    try {
+      const result = ensureMacosAppSeal(current.app, current.command);
+      assert.equal(result.repaired, true, "外层过了就不许早退");
+      assert.equal(result.macho.failedTotal, 0, "验收口径是逐文件失败数为 0");
+      const calls = (await current.read()).calls;
+      assert.ok(
+        calls.includes(`sign:${loose}`),
+        "未封印的散装二进制必须被补封",
+      );
+      assert.ok(calls.includes("sign"), "补封内部后必须重封外层");
+    } finally {
+      await current.close();
+    }
+  },
+);
+
+test("外层是证书签名但内部未封印时拒绝 ad-hoc 降级", options, async () => {
+  const current = await fixture(
+    { kind: "developer-id", sealed: true },
+    { nested: ["Contents/Resources/app/node_modules/libnut.node"] },
+  );
+  try {
+    assert.throws(
+      () => ensureMacosAppSeal(current.app, current.command),
+      /原签名身份/,
+      "Developer ID 包不能因为内部漏封就被 ad-hoc 重签，否则外层签名作废",
+    );
+    const calls = (await current.read()).calls;
+    assert.ok(
+      !calls.some((call) => call === "sign"),
+      "拒绝降级时不得调用任何重签",
+    );
+  } finally {
+    await current.close();
+  }
+});
 
 test("嵌套二进制签不动时报错到具体文件，不假装封印完成", options, async () => {
   const current = await fixture(

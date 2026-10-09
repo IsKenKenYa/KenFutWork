@@ -336,7 +336,10 @@ describe.skipIf(!ptyAvailable)(
           session.write("cd sub\r");
           session.write("set KFW_PROBE=kept\r");
           session.write("echo PROBE:%CD%:%KFW_PROBE%:END\r");
-          await waitForOutput(/PROBE:[A-Za-z]:\\[^\r\n]*\\sub:kept:END/, () => output);
+          await waitForOutput(
+            /PROBE:[A-Za-z]:\\[^\r\n]*\\sub:kept:END/,
+            () => output,
+          );
           // cd 到了 sub、变量还在：说明这两条命令跑在同一个 shell 进程里
           expect(output).toContain("PROBE:");
           expect(output.toLowerCase()).toContain("sub");
