@@ -8,6 +8,7 @@ import {
 import { brandKitPromptSection } from "../features/brand-kit/prompt.js";
 import { canvasDesignPromptSection } from "../features/canvas/prompt.js";
 import { codeModePromptSection } from "../features/code-tools/prompt.js";
+import { createDynamicUiPlugin } from "../features/dynamic-ui/plugin.js";
 import { SystemPromptRegistryImpl } from "./context.js";
 import type { PromptSectionDefinition } from "./types.js";
 
@@ -81,6 +82,37 @@ describe("SystemPromptRegistryImpl（内核提示段注册表）", () => {
       }),
     );
     expect(await registry.compose({ preset: "code" })).toBe("ASYNC");
+  });
+});
+
+/**
+ * 动态 UI（对话流可视化）：提示段经插件注册，code 与 design 两模式都挂——
+ * 只贡献「怎么输出可视化块」的说明，与渲染侧（Design / Code 两端的 ```mermaid 与
+ * ```viz 分支）同一份契约。
+ */
+describe("dynamic-ui 插件：可视化块说明两模式都挂", () => {
+  function registryFromPlugin() {
+    const registry = new SystemPromptRegistryImpl();
+    const ctx = {
+      get: (key: string) => {
+        if (key === "systemPrompt") return registry;
+        throw new Error(`没有提供 ${key}`);
+      },
+    } as never;
+    createDynamicUiPlugin().apply(ctx);
+    return registry;
+  }
+
+  it("code 与 design 组合都含可视化块说明（两种块 + JSON 形状写全）", async () => {
+    const registry = registryFromPlugin();
+    for (const preset of ["code", "design"] as const) {
+      const prompt = await registry.compose({ preset });
+      expect(prompt).toContain("## 可视化（动态 UI）");
+      expect(prompt).toContain("```mermaid");
+      expect(prompt).toContain('"type":"bar|line|pie"');
+      // 不做任意 HTML/JS 的边界要写进提示（渲染侧只认两种标记）
+      expect(prompt).toContain("不要输出 HTML 或脚本");
+    }
   });
 });
 

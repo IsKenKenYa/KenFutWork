@@ -11,6 +11,11 @@ import {
 } from "@/lib/browser-panel";
 import { ChatImage } from "./image-lightbox";
 import { isImageUrl } from "./utils";
+import {
+  extractFencedBlock,
+  FencedVisualization,
+  MarkdownStreamingContext,
+} from "./visualization-block";
 
 /**
  * Pre-built markdown component overrides.
@@ -20,6 +25,20 @@ import { isImageUrl } from "./utils";
  * every render, which would force ReactMarkdown to remount its tree.
  */
 const markdownComponents: Components = {
+  /**
+   * 动态 UI：` ```mermaid `（流程图 / 架构图）与 ` ```viz `（数据图表）在**块级**接管；
+   * 认不出 / 解析失败 / 流式中一律原样回落默认 `<pre><code>`（内容不吞）。
+   * 判定放在 `pre` 而不是 `code`：接管后返回的是 `<figure>` / `<div>`，
+   * 留在 `<pre>` 里是非法嵌套。
+   */
+  pre({ children, ...props }) {
+    const block = extractFencedBlock(children);
+    if (block) {
+      const fallback = <pre {...props}>{children}</pre>;
+      return <FencedVisualization block={block} fallback={fallback} />;
+    }
+    return <pre {...props}>{children}</pre>;
+  },
   a({ href, children }) {
     if (href && isImageUrl(href)) {
       return (
@@ -91,12 +110,15 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
 
   return (
     <div className="markdown-content text-sm leading-[1.6] text-foreground">
-      <ReactMarkdown
-        remarkPlugins={remarkPlugins}
-        components={markdownComponents}
-      >
-        {safeText}
-      </ReactMarkdown>
+      {/* 流式态经 context 传给动态 UI 块：components 表是模块级常量，不能按实例重建 */}
+      <MarkdownStreamingContext.Provider value={Boolean(showCursor)}>
+        <ReactMarkdown
+          remarkPlugins={remarkPlugins}
+          components={markdownComponents}
+        >
+          {safeText}
+        </ReactMarkdown>
+      </MarkdownStreamingContext.Provider>
       {showCursor && (
         <span className="inline-block w-[2px] h-[14px] ml-0.5 -mb-[2px] bg-foreground animate-pulse rounded-full" />
       )}
