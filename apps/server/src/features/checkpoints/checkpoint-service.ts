@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readdir, readFile, rm } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { lstat, mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { GitSource } from "../code-git/code-git-service.js";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
 import type { LocalActor } from "../local-instance/types.js";
@@ -197,7 +197,8 @@ export function createCheckpointService(options: {
   >();
   const identityKey = (scope: ExecutionScopeHandle) =>
     `${scope.describe().instanceId}:${scope.describe().taskId}`;
-  const gitDirectory = (scope: ExecutionScopeHandle, root: string) => {
+  /** 旧布局（三层 UUID + 64 位摘要）——只用于兼容既有影子仓库，新仓库不再用它。 */
+  const legacyGitDirectory = (scope: ExecutionScopeHandle, root: string) => {
     const id = scope.describe();
     return join(
       options.checkpointRoot,
@@ -206,6 +207,46 @@ export function createCheckpointService(options: {
       `${id.taskId}.git`,
       createHash("sha256").update(root).digest("hex"),
     );
+  };
+  const isDirectory = async (path: string) => {
+    try {
+      return (await lstat(path)).isDirectory();
+    } catch {
+      // 不存在 / 路径过长（Windows ENAMETOOLONG）都当作「没有」
+      return false;
+    }
+  };
+  /**
+   * 影子仓库目录（**短布局**）：`<checkpointRoot>/<taskId>-<rootHash16>.git`。
+   *
+   * 为什么不再用「三层 UUID + 64 位摘要」：临时目录 / AppData 前缀一叠就 230+ 字符，
+   * Windows 上 git 自己都打不开——`fatal: '$GIT_DIR' too big` / `Filename too long`
+   * （2026-10-09 实测：checkpoint-service 九条用例全红、打包冒烟卡在 shadow checkpoint 一步；
+   * `-c core.longpaths=true` 治不了，那是 git 的长度校验而非 Windows 路径 API）。
+   * 旧布局的仓库若已存在则**原地搬家**到短布局——数据库只存 sha、不存路径，搬家不动任何
+   * 检查点记录；搬不动（被占用 / 权限）就沿用旧路径，行为与修前一致。
+   */
+  const gitDirectory = async (
+    scope: ExecutionScopeHandle,
+    root: string,
+  ): Promise<string> => {
+    const id = scope.describe();
+    const short = join(
+      options.checkpointRoot,
+      `${id.taskId}-${createHash("sha256").update(root).digest("hex").slice(0, 16)}.git`,
+    );
+    if (await isDirectory(short)) return short;
+    const legacy = legacyGitDirectory(scope, root);
+    if (await isDirectory(legacy)) {
+      try {
+        await mkdir(dirname(short), { recursive: true });
+        await rename(legacy, short);
+        return short;
+      } catch {
+        return legacy;
+      }
+    }
+    return short;
   };
   const excludedPathsFor = (
     scope: ExecutionScopeHandle,
@@ -298,7 +339,7 @@ export function createCheckpointService(options: {
     const directorySnapshots: DirectorySnapshot[] = [];
     for (const rootDirectory of [...new Set(rootsFor(input.scope))]) {
       await input.scope.resolvePath(rootDirectory, "read");
-      const gitDir = gitDirectory(input.scope, rootDirectory);
+      const gitDir = await gitDirectory(input.scope, rootDirectory);
       await mkdir(gitDir, { recursive: true });
       const nested = excludedPathsFor(input.scope, rootDirectory);
       const excludes = [
@@ -337,7 +378,7 @@ export function createCheckpointService(options: {
           (entry) => entry.rootDirectory === rootDirectory,
         )?.shadowCommit ?? EMPTY_TREE_SHA;
       const directory = {
-        gitDir: gitDirectory(input.scope, rootDirectory),
+        gitDir: await gitDirectory(input.scope, rootDirectory),
         workTree: rootDirectory,
         excludedPaths: excludedPathsFor(input.scope, rootDirectory),
       };
@@ -406,7 +447,7 @@ export function createCheckpointService(options: {
           (entry) => entry.rootDirectory === directory.rootDirectory,
         )?.shadowCommit ?? EMPTY_TREE_SHA;
       const scope = {
-        gitDir: gitDirectory(input.scope, directory.rootDirectory),
+        gitDir: await gitDirectory(input.scope, directory.rootDirectory),
         workTree: directory.rootDirectory,
         from,
         to: directory.shadowCommit,
@@ -463,7 +504,7 @@ export function createCheckpointService(options: {
     for (const directory of row.directorySnapshots) {
       if (targetRoot && directory.rootDirectory !== targetRoot) continue;
       await input.scope.resolvePath(directory.rootDirectory, "write");
-      const gitDir = gitDirectory(input.scope, directory.rootDirectory);
+      const gitDir = await gitDirectory(input.scope, directory.rootDirectory);
       const workTree = directory.rootDirectory;
       const excludedPaths = excludedPathsFor(
         input.scope,
@@ -622,7 +663,7 @@ export function createCheckpointService(options: {
         404,
       );
     const path = requireRelative(relative(directory.rootDirectory, canonical));
-    const gitDir = gitDirectory(input.scope, directory.rootDirectory);
+    const gitDir = await gitDirectory(input.scope, directory.rootDirectory);
     const stagingDirectory = join(gitDir, `read-${randomUUID()}`);
     await mkdir(stagingDirectory, { recursive: true });
     try {
