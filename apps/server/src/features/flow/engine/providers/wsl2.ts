@@ -96,7 +96,11 @@ export async function probeWsl2Path(deps: {
       ...base,
       available: true,
       distro: wsl2.name,
-      detail: `发行版 ${wsl2.name}（WSL2，${wsl2.state}；${docker.detail}）`,
+      // 内存口径（§9-②）：给一条可直接照抄的指引，**不代写**全局 `.wslconfig`
+      // ——那个文件管的是用户所有 WSL 发行版（含 Docker Desktop 的），插件不越权改它。
+      detail:
+        `发行版 ${wsl2.name}（WSL2，${wsl2.state}；${docker.detail}）；` +
+        "限内存：在 %USERPROFILE%\\.wslconfig 加 [wsl2] memory=4GB",
     };
   }
   if (userDistros.length > 0) {

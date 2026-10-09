@@ -181,7 +181,7 @@ describe("引擎承载目标（双 Provider）", () => {
     expect(getEngineInstallSnapshot().state).toBe("idle");
   });
 
-  it("WSL2 停止：down 经同一承载目标（wsl.exe）", async () => {
+  it("WSL2 停止：down 经同一承载目标（wsl.exe），随后回收发行版", async () => {
     const target = options();
     const run = fakeRun({ code: 0 });
     const result = await stopEngineStack(
@@ -192,6 +192,34 @@ describe("引擎承载目标（双 Provider）", () => {
     expect(run.calls[0]?.file).toBe("wsl.exe");
     expect(run.calls[0]?.args).toContain("Ubuntu");
     expect(run.calls[0]?.args).toContain("down");
+    // §9-② 的「退出 flow 时零常驻」：回收只针对本栈所在发行版（不是全局 --shutdown）
+    expect(run.calls[1]).toEqual({
+      file: "wsl.exe",
+      args: ["--terminate", "Ubuntu"],
+    });
+  });
+
+  it("宿主 docker 停止不碰 WSL；回收失败也不影响「栈已停」", async () => {
+    const hostTarget = options();
+    const hostRun = fakeRun({ code: 0 });
+    await stopEngineStack(hostTarget, { run: hostRun.run });
+    expect(hostRun.calls.every((call) => call.file !== "wsl.exe")).toBe(true);
+
+    // 回收那一步失败（发行版已被手工停掉/命令不可用）：停止仍算成功
+    const wslTarget = options();
+    const calls: Array<{ file: string; args: readonly string[] }> = [];
+    const result = await stopEngineStack(
+      { ...wslTarget, launch: { kind: "wsl2", distro: "Ubuntu" } },
+      {
+        run: async (file, args) => {
+          calls.push({ file, args });
+          if (args.includes("--terminate")) throw new Error("wsl 不可用");
+          return { code: 0, stdout: Buffer.from(""), stderr: Buffer.from("") };
+        },
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(calls).toHaveLength(2);
   });
 
   it("卸载 purge：down --volumes --rmi all，并清掉本地 env/日志/承载记录", async () => {

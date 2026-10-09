@@ -332,6 +332,19 @@ export async function stopEngineStack(
         (detail ? `：${detail.slice(0, 200)}` : ""),
     };
   }
+  /**
+   * WSL2 承载：栈停掉之后回收发行版（§9-② 的「不用 flow 时零常驻」）。
+   *
+   * 用 `--terminate <distro>` 而不是方案文档写的 `wsl --shutdown`：后者会把用户
+   * **所有**发行版（含 Docker Desktop 自己的）一起停掉，爆炸半径远超本功能的需要；
+   * terminate 只停这套栈所在的那个发行版。**尽力而为**——回收失败不影响「栈已停」
+   * 的结论（下次启动会自行把发行版拉起来），故只吞错误、不改判返回。
+   */
+  if (options.launch?.kind === "wsl2") {
+    await run("wsl.exe", ["--terminate", options.launch.distro]).catch(
+      () => undefined,
+    );
+  }
   current = { state: "idle" };
   return { ok: true };
 }

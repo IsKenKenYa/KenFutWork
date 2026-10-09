@@ -153,7 +153,7 @@ describe("probeWsl2Path（Provider A）", () => {
     expect(path.reason).toContain("--set-default-version 2");
   });
 
-  it("WSL2 发行版就绪 → 可用，detail 带发行版名与 Docker 版本", async () => {
+  it("WSL2 发行版就绪 → 可用，detail 带发行版名、Docker 版本与限内存指引", async () => {
     const path = await probeWsl2Path({
       platform: "win32",
       release: "10.0.26200",
@@ -164,6 +164,8 @@ describe("probeWsl2Path（Provider A）", () => {
     // 发行版内 Docker 就绪才算可用；distro 字段供安装时作承载目标（界面不解析 detail）
     expect(path.detail).toContain("Docker Engine 27.3.1");
     expect(path.distro).toBe("Ubuntu");
+    // §9-② 的内存口径：给指引不代写全局 .wslconfig（引擎页把 detail 原样显示）
+    expect(path.detail).toContain("memory=4GB");
   });
 
   it("发行版内没有 Docker（CLI 不可用）→ 不可用，指引在发行版内装引擎与 compose 插件", async () => {
