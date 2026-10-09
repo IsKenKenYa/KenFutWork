@@ -89,10 +89,10 @@ function sendError(reply: FastifyReply, error: unknown) {
 
 async function writeSseFrame(
   reply: FastifyReply,
-  event: unknown,
+  frame: string,
 ): Promise<void> {
   if (reply.raw.destroyed || reply.raw.writableEnded) return;
-  if (reply.raw.write(`data: ${JSON.stringify(event)}\n\n`)) return;
+  if (reply.raw.write(frame)) return;
   await new Promise<void>((resolve) => {
     const finish = () => {
       reply.raw.off("drain", finish);
@@ -173,9 +173,12 @@ export async function registerCodeUiRoutes(
     let started = false;
     let unsubscribe = () => {};
     let disposed: Promise<void> | undefined;
+    let keepAlive: ReturnType<typeof setInterval> | undefined;
+    let keepAliveInFlight = false;
     const close = (): Promise<void> => {
       if (disposed) return disposed;
       closed = true;
+      clearInterval(keepAlive);
       unsubscribe();
       unsubscribe = () => {};
       request.raw.socket.off("close", disconnected);
@@ -202,7 +205,7 @@ export async function registerCodeUiRoutes(
         request.log.warn({ error }, "Code连接资源尚未确认关闭"),
       );
     };
-    const sendAuthenticated = async (event: unknown) => {
+    const sendAuthenticated = async (frame: string) => {
       if (closed || !started) return;
       const current = await deps.localAccess.authenticate(request).catch(() => {
         request.log.warn("本机事件流接入校验失败，连接已关闭。");
@@ -218,7 +221,7 @@ export async function registerCodeUiRoutes(
         return;
       }
       if (closed) return;
-      await writeSseFrame(reply, event);
+      await writeSseFrame(reply, frame);
     };
     eventStreams.add(close);
     request.raw.socket.once("close", disconnected);
@@ -245,7 +248,7 @@ export async function registerCodeUiRoutes(
       }
       opening = deps.service.openConnection(
         user,
-        sendAuthenticated,
+        (event) => sendAuthenticated(`data: ${JSON.stringify(event)}\n\n`),
         disconnected,
       );
       connection = await opening;
@@ -268,11 +271,28 @@ export async function registerCodeUiRoutes(
         "x-accel-buffering": "no",
       });
       started = true;
-      await sendAuthenticated({
-        event: "ready",
-        hello: connection.hello,
-        reconnectDelayMs: connection.reconnectDelayMs,
-      });
+      await sendAuthenticated(
+        `data: ${JSON.stringify({
+          event: "ready",
+          hello: connection.hello,
+          reconnectDelayMs: connection.reconnectDelayMs,
+        })}\n\n`,
+      );
+      if (closed) return reply;
+      // WebKit慢消费时可能暂存尾部网络数据；标准SSE注释推动交付，也检查闲置连接授权。
+      keepAlive = setInterval(() => {
+        if (closed || keepAliveInFlight) return;
+        keepAliveInFlight = true;
+        void sendAuthenticated(": keepalive\n\n")
+          .catch((error: unknown) => {
+            request.log.warn({ error }, "Code事件流保活失败，连接已关闭。");
+            disconnected();
+          })
+          .finally(() => {
+            keepAliveInFlight = false;
+          });
+      }, 5_000);
+      keepAlive.unref();
     } catch (error) {
       await close();
       if (started || reply.raw.destroyed) return reply;
