@@ -2,6 +2,7 @@
 
 > **角色声明**：方案稿（参考级，非权威）——Home Assistant（HA）接入方案的实施蓝图。**尚未拍板**：文内决策用 `HA-*` 本地编号占位，拍板后归并《[改造计划](../方案设计/改造计划.md)》§6 并分配 `DEC-*` 编号；结论与理由以《改造计划》§6 为准。
 > 状态：2026-10-09 成稿。外部事实逐条取证（来源与日期见 §2、§9）；仓库侧结论均在本机代码上核对过，附文件与行号。
+> **进展（2026-10-09 第二轮）**：本轮的**三个仓库侧缺口已按文内推荐落地**（不依赖 HA 插件本身）：① 桌面发布包/自托管镜像补自带插件 bundle（§3.5）；② MCP `http` 传输支持自定义请求头（§5.1）；③ 插件工具可声明 `access: read/write/execute` 并据此进默认档审批（§3.3）。插件本体（P1–P4）**尚未开工**。
 > 需求来源：2026-10-09 用户口径——「我想兼容 HA，可以同时兼容米家和华为的」。
 > 与既有文档的关系：本条是《[米家插件规划](./米家插件规划.md)》**路线 A** 的落地化设计（该文档推荐的 HA 路线当时因「本机无 HA、端到端验收做不了」改走了路线 B 自包含实现；本轮用户明确要兼容 HA 且要覆盖华为，故把路线 A 正式立项）。已落地的米家插件（`plugins/mihome/`）**保留不撤**，两者关系见 §4.7 与 §8。
 
@@ -17,8 +18,8 @@
 | 面板 | **自带面板页**（不走 HA 前端 iframe）：配置（地址+令牌）→ 实体网格（按区域分组、域驱动控件）；WS 实时优先、降级轮询 |
 | agent 工具 | `ha_entities`（读）/ `ha_control`（写，读回校验）——经 ToolSearch 激活；未配置时 fail loud |
 | 凭据 | HA 长期令牌存插件存储：实例隔离、**值明文落库**（`DEC-7` 2026-10-05 修订后的本地口径）、HTTP 不回显、卸载即清 |
-| 零代码替代 | HA MCP（HA ≥ 2025.2，`POST /api/mcp`）——现状缺口：本仓 MCP `http` 传输不支持自定义头，直连要补一处小改动（§5.1） |
-| 已知仓库侧缺口 | 桌面发布包**未拷贝 `plugins/`**（打包脚本只拷 web/pg/supabase/dify/runtime）→ 自带 bundle 在装好的桌面端不可见，需补一步（§3.5，米家/flow 同样受益） |
+| 零代码替代 | HA MCP（HA ≥ 2025.2，`POST /api/mcp`）——**已通**：MCP `http` 类型现支持自定义请求头（Authorization），面板即可直连，不再需要 `npx mcp-remote` 中转（§5.1） |
+| 已知仓库侧缺口 | ~~桌面发布包**未拷贝 `plugins/`**~~ **已修**（2026-10-09）：`package-win/mac.mjs` 拷贝 + tauri 资源映射 + Docker 镜像 COPY + 加载器契约测试（§3.5）。~~插件工具不进默认档审批~~ **已修**：`access` 声明进危险判据（§3.3） |
 
 ## 1. 需求与判定
 
@@ -97,19 +98,22 @@
 
 ### 3.3 插件工具面与审批（关键缺口）
 
-- `ctx.tools.register` 的插件工具被规范化成：`scope: "shared"`、`exposure: "deferred"`、`access: "execute"`（`compat-context.ts` 的 `normalizeToolDefinition`）。
+- `ctx.tools.register` 的插件工具被规范化成：`scope: "shared"`、`exposure: "deferred"`、`access: <属主声明 | "execute">`（`compat-context.ts` 的 `normalizeToolDefinition`）。
 - `deferred` = 不在首轮工具清单里，模型要先经 **ToolSearch** 发现并激活（`apps/server/src/features/tool-catalog/catalogue.ts`）。
-- 审批只按**工具名模式**匹配：`/^(Write|Edit|ApplyPatch|Bash|TaskInput|TaskStop)$/`、`/^mcp__/`、`/^execute$/`、`/shell/i` 等（`apps/server/src/features/permissions/permission-service.ts`）。
-- ⇒ **设备控制类插件工具（如 `ha_control`）在默认档不会进审批链**——这是现状（米家插件同样如此），需要拍板处理方式（§4.5、§8）。
+- 审批判据 = **危险工具名模式**（`/^(Write|Edit|ApplyPatch|Bash|TaskInput|TaskStop)$/`、`/^mcp__/`、`/^execute$/`、`/shell/i` 等）**或属主声明的非只读效果**（`permission-service.ts` 的 `isDangerousCall`）。
+- **审批缺口已修（2026-10-09）**：插件在 `ctx.tools.register` 里声明 `access: "read" | "write" | "execute"`——`read` 只读放行、`write`/`execute` 进默认档审批，**不声明按 `execute` 处理**（未知效果按执行策略做人审，与 MCP 工具同口径）。链路：`compat-context` 归一化 → 内核 `tool-pre-execute` 事件带 `access` → permissions 插件据此判。写工具不声明 `access` 仍会被拦（默认档），漏网只剩「明确声明 `read` 却干写」这一种自欺——那是插件作者的责任，验收见 `plugins/mihome/README.md` 的声明示例。
 
 ### 3.4 安装与分发路径
 
 - 三种安装入口（`packages/shared/src/plugin-contracts.ts`）：① 自带 bundle（按包名，一键装）；② 从链接（本机目录路径或 GitHub 仓库/子目录）；③ 沙箱工作目录。
 - 自带 bundle 目录候选：`<cwd>/plugins` → `<cwd>/../../plugins`，可用 `KENFUTWORK_BUILTIN_PLUGINS_DIR` 覆盖（`apps/server/src/features/plugins/plugin.ts`）。仓库内事件前例：`plugins/{mihome,flow,computer-use,demo-panel,example-clock}`。
 
-### 3.5 桌面发布包的缺口（本轮新发现，影响所有自带 bundle）
+### 3.5 桌面发布包的缺口（本轮新发现，影响所有自带 bundle）——**已修（2026-10-09）**
 
-`scripts/package-win.mjs` 组装 `release/` 时只拷：静态 UI（`web/`）、内嵌 Postgres（`pg/`）、迁移 SQL（`supabase/`）、flow 引擎资源（`dify/`）、sharp/node-pty 原生包、运行时（`runtime/`）——**没有拷贝 `plugins/`**，且桌面入口（`apps/server/src/desktop/`）不注入 `KENFUTWORK_BUILTIN_PLUGINS_DIR`。后果：装好的桌面端里「自带插件」列表为空，米家/flow 与本次的 HA 插件都只能走「从链接安装」。修法见 §6 的 P5（一行拷贝 + 打包复验），属独立小改动。
+`scripts/package-win.mjs` 组装 `release/` 时只拷：静态 UI（`web/`）、内嵌 Postgres（`pg/`）、迁移 SQL（`supabase/`）、flow 引擎资源（`dify/`）、sharp/node-pty 原生包、运行时（`runtime/`）——**没有拷贝 `plugins/`**，且桌面入口（`apps/server/src/desktop/`）不注入 `KENFUTWORK_BUILTIN_PLUGINS_DIR`。后果：装好的桌面端里「自带插件」列表为空，米家/flow 与本次的 HA 插件都只能走「从链接安装」。
+
+**修法（已落地）**：`package-win.mjs` / `package-mac.mjs` 各加一步 `plugins/ → release/plugins` 拷贝，tauri 资源映射补 `release/plugins → app/plugins`（mac 侧替换原先只映射 `computer-use` 的窄条目），`apps/server/Dockerfile` 补 `COPY plugins/ plugins/`（容器 cwd 是 `/app/apps/server`，命中 `<cwd>/../../plugins` 候选）。壳以应用目录为服务端 cwd 拉起（`src/lib.rs` 的 `packaged_spawn_config`），加载器的 `<cwd>/plugins` 候选即命中——这条**打包布局契约**由 `apps/server/src/features/plugins/plugin-bundled-dir.test.ts` 锁死（cwd 命中 + env 覆盖优先 + 目录不存在返回空 + 坏目录只跳过自己）。
+**Windows 例外**：`computer-use` 不进 Windows 包——该形态是 Node SEA（`import.meta.url` 为空），执行原语 `windows-native.ps1` 既未随包也无法按入口定位，装了也用不了，不发半成品（`package-win.mjs` 的 cpSync filter 里写明；mac 侧照常交付）。
 
 ### 3.6 既有米家插件（形状模板，协议不通用）
 
@@ -174,7 +178,7 @@ plugins/ha/
 | `ha_control` | 写：`entity_id`（或 `domain`+`service`）+ 服务与参数 | 调用后**读回真值**再报结果：`{ok, state, changed}`；未变化如实说「已发出，状态未变」，不假成功 |
 
 - 未配置/令牌失效时 fail loud：返回可读错误（「请先在侧栏 Home Assistant 面板完成配置」），不假装成功。
-- 审批缺口（§3.3）的推荐处理：**内核给 `CompatToolDefinition` 增加只读/写入声明（如 `access: "read" | "write" | "execute"`，映射进 kernel `ToolDefinition.access` 并纳入危险判据）**，让插件工具能宣称「写」从而进默认档审批；在落地前，用**工具命名 + 文档 + 自定义权限规则**兜底，并在面板/README 明示「默认档不拦设备写入」（§8 待拍板）。
+- **审批口径（已落地）**：`ha_control` 注册时声明 `access: "write"`、`ha_entities` 声明 `access: "read"`——写设备在默认档进审批（与 `mihome_control` 同一套声明，见 §3.3）。插件面板与 README 如实写明「写操作按当前权限档审批」，不再需要「默认档不拦设备写入」的兜底声明。
 - 可选：注册一段 systemPrompt 提示（「控制智能家居前先用 ToolSearch 找 `ha_*` 工具」）——先不做，真机验证模型能否自行发现；发现困难再加（保持最小面）。
 
 ### 4.6 凭据与边界（`HA-6`）
@@ -196,8 +200,8 @@ plugins/ha/
 
 HA ≥ 2025.2 自带 MCP Server（`POST /api/mcp`）。两条接法：
 
-1. **现状可用**：MCP 面板加一条 stdio 条目 `npx -y mcp-remote <HA地址>/api/mcp --header "Authorization: Bearer <长期令牌>"`（沿用《米家插件规划》A1 的配方）。
-2. **本仓缺口**：MCP 的 `http` 类型不支持自定义头——`apps/server/src/features/mcp/mcp-service.ts` 构造 `StreamableHTTPClientTransport(new URL(spec.url))` 时不带 `requestInit`，而 HA 的 MCP 端点必须带 `Authorization`。补齐 = 契约（`mcpServerCreateRequestSchema` 加 headers/secret 字段，只写不读）+ 存储（`mcp_servers` 迁移）+ 传输（`requestInit: { headers }`）三处，小但跨层（§8 待拍板）。
+1. **推荐（已通，2026-10-09）**：MCP 面板「手动添加 → 远程端点」填 `<HA地址>/api/mcp`，请求头一栏一行 `Authorization=Bearer <长期令牌>` 即可直连，不再需要 `npx mcp-remote` 中转（桌面端可能没有 Node/npx）。
+2. **~~本仓缺口~~ 已补齐（2026-10-09）**：MCP 的 `http` 类型此前不支持自定义头——`mcp-service.ts` 构造 `StreamableHTTPClientTransport(new URL(spec.url))` 时不带 `requestInit`，而 HA 的 MCP 端点必须带 `Authorization`。补齐落点：契约（`mcpServerCreateRequestSchema`/`Update` 加 `headers`，名按 HTTP token 收窄、值禁 CR/LF；视图只回 `headerKeys`，值只写不读）+ 存储（迁移 `20261009120036_mcp_servers_headers.sql` 的 `headers jsonb`）+ 传输（Streamable HTTP 与 SSE 回退两条路径都带 `requestInit: { headers }`）+ 面板（远程端点分支的请求头输入框）+ 测试（本机 HTTP 桩断言请求头真的发到线上、值不外发、stdio 不吃请求头）。
 
 不把 MCP 作为主路的原因：暴露面仅限「已暴露给 Assist 的实体」（要在 HA 里逐个配置）、无设备面板、工具进 `mcp__` 危险前缀默认档每次审批。
 
@@ -213,15 +217,15 @@ HA ≥ 2025.2 自带 MCP Server（`POST /api/mcp`）。两条接法：
 
 一步一提交、一步一测试（《[AGENTS.md](../../AGENTS.md)》提交纪律）；每步验证命令写在该步。
 
-| # | 步骤 | 验证 |
-| --- | --- | --- |
-| P0 | 本文档 + `docs/README.md` 文档地图登记 | `pnpm test:docs` |
-| P1 | bundle 骨架（package.json/patch/入口/README）+ `lib/ha-rest.js`（URL 归一、错误映射）+ 单测（假 HA 的 fetch 层） | `pnpm --filter @kenfutwork/server test` |
-| P2 | 面板 + 路由（配置/连接测试/实体列表/控制）+ 存储 + 面板握手接线 | 假 HA 全链路单测 + 真机走查（docker HA：配置 → 列实体 → 开关灯真变） |
-| P3 | WS：`subscribe_events` 增量 + 退避重连 + 降级轮询；`ha-ws.js` 的 connect 可注入 | 单测（假 socket 驱动状态机：auth 流/断线/重连/降级）+ 真机（HA 里改灯，面板跟随） |
-| P4 | agent 工具 `ha_entities`/`ha_control` + 读回校验 + 未配置 fail loud | 假 HA 单测 + 真机「让 agent 开客厅灯」并核对读回 |
-| P5 | 桌面发布包补 `plugins/` 拷贝（米家/flow 一并受益）；可选：MCP 自定义头（§5.1） | `pnpm package:win` 后核 `release/plugins` 存在且市场列出；MCP 改动另附单测 |
-| P6 | 台账（《[日志](../日志.md)》）+ 面板文案复核 + 与米家插件的互斥说明（§4.7） | `pnpm test` + `pnpm typecheck` + 真机看图 |
+| # | 步骤 | 状态 | 验证 |
+| --- | --- | --- | --- |
+| P0 | 本文档 + `docs/README.md` 文档地图登记 | ✅ 2026-10-09 | `pnpm test:docs` |
+| P1 | bundle 骨架（package.json/patch/入口/README）+ `lib/ha-rest.js`（URL 归一、错误映射）+ 单测（假 HA 的 fetch 层） | 未开工 | `pnpm --filter @kenfutwork/server test` |
+| P2 | 面板 + 路由（配置/连接测试/实体列表/控制）+ 存储 + 面板握手接线 | 未开工 | 假 HA 全链路单测 + 真机走查（docker HA：配置 → 列实体 → 开关灯真变） |
+| P3 | WS：`subscribe_events` 增量 + 退避重连 + 降级轮询；`ha-ws.js` 的 connect 可注入 | 未开工 | 单测（假 socket 驱动状态机：auth 流/断线/重连/降级）+ 真机（HA 里改灯，面板跟随） |
+| P4 | agent 工具 `ha_entities`/`ha_control` + 读回校验 + 未配置 fail loud | 未开工 | 假 HA 单测 + 真机「让 agent 开客厅灯」并核对读回 |
+| P5 | 前置缺口：桌面发布包/镜像补 `plugins/` 拷贝；MCP 自定义头（§5.1）；插件工具 `access` 声明进审批（§3.3） | ✅ 2026-10-09（先于 P1 落地，缺口修复独立于插件本体） | `pnpm package:win` 后核 `release/plugins` 存在且市场列出（真机复验见《日志》本轮遗留）；`plugin-bundled-dir.test.ts`、`mcp-service.test.ts` 的线上桩、`permission-service.test.ts` 的声明判据 |
+| P6 | 台账（《[日志](../日志.md)》）+ 面板文案复核 + 与米家插件的互斥说明（§4.7） | 未开工（随 P1–P4） | `pnpm test` + `pnpm typecheck` + 真机看图 |
 
 真机验收配方（用户侧一次性）：
 
@@ -241,10 +245,12 @@ HA ≥ 2025.2 自带 MCP Server（`POST /api/mcp`）。两条接法：
 
 ## 8. 待拍板问题
 
+> 2026-10-09 第二轮：2–4 已按文内建议落地（缺口修复先于插件本体）；1、5、6 仍待用户拍板（属插件本体的产品口径，不影响本轮已落地的三处修复）。
+
 1. **插件标题**：侧栏入口叫「Home Assistant」还是「智能家居」？（建议前者：如实、不冒充自有能力）
-2. **写工具审批缺口**（§3.3）：按现状放行 + 文档说明，还是给内核 `CompatToolDefinition` 加 `access`/危险声明让其进默认档审批？（建议后者，独立小 PR）
-3. **桌面发布包补 `plugins/` 拷贝**（§3.5）：本轮一并做，还是单独立项？（建议一并：一行拷贝 + 打包复验）
-4. **MCP 自定义头**（§5.1）：是否补？补了「只给 agent 用」的零代码路线就不用 `npx`（桌面端可能没有 Node/npx）。
+2. ~~**写工具审批缺口**（§3.3）~~ **已按建议落地（2026-10-09）**：`CompatToolDefinition.access`（`read`/`write`/`execute`，不声明按 `execute`）映射进内核 `access` 并纳入危险判据；`mihome_control` 已声明 `write`、`mihome_devices` 声明 `read`。**副作用需知**：判据同时对内建共享工具生效——`browser_navigate`/`browser_act`/`browser_eval`、`create_skill`、`install_plugin` 声明的是 `execute`/`write`，在**非 Code 场景（画布助手等）的默认档下从此需要审批**（Code 场景走既有的 Task 审批策略，行为不变）。若认为其中某个不该拦，把它的 `access` 改成与实际效果相符的值即可。
+3. ~~**桌面发布包补 `plugins/` 拷贝**（§3.5）~~ **已落地（2026-10-09）**：本轮一并做（win/mac/镜像三处 + 契约测试），并额外排除 Windows 形态下跑不起来的 `computer-use`（§3.5 末）。
+4. ~~**MCP 自定义头**（§5.1）~~ **已落地（2026-10-09）**：面板可直连 HA 的 `POST /api/mcp`，无需 `npx`。
 5. **米家插件去留**（§4.7）：并存（建议）还是设定「装 HA 后提示卸载米家插件」？未来是否收敛掉自包含实现？
 6. **面板控制面**（`HA-3`）：v1 只做常用域（灯/开关/窗帘/空调/传感器），其余域如实只读——是否接受？
 
