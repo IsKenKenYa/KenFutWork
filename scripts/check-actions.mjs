@@ -18,6 +18,10 @@
  *   A5 `permissions` 的取值不得是表达式，且只能是 read / write / none
  *      （本轮实测：写 `${{ ... && 'write' || 'read' }}` 会让整个文件解析失败——工作流名退化成
  *       文件路径、0 秒失败、连日志都没有，非查 API 看不出问题在哪）
+ *   A6 有 `run:` 步骤的 job 至少要有一处显式 `shell:`（job 级 `defaults.run.shell` 最佳）
+ *      隐式默认 shell 已咬过两次：Windows runner 是 PowerShell、容器 job 是 dash，
+ *      两者都不认 `set -o pipefail`。口径是「整个 job 一个 shell 都没显式写」才报，
+ *      逐步声明也算通过（不追求统计每个步骤都覆盖到）。
  *
  * 双入口：`pnpm test:actions` 直接跑；`tests/workspace.test.mjs` 导入 checkActions 挂门禁，
  * 并用夹具验「正例通过 / 每条负例各自被拦」——一个永远 PASS 的检查等于没有检查。
@@ -63,6 +67,7 @@ function inspectWorkflow(text) {
     concurrencyGroups: [],
     permissionLines: [],
     runBlobs: [],
+    jobStats: new Map(),
   };
   let inOn = false;
   let inJobs = false;
@@ -113,6 +118,12 @@ function inspectWorkflow(text) {
           value: trimmed.slice("if:".length).trim(),
         });
       }
+      // 统计该 job 的 run 步骤数与显式 shell 声明数（A6 用）。
+      const key = currentJob ?? "(未命名 job)";
+      const stats = signals.jobStats.get(key) ?? { runs: 0, shells: 0 };
+      if (/^(-\s+)?run:/.test(trimmed)) stats.runs += 1;
+      if (/^(-\s+)?shell:\s*\S/.test(trimmed)) stats.shells += 1;
+      signals.jobStats.set(key, stats);
     }
     // run 块：`run: |` 之后的所有内容按缩进归入同一段。
     if (currentStepRun !== null && indent >= currentStepRun) {
@@ -120,9 +131,10 @@ function inspectWorkflow(text) {
       continue;
     }
     currentStepRun = null;
-    if (trimmed.startsWith("run:")) {
-      const value = trimmed.slice("run:".length).trim();
-      signals.runBlobs.push(value);
+    const runMatch = /^(-\s+)?run:\s*(.*)$/.exec(trimmed);
+    if (runMatch) {
+      const value = runMatch[2].trim();
+      if (value) signals.runBlobs.push(value);
       if (value === "|" || value === ">-" || value === ">" || value === "|-") {
         currentStepRun = indent + 2;
       }
@@ -173,6 +185,13 @@ export function checkActions({ rootDir }) {
       if (bad) {
         errors.push(
           `${rel}: run 里调了 \`pnpm ${bad[1]}\`——dev/desktop 写死 --env-file=../../.env.local，CI 里必失败（且 dev 是 persistent 任务）`,
+        );
+      }
+    }
+    for (const [job, stats] of signals.jobStats) {
+      if (stats.runs > 0 && stats.shells === 0) {
+        errors.push(
+          `${rel}: job「${job}」有 ${stats.runs} 个 run 步骤却没有任何显式 shell——Windows runner 默认 PowerShell、容器 job 默认 dash，都不认 set -o pipefail；请加 job 级 defaults.run.shell: bash`,
         );
       }
     }

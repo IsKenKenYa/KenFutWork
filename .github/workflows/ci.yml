@@ -27,6 +27,11 @@ jobs:
     if: github.repository == 'IsKenKenYa/KenFutWork'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # 显式声明 shell：不写就是「平台给什么 shell 用什么」（Windows 是 PowerShell、
+    # 容器是 dash），bash 写法会以一种离根因很远的姿态失败。由 check-actions 的 A6 把守。
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
@@ -97,6 +102,11 @@ jobs:
     if: github.repository == 'IsKenKenYa/KenFutWork'
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    # 显式声明 shell：不写就是「平台给什么 shell 用什么」（Windows 是 PowerShell、
+    # 容器是 dash），bash 写法会以一种离根因很远的姿态失败。由 check-actions 的 A6 把守。
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
@@ -130,6 +140,11 @@ jobs:
       image: node:24-bookworm
       options: --privileged
     timeout-minutes: 45
+    # 容器 job 的默认 shell 是 sh（dash），不认 `set -o pipefail`——实测第一步就报
+    # `Illegal option -o pipefail` 退 2。与 Windows 那次 PowerShell 默认 shell 同一类错误。
+    defaults:
+      run:
+        shell: bash
     env:
       # 容器内没有 Actions 的 setup-node，pnpm 由 corepack 按 packageManager 字段取版本
       CI: "true"
@@ -178,6 +193,11 @@ jobs:
     if: github.repository == 'IsKenKenYa/KenFutWork'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # 显式声明 shell：不写就是「平台给什么 shell 用什么」（Windows 是 PowerShell、
+    # 容器是 dash），bash 写法会以一种离根因很远的姿态失败。由 check-actions 的 A6 把守。
+    defaults:
+      run:
+        shell: bash
     services:
       postgres:
         image: postgres:17
