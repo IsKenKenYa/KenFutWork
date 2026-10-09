@@ -640,14 +640,20 @@ async function createByokProtocolUpstream() {
   };
 }
 
-async function waitForByokResult(read, description) {
+async function waitForByokResult(read, description, diagnose) {
   const deadline = Date.now() + SMOKE_BYOK_TIMEOUT_MS;
+  let attempts = 0;
   while (Date.now() < deadline) {
+    attempts += 1;
     const value = await read();
     if (value) return value;
     await new Promise((done) => setTimeout(done, SMOKE_BYOK_POLL_MS));
   }
-  throw new Error(`${description}未在产物验收期限内完成。`);
+  // 超时时把现场打出来：只报「没等到」会逼着人去猜是服务端没做、还是接口口径不对。
+  const scene = diagnose ? ` 现场：${diagnose().slice(0, 600)}` : "";
+  throw new Error(
+    `${description}未在产物验收期限内完成（轮询 ${attempts} 次 / ${SMOKE_BYOK_TIMEOUT_MS / 1000}s）。${scene}`,
+  );
 }
 
 async function openByokCodeStream(base, headers) {
@@ -971,17 +977,23 @@ async function requireNativeSmokeCheckpoints(
   expectedIds,
 ) {
   const query = new URLSearchParams({ taskId }).toString();
+  let lastBody = "";
   // completedSuccess先投影到UI；post捕获仍在同一Run的finally中收尾。
-  const checkpoints = await waitForByokResult(async () => {
-    const items = JSON.parse(
-      (
-        await expectStatus(base, `/api/code/checkpoints?${query}`, 200, {
-          headers,
-        })
-      ).body,
-    ).checkpoints;
-    return Array.isArray(items) && items.length > 0 ? items : null;
-  }, "实际Write/Read完成后的持久shadow checkpoint");
+  const checkpoints = await waitForByokResult(
+    async () => {
+      const response = await expectStatus(
+        base,
+        `/api/code/checkpoints?${query}`,
+        200,
+        { headers },
+      );
+      lastBody = response.body ?? "";
+      const items = JSON.parse(lastBody).checkpoints;
+      return Array.isArray(items) && items.length > 0 ? items : null;
+    },
+    "实际Write/Read完成后的持久shadow checkpoint",
+    () => `GET /api/code/checkpoints?${query} → ${lastBody}`,
+  );
   requireCondition(
     checkpoints.every(
       (checkpoint) =>
