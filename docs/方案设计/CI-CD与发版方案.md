@@ -55,6 +55,8 @@ CI 侧的两个必修点：`bundle_dmg.sh --skip-jenkins`（脚本自述「跳�
 
 如实表述的口径不变（沿用《日志》里「无有效 Developer ID 身份，不冒称证书/公证完成」）：清单与 Release body 里签名状态只写 `adhoc` / `unsigned` / `developer-id`，没有就是没有。
 
+`pnpm-workspace.yaml` 的 `onlyBuiltDependencies` 补了 `macos-alias` 与 `fs-xattr`（appdmg 的两个原生件，此前分裂在 `package.json:40` 与 workspace 文件两处）。实测这两个包都带 `os` 约束（`macos-alias: ["darwin"]`、`fs-xattr: ["!win32"]`），Linux/Windows 不会尝试构建；但 `fs-xattr` 在 ubuntu 上会变成**安装期编译**，若 runner 缺构建工具就会让所有 CI job 卡在 `pnpm install`——首轮若红，摘掉 `fs-xattr` 即可回到「collect-bundle 里 node-gyp 现场重编」的既有兜底路径（那条路径本身是可用的）。
+
 ## 五、签名相关：secrets 与 variables 分档
 
 **档 0（现在）— 零机密。** `ci.yml` 与 `build-debug.yml` 不读任何 secret。

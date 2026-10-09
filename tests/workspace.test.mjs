@@ -15,6 +15,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { checkActions } from "../scripts/check-actions.mjs";
 import { checkDocs, updateFrozenLock } from "../scripts/check-docs.mjs";
 import * as envModule from "../scripts/check-env.mjs";
 
@@ -737,6 +738,140 @@ test("runtime-lock：无条目放行、哈希不符与改名必拦、按目标�
       JSON.stringify({ schema: 99, targets: {} }),
     );
     assert.throws(() => readRuntimeLock(fixtureRoot), /结构不符/);
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+// --- GitHub Actions 护栏 ---
+//
+// 拦的是「Actions UI 显示绿色、实际什么都没干」这一类失败：job 级 `if` 与 workflow 级
+// `concurrency` 拿不到 `matrix` 上下文，表达式不报错只取空值；复用工作流的顶层 `permissions`
+// 只能收窄会把调用方给的 write 压回 read；`pnpm dev` 在 CI 里因 --env-file 缺文件必死。
+// 本轮在同一次提交里撞中三种，所以护栏必须带**反例夹具**——只验真仓通过等于没验。
+test("Actions 护栏：真仓通过，四类「静默不干活」各自被拦", async () => {
+  const real = checkActions({ rootDir });
+  assert.ok(
+    real.files.length >= 4,
+    `应扫到 .github/workflows 下的工作流，实际 ${real.files.length} 个`,
+  );
+  assert.deepEqual(
+    real.errors,
+    [],
+    `真仓护栏不应红：\n  - ${real.errors.join("\n  - ")}`,
+  );
+
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "kfw-actions-"));
+  const dir = path.join(fixtureRoot, ".github", "workflows");
+  mkdirSync(dir, { recursive: true });
+  const put = (name, text) =>
+    writeFileSync(path.join(dir, `${name}.yml`), text, "utf8");
+  const clean = `name: clean
+on: push
+jobs:
+  a:
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 干活
+        run: |
+          echo hi
+`;
+  try {
+    put("clean", clean);
+    assert.deepEqual(
+      checkActions({ rootDir: fixtureRoot }).errors,
+      [],
+      "干净夹具必须通过，否则护栏在误伤",
+    );
+
+    put(
+      "a1",
+      `name: a1
+on: push
+jobs:
+  mac:
+    if: github.event.inputs.platform == 'both' || github.event.inputs.platform == matrix.os
+    runs-on: macos-latest
+    steps:
+      - run: echo hi
+`,
+    );
+    let result = checkActions({ rootDir: fixtureRoot });
+    assert.ok(
+      result.errors.some((line) => /job「mac」.*matrix/s.test(line)),
+      `A1 应拦住 job 级 matrix：${JSON.stringify(result.errors)}`,
+    );
+    rmSync(path.join(dir, "a1.yml"));
+
+    put(
+      "a2",
+      `name: a2
+on: push
+concurrency:
+  group: codeql-\${{ matrix.language }}
+  cancel-in-progress: true
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`,
+    );
+    result = checkActions({ rootDir: fixtureRoot });
+    assert.ok(
+      result.errors.some((line) => /concurrency\.group/.test(line)),
+      `A2 应拦住 concurrency 引用 matrix：${JSON.stringify(result.errors)}`,
+    );
+    rmSync(path.join(dir, "a2.yml"));
+
+    put(
+      "a3",
+      `name: a3
+on:
+  workflow_call:
+    inputs:
+      platform:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`,
+    );
+    result = checkActions({ rootDir: fixtureRoot });
+    assert.ok(
+      result.errors.some((line) => /复用工作流写了顶层/.test(line)),
+      `A3 应拦住复用工作流的顶层 permissions：${JSON.stringify(result.errors)}`,
+    );
+    rmSync(path.join(dir, "a3.yml"));
+
+    put(
+      "a4",
+      `name: a4
+on: push
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 起服务
+        run: |
+          pnpm dev
+`,
+    );
+    result = checkActions({ rootDir: fixtureRoot });
+    assert.ok(
+      result.errors.some((line) => /pnpm dev/.test(line)),
+      `A4 应拦住 run 里的 pnpm dev：${JSON.stringify(result.errors)}`,
+    );
+    rmSync(path.join(dir, "a4.yml"));
+
+    // 回到干净态必须再次全绿（证明上面每条都是「这一处」引起的，不是常驻误报）
+    assert.deepEqual(checkActions({ rootDir: fixtureRoot }).errors, []);
   } finally {
     rmSync(fixtureRoot, { recursive: true, force: true });
   }

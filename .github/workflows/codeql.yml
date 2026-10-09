@@ -21,7 +21,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: codeql-${{ github.workflow }}-${{ matrix.language }}-${{ github.ref }}
+  # 这里不许引用 matrix：workflow 级 concurrency 拿不到 matrix 上下文，取到空值会让
+  # 四种语言的扫描任务互相取消（本想按语言分组）。整体按 ref 分组即可。
+  group: codeql-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

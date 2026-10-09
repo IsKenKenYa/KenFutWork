@@ -16,6 +16,7 @@
     "lint": "node scripts/lint-biome.mjs",
     "test:docs": "node scripts/check-docs.mjs",
     "test:env": "node scripts/check-env.mjs",
+    "test:actions": "node scripts/check-actions.mjs",
     "test:workspace": "node --test tests/workspace.test.mjs tests/api-spec-consistency.test.mjs",
     "api:spec": "pnpm --filter @kenfutwork/server api:spec",
     "test:packages": "turbo run test",

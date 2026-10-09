@@ -1,0 +1,185 @@
+name: 出包实现（单平台，被 build-debug / release 复用）
+
+# 这是一份 **workflow_call 复用实现**，不自己触发。为什么不用一个 job + 平台矩阵：
+# job 级 `if` 拿不到 `matrix` 上下文（可用上下文只有 github/needs/inputs/vars），
+# 在 job 级用 `matrix.os` 过滤平台会得到空值——于是「macos 触发时整个 job 被跳过」，
+# 工作流显示成功但一个包都没产。平台分叉改由调用方的 job 级 `if` 用 `inputs` 表达，
+# 这里只按 `inputs.platform` 取 runner 与脚本，平台差异在 shell 里按 `$RUNNER_OS` 分支。
+on:
+  workflow_call:
+    inputs:
+      platform:
+        description: macos 或 windows
+        required: true
+        type: string
+      channel:
+        description: debug=只传 Actions 产物；rc=另建 draft Release
+        required: false
+        type: string
+        default: debug
+      checkout_ref:
+        description: 要出包的分支或提交（空=调用方所在 ref）
+        required: false
+        type: string
+        default: ""
+
+# 这里**故意不写顶层 `permissions`**：被调用的复用工作流只能收窄、不能扩权，
+# 写了 `contents: read` 会把调用方为 rc 通道授予的 `write` 压回 read，
+# `gh release create` 必然 403。权限由调用方的 job 级 `permissions` 决定。
+env:
+  CI: "true"
+  TURBO_TELEMETRY_DISABLED: "1"
+
+jobs:
+  package:
+    name: ${{ inputs.platform }}
+    runs-on: ${{ inputs.platform == 'macos' && 'macos-latest' || 'windows-latest' }}
+    timeout-minutes: 120
+    steps:
+      - name: 校验 ref 取值
+        # 走 env 传值再校验：把 workflow_dispatch 的输入直接插进 shell 就是注入面。
+        env:
+          REQUESTED_REF: ${{ inputs.checkout_ref }}
+        run: |
+          set -euo pipefail
+          if [ -n "${REQUESTED_REF}" ] && ! printf '%s' "${REQUESTED_REF}" | grep -Eq '^[A-Za-z0-9._/-]+$'; then
+            echo "ref 只能是分支名或提交号"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
+          # 参考仓是方向参考，不参与出包
+          submodules: false
+
+      - uses: pnpm/action-setup@v4
+
+      # SEA 宿主就是 process.execPath（package-win.mjs），脚本会把 process.version 与
+      # .nvmrc 精确对账；出包必须用同一个 node，故按 pin 安装而不是用 runner 自带版本。
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: 缓存随包运行时
+        uses: actions/cache@v4
+        with:
+          path: runtime
+          key: runtime-${{ inputs.platform }}-${{ hashFiles('runtime-lock.json', 'scripts/fetch-runtimes.mjs') }}
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 取随包运行时（Node / Python / uv / JDK）
+        # GH_TOKEN 让 fetch-runtimes 的 GitHub API 回落走认证额度（匿名 60/h 按 IP 计，
+        # runner 共享出口很容易 403；脚本已有 gh 回落路径 fetch-runtimes.mjs:152-170）。
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm fetch:runtimes
+
+      - name: 组装 release/（服务端 + 静态 UI + 内嵌 PG + 随包运行时）
+        run: pnpm ${{ inputs.platform == 'macos' && 'package:mac' || 'package:win' }}
+
+      - name: 断言随包资源齐备
+        # `bundle.resources` 映射缺任一项，tauri 都会在打包阶段报「resource path 不存在」；
+        # 而 package-mac/win 对缺 runtime 只 warn 不 fail，所以这里必须点名拦一次。
+        run: |
+          set -euo pipefail
+          missing=0
+          need="web pg runtime process-helper node_modules supabase"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            need="$need server computer-use plugins/computer-use"
+          fi
+          for item in $need; do
+            if [ ! -e "release/$item" ]; then
+              echo "· 缺 release/$item"
+              missing=1
+            fi
+          done
+          if [ "$RUNNER_OS" = "Windows" ] && [ ! -e release/KenFutWork-server.exe ]; then
+            echo "· 缺 release/KenFutWork-server.exe（SEA 单文件服务端）"
+            missing=1
+          fi
+          if [ "$RUNNER_OS" = "macOS" ] && [ ! -e release/server/server.cjs ]; then
+            echo "· 缺 release/server/server.cjs（随包 node 的入口）"
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            echo "· 随包资源不完整，停在这里（别把缺失留到 tauri 阶段再炸）"
+            exit 1
+          fi
+
+      # 桌面壳的检查在 ubuntu 门禁里跑不了（缺 Rust + webkit2gtk），归到这里。
+      - name: 桌面壳静态检查
+        run: pnpm --filter @kenfutwork/desktop typecheck
+
+      - name: tauri 出安装包并收到仓库根
+        run: pnpm --filter @kenfutwork/desktop build
+
+      - name: 清中间产物（14GB 盘的余量靠这步）
+        if: always()
+        shell: bash
+        run: |
+          rm -rf apps/desktop/src-tauri/target/debug \
+                 apps/desktop/src-tauri/target/release/deps \
+                 apps/desktop/src-tauri/target/release/build \
+                 apps/desktop/src-tauri/target/release/incremental \
+                 apps/desktop/src-tauri/target/release/.fingerprint \
+                 apps/web/.next apps/web/out .turbo apps/*/.turbo packages/*/.turbo || true
+          df -h . || true
+
+      - name: 打包态冒烟（随包服务端 + 内嵌 Postgres 真建库）
+        # 「dev 全绿但安装包起不来」那类事故的唯一自动化解药：脚本直接用 release/ 里的平台产物
+        # 与独占临时数据目录，不访问外部模型服务（scripts/desktop-offline-smoke.mjs:71-76 支持
+        # win32/darwin 两平台）。首轮若在无 GUI 环境跑不通，要改的是脚本，不是关掉这一步。
+        run: node scripts/desktop-offline-smoke.mjs
+
+      - name: 产物清单
+        if: always()
+        shell: bash
+        run: |
+          if [ -f dist-manifest.json ]; then
+            cat dist-manifest.json
+          else
+            echo "· 本次没走到清单产出"
+            exit 1
+          fi
+
+      - name: 上传安装包与清单
+        uses: actions/upload-artifact@v4
+        with:
+          name: kenfutwork-${{ inputs.platform }}-${{ github.sha }}
+          # 上一步已断言清单存在；两平台的安装包 glob 各只在一侧命中。
+          path: |
+            KenFutWork_*.dmg
+            KenFutWork_*.zip
+            KenFutWork_*-setup.exe
+            dist-manifest.json
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: rc 通道另建 draft Release
+        if: inputs.channel == 'rc'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")"
+          tag="v${version}-rc.$(date -u +%Y%m%d%H%M)"
+          # 只把真实存在的文件交给 gh release create（glob 未命中时不许传空参数），
+          # 且一次调用建一个 release——分批调用会撞「tag 已存在」。
+          files=()
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < <(find . -maxdepth 1 \( -name 'KenFutWork_*.dmg' -o -name 'KenFutWork_*.zip' \
+            -o -name 'KenFutWork_*-setup.exe' -o -name 'dist-manifest.json' \) -print0)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "· 没有任何产物可上传"
+            exit 1
+          fi
+          gh release create "$tag" --draft=true --prerelease \
+            --title "KenFutWork ${version} 候选" \
+            --notes "候选包。签名状态与构建读数见随包 dist-manifest.json；本 tag 由 Actions 出包自动创建。" \
+            "${files[@]}"
+          echo "已建 draft Release：$tag"
