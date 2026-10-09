@@ -220,28 +220,32 @@ function main() {
   const esbuildRequire = createRequire(
     join(ROOT, "apps", "server", "package.json"),
   );
-  // 可执行文件的位置随平台不同：Windows 上真身在平台包 @esbuild/win32-x64/esbuild.exe
-  //（esbuild 包根没有副本，实测 CI 报「找不到」）；macOS/Linux 上 esbuild 包内的
-  // bin/esbuild 本身就是原生二进制（0.28 起不是 JS 壳）。
+  // 可执行文件在**平台包**里（win32 是 @esbuild/win32-x64/esbuild.exe），而平台包是
+  // esbuild 自己的依赖：pnpm 严格布局下它不在 apps/server 的解析范围内，必须用
+  // 「以 esbuild 包为锚」的 require 去解析（实测直接用 apps/server 的 require 解析不到）。
   const esbuildBin = (() => {
-    const candidates =
-      process.platform === "win32"
+    const esbuildPkg = esbuildRequire.resolve("esbuild/package.json");
+    const esbuildDir = dirname(esbuildPkg);
+    const fromEsbuild = createRequire(esbuildPkg);
+    const platformPackage = {
+      win32: "@esbuild/win32-x64/esbuild.exe",
+      darwin: `@esbuild/darwin-${process.arch}/bin/esbuild`,
+      linux: `@esbuild/linux-${process.arch}/bin/esbuild`,
+    }[process.platform];
+    const candidates = [
+      ...(platformPackage
         ? [
-            () => esbuildRequire.resolve("@esbuild/win32-x64/esbuild.exe"),
-            () =>
-              join(
-                dirname(esbuildRequire.resolve("esbuild/package.json")),
-                "esbuild.exe",
-              ),
+            () => fromEsbuild.resolve(platformPackage),
+            () => join(esbuildDir, "node_modules", platformPackage),
           ]
-        : [
-            () =>
-              join(
-                dirname(esbuildRequire.resolve("esbuild/package.json")),
-                "bin",
-                "esbuild",
-              ),
-          ];
+        : []),
+      // 老安装形态：包内直接放一份可执行文件。
+      () =>
+        join(
+          esbuildDir,
+          process.platform === "win32" ? "esbuild.exe" : "bin/esbuild",
+        ),
+    ];
     for (const candidate of candidates) {
       try {
         const resolved = candidate();
@@ -251,7 +255,7 @@ function main() {
       }
     }
     console.error(
-      "[package] 找不到 esbuild 可执行文件（平台包与 esbuild 包根都没有），先 pnpm install",
+      `[package] 找不到 esbuild 可执行文件（试过 ${candidates.length} 个候选，平台包与 esbuild 包内都没有），先 pnpm install`,
     );
     process.exit(1);
   })();
