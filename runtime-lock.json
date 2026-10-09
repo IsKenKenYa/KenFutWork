@@ -10,9 +10,9 @@
       },
       "python": {
         "version": "3.12",
-        "fileName": "cpython-3.12.15+20261003-aarch64-apple-darwin-install_only.tar.gz",
-        "sha256": "316a463172740e71d8dca1f2730784e325f3f720941137b5d674d5801a632213",
-        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.12.15%2B20261003-aarch64-apple-darwin-install_only.tar.gz"
+        "fileName": "cpython-3.12.15+20261009-aarch64-apple-darwin-install_only.tar.gz",
+        "sha256": "83dcb04777c798bd95f3687acf9ae84b09860272ee6bdfb05be8bcf9447f75b8",
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261009/cpython-3.12.15%2B20261009-aarch64-apple-darwin-install_only.tar.gz"
       },
       "uv": {
         "version": null,
