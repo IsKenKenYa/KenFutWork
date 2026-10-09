@@ -54,6 +54,26 @@ jobs:
       # 这一条就覆盖：root 脚本装配、各 app 脚本真实性、文档治理（冻结区/断链/第二处
       # ctx key 表）、env 权威表与样例互锁、去 Supabase 棘轮、库约束↔契约枚举、
       # 安装向导图 DPI、桌面版本四处一致 + .nvmrc 与 engines 同值。
+      # 工作流文件本身也是产品代码：actionlint 查 YAML/schema/action 参数与表达式，
+      # 它在 PATH 上看见 shellcheck 后会顺带把每个 run: 块当 shell 脚本查一遍。
+      # 自研护栏（check-actions.mjs）只留「官方文档不报错但 job 静默不干活」那 6 条。
+      - name: actionlint + ShellCheck（工作流与脚本静态检查）
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends shellcheck
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) latest /usr/local/bin
+          actionlint -version
+          pnpm run test:actions
+          # 第一方 shell 脚本单独查一遍。bundle_dmg.sh 是 appdmg 上游产物（6 处既存告警），
+          # 不在本轮范围内批量改动第三方脚本，故排除并留名。
+          shellcheck --severity=warning \
+            apps/desktop/dev.sh \
+            apps/server/src/features/computer-use/fixtures/run-linux-desktop.sh \
+            .agents/skills/diagnosing-bugs/scripts/hitl-loop.template.sh \
+            .agents/skills/git-guardrails-claude-code/scripts/block-dangerous-git.sh \
+            .agents/skills/wizard/template.sh
+
       - name: 仓库级门禁
         run: pnpm run test:workspace
 
@@ -193,29 +213,26 @@ jobs:
             echo "· $knob 已置 0"
           done
 
-      - name: 沙箱能力探针（先给结论再跑用例）
+      - name: 沙箱能力探针（打印环境结论，判定交给真实用例预检）
         run: |
           set -euo pipefail
-          # 探针必须验**沙箱真正依赖的那件事**：apply-seccomp 在 bwrap 内再嵌一层
-          # userns 取 CAP_SYS_ADMIN 来上 seccomp 与锁挂载。所以看嵌套命名空间的 CapEff：
-          # 全 0 = 无能力 userns（AppArmor 限制没解除），非 0 = 可用。
-          # 反例自查：早期版本探针写 /proc/self/setgroups，那个原语即使在健康环境里
-          # 也要 init_user_ns 的 CAP_SETGID，永远 EPERM——探针自己假红，比不写更糟。
-          capeff="$(bwrap --ro-bind / / --dev /dev --proc /proc \
-            --unshare-user --unshare-pid --cap-drop ALL --cap-add CAP_SETFCAP \
-            /bin/sh -c 'unshare -U sh -c "grep ^CapEff: /proc/self/status"' 2>/tmp/srt-probe.err | awk '{print $2}')" || {
-              echo "· bwrap 起不来：$(cat /tmp/srt-probe.err)"
-              echo "  → 这批用例走不了真实进程沙箱。禁止跳过或削弱沙箱；换用允许能力型 userns 的 runner。"
-              exit 1
-            }
-          if [ "${capeff}" = "0000000000000000" ]; then
-            echo "· 嵌套 userns 无能力（CapEff=0）：隔离层拿不到 CAP_SYS_ADMIN，沙箱起不来"
-            echo "  → 禁止跳过或削弱沙箱；换用允许能力型 userns 的 runner。"
-            exit 1
-          fi
-          echo "· 嵌套 userns 有能力（CapEff=${capeff}）：这批用例走真实进程沙箱"
+          # 这步只**报告**，不**判定**：手写 bwrap 探针连着两次给出假红（先误把「bwrap 能起」
+          # 当成可用，后又因为没 --map-root-user 让嵌套 userns 的 CapEff 全 0）。
+          # 判定权在下一步——它跑的是产品代码路径，结论不可能和真实用例不一致。
+          echo "· 自身能力：$(grep -E '^Cap(Bnd|Eff):' /proc/self/status | tr '\n' ' ')"
+          for knob in kernel.apparmor_restrict_unprivileged_userns; do
+            echo "· $knob = $(cat "/proc/sys/${knob//./\/}" 2>/dev/null || echo '(不存在)')"
+          done
           bwrap --version
           node --version
+          nested="$(bwrap --ro-bind / / --dev /dev --proc /proc \
+            --unshare-user --unshare-pid --cap-drop ALL --cap-add CAP_SETFCAP \
+            /bin/sh -c 'unshare -Um sh -c "grep ^CapEff: /proc/self/status"' 2>&1 | tail -1)" || {
+              echo "· bwrap 起不来：${nested}"
+              echo "  → 禁止跳过或削弱沙箱；换用允许能力型 userns 的 runner。"
+              exit 1
+            }
+          echo "· 嵌套 userns（map-root）CapEff：${nested:-（读不到）}"
 
       - name: 启用 pnpm
         run: corepack enable && pnpm --version
@@ -328,7 +345,7 @@ jobs:
           probe_url="${KENFUTWORK_DATABASE_URL%/*}/drift_probe"
           KENFUTWORK_DATABASE_URL="$probe_url" \
             pnpm --filter @kenfutwork/server exec node --import tsx src/migrate.ts apply
-          target="$(ls supabase/migrations/*.sql | head -1)"
+          target="$(find supabase/migrations -name '*.sql' | sort | head -1)"
           printf '\n-- CI 篡改探针\n' >> "$target"
           if KENFUTWORK_DATABASE_URL="$probe_url" \
             pnpm --filter @kenfutwork/server exec node --import tsx src/migrate.ts status; then

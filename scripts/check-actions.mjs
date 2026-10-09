@@ -27,6 +27,7 @@
  * 并用夹具验「正例通过 / 每条负例各自被拦」——一个永远 PASS 的检查等于没有检查。
  */
 
+import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import process from "node:process";
@@ -236,5 +237,44 @@ if (invokedDirectly) {
     for (const line of errors) console.error(`  - ${line}`);
     process.exit(1);
   }
-  console.log(`[actions] ${files.length} 个工作流全部通过护栏`);
+  // 通用 YAML / 表达式 / action 参数校验交给 actionlint（它自带 Schema，且在 PATH 上有
+  // shellcheck 时顺带把 run: 里的脚本一起查）。自研解析器只保留上面那 6 条「Actions 官方
+  // 文档不会报错、但会让 job 静默不干活」的规则——继续往里堆通用解析就是在造第二个 actionlint。
+  const lint = runActionlint();
+  if (lint === "missing" && process.env.CI === "true") {
+    console.error(
+      "[actions] CI 里没找到 actionlint——静态门禁退化成 6 条自研规则等于没拦表达式类错误",
+    );
+    process.exit(1);
+  }
+  if (lint === "failed") process.exit(1);
+  console.log(
+    `[actions] ${files.length} 个工作流通过护栏${lint === "passed" ? "与 actionlint" : ""}`,
+  );
+}
+
+/** @returns {"passed" | "failed" | "missing" | "skipped"} */
+function runActionlint() {
+  const binary = findBinary();
+  if (!binary) return process.platform === "win32" ? "skipped" : "missing";
+  const result = spawnSync(binary, [], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: { ...process.env, RUNNER_TEMP: process.env.RUNNER_TEMP ?? "" },
+  });
+  if (result.status === 0) return "passed";
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
+  console.error(`[actionlint] 发现问题：\n${output}`);
+  return "failed";
+}
+
+function findBinary() {
+  for (const name of ["actionlint", "/usr/local/bin/actionlint"]) {
+    const result = spawnSync(name, ["-version"], {
+      encoding: "utf8",
+      stdio: "ignore",
+    });
+    if (!result.error && result.status === 0) return name;
+  }
+  return null;
 }
