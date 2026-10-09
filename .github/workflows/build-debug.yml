@@ -1,0 +1,188 @@
+name: 出包（Windows / macOS）
+
+# 只由手动触发驱动：出包链跑一次十几分钟，且必须在**对应平台的真实 runner** 上跑
+#（scripts/package-mac.mjs:135 只认 darwin/arm64，package-win.mjs:79 只认 win32，
+# fetch-runtimes.mjs 没有交叉下载能力）。把它挂在 push 上会让每次提交都烧双平台时长，
+# 而出包失败也不该染红 PR——PR 的门禁在 ci.yml。
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 出哪个平台
+        type: choice
+        default: both
+        options: [both, macos, windows]
+      channel:
+        description: debug=只传 Actions 产物；rc=另建 draft Release
+        type: choice
+        default: debug
+        options: [debug, rc]
+      ref:
+        description: 分支或提交（留空=本次运行所在的 ref）
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-${{ github.ref }}
+  # 出包中途取消只会留下半截产物，且不省时间，禁止自动取消进行中的出包
+  cancel-in-progress: false
+
+env:
+  CI: "true"
+  TURBO_TELEMETRY_DISABLED: "1"
+
+jobs:
+  package:
+    name: ${{ matrix.os }}
+    if: github.repository == 'IsKenKenYa/KenFutWork' && (github.event.inputs.platform == 'both' || github.event.inputs.platform == matrix.os)
+    runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: 120
+    permissions:
+      contents: ${{ github.event.inputs.channel == 'rc' && 'write' || 'read' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos
+            runs_on: macos-latest
+            package_script: package:mac
+            # bundle.resources 需要的目录（tauri.macos.conf.json）；缺任一个 tauri 都会
+            # 在打包阶段报「resource path 不存在」，所以先在这一步点名。
+            required_resources: server web pg runtime process-helper node_modules supabase computer-use plugins/computer-use
+            # mac 主产物是 DMG，另附 .app 的 zip：未公证时 `curl -LO` 不写 quarantine 属性，
+            # 测试者可以免弹窗装（浏览器下载才会被 Gatekeeper 拦）。
+            artifacts: |
+              KenFutWork_*.dmg
+              KenFutWork_*.zip
+              dist-manifest.json
+          - os: windows
+            runs_on: windows-latest
+            package_script: package:win
+            required_resources: web pg runtime process-helper node_modules supabase
+            artifacts: |
+              KenFutWork_*-setup.exe
+              dist-manifest.json
+
+    steps:
+      - name: 校验 ref 取值
+        shell: bash
+        run: |
+          ref="${{ github.event.inputs.ref }}"
+          if [ -n "$ref" ] && ! printf '%s' "$ref" | grep -Eq '^[A-Za-z0-9._/-]+$'; then
+            echo "ref 只能是分支名或提交号（收到：$ref）"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.sha }}
+          # 参考仓是方向参考，不参与出包；拉下来只是几百 MB 的白等
+          submodules: false
+
+      - uses: pnpm/action-setup@v4
+
+      # SEA 宿主就是 process.execPath（package-win.mjs:174），脚本会把 process.version 与
+      # .nvmrc 精确对账；mac 侧的随包 node 由 runtime-lock 固定。两版必须同源，故这里按 pin 装。
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: 缓存随包运行时
+        uses: actions/cache@v4
+        with:
+          path: runtime
+          key: runtime-${{ matrix.os }}-${{ hashFiles('runtime-lock.json', 'scripts/fetch-runtimes.mjs') }}
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 取随包运行时（Node / Python / uv / JDK）
+        # GH_TOKEN 让 fetch-runtimes 的 GitHub API 回落走认证额度（匿名 60/h，runner 共享 IP
+        # 很容易 403；脚本已有 gh 回落路径 scripts/fetch-runtimes.mjs:152-170）。
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm fetch:runtimes
+
+      - name: 组装 release/（服务端 + 静态 UI + 内嵌 PG + 随包运行时）
+        run: pnpm ${{ matrix.package_script }}
+
+      - name: 断言随包资源齐备
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for item in ${{ matrix.required_resources }}; do
+            if [ ! -e "release/$item" ]; then
+              echo "· 缺 release/$item —— tauri 打包会因此直接失败"
+              missing=1
+            fi
+          done
+          if [ ! -e "release/KenFutWork-server.exe" ] && [ "${{ matrix.os }}" = "windows" ]; then
+            echo "· 缺 release/KenFutWork-server.exe（SEA 单文件服务端）"
+            missing=1
+          fi
+          if [ ! -e "release/server/server.cjs" ] && [ "${{ matrix.os }}" = "macos" ]; then
+            echo "· 缺 release/server/server.cjs（随包 node 的入口）"
+            missing=1
+          fi
+          exit "$missing"
+
+      # 桌面壳的 cargo 检查在 ubuntu 门禁里跑不了（缺 Rust + webkit2gtk），归到这里。
+      - name: 桌面壳静态检查
+        run: pnpm --filter @kenfutwork/desktop typecheck
+
+      - name: tauri 出安装包并收到仓库根
+        run: pnpm --filter @kenfutwork/desktop build
+
+      - name: 清中间产物（14GB 盘的余量靠这步）
+        if: always()
+        shell: bash
+        run: |
+          rm -rf apps/desktop/src-tauri/target/debug \
+                 apps/desktop/src-tauri/target/release/deps \
+                 apps/desktop/src-tauri/target/release/build \
+                 apps/desktop/src-tauri/target/release/incremental \
+                 apps/desktop/src-tauri/target/release/.fingerprint \
+                 apps/web/.next apps/web/out .turbo apps/*/.turbo packages/*/.turbo || true
+          df -h . || true
+
+      - name: 打包态冒烟（随包服务端 + 内嵌 Postgres 真建库）
+        # 这条是「dev 全绿但安装包起不来」那类事故的唯一自动化解药：脚本直接用 release/ 里的
+        # 平台产物与独占临时数据目录，不访问外部模型服务（scripts/desktop-offline-smoke.mjs:71-76）。
+        run: node scripts/desktop-offline-smoke.mjs
+
+      - name: 产物清单
+        if: always()
+        shell: bash
+        run: |
+          if [ -f dist-manifest.json ]; then
+            cat dist-manifest.json
+          else
+            echo "· 本次没走到清单产出"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kenfutwork-${{ matrix.os }}-${{ github.sha }}
+          path: ${{ matrix.artifacts }}
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: rc 通道另建 draft Release
+        if: github.event.inputs.channel == 'rc'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")"
+          tag="v${version}-rc.$(date -u +%Y%m%d%H%M)"
+          gh release create "$tag" --draft=true --prerelease \
+            --title "KenFutWork ${version} 候选" \
+            --notes "候选包。签名状态与构建读数见随包 dist-manifest.json；本 tag 由 Actions 出包自动创建。" \
+            $(ls KenFutWork_*.dmg KenFutWork_*-setup.exe KenFutWork_*.zip dist-manifest.json 2>/dev/null)
+          echo "已建 draft Release：$tag"

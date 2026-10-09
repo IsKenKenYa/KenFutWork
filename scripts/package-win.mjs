@@ -13,6 +13,7 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -75,11 +76,43 @@ function resolvePgNativeDir() {
   return nativeDir;
 }
 
+/**
+ * SEA 宿主取 `process.execPath`——构建机上跑的那个 node，就是随包服务端将来运行的 node。
+ * 不锁版本就会「同一 commit 两台机器出两个不同 node 的 exe 且无人记账」，故与根 `.nvmrc`
+ * 精确对账，不一致即拒绝出包。
+ *
+ * 注：`--sentinel-fuse` 的 `NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2` 是 Node 源码里的
+ * 固定常量（本机实测 node 22.20.0 与 24.11.1 同值），**与版本无关**，别把它当版本指纹改。
+ */
+function assertNodeMatchesPin() {
+  const pinPath = join(ROOT, ".nvmrc");
+  if (!existsSync(pinPath)) {
+    console.error(
+      "[package] 缺根 `.nvmrc`：SEA 宿主版本无从对账，先补该文件。",
+    );
+    process.exit(1);
+  }
+  const pin = readFileSync(pinPath, "utf8").trim();
+  if (process.version !== `v${pin}`) {
+    console.error(
+      `[package] SEA 宿主版本与 .nvmrc 不符：当前 ${process.version}，钉的是 v${pin}。\n` +
+        "  本机：nvm use " +
+        pin +
+        "（或装对应版本）后重跑 pnpm package:win。\n" +
+        "  CI：actions/setup-node 用 node-version-file: .nvmrc。",
+    );
+    process.exit(1);
+  }
+  console.log(`[package] SEA 宿主与 .nvmrc 一致：v${pin}`);
+}
+
 function main() {
   if (process.platform !== "win32") {
     console.error("[package] 本脚本仅支持在 Windows 上打包 Windows exe。");
     process.exit(1);
   }
+
+  assertNodeMatchesPin();
 
   rmSync(RELEASE, { recursive: true, force: true });
   mkdirSync(BUILD, { recursive: true });
@@ -287,7 +320,9 @@ function main() {
   //   它内部按 require('sherpa-onnx-' + platform) 解析，故平台包必须与它同级落在
   //   <exe>/node_modules/ 下；模型文件不在包里（按需下载到用户数据目录，规划 §5/§8）。
   try {
-    const sherpaPkgPath = serverRequire.resolve("sherpa-onnx-node/package.json");
+    const sherpaPkgPath = serverRequire.resolve(
+      "sherpa-onnx-node/package.json",
+    );
     const sherpaDir = dirname(sherpaPkgPath);
     const sherpaOut = join(RELEASE, "node_modules", "sherpa-onnx-node");
     cpSync(sherpaDir, sherpaOut, { recursive: true });
@@ -297,10 +332,14 @@ function main() {
     // 它也可能只挂在 .pnpm 目录里。两条都试，别因为一处解析不到就静默不拷。
     let platformDir;
     try {
-      platformDir = dirname(serverRequire.resolve("sherpa-onnx-win-x64/package.json"));
+      platformDir = dirname(
+        serverRequire.resolve("sherpa-onnx-win-x64/package.json"),
+      );
     } catch {
       const sherpaRequire = createRequire(sherpaPkgPath);
-      platformDir = dirname(sherpaRequire.resolve("sherpa-onnx-win-x64/package.json"));
+      platformDir = dirname(
+        sherpaRequire.resolve("sherpa-onnx-win-x64/package.json"),
+      );
     }
     cpSync(platformDir, join(RELEASE, "node_modules", "sherpa-onnx-win-x64"), {
       recursive: true,

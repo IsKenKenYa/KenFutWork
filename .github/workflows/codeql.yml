@@ -1,0 +1,74 @@
+name: CodeQL
+
+# 由「默认设置」改为「高级设置」的理由（都是实测）：
+#  - 默认设置自动探测出 6 门语言，其中 `Analyze (swift)` 恒红——全仓只有 1 个孤立
+#    `apps/server/src/features/computer-use/fixtures/desktop.swift`，没有 Xcode 工程，
+#    Autobuild 必挂；C# 同理只有 1 个 `windows-native.cs`（这次「成功」但零产出）。
+#  - 默认设置**不支持排除路径**，于是 100 条告警里 85 条是测试代码、5 条是 vendored 源码。
+#  扫描面收窄写在 .github/codeql/codeql-config.yml。
+# 启用本文件后要在设置里（或 API）关掉默认设置，否则两套并存、双份扫描双份红。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # 每天一次：CodeQL 规则更新后，老提交上的新问题也会被重新比对出来
+    - cron: 30 17 * * *
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ matrix.language }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: 90
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 第一方主体：2268 个 .ts + 825 个 .tsx
+          - language: javascript-typescript
+            runs_on: ubuntu-latest
+            build_mode: none
+          # computer-use 的 Linux 侧真产品代码（atspi.py / wayland-portal.py），无需构建
+          - language: python
+            runs_on: ubuntu-latest
+            build_mode: none
+          # 白送的收益：扫我们即将写好的 workflow 本身（表达式注入等）
+          - language: actions
+            runs_on: ubuntu-latest
+            build_mode: none
+          # 19 个第一方 .rs：换票（desktop_access.rs）、进程沙箱与并发控制。
+          # Rust 必须按编译过程取真值，故走 autobuild（需要 cargo，runner 镜像自带）。
+          - language: rust
+            runs_on: ubuntu-latest
+            build_mode: autobuild
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build_mode }}
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /codeql:${{ matrix.language }}

@@ -579,6 +579,169 @@ test("provider_instances.protocol 的库约束与共享契约枚举一致", asyn
   );
 });
 
+// --- 桌面版本四处一致 + SEA 宿主与 .nvmrc 钉死（CI 出包可复现性的前置门）---
+//
+// 版本声明散在四个文件（tauri.conf.json 权威、Cargo.toml 的 [package]、Cargo.lock 的包条目、
+// desktop package.json），历史上每次发版手改四处，0.1.1→0.1.3 皆如此；漏改的代价是安装包元数据
+// 与产物互不相认。唯一写入入口是 `pnpm version:bump`，本门禁只负责在合入前拦住漂移。
+// SEA 宿主另算一件：`package-win.mjs` 拿 `process.execPath` 当宿主，构建机上的 node 版本就是
+// 随包服务端未来的运行版本，所以必须与 `.nvmrc` 精确一致——而且脚本里得**真的存在**这道断言，
+// 否则「加了 pin 但没人读」比没有 pin 更危险。
+test("桌面版本四处一致，且 SEA 宿主与 .nvmrc 钉死", async () => {
+  const tauri = await readJson("apps/desktop/src-tauri/tauri.conf.json");
+  const desktopManifest = await readJson("apps/desktop/package.json");
+  const cargoToml = await readText("apps/desktop/src-tauri/Cargo.toml");
+  const cargoLock = await readText("apps/desktop/src-tauri/Cargo.lock");
+
+  const packageTomlVersion = cargoToml.match(
+    /\[package\][^[]*?version = "([^"]+)"/,
+  )?.[1];
+  const lockVersion = cargoLock.match(
+    /name = "kenfutwork-desktop"\nversion = "([^"]+)"/,
+  )?.[1];
+
+  const declared = {
+    "tauri.conf.json": tauri.version,
+    "Cargo.toml [package]": packageTomlVersion,
+    "Cargo.lock": lockVersion,
+    "desktop package.json": desktopManifest.version,
+  };
+  for (const [where, value] of Object.entries(declared)) {
+    assert.ok(
+      value,
+      `${where} 里没读出版本号——文件形状变了，改 bump-version.mjs 对齐真实结构`,
+    );
+    assert.equal(
+      value,
+      tauri.version,
+      `版本漂移：${where}=${value} 但 tauri.conf.json=${tauri.version}；用 pnpm version:bump ${tauri.version} 改齐`,
+    );
+  }
+
+  // SEA 宿主：.nvmrc 必须是精确版本（非范围），且与 engines.node 同值，package-win 必须读它。
+  const pin = (await readText(".nvmrc")).trim();
+  assert.match(
+    pin,
+    /^\d+\.\d+\.\d+$/,
+    `.nvmrc 应是精确版本（SEA 宿主按它对账），当前是 "${pin}"`,
+  );
+  const rootManifest = await readJson("package.json");
+  assert.equal(
+    rootManifest.engines?.node,
+    pin,
+    "根 engines.node 与 .nvmrc 必须同值，否则本地与 CI 各跑一套 node",
+  );
+  const winScript = await readText("scripts/package-win.mjs");
+  assert.match(
+    winScript,
+    /\.nvmrc/,
+    "package-win.mjs 必须读 .nvmrc 校验 SEA 宿主版本——只加 pin 不做断言等于没锁",
+  );
+});
+
+// --- 随包运行时锁定表：对账规则与合并写 ---
+//
+// `fetch-runtimes.mjs` 的 python/uv/jdk/git 都解析「最新发布」，同一 commit 隔天出包可以拿到
+// 不同内容；`runtime-lock.json` 把这层不确定性显式化。这里用夹具验四条规则，外加
+// 「永远 PASS 的检查等于没有检查」的反例（不匹配必须判红）。
+test("runtime-lock：无条目放行、哈希不符与改名必拦、按目标平台合并写", async () => {
+  const lockModule = await import("../scripts/runtime-lock.mjs");
+  const {
+    assertLockAssetName,
+    assertLockSha,
+    buildLockEntry,
+    lockEntryFor,
+    mergeLockTargets,
+    readRuntimeLock,
+    LOCK_FILE_NAME,
+    LOCK_SCHEMA,
+  } = lockModule;
+
+  const entry = buildLockEntry({
+    version: "3.12",
+    fileName:
+      "cpython-3.12.11+20260101-aarch64-apple-darwin-install_only.tar.gz",
+    sha256: "a".repeat(64),
+    url: "https://example.invalid/x.tar.gz",
+  });
+
+  // 1) 无锁定条目（本机开发过渡态）：放行但要说清是哪一种
+  const none = assertLockSha({
+    entry: null,
+    sha256: "b".repeat(64),
+    name: "python",
+    target: "darwin-arm64",
+  });
+  assert.equal(none.ok, true);
+  assert.match(none.reason, /无锁定条目/);
+
+  // 2) 哈希不符：必须拦，且报错要给出「去哪改」
+  const drift = assertLockSha({
+    entry,
+    sha256: "b".repeat(64),
+    name: "python",
+    target: "darwin-arm64",
+  });
+  assert.equal(drift.ok, false, "内容变了却放行，lock 就成了摆设");
+  assert.match(drift.reason, /write-lock/);
+
+  // 3) 资产名变了：下载前就该拦（省一趟几百 MB）；名字取不到时交给哈希兜底
+  assert.equal(
+    assertLockAssetName({
+      entry,
+      fileName:
+        "cpython-3.12.9+20251201-aarch64-apple-darwin-install_only.tar.gz",
+      name: "python",
+      target: "darwin-arm64",
+    }).ok,
+    false,
+  );
+  assert.equal(
+    assertLockAssetName({
+      entry,
+      fileName: null,
+      name: "jdk",
+      target: "darwin-arm64",
+    }).ok,
+    true,
+    "Adoptium 直链没有文件名时不许误拦",
+  );
+
+  // 4) 合并写：mac 打包机重锁不能抹掉 Windows 那一节
+  const seed = { schema: LOCK_SCHEMA, targets: { "win-x64": { node: entry } } };
+  const merged = mergeLockTargets(seed, "darwin-arm64", { python: entry });
+  assert.deepEqual(Object.keys(merged.targets).sort(), [
+    "darwin-arm64",
+    "win-x64",
+  ]);
+  assert.equal(
+    merged.targets["win-x64"].node,
+    entry,
+    "另一平台的条目必须原样保留",
+  );
+  assert.equal(lockEntryFor(merged, "darwin-arm64", "python"), entry);
+  assert.equal(lockEntryFor(merged, "darwin-arm64", "git"), null);
+
+  // 5) 结构不符 / 非法 JSON 一律 fail loud，不静默当作「没有 lock」
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "kfw-runtime-lock-"));
+  try {
+    assert.equal(
+      readRuntimeLock(fixtureRoot),
+      null,
+      "文件不存在=无 lock（允许）",
+    );
+    writeFileSync(path.join(fixtureRoot, LOCK_FILE_NAME), "{ 坏掉的 JSON");
+    assert.throws(() => readRuntimeLock(fixtureRoot), /不是合法 JSON/);
+    writeFileSync(
+      path.join(fixtureRoot, LOCK_FILE_NAME),
+      JSON.stringify({ schema: 99, targets: {} }),
+    );
+    assert.throws(() => readRuntimeLock(fixtureRoot), /结构不符/);
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
 // 安装向导的品牌图必须**超采样**出图，不能按名义尺寸（页头 150×57 / 侧边 164×314）出：
 // 向导带 `ManifestDPIAwareness PerMonitorV2`，控件随 DPI 放大（150% 屏上 1.5 倍），而
 // `MUI_HEADERIMAGE_BITMAP_STRETCH` 默认 `FitControl` —— NSIS 会把位图 StretchBlt 到控件大小。

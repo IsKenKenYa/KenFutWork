@@ -25,6 +25,15 @@ import {
 } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, dirname, join } from "node:path";
+import {
+  buildDistManifest,
+  classifyAuthenticode,
+  classifyCodesignDisplay,
+  findMachOFiles,
+  readBuildTooling,
+  verifyMachOFiles,
+  writeDistManifest,
+} from "./dist-manifest.mjs";
 import { ensureMacosAppSeal } from "./macos-signing.mjs";
 
 const repoRoot = join(import.meta.dirname, "..", "..", "..");
@@ -37,6 +46,42 @@ const bundleBase = join(
   "release",
   "bundle",
 );
+
+/** git 读数：CI 上优先用 runner 注入的环境变量，本机出包回落到 git 命令。 */
+function readGitValue(names, gitArgs) {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value) return value;
+  }
+  const probe = spawnSync("git", gitArgs, {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  return probe.status === 0 ? probe.stdout.trim() || null : null;
+}
+
+/** 随包 runtime 的版本记账：有 `runtime-lock.json` 就用它，没有就如实留空。 */
+function readRuntimeVersions() {
+  const lockPath = join(repoRoot, "runtime-lock.json");
+  if (!existsSync(lockPath)) return null;
+  try {
+    return JSON.parse(readFileSync(lockPath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/** 产品版本：`tauri.conf.json` 是权威（另有门禁保证四处一致）。 */
+function readProductVersion() {
+  return (
+    JSON.parse(
+      readFileSync(
+        join(repoRoot, "apps", "desktop", "src-tauri", "tauri.conf.json"),
+        "utf8",
+      ),
+    ).version ?? null
+  );
+}
 
 function collectLatest({ dir, suffix, doneMessage }) {
   if (!existsSync(dir)) {
@@ -63,14 +108,46 @@ function collectLatest({ dir, suffix, doneMessage }) {
   copyFileSync(latest, target);
   const sizeMb = (statSync(target).size / 1024 / 1024).toFixed(1);
   console.log(`[collect] ${doneMessage}：${target}（${sizeMb} MB）`);
+  return target;
 }
 
 if (process.platform === "win32") {
-  collectLatest({
+  const setupExe = collectLatest({
     dir: join(bundleBase, "nsis"),
     suffix: "-setup.exe",
     doneMessage: "安装包已在项目根（双击即装）",
   });
+  // Authenticode 读数用 env 传参，不把路径拼进 PowerShell 命令行（避开引号与注入面）。
+  const probe = spawnSync(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-Command",
+      "(Get-AuthenticodeSignature $env:KFW_ARTIFACT).Status",
+    ],
+    { encoding: "utf8", env: { ...process.env, KFW_ARTIFACT: setupExe } },
+  );
+  const status = classifyAuthenticode(probe.stdout);
+  writeDistManifest(
+    repoRoot,
+    buildDistManifest({
+      root: repoRoot,
+      version: readProductVersion(),
+      platform: "win32",
+      commit: readGitValue(["GITHUB_SHA"], ["rev-parse", "HEAD"]),
+      ref: readGitValue(
+        ["GITHUB_REF_NAME"],
+        ["rev-parse", "--abbrev-ref", "HEAD"],
+      ),
+      build: readBuildTooling(repoRoot),
+      runtimeVersions: readRuntimeVersions(),
+      signing: {
+        status,
+        provider: status === "unsigned" ? "none" : "unknown",
+      },
+      artifacts: [setupExe],
+    }),
+  );
 } else if (process.platform === "darwin") {
   // tauri 的 dmg bundler 依赖 AppleScript（Finder 自动化），无头环境跑不了。
   // 这里首选 **appdmg**（纯 JS 写 .DS_Store，无 AppleScript，背景图/图标布局全可控，
@@ -88,12 +165,7 @@ if (process.platform === "win32") {
       ? "[collect] 本机资源封印已补全"
       : "[collect] 沿用已有有效签名",
   );
-  const version = JSON.parse(
-    readFileSync(
-      join(import.meta.dirname, "..", "src-tauri", "tauri.conf.json"),
-      "utf8",
-    ),
-  ).version;
+  const version = readProductVersion();
   const dmgPath = join(repoRoot, `KenFutWork_${version}_${process.arch}.dmg`);
   rmSync(dmgPath, { force: true });
 
@@ -143,6 +215,10 @@ if (process.platform === "win32") {
       "--app-drop-link",
       "495",
       "225",
+      // CI/无 GUI 环境必带：脚本自带的「跳过美化 Finder 的 AppleScript」开关
+      //（bundle_dmg.sh 的 --skip-jenkins 文档原文即「适用 Sandbox 与非 GUI 环境」）。
+      // 不带它，托管 runner 上布局引擎会在 AppleScript 那步挂死而不是降级。
+      "--skip-jenkins",
       dmgPath,
       appDir,
     ],
@@ -155,13 +231,11 @@ if (process.platform === "win32") {
     const run = spawnSync(layout[0], layout[1], { stdio: "inherit" });
     return run.status === 0;
   })();
-  if (layoutOk) {
-    const sizeMb = (statSync(dmgPath).size / 1024 / 1024).toFixed(1);
-    console.log(
-      `[collect] DMG 已在项目根：${dmgPath}（${sizeMb} MB，挂载后拖入 Applications）`,
-    );
-    process.exit(0);
-  }
+  // 三档布局引擎的读数要如实进 manifest：bundle_dmg（AppleScript 真布局）
+  // → appdmg（纯 JS 布局，窗口尺寸可能不被 Finder 采纳）→ hdiutil（无布局）。
+  // 走哪一档不该靠人回忆，图标错位历史上就是「看不出这次用了哪档」造成的。
+  let dmgLayout = layoutOk ? "bundle_dmg" : null;
+  let ok = layoutOk;
 
   // 布局引擎失败（无头/AppleScript 权限受限）→ appdmg 兜底（纯 JS 也有布局，
   // 但窗口尺寸可能不被 Finder 采纳）；再失败 → hdiutil 无布局镜像。
@@ -210,7 +284,6 @@ if (process.platform === "win32") {
   // require**（失败不进缓存，重编后重新 require 才生效；ESM import() 的失败会被
   // 模块图缓存，重试只会拿到同一个 rejected 结果）。
   const nodeRequire = createRequire(import.meta.url);
-  let ok = false;
   for (let attempt = 1; attempt <= 2 && !ok; attempt += 1) {
     try {
       const appdmg = nodeRequire("appdmg");
@@ -248,14 +321,14 @@ if (process.platform === "win32") {
   if (!ok) {
     // 兜底：hdiutil 出无布局镜像（背景/图标位缺失但完全可用）
     console.log("[collect] 回落 hdiutil（无拖拽布局）…");
+    // 不再写死 `-size 2g`：`-srcfolder` + UDZO 本来就按内容定尺，14GB 盘的 CI runner
+    // 上多预分配 2GB 只是白吃空间。
     const hdiutil = spawnSync(
       "/usr/bin/hdiutil",
       [
         "create",
         "-volname",
         "KenFutWork",
-        "-size",
-        "2g",
         "-fs",
         "HFS+",
         "-srcfolder",
@@ -271,10 +344,72 @@ if (process.platform === "win32") {
       console.error("[collect] hdiutil 创建 DMG 也失败");
       process.exit(hdiutil.status ?? 1);
     }
+    dmgLayout = "hdiutil";
+  } else if (!dmgLayout) {
+    dmgLayout = "appdmg";
   }
+
   const sizeMb = (statSync(dmgPath).size / 1024 / 1024).toFixed(1);
   console.log(
-    `[collect] DMG 已在项目根：${dmgPath}（${sizeMb} MB，挂载后拖入 Applications）`,
+    `[collect] DMG 已在项目根：${dmgPath}（${sizeMb} MB，布局引擎=${dmgLayout}）`,
+  );
+
+  // .app 另出一份 zip：macOS 只对带 `com.apple.quarantine` 的产物走 Gatekeeper，浏览器下载
+  // 会写这个属性、`curl -LO` 不写。未公证这版给测试者留一条免弹窗的取包路径。
+  const zipPath = join(repoRoot, `KenFutWork_${version}_${process.arch}.zip`);
+  rmSync(zipPath, { force: true });
+  const zip = spawnSync(
+    "ditto",
+    ["-c", "-k", "--sequesterRsrc", "--keepParent", appPath, zipPath],
+    { stdio: "inherit" },
+  );
+  const artifacts = [dmgPath];
+  if (zip.status === 0 && existsSync(zipPath)) {
+    console.log(
+      `[collect] .app 已压成 zip：${zipPath}（curl 取用不写 quarantine，不会被 Gatekeeper 拦）`,
+    );
+    artifacts.push(zipPath);
+  } else {
+    console.warn("[collect] zip 产出失败（DMG 仍在，清单里如实少一项产物）");
+  }
+
+  // 逐 Mach-O 封印计数：`codesign --verify --deep` 通过**证明不了** Resources 下那批散装
+  // 可执行体已封印；这批读数同时是将来上公证的第一手靶子（libjvm / libvips 就在这里被
+  // 库校验杀掉）。读数进清单，不靠人回忆。
+  const macho = verifyMachOFiles(findMachOFiles(appPath));
+  const display = spawnSync(
+    "/usr/bin/codesign",
+    ["-dv", "--verbose=2", appPath],
+    { encoding: "utf8" },
+  );
+  const signingStatus = classifyCodesignDisplay(
+    `${display.stdout ?? ""}${display.stderr ?? ""}`,
+  );
+  writeDistManifest(
+    repoRoot,
+    buildDistManifest({
+      root: repoRoot,
+      version,
+      platform: "darwin",
+      commit: readGitValue(["GITHUB_SHA"], ["rev-parse", "HEAD"]),
+      ref: readGitValue(
+        ["GITHUB_REF_NAME"],
+        ["rev-parse", "--abbrev-ref", "HEAD"],
+      ),
+      build: readBuildTooling(repoRoot),
+      runtimeVersions: readRuntimeVersions(),
+      signing: {
+        status: signingStatus,
+        provider:
+          signingStatus === "adhoc"
+            ? "adhoc"
+            : signingStatus === "unsigned"
+              ? "none"
+              : "unknown",
+      },
+      macos: { dmgLayout, ...macho },
+      artifacts,
+    }),
   );
 } else {
   console.log("[collect] 该平台没有安装包产物，跳过收集。");

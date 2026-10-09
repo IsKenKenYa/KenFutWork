@@ -14,3 +14,7 @@ onlyBuiltDependencies:
   - sharp
   # 真实交互终端要的是 PTY（conpty），必须让它跑 native 构建/预编译下载
   - node-pty
+  # appdmg 出 DMG 要这两个原生件；上游 tarball 不带产物、pnpm 默认拦 install 脚本，
+  # 缺了它们 appdmg 首次必挂，只能靠 collect-bundle.mjs 现场 node-gyp 重编兜底。
+  - macos-alias
+  - fs-xattr

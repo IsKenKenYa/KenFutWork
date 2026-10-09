@@ -3,11 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "packageManager": "pnpm@10.26.2",
+  "engines": {
+    "node": "24.11.1"
+  },
   "scripts": {
     "dev": "turbo run dev",
     "desktop": "bash apps/desktop/dev.sh",
     "package:win": "node scripts/package-win.mjs",
     "package:mac": "node scripts/package-mac.mjs",
+    "version:bump": "node scripts/bump-version.mjs",
     "build": "turbo run build",
     "lint": "node scripts/lint-biome.mjs",
     "test:docs": "node scripts/check-docs.mjs",

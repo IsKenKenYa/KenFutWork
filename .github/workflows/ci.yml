@@ -1,0 +1,176 @@
+name: CI 门禁
+
+# 只做「静态门禁 + 各包测试 + 迁移重放」三件事，**不含任何打包**：
+# 出包失败不该染红 PR，打包链在 build-debug.yml（手动触发）里跑。
+on:
+  pull_request:
+    branches: [main, 啃啃在开发]
+  push:
+    branches: [main, 啃啃在开发]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  # 关闭 turbo 遥测，避免 CI 日志里混入无关输出
+  TURBO_TELEMETRY_DISABLED: "1"
+
+jobs:
+  static:
+    name: 静态门禁（仓库级 · 改动 lint · 类型）
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 迁移重放的篡改自检要写文件，但门禁本身不需要历史；submodules 是参考仓，
+          # 既不进 CI 也不该被拉（否则几百 MB 白下）
+          fetch-depth: 0
+          submodules: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      # 这一条就覆盖：root 脚本装配、各 app 脚本真实性、文档治理（冻结区/断链/第二处
+      # ctx key 表）、env 权威表与样例互锁、去 Supabase 棘轮、库约束↔契约枚举、
+      # 安装向导图 DPI、桌面版本四处一致 + .nvmrc 与 engines 同值。
+      - name: 仓库级门禁
+        run: pnpm run test:workspace
+
+      # 仓库当前有 92 处既存 Biome 报错（不是本 PR 造成的）：全仓 `pnpm lint` 当硬门会让
+      # 每个 PR 都红，反而没人看。这里只判**本次改动**的文件；全仓欠债另立单子收敛。
+      - name: Biome（只判本次改动的文件）
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${BASE_SHA:-}"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            base="$(git rev-parse "${GITHUB_SHA}^" 2>/dev/null || true)"
+          fi
+          if [ -z "$base" ]; then
+            echo "· 找不到比较基线，跳过改动 lint（不误判为通过：这一步本就不覆盖全仓）"
+            exit 0
+          fi
+          mapfile -d '' -t changed < <(git diff -z --diff-filter=ACMR --name-only "$base" "$GITHUB_SHA")
+          files=()
+          for path in "${changed[@]}"; do
+            case "$path" in
+              *.cjs | *.js | *.mjs | *.ts | *.tsx | *.json) files+=("$path") ;;
+            esac
+          done
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "· 本次无 JS/TS/JSON 改动"
+            exit 0
+          fi
+          printf '%s\0' "${files[@]}" | xargs -0 pnpm exec biome check
+
+      # 桌面壳的 typecheck/test 是 cargo（apps/desktop/package.json:11-12），ubuntu runner 上
+      # 没有 Rust + webkit2gtk 系统库，改由 mac lane 负责；这里显式排除而不是让它红。
+      - name: 类型检查（排除桌面壳，它归 mac/win lane）
+        run: pnpm exec turbo run typecheck --filter=!@kenfutwork/desktop --concurrency=1
+
+  packages-test:
+    name: 各包测试（vitest 串行）
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+      # AGENTS.md 的测试资源护栏：确需串行用 turbo --concurrency=1（不是把参数塞给 pnpm run，
+      # `--` 之后的会被各包任务当成自己的选项而报错）。
+      - name: turbo 跑各包测试
+        run: pnpm exec turbo run test --filter=!@kenfutwork/desktop --concurrency=1
+
+  db-replay:
+    name: 迁移空库重放 + 二次 no-op
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+          POSTGRES_DB: kenfutwork
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      KENFUTWORK_DATABASE_URL: postgresql://postgres:ci-only-not-a-secret@localhost:5432/kenfutwork
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      # 《AGENTS.md》数据库硬约束的机械落地：93 条历史必须能在空库从零重放，且第二轮必须
+      # 一条都不执行（no-op）。入口是 apps/server/src/migrate.ts 的 replay 模式（:186-237）。
+      - name: 空库全量重放 + 二次 no-op
+        run: pnpm --filter @kenfutwork/server exec node --import tsx src/migrate.ts replay
+
+      # 「一个永远 PASS 的检查等于没有检查」：改一个已记账迁移的字节，`status` 必须红。
+      # 不这么做的话，SHA-256 账本校验坏成「静默通过」也没人发现。
+      - name: 篡改历史迁移必须被拦（自检）
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @kenfutwork/server exec node --input-type=module -e "
+          import { Client } from 'pg';
+          const admin = new Client({ connectionString: process.env.KENFUTWORK_DATABASE_URL });
+          await admin.connect();
+          await admin.query('drop database if exists drift_probe with (force)');
+          await admin.query('create database drift_probe');
+          await admin.end();
+          console.log('· 探针库 drift_probe 已建');
+          "
+          # 探针库里先干净落一遍账本，再改文件——这样漂移只可能来自「改动已记账的迁移」。
+          probe_url="${KENFUTWORK_DATABASE_URL%/*}/drift_probe"
+          KENFUTWORK_DATABASE_URL="$probe_url" \
+            pnpm --filter @kenfutwork/server exec node --import tsx src/migrate.ts apply
+          target="$(ls supabase/migrations/*.sql | head -1)"
+          printf '\n-- CI 篡改探针\n' >> "$target"
+          if KENFUTWORK_DATABASE_URL="$probe_url" \
+            pnpm --filter @kenfutwork/server exec node --import tsx src/migrate.ts status; then
+            echo "· 期望：改了已执行迁移的内容后 status 必须报校验和不一致，但它退 0 了——门禁坏了"
+            exit 1
+          fi
+          echo "· 篡改已被拦下（历史 SHA-256 账本对账生效）"
