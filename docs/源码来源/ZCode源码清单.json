@@ -16,12 +16,12 @@
       "source": "references/zcode/packages/ui/src/App.tsx",
       "target": "apps/web/src/components/workbench/zcode/App.tsx",
       "sha256": "ad78d4e881b8706bf708a5acd08aff900c66784a8a435603fd50cf1b8670a987",
-      "copiedSha256": "9e5ce923820818868f13d4c668c74bd61231371cdaf955d7298b60cae83b9132",
+      "copiedSha256": "826f4013897a05284e78a2a6b9d284e09d30f18dfa6a89aa48ce0afdaf9f517a",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "能力显隐：未接通自动化服务时不进入原自动化主视图、不轮询闲时任务通知",
         "品牌适配：应用 chrome 标识换 KenFutWork 自有标，ZCode 归属保留于 About 与 NOTICE",
-        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
+        "能力显隐：原自动化导航保留，未接入宿主进入原页禁用态；通知仍不轮询闲时任务"
       ]
     },
     {
@@ -1654,13 +1654,13 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebar.tsx",
       "sha256": "312065bd80ff3a74b498dde96270a9f430f86808933625b02e4a1a6cbd56bf49",
-      "copiedSha256": "5cc7f847c5aacedbc115cf4f22fc47fb81532f2b49916139973bf3e0b3abb798",
+      "copiedSha256": "88766a320f58bfc865134a45937b8aecaa904a9b4355e8535ccd00a889093042",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "能力显隐：原自动化按钮及分组快捷入口仅在宿主服务可用时显示",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "宿主接口：原市场下扩展插件入口槽，沿用原Button及PluginIcon，入口数据和面板由现有库存及宿主提供",
-        "宿主入口扩展：原Button及图标直达原技能/MCP页，通过原设置导航意图固定本机作用域，不创建Task"
+        "宿主入口扩展：原Button及图标直达原技能/MCP页，通过原设置导航意图固定本机作用域，不创建Task",
+        "能力显隐：恢复原自动化Button/CalendarClock导航；分组任务快捷入口仍仅在服务可用时显示"
       ]
     },
     {
@@ -9151,9 +9151,10 @@
       "source": "references/zcode/packages/ui/src/settings/AutomationDesignPrimitives.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/AutomationDesignPrimitives.tsx",
       "sha256": "9f6774f8db202e98a41de8426473f7fba626a9483304ee8cf94da505a4e57d2d",
-      "copiedSha256": "589d285c41e3a588366c2ae370bff4e3a1d446b5db13683f3290e44219862971",
+      "copiedSha256": "a482b1f4390af496493dec9200bf52e5abfa7d33d6e5ff59ae236f509fe6780b",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主能力接口：原创建控件增加disabled；未接入无动作回调，支持态使用原回调"
       ]
     },
     {
@@ -9232,9 +9233,10 @@
       "source": "references/zcode/packages/ui/src/settings/AutomationsSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/AutomationsSection.tsx",
       "sha256": "84dee6ce8ec0debfbe138f0ff3bc5d9f40b1c2923965522f36a737c91247344d",
-      "copiedSha256": "e3d293ae38cc65563b4d7be2255158a0e1dd8e095ecac7fb2f0f246221a89fc0",
+      "copiedSha256": "230e78c2b39c24493f8587f695cdf4c3d9ad03ffe8fa8c25d71d236e60e75487",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主能力显隐：未接入时保留原页面容器、标题和禁用创建控件，不挂载原列表/轮询/套餐/模板消费者；支持态完整原装配保留"
       ]
     },
     {
@@ -10683,9 +10685,10 @@
       "source": "references/zcode/packages/ui/src/settings/saved-workflows/AutomationsPageTitleSwitch.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/saved-workflows/AutomationsPageTitleSwitch.tsx",
       "sha256": "20dcb121c29c92900b3dec6471cbdd75fe15ae6714bb5d6f46d638a4deffe9c6",
-      "copiedSha256": "e74c0fea7bf1c93d6923f77a69ad23e023370a9970f1f785af39857cf15014a1",
+      "copiedSha256": "a46abe2017a193e43721e3004e98e45ab104beebb81512c46c1da1bda695ff6e",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "复用原源码：仅提取原平铺h1供未接入态共用，标题与布局保持原装配"
       ]
     },
     {

@@ -759,9 +759,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     onOpenPluginStore?.();
   }, [onOpenPluginStore]);
   const handleOpenAutomationsMain = useCallback(() => {
-    if (!supportsAutomations) return;
     onOpenAutomations?.();
-  }, [onOpenAutomations, supportsAutomations]);
+  }, [onOpenAutomations]);
   const handleOpenCodingPlanUpgrade = useCallback(
     (
       providerId: string,
@@ -1323,7 +1322,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 }
               />
             ) : null} */}
-            {supportsAutomations ? (
               <Button
                 variant="ghost"
                 onClick={handleOpenAutomationsMain}
@@ -1339,7 +1337,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 <CalendarClock className="size-4" />
                 {intl.formatMessage({ id: "workspace.openScheduledSettings" })}
               </Button>
-            ) : null}
             <Button
               variant="ghost"
               onClick={handleOpenPluginStoreMain}

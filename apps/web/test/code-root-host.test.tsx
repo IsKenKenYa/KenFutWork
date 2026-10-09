@@ -7,8 +7,10 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { PlatformProvider } from "@zui/hooks/usePlatform";
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider";
 import { Root } from "@zui/index";
+import { AutomationsSection } from "@zui/settings/AutomationsSection";
 import { useAlertDialogStore } from "@zui/store/alertDialogStore";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore";
 import { afterEach, expect, it, vi } from "vitest";
@@ -30,12 +32,78 @@ import {
 const clients: CodeHttpChannelClient[] = [];
 const releases: Array<() => void> = [];
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   for (const release of releases.splice(0)) release();
   for (const client of clients.splice(0)) client.dispose();
   vi.unstubAllGlobals();
   localStorage.clear();
   restoreCodeRootBrowser();
+});
+
+it("原自动化入口在宿主未接入时保留原页面与图标，禁用创建且零运行请求", async () => {
+  const calls: Array<{ service: string; method: string; args: unknown[] }> = [];
+  installBrowserLayout();
+  vi.stubGlobal("fetch", createCodeRootHostFetch(calls, { rejectOpen: false }));
+  const client = new CodeHttpChannelClient({ apiBase: "https://host.example" });
+  clients.push(client);
+  await client.connect();
+  client.registerWorkspaces([rootWorkspace]);
+  releases.push(bindCodeWorkspaceServices(client));
+  render(
+    <ZCodeIntlProvider initialLocale="zh-CN">
+      <Root
+        services={client.services}
+        platform={createCodePlatform(client)}
+        initialWorkspaceAbsPath="/code"
+        initialWorkspaceIdentity={JSON.stringify([rootProjectId, "/code"])}
+        restoreSession={false}
+        allowRemoteWorkspace={false}
+      />
+    </ZCodeIntlProvider>,
+  );
+  await screen.findByRole("textbox");
+  const beforeOpen = calls.length;
+  for (let round = 0; round < 2; round += 1) {
+    fireEvent.click(await screen.findByRole("button", { name: "自动化" }));
+    expect(
+      await screen.findByRole("heading", { name: "自动化" }),
+    ).not.toBeNull();
+    expect(screen.getByText("未接入").getAttribute("role")).toBe("status");
+    const create = screen.getByRole("button", {
+      name: "创建定时任务",
+    });
+    expect(create.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(create);
+    expect(screen.getByRole("heading", { name: "自动化" })).not.toBeNull();
+  }
+  expect(
+    calls
+      .slice(beforeOpen)
+      .filter((call) =>
+        /automation|offpeak|client-scenes|coding-plan-subscription/i.test(
+          call.method + call.service,
+        ),
+      ),
+  ).toEqual([]);
+});
+
+it("未接入的原自动化页停留一分钟仍不取数或轮询", async () => {
+  const calls: Array<{ service: string; method: string; args: unknown[] }> = [];
+  vi.stubGlobal("fetch", createCodeRootHostFetch(calls, { rejectOpen: false }));
+  const client = new CodeHttpChannelClient({ apiBase: "https://host.example" });
+  clients.push(client);
+  vi.useFakeTimers();
+  render(
+    <ZCodeIntlProvider initialLocale="zh-CN">
+      <PlatformProvider platform={createCodePlatform(client)}>
+        <AutomationsSection />
+      </PlatformProvider>
+    </ZCodeIntlProvider>,
+  );
+  await act(() => vi.advanceTimersByTimeAsync(60_000));
+  expect(screen.getByText("未接入")).not.toBeNull();
+  expect(calls).toEqual([]);
 });
 
 it.each([true, false])(

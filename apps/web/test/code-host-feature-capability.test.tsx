@@ -146,10 +146,12 @@ async function renderOriginalSurfaces(originalCapabilities = false) {
   return { calls, openToolAutomation };
 }
 
-it("未接通的自动化/浏览器/CUA 不出现在原侧栏或设置；隐藏分区跳转保持当前页", async () => {
+it("自动化保留原侧栏入口；未接通的浏览器/CUA与旧设置跳转保持能力限制", async () => {
   const { calls } = await renderOriginalSurfaces();
   await screen.findByTestId("settings-section-nav-appearance");
-  expect(screen.queryByTestId("automations-open")).toBeNull();
+  expect(
+    screen.getByTestId("automations-open").getAttribute("aria-pressed"),
+  ).toBe("false");
   for (const id of ["automations", "browser", "computerUse"])
     expect(screen.queryByTestId(`settings-section-nav-${id}`)).toBeNull();
   expect(screen.getByText("定时任务结果").textContent).toBe("定时任务结果");
