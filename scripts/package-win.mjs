@@ -217,19 +217,44 @@ function main() {
   // esbuild 的 CLI 是原生二进制（0.28 起 bin/esbuild 不是 JS 壳），直接 spawn 它：
   // 绕开 pnpm 的 .cmd shim 就用不着 shell——banner 是 JS 源码，经 cmd.exe 传参会被它
   // 自己解释（实测 `const was unexpected at this time.`，exit=255）。
-  const esbuildDir = dirname(
-    createRequire(join(ROOT, "apps", "server", "package.json")).resolve(
-      "esbuild/package.json",
-    ),
+  const esbuildRequire = createRequire(
+    join(ROOT, "apps", "server", "package.json"),
   );
-  const esbuildBin = join(
-    esbuildDir,
-    process.platform === "win32" ? "esbuild.exe" : "bin/esbuild",
-  );
-  if (!existsSync(esbuildBin)) {
-    console.error(`[package] 找不到 esbuild 可执行文件：${esbuildBin}`);
+  // 可执行文件的位置随平台不同：Windows 上真身在平台包 @esbuild/win32-x64/esbuild.exe
+  //（esbuild 包根没有副本，实测 CI 报「找不到」）；macOS/Linux 上 esbuild 包内的
+  // bin/esbuild 本身就是原生二进制（0.28 起不是 JS 壳）。
+  const esbuildBin = (() => {
+    const candidates =
+      process.platform === "win32"
+        ? [
+            () => esbuildRequire.resolve("@esbuild/win32-x64/esbuild.exe"),
+            () =>
+              join(
+                dirname(esbuildRequire.resolve("esbuild/package.json")),
+                "esbuild.exe",
+              ),
+          ]
+        : [
+            () =>
+              join(
+                dirname(esbuildRequire.resolve("esbuild/package.json")),
+                "bin",
+                "esbuild",
+              ),
+          ];
+    for (const candidate of candidates) {
+      try {
+        const resolved = candidate();
+        if (existsSync(resolved)) return resolved;
+      } catch {
+        // 试下一个候选
+      }
+    }
+    console.error(
+      "[package] 找不到 esbuild 可执行文件（平台包与 esbuild 包根都没有），先 pnpm install",
+    );
     process.exit(1);
-  }
+  })();
   run(
     "打包服务端（esbuild）",
     esbuildBin,
