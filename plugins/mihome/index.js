@@ -359,6 +359,8 @@ export function apply(ctx) {
 
   ctx.tools.register({
     name: "mihome_devices",
+    // 只读：默认档不审批（声明 read 的插件工具不进危险判据）。
+    access: "read",
     description:
       "列出米家设备：名称、在线状态、房间，以及每台设备可读写的属性（含 siid/piid 与当前值）。控制设备前先用本工具拿到目标属性的 siid/piid。",
     parameters: {
@@ -418,6 +420,8 @@ export function apply(ctx) {
 
   ctx.tools.register({
     name: "mihome_control",
+    // 写设备状态：进默认档审批（名表不认识插件工具名，靠这条声明）。
+    access: "write",
     description:
       "写米家设备的某个属性（开关、亮度、模式等）。siid/piid 与可用取值先用 mihome_devices 查；返回里带读回的真值，便于确认是否真的生效。",
     parameters: {

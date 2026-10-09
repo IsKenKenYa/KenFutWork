@@ -283,6 +283,7 @@ export class ToolRegistryImpl implements ToolRegistry {
       runId: execCtx.runId,
       ...(execCtx.threadId ? { threadId: execCtx.threadId } : {}),
       toolName: tool.name,
+      ...(tool.access ? { access: tool.access } : {}),
     });
     if (decision.decision === "deny") {
       throw new ToolDeniedError(tool.name, decision.denyReason);

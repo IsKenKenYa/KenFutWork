@@ -210,6 +210,11 @@ export interface ToolPreExecutePayload {
   /** 会话线程（执行模式等按线程拦截的监听器据此取策略）。 */
   threadId?: string | undefined;
   toolName: string;
+  /**
+   * 工具属主声明的执行效果（`ToolDefinition.access`）。权限判据用它区分只读与写：
+   * 插件工具尤其需要——它们的名字不进危险工具名表，只能靠声明进默认档审批。
+   */
+  access?: "read" | "write" | "execute" | undefined;
 }
 
 export interface TurnStoppingPayload {

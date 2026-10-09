@@ -17,6 +17,8 @@ export const inject = ["tools", "systemPrompt", "routes", "ui"];
 export function apply(ctx) {
   ctx.tools.register({
     name: "demo_ping",
+    // 只读：默认档不审批（执行效果声明见 example-clock 的说明）。
+    access: "read",
     description: "参考插件自检：返回 pong 与当前时间戳。",
     parameters: { type: "object", properties: {} },
     execute: async () => ({ pong: true, at: new Date().toISOString() }),

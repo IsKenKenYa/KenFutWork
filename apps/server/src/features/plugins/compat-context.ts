@@ -30,6 +30,12 @@ export interface CompatToolDefinition {
   description?: string;
   parameters?: Record<string, unknown>;
   output?: unknown;
+  /**
+   * 执行效果声明：只读工具（如设备/实体查询）声明 `read`——默认档下不进审批；
+   * `write`（改设备状态、落盘）与 `execute`（跑任意命令/代码）进默认档审批。
+   * 不声明按 `execute` 处理（未知效果按执行策略做人审，与 MCP 工具同口径）。
+   */
+  access?: "read" | "write" | "execute";
   execute?: (args: unknown, exec: unknown) => unknown | Promise<unknown>;
 }
 
@@ -245,6 +251,18 @@ function normalizeToolDefinition(raw: unknown, label: string): ToolDefinition {
       "tool_invalid",
     );
   }
+  const declaredAccess = record.access;
+  if (
+    declaredAccess !== undefined &&
+    declaredAccess !== "read" &&
+    declaredAccess !== "write" &&
+    declaredAccess !== "execute"
+  ) {
+    throw new CompatLoadError(
+      `${label}：工具 ${name} 的 access 只能是 read / write / execute（收到 ${String(declaredAccess)}）。`,
+      "tool_invalid",
+    );
+  }
   const parameters = asRecord(record.parameters) ?? {
     type: "object",
     properties: {},
@@ -264,8 +282,9 @@ function normalizeToolDefinition(raw: unknown, label: string): ToolDefinition {
     description,
     scope: "shared",
     exposure: "deferred",
-    // 兼容bundle没有可信只读证明，不能进入explore/review。
-    access: "execute",
+    // 执行效果由插件属主声明：`read` 进只读角色且默认档不审批；`write`/`execute` 与
+    // 未声明（未知效果）都按执行策略做人审——后者不能进 explore/review。
+    access: declaredAccess ?? "execute",
     parameters,
     execute: async (args, execCtx) =>
       normalizeToolResult(
