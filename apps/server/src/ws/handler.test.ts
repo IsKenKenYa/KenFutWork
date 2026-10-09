@@ -2,7 +2,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import websocket from "@fastify/websocket";
-import { instanceSettingsSchema } from "@kenfutwork/shared";
+import { flowRunEventSchema, instanceSettingsSchema } from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
@@ -12,6 +12,7 @@ import { createLocalAccessFixture } from "../features/local-access/test-fixture.
 import type { LocalAccessRequest } from "../features/local-access/types.js";
 import { createProcessSandbox } from "../features/process-sandbox/service.js";
 
+import { CanvasEventBuffer, flowEventScopeKey } from "./event-buffer.js";
 import { registerWsRoute } from "./handler.js";
 
 // 真实受控PTY目前已在macOS验收。
@@ -138,6 +139,7 @@ async function makeStubs() {
     taskId,
     captureRoot,
     workDirState,
+    eventBuffer: new CanvasEventBuffer(),
   };
 }
 
@@ -151,6 +153,7 @@ async function startServer() {
     localAccess: stubs.localAccess,
     codeTerminal: stubs.terminals,
     localInstance: stubs.localInstance,
+    eventBuffer: stubs.eventBuffer,
   });
   app.addHook("onClose", async () => {
     await stubs.terminals.close("test_cleanup");
@@ -194,6 +197,87 @@ async function sendImmediatelyOnOpen(
   client.close();
   return { got };
 }
+
+/** 连上后发送 raw，收集服务端回传的前 count 条消息（或超时返回已收的）。 */
+async function collectMessages(
+  port: number,
+  raw: string,
+  headers: LocalAccessRequest["headers"],
+  count: number,
+): Promise<string[]> {
+  const client = new WebSocket(
+    `ws://127.0.0.1:${port}/api/ws?connectionId=c-flow-${Date.now()}`,
+    { headers },
+  );
+  const collected = await new Promise<string[]>((resolve) => {
+    const messages: string[] = [];
+    const timer = setTimeout(() => resolve(messages), 6000);
+    client.on("open", () => client.send(raw));
+    client.on("message", (data) => {
+      messages.push(data.toString());
+      if (messages.length >= count) {
+        clearTimeout(timer);
+        resolve(messages);
+      }
+    });
+    client.on("error", () => {
+      clearTimeout(timer);
+      resolve(messages);
+    });
+  });
+  client.close();
+  return collected;
+}
+
+describe("flow 事件续传（flow.resume，P5）", () => {
+  it("ACK 先行，随后补发断线期间的 flowRun 事件（lastSeq 覆盖后不再重放）", async () => {
+    const { app, port, headers, stubs } = await startServer();
+    try {
+      const instanceId = stubs.access.instanceId;
+      const flowEvent = flowRunEventSchema.parse({
+        type: "flowRun.event",
+        runId: "run-9",
+        seq: 1,
+        eventType: "workflow_started",
+        payload: { ok: true },
+        at: "2026-10-09T00:00:00Z",
+        timestamp: "2026-10-09T00:00:00Z",
+      });
+      stubs.eventBuffer.push(flowEventScopeKey(instanceId), flowEvent);
+
+      const messages = await collectMessages(
+        port,
+        JSON.stringify({
+          type: "command",
+          action: "flow.resume",
+          payload: { lastSeq: 0 },
+        }),
+        headers,
+        2,
+      );
+      expect(messages[0]).toContain("flow.resume");
+      expect(messages[0]).toContain('"replayed":1');
+      expect(messages[1]).toContain("flowRun.event");
+      expect(messages[1]).toContain("run-9");
+
+      // lastSeq 已覆盖：再续传只回 ACK（replayed 0），不再重放
+      const again = await collectMessages(
+        port,
+        JSON.stringify({
+          type: "command",
+          action: "flow.resume",
+          payload: { lastSeq: 1 },
+        }),
+        headers,
+        1,
+      );
+      expect(again[0]).toContain("flow.resume");
+      expect(again[0]).toContain('"replayed":0');
+    } finally {
+      await app.close();
+    }
+  });
+});
 
 describe("WS 早期消息不丢失（回归）", () => {
   it("open 后立即发送的非法 JSON 会被处理并回错误", async () => {

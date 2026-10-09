@@ -10,7 +10,7 @@ import {
   type VoiceDecodeContext,
   VOICE_SAMPLE_RATE,
   VoiceCaptureError,
-} from "../src/lib/voice-audio.js";
+} from "@kenfutwork/voice-ui";
 
 /**
  * 采集侧的纯逻辑。WAV 编码与重采样是「服务端能不能吃」的边界，

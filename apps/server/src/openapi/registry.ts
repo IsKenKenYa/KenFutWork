@@ -12,7 +12,6 @@ import {
   agentRunActivityResponseSchema,
   agentRunLatestResponseSchema,
   agentSubagentListResponseSchema,
-  applicationErrorResponseSchema,
   assetSignedUrlResponseSchema,
   brandKitAssetCreateRequestSchema,
   brandKitAssetResponseSchema,
@@ -70,8 +69,13 @@ import {
   flowEngineInstallStatusSchema,
   flowHostCredentialsRequestSchema,
   flowHostCredentialsResponseSchema,
+  flowHostEngineInfoResponseSchema,
+  flowHostEngineStopRequestSchema,
   flowHostEventsRequestSchema,
   flowHostEventsResponseSchema,
+  flowHostIdentityRequestSchema,
+  flowHostIdentityResponseSchema,
+  flowHostIdentityTicketResponseSchema,
   flowHostStatusResponseSchema,
   generateImageRequestSchema,
   generateVideoRequestSchema,
@@ -144,7 +148,6 @@ import {
   voiceSettingsUpdateRequestSchema,
   voiceSpeakRequestSchema,
   voiceTranscribeResponseSchema,
-
 } from "@kenfutwork/shared";
 import type { ZodType } from "zod";
 import { z } from "zod";
@@ -182,7 +185,8 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     auth: "local",
     successStatus: 200,
     summary: "查询会话最近一轮运行终态",
-    description: "按持久会话和当前本地实例隔离，返回原始失败原因；没有可见运行时返回 null。",
+    description:
+      "按持久会话和当前本地实例隔离，返回原始失败原因；没有可见运行时返回 null。",
     responseSchema: agentRunLatestResponseSchema,
     querySchema: z.object({ sessionId: z.string().min(1) }),
   },
@@ -193,7 +197,8 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     auth: "local",
     successStatus: 200,
     summary: "开始托管安装 Flow 引擎栈",
-    description: "本机授权后启动引擎栈安装；安装已在进行中返回 409，客户端通过状态端点观察结果。",
+    description:
+      "本机授权后启动引擎栈安装；安装已在进行中返回 409，客户端通过状态端点观察结果。",
     responseSchema: flowEngineInstallStatusSchema,
   },
   {
@@ -204,6 +209,18 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     successStatus: 200,
     summary: "查询 Flow 引擎栈安装状态",
     description: "返回安装阶段、日志尾部及失败原因；不触发安装。",
+    responseSchema: flowEngineInstallStatusSchema,
+  },
+  {
+    method: "post",
+    path: "/api/flow/host/engine/stop",
+    tag: "flow",
+    auth: "local",
+    successStatus: 200,
+    summary: "停止或卸载 Flow 引擎栈",
+    description:
+      "本机授权后执行 docker compose down；deleteData=true 时追加 --volumes 全删容器卷（默认保留数据）。失败原样返回可读原因。",
+    requestSchema: flowHostEngineStopRequestSchema,
     responseSchema: flowEngineInstallStatusSchema,
   },
   {
@@ -294,8 +311,9 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     auth: "local",
     successStatus: 200,
     summary: "转写录音为文本",
-    description: "上传 WAV 音频，最大 8 MiB；使用当前实例选择的内置或 BYOK 听段，空文本表示没有识别到语音。",
-    multipart: {"fileField": "file"},
+    description:
+      "上传 WAV 音频，最大 8 MiB；使用当前实例选择的内置或 BYOK 听段，空文本表示没有识别到语音。",
+    multipart: { fileField: "file" },
     responseSchema: voiceTranscribeResponseSchema,
   },
   {
@@ -305,7 +323,8 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     auth: "local",
     successStatus: 200,
     summary: "整理口述需求",
-    description: "使用当前实例选择的想段和可选最近上下文，将转写文本整理为完整需求；未选择模型返回可读错误。",
+    description:
+      "使用当前实例选择的想段和可选最近上下文，将转写文本整理为完整需求；未选择模型返回可读错误。",
     requestSchema: voiceRefineRequestSchema,
     responseSchema: voiceRefineResponseSchema,
   },
@@ -316,7 +335,8 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     auth: "local",
     successStatus: 200,
     summary: "合成语音回复",
-    description: "使用当前实例选择的说段合成音频字节，实际 MIME 由 Provider 决定；请求中止时取消合成。",
+    description:
+      "使用当前实例选择的说段合成音频字节，实际 MIME 由 Provider 决定；请求中止时取消合成。",
     requestSchema: voiceSpeakRequestSchema,
     binaryResponse: "application/octet-stream",
   },
@@ -1144,6 +1164,17 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
       "只读探测引擎可承载路径（平台 / WSL2 / 本机容器 / 自管地址），不做安装、下载或拉起。",
   },
   {
+    method: "get",
+    path: "/api/flow/host/engine/info",
+    tag: "flow",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: flowHostEngineInfoResponseSchema,
+    summary: "查询 flow 引擎信息页数据",
+    description:
+      "汇总安装状态、环境探测与引擎栈容器运行态（安装态为进程内快照，有运行中容器时按已就绪校正）；身份回调地址按本次请求主机名拼。数据面未装配时 503。",
+  },
+  {
     method: "post",
     path: "/api/flow/host/credentials",
     tag: "flow",
@@ -1169,14 +1200,26 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
   },
   {
     method: "post",
+    path: "/api/flow/host/identity-ticket",
+    tag: "flow",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: flowHostIdentityTicketResponseSchema,
+    summary: "签发一次性宿主身份票据",
+    description:
+      "本机接入验证后签发短时一次性票据（治理值 localAccessTicketTtlMs）；宿主前端在 ff-embed 握手里把它注入 flow，由 flow 网关带回 /api/flow/host/identity 验签。",
+  },
+  {
+    method: "post",
     path: "/api/flow/host/identity",
     tag: "flow",
     auth: "local",
-    successStatus: 503,
-    responseSchema: applicationErrorResponseSchema,
-    summary: "报告 Flow 身份适配未接通",
+    successStatus: 200,
+    requestSchema: flowHostIdentityRequestSchema,
+    responseSchema: flowHostIdentityResponseSchema,
+    summary: "验签宿主身份票据",
     description:
-      "本期尚未接通本地实例与 Flow 的身份适配，明确返回 503；不交换账户或本机接入凭据。",
+      "校验共享密钥后一次性消费票据，换出稳定 subject（本地实例模型下即实例 instanceId）；伪造、过期与重放一律 401，版本不符 400。",
   },
   // ---- fonts.ts（字体；免鉴权）----
   {

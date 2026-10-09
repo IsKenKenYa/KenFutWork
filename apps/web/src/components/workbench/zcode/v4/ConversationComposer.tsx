@@ -94,6 +94,8 @@ import { usePromptEditorDragState } from "@zui/prompt-editor/usePromptEditorDrag
 import type { AppSlashCommand } from "@zui/slashCommandHelpers.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import type { ComposerMentionPrefill } from "@zui/store/zcodeSessionStoreTypes.js";
+import { useCodeComposerVoice } from "@zui/voice/binding.js";
+import { recentMessagesFromSnapshot } from "@zui/voice/recent-messages.js";
 import type { AttachmentPutFn } from "@zui/v4/composer/attachmentUpload.js";
 import { CodeCommentAttachmentChip } from "@zui/v4/composer/CodeCommentAttachmentChip.js";
 import { ConversationBackgroundWorkTrigger } from "@zui/v4/composer/ConversationBackgroundWorkTrigger.js";
@@ -1514,6 +1516,72 @@ function ConversationComposerImpl({
     ],
   );
 
+  /**
+   * 语音接线（宿主桥 `@zui/voice/binding.js`；transport 由 `host/main.tsx` 注入）：
+   * 按住输入卡说话 → 转写填入（只转文本档）；完整回路档经「改写 → 2 秒撤销窗口」
+   * 自动提交。写回走 `inputApiRef.appendText`——程序化改写经 TextContentPlugin →
+   * handleEditorChange 落入草稿与受控 state。
+   */
+  const voiceAutoSubmitRef = useRef<string | null>(null);
+  /** 「想」段的指代消解上下文：最近几条转录消息（真实用户输入 + 已完成回复）。 */
+  const voiceRecentMessages = useMemo(
+    () => recentMessagesFromSnapshot(snapshot),
+    [snapshot],
+  );
+  const voice = useCodeComposerVoice({
+    enabled: !disabled && mode !== "reject",
+    recentMessages: voiceRecentMessages,
+    onTranscript: (text) => {
+      inputApiRef.current?.appendText(text);
+      inputApiRef.current?.focus();
+    },
+    onAutoSubmit: (prompt) => {
+      // 撤回窗口走完才到这里。注意 appendText 经 Lexical 更新事件**异步**回传草稿，
+      // 立即 submit 会读到旧文本而空转（真机验收抓到的缺陷）——先记下待提交文本，
+      // 等它真的出现在 composer 文本里再走与回车完全相同的提交路径。
+      voiceAutoSubmitRef.current = prompt;
+      inputApiRef.current?.appendText(prompt);
+      inputApiRef.current?.focus();
+    },
+  });
+  useEffect(() => {
+    const pending = voiceAutoSubmitRef.current;
+    if (!pending || !text.includes(pending)) return;
+    voiceAutoSubmitRef.current = null;
+    void submit();
+  }, [text, submit]);
+
+  /**
+   * 「说」段（规划 §4.2）：回复**从 streaming 转为 complete** 时念一次。
+   * 只念「先见过 streaming 的行」——打开历史会话时最后一行本就是 complete，
+   * 不能把旧回复重念一遍（先见 streaming 即标记，完成即消费并移除）。
+   */
+  const voiceStreamingRowsRef = useRef<Set<number>>(new Set());
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
+  useEffect(() => {
+    const rows = snapshot?.rows.window;
+    if (!rows) {
+      return;
+    }
+    const seen = voiceStreamingRowsRef.current;
+    for (const row of rows) {
+      if (row.kind === "assistantText" && row.state === "streaming") {
+        seen.add(row.rowId);
+      }
+    }
+    const last = [...rows]
+      .reverse()
+      .find((row) => row.kind === "assistantText");
+    if (
+      last?.kind === "assistantText" &&
+      last.state === "complete" &&
+      seen.delete(last.rowId)
+    ) {
+      voiceRef.current?.speakReply(last.text);
+    }
+  }, [snapshot]);
+
   // Lexical onChange（首字符也稳定回传，见 LexicalChatInput.TextContentPlugin）。
   const handleEditorChange = useCallback(
     (value: string) => {
@@ -2293,6 +2361,8 @@ function ConversationComposerImpl({
           "chat-composer-input-surface w-full",
           contextHeader && "rounded-2xl bg-surface shadow-xl/5",
         )}
+        onPointerDown={voice?.onPointerDown}
+        style={voice?.lockSelection ? { userSelect: "none" } : undefined}
       >
         {contextHeader ? (
           // 旧 ChatViewComposer contextHeaderContent 同款包装（workspace 菜单 + Git 分支）。
@@ -2358,6 +2428,7 @@ function ConversationComposerImpl({
             <span>{attachmentsApi.attachmentError}</span>
           </p>
         ) : null}
+        {voice?.status}
       </div>
       <ImagePreviewDialog
         initialIndex={attachmentPreviewIndex}

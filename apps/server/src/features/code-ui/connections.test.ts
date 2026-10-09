@@ -252,3 +252,16 @@ it.each(topicKinds)(
     expect(f.events).toHaveLength(2);
   },
 );
+
+it("hello 宣告 independentPlanState：vendored 客户端只在见到该位时允许发送 Plan 创建命令", () => {
+  const connections = new CodeUiConnections();
+  const carrier = connections.open(
+    randomUUID(),
+    randomUUID(),
+    async () => {},
+    () => {},
+  );
+  // 回归：此前缺这一位，勾选「计划」后发送在客户端被拒（proto.independentPlanUnsupported），
+  // 表现为「计划模式 → 发送失败」，取消计划立即成功。
+  expect(carrier.hello.capabilities.independentPlanState).toBe(true);
+});

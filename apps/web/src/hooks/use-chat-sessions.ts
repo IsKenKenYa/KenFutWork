@@ -336,6 +336,17 @@ export function useChatSessions({
     }
   }, []);
 
+  /**
+   * 同步读某会话的当前消息（写穿缓存的那份，含尚未刷进 React state 的最后一条增量）。
+   * run 收尾后要读**完整**的助手正文（播报用），不能读 messagesRef——它只随渲染更新，
+   * 会漏掉最后一批 delta。
+   */
+  const readSessionMessages = useCallback(
+    (sessionId: string): Message[] | undefined =>
+      msgCacheRef.current.get(sessionId),
+    [],
+  );
+
   return {
     sessions,
     activeSessionId,
@@ -353,6 +364,7 @@ export function useChatSessions({
     handleDeleteSession,
     autoTitleSession,
     reloadMessages,
+    readSessionMessages,
     accessTokenRef,
   };
 }

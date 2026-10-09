@@ -7,6 +7,15 @@ type BufferedEvent = {
 };
 
 /**
+ * flow 事件缓冲的作用域键（P5）：flowRun 事件没有 canvasId，归属是本地实例
+ * （与 `pushToInstance` 同一口径），故按实例缓冲；`flow.resume` 从同一作用域补发。
+ * 前缀避免与真实 canvasId 撞键（canvasId 是 UUID，不会是 `flow:` 开头）。
+ */
+export function flowEventScopeKey(instanceId: string): string {
+  return `flow:${instanceId}`;
+}
+
+/**
  * Per-canvas ring buffer for recent StreamEvents.
  * Enables event replay on client reconnection.
  */

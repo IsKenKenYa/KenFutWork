@@ -79,6 +79,8 @@ apps/web/tmp/
 
 # 本地 blob 目录（M3.1 local 形态）：本机数据，不入库
 /data/
+# 同上：`pnpm --filter server dev` 时 cwd 在 apps/server，blob 目录落它下面
+apps/server/data/
 
 # 已安装插件（机器本地，含第三方代码，禁止提交）
 .kenfutwork/

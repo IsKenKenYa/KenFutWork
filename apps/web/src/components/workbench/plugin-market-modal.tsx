@@ -366,7 +366,7 @@ export function PluginMarketModal({
                             }}
                             className={
                               entry.installed
-                                ? "rounded-full border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                                ? "rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                                 : "rounded-full bg-primary px-2.5 py-0.5 text-xs text-primary-foreground"
                             }
                           >
@@ -389,7 +389,7 @@ export function PluginMarketModal({
                         <button
                           type="button"
                           onClick={() => setExportName(entry.name)}
-                          className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                          className="rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                         >
                           导出
                         </button>

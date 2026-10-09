@@ -33,6 +33,7 @@ describe.skipIf(!DATABASE_URL)("权限设置持久化真实库集成", () => {
         browserControlEnabled: true,
         browserAutoScreenshot: true,
         browserHeadless: true,
+        approvedForever: ["mcp__*"],
         browserDevtoolsReadEnabled: true,
       });
       expect(await store.load()).toEqual({
@@ -42,6 +43,7 @@ describe.skipIf(!DATABASE_URL)("权限设置持久化真实库集成", () => {
         browserControlEnabled: true,
         browserAutoScreenshot: true,
         browserHeadless: true,
+        approvedForever: ["mcp__*"],
         browserDevtoolsReadEnabled: true,
       });
 

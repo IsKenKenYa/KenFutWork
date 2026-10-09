@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useFlowHostEntry } from "@/hooks/use-flow-host";
 import { installDesktopExternalLinks } from "@/lib/desktop-system";
 import { SIDEBAR_RAIL_WIDTH } from "@/lib/panel-layout";
+import { useFlowEngineInstall } from "@/lib/use-flow-engine-install";
 import {
   resolveWorkbenchSurface,
   type WorkbenchMode,
@@ -18,6 +19,7 @@ import {
   FlowCanvasFrame,
   type FlowCanvasFrameHandle,
 } from "./flow-canvas-frame";
+import { FlowEnginePage } from "./flow-engine-page";
 import { McpModal } from "./mcp-modal";
 import { PluginMarketModal } from "./plugin-market-modal";
 import { SettingsModal, type SettingsTab } from "./settings-modal";
@@ -32,7 +34,6 @@ export function CanvasWorkbench({
   onModeChange: (mode: WorkbenchMode) => void;
 }) {
   const accessToken = null;
-  const getToken = useCallback(() => accessToken, []);
   const { entry: flowEntry, refresh: refreshFlowEntry } = useFlowHostEntry();
   const flowFrameRef = useRef<FlowCanvasFrameHandle>(null);
   const projects = useDesignProjects(accessToken, mode);
@@ -42,6 +43,18 @@ export function CanvasWorkbench({
   const [canvasPrompt, setCanvasPrompt] = useState<string | null>(null);
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [pluginsOpen, setPluginsOpen] = useState(false);
+  /**
+   * Flow 子视图：`canvas` = 工作流画布（默认主界面）；`engine` = 「引擎」信息页
+   * （状态 / 承载路径 / 地址 / 栈容器事实）。只被用户点侧栏导航切换，不被对话框顶掉
+   * （与 Design 主区不变量同一条纪律）。安装状态与信息页共用一份 hook。
+   */
+  const [flowView, setFlowView] = useState<"canvas" | "engine">("canvas");
+  const {
+    state: engineState,
+    notice: engineNotice,
+    install: runEngineInstall,
+    stop: runEngineStop,
+  } = useFlowEngineInstall();
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
   const { selectedProject } = projects;
@@ -98,14 +111,24 @@ export function CanvasWorkbench({
         setMcpOpen={setMcpOpen}
         flowEntry={flowEntry}
         flowFrameRef={flowFrameRef}
+        flowView={flowView}
+        setFlowView={setFlowView}
       />
       <main className="min-w-0 flex-1 overflow-hidden bg-card">
         {mode === "flow" && flowEntry?.available ? (
-          <FlowCanvasFrame
-            ref={flowFrameRef}
-            frontendUrl={flowEntry.frontendUrl}
-            getToken={getToken}
-          />
+          flowView === "engine" ? (
+            <FlowEnginePage
+              engineState={engineState}
+              engineNotice={engineNotice}
+              onInstall={runEngineInstall}
+              onStop={runEngineStop}
+            />
+          ) : (
+            <FlowCanvasFrame
+              ref={flowFrameRef}
+              frontendUrl={flowEntry.frontendUrl}
+            />
+          )
         ) : surface === "canvas" ? (
           <iframe
             key={`${selectedProject?.primaryCanvas.id}:${canvasPrompt ?? ""}`}

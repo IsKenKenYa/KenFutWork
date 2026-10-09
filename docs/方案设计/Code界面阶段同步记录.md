@@ -188,3 +188,34 @@ pnpm --filter @zcode/ui build
 来源清单只更新本阶段6个owned vendor记录：toolDisplay、fileSummaries、fileSummaryTypes、edit renderer与两种locale。原source revision/blob与既有locale donor syncSource保留；使用原checkout只读Git对象核对source SHA、donor SHA及当前target copiedSha，6项全部一致。工作树未初始化references子模块，也未复制或建立符号链接。owned paths的`git diff --check`通过；全仓diff中`THIRD-PARTY-NOTICES.md`的原CRLF字节保真例外保留，未为清除trailing whitespace修改版权原字节。
 
 后续V4文件详情必须从已持久事件的完整canonical/journal聚合真实提交，不从有界display还原完整补丁。单Write/Edit canonical带解码`originalFile`与`content`，ApplyPatch files仅有path/type/structuredPatch/counts/version；恢复原字节必须使用真实checkpoint/ledger。Git只保存可执行位，材料化文件mode不代表完整原权限：现存文件保留最终native实际观察mode；已删除文件恢复为owner读写`0600`，仅继承Git保存的owner执行位，执行文件为`0700`。这些POSIX位是权限语义常量，不是运行时限额，不另造完整mode元数据历史。真实`0600` Edit回退首RED为权限扩大到`0644`；修正后19个文件回退边界用例全GREEN，收据为`/private/tmp/kfw-file-rewind-mode-red.log`与`/private/tmp/kfw-file-rewind-boundaries.log`。已删可执行文件`0700`与完成顺序也已回归；后者实际RED暴露按启动行顺序重建会误拒绝合法提交，改为持久completion日志顺序后GREEN，收据为`/private/tmp/kfw-file-rewind-completion-order-red.log`。原V4 RPC独立PG/Scope/Checkpoint/ShadowGitExec/SRT正例1/1 GREEN，UTF16/BOM、`0600`、cold聊天/reverted摘要、旧CAS duplicate与新代际已验证，收据为`/private/tmp/kfw-file-rewind-v4-current.log`。delete.version是删除前版本；move的filePath是源路径、movePath是目标路径、version为目标提交后版本，patch来自目标新建；移动目标已提交但源未删的partial结果如实为目标add加failure，不得冒充成功move。
+
+## 第6阶段：输入框语音入口（宿主接线）
+
+来源冻结仍为`3f5c38732f151fa64e99856f456623b303dbe14e`。本阶段只做宿主接线，不同步donor的新hunk：语音能力本身（录制/WAV/手势/改写与撤销窗口）来自第一方`@kenfutwork/voice-ui`与既有`/api/voice/*`，不在ZCode来源内。
+
+`v4/ConversationComposer.tsx`三触点：输入卡摊`onPointerDown`语音手势与状态行，转写经`inputApiRef.appendText`受控写回（TextContentPlugin→handleEditorChange落草稿）；完整回路在撤销窗口后走组件自身`submit`——文本先落草稿，`submit`未就绪也不丢，不另起发送通道。transport由树级宿主桥`@zui/voice/binding.js`（`zcode/voice/binding.tsx`，第一方文件，不进清单）注入，`host/main.tsx`装配multipart转写（`CodeHttpChannelClient.transcribeVoice`，cookie认证、不手写content-type）与设置读；`styles.css`追加共享语音包扫描面`@source ../../../../../../packages/voice-ui/src/**/*.{ts,tsx}`（探针类实测证明扫描生效、随后移除，状态行类在两个构建的产物CSS均齐全）。
+
+验证：`@zcode/ui` typecheck（vendor+host）与build均exit0；web定向用例（接线守卫源码级、语音桥组件级、宿主通道multipart）全GREEN。命令：
+
+```sh
+pnpm --filter @zcode/ui typecheck
+pnpm --filter @zcode/ui build
+pnpm --filter @kenfutwork/web exec vitest run test/code-voice.test.tsx test/voice-wiring-guard.test.ts test/code-host-channel.test.ts --maxWorkers=1
+```
+
+本阶段仅更新2个owned vendor记录（`v4/ConversationComposer.tsx`、`styles.css`）：source字节不变（source blob/SHA沿用《ZCode源码清单》既有记录），copiedSha与适配理由由该清单单处持有；`host/`与`voice/`下的第一方文件不在清单范围。
+
+## 第7阶段：语音补全接线（「想」段上下文 + 「说」段播报）
+
+承接第6阶段，补齐规划 §2.3 与 §4.2 的两端：① `snapshot.rows.window` 提取指代消解上下文（新第一方 `zcode/voice/recent-messages.ts`：只取 `origin === "realUser"` 的 userInput 与 `state === "complete"` 的 assistantText，经 `buildRefineContext` 单条截断 500 字 / 封顶 6 条）注入 `useCodeComposerVoice` 的 `recentMessages`；② 助手回复**从 streaming 转为 complete** 时调 `speakReply` 播报（先见 streaming 的 rowId 才消费——打开历史会话的最后一行本就 complete，不能重念）。`speakReply` 只在完整回路档 + 朗读开关打开时工作（与设置页同一口径）。
+
+宿主通道新增 `CodeHttpChannelClient.speakVoice`（`POST /api/voice/speak`，二进制响应、打断走 signal），`host/main.tsx` 装配为 transport.speak；`voice/binding.tsx` 增加播报实例（打断口径与 Design 侧同一份：新播报 / 开始说话 / 卸载即停）。
+
+验证：`@zcode/ui` typecheck（vendor+host）exit0；定向用例 4 文件 32 例全绿（含播报开关三态、上下文注入、转录提取纯函数、接线守卫新增断言）。
+
+```sh
+pnpm --filter @zcode/ui typecheck
+pnpm --filter @kenfutwork/web exec vitest run test/code-voice.test.tsx test/code-recent-messages.test.ts test/voice-wiring-guard.test.ts test/code-host-channel.test.ts
+```
+
+本阶段更新 1 个owned vendor记录（`v4/ConversationComposer.tsx`）：source字节不变，copiedSha随适配更新（见《ZCode源码清单》）；`host/`与`voice/`下的第一方文件不在清单范围。

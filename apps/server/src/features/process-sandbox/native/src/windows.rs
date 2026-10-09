@@ -124,9 +124,19 @@ pub fn spawn_workload(input: &Launch, mode: StdioMode) -> Result<Box<dyn Sandbox
             .any(|item| item == "permissiveLearningMode"),
         "不允许学习模式降级"
     );
+    let mut logger = Logger::new(Mode::Buffer);
     let child = BaseContainerRunner::new()
-        .spawn(&request, &mut Logger::new(Mode::Buffer), mode)
-        .map_err(|_| anyhow::anyhow!("原生 Windows sandbox 启动失败；拒绝未经约束执行"))?;
+        .spawn(&request, &mut logger, mode)
+        .map_err(|error| {
+            let buffer = logger.get_buffer();
+            let tail: String = buffer
+                .chars()
+                .skip(buffer.chars().count().saturating_sub(800))
+                .collect();
+            anyhow::anyhow!(
+                "原生 Windows sandbox 启动失败（{error:?}）；拒绝未经约束执行。日志尾部：{tail}"
+            )
+        })?;
     ensure!(
         child.warnings().is_empty(),
         "后端报告降级 containment，拒绝执行"

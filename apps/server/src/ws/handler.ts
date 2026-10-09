@@ -40,7 +40,7 @@ import {
   ConnectionIdentityConflictError,
   type ConnectionManager,
 } from "./connection-manager.js";
-import type { CanvasEventBuffer } from "./event-buffer.js";
+import { type CanvasEventBuffer, flowEventScopeKey } from "./event-buffer.js";
 import { createPipelineLogger } from "./logger.js";
 
 type RegisterWsOptions = {
@@ -467,6 +467,33 @@ async function authenticateAndBind(
         });
 
         // THEN replay missed events from buffer
+        for (const entry of missed) {
+          connectionManager.sendTo(connectionId, {
+            type: "event",
+            event: entry.event,
+          });
+        }
+      } else if (msg.action === "flow.resume") {
+        /**
+         * flow 事件续传（P5）：作用域是本地实例（flowRun 事件没有 canvasId），
+         * 与其他 flowRun 事件同一条 WS 通道；客户端按 runId + payload.seq 去重。
+         */
+        const scope = flowEventScopeKey(authenticatedUser.instanceId);
+        log.info("flow_resume", {
+          instanceId: authenticatedUser.instanceId,
+          lastSeq: msg.payload.lastSeq,
+        });
+        const missed =
+          options.eventBuffer?.getAfter(scope, msg.payload.lastSeq) ?? [];
+        // ACK 先行（与 canvas.resume 同一时序口径）：客户端先注册监听再收重放
+        connectionManager.sendTo(connectionId, {
+          type: "command.ack",
+          action: "flow.resume",
+          payload: {
+            latestSeq: options.eventBuffer?.getLatestSeq(scope) ?? 0,
+            replayed: missed.length,
+          },
+        });
         for (const entry of missed) {
           connectionManager.sendTo(connectionId, {
             type: "event",

@@ -47,6 +47,46 @@ describe("permissions 缝（DEC-4）", () => {
     expect(svc.listApprovedForever()).toEqual(["execute"]);
   });
 
+  it("永久批准随 applySettings 恢复、随 getSettings 读出（重启持久化的内存侧契约）", () => {
+    // 启动期读回：持久化里带着上次的永久批准，服务一建好就生效
+    const restored = createPermissionService();
+    restored.applySettings({
+      tier: "default",
+      automationTier: "default",
+      rules: { allow: [], deny: [] },
+      approvedForever: ["execute", "mcp__py__run"],
+      browserControlEnabled: false,
+      browserAutoScreenshot: false,
+      browserHeadless: false,
+      browserDevtoolsReadEnabled: true,
+    });
+    expect(restored.listApprovedForever()).toEqual([
+      "execute",
+      "mcp__py__run",
+    ]);
+    expect(restored.evaluate({ toolName: "execute" }).decision).toBe("allow");
+
+    // 读回后再增补：getSettings 里的 approvedForever 同步增长（写穿存储的数据源）
+    restored.approve("write_file", { scope: "forever" });
+    expect(restored.getSettings().approvedForever).toEqual([
+      "execute",
+      "mcp__py__run",
+      "write_file",
+    ]);
+    expect(restored.evaluate({ toolName: "write_file" }).decision).toBe(
+      "allow",
+    );
+
+    // PUT tier 的合并路径：getSettings() 展开再 applySettings，批准清单不丢
+    const merged = { ...restored.getSettings(), tier: "auto-approve" as const };
+    restored.applySettings(merged);
+    expect(restored.listApprovedForever()).toEqual([
+      "execute",
+      "mcp__py__run",
+      "write_file",
+    ]);
+  });
+
   it("auto-approve 档自动放行危险工具；full-access 全放行；线程档位覆盖全局", () => {
     const svc = createPermissionService();
     svc.setTier(undefined, "auto-approve");
@@ -99,6 +139,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
+      approvedForever: [],
       browserDevtoolsReadEnabled: false,
     });
     // 放行项：危险工具（write_file）也放行
@@ -122,6 +163,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
+      approvedForever: [],
       browserDevtoolsReadEnabled: false,
     });
     expect(svc.evaluate({ toolName: "mcp__fs__write" }).decision).toBe("deny");
@@ -143,6 +185,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
+      approvedForever: [],
       browserDevtoolsReadEnabled: false,
     });
     // 常规：全放行
@@ -162,6 +205,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
+      approvedForever: [],
       browserDevtoolsReadEnabled: false,
     });
     expect(
@@ -182,6 +226,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       browserControlEnabled: false,
       browserAutoScreenshot: false,
       browserHeadless: false,
+      approvedForever: [],
       browserDevtoolsReadEnabled: false,
     });
     svc.setTier("t1", "full-access");

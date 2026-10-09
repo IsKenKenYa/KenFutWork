@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import {
+  cp,
   lstat,
   mkdir,
   readFile,
@@ -8,6 +10,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -415,6 +418,38 @@ export function createPluginRegistryService(
     return path.join(deps.pluginsDir, id);
   }
 
+  /**
+   * 插件运行副本根 + 按（插件 id, installedAt）定位快照目录。
+   *
+   * **为什么 import 不直接用落盘目录**：dev 服务端跑在 `node --watch` 下，它把
+   * import 过的每个文件都加入监视；bundle 就地 import 后，「卸载 = rm 落盘目录 =
+   * 删被监视文件 = dev 服务端重启」，正在跑的 agent run 全部中断（2026-10-07 真机
+   * 复现）。因此装载前把 bundle 拷进系统临时目录再 import：
+   * - 卸载只删落盘目录，**永不删快照**——同进程内 import 过的快照一旦删除同样触发
+   *   重启，所以快照只增不删，残留由 OS 清理 tmp；
+   * - 快照按 installedAt 隔离：重装必然拿到新时间戳 → 新目录，重载旧记录复用旧快照。
+   */
+  const pluginRuntimeRoot = path.join(tmpdir(), "kenfutwork-plugin-runtime");
+
+  function bundleRuntimeDirOf(id: string, installedAt: string): string {
+    return path.join(pluginRuntimeRoot, `${id}-${encodeURIComponent(installedAt)}`);
+  }
+
+  async function snapshotBundleForImport(
+    record: InstalledPlugin,
+  ): Promise<string> {
+    const target = bundleRuntimeDirOf(record.id, record.installedAt);
+    if (existsSync(target)) return target;
+    const staging = `${target}.staging-${process.pid}`;
+    await rm(staging, { recursive: true, force: true });
+    await mkdir(path.dirname(staging), { recursive: true });
+    await cp(bundleDirOf(record.id), staging, { recursive: true });
+    await rm(target, { recursive: true, force: true });
+    await cp(staging, target, { recursive: true });
+    await rm(staging, { recursive: true, force: true });
+    return target;
+  }
+
   async function writeBundleFiles(
     id: string,
     files: Record<string, string>,
@@ -446,7 +481,8 @@ export function createPluginRegistryService(
       log.warn(`[plugins] ${record.id} 未声明入口模块，跳过装载。`);
       return undefined;
     }
-    const entryPath = path.join(bundleDirOf(record.id), entry);
+    const runtimeDir = await snapshotBundleForImport(record);
+    const entryPath = path.join(runtimeDir, entry);
     try {
       // 查询串绕过 ESM 模块缓存：重装同一路径必须拿到新代码
       const moduleUrl = `${pathToFileURL(entryPath).href}?v=${encodeURIComponent(record.installedAt)}`;

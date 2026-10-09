@@ -1,4 +1,8 @@
-import type { CodeUiWorkspace, InstanceContext } from "@kenfutwork/shared";
+import type {
+  CodeUiWorkspace,
+  InstanceContext,
+  VoiceSettings,
+} from "@kenfutwork/shared";
 import type { UserInfo } from "@zcode/shared";
 import type { HelloMessage } from "@zcode/shared/zcode-protocol-v4";
 import { ScopedErrorBoundary } from "@zui/ErrorBoundary.js";
@@ -6,6 +10,10 @@ import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider.js";
 import { Root } from "@zui/Root.js";
 import { RootStartupLoading } from "@zui/root/RootStartupLoading.js";
 import { ensureAgentV4ConnectionHandshake } from "@zui/v4/agentV4ConnectionHandshake.js";
+import {
+  CodeVoiceProvider,
+  type CodeVoiceTransport,
+} from "@zui/voice/binding.js";
 import { useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { CuaSnapshotReader } from "./cuaScreenshotSectionAdapter.js";
@@ -30,6 +38,24 @@ const config: CodeHostConfig = {
 };
 const client = new CodeHttpChannelClient(config);
 const readCuaSnapshot = client.readCuaSnapshot.bind(client);
+/** 语音 transport：转写走 multipart、播报走二进制，改写/设置读走 JSON 通道（cookie 认证同 Code 宿主）。 */
+const voiceTransport: CodeVoiceTransport = {
+  transcribe: (wav) => client.transcribeVoice(wav),
+  speak: (input) => client.speakVoice(input),
+  refine: async (input) => {
+    const result = await client.request<{ prompt: string }>(
+      "/api/voice/refine",
+      input,
+    );
+    return result.prompt;
+  },
+  fetchSettings: async () => {
+    const result = await client.request<{ settings: VoiceSettings }>(
+      "/api/voice/settings",
+    );
+    return result.settings;
+  },
+};
 const platform = createCodePlatform(client);
 const onWorkspaceContextChange = createCodeWorkspaceContextResolver(client);
 const element = document.getElementById("root");
@@ -107,11 +133,13 @@ try {
       )
     : undefined;
   root.render(
-    <CodeHost
-      {...(workspace ? { workspace } : {})}
-      user={null}
-      clientMode={hello.clientMode}
-    />,
+    <CodeVoiceProvider transport={voiceTransport}>
+      <CodeHost
+        {...(workspace ? { workspace } : {})}
+        user={null}
+        clientMode={hello.clientMode}
+      />
+    </CodeVoiceProvider>,
   );
 } catch (error) {
   console.error("Code 工作台启动失败", error);

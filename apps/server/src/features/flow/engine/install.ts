@@ -3,6 +3,12 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import {
+  createProcessRunCommand,
+  decodeCommandText,
+  type RunCommand,
+} from "./exec.js";
+
 /**
  * Dify 无头栈的**托管安装状态机**（FORM-11 探测后的「下载 → 确认 → 托管」流程）。
  *
@@ -13,7 +19,7 @@ import { join } from "node:path";
  * 三个口径（§9.1 已拍板，见《flow插件集成规划》§9.1）：
  *  - 首次安装自动生成密钥（SECRET_KEY / ADMIN_API_KEY）落到数据目录的 env 文件，之后复用；
  *  - 引擎数据在容器卷里（不在主仓数据目录）；
- *  - 卸载流程后续增量（先只做安装与状态）。
+ *  - 停止/卸载：默认 `down` 保留数据卷，显式选择全删才 `down --volumes`（见 stopEngineStack）。
  *
  * 边界：compose 文件与数据目录由调用方解析传入（开发=仓库根，桌面=资源目录，后者待接）。
  */
@@ -159,4 +165,58 @@ export function startEngineInstall(options: EngineInstallOptions): {
   });
 
   return { started: true, snapshot: getEngineInstallSnapshot() };
+}
+
+/**
+ * 取消进行中的安装（协作式）：终止 `up` 子进程；已拉取的镜像层保留（可重放），
+ * 半创建的容器由停止（`stopEngineStack`）清理——取消本身不假装栈已不存在。
+ */
+export function cancelEngineInstall(): EngineInstallSnapshot {
+  if (current.state !== "installing") return getEngineInstallSnapshot();
+  current.child?.kill();
+  current = { state: "idle" };
+  return getEngineInstallSnapshot();
+}
+
+export interface EngineStopResult {
+  ok: boolean;
+  /** 失败时的可读原因（命令退出码 + stderr 摘要）。 */
+  error?: string;
+}
+
+/**
+ * 停止引擎栈（FORM-11 生命周期）：`docker compose down`；`deleteData` 时追加
+ * `--volumes`（全删容器卷，含 Dify 库与文件——**显式选择才动数据**，§9.1③）。
+ * 安装中先取消：`up` 还在跑时 `down` 会互相打架。
+ */
+export async function stopEngineStack(
+  options: EngineInstallOptions & { deleteData?: boolean },
+  deps: { run?: RunCommand } = {},
+): Promise<EngineStopResult> {
+  if (current.state === "installing") cancelEngineInstall();
+  // 停止是交互式操作（用户点了按钮）：超时只作兜底，给 compose 收尾留足时间。
+  const run = deps.run ?? createProcessRunCommand({ timeoutMs: 120_000 });
+  const envFile = ensureStackEnvFile(options.dataDir);
+  const result = await run("docker", [
+    "compose",
+    "--env-file",
+    envFile,
+    "-f",
+    options.composeFile,
+    "--profile",
+    "dify",
+    "down",
+    ...(options.deleteData ? ["--volumes"] : []),
+  ]);
+  if (result.code !== 0) {
+    const detail = decodeCommandText(result.stderr).split("\n")[0]?.trim();
+    return {
+      ok: false,
+      error:
+        `docker compose down 失败（退出码 ${result.code}）` +
+        (detail ? `：${detail.slice(0, 200)}` : ""),
+    };
+  }
+  current = { state: "idle" };
+  return { ok: true };
 }

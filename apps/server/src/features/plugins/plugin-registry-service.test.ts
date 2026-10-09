@@ -292,6 +292,43 @@ describe("plugin-registry：安装并真的能用", () => {
     ).toBe(false);
   });
 
+  it("卸载删除落盘 bundle 但保留 import 快照（dev --watch 不因删被监视文件而重启）", async () => {
+    const { service } = makeService();
+    const { installed } = await service.install({
+      url: EXAMPLE_PLUGIN,
+      allowLifecycleScripts: false,
+    });
+    // 装载即产生快照：快照在系统临时目录、按 installedAt 隔离，且不在落盘目录里
+    const snapshotDir = path.join(
+      tmpdir(),
+      "kenfutwork-plugin-runtime",
+      `${installed.id}-${encodeURIComponent(installed.installedAt)}`,
+    );
+    expect(await exists(snapshotDir)).toBe(true);
+    expect(snapshotDir.startsWith(pluginsDir)).toBe(false);
+
+    await service.uninstall(installed.id);
+    expect(await exists(path.join(pluginsDir, installed.id))).toBe(false);
+    // 快照只增不删：卸载不触碰它——同进程 import 过的快照一旦删除，
+    // node --watch 照样把它当「被监视文件变更」而重启 dev 服务端
+    expect(await exists(snapshotDir)).toBe(true);
+
+    // 重装（新 installedAt）拿新快照目录，不与旧快照串包
+    const reinstalled = await service.install({
+      url: EXAMPLE_PLUGIN,
+      allowLifecycleScripts: false,
+    });
+    const secondSnapshot = path.join(
+      tmpdir(),
+      "kenfutwork-plugin-runtime",
+      `${reinstalled.installed.id}-${encodeURIComponent(
+        reinstalled.installed.installedAt,
+      )}`,
+    );
+    expect(secondSnapshot).not.toEqual(snapshotDir);
+    expect(await exists(secondSnapshot)).toBe(true);
+  });
+
   it("禁用注销工具，重新启用再注册（同一实例）", async () => {
     const { kernel, service } = makeService();
     const { installed } = await service.install({

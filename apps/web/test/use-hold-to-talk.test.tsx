@@ -1,9 +1,8 @@
+import type { VoiceRecorder, VoiceRecording } from "@kenfutwork/voice-ui";
+import { useHoldToTalk } from "@kenfutwork/voice-ui";
 import { act, renderHook } from "@testing-library/react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import { useHoldToTalk } from "../src/lib/use-hold-to-talk.js";
-import type { VoiceRecorder, VoiceRecording } from "../src/lib/voice-audio.js";
 
 /**
  * 手势状态机。这块最容易伤到既有行为（光标定位、拖选、IME），
@@ -101,6 +100,7 @@ interface HarnessOptions {
 function setup(options: HarnessOptions = {}) {
   const transcripts: string[] = [];
   const errors: string[] = [];
+  const recordingStarts: number[] = [];
   const { recorder, calls } = fakeRecorder(options);
   const { el, textarea } = createComposer();
   const view = renderHook(() =>
@@ -109,6 +109,7 @@ function setup(options: HarnessOptions = {}) {
       recorder,
       onTranscript: (text) => transcripts.push(text),
       onError: (message) => errors.push(message),
+      onRecordingStart: () => recordingStarts.push(Date.now()),
       transcribe: options.transcribe ?? (async () => "把首页按钮改成蓝色"),
       ...(options.maxClipMs ? { maxClipMs: options.maxClipMs } : {}),
     }),
@@ -155,6 +156,7 @@ function setup(options: HarnessOptions = {}) {
     textarea,
     transcripts,
     errors,
+    recordingStarts,
     calls,
     down,
     fire,
@@ -229,6 +231,28 @@ describe("起手判定：不该录音的路径", () => {
     expect(h.calls).toEqual([]);
     expect(h.result.current.phase).toBe("idle");
     expect(h.result.current.statusText).toBeNull();
+  });
+});
+
+describe("onRecordingStart（宿主据此打断旧播报）", () => {
+  it("满 200ms 真的开麦才回调；提前松手与拖选不回调", async () => {
+    const h = setup();
+    h.down();
+    h.advance(150);
+    h.fire("pointerup");
+    expect(h.recordingStarts).toEqual([]);
+
+    h.down();
+    h.advance(50);
+    h.fire("pointermove", { clientX: 40, clientY: 40 });
+    h.advance(400);
+    expect(h.recordingStarts).toEqual([]);
+
+    h.down();
+    h.advance(200);
+    expect(h.recordingStarts).toHaveLength(1);
+    await h.settle();
+    h.fire("pointerup");
   });
 });
 

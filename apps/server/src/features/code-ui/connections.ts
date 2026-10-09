@@ -82,6 +82,11 @@ export class CodeUiConnections {
         localTerminal,
         binaryFrames: false,
         compression: "none",
+        // 独立计划态：宿主已支持（createSession.firstInput.planEnabled 进 record、运行期按
+        // planEnabled 走计划门），但握手必须**显式宣告**——vendored 客户端只在见到该位时
+        // 才允许发送带 Plan 的创建命令（否则抛 proto.independentPlanUnsupported，
+        // 表现为「勾了计划模式 → 发送失败」，而取消计划立即成功）。
+        independentPlanState: true,
       },
     });
     this.connections.set(hello.connectionId, {

@@ -1744,29 +1744,34 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           }
 
           /**
-           * 上下文自动压缩的触发线（口径见 agent/auto-compact.ts）：
-           * 「模型声明的窗口 / 最大输出」优先，没声明就用共享兜底表认模型族；
-           * 两边都没有（认不出的 BYOK 模型）→ 中间件按框架回退值走，这里如实记来源。
+           * 模型实例元数据一次解析，两个消费方：
+           * - 压缩触发线用 contextWindow / maxOutputTokens（autoCompact 开时）；
+           * - maxOutputTokens 转发上游（ChatOpenAI maxTokens）——reasoning 模型在
+           *   上游默认 max_tokens 下可能把输出预算烧在思考上（空回复）。
            */
+          // 模型实例元数据一次解析，两个消费方：
+          // - 压缩触发线（autoCompact 开、或手动 compact 操作）用 contextWindow / maxOutputTokens；
+          // - maxOutputTokens **不分场景**转发上游（ChatOpenAI maxTokens）——reasoning 模型在
+          //   上游默认 max_tokens 下可能把输出预算烧在思考上（空回复）。
+          const specifier =
+            typeof run.modelOverride === "string"
+              ? run.modelOverride
+              : typeof options.model === "string"
+                ? options.model
+                : "";
+          let declaredWindow: number | null = null;
+          let declaredMaxOutput: number | null = null;
+          if (specifier && options.modelCatalog) {
+            const entries = await options.modelCatalog
+              .listCatalog(run.actor)
+              .catch(() => []);
+            const entry = entries.find(
+              (candidate) => toInstanceSpecifier(candidate) === specifier,
+            );
+            declaredWindow = entry?.model.contextWindow ?? null;
+            declaredMaxOutput = entry?.model.maxOutputTokens ?? null;
+          }
           if (autoCompactEnabled || run.operation?.kind === "compact") {
-            const specifier =
-              typeof run.modelOverride === "string"
-                ? run.modelOverride
-                : typeof options.model === "string"
-                  ? options.model
-                  : "";
-            let declaredWindow: number | null = null;
-            let declaredMaxOutput: number | null = null;
-            if (specifier && options.modelCatalog) {
-              const entries = await options.modelCatalog
-                .listCatalog(run.actor)
-                .catch(() => []);
-              const entry = entries.find(
-                (candidate) => toInstanceSpecifier(candidate) === specifier,
-              );
-              declaredWindow = entry?.model.contextWindow ?? null;
-              declaredMaxOutput = entry?.model.maxOutputTokens ?? null;
-            }
             const plan = resolveCompactionPlan({
               retention: compactionRetention,
               contextWindow: resolveContextWindow(declaredWindow, specifier),
@@ -2120,6 +2125,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             env: options.env,
             ...(resolvedModel ? { model: resolvedModel } : {}),
             ...(autoCompact ? { autoCompact } : {}),
+            ...(declaredMaxOutput
+              ? { declaredMaxOutputTokens: declaredMaxOutput }
+              : {}),
             ...(manualCompactPlan ? { manualCompactPlan } : {}),
             compactionRetention,
             // execute 工具由 LocalShellBackend 自动提供，无需手动传递

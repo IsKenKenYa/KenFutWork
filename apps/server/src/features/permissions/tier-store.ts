@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import type { PermissionRules, PermissionTier } from "@kenfutwork/shared";
 import {
   permissionRulesSchema,
@@ -14,9 +16,13 @@ import type { PersistenceService } from "../persistence/types.js";
  * - `permission_tier`：常规任务档位；
  * - `automation_permission_tier`：自动化任务（目标/循环）档位；
  * - `permission_rules`：第 4 档「自定义」的 allow / deny 规则；
+ * - `approved_tools`：「永久」粒度批准的工具名（此前只存内存，重启即丢）；
  * - `browser_control_enabled`：agent 能不能用 `browser_open` 打网页；
  * - `browser_devtools_read_enabled`：agent 能不能读面板控制台采集到的开发者工具数据。
  */
+
+const approvedToolsSchema = z.array(z.string().min(1));
+
 
 export interface PermissionSettings {
   /** 常规任务档位。 */
@@ -24,6 +30,8 @@ export interface PermissionSettings {
   /** 自动化任务（goal/loop）档位。 */
   automationTier: PermissionTier;
   rules: PermissionRules;
+  /** 「永久」粒度批准的工具名（持久化；重启后依旧生效）。 */
+  approvedForever: string[];
   browserControlEnabled: boolean;
   /** 浏览器动作后自动附截图（R5-4「自动截图」）。 */
   browserAutoScreenshot: boolean;
@@ -40,6 +48,7 @@ export const DEFAULT_PERMISSION_SETTINGS: PermissionSettings = {
   tier: "default",
   automationTier: "default",
   rules: { allow: [], deny: [] },
+  approvedForever: [],
   browserControlEnabled: false,
   browserAutoScreenshot: false,
   browserHeadless: false,
@@ -57,6 +66,7 @@ type AppConfigRow = {
   permission_tier: unknown;
   automation_permission_tier: unknown;
   permission_rules: unknown;
+  approved_tools: unknown;
   browser_control_enabled: unknown;
   browser_auto_screenshot: unknown;
   browser_headless: unknown;
@@ -70,6 +80,7 @@ export function createPermissionSettingsStore(
     async load() {
       const row = await persistence.queryOne<AppConfigRow>(
         `select permission_tier, automation_permission_tier, permission_rules,
+                approved_tools,
                 browser_control_enabled, browser_auto_screenshot, browser_headless,
                 browser_devtools_read_enabled
            from public.app_config where id = 1`,
@@ -80,6 +91,7 @@ export function createPermissionSettingsStore(
         row.automation_permission_tier,
       );
       const rules = permissionRulesSchema.safeParse(row.permission_rules);
+      const approvedTools = approvedToolsSchema.safeParse(row.approved_tools);
       return {
         // 坏值一律落 default：权限档宁严勿松（历史故障：UI 显示旧档、服务端按 default 拦）
         tier: tier.success ? tier.data : DEFAULT_PERMISSION_SETTINGS.tier,
@@ -87,6 +99,10 @@ export function createPermissionSettingsStore(
           ? automation.data
           : DEFAULT_PERMISSION_SETTINGS.automationTier,
         rules: rules.success ? rules.data : DEFAULT_PERMISSION_SETTINGS.rules,
+        // 缺列/坏值落空数组：旧行没有这一列，与默认一致（没有历史批准可恢复）
+        approvedForever: approvedTools.success
+          ? approvedTools.data
+          : DEFAULT_PERMISSION_SETTINGS.approvedForever,
         browserControlEnabled: row.browser_control_enabled === true,
         browserAutoScreenshot: row.browser_auto_screenshot === true,
         browserHeadless: row.browser_headless === true,
@@ -102,13 +118,15 @@ export function createPermissionSettingsStore(
       await persistence.execute(
         `insert into public.app_config
            (id, permission_tier, automation_permission_tier, permission_rules,
+            approved_tools,
             browser_control_enabled, browser_auto_screenshot, browser_headless,
             browser_devtools_read_enabled)
-         values (1, $1, $2, $3::jsonb, $4, $5, $6, $7)
+         values (1, $1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8)
          on conflict (id) do update
            set permission_tier = excluded.permission_tier,
                automation_permission_tier = excluded.automation_permission_tier,
                permission_rules = excluded.permission_rules,
+               approved_tools = excluded.approved_tools,
                browser_control_enabled = excluded.browser_control_enabled,
                browser_auto_screenshot = excluded.browser_auto_screenshot,
                browser_headless = excluded.browser_headless,
@@ -118,6 +136,7 @@ export function createPermissionSettingsStore(
           settings.tier,
           settings.automationTier,
           JSON.stringify(settings.rules),
+          JSON.stringify(settings.approvedForever),
           settings.browserControlEnabled,
           settings.browserAutoScreenshot,
           settings.browserHeadless,

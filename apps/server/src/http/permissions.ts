@@ -174,6 +174,24 @@ export async function registerPermissionRoutes(
         scope: body.scope ?? "once",
         ...(body.threadId ? { threadId: body.threadId } : {}),
       });
+      // 「永久」批准写穿持久化（与 PUT tier 同一纪律：写失败如实报错，不静默降级
+      // ——内存已生效，但 UI 承诺的「永久」落不了盘必须让用户知道）。
+      if (body.scope === "forever" && options.tierStore) {
+        try {
+          await options.tierStore.save(options.permissions.getSettings());
+        } catch (error) {
+          return reply.code(500).send(
+            applicationErrorResponseSchema.parse({
+              error: {
+                code: "internal_error",
+                message: `永久批准保存失败（本次运行内仍生效）：${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              },
+            }),
+          );
+        }
+      }
       return reply.code(204).send();
     } catch (error) {
       return reply.code(400).send(

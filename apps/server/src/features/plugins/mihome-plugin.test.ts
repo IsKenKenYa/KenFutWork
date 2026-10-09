@@ -77,6 +77,7 @@ interface QrRefreshModule {
   }) => "scanned" | "poll" | "refresh" | "give-up";
 }
 
+
 interface DeviceModelModule {
   propertySlug: (type: string) => string;
   controlKindOf: (property: {

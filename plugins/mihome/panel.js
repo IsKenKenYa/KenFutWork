@@ -1,14 +1,18 @@
 /**
  * 米家面板页（插件自带，无构建、无外部依赖）。
  *
- * 本机接入由浏览器HttpOnly cookie持有，面板不接收或保管宿主长期令牌。
- * 数据面请求带credentials，由服务端从LocalActor解析稳定instanceId。
+ * 本机接入由浏览器 HttpOnly cookie 持有，面板不接收或保管宿主令牌；数据面请求带
+ * credentials，由服务端解析稳定身份（本地形态）。
  *
- * 模块脚本：二维码的刷新判定从 `lib/qr-refresh.js` 静态引入，与宿主侧单测共用同一份逻辑
- * （小米二维码约 2 分钟过期——过期要自动换新码，不能让用户手动点）。
+ * 数据面：本插件自己的私有路由（`/api/plugins/<id>/…`）。
+ *
+ * 加载方式：**本文件不是 ES module**（无 import/export），由 panel.html 的引导脚本
+ * 以经典脚本注入，依赖从 window 上取（见 panel.html 的加载方式说明——为什么不直接用
+ * `<script type="module">` 跨文件 import）。lib 源码仍是 ESM：`lib/qr-refresh.js`
+ * （二维码过期自动换码判定），宿主侧单测直接 import 它。
  */
 
-import { decideQrAction } from "./lib/qr-refresh.js";
+const { decideQrAction } = window.QRRefresh;
 
 const BASE = location.pathname.replace(/\/assets\/[^/]*$/, "");
 const POLL_MS = 5000;
@@ -215,6 +219,9 @@ function renderLogin(message) {
     img.src = qrUrl;
     qrBox.appendChild(img);
   };
+  // 进入登录视图即取码：占位文案是「正在获取二维码…」，此前要等用户先点一下按钮
+  // 才真的发起请求——文案与状态不符（用户报「一直获取登录态」的观感来源之一）。
+  startLogin();
 }
 
 // === 设备列表 ===
@@ -555,5 +562,5 @@ els.disconnect.addEventListener("click", () => {
     });
 });
 
-// module脚本在文档解析后执行；本机会话由HttpOnly cookie自动携带。
+// 引导脚本已保证依赖就位；会话由 HttpOnly cookie 自动携带，直接开工。
 boot();

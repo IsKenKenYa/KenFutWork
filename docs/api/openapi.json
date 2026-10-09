@@ -318,6 +318,66 @@
         }
       }
     },
+    "/api/flow/host/engine/stop": {
+      "post": {
+        "operationId": "postFlowHostEngineStop",
+        "summary": "停止或卸载 Flow 引擎栈",
+        "description": "本机授权后执行 docker compose down；deleteData=true 时追加 --volumes 全删容器卷（默认保留数据）。失败原样返回可读原因。",
+        "tags": [
+          "flow"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/flowHostEngineStopRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/flowEngineInstallStatusSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/voice/models": {
       "get": {
         "operationId": "getVoiceModels",
@@ -5248,6 +5308,56 @@
         }
       }
     },
+    "/api/flow/host/engine/info": {
+      "get": {
+        "operationId": "getFlowHostEngineInfo",
+        "summary": "查询 flow 引擎信息页数据",
+        "description": "汇总安装状态、环境探测与引擎栈容器运行态（安装态为进程内快照，有运行中容器时按已就绪校正）；身份回调地址按本次请求主机名拼。数据面未装配时 503。",
+        "tags": [
+          "flow"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/flowHostEngineInfoResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/flow/host/credentials": {
       "post": {
         "operationId": "postFlowHostCredentials",
@@ -5368,11 +5478,11 @@
         }
       }
     },
-    "/api/flow/host/identity": {
+    "/api/flow/host/identity-ticket": {
       "post": {
-        "operationId": "postFlowHostIdentity",
-        "summary": "报告 Flow 身份适配未接通",
-        "description": "本期尚未接通本地实例与 Flow 的身份适配，明确返回 503；不交换账户或本机接入凭据。",
+        "operationId": "postFlowHostIdentityTicket",
+        "summary": "签发一次性宿主身份票据",
+        "description": "本机接入验证后签发短时一次性票据（治理值 localAccessTicketTtlMs）；宿主前端在 ff-embed 握手里把它注入 flow，由 flow 网关带回 /api/flow/host/identity 验签。",
         "tags": [
           "flow"
         ],
@@ -5385,6 +5495,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/flowHostIdentityTicketResponseSchema"
+                }
+              }
+            }
+          },
           "401": {
             "description": "未认证或令牌无效",
             "content": {
@@ -5395,12 +5515,62 @@
               }
             }
           },
-          "503": {
-            "description": "成功",
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/flow/host/identity": {
+      "post": {
+        "operationId": "postFlowHostIdentity",
+        "summary": "验签宿主身份票据",
+        "description": "校验共享密钥后一次性消费票据，换出稳定 subject（本地实例模型下即实例 instanceId）；伪造、过期与重放一律 401，版本不符 400。",
+        "tags": [
+          "flow"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/flowHostIdentityRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/flowHostIdentityResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
                 }
               }
             }
@@ -13163,6 +13333,206 @@
         ],
         "additionalProperties": false
       },
+      "flowHostEngineInfoResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "install": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "idle",
+                  "installing",
+                  "ready",
+                  "error"
+                ]
+              },
+              "logTail": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "error": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "logTail"
+            ],
+            "additionalProperties": false
+          },
+          "probe": {
+            "type": "object",
+            "properties": {
+              "platform": {
+                "type": "string",
+                "minLength": 1
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "enum": [
+                        "wsl2",
+                        "container",
+                        "remote"
+                      ]
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "available"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "recommended": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "wsl2",
+                      "container",
+                      "remote"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "platform",
+              "paths",
+              "recommended"
+            ],
+            "additionalProperties": false
+          },
+          "stack": {
+            "type": "object",
+            "properties": {
+              "containers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "service": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "state": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "health": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "ports": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "service",
+                    "name",
+                    "state",
+                    "health",
+                    "ports"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "containers"
+            ],
+            "additionalProperties": false
+          },
+          "addresses": {
+            "type": "object",
+            "properties": {
+              "frontendUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "hostIdentityUrl": {
+                "type": "string",
+                "minLength": 1
+              },
+              "composeFile": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dataDir": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "frontendUrl",
+              "hostIdentityUrl",
+              "composeFile",
+              "dataDir"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "install",
+          "probe",
+          "stack",
+          "addresses"
+        ],
+        "additionalProperties": false
+      },
+      "flowHostEngineStopRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deleteData": {
+            "type": "boolean"
+          }
+        }
+      },
       "flowHostEventsRequestSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -13239,6 +13609,66 @@
         "required": [
           "accepted",
           "skipped"
+        ],
+        "additionalProperties": false
+      },
+      "flowHostIdentityRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "protocolVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "flowHostIdentityResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "subject"
+        ],
+        "additionalProperties": false
+      },
+      "flowHostIdentityTicketResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "expiresAt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "token",
+          "expiresAt"
         ],
         "additionalProperties": false
       },

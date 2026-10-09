@@ -56,3 +56,7 @@
 [submodule "references/zcode"]
 	path = references/zcode
 	url = https://github.com/zai-org/ZCode.git
+[submodule "references/octop"]
+	path = references/octop
+	url = https://github.com/TencentCloud/Octop.git
+	shallow = true

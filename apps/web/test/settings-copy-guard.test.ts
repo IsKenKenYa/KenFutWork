@@ -13,7 +13,9 @@ import { describe, expect, it } from "vitest";
  * 「还是很啰嗦」「好多可以设置成左右的，你为什么要设置成上下」「添加硬约束，所有内容的文本
  * 不要啰哩巴嗦」。三类问题都由本门禁盯住，不再靠人盯：
  *
- * ① **文案（全站）**：`src/components` 与 `src/app` 下所有 tsx 的 JSX 文本出现句子标点
+ * ① **文案（全站）**：`src/components`、`src/app` 与共享语音包
+ *    （`packages/voice-ui/src`，语音状态行的 JSX 已下沉在那里）下所有 tsx 的 JSX
+ *    文本出现句子标点
  *    （。；，）、中文字数超过 20、或占位/虚假词（假的 / 虚假 / 即将上线 / 占位；「占位符」
  *    是正常术语，除外）→ 违约；**文案属性**（`hint` / `title` / `placeholder` / `emptyLabel` /
  *    `description`）的值同样受这两条约束，字符串、三元与模板写法都扫；
@@ -34,6 +36,16 @@ import { describe, expect, it } from "vitest";
 
 const COMPONENTS = join(import.meta.dirname, "..", "src", "components");
 const APP = join(import.meta.dirname, "..", "src", "app");
+/** 共享语音运行时（语音状态行的 JSX 在这里，文案规则同样要管）。 */
+const VOICE_UI_SRC = join(
+  import.meta.dirname,
+  "..",
+  "..",
+  "..",
+  "packages",
+  "voice-ui",
+  "src",
+);
 const preservedSources = new Set<string>(
   (JSON.parse(readFileSync(join(import.meta.dirname, "../../../docs/源码来源/ZCode源码清单.json"), "utf8")) as { records: Array<{ target: string }> }).records
     .map((record) => join(import.meta.dirname, "../../..", record.target)),
@@ -68,6 +80,7 @@ function uiFiles(): string[] {
   };
   walk(COMPONENTS);
   walk(APP);
+  walk(VOICE_UI_SRC);
   return files.sort();
 }
 

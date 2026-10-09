@@ -202,6 +202,7 @@ class TaskConnection {
 interface TaskEntry {
   connection: Promise<TaskConnection>;
   initialized: Promise<unknown>;
+  initializedError?: string;
   generation: number;
   instanceId: string;
   projectId: string;
@@ -354,7 +355,9 @@ export function createProcessSandbox(
       };
       tasks.set(request.scope.taskId, entry);
       const created = entry;
-      void created.initialized.catch(() => {
+      void created.initialized.catch((error: unknown) => {
+        created.initializedError =
+          error instanceof Error ? error.message : String(error);
         if (created.phase !== "closed") created.phase = "failed";
       });
     }
@@ -366,6 +369,11 @@ export function createProcessSandbox(
       throw new ProcessSandboxError(
         "invalid_process_request",
         "Task 执行身份或主目录不可被调用方替换。",
+      );
+    if (entry.phase === "failed")
+      throw new ProcessSandboxError(
+        "enforcement_unavailable",
+        `Task 进程沙箱初始化失败，命令无法执行：${entry.initializedError ?? "原因未知"}`,
       );
     if (entry.phase !== "ready" || request.scope.generation < entry.generation)
       throw new ProcessSandboxError(

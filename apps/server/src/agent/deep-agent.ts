@@ -365,6 +365,8 @@ export function createKenFutWorkDeepAgent(options: {
   /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
   manualCompactPlan?: CompactionPlan;
   compactionRetention?: CompactionRetention;
+  /** BYOK 模型声明的单次输出上限（maxOutputTokens）：转发上游，避免 reasoning 模型被上游默认 max_tokens 掐断。 */
+  declaredMaxOutputTokens?: number | null;
   /**
    * 装配完成时回吐工具清单（R4-1 分类占比要按 schema 量「系统工具 / MCP 工具」）。
    * 用回调而不是返回值：调用方（runtime）拿到的是 agent 对象，工具清单只在装配期有。
@@ -401,7 +403,7 @@ export function createKenFutWorkDeepAgent(options: {
   const modelSpec = options.model ?? createDefaultModelSpecifier(options.env);
   const resolvedModel =
     typeof modelSpec === "string"
-      ? createStreamingChatModel(modelSpec)
+      ? createStreamingChatModel(modelSpec, options.declaredMaxOutputTokens)
       : modelSpec;
 
   // 系统提示由调用方（runtime）经内核段注册表组装后传入——deep-agent 只消费，
@@ -727,7 +729,10 @@ export function createKenFutWorkDeepAgent(options: {
  * - `google` — uses ChatGoogleGenerativeAI (Google AI Studio, API Key) or
  *   ChatVertexAI (Vertex AI, service account) depending on available config.
  */
-function createStreamingChatModel(specifier: string): BaseLanguageModel {
+export function createStreamingChatModel(
+  specifier: string,
+  declaredMaxOutputTokens?: number | null,
+): BaseLanguageModel {
   const colonIdx = specifier.indexOf(":");
   let provider = colonIdx > 0 ? specifier.slice(0, colonIdx) : "openai";
   let modelName = colonIdx > 0 ? specifier.slice(colonIdx + 1) : specifier;
@@ -789,6 +794,12 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
         model: modelName,
         streaming: true,
         streamUsage: false,
+        // 上游默认 max_tokens 对 reasoning 模型可能不够（思考先烧完输出预算 → 空回复）；
+        // BYOK 实例声明过就转发，LangChain 只在非空时带这个字段。
+        ...(typeof declaredMaxOutputTokens === "number" &&
+        declaredMaxOutputTokens > 0
+          ? { maxTokens: declaredMaxOutputTokens }
+          : {}),
       });
   }
 }

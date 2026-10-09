@@ -2,6 +2,7 @@
 import {
   Blocks,
   Code2,
+  Cpu,
   Layers,
   ListChecks,
   Palette,
@@ -35,6 +36,9 @@ type Props = ReturnType<typeof useDesignProjects> & {
   setMcpOpen: Dispatch<SetStateAction<boolean>>;
   flowEntry: FlowEntry | null;
   flowFrameRef: RefObject<FlowCanvasFrameHandle | null>;
+  /** Flow 子视图：「引擎」是侧栏导航的显式目的地（信息页），其余项回画布。 */
+  flowView: "canvas" | "engine";
+  setFlowView: Dispatch<SetStateAction<"canvas" | "engine">>;
 };
 /** 从原工作台提取的 Design/Flow 侧栏；Code 只执行宿主导航。 */
 export function CanvasSidebar({
@@ -57,6 +61,8 @@ export function CanvasSidebar({
   setMcpOpen,
   flowEntry,
   flowFrameRef,
+  flowView,
+  setFlowView,
 }: Props) {
   const availableModes: WorkbenchMode[] = flowEntry?.available
     ? ["code", "design", "flow"]
@@ -260,13 +266,28 @@ export function CanvasSidebar({
                   key={item.path}
                   type="button"
                   disabled={!flowEntry?.available}
-                  onClick={() => flowFrameRef.current?.navigate(item.path)}
+                  onClick={() => {
+                    // 从「引擎」页回到画布导航项：切回画布再让 iframe 内路由跳转
+                    setFlowView("canvas");
+                    flowFrameRef.current?.navigate(item.path);
+                  }}
                   className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {item.icon}
                   {item.label}
                 </button>
               ))}
+              {/* 引擎（FORM-11 托管）：独立信息页——状态 / 承载路径 / 地址 / 栈容器事实；
+                  样式与上面三个导航项同款（行高/间距/hover 一致，内嵌协议不上报 iframe
+                  内路由，故不单独做选中态）。 */}
+              <button
+                type="button"
+                onClick={() => setFlowView("engine")}
+                className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <Cpu className="h-4 w-4 shrink-0" />
+                引擎
+              </button>
             </nav>
           ) : (
             <div className="flex min-h-0 flex-1 flex-col px-2">

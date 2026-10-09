@@ -11,6 +11,7 @@ import { getServerBaseUrl } from "@/lib/env";
 import { LOCAL_ACCESS_LOST_EVENT } from "@/lib/local-access";
 import { LocalAccessClientsSection } from "./local-access-clients-section";
 import { LocalInstanceSection } from "./local-instance-section";
+import { VoiceSettingsSection } from "./voice-settings-section";
 
 /** Code 的独立原文档保护 Design 的 CSS、theme 与 portal。 */
 export function CodeWorkbenchFrame({
@@ -80,6 +81,8 @@ export function CodeWorkbenchFrame({
           <DialogTitle>本地实例设置</DialogTitle>
           <LocalInstanceSection />
           <LocalAccessClientsSection />
+          {/* 语音设置复用设置页同一段：Code 模式就地调档，不必切回 Design */}
+          <VoiceSettingsSection accessToken={null} />
           <AgentGovernanceSettingsPanel enabled={instanceOpen} />
         </DialogContent>
       </Dialog>

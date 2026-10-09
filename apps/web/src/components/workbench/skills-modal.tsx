@@ -56,7 +56,7 @@ type SkillsTab = "mine" | "market" | "create";
  *
  * 后端 9 个 CRUD + 市场端点此前**没有任何前端消费方**（`/api/skills` 全仓
  * 前端零调用）——技能缝缺 Consumer。本页补上最小可用闭环：
- * 列出可见技能（合并工作区启用态）→ 启用/停用 → 删除自己的 → 详情（内容+文件）
+ * 列出可见技能（合并实例启用态）→ 启用/停用 → 删除自己的 → 详情（内容+文件）
  * → 从链接导入（GitHub / npm tarball / ZIP）→ 手动新建。
  */
 export function SkillsModal({
@@ -96,7 +96,7 @@ export function SkillsModal({
       serverFetch(`${base}/api/skills`, { headers: authHeaders() }).then((r) =>
         r.ok ? r.json() : { skills: [] },
       ),
-      serverFetch(`${base}/api/workspaces/skills`, {
+      serverFetch(`${base}/api/instance/skills`, {
         headers: authHeaders(),
       }).then((r) => (r.ok ? r.json() : { skills: [] })),
     ])
@@ -123,14 +123,14 @@ export function SkillsModal({
       // 已安装 → 直接切启用态；未安装 → 先安装（安装即启用）
       const response = row.installed
         ? await serverFetch(
-            `${base}/api/workspaces/skills/${encodeURIComponent(row.id)}`,
+            `${base}/api/instance/skills/${encodeURIComponent(row.id)}`,
             {
               method: "PATCH",
               headers: { "content-type": "application/json", ...authHeaders() },
               body: JSON.stringify({ enabled: !row.enabled }),
             },
           )
-        : await serverFetch(`${base}/api/workspaces/skills`, {
+        : await serverFetch(`${base}/api/instance/skills`, {
             method: "POST",
             headers: { "content-type": "application/json", ...authHeaders() },
             body: JSON.stringify({ skillId: row.id }),

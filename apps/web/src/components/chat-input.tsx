@@ -1,6 +1,9 @@
 "use client";
 
-import type { MessageMention } from "@kenfutwork/shared";
+import type {
+  MessageMention,
+  VoiceRefineContextMessage,
+} from "@kenfutwork/shared";
 import {
   forwardRef,
   useCallback,
@@ -10,6 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { getVoicePlayback } from "@/lib/voice-playback";
 import type { ImageAttachmentState } from "../hooks/use-image-attachments";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
@@ -40,6 +44,8 @@ type ChatInputProps = {
   selectedCanvasElements?: CanvasSelectedElement[];
   /** 语音输入所需（缺省 = 不接线：按住说话退化为普通点击）。 */
   accessToken?: string | undefined;
+  /** 「想」段的指代消解上下文：最近几条会话消息。 */
+  recentMessages?: VoiceRefineContextMessage[];
 };
 
 export type ChatInputHandle = {
@@ -65,6 +71,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       onRemoveMention,
       selectedCanvasElements,
       accessToken,
+      recentMessages,
     },
     ref,
   ) {
@@ -92,6 +99,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const voice = useComposerVoice({
       accessToken,
       mode: voiceMode,
+      ...(recentMessages ? { recentMessages } : {}),
+      // 用户开始说话：正在念的回复立刻让位（规划 §4.2 的打断口径）
+      onRecordingStart: () => getVoicePlayback().stop(),
       onTranscript: (text) => {
         setValue((prev) => (prev ? `${prev}${text}` : text));
         requestAnimationFrame(() => textareaRef.current?.focus());
