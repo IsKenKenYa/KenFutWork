@@ -27,6 +27,7 @@ import type {
   SubmitImageJobFn,
   SubmitVideoJobFn,
 } from "../features/generation/tool-types.js";
+import type { FlowEngineHostService } from "../features/flow/engine/install.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import type { LocalAccessService } from "../features/local-access/types.js";
 import type {
@@ -157,6 +158,11 @@ export interface ServiceMap {
    * Provider（内置 sherpa 离线 / BYOK 实例端点）。非模型可调用能力，故不进 `tools`。
    */
   voice: VoiceService;
+  /**
+   * flow 引擎托管缝（FORM-11）：承载目标（host / WSL2）下的引擎栈生命周期钩子；
+   * 消费方 = 插件卸载路由（卸载 flow 插件时 purge 引擎、保留插件代码，见《flow插件集成规划》§9.1③）。
+   */
+  flowEngine: FlowEngineHostService;
   /** ConnectionManager + EventBuffer */
   ws: WsServices;
 }

@@ -11,7 +11,7 @@ import {
 } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // 由 server/desktop packaging 调用；不加载服务端 env，不启动执行进程。
 const destination = process.argv[2];
@@ -19,7 +19,9 @@ if (!destination) throw new Error("请传入进程 helper 的输出目录。");
 const output = resolve(destination);
 const source = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-const { build } = await import(require.resolve("esbuild"));
+// Windows 上 require.resolve 给的是盘符绝对路径（`D:\…`），直接 import 会被当成 URL
+// 并报 ERR_UNSUPPORTED_ESM_URL_SCHEME——必须转成 file:// URL。
+const { build } = await import(pathToFileURL(require.resolve("esbuild")).href);
 await mkdir(output, { recursive: true });
 if (process.platform === "darwin") {
   // 一次性构建参数，不是业务运行时治理值；发布包不依赖用户机器安装编译器。

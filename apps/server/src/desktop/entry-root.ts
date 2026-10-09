@@ -16,6 +16,17 @@ export function resolveEntryRootForPackagedCjs(entryFilePath: string): string {
 }
 
 /**
+ * 打包态判定（给「开发=仓库根、打包=资源根」这类资源定位复用）：
+ * - mac 打包（CJS）：`KFW_PACKAGED_CJS` 编译期定义；
+ * - Windows 打包（Node SEA）：`import.meta.url` 为空。
+ * 源码态两者都不成立（import.meta.url 是合法的 file URL）。
+ */
+export function isPackagedRuntime(entryFileUrl: string | undefined): boolean {
+  if (typeof KFW_PACKAGED_CJS !== "undefined" && KFW_PACKAGED_CJS) return true;
+  return !entryFileUrl;
+}
+
+/**
  * 入口资源根目录（`pg/`、`supabase/`、`runtime/`、`tmp/` 等资源相对它定位）。
  *
  * 三种形态：

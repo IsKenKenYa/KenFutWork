@@ -240,6 +240,12 @@ function main() {
     "[package] 捆绑内嵌 Postgres（pg/）+ 迁移 SQL（supabase/）+ pgmq shim",
   );
 
+  // 4b-2) flow 引擎资源（dify/：compose 文件 + ssrf_proxy 配置）：服务端按资源根解析
+  //       （desktop/entry-root.ts → <exeDir>/dify/），打包后 `docker compose -f` 用它起
+  //       无头栈；镜像不随包（首次安装按需拉取）。相对挂载路径以该目录为基准。
+  cpSync(join(ROOT, "dify"), join(RELEASE, "dify"), { recursive: true });
+  console.log("[package] 捆绑 flow 引擎资源（dify/：compose + ssrf_proxy）");
+
   // 4c) sharp 的原生扩展：sharp 的 JS 被打进 bundle，但它按 __filename 解析
   //     @img/sharp-<platform>/sharp.node；SEA 下 __filename 是 exe，故原生包必须
   //     落在 <exe>/node_modules/@img/ 才能被找到（否则启动即 'Could not load sharp'）。

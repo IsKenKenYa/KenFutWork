@@ -8,7 +8,10 @@ import { CircleCheck, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { getServerBaseUrl } from "@/lib/env";
-import type { FlowEngineInstallState } from "@/lib/use-flow-engine-install";
+import type {
+  FlowEngineInstallState,
+  FlowEngineLaunch,
+} from "@/lib/use-flow-engine-install";
 
 /**
  * Flow 模式「引擎」页（宿主侧渲染）：资源管理器式排版——标题行 + 分段页签 +
@@ -17,6 +20,9 @@ import type { FlowEngineInstallState } from "@/lib/use-flow-engine-install";
  * 数据面 `GET /api/flow/host/engine/info` 一次取全（本机接入 cookie，credentials: include）；
  * 安装动作与侧栏共用 `useFlowEngineInstall`。呈现纪律：只列宿主真正知道的（不确定的不编）；长值单行
  * 省略、悬停看全文；容器与端口来自 `docker compose ps` 的运行期事实。
+ *
+ * 承载方式（FORM-11 双 Provider）：未安装时按探测结果给可选目标（本机容器 / WSL2 发行版），
+ * 选定后随安装请求下发并**落盘**——停止与查询都按落盘记录执行；已就绪时只展示当前目标。
  */
 
 type TabId = "containers" | "paths" | "addresses";
@@ -36,7 +42,8 @@ export function FlowEnginePage({
   engineState: FlowEngineInstallState;
   /** 安装失败 / 超时的可读原因（hook 返回；成功为 null）。 */
   engineNotice: string | null;
-  onInstall: () => Promise<void>;
+  /** 安装引擎栈；`launch` 选定承载目标（缺省 host）。 */
+  onInstall: (launch?: FlowEngineLaunch) => Promise<void>;
   /** 停止／取消引擎栈：`deleteData` 显式选择才全删容器卷（§9.1③）。 */
   onStop: (input: { deleteData: boolean }) => Promise<void>;
 }) {
@@ -46,6 +53,10 @@ export function FlowEnginePage({
   const [tab, setTab] = useState<TabId>("containers");
   // 「停止引擎」先亮出「保留数据 / 删除数据」两个选项再动手——不静默删数据。
   const [stopAsk, setStopAsk] = useState(false);
+  // 承载方式：用户显式选过就尊重；没选过按探测推荐默认（WSL2 就绪时推荐它）。
+  const [launchChoice, setLaunchChoice] = useState<FlowEngineLaunch | null>(
+    null,
+  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -86,6 +97,19 @@ export function FlowEnginePage({
   const recommendation = info?.probe.paths.find(
     (path) => path.id === info.probe.recommended,
   );
+  // 承载方式：WSL2 路径可用才给选择（推荐即默认）；已就绪时只展示落盘的当前目标。
+  const wslPath = info?.probe.paths.find((path) => path.id === "wsl2");
+  const wslUsable = Boolean(wslPath?.available && wslPath.distro);
+  const activeLaunch: FlowEngineLaunch =
+    launchChoice ??
+    (info?.probe.recommended === "wsl2" && wslUsable
+      ? { kind: "wsl2", distro: wslPath?.distro ?? "" }
+      : { kind: "host" });
+  const runtimeLabel = info
+    ? info.runtime.kind === "wsl2"
+      ? `WSL2 · ${info.runtime.distro}`
+      : "本机容器"
+    : null;
 
   return (
     <div className="h-full overflow-y-auto bg-background">
@@ -99,7 +123,7 @@ export function FlowEnginePage({
             <p className="mt-0.5 truncate text-xs text-muted-foreground">
               {info
                 ? `${info.stack.containers.length} 个容器${
-                    recommendation ? ` · ${recommendation.label}` : ""
+                    runtimeLabel ? ` · 承载 ${runtimeLabel}` : ""
                   }`
                 : loading
                   ? "读取中…"
@@ -107,6 +131,31 @@ export function FlowEnginePage({
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {state !== "installing" && state !== "ready" && wslUsable ? (
+              <div className="flex items-center gap-1 rounded-full bg-muted/60 p-1">
+                <button
+                  type="button"
+                  aria-pressed={activeLaunch.kind === "host"}
+                  onClick={() => setLaunchChoice({ kind: "host" })}
+                  className="rounded-full px-2.5 py-1 text-xs text-muted-foreground transition-colors aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
+                >
+                  本机容器
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={activeLaunch.kind === "wsl2"}
+                  onClick={() =>
+                    setLaunchChoice({
+                      kind: "wsl2",
+                      distro: wslPath?.distro ?? "",
+                    })
+                  }
+                  className="rounded-full px-2.5 py-1 text-xs text-muted-foreground transition-colors aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
+                >
+                  WSL2 · {wslPath?.distro}
+                </button>
+              </div>
+            ) : null}
             <button
               type="button"
               onClick={() => void refresh()}
@@ -168,7 +217,7 @@ export function FlowEnginePage({
             ) : (
               <button
                 type="button"
-                onClick={() => void onInstall()}
+                onClick={() => void onInstall(activeLaunch)}
                 className="rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 {state === "error" ? "重试安装" : "安装引擎栈"}

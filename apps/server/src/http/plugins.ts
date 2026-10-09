@@ -53,6 +53,14 @@ export interface PluginRoutesDeps {
   projectWorkDirLoader?:
     | ((instanceId: string, canvasId: string) => Promise<string | null>)
     | undefined;
+  /**
+   * 卸载前置钩子（引擎托管缝）：卸载某插件前先做它的引擎清理（flow 插件 = purge
+   * 容器/卷/镜像 + 本地 env/日志/记录，保留插件代码）。失败即**取消卸载**并如实回原因——
+   * 插件没了但引擎还在跑，界面上就再也没有能停它的入口了。
+   */
+  enginePurge?:
+    | ((pluginId: string) => Promise<{ ok: boolean; error?: string }>)
+    | undefined;
 }
 
 function sendUnauthenticated(reply: FastifyReply) {
@@ -359,6 +367,17 @@ export async function registerPluginRoutes(
     if (!(await requireAccess(request, reply))) return reply;
     const { id } = request.params as { id: string };
     try {
+      // 引擎托管缝：卸载 flow 插件先清引擎（删容器/卷/镜像；插件代码保留，可二次安装）。
+      // 清理失败即取消卸载——卸载后引擎页随之消失，留下的容器就没人能停了。
+      const purge = await options.enginePurge?.(id);
+      if (purge && !purge.ok) {
+        return sendError(
+          reply,
+          "service_unavailable",
+          purge.error ?? "引擎清理失败，已取消卸载。",
+          503,
+        );
+      }
       await options.registry.uninstall(id);
       return reply.code(200).send({ id, installed: false });
     } catch (error) {

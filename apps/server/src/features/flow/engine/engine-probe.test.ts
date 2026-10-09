@@ -49,6 +49,14 @@ const WSL_OK = {
     stdout:
       "  NAME      STATE           VERSION\n* Ubuntu    Running         2\n",
   },
+  // 发行版内 Docker 三连（CLI / 守护进程 / compose 插件）：齐全才算「能起栈」
+  "wsl.exe -d Ubuntu -- docker --version": {
+    stdout: "Docker version 27.3.1, build abcdef",
+  },
+  "wsl.exe -d Ubuntu -- docker info": { stdout: "27.3.1" },
+  "wsl.exe -d Ubuntu -- docker compose version --short": {
+    stdout: "v2.40.3",
+  },
 };
 
 function difyInstance(overrides: Partial<ProviderInstanceResponse> = {}) {
@@ -145,7 +153,7 @@ describe("probeWsl2Path（Provider A）", () => {
     expect(path.reason).toContain("--set-default-version 2");
   });
 
-  it("WSL2 发行版就绪 → 可用，detail 带发行版名与状态", async () => {
+  it("WSL2 发行版就绪 → 可用，detail 带发行版名与 Docker 版本", async () => {
     const path = await probeWsl2Path({
       platform: "win32",
       release: "10.0.26200",
@@ -153,6 +161,66 @@ describe("probeWsl2Path（Provider A）", () => {
     });
     expect(path.available).toBe(true);
     expect(path.detail).toContain("Ubuntu");
+    // 发行版内 Docker 就绪才算可用；distro 字段供安装时作承载目标（界面不解析 detail）
+    expect(path.detail).toContain("Docker Engine 27.3.1");
+    expect(path.distro).toBe("Ubuntu");
+  });
+
+  it("发行版内没有 Docker（CLI 不可用）→ 不可用，指引在发行版内装引擎与 compose 插件", async () => {
+    const path = await probeWsl2Path({
+      platform: "win32",
+      release: "10.0.26200",
+      run: fakeRun({
+        "wsl.exe --status": WSL_OK["wsl.exe --status"],
+        "wsl.exe -l -v": WSL_OK["wsl.exe -l -v"],
+      }),
+    });
+    expect(path.available).toBe(false);
+    expect(path.distro).toBe("Ubuntu");
+    expect(path.reason).toContain("没有 Docker");
+    expect(path.reason).toContain(
+      "apt-get install -y docker.io docker-compose-v2",
+    );
+  });
+
+  it("发行版内 Docker 守护进程没起 → 不可用，指引启动（不误报「没装」）", async () => {
+    const path = await probeWsl2Path({
+      platform: "win32",
+      release: "10.0.26200",
+      run: fakeRun({
+        "wsl.exe --status": WSL_OK["wsl.exe --status"],
+        "wsl.exe -l -v": WSL_OK["wsl.exe -l -v"],
+        "wsl.exe -d Ubuntu -- docker --version":
+          WSL_OK["wsl.exe -d Ubuntu -- docker --version"],
+        "wsl.exe -d Ubuntu -- docker info": {
+          code: 1,
+          stderr:
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock",
+        },
+      }),
+    });
+    expect(path.available).toBe(false);
+    expect(path.reason).toContain("守护进程没起来");
+    expect(path.reason).toContain("service docker start");
+    expect(path.reason).toContain("Cannot connect to the Docker daemon");
+  });
+
+  it("发行版内缺 compose 插件 → 不可用，指引装插件（Docker 本体在也不算就绪）", async () => {
+    const path = await probeWsl2Path({
+      platform: "win32",
+      release: "10.0.26200",
+      run: fakeRun({
+        "wsl.exe --status": WSL_OK["wsl.exe --status"],
+        "wsl.exe -l -v": WSL_OK["wsl.exe -l -v"],
+        "wsl.exe -d Ubuntu -- docker --version":
+          WSL_OK["wsl.exe -d Ubuntu -- docker --version"],
+        "wsl.exe -d Ubuntu -- docker info":
+          WSL_OK["wsl.exe -d Ubuntu -- docker info"],
+      }),
+    });
+    expect(path.available).toBe(false);
+    expect(path.reason).toContain("缺 compose 插件");
+    expect(path.reason).toContain("docker-compose-v2");
   });
 
   it("只有 Docker Desktop 的内部发行版 → 不可用（真机实测踩到：那是 Docker 自管的，不是通用发行版）", async () => {
@@ -177,7 +245,7 @@ describe("probeWsl2Path（Provider A）", () => {
       platform: "win32",
       release: "10.0.26200",
       run: fakeRun({
-        "wsl.exe --status": WSL_OK["wsl.exe --status"],
+        ...WSL_OK,
         "wsl.exe -l -v": {
           stdout:
             "  NAME              STATE           VERSION\n* docker-desktop    Stopped         2\n  Ubuntu            Running         2\n",

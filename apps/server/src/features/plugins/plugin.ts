@@ -271,6 +271,11 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
         sandboxRoot: ctx.env.sandboxRoot,
         canvasWorkDirs: ctx.env.canvasWorkDirs,
         projectWorkDirLoader: projectWorkDirLoaderFor(ctx.get("persistence")),
+        // 引擎托管缝（flow-host 插件注册）：卸载 flow 插件时清理引擎。
+        // 调用时再解析（装配顺序不保证 flow-host 先于本插件 mounted）。
+        enginePurge: (pluginId) =>
+          ctx.tryGet("flowEngine")?.purgeForPlugin(pluginId) ??
+          Promise.resolve({ ok: true }),
       });
       // 原服务必须在宿主接请求前恢复，在同步kernel disposer前完成在途释放。
       ctx.app.addHook("onReady", async () => {

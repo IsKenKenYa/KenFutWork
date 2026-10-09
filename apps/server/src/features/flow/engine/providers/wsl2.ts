@@ -81,10 +81,22 @@ export async function probeWsl2Path(deps: {
 
   const wsl2 = userDistros.find((distro) => distro.version === 2);
   if (wsl2) {
+    // 发行版有了不等于能起栈：还要**发行版内**有 Docker Engine 与 compose 插件
+    // （§9.1① 的宿主侧职责：探测 → 指导启用 → 拉起）。没有就给出可读的启用指引。
+    const docker = await probeDistroDocker(deps, wsl2.name);
+    if (!docker.ok) {
+      return {
+        ...base,
+        available: false,
+        distro: wsl2.name,
+        reason: docker.reason,
+      };
+    }
     return {
       ...base,
       available: true,
-      detail: `发行版 ${wsl2.name}（WSL2，${wsl2.state}）`,
+      distro: wsl2.name,
+      detail: `发行版 ${wsl2.name}（WSL2，${wsl2.state}；${docker.detail}）`,
     };
   }
   if (userDistros.length > 0) {
@@ -101,6 +113,58 @@ export async function probeWsl2Path(deps: {
     available: false,
     reason:
       "WSL2 可用但还没有发行版：执行 `wsl --install -d <发行版名>` 后重试。",
+  };
+}
+
+/**
+ * 发行版内 Docker 就绪探测（三步，任一不满足给「怎么补」的可读原因）：
+ * ① CLI 存在（`docker --version`）；② 守护进程在跑（`docker info`）；③ compose 插件存在。
+ */
+async function probeDistroDocker(
+  deps: { run: RunCommand },
+  distro: string,
+): Promise<{ ok: true; detail: string } | { ok: false; reason: string }> {
+  const inDistro = (...args: string[]) => ["-d", distro, "--", ...args];
+  const cli = await deps.run("wsl.exe", inDistro("docker", "--version"));
+  if (cli.code !== 0) {
+    return {
+      ok: false,
+      reason:
+        `发行版 ${distro} 内没有 Docker（CLI 不可用）：在该发行版内装 Docker Engine 与 ` +
+        `compose 插件后重试（Ubuntu 例：wsl -d ${distro} -- sudo apt-get update && ` +
+        `wsl -d ${distro} -- sudo apt-get install -y docker.io docker-compose-v2）。`,
+    };
+  }
+  const info = await deps.run("wsl.exe", inDistro("docker", "info"));
+  if (info.code !== 0) {
+    const hint = decodeCommandText(info.stderr).split("\n")[0]?.trim();
+    return {
+      ok: false,
+      reason:
+        `发行版 ${distro} 内的 Docker 守护进程没起来：wsl -d ${distro} -- sudo service docker start` +
+        `（或在发行版内启用 systemd 后 systemctl start docker；当前用户需在 docker 组或用 sudo）。` +
+        (hint ? `（发行版提示：${hint.slice(0, 120)}）` : ""),
+    };
+  }
+  const compose = await deps.run(
+    "wsl.exe",
+    inDistro("docker", "compose", "version", "--short"),
+  );
+  if (compose.code !== 0) {
+    return {
+      ok: false,
+      reason:
+        `发行版 ${distro} 内的 Docker 缺 compose 插件：wsl -d ${distro} -- sudo apt-get install -y ` +
+        `docker-compose-v2（旧版发行版包名 docker-compose-plugin）。`,
+    };
+  }
+  const dockerVersion = decodeCommandText(info.stdout).trim().split("\n")[0];
+  const composeVersion = decodeCommandText(compose.stdout).trim().split("\n")[0];
+  return {
+    ok: true,
+    detail:
+      `Docker Engine ${dockerVersion || "已就绪"}` +
+      (composeVersion ? `，compose ${composeVersion}` : ""),
   };
 }
 

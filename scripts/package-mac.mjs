@@ -243,6 +243,12 @@ function main() {
     "[package-mac] 捆绑内嵌 Postgres（pg/）+ 迁移 SQL（supabase/）+ pgmq shim",
   );
 
+  // 4b-2) flow 引擎资源（dify/：compose 文件 + ssrf_proxy 配置）：服务端按资源根解析
+  //       （desktop/entry-root.ts → <app>/dify/），打包后 `docker compose -f` 用它起
+  //       无头栈；镜像不随包（首次安装按需拉取）。
+  cpSync(join(ROOT, "dify"), join(RELEASE, "dify"), { recursive: true });
+  console.log("[package-mac] 捆绑 flow 引擎资源（dify/：compose + ssrf_proxy）");
+
   // 4c) sharp 的 darwin 原生扩展（server.cjs 按 __filename 向上解析 node_modules）
   const serverRequire = createRequire(
     join(ROOT, "apps", "server", "package.json"),
