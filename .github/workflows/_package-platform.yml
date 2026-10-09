@@ -144,7 +144,12 @@ jobs:
       - name: 打包态冒烟（随包服务端 + 内嵌 Postgres 真建库）
         # 「dev 全绿但安装包起不来」那类事故的唯一自动化解药：脚本直接用 release/ 里的平台产物
         # 与独占临时数据目录，不访问外部模型服务（scripts/desktop-offline-smoke.mjs:71-76 支持
-        # win32/darwin 两平台）。首轮若在无 GUI 环境跑不通，要改的是脚本，不是关掉这一步。
+        # win32/darwin 两平台）。首轮 mac 实测：DMG/zip/清单全部产出、前面 6 组断言全过，
+        # 只有「Write/Read 后的持久 shadow checkpoint」在 120s 期限内没等到——服务端日志零
+        # error，是托管 3 核 runner 慢，不是坏。故这里把**等待窗口**显式放宽到 5 分钟并写明理由；
+        # 断言强度不变，超期依旧失败。
+        env:
+          KFW_SMOKE_BYOK_TIMEOUT_MS: "300000"
         run: node scripts/desktop-offline-smoke.mjs
 
       - name: 产物清单

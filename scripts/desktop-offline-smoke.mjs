@@ -47,7 +47,13 @@ const SMOKE_RESUME_PROMPT = "BYOK_DESKTOP_RESUME_AFTER_BACKUP";
 const SMOKE_RESUME_TEXT = "BYOK_DESKTOP_RESUME_AFTER_BACKUP_OK";
 const SMOKE_VIDEO_MODEL = "metaso/minimax-h3";
 const SMOKE_VIDEO_TASK = "desktop-smoke-video-task";
-const SMOKE_BYOK_TIMEOUT_MS = 120_000;
+// 验收等待期限可按运行硬件显式声明：托管 CI runner 是 3 核 / 7GB，与开发机不是一个量级。
+// 放宽的只是等待窗口，不是断言强度——期限内拿不到 checkpoint 依旧判失败。
+const byokTimeoutEnv = Number(process.env.KFW_SMOKE_BYOK_TIMEOUT_MS);
+const SMOKE_BYOK_TIMEOUT_MS =
+  Number.isInteger(byokTimeoutEnv) && byokTimeoutEnv > 0
+    ? byokTimeoutEnv
+    : 120_000;
 const SMOKE_BYOK_POLL_MS = 100;
 const SMOKE_IMAGE_BYTES = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l5sAAAAASUVORK5CYII=",
