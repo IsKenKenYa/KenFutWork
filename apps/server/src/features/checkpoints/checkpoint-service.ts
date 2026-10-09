@@ -316,10 +316,22 @@ export function createCheckpointService(options: {
         message: label,
       });
       const shadowCommit = committed?.sha ?? (await git.head(directory));
-      if (!shadowCommit) continue;
+      if (!shadowCommit) {
+        // 静默 continue 会让「checkpoints 永远为空」毫无线索（macOS 打包态冒烟实测：
+        // Run completedSuccess、Write/Read 都过，影子仓却没有可用提交）。
+        console.warn(
+          `[checkpoints] 影子仓没有可用提交，跳过该目录：workTree=${rootDirectory} gitDir=${gitDir} commitSnapshot=${committed ? "返回了对象但没有 sha" : "null"}`,
+        );
+        continue;
+      }
       directorySnapshots.push({ rootDirectory, shadowCommit });
     }
-    if (!directorySnapshots.length) return { created: null, effective: null };
+    if (!directorySnapshots.length) {
+      console.warn(
+        `[checkpoints] 本次捕获没有产出任何目录快照，因此不落检查点：kind=${kind} task=${identity.taskId} run=${input.runId}`,
+      );
+      return { created: null, effective: null };
+    }
     const effective = await options.repository.getByVersion(
       identity.instanceId,
       identity.taskId,
