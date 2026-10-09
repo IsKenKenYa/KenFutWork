@@ -154,6 +154,7 @@ export function BrowserSettingsSection({
    * 网络请求，agent 能不能读（默认开，见迁移 20260918100000）。
    */
   const [browserDevtoolsRead, setBrowserDevtoolsRead] = useState(true);
+  const [browserEval, setBrowserEval] = useState(false);
   const [browserHeadless, setBrowserHeadless] = useState(false);
 
   useEffect(() => {
@@ -172,6 +173,7 @@ export function BrowserSettingsSection({
         setAgentControl(view.browserControlEnabled);
         setBrowserAutoScreenshot(view.browserAutoScreenshot ?? false);
         setBrowserDevtoolsRead(view.browserDevtoolsReadEnabled ?? true);
+        setBrowserEval(view.browserEvalEnabled ?? false);
         setBrowserHeadless(view.browserHeadless ?? false);
       })
       .catch(() => {
@@ -223,12 +225,13 @@ export function BrowserSettingsSection({
     }
   };
 
-  /** 服务端开关（自动截图 / 无头 / 开发者工具数据）：先写库再改界面，失败回滚。 */
+  /** 服务端开关（自动截图 / 无头 / 开发者工具数据 / 页面执行脚本）：先写库再改界面，失败回滚。 */
   const toggleServerFlag = async (
     key:
       | "browserAutoScreenshot"
       | "browserHeadless"
-      | "browserDevtoolsReadEnabled",
+      | "browserDevtoolsReadEnabled"
+      | "browserEvalEnabled",
     next: boolean,
   ) => {
 
@@ -237,13 +240,16 @@ export function BrowserSettingsSection({
         ? setBrowserAutoScreenshot
         : key === "browserHeadless"
           ? setBrowserHeadless
-          : setBrowserDevtoolsRead;
+          : key === "browserEvalEnabled"
+            ? setBrowserEval
+            : setBrowserDevtoolsRead;
     setter(next);
     try {
       const view = await updatePermissionSettings(accessToken, { [key]: next });
       setBrowserAutoScreenshot(view.browserAutoScreenshot ?? false);
       setBrowserHeadless(view.browserHeadless ?? false);
       setBrowserDevtoolsRead(view.browserDevtoolsReadEnabled ?? true);
+      setBrowserEval(view.browserEvalEnabled ?? false);
       setMessage(
         key === "browserAutoScreenshot"
           ? next
@@ -253,9 +259,13 @@ export function BrowserSettingsSection({
             ? next
               ? "已设为后台运行（下次连接生效）"
               : "已设为有窗口（下次连接生效）"
-            : next
-              ? "已允许 AI 读取开发者工具数据"
-              : "已禁止 AI 读取开发者工具数据",
+            : key === "browserEvalEnabled"
+              ? next
+                ? "已允许 AI 在页面执行脚本"
+                : "已禁止 AI 在页面执行脚本"
+              : next
+                ? "已允许 AI 读取开发者工具数据"
+                : "已禁止 AI 读取开发者工具数据",
       );
     } catch (error) {
       setter(!next);
@@ -489,6 +499,13 @@ export function BrowserSettingsSection({
             checked={browserDevtoolsRead}
             onChange={(next) =>
               void toggleServerFlag("browserDevtoolsReadEnabled", next)
+            }
+          />
+          <Toggle
+            label="允许 AI 在页面执行脚本"
+            checked={browserEval}
+            onChange={(next) =>
+              void toggleServerFlag("browserEvalEnabled", next)
             }
           />
         </div>

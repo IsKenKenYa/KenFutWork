@@ -42,7 +42,13 @@ import {
   parseDebugConsoleProbe,
 } from "./debug-console.js";
 import { sendDevToolsKey } from "./devtools-keys.js";
-import { createNetworkBuffer, type NetworkRequest } from "./network-log.js";
+import {
+  capBody,
+  createNetworkBuffer,
+  isTextMime,
+  type NetworkRequest,
+  RESPONSE_BODY_MAX_BYTES,
+} from "./network-log.js";
 import { samePageUrl } from "./view-stream.js";
 
 /**
@@ -174,6 +180,22 @@ export interface CdpBrowserSession {
   ): Promise<{ messages: ConsoleMessage[]; nextSeq: number }>;
   /** 悬浮控制台里敲的表达式：在页面里执行并回一行结果（对象给一行预览）。 */
   evaluate(expression: string): Promise<ConsoleMessage>;
+  /**
+   * 在页面里执行一段 JS，回**结构化结果**（`browser_eval` 用；与 `evaluate` 的区别：
+   * 那个折成一行进控制台时间线给人看，这个把原始值/类型原样回给 agent 做判断）。
+   *
+   * `returnByValue` 拿可序列化的值；拿不到（函数/DOM 节点这类）时回一段预览文本。
+   * 抛错时不进控制台缓冲，直接把异常文本回给调用方（它要的是「这段代码行不行」）。
+   */
+  evaluateValue(expression: string): Promise<{
+    ok: boolean;
+    /** 成功时的值（returnByValue 拿到；拿不到时是预览字符串）。 */
+    value?: unknown;
+    /** 值类型（string/number/boolean/object/undefined…）。 */
+    type?: string;
+    /** 失败时的异常文本。 */
+    error?: string;
+  }>;
   /** 清空控制台缓存（界面上的「清空」）。 */
   clearMessages(): Promise<void>;
   /**
@@ -288,6 +310,11 @@ export function createCdpBrowserSession(deps: {
   const consoleLog = createConsoleBuffer();
   /** 网络请求缓存（环形，见 network-log）。 */
   const networkLog = createNetworkBuffer();
+  /**
+   * requestId → 发起时刻（CDP 单调秒）。用来算耗时（发出 → 完成）；
+   * 完成/失败即删，断开时整体清（不给 CDP 的内部 id 留长期状态）。
+   */
+  const networkStartedAt = new Map<string, number>();
   /** 时间戳来源（测试注入，默认 Date）。 */
   const now = deps.now ?? (() => new Date());
   const sendKeys = deps.sendKeys ?? sendDevToolsKey;
@@ -340,19 +367,26 @@ export function createCdpBrowserSession(deps: {
         if (!mine(eventSessionId)) return;
         consoleLog.push(formatLogEntry(params as never, now().toISOString()));
       }),
-      // 网络：发出 → 响应 / 失败（同一条记录就地补状态，seq 在「发出」时定）
+      // 网络：发出 → 响应 / 完成 / 失败（同一条记录就地补状态，seq 在「发出」时定）
       target.on("Network.requestWillBeSent", (params, eventSessionId) => {
         if (!mine(eventSessionId)) return;
         const requestId =
           typeof params.requestId === "string" ? params.requestId : "";
         const request = params.request as
-          | { url?: unknown; method?: unknown }
+          | { url?: unknown; method?: unknown; postData?: unknown }
           | undefined;
         if (!requestId) return;
+        if (typeof params.timestamp === "number") {
+          networkStartedAt.set(requestId, params.timestamp);
+        }
         networkLog.started(requestId, {
           method: typeof request?.method === "string" ? request.method : "GET",
           url: typeof request?.url === "string" ? request.url : "",
           ...(typeof params.type === "string" ? { type: params.type } : {}),
+          // 请求体：事件里带 postData 才采（表单/JSON 提交）；大体积同样截断
+          ...(typeof request?.postData === "string" && request.postData
+            ? { requestBody: capBody(request.postData) }
+            : {}),
           at: now().toISOString(),
         });
       }),
@@ -360,16 +394,77 @@ export function createCdpBrowserSession(deps: {
         if (!mine(eventSessionId)) return;
         const requestId =
           typeof params.requestId === "string" ? params.requestId : "";
-        const response = params.response as { status?: unknown } | undefined;
+        const response = params.response as
+          | { status?: unknown; mimeType?: unknown }
+          | undefined;
         const status =
           typeof response?.status === "number" ? response.status : 0;
-        if (requestId && status > 0) networkLog.responded(requestId, status);
+        if (requestId && status > 0) {
+          networkLog.responded(requestId, status, {
+            ...(typeof response?.mimeType === "string"
+              ? { mimeType: response.mimeType }
+              : {}),
+          });
+        }
+      }),
+      target.on("Network.loadingFinished", (params, eventSessionId) => {
+        if (!mine(eventSessionId)) return;
+        const requestId =
+          typeof params.requestId === "string" ? params.requestId : "";
+        if (!requestId) return;
+        const startedAt = networkStartedAt.get(requestId);
+        networkStartedAt.delete(requestId);
+        const finishedAt =
+          typeof params.timestamp === "number" ? params.timestamp : undefined;
+        const durationMs =
+          startedAt !== undefined && finishedAt !== undefined
+            ? Math.max(0, Math.round((finishedAt - startedAt) * 1000))
+            : undefined;
+        /**
+         * 响应体按需取：只有文本类 MIME 且体积在上限内才要（二进制取回来是乱码，
+         * 大响应会把内存与 agent 的结果一起撑爆）。取体失败（重定向 / 无体 / 已被
+         * 丢弃）不是错误路径——照样把耗时补上。
+         */
+        void (async () => {
+          let responseBody: string | undefined;
+          const current = networkLog.get(requestId);
+          const encoded =
+            typeof params.encodedDataLength === "number"
+              ? params.encodedDataLength
+              : 0;
+          if (
+            current &&
+            isTextMime(current.mimeType) &&
+            encoded <= RESPONSE_BODY_MAX_BYTES
+          ) {
+            try {
+              const { client: cdp, sessionId: id } = requireConnected();
+              const body = (await cdp.send(
+                "Network.getResponseBody",
+                { requestId },
+                id,
+              )) as { body?: unknown; base64Encoded?: unknown };
+              if (
+                typeof body?.body === "string" &&
+                body.base64Encoded !== true
+              ) {
+                responseBody = capBody(body.body);
+              }
+            } catch {
+              // 取不到就算了（重定向、无响应体、已被浏览器丢弃）
+            }
+          }
+          if (durationMs !== undefined || responseBody !== undefined) {
+            networkLog.finished(requestId, durationMs ?? 0, responseBody);
+          }
+        })();
       }),
       target.on("Network.loadingFailed", (params, eventSessionId) => {
         if (!mine(eventSessionId)) return;
         const requestId =
           typeof params.requestId === "string" ? params.requestId : "";
         if (!requestId) return;
+        networkStartedAt.delete(requestId);
         const reason =
           typeof params.errorText === "string" ? params.errorText : "请求失败";
         networkLog.failed(
@@ -521,6 +616,7 @@ export function createCdpBrowserSession(deps: {
     async clearMessages() {
       consoleLog.clear();
       networkLog.clear();
+      networkStartedAt.clear();
     },
     async requests(since) {
       return {
@@ -543,6 +639,43 @@ export function createCdpBrowserSession(deps: {
       )) as never;
       // 自己敲的也进同一条时间线（下次增量拉取时顺序一致）
       return consoleLog.push(formatEvalResult(evaluated, now().toISOString()));
+    },
+    async evaluateValue(expression) {
+      const { client: cdp, sessionId: id } = requireConnected();
+      const evaluated = (await cdp.send(
+        "Runtime.evaluate",
+        {
+          expression,
+          returnByValue: true,
+          awaitPromise: true,
+          userGesture: true,
+        },
+        id,
+      )) as {
+        result?: { type?: string; value?: unknown; description?: string };
+        exceptionDetails?: {
+          text?: string;
+          exception?: { description?: string };
+        };
+      };
+      if (evaluated.exceptionDetails) {
+        return {
+          ok: false,
+          error:
+            evaluated.exceptionDetails.exception?.description ??
+            evaluated.exceptionDetails.text ??
+            "执行出错",
+        };
+      }
+      const result = evaluated.result;
+      // 值拿不到（函数 / DOM 节点 / 含不可序列化内容）时 CDP 只给 description：用预览兜底，
+      // 不让 agent 拿到空 value 误以为「返回了 undefined」。
+      const hasValue = result !== undefined && "value" in result;
+      return {
+        ok: true,
+        value: hasValue ? result.value : (result?.description ?? null),
+        type: result?.type ?? (hasValue ? typeof result.value : "object"),
+      };
     },
     async injectDebugConsole(url: string) {
       const { client: cdp } = requireConnected();
@@ -692,6 +825,7 @@ export function createCdpBrowserSession(deps: {
     },
     async disconnect() {
       detachPageTracking();
+      networkStartedAt.clear();
       client?.close();
       client = null;
       sessionId = null;

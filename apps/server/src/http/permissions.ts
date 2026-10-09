@@ -40,6 +40,7 @@ export async function registerPermissionRoutes(
       browserAutoScreenshot: settings.browserAutoScreenshot,
       browserHeadless: settings.browserHeadless,
       browserDevtoolsReadEnabled: settings.browserDevtoolsReadEnabled,
+      browserEvalEnabled: settings.browserEvalEnabled,
       approvedForever: options.permissions.listApprovedForever(),
     });
   });
@@ -65,6 +66,7 @@ export async function registerPermissionRoutes(
       browserAutoScreenshot?: unknown;
       browserHeadless?: unknown;
       browserDevtoolsReadEnabled?: unknown;
+      browserEvalEnabled?: unknown;
     };
     const current = options.permissions.getSettings();
     let next = { ...current };
@@ -100,6 +102,12 @@ export async function registerPermissionRoutes(
         next = {
           ...next,
           browserDevtoolsReadEnabled: body.browserDevtoolsReadEnabled === true,
+        };
+      }
+      if (body.browserEvalEnabled !== undefined) {
+        next = {
+          ...next,
+          browserEvalEnabled: body.browserEvalEnabled === true,
         };
       }
     } catch {
@@ -140,6 +148,7 @@ export async function registerPermissionRoutes(
       browserAutoScreenshot: next.browserAutoScreenshot,
       browserHeadless: next.browserHeadless,
       browserDevtoolsReadEnabled: next.browserDevtoolsReadEnabled,
+      browserEvalEnabled: next.browserEvalEnabled,
       approvedForever: options.permissions.listApprovedForever(),
     });
   });

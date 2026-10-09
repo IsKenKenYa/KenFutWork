@@ -39,6 +39,7 @@ beforeEach(() => {
     browserAutoScreenshot: false,
     browserHeadless: false,
     browserDevtoolsReadEnabled: true,
+    browserEvalEnabled: false,
   });
   fetchCdpStatus.mockResolvedValue({ status: "disconnected" });
   updatePermissionSettings.mockImplementation(
@@ -47,6 +48,7 @@ beforeEach(() => {
       browserAutoScreenshot: false,
       browserHeadless: false,
       browserDevtoolsReadEnabled: true,
+      browserEvalEnabled: false,
       ...(patch as object),
     }),
   );
@@ -128,6 +130,27 @@ describe("浏览器设置：连接到 Chrome（CDP）", () => {
     expect(
       screen.getByRole("switch", { name: "允许 AI 读取开发者工具数据" }),
     ).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("「允许 AI 在页面执行脚本」默认关；打开写服务端并回读（browser_eval 的门）", async () => {
+    const user = await renderSection();
+    const toggle = await screen.findByRole("switch", {
+      name: "允许 AI 在页面执行脚本",
+    });
+    // 默认关（迁移里的默认值就是 false——放行「任意脚本」，宁严勿松）
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+
+    await user.click(toggle);
+    await waitFor(() =>
+      expect(updatePermissionSettings).toHaveBeenCalledWith(
+        "tok",
+        expect.objectContaining({ browserEvalEnabled: true }),
+      ),
+    );
+    expect(await screen.findByText(/已允许 AI 在页面执行脚本/)).toBeVisible();
+    expect(
+      screen.getByRole("switch", { name: "允许 AI 在页面执行脚本" }),
+    ).toHaveAttribute("aria-checked", "true");
   });
 
   it("「自动截图」写服务端并回读；写失败回滚开关（不留假的打开态）", async () => {

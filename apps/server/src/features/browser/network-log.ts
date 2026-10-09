@@ -22,17 +22,63 @@ export interface NetworkRequest {
   failed?: string;
   /** 发起时间（ISO）。 */
   at: string;
+  /** 响应 MIME（来自 responseReceived；判断「回来的是什么」用）。 */
+  mimeType?: string;
+  /** 请求体（postData，文本类才有；超过上限按上限截断并标 `…`）。 */
+  requestBody?: string;
+  /** 响应体（loadingFinished 后按需取回；文本类且体积在上限内才采，截断同上）。 */
+  responseBody?: string;
+  /** 耗时（发出 → 完成，毫秒；还没完成就没有）。 */
+  durationMs?: number;
+}
+
+/**
+ * 单个请求/响应体的采集上限（字节口径，按 UTF-16 字符数近似）。
+ * 采集是有隐私面的（表单内容、令牌可能出现在 body 里），上限同时是「够调试」与
+ * 「别把 agent 的结果撑爆」的折中；超大响应（> {@link RESPONSE_BODY_MAX_BYTES}）
+ * 直接不取体，只留状态与耗时。
+ */
+export const NETWORK_BODY_LIMIT_CHARS = 8_192;
+/** 超过这个响应体积就不取响应体（避免为一个几 MB 的文件把内存与结果都拖垮）。 */
+export const RESPONSE_BODY_MAX_BYTES = 512 * 1024;
+
+/** 文本类 MIME（只有这类取响应体有意义；二进制取回来只是乱码）。 */
+export function isTextMime(mime: string | undefined): boolean {
+  if (!mime) return false;
+  return /^(text\/|application\/(json|xml|javascript|ecmascript|x-www-form-urlencoded|graphql)|[^;]*[+/](json|xml))/i.test(
+    mime,
+  );
+}
+
+/** 按上限截断文本（超限补 `…`，告诉读者「这不是全文」）。 */
+export function capBody(
+  text: string,
+  limit = NETWORK_BODY_LIMIT_CHARS,
+): string {
+  return text.length > limit ? `${text.slice(0, limit)}…` : text;
 }
 
 export interface NetworkBuffer {
   /** 请求发出（`requestId` 是 CDP 的请求标识，后续事件用它回填状态）。 */
   started(requestId: string, entry: Omit<NetworkRequest, "seq">): void;
-  /** 收到响应（补状态码）。 */
-  responded(requestId: string, status: number): void;
+  /** 收到响应（补状态码与 MIME）。 */
+  responded(
+    requestId: string,
+    status: number,
+    options?: { mimeType?: string },
+  ): void;
   /** 失败（补原因）。 */
   failed(requestId: string, reason: string): void;
+  /** 完成（补耗时；响应体已取到就一并补上）。 */
+  finished(
+    requestId: string,
+    durationMs: number,
+    responseBody?: string,
+  ): void;
   /** 取 `seq > since` 的请求（最多 `limit` 条）。 */
   since(seq: number, limit?: number): NetworkRequest[];
+  /** 按 CDP 的 requestId 取当前记录（取响应体前查 MIME/体积用）。 */
+  get(requestId: string): NetworkRequest | undefined;
   latestSeq(): number;
   clear(): void;
   size(): number;
@@ -67,19 +113,30 @@ export function createNetworkBuffer(limit = 200): NetworkBuffer {
       }
       index.set(requestId, items.length - 1);
     },
-    responded(requestId, status) {
+    responded(requestId, status, options) {
       const entry = find(requestId);
-      if (entry) entry.status = status;
+      if (!entry) return;
+      entry.status = status;
+      if (options?.mimeType) entry.mimeType = options.mimeType;
     },
     failed(requestId, reason) {
       const entry = find(requestId);
       if (entry) entry.failed = reason;
+    },
+    finished(requestId, durationMs, responseBody) {
+      const entry = find(requestId);
+      if (!entry) return;
+      entry.durationMs = durationMs;
+      if (responseBody !== undefined) entry.responseBody = responseBody;
     },
     since(from, take = 200) {
       return items
         .map((item) => item.entry)
         .filter((entry) => entry.seq > from)
         .slice(0, take);
+    },
+    get(requestId) {
+      return find(requestId);
     },
     latestSeq() {
       return seq;

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  capBody,
   createNetworkBuffer,
   formatRequest,
+  isTextMime,
+  NETWORK_BODY_LIMIT_CHARS,
   shortenUrl,
 } from "./network-log.js";
 
@@ -86,6 +89,84 @@ describe("网络请求缓冲", () => {
     expect(buffer.since(0)).toEqual([]);
     buffer.started("r2", { method: "GET", url: "https://a.com/2", at });
     expect(buffer.latestSeq()).toBe(2);
+  });
+
+  it("响应带 MIME、完成带耗时与响应体（都补在同一条上）", () => {
+    const buffer = createNetworkBuffer();
+    buffer.started("r1", {
+      method: "POST",
+      url: "https://a.com/api",
+      type: "fetch",
+      requestBody: '{"a":1}',
+      at,
+    });
+    buffer.responded("r1", 200, { mimeType: "application/json" });
+    buffer.finished("r1", 132, '{"ok":true}');
+    expect(buffer.since(0)).toEqual([
+      {
+        seq: 1,
+        method: "POST",
+        url: "https://a.com/api",
+        type: "fetch",
+        requestBody: '{"a":1}',
+        status: 200,
+        mimeType: "application/json",
+        durationMs: 132,
+        responseBody: '{"ok":true}',
+        at,
+      },
+    ]);
+  });
+
+  it("取响应体失败时只补耗时（finished 不带体也是合法路径）", () => {
+    const buffer = createNetworkBuffer();
+    buffer.started("r1", { method: "GET", url: "https://a.com/x", at });
+    buffer.finished("r1", 8);
+    const entry = buffer.get("r1");
+    expect(entry?.durationMs).toBe(8);
+    expect(entry?.responseBody).toBeUndefined();
+  });
+
+  it("get 按 requestId 取（取响应体前查 MIME/体积用）；陌生 id 回 undefined", () => {
+    const buffer = createNetworkBuffer();
+    buffer.started("r1", { method: "GET", url: "https://a.com/x", at });
+    expect(buffer.get("r1")?.url).toBe("https://a.com/x");
+    expect(buffer.get("r2")).toBeUndefined();
+  });
+});
+
+describe("网络体采集口径", () => {
+  it("文本类 MIME 判定：text/json/xml/js/表单 收，图片/字体/视频不收", () => {
+    for (const mime of [
+      "text/html",
+      "text/plain; charset=utf-8",
+      "application/json",
+      "application/xml",
+      "application/javascript",
+      "application/x-www-form-urlencoded",
+      "application/vnd.api+json",
+    ]) {
+      expect(isTextMime(mime), mime).toBe(true);
+    }
+    for (const mime of [
+      undefined,
+      "",
+      "image/png",
+      "font/woff2",
+      "video/mp4",
+      "application/octet-stream",
+      "application/pdf",
+    ]) {
+      expect(isTextMime(mime), String(mime)).toBe(false);
+    }
+  });
+
+  it("截断：超上限补 `…`（告诉读者这不是全文），不超原样", () => {
+    expect(capBody("short")).toBe("short");
+    const long = "x".repeat(NETWORK_BODY_LIMIT_CHARS + 10);
+    const capped = capBody(long);
+    expect(capped.length).toBe(NETWORK_BODY_LIMIT_CHARS + 1);
+    expect(capped.endsWith("…")).toBe(true);
   });
 });
 
