@@ -13,6 +13,7 @@ import {
 import { Brain, Palette } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { useComposerVoice, useVoiceMode } from "@/components/composer-voice";
 import {
   Select,
   SelectContent,
@@ -24,6 +25,7 @@ import {
 import { getServerBaseUrl } from "@/lib/env";
 import { executionModeOptions } from "@/lib/execution-modes";
 import { expandCommand } from "@/lib/slash-commands";
+import { getVoicePlayback } from "@/lib/voice-playback";
 import {
   ComposerCompactSelect,
   THINKING_OPTIONS,
@@ -74,6 +76,24 @@ export function DesignHome({
     setPrompt("");
     onSubmit(text);
   };
+  /**
+   * 语音（按住说话）：设计空态输入框与画布助手同一口径（规划 §7 的三落点之一）。
+   * 写回走 `setPrompt`——ChatPromptEditor 是受控的（initialValue + onChange 回路），
+   * 直接改 DOM 会与 React state 脱钩；完整回路与发送键同一条路径（展开命令后起会话）。
+   */
+  const voiceMode = useVoiceMode(null);
+  const voice = useComposerVoice({
+    accessToken: null,
+    mode: voiceMode,
+    // 用户开始说话：正在念的回复立刻让位（规划 §4.2 的打断口径）
+    onRecordingStart: () => getVoicePlayback().stop(),
+    onTranscript: (text) =>
+      setPrompt((prev) => (prev ? `${prev}${text}` : text)),
+    onAutoSubmit: (text) => {
+      const expanded = expandCommand(text, commands).text;
+      if (expanded.trim()) startTask(expanded);
+    },
+  });
   const client = useMemo(
     () =>
       new CodeHttpChannelClient({
@@ -111,7 +131,13 @@ export function DesignHome({
                   {/* zcode composer（P5a）：ChatPromptEditor 原件（自带单层
                           rounded-2xl border-input-border 壳 + `/` 命令面板 + 发送状态机）；
                           不再额外包宿主容器壳（双层壳已剥） */}
-                  <div className="w-full">
+                  <div
+                    className="w-full"
+                    onPointerDown={voice.onPointerDown}
+                    style={
+                      voice.lockSelection ? { userSelect: "none" } : undefined
+                    }
+                  >
                     <ChatPromptEditor
                       initialValue={prompt}
                       appSlashCommands={commands.map((command) => ({
@@ -315,6 +341,7 @@ export function DesignHome({
                       }}
                     />
                   </div>
+                  {voice.status}
                 </div>
 
                 <div className="mt-5 flex items-center justify-center gap-3">

@@ -36,9 +36,10 @@ const config: CodeHostConfig = {
   ...(workspacePath ? { workspacePath } : {}),
 };
 const client = new CodeHttpChannelClient(config);
-/** 语音 transport：转写走 multipart，改写/设置读走 JSON 通道（cookie 认证同 Code 宿主）。 */
+/** 语音 transport：转写走 multipart、播报走二进制，改写/设置读走 JSON 通道（cookie 认证同 Code 宿主）。 */
 const voiceTransport: CodeVoiceTransport = {
   transcribe: (wav) => client.transcribeVoice(wav),
+  speak: (input) => client.speakVoice(input),
   refine: async (input) => {
     const result = await client.request<{ prompt: string }>(
       "/api/voice/refine",

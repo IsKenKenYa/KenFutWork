@@ -8,11 +8,13 @@ import type {
   StreamEvent,
   VideoArtifact,
 } from "@kenfutwork/shared";
+import { buildRefineContext } from "@kenfutwork/voice-ui";
 import { PanelRight as PanelRightIcon, PanelsTopLeft } from "lucide-react";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toChatMenuMessages } from "@/lib/chat-menu";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
+import { extractSpeakableText, getVoicePlayback } from "@/lib/voice-playback";
 import { useAgentModel } from "../hooks/use-agent-model";
 import { useBreakpoint } from "../hooks/use-breakpoint";
 import { useChatSessions } from "../hooks/use-chat-sessions";
@@ -56,6 +58,7 @@ import { ChatContextMenu, useChatContextMenu } from "./chat/chat-context-menu";
 import { ChatInput } from "./chat-input";
 import { ChatMessage } from "./chat-message";
 import { ChatSkills } from "./chat-skills";
+import { useVoiceSettings } from "./composer-voice";
 import { ErrorBoundary } from "./error-boundary";
 import { ExecutionModeSelect } from "./execution-mode-select";
 import { SessionSelector } from "./session-selector";
@@ -168,6 +171,7 @@ export function ChatSidebar({
     handleDeleteSession,
     autoTitleSession,
     reloadMessages,
+    readSessionMessages,
     accessTokenRef,
   } = useChatSessions({
     canvasId,
@@ -178,6 +182,39 @@ export function ChatSidebar({
 
   // ── Stream event handler (extracted hook, shared between send & reconnect) ──
   const { applyStreamEvent } = useChatStream(updateSessionMessages);
+
+  /**
+   * 语音播报（规划 §4.2「说」段 + §7 的「朗读回复」开关）：完整回路 + 开关打开时，
+   * run 收尾后念这一轮的助手正文。读正文走 `readSessionMessages`（缓存同步写穿，
+   * 含最后一批 delta）——读 React state 会漏掉收尾的最后一帧。
+   */
+  const voiceSettings = useVoiceSettings(accessToken);
+  const voiceSettingsRef = useRef(voiceSettings);
+  voiceSettingsRef.current = voiceSettings;
+  // 切走画布（或卸载）即停播：播报属于当前画布，不该跟到下一页
+  // biome-ignore lint/correctness/useExhaustiveDependencies: canvasId 只当触发器（换画布 = 停播），清理时读的 stop() 与它无关
+  useEffect(() => () => getVoicePlayback().stop(), [canvasId]);
+  /** 「想」段的指代消解上下文：最近几条会话消息（单条截断、条数封顶，见 voice-ui）。 */
+  const voiceRecentMessages = useMemo(
+    () =>
+      buildRefineContext(
+        messages.flatMap((message) =>
+          message.role === "user" || message.role === "assistant"
+            ? [
+                {
+                  role: message.role,
+                  text: message.contentBlocks
+                    .flatMap((block) =>
+                      block.type === "text" ? [block.text] : [],
+                    )
+                    .join("\n"),
+                },
+              ]
+            : [],
+        ),
+      ),
+    [messages],
+  );
 
   /**
    * 面板标签页：**对话**（每个打开的历史对话一个）＋**视图**（图层 / 生成文件，
@@ -555,6 +592,9 @@ export function ChatSidebar({
       const currentSessionId = activeSessionIdRef.current;
       if (streaming || !currentSessionId) return;
 
+      // 新的一次发送：上一句播报立刻让位（念着旧回复等新回复是最刺耳的形态）
+      getVoicePlayback().stop();
+
       // Merge explicitly-attached images with auto-sensed canvas selection images
       let currentAttachments = attachmentsOverride ?? readyAttachments;
       const selectedEls = selectedCanvasElementsRef.current ?? [];
@@ -803,6 +843,24 @@ export function ChatSidebar({
 
         await streamDone;
         cleanup();
+
+        // 「说」段（规划 §4.2）：念这一轮的助手正文（代码块剔除）。只念该念的，
+        // 失败静默——正文已在屏幕上，念不出来不影响用。
+        const voice = voiceSettingsRef.current;
+        if (voice.mode === "loop" && voice.speakReplies) {
+          const reply = readSessionMessages(currentSessionId)?.find(
+            (message) => message.id === assistantId,
+          );
+          const text = (reply?.contentBlocks ?? [])
+            .flatMap((block) => (block.type === "text" ? [block.text] : []))
+            .join("\n");
+          const speakable = extractSpeakableText(text);
+          if (speakable) {
+            void getVoicePlayback()
+              .speak(accessTokenRef.current, speakable)
+              .catch(() => undefined);
+          }
+        }
       } catch {
         updateSessionMessages(currentSessionId, (prev) =>
           prev.map((m) => {
@@ -840,6 +898,7 @@ export function ChatSidebar({
       autoTitleSession,
       accessTokenRef,
       activeSessionIdRef,
+      readSessionMessages,
     ],
   );
 
@@ -1406,6 +1465,7 @@ export function ChatSidebar({
               onRemoveMention={handleRemoveMention}
               {...(selectedCanvasElements ? { selectedCanvasElements } : {})}
               {...(accessToken ? { accessToken } : {})}
+              recentMessages={voiceRecentMessages}
             />
           </div>
         </>

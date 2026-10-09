@@ -5,7 +5,7 @@ import type {
   VoiceModelCandidate,
   VoiceSettings,
 } from "@kenfutwork/shared";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { VOICE_SETTINGS_CHANGED_EVENT } from "@/components/composer-voice";
 import { formatBytes } from "@/components/workbench/index-library-section";
@@ -48,7 +48,11 @@ const SEGMENTS: Array<{ key: SegmentKey; label: string }> = [
   { key: "speak", label: "说" },
 ];
 
-export function VoiceSettingsSection({ accessToken }: { accessToken: string | null }) {
+export function VoiceSettingsSection({
+  accessToken,
+}: {
+  accessToken: string | null;
+}) {
   const [settings, setSettings] = useState<VoiceSettings | null>(null);
   const [models, setModels] = useState<VoiceModelCandidate[]>([]);
   const [report, setReport] = useState<VoiceDiagnoseReport | null>(null);
@@ -56,6 +60,8 @@ export function VoiceSettingsSection({ accessToken }: { accessToken: string | nu
   const [busy, setBusy] = useState<string | null>(null);
   const [diagnosing, setDiagnosing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  /** 在跑的检测（取消按钮按它中止；服务端在客户端断开时停止探针）。 */
+  const diagnoseAbort = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -94,25 +100,10 @@ export function VoiceSettingsSection({ accessToken }: { accessToken: string | nu
     return () => clearInterval(timer);
   }, [accessToken, downloading]);
 
-  const advice: VoiceProfileAdvice = useMemo(
-    () =>
-      adviseVoiceProfile({
-        ...(report?.listen.state === "measured" &&
-        report.listen.listen?.rtfMedian !== undefined
-          ? { asr: gradeAsrRtf(report.listen.listen.rtfMedian) }
-          : {}),
-        ...(report?.think.state === "measured" && report.think.think
-          ? {
-              llm: gradeLlm({
-                ttftSeconds: report.think.think.ttftSeconds,
-                ...(report.think.think.tokensPerSecond === undefined
-                  ? {}
-                  : { tokensPerSecond: report.think.think.tokensPerSecond }),
-              }),
-            }
-          : {}),
-      }),
-    [report],
+  const advice: VoiceProfileAdvice = useMemo(() => adviceOf(report), [report]);
+  const performanceWarning = useMemo(
+    () => (report ? insufficientNote(report, advice) : null),
+    [advice, report],
   );
 
   const patch = useCallback(
@@ -176,15 +167,23 @@ export function VoiceSettingsSection({ accessToken }: { accessToken: string | nu
   );
 
   const runDiagnose = useCallback(async () => {
+    const controller = new AbortController();
+    diagnoseAbort.current = controller;
     setDiagnosing(true);
     setMessage(null);
     try {
-      const response = await runVoiceDiagnose(accessToken);
+      const response = await runVoiceDiagnose(accessToken, controller.signal);
       setReport(response.report);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "检测失败。");
+      // 取消不是失败：点了「取消检测」不该看到一条红色报错
+      if (!controller.signal.aborted) {
+        setMessage(error instanceof Error ? error.message : "检测失败。");
+      }
     } finally {
-      setDiagnosing(false);
+      if (diagnoseAbort.current === controller) {
+        diagnoseAbort.current = null;
+        setDiagnosing(false);
+      }
     }
   }, [accessToken]);
 
@@ -292,11 +291,12 @@ export function VoiceSettingsSection({ accessToken }: { accessToken: string | nu
             <span className="text-sm text-muted-foreground">性能检测</span>
             <button
               type="button"
-              disabled={diagnosing}
-              onClick={() => void runDiagnose()}
+              onClick={() =>
+                diagnosing ? diagnoseAbort.current?.abort() : void runDiagnose()
+              }
               className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
             >
-              {diagnosing ? "检测中…" : "重新检测"}
+              {diagnosing ? "取消检测" : "重新检测"}
             </button>
             <button
               type="button"
@@ -310,7 +310,7 @@ export function VoiceSettingsSection({ accessToken }: { accessToken: string | nu
           {report ? (
             <div className="w-full space-y-1 rounded-lg border px-3 py-2 text-xs text-muted-foreground">
               <p>
-                {report.hardware.cpuCores} 核 ·{" "}
+                {report.hardware.cpuModel} · {report.hardware.cpuCores} 核 ·{" "}
                 {formatBytes(report.hardware.totalMemoryBytes)}
                 {report.hardware.gpu ? ` · ${report.hardware.gpu}` : ""}
               </p>
@@ -323,6 +323,13 @@ export function VoiceSettingsSection({ accessToken }: { accessToken: string | nu
                     : "完整回路"
                   : "只转文本"}
               </p>
+              {/*
+                规划 §6「检测不删功能」：实测不足给红字警告 + 实测代价，用户可强制开。
+                只给数字读数（数字不写成句子），建议始终可被下一行的档位控件覆盖。
+              */}
+              {performanceWarning ? (
+                <p className="text-destructive">{performanceWarning}</p>
+              ) : null}
               {/*
                 规划 §3.4「检测到 NVIDIA GPU 时提示『可接 GPU 服务』」——只写这句结论，
                 **不再重复 GPU 名字**（上一行的硬件清单里已经有了）。
@@ -340,6 +347,69 @@ export function VoiceSettingsSection({ accessToken }: { accessToken: string | nu
       </div>
     </section>
   );
+}
+
+/** 报告 → 总体建议（渲染与红字警告共用同一次判定，避免两处口径漂移）。 */
+function adviceOf(report: VoiceDiagnoseReport | null): VoiceProfileAdvice {
+  return adviseVoiceProfile({
+    ...(report?.listen.state === "measured" &&
+    report.listen.listen?.rtfMedian !== undefined
+      ? { asr: gradeAsrRtf(report.listen.listen.rtfMedian) }
+      : {}),
+    ...(report?.think.state === "measured" && report.think.think
+      ? {
+          llm: gradeLlm({
+            ttftSeconds: report.think.think.ttftSeconds,
+            ...(report.think.think.tokensPerSecond === undefined
+              ? {}
+              : { tokensPerSecond: report.think.think.tokensPerSecond }),
+          }),
+        }
+      : {}),
+  });
+}
+
+/**
+ * 实测不足时的红字警告（规划 §6「给红字警告 + 实测代价，用户可强制开」）。
+ *
+ * 只拼**数字读数**（`听 2.30× · 想 1.80s 6t/s · 建议只转文本`），不搬
+ * `advice.reasons` 里的整句——那是判定依据（含句子标点），界面按硬约束只写标签。
+ * 未实测（pending）不算性能不足：没有读数就无从下结论，也不该吓用户。
+ */
+function insufficientNote(
+  report: VoiceDiagnoseReport,
+  advice: VoiceProfileAdvice,
+): string | null {
+  if (advice.recommendedMode === "loop") {
+    return null;
+  }
+  const parts: string[] = [];
+  const rtf = report.listen.listen?.rtfMedian;
+  if (
+    report.listen.state === "measured" &&
+    rtf !== undefined &&
+    !gradeAsrRtf(rtf).recommended
+  ) {
+    parts.push(`听 ${rtf.toFixed(2)}×`);
+  }
+  const think = report.think.think;
+  if (
+    report.think.state === "measured" &&
+    think &&
+    !gradeLlm({
+      ttftSeconds: think.ttftSeconds,
+      ...(think.tokensPerSecond === undefined
+        ? {}
+        : { tokensPerSecond: think.tokensPerSecond }),
+    }).recommended
+  ) {
+    const speed =
+      think.tokensPerSecond === undefined
+        ? ""
+        : ` ${think.tokensPerSecond.toFixed(0)}t/s`;
+    parts.push(`想 ${think.ttftSeconds.toFixed(2)}s${speed}`);
+  }
+  return parts.length > 0 ? `${parts.join(" · ")} · 建议只转文本` : null;
 }
 
 /** 段的实测读数（只给数字，不写成句子）。 */
@@ -497,12 +567,20 @@ function CandidateRow({
   );
 }
 
-/** 候选的元信息：来源 · 体积 · 性能（数字，不是句子）。 */
+/** 运行位置标注（规划 §3.4：本机 CPU / 本机 GPU / 远端，是标注不是配置通道）。 */
+const LOCATION_LABELS: Record<VoiceModelCandidate["location"], string> = {
+  cpu: "本机 CPU",
+  gpu: "本机 GPU",
+  remote: "远端",
+};
+
+/** 候选的元信息：来源 · 体积 · 运行位置 · 性能（数字，不是句子）。 */
 function candidateMeta(candidate: VoiceModelCandidate): string {
   const parts = [candidate.kind === "builtin" ? "离线" : "在线"];
   if (candidate.sizeBytes > 0) {
     parts.push(formatBytes(candidate.sizeBytes));
   }
+  parts.push(LOCATION_LABELS[candidate.location]);
   if (candidate.performanceNote) {
     parts.push(candidate.performanceNote);
   }

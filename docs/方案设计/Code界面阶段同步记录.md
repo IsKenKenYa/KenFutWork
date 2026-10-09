@@ -204,3 +204,18 @@ pnpm --filter @kenfutwork/web exec vitest run test/code-voice.test.tsx test/voic
 ```
 
 本阶段仅更新2个owned vendor记录（`v4/ConversationComposer.tsx`、`styles.css`）：source字节不变（source blob/SHA沿用《ZCode源码清单》既有记录），copiedSha与适配理由由该清单单处持有；`host/`与`voice/`下的第一方文件不在清单范围。
+
+## 第7阶段：语音补全接线（「想」段上下文 + 「说」段播报）
+
+承接第6阶段，补齐规划 §2.3 与 §4.2 的两端：① `snapshot.rows.window` 提取指代消解上下文（新第一方 `zcode/voice/recent-messages.ts`：只取 `origin === "realUser"` 的 userInput 与 `state === "complete"` 的 assistantText，经 `buildRefineContext` 单条截断 500 字 / 封顶 6 条）注入 `useCodeComposerVoice` 的 `recentMessages`；② 助手回复**从 streaming 转为 complete** 时调 `speakReply` 播报（先见 streaming 的 rowId 才消费——打开历史会话的最后一行本就 complete，不能重念）。`speakReply` 只在完整回路档 + 朗读开关打开时工作（与设置页同一口径）。
+
+宿主通道新增 `CodeHttpChannelClient.speakVoice`（`POST /api/voice/speak`，二进制响应、打断走 signal），`host/main.tsx` 装配为 transport.speak；`voice/binding.tsx` 增加播报实例（打断口径与 Design 侧同一份：新播报 / 开始说话 / 卸载即停）。
+
+验证：`@zcode/ui` typecheck（vendor+host）exit0；定向用例 4 文件 32 例全绿（含播报开关三态、上下文注入、转录提取纯函数、接线守卫新增断言）。
+
+```sh
+pnpm --filter @zcode/ui typecheck
+pnpm --filter @kenfutwork/web exec vitest run test/code-voice.test.tsx test/code-recent-messages.test.ts test/voice-wiring-guard.test.ts test/code-host-channel.test.ts
+```
+
+本阶段更新 1 个owned vendor记录（`v4/ConversationComposer.tsx`）：source字节不变，copiedSha随适配更新（见《ZCode源码清单》）；`host/`与`voice/`下的第一方文件不在清单范围。

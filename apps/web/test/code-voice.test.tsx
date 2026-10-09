@@ -1,13 +1,13 @@
+import type { VoiceMode, VoiceSettings } from "@kenfutwork/shared";
+import type { VoiceRecorder } from "@kenfutwork/voice-ui";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { VoiceMode, VoiceSettings } from "@kenfutwork/shared";
-import type { VoiceRecorder } from "@kenfutwork/voice-ui";
-
 import {
+  type CodeComposerVoiceBinding,
   CodeVoiceProvider,
-  useCodeComposerVoice,
   type CodeVoiceTransport,
+  useCodeComposerVoice,
 } from "../src/components/workbench/zcode/voice/binding.js";
 
 /**
@@ -41,15 +41,17 @@ function fakeRecorder(): { recorder: VoiceRecorder; calls: string[] } {
   };
 }
 
-function settingsFor(mode: VoiceMode): VoiceSettings {
-  return { mode, listen: null, think: null, speak: null, speakReplies: false };
+function settingsFor(mode: VoiceMode, speakReplies = false): VoiceSettings {
+  return { mode, listen: null, think: null, speak: null, speakReplies };
 }
 
 interface SetupOptions {
   mode?: VoiceMode;
+  speakReplies?: boolean;
   settingsFail?: boolean;
   withProvider?: boolean;
   enabled?: boolean;
+  recentMessages?: Array<{ role: "user" | "assistant"; content: string }>;
 }
 
 function setup(options: SetupOptions = {}) {
@@ -57,24 +59,44 @@ function setup(options: SetupOptions = {}) {
   const submitted: string[] = [];
   const { recorder, calls } = fakeRecorder();
   const transcribe = vi.fn(async (_wav: Uint8Array) => "把首页按钮改成蓝色");
-  const refine = vi.fn(async (input: { text: string }) => {
-    return `完整需求：${input.text}`;
+  const refine = vi.fn(
+    async (input: {
+      text: string;
+      recentMessages?: Array<{ role: "user" | "assistant"; content: string }>;
+    }) => {
+      return `完整需求：${input.text}`;
+    },
+  );
+  const speak = vi.fn(async (_input: { text: string; signal: AbortSignal }) => {
+    return new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" });
   });
   const fetchSettings = vi.fn(async () => {
     if (options.settingsFail) {
       throw new Error("offline");
     }
-    return settingsFor(options.mode ?? "transcribe");
+    return settingsFor(options.mode ?? "transcribe", options.speakReplies);
   });
-  const transport: CodeVoiceTransport = { transcribe, refine, fetchSettings };
+  const transport: CodeVoiceTransport = {
+    transcribe,
+    refine,
+    speak,
+    fetchSettings,
+  };
+  const bindingRef: { current: CodeComposerVoiceBinding | null } = {
+    current: null,
+  };
 
   function Harness() {
     const voice = useCodeComposerVoice({
       ...(options.enabled === false ? { enabled: false } : {}),
+      ...(options.recentMessages
+        ? { recentMessages: options.recentMessages }
+        : {}),
       recorder,
       onTranscript: (text) => received.push(text),
       onAutoSubmit: (prompt) => submitted.push(prompt),
     });
+    bindingRef.current = voice;
     if (!voice) {
       return <div data-testid="composer" data-wired="no" />;
     }
@@ -128,6 +150,7 @@ function setup(options: SetupOptions = {}) {
   return {
     ...view,
     composer,
+    bindingRef,
     received,
     submitted,
     calls,
@@ -135,16 +158,24 @@ function setup(options: SetupOptions = {}) {
     settleSettings,
     transcribe,
     refine,
+    speak,
     fetchSettings,
   };
 }
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // 播报用例：jsdom 不实现真正的播放与 object URL（同 voice-playback.test）
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:fake");
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(
+    () => new Promise<void>(() => {}),
+  );
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   // 本仓 vitest 未开 globals，Testing Library 的自动清理不会生效：手动清
   cleanup();
 });
@@ -197,5 +228,54 @@ describe("Code 输入框语音桥（宿主接线）", () => {
     expect(h.received).toEqual(["把首页按钮改成蓝色"]);
     expect(h.refine).not.toHaveBeenCalled();
     expect(h.submitted).toEqual([]);
+  });
+
+  it("recentMessages 注入到改写请求（指代消解上下文）", async () => {
+    const h = setup({
+      mode: "loop",
+      recentMessages: [{ role: "user", content: "刚才那个按钮" }],
+    });
+    await h.settleSettings();
+    await h.hold();
+    expect(h.refine).toHaveBeenCalledWith({
+      text: "把首页按钮改成蓝色",
+      recentMessages: [{ role: "user", content: "刚才那个按钮" }],
+    });
+  });
+
+  it("朗读回复：完整回路 + 开关打开才打 /speak 通道", async () => {
+    const h = setup({ mode: "loop", speakReplies: true });
+    await h.settleSettings();
+    act(() => {
+      h.bindingRef.current?.speakReply("已经改好了，按钮现在是蓝色。");
+    });
+    expect(h.speak).toHaveBeenCalledTimes(1);
+    expect(h.speak.mock.calls[0]?.[0]?.text).toContain("已经改好了");
+  });
+
+  it("只转文本档 / 开关关闭：speakReply 不发请求（不摆假开关）", async () => {
+    const transcribeMode = setup({ mode: "transcribe", speakReplies: true });
+    await transcribeMode.settleSettings();
+    act(() => {
+      transcribeMode.bindingRef.current?.speakReply("不该被念");
+    });
+    expect(transcribeMode.speak).not.toHaveBeenCalled();
+    cleanup();
+
+    const switchOff = setup({ mode: "loop", speakReplies: false });
+    await switchOff.settleSettings();
+    act(() => {
+      switchOff.bindingRef.current?.speakReply("不该被念");
+    });
+    expect(switchOff.speak).not.toHaveBeenCalled();
+  });
+
+  it("全是代码的回复不播报（念代码没有意义）", async () => {
+    const h = setup({ mode: "loop", speakReplies: true });
+    await h.settleSettings();
+    act(() => {
+      h.bindingRef.current?.speakReply("```ts\nconst a = 1;\n```");
+    });
+    expect(h.speak).not.toHaveBeenCalled();
   });
 });

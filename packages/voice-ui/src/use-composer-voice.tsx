@@ -16,10 +16,7 @@
  * 文案按《AGENTS.md》「界面文案只写给用户看」：一句说清，不写实现细节。
  */
 
-import type {
-  VoiceMode,
-  VoiceRefineContextMessage,
-} from "@kenfutwork/shared";
+import type { VoiceMode, VoiceRefineContextMessage } from "@kenfutwork/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useHoldToTalk } from "./use-hold-to-talk.js";
@@ -38,6 +35,8 @@ export interface ComposerVoiceOptions {
   mode?: VoiceMode;
   /** 最近几条会话消息（指代消解用：「刚才那个按钮」）。 */
   recentMessages?: VoiceRefineContextMessage[];
+  /** 进入录音态时回调：宿主据此打断旧播报（「用户下一次说话」即停）。 */
+  onRecordingStart?: () => void;
   /** 撤销窗口时长（规划 §4.3 第 2 条：约 2 秒）。测试可调小。 */
   undoWindowMs?: number;
   /** 注入：录音器（测试用；默认浏览器实现）。 */
@@ -78,6 +77,7 @@ export function useComposerVoice({
   onAutoSubmit,
   mode = "transcribe",
   recentMessages,
+  onRecordingStart,
   undoWindowMs = DEFAULT_UNDO_WINDOW_MS,
   recorder,
   transcribe,
@@ -225,6 +225,7 @@ export function useComposerVoice({
     onTranscript: handleTranscript,
     onError: showNotice,
     transcribe,
+    ...(onRecordingStart ? { onRecordingStart } : {}),
     ...(recorder ? { recorder } : {}),
   });
 
@@ -233,7 +234,9 @@ export function useComposerVoice({
       <p
         role="status"
         className={`mt-1 text-xs ${
-          voice.phase === "error" ? "text-destructive" : "text-foreground-subtle"
+          voice.phase === "error"
+            ? "text-destructive"
+            : "text-foreground-subtle"
         }`}
       >
         {voice.phase === "recording"

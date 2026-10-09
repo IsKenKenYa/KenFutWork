@@ -59,6 +59,8 @@ export interface HoldToTalkOptions {
   onTranscript: (text: string) => void;
   /** 失败时可读原因（同时会进 `statusText`）。 */
   onError?: (message: string) => void;
+  /** 进入录音态（满 200ms 真的开麦）时回调：宿主据此打断旧播报。 */
+  onRecordingStart?: () => void;
   /** 注入：录音器（默认浏览器实现）。 */
   recorder?: VoiceRecorder;
   /** 注入：转写请求（默认无，缺失即报「未接线」）。 */
@@ -105,6 +107,8 @@ export function useHoldToTalk(options: HoldToTalkOptions): HoldToTalk {
   onTranscriptRef.current = onTranscript;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  const onRecordingStartRef = useRef(options.onRecordingStart);
+  onRecordingStartRef.current = options.onRecordingStart;
 
   const [phase, setPhase] = useState<HoldToTalkPhase>("idle");
   const [statusText, setStatusText] = useState<string | null>(null);
@@ -189,6 +193,8 @@ export function useHoldToTalk(options: HoldToTalkOptions): HoldToTalk {
       setPhase("recording");
       setElapsedMs(0);
       setStatusText("录音中…");
+      // 用户开始说话：宿主的播报（若有）立刻让位——先打断，再开麦
+      onRecordingStartRef.current?.();
       try {
         const recording = await recorder.start();
         if (marker.aborted) {

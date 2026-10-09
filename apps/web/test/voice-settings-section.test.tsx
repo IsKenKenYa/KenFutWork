@@ -122,6 +122,19 @@ function stubApi(
         });
       }
       if (path.endsWith("/api/voice/diagnose")) {
+        if (init?.method === "POST") {
+          // 检测挂起直到被取消：模拟「跑半分钟」的探针，锁「取消检测」按钮的行为
+          return await new Promise<Response>((_resolve, reject) => {
+            const signal = init.signal;
+            if (signal?.aborted) {
+              reject(new DOMException("Aborted", "AbortError"));
+              return;
+            }
+            signal?.addEventListener("abort", () =>
+              reject(new DOMException("Aborted", "AbortError")),
+            );
+          });
+        }
         // 用 "report" in options 判定：显式传 null（还没测过）不能被 ?? 吞掉
         return json({ report: "report" in options ? options.report : REPORT });
       }
@@ -167,6 +180,55 @@ describe("语音设置页", () => {
     expect(builtinCard?.textContent).toContain("离线");
     expect(builtinCard?.textContent).toContain("228.5 MB");
     expect(builtinCard?.textContent).toContain("预估 0.1–0.7×");
+    // 运行位置是卡片上的标注（规划 §3.4）：本机 CPU / 本机 GPU / 远端
+    expect(builtinCard?.textContent).toContain("本机 CPU");
+    const instanceCard = screen
+      .getByText("我的网关 · whisper-1")
+      .closest("label");
+    expect(instanceCard?.textContent).toContain("远端");
+  });
+
+  it("实测不足给红字警告 + 实测代价（检测不删功能：档位仍可改）", async () => {
+    await mount({
+      report: {
+        ...REPORT,
+        listen: {
+          state: "measured" as const,
+          summary: "实测。",
+          listen: { samples: 3, rtfMedian: 2.31, modelLoadMs: 1_000 },
+        },
+        think: {
+          state: "measured" as const,
+          summary: "实测。",
+          think: { ttftSeconds: 1.8, tokensPerSecond: 6.2 },
+        },
+      },
+    });
+    const warning = await screen.findByText(
+      "听 2.31× · 想 1.80s 6t/s · 建议只转文本",
+    );
+    expect(warning.className).toContain("text-destructive");
+    // 强制开仍可：模式单选不被禁用
+    const loop = screen.getByRole("radio", {
+      name: "完整回路",
+    }) as HTMLInputElement;
+    expect(loop.disabled).toBe(false);
+  });
+
+  it("实测达标或未实测时不给红字警告（没有读数就无从下结论）", async () => {
+    await mount();
+    expect(await screen.findByText(/12 核/)).toBeTruthy();
+    expect(screen.queryByText(/建议只转文本/)).toBeNull();
+  });
+
+  it("检测可取消：检测中按钮变「取消检测」，取消后回到「重新检测」且不报错", async () => {
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "重新检测" }));
+    const cancel = await screen.findByRole("button", { name: "取消检测" });
+    fireEvent.click(cancel);
+    // 取消 = 客户端中止在途请求：服务端在断开时停止探针（不是发一条「取消失败」）
+    await screen.findByRole("button", { name: "重新检测" });
+    expect(screen.queryByText(/检测失败/)).toBeNull();
   });
 
   it("未选择 = 不下载：离线候选带「下载」按钮，在线候选不带", async () => {

@@ -1,12 +1,11 @@
+import type { VoiceRecorder } from "@kenfutwork/voice-ui";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
 import {
   useComposerVoice,
   useVoiceMode,
   VOICE_SETTINGS_CHANGED_EVENT,
 } from "../src/components/composer-voice.js";
-import type { VoiceRecorder } from "@kenfutwork/voice-ui";
 
 /**
  * 三处输入框共用的语音接线：手势 → 状态行 → 文本落进受控 state。
@@ -391,6 +390,30 @@ describe("useVoiceMode（设置页改档同页立刻生效）", () => {
     await vi.waitFor(() => {
       expect(view.getByTestId("mode").textContent).toBe("loop");
     });
+  });
+
+  it("设置响应不含 settings 时保持默认档：不把 undefined 设进 state 崩掉整棵树（workbench-modes 回归）", async () => {
+    // 形状异常的 200（老服务端 / 中间层返回别的 JSON）：读设置这条链路必须软着陆
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({}), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+    function Harness() {
+      const mode = useVoiceMode("tok");
+      return <span data-testid="mode">{mode}</span>;
+    }
+    const view = render(<Harness />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // 停在默认档（只转文本），组件仍在
+    expect(view.getByTestId("mode").textContent).toBe("transcribe");
   });
 });
 

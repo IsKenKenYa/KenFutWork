@@ -95,6 +95,7 @@ import type { AppSlashCommand } from "@zui/slashCommandHelpers.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import type { ComposerMentionPrefill } from "@zui/store/zcodeSessionStoreTypes.js";
 import { useCodeComposerVoice } from "@zui/voice/binding.js";
+import { recentMessagesFromSnapshot } from "@zui/voice/recent-messages.js";
 import type { AttachmentPutFn } from "@zui/v4/composer/attachmentUpload.js";
 import { CodeCommentAttachmentChip } from "@zui/v4/composer/CodeCommentAttachmentChip.js";
 import { ConversationBackgroundWorkTrigger } from "@zui/v4/composer/ConversationBackgroundWorkTrigger.js";
@@ -1522,8 +1523,14 @@ function ConversationComposerImpl({
    * handleEditorChange 落入草稿与受控 state。
    */
   const voiceAutoSubmitRef = useRef<string | null>(null);
+  /** 「想」段的指代消解上下文：最近几条转录消息（真实用户输入 + 已完成回复）。 */
+  const voiceRecentMessages = useMemo(
+    () => recentMessagesFromSnapshot(snapshot),
+    [snapshot],
+  );
   const voice = useCodeComposerVoice({
     enabled: !disabled && mode !== "reject",
+    recentMessages: voiceRecentMessages,
     onTranscript: (text) => {
       inputApiRef.current?.appendText(text);
       inputApiRef.current?.focus();
@@ -1543,6 +1550,37 @@ function ConversationComposerImpl({
     voiceAutoSubmitRef.current = null;
     void submit();
   }, [text, submit]);
+
+  /**
+   * 「说」段（规划 §4.2）：回复**从 streaming 转为 complete** 时念一次。
+   * 只念「先见过 streaming 的行」——打开历史会话时最后一行本就是 complete，
+   * 不能把旧回复重念一遍（先见 streaming 即标记，完成即消费并移除）。
+   */
+  const voiceStreamingRowsRef = useRef<Set<number>>(new Set());
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
+  useEffect(() => {
+    const rows = snapshot?.rows.window;
+    if (!rows) {
+      return;
+    }
+    const seen = voiceStreamingRowsRef.current;
+    for (const row of rows) {
+      if (row.kind === "assistantText" && row.state === "streaming") {
+        seen.add(row.rowId);
+      }
+    }
+    const last = [...rows]
+      .reverse()
+      .find((row) => row.kind === "assistantText");
+    if (
+      last?.kind === "assistantText" &&
+      last.state === "complete" &&
+      seen.delete(last.rowId)
+    ) {
+      voiceRef.current?.speakReply(last.text);
+    }
+  }, [snapshot]);
 
   // Lexical onChange（首字符也稳定回传，见 LexicalChatInput.TextContentPlugin）。
   const handleEditorChange = useCallback(

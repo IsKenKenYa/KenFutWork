@@ -70,21 +70,33 @@ export function useComposerVoice(
   });
 }
 
+/** 读不到设置时的默认档：与契约默认一致（只转文本 / 不朗读）。 */
+const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
+  mode: "transcribe",
+  listen: null,
+  think: null,
+  speak: null,
+  speakReplies: false,
+};
+
 /**
- * 读当前功能模式（方案 A / B）。三处输入框都会调它，故用 `dedupeRequest` 合并成
- * 一次请求（追问框与空态框在同一页面上）。
+ * 读完整语音设置（功能模式 + 朗读开关）。输入框与消息区（播报）共用一份。
  *
- * 读不到就按**默认档**（只转文本）处理：这是规划 §4.1 的默认，也是更保守的一侧
- * ——宁可不自动执行，也不要因为一次读失败就去替用户起 run。
+ * 读不到就按**默认档**处理：这是规划 §4.1 的默认，也是更保守的一侧
+ * ——宁可不自动执行/不朗读，也不要因为一次读失败就去替用户起 run 或出声。
  */
-export function useVoiceMode(accessToken: string | null | undefined): VoiceMode {
-  const [mode, setMode] = useState<VoiceMode>("transcribe");
-  // 设置页保存后广播：同页输入框立刻换档，不必重载页面
+export function useVoiceSettings(
+  accessToken: string | null | undefined,
+): VoiceSettings {
+  const [settings, setSettings] = useState<VoiceSettings>(
+    DEFAULT_VOICE_SETTINGS,
+  );
+  // 设置页保存后广播：同页输入框与播报立刻换档，不必重载页面
   useEffect(() => {
     const onChange = (event: Event) => {
       const detail = (event as CustomEvent<VoiceSettings>).detail;
-      if (detail?.mode) {
-        setMode(detail.mode);
+      if (detail) {
+        setSettings(detail);
       }
     };
     window.addEventListener(VOICE_SETTINGS_CHANGED_EVENT, onChange);
@@ -97,8 +109,10 @@ export function useVoiceMode(accessToken: string | null | undefined): VoiceMode 
       fetchVoiceSettings(accessToken),
     )
       .then((response) => {
-        if (!cancelled) {
-          setMode(response.settings.mode);
+        // 响应形状不含 settings（老服务端 / 中间层塞了别的 JSON）时保持默认档：
+        // 把 undefined 设进 state 会让 `useVoiceMode` 在渲染期读 `.mode` 直接崩掉整棵输入区。
+        if (!cancelled && response.settings) {
+          setSettings(response.settings);
         }
       })
       .catch(() => {
@@ -108,5 +122,12 @@ export function useVoiceMode(accessToken: string | null | undefined): VoiceMode 
       cancelled = true;
     };
   }, [accessToken]);
-  return mode;
+  return settings;
+}
+
+/** 只读功能模式（方案 A / B）：`useVoiceSettings` 的窄面。 */
+export function useVoiceMode(
+  accessToken: string | null | undefined,
+): VoiceMode {
+  return useVoiceSettings(accessToken).mode;
 }

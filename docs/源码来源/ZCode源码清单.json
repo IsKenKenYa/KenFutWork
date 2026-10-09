@@ -11708,11 +11708,12 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationComposer.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationComposer.tsx",
       "sha256": "9bfa3d1365cfa7bf10e45d521a3d7201381aa27697c79b4f33b356cd2f4a3c2d",
-      "copiedSha256": "bd1adba680b8cc06212941262087f82b89cd75fa5ff4e35fffebf0dedb7b92cc",
+      "copiedSha256": "1b274d9a31a1befa3b194fa708b5bb5d408bd777355ce8dc07dabdb3d7e9d9aa",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
-        "宿主接线：输入卡摊语音手势（onPointerDown）与状态行，转写经 inputApiRef.appendText 受控写回；完整回路在撤销窗口后走组件自身 submit——等 appendText 经 Lexical 事件回传草稿后再提交（立即提交会读到旧文本而空转，真机验收抓到并修复）。transport 由 @zui/voice/binding.js 宿主桥注入（host/main.tsx 装配），验证见 voice-wiring-guard 与 code-voice.test 及台账一百三十八补。"
+        "宿主接线：输入卡摊语音手势（onPointerDown）与状态行，转写经 inputApiRef.appendText 受控写回；完整回路在撤销窗口后走组件自身 submit——等 appendText 经 Lexical 事件回传草稿后再提交（立即提交会读到旧文本而空转，真机验收抓到并修复）。transport 由 @zui/voice/binding.js 宿主桥注入（host/main.tsx 装配），验证见 voice-wiring-guard 与 code-voice.test 及台账一百三十八补。",
+        "语音补全接线：从 snapshot.rows 提取指代消解上下文（recentMessagesFromSnapshot，只取真实用户输入与已完成正文）喂给「想」段；回复从 streaming 转为 complete 时调 speakReply 播报（历史行不重念）。验证见 code-voice.test（播报开关/上下文注入）与 voice-wiring-guard，哈希随本次改动更新。"
       ]
     },
     {

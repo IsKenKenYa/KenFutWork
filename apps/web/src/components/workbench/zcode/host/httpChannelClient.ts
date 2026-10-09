@@ -287,6 +287,37 @@ export class CodeHttpChannelClient implements IChannelClient {
     return result.text ?? "";
   }
 
+  /**
+   * 语音播报（语音助手「说」段）：文本 → 音频字节。响应体是二进制（不是 JSON），
+   * 故与 `request` 分开；打断通过在途 signal 中止。
+   */
+  async speakVoice(input: {
+    text: string;
+    signal: AbortSignal;
+  }): Promise<Blob> {
+    const response = await fetch(
+      `${this.config.apiBase.replace(/\/$/u, "")}/api/voice/speak`,
+      {
+        method: "POST",
+        credentials: "include",
+        signal: input.signal,
+        headers: { ...this.headers(), "content-type": "application/json" },
+        body: JSON.stringify({ text: input.text }),
+      },
+    );
+    reportAccessLost(response.status);
+    if (!response.ok) {
+      const result = (await response.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      throw new CodeHostHttpError(
+        response.status,
+        result?.error?.message ?? `语音播报失败：${response.status}`,
+      );
+    }
+    return await response.blob();
+  }
+
   connect(): Promise<void> {
     if (this.controller.signal.aborted)
       return Promise.reject(new DOMException("Code 宿主已关闭", "AbortError"));
