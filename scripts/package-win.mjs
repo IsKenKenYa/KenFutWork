@@ -47,6 +47,8 @@ function run(label, command, args, options = {}) {
     // **真正的错误信息被吃掉**（实测只剩一段 wasmBase64）。需要看报错的步骤一律
     // 捕获后按行截断输出，保留错误行本身。
     stdio: trimLongLines ? "pipe" : spawn.quiet ? "ignore" : "inherit",
+    // 捕获模式下 1MB 默认上限会把子进程直接杀掉（exit=null），产物级输出要留足。
+    ...(trimLongLines ? { maxBuffer: 256 * 1024 * 1024 } : {}),
     ...(trimLongLines ? { encoding: "utf8" } : {}),
     ...spawn,
   });
@@ -207,21 +209,11 @@ function main() {
   //   - require 重绑定为 createRequire(<exe>/server.cjs)，外部包从 <exe>/node_modules 解析；
   //   - import.meta.url 换成同一基准的 file URL，源码里的 createRequire(import.meta.url) 同锚点。
   // 非 SEA（`node server.cjs`）走原语义，两处基准都退回 __filename。
-  const seaBanner = `
-(() => {
-  const path = require("node:path");
-  const { pathToFileURL } = require("node:url");
-  let isSea = false;
-  try {
-    isSea = require("node:sea").isSea();
-  } catch {}
-  const base = isSea
-    ? path.join(path.dirname(process.execPath), "server.cjs")
-    : __filename;
-  globalThis.__kfwModuleUrl = pathToFileURL(base).href;
-  if (isSea) require = require("node:module").createRequire(base);
-})();
-`;
+  // 必须写成**单行**：Windows 下 spawnSync 走 shell:true，cmd.exe 不吃多行参数——
+  // 实测多行 banner 会把后面的 --external/--outfile 一起截断，esbuild 转把 18MB 产物
+  // 打到 stdout，spawnSync 超 maxBuffer 直接杀掉子进程，报 exit=null（离根因极远）。
+  const seaBanner = `(() => { const path = require("node:path"); const { pathToFileURL } = require("node:url"); let isSea = false; try { isSea = require("node:sea").isSea(); } catch {} const base = isSea ? path.join(path.dirname(process.execPath), "server.cjs") : __filename; globalThis.__kfwModuleUrl = pathToFileURL(base).href; if (isSea) require = require("node:module").createRequire(base); })();`;
+
   run(
     "打包服务端（esbuild）",
     "pnpm",
