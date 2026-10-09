@@ -10,7 +10,7 @@ import type {
 } from "@zcode/shared";
 import type { IPluginManagementService } from "@zcode/services";
 import { logger } from "@zui/logger.js";
-import { loadInto, runWorkspaceOperation } from "@zui/store/pluginManagementStoreLoading.js";
+import { loadInto, runWorkspaceOperation, isCurrentPluginInventoryService } from "@zui/store/pluginManagementStoreLoading.js";
 import { setPluginEnabledOptimistically } from "@zui/store/pluginManagementStoreEnabled.js";
 
 // 市场详情按需拉取的组件清单缓存：按 pluginId 记 loading/data/error，避免重复请求与切换闪烁。
@@ -53,6 +53,7 @@ export interface PluginManagementState {
     workspaceIdentity?: string;
     configScope?: ZCodePluginScope;
     pluginService: IPluginManagementService;
+    forceReload?: boolean;
   }) => Promise<void>;
   refresh: (pluginService: IPluginManagementService) => Promise<void>;
   addMarketplace: (source: string, pluginService: IPluginManagementService) => Promise<boolean>;
@@ -136,7 +137,7 @@ export const usePluginManagementStore = create<PluginManagementState>((set, get)
   operationVersion: 0,
   describeCache: {},
 
-  async initialize({ workspacePath, workspaceIdentity, configScope, pluginService }) {
+  async initialize({ workspacePath, workspaceIdentity, configScope, pluginService, forceReload }) {
     const normalizedIdentity = workspaceIdentity?.trim() || null;
     const normalizedConfigScope = configScope ?? null;
     const current = get();
@@ -145,6 +146,7 @@ export const usePluginManagementStore = create<PluginManagementState>((set, get)
       current.workspaceIdentity !== normalizedIdentity ||
       current.configScope !== normalizedConfigScope;
     const hasCache =
+      isCurrentPluginInventoryService(pluginService) &&
       current.plugins.length > 0 &&
       current.workspacePath === workspacePath &&
       current.workspaceIdentity === normalizedIdentity &&
@@ -168,12 +170,13 @@ export const usePluginManagementStore = create<PluginManagementState>((set, get)
       workspaceIdentity: normalizedIdentity,
       configScope: normalizedConfigScope,
       pluginService,
+      ...(forceReload ? { bypassCache: true } : {}),
     });
   },
 
   async refresh(pluginService) {
     const { workspacePath, workspaceIdentity, configScope } = get();
-    if (!workspacePath) {
+    if (workspacePath === null) {
       return;
     }
     set({ error: null, lastFailedPluginId: null });

@@ -764,9 +764,12 @@ export class CodeHttpChannelClient implements IChannelClient {
       // 未知写入结果同样读取库存对账；不重试写操作。
       if (
         service === ServiceChannels.PluginManagement &&
-        ["installPlugin", "setPluginEnabled", "uninstallPlugin"].includes(
-          method,
-        )
+        [
+          "installPlugin",
+          "installPluginFromSource",
+          "setPluginEnabled",
+          "uninstallPlugin",
+        ].includes(method)
       ) {
         this.pluginInventoryChanges.fire();
         notifyPluginInventoryChanged();

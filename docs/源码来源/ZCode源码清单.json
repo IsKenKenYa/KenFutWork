@@ -9142,9 +9142,10 @@
       "source": "references/zcode/packages/ui/src/settings/AddMarketplaceSourceDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/AddMarketplaceSourceDialog.tsx",
       "sha256": "054da48e48b083eac6aaf37557bb5edf3b6667f1bc3999d9b9bf5bd137c3e461",
-      "copiedSha256": "85dd27d5d246000933f862cda6ead1c595e08f4b7fbbc81b9f19a8382b73f03a",
+      "copiedSha256": "b3f6dd17c2f461a4a57764ef92369ab67c4ad77d6b3afc1ffb6cd6eb06e70298",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口/能力显隐：复用原输入、对话框及操作区增加独立来源安装/检查；原市场源未接入禁用；表单episode保护关闭后晚到结果"
       ]
     },
     {
@@ -9516,9 +9517,10 @@
       "source": "references/zcode/packages/ui/src/settings/PluginAddMenu.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/PluginAddMenu.tsx",
       "sha256": "49b6c0a7310e7013a91a893df795695d6bf32c662a6589452dd2b5f866e6c331",
-      "copiedSha256": "1caf93f5d2e15f1d545accf14455dad4b02da45390f33e8518ec658710f88022",
+      "copiedSha256": "4eaeb93aaf22639ddbe7178d163a0ad63d85130888ff39262b5ae7285111b7d5",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主扩展槽：原菜单增加链接或目录安装；不将来源安装冒充市场源添加"
       ]
     },
     {
@@ -9599,18 +9601,20 @@
       "source": "references/zcode/packages/ui/src/settings/PluginStorePage.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/PluginStorePage.tsx",
       "sha256": "ebd9f6237e0dbafd538f21783262bb29baf45f4f30439ee93cbc78888235b3e8",
-      "copiedSha256": "917b9eb983ec4c554d12ad8edfb8d68808f2f5ee9180b8be462f089ea5bc7641",
+      "copiedSha256": "cbba9a82a50542419389976db66f78d5e1eb9ab5875f0c1948319ed6165c7ae5",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接线：本机市场不要求Project；原来源对话框接现有注册表安装/检查，原顶栏显式刷新库存，市场源管理保持未接入"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/PluginStoreSourcesDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/PluginStoreSourcesDialog.tsx",
       "sha256": "dea55eb2215906510fa6018e5fe7c601e3c55f0fbe3fb66abde054d411a1e9ce",
-      "copiedSha256": "dedb90e2627812db9cc397927189c0138958a6e49568567f6848f4f4d453462d",
+      "copiedSha256": "17cfa6b277cd75306fd95852cd2ce59224351a8fd86947cd2f040aeb16100f29",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：原市场源页面显示未接入并禁用刷新/删除，不返回假开关效果"
       ]
     },
     {
@@ -11390,9 +11394,10 @@
       "source": "references/zcode/packages/ui/src/store/pluginManagementStore.ts",
       "target": "apps/web/src/components/workbench/zcode/store/pluginManagementStore.ts",
       "sha256": "147cddd20abb8d96079c138ede0b2028ccf6a8f62ebb50d8578a98821a6c62af",
-      "copiedSha256": "4c2fa9490dd260afe3e8105ae01ef8adaaa6faea9053bb627eebb4697721a769",
+      "copiedSha256": "ab75c2c9fbd84230bee5e19a6c3d4d6708f4b80163c065e538881998cbad8ce3",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "类型/宿主接口：无Project用原接口空上下文，不伪造目录；同服务缓存、强制读取对账"
       ]
     },
     {
@@ -11408,9 +11413,10 @@
       "source": "references/zcode/packages/ui/src/store/pluginManagementStoreLoading.ts",
       "target": "apps/web/src/components/workbench/zcode/store/pluginManagementStoreLoading.ts",
       "sha256": "fdbf8e6e3d8ed9122f9e857fc6a5b4e27c288b8c6a8904b637047df2df1d691a",
-      "copiedSha256": "d5c1b19aa879536a2711ceb9a1efbce7581d07f39c4eaaad002f46e4fd009a89",
+      "copiedSha256": "985a7d0c3a14a6bafc094ea67fcf808852a5ac602a76cffce920a7162205c3a5",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主读取代际：在飞按服务/目标隔离；写前后废旧读、未知结果只读对账；旧动作不得作废新目标读取"
       ]
     },
     {
@@ -14552,7 +14558,7 @@
       "source": "references/zcode/packages/shared/src/platform.ts",
       "target": "packages/zcode-shared/src/platform.ts",
       "sha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "copiedSha256": "79f16309af22839c98cfded3486c6a03dce248ca0868d32fbb420ce1ee567af7",
+      "copiedSha256": "71557b7d931c68a67fd9df96c12c7dbf2f8a8e3e9865d2670bfa74085bb3c4db",
       "adaptations": [
         "宿主能力接口：增加可选云账户支持标记；未声明的原宿主行为不变",
         "宿主接口：可选自动化/嵌入浏览器/CUA/远程能力声明；未声明保持原平台语义",
@@ -14565,7 +14571,8 @@
         "宿主接口：可选认证包图标解析，沿现有平台Provider；不扩大通用图片URL许可",
         "宿主接口：声明插件侧栏读取、变化订阅及仅传插件/入口身份的打开接口，不携带面板地址或凭据",
         "宿主接口：声明现有MCP记录、项目/OAuth/请求头/参数/SSE支持态，未声明保持原平台行为",
-        "宿主接口：本机技能记录与外部Agent扫描/同步实际能力声明，未声明保持原行为"
+        "宿主接口：本机技能记录与外部Agent扫描/同步实际能力声明，未声明保持原行为",
+        "宿主能力声明：来源安装与市场源管理独立显隐，不改变未声明宿主的原行为"
       ]
     },
     {
@@ -15817,8 +15824,10 @@
       "source": "references/zcode/packages/services/src/plugins/pluginManagement.ts",
       "target": "packages/zcode-services/src/plugins/pluginManagement.ts",
       "sha256": "c145b0a64fbc30398b91085e3e9db78a92e26c0ecdefce7621d770f98700a9e4",
-      "copiedSha256": "c145b0a64fbc30398b91085e3e9db78a92e26c0ecdefce7621d770f98700a9e4",
-      "adaptations": []
+      "copiedSha256": "f306b2c47f4e472e9e24b6d607833d349d175053ac698215ec3a6f4f67ca2316",
+      "adaptations": [
+        "宿主接口：扩展原市场的来源检查/安装边界，原方法保留；未知跨宿主结果由现有shared公共schema校验"
+      ]
     },
     {
       "source": "references/zcode/packages/services/src/plugins/plugins.ts",

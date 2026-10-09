@@ -46,6 +46,10 @@ export function createCodePlatform(
         .getChannel("platform")
         .call<ApplicationIconInfo | null>("getApplicationIcon", [request]),
     resolvePluginIcon: (resource) => client.resolvePluginIcon(resource),
+    pluginManagementCapabilities: {
+      sourceInstall: true,
+      marketplaceSources: false,
+    },
     skillsSettingsCapabilities: { databaseRecords: true },
     mcpSettingsCapabilities: {
       databaseRecords: true,

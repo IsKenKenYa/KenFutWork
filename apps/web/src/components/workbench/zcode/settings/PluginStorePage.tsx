@@ -7,6 +7,8 @@ import { Button } from "@zui/components/ui/button.js";
 import { toast } from "@zui/components/ui/toast.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { useServices } from "@zui/hooks/useServices.js";
+import { usePlatform } from "@zui/hooks/usePlatform.js";
+import { usePluginSourceInstallation } from "@zui/host/usePluginSourceInstallation.js";
 import { usePluginStoreOrder } from "@zui/hooks/usePluginStoreOrder.js";
 import { useZCodeSessionService } from "@zui/hooks/useZCodeSessionService.js";
 import { usePluginManagementStore } from "@zui/store/pluginManagementStore.js";
@@ -61,6 +63,9 @@ export function PluginStorePage({
   onManageInstalled,
 }: PluginStorePageProps) {
   const { intl, locale } = useZCodeIntl();
+  const sourceCapabilities = usePlatform().pluginManagementCapabilities;
+  const nativeSources = sourceCapabilities?.sourceInstall === true;
+  const storeWorkspacePath = workspacePath ?? "";
   const { order: storeOrder, refresh: refreshStoreOrder } = usePluginStoreOrder();
   const { pluginManagementService, skillsService } = useServices();
   const zcodeSessionService = useZCodeSessionService(
@@ -99,6 +104,7 @@ export function PluginStorePage({
   const [refreshing, setRefreshing] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [addSourceOpen, setAddSourceOpen] = useState(false);
+  const [sourceMode, setSourceMode] = useState<"marketplace" | "install">("marketplace");
   const [addMarketplaceError, setAddMarketplaceError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   // 返回列表页时恢复进入详情前的滚动位置（设置页 main 容器滚动）。
@@ -110,20 +116,26 @@ export function PluginStorePage({
   }, [initialNavigationTarget]);
 
   const normalizedWorkspaceIdentity = workspaceIdentity?.trim() || null;
+  const reconcileSources = useCallback(async () => {
+    await initialize({ workspacePath: storeWorkspacePath, workspaceIdentity: workspaceIdentity, configScope: "user", pluginService: pluginManagementService, forceReload: true });
+    const state = usePluginManagementStore.getState();
+    return state.error === null && state.marketplaceAvailabilityKnown && !state.loading;
+  }, [initialize, storeWorkspacePath, workspaceIdentity, pluginManagementService]);
+  const sourceInstallation = usePluginSourceInstallation({ open: addSourceOpen && sourceMode === "install", targetKey: normalizedWorkspaceIdentity ?? storeWorkspacePath, service: pluginManagementService, reconcile: reconcileSources });
 
   useEffect(() => {
-    if (!workspacePath) {
+    if (!workspacePath && !nativeSources) {
       return;
     }
     // Marketplace 只管理 Host User inventory；即使从 Workspace 当前窗口打开，也不能把
     // Workspace config 投影带入市场，否则会让项目配置看起来像安装 scope。
     void initialize({
-      workspacePath,
+      workspacePath: storeWorkspacePath,
       workspaceIdentity,
       configScope: "user",
       pluginService: pluginManagementService,
     });
-  }, [initialize, pluginManagementService, workspaceIdentity, workspacePath]);
+  }, [initialize, pluginManagementService, workspaceIdentity, workspacePath, nativeSources, storeWorkspacePath]);
 
   // 目录自动刷新（Catalog Auto-Refresh）：只针对 ZCode 官方市场。每次进入商店页都刷新 CDN 目录，
   // 否则新上架插件要等用户手动点刷新才可见；以 10 分钟窗口节流，并在发起时占位防抖（失败/在飞不重复），
@@ -205,7 +217,7 @@ export function PluginStorePage({
     if (
       !target?.pluginId ||
       loading ||
-      loadedWorkspacePath !== workspacePath ||
+      loadedWorkspacePath !== storeWorkspacePath ||
       loadedWorkspaceIdentity !== normalizedWorkspaceIdentity
     ) {
       return;
@@ -226,6 +238,7 @@ export function PluginStorePage({
     normalizedWorkspaceIdentity,
     openDetail,
     workspacePath,
+    storeWorkspacePath,
   ]);
 
   const backToStore = useCallback(() => {
@@ -241,6 +254,11 @@ export function PluginStorePage({
   // 操作内部完成后会重载概览），随后按更新徽标数量给完成提示。只做本地重载时，
   // 用户点了刷新看不到 CDN 新插件（与规格「刷新→update(null)」不符）。
   const handleRefresh = async () => {
+    if (sourceCapabilities?.marketplaceSources === false) {
+      setRefreshing(true);
+      try { await reconcileSources(); } finally { setRefreshing(false); }
+      return;
+    }
     void refreshStoreOrder(true);
     setRefreshing(true);
     try {
@@ -373,7 +391,7 @@ export function PluginStorePage({
     [handleInstall, handleUpdatePlugin, openDetail, operationId, uninstall.requestUninstall],
   );
 
-  if (!workspacePath) {
+  if (!workspacePath && !nativeSources) {
     return (
       <div className="rounded-lg border border-border bg-card px-3 py-2 text-ui-base text-foreground-subtle">
         {intl.formatMessage({ id: "settings.plugins.noWorkspace" })}
@@ -410,7 +428,7 @@ export function PluginStorePage({
           <div className="flex shrink-0 items-center gap-2">
             <ControlHintTooltip
               title={
-                refreshing
+                sourceCapabilities?.marketplaceSources === false ? "刷新库存" : refreshing
                   ? intl.formatMessage({ id: "settings.plugins.refreshing" })
                   : intl.formatMessage({ id: "settings.plugins.refresh" })
               }
@@ -421,7 +439,7 @@ export function PluginStorePage({
                 variant="outline"
                 size="icon-lg"
                 aria-label={
-                  refreshing
+                  sourceCapabilities?.marketplaceSources === false ? "刷新库存" : refreshing
                     ? intl.formatMessage({ id: "settings.plugins.refreshing" })
                     : intl.formatMessage({ id: "settings.plugins.refresh" })
                 }
@@ -452,9 +470,11 @@ export function PluginStorePage({
               testId="plugin-store-create"
               onCreateTask={onCreateTask}
               onAddMarketplace={() => {
+                setSourceMode("marketplace");
                 setAddMarketplaceError(null);
                 setAddSourceOpen(true);
               }}
+              {...(nativeSources ? { onInstallSource: () => { setSourceMode("install"); setAddMarketplaceError(null); setAddSourceOpen(true); } } : {})}
             />
           </div>
         </div>
@@ -579,13 +599,26 @@ export function PluginStorePage({
           void removeMarketplace(marketplace, pluginManagementService)
         }
         operationId={operationId}
+        unavailable={sourceCapabilities?.marketplaceSources === false}
       />
       <AddMarketplaceSourceDialog
+        key={sourceMode}
         open={addSourceOpen}
         onOpenChange={setAddSourceOpen}
-        onAddMarketplace={handleAddMarketplace}
+        onAddMarketplace={sourceMode === "install" ? async (source) => {
+          const installed = await sourceInstallation.install(source);
+          if (installed) setSegment("personal");
+          return installed;
+        } : handleAddMarketplace}
         operationId={operationId}
-        error={addMarketplaceError}
+        error={sourceMode === "install" ? sourceInstallation.error : addMarketplaceError}
+        mode={sourceMode}
+        unavailable={sourceMode === "marketplace" && sourceCapabilities?.marketplaceSources === false}
+        inspection={sourceInstallation.inspection ? { source: sourceInstallation.inspection.source, name: sourceInstallation.inspection.result.manifest.title ?? sourceInstallation.inspection.result.manifest.name, compatible: sourceInstallation.inspection.result.report.compatible, messages: sourceInstallation.inspection.result.report.issues.map((issue) => issue.message) } : null}
+        inspecting={sourceInstallation.pending === "inspect"}
+        installing={sourceInstallation.pending === "install"}
+        onInspectSource={(source) => void sourceInstallation.inspect(source)}
+        onSourceChange={sourceInstallation.invalidateSource}
       />
     </div>
   );

@@ -13,10 +13,12 @@ import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 export function PluginAddMenu({
   onCreateTask,
   onAddMarketplace,
+  onInstallSource,
   testId,
 }: {
   onCreateTask?: (request?: CreateTaskRequest) => void;
   onAddMarketplace: () => void;
+  onInstallSource?: () => void;
   testId: string;
 }) {
   const { intl } = useZCodeIntl();
@@ -31,6 +33,7 @@ export function PluginAddMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" data-testid="plugin-add-menu">
+        {onInstallSource ? <DropdownMenuItem data-testid="plugin-store-install-source-menu-item" onSelect={onInstallSource}><Plus className="size-4" aria-hidden="true" />从链接或目录安装</DropdownMenuItem> : null}
         <DropdownMenuItem
           data-testid="plugin-create-menu-item"
           disabled={creator.busy || !creator.available}

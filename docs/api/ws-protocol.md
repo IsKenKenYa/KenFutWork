@@ -106,3 +106,9 @@ Code 的原 `plugin-management` 通道现已将 `listPlugins` 与 `getPluginsOve
 启停及卸载需回传 `installationRevision`，由既有安装时间的UTC精确文本派生，并在原仓库SQL条件中原子匹配；卸载重装后旧请求404，不能改新安装。无新增配置库或SQL迁移。旧集中Skills桥及其项目/Task绑定退役；文件、Git与终端继续沿真实Project/Task权限边界。外部Agent扫描/同步原页面标未接入、禁用操作且不发送扫描/导入请求；不返回假空数据。设置页与共享技能消费接口都保护目标/服务/读取代际，写入响应未知只读对账不自动重放。当前Composer的原 `getSkillReferenceCatalog` 与会话冻结目录接线另行继续，不能用管理页列表替代运行消费。
 
 `provider` 复用原 `zcodeAgentProviderSchema` 的 `glm` wire 标识，表示原 Agent 协议身份，不是 BYOK 供应商选择。技能列表与诊断条目无效时宿主通道明确拒绝，原页面显示读取错误，不转成假空目录。
+
+### 插件来源宿主
+
+`plugin-management.inspectPluginSource/installPluginFromSource` 由 plugins feature 贡献，参数／结果沿既有 `pluginInspectRequest/Response` 与 `pluginInstallRequest/Response` 公共schema。来源检查与安装直接消费同一注册表，支持链接和本机目录，不创建Project／Task；原市场源添加、更新、删除是独立操作，未接入时保留原页并禁用。
+
+来源安装不开放生命周期脚本授权；安装阶段重新执行既有兼容门禁，拒绝时原HTTP/RPC返回真实报告与422。停用后重装保持停用。原来源表单输入与检查结果绑定服务、目标、来源及弹窗代际；关闭表单仍给有效库存目标只读对账，迟到响应不清新表单或作废新目标读取，未知写入响应不自动重试。Native顶栏「刷新库存」仅重新读取目录，不冒充市场源更新。工作目录授权安装与导出入口仍待接线。

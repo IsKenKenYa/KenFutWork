@@ -45,6 +45,7 @@ export function PluginStoreSourcesDialog({
   onUpdateMarketplace,
   onRemoveMarketplace,
   operationId,
+  unavailable = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -52,6 +53,7 @@ export function PluginStoreSourcesDialog({
   onUpdateMarketplace: (marketplace: string) => void;
   onRemoveMarketplace: (marketplace: string) => void;
   operationId: string | null;
+  unavailable?: boolean;
 }) {
   const { intl, locale } = useZCodeIntl();
   const sortedMarketplaces = sortMarketplaceSources(marketplaces, locale);
@@ -64,6 +66,7 @@ export function PluginStoreSourcesDialog({
         <DialogTitle className="text-ui-lg font-medium text-foreground">
           {intl.formatMessage({ id: "settings.plugins.store.sources.title" })}
         </DialogTitle>
+        {unavailable ? <p role="status" className="text-ui-base text-foreground-subtle">未接入</p> : null}
         <div className="max-h-[min(420px,60vh)] space-y-1 overflow-y-auto">
           {sortedMarketplaces.length === 0 ? (
             <p className="px-1 py-2 text-ui-base text-foreground-subtle">
@@ -111,7 +114,7 @@ export function PluginStoreSourcesDialog({
                     aria-label={intl.formatMessage({
                       id: "settings.plugins.store.sources.update",
                     })}
-                    disabled={updating}
+            disabled={updating || unavailable}
                     onClick={() => onUpdateMarketplace(marketplace.id)}
                   >
                     <RefreshCw
@@ -130,7 +133,7 @@ export function PluginStoreSourcesDialog({
                       aria-label={intl.formatMessage({
                         id: "settings.plugins.store.sources.remove",
                       })}
-                      disabled={removing}
+                      disabled={removing || unavailable}
                       onClick={() => onRemoveMarketplace(marketplace.id)}
                     >
                       {removing ? (

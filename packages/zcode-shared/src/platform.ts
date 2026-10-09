@@ -535,6 +535,8 @@ export interface HostPluginSidebarEntry {
 }
 
 export interface IPlatformService {
+  /** 宿主原市场接线状态；来源安装与市场源管理是独立能力。 */
+  pluginManagementCapabilities?: { sourceInstall: boolean; marketplaceSources: boolean };
   /** 外部Agent扫描/同步的实际支持态；不将安装包伪装文件目录。 */
   supportsExternalAgentSettingsSync?: boolean;
   /** 宿主已接通的原设置能力；不将数据库记录视为目录或符号链接。 */
