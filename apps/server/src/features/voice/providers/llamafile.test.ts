@@ -1,7 +1,7 @@
-import { mkdirSync, mkdtempSync, truncateSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { findBuiltinModel } from "../catalog.js";
 import { createLlamafileThinkProvider } from "./llamafile.js";
@@ -12,7 +12,18 @@ import { createLlamafileThinkProvider } from "./llamafile.js";
  *  - 拉起命令带 `--server --nobrowser`（llamafile 默认会弹浏览器标签，桌面里不该弹）；
  *  - 端口上已有我们的服务就复用（并发调用不重复 spawn、也不误认无关服务）；
  *  - `probe()` 量**真首 token 延迟**（流式），tok/s 只在有 usage 时给。
+ *
+ * 夹具纪律：模型目录只借「尺寸」用，文件按真实大小 truncate（≈756MB/个），
+ * **用完必须删**——本文件 6 个用例各建一个，不清理就是每次测试往 %TEMP% 丢 ~4.5GB；
+ * 2026-10-09 实测 %TEMP% 堆到 3280 个本仓目录、共 65GB，把 C 盘写满。
  */
+const fixtureRoots: string[] = [];
+
+afterEach(() => {
+  for (const root of fixtureRoots.splice(0)) {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 function fakeChild() {
   const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
   return {
@@ -30,6 +41,7 @@ function fakeChild() {
 
 function modelDir() {
   const root = mkdtempSync(join(tmpdir(), "kfw-llamafile-"));
+  fixtureRoots.push(root);
   const model = findBuiltinModel("qwen3-0.6b-llamafile");
   if (!model) throw new Error("目录里没有 think 档");
   const dir = join(root, model.id);
