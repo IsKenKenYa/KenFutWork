@@ -887,7 +887,9 @@ jobs:
     );
     result = checkActions({ rootDir: fixtureRoot });
     assert.ok(
-      result.errors.some((line) => /permissions 的 contents 写了表达式/.test(line)),
+      result.errors.some((line) =>
+        /permissions 的 contents 写了表达式/.test(line),
+      ),
       `A5 应拦住 permissions 里的表达式：${JSON.stringify(result.errors)}`,
     );
     rmSync(path.join(dir, "a5.yml"));

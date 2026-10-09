@@ -83,6 +83,10 @@ jobs:
 
       # 桌面壳的 typecheck/test 是 cargo（apps/desktop/package.json:11-12），ubuntu runner 上
       # 没有 Rust + webkit2gtk 系统库，改由 mac lane 负责；这里显式排除而不是让它红。
+      # shared 先建上游：它 import vendored `@zcode/*` 的类型产物，干净检出下 tsc 会 TS2307。
+      - name: 构建 shared 的上游依赖
+        run: pnpm exec turbo run build --filter=@kenfutwork/shared^... --concurrency=1
+
       - name: 类型检查（排除桌面壳，它归 mac/win lane）
         run: pnpm exec turbo run typecheck --filter=!@kenfutwork/desktop --concurrency=1
 
@@ -103,6 +107,18 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
+      # 尽量保留真进程沙箱的覆盖：装上 bubblewrap 后，`file-rewind` 里那两个「真起子进程再读
+      # 输出」的用例在 Linux runner 上也能真跑；装不上（或非特权用户命名空间被禁）则由用例内
+      # 的能力探测跳过——探测而非写死平台，装了 bwrap 的自建 runner 与本机 Linux 照常执行。
+      - name: 尝试安装 bwrap（Linux 进程沙箱能力）
+        run: |
+          sudo apt-get update -qq >/dev/null 2>&1 || true
+          if sudo apt-get install -y bubblewrap >/dev/null 2>&1; then
+            bwrap --version
+          else
+            echo "· bwrap 装不上：依赖它的用例会按能力探测跳过（不是通过，是 skipped）"
+          fi
+
       # AGENTS.md 的测试资源护栏：确需串行用 turbo --concurrency=1（不是把参数塞给 pnpm run，
       # `--` 之后的会被各包任务当成自己的选项而报错）。
       - name: turbo 跑各包测试
@@ -141,6 +157,13 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
+
+      # `migrate.ts` 经 `config/env.ts` 引 `@kenfutwork/shared` 的产物；先建 shared 及其上游，
+      # 否则干净检出上报 `Cannot find module .../shared/dist/index.js`（首轮实测）。
+      - name: 构建 shared 及其上游
+        run: |
+          pnpm exec turbo run build --filter=@kenfutwork/shared^... --concurrency=1
+          pnpm --filter @kenfutwork/shared build
 
       # 《AGENTS.md》数据库硬约束的机械落地：93 条历史必须能在空库从零重放，且第二轮必须
       # 一条都不执行（no-op）。入口是 apps/server/src/migrate.ts 的 replay 模式（:186-237）。

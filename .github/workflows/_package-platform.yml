@@ -35,6 +35,12 @@ jobs:
     name: ${{ inputs.platform }}
     runs-on: ${{ inputs.platform == 'macos' && 'macos-latest' || 'windows-latest' }}
     timeout-minutes: 120
+    # Windows runner 的默认 shell 是 PowerShell：没有这一句时，`if [ -n "$X" ]` 这类
+    # POSIX 写法会被 powershell 解析成 ParserError（首轮实测：win lane 卡在第一步
+    # 「校验 ref 取值」就红了）。所有步骤统一按 bash 跑。
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: 校验 ref 取值
         # 走 env 传值再校验：把 workflow_dispatch 的输入直接插进 shell 就是注入面。
@@ -76,6 +82,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm fetch:runtimes
+
+      # `@kenfutwork/shared` 直接 import vendored 的 `@zcode/{shared,services,provider}`
+      # 类型产物，而 `package-mac.mjs` / `package-win.mjs` 用 `pnpm --filter … build` 单点构建，
+      # 绕过了 turbo 的依赖排序——干净检出必报 TS2307（本机残留 dist 会把这点掩盖掉，实测如此）。
+      # 先按图把 shared 的上游建出来，再进入打包链。
+      - name: 构建 shared 的上游依赖
+        run: pnpm exec turbo run build --filter=@kenfutwork/shared^... --concurrency=1
 
       - name: 组装 release/（服务端 + 静态 UI + 内嵌 PG + 随包运行时）
         run: pnpm ${{ inputs.platform == 'macos' && 'package:mac' || 'package:win' }}
