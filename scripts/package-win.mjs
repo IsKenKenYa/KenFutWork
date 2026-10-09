@@ -179,6 +179,31 @@ function main() {
   ]);
 
   // 2) esbuild 打包服务端为单文件 CJS（SEA 要求 CommonJS）
+  //
+  // SEA 的 require 只认内置模块：`--external` 留在外面的原生包（@napi-rs/canvas、node-pty、
+  // @vscode/ripgrep、sherpa-onnx-node）一旦被 `require("pkg")` 命中就是
+  // ERR_UNKNOWN_BUILTIN_MODULE（实测 Windows exe 启动 1 秒即退，栈里是 embedderRequire）。
+  // 且 SEA 里 `__filename` 是**生成 blob 时的构建机路径**，发布机上不存在，
+  // 所以 import.meta.url 也不能直接映射到 __filename。
+  // 统一在产物最前面建立「以发布 exe 位置为基准」的文件型 require：
+  //   - require 重绑定为 createRequire(<exe>/server.cjs)，外部包从 <exe>/node_modules 解析；
+  //   - import.meta.url 换成同一基准的 file URL，源码里的 createRequire(import.meta.url) 同锚点。
+  // 非 SEA（`node server.cjs`）走原语义，两处基准都退回 __filename。
+  const seaBanner = `
+(() => {
+  const path = require("node:path");
+  const { pathToFileURL } = require("node:url");
+  let isSea = false;
+  try {
+    isSea = require("node:sea").isSea();
+  } catch {}
+  const base = isSea
+    ? path.join(path.dirname(process.execPath), "server.cjs")
+    : __filename;
+  globalThis.__kfwModuleUrl = pathToFileURL(base).href;
+  if (isSea) require = require("node:module").createRequire(base);
+})();
+`;
   run("打包服务端（esbuild）", "pnpm", [
     "exec",
     "esbuild",
@@ -188,9 +213,10 @@ function main() {
     "--format=cjs",
     // ESM-only 依赖（sharp 等）在模块顶层用 createRequire(import.meta.url) 定位自身；
     // CJS/SEA 打包下 import.meta 是空对象 → createRequire(undefined) 直接抛，包根本起不来。
-    // CJS 里 __filename/__dirname 恒可用，把 import.meta 的这两个字段指过去。
-    "--define:import.meta.url=__filename",
+    // 基准由上面的 banner 给出：SEA 里 __filename 是构建机路径，不能直接用。
+    "--define:import.meta.url=globalThis.__kfwModuleUrl",
     "--define:import.meta.dirname=__dirname",
+    `--banner:js=${seaBanner}`,
     // node-pty 是原生模块（conpty.node + conpty.dll/OpenConsole.exe）：**不能打进单文件**，
     // 运行时从 <exe>/node_modules/node-pty 解析（同 sharp 的办法）。
     "--external:node-pty",

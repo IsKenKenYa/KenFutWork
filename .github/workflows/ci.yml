@@ -137,7 +137,10 @@ jobs:
     if: github.repository == 'IsKenKenYa/KenFutWork'
     runs-on: ubuntu-latest
     container:
-      image: node:24-bookworm
+      # 与 .nvmrc 同一个钉住版本：`node:24-bookworm` 是浮动 tag，实测解析到 24.21.0，
+      # 而仓库锁的是 24.11.1——测试环境与 SEA 宿主/桌面捆绑的 Node 不是同一份，
+      # 「CI 绿了」就不能作为发布运行时的证据。由 check-actions 的 A7 对账 .nvmrc。
+      image: node:24.11.1-bookworm
       options: --privileged
     timeout-minutes: 45
     # 容器 job 的默认 shell 是 sh（dash），不认 `set -o pipefail`——实测第一步就报
@@ -164,17 +167,48 @@ jobs:
             echo "· $tool → $(command -v $tool)"
           done
 
-      - name: bwrap 能力探针（先给结论再跑用例）
+      - name: 放开「无能力 userns」限制（Ubuntu 24.04 AppArmor 默认值）
         run: |
           set -euo pipefail
-          if bwrap --unshare-user --unshare-pid --ro-bind / / --dev /dev --proc /proc \
-            /bin/true 2>/tmp/srt-bwrap.err; then
-            echo "· privileged 容器内 bwrap 可用：这批用例走真实进程沙箱"
-          else
-            echo "· privileged 容器内 bwrap 仍不可用：$(cat /tmp/srt-bwrap.err || true)"
-            echo "  → 托管 runner 无法满足非特权用户命名空间；不要改成跳过，改走自建 Linux runner"
+          # 托管 runner 是 Ubuntu 24.04：kernel.apparmor_restrict_unprivileged_userns=1
+          # 允许非特权进程 unshare 用户命名空间，但**剥掉新命名空间里的能力**。
+          # bwrap 自己 --unshare-user 照样能起（所以只验它能起会假绿），而沙箱真正的
+          # 隔离层 apply-seccomp 在 bwrap 内再嵌一层 userns 时，写 /proc/self/setgroups
+          # 直接 EPERM，整条命令启动失败。SRT 官方要求把它关掉。
+          for knob in \
+            kernel.apparmor_restrict_unprivileged_userns \
+            kernel.apparmor_unprivileged_userns_apparmor_policy; do
+            path="/proc/sys/${knob//./\/}"
+            [ -e "$path" ] || { echo "· $knob 不存在（非 24.04 系内核，无需处理）"; continue; }
+            before="$(cat "$path")"
+            echo "· $knob 原值 $before"
+            [ "$before" = "0" ] && continue
+            if ! echo 0 > "$path" 2>/tmp/knob.err; then
+              echo "· 无法关闭 $knob：$(cat /tmp/knob.err)"
+              echo "  → privileged 容器的 /proc/sys 仍只读；不要改成跳过用例，改用带该能力的自建 Linux runner"
+              exit 1
+            fi
+            after="$(cat "$path")"
+            [ "$after" = "0" ] || { echo "· $knob 写完回读仍是 $after"; exit 1; }
+            echo "· $knob 已置 0"
+          done
+
+      - name: 沙箱能力探针（先给结论再跑用例）
+        run: |
+          set -euo pipefail
+          # 验的是**失败的那个原语**，不是「bwrap 能不能起」：
+          # 1) bwrap 起得来；2) bwrap 内嵌 userns 拿得到能力（apply-seccomp 的前提）。
+          if ! bwrap --unshare-user --unshare-pid --ro-bind / / --dev /dev --proc /proc \
+            --cap-drop ALL --cap-add CAP_SETFCAP \
+            /bin/sh -c 'unshare -U sh -c "echo deny > /proc/self/setgroups"' \
+            2>/tmp/srt-probe.err; then
+            echo "· 沙箱前置能力不足：$(cat /tmp/srt-probe.err)"
+            echo "  → 这批用例走不了真实进程沙箱。禁止跳过或削弱沙箱；换用允许能力型 userns 的 runner。"
             exit 1
           fi
+          echo "· 能力型嵌套 userns 可用：这批用例走真实进程沙箱"
+          bwrap --version
+          node --version
 
       - name: 启用 pnpm
         run: corepack enable && pnpm --version

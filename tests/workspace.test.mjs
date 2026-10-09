@@ -638,6 +638,17 @@ test("桌面版本四处一致，且 SEA 宿主与 .nvmrc 钉死", async () => {
     /\.nvmrc/,
     "package-win.mjs 必须读 .nvmrc 校验 SEA 宿主版本——只加 pin 不做断言等于没锁",
   );
+
+  // CI 容器 job 的 node 也归 .nvmrc 管：`node:24-bookworm` 是浮动 tag（实测解析到 24.21.0），
+  // 用它跑出来的「真沙箱绿」不代表发布运行时（SEA 宿主 / 桌面捆绑都是 pin 版本）。
+  const ciText = await readText(".github/workflows/ci.yml");
+  for (const [, image] of ciText.matchAll(/^.*image:\s*(node:\S+)\s*$/gm)) {
+    assert.match(
+      image,
+      new RegExp(`^node:${pin.replace(/\./g, "\\.")}-`),
+      `CI 容器镜像「${image}」没钉到 .nvmrc 的 ${pin}；浮动 tag 让 CI 与出包用的 node 不是同一份`,
+    );
+  }
 });
 
 // --- 随包运行时锁定表：对账规则与合并写 ---
@@ -923,6 +934,43 @@ jobs:
   } finally {
     rmSync(fixtureRoot, { recursive: true, force: true });
   }
+});
+
+// --- SEA 产物必须自带「以发布 exe 为基准」的文件型 require ---
+//
+// 懒解析只解决了**我们源码里**的四处外部包；`--external` 的包一旦被第三方代码
+// `require("pkg")` 命中，SEA 的内置 require 仍会抛 ERR_UNKNOWN_BUILTIN_MODULE。
+// 所以产物头部必须重绑定 require 并把 import.meta.url 指到 <exe>/server.cjs；
+// 「加了 external 但没加 banner」是最容易漏的一半。
+test("SEA 产物头部建立 exe 锚点的文件型 require", async () => {
+  const script = await readText("scripts/package-win.mjs");
+  const banner = /const seaBanner = `([\s\S]*?)`;/.exec(script)?.[1];
+  assert.ok(banner, "package-win.mjs 里找不到 seaBanner——external 会退回启动期裸 require");
+  assert.match(
+    banner,
+    /createRequire\(base\)/,
+    "banner 必须用 createRequire(base) 重绑定 require",
+  );
+  assert.match(
+    banner,
+    /require\("node:sea"\)\.isSea\(\)/,
+    "banner 必须区分 SEA 与普通 node 运行（否则 node server.cjs 会被错误锚定）",
+  );
+  assert.match(
+    banner,
+    /process\.execPath/,
+    "解析基准必须是发布 exe 位置，不能是构建机路径",
+  );
+  assert.match(
+    script,
+    /--banner:js=\$\{seaBanner\}/,
+    "banner 必须真的传给 esbuild，只写在字符串里等于没生效",
+  );
+  assert.match(
+    script,
+    /--define:import\.meta\.url=globalThis\.__kfwModuleUrl/,
+    "import.meta.url 必须映射到 banner 计算的 exe 基准（SEA 里 __filename 是构建机路径）",
+  );
 });
 
 // --- 外部原生包不许顶层静态 import ---
