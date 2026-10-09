@@ -308,26 +308,8 @@ jobs:
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
-      # 历史迁移里有 `CREATE EXTENSION IF NOT EXISTS pgmq`
-      #（supabase/migrations/20260325200000_background_jobs.sql:73），而官方 postgres:17 镜像
-      # 不带 pgmq，空库重放会停在 `extension "pgmq" is not available`。桌面形态同一口径：
-      # 打包期把最小兼容 shim 预装进该集群的 share/extension（scripts/package-mac.mjs:219-229），
-      # CI 这里对服务容器做同一件事——装的是兼容层，不是真 pgmq，语义与桌面包一致。
-      - name: 给 Postgres 服务容器装上 pgmq 兼容 shim
-        run: |
-          set -euo pipefail
-          cid="$(docker ps --format '{{.ID}} {{.Image}}' | awk '/postgres:17/{print $1}' | head -1)"
-          if [ -z "$cid" ]; then
-            echo "· 找不到 postgres:17 服务容器"
-            exit 1
-          fi
-          ext="$(docker exec "$cid" sh -c 'pg_config --sharedir')/extension"
-          docker exec "$cid" mkdir -p "$ext"
-          for file in pgmq.control pgmq--1.0.sql; do
-            docker cp "docker/pg-dev-shim/$file" "$cid:$ext/$file"
-          done
-          # 不重启也可见：pg_available_extensions 是按需扫目录的。
-          echo "· 已装入 $ext：$(docker exec "$cid" sh -c "ls -1 $ext | grep -c '^pgmq'") 个 pgmq 文件"
+      # shim 装法与桌面打包期一致，抽成复合动作给「迁移重放」与「健康检查」两个 job 共用。
+      - uses: ./.github/actions/pgmq-shim
 
       # `migrate.ts` 经 `config/env.ts` 引 `@kenfutwork/shared` 的产物；先建 shared 及其上游，
       # 否则干净检出上报 `Cannot find module .../shared/dist/index.js`（首轮实测）。
@@ -366,3 +348,99 @@ jobs:
             exit 1
           fi
           echo "· 篡改已被拦下（历史 SHA-256 账本对账生效）"
+
+  health-check:
+    name: 服务端健康检查（真库启动 + /api/health + 未授权边界）
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+          POSTGRES_DB: kenfutwork
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      KENFUTWORK_DATABASE_URL: postgresql://postgres:ci-only-not-a-secret@localhost:5432/kenfutwork
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/pgmq-shim
+      - name: 构建 server 及其上游
+        run: pnpm exec turbo run build --filter=@kenfutwork/server^... --concurrency=1
+
+      # 迁移必须落在**目标库**上：`replay` 建临时库验证后即删（db-replay 那条 job 的口径），
+      # 用它当健康检查的前置会得到一个空库，服务端起来就因缺表退出。
+      - name: 迁移目标库
+        run: pnpm --filter @kenfutwork/server exec node --import tsx src/migrate.ts apply
+
+      # 真启动整个服务端（不是 mock、不是单测里的 app 实例），验三件事：
+      #   1) /api/health 200 且 service 名对得上；
+      #   2) 带本机凭据边界的业务路由在没有凭据时必须 401（不能因为 CI 少配了鉴权就放行）；
+      #   3) 进程没有早退——早退就把服务端日志原样打出来，别让「curl 连不上」当唯一线索。
+      - name: 启动服务端并做健康检查
+        env:
+          KENFUTWORK_DATA_DIR: ${{ runner.temp }}/kfw-health-data
+          KENFUTWORK_SERVER_PORT: "39111"
+          HOST: 127.0.0.1
+          HEALTH_FILE: ${{ runner.temp }}/health.json
+        run: |
+          set -uo pipefail
+          mkdir -p "$KENFUTWORK_DATA_DIR"
+          log="$RUNNER_TEMP/server.log"
+          pnpm --filter @kenfutwork/server exec node --import tsx src/server.ts > "$log" 2>&1 &
+          pid=$!
+          code=""
+          for _ in $(seq 1 60); do
+            code="$(curl -s -o "$RUNNER_TEMP/health.json" -w '%{http_code}' http://127.0.0.1:39111/api/health || true)"
+            [ "$code" = "200" ] && break
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo "· 服务端启动后退出，日志如下："
+              cat "$log"
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ "$code" != "200" ]; then
+            echo "· /api/health 60 次轮询后仍是 $code，日志如下："
+            cat "$log"
+            exit 1
+          fi
+          echo "· /api/health $(cat "$RUNNER_TEMP/health.json")"
+          node -e '
+            const payload = JSON.parse(require("node:fs").readFileSync(process.env.HEALTH_FILE, "utf8"));
+            if (payload.ok !== true) throw new Error("health.ok 不是 true：" + JSON.stringify(payload));
+            if (payload.service !== "kenfutwork-server") throw new Error("service 名不符：" + payload.service);
+          ' 2>&1 || { echo "· 健康响应体不合规"; cat "$log"; exit 1; }
+          for route in "/api/projects?kind=code" "/api/models"; do
+            unauth="$(curl -s -o "$RUNNER_TEMP/unauth.json" -w '%{http_code}' "http://127.0.0.1:39111$route")"
+            if [ "$unauth" != "401" ]; then
+              echo "· $route 无凭据时返回 $unauth（应为 401）：$(cat "$RUNNER_TEMP/unauth.json")"
+              kill "$pid" 2>/dev/null || true
+              exit 1
+            fi
+            echo "· $route 无凭据 → 401（本机凭据边界生效）"
+          done
+          kill "$pid"
+          wait "$pid" 2>/dev/null || true
+          echo "· 服务端已正常关停"
