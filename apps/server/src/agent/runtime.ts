@@ -1412,7 +1412,18 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       /** 捕获被跳过的原因每个 Run 只报一次，避免逐轮刷屏。 */
       let captureSkipReported = false;
       const captureBoundary = async (phase: AgentTurnBoundaryPhase) => {
-        if (run.scopeHandle?.role !== "main") return;
+        if (run.scopeHandle?.role !== "main") {
+          // 这条早退同样是静默的：非 main 角色（子代理/worker）不产检查点属于设计，
+          // 但「主 Run 的 scopeHandle 角色不是 main」就是装配错误，外部只会看到
+          // checkpoints 恒空。所以第一次遇到时把角色与 Run 说出来。
+          if (!captureSkipReported) {
+            captureSkipReported = true;
+            console.warn(
+              `[turn-boundary] 跳过文件边界捕获：scopeHandle 角色是 ${run.scopeHandle?.role ?? "（无 scopeHandle）"} 而非 main，run=${runId}`,
+            );
+          }
+          return;
+        }
         const scope = run.scopeHandle;
         const actor = taskWorkContext?.actor;
         const hook =
