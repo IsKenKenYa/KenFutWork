@@ -10,7 +10,8 @@
       "../../../release/process-helper": "app/process-helper",
       "../../../release/node_modules": "app/node_modules",
       "../../../release/supabase": "app/supabase",
-      "../../../release/dify": "app/dify"
+      "../../../release/dify": "app/dify",
+      "../../../release/plugins": "app/plugins"
     },
     "windows": {
       "nsis": {

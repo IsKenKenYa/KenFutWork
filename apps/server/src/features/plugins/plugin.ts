@@ -93,8 +93,12 @@ function builtinPluginsDirCandidates(explicit?: string): string[] {
  * 读自带 bundle 插件（每个子目录 = 一个可安装插件）。启动期一次读入内存：
  * 市场列表要点出来、安装时直接落盘，资产（图标）也能在未安装时显示。
  * 解析失败/门禁不过的子目录跳过并记日志——一个坏目录不拖垮其余自带插件。
+ *
+ * 导出供回归测试锁定**打包布局契约**：桌面发布包把本仓库 `plugins/` 拷到应用目录，
+ * 壳以该目录为服务端 cwd 拉起（`apps/desktop/src-tauri/src/lib.rs` 的
+ * `packaged_spawn_config`）——目录候选里的 `<cwd>/plugins` 就是靠这两件事成立的。
  */
-function loadBundledBundles(
+export function loadBundledBundles(
   explicitDir: string | undefined,
   hostNodeMajor: number,
   log: { warn(message: string): void },

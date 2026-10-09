@@ -32,6 +32,9 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.js
 COPY packages/shared/ packages/shared/
 COPY packages/config/ packages/config/
 COPY apps/server/ apps/server/
+# 自带插件 bundle（市场「内置」一键安装）：容器 cwd 是 /app/apps/server，加载器的
+# `<cwd>/../../plugins` 候选取到 /app/plugins；不拷则自带插件列表为空。
+COPY plugins/ plugins/
 
 # Build @kenfutwork/shared (server depends on it)
 RUN pnpm --filter @kenfutwork/shared build

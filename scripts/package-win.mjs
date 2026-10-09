@@ -18,7 +18,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import process from "node:process";
 import {
   packageCodeNativeRuntime,
@@ -245,6 +245,21 @@ function main() {
   //       无头栈；镜像不随包（首次安装按需拉取）。相对挂载路径以该目录为基准。
   cpSync(join(ROOT, "dify"), join(RELEASE, "dify"), { recursive: true });
   console.log("[package] 捆绑 flow 引擎资源（dify/：compose + ssrf_proxy）");
+
+  // 4b-3) 自带插件 bundle（plugins/：flow / mihome 等）：壳以应用目录为服务端 cwd 拉起
+  //       （src/lib.rs 的 packaged_spawn_config），插件加载器的 `<cwd>/plugins` 候选即命中这里；
+  //       不拷则市场里「自带插件」永远是空的。
+  //       computer-use 除外：Windows 打包形态是 Node SEA（import.meta.url 为空），执行原语
+  //       windows-native.ps1 既未随包、也无法按入口定位——装了也用不了，不发半成品；
+  //       macOS 侧由 computer-use/build-helper.mjs 复制并由 tauri.macos.conf.json 映射。
+  const computerUseBundle = join(ROOT, "plugins", "computer-use");
+  cpSync(join(ROOT, "plugins"), join(RELEASE, "plugins"), {
+    recursive: true,
+    filter: (source) =>
+      source !== computerUseBundle &&
+      !source.startsWith(`${computerUseBundle}${sep}`),
+  });
+  console.log("[package] 捆绑自带插件（plugins/：市场「内置」一键安装）");
 
   // 4c) sharp 的原生扩展：sharp 的 JS 被打进 bundle，但它按 __filename 解析
   //     @img/sharp-<platform>/sharp.node；SEA 下 __filename 是 exe，故原生包必须
