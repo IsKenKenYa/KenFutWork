@@ -77,6 +77,21 @@
   WriteRegStr SHCTX "Software\KenFutWork" "InstallDir" "$INSTDIR"
   WriteRegStr SHCTX "Software\KenFutWork" "Version" "${VERSION}"
   !insertmacro KFW_BROADCAST_ENV
+
+  ; ── 内置运行时（Node / Python / JDK / uv / Git，约 321MB）：安装时选择是否保留 ──
+  ;
+  ; 为什么不是标准「组件页」：Tauri 的 NSIS 模板是**单 Section 统一解压** resources，
+  ; 配置层面无法把 runtime 分节；安装后询问是 hooks 能拿到的最接近形态——磁盘结果一致
+  ; （选「否」安装目录里不占这份空间），下载体积不变（运行时仍在安装器里）。
+  ; 需要真·「不下载/不解压」时，得走自定义 NSIS 模板（fork 模板 + 把 runtime 从
+  ; resources 拆出来单独 File），维护成本高，暂不做。
+  ; 静默安装（/S）不弹窗，默认保留（功能优先；命令行拼包场景可装完手动删 app\runtime）。
+  IfSilent kfw_runtime_keep
+    MessageBox MB_YESNO|MB_ICONQUESTION \
+      "是否保留内置运行时（Node / Python / JDK / uv / Git，约 321MB）？$\r$\n选择「否」将删除它们，Agent 改用系统里已安装的工具。" \
+      /SD IDYES IDYES kfw_runtime_keep
+    RMDir /r "$INSTDIR\app\runtime"
+  kfw_runtime_keep:
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
