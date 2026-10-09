@@ -6787,34 +6787,39 @@
       "source": "references/zcode/packages/ui/src/lib/providerPersonalSave.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/providerPersonalSave.ts",
       "sha256": "c0831ac2105a5401630047bd042c445784fc475f4ef9c725cc343fadcada2ca6",
-      "copiedSha256": "d516a276a2b4f93ceb4f12c37b7bb36f879fc0c7d40807714e895ebbf1af3261",
+      "copiedSha256": "3de6a65a74968126090b809619ad3716b952932b427d334cd8f3375f998d2529",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；授权设置可查看／复制，普通目录／通知不含秘密值，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
+        "宿主保存：生成模型及协议草稿进入同一providerSettingsService；提交返回view沿原Hook更新"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/lib/providerSettingsFormProjection.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/providerSettingsFormProjection.ts",
       "sha256": "2c3ec70a8b2f68e6c9d20c358656d238ce865b7e61cc582172316f04039427dc",
-      "copiedSha256": "f4256ddaac7db1fbfdf34d49f174725a8e7f9bf0930aaabd87aee672ba309cd7",
+      "copiedSha256": "6a6766122095e978685103a569ee016e76af668641ace3ebe88261df7d0dd921",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主 DTO 接线：原投影传递真实凭证 presence，不生成 Key 占位值",
-        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
-        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；授权设置可查看／复制，普通目录／通知不含秘密值，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
+        "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
+        "宿主投影：原view解析原生供应商一次并按ID关联模型；生成与Flow不伪造聊天配置"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/lib/providerSettingsFormTypes.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/providerSettingsFormTypes.ts",
       "sha256": "09ff05f29fe66e1b92208edd188397321e61b9c4e12364f3004d38b0a8cae3c8",
-      "copiedSha256": "158e86070f31e4248b65d21ef1c976de233af0d06ae657941b896252f8ad4b91",
+      "copiedSha256": "76b40682dcce0c76e0d2dc07a4816046ab24c730563dffdd958f6febad3dc16a",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主类型兼容：原表单传递可选 credentialConfigured",
-        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
-        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；授权设置可查看／复制，普通目录／通知不含秘密值，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
+        "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
+        "宿主契约：原表单携带真实生成定义与编辑修订；协议及模型保存意图由统一管理服务消费"
       ]
     },
     {
@@ -10077,11 +10082,13 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/InlineEditableProviderCard.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/InlineEditableProviderCard.tsx",
       "sha256": "2158d97081523c1423a1b4c7c0318e92d89c3e7f3610cf6001e7923588efe0d1",
-      "copiedSha256": "9cbdaf9d177d0e4d179223945e38242752e3bdda75f0d700006822975bfacbbd",
+      "copiedSha256": "7bcd92bf585bb0b3b34129c96883656372ce7ca978f72c14d3d401a2ab5740c1",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主 BYOK 接线：沿原保存链明确 clear，仅清成功提交且未继续编辑的对应 Key 草稿，保护迟到应答",
-        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。"
+        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
+        "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
+        "宿主接线：原卡片生成模型新增编辑和真实协议保存；Flow隐藏本机模型；保留原反馈与操作生命周期"
       ]
     },
     {
@@ -10124,21 +10131,24 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderApiFormatSelect.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderApiFormatSelect.tsx",
       "sha256": "ea0f7234753f8300a2f70b190bc878ddf711a73a05f9fcd93810349715eda81f",
-      "copiedSha256": "752f50bee630c5e817fd62bf45d0064994e2298c2fa0ef36ebd96586cc59375c",
+      "copiedSha256": "f18373f902c2929fba2b5d64336be39cb26ecbf2349866f2c48f8200e051652f",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；授权设置可查看／复制，普通目录／通知不含秘密值，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
+        "宿主协议扩展：原Select展示生成/Flow真实协议，聊天四API选项保留；原生协议使用统一修订保存"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderCardSections.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderCardSections.tsx",
       "sha256": "d01c7b6a18b1b5c93bc176988751821f0f29f435613c399380ba8e4d8dd0ef09",
-      "copiedSha256": "d240a97f9232a1031b9403087fef7dfefffa11bd599b1544c10f1d225777b3e6",
+      "copiedSha256": "a91ebc07b04045066261159835cbc458ec1140ed460dbfede53a200c50443aad",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主接口：原 Key 区段透传 presence 与 clear 回调",
-        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；授权设置可查看／复制，普通目录／通知不含秘密值，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
+        "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
+        "生成叶子扩展：原新增对话框及列表承载真实模型用途，创建捕获供应商修订；生成不显示聊天校验"
       ]
     },
     {
@@ -10174,9 +10184,11 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderFormControls.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderFormControls.tsx",
       "sha256": "ea46f9f4f4e21c9684f84b179370018c41f9db6a191a1332b3b1a59c623f34b3",
-      "copiedSha256": "da950c11784c325f3dc015b623066665f3e3a2b2ffc4efa5c65cade5dde0ec0b",
+      "copiedSha256": "21770b1d7bc8d70cbecec857dea9436bebd9f29bb70e896e062569077e2c5b42",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
+        "生成叶子扩展：原模型行及弹窗通过原onCommit返回真实定义，编辑固定打开修订；不展示聊天Token徽标"
       ]
     },
     {
@@ -10210,9 +10222,12 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderModelMetadataDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderModelMetadataDialog.tsx",
       "sha256": "9d3f08fae02d05ee885ae331a9ae38f1cb46608f74dc3da52c493bd444a61c15",
-      "copiedSha256": "3b50673ab8fd6f11d0dcd50c21951e16d8a768adea6fffc2af4fa4aca0683a4f",
+      "copiedSha256": "7ed49e2663d233661038ad97f7c6e72fff854251d80cecde6e3319d47b53ab94",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
+        "生成叶子slot：保留原Dialog触发器/操作/错误/保存；生成隐藏聊天智能推荐与恢复提示",
+        "生成叶子沿用原Enter/IME提交与保存中inert保护，技术输入失焦后读取最新草稿"
       ]
     },
     {

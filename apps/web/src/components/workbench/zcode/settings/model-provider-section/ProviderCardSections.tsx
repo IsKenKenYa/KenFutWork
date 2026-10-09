@@ -13,6 +13,8 @@ import type {
 } from "@zui/lib/providerSettingsFormTypes.js";
 import type { ModelConnectivityResult } from "@zcode/shared";
 import type { ProviderApiType } from "@zcode/provider";
+import { type ProviderInstanceResponse, type ProviderInstanceModel, type ProviderProtocol } from "@kenfutwork/shared";
+import { GenerationModelFields, parseGenerationModelDraft } from "@zui/host/GenerationModelFields.js";
 import {
   TID_MODEL_PROVIDER_ADD_MODEL_BUTTON,
   TID_MODEL_PROVIDER_BASE_URL_INPUT,
@@ -183,6 +185,7 @@ export function ProviderConnectionSection({
   apiFormat,
   baseUrlValue,
   onApiFormatChange,
+  onNativeProtocolChange,
   onBaseUrlChange,
   onBaseUrlBlur,
   onBaseUrlKeyDown,
@@ -194,6 +197,7 @@ export function ProviderConnectionSection({
   apiFormat: ProviderApiType;
   baseUrlValue: string;
   onApiFormatChange: (value: ProviderApiType) => void;
+  onNativeProtocolChange?: ((value: ProviderProtocol) => void) | undefined;
   onBaseUrlChange: (value: string) => void;
   onBaseUrlBlur: () => void;
   onBaseUrlKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void;
@@ -204,6 +208,7 @@ export function ProviderConnectionSection({
   const showApiFormat = shouldShowProviderApiFormat(provider);
   const readOnlyBaseUrl = provider.config.api?.baseUrl ?? "";
   const resolvedApiFormat = provider.config.api?.type ?? "anthropic-messages";
+  const nativeProtocol = provider.native && !["openai-compatible", "anthropic", "gemini"].includes(provider.native.protocol) ? provider.native.protocol : undefined;
 
   const renderReadOnlyField = (label: string, value: string) => (
     <div>
@@ -234,7 +239,7 @@ export function ProviderConnectionSection({
         {showApiFormat
           ? renderReadOnlyField(
               intl.formatMessage({ id: "settings.modelProvider.apiFormat" }),
-              resolveProviderConnectionApiFormatDisplayLabel(intl, resolvedApiFormat),
+              resolveProviderConnectionApiFormatDisplayLabel(intl, nativeProtocol ?? resolvedApiFormat),
             )
           : null}
       </>
@@ -268,7 +273,7 @@ export function ProviderConnectionSection({
           <label className="mb-1 block text-ui-base text-foreground-subtle">
             {intl.formatMessage({ id: "settings.modelProvider.apiFormat" })}
           </label>
-          <ProviderApiFormatSelect value={apiFormat} onChange={onApiFormatChange} />
+          <ProviderApiFormatSelect value={apiFormat} onChange={onApiFormatChange} nativeProtocol={nativeProtocol} onNativeProtocolChange={onNativeProtocolChange} />
         </div>
       ) : null}
     </>
@@ -362,6 +367,8 @@ export function ProviderModelsSection({
   onAddModel,
   onReorderModelIds,
   settingsRevision = 0,
+  providerRevision,
+  nativeProvider,
 }: {
   providerId: string;
   providerName?: string;
@@ -379,6 +386,8 @@ export function ProviderModelsSection({
   onAddModel: (model: ProviderSettingsFormModel) => void | Promise<void>;
   onReorderModelIds?: (modelIds: string[]) => void;
   settingsRevision?: number;
+  providerRevision?: number | undefined;
+  nativeProvider?: ProviderInstanceResponse | undefined;
 }) {
   const { intl } = useZCodeIntl();
   const { providerSettingsService } = useServices();
@@ -387,6 +396,11 @@ export function ProviderModelsSection({
   const addSavingRef = useRef(false);
   const [addCommitError, setAddCommitError] = useState<string | null>(null);
   const [addModel] = useState(createEmptyModel);
+  const generation = Boolean(nativeProvider && !["openai-compatible", "anthropic", "gemini"].includes(nativeProvider.protocol));
+  const [nativeDraft, setNativeDraft] = useState<ProviderInstanceModel>({ id: "", name: "", capability: "image" });
+  const nativeDraftRef = useRef(nativeDraft);
+  const changeNativeDraft = (model: ProviderInstanceModel) => { nativeDraftRef.current = model; setNativeDraft(model); };
+  const addRevisionRef = useRef(providerRevision);
   const [addDraftErrorField, setAddDraftErrorField] = useState<
     | "id"
     | "contextWindow"
@@ -402,18 +416,20 @@ export function ProviderModelsSection({
   );
   const editor = useProviderModelDraft({
     model: addModel,
-    open: addDialogOpen,
+    open: addDialogOpen && !generation,
     scopeKey: providerId,
     resolve: resolveAddModelConfig,
   });
   const { draft: addDraft } = editor;
 
   const openAddDialog = useCallback(() => {
+    changeNativeDraft({ id: "", name: "", capability: "image" });
+    addRevisionRef.current = providerRevision;
     editor.reset(createEmptyModel());
     setAddDraftErrorField(null);
     setAddCommitError(null);
     setAddDialogOpen(true);
-  }, [editor.reset]);
+  }, [editor.reset, providerRevision]);
 
   const updateAddDraft = (patch: Partial<ProviderModelDraftValues>) => {
     editor.change(patch);
@@ -446,6 +462,12 @@ export function ProviderModelsSection({
     setAddSaving(true);
     setAddCommitError(null);
     try {
+      if (generation) {
+        const native = parseGenerationModelDraft(nativeDraftRef.current);
+        await onAddModel({ ...createEmptyModel(), modelId: native.id, native, providerRevision: addRevisionRef.current });
+        setAddDialogOpen(false);
+        return true;
+      }
       const result = await editor.commit();
       if (result.status === "invalid") {
         setAddDraftErrorField(result.field);
@@ -463,7 +485,7 @@ export function ProviderModelsSection({
       addSavingRef.current = false;
       setAddSaving(false);
     }
-  }, [editor, onAddModel]);
+  }, [editor, onAddModel, generation]);
   const addDraftErrorMessage = addDraftErrorField
     ? intl.formatMessage({
         id: `settings.modelProvider.modelMetadata.invalid.${addDraftErrorField}`,
@@ -509,6 +531,7 @@ export function ProviderModelsSection({
               return (
                 <>
                   <ModelRowInput
+                    providerRevision={providerRevision}
                     key={`${providerId}/${model.modelId}`}
                     providerId={providerId}
                     providerName={providerName}
@@ -537,7 +560,7 @@ export function ProviderModelsSection({
                     }}
                     onTest={onTestModel}
                   />
-                  {!completeProperties && (
+                  {(!model.native || model.native.capability === "chat") && !completeProperties && (
                     <div className="px-3 pb-2 text-ui-sm text-destructive">
                       {model.issues?.[0]?.message ??
                         intl.formatMessage({ id: "settings.modelProvider.modelConfigIncomplete" })}
@@ -556,6 +579,7 @@ export function ProviderModelsSection({
       )}
       <>
         <ProviderModelMetadataDialog
+          editorContent={generation ? <GenerationModelFields model={nativeDraft} onChange={changeNativeDraft} /> : undefined}
           onRestore={() => {
             setAddDraftErrorField(null);
             setAddCommitError(null);

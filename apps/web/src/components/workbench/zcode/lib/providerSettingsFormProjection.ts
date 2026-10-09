@@ -1,4 +1,5 @@
 import type { ProviderSettingsView } from "@zcode/services";
+import { nativeProviderDefinition } from "@kenfutwork/shared";
 import type { ProviderSettingsFormProvider } from "@zui/lib/providerSettingsFormTypes.js";
 import type { ProviderOrderView } from "@zui/lib/modelProviderOrdering.js";
 
@@ -12,8 +13,12 @@ export function projectProviderSettingsViewToFormProviders(
 function projectProviderSettingsProviders(
   providers: ProviderSettingsView["providers"],
 ): ProviderSettingsFormProvider[] {
-  return providers.map((provider) => ({
+  return providers.map((provider) => {
+    const native = nativeProviderDefinition(provider);
+    const nativeModels = new Map(native?.models.map((model) => [model.id, model]));
+    return ({
     providerId: provider.providerId,
+    native,
     providerName: provider.providerName,
     templateId: provider.templateId,
     executable: provider.executable,
@@ -28,6 +33,7 @@ function projectProviderSettingsProviders(
     models: provider.models.map((model) => ({
       kind: model.kind,
       modelId: model.modelId,
+      native: nativeModels.get(model.modelId),
       builtin: model.builtin,
       inheritedConfig: structuredClone(model.effectiveBuiltinConfig),
       personalConfig: structuredClone(model.personalExactConfig ?? {}),
@@ -38,7 +44,8 @@ function projectProviderSettingsProviders(
       selectable: model.selectable,
       issues: model.issues,
     })),
-  }));
+  });
+  });
 }
 
 export function resolveProviderSettingsFormProviders(params: {
