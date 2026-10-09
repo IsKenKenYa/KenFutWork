@@ -582,38 +582,6 @@ const processLimits = {
   killGraceMs: AGENT_GOVERNANCE_DEFAULTS.processKillGraceMs,
 };
 
-/**
- * 下面两个用例通过进程沙箱**真起子进程**再读回输出。Linux 侧的启动器必须是带
- * `--unshare-pid/--unshare-user` 的 bwrap（见 `linux-launch.ts:91-107` 的强制校验），
- * 而托管 runner 上常缺 bubblewrap 或非特权用户命名空间——那时 `readOutput()` 拿到的永远是
- * 空串并卡在 30s 超时（首轮 CI 实测）。这是环境能力缺失，不是行为回归，所以按**能力探测**
- * 跳过而不是按平台写死：装了 bubblewrap 的机器（本机 Linux、自建 runner）照常执行这两个用例。
- */
-function linuxProcessSandboxUsable(): boolean {
-  if (process.platform !== "linux") return true;
-  try {
-    execFileSync(
-      "bwrap",
-      [
-        "--unshare-user",
-        "--unshare-pid",
-        "--ro-bind",
-        "/",
-        "/",
-        "--dev",
-        "/dev",
-        "/bin/true",
-      ],
-      { stdio: "ignore" },
-    );
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const skipWithoutRealSandbox = !linuxProcessSandboxUsable();
-
 it("Write新建后再次Edit仍只回退该真实路径，完整两次提交聚合后删除新文件", async () => {
   const fixture = await world();
   await writeFile(join(fixture.root, "anchor.txt"), "existing\n");
@@ -765,98 +733,92 @@ it("不可读精确checkpoint或非绝对native路径均fail closed，不回退�
   });
   expect(await readFile(fixture.path, "utf8")).toBe("after\n");
 });
-it.skipIf(skipWithoutRealSandbox)(
-  "实际同Task进程确认rangeEmpty且文件barrier释放后才允许宿主finish，聊天不截断",
-  async () => {
-    const fixture = await edited();
-    const plan = await fixture.prepare();
-    const sandbox = fixture.applyInput.processSandbox;
-    const child = await sandbox.spawn({
-      scope: fixture.scope.describe(),
-      agentId: "main",
-      invocationId: randomUUID(),
-      argv: {
-        executable: process.execPath,
-        args: ["-e", 'process.stdout.write("alive");setInterval(()=>{},1000)'],
-      },
-      background: true,
-      timeoutMs: null,
-      limits: processLimits,
-    });
-    await expect
-      .poll(
-        async () =>
-          (
-            await child.readOutput({
-              offset: 0,
-              maxBytes: processLimits.maxOutputBytes,
-            })
-          ).data,
-      )
-      .toContain("alive");
-    await applyFileRewind(plan, {
-      ...fixture.applyInput,
-      finishRestore: async (scope, owner, success) => {
-        expect(await child.waitForExit()).toMatchObject({
-          rangeEmpty: true,
-          stopped: true,
-        });
-        await expect(
-          fixture.scopes.openTask(actor, scope.describe().taskId),
-        ).rejects.toMatchObject({ code: "scope_unavailable" });
-        expect(await readFile(fixture.path, "utf8")).toBe("before\n");
-        await fixture.applyInput.finishRestore(scope, owner, success);
-      },
-    });
-    expect(
-      (
-        await fixture.scopes.openTask(actor, fixture.scope.describe().taskId)
-      ).describe().generation,
-    ).toBe(1);
-  },
-);
+it("实际同Task进程确认rangeEmpty且文件barrier释放后才允许宿主finish，聊天不截断", async () => {
+  const fixture = await edited();
+  const plan = await fixture.prepare();
+  const sandbox = fixture.applyInput.processSandbox;
+  const child = await sandbox.spawn({
+    scope: fixture.scope.describe(),
+    agentId: "main",
+    invocationId: randomUUID(),
+    argv: {
+      executable: process.execPath,
+      args: ["-e", 'process.stdout.write("alive");setInterval(()=>{},1000)'],
+    },
+    background: true,
+    timeoutMs: null,
+    limits: processLimits,
+  });
+  await expect
+    .poll(
+      async () =>
+        (
+          await child.readOutput({
+            offset: 0,
+            maxBytes: processLimits.maxOutputBytes,
+          })
+        ).data,
+    )
+    .toContain("alive");
+  await applyFileRewind(plan, {
+    ...fixture.applyInput,
+    finishRestore: async (scope, owner, success) => {
+      expect(await child.waitForExit()).toMatchObject({
+        rangeEmpty: true,
+        stopped: true,
+      });
+      await expect(
+        fixture.scopes.openTask(actor, scope.describe().taskId),
+      ).rejects.toMatchObject({ code: "scope_unavailable" });
+      expect(await readFile(fixture.path, "utf8")).toBe("before\n");
+      await fixture.applyInput.finishRestore(scope, owner, success);
+    },
+  });
+  expect(
+    (
+      await fixture.scopes.openTask(actor, fixture.scope.describe().taskId)
+    ).describe().generation,
+  ).toBe(1);
+});
 
-it.skipIf(skipWithoutRealSandbox)(
-  "实际其它Task相交RW进程阻止回退且不被自动停止，显式停止后同计划可安全执行",
-  async () => {
-    const fixture = await edited();
-    const plan = await fixture.prepare();
-    const child = await fixture.applyInput.processSandbox.spawn({
-      scope: { ...fixture.scope.describe(), taskId: randomUUID() },
-      agentId: "main",
-      invocationId: randomUUID(),
-      argv: {
-        executable: process.execPath,
-        args: [
-          "-e",
-          'process.stdout.write("foreign-alive");setInterval(()=>{},1000)',
-        ],
-      },
-      background: true,
-      timeoutMs: null,
-      limits: processLimits,
-    });
-    await expect
-      .poll(
-        async () =>
-          (
-            await child.readOutput({
-              offset: 0,
-              maxBytes: processLimits.maxOutputBytes,
-            })
-          ).data,
-      )
-      .toContain("foreign-alive");
-    await expect(fixture.apply(plan)).rejects.toMatchObject({
-      code: "restore_conflict",
-    });
-    expect(child.snapshot().state).toBe("running");
-    expect(await readFile(fixture.path, "utf8")).toBe("after\n");
-    await child.stop("explicit_test_stop");
-    await fixture.apply(plan);
-    expect(await readFile(fixture.path, "utf8")).toBe("before\n");
-  },
-);
+it("实际其它Task相交RW进程阻止回退且不被自动停止，显式停止后同计划可安全执行", async () => {
+  const fixture = await edited();
+  const plan = await fixture.prepare();
+  const child = await fixture.applyInput.processSandbox.spawn({
+    scope: { ...fixture.scope.describe(), taskId: randomUUID() },
+    agentId: "main",
+    invocationId: randomUUID(),
+    argv: {
+      executable: process.execPath,
+      args: [
+        "-e",
+        'process.stdout.write("foreign-alive");setInterval(()=>{},1000)',
+      ],
+    },
+    background: true,
+    timeoutMs: null,
+    limits: processLimits,
+  });
+  await expect
+    .poll(
+      async () =>
+        (
+          await child.readOutput({
+            offset: 0,
+            maxBytes: processLimits.maxOutputBytes,
+          })
+        ).data,
+    )
+    .toContain("foreign-alive");
+  await expect(fixture.apply(plan)).rejects.toMatchObject({
+    code: "restore_conflict",
+  });
+  expect(child.snapshot().state).toBe("running");
+  expect(await readFile(fixture.path, "utf8")).toBe("after\n");
+  await child.stop("explicit_test_stop");
+  await fixture.apply(plan);
+  expect(await readFile(fixture.path, "utf8")).toBe("before\n");
+});
 
 it("ApplyPatch部分提交仅回退真实更新/新建/删除，失败项不进入计划且delete期望当前缺失", async () => {
   const fixture = await world();
