@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+/** 宿主控制当前文档的输入活动，不控制Run或会话生命周期。 */
+export const workspaceActivitySchema = z
+  .object({
+    type: z.literal("kenfutwork:workspace-activity"),
+    active: z.boolean(),
+  })
+  .strict();
+export type WorkspaceActivity = z.infer<typeof workspaceActivitySchema>;
+
 /** 父窗口认证与导航缝；原界面的服务调用仍使用原 RPC/帧协议。 */
 export const codeUiBootstrapSchema = z.object({
   type: z.literal("kenfutwork:code-bootstrap"),

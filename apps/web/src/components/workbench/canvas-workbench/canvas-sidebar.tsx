@@ -25,6 +25,7 @@ import type { useDesignProjects } from "./use-design-projects";
 
 type Props = ReturnType<typeof useDesignProjects> & {
   mode: "design" | "flow";
+  active: boolean;
   switchMode: (mode: WorkbenchMode) => void;
   sidebarWidth: number;
   sidebarCollapsed: boolean;
@@ -54,6 +55,7 @@ export function CanvasSidebar({
   setSidebarCollapsed,
   startSidebarResize,
   mode,
+  active,
   switchMode,
   setSettingsTab,
   setPluginsOpen,
@@ -219,6 +221,7 @@ export function CanvasSidebar({
               accessToken={null}
               slot="sidebar"
               mode={mode}
+              workspaceActive={active}
               renderButton={(panel, open) => (
                 <button
                   key={panel.id}

@@ -29,14 +29,24 @@ import { SkillsModal } from "./skills-modal";
 export function CanvasWorkbench({
   mode,
   onModeChange,
+  active = true,
 }: {
   mode: "design" | "flow";
   onModeChange: (mode: WorkbenchMode) => void;
+  active?: boolean;
 }) {
   const accessToken = null;
   const { entry: flowEntry, refresh: refreshFlowEntry } = useFlowHostEntry();
   const flowFrameRef = useRef<FlowCanvasFrameHandle>(null);
-  const projects = useDesignProjects(accessToken, mode);
+  const canvasFrameRef = useRef<HTMLIFrameElement>(null);
+  const sendCanvasActivity = useCallback(() => {
+    canvasFrameRef.current?.contentWindow?.postMessage(
+      { type: "kenfutwork:workspace-activity", active },
+      window.location.origin,
+    );
+  }, [active]);
+  useEffect(sendCanvasActivity, [sendCanvasActivity]);
+  const projects = useDesignProjects(accessToken, mode, canvasFrameRef);
   const composer = useDesignComposer();
   const { sidebarWidth, startSidebarResize } = useSidebarWidth();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -67,9 +77,9 @@ export function CanvasWorkbench({
     installDesktopExternalLinks();
   }, []);
   useEffect(() => {
-    if (mode === "flow" && flowEntry && !flowEntry.available)
+    if (active && mode === "flow" && flowEntry && !flowEntry.available)
       onModeChange("design");
-  }, [mode, flowEntry, onModeChange]);
+  }, [mode, flowEntry, onModeChange, active]);
   const handlePluginUse = useCallback(
     (name: string) => {
       setPluginsOpen(false);
@@ -100,6 +110,7 @@ export function CanvasWorkbench({
       <CanvasSidebar
         {...projects}
         mode={mode}
+        active={active}
         switchMode={onModeChange}
         sidebarWidth={sidebarWidth}
         sidebarCollapsed={sidebarCollapsed}
@@ -127,10 +138,15 @@ export function CanvasWorkbench({
             <FlowCanvasFrame
               ref={flowFrameRef}
               frontendUrl={flowEntry.frontendUrl}
+              active={active}
             />
           )
         ) : surface === "canvas" ? (
           <iframe
+            ref={canvasFrameRef}
+            onLoad={sendCanvasActivity}
+            inert={!active}
+            tabIndex={active ? 0 : -1}
             key={`${selectedProject?.primaryCanvas.id}:${canvasPrompt ?? ""}`}
             src={`/canvas?id=${selectedProject?.primaryCanvas.id}${canvasPrompt ? `&prompt=${encodeURIComponent(canvasPrompt)}` : ""}`}
             title={`${selectedProject?.name ?? ""} 画布`}
@@ -148,9 +164,9 @@ export function CanvasWorkbench({
           />
         )}
       </main>
-      <FullAccessDialog composer={composer} />
+      <FullAccessDialog composer={composer} active={active} />
       <SettingsModal
-        open={settingsTab !== null}
+        open={active && settingsTab !== null}
         initialTab={settingsTab === null ? undefined : settingsTab}
         onClose={() => setSettingsTab(null)}
         accessToken={accessToken}
@@ -160,7 +176,7 @@ export function CanvasWorkbench({
       />
       {pluginsOpen ? (
         <PluginMarketModal
-          open={pluginsOpen}
+          open={active && pluginsOpen}
           onUse={handlePluginUse}
           onClose={() => setPluginsOpen(false)}
           accessToken={accessToken}
@@ -170,7 +186,7 @@ export function CanvasWorkbench({
       ) : null}
       {skillsOpen ? (
         <SkillsModal
-          open={skillsOpen}
+          open={active && skillsOpen}
           onClose={() => setSkillsOpen(false)}
           accessToken={accessToken}
           canvasId={selectedProject?.primaryCanvas?.id ?? null}
@@ -178,7 +194,7 @@ export function CanvasWorkbench({
       ) : null}
       {mcpOpen ? (
         <McpModal
-          open={mcpOpen}
+          open={active && mcpOpen}
           onClose={() => setMcpOpen(false)}
           accessToken={accessToken}
         />

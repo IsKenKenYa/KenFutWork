@@ -193,19 +193,26 @@ export function PluginIcon({
 export function PluginPanelOverlay({
   panel,
   onClose,
+  active = true,
 }: {
   panel: PluginPanelEntry | null;
   onClose: () => void;
+  active?: boolean;
 }) {
   if (!panel) return null;
   return (
     <Dialog
-      open={panel !== null}
+      open={active && panel !== null}
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
     >
       <DialogContent
+        portalProps={{ keepMounted: true }}
+        overlayProps={{ hidden: !active }}
+        hidden={!active}
+        inert={!active}
+        aria-hidden={!active}
         className="flex h-[80vh] max-h-[80vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
         aria-describedby={undefined}
       >
@@ -244,12 +251,14 @@ export function PluginPanelButtons({
   renderButton,
   emptyLabel,
   mode,
+  workspaceActive = true,
 }: {
   accessToken: string | null;
   slot: string;
   renderButton: (panel: PluginPanelEntry, open: () => void) => React.ReactNode;
   emptyLabel?: string | undefined;
   mode?: "code" | "design" | "flow";
+  workspaceActive?: boolean;
 }) {
   const { panels, error } = usePluginPanels(accessToken, slot, mode);
   const [active, setActive] = useState<PluginPanelEntry | null>(null);
@@ -272,7 +281,11 @@ export function PluginPanelButtons({
         <p className="text-sm text-muted-foreground">{emptyLabel}</p>
       ) : null}
       {panels.map((panel) => renderButton(panel, () => setActive(panel)))}
-      <PluginPanelOverlay panel={active} onClose={() => setActive(null)} />
+      <PluginPanelOverlay
+        panel={active}
+        active={workspaceActive}
+        onClose={() => setActive(null)}
+      />
     </>
   );
 }

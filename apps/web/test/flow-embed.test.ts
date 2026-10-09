@@ -21,13 +21,21 @@ describe("resolveFlowEntry（入口门控）", () => {
   };
 
   it("插件未装 → 不可用，原因指向插件市场", () => {
-    const entry = resolveFlowEntry({ pluginInstalled: false, status: ready });
+    const entry = resolveFlowEntry({
+      pluginInstalled: false,
+      pluginEnabled: false,
+      status: ready,
+    });
     expect(entry.available).toBe(false);
     expect(!entry.available && entry.reason).toContain("插件");
   });
 
   it("插件已装 + 适配层配齐 → 可用并透出 frontendUrl", () => {
-    const entry = resolveFlowEntry({ pluginInstalled: true, status: ready });
+    const entry = resolveFlowEntry({
+      pluginInstalled: true,
+      pluginEnabled: true,
+      status: ready,
+    });
     expect(entry).toEqual({
       available: true,
       frontendUrl: "http://127.0.0.1:8080",
@@ -37,6 +45,7 @@ describe("resolveFlowEntry（入口门控）", () => {
   it("插件已装但适配层未配齐 → 不可用，原因点名缺失环境变量", () => {
     const entry = resolveFlowEntry({
       pluginInstalled: true,
+      pluginEnabled: true,
       status: {
         enabled: false,
         frontendUrl: null,
@@ -56,7 +65,11 @@ describe("resolveFlowEntry（入口门控）", () => {
   });
 
   it("插件已装但探针失败（status=null）→ 不可用，不猜「也许能用」", () => {
-    const entry = resolveFlowEntry({ pluginInstalled: true, status: null });
+    const entry = resolveFlowEntry({
+      pluginInstalled: true,
+      pluginEnabled: true,
+      status: null,
+    });
     expect(entry.available).toBe(false);
     expect(!entry.available && entry.reason).toContain("host/status");
   });
@@ -64,6 +77,7 @@ describe("resolveFlowEntry（入口门控）", () => {
   it("enabled 但 frontendUrl 缺失（防御：服务端契约不该给这种组合）→ 不可用", () => {
     const entry = resolveFlowEntry({
       pluginInstalled: true,
+      pluginEnabled: true,
       status: { enabled: true, frontendUrl: null, reasons: [] },
     });
     expect(entry.available).toBe(false);

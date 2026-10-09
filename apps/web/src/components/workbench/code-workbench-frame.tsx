@@ -22,8 +22,10 @@ import { VoiceSettingsSection } from "./voice-settings-section";
 /** Code 的独立原文档保护 Design 的 CSS、theme 与 portal。 */
 export function CodeWorkbenchFrame({
   onModeChange,
+  active = true,
 }: {
   onModeChange: (mode: "design") => void;
+  active?: boolean;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [instanceOpen, setInstanceOpen] = useState(false);
@@ -42,6 +44,13 @@ export function CodeWorkbenchFrame({
     );
   }, [panels]);
   const ready = useRef(false);
+  const sendActivity = useCallback(() => {
+    frame.current?.contentWindow?.postMessage(
+      { type: "kenfutwork:workspace-activity", active },
+      window.location.origin,
+    );
+  }, [active]);
+  useEffect(sendActivity, [sendActivity]);
   const bootstrap = useCallback(() => {
     if (!ready.current) return;
     const message: CodeUiBootstrap = {
@@ -65,11 +74,12 @@ export function CodeWorkbenchFrame({
         return;
       const parsed = codeUiParentRequestSchema.safeParse(event.data);
       if (!parsed.success) return;
-      if (parsed.data.type === "kenfutwork:code-navigate")
-        onModeChange(parsed.data.mode);
-      else if (parsed.data.type === "kenfutwork:code-plugins-changed")
+      if (parsed.data.type === "kenfutwork:code-navigate") {
+        if (active) onModeChange(parsed.data.mode);
+      } else if (parsed.data.type === "kenfutwork:code-plugins-changed")
         window.dispatchEvent(new Event(PLUGIN_INVENTORY_CHANGED_EVENT));
       else if (parsed.data.type === "kenfutwork:code-open-plugin") {
+        if (!active) return;
         const { pluginId, entryId } = parsed.data;
         const current = ++panelRequest.current;
         // 聚焦的并发读可使本次读取过期；仅补读库存，不重复写入。
@@ -93,6 +103,7 @@ export function CodeWorkbenchFrame({
       else {
         ready.current = true;
         bootstrap();
+        sendActivity();
       }
     };
     window.addEventListener("message", receive);
@@ -101,7 +112,7 @@ export function CodeWorkbenchFrame({
       panelRequest.current++;
       window.removeEventListener("message", receive);
     };
-  }, [bootstrap, onModeChange, refreshPanels]);
+  }, [bootstrap, onModeChange, refreshPanels, active, sendActivity]);
   return (
     <>
       <iframe
@@ -109,6 +120,8 @@ export function CodeWorkbenchFrame({
         src="/code-ui/index.html"
         title="Code 工作台"
         className="block h-dvh w-full border-0"
+        inert={!active}
+        tabIndex={active ? 0 : -1}
       />
       <button
         type="button"
@@ -127,12 +140,13 @@ export function CodeWorkbenchFrame({
       ) : null}
       <PluginPanelOverlay
         panel={activePanel}
+        active={active}
         onClose={() => {
           panelRequest.current++;
           setActivePanel(null);
         }}
       />
-      <Dialog open={instanceOpen} onOpenChange={setInstanceOpen}>
+      <Dialog open={active && instanceOpen} onOpenChange={setInstanceOpen}>
         <DialogContent
           className="max-h-[85vh] overflow-y-auto sm:max-w-xl"
           aria-describedby={undefined}

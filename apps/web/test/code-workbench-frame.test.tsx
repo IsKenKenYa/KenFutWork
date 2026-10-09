@@ -289,9 +289,9 @@ it("本地实例弹窗带语音设置段：Code 模式就地调语音，cookie �
   // 语音段渲染出来（设置页同一组件），设置与模型目录都实际取数
   expect(await screen.findByRole("heading", { name: "语音" })).toBeTruthy();
   await waitFor(() =>
-    expect(calls.some((call) => call.path.includes("/api/voice/settings"))).toBe(
-      true,
-    ),
+    expect(
+      calls.some((call) => call.path.includes("/api/voice/settings")),
+    ).toBe(true),
   );
   await waitFor(() =>
     expect(calls.some((call) => call.path.includes("/api/voice/models"))).toBe(
@@ -305,4 +305,89 @@ it("本地实例弹窗带语音设置段：Code 模式就地调语音，cookie �
   expect(JSON.stringify(voiceCall?.headers ?? {})).not.toContain(
     "Authorization",
   );
+});
+
+it("隐藏Code窗口继续bootstrap但不处理导航，恢复时同一文档收到活动状态", async () => {
+  vi.stubGlobal("fetch", async () => Response.json({ plugins: [] }));
+  const navigate = vi.fn();
+  const view = render(
+    <CodeWorkbenchFrame active={false} onModeChange={navigate} />,
+  );
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  if (!frame.contentWindow) throw new Error("Code窗口缺失");
+  const send = vi.spyOn(frame.contentWindow, "postMessage");
+  const event = (data: unknown) =>
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        origin: window.location.origin,
+        source: frame.contentWindow,
+        data,
+      }),
+    );
+  event({ type: "kenfutwork:code-ready" });
+  expect(send).toHaveBeenCalledWith(
+    expect.objectContaining({ type: "kenfutwork:code-bootstrap" }),
+    window.location.origin,
+  );
+  expect(send).toHaveBeenCalledWith(
+    { type: "kenfutwork:workspace-activity", active: false },
+    window.location.origin,
+  );
+  event({ type: "kenfutwork:code-navigate", mode: "design" });
+  expect(navigate).not.toHaveBeenCalled();
+  view.rerender(<CodeWorkbenchFrame active onModeChange={navigate} />);
+  expect(screen.getByTitle("Code 工作台")).toBe(frame);
+  expect(send).toHaveBeenCalledWith(
+    { type: "kenfutwork:workspace-activity", active: true },
+    window.location.origin,
+  );
+  event({ type: "kenfutwork:code-navigate", mode: "design" });
+  expect(navigate).toHaveBeenCalledOnce();
+});
+
+it("Code插件面板切换到非活动工作区时保留同一iframe，返回后恢复原面板", async () => {
+  vi.stubGlobal("fetch", async () =>
+    Response.json({
+      plugins: [
+        {
+          id: "bundled__mihome",
+          installed: true,
+          enabled: true,
+          scope: "shared",
+          ui: [
+            {
+              id: "devices",
+              slot: "sidebar",
+              title: "米家",
+              url: "panel",
+              icon: null,
+            },
+          ],
+        },
+      ],
+    }),
+  );
+  const navigate = vi.fn();
+  const view = render(<CodeWorkbenchFrame active onModeChange={navigate} />);
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: frame.contentWindow,
+      data: {
+        type: "kenfutwork:code-open-plugin",
+        pluginId: "bundled__mihome",
+        entryId: "devices",
+      },
+    }),
+  );
+  const panel = await screen.findByTitle("米家");
+  view.rerender(<CodeWorkbenchFrame active={false} onModeChange={navigate} />);
+  expect(screen.getByTitle("米家")).toBe(panel);
+  expect(screen.queryByRole("dialog", { name: "米家" })).toBeNull();
+  view.rerender(<CodeWorkbenchFrame active onModeChange={navigate} />);
+  expect(await screen.findByRole("dialog", { name: "米家" })).not.toBeNull();
+  expect(screen.getByTitle("米家")).toBe(panel);
 });

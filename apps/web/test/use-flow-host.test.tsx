@@ -50,7 +50,9 @@ describe("useFlowHostEntry", () => {
       const url = String(input);
       if (url.includes("/api/plugins"))
         return Response.json({
-          plugins: [{ name: "kenfutwork-flow", installed: true }],
+          plugins: [
+            { name: "kenfutwork-flow", installed: true, enabled: true },
+          ],
         });
       if (url.includes("/api/flow/host/status")) return await status.promise;
       return Response.json({});
@@ -81,7 +83,9 @@ describe("useFlowHostEntry", () => {
         const url = String(input);
         if (url.includes("/api/plugins"))
           return Response.json({
-            plugins: [{ name: "kenfutwork-flow", installed: true }],
+            plugins: [
+              { name: "kenfutwork-flow", installed: true, enabled: true },
+            ],
           });
         if (url.includes("/api/flow/host/status"))
           return Response.json({

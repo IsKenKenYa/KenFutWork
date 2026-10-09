@@ -23,11 +23,13 @@ import {
 } from "./httpChannelClient.js";
 import { navigateToDesign, requestParentBootstrap } from "./parentBridge.js";
 import { createCodePlatform } from "./platform.js";
+import { installHostWorkspaceActivity } from "./workspaceActivity.js";
 import { createCodeWorkspaceContextResolver } from "./workspaceServiceController.js";
 import { bindCodeWorkspaceServices } from "./workspaceServices.js";
 import "@zui/styles.css";
 
 const params = new URLSearchParams(window.location.search);
+const releaseActivity = installHostWorkspaceActivity(window.parent);
 const bootstrap =
   window.parent !== window ? await requestParentBootstrap(window.parent) : null;
 const workspacePath = params.get("workspace");
@@ -153,6 +155,7 @@ try {
 window.addEventListener(
   "pagehide",
   () => {
+    releaseActivity();
     releaseWorkspaceServices?.();
     client.setViewerContextResolver(null);
     client.dispose();

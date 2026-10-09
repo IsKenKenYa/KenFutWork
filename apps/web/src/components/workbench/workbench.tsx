@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { lazy, Suspense, useCallback } from "react";
+import { lazy, Suspense, useCallback, useState } from "react";
 import { useFlowHostEntry } from "@/hooks/use-flow-host";
 import type { WorkbenchMode } from "@/lib/workbench-surface";
 import { CodeWorkbenchFrame } from "./code-workbench-frame";
@@ -23,6 +23,9 @@ function WorkbenchModeSurface() {
       : requested === "flow" && flowEntry?.available
         ? "flow"
         : "code";
+  const pendingFlow = requested === "flow" && flowEntry === null;
+  const [visited, setVisited] = useState<WorkbenchMode[]>([]);
+  if (!pendingFlow && !visited.includes(mode)) setVisited([...visited, mode]);
   const navigate = useCallback(
     (next: WorkbenchMode) => {
       router.replace(
@@ -31,14 +34,36 @@ function WorkbenchModeSurface() {
     },
     [router],
   );
-  return mode === "code" ? (
-    <CodeWorkbenchFrame onModeChange={navigate} />
-  ) : (
-    <CanvasWorkbench mode={mode} onModeChange={navigate} />
+  return (
+    <>
+      {visited.map((workspaceMode) => (
+        <div
+          key={workspaceMode}
+          data-workbench-mode={workspaceMode}
+          hidden={pendingFlow || mode !== workspaceMode}
+          inert={pendingFlow || mode !== workspaceMode}
+          aria-hidden={pendingFlow || mode !== workspaceMode}
+        >
+          {workspaceMode === "code" ? (
+            <CodeWorkbenchFrame
+              active={!pendingFlow && mode === workspaceMode}
+              onModeChange={navigate}
+            />
+          ) : (
+            <CanvasWorkbench
+              mode={workspaceMode}
+              active={!pendingFlow && mode === workspaceMode}
+              onModeChange={navigate}
+            />
+          )}
+        </div>
+      ))}
+      {pendingFlow ? <div role="status">加载中</div> : null}
+    </>
   );
 }
 
-/** Code 的原文档与画布工作台按客户端导航分别挂载。 */
+/** 已访问文档持续挂载，模式导航只改变活动面，不结束Task或画布运行。 */
 export function Workbench() {
   return (
     <Suspense>
