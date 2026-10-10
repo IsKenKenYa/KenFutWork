@@ -580,7 +580,9 @@ describe("CDP 会话：网络体与耗时采集", () => {
     expect(
       fake.sent.some((call) => call.method === "Network.getResponseBody"),
     ).toBe(false);
-    expect((await session.requests(0)).requests[0]?.responseBody).toBeUndefined();
+    expect(
+      (await session.requests(0)).requests[0]?.responseBody,
+    ).toBeUndefined();
   });
 
   it("超大响应不取体（不给内存与 agent 结果上压力）", async () => {
@@ -628,7 +630,9 @@ describe("CDP 会话：网络体与耗时采集", () => {
       const entry = (await session.requests(0)).requests[0];
       expect(entry?.durationMs).toBe(132);
     });
-    expect((await session.requests(0)).requests[0]?.responseBody).toBeUndefined();
+    expect(
+      (await session.requests(0)).requests[0]?.responseBody,
+    ).toBeUndefined();
   });
 });
 

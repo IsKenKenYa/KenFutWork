@@ -7,9 +7,8 @@
  */
 
 import { join } from "node:path";
-
-import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import type { ServerEnv } from "../../config/env.js";
+import { resolveDesktopDataDir } from "../../desktop/paths.js";
 
 const VOICE_MODELS_SUBDIR = "models";
 
@@ -20,9 +19,12 @@ const VOICE_MODELS_SUBDIR = "models";
 export function resolveVoiceModelsRoot(
   env: Pick<ServerEnv, "desktopDataDir">,
 ): string {
-  return join(resolveDesktopDataDir({
-    env: { KENFUTWORK_DATA_DIR: env.desktopDataDir },
-  }), VOICE_MODELS_SUBDIR);
+  return join(
+    resolveDesktopDataDir({
+      env: { KENFUTWORK_DATA_DIR: env.desktopDataDir },
+    }),
+    VOICE_MODELS_SUBDIR,
+  );
 }
 
 /** 某个内置模型的目录绝对路径。 */

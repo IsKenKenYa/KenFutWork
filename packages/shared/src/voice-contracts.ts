@@ -114,7 +114,9 @@ export type VoiceModelCandidate = z.infer<typeof voiceModelCandidateSchema>;
 export const voiceModelListResponseSchema = z.object({
   models: z.array(voiceModelCandidateSchema),
 });
-export type VoiceModelListResponse = z.infer<typeof voiceModelListResponseSchema>;
+export type VoiceModelListResponse = z.infer<
+  typeof voiceModelListResponseSchema
+>;
 
 export const voiceModelResponseSchema = z.object({
   model: voiceModelCandidateSchema,
@@ -125,7 +127,6 @@ export type VoiceModelResponse = z.infer<typeof voiceModelResponseSchema>;
 export const voiceModelDownloadParamsSchema = z.object({
   modelId: z.string().min(1),
 });
-
 
 // --- 性能检测（规划 §6） ---
 

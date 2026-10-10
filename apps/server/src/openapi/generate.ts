@@ -126,7 +126,10 @@ const TAG_META: Record<string, { folder: string; description: string }> = {
     description: "项目图片资产上传、签名 URL 与删除。",
   },
   usage: { folder: "用量", description: "工作区用量汇总与使用统计。" },
-  voice: { folder: "语音助手", description: "本地实例的听、想、说、模型下载与性能检测。" },
+  voice: {
+    folder: "语音助手",
+    description: "本地实例的听、想、说、模型下载与性能检测。",
+  },
 };
 
 function isZodSchema(value: unknown): value is z.ZodType {

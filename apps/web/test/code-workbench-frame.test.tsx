@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { CodeWorkbenchFrame } from "../src/components/workbench/code-workbench-frame";
 import { LOCAL_ACCESS_LOST_EVENT } from "../src/lib/local-access";
@@ -132,9 +138,9 @@ it("本地实例弹窗带语音设置段：Code 模式就地调语音，cookie �
   // 语音段渲染出来（设置页同一组件），设置与模型目录都实际取数
   expect(await screen.findByRole("heading", { name: "语音" })).toBeTruthy();
   await waitFor(() =>
-    expect(calls.some((call) => call.path.includes("/api/voice/settings"))).toBe(
-      true,
-    ),
+    expect(
+      calls.some((call) => call.path.includes("/api/voice/settings")),
+    ).toBe(true),
   );
   await waitFor(() =>
     expect(calls.some((call) => call.path.includes("/api/voice/models"))).toBe(

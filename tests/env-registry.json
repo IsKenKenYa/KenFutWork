@@ -242,7 +242,9 @@
     },
     "KENFUTWORK_TEST_APP_ROOT": {
       "surface": "test",
-      "readers": ["apps/server/src/features/computer-use/desktop.app.integration.test.ts"],
+      "readers": [
+        "apps/server/src/features/computer-use/desktop.app.integration.test.ts"
+      ],
       "inExamples": false,
       "status": "test-gate",
       "note": "复用有本验收所属标记的临时.app安装根，保持系统TCC权限主体；每次另建数据目录，不接管既有进程"
@@ -258,9 +260,7 @@
     },
     "KENFUTWORK_VOICE_REAL_MODEL": {
       "surface": "test",
-      "readers": [
-        "apps/server/src/features/voice/sherpa.integration.test.ts"
-      ],
+      "readers": ["apps/server/src/features/voice/sherpa.integration.test.ts"],
       "inExamples": true,
       "status": "test-gate",
       "note": "=1 启用语音内置模型的真机验收（会下载 228MB 模型）；生产无读者"

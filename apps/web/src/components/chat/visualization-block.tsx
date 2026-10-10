@@ -4,11 +4,11 @@ import { parseVizSpec, VizBlock, type VizSpec } from "@kenfutwork/ui";
 import {
   createContext,
   isValidElement,
+  type ReactNode,
   useContext,
   useEffect,
   useMemo,
   useState,
-  type ReactNode,
 } from "react";
 
 import { isConversationVisualsEnabled } from "@/lib/conversation-visuals";
@@ -59,9 +59,7 @@ function toText(node: ReactNode): string {
 }
 
 /** 从 `<pre>` 的 children 里认出我们的块（`<code class="language-…">`）。 */
-export function extractFencedBlock(
-  children: ReactNode,
-): FencedBlock | null {
+export function extractFencedBlock(children: ReactNode): FencedBlock | null {
   const element = Array.isArray(children) ? children[0] : children;
   if (!isValidElement(element)) return null;
   const props = element.props as {

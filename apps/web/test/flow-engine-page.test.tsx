@@ -159,9 +159,7 @@ it("WSL2 就绪：改选本机容器后安装按 host 下发", async () => {
   );
   fireEvent.click(await screen.findByRole("button", { name: "本机容器" }));
   fireEvent.click(screen.getByRole("button", { name: "安装引擎栈" }));
-  await waitFor(() =>
-    expect(onInstall).toHaveBeenCalledWith({ kind: "host" }),
-  );
+  await waitFor(() => expect(onInstall).toHaveBeenCalledWith({ kind: "host" }));
 });
 
 it("WSL2 不可用：不摆承载选择（探测说不行就不给假选项）", async () => {

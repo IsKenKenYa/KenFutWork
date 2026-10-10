@@ -137,7 +137,10 @@ export function createMcpService(options: {
             : undefined;
         try {
           await mcpClient.connect(
-            new StreamableHTTPClientTransport(url, transportOptions) as Parameters<Client["connect"]>[0],
+            new StreamableHTTPClientTransport(
+              url,
+              transportOptions,
+            ) as Parameters<Client["connect"]>[0],
             await requestOptions(),
           );
         } catch (streamableError) {
@@ -153,9 +156,14 @@ export function createMcpService(options: {
           }
         }
       } else {
-        await mcpClient.connect(new StdioClientTransport({
-          command: spec.command, args: spec.args, env: spec.env,
-        }), await requestOptions());
+        await mcpClient.connect(
+          new StdioClientTransport({
+            command: spec.command,
+            args: spec.args,
+            env: spec.env,
+          }),
+          await requestOptions(),
+        );
       }
       const client: McpClientLike = {
         listTools: async () => {
@@ -400,7 +408,8 @@ export function createMcpService(options: {
       ensureOpen();
       const kind = rawInput.kind ?? "stdio";
       const input = {
-        ...rawInput, kind,
+        ...rawInput,
+        kind,
         command: kind === "http" ? "" : (rawInput.command ?? ""),
         url: kind === "http" ? (rawInput.url ?? null) : null,
         headers: kind === "http" ? (rawInput.headers ?? {}) : {},

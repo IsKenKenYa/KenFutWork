@@ -415,7 +415,9 @@ export function createBrowserPlugin(): PluginDefinition {
           if (!expression) throw new Error("browser_eval 需要 expression 参数");
           // 与 browser_console / browser_network 同一条通路：经 `ctx.get("browser")` 解析，
           // 而不是闭包里的会话——「overrides 优先」的口径要一致，测试与替换才都能生效。
-          const result = await kernelCtx.get("browser").cdp.evaluateValue(expression);
+          const result = await kernelCtx
+            .get("browser")
+            .cdp.evaluateValue(expression);
           if (!result.ok) {
             return { ok: false, error: result.error ?? "执行出错" };
           }

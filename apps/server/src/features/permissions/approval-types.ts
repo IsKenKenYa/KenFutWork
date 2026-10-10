@@ -65,7 +65,12 @@ export interface ApprovalResolution {
   /** Current facts resolved by the authenticated host, never from answer. */
   binding: Pick<
     ApprovalIdentity,
-    "instanceId" | "taskId" | "runId" | "scopeGeneration" | "branchGeneration" | "planningEpoch"
+    | "instanceId"
+    | "taskId"
+    | "runId"
+    | "scopeGeneration"
+    | "branchGeneration"
+    | "planningEpoch"
   >;
 }
 

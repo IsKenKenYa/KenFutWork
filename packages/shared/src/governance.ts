@@ -343,7 +343,9 @@ export function resolveGovernanceEnvOverrides(
     llmInfiniteRetry: parseBool(source.KENFUTWORK_LLM_INFINITE_RETRY),
     executeTimeoutMs: parseStrictInt(source.KENFUTWORK_EXECUTE_TIMEOUT_MS),
     agentStreamIdleTimeoutMs: (() => {
-      const value = parseStrictInt(source.KENFUTWORK_AGENT_STREAM_IDLE_TIMEOUT_MS);
+      const value = parseStrictInt(
+        source.KENFUTWORK_AGENT_STREAM_IDLE_TIMEOUT_MS,
+      );
       return value !== undefined && value >= 0 ? value : undefined;
     })(),
     codeUiReconnectDelayMs:

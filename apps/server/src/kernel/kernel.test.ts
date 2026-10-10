@@ -525,7 +525,10 @@ describe("agent-run 事件缝（DEC-1，只 3 个事件）", () => {
     const tools: ToolRegistry = kernel.get("tools");
     await tools.execute("demo_write_tool", {});
     await tools.execute("demo_undeclared_tool", {});
-    expect(seen).toEqual(["demo_write_tool:write", "demo_undeclared_tool:none"]);
+    expect(seen).toEqual([
+      "demo_write_tool:write",
+      "demo_undeclared_tool:none",
+    ]);
     kernel.dispose();
   });
 });

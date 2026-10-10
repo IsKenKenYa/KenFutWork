@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  truncateSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -51,7 +57,9 @@ function modelDir() {
 }
 
 /** 让 health 探针（/health + /v1/models）立刻通过。 */
-function healthyFetch(extra?: (url: string, init?: RequestInit) => Response | undefined) {
+function healthyFetch(
+  extra?: (url: string, init?: RequestInit) => Response | undefined,
+) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const custom = extra?.(url, init);
@@ -266,6 +274,8 @@ describe("llamafile 离线「想」档", () => {
         throw new Error("ECONNREFUSED");
       }),
     });
-    await expect(provider.refine({ text: "x" })).rejects.toThrow(/没就绪|启动失败/);
+    await expect(provider.refine({ text: "x" })).rejects.toThrow(
+      /没就绪|启动失败/,
+    );
   });
 });

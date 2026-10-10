@@ -240,7 +240,9 @@ export async function registerFlowHostRoutes(
     if (!parsed.success)
       return error(reply, 400, "application_error", "安装请求格式不正确。");
     // 确认闸：这是用户点「安装引擎」后的入口；已在安装中则 409（轮询 status 即可）。
-    const { started, snapshot } = options.engineInstall.start(parsed.data.launch);
+    const { started, snapshot } = options.engineInstall.start(
+      parsed.data.launch,
+    );
     if (!started && snapshot.state === "installing") {
       return reply.code(409).send(
         applicationErrorResponseSchema.parse({

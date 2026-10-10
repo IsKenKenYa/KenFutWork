@@ -82,10 +82,7 @@ export function registerStaticWebRoutes(
         "content-type",
         MIME_TYPES[extname(file)] ?? "application/octet-stream",
       )
-      .header(
-        "cache-control",
-        noCache ? "no-cache" : "public, max-age=86400",
-      );
+      .header("cache-control", noCache ? "no-cache" : "public, max-age=86400");
     return reply.send(createReadStream(file));
   };
 

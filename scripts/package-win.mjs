@@ -308,7 +308,9 @@ function main() {
   //   它内部按 require('sherpa-onnx-' + platform) 解析，故平台包必须与它同级落在
   //   <exe>/node_modules/ 下；模型文件不在包里（按需下载到用户数据目录，规划 §5/§8）。
   try {
-    const sherpaPkgPath = serverRequire.resolve("sherpa-onnx-node/package.json");
+    const sherpaPkgPath = serverRequire.resolve(
+      "sherpa-onnx-node/package.json",
+    );
     const sherpaDir = dirname(sherpaPkgPath);
     const sherpaOut = join(RELEASE, "node_modules", "sherpa-onnx-node");
     cpSync(sherpaDir, sherpaOut, { recursive: true });
@@ -318,10 +320,14 @@ function main() {
     // 它也可能只挂在 .pnpm 目录里。两条都试，别因为一处解析不到就静默不拷。
     let platformDir;
     try {
-      platformDir = dirname(serverRequire.resolve("sherpa-onnx-win-x64/package.json"));
+      platformDir = dirname(
+        serverRequire.resolve("sherpa-onnx-win-x64/package.json"),
+      );
     } catch {
       const sherpaRequire = createRequire(sherpaPkgPath);
-      platformDir = dirname(sherpaRequire.resolve("sherpa-onnx-win-x64/package.json"));
+      platformDir = dirname(
+        sherpaRequire.resolve("sherpa-onnx-win-x64/package.json"),
+      );
     }
     cpSync(platformDir, join(RELEASE, "node_modules", "sherpa-onnx-win-x64"), {
       recursive: true,

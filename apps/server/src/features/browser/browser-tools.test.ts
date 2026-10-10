@@ -55,8 +55,9 @@ function buildPluginTools(options: {
       requests: [...(options.requests ?? [])],
       nextSeq: 9,
     })),
-    evaluateValue: vi.fn(async () =>
-      options.evalResult ?? { ok: true as const, value: 42, type: "number" },
+    evaluateValue: vi.fn(
+      async () =>
+        options.evalResult ?? { ok: true as const, value: 42, type: "number" },
     ),
   };
   const services = new Map<string, unknown>();

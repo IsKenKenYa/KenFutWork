@@ -7,13 +7,13 @@ import {
   createSkillCatalogRepository,
 } from "../skills/repository.js";
 import { createTaskResourceCloser } from "../task-work/close-resources.js";
-import { createCodeHistoryOutputPrompt } from "./output-history-prompt.js";
+import { createApprovedPlanPromptSection } from "./approved-plan-prompt.js";
 import { createAskUserQuestionToolDefinition } from "./ask-user-question.js";
+import { createCodeAttachmentRepository } from "./attachments/repository.js";
 import { createEnterPlanModeToolDefinition } from "./enter-plan.js";
 import { createExitPlanModeToolDefinition } from "./exit-plan.js";
-import { createApprovedPlanPromptSection } from "./approved-plan-prompt.js";
-import { createCodeAttachmentRepository } from "./attachments/repository.js";
 import { createCodeGuideMiddleware } from "./guide-model-mailbox.js";
+import { createCodeHistoryOutputPrompt } from "./output-history-prompt.js";
 import { createCodeUiRepository } from "./repository.js";
 import { createCodeUiService } from "./service.js";
 import { createUserInputBroker } from "./user-input-broker.js";
@@ -87,26 +87,42 @@ export function createCodeUiPlugin(): PluginDefinition {
         id: "code.planning.enter",
         scope: "code",
         resolve(run) {
-          if (run.scopeHandle?.role !== "main" ||
-            run.scopeHandle.agentId !== "main") return null;
+          if (
+            run.scopeHandle?.role !== "main" ||
+            run.scopeHandle.agentId !== "main"
+          )
+            return null;
           return createEnterPlanModeToolDefinition({
-            control: { enter: (context) => ctx.get("codeUi").enterPlanMode(context) },
+            control: {
+              enter: (context) => ctx.get("codeUi").enterPlanMode(context),
+            },
           });
         },
       });
-      ctx.get("systemPrompt").register(createApprovedPlanPromptSection({
-        read: (context) => ctx.get("codeUi").readApprovedPlan(context),
-      }));
-      ctx.get("systemPrompt").register(createCodeHistoryOutputPrompt({
-        manifest: (context) => ctx.get("codeUi").outputHistory.manifest(context),
-      }));
+      ctx.get("systemPrompt").register(
+        createApprovedPlanPromptSection({
+          read: (context) => ctx.get("codeUi").readApprovedPlan(context),
+        }),
+      );
+      ctx.get("systemPrompt").register(
+        createCodeHistoryOutputPrompt({
+          manifest: (context) =>
+            ctx.get("codeUi").outputHistory.manifest(context),
+        }),
+      );
       ctx.get("tools").registerDynamic({
         id: "code.planning.exit",
         scope: "code",
         resolve(run) {
-          if (run.scopeHandle?.role !== "main" || run.scopeHandle.agentId !== "main") return null;
+          if (
+            run.scopeHandle?.role !== "main" ||
+            run.scopeHandle.agentId !== "main"
+          )
+            return null;
           return createExitPlanModeToolDefinition({
-            control: { exit: (context) => ctx.get("codeUi").exitPlanMode(context) },
+            control: {
+              exit: (context) => ctx.get("codeUi").exitPlanMode(context),
+            },
           });
         },
       });
@@ -125,7 +141,11 @@ export function createCodeUiPlugin(): PluginDefinition {
       const guideExtension: AgentRunExtension = {
         preset: "code",
         createMiddleware(identity, context) {
-          return createCodeGuideMiddleware(ctx.get("codeUi"), identity, context);
+          return createCodeGuideMiddleware(
+            ctx.get("codeUi"),
+            identity,
+            context,
+          );
         },
       };
       ctx.get("capabilities").register("agent-run-extension", {

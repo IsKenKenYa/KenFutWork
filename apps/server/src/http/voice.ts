@@ -12,9 +12,9 @@ import {
   voiceTranscribeResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import { LocalAccessError } from "../features/local-access/types.js";
 import { LocalInstanceError } from "../features/local-instance/service.js";
-import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import type { LocalInstanceService } from "../features/local-instance/types.js";
 import { VoiceAudioError } from "../features/voice/audio.js";
 import {
@@ -271,10 +271,7 @@ export async function registerVoiceRoutes(
       }
 
       const { impl: transcriber, label } =
-        await options.voiceService.resolveTranscriber(
-          user,
-          user.instanceId,
-        );
+        await options.voiceService.resolveTranscriber(user, user.instanceId);
       const { text } = await transcriber.transcribe(audio);
       request.log.info(
         { bytes: audio.byteLength, provider: label },
@@ -304,10 +301,7 @@ export async function registerVoiceRoutes(
       const controller = new AbortController();
       request.raw.once("close", () => controller.abort());
       const { impl: synthesizer } =
-        await options.voiceService.resolveSynthesizer(
-          user,
-          user.instanceId,
-        );
+        await options.voiceService.resolveSynthesizer(user, user.instanceId);
       const { audio, mimeType } = await synthesizer.synthesize(payload.text, {
         signal: controller.signal,
       });
@@ -376,10 +370,15 @@ function sendInvalidInput(reply: FastifyReply, message: string) {
 }
 
 function sendVoiceError(error: unknown, reply: FastifyReply) {
-  if (error instanceof LocalAccessError || error instanceof LocalInstanceError) {
-    return reply.code(error.statusCode).send(applicationErrorResponseSchema.parse({
-      error: { code: error.code, message: error.message },
-    }));
+  if (
+    error instanceof LocalAccessError ||
+    error instanceof LocalInstanceError
+  ) {
+    return reply.code(error.statusCode).send(
+      applicationErrorResponseSchema.parse({
+        error: { code: error.code, message: error.message },
+      }),
+    );
   }
   // 包体不符合契约 → 400（判错的代价是「把客户端错误报成 500」，见 zod-error 的注释）
   if (isZodError(error)) {

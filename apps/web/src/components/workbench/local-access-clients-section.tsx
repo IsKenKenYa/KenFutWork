@@ -93,9 +93,7 @@ export function LocalAccessClientsSection() {
 
       <ul className="mt-3 divide-y rounded-lg border">
         {tokens.length === 0 ? (
-          <li className="px-3 py-2 text-sm text-muted-foreground">
-            没有令牌
-          </li>
+          <li className="px-3 py-2 text-sm text-muted-foreground">没有令牌</li>
         ) : null}
         {tokens.map((token) => (
           <li key={token.id} className="flex items-center gap-3 px-3 py-2">
@@ -154,9 +152,7 @@ export function LocalAccessClientsSection() {
         ))}
       </ul>
 
-      <p className="mt-2 text-xs text-muted-foreground">
-        撤销后需要重新连接
-      </p>
+      <p className="mt-2 text-xs text-muted-foreground">撤销后需要重新连接</p>
 
       {notice ? (
         <p role="status" className="mt-2 text-xs text-muted-foreground">

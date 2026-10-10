@@ -103,7 +103,9 @@ describe("设置 → 模型：上下文自动压缩开关", () => {
     expect(
       screen.getByRole("switch", { name: "上下文自动压缩" }),
     ).toBeChecked();
-    expect(screen.getByRole("switch", { name: "上下文自动压缩" })).toBeVisible();
+    expect(
+      screen.getByRole("switch", { name: "上下文自动压缩" }),
+    ).toBeVisible();
     expect(screen.queryByText(/压缩成摘要/)).toBeNull();
     expect(screen.queryByText(/超长对话会被模型拒绝/)).toBeNull();
   });

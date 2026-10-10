@@ -252,7 +252,10 @@ export function createLlamafileThinkProvider(
   return {
     async ready() {
       if (!model) {
-        return { ok: false, reason: `内置「想」模型不存在：${options.modelId}` };
+        return {
+          ok: false,
+          reason: `内置「想」模型不存在：${options.modelId}`,
+        };
       }
       if (!existsSync(modelFile)) {
         return {
@@ -315,7 +318,9 @@ export function createLlamafileThinkProvider(
       };
       const content = body.choices?.[0]?.message?.content;
       if (typeof content !== "string" || !content.trim()) {
-        throw new Error("离线「想」模型没有返回内容（可能是上下文过长或生成被截断）。");
+        throw new Error(
+          "离线「想」模型没有返回内容（可能是上下文过长或生成被截断）。",
+        );
       }
       return content.trim();
     },
@@ -377,7 +382,11 @@ export function createLlamafileThinkProvider(
             continue;
           }
           const delta = parsed.choices?.[0]?.delta?.content;
-          if (firstChunkAt === undefined && typeof delta === "string" && delta) {
+          if (
+            firstChunkAt === undefined &&
+            typeof delta === "string" &&
+            delta
+          ) {
             firstChunkAt = Date.now();
           }
           if (parsed.usage?.completion_tokens) {

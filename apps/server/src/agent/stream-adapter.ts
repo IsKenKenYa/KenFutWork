@@ -218,7 +218,10 @@ export async function* adaptDeepAgentStream(
       const evt = canonicalToolEvent(rawEvent) ?? rawEvent;
       if (evt.event === "on_chat_model_start")
         activeModelRuns.add(evt.run_id ?? "anonymous-model");
-      if (evt.event === "on_chat_model_end" || evt.event === "on_chat_model_error")
+      if (
+        evt.event === "on_chat_model_end" ||
+        evt.event === "on_chat_model_error"
+      )
         activeModelRuns.delete(evt.run_id ?? "anonymous-model");
       if (
         evt.event === "on_custom_event" &&
@@ -249,7 +252,9 @@ export async function* adaptDeepAgentStream(
         evt.event === "on_chat_model_end"
       ) {
         const message =
-          evt.event === "on_chat_model_stream" ? evt.data?.chunk : evt.data?.output;
+          evt.event === "on_chat_model_stream"
+            ? evt.data?.chunk
+            : evt.data?.output;
         if (
           AIMessageClass.isInstance(message) ||
           AIMessageChunkClass.isInstance(message)
@@ -261,7 +266,9 @@ export async function* adaptDeepAgentStream(
               totals = options.onUsage?.(observed.usage) ?? totals;
             } catch {
               // 观测旁路不能把真实模型正文或完成变成运行失败；不记录潜在敏感异常。
-              console.warn("[model-usage] 用量采集失败，保留本次观测并继续运行。");
+              console.warn(
+                "[model-usage] 用量采集失败，保留本次观测并继续运行。",
+              );
             }
             if (observed.emit)
               yield {

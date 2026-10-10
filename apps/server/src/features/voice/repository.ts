@@ -23,13 +23,11 @@ export function createVoiceRepository(
 ): VoiceRepository {
   return {
     async findVoice(instanceId) {
-      const row = await persistence
-        .forInstance(instanceId)
-        .queryOne<VoiceRow>(
-          `select voice
+      const row = await persistence.forInstance(instanceId).queryOne<VoiceRow>(
+        `select voice
              from public.instance_settings
             where instance_id = :instance`,
-        );
+      );
       return row?.voice ?? null;
     },
 

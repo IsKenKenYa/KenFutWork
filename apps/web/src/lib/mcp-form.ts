@@ -141,7 +141,8 @@ export function buildMcpServerPayload(
       input.headersText,
     );
     errors.push(...headerErrors);
-    const shouldSendHeaders = options.mode === "create" || options.headersTouched;
+    const shouldSendHeaders =
+      options.mode === "create" || options.headersTouched;
     return {
       errors,
       payload: {

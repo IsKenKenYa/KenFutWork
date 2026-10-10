@@ -13,13 +13,16 @@ import {
 import {
   appSettingsSchema,
   resolveExecutionState,
-  zcodeWorkspacePresentationSchema,
   zcodeSessionSubagentsParamsSchema,
+  zcodeWorkspacePresentationSchema,
 } from "@zcode/shared";
 import type { AgentRunService } from "../../agent/runtime.js";
 import { DEFAULT_SANDBOX_ROOT } from "../../agent/sandbox-dir.js";
 import type { ServerEnv } from "../../config/env.js";
-import type { ToolExecutionContext } from "../../kernel/types.js";
+import type {
+  PromptExecutionContext,
+  ToolExecutionContext,
+} from "../../kernel/types.js";
 import type { ModelInvocationSnapshot } from "../../providers/types.js";
 import type { AgentRunMetadataService } from "../agent-runs/agent-run-service.js";
 import type { BlobStore } from "../blob/types.js";
@@ -61,6 +64,8 @@ import type {
   TaskWorkManager,
   TaskWorkRecord,
 } from "../task-work/types.js";
+import { createCodeApprovedPlanReader } from "./approved-plan-reader.js";
+import { createCodeApprovedPlanStore } from "./approved-plan-store.js";
 import { createCodeAttachmentHost } from "./attachments/host.js";
 import type { TrustedCodeInput } from "./attachments/input-types.js";
 import { codeAttachmentsRpc, isCodeAttachmentRpc } from "./attachments/rpc.js";
@@ -69,6 +74,7 @@ import type {
   CodeAttachmentsService,
 } from "./attachments/types.js";
 import { CodeAttachmentError } from "./attachments/types.js";
+import { createCodeUiBackgroundOutputView } from "./background-output-view.js";
 import { CodeUiConnections } from "./connections.js";
 import { createCodeUiWindowController } from "./controller-host.js";
 import { createCodeUiConversation } from "./conversation.js";
@@ -78,19 +84,9 @@ import {
 } from "./file-changes.js";
 import { createCodeUiFileHistory } from "./file-history.js";
 import { CodeUiFileIndex, codeUiViewerRpc } from "./files.js";
+import { createCodeGuideInputs } from "./guide-input.js";
 import { createCodeUiHistoryEdit } from "./history-edit.js";
 import { createCodeUiHistoryFork } from "./history-fork.js";
-import {
-  createCodeUiOwnedHistory,
-  requireHistoryFileChanges,
-  requireStoredFileChanges,
-} from "./owned-history.js";
-import { listCodeSessionSubagents } from "./subagent-directory.js";
-import { createCodeGuideInputs } from "./guide-input.js";
-import { createCodePlanningControl } from "./planning-control.js";
-import { createCodeApprovedPlanStore } from "./approved-plan-store.js";
-import { createCodeApprovedPlanReader } from "./approved-plan-reader.js";
-import type { PromptExecutionContext } from "../../kernel/types.js";
 import { createCodeUiFileWatchers } from "./host-file-watcher.js";
 import {
   type CodeUiHostGitRpc,
@@ -103,14 +99,26 @@ import {
 } from "./host-service-rpc.js";
 import type { CodeAdmittedInput } from "./input-intents.js";
 import { compileCodeUiModelExecution } from "./model-execution-options.js";
+import { createCodeUiOutputHistory } from "./output-history.js";
+import {
+  createCodeUiOwnedHistory,
+  requireHistoryFileChanges,
+  requireStoredFileChanges,
+} from "./owned-history.js";
+import { createCodePlanningControl } from "./planning-control.js";
 import { createCodeUiPluginsHost } from "./plugins.js";
 import {
   type CodeUiProviderSettingsRpc,
   createCodeUiProviderSettingsRpc,
 } from "./provider-settings-rpc.js";
 import type { CodeInputSettlement } from "./queue-control.js";
-import { applyCodeQueueCommand, CODE_QUEUE_COMMANDS, codeInputRouting } from "./queue-control.js";
+import {
+  applyCodeQueueCommand,
+  CODE_QUEUE_COMMANDS,
+  codeInputRouting,
+} from "./queue-control.js";
 import { type CodeUiRepository, CodeUiRepositoryError } from "./repository.js";
+import { listCodeSessionSubagents } from "./subagent-directory.js";
 import { codeUiTaskMeta } from "./task-index.js";
 import type {
   CodeUserInputService,
@@ -126,8 +134,6 @@ import {
   createHumanWorkspaceRpc,
   type HumanWorkspaceRpc,
 } from "./workspace-rpc.js";
-import { createCodeUiOutputHistory } from "./output-history.js";
-import { createCodeUiBackgroundOutputView } from "./background-output-view.js";
 
 export interface CodeUiServiceDeps {
   plugins?: PluginRegistryService;
@@ -190,7 +196,8 @@ function requireLiveUserInput(
     ) ||
     (event.identity.planningEpoch !== undefined &&
       (event.identity.planningEpoch !== (root.state?.planningEpoch ?? 0) ||
-        root.active_run_id !== event.identity.runId || owner.config.planEnabled !== true))
+        root.active_run_id !== event.identity.runId ||
+        owner.config.planEnabled !== true))
   )
     throw new CodeUiRepositoryError(
       "command_conflict",
@@ -221,7 +228,9 @@ export function codeUiCommandFingerprint(
 export class CodeUiService {
   private readonly guideInputs: ReturnType<typeof createCodeGuideInputs>;
   private readonly planning: ReturnType<typeof createCodePlanningControl>;
-  private readonly approvedPlans: ReturnType<typeof createCodeApprovedPlanReader>;
+  private readonly approvedPlans: ReturnType<
+    typeof createCodeApprovedPlanReader
+  >;
   readonly userInputs: CodeUserInputService | undefined;
   readonly outputHistory: ReturnType<typeof createCodeUiOutputHistory>;
   private readonly backgroundOutput: ReturnType<
@@ -259,7 +268,10 @@ export class CodeUiService {
   constructor(private readonly deps: CodeUiServiceDeps) {
     const files = createCodeApprovedPlanStore();
     this.approvedPlans = createCodeApprovedPlanReader({
-      repository: deps.repository, localInstance: deps.localInstance, settings: deps.settings, files,
+      repository: deps.repository,
+      localInstance: deps.localInstance,
+      settings: deps.settings,
+      files,
     });
     this.planning = createCodePlanningControl({
       repository: deps.repository,
@@ -270,7 +282,8 @@ export class CodeUiService {
     });
     this.guideInputs = createCodeGuideInputs({
       repository: deps.repository,
-      refresh: (instanceId, path, projectId) => this.refreshTaskProjection(instanceId, path, projectId),
+      refresh: (instanceId, path, projectId) =>
+        this.refreshTaskProjection(instanceId, path, projectId),
     });
     this.userInputs = deps.userInputs;
     this.inputOwner = {
@@ -306,7 +319,10 @@ export class CodeUiService {
       settings: deps.settings,
       localInstance: deps.localInstance,
       ...(deps.blob ? { blob: deps.blob } : {}),
-      executionOutputRoot: join(dirname(resolve(deps.env.checkpointRoot ?? "data/checkpoints")), "execution-output"),
+      executionOutputRoot: join(
+        dirname(resolve(deps.env.checkpointRoot ?? "data/checkpoints")),
+        "execution-output",
+      ),
     });
     this.backgroundOutput = createCodeUiBackgroundOutputView({
       load: (actor, sessionId) => this.loadConversation(actor, sessionId),
@@ -2009,8 +2025,12 @@ export class CodeUiService {
       };
       const parsed = zcodeSessionSubagentsParamsSchema.parse({
         sessionId: value.sessionId,
-        ...(value.endedLimit !== undefined ? { endedLimit: value.endedLimit } : {}),
-        ...(value.endedCursor !== undefined ? { endedCursor: value.endedCursor } : {}),
+        ...(value.endedLimit !== undefined
+          ? { endedLimit: value.endedLimit }
+          : {}),
+        ...(value.endedCursor !== undefined
+          ? { endedCursor: value.endedCursor }
+          : {}),
       });
       const loaded = await this.loadConversation(user, parsed.sessionId);
       if (
@@ -2074,7 +2094,10 @@ export class CodeUiService {
           childDetails.owner.projectId !== loaded.root.project_id ||
           childDetails.owner.taskId !== loaded.root.id
         )
-          throw new CodeUiRepositoryError("not_found", "子历史详情不属于当前Task。");
+          throw new CodeUiRepositoryError(
+            "not_found",
+            "子历史详情不属于当前Task。",
+          );
         const stored = requireStoredFileChanges(
           childDetails.fileChanges.find((file) => file.turnId === header.turnId)
             ?.details,
@@ -2085,10 +2108,9 @@ export class CodeUiService {
         );
         if (stored) return { result: stored };
       }
-      const owned =
-        loaded.root.state?.inheritedHistory?.some(
-          (turn) => turn.owner.turnId === header.turnId,
-        )
+      const owned = loaded.root.state?.inheritedHistory?.some(
+        (turn) => turn.owner.turnId === header.turnId,
+      )
         ? await createCodeUiOwnedHistory(this.deps).resolve(
             user,
             loaded.root,
@@ -2411,10 +2433,12 @@ export class CodeUiService {
             runId: pending.identity.runId,
             scopeGeneration: Number(root.scope_generation),
             branchGeneration: Number(root.branch_generation),
-            ...(approval?.identity.planningEpoch !== undefined ? {
-              planningEpoch: root.state?.planningEpoch ?? 0,
-              runId: root.active_run_id ?? "",
-            } : {}),
+            ...(approval?.identity.planningEpoch !== undefined
+              ? {
+                  planningEpoch: root.state?.planningEpoch ?? 0,
+                  runId: root.active_run_id ?? "",
+                }
+              : {}),
           },
         };
         resolution = question
@@ -2426,8 +2450,11 @@ export class CodeUiService {
         ack: {
           commandId: envelope.commandId,
           status:
-            resolution?.status === "rejected" ? "rejected"
-              : resolution?.status === "alreadyResolved" ? "noop" : "accepted",
+            resolution?.status === "rejected"
+              ? "rejected"
+              : resolution?.status === "alreadyResolved"
+                ? "noop"
+                : "accepted",
           revisionAtDecision: Number(root.revision),
           ...(resolution && "reasonCode" in resolution
             ? { reasonCode: resolution.reasonCode }
@@ -2854,7 +2881,9 @@ export class CodeUiService {
         const active = root.state?.inputs?.find(
           (input) => input.runId === previous && input.status === "active",
         );
-        const requestedGuide = !compact && busy &&
+        const requestedGuide =
+          !compact &&
+          busy &&
           (payload.requestedDelivery === "guide" ||
             (payload.requestedDelivery === undefined &&
               current.config.followupMode === "guide"));
@@ -2940,8 +2969,9 @@ export class CodeUiService {
               : {}),
           },
           steer: {
-            state:
-              guide ? "steering" : payload.requestedDelivery === "guide"
+            state: guide
+              ? "steering"
+              : payload.requestedDelivery === "guide"
                 ? "fellBack"
                 : "notRequested",
             ...(payload.requestedDelivery === "guide" && !guide

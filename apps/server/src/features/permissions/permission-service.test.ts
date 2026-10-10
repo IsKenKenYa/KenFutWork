@@ -62,10 +62,7 @@ describe("permissions 缝（DEC-4）", () => {
       browserDevtoolsReadEnabled: true,
       browserEvalEnabled: false,
     });
-    expect(restored.listApprovedForever()).toEqual([
-      "execute",
-      "mcp__py__run",
-    ]);
+    expect(restored.listApprovedForever()).toEqual(["execute", "mcp__py__run"]);
     expect(restored.evaluate({ toolName: "execute" }).decision).toBe("allow");
 
     // 读回后再增补：getSettings 里的 approvedForever 同步增长（写穿存储的数据源）
@@ -156,13 +153,13 @@ describe("permissions 缝（DEC-4）", () => {
   });
 
   it("isDangerousCall：名表或非只读声明任一命中即危险", () => {
-    expect(isDangerousCall({ toolName: "mihome_control", access: "write" })).toBe(
-      true,
-    );
+    expect(
+      isDangerousCall({ toolName: "mihome_control", access: "write" }),
+    ).toBe(true);
     expect(isDangerousCall({ toolName: "unknown_plugin_tool" })).toBe(false);
-    expect(isDangerousCall({ toolName: "unknown_plugin_tool", access: "execute" })).toBe(
-      true,
-    );
+    expect(
+      isDangerousCall({ toolName: "unknown_plugin_tool", access: "execute" }),
+    ).toBe(true);
     expect(isDangerousCall({ toolName: "ha_entities", access: "read" })).toBe(
       false,
     );

@@ -839,7 +839,13 @@ export function createCodeUiOutputHistory(deps: {
               throw conflict("同一已验证源输出不能映射多个引用。");
             continue;
           }
-          const copied = await prepareRecord(root, target, source, paths, planObject);
+          const copied = await prepareRecord(
+            root,
+            target,
+            source,
+            paths,
+            planObject,
+          );
           copiedSources.set(source.id, source.ref);
           records.push(copied.record);
           bindings.push(copied.binding);

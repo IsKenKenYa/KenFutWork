@@ -147,7 +147,8 @@ export function createPermissionService(): PermissionService {
     applySettings(next) {
       settings = next;
       foreverApproved.clear();
-      for (const toolName of next.approvedForever) foreverApproved.add(toolName);
+      for (const toolName of next.approvedForever)
+        foreverApproved.add(toolName);
     },
     evaluate({ toolName, threadId, scenario = "interactive", access }) {
       const tier = tierFor(threadId, scenario);

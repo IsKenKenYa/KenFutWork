@@ -93,7 +93,9 @@ describe("外部桌面MCP真实stdio协议边界", () => {
         });
         const next = { runId: "next-quota-run" };
         await service.getState(app, {}, next);
-        expect(await service.click(app, target, next.runId, next)).toMatchObject({ structuredContent: { actionSent: true } });
+        expect(
+          await service.click(app, target, next.runId, next),
+        ).toMatchObject({ structuredContent: { actionSent: true } });
       } finally {
         await service.dispose();
       }

@@ -174,10 +174,9 @@ async function writeBranch(
       {
         ...tuple.checkpoint,
         channel_values: Object.fromEntries(
-          Object.entries(tuple.checkpoint.channel_values).map(([name, value]) => [
-            name,
-            resources.channel(name, value),
-          ]),
+          Object.entries(tuple.checkpoint.channel_values).map(
+            ([name, value]) => [name, resources.channel(name, value)],
+          ),
         ),
       },
       {
@@ -232,7 +231,9 @@ export function createNativeContextBranchService(options: {
     input: AgentContextBranchHistoryCloneInput,
   ): Promise<AgentContextBranchHistoryCloneResult> => {
     const source = sourceConfig(input);
-    const resources = createNativeContextResourceRebinder(input.resourceBindings ?? []);
+    const resources = createNativeContextResourceRebinder(
+      input.resourceBindings ?? [],
+    );
     if (cloning.has(input.targetThreadId))
       throw new Error("上下文目标thread正在使用，不能重复克隆。");
     cloning.add(input.targetThreadId);
@@ -280,7 +281,11 @@ export function createNativeContextBranchService(options: {
         });
         return { reference, boundaries };
       }
-      await lease.store.put(leaseNamespace, input.targetThreadId, { reference: null, writeAttempted: false, complete: true });
+      await lease.store.put(leaseNamespace, input.targetThreadId, {
+        reference: null,
+        writeAttempted: false,
+        complete: true,
+      });
       return { reference: null, boundaries };
     } catch (error) {
       if (lease) {
@@ -302,9 +307,13 @@ export function createNativeContextBranchService(options: {
   };
   return {
     async preparation(targetThreadId) {
-      const persistence = await options.agentPersistenceService.getPersistence();
+      const persistence =
+        await options.agentPersistenceService.getPersistence();
       if (!persistence) throw new Error("原生上下文持久化能力未装配。");
-      const stored = await persistence.store.get(leaseNamespace, targetThreadId);
+      const stored = await persistence.store.get(
+        leaseNamespace,
+        targetThreadId,
+      );
       if (!stored) return null;
       const lease = leaseSchema.parse(stored.value);
       return { targetThreadId, reference: lease.reference };
@@ -329,7 +338,11 @@ export function createNativeContextBranchService(options: {
           const reference = current
             ? encodeNativeContextReference(input.targetThreadId, current.config)
             : null;
-          if (current && lease.complete && !sameReference(reference, input.reference))
+          if (
+            current &&
+            lease.complete &&
+            !sameReference(reference, input.reference)
+          )
             throw new Error("目标上下文已被继续使用，不能丢弃。");
           await lease.checkpointer.deleteThread(input.targetThreadId);
         }

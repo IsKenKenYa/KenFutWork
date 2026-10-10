@@ -337,7 +337,8 @@ const server = createServer(async (req, res) => {
           i / (rate * 0.05),
           (frames - i) / (rate * 0.05),
         );
-        const sample = Math.sin(2 * Math.PI * 440 * (i / rate)) * 0.3 * envelope;
+        const sample =
+          Math.sin(2 * Math.PI * 440 * (i / rate)) * 0.3 * envelope;
         wav.writeInt16LE(Math.round(sample * 32_767), 44 + i * 2);
       }
       console.log(

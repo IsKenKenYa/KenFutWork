@@ -255,11 +255,14 @@ export async function transcribeVoice(
     new Blob([new Uint8Array(wav)], { type: "audio/wav" }),
     "audio.wav",
   );
-  const response = await serverFetch(`${getServerBaseUrl()}/api/voice/transcribe`, {
-    method: "POST",
-    headers: authHeaders(accessToken),
-    body: formData,
-  });
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/voice/transcribe`,
+    {
+      method: "POST",
+      headers: authHeaders(accessToken),
+      body: formData,
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
   const payload = (await response.json()) as VoiceTranscribeResponse;
   return payload.text;
@@ -1252,7 +1255,6 @@ export type AgentSubagentListResponse = {
     tools: string[];
   }>;
   builtin: Array<{ name: string; label: string; description: string }>;
-
 };
 
 export async function fetchSubagents(
@@ -1272,9 +1274,12 @@ export async function fetchSubagents(
 export async function fetchVoiceSettings(
   accessToken: string | null | undefined,
 ): Promise<VoiceSettingsResponse> {
-  const response = await serverFetch(`${getServerBaseUrl()}/api/voice/settings`, {
-    headers: authHeaders(accessToken),
-  });
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/voice/settings`,
+    {
+      headers: authHeaders(accessToken),
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as VoiceSettingsResponse;
 }
@@ -1284,11 +1289,14 @@ export async function updateVoiceSettings(
   accessToken: string | null | undefined,
   patch: VoiceSettingsUpdateRequest,
 ): Promise<VoiceSettingsResponse> {
-  const response = await serverFetch(`${getServerBaseUrl()}/api/voice/settings`, {
-    method: "PUT",
-    headers: authJsonHeaders(accessToken),
-    body: JSON.stringify(patch),
-  });
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/voice/settings`,
+    {
+      method: "PUT",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(patch),
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as VoiceSettingsResponse;
 }
@@ -1348,9 +1356,12 @@ async function voiceModelAction(
 export async function fetchVoiceDiagnose(
   accessToken: string | null | undefined,
 ): Promise<VoiceDiagnoseResponse> {
-  const response = await serverFetch(`${getServerBaseUrl()}/api/voice/diagnose`, {
-    headers: authHeaders(accessToken),
-  });
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/voice/diagnose`,
+    {
+      headers: authHeaders(accessToken),
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as VoiceDiagnoseResponse;
 }
@@ -1360,11 +1371,14 @@ export async function runVoiceDiagnose(
   accessToken: string | null | undefined,
   signal?: AbortSignal,
 ): Promise<VoiceDiagnoseResponse> {
-  const response = await serverFetch(`${getServerBaseUrl()}/api/voice/diagnose`, {
-    method: "POST",
-    headers: authHeaders(accessToken),
-    ...(signal ? { signal } : {}),
-  });
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/voice/diagnose`,
+    {
+      method: "POST",
+      headers: authHeaders(accessToken),
+      ...(signal ? { signal } : {}),
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as VoiceDiagnoseResponse;
 }

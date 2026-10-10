@@ -14,13 +14,13 @@ import {
   fetchInstanceSettings,
   updateInstanceSettings,
 } from "@/lib/server-api";
-import { fetchTerminalShells } from "@/lib/terminal-api";
 import {
   SETTINGS_CONTROL_WIDTH,
   SETTINGS_ROW,
   SETTINGS_ROW_STACK,
   SETTINGS_TITLE,
 } from "@/lib/settings-layout";
+import { fetchTerminalShells } from "@/lib/terminal-api";
 
 /**
  * 设置 → 通用 → 终端：右栏「终端」标签默认用哪个 shell（用户口径：「终端应该是直连 cmd 或者

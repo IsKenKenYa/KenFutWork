@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
+import { fileURLToPath } from "node:url";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { fileURLToPath } from "node:url";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, it } from "vitest";
 
 import type { ServerEnv } from "../../config/env.js";
@@ -194,21 +197,42 @@ describe.skipIf(!ENABLED)("MCP 生命周期（真实 stdio 握手）", () => {
   }, 30_000);
 });
 
-
 async function remoteFixture(protocol: "http" | "sse") {
-  const mcp = new Server({ name: "remote-fixture", version: "1" }, { capabilities: { tools: {} } });
-  mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [{
-    name: "add_numbers", description: "fixture addition",
-    inputSchema: { type: "object", properties: { a: { type: "number" }, b: { type: "number" } }, required: ["a", "b"] },
-  }] }));
-  mcp.setRequestHandler(CallToolRequestSchema, async (request) => ({ content: [{
-    type: "text", text: String(Number(request.params.arguments?.a) + Number(request.params.arguments?.b)),
-  }] }));
-  const streamable = protocol === "http"
-    ? new StreamableHTTPServerTransport({ sessionIdGenerator: randomUUID })
-    : null;
+  const mcp = new Server(
+    { name: "remote-fixture", version: "1" },
+    { capabilities: { tools: {} } },
+  );
+  mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: [
+      {
+        name: "add_numbers",
+        description: "fixture addition",
+        inputSchema: {
+          type: "object",
+          properties: { a: { type: "number" }, b: { type: "number" } },
+          required: ["a", "b"],
+        },
+      },
+    ],
+  }));
+  mcp.setRequestHandler(CallToolRequestSchema, async (request) => ({
+    content: [
+      {
+        type: "text",
+        text: String(
+          Number(request.params.arguments?.a) +
+            Number(request.params.arguments?.b),
+        ),
+      },
+    ],
+  }));
+  const streamable =
+    protocol === "http"
+      ? new StreamableHTTPServerTransport({ sessionIdGenerator: randomUUID })
+      : null;
   let sse: SSEServerTransport | undefined;
-  if (streamable) await mcp.connect(streamable as Parameters<Server["connect"]>[0]);
+  if (streamable)
+    await mcp.connect(streamable as Parameters<Server["connect"]>[0]);
   async function body(request: IncomingMessage) {
     const chunks: Buffer[] = [];
     for await (const chunk of request) chunks.push(Buffer.from(chunk));
@@ -217,11 +241,19 @@ async function remoteFixture(protocol: "http" | "sse") {
   const http = createServer((request, response) => {
     void (async () => {
       if (streamable) {
-        await streamable.handleRequest(request, response, request.method === "POST" ? await body(request) : undefined);
+        await streamable.handleRequest(
+          request,
+          response,
+          request.method === "POST" ? await body(request) : undefined,
+        );
       } else if (request.method === "GET" && request.url === "/mcp") {
         sse = new SSEServerTransport("/messages", response);
         await mcp.connect(sse);
-      } else if (request.method === "POST" && request.url?.startsWith("/messages") && sse) {
+      } else if (
+        request.method === "POST" &&
+        request.url?.startsWith("/messages") &&
+        sse
+      ) {
         await sse.handlePostMessage(request, response, await body(request));
       } else {
         response.writeHead(405).end();
@@ -232,35 +264,58 @@ async function remoteFixture(protocol: "http" | "sse") {
   });
   await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
   const address = http.address();
-  if (!address || typeof address === "string") throw new Error("测试监听地址不可用");
+  if (!address || typeof address === "string")
+    throw new Error("测试监听地址不可用");
   return {
     url: `http://127.0.0.1:${address.port}/mcp`,
     async close() {
       await mcp.close();
       http.closeAllConnections();
-      await new Promise<void>((resolve, reject) => http.close((error) => error ? reject(error) : resolve()));
+      await new Promise<void>((resolve, reject) =>
+        http.close((error) => (error ? reject(error) : resolve())),
+      );
     },
   };
 }
 
 describe.skipIf(!ENABLED)("远程 MCP 实际协议", () => {
-  it.each(["http", "sse"] as const)("%s 握手、工具效果与停用注销", async (protocol) => {
-    const remote = await remoteFixture(protocol);
-    const rows = [fixtureRow({ kind: "http", command: "", args: [], url: remote.url })];
-    const { registry, tools } = trackingRegistry();
-    const service = createMcpService({ env: { version: "test" } as ServerEnv, registry, store: inMemoryStore(rows) });
-    try {
-      await service.connectAll();
-      expect(await service.listStatuses()).toEqual([expect.objectContaining({ status: "connected", kind: "http", toolCount: 1 })]);
-      const tool = tools.get("mcp__fixture__add_numbers");
-      if (!tool) throw new Error("真实远程工具未注册");
-      expect(JSON.stringify(await tool.execute({ a: 20, b: 22 }, {}))).toContain("42");
-      await service.setEnabled("fixture-1", false);
-      expect(tools.size).toBe(0);
-      expect(await service.listStatuses()).toEqual([expect.objectContaining({ status: "disabled", toolCount: 0 })]);
-    } finally {
-      await service.shutdown();
-      await remote.close();
-    }
-  }, 30_000);
+  it.each(["http", "sse"] as const)(
+    "%s 握手、工具效果与停用注销",
+    async (protocol) => {
+      const remote = await remoteFixture(protocol);
+      const rows = [
+        fixtureRow({ kind: "http", command: "", args: [], url: remote.url }),
+      ];
+      const { registry, tools } = trackingRegistry();
+      const service = createMcpService({
+        env: { version: "test" } as ServerEnv,
+        registry,
+        store: inMemoryStore(rows),
+      });
+      try {
+        await service.connectAll();
+        expect(await service.listStatuses()).toEqual([
+          expect.objectContaining({
+            status: "connected",
+            kind: "http",
+            toolCount: 1,
+          }),
+        ]);
+        const tool = tools.get("mcp__fixture__add_numbers");
+        if (!tool) throw new Error("真实远程工具未注册");
+        expect(
+          JSON.stringify(await tool.execute({ a: 20, b: 22 }, {})),
+        ).toContain("42");
+        await service.setEnabled("fixture-1", false);
+        expect(tools.size).toBe(0);
+        expect(await service.listStatuses()).toEqual([
+          expect.objectContaining({ status: "disabled", toolCount: 0 }),
+        ]);
+      } finally {
+        await service.shutdown();
+        await remote.close();
+      }
+    },
+    30_000,
+  );
 });

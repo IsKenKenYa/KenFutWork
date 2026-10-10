@@ -19,8 +19,16 @@ export interface AgentContextBranchBoundary {
 }
 /** 宿主已独立复制的只读历史输出；不签发执行或恢复权限。 */
 export interface AgentContextResourceBinding {
-  source: { id: string; outputRef: string; childSessionId?: string | undefined };
-  target: { id: string; outputRef: string; childSessionId?: string | undefined };
+  source: {
+    id: string;
+    outputRef: string;
+    childSessionId?: string | undefined;
+  };
+  target: {
+    id: string;
+    outputRef: string;
+    childSessionId?: string | undefined;
+  };
 }
 export interface AgentContextBranchHistoryCloneInput
   extends AgentContextBranchCloneInput {
@@ -34,7 +42,9 @@ export interface AgentContextBranchHistoryCloneResult {
 /** 可信消费者提供owned轮次引用；adapter保留完整原生状态，产品不解码opaque key。 */
 export interface AgentContextBranchService {
   /** 仅列出本adapter持久认领的准备；产品核对发表结果后才可清理/释放。 */
-  preparation?(targetThreadId: string): Promise<AgentContextBranchTargetInput | null>;
+  preparation?(
+    targetThreadId: string,
+  ): Promise<AgentContextBranchTargetInput | null>;
   clone(
     input: AgentContextBranchCloneInput,
   ): Promise<AgentContextHistoryReference | null>;

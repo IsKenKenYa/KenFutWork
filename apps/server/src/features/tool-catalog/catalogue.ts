@@ -3,8 +3,8 @@ import { type AgentMiddleware, tool } from "langchain";
 import { z } from "zod";
 import { kernelToolToStructuredTool } from "../../agent/kernel-tools-bridge.js";
 import type { AgentRunExtensionContext } from "../../agent/run-extension.js";
-import type { ToolDefinition } from "../../kernel/types.js";
 import { promptExecutionContext } from "../../kernel/prompt-execution.js";
+import type { ToolDefinition } from "../../kernel/types.js";
 import type { CodeApprovalMode } from "../permissions/approval-types.js";
 import {
   allowsPlanControl,

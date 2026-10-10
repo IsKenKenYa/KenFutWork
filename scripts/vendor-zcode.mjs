@@ -24,7 +24,8 @@ const { parse } = createRequire(import.meta.url)("@babel/parser");
  */
 function matchesReferenceSha(path, expected) {
   const bytes = readFileSync(path);
-  if (createHash("sha256").update(bytes).digest("hex") === expected) return true;
+  if (createHash("sha256").update(bytes).digest("hex") === expected)
+    return true;
   if (bytes.includes(0)) return false;
   return (
     createHash("sha256")

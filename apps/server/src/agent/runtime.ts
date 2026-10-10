@@ -71,6 +71,7 @@ import type {
   AvailableModel,
   AvailableVideoModel,
 } from "../generation/types.js";
+import { promptExecutionContext } from "../kernel/prompt-execution.js";
 import { publicToolArguments } from "../kernel/tool-arguments.js";
 import type {
   PreStepPayload,
@@ -79,7 +80,6 @@ import type {
   ToolExecutionContext,
   ToolRegistry,
 } from "../kernel/types.js";
-import { promptExecutionContext } from "../kernel/prompt-execution.js";
 import type { ModelInvocationSnapshot } from "../providers/types.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
@@ -111,16 +111,16 @@ import {
   MODEL_USAGE_OWNER_METADATA,
   type ModelCallUsage,
 } from "./model-call-usage.js";
+import {
+  createRunModelControl,
+  resolveInstanceModelExecution,
+} from "./model-execution.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { measureTools } from "./prompt-composition.js";
 import type {
   AgentRunExtension,
   AgentRunModelControl,
 } from "./run-extension.js";
-import {
-  createRunModelControl,
-  resolveInstanceModelExecution,
-} from "./model-execution.js";
 import { withBoundWorkDir } from "./sandbox-dir.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
 import { formatTaskNotificationsXml } from "./task-notifications.js";
@@ -729,7 +729,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         throw new Error("当前Agent未装配上下文分支能力。");
       await options.contextBranchProvider.discard(input);
     },
-    async releaseContextBranch(input: AgentContextBranchTargetInput): Promise<void> {
+    async releaseContextBranch(
+      input: AgentContextBranchTargetInput,
+    ): Promise<void> {
       if (!options.contextBranchProvider)
         throw new Error("当前Agent未装配上下文分支能力。");
       await options.contextBranchProvider.release(input);
@@ -2434,23 +2436,26 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 ? {
                     onUsage: (usage: ModelCallUsage) => {
                       const owner = usage.owner ?? run.usageMeta;
-                      return options.runUsage?.update(runId, usage.modelCallId, {
-                        inputTokens: usage.inputTokens,
-                        outputTokens: usage.outputTokens,
-                        provider: owner?.provider ?? "builtin",
-                        model: owner?.model ?? "unknown",
-                        ...(usage.cachedInputTokens === undefined
-                          ? {}
-                          : { cachedInputTokens: usage.cachedInputTokens }),
-                        ...(owner?.providerInstanceId
-                          ? {
-                              providerInstanceId:
-                                owner.providerInstanceId,
-                            }
-                          : {}),
-                        instanceId: usageActor.instanceId,
-                        accessClientId: usageActor.accessClientId,
-                      });
+                      return options.runUsage?.update(
+                        runId,
+                        usage.modelCallId,
+                        {
+                          inputTokens: usage.inputTokens,
+                          outputTokens: usage.outputTokens,
+                          provider: owner?.provider ?? "builtin",
+                          model: owner?.model ?? "unknown",
+                          ...(usage.cachedInputTokens === undefined
+                            ? {}
+                            : { cachedInputTokens: usage.cachedInputTokens }),
+                          ...(owner?.providerInstanceId
+                            ? {
+                                providerInstanceId: owner.providerInstanceId,
+                              }
+                            : {}),
+                          instanceId: usageActor.instanceId,
+                          accessClientId: usageActor.accessClientId,
+                        },
+                      );
                     },
                   }
                 : {}),

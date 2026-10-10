@@ -274,7 +274,10 @@ describe("git 运行时的优先级（本地优先，打包兜底；Windows 桌�
     const resolved = resolveRuntimes({
       env: {},
       exeDir: app,
-      exists: fakeFs([bundledGit, win32.join("C:/Program Files/Git/cmd", "git.exe")]),
+      exists: fakeFs([
+        bundledGit,
+        win32.join("C:/Program Files/Git/cmd", "git.exe"),
+      ]),
       platform: "win32",
       systemPath: "C:/Program Files/Git/cmd",
     });

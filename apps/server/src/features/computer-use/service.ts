@@ -276,7 +276,11 @@ export function createComputerUseService(options: {
     const maximum = governance().maxActionsPerRun;
     const count = actionCounts.get(runId) ?? 0;
     return count >= maximum
-      ? errorResult("action_limit", `本轮 run 已执行 ${count} 个动作，达到上限 ${maximum}（设置可调 computerUseMaxActionsPerRun）。`, { retry: "never" })
+      ? errorResult(
+          "action_limit",
+          `本轮 run 已执行 ${count} 个动作，达到上限 ${maximum}（设置可调 computerUseMaxActionsPerRun）。`,
+          { retry: "never" },
+        )
       : undefined;
   };
 

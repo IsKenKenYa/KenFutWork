@@ -1,5 +1,3 @@
-import { describe, expect, it, vi } from "vitest";
-
 import {
   blobToVoiceWav,
   createBrowserRecorder,
@@ -7,10 +5,11 @@ import {
   encodeWav,
   floatToPcm16,
   resampleLinear,
-  type VoiceDecodeContext,
   VOICE_SAMPLE_RATE,
   VoiceCaptureError,
+  type VoiceDecodeContext,
 } from "@kenfutwork/voice-ui";
+import { describe, expect, it, vi } from "vitest";
 
 /**
  * 采集侧的纯逻辑。WAV 编码与重采样是「服务端能不能吃」的边界，

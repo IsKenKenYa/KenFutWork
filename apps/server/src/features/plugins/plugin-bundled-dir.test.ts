@@ -40,7 +40,7 @@ function writeBundle(rootDir: string, dirName: string, name: string): void {
       'export const inject = ["tools"];',
       "export function apply(ctx) {",
       "  ctx.tools.register({",
-      '    name: `${name}_ping`,',
+      "    name: `${name}_ping`,",
       '    description: "ping",',
       '    parameters: { type: "object", properties: {} },',
       '    execute: () => "pong",',
