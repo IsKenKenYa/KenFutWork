@@ -1,7 +1,7 @@
 "use client";
 
 import type { TerminalShellId } from "@kenfutwork/shared";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Select,
   SelectContent,
@@ -14,13 +14,13 @@ import {
   fetchInstanceSettings,
   updateInstanceSettings,
 } from "@/lib/server-api";
-import { fetchTerminalShells } from "@/lib/terminal-api";
 import {
   SETTINGS_CONTROL_WIDTH,
   SETTINGS_ROW,
   SETTINGS_ROW_STACK,
   SETTINGS_TITLE,
 } from "@/lib/settings-layout";
+import { fetchTerminalShells } from "@/lib/terminal-api";
 
 /**
  * 设置 → 通用 → 终端：右栏「终端」标签默认用哪个 shell（用户口径：「终端应该是直连 cmd 或者
@@ -45,6 +45,15 @@ export function TerminalSettingsSection({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  /** 卸载后不再触碰 React 状态：晚到的响应若继续 dispatch，是卸载后的白渲染，
+   * 且会在测试环境拆除后变成 unhandled rejection（CI 实锤 `window is not defined`）。 */
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -52,13 +61,15 @@ export function TerminalSettingsSection({
         fetchTerminalShells(accessToken),
         fetchInstanceSettings(accessToken),
       ]);
+      if (!mountedRef.current) return;
       setShells(list.shells);
       setAutoShell(list.resolvedShell);
       setShell(settings.settings.terminalShell);
     } catch (err) {
+      if (!mountedRef.current) return;
       setMessage(err instanceof Error ? err.message : "无法读取终端设置。");
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   }, [accessToken]);
 
@@ -71,12 +82,14 @@ export function TerminalSettingsSection({
     setMessage(null);
     try {
       await updateInstanceSettings(accessToken, { terminalShell: next });
+      if (!mountedRef.current) return;
       setShell(next);
       setMessage("已保存");
     } catch (err) {
+      if (!mountedRef.current) return;
       setMessage(err instanceof Error ? err.message : "保存失败。");
     } finally {
-      setSaving(false);
+      if (mountedRef.current) setSaving(false);
     }
   };
 
