@@ -240,9 +240,9 @@ export function SkillsSection({
     !activeWorkspacePath || loadedSkillTargetKey === activeSkillTargetKey;
 
   useEffect(() => {
-    if (!activeWorkspacePath || !targetServiceResolution.rpcReady) return;
+    if ((!activeWorkspacePath && !platform.pluginManagementCapabilities?.instanceScope) || !targetServiceResolution.rpcReady) return;
     void initializePlugins({
-      workspacePath: activeWorkspacePath,
+      workspacePath: activeWorkspacePath ?? "",
       workspaceIdentity: activeWorkspaceIdentity,
       configScope: scopeFilter,
       pluginService: pluginManagementService,
@@ -251,6 +251,7 @@ export function SkillsSection({
     activeWorkspaceIdentity,
     activeWorkspacePath,
     initializePlugins,
+    platform.pluginManagementCapabilities?.instanceScope,
     pluginManagementService,
     scopeFilter,
     targetServiceResolution.rpcReady,
@@ -378,6 +379,19 @@ export function SkillsSection({
     });
   }, [activeWorkspaceIdentity, activeWorkspacePath, skillsService]);
 
+  useEffect(() => {
+    if (!databaseRecords || !platform.pluginSidebar) return;
+    return platform.pluginSidebar.subscribe(() => {
+      void Promise.all([
+        loadSkills(false),
+        usePluginManagementStore.getState().refresh(pluginManagementService),
+        refreshSharedSkillStoreForCurrentWorkspace(),
+      ]).catch((cause) => {
+        if (isCurrentTarget()) setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    });
+  }, [databaseRecords, isCurrentTarget, loadSkills, platform, pluginManagementService, refreshSharedSkillStoreForCurrentWorkspace]);
+
   const setEnabled = useCallback(
     async (skillId: string, enabled: boolean) => {
       if (!activeWorkspacePath && !databaseRecords) return;
@@ -489,10 +503,12 @@ export function SkillsSection({
       allProviderSkills,
       pluginStoreMatchesTarget ? selectPluginsForScope(plugins, installedPlugins, scopeFilter) : [],
       scopeFilter,
+      databaseRecords,
     );
   }, [
     activeWorkspaceIdentity,
     activeWorkspacePath,
+    databaseRecords,
     installedPlugins,
     pluginWorkspaceIdentity,
     pluginWorkspacePath,

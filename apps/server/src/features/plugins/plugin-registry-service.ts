@@ -36,7 +36,10 @@ import {
   loadCompatPlugin,
 } from "./compat-context.js";
 import { validateBundleFiles } from "./compat-validator.js";
-import { describeBundleFiles } from "./package-description.js";
+import {
+  describeBundleFiles,
+  readBundleSkills,
+} from "./package-description.js";
 import {
   exportPluginBundle,
   type PluginExportSpec,
@@ -171,6 +174,16 @@ export interface PluginRouteDispatchResult {
 }
 
 export interface PluginRegistryService {
+  /** 已安装包技能与真实启用态；读取不依赖Project，不包含未安装发行包。 */
+  readSkillPackages(mode?: "code" | "design"): Promise<
+    Array<{
+      pluginId: string;
+      pluginName: string;
+      enabled: boolean;
+      version: string;
+      skills: ReturnType<typeof readBundleSkills>;
+    }>
+  >;
   list(): Promise<PluginMarketEntry[]>;
   /** 机器包库存读面；可安装bundle与profile feature分开，安装态仍由本registry持有。 */
   readPackageInventory(): Promise<{
@@ -690,7 +703,64 @@ export function createPluginRegistryService(
     return { installed: record, report };
   }
 
+  const readPackageFiles = async (id: string) => {
+    const state = await readState();
+    const installed = state.installed.find((entry) => entry.id === id);
+    if (installed) {
+      const directory = bundleDirOf(id);
+      const relative = path.relative(deps.pluginsDir, directory);
+      if (
+        relative.startsWith("..") ||
+        path.isAbsolute(relative) ||
+        !(await lstat(directory)).isDirectory()
+      )
+        throw new PluginRegistryError("插件包目录无效。", "invalid_request");
+      return {
+        files: (await fetchBundleFiles(directory)).files,
+        manifest: installed.manifest,
+      };
+    }
+    const bundled = bundledBundles.find((entry) => entry.id === id);
+    if (!bundled)
+      throw new PluginRegistryError("插件包不存在。", "plugin_not_found");
+    return { files: bundled.files, manifest: bundled.manifest };
+  };
+
   const service: PluginRegistryService = {
+    async readSkillPackages(mode) {
+      const before = await readState();
+      const packages = await Promise.all(
+        before.installed
+          .filter(
+            (record) =>
+              !mode ||
+              !record.manifest.scope ||
+              record.manifest.scope === "shared" ||
+              record.manifest.scope === mode,
+          )
+          .map(async (record) => ({
+            record,
+            skills: readBundleSkills((await readPackageFiles(record.id)).files),
+          })),
+      );
+      const after = await readState();
+      return packages.flatMap(({ record, skills }) => {
+        const current = after.installed.find(
+          (item) =>
+            item.id === record.id && item.installedAt === record.installedAt,
+        );
+        if (!current) return [];
+        return [
+          {
+            pluginId: current.id,
+            pluginName: current.name,
+            enabled: current.enabled,
+            version: current.manifest.version,
+            skills,
+          },
+        ];
+      });
+    },
     async readPackageInventory() {
       const state = await readState();
       return {
@@ -708,24 +778,8 @@ export function createPluginRegistryService(
       };
     },
     async readPackageDescription(id) {
-      const state = await readState();
-      const installed = state.installed.find((entry) => entry.id === id);
-      if (installed) {
-        const directory = bundleDirOf(id);
-        const relative = path.relative(deps.pluginsDir, directory);
-        if (
-          relative.startsWith("..") ||
-          path.isAbsolute(relative) ||
-          !(await lstat(directory)).isDirectory()
-        )
-          throw new PluginRegistryError("插件包目录无效。", "invalid_request");
-        const { files } = await fetchBundleFiles(directory);
-        return describeBundleFiles(files, installed.manifest);
-      }
-      const bundled = bundledBundles.find((entry) => entry.id === id);
-      if (!bundled)
-        throw new PluginRegistryError("插件包不存在。", "plugin_not_found");
-      return describeBundleFiles(bundled.files, bundled.manifest);
+      const { files, manifest } = await readPackageFiles(id);
+      return describeBundleFiles(files, manifest);
     },
     async list() {
       const state = await readState();

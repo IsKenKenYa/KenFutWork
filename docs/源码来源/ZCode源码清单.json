@@ -9841,10 +9841,12 @@
       "source": "references/zcode/packages/ui/src/settings/SkillsSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/SkillsSection.tsx",
       "sha256": "08362ed2dd3e492e04d95ba656b07c22c99264be6a74893a5ad46b7fdec5d021",
-      "copiedSha256": "7a9a802104c8496db920f8f4bc0c444842292ced6cff32771d8064f36a877a64",
+      "copiedSha256": "404753daffa8038bea53385af12a19b6deca27cd9e42fde421276eac248de04c",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "宿主接口：本机安装态无需Project，原详情复用MessageResponse正文，不提供空路径操作；原卸载/开关与修订/目标代际回写保护，不重组页面装配"
+        "宿主接口：本机安装态无需Project，原详情复用MessageResponse正文，不提供空路径操作；原卸载/开关与修订/目标代际回写保护，不重组页面装配",
+        "宿主接口：DB宿主保留已停用插件的只读技能；沿现有库存通知刷新定义与详情，不将包资源投影为文件夹",
+        "宿主接口：原技能页按真实instanceScope初始化无Project插件库存，直达管理文档可读声明"
       ]
     },
     {
@@ -10611,9 +10613,10 @@
       "source": "references/zcode/packages/ui/src/settings/pluginCapabilityProjection.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/pluginCapabilityProjection.ts",
       "sha256": "f23b56b792852439de0d71d0055c8f720f1146f934b1b0948f8391064dac4d39",
-      "copiedSha256": "f7d515250e716ff4211c4c27cd0f0eea36a9727afbb6cdd09d24679b398126a3",
+      "copiedSha256": "1093fadc38f7a2a900b5bae04ca9a0730e8ad024f0f91c9db7d2eb156e58813f",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力投影：DB宿主的技能管理允许停用插件声明继续展示，运行候选仍由真实启用态收窄"
       ]
     },
     {
@@ -24564,6 +24567,15 @@
       "sha256": "606c36baf38b973227273df12a74930e4b4137280eea835c5cd623aa4553c13b",
       "copiedSha256": "606c36baf38b973227273df12a74930e4b4137280eea835c5cd623aa4553c13b",
       "adaptations": []
+    },
+    {
+      "source": "references/zcode/packages/services/src/skills/skillsService.ts",
+      "target": "apps/server/src/features/skills/skill-document-body.ts",
+      "sha256": "85e5f5d3ca1eaf296bbaed5d1b1941cf503a8e10f2da1062db4bdcbbde01b590",
+      "copiedSha256": "dcc00bd8b38c65ff07e5072d324ebc0bccf642145ef9a30e92e008bd0aa6d79a",
+      "adaptations": [
+        "宿主接口：提取原readFrontmatter正文切分及splitFrontmatterAndLeakedBody，返回字符串供原SkillSummary.body投影；原算法保留，完整运行资源不裁剪"
+      ]
     }
   ],
   "buildAdaptations": [

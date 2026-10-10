@@ -10,7 +10,10 @@ import {
   type CodeUiHostRpcHandler,
 } from "../code-ui/host-rpc-handler.js";
 import type { LocalInstanceService } from "../local-instance/types.js";
+import type { PluginRegistryService } from "../plugins/plugin-registry-service.js";
 import type { SkillCatalogRepository } from "./repository.js";
+import { readSkillDocumentBody } from "./skill-document-body.js";
+import { pluginSkillReference } from "./skill-resource-service.js";
 
 function xmlAttribute(value: string) {
   return value
@@ -23,7 +26,11 @@ function xmlAttribute(value: string) {
 /** 原设置、REST、运行工具共读同一技能库存；包资源不是本机目录。 */
 export function createCodeUiSkillsHost(deps: {
   localInstance: LocalInstanceService;
-  repository: SkillCatalogRepository;
+  repository: Pick<
+    SkillCatalogRepository,
+    "listInstanceSkills" | "setEnabled" | "uninstall"
+  >;
+  plugins: Pick<PluginRegistryService, "readSkillPackages">;
 }): Record<string, CodeUiHostRpcHandler> {
   const missing = () =>
     new CodeUiHostRpcError(
@@ -43,21 +50,45 @@ export function createCodeUiSkillsHost(deps: {
         const owner = await deps.localInstance.resolve(actor);
         codeUiSkillsRequestSchema.parse(args[0] ?? {});
         const rows = await deps.repository.listInstanceSkills(owner.instanceId);
+        const plugins = await deps.plugins.readSkillPackages();
         return {
-          skills: rows.map((row) => ({
-            id: row.skillId,
-            ...(row.installationRevision
-              ? { installationRevision: row.installationRevision }
-              : {}),
-            name: row.slug,
-            description: row.description,
-            body: row.skillContent,
-            path: "",
-            scope: "user",
-            enabled: row.enabled,
-            resourceRef: `kenfutwork-skill:${row.skillId}`,
-            metadata: { slug: row.slug },
-          })),
+          skills: [
+            ...rows.map((row) => ({
+              id: row.skillId,
+              ...(row.installationRevision
+                ? { installationRevision: row.installationRevision }
+                : {}),
+              name: row.slug,
+              description: row.description,
+              body: readSkillDocumentBody(row.skillContent),
+              path: "",
+              scope: "user" as const,
+              enabled: row.enabled,
+              resourceRef: `kenfutwork-skill:${row.skillId}`,
+              metadata: { slug: row.slug },
+            })),
+            ...plugins.flatMap((packageInfo) =>
+              packageInfo.skills.map((skill) => ({
+                id: pluginSkillReference(
+                  packageInfo.pluginId,
+                  skill.relativePath,
+                ),
+                name: skill.name,
+                description: skill.description,
+                body: readSkillDocumentBody(skill.content),
+                path: "",
+                resourceRef: pluginSkillReference(
+                  packageInfo.pluginId,
+                  skill.relativePath,
+                ),
+                scope: "plugin" as const,
+                enabled: packageInfo.enabled,
+                pluginId: packageInfo.pluginId,
+                pluginName: packageInfo.pluginName,
+                metadata: { slug: skill.name, version: packageInfo.version },
+              })),
+            ),
+          ],
           capability: {
             userScopeAvailable: true,
             databaseRecords: true,

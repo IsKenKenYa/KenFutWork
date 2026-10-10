@@ -1,6 +1,11 @@
 import { LocalInstanceError } from "../local-instance/service.js";
 import type { LocalInstanceService } from "../local-instance/types.js";
+import type { PluginRegistryService } from "../plugins/plugin-registry-service.js";
 import type { SkillCatalogRepository } from "./repository.js";
+import {
+  findPluginSkill,
+  pluginSkillReference,
+} from "./skill-resource-service.js";
 
 /**
  * skill 目录服务（P5「skill 收敛为缝」）：
@@ -30,37 +35,69 @@ export interface SkillCatalogDetail {
 
 export interface SkillCatalogService {
   /** 实例已安装 skill 清单（含停用，供管理视图；工具侧只展示启用项）。 */
-  listSkills(instanceId: string): Promise<SkillCatalogEntry[]>;
+  listSkills(
+    instanceId: string,
+    mode?: "code" | "design",
+  ): Promise<SkillCatalogEntry[]>;
   /** 按 slug 取 SKILL.md 全文；未安装/停用即 404 语义。 */
   getSkill(
     instanceId: string,
     slug: string,
+    mode?: "code" | "design",
   ): Promise<SkillCatalogDetail | undefined>;
 }
 
 export function createSkillCatalogService(options: {
   localInstance: LocalInstanceService;
-  repository: SkillCatalogRepository;
+  repository: Pick<SkillCatalogRepository, "listInstanceSkills">;
+  plugins?: Pick<PluginRegistryService, "readSkillPackages">;
 }): SkillCatalogService {
   const { repository } = options;
 
   return {
-    async listSkills(instanceId) {
+    async listSkills(instanceId, mode) {
       if ((await options.localInstance.getContext()).instanceId !== instanceId)
         throw new LocalInstanceError();
       const rows = await repository.listInstanceSkills(instanceId);
 
-      return rows.map((row) => ({
-        name: row.slug,
-        description: row.description,
-        enabled: row.enabled,
-        fileCount: 0,
-      }));
+      const plugins = options.plugins
+        ? await options.plugins.readSkillPackages(mode)
+        : [];
+      return [
+        ...rows.map((row) => ({
+          name: row.slug,
+          description: row.description,
+          enabled: row.enabled,
+          fileCount: 0,
+        })),
+        ...plugins.flatMap((packageInfo) =>
+          packageInfo.skills.map((skill) => ({
+            name: pluginSkillReference(
+              packageInfo.pluginId,
+              skill.relativePath,
+            ),
+            description: skill.description,
+            enabled: packageInfo.enabled,
+            fileCount: skill.files.length,
+          })),
+        ),
+      ];
     },
 
-    async getSkill(instanceId, slug) {
+    async getSkill(instanceId, slug, mode) {
       if ((await options.localInstance.getContext()).instanceId !== instanceId)
         throw new LocalInstanceError();
+      if (slug.startsWith("kenfutwork-plugin-skill:")) {
+        if (!options.plugins) throw new Error("插件技能读取未接入。");
+        const skill = await findPluginSkill(options.plugins, slug, mode);
+        return skill
+          ? {
+              name: slug,
+              description: skill.description,
+              content: skill.content,
+            }
+          : undefined;
+      }
       const rows = await repository.listInstanceSkills(instanceId);
 
       const row = rows.find((entry) => entry.slug === slug);

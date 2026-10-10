@@ -78,6 +78,7 @@ export function createAgentRunsPlugin(
       "threads",
       "localInstance",
       "taskWork",
+      "plugins",
     ],
     apply(ctx) {
       let persistence: AgentPersistenceService | undefined;
@@ -260,9 +261,11 @@ export function createAgentRunsPlugin(
           instanceSkillsLoader: createInstanceSkillsLoader({
             canvases: canvasRepository,
             skills: createSkillCatalogRepository(ctx.get("persistence")),
+            plugins: ctx.get("plugins"),
           }),
           instanceSkillsByInstanceLoader: createInstanceSkillsByInstanceLoader({
             skills: createSkillCatalogRepository(ctx.get("persistence")),
+            plugins: ctx.get("plugins"),
           }),
           // 项目绑定的本机工作目录（web 形态「填本机路径」）→ run 的沙箱作用域
           projectWorkDirLoader: createProjectWorkDirLoader({

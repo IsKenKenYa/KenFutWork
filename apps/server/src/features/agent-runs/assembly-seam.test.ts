@@ -1,7 +1,7 @@
 import { tmpdir } from "node:os";
 import { instanceSettingsSchema, type StreamEvent } from "@kenfutwork/shared";
 import Fastify from "fastify";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type {
   KenFutWorkAgent,
   KenFutWorkAgentFactory,
@@ -15,6 +15,7 @@ import {
   ToolDeniedError,
 } from "../../kernel/context.js";
 import { createAgentModesPlugin } from "../agent-modes/plugin.js";
+import { createPluginInventoryFixture } from "../code-ui/plugins.test-fixture.js";
 import { createLocalInstanceService } from "../local-instance/service.js";
 import { createMemoryTaskWorkManager } from "../task-work/test-store.js";
 import { createAgentRunsPlugin } from "./plugin.js";
@@ -32,6 +33,10 @@ const SEAM_ACTOR = {
   instanceId: "00000000-0000-4000-8000-000000000001",
   accessClientId: null,
 };
+const pluginCleanups: Array<() => Promise<void>> = [];
+afterEach(async () => {
+  for (const release of pluginCleanups.splice(0)) await release();
+});
 
 function makeEnv(): ServerEnv {
   return {
@@ -74,7 +79,7 @@ describe("agent-runs × agent-modes 装配缝（pre-step 指令 + 工具门）",
       } as unknown as KenFutWorkAgent;
     };
 
-    const { kernel, app } = assembleSeamKernel(agentFactory);
+    const { kernel, app } = await assembleSeamKernel(agentFactory);
     try {
       const threadId = "thread-seam-plan";
       await kernel.get("agentModes").activate(threadId, "plan");
@@ -118,7 +123,7 @@ describe("agent-runs × agent-modes 装配缝（pre-step 指令 + 工具门）",
       } as unknown as KenFutWorkAgent;
     };
 
-    const { kernel, app } = assembleSeamKernel(agentFactory);
+    const { kernel, app } = await assembleSeamKernel(agentFactory);
     try {
       const threadId = "thread-seam-solo";
       await kernel.get("agentModes").activate(threadId, "solo");
@@ -167,7 +172,9 @@ describe("agent-runs × agent-modes 装配缝（pre-step 指令 + 工具门）",
 });
 
 /** 按 server profile 的真实接线方式组合内核（events + emitPreStep 同源）。 */
-function assembleSeamKernel(agentFactory: KenFutWorkAgentFactory) {
+async function assembleSeamKernel(agentFactory: KenFutWorkAgentFactory) {
+  const inventory = await createPluginInventoryFixture();
+  pluginCleanups.push(inventory.dispose);
   const bus = new AgentRunEventBus();
   const kernelEvents = createKernelEvents(bus);
   const app = Fastify();
@@ -189,6 +196,7 @@ function assembleSeamKernel(agentFactory: KenFutWorkAgentFactory) {
       app,
       events: bus,
       overrides: {
+        plugins: inventory.registry,
         taskWork: createMemoryTaskWorkManager(),
         processSandbox: {} as never,
         executionScopes: {} as never,

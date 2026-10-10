@@ -50,12 +50,14 @@ async function openSkillsPage(
     root?: boolean;
     workspacePath?: string;
     deferToggle?: boolean;
+    pluginSkill?: boolean;
   } = {},
 ) {
   installCodeRootBrowser();
   const calls: Array<{ service: string; method: string; args: unknown[] }> = [];
   const fallback = createCodeRootHostFetch(calls, { rejectOpen: false });
   let delayNextRead = false;
+  let pluginInstalled = true;
   let settleRead: (value: Response) => void = () => {};
   const pendingRead = new Promise<Response>((resolve) => {
     settleRead = resolve;
@@ -76,10 +78,51 @@ async function openSkillsPage(
     body: "# 技能正文\n\n- Unicode😀\n",
     metadata: { slug: "native-skill" },
   };
+  if (scenario.pluginSkill)
+    Object.assign(record, {
+      id: "kenfutwork-plugin-skill:local__probe/skills%2Finspect%2FSKILL.md",
+      scope: "plugin",
+      pluginId: "local__probe",
+      pluginName: "probe",
+      enabled: false,
+      resourceRef:
+        "kenfutwork-plugin-skill:local__probe/skills%2Finspect%2FSKILL.md",
+    });
   vi.stubGlobal("fetch", async (url: string, options?: RequestInit) => {
     if (url.endsWith("/api/plugins")) return Response.json({ plugins: [] });
     if (url.endsWith("/rpc")) {
       const call = JSON.parse(String(options?.body));
+      if (scenario.pluginSkill && call.service === "plugin-management") {
+        calls.push(call);
+        if (call.method === "uninstallPlugin") {
+          pluginInstalled = false;
+          return Response.json({ result: null });
+        }
+        const info = {
+          id: "local__probe",
+          name: "probe",
+          enabled: record.enabled,
+          source: "url",
+          marketplace: "kenfutwork-local",
+          rootPath: "/packages/probe",
+          skillRootCount: 1,
+          commandRootCount: 0,
+          mcpServerNames: [],
+          version: "1.0",
+        };
+        return Response.json({
+          result:
+            call.method === "listPlugins"
+              ? { plugins: pluginInstalled ? [info] : [], diagnostics: [] }
+              : {
+                  marketplaces: [],
+                  availablePlugins: [],
+                  installedPlugins: [],
+                  restorableBuiltins: [],
+                  diagnostics: [],
+                },
+        });
+      }
       if (call.service === "mcp-sync") {
         calls.push(call);
         return Response.json({
@@ -104,7 +147,7 @@ async function openSkillsPage(
             );
           return Response.json({
             result: {
-              skills: [record],
+              skills: scenario.pluginSkill && !pluginInstalled ? [] : [record],
               diagnostics: scenario.invalidDiagnostic ? [null] : [],
               capability: {
                 userScopeAvailable: true,
@@ -182,6 +225,30 @@ async function openSkillsPage(
     changeTarget: (path: string) => view.rerender(page(path)),
   };
 }
+
+it("原技能页保留停用插件的只读定义与正文，不展示DB卸载/开关或虚构目录", async () => {
+  const { calls, record } = await openSkillsPage({ pluginSkill: true });
+  fireEvent.click(await screen.findByRole("button", { name: /native-skill/ }));
+  await screen.findByRole("heading", { name: "技能正文" });
+  expect(screen.getByText("Unicode😀")).not.toBeNull();
+  expect(screen.queryByRole("button", { name: "卸载" })).toBeNull();
+  expect(screen.queryByRole("switch")).toBeNull();
+  expect(record.enabled).toBe(false);
+  expect(
+    calls
+      .filter((call) => call.service === "skills")
+      .every((call) => call.method === "list"),
+  ).toBe(true);
+  await act(async () => {
+    await client
+      ?.getChannel("plugin-management")
+      .call("uninstallPlugin", [{ pluginId: "local__probe" }]);
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("heading", { name: "技能正文" })).toBeNull(),
+  );
+  expect(screen.queryByRole("button", { name: /native-skill/ })).toBeNull();
+});
 
 it("无Project原技能页显示真实本机包，启停写回相同安装记录", async () => {
   const { calls, record } = await openSkillsPage();

@@ -82,7 +82,7 @@ file.resolvePath 规范化真实路径，workspace.open 绑定或创建实际 Co
 
 原 Root 的 setting.get/update 已按原 AppSettings/稀疏 patch 契约接真实工作区设置。语言、消息/工具显示、快捷键和本次运行产生的 tab/焦点等非敏感 UI 偏好存于前向 code_ui_app_preferences JSONB；recentProjects 仍由既有列持有，不复制第二份。读面同一 MVCC 行读取两者，写面按原子 JSON merge 保留未送叶子；未知字段/凭据字段拒绝。引用目录必须是当前工作区活跃 Code 项目，写入持有 FOR SHARE，归档先完成则整条拒绝。读取移除归档 tab 后按原激活条目重映射索引并清理关联焦点，最近项目按原 UI 固定规则去重保留前10项。该前置服务不转换历史调试数据，不代表原 Root 及运行偏好消费者已完成挂载。
 
-Code 宿主已直接挂原 Root。file.ensureConversationWorkspace 沿原 IFileService 返回真实 `{path, created, workspacePurpose: "conversation"}`，共享 cwd 按当前 Workspace 身份隔离，并经 Project 服务绑定固定主画布；冷并发复用身份，重开保留文件，已归档默认项目的迟到 ensure 返回 409。目录选择先 resolvePath，再 workspace.open，绑定失败交回原选择器保持重试。原 Root 只消费真实 hello.clientMode；同源父工作台与独立 Code 文档的刷新资格沿原 navigation 判定恢复，不伪造 desktop-continuous。此轮不新增 HTTP/WS schema，原 contract 继续由 shared 导出。
+Code 宿主已直接挂原 Root。file.ensureConversationWorkspace 沿原 IFileService 返回真实 `{path, created, workspacePurpose: "conversation"}`，共享 cwd 按当前 Workspace 身份隔离，并经 Project 服务建立真实 Code 默认对话项目与工作目录；冷并发复用身份，重开保留文件，已归档默认项目的迟到 ensure 返回 409。目录选择先 resolvePath，再 workspace.open，绑定失败交回原选择器保持重试。原 Root 只消费真实 hello.clientMode；同源父工作台与独立 Code 文档的刷新资格沿原 navigation 判定恢复，不伪造 desktop-continuous。此轮不新增 HTTP/WS schema，原 contract 继续由 shared 导出。
 
 Code主标题的轻量元信息由宿主明确选择原Task.getTaskMeta读面，返回来自真实原V4快照的Task元信息；主/子消息流继续走原SessionDataLayer，不增加session/read旧消息展示链。未声明宿主策略的原平台仍消费原session snapshot/converter。此选择仅涉及宿主接口，HTTP/SSE帧结构未变化，原契约与Schema仍从shared再导出。
 
@@ -109,7 +109,9 @@ Code 的原 `plugin-management` 通道现已将 `listPlugins` 与 `getPluginsOve
 
 原 `skills.list/setEnabled/deleteSkill/buildPromptContext` 在 skills feature 贡献，复用现有技能仓库、REST与运行目录数据。实例包返回 `scope:user`、真实 `resourceRef` 与空物理 `path`；不需要Project，不假作项目安装、文件目录或软链。原详情沿MessageResponse显示正文。原删除入口在本机包边界标为卸载并仅移除安装，保留可见定义；定义CRUD、目录及链接安装／市场检索仍在接线，不计本片完成。
 
-启停及卸载需回传 `installationRevision`，由既有安装时间的UTC精确文本派生，并在原仓库SQL条件中原子匹配；卸载重装后旧请求404，不能改新安装。无新增配置库或SQL迁移。旧集中Skills桥及其项目/Task绑定退役；文件、Git与终端继续沿真实Project/Task权限边界。外部Agent扫描/同步原页面标未接入、禁用操作且不发送扫描/导入请求；不返回假空数据。设置页与共享技能消费接口都保护目标/服务/读取代际，写入响应未知只读对账不自动重放。当前Composer的原 `getSkillReferenceCatalog` 与会话冻结目录接线另行继续，不能用管理页列表替代运行消费。
+启停及卸载需回传 `installationRevision`，由既有安装时间的UTC精确文本派生，并在原仓库SQL条件中原子匹配；卸载重装后旧请求404，不能改新安装。无新增配置库或SQL迁移。旧集中Skills桥及其项目/Task绑定退役；文件、Git与终端继续沿真实Project/Task权限边界。外部Agent扫描/同步原页面标未接入、禁用操作且不发送扫描/导入请求；不返回假空数据。设置页与共享技能消费接口都保护目标/服务/读取代际，写入响应未知只读对账不自动重放。
+
+插件定义从同一注册表已安装包读取，返回 `scope:plugin`、稳定 `resourceRef` 与空物理路径；停用保留只读定义，卸载移除。资源身份为 `kenfutwork-plugin-skill:${encodeURIComponent(pluginId)}/${encodeURIComponent(relativeSkillPath)}`，不能按同名猜归属或映射成文件夹。原 Markdown 详情只展示按固定 ZCode 正文算法提取的 body，运行目录／`use_skill` 仍读取完整 SKILL.md 和包内相对资源。实例、canonical 相对路径、启用态及 Code／Design 模式都由既有资源服务核对；停用／卸载后拒绝运行读取。原轮次 loader 接同一注册表，并保留已取得的目录快照；Composer 选择与引用消费仍须逐场景验收，不以管理列表替代执行。
 
 `provider` 复用原 `zcodeAgentProviderSchema` 的 `glm` wire 标识，表示原 Agent 协议身份，不是 BYOK 供应商选择。技能列表与诊断条目无效时宿主通道明确拒绝，原页面显示读取错误，不转成假空目录。
 
