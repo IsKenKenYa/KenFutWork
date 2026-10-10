@@ -1,0 +1,97 @@
+name: 代码风险扫描（社区引擎）
+
+# CodeQL 之外的白嫖补充：Semgrep（规则库驱动，抓 CodeQL 规则面之外的惯用坑）与
+# Bearer（OWASP/隐私数据流视角）。两者对公开仓库都**免账号、免 token**。
+#
+# 口径与 osv-scanner 相同：本链是「让风险被看见」（Security 标签 + 代码扫描告警），
+# 不在此处染红——存量债务不该让每个 PR 常红；拦新增高危是 CodeQL 与门禁链的职责。
+# 扫描范围只含第一方代码：packages/zcode-* 与 packages/third-party 是 ZCode 上游
+# 移植包（代码标识保持上游），告警归属上游，不进我们的账。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # 每周一次：规则库更新后，老提交上的新规则命中也会被重新比对出来
+    - cron: 0 21 * * 1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sast-community-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semgrep:
+    name: Semgrep（社区 CI 规则包）
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # references/* 是 submodule 指针，不拉取即天然不在扫描面内
+          submodules: false
+          persist-credentials: false
+      - name: Semgrep 扫描（规则包 p/ci，命中不上报退出码）
+        run: |
+          set -euo pipefail
+          docker run --rm -v "${GITHUB_WORKSPACE}:/src" -w /src \
+            semgrep/semgrep:v1.180.0 \
+            semgrep scan --config p/ci \
+              --exclude "packages/zcode-cua" \
+              --exclude "packages/zcode-model-option-map" \
+              --exclude "packages/zcode-provider" \
+              --exclude "packages/zcode-rpc" \
+              --exclude "packages/zcode-services" \
+              --exclude "packages/zcode-shared" \
+              --exclude "packages/zcode-window-controller" \
+              --exclude "packages/third-party" \
+              --sarif --output /src/semgrep.sarif
+          echo "· Semgrep SARIF 已生成"
+      - name: 上传 SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@9f759ee644a3e7c15c1390abf49868036c00067b # v3.38.3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  bearer:
+    name: Bearer（OWASP / 隐私数据流）
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: false
+          persist-credentials: false
+      - name: Bearer 扫描（SARIF 上报，命中不改退出码）
+        uses: bearer/bearer-action@828eeb928ce2f4a7ca5ed57fb8b59508cb8c79bc # v2
+        with:
+          version: v2.1.1
+          format: sarif
+          output: bearer.sarif
+          # 只报告不染红：有命中也退 0，告警进代码扫描由人跟进。skip-path 单行逗号
+          # 分隔（折叠换行会在逗号后混入空格，路径就匹配不上了）。
+          exit-code: "0"
+          skip-path: packages/zcode-cua/**,packages/zcode-model-option-map/**,packages/zcode-provider/**,packages/zcode-rpc/**,packages/zcode-services/**,packages/zcode-shared/**,packages/zcode-window-controller/**,packages/third-party/**
+      - name: 上传 SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@9f759ee644a3e7c15c1390abf49868036c00067b # v3.38.3
+        with:
+          sarif_file: bearer.sarif
+          category: bearer
