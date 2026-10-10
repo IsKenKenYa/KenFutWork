@@ -2188,6 +2188,32 @@ function ConversationComposerImpl({
             onSendCompressionCommand={onSendCompressionCommand}
           />
         </span>
+        {/* 语音入口（可见麦克风）：按住按钮录音，松开提交转写；按住输入卡的手势并存 */}
+        {voice ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-md"
+            disabled={disabled}
+            onPointerDown={(event) => {
+              // 捕获指针：按住后移出按钮再松手，pointerup 仍派发给按钮，不会漏掉停止
+              event.currentTarget.setPointerCapture?.(event.pointerId);
+              voice.startRecording();
+            }}
+            onPointerUp={() => voice.stopRecording()}
+            onPointerCancel={() => voice.stopRecording()}
+            data-testid="v4-composer-voice"
+            aria-label={voice.recording ? "停止录音并转写" : "语音输入"}
+            className={cn(
+              "cursor-pointer rounded-lg text-muted-foreground transition-colors",
+              voice.recording &&
+                "animate-pulse bg-foreground text-background hover:bg-foreground/90",
+            )}
+          >
+            <MicIcon className="size-4" />
+            <span className="sr-only">{voice.recording ? "停止录音并转写" : "语音输入"}</span>
+          </Button>
+        ) : null}
         {showStopControl ? (
           <ControlHintTooltip title={stopTooltipTitle} shortcut="Esc">
             <Button
@@ -2260,6 +2286,7 @@ function ConversationComposerImpl({
       sessionId,
       showStopControl,
       stopTooltipTitle,
+      voice,
       workspaceIdentity,
       workspacePath,
     ],
@@ -2294,33 +2321,6 @@ function ConversationComposerImpl({
           onOpen={onOpenRunningBackgroundWorks}
           openTarget={backgroundWorkOpenTarget}
         />
-        {/* 语音入口（可见麦克风）：按住按钮录音，松开即提交转写；按住输入卡的手势并存 */}
-        {voice ? (
-          <Button
-            type="button"
-            variant="secondary"
-            size="icon-md"
-            disabled={disabled}
-            onPointerDown={(event) => {
-              // 捕获指针：按住后移出按钮再松手，pointerup 仍派发给按钮，不会漏掉停止
-              event.currentTarget.setPointerCapture?.(event.pointerId);
-              voice.startRecording();
-            }}
-            onPointerUp={() => voice.stopRecording()}
-            onPointerCancel={() => voice.stopRecording()}
-            data-testid="v4-composer-voice"
-            aria-label={voice.recording ? "停止录音并转写" : "语音输入"}
-            className={cn(
-              "cursor-pointer rounded-lg transition-colors",
-              voice.recording
-                ? "animate-pulse bg-foreground text-background hover:bg-foreground/90"
-                : "text-muted-foreground",
-            )}
-          >
-            <MicIcon className="size-4" />
-            <span className="sr-only">{voice.recording ? "停止录音并转写" : "语音输入"}</span>
-          </Button>
-        ) : null}
       </>
     ),
     [
@@ -2336,7 +2336,6 @@ function ConversationComposerImpl({
       remoteSessionId,
       runningSubagentCount,
       snapshot?.backgroundWorks,
-      voice,
       workspaceIdentity,
       workspacePath,
     ],
