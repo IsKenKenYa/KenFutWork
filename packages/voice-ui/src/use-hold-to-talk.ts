@@ -80,8 +80,10 @@ export interface HoldToTalk {
   onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
   /** 用户手动清掉错误提示。 */
   dismissError: () => void;
-  /** 麦克风按钮的显式开关（点击开麦 / 录音中再点提交转写）。 */
-  toggleRecording: () => void;
+  /** 麦克风按钮按下沿：立即开麦（按住录音）。 */
+  startRecording: () => void;
+  /** 麦克风按钮松开沿：停止并提交转写。 */
+  stopRecording: () => void;
 }
 
 /** 起手就要放行的交互控件（规划 §7 点名的四类 + 同族控件）。 */
@@ -398,22 +400,27 @@ export function useHoldToTalk(options: HoldToTalkOptions): HoldToTalk {
   }, []);
 
   /**
-   * 麦克风按钮的显式开关：空闲/起手 → 直接开麦（跳过 200ms 手势阈值）；
-   * 录音中 → 提交转写。与按住手势共用同一状态机与收尾路径。
-   * pointerId 给占位值——显式开关不受 window pointerup 的指针过滤影响，
-   * 只有再次点击按钮才会停。
+   * 麦克风按钮「按住录音」的按下沿：立即开麦（跳过手势阈值与暖身窗口）。
+   * pointerId 用占位 -1——window 的 pointerup 监听按指针过滤，真实松手不会误触发提交，
+   * 停止必须走显式的 stopRecording（按钮松开沿）。
    */
-  const toggleRecording = useCallback(() => {
+  const startRecording = useCallback(() => {
     if (!enabled || phase === "transcribing") {
       return;
     }
-    if (session.current.kind === "active") {
-      void submit();
+    if (pending.current || session.current.kind !== "idle") {
       return;
     }
-    clearPending();
-    void beginRecording(1);
-  }, [beginRecording, clearPending, enabled, phase, submit]);
+    void beginRecording(-1);
+  }, [beginRecording, enabled, phase]);
+
+  /** 麦克风按钮「按住录音」的松开沿：提交转写（仅在活跃录音时）。 */
+  const stopRecording = useCallback(() => {
+    if (session.current.kind !== "active") {
+      return;
+    }
+    void submit();
+  }, [submit]);
 
   const displayStatus = useMemo(() => {
     if (phase === "recording") {
@@ -429,6 +436,7 @@ export function useHoldToTalk(options: HoldToTalkOptions): HoldToTalk {
     lockSelection: phase === "recording",
     onPointerDown,
     dismissError,
-    toggleRecording,
+    startRecording,
+    stopRecording,
   };
 }
