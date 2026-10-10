@@ -1,8 +1,8 @@
 "use client";
 import type { ManagementTarget } from "@kenfutwork/shared";
+import { WorkbenchModeNavigation } from "@zcode/ui/design-shared";
 import {
   Blocks,
-  Code2,
   Cpu,
   Layers,
   ListChecks,
@@ -66,18 +66,6 @@ export function CanvasSidebar({
   const availableModes: WorkbenchMode[] = flowEntry?.available
     ? ["code", "design", "flow"]
     : ["code", "design"];
-  const modeItems = availableModes.map((id) => ({
-    id,
-    label: id === "code" ? "Code" : id === "design" ? "Design" : "Flow",
-    icon:
-      id === "code" ? (
-        <Code2 className="h-4 w-4 shrink-0" />
-      ) : id === "design" ? (
-        <Palette className="h-4 w-4 shrink-0" />
-      ) : (
-        <Workflow className="h-4 w-4 shrink-0" />
-      ),
-  }));
   return (
     <>
       {sidebarCollapsed /* 收起态：图标栏（模式切换 + 插件 + 底部头像） */ ? (
@@ -92,19 +80,12 @@ export function CanvasSidebar({
             <PanelLeftOpen className="h-4 w-4" />
           </button>
           <div className="my-1 w-6 border-t" />
-          {modeItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              title={item.label}
-              aria-label={item.label}
-              data-active={mode === item.id}
-              onClick={() => switchMode(item.id)}
-              className="rounded-md p-2 hover:bg-muted data-[active=true]:bg-muted data-[active=true]:text-foreground data-[active=false]:text-muted-foreground"
-            >
-              {item.icon}
-            </button>
-          ))}
+          <WorkbenchModeNavigation
+            mode={mode}
+            availableModes={availableModes}
+            onModeChange={switchMode}
+            collapsed
+          />
           <button
             type="button"
             title="插件"
@@ -163,29 +144,11 @@ export function CanvasSidebar({
           {/* 模式切换（开关式：一个分段控件内左右切换 Code / Design / Flow）。
               三段并存时每段只有 ~60px：内边距收到最小、文字 13px、超宽截断，
               否则最后一个（Flow）会被挤变形。 */}
-          <div className="px-2 pt-1 pb-0.5">
-            <div
-              role="radiogroup"
-              aria-label="模式切换"
-              className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5"
-            >
-              {modeItems.map((item) => (
-                // biome-ignore lint/a11y/useSemanticElements: 分段控件用的是 radiogroup/radio 模式（原生 radio 无法承载这套样式与布局）
-                <button
-                  key={item.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={mode === item.id}
-                  data-active={mode === item.id}
-                  onClick={() => switchMode(item.id)}
-                  className="flex min-h-[30px] min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-1.5 text-[13px] whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:text-foreground data-[active=true]:shadow-sm"
-                >
-                  {item.icon}
-                  <span className="truncate">{item.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          <WorkbenchModeNavigation
+            mode={mode}
+            availableModes={availableModes}
+            onModeChange={switchMode}
+          />
 
           <div className="mx-3 my-2 border-t" />
 

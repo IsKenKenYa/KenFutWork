@@ -1,5 +1,18 @@
 import { z } from "zod";
 
+/** 可用模式由既有宿主能力判定，顺序沿现有顶部按钮。 */
+export const workbenchModesSchema = z
+  .tuple([z.literal("code"), z.literal("design")])
+  .rest(z.literal("flow"))
+  .refine((modes) => modes.length <= 3);
+export type WorkbenchModes = z.infer<typeof workbenchModesSchema>;
+export const workbenchNavigationSchema = z
+  .object({
+    type: z.literal("kenfutwork:workbench-navigation"),
+    availableModes: workbenchModesSchema,
+  })
+  .strict();
+
 /** 宿主控制当前文档的输入活动，不控制Run或会话生命周期。 */
 export const workspaceActivitySchema = z
   .object({
@@ -61,6 +74,7 @@ export const codeUiBootstrapSchema = z.object({
     .nullable(),
   management: managementTargetSchema.optional(),
   managementAvailable: z.boolean().optional(),
+  workbenchModes: workbenchModesSchema.optional(),
 });
 export const codeUiParentRequestSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("kenfutwork:code-ready") }),
@@ -78,7 +92,7 @@ export const codeUiParentRequestSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("kenfutwork:code-navigate"),
-    mode: z.literal("design"),
+    mode: z.enum(["design", "flow"]),
   }),
 ]);
 export type CodeUiBootstrap = z.infer<typeof codeUiBootstrapSchema>;

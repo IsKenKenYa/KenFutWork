@@ -287,7 +287,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
-            <DropdownMenuSub>
+            {!platform.workbenchNavigation ? <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <PencilRuler className="size-4" />
                 {intl.formatMessage({ id: "settings.interfaceMode" })}
@@ -305,7 +305,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
                   </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
-            </DropdownMenuSub>
+            </DropdownMenuSub> : null}
             {/* 快捷键设置：缩放子菜单 label 读生效表，设置页改绑后即时跟随 */}
             {/* 收口重复缩放子菜单时误留了语言之后的那份，导致菜单顺序变成
                 语言→缩放→主题；账户菜单分组顺序固定为 语言→主题→界面模式→缩放→用量→登录/登出，

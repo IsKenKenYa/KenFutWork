@@ -534,7 +534,16 @@ export interface HostPluginSidebarEntry {
   icon: string | null;
 }
 
+export type HostWorkbenchMode = "code" | "design" | "flow";
+export interface HostWorkbenchNavigation {
+  getSnapshot(): { mode: HostWorkbenchMode; availableModes: readonly HostWorkbenchMode[] };
+  subscribe(listener: () => void): () => void;
+  open(mode: HostWorkbenchMode): void;
+}
+
 export interface IPlatformService {
+  /** 宿主模式导航；运行和原会话仍留在各自文档。 */
+  workbenchNavigation?: HostWorkbenchNavigation;
   /** 宿主独立管理文档；未声明的平台保留原窗口导航。 */
   openSettingsDocument?: () => void;
   openPluginStoreDocument?: (target: { pluginId?: string; intent?: "add-marketplace"; returnScopeKey?: string }) => void;

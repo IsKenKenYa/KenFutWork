@@ -2,8 +2,8 @@
 
 import type { ManagementTarget } from "@kenfutwork/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useFlowHostEntry } from "@/hooks/use-flow-host";
 import { installDesktopExternalLinks } from "@/lib/desktop-system";
+import type { FlowEntry } from "@/lib/flow-embed";
 import { SIDEBAR_RAIL_WIDTH } from "@/lib/panel-layout";
 import { useFlowEngineInstall } from "@/lib/use-flow-engine-install";
 import {
@@ -29,14 +29,15 @@ export function CanvasWorkbench({
   onModeChange,
   active = true,
   onOpenManagement,
+  flowEntry,
 }: {
   mode: "design" | "flow";
   onModeChange: (mode: WorkbenchMode) => void;
   active?: boolean;
   onOpenManagement: (target: ManagementTarget) => void;
+  flowEntry: FlowEntry | null;
 }) {
   const accessToken = null;
-  const { entry: flowEntry } = useFlowHostEntry();
   const flowFrameRef = useRef<FlowCanvasFrameHandle>(null);
   const canvasFrameRef = useRef<HTMLIFrameElement>(null);
   const sendCanvasActivity = useCallback(() => {

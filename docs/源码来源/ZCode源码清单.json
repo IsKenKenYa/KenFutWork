@@ -1657,13 +1657,14 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebar.tsx",
       "sha256": "312065bd80ff3a74b498dde96270a9f430f86808933625b02e4a1a6cbd56bf49",
-      "copiedSha256": "88766a320f58bfc865134a45937b8aecaa904a9b4355e8535ccd00a889093042",
+      "copiedSha256": "d48b08eb34444bc83a6c49323f1899a18dc40fe60d24ab5f149522f7c63f76f3",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "宿主接口：原市场下扩展插件入口槽，沿用原Button及PluginIcon，入口数据和面板由现有库存及宿主提供",
         "宿主入口扩展：原Button及图标直达原技能/MCP页，通过原设置导航意图固定本机作用域，不创建Task",
-        "能力显隐：恢复原自动化Button/CalendarClock导航；分组任务快捷入口仍仅在服务可用时显示"
+        "能力显隐：恢复原自动化Button/CalendarClock导航；分组任务快捷入口仍仅在服务可用时显示",
+        "品牌／模式文案：原侧栏顶部插入既有横排模式按钮的共享展示，保留原导航与任务装配"
       ]
     },
     {
@@ -1716,12 +1717,13 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebarFooter.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebarFooter.tsx",
       "sha256": "5f64bddab48988a8cea50ea65f615d6b1f02bb63a2a40b232f207cfea30a9a57",
-      "copiedSha256": "01c8c58217394b1bc4f56aea845744b7eeef7230054c6575cee8ed60024ffb66",
+      "copiedSha256": "c7c6a76499b83b7f94d86d6bf37965268905713bbd3ffada4bed73da924a7111",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：未提供云账户的宿主隐藏原云徽标/登录/退出，保留原偏好与用量项",
         "品牌适配：无用户名时的回退显示名改 KenFutWork",
-        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
+        "能力显隐：宿主提供顶部模式按钮时移除旧界面模式菜单，避免重复入口"
       ]
     },
     {
@@ -14358,11 +14360,12 @@
       "source": "references/zcode/packages/shared/src/index.ts",
       "target": "packages/zcode-shared/src/index.ts",
       "sha256": "6fe33b1fdc42af4449155a13c540d137731d723bde3fa639e47bbca0f403a725",
-      "copiedSha256": "67354ee7bf0aa3bbc61f7d64db894977f283b4d00a568ec849a3bad158f40d4d",
+      "copiedSha256": "b9c69e6c40c3649e86dbd2fc90530a7069d8a0cc0029514a12db2a8db120f980",
       "adaptations": [
         "本机Project与固定Task目录的qualified身份按local路由、持久化和恢复；保留原远程身份及权限校验。",
         "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。",
-        "宿主接口：导出插件入口身份类型，供原侧栏与Platform边界消费"
+        "宿主接口：导出插件入口身份类型，供原侧栏与Platform边界消费",
+        "宿主契约：导出HostWorkbenchMode与HostWorkbenchNavigation供原UI及Design共用"
       ]
     },
     {
@@ -14567,7 +14570,7 @@
       "source": "references/zcode/packages/shared/src/platform.ts",
       "target": "packages/zcode-shared/src/platform.ts",
       "sha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "copiedSha256": "3db301c76d93c7930828b9ee160ec3b43efd4a8cb4a9275bceb0b09bc9962e52",
+      "copiedSha256": "ed9f476333e6fac3387e701175e3e85b4c8a9eeca81a21485da2c4b6e4a3ea2a",
       "adaptations": [
         "宿主能力接口：增加可选云账户支持标记；未声明的原宿主行为不变",
         "宿主接口：可选自动化/嵌入浏览器/CUA/远程能力声明；未声明保持原平台语义",
@@ -14582,7 +14585,8 @@
         "宿主接口：声明现有MCP记录、项目/OAuth/请求头/参数/SSE支持态，未声明保持原平台行为",
         "宿主接口：本机技能记录与外部Agent扫描/同步实际能力声明，未声明保持原行为",
         "宿主能力声明：来源安装与市场源管理独立显隐，不改变未声明宿主的原行为",
-        "宿主接口：独立管理文档导航、真实实例插件作用域和实例设置模式显隐；缺省原平台行为"
+        "宿主接口：独立管理文档导航、真实实例插件作用域和实例设置模式显隐；缺省原平台行为",
+        "宿主接口：可选workbenchNavigation承接同源Code／Design／可信Flow导航，原coding执行树不变"
       ]
     },
     {

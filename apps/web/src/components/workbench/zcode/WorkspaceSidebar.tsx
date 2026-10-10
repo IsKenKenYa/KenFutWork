@@ -140,6 +140,7 @@ import {
 } from "@zui/lib/workspaceSidebarDrag.js";
 import { createPortal } from "react-dom";
 import { PluginSidebarNavigation } from "./host/PluginSidebarNavigation.js";
+import { HostWorkbenchModeNavigation } from "./host/WorkbenchModeNavigation.js";
 
 function WorkspaceNewTaskTooltip({
   children,
@@ -1261,6 +1262,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       className="flex h-full flex-col overflow-hidden"
     >
       <div className="h-12 [app-region:drag]"></div>
+      <HostWorkbenchModeNavigation />
       <div className="relative flex-1 min-h-0 overflow-hidden">
         <div
           className={cn(

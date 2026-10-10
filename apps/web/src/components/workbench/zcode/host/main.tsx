@@ -25,10 +25,12 @@ import { renderManagementDocument } from "./managementDocument.js";
 import { requestManagementOpen } from "./managementNavigation.js";
 import { navigateToDesign, requestParentBootstrap } from "./parentBridge.js";
 import { createCodePlatform } from "./platform.js";
+import { createHostWorkbenchNavigation } from "./workbenchNavigation.js";
 import { installHostWorkspaceActivity } from "./workspaceActivity.js";
 import { createCodeWorkspaceContextResolver } from "./workspaceServiceController.js";
 import { bindCodeWorkspaceServices } from "./workspaceServices.js";
 import "@zui/styles.css";
+import "./workbenchNavigation.css";
 
 const params = new URLSearchParams(window.location.search);
 const releaseActivity = installHostWorkspaceActivity(window.parent);
@@ -60,12 +62,15 @@ const voiceTransport: CodeVoiceTransport = {
     return result.settings;
   },
 };
-const platform = createCodePlatform(
-  client,
-  bootstrap?.managementAvailable
+const workbenchNavigation = bootstrap?.workbenchModes
+  ? createHostWorkbenchNavigation(window.parent, bootstrap.workbenchModes)
+  : undefined;
+const platform = createCodePlatform(client, {
+  ...(bootstrap?.managementAvailable
     ? { onOpenManagement: requestManagementOpen }
-    : {},
-);
+    : {}),
+  ...(workbenchNavigation ? { workbenchNavigation } : {}),
+});
 const onWorkspaceContextChange = createCodeWorkspaceContextResolver(client);
 const element = document.getElementById("root");
 if (!element) throw new Error("Code 宿主缺少 root 容器");
@@ -178,6 +183,7 @@ window.addEventListener(
   "pagehide",
   () => {
     releaseActivity();
+    workbenchNavigation?.dispose();
     releaseWorkspaceServices?.();
     client.setViewerContextResolver(null);
     client.dispose();

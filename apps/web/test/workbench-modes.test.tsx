@@ -221,6 +221,61 @@ it("实例插件启停后Flow模式入口立即按真实库存刷新，无需离
   expect(screen.getByTitle("设计项目 画布")).not.toBeNull();
 });
 
+it("Code的顶部模式能力来自真实宿主库存，Flow停用后同步移除且拒绝迟到导航", async () => {
+  const plugin = { name: "kenfutwork-flow", installed: true, enabled: true };
+  installFixture(true, true, undefined, true, [plugin]);
+  render(
+    <LocalInstanceProvider>
+      <LocalInstanceBoundary>
+        <Workbench />
+      </LocalInstanceBoundary>
+    </LocalInstanceProvider>,
+  );
+  const frame = (await screen.findByTitle(
+    "Code 工作台",
+    {},
+    LAZY,
+  )) as HTMLIFrameElement;
+  if (!frame.contentWindow) throw new Error("Code文档未创建");
+  const send = vi.spyOn(frame.contentWindow, "postMessage");
+  const message = (data: unknown) =>
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        origin: window.location.origin,
+        source: frame.contentWindow,
+        data,
+      }),
+    );
+  await waitFor(() => {
+    message({ type: "kenfutwork:code-ready" });
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "kenfutwork:code-bootstrap",
+        workbenchModes: ["code", "design", "flow"],
+      }),
+      window.location.origin,
+    );
+  });
+  message({ type: "kenfutwork:code-navigate", mode: "flow" });
+  expect(navigation.replace).toHaveBeenCalledWith("/workbench?mode=flow");
+  navigation.replace.mockClear();
+  send.mockClear();
+  plugin.enabled = false;
+  fireEvent(window, new Event(PLUGIN_INVENTORY_CHANGED_EVENT));
+  await waitFor(() =>
+    expect(send).toHaveBeenCalledWith(
+      {
+        type: "kenfutwork:workbench-navigation",
+        availableModes: ["code", "design"],
+      },
+      window.location.origin,
+    ),
+  );
+  message({ type: "kenfutwork:code-navigate", mode: "flow" });
+  expect(navigation.replace).not.toHaveBeenCalled();
+});
+
 it("Flow可用态读取在飞时保留已访问的Code文档，落定后按需挂Flow且切回不重建", async () => {
   let settle!: (response: Response) => void;
   const pending = new Promise<Response>((resolve) => {

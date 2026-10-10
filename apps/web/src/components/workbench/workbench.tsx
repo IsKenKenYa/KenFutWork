@@ -1,8 +1,8 @@
 "use client";
 
-import type { ManagementTarget } from "@kenfutwork/shared";
+import type { ManagementTarget, WorkbenchModes } from "@kenfutwork/shared";
 import { useRouter, useSearchParams } from "next/navigation";
-import { lazy, Suspense, useCallback, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { useFlowHostEntry } from "@/hooks/use-flow-host";
 import type { WorkbenchMode } from "@/lib/workbench-surface";
 import { CodeWorkbenchFrame } from "./code-workbench-frame";
@@ -18,7 +18,12 @@ function WorkbenchModeSurface() {
   const search = useSearchParams();
   const router = useRouter();
   const requested = search.get("mode");
-  const { entry: flowEntry } = useFlowHostEntry(requested === "flow");
+  const { entry: flowEntry } = useFlowHostEntry();
+  const availableModes = useMemo<WorkbenchModes>(
+    () =>
+      flowEntry?.available ? ["code", "design", "flow"] : ["code", "design"],
+    [flowEntry?.available],
+  );
   const mode =
     requested === "design"
       ? "design"
@@ -52,6 +57,7 @@ function WorkbenchModeSurface() {
         >
           {workspaceMode === "code" ? (
             <CodeWorkbenchFrame
+              availableModes={availableModes}
               active={
                 !pendingFlow && mode === workspaceMode && management === null
               }
@@ -60,6 +66,7 @@ function WorkbenchModeSurface() {
             />
           ) : (
             <CanvasWorkbench
+              flowEntry={flowEntry}
               mode={workspaceMode}
               active={
                 !pendingFlow && mode === workspaceMode && management === null

@@ -4,6 +4,7 @@ import {
   type CodeUiBootstrap,
   codeUiParentRequestSchema,
   type ManagementTarget,
+  type WorkbenchModes,
 } from "@kenfutwork/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentGovernanceSettingsPanel } from "@/components/agent-governance-settings";
@@ -20,15 +21,19 @@ import { LocalAccessClientsSection } from "./local-access-clients-section";
 import { LocalInstanceSection } from "./local-instance-section";
 import { VoiceSettingsSection } from "./voice-settings-section";
 
+const DEFAULT_MODES: WorkbenchModes = ["code", "design"];
+
 /** Code 的独立原文档保护 Design 的 CSS、theme 与 portal。 */
 export function CodeWorkbenchFrame({
   onModeChange,
   active = true,
   onOpenManagement,
+  availableModes = DEFAULT_MODES,
 }: {
-  onModeChange: (mode: "design") => void;
+  onModeChange: (mode: "design" | "flow") => void;
   active?: boolean;
   onOpenManagement?: (target: ManagementTarget) => void;
+  availableModes?: WorkbenchModes;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [instanceOpen, setInstanceOpen] = useState(false);
@@ -39,6 +44,12 @@ export function CodeWorkbenchFrame({
     error: panelError,
   } = usePluginPanels(null, "sidebar", "code");
   const panelRequest = useRef(0);
+  useEffect(
+    () => () => {
+      panelRequest.current++;
+    },
+    [active],
+  );
   useEffect(() => {
     setActivePanel((current) =>
       current
@@ -54,6 +65,13 @@ export function CodeWorkbenchFrame({
     );
   }, [active]);
   useEffect(sendActivity, [sendActivity]);
+  const sendNavigation = useCallback(() => {
+    frame.current?.contentWindow?.postMessage(
+      { type: "kenfutwork:workbench-navigation", availableModes },
+      window.location.origin,
+    );
+  }, [availableModes]);
+  useEffect(sendNavigation, [sendNavigation]);
   const bootstrap = useCallback(() => {
     if (!ready.current) return;
     const message: CodeUiBootstrap = {
@@ -66,9 +84,10 @@ export function CodeWorkbenchFrame({
         .replace(/\/$/, ""),
       user: null,
       ...(onOpenManagement ? { managementAvailable: true } : {}),
+      workbenchModes: availableModes,
     };
     frame.current?.contentWindow?.postMessage(message, window.location.origin);
-  }, [onOpenManagement]);
+  }, [onOpenManagement, availableModes]);
   useEffect(() => {
     const receive = (event: MessageEvent) => {
       if (
@@ -79,7 +98,8 @@ export function CodeWorkbenchFrame({
       const parsed = codeUiParentRequestSchema.safeParse(event.data);
       if (!parsed.success) return;
       if (parsed.data.type === "kenfutwork:code-navigate") {
-        if (active) onModeChange(parsed.data.mode);
+        if (active && availableModes.includes(parsed.data.mode))
+          onModeChange(parsed.data.mode);
       } else if (parsed.data.type === "kenfutwork:open-management") {
         if (active) onOpenManagement?.(parsed.data.target);
       } else if (parsed.data.type === "kenfutwork:code-plugins-changed")
@@ -110,12 +130,12 @@ export function CodeWorkbenchFrame({
         ready.current = true;
         bootstrap();
         sendActivity();
+        sendNavigation();
       }
     };
     window.addEventListener("message", receive);
     bootstrap();
     return () => {
-      panelRequest.current++;
       window.removeEventListener("message", receive);
     };
   }, [
@@ -125,6 +145,8 @@ export function CodeWorkbenchFrame({
     active,
     sendActivity,
     onOpenManagement,
+    availableModes,
+    sendNavigation,
   ]);
   return (
     <>

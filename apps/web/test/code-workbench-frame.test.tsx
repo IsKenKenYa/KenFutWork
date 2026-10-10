@@ -88,7 +88,7 @@ it("插件入口只接受当前Code窗口，并按已启用且适用的库存打
   expect(screen.getByTitle("Code 工作台")).toBe(frame);
 });
 
-it("窗口聚焦刷新交错时，插件打开仍读取最新库存，不静默取消", async () => {
+it("窗口聚焦与模式能力更新交错时，插件打开仍读取最新库存，不静默取消", async () => {
   const payload = {
     plugins: [
       {
@@ -118,7 +118,8 @@ it("窗口聚焦刷新交错时，插件打开仍读取最新库存，不静默�
       });
     return Response.json(payload);
   });
-  render(<CodeWorkbenchFrame onModeChange={vi.fn()} />);
+  const navigate = vi.fn();
+  const view = render(<CodeWorkbenchFrame onModeChange={navigate} />);
   await waitFor(() => expect(reads).toBe(1));
   const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
   fireEvent(
@@ -136,6 +137,12 @@ it("窗口聚焦刷新交错时，插件打开仍读取最新库存，不静默�
   fireEvent(window, new Event("focus"));
   await waitFor(() => expect(reads).toBe(3));
   if (!finishOpen) throw new Error("未建立插件打开目录请求");
+  view.rerender(
+    <CodeWorkbenchFrame
+      onModeChange={navigate}
+      availableModes={["code", "design", "flow"]}
+    />,
+  );
   finishOpen(Response.json(payload));
   expect(await screen.findByTitle("米家")).not.toBeNull();
 });

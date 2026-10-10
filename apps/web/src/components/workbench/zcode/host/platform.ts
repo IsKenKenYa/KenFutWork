@@ -3,7 +3,11 @@ import {
   type PluginMarketEntry,
   projectPluginPanels,
 } from "@kenfutwork/shared";
-import type { ApplicationIconInfo, IPlatformService } from "@zcode/shared";
+import type {
+  ApplicationIconInfo,
+  HostWorkbenchNavigation,
+  IPlatformService,
+} from "@zcode/shared";
 import {
   createCuaPermissionOnboarding,
   localCuaDesktopInvoke,
@@ -16,7 +20,10 @@ import { createWebPlatform } from "./upstream/browserPlatform.js";
 /** e58fe8ce宿主能力缝；目录仍经真实Project UUID解析，不建立Canvas或隐式Task。 */
 export function createCodePlatform(
   client: CodeHttpChannelClient,
-  options: { onOpenManagement?: (target: ManagementTarget) => void } = {},
+  options: {
+    onOpenManagement?: (target: ManagementTarget) => void;
+    workbenchNavigation?: HostWorkbenchNavigation;
+  } = {},
 ): IPlatformService {
   const desktop = localCuaDesktopInvoke();
   const macDesktop =
@@ -25,6 +32,12 @@ export function createCodePlatform(
     !/iPhone|iPad/u.test(navigator.userAgent);
   return {
     ...createWebPlatform(),
+    ...(options.workbenchNavigation
+      ? {
+          workbenchNavigation: options.workbenchNavigation,
+          supportsInterfaceModeSettings: false,
+        }
+      : {}),
     ...(options.onOpenManagement
       ? {
           openSettingsDocument: () =>

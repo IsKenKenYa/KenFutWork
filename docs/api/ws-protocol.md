@@ -49,6 +49,8 @@ Code 使用 `packages/shared/src/code-ui-contracts.ts` 导出的原 V4 协议：
 
 工作台的文档活动桥由 `packages/shared/src/code-ui-host-bridge.ts` 导出 `workspaceActivitySchema`：`{ type: "kenfutwork:workspace-activity", active: boolean }` 是同源父窗口的postMessage，不是HTTP／SSE／WS运行事件。Code／Design子页校验origin及source，非活动时收束焦点和键盘，保留运行、订阅、转录与原iframe。父文档同步隐藏自身portal；首次消息早于监听时，子页读取父iframe的inert属性。Flow握手同时校验当前iframe窗口与配置origin，地址更换后的迟到身份票据不再注入。
 
+顶部模式能力使用同一宿主桥的`workbenchModesSchema`／`workbenchNavigationSchema`。父窗口按现有Flow安装、启用及宿主配置，发送有序Code／Design与可选Flow；子页只接受同源父窗口。原导航发`kenfutwork:code-navigate`，父窗口再次核当前iframe、活动态及真实可用模式，停用后迟到请求无效。Code内部仍为coding，模式变化不终止或重发运行。
+
 共用管理导航同样使用该文件的`managementTargetSchema`。当前Code文档发送`kenfutwork:open-management`，目标仅含原页面、分区和插件／供应商ID，不含凭据或执行身份；父窗口核当前iframe及origin后打开`/code-ui/index.html?document=management`，通过原bootstrap的`management`字段传目标。管理文档只装配原管理providers／页面，不初始化工作区Root；实例操作无需Project／Task。`kenfutwork:management-close`仅从当前管理窗口接受，关闭恢复原文档输入；宿主关闭按钮在子页加载及失败时仍可用。库存通知沿原插件事件同步，两模式消费同一既有服务。此桥不新增HTTP／WS端点。
 
 现阶段已接创建、发送、根会话停止、命令查询、快照/订阅/恢复、历史行读取、Task 索引、文本文件与原 readdir 目录读取。权限/提问、队列、子代理独立停止、文件回退、终端等尚待接通；既有 `/api/ws` 的 Design/终端通道不因此改变。

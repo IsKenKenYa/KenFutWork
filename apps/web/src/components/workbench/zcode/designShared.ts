@@ -13,3 +13,4 @@ export { createWebPlatform } from "./host/upstream/browserPlatform.js";
 export { ZCodeIntlProvider } from "./i18n/IntlProvider.js";
 export { ChatPromptEditor } from "./prompt-editor/ChatPromptEditor.js";
 export { TabStoreProvider } from "./store/TabStoreProvider.js";
+export { WorkbenchModeNavigation } from "./host/WorkbenchModeNavigation.js";
