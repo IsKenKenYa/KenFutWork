@@ -17,11 +17,11 @@ declare global {
 const TabStoreContext = createContext<TabStore | null>(null);
 const fallbackTabStore = createTabStore(null);
 
-export function TabStoreProvider({ children }: { children: ReactNode }) {
+export function TabStoreProvider({ children, onOpenSettings }: { children: ReactNode; onOpenSettings?: () => void }) {
   // 只在首次渲染时创建 store，避免 HMR 重复创建
   const storeRef = useRef<TabStore | null>(null);
   if (!storeRef.current) {
-    storeRef.current = createTabStore();
+    storeRef.current = createTabStore(undefined, { onOpenSettings });
   }
 
   useEffect(() => {

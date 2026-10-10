@@ -3,6 +3,7 @@
 import {
   type CodeUiBootstrap,
   codeUiParentRequestSchema,
+  type ManagementTarget,
 } from "@kenfutwork/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentGovernanceSettingsPanel } from "@/components/agent-governance-settings";
@@ -23,9 +24,11 @@ import { VoiceSettingsSection } from "./voice-settings-section";
 export function CodeWorkbenchFrame({
   onModeChange,
   active = true,
+  onOpenManagement,
 }: {
   onModeChange: (mode: "design") => void;
   active?: boolean;
+  onOpenManagement?: (target: ManagementTarget) => void;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [instanceOpen, setInstanceOpen] = useState(false);
@@ -62,9 +65,10 @@ export function CodeWorkbenchFrame({
         .toString()
         .replace(/\/$/, ""),
       user: null,
+      ...(onOpenManagement ? { managementAvailable: true } : {}),
     };
     frame.current?.contentWindow?.postMessage(message, window.location.origin);
-  }, []);
+  }, [onOpenManagement]);
   useEffect(() => {
     const receive = (event: MessageEvent) => {
       if (
@@ -76,6 +80,8 @@ export function CodeWorkbenchFrame({
       if (!parsed.success) return;
       if (parsed.data.type === "kenfutwork:code-navigate") {
         if (active) onModeChange(parsed.data.mode);
+      } else if (parsed.data.type === "kenfutwork:open-management") {
+        if (active) onOpenManagement?.(parsed.data.target);
       } else if (parsed.data.type === "kenfutwork:code-plugins-changed")
         window.dispatchEvent(new Event(PLUGIN_INVENTORY_CHANGED_EVENT));
       else if (parsed.data.type === "kenfutwork:code-open-plugin") {
@@ -100,7 +106,7 @@ export function CodeWorkbenchFrame({
           });
       } else if (parsed.data.type === "kenfutwork:code-access-lost")
         window.dispatchEvent(new Event(LOCAL_ACCESS_LOST_EVENT));
-      else {
+      else if (parsed.data.type === "kenfutwork:code-ready") {
         ready.current = true;
         bootstrap();
         sendActivity();
@@ -112,7 +118,14 @@ export function CodeWorkbenchFrame({
       panelRequest.current++;
       window.removeEventListener("message", receive);
     };
-  }, [bootstrap, onModeChange, refreshPanels, active, sendActivity]);
+  }, [
+    bootstrap,
+    onModeChange,
+    refreshPanels,
+    active,
+    sendActivity,
+    onOpenManagement,
+  ]);
   return (
     <>
       <iframe

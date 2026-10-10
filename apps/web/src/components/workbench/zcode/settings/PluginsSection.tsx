@@ -74,6 +74,7 @@ import {
 } from "@zui/settings/pluginStoreListing.js";
 import { usePluginManagementStore } from "@zui/store/pluginManagementStore.js";
 import { useTabStore } from "@zui/store/TabStoreProvider.js";
+import { usePlatform } from "@zui/hooks/usePlatform.js";
 import { isWorkspaceTab, type WorkspaceTabState } from "@zui/store/tabStore.js";
 import {
   filterPluginsByQuery,
@@ -159,6 +160,8 @@ function PluginList({
   showMarketplaceBreadcrumb?: boolean;
   onVisibleCountChange?: (count: number) => void;
 }) {
+  const instanceScope = usePlatform().pluginManagementCapabilities?.instanceScope === true && configScope === "user";
+  const canManageTarget = target !== null || instanceScope;
   const { intl, locale } = useZCodeIntl();
   const targetServiceResolution = useWorkspaceServicesResolution(
     target?.workspacePath,
@@ -290,13 +293,13 @@ function PluginList({
   });
   const showUnavailableComputerUse = Boolean(
     configScope === "user" &&
-    target &&
+    canManageTarget &&
     !loading &&
     isComputerUseRemoteOrLinux(computerUseAvailability) &&
     matchesComputerUseSearch(searchQuery),
   );
   const hasEmptySearchResult = Boolean(
-    target &&
+    canManageTarget &&
     !loading &&
     searchQuery.trim() &&
     visibleInstalledPlugins.length === 0 &&
@@ -308,14 +311,14 @@ function PluginList({
     onVisibleCountChange?.(visibleInstalledPlugins.length + visibleBuiltInPlugins.length);
   }, [onVisibleCountChange, visibleBuiltInPlugins.length, visibleInstalledPlugins.length]);
   const refreshAfterPluginChange = useCallback(async () => {
-    if (!target || !targetServiceResolution.rpcReady) return;
+    if (!canManageTarget || !targetServiceResolution.rpcReady) return;
     await initialize({
-      workspacePath: target.workspacePath,
-      workspaceIdentity: target.workspaceIdentity,
+      workspacePath: target?.workspacePath ?? "",
+      workspaceIdentity: target?.workspaceIdentity,
       configScope,
       pluginService: pluginManagementService,
     });
-  }, [initialize, pluginManagementService, configScope, target, targetServiceResolution.rpcReady]);
+  }, [initialize, pluginManagementService, configScope, target, targetServiceResolution.rpcReady, canManageTarget]);
   const handleSetEnabled = useCallback(
     async (pluginId: string, enabled: boolean) => {
       const plugin = plugins.find((candidate) => candidate.id === pluginId);
@@ -471,15 +474,7 @@ function PluginList({
       uninstall.requestUninstall,
     ],
   );
-  useEffect(() => {
-    if (!target || !targetServiceResolution.rpcReady) return;
-    void initialize({
-      workspacePath: target.workspacePath,
-      workspaceIdentity: target.workspaceIdentity,
-      configScope,
-      pluginService: pluginManagementService,
-    });
-  }, [initialize, pluginManagementService, configScope, target, targetServiceResolution.rpcReady]);
+  useEffect(() => { void refreshAfterPluginChange(); }, [refreshAfterPluginChange]);
 
   const renderPluginRows = (items: ZCodePluginInfo[]) => (
     <div className="overflow-hidden rounded-xl bg-surface">
@@ -842,7 +837,7 @@ function PluginList({
             )}
           </div>
         ) : null}
-        {!target ? (
+        {!canManageTarget ? (
           <EmptyState
             message={intl.formatMessage({
               id: "settings.plugin.noWorkspace",
@@ -960,6 +955,7 @@ export function PluginsSection({
   showMarketplaceBreadcrumb = false,
 }: PluginsSectionProps) {
   const { intl } = useZCodeIntl();
+  const platform = usePlatform();
   const tabs = useTabStore((state) => state.tabs);
   const storeActiveWorkspacePath = useTabStore((state) => state.activeWorkspacePath);
   const storeActiveWorkspaceIdentity = useTabStore((state) => state.activeWorkspaceIdentity);
@@ -1050,6 +1046,7 @@ export function PluginsSection({
     [onOpenPluginStore, selectedScope.kind],
   );
   const target = selectedScope.kind === "workspace" ? selectedScope.tab : preferredHost;
+  const instanceSkill = selectedScope.kind === "user" && platform.skillsSettingsCapabilities?.databaseRecords === true;
   const effectiveMcpScopeKey =
     mcpEditorOpen && mcpFormScopeKey ? mcpFormScopeKey : selectedScopeKey;
   const effectiveMcpWorkspace = workspaceTabs.find(
@@ -1061,6 +1058,7 @@ export function PluginsSection({
     mcpEditorOpen && mcpFormScopeKey && mcpFormScopeKey !== "user" && !effectiveMcpWorkspace,
   );
   const mcpTarget = mcpEditorWorkspaceMissing ? null : (effectiveMcpWorkspace ?? preferredHost);
+  const instanceMcp = effectiveMcpScopeKey === "user" && platform.mcpSettingsCapabilities?.databaseRecords === true;
   const effectiveCommandScopeKey =
     commandEditorOpen && commandFormScopeKey ? commandFormScopeKey : selectedScopeKey;
   const effectiveCommandWorkspace = workspaceTabs.find(
@@ -1307,13 +1305,13 @@ export function PluginsSection({
               mcpEditorOpen ? "data-[state=inactive]:hidden" : "mt-6 data-[state=inactive]:hidden"
             }
           >
-            {mcpTarget ? (
+            {mcpTarget || instanceMcp ? (
               <McpSettingsSection
-                workspacePath={mcpTarget.workspacePath}
-                workspaceIdentity={mcpTarget.workspaceIdentity}
-                remoteSessionId={mcpTarget.remoteSessionId}
-                remoteTarget={mcpTarget.remoteTarget}
-                localWorkspacePath={mcpTarget.localWorkspacePath}
+                workspacePath={mcpTarget?.workspacePath}
+                workspaceIdentity={mcpTarget?.workspaceIdentity}
+                remoteSessionId={mcpTarget?.remoteSessionId}
+                remoteTarget={mcpTarget?.remoteTarget}
+                localWorkspacePath={mcpTarget?.localWorkspacePath}
                 scopeFilter={effectiveMcpScopeKey === "user" ? "user" : "workspace"}
                 parentScopeKey={selectedScopeKey}
                 workspaceTabs={workspaceTabs}
@@ -1337,12 +1335,12 @@ export function PluginsSection({
         ) : null}
         {mode === "plugin" || mode === "skill" ? (
           <TabsContent forceMount value="skills" className="mt-6 data-[state=inactive]:hidden">
-            {target ? (
+            {target || instanceSkill ? (
               <SkillsSection
-                workspacePath={target.workspacePath}
-                workspaceIdentity={target.workspaceIdentity}
-                remoteSessionId={target.remoteSessionId}
-                remoteTarget={target.remoteTarget}
+                workspacePath={target?.workspacePath}
+                workspaceIdentity={target?.workspaceIdentity}
+                remoteSessionId={target?.remoteSessionId}
+                remoteTarget={target?.remoteTarget}
                 scopeFilter={selectedScope.kind === "user" ? "user" : "workspace"}
                 searchQuery={searchQueries.skills}
                 onCreateTask={onCreateTask}

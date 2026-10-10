@@ -21,6 +21,8 @@ import {
   type CodeHostConfig,
   CodeHttpChannelClient,
 } from "./httpChannelClient.js";
+import { renderManagementDocument } from "./managementDocument.js";
+import { requestManagementOpen } from "./managementNavigation.js";
 import { navigateToDesign, requestParentBootstrap } from "./parentBridge.js";
 import { createCodePlatform } from "./platform.js";
 import { installHostWorkspaceActivity } from "./workspaceActivity.js";
@@ -58,7 +60,12 @@ const voiceTransport: CodeVoiceTransport = {
     return result.settings;
   },
 };
-const platform = createCodePlatform(client);
+const platform = createCodePlatform(
+  client,
+  bootstrap?.managementAvailable
+    ? { onOpenManagement: requestManagementOpen }
+    : {},
+);
 const onWorkspaceContextChange = createCodeWorkspaceContextResolver(client);
 const element = document.getElementById("root");
 if (!element) throw new Error("Code 宿主缺少 root 容器");
@@ -123,26 +130,41 @@ root.render(<RootStartupLoading label="加载 Code 工作台" />);
 try {
   if (!bootstrap) await client.request<InstanceContext>("/api/instance");
   await client.connect();
-  const hello = await ensureAgentV4ConnectionHandshake(
-    client.services.zcodeAgentService,
-  );
-  await client.refreshWorkspaces();
-  releaseWorkspaceServices = bindCodeWorkspaceServices(client);
-  const workspace = config.workspacePath
-    ? await client.openWorkspace(
-        config.workspacePath,
-        client.projectForPath(config.workspacePath)?.projectId,
-      )
-    : undefined;
-  root.render(
-    <CodeVoiceProvider transport={voiceTransport}>
-      <CodeHost
-        {...(workspace ? { workspace } : {})}
-        user={null}
-        clientMode={hello.clientMode}
-      />
-    </CodeVoiceProvider>,
-  );
+  if (params.get("document") === "management") {
+    releaseWorkspaceServices = bindCodeWorkspaceServices(client);
+    renderManagementDocument(
+      root,
+      client,
+      bootstrap?.management ?? { page: "settings" },
+      () => {
+        window.parent.postMessage(
+          { type: "kenfutwork:management-close" },
+          window.location.origin,
+        );
+      },
+    );
+  } else {
+    const hello = await ensureAgentV4ConnectionHandshake(
+      client.services.zcodeAgentService,
+    );
+    await client.refreshWorkspaces();
+    releaseWorkspaceServices = bindCodeWorkspaceServices(client);
+    const workspace = config.workspacePath
+      ? await client.openWorkspace(
+          config.workspacePath,
+          client.projectForPath(config.workspacePath)?.projectId,
+        )
+      : undefined;
+    root.render(
+      <CodeVoiceProvider transport={voiceTransport}>
+        <CodeHost
+          {...(workspace ? { workspace } : {})}
+          user={null}
+          clientMode={hello.clientMode}
+        />
+      </CodeVoiceProvider>,
+    );
+  }
 } catch (error) {
   console.error("Code 工作台启动失败", error);
   root.render(

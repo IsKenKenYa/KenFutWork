@@ -1,4 +1,5 @@
 import {
+  type ManagementTarget,
   type PluginMarketEntry,
   projectPluginPanels,
 } from "@kenfutwork/shared";
@@ -8,12 +9,14 @@ import {
   localCuaDesktopInvoke,
 } from "./cuaPermissionPlatform.js";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
+import { readManagementSettingsTarget } from "./managementNavigation.js";
 import { openPluginPanel } from "./parentBridge.js";
 import { createWebPlatform } from "./upstream/browserPlatform.js";
 
 /** e58fe8ce宿主能力缝；目录仍经真实Project UUID解析，不建立Canvas或隐式Task。 */
 export function createCodePlatform(
   client: CodeHttpChannelClient,
+  options: { onOpenManagement?: (target: ManagementTarget) => void } = {},
 ): IPlatformService {
   const desktop = localCuaDesktopInvoke();
   const macDesktop =
@@ -22,6 +25,22 @@ export function createCodePlatform(
     !/iPhone|iPad/u.test(navigator.userAgent);
   return {
     ...createWebPlatform(),
+    ...(options.onOpenManagement
+      ? {
+          openSettingsDocument: () =>
+            options.onOpenManagement?.(readManagementSettingsTarget()),
+          openPluginStoreDocument: (target: {
+            pluginId?: string;
+            intent?: "add-marketplace";
+            returnScopeKey?: string;
+          }) =>
+            options.onOpenManagement?.({
+              ...target,
+              page: "plugins",
+              returnScopeKey: "user",
+            }),
+        }
+      : {}),
     supportsCloudAccounts: false,
     supportsAutomations: false,
     supportsEmbeddedBrowser: false,
@@ -49,6 +68,7 @@ export function createCodePlatform(
     pluginManagementCapabilities: {
       sourceInstall: true,
       marketplaceSources: false,
+      instanceScope: true,
     },
     skillsSettingsCapabilities: { databaseRecords: true },
     mcpSettingsCapabilities: {

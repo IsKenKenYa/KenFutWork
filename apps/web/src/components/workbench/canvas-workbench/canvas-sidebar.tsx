@@ -1,4 +1,5 @@
 "use client";
+import type { ManagementTarget } from "@kenfutwork/shared";
 import {
   Blocks,
   Code2,
@@ -32,9 +33,7 @@ type Props = ReturnType<typeof useDesignProjects> & {
   setSidebarCollapsed: Dispatch<SetStateAction<boolean>>;
   startSidebarResize: (event: MouseEvent) => void;
   setSettingsTab: Dispatch<SetStateAction<SettingsTab | null>>;
-  setPluginsOpen: Dispatch<SetStateAction<boolean>>;
-  setSkillsOpen: Dispatch<SetStateAction<boolean>>;
-  setMcpOpen: Dispatch<SetStateAction<boolean>>;
+  onOpenManagement: (target: ManagementTarget) => void;
   flowEntry: FlowEntry | null;
   flowFrameRef: RefObject<FlowCanvasFrameHandle | null>;
   /** Flow 子视图：「引擎」是侧栏导航的显式目的地（信息页），其余项回画布。 */
@@ -58,9 +57,7 @@ export function CanvasSidebar({
   active,
   switchMode,
   setSettingsTab,
-  setPluginsOpen,
-  setSkillsOpen,
-  setMcpOpen,
+  onOpenManagement,
   flowEntry,
   flowFrameRef,
   flowView,
@@ -112,7 +109,7 @@ export function CanvasSidebar({
             type="button"
             title="插件"
             aria-label="插件"
-            onClick={() => setPluginsOpen(true)}
+            onClick={() => onOpenManagement({ page: "plugins" })}
             className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <Layers className="h-4 w-4" />
@@ -195,21 +192,25 @@ export function CanvasSidebar({
           <nav className="space-y-0.5 px-2">
             <button
               type="button"
-              onClick={() => setPluginsOpen(true)}
+              onClick={() => onOpenManagement({ page: "plugins" })}
               className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <Layers className="h-4 w-4 shrink-0" /> 插件
             </button>
             <button
               type="button"
-              onClick={() => setSkillsOpen(true)}
+              onClick={() =>
+                onOpenManagement({ page: "settings", section: "skill" })
+              }
               className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <Blocks className="h-4 w-4 shrink-0" /> 技能
             </button>
             <button
               type="button"
-              onClick={() => setMcpOpen(true)}
+              onClick={() =>
+                onOpenManagement({ page: "settings", section: "mcp" })
+              }
               className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               {/* Server 而不是 Plug：插头字形天生窄（墨迹只占格子 58%），居中也会显得缩在

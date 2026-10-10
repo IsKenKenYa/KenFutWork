@@ -535,8 +535,13 @@ export interface HostPluginSidebarEntry {
 }
 
 export interface IPlatformService {
+  /** 宿主独立管理文档；未声明的平台保留原窗口导航。 */
+  openSettingsDocument?: () => void;
+  openPluginStoreDocument?: (target: { pluginId?: string; intent?: "add-marketplace"; returnScopeKey?: string }) => void;
+  /** 实例管理文档不控制工作区模式；模式由宿主导航持有。 */
+  supportsInterfaceModeSettings?: boolean;
   /** 宿主原市场接线状态；来源安装与市场源管理是独立能力。 */
-  pluginManagementCapabilities?: { sourceInstall: boolean; marketplaceSources: boolean };
+  pluginManagementCapabilities?: { sourceInstall: boolean; marketplaceSources: boolean; instanceScope?: boolean };
   /** 外部Agent扫描/同步的实际支持态；不将安装包伪装文件目录。 */
   supportsExternalAgentSettingsSync?: boolean;
   /** 宿主已接通的原设置能力；不将数据库记录视为目录或符号链接。 */

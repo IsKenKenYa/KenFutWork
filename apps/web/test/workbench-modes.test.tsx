@@ -619,3 +619,207 @@ it("Design插件面板切换到Code后隐藏且保留iframe，返回恢复同一
   expect(await screen.findByRole("dialog", { name: "米家" })).not.toBeNull();
   expect(screen.getByTitle("米家")).toBe(panel);
 });
+
+it("Design打开MCP使用独立原管理文档，可信关闭回到同一画布且不切换模式", async () => {
+  navigation.query = "mode=design";
+  installFixture();
+  render(
+    <LocalInstanceProvider>
+      <LocalInstanceBoundary>
+        <Workbench />
+      </LocalInstanceBoundary>
+    </LocalInstanceProvider>,
+  );
+  const canvas = (await screen.findByTitle(
+    "设计项目 画布",
+    {},
+    LAZY,
+  )) as HTMLIFrameElement;
+  fireEvent.click(screen.getByRole("button", { name: "MCP" }));
+  const manager = (await screen.findByTitle("管理设置")) as HTMLIFrameElement;
+  expect(manager.getAttribute("src")).toBe(
+    "/code-ui/index.html?document=management",
+  );
+  if (!manager.contentWindow) throw new Error("管理文档未创建");
+  const send = vi.spyOn(manager.contentWindow, "postMessage");
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: manager.contentWindow,
+      data: { type: "kenfutwork:code-ready" },
+    }),
+  );
+  expect(send).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: "kenfutwork:code-bootstrap",
+      management: { page: "settings", section: "mcp" },
+    }),
+    window.location.origin,
+  );
+  expect(canvas.closest("[data-workbench-mode]")?.hasAttribute("inert")).toBe(
+    true,
+  );
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: window,
+      data: { type: "kenfutwork:management-close" },
+    }),
+  );
+  expect(screen.getByTitle("管理设置")).toBe(manager);
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: manager.contentWindow,
+      data: { type: "kenfutwork:management-close" },
+    }),
+  );
+  expect(screen.queryByTitle("管理设置")).toBeNull();
+  expect(screen.getByTitle("设计项目 画布")).toBe(canvas);
+  expect(canvas.closest("[data-workbench-mode]")?.hasAttribute("inert")).toBe(
+    false,
+  );
+  expect(navigation.replace).not.toHaveBeenCalled();
+});
+
+it("Code可信模型管理请求打开同一独立文档，拒绝伪造和无效目标，关闭保留Codeiframe", async () => {
+  installFixture();
+  render(
+    <LocalInstanceProvider>
+      <LocalInstanceBoundary>
+        <Workbench />
+      </LocalInstanceBoundary>
+    </LocalInstanceProvider>,
+  );
+  const code = (await screen.findByTitle(
+    "Code 工作台",
+    {},
+    LAZY,
+  )) as HTMLIFrameElement;
+  const open = {
+    type: "kenfutwork:open-management",
+    target: {
+      page: "settings",
+      section: "modelProvider",
+      modelProviderId: "provider:glm",
+    },
+  };
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: window,
+      data: open,
+    }),
+  );
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: "https://untrusted.example",
+      source: code.contentWindow,
+      data: open,
+    }),
+  );
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: code.contentWindow,
+      data: { ...open, target: { page: "settings", section: "invalid" } },
+    }),
+  );
+  expect(screen.queryByTitle("管理设置")).toBeNull();
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: code.contentWindow,
+      data: open,
+    }),
+  );
+  const manager = (await screen.findByTitle("管理设置")) as HTMLIFrameElement;
+  expect(screen.getByTitle("Code 工作台")).toBe(code);
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: manager.contentWindow,
+      data: { type: "kenfutwork:management-close" },
+    }),
+  );
+  expect(screen.queryByTitle("管理设置")).toBeNull();
+  expect(screen.getByTitle("Code 工作台")).toBe(code);
+  expect(navigation.replace).not.toHaveBeenCalled();
+});
+
+it("管理文档加载中或失败时宿主仍能关闭并恢复原Codeiframe", async () => {
+  installFixture();
+  render(
+    <LocalInstanceProvider>
+      <LocalInstanceBoundary>
+        <Workbench />
+      </LocalInstanceBoundary>
+    </LocalInstanceProvider>,
+  );
+  const code = (await screen.findByTitle(
+    "Code 工作台",
+    {},
+    LAZY,
+  )) as HTMLIFrameElement;
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: code.contentWindow,
+      data: {
+        type: "kenfutwork:open-management",
+        target: { page: "settings", section: "mcp" },
+      },
+    }),
+  );
+  const manager = await screen.findByTitle("管理设置");
+  fireEvent.error(manager);
+  fireEvent.click(screen.getByRole("button", { name: "关闭管理页" }));
+  expect(screen.queryByTitle("管理设置")).toBeNull();
+  expect(screen.getByTitle("Code 工作台")).toBe(code);
+  expect(code.hasAttribute("inert")).toBe(false);
+});
+
+it.each([
+  { name: "技能", target: { page: "settings", section: "skill" } },
+  { name: "插件", target: { page: "plugins" } },
+])(
+  "Design的$name入口进入同一个原管理文档并保留画布",
+  async ({ name, target }) => {
+    navigation.query = "mode=design";
+    installFixture();
+    render(
+      <LocalInstanceProvider>
+        <LocalInstanceBoundary>
+          <Workbench />
+        </LocalInstanceBoundary>
+      </LocalInstanceProvider>,
+    );
+    const canvas = await screen.findByTitle("设计项目 画布", {}, LAZY);
+    fireEvent.click(screen.getByRole("button", { name }));
+    const manager = (await screen.findByTitle("管理设置")) as HTMLIFrameElement;
+    if (!manager.contentWindow) throw new Error("管理文档未创建");
+    const send = vi.spyOn(manager.contentWindow, "postMessage");
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        origin: window.location.origin,
+        source: manager.contentWindow,
+        data: { type: "kenfutwork:code-ready" },
+      }),
+    );
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ management: target }),
+      window.location.origin,
+    );
+    expect(screen.getByTitle("设计项目 画布")).toBe(canvas);
+  },
+);

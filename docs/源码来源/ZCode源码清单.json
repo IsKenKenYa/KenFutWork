@@ -16,12 +16,13 @@
       "source": "references/zcode/packages/ui/src/App.tsx",
       "target": "apps/web/src/components/workbench/zcode/App.tsx",
       "sha256": "ad78d4e881b8706bf708a5acd08aff900c66784a8a435603fd50cf1b8670a987",
-      "copiedSha256": "826f4013897a05284e78a2a6b9d284e09d30f18dfa6a89aa48ce0afdaf9f517a",
+      "copiedSha256": "bc923f042bc3533f335e155af41ece2dfa2d22a0c73483973190680d703d731f",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "品牌适配：应用 chrome 标识换 KenFutWork 自有标，ZCode 归属保留于 About 与 NOTICE",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
-        "能力显隐：原自动化导航保留，未接入宿主进入原页禁用态；通知仍不轮询闲时任务"
+        "能力显隐：原自动化导航保留，未接入宿主进入原页禁用态；通知仍不轮询闲时任务",
+        "宿主接口：原市场导航交给独立管理文档，保留Task工作区及原页面装配"
       ]
     },
     {
@@ -573,13 +574,14 @@
       "source": "references/zcode/packages/ui/src/Root.tsx",
       "target": "apps/web/src/components/workbench/zcode/Root.tsx",
       "sha256": "2fe5a5c4a94149d424591b48f6ab04226c29550227f32db986f8bffc65166c5b",
-      "copiedSha256": "da92c4196d9447581cebf85a30bf798d0ec5f0c606db86c4a060582cc16c0345",
+      "copiedSha256": "7b29a2de8a70fbe085e1e6dc4b80ef381ccf947c85e33eeadce7949429699c21",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主接口：真实身份、mode callback与握手clientMode透传；非云OAuth/账号迁移门及未接引导/import/运行偏好门，保留原Root生命周期",
         "宿主接口：原目录选择等待真实resolvePath与Project绑定，成功才关闭，失败沿原错误区重试",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
-        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
+        "宿主接口：原设置操作由TabStore托管到独立文档，Root运行与工作区保持"
       ]
     },
     {
@@ -604,14 +606,15 @@
       "source": "references/zcode/packages/ui/src/SettingsPage.tsx",
       "target": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
       "sha256": "0f3d3b06be4fdb675f870e06dcc8bf89aeff9ad9fc880ca1f0f6338a6e76916a",
-      "copiedSha256": "9ae9d754f0b4d6c90b91a736054d3ca9d6a7989abd81fca5616f2ac9a8ccac17",
+      "copiedSha256": "b63e05b47f1f721886d18746c61ba116b18da16734ad90bed3f4651d02a460a3",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落",
         "能力显隐：未接引导记录时隐藏原引导入口和查询，缺省原行为",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
-        "设置目标统一复用isLocalWorkspaceTarget：本机Project身份不再误判远端，保留远端连接及目录匹配校验。"
+        "设置目标统一复用isLocalWorkspaceTarget：本机Project身份不再误判远端，保留远端连接及目录匹配校验。",
+        "宿主接口：独立文档的设置到市场导航不关闭文档；原返回、栏目、模型编辑器保留"
       ]
     },
     {
@@ -5600,9 +5603,10 @@
       "source": "references/zcode/packages/ui/src/hooks/useZCodeSessionService.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useZCodeSessionService.ts",
       "sha256": "89a3d7520a9d732da5c8838866669d277ee8d265ec0240aabd5ede50a27f1830",
-      "copiedSha256": "232bcec25d00a934d8b67f6a9c582dfdf51f9c24e0e69b9640dc57ab22c7d98b",
+      "copiedSha256": "ee9869e51e7fba08788bc072b7f1d7e3d6d85e57ad1e1cfe7adf847a9b80c14c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接线：实例到真实Project的切换始终调用原服务解析hook，消除条件hook序列变化，保留原会话服务"
       ]
     },
     {
@@ -9601,10 +9605,11 @@
       "source": "references/zcode/packages/ui/src/settings/PluginStorePage.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/PluginStorePage.tsx",
       "sha256": "ebd9f6237e0dbafd538f21783262bb29baf45f4f30439ee93cbc78888235b3e8",
-      "copiedSha256": "cbba9a82a50542419389976db66f78d5e1eb9ab5875f0c1948319ed6165c7ae5",
+      "copiedSha256": "2178ff04329e8d74f19dd6561480413f7e500b6c5ac64c97f738dd256bc43cf3",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "宿主接线：本机市场不要求Project；原来源对话框接现有注册表安装/检查，原顶栏显式刷新库存，市场源管理保持未接入"
+        "宿主接线：本机市场不要求Project；原来源对话框接现有注册表安装/检查，原顶栏显式刷新库存，市场源管理保持未接入",
+        "宿主接口：独立原市场可返回宿主，保留原列表、详情、安装及注册表装配"
       ]
     },
     {
@@ -9630,9 +9635,10 @@
       "source": "references/zcode/packages/ui/src/settings/PluginsSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/PluginsSection.tsx",
       "sha256": "65954a8df4701a1aebdd6fba0e88ef370b45d88a739ee601c838acea0a65a5d6",
-      "copiedSha256": "a4eb665818491cbe332880722acf6bf1401cfd54d3d4cc24e7cbea069dfd5f4a",
+      "copiedSha256": "8e51e99a73cea83ee0d3a00ae7e3b253e823a3599e0a6750c59d733190cd83f9",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：真实实例插件、MCP及技能无需Project，原表单按本机作用域接原接口，不伪装目录或Task"
       ]
     },
     {
@@ -11134,11 +11140,12 @@
       "source": "references/zcode/packages/ui/src/settingsPageHelpers.tsx",
       "target": "apps/web/src/components/workbench/zcode/settingsPageHelpers.tsx",
       "sha256": "d65c95c659bcf92416f068255bc2d0a62a7e673bf9d967a4e5e485dff0f41e83",
-      "copiedSha256": "60786f18381f9a4014f126f132d6bc99e00bd65e9188a83798a164fccf962e4c",
+      "copiedSha256": "022be992cbb92970f4786d5f202039bcf90e45a2900ded204cfe8eb11590b3dd",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：隐藏未接引导与运行偏好对应原控件，缺省原行为",
-        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
+        "能力显隐：实例管理文档不提供工作区模式设置，由宿主导航持有模式"
       ]
     },
     {
@@ -11218,9 +11225,10 @@
       "source": "references/zcode/packages/ui/src/store/TabStoreProvider.tsx",
       "target": "apps/web/src/components/workbench/zcode/store/TabStoreProvider.tsx",
       "sha256": "4fa0467562e4fa4baa12e4ceb762de4e64960e3e75346826a72903d29449d764",
-      "copiedSha256": "62fdb18bbbbcc68759b1462d2c7f481e1eca5b5937b592808b2a57cbc929f06d",
+      "copiedSha256": "68225b3cd6eff48913aaf0c4e817b500da95069656272aa7861abbfe6bf1cfb6",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：透传可选设置文档导航回调，缺省原Store行为"
       ]
     },
     {
@@ -11496,9 +11504,10 @@
       "source": "references/zcode/packages/ui/src/store/tabStore.ts",
       "target": "apps/web/src/components/workbench/zcode/store/tabStore.ts",
       "sha256": "d07f82e2c75c7ec9d0981b5d4aba6432ed45ff201600b5c258131a6fd609dcc2",
-      "copiedSha256": "ae015ccd89f1e20b588f2d925bd38fe6d9cca04ebea5b9814d2ec28ef85dcc8a",
+      "copiedSha256": "57a493c8d660c805e028919fe2e2c446559e4245a058ff17396be281fb9ded06",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：外部设置导航不改变活动Task或workspace；未提供回调时保留原tab装配"
       ]
     },
     {
@@ -14558,7 +14567,7 @@
       "source": "references/zcode/packages/shared/src/platform.ts",
       "target": "packages/zcode-shared/src/platform.ts",
       "sha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "copiedSha256": "71557b7d931c68a67fd9df96c12c7dbf2f8a8e3e9865d2670bfa74085bb3c4db",
+      "copiedSha256": "3db301c76d93c7930828b9ee160ec3b43efd4a8cb4a9275bceb0b09bc9962e52",
       "adaptations": [
         "宿主能力接口：增加可选云账户支持标记；未声明的原宿主行为不变",
         "宿主接口：可选自动化/嵌入浏览器/CUA/远程能力声明；未声明保持原平台语义",
@@ -14572,7 +14581,8 @@
         "宿主接口：声明插件侧栏读取、变化订阅及仅传插件/入口身份的打开接口，不携带面板地址或凭据",
         "宿主接口：声明现有MCP记录、项目/OAuth/请求头/参数/SSE支持态，未声明保持原平台行为",
         "宿主接口：本机技能记录与外部Agent扫描/同步实际能力声明，未声明保持原行为",
-        "宿主能力声明：来源安装与市场源管理独立显隐，不改变未声明宿主的原行为"
+        "宿主能力声明：来源安装与市场源管理独立显隐，不改变未声明宿主的原行为",
+        "宿主接口：独立管理文档导航、真实实例插件作用域和实例设置模式显隐；缺省原平台行为"
       ]
     },
     {

@@ -876,6 +876,10 @@ export function App({
   });
   const handleOpenPluginStoreForScope = useCallback(
     (_target: PluginStoreOpenTarget = {}) => {
+      if (platform.openPluginStoreDocument) {
+        platform.openPluginStoreDocument(_target);
+        return;
+      }
       // Workspace Marketplace 已收敛为全局入口。兼容旧事件中的 Workspace key，但返回
       // 目标统一归一为 User，避免旧 sessionStorage/同窗口事件把设置页带回失效 scope。
       const returnScopeKey = "user";
@@ -887,7 +891,7 @@ export function App({
       handleOpenPluginStore();
       setPluginStoreReturnScopeKey(returnScopeKey);
     },
-    [handleOpenPluginStore, workspaceMainView],
+    [handleOpenPluginStore, workspaceMainView, platform],
   );
   useEffect(
     () => addPluginStoreOpenListener(handleOpenPluginStoreForScope),

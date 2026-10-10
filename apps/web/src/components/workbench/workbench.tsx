@@ -1,10 +1,12 @@
 "use client";
 
+import type { ManagementTarget } from "@kenfutwork/shared";
 import { useRouter, useSearchParams } from "next/navigation";
 import { lazy, Suspense, useCallback, useState } from "react";
 import { useFlowHostEntry } from "@/hooks/use-flow-host";
 import type { WorkbenchMode } from "@/lib/workbench-surface";
 import { CodeWorkbenchFrame } from "./code-workbench-frame";
+import { ManagementDocumentFrame } from "./management-document-frame";
 
 const CanvasWorkbench = lazy(() =>
   import("./canvas-workbench").then((module) => ({
@@ -25,6 +27,8 @@ function WorkbenchModeSurface() {
         : "code";
   const pendingFlow = requested === "flow" && flowEntry === null;
   const [visited, setVisited] = useState<WorkbenchMode[]>([]);
+  const [management, setManagement] = useState<ManagementTarget | null>(null);
+  const closeManagement = useCallback(() => setManagement(null), []);
   if (!pendingFlow && !visited.includes(mode)) setVisited([...visited, mode]);
   const navigate = useCallback(
     (next: WorkbenchMode) => {
@@ -41,24 +45,38 @@ function WorkbenchModeSurface() {
           key={workspaceMode}
           data-workbench-mode={workspaceMode}
           hidden={pendingFlow || mode !== workspaceMode}
-          inert={pendingFlow || mode !== workspaceMode}
-          aria-hidden={pendingFlow || mode !== workspaceMode}
+          inert={pendingFlow || mode !== workspaceMode || management !== null}
+          aria-hidden={
+            pendingFlow || mode !== workspaceMode || management !== null
+          }
         >
           {workspaceMode === "code" ? (
             <CodeWorkbenchFrame
-              active={!pendingFlow && mode === workspaceMode}
+              active={
+                !pendingFlow && mode === workspaceMode && management === null
+              }
               onModeChange={navigate}
+              onOpenManagement={setManagement}
             />
           ) : (
             <CanvasWorkbench
               mode={workspaceMode}
-              active={!pendingFlow && mode === workspaceMode}
+              active={
+                !pendingFlow && mode === workspaceMode && management === null
+              }
               onModeChange={navigate}
+              onOpenManagement={setManagement}
             />
           )}
         </div>
       ))}
       {pendingFlow ? <div role="status">加载中</div> : null}
+      {management ? (
+        <ManagementDocumentFrame
+          target={management}
+          onClose={closeManagement}
+        />
+      ) : null}
     </>
   );
 }

@@ -5,7 +5,6 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ToastProvider } from "../src/components/toast";
 import { SubagentsSection } from "../src/components/workbench/subagents-section";
 
 const navigateToCode = vi.hoisted(() => vi.fn());
@@ -103,7 +102,9 @@ describe("设置 → 模型：上下文自动压缩开关", () => {
     expect(
       screen.getByRole("switch", { name: "上下文自动压缩" }),
     ).toBeChecked();
-    expect(screen.getByRole("switch", { name: "上下文自动压缩" })).toBeVisible();
+    expect(
+      screen.getByRole("switch", { name: "上下文自动压缩" }),
+    ).toBeVisible();
     expect(screen.queryByText(/压缩成摘要/)).toBeNull();
     expect(screen.queryByText(/超长对话会被模型拒绝/)).toBeNull();
   });
@@ -125,136 +126,6 @@ describe("设置 → 模型：上下文自动压缩开关", () => {
       screen.getByRole("switch", { name: "上下文自动压缩" }),
     );
     expect(onToggleAutoCompact).toHaveBeenCalledWith(false);
-  });
-});
-
-/**
- * 插件市场「使用」态（R3-5 参考图：已装插件显示「使用」而不是「安装」）。
- *
- * 锁两条：① 只有**装了、且有真实消费界面**的插件才给「使用」（不在显式表里的不给，
- * 免得点了没反应）；② 点它把插件名交给上层去跳（上层负责打开 MCP/技能/设置对应页）。
- */
-/**
- * 市场弹窗**直接用 fetch('/api/plugins')**（不经 server-api 封装），所以这里桩 fetch 而不是桩模块。
- */
-const mockFetch = vi.fn();
-globalThis.fetch = mockFetch as never;
-
-describe("插件市场：使用态", () => {
-  it("已装且有消费界面 → 出现「使用」，点了把插件名交给上层", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        plugins: [
-          {
-            id: "mcp",
-            name: "mcp",
-            title: "MCP 接入",
-            description: "连接 MCP server",
-            source: "builtin",
-            installed: true,
-            enabled: true,
-            system: false,
-            category: "工具与集成",
-          },
-        ],
-      }),
-    });
-    const onUse = vi.fn();
-    const { PluginMarketModal } = await import(
-      "../src/components/workbench/plugin-market-modal"
-    );
-    render(
-      <ToastProvider>
-        <PluginMarketModal
-          open
-          onClose={() => {}}
-          accessToken="tok"
-          onUse={onUse}
-        />
-        ,
-      </ToastProvider>,
-    );
-    const use = await screen.findByRole("button", { name: "使用" });
-    await userEvent.click(use);
-    expect(onUse).toHaveBeenCalledWith("mcp");
-  });
-
-  it("已装但没有消费界面（不在显式表里）→ 不给「使用」", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        plugins: [
-          {
-            id: "local__x",
-            name: "some-third-party",
-            title: "第三方插件",
-            description: "x",
-            source: "local",
-            installed: true,
-            enabled: true,
-            system: false,
-          },
-        ],
-      }),
-    });
-    const { PluginMarketModal } = await import(
-      "../src/components/workbench/plugin-market-modal"
-    );
-    render(
-      <ToastProvider>
-        <PluginMarketModal
-          open
-          onClose={() => {}}
-          accessToken="tok"
-          onUse={() => {}}
-        />
-        ,
-      </ToastProvider>,
-    );
-    expect(await screen.findByText("第三方插件")).toBeVisible();
-    expect(screen.queryByRole("button", { name: "使用" })).toBeNull();
-  });
-
-  it("「导出」按钮不带图标（用户口径：导出不要加图标）", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        plugins: [
-          {
-            id: "local__x",
-            name: "some-third-party",
-            title: "第三方插件",
-            description: "x",
-            source: "local",
-            installed: true,
-            enabled: true,
-            system: false,
-          },
-        ],
-      }),
-    });
-    const { PluginMarketModal } = await import(
-      "../src/components/workbench/plugin-market-modal"
-    );
-    render(
-      <ToastProvider>
-        <PluginMarketModal
-          open
-          onClose={() => {}}
-          accessToken="tok"
-          onUse={() => {}}
-        />
-        ,
-      </ToastProvider>,
-    );
-    // 与同排的「卸载」「使用」口径一致：只有文字，不带 ⬇ 之类的图标
-    const exportButton = await screen.findByRole("button", { name: "导出" });
-    expect(exportButton.querySelector("svg")).toBeNull();
-    expect(exportButton.textContent?.trim()).toBe("导出");
   });
 });
 

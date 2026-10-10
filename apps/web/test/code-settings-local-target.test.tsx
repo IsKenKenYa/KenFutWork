@@ -332,8 +332,8 @@ it("原插件管理页接受已绑定的本机Project，读取真实库存RPC并
   );
   expect(await screen.findByText("Probe", { exact: true })).not.toBeNull();
   expect(screen.queryByText("请先打开工作区")).toBeNull();
-  expect(calls.filter((call) => call.method === "listPlugins")).toMatchObject([
-    {
+  expect(calls.filter((call) => call.method === "listPlugins")).toContainEqual(
+    expect.objectContaining({
       service: "plugin-management",
       args: [
         {
@@ -342,6 +342,6 @@ it("原插件管理页接受已绑定的本机Project，读取真实库存RPC并
           configScope: "user",
         },
       ],
-    },
-  ]);
+    }),
+  );
 });

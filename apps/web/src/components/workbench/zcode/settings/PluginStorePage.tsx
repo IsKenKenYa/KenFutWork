@@ -1,7 +1,7 @@
 /* eslint-disable max-lines -- 插件商店容器统一编排列表/详情、市场源对话框、卸载确认、试用跳转与技能刷新收尾，集中维护保证交互一致。 */
 import { PluginAddMenu } from "@zui/settings/PluginAddMenu.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw, Settings } from "lucide-react";
+import { ArrowLeft, RefreshCw, Settings } from "lucide-react";
 import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
 import { Button } from "@zui/components/ui/button.js";
 import { toast } from "@zui/components/ui/toast.js";
@@ -52,6 +52,7 @@ interface PluginStorePageProps {
   workspaceIdentity?: string;
   onCreateTask?: (request?: CreateTaskRequest) => void;
   onManageInstalled: () => void;
+  onBack?: () => void;
 }
 
 type PluginStoreView = "store" | "detail";
@@ -61,6 +62,7 @@ export function PluginStorePage({
   workspaceIdentity,
   onCreateTask,
   onManageInstalled,
+  onBack,
 }: PluginStorePageProps) {
   const { intl, locale } = useZCodeIntl();
   const sourceCapabilities = usePlatform().pluginManagementCapabilities;
@@ -403,6 +405,7 @@ export function PluginStorePage({
 
   return (
     <div ref={rootRef} className="space-y-5" data-testid="plugin-store-root" data-view={view}>
+      {onBack ? <ControlHintTooltip title={intl.formatMessage({ id: "workspace.backToWorkspace" })}><Button type="button" variant="ghost" size="icon-lg" aria-label={intl.formatMessage({ id: "workspace.backToWorkspace" })} onClick={onBack}><ArrowLeft className="size-4" /></Button></ControlHintTooltip> : null}
       <SettingsBreadcrumbReporter
         items={
           view === "detail" && detailItem
