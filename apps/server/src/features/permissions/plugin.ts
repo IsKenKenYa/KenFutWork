@@ -10,8 +10,9 @@ import { createPermissionSettingsStore } from "./tier-store.js";
  * permissions 插件（DEC-4，P6）：
  * - `permissions` ctx key：三档策略 + 审批记忆；
  * - 订阅 tool-pre-execute 事件做拦截（deny 等 审批），这是策略缝的消费点；
- * - design preset 不激活闸门（保持画布行为不变）：本插件只拦截代码类工具，
- *   画布工具（design scope）不触发审批（isDangerousTool 不匹配）。
+ * - design preset 不激活闸门（保持画布行为不变）：判据 = 危险工具名模式 **或**
+ *   属主声明的非只读效果（`isDangerousCall`）——插件写工具（`access: "write"`、
+ *   撤销声明即回落到 execute）靠声明进默认档审批，画布工具通常不命中名表。
  *
  * 全局档位持久化（app_config 单行表）：启动期读回（读失败只记日志，回落 default
  * ——fail-safe：权限档宁严勿松），PUT 路由写穿。
@@ -36,6 +37,8 @@ export function createPermissionsPlugin(_deps: {
           : service.evaluate({
               toolName: payload.toolName,
               ...(payload.threadId ? { threadId: payload.threadId } : {}),
+              // 属主声明的效果随事件带来：插件写工具靠它进默认档审批（名表不认识它们）。
+              ...(payload.access ? { access: payload.access } : {}),
             });
         return next({
           ...payload,

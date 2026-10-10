@@ -24,6 +24,7 @@ import { LocalInstanceSection } from "@/components/workbench/local-instance-sect
 import { OnboardingSection } from "@/components/workbench/onboarding-section";
 import { RulesMemorySection } from "@/components/workbench/rules-memory-section";
 import { SubagentsSection } from "@/components/workbench/subagents-section";
+import { ConversationVisualsSection } from "@/components/workbench/conversation-visuals-section";
 import { TerminalSettingsSection } from "@/components/workbench/terminal-settings-section";
 import { VoiceSettingsSection } from "./voice-settings-section";
 import { UsageStatsSection } from "@/components/workbench/usage-stats-section";
@@ -345,6 +346,7 @@ export function SettingsModal({
               <div className="space-y-8">
                 <LocalInstanceSection />
                 <TerminalSettingsSection accessToken={token} />
+                <ConversationVisualsSection />
               </div>
             ) : activeTab === "appearance" ? (
               <AppearanceSection />

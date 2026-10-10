@@ -494,6 +494,40 @@ describe("agent-run 事件缝（DEC-1，只 3 个事件）", () => {
     expect(seen).toEqual([{ q: "hi" }]);
     kernel.dispose();
   });
+
+  it("tool-pre-execute 携带属主声明的 access（插件写工具靠它进默认档审批）", async () => {
+    const seen: string[] = [];
+    const kernel = composePlugins(makeEnv(), [
+      plugin("p", {
+        onApply(ctx) {
+          ctx.get("tools").register({
+            name: "demo_write_tool",
+            description: "demo",
+            scope: "shared",
+            access: "write",
+            parameters: { type: "object" },
+            execute: async () => "ok",
+          });
+          ctx.get("tools").register({
+            name: "demo_undeclared_tool",
+            description: "demo",
+            scope: "shared",
+            parameters: { type: "object" },
+            execute: async () => "ok",
+          });
+          ctx.on("tool-pre-execute", async (payload, next) => {
+            seen.push(`${payload.toolName}:${payload.access ?? "none"}`);
+            return next(payload);
+          });
+        },
+      }),
+    ]);
+    const tools: ToolRegistry = kernel.get("tools");
+    await tools.execute("demo_write_tool", {});
+    await tools.execute("demo_undeclared_tool", {});
+    expect(seen).toEqual(["demo_write_tool:write", "demo_undeclared_tool:none"]);
+    kernel.dispose();
+  });
 });
 
 describe("ctx.tools 注册表", () => {

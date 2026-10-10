@@ -45,7 +45,7 @@ export function createCodeUiMcpHost(deps: {
           hostRecordId: row.id,
           config:
             row.kind === "http"
-              ? { type: "http", url: row.url }
+              ? { type: "http", url: row.url, headers: row.headers }
               : { command: row.command, args: row.args, env: row.env },
         };
       },
@@ -93,11 +93,10 @@ export function createCodeUiMcpHost(deps: {
           );
         if (
           config.oauth !== undefined ||
-          Object.keys(config.headers ?? {}).length ||
           config.timeoutMs !== undefined ||
           (config.protocolVersion && config.protocolVersion !== "auto")
         )
-          throw unsupported("MCP授权、请求头和服务参数未接入。");
+          throw unsupported("MCP授权和服务参数未接入。");
         const normalized = mcpServerCreateRequestSchema.parse({
           name: input.name,
           kind: config.type === "http" || config.url ? "http" : "stdio",
@@ -105,6 +104,10 @@ export function createCodeUiMcpHost(deps: {
           url: config.url,
           args: config.args ?? [],
           env: config.env ?? existing?.env ?? {},
+          headers:
+            config.type === "http" || config.url
+              ? (config.headers ?? existing?.headers ?? {})
+              : {},
           enabled: config.enable ?? existing?.enabled ?? true,
         });
         if (input.hostRecordId) {

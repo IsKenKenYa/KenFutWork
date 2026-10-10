@@ -1,6 +1,7 @@
 import type { FlowEngineStackContainer } from "@kenfutwork/shared";
 
 import { createProcessRunCommand, type RunCommand } from "./exec.js";
+import { composeCommand, type EngineLaunch } from "./install.js";
 
 /**
  * 引擎栈容器清单：`docker compose -f <file> --profile dify ps --format json` 的
@@ -10,6 +11,9 @@ import { createProcessRunCommand, type RunCommand } from "./exec.js";
  * 输出兼容两条口径：compose v2 老版本逐行 NDJSON、新版本单个 JSON 数组；两种都解析。
  * 查询失败（docker 不在/daemon 没起/compose 文件缺失）**不抛**——返回空清单 + 可读原因，
  * 让信息页如实展示「查不到」而不是整页崩。
+ *
+ * 承载目标与安装同一口径（`launch`）：WSL2 档要经 `wsl.exe -d <distro> -- docker …` 查询，
+ * 否则会去宿主 docker 里找一套不存在的容器（查询结果与安装事实分叉）。
  */
 
 interface RawPsRow {
@@ -27,22 +31,22 @@ interface RawPsRow {
 
 export async function listEngineStackContainers(
   composeFile: string,
-  options: { envFile?: string; run?: RunCommand } = {},
+  options: {
+    envFile?: string;
+    launch?: EngineLaunch;
+    run?: RunCommand;
+  } = {},
 ): Promise<{ containers: FlowEngineStackContainer[]; error?: string }> {
   const run = options.run ?? createProcessRunCommand({ timeoutMs: 15_000 });
-  const result = await run("docker", [
-    "compose",
-    // 与安装同一口径：compose 文件要求注入密钥变量（缺了就整份文件插值失败），
-    // 密钥文件由首次安装生成在数据目录（见 install.ts 的 ensureStackEnvFile）。
-    ...(options.envFile ? ["--env-file", options.envFile] : []),
-    "-f",
-    composeFile,
-    "--profile",
-    "dify",
-    "ps",
-    "--format",
-    "json",
-  ]);
+  const command = composeCommand(
+    {
+      composeFile,
+      ...(options.envFile ? { envFile: options.envFile } : {}),
+      ...(options.launch ? { launch: options.launch } : {}),
+    },
+    ["--profile", "dify", "ps", "--format", "json"],
+  );
+  const result = await run(command.command, command.args);
   if (result.code !== 0) {
     return {
       containers: [],

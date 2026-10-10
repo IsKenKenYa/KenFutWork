@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createPermissionService,
+  isDangerousCall,
   isDangerousTool,
 } from "./permission-service.js";
 
@@ -59,6 +60,7 @@ describe("permissions 缝（DEC-4）", () => {
       browserAutoScreenshot: false,
       browserHeadless: false,
       browserDevtoolsReadEnabled: true,
+      browserEvalEnabled: false,
     });
     expect(restored.listApprovedForever()).toEqual([
       "execute",
@@ -120,6 +122,52 @@ describe("permissions 缝（DEC-4）", () => {
     expect(isDangerousTool("write_file")).toBe(true);
     expect(isDangerousTool("edit_file")).toBe(true);
   });
+
+  /**
+   * 回归：插件工具名（mihome_control / ha_control…）不进名表，只按名字判会**静默放行
+   * 设备写入**。判据因此纳入属主声明的执行效果（内核随 tool-pre-execute 带来）。
+   */
+  it("属主声明的非只读效果进默认档审批：插件写工具不再静默放行", () => {
+    const svc = createPermissionService();
+
+    // 声明只读：放行（设备/实体查询不该拦）
+    expect(
+      svc.evaluate({ toolName: "ha_entities", access: "read" }).decision,
+    ).toBe("allow");
+
+    for (const access of ["write", "execute"] as const) {
+      const decision = svc.evaluate({ toolName: "ha_control", access });
+      expect(decision.decision, access).toBe("deny");
+      expect(decision.reason).toContain("危险");
+    }
+
+    // 审批记忆按工具名生效：永久批准后放行，且立刻对新会话有效
+    svc.approve("ha_control", { scope: "forever" });
+    expect(
+      svc.evaluate({ toolName: "ha_control", access: "write" }).decision,
+    ).toBe("allow");
+
+    // 未声明（旧工具/无属主信息的调用点）维持按名字判，行为不变
+    expect(svc.evaluate({ toolName: "ha_control" }).decision).toBe("allow");
+    // 只读声明不能豁免名表命中的工具（声明不能掩盖已确认的危险效果）
+    expect(
+      svc.evaluate({ toolName: "mcp__anything", access: "read" }).decision,
+    ).toBe("deny");
+  });
+
+  it("isDangerousCall：名表或非只读声明任一命中即危险", () => {
+    expect(isDangerousCall({ toolName: "mihome_control", access: "write" })).toBe(
+      true,
+    );
+    expect(isDangerousCall({ toolName: "unknown_plugin_tool" })).toBe(false);
+    expect(isDangerousCall({ toolName: "unknown_plugin_tool", access: "execute" })).toBe(
+      true,
+    );
+    expect(isDangerousCall({ toolName: "ha_entities", access: "read" })).toBe(
+      false,
+    );
+    expect(isDangerousCall({ toolName: "mcp__x", access: "read" })).toBe(true);
+  });
 });
 
 /**
@@ -141,6 +189,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       browserHeadless: false,
       approvedForever: [],
       browserDevtoolsReadEnabled: false,
+      browserEvalEnabled: false,
     });
     // 放行项：危险工具（write_file）也放行
     expect(svc.evaluate({ toolName: "write_file" }).decision).toBe("allow");
@@ -165,6 +214,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       browserHeadless: false,
       approvedForever: [],
       browserDevtoolsReadEnabled: false,
+      browserEvalEnabled: false,
     });
     expect(svc.evaluate({ toolName: "mcp__fs__write" }).decision).toBe("deny");
     expect(svc.evaluate({ toolName: "mcp__py-helper__echo" }).decision).toBe(
@@ -187,6 +237,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       browserHeadless: false,
       approvedForever: [],
       browserDevtoolsReadEnabled: false,
+      browserEvalEnabled: false,
     });
     // 常规：全放行
     expect(
@@ -207,6 +258,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       browserHeadless: false,
       approvedForever: [],
       browserDevtoolsReadEnabled: false,
+      browserEvalEnabled: false,
     });
     expect(
       svc.evaluate({ toolName: "write_file", scenario: "automation" }).decision,
@@ -228,6 +280,7 @@ describe("permissions 缝（R5-3 自定义档与分场景）", () => {
       browserHeadless: false,
       approvedForever: [],
       browserDevtoolsReadEnabled: false,
+      browserEvalEnabled: false,
     });
     svc.setTier("t1", "full-access");
     expect(

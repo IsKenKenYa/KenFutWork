@@ -35,6 +35,7 @@ describe.skipIf(!DATABASE_URL)("权限设置持久化真实库集成", () => {
         browserHeadless: true,
         approvedForever: ["mcp__*"],
         browserDevtoolsReadEnabled: true,
+        browserEvalEnabled: false,
       });
       expect(await store.load()).toEqual({
         tier: "custom",
@@ -45,6 +46,7 @@ describe.skipIf(!DATABASE_URL)("权限设置持久化真实库集成", () => {
         browserHeadless: true,
         approvedForever: ["mcp__*"],
         browserDevtoolsReadEnabled: true,
+        browserEvalEnabled: false,
       });
 
       // 收尾：恢复缺省，不给其它测试/本地开发留 full-access 或放行规则（安全）

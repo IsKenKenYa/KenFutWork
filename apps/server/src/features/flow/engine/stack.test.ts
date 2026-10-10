@@ -56,6 +56,30 @@ const PS_NDJSON = [
 ].join("\n");
 
 describe("引擎栈容器清单：docker compose ps 解析", () => {
+  it("WSL2 承载：ps 经 wsl.exe 与安装同一目标（不查宿主 docker，路径换 /mnt/…）", async () => {
+    const calls: Array<{ file: string; args: readonly string[] }> = [];
+    const run: RunCommand = async (file, args) => {
+      calls.push({ file, args });
+      return { code: 0, stdout: Buffer.from("[]"), stderr: Buffer.alloc(0) };
+    };
+    await listEngineStackContainers("C:\\repo\\dify\\docker-compose.dify.yml", {
+      envFile: "C:\\data\\dify-stack.env",
+      launch: { kind: "wsl2", distro: "Ubuntu" },
+      run,
+    });
+    expect(calls[0]?.file).toBe("wsl.exe");
+    expect(calls[0]?.args.slice(0, 4)).toEqual([
+      "-d",
+      "Ubuntu",
+      "--",
+      "docker",
+    ]);
+    expect(calls[0]?.args).toContain(
+      "/mnt/c/repo/dify/docker-compose.dify.yml",
+    );
+    expect(calls[0]?.args).toContain("/mnt/c/data/dify-stack.env");
+  });
+
   it("新版本 JSON 数组：服务/健康/端口映射齐全，按服务名排序", async () => {
     const { containers, error } = await listEngineStackContainers("compose.yml", { run: runWith(PS_ARRAY) });
     expect(error).toBeUndefined();

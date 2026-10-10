@@ -13,6 +13,7 @@ import type {
   McpServerPatch,
   McpServerStore,
   PublicMcpServer,
+  StoredMcpServer,
 } from "./server-store.js";
 import { mcpFailure } from "./task-mcp-context.js";
 
@@ -43,6 +44,8 @@ export interface McpServerStatus {
   /** http 类型的远程端点 URL（stdio 为 null）。 */
   url: string | null;
   envKeys: string[];
+  /** http 类型的自定义请求头键名（值不外发）。 */
+  headerKeys: string[];
   toolCount: number;
   /** 上次连接失败原因（status=error 时有值）。 */
   error: string | null;
@@ -74,6 +77,7 @@ export interface McpSettingsConfiguration {
   args: string[];
   url: string | null;
   env: Record<string, string>;
+  headers: Record<string, string>;
 }
 
 interface Connection {
@@ -112,7 +116,14 @@ export function createMcpService(options: {
 
   async function connect(
     name: string,
-    spec: { kind: "stdio" | "http"; command: string; url: string | null; args: string[]; env: Record<string, string> },
+    spec: {
+      kind: "stdio" | "http";
+      command: string;
+      url: string | null;
+      args: string[];
+      env: Record<string, string>;
+      headers: Record<string, string>;
+    },
   ) {
     ensureOpen();
     await disconnect(name);
@@ -133,21 +144,41 @@ export function createMcpService(options: {
     try {
       if (spec.kind === "http" && spec.url) {
         const url = new URL(spec.url);
+        // 自定义请求头（如 HA 的 Authorization）在 Streamable HTTP 与 SSE 回退两条
+        // 路径上都必须带——否则 401 会让整个 http 连接失败。
+        const transportOptions =
+          Object.keys(spec.headers).length > 0
+            ? { requestInit: { headers: spec.headers } }
+            : undefined;
         try {
-          await mcpClient.connect(new StreamableHTTPClientTransport(url) as Parameters<Client["connect"]>[0], await requestOptions());
+          await mcpClient.connect(
+            new StreamableHTTPClientTransport(
+              url,
+              transportOptions,
+            ) as Parameters<Client["connect"]>[0],
+            await requestOptions(),
+          );
         } catch (streamableError) {
           ensureOpen();
           try {
             closedDuringConnect = false;
-            await mcpClient.connect(new SSEClientTransport(url), await requestOptions());
+            await mcpClient.connect(
+              new SSEClientTransport(url, transportOptions),
+              await requestOptions(),
+            );
           } catch {
             throw streamableError;
           }
         }
       } else {
-        await mcpClient.connect(new StdioClientTransport({
-          command: spec.command, args: spec.args, env: spec.env,
-        }), await requestOptions());
+        await mcpClient.connect(
+          new StdioClientTransport({
+            command: spec.command,
+            args: spec.args,
+            env: spec.env,
+          }),
+          await requestOptions(),
+        );
       }
       const client: McpClientLike = {
         listTools: async () => {
@@ -221,6 +252,7 @@ export function createMcpService(options: {
     url: string | null;
     args: string[];
     env: Record<string, string>;
+    headers: Record<string, string>;
     enabled: boolean;
   }) {
     ensureOpen();
@@ -255,6 +287,7 @@ export function createMcpService(options: {
     url: string | null;
     args: string[];
     envKeys: string[];
+    headerKeys: string[];
   }): Promise<McpServerStatus> {
     const connection = connections.get(server.name);
     const failure = failures.get(server.name);
@@ -285,6 +318,7 @@ export function createMcpService(options: {
         url: null,
         args: server.args ?? [],
         env: server.env ?? {},
+        headers: {},
         enabled: true,
         source: "env" as const,
       }));
@@ -292,6 +326,16 @@ export function createMcpService(options: {
       ...managed.map((server) => ({ ...server, source: "managed" as const })),
       ...fromEnv,
     ];
+  }
+
+  /** 公开形态投影：env 与 headers 的**值**绝不下发，只给键名。 */
+  function publicServer(server: StoredMcpServer): PublicMcpServer {
+    const { env: _env, headers: _headers, ...rest } = server;
+    return {
+      ...rest,
+      envKeys: Object.keys(server.env),
+      headerKeys: Object.keys(server.headers),
+    };
   }
 
   return {
@@ -307,6 +351,7 @@ export function createMcpService(options: {
         args: [...server.args],
         url: server.url,
         env: { ...server.env },
+        headers: { ...server.headers },
       }));
     },
     async computerUseConnections() {
@@ -354,6 +399,7 @@ export function createMcpService(options: {
             url: server.url,
             args: server.args,
             envKeys: Object.keys(server.env),
+            headerKeys: Object.keys(server.headers),
           }),
         ),
       );
@@ -392,15 +438,16 @@ export function createMcpService(options: {
       ensureOpen();
       const kind = rawInput.kind ?? "stdio";
       const input = {
-        ...rawInput, kind,
+        ...rawInput,
+        kind,
         command: kind === "http" ? "" : (rawInput.command ?? ""),
         url: kind === "http" ? (rawInput.url ?? null) : null,
+        headers: kind === "http" ? (rawInput.headers ?? {}) : {},
       };
       const created = await options.store.create(input);
       await reconcile(created);
-      // 回读公开形态（env 值不下发）
-      const { env: _env, ...rest } = created;
-      return { ...rest, envKeys: Object.keys(created.env) };
+      // 回读公开形态（env 与 headers 的值都不下发）
+      return publicServer(created);
     },
 
     async update(id, patch) {
@@ -410,8 +457,7 @@ export function createMcpService(options: {
         return null;
       }
       await reconcile(updated);
-      const { env: _env, ...rest } = updated;
-      return { ...rest, envKeys: Object.keys(updated.env) };
+      return publicServer(updated);
     },
 
     async setEnabled(id, enabled) {
@@ -421,8 +467,7 @@ export function createMcpService(options: {
         return null;
       }
       await reconcile(updated);
-      const { env: _env, ...rest } = updated;
-      return { ...rest, envKeys: Object.keys(updated.env) };
+      return publicServer(updated);
     },
 
     async remove(id) {
@@ -463,6 +508,7 @@ export function createMcpService(options: {
               url: null,
               args: envFallback.args ?? [],
               env: envFallback.env ?? {},
+              headers: {},
               enabled: true,
             }
           : null);

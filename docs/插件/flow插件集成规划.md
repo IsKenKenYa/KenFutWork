@@ -1,6 +1,9 @@
 # flow 集成方案（futureFlow 子系统 × 第三模式）
 
 > **角色声明**：方案稿——flow 子系统的集成实施蓝图。决策结论与理由的唯一权威在《[改造计划](../方案设计/改造计划.md)》§6（`DEC-10`…`DEC-13`）；代码现状数字以代码为准。上游仓库以子模块挂载于根级 `flow/`（github.com/future73807/futureFlow，MIT，pnpm workspace：frontend + gateway；完整历史，不走 `references/` 的浅克隆维护，见《日志》五十四）。
+>
+> **状态（2026-10-09，第二轮补充）**：P0–P6 已落地——模式骨架与宿主适配层、凭证/计量/事件缝、引擎探测与托管（含**承载目标**：本机容器 / WSL2 发行版内 docker）、桌面资源目录承载 compose、卸载 purge（删引擎、留插件代码）均有实现与测试；回执见《日志》一百三十九、一百四十一与一百四十三。**P7（深度收编评估）未启动**（§6 标注「远期，届时另立方案」）；WSL2 发行版内起栈的真机验收待有通用发行版的机器（本机只有 Docker Desktop 内部发行版）。
+> **2026-10-09 逐项复核（本轮）**：按 §9 开放问题的三条拍板补齐并登记两处**口径偏差**——① WSL 回收落地为 `wsl.exe --terminate <distro>`（不是拍板文里的全局 `wsl --shutdown`：后者会连用户的其它发行版含 Docker Desktop 一起停掉，爆炸半径过大）；② 内存口径落地为**指引**（引擎页承载表显示「`%USERPROFILE%\.wslconfig` 加 `[wsl2] memory=4GB`」），**不代写**这个全局文件。③ §9-③ 的「卸载默认保留数据卷 + 询问」被用户 2026-10-09 口径覆盖：**停止**默认保留数据卷（`down`，无 `--volumes`），**卸载**删引擎本体（`down --volumes --rmi all`，下次安装重新下载）而插件代码与 compose 资源保留。§7 的 Dify source-available 属性已登记进根级 `NOTICE.md`。
 
 ## 1. 背景与定位
 
@@ -152,6 +155,7 @@ graph TB
 | P2 | **宿主适配层 + `ff-embed/v1`**（`DEC-10`）：六缝 Definition 先立，内嵌 Provider 以主仓为宿主 #1 打通（token 交换/postMessage 注入、按宿主 sub get-or-create、CORS 加外壳域名、去品牌、`--ff-*` 视觉令牌对齐），独立 Provider 保留并回归 | 双栈本地联调（futureFlow `pnpm start`：3000/3001/8080/5001）+ GUI 冒烟 + **独立模式自足清单**（§3.4）回归 |
 | P3 | 凭证缝（`DEC-12`）：宿主 Provider = BYOK 实例下发（`resolveCredentials` → Dify Provider 同步，独立 feature 服务）；**第三方网关 Provider = 实例 `base_url` + key 接入**；独立 Provider = `.env` 全局 key | 服务端单测（凭证不回显、脱敏）+ 联调 + 三方 Provider 各自跑通 |
 | P4 | 计量缝（`DEC-12`）：宿主态接 credits/usage（`DEC-5`/`DEC-6`），flow run id 作幂等键，平台池余额门进 flow 执行入口；第三方网关态只记 usage 不自扣；独立态保留自带 balance | 幂等重放/并发/退款回归测试 |
+| P4（现状口径，2026-10-09 复核） | **credits/平台池余额门已随 `DEC-20`（用户与账户系统重构）退役**：本期本机免账户 + BYOK，所有路径不检查套餐或余额，不留假计费服务；计量缝的实质内容（宿主态计费 + 余额门）**顺延到《官方账户与远端连接基础设施》（`DEC-21`）阶段**再落，届时以该规格为准 | 当前无计费回归可跑；`DEC-20` 的「不留空计费服务」由账户重构轮的测试覆盖 |
 | P5 | 事件统一：`streamEventSchema` 加 `flowRun.*`，EventBuffer 纳管 flow 画布，断线 `lastSeq` 重放；内嵌态经宿主通道透出 | shared 契约测试 + WS 集成测试 |
 | P6 | 部署形态（`DEC-11` + `FORM-11`）：自托管 Compose 加 dify profile（**本地 Dify 无头栈**）；桌面 = flow 插件 + 引擎按需下载 + `engineRuntime` 双 Provider（WSL2 / 本机容器）+ 兜底（指向自管地址） | 空库全量重放 + Compose 健康检查 + 下载失败/取消路径 + 卸载后无残留 + WSL 与本机 Docker 两条路各自跑通启停 |
 | P7 | （远期）深度收编评估 | 届时另立方案 |
@@ -187,7 +191,7 @@ graph TB
 
 1. **桌面引擎「怎么拿到运行时」的实施细节**（`FORM-11` 已定：承载方式 = flow 插件 + 按需下载，运行时 = 双 Provider「WSL2 / 本机容器」+ 兜底「指向自管地址」）。**三问已拍板（2026-09-25，用户委托按工程最优补定，可复议）**：
    - ① **WSL2 分发形态：装好 WSL 后在其内自行拉取镜像**（不在仓库里自分发打包发行版）。理由：插件守护 + 无头镜像集实测已到 **≈8.3GB**，打包分发会让安装包/补丁体积失控；自行拉取贴近官方升级路径（`DEC-13`），配合 docker compose 的 profile 一条命令起栈。代价：首次需要外网（与「镜像按需下载」的前提一致）。宿主侧职责 = 探测 WSL2 可用性（已落地）→ 指导安装发行版 → 在 distro 内启用 Docker Engine → 拉起 compose。
-   - ② **内存口径：`.wslconfig` `memory=4GB`，退出 flow 时自动 `wsl --shutdown`**。理由：无头栈 10 容器实测空载 1.5–3GB，4GB 留出运行余量且不挤占桌面「内存 ≤900MB 的应用进程」预算（引擎是独立 VM，不占该口径）；自动 shutdown 换取「不用 flow 时零常驻」，代价是下次冷启动慢数秒——桌面场景可接受。数据（docker volume）不受 shutdown 影响。
-   - ③ **数据卷落点：落 distro 内**（docker 命名卷），不挂载 Windows 目录。理由：跨文件系统 I/O（9P）对 Postgres 是数量级劣化；备份用 `docker run --rm -v … tar` 导出命令文档化（compose 文件头已写「down -v 无残留」口径）。卸载策略：flow 插件卸载时**默认保留数据卷**并显式询问「保留 / 全删」，选择全删才执行 `down -v`——与 compose 头的口径一致。
+   - ② **内存口径：`.wslconfig` `memory=4GB`，退出 flow 时自动 `wsl --shutdown`**。理由：无头栈 10 容器实测空载 1.5–3GB，4GB 留出运行余量且不挤占桌面「内存 ≤900MB 的应用进程」预算（引擎是独立 VM，不占该口径）；自动 shutdown 换取「不用 flow 时零常驻」，代价是下次冷启动慢数秒——桌面场景可接受。数据（docker volume）不受 shutdown 影响。**落地口径（2026-10-09，偏差已登记）**：回收实现为停栈成功后 `wsl.exe --terminate <distro>`（只停本栈所在发行版，不碰用户其它发行版）；内存上限**只给指引不代写**（`.wslconfig` 是管用户所有发行版的全局文件，插件不越权改），指引显示在引擎页承载表。
+   - ③ **数据卷落点：落 distro 内**（docker 命名卷），不挂载 Windows 目录。理由：跨文件系统 I/O（9P）对 Postgres 是数量级劣化；备份用 `docker run --rm -v … tar` 导出命令文档化（compose 文件头已写「down -v 无残留」口径）。卸载策略：flow 插件卸载时**默认保留数据卷**并显式询问「保留 / 全删」，选择全删才执行 `down -v`——与 compose 头的口径一致。**落地口径（2026-10-09，用户口径覆盖本条）**：普通**停止**默认保留数据卷（`down`，不带 `--volumes`）；**卸载**按用户 2026-10-09 口径删引擎本体（`down --volumes --rmi all`，下次安装重新下载），插件代码与 compose 资源保留——不再询问「保留 / 全删」，如要复议以本条落地口径为准。
 2. **NestJS 网关长期去留**：B 形态下作为独立子系统长期存在，还是以 C 为目标提前做 Fastify 适配层？影响 P3/P4 缝的实现位置。
 3. **上游协作模式**：作者继续在原仓开发、主仓子模块指针跟随；何时转入主仓直接开发（作者已是本仓协作者，随时可转）。

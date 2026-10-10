@@ -1209,3 +1209,62 @@ test("env 门禁 fixture：未登记名 / 读者漂移 / 样例互锁各自被�
   result = envModule.checkEnv({ rootDir: fixtureRoot });
   assert.deepEqual(result.errors, []);
 });
+
+// --- 桌面打包的 SEA 边界：external 原生模块只能运行时懒加载 ---
+//
+// 打包服务端是**单文件 SEA**（Node 22）：esbuild 把 `--external:` 的依赖留成 require，
+// 而 SEA 的内建 require **只认内置模块**——模块顶层的静态 import 会在**加载期**抛
+// `ERR_UNKNOWN_BUILTIN_MODULE`，把整个服务端起不来（2026-10-09 打包冒烟实测：
+// `@napi-rs/canvas` 与 `@vscode/ripgrep` 各自拖死过一次，桌面端当时直接打不开）。
+// 这些依赖只允许走 `createRequire(import.meta.url)("…")` 的懒加载（见 node-pty 先例）。
+// 本门禁用静态扫描把「再写回顶层 import / 裸 require」挡在提交前——运行期证据是
+// `pnpm smoke:desktop`，但那条要打包数分钟，坏掉的写法不该等到那时才发现。
+test("打包 external 原生模块不得静态 import（SEA 加载期会崩）", () => {
+  const externals = [
+    "node-pty",
+    "@napi-rs/canvas",
+    "@vscode/ripgrep",
+    "sherpa-onnx-node",
+  ];
+  const sourceRoot = path.join(rootDir, "apps", "server", "src");
+  const files = [];
+  const walk = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.name === "node_modules") continue;
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) walk(absolute);
+      else if (/\.ts$/.test(entry.name) && !/\.test\.ts$/.test(entry.name))
+        files.push(absolute);
+    }
+  };
+  walk(sourceRoot);
+  assert.ok(files.length > 0, "应扫描到服务端源码");
+
+  const offenders = [];
+  for (const file of files) {
+    const source = readFileSync(file, "utf8");
+    for (const dependency of externals) {
+      const escaped = dependency.replace(/[.*+?^${}()|[\]\\/@]/g, "\\$&");
+      const patterns = [
+        // 值导入：`import x from "dep"`、`import "dep"`、`import { y } from "dep"`
+        // （`import type` 在编译期擦除，放行；type 位置的 `typeof import("dep")` 也放行）
+        new RegExp(
+          `^\\s*import\\s+(?!type\\b)[^;]*from\\s+["']${escaped}["']`,
+          "m",
+        ),
+        new RegExp(`^\\s*import\\s+["']${escaped}["']`, "m"),
+        // 裸 require("dep")：`requireFrom("dep")`、`nodeRequire("dep")` 不算
+        new RegExp(`(^|[^.\\w])require\\(\\s*["']${escaped}["']\\s*\\)`, "m"),
+        new RegExp(`(?<!typeof\\s)import\\(\\s*["']${escaped}["']`, "m"),
+      ];
+      if (patterns.some((pattern) => pattern.test(source)))
+        offenders.push(`${path.relative(rootDir, file)} → ${dependency}`);
+    }
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `这些文件把打包 external 写成了静态 import/裸 require（SEA 加载期会崩，改用 createRequire 懒加载）：\n${offenders.join("\n")}`,
+  );
+});

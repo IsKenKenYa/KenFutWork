@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -51,12 +52,29 @@ const files = [...new Set(listing.stdout.split("\0"))].filter((path) => {
     return false;
   }
 });
-const result = spawnSync(
-  "pnpm",
-  ["exec", "biome", "check", ...files, ...args],
-  {
-    cwd: root,
-    stdio: "inherit",
-  },
+/**
+ * biome 用 **node 直跑它的 JS 入口**，并把文件列表分批传参——两条都是 Windows 上的
+ * 硬约束（2026-10-09 实测，此前 `pnpm lint` 在这里静默退 1，连 biome 都没跑起来）：
+ * - `spawnSync("pnpm", …)` 在 Windows 上没有 shell 时解析不到 `pnpm.CMD`（Node ≥20
+ *   起 .cmd 不再可直接 spawn）→ ENOENT；
+ * - 1375 条路径合计 6.6 万字符，一次传参超过 CreateProcess 的命令行上限（约 32k）同样失败。
+ * 分批后每批各打各的摘要，任一批非零即整体失败。
+ */
+const biomeBin = createRequire(import.meta.url).resolve(
+  "@biomejs/biome/bin/biome",
 );
-process.exit(result.status ?? 1);
+const BATCH_SIZE = 300;
+let biomeFailed = false;
+for (let index = 0; index < Math.max(files.length, 1); index += BATCH_SIZE) {
+  const batch = files.slice(index, index + BATCH_SIZE);
+  const result = spawnSync(
+    process.execPath,
+    [biomeBin, "check", ...batch, ...args],
+    {
+      cwd: root,
+      stdio: "inherit",
+    },
+  );
+  if ((result.status ?? 1) !== 0) biomeFailed = true;
+}
+process.exit(biomeFailed ? 1 : 0);

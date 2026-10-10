@@ -98,6 +98,66 @@ describe("compat-context：正常装载", () => {
     expect(host.tools.get("demo_echo")).toBeUndefined();
   });
 
+  it("工具可声明执行效果：read/write 原样进注册表，未声明按 execute（未知效果人审）", async () => {
+    const host = makeHost();
+    const loaded = await loadCompatPlugin(
+      demoModule({
+        apply(ctx: {
+          effect: (fn: () => unknown) => void;
+          tools: { register: (d: unknown) => unknown };
+        }) {
+          ctx.effect(() => {
+            ctx.tools.register({
+              name: "device_read",
+              access: "read",
+              execute: async () => "read-ok",
+            });
+            ctx.tools.register({
+              name: "device_write",
+              access: "write",
+              execute: async () => "write-ok",
+            });
+            ctx.tools.register({
+              name: "undeclared",
+              execute: async () => "unknown-ok",
+            });
+          });
+        },
+      }),
+      host,
+    );
+
+    expect(host.tools.require("device_read").access).toBe("read");
+    expect(host.tools.require("device_write").access).toBe("write");
+    // 未声明 = 没有可信只读证明：按 execute 处理（与 MCP 工具同口径）
+    expect(host.tools.require("undeclared").access).toBe("execute");
+    loaded.dispose();
+  });
+
+  it("access 声明非法值时装载失败（fail loud，不静默按 execute 放过）", async () => {
+    const host = makeHost();
+    await expect(
+      loadCompatPlugin(
+        demoModule({
+          apply(ctx: {
+            effect: (fn: () => unknown) => void;
+            tools: { register: (d: unknown) => unknown };
+          }) {
+            ctx.effect(() => {
+              ctx.tools.register({
+                name: "demo_bad_access",
+                access: "run",
+                execute: async () => "nope",
+              });
+            });
+          },
+        }),
+        host,
+      ),
+    ).rejects.toBeInstanceOf(CompatLoadError);
+    expect(host.tools.get("demo_bad_access")).toBeUndefined();
+  });
+
   it("structuredContent 优先于文本块", async () => {
     const host = makeHost();
     const loaded = await loadCompatPlugin(

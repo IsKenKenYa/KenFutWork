@@ -80,3 +80,58 @@ describe("Reasoning（@zui 原件）", () => {
     expect(screen.getByText("思考正文")).toBeTruthy();
   });
 });
+
+/**
+ * 动态 UI（宿主扩展，见源码清单 message.tsx 的 adaptations）：
+ * ` ```viz ` 数据图表块在**完成态**交给共享组件渲染；流式态与坏 spec 落回代码块。
+ * mermaid 由上游 CodeBlock 的 renderMermaid 负责，这里不重复测。
+ */
+describe("MessageResponse：viz 数据图表块", () => {
+  const spec = JSON.stringify({
+    type: "bar",
+    title: "阶段耗时",
+    unit: "ms",
+    data: [
+      { label: "转写", value: 320 },
+      { label: "改写", value: 900 },
+    ],
+  });
+
+  it("完成态：渲染成图表（标题 + 数值可见）", () => {
+    render(
+      <MessageResponse
+        theme="light"
+        codePreviewSettings={DEFAULT_CODE_PREVIEW_SETTINGS}
+      >
+        {["```viz", spec, "```"].join("\n")}
+      </MessageResponse>,
+    );
+    expect(screen.getByText("阶段耗时")).toBeTruthy();
+    expect(screen.getByText("900ms")).toBeTruthy();
+  });
+
+  it("流式态：不升级成图（半截 JSON 必然失败，重挂载风险）", () => {
+    const { container } = render(
+      <MessageResponse streaming theme="light">
+        {["```viz", spec, "```"].join("\n")}
+      </MessageResponse>,
+    );
+    expect(screen.queryByRole("img", { name: "阶段耗时" })).toBeNull();
+    // 回落成代码块：viz 按 JSON 高亮（没有 viz 语法，未知语言会抛未处理的 rejection）
+    expect(container.querySelector('[data-language="json"]')).not.toBeNull();
+  });
+
+  it("坏 spec：落回代码块（不渲染图表、不炸消息）", () => {
+    const { container } = render(
+      <MessageResponse
+        theme="light"
+        codePreviewSettings={DEFAULT_CODE_PREVIEW_SETTINGS}
+      >
+        {["```viz", "{ 坏 JSON }", "```"].join("\n")}
+      </MessageResponse>,
+    );
+    expect(screen.queryByRole("img")).toBeNull();
+    // 回落成代码块（viz → json 高亮；代码正文由异步高亮器填充，jsdom 下不等它）
+    expect(container.querySelector('[data-language="json"]')).not.toBeNull();
+  });
+});

@@ -5,12 +5,14 @@ import {
   formatArgsText,
   parseArgsText,
   parseEnvText,
+  parseHeadersText,
 } from "../src/lib/mcp-form.js";
 
 /**
  * 回归背景：MCP 配置此前只能改环境变量，现在要能界面增删改。
- * 三个易错点必须由纯函数兜住：参数含空格（切分会碎）、编辑时误用空 env
- * 覆盖掉已存密钥（接口只回 envKeys，不回值）、两类传输（stdio/http）校验互斥。
+ * 四个易错点必须由纯函数兜住：参数含空格（切分会碎）、编辑时误用空 env
+ * 覆盖掉已存密钥（接口只回 envKeys/headerKeys，不回值）、两类传输（stdio/http）
+ * 校验互斥、请求头名按 HTTP token 收窄。
  */
 describe("MCP 表单解析与校验", () => {
   it("参数按行解析（保留含空格的值），并忽略空行与首尾空白", () => {
@@ -33,6 +35,19 @@ describe("MCP 表单解析与校验", () => {
     expect(result.errors[1]).toContain("环境变量名不合法");
   });
 
+  it("请求头按 KEY=VALUE 解析：放开 `-`，值里的 `=` 归值", () => {
+    const result = parseHeadersText(
+      "Authorization=Bearer eyJhbGciOi=abc\nX-Api-Key=k-1\nbad name=v\nNO_EQUALS",
+    );
+    expect(result.env).toEqual({
+      Authorization: "Bearer eyJhbGciOi=abc",
+      "X-Api-Key": "k-1",
+    });
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors[0]).toContain("请求头名不合法");
+    expect(result.errors[1]).toContain("缺少 KEY=");
+  });
+
   it("stdio 新建：名称必填/格式校验/命令必填，env 总是下发", () => {
     const bad = buildMcpServerPayload(
       {
@@ -42,8 +57,9 @@ describe("MCP 表单解析与校验", () => {
         url: "",
         argsText: "",
         envText: "",
+        headersText: "",
       },
-      { mode: "create", envTouched: false },
+      { mode: "create", envTouched: false, headersTouched: false },
     );
     expect(bad.errors).toEqual([
       "名称只允许字母、数字、- 与 _。",
@@ -58,8 +74,9 @@ describe("MCP 表单解析与校验", () => {
         url: "",
         argsText: "server.py",
         envText: "K=v",
+        headersText: "X-Ignored=1",
       },
-      { mode: "create", envTouched: false },
+      { mode: "create", envTouched: false, headersTouched: false },
     );
     expect(ok.errors).toEqual([]);
     expect(ok.payload).toEqual({
@@ -71,7 +88,7 @@ describe("MCP 表单解析与校验", () => {
     });
   });
 
-  it("http 新建：只要求 url（http/https），不下发 command/args/env", () => {
+  it("http 新建：只要求 url（http/https），不下发 command/args/env；请求头随创建下发", () => {
     const missing = buildMcpServerPayload(
       {
         name: "remote",
@@ -80,8 +97,9 @@ describe("MCP 表单解析与校验", () => {
         url: "",
         argsText: "",
         envText: "",
+        headersText: "",
       },
-      { mode: "create", envTouched: false },
+      { mode: "create", envTouched: false, headersTouched: false },
     );
     expect(missing.errors).toEqual(["远程端点 URL 必填。"]);
 
@@ -93,27 +111,30 @@ describe("MCP 表单解析与校验", () => {
         url: "ftp://example.com",
         argsText: "",
         envText: "",
+        headersText: "",
       },
-      { mode: "create", envTouched: false },
+      { mode: "create", envTouched: false, headersTouched: false },
     );
     expect(badScheme.errors).toEqual(["远程端点 URL 必须以 http(s):// 开头。"]);
 
     const ok = buildMcpServerPayload(
       {
-        name: "remote",
+        name: "home-assistant",
         kind: "http",
         command: "",
         url: "  https://mcp.example.com/mcp  ",
         argsText: "--should-be-ignored",
         envText: "SHOULD=be-ignored",
+        headersText: "Authorization=Bearer ha-token",
       },
-      { mode: "create", envTouched: false },
+      { mode: "create", envTouched: false, headersTouched: false },
     );
     expect(ok.errors).toEqual([]);
     expect(ok.payload).toEqual({
-      name: "remote",
+      name: "home-assistant",
       kind: "http",
       url: "https://mcp.example.com/mcp",
+      headers: { Authorization: "Bearer ha-token" },
     });
   });
 
@@ -126,8 +147,9 @@ describe("MCP 表单解析与校验", () => {
         url: "",
         argsText: "",
         envText: "",
+        headersText: "",
       },
-      { mode: "edit", envTouched: false },
+      { mode: "edit", envTouched: false, headersTouched: false },
     );
     expect(untouched.payload).not.toHaveProperty("env");
     expect(untouched.payload).not.toHaveProperty("name");
@@ -140,13 +162,14 @@ describe("MCP 表单解析与校验", () => {
         url: "",
         argsText: "",
         envText: "NEW=1",
+        headersText: "",
       },
-      { mode: "edit", envTouched: true },
+      { mode: "edit", envTouched: true, headersTouched: false },
     );
     expect(touched.payload.env).toEqual({ NEW: "1" });
   });
 
-  it("http 编辑：只下发 url（name/env/command 都不动）", () => {
+  it("http 编辑：只下发 url 与改动过的请求头（name/env 都不动）", () => {
     const result = buildMcpServerPayload(
       {
         name: "remote",
@@ -155,13 +178,33 @@ describe("MCP 表单解析与校验", () => {
         url: "https://mcp.example.com/mcp",
         argsText: "",
         envText: "NEW=1",
+        headersText: "",
       },
-      { mode: "edit", envTouched: true },
+      { mode: "edit", envTouched: true, headersTouched: false },
     );
     expect(result.errors).toEqual([]);
     expect(result.payload).toEqual({
       kind: "http",
       url: "https://mcp.example.com/mcp",
+    });
+  });
+
+  it("http 编辑且改动请求头：下发 headers（空文本等于清空）", () => {
+    const result = buildMcpServerPayload(
+      {
+        name: "remote",
+        kind: "http",
+        command: "",
+        url: "https://mcp.example.com/mcp",
+        argsText: "",
+        envText: "",
+        headersText: "Authorization=Bearer new-token",
+      },
+      { mode: "edit", envTouched: false, headersTouched: true },
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.payload.headers).toEqual({
+      Authorization: "Bearer new-token",
     });
   });
 
@@ -174,8 +217,9 @@ describe("MCP 表单解析与校验", () => {
         url: "",
         argsText: "",
         envText: "",
+        headersText: "",
       },
-      { mode: "edit", envTouched: false },
+      { mode: "edit", envTouched: false, headersTouched: false },
     );
     expect(result.errors).toEqual([]);
   });

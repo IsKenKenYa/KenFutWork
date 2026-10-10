@@ -7,6 +7,9 @@
  *
  * 能力面：只依赖 `tools`。KenFutWork 的支持面见服务端 capability-binding.ts。
  * 工具结果用 dsh 的 ContentBlock 形状返回，KenFutWork 的适配层会归一化。
+ *
+ * `access` 是 KenFutWork 的执行效果声明（dsh 侧忽略）：`read` = 只读、默认档不审批；
+ * `write` / `execute` = 进默认档审批；不声明按 `execute` 处理（未知效果人审）。
  */
 
 export const name = "kenfutwork-example-clock";
@@ -17,6 +20,8 @@ export function apply(ctx) {
   ctx.effect(() =>
     ctx.tools.register({
       name: "clock_now",
+      // 只读：默认档不拦截（写设备/落盘的插件工具应声明 write）。
+      access: "read",
       description: "返回当前时间（本地时区 ISO 字符串与 UTC 时间戳）。",
       parameters: { type: "object", properties: {} },
       execute: async () => {

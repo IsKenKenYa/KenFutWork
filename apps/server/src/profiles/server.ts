@@ -17,6 +17,7 @@ import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
 import { createCodeUiAgentEventsPlugin } from "../features/code-ui/agent-events-plugin.js";
 import { createCodeUiPlugin } from "../features/code-ui/plugin.js";
 import { createComputerUsePlugin } from "../features/computer-use/plugin.js";
+import { createDynamicUiPlugin } from "../features/dynamic-ui/plugin.js";
 import { createExecutionScopesPlugin } from "../features/execution/plugin.js";
 import { createFlowHostPlugin } from "../features/flow/plugin.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
@@ -214,6 +215,8 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createBrowserPlugin(),
     // 语音助手（内建插件，默认开启）：听/说走内置 sherpa 或 BYOK 实例端点
     createVoicePlugin(),
+    // 动态 UI（对话流可视化）：只贡献提示段（mermaid / viz 两种块；渲染在两端）
+    createDynamicUiPlugin(),
     createPluginsPlugin({
       builtinCatalog: PLUGIN_CATALOG,
       ...(deps.githubToken ? { githubToken: deps.githubToken } : {}),

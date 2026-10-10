@@ -47,6 +47,23 @@ export function isDangerousTool(toolName: string): boolean {
 }
 
 /**
+ * 危险调用的完整判据 = 名称命中危险模式 **或** 属主声明的执行效果不是只读。
+ *
+ * 为什么要看声明：插件 bundle 的工具名（`mihome_control`/`ha_control`…）不进名表，
+ * 只按名字判会**静默放行设备写入**（《docs/插件/HA插件规划.md》§3.3）。工具注册时由
+ * 属主声明 `access`（内建工具在各自定义处、插件在 `ctx.tools.register`），内核随
+ * `tool-pre-execute` 事件把它带到这里：`read` = 只读放行，`write`/`execute` = 默认档
+ * 需审批。`undefined`（未声明的旧工具）维持按名字判，行为不变。
+ */
+export function isDangerousCall(input: {
+  toolName: string;
+  access?: "read" | "write" | "execute" | undefined;
+}): boolean {
+  if (isDangerousTool(input.toolName)) return true;
+  return input.access !== undefined && input.access !== "read";
+}
+
+/**
  * 档位 → 用户可见名（与界面同一套词：默认 / 自动审批 / 完全访问 / 自定义）。
  *
  * 审批原因会直接展示给用户，**别把原始枚举值写进去**（此前非自定义档渲染成
@@ -84,6 +101,8 @@ export interface PermissionService extends CodeApprovalService {
     toolName: string;
     threadId?: string;
     scenario?: PermissionScenario;
+    /** 属主声明的执行效果（内核随 tool-pre-execute 事件带来）；缺省按名字判。 */
+    access?: "read" | "write" | "execute" | undefined;
   }): PermissionDecision;
   /** 审批（只能由人审 UI 触发，agent 无路径自我授权）。 */
   approve(toolName: string, approval: ToolApproval): void;
@@ -130,7 +149,7 @@ export function createPermissionService(): PermissionService {
       foreverApproved.clear();
       for (const toolName of next.approvedForever) foreverApproved.add(toolName);
     },
-    evaluate({ toolName, threadId, scenario = "interactive" }) {
+    evaluate({ toolName, threadId, scenario = "interactive", access }) {
       const tier = tierFor(threadId, scenario);
       if (tier === "full-access") {
         return { decision: "allow" };
@@ -149,7 +168,7 @@ export function createPermissionService(): PermissionService {
         }
         // 都没命中 → 回落 default 档的判定
       }
-      if (!isDangerousTool(toolName)) {
+      if (!isDangerousCall({ toolName, ...(access ? { access } : {}) })) {
         return { decision: "allow" };
       }
       if (tier === "auto-approve") {

@@ -51,7 +51,12 @@ import {
   thinkSegment,
 } from "./diagnose.js";
 import type { VoiceModelStore } from "./model-store.js";
+import {
+  createLlamafileThinkProvider,
+  type LlamafileThinkProvider,
+} from "./providers/llamafile.js";
 import { createSherpaProvider, type SherpaModels } from "./providers/sherpa.js";
+import { REFINE_SYSTEM_PROMPT } from "./refine-prompt.js";
 import type { VoiceDiagnoseStore, VoiceRepository } from "./repository.js";
 import {
   createVoiceTimingLog,
@@ -110,6 +115,8 @@ export interface VoiceServiceDeps {
     selection: VoiceSelection,
     signal?: AbortSignal,
   ) => Promise<{ ttftSeconds: number; tokensPerSecond?: number }>;
+  /** 测试注入：离线「想」档 provider（默认走 llamafile）。 */
+  createThinkProvider?: (selection: VoiceSelection) => LlamafileThinkProvider;
 }
 
 export interface VoiceService {
@@ -376,15 +383,25 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
            * 文案口径（用户口径 2026-09-27）：**只给数字**，不写句子——界面负责排版，
            * 解释留在文档里。首次调用含模型载入，故实测值后面跟一个「首载」，别让人
            * 以为第一次也这么快。
+           *
+           * 「想」段单独一套口径：它的量纲是 tok/s（不是 ASR 的 RTF 倍数），未下载时给
+           * 规划 §3.2 的推算值并标「预估」；就绪后不编数字（真实吞吐要经检测页量，
+           * 没量到就不写——运行位置已经由 `location` 说明）。
            */
-          performanceNote:
-            ready && measured.rtfMedian !== undefined
-              ? `实测 ${measured.rtfMedian.toFixed(2)}×${
-                  measured.modelLoadMs === undefined
-                    ? ""
-                    : ` 首载 ${(measured.modelLoadMs / 1000).toFixed(1)}s`
-                }`
-              : "预估 0.1–0.7×",
+          ...(model.segment === "think"
+            ? ready
+              ? {}
+              : { performanceNote: "预估 10–20 tok/s" }
+            : {
+                performanceNote:
+                  ready && measured.rtfMedian !== undefined
+                    ? `实测 ${measured.rtfMedian.toFixed(2)}×${
+                        measured.modelLoadMs === undefined
+                          ? ""
+                          : ` 首载 ${(measured.modelLoadMs / 1000).toFixed(1)}s`
+                      }`
+                    : "预估 0.1–0.7×",
+              }),
           license: model.license,
         });
       }
@@ -437,10 +454,28 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
           "未选择「想」模型：完整回路需要一个对话模型（到「设置 → 语音」选一个）。",
         );
       }
-      if (settings.think.kind !== "instance") {
-        throw new VoiceUnavailableError(
-          "「想」段目前只支持在线（BYOK 对话模型）——内置离线档需要额外的推理运行时。",
+      if (settings.think.kind === "builtin") {
+        // 离线档：llamafile（权重 + 运行时同一文件，按需下载；见 providers/llamafile.ts）
+        const model = findBuiltinModel(settings.think.id);
+        if (!model || model.segment !== "think") {
+          throw new VoiceUnavailableError(
+            `内置「想」模型不存在：${settings.think.id}（到「设置 → 语音」重新选择）。`,
+          );
+        }
+        const provider = (deps.createThinkProvider ?? defaultThinkProvider(deps))(
+          settings.think,
         );
+        const ready = await provider.ready();
+        if (!ready.ok) {
+          throw new VoiceUnavailableError(ready.reason ?? "离线「想」模型未就绪。");
+        }
+        try {
+          return await provider.refine(input, signal);
+        } catch (error) {
+          throw new VoiceUnavailableError(
+            error instanceof Error ? error.message : "离线「想」模型调用失败。",
+          );
+        }
       }
       const run = deps.refine ?? refineWithInstanceChat(deps);
       return run(user, settings.think, input, signal);
@@ -767,6 +802,17 @@ function probeThinkTtft(deps: VoiceServiceDeps) {
     selection: VoiceSelection,
     signal?: AbortSignal,
   ): Promise<{ ttftSeconds: number; tokensPerSecond?: number }> => {
+    if (selection.kind === "builtin") {
+      // 离线档：llamafile 流式打一条固定短提示（真首 token 延迟 + 有 usage 才报 tok/s）
+      const provider = (deps.createThinkProvider ?? defaultThinkProvider(deps))(
+        selection,
+      );
+      const ready = await provider.ready();
+      if (!ready.ok) {
+        throw new Error(ready.reason ?? "离线「想」模型未就绪。");
+      }
+      return provider.probe(signal);
+    }
     if (!selection.model) {
       throw new Error("「想」段的供应商实例未指定模型。");
     }
@@ -818,6 +864,20 @@ function probeThinkTtft(deps: VoiceServiceDeps) {
 }
 
 /**
+ * 「想」段的离线档默认实现：llamafile（模型 + 运行时同一文件，见 providers/llamafile.ts）。
+ * 每次调用新建（与实例档同口径：内部进程单例按需惰性起，构造本身零成本）。
+ */
+function defaultThinkProvider(
+  deps: VoiceServiceDeps,
+): (selection: VoiceSelection) => LlamafileThinkProvider {
+  return (selection) =>
+    createLlamafileThinkProvider({
+      modelsRoot: deps.modelsRoot,
+      modelId: selection.id,
+    });
+}
+
+/**
  * 「想」段的默认实现：用用户自己的 BYOK 对话模型把口述补成完整需求。
  *
  * 提示词只做「补全与澄清」，**不替用户加需求**（三个不许：不许加约束、不许换技术栈、
@@ -853,14 +913,8 @@ function refineWithInstanceChat(deps: VoiceServiceDeps) {
     );
     const response = await model.invoke(
       [
-        new SystemMessage(
-          [
-            "你负责把用户的口述补成一条可直接执行的完整需求（中文，一段话）。",
-            "只做三件事：补全被省略的主语/对象、把口语指代按上下文落实、点明可验收的结果。",
-            "三个不许：不许添加用户没说的约束、不许更换用户指定的技术或方案、不许改变用户意图。",
-            "信息不足时按上下文最合理的解释补全，不要反问。只输出补全后的需求，不要解释。",
-          ].join(String.fromCharCode(10)),
-        ),
+        // 与离线档（llamafile）共用同一份系统提示词：两条路只差承载，口径必须一致
+        new SystemMessage(REFINE_SYSTEM_PROMPT),
         ...context,
         new HumanMessage(input.text),
       ],

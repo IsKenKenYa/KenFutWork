@@ -12,9 +12,12 @@
 #   → 要么在 Dify 里安装供应商插件（需外网），要么把网关侧 DIFY_SYNC_LLM_PROVIDER 设为 false。
 #
 # 用法（profile 名 `dify`，与仓库其余 compose 文件并存、互不干扰）：
-#   docker compose -f docker-compose.dify.yml --profile dify up -d
-#   docker compose -f docker-compose.dify.yml --profile dify ps        # 健康检查状态
-#   docker compose -f docker-compose.dify.yml --profile dify down -v   # 停并删数据卷（无残留）
+#   docker compose -f dify/docker-compose.dify.yml --profile dify up -d
+#   docker compose -f dify/docker-compose.dify.yml --profile dify ps        # 健康检查状态
+#   docker compose -f dify/docker-compose.dify.yml --profile dify down -v   # 停并删数据卷（无残留）
+#
+# 位置：本文件在 `dify/` 下（与 `ssrf_proxy/squid.conf` 同目录）——开发态与桌面打包态
+# 共用一条解析规则（资源根 + `dify/…`），相对挂载路径不再依赖仓库根。
 #
 # 首次初始化（无头栈必须走 API，两步且**共用 cookie 会话**；实测于 1.17.1）：
 #   curl -c jar -X POST $BASE/console/api/init  -d '{"password":"'"$DIFY_INIT_PASSWORD"'"}' \
@@ -166,13 +169,13 @@ services:
       retries: 30
     networks: [dify]
 
-  # ── SSRF 反代：sandbox 的出网只经它（禁私网目标，最小配置见 docker/dify/ssrf_proxy）──
+  # ── SSRF 反代：sandbox 的出网只经它（禁私网目标，最小配置见同目录 ssrf_proxy/）──
   ssrf_proxy:
     profiles: ["dify"]
     image: ubuntu/squid:latest
     restart: unless-stopped
     volumes:
-      - ./docker/dify/ssrf_proxy/squid.conf:/etc/squid/squid.conf:ro
+      - ./ssrf_proxy/squid.conf:/etc/squid/squid.conf:ro
     environment:
       HTTP_PORT: "3128"
     healthcheck:

@@ -46,8 +46,8 @@ export const computerUseMcpEventStreamSchema = z
 /**
  * MCP server 管理契约（`/api/mcp/servers*`）。
  *
- * 密钥纪律：请求可携带 `env`（含值），**响应只回 `envKeys`**——
- * 授权设置经原宿主按稳定记录ID读取env；目录、工具参数和事件不携带值。
+ * 密钥纪律：请求可携带 `env` 与 HTTP `headers`（含值），响应只回 `envKeys` / `headerKeys`。
+ * 授权设置经原宿主按稳定记录 ID 读取凭据；目录、工具参数和事件不携带值。
  */
 
 export const mcpServerSourceSchema = z.enum(["env", "managed"]);
@@ -74,6 +74,8 @@ export const mcpServerViewSchema = z.object({
   args: z.array(z.string()),
   /** 仅键名，值不外发。 */
   envKeys: z.array(z.string()),
+  /** http 类型的自定义请求头，同样**只回键名**（如 Authorization）。 */
+  headerKeys: z.array(z.string()),
   toolCount: z.number(),
   error: z.string().nullable(),
 });
@@ -85,6 +87,23 @@ export const mcpServerListResponseSchema = z.object({
 export type McpServerListResponse = z.infer<typeof mcpServerListResponseSchema>;
 
 const mcpEnvSchema = z.record(z.string(), z.string());
+
+/**
+ * http 类型的自定义请求头（HA 的 `POST /api/mcp` 一类端点靠 `Authorization` 鉴权）。
+ *
+ * 名按 HTTP token 收窄（Authorization / X-Api-Key 这类，不放任任意字节），值禁 CR/LF
+ * ——拼进 `requestInit.headers` 前必须先挡住头注入。值等同密钥：普通目录仅下发键名。
+ */
+const mcpHeadersSchema = z.record(
+  z
+    .string()
+    .max(64)
+    .regex(/^[A-Za-z0-9-]+$/, "请求头名只允许字母数字与 -"),
+  z
+    .string()
+    .max(4096)
+    .refine((value) => !/[\r\n]/.test(value), "请求头值不能含换行"),
+);
 
 export const mcpServerCreateRequestSchema = z
   .object({
@@ -101,6 +120,8 @@ export const mcpServerCreateRequestSchema = z
     url: z.string().trim().max(500).optional(),
     args: z.array(z.string().max(500)).max(50).default([]),
     env: mcpEnvSchema.default({}),
+    /** http 类型的自定义请求头（值只写不读）。 */
+    headers: mcpHeadersSchema.default({}),
     enabled: z.boolean().default(true),
   })
   .superRefine((value, ctx) => {
@@ -109,6 +130,13 @@ export const mcpServerCreateRequestSchema = z
         code: z.ZodIssueCode.custom,
         path: ["command"],
         message: "stdio 类型必须提供本地命令",
+      });
+    }
+    if (value.kind === "stdio" && Object.keys(value.headers).length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["headers"],
+        message: "stdio 类型用 env 传密钥，不支持自定义请求头",
       });
     }
     if (value.kind === "http") {
@@ -146,6 +174,8 @@ export const mcpServerUpdateRequestSchema = z.object({
   url: z.string().trim().min(1).max(500).optional(),
   args: z.array(z.string().max(500)).max(50).optional(),
   env: mcpEnvSchema.optional(),
+  /** http 类型的自定义请求头（提供时整体替换；值只写不读）。 */
+  headers: mcpHeadersSchema.optional(),
   enabled: z.boolean().optional(),
 });
 export type McpServerUpdateRequest = z.infer<
@@ -170,7 +200,7 @@ export const codeUiMcpSettingsSaveRequestSchema = z
         args: z.array(z.string()).optional(),
         env: mcpEnvSchema.optional(),
         enable: z.boolean().optional(),
-        headers: mcpEnvSchema.optional(),
+        headers: mcpHeadersSchema.optional(),
         oauth: z.unknown().optional(),
         timeoutMs: z.number().optional(),
         protocolVersion: z.string().optional(),

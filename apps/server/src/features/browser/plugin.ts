@@ -73,6 +73,19 @@ export function createBrowserPlugin(): PluginDefinition {
           );
         }
       };
+      /**
+       * 「允许 AI 在页面执行任意 JS」门控（`browser_eval`；默认关）。
+       * eval 把能力从「看和点」扩到「任意脚本」——独立于 devtools_read 的一道权限，
+       * 关掉时如实拒绝并指路，不静默降级成空结果。
+       */
+      const requireBrowserEval = (toolName: string): void => {
+        const settings = kernelCtx.tryGet("permissions")?.getSettings();
+        if (settings && !settings.browserEvalEnabled) {
+          throw new Error(
+            `页面内执行脚本未开启：请到「设置 → 浏览器」里打开「允许 AI 在页面执行脚本」后重试（${toolName}）。`,
+          );
+        }
+      };
       const autoScreenshot = (): boolean =>
         kernelCtx.tryGet("permissions")?.getSettings().browserAutoScreenshot ??
         false;
@@ -252,7 +265,7 @@ export function createBrowserPlugin(): PluginDefinition {
       tools.register({
         name: "browser_network",
         description:
-          "列出受控浏览器**当前页面**发出的网络请求（方法、URL、状态码、失败原因）。用来确认「点了按钮有没有真的发请求 / 哪个请求失败了」。",
+          "列出受控浏览器**当前页面**发出的网络请求（方法、URL、状态码、失败原因、耗时、响应 MIME）。用来确认「点了按钮有没有真的发请求 / 哪个请求失败了 / 慢在哪」。需要看请求体或响应内容时把 bodies 打开（默认不带，内容可能较大）。",
         scope: "shared",
         exposure: "deferred",
         access: "read",
@@ -268,6 +281,11 @@ export function createBrowserPlugin(): PluginDefinition {
               description: "只看 seq 大于它的新请求（用上一次返回的 nextSeq）",
             },
             limit: { type: "number", description: "最多返回多少条（默认 50）" },
+            bodies: {
+              type: "boolean",
+              description:
+                "带上请求体 / 响应体（文本类且体积在上限内才采到；默认 false）",
+            },
           },
         },
         execute: async (args) => {
@@ -282,6 +300,7 @@ export function createBrowserPlugin(): PluginDefinition {
               ? Math.min(Math.floor(limitRaw), 200)
               : 50;
           const onlyFailed = String(args.filter ?? "all") === "failed";
+          const withBodies = args.bodies === true;
           const result = await kernelCtx.get("browser").cdp.requests(since);
           const requests = result.requests
             .filter((request) =>
@@ -299,6 +318,16 @@ export function createBrowserPlugin(): PluginDefinition {
                 : { status: request.status }),
               ...(request.failed ? { failed: request.failed } : {}),
               ...(request.type ? { type: request.type } : {}),
+              ...(request.mimeType ? { mimeType: request.mimeType } : {}),
+              ...(request.durationMs === undefined
+                ? {}
+                : { durationMs: request.durationMs }),
+              ...(withBodies && request.requestBody !== undefined
+                ? { requestBody: request.requestBody }
+                : {}),
+              ...(withBodies && request.responseBody !== undefined
+                ? { responseBody: request.responseBody }
+                : {}),
             }));
           return {
             requests,
@@ -358,6 +387,39 @@ export function createBrowserPlugin(): PluginDefinition {
             throw new Error("browser_act 的 action 只支持 click / type / key");
           }
           return withShot({ ok: true, action });
+        },
+      });
+
+      tools.register({
+        name: "browser_eval",
+        description:
+          "在受控浏览器的当前页面里执行一段 JavaScript 并返回结果（值 / 类型；抛错则回错误文本）。用于读取页面状态、调用页面自己的 API、驱动前端逻辑做验证。需要「允许 AI 在页面执行脚本」权限（设置 → 浏览器，默认关）。结果尽量小：返回可序列化的值。",
+        scope: "shared",
+        exposure: "deferred",
+        access: "execute",
+        parameters: {
+          type: "object",
+          properties: {
+            expression: {
+              type: "string",
+              description:
+                "要执行的 JS 表达式（返回一个值；可用 await，支持 Promise）",
+            },
+          },
+          required: ["expression"],
+        },
+        execute: async (args) => {
+          requireBrowserControl("browser_eval");
+          requireBrowserEval("browser_eval");
+          const expression = String(args.expression ?? "").trim();
+          if (!expression) throw new Error("browser_eval 需要 expression 参数");
+          // 与 browser_console / browser_network 同一条通路：经 `ctx.get("browser")` 解析，
+          // 而不是闭包里的会话——「overrides 优先」的口径要一致，测试与替换才都能生效。
+          const result = await kernelCtx.get("browser").cdp.evaluateValue(expression);
+          if (!result.ok) {
+            return { ok: false, error: result.error ?? "执行出错" };
+          }
+          return withShot({ ok: true, type: result.type, value: result.value });
         },
       });
     },

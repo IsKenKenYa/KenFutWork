@@ -158,9 +158,10 @@ export type FlowHostEventsResponse = z.infer<
  * `recommended` 按平台矩阵给出首选；都不可用时为 null（界面据此引导安装或去配 Provider C）。
  * `reason` 是**可读原因 + 怎么补**（不放无提示的不可用），`detail` 是可用时的补充事实。
  *
- * 边界（如实声明）：本层只做**探测**；引擎的按需下载与生命周期托管（provision/start/
- * stop/teardown）依赖方案 §9.1 待拍板的三个口径（WSL 分发形态 / 内存上限 / 数据卷落点），
- * 尚未实现——探测层不假装能做，界面也不得据此显示「可启动」。
+ * 边界（如实声明）：本层只做**探测**；引擎的生命周期托管（provision/start/stop/teardown）
+ * 走 `flowEngineLaunchSchema` 选定的承载目标（宿主 docker / WSL2 发行版内 docker），
+ * 由宿主侧安装状态机执行。`wsl2` 路径的 `available` 含义是「发行版内 Docker 已就绪」，
+ * 只有发行版没有 docker 时给出可读的启用指引，不假装能启动。
  */
 export const flowEnginePathIdSchema = z.enum(["wsl2", "container", "remote"]);
 export type FlowEnginePathId = z.infer<typeof flowEnginePathIdSchema>;
@@ -174,6 +175,8 @@ export const flowEnginePathSchema = z.object({
   reason: z.string().optional(),
   /** 可用时的补充事实（版本、发行版名、地址来源）。 */
   detail: z.string().optional(),
+  /** `wsl2` 路径选定的发行版名（安装时作为承载目标的 `distro`，界面直接用它，不解析 detail）。 */
+  distro: z.string().optional(),
 });
 export type FlowEnginePath = z.infer<typeof flowEnginePathSchema>;
 
@@ -208,13 +211,39 @@ export type FlowEngineInstallStatus = z.infer<
  * 引擎栈停止/卸载（FORM-11 生命周期，`POST /api/flow/host/engine/stop`）。
  *
  * `deleteData` 缺省 false = 只 `down` 保容器卷数据（下次起栈沿用）；
- * `true` = 追加 `--volumes` 全删（§9.1③ 的卸载策略：**显式选择全删才动数据**）。
+ * `true` = 追加 `--volumes` 全删（§9.1③ 的停止口径：**显式选择全删才动数据**）。
+ * flow 插件卸载走的是更强的 `purge`（`down --volumes --rmi all` + 清本地 env/日志/记录），
+ * 见 `flowEngineLaunchSchema` 旁的说明。
  */
 export const flowHostEngineStopRequestSchema = z.object({
   deleteData: z.boolean().optional(),
 });
 export type FlowHostEngineStopRequest = z.infer<
   typeof flowHostEngineStopRequestSchema
+>;
+
+/**
+ * 引擎承载目标（FORM-11 双 Provider）：宿主 docker 或 WSL2 发行版内 docker。
+ *
+ * 安装时选定并**落盘**（数据目录 `dify-stack.runtime.json`）——停止 / 查询必须用同一个
+ * 目标，否则 `down` 找不到另一侧起的容器。缺省（没有记录）= `host`。
+ *
+ * flow 插件卸载（`POST /api/plugins/kenfutwork-flow/uninstall`）按用户口径执行 purge：
+ * 删引擎本体（容器 + 卷 + 镜像 + 本地 env/日志/记录），**保留插件代码**——下次安装
+ * 重新下载镜像即可；不 purge 插件代码是「能二次安装」的前提。
+ */
+export const flowEngineLaunchSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("host") }),
+  z.object({ kind: z.literal("wsl2"), distro: z.string().min(1) }),
+]);
+export type FlowEngineLaunch = z.infer<typeof flowEngineLaunchSchema>;
+
+/** 引擎安装请求（`POST /api/flow/host/engine/install`）：选定承载目标。 */
+export const flowHostEngineInstallRequestSchema = z.object({
+  launch: flowEngineLaunchSchema.optional(),
+});
+export type FlowHostEngineInstallRequest = z.infer<
+  typeof flowHostEngineInstallRequestSchema
 >;
 
 /**
@@ -245,6 +274,8 @@ export const flowHostEngineInfoResponseSchema = z.object({
     containers: z.array(flowEngineStackContainerSchema),
     error: z.string().optional(),
   }),
+  /** 当前承载目标（落盘记录；缺省 host）。停止/查询都按它执行。 */
+  runtime: flowEngineLaunchSchema,
   addresses: z.object({
     /** flow 画布（前端）地址；未配置为 null。 */
     frontendUrl: z.string().nullable(),

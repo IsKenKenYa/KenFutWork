@@ -7,6 +7,67 @@ const { request, pluginsDirectory } = useCodeUiHttpFixture();
 describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
   "原MCP管理接口 integration",
   () => {
+    it("HTTP请求头经原编辑器保存与回读，普通目录不携带凭据", async () => {
+      const save = (input: unknown) =>
+        request("/api/code-ui/rpc", {
+          service: "mcp-sync",
+          method: "saveMcpToUserDirectory",
+          args: [input],
+        });
+      const base = {
+        action: "upsert",
+        source: "zcodeagentmcp",
+        name: "http-header-probe",
+      };
+      const saved = await save({
+        ...base,
+        hostRecordId: null,
+        config: {
+          type: "http",
+          url: "http://127.0.0.1:1/mcp",
+          enable: false,
+          headers: { Authorization: "Bearer private-header" },
+        },
+      });
+      expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+      const directory = await request("/api/mcp/servers");
+      const row = directory.body.servers.find(
+        (row: { name: string }) => row.name === base.name,
+      );
+      expect(row.headerKeys).toEqual(["Authorization"]);
+      expect(JSON.stringify(directory.body)).not.toContain("private-header");
+      const read = () =>
+        request("/api/code-ui/rpc", {
+          service: "mcp-sync",
+          method: "readMcpServerConfiguration",
+          args: [{ hostRecordId: row.id }],
+        });
+      expect((await read()).body.result.config.headers).toEqual({
+        Authorization: "Bearer private-header",
+      });
+      expect(
+        (
+          await save({
+            ...base,
+            hostRecordId: row.id,
+            config: {
+              type: "http",
+              url: "http://127.0.0.1:1/mcp",
+              enable: false,
+              headers: {},
+            },
+          })
+        ).status,
+      ).toBe(200);
+      expect((await read()).body.result.config.headers).toEqual({});
+      const listed = await request("/api/code-ui/rpc", {
+        service: "mcp-sync",
+        method: "loadMcpFromUserDirectory",
+        args: [{}],
+      });
+      expect(JSON.stringify(listed.body)).not.toContain("private-header");
+    });
+
     it("原连接页读取真实stdio工具并重连，不能执行UI提供的替代命令", async () => {
       // 外部stdio边界替身；通过真实SDK的initialize/tools/list协议验证宿主消费。
       const script = `

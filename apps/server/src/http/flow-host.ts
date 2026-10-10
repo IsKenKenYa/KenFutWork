@@ -3,12 +3,14 @@ import {
   applicationErrorResponseSchema,
   FLOW_EMBED_PROTOCOL_VERSION,
   type FlowEngineInstallStatus,
+  type FlowEngineLaunch,
   type FlowEngineStackContainer,
   type FlowHostEngineResponse,
   flowEngineInstallStatusSchema,
   flowHostCredentialsRequestSchema,
   flowHostCredentialsResponseSchema,
   flowHostEngineInfoResponseSchema,
+  flowHostEngineInstallRequestSchema,
   flowHostEngineStopRequestSchema,
   flowHostEventsRequestSchema,
   flowHostEventsResponseSchema,
@@ -65,9 +67,12 @@ export async function registerFlowHostRoutes(
         displayName?: string;
       } | null>;
     };
-    /** 引擎栈托管（FORM-11）：确认后拉镜像起栈，状态可轮询。 */
+    /** 引擎栈托管（FORM-11）：确认后按承载目标拉镜像起栈，状态可轮询。 */
     engineInstall: {
-      start(): { started: boolean; snapshot: FlowEngineInstallStatus };
+      start(launch?: FlowEngineLaunch): {
+        started: boolean;
+        snapshot: FlowEngineInstallStatus;
+      };
       status(): FlowEngineInstallStatus;
     };
     /** 引擎栈停止/卸载（FORM-11 生命周期）：`deleteData` 显式选择才全删容器卷。 */
@@ -79,13 +84,14 @@ export async function registerFlowHostRoutes(
     };
     /**
      * 引擎信息页的数据面（`GET /api/flow/host/engine/info`）：托管状态 + 承载探测 +
-     * 栈容器事实 + 地址/路径一次取全。由装配层实现（compose 文件与数据目录只在它那里）。
+     * 栈容器事实 + 当前承载目标 + 地址/路径一次取全。由装配层实现（compose 文件与数据目录只在它那里）。
      */
     engineInfo?: {
       info(): Promise<{
         install: FlowEngineInstallStatus;
         probe: FlowHostEngineResponse;
         stack: { containers: FlowEngineStackContainer[]; error?: string };
+        runtime: FlowEngineLaunch;
         addresses: { composeFile: string; dataDir: string };
       }>;
     };
@@ -227,8 +233,14 @@ export async function registerFlowHostRoutes(
     const actor = await options.localAccess.authenticate(request);
     if (!actor) return unauthorized(reply, "缺少或无效的本机接入凭据。");
     await options.localInstance.resolve(actor);
+    // 承载目标（FORM-11 双 Provider）：缺省 host；选定后落盘，停止/查询都按它执行。
+    const parsed = flowHostEngineInstallRequestSchema.safeParse(
+      request.body ?? {},
+    );
+    if (!parsed.success)
+      return error(reply, 400, "application_error", "安装请求格式不正确。");
     // 确认闸：这是用户点「安装引擎」后的入口；已在安装中则 409（轮询 status 即可）。
-    const { started, snapshot } = options.engineInstall.start();
+    const { started, snapshot } = options.engineInstall.start(parsed.data.launch);
     if (!started && snapshot.state === "installing") {
       return reply.code(409).send(
         applicationErrorResponseSchema.parse({
@@ -309,6 +321,8 @@ export async function registerFlowHostRoutes(
         install,
         probe: info.probe,
         stack: info.stack,
+        // 承载目标（落盘记录）：界面按它显示「承载 WSL2 · Ubuntu / 本机容器」
+        runtime: info.runtime,
         addresses: {
           frontendUrl: options.frontendUrl?.trim() || null,
           hostIdentityUrl,

@@ -27,6 +27,7 @@ import type {
   SubmitImageJobFn,
   SubmitVideoJobFn,
 } from "../features/generation/tool-types.js";
+import type { FlowEngineHostService } from "../features/flow/engine/install.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import type { LocalAccessService } from "../features/local-access/types.js";
 import type {
@@ -157,6 +158,11 @@ export interface ServiceMap {
    * Provider（内置 sherpa 离线 / BYOK 实例端点）。非模型可调用能力，故不进 `tools`。
    */
   voice: VoiceService;
+  /**
+   * flow 引擎托管缝（FORM-11）：承载目标（host / WSL2）下的引擎栈生命周期钩子；
+   * 消费方 = 插件卸载路由（卸载 flow 插件时 purge 引擎、保留插件代码，见《flow插件集成规划》§9.1③）。
+   */
+  flowEngine: FlowEngineHostService;
   /** ConnectionManager + EventBuffer */
   ws: WsServices;
 }
@@ -204,6 +210,11 @@ export interface ToolPreExecutePayload {
   /** 会话线程（执行模式等按线程拦截的监听器据此取策略）。 */
   threadId?: string | undefined;
   toolName: string;
+  /**
+   * 工具属主声明的执行效果（`ToolDefinition.access`）。权限判据用它区分只读与写：
+   * 插件工具尤其需要——它们的名字不进危险工具名表，只能靠声明进默认档审批。
+   */
+  access?: "read" | "write" | "execute" | undefined;
 }
 
 export interface TurnStoppingPayload {

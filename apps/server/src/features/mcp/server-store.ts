@@ -18,13 +18,15 @@ export interface StoredMcpServer {
   args: string[];
   /** http 类型的远程端点 URL（stdio 为空）。 */
   url: string | null;
+  /** http 类型的自定义请求头（可能含密钥，运行时连接用）。 */
+  headers: Record<string, string>;
   env: Record<string, string>;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-/** 可下发形态：env 只给键名。 */
+/** 可下发形态：env 与 headers 只给键名。 */
 export interface PublicMcpServer {
   id: string;
   name: string;
@@ -33,6 +35,7 @@ export interface PublicMcpServer {
   args: string[];
   url: string | null;
   envKeys: string[];
+  headerKeys: string[];
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -48,6 +51,8 @@ export interface McpServerUpsertInput {
   /** http 类型的远程端点 URL（stdio 为 null）。 */
   url: string | null;
   env: Record<string, string>;
+  /** http 类型的自定义请求头（stdio 为空对象，由归一化层写入）。 */
+  headers: Record<string, string>;
   enabled: boolean;
 }
 
@@ -62,6 +67,7 @@ export type McpServerCreateRaw = {
   args: string[];
   url?: string | null | undefined;
   env: Record<string, string>;
+  headers?: Record<string, string> | undefined;
   enabled: boolean;
 };
 
@@ -89,6 +95,7 @@ type Row = {
   command: string;
   args: unknown;
   url: string | null;
+  headers: unknown;
   env: unknown;
   enabled: boolean;
   created_at: string;
@@ -122,6 +129,7 @@ function toStored(row: Row): StoredMcpServer {
     command: row.command,
     args: asStringArray(row.args),
     url: row.url,
+    headers: asStringRecord(row.headers),
     env: asStringRecord(row.env),
     enabled: row.enabled,
     createdAt: row.created_at,
@@ -138,6 +146,7 @@ function toPublic(row: Row): PublicMcpServer {
     args: asStringArray(row.args),
     url: row.url,
     envKeys: Object.keys(asStringRecord(row.env)),
+    headerKeys: Object.keys(asStringRecord(row.headers)),
     enabled: row.enabled,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -145,7 +154,7 @@ function toPublic(row: Row): PublicMcpServer {
 }
 
 const COLUMNS =
-  "id, name, kind, command, args, url, env, enabled, created_at, updated_at";
+  "id, name, kind, command, args, url, headers, env, enabled, created_at, updated_at";
 
 export function createMcpServerStore(
   persistence: PersistenceService,
@@ -178,8 +187,8 @@ export function createMcpServerStore(
 
     async create(input) {
       const row = await (await scoped()).queryOne<Row>(
-        `insert into public.mcp_servers (instance_id, name, kind, command, args, url, env, enabled)
-         values (:instance, $1, $2, $3, $4::jsonb, $5, $6::jsonb, $7)
+        `insert into public.mcp_servers (instance_id, name, kind, command, args, url, headers, env, enabled)
+         values (:instance, $1, $2, $3, $4::jsonb, $5, $6::jsonb, $7::jsonb, $8)
          returning ${COLUMNS}`,
         [
           input.name,
@@ -187,6 +196,7 @@ export function createMcpServerStore(
           input.command,
           JSON.stringify(input.args),
           input.url,
+          JSON.stringify(input.headers),
           JSON.stringify(input.env),
           input.enabled,
         ],
@@ -211,6 +221,8 @@ export function createMcpServerStore(
       if (patch.url !== undefined) push("url = $?", patch.url);
       if (patch.args !== undefined)
         push("args = $?::jsonb", JSON.stringify(patch.args));
+      if (patch.headers !== undefined)
+        push("headers = $?::jsonb", JSON.stringify(patch.headers));
       if (patch.env !== undefined)
         push("env = $?::jsonb", JSON.stringify(patch.env));
       if (patch.enabled !== undefined) push("enabled = $?", patch.enabled);

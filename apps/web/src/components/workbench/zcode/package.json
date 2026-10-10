@@ -48,6 +48,7 @@
   },
   "dependencies": {
     "@kenfutwork/shared": "workspace:*",
+    "@kenfutwork/ui": "workspace:*",
     "@kenfutwork/voice-ui": "workspace:*",
     "@aiden0z/pptx-renderer": "1.2.4",
     "@dnd-kit/core": "^6.3.1",

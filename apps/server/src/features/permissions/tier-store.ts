@@ -42,6 +42,12 @@ export interface PermissionSettings {
    * 默认开——这是 agent 调试网页的主要依据，且数据只来自本机受控浏览器会话。
    */
   browserDevtoolsReadEnabled: boolean;
+  /**
+   * agent 能不能在受控页面里**执行任意 JS**（`browser_eval`）。
+   * 默认**关**——eval 把能力从「看和点」扩到「任意脚本」（改写页面状态、绕过前端校验、
+   * 发起本机请求），属权限口径，须用户显式打开；且仍需先开「允许 AI 控制浏览器」。
+   */
+  browserEvalEnabled: boolean;
 }
 
 export const DEFAULT_PERMISSION_SETTINGS: PermissionSettings = {
@@ -53,6 +59,7 @@ export const DEFAULT_PERMISSION_SETTINGS: PermissionSettings = {
   browserAutoScreenshot: false,
   browserHeadless: false,
   browserDevtoolsReadEnabled: true,
+  browserEvalEnabled: false,
 };
 
 export interface PermissionSettingsStore {
@@ -71,6 +78,7 @@ type AppConfigRow = {
   browser_auto_screenshot: unknown;
   browser_headless: unknown;
   browser_devtools_read_enabled: unknown;
+  browser_eval_enabled: unknown;
 };
 
 export function createPermissionSettingsStore(
@@ -82,7 +90,7 @@ export function createPermissionSettingsStore(
         `select permission_tier, automation_permission_tier, permission_rules,
                 approved_tools,
                 browser_control_enabled, browser_auto_screenshot, browser_headless,
-                browser_devtools_read_enabled
+                browser_devtools_read_enabled, browser_eval_enabled
            from public.app_config where id = 1`,
       );
       if (!row) return { ...DEFAULT_PERMISSION_SETTINGS };
@@ -111,6 +119,8 @@ export function createPermissionSettingsStore(
           row.browser_devtools_read_enabled === undefined
             ? DEFAULT_PERMISSION_SETTINGS.browserDevtoolsReadEnabled
             : row.browser_devtools_read_enabled === true,
+        // 缺列/坏值一律**当关**：eval 是放行「任意脚本」的权限，宁严勿松（与 devtools_read 相反）
+        browserEvalEnabled: row.browser_eval_enabled === true,
       };
     },
 
@@ -120,8 +130,8 @@ export function createPermissionSettingsStore(
            (id, permission_tier, automation_permission_tier, permission_rules,
             approved_tools,
             browser_control_enabled, browser_auto_screenshot, browser_headless,
-            browser_devtools_read_enabled)
-         values (1, $1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8)
+            browser_devtools_read_enabled, browser_eval_enabled)
+         values (1, $1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9)
          on conflict (id) do update
            set permission_tier = excluded.permission_tier,
                automation_permission_tier = excluded.automation_permission_tier,
@@ -131,6 +141,7 @@ export function createPermissionSettingsStore(
                browser_auto_screenshot = excluded.browser_auto_screenshot,
                browser_headless = excluded.browser_headless,
                browser_devtools_read_enabled = excluded.browser_devtools_read_enabled,
+               browser_eval_enabled = excluded.browser_eval_enabled,
                updated_at = now()`,
         [
           settings.tier,
@@ -141,6 +152,7 @@ export function createPermissionSettingsStore(
           settings.browserAutoScreenshot,
           settings.browserHeadless,
           settings.browserDevtoolsReadEnabled,
+          settings.browserEvalEnabled,
         ],
       );
     },

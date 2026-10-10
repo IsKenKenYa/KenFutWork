@@ -12,6 +12,27 @@ import { dirname, join, relative, resolve } from "node:path";
 
 const { parse } = createRequire(import.meta.url)("@babel/parser");
 
+/**
+ * 参考侧（`references/zcode`）的 sha 比对：**原始与 LF 归一任一命中即视为未漂移**。
+ *
+ * 为什么不能只比一种：清单是在 LF 检出的机器上逐字节记录的，而参考子模块的行尾随宿主
+ * git 配置走——`core.autocrlf=true` 的 Windows 检出会把 3000 个源文件里的 1852 个转成
+ * CRLF，只比原始就是满屏「漂移」假红（2026-10-09 实测；父仓 `.gitattributes` 钉 LF 管不到
+ * 子模块内容）。反过来，上游 `.gitattributes` 标了 `-text` 的文件（如
+ * `THIRD-PARTY-NOTICES.md`）原文本就是 CRLF，只有原始 sha 对得上。
+ * 二进制（含 NUL）只认逐字节；本仓自己的副本仍逐字节比（父仓钉 LF，保真口径不变）。
+ */
+function matchesReferenceSha(path, expected) {
+  const bytes = readFileSync(path);
+  if (createHash("sha256").update(bytes).digest("hex") === expected) return true;
+  if (bytes.includes(0)) return false;
+  return (
+    createHash("sha256")
+      .update(bytes.toString("utf8").replace(/\r\n/g, "\n"), "utf8")
+      .digest("hex") === expected
+  );
+}
+
 // 固定源码与实际复制记录；只负责机械移植，不生成或仿制界面。
 const root = resolve(import.meta.dirname, "..");
 const sourceOption = process.argv.indexOf("--source-root");
@@ -35,8 +56,7 @@ if (existsSync(inventoryPath)) {
     return (
       !existsSync(source) ||
       !existsSync(target) ||
-      createHash("sha256").update(readFileSync(source)).digest("hex") !==
-        record.sha256 ||
+      !matchesReferenceSha(source, record.sha256) ||
       createHash("sha256").update(readFileSync(target)).digest("hex") !==
         record.copiedSha256
     );

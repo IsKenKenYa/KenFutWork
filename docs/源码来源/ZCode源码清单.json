@@ -3315,9 +3315,10 @@
       "source": "references/zcode/packages/ui/src/components/ai-elements/message.tsx",
       "target": "apps/web/src/components/workbench/zcode/components/ai-elements/message.tsx",
       "sha256": "6c35829ed11321e850cd59e20c1c88fdd452e8e2d9b5da45f808371021aabf99",
-      "copiedSha256": "f15c3093a7db03f1221bd890fe91fef32a8cc6268776124fb5543d4dac98b37b",
+      "copiedSha256": "e876a6c05dc8f2493cce0ba5d89eeafe26d63f883b08fc83cd30cda2f80b7682",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主扩展（动态 UI）：code 覆写里新增 viz 数据图表分支，交给共享组件 @kenfutwork/ui 渲染（与 Design 侧同一份实现）；流式态不升级、坏 spec 回落 CodeBlock。验证见 apps/web/test/zcode-message.test.tsx 的 viz 用例与 visualization-block.test.tsx，哈希随本次改动更新。"
       ]
     },
     {

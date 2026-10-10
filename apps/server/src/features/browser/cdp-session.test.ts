@@ -29,6 +29,11 @@ function fakeClient() {
     null;
   /** 连上时报告的实例状态（无头用例要它）。 */
   let headless = false;
+  /** `Network.getResponseBody` 的返回；null = 浏览器说「取不到」（重定向/无体）。 */
+  let responseBodyResult: {
+    body: string;
+    base64Encoded?: boolean;
+  } | null = { body: "" };
   const client: CdpClient = {
     async send(method, params = {}, sessionId) {
       sent.push({ method, params, ...(sessionId ? { sessionId } : {}) });
@@ -38,6 +43,12 @@ function fakeClient() {
         };
       }
       if (method === "Runtime.evaluate") return evalResult;
+      if (method === "Network.getResponseBody") {
+        if (!responseBodyResult) {
+          throw new Error("No resource with given identifier found");
+        }
+        return responseBodyResult;
+      }
       if (method === "Browser.getWindowForTarget") {
         return {
           windowId: 4242,
@@ -69,6 +80,9 @@ function fakeClient() {
     sent,
     setEvalResult(value: Record<string, unknown>) {
       evalResult = value;
+    },
+    setResponseBody(value: { body: string; base64Encoded?: boolean } | null) {
+      responseBodyResult = value;
     },
     setDevToolsTarget(target: {
       targetId: string;
@@ -467,5 +481,223 @@ describe("CDP 会话：面板画面流", () => {
     expect(fake.listenerCount("Page.frameNavigated")).toBe(1);
     await session.disconnect();
     expect(fake.listenerCount("Page.frameNavigated")).toBe(0);
+  });
+});
+
+/**
+ * 网络采集（请求体 / 响应体 / 耗时）：CDP 的事件序列折成同一条记录。
+ * 采集有隐私与体积两个面——只有**文本类 MIME 且体积在上限内**才取响应体，
+ * 二进制与超大响应只留状态与耗时；取体失败（重定向/无体）不是错误路径。
+ */
+describe("CDP 会话：网络体与耗时采集", () => {
+  const emitRequest = (
+    fake: ReturnType<typeof fakeClient>,
+    overrides: {
+      requestId?: string;
+      timestamp?: number;
+      mimeType?: string;
+      encodedDataLength?: number;
+      postData?: string;
+    } = {},
+  ) => {
+    const requestId = overrides.requestId ?? "r1";
+    fake.emit(
+      "Network.requestWillBeSent",
+      {
+        requestId,
+        type: "fetch",
+        timestamp: overrides.timestamp ?? 100,
+        request: {
+          url: "https://a.com/api",
+          method: "POST",
+          ...(overrides.postData === undefined
+            ? {}
+            : { postData: overrides.postData }),
+        },
+      },
+      "S1",
+    );
+    fake.emit(
+      "Network.responseReceived",
+      {
+        requestId,
+        response: {
+          status: 200,
+          mimeType: overrides.mimeType ?? "application/json",
+        },
+      },
+      "S1",
+    );
+    fake.emit(
+      "Network.loadingFinished",
+      {
+        requestId,
+        timestamp: (overrides.timestamp ?? 100) + 0.132,
+        encodedDataLength: overrides.encodedDataLength ?? 11,
+      },
+      "S1",
+    );
+  };
+
+  it("请求体 / 响应体 / 耗时都补在同一条上", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.setResponseBody({ body: '{"ok":true}' });
+
+    emitRequest(fake, { postData: '{"a":1}' });
+
+    await vi.waitFor(async () => {
+      const { requests } = await session.requests(0);
+      expect(requests[0]).toMatchObject({
+        method: "POST",
+        url: "https://a.com/api",
+        status: 200,
+        mimeType: "application/json",
+        requestBody: '{"a":1}',
+        responseBody: '{"ok":true}',
+        durationMs: 132,
+      });
+    });
+    // 取体时用的就是这条请求的 id
+    const bodyCall = fake.sent.find(
+      (call) => call.method === "Network.getResponseBody",
+    );
+    expect(bodyCall?.params).toEqual({ requestId: "r1" });
+  });
+
+  it("二进制响应不取体（取回来是乱码）；耗时照给", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+
+    emitRequest(fake, { mimeType: "image/png" });
+
+    await vi.waitFor(async () => {
+      const { requests } = await session.requests(0);
+      expect(requests[0]?.durationMs).toBe(132);
+    });
+    expect(
+      fake.sent.some((call) => call.method === "Network.getResponseBody"),
+    ).toBe(false);
+    expect((await session.requests(0)).requests[0]?.responseBody).toBeUndefined();
+  });
+
+  it("超大响应不取体（不给内存与 agent 结果上压力）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+
+    emitRequest(fake, { encodedDataLength: 512 * 1024 + 1 });
+
+    await vi.waitFor(async () => {
+      const { requests } = await session.requests(0);
+      expect(requests[0]?.durationMs).toBe(132);
+    });
+    expect(
+      fake.sent.some((call) => call.method === "Network.getResponseBody"),
+    ).toBe(false);
+  });
+
+  it("取体失败（重定向/无体）：只补耗时，不炸也不留半截", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.setResponseBody(null);
+
+    emitRequest(fake);
+
+    await vi.waitFor(async () => {
+      const entry = (await session.requests(0)).requests[0];
+      expect(entry?.durationMs).toBe(132);
+    });
+    const entry = (await session.requests(0)).requests[0];
+    expect(entry?.responseBody).toBeUndefined();
+    expect(entry?.status).toBe(200);
+  });
+
+  it("base64 编码的响应体不采（避免把二进制塞进结果）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.setResponseBody({ body: "iVBORw0KGgo=", base64Encoded: true });
+
+    emitRequest(fake);
+
+    await vi.waitFor(async () => {
+      const entry = (await session.requests(0)).requests[0];
+      expect(entry?.durationMs).toBe(132);
+    });
+    expect((await session.requests(0)).requests[0]?.responseBody).toBeUndefined();
+  });
+});
+
+/**
+ * `evaluateValue`：`browser_eval` 的取值路径（与 `evaluate` 分开）。
+ * `evaluate` 是「控制台里敲一行」——结果折进同一条时间线；`evaluateValue` 是工具取值——
+ * 只回「值 + 类型」或「错误文本」，且**抛错不进控制台缓冲**（页面异常是这次调用的结果，
+ * 不是页面自己的日志，混进去会让 agent 下次拉增量时重复看到它）。
+ */
+describe("CDP 会话：页面内取值（browser_eval）", () => {
+  it("正常值：returnByValue + awaitPromise，回值与原类型；不进控制台缓冲", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.setEvalResult({ result: { type: "number", value: 42 } });
+
+    const result = await session.evaluateValue("6 * 7");
+    expect(result).toEqual({ ok: true, value: 42, type: "number" });
+    const params = fake.sent.at(-1)?.params as Record<string, unknown>;
+    expect(params).toMatchObject({
+      expression: "6 * 7",
+      returnByValue: true,
+      awaitPromise: true,
+      userGesture: true,
+    });
+    expect((await session.messages(0)).messages).toHaveLength(0);
+  });
+
+  it("页面里抛错：回错误原文（ok=false），不进控制台缓冲", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.setEvalResult({
+      exceptionDetails: {
+        exception: { description: "ReferenceError: nope is not defined" },
+      },
+    });
+
+    const result = await session.evaluateValue("nope()");
+    expect(result).toEqual({
+      ok: false,
+      error: "ReferenceError: nope is not defined",
+    });
+    expect((await session.messages(0)).messages).toHaveLength(0);
+  });
+
+  it("拿不到可序列化值：用 description 兜底（DOM 节点一类）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.setEvalResult({
+      result: { type: "object", description: "HTMLDivElement" },
+    });
+
+    const result = await session.evaluateValue("document.body");
+    expect(result).toEqual({
+      ok: true,
+      value: "HTMLDivElement",
+      type: "object",
+    });
+  });
+
+  it("undefined：如实回 null 值 + undefined 类型（不伪装成「没有返回」）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.setEvalResult({ result: { type: "undefined" } });
+
+    const result = await session.evaluateValue("void 0");
+    expect(result).toEqual({ ok: true, value: null, type: "undefined" });
   });
 });

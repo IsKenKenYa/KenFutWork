@@ -16,6 +16,12 @@ import { createBrowserPlugin } from "./plugin.js";
 function buildPluginTools(options: {
   devtoolsRead?: boolean;
   browserControl?: boolean;
+  /** 「允许 AI 在页面执行脚本」（browser_eval 的门；默认关）。 */
+  evalEnabled?: boolean;
+  /** 页面内执行脚本的替身返回（缺省成功回 42）。 */
+  evalResult?:
+    | { ok: true; value: unknown; type: string }
+    | { ok: false; error: string };
   messages?: Array<{
     seq: number;
     level: "log" | "info" | "warn" | "error";
@@ -32,6 +38,10 @@ function buildPluginTools(options: {
     status?: number;
     failed?: string;
     at: string;
+    mimeType?: string;
+    durationMs?: number;
+    requestBody?: string;
+    responseBody?: string;
   }>;
 }) {
   const tools = new Map<string, ToolDefinition>();
@@ -45,12 +55,16 @@ function buildPluginTools(options: {
       requests: [...(options.requests ?? [])],
       nextSeq: 9,
     })),
+    evaluateValue: vi.fn(async () =>
+      options.evalResult ?? { ok: true as const, value: 42, type: "number" },
+    ),
   };
   const services = new Map<string, unknown>();
   const settings = {
     browserControlEnabled: options.browserControl ?? true,
     browserDevtoolsReadEnabled: options.devtoolsRead ?? true,
     browserAutoScreenshot: false,
+    browserEvalEnabled: options.evalEnabled ?? false,
   };
   const ctx = {
     env: loadServerEnv({
@@ -236,5 +250,112 @@ describe("browser_network", () => {
       /允许 AI 读取开发者工具数据/,
     );
     expect(cdp.requests).not.toHaveBeenCalled();
+  });
+
+  it("耗时与响应 MIME 默认就带（判「慢在哪 / 回来的是什么」）", async () => {
+    const { tools } = buildPluginTools({
+      requests: [
+        {
+          seq: 1,
+          method: "POST",
+          url: "https://a.com/api",
+          status: 200,
+          at: "t",
+          mimeType: "application/json",
+          durationMs: 132,
+        },
+      ],
+    });
+    const result = (await call(tools, "browser_network")) as {
+      requests: Array<Record<string, unknown>>;
+    };
+    expect(result.requests[0]).toMatchObject({
+      mimeType: "application/json",
+      durationMs: 132,
+    });
+  });
+
+  it("请求体/响应体默认不带（结果保持紧凑），bodies=true 才带上", async () => {
+    const { tools } = buildPluginTools({
+      requests: [
+        {
+          seq: 1,
+          method: "POST",
+          url: "https://a.com/api",
+          status: 200,
+          at: "t",
+          mimeType: "application/json",
+          requestBody: '{"a":1}',
+          responseBody: '{"ok":true}',
+        },
+      ],
+    });
+    const compact = (await call(tools, "browser_network")) as {
+      requests: Array<Record<string, unknown>>;
+    };
+    expect(compact.requests[0]).not.toHaveProperty("requestBody");
+    expect(compact.requests[0]).not.toHaveProperty("responseBody");
+
+    const withBodies = (await call(tools, "browser_network", {
+      bodies: true,
+    })) as { requests: Array<Record<string, unknown>> };
+    expect(withBodies.requests[0]).toMatchObject({
+      requestBody: '{"a":1}',
+      responseBody: '{"ok":true}',
+    });
+  });
+});
+
+/**
+ * `browser_eval`：在页面里执行任意 JS（默认**关**，设置 → 浏览器显式打开）。
+ * 门控必须如实拒绝并指路；执行本身把「值 / 类型」与「抛错文本」分开回，
+ * 不把页面里的异常伪装成工具失败（模型要能看到真实报错原文）。
+ */
+describe("browser_eval", () => {
+  it("默认关：如实拒绝并指路，不执行任何脚本", async () => {
+    const { tools, cdp } = buildPluginTools({ evalEnabled: false });
+    await expect(
+      call(tools, "browser_eval", { expression: "1 + 1" }),
+    ).rejects.toThrow(/允许 AI 在页面执行脚本/);
+    expect(cdp.evaluateValue).not.toHaveBeenCalled();
+  });
+
+  it("浏览器控制关掉：先被控制门拦下", async () => {
+    const { tools } = buildPluginTools({
+      browserControl: false,
+      evalEnabled: true,
+    });
+    await expect(
+      call(tools, "browser_eval", { expression: "1 + 1" }),
+    ).rejects.toThrow(/浏览器控制未开启/);
+  });
+
+  it("打开后：透传表达式，回「值 + 类型」", async () => {
+    const { tools, cdp } = buildPluginTools({ evalEnabled: true });
+    const result = (await call(tools, "browser_eval", {
+      expression: "document.title",
+    })) as { ok: boolean; type?: string; value?: unknown };
+    expect(cdp.evaluateValue).toHaveBeenCalledWith("document.title");
+    expect(result).toMatchObject({ ok: true, type: "number", value: 42 });
+  });
+
+  it("页面里抛错：回错误文本（ok=false），不伪装成工具失败", async () => {
+    const { tools } = buildPluginTools({
+      evalEnabled: true,
+      evalResult: { ok: false, error: "ReferenceError: nope" },
+    });
+    const result = (await call(tools, "browser_eval", {
+      expression: "nope()",
+    })) as { ok: boolean; error?: string };
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("ReferenceError");
+  });
+
+  it("空表达式：拒绝并说明需要 expression", async () => {
+    const { tools, cdp } = buildPluginTools({ evalEnabled: true });
+    await expect(
+      call(tools, "browser_eval", { expression: "   " }),
+    ).rejects.toThrow(/需要 expression/);
+    expect(cdp.evaluateValue).not.toHaveBeenCalled();
   });
 });

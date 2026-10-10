@@ -28,11 +28,17 @@ describe.skipIf(process.env.KENFUTWORK_PERSISTENCE_TEST_PG !== "1")(
         const mcp = createMcpServerStore(db.persistence, db.localInstance);
         const remote = await mcp.create({
           name: "retained-remote", kind: "http", command: "", url: "http://127.0.0.1:9999/mcp",
-          args: [], env: { TEST_KEY: "fixture-value" }, enabled: false,
+          args: [], env: { TEST_KEY: "fixture-value" }, headers: { Authorization: "Bearer fixture-token" }, enabled: false,
         });
         expect(remote).toMatchObject({ kind: "http", command: "", url: "http://127.0.0.1:9999/mcp" });
-        expect(await mcp.listPublic()).toEqual([expect.objectContaining({ envKeys: ["TEST_KEY"] })]);
+        expect(await mcp.listPublic()).toEqual([
+          expect.objectContaining({
+            envKeys: ["TEST_KEY"],
+            headerKeys: ["Authorization"],
+          }),
+        ]);
         expect(JSON.stringify(await mcp.listPublic())).not.toContain("fixture-value");
+        expect(JSON.stringify(await mcp.listPublic())).not.toContain("fixture-token");
         const report = { measuredAt: "fixture-time" };
         await createVoiceDiagnoseStore(db.persistence).save(report);
         await db.persistence.close();

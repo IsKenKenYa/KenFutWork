@@ -40,6 +40,7 @@ import {
 import type { BundledTheme } from "shiki";
 import { defaultRehypePlugins, defaultRemarkPlugins, Streamdown } from "streamdown";
 import type { Pluggable, PluggableList } from "unified";
+import { parseVizSpec, VizBlock } from "@kenfutwork/ui";
 import { CodeBlock, CodeBlockHeader } from "@zui/components/ai-elements/code-block.js";
 import {
   ContextMenu,
@@ -1558,6 +1559,21 @@ export const MessageResponse = memo(
           const codeText = trimCodeFenceTrailingNewlines(extractCodeText(children));
           const language = getCodeLanguage(codeClassName);
 
+          /**
+           * 动态 UI（宿主扩展，见源码清单 adaptations）：` ```viz ` 数据图表块交给
+           * 共享组件（与 Design 侧同一份实现）。流式态不升级（半截 JSON 必然解析失败，
+           * 且与 mermaid 同款的重挂载风险）；解析失败原样落回 CodeBlock。
+           */
+          if (language === "viz" && !renderStreaming) {
+            const spec = parseVizSpec(codeText);
+            if (spec) {
+              return <VizBlock spec={spec} />;
+            }
+          }
+          // viz 不是语法：回落/流式态按 JSON 高亮（未知语言会让高亮器抛未处理的
+          // rejection——真机调试台里表现为一条莫名报错）
+          const codeLanguage = language === "viz" ? "json" : language;
+
           return (
             <CodeBlock
               className="my-4 border border-border bg-card"
@@ -1566,7 +1582,7 @@ export const MessageResponse = memo(
               // 高亮等消息完成后再启动，避免 async highlighter 和消息流更新叠加触发 React #185。
               enableSyntaxHighlighting={!renderStreaming}
               fontSizePx={codePreviewSettings.fontSizePx}
-              language={language}
+              language={codeLanguage}
               renderMermaid={!renderStreaming}
               theme={codeBlockTheme}
               appTheme={theme}
@@ -1574,7 +1590,7 @@ export const MessageResponse = memo(
             >
               <CodeBlockHeader
                 className="pl-3 pr-2 pt-2"
-                language={language}
+                language={codeLanguage}
                 showWrapButton={!forceCodeWrap}
               />
             </CodeBlock>

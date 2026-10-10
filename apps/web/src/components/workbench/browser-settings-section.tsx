@@ -27,6 +27,7 @@ import {
   fetchPermissionSettings,
   updatePermissionSettings,
 } from "@/lib/server-api";
+import { SettingsToggle } from "./settings-toggle";
 import {
   SETTINGS_CONTROL_WIDTH,
   SETTINGS_ROW_MIN_HEIGHT,
@@ -87,53 +88,6 @@ function saveSettings(settings: BrowserSettings) {
   }
 }
 
-/**
- * 单个开关行：标签 + 开关。**没有副标题**——复述标签的副标题按 2026-09-27 口径一律不写；
- * 时机这类一句话事实走操作回执（`setMessage`），不常驻在行里。
- */
-function Toggle({
-  label,
-  checked,
-  onChange,
-  disabled = false,
-}: {
-  label: string;
-  checked: boolean;
-  onChange?: (next: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <label
-      className={`flex cursor-pointer items-center justify-between gap-4 px-3 py-2 ${SETTINGS_ROW_MIN_HEIGHT}`}
-    >
-      <span className="text-sm">
-        {label}
-        {disabled ? (
-          <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-            暂不可用
-          </span>
-        ) : null}
-      </span>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        disabled={disabled}
-        onClick={() => onChange?.(!checked)}
-        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-          checked ? "bg-primary" : "bg-muted-foreground/30"
-        } ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
-      >
-        <span
-          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${
-            checked ? "left-[1.125rem]" : "left-0.5"
-          }`}
-        />
-      </button>
-    </label>
-  );
-}
 
 export function BrowserSettingsSection({
   accessToken = null,
@@ -154,6 +108,7 @@ export function BrowserSettingsSection({
    * 网络请求，agent 能不能读（默认开，见迁移 20260918100000）。
    */
   const [browserDevtoolsRead, setBrowserDevtoolsRead] = useState(true);
+  const [browserEval, setBrowserEval] = useState(false);
   const [browserHeadless, setBrowserHeadless] = useState(false);
 
   useEffect(() => {
@@ -172,6 +127,7 @@ export function BrowserSettingsSection({
         setAgentControl(view.browserControlEnabled);
         setBrowserAutoScreenshot(view.browserAutoScreenshot ?? false);
         setBrowserDevtoolsRead(view.browserDevtoolsReadEnabled ?? true);
+        setBrowserEval(view.browserEvalEnabled ?? false);
         setBrowserHeadless(view.browserHeadless ?? false);
       })
       .catch(() => {
@@ -223,12 +179,13 @@ export function BrowserSettingsSection({
     }
   };
 
-  /** 服务端开关（自动截图 / 无头 / 开发者工具数据）：先写库再改界面，失败回滚。 */
+  /** 服务端开关（自动截图 / 无头 / 开发者工具数据 / 页面执行脚本）：先写库再改界面，失败回滚。 */
   const toggleServerFlag = async (
     key:
       | "browserAutoScreenshot"
       | "browserHeadless"
-      | "browserDevtoolsReadEnabled",
+      | "browserDevtoolsReadEnabled"
+      | "browserEvalEnabled",
     next: boolean,
   ) => {
 
@@ -237,13 +194,16 @@ export function BrowserSettingsSection({
         ? setBrowserAutoScreenshot
         : key === "browserHeadless"
           ? setBrowserHeadless
-          : setBrowserDevtoolsRead;
+          : key === "browserEvalEnabled"
+            ? setBrowserEval
+            : setBrowserDevtoolsRead;
     setter(next);
     try {
       const view = await updatePermissionSettings(accessToken, { [key]: next });
       setBrowserAutoScreenshot(view.browserAutoScreenshot ?? false);
       setBrowserHeadless(view.browserHeadless ?? false);
       setBrowserDevtoolsRead(view.browserDevtoolsReadEnabled ?? true);
+      setBrowserEval(view.browserEvalEnabled ?? false);
       setMessage(
         key === "browserAutoScreenshot"
           ? next
@@ -253,9 +213,13 @@ export function BrowserSettingsSection({
             ? next
               ? "已设为后台运行（下次连接生效）"
               : "已设为有窗口（下次连接生效）"
-            : next
-              ? "已允许 AI 读取开发者工具数据"
-              : "已禁止 AI 读取开发者工具数据",
+            : key === "browserEvalEnabled"
+              ? next
+                ? "已允许 AI 在页面执行脚本"
+                : "已禁止 AI 在页面执行脚本"
+              : next
+                ? "已允许 AI 读取开发者工具数据"
+                : "已禁止 AI 读取开发者工具数据",
       );
     } catch (error) {
       setter(!next);
@@ -315,7 +279,7 @@ export function BrowserSettingsSection({
       <div>
         <h3 className={SETTINGS_TITLE}>内置浏览器</h3>
         <div className="divide-y rounded-lg border">
-          <Toggle
+          <SettingsToggle
             label="允许 AI 控制浏览器"
             checked={agentControl}
             onChange={(next) => void toggleAgentControl(next)}
@@ -472,23 +436,30 @@ export function BrowserSettingsSection({
             </Select>
           </label>
 
-          <Toggle
+          <SettingsToggle
             label="无头浏览器"
             checked={browserHeadless}
             onChange={(next) => void toggleServerFlag("browserHeadless", next)}
           />
-          <Toggle
+          <SettingsToggle
             label="自动截图"
             checked={browserAutoScreenshot}
             onChange={(next) =>
               void toggleServerFlag("browserAutoScreenshot", next)
             }
           />
-          <Toggle
+          <SettingsToggle
             label="允许 AI 读取开发者工具数据"
             checked={browserDevtoolsRead}
             onChange={(next) =>
               void toggleServerFlag("browserDevtoolsReadEnabled", next)
+            }
+          />
+          <SettingsToggle
+            label="允许 AI 在页面执行脚本"
+            checked={browserEval}
+            onChange={(next) =>
+              void toggleServerFlag("browserEvalEnabled", next)
             }
           />
         </div>

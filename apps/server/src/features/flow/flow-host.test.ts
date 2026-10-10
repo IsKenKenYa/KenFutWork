@@ -17,17 +17,18 @@ const localInstance: LocalInstanceService = {
   serviceActor: async () => actor,
   isDraining: () => false, assertReady() {}, beginAdmission: () => () => {}, activeAdmissionCount: () => 0, beginMaintenance: async () => {}, cancelMaintenance() {},
 };
-function fixture(options: { secret?: string; authorized?: boolean; configured?: boolean; baseUrl?: string; engineInfo?: { info(): Promise<unknown> }; engineStop?: (input: { deleteData: boolean }) => Promise<{ ok: boolean; error?: string }> } = {}) {
+function fixture(options: { secret?: string; authorized?: boolean; configured?: boolean; baseUrl?: string; engineInfo?: { info(): Promise<unknown> }; engineStop?: (input: { deleteData: boolean }) => Promise<{ ok: boolean; error?: string }>; engineInstallStart?: (launch?: unknown) => { started: boolean; snapshot: { state: string; logTail: string[] } } } = {}) {
   const app = Fastify();
   const provider = providerInstanceResponseSchema.parse({ id: PROVIDER_ID, scope: "local", name: "Dify", protocol: "dify-engine", enabled: true, hasCredential: true, configRevision: 1, models: [], headerKeys: [] });
   const credentials: ResolvedInstanceCredentials = { instanceId: PROVIDER_ID, name: "Dify", protocol: "dify-engine", apiKey: "byok-secret", baseUrl: options.baseUrl ?? "http://127.0.0.1:8080/", configRevision: 1, models: [] };
   const listInstances = vi.fn(async () => options.configured === false ? [] : [provider]);
   const stopCalls: Array<{ deleteData: boolean }> = [];
+  const installLaunches: unknown[] = [];
   const pushed: Array<{ instanceId: string; event: StreamEvent }> = [];
   const eventBuffer = new CanvasEventBuffer();
   const identityTickets = createFlowIdentityTickets();
-  void registerFlowHostRoutes(app, { ...(options.engineInfo ? { engineInfo: options.engineInfo as never } : {}), localAccess: { authenticate: async () => options.authorized === false ? null : actor }, localInstance, providers: { listInstances, resolveCredentialsById: async () => credentials }, ws: { connectionManager: { pushToInstance: (instanceId, event) => { pushed.push({ instanceId, event }); } }, eventBuffer }, identity: { issue: async (forActor) => identityTickets.issue({ instanceId: forActor.instanceId, accessClientId: forActor.accessClientId, ttlMs: 60_000 }), verify: async (token) => { const entry = identityTickets.consume(token); return entry && entry.instanceId === INSTANCE_ID ? { subject: entry.instanceId, displayName: "本机" } : null; } }, engine: { probe: async () => ({ platform: "darwin", paths: [], recommended: null }) }, engineInstall: { start: () => ({ started: true, snapshot: { state: "ready", logTail: [] } }), status: () => ({ state: "idle", logTail: [] }) }, engineStop: { stop: async (input) => { stopCalls.push(input); return options.engineStop ? await options.engineStop(input) : { ok: true }; } }, ...(options.secret ? { secret: options.secret } : {}), frontendUrl: "http://127.0.0.1:8081" });
-  return { app, pushed, listInstances, eventBuffer, stopCalls };
+  void registerFlowHostRoutes(app, { ...(options.engineInfo ? { engineInfo: options.engineInfo as never } : {}), localAccess: { authenticate: async () => options.authorized === false ? null : actor }, localInstance, providers: { listInstances, resolveCredentialsById: async () => credentials }, ws: { connectionManager: { pushToInstance: (instanceId, event) => { pushed.push({ instanceId, event }); } }, eventBuffer }, identity: { issue: async (forActor) => identityTickets.issue({ instanceId: forActor.instanceId, accessClientId: forActor.accessClientId, ttlMs: 60_000 }), verify: async (token) => { const entry = identityTickets.consume(token); return entry && entry.instanceId === INSTANCE_ID ? { subject: entry.instanceId, displayName: "本机" } : null; } }, engine: { probe: async () => ({ platform: "darwin", paths: [], recommended: null }) }, engineInstall: { start: (launch?: unknown) => { installLaunches.push(launch); return options.engineInstallStart ? (options.engineInstallStart(launch) as never) : { started: true, snapshot: { state: "ready", logTail: [] } }; }, status: () => ({ state: "idle", logTail: [] }) }, engineStop: { stop: async (input) => { stopCalls.push(input); return options.engineStop ? await options.engineStop(input) : { ok: true }; } }, ...(options.secret ? { secret: options.secret } : {}), frontendUrl: "http://127.0.0.1:8081" });
+  return { app, pushed, listInstances, eventBuffer, stopCalls, installLaunches };
 }
 
 describe("Flow 本地实例基础设施", () => {
@@ -156,8 +157,10 @@ describe("引擎信息页（/api/flow/host/engine/info）", () => {
             },
           ],
         },
+        // 承载目标（落盘记录）：停止/查询都按它执行
+        runtime: { kind: "host" },
         addresses: {
-          composeFile: "D:/repo/docker-compose.dify.yml",
+          composeFile: "D:/repo/dify/docker-compose.dify.yml",
           dataDir: "D:/repo/.kenfutwork-data",
         },
       };
@@ -207,6 +210,7 @@ describe("引擎信息页（/api/flow/host/engine/info）", () => {
                 },
               ],
             },
+            runtime: { kind: "host" },
             addresses: { composeFile: "c.yml", dataDir: "d" },
           };
         },
@@ -239,6 +243,46 @@ describe("引擎信息页（/api/flow/host/engine/info）", () => {
     } finally {
       await missing.app.close();
       await denied.app.close();
+    }
+  });
+});
+
+describe("引擎栈安装（/api/flow/host/engine/install）与承载目标", () => {
+  it("缺省不带承载目标；带 launch 时透传（wsl2 点名发行版）", async () => {
+    const { app, installLaunches } = fixture({ secret: SECRET });
+    try {
+      const plain = await app.inject({
+        method: "POST",
+        url: "/api/flow/host/engine/install",
+        payload: {},
+      });
+      expect(plain.statusCode).toBe(200);
+      expect(installLaunches[0]).toBeUndefined();
+
+      const wsl = await app.inject({
+        method: "POST",
+        url: "/api/flow/host/engine/install",
+        payload: { launch: { kind: "wsl2", distro: "Ubuntu" } },
+      });
+      expect(wsl.statusCode).toBe(200);
+      expect(installLaunches[1]).toEqual({ kind: "wsl2", distro: "Ubuntu" });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("承载目标格式不对（wsl2 缺 distro）→ 400，不进安装", async () => {
+    const { app, installLaunches } = fixture({ secret: SECRET });
+    try {
+      const bad = await app.inject({
+        method: "POST",
+        url: "/api/flow/host/engine/install",
+        payload: { launch: { kind: "wsl2" } },
+      });
+      expect(bad.statusCode).toBe(400);
+      expect(installLaunches).toHaveLength(0);
+    } finally {
+      await app.close();
     }
   });
 });

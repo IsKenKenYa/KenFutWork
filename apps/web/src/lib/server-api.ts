@@ -377,6 +377,8 @@ export interface PermissionSettingsView {
   browserHeadless: boolean;
   /** 允许 AI 读取开发者工具数据（控制台日志 / 页面报错 / 网络请求）。 */
   browserDevtoolsReadEnabled: boolean;
+  /** 允许 AI 在受控页面执行任意 JS（browser_eval；默认关）。 */
+  browserEvalEnabled: boolean;
   approvedForever: string[];
 }
 
@@ -405,6 +407,8 @@ export async function updatePermissionSettings(
     browserHeadless: boolean;
     /** 允许 AI 读取开发者工具数据（控制台日志 / 页面报错 / 网络请求）。 */
     browserDevtoolsReadEnabled: boolean;
+    /** 允许 AI 在受控页面执行任意 JS（browser_eval；默认关）。 */
+    browserEvalEnabled: boolean;
   }>,
 ): Promise<PermissionSettingsView> {
   const response = await serverFetch(

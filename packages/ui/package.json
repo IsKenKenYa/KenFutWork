@@ -13,8 +13,13 @@
   "files": [
     "dist"
   ],
+  "peerDependencies": {
+    "react": ">=18"
+  },
   "devDependencies": {
-    "@kenfutwork/config": "workspace:*"
+    "@kenfutwork/config": "workspace:*",
+    "@types/react": "^19.3.0",
+    "react": "^19.3.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
