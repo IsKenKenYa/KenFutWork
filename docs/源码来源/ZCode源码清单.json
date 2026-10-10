@@ -14446,9 +14446,10 @@
       "source": "references/zcode/packages/shared/src/mcp.ts",
       "target": "packages/zcode-shared/src/mcp.ts",
       "sha256": "20903fb8806923434dcf5c319cb1becc5cbaa3418bc6c6e9bcf56848ad9312ac",
-      "copiedSha256": "65ea7ef6030d1a25db28a32b155fa562e41623434d80dc9c64ade81119519ec8",
+      "copiedSha256": "4fd7881229b2a80114ed31a8846a97438dc5956b785c862d44732c9d9737debc",
       "adaptations": [
-        "宿主类型兼容：原记录携带稳定hostRecordId、来源与envKeys，不虚构文件/目录"
+        "宿主类型兼容：原记录携带稳定hostRecordId、来源与envKeys，不虚构文件/目录",
+        "安全修复：CUA包规格的路径叶子改为线性尾扫描，保留身份判定语义；消除CodeQL报告的多项式回溯"
       ]
     },
     {
