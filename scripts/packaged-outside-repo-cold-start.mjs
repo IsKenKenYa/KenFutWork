@@ -11,7 +11,7 @@
  *
  * 不访问外部模型服务，不读用户凭据；只验「起得来 + 本机凭据边界仍在」。
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -113,6 +113,51 @@ function osEnvironment() {
   );
 }
 
+/**
+ * 停干净整个运行时再交还目录：SIGTERM 等退出、超时 SIGKILL 兜底，随后用产物自带的
+ * pg_ctl 显式停掉内嵌 PG 并**确认已停**（杀掉父进程不会带走它派生的 postgres——
+ * Windows 上句柄不释放，rmSync 直接 EPERM，实测 38030977516）。与冒烟的
+ * stopChild/stopDatabase 同一序列、同一确认强度。
+ */
+async function stopRuntime(child, destination, dataDir) {
+  if (child.exitCode === null && child.signalCode === null) {
+    const exited = new Promise((done) => {
+      const timer = setTimeout(() => done(false), 20_000);
+      child.once("exit", () => {
+        clearTimeout(timer);
+        done(true);
+      });
+    });
+    child.kill("SIGTERM");
+    if (!(await exited)) child.kill("SIGKILL");
+  }
+  const pgDataDir = join(dataDir, "postgres");
+  if (!existsSync(join(pgDataDir, "PG_VERSION"))) return;
+  const pgCtl = join(
+    destination,
+    "pg",
+    "bin",
+    process.platform === "win32" ? "pg_ctl.exe" : "pg_ctl",
+  );
+  const status = () =>
+    spawnSync(pgCtl, ["-D", pgDataDir, "status"], { stdio: "ignore" });
+  const initial = status();
+  requireCondition(!initial.error, "无法检查内嵌数据库是否已停止。");
+  if (initial.status === 0) {
+    const stopped = spawnSync(
+      pgCtl,
+      ["-D", pgDataDir, "-m", "fast", "-w", "stop"],
+      { stdio: "ignore" },
+    );
+    requireCondition(stopped.status === 0, "内嵌数据库关停失败。");
+  }
+  const final = status();
+  requireCondition(
+    !final.error && final.status === 3,
+    "内嵌数据库未确认停止。",
+  );
+}
+
 async function main() {
   requireCondition(
     existsSync(RELEASE),
@@ -171,8 +216,15 @@ async function main() {
     );
     throw error;
   } finally {
-    if (child.exitCode === null) child.kill("SIGKILL");
-    rmSync(sandboxRoot, { recursive: true, force: true, maxRetries: 3 });
+    // 先停干净进程与内嵌 PG，再删临时根；retryDelay 给足余量吸收 Windows
+    // Defender 对新落盘 exe 的短时句柄（默认 100ms 三次不够，实测）。
+    await stopRuntime(child, destination, join(sandboxRoot, "data"));
+    rmSync(sandboxRoot, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 500,
+    });
   }
 }
 
