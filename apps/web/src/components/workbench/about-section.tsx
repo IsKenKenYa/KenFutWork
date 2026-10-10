@@ -31,6 +31,25 @@ const THIRD_PARTY_NOTICES: ReadonlyArray<readonly [string, string]> = [
   ["espeak-ng 数据", "GPL-3.0"],
 ];
 
+/**
+ * 法律文档：仓库根的属主文件（打包产物内的同址副本由 `release/legal/` 随包分发，
+ * 见 `THIRD-PARTY-NOTICES.md` §G1）。只给链接与标签，不在界面里复述条款。
+ */
+const LEGAL_DOCUMENTS: ReadonlyArray<readonly [string, string]> = [
+  [
+    "最终用户许可协议",
+    "https://github.com/IsKenKenYa/KenFutWork/blob/main/EULA.md",
+  ],
+  [
+    "隐私政策",
+    "https://github.com/IsKenKenYa/KenFutWork/blob/main/PRIVACY.md",
+  ],
+  [
+    "第三方声明",
+    "https://github.com/IsKenKenYa/KenFutWork/blob/main/THIRD-PARTY-NOTICES.md",
+  ],
+];
+
 export function AboutSection() {
   const [health, setHealth] = useState<{
     ok: boolean;
@@ -72,7 +91,7 @@ export function AboutSection() {
     <section aria-label="关于" className="w-full">
       <h3 className={SETTINGS_TITLE}>关于</h3>
       {/*
-        信息面板：全部居中，自上而下 标识 → 名字 → 一句话 → 服务端 → 地址 → 许可 → 隐私承诺。
+        信息面板：全部居中，自上而下 标识 → 名字 → 一句话 → 服务端 → 地址 → 许可 → 隐私承诺 → 法律文档。
         这里**刻意不用设置区的行样式**（那是配置行用的），也不折叠许可——关于页没有任何
         可设置的东西，摊平罗列才对（用户口径：「不要做成选项卡，做成信息面板那样的」）。
       */}
@@ -100,6 +119,23 @@ export function AboutSection() {
         </ul>
 
         <p className="mt-5 text-xs text-muted-foreground">录音不留存</p>
+
+        <nav
+          aria-label="法律文档"
+          className="mt-5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs"
+        >
+          {LEGAL_DOCUMENTS.map(([label, href]) => (
+            <a
+              key={href}
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className="text-muted-foreground underline-offset-2 hover:underline"
+            >
+              {label}
+            </a>
+          ))}
+        </nav>
       </div>
     </section>
   );

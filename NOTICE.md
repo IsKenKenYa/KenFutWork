@@ -16,3 +16,11 @@
 ## LangChain 发行入口补丁
 
 本仓库通过标准 pnpm 补丁修复官方 npm **langchain 1.5.11** 的 afterModel 显式模型续跑路由。ESM/CJS 发行入口的原代码采用 MIT；原许可完整保存在 `patches/LICENSE-langchain.txt`，来源哈希、修改与验证见 `patches/LangChain路由修复说明.md`。
+
+## 法律与归属文档（仓库层属主）
+
+- [`EULA.md`](EULA.md)：许可与使用声明（GPL-3.0 相容，不附加进一步限制）、商标声明、免责与责任限制。
+- [`PRIVACY.md`](PRIVACY.md)：按当前代码实现如实披露的数据行为与已知缺口。
+- [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)：第三方组件、素材与品牌标识的逐项归属与义务履行位置；本文件的 ZCode 与 LangChain 条目是其索引，新增移植资产须同 PR 登记。
+
+分发产物内的同址副本由打包链装配到 `release/legal/`，再经 `tauri.*.conf.json` 的 resources 映射进安装包（`app/legal/`）。

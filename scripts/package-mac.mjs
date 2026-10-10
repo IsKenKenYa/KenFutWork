@@ -54,6 +54,42 @@ const SHARP_PACKAGE = "@img/sharp-darwin-arm64";
 const SUPABASE_DIR = join(ROOT, "supabase");
 /** pgmq 兼容 shim（历史迁移 CREATE EXTENSION pgmq 需要，见 desktop/pgmq-shim.ts）。 */
 const SHIM_DIR = join(ROOT, "docker", "pg-dev-shim");
+/**
+ * 随包分发的许可与声明文本：GPL-3.0 第 4 条要求分发物带许可证与版权声明，
+ * Apache-2.0 第 4 条 d 款与 MIT/ISC 的 attribution 同理（清单见 THIRD-PARTY-NOTICES.md §G1）。
+ */
+const LEGAL_DOCUMENTS = [
+  ["LICENSE", "GPL-3.0.txt"],
+  ["NOTICE.md", "NOTICE.md"],
+  ["EULA.md", "EULA.md"],
+  ["PRIVACY.md", "PRIVACY.md"],
+  ["THIRD-PARTY-NOTICES.md", "THIRD-PARTY-NOTICES.md"],
+];
+/** 上游许可文本：随移植代码与素材分发，源路径即仓库内的属主位置。 */
+const LEGAL_UPSTREAM = [
+  ["apps/web/src/components/workbench/zcode/LICENSE", "zcode-LICENSE.txt"],
+  ["apps/web/src/components/workbench/zcode/NOTICE.md", "zcode-NOTICE.md"],
+  [
+    "apps/web/src/components/workbench/zcode/THIRD-PARTY-NOTICES.md",
+    "zcode-THIRD-PARTY-NOTICES.txt",
+  ],
+  [
+    "apps/web/src/components/workbench/zcode/public/material-icons/LICENSE",
+    "material-icon-theme-LICENSE.txt",
+  ],
+  ["patches/LICENSE-langchain.txt", "langchain-LICENSE.txt"],
+];
+
+function stageLegalDocuments() {
+  const legal = join(RELEASE, "legal");
+  mkdirSync(join(legal, "upstream"), { recursive: true });
+  for (const [source, name] of LEGAL_DOCUMENTS) {
+    copyFileSync(join(ROOT, source), join(legal, name));
+  }
+  for (const [source, name] of LEGAL_UPSTREAM) {
+    copyFileSync(join(ROOT, source), join(legal, "upstream", name));
+  }
+}
 
 function run(label, command, args, options = {}) {
   console.log(`[package-mac] ${label}…`);
@@ -335,6 +371,11 @@ function main() {
     );
   }
 
+  // 4e) 许可与声明文本（release/legal/）：由 tauri.macos.conf.json 的 resources 映射进
+  //     .app/Contents/Resources/app/legal，使「声明随分发光一并分发」成立。
+  stageLegalDocuments();
+  console.log("[package-mac] 捆绑许可与声明文本（legal/）");
+
   // Adoptium 等上游带只读文件（classes.jsa=444），tauri-build 二次构建覆盖拷贝时会
   // EACCES——统一放开属主写位（保留可执行位）；并清掉壳 target 里上一轮的陈旧资源
   // 拷贝（target/release/app，同样可能是只读旧文件）。
@@ -349,7 +390,7 @@ function main() {
   console.log("");
   console.log(`[package-mac] 打包完成：${RELEASE}`);
   console.log(
-    `[package-mac]   server/server.cjs  +  web/  +  pg/  +  runtime/`,
+    `[package-mac]   server/server.cjs  +  web/  +  pg/  +  runtime/  +  legal/`,
   );
   console.log(
     "[package-mac] 下一步：pnpm --filter @kenfutwork/desktop build（tauri 出 .app 与 DMG）",
