@@ -61,6 +61,8 @@ export interface ComposerVoiceBinding {
   startRecording: () => void;
   /** 麦克风按钮松开沿：停止并提交转写。 */
   stopRecording: () => void;
+  /** 麦克风按钮点击切换：录音中 → 停止并转写；空闲 → 开麦。 */
+  toggleRecording: () => void;
   /** 是否正在录音（按钮的激活态）。 */
   recording: boolean;
 }
@@ -275,6 +277,14 @@ export function useComposerVoice({
     startRecording: voice.startRecording,
     /** 麦克风按钮松开沿：停止并提交转写。 */
     stopRecording: voice.stopRecording,
+    /** 点击切换：开麦/停止由钩子的 idle/active 守卫兜底，起手期与转写期不会重复开麦。 */
+    toggleRecording: () => {
+      if (voice.phase === "recording") {
+        voice.stopRecording();
+      } else {
+        voice.startRecording();
+      }
+    },
     recording: voice.phase === "recording",
     status: loopStatus ?? (
       <>

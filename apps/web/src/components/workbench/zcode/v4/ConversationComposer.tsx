@@ -2190,26 +2190,20 @@ function ConversationComposerImpl({
             onSendCompressionCommand={onSendCompressionCommand}
           />
         </span>
-        {/* 语音入口（可见麦克风）：按住按钮录音，松开提交转写；按住输入卡的手势并存 */}
+        {/* 语音入口（可见麦克风）：悬停输入卡显形，点击开麦 / 再点提交转写；按住输入卡的手势并存 */}
         {voice ? (
           <Button
             type="button"
             variant="ghost"
             size="icon-md"
             disabled={disabled}
-            onPointerDown={(event) => {
-              // 捕获指针：按住后移出按钮再松手，pointerup 仍派发给按钮，不会漏掉停止
-              event.currentTarget.setPointerCapture?.(event.pointerId);
-              voice.startRecording();
-            }}
-            onPointerUp={() => voice.stopRecording()}
-            onPointerCancel={() => voice.stopRecording()}
+            onClick={() => voice.toggleRecording()}
             data-testid="v4-composer-voice"
             aria-label={voice.recording ? "停止录音并转写" : "语音输入"}
             className={cn(
-              "cursor-pointer rounded-lg text-muted-foreground transition-colors",
+              "cursor-pointer rounded-lg text-muted-foreground opacity-0 transition group-hover/voice:opacity-100 focus-visible:opacity-100",
               voice.recording &&
-                "animate-pulse bg-foreground text-background hover:bg-foreground/90",
+                "animate-pulse bg-foreground text-background opacity-100 hover:bg-foreground/90",
             )}
           >
             <MicIcon className="size-4" />
@@ -2388,7 +2382,8 @@ function ConversationComposerImpl({
       ) : null}
       <div
         className={cn(
-          "chat-composer-input-surface w-full transition-[min-height]",
+          // group/voice：麦克风按钮悬停显形的判定域（悬停输入卡即出现）
+          "chat-composer-input-surface group/voice w-full transition-[min-height]",
           contextHeader && "rounded-2xl bg-surface shadow-xl/5",
           // 录音时输入区顶上去（参考视频：占位变「开始说话」、输入区加高）
           voice?.recording && "min-h-32",
