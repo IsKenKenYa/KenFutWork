@@ -46,8 +46,9 @@ jobs:
       - name: Semgrep 扫描（规则包 p/ci，命中不上报退出码）
         run: |
           set -euo pipefail
+          # Docker Hub 的 tag 无 v 前缀（v1.180.0 不存在，本机 pull 实证），钉无前缀版。
           docker run --rm -v "${GITHUB_WORKSPACE}:/src" -w /src \
-            semgrep/semgrep:v1.180.0 \
+            semgrep/semgrep:1.180.0 \
             semgrep scan --config p/ci \
               --exclude "packages/zcode-cua" \
               --exclude "packages/zcode-model-option-map" \
