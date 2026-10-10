@@ -367,6 +367,40 @@ async function resolveUvAsset(assetName) {
   };
 }
 
+/**
+ * 带有限重试的下载。GitHub 对象存储与发布 API 偶发 5xx / 403 限流 / 连接重置，一次网络
+ * 抖动就让整条十几分钟的出包链变红不划算，且红得看不出原因。
+ * 只重试「传输层」失败；内容问题（校验值不符、锁文件不匹配）由调用方判定，绝不重试。
+ * 次数与退避是构建期常量，不是运行期限额，故不进治理表（AGENTS.md「运行时可调数值」一节）。
+ */
+const DOWNLOAD_ATTEMPTS = 3;
+
+async function fetchBytesWithRetry(url) {
+  let last = "";
+  for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt += 1) {
+    let retryable = true;
+    try {
+      const response = await fetch(url, { redirect: "follow" });
+      if (response.ok) return Buffer.from(await response.arrayBuffer());
+      last = `HTTP ${response.status}`;
+      // 4xx（除 403/429 限流）说明 URL 本身错了，重试没有意义
+      retryable =
+        response.status >= 500 ||
+        response.status === 403 ||
+        response.status === 429;
+    } catch (error) {
+      last = error.message;
+    }
+    if (!retryable || attempt === DOWNLOAD_ATTEMPTS) break;
+    const waitMs = 2000 * attempt;
+    log(
+      `第 ${attempt} 次取 ${basename(url)} 失败（${last}），${waitMs}ms 后重试…`,
+    );
+    await new Promise((done) => setTimeout(done, waitMs));
+  }
+  throw new Error(`${basename(url)} 取回失败：${last}（URL：${url}）`);
+}
+
 /** 取官方校验值：SHASUMS 文件按文件名查行，Adoptium 则读 assets JSON 的 checksum。 */
 async function resolveExpectedSha(resolved, url) {
   // 校验值直接来自发布说明的表格（git-for-windows 的 MinGit 就是这么发布的）
@@ -374,18 +408,22 @@ async function resolveExpectedSha(resolved, url) {
     return resolved.bodySha;
   }
   if (resolved.sumsUrl) {
-    const sums = await (await fetch(resolved.sumsUrl)).text();
+    const sums = (await fetchBytesWithRetry(resolved.sumsUrl)).toString("utf8");
     const fileName = resolved.fileName ?? basename(url);
     const line = sums.split("\n").find((row) => row.trim().endsWith(fileName));
     return line ? (line.trim().split(/\s+/)[0] ?? null) : null;
   }
   // 逐资产校验文件（uv 的 `<asset>.sha256`：内容就是哈希，或「哈希 + 文件名」）
   if (resolved.rawShaUrl) {
-    const text = (await (await fetch(resolved.rawShaUrl)).text()).trim();
+    const text = (await fetchBytesWithRetry(resolved.rawShaUrl))
+      .toString("utf8")
+      .trim();
     return text.split(/\s+/)[0] ?? null;
   }
   if (resolved.checksumUrl) {
-    const assets = await (await fetch(resolved.checksumUrl)).json();
+    const assets = JSON.parse(
+      (await fetchBytesWithRetry(resolved.checksumUrl)).toString("utf8"),
+    );
     return assets?.[0]?.binary?.package?.checksum ?? null;
   }
   return null;
@@ -403,7 +441,12 @@ async function fetchWithSha(spec, { force, lock }) {
     return;
   }
 
-  const resolved = await spec.resolve(spec.version ?? spec.series);
+  // 锁里有「确切 URL + sha256」时按**锁**下载，不再解析 latest：上游每发一版（uv
+  // 0.12.24→0.13.0、python-build-standalone 20261003→20261009 都真实发生过）都会把
+  // 出包链判红，而那既不是代码问题也不是可复现构建。官方校验值的抓取留给 --write-lock
+  // 与「锁里没有该项」的路径；日常构建只信仓库里这条已评审过的 URL+哈希。
+  const pinned = entry?.url && entry?.sha256 ? entry : null;
+  const resolved = pinned ?? (await spec.resolve(spec.version ?? spec.series));
   const nameVerdict = assertLockAssetName({
     entry,
     fileName: resolved.fileName ?? null,
@@ -414,22 +457,24 @@ async function fetchWithSha(spec, { force, lock }) {
     throw new Error(nameVerdict.reason);
   }
   const url = resolved.url;
-  log(`${spec.name} 下载：${url}`);
-  const response = await fetch(url, { redirect: "follow" });
-  if (!response.ok) {
-    throw new Error(`${spec.name} 下载失败：HTTP ${response.status}`);
-  }
-  const buffer = Buffer.from(await response.arrayBuffer());
+  log(
+    pinned
+      ? `${spec.name} 按锁下载：${url}`
+      : `${spec.name} 下载（解析 latest）：${url}`,
+  );
+  const buffer = await fetchBytesWithRetry(url);
   const digest = sha256(buffer);
 
-  const expected = await resolveExpectedSha(resolved, url);
-  if (!expected) {
-    throw new Error(`${spec.name} 拿不到官方校验值，拒绝安装（fail loud）。`);
-  }
-  if (expected !== digest) {
-    throw new Error(
-      `${spec.name} 校验失败：期望 ${expected}，实际 ${digest}（若官方更新了版本，请同步更新脚本里的版本/哈希）。`,
-    );
+  if (!pinned) {
+    const expected = await resolveExpectedSha(resolved, url);
+    if (!expected) {
+      throw new Error(`${spec.name} 拿不到官方校验值，拒绝安装（fail loud）。`);
+    }
+    if (expected !== digest) {
+      throw new Error(
+        `${spec.name} 校验失败：期望 ${expected}，实际 ${digest}（若官方更新了版本，请同步更新脚本里的版本/哈希）。`,
+      );
+    }
   }
   const shaVerdict = assertLockSha({
     entry,
