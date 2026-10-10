@@ -164,6 +164,14 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+      - name: 仓外冷启动（产物复制到仓库外的新目录后用发布本体启动）
+        # 冒烟跑在 <仓库>/release 下：原生外部依赖（@napi-rs/canvas、node-pty、ripgrep）
+        # 按 server.cjs 的路径向上找 node_modules，会撞见仓库自己的 node_modules，于是
+        # 「开发机能跑」被当成「装机后能跑」。这一步把 release/ 整体复制到 tmp（与仓库无
+        # 祖先关系、cwd 也在仓外）再冷启动，把那条退路堵死。本机实测 macOS 复制 681MB +
+        # 首次建库到健康约 40 秒。
+        run: node scripts/packaged-outside-repo-cold-start.mjs
+
       - name: 产物清单
         if: always()
         shell: bash
