@@ -53,22 +53,23 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ inputs.checkout_ref || github.sha }}
           # 参考仓是方向参考，不参与出包
           submodules: false
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
 
       # SEA 宿主就是 process.execPath（package-win.mjs），脚本会把 process.version 与
       # .nvmrc 精确对账；出包必须用同一个 node，故按 pin 安装而不是用 runner 自带版本。
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: .nvmrc
 
       - name: 缓存随包运行时
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: runtime
           key: runtime-${{ inputs.platform }}-${{ hashFiles('runtime-lock.json', 'scripts/fetch-runtimes.mjs') }}
@@ -157,7 +158,7 @@ jobs:
       - name: 上传打包态冒烟的服务端全量日志
         # 成功也要传：下一轮排查不必重跑 30 分钟出包。
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: smoke-server-log-${{ inputs.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: release/smoke-server.log
@@ -184,7 +185,7 @@ jobs:
           fi
 
       - name: 上传安装包与清单
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kenfutwork-${{ inputs.platform }}-${{ github.sha }}
           # 上一步已断言清单存在；两平台的安装包 glob 各只在一侧命中。
