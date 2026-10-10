@@ -139,15 +139,18 @@ export class LinuxProcessRange {
     return this.stopping;
   }
 
-  private async freeze(): Promise<void> {
+  /**
+   * 尽力冻结（SIGSTOP）范围内进程，返回是否全部停住。
+   *
+   * 冻结不彻底**不是**停止失败：处于不可中断睡眠（D）的进程收不到 SIGSTOP，
+   * 但 SIGKILL 仍然有效。把它当致命错误抛出会让整条停止流程在 TERM/KILL 之前就中止，
+   * 真正的保证在后面的「SIGKILL 后范围归零」那一步（做不到才报 stop_unconfirmed）。
+   */
+  private async freeze(): Promise<boolean> {
     const started = Date.now();
     for (;;) {
-      if ((await this.query("SIGSTOP")).activeCount === 0) return;
-      if (Date.now() - started >= this.limits.killGraceMs)
-        throw new ProcessSandboxError(
-          "stop_unconfirmed",
-          "无法冻结 Linux namespace 全部进程。",
-        );
+      if ((await this.query("SIGSTOP")).activeCount === 0) return true;
+      if (Date.now() - started >= this.limits.killGraceMs) return false;
       await delay(this.limits.yieldMs);
     }
   }
