@@ -143,14 +143,26 @@ jobs:
 
       - name: 打包态冒烟（随包服务端 + 内嵌 Postgres 真建库）
         # 「dev 全绿但安装包起不来」那类事故的唯一自动化解药：脚本直接用 release/ 里的平台产物
-        # 与独占临时数据目录，不访问外部模型服务（scripts/desktop-offline-smoke.mjs:71-76 支持
-        # win32/darwin 两平台）。首轮 mac 实测：DMG/zip/清单全部产出、前面 6 组断言全过，
-        # 只有「Write/Read 后的持久 shadow checkpoint」在 120s 期限内没等到——服务端日志零
-        # error，是托管 3 核 runner 慢，不是坏。故这里把**等待窗口**显式放宽到 5 分钟并写明理由；
-        # 断言强度不变，超期依旧失败。
+        # 与独占临时数据目录，不访问外部模型服务（scripts/desktop-offline-smoke.mjs:76-88 支持
+        # win32/darwin 两平台）。
+        # 历史教训（别再犯）：首轮 mac 只等到「checkpoints 恒空」，尾部 4000 字符窗口里没有任何
+        # error，于是被误判成「runner 慢」。真实现场是更早打出的一行
+        # `[turn-boundary] 文件边界捕获失败： env: /opt/homebrew/bin/git: Operation not permitted`
+        # ——沙箱读取基线缺 /opt/homebrew（见 process-sandbox/policy.ts）。所以现在无条件落全量
+        # 日志并作为 artifact 上传，等待窗口放宽到 5 分钟只是给慢 runner 留余量，断言强度不变。
         env:
           KFW_SMOKE_BYOK_TIMEOUT_MS: "300000"
         run: node scripts/desktop-offline-smoke.mjs
+
+      - name: 上传打包态冒烟的服务端全量日志
+        # 成功也要传：下一轮排查不必重跑 30 分钟出包。
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-server-log-${{ inputs.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release/smoke-server.log
+          retention-days: 14
+          if-no-files-found: warn
 
       - name: 产物清单
         if: always()

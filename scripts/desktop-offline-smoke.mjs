@@ -10,7 +10,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream, existsSync, writeFileSync } from "node:fs";
 import {
   cp,
   lstat,
@@ -1659,6 +1659,34 @@ function smokeOsEnvironment() {
   );
 }
 
+/**
+ * 失败现场输出。Actions 会把超长单行截断，且 4000 字符的尾部窗口会吞掉真正的
+ * 第一现场（边界捕获/影子仓的诊断行往往在轮询之前就打完了），所以：
+ * 完整日志无条件落盘（成功也写，供 artifact 上传），终端只回显「尾部 + 全部诊断行」。
+ */
+function writeServerLog(output) {
+  const fullLog = join(RELEASE, "smoke-server.log");
+  try {
+    writeFileSync(fullLog, output.join(""), "utf8");
+  } catch (error) {
+    console.error(`[冒烟] 完整服务端日志写入失败：${error.message}`);
+  }
+  return fullLog;
+}
+
+function echoServerOutput(output, title) {
+  const text = output.join("");
+  const fullLog = writeServerLog(output);
+  // 只挑诊断行：轮询期的 HTTP 访问日志同样含 "checkpoint"，按它过滤会把真线索挤掉。
+  const interesting = text
+    .split(/\r?\n/u)
+    .filter((line) => /\[turn-boundary\]|\[checkpoints\]/u.test(line))
+    .slice(-40);
+  console.error(
+    `${title}\n尾部：\n${text.slice(-4000)}\n诊断行（${interesting.length} 条，完整日志：${fullLog}）：\n${interesting.join("\n")}`,
+  );
+}
+
 function startPackagedServer(packaged, dataDir, port, base, configDir) {
   const child = spawn(packaged.command, packaged.args, {
     cwd: RELEASE,
@@ -1710,18 +1738,18 @@ async function withPackagedSmokeRuntime(
     return await verify();
   } catch (error) {
     // 接入凭据不写日志；这里只保留服务端输出与失败步骤。
-    console.error(`[冒烟] 进程输出尾部：\n${output.join("").slice(-4000)}`);
+    echoServerOutput(output, "[冒烟] 进程输出：");
     throw error;
   } finally {
     try {
       if (!readSpawnError())
         await stopChild(child).catch((error) => {
-          console.error(
-            `[冒烟] 停机输出尾部：\n${output.join("").slice(-4000)}`,
-          );
+          echoServerOutput(output, "[冒烟] 停机输出：");
           throw error;
         });
     } finally {
+      // 成功也留全量日志：出包作业把它作为 artifact 上传，下一轮排查不必重跑半小时。
+      writeServerLog(output);
       stopDatabase(dataDir);
     }
   }
