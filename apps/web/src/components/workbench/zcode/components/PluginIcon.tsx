@@ -12,12 +12,14 @@ export function PluginIcon({
   className,
   iconClassName,
   fallbackIcon,
+  monochrome = false,
 }: {
   src?: string;
   pluginId?: string;
   className?: string;
   iconClassName?: string;
   fallbackIcon?: ReactNode;
+  monochrome?: boolean;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const resolvedSrc = resolvePluginIconSource(pluginId, src);
@@ -46,13 +48,29 @@ export function PluginIcon({
       )}
     >
       {showImage ? (
+        <>
+        {monochrome ? <span
+          className={cn("size-full", iconClassName)}
+          style={{
+            backgroundColor: "currentColor",
+            maskImage: `url(${imageSrc})`,
+            maskSize: "contain",
+            maskRepeat: "no-repeat",
+            maskPosition: "center",
+            WebkitMaskImage: `url(${imageSrc})`,
+            WebkitMaskSize: "contain",
+            WebkitMaskRepeat: "no-repeat",
+            WebkitMaskPosition: "center",
+          }}
+        /> : null}
         <img
           src={imageSrc}
           alt=""
           draggable={false}
-          className="h-2/3 w-2/3 object-contain"
+          className={monochrome ? "absolute size-0 opacity-0" : "h-2/3 w-2/3 object-contain"}
           onError={() => setImageFailed(true)}
         />
+        </>
       ) : fallbackIcon ? (
         fallbackIcon
       ) : (

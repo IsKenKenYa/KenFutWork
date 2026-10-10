@@ -65,6 +65,7 @@ export function PluginSidebarNavigation() {
             onClick={() => sidebar?.open(entry)}
           >
             <PluginIcon
+              monochrome
               pluginId={entry.pluginId}
               {...(resource ? { src: resource } : {})}
               className="size-4 rounded-none bg-transparent"

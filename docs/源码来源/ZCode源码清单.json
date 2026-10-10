@@ -3086,10 +3086,11 @@
       "source": "references/zcode/packages/ui/src/components/PluginIcon.tsx",
       "target": "apps/web/src/components/workbench/zcode/components/PluginIcon.tsx",
       "sha256": "4bdb6a78e9839770411c765fb6ea95691fdb2ce3d69ac52d467ba7ebfc08d604",
-      "copiedSha256": "663d7c11a1df7edf7602911389a7244e9c997b9ed0b7fbc19b7eca902eaa5901",
+      "copiedSha256": "2d7914173c7b1d400b5be2509be6bf1cc12567b736f64f5489b4c467e331c975",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "宿主资源适配：原span/img及失败回退保留，原Platform取认证图片引用；异步结果按当前资源守卫"
+        "宿主资源适配：原span/img及失败回退保留，原Platform取认证图片引用；异步结果按当前资源守卫",
+        "主题适配：导航可选monochrome使用已认证图片引用作为currentColor mask，读取／解码失败沿原兜底；市场头像仍用原图片"
       ]
     },
     {
