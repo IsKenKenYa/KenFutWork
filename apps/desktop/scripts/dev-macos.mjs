@@ -290,6 +290,7 @@ async function run() {
       await closeApp(existing);
     }
     command("pnpm", ["--filter", "@kenfutwork/shared", "build"]);
+    command("pnpm", ["--filter", "@kenfutwork/voice-ui", "build"]);
     command("pnpm", ["--filter", "@zcode/ui", "build"]);
     const apiPort = await freePort(3301, 3301),
       webPort = await freePort(3400, 3400);
