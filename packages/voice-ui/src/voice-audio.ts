@@ -158,7 +158,13 @@ export async function blobToVoiceWav(
 ): Promise<{ wav: Uint8Array; durationMs: number }> {
   const context = createContext();
   try {
-    const decoded = await context.decodeAudioData(await blob.arrayBuffer());
+    let decoded: Awaited<ReturnType<VoiceDecodeContext["decodeAudioData"]>>;
+    try {
+      decoded = await context.decodeAudioData(await blob.arrayBuffer());
+    } catch {
+      // 浏览器对空/截断的录音原样抛 "Unable to decode audio data"——包成可读原因
+      throw new VoiceCaptureError("录音处理失败，请按住再说一次。");
+    }
     const channels: Float32Array[] = [];
     for (let i = 0; i < decoded.numberOfChannels; i += 1) {
       channels.push(decoded.getChannelData(i));

@@ -164,16 +164,17 @@ describe("blobToVoiceWav（解码 → 下混 → 重采样 → 编码）", () =>
     expect(parsed.sample(100)).toBe(0);
   });
 
-  it("解不开的音频：抛可读原因，不返回空 WAV", async () => {
-    await expect(
-      blobToVoiceWav(new Blob([new Uint8Array([1])]), () =>
-        fakeContext({
-          channels: [new Float32Array(10)],
-          sampleRate: 16_000,
-          failDecode: true,
-        }),
-      ),
-    ).rejects.toThrow(/decode audio/i);
+  it("解不开的音频：抛可读中文原因（回归：浏览器英文原文不再上屏），不返回空 WAV", async () => {
+    const error = await blobToVoiceWav(new Blob([new Uint8Array([1])]), () =>
+      fakeContext({
+        channels: [new Float32Array(10)],
+        sampleRate: 16_000,
+        failDecode: true,
+      }),
+    ).catch((thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(VoiceCaptureError);
+    expect((error as Error).message).toMatch(/录音处理失败/);
+    expect((error as Error).message).not.toMatch(/decode audio/i);
   });
 
   it("解出零样本：明确报错（别把空录音当成功提交）", async () => {
