@@ -216,6 +216,9 @@ export async function registerCodeUiRoutes(
         current.instanceId !== user.instanceId ||
         current.accessClientId !== user.accessClientId
       ) {
+        // 撤权回调已直接 close，这里拦的是「凭据对不上」的剩余路径；不落 warn 的话
+        // 连接是静默蒸发的，下游只会看到裸 404（实测排障时缺的正是这一行）。
+        request.log.warn("本机事件流凭据校验未通过，连接已关闭。");
         // Controller释放会等待当前发送队列；帧内只启动关闭，外部撤权/preClose仍join同一Promise。
         disconnected();
         return;
