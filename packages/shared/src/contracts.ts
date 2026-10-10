@@ -239,7 +239,7 @@ export const instanceSettingsSchema = z.object({
           }),
         /** 说明（在设置页与输入框提示里显示）。 */
         description: z.string().trim().max(200).default(""),
-        /** 提示词模板；`{{args}}` 会被替换成命令后面的参数（没有占位符则把参数追加到末尾）。 */
+        /** 原ZCode模板：$ARGUMENTS为完整参数，$1/$2为位置参数；无占位符时追加参数。 */
         prompt: z.string().trim().min(1).max(4_000),
       }),
     )

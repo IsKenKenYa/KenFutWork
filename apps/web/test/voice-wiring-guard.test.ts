@@ -95,9 +95,8 @@ describe("语音接线守卫", () => {
     expect(DESIGN_HOME).toMatch(
       /onTranscript:\s*\(text\)\s*=>\s*\n?\s*setPrompt\(/,
     );
-    // 完整回路：与发送键同一条路径（展开命令后交给 onSubmit 起会话），不另起通道
+    // 语音完整回路仍由原输入器提交；命令文本的消费在真实UI／运行接口验证。
     expect(DESIGN_HOME).toMatch(/onAutoSubmit:\s*\(text\)\s*=>/);
-    expect(DESIGN_HOME).toContain("startTask(expanded);");
   });
 
   it("Code 输入框接上语音桥（composer 三触点 + 宿主注入 transport）", () => {

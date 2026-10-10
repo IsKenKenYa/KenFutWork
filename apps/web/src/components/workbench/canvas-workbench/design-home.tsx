@@ -24,7 +24,6 @@ import {
 } from "@/components/ui/select";
 import { getServerBaseUrl } from "@/lib/env";
 import { executionModeOptions } from "@/lib/execution-modes";
-import { expandCommand } from "@/lib/slash-commands";
 import { getVoicePlayback } from "@/lib/voice-playback";
 import {
   ComposerCompactSelect,
@@ -79,7 +78,7 @@ export function DesignHome({
   /**
    * 语音（按住说话）：设计空态输入框与画布助手同一口径（规划 §7 的三落点之一）。
    * 写回走 `setPrompt`——ChatPromptEditor 是受控的（initialValue + onChange 回路），
-   * 直接改 DOM 会与 React state 脱钩；完整回路与发送键同一条路径（展开命令后起会话）。
+   * 直接改 DOM 会与 React state 脱钩；完整回路与发送键同一条路径。
    */
   const voiceMode = useVoiceMode(null);
   const voice = useComposerVoice({
@@ -90,8 +89,7 @@ export function DesignHome({
     onTranscript: (text) =>
       setPrompt((prev) => (prev ? `${prev}${text}` : text)),
     onAutoSubmit: (text) => {
-      const expanded = expandCommand(text, commands).text;
-      if (expanded.trim()) startTask(expanded);
+      if (text.trim()) startTask(text);
     },
   });
   const client = useMemo(
@@ -139,6 +137,7 @@ export function DesignHome({
                     }
                   >
                     <ChatPromptEditor
+                      inputTestId="design-home-prompt"
                       initialValue={prompt}
                       appSlashCommands={commands.map((command) => ({
                         value: command.name,
@@ -333,10 +332,8 @@ export function DesignHome({
                       }
                       onChange={setPrompt}
                       onSubmit={(value: string) => {
-                        // `/命令 args` 在提交前展开（转录里看到的就是实际发出去的）
-                        const expanded = expandCommand(value, commands).text;
-                        if (!expanded.trim()) return false;
-                        startTask(expanded);
+                        if (!value.trim()) return false;
+                        startTask(value);
                         return true;
                       }}
                     />

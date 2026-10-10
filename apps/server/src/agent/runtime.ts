@@ -59,6 +59,7 @@ import type {
   ProcessSandbox,
 } from "../features/process-sandbox/types.js";
 import { hooksFor, runHooks } from "../features/settings/hooks.js";
+import { resolveConfiguredCommandPrompt } from "../features/settings/command-input.js";
 import { createScopedHookCommand } from "../features/settings/scoped-hook-command.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import { formatUserRulesFragment } from "../features/settings/user-rules.js";
@@ -1370,6 +1371,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           AGENT_GOVERNANCE_DEFAULTS.compactFallbackKeepMessages,
       };
       let codeInputLimits: FileLimits = AGENT_GOVERNANCE_DEFAULTS;
+      let executionPrompt = run.prompt;
       let modelCapabilities = { image: false, pdf: false };
       let autoCompact: CompactionPlan | undefined;
       let manualCompactPlan: CompactionPlan | undefined;
@@ -1622,6 +1624,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               .getInstanceSettings(run.actor, toolInstanceId)
               .catch(() => null);
             if (instanceSettings) codeInputLimits = instanceSettings;
+            if (
+              run.inputOrigin !== "backgroundResult" &&
+              run.inputOrigin !== "controlOperation" &&
+              (run.delegationDepth ?? 0) === 0
+            ) {
+              executionPrompt = resolveConfiguredCommandPrompt(
+                run.prompt,
+                instanceSettings?.commands,
+              );
+            }
             userRulesFragment = formatUserRulesFragment({
               userRules: instanceSettings?.userRules,
               ruleEntries: instanceSettings?.ruleEntries,
@@ -2255,7 +2267,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             if (!run.scopeHandle)
               throw new Error("Code附件输入缺少可信Task工作域。");
             let { text: enrichedPrompt } = buildUserMessage(
-              run.prompt,
+              executionPrompt,
               [],
               run.imageGenerationPreference,
               run.mentions,
@@ -2337,7 +2349,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
             // Build XML text tags for LLM to reference by assetId
             let { text: enrichedPrompt } = buildUserMessage(
-              run.prompt,
+              executionPrompt,
               attachments,
               run.imageGenerationPreference,
               run.mentions,
@@ -2359,7 +2371,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             });
           } else {
             let { text: enrichedPrompt } = buildUserMessage(
-              run.prompt,
+              executionPrompt,
               [],
               run.imageGenerationPreference,
               run.mentions,

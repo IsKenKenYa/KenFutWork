@@ -24576,6 +24576,15 @@
       "adaptations": [
         "宿主接口：提取原readFrontmatter正文切分及splitFrontmatterAndLeakedBody，返回字符串供原SkillSummary.body投影；原算法保留，完整运行资源不裁剪"
       ]
+    },
+    {
+      "source": "references/zcode/apps/zcode-cli/packages/contracts/src/commands/index.ts",
+      "target": "apps/server/src/features/settings/zcode-command-expansion.ts",
+      "sha256": "decafe2cee6b638071ac7aa7b5004615cb7e9b99ff3a29b81d9226d512bcf629",
+      "copiedSha256": "1754402c9e1aae227b0902d3cbd6d29bad1c56581bb3d00b49b4319583973c54",
+      "adaptations": [
+        "宿主接口：机械提取原参数展开、分词、动态语法拒绝及提示装配声明；仅缩窄未使用的类型依赖，无文件扫描或shell预展开"
+      ]
     }
   ],
   "buildAdaptations": [

@@ -115,6 +115,10 @@ Code 的原 `plugin-management` 通道现已将 `listPlugins` 与 `getPluginsOve
 
 `provider` 复用原 `zcodeAgentProviderSchema` 的 `glm` wire 标识，表示原 Agent 协议身份，不是 BYOK 供应商选择。技能列表与诊断条目无效时宿主通道明确拒绝，原页面显示读取错误，不转成假空目录。
 
+### 实例命令的运行输入
+
+Code V4与Design原`agent.run`传输保留用户原文。现有运行设置读取后统一匹配`instance_settings.commands`，沿固定ZCode的原函数展开`$ARGUMENTS`、`$1/$2`及无占位符参数尾块，再进入已有媒体／上下文构造；原用户转录与工具权限不改写。动态shell预展开仍由原函数拒绝，不执行系统命令。后台结果、控制输入及已声明子派发深度不作为用户命令解析。原管理页CRUD、指导消息、并发草稿及冷恢复还须继续验收，不能以本片证明整套命令能力完成。
+
 ### 插件来源宿主
 
 `plugin-management.inspectPluginSource/installPluginFromSource` 由 plugins feature 贡献，参数／结果沿既有 `pluginInspectRequest/Response` 与 `pluginInstallRequest/Response` 公共schema。来源检查与安装直接消费同一注册表，支持链接和本机目录，不创建Project／Task；原市场源添加、更新、删除是独立操作，未接入时保留原页并禁用。

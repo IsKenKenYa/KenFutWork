@@ -10,8 +10,7 @@ import { CommandsSection } from "../src/components/workbench/commands-section";
 /**
  * 设置 → 命令（R5-2 的「命令」条目）。
  *
- * 这一页的意义在于它是**真的注册表**：存进工作区设置、由输入框消费（展开逻辑见
- * `lib/slash-commands.ts` 的 7 例单测）。这里锁界面侧：整表保存、前端能立刻给的校验
+ * 本页保存实例设置；实际展开在Code/Design运行接口验证。这里锁界面侧：整表保存、前端能立刻给的校验
  * （空名/非法字符/重名/空提示词）、删行。
  */
 const onSave = vi.fn();
