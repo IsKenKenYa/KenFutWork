@@ -326,7 +326,8 @@ export function createCheckpointService(options: {
       }
       directorySnapshots.push({ rootDirectory, shadowCommit });
     }
-    if (!directorySnapshots.length) {
+    const [firstSnapshot] = directorySnapshots;
+    if (!firstSnapshot) {
       console.warn(
         `[checkpoints] 本次捕获没有产出任何目录快照，因此不落检查点：kind=${kind} task=${identity.taskId} run=${input.runId}`,
       );
@@ -369,7 +370,7 @@ export function createCheckpointService(options: {
       runId: input.runId,
       kind,
       label,
-      shadowCommit: directorySnapshots[0]!.shadowCommit,
+      shadowCommit: firstSnapshot.shadowCommit,
       ...totals(files),
       createdAt: new Date().toISOString(),
     };
@@ -608,7 +609,14 @@ export function createCheckpointService(options: {
       checkpointId: row.id,
       generation: identity.generation,
       entries,
-      ...(input.path ? { path: input.path, rootDirectory: targetRoot! } : {}),
+      // 与上方 targetRoot 同义（input.path ? input.rootDirectory ?? identity.rootDirectory : undefined），
+      // input.path 分支里 targetRoot 恒为 string，内联以省掉非空断言。
+      ...(input.path
+        ? {
+            path: input.path,
+            rootDirectory: input.rootDirectory ?? identity.rootDirectory,
+          }
+        : {}),
     });
     return {
       targetSha: row.shadowCommit,

@@ -58,8 +58,8 @@ import type {
   ProcessLimits,
   ProcessSandbox,
 } from "../features/process-sandbox/types.js";
-import { hooksFor, runHooks } from "../features/settings/hooks.js";
 import { resolveConfiguredCommandPrompt } from "../features/settings/command-input.js";
+import { hooksFor, runHooks } from "../features/settings/hooks.js";
 import { createScopedHookCommand } from "../features/settings/scoped-hook-command.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import { formatUserRulesFragment } from "../features/settings/user-rules.js";
@@ -530,12 +530,12 @@ type CreateAgentRuntimeOptions = {
       scope: ExecutionScopeHandle;
       actor: LocalActor;
       runId: string;
-    }): Promise<TurnBoundaryCapture | void>;
+    }): Promise<TurnBoundaryCapture | undefined>;
     afterTurn(ctx: {
       scope: ExecutionScopeHandle;
       actor: LocalActor;
       runId: string;
-    }): Promise<TurnBoundaryCapture | void>;
+    }): Promise<TurnBoundaryCapture | undefined>;
   };
   now?: () => string;
   runIdFactory?: () => string;
@@ -1314,27 +1314,30 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       // Code uses the trusted Task workspace; only Design stages a Store route.
       let instanceSkills: InstanceSkillEntry[] = [];
-      if (
-        run.scopeHandle
-          ? options.instanceSkillsByInstanceLoader
-          : run.canvasId && options.instanceSkillsLoader
-      ) {
-        try {
-          instanceSkills = run.scopeHandle
-            ? await options.instanceSkillsByInstanceLoader!(
-                run.actor.instanceId,
-              )
-            : await options.instanceSkillsLoader!(
-                run.actor.instanceId,
-                run.canvasId!,
-              );
+      try {
+        if (run.scopeHandle) {
+          const { instanceSkillsByInstanceLoader } = options;
+          if (instanceSkillsByInstanceLoader) {
+            instanceSkills = await instanceSkillsByInstanceLoader(
+              run.actor.instanceId,
+            );
+            rlog.lap("workspace_skills_loaded", {
+              count: instanceSkills.length,
+            });
+          }
+        } else if (run.canvasId && options.instanceSkillsLoader) {
+          const { instanceSkillsLoader } = options;
+          instanceSkills = await instanceSkillsLoader(
+            run.actor.instanceId,
+            run.canvasId,
+          );
           rlog.lap("workspace_skills_loaded", {
             count: instanceSkills.length,
           });
-        } catch (err) {
-          // Non-fatal: agent runs without workspace skills
-          console.warn("[runtime] Failed to load workspace skills:", err);
         }
+      } catch (err) {
+        // Non-fatal: agent runs without workspace skills
+        console.warn("[runtime] Failed to load workspace skills:", err);
       }
 
       // Create backend — production uses StateBackend (no local shell).
