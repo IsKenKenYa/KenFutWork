@@ -84,6 +84,22 @@ jobs:
             .agents/skills/git-guardrails-claude-code/scripts/block-dangerous-git.sh \
             .agents/skills/wizard/template.sh
 
+      - name: Dockerfile 检查（hadolint）
+        # 门槛设在 error：真实拦得住「忘设 USER / 缓存没清 / 指令顺序错」这类部署隐患。
+        # 现存 2 条 warning（DL3008 apt 未钉版、DL3013 pip 未钉版）是欠债但不硬拦：
+        # 在 node:*-bookworm 上把 apt 包钉成具体版本，会让 Debian 每次 apt 刷新都构建失败；
+        # 正确解是按 digest 钉基础镜像 + 带哈希的 requirements.txt，属独立的部署改动。
+        # 告警照样打出来，不让它无声。
+        run: |
+          set -euo pipefail
+          version=2.15.1
+          curl -sSfL -o "$RUNNER_TEMP/hadolint" \
+            "https://github.com/hadolint/hadolint/releases/download/v${version}/hadolint-linux-x86_64"
+          chmod +x "$RUNNER_TEMP/hadolint"
+          "$RUNNER_TEMP/hadolint" --version
+          "$RUNNER_TEMP/hadolint" --failure-threshold=error \
+            apps/server/Dockerfile docker/pg-dev-shim/Dockerfile
+
       - name: 仓库级门禁
         run: pnpm run test:workspace
 
