@@ -22,6 +22,7 @@ import {
 } from "./httpChannelClient.js";
 import { navigateToDesign, requestParentBootstrap } from "./parentBridge.js";
 import { createCodePlatform } from "./platform.js";
+import { applyTheme, isTheme, normalizeThemePreference, type Theme } from "@zui/useTheme.js";
 import { createCodeWorkspaceContextResolver } from "./workspaceServiceController.js";
 import { bindCodeWorkspaceServices } from "./workspaceServices.js";
 import "@zui/styles.css";
@@ -154,3 +155,19 @@ window.addEventListener(
   },
   { once: true },
 );
+
+// 外观主题桥（宿主侧）：设置 → 外观（next-themes，默认跟随系统）解析出的 zai 主题
+// 经 postMessage 推过来，这里落到 Code UI 的主题系统（localStorage + applyTheme）。
+// 没有这座桥，外观切深色时 Code 工作台仍是浅色。内嵌场景（无父窗口）保持 zcode 自有默认。
+if (window.parent !== window && bootstrap) {
+  window.addEventListener("message", (event) => {
+    if (event.source !== window.parent || event.origin !== window.location.origin)
+      return;
+    const type = (event.data as { type?: unknown } | null)?.type;
+    if (type !== "kenfutwork:code-theme") return;
+    const theme = (event.data as { theme?: unknown }).theme;
+    if (typeof theme !== "string" || !isTheme(theme)) return;
+    localStorage.setItem("zcode-theme", normalizeThemePreference(theme));
+    applyTheme(normalizeThemePreference(theme));
+  });
+}

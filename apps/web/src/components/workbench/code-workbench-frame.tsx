@@ -5,6 +5,7 @@ import {
   codeUiParentRequestSchema,
 } from "@kenfutwork/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTheme } from "next-themes";
 import { AgentGovernanceSettingsPanel } from "@/components/agent-governance-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
@@ -36,6 +37,24 @@ export function CodeWorkbenchFrame({
     };
     frame.current?.contentWindow?.postMessage(message, window.location.origin);
   }, []);
+  /**
+   * 外观主题桥：设置 → 外观（next-themes，默认跟随系统）解析后的结果同步给 Code iframe
+   * （zai 主题口径 zai-light/zai-dark）——没有这座桥，外观切深色时 Code 工作台仍是浅色。
+   * 握手响应后立即推一次（iframe 的监听器这时才就位），之后主题变化实时推。
+   */
+  const { resolvedTheme } = useTheme();
+  const themeRef = useRef<"zai-dark" | "zai-light">("zai-light");
+  const postTheme = useCallback(
+    (theme: "zai-dark" | "zai-light") => {
+      themeRef.current = theme;
+      localStorage.setItem("zcode-theme", theme);
+      frame.current?.contentWindow?.postMessage(
+        { type: "kenfutwork:code-theme", theme },
+        window.location.origin,
+      );
+    },
+    [],
+  );
   useEffect(() => {
     const receive = (event: MessageEvent) => {
       if (
@@ -52,12 +71,18 @@ export function CodeWorkbenchFrame({
       else {
         ready.current = true;
         bootstrap();
+        // iframe 的主题监听器这时才就位，补推当前外观主题
+        postTheme(themeRef.current);
       }
     };
     window.addEventListener("message", receive);
     bootstrap();
     return () => window.removeEventListener("message", receive);
-  }, [bootstrap, onModeChange]);
+  }, [bootstrap, onModeChange, postTheme]);
+  useEffect(() => {
+    const zcodeTheme = resolvedTheme === "dark" ? "zai-dark" : "zai-light";
+    postTheme(zcodeTheme);
+  }, [postTheme, resolvedTheme]);
   return (
     <>
       <iframe

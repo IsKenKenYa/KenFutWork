@@ -5653,7 +5653,7 @@
       "source": "references/zcode/packages/ui/src/i18n/IntlProvider.tsx",
       "target": "apps/web/src/components/workbench/zcode/i18n/IntlProvider.tsx",
       "sha256": "269f010d7b15d5c1a011fc79a99a578952ef4194f2ed652a0f052e5ee2b18b40",
-      "copiedSha256": "26ecd7b8b7a7067721d059a4168fcb24f889b643347ffe757230fd70f9205ade",
+      "copiedSha256": "18ecd8dc48f9a0cbc3331dea6163a13cfc716699beafeda0b8694f194d69e743",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]

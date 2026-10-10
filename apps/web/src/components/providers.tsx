@@ -11,7 +11,7 @@ import { ToastProvider } from "./toast";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <LocalInstanceProvider>
         <ToastProvider>
           <LocalInstanceBoundary>{children}</LocalInstanceBoundary>
