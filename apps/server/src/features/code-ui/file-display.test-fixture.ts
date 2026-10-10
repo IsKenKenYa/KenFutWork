@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   AGENT_GOVERNANCE_DEFAULTS,
   AGENT_GOVERNANCE_LIMITS,
@@ -52,9 +52,11 @@ export async function createFileDisplayPublicFixture(
     }),
     resolvePath: async (path) => {
       const canonical = resolve(rootDirectory, path);
+      // 与生产 scope-service inside() 同款判定：relative + sep，Windows 反斜杠同样成立
+      const tail = relative(rootDirectory, canonical);
       if (
-        canonical !== rootDirectory &&
-        !canonical.startsWith(`${rootDirectory}/`)
+        tail !== "" &&
+        (isAbsolute(tail) || tail === ".." || tail.startsWith(`..${sep}`))
       )
         throw new Error("夹具目录未授权");
       return canonical;

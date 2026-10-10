@@ -1718,13 +1718,15 @@ function ConversationComposerImpl({
 
   // 动态 placeholder（旧 chatViewPlaceholder 语义）：无历史 → newTask；
   // 有历史空闲 → followUpAsk；有历史处理中 → followUpQueue。
-  const placeholder = intl.formatMessage({
-    id: resolveChatPlaceholderKey({
-      hasHistoryMessages: (snapshot?.rows.totalCount ?? 0) > 0,
-      isTaskProcessing: canStop,
-      compactNewTask: false,
-    }),
-  });
+  const placeholder = voice?.recording
+    ? "开始说话"
+    : intl.formatMessage({
+        id: resolveChatPlaceholderKey({
+          hasHistoryMessages: (snapshot?.rows.totalCount ?? 0) > 0,
+          isTaskProcessing: canStop,
+          compactNewTask: false,
+        }),
+      });
   const sendTooltipTitle = intl.formatMessage({
     id: mode === "enqueue" ? "chat.queue.enqueue" : "chat.send",
   });
@@ -2386,8 +2388,10 @@ function ConversationComposerImpl({
       ) : null}
       <div
         className={cn(
-          "chat-composer-input-surface w-full",
+          "chat-composer-input-surface w-full transition-[min-height]",
           contextHeader && "rounded-2xl bg-surface shadow-xl/5",
+          // 录音时输入区顶上去（参考视频：占位变「开始说话」、输入区加高）
+          voice?.recording && "min-h-32",
         )}
         onPointerDown={voice?.onPointerDown}
         style={voice?.lockSelection ? { userSelect: "none" } : undefined}
@@ -2456,6 +2460,7 @@ function ConversationComposerImpl({
             <span>{attachmentsApi.attachmentError}</span>
           </p>
         ) : null}
+        {/* 录音中只有图标变化：麦克风高亮脉动，不出状态文字 */}
         {voice?.status}
       </div>
       <ImagePreviewDialog
