@@ -429,11 +429,14 @@ jobs:
           # 本 job 的口径是「让公告被看见」（Security 标签 + 告警），不是在此处染红：
           # 存量 29 个包 / 49 条公告（含传递依赖）需要的是被跟踪，而不是被静音。
           # 「新增高危依赖」由 dependency-review 在 PR 上拦。
+          #
+          # GitHub 给 run 步骤的 shell 是 `bash -e -o pipefail`，所以「取退出码」必须写成
+          # `cmd || code=$?`——裸 `cmd` 后跟 `code=$?` 会在 cmd 非 0 时就被 -e 打断（实测红过一次）。
+          code=0
           "$RUNNER_TEMP/osv-scanner" scan source \
             -L pnpm-lock.yaml \
             -L apps/desktop/src-tauri/Cargo.lock \
-            --format sarif --output-file "$RUNNER_TEMP/osv.sarif"
-          code=$?
+            --format sarif --output-file "$RUNNER_TEMP/osv.sarif" || code=$?
           # 退出码 1 = 发现公告（正常）；但没产出 SARIF 就是扫描器自己失败，必须说出来。
           if [ ! -s "$RUNNER_TEMP/osv.sarif" ]; then
             echo "· osv-scanner 退出码 $code 且没有产出 SARIF —— 这是扫描失败，不是没有漏洞"
