@@ -179,6 +179,11 @@ jobs:
         run: |
           if [ -f dist-manifest.json ]; then
             cat dist-manifest.json
+            # dmgAesthetics 是**产物级**读数（挂载后读卷根 .DS_Store），不是引擎退出码：
+            # 无 GUI 会话时 bundle_dmg 会跳过写布局却仍然退出 0，历史上清单就写着
+            # 「bundle_dmg」而用户拿到白底包。三档都没落地时在这里点名，不硬拦
+            # （白底包照样能装），但必须在运行页看得见。
+            node -e 'const m=require("./dist-manifest.json");const mac=m.macos;if(mac&&mac.dmgAesthetics===false){console.log("::warning title=DMG 没有品牌背景布局::引擎=" + mac.dmgLayout + "，三档布局引擎都没落地，产物是白底默认排布");}'
           else
             echo "· 本次没走到清单产出"
             exit 1
