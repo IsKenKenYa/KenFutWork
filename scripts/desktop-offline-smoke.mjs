@@ -128,7 +128,9 @@ async function expectStatus(base, path, status, init = {}) {
   const result = await request(base, path, init);
   requireCondition(
     result.status === status,
-    `${path} 期望 ${status}，实际 ${result.status}。`,
+    // 带上响应体（截断）：服务端的错误码/原因原文才是可行动的第一现场，
+    // 裸状态号会把「代码报错」伪装成「HTTP 404」这种无从下手的线索（实测）。
+    `${path} 期望 ${status}，实际 ${result.status}。响应：${(result.body ?? "").slice(0, 500)}`,
   );
   return result;
 }
@@ -671,6 +673,12 @@ const SANDBOX_ENFORCEMENT_UNAVAILABLE = [
   /拒绝不受约束执行/u,
 ];
 
+/**
+ * 沙箱强制能力的跨 boot 记忆判定：null=未知，true=已证实缺失，false=已实证可用。
+ * 证据只在 turn 边界打一次且输出缓冲按次启动重置，所以判定必须整场记忆。
+ */
+let sandboxEnforcementUnavailable = null;
+
 function sandboxEnforcementEvidence() {
   const lines = packagedServerOutput.join("").split(/\r?\n/u);
   for (let index = lines.length - 1; index >= 0; index -= 1) {
@@ -682,18 +690,18 @@ function sandboxEnforcementEvidence() {
 }
 
 async function openByokCodeStream(base, headers) {
+  // 这里**不能**挂「打开即倒计时」的绝对 abort 定时器：同一条 SSE 连接要贯穿整条
+  // BYOK 流水线（含检查点等待之后的 listTasks / 快照 / 数据迁移场景）。Windows 产物
+  // 缺 PSEC 时检查点等待会耗满验收窗口，倒计时在中途把健康连接掐死，服务端随即释放
+  // 连接，后续 RPC 全部 404（实测）。各处等待的验收期限由 waitForByokResult 把守，
+  // 关闭只来自 close()（每个调用方都有 finally）或读流失败，断言强度不变。
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), SMOKE_BYOK_TIMEOUT_MS);
   const response = await fetch(`${base}/api/code-ui/events`, {
     headers: { ...headers, origin: base },
     signal: controller.signal,
-  }).catch((error) => {
-    clearTimeout(timer);
-    throw error;
   });
   if (response.status !== 200 || !response.body) {
     controller.abort();
-    clearTimeout(timer);
     throw new Error("真实Code SSE连接未获授权或未返回事件流。");
   }
   const reader = response.body.getReader();
@@ -723,7 +731,6 @@ async function openByokCodeStream(base, headers) {
     } catch (error) {
       if (!controller.signal.aborted) failure = error;
     } finally {
-      clearTimeout(timer);
       reader.releaseLock();
     }
   })();
@@ -1001,6 +1008,20 @@ async function requireNativeSmokeCheckpoints(
   workspacePath,
   expectedIds,
 ) {
+  // 沙箱强制能力是**二进制属性**，且服务端输出缓冲按次启动重置——判定一旦成立就在
+  // 整场冒烟里记忆（数据迁移场景会多次重启，新 boot 里不再有 turn 边界拒绝行）。
+  // 已判死就直接换把关口径，不空耗验收窗口；能力可用的宿主照走完整检查点链。
+  const earlyEvidence = sandboxEnforcementEvidence();
+  if (earlyEvidence || sandboxEnforcementUnavailable) {
+    sandboxEnforcementUnavailable = true;
+    log(
+      `! 该宿主缺原生沙箱强制能力，按设计不产 checkpoint：${earlyEvidence ?? "（沿用此前判定）"}`,
+    );
+    log(
+      "! 此处改由「能力拒绝必须如实透出」把关；能力可用的宿主仍要完整检查点链。",
+    );
+    return [];
+  }
   const query = new URLSearchParams({ taskId }).toString();
   let lastBody = "";
   // completedSuccess先投影到UI；post捕获仍在同一Run的finally中收尾。
@@ -1024,7 +1045,9 @@ async function requireNativeSmokeCheckpoints(
   } catch (error) {
     const evidence = sandboxEnforcementEvidence();
     if (!evidence) throw error;
-    // 超时现场原样保留，再说明为什么这一项在该宿主上换把关方式。
+    // 超时现场原样保留，再说明为什么这一项在该宿主上换把关方式（等待期内才落地的
+    // 拒绝行走这里：进入时证据为空、轮询期间 turn 边界才打出）。
+    sandboxEnforcementUnavailable = true;
     log(`! ${error.message}`);
     log(`! 该宿主缺原生沙箱强制能力，按设计不产 checkpoint：${evidence}`);
     log(
@@ -1032,6 +1055,8 @@ async function requireNativeSmokeCheckpoints(
     );
     return [];
   }
+  // checkpoint 到手即实证宿主有能力，锁定结论防止后续误判短路。
+  sandboxEnforcementUnavailable = false;
   requireCondition(
     checkpoints.every(
       (checkpoint) =>
@@ -1984,10 +2009,16 @@ async function verifyRestoredTaskAndKeys(base, dataDir, headers, fixture) {
     `${fixture.task.sessionId}.git`,
     createHash("sha256").update(scopeRoot).digest("hex"),
   );
-  requireCondition(
-    existsSync(join(shadow, "config")),
-    "真实检查点影子仓库未按新Task根重新绑定hash目录。",
-  );
+  if (sandboxEnforcementUnavailable) {
+    // 缺能力的宿主从未产出过 checkpoint，影子仓库不存在是能力拒绝的必然结果，
+    // 不是「移动/恢复丢了影子仓库」；能力可用的宿主依旧硬性断言。
+    log("! 缺原生沙箱强制能力的宿主无影子仓库，重绑定断言按能力拒绝跳过。");
+  } else {
+    requireCondition(
+      existsSync(join(shadow, "config")),
+      "真实检查点影子仓库未按新Task根重新绑定hash目录。",
+    );
+  }
   const keys = JSON.parse(
     await readFile(join(dataDir, "credentials", "byok.json"), "utf8"),
   );
