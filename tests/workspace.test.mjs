@@ -645,7 +645,7 @@ test("桌面版本四处一致，且 SEA 宿主与 .nvmrc 钉死", async () => {
   for (const [, image] of ciText.matchAll(/^.*image:\s*(node:\S+)\s*$/gm)) {
     assert.match(
       image,
-      new RegExp(`^node:${pin.replace(/\./g, "\\.")}-`),
+      new RegExp(`^node:${pin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-`),
       `CI 容器镜像「${image}」没钉到 .nvmrc 的 ${pin}；浮动 tag 让 CI 与出包用的 node 不是同一份`,
     );
   }

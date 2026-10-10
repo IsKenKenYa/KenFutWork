@@ -134,34 +134,12 @@ jobs:
       - name: 仓库级门禁
         run: pnpm run test:workspace
 
-      # 仓库当前有 92 处既存 Biome 报错（不是本 PR 造成的）：全仓 `pnpm lint` 当硬门会让
-      # 每个 PR 都红，反而没人看。这里只判**本次改动**的文件；全仓欠债另立单子收敛。
-      - name: Biome（只判本次改动的文件）
-        env:
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          base="${BASE_SHA:-}"
-          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
-            base="$(git rev-parse "${GITHUB_SHA}^" 2>/dev/null || true)"
-          fi
-          if [ -z "$base" ]; then
-            echo "· 找不到比较基线，跳过改动 lint（不误判为通过：这一步本就不覆盖全仓）"
-            exit 0
-          fi
-          mapfile -d '' -t changed < <(git diff -z --diff-filter=ACMR --name-only "$base" "$GITHUB_SHA")
-          files=()
-          for path in "${changed[@]}"; do
-            case "$path" in
-              *.cjs | *.js | *.mjs | *.ts | *.tsx | *.json) files+=("$path") ;;
-            esac
-          done
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "· 本次无 JS/TS/JSON 改动"
-            exit 0
-          fi
-          printf '%s\0' "${files[@]}" | xargs -0 pnpm exec biome check
+      # 与本机共用来源保真与第一方 lint 入口；不让 CI 直接格式检查原 ZCode 源码。
+      - name: 原 ZCode 来源（仅固定参考仓）
+        run: git submodule update --init --depth 1 references/zcode
+
+      - name: Biome（来源校验与全量第一方代码）
+        run: pnpm lint
 
       # 桌面壳的 typecheck/test 是 cargo（apps/desktop/package.json:11-12），ubuntu runner 上
       # 没有 Rust + webkit2gtk 系统库，改由 mac lane 负责；这里显式排除而不是让它红。

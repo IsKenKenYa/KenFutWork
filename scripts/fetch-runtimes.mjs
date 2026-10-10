@@ -339,7 +339,7 @@ async function resolvePythonAsset(series, platformTriple) {
   const release = await fetchGithubReleaseJson(PYTHON_RELEASE_API);
   const assets = release?.assets ?? [];
   const pattern = new RegExp(
-    `^cpython-${series.replace(/\./g, "\\.")}\\.(\\d+)\\+\\d+-${platformTriple.replaceAll("-", "\\-")}-install_only\\.tar\\.gz$`,
+    `^cpython-${series.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.(\\d+)\\+\\d+-${platformTriple.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-install_only\\.tar\\.gz$`,
   );
   const matched = assets.filter((item) => pattern.test(item.name ?? ""));
   const chosen = matched.sort(
