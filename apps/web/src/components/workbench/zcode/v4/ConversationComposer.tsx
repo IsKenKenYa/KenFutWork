@@ -150,6 +150,7 @@ import {
   ArrowUpIcon,
   ClipboardPenLineIcon,
   InfoIcon,
+  MicIcon,
   RotateCcwIcon,
   SquareIcon,
   XIcon,
@@ -2293,6 +2294,25 @@ function ConversationComposerImpl({
           onOpen={onOpenRunningBackgroundWorks}
           openTarget={backgroundWorkOpenTarget}
         />
+        {/* 语音入口（可见麦克风）：点击开麦 / 录音中再点提交转写；按住输入卡的手势并存 */}
+        {voice ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon-md"
+            disabled={disabled}
+            onClick={voice.toggleRecording}
+            data-testid="v4-composer-voice"
+            aria-label={voice.recording ? "停止录音并转写" : "语音输入"}
+            className={cn(
+              "cursor-pointer rounded-lg",
+              voice.recording && "bg-brand text-foreground-inverse hover:bg-brand/80",
+            )}
+          >
+            <MicIcon className="size-4" />
+            <span className="sr-only">{voice.recording ? "停止录音并转写" : "语音输入"}</span>
+          </Button>
+        ) : null}
       </>
     ),
     [
@@ -2308,6 +2328,7 @@ function ConversationComposerImpl({
       remoteSessionId,
       runningSubagentCount,
       snapshot?.backgroundWorks,
+      voice,
       workspaceIdentity,
       workspacePath,
     ],

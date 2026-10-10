@@ -57,6 +57,10 @@ export interface ComposerVoiceBinding {
   lockSelection: boolean;
   /** 状态行（null = 不显示）。放到输入框下方同一位置。 */
   status: React.ReactNode;
+  /** 麦克风按钮的显式开关（点击开麦 / 再点提交转写）；给可见入口用。 */
+  toggleRecording: () => void;
+  /** 是否正在录音（按钮的激活态）。 */
+  recording: boolean;
 }
 
 /** 「没听到语音」这类提示的自动收起时长。 */
@@ -273,6 +277,8 @@ export function useComposerVoice({
   return {
     onPointerDown: voice.onPointerDown,
     lockSelection: voice.lockSelection,
+    toggleRecording: voice.toggleRecording,
+    recording: voice.phase === "recording",
     status: loopStatus ?? (
       <>
         {notice ? (
