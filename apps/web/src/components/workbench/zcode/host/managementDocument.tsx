@@ -26,6 +26,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { Root } from "react-dom/client";
+import { createMacDesktopChrome } from "./desktopChrome.js";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 import { createCodePlatform } from "./platform.js";
 
@@ -72,6 +73,7 @@ function ManagementDocument({
     }),
     [client],
   );
+  const desktop = Boolean(createMacDesktopChrome());
   const [target, setTarget] = useState(initialTarget);
   useLayoutEffect(() => {
     setMcpStorePlatform(platform);
@@ -115,6 +117,7 @@ function ManagementDocument({
                       <RootShell>
                         {target.page === "settings" ? (
                           <SettingsPage
+                            isMacDesktop={desktop}
                             onBack={onClose}
                             onOpenPluginStore={(next) => {
                               const destination: ManagementTarget = {
@@ -131,7 +134,7 @@ function ManagementDocument({
                         ) : (
                           <main className="flex h-full min-h-0 flex-1 flex-col bg-background">
                             <AutomationsMainBreadcrumbFrame
-                              isDesktop={false}
+                              isDesktop={desktop}
                               sectionLabel="插件市场"
                               ariaLabel="导航"
                             >

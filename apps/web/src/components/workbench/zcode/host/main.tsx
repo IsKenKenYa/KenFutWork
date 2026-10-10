@@ -18,6 +18,10 @@ import { useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { CuaSnapshotReader } from "./cuaScreenshotSectionAdapter.js";
 import {
+  createMacDesktopChrome,
+  installDesktopTitlebarDrag,
+} from "./desktopChrome.js";
+import {
   type CodeHostConfig,
   CodeHttpChannelClient,
 } from "./httpChannelClient.js";
@@ -34,6 +38,8 @@ import "./workbenchNavigation.css";
 
 const params = new URLSearchParams(window.location.search);
 const releaseActivity = installHostWorkspaceActivity(window.parent);
+const releaseTitlebarDrag = installDesktopTitlebarDrag(document);
+const desktopChrome = createMacDesktopChrome();
 const bootstrap =
   window.parent !== window ? await requestParentBootstrap(window.parent) : null;
 const workspacePath = params.get("workspace");
@@ -104,7 +110,7 @@ function CodeHost({
           <Root
             services={services}
             platform={platform}
-            isMacDesktop={platform.supportsComputerUse === true}
+            isMacDesktop={Boolean(desktopChrome)}
             directoryServices={client.directoryServices()}
             onWorkspaceContextChange={onWorkspaceContextChange}
             initialUserInfo={user}
@@ -183,6 +189,7 @@ window.addEventListener(
   "pagehide",
   () => {
     releaseActivity();
+    releaseTitlebarDrag();
     workbenchNavigation?.dispose();
     releaseWorkspaceServices?.();
     client.setViewerContextResolver(null);

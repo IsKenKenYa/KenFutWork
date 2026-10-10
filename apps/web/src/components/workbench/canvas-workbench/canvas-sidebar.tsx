@@ -27,6 +27,7 @@ import type { useDesignProjects } from "./use-design-projects";
 type Props = ReturnType<typeof useDesignProjects> & {
   mode: "design" | "flow";
   active: boolean;
+  desktopTitlebar?: boolean;
   switchMode: (mode: WorkbenchMode) => void;
   sidebarWidth: number;
   sidebarCollapsed: boolean;
@@ -55,6 +56,7 @@ export function CanvasSidebar({
   startSidebarResize,
   mode,
   active,
+  desktopTitlebar = false,
   switchMode,
   setSettingsTab,
   onOpenManagement,
@@ -71,14 +73,16 @@ export function CanvasSidebar({
       {sidebarCollapsed /* 收起态：图标栏（模式切换 + 插件 + 底部头像） */ ? (
         <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r bg-card py-2">
           <KenFutWorkLogo className="mb-1 size-7 shrink-0" />
-          <button
-            type="button"
-            aria-label="展开侧栏"
-            onClick={() => setSidebarCollapsed(false)}
-            className="rounded-md p-2 hover:bg-muted"
-          >
-            <PanelLeftOpen className="h-4 w-4" />
-          </button>
+          {!desktopTitlebar ? (
+            <button
+              type="button"
+              aria-label="展开侧栏"
+              onClick={() => setSidebarCollapsed(false)}
+              className="rounded-md p-2 hover:bg-muted"
+            >
+              <PanelLeftOpen className="h-4 w-4" />
+            </button>
+          ) : null}
           <div className="my-1 w-6 border-t" />
           <WorkbenchModeNavigation
             mode={mode}
@@ -131,14 +135,16 @@ export function CanvasSidebar({
                 KenFutWork
               </span>
             </span>
-            <button
-              type="button"
-              aria-label="收起侧栏"
-              onClick={() => setSidebarCollapsed(true)}
-              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <PanelLeftClose className="h-4 w-4" />
-            </button>
+            {!desktopTitlebar ? (
+              <button
+                type="button"
+                aria-label="收起侧栏"
+                onClick={() => setSidebarCollapsed(true)}
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <PanelLeftClose className="h-4 w-4" />
+              </button>
+            ) : null}
           </div>
 
           {/* 模式切换（开关式：一个分段控件内左右切换 Code / Design / Flow）。

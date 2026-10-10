@@ -8,9 +8,14 @@ export {
 export { TooltipProvider } from "./components/ui/tooltip.js";
 export { PlatformProvider } from "./hooks/usePlatform.js";
 export { ServiceProvider } from "./hooks/useServices.js";
+export { DesktopWorkbenchTitlebar } from "./host/DesktopWorkbenchTitlebar.js";
+export {
+  createMacDesktopChrome,
+  installDesktopTitlebarDrag,
+} from "./host/desktopChrome.js";
 export { CodeHttpChannelClient } from "./host/httpChannelClient.js";
 export { createWebPlatform } from "./host/upstream/browserPlatform.js";
+export { WorkbenchModeNavigation } from "./host/WorkbenchModeNavigation.js";
 export { ZCodeIntlProvider } from "./i18n/IntlProvider.js";
 export { ChatPromptEditor } from "./prompt-editor/ChatPromptEditor.js";
 export { TabStoreProvider } from "./store/TabStoreProvider.js";
-export { WorkbenchModeNavigation } from "./host/WorkbenchModeNavigation.js";

@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from "@testing-library/react";
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider";
 import { Root } from "@zui/Root";
@@ -38,6 +39,25 @@ afterEach(() => {
 
 it("原Code侧栏使用横排模式按钮，可信宿主能力才显示Flow；导航保持coding且旧菜单不重复", async () => {
   installCodeRootBrowser();
+  let fullscreen = false;
+  let resize: (() => void) | undefined;
+  const theme = vi.fn(async () => {});
+  vi.stubGlobal("navigator", {
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X)",
+    platform: "MacIntel",
+  });
+  vi.stubGlobal("__TAURI__", {
+    window: {
+      getCurrentWindow: () => ({
+        isFullscreen: async () => fullscreen,
+        onResized: async (handler: () => void) => {
+          resize = handler;
+          return () => {};
+        },
+        setTheme: theme,
+      }),
+    },
+  });
   const calls: Array<{ service: string; method: string; args: unknown[] }> = [];
   vi.stubGlobal("fetch", createCodeRootHostFetch(calls, { rejectOpen: false }));
   const parentFrame = document.createElement("iframe");
@@ -55,6 +75,8 @@ it("原Code侧栏使用横排模式按钮，可信宿主能力才显示Flow；�
   render(
     <ZCodeIntlProvider initialLocale="zh-CN">
       <Root
+        isMacDesktop
+        preferDirectoryBrowser
         services={host.services}
         platform={createCodePlatform(host, { workbenchNavigation: navigation })}
         initialWorkspaceAbsPath="/code"
@@ -104,4 +126,20 @@ it("原Code侧栏使用横排模式按钮，可信宿主能力才显示Flow；�
   );
   fireEvent.click(screen.getByRole("button", { name: "连接使用" }));
   expect(screen.queryByText("界面模式")).toBeNull();
+  await waitFor(() => expect(theme).toHaveBeenCalled());
+  await act(async () => {
+    fullscreen = true;
+    resize?.();
+  });
+  expect(document.querySelector('[style*="padding-left: 96px"]')).toBeNull();
+  await act(async () => {
+    fullscreen = false;
+    resize?.();
+  });
+  expect(
+    document.querySelector('[style*="padding-left: 96px"]'),
+  ).not.toBeNull();
+  fireEvent.keyDown(window, { key: "Escape" });
+  fireEvent.keyDown(window, { key: "o", metaKey: true });
+  expect(await screen.findByText("显示隐藏目录")).not.toBeNull();
 });

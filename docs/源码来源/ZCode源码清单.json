@@ -1447,10 +1447,11 @@
       "source": "references/zcode/packages/ui/src/UpdateStatusDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/UpdateStatusDialog.tsx",
       "sha256": "96d814735da7eafaafb3cf88673ae0472970340addd6b5a3f6504a85c38205d6",
-      "copiedSha256": "67b56b98be1d7af302c1715bcacf2e9051921b8c426c8fd5ed9facd9d1248025",
+      "copiedSha256": "1e524ef850082a57bef44bb17a7f30242dfb3a071deb26e5ec6af0af615d0eee",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "资源路径：dock 图标改为本镜像 public 路径，由 Vite 处理"
+        "资源路径：dock 图标改为本镜像 public 路径，由 Vite 处理",
+        "品牌／Next资源路径：更新弹窗使用既有KenFutWork mark的静态导入，避免库产物new URL(public绝对路径)被Next重新解析为模块"
       ]
     },
     {
@@ -2104,9 +2105,10 @@
       "source": "references/zcode/packages/ui/src/app-shell/useAppChromeState.ts",
       "target": "apps/web/src/components/workbench/zcode/app-shell/useAppChromeState.ts",
       "sha256": "f5e8beeb36a54d1e925254287c93fe820ec9b65c6323a9ec9130eaffeaddf029",
-      "copiedSha256": "4a38e3855b4db95b2f2e29b47f2b65b9da7fc9305f399066460c5cad67bee430",
+      "copiedSha256": "c759683a4a83693f68e4f4c12363d26e83a55a96dc656ebbea93156bd77c9b9a",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：实际提供窗口控制区几何的平台可订阅原生全屏，独立于完整Electron桌面菜单能力"
       ]
     },
     {
@@ -9024,9 +9026,10 @@
       "source": "references/zcode/packages/ui/src/root/useDesktopNativeThemeSync.ts",
       "target": "apps/web/src/components/workbench/zcode/root/useDesktopNativeThemeSync.ts",
       "sha256": "666c3a465d9bff34703190a2a56a7bc40ef3e77c443342c5c38de8b8ea6ad132",
-      "copiedSha256": "dbf9a2063bc330eb1630d24906d20d590c29e679297c74263b46ceccf7b2a3a7",
+      "copiedSha256": "c9b400aafbb941a3427ba6d1c54d3db5ff52496cb8224f6536e5b1c48a5ead97",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：窗口控制区几何能力可同步原生主题，不开放未接通的桌面命令或切换键盘消费路径"
       ]
     },
     {

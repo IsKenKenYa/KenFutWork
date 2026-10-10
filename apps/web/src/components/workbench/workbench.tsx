@@ -1,8 +1,16 @@
 "use client";
 
 import type { ManagementTarget, WorkbenchModes } from "@kenfutwork/shared";
+import { installDesktopTitlebarDrag } from "@zcode/ui/design-shared";
 import { useRouter, useSearchParams } from "next/navigation";
-import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useFlowHostEntry } from "@/hooks/use-flow-host";
 import type { WorkbenchMode } from "@/lib/workbench-surface";
 import { CodeWorkbenchFrame } from "./code-workbench-frame";
@@ -15,6 +23,7 @@ const CanvasWorkbench = lazy(() =>
 );
 
 function WorkbenchModeSurface() {
+  useEffect(() => installDesktopTitlebarDrag(document), []);
   const search = useSearchParams();
   const router = useRouter();
   const requested = search.get("mode");

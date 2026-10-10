@@ -12,6 +12,7 @@ import {
   createCuaPermissionOnboarding,
   localCuaDesktopInvoke,
 } from "./cuaPermissionPlatform.js";
+import { createMacDesktopChrome } from "./desktopChrome.js";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 import { readManagementSettingsTarget } from "./managementNavigation.js";
 import { openPluginPanel } from "./parentBridge.js";
@@ -32,6 +33,7 @@ export function createCodePlatform(
     !/iPhone|iPad/u.test(navigator.userAgent);
   return {
     ...createWebPlatform(),
+    ...createMacDesktopChrome(),
     ...(options.workbenchNavigation
       ? {
           workbenchNavigation: options.workbenchNavigation,

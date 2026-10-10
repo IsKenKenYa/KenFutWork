@@ -99,6 +99,44 @@ function installFixture(
   );
 }
 
+it("桌面Design复用原标题栏侧栏按钮，画布与助手文档不被收起操作重建", async () => {
+  installFixture();
+  navigation.query = "mode=design";
+  vi.stubGlobal("navigator", {
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X)",
+  });
+  vi.stubGlobal("__TAURI__", {
+    window: {
+      getCurrentWindow: () => ({
+        startDragging: async () => {},
+        toggleMaximize: async () => {},
+        setTheme: async () => {},
+        isFullscreen: async () => false,
+        onResized: async () => () => {},
+      }),
+    },
+  });
+  render(
+    <LocalInstanceProvider>
+      <LocalInstanceBoundary>
+        <Workbench />
+      </LocalInstanceBoundary>
+    </LocalInstanceProvider>,
+  );
+  const toggle = await screen.findByRole(
+    "button",
+    { name: "切换侧边栏" },
+    LAZY,
+  );
+  const canvas = await screen.findByTitle("设计项目 画布", {}, LAZY);
+  expect(screen.queryByRole("button", { name: "收起侧栏" })).toBeNull();
+  fireEvent.click(toggle);
+  expect(screen.queryByRole("button", { name: "展开侧栏" })).toBeNull();
+  expect(screen.getByTitle("设计项目 画布")).toBe(canvas);
+  fireEvent.click(toggle);
+  expect(screen.getByTitle("设计项目 画布")).toBe(canvas);
+});
+
 it("Code默认主区仍是原iframe，可信原菜单Design请求同时更新URL导航", async () => {
   installFixture();
   render(

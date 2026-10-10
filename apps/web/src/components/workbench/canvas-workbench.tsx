@@ -1,7 +1,11 @@
 "use client";
 
 import type { ManagementTarget } from "@kenfutwork/shared";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createMacDesktopChrome,
+  DesktopWorkbenchTitlebar,
+} from "@zcode/ui/design-shared";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { installDesktopExternalLinks } from "@/lib/desktop-system";
 import type { FlowEntry } from "@/lib/flow-embed";
 import { SIDEBAR_RAIL_WIDTH } from "@/lib/panel-layout";
@@ -51,6 +55,7 @@ export function CanvasWorkbench({
   const composer = useDesignComposer();
   const { sidebarWidth, startSidebarResize } = useSidebarWidth();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const desktop = useMemo(() => Boolean(createMacDesktopChrome()), []);
   const [canvasPrompt, setCanvasPrompt] = useState<string | null>(null);
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   /**
@@ -82,16 +87,21 @@ export function CanvasWorkbench({
 
   return (
     <div
-      className="flex h-screen bg-background text-foreground"
+      className={`relative flex h-screen bg-background text-foreground${desktop ? " pt-14" : ""}`}
       style={
         {
           "--workbench-sidebar": `${sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : sidebarWidth}px`,
         } as React.CSSProperties
       }
     >
+      <DesktopWorkbenchTitlebar
+        isSidebarVisible={!sidebarCollapsed}
+        onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
+      />
       <CanvasSidebar
         {...projects}
         mode={mode}
+        desktopTitlebar={desktop}
         active={active}
         switchMode={onModeChange}
         sidebarWidth={sidebarWidth}
