@@ -3,6 +3,7 @@ import {
   zcodePluginsOverviewResultSchema,
 } from "@kenfutwork/shared";
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -15,6 +16,7 @@ import { PlatformProvider } from "@zui/hooks/usePlatform";
 import { ServiceProvider } from "@zui/hooks/useServices";
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider";
 import { PluginStorePage } from "@zui/settings/PluginStorePage";
+import { PluginsSection } from "@zui/settings/PluginsSection";
 import { StoreProvider } from "@zui/store/StoreProvider";
 import { TabStoreProvider } from "@zui/store/TabStoreProvider";
 import { afterEach, expect, it, vi } from "vitest";
@@ -29,6 +31,202 @@ afterEach(() => {
   client?.dispose();
   client = null;
   vi.unstubAllGlobals();
+});
+
+async function openInstancePlugins(
+  unknownToggle = false,
+  delayedToggle?: Promise<Response>,
+) {
+  const calls: PluginRpcCall[] = [];
+  const plugin = {
+    id: "local__instance-toggle",
+    name: "instance-toggle",
+    enabled: true,
+    source: "url",
+    marketplace: "kenfutwork-local",
+    rootPath: "/packages/instance-toggle",
+    skillRootCount: 1,
+    commandRootCount: 0,
+    mcpServerNames: [],
+    listing: { displayName: "实例开关" },
+  };
+  vi.stubGlobal("fetch", async (url: string, options?: RequestInit) => {
+    if (url.endsWith("/events"))
+      return codeHostNotificationResponse(options?.signal ?? undefined);
+    const call: PluginRpcCall = JSON.parse(String(options?.body));
+    calls.push(call);
+    if (call.service === "plugin-management") {
+      const currentPlugin = url.startsWith("https://next-host.example")
+        ? { ...plugin, enabled: true }
+        : plugin;
+      if (call.method === "setPluginEnabled") {
+        plugin.enabled = call.args[0]?.enabled === true;
+        if (delayedToggle) return delayedToggle;
+        if (unknownToggle) throw new TypeError("停用响应丢失");
+        return Response.json({
+          result: { plugin, enabled: plugin.enabled, diagnostics: [] },
+        });
+      }
+      return Response.json({
+        result:
+          call.method === "listPlugins"
+            ? { plugins: [currentPlugin], diagnostics: [] }
+            : {
+                marketplaces: [],
+                availablePlugins: [],
+                installedPlugins: [
+                  {
+                    id: plugin.id,
+                    name: plugin.name,
+                    marketplace: plugin.marketplace,
+                    enabled: currentPlugin.enabled,
+                    scope: "user",
+                    listing: plugin.listing,
+                  },
+                ],
+                restorableBuiltins: [],
+                diagnostics: [],
+              },
+      });
+    }
+    return Response.json({ result: null });
+  });
+  client = new CodeHttpChannelClient({ apiBase: "https://host.example" });
+  await client.connect();
+  const page = (host: CodeHttpChannelClient) => (
+    <ServiceProvider services={host.services}>
+      <PlatformProvider platform={createCodePlatform(host)}>
+        <ZCodeIntlProvider initialLocale="zh-CN">
+          <StoreProvider broadcastService={host.services.broadcastService}>
+            <TabStoreProvider>
+              <TooltipProvider>
+                <PluginsSection onOpenPluginStore={() => {}} />
+              </TooltipProvider>
+            </TabStoreProvider>
+          </StoreProvider>
+        </ZCodeIntlProvider>
+      </PlatformProvider>
+    </ServiceProvider>
+  );
+  const view = render(page(client));
+  await screen.findByRole("switch", { name: "停用 实例开关" });
+  return { calls, page, view };
+}
+
+it("无Project的原插件管理页可停用再启用，保留安装且不创建Task", async () => {
+  const { calls } = await openInstancePlugins();
+  await userEvent.click(screen.getByRole("switch", { name: "停用 实例开关" }));
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole("switch", { name: "启用 实例开关" })
+        .getAttribute("aria-checked"),
+    ).toBe("false"),
+  );
+  expect(screen.getByRole("heading", { name: /^已安装\s*1$/ })).not.toBeNull();
+  await userEvent.click(screen.getByRole("switch", { name: "启用 实例开关" }));
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole("switch", { name: "停用 实例开关" })
+        .getAttribute("aria-checked"),
+    ).toBe("true"),
+  );
+  expect(
+    calls
+      .filter((call) => call.method === "setPluginEnabled")
+      .map((call) => call.args[0]),
+  ).toEqual([
+    {
+      workspacePath: "",
+      pluginId: "local__instance-toggle",
+      enabled: false,
+      scope: "user",
+    },
+    {
+      workspacePath: "",
+      pluginId: "local__instance-toggle",
+      enabled: true,
+      scope: "user",
+    },
+  ]);
+  expect(
+    calls.some((call) =>
+      /ensureConversationWorkspace|createTask|openWorkspace/.test(call.method),
+    ),
+  ).toBe(false);
+});
+
+it("原插件停用响应未知时只读对账且不恢复旧开关或重试写入", async () => {
+  const { calls } = await openInstancePlugins(true);
+  await userEvent.click(screen.getByRole("switch", { name: "停用 实例开关" }));
+  await screen.findByText("停用响应丢失", { exact: true });
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole("switch", { name: "启用 实例开关" })
+        .getAttribute("aria-checked"),
+    ).toBe("false"),
+  );
+  const writeIndex = calls.findIndex(
+    (call) => call.method === "setPluginEnabled",
+  );
+  expect(
+    calls.filter((call) => call.method === "setPluginEnabled"),
+  ).toHaveLength(1);
+  expect(
+    calls.slice(writeIndex + 1).some((call) => call.method === "listPlugins"),
+  ).toBe(true);
+  expect(screen.getByRole("heading", { name: /^已安装\s*1$/ })).not.toBeNull();
+});
+
+it("无目录的管理页切换宿主后旧停用结果不能改新库存或锁住新开关", async () => {
+  let finish: (value: Response) => void = () => {};
+  const pending = new Promise<Response>((resolve) => {
+    finish = resolve;
+  });
+  const { calls, page, view } = await openInstancePlugins(false, pending);
+  await userEvent.click(screen.getByRole("switch", { name: "停用 实例开关" }));
+  await waitFor(() =>
+    expect(
+      calls.filter((call) => call.method === "setPluginEnabled"),
+    ).toHaveLength(1),
+  );
+  const nextHost = new CodeHttpChannelClient({
+    apiBase: "https://next-host.example",
+  });
+  try {
+    await nextHost.connect();
+    view.rerender(page(nextHost));
+    await waitFor(() => {
+      const control = screen.getByRole("switch", { name: "停用 实例开关" });
+      expect(control.getAttribute("aria-checked")).toBe("true");
+      expect(control.hasAttribute("disabled")).toBe(false);
+    });
+    await act(async () => {
+      finish(
+        Response.json({
+          result: {
+            enabled: false,
+            plugin: { id: "local__instance-toggle", enabled: false },
+            diagnostics: [],
+          },
+        }),
+      );
+      await pending;
+    });
+    expect(
+      screen
+        .getByRole("switch", { name: "停用 实例开关" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(screen.queryByText(/无法更新/)).toBeNull();
+    expect(
+      calls.filter((call) => call.method === "setPluginEnabled"),
+    ).toHaveLength(1);
+  } finally {
+    nextHost.dispose();
+  }
 });
 
 it("原市场个人目录保留已停用的真实安装卡，显示版本与详情且不误报未安装/孤立", async () => {

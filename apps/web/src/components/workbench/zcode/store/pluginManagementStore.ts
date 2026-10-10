@@ -142,6 +142,7 @@ export const usePluginManagementStore = create<PluginManagementState>((set, get)
     const normalizedConfigScope = configScope ?? null;
     const current = get();
     const contextChanged =
+      !isCurrentPluginInventoryService(pluginService) ||
       current.workspacePath !== workspacePath ||
       current.workspaceIdentity !== normalizedIdentity ||
       current.configScope !== normalizedConfigScope;
@@ -163,7 +164,7 @@ export const usePluginManagementStore = create<PluginManagementState>((set, get)
       // 配置保存后的 overview 刷新可能还没结束，用户已切到另一层配置视图；
       // 旧层的 operationId 不能继续把新层的输入控件置灰。旧操作结束时由版本号防止
       // 它误清理新层后来启动的同名操作。
-      ...(contextChanged ? { operationId: null } : {}),
+      ...(contextChanged ? { operationId: null, togglingPluginId: null } : {}),
     });
     await loadInto(set, get, {
       workspacePath,

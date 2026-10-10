@@ -9641,10 +9641,11 @@
       "source": "references/zcode/packages/ui/src/settings/PluginsSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/PluginsSection.tsx",
       "sha256": "65954a8df4701a1aebdd6fba0e88ef370b45d88a739ee601c838acea0a65a5d6",
-      "copiedSha256": "8e51e99a73cea83ee0d3a00ae7e3b253e823a3599e0a6750c59d733190cd83f9",
+      "copiedSha256": "aa9f6e32425875d3d8c950cdede0f8f8b99eb484115d9ad8c71e15048c612fcb",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "能力显隐：真实实例插件、MCP及技能无需Project，原表单按本机作用域接原接口，不伪装目录或Task"
+        "能力显隐：真实实例插件、MCP及技能无需Project，原表单按本机作用域接原接口，不伪装目录或Task",
+        "宿主接口：切换服务后旧启停响应不向新管理页提示成功或失败"
       ]
     },
     {
@@ -11408,19 +11409,21 @@
       "source": "references/zcode/packages/ui/src/store/pluginManagementStore.ts",
       "target": "apps/web/src/components/workbench/zcode/store/pluginManagementStore.ts",
       "sha256": "147cddd20abb8d96079c138ede0b2028ccf6a8f62ebb50d8578a98821a6c62af",
-      "copiedSha256": "ab75c2c9fbd84230bee5e19a6c3d4d6708f4b80163c065e538881998cbad8ce3",
+      "copiedSha256": "518e3f0a7f2504486d1d8d066bc5a58814868cea6c9a669ef3ff8d345d7def01",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "类型/宿主接口：无Project用原接口空上下文，不伪造目录；同服务缓存、强制读取对账"
+        "类型/宿主接口：无Project用原接口空上下文，不伪造目录；同服务缓存、强制读取对账",
+        "宿主接口：同路径切换服务清理旧操作忙碌态；原库存与组件装配保留"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/store/pluginManagementStoreEnabled.ts",
       "target": "apps/web/src/components/workbench/zcode/store/pluginManagementStoreEnabled.ts",
       "sha256": "225e5a88bfdd65d36e87920f865d5a9b16e1f50489bf7160f8454634d5981395",
-      "copiedSha256": "ac06fa2abdc33dcb09a410f543fbe2363add1f9b96bcd51bbed1a268b60f1213",
+      "copiedSha256": "c55af98bb90275d4d85a5f654027da314c893975704a048b1abc902e595b9ac9",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：空目录承接实例启停；按服务与读取代际核对结果，未知写入只读对账不重放"
       ]
     },
     {

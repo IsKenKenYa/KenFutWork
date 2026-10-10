@@ -73,6 +73,7 @@ import {
   resolvePluginDisplayName,
 } from "@zui/settings/pluginStoreListing.js";
 import { usePluginManagementStore } from "@zui/store/pluginManagementStore.js";
+import { isCurrentPluginInventoryService } from "@zui/store/pluginManagementStoreLoading.js";
 import { useTabStore } from "@zui/store/TabStoreProvider.js";
 import { usePlatform } from "@zui/hooks/usePlatform.js";
 import { isWorkspaceTab, type WorkspaceTabState } from "@zui/store/tabStore.js";
@@ -326,6 +327,7 @@ function PluginList({
         ? resolveManagedPluginDisplay(plugin, storeItemById.get(plugin.id), locale).name
         : pluginId;
       const succeeded = await setEnabled(pluginId, enabled, pluginManagementService, configScope);
+      if (!isCurrentPluginInventoryService(pluginManagementService)) return;
       if (!succeeded) {
         toast(
           usePluginManagementStore.getState().error ??
