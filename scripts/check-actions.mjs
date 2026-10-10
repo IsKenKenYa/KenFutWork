@@ -188,6 +188,14 @@ export function checkActions({ rootDir }) {
           `${rel}: run 里调了 \`pnpm ${bad[1]}\`——dev/desktop 写死 --env-file=../../.env.local，CI 里必失败（且 dev 是 persistent 任务）`,
         );
       }
+      // A7：Actions 给 run 步骤的 shell 是 `bash -e -o pipefail`，命令非 0 时脚本当场
+      // 结束，下一行的 `$?` 永远取不到——表现是「扫描器有公告就把本应只上报的 job 判红」
+      // （实测红过一次）。actionlint 不查这层语义，只能自己拦。
+      if (/^[A-Za-z_][A-Za-z0-9_]*=\$\?$/.test(blob)) {
+        errors.push(
+          `${rel}: run 里裸写「${blob}」取退出码——shell 带 -e，上一条命令非 0 时这一步已退出，$? 取不到；改成 \`var=0; cmd || var=$?\``,
+        );
+      }
     }
     for (const [job, stats] of signals.jobStats) {
       if (stats.runs > 0 && stats.shells === 0) {

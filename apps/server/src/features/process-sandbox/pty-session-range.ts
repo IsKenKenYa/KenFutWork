@@ -91,16 +91,15 @@ export class PtySessionRange {
     return this.stopping;
   }
 
-  private async freeze(): Promise<void> {
+  /** 见 LinuxProcessRange.freeze：冻结不彻底（D 状态进程收不到 SIGSTOP）不该中止停止流程，
+   *  真正的保证是「SIGKILL 后作业范围为空」。 */
+  private async freeze(): Promise<boolean> {
     const started = Date.now();
     for (;;) {
       const snapshot = await this.query("SIGSTOP");
-      if (snapshot.members.every((member) => member.state !== "active")) return;
-      if (Date.now() - started >= this.limits.killGraceMs)
-        throw new ProcessSandboxError(
-          "stop_unconfirmed",
-          "无法冻结全部 PTY session 作业，停止尚未确认。",
-        );
+      if (snapshot.members.every((member) => member.state !== "active"))
+        return true;
+      if (Date.now() - started >= this.limits.killGraceMs) return false;
       await delay(this.limits.yieldMs);
     }
   }

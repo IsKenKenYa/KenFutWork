@@ -53,22 +53,23 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ inputs.checkout_ref || github.sha }}
           # 参考仓是方向参考，不参与出包
           submodules: false
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
 
       # SEA 宿主就是 process.execPath（package-win.mjs），脚本会把 process.version 与
       # .nvmrc 精确对账；出包必须用同一个 node，故按 pin 安装而不是用 runner 自带版本。
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: .nvmrc
 
       - name: 缓存随包运行时
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: runtime
           key: runtime-${{ inputs.platform }}-${{ hashFiles('runtime-lock.json', 'scripts/fetch-runtimes.mjs') }}
@@ -143,14 +144,34 @@ jobs:
 
       - name: 打包态冒烟（随包服务端 + 内嵌 Postgres 真建库）
         # 「dev 全绿但安装包起不来」那类事故的唯一自动化解药：脚本直接用 release/ 里的平台产物
-        # 与独占临时数据目录，不访问外部模型服务（scripts/desktop-offline-smoke.mjs:71-76 支持
-        # win32/darwin 两平台）。首轮 mac 实测：DMG/zip/清单全部产出、前面 6 组断言全过，
-        # 只有「Write/Read 后的持久 shadow checkpoint」在 120s 期限内没等到——服务端日志零
-        # error，是托管 3 核 runner 慢，不是坏。故这里把**等待窗口**显式放宽到 5 分钟并写明理由；
-        # 断言强度不变，超期依旧失败。
+        # 与独占临时数据目录，不访问外部模型服务（scripts/desktop-offline-smoke.mjs:76-88 支持
+        # win32/darwin 两平台）。
+        # 历史教训（别再犯）：首轮 mac 只等到「checkpoints 恒空」，尾部 4000 字符窗口里没有任何
+        # error，于是被误判成「runner 慢」。真实现场是更早打出的一行
+        # `[turn-boundary] 文件边界捕获失败： env: /opt/homebrew/bin/git: Operation not permitted`
+        # ——沙箱读取基线缺 /opt/homebrew（见 process-sandbox/policy.ts）。所以现在无条件落全量
+        # 日志并作为 artifact 上传，等待窗口放宽到 5 分钟只是给慢 runner 留余量，断言强度不变。
         env:
           KFW_SMOKE_BYOK_TIMEOUT_MS: "300000"
         run: node scripts/desktop-offline-smoke.mjs
+
+      - name: 上传打包态冒烟的服务端全量日志
+        # 成功也要传：下一轮排查不必重跑 30 分钟出包。
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: smoke-server-log-${{ inputs.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release/smoke-server.log
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: 仓外冷启动（产物复制到仓库外的新目录后用发布本体启动）
+        # 冒烟跑在 <仓库>/release 下：原生外部依赖（@napi-rs/canvas、node-pty、ripgrep）
+        # 按 server.cjs 的路径向上找 node_modules，会撞见仓库自己的 node_modules，于是
+        # 「开发机能跑」被当成「装机后能跑」。这一步把 release/ 整体复制到 tmp（与仓库无
+        # 祖先关系、cwd 也在仓外）再冷启动，把那条退路堵死。本机实测 macOS 复制 681MB +
+        # 首次建库到健康约 40 秒。
+        run: node scripts/packaged-outside-repo-cold-start.mjs
 
       - name: 产物清单
         if: always()
@@ -158,13 +179,18 @@ jobs:
         run: |
           if [ -f dist-manifest.json ]; then
             cat dist-manifest.json
+            # dmgAesthetics 是**产物级**读数（挂载后读卷根 .DS_Store），不是引擎退出码：
+            # 无 GUI 会话时 bundle_dmg 会跳过写布局却仍然退出 0，历史上清单就写着
+            # 「bundle_dmg」而用户拿到白底包。三档都没落地时在这里点名，不硬拦
+            # （白底包照样能装），但必须在运行页看得见。
+            node -e 'const m=require("./dist-manifest.json");const mac=m.macos;if(mac&&mac.dmgAesthetics===false){console.log("::warning title=DMG 没有品牌背景布局::引擎=" + mac.dmgLayout + "，三档布局引擎都没落地，产物是白底默认排布");}'
           else
             echo "· 本次没走到清单产出"
             exit 1
           fi
 
       - name: 上传安装包与清单
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kenfutwork-${{ inputs.platform }}-${{ github.sha }}
           # 上一步已断言清单存在；两平台的安装包 glob 各只在一侧命中。

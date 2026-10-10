@@ -34,6 +34,7 @@ import {
   verifyMachOFiles,
   writeDistManifest,
 } from "./dist-manifest.mjs";
+import { verifyDmgAesthetics } from "./dmg-aesthetics.mjs";
 import { ensureMacosAppSeal } from "./macos-signing.mjs";
 
 const repoRoot = join(import.meta.dirname, "..", "..", "..");
@@ -231,11 +232,21 @@ if (process.platform === "win32") {
     const run = spawnSync(layout[0], layout[1], { stdio: "inherit" });
     return run.status === 0;
   })();
-  // 三档布局引擎的读数要如实进 manifest：bundle_dmg（AppleScript 真布局）
-  // → appdmg（纯 JS 布局，窗口尺寸可能不被 Finder 采纳）→ hdiutil（无布局）。
-  // 走哪一档不该靠人回忆，图标错位历史上就是「看不出这次用了哪档」造成的。
-  let dmgLayout = layoutOk ? "bundle_dmg" : null;
-  let ok = layoutOk;
+  // 三档布局引擎的读数要如实进清单：bundle_dmg（AppleScript 真布局）
+  // → appdmg（纯 JS 写 .DS_Store 的布局）→ hdiutil（无布局）。
+  // 判据是**产物**而不是退出码：托管 runner 上 bundle_dmg 带着 --skip-jenkins 退出 0，
+  // 却明说「这个 DMG 没有自定义背景与图标定位」——实测清单当时写着 bundle_dmg，
+  // 用户拿到的就是白底包。所以每档都要挂载取证，通过才算这一档成功。
+  let aesthetics = layoutOk
+    ? verifyDmgAesthetics(dmgPath)
+    : { ok: false, why: "bundle_dmg 未运行" };
+  if (layoutOk && !aesthetics.ok) {
+    console.warn(
+      `[collect] bundle_dmg 退出 0 但产物不合格：${aesthetics.why}——改让 appdmg 写 .DS_Store`,
+    );
+  }
+  let dmgLayout = layoutOk && aesthetics.ok ? "bundle_dmg" : null;
+  let ok = aesthetics.ok;
 
   // 布局引擎失败（无头/AppleScript 权限受限）→ appdmg 兜底（纯 JS 也有布局，
   // 但窗口尺寸可能不被 Finder 采纳）；再失败 → hdiutil 无布局镜像。
@@ -318,6 +329,16 @@ if (process.platform === "win32") {
     if (!ok && attempt === 1) rebuildNativeDeps();
   }
 
+  if (ok && !dmgLayout) {
+    // appdmg 自称成功同样要产物验收：它的 .DS_Store 是纯 JS 写的，原生依赖没重编对时
+    // 会「finish 但没写布局」，退出码依旧不可信。
+    aesthetics = verifyDmgAesthetics(dmgPath);
+    if (!aesthetics.ok) {
+      console.warn(`[collect] appdmg 完成但产物不合格：${aesthetics.why}`);
+      ok = false;
+    }
+  }
+
   if (!ok) {
     // 兜底：hdiutil 出无布局镜像（背景/图标位缺失但完全可用）
     console.log("[collect] 回落 hdiutil（无拖拽布局）…");
@@ -351,7 +372,8 @@ if (process.platform === "win32") {
 
   const sizeMb = (statSync(dmgPath).size / 1024 / 1024).toFixed(1);
   console.log(
-    `[collect] DMG 已在项目根：${dmgPath}（${sizeMb} MB，布局引擎=${dmgLayout}）`,
+    `[collect] DMG 已在项目根：${dmgPath}（${sizeMb} MB，布局引擎=${dmgLayout}，` +
+      `背景布局=${aesthetics.ok ? "已生效" : `未生效：${aesthetics.why}`}）`,
   );
 
   // .app 另出一份 zip：macOS 只对带 `com.apple.quarantine` 的产物走 Gatekeeper，浏览器下载
@@ -407,7 +429,7 @@ if (process.platform === "win32") {
               ? "none"
               : "unknown",
       },
-      macos: { dmgLayout, ...macho },
+      macos: { dmgLayout, dmgAesthetics: aesthetics.ok, ...macho },
       artifacts,
     }),
   );

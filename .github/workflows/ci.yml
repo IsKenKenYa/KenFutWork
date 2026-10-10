@@ -6,7 +6,16 @@ on:
   pull_request:
     branches: [main, 啃啃在开发]
   push:
-    branches: [main, 啃啃在开发]
+    # 分支命名约定（AGENTS.md）里的 agent 分支也要跑门禁：只在 main / 主开发分支上跑，
+    # 等于「修 CI 的分支自己不被 CI 检查」——本轮就是这么漏掉三次假绿的。
+    branches:
+      - main
+      - 啃啃在开发
+      - "qoder/**"
+      - "codex/**"
+      - "claude/**"
+      - "trae/**"
+      - "人/**"
   workflow_dispatch:
 
 permissions:
@@ -27,22 +36,27 @@ jobs:
     if: github.repository == 'IsKenKenYa/KenFutWork'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # security-events 只用于把 zizmor 的 SARIF 传上去；不授予写内容的权限。
+    permissions:
+      contents: read
+      security-events: write
     # 显式声明 shell：不写就是「平台给什么 shell 用什么」（Windows 是 PowerShell、
     # 容器是 dash），bash 写法会以一种离根因很远的姿态失败。由 check-actions 的 A6 把守。
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # 迁移重放的篡改自检要写文件，但门禁本身不需要历史；submodules 是参考仓，
           # 既不进 CI 也不该被拉（否则几百 MB 白下）
           fetch-depth: 0
           submodules: false
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -60,8 +74,9 @@ jobs:
       - name: actionlint + ShellCheck（工作流与脚本静态检查）
         run: |
           set -euo pipefail
-          apt-get update -qq
-          apt-get install -y -qq --no-install-recommends shellcheck
+          # 宿主 runner（非容器）里当前用户不是 root，apt 必须 sudo（runner 有免密 sudo）。
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends shellcheck
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) latest /usr/local/bin
           actionlint -version
           pnpm run test:actions
@@ -73,6 +88,48 @@ jobs:
             .agents/skills/diagnosing-bugs/scripts/hitl-loop.template.sh \
             .agents/skills/git-guardrails-claude-code/scripts/block-dangerous-git.sh \
             .agents/skills/wizard/template.sh
+
+      - name: Dockerfile 检查（hadolint）
+        # 门槛设在 error：真实拦得住「忘设 USER / 缓存没清 / 指令顺序错」这类部署隐患。
+        # 现存 2 条 warning（DL3008 apt 未钉版、DL3013 pip 未钉版）是欠债但不硬拦：
+        # 在 node:*-bookworm 上把 apt 包钉成具体版本，会让 Debian 每次 apt 刷新都构建失败；
+        # 正确解是按 digest 钉基础镜像 + 带哈希的 requirements.txt，属独立的部署改动。
+        # 告警照样打出来，不让它无声。
+        run: |
+          set -euo pipefail
+          version=2.15.1
+          curl -sSfL -o "$RUNNER_TEMP/hadolint" \
+            "https://github.com/hadolint/hadolint/releases/download/v${version}/hadolint-linux-x86_64"
+          chmod +x "$RUNNER_TEMP/hadolint"
+          "$RUNNER_TEMP/hadolint" --version
+          "$RUNNER_TEMP/hadolint" --failure-threshold=error \
+            apps/server/Dockerfile docker/pg-dev-shim/Dockerfile
+
+      - name: 工作流安全审计（zizmor）
+        # 钉版纪律的执法者。本仓有 contents: write 的发版链：第三方 action 的 movable tag
+        # 一旦被接管，被污染的是**发出去的产物**，而不是某次 CI 的红。zizmor 把
+        # unpinned-uses 记为 high，故门槛设在 high——出现 `uses: owner/repo@vN` 直接染红。
+        # medium/low 不上硬门（现存 1 条 medium 是 dependency-review 的 checkout 凭据：该动作
+        # 自己要做 base/head 的 git 取回，官方用法没关凭据，不拿猜测换硬化），全部进 SARIF。
+        # `--offline`：输入全是本地文件，不需要联网审计规则，去掉一个不确定性来源。
+        run: |
+          set -euo pipefail
+          version=1.30.1
+          curl -sSfL -o "$RUNNER_TEMP/zizmor.tar.gz" \
+            "https://github.com/zizmorcore/zizmor/releases/download/v${version}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          tar -xzf "$RUNNER_TEMP/zizmor.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/zizmor" --version
+          "$RUNNER_TEMP/zizmor" --offline --min-severity high .github
+          # SARIF 走 stdout（zizmor 没有 --output-file），--no-exit-codes 让低危不改变退出码。
+          "$RUNNER_TEMP/zizmor" --offline --no-exit-codes --format sarif .github \
+            > "$RUNNER_TEMP/zizmor.sarif"
+
+      - name: 上传 zizmor SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@9f759ee644a3e7c15c1390abf49868036c00067b # v3.38.3
+        with:
+          sarif_file: ${{ runner.temp }}/zizmor.sarif
+          category: zizmor
 
       - name: 仓库级门禁
         run: pnpm run test:workspace
@@ -128,11 +185,12 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           submodules: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -161,7 +219,10 @@ jobs:
       # 而仓库锁的是 24.11.1——测试环境与 SEA 宿主/桌面捆绑的 Node 不是同一份，
       # 「CI 绿了」就不能作为发布运行时的证据。由 check-actions 的 A7 对账 .nvmrc。
       image: node:24.11.1-bookworm
-      options: --privileged
+      # --init：容器 PID 1 换成 tini 这类会 reap 的 init。沙箱的停止确认要「命名空间内
+      # 进程数归零」，而 job 容器的 PID 1 不会收养并回收孤儿僵尸，杀完最后一层后僵尸
+      # 永远挂在 /proc 里，实测报 stop_unconfirmed（范围里仍有进程）。
+      options: --privileged --init
     timeout-minutes: 45
     # 容器 job 的默认 shell 是 sh（dash），不认 `set -o pipefail`——实测第一步就报
     # `Illegal option -o pipefail` 退 2。与 Windows 那次 PowerShell 默认 shell 同一类错误。
@@ -173,9 +234,10 @@ jobs:
       CI: "true"
       TURBO_TELEMETRY_DISABLED: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           submodules: false
+          persist-credentials: false
 
       - name: 安装沙箱依赖（ripgrep + socat + bubblewrap）
         run: |
@@ -283,11 +345,12 @@ jobs:
     env:
       KENFUTWORK_DATABASE_URL: postgresql://postgres:ci-only-not-a-secret@localhost:5432/kenfutwork
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           submodules: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -295,26 +358,8 @@ jobs:
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
-      # 历史迁移里有 `CREATE EXTENSION IF NOT EXISTS pgmq`
-      #（supabase/migrations/20260325200000_background_jobs.sql:73），而官方 postgres:17 镜像
-      # 不带 pgmq，空库重放会停在 `extension "pgmq" is not available`。桌面形态同一口径：
-      # 打包期把最小兼容 shim 预装进该集群的 share/extension（scripts/package-mac.mjs:219-229），
-      # CI 这里对服务容器做同一件事——装的是兼容层，不是真 pgmq，语义与桌面包一致。
-      - name: 给 Postgres 服务容器装上 pgmq 兼容 shim
-        run: |
-          set -euo pipefail
-          cid="$(docker ps --format '{{.ID}} {{.Image}}' | awk '/postgres:17/{print $1}' | head -1)"
-          if [ -z "$cid" ]; then
-            echo "· 找不到 postgres:17 服务容器"
-            exit 1
-          fi
-          ext="$(docker exec "$cid" sh -c 'pg_config --sharedir')/extension"
-          docker exec "$cid" mkdir -p "$ext"
-          for file in pgmq.control pgmq--1.0.sql; do
-            docker cp "docker/pg-dev-shim/$file" "$cid:$ext/$file"
-          done
-          # 不重启也可见：pg_available_extensions 是按需扫目录的。
-          echo "· 已装入 $ext：$(docker exec "$cid" sh -c "ls -1 $ext | grep -c '^pgmq'") 个 pgmq 文件"
+      # shim 装法与桌面打包期一致，抽成复合动作给「迁移重放」与「健康检查」两个 job 共用。
+      - uses: ./.github/actions/pgmq-shim
 
       # `migrate.ts` 经 `config/env.ts` 引 `@kenfutwork/shared` 的产物；先建 shared 及其上游，
       # 否则干净检出上报 `Cannot find module .../shared/dist/index.js`（首轮实测）。
@@ -353,3 +398,203 @@ jobs:
             exit 1
           fi
           echo "· 篡改已被拦下（历史 SHA-256 账本对账生效）"
+
+  # 免费且零配置：只对**本次 PR 变更的依赖**做审查（不是全仓扫描，既存告警不会让它常红）。
+  # 与 Dependabot 的差别：Dependabot 看的是「已知漏洞的既有依赖」，这里看的是
+  # 「这次 diff 新引入/换版本的依赖有没有漏洞、许可证是否变化」，PR 里直接留评论。
+  secrets-scan:
+    name: 密钥扫描（全历史，gitleaks）
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # 浅克隆只会让 gitleaks 看到 1 个提交——表现是「绿了，但什么都没扫」。
+          fetch-depth: 0
+          submodules: false
+          persist-credentials: false
+      - name: 安装 gitleaks
+        run: |
+          set -euo pipefail
+          # 与本地验证同一版本；二进制直取 release 资产，避免依赖需要 license 的包装 action。
+          version=8.30.1
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz"
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" version
+      - name: 扫描全历史
+        run: |
+          set -euo pipefail
+          # 豁免只按「具体值」放行（见 .gitleaks.toml）：同文件里将来出现真 Key 仍会被拦。
+          "$RUNNER_TEMP/gitleaks" git --no-banner --redact -c .gitleaks.toml
+
+  dependency-review:
+    name: 依赖变更审查（只在 PR 上跑）
+    if: github.repository == 'IsKenKenYa/KenFutWork' && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: false
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: always
+
+  sca-osv:
+    name: 依赖漏洞扫描（OSV 锁文件级，上报到代码扫描）
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: false
+          persist-credentials: false
+      - name: 安装 osv-scanner
+        run: |
+          set -euo pipefail
+          version=2.6.0
+          curl -sSfL -o "$RUNNER_TEMP/osv-scanner" \
+            "https://github.com/google/osv-scanner/releases/download/v${version}/osv-scanner_linux_amd64"
+          chmod +x "$RUNNER_TEMP/osv-scanner"
+          "$RUNNER_TEMP/osv-scanner" --version
+      - name: 扫描 npm 与 Cargo 锁文件
+        run: |
+          set -uo pipefail
+          # 本 job 的口径是「让公告被看见」（Security 标签 + 告警），不是在此处染红：
+          # 存量 29 个包 / 49 条公告（含传递依赖）需要的是被跟踪，而不是被静音。
+          # 「新增高危依赖」由 dependency-review 在 PR 上拦。
+          #
+          # GitHub 给 run 步骤的 shell 是 `bash -e -o pipefail`，所以「取退出码」必须写成
+          # `cmd || code=$?`——裸 `cmd` 后跟 `code=$?` 会在 cmd 非 0 时就被 -e 打断（实测红过一次）。
+          code=0
+          "$RUNNER_TEMP/osv-scanner" scan source \
+            -L pnpm-lock.yaml \
+            -L apps/desktop/src-tauri/Cargo.lock \
+            --format sarif --output-file "$RUNNER_TEMP/osv.sarif" || code=$?
+          # 退出码 1 = 发现公告（正常）；但没产出 SARIF 就是扫描器自己失败，必须说出来。
+          if [ ! -s "$RUNNER_TEMP/osv.sarif" ]; then
+            echo "· osv-scanner 退出码 $code 且没有产出 SARIF —— 这是扫描失败，不是没有漏洞"
+            exit 1
+          fi
+          echo "· osv-scanner 退出码 $code（1=有公告），SARIF 已生成"
+      - name: 上传 SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@9f759ee644a3e7c15c1390abf49868036c00067b # v3.38.3
+        with:
+          sarif_file: ${{ runner.temp }}/osv.sarif
+          category: osv-scanner
+
+  health-check:
+    name: 服务端健康检查（真库启动 + /api/health + 未授权边界）
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+          POSTGRES_DB: kenfutwork
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      KENFUTWORK_DATABASE_URL: postgresql://postgres:ci-only-not-a-secret@localhost:5432/kenfutwork
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: false
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/pgmq-shim
+      - name: 构建 server 及其上游
+        run: pnpm exec turbo run build --filter=@kenfutwork/server^... --concurrency=1
+
+      # 迁移必须落在**目标库**上：`replay` 建临时库验证后即删（db-replay 那条 job 的口径），
+      # 用它当健康检查的前置会得到一个空库，服务端起来就因缺表退出。
+      - name: 迁移目标库
+        run: pnpm --filter @kenfutwork/server exec node --import tsx src/migrate.ts apply
+
+      # 真启动整个服务端（不是 mock、不是单测里的 app 实例），验三件事：
+      #   1) /api/health 200 且 service 名对得上；
+      #   2) 带本机凭据边界的业务路由在没有凭据时必须 401（不能因为 CI 少配了鉴权就放行）；
+      #   3) 进程没有早退——早退就把服务端日志原样打出来，别让「curl 连不上」当唯一线索。
+      - name: 启动服务端并做健康检查
+        env:
+          KENFUTWORK_DATA_DIR: ${{ runner.temp }}/kfw-health-data
+          KENFUTWORK_SERVER_PORT: "39111"
+          HOST: 127.0.0.1
+          HEALTH_FILE: ${{ runner.temp }}/health.json
+        run: |
+          set -uo pipefail
+          mkdir -p "$KENFUTWORK_DATA_DIR"
+          log="$RUNNER_TEMP/server.log"
+          pnpm --filter @kenfutwork/server exec node --import tsx src/server.ts > "$log" 2>&1 &
+          pid=$!
+          code=""
+          for _ in $(seq 1 60); do
+            code="$(curl -s -o "$RUNNER_TEMP/health.json" -w '%{http_code}' http://127.0.0.1:39111/api/health || true)"
+            [ "$code" = "200" ] && break
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo "· 服务端启动后退出，日志如下："
+              cat "$log"
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ "$code" != "200" ]; then
+            echo "· /api/health 60 次轮询后仍是 $code，日志如下："
+            cat "$log"
+            exit 1
+          fi
+          echo "· /api/health $(cat "$RUNNER_TEMP/health.json")"
+          node -e '
+            const payload = JSON.parse(require("node:fs").readFileSync(process.env.HEALTH_FILE, "utf8"));
+            if (payload.ok !== true) throw new Error("health.ok 不是 true：" + JSON.stringify(payload));
+            if (payload.service !== "kenfutwork-server") throw new Error("service 名不符：" + payload.service);
+          ' 2>&1 || { echo "· 健康响应体不合规"; cat "$log"; exit 1; }
+          for route in "/api/projects?kind=code" "/api/models"; do
+            unauth="$(curl -s -o "$RUNNER_TEMP/unauth.json" -w '%{http_code}' "http://127.0.0.1:39111$route")"
+            if [ "$unauth" != "401" ]; then
+              echo "· $route 无凭据时返回 $unauth（应为 401）：$(cat "$RUNNER_TEMP/unauth.json")"
+              kill "$pid" 2>/dev/null || true
+              exit 1
+            fi
+            echo "· $route 无凭据 → 401（本机凭据边界生效）"
+          done
+          kill "$pid"
+          wait "$pid" 2>/dev/null || true
+          echo "· 服务端已正常关停"
