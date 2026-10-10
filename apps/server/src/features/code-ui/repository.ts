@@ -15,8 +15,11 @@ import {
   type CodeUiConversationState,
   createCodeUiConversation,
 } from "./conversation.js";
+import {
+  createHistoryPreparations,
+  publishHistoryPreparation,
+} from "./history-preparation.js";
 import type { CodeInputSettlement } from "./queue-control.js";
-import { createHistoryPreparations, publishHistoryPreparation } from "./history-preparation.js";
 
 export type CodeUiSessionRecord = SqlRow & {
   id: string;
@@ -241,9 +244,14 @@ async function writeState(
   activeRunId: string | null,
 ) {
   // 同一Task锁内按持久bit迁移推进epoch；普通流事件/usage不改变批准代际。
-  const previousPlan = root.state?.snapshots.find((entry) => entry.sessionId === root.id)?.config.planEnabled === true;
-  const currentPlan = state.snapshots.find((entry) => entry.sessionId === root.id)?.config.planEnabled === true;
-  state.planningEpoch = (root.state?.planningEpoch ?? 0) + (previousPlan === currentPlan ? 0 : 1);
+  const previousPlan =
+    root.state?.snapshots.find((entry) => entry.sessionId === root.id)?.config
+      .planEnabled === true;
+  const currentPlan =
+    state.snapshots.find((entry) => entry.sessionId === root.id)?.config
+      .planEnabled === true;
+  state.planningEpoch =
+    (root.state?.planningEpoch ?? 0) + (previousPlan === currentPlan ? 0 : 1);
   await scoped.execute(
     `update public.code_ui_sessions set state = $2::jsonb, revision = revision + 1, active_run_id = $3, updated_at = now()
       where instance_id = :instance and id = $1 and deleted_at is null`,
@@ -826,7 +834,12 @@ export function createCodeUiRepository(persistence: PersistenceService) {
               );
             await insertRoot(scoped, next);
             await next.publishArtifacts?.(scoped);
-            await publishHistoryPreparation(scoped, { clientId: envelope.clientId, commandId: envelope.commandId, targetTaskId: next.sessionId, targetThreadId: next.threadId });
+            await publishHistoryPreparation(scoped, {
+              clientId: envelope.clientId,
+              commandId: envelope.commandId,
+              targetTaskId: next.sessionId,
+              targetThreadId: next.threadId,
+            });
           }
           if (decision.threadBinding) {
             const binding = decision.threadBinding;
@@ -910,7 +923,8 @@ export function createCodeUiRepository(persistence: PersistenceService) {
             commandId: envelope.commandId,
             status: "failed",
             reasonCode: failureReasonCode,
-            message: error instanceof Error ? error.message : "Task 授权变更失败",
+            message:
+              error instanceof Error ? error.message : "Task 授权变更失败",
             revisionAtDecision: Number(claimed.root!.revision),
           });
           await persistence.forInstance(instanceId).execute(
@@ -1037,14 +1051,24 @@ export function createCodeUiRepository(persistence: PersistenceService) {
       });
     },
     /** 批准事实与正文指纹在原Task事务中提交；不是模型转录或Todo。 */
-    async readApprovedPlanProof(instanceId: string, taskId: string, runId: string, toolCallId: string) {
-      const row = await persistence.forInstance(instanceId).queryOne<SqlRow & {
-        parameter_fingerprint: string; payload: unknown;
-      }>(
+    async readApprovedPlanProof(
+      instanceId: string,
+      taskId: string,
+      runId: string,
+      toolCallId: string,
+    ) {
+      const row = await persistence.forInstance(instanceId).queryOne<
+        SqlRow & {
+          parameter_fingerprint: string;
+          payload: unknown;
+        }
+      >(
         "select parameter_fingerprint,payload from public.code_ui_events where instance_id=:instance and root_session_id=$1 and event_key=$2",
         [taskId, `plan-exit:${runId}/${toolCallId}`],
       );
-      return row ? { fingerprint: row.parameter_fingerprint, event: row.payload } : null;
+      return row
+        ? { fingerprint: row.parameter_fingerprint, event: row.payload }
+        : null;
     },
     /** 可信文件恢复消费者读原生提交；原文留在私有journal，不经UI展示字段重建。 */
     async readToolCompletions(

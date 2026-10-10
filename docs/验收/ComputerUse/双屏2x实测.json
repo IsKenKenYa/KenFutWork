@@ -4,33 +4,18 @@
     "verifiedAt": "2026-10-08T01:52:00.390Z",
     "primary": {
       "id": "2",
-      "bounds": [
-        0,
-        0,
-        1920,
-        1080
-      ],
+      "bounds": [0, 0, 1920, 1080],
       "scaleFactor": 2
     },
     "secondary": {
       "id": "3",
-      "bounds": [
-        1920,
-        0,
-        1920,
-        1080
-      ],
+      "bounds": [1920, 0, 1920, 1080],
       "scaleFactor": 2
     },
     "raster": {
       "width": 840,
       "height": 664,
-      "bounds": [
-        2070,
-        598,
-        420,
-        332
-      ]
+      "bounds": [2070, 598, 420, 332]
     },
     "actualClickCount": 5,
     "staleFrameRejected": true
@@ -39,33 +24,18 @@
     "verifiedAt": "2026-10-08T01:54:26.085Z",
     "primary": {
       "id": "2",
-      "bounds": [
-        0,
-        0,
-        1920,
-        1080
-      ],
+      "bounds": [0, 0, 1920, 1080],
       "scaleFactor": 2
     },
     "secondary": {
       "id": "3",
-      "bounds": [
-        1920,
-        0,
-        1920,
-        1080
-      ],
+      "bounds": [1920, 0, 1920, 1080],
       "scaleFactor": 2
     },
     "raster": {
       "width": 840,
       "height": 664,
-      "bounds": [
-        2070,
-        598,
-        420,
-        332
-      ]
+      "bounds": [2070, 598, 420, 332]
     },
     "actualClickCount": 5,
     "staleFrameRejected": true

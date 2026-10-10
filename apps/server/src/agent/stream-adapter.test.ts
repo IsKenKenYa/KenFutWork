@@ -24,9 +24,13 @@ function stalledStream() {
         next(): Promise<IteratorResult<unknown>> {
           calls += 1;
           if (calls === 1) {
-            return Promise.resolve({ done: false, value: {
-              event: "on_chat_model_start", run_id: "stalled-model",
-            } });
+            return Promise.resolve({
+              done: false,
+              value: {
+                event: "on_chat_model_start",
+                run_id: "stalled-model",
+              },
+            });
           }
           // 之后永远挂起
           return new Promise<IteratorResult<unknown>>(() => {});
@@ -70,18 +74,65 @@ describe("stream-adapter 停滞与取消", () => {
     const awaitingApproval: AsyncIterable<unknown> = {
       async *[Symbol.asyncIterator]() {
         yield { event: "on_chat_model_start", run_id: "approval-model" };
-        yield { event: "on_chat_model_end", run_id: "approval-model", data: { output: new AIMessage({ content: "", tool_calls: [{ id: "needs-approval", name: "Bash", args: { command: "printf approved" } }] }) } };
-        yield { event: "on_custom_event", name: "kenfutwork.tool", data: { phase: "started", toolCallId: "needs-approval", toolName: "Bash", input: { command: "printf approved" } } };
-        await new Promise(resolve => setTimeout(resolve, 150));
-        yield { event: "on_custom_event", name: "kenfutwork.tool", data: { phase: "completed", toolCallId: "needs-approval", toolName: "Bash", output: "approved" } };
+        yield {
+          event: "on_chat_model_end",
+          run_id: "approval-model",
+          data: {
+            output: new AIMessage({
+              content: "",
+              tool_calls: [
+                {
+                  id: "needs-approval",
+                  name: "Bash",
+                  args: { command: "printf approved" },
+                },
+              ],
+            }),
+          },
+        };
+        yield {
+          event: "on_custom_event",
+          name: "kenfutwork.tool",
+          data: {
+            phase: "started",
+            toolCallId: "needs-approval",
+            toolName: "Bash",
+            input: { command: "printf approved" },
+          },
+        };
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        yield {
+          event: "on_custom_event",
+          name: "kenfutwork.tool",
+          data: {
+            phase: "completed",
+            toolCallId: "needs-approval",
+            toolName: "Bash",
+            output: "approved",
+          },
+        };
         yield { event: "on_chat_model_start", run_id: "after-approval-model" };
-        yield { event: "on_chat_model_end", run_id: "after-approval-model", data: { output: new AIMessage("AFTER_APPROVAL_COMPLETED") } };
+        yield {
+          event: "on_chat_model_end",
+          run_id: "after-approval-model",
+          data: { output: new AIMessage("AFTER_APPROVAL_COMPLETED") },
+        };
       },
     };
-    const events = await collect(awaitingApproval, { idleTimeoutMs: 40, canonicalToolEvents: true });
-    expect(events.filter(event => event.type === "tool.completed")).toContainEqual(expect.objectContaining({ toolName: "Bash", toolCallId: "needs-approval" }));
+    const events = await collect(awaitingApproval, {
+      idleTimeoutMs: 40,
+      canonicalToolEvents: true,
+    });
+    expect(
+      events.filter((event) => event.type === "tool.completed"),
+    ).toContainEqual(
+      expect.objectContaining({
+        toolName: "Bash",
+        toolCallId: "needs-approval",
+      }),
+    );
     expect(events.at(-1)?.type).toBe("run.completed");
-    expect(events.filter(event => event.type === "run.failed")).toEqual([]);
+    expect(events.filter((event) => event.type === "run.failed")).toEqual([]);
   });
 
   it("上游停滞超过阈值：以 run.failed 有界收尾，且文案可读（非通用提示）", async () => {

@@ -21,9 +21,7 @@
     "perFrameSynchronousWorkMs": 50,
     "deadlineMs": 8000,
     "beforeKeepalive": {
-      "receivedFragmentIndexes": [
-        0
-      ],
+      "receivedFragmentIndexes": [0],
       "firstFragmentMs": 411,
       "completed": false,
       "error": "AbortError"
@@ -36,20 +34,8 @@
         "approximate": true
       },
       {
-        "receivedFragmentIndexes": [
-          0,
-          1,
-          2,
-          3,
-          4
-        ],
-        "receivedAtMs": [
-          469,
-          519,
-          5111,
-          5161,
-          5211
-        ],
+        "receivedFragmentIndexes": [0, 1, 2, 3, 4],
+        "receivedAtMs": [469, 519, 5111, 5161, 5211],
         "completed": true
       }
     ],

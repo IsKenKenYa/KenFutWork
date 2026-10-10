@@ -356,7 +356,10 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         expect(copy.boundaries[1]?.reference).toEqual(copy.reference);
         await provider.discard({ targetThreadId, reference: copy.reference });
         const replacement = await provider.cloneHistory(corrected);
-        await provider.release({ targetThreadId, reference: replacement.reference });
+        await provider.release({
+          targetThreadId,
+          reference: replacement.reference,
+        });
         await expect(
           provider.discard({
             targetThreadId,

@@ -31,8 +31,10 @@ export function FullAccessDialog({
           </DialogTitle>
           <DialogDescription>
             无需逐项审批
-            <br />文件修改 · 命令执行 · 外部工具
-            <br />执行结果无法回滚
+            <br />
+            文件修改 · 命令执行 · 外部工具
+            <br />
+            执行结果无法回滚
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

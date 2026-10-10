@@ -7,16 +7,16 @@ import {
   zcodeUiProtocol as protocol,
   type StreamEvent,
 } from "@kenfutwork/shared";
-import { PNG } from "pngjs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
+import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
 import { loadServerEnv } from "../../config/env.js";
-import { createInstanceChatModel } from "../../providers/openai-compatible/index.js";
 import { ToolDeniedError } from "../../kernel/context.js";
+import { createInstanceChatModel } from "../../providers/openai-compatible/index.js";
 import { adaptSdkTransport } from "../mcp/sdk-transport.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createDesktopModelServer } from "./fixtures/model-server.js";

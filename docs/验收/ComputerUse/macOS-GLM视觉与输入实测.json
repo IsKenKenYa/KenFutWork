@@ -17,8 +17,5 @@
     "frameId": "frame-2"
   },
   "clickCountReadBack": true,
-  "nativeClickEvents": [
-    1,
-    2
-  ]
+  "nativeClickEvents": [1, 2]
 }

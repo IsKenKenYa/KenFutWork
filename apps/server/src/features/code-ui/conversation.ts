@@ -7,13 +7,13 @@ import type { z } from "zod";
 import { deriveSessionTitle } from "../chat/session-title.js";
 import type { ApprovalEvent } from "../permissions/approval-types.js";
 import type { RunUsageTotals } from "../usage/run-usage-accumulator.js";
-import { updateTurnFileSummary } from "./file-changes.js";
 import { freezeChildSnapshots } from "./child-history.js";
+import { updateTurnFileSummary } from "./file-changes.js";
 import { type CodeAdmittedInput, codeGuideMessageId } from "./input-intents.js";
+import type { OwnedHistoryOutput } from "./output-history-types.js";
+import type { CodeApprovedPlan } from "./planning-types.js";
 import { codeInputRouting, resolveHeldQueue } from "./queue-control.js";
 import type { UserInputEvent } from "./user-input-types.js";
-import type { CodeApprovedPlan } from "./planning-types.js";
-import type { OwnedHistoryOutput } from "./output-history-types.js";
 
 type Snapshot = protocol.ConversationSnapshot;
 type Row = protocol.ConversationRow;
@@ -46,7 +46,10 @@ function setManualCompactStatus(
   row.marker.status = status;
 }
 
-export type CodeUiCompletedTurnView = Pick<Snapshot, "config" | "plan" | "usage"> & {
+export type CodeUiCompletedTurnView = Pick<
+  Snapshot,
+  "config" | "plan" | "usage"
+> & {
   childSnapshots?: Snapshot[];
   frozenRows?: Row[];
 };
@@ -172,8 +175,10 @@ function completeTool(
     // TaskOutput的canonical页已受字节预算约束，原UI不能把模型预览冒充完整分页。
     event.toolName === "TaskOutput" && event.output
       ? JSON.stringify(event.output)
-      : event.outputText ??
-        (event.output ? JSON.stringify(event.output) : (event.outputSummary ?? ""));
+      : (event.outputText ??
+        (event.output
+          ? JSON.stringify(event.output)
+          : (event.outputSummary ?? "")));
   const output = protocol.toolOutputSchema.safeParse({
     text,
     ...(event.output?.display ? { display: event.output.display } : {}),
@@ -314,7 +319,9 @@ export function createCodeUiConversation(input: {
     structuredClone(input.state?.completedTurnViews ?? []),
   );
   const inheritedHistory = structuredClone(input.state?.inheritedHistory ?? []);
-  const inheritedSessions = structuredClone(input.state?.inheritedSessions ?? []);
+  const inheritedSessions = structuredClone(
+    input.state?.inheritedSessions ?? [],
+  );
   const inheritedOutputs = structuredClone(input.state?.inheritedOutputs ?? []);
   const planningEpoch = input.state?.planningEpoch ?? 0;
   const approvedPlan = input.state?.approvedPlan;
@@ -618,7 +625,12 @@ export function createCodeUiConversation(input: {
       return child.sessionId;
     },
     recordChildRunEvent(childSessionId: string, event: StreamEvent) {
-      if (inheritedSessions.some((session) => session.owner.sessionId === childSessionId)) return;
+      if (
+        inheritedSessions.some(
+          (session) => session.owner.sessionId === childSessionId,
+        )
+      )
+        return;
       if (childSessionId === input.sessionId)
         throw new Error("子运行不能写入主转录目标");
       const child = requireSnapshot(childSessionId);
@@ -647,7 +659,9 @@ export function createCodeUiConversation(input: {
           version: 1,
           runId: event.runId,
           runUsage: childRunUsage.get(childSessionId) ?? [],
-          childRunUsage: [...childRunUsage].filter(([id]) => descendants.has(id)),
+          childRunUsage: [...childRunUsage].filter(([id]) =>
+            descendants.has(id),
+          ),
           snapshots: [...snapshots.values()].filter((snapshot) =>
             descendants.has(snapshot.sessionId),
           ),
@@ -746,11 +760,18 @@ export function createCodeUiConversation(input: {
           (item) => item.queueItemId !== record.intent.queueItemId,
         );
         header.workSegments ??= [
-          { segmentId: header.entityId ?? `turn:${runId}`, startedAt: header.startedAt },
+          {
+            segmentId: header.entityId ?? `turn:${runId}`,
+            startedAt: header.startedAt,
+          },
         ];
         const previous = header.workSegments.at(-1);
         if (previous) previous.endedAt = at;
-        header.workSegments.push({ segmentId: entityId, triggerEntityId: entityId, startedAt: at });
+        header.workSegments.push({
+          segmentId: entityId,
+          triggerEntityId: entityId,
+          startedAt: at,
+        });
         header.sourceCommandId = record.intent.sourceCommandId;
         root.seq += 1;
         root.revision += 1;
@@ -760,7 +781,9 @@ export function createCodeUiConversation(input: {
           origin: "realUser",
           guided: true,
           sourceCommandId: record.intent.sourceCommandId,
-          rootSourceCommandId: record.intent.provenance?.sourceCommandId ?? record.intent.sourceCommandId,
+          rootSourceCommandId:
+            record.intent.provenance?.sourceCommandId ??
+            record.intent.sourceCommandId,
           clientId: record.intent.clientId,
           text: record.intent.text,
         });
@@ -988,16 +1011,29 @@ export function createCodeUiConversation(input: {
         // 未到模型边界的指导仍是原canonical输入；转回普通队列，不能复用已关闭Run。
         for (const guide of inputs) {
           if (
-            guide.runId !== event.runId || guide.status !== "queued" ||
+            guide.runId !== event.runId ||
+            guide.status !== "queued" ||
             guide.intent.delivery.admitted !== "guide"
-          ) continue;
-          const reasonCode = event.type === "run.completed"
-            ? "guide.noToolBoundary" : "guide.turnInterrupted";
+          )
+            continue;
+          const reasonCode =
+            event.type === "run.completed"
+              ? "guide.noToolBoundary"
+              : "guide.turnInterrupted";
           guide.runId = randomUUID();
-          guide.intent.delivery = { ...guide.intent.delivery, admitted: "queue", fallbackReasonCode: reasonCode };
+          guide.intent.delivery = {
+            ...guide.intent.delivery,
+            admitted: "queue",
+            fallbackReasonCode: reasonCode,
+          };
           guide.intent.steer = { state: "fellBack", reasonCode };
-          const index = root.queue.items.findIndex((item) => item.queueItemId === guide.intent.queueItemId);
-          if (index >= 0) root.queue.items[index] = protocol.queueItemSchema.parse(guide.intent);
+          const index = root.queue.items.findIndex(
+            (item) => item.queueItemId === guide.intent.queueItemId,
+          );
+          if (index >= 0)
+            root.queue.items[index] = protocol.queueItemSchema.parse(
+              guide.intent,
+            );
         }
         const active = inputs.find(
           (entry) => entry.runId === event.runId && entry.status === "active",
@@ -1091,7 +1127,12 @@ export function createCodeUiConversation(input: {
               config: root.config,
               plan: root.plan,
               usage: root.usage,
-              ...(snapshots.size > 1 ? { childSnapshots: freezeChildSnapshots(root, snapshots), frozenRows: root.rows.window } : {}),
+              ...(snapshots.size > 1
+                ? {
+                    childSnapshots: freezeChildSnapshots(root, snapshots),
+                    frozenRows: root.rows.window,
+                  }
+                : {}),
             }),
           );
         return;

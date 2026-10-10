@@ -16,6 +16,7 @@ import { AboutSection } from "@/components/workbench/about-section";
 import { AppearanceSection } from "@/components/workbench/appearance-section";
 import { BrowserSettingsSection } from "@/components/workbench/browser-settings-section";
 import { CommandsSection } from "@/components/workbench/commands-section";
+import { ConversationVisualsSection } from "@/components/workbench/conversation-visuals-section";
 import { HooksSection } from "@/components/workbench/hooks-section";
 import { IndexLibrarySection } from "@/components/workbench/index-library-section";
 import { ListLoading } from "@/components/workbench/list-state";
@@ -24,13 +25,12 @@ import { LocalInstanceSection } from "@/components/workbench/local-instance-sect
 import { OnboardingSection } from "@/components/workbench/onboarding-section";
 import { RulesMemorySection } from "@/components/workbench/rules-memory-section";
 import { SubagentsSection } from "@/components/workbench/subagents-section";
-import { ConversationVisualsSection } from "@/components/workbench/conversation-visuals-section";
 import { TerminalSettingsSection } from "@/components/workbench/terminal-settings-section";
-import { VoiceSettingsSection } from "./voice-settings-section";
 import { UsageStatsSection } from "@/components/workbench/usage-stats-section";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
 import { fetchModels } from "@/lib/server-api";
 import { useInstanceSettings } from "@/lib/use-instance-settings";
+import { VoiceSettingsSection } from "./voice-settings-section";
 
 export type SettingsTab =
   | "pluginPanels"
@@ -425,9 +425,7 @@ export function SettingsModal({
 function PluginPanelsSettings({ accessToken }: { accessToken: string | null }) {
   return (
     <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        已启用插件的设置面板
-      </p>
+      <p className="text-sm text-muted-foreground">已启用插件的设置面板</p>
       <div className="flex flex-wrap gap-2">
         <PluginPanelButtons
           accessToken={accessToken}

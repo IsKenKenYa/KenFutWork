@@ -40,10 +40,7 @@ const LEGAL_DOCUMENTS: ReadonlyArray<readonly [string, string]> = [
     "最终用户许可协议",
     "https://github.com/IsKenKenYa/KenFutWork/blob/main/EULA.md",
   ],
-  [
-    "隐私政策",
-    "https://github.com/IsKenKenYa/KenFutWork/blob/main/PRIVACY.md",
-  ],
+  ["隐私政策", "https://github.com/IsKenKenYa/KenFutWork/blob/main/PRIVACY.md"],
   [
     "第三方声明",
     "https://github.com/IsKenKenYa/KenFutWork/blob/main/THIRD-PARTY-NOTICES.md",

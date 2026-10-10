@@ -283,7 +283,9 @@ function main() {
   //       （desktop/entry-root.ts → <app>/dify/），打包后 `docker compose -f` 用它起
   //       无头栈；镜像不随包（首次安装按需拉取）。
   cpSync(join(ROOT, "dify"), join(RELEASE, "dify"), { recursive: true });
-  console.log("[package-mac] 捆绑 flow 引擎资源（dify/：compose + ssrf_proxy）");
+  console.log(
+    "[package-mac] 捆绑 flow 引擎资源（dify/：compose + ssrf_proxy）",
+  );
 
   // 4b-3) 自带插件 bundle（plugins/：computer-use / flow / mihome 等）：壳以应用目录为
   //       服务端 cwd 拉起（src/lib.rs 的 packaged_spawn_config），插件加载器的

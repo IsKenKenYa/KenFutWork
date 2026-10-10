@@ -70,9 +70,11 @@ describe("动态 UI：viz（数据图表）", () => {
 
     const unknown = render(
       <MarkdownRenderer
-        text={["```viz", '{"type":"radar","data":[{"label":"a","value":1}]}', "```"].join(
-          "\n",
-        )}
+        text={[
+          "```viz",
+          '{"type":"radar","data":[{"label":"a","value":1}]}',
+          "```",
+        ].join("\n")}
       />,
     );
     expect(unknown.container.querySelector("pre code")).not.toBeNull();
@@ -102,7 +104,9 @@ describe("动态 UI：mermaid（流程图/架构图）", () => {
       />,
     );
     await waitFor(() => expect(mermaidRender).toHaveBeenCalled());
-    expect(await screen.findByRole("img", { name: "diagram" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("img", { name: "diagram" }),
+    ).toBeInTheDocument();
   });
 
   it("渲染失败（语法错）：回落代码块，内容不吞", async () => {

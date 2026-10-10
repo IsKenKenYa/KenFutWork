@@ -446,7 +446,10 @@ export function createPluginRegistryService(
   const pluginRuntimeRoot = path.join(tmpdir(), "kenfutwork-plugin-runtime");
 
   function bundleRuntimeDirOf(id: string, installedAt: string): string {
-    return path.join(pluginRuntimeRoot, `${id}-${encodeURIComponent(installedAt)}`);
+    return path.join(
+      pluginRuntimeRoot,
+      `${id}-${encodeURIComponent(installedAt)}`,
+    );
   }
 
   async function snapshotBundleForImport(

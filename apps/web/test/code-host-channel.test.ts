@@ -89,7 +89,9 @@ describe("Code human viewer channel", () => {
       ).toEqual(targets.map(() => "connection-2"));
       expect(restarts.map((events) => events.length)).toEqual([1, 1, 1]);
     } finally {
-      listeners.forEach((listener) => listener.dispose());
+      listeners.forEach((listener) => {
+        listener.dispose();
+      });
       client.dispose();
     }
   });
@@ -612,7 +614,8 @@ describe("Code 宿主语音转写通道", () => {
           new Response(
             JSON.stringify({
               error: {
-                message: "未选择「听」模型。到「设置 → 语音」选一个（内置模型需先下载）。",
+                message:
+                  "未选择「听」模型。到「设置 → 语音」选一个（内置模型需先下载）。",
               },
             }),
             { status: 422, headers: { "content-type": "application/json" } },

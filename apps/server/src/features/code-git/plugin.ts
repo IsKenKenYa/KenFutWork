@@ -82,7 +82,6 @@ export function createCodeGitPlugin(): PluginDefinition {
           ),
         }),
       });
-
     },
   };
 }

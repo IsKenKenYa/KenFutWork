@@ -32,7 +32,6 @@ import {
   CODE_UI_HOST_RPC_CAPABILITY,
   type CodeUiHostRpcHandler,
 } from "../code-ui/host-rpc-handler.js";
-import { createMacosPermissionStatusRpc } from "./permission-status-rpc.js";
 import { createActiveComputerUseRuns } from "./active-runs.js";
 import { createMacosApplicationIconResolver } from "./application-icon.js";
 import { createUnavailableExecutor } from "./executor.js";
@@ -44,6 +43,7 @@ import {
   type ComputerUseMcpExport,
   createComputerUseMcpServer,
 } from "./mcp-server.js";
+import { createMacosPermissionStatusRpc } from "./permission-status-rpc.js";
 import {
   type CuGovernanceValues,
   createComputerUseService,
@@ -165,12 +165,10 @@ export function createComputerUsePlugin(options?: {
           },
         };
         ctx.effect(() =>
-          ctx
-            .get("capabilities")
-            .register(CODE_UI_HOST_RPC_CAPABILITY, {
-              id: "platform.getApplicationIcon",
-              value: iconRpc,
-            }),
+          ctx.get("capabilities").register(CODE_UI_HOST_RPC_CAPABILITY, {
+            id: "platform.getApplicationIcon",
+            value: iconRpc,
+          }),
         );
         ctx.effect(() => () => controller.abort());
       }
@@ -201,7 +199,12 @@ export function createComputerUsePlugin(options?: {
         const permissionRpc = createMacosPermissionStatusRpc({
           gate,
           executor: () => native,
-          timeoutMs: async (actor) => (await ctx.get("settings").getInstanceSettings(actor, actor.instanceId)).computerUseActionTimeoutMs,
+          timeoutMs: async (actor) =>
+            (
+              await ctx
+                .get("settings")
+                .getInstanceSettings(actor, actor.instanceId)
+            ).computerUseActionTimeoutMs,
         });
         ctx.effect(() =>
           ctx.get("capabilities").register(CODE_UI_HOST_RPC_CAPABILITY, {

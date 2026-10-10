@@ -276,9 +276,7 @@
     },
     "KENFUTWORK_VOICE_REAL_MODEL": {
       "surface": "test",
-      "readers": [
-        "apps/server/src/features/voice/sherpa.integration.test.ts"
-      ],
+      "readers": ["apps/server/src/features/voice/sherpa.integration.test.ts"],
       "inExamples": true,
       "status": "test-gate",
       "note": "=1 启用语音内置模型的真机验收（会下载 228MB 模型）；生产无读者"

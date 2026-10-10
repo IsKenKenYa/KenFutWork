@@ -4,6 +4,7 @@ import type {
   ToolDefinition,
   ToolExecutionContext,
 } from "../../kernel/types.js";
+import type { CodeUiOutputHistory } from "../code-ui/output-history-types.js";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
 import type { LocalActor } from "../local-instance/types.js";
 import { createScopedExecute } from "../process-sandbox/consumer.js";
@@ -16,7 +17,6 @@ import type {
   ProcessSandbox,
 } from "../process-sandbox/types.js";
 import type { SettingsService } from "../settings/settings-service.js";
-import type { CodeUiOutputHistory } from "../code-ui/output-history-types.js";
 import type {
   TaskWorkContext,
   TaskWorkManager,
@@ -366,12 +366,19 @@ export function createTaskCommandTools(deps: {
             endedAt,
           }),
         );
-        const inherited = await deps.historicalOutputs?.manifest(context) ?? [];
-        return [...work, ...inherited.map(record => ({
-          taskId: record.id, kind: record.kind, label: record.label,
-          status: record.status, readOnly: true,
-          ...(record.frozenAt ? { frozenAt: record.frozenAt } : {}),
-        }))];
+        const inherited =
+          (await deps.historicalOutputs?.manifest(context)) ?? [];
+        return [
+          ...work,
+          ...inherited.map((record) => ({
+            taskId: record.id,
+            kind: record.kind,
+            label: record.label,
+            status: record.status,
+            readOnly: true,
+            ...(record.frozenAt ? { frozenAt: record.frozenAt } : {}),
+          })),
+        ];
       }
       const record = await deps.manager.find(context, input.task_id);
       const settings = await settingsFor(context);
@@ -382,18 +389,26 @@ export function createTaskCommandTools(deps: {
       );
       const pageSize = Math.min(input.max_bytes ?? pageBytes, pageBytes);
       const inherited = !record
-        ? await deps.historicalOutputs?.read(context, input.task_id, input.offset, pageSize)
+        ? await deps.historicalOutputs?.read(
+            context,
+            input.task_id,
+            input.offset,
+            pageSize,
+          )
         : null;
       const result = record ?? inherited;
       if (!result) throw new Error("输出不属于当前 Task 或不存在。");
-      const output = record ? await readOutput(record, input.offset, pageSize) : inherited?.output;
+      const output = record
+        ? await readOutput(record, input.offset, pageSize)
+        : inherited?.output;
       const canonicalOutput = {
         taskId: result.id,
         status: result.status,
         summary: result.summary,
         output,
         outputRef: result.outputRef,
-        statisticsComplete: inherited?.statisticsComplete ?? result.status !== "interrupted",
+        statisticsComplete:
+          inherited?.statisticsComplete ?? result.status !== "interrupted",
         ...(inherited ? { readOnly: true } : {}),
         ...(inherited?.frozenAt ? { frozenAt: inherited.frozenAt } : {}),
         display: {

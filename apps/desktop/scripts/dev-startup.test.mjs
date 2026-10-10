@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createServer } from "node:http";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import {

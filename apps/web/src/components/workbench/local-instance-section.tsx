@@ -134,21 +134,27 @@ export function LocalInstanceSection() {
         ) : null}
         <p className="text-sm text-muted-foreground">
           迁移前等待任务结束
-          <br />停机复制并校验后重启
-          <br />失败保留原目录 · 项目代码目录不移动
+          <br />
+          停机复制并校验后重启
+          <br />
+          失败保留原目录 · 项目代码目录不移动
         </p>
       </div>
       <div className="space-y-2">
         <h4 className="text-sm font-medium">备份与恢复</h4>
         <p className="text-sm text-muted-foreground">
           停机后复制完整数据目录
-          <br />使用完整备份目录恢复
-          <br />供应商 Key 以明文保存 · 妥善保管备份
+          <br />
+          使用完整备份目录恢复
+          <br />
+          供应商 Key 以明文保存 · 妥善保管备份
         </p>
         <p className="text-sm text-muted-foreground">
           项目与会话保留
-          <br />外部目录缺失需重新关联
-          <br />已有任务不自动重放
+          <br />
+          外部目录缺失需重新关联
+          <br />
+          已有任务不自动重放
         </p>
       </div>
       {notice ? (

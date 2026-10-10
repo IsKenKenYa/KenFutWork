@@ -15,7 +15,6 @@ import {
   flattenAxTree,
   formatAxTree,
 } from "./ax-tree.js";
-import { fitRasterPreview } from "./raster-preview.js";
 import type {
   ComputerUseExecutor,
   CuInputAction,
@@ -27,6 +26,7 @@ import {
   createCuLease,
   toActionSentError,
 } from "./lease.js";
+import { fitRasterPreview } from "./raster-preview.js";
 import {
   type ParsedAppRef,
   parseAppRef,

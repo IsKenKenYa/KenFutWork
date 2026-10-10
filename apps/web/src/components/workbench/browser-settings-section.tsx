@@ -27,13 +27,13 @@ import {
   fetchPermissionSettings,
   updatePermissionSettings,
 } from "@/lib/server-api";
-import { SettingsToggle } from "./settings-toggle";
 import {
   SETTINGS_CONTROL_WIDTH,
   SETTINGS_ROW_MIN_HEIGHT,
   SETTINGS_SECTION_GAP,
   SETTINGS_TITLE,
 } from "@/lib/settings-layout";
+import { SettingsToggle } from "./settings-toggle";
 
 /**
  * 浏览器设置（R5-4 按参考图分区：内置浏览器 / 外部浏览器 / 通用）。
@@ -88,7 +88,6 @@ function saveSettings(settings: BrowserSettings) {
   }
 }
 
-
 export function BrowserSettingsSection({
   accessToken = null,
 }: {
@@ -119,7 +118,6 @@ export function BrowserSettingsSection({
 
   // 「允许 AI 控制浏览器」「自动截图」「无头」都是服务端开关（工具门控必须在服务端生效）
   useEffect(() => {
-
     let cancelled = false;
     fetchPermissionSettings(accessToken)
       .then((view) => {
@@ -146,7 +144,6 @@ export function BrowserSettingsSection({
   }, [accessToken]);
 
   const cdpConnect = async () => {
-
     setCdpBusy(true);
     setMessage(null);
     try {
@@ -167,7 +164,6 @@ export function BrowserSettingsSection({
   };
 
   const cdpDisconnect = async () => {
-
     setCdpBusy(true);
     try {
       setCdp(await disconnectCdp(accessToken));
@@ -188,7 +184,6 @@ export function BrowserSettingsSection({
       | "browserEvalEnabled",
     next: boolean,
   ) => {
-
     const setter =
       key === "browserAutoScreenshot"
         ? setBrowserAutoScreenshot
@@ -234,7 +229,6 @@ export function BrowserSettingsSection({
   };
 
   const toggleAgentControl = async (next: boolean) => {
-
     setMessage(null);
     try {
       const view = await updatePermissionSettings(accessToken, {

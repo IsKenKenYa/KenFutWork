@@ -1,7 +1,10 @@
-import { createRuntimeTestInstance, RUNTIME_TEST_ACTOR } from "../agent/runtime-test-fixtures.js";
 import multipart from "@fastify/multipart";
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
+import {
+  createRuntimeTestInstance,
+  RUNTIME_TEST_ACTOR,
+} from "../agent/runtime-test-fixtures.js";
 
 import { encodeWav, VoiceAudioError } from "../features/voice/audio.js";
 import { VoiceModelError } from "../features/voice/model-store.js";
@@ -112,7 +115,12 @@ function buildApp(
   void app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
   registerVoiceRoutes(app, {
     localAccess: {
-      authenticate: async () => options.unauthenticated ? null : options.foreignInstance ? { ...RUNTIME_TEST_ACTOR, instanceId: "foreign-instance" } : RUNTIME_TEST_ACTOR,
+      authenticate: async () =>
+        options.unauthenticated
+          ? null
+          : options.foreignInstance
+            ? { ...RUNTIME_TEST_ACTOR, instanceId: "foreign-instance" }
+            : RUNTIME_TEST_ACTOR,
     } as never,
     localInstance: createRuntimeTestInstance(),
     voiceService: {
@@ -872,7 +880,6 @@ describe("POST /api/voice/speak（说段：回复播报）", () => {
     }
   });
 });
-
 
 describe("voice 本机归属", () => {
   it("错误实例在读取语音设置前被拒绝", async () => {

@@ -4,11 +4,11 @@ import { parseVizSpec, VizBlock, type VizSpec } from "@kenfutwork/ui";
 import {
   createContext,
   isValidElement,
+  type ReactNode,
   useContext,
   useEffect,
   useMemo,
   useState,
-  type ReactNode,
 } from "react";
 
 import { isConversationVisualsEnabled } from "@/lib/conversation-visuals";
@@ -59,9 +59,7 @@ function toText(node: ReactNode): string {
 }
 
 /** 从 `<pre>` 的 children 里认出我们的块（`<code class="language-…">`）。 */
-export function extractFencedBlock(
-  children: ReactNode,
-): FencedBlock | null {
+export function extractFencedBlock(children: ReactNode): FencedBlock | null {
   const element = Array.isArray(children) ? children[0] : children;
   if (!isValidElement(element)) return null;
   const props = element.props as {
@@ -135,7 +133,7 @@ function MermaidDiagram({
   return (
     <div
       className="my-3 flex justify-center overflow-x-auto rounded-lg border border-border bg-card p-3 [&_svg]:max-w-full"
-      // mermaid 的 SVG 输出：securityLevel=strict 下不含脚本与事件处理器
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: Mermaid strict 在返回 SVG 前使用 DOMPurify 清洗。
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

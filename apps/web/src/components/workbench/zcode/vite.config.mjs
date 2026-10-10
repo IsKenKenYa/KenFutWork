@@ -2,13 +2,18 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-import { pdfJsCMapsPlugin } from "./host/upstream/pdfJsCMapsPlugin.ts";
 import { cuaSettingsNavigationPlugin } from "./host/cuaSettingsNavigationPlugin.mjs";
+import { pdfJsCMapsPlugin } from "./host/upstream/pdfJsCMapsPlugin.ts";
 
 export default defineConfig({
   base: "/code-ui/",
   publicDir: "public",
-  plugins: [cuaSettingsNavigationPlugin(), pdfJsCMapsPlugin(), react(), tailwindcss()],
+  plugins: [
+    cuaSettingsNavigationPlugin(),
+    pdfJsCMapsPlugin(),
+    react(),
+    tailwindcss(),
+  ],
   resolve: {
     alias: [
       {
