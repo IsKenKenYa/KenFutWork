@@ -352,6 +352,37 @@ jobs:
   # 免费且零配置：只对**本次 PR 变更的依赖**做审查（不是全仓扫描，既存告警不会让它常红）。
   # 与 Dependabot 的差别：Dependabot 看的是「已知漏洞的既有依赖」，这里看的是
   # 「这次 diff 新引入/换版本的依赖有没有漏洞、许可证是否变化」，PR 里直接留评论。
+  secrets-scan:
+    name: 密钥扫描（全历史，gitleaks）
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 浅克隆只会让 gitleaks 看到 1 个提交——表现是「绿了，但什么都没扫」。
+          fetch-depth: 0
+          submodules: false
+      - name: 安装 gitleaks
+        run: |
+          set -euo pipefail
+          # 与本地验证同一版本；二进制直取 release 资产，避免依赖需要 license 的包装 action。
+          version=8.30.1
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz"
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" version
+      - name: 扫描全历史
+        run: |
+          set -euo pipefail
+          # 豁免只按「具体值」放行（见 .gitleaks.toml）：同文件里将来出现真 Key 仍会被拦。
+          "$RUNNER_TEMP/gitleaks" git --no-banner --redact -c .gitleaks.toml
+
   dependency-review:
     name: 依赖变更审查（只在 PR 上跑）
     if: github.repository == 'IsKenKenYa/KenFutWork' && github.event_name == 'pull_request'
@@ -368,6 +399,53 @@ jobs:
         with:
           fail-on-severity: high
           comment-summary-in-pr: always
+
+  sca-osv:
+    name: 依赖漏洞扫描（OSV 锁文件级，上报到代码扫描）
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: 安装 osv-scanner
+        run: |
+          set -euo pipefail
+          version=2.6.0
+          curl -sSfL -o "$RUNNER_TEMP/osv-scanner" \
+            "https://github.com/google/osv-scanner/releases/download/v${version}/osv-scanner_linux_amd64"
+          chmod +x "$RUNNER_TEMP/osv-scanner"
+          "$RUNNER_TEMP/osv-scanner" --version
+      - name: 扫描 npm 与 Cargo 锁文件
+        run: |
+          set -uo pipefail
+          # 本 job 的口径是「让公告被看见」（Security 标签 + 告警），不是在此处染红：
+          # 存量 29 个包 / 49 条公告（含传递依赖）需要的是被跟踪，而不是被静音。
+          # 「新增高危依赖」由 dependency-review 在 PR 上拦。
+          "$RUNNER_TEMP/osv-scanner" scan source \
+            -L pnpm-lock.yaml \
+            -L apps/desktop/src-tauri/Cargo.lock \
+            --format sarif --output-file "$RUNNER_TEMP/osv.sarif"
+          code=$?
+          # 退出码 1 = 发现公告（正常）；但没产出 SARIF 就是扫描器自己失败，必须说出来。
+          if [ ! -s "$RUNNER_TEMP/osv.sarif" ]; then
+            echo "· osv-scanner 退出码 $code 且没有产出 SARIF —— 这是扫描失败，不是没有漏洞"
+            exit 1
+          fi
+          echo "· osv-scanner 退出码 $code（1=有公告），SARIF 已生成"
+      - name: 上传 SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ runner.temp }}/osv.sarif
+          category: osv-scanner
 
   health-check:
     name: 服务端健康检查（真库启动 + /api/health + 未授权边界）
