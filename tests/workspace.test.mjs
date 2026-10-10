@@ -989,6 +989,25 @@ jobs:
   }
 });
 
+// --- fetch-runtimes 的 `--only` 解析 ---
+// 文件头用法写的是空格形式（`--only node,python`），而解析器曾只认 `--only=`：
+// 结果是这条命令**静默变成「全部运行时」**，既慢又误导（实测过一次）。
+test("fetch-runtimes 的 --only 两种写法都必须生效", async () => {
+  const { parseArgs } = await import("../scripts/fetch-runtimes.mjs");
+  const available = ["node", "python", "uv", "jdk"];
+  assert.deepEqual(
+    parseArgs(["--only", "uv"], available).only,
+    ["uv"],
+    "空格形式的 --only 必须真的过滤，不能退回全部",
+  );
+  assert.deepEqual(parseArgs(["--only=node,uv"], available).only, [
+    "node",
+    "uv",
+  ]);
+  assert.deepEqual(parseArgs([], available).only, available);
+  assert.equal(parseArgs(["--only", "uv", "--force"], available).force, true);
+});
+
 // --- SEA 产物必须自带「以发布 exe 为基准」的文件型 require ---
 //
 // 懒解析只解决了**我们源码里**的四处外部包；`--external` 的包一旦被第三方代码

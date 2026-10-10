@@ -33,6 +33,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   assertLockAssetName,
   assertLockSha,
@@ -140,16 +141,27 @@ const SPECS = {
   "darwin-x64": null,
 };
 
-function parseArgs(argv, available) {
-  const onlyArg = argv.find((a) => a.startsWith("--only="));
-  const only = onlyArg
-    ? onlyArg
-        .slice("--only=".length)
-        .split(",")
-        .map((s) => s.trim())
-    : available;
+/**
+ * `--only` 两种写法都得认：文件头的用法是 `--only node,python`（空格分隔），只认
+ * `--only=` 会让前者**静默降级成「全部运行时」**——实测过一次，多下十几个 GB 的
+ * 无关运行时还让人以为过滤生效了。裸 `--only` 不给值时宁可报错，不猜意图。
+ */
+export function parseArgs(argv, available) {
+  const inline = argv.find((arg) => arg.startsWith("--only="));
+  const flagIndex = argv.indexOf("--only");
+  const raw = inline
+    ? inline.slice("--only=".length)
+    : flagIndex >= 0
+      ? (argv[flagIndex + 1] ?? "")
+      : null;
   return {
-    only,
+    only:
+      raw === null
+        ? available
+        : raw
+            .split(",")
+            .map((name) => name.trim())
+            .filter(Boolean),
     force: argv.includes("--force"),
     writeLock: argv.includes("--write-lock"),
   };
@@ -571,7 +583,13 @@ async function main() {
   );
 }
 
-main().catch((error) => {
-  console.error(`[runtimes] 失败：${error.message}`);
-  process.exitCode = 1;
-});
+// 被 import（测试 parseArgs 这类纯函数）时不触发下载；只有作为入口执行才跑主流程。
+if (
+  process.argv[1] &&
+  pathToFileURL(process.argv[1]).href === import.meta.url
+) {
+  main().catch((error) => {
+    console.error(`[runtimes] 失败：${error.message}`);
+    process.exitCode = 1;
+  });
+}
