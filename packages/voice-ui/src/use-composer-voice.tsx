@@ -235,21 +235,13 @@ export function useComposerVoice({
     ...(recorder ? { recorder } : {}),
   });
 
+  // 录音/转写过程不出文字提示（只有图标与输入区变化）；状态行只在错误时出现
   const baseStatus =
-    voice.statusText === null ? null : (
-      <p
-        role="status"
-        className={`mt-1 text-xs ${
-          voice.phase === "error"
-            ? "text-destructive"
-            : "text-foreground-subtle"
-        }`}
-      >
-        {voice.phase === "recording"
-          ? `${voice.statusText} · 松开转文字`
-          : voice.statusText}
+    voice.phase === "error" && voice.statusText !== null ? (
+      <p role="status" className="mt-1 text-xs text-destructive">
+        {voice.statusText}
       </p>
-    );
+    ) : null;
 
   /** 方案 B 的状态行：完整需求 + 倒计时 + 「等等」——**显示的就是将要发出的那句话**。 */
   const loopStatus =
