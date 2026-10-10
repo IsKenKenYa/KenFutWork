@@ -760,7 +760,7 @@ test("runtime-lock：无条目放行、哈希不符与改名必拦、按目标�
 // `concurrency` 拿不到 `matrix` 上下文，表达式不报错只取空值；复用工作流的顶层 `permissions`
 // 只能收窄会把调用方给的 write 压回 read；`pnpm dev` 在 CI 里因 --env-file 缺文件必死。
 // 本轮在同一次提交里撞中三种，所以护栏必须带**反例夹具**——只验真仓通过等于没验。
-test("Actions 护栏：真仓通过，六类「静默不干活」各自被拦", async () => {
+test("Actions 护栏：真仓通过，七类「静默不干活/假红」各自被拦", async () => {
   const real = checkActions({ rootDir });
   assert.ok(
     real.files.length >= 4,
@@ -928,6 +928,59 @@ jobs:
       `A6 应拦住「整 job 没声明 shell」的 bash 写法：${JSON.stringify(result.errors)}`,
     );
     rmSync(path.join(dir, "a6.yml"));
+
+    put(
+      "a7",
+      `name: a7
+on: push
+jobs:
+  a:
+    defaults:
+      run:
+        shell: bash
+    runs-on: ubuntu-latest
+    steps:
+      - name: 取退出码
+        run: |
+          set -uo pipefail
+          scan --out x.sarif
+          code=$?
+          echo "code=$code"
+`,
+    );
+    result = checkActions({ rootDir: fixtureRoot });
+    assert.ok(
+      result.errors.some((line) => /取退出码/.test(line)),
+      `A7 应拦住 bash -e 下裸写 code=$?（这一步永远执行不到）：${JSON.stringify(result.errors)}`,
+    );
+    rmSync(path.join(dir, "a7.yml"));
+
+    // 正确写法：先置 0，再用 || 捕获——不得被 A7 误伤
+    put(
+      "a7ok",
+      `name: a7ok
+on: push
+jobs:
+  a:
+    defaults:
+      run:
+        shell: bash
+    runs-on: ubuntu-latest
+    steps:
+      - name: 取退出码
+        run: |
+          set -uo pipefail
+          code=0
+          scan --out x.sarif || code=$?
+          echo "code=$code"
+`,
+    );
+    assert.deepEqual(
+      checkActions({ rootDir: fixtureRoot }).errors,
+      [],
+      "A7 不得误伤 `cmd || code=$?` 的正确写法",
+    );
+    rmSync(path.join(dir, "a7ok.yml"));
 
     // 回到干净态必须再次全绿（证明上面每条都是「这一处」引起的，不是常驻误报）
     assert.deepEqual(checkActions({ rootDir: fixtureRoot }).errors, []);
