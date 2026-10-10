@@ -100,6 +100,8 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 
 ## E. 字体与视觉素材
 
+### E1. 第三方字体与素材
+
 | 素材 | 许可 | 状态 |
 | --- | --- | --- |
 | Momo Trust Display（字标在用） | SIL Open Font License 1.1 | 合规：随产物分发于 `apps/web/public/fonts/`，同目录带 `LICENSE.txt`（OFL 全文）；无保留字体名（Reserved Font Name） |
@@ -108,6 +110,22 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | `skills/canvas-design/canvas-fonts/` | **54 个字体文件，仓库内无任何许可文本** | **待核**：分发前必须逐支确认来源与许可，不能默认沿用 GPL 或 OFL |
 
 字体样张与图片素材不属于本项目代码，**不在 GPL-3.0 的授权范围内**，版权归各自权利人所有；我们不代为授权、不担保其授权状态与可用性。
+
+### E2. 本项目自有的名称、标识与图标
+
+这些是我们自己的资产，列在这里是为了把「代码按 GPL 走、标识不走」这条线画清（使用规则属主见 `EULA.md` §6.2–§6.4）。
+
+| 资产 | 落点 | 来源与生成方式 |
+| --- | --- | --- |
+| 现行 KF 标识（2026-09-15 换版） | `apps/web/src/components/icons/kenfutwork-logo.tsx`、`docs/视觉设计/logo/新版.png`（源图）、`docs/视觉设计/logo/应用图标-白底圆角.png` | 组件注释记载为 **GPT 生成图定稿**，源图即上表 PNG |
+| Web 静态标识 | `apps/web/public/` 的 `logo.png`、`logo-mark.png`、`app-icon.png`、`apple-touch-icon.png`、`favicon.png`、`og-image.png` | 由现行源图派生 |
+| 桌面/移动应用图标 | `apps/desktop/src-tauri/icons/`（含 android `mipmap-*`、Windows `SquareNxNLogo.png`、StoreLogo） | 由 `apps/desktop/scripts/icons.mjs` 从**同一份墨迹**批量生成（2026-09-26 口径：墨迹占画布 80%） |
+| 旧版字标 KF-2 骨架版 C（留档） | `docs/视觉设计/旧版/品牌Logo说明.md`（权威说明与几何/色值）、`docs/视觉设计/旧版/字体风格对比.html` | 纯手写 SVG；白字形是 **Chakra Petch Italic**（SIL OFL-1.1）字形的 K 轮廓 + 裁短 F 顶横的布尔并集，样张 `docs/视觉设计/logo/字体/ChakraPetch.woff2` |
+
+- **归属**：名称、标识与图标的著作权及商标性权益归本项目维护者／该标识的创作者；**不随 GPL-3.0 分发**，不因代码贡献而共有，后续加入的协作者亦不因此取得标识权利。
+- **OFL 一侧**：SIL OFL 不限制字形轮廓在标识中的使用，其「保留字体名」条款约束的是字体文件本身的命名与再分发，与旧版字标的设计无冲突。
+- **如实登记不确定性（推测，非事实结论）**：现行标识出自生成式模型，纯 AI 生成内容的可版权性在各法域存在分歧——美国版权局现行立场是不保护缺乏足够人类作者性的 AI 生成输出；中国 2023 年北京互联网法院有承认「含人类智力投入与审美选择的 AI 生成图片可构成美术作品」的个案。我们以创作者与项目主体身份主张权利，但不保证在每个法域都能取得排他性保护；这不影响代码侧 GPL 授予的确定性。若要注册商标或对外授权，建议先做近似检索并保存创作过程证据（提示词、迭代与筛选记录）。
+- **待核**：`og-image.png` 等派生图是否混入模型输出携带的其他第三方视觉元素，无法完全验证。
 
 ## F. 待合并子系统与外部引擎
 
