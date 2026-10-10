@@ -103,9 +103,11 @@ export function AutomationKeepAwakeNotice({
 export function AutomationCreateDropdown({
   onViaChat,
   onManually,
+  disabled = false,
 }: {
-  onViaChat: () => void;
-  onManually: () => void;
+  onViaChat?: () => void;
+  onManually?: () => void;
+  disabled?: boolean;
 }) {
   const { intl } = useZCodeIntl();
   return (
@@ -118,6 +120,7 @@ export function AutomationCreateDropdown({
           className="rounded-none border-0"
           data-testid={TID_AUTOMATION_CREATE_MANUALLY}
           onClick={onManually}
+          disabled={disabled || !onManually}
         >
           {intl.formatMessage({ id: "automations.createManually" })}
         </Button>
@@ -129,13 +132,14 @@ export function AutomationCreateDropdown({
             data-testid={TID_AUTOMATION_CREATE_MENU}
             aria-label={intl.formatMessage({ id: "automations.create" })}
             className="!w-6 rounded-none border-0"
+            disabled={disabled || !onViaChat}
           >
             <AutomationChevronDownIcon size={14} />
           </Button>
         </DropdownMenuTrigger>
       </div>
       <DropdownMenuContent align="end" sideOffset={4} className="w-auto min-w-0">
-        <DropdownMenuItem className="pr-6" onSelect={onViaChat}>
+        <DropdownMenuItem className="pr-6" onSelect={onViaChat} disabled={disabled || !onViaChat}>
           {intl.formatMessage({ id: "automations.createViaChat" })}
         </DropdownMenuItem>
       </DropdownMenuContent>

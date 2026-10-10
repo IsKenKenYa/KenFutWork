@@ -7,8 +7,10 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { PlatformProvider } from "@zui/hooks/usePlatform";
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider";
 import { Root } from "@zui/index";
+import { AutomationsSection } from "@zui/settings/AutomationsSection";
 import { useAlertDialogStore } from "@zui/store/alertDialogStore";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore";
 import { afterEach, expect, it, vi } from "vitest";
@@ -30,12 +32,78 @@ import {
 const clients: CodeHttpChannelClient[] = [];
 const releases: Array<() => void> = [];
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   for (const release of releases.splice(0)) release();
   for (const client of clients.splice(0)) client.dispose();
   vi.unstubAllGlobals();
   localStorage.clear();
   restoreCodeRootBrowser();
+});
+
+it("原自动化入口在宿主未接入时保留原页面与图标，禁用创建且零运行请求", async () => {
+  const calls: Array<{ service: string; method: string; args: unknown[] }> = [];
+  installBrowserLayout();
+  vi.stubGlobal("fetch", createCodeRootHostFetch(calls, { rejectOpen: false }));
+  const client = new CodeHttpChannelClient({ apiBase: "https://host.example" });
+  clients.push(client);
+  await client.connect();
+  client.registerWorkspaces([rootWorkspace]);
+  releases.push(bindCodeWorkspaceServices(client));
+  render(
+    <ZCodeIntlProvider initialLocale="zh-CN">
+      <Root
+        services={client.services}
+        platform={createCodePlatform(client)}
+        initialWorkspaceAbsPath="/code"
+        initialWorkspaceIdentity={JSON.stringify([rootProjectId, "/code"])}
+        restoreSession={false}
+        allowRemoteWorkspace={false}
+      />
+    </ZCodeIntlProvider>,
+  );
+  await screen.findByRole("textbox");
+  const beforeOpen = calls.length;
+  for (let round = 0; round < 2; round += 1) {
+    fireEvent.click(await screen.findByRole("button", { name: "自动化" }));
+    expect(
+      await screen.findByRole("heading", { name: "自动化" }),
+    ).not.toBeNull();
+    expect(screen.getByText("未接入").getAttribute("role")).toBe("status");
+    const create = screen.getByRole("button", {
+      name: "创建定时任务",
+    });
+    expect(create.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(create);
+    expect(screen.getByRole("heading", { name: "自动化" })).not.toBeNull();
+  }
+  expect(
+    calls
+      .slice(beforeOpen)
+      .filter((call) =>
+        /automation|offpeak|client-scenes|coding-plan-subscription/i.test(
+          call.method + call.service,
+        ),
+      ),
+  ).toEqual([]);
+});
+
+it("未接入的原自动化页停留一分钟仍不取数或轮询", async () => {
+  const calls: Array<{ service: string; method: string; args: unknown[] }> = [];
+  vi.stubGlobal("fetch", createCodeRootHostFetch(calls, { rejectOpen: false }));
+  const client = new CodeHttpChannelClient({ apiBase: "https://host.example" });
+  clients.push(client);
+  vi.useFakeTimers();
+  render(
+    <ZCodeIntlProvider initialLocale="zh-CN">
+      <PlatformProvider platform={createCodePlatform(client)}>
+        <AutomationsSection />
+      </PlatformProvider>
+    </ZCodeIntlProvider>,
+  );
+  await act(() => vi.advanceTimersByTimeAsync(60_000));
+  expect(screen.getByText("未接入")).not.toBeNull();
+  expect(calls).toEqual([]);
 });
 
 it.each([true, false])(
@@ -161,6 +229,150 @@ function installViewerContext(
     workspaceIdentity: target.workspaceIdentity ?? null,
   });
 }
+
+it("原侧栏从真实安装目录展示Code入口，生命周期操作后刷新且不串入Design入口", async () => {
+  installBrowserLayout();
+  vi.stubGlobal(
+    "URL",
+    class extends URL {
+      static createObjectURL = vi.fn(
+        () => "blob:https://host.example/sidebar-icon",
+      );
+      static revokeObjectURL = vi.fn();
+    },
+  );
+  const calls: Array<{ service: string; method: string; args: unknown[] }> = [];
+  const fixture = createCodeRootHostFetch(calls, { rejectOpen: false });
+  let enabled = true;
+  let installed = true;
+  vi.stubGlobal("fetch", async (url: string, options?: RequestInit) => {
+    if (url.endsWith("/api/plugins/bundled__mihome/assets/icon.svg"))
+      return new Response("<svg/>", {
+        headers: { "content-type": "image/svg+xml" },
+      });
+    if (url.endsWith("/api/plugins"))
+      return Response.json({
+        plugins: [
+          {
+            id: "bundled__mihome",
+            installed,
+            enabled,
+            scope: "shared",
+            ui: [
+              {
+                id: "devices",
+                title: "米家",
+                slot: "sidebar",
+                url: "panel",
+                icon: "assets/icon.svg",
+              },
+            ],
+          },
+          {
+            id: "local__design",
+            installed: true,
+            enabled: true,
+            scope: "design",
+            ui: [
+              {
+                id: "canvas",
+                title: "画布专用",
+                slot: "sidebar",
+                url: "panel",
+              },
+            ],
+          },
+        ],
+      });
+    if (url.endsWith("/rpc")) {
+      const call = JSON.parse(String(options?.body));
+      if (
+        call.service === "plugin-management" &&
+        call.method === "setPluginEnabled"
+      ) {
+        enabled = call.args[0].enabled;
+        return Response.json({ result: { enabled } });
+      }
+      if (
+        call.service === "plugin-management" &&
+        call.method === "uninstallPlugin"
+      ) {
+        installed = false;
+        return Response.json({ result: { removed: true, diagnostics: [] } });
+      }
+    }
+    return fixture(url, options);
+  });
+  const client = new CodeHttpChannelClient({ apiBase: "https://host.example" });
+  clients.push(client);
+  await client.connect();
+  client.registerWorkspaces([rootWorkspace]);
+  releases.push(bindCodeWorkspaceServices(client));
+  render(
+    <ZCodeIntlProvider initialLocale="zh-CN">
+      <Root
+        services={client.services}
+        platform={createCodePlatform(client)}
+        initialWorkspaceAbsPath="/code"
+        initialWorkspaceIdentity={JSON.stringify([rootProjectId, "/code"])}
+        directoryServices={client.directoryServices()}
+        onWorkspaceContextChange={(target) =>
+          installViewerContext(client, target)
+        }
+        restoreSession={false}
+        allowRemoteWorkspace={false}
+      />
+    </ZCodeIntlProvider>,
+  );
+  expect(await screen.findByRole("button", { name: "米家" })).not.toBeNull();
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole("button", { name: "米家" })
+        .querySelector('img[src="blob:https://host.example/sidebar-icon"]'),
+    ).not.toBeNull(),
+  );
+  expect(screen.queryByRole("button", { name: "画布专用" })).toBeNull();
+  const send = vi.spyOn(window, "postMessage");
+  fireEvent.click(screen.getByRole("button", { name: "米家" }));
+  expect(send).toHaveBeenCalledWith(
+    {
+      type: "kenfutwork:code-open-plugin",
+      pluginId: "bundled__mihome",
+      entryId: "devices",
+    },
+    window.location.origin,
+  );
+  await act(async () => {
+    await client.services.pluginManagementService.setPluginEnabled({
+      pluginId: "bundled__mihome",
+      enabled: false,
+      scope: "user",
+      workspacePath: "/code",
+    });
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "米家" })).toBeNull(),
+  );
+  await act(async () => {
+    await client.services.pluginManagementService.setPluginEnabled({
+      pluginId: "bundled__mihome",
+      enabled: true,
+      scope: "user",
+      workspacePath: "/code",
+    });
+  });
+  await screen.findByRole("button", { name: "米家" });
+  await act(async () => {
+    await client.services.pluginManagementService.uninstallPlugin({
+      pluginId: "bundled__mihome",
+      workspacePath: "/code",
+    });
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "米家" })).toBeNull(),
+  );
+});
 
 it("原Root新建任务动作读取Project新默认B，已选旧Task及其文件上下文仍固定A", async () => {
   installBrowserLayout();

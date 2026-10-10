@@ -1,8 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useFlowHostEntry } from "@/hooks/use-flow-host";
+import type { ManagementTarget } from "@kenfutwork/shared";
+import {
+  createMacDesktopChrome,
+  DesktopWorkbenchTitlebar,
+} from "@zcode/ui/design-shared";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { installDesktopExternalLinks } from "@/lib/desktop-system";
+import type { FlowEntry } from "@/lib/flow-embed";
 import { SIDEBAR_RAIL_WIDTH } from "@/lib/panel-layout";
 import { useFlowEngineInstall } from "@/lib/use-flow-engine-install";
 import {
@@ -20,29 +25,39 @@ import {
   type FlowCanvasFrameHandle,
 } from "./flow-canvas-frame";
 import { FlowEnginePage } from "./flow-engine-page";
-import { McpModal } from "./mcp-modal";
-import { PluginMarketModal } from "./plugin-market-modal";
 import { SettingsModal, type SettingsTab } from "./settings-modal";
-import { SkillsModal } from "./skills-modal";
 
 /** 保留画布工作台。对话与运行均在画布页，Code 由独立原宿主负责。 */
 export function CanvasWorkbench({
   mode,
   onModeChange,
+  active = true,
+  onOpenManagement,
+  flowEntry,
 }: {
   mode: "design" | "flow";
   onModeChange: (mode: WorkbenchMode) => void;
+  active?: boolean;
+  onOpenManagement: (target: ManagementTarget) => void;
+  flowEntry: FlowEntry | null;
 }) {
   const accessToken = null;
-  const { entry: flowEntry, refresh: refreshFlowEntry } = useFlowHostEntry();
   const flowFrameRef = useRef<FlowCanvasFrameHandle>(null);
-  const projects = useDesignProjects(accessToken, mode);
+  const canvasFrameRef = useRef<HTMLIFrameElement>(null);
+  const sendCanvasActivity = useCallback(() => {
+    canvasFrameRef.current?.contentWindow?.postMessage(
+      { type: "kenfutwork:workspace-activity", active },
+      window.location.origin,
+    );
+  }, [active]);
+  useEffect(sendCanvasActivity, [sendCanvasActivity]);
+  const projects = useDesignProjects(accessToken, mode, canvasFrameRef);
   const composer = useDesignComposer();
   const { sidebarWidth, startSidebarResize } = useSidebarWidth();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const desktop = useMemo(() => Boolean(createMacDesktopChrome()), []);
   const [canvasPrompt, setCanvasPrompt] = useState<string | null>(null);
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
-  const [pluginsOpen, setPluginsOpen] = useState(false);
   /**
    * Flow 子视图：`canvas` = 工作流画布（默认主界面）；`engine` = 「引擎」信息页
    * （状态 / 承载路径 / 地址 / 栈容器事实）。只被用户点侧栏导航切换，不被对话框顶掉
@@ -55,8 +70,6 @@ export function CanvasWorkbench({
     install: runEngineInstall,
     stop: runEngineStop,
   } = useFlowEngineInstall();
-  const [skillsOpen, setSkillsOpen] = useState(false);
-  const [mcpOpen, setMcpOpen] = useState(false);
   const { selectedProject } = projects;
   const surface = resolveWorkbenchSurface({
     mode,
@@ -67,48 +80,36 @@ export function CanvasWorkbench({
     installDesktopExternalLinks();
   }, []);
   useEffect(() => {
-    if (mode === "flow" && flowEntry && !flowEntry.available)
+    if (active && mode === "flow" && flowEntry && !flowEntry.available)
       onModeChange("design");
-  }, [mode, flowEntry, onModeChange]);
-  const handlePluginUse = useCallback(
-    (name: string) => {
-      setPluginsOpen(false);
-      if (name === "mcp") return setMcpOpen(true);
-      if (name === "skills") return setSkillsOpen(true);
-      if (name === "canvas") return onModeChange("design");
-      setSettingsTab(
-        name === "model-providers"
-          ? "providers"
-          : name === "search"
-            ? "browser"
-            : "pluginPanels",
-      );
-    },
-    [onModeChange],
-  );
+  }, [mode, flowEntry, onModeChange, active]);
   if (mode === "flow" && !flowEntry?.available) return null;
 
   return (
     <div
-      className="flex h-screen bg-background text-foreground"
+      className={`relative flex h-screen bg-background text-foreground${desktop ? " pt-14" : ""}`}
       style={
         {
           "--workbench-sidebar": `${sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : sidebarWidth}px`,
         } as React.CSSProperties
       }
     >
+      <DesktopWorkbenchTitlebar
+        isSidebarVisible={!sidebarCollapsed}
+        onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
+      />
       <CanvasSidebar
         {...projects}
         mode={mode}
+        desktopTitlebar={desktop}
+        active={active}
         switchMode={onModeChange}
         sidebarWidth={sidebarWidth}
         sidebarCollapsed={sidebarCollapsed}
         setSidebarCollapsed={setSidebarCollapsed}
         startSidebarResize={startSidebarResize}
         setSettingsTab={setSettingsTab}
-        setPluginsOpen={setPluginsOpen}
-        setSkillsOpen={setSkillsOpen}
-        setMcpOpen={setMcpOpen}
+        onOpenManagement={onOpenManagement}
         flowEntry={flowEntry}
         flowFrameRef={flowFrameRef}
         flowView={flowView}
@@ -127,10 +128,15 @@ export function CanvasWorkbench({
             <FlowCanvasFrame
               ref={flowFrameRef}
               frontendUrl={flowEntry.frontendUrl}
+              active={active}
             />
           )
         ) : surface === "canvas" ? (
           <iframe
+            ref={canvasFrameRef}
+            onLoad={sendCanvasActivity}
+            inert={!active}
+            tabIndex={active ? 0 : -1}
             key={`${selectedProject?.primaryCanvas.id}:${canvasPrompt ?? ""}`}
             src={`/canvas?id=${selectedProject?.primaryCanvas.id}${canvasPrompt ? `&prompt=${encodeURIComponent(canvasPrompt)}` : ""}`}
             title={`${selectedProject?.name ?? ""} 画布`}
@@ -148,9 +154,9 @@ export function CanvasWorkbench({
           />
         )}
       </main>
-      <FullAccessDialog composer={composer} />
+      <FullAccessDialog composer={composer} active={active} />
       <SettingsModal
-        open={settingsTab !== null}
+        open={active && settingsTab !== null}
         initialTab={settingsTab === null ? undefined : settingsTab}
         onClose={() => setSettingsTab(null)}
         accessToken={accessToken}
@@ -158,31 +164,6 @@ export function CanvasWorkbench({
         conversationCount={0}
         key={mode}
       />
-      {pluginsOpen ? (
-        <PluginMarketModal
-          open={pluginsOpen}
-          onUse={handlePluginUse}
-          onClose={() => setPluginsOpen(false)}
-          accessToken={accessToken}
-          canvasId={selectedProject?.primaryCanvas?.id ?? null}
-          onPluginsChanged={refreshFlowEntry}
-        />
-      ) : null}
-      {skillsOpen ? (
-        <SkillsModal
-          open={skillsOpen}
-          onClose={() => setSkillsOpen(false)}
-          accessToken={accessToken}
-          canvasId={selectedProject?.primaryCanvas?.id ?? null}
-        />
-      ) : null}
-      {mcpOpen ? (
-        <McpModal
-          open={mcpOpen}
-          onClose={() => setMcpOpen(false)}
-          accessToken={accessToken}
-        />
-      ) : null}
     </div>
   );
 }

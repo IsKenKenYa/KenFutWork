@@ -16,6 +16,7 @@ import { pathToFileURL } from "node:url";
 
 import {
   type CompatReport,
+  createPluginIconResourceReference,
   type InstalledPlugin,
   installedPluginSchema,
   PLUGIN_UI_SLOTS,
@@ -35,7 +36,10 @@ import {
   loadCompatPlugin,
 } from "./compat-context.js";
 import { validateBundleFiles } from "./compat-validator.js";
-import { describeBundleFiles } from "./package-description.js";
+import {
+  describeBundleFiles,
+  readBundleSkills,
+} from "./package-description.js";
 import {
   exportPluginBundle,
   type PluginExportSpec,
@@ -170,6 +174,16 @@ export interface PluginRouteDispatchResult {
 }
 
 export interface PluginRegistryService {
+  /** 已安装包技能与真实启用态；读取不依赖Project，不包含未安装发行包。 */
+  readSkillPackages(mode?: "code" | "design"): Promise<
+    Array<{
+      pluginId: string;
+      pluginName: string;
+      enabled: boolean;
+      version: string;
+      skills: ReturnType<typeof readBundleSkills>;
+    }>
+  >;
   list(): Promise<PluginMarketEntry[]>;
   /** 机器包库存读面；可安装bundle与profile feature分开，安装态仍由本registry持有。 */
   readPackageInventory(): Promise<{
@@ -432,7 +446,10 @@ export function createPluginRegistryService(
   const pluginRuntimeRoot = path.join(tmpdir(), "kenfutwork-plugin-runtime");
 
   function bundleRuntimeDirOf(id: string, installedAt: string): string {
-    return path.join(pluginRuntimeRoot, `${id}-${encodeURIComponent(installedAt)}`);
+    return path.join(
+      pluginRuntimeRoot,
+      `${id}-${encodeURIComponent(installedAt)}`,
+    );
   }
 
   async function snapshotBundleForImport(
@@ -689,7 +706,64 @@ export function createPluginRegistryService(
     return { installed: record, report };
   }
 
+  const readPackageFiles = async (id: string) => {
+    const state = await readState();
+    const installed = state.installed.find((entry) => entry.id === id);
+    if (installed) {
+      const directory = bundleDirOf(id);
+      const relative = path.relative(deps.pluginsDir, directory);
+      if (
+        relative.startsWith("..") ||
+        path.isAbsolute(relative) ||
+        !(await lstat(directory)).isDirectory()
+      )
+        throw new PluginRegistryError("插件包目录无效。", "invalid_request");
+      return {
+        files: (await fetchBundleFiles(directory)).files,
+        manifest: installed.manifest,
+      };
+    }
+    const bundled = bundledBundles.find((entry) => entry.id === id);
+    if (!bundled)
+      throw new PluginRegistryError("插件包不存在。", "plugin_not_found");
+    return { files: bundled.files, manifest: bundled.manifest };
+  };
+
   const service: PluginRegistryService = {
+    async readSkillPackages(mode) {
+      const before = await readState();
+      const packages = await Promise.all(
+        before.installed
+          .filter(
+            (record) =>
+              !mode ||
+              !record.manifest.scope ||
+              record.manifest.scope === "shared" ||
+              record.manifest.scope === mode,
+          )
+          .map(async (record) => ({
+            record,
+            skills: readBundleSkills((await readPackageFiles(record.id)).files),
+          })),
+      );
+      const after = await readState();
+      return packages.flatMap(({ record, skills }) => {
+        const current = after.installed.find(
+          (item) =>
+            item.id === record.id && item.installedAt === record.installedAt,
+        );
+        if (!current) return [];
+        return [
+          {
+            pluginId: current.id,
+            pluginName: current.name,
+            enabled: current.enabled,
+            version: current.manifest.version,
+            skills,
+          },
+        ];
+      });
+    },
     async readPackageInventory() {
       const state = await readState();
       return {
@@ -707,24 +781,8 @@ export function createPluginRegistryService(
       };
     },
     async readPackageDescription(id) {
-      const state = await readState();
-      const installed = state.installed.find((entry) => entry.id === id);
-      if (installed) {
-        const directory = bundleDirOf(id);
-        const relative = path.relative(deps.pluginsDir, directory);
-        if (
-          relative.startsWith("..") ||
-          path.isAbsolute(relative) ||
-          !(await lstat(directory)).isDirectory()
-        )
-          throw new PluginRegistryError("插件包目录无效。", "invalid_request");
-        const { files } = await fetchBundleFiles(directory);
-        return describeBundleFiles(files, installed.manifest);
-      }
-      const bundled = bundledBundles.find((entry) => entry.id === id);
-      if (!bundled)
-        throw new PluginRegistryError("插件包不存在。", "plugin_not_found");
-      return describeBundleFiles(bundled.files, bundled.manifest);
+      const { files, manifest } = await readPackageFiles(id);
+      return describeBundleFiles(files, manifest);
     },
     async list() {
       const state = await readState();
@@ -740,6 +798,8 @@ export function createPluginRegistryService(
         category: entry.category ?? null,
         system: SYSTEM_PLUGIN_NAMES.has(entry.name),
         installed: true,
+        enabled: true,
+        scope: null,
         // 系统插件不带 UI 入口（它们本来就有专门的界面）
         ui: [],
       }));
@@ -756,9 +816,25 @@ export function createPluginRegistryService(
           installability: record.report.compatible ? "verified" : "failed",
           category: record.manifest.category ?? null,
           system: false,
-          installed: record.enabled,
+          installed: true,
+          enabled: record.enabled,
+          scope: record.manifest.scope,
           // 停用即收回入口（侧栏不该出现点不开的插件）
-          ui: record.enabled ? (record.manifest.ui ?? []) : [],
+          ui: record.enabled
+            ? [
+                ...new Map([
+                  ...record.manifest.ui.map(
+                    (entry) => [entry.id, entry] as const,
+                  ),
+                  ...contributions.ui
+                    .filter((entry) => entry.pluginId === record.id)
+                    .map(
+                      ({ pluginId: _pluginId, ...entry }) =>
+                        [entry.id, entry] as const,
+                    ),
+                ]).values(),
+              ]
+            : [],
         });
       }
 
@@ -778,7 +854,9 @@ export function createPluginRegistryService(
           category: bundle.manifest.category ?? null,
           system: false,
           installed: false,
-          ui: bundle.manifest.ui ?? [],
+          enabled: false,
+          scope: bundle.manifest.scope,
+          ui: [],
         });
       }
       return entries;
@@ -883,7 +961,24 @@ export function createPluginRegistryService(
           contentType: contentTypeOf(normalized),
         };
       }
-      if (!record.enabled || record.manifest.assets !== true) {
+      const requestedIcon = createPluginIconResourceReference(
+        pluginId,
+        `assets/${normalized}`,
+      );
+      const declaredIcon =
+        requestedIcon &&
+        contentTypeOf(normalized).startsWith("image/") &&
+        record.manifest.ui.some(
+          (entry) =>
+            entry.icon &&
+            createPluginIconResourceReference(pluginId, entry.icon) ===
+              requestedIcon,
+        );
+      // 停用收回运行面板；已安装卡片的声明图标仍是只读元信息。
+      if (
+        record.manifest.assets !== true ||
+        (!record.enabled && !declaredIcon)
+      ) {
         return undefined;
       }
       const bundleDir = bundleDirOf(pluginId);

@@ -3,6 +3,7 @@ import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { ChatGenerationChunk, ChatResult } from "@langchain/core/outputs";
 import { ChatOpenAICompletions, ChatOpenAIResponses } from "@langchain/openai";
+import type OpenAI from "openai";
 
 import { OpenAIImageProvider } from "../../generation/providers/openai-image.js";
 import type { ImageProvider } from "../../generation/types.js";
@@ -36,6 +37,18 @@ class InstanceCompletionsModel extends ChatOpenAICompletions {
     return mergeInvocationParameters(
       super.invocationParams(options, extra),
       this.requestBody,
+    );
+  }
+  protected override _convertCompletionsDeltaToBaseMessageChunk(
+    delta: Record<string, unknown>,
+    rawResponse: OpenAI.Chat.Completions.ChatCompletionChunk,
+    defaultRole?: OpenAI.Chat.ChatCompletionRole,
+  ) {
+    // 兼容流可能先发空delta或省略role；首帧必须仍是AI chunk，否则后续工具分片会被吞掉。
+    return super._convertCompletionsDeltaToBaseMessageChunk(
+      delta,
+      rawResponse,
+      defaultRole ?? "assistant",
     );
   }
 }

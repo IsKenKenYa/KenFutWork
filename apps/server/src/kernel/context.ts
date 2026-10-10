@@ -200,10 +200,20 @@ export class ToolRegistryImpl implements ToolRegistry {
     const approval = execCtx.codeApproval;
     const permissions = handle ? this.permissions?.() : undefined;
     const planControl = tool.planControl !== undefined;
-    if (planControl && (!handle || tool.scope !== "code" || !allowsPlanControl({
-      role: handle.role, access: tool.access, planControl: tool.planControl,
-    })))
-      throw new ToolDeniedError(tool.name, "规划控制必须由主Code Task独立声明，不能混合资源访问效果。");
+    if (
+      planControl &&
+      (!handle ||
+        tool.scope !== "code" ||
+        !allowsPlanControl({
+          role: handle.role,
+          access: tool.access,
+          planControl: tool.planControl,
+        }))
+    )
+      throw new ToolDeniedError(
+        tool.name,
+        "规划控制必须由主Code Task独立声明，不能混合资源访问效果。",
+      );
     const normalized = execCtx.scopeHandle
       ? ((tool.zodSchema ?? z.fromJSONSchema(tool.parameters)).parse(
           args,
@@ -248,9 +258,15 @@ export class ToolRegistryImpl implements ToolRegistry {
         );
       }
       const policy = await approval.resolve();
-      if (tool.planControl === "exit" &&
-        (policy.planEnabled !== true || !Number.isSafeInteger(policy.planningEpoch)))
-        throw new ToolDeniedError(tool.name, "退出规划要求当前Task持久规划仍开启。");
+      if (
+        tool.planControl === "exit" &&
+        (policy.planEnabled !== true ||
+          !Number.isSafeInteger(policy.planningEpoch))
+      )
+        throw new ToolDeniedError(
+          tool.name,
+          "退出规划要求当前Task持久规划仍开启。",
+        );
       if (policy.scopeGeneration !== scope.generation)
         throw new ToolDeniedError(tool.name, "工具调用的授权代际已失效。");
       invocation = {
@@ -270,7 +286,9 @@ export class ToolRegistryImpl implements ToolRegistry {
         displayArgs: publicToolArguments(tool, normalized),
         access: tool.access,
         planControl: tool.planControl,
-        ...(tool.planControl === "exit" ? { planningEpoch: policy.planningEpoch } : {}),
+        ...(tool.planControl === "exit"
+          ? { planningEpoch: policy.planningEpoch }
+          : {}),
         readonlyExecution: tool.readonlyExecution,
         signal: execCtx.signal,
         ...(execCtx.threadId ? { threadId: execCtx.threadId } : {}),
@@ -292,9 +310,15 @@ export class ToolRegistryImpl implements ToolRegistry {
     if (invocation && handle && approval && permissions) {
       await handle.resolvePath(".", "read");
       const current = await approval.resolve();
-      if (invocation.planControl === "exit" &&
-        (current.planEnabled !== true || current.planningEpoch !== invocation.planningEpoch))
-        throw new ToolDeniedError(tool.name, "等待批准期间规划代际已改变，原批准不能退出新规划。");
+      if (
+        invocation.planControl === "exit" &&
+        (current.planEnabled !== true ||
+          current.planningEpoch !== invocation.planningEpoch)
+      )
+        throw new ToolDeniedError(
+          tool.name,
+          "等待批准期间规划代际已改变，原批准不能退出新规划。",
+        );
       if (
         current.scopeGeneration !== invocation.scopeGeneration ||
         current.branchGeneration !== invocation.branchGeneration

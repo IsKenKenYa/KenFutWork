@@ -526,7 +526,51 @@ export type CuaOsSupport =
  * 比如 native dialog、窗口生命周期控制等。
  * 业务服务（文件、终端、凭据等）走 IServiceAccessor 的 RPC 通道。
  */
+export interface HostPluginSidebarEntry {
+  id: string;
+  pluginId: string;
+  entryId: string;
+  title: string;
+  icon: string | null;
+}
+
+export type HostWorkbenchMode = "code" | "design" | "flow";
+export interface HostWorkbenchNavigation {
+  getSnapshot(): { mode: HostWorkbenchMode; availableModes: readonly HostWorkbenchMode[] };
+  subscribe(listener: () => void): () => void;
+  open(mode: HostWorkbenchMode): void;
+}
+
 export interface IPlatformService {
+  /** 宿主模式导航；运行和原会话仍留在各自文档。 */
+  workbenchNavigation?: HostWorkbenchNavigation;
+  /** 宿主独立管理文档；未声明的平台保留原窗口导航。 */
+  openSettingsDocument?: () => void;
+  openPluginStoreDocument?: (target: { pluginId?: string; intent?: "add-marketplace"; returnScopeKey?: string }) => void;
+  /** 实例管理文档不控制工作区模式；模式由宿主导航持有。 */
+  supportsInterfaceModeSettings?: boolean;
+  /** 宿主原市场接线状态；来源安装与市场源管理是独立能力。 */
+  pluginManagementCapabilities?: { sourceInstall: boolean; marketplaceSources: boolean; instanceScope?: boolean };
+  /** 外部Agent扫描/同步的实际支持态；不将安装包伪装文件目录。 */
+  supportsExternalAgentSettingsSync?: boolean;
+  /** 宿主已接通的原设置能力；不将数据库记录视为目录或符号链接。 */
+  skillsSettingsCapabilities?: { databaseRecords: boolean };
+  mcpSettingsCapabilities?: {
+    databaseRecords: boolean;
+    projectScope: boolean;
+    oauth: boolean;
+    httpHeaders: boolean;
+    serverParameters: boolean;
+    sse: boolean;
+  };
+  /** 宿主的插件入口；库存仍由既有插件服务持有，面板由宿主打开。 */
+  pluginSidebar?: {
+    read(): Promise<HostPluginSidebarEntry[]>;
+    subscribe(handler: () => void): () => void;
+    open(entry: HostPluginSidebarEntry): void;
+  };
+  /** 宿主声明的包资源经现有认证取回；结果是当前文档拥有的图片引用。 */
+  resolvePluginIcon?(resource: string): Promise<string | undefined>;
   /** 宿主是否提供 ZCode 云账户/套餐服务；未声明时保持原平台行为。 */
   supportsCloudAccounts?: boolean;
 

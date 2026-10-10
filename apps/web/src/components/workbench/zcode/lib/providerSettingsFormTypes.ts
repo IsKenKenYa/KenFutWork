@@ -1,4 +1,5 @@
 import { isApiKeyAccess } from "@zcode/provider";
+import type { ProviderInstanceModel, ProviderInstanceResponse, ProviderProtocol } from "@kenfutwork/shared";
 import type {
   ConfigValidationIssue,
   AccountProviderState,
@@ -13,6 +14,10 @@ export interface ProviderSettingsFormProvider extends Pick<
   "providerName" | "templateId"
 > {
   providerId: string;
+  /** 宿主的真实协议与模型定义；生成用途不经过聊天配置解释。 */
+  native?: ProviderInstanceResponse | undefined;
+  nativeProtocolUpdate?: ProviderProtocol;
+  nativeModelUpdate?: { originalModelId?: string; model: ProviderInstanceModel };
   /** 仅本次显式改名的补丁；其他编辑不得把继承名称物化成个人配置。 */
   providerNameUpdate?: string | null;
   /** 仅本次显式开关的外层补丁；普通字段编辑不复制继承启停值。 */
@@ -34,6 +39,9 @@ export interface ProviderSettingsFormProvider extends Pick<
 
 /** 设置页面在一次编辑会话中使用的 Model 状态。 */
 export interface ProviderSettingsFormModel {
+  /** 创建草稿固定打开时的供应商修订。 */
+  providerRevision?: number | undefined;
+  native?: ProviderInstanceModel | undefined;
   kind: "candidate";
   modelId: string;
   builtin: boolean;

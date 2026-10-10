@@ -1,10 +1,20 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { PluginPanelButtons } from "../src/lib/plugin-panels";
+import {
+  PLUGIN_INVENTORY_CHANGED_EVENT,
+  PluginPanelButtons,
+} from "../src/lib/plugin-panels";
 
 /**
  * 设置 → 插件面板 的空态（回归）。
@@ -37,6 +47,116 @@ afterEach(() => {
 });
 
 describe("插件面板空态", () => {
+  it.each(["canvas", "conversation"])(
+    "Design的%s槽只显示Design及共享插件",
+    async (slot) => {
+      stubPlugins(
+        ["code", "design", "shared"].map((scope) => ({
+          id: `local__${scope}`,
+          installed: true,
+          enabled: true,
+          scope,
+          ui: [
+            {
+              id: "entry",
+              title: `${scope}入口`,
+              slot,
+              url: "panel",
+              icon: null,
+            },
+          ],
+        })),
+      );
+      render(
+        <PluginPanelButtons
+          accessToken={null}
+          slot={slot}
+          mode="design"
+          renderButton={(panel) => (
+            <button type="button" key={panel.id}>
+              {panel.title}
+            </button>
+          )}
+        />,
+      );
+      await screen.findByRole("button", { name: "design入口" });
+      expect(screen.getByRole("button", { name: "shared入口" })).not.toBeNull();
+      expect(screen.queryByRole("button", { name: "code入口" })).toBeNull();
+    },
+  );
+
+  it("读取失败显示真实错误，不伪装没有面板", async () => {
+    vi.stubGlobal("fetch", async () =>
+      Response.json({ error: { message: "插件服务不可用" } }, { status: 503 }),
+    );
+    render(
+      <PluginPanelButtons
+        accessToken={null}
+        slot="settings"
+        emptyLabel="没有面板"
+        renderButton={() => null}
+      />,
+    );
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "插件服务不可用",
+    );
+    expect(screen.queryByText("没有面板")).toBeNull();
+  });
+
+  it("目录刷新收回停用面板，旧读取晚到不能恢复已删除入口", async () => {
+    const plugin = {
+      id: "local__devices",
+      installed: true,
+      enabled: true,
+      scope: "shared",
+      ui: [
+        {
+          id: "panel",
+          title: "米家",
+          slot: "sidebar",
+          url: "panel",
+          icon: null,
+        },
+      ],
+    };
+    let reads = 0;
+    let finishOld: ((response: Response) => void) | undefined;
+    vi.stubGlobal("fetch", async () => {
+      reads++;
+      if (reads === 2)
+        return new Promise<Response>((resolve) => {
+          finishOld = resolve;
+        });
+      return Response.json({ plugins: reads === 1 ? [plugin] : [] });
+    });
+    render(
+      <PluginPanelButtons
+        accessToken={null}
+        slot="sidebar"
+        mode="design"
+        renderButton={(panel, open) => (
+          <button key={panel.id} type="button" onClick={open}>
+            {panel.title}
+          </button>
+        )}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "米家" }));
+    await screen.findByTitle("米家");
+    fireEvent(window, new Event(PLUGIN_INVENTORY_CHANGED_EVENT));
+    fireEvent(window, new Event(PLUGIN_INVENTORY_CHANGED_EVENT));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "米家" })).toBeNull(),
+    );
+    await waitFor(() => expect(screen.queryByTitle("米家")).toBeNull());
+    if (!finishOld) throw new Error("未建立延迟目录请求");
+    await act(async () => {
+      finishOld?.(Response.json({ plugins: [plugin] }));
+    });
+    await waitFor(() => expect(reads).toBe(3));
+    expect(screen.queryByRole("button", { name: "米家" })).toBeNull();
+  });
+
   it("列表页（传 emptyLabel）：没有面板时明说，不留白板", async () => {
     stubPlugins([]);
     render(
@@ -71,6 +191,7 @@ describe("插件面板空态", () => {
       {
         id: "local__demo",
         installed: true,
+        enabled: true,
         ui: [{ id: "panel", title: "演示面板", slot: "settings", url: "p" }],
       },
     ]);
@@ -95,6 +216,7 @@ describe("插件面板空态", () => {
       {
         id: "owner__repo",
         installed: false,
+        enabled: false,
         ui: [{ id: "panel", title: "未装面板", slot: "settings", url: "p" }],
       },
     ]);
@@ -121,6 +243,7 @@ describe("插件面板空态", () => {
       {
         id: "local__demo",
         installed: true,
+        enabled: true,
         ui: [{ id: "panel", title: "侧栏面板", slot: "sidebar", url: "p" }],
       },
     ]);

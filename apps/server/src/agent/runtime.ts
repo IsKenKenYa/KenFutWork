@@ -58,6 +58,7 @@ import type {
   ProcessLimits,
   ProcessSandbox,
 } from "../features/process-sandbox/types.js";
+import { resolveConfiguredCommandPrompt } from "../features/settings/command-input.js";
 import { hooksFor, runHooks } from "../features/settings/hooks.js";
 import { createScopedHookCommand } from "../features/settings/scoped-hook-command.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
@@ -71,6 +72,7 @@ import type {
   AvailableModel,
   AvailableVideoModel,
 } from "../generation/types.js";
+import { promptExecutionContext } from "../kernel/prompt-execution.js";
 import { publicToolArguments } from "../kernel/tool-arguments.js";
 import type {
   PreStepPayload,
@@ -79,7 +81,6 @@ import type {
   ToolExecutionContext,
   ToolRegistry,
 } from "../kernel/types.js";
-import { promptExecutionContext } from "../kernel/prompt-execution.js";
 import type { ModelInvocationSnapshot } from "../providers/types.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
@@ -111,16 +112,16 @@ import {
   MODEL_USAGE_OWNER_METADATA,
   type ModelCallUsage,
 } from "./model-call-usage.js";
+import {
+  createRunModelControl,
+  resolveInstanceModelExecution,
+} from "./model-execution.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { measureTools } from "./prompt-composition.js";
 import type {
   AgentRunExtension,
   AgentRunModelControl,
 } from "./run-extension.js";
-import {
-  createRunModelControl,
-  resolveInstanceModelExecution,
-} from "./model-execution.js";
 import { withBoundWorkDir } from "./sandbox-dir.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
 import { formatTaskNotificationsXml } from "./task-notifications.js";
@@ -529,12 +530,12 @@ type CreateAgentRuntimeOptions = {
       scope: ExecutionScopeHandle;
       actor: LocalActor;
       runId: string;
-    }): Promise<TurnBoundaryCapture | void>;
+    }): Promise<TurnBoundaryCapture | undefined>;
     afterTurn(ctx: {
       scope: ExecutionScopeHandle;
       actor: LocalActor;
       runId: string;
-    }): Promise<TurnBoundaryCapture | void>;
+    }): Promise<TurnBoundaryCapture | undefined>;
   };
   now?: () => string;
   runIdFactory?: () => string;
@@ -729,7 +730,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         throw new Error("当前Agent未装配上下文分支能力。");
       await options.contextBranchProvider.discard(input);
     },
-    async releaseContextBranch(input: AgentContextBranchTargetInput): Promise<void> {
+    async releaseContextBranch(
+      input: AgentContextBranchTargetInput,
+    ): Promise<void> {
       if (!options.contextBranchProvider)
         throw new Error("当前Agent未装配上下文分支能力。");
       await options.contextBranchProvider.release(input);
@@ -1311,27 +1314,30 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       // Code uses the trusted Task workspace; only Design stages a Store route.
       let instanceSkills: InstanceSkillEntry[] = [];
-      if (
-        run.scopeHandle
-          ? options.instanceSkillsByInstanceLoader
-          : run.canvasId && options.instanceSkillsLoader
-      ) {
-        try {
-          instanceSkills = run.scopeHandle
-            ? await options.instanceSkillsByInstanceLoader!(
-                run.actor.instanceId,
-              )
-            : await options.instanceSkillsLoader!(
-                run.actor.instanceId,
-                run.canvasId!,
-              );
+      try {
+        if (run.scopeHandle) {
+          const { instanceSkillsByInstanceLoader } = options;
+          if (instanceSkillsByInstanceLoader) {
+            instanceSkills = await instanceSkillsByInstanceLoader(
+              run.actor.instanceId,
+            );
+            rlog.lap("workspace_skills_loaded", {
+              count: instanceSkills.length,
+            });
+          }
+        } else if (run.canvasId && options.instanceSkillsLoader) {
+          const { instanceSkillsLoader } = options;
+          instanceSkills = await instanceSkillsLoader(
+            run.actor.instanceId,
+            run.canvasId,
+          );
           rlog.lap("workspace_skills_loaded", {
             count: instanceSkills.length,
           });
-        } catch (err) {
-          // Non-fatal: agent runs without workspace skills
-          console.warn("[runtime] Failed to load workspace skills:", err);
         }
+      } catch (err) {
+        // Non-fatal: agent runs without workspace skills
+        console.warn("[runtime] Failed to load workspace skills:", err);
       }
 
       // Create backend — production uses StateBackend (no local shell).
@@ -1370,6 +1376,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           AGENT_GOVERNANCE_DEFAULTS.compactFallbackKeepMessages,
       };
       let codeInputLimits: FileLimits = AGENT_GOVERNANCE_DEFAULTS;
+      let executionPrompt = run.prompt;
       let modelCapabilities = { image: false, pdf: false };
       let autoCompact: CompactionPlan | undefined;
       let manualCompactPlan: CompactionPlan | undefined;
@@ -1407,14 +1414,36 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       let taskWorkContext: TaskWorkContext | undefined;
       let leaveForeground: (() => Promise<void>) | undefined;
       let agent: KenFutWorkAgent | undefined;
+      /** 捕获被跳过的原因每个 Run 只报一次，避免逐轮刷屏。 */
+      let captureSkipReported = false;
       const captureBoundary = async (phase: AgentTurnBoundaryPhase) => {
-        if (run.scopeHandle?.role !== "main") return;
+        if (run.scopeHandle?.role !== "main") {
+          // 这条早退同样是静默的：非 main 角色（子代理/worker）不产检查点属于设计，
+          // 但「主 Run 的 scopeHandle 角色不是 main」就是装配错误，外部只会看到
+          // checkpoints 恒空。所以第一次遇到时把角色与 Run 说出来。
+          if (!captureSkipReported) {
+            captureSkipReported = true;
+            console.warn(
+              `[turn-boundary] 跳过文件边界捕获：scopeHandle 角色是 ${run.scopeHandle?.role ?? "（无 scopeHandle）"} 而非 main，run=${runId}`,
+            );
+          }
+          return;
+        }
         const scope = run.scopeHandle;
         const actor = taskWorkContext?.actor;
         const hook =
           phase === "pre"
             ? options.checkpointHooks?.beforeTurn
             : options.checkpointHooks?.afterTurn;
+        // 缺 hook 或缺 actor 时 captureFiles 是 undefined，边界会被记成
+        // not_supported——不抛错、不打日志，表现就是「checkpoints 永远空」。
+        // 打包态冒烟曾卡在这里 300s 无任何线索，所以这条必须说出来（每个 Run 只说一次）。
+        if ((!hook || !actor) && !captureSkipReported) {
+          captureSkipReported = true;
+          console.warn(
+            `[turn-boundary] 文件边界捕获被跳过：${!hook ? "checkpointHooks 未装配" : "TaskWork actor 缺失"}——本 Run 不会产出 shadow checkpoint`,
+          );
+        }
         const facts = await captureAgentTurnBoundaryFacts({
           contextHistory: agent?.contextHistory,
           threadId: run.threadId,
@@ -1622,6 +1651,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               .getInstanceSettings(run.actor, toolInstanceId)
               .catch(() => null);
             if (instanceSettings) codeInputLimits = instanceSettings;
+            if (
+              run.inputOrigin !== "backgroundResult" &&
+              run.inputOrigin !== "controlOperation" &&
+              (run.delegationDepth ?? 0) === 0
+            ) {
+              executionPrompt = resolveConfiguredCommandPrompt(
+                run.prompt,
+                instanceSettings?.commands,
+              );
+            }
             userRulesFragment = formatUserRulesFragment({
               userRules: instanceSettings?.userRules,
               ruleEntries: instanceSettings?.ruleEntries,
@@ -2255,7 +2294,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             if (!run.scopeHandle)
               throw new Error("Code附件输入缺少可信Task工作域。");
             let { text: enrichedPrompt } = buildUserMessage(
-              run.prompt,
+              executionPrompt,
               [],
               run.imageGenerationPreference,
               run.mentions,
@@ -2337,7 +2376,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
             // Build XML text tags for LLM to reference by assetId
             let { text: enrichedPrompt } = buildUserMessage(
-              run.prompt,
+              executionPrompt,
               attachments,
               run.imageGenerationPreference,
               run.mentions,
@@ -2359,7 +2398,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             });
           } else {
             let { text: enrichedPrompt } = buildUserMessage(
-              run.prompt,
+              executionPrompt,
               [],
               run.imageGenerationPreference,
               run.mentions,
@@ -2434,23 +2473,26 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 ? {
                     onUsage: (usage: ModelCallUsage) => {
                       const owner = usage.owner ?? run.usageMeta;
-                      return options.runUsage?.update(runId, usage.modelCallId, {
-                        inputTokens: usage.inputTokens,
-                        outputTokens: usage.outputTokens,
-                        provider: owner?.provider ?? "builtin",
-                        model: owner?.model ?? "unknown",
-                        ...(usage.cachedInputTokens === undefined
-                          ? {}
-                          : { cachedInputTokens: usage.cachedInputTokens }),
-                        ...(owner?.providerInstanceId
-                          ? {
-                              providerInstanceId:
-                                owner.providerInstanceId,
-                            }
-                          : {}),
-                        instanceId: usageActor.instanceId,
-                        accessClientId: usageActor.accessClientId,
-                      });
+                      return options.runUsage?.update(
+                        runId,
+                        usage.modelCallId,
+                        {
+                          inputTokens: usage.inputTokens,
+                          outputTokens: usage.outputTokens,
+                          provider: owner?.provider ?? "builtin",
+                          model: owner?.model ?? "unknown",
+                          ...(usage.cachedInputTokens === undefined
+                            ? {}
+                            : { cachedInputTokens: usage.cachedInputTokens }),
+                          ...(owner?.providerInstanceId
+                            ? {
+                                providerInstanceId: owner.providerInstanceId,
+                              }
+                            : {}),
+                          instanceId: usageActor.instanceId,
+                          accessClientId: usageActor.accessClientId,
+                        },
+                      );
                     },
                   }
                 : {}),

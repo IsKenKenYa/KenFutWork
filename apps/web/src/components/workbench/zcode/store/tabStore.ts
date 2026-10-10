@@ -246,7 +246,7 @@ interface StorageLike {
   setItem(key: string, value: string): void;
 }
 
-export function createTabStore(storage: StorageLike | null | undefined = undefined) {
+export function createTabStore(storage: StorageLike | null | undefined = undefined, options: { onOpenSettings?: () => void } = {}) {
   return create<TabStoreState>()((set, get) => ({
     tabs: [],
     activeTabId: null,
@@ -490,6 +490,10 @@ export function createTabStore(storage: StorageLike | null | undefined = undefin
     },
 
     openSettingsTab: () => {
+      if (options.onOpenSettings) {
+        options.onOpenSettings();
+        return;
+      }
       const existing = get().tabs.find(isSettingsTab);
       if (existing) {
         set({ activeTabId: existing.id });

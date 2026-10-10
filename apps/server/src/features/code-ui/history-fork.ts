@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import type { AgentContextHistoryReference } from "../../agent/context-history.js";
-import type { CodeUiOutputCopy, CodeUiOutputHistory } from "./output-history-types.js";
 import type { LocalActor } from "../local-instance/types.js";
 import type {
   CodeAttachmentHistoryCopy,
@@ -18,6 +17,11 @@ import {
   type CodeUiCompletedTurnView,
   createCodeUiConversation,
 } from "./conversation.js";
+import type { HistoryPreparationOwner } from "./history-preparation.js";
+import type {
+  CodeUiOutputCopy,
+  CodeUiOutputHistory,
+} from "./output-history-types.js";
 import {
   captureHistoryFileChanges,
   createCodeUiOwnedHistory,
@@ -35,7 +39,6 @@ import {
   type CodeUiSessionRecord,
 } from "./repository.js";
 import type { CodeUiService, CodeUiServiceDeps } from "./service.js";
-import type { HistoryPreparationOwner } from "./history-preparation.js";
 
 type Loaded = Awaited<ReturnType<CodeUiService["loadConversation"]>>;
 type Snapshot = protocol.ConversationSnapshot;
@@ -410,9 +413,14 @@ async function prepareFork(
   const id = randomUUID();
   const threadId = deps.threads.createThreadId();
   operation.preparationId = await deps.repository.preparations.begin({
-    instanceId: root.instance_id, projectId: root.project_id, sourceTaskId: root.id,
-    targetTaskId: id, targetThreadId: threadId, clientId: operation.envelope.clientId,
-    commandId: operation.envelope.commandId, ...deps.owner,
+    instanceId: root.instance_id,
+    projectId: root.project_id,
+    sourceTaskId: root.id,
+    targetTaskId: id,
+    targetThreadId: threadId,
+    clientId: operation.envelope.clientId,
+    commandId: operation.envelope.commandId,
+    ...deps.owner,
   });
   const preparationId = operation.preparationId;
   const { turns, turnIds, childFiles } = await collectForkHistory(
@@ -428,18 +436,35 @@ async function prepareFork(
     id,
     selected,
     turns,
-    path => deps.repository.preparations.planObject(root.instance_id, preparationId, { bucket: "code-attachments", path }),
+    (path) =>
+      deps.repository.preparations.planObject(root.instance_id, preparationId, {
+        bucket: "code-attachments",
+        path,
+      }),
   );
   const identity = childIdentityMap(id, selected.children, new Map(turnIds));
   const outputService = deps.outputs?.();
   if (outputService)
-    operation.outputs = await outputService.prepare(operation.actor, root, {
-      instanceId: root.instance_id,
-      projectId: root.project_id,
-      taskId: id,
-      childSessionIds: identity.sessions,
-    }, [...selected.rows, ...selected.children.flatMap(child => child.rows.window)],
-    path => deps.repository.preparations.planObject(root.instance_id, preparationId, { bucket: "task-output-history", path }));
+    operation.outputs = await outputService.prepare(
+      operation.actor,
+      root,
+      {
+        instanceId: root.instance_id,
+        projectId: root.project_id,
+        taskId: id,
+        childSessionIds: identity.sessions,
+      },
+      [
+        ...selected.rows,
+        ...selected.children.flatMap((child) => child.rows.window),
+      ],
+      (path) =>
+        deps.repository.preparations.planObject(
+          root.instance_id,
+          preparationId,
+          { bucket: "task-output-history", path },
+        ),
+    );
   const mapped = await deps.agentRuns.cloneContextHistoryBranch({
     sourceThreadId: post.threadId,
     targetThreadId: threadId,
@@ -496,7 +521,10 @@ async function prepareFork(
       attachments,
       { instanceId: root.instance_id, projectId: root.project_id },
       childFiles,
-      { identity, ...(operation.outputs ? { outputs: operation.outputs } : {}) },
+      {
+        identity,
+        ...(operation.outputs ? { outputs: operation.outputs } : {}),
+      },
     ),
     ...(attachmentCopy
       ? { publishArtifacts: (scoped) => attachmentCopy.publish(scoped) }
@@ -525,7 +553,11 @@ async function discardUnpublishedFork(
     }
   if (failures.length)
     throw new AggregateError(failures, "未发表分叉的私有资源未全部确认清理。");
-  if (operation.preparationId) await deps.repository.preparations.remove(operation.loaded.instanceId, operation.preparationId);
+  if (operation.preparationId)
+    await deps.repository.preparations.remove(
+      operation.loaded.instanceId,
+      operation.preparationId,
+    );
 }
 
 function decideFork(operation: ForkOperation, root: CodeUiSessionRecord) {
@@ -564,7 +596,11 @@ async function finishFork(
   operation.attachments?.release();
   operation.outputs?.release();
   await deps.agentRuns.releaseContextBranch(operation.clone);
-  if (operation.preparationId) await deps.repository.preparations.remove(operation.loaded.instanceId, operation.preparationId);
+  if (operation.preparationId)
+    await deps.repository.preparations.remove(
+      operation.loaded.instanceId,
+      operation.preparationId,
+    );
   try {
     await deps.refresh(
       operation.loaded.instanceId,
@@ -580,7 +616,11 @@ async function finishFork(
 export function createCodeUiHistoryFork(deps: Deps) {
   return {
     async recover() {
-      await deps.repository.preparations.recover(deps.owner, deps.agentRuns, deps.blob);
+      await deps.repository.preparations.recover(
+        deps.owner,
+        deps.agentRuns,
+        deps.blob,
+      );
     },
     async decorate(actor: LocalActor, loaded: Loaded, snapshot: Snapshot) {
       const available =

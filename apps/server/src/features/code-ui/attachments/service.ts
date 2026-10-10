@@ -200,7 +200,13 @@ export function createCodeAttachmentsService(
   }
   const service: CodeAttachmentsService = {
     initialize,
-    async prepareHistory(actor, sourceSessionId, target, attachments, planObject) {
+    async prepareHistory(
+      actor,
+      sourceSessionId,
+      target,
+      attachments,
+      planObject,
+    ) {
       const admittedBeforeRelease = releaseSerial;
       const identity = await session(actor, sourceSessionId);
       const assertOpen = () => {

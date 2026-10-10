@@ -173,8 +173,6 @@ async function fixture(
       listProviderPresets: () => [],
     },
     modelCatalog: { listCatalog: async () => [] },
-    skillRepository: { listInstanceSkills: async () => [] },
-    skillSettingsRepository: { setEnabled: async () => true },
     settings: {
       getInstanceSettings: async () =>
         instanceSettingsSchema.parse({
@@ -413,53 +411,6 @@ it("Window Controller真实宿主按Project与固定目录聚合，搜索旧Task
         stream.hello.connectionId,
       ),
     ).rejects.toMatchObject({ code: "command_conflict" });
-  } finally {
-    await stream.dispose();
-    await service.closeConnections();
-  }
-});
-
-it("原宿主Skills以真实Task/Project匹配qualified source身份，拒绝借同路径其它Project换绑", async () => {
-  const { actor, service, projects, pathA, pathB, firstId, secondId, taskId } =
-    await fixture();
-  projects[1]!.workDir = pathB;
-  const stream = await service.openConnection(
-    actor,
-    async () => {},
-    () => {},
-  );
-  try {
-    const call = (
-      workspacePath: string,
-      workspaceIdentity: string,
-      viewerScope: unknown,
-    ) =>
-      service.hostRpc(
-        actor,
-        "skills",
-        "list",
-        [{ workspacePath, workspaceIdentity, viewerScope }],
-        stream.hello.connectionId,
-      );
-    expect(
-      (
-        await call(pathA, JSON.stringify([secondId, pathA]), {
-          kind: "task",
-          taskId,
-        })
-      )?.result,
-    ).toMatchObject({ skills: [] });
-    expect(
-      (
-        await call(pathB, JSON.stringify([secondId, pathB]), {
-          kind: "project",
-          projectId: secondId,
-        })
-      )?.result,
-    ).toMatchObject({ skills: [] });
-    await expect(
-      call(pathA, JSON.stringify([firstId, pathA]), { kind: "task", taskId }),
-    ).rejects.toMatchObject({ code: "not_found" });
   } finally {
     await stream.dispose();
     await service.closeConnections();

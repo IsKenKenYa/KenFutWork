@@ -133,6 +133,7 @@ async function observeWithLaunch(
 }
 
 interface WindowBoundsResult {
+  app?: import("./ax-tree.js").AxAppRef;
   binding?: string;
   bounds?: [number, number, number, number] | null;
 }
@@ -330,7 +331,7 @@ win.actions.byName('AXRaise').perform(); JSON.stringify({ok:true});`,
         postEvents,
         hint:
           missing.length > 0
-            ? `缺少权限：${missing.join("、")}。在 系统设置 → 隐私与安全性 里为${devFormLabel()}授予后重试（截屏是否可用最终以内容为准）。`
+            ? `缺少权限：${missing.join("、")}。请在系统设置 → 隐私与安全性中手动批准运行KenFutWork的应用；桌面端可在「电脑控制」设置中查看授权路径，然后返回重试。`
             : "权限查询通过；请用实际观察和输入效果确认桌面能力。",
       };
     },
@@ -408,7 +409,7 @@ win.actions.byName('AXRaise').perform(); JSON.stringify({ok:true});`,
       const directory = await mkdtemp(join(tmpdir(), "kenfutwork-cu-"));
       try {
         if (context) await focus(appRef, context);
-        const metadata = appRef.displayId
+        const metadata: WindowBoundsResult = appRef.displayId
           ? { bounds: await geometry(appRef, context) }
           : await jxaJson<WindowBoundsResult>(
               buildWindowBoundsScript(appRef, context?.binding),
@@ -448,6 +449,7 @@ win.actions.byName('AXRaise').perform(); JSON.stringify({ok:true});`,
           });
         return {
           frameId: `frame-${++frameSeq}`,
+          ...(metadata.app ? { app: metadata.app } : {}),
           mimeType: "image/png",
           width: image.width,
           height: image.height,
@@ -599,10 +601,6 @@ win.actions.byName('AXRaise').perform(); JSON.stringify({ok:true});`,
       // A 档无常驻资源：租约与计数在 service 层释放；此处保持 no-op
     },
   };
-}
-
-function devFormLabel(): string {
-  return "运行KenFutWork的宿主应用（桌面端为KenFutWork，开发时通常为终端）";
 }
 
 /** 输入脚本：与观察**同一份遍历实现**定位元素（可缺省=当前焦点）→ set value 或剪贴板粘贴/keystroke。 */

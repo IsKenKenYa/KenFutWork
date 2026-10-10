@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { GenerationModelFields, parseGenerationModelDraft } from "@zui/host/GenerationModelFields.js";
 import type { ProviderSettingsFormModel } from "@zui/lib/providerSettingsFormTypes.js";
 import type { ModelConnectivityResult } from "@zcode/shared";
 import { Loader2Icon, Trash2, Unplug } from "lucide-react";
@@ -24,6 +25,7 @@ export function ModelRowInput({
   onCommit,
   onResolveDraft,
   settingsRevision = 0,
+  providerRevision,
   onDelete,
   onEnabledChange,
   onTest,
@@ -41,11 +43,16 @@ export function ModelRowInput({
     personalConfig: ProviderSettingsFormModel["personalConfig"],
   ) => Promise<ModelConfigResolution>;
   settingsRevision?: number;
+  providerRevision?: number | undefined;
   onDelete?: () => void;
   onEnabledChange?: (enabled: boolean) => void;
   onTest?: (model: string) => Promise<ModelConnectivityResult>;
 }) {
   const { intl, locale } = useZCodeIntl();
+  const generation = Boolean(model.native && model.native.capability !== "chat");
+  const [nativeDraft, setNativeDraft] = useState(model.native);
+  const nativeDraftRef = useRef(model.native);
+  const changeNativeDraft = (value: typeof model.native) => { nativeDraftRef.current = value; setNativeDraft(value); };
   const { showFeedback } = useProviderDetailFeedback();
   const [isTesting, setIsTesting] = useState(false);
   const [metadataDialogOpen, setMetadataDialogOpen] = useState(false);
@@ -57,7 +64,7 @@ export function ModelRowInput({
   const [editingModel, setEditingModel] = useState(model);
   const editor = useProviderModelDraft({
     model: editingModel,
-    open: metadataDialogOpen,
+    open: metadataDialogOpen && !generation,
     scopeKey: providerId,
     resolve: onResolveDraft,
   });
@@ -77,6 +84,11 @@ export function ModelRowInput({
     setDraftErrorField(null);
   };
   const commitDraft = async (): Promise<boolean> => {
+    if (generation && nativeDraftRef.current) {
+      const native = parseGenerationModelDraft(nativeDraftRef.current);
+      await onCommit({ ...model, native, modelId: native.id }, draftBasedOnRevision);
+      return true;
+    }
     const result = await editor.commit();
     if (result.status === "invalid") {
       setDraftErrorField(result.field);
@@ -95,13 +107,14 @@ export function ModelRowInput({
   }, [model]);
 
   const openMetadataDialog = useCallback(() => {
+    changeNativeDraft(model.native ? structuredClone(model.native) : undefined);
     setEditingModel(model);
     editor.reset(model);
     setDraftErrorField(null);
     setCommitErrorMessage(null);
-    setDraftBasedOnRevision(settingsRevision);
+    setDraftBasedOnRevision(generation ? (providerRevision ?? settingsRevision) : settingsRevision);
     setMetadataDialogOpen(true);
-  }, [model, settingsRevision]);
+  }, [model, settingsRevision, generation, providerRevision]);
 
   const handleMetadataDialogOpenChange = useCallback(
     (open: boolean) => {
@@ -231,7 +244,7 @@ export function ModelRowInput({
           id: `settings.modelProvider.modelMetadata.invalid.${draftErrorField}`,
         })
       : null);
-  const shouldShowTestButton = Boolean(onTest);
+  const shouldShowTestButton = !generation && Boolean(onTest);
   const testDisabled = !providerEnabled || isTesting || !draft.idValue.trim() || !onTest;
   const contextWindowLabel = formatModelContextWindowLabel(
     model.config.properties?.contextWindow ?? 0,
@@ -252,13 +265,13 @@ export function ModelRowInput({
           >
             {model.modelId}
           </span>
-          <span
+          {generation ? null : <span
             className="inline-flex h-5 max-w-20 shrink-0 items-center truncate rounded-md border border-border bg-surface px-1.5 font-mono text-ui-sm text-foreground-subtle"
             aria-label={contextWindowAccessibleLabel}
             title={contextWindowAccessibleLabel}
           >
             {contextWindowLabel}
-          </span>
+          </span>}
           {shouldShowModelVisionBadge(
             model.modelId,
             model.config.properties?.inputFormat?.supportsImage,
@@ -288,6 +301,7 @@ export function ModelRowInput({
           </Button>
         ) : null}
         <ProviderModelMetadataDialog
+          editorContent={generation && nativeDraft ? <GenerationModelFields model={nativeDraft} onChange={changeNativeDraft} /> : undefined}
           onRestore={() => {
             setDraftErrorField(null);
             setCommitErrorMessage(null);

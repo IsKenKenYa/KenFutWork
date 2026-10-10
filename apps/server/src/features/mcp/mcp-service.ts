@@ -52,6 +52,8 @@ export interface McpServerStatus {
 }
 
 export interface McpService {
+  /** 仅供已授权本机设置编辑器；普通目录仍使用listStatuses。 */
+  readSettingsConfigurations(): Promise<McpSettingsConfiguration[]>;
   computerUseConnections(): Promise<ComputerUseMcpConnection[]>;
   listStatuses(): Promise<McpServerStatus[]>;
   /** 启动期连接：环境变量 + 库内启用项。 */
@@ -63,6 +65,19 @@ export interface McpService {
   /** 手动重连（配置未变但连接掉线时用）；`idOrName` 允许环境变量条目按名称传入。 */
   reconnect(idOrName: string): Promise<McpServerStatus | null>;
   shutdown(): Promise<void>;
+}
+
+export interface McpSettingsConfiguration {
+  id: string | null;
+  name: string;
+  source: "env" | "managed";
+  enabled: boolean;
+  kind: "stdio" | "http";
+  command: string;
+  args: string[];
+  url: string | null;
+  env: Record<string, string>;
+  headers: Record<string, string>;
 }
 
 interface Connection {
@@ -137,7 +152,10 @@ export function createMcpService(options: {
             : undefined;
         try {
           await mcpClient.connect(
-            new StreamableHTTPClientTransport(url, transportOptions) as Parameters<Client["connect"]>[0],
+            new StreamableHTTPClientTransport(
+              url,
+              transportOptions,
+            ) as Parameters<Client["connect"]>[0],
             await requestOptions(),
           );
         } catch (streamableError) {
@@ -153,9 +171,14 @@ export function createMcpService(options: {
           }
         }
       } else {
-        await mcpClient.connect(new StdioClientTransport({
-          command: spec.command, args: spec.args, env: spec.env,
-        }), await requestOptions());
+        await mcpClient.connect(
+          new StdioClientTransport({
+            command: spec.command,
+            args: spec.args,
+            env: spec.env,
+          }),
+          await requestOptions(),
+        );
       }
       const client: McpClientLike = {
         listTools: async () => {
@@ -316,6 +339,21 @@ export function createMcpService(options: {
   }
 
   return {
+    async readSettingsConfigurations() {
+      ensureOpen();
+      return (await effectiveServers()).map((server) => ({
+        id: server.id,
+        name: server.name,
+        source: server.source,
+        enabled: server.enabled,
+        kind: server.kind,
+        command: server.command,
+        args: [...server.args],
+        url: server.url,
+        env: { ...server.env },
+        headers: { ...server.headers },
+      }));
+    },
     async computerUseConnections() {
       const statuses = await this.listStatuses();
       return [...connections].flatMap(([name, connection]) => {
@@ -400,7 +438,8 @@ export function createMcpService(options: {
       ensureOpen();
       const kind = rawInput.kind ?? "stdio";
       const input = {
-        ...rawInput, kind,
+        ...rawInput,
+        kind,
         command: kind === "http" ? "" : (rawInput.command ?? ""),
         url: kind === "http" ? (rawInput.url ?? null) : null,
         headers: kind === "http" ? (rawInput.headers ?? {}) : {},

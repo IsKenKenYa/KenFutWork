@@ -1,0 +1,78 @@
+name: CodeQL
+
+# 由「默认设置」改为「高级设置」的理由（都是实测）：
+#  - 默认设置自动探测出 6 门语言，其中 `Analyze (swift)` 恒红——全仓只有 1 个孤立
+#    `apps/server/src/features/computer-use/fixtures/desktop.swift`，没有 Xcode 工程，
+#    Autobuild 必挂；C# 同理只有 1 个 `windows-native.cs`（这次「成功」但零产出）。
+#  - 默认设置**不支持排除路径**，于是 100 条告警里 85 条是测试代码、5 条是 vendored 源码。
+#  扫描面收窄写在 .github/codeql/codeql-config.yml。
+# 启用本文件后要在设置里（或 API）关掉默认设置，否则两套并存、双份扫描双份红。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # 每天一次：CodeQL 规则更新后，老提交上的新问题也会被重新比对出来
+    - cron: 30 17 * * *
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # 这里不许引用 matrix：workflow 级 concurrency 拿不到 matrix 上下文，取到空值会让
+  # 四种语言的扫描任务互相取消（本想按语言分组）。整体按 ref 分组即可。
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: 90
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 第一方主体：2268 个 .ts + 825 个 .tsx
+          - language: javascript-typescript
+            runs_on: ubuntu-latest
+            build_mode: none
+          # computer-use 的 Linux 侧真产品代码（atspi.py / wayland-portal.py），无需构建
+          - language: python
+            runs_on: ubuntu-latest
+            build_mode: none
+          # 白送的收益：扫我们即将写好的 workflow 本身（表达式注入等）
+          - language: actions
+            runs_on: ubuntu-latest
+            build_mode: none
+          # 19 个第一方 .rs：换票（desktop_access.rs）、进程沙箱与并发控制。
+          # 官方文档：Rust 的提取按解释型语言处理，build-mode: none 即可，
+          # 不需要跑 cargo 构建（autobuild 只是白烧一次编译，还会因依赖树失败）。
+          - language: rust
+            runs_on: ubuntu-latest
+            build_mode: none
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@9f759ee644a3e7c15c1390abf49868036c00067b # v3.38.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build_mode }}
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@9f759ee644a3e7c15c1390abf49868036c00067b # v3.38.3
+        with:
+          category: /codeql:${{ matrix.language }}

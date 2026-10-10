@@ -299,7 +299,6 @@ export const agentSubagentListResponseSchema = z.object({
       description: z.string(),
     }),
   ),
-
 });
 
 export type AgentSubagentListResponse = z.infer<

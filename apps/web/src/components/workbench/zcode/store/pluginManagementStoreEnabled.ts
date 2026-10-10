@@ -1,7 +1,11 @@
 import type { IPluginManagementService } from "@zcode/services";
 import type { ZCodePluginScope } from "@zcode/shared";
 import { logger } from "@zui/logger.js";
-import { loadInto } from "@zui/store/pluginManagementStoreLoading.js";
+import {
+  invalidatePluginInventoryReads,
+  isCurrentPluginInventoryService,
+  loadInto,
+} from "@zui/store/pluginManagementStoreLoading.js";
 import type { PluginManagementState } from "@zui/store/pluginManagementStore.js";
 
 function toMessage(error: unknown): string {
@@ -30,7 +34,7 @@ export async function setPluginEnabledOptimistically(
   scope: ZCodePluginScope = "user",
 ): Promise<boolean> {
   const { workspacePath, workspaceIdentity, configScope } = get();
-  if (!workspacePath) return false;
+  if (workspacePath === null || !isCurrentPluginInventoryService(pluginService)) return false;
 
   const requestKey = buildToggleRequestKey({
     workspacePath,
@@ -47,6 +51,7 @@ export async function setPluginEnabledOptimistically(
       current.workspacePath === workspacePath &&
       current.workspaceIdentity === workspaceIdentity &&
       current.configScope === configScope &&
+      isCurrentPluginInventoryService(pluginService) &&
       current.togglingPluginId === pluginId
     );
   };
@@ -68,6 +73,7 @@ export async function setPluginEnabledOptimistically(
   });
 
   try {
+    invalidatePluginInventoryReads();
     const result = await pluginService.setPluginEnabled({
       workspacePath,
       ...(workspaceIdentity ? { workspaceIdentity } : {}),
@@ -81,28 +87,32 @@ export async function setPluginEnabledOptimistically(
         plugin.id === pluginId ? { ...plugin, ...result.plugin, enabled: result.enabled } : plugin,
       ),
     });
+    invalidatePluginInventoryReads();
     await loadInto(set, get, {
       workspacePath,
       workspaceIdentity,
       configScope,
       pluginService,
+      bypassCache: true,
     });
     return isCurrentRequest();
   } catch (error) {
-    // 启停失败时必须返回 false 并恢复 optimistic projection，避免
-    // 调用方继续刷新其它能力，或让界面把失败的切换误报成成功。
+    // 响应未知时读取权威库存，不能把可能已落盘的操作恢复为旧开关，也不重试写入。
     logger.error("[plugins] setEnabled failed", { pluginId, enabled, error: toMessage(error) });
+    if (isCurrentRequest()) {
+      invalidatePluginInventoryReads();
+      await loadInto(set, get, {
+        workspacePath,
+        workspaceIdentity,
+        configScope,
+        pluginService,
+        bypassCache: true,
+      });
+    }
     if (isCurrentRequest()) {
       set({
         error: toMessage(error),
         lastFailedPluginId: pluginId,
-        ...(previousPlugin
-          ? {
-              plugins: get().plugins.map((plugin) =>
-                plugin.id === pluginId ? previousPlugin : plugin,
-              ),
-            }
-          : {}),
       });
     }
     return false;

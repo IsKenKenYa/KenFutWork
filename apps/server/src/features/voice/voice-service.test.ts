@@ -827,7 +827,8 @@ describe("voice 服务：离线「想」档", () => {
           stubProvider({
             ready: async () => ({
               ok: false,
-              reason: "离线「想」模型未下载（/models/qwen3-0.6b-llamafile/…）。",
+              reason:
+                "离线「想」模型未下载（/models/qwen3-0.6b-llamafile/…）。",
             }),
             refine,
           }),
@@ -850,7 +851,10 @@ describe("voice 服务：离线「想」档", () => {
     await expect(
       service.refine(USER, "ws-1", { text: "把那个按钮改蓝一点" }),
     ).resolves.toBe("把首页按钮改成蓝色。");
-    expect(refine).toHaveBeenCalledWith({ text: "把那个按钮改蓝一点" }, undefined);
+    expect(refine).toHaveBeenCalledWith(
+      { text: "把那个按钮改蓝一点" },
+      undefined,
+    );
   });
 
   it("provider 抛错：包成可读的不可用原因（不是裸 Error 冒到路由）", async () => {
@@ -872,7 +876,9 @@ describe("voice 服务：离线「想」档", () => {
 
   it("内置 id 不是 think 档：拒绝并指路（不拿听/说模型当「想」用）", async () => {
     const service = createVoiceService(
-      deps({ voice: { think: { kind: "builtin", id: "sensevoice-small-int8" } } }),
+      deps({
+        voice: { think: { kind: "builtin", id: "sensevoice-small-int8" } },
+      }),
     );
     await expect(service.refine(USER, "ws-1", { text: "x" })).rejects.toThrow(
       /内置「想」模型不存在/,

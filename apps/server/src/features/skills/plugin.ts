@@ -6,7 +6,9 @@ import type {
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import { createCanvasRepository } from "../canvas/repository.js";
+import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
 import { projectWorkDirLoaderFor } from "../projects/work-dir.js";
+import { createCodeUiSkillsHost } from "./code-ui-host.js";
 import { createCreateSkillTool } from "./create-skill-tool.js";
 import {
   createSkillCatalogRepository,
@@ -37,16 +39,24 @@ export function createSkillsPlugin(): PluginDefinition {
       "localInstance",
       "projects",
       "executionScopes",
+      "plugins",
     ],
     apply(ctx) {
+      // apply只声明消费；插件注册表可能在后续profile项才注册。
+      const packages = {
+        readSkillPackages: (mode?: "code" | "design") =>
+          ctx.get("plugins").readSkillPackages(mode),
+      };
       skillsRepository = createSkillCatalogRepository(ctx.get("persistence"));
       const catalog: SkillCatalogService = createSkillCatalogService({
         repository: skillsRepository,
         localInstance: ctx.get("localInstance"),
+        plugins: packages,
       });
       const resources = createInstanceSkillResourceReader({
         repository: skillsRepository,
         localInstance: ctx.get("localInstance"),
+        plugins: packages,
       });
 
       const listSkillsTool: ToolDefinition = {
@@ -61,7 +71,10 @@ export function createSkillsPlugin(): PluginDefinition {
             ctx.get("localInstance"),
             execCtx,
           );
-          const skills = await catalog.listSkills(actor.instanceId);
+          const skills = await catalog.listSkills(
+            actor.instanceId,
+            execCtx.scopeHandle ? "code" : "design",
+          );
           return {
             skills: skills
               .filter((s) => s.enabled)
@@ -80,7 +93,10 @@ export function createSkillsPlugin(): PluginDefinition {
         parameters: {
           type: "object",
           properties: {
-            name: { type: "string", description: "skill slug" },
+            name: {
+              type: "string",
+              description: "技能 slug 或目录返回的资源引用",
+            },
             resource_path: {
               type: "string",
               description:
@@ -105,12 +121,17 @@ export function createSkillsPlugin(): PluginDefinition {
               actor.instanceId,
               name,
               args.resource_path,
+              execCtx.scopeHandle ? "code" : "design",
             );
             if (!resource)
               throw new Error(`skill ${name} 的资源未安装、已停用或不存在`);
             return resource;
           }
-          const detail = await catalog.getSkill(actor.instanceId, name);
+          const detail = await catalog.getSkill(
+            actor.instanceId,
+            name,
+            execCtx.scopeHandle ? "code" : "design",
+          );
           if (!detail) {
             throw new Error(`skill ${name} 未安装或未启用`);
           }
@@ -129,6 +150,19 @@ export function createSkillsPlugin(): PluginDefinition {
       ctx.get("tools").register(createSkillTool);
     },
     mounted(ctx) {
+      for (const [id, value] of Object.entries(
+        createCodeUiSkillsHost({
+          localInstance: ctx.get("localInstance"),
+          repository: skillsRepository,
+          plugins: ctx.get("plugins"),
+        }),
+      )) {
+        ctx.effect(() =>
+          ctx
+            .get("capabilities")
+            .register(CODE_UI_HOST_RPC_CAPABILITY, { id, value }),
+        );
+      }
       void registerSkillRoutes(ctx.app, {
         localAccess: ctx.get("localAccess"),
         skillsRepository,

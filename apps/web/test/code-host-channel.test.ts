@@ -24,6 +24,77 @@ function clientWith(result: unknown = { content: "read" }) {
   };
 }
 describe("Code human viewer channel", () => {
+  it("通知连接换代把生命周期送达各自的工作域监听，不能被路由过滤掉", async () => {
+    let disconnect!: () => void;
+    let connections = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, options: RequestInit) => {
+        if (!url.endsWith("/events"))
+          return new Response(JSON.stringify({ result: {} }));
+        const generation = ++connections;
+        let close!: () => void;
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            let closed = false;
+            close = () => {
+              if (!closed) {
+                closed = true;
+                controller.close();
+              }
+            };
+            controller.enqueue(
+              new TextEncoder().encode(
+                `data: ${JSON.stringify({ event: "ready", hello: { connectionId: `connection-${generation}` }, reconnectDelayMs: 10 })}\n\n`,
+              ),
+            );
+          },
+        });
+        if (generation === 1) disconnect = close;
+        options.signal?.addEventListener("abort", close, { once: true });
+        return new Response(body);
+      }),
+    );
+    const client = new CodeHttpChannelClient({ apiBase: "http://host.test" });
+    const targets = [
+      { workspacePath: "/same", workspaceIdentity: '["project-a","/same"]' },
+      { workspacePath: "/same", workspaceIdentity: '["project-b","/same"]' },
+      { workspacePath: "/path-only" },
+    ];
+    const seen = targets.map(
+      () =>
+        [] as Array<{ state: string; runtimeIdentity: { identity: string } }>,
+    );
+    const restarts = targets.map(() => [] as unknown[]);
+    const channel = client.getChannel(ServiceChannels.ZCodeAgent);
+    const listeners = targets.flatMap((target, index) => [
+      channel.listen<{ state: string; runtimeIdentity: { identity: string } }>(
+        "onAgentRuntimeLifecycle",
+        target,
+      )((event) => seen[index]!.push(event)),
+      channel.listen(
+        "onAgentRuntimeRestarted",
+        target,
+      )((event) => restarts[index]!.push(event)),
+    ]);
+    try {
+      await client.connect();
+      disconnect();
+      await expect.poll(() => connections).toBe(2);
+      await expect
+        .poll(() => seen.map((events) => events.map((event) => event.state)))
+        .toEqual(targets.map(() => ["unavailable", "available"]));
+      expect(
+        seen.map((events) => events.at(-1)?.runtimeIdentity.identity),
+      ).toEqual(targets.map(() => "connection-2"));
+      expect(restarts.map((events) => events.length)).toEqual([1, 1, 1]);
+    } finally {
+      listeners.forEach((listener) => {
+        listener.dispose();
+      });
+      client.dispose();
+    }
+  });
   it("终端归属只来自本客户端真实创建回执，不由相同Task或路径猜测", async () => {
     vi.stubGlobal(
       "fetch",
@@ -156,8 +227,13 @@ describe("Code human viewer channel", () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(requests).toEqual([]);
   });
-  it("原Git/Skills/watch请求携带明确viewer hint，Project不被伪造为Task", async () => {
-    const { client, requests } = clientWith({ id: "watcher" });
+  it("原Git/watch请求保留Project viewer hint，本机技能不借用Task身份", async () => {
+    const { client, requests } = clientWith({
+      id: "watcher",
+      skills: [],
+      diagnostics: [],
+      capability: { userScopeAvailable: true },
+    });
     client.setViewerContextResolver(() => ({
       kind: "project",
       projectId: "project",
@@ -177,12 +253,7 @@ describe("Code human viewer channel", () => {
           viewerScope: { kind: "project", projectId: "project" },
         },
       ],
-      [
-        {
-          workspacePath: "/same",
-          viewerScope: { kind: "project", projectId: "project" },
-        },
-      ],
+      [{ workspacePath: "/same" }],
       [
         {
           path: "/same/subdir",
@@ -543,7 +614,8 @@ describe("Code 宿主语音转写通道", () => {
           new Response(
             JSON.stringify({
               error: {
-                message: "未选择「听」模型。到「设置 → 语音」选一个（内置模型需先下载）。",
+                message:
+                  "未选择「听」模型。到「设置 → 语音」选一个（内置模型需先下载）。",
               },
             }),
             { status: 422, headers: { "content-type": "application/json" } },

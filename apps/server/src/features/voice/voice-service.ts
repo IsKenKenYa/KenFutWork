@@ -120,10 +120,7 @@ export interface VoiceServiceDeps {
 }
 
 export interface VoiceService {
-  getSettings(
-    user: LocalActor,
-    instanceId: string,
-  ): Promise<VoiceSettings>;
+  getSettings(user: LocalActor, instanceId: string): Promise<VoiceSettings>;
   updateSettings(
     user: LocalActor,
     instanceId: string,
@@ -196,7 +193,10 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
     return provider;
   }
 
-  async function readSettings(actor: LocalActor, instanceId: string): Promise<VoiceSettings> {
+  async function readSettings(
+    actor: LocalActor,
+    instanceId: string,
+  ): Promise<VoiceSettings> {
     if (actor.instanceId !== instanceId) {
       throw new VoiceUnavailableError("语音设置不属于当前本地实例。");
     }
@@ -462,12 +462,14 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
             `内置「想」模型不存在：${settings.think.id}（到「设置 → 语音」重新选择）。`,
           );
         }
-        const provider = (deps.createThinkProvider ?? defaultThinkProvider(deps))(
-          settings.think,
-        );
+        const provider = (
+          deps.createThinkProvider ?? defaultThinkProvider(deps)
+        )(settings.think);
         const ready = await provider.ready();
         if (!ready.ok) {
-          throw new VoiceUnavailableError(ready.reason ?? "离线「想」模型未就绪。");
+          throw new VoiceUnavailableError(
+            ready.reason ?? "离线「想」模型未就绪。",
+          );
         }
         try {
           return await provider.refine(input, signal);

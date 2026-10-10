@@ -55,6 +55,8 @@ export interface CliMcpConfig {
 }
 
 export interface SaveCliMcpToUserDirectoryRequest {
+  /** 宿主记录引用：null表示新建，已有记录必须按稳定ID修改/删除。 */
+  hostRecordId?: string | null;
   action: "upsert" | "delete" | "set-enabled";
   source: CliMcpSource;
   name: string;
@@ -70,6 +72,10 @@ export interface NativeMcpFileReference {
 }
 
 export interface NativeMcpServerRecord {
+  /** 宿主数据库身份与来源，不表示文件或目录。 */
+  hostRecordId?: string;
+  origin?: "managed" | "env";
+  envKeys?: string[];
   source: McpSource;
   scope: McpScope;
   name: string;
@@ -111,6 +117,9 @@ export interface McpConfig {
 }
 
 export interface ZCodeMcpServer {
+  hostRecordId?: string;
+  origin?: "managed" | "env";
+  envKeys?: string[];
   id: string;
   name: string;
   config: McpServerConfig;
@@ -214,13 +223,12 @@ export function getMcpServerRequestHeaders(
 // 完全一致的判定；否则同一 MCP 配置在不同入口行为不同，可能漏注入 product broker，让
 // Python/uvx 自己持有 macOS TCC 权限（违反 fail-closed 边界）。改这里即同时改两条链路。
 function zcodeCuaArgLeaf(value: string): string {
-  // 先去掉结尾的路径分隔符再取叶子：`.../zcode-cua/` 直接 split 会得到空串叶子 → 漏判 → fail-open。
-  return (
-    value
-      .replace(/[\\/]+$/, "")
-      .split(/[\\/]/)
-      .pop() ?? value
-  );
+  // 从尾部一次扫描，避免尾分隔符正则对超长路径反复回溯。
+  let end = value.length;
+  while (end > 0 && (value[end - 1] === "/" || value[end - 1] === "\\")) end--;
+  let start = end;
+  while (start > 0 && value[start - 1] !== "/" && value[start - 1] !== "\\") start--;
+  return value.slice(start, end);
 }
 
 // 单个候选串是否为 zcode-cua 的包规格。PyPI 视 `_`/`-` 等价，故先把下划线归一成短横（zcode_cua →

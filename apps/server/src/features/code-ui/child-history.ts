@@ -62,7 +62,9 @@ export function remapHistoryRows(
   sourceSessionId: string,
   identity: HistoryIdentityMap,
 ): Row[] {
-  const resources = identity.resourceBindings?.length ? createContextResourceRebinder(identity.resourceBindings) : null;
+  const resources = identity.resourceBindings?.length
+    ? createContextResourceRebinder(identity.resourceBindings)
+    : null;
   const entities = new Map(
     rows.flatMap((row, index) =>
       row.entityId
@@ -120,9 +122,14 @@ function remapToolResources(
 ) {
   if (!resources) return;
   if (row.output?.display) {
-    const mapped = resources.payload(row.toolName, { display: row.output.display });
+    const mapped = resources.payload(row.toolName, {
+      display: row.output.display,
+    });
     if (mapped && typeof mapped === "object" && "display" in mapped)
-      row.output = protocol.toolOutputSchema.parse({ ...row.output, display: mapped.display });
+      row.output = protocol.toolOutputSchema.parse({
+        ...row.output,
+        display: mapped.display,
+      });
   }
   if (row.input && row.toolName === "TaskOutput") {
     const mapped = resources.args(row.toolName, row.input);
@@ -131,9 +138,17 @@ function remapToolResources(
       row.inputText = JSON.stringify(row.input);
     }
   }
-  if (!row.output?.text || !["Task", "TaskOutput", "Bash"].includes(row.toolName)) return;
+  if (
+    !row.output?.text ||
+    !["Task", "TaskOutput", "Bash"].includes(row.toolName)
+  )
+    return;
   let payload: unknown;
-  try { payload = JSON.parse(row.output.text); } catch { return; } // 普通工具错误正文不包含结构化资源。
+  try {
+    payload = JSON.parse(row.output.text);
+  } catch {
+    return;
+  } // 普通工具错误正文不包含结构化资源。
   row.output.text = JSON.stringify(resources.payload(row.toolName, payload));
 }
 

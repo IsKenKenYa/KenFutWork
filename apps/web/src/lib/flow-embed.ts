@@ -17,6 +17,7 @@ export type FlowEntry =
 export function resolveFlowEntry(input: {
   /** flow 插件（`kenfutwork-flow`）是否已安装。 */
   pluginInstalled: boolean;
+  pluginEnabled: boolean;
   /** 宿主适配层状态；null = 探针请求失败（按不可用处理，不猜）。 */
   status: FlowHostStatusResponse | null;
 }): FlowEntry {
@@ -26,6 +27,8 @@ export function resolveFlowEntry(input: {
       reason: "未安装 flow 插件（插件市场可安装）。",
     };
   }
+  if (!input.pluginEnabled)
+    return { available: false, reason: "Flow 插件已停用。" };
   if (!input.status) {
     return {
       available: false,

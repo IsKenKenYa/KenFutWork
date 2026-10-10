@@ -4,6 +4,7 @@ import {
   type CodeUiWorkspace,
   clampCodeUiReconnectDelayMs,
   codeUiWorkspaceSchema,
+  isPluginIconResourceReference,
 } from "@kenfutwork/shared";
 import {
   Emitter,
@@ -22,6 +23,7 @@ import {
   clientHelloSchema,
   windowHostControllerTaskFrameSchema,
 } from "@zcode/shared/zcode-protocol-v4";
+import { notifyPluginInventoryChanged } from "./parentBridge.js";
 import { TaskWorkspaceRegistry } from "./taskWorkspaceRegistry.js";
 import { RemoteServiceAccess } from "./upstream/remoteServiceAccess.js";
 
@@ -91,6 +93,47 @@ const servicesByChannel: Record<string, string> = {
   [ServiceChannels.ProviderSettings]: "providerSettingsService",
 };
 
+function validateSkillsListResponse(result: unknown) {
+  if (
+    !result ||
+    typeof result !== "object" ||
+    !("skills" in result) ||
+    !Array.isArray(result.skills) ||
+    !("diagnostics" in result) ||
+    !Array.isArray(result.diagnostics) ||
+    !("capability" in result) ||
+    !result.capability ||
+    typeof result.capability !== "object" ||
+    !("userScopeAvailable" in result.capability) ||
+    typeof result.capability.userScopeAvailable !== "boolean" ||
+    result.skills.some(
+      (skill) =>
+        !skill ||
+        typeof skill !== "object" ||
+        typeof skill.id !== "string" ||
+        typeof skill.name !== "string" ||
+        typeof skill.path !== "string" ||
+        typeof skill.body !== "string" ||
+        typeof skill.description !== "string" ||
+        typeof skill.enabled !== "boolean" ||
+        !["user", "workspace", "plugin"].includes(skill.scope),
+    ) ||
+    result.diagnostics.some(
+      (diagnostic) =>
+        !diagnostic ||
+        typeof diagnostic !== "object" ||
+        typeof diagnostic.code !== "string" ||
+        !["warning", "error"].includes(diagnostic.severity) ||
+        typeof diagnostic.message !== "string" ||
+        (diagnostic.path !== undefined &&
+          typeof diagnostic.path !== "string") ||
+        (diagnostic.skillName !== undefined &&
+          typeof diagnostic.skillName !== "string"),
+    )
+  )
+    throw new Error("技能目录响应无效，请重新连接。");
+}
+
 /** ChannelClient 只替换载体；原 RemoteServiceAccess/ProxyChannel 保留服务和事件语义。 */
 const viewerMethods = new Set([
   "readTextFile",
@@ -112,6 +155,8 @@ export class CodeHttpChannelClient implements IChannelClient {
     return this.servicesSnapshot;
   }
   private readonly notifications = new Emitter<Notification>();
+  private readonly pluginInventoryChanges = new Emitter<void>();
+  readonly onPluginInventoryChanged = this.pluginInventoryChanges.event;
   private readonly servicesChanges = new Emitter<void>();
   readonly subscribeServices = (listener: () => void) => {
     const subscription = this.servicesChanges.event(listener);
@@ -126,7 +171,7 @@ export class CodeHttpChannelClient implements IChannelClient {
     AGENT_GOVERNANCE_DEFAULTS.codeUiReconnectDelayMs;
   private readonly workspaceSubscriptions = new Map<
     string,
-    { path: string; references: number }
+    { path: string; workspaceIdentity?: string; references: number }
   >();
   private ready: {
     promise: Promise<void>;
@@ -250,6 +295,82 @@ export class CodeHttpChannelClient implements IChannelClient {
         result.error?.message ?? `Code 宿主请求失败：${response.status}`,
       );
     return result as T;
+  }
+
+  private readonly pluginIcons = new Map<string, Promise<string | undefined>>();
+  private readonly pluginIconUrls = new Set<string>();
+  async resolvePluginIcon(resource: string): Promise<string | undefined> {
+    if (
+      !isPluginIconResourceReference(resource) ||
+      this.controller.signal.aborted
+    )
+      return undefined;
+    const cached = this.pluginIcons.get(resource);
+    if (cached) return cached;
+    const pending = this.readHostImage(
+      resource,
+      this.controller.signal,
+      [
+        "image/svg+xml",
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "image/gif",
+        "image/avif",
+      ],
+      "插件图标已不可用。",
+    )
+      .then((blob) => {
+        if (this.controller.signal.aborted) return undefined;
+        const image = URL.createObjectURL(blob);
+        this.pluginIconUrls.add(image);
+        return image;
+      })
+      .catch(() => {
+        this.pluginIcons.delete(resource);
+        return undefined;
+      });
+    this.pluginIcons.set(resource, pending);
+    return pending;
+  }
+
+  async readCuaSnapshot(uri: string, signal: AbortSignal): Promise<Blob> {
+    if (
+      !/^\/api\/computer-use\/snapshots\?taskId=[0-9a-f-]{36}&digest=[0-9a-f]{64}$/u.test(
+        uri,
+      )
+    )
+      throw new Error("截图引用无效。");
+    return this.readHostImage(uri, signal, ["image/png"], "截图已不可用。");
+  }
+
+  private async readHostImage(
+    path: string,
+    signal: AbortSignal,
+    contentTypes: readonly string[],
+    errorMessage: string,
+  ): Promise<Blob> {
+    const response = await fetch(
+      `${this.config.apiBase.replace(/\/$/u, "")}${path}`,
+      {
+        credentials: "include",
+        headers: this.headers(),
+        cache: "no-store",
+        redirect: "error",
+        signal: AbortSignal.any([signal, this.controller.signal]),
+      },
+    );
+    reportAccessLost(response.status);
+    if (
+      !response.ok ||
+      !contentTypes.includes(
+        response.headers.get("content-type")?.split(";")[0] ?? "",
+      )
+    ) {
+      await response.body?.cancel();
+      throw new CodeHostHttpError(response.status, errorMessage);
+    }
+    return response.blob();
   }
 
   /**
@@ -398,11 +519,15 @@ export class CodeHttpChannelClient implements IChannelClient {
               ),
           };
           this.servicesChanges.fire();
-          for (const key of this.workspaceSubscriptions.keys())
+          for (const [key, scope] of this.workspaceSubscriptions)
             this.notifications.fire({
               event: "service",
               service: "zcodeAgentService",
               name: "onAgentRuntimeRestarted",
+              workspacePath: scope.path,
+              ...(scope.workspaceIdentity
+                ? { workspaceIdentity: scope.workspaceIdentity }
+                : {}),
               data: { workspaceKey: key },
             });
           this.publishLifecycle("available");
@@ -460,11 +585,14 @@ export class CodeHttpChannelClient implements IChannelClient {
   }
 
   private publishLifecycle(state: "available" | "unavailable") {
-    for (const [workspaceKey, { path }] of this.workspaceSubscriptions)
+    for (const [workspaceKey, { path, workspaceIdentity }] of this
+      .workspaceSubscriptions)
       this.notifications.fire({
         event: "service",
         service: "zcodeAgentService",
         name: "onAgentRuntimeLifecycle",
+        workspacePath: path,
+        ...(workspaceIdentity ? { workspaceIdentity } : {}),
         data: {
           workspaceKey,
           workspacePath: path,
@@ -595,8 +723,7 @@ export class CodeHttpChannelClient implements IChannelClient {
     const viewerRequest =
       (service === ServiceChannels.File && viewerMethods.has(method)) ||
       service === ServiceChannels.Git ||
-      (service === ServiceChannels.FileWatcher && method === "watch") ||
-      service === ServiceChannels.Skills;
+      (service === ServiceChannels.FileWatcher && method === "watch");
     if (!viewerRequest) return values;
     const first = values[0] as Record<string, unknown> | undefined;
     if (first?.humanPurpose === "directory-picker") return values;
@@ -625,10 +752,29 @@ export class CodeHttpChannelClient implements IChannelClient {
     )
       this.clientHello = clientHelloSchema.parse((values as unknown[])[0]);
     const connectionId = this.connectionId;
-    const response = await this.request<{ result: TResult }>(
-      "/api/code-ui/rpc",
-      { connectionId, service, method, args: values },
-    );
+    let response: { result: TResult };
+    try {
+      response = await this.request<{ result: TResult }>("/api/code-ui/rpc", {
+        connectionId,
+        service,
+        method,
+        args: values,
+      });
+    } finally {
+      // 未知写入结果同样读取库存对账；不重试写操作。
+      if (
+        service === ServiceChannels.PluginManagement &&
+        [
+          "installPlugin",
+          "installPluginFromSource",
+          "setPluginEnabled",
+          "uninstallPlugin",
+        ].includes(method)
+      ) {
+        this.pluginInventoryChanges.fire();
+        notifyPluginInventoryChanged();
+      }
+    }
     if (service === ServiceChannels.Terminal && method === "create") {
       if (this.controller.signal.aborted || connectionId !== this.connectionId)
         throw new Error("终端启动期间通知连接已改变，请重新打开终端。");
@@ -658,6 +804,8 @@ export class CodeHttpChannelClient implements IChannelClient {
       for (const task of tasks) this.workspaces.registerTask(task);
     }
     let result = response.result;
+    if (service === ServiceChannels.Skills && method === "list")
+      validateSkillsListResponse(result);
     if (
       service === ServiceChannels.File &&
       [
@@ -723,6 +871,9 @@ export class CodeHttpChannelClient implements IChannelClient {
           if (workspacePath && workspaceKey) {
             const reference = this.workspaceSubscriptions.get(workspaceKey) ?? {
               path: workspacePath,
+              ...(target?.workspaceIdentity
+                ? { workspaceIdentity: target.workspaceIdentity }
+                : {}),
               references: 0,
             };
             reference.references += 1;
@@ -800,10 +951,14 @@ export class CodeHttpChannelClient implements IChannelClient {
 
   dispose() {
     this.controller.abort();
+    for (const image of this.pluginIconUrls) URL.revokeObjectURL(image);
+    this.pluginIconUrls.clear();
+    this.pluginIcons.clear();
     this.connected = false;
     this.ready?.reject(new DOMException("Code 宿主已关闭", "AbortError"));
     this.ready = null;
     this.notifications.dispose();
+    this.pluginInventoryChanges.dispose();
     this.servicesChanges.dispose();
     this.workspaceSubscriptions.clear();
     this.terminalListeners.clear();

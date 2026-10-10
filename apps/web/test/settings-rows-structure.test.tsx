@@ -362,7 +362,5 @@ describe("设置区结构（二）：其余各页也是「标签左 / 值右」"
     expect(entryRow.lastElementChild).toBe(
       screen.getByLabelText("删除规则 先给结论"),
     );
-
-
   });
 });

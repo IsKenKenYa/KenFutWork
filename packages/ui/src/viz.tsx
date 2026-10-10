@@ -59,7 +59,9 @@ export function parseVizSpec(text: string): VizSpec | null {
     if (type === "pie" && value < 0) continue;
     data.push({
       label:
-        typeof point.label === "string" ? point.label : String(point.label ?? ""),
+        typeof point.label === "string"
+          ? point.label
+          : String(point.label ?? ""),
       value,
     });
   }
@@ -107,10 +109,7 @@ function BarChart({ spec }: { spec: VizSpec }) {
       style={{ width: "100%", maxWidth: 480, height: "auto", display: "block" }}
     >
       {spec.data.map((point, index) => {
-        const width = Math.max(
-          2,
-          (Math.abs(point.value) / scale) * 190,
-        );
+        const width = Math.max(2, (Math.abs(point.value) / scale) * 190);
         const y = index * rowHeight + 6;
         return (
           <g key={`${point.label}-${index}`}>
@@ -190,12 +189,7 @@ function LineChart({ spec }: { spec: VizSpec }) {
       <path d={path} fill="none" stroke={PALETTE[0]} strokeWidth={2} />
       {points.map((entry, index) => (
         <g key={`${entry.point.label}-${index}`}>
-          <circle
-            cx={entry.x}
-            cy={entry.y}
-            r={3}
-            fill={PALETTE[0]}
-          />
+          <circle cx={entry.x} cy={entry.y} r={3} fill={PALETTE[0]} />
           {index === points.length - 1 ? (
             <text
               x={entry.x}
@@ -321,9 +315,7 @@ export function VizBlock({ spec }: { spec: VizSpec }) {
       }}
     >
       {spec.title ? (
-        <figcaption
-          style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}
-        >
+        <figcaption style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>
           {spec.title}
         </figcaption>
       ) : null}

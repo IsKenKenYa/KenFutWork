@@ -13,6 +13,9 @@ export function createSettingsPlugin(): PluginDefinition {
       ctx.register("settings", () =>
         createSettingsService({
           localInstance: ctx.get("localInstance"),
+          modelCatalog: {
+            listCatalog: (actor) => ctx.get("modelCatalog").listCatalog(actor),
+          },
           defaultModel: ctx.env.agentModel,
           ...(ctx.env.agentGovernance
             ? { governanceEnv: ctx.env.agentGovernance }

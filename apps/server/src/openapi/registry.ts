@@ -61,6 +61,7 @@ import {
   computerUseMcpEventStreamSchema,
   computerUseMcpMessageSchema,
   computerUseMcpQuerySchema,
+  computerUseSnapshotQuerySchema,
   createImageJobRequestSchema,
   createVideoJobRequestSchema,
   directoryPickerStatusSchema,
@@ -110,6 +111,9 @@ import {
   pluginInspectResponseSchema,
   pluginInstallRequestSchema,
   pluginInstallResponseSchema,
+  pluginMarketListResponseSchema,
+  pluginToggleRequestSchema,
+  pluginToggleResponseSchema,
   projectCreateRequestSchema,
   projectCreateResponseSchema,
   projectListQuerySchema,
@@ -341,6 +345,19 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
   },
 
   {
+    method: "get",
+    path: "/api/computer-use/snapshots",
+    tag: "mcp",
+    auth: "local",
+    successStatus: 200,
+    querySchema: computerUseSnapshotQuerySchema,
+    binaryResponse: "image/png",
+    summary: "读取当前实例Task持有的桌面截图",
+    description:
+      "大图保存在原blob服务；每次读取重新校验本机凭据与Task实例归属，已删除Task或不存在的截图返回404。引用不含访问令牌，读取字节受实例processMaxOutputBytes预算约束。",
+  },
+
+  {
     method: "post",
     path: "/api/computer-use/mcp",
     tag: "mcp",
@@ -524,7 +541,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: codeUiRpcResponseSchema,
     summary: "调用 Code 原界面宿主接口",
     description:
-      "按已接通的服务与方法白名单调用原 UI 的宿主能力。命令按 clientId 与 commandId 幂等；相同键不同参数冲突，Key仅在授权设置内可查看复制，尚未接通的方法明确拒绝。",
+      "按已接通的服务与方法白名单调用原 UI 的宿主能力。命令按 clientId 与 commandId 幂等；相同键不同参数冲突，Key仅在授权设置内可查看复制；MCP配置与REST共用实例记录，目录省略env值，授权编辑按记录ID读取；技能管理复用实例安装库并以安装修订限制迟到写入；插件来源检查和安装复用注册表与公共契约，实例操作无需Project且不开放生命周期脚本；尚未接通的方法明确拒绝。",
   },
   {
     method: "get",
@@ -1478,8 +1495,10 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "plugins",
     auth: "local",
     successStatus: 200,
-    summary: "列出已安装插件",
-    description: "返回本实例已安装插件的清单，供插件市场面板展示。",
+    responseSchema: pluginMarketListResponseSchema,
+    summary: "列出本机插件目录与安装状态",
+    description:
+      "返回真实系统能力、随发行包及本机安装清单；installed与enabled独立，scope表示Code/Design/共享作用域，ui合并清单及运行时贡献且同键运行时优先。停用仍为已安装，未安装或未启用不提供运行面板入口。",
   },
   {
     method: "post",
@@ -1575,9 +1594,11 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "plugins",
     auth: "local",
     successStatus: 200,
+    requestSchema: pluginToggleRequestSchema,
+    responseSchema: pluginToggleResponseSchema,
     summary: "切换插件启停",
     description:
-      "按 id 启用/禁用插件，body.enabled 必须为布尔值；未安装返回 404。需已授权的本机接入。",
+      "按 id 启用/禁用已安装插件；返回installed=true及真实enabled，停用不删除包，未安装返回404。需已授权的本机接入。",
   },
   {
     method: "post",
@@ -1778,7 +1799,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: instanceSettingsResponseSchema,
     summary: "读取实例设置",
     description:
-      "解析当前本地实例后返回其已解析设置；未配置默认模型时 defaultModel 可为空字符串。压缩保留字段表示近期原始消息的配置目标，不表示 SDK 实际保留量。模型流无输出阈值仅计真实模型请求，不含工具执行和人工审批等待；0表示关闭。",
+      "解析当前本地实例后返回其已解析设置；modelDefaults 独立持有聊天引用、图像和视频自动或手动候选，未配置聊天默认可为 null。压缩保留字段表示近期原始消息的配置目标，不表示 SDK 实际保留量。模型流无输出阈值仅计真实模型请求，不含工具执行和人工审批等待；0表示关闭。",
   },
   {
     method: "patch",
@@ -1790,7 +1811,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: instanceSettingsResponseSchema,
     summary: "更新实例设置",
     description:
-      "仅更新送来的实例设置字段，未配置默认模型也可保存其他设置。压缩保留目标按窗口已知/未知分别设置，自动与手动维护共用。模型流无输出阈值由实例设置优先于env解析，仅计真实模型请求，0表示关闭。显式设置默认模型必须提供非空标识，并校验其是否在目录中；不存在返回 400 invalid_model 及可用清单。",
+      "仅更新送来的实例设置字段，未配置默认模型也可保存其他设置。modelDefaults 使用规范化的 providerId 与 modelId 精确引用；手动候选非空且不重复，必须属于当前实例可用的对应能力目录，Flow 连接不能作为候选。结构错误返回 400 invalid_request，候选不可用返回 400 invalid_model；数据库写入失败整个 patch 回滚。压缩保留目标按窗口已知/未知分别设置，自动与手动维护共用。模型流无输出阈值由实例设置优先于env解析，仅计真实模型请求，0表示关闭。",
   },
   // ---- skills.ts（技能；含实例安装态）----
   {

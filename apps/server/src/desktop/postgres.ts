@@ -129,6 +129,8 @@ export function resolvePgBinDir(input: {
   env: Record<string, string | undefined>;
   exists?: (path: string) => boolean;
   exeDir?: string;
+  /** 可执行文件路径（默认 process.execPath）；SEA 发布态即 <release>/KenFutWork-server.exe。 */
+  execPath?: string;
   platform?: NodeJS.Platform;
 }): string {
   const exists = input.exists ?? existsSync;
@@ -144,10 +146,20 @@ export function resolvePgBinDir(input: {
     return explicit;
   }
 
-  const exeDir = input.exeDir ?? process.cwd();
-  const bundled = join(exeDir, "pg", "bin");
-  if (exists(bundled)) {
-    return bundled;
+  const exeDir = input.exeDir;
+  // 发布态的 SEA 单文件服务端：process.execPath 就是 <release>/KenFutWork-server.exe，
+  // pg/ 与它同级；而 process.cwd() 是**启动方**（桌面壳 / 冒烟脚本）的工作目录，两者
+  // 不是一回事——Windows 打包态冒烟实测就因 cwd 不是 release/ 而报「未找到内嵌 Postgres」。
+  const roots = [
+    ...(exeDir ? [exeDir] : []),
+    dirname(input.execPath ?? process.execPath),
+    process.cwd(),
+  ];
+  for (const root of roots) {
+    const bundled = join(root, "pg", "bin");
+    if (exists(bundled)) {
+      return bundled;
+    }
   }
 
   const dependency = PLATFORM_PACKAGES[`${platform}-${process.arch}`];

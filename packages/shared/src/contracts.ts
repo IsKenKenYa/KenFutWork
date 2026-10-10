@@ -5,6 +5,7 @@ import { brandKitAssetTypeSchema } from "./brand-kit-contracts.js";
 import { executionModeSchema } from "./capability-contracts.js";
 import { additionalDirectorySchema } from "./execution-contracts.js";
 import { governanceBoolSetting, governanceSetting } from "./governance.js";
+import { modelDefaultsSchema } from "./model-policy.js";
 
 export const identifierSchema = z.string().min(1);
 export const timestampSchema = z.iso.datetime({ offset: true });
@@ -181,6 +182,7 @@ export const terminalShellSchema = z.enum([
 export type TerminalShellId = z.infer<typeof terminalShellSchema>;
 
 export const instanceSettingsSchema = z.object({
+  modelDefaults: modelDefaultsSchema.optional(),
   /** 未配置默认模型时为真实空值，局部设置保存不要求先选模型。 */
   defaultModel: z.string(),
   /** 终端默认 shell（用户口径：「可以在设置里配置默认的」）。 */
@@ -237,7 +239,7 @@ export const instanceSettingsSchema = z.object({
           }),
         /** 说明（在设置页与输入框提示里显示）。 */
         description: z.string().trim().max(200).default(""),
-        /** 提示词模板；`{{args}}` 会被替换成命令后面的参数（没有占位符则把参数追加到末尾）。 */
+        /** 原ZCode模板：$ARGUMENTS为完整参数，$1/$2为位置参数；无占位符时追加参数。 */
         prompt: z.string().trim().min(1).max(4_000),
       }),
     )

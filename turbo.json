@@ -8,6 +8,7 @@
     "KENFUTWORK_SEARCH_PORT",
     "KENFUTWORK_SEARCH_UPSTREAM",
     "KFW_CDP_PORT",
+    "KFW_SMOKE_BYOK_TIMEOUT_MS",
     "LOCALAPPDATA",
     "MOCK_MODEL_ID",
     "MOCK_MODEL_PORT",
@@ -29,7 +30,7 @@
       "outputs": []
     },
     "typecheck": {
-      "dependsOn": ["^typecheck"],
+      "dependsOn": ["^build", "^typecheck"],
       "outputs": []
     }
   }

@@ -16,17 +16,30 @@ import {
 } from "@zui/voice/binding.js";
 import { useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
+import { CuaSnapshotReader } from "./cuaScreenshotSectionAdapter.js";
+import {
+  createMacDesktopChrome,
+  installDesktopTitlebarDrag,
+} from "./desktopChrome.js";
 import {
   type CodeHostConfig,
   CodeHttpChannelClient,
 } from "./httpChannelClient.js";
+import { renderManagementDocument } from "./managementDocument.js";
+import { requestManagementOpen } from "./managementNavigation.js";
 import { navigateToDesign, requestParentBootstrap } from "./parentBridge.js";
 import { createCodePlatform } from "./platform.js";
+import { createHostWorkbenchNavigation } from "./workbenchNavigation.js";
+import { installHostWorkspaceActivity } from "./workspaceActivity.js";
 import { createCodeWorkspaceContextResolver } from "./workspaceServiceController.js";
 import { bindCodeWorkspaceServices } from "./workspaceServices.js";
 import "@zui/styles.css";
+import "./workbenchNavigation.css";
 
 const params = new URLSearchParams(window.location.search);
+const releaseActivity = installHostWorkspaceActivity(window.parent);
+const releaseTitlebarDrag = installDesktopTitlebarDrag(document);
+const desktopChrome = createMacDesktopChrome();
 const bootstrap =
   window.parent !== window ? await requestParentBootstrap(window.parent) : null;
 const workspacePath = params.get("workspace");
@@ -36,6 +49,7 @@ const config: CodeHostConfig = {
   ...(workspacePath ? { workspacePath } : {}),
 };
 const client = new CodeHttpChannelClient(config);
+const readCuaSnapshot = client.readCuaSnapshot.bind(client);
 /** 语音 transport：转写走 multipart、播报走二进制，改写/设置读走 JSON 通道（cookie 认证同 Code 宿主）。 */
 const voiceTransport: CodeVoiceTransport = {
   transcribe: (wav) => client.transcribeVoice(wav),
@@ -54,7 +68,15 @@ const voiceTransport: CodeVoiceTransport = {
     return result.settings;
   },
 };
-const platform = createCodePlatform(client);
+const workbenchNavigation = bootstrap?.workbenchModes
+  ? createHostWorkbenchNavigation(window.parent, bootstrap.workbenchModes)
+  : undefined;
+const platform = createCodePlatform(client, {
+  ...(bootstrap?.managementAvailable
+    ? { onOpenManagement: requestManagementOpen }
+    : {}),
+  ...(workbenchNavigation ? { workbenchNavigation } : {}),
+});
 const onWorkspaceContextChange = createCodeWorkspaceContextResolver(client);
 const element = document.getElementById("root");
 if (!element) throw new Error("Code 宿主缺少 root 容器");
@@ -78,37 +100,40 @@ function CodeHost({
     ? client.workspaces.identityFor(workspace.projectId, workspace.path)
     : null;
   return (
-    <ZCodeIntlProvider
-      initialLocale="zh-CN"
-      settingService={services.settingService}
-      broadcastService={services.broadcastService}
-    >
-      <ScopedErrorBoundary scope="kenfutwork-code-host">
-        <Root
-          services={services}
-          platform={platform}
-          directoryServices={client.directoryServices()}
-          onWorkspaceContextChange={onWorkspaceContextChange}
-          initialUserInfo={user}
-          {...(workspace ? { initialWorkspaceAbsPath: workspace.path } : {})}
-          {...(workspaceIdentity
-            ? { initialWorkspaceIdentity: workspaceIdentity }
-            : {})}
-          workbenchGroupClientMode={clientMode}
-          onInterfaceModeChange={(mode) => {
-            if (mode === "office") navigateToDesign();
-          }}
-          preferDirectoryBrowser
-          restoreSession
-          allowRemoteWorkspace={false}
-          supportsEmbeddedBrowser={false}
-          assistantCodeCommentCardsEnabled
-          initialWorkspaceLoadingFallback={
-            <RootStartupLoading label="打开 Code 工作目录" />
-          }
-        />
-      </ScopedErrorBoundary>
-    </ZCodeIntlProvider>
+    <CuaSnapshotReader value={readCuaSnapshot}>
+      <ZCodeIntlProvider
+        initialLocale="zh-CN"
+        settingService={services.settingService}
+        broadcastService={services.broadcastService}
+      >
+        <ScopedErrorBoundary scope="kenfutwork-code-host">
+          <Root
+            services={services}
+            platform={platform}
+            isMacDesktop={Boolean(desktopChrome)}
+            directoryServices={client.directoryServices()}
+            onWorkspaceContextChange={onWorkspaceContextChange}
+            initialUserInfo={user}
+            {...(workspace ? { initialWorkspaceAbsPath: workspace.path } : {})}
+            {...(workspaceIdentity
+              ? { initialWorkspaceIdentity: workspaceIdentity }
+              : {})}
+            workbenchGroupClientMode={clientMode}
+            onInterfaceModeChange={(mode) => {
+              if (mode === "office") navigateToDesign();
+            }}
+            preferDirectoryBrowser
+            restoreSession
+            allowRemoteWorkspace={false}
+            supportsEmbeddedBrowser={false}
+            assistantCodeCommentCardsEnabled
+            initialWorkspaceLoadingFallback={
+              <RootStartupLoading label="打开 Code 工作目录" />
+            }
+          />
+        </ScopedErrorBoundary>
+      </ZCodeIntlProvider>
+    </CuaSnapshotReader>
   );
 }
 
@@ -116,26 +141,41 @@ root.render(<RootStartupLoading label="加载 Code 工作台" />);
 try {
   if (!bootstrap) await client.request<InstanceContext>("/api/instance");
   await client.connect();
-  const hello = await ensureAgentV4ConnectionHandshake(
-    client.services.zcodeAgentService,
-  );
-  await client.refreshWorkspaces();
-  releaseWorkspaceServices = bindCodeWorkspaceServices(client);
-  const workspace = config.workspacePath
-    ? await client.openWorkspace(
-        config.workspacePath,
-        client.projectForPath(config.workspacePath)?.projectId,
-      )
-    : undefined;
-  root.render(
-    <CodeVoiceProvider transport={voiceTransport}>
-      <CodeHost
-        {...(workspace ? { workspace } : {})}
-        user={null}
-        clientMode={hello.clientMode}
-      />
-    </CodeVoiceProvider>,
-  );
+  if (params.get("document") === "management") {
+    releaseWorkspaceServices = bindCodeWorkspaceServices(client);
+    renderManagementDocument(
+      root,
+      client,
+      bootstrap?.management ?? { page: "settings" },
+      () => {
+        window.parent.postMessage(
+          { type: "kenfutwork:management-close" },
+          window.location.origin,
+        );
+      },
+    );
+  } else {
+    const hello = await ensureAgentV4ConnectionHandshake(
+      client.services.zcodeAgentService,
+    );
+    await client.refreshWorkspaces();
+    releaseWorkspaceServices = bindCodeWorkspaceServices(client);
+    const workspace = config.workspacePath
+      ? await client.openWorkspace(
+          config.workspacePath,
+          client.projectForPath(config.workspacePath)?.projectId,
+        )
+      : undefined;
+    root.render(
+      <CodeVoiceProvider transport={voiceTransport}>
+        <CodeHost
+          {...(workspace ? { workspace } : {})}
+          user={null}
+          clientMode={hello.clientMode}
+        />
+      </CodeVoiceProvider>,
+    );
+  }
 } catch (error) {
   console.error("Code 工作台启动失败", error);
   root.render(
@@ -148,6 +188,9 @@ try {
 window.addEventListener(
   "pagehide",
   () => {
+    releaseActivity();
+    releaseTitlebarDrag();
+    workbenchNavigation?.dispose();
     releaseWorkspaceServices?.();
     client.setViewerContextResolver(null);
     client.dispose();

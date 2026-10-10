@@ -1,7 +1,7 @@
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // 独立输入进程与原生库必须随包交付，不能依赖用户的源码目录或pnpm布局。
 const destination = process.argv[2];
@@ -11,7 +11,9 @@ if (process.platform !== "darwin")
 const output = resolve(destination);
 const source = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-const { build } = await import(require.resolve("esbuild"));
+// require.resolve 在 Windows 返回 `D:\...`，而 ESM loader 只认 file:// URL（CI 实测
+// ERR_UNSUPPORTED_ESM_URL_SCHEME），故必须先转成 URL。
+const { build } = await import(pathToFileURL(require.resolve("esbuild")).href);
 await mkdir(output, { recursive: true });
 // 原市场/安装消费者按.app工作目录的plugins读取自带bundle；源码目录不能代替发行资源。
 await cp(

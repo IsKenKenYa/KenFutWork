@@ -48,6 +48,7 @@ import {
   SelectValue,
 } from "@zui/components/ui/select.js";
 import type { ISettingsSyncService } from "@zcode/services";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { logger } from "@zui/logger.js";
 
@@ -498,13 +499,14 @@ function ExternalAgentImportDialog({
   onImported,
 }: CategorizedExternalAgentImportDialogProps) {
   const { intl } = useZCodeIntl();
+  const unavailable = useOptionalPlatform()?.supportsExternalAgentSettingsSync === false;
   const [step, setStep] = useState<ImportStep>("selection");
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<SettingsSyncImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const importState = useExternalAgentImportCategoryState({
     category,
-    enabled: open,
+    enabled: open && !unavailable,
     settingsSyncService,
     workspacePath,
     workspaceIdentity,
@@ -524,7 +526,7 @@ function ExternalAgentImportDialog({
 
   const importProgress = step === "complete" ? 100 : importing ? 62 : 0;
   const importedResults = useMemo(() => getImportResults(result, category), [category, result]);
-  const displayError = error ?? importError;
+  const displayError = unavailable ? "未接入" : error ?? importError;
 
   useEffect(() => {
     if (!open) {
@@ -537,7 +539,7 @@ function ExternalAgentImportDialog({
 
   const startImport = useCallback(
     async (targetScope: SettingsSyncSourceScope) => {
-      if (selectedKeys.length === 0) {
+      if (unavailable || selectedKeys.length === 0) {
         return;
       }
       setImporting(true);
@@ -568,6 +570,7 @@ function ExternalAgentImportDialog({
       }
     },
     [
+      unavailable,
       onImported,
       category,
       importMode,
@@ -629,7 +632,7 @@ function ExternalAgentImportDialog({
                   </div>
                 ) : null}
 
-                {loading ? (
+                {unavailable ? null : loading ? (
                   <div className="flex h-full min-h-48 items-center justify-center gap-2 rounded-lg bg-surface px-4 py-10 text-ui-base text-foreground-subtle">
                     <Loader2Icon className="size-4 animate-spin" />
                     {intl.formatMessage({ id: `settings.${category}.import.scanning` })}
@@ -675,7 +678,7 @@ function ExternalAgentImportDialog({
                 step === "complete" ? "justify-end" : "justify-between",
               )}
             >
-              {step === "complete" ? null : (
+              {step === "complete" || unavailable ? null : (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                   <div className="text-ui-base text-foreground-subtle">
                     {intl.formatMessage(
@@ -702,7 +705,7 @@ function ExternalAgentImportDialog({
                   <ImportTargetDropdownButton
                     category={category}
                     targetScope={importTargetScope}
-                    disabled={selectedCount === 0 || loading}
+                    disabled={unavailable || selectedCount === 0 || loading}
                     workspacePath={workspacePath}
                     onTargetScopeChange={importState.setImportTargetScope}
                     onImport={(targetScope) => void startImport(targetScope)}

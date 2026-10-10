@@ -12,12 +12,17 @@ import {
 import type { useDesignComposer } from "./use-design-composer";
 export function FullAccessDialog({
   composer,
+  active = true,
 }: {
   composer: ReturnType<typeof useDesignComposer>;
+  active?: boolean;
 }) {
   const { pendingFullAccess, setPendingFullAccess, applyTier } = composer;
   return (
-    <Dialog open={pendingFullAccess} onOpenChange={setPendingFullAccess}>
+    <Dialog
+      open={active && pendingFullAccess}
+      onOpenChange={setPendingFullAccess}
+    >
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -26,8 +31,10 @@ export function FullAccessDialog({
           </DialogTitle>
           <DialogDescription>
             无需逐项审批
-            <br />文件修改 · 命令执行 · 外部工具
-            <br />执行结果无法回滚
+            <br />
+            文件修改 · 命令执行 · 外部工具
+            <br />
+            执行结果无法回滚
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

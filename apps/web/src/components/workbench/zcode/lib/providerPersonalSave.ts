@@ -1,4 +1,5 @@
 import type { IProviderSettingsService, ProviderSettingsView } from "@zcode/services";
+import type { ModelManagementService } from "@kenfutwork/shared";
 import type { ProviderSettingsFormProvider } from "@zui/lib/providerSettingsFormTypes.js";
 
 /**
@@ -13,6 +14,21 @@ export async function persistPersonalProvider(params: {
     personalModelIds: _modelIds,
     ...providerFields
   } = params.provider.personalConfig;
+  if (params.provider.nativeProtocolUpdate) {
+    if (params.provider.configRevision === undefined) throw new Error("供应商配置已变化，请刷新后重试。");
+    return (params.providerSettingsService as ModelManagementService).saveManagedProvider({
+      providerId: params.provider.providerId,
+      patch: { protocol: params.provider.nativeProtocolUpdate, expectedRevision: params.provider.configRevision },
+    });
+  }
+  if (params.provider.nativeModelUpdate) {
+    if (params.provider.configRevision === undefined) throw new Error("模型配置已变化，请刷新后重试。");
+    return (params.providerSettingsService as ModelManagementService).saveManagedModel({
+      providerId: params.provider.providerId,
+      expectedRevision: params.provider.configRevision,
+      ...params.provider.nativeModelUpdate,
+    });
+  }
   return params.providerSettingsService.savePersonalProviderOverlay(
     params.provider.providerId,
     structuredClone(providerFields),

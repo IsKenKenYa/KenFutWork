@@ -1,6 +1,28 @@
 import { LocalInstanceError } from "../local-instance/service.js";
 import type { LocalInstanceService } from "../local-instance/types.js";
+import type { PluginRegistryService } from "../plugins/plugin-registry-service.js";
 import type { SkillCatalogRepository } from "./repository.js";
+
+export function pluginSkillReference(pluginId: string, relativePath: string) {
+  return `kenfutwork-plugin-skill:${encodeURIComponent(pluginId)}/${encodeURIComponent(relativePath)}`;
+}
+
+export async function findPluginSkill(
+  plugins: Pick<PluginRegistryService, "readSkillPackages">,
+  reference: string,
+  mode?: "code" | "design",
+) {
+  for (const packageInfo of await plugins.readSkillPackages(mode)) {
+    if (!packageInfo.enabled) continue;
+    const skill = packageInfo.skills.find(
+      (entry) =>
+        pluginSkillReference(packageInfo.pluginId, entry.relativePath) ===
+        reference,
+    );
+    if (skill) return skill;
+  }
+  return undefined;
+}
 
 export interface InstanceSkillResource {
   name: string;
@@ -13,6 +35,7 @@ export interface InstanceSkillResourceReader {
     instanceId: string,
     slug: string,
     resourcePath?: string,
+    mode?: "code" | "design",
   ): Promise<InstanceSkillResource | undefined>;
 }
 /** 安装包是只读DB资源；读取不签发本机路径、执行权限或NativeRead observation。 */
@@ -37,12 +60,26 @@ export function createInstanceSkillResourceReader(options: {
     SkillCatalogRepository,
     "listInstanceSkills" | "listSkillFiles"
   >;
+  plugins?: Pick<PluginRegistryService, "readSkillPackages">;
 }): InstanceSkillResourceReader {
   return {
-    async read(instanceId, slug, resourcePath = "SKILL.md") {
+    async read(instanceId, slug, resourcePath = "SKILL.md", mode) {
       if ((await options.localInstance.getContext()).instanceId !== instanceId)
         throw new LocalInstanceError();
       const path = canonicalResourcePath(resourcePath);
+      if (slug.startsWith("kenfutwork-plugin-skill:")) {
+        if (!options.plugins) throw new Error("插件技能读取未接入。");
+        const skill = await findPluginSkill(options.plugins, slug, mode);
+        if (!skill) return undefined;
+        const content =
+          path === "SKILL.md"
+            ? skill.content
+            : skill.files.find(
+                (file) => canonicalResourcePath(file.path) === path,
+              )?.content;
+        if (content === undefined) return undefined;
+        return { name: slug, resourceRef: slug, resourcePath: path, content };
+      }
       const installed = (
         await options.repository.listInstanceSkills(instanceId)
       ).find((row) => row.slug === slug && row.enabled);

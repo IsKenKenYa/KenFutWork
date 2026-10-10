@@ -379,6 +379,12 @@ export class CodeUiConnections {
       subscription.workspaceIdentity === undefined && subscription.projectId
         ? JSON.stringify([subscription.projectId, subscription.workspacePath])
         : subscription.workspaceIdentity;
+    const notification = (wire: unknown) => ({
+      event: definition.event,
+      workspacePath: subscription.workspacePath,
+      ...(workspaceIdentity ? { workspaceIdentity } : {}),
+      frame: wire,
+    });
     for (const wire of protocol.encodeTopicWireFrames(parsed, {
       deliveryKind,
       topic: subscription.topic,
@@ -386,19 +392,17 @@ export class CodeUiConnections {
       logicalFrameId: randomUUID(),
       logicalFrameOrdinal: ++subscription.ordinal,
       measurePhysicalFrameBytes: (value) =>
-        Buffer.byteLength(JSON.stringify(value), "utf8"),
+        Math.max(
+          protocol.measureTopicNotificationEnvelopeBytes(value).maxBytes,
+          Buffer.byteLength(JSON.stringify(notification(value)), "utf8"),
+        ),
     })) {
       if (
         !this.owns(connection, subscription) ||
         !this.isCurrentSnapshot(subscription, current)
       )
         return;
-      await connection.send({
-        event: definition.event,
-        workspacePath: subscription.workspacePath,
-        ...(workspaceIdentity ? { workspaceIdentity } : {}),
-        frame: wire,
-      } as CodeUiEvent);
+      await connection.send(notification(wire) as CodeUiEvent);
     }
   }
 }

@@ -38,7 +38,16 @@ interface SkillStoreState {
   ) => Promise<void>;
 }
 
-const inFlightSkillLoads = new Map<string, ReturnType<ISkillsService["list"]>>();
+const inFlightSkillLoadsByService = new WeakMap<ISkillsService, Map<string, ReturnType<ISkillsService["list"]>>>();
+
+function getSkillLoads(skillsService: ISkillsService) {
+  let loads = inFlightSkillLoadsByService.get(skillsService);
+  if (!loads) {
+    loads = new Map();
+    inFlightSkillLoadsByService.set(skillsService, loads);
+  }
+  return loads;
+}
 
 function getSkillLoadKey(
   workspacePath: string,
@@ -56,6 +65,7 @@ function loadSkillsOnce(
   options: { bypassCache?: boolean } = {},
 ): ReturnType<ISkillsService["list"]> {
   const key = getSkillLoadKey(workspacePath, provider, workspaceIdentity);
+  const inFlightSkillLoads = getSkillLoads(skillsService);
   if (!options.bypassCache) {
     const current = inFlightSkillLoads.get(key);
     if (current) {
@@ -73,6 +83,9 @@ function loadSkillsOnce(
   inFlightSkillLoads.set(key, request);
   return request;
 }
+
+let skillLoadEpoch = 0;
+let currentSkillService: ISkillsService | null = null;
 
 export const useSkillStore = create<SkillStoreState>((set, get) => ({
   workspacePath: null,
@@ -112,6 +125,7 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
       return;
     }
     const hasCachedSkills =
+      currentSkillService === skillsService &&
       currentState.skills.length > 0 &&
       currentState.loadedWorkspacePath === workspacePath &&
       currentState.loadedWorkspaceIdentity === normalizedWorkspaceIdentity &&
@@ -119,6 +133,8 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
     // 切换 agent 筛选时会触发 initialize。
     // 之前总是 loading=true，会先清空成“加载中”再渲染结果，导致列表闪烁。
     // 这里改成“只有同一 workspace+provider 的缓存才允许复用”，避免上一套技能误显示到当前会话里。
+    currentSkillService = skillsService;
+    const requestEpoch = ++skillLoadEpoch;
     set({
       workspacePath,
       workspaceIdentity: normalizedWorkspaceIdentity,
@@ -138,6 +154,7 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
         skillsService,
         normalizedWorkspaceIdentity ?? undefined,
       );
+      if (requestEpoch !== skillLoadEpoch) return;
       set({
         skills: result.skills,
         capability: result.capability,
@@ -147,6 +164,7 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
         loadedProvider: provider,
       });
     } catch (error) {
+      if (requestEpoch !== skillLoadEpoch) return;
       logger.error("[skills] initialize failed", {
         workspacePath,
         provider,
@@ -173,12 +191,14 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
     // 开关技能后会触发 refresh，之前每次都把 loading 置 true，
     // Settings 列表会先切到“加载中”再切回数据，用户看到整列表闪烁。
     // 这里改成“仅首次无缓存时显示阻塞 loading”，有缓存时后台刷新并保留当前列表。
+    currentSkillService = skillsService;
+    const requestEpoch = ++skillLoadEpoch;
     set({ loading: !hasCachedSkills, error: null });
     // refresh 必须保证拿到「最新一次」的服务端结果。
     // 直接调 loadSkillsOnce 会复用 in-flight 的旧请求，
     // 导致复制 skill 到通用目录后 chat mention 仍看到旧列表。
     // 这里在 refresh 时显式跳过 in-flight 缓存，强制发起一次新请求。
-    inFlightSkillLoads.delete(getSkillLoadKey(workspacePath, provider, workspaceIdentityFromState));
+    getSkillLoads(skillsService).delete(getSkillLoadKey(workspacePath, provider, workspaceIdentityFromState));
     try {
       const result = await loadSkillsOnce(
         workspacePath,
@@ -186,6 +206,7 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
         skillsService,
         workspaceIdentityFromState,
       );
+      if (requestEpoch !== skillLoadEpoch) return;
       set({
         skills: result.skills,
         capability: result.capability,
@@ -195,6 +216,7 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
         loadedProvider: provider,
       });
     } catch (error) {
+      if (requestEpoch !== skillLoadEpoch) return;
       logger.error("[skills] refresh failed", {
         workspacePath,
         provider,
@@ -236,20 +258,29 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
       set({ error: "skillsService is required" });
       return;
     }
+    skillLoadEpoch += 1;
+    const targetSkill = get().skills.find((skill) => skill.id === skillId);
+    const effectiveScope = get().capability?.databaseRecords ? targetSkill?.scope : scope;
+    const isCurrentTarget = () => currentSkillService === skillsService && get().workspacePath === workspacePath &&
+      get().workspaceIdentity === (workspaceIdentityFromState ?? null) &&
+      normalizeAgentProviderToZCodeAgent(get().provider) === provider;
     try {
       await skillsService.setEnabled({
         workspacePath,
         workspaceIdentity: workspaceIdentityFromState,
         provider,
-        ...(scope ? { scope } : {}),
+        ...(effectiveScope ? { scope: effectiveScope } : {}),
+        ...(targetSkill?.installationRevision ? { installationRevision: targetSkill.installationRevision } : {}),
         skillId,
         enabled,
       });
+      if (!isCurrentTarget()) return;
       await get().refresh(skillsService, workspaceIdentityFromState);
     } catch (error) {
-      set({
-        error: error instanceof Error ? error.message : String(error),
-      });
+      if (!isCurrentTarget()) return;
+      if (get().capability?.databaseRecords) await get().refresh(skillsService, workspaceIdentityFromState);
+      if (!isCurrentTarget()) return;
+      set({ error: error instanceof Error ? error.message : String(error) });
     }
   },
 }));

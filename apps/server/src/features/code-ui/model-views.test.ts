@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { providerInstanceResponseSchema } from "@kenfutwork/shared";
 import { expect, it } from "vitest";
-import { buildCodeUiModelViews } from "./model-views.js";
+import { buildCodeUiModelViews } from "../model-providers/model-views.js";
 
 function provider(input: Record<string, unknown> = {}) {
   return providerInstanceResponseSchema.parse({

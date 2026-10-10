@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import {
+  createPlanApprovalRequest,
+  planApprovalDecision,
+} from "../code-ui/plan-approval.js";
 import { parameterFingerprint } from "../execution/parameter-fingerprint.js";
 import type {
   ApprovalEvent,
@@ -9,7 +13,6 @@ import type {
   PermissionInvocation,
 } from "./approval-types.js";
 import { codePermissionPolicy } from "./code-policy.js";
-import { createPlanApprovalRequest, planApprovalDecision } from "../code-ui/plan-approval.js";
 import type { PermissionDecision } from "./permission-service.js";
 
 interface ApprovalCall {
@@ -41,7 +44,9 @@ function identity(input: PermissionInvocation): ApprovalIdentity {
     role,
     scopeGeneration,
     branchGeneration,
-    ...(input.planControl === "exit" ? { planningEpoch: input.planningEpoch } : {}),
+    ...(input.planControl === "exit"
+      ? { planningEpoch: input.planningEpoch }
+      : {}),
   };
 }
 
@@ -75,9 +80,10 @@ function sameBinding(call: ApprovalCall, input: ApprovalResolution): boolean {
     "scopeGeneration",
     "branchGeneration",
   ] as const;
-  return (call.request.identity.planningEpoch === undefined ||
-    call.request.identity.planningEpoch === input.binding.planningEpoch) && keys.every(
-    (key) => call.request.identity[key] === input.binding?.[key],
+  return (
+    (call.request.identity.planningEpoch === undefined ||
+      call.request.identity.planningEpoch === input.binding.planningEpoch) &&
+    keys.every((key) => call.request.identity[key] === input.binding?.[key])
   );
 }
 
@@ -278,8 +284,10 @@ export function createCodeApprovalService(): CodeApprovalService {
           status: "alreadyResolved",
           reasonCode: "proto.alreadyResolved",
         };
-      const decision = call.request.interaction.kind === "userInput"
-        ? planApprovalDecision(input.answer) : answerDecision(input.answer);
+      const decision =
+        call.request.interaction.kind === "userInput"
+          ? planApprovalDecision(input.answer)
+          : answerDecision(input.answer);
       if (!decision)
         return { status: "rejected", reasonCode: "approval.invalidAnswer" };
       const allowed = decision === "allow";

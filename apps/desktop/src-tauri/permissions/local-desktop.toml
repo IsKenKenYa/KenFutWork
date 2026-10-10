@@ -6,6 +6,8 @@ commands.allow = [
   "save_file",
   "reveal_path",
   "open_external",
+  "cua_permission_owner",
+  "open_cua_permission_settings",
   "open_in_browser",
   "open_data_directory",
   "move_data_directory",

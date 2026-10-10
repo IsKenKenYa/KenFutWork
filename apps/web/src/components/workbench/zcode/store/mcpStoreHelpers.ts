@@ -141,15 +141,15 @@ export function buildServerList(
   const servers: ZCodeMcpServer[] = [];
 
   for (const server of nativeServers) {
-    const serverId = makeServerId(
+    const serverId = server.hostRecordId ?? makeServerId(
       server.source,
       server.name,
       server.projectPath,
       server.location?.source,
     );
     if (!deletedPreload.has(serverId)) {
-      servers.push(
-        makeServer(
+      servers.push({
+        ...makeServer(
           serverId,
           server.name,
           server.config,
@@ -160,7 +160,11 @@ export function buildServerList(
           server.file,
           server.location,
         ),
-      );
+        ...(server.origin ? { enabled: server.enabled ?? true } : {}),
+        ...(server.hostRecordId ? { hostRecordId: server.hostRecordId } : {}),
+        ...(server.origin ? { origin: server.origin } : {}),
+        ...(server.envKeys ? { envKeys: server.envKeys } : {}),
+      });
     }
   }
 

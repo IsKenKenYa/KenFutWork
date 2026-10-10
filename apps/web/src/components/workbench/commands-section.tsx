@@ -9,7 +9,7 @@ import { SETTINGS_TITLE } from "@/lib/settings-layout";
  * 设置 → 命令（R5-2 的「命令」条目）。
  *
  * 自定义斜杠命令：`名字 + 说明 + 提示词模板`，对话输入框里 `/名字 参数` 触发，
- * **提交前**展开成提示词（消费方在 `lib/slash-commands.ts`，工作台 composer 调用）。
+ * 原文本进入转录；参数由服务端共用输入构造沿原ZCode规则展开。
  *
  * 保存是**整表覆盖**（这张表本来就是「一次编辑、整体保存」的形态）：新增/删除/改完
  * 点一次「保存命令」。校验与去重在服务端（契约层名字规则 + 读回时丢脏数据），
@@ -142,7 +142,7 @@ export function CommandsSection({
               value={row.prompt}
               onChange={(event) => patch(index, { prompt: event.target.value })}
               rows={2}
-              placeholder={"请审查以下改动：{{args}}"}
+              placeholder={"概括 $ARGUMENTS"}
               className="w-full resize-y rounded-md border bg-transparent px-2 py-1 text-sm outline-none"
             />
           </div>

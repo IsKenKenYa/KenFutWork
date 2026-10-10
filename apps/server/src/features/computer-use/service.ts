@@ -15,7 +15,6 @@ import {
   flattenAxTree,
   formatAxTree,
 } from "./ax-tree.js";
-import { planImageInline } from "./budget.js";
 import type {
   ComputerUseExecutor,
   CuInputAction,
@@ -27,6 +26,7 @@ import {
   createCuLease,
   toActionSentError,
 } from "./lease.js";
+import { fitRasterPreview } from "./raster-preview.js";
 import {
   type ParsedAppRef,
   parseAppRef,
@@ -276,7 +276,11 @@ export function createComputerUseService(options: {
     const maximum = governance().maxActionsPerRun;
     const count = actionCounts.get(runId) ?? 0;
     return count >= maximum
-      ? errorResult("action_limit", `本轮 run 已执行 ${count} 个动作，达到上限 ${maximum}（设置可调 computerUseMaxActionsPerRun）。`, { retry: "never" })
+      ? errorResult(
+          "action_limit",
+          `本轮 run 已执行 ${count} 个动作，达到上限 ${maximum}（设置可调 computerUseMaxActionsPerRun）。`,
+          { retry: "never" },
+        )
       : undefined;
   };
 
@@ -484,21 +488,6 @@ export function createComputerUseService(options: {
     content: CuContentBlock[];
     text: string;
   } => {
-    const plan = planImageInline({
-      base64Length: raster.base64.length,
-      maxInlineBytes: governance().screenshotMaxBytes,
-    });
-    if (!plan.inline) {
-      return {
-        structured: {
-          ...structured,
-          has_image: false,
-          image_omitted: plan.reason,
-        },
-        content: [],
-        text: `（截图超出内联预算，仅返回文字观察。${plan.reason}）`,
-      };
-    }
     return {
       structured: {
         ...structured,
@@ -656,7 +645,11 @@ export function createComputerUseService(options: {
         if (input.includeScreenshot) {
           const raster = await withTimeout(
             "screenshot",
-            (operation) => executor.capture(appRef, operation),
+            async (operation) =>
+              fitRasterPreview(
+                await executor.capture(appRef, operation),
+                governance().screenshotMaxBytes,
+              ),
             context,
             undefined,
             false,
@@ -698,7 +691,11 @@ export function createComputerUseService(options: {
       try {
         const raster = await withTimeout(
           "screenshot",
-          (operation) => executor.capture(appRef, operation),
+          async (operation) =>
+            fitRasterPreview(
+              await executor.capture(appRef, operation),
+              governance().screenshotMaxBytes,
+            ),
           context,
         );
         if (raster.blackFrame) {
@@ -722,6 +719,7 @@ export function createComputerUseService(options: {
         observations.set(key, latest);
         const attached = attachRaster(raster, {
           state_id: latest?.stateId ?? null,
+          ...(raster.app ? { app: raster.app } : {}),
         });
         return okResult(
           `已截取目标窗口 ${raster.width}x${raster.height}（frameId=${raster.frameId}）。${attached.text}`,
@@ -774,6 +772,7 @@ export function createComputerUseService(options: {
         );
         return okResult(`${result.detail}（actionSent=${result.actionSent}）`, {
           actionSent: result.actionSent,
+          ...(latest?.binding ? { app: latest.app } : {}),
         });
       } catch (error) {
         return failureOf(error);
@@ -824,6 +823,7 @@ export function createComputerUseService(options: {
         );
         return okResult(`${result.detail}（actionSent=${result.actionSent}）`, {
           actionSent: result.actionSent,
+          ...(latest?.binding ? { app: latest.app } : {}),
         });
       } catch (error) {
         return failureOf(error);
@@ -902,7 +902,10 @@ export function createComputerUseService(options: {
           true,
           latest?.binding,
         );
-        return okResult(result.detail, { actionSent: result.actionSent });
+        return okResult(result.detail, {
+          actionSent: result.actionSent,
+          ...(latest?.binding ? { app: latest.app } : {}),
+        });
       } catch (error) {
         return failureOf(error);
       } finally {

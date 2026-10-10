@@ -273,7 +273,12 @@ describe.skipIf(process.env.RUN_LOCAL_INSTANCE_SCHEMA_INTEGRATION !== "1")(
           state: createCodeUiConversation({
             sessionId: taskId,
             workspacePath: directory,
-            config: { provider: "zcode", model: "schema-test", thought: "", followupMode: "queue" },
+            config: {
+              provider: "zcode",
+              model: "schema-test",
+              thought: "",
+              followupMode: "queue",
+            },
           }).exportState(),
           command: {
             clientId: "original-sdk-client",

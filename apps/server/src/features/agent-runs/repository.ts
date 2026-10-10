@@ -216,16 +216,14 @@ export function createAgentRunRepository(
     },
 
     async latestForSession(input) {
-      const rows = await persistence
-        .forInstance(input.instanceId)
-        .query<{
-          status: string;
-          error_code: string | null;
-          error_message: string | null;
-          created_at: string | Date;
-          completed_at: string | Date | null;
-        }>(
-          `select r.status, r.error_code, r.error_message,
+      const rows = await persistence.forInstance(input.instanceId).query<{
+        status: string;
+        error_code: string | null;
+        error_message: string | null;
+        created_at: string | Date;
+        completed_at: string | Date | null;
+      }>(
+        `select r.status, r.error_code, r.error_message,
                   r.created_at, r.completed_at
              from public.agent_runs r
              join public.chat_sessions s on s.id = r.session_id
@@ -233,8 +231,8 @@ export function createAgentRunRepository(
               and s.instance_id = :instance
             order by r.created_at desc
             limit 1`,
-          [input.sessionId],
-        );
+        [input.sessionId],
+      );
       const row = rows[0];
       if (!row) return null;
       return {

@@ -6,7 +6,11 @@ import { CU_TOOL_PREFIX } from "../tools.js";
 
 export async function createDesktopModelServer(
   pid: number,
-  options: { beforeResponse?(stage: number): Promise<void> } = {},
+  options: {
+    beforeResponse?(stage: number): Promise<void>;
+    screenshotRecovery?: boolean;
+    omitRole?: boolean;
+  } = {},
 ) {
   const requests: Record<string, unknown>[] = [];
   let inputIndex: number | undefined;
@@ -15,6 +19,7 @@ export async function createDesktopModelServer(
     "request_access",
     "get_app_state",
     "screenshot",
+    ...(options.screenshotRecovery ? ["screenshot"] : []),
     "type",
     "get_app_state",
   ];
@@ -52,13 +57,21 @@ export async function createDesktopModelServer(
       const args =
         stage === 0
           ? { query: CU_TOOL_PREFIX }
-          : stage === 4
+          : shortName === "type"
             ? {
                 app: { pid },
                 text: "Task中文🙂🚀",
                 target: { type: "element", index: inputIndex },
               }
-            : { app: { pid } };
+            : {
+                app: {
+                  pid:
+                    options.screenshotRecovery && stage === 3
+                      ? 2_147_483_647
+                      : pid,
+                },
+              };
+      const role = options.omitRole ? {} : { role: "assistant" };
       response.writeHead(200, { "content-type": "text/event-stream" });
       const chunk = (delta: unknown, finishReason: string | null) =>
         `data: ${JSON.stringify({
@@ -72,7 +85,7 @@ export async function createDesktopModelServer(
         chunk(
           shortName
             ? {
-                role: "assistant",
+                ...role,
                 tool_calls: [
                   {
                     index: 0,
@@ -82,7 +95,7 @@ export async function createDesktopModelServer(
                   },
                 ],
               }
-            : { role: "assistant", content: "macOS Task验收完成" },
+            : { ...role, content: "macOS Task验收完成" },
           null,
         ),
       );

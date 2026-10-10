@@ -47,8 +47,16 @@ const VOICE_UI_SRC = join(
   "src",
 );
 const preservedSources = new Set<string>(
-  (JSON.parse(readFileSync(join(import.meta.dirname, "../../../docs/源码来源/ZCode源码清单.json"), "utf8")) as { records: Array<{ target: string }> }).records
-    .map((record) => join(import.meta.dirname, "../../..", record.target)),
+  (
+    JSON.parse(
+      readFileSync(
+        join(import.meta.dirname, "../../../docs/源码来源/ZCode源码清单.json"),
+        "utf8",
+      ),
+    ) as { records: Array<{ target: string }> }
+  ).records.map((record) =>
+    join(import.meta.dirname, "../../..", record.target),
+  ),
 );
 const CJK = /[\u4e00-\u9fff]/;
 const CJK_GLOBAL = /[\u4e00-\u9fff]/g;
@@ -75,7 +83,8 @@ function uiFiles(): string[] {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) walk(path);
-      else if (entry.name.endsWith(".tsx") && !preservedSources.has(path)) files.push(path);
+      else if (entry.name.endsWith(".tsx") && !preservedSources.has(path))
+        files.push(path);
     }
   };
   walk(COMPONENTS);

@@ -153,6 +153,20 @@ describe("内嵌 Postgres：二进制目录解析", () => {
     ).toBe(bundled);
   });
 
+  it("未显式给 exeDir 时按可执行文件同级找 pg/bin（SEA 发布态）", () => {
+    // Windows 打包态冒烟实测：冒烟脚本的 cwd 不是 release/，只按 cwd 找就报
+    // 「未找到内嵌 Postgres 二进制」，而 pg/ 其实就躺在 exe 旁边。
+    const bundled = join("D:/release", "pg", "bin");
+    expect(
+      resolvePgBinDir({
+        env: {},
+        exists: (path) => path === bundled,
+        execPath: join("D:/release", "KenFutWork-server.exe"),
+        platform: "win32",
+      }),
+    ).toBe(bundled);
+  });
+
   // 本用例 mock 了 win32 路径解析，但 resolvePgBinDir 内部用真实 process.arch 拼
   // 平台 key（win32-x64），且 windows-x64 可选依赖只在 x64 Windows 上安装——
   // 非 x64-Windows 机器直接跳过（依赖缺失的 fail loud 另有专测覆盖）。

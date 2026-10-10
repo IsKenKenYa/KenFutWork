@@ -17,7 +17,10 @@ import { execFileSync, spawnSync } from "node:child_process";
  *   - JDK：Adoptium API 直链 + 其 `checksum` 返回值校验（这里取 JRE 形态以控体积）。
  *
  * 幂等：目标目录已存在且可执行体在，则跳过（`--force` 重下）。
- * 用法：node scripts/fetch-runtimes.mjs [--only node,python,uv,jdk] [--force]
+ * 可复现：仓库根若有 `runtime-lock.json`，解析到的资产名与下载后的哈希都必须命中它，
+ * 不符即拒绝（同一 commit 两次出包拿到同一套运行时才是可对账的）。
+ *   用法：node scripts/fetch-runtimes.mjs [--only node,python,uv,jdk] [--force]
+ *   重锁：node scripts/fetch-runtimes.mjs --write-lock   （只改本目标平台那一节）
  */
 import { createHash } from "node:crypto";
 import {
@@ -30,6 +33,16 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import {
+  assertLockAssetName,
+  assertLockSha,
+  buildLockEntry,
+  LOCK_FILE_NAME,
+  lockEntryFor,
+  mergeLockTargets,
+  readRuntimeLock,
+} from "./runtime-lock.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const RUNTIME_DIR = join(ROOT, "runtime");
@@ -128,15 +141,58 @@ const SPECS = {
   "darwin-x64": null,
 };
 
-function parseArgs(argv, available) {
-  const onlyArg = argv.find((a) => a.startsWith("--only="));
-  const only = onlyArg
-    ? onlyArg
-        .slice("--only=".length)
-        .split(",")
-        .map((s) => s.trim())
-    : available;
-  return { only, force: argv.includes("--force") };
+/**
+ * `--only` 两种写法都得认：文件头的用法是 `--only node,python`（空格分隔），只认
+ * `--only=` 会让前者**静默降级成「全部运行时」**——实测过一次，多下十几个 GB 的
+ * 无关运行时还让人以为过滤生效了。裸 `--only` 不给值时宁可报错，不猜意图。
+ */
+export function parseArgs(argv, available) {
+  const inline = argv.find((arg) => arg.startsWith("--only="));
+  const flagIndex = argv.indexOf("--only");
+  const raw = inline
+    ? inline.slice("--only=".length)
+    : flagIndex >= 0
+      ? (argv[flagIndex + 1] ?? "")
+      : null;
+  return {
+    only:
+      raw === null
+        ? available
+        : raw
+            .split(",")
+            .map((name) => name.trim())
+            .filter(Boolean),
+    force: argv.includes("--force"),
+    writeLock: argv.includes("--write-lock"),
+  };
+}
+
+/**
+ * 取「跟随重定向之后的最终资产名」。Adoptium 的 `latest` 直链本身不含文件名，
+ * 但重定向后的 URL 含（如 `OpenJDK21U-jre_aarch64_apple_hotspot_21.0.5_11.tar.gz`），
+ * 写 lock 时把它记下来，「latest」就不再是悬空的。
+ */
+async function resolveFinalAssetName(url) {
+  try {
+    const response = await fetch(url, { method: "HEAD", redirect: "follow" });
+    return basename(new URL(response.url).pathname) || null;
+  } catch {
+    return basename(new URL(url).pathname) || null;
+  }
+}
+
+/**
+ * Adoptium 的重定向尾段是一段 UUID，真正的发行物名在它的 assets JSON 里
+ *（`binary.package.name`，与取 checksum 用的是同一份）。
+ */
+async function resolveChecksumAssetName(resolved) {
+  if (!resolved.checksumUrl) return null;
+  try {
+    const assets = await (await fetch(resolved.checksumUrl)).json();
+    return assets?.[0]?.binary?.package?.name ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function sha256(buffer) {
@@ -283,7 +339,7 @@ async function resolvePythonAsset(series, platformTriple) {
   const release = await fetchGithubReleaseJson(PYTHON_RELEASE_API);
   const assets = release?.assets ?? [];
   const pattern = new RegExp(
-    `^cpython-${series.replace(/\./g, "\\.")}\\.(\\d+)\\+\\d+-${platformTriple.replaceAll("-", "\\-")}-install_only\\.tar\\.gz$`,
+    `^cpython-${series.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.(\\d+)\\+\\d+-${platformTriple.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-install_only\\.tar\\.gz$`,
   );
   const matched = assets.filter((item) => pattern.test(item.name ?? ""));
   const chosen = matched.sort(
@@ -323,6 +379,40 @@ async function resolveUvAsset(assetName) {
   };
 }
 
+/**
+ * 带有限重试的下载。GitHub 对象存储与发布 API 偶发 5xx / 403 限流 / 连接重置，一次网络
+ * 抖动就让整条十几分钟的出包链变红不划算，且红得看不出原因。
+ * 只重试「传输层」失败；内容问题（校验值不符、锁文件不匹配）由调用方判定，绝不重试。
+ * 次数与退避是构建期常量，不是运行期限额，故不进治理表（AGENTS.md「运行时可调数值」一节）。
+ */
+const DOWNLOAD_ATTEMPTS = 3;
+
+async function fetchBytesWithRetry(url) {
+  let last = "";
+  for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt += 1) {
+    let retryable = true;
+    try {
+      const response = await fetch(url, { redirect: "follow" });
+      if (response.ok) return Buffer.from(await response.arrayBuffer());
+      last = `HTTP ${response.status}`;
+      // 4xx（除 403/429 限流）说明 URL 本身错了，重试没有意义
+      retryable =
+        response.status >= 500 ||
+        response.status === 403 ||
+        response.status === 429;
+    } catch (error) {
+      last = error.message;
+    }
+    if (!retryable || attempt === DOWNLOAD_ATTEMPTS) break;
+    const waitMs = 2000 * attempt;
+    log(
+      `第 ${attempt} 次取 ${basename(url)} 失败（${last}），${waitMs}ms 后重试…`,
+    );
+    await new Promise((done) => setTimeout(done, waitMs));
+  }
+  throw new Error(`${basename(url)} 取回失败：${last}（URL：${url}）`);
+}
+
 /** 取官方校验值：SHASUMS 文件按文件名查行，Adoptium 则读 assets JSON 的 checksum。 */
 async function resolveExpectedSha(resolved, url) {
   // 校验值直接来自发布说明的表格（git-for-windows 的 MinGit 就是这么发布的）
@@ -330,48 +420,85 @@ async function resolveExpectedSha(resolved, url) {
     return resolved.bodySha;
   }
   if (resolved.sumsUrl) {
-    const sums = await (await fetch(resolved.sumsUrl)).text();
+    const sums = (await fetchBytesWithRetry(resolved.sumsUrl)).toString("utf8");
     const fileName = resolved.fileName ?? basename(url);
     const line = sums.split("\n").find((row) => row.trim().endsWith(fileName));
     return line ? (line.trim().split(/\s+/)[0] ?? null) : null;
   }
   // 逐资产校验文件（uv 的 `<asset>.sha256`：内容就是哈希，或「哈希 + 文件名」）
   if (resolved.rawShaUrl) {
-    const text = (await (await fetch(resolved.rawShaUrl)).text()).trim();
+    const text = (await fetchBytesWithRetry(resolved.rawShaUrl))
+      .toString("utf8")
+      .trim();
     return text.split(/\s+/)[0] ?? null;
   }
   if (resolved.checksumUrl) {
-    const assets = await (await fetch(resolved.checksumUrl)).json();
+    const assets = JSON.parse(
+      (await fetchBytesWithRetry(resolved.checksumUrl)).toString("utf8"),
+    );
     return assets?.[0]?.binary?.package?.checksum ?? null;
   }
   return null;
 }
 
-async function fetchWithSha(spec, { force }) {
+async function fetchWithSha(spec, { force, lock }) {
   const targetDir = join(RUNTIME_DIR, spec.name);
+  const entry = lockEntryFor(lock, TARGET, spec.name);
   if (!force && existsSync(join(targetDir, spec.probe))) {
-    log(`${spec.name} 已存在，跳过（--force 可重下）：${targetDir}`);
+    log(
+      entry
+        ? `${spec.name} 已存在，跳过：${targetDir}（lock 要求 ${entry.fileName ?? entry.sha256?.slice(0, 12)}…；重新锁定后需 --force 重下）`
+        : `${spec.name} 已存在，跳过（--force 可重下）：${targetDir}`,
+    );
     return;
   }
 
-  const resolved = await spec.resolve(spec.version ?? spec.series);
-  const url = resolved.url;
-  log(`${spec.name} 下载：${url}`);
-  const response = await fetch(url, { redirect: "follow" });
-  if (!response.ok) {
-    throw new Error(`${spec.name} 下载失败：HTTP ${response.status}`);
+  // 锁里有「确切 URL + sha256」时按**锁**下载，不再解析 latest：上游每发一版（uv
+  // 0.12.24→0.13.0、python-build-standalone 20261003→20261009 都真实发生过）都会把
+  // 出包链判红，而那既不是代码问题也不是可复现构建。官方校验值的抓取留给 --write-lock
+  // 与「锁里没有该项」的路径；日常构建只信仓库里这条已评审过的 URL+哈希。
+  const pinned = entry?.url && entry?.sha256 ? entry : null;
+  const resolved = pinned ?? (await spec.resolve(spec.version ?? spec.series));
+  const nameVerdict = assertLockAssetName({
+    entry,
+    fileName: resolved.fileName ?? null,
+    name: spec.name,
+    target: TARGET,
+  });
+  if (!nameVerdict.ok) {
+    throw new Error(nameVerdict.reason);
   }
-  const buffer = Buffer.from(await response.arrayBuffer());
+  const url = resolved.url;
+  log(
+    pinned
+      ? `${spec.name} 按锁下载：${url}`
+      : `${spec.name} 下载（解析 latest）：${url}`,
+  );
+  const buffer = await fetchBytesWithRetry(url);
   const digest = sha256(buffer);
 
-  const expected = await resolveExpectedSha(resolved, url);
-  if (!expected) {
-    throw new Error(`${spec.name} 拿不到官方校验值，拒绝安装（fail loud）。`);
+  if (!pinned) {
+    const expected = await resolveExpectedSha(resolved, url);
+    if (!expected) {
+      throw new Error(`${spec.name} 拿不到官方校验值，拒绝安装（fail loud）。`);
+    }
+    if (expected !== digest) {
+      throw new Error(
+        `${spec.name} 校验失败：期望 ${expected}，实际 ${digest}（若官方更新了版本，请同步更新脚本里的版本/哈希）。`,
+      );
+    }
   }
-  if (expected !== digest) {
-    throw new Error(
-      `${spec.name} 校验失败：期望 ${expected}，实际 ${digest}（若官方更新了版本，请同步更新脚本里的版本/哈希）。`,
-    );
+  const shaVerdict = assertLockSha({
+    entry,
+    sha256: digest,
+    name: spec.name,
+    target: TARGET,
+  });
+  if (!shaVerdict.ok) {
+    throw new Error(shaVerdict.reason);
+  }
+  if (shaVerdict.reason) {
+    log(shaVerdict.reason);
   }
   log(`${spec.name} 校验通过（sha256=${digest.slice(0, 12)}…），解压中…`);
 
@@ -386,6 +513,39 @@ async function fetchWithSha(spec, { force }) {
   log(`${spec.name} 就位：${join(targetDir, spec.probe)}`);
 }
 
+/**
+ * 写 lock：只解析、只取官方校验值，**不下载压缩包**。
+ * 另一台打包机（另一目标平台）那一节保持原样——lock 是两份目标平台的并集。
+ */
+async function writeLock(specs) {
+  const lock = readRuntimeLock(ROOT);
+  const entries = {};
+  for (const [name, spec] of Object.entries(specs)) {
+    const resolved = await spec.resolve(spec.version ?? spec.series);
+    const digest = await resolveExpectedSha(resolved, resolved.url);
+    if (!digest) {
+      throw new Error(`${name} 拿不到官方校验值，无法写 lock（fail loud）。`);
+    }
+    const fileName =
+      resolved.fileName ??
+      (await resolveChecksumAssetName(resolved)) ??
+      (await resolveFinalAssetName(resolved.url));
+    entries[name] = buildLockEntry({
+      version: spec.version ?? spec.series,
+      fileName,
+      sha256: digest,
+      url: resolved.url,
+    });
+    log(
+      `锁定 ${name}：${fileName ?? "（最终名未知）"} sha256=${digest.slice(0, 12)}…`,
+    );
+  }
+  const next = mergeLockTargets(lock, TARGET, entries);
+  const file = join(ROOT, LOCK_FILE_NAME);
+  writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`);
+  log(`已写 ${relative(ROOT, file)}（本次只覆盖 ${TARGET} 那一节）。`);
+}
+
 async function main() {
   const specs = SPECS[TARGET];
   if (!specs) {
@@ -393,7 +553,21 @@ async function main() {
       `当前平台 ${TARGET} 没有可用的运行时资产清单（fail loud）。目前支持：${Object.keys(SPECS).join("、")}。`,
     );
   }
-  const { only, force } = parseArgs(process.argv.slice(2), Object.keys(specs));
+  const {
+    only,
+    force,
+    writeLock: shouldWrite,
+  } = parseArgs(process.argv.slice(2), Object.keys(specs));
+  if (shouldWrite) {
+    await writeLock(specs);
+    return;
+  }
+  const lock = readRuntimeLock(ROOT);
+  if (!lock) {
+    log(
+      `未发现 ${LOCK_FILE_NAME}：按「最新发布」解析（出包不可复现）。要固化就跑 --write-lock。`,
+    );
+  }
   const selected = Object.entries(specs).filter(([name]) =>
     only.includes(name),
   );
@@ -401,7 +575,7 @@ async function main() {
     throw new Error(`--only 里没有可识别的运行时：${only.join(",")}`);
   }
   for (const [name, spec] of selected) {
-    await fetchWithSha({ name, ...spec }, { force });
+    await fetchWithSha({ name, ...spec }, { force, lock });
   }
   log(`完成（目标 ${TARGET}）。运行时目录：${RUNTIME_DIR}`);
   log(
@@ -409,7 +583,13 @@ async function main() {
   );
 }
 
-main().catch((error) => {
-  console.error(`[runtimes] 失败：${error.message}`);
-  process.exitCode = 1;
-});
+// 被 import（测试 parseArgs 这类纯函数）时不触发下载；只有作为入口执行才跑主流程。
+if (
+  process.argv[1] &&
+  pathToFileURL(process.argv[1]).href === import.meta.url
+) {
+  main().catch((error) => {
+    console.error(`[runtimes] 失败：${error.message}`);
+    process.exitCode = 1;
+  });
+}

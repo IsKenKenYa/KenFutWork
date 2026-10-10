@@ -70,11 +70,7 @@ export interface NetworkBuffer {
   /** 失败（补原因）。 */
   failed(requestId: string, reason: string): void;
   /** 完成（补耗时；响应体已取到就一并补上）。 */
-  finished(
-    requestId: string,
-    durationMs: number,
-    responseBody?: string,
-  ): void;
+  finished(requestId: string, durationMs: number, responseBody?: string): void;
   /** 取 `seq > since` 的请求（最多 `limit` 条）。 */
   since(seq: number, limit?: number): NetworkRequest[];
   /** 按 CDP 的 requestId 取当前记录（取响应体前查 MIME/体积用）。 */

@@ -1,10 +1,9 @@
-import { z } from "zod";
-
 import type { PermissionRules, PermissionTier } from "@kenfutwork/shared";
 import {
   permissionRulesSchema,
   permissionTierSchema,
 } from "@kenfutwork/shared";
+import { z } from "zod";
 
 import type { PersistenceService } from "../persistence/types.js";
 
@@ -22,7 +21,6 @@ import type { PersistenceService } from "../persistence/types.js";
  */
 
 const approvedToolsSchema = z.array(z.string().min(1));
-
 
 export interface PermissionSettings {
   /** 常规任务档位。 */

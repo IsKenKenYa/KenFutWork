@@ -23,6 +23,7 @@ import { CanvasToolMenu } from "../../components/canvas-tool-menu";
 import { ChatSidebar, type SidePanelTab } from "../../components/chat-sidebar";
 import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";
+import { installHostWorkspaceActivity } from "../../components/workbench/zcode/host/workspaceActivity";
 import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
 import { useWebSocket } from "../../hooks/use-websocket";
 import {
@@ -36,6 +37,7 @@ import {
 } from "../../lib/server-api";
 
 function CanvasPageContent() {
+  useEffect(() => installHostWorkspaceActivity(window.parent), []);
   const searchParams = useSearchParams();
   const canvasId = searchParams.get("id");
   const initialSessionId = searchParams.get("session") ?? undefined;
@@ -290,6 +292,7 @@ function CanvasPageContent() {
         />
         {/* 插件面板（能力 `ui`）：画布槽位 */}
         <PluginPanelButtons
+          mode="design"
           accessToken={accessToken}
           slot="canvas"
           renderButton={(panel, open) => (

@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
+import { useId, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Loader2Icon, Pencil } from "lucide-react";
 import { Button } from "@zui/components/ui/button.js";
 import {
@@ -60,6 +60,7 @@ export function ProviderModelMetadataDialog({
   modelIdReadOnly = false,
   saving = false,
   modelDefaultsLoaded = false,
+  editorContent,
   onModelIdBlur,
 }: {
   mode?: "add" | "edit";
@@ -78,6 +79,7 @@ export function ProviderModelMetadataDialog({
   modelIdReadOnly?: boolean;
   saving?: boolean;
   modelDefaultsLoaded?: boolean;
+  editorContent?: ReactNode;
   onModelIdBlur?: () => void;
 }) {
   const { intl } = useZCodeIntl();
@@ -101,10 +103,11 @@ export function ProviderModelMetadataDialog({
   const shouldFocusContextWindowInput = mode === "edit";
   const addModelConfigResolutionPending = smart && modelConfigResolutionPending;
   const compositionActiveRef = useRef(false);
-  const handleTechnicalInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+  const handleTechnicalInputKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== "Enter") {
       return;
     }
+    if (editorContent && (event.defaultPrevented || !(event.target instanceof HTMLInputElement))) return;
     // 输入法候选确认也会发出 Enter。某些 Electron/macOS 版本的
     // nativeEvent.isComposing 会过早恢复 false，因此同时保留本地 composition 状态。
     if (
@@ -116,6 +119,8 @@ export function ProviderModelMetadataDialog({
       return;
     }
     event.preventDefault();
+    // 生成叶子保留原Enter提交；先失焦将当前技术输入写入草稿ref，再读取完整草稿。
+    if (editorContent && event.target instanceof HTMLInputElement) event.target.blur();
     void commit();
   };
   const handleCompositionStart = () => {
@@ -160,19 +165,22 @@ export function ProviderModelMetadataDialog({
               id: "settings.modelProvider.editModelDescription",
             })}
           </DialogDescription>
-          <ModelSmartConfigSwitch
+          {editorContent ? null : <ModelSmartConfigSwitch
             disabled={saving}
             checked={smart}
             onChange={(useRecommendedConfigValue) => onDraftChange({ useRecommendedConfigValue })}
-          />
+          />}
         </DialogHeader>
         {/* 保存期间锁定正文交互，不改变原有滚动容器；页脚单独显示提交状态。 */}
         <div
           inert={saving}
+          onKeyDown={editorContent ? handleTechnicalInputKeyDown : undefined}
+          onCompositionStart={editorContent ? handleCompositionStart : undefined}
+          onCompositionEnd={editorContent ? handleCompositionEnd : undefined}
           className="min-h-0 min-w-0 -mr-3 space-y-4 overflow-y-auto pr-4"
           data-model-settings-scroll="true"
         >
-          <ModelSettingsGroup group="basic">
+          {editorContent ?? <><ModelSettingsGroup group="basic">
             <div data-model-identity-row="true" className="flex flex-col gap-4">
               <div className="min-w-0 flex-1">
                 <label className="mb-1 block text-ui-base text-foreground-subtle">
@@ -361,11 +369,11 @@ export function ProviderModelMetadataDialog({
               inheritedConfig={inheritedConfig}
               onDraftChange={onDraftChange}
             />
-          </ModelEditorAdvanced>
+          </ModelEditorAdvanced></>}
         </div>
-        <ModelConfigDraftFeedback error={draftErrorMessage} matched={modelDefaultsLoaded} />
+        {editorContent && !draftErrorMessage ? null : <ModelConfigDraftFeedback error={draftErrorMessage} matched={modelDefaultsLoaded} />}
         <ProviderModelMetadataDialogActions
-          leadingAction={<ModelConfigRestoreButton disabled={saving} onRestore={onRestore} />}
+          leadingAction={editorContent ? undefined : <ModelConfigRestoreButton disabled={saving} onRestore={onRestore} />}
           saveLabel={intl.formatMessage({ id: "common.save" })}
           cancelLabel={intl.formatMessage({ id: "common.cancel" })}
           saving={saving}
