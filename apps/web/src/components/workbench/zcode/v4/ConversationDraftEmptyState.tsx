@@ -191,7 +191,7 @@ export function ConversationDraftEmptyState({ className }: { className?: string 
           data-v4-draft-logo="light"
           className={cn(
             className,
-            "h-full w-full object-contain opacity-70",
+            "h-full w-full object-contain opacity-45",
             "[-webkit-mask-image:linear-gradient(to_bottom,black_0%,transparent_70%,transparent_100%)]",
             "[-webkit-mask-repeat:no-repeat] [-webkit-mask-size:100%_100%]",
             "[mask-image:linear-gradient(to_bottom,black_0%,transparent_70%,transparent_100%)]",
@@ -202,8 +202,8 @@ export function ConversationDraftEmptyState({ className }: { className?: string 
           xmlns="http://www.w3.org/2000/svg"
         >
           <filter id={outlineFilterId} x="-10%" y="-10%" width="120%" height="120%">
-            <feMorphology in="SourceAlpha" operator="dilate" radius="4" result="kfw-dil" />
-            <feMorphology in="SourceAlpha" operator="erode" radius="4" result="kfw-ero" />
+            <feMorphology in="SourceAlpha" operator="dilate" radius="1.5" result="kfw-dil" />
+            <feMorphology in="SourceAlpha" operator="erode" radius="1.5" result="kfw-ero" />
             <feComposite in="kfw-dil" in2="kfw-ero" operator="xor" result="kfw-ring" />
             <feFlood floodColor="currentColor" />
             <feComposite in2="kfw-ring" operator="in" />
