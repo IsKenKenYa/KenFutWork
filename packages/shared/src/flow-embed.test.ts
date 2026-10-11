@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildHelloAck,
-  buildIdentity,
+  buildFlowHelloAck,
+  buildFlowIdentity,
   parseFlowInbound,
   resolveFlowEntry,
-} from "../src/lib/flow-embed";
+} from "./flow-host.js";
 
 /**
  * Flow 模式入口门控 + `ff-embed/v1` 宿主侧消息逻辑的回归锁。
@@ -124,11 +124,11 @@ describe("parseFlowInbound（入站消息解析）", () => {
   });
 
   it("出站消息带协议版本（宿主据此被对端识别版本）", () => {
-    expect(buildHelloAck("v1")).toEqual({
+    expect(buildFlowHelloAck("v1")).toEqual({
       type: "ff-embed/hello-ack",
       version: "v1",
     });
-    expect(buildIdentity("v1", "tok-1")).toEqual({
+    expect(buildFlowIdentity("v1", "tok-1")).toEqual({
       type: "ff-embed/identity",
       version: "v1",
       hostToken: "tok-1",

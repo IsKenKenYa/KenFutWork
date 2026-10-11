@@ -60,9 +60,12 @@ function CanvasPageContent() {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
-  // Default chat open on desktop, closed on mobile/tablet to avoid blocking canvas
+  // Default chat open on desktop, closed on mobile/tablet to avoid blocking canvas.
+  // 嵌入态（工作台内嵌面）传 ?panel=chat 强制打开：iframe 通常窄于 1024，
+  // 仅按宽度阈值会把右侧面板默认收起，丢失原工作台的默认观感。
   const [chatOpen, setChatOpen] = useState(() => {
     if (typeof window === "undefined") return true;
+    if (searchParams.get("panel") === "chat") return true;
     return window.innerWidth >= 1024;
   });
   /**

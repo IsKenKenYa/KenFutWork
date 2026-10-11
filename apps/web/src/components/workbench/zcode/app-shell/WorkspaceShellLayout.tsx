@@ -58,6 +58,8 @@ import { AnimatedTerminalPanel } from "@zui/app-shell/AnimatedTerminalPanel.js";
 import { SIDE_PANE_DEFAULT_EXPANDED_SIZE } from "@zui/app-shell/sidePaneLayout.js";
 import { useAnimatedResizablePanel } from "@zui/app-shell/useAnimatedResizablePanel.js";
 import { ensureTaskNavigationWorkspace } from "@zui/app-shell/taskNavigationWorkspace.js";
+import { HostDesignSurface } from "@zui/host/DesignSurface.js";
+import { HostFlowSurface } from "@zui/host/FlowSurface.js";
 
 import {
   resolveWorkspaceShellPanelRadiusPx,
@@ -1491,8 +1493,26 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   // Draft 之前维护一套独立轻量 header，导致 side pane、caption 安全区和拖拽入口
   // 与 Task Header 分叉。桌面端统一复用 WorkspaceHeader，只由 variant 裁剪 task 专属内容；
   // 手机远控无 active task 时仍不渲染桌面 chrome，继续遵守 replayable overlay 边界。
+  // design/flow 内嵌面自带顶栏（项目切换 / 画布-引擎切换），不吃壳的 Task Header。
+  const isEmbeddedSurfaceView =
+    workspaceMainView === "design" || workspaceMainView === "flow";
+  // 内嵌面首次进入后持续挂载（hidden + inert），design/flow → code → 回来不重载画布；
+  // 对话等其余主区视图维持原有「切换即卸载」行为不变。
+  const [visitedEmbeddedSurfaces, setVisitedEmbeddedSurfaces] = useState<
+    ReadonlySet<"design" | "flow">
+  >(() => new Set());
+  useEffect(() => {
+    if (!isEmbeddedSurfaceView) return;
+    setVisitedEmbeddedSurfaces((current) =>
+      current.has(workspaceMainView)
+        ? current
+        : new Set(current).add(workspaceMainView),
+    );
+  }, [isEmbeddedSurfaceView, workspaceMainView]);
   const shouldRenderMainViewHeader =
-    workspaceMainView !== "automations" && workspaceMainView !== "plugin-store";
+    workspaceMainView !== "automations" &&
+    workspaceMainView !== "plugin-store" &&
+    !isEmbeddedSurfaceView;
   const shouldRenderWorkspaceHeader =
     shouldRenderMainViewHeader && (activeTaskId !== null || isDesktop);
   // ErrorBoundary resetKeys 的数组如果每次 render 都重新创建，
@@ -1743,7 +1763,28 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                       </ScopedErrorBoundary>
                     ) : null}
                     <div className="min-h-0 flex-1 overflow-hidden">
-                      {workspaceMainView === "automations" ? (
+                      {/* 融合内嵌面（Design/Flow）：常驻挂载、按视图显隐（见 visitedEmbeddedSurfaces 注释）。 */}
+                      {visitedEmbeddedSurfaces.has("design") ? (
+                        <div
+                          className="h-full min-h-0"
+                          data-workspace-embedded-surface="design"
+                          hidden={workspaceMainView !== "design"}
+                          inert={workspaceMainView !== "design" ? true : undefined}
+                        >
+                          <HostDesignSurface active={workspaceMainView === "design"} />
+                        </div>
+                      ) : null}
+                      {visitedEmbeddedSurfaces.has("flow") ? (
+                        <div
+                          className="h-full min-h-0"
+                          data-workspace-embedded-surface="flow"
+                          hidden={workspaceMainView !== "flow"}
+                          inert={workspaceMainView !== "flow" ? true : undefined}
+                        >
+                          <HostFlowSurface active={workspaceMainView === "flow"} />
+                        </div>
+                      ) : null}
+                      {isEmbeddedSurfaceView ? null : workspaceMainView === "automations" ? (
                         <main
                           id={AUTOMATIONS_TOAST_ANCHOR_ID}
                           className="flex h-full min-h-0 flex-1 flex-col bg-background"
@@ -1898,7 +1939,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                     </div>
                   </section>
                 </ResizablePanel>
-                {workspaceMainView !== "automations" && workspaceMainView !== "plugin-store" ? (
+                {workspaceMainView !== "automations" &&
+                workspaceMainView !== "plugin-store" &&
+                !isEmbeddedSurfaceView ? (
                   <AnimatedTerminalPanel
                     frameClassName={cn(
                       isSidePaneVisible

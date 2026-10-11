@@ -4,21 +4,22 @@ import {
   type CodeUiBootstrap,
   codeUiParentRequestSchema,
   type ManagementTarget,
+  type WorkbenchMode,
   type WorkbenchModes,
 } from "@kenfutwork/shared";
-import { useCallback, useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentGovernanceSettingsPanel } from "@/components/agent-governance-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
 import { LOCAL_ACCESS_LOST_EVENT } from "@/lib/local-access";
+import { useLocalInstance } from "@/lib/local-instance-context";
 import {
   PLUGIN_INVENTORY_CHANGED_EVENT,
   type PluginPanelEntry,
   PluginPanelOverlay,
   usePluginPanels,
 } from "@/lib/plugin-panels";
-import { useLocalInstance } from "@/lib/local-instance-context";
 import { LocalAccessClientsSection } from "./local-access-clients-section";
 import { LocalInstanceSection } from "./local-instance-section";
 import { VoiceSettingsSection } from "./voice-settings-section";
@@ -27,12 +28,13 @@ const DEFAULT_MODES: WorkbenchModes = ["code", "design"];
 
 /** Code 的独立原文档保护 Design 的 CSS、theme 与 portal。 */
 export function CodeWorkbenchFrame({
-  onModeChange,
+  mode = "code",
   active = true,
   onOpenManagement,
   availableModes = DEFAULT_MODES,
 }: {
-  onModeChange: (mode: "design" | "flow") => void;
+  /** 当前工作台模式（深链解析结果）；融合后 Design/Flow 是壳内视图，由这里推给壳。 */
+  mode?: WorkbenchMode;
   active?: boolean;
   onOpenManagement?: (target: ManagementTarget) => void;
   availableModes?: WorkbenchModes;
@@ -53,7 +55,7 @@ export function CodeWorkbenchFrame({
     () => () => {
       panelRequest.current++;
     },
-    [active],
+    [],
   );
   useEffect(() => {
     setActivePanel((current) =>
@@ -72,10 +74,10 @@ export function CodeWorkbenchFrame({
   useEffect(sendActivity, [sendActivity]);
   const sendNavigation = useCallback(() => {
     frame.current?.contentWindow?.postMessage(
-      { type: "kenfutwork:workbench-navigation", availableModes },
+      { type: "kenfutwork:workbench-navigation", availableModes, mode },
       window.location.origin,
     );
-  }, [availableModes]);
+  }, [availableModes, mode]);
   useEffect(sendNavigation, [sendNavigation]);
   const bootstrap = useCallback(() => {
     if (!ready.current) return;
@@ -106,17 +108,14 @@ export function CodeWorkbenchFrame({
    */
   const { resolvedTheme } = useTheme();
   const themeRef = useRef<"zai-dark" | "zai-light">("zai-light");
-  const postTheme = useCallback(
-    (theme: "zai-dark" | "zai-light") => {
-      themeRef.current = theme;
-      localStorage.setItem("zcode-theme", theme);
-      frame.current?.contentWindow?.postMessage(
-        { type: "kenfutwork:code-theme", theme },
-        window.location.origin,
-      );
-    },
-    [],
-  );
+  const postTheme = useCallback((theme: "zai-dark" | "zai-light") => {
+    themeRef.current = theme;
+    localStorage.setItem("zcode-theme", theme);
+    frame.current?.contentWindow?.postMessage(
+      { type: "kenfutwork:code-theme", theme },
+      window.location.origin,
+    );
+  }, []);
   useEffect(() => {
     const receive = (event: MessageEvent) => {
       if (
@@ -126,10 +125,7 @@ export function CodeWorkbenchFrame({
         return;
       const parsed = codeUiParentRequestSchema.safeParse(event.data);
       if (!parsed.success) return;
-      if (parsed.data.type === "kenfutwork:code-navigate") {
-        if (active && availableModes.includes(parsed.data.mode))
-          onModeChange(parsed.data.mode);
-      } else if (parsed.data.type === "kenfutwork:open-management") {
+      if (parsed.data.type === "kenfutwork:open-management") {
         if (active) onOpenManagement?.(parsed.data.target);
       } else if (parsed.data.type === "kenfutwork:code-plugins-changed")
         window.dispatchEvent(new Event(PLUGIN_INVENTORY_CHANGED_EVENT));
@@ -171,12 +167,10 @@ export function CodeWorkbenchFrame({
     };
   }, [
     bootstrap,
-    onModeChange,
     refreshPanels,
     active,
     sendActivity,
     onOpenManagement,
-    availableModes,
     sendNavigation,
     postTheme,
   ]);

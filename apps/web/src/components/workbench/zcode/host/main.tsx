@@ -27,8 +27,9 @@ import {
 } from "./httpChannelClient.js";
 import { renderManagementDocument } from "./managementDocument.js";
 import { requestManagementOpen } from "./managementNavigation.js";
-import { navigateToDesign, requestParentBootstrap } from "./parentBridge.js";
+import { requestParentBootstrap } from "./parentBridge.js";
 import { createCodePlatform } from "./platform.js";
+import { setSurfaceApiBase } from "./surfaceApi.js";
 import { applyTheme, isTheme, normalizeThemePreference, type Theme } from "@zui/useTheme.js";
 import { createHostWorkbenchNavigation } from "./workbenchNavigation.js";
 import { installHostWorkspaceActivity } from "./workspaceActivity.js";
@@ -50,6 +51,8 @@ const config: CodeHostConfig = {
   ...(workspacePath ? { workspacePath } : {}),
 };
 const client = new CodeHttpChannelClient(config);
+// 壳内嵌面（Design/Flow 主区视图）的服务端访问缝：与 client 同一 apiBase/cookie 口径。
+setSurfaceApiBase(config.apiBase);
 const readCuaSnapshot = client.readCuaSnapshot.bind(client);
 /** 语音 transport：转写走 multipart、播报走二进制，改写/设置读走 JSON 通道（cookie 认证同 Code 宿主）。 */
 const voiceTransport: CodeVoiceTransport = {
@@ -121,7 +124,8 @@ function CodeHost({
               : {})}
             workbenchGroupClientMode={clientMode}
             onInterfaceModeChange={(mode) => {
-              if (mode === "office") navigateToDesign();
+              // 融合后 Design 是壳内主区视图（不再换壳导航）；独立打开（无父窗口）时无处可切，保持 coding。
+              if (mode === "office") workbenchNavigation?.open("design");
             }}
             preferDirectoryBrowser
             restoreSession

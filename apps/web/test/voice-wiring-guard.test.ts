@@ -27,10 +27,6 @@ const CHAT_SIDEBAR = readFileSync(
   join(COMPONENTS, "chat-sidebar.tsx"),
   "utf-8",
 );
-const DESIGN_HOME = readFileSync(
-  join(COMPONENTS, "workbench", "canvas-workbench", "design-home.tsx"),
-  "utf-8",
-);
 const ZCODE = join(COMPONENTS, "workbench", "zcode");
 const CODE_COMPOSER = readFileSync(
   join(ZCODE, "v4", "ConversationComposer.tsx"),
@@ -77,26 +73,12 @@ describe("语音接线守卫", () => {
     expect(CHAT_INPUT).toContain(
       "onRecordingStart: () => getVoicePlayback().stop()",
     );
-    expect(DESIGN_HOME).toContain(
-      "onRecordingStart: () => getVoicePlayback().stop()",
-    );
   });
 
   it("中指代消解：会话上下文喂进「想」段（Design 侧）", () => {
     expect(CHAT_SIDEBAR).toContain("buildRefineContext(");
     expect(CHAT_SIDEBAR).toContain("recentMessages={voiceRecentMessages}");
     expect(CHAT_INPUT).toContain("recentMessages");
-  });
-
-  it("Design 空态输入框也接上语音（手势 / 状态行 / 受控写回 / 完整回路同一条提交路径）", () => {
-    expect(DESIGN_HOME).toContain("useComposerVoice({");
-    expect(DESIGN_HOME).toContain("onPointerDown={voice.onPointerDown}");
-    expect(DESIGN_HOME).toContain("{voice.status}");
-    expect(DESIGN_HOME).toMatch(
-      /onTranscript:\s*\(text\)\s*=>\s*\n?\s*setPrompt\(/,
-    );
-    // 语音完整回路仍由原输入器提交；命令文本的消费在真实UI／运行接口验证。
-    expect(DESIGN_HOME).toMatch(/onAutoSubmit:\s*\(text\)\s*=>/);
   });
 
   it("Code 输入框接上语音桥（composer 三触点 + 宿主注入 transport）", () => {

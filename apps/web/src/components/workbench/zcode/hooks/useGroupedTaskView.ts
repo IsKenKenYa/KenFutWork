@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import type {
   ZCodeGroupedTaskView,
+  ZCodeGroupedTaskViewNode,
   ZCodeGroupedTaskViewOrderInput,
   ZCodeGroupedTaskViewStructure,
   ZCodeGroupedTaskViewTopLevelNodeRef,
@@ -1053,7 +1054,9 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
         return;
       }
       const nextView: ZCodeGroupedTaskView = {
-        nodes: view.nodes.flatMap((node) =>
+        // 回调显式标注返回类型：flatMap 的两分支分别是 task 数组与联合节点数组，
+        // 不标注时 TS 会推成「数组联合」而不是元素联合。
+        nodes: view.nodes.flatMap((node): ZCodeGroupedTaskViewNode[] =>
           node.type === "group" && node.group.id === groupId
             ? node.tasks.map((task) => ({ type: "task" as const, task }))
             : [node],

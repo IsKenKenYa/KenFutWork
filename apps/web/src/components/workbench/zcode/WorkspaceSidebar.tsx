@@ -248,7 +248,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   remoteWorkspaceErrorByWorkspaceKey,
   reconnectingRemoteWorkspaceLogsByWorkspaceKey = EMPTY_RECONNECTING_REMOTE_WORKSPACE_LOGS_BY_WORKSPACE_KEY,
   isDesktop = false,
-  isMacDesktop: _isMacDesktop = false,
+  isMacDesktop = false,
   isWindowsDesktop = false,
   isSidebarVisible: _isSidebarVisible = true,
   onToggleSidebar: _onToggleSidebar,
@@ -1257,7 +1257,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       // 这里用设计系统的结构面 token 固定侧栏层级，避免不同合成器把左侧容器混成异常灰块。
       className="flex h-full flex-col overflow-hidden"
     >
-      <div className="h-12 [app-region:drag]"></div>
+      {/* 顶部空白拖拽条已按用户口径去掉（品牌行自带拖拽区、贴窗口顶）；
+          仅 Mac 桌面 chrome 保留：红绿灯安全区与顶部浮层按钮仍需要这块空间。 */}
+      {isMacDesktop ? <div className="h-12 [app-region:drag]"></div> : null}
       <HostWorkbenchModeNavigation />
       <div className="relative flex-1 min-h-0 overflow-hidden">
         <div

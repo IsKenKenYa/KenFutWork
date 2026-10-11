@@ -1,78 +1,95 @@
 import { describe, expect, it } from "vitest";
-
-import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
+import { resolveDesignAutoCanvas } from "../src/components/workbench/zcode/host/designAutoCanvas";
 
 /**
- * 回归：Design 模式「自动进画布」的判定。
+ * Design 主区「自动进画布」决策的回归锁（融合后从原 web lib 迁入，语义不变）。
  *
- * 关键用例是第二条——Code 模式残留的 selectedProjectId 必须在 Design 里被忽略，
- * 否则主区会停在居中编排器（画布开不出来），线上被用户当成「Design 抄了 Code 模式」。
+ * 历史事故：跨上下文残留的选中 id 曾把自动进画布整段挡掉（判「选中即保持」，
+ * 但选中的项目根本不在本列表里），主区永远停在空态。这里的用例锁死：
+ * 按本列表过滤、列表未回来不动作、空列表只自动建一次。
  */
 describe("resolveDesignAutoCanvas", () => {
-  const base = {
-    mode: "design" as const,
-    activeTaskId: null,
-    creatingProject: false,
-    projectsLoaded: true,
-    designProjectIds: [] as string[],
-    selectedProjectId: null as string | null,
-    autoCreateTried: false,
-  };
-
-  it("无选中项目时选中画布列表的第一个", () => {
+  it("列表未回来（未 loaded）→ 不动作", () => {
     expect(
       resolveDesignAutoCanvas({
-        ...base,
-        designProjectIds: ["d1", "d2"],
+        creatingProject: false,
+        projectsLoaded: false,
+        projectIds: [],
+        selectedProjectId: null,
+        autoCreateTried: false,
       }),
-    ).toEqual({ kind: "select", projectId: "d1" });
+    ).toEqual({ kind: "idle" });
   });
 
-  it("Code 项目 id 残留时不挡画布：照样选中第一个画布项目", () => {
+  it("正在建项目 → 不动作（避免与创建流程互相触发）", () => {
     expect(
       resolveDesignAutoCanvas({
-        ...base,
-        designProjectIds: ["d1"],
-        selectedProjectId: "code-workdir-1",
+        creatingProject: true,
+        projectsLoaded: true,
+        projectIds: ["p1"],
+        selectedProjectId: null,
+        autoCreateTried: false,
       }),
-    ).toEqual({ kind: "select", projectId: "d1" });
+    ).toEqual({ kind: "idle" });
   });
 
-  it("已选中本模式项目则保持，不改变选择", () => {
+  it("选中的 id 在本列表里 → 保持", () => {
     expect(
       resolveDesignAutoCanvas({
-        ...base,
-        designProjectIds: ["d1", "d2"],
-        selectedProjectId: "d2",
+        creatingProject: false,
+        projectsLoaded: true,
+        projectIds: ["p1", "p2"],
+        selectedProjectId: "p2",
+        autoCreateTried: false,
       }),
     ).toEqual({ kind: "keep" });
   });
 
-  it("列表为空且未尝试过：自动建空白画布", () => {
-    expect(resolveDesignAutoCanvas(base)).toEqual({ kind: "create" });
+  it("选中 id 不在本列表（跨视图残留）→ 按第一个项目重选", () => {
+    expect(
+      resolveDesignAutoCanvas({
+        creatingProject: false,
+        projectsLoaded: true,
+        projectIds: ["p1", "p2"],
+        selectedProjectId: "code-project-id",
+        autoCreateTried: false,
+      }),
+    ).toEqual({ kind: "select", projectId: "p1" });
   });
 
-  it("列表为空但已尝试过：不再重试（避免反复发创建请求）", () => {
-    expect(resolveDesignAutoCanvas({ ...base, autoCreateTried: true })).toEqual(
-      { kind: "give-up" },
-    );
+  it("没有选中且列表有项目 → 选第一个", () => {
+    expect(
+      resolveDesignAutoCanvas({
+        creatingProject: false,
+        projectsLoaded: true,
+        projectIds: ["p1"],
+        selectedProjectId: null,
+        autoCreateTried: false,
+      }),
+    ).toEqual({ kind: "select", projectId: "p1" });
   });
 
-  it("列表尚未返回时不动作（否则会误建画布）", () => {
-    expect(resolveDesignAutoCanvas({ ...base, projectsLoaded: false })).toEqual(
-      { kind: "idle" },
-    );
+  it("空列表且没建过 → 自动建一张空白画布", () => {
+    expect(
+      resolveDesignAutoCanvas({
+        creatingProject: false,
+        projectsLoaded: true,
+        projectIds: [],
+        selectedProjectId: null,
+        autoCreateTried: false,
+      }),
+    ).toEqual({ kind: "create" });
   });
 
-  it("有激活任务 / 正在建项目 / 非 Design 模式都不动作", () => {
-    expect(resolveDesignAutoCanvas({ ...base, activeTaskId: "t1" })).toEqual({
-      kind: "idle",
-    });
-    expect(resolveDesignAutoCanvas({ ...base, creatingProject: true })).toEqual(
-      { kind: "idle" },
-    );
-    expect(resolveDesignAutoCanvas({ ...base, mode: "code" })).toEqual({
-      kind: "idle",
-    });
+  it("空列表且已建过（可能失败）→ 不再重试", () => {
+    expect(
+      resolveDesignAutoCanvas({
+        creatingProject: false,
+        projectsLoaded: true,
+        projectIds: [],
+        selectedProjectId: null,
+        autoCreateTried: true,
+      }),
+    ).toEqual({ kind: "give-up" });
   });
 });

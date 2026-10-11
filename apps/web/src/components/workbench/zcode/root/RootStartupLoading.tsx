@@ -27,13 +27,18 @@ export function RootStartupLoading({ label, children, busy = true }: RootStartup
 
 /**
  * 初始化与引导共用品牌徽标：KenFutWork 标志（vite 内联资产，随首帧即绘，
- * 不再出现原 Z 标 SVG 延迟绘制造成的黑块），底色描边圆角口径保持一致。
+ * 不再出现原 Z 标 SVG 延迟绘制造成的黑块），黑底白标（与侧栏品牌行同口径）。
  */
 export function ZCodeStartupLogoBadge() {
   return (
     <div className="relative flex size-24 items-center justify-center rounded-3xl bg-[linear-gradient(180deg,#000000_0%,#151718_100%)] shadow-xl/20 before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:border before:border-[rgba(255,255,255,0.1)] before:content-['']">
       {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
-      <img src={kenfutworkMarkUrl} alt="" className="size-14 select-none" draggable={false} />
+      <img
+        src={kenfutworkMarkUrl}
+        alt=""
+        className="size-14 select-none brightness-0 invert"
+        draggable={false}
+      />
     </div>
   );
 }

@@ -229,7 +229,9 @@ async function loadBatchPreviewWithStaticProducts(
   const previewByProductId = new Map(
     previewSnapshot.productList.map((product) => [product.productId, product]),
   );
-  const productList =
+  // 显式标注收窄两分支的联合（静态合并支与预览直通支的 hasPreview 可选性不同，
+  // 裸联合过泛型会让 TS 只按第一支收窄）。
+  const productList: CodingPlanProductDisplay[] =
     staticProducts.length > 0
       ? buildStaticProductDisplayList(staticProducts).map((product) =>
           mergeStaticProductWithPreview(product, previewByProductId.get(product.productId)),

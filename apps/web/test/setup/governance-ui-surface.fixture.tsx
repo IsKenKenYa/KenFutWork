@@ -56,7 +56,7 @@ export async function mountSurface(surface: Surface, server: Server) {
     <LocalInstanceProvider>
       <InstanceProbe />
       {surface === "code" ? (
-        <CodeWorkbenchFrame onModeChange={() => {}} />
+        <CodeWorkbenchFrame />
       ) : (
         <DesignEntry />
       )}

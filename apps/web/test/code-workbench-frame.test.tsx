@@ -47,7 +47,7 @@ it("插件入口只接受当前Code窗口，并按已启用且适用的库存打
       ],
     }),
   );
-  render(<CodeWorkbenchFrame onModeChange={vi.fn()} />);
+  render(<CodeWorkbenchFrame />);
   const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
   const data = {
     type: "kenfutwork:code-open-plugin",
@@ -118,8 +118,7 @@ it("窗口聚焦与模式能力更新交错时，插件打开仍读取最新库�
       });
     return Response.json(payload);
   });
-  const navigate = vi.fn();
-  const view = render(<CodeWorkbenchFrame onModeChange={navigate} />);
+  const view = render(<CodeWorkbenchFrame />);
   await waitFor(() => expect(reads).toBe(1));
   const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
   fireEvent(
@@ -137,12 +136,7 @@ it("窗口聚焦与模式能力更新交错时，插件打开仍读取最新库�
   fireEvent(window, new Event("focus"));
   await waitFor(() => expect(reads).toBe(3));
   if (!finishOpen) throw new Error("未建立插件打开目录请求");
-  view.rerender(
-    <CodeWorkbenchFrame
-      onModeChange={navigate}
-      availableModes={["code", "design", "flow"]}
-    />,
-  );
+  view.rerender(<CodeWorkbenchFrame availableModes={["code", "design", "flow"]} />);
   finishOpen(Response.json(payload));
   expect(await screen.findByTitle("米家")).not.toBeNull();
 });
@@ -158,7 +152,7 @@ it("Code宿主退出后，晚到的打开读取不再补发请求或打开面板
       });
     return Response.json({ plugins: [] });
   });
-  const view = render(<CodeWorkbenchFrame onModeChange={vi.fn()} />);
+  const view = render(<CodeWorkbenchFrame />);
   const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
   fireEvent(
     window,
@@ -183,8 +177,7 @@ it("Code宿主退出后，晚到的打开读取不再补发请求或打开面板
 });
 
 it("仅向当前 Code 文档发送宿主配置；bootstrap 带本地实例主人（侧栏显示用户而非连接使用），仍无接入令牌", async () => {
-  const navigate = vi.fn();
-  render(<CodeWorkbenchFrame onModeChange={navigate} />);
+  render(<CodeWorkbenchFrame />);
   const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
   if (!frame.contentWindow) throw new Error("测试 Code 文档未创建");
   const send = vi.spyOn(frame.contentWindow, "postMessage");
@@ -227,6 +220,18 @@ it("仅向当前 Code 文档发送宿主配置；bootstrap 带本地实例主人
       window.location.origin,
     ),
   );
+  // 融合后模式经 workbench-navigation 推给壳（缺省 code）；
+  // 旧「code-navigate 换壳请求」已随契约删除——迟到的该消息被 schema 拒之门外。
+  await waitFor(() =>
+    expect(send).toHaveBeenCalledWith(
+      {
+        type: "kenfutwork:workbench-navigation",
+        availableModes: ["code", "design"],
+        mode: "code",
+      },
+      window.location.origin,
+    ),
+  );
   fireEvent(
     window,
     new MessageEvent("message", {
@@ -235,7 +240,6 @@ it("仅向当前 Code 文档发送宿主配置；bootstrap 带本地实例主人
       data: { type: "kenfutwork:code-navigate", mode: "design" },
     }),
   );
-  expect(navigate).toHaveBeenCalledWith("design");
   const lost = vi.fn();
   window.addEventListener(LOCAL_ACCESS_LOST_EVENT, lost);
   fireEvent(
@@ -292,7 +296,7 @@ it("本地实例弹窗带语音设置段：Code 模式就地调语音，cookie �
       return new Response("not found", { status: 404 });
     }),
   );
-  render(<CodeWorkbenchFrame onModeChange={vi.fn()} />);
+  render(<CodeWorkbenchFrame />);
   fireEvent.click(screen.getByRole("button", { name: "本地实例" }));
   // 语音段渲染出来（设置页同一组件），设置与模型目录都实际取数
   expect(await screen.findByRole("heading", { name: "语音" })).toBeTruthy();
@@ -315,12 +319,9 @@ it("本地实例弹窗带语音设置段：Code 模式就地调语音，cookie �
   );
 });
 
-it("隐藏Code窗口继续bootstrap但不处理导航，恢复时同一文档收到活动状态", async () => {
+it("隐藏Code窗口继续bootstrap，恢复时同一文档收到活动状态与最新模式", async () => {
   vi.stubGlobal("fetch", async () => Response.json({ plugins: [] }));
-  const navigate = vi.fn();
-  const view = render(
-    <CodeWorkbenchFrame active={false} onModeChange={navigate} />,
-  );
+  const view = render(<CodeWorkbenchFrame active={false} />);
   const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
   if (!frame.contentWindow) throw new Error("Code窗口缺失");
   const send = vi.spyOn(frame.contentWindow, "postMessage");
@@ -342,16 +343,21 @@ it("隐藏Code窗口继续bootstrap但不处理导航，恢复时同一文档收
     { type: "kenfutwork:workspace-activity", active: false },
     window.location.origin,
   );
-  event({ type: "kenfutwork:code-navigate", mode: "design" });
-  expect(navigate).not.toHaveBeenCalled();
-  view.rerender(<CodeWorkbenchFrame active onModeChange={navigate} />);
+  // 模式变化（父页深链解析）在隐藏期间照常推送；恢复时补活动状态，不换文档。
+  view.rerender(<CodeWorkbenchFrame active mode="design" />);
   expect(screen.getByTitle("Code 工作台")).toBe(frame);
   expect(send).toHaveBeenCalledWith(
     { type: "kenfutwork:workspace-activity", active: true },
     window.location.origin,
   );
-  event({ type: "kenfutwork:code-navigate", mode: "design" });
-  expect(navigate).toHaveBeenCalledOnce();
+  expect(send).toHaveBeenCalledWith(
+    {
+      type: "kenfutwork:workbench-navigation",
+      availableModes: ["code", "design"],
+      mode: "design",
+    },
+    window.location.origin,
+  );
 });
 
 it("Code插件面板切换到非活动工作区时保留同一iframe，返回后恢复原面板", async () => {
@@ -376,8 +382,7 @@ it("Code插件面板切换到非活动工作区时保留同一iframe，返回后
       ],
     }),
   );
-  const navigate = vi.fn();
-  const view = render(<CodeWorkbenchFrame active onModeChange={navigate} />);
+  const view = render(<CodeWorkbenchFrame active />);
   const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
   fireEvent(
     window,
@@ -392,10 +397,10 @@ it("Code插件面板切换到非活动工作区时保留同一iframe，返回后
     }),
   );
   const panel = await screen.findByTitle("米家");
-  view.rerender(<CodeWorkbenchFrame active={false} onModeChange={navigate} />);
+  view.rerender(<CodeWorkbenchFrame active={false} />);
   expect(screen.getByTitle("米家")).toBe(panel);
   expect(screen.queryByRole("dialog", { name: "米家" })).toBeNull();
-  view.rerender(<CodeWorkbenchFrame active onModeChange={navigate} />);
+  view.rerender(<CodeWorkbenchFrame active />);
   expect(await screen.findByRole("dialog", { name: "米家" })).not.toBeNull();
   expect(screen.getByTitle("米家")).toBe(panel);
 });

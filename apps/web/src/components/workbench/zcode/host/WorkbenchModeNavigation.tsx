@@ -47,7 +47,7 @@ export function WorkbenchModeNavigation({
       </>
     );
   return (
-    <div className="px-2 pt-1 pb-0.5">
+    <div className="px-2 pt-3 pb-0.5">
       <div
         role="radiogroup"
         aria-label="模式切换"
@@ -90,14 +90,22 @@ function ConnectedWorkbenchModeNavigation({
   );
   return (
     <div className="pb-2">
-      <div className="flex w-full items-center gap-2 px-3.5 pt-0 pb-2">
+      {/* 品牌行（启动首屏即见）：黑底白标、铺满侧栏宽度、贴窗口顶——
+          同时承接标题栏拖拽区（原 h-12 空白拖拽条已按用户口径去掉）。
+          比例：标 24px（墨迹约 19px）配 20px 字标，视觉等高；字标用亮段渐变
+          （与 .dark 主题口径同款），纯白大字在黑底上会显得压闷。 */}
+      <div className="flex w-full items-center gap-2 border-b border-white/[0.08] bg-[linear-gradient(180deg,#000000_0%,#151718_100%)] px-3.5 py-3 [app-region:drag]">
+        {/* 白标：品牌图为蓝色墨迹，brightness-0 invert 转成纯白（黑底上唯一可读形态）。 */}
         <WindowsTopLeftLogo
           className="static m-0 h-auto p-0"
-          imageClassName="h-7 w-auto"
+          imageClassName="h-6 w-auto brightness-0 invert"
         />
         <span
-          className="font-wordmark bg-clip-text text-2xl leading-none tracking-tight text-transparent"
-          style={{ backgroundImage: "var(--wordmark-gradient)" }}
+          className="font-wordmark bg-clip-text text-[20px] leading-none tracking-tight text-transparent"
+          style={{
+            backgroundImage:
+              "linear-gradient(90deg,#7f96ea 0%,#9db3f7 45%,#bccfff 100%)",
+          }}
         >
           KenFutWork
         </span>

@@ -6,10 +6,14 @@ export const workbenchModesSchema = z
   .rest(z.literal("flow"))
   .refine((modes) => modes.length <= 3);
 export type WorkbenchModes = z.infer<typeof workbenchModesSchema>;
+export const workbenchModeSchema = z.enum(["code", "design", "flow"]);
+export type WorkbenchMode = z.infer<typeof workbenchModeSchema>;
 export const workbenchNavigationSchema = z
   .object({
     type: z.literal("kenfutwork:workbench-navigation"),
     availableModes: workbenchModesSchema,
+    /** 父→壳推送当前模式（深链 / 外部导航同步）；缺省 code。 */
+    mode: workbenchModeSchema.optional(),
   })
   .strict();
 
@@ -89,10 +93,6 @@ export const codeUiParentRequestSchema = z.discriminatedUnion("type", [
     type: z.literal("kenfutwork:code-open-plugin"),
     pluginId: z.string().min(1),
     entryId: z.string().min(1),
-  }),
-  z.object({
-    type: z.literal("kenfutwork:code-navigate"),
-    mode: z.enum(["design", "flow"]),
   }),
 ]);
 export type CodeUiBootstrap = z.infer<typeof codeUiBootstrapSchema>;
