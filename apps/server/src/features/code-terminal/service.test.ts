@@ -3,6 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { instanceSettingsSchema } from "@kenfutwork/shared";
 import { expect, it } from "vitest";
+import {
+  detectTerminalShells,
+  resolveTerminalShell,
+} from "../code-git/terminal-runner.js";
+import { interactiveInvocation } from "../code-git/terminal-session.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
 import type { TerminalOutputCursor } from "../process-sandbox/types.js";
@@ -316,3 +321,106 @@ it.skipIf(process.platform !== "darwin")(
     }
   },
 );
+
+it("create按请求shell启动：request.shell传递到spawn argv，缺省解析本机默认", async () => {
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), "kfw-terminal-shell-pick-")),
+  );
+  try {
+    const scope = {
+      instanceId: "00000000-0000-4000-8000-000000000001",
+      projectId: "00000000-0000-4000-8000-000000000002",
+      taskId: "00000000-0000-4000-8000-000000000003",
+      generation: 1,
+      rootDirectory: root,
+      additionalDirectories: [],
+      sandboxMode: "workspace-write" as const,
+    };
+    const actor = { instanceId: scope.instanceId, accessClientId: null };
+    const localInstance = {
+      resolve: async (subject: { instanceId: string }) => ({
+        instanceId: subject.instanceId,
+        dataDir: root,
+      }),
+    };
+    const exited = {
+      exitCode: 0,
+      signal: null,
+      reason: "test",
+      stopped: true,
+      rangeEmpty: true,
+    };
+    const argvSpawns: Array<{ executable: string; args: string[] }> = [];
+    const service = createCodeTerminalService({
+      scopes: createExecutionScopes({
+        repository: {
+          load: async () => ({ scope, state: "ready", branchGeneration: 1 }),
+        },
+        localInstance: localInstance as never,
+      }),
+      sandbox: {
+        spawnPty: async (request: {
+          argv: { executable: string; args: string[] };
+        }) => {
+          argvSpawns.push(request.argv);
+          return {
+            id: "fake-pty",
+            readOutput: async () => {
+              throw new Error("测试不读capture");
+            },
+            writeStdin: async () => {},
+            endStdin: async () => {},
+            stop: async () => exited,
+            waitForExit: async () => exited,
+            snapshot: () => {
+              throw new Error("测试不看快照");
+            },
+            onOutput: () => () => {},
+            resize: async () => {},
+          };
+        },
+      } as never,
+      localInstance: localInstance as never,
+      settings: {
+        getInstanceSettings: async () =>
+          instanceSettingsSchema.parse({ defaultModel: "fixture" }),
+      } as never,
+    });
+    // 本机探测到的真 shell：优先挑一个不是默认解析结果的，证明请求覆盖默认；
+    // 单 shell 机器上退化为「同一个」，至少锁住 request.shell 原样传到 spawn。
+    const available = detectTerminalShells();
+    const fallback = resolveTerminalShell(undefined, available);
+    const requested =
+      available.find((shell) => shell.id !== fallback?.id) ?? available[0]!;
+    const opened = await service.create(actor, "connection", {
+      taskId: scope.taskId,
+      sessionId: "shell-pick",
+      cols: 80,
+      rows: 24,
+      shell: requested.id,
+    });
+    expect(opened.shell).toBe(requested.id);
+    expect(opened.executable).toBe(requested.executable);
+    expect(argvSpawns.at(-1)).toEqual({
+      executable: requested.executable,
+      args: interactiveInvocation(requested),
+    });
+
+    const autoOpened = await service.create(actor, "connection", {
+      taskId: scope.taskId,
+      sessionId: "shell-auto",
+      cols: 80,
+      rows: 24,
+    });
+    expect(autoOpened.shell).toBe(fallback?.id);
+    expect(argvSpawns.at(-1)).toEqual(
+      fallback && {
+        executable: fallback.executable,
+        args: interactiveInvocation(fallback),
+      },
+    );
+    await service.close("test_cleanup");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -721,9 +721,10 @@
       "source": "references/zcode/packages/ui/src/Terminal.tsx",
       "target": "apps/web/src/components/workbench/zcode/Terminal.tsx",
       "sha256": "168fc27f0c9d8079a90fcff1588ef74cead789b00c29f25f41e173b8fa1639cc",
-      "copiedSha256": "660bdb049d18bdbdf84904b19369ba2fa867051e6e57093f1564c13ed162c940",
+      "copiedSha256": "3ad474fef6599d1086da8ecc6630511752b7649a4af143a83c79cf70147515cb",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主适配：工具栏挂 TerminalShellMenu（shell 切换菜单，G9/Q17），换 shell=换会话（switchTerminalSessionShell 替换 descriptor），会话 descriptor 透传 shell"
       ]
     },
     {
@@ -11630,9 +11631,10 @@
       "source": "references/zcode/packages/ui/src/terminal/TerminalSession.tsx",
       "target": "apps/web/src/components/workbench/zcode/terminal/TerminalSession.tsx",
       "sha256": "0b8a8fa17f5bda205101f4e215248042735b3185f530c13a6df77fef4fac79e9",
-      "copiedSha256": "ab4fa515cc7fab0cd60f39b63d70a8951bd0473238d1586cf3a5fbba6f324e19",
+      "copiedSha256": "07529713ea1365d743c2adbd0d0a0c606de68a0e6bc5c0f633168b03491f00a3",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主适配：create 请求携带 shell（下侧终端 shell 菜单按会话指定 shell，G9/Q17）；side pane persistentKey 路径不传"
       ]
     },
     {
@@ -11684,9 +11686,10 @@
       "source": "references/zcode/packages/ui/src/terminal/terminalPanelState.ts",
       "target": "apps/web/src/components/workbench/zcode/terminal/terminalPanelState.ts",
       "sha256": "7ffc4c7db10be35c3de79d258a523a7b87c5221444f4cb5749323f7957764318",
-      "copiedSha256": "7ffc4c7db10be35c3de79d258a523a7b87c5221444f4cb5749323f7957764318",
+      "copiedSha256": "d67df6d367d7444d237cde893fb38e73950ca5383ca451ea10dfa21f05f218d2",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主适配：descriptor 增 shell 字段并新增 switchTerminalSessionShell（换 shell=换会话，G9/Q17）"
       ]
     },
     {
@@ -15984,8 +15987,10 @@
       "source": "references/zcode/packages/services/src/terminal/terminal.ts",
       "target": "packages/zcode-services/src/terminal/terminal.ts",
       "sha256": "58827eb16d9db1b73095510e20c00e70b8c3aaf995f765b751fb9837158b0a9f",
-      "copiedSha256": "58827eb16d9db1b73095510e20c00e70b8c3aaf995f765b751fb9837158b0a9f",
-      "adaptations": []
+      "copiedSha256": "a59eb989f49c80ce5f5c8a45794478b93589464926bd40e184ef9144147117f9",
+      "adaptations": [
+        "宿主适配：ITerminalService.create params 增 shell 可选项（终端面板 shell 菜单，G9/Q17）"
+      ]
     },
     {
       "source": "references/zcode/packages/services/src/terminal/terminalProfile.ts",

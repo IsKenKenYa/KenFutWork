@@ -55,3 +55,52 @@ it("原terminal.create返回用户字体及真实source，fallback不返回空�
     rows: 24,
   });
 });
+
+it("create透传shell选择；缺省不注入；清单外shell在边界被拦下", async () => {
+  const taskId = randomUUID();
+  const actor: LocalActor = { instanceId: randomUUID(), accessClientId: null };
+  const create = vi.fn(async () => ({
+    id: "pty-shell",
+    taskId,
+    shell: "git-bash",
+    executable: "C:\\Program Files\\Git\\bin\\bash.exe",
+    tty: true,
+  }));
+  const base = {
+    terminals: { create } as unknown as CodeTerminalService,
+    actor,
+    connectionId: "connection",
+    subscriber: () => ({ output: async () => {}, exit: async () => {} }),
+  };
+  await codeUiTerminalRpc({
+    ...base,
+    method: "create",
+    args: [{ taskId, cols: 80, rows: 24, shell: "git-bash" }],
+  });
+  expect(create).toHaveBeenLastCalledWith(actor, "connection", {
+    taskId,
+    cols: 80,
+    rows: 24,
+    shell: "git-bash",
+  });
+
+  await codeUiTerminalRpc({
+    ...base,
+    method: "create",
+    args: [{ taskId, cols: 80, rows: 24 }],
+  });
+  expect(create).toHaveBeenLastCalledWith(actor, "connection", {
+    taskId,
+    cols: 80,
+    rows: 24,
+  });
+
+  await expect(
+    codeUiTerminalRpc({
+      ...base,
+      method: "create",
+      args: [{ taskId, cols: 80, rows: 24, shell: "fish" }],
+    }),
+  ).rejects.toThrow();
+  expect(create).toHaveBeenCalledTimes(2);
+});

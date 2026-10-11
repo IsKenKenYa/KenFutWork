@@ -9,7 +9,7 @@ export interface TerminalWindowsPtyInfo {
 }
 
 export interface ITerminalService {
-  create(params: { cols: number; rows: number; cwd?: string }): Promise<{
+  create(params: { cols: number; rows: number; cwd?: string; shell?: string }): Promise<{
     id: string;
     shell: string;
     fontFamily: string;

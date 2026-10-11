@@ -8,6 +8,8 @@ export interface TerminalSessionDescriptor {
   cwd?: string;
   index: number;
   shellLabel: string | null;
+  /** 本会话显式选用的 shell id（宿主 shell 菜单）；缺省走实例设置默认。 */
+  shell?: string;
 }
 
 export interface TerminalWorkspaceState {
@@ -167,6 +169,49 @@ export function exitTerminalSession(
       workspaces: nextWorkspaces,
     },
     action: session.workspaceKey === activeWorkspaceKey ? "close-panel" : "close-session",
+  };
+}
+
+/**
+ * 换 shell = 换会话（Q17）：原 session 从状态中移除（卸载即 dispose 旧 PTY），
+ * 在同一 tab 位换成带新 shell 的新 descriptor（挂载即按新 shell create）。
+ */
+export function switchTerminalSessionShell(
+  state: TerminalPanelState,
+  sessionId: string,
+  shell: string,
+): TerminalPanelState {
+  const session = state.sessions[sessionId];
+  const workspace = session ? state.workspaces[session.workspaceKey] : undefined;
+  if (
+    !session ||
+    !workspace?.sessionIds.includes(sessionId) ||
+    session.shell === shell
+  ) {
+    return state;
+  }
+
+  const replacement: TerminalSessionDescriptor = {
+    ...session,
+    id: createUuid(),
+    shell,
+    shellLabel: null,
+  };
+  const { [sessionId]: _replacedSession, ...nextSessions } = state.sessions;
+  return {
+    sessions: { ...nextSessions, [replacement.id]: replacement },
+    workspaces: {
+      ...state.workspaces,
+      [session.workspaceKey]: {
+        sessionIds: workspace.sessionIds.map((id) =>
+          id === sessionId ? replacement.id : id,
+        ),
+        activeSessionId:
+          workspace.activeSessionId === sessionId
+            ? replacement.id
+            : workspace.activeSessionId,
+      },
+    },
   };
 }
 

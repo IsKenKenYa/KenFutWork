@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList } from "@zui/components/ui/tabs.js";
 import { getPathLeaf } from "@zui/lib/path.js";
 import { TerminalTabTrigger } from "@zui/terminal/TerminalTabTrigger.js";
 import { TerminalSession } from "@zui/terminal/TerminalSession.js";
+import { TerminalShellMenu } from "@zui/host/TerminalShellMenu.js";
 import {
   closeTerminalSession,
   createTerminalSession,
@@ -19,6 +20,7 @@ import {
   formatTerminalTabTitle,
   getNextTerminalSessionIndex,
   getTerminalSessionCloseAction,
+  switchTerminalSessionShell,
   type TerminalPanelState,
   type TerminalSessionDescriptor,
 } from "@zui/terminal/terminalPanelState.js";
@@ -284,6 +286,20 @@ export function Terminal({
     null;
   const allSessions = Object.values(panelState.sessions);
 
+  // 换 shell = 换会话（Q17）：选择即停掉当前会话（卸载 dispose 旧 PTY），按新 shell 重开。
+  const handleSelectShell = useCallback(
+    (shell: string) => {
+      const sessionId = activeSession?.id;
+      if (!sessionId) {
+        return;
+      }
+      setPanelState((current) =>
+        switchTerminalSessionShell(current, sessionId, shell),
+      );
+    },
+    [activeSession?.id],
+  );
+
   // 修复说明：关闭面板只收起 UI，不 dispose tab。真正关闭某个终端由 tab 上的关闭按钮负责，
   // 这样 workspace/task 切换或面板收起都不会中断正在运行的命令。
   return (
@@ -330,6 +346,12 @@ export function Terminal({
 
           <div className="flex shrink-0 items-center gap-1">
             {!isOfficeMode && (
+              <TerminalShellMenu
+                activeShell={activeSession?.shell}
+                onSelectShell={handleSelectShell}
+              />
+            )}
+            {!isOfficeMode && (
               <Button
                 type="button"
                 size="icon-md"
@@ -367,6 +389,7 @@ export function Terminal({
                 sessionId={session.id}
                 services={session.services}
                 cwd={session.cwd}
+                shell={session.shell}
                 isVisible={
                   isVisible &&
                   session.workspaceKey === workspaceKey &&
