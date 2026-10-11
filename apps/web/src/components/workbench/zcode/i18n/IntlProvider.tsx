@@ -206,7 +206,10 @@ export function ZCodeIntlProvider({
 
   const [localePreference, setLocalePreferenceState] =
     useState<LocalePreference>(
-      () => initialLocale ?? readStoredPreference() ?? "system",
+      // KenFutWork 宿主偏差：已存的用户偏好必须压过挂载方硬编码的 initialLocale。
+      // 宿主弹窗写 zcode-locale-preference 后 iframe 重挂载时，若 initialLocale
+      // （固定 zh-CN）先生效，界面会闪回中文并把该值广播/回写，覆盖用户选择。
+      () => readStoredPreference() ?? initialLocale ?? "system",
     );
   const [systemLocale, setSystemLocale] = useState<Locale>(() =>
     resolveNavigatorSystemLocale(),

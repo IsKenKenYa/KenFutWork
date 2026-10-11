@@ -5665,9 +5665,10 @@
       "source": "references/zcode/packages/ui/src/i18n/IntlProvider.tsx",
       "target": "apps/web/src/components/workbench/zcode/i18n/IntlProvider.tsx",
       "sha256": "269f010d7b15d5c1a011fc79a99a578952ef4194f2ed652a0f052e5ee2b18b40",
-      "copiedSha256": "18ecd8dc48f9a0cbc3331dea6163a13cfc716699beafeda0b8694f194d69e743",
+      "copiedSha256": "6bea88db25b6ca25b3e920c1d2dd2684c373fc93940ca8324c7e965ad02b49b3",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork 宿主偏差：初始化优先读已存 zcode-locale-preference，压过挂载方硬编码 initialLocale（iframe 重挂载不闪回默认中文）"
       ]
     },
     {
