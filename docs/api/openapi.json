@@ -14149,6 +14149,10 @@
                   "sh"
                 ]
               },
+              "codeAutoCommitEnabled": {
+                "default": true,
+                "type": "boolean"
+              },
               "codeIndexEnabled": {
                 "default": false,
                 "type": "boolean"
@@ -14537,6 +14541,7 @@
             "required": [
               "defaultModel",
               "terminalShell",
+              "codeAutoCommitEnabled",
               "codeIndexEnabled",
               "codeIndexAutoNewFolder",
               "userRules",
@@ -14767,6 +14772,9 @@
               "bash",
               "sh"
             ]
+          },
+          "codeAutoCommitEnabled": {
+            "type": "boolean"
           },
           "codeIndexEnabled": {
             "type": "boolean"

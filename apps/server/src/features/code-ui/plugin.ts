@@ -41,6 +41,7 @@ export function createCodeUiPlugin(): PluginDefinition {
       "blob",
       "processSandbox",
       "plugins",
+      "codeGit",
     ],
     apply(ctx) {
       ctx.register("codeUi", () => {
@@ -61,6 +62,8 @@ export function createCodeUiPlugin(): PluginDefinition {
           agentModes: ctx.get("agentModes"),
           terminals: ctx.get("codeTerminal"),
           processSandbox: ctx.get("processSandbox"),
+          // G3/Q8：run 终态自动提交缝（code-git 域内收口开关与失败静默）。
+          codeGit: ctx.get("codeGit"),
           plugins: ctx.get("plugins"),
           blob: ctx.get("blob"),
           attachmentRepository: createCodeAttachmentRepository(

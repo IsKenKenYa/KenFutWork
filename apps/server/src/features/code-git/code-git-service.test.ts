@@ -77,6 +77,7 @@ async function world(
   const git: GitClient = {
     checkout: vi.fn(async () => {}),
     init: vi.fn(async () => {}),
+    autoCommit: vi.fn(async () => false),
     describe: vi.fn(async () => view),
     diffStat: vi.fn(async () => ({
       files: 0,

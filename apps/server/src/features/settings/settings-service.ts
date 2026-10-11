@@ -8,6 +8,7 @@ import type {
 
 import {
   AGENT_GOVERNANCE_DEFAULTS,
+  CODE_AUTO_COMMIT_ENABLED_DEFAULT,
   clampCodeUiReconnectDelayMs,
   clampComputerUseActionTimeoutMs,
   clampComputerUseMaxActionsPerRun,
@@ -75,6 +76,7 @@ export type InstanceSettingsPatch = Partial<
   codeIndexEnabled?: boolean | undefined;
   codeIndexAutoNewFolder?: boolean | undefined;
   autoCompactEnabled?: boolean | undefined;
+  codeAutoCommitEnabled?: boolean | undefined;
   commands?: InstanceSettings["commands"] | undefined;
   hooks?: InstanceSettings["hooks"] | undefined;
   userRules?: string | undefined;
@@ -226,6 +228,7 @@ export function createSettingsService(options: {
       storedIndexEnabled,
       storedIndexAutoNewFolder,
       storedAutoCompact,
+      storedCodeAutoCommit,
       storedRules,
       storedCommands,
       storedHooks,
@@ -244,6 +247,7 @@ export function createSettingsService(options: {
       repository.findCodeIndexEnabled(instanceId),
       repository.findCodeIndexAutoNewFolder(instanceId),
       repository.findAutoCompactEnabled(instanceId),
+      repository.findCodeAutoCommitEnabled(instanceId),
       repository.findUserRules(instanceId),
       repository.findCommands(instanceId),
       repository.findHooks(instanceId),
@@ -308,6 +312,9 @@ export function createSettingsService(options: {
       codeIndexAutoNewFolder: storedIndexAutoNewFolder ?? true,
       // 缺省 true：不压缩时超长会话直接撞上游上限失败，用户只能看到通用报错
       autoCompactEnabled: storedAutoCompact ?? true,
+      // run 终态自动提交（G3/Q8）：默认值属主是 shared 的 CODE_AUTO_COMMIT_ENABLED_DEFAULT
+      codeAutoCommitEnabled:
+        storedCodeAutoCommit ?? CODE_AUTO_COMMIT_ENABLED_DEFAULT,
       commands: parseCommands(storedCommands),
       hooks: parseHooks(storedHooks),
       userRules: storedRules?.userRules ?? "",

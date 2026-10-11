@@ -31,6 +31,7 @@ import type { AgentRunMetadataService } from "../agent-runs/agent-run-service.js
 import type { BlobStore } from "../blob/types.js";
 import type { ThreadService } from "../chat/thread-service.js";
 import type { CheckpointService } from "../checkpoints/checkpoint-service.js";
+import type { CodeGitService } from "../code-git/code-git-service.js";
 import { createScopedGitExec } from "../code-git/scoped-git-exec.js";
 import type {
   ChildSession,
@@ -143,6 +144,11 @@ export interface CodeUiServiceDeps {
   agentModes?: ExecutionModeService;
   userInputs?: CodeUserInputService;
   terminals?: CodeTerminalService;
+  /**
+   * Run 终态自动提交（G3/Q8）：code-git 域的收口缝。缺席（测试装配）时终态不提交，
+   * 不影响 run 生命周期；开关/跳过/失败静默全部在 code-git 侧收口。
+   */
+  codeGit?: Pick<CodeGitService, "autoCommitRun">;
   blob?: BlobStore;
   attachmentRepository?: CodeAttachmentRepository;
   processSandbox?: ProcessSandbox;
@@ -3214,8 +3220,14 @@ export class CodeUiService {
         project.path,
         project.projectId,
       );
-      if (["run.completed", "run.failed", "run.canceled"].includes(event.type))
+      if (["run.completed", "run.failed", "run.canceled"].includes(event.type)) {
         await this.notifyTask(user, project, sessionId, "task_status_changed");
+        // Run 终态自动提交（G3/Q8）：先于 drainQueuedInput 的下一轮派发（runTurn 的
+        // finally 在事件流之后），保证提交的就是本轮变更；autoCommitRun 永不抛，
+        // 开关关/非仓库/干净/失败全在 code-git 侧静默收口，不阻塞终态链路。
+        if (this.deps.codeGit)
+          await this.deps.codeGit.autoCommitRun(user, sessionId);
+      }
     }
   }
 

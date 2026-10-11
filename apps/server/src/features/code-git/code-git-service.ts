@@ -176,6 +176,12 @@ export type CodeGitService = {
   /** 提交全部改动（写操作：git 不可用即 503，未仓库/空改动 409）。 */
   /** 初始化仓库（幂等）。 */
   init(user: LocalActor, taskId: string): Promise<CodeGitStatus>;
+  /**
+   * Run 终态自动提交（G3/Q8）：工作目录是仓库且有未提交变更时 `add -A` + commit。
+   * 开关关 / 非仓库 / 干净工作区**静默跳过**（不自动 init——init 是独立入口）；
+   * 失败只 `console.warn`（可检索 `auto_commit`）不抛——不阻塞 run 终态。
+   */
+  autoCommitRun(user: LocalActor, taskId: string): Promise<void>;
   commit(
     user: LocalActor,
     taskId: string,
@@ -272,6 +278,14 @@ export function createCodeGitService(options: {
       );
     }
   };
+
+  /**
+   * 自动提交重试前等待：只在 `index.lock` 碰撞（用户手速并发 git）时用一次。
+   * 一次性局部常量，不进治理表——它不是用户可调的运行时档位，只是竞态窗口的缓冲。
+   */
+  const AUTO_COMMIT_RETRY_DELAY_MS = 500;
+  const nothingToCommit = (error: unknown) =>
+    error instanceof Error && /没有可提交的更改/.test(error.message);
 
   return {
     async status(user, taskId) {
@@ -630,6 +644,37 @@ export function createCodeGitService(options: {
         );
       }
       return read(git, dir);
+    },
+
+    /**
+     * Run 终态自动提交（G3/Q8）。一切前置（开关/归属/仓库/干净）与失败都收在
+     * 本方法内：**永不抛**，run 终态链路不需要知道这里发生过什么。
+     */
+    async autoCommitRun(user, taskId) {
+      try {
+        if (!(await instanceSettings(user)).codeAutoCommitEnabled) return;
+        const { dir, git } = await scopeFor(user, taskId, "write");
+        try {
+          await git.autoCommit(dir);
+        } catch (error) {
+          // 并发窗口里别人先提交干净了：不是失败，视作本轮无事可做
+          if (nothingToCommit(error)) return;
+          // 其余失败（典型是 index.lock 碰撞）重试一次，仍失败交由外层 warn
+          await new Promise((resolve) =>
+            setTimeout(resolve, AUTO_COMMIT_RETRY_DELAY_MS),
+          );
+          try {
+            await git.autoCommit(dir);
+          } catch (retryError) {
+            if (!nothingToCommit(retryError)) throw retryError;
+          }
+        }
+      } catch (error) {
+        console.warn(
+          "[code-git] auto_commit run 终态自动提交失败（已跳过，不影响 run 终态）：",
+          error,
+        );
+      }
     },
 
     async commit(user, taskId, message) {

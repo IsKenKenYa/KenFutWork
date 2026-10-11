@@ -100,6 +100,11 @@ export interface GitClient {
   createBranch(cwd: string, name: string): Promise<void>;
   /** 把普通目录初始化成仓库（`git init`；已是仓库时无副作用）。 */
   init(cwd: string): Promise<void>;
+  /**
+   * Run 终态自动提交（G3/Q8）：非仓库 / 干净工作区返回 false（静默跳过，
+   * 不自动 init）；有变更时按 `toAutoCommitMessage` 的统计信息 `add -A` + commit。
+   */
+  autoCommit(cwd: string): Promise<GitAutoCommitResult>;
   /** git 图谱（R2-1 条目 6）：最近 N 条提交的图形行。 */
   graph(cwd: string, limit: number): Promise<GitGraph>;
   /** 变更文件清单（R3-2）：逐文件增删行数与状态。 */
@@ -392,6 +397,48 @@ export interface GitDiffStat {
   untracked: number;
 }
 
+/** 自动提交（G3/Q8）结果：true = 已提交，false = 无需提交（非仓库 / 干净）。 */
+export type GitAutoCommitResult = boolean;
+
+/** 自动提交信息里列出的代表文件数上限（启发式摘要，不是治理数值）。 */
+const AUTO_COMMIT_SAMPLE_FILES = 3;
+
+/**
+ * `git status --porcelain` → 自动提交信息（G3/Q8，纯函数）。
+ *
+ * 按实际变更统计生成一句话中文，**不调 LLM**：
+ * - 全部是新增（`A*`/`??`）→「自动提交：新增 N 个文件（…）」；
+ * - 其余一律「自动提交：修改 N 个文件（…）」（修改/删除/重命名混排时不逐类罗列，
+ *   启发式的目标是「一眼认出这轮动了什么」，不是精确分类账）；
+ * - 最多列 3 个代表文件名，更多时以「等」收尾；
+ * - 无变更返回 null（干净工作区，调用方静默跳过）。
+ *
+ * porcelain 的未跟踪目录是折叠条目（`?? dir/`），按 1 个条目计入——启发式允许的误差。
+ */
+export function toAutoCommitMessage(status: GitCommandResult): string | null {
+  const entries: Array<{ code: string; path: string }> = [];
+  for (const line of status.stdout.split("\n")) {
+    if (line.length < 4) continue;
+    const code = line.slice(0, 2);
+    let rest = line.slice(3);
+    if (rest.includes(" -> ")) rest = rest.split(" -> ").pop() ?? rest;
+    // 带特殊字符的路径会被 git 成对引号包住；展示用去掉引号即可
+    if (rest.startsWith('"') && rest.endsWith('"')) rest = rest.slice(1, -1);
+    if (rest) entries.push({ code, path: rest });
+  }
+  if (entries.length === 0) return null;
+
+  // porcelain 分段输出（已跟踪在前、未跟踪在后）；按路径重排让「代表文件」稳定可比
+  entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const sample = entries.slice(0, AUTO_COMMIT_SAMPLE_FILES).map((e) => e.path);
+  const suffix = `（${sample.join("、")}${entries.length > AUTO_COMMIT_SAMPLE_FILES ? " 等" : ""}）`;
+  const allAdded = entries.every(
+    (entry) => entry.code === "??" || entry.code.trim().startsWith("A"),
+  );
+  const verb = allAdded ? "新增" : "修改";
+  return `自动提交：${verb} ${entries.length} 个文件${suffix}`;
+}
+
 /**
  * 由 `diff --numstat HEAD` 与 `status --porcelain` 拼 heirloom 统计（纯函数）。
  *
@@ -571,6 +618,23 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     }
   };
 
+  /**
+   * Run 终态自动提交（G3/Q8）。仓库判定复用 `describe` 的 locale 无关口径
+   * （`rev-parse --is-inside-work-tree` 输出 `true`），不解析 stderr 文案；
+   * 提交复用 {@link commitAll}（`add -A` + `commit`，错误信息已中文化）。
+   */
+  const autoCommit = async (cwd: string): Promise<GitAutoCommitResult> => {
+    const inside = await exec(["rev-parse", "--is-inside-work-tree"], cwd);
+    if (inside.code !== 0 || inside.stdout.trim() !== "true") return false;
+    const status = await exec(["status", "--porcelain"], cwd);
+    if (status.code !== 0)
+      throw new Error(status.stderr.trim() || "git status 失败。");
+    const message = toAutoCommitMessage(status);
+    if (!message) return false;
+    await commitAll(cwd, message);
+    return true;
+  };
+
   const createBranch = async (cwd: string, name: string): Promise<void> => {
     if (!isSafeBranchName(name)) {
       throw new Error(`非法分支名：${name}`);
@@ -660,6 +724,7 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     push,
     createBranch,
     init,
+    autoCommit,
     graph,
     changedFiles,
     fileDiff,
