@@ -135,6 +135,7 @@ async function fixture(
       planObject: async () => {},
     },
     recoverRuntimeInputs: async () => {},
+    readRunFailure: async () => null,
     readHumanPreferences: async () => ({}),
     find: async (workspace: string, id: string) =>
       workspace === instanceId && id === taskId ? structuredClone(root) : null,

@@ -3888,6 +3888,36 @@ export class CodeUiService {
       (item) => item.sessionId === root.id,
     );
     if (!snapshot) throw new Error("Code 根快照缺失，无法恢复");
+    // 旧恢复投影先按取消收尾；Run账本的启动对账在listen之后才写入失败。
+    // 仅同一Run的持久失败可恢复原因，无原因取消保留原终态。
+    if (
+      snapshot.control.phase === "completedInterrupted" &&
+      !snapshot.control.lastError &&
+      root.state.runId
+    ) {
+      const failure = await this.deps.repository.readRunFailure(
+        workspace.instanceId,
+        root.id,
+        root.state.runId,
+      );
+      if (failure) {
+        snapshot.control = {
+          ...snapshot.control,
+          phase: "error",
+          sessionEnded: false,
+          lastError: {
+            code: failure.error_code ?? "run_failed",
+            message: failure.error_message,
+            recoverable: true,
+            at: failure.completed_at
+              ? new Date(failure.completed_at).getTime()
+              : new Date(root.updated_at).getTime(),
+            source: "runtime",
+          },
+        };
+        snapshot.queue.pauseReason = "error";
+      }
+    }
     const host = createCodeUiConversation({
       sessionId: root.id,
       workspacePath: project.path,

@@ -6,6 +6,7 @@ import {
   type StreamEvent,
   streamEventSchema,
 } from "@kenfutwork/shared";
+import { INTERRUPTED_RUN_MESSAGE } from "../agent-runs/reconcile.js";
 import type {
   InstanceSqlClient,
   PersistenceService,
@@ -367,9 +368,10 @@ export function createCodeUiRepository(persistence: PersistenceService) {
           });
           if (root.active_run_id)
             host.recordEvent({
-              type: "run.canceled",
+              type: "run.failed",
               runId: root.active_run_id,
               timestamp: new Date().toISOString(),
+              error: { code: "run_failed", message: INTERRUPTED_RUN_MESSAGE },
             });
           const state = host.exportState();
           const current = state.snapshots.find(
@@ -657,6 +659,20 @@ export function createCodeUiRepository(persistence: PersistenceService) {
         );
         return ack;
       });
+    },
+    async readRunFailure(instanceId: string, sessionId: string, runId: string) {
+      return persistence.forInstance(instanceId).queryOne<{
+        error_code: string | null;
+        error_message: string;
+        completed_at: string | Date | null;
+      }>(
+        `select r.error_code, r.error_message, r.completed_at
+         from public.agent_runs r
+         join public.chat_sessions s on s.id = r.session_id
+         where s.instance_id = :instance and r.session_id = $1 and r.id = $2
+           and r.status = 'failed' and r.error_message is not null`,
+        [sessionId, runId],
+      );
     },
     async find(
       instanceId: string,
