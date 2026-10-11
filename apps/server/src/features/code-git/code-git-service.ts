@@ -614,8 +614,20 @@ export function createCodeGitService(options: {
       requireGitForWrite();
       const { dir, git } = await scopeFor(user, taskId, "write");
       const view = await git.describe(dir);
-      if (!view.isRepo) {
+      if (view.isRepo) {
+        return read(git, dir);
+      }
+      try {
         await git.init(dir);
+      } catch (error) {
+        // git 的 stderr 是机器话（fatal: …）；透传前补上中文语境，界面才说得清哪里不对。
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error && error.message
+            ? `初始化仓库失败：${error.message}`
+            : "初始化仓库失败。",
+          409,
+        );
       }
       return read(git, dir);
     },

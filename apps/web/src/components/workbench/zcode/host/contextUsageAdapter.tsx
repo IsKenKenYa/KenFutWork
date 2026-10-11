@@ -6,18 +6,16 @@
  *
  * 数据链：服务端 run.usage 事件带 contextWindowTokens（模型目录+兜底表解析后下发）→
  * conversation 快照 usage.contextWindow → 工具条 taskUsage {used, size, cache}。
- * 展示口径全部复用 web 层 `lib/context-usage.ts`（R4-1 沉淀：无数据不显示 0%、
- * 窗口未知不编分母、命中率按 token 加权）。
+ *
+ * 展示口径与 web 层 `src/lib/context-usage.ts`（R4-1 沉淀）一致；因 host tsconfig
+ * rootDir=host 不能跨包导入，此处内联等价实现（无数据不显示 0%、窗口未知不编分母、
+ * 命中率按 token 加权）——改口径时两处同步。
  */
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
 } from "@zui/components/ui/hover-card.js";
-import {
-  contextUsageView,
-  type RunUsageSnapshot,
-} from "../../../../lib/context-usage.js";
 
 interface AdapterTaskUsage {
   used: number;
@@ -26,6 +24,76 @@ interface AdapterTaskUsage {
     | (Record<string, unknown> & { hitRate?: number | null })
     | undefined;
   breakdown?: ReadonlyArray<{ source: string; chars: number }> | undefined;
+}
+
+/** token 数的中文习惯缩写（61.4万 / 100万）。 */
+function formatTokens(value: number): string {
+  if (!Number.isFinite(value) || value < 0) return "0";
+  if (value >= 100_000_000) return `${trimZero(value / 100_000_000)}亿`;
+  if (value >= 10_000) return `${trimZero(value / 10_000)}万`;
+  return String(Math.round(value));
+}
+
+function trimZero(value: number): string {
+  return value.toFixed(1).replace(/\.0$/, "");
+}
+
+interface UsageView {
+  percent: number | null;
+  fineLine: string | null;
+  line: string | null;
+  cacheHitLabel: string | null;
+  cacheHitPercent: number | null;
+}
+
+/** R4-1 口径的内联版：窗口未知不编分母；命中率 = run 累计命中 ÷ run 累计输入。 */
+function usageView(
+  used: number,
+  window: number | null,
+  cache?: {
+    cacheReadTokens?: number;
+    totalInputTokens?: number;
+    totalCacheReadTokens?: number;
+  },
+): UsageView {
+  if (used <= 0) {
+    return {
+      percent: null,
+      fineLine: null,
+      line: null,
+      cacheHitLabel: null,
+      cacheHitPercent: null,
+    };
+  }
+  const rawPercent = window === null ? null : (used / window) * 100;
+  const percent =
+    rawPercent === null ? null : Math.min(100, Math.round(rawPercent * 10) / 10);
+  const finePercent =
+    rawPercent === null
+      ? null
+      : rawPercent >= 100
+        ? "100"
+        : rawPercent.toFixed(2).replace(/\.?0+$/, "");
+  const runInput = cache?.totalInputTokens;
+  const runCached = cache?.totalCacheReadTokens;
+  const hitRate =
+    typeof runInput === "number" && runInput > 0 && typeof runCached === "number"
+      ? (runCached / runInput) * 100
+      : null;
+  return {
+    percent,
+    fineLine:
+      finePercent === null || window === null
+        ? null
+        : `${formatTokens(used)}/${formatTokens(window)}（${finePercent}%）`,
+    line:
+      window === null
+        ? `${formatTokens(used)}（窗口未知）`
+        : `${formatTokens(used)}/${formatTokens(window)}（${percent ?? 0}%）`,
+    cacheHitLabel:
+      hitRate === null ? null : `${Math.round(hitRate * 10) / 10}%`,
+    cacheHitPercent: hitRate === null ? null : Math.min(100, hitRate),
+  };
 }
 
 /** taskUsage 为空或非法时不渲染（不把兜底 0 当真实占用）。 */
@@ -48,41 +116,6 @@ export function getContextCompressionCommand(): string {
   return "/compact";
 }
 
-function toRunUsageSnapshot(
-  taskUsage: AdapterTaskUsage,
-): RunUsageSnapshot | null {
-  // 窗口未知（size=0）不算「无数据」：仍给绝对量读数（usageLine 兜底文案），
-  // 只有 used 非法/为零才视为无数据。
-  if (
-    !Number.isFinite(taskUsage.used) ||
-    taskUsage.used <= 0
-  ) {
-    return null;
-  }
-  const cache = taskUsage.cache as
-    | {
-        inputTokens?: number;
-        cacheReadTokens?: number;
-        totalInputTokens?: number;
-        totalCacheReadTokens?: number;
-        hitRate?: number | null;
-      }
-    | undefined;
-  return {
-    inputTokens: taskUsage.used,
-    outputTokens: 0,
-    ...(typeof cache?.cacheReadTokens === "number"
-      ? { cachedInputTokens: cache.cacheReadTokens }
-      : {}),
-    ...(typeof cache?.totalInputTokens === "number"
-      ? { runInputTokens: cache.totalInputTokens }
-      : {}),
-    ...(typeof cache?.totalCacheReadTokens === "number"
-      ? { runCachedInputTokens: cache.totalCacheReadTokens }
-      : {}),
-  };
-}
-
 export function ChatContextUsage({
   taskUsage,
 }: {
@@ -95,10 +128,16 @@ export function ChatContextUsage({
   onSendCompressionCommand?: (command: string) => void;
   compressionDisabled?: boolean;
 }) {
-  const usage = toRunUsageSnapshot(taskUsage ?? { used: 0, size: 0 });
+  const cache = taskUsage?.cache as
+    | {
+        cacheReadTokens?: number;
+        totalInputTokens?: number;
+        totalCacheReadTokens?: number;
+      }
+    | undefined;
   // size=0 = 服务端没解析到窗口（快照 schema 要求 number）：只给绝对量，不编分母。
   const window = taskUsage && taskUsage.size > 0 ? taskUsage.size : null;
-  const view = contextUsageView(usage, window);
+  const view = usageView(taskUsage?.used ?? 0, window, cache);
 
   return (
     <HoverCard openDelay={0} closeDelay={120}>
@@ -106,7 +145,7 @@ export function ChatContextUsage({
         <button
           type="button"
           aria-label="上下文容量"
-          title={view.usageFineLine ?? view.usageLine ?? "上下文容量"}
+          title={view.fineLine ?? view.line ?? "上下文容量"}
           className="inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors outline-none hover:bg-hover"
           data-testid="context-usage-ring"
         >
@@ -122,7 +161,7 @@ export function ChatContextUsage({
         <div className="flex items-baseline justify-between gap-2">
           <span className="font-medium">上下文容量</span>
           <span className="tabular-nums">
-            {view.usageFineLine ?? view.usageLine ?? "本轮暂无用量"}
+            {view.fineLine ?? view.line ?? "本轮暂无用量"}
           </span>
         </div>
         <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-hover">

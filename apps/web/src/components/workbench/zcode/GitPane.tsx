@@ -26,6 +26,7 @@ import {
   getSourceMessageId,
 } from "@zui/GitPane/helpers.js";
 import { GitPaneChangeCard } from "@zui/GitPaneChangeCard.js";
+import { GitPaneInitRepositoryAction } from "@zui/host/GitPaneInitRepository.js";
 import { getFileChangeFindState } from "@zui/GitPane/fileChangeFindSearch.js";
 import { logger } from "@zui/logger.js";
 import { useZCodeStore } from "@zui/store/StoreProvider.js";
@@ -162,6 +163,14 @@ export function GitPane({
     gitState.summary.isRepository,
     intl,
   ]);
+
+  // KenFutWork 宿主扩展：非仓库空态给「初始化仓库」入口（动作实现在 host 适配件）。
+  const showInitRepositoryAction =
+    gitState.summary.isGitAvailable &&
+    !gitState.summary.isRepository &&
+    !gitState.loading &&
+    !gitState.error &&
+    currentSourceOption.id !== "last-turn";
 
   useEffect(() => {
     diffGenerationRef.current += 1;
@@ -538,6 +547,13 @@ export function GitPane({
             <FileTextIcon className="size-8 text-foreground-subtlest" />
             <p className="mt-3 text-ui-base font-medium text-foreground">{emptyStateCopy.title}</p>
             <p className="mt-1 text-ui-base text-foreground-subtle">{emptyStateCopy.description}</p>
+            {showInitRepositoryAction ? (
+              <GitPaneInitRepositoryAction
+                workspacePath={workspacePath}
+                workspaceIdentity={workspaceIdentity}
+                onRefresh={onRefresh}
+              />
+            ) : null}
           </div>
         )}
       </div>

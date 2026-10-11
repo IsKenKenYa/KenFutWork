@@ -137,7 +137,7 @@ import { usePrimaryFollowupModifier } from "@zui/v4/composer/usePrimaryFollowupM
 import { useWebElementContexts } from "@zui/v4/composer/useWebElementContexts.js";
 import { V4ComposerCuaEntry } from "@zui/v4/composer/V4ComposerCuaEntry.js";
 // KenFutWork 宿主件：六档执行模式 chip（G2/Q7），实现位于 host/ 非上游移植。
-import { ExecutionModeChip } from "../../host/ExecutionModeChip.js";
+import { ExecutionModeChip } from "@zui/host/ExecutionModeChip.js";
 import {
   type ModelSelectionSource,
   V4ComposerModelControls,
