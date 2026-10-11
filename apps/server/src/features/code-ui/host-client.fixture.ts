@@ -74,15 +74,22 @@ export function createCodeUiTestClient(input: {
     const decoder = new TextDecoder();
     let buffer = "";
     const next = async () => {
-      while (!buffer.includes("\n\n")) {
-        const part = await reader.read();
-        if (part.done) throw new Error("Code 通道提前关闭");
-        buffer += decoder.decode(part.value, { stream: true });
+      for (;;) {
+        while (!buffer.includes("\n\n")) {
+          const part = await reader.read();
+          if (part.done) throw new Error("Code 通道提前关闭");
+          buffer += decoder.decode(part.value, { stream: true });
+        }
+        const boundary = buffer.indexOf("\n\n");
+        const record = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const data = record
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).replace(/^ /u, ""))
+          .join("\n");
+        if (data) return JSON.parse(data);
       }
-      const boundary = buffer.indexOf("\n\n");
-      const record = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      return JSON.parse(record.slice("data: ".length));
     };
     const ready = await next();
     const rpc = (method: string, args: unknown[] = []) =>

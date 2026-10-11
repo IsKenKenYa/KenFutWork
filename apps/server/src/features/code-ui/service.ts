@@ -221,6 +221,7 @@ export function codeUiCommandFingerprint(
 
 /** 服务定义的具体 Provider；原 GUI 仅调用该域提供的 RPC/会话消费接口。 */
 export class CodeUiService {
+  private readonly stoppingCommands = new Map<string, Promise<unknown>>();
   private readonly guideInputs: ReturnType<typeof createCodeGuideInputs>;
   private readonly planning: ReturnType<typeof createCodePlanningControl>;
   private readonly approvedPlans: ReturnType<
@@ -2450,10 +2451,34 @@ export class CodeUiService {
     user: LocalActor,
     envelope: protocol.CommandEnvelope,
   ) {
+    const key = JSON.stringify([
+      user.instanceId,
+      envelope.clientId,
+      envelope.commandId,
+    ]);
+    const previous = this.stoppingCommands.get(key) ?? Promise.resolve();
+    const next = previous.then(
+      () => this.applyStopExecution(user, envelope),
+      () => this.applyStopExecution(user, envelope),
+    );
+    this.stoppingCommands.set(key, next);
+    try {
+      return await next;
+    } finally {
+      if (this.stoppingCommands.get(key) === next)
+        this.stoppingCommands.delete(key);
+    }
+  }
+
+  private async applyStopExecution(
+    user: LocalActor,
+    envelope: protocol.CommandEnvelope,
+  ) {
     if (!envelope.sessionId)
       throw new CodeUiRepositoryError("not_found", "停止缺少会话身份");
     const loaded = await this.loadConversation(user, envelope.sessionId);
     const payload = protocol.commandPayloadSchemas.stop.parse(envelope.payload);
+    let targetChanged = false;
     const ack = await this.deps.repository.applyScopeCommand(
       loaded.instanceId,
       { ...envelope, sessionId: loaded.root.id },
@@ -2476,8 +2501,11 @@ export class CodeUiService {
         if (
           payload.expectedForegroundExecutionId &&
           payload.expectedForegroundExecutionId !== execution
-        )
+        ) {
+          targetChanged = true;
           return;
+        }
+        if (!execution) return;
         if (loaded.entry.id === root.id)
           await this.deps.repository.appendEvent(
             loaded.instanceId,
@@ -2579,10 +2607,11 @@ export class CodeUiService {
           );
       },
       (root) => ({
-        state: root.state!,
+        state: null,
         ack: {
           commandId: envelope.commandId,
-          status: "accepted",
+          status: targetChanged ? "noop" : "accepted",
+          ...(targetChanged ? { reasonCode: "guard.stopTargetChanged" } : {}),
           revisionAtDecision: Number(root.revision),
         },
       }),

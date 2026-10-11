@@ -210,8 +210,10 @@ async function fixture(
       }
       await change(structuredClone(root));
       const decision = decide(structuredClone(root));
-      root.state = decision.state;
-      root.revision = Number(root.revision) + 1;
+      if (decision.state) {
+        root.state = decision.state;
+        root.revision = Number(root.revision) + 1;
+      }
       const ack = protocol.commandAckSchema.parse(decision.ack);
       commands.set(key, { fingerprint, ack });
       return ack;

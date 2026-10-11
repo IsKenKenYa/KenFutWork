@@ -312,6 +312,13 @@ async function claimScopeCommand(
     };
   }
   const root = await lockRoot(scoped, envelope.sessionId!);
+  if (
+    envelope.type === "stop" &&
+    (root.archived ||
+      root.execution_state !== "ready" ||
+      !(await lockActiveProject(scoped, root)))
+  )
+    throw new CodeUiRepositoryError("not_found", "Code 项目已归档或正在关闭");
   await scoped.execute(
     `insert into public.code_ui_commands (instance_id, client_id, command_id, session_id, parameter_fingerprint, status)
      values (:instance, $1, $2, $3, $4, 'pending')`,
