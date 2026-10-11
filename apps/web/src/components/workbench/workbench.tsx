@@ -41,18 +41,26 @@ function WorkbenchModeSurface() {
           : "design";
     return "code";
   }, [requested, flowEntry]);
+  // 管理文档 keep-alive：首次打开后持续挂载（hidden 收起），重复打开不重载。
   const [management, setManagement] = useState<ManagementTarget | null>(null);
+  const [managementVisited, setManagementVisited] = useState(false);
+  const openManagement = useCallback((target: ManagementTarget) => {
+    setManagementVisited(true);
+    setManagement(target);
+  }, []);
   const closeManagement = useCallback(() => setManagement(null), []);
+
   return (
     <>
       <CodeWorkbenchFrame
         availableModes={availableModes}
         mode={mode}
-        onOpenManagement={setManagement}
+        onOpenManagement={openManagement}
       />
-      {management ? (
+      {managementVisited ? (
         <ManagementDocumentFrame
-          target={management}
+          target={management ?? { page: "settings" }}
+          visible={management !== null}
           onClose={closeManagement}
         />
       ) : null}

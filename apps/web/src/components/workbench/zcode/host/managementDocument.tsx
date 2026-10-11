@@ -1,4 +1,6 @@
 import type { ManagementTarget } from "@kenfutwork/shared";
+import { managementNavigationSchema } from "@kenfutwork/shared";
+import type { UserInfo } from "@zcode/shared";
 import { TooltipProvider } from "@zui/components/ui/tooltip.js";
 import { ScopedErrorBoundary } from "@zui/ErrorBoundary.js";
 import { PlatformProvider } from "@zui/hooks/usePlatform.js";
@@ -56,10 +58,12 @@ function prepareTarget(target: ManagementTarget) {
 function ManagementDocument({
   client,
   initialTarget,
+  user,
   onClose,
 }: {
   client: CodeHttpChannelClient;
   initialTarget: ManagementTarget;
+  user: UserInfo | null;
   onClose: () => void;
 }) {
   const services = useSyncExternalStore(
@@ -86,6 +90,23 @@ function ManagementDocument({
       ),
     [],
   );
+  // 父页 keep-alive 复用本文档：打开期间目标变化经 management-target 推送，
+  // 文档内切换（设置分区 ⇄ 插件市场），不重载。
+  useEffect(() => {
+    const receive = (event: MessageEvent) => {
+      if (
+        event.source !== window.parent ||
+        event.origin !== window.location.origin
+      )
+        return;
+      const parsed = managementNavigationSchema.safeParse(event.data);
+      if (!parsed.success) return;
+      prepareTarget(parsed.data.target);
+      setTarget(parsed.data.target);
+    };
+    window.addEventListener("message", receive);
+    return () => window.removeEventListener("message", receive);
+  }, []);
   const manageInstalled = () => {
     const next: ManagementTarget = {
       page: "settings",
@@ -129,7 +150,7 @@ function ManagementDocument({
                               setTarget(destination);
                             }}
                             allowOpenWorkspace={false}
-                            user={null}
+                            user={user}
                           />
                         ) : (
                           <main className="flex h-full min-h-0 flex-1 flex-col bg-background">
@@ -168,12 +189,14 @@ export function renderManagementDocument(
   client: CodeHttpChannelClient,
   target: ManagementTarget,
   onClose: () => void,
+  user: UserInfo | null = null,
 ) {
   prepareTarget(target);
   root.render(
     <ManagementDocument
       client={client}
       initialTarget={target}
+      user={user}
       onClose={onClose}
     />,
   );

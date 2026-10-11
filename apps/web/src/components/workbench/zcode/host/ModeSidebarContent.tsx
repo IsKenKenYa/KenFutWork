@@ -44,9 +44,16 @@ const FLOW_NAV_ITEMS = [
  * 壳侧栏的模式内容槽（融合缝）：Code 模式渲染原任务列表（children），
  * Design/Flow 模式换成对应内容——「侧边栏随模式变化」的原工作台逻辑
  * （用户口径：融合这块逻辑，不要在主区再套一层侧栏）。品牌行与模式 pills
- * 在本槽之上，底部用户/设置在本槽之下，均不随模式变化。
+ * 在本槽之上，底部用户/设置在本槽之下，均不随模式变化；`shared`（插件市场/
+ * 技能/MCP/插件面板）在所有模式渲染于模式内容之前（共用的东西要保留）。
  */
-export function HostModeSidebarContent({ children }: { children?: ReactNode }) {
+export function HostModeSidebarContent({
+  children,
+  shared,
+}: {
+  children?: ReactNode;
+  shared?: ReactNode;
+}) {
   const navigation = useOptionalPlatform()?.workbenchNavigation;
   const snapshot = useSyncExternalStore(
     navigation?.subscribe ?? NOOP_SUBSCRIBE,
@@ -55,10 +62,11 @@ export function HostModeSidebarContent({ children }: { children?: ReactNode }) {
   const mode = snapshot.mode;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {mode === "design" ? (
-        <DesignProjectsSidebar />
-      ) : mode === "flow" ? (
-        <FlowNavSidebar />
+      {mode === "design" || mode === "flow" ? (
+        <>
+          {shared}
+          {mode === "design" ? <DesignProjectsSidebar /> : <FlowNavSidebar />}
+        </>
       ) : (
         children
       )}

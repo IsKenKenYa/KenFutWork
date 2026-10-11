@@ -281,6 +281,7 @@ it("Code可信模型管理请求打开同一独立文档，拒绝伪造和无效
     }),
   );
   const manager = (await screen.findByTitle("管理设置")) as HTMLIFrameElement;
+  expect(manager.hasAttribute("hidden")).toBe(false);
   expect(screen.getByTitle("Code 工作台")).toBe(frame);
   fireEvent(
     window,
@@ -290,7 +291,10 @@ it("Code可信模型管理请求打开同一独立文档，拒绝伪造和无效
       data: { type: "kenfutwork:management-close" },
     }),
   );
-  expect(screen.queryByTitle("管理设置")).toBeNull();
+  // keep-alive：关闭后管理文档常驻但隐藏（下次打开不重载）
+  expect(
+    (screen.getByTitle("管理设置") as HTMLIFrameElement).hasAttribute("hidden"),
+  ).toBe(true);
   expect(screen.getByTitle("Code 工作台")).toBe(frame);
 });
 
@@ -301,7 +305,11 @@ it("管理文档加载中或失败时宿主仍能关闭并恢复原Codeiframe", 
     type: "kenfutwork:open-management",
     target: { page: "settings" },
   });
-  const manager = (await screen.findByTitle("管理设置", {}, LAZY)) as HTMLIFrameElement;
+  const manager = (await screen.findByTitle(
+    "管理设置",
+    {},
+    LAZY,
+  )) as HTMLIFrameElement;
   // 关闭消息必须来自管理文档自身（别的窗口发同款消息不得顶掉它）。
   fireEvent(
     window,
@@ -311,6 +319,8 @@ it("管理文档加载中或失败时宿主仍能关闭并恢复原Codeiframe", 
       data: { type: "kenfutwork:management-close" },
     }),
   );
-  expect(screen.queryByTitle("管理设置")).toBeNull();
+  expect(
+    (screen.getByTitle("管理设置") as HTMLIFrameElement).hasAttribute("hidden"),
+  ).toBe(true);
   expect(screen.getByTitle("Code 工作台")).toBe(frame);
 });

@@ -13,7 +13,6 @@ import {
   applyTheme,
   isTheme,
   normalizeThemePreference,
-  type Theme,
 } from "@zui/useTheme.js";
 import { ensureAgentV4ConnectionHandshake } from "@zui/v4/agentV4ConnectionHandshake.js";
 import {
@@ -163,6 +162,9 @@ try {
           window.location.origin,
         );
       },
+      // 父页 keep-alive 带来的本地实例主人：管理页底部显示「本地用户」
+      // 而不是「连接使用」（与 Code 壳同一份用户）。
+      bootstrap?.user ?? null,
     );
   } else {
     const hello = await ensureAgentV4ConnectionHandshake(

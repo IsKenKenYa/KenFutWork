@@ -1382,6 +1382,62 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     ],
   );
 
+  // 共用导航（各模式都保留）：插件市场 / 技能 / MCP 服务器 / 插件侧栏面板。
+  // 定义为元素复用——Code 模式排在「新建任务/搜索」之后，design/flow 模式经
+  // HostModeSidebarContent 的 shared 槽继续渲染（用户口径：共用的东西要保留）。
+  const sharedNavigation = (
+    <>
+      <Button
+        variant="ghost"
+        onClick={handleOpenPluginStoreMain}
+        data-icon="inline-start"
+        data-testid="plugin-store-sidebar-open"
+        size="lg"
+        aria-pressed={pluginStoreActive}
+        className={cn(
+          "w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground",
+          pluginStoreActive && "bg-selected text-foreground",
+        )}
+      >
+        <Blocks className="size-4" />
+        {intl.formatMessage({ id: "workspace.openPluginsSettings" })}
+      </Button>
+      {platform?.skillsSettingsCapabilities?.databaseRecords ? (
+        <Button
+          variant="ghost"
+          size="lg"
+          className="w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground"
+          onClick={() => {
+            setPendingSettingsSectionIntent("skill", {
+              pluginScopeKey: "user",
+            });
+            openSettingsTab();
+          }}
+        >
+          <WandSparkles className="size-4" />
+          {intl.formatMessage({ id: "settings.skills.title" })}
+        </Button>
+      ) : null}
+      {platform?.mcpSettingsCapabilities?.databaseRecords ? (
+        <Button
+          variant="ghost"
+          size="lg"
+          className="w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground"
+          onClick={() => {
+            setPendingSettingsSectionIntent("mcp", {
+              pluginScopeKey: "user",
+            });
+            openSettingsTab();
+          }}
+        >
+          <Cable className="size-4" />
+          {intl.formatMessage({ id: "settings.mcpTitle" })}
+        </Button>
+      ) : null}
+      <PluginSidebarNavigation />
+    </>
+  );
+
   return (
     <aside
       data-testid={TID_SIDEBAR}
@@ -1409,8 +1465,15 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
         }
       />
       {/* 模式内容槽（融合缝）：Code 渲染下方原任务列表；Design/Flow 换成项目
-          列表 / flow 导航——「侧边栏随模式变化」的原工作台逻辑。 */}
-      <HostModeSidebarContent>
+          列表 / flow 导航——「侧边栏随模式变化」的原工作台逻辑；shared=共用导航
+          （插件市场/技能/MCP/插件面板），design/flow 模式下继续渲染在模式内容之前。 */}
+      <HostModeSidebarContent
+        shared={
+          <div className="flex flex-col gap-1 px-2 pt-1">
+            {sharedNavigation}
+          </div>
+        }
+      >
         <div className="relative flex-1 min-h-0 overflow-hidden">
           <div
             className={cn(
@@ -1459,72 +1522,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                   {commandCenterShortcutLabel}
                 </span>
               </Button>
-              {/* 远程入口展示策略统一走 useRemoteConnectionEntryVisibility，避免与其他入口出现分叉。*/}
-              {/* {showRemoteConnectionEntry ? (
-              <SSHDialog
-                onConnect={onConnectRemote}
-                onSelectProject={onSelectRemoteProject}
-                onCancelSession={onCancelRemoteProject}
-                isWindowsDesktop={isWindowsDesktop}
-                triggerVariant="ghost"
-                triggerSize="lg"
-                triggerClassName="w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground"
-                trigger={
-                  <>
-                    <Cloud className="size-4" />
-                    <span>{intl.formatMessage({ id: "remote.trigger" })}</span>
-                  </>
-                }
-              />
-            ) : null} */}
-              <Button
-                variant="ghost"
-                onClick={handleOpenPluginStoreMain}
-                data-icon="inline-start"
-                data-testid="plugin-store-sidebar-open"
-                size="lg"
-                aria-pressed={pluginStoreActive}
-                className={cn(
-                  "w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground",
-                  pluginStoreActive && "bg-selected text-foreground",
-                )}
-              >
-                <Blocks className="size-4" />
-                {intl.formatMessage({ id: "workspace.openPluginsSettings" })}
-              </Button>
-              {platform?.skillsSettingsCapabilities?.databaseRecords ? (
-                <Button
-                  variant="ghost"
-                  size="lg"
-                  className="w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground"
-                  onClick={() => {
-                    setPendingSettingsSectionIntent("skill", {
-                      pluginScopeKey: "user",
-                    });
-                    openSettingsTab();
-                  }}
-                >
-                  <WandSparkles className="size-4" />
-                  {intl.formatMessage({ id: "settings.skills.title" })}
-                </Button>
-              ) : null}
-              {platform?.mcpSettingsCapabilities?.databaseRecords ? (
-                <Button
-                  variant="ghost"
-                  size="lg"
-                  className="w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground"
-                  onClick={() => {
-                    setPendingSettingsSectionIntent("mcp", {
-                      pluginScopeKey: "user",
-                    });
-                    openSettingsTab();
-                  }}
-                >
-                  <Cable className="size-4" />
-                  {intl.formatMessage({ id: "settings.mcpTitle" })}
-                </Button>
-              ) : null}
-              <PluginSidebarNavigation />
+              {/* 共用导航（插件市场/技能/MCP/插件面板）：各模式都保留——经
+                  HostModeSidebarContent 的 shared 槽在 design/flow 模式继续渲染。 */}
+              {sharedNavigation}
             </div>
 
             <div className="relative flex min-h-0 flex-1 flex-col">

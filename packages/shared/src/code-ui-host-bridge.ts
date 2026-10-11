@@ -80,6 +80,14 @@ export const codeUiBootstrapSchema = z.object({
   managementAvailable: z.boolean().optional(),
   workbenchModes: workbenchModesSchema.optional(),
 });
+/** 父→管理文档推送导航目标（keep-alive 复用同一文档时换目标用）。 */
+export const managementNavigationSchema = z
+  .object({
+    type: z.literal("kenfutwork:management-target"),
+    target: managementTargetSchema,
+  })
+  .strict();
+
 export const codeUiParentRequestSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("kenfutwork:code-ready") }),
   z.object({ type: z.literal("kenfutwork:code-access-lost") }),

@@ -62,7 +62,7 @@ export function WorkbenchModeNavigation({
             aria-checked={mode === item.id}
             data-active={mode === item.id}
             onClick={() => onModeChange(item.id)}
-            className="flex min-h-[30px] min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-1.5 text-[13px] whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground data-[active=true]:font-medium data-[active=true]:text-foreground"
+            className="flex min-h-[30px] min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-1.5 text-[13px] whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground data-[active=true]:bg-muted data-[active=true]:font-medium data-[active=true]:text-foreground"
           >
             {item.icon}
             <span className="truncate">{item.label}</span>
@@ -106,12 +106,13 @@ function ConnectedWorkbenchModeNavigation({
           间距沿用原口径（px-3.5 / py-3 / gap-2）；无黑底条、无底片徽章。
           拖拽区仍由本行承接（原 h-12 空白拖拽条已去掉）。 */}
       <div className="flex w-full items-center gap-2 px-3.5 py-3 [app-region:drag]">
-        {/* 黑标：品牌图为蓝色墨迹，brightness(0) 转黑；高度与 20px 字标的大写高一致。 */}
+        {/* 黑标：品牌图为蓝色墨迹，brightness(0) 转黑；高度对齐 20px 字标的大写高
+            （墨迹占图 80%，18px 盒→14.4px 墨迹）；基线光学补偿下沉 1px 对齐字面。 */}
         {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
         <img
           src={appLogoUrl}
           alt="KenFutWork"
-          className="h-[18px] w-auto brightness-0"
+          className="h-[18px] w-auto translate-y-[1px] brightness-0"
           draggable={false}
         />
         <span className="font-wordmark text-[20px] leading-none tracking-tight text-foreground">

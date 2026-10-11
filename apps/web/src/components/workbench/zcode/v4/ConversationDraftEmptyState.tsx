@@ -4,13 +4,21 @@
  * i18n key `chat.empty.greeting.*` 一直保留）；边界时刻自动换档逻辑保真。
  * 手机远控复用同一组件，但继续保留 20px 紧凑标题；桌面草稿首页才按标题自身宽度适配。
  */
-import { Code2 } from "lucide-react";
-import { type CSSProperties, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+
 import kenfutworkMarkUrl from "@zui/assets/kenfutwork-mark.png";
 import { cn } from "@zui/components/lib/utils.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { logger } from "@zui/logger.js";
+import { Code2 } from "lucide-react";
+import {
+  type CSSProperties,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 const GREETING_BOUNDARY_HOURS = [5, 9, 12, 14, 18, 23] as const;
 const GREETING_MIN_FONT_SIZE_PX = 20;
@@ -24,7 +32,9 @@ type ChatEmptyGreetingMessageId =
   | "chat.empty.greeting.evening"
   | "chat.empty.greeting.lateNight";
 
-function getChatEmptyGreetingMessageId(date: Date = new Date()): ChatEmptyGreetingMessageId {
+function getChatEmptyGreetingMessageId(
+  date: Date = new Date(),
+): ChatEmptyGreetingMessageId {
   const hour = date.getHours();
 
   if (hour >= 5 && hour < 9) return "chat.empty.greeting.morningEarly";
@@ -47,7 +57,8 @@ function getNextChatEmptyGreetingDelayMs(date: Date = new Date()) {
   tomorrowFirstBoundary.setHours(GREETING_BOUNDARY_HOURS[0], 0, 0, 0);
 
   const nextBoundary =
-    candidates.find((candidate) => candidate.getTime() > date.getTime()) ?? tomorrowFirstBoundary;
+    candidates.find((candidate) => candidate.getTime() > date.getTime()) ??
+    tomorrowFirstBoundary;
 
   return Math.max(1, nextBoundary.getTime() - date.getTime());
 }
@@ -73,22 +84,32 @@ function resolveGreetingFontSizePx({
     GREETING_MIN_FONT_SIZE_PX,
     Math.min(
       GREETING_MAX_FONT_SIZE_PX,
-      Math.floor(GREETING_MAX_FONT_SIZE_PX * (availableWidthPx / naturalTextWidthPx)),
+      Math.floor(
+        GREETING_MAX_FONT_SIZE_PX * (availableWidthPx / naturalTextWidthPx),
+      ),
     ),
   );
 }
 
-export function ConversationDraftEmptyState({ className }: { className?: string }) {
+export function ConversationDraftEmptyState({
+  className,
+}: {
+  className?: string;
+}) {
   const { intl } = useZCodeIntl();
   // 线稿描边滤镜 id：组件可能多处挂载（手机远控复用），id 不能撞
   const outlineFilterId = `kfw-mark-outline-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const isOfficeMode = useIsOfficeMode();
   const [greetingDate, setGreetingDate] = useState(() => new Date());
-  const [greetingFontSizePx, setGreetingFontSizePx] = useState(GREETING_MAX_FONT_SIZE_PX);
+  const [greetingFontSizePx, setGreetingFontSizePx] = useState(
+    GREETING_MAX_FONT_SIZE_PX,
+  );
   const greetingContainerRef = useRef<HTMLParagraphElement | null>(null);
   const greetingMeasurementRef = useRef<HTMLSpanElement | null>(null);
   const greeting = intl.formatMessage({
-    id: isOfficeMode ? "chat.empty.greeting.office" : getChatEmptyGreetingMessageId(greetingDate),
+    id: isOfficeMode
+      ? "chat.empty.greeting.office"
+      : getChatEmptyGreetingMessageId(greetingDate),
   });
 
   useEffect(() => {
@@ -202,10 +223,31 @@ export function ConversationDraftEmptyState({ className }: { className?: string 
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
         >
-          <filter id={outlineFilterId} x="-10%" y="-10%" width="120%" height="120%">
-            <feMorphology in="SourceAlpha" operator="dilate" radius="1.5" result="kfw-dil" />
-            <feMorphology in="SourceAlpha" operator="erode" radius="1.5" result="kfw-ero" />
-            <feComposite in="kfw-dil" in2="kfw-ero" operator="xor" result="kfw-ring" />
+          <filter
+            id={outlineFilterId}
+            x="-10%"
+            y="-10%"
+            width="120%"
+            height="120%"
+          >
+            <feMorphology
+              in="SourceAlpha"
+              operator="dilate"
+              radius="1.5"
+              result="kfw-dil"
+            />
+            <feMorphology
+              in="SourceAlpha"
+              operator="erode"
+              radius="1.5"
+              result="kfw-ero"
+            />
+            <feComposite
+              in="kfw-dil"
+              in2="kfw-ero"
+              operator="xor"
+              result="kfw-ring"
+            />
             <feFlood floodColor="currentColor" />
             <feComposite in2="kfw-ring" operator="in" />
           </filter>
@@ -243,27 +285,32 @@ export function ConversationDraftEmptyState({ className }: { className?: string 
             "--v4-draft-greeting-font-size": `${greetingFontSizePx}px`,
           } as CSSProperties
         }
-        className="relative z-10 flex w-full items-center justify-center gap-3 text-muted-foreground/50"
+        className="relative z-10 flex w-full flex-col items-center justify-center gap-2 text-muted-foreground/50"
       >
-        <Code2 className="size-8 shrink-0" strokeWidth={3} />
-        <p
-          style={
-            {
-              fontSize: "var(--v4-draft-greeting-font-size)",
-              lineHeight: 1.2,
-            } as CSSProperties
-          }
-          className="relative whitespace-nowrap font-medium"
-        >
-          <span
-            ref={greetingMeasurementRef}
-            aria-hidden="true"
-            className="pointer-events-none invisible absolute whitespace-nowrap"
+        {/* 用户口径：Code 空态与 Design 同款命名式标题（“Code with KenFutWork”），
+            时间问候语降为次行小字。 */}
+        <div className="flex items-center justify-center gap-3">
+          <Code2 className="size-8 shrink-0" strokeWidth={3} />
+          <p
+            style={
+              {
+                fontSize: "var(--v4-draft-greeting-font-size)",
+                lineHeight: 1.2,
+              } as CSSProperties
+            }
+            className="relative whitespace-nowrap font-medium"
           >
-            {greeting}
-          </span>
-          {greeting}
-        </p>
+            <span
+              ref={greetingMeasurementRef}
+              aria-hidden="true"
+              className="pointer-events-none invisible absolute whitespace-nowrap"
+            >
+              Code with KenFutWork
+            </span>
+            Code with KenFutWork
+          </p>
+        </div>
+        <p className="text-sm text-muted-foreground/70">{greeting}</p>
       </div>
     </div>
   );

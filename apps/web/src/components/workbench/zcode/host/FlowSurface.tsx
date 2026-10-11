@@ -23,6 +23,7 @@ import {
 import {
   getFlowSurfaceView,
   registerFlowNavigate,
+  setFlowSurfaceView,
   subscribeFlowSurface,
 } from "./flowSurfaceState.js";
 import { surfaceFetch, surfaceJson } from "./surfaceApi.js";
@@ -221,6 +222,14 @@ function FlowCanvasEmbed({
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [connected, setConnected] = useState(false);
   const [frameLoaded, setFrameLoaded] = useState(false);
+  // 引擎没起时 iframe 永远不 onLoad：8 秒后把「正在打开」换成去引擎页的引导，
+  // 不让用户对着无限加载发呆（fail loud，不猜「也许马上好」）。
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
+  useEffect(() => {
+    if (frameLoaded) return;
+    const timer = window.setTimeout(() => setLoadTimedOut(true), 8000);
+    return () => window.clearTimeout(timer);
+  }, [frameLoaded]);
   const flowOrigin = useMemo(() => {
     try {
       return new URL(frontendUrl).origin;
@@ -310,9 +319,22 @@ function FlowCanvasEmbed({
       {!frameLoaded ? (
         <div
           role="status"
-          className="absolute inset-0 flex items-center justify-center bg-background text-sm text-muted-foreground"
+          className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background text-sm text-muted-foreground"
         >
-          正在打开 flow 画布…
+          {loadTimedOut ? (
+            <>
+              <p>引擎未就绪</p>
+              <button
+                type="button"
+                onClick={() => setFlowSurfaceView("engine")}
+                className="rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-opacity hover:opacity-90"
+              >
+                去引擎页安装
+              </button>
+            </>
+          ) : (
+            "正在打开 flow 画布…"
+          )}
         </div>
       ) : !connected ? (
         <div
