@@ -607,7 +607,7 @@
       "source": "references/zcode/packages/ui/src/SettingsPage.tsx",
       "target": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
       "sha256": "0f3d3b06be4fdb675f870e06dcc8bf89aeff9ad9fc880ca1f0f6338a6e76916a",
-      "copiedSha256": "b63e05b47f1f721886d18746c61ba116b18da16734ad90bed3f4651d02a460a3",
+      "copiedSha256": "d22e879180924d6fece9b7f3f700977b5ddc6cb8c396a8aaa9d728c0a2cb9486",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落",
@@ -615,7 +615,9 @@
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
         "设置目标统一复用isLocalWorkspaceTarget：本机Project身份不再误判远端，保留远端连接及目录匹配校验。",
-        "宿主接口：独立文档的设置到市场导航不关闭文档；原返回、栏目、模型编辑器保留"
+        "宿主接口：独立文档的设置到市场导航不关闭文档；原返回、栏目、模型编辑器保留",
+        "设置分区：新增 about 分区挂宿主关于信息面板（T16）",
+        "KenFutWork 宿主偏差：供应商分区尾部挂宿主件 InstanceModelSettings（T4 自动压缩开关，实例设置缝 /api/instance/settings）"
       ]
     },
     {
@@ -5695,7 +5697,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "f944b2923e0cb0f7b3bf73d0dfa290797c61f634e06b0b32c7c75d451e31c9bc",
+      "copiedSha256": "366c425662253829d91ec7bb717b1c222c3f302c6e0e57b54ad0d26d210f05e2",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5705,14 +5707,15 @@
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "原Edit工具卡补丁预览预算截断提示英文本地化",
         "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
-        "本机文案：原Personal分段改Local；空目录标签与真实本机来源一致"
+        "本机文案：原Personal分段改Local；空目录标签与真实本机来源一致",
+        "新增 settings.about.title（T16 关于分区标题）"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "a9f316aca5cf16bcddfba87f3fae10a557039b8e071088713fbe4520d05258c4",
+      "copiedSha256": "a3cab0eef6718742055f5de7f83de159c32752e3ae2011d3a5516254460e47ce",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5722,7 +5725,8 @@
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "原Edit工具卡补丁预览预算截断提示中文本地化",
         "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
-        "本机文案：原个人分段改本机；空目录短标签，不宣称未接市场源可创建"
+        "本机文案：原个人分段改本机；空目录短标签，不宣称未接市场源可创建",
+        "新增 settings.about.title（T16 关于分区标题）"
       ]
     },
     {
@@ -7047,9 +7051,10 @@
       "source": "references/zcode/packages/ui/src/lib/settingsNavigation.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/settingsNavigation.ts",
       "sha256": "18fffab343c541b6c6170a081070eadca70edc63ee238d66a11e087b47716800",
-      "copiedSha256": "923c2a25d1b4404d53604ba98d6c31200ac77c32bbaa533bf5c2bdb235be55e7",
+      "copiedSha256": "f4657a804e0f116bac1622231e50e77b0520a84171098f97c26f40d55c87cbbe",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "分区导航：新增 about 分区 id 供宿主关于页接线（T16）"
       ]
     },
     {
@@ -10936,11 +10941,12 @@
       "source": "references/zcode/packages/ui/src/settings/settingsPageConfig.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/settingsPageConfig.ts",
       "sha256": "a4959cdb8d8b4736c86325f232556ea090d043ae00655469e30f0f7d823b3be0",
-      "copiedSha256": "cf9f15a59edbbe068d6510357f4645f8e3a769b5967994eb18f331d6f9ba5d55",
+      "copiedSha256": "d682a1217637056c9bdfcd6792a393419b67418df354852c1e77338c7ed5d8bd",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置分区数据按宿主自动化/浏览器/CUA能力过滤，原分组和组件保留",
-        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
+        "分区配置：新增 about 分区条目（信息+更新入口，T16）"
       ]
     },
     {
@@ -11154,12 +11160,13 @@
       "source": "references/zcode/packages/ui/src/settingsPageHelpers.tsx",
       "target": "apps/web/src/components/workbench/zcode/settingsPageHelpers.tsx",
       "sha256": "d65c95c659bcf92416f068255bc2d0a62a7e673bf9d967a4e5e485dff0f41e83",
-      "copiedSha256": "022be992cbb92970f4786d5f202039bcf90e45a2900ded204cfe8eb11590b3dd",
+      "copiedSha256": "443f895e6ed0e5624fa3c307a9bc6109907404b593e39b0ca8b8260e317d7c1e",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：隐藏未接引导与运行偏好对应原控件，缺省原行为",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
-        "能力显隐：实例管理文档不提供工作区模式设置，由宿主导航持有模式"
+        "能力显隐：实例管理文档不提供工作区模式设置，由宿主导航持有模式",
+        "通用分区挂宿主上下文自动压缩开关（instance_settings，T4）"
       ]
     },
     {
