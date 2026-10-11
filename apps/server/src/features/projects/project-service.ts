@@ -232,20 +232,15 @@ export function createProjectService(options: {
       // 不留到 run 时才发现「目录不存在」——那时用户已经等了一轮。
       const projectId = randomUUID();
       const kind = input.kind ?? "design";
-      const workDir =
-        kind === "code"
-          ? await resolveProjectWorkDirectory({
-              instanceId: context.instanceId,
-              projectId,
-              sandboxRoot:
-                options.sandboxRoot ?? join(context.dataDir, "sandbox"),
-              workDir: input.work_dir
-                ? requireWorkDir(input.work_dir)
-                : undefined,
-            })
-          : input.work_dir
+      const workDir = await resolveProjectWorkDirectory({
+        instanceId: context.instanceId,
+        projectId,
+        sandboxRoot: options.sandboxRoot ?? join(context.dataDir, "sandbox"),
+        workDir:
+          input.work_dir !== undefined
             ? requireWorkDir(input.work_dir)
-            : undefined;
+            : undefined,
+      });
       const additionalDirectories = requireAdditionalDirectories(
         input.additional_directories ?? [],
       );

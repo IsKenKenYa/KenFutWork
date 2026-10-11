@@ -1,6 +1,6 @@
-import { mkdtempSync, realpathSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 import { BlobError } from "../blob/types.js";
@@ -361,6 +361,7 @@ describe("project service（错误映射与行为保持不变）", () => {
   const buildService = (options: {
     repository: Partial<ReturnType<typeof createProjectRepository>>;
     localInstance?: LocalInstanceService;
+    sandboxRoot?: string;
     uploadError?: { message: string } | null;
   }) =>
     createProjectService({
@@ -394,6 +395,7 @@ describe("project service（错误映射与行为保持不变）", () => {
         ...options.repository,
       } as ReturnType<typeof createProjectRepository>,
       localInstance: options.localInstance ?? LOCAL_INSTANCE,
+      sandboxRoot: options.sandboxRoot,
     });
 
   it("列表把行映射为契约形状（含 primaryCanvas）", async () => {
@@ -680,9 +682,64 @@ describe("project service（错误映射与行为保持不变）", () => {
     expect(summary).not.toHaveProperty("primaryCanvas");
   });
 
+  it("三种项目类型缺省工作目录时共用实例与项目目录算法", async () => {
+    const sandboxRoot = realpathSync(
+      mkdtempSync(join(tmpdir(), "kfw-project-defaults-")),
+    );
+    const captured: CreateProjectInput[] = [];
+    const service = buildService({
+      sandboxRoot,
+      repository: {
+        createProject: async (input) => {
+          captured.push(input);
+          return {
+            canvas: {
+              id: `canvas-${input.name}`,
+              name: "Main Canvas",
+              is_primary: true,
+            },
+            project: {
+              id: input.id ?? PROJECT_ID,
+              kind: input.kind ?? "design",
+              name: input.name,
+              slug: input.slug,
+              description: null,
+              created_at: "2026-09-17T00:00:00+00:00",
+              updated_at: "2026-09-17T00:00:00+00:00",
+              instance_id: INSTANCE_ID,
+              work_dir: input.workDir ?? null,
+              additional_directories: input.additionalDirectories ?? [],
+            },
+          };
+        },
+      },
+    });
+
+    try {
+      for (const kind of ["design", "code", "flow"] as const) {
+        const summary = await service.createProject(ACTOR, {
+          kind,
+          name: kind,
+        });
+        const input = captured.at(-1);
+        if (!input?.id) throw new Error("项目创建没有提供项目 ID");
+        const expected = resolve(sandboxRoot, INSTANCE_ID, input.id);
+
+        expect(input.workDir).toBe(expected);
+        expect(summary.workDir).toBe(expected);
+        expect(summary.kind).toBe(kind);
+        expect(statSync(expected).isDirectory()).toBe(true);
+      }
+    } finally {
+      rmSync(sandboxRoot, { recursive: true, force: true });
+    }
+  });
+
   it("建项目带工作目录：不合格路径 400 invalid_work_dir，且不落库", async () => {
     let created = 0;
+    const sandboxRoot = mkdtempSync(join(tmpdir(), "kfw-invalid-project-dir-"));
     const service = buildService({
+      sandboxRoot,
       repository: {
         createProject: async () => {
           created += 1;
@@ -691,23 +748,29 @@ describe("project service（错误映射与行为保持不变）", () => {
       },
     });
 
-    await expect(
-      service.createProject(ACTOR, {
-        kind: "code",
-        name: "test",
-        work_dir: "相对路径",
-      }),
-    ).rejects.toMatchObject({ code: "invalid_work_dir", statusCode: 400 });
+    try {
+      for (const kind of ["design", "code", "flow"] as const) {
+        await expect(
+          service.createProject(ACTOR, {
+            kind,
+            name: "test",
+            work_dir: "相对路径",
+          }),
+        ).rejects.toMatchObject({ code: "invalid_work_dir", statusCode: 400 });
 
-    await expect(
-      service.createProject(ACTOR, {
-        kind: "code",
-        name: "test",
-        work_dir: join(tmpdir(), "kfw-definitely-missing-dir"),
-      }),
-    ).rejects.toMatchObject({ code: "invalid_work_dir", statusCode: 400 });
+        await expect(
+          service.createProject(ACTOR, {
+            kind,
+            name: "test",
+            work_dir: join(sandboxRoot, "missing"),
+          }),
+        ).rejects.toMatchObject({ code: "invalid_work_dir", statusCode: 400 });
+      }
 
-    expect(created).toBe(0);
+      expect(created).toBe(0);
+    } finally {
+      rmSync(sandboxRoot, { recursive: true, force: true });
+    }
   });
 
   it("更新工作目录：null 解绑走显式 null，字符串重绑先校验", async () => {
