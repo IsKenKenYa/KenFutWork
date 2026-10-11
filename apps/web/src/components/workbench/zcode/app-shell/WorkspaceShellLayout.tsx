@@ -1597,7 +1597,6 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                     goForwardShortcutLabel={goForwardShortcutLabel}
                     onOpenCommandCenter={handleOpenCommandCenter}
                     onOpenAutomations={handleOpenAutomations}
-                    automationsActive={workspaceMainView === "automations"}
                     onOpenPluginStore={handleOpenPluginStore}
                     pluginStoreActive={workspaceMainView === "plugin-store"}
                     onFileTreeOpenChange={setIsSidebarFileTreeOpen}
@@ -1960,6 +1959,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
             canGoBack={canGoBack}
             canGoForward={canGoForward}
             showNewTaskButton={showTopOverlayNewTaskButton}
+            // 用户拍板：顶部的任务前进/后退箭头不要（任务切换走侧栏列表），
+            // 键盘快捷键与命令面板的原导航不受影响。
+            hideTaskNavigationButtons
             appLogoUrl={appLogoUrl}
             platform={platform}
             onToggleSidebar={handleToggleSidebar}

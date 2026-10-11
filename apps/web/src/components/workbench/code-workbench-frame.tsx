@@ -18,6 +18,7 @@ import {
   PluginPanelOverlay,
   usePluginPanels,
 } from "@/lib/plugin-panels";
+import { useLocalInstance } from "@/lib/local-instance-context";
 import { LocalAccessClientsSection } from "./local-access-clients-section";
 import { LocalInstanceSection } from "./local-instance-section";
 import { VoiceSettingsSection } from "./voice-settings-section";
@@ -37,6 +38,9 @@ export function CodeWorkbenchFrame({
   availableModes?: WorkbenchModes;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
+  // 本地实例的主人即当前用户（DEC-20 免账户）：bootstrap 带给 Code 壳，
+  // 侧栏底部显示用户而不是「连接使用」。
+  const { instance: localInstance } = useLocalInstance();
   const [instanceOpen, setInstanceOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<PluginPanelEntry | null>(null);
   const {
@@ -83,12 +87,18 @@ export function CodeWorkbenchFrame({
       )
         .toString()
         .replace(/\/$/, ""),
-      user: null,
+      user: localInstance
+        ? {
+            id: localInstance.instanceId,
+            username: "local",
+            displayName: "本地用户",
+          }
+        : null,
       ...(onOpenManagement ? { managementAvailable: true } : {}),
       workbenchModes: availableModes,
     };
     frame.current?.contentWindow?.postMessage(message, window.location.origin);
-  }, [onOpenManagement, availableModes]);
+  }, [onOpenManagement, availableModes, localInstance]);
   /**
    * 外观主题桥：设置 → 外观（next-themes，默认跟随系统）解析后的结果同步给 Code iframe
    * （zai 主题口径 zai-light/zai-dark）——没有这座桥，外观切深色时 Code 工作台仍是浅色。

@@ -308,6 +308,18 @@ body {
   --color-plugin-paid-plan-badge-foreground: #4b280f;
 }
 
+/* 空态草稿标明暗互斥：跟 Code 主题类（.dark）而不是 OS 配色——
+   Tailwind 的 dark: 变体在本包跟 prefers-color-scheme 走，主题切换时不生效。 */
+[data-v4-draft-logo="dark"] {
+  display: none;
+}
+.dark [data-v4-draft-logo="dark"] {
+  display: block;
+}
+.dark [data-v4-draft-logo="light"] {
+  display: none;
+}
+
 .dark {
   --animated-gradient-text-strong: rgba(255, 255, 255, 1);
   --animated-gradient-text-soft: rgba(255, 255, 255, 0.2);

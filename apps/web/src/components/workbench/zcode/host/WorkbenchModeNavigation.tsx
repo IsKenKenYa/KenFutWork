@@ -90,13 +90,13 @@ function ConnectedWorkbenchModeNavigation({
   );
   return (
     <div className="pb-2">
-      <div className="flex items-center gap-[5px] px-4 pt-3 pb-2">
+      <div className="flex items-center gap-2 px-4 pt-3.5 pb-2.5">
         <WindowsTopLeftLogo
           className="static m-0 h-auto p-0"
-          imageClassName="h-[15px] w-auto"
+          imageClassName="h-5 w-auto"
         />
         <span
-          className="font-wordmark bg-clip-text text-xl tracking-tight text-transparent"
+          className="font-wordmark bg-clip-text text-[21px] leading-none tracking-tight text-transparent"
           style={{ backgroundImage: "var(--wordmark-gradient)" }}
         >
           KenFutWork

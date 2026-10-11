@@ -182,7 +182,7 @@ it("Code宿主退出后，晚到的打开读取不再补发请求或打开面板
   expect(screen.queryByTitle("米家")).toBeNull();
 });
 
-it("仅向当前 Code 文档发送宿主配置；原 Design 菜单请求交回模式导航，没有伪账户或接入令牌", async () => {
+it("仅向当前 Code 文档发送宿主配置；bootstrap 带本地实例主人（侧栏显示用户而非连接使用），仍无接入令牌", async () => {
   const navigate = vi.fn();
   render(<CodeWorkbenchFrame onModeChange={navigate} />);
   const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
@@ -221,7 +221,8 @@ it("仅向当前 Code 文档发送宿主配置；原 Design 菜单请求交回�
       expect.objectContaining({
         type: "kenfutwork:code-bootstrap",
         apiBase: window.location.origin,
-        user: null,
+        // 本地实例主人（DEC-20 免账户）：id 即 instanceId，侧栏底部显示用户而不是「连接使用」
+        user: { id: "instance", username: "local", displayName: "本地用户" },
       }),
       window.location.origin,
     ),

@@ -171,7 +171,9 @@ try {
       <CodeVoiceProvider transport={voiceTransport}>
         <CodeHost
           {...(workspace ? { workspace } : {})}
-          user={null}
+          // 父窗口 bootstrap 带来的本地实例主人（免账户形态下的当前用户），
+          // 侧栏底部据此显示用户而不是「连接使用」。
+          user={bootstrap?.user ?? null}
           clientMode={hello.clientMode}
         />
       </CodeVoiceProvider>,

@@ -14,7 +14,6 @@ import {
 import {
   Archive,
   Blocks,
-  CalendarClock,
   Cable,
   WandSparkles,
   Clock3,
@@ -53,7 +52,6 @@ import { BUILTIN_MODEL_PROVIDER_IDS } from "@zcode/shared";
 import {
   TID_CONVERSATION_NEW_TASK,
   TID_CONVERSATION_SECTION,
-  TID_AUTOMATIONS_OPEN,
   TID_PROJECT_ADD,
   TID_PROJECT_SECTION,
   TID_SIDEBAR,
@@ -264,7 +262,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onOpenCommandCenter,
   onOpenAutomations,
   onOpenPluginStore,
-  automationsActive = false,
   pluginStoreActive = false,
   onFileTreeOpenChange,
 }: {
@@ -316,7 +313,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onOpenCommandCenter: () => void;
   onOpenAutomations?: () => void;
   onOpenPluginStore?: () => void;
-  automationsActive?: boolean;
   pluginStoreActive?: boolean;
   onFileTreeOpenChange?: (open: boolean) => void;
 }) {
@@ -1324,21 +1320,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 }
               />
             ) : null} */}
-              <Button
-                variant="ghost"
-                onClick={handleOpenAutomationsMain}
-                data-icon="inline-start"
-                data-testid={TID_AUTOMATIONS_OPEN}
-                size="lg"
-                aria-pressed={automationsActive}
-                className={cn(
-                  "w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground",
-                  automationsActive && "bg-selected text-foreground",
-                )}
-              >
-                <CalendarClock className="size-4" />
-                {intl.formatMessage({ id: "workspace.openScheduledSettings" })}
-              </Button>
             <Button
               variant="ghost"
               onClick={handleOpenPluginStoreMain}
