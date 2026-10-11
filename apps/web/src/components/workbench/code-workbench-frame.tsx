@@ -9,20 +9,15 @@ import {
 } from "@kenfutwork/shared";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AgentGovernanceSettingsPanel } from "@/components/agent-governance-settings";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
-import { LOCAL_ACCESS_LOST_EVENT } from "@/lib/local-access";
 import { useLocalInstance } from "@/lib/local-instance-context";
+import { LOCAL_ACCESS_LOST_EVENT } from "@/lib/local-access";
 import {
   PLUGIN_INVENTORY_CHANGED_EVENT,
   type PluginPanelEntry,
   PluginPanelOverlay,
   usePluginPanels,
 } from "@/lib/plugin-panels";
-import { LocalAccessClientsSection } from "./local-access-clients-section";
-import { LocalInstanceSection } from "./local-instance-section";
-import { VoiceSettingsSection } from "./voice-settings-section";
 
 const DEFAULT_MODES: WorkbenchModes = ["code", "design"];
 
@@ -43,7 +38,6 @@ export function CodeWorkbenchFrame({
   // 本地实例的主人即当前用户（DEC-20 免账户）：bootstrap 带给 Code 壳，
   // 侧栏底部显示用户而不是「连接使用」。
   const { instance: localInstance } = useLocalInstance();
-  const [instanceOpen, setInstanceOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<PluginPanelEntry | null>(null);
   const {
     panels,
@@ -127,9 +121,6 @@ export function CodeWorkbenchFrame({
       if (!parsed.success) return;
       if (parsed.data.type === "kenfutwork:open-management") {
         if (active) onOpenManagement?.(parsed.data.target);
-      } else if (parsed.data.type === "kenfutwork:open-instance-settings") {
-        // 壳侧栏底部「本地实例」入口（悬浮按钮已按用户口径撤掉）。
-        if (active) setInstanceOpen(true);
       } else if (parsed.data.type === "kenfutwork:code-plugins-changed")
         window.dispatchEvent(new Event(PLUGIN_INVENTORY_CHANGED_EVENT));
       else if (parsed.data.type === "kenfutwork:code-open-plugin") {
@@ -207,19 +198,6 @@ export function CodeWorkbenchFrame({
           setActivePanel(null);
         }}
       />
-      <Dialog open={active && instanceOpen} onOpenChange={setInstanceOpen}>
-        <DialogContent
-          className="max-h-[85vh] overflow-y-auto sm:max-w-xl"
-          aria-describedby={undefined}
-        >
-          <DialogTitle>本地实例设置</DialogTitle>
-          <LocalInstanceSection />
-          <LocalAccessClientsSection />
-          {/* 语音设置复用设置页同一段：Code 模式就地调档，不必切回 Design */}
-          <VoiceSettingsSection accessToken={null} />
-          <AgentGovernanceSettingsPanel enabled={instanceOpen} />
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

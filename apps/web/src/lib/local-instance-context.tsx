@@ -90,15 +90,30 @@ export function useLocalInstance(): LocalInstanceContextValue {
 export function LocalInstanceBoundary({ children }: { children: ReactNode }) {
   const { status, message, retry } = useLocalInstance();
   if (status === "ready") return children;
+  // 加载态不放文字（用户口径）：黑白 logo + 加载动画即可；断连/错误仍给可读原因与重试。
+  if (status === "loading") {
+    return (
+      <main className="flex min-h-dvh flex-col items-center justify-center gap-5 bg-background">
+        {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
+        <img
+          src="/logo-mark.png"
+          alt=""
+          className="h-14 w-auto select-none brightness-0"
+          draggable={false}
+        />
+        <div
+          role="status"
+          aria-label="连接中"
+          className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground/70"
+        />
+      </main>
+    );
+  }
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background p-6">
       <section className="max-w-md space-y-4 text-center" aria-live="polite">
         <h1 className="text-lg font-medium">
-          {status === "loading"
-            ? "正在连接本机实例…"
-            : status === "disconnected"
-              ? "连接本机工作台"
-              : "本机服务不可用"}
+          {status === "disconnected" ? "连接本机工作台" : "本机服务不可用"}
         </h1>
         {status === "disconnected" ? (
           <p className="text-sm text-muted-foreground">
@@ -110,15 +125,13 @@ export function LocalInstanceBoundary({ children }: { children: ReactNode }) {
             {message}
           </p>
         ) : null}
-        {status !== "loading" ? (
-          <button
-            type="button"
-            onClick={retry}
-            className="rounded-md border px-4 py-2 text-sm"
-          >
-            重新连接
-          </button>
-        ) : null}
+        <button
+          type="button"
+          onClick={retry}
+          className="rounded-md border px-4 py-2 text-sm"
+        >
+          重新连接
+        </button>
       </section>
     </main>
   );

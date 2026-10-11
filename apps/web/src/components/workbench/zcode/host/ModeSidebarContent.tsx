@@ -1,7 +1,6 @@
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import {
   Cpu,
-  HardDrive,
   Layers,
   ListChecks,
   Palette,
@@ -27,7 +26,6 @@ import {
   setFlowSurfaceView,
   subscribeFlowSurface,
 } from "./flowSurfaceState.js";
-import { openInstanceSettings } from "./parentBridge.js";
 
 const NOOP_SUBSCRIBE = () => () => {};
 const CODE_SNAPSHOT = {
@@ -65,7 +63,7 @@ export function HostModeSidebarContent({
     <div className="flex min-h-0 flex-1 flex-col">
       {shared}
       {/* 分界线：共用按钮与各模式专属内容之间（用户口径）。 */}
-      <div className="mx-3 my-2 border-t" />
+      <div className="mx-3 my-2 border-t border-foreground/20" />
       {mode === "design" ? (
         <DesignProjectsSidebar />
       ) : mode === "flow" ? (
@@ -73,15 +71,6 @@ export function HostModeSidebarContent({
       ) : (
         children
       )}
-      {/* 本地实例入口：悬浮按钮已按用户口径撤掉，配置面板从侧栏底部进。 */}
-      <button
-        type="button"
-        onClick={openInstanceSettings}
-        className="flex min-h-[36px] w-full items-center gap-2.5 border-t px-4 text-left text-sm text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground"
-      >
-        <HardDrive className="h-4 w-4 shrink-0" />
-        本地实例
-      </button>
     </div>
   );
 }

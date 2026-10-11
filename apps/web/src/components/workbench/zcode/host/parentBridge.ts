@@ -41,12 +41,3 @@ export function notifyPluginInventoryChanged() {
       window.location.origin,
     );
 }
-
-/** 壳内「本地实例」入口 → 父页打开实例设置弹窗（悬浮按钮已按用户口径撤掉）。 */
-export function openInstanceSettings() {
-  if (window.parent === window) return;
-  window.parent.postMessage(
-    { type: "kenfutwork:open-instance-settings" },
-    window.location.origin,
-  );
-}

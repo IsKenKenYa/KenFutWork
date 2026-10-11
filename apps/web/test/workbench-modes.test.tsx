@@ -271,7 +271,8 @@ it("Code可信模型管理请求打开同一独立文档，拒绝伪造和无效
       data: { ...open, target: { page: "settings", section: "invalid" } },
     }),
   );
-  expect(screen.queryByTitle("管理设置")).toBeNull();
+  // 预加载契约：打开前管理文档已在但 hidden，打开后可见。
+  expect((screen.getByTitle("管理设置") as HTMLIFrameElement).hasAttribute("hidden")).toBe(true);
   fireEvent(
     window,
     new MessageEvent("message", {

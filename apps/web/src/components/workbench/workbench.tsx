@@ -43,9 +43,7 @@ function WorkbenchModeSurface() {
   }, [requested, flowEntry]);
   // 管理文档 keep-alive：首次打开后持续挂载（hidden 收起），重复打开不重载。
   const [management, setManagement] = useState<ManagementTarget | null>(null);
-  const [managementVisited, setManagementVisited] = useState(false);
   const openManagement = useCallback((target: ManagementTarget) => {
-    setManagementVisited(true);
     setManagement(target);
   }, []);
   const closeManagement = useCallback(() => setManagement(null), []);
@@ -57,13 +55,14 @@ function WorkbenchModeSurface() {
         mode={mode}
         onOpenManagement={openManagement}
       />
-      {managementVisited ? (
-        <ManagementDocumentFrame
-          target={management ?? { page: "settings" }}
-          visible={management !== null}
-          onClose={closeManagement}
-        />
-      ) : null}
+      {/* 管理文档**预加载**：页面挂载即后台建好 iframe（hidden），点设置/插件市场
+          零加载（用户口径：不想看到加载）。目标变化经 management-target 推送，
+          文档内切换不重载。 */}
+      <ManagementDocumentFrame
+        target={management ?? { page: "settings" }}
+        visible={management !== null}
+        onClose={closeManagement}
+      />
     </>
   );
 }
