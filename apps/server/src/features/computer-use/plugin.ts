@@ -12,7 +12,6 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-
 import {
   AGENT_GOVERNANCE_DEFAULTS,
   clampComputerUseActionTimeoutMs,
@@ -21,13 +20,20 @@ import {
   clampComputerUseScreenshotMaxBytes,
   clampComputerUseSessionMaxMs,
 } from "@kenfutwork/shared";
+import { z } from "zod";
 import type { ServerEnv } from "../../config/env.js";
 import { registerComputerUseMcpRoutes } from "../../http/computer-use-mcp.js";
+import { registerComputerUseSnapshotRoutes } from "../../http/computer-use-snapshots.js";
 import type {
   PluginDefinition,
   ToolExecutionContext,
 } from "../../kernel/types.js";
+import {
+  CODE_UI_HOST_RPC_CAPABILITY,
+  type CodeUiHostRpcHandler,
+} from "../code-ui/host-rpc-handler.js";
 import { createActiveComputerUseRuns } from "./active-runs.js";
+import { createMacosApplicationIconResolver } from "./application-icon.js";
 import { createUnavailableExecutor } from "./executor.js";
 import {
   type ComputerUseMcpSource,
@@ -37,10 +43,12 @@ import {
   type ComputerUseMcpExport,
   createComputerUseMcpServer,
 } from "./mcp-server.js";
+import { createMacosPermissionStatusRpc } from "./permission-status-rpc.js";
 import {
   type CuGovernanceValues,
   createComputerUseService,
 } from "./service.js";
+import { createCuSnapshotArchive } from "./snapshot-archive.js";
 import {
   CU_BUNDLE_ID,
   type CuGateVerdict,
@@ -138,9 +146,42 @@ export function createComputerUsePlugin(options?: {
 }): PluginDefinition {
   return {
     name: "computer-use",
-    inject: ["settings", "localAccess", "localInstance"],
+    inject: ["settings", "localAccess", "localInstance", "blob", "persistence"],
     apply(ctx) {
+      if ((options?.platform ?? process.platform) === "darwin") {
+        const icons = createMacosApplicationIconResolver();
+        const controller = new AbortController();
+        const iconRpc: CodeUiHostRpcHandler = {
+          async call(actor, args) {
+            const [request] = z.tuple([z.unknown()]).parse(args);
+            const settings = await ctx
+              .get("settings")
+              .getInstanceSettings(actor, actor.instanceId);
+            return icons.read(request, {
+              signal: controller.signal,
+              timeoutMs: settings.computerUseActionTimeoutMs,
+              maxBytes: settings.processMaxOutputBytes,
+            });
+          },
+        };
+        ctx.effect(() =>
+          ctx.get("capabilities").register(CODE_UI_HOST_RPC_CAPABILITY, {
+            id: "platform.getApplicationIcon",
+            value: iconRpc,
+          }),
+        );
+        ctx.effect(() => () => controller.abort());
+      }
       const runGovernance = new AsyncLocalStorage<CuGovernanceValues>();
+      const archive = createCuSnapshotArchive({
+        blob: ctx.get("blob"),
+        persistence: ctx.get("persistence"),
+      });
+      registerComputerUseSnapshotRoutes(ctx.app, {
+        archive,
+        localAccess: ctx.get("localAccess"),
+        settings: ctx.get("settings"),
+      });
       const executionContext = new AsyncLocalStorage<ToolExecutionContext>();
       let disposed = false;
       let selected = "native";
@@ -154,6 +195,24 @@ export function createComputerUsePlugin(options?: {
       const gate = createBundleGate(
         () => ctx.tryGet("plugins") as PluginsServiceLike | undefined,
       );
+      if ((options?.platform ?? process.platform) === "darwin") {
+        const permissionRpc = createMacosPermissionStatusRpc({
+          gate,
+          executor: () => native,
+          timeoutMs: async (actor) =>
+            (
+              await ctx
+                .get("settings")
+                .getInstanceSettings(actor, actor.instanceId)
+            ).computerUseActionTimeoutMs,
+        });
+        ctx.effect(() =>
+          ctx.get("capabilities").register(CODE_UI_HOST_RPC_CAPABILITY, {
+            id: "cua-permission.getStatus",
+            value: permissionRpc,
+          }),
+        );
+      }
       const tools = ctx.get("tools");
       const activeRuns = createActiveComputerUseRuns(tools);
       ctx.effect(() =>
@@ -306,10 +365,14 @@ export function createComputerUsePlugin(options?: {
                 inputDelayMs: settings.computerUseInputDelayMs,
                 processMaxOutputBytes: settings.processMaxOutputBytes,
               };
-              return executionContext.run(context, () =>
+              const result = await executionContext.run(context, () =>
                 runGovernance.run(governance, () =>
                   definition.execute(args, context),
                 ),
+              );
+              return archive.project(
+                result as import("./service.js").CuToolResult,
+                context,
               );
             },
           }),

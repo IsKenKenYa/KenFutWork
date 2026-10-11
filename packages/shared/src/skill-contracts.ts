@@ -1,8 +1,28 @@
+import { zcodeAgentProviderSchema } from "@zcode/shared";
 import { z } from "zod";
+import { codeUiViewerScopeSchema } from "./code-ui-contracts.js";
 import {
   codeWorkDirectoryTargetSchema,
   visualWorkDirectoryTargetSchema,
 } from "./execution-contracts.js";
+
+/** 原技能接口中的目录信息只作UI上下文；安装态由实例持有。 */
+export const codeUiSkillsRequestSchema = z.object({
+  workspacePath: z.string().optional(),
+  workspaceIdentity: z.string().optional(),
+  viewerScope: codeUiViewerScopeSchema.optional(),
+  provider: zcodeAgentProviderSchema.optional(),
+});
+export const codeUiSkillToggleRequestSchema = codeUiSkillsRequestSchema.extend({
+  skillId: z.uuid(),
+  installationRevision: z.string().min(1).max(128),
+  enabled: z.boolean(),
+  scope: z.enum(["workspace", "user", "plugin"]).optional(),
+});
+export const codeUiSkillDeleteRequestSchema = codeUiSkillsRequestSchema.extend({
+  skillId: z.uuid(),
+  installationRevision: z.string().min(1).max(128),
+});
 
 // === Enums ===
 

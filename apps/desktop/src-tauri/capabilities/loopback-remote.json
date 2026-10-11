@@ -6,5 +6,11 @@
   "remote": {
     "urls": ["http://localhost:*", "http://127.0.0.1:*"]
   },
-  "permissions": ["core:default", "allow-local-desktop"]
+  "permissions": [
+    "core:default",
+    "allow-local-desktop",
+    "core:window:allow-start-dragging",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-set-theme"
+  ]
 }

@@ -1,6 +1,7 @@
 import type {
   AgentGovernanceOverrides,
   InstanceSettings,
+  ModelDefaults,
   RuntimeGovernanceKey,
   TerminalShellId,
 } from "@kenfutwork/shared";
@@ -19,6 +20,7 @@ import {
   clampSubagentMaxContinuations,
   clampSubagentMaxDepth,
   coerceLlmInfiniteRetry,
+  modelDefaultsSchema,
   RUNTIME_GOVERNANCE_KEYS,
   resolveGovernanceNumber,
 } from "@kenfutwork/shared";
@@ -30,11 +32,15 @@ import type {
   LocalActor,
   LocalInstanceService,
 } from "../local-instance/types.js";
+import type { ModelCatalogService } from "../model-providers/model-catalog-service.js";
+import { validateModelDefaults } from "../model-providers/model-defaults.js";
 import type { SettingsRepository } from "./repository.js";
+import { writeSettingsPatch } from "./settings-patch.js";
 
 const FALLBACK_MODEL = "gpt-5.4-mini";
 
 type SettingsErrorCode =
+  | "invalid_model"
   | "settings_forbidden"
   | "settings_not_found"
   | "settings_read_failed"
@@ -61,6 +67,7 @@ export class SettingsServiceError extends Error {
 export type InstanceSettingsPatch = Partial<
   Record<RuntimeGovernanceKey, number | undefined>
 > & {
+  modelDefaults?: ModelDefaults | undefined;
   codeUiReconnectDelayMs?: number | undefined;
   defaultModel?: string | undefined;
   agentMaxRetries?: number | undefined;
@@ -154,6 +161,8 @@ function parseHooks(raw: unknown): InstanceSettings["hooks"] {
 export function createSettingsService(options: {
   repository: SettingsRepository;
   localInstance: LocalInstanceService;
+  /** 模型默认写入必须有真实目录；仅治理读写的消费者可不提供。 */
+  modelCatalog?: Pick<ModelCatalogService, "listCatalog">;
   /** Override the fallback model when no instance setting exists. */
   defaultModel?: string;
   /**
@@ -210,6 +219,7 @@ export function createSettingsService(options: {
   ): Promise<InstanceSettings> => {
     await requireInstance(actor, instanceId);
     const [
+      storedModelDefaults,
       storedModel,
       storedRetries,
       storedShell,
@@ -227,6 +237,7 @@ export function createSettingsService(options: {
       storedExecuteTimeoutMs,
       storedRuntimeGovernance,
     ] = await Promise.all([
+      repository.findModelDefaults(instanceId),
       repository.findDefaultModel(instanceId),
       repository.findAgentMaxRetries(instanceId),
       repository.findTerminalShell(instanceId),
@@ -276,6 +287,13 @@ export function createSettingsService(options: {
     ) as Pick<InstanceSettings, RuntimeGovernanceKey>;
 
     return {
+      modelDefaults: modelDefaultsSchema.parse(
+        storedModelDefaults ?? {
+          chat: null,
+          image: { mode: "auto" },
+          video: { mode: "auto" },
+        },
+      ),
       ...runtimeGovernance,
       codeUiReconnectDelayMs: (
         await getCodeUiTransportSettings(actor, instanceId)
@@ -362,132 +380,38 @@ export function createSettingsService(options: {
 
     async updateInstanceSettings(actor, instanceId, patch) {
       await requireInstance(actor, instanceId);
-      // 逐列 upsert（各写各的列）：没送来的字段一个字都不动
-      const writes: Array<Promise<void>> = [];
-      if (patch.codeUiReconnectDelayMs !== undefined)
-        writes.push(
-          repository.upsertCodeUiReconnectDelayMs(
-            instanceId,
-            clampCodeUiReconnectDelayMs(patch.codeUiReconnectDelayMs),
-          ),
-        );
-      if (patch.defaultModel !== undefined) {
-        writes.push(
-          repository.upsertDefaultModel(instanceId, patch.defaultModel),
-        );
+      if (patch.modelDefaults !== undefined) {
+        if (!options.modelCatalog)
+          throw new SettingsServiceError(
+            "settings_update_failed",
+            "模型目录服务不可用。",
+            503,
+          );
+        const entries = await options.modelCatalog.listCatalog(actor);
+        try {
+          validateModelDefaults(
+            modelDefaultsSchema.parse(patch.modelDefaults),
+            entries,
+          );
+        } catch (error) {
+          throw new SettingsServiceError(
+            "invalid_model",
+            error instanceof Error ? error.message : "所选模型不可用。",
+            400,
+          );
+        }
       }
-      if (patch.agentMaxRetries !== undefined) {
-        writes.push(
-          repository.upsertAgentMaxRetries(
-            instanceId,
-            clampMaxRunRetries(patch.agentMaxRetries),
-          ),
-        );
-      }
-      if (patch.terminalShell !== undefined) {
-        writes.push(
-          repository.upsertTerminalShell(instanceId, patch.terminalShell),
-        );
-      }
-      if (patch.codeIndexEnabled !== undefined) {
-        writes.push(
-          repository.upsertCodeIndexEnabled(instanceId, patch.codeIndexEnabled),
-        );
-      }
-      if (patch.codeIndexAutoNewFolder !== undefined) {
-        writes.push(
-          repository.upsertCodeIndexAutoNewFolder(
-            instanceId,
-            patch.codeIndexAutoNewFolder,
-          ),
-        );
-      }
-      if (patch.autoCompactEnabled !== undefined) {
-        writes.push(
-          repository.upsertAutoCompactEnabled(
-            instanceId,
-            patch.autoCompactEnabled,
-          ),
-        );
-      }
-      if (patch.hooks !== undefined) {
-        writes.push(repository.upsertHooks(instanceId, patch.hooks));
-      }
-      if (patch.commands !== undefined) {
-        writes.push(repository.upsertCommands(instanceId, patch.commands));
-      }
-      if (patch.userRules !== undefined) {
-        writes.push(repository.upsertUserRules(instanceId, patch.userRules));
-      }
-      if (patch.ruleEntries !== undefined) {
-        writes.push(
-          repository.upsertRuleEntries(instanceId, patch.ruleEntries),
-        );
-      }
-      if (patch.subagentMaxDepth !== undefined) {
-        writes.push(
-          repository.upsertSubagentMaxDepth(
-            instanceId,
-            clampSubagentMaxDepth(patch.subagentMaxDepth),
-          ),
-        );
-      }
-      if (patch.subagentMaxConcurrency !== undefined) {
-        writes.push(
-          repository.upsertSubagentMaxConcurrency(
-            instanceId,
-            clampSubagentMaxConcurrency(patch.subagentMaxConcurrency),
-          ),
-        );
-      }
-      if (patch.subagentMaxContinuations !== undefined) {
-        writes.push(
-          repository.upsertSubagentMaxContinuations(
-            instanceId,
-            clampSubagentMaxContinuations(patch.subagentMaxContinuations),
-          ),
-        );
-      }
-      if (patch.llmRequestMaxRetries !== undefined) {
-        writes.push(
-          repository.upsertLlmRequestMaxRetries(
-            instanceId,
-            clampLlmRequestMaxRetries(patch.llmRequestMaxRetries),
-          ),
-        );
-      }
-      if (patch.llmInfiniteRetry !== undefined) {
-        writes.push(
-          repository.upsertLlmInfiniteRetry(instanceId, patch.llmInfiniteRetry),
-        );
-      }
-      if (patch.executeTimeoutMs !== undefined) {
-        writes.push(
-          repository.upsertExecuteTimeoutMs(
-            instanceId,
-            clampExecuteTimeoutMs(patch.executeTimeoutMs),
-          ),
-        );
-      }
-      const runtimePatch = Object.fromEntries(
-        RUNTIME_GOVERNANCE_KEYS.flatMap((key) =>
-          patch[key] === undefined
-            ? []
-            : [[key, resolveGovernanceNumber(key, patch[key])]],
-        ),
-      );
-      if (Object.keys(runtimePatch).length > 0) {
-        writes.push(
-          repository.upsertRuntimeGovernance(instanceId, runtimePatch),
-        );
-      }
-      await Promise.all(writes).catch(() => {
-        throw new SettingsServiceError(
-          "settings_update_failed",
-          "无法更新本地实例设置。",
-          500,
-        );
-      });
+      await repository
+        .atomicUpdate((writer) =>
+          writeSettingsPatch({ writer, instanceId, patch }),
+        )
+        .catch(() => {
+          throw new SettingsServiceError(
+            "settings_update_failed",
+            "无法更新本地实例设置。",
+            500,
+          );
+        });
 
       // 回读真值：客户端拿到的是库里现在的事实，不是「我以为写成了什么」
       const result = await getSettings(actor, instanceId);

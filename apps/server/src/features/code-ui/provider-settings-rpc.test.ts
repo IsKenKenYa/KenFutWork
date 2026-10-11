@@ -11,7 +11,7 @@ import type { LocalActor } from "../local-instance/types.js";
 import {
   type CodeUiProviderSettingsRpcDeps,
   createCodeUiProviderSettingsRpc,
-} from "./provider-settings-rpc.js";
+} from "../model-providers/provider-settings-rpc.js";
 import { CodeUiRepositoryError } from "./repository.js";
 
 const actor: LocalActor = { instanceId: randomUUID(), accessClientId: null };
@@ -114,6 +114,8 @@ function fixture() {
     modelCatalog: { listCatalog: async () => [] },
     settings: {
       getInstanceSettings: async () =>
+        instanceSettingsSchema.parse({ defaultModel: "test" }),
+      updateInstanceSettings: async () =>
         instanceSettingsSchema.parse({ defaultModel: "test" }),
     },
     instanceId: async (user) => user.instanceId,

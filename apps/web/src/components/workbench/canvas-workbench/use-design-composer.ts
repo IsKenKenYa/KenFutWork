@@ -1,12 +1,11 @@
 "use client";
 
-import type { ExecutionMode } from "@kenfutwork/shared";
+import type { ExecutionMode, InstanceSettings } from "@kenfutwork/shared";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { contextUsageModelMeta } from "@/lib/context-usage";
 import { getServerBaseUrl } from "@/lib/env";
 import { serverFetch } from "@/lib/local-access";
 import { fetchInstanceSettings, fetchProjects } from "@/lib/server-api";
-import type { WorkspaceCommand } from "@/lib/slash-commands";
 export type WorkbenchModelOption = {
   id: string;
   name: string;
@@ -33,7 +32,7 @@ export function useDesignComposer() {
   >([]);
   const [models, setModels] = useState<WorkbenchModelOption[]>([]);
   const [model, setModel] = useState("");
-  const [commands, setCommands] = useState<WorkspaceCommand[]>([]);
+  const [commands, setCommands] = useState<InstanceSettings["commands"]>([]);
   const [hasWorkDir, setHasWorkDir] = useState(false);
   const modelMeta = useMemo(
     () => contextUsageModelMeta(models, model),

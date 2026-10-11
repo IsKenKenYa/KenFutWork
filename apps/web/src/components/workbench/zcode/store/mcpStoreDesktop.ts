@@ -12,6 +12,7 @@ import { logger } from "@zui/logger.js";
 export type McpPlatformService = Pick<
   IPlatformService,
   "loadMcpFromUserDirectory" | "saveMcpToUserDirectory" | "migrateLegacyCommonMcp"
+  | "mcpSettingsCapabilities"
 >;
 
 export type McpDirectoryService = Pick<

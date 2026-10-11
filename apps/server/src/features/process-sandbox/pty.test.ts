@@ -57,9 +57,15 @@ test.skipIf(!["darwin", "linux"].includes(process.platform))(
           (await child.readOutput({ offset: 0, maxBytes: 1024 })).data,
       )
       .toContain("TTY_READY");
-    expect(
-      (await child.readOutput({ offset: 0, maxBytes: 1024 })).data,
-    ).toContain("29 91");
+    // `stty size` 的输出是**下一帧**才到的：CI 冷容器里读一次只有 TTY_READY，
+    // 断言就假红（实测 expected 'TTY_READY\r\n' to contain '29 91'）。等真实结果到齐，
+    // 不猜它跟第一行同一帧。
+    await expect
+      .poll(
+        async () =>
+          (await child.readOutput({ offset: 0, maxBytes: 1024 })).data,
+      )
+      .toContain("29 91");
     await child.writeStdin("hello\r");
     await expect
       .poll(

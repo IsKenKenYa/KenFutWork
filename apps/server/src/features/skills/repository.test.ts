@@ -147,7 +147,7 @@ describe("实例技能仓储", () => {
         call.sql.startsWith("update public.instance_skills"),
       ),
     ).toBe(true);
-    expect(calls[0]?.values).toEqual([SKILL_ID, false, INSTANCE_ID]);
+    expect(calls[0]?.values).toEqual([SKILL_ID, false, null, INSTANCE_ID]);
     expect(await repository.uninstall(INSTANCE_ID, SKILL_ID)).toBe(0);
   });
 });

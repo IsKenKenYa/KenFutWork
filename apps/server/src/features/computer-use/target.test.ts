@@ -41,6 +41,22 @@ describe("parseTarget（动作目标解析）", () => {
 });
 
 describe("parseAppRef（应用引用）", () => {
+  it("接受模型序列化的对象引用，仍使用同一PID/窗口/显示器校验", () => {
+    expect(parseAppRef(' {"pid":24231,"windowId":6363} ')).toEqual({
+      pid: 24231,
+      windowId: 6363,
+    });
+    expect(parseAppRef('{"displayId":"3"}')).toEqual({ displayId: "3" });
+    for (const input of [
+      '{"pid":-1}',
+      '{"pid":"24231"}',
+      '{"displayId":"3","pid":1}',
+      "{broken",
+      "{}",
+    ]) {
+      expect(() => parseAppRef(input)).toThrow(CuTargetError);
+    }
+  });
   it("裸字符串按 bundle_id 读；对象形态原样", () => {
     expect(parseAppRef("com.apple.calculator")).toEqual({
       bundleId: "com.apple.calculator",

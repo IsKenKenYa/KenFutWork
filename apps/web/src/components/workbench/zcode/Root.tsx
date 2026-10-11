@@ -123,7 +123,7 @@ export function Root(props: RootProps) {
               initialIsRestoringOAuthSession={props.platform.supportsCloudAccounts !== false}
               onInterfaceModeChange={props.onInterfaceModeChange}
             >
-              <TabStoreProvider>
+              <TabStoreProvider onOpenSettings={props.platform.openSettingsDocument}>
                 <DiffsWorkerPoolProvider>
                   <AssistantCodeCommentFeatureProvider
                     enabled={props.assistantCodeCommentCardsEnabled}

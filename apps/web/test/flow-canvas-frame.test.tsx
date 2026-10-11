@@ -2,6 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -26,7 +27,9 @@ import { FlowCanvasFrame } from "../src/components/workbench/flow-canvas-frame";
 const FLOW_ORIGIN = "http://127.0.0.1:8080";
 
 function dispatchFromFlow(data: unknown, origin = FLOW_ORIGIN) {
-  window.dispatchEvent(new MessageEvent("message", { origin, data }));
+  window.dispatchEvent(
+    new MessageEvent("message", { origin, source: frameWindow(), data }),
+  );
 }
 
 function frameWindow(): Window {
@@ -143,4 +146,58 @@ describe("FlowCanvasFrame（ff-embed 宿主握手）", () => {
       screen.getByText(/KENFUTWORK_FLOW_FRONTEND_URL/),
     ).toBeInTheDocument();
   });
+});
+
+it("Flow握手仅接受当前iframe，其他同源窗口不能请求票据或标记就绪", async () => {
+  stubTicket("ticket-current");
+  render(<FlowCanvasFrame frontendUrl={FLOW_ORIGIN} />);
+  const send = vi.spyOn(frameWindow(), "postMessage");
+  fireEvent.load(screen.getByTitle("Flow 工作流画布"));
+  window.dispatchEvent(
+    new MessageEvent("message", {
+      origin: FLOW_ORIGIN,
+      source: window,
+      data: { type: "ff-embed/hello" },
+    }),
+  );
+  window.dispatchEvent(
+    new MessageEvent("message", {
+      origin: FLOW_ORIGIN,
+      source: window,
+      data: { type: "ff-embed/ready" },
+    }),
+  );
+  expect(send).not.toHaveBeenCalled();
+  expect(fetch).not.toHaveBeenCalled();
+  expect(screen.getByText("正在与 flow 画布握手…")).not.toBeNull();
+});
+
+it("Flow地址更换后不把旧握手的迟到身份票据发给当前文档", async () => {
+  let settle!: (response: Response) => void;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          settle = resolve;
+        }),
+    ),
+  );
+  const view = render(<FlowCanvasFrame frontendUrl={FLOW_ORIGIN} />);
+  const send = vi.spyOn(frameWindow(), "postMessage");
+  dispatchFromFlow({ type: "ff-embed/hello", version: "v1" });
+  view.rerender(<FlowCanvasFrame frontendUrl="http://127.0.0.1:8081" />);
+  const currentSend = vi.spyOn(frameWindow(), "postMessage");
+  await act(async () => {
+    settle(Response.json({ token: "ticket-old-document" }));
+  });
+  expect(currentSend).not.toHaveBeenCalledWith(
+    expect.objectContaining({ type: "ff-embed/identity" }),
+    expect.any(String),
+  );
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(send).toHaveBeenCalledWith(
+    { type: "ff-embed/hello-ack", version: "v1" },
+    FLOW_ORIGIN,
+  );
 });

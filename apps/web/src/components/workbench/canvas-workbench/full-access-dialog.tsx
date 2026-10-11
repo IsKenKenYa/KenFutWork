@@ -12,12 +12,17 @@ import {
 import type { useDesignComposer } from "./use-design-composer";
 export function FullAccessDialog({
   composer,
+  active = true,
 }: {
   composer: ReturnType<typeof useDesignComposer>;
+  active?: boolean;
 }) {
   const { pendingFullAccess, setPendingFullAccess, applyTier } = composer;
   return (
-    <Dialog open={pendingFullAccess} onOpenChange={setPendingFullAccess}>
+    <Dialog
+      open={active && pendingFullAccess}
+      onOpenChange={setPendingFullAccess}
+    >
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

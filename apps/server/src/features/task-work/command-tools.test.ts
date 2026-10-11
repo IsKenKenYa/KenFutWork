@@ -22,6 +22,14 @@ import { createTaskWorkManager } from "./service.js";
 import { createMemoryTaskWorkStore } from "./test-store.js";
 import type { TaskWorkContext } from "./types.js";
 
+/**
+ * 真沙箱里冷启动一个 node 进程（bwrap + apply-seccomp + seccomp 过滤器）在 CI 容器上
+ * 明显慢于本机：`expect.poll` 默认 1s 会在进程还没吐出第一行时就判红（实测
+ * `expected '' to contain 'ready'`）。这里给的是**进程启动预算**，不是掩盖同步错误——
+ * 沙箱启动失败由 failFast 立刻抛出原始原因，不会等满这个预算。
+ */
+const SANDBOX_STARTUP_MS = 30_000;
+
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -116,6 +124,18 @@ async function fixture() {
     toolCallId: call,
     runId: `run-${handle.agentId}`,
   });
+  /**
+   * 沙箱起不来时失败会被记成 status=failed + summary，输出里永远不会有 ready。
+   * 夹具必须在轮询里主动把原始失败抛出，否则用例只报「expected '' to contain 'ready'」，
+   * 把根因（apply-seccomp / 授权 / 隔离不可用）埋成一次空等超时。
+   */
+  const failFast = async (workId: string) => {
+    const record = await manager.find(context, workId);
+    if (record?.status === "failed")
+      throw new Error(
+        `后台命令启动即失败（${workId}）：${record.summary ?? "(未记录原因)"}`,
+      );
+  };
   const start = async (handle: ExecutionScopeHandle, call: string) => {
     const program =
       "process.stdin.setEncoding('utf8');process.stdin.on('data',data=>process.stdout.write('echo:'+data));setInterval(()=>{},1000);process.stdout.write('ready\\n')";
@@ -130,18 +150,23 @@ async function fixture() {
     );
     await expect
       .poll(
-        async () =>
-          outputResult.parse(
-            await tool("TaskOutput").execute(
-              { task_id: work.taskId },
-              execution(main, "output"),
-            ),
-          ).canonicalOutput.output?.data ?? "",
+        async () => {
+          await failFast(work.taskId);
+          return (
+            outputResult.parse(
+              await tool("TaskOutput").execute(
+                { task_id: work.taskId },
+                execution(main, "output"),
+              ),
+            ).canonicalOutput.output?.data ?? ""
+          );
+        },
+        { timeout: SANDBOX_STARTUP_MS },
       )
       .toContain("ready");
     return work.taskId;
   };
-  return { root, main, manager, context, tool, execution, start };
+  return { root, main, manager, context, tool, execution, start, failFast };
 }
 
 it.each(["TaskInput", "TaskStop"] as const)(
@@ -208,15 +233,20 @@ it("worker可向自身派发的命令输入并停止，TaskOutput仍能读取整
   ).toMatchObject({ inputSent: true });
   await expect
     .poll(
-      async () =>
-        outputResult.parse(
-          await state
-            .tool("TaskOutput")
-            .execute(
-              { task_id: own },
-              state.execution(state.main, "read-child"),
-            ),
-        ).canonicalOutput.output?.data ?? "",
+      async () => {
+        await state.failFast(own);
+        return (
+          outputResult.parse(
+            await state
+              .tool("TaskOutput")
+              .execute(
+                { task_id: own },
+                state.execution(state.main, "read-child"),
+              ),
+          ).canonicalOutput.output?.data ?? ""
+        );
+      },
+      { timeout: SANDBOX_STARTUP_MS },
     )
     .toContain("echo:owned");
   expect(
@@ -287,6 +317,7 @@ it.each([
       .poll(
         async () =>
           (await state.manager.find(state.context, work.taskId))?.status,
+        { timeout: SANDBOX_STARTUP_MS },
       )
       .toBe("failed");
     expect(await state.manager.find(state.context, work.taskId)).toMatchObject({

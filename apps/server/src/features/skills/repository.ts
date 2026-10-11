@@ -3,6 +3,7 @@ import type { PersistenceService } from "../persistence/types.js";
 export type InstanceSkillRecord = {
   enabled: boolean;
   skillId: string;
+  installationRevision?: string;
   slug: string;
   name: string;
   description: string;
@@ -115,9 +116,14 @@ export interface SkillCatalogRepository {
     instanceId: string,
     skillId: string,
     enabled: boolean,
+    installationRevision?: string,
   ): Promise<boolean>;
   /** 卸载；返回受影响行数（0 = 未安装）。 */
-  uninstall(instanceId: string, skillId: string): Promise<number>;
+  uninstall(
+    instanceId: string,
+    skillId: string,
+    installationRevision?: string,
+  ): Promise<number>;
 }
 
 /** 实例安装态更新口径：只更新已有安装，卸载后的迟到启停不得重新安装。 */
@@ -126,6 +132,7 @@ export interface InstanceSkillSettingsRepository {
     instanceId: string,
     skillId: string,
     enabled: boolean,
+    installationRevision?: string,
   ): Promise<boolean>;
 }
 
@@ -133,11 +140,12 @@ export function createInstanceSkillSettingsRepository(
   persistence: PersistenceService,
 ): InstanceSkillSettingsRepository {
   return {
-    async setEnabled(instanceId, skillId, enabled) {
+    async setEnabled(instanceId, skillId, enabled, installationRevision) {
       const changed = await persistence.forInstance(instanceId).execute(
         `update public.instance_skills set enabled = $2
-        where instance_id = :instance and skill_id = $1`,
-        [skillId, enabled],
+        where instance_id = :instance and skill_id = $1
+          and ($3::text is null or (installed_at at time zone 'UTC')::text = $3)`,
+        [skillId, enabled, installationRevision ?? null],
       );
       return changed > 0;
     },
@@ -151,6 +159,7 @@ type JoinedSkillRow = {
   name: string;
   description: string;
   skill_content: string;
+  installation_revision?: string;
 };
 
 export function createSkillCatalogRepository(
@@ -231,12 +240,13 @@ export function createSkillCatalogRepository(
       );
     },
 
-    async uninstall(instanceId, skillId) {
+    async uninstall(instanceId, skillId, installationRevision) {
       return persistence.forInstance(instanceId).execute(
         `delete from public.instance_skills
           where instance_id = :instance
-            and skill_id = $1`,
-        [skillId],
+            and skill_id = $1
+            and ($2::text is null or (installed_at at time zone 'UTC')::text = $2)`,
+        [skillId, installationRevision ?? null],
       );
     },
 
@@ -376,7 +386,8 @@ export function createSkillCatalogRepository(
       const rows = await persistence
         .forInstance(instanceId)
         .query<JoinedSkillRow>(
-          `select ws.enabled, s.id, s.slug, s.name, s.description, s.skill_content
+          `select ws.enabled, s.id, s.slug, s.name, s.description, s.skill_content,
+                  (ws.installed_at at time zone 'UTC')::text as installation_revision
              from public.instance_skills ws
              join public.skills s on s.id = ws.skill_id
             where ws.instance_id = :instance and s.instance_id = :instance`,
@@ -389,6 +400,9 @@ export function createSkillCatalogRepository(
         name: row.name,
         description: row.description,
         skillContent: row.skill_content,
+        ...(row.installation_revision
+          ? { installationRevision: row.installation_revision }
+          : {}),
       }));
     },
   };

@@ -135,8 +135,8 @@ const child = spawn(
 );
 // Ctrl-C / SIGTERM 让子进程（watcher）先收尾，本进程等它退出后再走——
 // 避免「父进程先死、watcher 留成孤儿」。
-process.on("SIGINT", () => {});
-process.on("SIGTERM", () => {});
+process.on("SIGINT", () => child.kill("SIGINT"));
+process.on("SIGTERM", () => child.kill("SIGTERM"));
 child.on("exit", (code, signal) => {
   process.exit(code ?? (signal ? 1 : 0));
 });

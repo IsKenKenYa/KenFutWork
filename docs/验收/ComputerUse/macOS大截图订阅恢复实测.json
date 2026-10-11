@@ -1,0 +1,67 @@
+{
+  "testedAt": "2026-10-09T04:56:10.443Z",
+  "taskId": "411c3ea4-c788-4e61-946d-33fe43762f05",
+  "seq": 1184,
+  "phase": "completedInterrupted",
+  "activeWorks": 0,
+  "rows": 75,
+  "previousObservation": {
+    "testedAt": "2026-10-08T12:56:56.540Z",
+    "taskId": "411c3ea4-c788-4e61-946d-33fe43762f05",
+    "seq": 1163,
+    "phase": "completedInterrupted",
+    "rows": 75,
+    "apiHealth": 200,
+    "sourceApiRestarted": true,
+    "desktopRestoredTask": true,
+    "appSealValid": true
+  },
+  "previousObservationLimit": "此前单次恢复后用户仍反馈复发，不能作为永久恢复证明",
+  "nativeWebKitSlowConsumer": {
+    "perFrameSynchronousWorkMs": 50,
+    "deadlineMs": 8000,
+    "beforeKeepalive": {
+      "receivedFragmentIndexes": [0],
+      "firstFragmentMs": 411,
+      "completed": false,
+      "error": "AbortError"
+    },
+    "afterKeepaliveRuns": [
+      {
+        "receivedFragmentCount": 5,
+        "completed": true,
+        "completeWithinMs": 5200,
+        "approximate": true
+      },
+      {
+        "receivedFragmentIndexes": [0, 1, 2, 3, 4],
+        "receivedAtMs": [469, 519, 5111, 5161, 5211],
+        "completed": true
+      }
+    ],
+    "keepaliveMs": 5000,
+    "scope": "同一本机固定.app的WebView，仅创建自己的只读HTTP订阅"
+  },
+  "originalDesktopUi": {
+    "taskRestored": true,
+    "stoppedStateVisible": true,
+    "observedBeyondRecoveryDeadlineMs": 30000,
+    "recoveryFaultAbsent": true,
+    "loadedAsset": "index-Dp1idbbK.js",
+    "temporaryDiagnosticExportsAbsent": true
+  },
+  "originalTransportStoreHttpRegression": {
+    "recoveryFrameObserved": true,
+    "initialFrameObservedAfterReconnect": true,
+    "ownSseDisconnect": true,
+    "waitedAfterReconnectMs": 31000,
+    "passed": true,
+    "durationSeconds": 37
+  },
+  "appBinarySha256": "45bfb815739387fc68ebc2741355b368c93e87415c3f9d0ad13ea0b334b722f1",
+  "appSealValid": true,
+  "limitations": [
+    "Windows/Linux未在此实测",
+    "Docker容器启停未完成，已有5432占用与独立搜索窗口定位问题"
+  ]
+}

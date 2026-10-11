@@ -12,6 +12,9 @@
     "windows": [
       {
         "title": "KenFutWork 工作台",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 22, "y": 23 },
         "width": 1280,
         "height": 800,
         "minWidth": 960,

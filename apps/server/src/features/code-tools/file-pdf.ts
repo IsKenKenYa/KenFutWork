@@ -3,39 +3,31 @@ import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { FileLimits, MediaFile, MediaReadInput } from "./file-types.js";
 
+/**
+ * `@napi-rs/canvas` 是 esbuild `--external` 的**外部原生包**：Windows 打包走 Node SEA，
+ * SEA 里的 `require` 只认内建模块，顶层静态 import 会被打结成启动期的一次 require，
+ * 于是整个服务端在启动时就抛 `ERR_UNKNOWN_BUILTIN_MODULE: @napi-rs/canvas`
+ * （win 安装包启动即死，CI 实测）。与 node-pty / sherpa 同一口径：等真要用 PDF 栅格化时，
+ * 再按入口文件位置解析——打包态解析到 `<exeDir>/node_modules/@napi-rs/canvas`。
+ */
+type CanvasModule = typeof import("@napi-rs/canvas");
+
+function loadCanvasModule(): CanvasModule {
+  try {
+    return createRequire(import.meta.url)("@napi-rs/canvas") as CanvasModule;
+  } catch (error) {
+    throw new Error(
+      `PDF 栅格化不可用：缺少 canvas 原生运行时（${
+        error instanceof Error ? error.message : String(error)
+      }）`,
+    );
+  }
+}
+
 export interface BinaryFile {
   path: string;
   bytes: Buffer;
   version: string;
-}
-
-/**
- * 懒加载 `@napi-rs/canvas`（**不能在模块顶层静态 import**）。
- *
- * 与 node-pty / sharp 同一套办法：随包分发时它是 external 原生模块，必须走
- * `<exe>/node_modules/` 在运行时解析；打包成单文件 SEA 后，顶层静态 import 会被换成
- * SEA 的内建 `require`——它只认内置模块，加载期直接抛 `ERR_UNKNOWN_BUILTIN_MODULE`
- * **把整个服务端拖死**（2026-10-09 打包冒烟实测：装好的桌面端起不来）。
- * 懒加载后影响只落在「PDF 渲染成图」这一条路径：真缺组件时给可读原因，文本读取照常。
- */
-let cachedCanvas: typeof import("@napi-rs/canvas") | null | undefined;
-
-function loadCanvas(): typeof import("@napi-rs/canvas") {
-  if (cachedCanvas === undefined) {
-    try {
-      cachedCanvas = createRequire(import.meta.url)(
-        "@napi-rs/canvas",
-      ) as typeof import("@napi-rs/canvas");
-    } catch {
-      cachedCanvas = null;
-    }
-  }
-  if (!cachedCanvas) {
-    throw new Error(
-      "本机缺少 PDF 图片渲染组件（@napi-rs/canvas），请改用文本方式读取该 PDF。",
-    );
-  }
-  return cachedCanvas;
 }
 
 type RenderInput = Parameters<PDFPageProxy["render"]>[0];
@@ -49,8 +41,8 @@ async function rasterPages(
   result: MediaFile,
   signal?: AbortSignal,
 ): Promise<MediaFile> {
-  const { createCanvas } = loadCanvas();
   const maxPage = Math.min(end, start + limits.codePdfMaxPages - 1);
+  const { createCanvas } = loadCanvasModule();
   let bytes = 0;
   result.modelContent = [
     {

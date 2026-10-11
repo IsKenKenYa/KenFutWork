@@ -8,6 +8,15 @@ export type AutomationsPageTab = "automation" | "workflow";
 
 const AUTOMATIONS_PAGE_TABS: readonly AutomationsPageTab[] = ["automation", "workflow"];
 
+export function AutomationsPageHeading() {
+  const { intl } = useZCodeIntl();
+  return (
+    <h1 className="text-[30px] font-medium leading-[34px] tracking-[0.114px] text-foreground">
+      {intl.formatMessage({ id: "settings.automations.title" })}
+    </h1>
+  );
+}
+
 /**
  * 自动化页的标题。动态工作流灰度未命中时
  * 页面只有「自动化」一件事，标题就退回引入「工作流」标签之前的那个平铺 h1——不留一个只有
@@ -22,14 +31,9 @@ export function AutomationsPageTitle({
   value: AutomationsPageTab;
   onValueChange: (tab: AutomationsPageTab) => void;
 }) {
-  const { intl } = useZCodeIntl();
   if (!workflowTabEnabled) {
     // 字号与切换态同源：30/34 页面标题层级，切换在不在场不该改变标题的视觉层级。
-    return (
-      <h1 className="text-[30px] font-medium leading-[34px] tracking-[0.114px] text-foreground">
-        {intl.formatMessage({ id: "settings.automations.title" })}
-      </h1>
-    );
+    return <AutomationsPageHeading />;
   }
   return <AutomationsPageTitleSwitch value={value} onValueChange={onValueChange} />;
 }

@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getServerBaseUrl } from "@/lib/env";
 import { type FlowEntry, resolveFlowEntry } from "@/lib/flow-embed";
 import { serverFetch } from "@/lib/local-access";
+import { PLUGIN_INVENTORY_CHANGED_EVENT } from "@/lib/plugin-panels";
 
 /**
  * Flow 模式入口的接线层：插件安装态 + 宿主适配层探针 → `resolveFlowEntry`。
@@ -27,11 +28,18 @@ export function useFlowHostEntry(enabled = true): {
 } {
   const [probe, setProbe] = useState<{
     pluginInstalled: boolean;
+    pluginEnabled: boolean;
     status: FlowHostStatusResponse | null;
   } | null>(null);
   const [tick, setTick] = useState(0);
 
   const refresh = useCallback(() => setTick((n) => n + 1), []);
+  useEffect(() => {
+    if (!enabled) return;
+    window.addEventListener(PLUGIN_INVENTORY_CHANGED_EVENT, refresh);
+    return () =>
+      window.removeEventListener(PLUGIN_INVENTORY_CHANGED_EVENT, refresh);
+  }, [enabled, refresh]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: tick 是手动刷新信号（refresh() 递增它以重跑本 effect），effect 体内不读它
   useEffect(() => {
@@ -42,25 +50,36 @@ export function useFlowHostEntry(enabled = true): {
     let cancelled = false;
 
     void (async () => {
-      const [pluginInstalled, status] = await Promise.all([
+      const [plugin, status] = await Promise.all([
         (async () => {
           try {
             const response = await serverFetch(
               `${getServerBaseUrl()}/api/plugins`,
               { headers: {} },
             );
-            if (!response.ok) return false;
+            if (!response.ok) return { installed: false, enabled: false };
             const body = (await response.json()) as {
-              plugins?: Array<{ name: string; installed: boolean }>;
+              plugins?: Array<{
+                name: string;
+                installed: boolean;
+                enabled: boolean;
+              }>;
             };
-            return (
-              body.plugins?.some(
-                (plugin) =>
-                  plugin.name === FLOW_PLUGIN_BUNDLE_NAME && plugin.installed,
-              ) ?? false
+            const flow = body.plugins?.filter(
+              (candidate) => candidate.name === FLOW_PLUGIN_BUNDLE_NAME,
             );
+            return {
+              installed:
+                flow?.some((candidate) => candidate.installed === true) ??
+                false,
+              enabled:
+                flow?.some(
+                  (candidate) =>
+                    candidate.installed === true && candidate.enabled === true,
+                ) ?? false,
+            };
           } catch {
-            return false;
+            return { installed: false, enabled: false };
           }
         })(),
         (async () => {
@@ -76,7 +95,12 @@ export function useFlowHostEntry(enabled = true): {
           }
         })(),
       ]);
-      if (!cancelled) setProbe({ pluginInstalled, status });
+      if (!cancelled)
+        setProbe({
+          pluginInstalled: plugin.installed,
+          pluginEnabled: plugin.enabled,
+          status,
+        });
     })();
 
     return () => {

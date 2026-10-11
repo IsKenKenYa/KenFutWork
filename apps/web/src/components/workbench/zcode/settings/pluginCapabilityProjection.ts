@@ -85,8 +85,9 @@ export function selectSkillsForScope(
   skills: readonly SkillSummary[],
   scopedPlugins: readonly Pick<ZCodePluginInfo, "id" | "name" | "enabled">[],
   scope: ZCodePluginScope,
+  includeDisabledPlugins = false,
 ): SkillSummary[] {
-  const enabledPlugins = scopedPlugins.filter((plugin) => plugin.enabled);
+  const enabledPlugins = scopedPlugins.filter((plugin) => includeDisabledPlugins || plugin.enabled);
   const scopedPluginIds = new Set(enabledPlugins.map((plugin) => plugin.id));
   const scopedPluginIdsByName = new Map<string, string[]>();
   for (const plugin of enabledPlugins) {

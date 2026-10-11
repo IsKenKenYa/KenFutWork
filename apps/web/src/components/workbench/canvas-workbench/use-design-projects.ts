@@ -1,7 +1,13 @@
 "use client";
 
 import type { ProjectSummary } from "@kenfutwork/shared";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
 import {
   createProject,
@@ -16,6 +22,7 @@ type CanvasProject = Extract<ProjectSummary, { kind: "design" | "flow" }>;
 export function useDesignProjects(
   accessToken: string | null,
   mode: "design" | "flow",
+  frameRef: RefObject<HTMLIFrameElement | null>,
 ) {
   const [projects, setProjects] = useState<CanvasProject[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
@@ -25,30 +32,48 @@ export function useDesignProjects(
   const [creatingProject, setCreatingProject] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const autoCanvasTried = useRef(false);
-  const refreshProjects = useCallback(() => {
-    fetchProjects(accessToken, "design")
-      .then((data) =>
-        setProjects(
-          data.projects.filter(
-            (project): project is CanvasProject => project.kind !== "code",
-          ),
-        ),
-      )
-      .catch((error: unknown) =>
-        setNotice(
-          error instanceof Error ? error.message : "画布项目读取失败。",
-        ),
-      )
-      .finally(() => setProjectsLoaded(true));
-  }, [accessToken]);
-  useEffect(refreshProjects, [refreshProjects]);
+  const readGeneration = useRef(0);
+  const refreshProjects = useCallback(
+    (selectId?: string) => {
+      const generation = ++readGeneration.current;
+      fetchProjects(accessToken, mode)
+        .then((data) => {
+          if (generation !== readGeneration.current) return;
+          const visible = data.projects.filter(
+            (project): project is CanvasProject => project.kind === mode,
+          );
+          setProjects(visible);
+          if (selectId && visible.some((project) => project.id === selectId))
+            setSelectedProjectId(selectId);
+        })
+        .catch((error: unknown) => {
+          if (generation !== readGeneration.current) return;
+          setNotice(
+            error instanceof Error ? error.message : "画布项目读取失败。",
+          );
+        })
+        .finally(() => {
+          if (generation === readGeneration.current) setProjectsLoaded(true);
+        });
+    },
+    [accessToken, mode],
+  );
+  useEffect(() => {
+    refreshProjects();
+    return () => {
+      readGeneration.current++;
+    };
+  }, [refreshProjects]);
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
+      const frame = frameRef.current?.contentWindow;
+      if (!frame || event.source !== frame) return;
       const data = event.data as { type?: string; projectId?: string } | null;
+      if (typeof data?.projectId !== "string" || !data.projectId) return;
       if (data?.type === "workbench:project-created") {
-        refreshProjects();
-        if (data.projectId) setSelectedProjectId(data.projectId);
+        // 由真实项目目录核对模式，不能把消息中的id直接当选中项目。
+        refreshProjects(data.projectId);
       }
       if (data?.type === "workbench:project-deleted") {
         setSelectedProjectId((current) =>
@@ -59,17 +84,17 @@ export function useDesignProjects(
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [refreshProjects]);
+  }, [refreshProjects, frameRef]);
   const createProjectNamed = useCallback(
     async (name: string): Promise<CanvasProject | null> => {
       setCreatingProject(true);
       try {
         const result = await createProject(accessToken, {
-          kind: "design",
+          kind: mode,
           name,
         });
         const project = result.project;
-        if (project.kind === "code") throw new Error("画布项目类型不匹配。");
+        if (project.kind !== mode) throw new Error("画布项目类型不匹配。");
         setProjects((prev) => [project, ...prev]);
         setNotice(null);
         return project;
@@ -80,7 +105,7 @@ export function useDesignProjects(
         setCreatingProject(false);
       }
     },
-    [accessToken],
+    [accessToken, mode],
   );
   const renameProject = useCallback(
     async (projectId: string, name: string) => {

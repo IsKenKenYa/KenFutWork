@@ -41,9 +41,11 @@ export function renderSkillsSection(
   if (skills.length === 0) return null;
   const skillsList = skills
     .map((s) => {
-      let line = s.path.startsWith("kenfutwork-skill:")
-        ? `- **${s.name}**: ${s.description}\n  → Use \`use_skill\` with name \`${s.name}\` for the complete installed SKILL.md. This is a read-only workspace resource, not a Native Read filesystem path. Use optional resource_path for its package files.`
-        : `- **${s.name}**: ${s.description}\n  → Read \`${s.path}\` for full instructions`;
+      let line =
+        s.path.startsWith("kenfutwork-skill:") ||
+        s.path.startsWith("kenfutwork-plugin-skill:")
+          ? `- **${s.name}**: ${s.description}\n  → Use \`use_skill\` with name \`${s.name}\` for the complete installed SKILL.md. This is a read-only workspace resource, not a Native Read filesystem path. Use optional resource_path for its package files.`
+          : `- **${s.name}**: ${s.description}\n  → Read \`${s.path}\` for full instructions`;
       if (s.files.length > 0) {
         const counts: Record<string, number> = {};
         for (const f of s.files) {

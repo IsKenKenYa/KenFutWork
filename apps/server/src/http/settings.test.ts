@@ -21,6 +21,11 @@ const ACTOR: LocalActor = {
   accessClientId: "desktop",
 };
 const FULL_SETTINGS = instanceSettingsSchema.parse({
+  modelDefaults: {
+    chat: null,
+    image: { mode: "auto" },
+    video: { mode: "auto" },
+  },
   defaultModel: "glm-5.3-flash",
   terminalShell: "git-bash",
   codeIndexEnabled: true,

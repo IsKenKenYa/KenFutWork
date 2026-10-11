@@ -357,10 +357,23 @@ export function createCheckpointService(options: {
         message: label,
       });
       const shadowCommit = committed?.sha ?? (await git.head(directory));
-      if (!shadowCommit) continue;
+      if (!shadowCommit) {
+        // 静默 continue 会让「checkpoints 永远为空」毫无线索（macOS 打包态冒烟实测：
+        // Run completedSuccess、Write/Read 都过，影子仓却没有可用提交）。
+        console.warn(
+          `[checkpoints] 影子仓没有可用提交，跳过该目录：workTree=${rootDirectory} gitDir=${gitDir} commitSnapshot=${committed ? "返回了对象但没有 sha" : "null"}`,
+        );
+        continue;
+      }
       directorySnapshots.push({ rootDirectory, shadowCommit });
     }
-    if (!directorySnapshots.length) return { created: null, effective: null };
+    const [firstSnapshot] = directorySnapshots;
+    if (!firstSnapshot) {
+      console.warn(
+        `[checkpoints] 本次捕获没有产出任何目录快照，因此不落检查点：kind=${kind} task=${identity.taskId} run=${input.runId}`,
+      );
+      return { created: null, effective: null };
+    }
     const effective = await options.repository.getByVersion(
       identity.instanceId,
       identity.taskId,
@@ -398,7 +411,7 @@ export function createCheckpointService(options: {
       runId: input.runId,
       kind,
       label,
-      shadowCommit: directorySnapshots[0]!.shadowCommit,
+      shadowCommit: firstSnapshot.shadowCommit,
       ...totals(files),
       createdAt: new Date().toISOString(),
     };
@@ -637,7 +650,14 @@ export function createCheckpointService(options: {
       checkpointId: row.id,
       generation: identity.generation,
       entries,
-      ...(input.path ? { path: input.path, rootDirectory: targetRoot! } : {}),
+      // 与上方 targetRoot 同义（input.path ? input.rootDirectory ?? identity.rootDirectory : undefined），
+      // input.path 分支里 targetRoot 恒为 string，内联以省掉非空断言。
+      ...(input.path
+        ? {
+            path: input.path,
+            rootDirectory: input.rootDirectory ?? identity.rootDirectory,
+          }
+        : {}),
     });
     return {
       targetSha: row.shadowCommit,

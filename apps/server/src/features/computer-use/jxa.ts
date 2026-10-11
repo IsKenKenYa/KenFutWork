@@ -169,6 +169,8 @@ if (cgTarget) {
 const windowId=Number(nativeWindow.kCGWindowNumber);
 const binding=JSON.stringify({pid,launchedAt,windowId,axTitle:win.title()});
 if (expected && binding!==expected) throw new Error('element_stale: 窗口绑定已改变');
+const resolvedApp = { pid, name: proc.name() };
+try { resolvedApp.bundleId = proc.bundleIdentifier(); } catch (e) {}
 `;
 }
 
@@ -291,11 +293,9 @@ function describeWindow(win) {
   return out;
 }
 
-const app = { pid: proc.unixId(), name: proc.name() };
-try { app.bundleId = proc.bundleIdentifier(); } catch (e) {}
 const windowInfo = describeWindow(win);
 windowInfo.windowId = windowId;
-JSON.stringify({ app, window: windowInfo, binding, root: toPlainElement(describeElementEx(win, 0, ${limits.maxDepth})) });
+JSON.stringify({ app: resolvedApp, window: windowInfo, binding, root: toPlainElement(describeElementEx(win, 0, ${limits.maxDepth})) });
 `;
 }
 
@@ -306,7 +306,7 @@ export function buildWindowBoundsScript(
 ): string {
   return `${buildResolveWindowScript(appRef, binding)}
 const position = win.position(), size = win.size();
-JSON.stringify({binding,bounds:[position[0],position[1],size[0],size[1]]});`;
+JSON.stringify({app:resolvedApp,binding,bounds:[position[0],position[1],size[0],size[1]]});`;
 }
 
 /** 直接检查发事件的JXA进程；较新C API不在JXA旧bridge元数据中，按SDK声明绑定。 */

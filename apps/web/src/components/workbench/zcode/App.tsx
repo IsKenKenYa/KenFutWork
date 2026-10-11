@@ -839,11 +839,10 @@ export function App({
     onExitSettings: handleNavigateToTaskMain,
   });
   const handleNavigateToAutomationsMain = useCallback((target: AutomationsNavigationTarget) => {
-    if (platform.supportsAutomations === false) return;
     setOpenAutomationId(target.automationId ?? null);
     setOpenAutomationTab(target.automationTab ?? null);
     setWorkspaceMainView("automations");
-  }, [platform.supportsAutomations]);
+  }, []);
   const handleNavigateToPluginStoreMain = useCallback(() => {
     // 通用入口没有 scope 上下文，默认回到 User；Settings 显式带 scope 的入口会在
     // 导航完成后覆盖这次默认值，避免沿用上一次 Workspace scope。
@@ -877,6 +876,10 @@ export function App({
   });
   const handleOpenPluginStoreForScope = useCallback(
     (_target: PluginStoreOpenTarget = {}) => {
+      if (platform.openPluginStoreDocument) {
+        platform.openPluginStoreDocument(_target);
+        return;
+      }
       // Workspace Marketplace 已收敛为全局入口。兼容旧事件中的 Workspace key，但返回
       // 目标统一归一为 User，避免旧 sessionStorage/同窗口事件把设置页带回失效 scope。
       const returnScopeKey = "user";
@@ -888,7 +891,7 @@ export function App({
       handleOpenPluginStore();
       setPluginStoreReturnScopeKey(returnScopeKey);
     },
-    [handleOpenPluginStore, workspaceMainView],
+    [handleOpenPluginStore, workspaceMainView, platform],
   );
   useEffect(
     () => addPluginStoreOpenListener(handleOpenPluginStoreForScope),

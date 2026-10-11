@@ -44,5 +44,8 @@ describe("设置导航：一个页面只出现一次", () => {
     expect(labels.filter((label) => label.includes("→"))).toEqual([]);
     expect(labels).not.toContain("记忆");
     expect(labels).not.toContain("用量管理");
+    // 默认 general 页随之挂载的终端分区在自行拉取：结束前等它落定，不给
+    // 「环境拆除后才 setState」留空窗（CI 实锤过一次 unhandled rejection）。
+    await screen.findByLabelText("默认 shell");
   });
 });

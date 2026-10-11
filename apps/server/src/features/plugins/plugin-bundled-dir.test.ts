@@ -78,7 +78,7 @@ describe("自带插件目录解析（打包布局契约）", () => {
     const bundles = loadBundledBundles(undefined, 22, silent);
 
     expect(bundles.map((bundle) => bundle.name)).toEqual(["kfw-test-demo"]);
-    expect(bundles[0]?.id).toBe("local__kfw-test-demo");
+    expect(bundles[0]?.id).toBe("bundled__kfw-test-demo");
     expect(bundles[0]?.report.compatible).toBe(true);
   });
 

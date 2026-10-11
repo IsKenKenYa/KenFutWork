@@ -122,6 +122,7 @@ async function fixture(
       role: input.scope.role,
     });
     if (options.failHook) throw new Error("checkpoint failed");
+    return undefined;
   };
   const runtime = createAgentRunService({
     agentFactory: factory,

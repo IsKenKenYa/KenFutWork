@@ -15,7 +15,7 @@ export function useDesktopNativeThemeSync({
   theme: Theme;
 }) {
   useEffect(() => {
-    if (!enabled || !isDesktop) {
+    if (!enabled || (!isDesktop && !platform.getWindowControlsOverlayMetrics?.())) {
       return;
     }
 

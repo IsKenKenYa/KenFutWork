@@ -133,7 +133,7 @@ function MermaidDiagram({
   return (
     <div
       className="my-3 flex justify-center overflow-x-auto rounded-lg border border-border bg-card p-3 [&_svg]:max-w-full"
-      // mermaid 的 SVG 输出：securityLevel=strict 下不含脚本与事件处理器
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: Mermaid strict 在返回 SVG 前使用 DOMPurify 清洗。
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

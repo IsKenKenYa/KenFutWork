@@ -1,5 +1,19 @@
 import { ToolMessage } from "@langchain/core/messages";
+import { createFilesystemMiddleware } from "deepagents";
 import type { AgentMiddleware } from "langchain";
+
+/** Code结果已由Task工具限制/归档；SDK的文字驱逐会把base64图片变成不可读的.txt。 */
+export function createCodeFilesystemMiddleware(
+  backend: NonNullable<
+    NonNullable<Parameters<typeof createFilesystemMiddleware>[0]>["backend"]
+  >,
+): AgentMiddleware {
+  return createFilesystemMiddleware({
+    backend,
+    tools: ["read_file"],
+    toolTokenLimitBeforeEvict: null,
+  }) as unknown as AgentMiddleware;
+}
 
 /** SDK scaffold 保留；Code 仅通过本 profile 的版本/权限/进程工具执行用户动作。 */
 export function createNativeToolExclusionMiddleware(): AgentMiddleware {

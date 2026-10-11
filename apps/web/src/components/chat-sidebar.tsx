@@ -1280,6 +1280,7 @@ export function ChatSidebar({
         </div>
         {/* 插件面板（能力 `ui`）：对话槽位——Design 模式的对话界面就是这块画布内面板 */}
         <PluginPanelButtons
+          mode="design"
           accessToken={accessToken}
           slot="conversation"
           renderButton={(panel, open) => (

@@ -576,6 +576,7 @@ export function McpSettingsSection({
   );
   const platform = usePlatform();
   const baseServices = useBaseWorkspaceServices();
+  const databaseRecords = platform.mcpSettingsCapabilities?.databaseRecords === true;
 
   const storedServers = useMcpStore((s) => s.servers);
   const storedStatusSnapshots = useMcpStore((s) => s.statusSnapshots);
@@ -597,9 +598,11 @@ export function McpSettingsSection({
   // active tab 会先于异步 MCP 目录加载切换；过渡帧不能把 A 的配置和
   // snapshot 投影到 B，更不能让后续 effect 把这些敏感配置发送给 B 的 Agent。
   const mcpStoreMatchesActiveWorkspace =
-    Boolean(activeWorkspaceKey) && currentMcpStoreWorkspaceKey === activeWorkspaceKey;
+    (Boolean(activeWorkspaceKey) || databaseRecords) && currentMcpStoreWorkspaceKey === activeWorkspaceKey;
   const servers = mcpStoreMatchesActiveWorkspace ? storedServers : [];
   const statusSnapshots = mcpStoreMatchesActiveWorkspace ? storedStatusSnapshots : {};
+  const mcpLoadError = useMcpStore((s) => s.loadError);
+  const [nativeConfigReady, setNativeConfigReady] = useState(false);
   const isConfigLoaded = useMcpStore((s) => s.isConfigLoaded);
   const ensureLoadedForWorkspace = useMcpStore((s) => s.ensureLoadedForWorkspace);
   const loadMcpFromUserDirectory = useMcpStore((s) => s.loadMcpFromUserDirectory);
@@ -612,6 +615,8 @@ export function McpSettingsSection({
   const markServerStatusListRefreshFailed = useMcpStore((s) => s.markServerStatusListRefreshFailed);
   const mergeServerStatusSnapshots = useMcpStore((s) => s.mergeServerStatusSnapshots);
 
+  const editorReadGeneration = useRef(0);
+  useEffect(() => () => { editorReadGeneration.current += 1; }, [workspacePath, workspaceIdentity]);
   const [showForm, setShowForm] = useState(false);
   const [formScopeKey, setFormScopeKey] = useState(parentScopeKey);
   const [editingServer, setEditingServer] = useState<ZCodeMcpServer | null>(null);
@@ -674,8 +679,8 @@ export function McpSettingsSection({
   const autoStatusListRefreshKey = useMemo(() => {
     if (
       !isConfigLoaded ||
-      !activeWorkspacePath ||
-      !activeWorkspaceKey ||
+      (!databaseRecords && (!activeWorkspacePath || !activeWorkspaceKey)) ||
+      (databaseRecords && !nativeConfigReady) ||
       mcpConfigReadyWorkspaceKey !== activeWorkspaceKey ||
       !serverStatusListKey
     ) {
@@ -683,6 +688,8 @@ export function McpSettingsSection({
     }
     return [activeWorkspaceIdentity ?? "", activeWorkspacePath, serverStatusListKey].join("\n");
   }, [
+    databaseRecords,
+    nativeConfigReady,
     activeWorkspaceIdentity,
     activeWorkspaceKey,
     activeWorkspacePath,
@@ -717,6 +724,19 @@ export function McpSettingsSection({
       trigger?: McpStatusListRefreshTrigger;
     }) => {
       const trigger = options?.trigger ?? "auto";
+      if (databaseRecords) {
+        const mode = options?.mode ?? "connect";
+        const epoch = beginServerStatusListRefresh(mode);
+        try {
+          const result = await services.mcpSyncService.listWorkspaceMcpServerStatuses({ mode });
+          mergeServerStatusSnapshots(result.statuses, epoch, mode);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          markServerStatusListRefreshFailed(message, epoch, mode);
+          if (trigger === "manual") toast(message, { variant: "warning" });
+        }
+        return;
+      }
       const requestedWorkspaceKey = activeWorkspaceKey;
       const requestedInput = latestStatusListRefreshInputRef.current;
       // 队列 runner 和 in-flight response 都可能跨 workspace 生命周期；
@@ -811,6 +831,7 @@ export function McpSettingsSection({
       });
     },
     [
+      databaseRecords,
       activeWorkspaceKey,
       beginServerStatusListRefresh,
       intl,
@@ -873,12 +894,13 @@ export function McpSettingsSection({
   useEffect(() => {
     let cancelled = false;
     setMcpConfigReadyWorkspaceKey("");
-    if (!activeWorkspacePath || !activeWorkspaceKey) {
+    setNativeConfigReady(false);
+    if (!databaseRecords && (!activeWorkspacePath || !activeWorkspaceKey)) {
       return;
     }
 
     void ensureLoadedForWorkspace(
-      activeWorkspacePath,
+      activeWorkspacePath ?? undefined,
       services.mcpSyncService,
       activeWorkspaceIdentity,
     )
@@ -891,6 +913,7 @@ export function McpSettingsSection({
           state.currentWorkspaceIdentity?.trim() || state.currentProjectPath;
         if (loadedWorkspaceKey === activeWorkspaceKey) {
           setMcpConfigReadyWorkspaceKey(activeWorkspaceKey);
+          setNativeConfigReady(true);
         }
       })
       .catch((error) => {
@@ -904,6 +927,7 @@ export function McpSettingsSection({
       cancelled = true;
     };
   }, [
+    databaseRecords,
     activeWorkspaceIdentity,
     activeWorkspaceKey,
     activeWorkspacePath,
@@ -1187,7 +1211,7 @@ export function McpSettingsSection({
     () => groupPluginMcpServersByPlugin(pluginMcpServers),
     [pluginMcpServers],
   );
-  const mcpProjectionReady =
+  const mcpProjectionReady = databaseRecords ? nativeConfigReady :
     !activeWorkspacePath ||
     (mcpStoreMatchesActiveWorkspace && mcpConfigReadyWorkspaceKey === activeWorkspaceKey);
   const hasEmptySearchResult = Boolean(query.trim()) && filteredMcpCount === 0;
@@ -1216,7 +1240,11 @@ export function McpSettingsSection({
     : "";
 
   async function handleToggle(id: string, enabled: boolean) {
-    await toggleServer(id, enabled);
+    try { await toggleServer(id, enabled); }
+    catch (error) {
+      toast(error instanceof Error ? error.message : String(error), { variant: "warning" });
+      return;
+    }
 
     if (!enabled) {
       // 禁用后的 unknown 只是本地展示态；toggleServer 已经作废旧请求，
@@ -1229,7 +1257,7 @@ export function McpSettingsSection({
 
     // renderer 侧浅检查无法真实启动 stdio MCP，曾把不存在的 command 误判为 connected。
     // 打开后只展示连接中，最终绿/红状态统一等待 agent 侧 mcp/list 真实 connect/listTools 回写。
-    if (!activeWorkspacePath) {
+    if (!activeWorkspacePath && !databaseRecords) {
       updateServerStatus(id, "unknown", undefined, {
         invalidateStatusListRequests: false,
       });
@@ -1243,40 +1271,40 @@ export function McpSettingsSection({
   }
 
   async function handleSave(form: FormState, prev?: ZCodeMcpServer) {
-    if (!activeWorkspacePath) {
-      return;
-    }
+    const generation = editorReadGeneration.current;
+    if (!activeWorkspacePath && !databaseRecords) throw new Error("请先选择项目。");
     const loaded = await ensureLoadedForWorkspace(
-      activeWorkspacePath,
+      activeWorkspacePath ?? undefined,
       services.mcpSyncService,
       activeWorkspaceIdentity,
     );
-    if (!loaded) {
-      return;
-    }
+    if (generation !== editorReadGeneration.current) return;
+    if (!loaded) throw new Error(mcpLoadError ?? "MCP配置读取失败，请刷新列表。");
     const config = {
       ...formToConfig(form),
       ...(prev?.enabled === false ? { enable: false } : {}),
     };
     // 表单 Scope 可以独立于父页面切换，不能继续读取可能仍属于旧目标的
     // currentProjectPath；保存目标必须使用表单已解析并完成加载的 workspace props。
-    const projectPath = formScopeKey === "user" ? undefined : activeWorkspacePath;
+    const projectPath = formScopeKey === "user" ? undefined : activeWorkspacePath ?? undefined;
 
     if (prev) {
-      await updateScopedMcpServer(DEFAULT_MCP_SOURCE, prev.name, config, projectPath);
+      await updateScopedMcpServer(DEFAULT_MCP_SOURCE, prev.name, config, projectPath, prev.hostRecordId);
     } else {
       await addScopedMcpServer(DEFAULT_MCP_SOURCE, form.name, config, projectPath);
     }
 
+    if (generation !== editorReadGeneration.current) return;
     setShowForm(false);
     setEditingServer(null);
     onFormScopeKeyChange?.(null);
   }
 
   async function handleDelete(server: ZCodeMcpServer) {
+    const generation = editorReadGeneration.current;
     const confirmed = await confirmDialog({
       title: intl.formatMessage({ id: "settings.mcp.deleteConfirmTitle" }, { name: server.name }),
-      description: intl.formatMessage({
+      description: databaseRecords ? "删除后不可恢复" : intl.formatMessage({
         id: "settings.mcp.deleteConfirmDescription",
       }),
       confirmLabel: intl.formatMessage({
@@ -1285,18 +1313,31 @@ export function McpSettingsSection({
       cancelLabel: intl.formatMessage({ id: "common.cancel" }),
     });
 
-    if (!confirmed) {
+    if (!confirmed || generation !== editorReadGeneration.current) {
       return;
     }
 
-    await deleteScopedMcpServer(server.source, server.name, server.projectPath);
+    await deleteScopedMcpServer(server.source, server.name, server.projectPath, server.hostRecordId);
+    if (generation !== editorReadGeneration.current) return;
     setEditingServer(null);
     setShowForm(false);
     setEditorMode("form");
     onFormScopeKeyChange?.(null);
   }
 
-  function handleEdit(server: ZCodeMcpServer) {
+  async function handleEdit(server: ZCodeMcpServer) {
+    const generation = ++editorReadGeneration.current;
+    if (server.hostRecordId && services.mcpSyncService.readMcpServerConfiguration) {
+      try {
+        const detail = await services.mcpSyncService.readMcpServerConfiguration({ hostRecordId: server.hostRecordId });
+        if (generation !== editorReadGeneration.current) return;
+        server = { ...server, config: detail.config, enabled: detail.enabled ?? server.enabled };
+      } catch (error) {
+        if (generation !== editorReadGeneration.current) return;
+        toast(error instanceof Error ? error.message : String(error), { variant: "warning" });
+        return;
+      }
+    }
     const ownerWorkspace = workspaceTabs.find((tab) => tab.workspacePath === server.projectPath);
     const ownedScopeKey =
       server.scope === "workspace"
@@ -1312,6 +1353,7 @@ export function McpSettingsSection({
   }
 
   function handleCreate() {
+    editorReadGeneration.current += 1;
     setFormScopeKey(parentScopeKey);
     onFormScopeKeyChange?.(parentScopeKey);
     setEditingServer(null);
@@ -1337,6 +1379,7 @@ export function McpSettingsSection({
 
   if (isFormView) {
     const closeFormView = () => {
+      editorReadGeneration.current += 1;
       setShowForm(false);
       setEditingServer(null);
       setEditorMode("form");
@@ -1445,7 +1488,9 @@ export function McpSettingsSection({
         </div>
       ) : null}
 
-      {!mcpProjectionReady ? (
+      {databaseRecords && scopeFilter === "workspace" ? <p role="status" className="text-ui-base text-foreground-subtle">未接入</p> : null}
+      {mcpLoadError ? <p role="alert" className="text-ui-base text-destructive">{mcpLoadError}</p> : null}
+      {!mcpProjectionReady && !mcpLoadError ? (
         <PluginLoadingState label={intl.formatMessage({ id: "common.loading" })} />
       ) : hasEmptySearchResult ? (
         <PluginSearchEmptyState
@@ -1470,6 +1515,8 @@ export function McpSettingsSection({
                   refreshing={refreshingStatusList}
                   onImport={() => setImportDialogOpen(true)}
                   onNew={handleCreate}
+                  newDisabled={databaseRecords && scopeFilter === "workspace"}
+                  importDisabled={databaseRecords && scopeFilter === "workspace"}
                   importActionId="settings.mcp.import.open"
                   newActionId="settings.mcp.create.open"
                 />

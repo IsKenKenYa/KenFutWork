@@ -269,26 +269,57 @@ describe.skipIf(!ptyAvailable)(
     }
 
     /** 等输出里出现哨兵（命令回显与结果都到齐）。 */
+    /**
+     * 等的是**执行结果**，不是命令回显。PTY 会把写入的命令行原样吐回来，
+     * 所以哨兵必须是「回显里不可能出现」的形状：要么由 shell 拼接生成（见 PowerShell 用例），
+     * 要么用正则要求哨兵相邻的是**展开后的值**（`%CD%`/`$(pwd)` 在回显里是字面量）。
+     * 只等裸哨兵会让断言在回显那一刻提前放行——旧 CI 上 `/sub` 就是这么失败的。
+     */
     function waitForOutput(
-      sentinel: string,
+      sentinel: string | RegExp,
       getOutput: () => string,
       timeoutMs = 10_000,
     ): Promise<void> {
       return new Promise((resolve, reject) => {
         const started = Date.now();
         const timer = setInterval(() => {
-          if (getOutput().includes(sentinel)) {
+          if (getOutput().match(sentinel)) {
             clearInterval(timer);
             resolve();
             return;
           }
           if (Date.now() - started > timeoutMs) {
             clearInterval(timer);
-            reject(new Error(`等待 ${sentinel} 超时；已收到：${getOutput()}`));
+            reject(
+              new Error(
+                `等待 ${sentinel} 超时；已收到：${getOutput().slice(-400)}`,
+              ),
+            );
           }
         }, 50);
       });
     }
+
+    it("等待器只认执行结果：命令回显不放行，真实结果分片到齐才放行", async () => {
+      // 回归旧 CI 的失败形状：PTY 会把写入的命令行原样回显，哨兵若只写 "END"，
+      // 回显那一刻就判定成功，随后的 `/sub` 断言自然踩空。
+      let output = "";
+      const result = /PROBE:\/tmp\/kfw-x:END/;
+      output += "echo PROBE:$(pwd):END\r\n"; // 回显：含字面量 $(pwd)，不是结果
+      let settled = false;
+      const waiting = waitForOutput(result, () => output, 5_000).then(() => {
+        settled = true;
+      });
+      await new Promise((done) => setTimeout(done, 200));
+      expect(settled, "只有命令回显时必须还没完成").toBe(false);
+      // 结果本身也常被拆成多帧送达
+      output += "PROBE:/tmp/kfw-x:EN";
+      await new Promise((done) => setTimeout(done, 200));
+      expect(settled, "半截结果不得提前放行").toBe(false);
+      output += "D\r\n";
+      await waiting;
+      expect(settled).toBe(true);
+    });
 
     it.skipIf(process.platform !== "win32")(
       "cmd：cd 与变量都在同一进程里保留（两条命令不共享目录就是失败的实现）",
@@ -305,7 +336,10 @@ describe.skipIf(!ptyAvailable)(
           session.write("cd sub\r");
           session.write("set KFW_PROBE=kept\r");
           session.write("echo PROBE:%CD%:%KFW_PROBE%:END\r");
-          await waitForOutput("PROBE:", () => output);
+          await waitForOutput(
+            /PROBE:[A-Za-z]:\\[^\r\n]*\\sub:kept:END/,
+            () => output,
+          );
           // cd 到了 sub、变量还在：说明这两条命令跑在同一个 shell 进程里
           expect(output).toContain("PROBE:");
           expect(output.toLowerCase()).toContain("sub");
@@ -335,7 +369,7 @@ describe.skipIf(!ptyAvailable)(
         try {
           session.write("cd sub\r");
           session.write("echo PROBE:$(pwd):END\r");
-          await waitForOutput("END", () => output);
+          await waitForOutput(/PROBE:\/[^\r\n]*\/sub:END/, () => output);
           expect(output).toContain("/sub");
         } finally {
           session.stop("测试结束");
@@ -386,12 +420,20 @@ describe.skipIf(!ptyAvailable)(
         });
         try {
           session.write("where python\r");
-          await waitForOutput("python", () => output, 8_000);
-          // 有 python 才有 REPL 可测；没有就只验「探查命令能跑」（不把环境缺失当失败）
-          if (!output.toLowerCase().includes("python")) return;
+          // 有 python 才有 REPL 可测；没有就只验「探查命令能跑」（不把环境缺失当失败）。
+          // 等的是 `python.exe` 这个**结果**，命令回显里的 “python” 不算数。
+          const found = await waitForOutput(
+            /python\.exe/i,
+            () => output,
+            8_000,
+          ).then(
+            () => true,
+            () => false,
+          );
+          if (!found) return;
           session.write("python -i\r");
           session.write("print(6*7)\r");
-          session.write("print('KFW_REPL_OK')\r");
+          session.write("print('KFW_' + 'REPL_OK')\r");
           session.write("exit()\r");
           await waitForOutput("KFW_REPL_OK", () => output, 15_000);
           expect(output).toContain("42");

@@ -1,0 +1,32 @@
+name: 给 Postgres 服务容器装 pgmq 兼容 shim
+description: >-
+  历史迁移里有 `CREATE EXTENSION IF NOT EXISTS pgmq`，官方 postgres 镜像不带它，空库重放/启动
+  会停在 `extension "pgmq" is not available`。桌面打包期做的是同一件事（把 shim 预装进集群的
+  share/extension），这里对 Actions 的服务容器做同一件事——装的是兼容层，不是真 pgmq。
+inputs:
+  image-pattern:
+    description: 用 `docker ps` 认服务容器时匹配的镜像串
+    required: false
+    default: postgres:17
+runs:
+  using: composite
+  steps:
+    - name: 装入 pgmq shim
+      shell: bash
+      env:
+        # 表达式一律走 env 注入，不拼进脚本文本（actionlint/shellcheck 与注入面都干净）
+        IMAGE_PATTERN: ${{ inputs.image-pattern }}
+      run: |
+        set -euo pipefail
+        cid="$(docker ps --format '{{.ID}} {{.Image}}' | awk -v pat="$IMAGE_PATTERN" '$0 ~ pat {print $1}' | head -1)"
+        if [ -z "$cid" ]; then
+          echo "· 找不到 $IMAGE_PATTERN 服务容器"
+          exit 1
+        fi
+        ext="$(docker exec "$cid" sh -c 'pg_config --sharedir')/extension"
+        docker exec "$cid" mkdir -p "$ext"
+        for file in pgmq.control pgmq--1.0.sql; do
+          docker cp "docker/pg-dev-shim/$file" "$cid:$ext/$file"
+        done
+        # 不重启也可见：pg_available_extensions 是按需扫目录的。
+        echo "· 已装入 $ext：$(docker exec "$cid" sh -c "ls -1 $ext | grep -c '^pgmq'") 个 pgmq 文件"

@@ -1,17 +1,16 @@
 import { execFile, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { constants } from "node:fs";
+import { createWriteStream } from "node:fs";
 import {
-  cp,
   mkdir,
   mkdtemp,
   readdir,
   readFile,
-  realpath,
-  writeFile,
+  rm,
+  utimes,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
@@ -21,6 +20,7 @@ import {
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
+import { PNG } from "pngjs";
 import { expect, it } from "vitest";
 import { z } from "zod";
 import { createCodeUiTestClient } from "../code-ui/host-client.fixture.js";
@@ -42,19 +42,90 @@ async function ownedAppPid(executable: string) {
   return match ? Number(match[1]) : undefined;
 }
 
-async function ownedRuntimePids(app: string) {
-  const prefix = join(app, "Contents", "Resources", "app");
-  const { stdout } = await exec("ps", ["-ww", "-axo", "pid=,args="]);
-  return stdout.split("\n").flatMap((line) => {
-    const row = line.trim().match(/^(\d+)\s+(.+)$/);
-    if (!row) return [];
-    const args = row[2] ?? "";
-    return args.startsWith(
-      join(prefix, "runtime", "node", "bin", "node") + " ",
-    ) || args.startsWith(join(prefix, "pg", "bin", "postgres") + " ")
-      ? [Number(row[1])]
-      : [];
+const repo = fileURLToPath(new URL("../../../../../", import.meta.url));
+const fixedApp = join(repo, "KenFutWork.app");
+let development: ReturnType<typeof spawn> | undefined;
+const knownRuntimePids = new Set<number>();
+let developmentOutput = "";
+
+function launchFixedApp(data: string) {
+  developmentOutput = "";
+  knownRuntimePids.clear();
+  const child = spawn("bash", ["apps/desktop/dev.sh"], {
+    cwd: repo,
+    env: {
+      ...process.env,
+      KENFUTWORK_DATA_DIR: data,
+      KENFUTWORK_CONFIG_DIR: join(data, "..", "config"),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
   });
+  development = child;
+  const log = createWriteStream(join(data, "desktop-development.log"));
+  for (const stream of [child.stdout, child.stderr]) {
+    stream.pipe(log, { end: false });
+    stream.on("data", (chunk) => {
+      developmentOutput = (developmentOutput + String(chunk)).slice(-65536);
+    });
+  }
+  development.once("close", () => log.end());
+}
+
+async function ownedRuntimePids(app: string) {
+  const executable = join(app, "Contents/MacOS/kenfutwork-desktop");
+  const appPid = await ownedAppPid(executable);
+  const { stdout } = await exec("ps", ["-ww", "-axo", "pid=,ppid=,args="]);
+  const rows = stdout.split("\n").flatMap((line) => {
+    const row = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/);
+    return row ? [{ pid: Number(row[1]), parent: Number(row[2]) }] : [];
+  });
+  const roots = new Set(
+    [appPid, development?.pid].filter((pid): pid is number => !!pid),
+  );
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const row of rows)
+      if (roots.has(row.parent) && !roots.has(row.pid)) {
+        roots.add(row.pid);
+        knownRuntimePids.add(row.pid);
+        changed = true;
+      }
+  }
+  return rows
+    .filter((row) => knownRuntimePids.has(row.pid))
+    .map((row) => row.pid);
+}
+
+async function browserConnected(data: string) {
+  const lines = (
+    await readFile(join(data, "logs/server-spawn.log"), "utf8")
+  ).split("\n");
+  const ticketRequests = new Set<string>();
+  for (const line of lines) {
+    let event: {
+      req?: { url?: string };
+      reqId?: string;
+      res?: { statusCode: number };
+    };
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!event.reqId) continue;
+    if (event.req?.url === "/api/local-access/connect")
+      ticketRequests.add(event.reqId);
+    // 只有真正WebView消费票据才会走connect；壳只签发tickets，Bearer夹具不走这里。
+    const statusCode = event.res?.statusCode;
+    if (
+      ticketRequests.has(event.reqId) &&
+      statusCode !== undefined &&
+      statusCode >= 200 &&
+      statusCode < 300
+    )
+      return true;
+  }
+  return false;
 }
 
 async function assertActualAppNormalExit(
@@ -62,7 +133,7 @@ async function assertActualAppNormalExit(
   executable: string,
   data: string,
 ) {
-  await exec("open", ["-n", app, "--env", `KENFUTWORK_DATA_DIR=${data}`]);
+  launchFixedApp(data);
   let pid: number | undefined;
   await expect
     .poll(
@@ -83,6 +154,9 @@ async function assertActualAppNormalExit(
     )
     .toBe(true);
   if (!pid) throw new Error("正常启动验收未找到所属应用。");
+  await expect
+    .poll(() => browserConnected(data), { timeout: 20_000 })
+    .toBe(true);
   process.kill(pid, "SIGTERM");
   await expect
     .poll(() => ownedAppPid(executable), {
@@ -96,38 +170,106 @@ async function assertActualAppNormalExit(
     .toEqual([]);
 }
 
-// LaunchServices启动实际签名.app；独占安装/数据目录，原公开Task/RPC与模型HTTP，不替换内核。
+it.skipIf(!enabled)(
+  "固定源码应用的WebView真实换票并在热更新后保持应用签名",
+  async () => {
+    const root = await mkdtemp(
+      join(repo, ".kenfutwork-data", "computer-use-hot-reload-"),
+    );
+    const data = join(root, "data");
+    await mkdir(data);
+    const executable = join(fixedApp, "Contents/MacOS/kenfutwork-desktop");
+    if (await ownedAppPid(executable))
+      throw new Error("固定应用正在运行，拒绝接管。");
+    const binaryHash = async () =>
+      createHash("sha256")
+        .update(await readFile(executable))
+        .digest("hex");
+    const before = await binaryHash();
+    let pid: number | undefined;
+    const serverPid = async () => {
+      const owned = await ownedRuntimePids(fixedApp);
+      const { stdout } = await exec("ps", ["-ww", "-axo", "pid=,args="]);
+      const row = stdout
+        .split("\n")
+        .map((line) => line.trim().match(/^(\d+)\s+(.+)$/))
+        .find(
+          (row) =>
+            row &&
+            owned.includes(Number(row[1])) &&
+            row[2]?.includes("--import tsx ./src/server.ts") &&
+            !row[2]?.includes("--watch"),
+        );
+      return row ? Number(row[1]) : undefined;
+    };
+    let success = false;
+    try {
+      launchFixedApp(data);
+      await expect
+        .poll(
+          async () => {
+            pid = await ownedAppPid(executable);
+            return (
+              !!pid &&
+              (await browserConnected(data).catch((error) => {
+                if (error.code === "ENOENT") return false;
+                throw error;
+              }))
+            );
+          },
+          { timeout: 90_000 },
+        )
+        .toBe(true);
+      const oldServer = await serverPid();
+      expect(oldServer).toBeTypeOf("number");
+      // 只触发源码watcher，文件内容不变，应用也不重建。
+      const now = new Date();
+      await utimes(
+        join(
+          repo,
+          "apps/server/src/features/computer-use/permission-status-rpc.ts",
+        ),
+        now,
+        now,
+      );
+      await expect
+        .poll(
+          async () => {
+            const next = await serverPid();
+            return next !== undefined && next !== oldServer;
+          },
+          { timeout: 20_000 },
+        )
+        .toBe(true);
+      expect(await ownedAppPid(executable)).toBe(pid);
+      expect(await binaryHash()).toBe(before);
+      await exec("codesign", ["--verify", "--deep", "--strict", fixedApp]);
+      success = true;
+    } finally {
+      await ownedRuntimePids(fixedApp);
+      if (pid && (await ownedAppPid(executable)) === pid)
+        process.kill(pid, "SIGTERM");
+      development?.kill("SIGTERM");
+      await expect
+        .poll(() => ownedRuntimePids(fixedApp), { timeout: 30_000 })
+        .toEqual([]);
+      await expect
+        .poll(() => ownedAppPid(executable), { timeout: 30_000 })
+        .toBeUndefined();
+      if (success) await rm(root, { recursive: true, force: true });
+    }
+  },
+  120_000,
+);
+
+// 固定签名.app通过pnpm desktop拥有源码API；数据隔离，原公开Task/RPC与模型HTTP。
 it.skipIf(!enabled)(
   "实际macOS.app通过持久Task/HTTP MCP控制窗口并确认TCC与PNG/Unicode",
   async () => {
-    const retainedRoot = process.env.KENFUTWORK_TEST_APP_ROOT;
-    const root = retainedRoot
-      ? await realpath(retainedRoot)
-      : await realpath(await mkdtemp(join(tmpdir(), "kfw-cua-app-")));
-    const marker = join(root, "验收所属.json");
-    if (retainedRoot) {
-      if (
-        dirname(root) !== (await realpath(tmpdir())) ||
-        !basename(root).startsWith("kfw-cua-app-")
-      )
-        throw new Error("只允许复用本验收创建的临时安装目录。");
-      z.object({
-        purpose: z.literal("computer-use-app-native"),
-        root: z.literal(root),
-      }).parse(JSON.parse(await readFile(marker, "utf8")));
-    } else {
-      await writeFile(
-        marker,
-        JSON.stringify({ purpose: "computer-use-app-native", root }),
-      );
-    }
-    const installedApp = join(root, "安装", "KenFutWork.app");
-    const sourceApp = fileURLToPath(
-      new URL(
-        "../../../../desktop/src-tauri/target/release/bundle/macos/KenFutWork.app/",
-        import.meta.url,
-      ),
-    );
+    const evidenceDir = join(repo, ".kenfutwork-data");
+    await mkdir(evidenceDir, { recursive: true });
+    const root = await mkdtemp(join(evidenceDir, "computer-use-app-"));
+    const installedApp = fixedApp;
     const executable = join(
       installedApp,
       "Contents",
@@ -139,7 +281,7 @@ it.skipIf(!enabled)(
       (await ownedAppPid(executable)) ||
       (await ownedRuntimePids(installedApp)).length
     )
-      throw new Error("该验收副本仍在运行；请关闭后再复验，不接管既有进程。");
+      throw new Error("固定应用仍在运行；请关闭后再复验，不接管既有进程。");
     let appPid: number | undefined;
     let fixture: ReturnType<typeof spawn> | undefined;
     let model: Awaited<ReturnType<typeof createDesktopModelServer>> | undefined;
@@ -156,23 +298,9 @@ it.skipIf(!enabled)(
       resumeModel = resolve;
     });
     try {
-      if (!retainedRoot) {
-        await mkdir(join(root, "安装"));
-        await cp(sourceApp, installedApp, {
-          recursive: true,
-          dereference: false,
-          verbatimSymlinks: true,
-          mode: constants.COPYFILE_FICLONE,
-        });
-      }
-      console.info("实际.app：独立安装副本已就绪");
+      console.info("实际.app：复用仓库根目录固定开发应用，不复制安装包");
       await exec("codesign", ["--verify", "--deep", "--strict", installedApp]);
-      await exec("open", [
-        "-n",
-        installedApp,
-        "--env",
-        `KENFUTWORK_DATA_DIR=${data}`,
-      ]);
+      launchFixedApp(data);
       await expect
         .poll(() => ownedAppPid(executable), {
           timeout: AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs,
@@ -190,7 +318,7 @@ it.skipIf(!enabled)(
               if (log.includes("复用"))
                 throw new Error("测试.app复用了既有服务，拒绝访问其数据");
               if (log.includes("启动失败")) throw new Error(log);
-              port = Number(log.match(/拉起随包服务端：.*（端口 (\d+)，/)?.[1]);
+              port = Number(developmentOutput.match(/（API (\d+)，Web/)?.[1]);
               // HTTP健康早于壳持有ServerHandle；必须等实际壳完成启动，不抢先结束它。
               if (!port || !log.includes("服务端已拉起（pid ")) return false;
               return (
@@ -207,6 +335,9 @@ it.skipIf(!enabled)(
         )
         .toBe(true);
       const base = `http://127.0.0.1:${port}`;
+      await expect
+        .poll(() => browserConnected(data), { timeout: 20_000 })
+        .toBe(true);
       console.info("实际.app：壳已持有自有服务，开始公开安装与Task流程");
       const token = (
         await readFile(join(data, "local-access", "desktop-token"), "utf8")
@@ -231,9 +362,13 @@ it.skipIf(!enabled)(
         "-o",
         probe,
       ]);
-      fixture = spawn(probe, [], { stdio: ["pipe", "pipe", "pipe"] });
+      fixture = spawn(probe, ["--noisy-background"], {
+        stdio: ["pipe", "pipe", "pipe"],
+      });
       await once(fixture.stdout!, "data");
       model = await createDesktopModelServer(fixture.pid!, {
+        screenshotRecovery: true,
+        omitRole: true,
         beforeResponse: async (stage) => {
           if (stage === 0) {
             modelStarted();
@@ -245,6 +380,26 @@ it.skipIf(!enabled)(
         client: transport,
       });
       console.info("实际.app：原公开RPC已创建持久Task与模型配置");
+      const icon = await transport.request("/api/code-ui/rpc", {
+        connectionId: host.stream.ready.hello.connectionId,
+        service: "platform",
+        method: "getApplicationIcon",
+        args: [
+          {
+            locators: [{ kind: "darwin-bundle-id", value: "com.apple.finder" }],
+          },
+        ],
+      });
+      expect(icon.status, JSON.stringify(icon.body)).toBe(200);
+      const iconUrl = z
+        .string()
+        .startsWith("data:image/png;base64,")
+        .parse(icon.body.result.iconDataUrl);
+      const iconPng = PNG.sync.read(
+        Buffer.from(iconUrl.slice("data:image/png;base64,".length), "base64"),
+      );
+      expect([iconPng.width, iconPng.height]).toEqual([32, 32]);
+      console.info("实际.app：原RPC系统图标32×32已验证");
       const idle = protocol.conversationSnapshotSchema.parse(
         await host.snapshot(),
       );
@@ -296,6 +451,34 @@ it.skipIf(!enabled)(
           postEvents: "granted",
         },
       });
+      const coordinateShot = CallToolResultSchema.parse(
+        await mcp.callTool({
+          name: "screenshot",
+          arguments: { app: { pid: fixture.pid } },
+        }),
+      );
+      const coordinateImage = z
+        .object({ width: z.number(), height: z.number(), frameId: z.string() })
+        .parse(coordinateShot.structuredContent?.image);
+      expect(coordinateImage.width).toBeLessThan(840);
+      const clicked = await mcp.callTool({
+        name: "click",
+        arguments: {
+          app: { pid: fixture.pid },
+          target: {
+            type: "coordinate",
+            frameId: coordinateImage.frameId,
+            x: coordinateImage.width * 0.25,
+            y: coordinateImage.height * 0.32,
+          },
+        },
+      });
+      expect(clicked.isError).not.toBe(true);
+      const clickedState = await mcp.callTool({
+        name: "get_app_state",
+        arguments: { app: { pid: fixture.pid } },
+      });
+      expect(JSON.stringify(clickedState.content)).toContain("点击数：1");
       resumeModel();
       const currentHost = host;
       await expect
@@ -313,20 +496,41 @@ it.skipIf(!enabled)(
       const shot = final.rows.window.find(
         (row) =>
           row.kind === "toolCall" &&
-          row.toolName === `${CU_TOOL_PREFIX}screenshot`,
+          row.toolName === `${CU_TOOL_PREFIX}screenshot` &&
+          row.toolCallId.includes("desktop-model-4") &&
+          row.status === "success",
       );
       if (
         !shot ||
         shot.kind !== "toolCall" ||
         shot.output?.display?.kind !== "cua"
       )
-        throw new Error("实际.app原V4缺少真实CUA图片行");
+        throw new Error(
+          `实际.app原V4缺少真实CUA图片行：${JSON.stringify(final.rows.window.filter((row) => row.kind === "toolCall").map((row) => (row.kind === "toolCall" ? { tool: row.toolName, status: row.status, text: row.output?.text?.slice(0, 300) } : null)))}`,
+        );
       expect(
         shot.output.display.media?.some(
           (block) =>
             block.mimeType === "image/png" &&
             typeof block.data === "string" &&
             block.data.length > 0,
+        ),
+      ).toBe(true);
+      const preview = shot.output.display.media?.find(
+        (block) => typeof block.data === "string",
+      );
+      if (!preview?.data) throw new Error("超预算截图未提供完整预览");
+      expect(preview.data.length).toBeLessThanOrEqual(
+        AGENT_GOVERNANCE_DEFAULTS.computerUseScreenshotMaxBytes,
+      );
+      const decoded = PNG.sync.read(Buffer.from(preview.data, "base64"));
+      expect(decoded.width).toBeLessThan(840);
+      expect(
+        final.rows.window.some(
+          (row) =>
+            row.kind === "toolCall" &&
+            row.toolName === `${CU_TOOL_PREFIX}screenshot` &&
+            row.status === "error",
         ),
       ).toBe(true);
       expect(JSON.stringify(model.requests)).toContain(
@@ -341,7 +545,7 @@ it.skipIf(!enabled)(
         )
         .parse(model.requests.at(-1)?.messages);
       const observed = messages.find(
-        (message) => message.tool_call_id === "desktop-model-5",
+        (message) => message.tool_call_id === "desktop-model-6",
       );
       expect(JSON.stringify(observed?.content)).toContain("Task中文🙂🚀");
       expect(JSON.stringify(final).includes(token)).toBe(false);
@@ -415,7 +619,8 @@ it.skipIf(!enabled)(
           installedApp,
         ]);
       });
-      // 临时安装/数据与日志保留本机供失败审计；不覆盖或移除用户的数据。
+      development?.kill("SIGTERM");
+      // 仅保留隔离数据/日志用于失败审计，应用始终为同一个固定路径。
       console.info(`实际.app验收资源：${root}`);
     }
     if (failures.length)
@@ -428,29 +633,12 @@ it.skipIf(!enabled)(
 it.skipIf(!enabled)(
   "实际macOS.app在服务尚未就绪时退出也回收所属进程",
   async () => {
-    const root = await realpath(
-      await mkdtemp(join(tmpdir(), "kfw-cua-early-exit-")),
-    );
-    const app = join(root, "KenFutWork.app");
-    const source = fileURLToPath(
-      new URL(
-        "../../../../desktop/src-tauri/target/release/bundle/macos/KenFutWork.app/",
-        import.meta.url,
-      ),
-    );
-    await writeFile(
-      join(root, "验收所属.json"),
-      JSON.stringify({
-        purpose: "computer-use-app-early-exit",
-        root,
-      }),
-    );
-    await cp(source, app, {
-      recursive: true,
-      dereference: false,
-      verbatimSymlinks: true,
-      mode: constants.COPYFILE_FICLONE,
-    });
+    const evidenceDir = join(repo, ".kenfutwork-data");
+    await mkdir(evidenceDir, { recursive: true });
+    const root = await mkdtemp(join(evidenceDir, "computer-use-early-exit-"));
+    const app = fixedApp;
+    if (await ownedAppPid(join(app, "Contents/MacOS/kenfutwork-desktop")))
+      throw new Error("固定应用正在运行，拒绝接管已有进程。");
     const data = join(root, "数据");
     await mkdir(data);
     const executable = join(app, "Contents", "MacOS", "kenfutwork-desktop");
@@ -458,26 +646,19 @@ it.skipIf(!enabled)(
     let stoppedPid: number | undefined;
     try {
       await exec("codesign", ["--verify", "--deep", "--strict", app]);
-      await exec("open", ["-n", app, "--env", `KENFUTWORK_DATA_DIR=${data}`]);
+      launchFixedApp(data);
       await expect
         .poll(
           async () => {
             appPid = await ownedAppPid(executable);
             const { stdout } = await exec("ps", ["-ww", "-axo", "pid=,args="]);
-            const postgres =
-              join(
-                app,
-                "Contents",
-                "Resources",
-                "app",
-                "pg",
-                "bin",
-                "postgres",
-              ) + " ";
             const row = stdout
               .split("\n")
               .map((line) => line.trim().match(/^(\d+)\s+(.+)$/))
-              .find((entry) => entry?.[2]?.startsWith(postgres));
+              .find(
+                (entry) =>
+                  entry?.[2]?.includes(data) && /\/postgres\s/u.test(entry[2]),
+              );
             stoppedPid = row ? Number(row[1]) : undefined;
             return !!appPid && !!stoppedPid;
           },
@@ -486,7 +667,12 @@ it.skipIf(!enabled)(
         .toBe(true);
       if (!appPid || !stoppedPid) throw new Error("未启动本验收所属进程。");
       process.kill(stoppedPid, "SIGSTOP");
-      const log = await readFile(join(data, "desktop-shell.log"), "utf8");
+      const log = await readFile(join(data, "desktop-shell.log"), "utf8").catch(
+        (error) => {
+          if (error.code === "ENOENT") return ""; // 首条壳日志在就绪/失败时写，尚未就绪可以没有文件。
+          throw error;
+        },
+      );
       expect(log).not.toContain("服务端已拉起（pid ");
       process.kill(stoppedPid, "SIGCONT");
       stoppedPid = undefined;
@@ -526,6 +712,7 @@ it.skipIf(!enabled)(
         })
         .toEqual([]);
       await exec("codesign", ["--verify", "--deep", "--strict", app]);
+      development?.kill("SIGTERM");
       console.info(`实际.app早退验收资源：${root}`);
     }
   },

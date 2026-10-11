@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -38,10 +38,16 @@ export type MigrationFile = {
   path: string;
   sql: string;
   checksum: string;
+  retirement?: {
+    byVersion: string;
+    absentRelation: string;
+    presentRelation: string;
+  };
 };
 
 export type LedgerRecord = {
-  applied_at: string;
+  applied_at: string | null;
+  superseded_by?: string | null;
   checksum: string;
   name: string;
   version: string;
@@ -86,16 +92,49 @@ export function checksumSql(sql: string): string {
 }
 
 export function loadMigrationFiles(dir: string): MigrationFile[] {
+  const metadataPath = join(dir, "superseded.json");
+  const retirements: Record<
+    string,
+    NonNullable<MigrationFile["retirement"]>
+  > = existsSync(metadataPath)
+    ? JSON.parse(readFileSync(metadataPath, "utf8"))
+    : {};
+  for (const [version, rule] of Object.entries(retirements)) {
+    if (
+      !/^\d{14}$/.test(version) ||
+      !/^\d{14}$/.test(rule.byVersion) ||
+      rule.byVersion <= version ||
+      !/^[a-z_]+\.[a-z_]+$/.test(rule.absentRelation) ||
+      !/^[a-z_]+\.[a-z_]+$/.test(rule.presentRelation)
+    )
+      throw new MigrationError(
+        "迁移退役声明无效：必须声明版本和可核对的数据库关系。",
+      );
+  }
   const files = readdirSync(dir)
     .filter((entry) => entry.endsWith(".sql"))
     .map((fileName) => {
       const { name, version } = parseMigrationFileName(fileName);
       const path = join(dir, fileName);
       const sql = readFileSync(path, "utf8");
-      return { checksum: checksumSql(sql), name, path, sql, version };
+      return {
+        checksum: checksumSql(sql),
+        name,
+        path,
+        sql,
+        version,
+        ...(retirements[version] ? { retirement: retirements[version] } : {}),
+      };
     });
 
   files.sort((a, b) => a.version.localeCompare(b.version));
+  const versions = new Set(files.map((file) => file.version));
+  for (const [version, rule] of Object.entries(retirements)) {
+    if (!versions.has(version) || !versions.has(rule.byVersion))
+      throw new MigrationError(
+        "迁移退役声明引用了不存在的版本，保留数据并停止。",
+      );
+  }
 
   const seen = new Set<string>();
   for (const file of files) {
@@ -124,6 +163,13 @@ export async function ensureLedger(db: SqlQueryable): Promise<void> {
     execution_ms integer,
     applied_at timestamptz not null default now()
   )`);
+  await db.query(
+    `alter table ${LEDGER_TABLE} add column if not exists superseded_by text`,
+  );
+  // 退役不是执行，不能伪造applied_at；历史供给曾将该列设为NOT NULL。
+  await db.query(
+    `alter table ${LEDGER_TABLE} alter column applied_at drop not null`,
+  );
 }
 
 /**
@@ -145,7 +191,7 @@ export async function readLedgerIfExists(
 
 export async function readLedger(db: SqlQueryable): Promise<LedgerRecord[]> {
   const { rows } = await db.query<LedgerRecord>(
-    `select version, name, checksum, applied_at from ${LEDGER_TABLE} order by version`,
+    `select version, name, checksum, applied_at, to_jsonb(m)->>'superseded_by' as superseded_by from ${LEDGER_TABLE} m order by version`,
   );
   return rows;
 }
@@ -207,6 +253,20 @@ export function planMigrations(
   files: readonly MigrationFile[],
   ledger: readonly LedgerRecord[],
 ): MigrationPlan {
+  for (const recorded of ledger.filter((row) => row.superseded_by)) {
+    const rule = files.find(
+      (file) => file.version === recorded.version,
+    )?.retirement;
+    if (
+      rule?.byVersion !== recorded.superseded_by ||
+      !ledger.some(
+        (row) => row.version === recorded.superseded_by && !row.superseded_by,
+      )
+    )
+      throw new MigrationError(
+        "迁移退役账本与当前声明或已执行版本不一致，保留数据并停止。",
+      );
+  }
   const recordedByVersion = new Map(ledger.map((row) => [row.version, row]));
   const fileVersions = new Set(files.map((file) => file.version));
 
@@ -245,7 +305,7 @@ export async function assertNoDrift(
       .map(({ file }) => `${file.version}_${file.name}`)
       .join("\n  ");
     throw new MigrationError(
-      `已执行的迁移被改动（校验和不匹配），必须改用新增的前向修复迁移：\n  ${detail}`,
+      `账本记录的迁移被改动（校验和不匹配），必须改用新增的前向修复迁移：\n  ${detail}`,
     );
   }
 
@@ -303,19 +363,50 @@ export async function applyMigrations(
     /** 注入时钟，便于测试；默认 `Date.now`。 */
     now?: () => number;
     onApplied?: (file: MigrationFile) => void;
+    onSuperseded?: (file: MigrationFile, byVersion: string) => void;
   } = {},
-): Promise<{ applied: string[] }> {
+): Promise<{ applied: string[]; superseded: string[] }> {
   const now = options.now ?? (() => Date.now());
 
   await ensureLedger(db);
   const plan = await assertNoDrift(db, files);
   const applied: string[] = [];
+  const superseded: string[] = [];
+  const ledger = await readLedger(db);
 
   for (const file of plan.pending) {
     const startedAt = now();
     // 一条迁移一个事务：中途失败整条回滚，不留半个迁移
     await db.query("begin");
     try {
+      const retirement = file.retirement;
+      if (
+        retirement &&
+        ledger.some(
+          (entry) =>
+            entry.version === retirement.byVersion && !entry.superseded_by,
+        )
+      ) {
+        const { rows } = await db.query<{
+          old_relation: string | null;
+          new_relation: string | null;
+        }>(
+          "select to_regclass($1)::text as old_relation, to_regclass($2)::text as new_relation",
+          [retirement.absentRelation, retirement.presentRelation],
+        );
+        if (rows[0]?.old_relation || !rows[0]?.new_relation)
+          throw new MigrationError(
+            "已执行退役迁移，但数据库关系不能证明退役状态；保留数据并停止。",
+          );
+        await db.query(
+          `insert into ${LEDGER_TABLE} (version, name, checksum, applied_at, superseded_by) values ($1, $2, $3, null, $4)`,
+          [file.version, file.name, file.checksum, retirement.byVersion],
+        );
+        await db.query("commit");
+        superseded.push(file.version);
+        options.onSuperseded?.(file, retirement.byVersion);
+        continue;
+      }
       await db.query(file.sql);
       await recordApplied(db, file, now() - startedAt);
       await db.query("commit");
@@ -331,5 +422,5 @@ export async function applyMigrations(
     options.onApplied?.(file);
   }
 
-  return { applied };
+  return { applied, superseded };
 }

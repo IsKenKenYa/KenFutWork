@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { composePlugins } from "../../kernel/compose.js";
 import type { ToolRegistry } from "../../kernel/types.js";
+import { createPluginInventoryFixture } from "../code-ui/plugins.test-fixture.js";
 import { createConsumerLocalAccessService } from "../local-access/test-consumer-service.js";
 import { createLocalInstanceService } from "../local-instance/service.js";
 import { createSkillsPlugin } from "./plugin.js";
@@ -11,7 +12,9 @@ import {
   type SkillCatalogEntry,
 } from "./skill-catalog-service.js";
 
-afterEach(() => {
+const pluginCleanups: Array<() => Promise<void>> = [];
+afterEach(async () => {
+  for (const release of pluginCleanups.splice(0)) await release();
   vi.restoreAllMocks();
 });
 
@@ -193,11 +196,13 @@ describe("skill 目录服务（SKILL.md 发现缝）", () => {
 });
 
 describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
-  function kernelWithSkillsPlugin(
+  async function kernelWithSkillsPlugin(
     options: Parameters<typeof fakePersistence>[0] = {},
   ) {
     const app = Fastify({ logger: false });
     const persistence = fakePersistence(options);
+    const inventory = await createPluginInventoryFixture();
+    pluginCleanups.push(inventory.dispose);
     const kernel = composePlugins(
       {
         agentBackendMode: "state" as const,
@@ -206,7 +211,16 @@ describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
         version: "t",
         webOrigin: "http://x",
       },
-      [createSkillsPlugin()],
+      [
+        createSkillsPlugin(),
+        {
+          name: "late-package-registry",
+          inject: [],
+          apply(ctx) {
+            ctx.register("plugins", () => inventory.registry);
+          },
+        },
+      ],
       {
         app,
         overrides: {
@@ -233,7 +247,7 @@ describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
   }
 
   it("注册 list_skills / use_skill（shared scope）并按执行上下文的实例取数", async () => {
-    const { kernel, persistence } = kernelWithSkillsPlugin();
+    const { kernel, persistence } = await kernelWithSkillsPlugin();
     const tools: ToolRegistry = kernel.get("tools");
     expect(tools.get("list_skills")?.scope).toBe("shared");
     expect(tools.get("use_skill")?.scope).toBe("shared");
@@ -266,7 +280,7 @@ describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
   });
 
   it("缺少实例上下文时明示原因，不再静默返回空", async () => {
-    const { kernel, persistence } = kernelWithSkillsPlugin();
+    const { kernel, persistence } = await kernelWithSkillsPlugin();
     const tools: ToolRegistry = kernel.get("tools");
 
     await expect(tools.execute("list_skills", {}, {})).rejects.toThrow(/可信/);
@@ -278,7 +292,7 @@ describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
   });
 
   it("use_skill 缺 name 参数即报错", async () => {
-    const { kernel } = kernelWithSkillsPlugin();
+    const { kernel } = await kernelWithSkillsPlugin();
     await expect(
       kernel.get("tools").execute("use_skill", {}, { instanceId: "ws-1" }),
     ).rejects.toThrow(/name/);
@@ -286,7 +300,7 @@ describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
   });
 
   it("原use_skill消费真实DB附属资源，路径与可信Task实例均核对", async () => {
-    const { kernel, persistence } = kernelWithSkillsPlugin({
+    const { kernel, persistence } = await kernelWithSkillsPlugin({
       readFiles: () => [
         {
           skill_id: "s1",
@@ -366,7 +380,7 @@ describe("skills 插件向 ctx.tools 贡献工具（P5 缝）", () => {
     for (const uninstall of [false, true]) {
       let installed = true;
       let enabled = true;
-      const { kernel } = kernelWithSkillsPlugin({
+      const { kernel } = await kernelWithSkillsPlugin({
         listRows: () => {
           const row = rawSkillRows[0];
           if (!row) throw new Error("技能fixture缺少启用行。");

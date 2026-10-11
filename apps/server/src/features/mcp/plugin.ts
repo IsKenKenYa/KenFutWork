@@ -1,8 +1,10 @@
 import type { ServerEnv } from "../../config/env.js";
 import { registerMcpRoutes } from "../../http/mcp.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
 import type { ComputerUseMcpSource } from "../computer-use/mcp-backend.js";
 import { projectWorkDirLoaderFor } from "../projects/work-dir.js";
+import { createCodeUiMcpHost } from "./code-ui-host.js";
 import { createCreateMcpServerTool } from "./create-mcp-server-tool.js";
 import { createMcpService, type McpService } from "./mcp-service.js";
 import { createMcpServerStore } from "./server-store.js";
@@ -98,6 +100,18 @@ export function createMcpPlugin(): PluginDefinition {
     mounted(ctx) {
       if (!service) {
         throw new Error("[mcp] service 未初始化（apply 未执行）。");
+      }
+      for (const [id, value] of Object.entries(
+        createCodeUiMcpHost({
+          service,
+          localInstance: ctx.get("localInstance"),
+        }),
+      )) {
+        ctx.effect(() =>
+          ctx
+            .get("capabilities")
+            .register(CODE_UI_HOST_RPC_CAPABILITY, { id, value }),
+        );
       }
       // 创造模式的第三种产物：把工作目录里的 MCP server 脚本注册成本实例的工具源。
       // 注册放 mounted（不是 apply）：apply 期 ctx.get 只解析得到「更早 apply 的插件」的

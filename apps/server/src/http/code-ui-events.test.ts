@@ -148,6 +148,36 @@ async function fixture(browser = false, realController = false) {
 }
 
 describe("Code事件流本机撤权", () => {
+  it("闲置回环HTTP以SSE注释保活，浏览器授权过期后自动结束流", async () => {
+    const data = await fixture(true);
+    const abort = new AbortController();
+    try {
+      const address = await data.app.listen({ host: "127.0.0.1", port: 0 });
+      const response = await fetch(`${address}/api/code-ui/events`, {
+        headers: data.headers,
+        signal: AbortSignal.any([abort.signal, AbortSignal.timeout(12_000)]),
+      });
+      if (!response.body) throw new Error("事件流缺少响应体");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let received = "";
+      while (!received.includes(": keepalive\n\n")) {
+        const part = await reader.read();
+        expect(part.done).toBe(false);
+        received += decoder.decode(part.value, { stream: true });
+      }
+      expect(received).toContain('"event":"ready"');
+      expect(received.match(/: keepalive\n\n/g)).toHaveLength(1);
+      data.advance(60_000);
+      expect((await reader.read()).done).toBe(true);
+      expect(data.dispose).toHaveBeenCalledTimes(1);
+      expect(data.listeners.size).toBe(0);
+    } finally {
+      abort.abort();
+      await data.close();
+    }
+  }, 15_000);
+
   it("对应accessClientId撤销后真实结束响应并dispose，其它客户端不受影响", async () => {
     const data = await fixture();
     try {

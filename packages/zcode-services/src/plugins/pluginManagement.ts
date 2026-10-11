@@ -45,6 +45,9 @@ import type {
 } from "../zcode-agent/zcodeAgentPluginParams.js";
 
 export interface IPluginManagementService {
+  /** 宿主来源边界：结果按宿主公共契约解析，原市场源操作不混作安装。 */
+  inspectPluginSource?(params: { url: string; ref?: string }): Promise<unknown>;
+  installPluginFromSource?(params: { url: string; ref?: string; allowLifecycleScripts?: false }): Promise<unknown>;
   listPlugins(params: ZCodeAgentPluginViewParams): Promise<ZCodePluginsListResult>;
   /**
    * Plugin 对话引用 catalog：

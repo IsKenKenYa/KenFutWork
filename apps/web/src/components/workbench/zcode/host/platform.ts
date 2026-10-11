@@ -1,22 +1,123 @@
-import type { IPlatformService } from "@zcode/shared";
+import {
+  type ManagementTarget,
+  type PluginMarketEntry,
+  projectPluginPanels,
+} from "@kenfutwork/shared";
+import type {
+  ApplicationIconInfo,
+  HostWorkbenchNavigation,
+  IPlatformService,
+} from "@zcode/shared";
+import {
+  createCuaPermissionOnboarding,
+  localCuaDesktopInvoke,
+} from "./cuaPermissionPlatform.js";
+import { createMacDesktopChrome } from "./desktopChrome.js";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
+import { readManagementSettingsTarget } from "./managementNavigation.js";
+import { openPluginPanel } from "./parentBridge.js";
 import { createWebPlatform } from "./upstream/browserPlatform.js";
 
 /** e58fe8ce宿主能力缝；目录仍经真实Project UUID解析，不建立Canvas或隐式Task。 */
 export function createCodePlatform(
   client: CodeHttpChannelClient,
+  options: {
+    onOpenManagement?: (target: ManagementTarget) => void;
+    workbenchNavigation?: HostWorkbenchNavigation;
+  } = {},
 ): IPlatformService {
+  const desktop = localCuaDesktopInvoke();
+  const macDesktop =
+    desktop &&
+    /Macintosh|Mac OS X/u.test(navigator.userAgent) &&
+    !/iPhone|iPad/u.test(navigator.userAgent);
   return {
     ...createWebPlatform(),
+    ...createMacDesktopChrome(),
+    ...(options.workbenchNavigation
+      ? {
+          workbenchNavigation: options.workbenchNavigation,
+          supportsInterfaceModeSettings: false,
+        }
+      : {}),
+    ...(options.onOpenManagement
+      ? {
+          openSettingsDocument: () =>
+            options.onOpenManagement?.(readManagementSettingsTarget()),
+          openPluginStoreDocument: (target: {
+            pluginId?: string;
+            intent?: "add-marketplace";
+            returnScopeKey?: string;
+          }) =>
+            options.onOpenManagement?.({
+              ...target,
+              page: "plugins",
+              returnScopeKey: "user",
+            }),
+        }
+      : {}),
     supportsCloudAccounts: false,
     supportsAutomations: false,
     supportsEmbeddedBrowser: false,
-    supportsComputerUse: false,
+    supportsComputerUse: Boolean(macDesktop),
+    ...(macDesktop
+      ? {
+          ...createCuaPermissionOnboarding(desktop),
+          executeDesktopCommand: async (command: string) => {
+            if (command === "getCuaOsSupport") return { kind: "supported" };
+            throw new Error("当前桌面宿主未提供该操作。");
+          },
+        }
+      : {}),
     supportsRemoteWorkspaces: false,
     supportsUserOnboarding: false,
     supportsSettingsImport: false,
+    supportsExternalAgentSettingsSync: false,
     supportsAppRuntimePreferences: false,
     sessionMetadataSource: "task-index",
+    getApplicationIcon: (request) =>
+      client
+        .getChannel("platform")
+        .call<ApplicationIconInfo | null>("getApplicationIcon", [request]),
+    resolvePluginIcon: (resource) => client.resolvePluginIcon(resource),
+    pluginManagementCapabilities: {
+      sourceInstall: true,
+      marketplaceSources: false,
+      instanceScope: true,
+    },
+    skillsSettingsCapabilities: { databaseRecords: true },
+    mcpSettingsCapabilities: {
+      databaseRecords: true,
+      projectScope: false,
+      oauth: false,
+      httpHeaders: false,
+      serverParameters: false,
+      sse: false,
+    },
+    loadMcpFromUserDirectory: (input) =>
+      client.services.mcpSyncService.loadMcpFromUserDirectory(input),
+    saveMcpToUserDirectory: async (input) => {
+      await client.services.mcpSyncService.saveMcpToUserDirectory(input);
+      return { success: true };
+    },
+    migrateLegacyCommonMcp: () => Promise.reject(new Error("旧MCP数据不迁移")),
+    pluginSidebar: {
+      read: async () =>
+        projectPluginPanels(
+          (
+            await client.request<{ plugins: PluginMarketEntry[] }>(
+              "/api/plugins",
+            )
+          ).plugins,
+          "sidebar",
+          "code",
+        ),
+      subscribe: (handler) => {
+        const subscription = client.onPluginInventoryChanged(handler);
+        return () => subscription.dispose();
+      },
+      open: (entry) => openPluginPanel(entry.pluginId, entry.entryId),
+    },
     async activateOrSetWorkspace(path) {
       const workspace = await client.openWorkspace(
         path,

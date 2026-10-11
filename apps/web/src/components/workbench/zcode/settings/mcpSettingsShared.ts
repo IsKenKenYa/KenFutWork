@@ -13,6 +13,8 @@ export interface FormState {
   type: "stdio" | "http" | "sse" | "streamableHttp";
   command: string;
   args: string;
+  /** 结构化参数未被用户改动时原样传递，避免显示文本丢失空格或空参数。 */
+  originalArgs?: string[];
   env: string;
   url: string;
   headers: string;
@@ -59,6 +61,7 @@ export function serverToForm(server: ZCodeMcpServer): FormState {
     type,
     command: cfg.command ?? "",
     args: (cfg.args ?? []).join(" "),
+    originalArgs: cfg.args ? [...cfg.args] : [],
     env: cfg.env ? JSON.stringify(cfg.env, null, 2) : "",
     url: cfg.url ?? "",
     headers: cfg.headers ? JSON.stringify(cfg.headers, null, 2) : "",
@@ -73,19 +76,24 @@ export function serverToForm(server: ZCodeMcpServer): FormState {
 export function formToConfig(form: FormState): McpServerConfig {
   const timeoutMs = parseTimeoutMs(form.timeoutMs);
   if (form.type === "stdio") {
-    let env: Record<string, string> | undefined;
+    let env: Record<string, string> = {};
     if (form.env.trim()) {
       try {
-        env = JSON.parse(form.env) as Record<string, string>;
+        const parsed: unknown = JSON.parse(form.env);
+        if (!isRecord(parsed) || Object.values(parsed).some((value) => typeof value !== "string"))
+          throw new Error("环境变量格式错误");
+        env = parsed as Record<string, string>;
       } catch {
-        // ignore invalid json until save validation
+        throw new Error("环境变量格式错误");
       }
     }
 
     return {
       type: "stdio",
       command: form.command,
-      args: form.args.trim() ? form.args.trim().split(/\s+/) : [],
+      args: form.originalArgs && form.args === form.originalArgs.join(" ")
+        ? [...form.originalArgs]
+        : form.args.trim() ? form.args.trim().split(/\s+/) : [],
       env,
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
       ...(form.protocolVersion
@@ -191,6 +199,7 @@ export function jsonDraftToForm(jsonText: string, fallback: FormState): FormStat
     type: normalizedType,
     command: normalizedConfig.command ?? "",
     args: Array.isArray(normalizedConfig.args) ? normalizedConfig.args.join(" ") : "",
+    originalArgs: Array.isArray(normalizedConfig.args) ? [...normalizedConfig.args] : [],
     env: normalizedConfig.env ? JSON.stringify(normalizedConfig.env, null, 2) : "",
     url: normalizedConfig.url ?? "",
     headers: normalizedConfig.headers ? JSON.stringify(normalizedConfig.headers, null, 2) : "",

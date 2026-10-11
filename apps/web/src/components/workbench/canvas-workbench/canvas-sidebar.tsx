@@ -1,7 +1,8 @@
 "use client";
+import type { ManagementTarget } from "@kenfutwork/shared";
+import { WorkbenchModeNavigation } from "@zcode/ui/design-shared";
 import {
   Blocks,
-  Code2,
   Cpu,
   Layers,
   ListChecks,
@@ -25,15 +26,15 @@ import type { useDesignProjects } from "./use-design-projects";
 
 type Props = ReturnType<typeof useDesignProjects> & {
   mode: "design" | "flow";
+  active: boolean;
+  desktopTitlebar?: boolean;
   switchMode: (mode: WorkbenchMode) => void;
   sidebarWidth: number;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: Dispatch<SetStateAction<boolean>>;
   startSidebarResize: (event: MouseEvent) => void;
   setSettingsTab: Dispatch<SetStateAction<SettingsTab | null>>;
-  setPluginsOpen: Dispatch<SetStateAction<boolean>>;
-  setSkillsOpen: Dispatch<SetStateAction<boolean>>;
-  setMcpOpen: Dispatch<SetStateAction<boolean>>;
+  onOpenManagement: (target: ManagementTarget) => void;
   flowEntry: FlowEntry | null;
   flowFrameRef: RefObject<FlowCanvasFrameHandle | null>;
   /** Flow 子视图：「引擎」是侧栏导航的显式目的地（信息页），其余项回画布。 */
@@ -54,11 +55,11 @@ export function CanvasSidebar({
   setSidebarCollapsed,
   startSidebarResize,
   mode,
+  active,
+  desktopTitlebar = false,
   switchMode,
   setSettingsTab,
-  setPluginsOpen,
-  setSkillsOpen,
-  setMcpOpen,
+  onOpenManagement,
   flowEntry,
   flowFrameRef,
   flowView,
@@ -67,50 +68,33 @@ export function CanvasSidebar({
   const availableModes: WorkbenchMode[] = flowEntry?.available
     ? ["code", "design", "flow"]
     : ["code", "design"];
-  const modeItems = availableModes.map((id) => ({
-    id,
-    label: id === "code" ? "Code" : id === "design" ? "Design" : "Flow",
-    icon:
-      id === "code" ? (
-        <Code2 className="h-4 w-4 shrink-0" />
-      ) : id === "design" ? (
-        <Palette className="h-4 w-4 shrink-0" />
-      ) : (
-        <Workflow className="h-4 w-4 shrink-0" />
-      ),
-  }));
   return (
     <>
       {sidebarCollapsed /* 收起态：图标栏（模式切换 + 插件 + 底部头像） */ ? (
         <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r bg-card py-2">
           <KenFutWorkLogo className="mb-1 size-7 shrink-0" />
-          <button
-            type="button"
-            aria-label="展开侧栏"
-            onClick={() => setSidebarCollapsed(false)}
-            className="rounded-md p-2 hover:bg-muted"
-          >
-            <PanelLeftOpen className="h-4 w-4" />
-          </button>
-          <div className="my-1 w-6 border-t" />
-          {modeItems.map((item) => (
+          {!desktopTitlebar ? (
             <button
-              key={item.id}
               type="button"
-              title={item.label}
-              aria-label={item.label}
-              data-active={mode === item.id}
-              onClick={() => switchMode(item.id)}
-              className="rounded-md p-2 hover:bg-muted data-[active=true]:bg-muted data-[active=true]:text-foreground data-[active=false]:text-muted-foreground"
+              aria-label="展开侧栏"
+              onClick={() => setSidebarCollapsed(false)}
+              className="rounded-md p-2 hover:bg-muted"
             >
-              {item.icon}
+              <PanelLeftOpen className="h-4 w-4" />
             </button>
-          ))}
+          ) : null}
+          <div className="my-1 w-6 border-t" />
+          <WorkbenchModeNavigation
+            mode={mode}
+            availableModes={availableModes}
+            onModeChange={switchMode}
+            collapsed
+          />
           <button
             type="button"
             title="插件"
             aria-label="插件"
-            onClick={() => setPluginsOpen(true)}
+            onClick={() => onOpenManagement({ page: "plugins" })}
             className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <Layers className="h-4 w-4" />
@@ -151,63 +135,51 @@ export function CanvasSidebar({
                 KenFutWork
               </span>
             </span>
-            <button
-              type="button"
-              aria-label="收起侧栏"
-              onClick={() => setSidebarCollapsed(true)}
-              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <PanelLeftClose className="h-4 w-4" />
-            </button>
+            {!desktopTitlebar ? (
+              <button
+                type="button"
+                aria-label="收起侧栏"
+                onClick={() => setSidebarCollapsed(true)}
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <PanelLeftClose className="h-4 w-4" />
+              </button>
+            ) : null}
           </div>
 
           {/* 模式切换（开关式：一个分段控件内左右切换 Code / Design / Flow）。
               三段并存时每段只有 ~60px：内边距收到最小、文字 13px、超宽截断，
               否则最后一个（Flow）会被挤变形。 */}
-          <div className="px-2 pt-1 pb-0.5">
-            <div
-              role="radiogroup"
-              aria-label="模式切换"
-              className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5"
-            >
-              {modeItems.map((item) => (
-                // biome-ignore lint/a11y/useSemanticElements: 分段控件用的是 radiogroup/radio 模式（原生 radio 无法承载这套样式与布局）
-                <button
-                  key={item.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={mode === item.id}
-                  data-active={mode === item.id}
-                  onClick={() => switchMode(item.id)}
-                  className="flex min-h-[30px] min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-1.5 text-[13px] whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:text-foreground data-[active=true]:shadow-sm"
-                >
-                  {item.icon}
-                  <span className="truncate">{item.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          <WorkbenchModeNavigation
+            mode={mode}
+            availableModes={availableModes}
+            onModeChange={switchMode}
+          />
 
           <div className="mx-3 my-2 border-t" />
 
           <nav className="space-y-0.5 px-2">
             <button
               type="button"
-              onClick={() => setPluginsOpen(true)}
+              onClick={() => onOpenManagement({ page: "plugins" })}
               className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <Layers className="h-4 w-4 shrink-0" /> 插件
             </button>
             <button
               type="button"
-              onClick={() => setSkillsOpen(true)}
+              onClick={() =>
+                onOpenManagement({ page: "settings", section: "skill" })
+              }
               className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <Blocks className="h-4 w-4 shrink-0" /> 技能
             </button>
             <button
               type="button"
-              onClick={() => setMcpOpen(true)}
+              onClick={() =>
+                onOpenManagement({ page: "settings", section: "mcp" })
+              }
               className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               {/* Server 而不是 Plug：插头字形天生窄（墨迹只占格子 58%），居中也会显得缩在
@@ -218,6 +190,8 @@ export function CanvasSidebar({
             <PluginPanelButtons
               accessToken={null}
               slot="sidebar"
+              mode={mode}
+              workspaceActive={active}
               renderButton={(panel, open) => (
                 <button
                   key={panel.id}

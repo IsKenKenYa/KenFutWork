@@ -9,8 +9,10 @@ import {
 import { registerPluginRoutes } from "../../http/plugins.js";
 import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
 import { createCanvasRepository } from "../canvas/repository.js";
+import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
 import { projectWorkDirLoaderFor } from "../projects/work-dir.js";
 import { type BundleFiles, buildBundleManifest } from "./bundle-manifest.js";
+import { createCodeUiPluginSourceHost } from "./code-ui-host.js";
 import { CompatLoadError } from "./compat-context.js";
 import { validateBundleFiles } from "./compat-validator.js";
 import { createInstallPluginTool } from "./install-plugin-tool.js";
@@ -152,7 +154,7 @@ export function loadBundledBundles(
         continue;
       }
       out.push({
-        id: `local__${manifest.name}`,
+        id: `bundled__${manifest.name}`,
         name: manifest.name,
         files,
         manifest,
@@ -255,6 +257,18 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
     },
     mounted(ctx) {
       const registry = ctx.get("plugins");
+      for (const [id, value] of Object.entries(
+        createCodeUiPluginSourceHost({
+          registry,
+          localInstance: ctx.get("localInstance"),
+        }),
+      )) {
+        ctx.effect(() =>
+          ctx
+            .get("capabilities")
+            .register(CODE_UI_HOST_RPC_CAPABILITY, { id, value }),
+        );
+      }
       // 从已授权工作目录安装；实例归属、安装检查与执行审批在消费方保持有效。
       ctx.get("tools").register(
         createInstallPluginTool({

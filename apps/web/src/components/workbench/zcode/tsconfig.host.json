@@ -6,7 +6,8 @@
     "outDir": "dist-host",
     "rootDir": "host",
     "paths": {
-      "@zui/*": ["./dist-types/*"]
+      "@zui/*": ["./dist-types/*"],
+      "@zui-original/*": ["./dist-types/*"]
     }
   },
   "include": ["host/**/*.ts", "host/**/*.tsx"],

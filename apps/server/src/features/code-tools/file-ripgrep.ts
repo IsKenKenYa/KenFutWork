@@ -6,23 +6,6 @@ import { createRequire } from "node:module";
 import type { ScopedFilesystemScope } from "../execution/scoped-filesystem.js";
 import type { FileLimits, GrepPageInput } from "./file-types.js";
 
-/**
- * 懒加载 `@vscode/ripgrep`（**不能在模块顶层静态 import**）。
- *
- * 与 node-pty / @napi-rs/canvas 同一套：随包分发时它是 external，必须在运行时从
- * `<exe>/node_modules/` 解析；顶层静态 import 会被换成 SEA 的内建 require（只认内置
- * 模块），**加载期**就抛 `ERR_UNKNOWN_BUILTIN_MODULE` 把整个服务端拖死
- * （2026-10-09 打包冒烟实测：装好的桌面端起不来）。
- */
-let cachedRgPath: string | undefined;
-
-function rgBinary(): string {
-  cachedRgPath ??= (
-    createRequire(import.meta.url)("@vscode/ripgrep") as { rgPath: string }
-  ).rgPath;
-  return cachedRgPath;
-}
-
 export interface RipgrepRow {
   type: string;
   data?: {
@@ -38,6 +21,31 @@ export interface RipgrepOutput {
   hasMatch?: boolean;
 }
 class BinarySkipped extends Error {}
+
+/**
+ * `@vscode/ripgrep` 是 esbuild `--external` 的外部包：Windows 打包走 Node SEA，
+ * SEA 内的 `require` 只认内建模块，顶层静态 import 会让服务端在**启动期**就抛
+ * `ERR_UNKNOWN_BUILTIN_MODULE`（与 canvas 同一事故口径）。故首次真正搜索时才按入口
+ * 文件位置解析——打包态落在 `<exeDir>/node_modules/@vscode/ripgrep`。
+ */
+let ripgrepPath: string | undefined;
+
+function ripgrepBinary(): string {
+  if (ripgrepPath) return ripgrepPath;
+  try {
+    const loaded = createRequire(import.meta.url)("@vscode/ripgrep") as {
+      rgPath: string;
+    };
+    ripgrepPath = loaded.rgPath;
+  } catch (error) {
+    throw new Error(
+      `搜索不可用：缺少 ripgrep 运行时（${
+        error instanceof Error ? error.message : String(error)
+      }）`,
+    );
+  }
+  return ripgrepPath;
+}
 let fileTypes: Promise<Map<string, string[]>> | undefined;
 
 export async function matchesFileType(
@@ -48,7 +56,7 @@ export async function matchesFileType(
   if (!fileTypes)
     fileTypes = new Promise((resolve, reject) => {
       execFile(
-        rgBinary(),
+        ripgrepBinary(),
         ["--type-list"],
         {
           maxBuffer: limits.codeReadMaxBytes,
@@ -227,7 +235,7 @@ export async function runRipgrep(
   let exited: Promise<void> = Promise.resolve();
   const result = new Promise<RipgrepOutput>((resolve, reject) => {
     const child = execFile(
-      rgBinary(),
+      ripgrepBinary(),
       args,
       {
         maxBuffer: maxBytes,

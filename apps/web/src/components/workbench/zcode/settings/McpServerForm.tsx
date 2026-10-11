@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@zui/components/ui/select.js";
+import { usePlatform } from "@zui/hooks/usePlatform.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { PluginScopeMenu } from "@zui/settings/PluginScopeMenu.js";
 import type { WorkspaceTabState } from "@zui/store/tabStore.js";
@@ -24,7 +25,7 @@ import {
   type McpEditorMode,
 } from "./mcpSettingsShared.js";
 
-function McpFormFieldLabel({ children }: { children: string }) {
+function McpFormFieldLabel({ children }: { children: import("react").ReactNode }) {
   return (
     <label className="mb-1 block text-ui-base font-medium text-foreground-subtle">{children}</label>
   );
@@ -78,11 +79,12 @@ export function McpServerForm({
   workspaceTabs: WorkspaceTabState[];
   onScopeKeyChange: (scopeKey: string) => void;
   onEditorModeChange: (mode: McpEditorMode) => void;
-  onSave: (form: FormState, prevServer?: ZCodeMcpServer) => void;
+  onSave: (form: FormState, prevServer?: ZCodeMcpServer) => void | Promise<void>;
   onCancel: () => void;
-  onDelete?: (server: ZCodeMcpServer) => void;
+  onDelete?: (server: ZCodeMcpServer) => void | Promise<void>;
 }) {
   const { intl } = useZCodeIntl();
+  const capabilities = usePlatform().mcpSettingsCapabilities;
   const initialForm: FormState = initial
     ? serverToForm(initial)
     : {
@@ -92,6 +94,9 @@ export function McpServerForm({
   const [form, setForm] = useState<FormState>(initialForm);
   const [jsonDraft, setJsonDraft] = useState<string>(() => formToJsonDraft(initialForm));
   const [jsonError, setJsonError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const submitting = useRef(false);
   const [showEnv, setShowEnv] = useState(false);
   const formRef = useRef(form);
   const jsonDraftRef = useRef(jsonDraft);
@@ -111,19 +116,16 @@ export function McpServerForm({
       return;
     }
 
-    if (editorMode === "json") {
-      setJsonDraft(formToJsonDraft(formRef.current));
-      setJsonError(null);
-      previousEditorModeRef.current = editorMode;
-      return;
-    }
-
     try {
-      const parsedForm = jsonDraftToForm(jsonDraftRef.current, formRef.current);
-      setForm(parsedForm);
+      if (editorMode === "json") {
+        setJsonDraft(formToJsonDraft(formRef.current));
+      } else {
+        setForm(jsonDraftToForm(jsonDraftRef.current, formRef.current));
+      }
       setJsonError(null);
       previousEditorModeRef.current = editorMode;
     } catch (error) {
+      setSaveError(error instanceof Error ? error.message : intl.formatMessage({ id: "settings.mcp.form.jsonParseError" }));
       setJsonError(
         error instanceof Error
           ? error.message
@@ -143,25 +145,39 @@ export function McpServerForm({
     });
   }
 
-  function handleSaveClick() {
-    if (editorMode === "json") {
-      try {
+  function configurationUnavailable(next: FormState) {
+    return Boolean(
+      (capabilities?.projectScope === false && next.storageLevel === "workspace") ||
+      (capabilities?.oauth === false && next.oauth?.trim()) ||
+      (capabilities?.httpHeaders === false && next.headers.trim()) ||
+      (capabilities?.serverParameters === false && (next.timeoutMs.trim() || (next.protocolVersion && next.protocolVersion !== "auto"))) ||
+      (capabilities?.sse === false && next.type === "sse")
+    );
+  }
+  const currentForm = (() => {
+    try { return editorMode === "json" ? jsonDraftToForm(jsonDraft, form) : form; }
+    catch { return form; }
+  })();
+  const unavailable = configurationUnavailable(currentForm);
+
+  async function handleSaveClick() {
+    if (submitting.current || unavailable) return;
+    submitting.current = true;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      if (editorMode === "json") {
         const parsedForm = jsonDraftToForm(jsonDraft, form);
         setForm(parsedForm);
         setJsonError(null);
-
-        onSave(parsedForm, initial);
-      } catch (error) {
-        setJsonError(
-          error instanceof Error
-            ? error.message
-            : intl.formatMessage({ id: "settings.mcp.form.jsonParseError" }),
-        );
-      }
-      return;
+        await onSave(parsedForm, initial);
+      } else await onSave(form, initial);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : intl.formatMessage({ id: "settings.mcp.form.jsonParseError" }));
+    } finally {
+      submitting.current = false;
+      setSaving(false);
     }
-
-    onSave(form, initial);
   }
 
   const canSave = (() => {
@@ -199,7 +215,7 @@ export function McpServerForm({
     update({ protocolVersion: value === "auto" ? "" : value });
   const scopeSelect = (
     <McpScopeMenu
-      disabled={!!initial}
+      disabled={!!initial || capabilities?.projectScope === false}
       scopeKey={scopeKey}
       workspaceTabs={workspaceTabs}
       onChange={(nextScopeKey) => {
@@ -282,8 +298,9 @@ export function McpServerForm({
                   Streamable HTTP 传输类型未启用。
                   <SelectItem value="streamableHttp">Streamable HTTP</SelectItem>
                 */}
-                <SelectItem value="sse">
+                <SelectItem value="sse" disabled={capabilities?.sse === false}>
                   {intl.formatMessage({ id: "settings.mcp.form.type.sse" })}
+                  {capabilities?.sse === false ? " · 未接入" : null}
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -292,6 +309,7 @@ export function McpServerForm({
           <div className="w-full space-y-1.5 md:w-48">
             <McpFormFieldLabel>
               {intl.formatMessage({ id: "settings.mcp.form.timeoutMs" })}
+              {capabilities?.serverParameters === false ? " · 未接入" : null}
             </McpFormFieldLabel>
             <Input
               size="lg"
@@ -299,6 +317,7 @@ export function McpServerForm({
               min={1}
               inputMode="numeric"
               placeholder="30000"
+              disabled={capabilities?.serverParameters === false}
               value={form.timeoutMs}
               onChange={(e) => update({ timeoutMs: e.target.value })}
             />
@@ -313,7 +332,7 @@ export function McpServerForm({
               <McpFormFieldLabel>
                 {intl.formatMessage({ id: "settings.mcp.form.protocolVersion" })}
               </McpFormFieldLabel>
-              <Select value={form.protocolVersion || "auto"} onValueChange={updateProtocolVersion}>
+              <Select disabled={capabilities?.serverParameters === false} value={form.protocolVersion || "auto"} onValueChange={updateProtocolVersion}>
                 <SelectTrigger size="lg" className="w-48">
                   <SelectValue />
                 </SelectTrigger>
@@ -374,10 +393,12 @@ export function McpServerForm({
             <button
               type="button"
               className="flex items-center gap-1 text-ui-base text-foreground-subtle hover:text-foreground"
+              disabled={form.type !== "stdio" && capabilities?.httpHeaders === false}
               onClick={() => setShowEnv((v) => !v)}
             >
               {showEnv ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
               {envToggleLabel}
+              {form.type !== "stdio" && capabilities?.httpHeaders === false ? " · 未接入" : null}
             </button>
             {showEnv && (
               <div className="mt-2 space-y-1.5">
@@ -394,6 +415,8 @@ export function McpServerForm({
         </div>
       )}
 
+      {unavailable ? <p role="status" className="text-ui-base text-foreground-subtle">未接入</p> : null}
+      {saveError ? <p role="alert" className="text-ui-base text-destructive">{saveError}</p> : null}
       <SettingsFormActions
         leadingAction={
           initial && onDelete ? (
@@ -402,7 +425,15 @@ export function McpServerForm({
               variant="link"
               size="lg"
               className="px-0 text-destructive hover:text-destructive"
-              onClick={() => onDelete(initial)}
+              disabled={saving}
+              onClick={async () => {
+                if (submitting.current) return;
+                submitting.current = true;
+                setSaving(true);
+                try { await onDelete(initial); }
+                catch (error) { setSaveError(error instanceof Error ? error.message : String(error)); }
+                finally { submitting.current = false; setSaving(false); }
+              }}
             >
               <Trash2 className="size-3.5" aria-hidden="true" />
               {intl.formatMessage({ id: "common.delete" })}
@@ -410,7 +441,7 @@ export function McpServerForm({
           ) : undefined
         }
       >
-        <Button size="lg" disabled={!canSave} onClick={handleSaveClick}>
+        <Button size="lg" disabled={!canSave || saving || unavailable} onClick={handleSaveClick}>
           {intl.formatMessage({ id: "common.save" })}
         </Button>
         <Button variant="ghost" size="lg" onClick={onCancel}>

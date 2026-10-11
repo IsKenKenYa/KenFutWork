@@ -10,12 +10,12 @@ export function createCodeUiTestClient(input: {
   const ownedStreams = new Set<AbortController>();
   const streamClosures = new Set<Promise<void>>();
 
-  async function request(
+  async function fetchResponse(
     path: string,
     body?: unknown,
     method = body === undefined ? "GET" : "POST",
   ) {
-    const response = await fetch(`${base}${path}`, {
+    return fetch(`${base}${path}`, {
       method,
       headers: {
         ...(body === undefined ? {} : { "content-type": "application/json" }),
@@ -25,6 +25,13 @@ export function createCodeUiTestClient(input: {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+  }
+  async function request(
+    path: string,
+    body?: unknown,
+    method = body === undefined ? "GET" : "POST",
+  ) {
+    const response = await fetchResponse(path, body, method);
     return {
       status: response.status,
       body:
@@ -96,6 +103,14 @@ export function createCodeUiTestClient(input: {
 
   return {
     request,
+    async readResource(path: string) {
+      const response = await fetchResponse(path);
+      return {
+        status: response.status,
+        contentType: response.headers.get("content-type"),
+        bytes: new Uint8Array(await response.arrayBuffer()),
+      };
+    },
     openCodeStream,
     async close() {
       for (const controller of ownedStreams) controller.abort();

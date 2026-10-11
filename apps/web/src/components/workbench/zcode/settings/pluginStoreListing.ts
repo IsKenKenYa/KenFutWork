@@ -276,6 +276,7 @@ export function buildStoreItems(input: {
     // 旧插件拆分/下架后，配置仍会生成缺包诊断；它不是可安装目录来源。
     // 保留原 plugins 给设置页诊断，但不凭此生成商店安装入口；有目录/恢复来源的条目已在上面保留。
     if (info.packageStatus === "missing") continue;
+    const installedMeta = metaById.get(info.id);
     items.set(info.id, {
       id: info.id,
       name: info.name,
@@ -289,7 +290,8 @@ export function buildStoreItems(input: {
         info.source === "cache" &&
         !marketplaceIds.has(info.marketplace),
       info,
-      ...(metaById.get(info.id) ? { installedMeta: metaById.get(info.id) } : {}),
+      ...(installedMeta?.listing ? { listing: installedMeta.listing } : {}),
+      ...(installedMeta ? { installedMeta } : {}),
     });
   }
   return [...items.values()];

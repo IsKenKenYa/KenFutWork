@@ -12,8 +12,7 @@ import { Checkbox } from "@zui/components/ui/checkbox.js";
 import { Progress } from "@zui/components/ui/progress.js";
 import type { IntlInstance } from "@zui/i18n/IntlProvider.js";
 import type { UpdateStatusDialogPhase } from "@zui/updateStatusModel.js";
-
-const macosDockIconUrl = new URL("./public/icon_512@2x.png", import.meta.url).href;
+import macosDockIconUrl from "@zui/assets/kenfutwork-mark.png";
 
 type LocalizedUpdateReleaseNotes = {
   markdown: string;

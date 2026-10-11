@@ -17,13 +17,13 @@ const ENABLED = process.env.KENFUTWORK_DESKTOP_PG_IT === "1";
 
 describe.skipIf(!ENABLED)("桌面运行时（内嵌PG + 本机接入）", () => {
   it("空目录首启动即建成完整 schema，且免登录可用", async () => {
-    const { mkdtemp, rm } = await import("node:fs/promises");
+    const { mkdtemp, realpath, rm } = await import("node:fs/promises");
     const { join } = await import("node:path");
     const { tmpdir } = await import("node:os");
 
     const repoRoot = join(process.cwd(), "..", "..");
-    const dataDir = await mkdtemp(
-      join(tmpdir(), "kenfutwork-desktop-runtime-"),
+    const dataDir = await realpath(
+      await mkdtemp(join(tmpdir(), "kenfutwork-desktop-runtime-")),
     );
     const logs: string[] = [];
 
@@ -41,6 +41,17 @@ describe.skipIf(!ENABLED)("桌面运行时（内嵌PG + 本机接入）", () => 
     const app = buildApp({ env: runtime.env });
 
     try {
+      // API尚未监听也必须拒绝另一启动者；不能让失败启动者停掉第一份数据库。
+      await expect(
+        prepareDesktopRuntime({
+          env: loadServerEnv({
+            desktopDataDir: dataDir,
+            embeddedPostgres: true,
+          }),
+          exeDir: join(dataDir, "nope"),
+          repoRoot,
+        }),
+      ).rejects.toMatchObject({ code: "desktop_instance_busy" });
       // 首启动建库 + 全量迁移（日志里应有迁移执行行）
       expect(logs.some((line) => line.includes("已执行迁移"))).toBe(true);
 

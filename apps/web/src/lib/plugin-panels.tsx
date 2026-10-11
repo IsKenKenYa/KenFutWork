@@ -1,8 +1,12 @@
 "use client";
 
-import type { PluginMarketEntry } from "@kenfutwork/shared";
+import {
+  type PluginMarketEntry,
+  type PluginPanelEntry,
+  projectPluginPanels,
+} from "@kenfutwork/shared";
 import { PanelsTopLeft } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +15,10 @@ import {
 } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
 import { bearerHeaders, serverFetch } from "@/lib/local-access";
+
+export type { PluginPanelEntry } from "@kenfutwork/shared";
+export const PLUGIN_INVENTORY_CHANGED_EVENT =
+  "kenfutwork:plugin-inventory-changed";
 
 /**
  * 插件 UI 面板（能力 `ui`）的**共享前端**：入口按钮 + 面板弹层。
@@ -25,58 +33,57 @@ import { bearerHeaders, serverFetch } from "@/lib/local-access";
  * 避免每处各写一遍取数 + iframe 逻辑。
  */
 
-export interface PluginPanelEntry {
-  id: string;
-  pluginId: string;
-  title: string;
-  slot: string;
-  url: string;
-  /** 入口图标（相对插件根的资源路径）；null 用宿主通用图标。 */
-  icon: string | null;
-}
-
 /** 取「某槽位」的插件面板入口；本机Cookie授权。 */
 export function usePluginPanels(
   accessToken: string | null,
   slot: string,
-): { panels: PluginPanelEntry[]; refresh: () => void } {
+  mode?: "code" | "design" | "flow",
+) {
   const [panels, setPanels] = useState<PluginPanelEntry[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const generation = useRef(0);
 
-  const refresh = useCallback(() => {
-    serverFetch(`${getServerBaseUrl()}/api/plugins`, {
-      headers: bearerHeaders(accessToken),
-    })
-      .then((response) =>
-        response.ok
-          ? (response.json() as Promise<{ plugins: PluginMarketEntry[] }>)
-          : { plugins: [] },
-      )
-      .then((data) => {
-        setPanels(
-          data.plugins
-            .filter((plugin) => plugin.installed)
-            .flatMap((plugin) =>
-              (plugin.ui ?? [])
-                .filter((entry) => (entry.slot ?? "sidebar") === slot)
-                .map((entry) => ({
-                  id: `${plugin.id}:${entry.id}`,
-                  pluginId: plugin.id,
-                  title: entry.title,
-                  slot: entry.slot ?? "sidebar",
-                  url: entry.url,
-                  icon: entry.icon ?? null,
-                })),
-            ),
-        );
-      })
-      .catch(() => setPanels([]));
-  }, [accessToken, slot]);
+  const refresh = useCallback(async () => {
+    const current = ++generation.current;
+    try {
+      const response = await serverFetch(`${getServerBaseUrl()}/api/plugins`, {
+        headers: bearerHeaders(accessToken),
+      });
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(data.error?.message ?? "插件入口读取失败");
+      const next = projectPluginPanels(
+        (data as { plugins: PluginMarketEntry[] }).plugins,
+        slot,
+        mode,
+      );
+      if (current !== generation.current) return null;
+      setPanels(next);
+      setError(null);
+      return next;
+    } catch (cause) {
+      if (current !== generation.current) return null;
+      setPanels([]);
+      setError(cause instanceof Error ? cause.message : "插件入口读取失败");
+      return null;
+    }
+  }, [accessToken, slot, mode]);
 
   useEffect(() => {
-    refresh();
+    const update = () => {
+      void refresh();
+    };
+    update();
+    window.addEventListener(PLUGIN_INVENTORY_CHANGED_EVENT, update);
+    window.addEventListener("focus", update);
+    return () => {
+      generation.current++;
+      window.removeEventListener(PLUGIN_INVENTORY_CHANGED_EVENT, update);
+      window.removeEventListener("focus", update);
+    };
   }, [refresh]);
 
-  return { panels, refresh };
+  return { panels, refresh, error };
 }
 
 /**
@@ -186,18 +193,26 @@ export function PluginIcon({
 export function PluginPanelOverlay({
   panel,
   onClose,
+  active = true,
 }: {
   panel: PluginPanelEntry | null;
   onClose: () => void;
+  active?: boolean;
 }) {
+  if (!panel) return null;
   return (
     <Dialog
-      open={panel !== null}
+      open={active && panel !== null}
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
     >
       <DialogContent
+        portalProps={{ keepMounted: true }}
+        overlayProps={{ hidden: !active }}
+        hidden={!active}
+        inert={!active}
+        aria-hidden={!active}
         className="flex h-[80vh] max-h-[80vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
         aria-describedby={undefined}
       >
@@ -235,22 +250,42 @@ export function PluginPanelButtons({
   slot,
   renderButton,
   emptyLabel,
+  mode,
+  workspaceActive = true,
 }: {
   accessToken: string | null;
   slot: string;
   renderButton: (panel: PluginPanelEntry, open: () => void) => React.ReactNode;
   emptyLabel?: string | undefined;
+  mode?: "code" | "design" | "flow";
+  workspaceActive?: boolean;
 }) {
-  const { panels } = usePluginPanels(accessToken, slot);
+  const { panels, error } = usePluginPanels(accessToken, slot, mode);
   const [active, setActive] = useState<PluginPanelEntry | null>(null);
+  useEffect(() => {
+    setActive((current) =>
+      current
+        ? (panels.find((panel) => panel.id === current.id) ?? null)
+        : null,
+    );
+  }, [panels]);
 
   return (
     <>
-      {panels.length === 0 && emptyLabel ? (
+      {error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+      {!error && panels.length === 0 && emptyLabel ? (
         <p className="text-sm text-muted-foreground">{emptyLabel}</p>
       ) : null}
       {panels.map((panel) => renderButton(panel, () => setActive(panel)))}
-      <PluginPanelOverlay panel={active} onClose={() => setActive(null)} />
+      <PluginPanelOverlay
+        panel={active}
+        active={workspaceActive}
+        onClose={() => setActive(null)}
+      />
     </>
   );
 }

@@ -5,8 +5,10 @@ import {
   copyFile,
   cp,
   mkdir,
+  readdir,
   readFile,
   realpath,
+  rm,
   writeFile,
 } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -19,8 +21,8 @@ if (!destination) throw new Error("请传入进程 helper 的输出目录。");
 const output = resolve(destination);
 const source = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-// Windows 上 require.resolve 给的是盘符绝对路径（`D:\…`），直接 import 会被当成 URL
-// 并报 ERR_UNSUPPORTED_ESM_URL_SCHEME——必须转成 file:// URL。
+// require.resolve 在 Windows 返回 `D:\...`，而 ESM loader 只认 file:// URL（CI 实测
+// ERR_UNSUPPORTED_ESM_URL_SCHEME），故必须先转成 URL。
 const { build } = await import(pathToFileURL(require.resolve("esbuild")).href);
 await mkdir(output, { recursive: true });
 if (process.platform === "darwin") {
@@ -143,6 +145,17 @@ await materializeDependency(
 );
 const pty = await packageRoot("node-pty", require);
 await materializeDependency("node-pty", require, join(output, "node_modules"));
+// 只保留与本机构筑对应的 node-pty 预编译：arm64 包里躺一份 darwin-x64 的
+// pty.node + spawn-helper 没人会加载，还会让逐二进制造假检查多报两个未封印目标
+//（CI 实测就是这个）。
+const prebuilds = join(output, "node_modules", "node-pty", "prebuilds");
+const keepPrebuild = `${process.platform}-${process.arch}`;
+for (const entry of await readdir(prebuilds, { withFileTypes: true }).catch(
+  () => [],
+)) {
+  if (entry.isDirectory() && entry.name !== keepPrebuild)
+    await rm(join(prebuilds, entry.name), { recursive: true, force: true });
+}
 await writeFile(
   join(output, "package.json"),
   JSON.stringify(

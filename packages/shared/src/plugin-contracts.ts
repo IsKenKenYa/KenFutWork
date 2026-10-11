@@ -214,6 +214,50 @@ export type CompatReport = z.infer<typeof compatReportSchema>;
 export const pluginMarketSourceSchema = z.enum(["builtin", "registry", "url"]);
 export type PluginMarketSource = z.infer<typeof pluginMarketSourceSchema>;
 
+/** 宿主包图标只接受已声明资产路径；不携带接入凭据或任意服务器地址。 */
+export function isPluginIconResourceReference(
+  value: string | undefined,
+  pluginId?: string,
+): value is string {
+  const match = value?.match(
+    /^\/api\/plugins\/([^/?#]+)\/assets\/([^?#\\]+)$/u,
+  );
+  const encodedId = match?.[1];
+  const path = match?.[2];
+  if (!encodedId || !path) return false;
+  const safePart = (part: string) =>
+    part !== "" &&
+    !part.includes("/") &&
+    !part.includes("\\") &&
+    [...part].every(
+      (character) =>
+        character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127,
+    );
+  try {
+    const id = decodeURIComponent(encodedId);
+    if (!safePart(id) || (pluginId !== undefined && id !== pluginId))
+      return false;
+    return path.split("/").every((part) => {
+      const decoded = decodeURIComponent(part);
+      return !decoded.startsWith(".") && safePart(decoded);
+    });
+  } catch {
+    return false;
+  }
+}
+
+/** 清单图标的assets前缀指向已有包资源端点，其余路径必须符合同一引用契约。 */
+export function createPluginIconResourceReference(
+  pluginId: string,
+  declaredPath: string,
+): string | undefined {
+  const relative = declaredPath.replace(/^assets\//u, "");
+  const resource = `/api/plugins/${encodeURIComponent(pluginId)}/assets/${relative.split("/").map(encodeURIComponent).join("/")}`;
+  return isPluginIconResourceReference(resource, pluginId)
+    ? resource
+    : undefined;
+}
+
 export const pluginMarketEntrySchema = z.object({
   /** 市场条目 id：内置为插件名，第三方为 `owner/repo` */
   id: z.string().min(1),
@@ -231,6 +275,9 @@ export const pluginMarketEntrySchema = z.object({
   /** 内核必需插件，不可卸载 */
   system: z.boolean().default(false),
   installed: z.boolean().default(false),
+  /** 安装与启用是独立事实；停用不能伪装成卸载。 */
+  enabled: z.boolean(),
+  scope: z.enum(["design", "code", "shared"]).nullable(),
   /** 插件贡献的 UI 面板入口（仅已安装且启用时非空）。 */
   ui: z
     .array(
@@ -245,6 +292,43 @@ export const pluginMarketEntrySchema = z.object({
     .default([]),
 });
 export type PluginMarketEntry = z.infer<typeof pluginMarketEntrySchema>;
+
+export interface PluginPanelEntry {
+  id: string;
+  entryId: string;
+  pluginId: string;
+  title: string;
+  slot: string;
+  url: string;
+  icon: string | null;
+}
+
+/** 同一安装库存供各工作区消费；空作用域沿既有通用插件语义。 */
+export function projectPluginPanels(
+  plugins: PluginMarketEntry[],
+  slot: string,
+  mode?: "code" | "design" | "flow",
+): PluginPanelEntry[] {
+  return plugins
+    .filter((plugin) => plugin.installed && plugin.enabled)
+    .filter(
+      (plugin) =>
+        !mode ||
+        !plugin.scope ||
+        plugin.scope === "shared" ||
+        plugin.scope === mode,
+    )
+    .flatMap((plugin) =>
+      plugin.ui
+        .filter((entry) => entry.slot === slot)
+        .map((entry) => ({
+          ...entry,
+          id: `${plugin.id}:${entry.id}`,
+          entryId: entry.id,
+          pluginId: plugin.id,
+        })),
+    );
+}
 
 export const installedPluginSchema = z.object({
   id: z.string().min(1),
@@ -346,6 +430,12 @@ export const pluginMarketListResponseSchema = z.object({
 export type PluginMarketListResponse = z.infer<
   typeof pluginMarketListResponseSchema
 >;
+export const pluginToggleRequestSchema = z.object({ enabled: z.boolean() });
+export const pluginToggleResponseSchema = z.object({
+  id: z.string().min(1),
+  installed: z.literal(true),
+  enabled: z.boolean(),
+});
 
 export const pluginInspectResponseSchema = z.object({
   manifest: pluginBundleManifestSchema,

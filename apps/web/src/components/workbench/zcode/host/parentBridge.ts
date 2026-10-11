@@ -39,3 +39,18 @@ export function navigateToDesign() {
     );
   }
 }
+
+export function openPluginPanel(pluginId: string, entryId: string) {
+  window.parent.postMessage(
+    { type: "kenfutwork:code-open-plugin", pluginId, entryId },
+    window.location.origin,
+  );
+}
+
+export function notifyPluginInventoryChanged() {
+  if (window.parent !== window)
+    window.parent.postMessage(
+      { type: "kenfutwork:code-plugins-changed" },
+      window.location.origin,
+    );
+}

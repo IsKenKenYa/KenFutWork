@@ -7,6 +7,7 @@ import {
   pluginInstallBuiltinRequestSchema,
   pluginInstallRequestSchema,
   pluginInstallResponseSchema,
+  pluginToggleResponseSchema,
   sandboxPluginBundleListResponseSchema,
   sandboxPluginInstallRequestSchema,
   unauthenticatedErrorResponseSchema,
@@ -404,9 +405,13 @@ export async function registerPluginRoutes(
     }
     try {
       const updated = await options.registry.setEnabled(id, body.enabled);
-      return reply
-        .code(200)
-        .send({ id: updated.id, installed: updated.enabled });
+      return reply.code(200).send(
+        pluginToggleResponseSchema.parse({
+          id: updated.id,
+          installed: true,
+          enabled: updated.enabled,
+        }),
+      );
     } catch (error) {
       if (error instanceof PluginRegistryError) {
         return sendError(

@@ -139,24 +139,29 @@ export class LinuxProcessRange {
     return this.stopping;
   }
 
-  private async freeze(): Promise<void> {
+  /**
+   * 尽力冻结（SIGSTOP）范围内进程，返回是否全部停住。
+   *
+   * 冻结不彻底**不是**停止失败：处于不可中断睡眠（D）的进程收不到 SIGSTOP，
+   * 但 SIGKILL 仍然有效。把它当致命错误抛出会让整条停止流程在 TERM/KILL 之前就中止，
+   * 真正的保证在后面的「SIGKILL 后范围归零」那一步（做不到才报 stop_unconfirmed）。
+   */
+  private async freeze(): Promise<boolean> {
     const started = Date.now();
     for (;;) {
-      if ((await this.query("SIGSTOP")).activeCount === 0) return;
-      if (Date.now() - started >= this.limits.killGraceMs)
-        throw new ProcessSandboxError(
-          "stop_unconfirmed",
-          "无法冻结 Linux namespace 全部进程。",
-        );
+      if ((await this.query("SIGSTOP")).activeCount === 0) return true;
+      if (Date.now() - started >= this.limits.killGraceMs) return false;
       await delay(this.limits.yieldMs);
     }
   }
 
-  private async emptyWithin(): Promise<boolean> {
+  /** 返回仍未清空的最后一次扫描（含计数，报错要能看出还剩几个）；清空则返回 null。 */
+  private async remainingWithin(): Promise<RangeSnapshot | null> {
     const started = Date.now();
     for (;;) {
-      if ((await this.query()).memberCount === 0) return true;
-      if (Date.now() - started >= this.limits.killGraceMs) return false;
+      const snapshot = await this.query();
+      if (snapshot.memberCount === 0) return null;
+      if (Date.now() - started >= this.limits.killGraceMs) return snapshot;
       await delay(this.limits.yieldMs);
     }
   }
@@ -167,13 +172,14 @@ export class LinuxProcessRange {
       // TERM 先到叶子命令，保留 namespace reaper / launcher，让 handler 能完成清理。
       await this.query("SIGTERM");
       await this.query("SIGCONT");
-      if (!(await this.emptyWithin())) {
+      if (await this.remainingWithin()) {
         await this.freeze();
         await this.query("SIGKILL");
-        if (!(await this.emptyWithin()))
+        const left = await this.remainingWithin();
+        if (left)
           throw new ProcessSandboxError(
             "stop_unconfirmed",
-            "Linux PID namespace 仍有进程，停止未确认。",
+            `Linux PID namespace 在 SIGKILL 后 ${this.limits.killGraceMs}ms 内仍有 ${left.memberCount} 个进程（活跃 ${left.activeCount}），停止未确认——若活跃数为 0 则是没人回收的僵尸，容器 PID 1 必须是会 reap 的 init。`,
           );
       }
     }

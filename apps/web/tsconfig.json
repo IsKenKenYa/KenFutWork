@@ -11,7 +11,8 @@
     "noEmit": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@zui/*": ["./src/components/workbench/zcode/dist-types/*"]
+      "@zui/*": ["./src/components/workbench/zcode/dist-types/*"],
+      "@zui-original/*": ["./src/components/workbench/zcode/dist-types/*"]
     },
     "plugins": [
       {

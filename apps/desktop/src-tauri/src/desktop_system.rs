@@ -15,6 +15,65 @@ use std::path::{Path, PathBuf};
 use base64::Engine as _;
 use tauri::Manager;
 
+#[derive(Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CuaPermissionKind {
+    Accessibility,
+    ScreenRecording,
+}
+
+fn cua_settings_url(permission: CuaPermissionKind) -> &'static str {
+    match permission {
+        CuaPermissionKind::Accessibility => "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+        CuaPermissionKind::ScreenRecording => "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CuaPermissionOwner {
+    app_path: String,
+    display_name: String,
+}
+
+/// 路径来自当前运行的应用，页面不能指定另一授权主体。
+#[tauri::command]
+pub fn cua_permission_owner(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<CuaPermissionOwner, String> {
+    crate::data_location::snapshot(&app, &window)?;
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    let bundle = executable.ancestors().find(|path| path.extension().is_some_and(|ext| ext == "app"))
+        .ok_or("请通过 KenFutWork.app 启动桌面应用。")?;
+    Ok(CuaPermissionOwner {
+        app_path: bundle.to_string_lossy().to_string(),
+        display_name: app.config().product_name.clone().unwrap_or_else(|| "KenFutWork".into()),
+    })
+}
+
+/// 只打开对应系统设置；权限必须由用户手动批准。
+#[tauri::command]
+pub fn open_cua_permission_settings(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    permission: CuaPermissionKind,
+) -> Result<(), String> {
+    cua_permission_owner(app, window)?;
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("open").arg(cua_settings_url(permission)).status()
+            .map_err(|error| format!("打开系统设置失败：{error}"))?;
+        if !status.success() { return Err("系统设置未能打开，请手动进入隐私与安全性。".into()); }
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = permission;
+        Err("该权限入口仅适用于 macOS。".into())
+    }
+}
+
 /// 清洗前端传来的文件名：先按路径分隔符取**末段**（防 `../` 穿越），再剥控制字符；
 /// 空名/纯点号兜底；超长截断（下载目录的文件名没必要超 120 字符）。
 pub fn sanitize_filename(raw: &str) -> String {
@@ -132,6 +191,13 @@ pub fn open_external(url: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cua_settings_only_accepts_two_known_permission_panes() {
+        assert!(cua_settings_url(CuaPermissionKind::Accessibility).ends_with("Privacy_Accessibility"));
+        assert!(cua_settings_url(CuaPermissionKind::ScreenRecording).ends_with("Privacy_ScreenCapture"));
+        assert!(serde_json::from_str::<CuaPermissionKind>("\"file:///etc/passwd\"").is_err());
+    }
 
     #[test]
     fn sanitize_filename_strips_paths_and_controls() {

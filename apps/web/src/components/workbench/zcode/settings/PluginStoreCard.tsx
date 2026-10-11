@@ -8,6 +8,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button } from "@zui/components/ui/button.js";
+import { Badge } from "@zui/components/ui/badge.js";
+import { HOST_BUNDLED_PLUGIN_MARKETPLACE_ID } from "@zcode/shared";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -323,6 +325,7 @@ export function PluginStoreCard({
             {displayName}
           </span>
           <PluginStorePaidPlanBadge item={item} />
+          {item.marketplace === HOST_BUNDLED_PLUGIN_MARKETPLACE_ID ? <Badge variant="secondary">{intl.formatMessage({ id: "settings.plugins.marketplaces.official" })}</Badge> : null}
           <PluginStoreUpdateBadge item={item} />
         </div>
         {item.orphaned ? (

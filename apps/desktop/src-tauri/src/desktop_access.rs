@@ -56,6 +56,7 @@ pub fn local_request(
 }
 
 pub fn connection_url(data_dir: &Path, port: u16, ui_base: &str) -> Result<String, String> {
+    let mut url = validated_ui_url(ui_base)?;
     let response = local_request(
         data_dir,
         port,
@@ -73,14 +74,33 @@ pub fn connection_url(data_dir: &Path, port: u16, ui_base: &str) -> Result<Strin
     {
         return Err("连接票据格式无效。".into());
     }
-    let mut url = tauri::Url::parse(ui_base).map_err(|_| "桌面界面地址格式无效。")?;
     url.set_fragment(Some(&format!("connect={ticket}")));
     Ok(url.to_string())
+}
+
+pub(crate) fn validated_ui_url(value: &str) -> Result<tauri::Url, String> {
+    let url = tauri::Url::parse(value).map_err(|_| "桌面界面地址格式无效。")?;
+    let host = url.host_str().unwrap_or("").trim_matches(&['[', ']'][..]);
+    let loopback = host == "localhost" || host.parse::<std::net::IpAddr>().map(|ip| ip.is_loopback()).unwrap_or(false);
+    if url.scheme() != "http" || !loopback || !url.username().is_empty() || url.password().is_some() {
+        return Err("桌面界面必须使用本机HTTP地址。".into());
+    }
+    Ok(url)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn desktop_ui_ticket_only_targets_loopback_http() {
+        for url in ["http://localhost:3400", "http://127.0.0.1:3301", "http://[::1]:3400"] {
+            assert!(validated_ui_url(url).is_ok());
+        }
+        for url in ["https://localhost", "http://localhost.evil.test", "http://example.com", "http://user:secret@localhost"] {
+            assert!(validated_ui_url(url).is_err());
+        }
+    }
     use std::net::TcpListener;
     use std::sync::atomic::{AtomicU64, Ordering};
 

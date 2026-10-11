@@ -7,15 +7,16 @@ import {
   zcodeUiProtocol as protocol,
   type StreamEvent,
 } from "@kenfutwork/shared";
-import { ChatOpenAI } from "@langchain/openai";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
+import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
 import { loadServerEnv } from "../../config/env.js";
 import { ToolDeniedError } from "../../kernel/context.js";
+import { createInstanceChatModel } from "../../providers/openai-compatible/index.js";
 import { adaptSdkTransport } from "../mcp/sdk-transport.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createDesktopModelServer } from "./fixtures/model-server.js";
@@ -66,12 +67,16 @@ describe.skipIf(!enabled)("真实macOS Task→插件→Agent→模型HTTP→V4�
           "-o",
           executable,
         ]);
-        fixture = spawn(executable, [], { stdio: ["pipe", "pipe", "pipe"] });
+        fixture = spawn(executable, ["--noisy-background"], {
+          stdio: ["pipe", "pipe", "pipe"],
+        });
         await once(fixture.stdout!, "data");
         fixture.stdout!.on("data", (bytes) => {
           nativeOutput += String(bytes);
         });
         modelServer = await createDesktopModelServer(fixture.pid!, {
+          screenshotRecovery: true,
+          omitRole: true,
           beforeResponse: async (stage) => {
             if (stage === 0) {
               modelStarted();
@@ -89,11 +94,10 @@ describe.skipIf(!enabled)("真实macOS Task→插件→Agent→模型HTTP→V4�
           database,
           installed,
           env,
-          new ChatOpenAI({
+          createInstanceChatModel("desktop-fixture", {
             apiKey: "desktop-fixture",
-            model: "desktop-fixture",
             useResponsesApi: false,
-            configuration: { baseURL: modelServer.baseURL },
+            baseUrl: modelServer.baseURL,
           }),
         );
         const { runId } = task.runtime.createRun(
@@ -192,6 +196,16 @@ describe.skipIf(!enabled)("真实macOS Task→插件→Agent→模型HTTP→V4�
             (block) => block.type === "image",
           ),
         ).toBe(true);
+        const preview = CallToolResultSchema.parse(externalShot).content.find(
+          (block) => block.type === "image",
+        );
+        if (!preview || preview.type !== "image")
+          throw new Error("超预算原图未返回预览");
+        expect(preview.data.length).toBeLessThanOrEqual(
+          AGENT_GOVERNANCE_DEFAULTS.computerUseScreenshotMaxBytes,
+        );
+        const decoded = PNG.sync.read(Buffer.from(preview.data, "base64"));
+        expect(decoded.width).toBeLessThan(840);
         await expect
           .poll(
             () =>
@@ -401,7 +415,8 @@ describe.skipIf(!enabled)("真实macOS Task→插件→Agent→模型HTTP→V4�
         const shot = snapshot.rows.window.find(
           (row) =>
             row.kind === "toolCall" &&
-            row.toolName === `${CU_TOOL_PREFIX}screenshot`,
+            row.toolName === `${CU_TOOL_PREFIX}screenshot` &&
+            row.status === "success",
         );
         expect(shot?.kind).toBe("toolCall");
         if (!shot || shot.kind !== "toolCall")
@@ -418,6 +433,14 @@ describe.skipIf(!enabled)("真实macOS Task→插件→Agent→模型HTTP→V4�
           ),
         ).toBe(true);
         expect(
+          snapshot.rows.window.some(
+            (row) =>
+              row.kind === "toolCall" &&
+              row.toolName === `${CU_TOOL_PREFIX}screenshot` &&
+              row.status === "error",
+          ),
+        ).toBe(true);
+        expect(
           JSON.stringify(modelServer.requests).includes(
             "data:image/png;base64,",
           ),
@@ -430,7 +453,7 @@ describe.skipIf(!enabled)("真实macOS Task→插件→Agent→模型HTTP→V4�
           content: unknown;
         }>;
         const observedText = finalMessages.find(
-          (message) => message.tool_call_id === "desktop-model-5",
+          (message) => message.tool_call_id === "desktop-model-6",
         )?.content;
         expect(JSON.stringify(observedText).includes("Task中文🙂🚀")).toBe(
           true,

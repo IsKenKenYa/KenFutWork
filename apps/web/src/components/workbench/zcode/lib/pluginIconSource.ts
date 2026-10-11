@@ -5,6 +5,7 @@ import pluginCreatorIconUrl from "@zui/assets/plugin-icons/plugin-creator.png";
 import presentationsIconUrl from "@zui/assets/plugin-icons/presentations.png";
 import spreadsheetsIconUrl from "@zui/assets/plugin-icons/spreadsheets.png";
 import { isTrustedImageUrl } from "@zui/lib/trustedImageUrl.js";
+import { isPluginIconResourceReference } from "@kenfutwork/shared";
 
 const OFFICIAL_PLUGIN_ICON_BY_ID: Readonly<Record<string, string>> = {
   "documents@zcode-plugins-official": documentsIconUrl,
@@ -25,11 +26,12 @@ export function resolvePluginIconSource(
   if (pluginId) {
     const bundledIcon = OFFICIAL_PLUGIN_ICON_BY_ID[pluginId];
     if (bundledIcon) return bundledIcon;
+    if (isPluginIconResourceReference(icon, pluginId)) return icon;
   }
   return isTrustedImageUrl(icon) ? icon : undefined;
 }
 
 /** Session 投影已完成身份匹配；仅放行固定打包资源，不放宽任意本地 URL。 */
 export function isTrustedPluginIconSource(icon: string | undefined): icon is string {
-  return Boolean(icon && TRUSTED_BUNDLED_PLUGIN_ICONS.has(icon)) || isTrustedImageUrl(icon);
+  return Boolean(icon && TRUSTED_BUNDLED_PLUGIN_ICONS.has(icon)) || isPluginIconResourceReference(icon) || isTrustedImageUrl(icon);
 }

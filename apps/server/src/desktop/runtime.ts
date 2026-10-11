@@ -10,7 +10,12 @@ import {
 } from "../features/persistence/migrations.js";
 import { resolveDesktopDataDir, resolveDesktopPaths } from "./paths.js";
 import { ensurePgmqAvailable, resolvePgmqShimDir } from "./pgmq-shim.js";
-import { resolvePgBinDir, startEmbeddedPostgres } from "./postgres.js";
+import {
+  type EmbeddedPostgresHandle,
+  resolvePgBinDir,
+  startEmbeddedPostgres,
+} from "./postgres.js";
+import { acquireDesktopServerOwner } from "./server-owner.js";
 
 /**
  * 桌面运行时的准备（FORM-2）：在 buildApp 之前把「本机开箱即用」需要的一切就位。
@@ -114,21 +119,28 @@ export async function prepareDesktopRuntime(options: {
   const exists = options.exists ?? existsSync;
   await mkdir(paths.dataDir, { recursive: true });
 
-  const binDir = env.pgBinDir ?? resolvePgBinDir({ env: processEnv, exeDir });
-  const postgres = await startEmbeddedPostgres({
-    binDir,
-    dataDir: paths.pgDataDir,
-    logFile: paths.pgLogFile,
-    onLog: log,
-    passwordFile: paths.pgPasswordFile,
-    ...(env.embeddedPostgresPort ? { port: env.embeddedPostgresPort } : {}),
-  });
-
-  const shutdown = async () => {
-    await postgres.stop();
-  };
+  const owner = acquireDesktopServerOwner(paths.dataDir);
+  let postgres: EmbeddedPostgresHandle | undefined;
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = () =>
+    (shutdownPromise ??= (async () => {
+      try {
+        await postgres?.stop();
+      } finally {
+        owner.close();
+      }
+    })());
 
   try {
+    const binDir = env.pgBinDir ?? resolvePgBinDir({ env: processEnv, exeDir });
+    postgres = await startEmbeddedPostgres({
+      binDir,
+      dataDir: paths.pgDataDir,
+      logFile: paths.pgLogFile,
+      onLog: log,
+      passwordFile: paths.pgPasswordFile,
+      ...(env.embeddedPostgresPort ? { port: env.embeddedPostgresPort } : {}),
+    });
     const shimDir = resolvePgmqShimDir({ env: processEnv, exeDir, repoRoot });
     const migrationRoots = resolveMigrationRoots({
       env: processEnv,
@@ -146,16 +158,20 @@ export async function prepareDesktopRuntime(options: {
     try {
       await ensurePgmqAvailable(pool, { binDir, shimDir, onLog: log });
       const migrationSet = loadMigrationSet(migrationRoots);
-      const { applied } = await applyMigrations(
+      const { applied, superseded } = await applyMigrations(
         toQueryable(pool),
         migrationSet,
         {
           onApplied: (file) => log(`已执行迁移 ${file.version}_${file.name}`),
+          onSuperseded: (file, byVersion) =>
+            log(
+              `迁移 ${file.version}_${file.name} 已被 ${byVersion} 退役；记录superseded，未执行原SQL`,
+            ),
         },
       );
       log(
-        applied.length > 0
-          ? `迁移完成：本次执行 ${applied.length} 条（共 ${migrationSet.length} 条）`
+        applied.length > 0 || superseded.length > 0
+          ? `迁移完成：本次执行 ${applied.length} 条、明确退役 ${superseded.length} 条（共 ${migrationSet.length} 条）`
           : `迁移无需执行（${migrationSet.length} 条均已落地）`,
       );
     } finally {

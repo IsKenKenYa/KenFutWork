@@ -322,6 +322,7 @@ export function GeneralSectionContent({
       </SettingsGroupCard>
 
       <SettingsGroupCard>
+        {platform?.supportsInterfaceModeSettings !== false ? (
         <SettingsRow
           controlLayout="wide"
           label={intl.formatMessage({ id: "settings.interfaceMode" })}
@@ -349,6 +350,7 @@ export function GeneralSectionContent({
             </Select>
           }
         />
+        ) : null}
         {hasServices ? <ProactiveSuggestionsSetting /> : null}
       </SettingsGroupCard>
 

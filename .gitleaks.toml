@@ -1,0 +1,17 @@
+# 密钥门禁（CI 的 secrets job 用 `gitleaks dir` 扫工作树）。
+#
+# 豁免只按「具体值」精确放行，不按文件整放行——同文件里将来出现真 Key 仍会被拦。
+# 每条都要写清它为什么不是凭据。
+title = "KenFutWork 密钥门禁"
+
+[allowlist]
+description = "测试夹具与公开 demo 值，不是可用凭据"
+regexes = [
+  # vitest 夹具：只用于断言「显示/脱敏」逻辑，从不发往任何服务
+  '''\bkfw_abcd1234\b''',
+  '''\bQC-78b2ada128faa84ccf46c7cfde08a994-2d2095\b''',
+  # Supabase 本地 CLI 的公开 demo JWT（payload 里 iss=supabase-demo、exp=1983812996），
+  # 官方文档同一串；只对这种 iss 放通，不放通任何其它 JWT。
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0\.[A-Za-z0-9_-]{43}''',
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9\.[A-Za-z0-9_-]{43}''',
+]

@@ -81,7 +81,7 @@ export function useAppChromeState({
   const { intl } = useZCodeIntl();
 
   useEffect(() => {
-    if (!isDesktop || !isMacDesktop) {
+    if ((!isDesktop && !platform.getWindowControlsOverlayMetrics?.()) || !isMacDesktop) {
       setIsMacFullscreen(false);
       setMacWindowControlsLeftPaddingPx(MACOS_WINDOW_CONTROLS_DEFAULT_LEFT_PADDING_PX);
       return;

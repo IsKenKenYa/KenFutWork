@@ -126,6 +126,7 @@ import {
 import { useAutomationTemplates } from "@zui/settings/useAutomationTemplates.js";
 import type { AutomationsNavigationTab } from "@zui/lib/taskNavigationHistory.js";
 import {
+  AutomationsPageHeading,
   AutomationsPageTitle,
   type AutomationsPageTab,
 } from "@zui/settings/saved-workflows/AutomationsPageTitleSwitch.js";
@@ -511,7 +512,24 @@ function AutomationStatusFilterEmpty() {
   );
 }
 
-export function AutomationsSection({
+export function AutomationsSection(props: AutomationsSectionProps) {
+  const platform = usePlatform();
+  if (platform.supportsAutomations !== false) return <ConnectedAutomationsSection {...props} />;
+  // 保留原页面/标题/创建控件；缺失运行链路时不挂载取数、套餐查询与轮询消费者。
+  return (
+    <div data-automations-content className={cn(SETTINGS_FRAME_CONTENT_CLASSNAME, "flex flex-col")}>
+      <div className="flex flex-col gap-3">
+        <AutomationsPageHeading />
+        <p role="status" className="text-ui-base leading-5 text-foreground-subtlest">未接入</p>
+      </div>
+      <div className="mt-8 flex items-center justify-between">
+        <AutomationCreateDropdown disabled />
+      </div>
+    </div>
+  );
+}
+
+function ConnectedAutomationsSection({
   workspacePath,
   workspaceIdentity,
   onCreateViaChat,

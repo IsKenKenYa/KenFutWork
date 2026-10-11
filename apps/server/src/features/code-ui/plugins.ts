@@ -1,6 +1,8 @@
 import { join } from "node:path";
 import {
   type CodeUiWorkspace,
+  createPluginIconResourceReference,
+  type PluginBundleManifest,
   zcodeInstalledPluginSummarySchema,
   zcodePluginsInstallParamsSchema,
   zcodePluginsInstallResultSchema,
@@ -12,6 +14,7 @@ import {
   zcodePluginsUninstallResultSchema,
 } from "@kenfutwork/shared";
 import {
+  HOST_BUNDLED_PLUGIN_MARKETPLACE_ID,
   zcodePluginsDescribeParamsSchema,
   zcodePluginsDescribeResultSchema,
 } from "@zcode/shared";
@@ -48,8 +51,23 @@ const targetSchema = z
 type Inventory = Awaited<
   ReturnType<PluginRegistryService["readPackageInventory"]>
 >;
-const BUNDLED_MARKETPLACE = "kenfutwork-bundled";
+const BUNDLED_MARKETPLACE = HOST_BUNDLED_PLUGIN_MARKETPLACE_ID;
 const LOCAL_MARKETPLACE = "kenfutwork-local";
+
+/** 图标沿已有包资源端点读取，不把目录或凭据放进引用。 */
+function pluginListing(id: string, manifest: PluginBundleManifest) {
+  const declared = manifest.assets
+    ? manifest.ui.find((entry) => entry.icon)?.icon
+    : undefined;
+  const icon = declared
+    ? createPluginIconResourceReference(id, declared)
+    : undefined;
+  return {
+    displayName: manifest.title ?? manifest.name,
+    ...(manifest.category ? { category: manifest.category } : {}),
+    ...(icon ? { icon } : {}),
+  };
+}
 
 function installedSummary(
   { record, rootPath }: Inventory["installed"][number],
@@ -65,43 +83,30 @@ function installedSummary(
     scope: "user",
     installPath: rootPath,
     installedAt: record.installedAt,
-    listing: {
-      displayName: record.manifest.title ?? record.name,
-      ...(record.manifest.category
-        ? { category: record.manifest.category }
-        : {}),
-    },
+    listing: pluginListing(record.id, record.manifest),
   });
 }
 
-/** 原service的扁平参数仅转为原协议workspace引用；identity不签执行权限。 */
+/** 原业务字段继续由原schema校验；实例操作不伪造workspace/Task。 */
 function nativePluginInput<T extends z.ZodType>(schema: T, value: unknown) {
-  const parsed = targetSchema
-    .omit({ configScope: true })
-    .passthrough()
-    .parse(value);
+  const parsed = targetSchema.passthrough().parse(value);
   const {
     workspacePath,
     workspaceIdentity,
     projectId,
+    configScope,
     remoteSessionId,
     ...fields
   } = parsed;
-  if (!workspacePath)
-    throw new PluginRegistryError(
-      "项目插件管理必须提供真实工作目录。",
-      "invalid_request",
-    );
   return {
-    target: { workspacePath, workspaceIdentity, projectId, remoteSessionId },
-    input: schema.parse({
-      ...fields,
-      workspace: {
-        workspacePath,
-        workspaceKey: workspaceIdentity ?? workspacePath,
-        ...(workspaceIdentity ? { workspaceIdentity } : {}),
-      },
-    }),
+    target: {
+      workspacePath,
+      workspaceIdentity,
+      projectId,
+      configScope,
+      remoteSessionId,
+    },
+    input: schema.parse(fields),
   };
 }
 
@@ -129,8 +134,14 @@ async function validateTarget(
 
 function marketplaceResolver(inventory: Inventory) {
   const bundled = new Set(inventory.bundled.map((entry) => entry.id));
+  const installed = new Map(
+    inventory.installed.map((entry) => [entry.record.id, entry.record]),
+  );
   return (id: string) =>
-    bundled.has(id) ? BUNDLED_MARKETPLACE : LOCAL_MARKETPLACE;
+    bundled.has(id) &&
+    (!installed.has(id) || installed.get(id)?.source === "builtin")
+      ? BUNDLED_MARKETPLACE
+      : LOCAL_MARKETPLACE;
 }
 
 function packageComponents(
@@ -193,7 +204,7 @@ function overviewResult(
         ? [
             {
               id: BUNDLED_MARKETPLACE,
-              name: "KenFutWork 自带插件",
+              name: "KenFutWork 官方插件",
               source: { type: "builtin" },
               pluginCount: inventory.bundled.length,
             },
@@ -217,12 +228,7 @@ function overviewResult(
       description: entry.manifest.description,
       version: entry.manifest.version,
       installed: installed.has(entry.id),
-      listing: {
-        displayName: entry.manifest.title ?? entry.name,
-        ...(entry.manifest.category
-          ? { category: entry.manifest.category }
-          : {}),
-      },
+      listing: pluginListing(entry.id, entry.manifest),
     })),
     installedPlugins: inventory.installed.map((entry) =>
       installedSummary(entry, marketplace),
@@ -250,7 +256,7 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
 
   async function install(actor: LocalActor, value: unknown) {
     const { target, input } = nativePluginInput(
-      zcodePluginsInstallParamsSchema,
+      zcodePluginsInstallParamsSchema.omit({ workspace: true }),
       value,
     );
     await requireMutation(actor, target, input.scope);
@@ -296,7 +302,7 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
 
   async function setEnabled(actor: LocalActor, value: unknown) {
     const { target, input } = nativePluginInput(
-      zcodePluginsSetEnabledParamsSchema,
+      zcodePluginsSetEnabledParamsSchema.omit({ workspace: true }),
       value,
     );
     await requireMutation(actor, target, input.scope);
@@ -327,7 +333,7 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
 
   async function describe(actor: LocalActor, value: unknown) {
     const { target, input } = nativePluginInput(
-      zcodePluginsDescribeParamsSchema,
+      zcodePluginsDescribeParamsSchema.omit({ workspace: true }),
       value,
     );
     await deps.resolveInstanceId(actor);
@@ -355,9 +361,11 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
 
   async function uninstall(actor: LocalActor, value: unknown) {
     const { target, input } = nativePluginInput(
-      zcodePluginsUninstallParamsSchema,
+      zcodePluginsUninstallParamsSchema.omit({ workspace: true }),
       value,
     );
+    if (!input.pluginId && !input.pluginName)
+      throw new PluginRegistryError("请选择要卸载的插件。", "invalid_request");
     await requireMutation(actor, target);
     const inventory = await deps.registry.readPackageInventory();
     const marketplace = marketplaceResolver(inventory);

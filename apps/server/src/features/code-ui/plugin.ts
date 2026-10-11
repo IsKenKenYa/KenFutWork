@@ -2,10 +2,6 @@ import { resolve } from "node:path";
 import type { AgentRunExtension } from "../../agent/run-extension.js";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
 import type { PluginDefinition } from "../../kernel/types.js";
-import {
-  createInstanceSkillSettingsRepository,
-  createSkillCatalogRepository,
-} from "../skills/repository.js";
 import { createTaskResourceCloser } from "../task-work/close-resources.js";
 import { createApprovedPlanPromptSection } from "./approved-plan-prompt.js";
 import { createAskUserQuestionToolDefinition } from "./ask-user-question.js";
@@ -13,6 +9,10 @@ import { createCodeAttachmentRepository } from "./attachments/repository.js";
 import { createEnterPlanModeToolDefinition } from "./enter-plan.js";
 import { createExitPlanModeToolDefinition } from "./exit-plan.js";
 import { createCodeGuideMiddleware } from "./guide-model-mailbox.js";
+import {
+  CODE_UI_HOST_RPC_CAPABILITY,
+  type CodeUiHostRpcHandler,
+} from "./host-rpc-handler.js";
 import { createCodeHistoryOutputPrompt } from "./output-history-prompt.js";
 import { createCodeUiRepository } from "./repository.js";
 import { createCodeUiService } from "./service.js";
@@ -45,6 +45,13 @@ export function createCodeUiPlugin(): PluginDefinition {
       ctx.register("codeUi", () => {
         const userInputs = createUserInputBroker();
         return createCodeUiService({
+          hostRpcHandler: (service, method) =>
+            ctx
+              .get("capabilities")
+              .get<CodeUiHostRpcHandler>(
+                CODE_UI_HOST_RPC_CAPABILITY,
+                `${service}.${method}`,
+              ),
           userInputs,
           repository: createCodeUiRepository(ctx.get("persistence")),
           executionScopes: ctx.get("executionScopes"),
@@ -57,10 +64,6 @@ export function createCodeUiPlugin(): PluginDefinition {
           attachmentRepository: createCodeAttachmentRepository(
             ctx.get("persistence"),
             resolve(ctx.env.checkpointRoot ?? "data/checkpoints"),
-          ),
-          skillRepository: createSkillCatalogRepository(ctx.get("persistence")),
-          skillSettingsRepository: createInstanceSkillSettingsRepository(
-            ctx.get("persistence"),
           ),
           beforeCloseTask: createTaskResourceCloser({
             localInstance: ctx.get("localInstance"),

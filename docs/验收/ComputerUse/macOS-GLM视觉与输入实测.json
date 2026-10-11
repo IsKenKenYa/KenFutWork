@@ -1,0 +1,21 @@
+{
+  "testedAt": "2026-10-08T12:46:48.184Z",
+  "taskId": "8e5ead86-0994-4aa0-b753-c2565d90fc42",
+  "model": "glm-5.3-flash",
+  "reasoningLevel": "max",
+  "phase": "completedSuccess",
+  "visualMarker": "KFW-568B3D",
+  "markerAbsentFromPrompt": true,
+  "markerAbsentFromInitialAxTree": true,
+  "onlyComputerUseTools": true,
+  "typedValue": "KFW-568B3D中文🙂🚀",
+  "typedValueReadBack": true,
+  "coordinateClick": {
+    "x": 230,
+    "y": 224,
+    "type": "coordinate",
+    "frameId": "frame-2"
+  },
+  "clickCountReadBack": true,
+  "nativeClickEvents": [1, 2]
+}

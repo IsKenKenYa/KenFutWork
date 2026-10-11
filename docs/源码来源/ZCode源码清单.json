@@ -16,12 +16,13 @@
       "source": "references/zcode/packages/ui/src/App.tsx",
       "target": "apps/web/src/components/workbench/zcode/App.tsx",
       "sha256": "ad78d4e881b8706bf708a5acd08aff900c66784a8a435603fd50cf1b8670a987",
-      "copiedSha256": "9e5ce923820818868f13d4c668c74bd61231371cdaf955d7298b60cae83b9132",
+      "copiedSha256": "bc923f042bc3533f335e155af41ece2dfa2d22a0c73483973190680d703d731f",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "能力显隐：未接通自动化服务时不进入原自动化主视图、不轮询闲时任务通知",
         "品牌适配：应用 chrome 标识换 KenFutWork 自有标，ZCode 归属保留于 About 与 NOTICE",
-        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
+        "能力显隐：原自动化导航保留，未接入宿主进入原页禁用态；通知仍不轮询闲时任务",
+        "宿主接口：原市场导航交给独立管理文档，保留Task工作区及原页面装配"
       ]
     },
     {
@@ -573,13 +574,14 @@
       "source": "references/zcode/packages/ui/src/Root.tsx",
       "target": "apps/web/src/components/workbench/zcode/Root.tsx",
       "sha256": "2fe5a5c4a94149d424591b48f6ab04226c29550227f32db986f8bffc65166c5b",
-      "copiedSha256": "da92c4196d9447581cebf85a30bf798d0ec5f0c606db86c4a060582cc16c0345",
+      "copiedSha256": "7b29a2de8a70fbe085e1e6dc4b80ef381ccf947c85e33eeadce7949429699c21",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主接口：真实身份、mode callback与握手clientMode透传；非云OAuth/账号迁移门及未接引导/import/运行偏好门，保留原Root生命周期",
         "宿主接口：原目录选择等待真实resolvePath与Project绑定，成功才关闭，失败沿原错误区重试",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
-        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
+        "宿主接口：原设置操作由TabStore托管到独立文档，Root运行与工作区保持"
       ]
     },
     {
@@ -604,14 +606,15 @@
       "source": "references/zcode/packages/ui/src/SettingsPage.tsx",
       "target": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
       "sha256": "0f3d3b06be4fdb675f870e06dcc8bf89aeff9ad9fc880ca1f0f6338a6e76916a",
-      "copiedSha256": "9ae9d754f0b4d6c90b91a736054d3ca9d6a7989abd81fca5616f2ac9a8ccac17",
+      "copiedSha256": "b63e05b47f1f721886d18746c61ba116b18da16734ad90bed3f4651d02a460a3",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落",
         "能力显隐：未接引导记录时隐藏原引导入口和查询，缺省原行为",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
-        "设置目标统一复用isLocalWorkspaceTarget：本机Project身份不再误判远端，保留远端连接及目录匹配校验。"
+        "设置目标统一复用isLocalWorkspaceTarget：本机Project身份不再误判远端，保留远端连接及目录匹配校验。",
+        "宿主接口：独立文档的设置到市场导航不关闭文档；原返回、栏目、模型编辑器保留"
       ]
     },
     {
@@ -1444,10 +1447,11 @@
       "source": "references/zcode/packages/ui/src/UpdateStatusDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/UpdateStatusDialog.tsx",
       "sha256": "96d814735da7eafaafb3cf88673ae0472970340addd6b5a3f6504a85c38205d6",
-      "copiedSha256": "67b56b98be1d7af302c1715bcacf2e9051921b8c426c8fd5ed9facd9d1248025",
+      "copiedSha256": "1e524ef850082a57bef44bb17a7f30242dfb3a071deb26e5ec6af0af615d0eee",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "资源路径：dock 图标改为本镜像 public 路径，由 Vite 处理"
+        "资源路径：dock 图标改为本镜像 public 路径，由 Vite 处理",
+        "品牌／Next资源路径：更新弹窗使用既有KenFutWork mark的静态导入，避免库产物new URL(public绝对路径)被Next重新解析为模块"
       ]
     },
     {
@@ -1654,11 +1658,14 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebar.tsx",
       "sha256": "312065bd80ff3a74b498dde96270a9f430f86808933625b02e4a1a6cbd56bf49",
-      "copiedSha256": "ba936a62ca192934c79092e0ce4d36ed2fb011bd4e2b5de5b2dede3fd2201c50",
+      "copiedSha256": "d48b08eb34444bc83a6c49323f1899a18dc40fe60d24ab5f149522f7c63f76f3",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "能力显隐：原自动化按钮及分组快捷入口仅在宿主服务可用时显示",
-        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
+        "宿主接口：原市场下扩展插件入口槽，沿用原Button及PluginIcon，入口数据和面板由现有库存及宿主提供",
+        "宿主入口扩展：原Button及图标直达原技能/MCP页，通过原设置导航意图固定本机作用域，不创建Task",
+        "能力显隐：恢复原自动化Button/CalendarClock导航；分组任务快捷入口仍仅在服务可用时显示",
+        "品牌／模式文案：原侧栏顶部插入既有横排模式按钮的共享展示，保留原导航与任务装配"
       ]
     },
     {
@@ -1711,12 +1718,13 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebarFooter.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebarFooter.tsx",
       "sha256": "5f64bddab48988a8cea50ea65f615d6b1f02bb63a2a40b232f207cfea30a9a57",
-      "copiedSha256": "01c8c58217394b1bc4f56aea845744b7eeef7230054c6575cee8ed60024ffb66",
+      "copiedSha256": "c7c6a76499b83b7f94d86d6bf37965268905713bbd3ffada4bed73da924a7111",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：未提供云账户的宿主隐藏原云徽标/登录/退出，保留原偏好与用量项",
         "品牌适配：无用户名时的回退显示名改 KenFutWork",
-        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
+        "能力显隐：宿主提供顶部模式按钮时移除旧界面模式菜单，避免重复入口"
       ]
     },
     {
@@ -2097,9 +2105,10 @@
       "source": "references/zcode/packages/ui/src/app-shell/useAppChromeState.ts",
       "target": "apps/web/src/components/workbench/zcode/app-shell/useAppChromeState.ts",
       "sha256": "f5e8beeb36a54d1e925254287c93fe820ec9b65c6323a9ec9130eaffeaddf029",
-      "copiedSha256": "4a38e3855b4db95b2f2e29b47f2b65b9da7fc9305f399066460c5cad67bee430",
+      "copiedSha256": "c759683a4a83693f68e4f4c12363d26e83a55a96dc656ebbea93156bd77c9b9a",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：实际提供窗口控制区几何的平台可订阅原生全屏，独立于完整Electron桌面菜单能力"
       ]
     },
     {
@@ -3079,9 +3088,11 @@
       "source": "references/zcode/packages/ui/src/components/PluginIcon.tsx",
       "target": "apps/web/src/components/workbench/zcode/components/PluginIcon.tsx",
       "sha256": "4bdb6a78e9839770411c765fb6ea95691fdb2ce3d69ac52d467ba7ebfc08d604",
-      "copiedSha256": "28102de1f41b457f9524f7f1650e1fa2eae955dd299b196bcd2638284b6f4c93",
+      "copiedSha256": "2d7914173c7b1d400b5be2509be6bf1cc12567b736f64f5489b4c467e331c975",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主资源适配：原span/img及失败回退保留，原Platform取认证图片引用；异步结果按当前资源守卫",
+        "主题适配：导航可选monochrome使用已认证图片引用作为currentColor mask，读取／解码失败沿原兜底；市场头像仍用原图片"
       ]
     },
     {
@@ -5598,9 +5609,10 @@
       "source": "references/zcode/packages/ui/src/hooks/useZCodeSessionService.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useZCodeSessionService.ts",
       "sha256": "89a3d7520a9d732da5c8838866669d277ee8d265ec0240aabd5ede50a27f1830",
-      "copiedSha256": "232bcec25d00a934d8b67f6a9c582dfdf51f9c24e0e69b9640dc57ab22c7d98b",
+      "copiedSha256": "ee9869e51e7fba08788bc072b7f1d7e3d6d85e57ad1e1cfe7adf847a9b80c14c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接线：实例到真实Project的切换始终调用原服务解析hook，消除条件hook序列变化，保留原会话服务"
       ]
     },
     {
@@ -5680,7 +5692,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "5292f9f22d67cbfc2950a2274f4061150d06d409d7d074f2e194fb6011859127",
+      "copiedSha256": "f944b2923e0cb0f7b3bf73d0dfa290797c61f634e06b0b32c7c75d451e31c9bc",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5689,14 +5701,15 @@
         "品牌适配：用户可见文案 ZCode→KenFutWork（不做产品品牌呈现，归属保留）",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "原Edit工具卡补丁预览预算截断提示英文本地化",
-        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
+        "本机文案：原Personal分段改Local；空目录标签与真实本机来源一致"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "343df832b7b13bcc9e9b283374d7f5dce57806e9a137cd4dc10e9973dcdebb1c",
+      "copiedSha256": "a9f316aca5cf16bcddfba87f3fae10a557039b8e071088713fbe4520d05258c4",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5705,7 +5718,8 @@
         "品牌适配：用户可见文案 ZCode→KenFutWork（不做产品品牌呈现，归属保留）",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "原Edit工具卡补丁预览预算截断提示中文本地化",
-        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
+        "本机文案：原个人分段改本机；空目录短标签，不宣称未接市场源可创建"
       ]
     },
     {
@@ -6644,9 +6658,10 @@
       "source": "references/zcode/packages/ui/src/lib/pluginIconSource.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/pluginIconSource.ts",
       "sha256": "0c2067d3ce5326a3d9c778cea189e4534127a4e469388b0c94e10c2b0c6cdd5d",
-      "copiedSha256": "441f9f202656d8d408114bcc4b791b3f5a09f20e82e73a95f60cbf4a6156d32b",
+      "copiedSha256": "dd5bc661edea588dcbad9548805cc9f729358687975868f8c6919e88f3611790",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主资源适配：按完整pluginId校验包图标引用，不放行任意本机URL；原HTTPS及打包图标保持"
       ]
     },
     {
@@ -6788,34 +6803,39 @@
       "source": "references/zcode/packages/ui/src/lib/providerPersonalSave.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/providerPersonalSave.ts",
       "sha256": "c0831ac2105a5401630047bd042c445784fc475f4ef9c725cc343fadcada2ca6",
-      "copiedSha256": "d516a276a2b4f93ceb4f12c37b7bb36f879fc0c7d40807714e895ebbf1af3261",
+      "copiedSha256": "3de6a65a74968126090b809619ad3716b952932b427d334cd8f3375f998d2529",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；授权设置可查看／复制，普通目录／通知不含秘密值，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
+        "宿主保存：生成模型及协议草稿进入同一providerSettingsService；提交返回view沿原Hook更新"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/lib/providerSettingsFormProjection.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/providerSettingsFormProjection.ts",
       "sha256": "2c3ec70a8b2f68e6c9d20c358656d238ce865b7e61cc582172316f04039427dc",
-      "copiedSha256": "f4256ddaac7db1fbfdf34d49f174725a8e7f9bf0930aaabd87aee672ba309cd7",
+      "copiedSha256": "6a6766122095e978685103a569ee016e76af668641ace3ebe88261df7d0dd921",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主 DTO 接线：原投影传递真实凭证 presence，不生成 Key 占位值",
-        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
-        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；授权设置可查看／复制，普通目录／通知不含秘密值，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
+        "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
+        "宿主投影：原view解析原生供应商一次并按ID关联模型；生成与Flow不伪造聊天配置"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/lib/providerSettingsFormTypes.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/providerSettingsFormTypes.ts",
       "sha256": "09ff05f29fe66e1b92208edd188397321e61b9c4e12364f3004d38b0a8cae3c8",
-      "copiedSha256": "158e86070f31e4248b65d21ef1c976de233af0d06ae657941b896252f8ad4b91",
+      "copiedSha256": "76b40682dcce0c76e0d2dc07a4816046ab24c730563dffdd958f6febad3dc16a",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主类型兼容：原表单传递可选 credentialConfigured",
-        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
-        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；授权设置可查看／复制，普通目录／通知不含秘密值，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
+        "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
+        "宿主契约：原表单携带真实生成定义与编辑修订；协议及模型保存意图由统一管理服务消费"
       ]
     },
     {
@@ -7078,9 +7098,10 @@
       "source": "references/zcode/packages/ui/src/lib/skillSourceFilter.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/skillSourceFilter.ts",
       "sha256": "2a46b9318008048c1dd9a8961abd0714d1ad6e5c276c5e079621c9cd48edcbab",
-      "copiedSha256": "2a46b9318008048c1dd9a8961abd0714d1ad6e5c276c5e079621c9cd48edcbab",
+      "copiedSha256": "ee9462df76e178bfc76a8cf13ac0e042575aa267193b25ba158ac38af855175e",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主类型兼容：按真实package resourceRef与稳定ID识别本机技能，拒绝伪造文件/软链路径"
       ]
     },
     {
@@ -9006,9 +9027,10 @@
       "source": "references/zcode/packages/ui/src/root/useDesktopNativeThemeSync.ts",
       "target": "apps/web/src/components/workbench/zcode/root/useDesktopNativeThemeSync.ts",
       "sha256": "666c3a465d9bff34703190a2a56a7bc40ef3e77c443342c5c38de8b8ea6ad132",
-      "copiedSha256": "dbf9a2063bc330eb1630d24906d20d590c29e679297c74263b46ceccf7b2a3a7",
+      "copiedSha256": "c9b400aafbb941a3427ba6d1c54d3db5ff52496cb8224f6536e5b1c48a5ead97",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：窗口控制区几何能力可同步原生主题，不开放未接通的桌面命令或切换键盘消费路径"
       ]
     },
     {
@@ -9131,18 +9153,20 @@
       "source": "references/zcode/packages/ui/src/settings/AddMarketplaceSourceDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/AddMarketplaceSourceDialog.tsx",
       "sha256": "054da48e48b083eac6aaf37557bb5edf3b6667f1bc3999d9b9bf5bd137c3e461",
-      "copiedSha256": "85dd27d5d246000933f862cda6ead1c595e08f4b7fbbc81b9f19a8382b73f03a",
+      "copiedSha256": "b3f6dd17c2f461a4a57764ef92369ab67c4ad77d6b3afc1ffb6cd6eb06e70298",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口/能力显隐：复用原输入、对话框及操作区增加独立来源安装/检查；原市场源未接入禁用；表单episode保护关闭后晚到结果"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/AutomationDesignPrimitives.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/AutomationDesignPrimitives.tsx",
       "sha256": "9f6774f8db202e98a41de8426473f7fba626a9483304ee8cf94da505a4e57d2d",
-      "copiedSha256": "589d285c41e3a588366c2ae370bff4e3a1d446b5db13683f3290e44219862971",
+      "copiedSha256": "a482b1f4390af496493dec9200bf52e5abfa7d33d6e5ff59ae236f509fe6780b",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主能力接口：原创建控件增加disabled；未接入无动作回调，支持态使用原回调"
       ]
     },
     {
@@ -9221,9 +9245,10 @@
       "source": "references/zcode/packages/ui/src/settings/AutomationsSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/AutomationsSection.tsx",
       "sha256": "84dee6ce8ec0debfbe138f0ff3bc5d9f40b1c2923965522f36a737c91247344d",
-      "copiedSha256": "e3d293ae38cc65563b4d7be2255158a0e1dd8e095ecac7fb2f0f246221a89fc0",
+      "copiedSha256": "230e78c2b39c24493f8587f695cdf4c3d9ad03ffe8fa8c25d71d236e60e75487",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主能力显隐：未接入时保留原页面容器、标题和禁用创建控件，不挂载原列表/轮询/套餐/模板消费者；支持态完整原装配保留"
       ]
     },
     {
@@ -9325,9 +9350,10 @@
       "source": "references/zcode/packages/ui/src/settings/ExternalAgentImportDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/ExternalAgentImportDialog.tsx",
       "sha256": "19aa8cb5c86f421ce736a518e109f988326039b2889705b15457466820646daf",
-      "copiedSha256": "85dfcd33046b00d175a8f0e0da6224a04d3776944f0a8c058be47d89ff2e976f",
+      "copiedSha256": "8493bc14a288e022304fb24a0b70aea685b0164b5a29b60b0fd78af3ac6ea5e0",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主能力显隐：外部Agent扫描/同步未接入保留原Dialog及未接入状态，禁用操作、零扫描请求，不显示假空数据"
       ]
     },
     {
@@ -9379,28 +9405,31 @@
       "source": "references/zcode/packages/ui/src/settings/McpServerForm.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/McpServerForm.tsx",
       "sha256": "67c9ca3284c69baee8c674542203e12f749fd6675e3da555395857ef75cd2fe8",
-      "copiedSha256": "0d564240583439f5f460e012a28b8d4ea3b7c28a9937730edae21d8e383e667a",
+      "copiedSha256": "dd23cba662e56be9d8e9c9cf6a473c3db762f115df224c7fc1a22c60f2a498c3",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：异步写入保留草稿；非法env及JSON模式转换显式校验；按真实MCP能力禁用项目/请求头/服务参数/SSE配置，保留原表单装配"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/McpServerList.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/McpServerList.tsx",
       "sha256": "b6d995f8b215f1db768abdff486da8e36e9ac5c729ddef225e9966609cd21794",
-      "copiedSha256": "37b40251c99f8ce2cbd2b8f9c9f2ce7bafe272cc4967621f065ab05e2306a798",
+      "copiedSha256": "c321cc10c6806451af3d17857e640a4d67e418895e690d261316daa33167df55",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：环境来源记录只读，复用原列表及开关，不将环境配置伪装可写数据库记录"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/McpSettingsSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/McpSettingsSection.tsx",
       "sha256": "7dd648f1b79e674b714a9f025420f8519741d2b6327b52600fe077b3ea6a4e69",
-      "copiedSha256": "4d06d9f877d1fc1dc9d3ace5d5fc65c10190770319244dbf90ee6880eb579be9",
+      "copiedSha256": "124b3304c2c466b849fd6e96e303ffd57e7b8fb738585172601e3f77bb5f8da8",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "类型兼容：原 segmented tab 回调值收窄到原 McpEditorMode"
+        "类型兼容：原 segmented tab 回调值收窄到原 McpEditorMode",
+        "宿主接口：实例无Project管理、固定编辑快照ID、授权读代际保护、失败提示与真实连接状态；保持原列表/分组/表单装配"
       ]
     },
     {
@@ -9499,9 +9528,10 @@
       "source": "references/zcode/packages/ui/src/settings/PluginAddMenu.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/PluginAddMenu.tsx",
       "sha256": "49b6c0a7310e7013a91a893df795695d6bf32c662a6589452dd2b5f866e6c331",
-      "copiedSha256": "1caf93f5d2e15f1d545accf14455dad4b02da45390f33e8518ec658710f88022",
+      "copiedSha256": "4eaeb93aaf22639ddbe7178d163a0ad63d85130888ff39262b5ae7285111b7d5",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主扩展槽：原菜单增加链接或目录安装；不将来源安装冒充市场源添加"
       ]
     },
     {
@@ -9554,9 +9584,10 @@
       "source": "references/zcode/packages/ui/src/settings/PluginStoreCard.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/PluginStoreCard.tsx",
       "sha256": "aad8f08f60f2df6d47afced3cb3633af0ab7e21494ab17f285eb424d5f213dce",
-      "copiedSha256": "05a134b3737a833aa09f4bd8ef1620174ae5c76cf9995babcc0986ca782cdca3",
+      "copiedSha256": "c330cc9ccc81f3eecd7a5242fa760889ec10975ed32756d877628a646f40ee47",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主来源标识：可信发行目录在原卡片通过原Badge标官方，不重新装配市场卡片"
       ]
     },
     {
@@ -9581,18 +9612,21 @@
       "source": "references/zcode/packages/ui/src/settings/PluginStorePage.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/PluginStorePage.tsx",
       "sha256": "ebd9f6237e0dbafd538f21783262bb29baf45f4f30439ee93cbc78888235b3e8",
-      "copiedSha256": "917b9eb983ec4c554d12ad8edfb8d68808f2f5ee9180b8be462f089ea5bc7641",
+      "copiedSha256": "2178ff04329e8d74f19dd6561480413f7e500b6c5ac64c97f738dd256bc43cf3",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接线：本机市场不要求Project；原来源对话框接现有注册表安装/检查，原顶栏显式刷新库存，市场源管理保持未接入",
+        "宿主接口：独立原市场可返回宿主，保留原列表、详情、安装及注册表装配"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/PluginStoreSourcesDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/PluginStoreSourcesDialog.tsx",
       "sha256": "dea55eb2215906510fa6018e5fe7c601e3c55f0fbe3fb66abde054d411a1e9ce",
-      "copiedSha256": "dedb90e2627812db9cc397927189c0138958a6e49568567f6848f4f4d453462d",
+      "copiedSha256": "17cfa6b277cd75306fd95852cd2ce59224351a8fd86947cd2f040aeb16100f29",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：原市场源页面显示未接入并禁用刷新/删除，不返回假开关效果"
       ]
     },
     {
@@ -9608,9 +9642,11 @@
       "source": "references/zcode/packages/ui/src/settings/PluginsSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/PluginsSection.tsx",
       "sha256": "65954a8df4701a1aebdd6fba0e88ef370b45d88a739ee601c838acea0a65a5d6",
-      "copiedSha256": "a4eb665818491cbe332880722acf6bf1401cfd54d3d4cc24e7cbea069dfd5f4a",
+      "copiedSha256": "aa9f6e32425875d3d8c950cdede0f8f8b99eb484115d9ad8c71e15048c612fcb",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力显隐：真实实例插件、MCP及技能无需Project，原表单按本机作用域接原接口，不伪装目录或Task",
+        "宿主接口：切换服务后旧启停响应不向新管理页提示成功或失败"
       ]
     },
     {
@@ -9806,9 +9842,12 @@
       "source": "references/zcode/packages/ui/src/settings/SkillsSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/SkillsSection.tsx",
       "sha256": "08362ed2dd3e492e04d95ba656b07c22c99264be6a74893a5ad46b7fdec5d021",
-      "copiedSha256": "284c5e06ee95516526b3063ee7d08bd009671b8d41f9c7c3b3ed548a4cab9ccb",
+      "copiedSha256": "404753daffa8038bea53385af12a19b6deca27cd9e42fde421276eac248de04c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：本机安装态无需Project，原详情复用MessageResponse正文，不提供空路径操作；原卸载/开关与修订/目标代际回写保护，不重组页面装配",
+        "宿主接口：DB宿主保留已停用插件的只读技能；沿现有库存通知刷新定义与详情，不将包资源投影为文件夹",
+        "宿主接口：原技能页按真实instanceScope初始化无Project插件库存，直达管理文档可读声明"
       ]
     },
     {
@@ -10013,9 +10052,10 @@
       "source": "references/zcode/packages/ui/src/settings/mcpSettingsShared.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/mcpSettingsShared.ts",
       "sha256": "a4241c93167b087afebe9d669ffe4fa5b5137a4768cb0045d8eeb8a4f220ab98",
-      "copiedSha256": "a4241c93167b087afebe9d669ffe4fa5b5137a4768cb0045d8eeb8a4f220ab98",
+      "copiedSha256": "eb206a6ba3f795ca2d740ed579c1fc64a96edd67291a4616213a77129bace9d7",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主类型兼容：保持结构化argv与空参数；env清空显式提交，非法env拒绝而不清除凭据"
       ]
     },
     {
@@ -10078,11 +10118,13 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/InlineEditableProviderCard.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/InlineEditableProviderCard.tsx",
       "sha256": "2158d97081523c1423a1b4c7c0318e92d89c3e7f3610cf6001e7923588efe0d1",
-      "copiedSha256": "9cbdaf9d177d0e4d179223945e38242752e3bdda75f0d700006822975bfacbbd",
+      "copiedSha256": "7bcd92bf585bb0b3b34129c96883656372ce7ca978f72c14d3d401a2ab5740c1",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主 BYOK 接线：沿原保存链明确 clear，仅清成功提交且未继续编辑的对应 Key 草稿，保护迟到应答",
-        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。"
+        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
+        "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
+        "宿主接线：原卡片生成模型新增编辑和真实协议保存；Flow隐藏本机模型；保留原反馈与操作生命周期"
       ]
     },
     {
@@ -10125,21 +10167,24 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderApiFormatSelect.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderApiFormatSelect.tsx",
       "sha256": "ea0f7234753f8300a2f70b190bc878ddf711a73a05f9fcd93810349715eda81f",
-      "copiedSha256": "752f50bee630c5e817fd62bf45d0064994e2298c2fa0ef36ebd96586cc59375c",
+      "copiedSha256": "f18373f902c2929fba2b5d64336be39cb26ecbf2349866f2c48f8200e051652f",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；授权设置可查看／复制，普通目录／通知不含秘密值，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
+        "宿主协议扩展：原Select展示生成/Flow真实协议，聊天四API选项保留；原生协议使用统一修订保存"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderCardSections.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderCardSections.tsx",
       "sha256": "d01c7b6a18b1b5c93bc176988751821f0f29f435613c399380ba8e4d8dd0ef09",
-      "copiedSha256": "d240a97f9232a1031b9403087fef7dfefffa11bd599b1544c10f1d225777b3e6",
+      "copiedSha256": "a91ebc07b04045066261159835cbc458ec1140ed460dbfede53a200c50443aad",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主接口：原 Key 区段透传 presence 与 clear 回调",
-        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；授权设置可查看／复制，普通目录／通知不含秘密值，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
+        "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
+        "生成叶子扩展：原新增对话框及列表承载真实模型用途，创建捕获供应商修订；生成不显示聊天校验"
       ]
     },
     {
@@ -10175,9 +10220,11 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderFormControls.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderFormControls.tsx",
       "sha256": "ea46f9f4f4e21c9684f84b179370018c41f9db6a191a1332b3b1a59c623f34b3",
-      "copiedSha256": "da950c11784c325f3dc015b623066665f3e3a2b2ffc4efa5c65cade5dde0ec0b",
+      "copiedSha256": "21770b1d7bc8d70cbecec857dea9436bebd9f29bb70e896e062569077e2c5b42",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
+        "生成叶子扩展：原模型行及弹窗通过原onCommit返回真实定义，编辑固定打开修订；不展示聊天Token徽标"
       ]
     },
     {
@@ -10211,9 +10258,12 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderModelMetadataDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderModelMetadataDialog.tsx",
       "sha256": "9d3f08fae02d05ee885ae331a9ae38f1cb46608f74dc3da52c493bd444a61c15",
-      "copiedSha256": "3b50673ab8fd6f11d0dcd50c21951e16d8a768adea6fffc2af4fa4aca0683a4f",
+      "copiedSha256": "7ed49e2663d233661038ad97f7c6e72fff854251d80cecde6e3319d47b53ab94",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
+        "生成叶子slot：保留原Dialog触发器/操作/错误/保存；生成隐藏聊天智能推荐与恢复提示",
+        "生成叶子沿用原Enter/IME提交与保存中inert保护，技术输入失焦后读取最新草稿"
       ]
     },
     {
@@ -10564,9 +10614,10 @@
       "source": "references/zcode/packages/ui/src/settings/pluginCapabilityProjection.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/pluginCapabilityProjection.ts",
       "sha256": "f23b56b792852439de0d71d0055c8f720f1146f934b1b0948f8391064dac4d39",
-      "copiedSha256": "f7d515250e716ff4211c4c27cd0f0eea36a9727afbb6cdd09d24679b398126a3",
+      "copiedSha256": "1093fadc38f7a2a900b5bae04ca9a0730e8ad024f0f91c9db7d2eb156e58813f",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "能力投影：DB宿主的技能管理允许停用插件声明继续展示，运行候选仍由真实启用态收窄"
       ]
     },
     {
@@ -10636,9 +10687,10 @@
       "source": "references/zcode/packages/ui/src/settings/pluginStoreListing.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/pluginStoreListing.ts",
       "sha256": "f63b9b51c17766f7d6bf9b46d700eaaf502063b26b5ea2b6a345b65900071511",
-      "copiedSha256": "86b739579ccaa5b457ed6eca12d099e47c0cad7398664dafdc09da92c12a66cd",
+      "copiedSha256": "c6acbef7063e3822475f71c755e0b39fdf1f7a1b16351b29b2567a2189fcf93b",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主元信息适配：本机包按完整ID合入真实installedMeta.listing，原商店装配/排序/身份关联保持"
       ]
     },
     {
@@ -10654,9 +10706,10 @@
       "source": "references/zcode/packages/ui/src/settings/saved-workflows/AutomationsPageTitleSwitch.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/saved-workflows/AutomationsPageTitleSwitch.tsx",
       "sha256": "20dcb121c29c92900b3dec6471cbdd75fe15ae6714bb5d6f46d638a4deffe9c6",
-      "copiedSha256": "e74c0fea7bf1c93d6923f77a69ad23e023370a9970f1f785af39857cf15014a1",
+      "copiedSha256": "a46abe2017a193e43721e3004e98e45ab104beebb81512c46c1da1bda695ff6e",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "复用原源码：仅提取原平铺h1供未接入态共用，标题与布局保持原装配"
       ]
     },
     {
@@ -11098,11 +11151,12 @@
       "source": "references/zcode/packages/ui/src/settingsPageHelpers.tsx",
       "target": "apps/web/src/components/workbench/zcode/settingsPageHelpers.tsx",
       "sha256": "d65c95c659bcf92416f068255bc2d0a62a7e673bf9d967a4e5e485dff0f41e83",
-      "copiedSha256": "60786f18381f9a4014f126f132d6bc99e00bd65e9188a83798a164fccf962e4c",
+      "copiedSha256": "022be992cbb92970f4786d5f202039bcf90e45a2900ded204cfe8eb11590b3dd",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：隐藏未接引导与运行偏好对应原控件，缺省原行为",
-        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
+        "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
+        "能力显隐：实例管理文档不提供工作区模式设置，由宿主导航持有模式"
       ]
     },
     {
@@ -11182,9 +11236,10 @@
       "source": "references/zcode/packages/ui/src/store/TabStoreProvider.tsx",
       "target": "apps/web/src/components/workbench/zcode/store/TabStoreProvider.tsx",
       "sha256": "4fa0467562e4fa4baa12e4ceb762de4e64960e3e75346826a72903d29449d764",
-      "copiedSha256": "62fdb18bbbbcc68759b1462d2c7f481e1eca5b5937b592808b2a57cbc929f06d",
+      "copiedSha256": "68225b3cd6eff48913aaf0c4e817b500da95069656272aa7861abbfe6bf1cfb6",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：透传可选设置文档导航回调，缺省原Store行为"
       ]
     },
     {
@@ -11292,27 +11347,30 @@
       "source": "references/zcode/packages/ui/src/store/mcpStore.ts",
       "target": "apps/web/src/components/workbench/zcode/store/mcpStore.ts",
       "sha256": "ae3a9a2f0513969ae680be94777d4275a0fe33c2010bbafd5c8d138ed62b9e49",
-      "copiedSha256": "0153c203973553c504146aec79d779baa5ff776b8996997f26aaec5224ac80f6",
+      "copiedSha256": "5419ceca8af1204fed4d2474c825f8aef3ed3f2b9f416de355361b1175052d35",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：数据库记录固定ID，秘密只留授权草稿；写入响应未知只读对账不自动重试，刷新失败不报成功，不执行旧数据迁移"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/store/mcpStoreDesktop.ts",
       "target": "apps/web/src/components/workbench/zcode/store/mcpStoreDesktop.ts",
       "sha256": "1362f1da2c9345ece3837d908bda33037434e9f900952f80e3358da8b1ceae33",
-      "copiedSha256": "fb8e77b0ac96e4b1ca4b15691e4d4cc7fe4b228a88391b9941999d43d3b722ee",
+      "copiedSha256": "66e7666bff6171b87966017c9a99aa7f7522869320bbd4af2561e386e0ee9ca5",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：沿原平台调用读取真实本机记录，宿主能力仅决定原配置迁移路径"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/store/mcpStoreHelpers.ts",
       "target": "apps/web/src/components/workbench/zcode/store/mcpStoreHelpers.ts",
       "sha256": "4db0d74a9d24421414a5e3cce342cdd77b3dd794bb188c885456dd36ea38cba7",
-      "copiedSha256": "4db0d74a9d24421414a5e3cce342cdd77b3dd794bb188c885456dd36ea38cba7",
+      "copiedSha256": "fbca8a6bc94bd03f2e745e1dd1aa3554ed690665e08098d4b964dc8fb89ba3ed",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主类型兼容：稳定记录ID、来源、envKeys；数据库启用态来自服务端，不绑定同名重建记录"
       ]
     },
     {
@@ -11355,27 +11413,31 @@
       "source": "references/zcode/packages/ui/src/store/pluginManagementStore.ts",
       "target": "apps/web/src/components/workbench/zcode/store/pluginManagementStore.ts",
       "sha256": "147cddd20abb8d96079c138ede0b2028ccf6a8f62ebb50d8578a98821a6c62af",
-      "copiedSha256": "4c2fa9490dd260afe3e8105ae01ef8adaaa6faea9053bb627eebb4697721a769",
+      "copiedSha256": "518e3f0a7f2504486d1d8d066bc5a58814868cea6c9a669ef3ff8d345d7def01",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "类型/宿主接口：无Project用原接口空上下文，不伪造目录；同服务缓存、强制读取对账",
+        "宿主接口：同路径切换服务清理旧操作忙碌态；原库存与组件装配保留"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/store/pluginManagementStoreEnabled.ts",
       "target": "apps/web/src/components/workbench/zcode/store/pluginManagementStoreEnabled.ts",
       "sha256": "225e5a88bfdd65d36e87920f865d5a9b16e1f50489bf7160f8454634d5981395",
-      "copiedSha256": "ac06fa2abdc33dcb09a410f543fbe2363add1f9b96bcd51bbed1a268b60f1213",
+      "copiedSha256": "c55af98bb90275d4d85a5f654027da314c893975704a048b1abc902e595b9ac9",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：空目录承接实例启停；按服务与读取代际核对结果，未知写入只读对账不重放"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/store/pluginManagementStoreLoading.ts",
       "target": "apps/web/src/components/workbench/zcode/store/pluginManagementStoreLoading.ts",
       "sha256": "fdbf8e6e3d8ed9122f9e857fc6a5b4e27c288b8c6a8904b637047df2df1d691a",
-      "copiedSha256": "d5c1b19aa879536a2711ceb9a1efbce7581d07f39c4eaaad002f46e4fd009a89",
+      "copiedSha256": "985a7d0c3a14a6bafc094ea67fcf808852a5ac602a76cffce920a7162205c3a5",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主读取代际：在飞按服务/目标隔离；写前后废旧读、未知结果只读对账；旧动作不得作废新目标读取"
       ]
     },
     {
@@ -11427,9 +11489,10 @@
       "source": "references/zcode/packages/ui/src/store/skillStore.ts",
       "target": "apps/web/src/components/workbench/zcode/store/skillStore.ts",
       "sha256": "ff122ead4cc64f94551b87a6389f44c2e557f0b054e473b6cdd3c5a7a80fa961",
-      "copiedSha256": "aa5e49d9a1dee24892e987659c65326a3a349b789713f554fc8d25ed26370206",
+      "copiedSha256": "b0d2a9630bdf89e075bab1856907634a7c0fda1d5a468dd7f3a26970c4822ae5",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：安装修订随启停提交；共享原UI消费接口绑定服务/目标/读取代际，响应未知先读回不重试写入"
       ]
     },
     {
@@ -11454,9 +11517,10 @@
       "source": "references/zcode/packages/ui/src/store/tabStore.ts",
       "target": "apps/web/src/components/workbench/zcode/store/tabStore.ts",
       "sha256": "d07f82e2c75c7ec9d0981b5d4aba6432ed45ff201600b5c258131a6fd609dcc2",
-      "copiedSha256": "ae015ccd89f1e20b588f2d925bd38fe6d9cca04ebea5b9814d2ec28ef85dcc8a",
+      "copiedSha256": "57a493c8d660c805e028919fe2e2c446559e4245a058ff17396be281fb9ded06",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：外部设置导航不改变活动Task或workspace；未提供回调时保留原tab装配"
       ]
     },
     {
@@ -14307,10 +14371,12 @@
       "source": "references/zcode/packages/shared/src/index.ts",
       "target": "packages/zcode-shared/src/index.ts",
       "sha256": "6fe33b1fdc42af4449155a13c540d137731d723bde3fa639e47bbca0f403a725",
-      "copiedSha256": "8119cbe7d685e926e6ae700765e22346d5e27ac211797b40e8e80862aa1b3d31",
+      "copiedSha256": "b9c69e6c40c3649e86dbd2fc90530a7069d8a0cc0029514a12db2a8db120f980",
       "adaptations": [
         "本机Project与固定Task目录的qualified身份按local路由、持久化和恢复；保留原远程身份及权限校验。",
-        "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。"
+        "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。",
+        "宿主接口：导出插件入口身份类型，供原侧栏与Platform边界消费",
+        "宿主契约：导出HostWorkbenchMode与HostWorkbenchNavigation供原UI及Design共用"
       ]
     },
     {
@@ -14380,8 +14446,11 @@
       "source": "references/zcode/packages/shared/src/mcp.ts",
       "target": "packages/zcode-shared/src/mcp.ts",
       "sha256": "20903fb8806923434dcf5c319cb1becc5cbaa3418bc6c6e9bcf56848ad9312ac",
-      "copiedSha256": "20903fb8806923434dcf5c319cb1becc5cbaa3418bc6c6e9bcf56848ad9312ac",
-      "adaptations": []
+      "copiedSha256": "4fd7881229b2a80114ed31a8846a97438dc5956b785c862d44732c9d9737debc",
+      "adaptations": [
+        "宿主类型兼容：原记录携带稳定hostRecordId、来源与envKeys，不虚构文件/目录",
+        "安全修复：CUA包规格的路径叶子改为线性尾扫描，保留身份判定语义；消除CodeQL报告的多项式回溯"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/media-preview.ts",
@@ -14513,7 +14582,7 @@
       "source": "references/zcode/packages/shared/src/platform.ts",
       "target": "packages/zcode-shared/src/platform.ts",
       "sha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "copiedSha256": "013721beb5c3f5e7fc103ab6539634fdbba9fae9db9114b33350c5c2071ea81f",
+      "copiedSha256": "ed9f476333e6fac3387e701175e3e85b4c8a9eeca81a21485da2c4b6e4a3ea2a",
       "adaptations": [
         "宿主能力接口：增加可选云账户支持标记；未声明的原宿主行为不变",
         "宿主接口：可选自动化/嵌入浏览器/CUA/远程能力声明；未声明保持原平台语义",
@@ -14522,7 +14591,14 @@
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
         "阶段同步3f5c3873: 可选sessionMetadataSource与原Root轻量真实标题；Task-index只读metainfo，未声明保持原session投影",
-        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
+        "宿主接口：可选认证包图标解析，沿现有平台Provider；不扩大通用图片URL许可",
+        "宿主接口：声明插件侧栏读取、变化订阅及仅传插件/入口身份的打开接口，不携带面板地址或凭据",
+        "宿主接口：声明现有MCP记录、项目/OAuth/请求头/参数/SSE支持态，未声明保持原平台行为",
+        "宿主接口：本机技能记录与外部Agent扫描/同步实际能力声明，未声明保持原行为",
+        "宿主能力声明：来源安装与市场源管理独立显隐，不改变未声明宿主的原行为",
+        "宿主接口：独立管理文档导航、真实实例插件作用域和实例设置模式显隐；缺省原平台行为",
+        "宿主接口：可选workbenchNavigation承接同源Code／Design／可信Flow导航，原coding执行树不变"
       ]
     },
     {
@@ -14536,8 +14612,10 @@
       "source": "references/zcode/packages/shared/src/plugin-marketplaces.ts",
       "target": "packages/zcode-shared/src/plugin-marketplaces.ts",
       "sha256": "e4e42c6122c1f732928a403b7f67b6941927de361daa39dd52e21d74ea7c04db",
-      "copiedSha256": "e4e42c6122c1f732928a403b7f67b6941927de361daa39dd52e21d74ea7c04db",
-      "adaptations": []
+      "copiedSha256": "51ea481271265ccf5bea90ac3a5fd96fb1a53f052f0db1c6c1d93db0157809fc",
+      "adaptations": [
+        "宿主发行清单身份加入原公开分段；默认ZCode目录与其他原分类逻辑不改"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/plugin-sync.ts",
@@ -14784,8 +14862,10 @@
       "source": "references/zcode/packages/shared/src/skills-types.ts",
       "target": "packages/zcode-shared/src/skills-types.ts",
       "sha256": "ed087503ae21992ec109acbb464ec3c7a17fbc8b0410fe6146195c2444e67dc3",
-      "copiedSha256": "ed087503ae21992ec109acbb464ec3c7a17fbc8b0410fe6146195c2444e67dc3",
-      "adaptations": []
+      "copiedSha256": "112de62014cb7d95c8192e530953e27cecb031b694a7ba190991550a29a4dcae",
+      "adaptations": [
+        "宿主类型兼容：本机包resourceRef及安装修订/能力状态，不虚构文件目录或符号链接"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/storage.ts",
@@ -15691,8 +15771,10 @@
       "source": "references/zcode/packages/services/src/mcp-sync/mcpSync.ts",
       "target": "packages/zcode-services/src/mcp-sync/mcpSync.ts",
       "sha256": "5d889611389bf900262a94be0e4a9daaa7b19950eeb7ed3f02ee9f344d2291ee",
-      "copiedSha256": "5d889611389bf900262a94be0e4a9daaa7b19950eeb7ed3f02ee9f344d2291ee",
-      "adaptations": []
+      "copiedSha256": "1306fbba1926896827833b4d96a0d88834dcb1e1aaf88b231ee9e0fab707a5a9",
+      "adaptations": [
+        "宿主接口：授权编辑按记录ID读取；实例状态读取允许无工作目录，不创建Project/Task"
+      ]
     },
     {
       "source": "references/zcode/packages/services/src/media-preview/mediaPreview.ts",
@@ -15768,8 +15850,10 @@
       "source": "references/zcode/packages/services/src/plugins/pluginManagement.ts",
       "target": "packages/zcode-services/src/plugins/pluginManagement.ts",
       "sha256": "c145b0a64fbc30398b91085e3e9db78a92e26c0ecdefce7621d770f98700a9e4",
-      "copiedSha256": "c145b0a64fbc30398b91085e3e9db78a92e26c0ecdefce7621d770f98700a9e4",
-      "adaptations": []
+      "copiedSha256": "f306b2c47f4e472e9e24b6d607833d349d175053ac698215ec3a6f4f67ca2316",
+      "adaptations": [
+        "宿主接口：扩展原市场的来源检查/安装边界，原方法保留；未知跨宿主结果由现有shared公共schema校验"
+      ]
     },
     {
       "source": "references/zcode/packages/services/src/plugins/plugins.ts",
@@ -15866,8 +15950,10 @@
       "source": "references/zcode/packages/services/src/skills/skills.ts",
       "target": "packages/zcode-services/src/skills/skills.ts",
       "sha256": "f3e9da868cde52bc7cd9ff16dc4e0c79df9dc54df1218993a87f8f4967a5c74c",
-      "copiedSha256": "f3e9da868cde52bc7cd9ff16dc4e0c79df9dc54df1218993a87f8f4967a5c74c",
-      "adaptations": []
+      "copiedSha256": "dc3d8a9b654224e3cd322dca7c79850a17226f7ceb73263eb9b0025002b73e90",
+      "adaptations": [
+        "宿主接口：实例技能管理允许无工作目录，启停/卸载承接稳定安装修订；原上游接口保留"
+      ]
     },
     {
       "source": "references/zcode/packages/services/src/storage/contract.ts",
@@ -24483,6 +24569,24 @@
       "sha256": "606c36baf38b973227273df12a74930e4b4137280eea835c5cd623aa4553c13b",
       "copiedSha256": "606c36baf38b973227273df12a74930e4b4137280eea835c5cd623aa4553c13b",
       "adaptations": []
+    },
+    {
+      "source": "references/zcode/packages/services/src/skills/skillsService.ts",
+      "target": "apps/server/src/features/skills/skill-document-body.ts",
+      "sha256": "85e5f5d3ca1eaf296bbaed5d1b1941cf503a8e10f2da1062db4bdcbbde01b590",
+      "copiedSha256": "dcc00bd8b38c65ff07e5072d324ebc0bccf642145ef9a30e92e008bd0aa6d79a",
+      "adaptations": [
+        "宿主接口：提取原readFrontmatter正文切分及splitFrontmatterAndLeakedBody，返回字符串供原SkillSummary.body投影；原算法保留，完整运行资源不裁剪"
+      ]
+    },
+    {
+      "source": "references/zcode/apps/zcode-cli/packages/contracts/src/commands/index.ts",
+      "target": "apps/server/src/features/settings/zcode-command-expansion.ts",
+      "sha256": "decafe2cee6b638071ac7aa7b5004615cb7e9b99ff3a29b81d9226d512bcf629",
+      "copiedSha256": "1754402c9e1aae227b0902d3cbd6d29bad1c56581bb3d00b49b4319583973c54",
+      "adaptations": [
+        "宿主接口：机械提取原参数展开、分词、动态语法拒绝及提示装配声明；仅缩窄未使用的类型依赖，无文件扫描或shell预展开"
+      ]
     }
   ],
   "buildAdaptations": [

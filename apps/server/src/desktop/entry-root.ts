@@ -1,4 +1,5 @@
 import { dirname } from "node:path";
+import { isSea } from "node:sea";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -36,12 +37,22 @@ export function isPackagedRuntime(entryFileUrl: string | undefined): boolean {
  *   两处都错——用户要求「沙箱放项目根或 exe 目录下的 tmp/sandbox」正是为了消除这种漂移。
  * - **mac 打包（CJS + 随包 node）**：esbuild 把 import.meta.url 定义成 __filename
  *   （`<app>/server/server.cjs`），KFW_PACKAGED_CJS 已定义 → 上**两级**到 `<app>`。
- * - **Windows 打包（Node SEA）**：`import.meta.url` 为空，回退到可执行文件所在目录。
+ * - **Windows 打包（Node SEA）**：banner 给了 `<exe>/server.cjs` 形式的 import.meta.url，
+ *   但资源根是 exe 所在目录（`node:sea` 的 isSea() 判定），不走源码层级上四级。
  */
 export function resolveEntryRoot(input: {
   entryFileUrl: string | undefined;
   execPath: string;
+  /** 是否 Node SEA 单文件宿主；缺省用 node:sea 自检（测试可显式注入）。 */
+  sea?: boolean;
 }): string {
+  // Windows SEA：打包 banner 把 import.meta.url 定义成 <exe>/server.cjs（外部原生包
+  // 要从发布目录解析），但资源根**不是**按源码层级上四级——它就是 exe 所在目录。
+  // 漏了这条会走下面的「上四级」分支，实测得到 D:\a\supabase 这种不存在的根，
+  // 迁移目录/随包运行时全找不到。
+  if (input.sea ?? isSea()) {
+    return dirname(input.execPath);
+  }
   if (typeof KFW_PACKAGED_CJS !== "undefined" && KFW_PACKAGED_CJS) {
     // esbuild 的 define 把 import.meta.url 换成了 __filename（纯路径，非 file:// URL）
     if (input.entryFileUrl) {

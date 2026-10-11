@@ -1,3 +1,7 @@
+/*
+ * 按 shadcn 注册表模板（MIT，风格 base-nova）编写的组件封装，运行时依赖 Base UI（MIT，
+ * @base-ui/react）与 lucide-react（ISC）。归属与义务见仓库根 THIRD-PARTY-NOTICES.md §A4。
+ */
 "use client";
 
 import { Separator as SeparatorPrimitive } from "@base-ui/react/separator";

@@ -13,6 +13,10 @@ export interface SkillSummary {
   description: string;
   body: string;
   path: string;
+  /** 宿主只读包资源身份；不是本机文件或软链路径。 */
+  resourceRef?: string;
+  /** 宿主安装记录代际；卸载重装后旧请求不得改变新安装。 */
+  installationRevision?: string;
   /**
    * 发现阶段命中的原始 SKILL.md 路径（未经 realpath 解析）。
    * 软链导入的技能里 `path` 是 realpath 后的目标文件，`sourcePath` 才指向 `~/.zcode/skills/<name>` 下的链接本体，
@@ -30,6 +34,9 @@ export interface SkillSummary {
 
 export interface SkillsCapability {
   userScopeAvailable: boolean;
+  databaseRecords?: boolean;
+  workspaceScopeAvailable?: boolean;
+  externalImportAvailable?: boolean;
   userScopeReason?: "desktop_only";
 }
 

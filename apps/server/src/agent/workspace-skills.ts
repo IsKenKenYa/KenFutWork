@@ -1,5 +1,7 @@
 import type { CanvasRepository } from "../features/canvas/repository.js";
+import type { PluginRegistryService } from "../features/plugins/plugin-registry-service.js";
 import type { SkillCatalogRepository } from "../features/skills/repository.js";
+import { pluginSkillReference } from "../features/skills/skill-resource-service.js";
 
 /**
  * A file bundled with a skill (scripts/, references/, assets/).
@@ -40,6 +42,8 @@ export type InstanceSkillsByInstanceLoader = (
 /** Code用可信工作区身份读取安装包，不经Canvas JOIN，不签发物理FS路径。 */
 export function createInstanceSkillsByInstanceLoader(options: {
   skills: Pick<SkillCatalogRepository, "listInstanceSkills" | "listSkillFiles">;
+  plugins?: Pick<PluginRegistryService, "readSkillPackages">;
+  mode?: "code" | "design";
 }): InstanceSkillsByInstanceLoader {
   return async (instanceId) => {
     const installed = await options.skills
@@ -58,21 +62,38 @@ export function createInstanceSkillsByInstanceLoader(options: {
       packageFiles.push({ path: file.path, content: file.content });
       filesBySkillId.set(file.skillId, packageFiles);
     }
-    return enabled
-      .filter((entry) => {
-        if (entry.skillContent) return true;
-        console.warn(
-          `[workspace-skills] ${entry.slug} 正文为空，跳过提示注入。`,
-        );
-        return false;
-      })
-      .map((entry) => ({
-        name: entry.slug,
-        description: entry.description,
-        path: `kenfutwork-skill:${entry.skillId}`,
-        content: entry.skillContent,
-        files: filesBySkillId.get(entry.skillId) ?? [],
-      }));
+    const packages = options.plugins
+      ? await options.plugins.readSkillPackages(options.mode ?? "code")
+      : [];
+    const pluginSkills = packages
+      .filter((entry) => entry.enabled)
+      .flatMap((entry) =>
+        entry.skills.map((skill) => ({
+          name: pluginSkillReference(entry.pluginId, skill.relativePath),
+          description: skill.description,
+          path: pluginSkillReference(entry.pluginId, skill.relativePath),
+          content: skill.content,
+          files: skill.files,
+        })),
+      );
+    return [
+      ...enabled
+        .filter((entry) => {
+          if (entry.skillContent) return true;
+          console.warn(
+            `[workspace-skills] ${entry.slug} 正文为空，跳过提示注入。`,
+          );
+          return false;
+        })
+        .map((entry) => ({
+          name: entry.slug,
+          description: entry.description,
+          path: `kenfutwork-skill:${entry.skillId}`,
+          content: entry.skillContent,
+          files: filesBySkillId.get(entry.skillId) ?? [],
+        })),
+      ...pluginSkills,
+    ];
   };
 }
 
@@ -86,9 +107,14 @@ export function createInstanceSkillsByInstanceLoader(options: {
 export function createInstanceSkillsLoader(options: {
   canvases: CanvasRepository;
   skills: SkillCatalogRepository;
+  plugins?: Pick<PluginRegistryService, "readSkillPackages">;
 }): InstanceSkillsLoader {
   const { canvases, skills } = options;
-  const loadWorkspace = createInstanceSkillsByInstanceLoader({ skills });
+  const loadWorkspace = createInstanceSkillsByInstanceLoader({
+    skills,
+    ...(options.plugins ? { plugins: options.plugins } : {}),
+    mode: "design",
+  });
 
   return async (instanceId, canvasId) => {
     const canvas = await canvases
@@ -97,7 +123,9 @@ export function createInstanceSkillsLoader(options: {
     if (!canvas) return [];
     return (await loadWorkspace(instanceId)).map((entry) => ({
       ...entry,
-      path: `/workspace-skills/${entry.name}/SKILL.md`,
+      path: entry.path.startsWith("kenfutwork-plugin-skill:")
+        ? entry.path
+        : `/workspace-skills/${entry.name}/SKILL.md`,
     }));
   };
 }

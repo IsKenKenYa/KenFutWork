@@ -106,7 +106,7 @@ import {
 } from "./settingsPageHelpers.js";
 import { AppearanceSectionContent } from "./settingsCodePreview.js";
 import type { SettingsSectionId } from "@zui/lib/settingsNavigation.js";
-import { requestPluginStoreOpen } from "@zui/lib/pluginStoreNavigation.js";
+import { requestPluginStoreOpen, type PluginStoreOpenTarget } from "@zui/lib/pluginStoreNavigation.js";
 import {
   runUserAction,
   runUserActionAsync,
@@ -275,6 +275,7 @@ export function SettingsPage({
   windowsWindowControlsRightPaddingPx: _windowsWindowControlsRightPaddingPx,
   captionWorkspacePath,
   onBack,
+  onOpenPluginStore,
   onCreateTask,
   onOpenWorkspace,
   allowOpenWorkspace = true,
@@ -288,6 +289,7 @@ export function SettingsPage({
   windowsWindowControlsRightPaddingPx?: number;
   captionWorkspacePath?: string | null;
   onBack?: () => void;
+  onOpenPluginStore?: (target: PluginStoreOpenTarget) => void;
   onCreateTask?: (request?: CreateTaskRequest) => void;
   onOpenWorkspace?: () => void;
   allowOpenWorkspace?: boolean;
@@ -296,6 +298,12 @@ export function SettingsPage({
   user?: UserInfo | null;
 }) {
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
+  const openPluginStore = useCallback((_returnScopeKey?: string, intent?: "add-marketplace") => {
+    const target: PluginStoreOpenTarget = { returnScopeKey: "user", intent };
+    if (onOpenPluginStore) { onOpenPluginStore(target); return; }
+    requestPluginStoreOpen(target);
+    onBack?.();
+  }, [onBack, onOpenPluginStore]);
   const platform = usePlatform();
   const { settingsSectionGroups, settingsSections } = useMemo(
     () =>
@@ -1426,6 +1434,7 @@ export function SettingsPage({
                           },
                           operation: () => {
                             if (pluginNavigationOrigin === "plugin-store") {
+                              if (onOpenPluginStore) { onOpenPluginStore({ returnScopeKey: "user" }); return; }
                               requestPluginStoreOpen("user");
                             }
                             onBack?.();
@@ -1855,11 +1864,7 @@ export function SettingsPage({
                             workspaceIdentity={activeWorkspaceIdentity}
                             showMarketplaceBreadcrumb={pluginNavigationOrigin === "plugin-store"}
                             onCreateTask={onCreateTask}
-                            onOpenPluginStore={(_returnScopeKey, intent) => {
-                              // 添加市场与浏览插件都先离开设置层，再显示商店。
-                              requestPluginStoreOpen({ returnScopeKey: "user", intent });
-                              onBack?.();
-                            }}
+                            onOpenPluginStore={openPluginStore}
                           />
                         ) : activeSection === "mcp" ? (
                           <PluginsSection
@@ -1868,11 +1873,7 @@ export function SettingsPage({
                             workspacePath={activeWorkspacePath}
                             workspaceIdentity={activeWorkspaceIdentity}
                             onCreateTask={onCreateTask}
-                            onOpenPluginStore={(_returnScopeKey, intent) => {
-                              // 添加市场与浏览插件都先离开设置层，再显示商店。
-                              requestPluginStoreOpen({ returnScopeKey: "user", intent });
-                              onBack?.();
-                            }}
+                            onOpenPluginStore={openPluginStore}
                           />
                         ) : activeSection === "skill" ? (
                           <PluginsSection
@@ -1881,11 +1882,7 @@ export function SettingsPage({
                             workspacePath={activeWorkspacePath}
                             workspaceIdentity={activeWorkspaceIdentity}
                             onCreateTask={onCreateTask}
-                            onOpenPluginStore={(_returnScopeKey, intent) => {
-                              // 添加市场与浏览插件都先离开设置层，再显示商店。
-                              requestPluginStoreOpen({ returnScopeKey: "user", intent });
-                              onBack?.();
-                            }}
+                            onOpenPluginStore={openPluginStore}
                           />
                         ) : activeSection === "migration" ? (
                           <MigrationSection
@@ -1918,11 +1915,7 @@ export function SettingsPage({
                             workspacePath={activeWorkspacePath}
                             workspaceIdentity={activeWorkspaceIdentity}
                             onCreateTask={onCreateTask}
-                            onOpenPluginStore={(_returnScopeKey, intent) => {
-                              // 添加市场与浏览插件都先离开设置层，再显示商店。
-                              requestPluginStoreOpen({ returnScopeKey: "user", intent });
-                              onBack?.();
-                            }}
+                            onOpenPluginStore={openPluginStore}
                           />
                         ) : activeSection === "hooks" ? (
                           <HooksSection

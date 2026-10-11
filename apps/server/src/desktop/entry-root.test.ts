@@ -55,4 +55,20 @@ describe("入口资源根解析", () => {
       }),
     ).toBe(join(REPO, "app"));
   });
+  it("SEA 单文件宿主：资源根是 exe 所在目录，不按源码层级上四级", () => {
+    // 打包 banner 会把 import.meta.url 定义成 <exe>/server.cjs；若按源码态上四级，
+    // D:/a/KenFutWork/KenFutWork/release/server.cjs 会得到 D:/a——迁移目录与随包运行时全找不到。
+    expect(
+      resolveEntryRoot({
+        entryFileUrl: pathToFileURL(
+          "D:/a/KenFutWork/KenFutWork/release/server.cjs",
+        ).href,
+        execPath: join(
+          "D:/a/KenFutWork/KenFutWork/release",
+          "KenFutWork-server.exe",
+        ),
+        sea: true,
+      }),
+    ).toBe(join("D:/a/KenFutWork/KenFutWork/release"));
+  });
 });

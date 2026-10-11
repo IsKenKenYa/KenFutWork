@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
-import type { ChatOpenAI } from "@langchain/openai";
+import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import Fastify from "fastify";
 import { createNativeContextBranchService } from "../../../agent/native-context-branch.js";
 import { createAgentPersistenceService } from "../../../agent/persistence/index.js";
@@ -107,6 +107,11 @@ export async function installedKernel(
         localInstance: database.localInstance,
         localAccess: database.localAccess,
         persistence: database.persistence,
+        blob: createLocalFsBlobStore({
+          rootDir: join(database.directory, "blob"),
+          publicBaseUrl: "http://127.0.0.1/unused-blobs",
+          signingSecret: "desktop-fixture-signing",
+        }),
       },
     },
   );
@@ -120,7 +125,7 @@ export async function taskRuntime(
   database: Database,
   installed: Awaited<ReturnType<typeof installedKernel>>,
   env: ReturnType<typeof loadServerEnv>,
-  model: ChatOpenAI,
+  model: BaseLanguageModel,
 ) {
   const task = await prepareHarnessTask(database);
   const scopes = createExecutionScopes({

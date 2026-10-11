@@ -47,13 +47,23 @@
 
 Code 使用 `packages/shared/src/code-ui-contracts.ts` 导出的原 V4 协议：认证 HTTP RPC `/api/code-ui/rpc` 与 SSE `/api/code-ui/events`，不经旧工作台的 TaskMessage 展示归约。连接先收原 hello 和宿主 reconnectDelayMs（与 hello 分开，原协议不改），以 connectionId 完成 clientHello；原 subscribe 服务参数是 sessionId，RPC 只返回 ACK，snapshot/恢复帧随后经 owned 通知下发。主/子转录与租约独立，UI 复用原 SessionDataLayer。
 
+工作台的文档活动桥由 `packages/shared/src/code-ui-host-bridge.ts` 导出 `workspaceActivitySchema`：`{ type: "kenfutwork:workspace-activity", active: boolean }` 是同源父窗口的postMessage，不是HTTP／SSE／WS运行事件。Code／Design子页校验origin及source，非活动时收束焦点和键盘，保留运行、订阅、转录与原iframe。父文档同步隐藏自身portal；首次消息早于监听时，子页读取父iframe的inert属性。Flow握手同时校验当前iframe窗口与配置origin，地址更换后的迟到身份票据不再注入。
+
+顶部模式能力使用同一宿主桥的`workbenchModesSchema`／`workbenchNavigationSchema`。父窗口按现有Flow安装、启用及宿主配置，发送有序Code／Design与可选Flow；子页只接受同源父窗口。原导航发`kenfutwork:code-navigate`，父窗口再次核当前iframe、活动态及真实可用模式，停用后迟到请求无效。Code内部仍为coding，模式变化不终止或重发运行。
+
+共用管理导航同样使用该文件的`managementTargetSchema`。当前Code文档发送`kenfutwork:open-management`，目标仅含原页面、分区和插件／供应商ID，不含凭据或执行身份；父窗口核当前iframe及origin后打开`/code-ui/index.html?document=management`，通过原bootstrap的`management`字段传目标。管理文档只装配原管理providers／页面，不初始化工作区Root；实例操作无需Project／Task。`kenfutwork:management-close`仅从当前管理窗口接受，关闭恢复原文档输入；宿主关闭按钮在子页加载及失败时仍可用。库存通知沿原插件事件同步，两模式消费同一既有服务。此桥不新增HTTP／WS端点。
+
 现阶段已接创建、发送、根会话停止、命令查询、快照/订阅/恢复、历史行读取、Task 索引、文本文件与原 readdir 目录读取。权限/提问、队列、子代理独立停止、文件回退、终端等尚待接通；既有 `/api/ws` 的 Design/终端通道不因此改变。
 
 根 stop 沿原命令契约：expectedForegroundExecutionId 对不上当前执行或对应执行已结束时，返回 noop/guard.stopTargetChanged；未指定目标的空闲停止 accepted 且不修改快照。取消状态与 ACK 同事务持久化，重复命令只回放，真实引擎及后台任务沿既有 cancelRun 中止。启动句柄登记与 Stop 共用根锁，登记延迟期间已停止或项目已归档时不执行模型；命令裁决在根锁后持有有效项目共享锁，归档先完成则迟到请求 404，不写 accepted 回执。旧事件使用权威当前 runId，不覆盖下一轮身份。此处未接子代理独立停止，也不代表队列/权限等完整运行面已完成。
 
 Window Controller 读面已接原 `listTaskList`、`subscribeControllerV4`、`resyncControllerV4`、`unsubscribeControllerV4`。每条 owned SSE 连接持有一个原 Runtime，源连接提供真实 Task 与 sessions-index；集合、标题 overlay、membership、delta 和游标由固定原 `windowHostControllerService` / Projection / Observer 装配，未另造展示投影。原初始帧可早于 HTTP ACK，客户端原装配先监听并缓冲；会话 transport 的 ACK 后 publish 规则保持不变。resync 拒绝跨连接及已释放租约，查询拒绝工作区外目录，关闭连接释放 Runtime 和内部源订阅；在途目录/源读取恢复后再次核实连接，迟到订阅拒绝且清理期间创建的租约。首条输入提交后发布 `task_created`，后续输入仍为 `user_message_saved`；重复命令不重复广播。空 thoughtLevel 按原可选字段语义省略，不放宽原 schema。Controller mutate/search、重连租约恢复与全局分组视图仍待完整接通。
 
-供应商 Settings RPC 已接 `getView`、`refresh`、空配置的 `createPersonalProvider`、`savePersonalProviderOverlay` 和 `deletePersonalProvider`。草稿真实持久化无凭证、无模型状态，不能执行。原稀疏 Provider 配置用原 parser/overlay 处理，保留 API 格式、品牌、管理地址和未编辑叶子；省略 Key/headers 保留旧值，显式 null 清除，读面和通知只返回真实 `credentialConfigured` 与非敏感配置。原 Key 控件已接 presence/明确 clear，成功提交后仅清对应且未继续编辑的 Key 草稿。原 Provider/View/Model 配置类型从 shared 直接再导出，定义仍在固定 ZCode 源码。配置与持久 workspace revision 由同一 SQL 快照读取，Settings 保留停用候选，Selection 按供应商/模型开关及完整配置资格过滤。创建/保存/删除提交后，经 owned SSE 广播原两服务的 `onDidChange`；通知与应答来自同一 View。无变化刷新和同值配置保存保持修订；删除后迟到保存返回 404，不重建。完整模型操作、模板创建及其他写入口的通知仍待接通，不能将 Provider 保存链路视为设置全部完成。
+供应商 Settings RPC 的保存装配收口到 `model-providers`，仍沿原 `providerSettingsService`／`modelSelectionService` 消费，不新增服务 key。设置 view 保留所有真实供应商及模型定义；聊天选择仅投影可执行聊天候选，生成／Flow 不进入聊天选择。原 `createPersonalProvider`／稀疏 `savePersonalProviderOverlay`、删除和供应商排序仍可用；共同字段保存不能将生成／Flow 的协议切成聊天缺省协议。实例创建是 unsafe 操作，宿主不自动重发，响应未知时先刷新列表核对。
+
+宿主扩展 `saveManagedModel({ providerId, expectedRevision, originalModelId?, model })`：缺省 originalModelId 表示新增，重复 ID 拒绝；显式 originalModelId 表示编辑，原模型已删除返回 404，修订过期返回 409。`saveManagedProvider({ providerId, patch })` 强制 patch.expectedRevision，其余字段沿共享供应商更新契约保存；原启停、删除和排序操作也消费同一原生模型集合。`getModelDefaults`／`saveModelDefaults` 读取、校验并持久化实例 chat／image／video 策略，无需 Project 或 Task。
+
+授权设置的 `getView` 可读取本机 Key，用于查看和复制；普通 native 定义、REST 目录、通知与运行读面仅携带 hasCredential／credentialConfigured，不携带秘密值。省略 Key／headers 保留，显式 null 清除 Key，headers={} 清空。保存成功返回权威 view 并广播非敏感 view；原 Hook 同时提交应答 view，通知丢失也可更新列表。草稿修订与供应商 CAS 保留；旧开发数据不转换。默认执行策略、统一设置文档及 Design 消费迁移仍在后续切片，当前管理接口不表示完整统一目标已完成。
 
 模型编辑器已接 `resolveModelConfig`、`addPersonalModel` 与 `savePersonalModelDraft`：复用固定原推荐规则及 ModelConfigRules 的精确/手动合成，规则原件由 modelProviders 域持有。精确配置与模式标记保存于同一模型成员，标准运行容量从它推导；新增成员与配置同事务，原添加语义默认启用，新成员保留原模型 ID。草稿保存把改名、原成员位置与配置同事务提交，`basedOnRevision` 对整个 workspace Registry 作 CAS；所有配置写入口先锁工作区修订再锁实例。同修订并发只有一次提交，跨供应商配置变化同样使旧草稿返回 409；重复成员返回 409，已删除供应商/成员返回 404，不部分写入。恢复智能规则复用原结构空判定，删除个人精确配置，刷新沿用原推荐；同值重复保存不增修订，手动空配置仍按原规则拒绝。原 setPersonalModelEnabled 在事务内只修改最新 enabled，保留精确配置与手动/智能模式；Settings 保留停用成员，Selection 移除执行候选，同值保存不增修订。deletePersonalModel 同事务移除成员及精确规则，未知成员 404；删除后迟到的保存/启用请求拒绝，不能重新创建成员。独立改名/排序与指定模型连通性测试仍待接通。
 
@@ -72,7 +82,7 @@ file.resolvePath 规范化真实路径，workspace.open 绑定或创建实际 Co
 
 原 Root 的 setting.get/update 已按原 AppSettings/稀疏 patch 契约接真实工作区设置。语言、消息/工具显示、快捷键和本次运行产生的 tab/焦点等非敏感 UI 偏好存于前向 code_ui_app_preferences JSONB；recentProjects 仍由既有列持有，不复制第二份。读面同一 MVCC 行读取两者，写面按原子 JSON merge 保留未送叶子；未知字段/凭据字段拒绝。引用目录必须是当前工作区活跃 Code 项目，写入持有 FOR SHARE，归档先完成则整条拒绝。读取移除归档 tab 后按原激活条目重映射索引并清理关联焦点，最近项目按原 UI 固定规则去重保留前10项。该前置服务不转换历史调试数据，不代表原 Root 及运行偏好消费者已完成挂载。
 
-Code 宿主已直接挂原 Root。file.ensureConversationWorkspace 沿原 IFileService 返回真实 `{path, created, workspacePurpose: "conversation"}`，共享 cwd 按当前 Workspace 身份隔离，并经 Project 服务绑定固定主画布；冷并发复用身份，重开保留文件，已归档默认项目的迟到 ensure 返回 409。目录选择先 resolvePath，再 workspace.open，绑定失败交回原选择器保持重试。原 Root 只消费真实 hello.clientMode；同源父工作台与独立 Code 文档的刷新资格沿原 navigation 判定恢复，不伪造 desktop-continuous。此轮不新增 HTTP/WS schema，原 contract 继续由 shared 导出。
+Code 宿主已直接挂原 Root。file.ensureConversationWorkspace 沿原 IFileService 返回真实 `{path, created, workspacePurpose: "conversation"}`，共享 cwd 按当前 Workspace 身份隔离，并经 Project 服务建立真实 Code 默认对话项目与工作目录；冷并发复用身份，重开保留文件，已归档默认项目的迟到 ensure 返回 409。目录选择先 resolvePath，再 workspace.open，绑定失败交回原选择器保持重试。原 Root 只消费真实 hello.clientMode；同源父工作台与独立 Code 文档的刷新资格沿原 navigation 判定恢复，不伪造 desktop-continuous。此轮不新增 HTTP/WS schema，原 contract 继续由 shared 导出。
 
 Code主标题的轻量元信息由宿主明确选择原Task.getTaskMeta读面，返回来自真实原V4快照的Task元信息；主/子消息流继续走原SessionDataLayer，不增加session/read旧消息展示链。未声明宿主策略的原平台仍消费原session snapshot/converter。此选择仅涉及宿主接口，HTTP/SSE帧结构未变化，原契约与Schema仍从shared再导出。
 
@@ -81,3 +91,36 @@ Code 的原 `plugin-management` 通道现已将 `listPlugins` 与 `getPluginsOve
 原 `plugin-management` 写面已接 `installPlugin`（真实自带包）、`setPluginEnabled` 与 `uninstallPlugin`。原扁平 service 寻址仅转换为原 schema 的 workspace 引用；结果沿原 schema（启停同时包含 plugin 与 enabled）。变更消费既有管理员门：managed 普通用户403，local-trust 本机主人沿既有策略。项目层写入、外部来源、更新/describe及带operationId的取消恢复仍待接通，不以本机自带包链路代替完整市场。库存变更与旧HTTP/工具入口共享同一宿主写队列，文件原子替换；卸载后迟到启用404，不重装已删包。
 
 自带包的原安装重放保留用户已有启停选择；显式removeCache=false卸载只移除安装与贡献，保留缓存/数据，返回removedPlugin.enabled=false。Host ready/close消费原服务恢复与写队列，关闭不提前报告资源释放完成。
+
+
+原插件市场宿主接线（2026-10-09）：发行目录使用固定 kenfutwork-bundled 身份并归公开，本机来源归 kenfutwork-local；官方安装包同时核 trusted发行目录与record.source=builtin，不按同名猜归属。随发行包使用bundled__命名空间，与local__本机包区分，不维护旧调试ID别名。原overview／installed listing提供已声明包图标引用，仍由原组件及认证平台读取；停用只保留清单声明的图片元信息可读，运行面板和贡献继续收回。实例层原installPlugin/setPluginEnabled/uninstallPlugin无需Project或Task；若带项目引用仍须真实验证，workspace安装态尚未接入，不伪造工作目录。页面端无项目操作在共用管理文档切片完成。
+
+公共GET /api/plugins独立返回installed与enabled，未安装／停用不返回运行面板入口；POST /api/plugins/:id/toggle保留installed=true并返回实际enabled。它们消费同一registry，不增加配置或安装服务。完整侧栏、MCP／技能、子定义双模式消费与共用管理页进度见《现有能力接线与入口统一》，当前目录／图标切片不表示完整目标完成。
+
+插件入口接线（2026-10-09）：GET /api/plugins同时投影真实scope（code/design/shared/null），ui合并清单与运行时贡献，按pluginId＋entryId去重，同键运行时优先。Code原侧栏及Design各运行槽沿作用域过滤；写入返回或失败后读取对账，旧读取晚到不复活收回入口。Code父窗口桥只接收当前同源文档的code-open-plugin（pluginId/entryId）与code-plugins-changed；面板地址由父宿主重新核已安装、启用且适用的库存，沿现有PluginPanelOverlay与私有路由打开，不接收消息中的URL或凭据。实例settings槽不按工作模式缩窄。
+
+### 原 MCP 管理宿主
+
+`mcp-sync.loadMcpFromUserDirectory`、`readMcpServerConfiguration`、`saveMcpToUserDirectory` 和 `listWorkspaceMcpServerStatuses` 由 MCP feature 贡献，复用 REST／运行工具的同一 `McpService`。本机配置为实例数据库记录；原接口名称保留，不伪造文件夹或位置，也不创建 Project／Task。普通列表只返回 `envKeys`，本机授权编辑按 `hostRecordId` 单独读取完整配置；不将凭据写入共享 UI inventory 或普通事件。
+
+创建传 `hostRecordId:null`；编辑、启停与删除传原记录 UUID。删除后迟到请求返回404，不能按同名记录重新绑定。写入响应未知时只读刷新，不自动重放；写入成功但刷新失败保留表单并报告读取错误。环境来源只读。当前服务承接 stdio／HTTP 与真实状态／重连；项目文件配置、OAuth、显式 SSE 类型、HTTP 请求头、超时及协议覆盖未接入，原表单禁用对应操作。外部 Agent 扫描／同步与市场检索仍继续接线，不计本片完成。
+
+### 原技能管理宿主
+
+原 `skills.list/setEnabled/deleteSkill/buildPromptContext` 在 skills feature 贡献，复用现有技能仓库、REST与运行目录数据。实例包返回 `scope:user`、真实 `resourceRef` 与空物理 `path`；不需要Project，不假作项目安装、文件目录或软链。原详情沿MessageResponse显示正文。原删除入口在本机包边界标为卸载并仅移除安装，保留可见定义；定义CRUD、目录及链接安装／市场检索仍在接线，不计本片完成。
+
+启停及卸载需回传 `installationRevision`，由既有安装时间的UTC精确文本派生，并在原仓库SQL条件中原子匹配；卸载重装后旧请求404，不能改新安装。无新增配置库或SQL迁移。旧集中Skills桥及其项目/Task绑定退役；文件、Git与终端继续沿真实Project/Task权限边界。外部Agent扫描/同步原页面标未接入、禁用操作且不发送扫描/导入请求；不返回假空数据。设置页与共享技能消费接口都保护目标/服务/读取代际，写入响应未知只读对账不自动重放。
+
+插件定义从同一注册表已安装包读取，返回 `scope:plugin`、稳定 `resourceRef` 与空物理路径；停用保留只读定义，卸载移除。资源身份为 `kenfutwork-plugin-skill:${encodeURIComponent(pluginId)}/${encodeURIComponent(relativeSkillPath)}`，不能按同名猜归属或映射成文件夹。原 Markdown 详情只展示按固定 ZCode 正文算法提取的 body，运行目录／`use_skill` 仍读取完整 SKILL.md 和包内相对资源。实例、canonical 相对路径、启用态及 Code／Design 模式都由既有资源服务核对；停用／卸载后拒绝运行读取。原轮次 loader 接同一注册表，并保留已取得的目录快照；Composer 选择与引用消费仍须逐场景验收，不以管理列表替代执行。
+
+`provider` 复用原 `zcodeAgentProviderSchema` 的 `glm` wire 标识，表示原 Agent 协议身份，不是 BYOK 供应商选择。技能列表与诊断条目无效时宿主通道明确拒绝，原页面显示读取错误，不转成假空目录。
+
+### 实例命令的运行输入
+
+Code V4与Design原`agent.run`传输保留用户原文。现有运行设置读取后统一匹配`instance_settings.commands`，沿固定ZCode的原函数展开`$ARGUMENTS`、`$1/$2`及无占位符参数尾块，再进入已有媒体／上下文构造；原用户转录与工具权限不改写。动态shell预展开仍由原函数拒绝，不执行系统命令。后台结果、控制输入及已声明子派发深度不作为用户命令解析。原管理页CRUD、指导消息、并发草稿及冷恢复还须继续验收，不能以本片证明整套命令能力完成。
+
+### 插件来源宿主
+
+`plugin-management.inspectPluginSource/installPluginFromSource` 由 plugins feature 贡献，参数／结果沿既有 `pluginInspectRequest/Response` 与 `pluginInstallRequest/Response` 公共schema。来源检查与安装直接消费同一注册表，支持链接和本机目录，不创建Project／Task；原市场源添加、更新、删除是独立操作，未接入时保留原页并禁用。
+
+来源安装不开放生命周期脚本授权；安装阶段重新执行既有兼容门禁，拒绝时原HTTP/RPC返回真实报告与422。停用后重装保持停用。原来源表单输入与检查结果绑定服务、目标、来源及弹窗代际；关闭表单仍给有效库存目标只读对账，迟到响应不清新表单或作废新目标读取，未知写入响应不自动重试。Native顶栏「刷新库存」仅重新读取目录，不冒充市场源更新。工作目录授权安装与导出入口仍待接线。

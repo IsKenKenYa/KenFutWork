@@ -1,0 +1,71 @@
+name: 发版（tag 触发 · 双平台出包 + draft Release）
+
+# 推 `v*.*.*` tag 即发版：先校验 tag 与产品版本一致（不一致立刻红，不要出完包才发现），
+# 再在两个平台的真实 runner 上出包，并按 rc 通道各自建 draft Release。
+# 出包链复用 _package-platform.yml（与手动出包同一份步骤，不另写一套）。
+#
+# 为什么是 draft 而不是直接发布：产物要在 Release 页上人眼过一遍（体积、清单、
+# 签名状态 dist-manifest.json），确认后再点发布。发版本身是**不可撤销**的对外动作，
+# 不让流水线替人按那个按钮。
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  # 发版中途取消只会留下半截产物与半成品 Release
+  cancel-in-progress: false
+
+jobs:
+  version-gate:
+    name: tag 与产品版本一致
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: false
+          persist-credentials: false
+      - name: 校验 tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # 版本权威是 tauri.conf.json（四处一致由 tests/workspace.test.mjs 的根门禁把守）
+          product="$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")"
+          echo "· tag=$TAG 产品版本=$product"
+          if [ "$TAG" != "v$product" ]; then
+            echo "· tag 与产品版本不一致：先跑 pnpm version:bump $product 或改 tag，再发版"
+            exit 1
+          fi
+
+  macos:
+    name: macOS
+    needs: version-gate
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    uses: ./.github/workflows/_package-platform.yml
+    with:
+      platform: macos
+      channel: rc
+      checkout_ref: ${{ github.ref }}
+    permissions:
+      contents: write
+
+  windows:
+    name: Windows
+    needs: version-gate
+    if: github.repository == 'IsKenKenYa/KenFutWork'
+    uses: ./.github/workflows/_package-platform.yml
+    with:
+      platform: windows
+      channel: rc
+      checkout_ref: ${{ github.ref }}
+    permissions:
+      contents: write

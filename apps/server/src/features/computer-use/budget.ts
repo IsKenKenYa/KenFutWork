@@ -34,29 +34,6 @@ export function isBlackFrame(rgb: Uint8Array): boolean {
   return blackFrameRatio(rgb) >= BLACK_FRAME_THRESHOLD;
 }
 
-export type ImageInlinePlan =
-  | { inline: true }
-  | { inline: false; reason: string };
-
-/**
- * 截图是否以内联 base64 进工具结果（UI 的 CuaScreenshotSection 深度识别
- * `{mimeType,data}` / data URI）。超预算**拒绝内联**并说明原因——不截断图片
- * 硬塞（截断的 base64 两头都不认）。
- */
-export function planImageInline(input: {
-  base64Length: number;
-  /** 治理键注入（computerUseScreenshotMaxBytes），禁止调用方写字面量。 */
-  maxInlineBytes: number;
-}): ImageInlinePlan {
-  if (input.base64Length <= input.maxInlineBytes) {
-    return { inline: true };
-  }
-  return {
-    inline: false,
-    reason: `截图 base64 长度 ${input.base64Length} 超出内联预算 ${input.maxInlineBytes}（可在设置里调 computerUseScreenshotMaxBytes）。本次仅返回文字摘要。`,
-  };
-}
-
 /** PNG声明尺寸先过实例资源预算；Adam7路径也先做有界inflate，避免库的无界分支。 */
 export function readPngWithinBudget(bytes: Buffer, maxBytes: number) {
   const invalid = () =>

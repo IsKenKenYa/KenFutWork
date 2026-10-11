@@ -11,7 +11,17 @@ function buildWorkspaceKey(workspacePath: string, workspaceIdentity: string | nu
   return workspaceIdentity?.trim() || workspacePath;
 }
 
-const inFlightLoads = new Map<string, Promise<void>>();
+const inFlightLoads = new WeakMap<IPluginManagementService, Map<string, { epoch: number; promise: Promise<void> }>>();
+let readEpoch = 0;
+let currentService: IPluginManagementService | null = null;
+
+export function isCurrentPluginInventoryService(service: IPluginManagementService) {
+  return currentService === service;
+}
+
+export function invalidatePluginInventoryReads() {
+  readEpoch += 1;
+}
 
 export async function runWorkspaceOperation(
   set: (partial: Partial<PluginManagementState>) => void,
@@ -21,7 +31,7 @@ export async function runWorkspaceOperation(
   operation: (workspace: { workspacePath: string; workspaceIdentity?: string }) => Promise<void>,
 ): Promise<boolean> {
   const { workspacePath, workspaceIdentity, configScope } = get();
-  if (!workspacePath) return false;
+  if (workspacePath === null || !isCurrentPluginInventoryService(pluginService)) return false;
   const operationVersion = get().operationVersion + 1;
   set({ operationId, operationVersion, error: null, lastFailedPluginId: null });
   const isCurrentContext = (): boolean => {
@@ -30,11 +40,13 @@ export async function runWorkspaceOperation(
       current.workspacePath === workspacePath &&
       current.workspaceIdentity === workspaceIdentity &&
       current.configScope === configScope
+      && isCurrentPluginInventoryService(pluginService)
     );
   };
   const ownsVisibleOperation = (): boolean =>
     isCurrentContext() && get().operationId === operationId;
   try {
+    invalidatePluginInventoryReads();
     await operation({
       workspacePath,
       ...(workspaceIdentity ? { workspaceIdentity } : {}),
@@ -42,6 +54,7 @@ export async function runWorkspaceOperation(
     // operationId 只是共享的 UI 忙碌指示器。自动刷新可能在当前操作完成前覆盖它，
     // 但不能因此把已经成功落盘的添加/安装操作报告成失败，否则调用方会保留弹窗。
     if (!isCurrentContext()) return false;
+    invalidatePluginInventoryReads();
     await loadInto(set, get, {
       workspacePath,
       workspaceIdentity,
@@ -50,6 +63,9 @@ export async function runWorkspaceOperation(
     });
     return isCurrentContext();
   } catch (error) {
+    if (!isCurrentContext()) return false;
+    invalidatePluginInventoryReads();
+    await loadInto(set, get, { workspacePath, workspaceIdentity, configScope, pluginService, bypassCache: true });
     // marketplace add/update 等通用操作失败：无插件目标，归属清空。
     logger.error("[plugins] operation failed", { operationId, error: toMessage(error) });
     // 旧操作不能覆盖同一配置层中新操作的错误态；只有仍持有可见 operationId 的操作才回写。
@@ -76,26 +92,32 @@ export async function loadInto(
     workspaceIdentity: string | null;
     configScope: ZCodePluginScope | null;
     pluginService: IPluginManagementService;
+    bypassCache?: boolean;
   },
 ): Promise<void> {
   const workspaceKey = buildWorkspaceKey(params.workspacePath, params.workspaceIdentity);
   const loadKey = `${workspaceKey}\u0000${params.configScope ?? "effective"}`;
-  const existing = inFlightLoads.get(loadKey);
-  if (existing) {
+  let loads = inFlightLoads.get(params.pluginService);
+  if (!loads) { loads = new Map(); inFlightLoads.set(params.pluginService, loads); }
+  const existing = loads.get(loadKey);
+  if (!params.bypassCache && currentService === params.pluginService && existing?.epoch === readEpoch) {
     logger.debug("[plugins] join in-flight list", {
       configScope: params.configScope,
       workspaceKey,
     });
-    await existing;
+    await existing.promise;
     return;
   }
-  const loadTask = runLoadInto(set, get, { ...params, workspaceKey });
-  inFlightLoads.set(loadKey, loadTask);
+  currentService = params.pluginService;
+  const epoch = ++readEpoch;
+  const loadTask = runLoadInto(set, get, { ...params, workspaceKey, epoch });
+  const active = { epoch, promise: loadTask };
+  loads.set(loadKey, active);
   try {
     await loadTask;
   } finally {
-    if (inFlightLoads.get(loadKey) === loadTask) {
-      inFlightLoads.delete(loadKey);
+    if (loads.get(loadKey) === active) {
+      loads.delete(loadKey);
     }
   }
 }
@@ -108,12 +130,14 @@ async function runLoadInto(
     workspaceIdentity: string | null;
     configScope: ZCodePluginScope | null;
     workspaceKey: string;
+    epoch: number;
     pluginService: IPluginManagementService;
   },
 ): Promise<void> {
   const setIfCurrent = (partial: Partial<PluginManagementState>): void => {
     const current = get();
     if (
+      params.epoch !== readEpoch || currentService !== params.pluginService ||
       current.workspacePath !== params.workspacePath ||
       current.workspaceIdentity !== params.workspaceIdentity ||
       current.configScope !== params.configScope

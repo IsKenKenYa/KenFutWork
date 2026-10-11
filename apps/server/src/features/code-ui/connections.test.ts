@@ -122,6 +122,76 @@ function frame(event: CodeUiEvent | undefined) {
   return { wire, frame: wire.frame, snapshot: wire.frame.payload.snapshot };
 }
 
+it.each([790_000, 1_600_000])(
+  "%i字节会话的initial与强制recovery必须被原前端assembler接受",
+  async (size) => {
+    const f = fixture("conversation");
+    const host = createCodeUiConversation({
+      sessionId: randomUUID(),
+      workspacePath: "/owned/project",
+      config: {
+        provider: "fixture",
+        model: "fixture",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    const snapshot = protocol.conversationSnapshotSchema.parse({
+      ...host.getSnapshot(),
+      meta: { title: "x".repeat(size), titleSource: "generated" },
+    });
+    const topic = protocol.conversationTopic(snapshot.sessionId);
+    const subscription = await f.connections.subscribe(
+      f.owner,
+      f.connectionId,
+      {
+        topic,
+        workspacePath: "/owned/project",
+        read: async () => ({ snapshot, seq: snapshot.seq }),
+      },
+    );
+    await subscription.publish();
+    const check = (delivery: "initial" | "recovery") => {
+      const assembler = new protocol.TopicWireFrameAssembler(
+        protocol.conversationTopicFrameSchema,
+      );
+      const outcomes = f.events.flatMap((event) =>
+        "frame" in event
+          ? assembler.accept(
+              protocol.conversationTopicWireCandidateSchema.parse(event.frame),
+            )
+          : [],
+      );
+      expect(
+        outcomes
+          .filter((event) => event.kind === "fault")
+          .map((event) =>
+            event.kind === "fault" ? event.fault.reasonCode : null,
+          ),
+      ).toEqual([]);
+      const complete = outcomes.find((event) => event.kind === "complete");
+      if (!complete || complete.kind !== "complete")
+        throw new Error("订阅没有完整logical frame");
+      expect(complete.deliveryKind).toBe(delivery);
+      expect(complete.frame.payload.kind).toBe("snapshot");
+      for (const event of f.events)
+        expect(Buffer.byteLength(JSON.stringify(event))).toBeLessThanOrEqual(
+          protocol.PROTOCOL_V4_LIMITS.maxFrameBytes,
+        );
+    };
+    check("initial");
+    f.events.length = 0;
+    const recovered = await f.connections.resync(f.owner, f.connectionId, {
+      subscriptionId: subscription.result.ack.subscriptionId,
+      base: null,
+      forceSnapshot: true,
+    });
+    await recovered.publish();
+    check("recovery");
+  },
+);
+
 it.each(topicKinds)(
   "%s：最新online已发后，迟到initial/recovery不得回滚；同seq recovery仍交付",
   async (kind) => {

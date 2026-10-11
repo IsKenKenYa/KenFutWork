@@ -11,7 +11,7 @@ export type AgentTurnBoundaryFacts = Pick<
 export async function captureAgentTurnBoundaryFacts(options: {
   contextHistory?: AgentContextHistory | undefined;
   threadId?: string | undefined;
-  captureFiles?: (() => Promise<TurnBoundaryCapture | void>) | undefined;
+  captureFiles?: (() => Promise<TurnBoundaryCapture | undefined>) | undefined;
 }): Promise<AgentTurnBoundaryFacts> {
   let files: AgentTurnBoundary["files"] = {
     status: "unavailable",

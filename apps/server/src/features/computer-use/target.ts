@@ -101,6 +101,15 @@ export function parseAppRef(raw: unknown): ParsedAppRef {
     if (raw.trim() === "") {
       throw new CuTargetError("app 引用不能是空字符串");
     }
+    if (raw.trimStart().startsWith("{")) {
+      let object: unknown;
+      try {
+        object = JSON.parse(raw);
+      } catch {
+        throw new CuTargetError("app 对象引用不是合法JSON");
+      }
+      return parseAppRef(object);
+    }
     // 裸字符串按 bundle_id 读（ZCode cua 同款约定）
     return { bundleId: raw };
   }

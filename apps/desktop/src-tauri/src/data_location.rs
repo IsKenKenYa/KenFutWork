@@ -44,7 +44,7 @@ pub fn resolve_data_dir(default: &Path, pointer: &Path) -> Result<PathBuf, Strin
     Ok(path)
 }
 
-fn snapshot(
+pub(crate) fn snapshot(
     app: &tauri::AppHandle,
     window: &tauri::WebviewWindow,
 ) -> Result<(PathBuf, PathBuf, u16, String), String> {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { blackFrameRatio, isBlackFrame, planImageInline } from "./budget.js";
+import { blackFrameRatio, isBlackFrame } from "./budget.js";
 
 function pixels(r: number, g: number, b: number, count: number): Uint8Array {
   const buf = new Uint8Array(count * 3);
@@ -38,26 +38,5 @@ describe("isBlackFrame（黑帧检测）", () => {
     }
     // 100/300 非黑 → 全黑占比 2/3
     expect(blackFrameRatio(mixed)).toBeCloseTo(2 / 3, 2);
-  });
-});
-
-describe("planImageInline（截图内联预算）", () => {
-  it("预算内 → 内联 base64", () => {
-    const plan = planImageInline({
-      base64Length: 1000,
-      maxInlineBytes: 200_000,
-    });
-    expect(plan.inline).toBe(true);
-  });
-
-  it("超预算 → 拒绝内联并给原因（不截断图片硬塞）", () => {
-    const plan = planImageInline({
-      base64Length: 300_000,
-      maxInlineBytes: 200_000,
-    });
-    expect(plan.inline).toBe(false);
-    if (!plan.inline) {
-      expect(plan.reason).toContain("预算");
-    }
   });
 });

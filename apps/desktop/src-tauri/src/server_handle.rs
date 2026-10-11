@@ -103,6 +103,8 @@ pub struct ServerSpawnConfig {
     /// 注入子进程 `KENFUTWORK_DATA_DIR`（桌面数据与开发目录彻底分离）。
     pub data_dir: PathBuf,
     pub port: u16,
+    /// 固定开发壳必须亲自启动API，不能复用另一权限身份下的进程。
+    pub require_owned: bool,
     /**
      * 额外注入子进程的环境变量（打包态用：内嵌 PG / 免登录 / 静态 UI 目录…）。
      * dev 形态留空——那时服务端读仓库的 `.env.local`。
@@ -120,6 +122,7 @@ impl ServerSpawnConfig {
             cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             data_dir,
             port,
+            require_owned: false,
             env: Vec::new(),
             health_timeout: Duration::from_secs(90),
         }
@@ -323,6 +326,7 @@ fn open_spawn_log(data_dir: &std::path::Path) -> Option<std::fs::File> {
  * 未健康 → spawn 子进程（注入 `KENFUTWORK_DATA_DIR`）并探活等待，失败即回收子进程。
  */
 pub fn ensure_server_running(config: ServerSpawnConfig) -> Result<ServerLaunch, LifecycleError> {
+    reject_occupied_owned_port(&config)?;
     if health_once(config.port) {
         return Ok(ServerLaunch::Reused);
     }
@@ -332,6 +336,16 @@ pub fn ensure_server_running(config: ServerSpawnConfig) -> Result<ServerLaunch, 
         Ok(_) => Ok(ServerLaunch::Spawned(handle)),
         Err(probe) => Err(probe_failure(&config, &mut handle, probe)),
     }
+}
+
+fn reject_occupied_owned_port(config: &ServerSpawnConfig) -> Result<(), LifecycleError> {
+    if config.require_owned && !port_is_free(config.port) {
+        return Err(LifecycleError::Spawn(std::io::Error::new(
+            std::io::ErrorKind::AddrInUse,
+            format!("开发端口 {} 已被占用，请关闭本次开发入口后重试。", config.port),
+        )));
+    }
+    Ok(())
 }
 
 fn spawn_server(config: &ServerSpawnConfig) -> Result<ServerHandle, LifecycleError> {
@@ -452,7 +466,8 @@ impl ServerLifecycle {
                     "已有托管服务端，不能重复启动。",
                 )));
             }
-            if health_once(config.port) {
+            reject_occupied_owned_port(&config)?;
+            if !config.require_owned && health_once(config.port) {
                 return Ok(None);
             }
             let handle = spawn_server(&config)?;

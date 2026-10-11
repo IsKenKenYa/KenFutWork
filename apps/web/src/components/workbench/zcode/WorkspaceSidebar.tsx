@@ -15,6 +15,8 @@ import {
   Archive,
   Blocks,
   CalendarClock,
+  Cable,
+  WandSparkles,
   Clock3,
   Cloud,
   Folder,
@@ -137,6 +139,8 @@ import {
   workspaceVerticalListSortingStrategy,
 } from "@zui/lib/workspaceSidebarDrag.js";
 import { createPortal } from "react-dom";
+import { PluginSidebarNavigation } from "./host/PluginSidebarNavigation.js";
+import { HostWorkbenchModeNavigation } from "./host/WorkbenchModeNavigation.js";
 
 function WorkspaceNewTaskTooltip({
   children,
@@ -317,7 +321,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onFileTreeOpenChange?: (open: boolean) => void;
 }) {
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
-  const supportsAutomations = useOptionalPlatform()?.supportsAutomations !== false;
+  const platform = useOptionalPlatform();
+  const supportsAutomations = platform?.supportsAutomations !== false;
   const handleTaskRowSelect = useCallback(
     (
       targetWorkspacePath: string,
@@ -755,9 +760,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     onOpenPluginStore?.();
   }, [onOpenPluginStore]);
   const handleOpenAutomationsMain = useCallback(() => {
-    if (!supportsAutomations) return;
     onOpenAutomations?.();
-  }, [onOpenAutomations, supportsAutomations]);
+  }, [onOpenAutomations]);
   const handleOpenCodingPlanUpgrade = useCallback(
     (
       providerId: string,
@@ -1258,6 +1262,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       className="flex h-full flex-col overflow-hidden"
     >
       <div className="h-12 [app-region:drag]"></div>
+      <HostWorkbenchModeNavigation />
       <div className="relative flex-1 min-h-0 overflow-hidden">
         <div
           className={cn(
@@ -1319,7 +1324,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 }
               />
             ) : null} */}
-            {supportsAutomations ? (
               <Button
                 variant="ghost"
                 onClick={handleOpenAutomationsMain}
@@ -1335,7 +1339,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 <CalendarClock className="size-4" />
                 {intl.formatMessage({ id: "workspace.openScheduledSettings" })}
               </Button>
-            ) : null}
             <Button
               variant="ghost"
               onClick={handleOpenPluginStoreMain}
@@ -1351,6 +1354,25 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               <Blocks className="size-4" />
               {intl.formatMessage({ id: "workspace.openPluginsSettings" })}
             </Button>
+            {platform?.skillsSettingsCapabilities?.databaseRecords ? (
+              <Button variant="ghost" size="lg" className="w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground" onClick={() => {
+                setPendingSettingsSectionIntent("skill", { pluginScopeKey: "user" });
+                openSettingsTab();
+              }}>
+                <WandSparkles className="size-4" />
+                {intl.formatMessage({ id: "settings.skills.title" })}
+              </Button>
+            ) : null}
+            {platform?.mcpSettingsCapabilities?.databaseRecords ? (
+              <Button variant="ghost" size="lg" className="w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground" onClick={() => {
+                setPendingSettingsSectionIntent("mcp", { pluginScopeKey: "user" });
+                openSettingsTab();
+              }}>
+                <Cable className="size-4" />
+                {intl.formatMessage({ id: "settings.mcpTitle" })}
+              </Button>
+            ) : null}
+            <PluginSidebarNavigation />
           </div>
 
           <div className="relative flex min-h-0 flex-1 flex-col">

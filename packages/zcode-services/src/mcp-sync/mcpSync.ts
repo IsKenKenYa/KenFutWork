@@ -11,11 +11,14 @@ import type {
   ZCodeAgentMcpServer,
   ZCodeMcpListMode,
   ZCodeMcpListResult,
+  NativeMcpServerRecord,
 } from "@zcode/shared";
 import { ServiceChannels } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
 
 export interface IMcpSyncService {
+  /** 宿主授权编辑读面；秘密值不进入普通目录或运行状态。 */
+  readMcpServerConfiguration?(params: { hostRecordId: string }): Promise<NativeMcpServerRecord>;
   loadMcpFromUserDirectory(
     request?: LoadCliMcpFromUserDirectoryRequest,
   ): Promise<LoadCliMcpFromUserDirectoryResult>;
@@ -25,7 +28,7 @@ export interface IMcpSyncService {
    * workspace 环境），本服务只是 UI 的注入面——mcp/list 词的 host 消费收拢到实现一处。
    */
   listWorkspaceMcpServerStatuses(params: {
-    workspacePath: string;
+    workspacePath?: string;
     workspaceIdentity?: string;
     mcpServers?: ZCodeAgentMcpServer[];
     mode?: ZCodeMcpListMode;

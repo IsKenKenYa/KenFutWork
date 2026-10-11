@@ -34,8 +34,19 @@ export async function commandDirectory(
   return path;
 }
 
-/** 平台启动器/动态库的固定读取基线；项目目录授权仍来自 scope。 */
-export function unixRuntimeReadRoots(extra: readonly string[] = []): string[] {
+/**
+ * 平台启动器/动态库的固定读取基线；项目目录授权仍来自 scope。
+ *
+ * `denyRead: ["/"]` 之下，凡是不在此清单里的前缀都读不到，也就 exec 不了。Apple
+ * Silicon 的第三方工具链装在 `/opt/homebrew`，**不在已授予的 `/usr` 之下**：缺了它，
+ * 沙箱内 `env git …` 会以 `Operation not permitted` 失败——影子检查点与用户自己的
+ * `git`/`rg`/`python3` 命令同时失效。这是 Windows 侧 ProgramFiles 读取基线的对等项：
+ * 只覆盖已安装软件目录，不含任何用户数据（`/Users` 仍在拒绝侧）。
+ */
+export function unixRuntimeReadRoots(
+  extra: readonly string[] = [],
+  platform: NodeJS.Platform = process.platform,
+): string[] {
   const packageEntry = createRequire(import.meta.url).resolve(
     "@anthropic-ai/sandbox-runtime",
   );
@@ -53,6 +64,7 @@ export function unixRuntimeReadRoots(extra: readonly string[] = []): string[] {
       "/private/etc",
       "/System",
       "/Library",
+      ...(platform === "darwin" ? ["/opt/homebrew"] : []),
       // Darwin 的 /bin/sh 经此系统 selector 解析；只允许系统 selector，不放开 /var。
       "/var/select",
       "/private/var/select",

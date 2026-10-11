@@ -68,6 +68,7 @@ export const FlowCanvasFrame = forwardRef<
   {
     frontendUrl: string;
     title?: string;
+    active?: boolean;
   }
 >(function FlowCanvasFrame(props, ref) {
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -87,11 +88,12 @@ export const FlowCanvasFrame = forwardRef<
   useEffect(() => {
     if (!flowOrigin) return;
     const version = FLOW_EMBED_PROTOCOL_VERSION;
+    let disposed = false;
 
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== flowOrigin) return;
       const frame = frameRef.current?.contentWindow;
-      if (!frame) return;
+      if (!frame || event.source !== frame) return;
 
       const message = parseFlowInbound(event.data, {
         origin: event.origin,
@@ -105,7 +107,7 @@ export const FlowCanvasFrame = forwardRef<
         //（flow 侧会停在自己的降级面并给出原因，不拿假身份继续）。
         void fetchIdentityTicket().then((hostToken) => {
           const target = frameRef.current?.contentWindow;
-          if (hostToken && target) {
+          if (!disposed && hostToken && target === frame) {
             target.postMessage(buildIdentity(version, hostToken), flowOrigin);
           }
         });
@@ -118,7 +120,10 @@ export const FlowCanvasFrame = forwardRef<
     };
 
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+    return () => {
+      disposed = true;
+      window.removeEventListener("message", onMessage);
+    };
   }, [flowOrigin]);
 
   // 侧栏导航项 → iframe 内的 flow 路由（握手前点击是 no-op，flow 会按默认页落地）。
@@ -158,6 +163,8 @@ export const FlowCanvasFrame = forwardRef<
         className={`h-full w-full border-0 transition-opacity duration-300 ${
           frameLoaded ? "opacity-100" : "opacity-0"
         }`}
+        inert={props.active === false}
+        tabIndex={props.active === false ? -1 : 0}
         onLoad={() => setFrameLoaded(true)}
         allow="clipboard-read; clipboard-write; fullscreen"
       />

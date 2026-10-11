@@ -656,6 +656,14 @@ export function InlineEditableProviderCard({
       nextModel: ProviderSettingsFormModel,
       basedOnRevision: number,
     ): Promise<void> => {
+      if (nextModel.native && nextModel.native.capability !== "chat") {
+        await runSaveOperation(() => Promise.resolve(onSave({
+          ...provider,
+          configRevision: basedOnRevision,
+          nativeModelUpdate: { originalModelId, model: nextModel.native! },
+        })), { modelId: nextModel.modelId, draftOwnsRetry: true });
+        return;
+      }
       const trimmed = nextModel.modelId.trim();
       const index = models.findIndex((model) => model.modelId === originalModelId);
       const currentModel = models[index];
@@ -683,7 +691,7 @@ export function InlineEditableProviderCard({
         { modelId: trimmed, draftOwnsRetry: true },
       );
     },
-    [models, onSavePersonalModelDraft, provider.providerId, runSaveOperation],
+    [models, onSavePersonalModelDraft, provider, onSave, runSaveOperation],
   );
 
   const handleDeleteModel = useCallback(
@@ -728,6 +736,14 @@ export function InlineEditableProviderCard({
 
   const handleAddModel = useCallback(
     async (model: ProviderSettingsFormModel) => {
+      if (model.native) {
+        await runSaveOperation(() => Promise.resolve(onSave({
+          ...provider,
+          configRevision: model.providerRevision,
+          nativeModelUpdate: { model: model.native! },
+        })), { modelId: model.modelId, draftOwnsRetry: true });
+        return;
+      }
       if (!onAddPersonalModel) throw new Error("当前设置入口未装配 Personal Model 添加能力");
       const added = { ...model, modelId: model.modelId.trim(), hasPersonalConfig: true };
       if (!added.modelId) return;
@@ -743,7 +759,7 @@ export function InlineEditableProviderCard({
         { modelId: added.modelId, draftOwnsRetry: true },
       );
     },
-    [onAddPersonalModel, provider.providerId, runSaveOperation],
+    [onAddPersonalModel, provider, onSave, runSaveOperation],
   );
 
   const handleReorderModelIds = useCallback(
@@ -837,6 +853,9 @@ export function InlineEditableProviderCard({
             apiFormat={apiFormat}
             baseUrlValue={baseUrlValue}
             onApiFormatChange={handleApiFormatChange}
+            onNativeProtocolChange={(value) => {
+              void saveProviderWithCleanupGuard({ ...provider, nativeProtocolUpdate: value }).catch(() => undefined);
+            }}
             onBaseUrlChange={handleBaseUrlValueChange}
             onBaseUrlBlur={saveConnection}
             onBaseUrlKeyDown={handleTextCommitKeyDown}
@@ -864,10 +883,12 @@ export function InlineEditableProviderCard({
           />
         ) : null}
 
-        <ProviderModelsSection
+        {provider.native?.protocol === "dify-engine" ? null : <ProviderModelsSection
+          nativeProvider={provider.native}
           // 不同 Provider 可以有同名模型；不能复用上一供应商的打开中草稿和版本。
           key={provider.providerId}
           providerId={provider.providerId}
+          providerRevision={provider.configRevision}
           providerName={getProviderFormLabel(provider)}
           providerEnabled={provider.enabled}
           providerAccess={provider.config.access}
@@ -879,7 +900,7 @@ export function InlineEditableProviderCard({
           onAddModel={handleAddModel}
           onReorderModelIds={onReorderModelIds ? handleReorderModelIds : undefined}
           settingsRevision={settingsRevision ?? 0}
-        />
+        />}
       </div>
     </div>
   );

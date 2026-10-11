@@ -1,0 +1,33 @@
+# CodeQL 扫描面（高级设置用；默认设置不支持排除路径，故本仓改走文件版工作流）。
+#
+# 为什么必须收窄：默认设置自动探测出的 100 条告警里，85 条落在 `apps/server` 的**测试与夹具**
+#（`js/bad-code-sanitization` 在测试里拼命令是设计如此），5 条落在 **vendored 的 ZCode UI**
+#（`apps/web/src/components/workbench/zcode/**`，2714 个已提交的第三方源码文件，REDOS 之类
+# 报上去我们也改不动，上游一换就蒸发）。噪音不会被读，只会让真问题沉底——
+# 真正需要处理的那几条是 `image-proxy.ts`（白名单绕过 + 回环 SSRF）这类第一方产品代码。
+name: KenFutWork CodeQL
+
+paths-ignore:
+  # 测试与夹具：验的是行为，不是生产路径
+  - '**/*.test.ts'
+  - '**/*.test.tsx'
+  - '**/test/**'
+  - '**/fixtures/**'
+  # vendored 第三方源码（来源与授权见 docs/源码来源/ 与 NOTICE.md）；
+  # 它的**依赖**仍由 Dependabot 与依赖关系图覆盖，这里只是不做代码扫描。
+  - apps/web/src/components/workbench/zcode/**
+  # 参考仓（submodule，CI 里本来也不检出，写上做双保险）与非源码目录
+  - references/**
+  - flow/**
+  - plugins/**
+  - patches/**
+  - skills/**
+  - docs/**
+  - runtime/**
+  - release/**
+  # 构建产物与依赖
+  - '**/node_modules/**'
+  - '**/dist/**'
+  - '**/out/**'
+  - apps/desktop/src-tauri/target/**
+  - apps/desktop/src-tauri/gen/**

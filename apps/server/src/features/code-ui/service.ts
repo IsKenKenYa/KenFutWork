@@ -48,6 +48,10 @@ import type {
 } from "../local-instance/types.js";
 import type { ModelCatalogService } from "../model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../model-providers/model-provider-service.js";
+import {
+  type CodeUiProviderSettingsRpc,
+  createCodeUiProviderSettingsRpc,
+} from "../model-providers/provider-settings-rpc.js";
 import type { ApprovalEvent } from "../permissions/approval-types.js";
 import type { PermissionService } from "../permissions/permission-service.js";
 import type { PluginRegistryService } from "../plugins/plugin-registry-service.js";
@@ -55,10 +59,6 @@ import type { ProcessSandbox } from "../process-sandbox/types.js";
 import type { ProjectService } from "../projects/project-service.js";
 import { resolveProjectWorkDirectory } from "../projects/work-dir.js";
 import type { SettingsService } from "../settings/settings-service.js";
-import type {
-  InstanceSkillSettingsRepository,
-  SkillCatalogRepository,
-} from "../skills/repository.js";
 import type {
   TaskWorkContext,
   TaskWorkManager,
@@ -92,11 +92,8 @@ import {
   type CodeUiHostGitRpc,
   createCodeUiHostGitRpc,
 } from "./host-git-rpc.js";
-import {
-  type CodeUiHostServicesRpc,
-  type CodeUiHostTargetRequest,
-  createCodeUiHostServicesRpc,
-} from "./host-service-rpc.js";
+import type { CodeUiHostRpcHandler } from "./host-rpc-handler.js";
+import type { CodeUiHostTargetRequest } from "./host-service-rpc.js";
 import type { CodeAdmittedInput } from "./input-intents.js";
 import { compileCodeUiModelExecution } from "./model-execution-options.js";
 import { createCodeUiOutputHistory } from "./output-history.js";
@@ -107,10 +104,6 @@ import {
 } from "./owned-history.js";
 import { createCodePlanningControl } from "./planning-control.js";
 import { createCodeUiPluginsHost } from "./plugins.js";
-import {
-  type CodeUiProviderSettingsRpc,
-  createCodeUiProviderSettingsRpc,
-} from "./provider-settings-rpc.js";
 import type { CodeInputSettlement } from "./queue-control.js";
 import {
   applyCodeQueueCommand,
@@ -136,6 +129,10 @@ import {
 } from "./workspace-rpc.js";
 
 export interface CodeUiServiceDeps {
+  hostRpcHandler?: (
+    service: string,
+    method: string,
+  ) => CodeUiHostRpcHandler | undefined;
   plugins?: PluginRegistryService;
   checkpoints?: CheckpointService;
   permissions?: PermissionService;
@@ -143,8 +140,6 @@ export interface CodeUiServiceDeps {
   terminals?: CodeTerminalService;
   blob?: BlobStore;
   attachmentRepository?: CodeAttachmentRepository;
-  skillRepository?: SkillCatalogRepository;
-  skillSettingsRepository?: InstanceSkillSettingsRepository;
   processSandbox?: ProcessSandbox;
   beforeCloseTask?: (
     actor: LocalActor,
@@ -248,7 +243,6 @@ export class CodeUiService {
   private readonly humanWorkspace: HumanWorkspaceRpc;
   private readonly providerSettings: CodeUiProviderSettingsRpc;
   private readonly attachments: CodeAttachmentsService | undefined;
-  private readonly hostServices: CodeUiHostServicesRpc | undefined;
   private readonly watchers: ReturnType<typeof createCodeUiFileWatchers>;
   private readonly git: CodeUiHostGitRpc | undefined;
   private closing = false;
@@ -488,15 +482,6 @@ export class CodeUiService {
           },
         })
       : undefined;
-    this.hostServices =
-      deps.skillRepository && deps.skillSettingsRepository
-        ? createCodeUiHostServicesRpc({
-            skills: deps.skillRepository,
-            skillSettings: deps.skillSettingsRepository,
-            resolveTarget: (actor, request) =>
-              this.resolveHostTarget(actor, request),
-          })
-        : undefined;
     this.attachments =
       deps.blob && deps.attachmentRepository
         ? createCodeAttachmentHost({
@@ -1460,7 +1445,8 @@ export class CodeUiService {
     args: unknown[],
     connectionId?: string,
   ) {
-    if (connectionId !== undefined) {
+    const contributed = this.deps.hostRpcHandler?.(service, method);
+    if (connectionId !== undefined || contributed) {
       const owner = await this.deps.localInstance.resolve(user);
       this.connections.require(
         owner.instanceId,
@@ -1468,6 +1454,9 @@ export class CodeUiService {
         false,
         user.accessClientId,
       );
+    }
+    if (contributed) {
+      return { result: await contributed.call(user, args) };
     }
     if (service === "window-controller") {
       const owner = await this.deps.localInstance.resolve(user);
@@ -1542,14 +1531,6 @@ export class CodeUiService {
       return service === "file-watcher"
         ? this.watchers.call(user, method, args, connection)
         : (this.git?.call(user, method, args, connection) ?? null);
-    }
-    if (service === "skills" && this.hostServices) {
-      const owner = await this.deps.localInstance.resolve(user);
-      this.connections.require(owner.instanceId, connectionId, false);
-      return this.hostServices.call(user, service, method, args, {
-        connectionId: connectionId!,
-        instanceId: owner.instanceId,
-      });
     }
     if (
       service === "providerSettingsService" ||
