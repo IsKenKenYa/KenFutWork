@@ -396,7 +396,7 @@ export function ChatSidebar({
   const { toast: showToast } = useToast();
 
   // ── Sidebar resize ──
-  const SIDEBAR_MIN = 260;
+  const SIDEBAR_MIN = 216;
   const SIDEBAR_MAX = 600;
   const SIDEBAR_KEYBOARD_STEP = 20;
   const [sidebarWidth, setSidebarWidth] = useState(400);
@@ -404,7 +404,7 @@ export function ChatSidebar({
   // 实际渲染宽度：用户拖的宽度为上限，按容器可用宽自动收缩（最小 260 / 至多 42%）。
   // 用 CSS min()/max() 百分比实现——容器宽度变化即时生效，不依赖 window resize
   // 事件（宿主拖窄窗口不发 resize 的坑，用户发过两次火，一律走 CSS 自适应）。
-  const sidebarStyleWidth = `min(${sidebarWidth}px, max(${SIDEBAR_MIN}px, 42%))`;
+  const sidebarStyleWidth = `min(${sidebarWidth}px, max(${SIDEBAR_MIN}px, 36%))`;
 
   const clampWidth = useCallback(
     (w: number) => Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, w)),

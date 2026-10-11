@@ -291,7 +291,7 @@ export function ConversationDraftEmptyState({
             font-wordmark 字体 + tracking-tight——与 canvas-empty-hint 的 Design 版同款），
             时间问候语降为次行小字。 */}
         <div className="flex items-center justify-center gap-3">
-          <Code2 className="size-8 shrink-0" strokeWidth={3} />
+          <Code2 className="size-10 shrink-0" strokeWidth={3} />
           <p
             style={
               {

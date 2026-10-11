@@ -12,6 +12,7 @@ import {
   parseFlowInbound,
 } from "@kenfutwork/shared";
 import { CircleCheck, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
+import appLogoUrl from "@zui/assets/kenfutwork-mark.png";
 import {
   useCallback,
   useEffect,
@@ -220,7 +221,7 @@ function FlowCanvasEmbed({
   active: boolean;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const [connected, setConnected] = useState(false);
+  const [, setConnected] = useState(false);
   const [frameLoaded, setFrameLoaded] = useState(false);
   // 引擎没起时 iframe 永远不 onLoad：8 秒后把「正在打开」换成去引擎页的引导，
   // 不让用户对着无限加载发呆（fail loud，不猜「也许马上好」）。
@@ -319,29 +320,32 @@ function FlowCanvasEmbed({
       {!frameLoaded ? (
         <div
           role="status"
-          className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background text-sm text-foreground-subtle"
+          className="absolute inset-0 flex flex-col items-center justify-center gap-5 bg-background"
         >
+          {/* 与启动屏/连接屏同款加载动画（logo 黑白 + 旋转），全程无文字跳动 */}
+          {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
+          <img
+            src={appLogoUrl}
+            alt=""
+            className="h-14 w-auto select-none brightness-0"
+            draggable={false}
+          />
+          <div
+            className="h-6 w-6 animate-spin rounded-full border-2"
+            style={{
+              borderColor: "rgba(13, 13, 13, 0.15)",
+              borderTopColor: "rgba(13, 13, 13, 0.6)",
+            }}
+          />
           {loadTimedOut ? (
-            <>
-              <p>引擎未就绪</p>
-              <button
-                type="button"
-                onClick={() => setFlowSurfaceView("engine")}
-                className="rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-opacity hover:opacity-90"
-              >
-                去引擎页安装
-              </button>
-            </>
-          ) : (
-            "正在打开 flow 画布…"
-          )}
-        </div>
-      ) : !connected ? (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-2 mx-auto w-fit rounded-full bg-hover/80 px-3 py-1 text-xs text-foreground-subtle"
-        >
-          正在与 flow 画布握手…
+            <button
+              type="button"
+              onClick={() => setFlowSurfaceView("engine")}
+              className="rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-opacity hover:opacity-90"
+            >
+              去引擎页安装
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>

@@ -105,8 +105,8 @@ import type {
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 
-const WORKSPACE_SIDEBAR_DEFAULT_WIDTH_PX = 264;
-const WORKSPACE_SIDEBAR_MIN_WIDTH_PX = 264;
+const WORKSPACE_SIDEBAR_DEFAULT_WIDTH_PX = 240;
+const WORKSPACE_SIDEBAR_MIN_WIDTH_PX = 216;
 const WORKSPACE_SIDEBAR_MAX_WIDTH_RATIO = 0.5;
 const WORKSPACE_SIDEBAR_WIDTH_STORAGE_KEY =
   "zcode:workspace-shell:sidebar-width-px";
