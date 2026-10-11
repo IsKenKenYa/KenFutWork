@@ -102,5 +102,6 @@ export const codeUiParentRequestSchema = z.discriminatedUnion("type", [
     pluginId: z.string().min(1),
     entryId: z.string().min(1),
   }),
+  z.object({ type: z.literal("kenfutwork:open-instance-settings") }),
 ]);
 export type CodeUiBootstrap = z.infer<typeof codeUiBootstrapSchema>;

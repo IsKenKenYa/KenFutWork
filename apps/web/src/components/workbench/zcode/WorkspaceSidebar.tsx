@@ -149,7 +149,10 @@ import {
 import { createPortal } from "react-dom";
 import { HostModeSidebarContent } from "./host/ModeSidebarContent.js";
 import { PluginSidebarNavigation } from "./host/PluginSidebarNavigation.js";
-import { HostWorkbenchModeNavigation } from "./host/WorkbenchModeNavigation.js";
+import {
+  HostSidebarRail,
+  HostWorkbenchModeNavigation,
+} from "./host/WorkbenchModeNavigation.js";
 import {
   restrictVerticalDragWithinContainer,
   SortableWorkspaceSidebarItem,
@@ -1438,6 +1441,22 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     </>
   );
 
+  // 收起态（浏览器/内嵌形态）：48px 图标栏——黑标 + 展开按钮 + 模式图标，
+  // 不收缩到什么都没有（用户口径：像之前一样留 rail；桌面 chrome 形态
+  // 由顶部浮层承担，仍走整体隐藏）。
+  const railMode =
+    !isSidebarVisible && !isDesktop && !isMacDesktop && !isWindowsDesktop;
+  if (railMode) {
+    return (
+      <aside
+        data-testid={TID_SIDEBAR}
+        className="flex h-full flex-col overflow-hidden"
+      >
+        <HostSidebarRail onExpand={() => onToggleSidebar?.()} />
+      </aside>
+    );
+  }
+
   return (
     <aside
       data-testid={TID_SIDEBAR}
@@ -1464,12 +1483,12 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
           ) : undefined
         }
       />
-      {/* 模式内容槽（融合缝）：Code 渲染下方原任务列表；Design/Flow 换成项目
-          列表 / flow 导航——「侧边栏随模式变化」的原工作台逻辑；shared=共用导航
-          （插件市场/技能/MCP/插件面板），design/flow 模式下继续渲染在模式内容之前。 */}
+      {/* 模式内容槽（融合缝）：共用导航（插件市场/技能/MCP/插件面板）在所有模式
+          渲染，其下分界线，再往下是模式专属内容（Code=children 任务区；
+          Design/Flow=项目列表/工作流导航）——用户拍板的侧栏结构。 */}
       <HostModeSidebarContent
         shared={
-          <div className="flex flex-col gap-1 px-2 pt-1">
+          <div className="flex flex-col gap-1 px-2 pt-2">
             {sharedNavigation}
           </div>
         }
@@ -1522,9 +1541,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                   {commandCenterShortcutLabel}
                 </span>
               </Button>
-              {/* 共用导航（插件市场/技能/MCP/插件面板）：各模式都保留——经
-                  HostModeSidebarContent 的 shared 槽在 design/flow 模式继续渲染。 */}
-              {sharedNavigation}
             </div>
 
             <div className="relative flex min-h-0 flex-1 flex-col">

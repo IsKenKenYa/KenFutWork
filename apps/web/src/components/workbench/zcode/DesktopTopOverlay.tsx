@@ -170,19 +170,6 @@ export function DesktopTopOverlay({
             </DesktopTopOverlayActionButton>
           )}
 
-          {/* 浏览器形态（无自绘标题栏）且侧栏已收起时的展开入口：桌面端有左上角
-              logo 按钮兜底，浏览器只有快捷键——不补这个按钮侧栏就回不来。 */}
-          {!usesCustomCaptionArea && !isMacDesktop && !isSidebarVisible ? (
-            <DesktopTopOverlayActionButton
-              title={toggleSidebarTitle}
-              shortcut={toggleSidebarShortcutLabel}
-              ariaLabel={toggleSidebarTitle}
-              onClick={onToggleSidebar}
-            >
-              <SidebarToggleIcon className="size-4" />
-            </DesktopTopOverlayActionButton>
-          ) : null}
-
           {/* 远程控制移动端左上角空间有限，任务前进/后退在这里会与主操作拥挤重叠。*/}
           {hideTaskNavigationButtons ? null : (
             <>

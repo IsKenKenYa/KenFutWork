@@ -255,7 +255,7 @@ describe("ChatSidebar", () => {
     expect(screen.queryByText("图层列表占位")).toBeNull();
 
     // 点「对话」→ 切回对话视图（新增的回到对话按钮）
-    await userEvent.click(screen.getByRole("button", { name: "对话" }));
+    await userEvent.click(screen.getByRole("button", { name: "面板" }));
     expect(
       await screen.findByPlaceholderText(/输入你的想法/),
     ).toBeInTheDocument();
@@ -293,7 +293,7 @@ describe("ChatSidebar", () => {
     expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     // 三个视图图标：**空心**（fill=none）且尺寸一致（用户反馈有的大有的小、有的实心）
-    for (const name of ["对话", "图层", "生成文件"]) {
+    for (const name of ["面板", "图层", "生成文件"]) {
       const svg = screen.getByRole("button", { name }).querySelector("svg");
       expect(svg).not.toBeNull();
       expect(svg?.getAttribute("fill")).toBe("none");

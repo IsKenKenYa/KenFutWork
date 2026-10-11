@@ -1,6 +1,5 @@
 import kenfutworkMarkUrl from "@zui/assets/kenfutwork-mark.png";
 import type { ReactNode } from "react";
-import { cn } from "@zui/components/lib/utils.js";
 
 interface RootStartupLoadingProps {
   label: string;
@@ -8,7 +7,11 @@ interface RootStartupLoadingProps {
   busy?: boolean;
 }
 
-export function RootStartupLoading({ label, children, busy = true }: RootStartupLoadingProps) {
+export function RootStartupLoading({
+  label,
+  children,
+  busy = true,
+}: RootStartupLoadingProps) {
   return (
     <div
       // Web 端全局 html/body/#root 为 Electron 透明背景让路，React 接管后会替换 HTML 启动壳。
@@ -26,19 +29,17 @@ export function RootStartupLoading({ label, children, busy = true }: RootStartup
 }
 
 /**
- * 初始化与引导共用品牌徽标：KenFutWork 标志（vite 内联资产，随首帧即绘，
- * 不再出现原 Z 标 SVG 延迟绘制造成的黑块），黑底白标（与侧栏品牌行同口径）。
+ * 初始化与引导共用品牌徽标：裸黑标（与侧栏品牌行同款——黑墨迹、正常背景），
+ * 加载→就绪全程 logo 颜色不变化（用户口径：logo 只要黑白、加载时不变色）。
  */
 export function ZCodeStartupLogoBadge() {
   return (
-    <div className="relative flex size-24 items-center justify-center rounded-3xl bg-[linear-gradient(180deg,#000000_0%,#151718_100%)] shadow-xl/20 before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:border before:border-[rgba(255,255,255,0.1)] before:content-['']">
-      {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
-      <img
-        src={kenfutworkMarkUrl}
-        alt=""
-        className="size-14 select-none brightness-0 invert"
-        draggable={false}
-      />
-    </div>
+    // biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败
+    <img
+      src={kenfutworkMarkUrl}
+      alt="KenFutWork"
+      className="size-14 select-none brightness-0"
+      draggable={false}
+    />
   );
 }

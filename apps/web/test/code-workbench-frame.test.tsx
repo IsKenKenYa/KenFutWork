@@ -297,7 +297,16 @@ it("本地实例弹窗带语音设置段：Code 模式就地调语音，cookie �
     }),
   );
   render(<CodeWorkbenchFrame />);
-  fireEvent.click(screen.getByRole("button", { name: "本地实例" }));
+  // 悬浮按钮已按用户口径撤掉：壳侧栏底部的「本地实例」入口经消息打开弹窗。
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: frame.contentWindow,
+      data: { type: "kenfutwork:open-instance-settings" },
+    }),
+  );
   // 语音段渲染出来（设置页同一组件），设置与模型目录都实际取数
   expect(await screen.findByRole("heading", { name: "语音" })).toBeTruthy();
   await waitFor(() =>

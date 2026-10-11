@@ -1,6 +1,7 @@
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import {
   Cpu,
+  HardDrive,
   Layers,
   ListChecks,
   Palette,
@@ -26,6 +27,7 @@ import {
   setFlowSurfaceView,
   subscribeFlowSurface,
 } from "./flowSurfaceState.js";
+import { openInstanceSettings } from "./parentBridge.js";
 
 const NOOP_SUBSCRIBE = () => () => {};
 const CODE_SNAPSHOT = {
@@ -41,11 +43,10 @@ const FLOW_NAV_ITEMS = [
 ] as const;
 
 /**
- * 壳侧栏的模式内容槽（融合缝）：Code 模式渲染原任务列表（children），
- * Design/Flow 模式换成对应内容——「侧边栏随模式变化」的原工作台逻辑
- * （用户口径：融合这块逻辑，不要在主区再套一层侧栏）。品牌行与模式 pills
- * 在本槽之上，底部用户/设置在本槽之下，均不随模式变化；`shared`（插件市场/
- * 技能/MCP/插件面板）在所有模式渲染于模式内容之前（共用的东西要保留）。
+ * 壳侧栏的模式内容槽（融合缝）。用户拍板的最终结构（自上而下）：
+ * 品牌行 → Code/Design/Flow 选项卡（高亮选中）→ **共用按钮**（插件市场/技能/
+ * MCP/插件面板，所有模式都在）→ **分界线** → 模式专属内容（Code=新建任务/
+ * 搜索/任务列表；Design=项目列表；Flow=工作流导航）→ 底部用户/设置。
  */
 export function HostModeSidebarContent({
   children,
@@ -62,14 +63,25 @@ export function HostModeSidebarContent({
   const mode = snapshot.mode;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {mode === "design" || mode === "flow" ? (
-        <>
-          {shared}
-          {mode === "design" ? <DesignProjectsSidebar /> : <FlowNavSidebar />}
-        </>
+      {shared}
+      {/* 分界线：共用按钮与各模式专属内容之间（用户口径）。 */}
+      <div className="mx-3 my-2 border-t" />
+      {mode === "design" ? (
+        <DesignProjectsSidebar />
+      ) : mode === "flow" ? (
+        <FlowNavSidebar />
       ) : (
         children
       )}
+      {/* 本地实例入口：悬浮按钮已按用户口径撤掉，配置面板从侧栏底部进。 */}
+      <button
+        type="button"
+        onClick={openInstanceSettings}
+        className="flex min-h-[36px] w-full items-center gap-2.5 border-t px-4 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <HardDrive className="h-4 w-4 shrink-0" />
+        本地实例
+      </button>
     </div>
   );
 }

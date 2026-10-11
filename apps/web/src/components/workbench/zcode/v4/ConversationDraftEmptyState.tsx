@@ -287,7 +287,8 @@ export function ConversationDraftEmptyState({
         }
         className="relative z-10 flex w-full flex-col items-center justify-center gap-2 text-muted-foreground/50"
       >
-        {/* 用户口径：Code 空态与 Design 同款命名式标题（“Code with KenFutWork”），
+        {/* 用户口径：Code 空态与 Design 同款命名式标题（「Code with KenFutWork」，
+            font-wordmark 字体 + tracking-tight——与 canvas-empty-hint 的 Design 版同款），
             时间问候语降为次行小字。 */}
         <div className="flex items-center justify-center gap-3">
           <Code2 className="size-8 shrink-0" strokeWidth={3} />
@@ -298,7 +299,7 @@ export function ConversationDraftEmptyState({
                 lineHeight: 1.2,
               } as CSSProperties
             }
-            className="relative whitespace-nowrap font-medium"
+            className="relative whitespace-nowrap font-wordmark font-medium tracking-tight"
           >
             <span
               ref={greetingMeasurementRef}

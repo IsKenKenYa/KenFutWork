@@ -15,7 +15,7 @@
       这一页**不引任何脚本依赖**（纯 HTML/CSS + 几行内联计时提示），因为它要能在
       「什么都还没起来」的时候把画面撑住。
 
-      视觉口径（2026-10-11 用户拍板）：黑底白标——与壳内品牌行/加载徽标同一套。
+      视觉口径（2026-10-11 终版）：白底黑标——与壳内品牌行/加载徽标同一套，全程不变色。
     -->
     <style>
       /* 字标字体：Momo Trust Display（OFL），自托管一份（桌面端离线也要能显示） */
@@ -27,12 +27,10 @@
         src: url("/fonts/momo-trust-display.woff2") format("woff2");
       }
       :root {
-        --kfw-bg-top: #000000;
-        --kfw-bg-bottom: #151718;
-        --kfw-ink: #f4f5f7;
-        --kfw-muted: #9aa0ac;
-        --kfw-track: rgba(255, 255, 255, 0.14);
-        --kfw-accent: #5c82ec;
+        --kfw-ink: #16181d;
+        --kfw-muted: #6b6f85;
+        --kfw-track: #e6e7ef;
+        --kfw-accent: #4f6bd0;
       }
       html,
       body {
@@ -50,11 +48,7 @@
         gap: 16px;
         grid-auto-rows: min-content;
         overflow: hidden;
-        background: linear-gradient(
-          180deg,
-          var(--kfw-bg-top) 0%,
-          var(--kfw-bg-bottom) 100%
-        );
+        background: #fff;
         color: var(--kfw-ink);
         font:
           14px/1.6 system-ui,

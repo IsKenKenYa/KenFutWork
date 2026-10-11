@@ -1,7 +1,7 @@
 import type { HostWorkbenchMode, HostWorkbenchNavigation } from "@zcode/shared";
 import appLogoUrl from "@zui/assets/kenfutwork-mark.png";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
-import { Code2, Palette, Workflow } from "lucide-react";
+import { Code2, Palette, PanelLeftOpen, Workflow } from "lucide-react";
 import { useSyncExternalStore } from "react";
 
 /** 从CanvasSidebar原横排及收起按钮提取，Code／Design／Flow共用展示。 */
@@ -47,11 +47,13 @@ export function WorkbenchModeNavigation({
       </>
     );
   return (
-    <div className="px-2 pt-3 pb-0.5">
+    <div className="px-2 pt-3 pb-1">
+      {/* 用户口径：模式行上下加分界线（tab 轨道式 hairline），选中项灰底填充
+          顶满两线——一眼可辨当前模式，又不回到胶囊容器的突兀。 */}
       <div
         role="radiogroup"
         aria-label="模式切换"
-        className="flex items-center gap-0.5"
+        className="flex items-stretch border-y"
       >
         {modeItems.map((item) => (
           // biome-ignore lint/a11y/useSemanticElements: 提取现有分段radio按钮，保持图标和布局
@@ -62,7 +64,7 @@ export function WorkbenchModeNavigation({
             aria-checked={mode === item.id}
             data-active={mode === item.id}
             onClick={() => onModeChange(item.id)}
-            className="flex min-h-[30px] min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-1.5 text-[13px] whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground data-[active=true]:bg-muted data-[active=true]:font-medium data-[active=true]:text-foreground"
+            className="flex min-h-[34px] min-w-0 flex-1 items-center justify-center gap-1 py-1.5 text-[13px] whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground data-[active=true]:bg-muted data-[active=true]:font-medium data-[active=true]:text-foreground"
           >
             {item.icon}
             <span className="truncate">{item.label}</span>
@@ -106,13 +108,14 @@ function ConnectedWorkbenchModeNavigation({
           间距沿用原口径（px-3.5 / py-3 / gap-2）；无黑底条、无底片徽章。
           拖拽区仍由本行承接（原 h-12 空白拖拽条已去掉）。 */}
       <div className="flex w-full items-center gap-2 px-3.5 py-3 [app-region:drag]">
-        {/* 黑标：品牌图为蓝色墨迹，brightness(0) 转黑；高度对齐 20px 字标的大写高
-            （墨迹占图 80%，18px 盒→14.4px 墨迹）；基线光学补偿下沉 1px 对齐字面。 */}
+        {/* 黑标：品牌图为蓝色墨迹，brightness(0) 只留黑白；盒高 20px=字标行高，
+            墨迹(盒的 71%)≈字标大写高——垂直居中即光学对齐（实测墨迹在画布中
+            上下均分 148/147，无需位移补偿）。 */}
         {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
         <img
           src={appLogoUrl}
           alt="KenFutWork"
-          className="h-[18px] w-auto translate-y-[1px] brightness-0"
+          className="h-5 w-auto brightness-0"
           draggable={false}
         />
         <span className="font-wordmark text-[20px] leading-none tracking-tight text-foreground">
@@ -125,6 +128,53 @@ function ConnectedWorkbenchModeNavigation({
         ) : null}
       </div>
       <WorkbenchModeNavigation {...snapshot} onModeChange={navigation.open} />
+    </div>
+  );
+}
+
+const NOOP_SUBSCRIBE = () => () => {};
+const FALLBACK_SNAPSHOT = {
+  mode: "code" as const,
+  availableModes: [] as readonly never[],
+};
+
+/**
+ * 收起态图标栏（用户口径：收起不要收缩到什么都没有，像之前一样留一条 rail）：
+ * 黑标 + 展开按钮 + 模式图标（复用 WorkbenchModeNavigation 的 collapsed 形态）。
+ * 挂在壳侧栏 48px 宽的收起轨道里；桌面 chrome 形态不启用（那边有顶部浮层按钮）。
+ */
+export function HostSidebarRail({ onExpand }: { onExpand: () => void }) {
+  const navigation = useOptionalPlatform()?.workbenchNavigation;
+  const snapshot = useSyncExternalStore(
+    navigation?.subscribe ?? NOOP_SUBSCRIBE,
+    navigation?.getSnapshot ?? (() => FALLBACK_SNAPSHOT),
+  );
+  return (
+    <div className="flex h-full w-full flex-col items-center gap-1 py-2">
+      {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
+      <img
+        src={appLogoUrl}
+        alt="KenFutWork"
+        className="my-1 h-5 w-auto brightness-0"
+        draggable={false}
+      />
+      <button
+        type="button"
+        aria-label="展开侧栏"
+        title="展开侧栏"
+        onClick={onExpand}
+        className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        <PanelLeftOpen className="h-4 w-4" />
+      </button>
+      <div className="my-1 w-5 border-t" />
+      {navigation ? (
+        <WorkbenchModeNavigation
+          {...snapshot}
+          onModeChange={navigation.open}
+          collapsed
+        />
+      ) : null}
     </div>
   );
 }

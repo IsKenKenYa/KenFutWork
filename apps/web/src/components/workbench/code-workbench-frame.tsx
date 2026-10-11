@@ -127,6 +127,9 @@ export function CodeWorkbenchFrame({
       if (!parsed.success) return;
       if (parsed.data.type === "kenfutwork:open-management") {
         if (active) onOpenManagement?.(parsed.data.target);
+      } else if (parsed.data.type === "kenfutwork:open-instance-settings") {
+        // 壳侧栏底部「本地实例」入口（悬浮按钮已按用户口径撤掉）。
+        if (active) setInstanceOpen(true);
       } else if (parsed.data.type === "kenfutwork:code-plugins-changed")
         window.dispatchEvent(new Event(PLUGIN_INVENTORY_CHANGED_EVENT));
       else if (parsed.data.type === "kenfutwork:code-open-plugin") {
@@ -188,13 +191,6 @@ export function CodeWorkbenchFrame({
         inert={!active}
         tabIndex={active ? 0 : -1}
       />
-      <button
-        type="button"
-        onClick={() => setInstanceOpen(true)}
-        className="fixed bottom-3 right-3 z-20 rounded-md border bg-background/95 px-3 py-1.5 text-xs shadow-sm"
-      >
-        本地实例
-      </button>
       {panelError ? (
         <p
           role="alert"
