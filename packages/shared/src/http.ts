@@ -12,7 +12,10 @@ import {
   runIdSchema,
   terminalShellSchema,
 } from "./contracts.js";
-import { additionalDirectorySchema } from "./execution-contracts.js";
+import {
+  additionalDirectorySchema,
+  sandboxModeSchema,
+} from "./execution-contracts.js";
 
 export const healthResponseSchema = z.object({
   ok: z.literal(true),
@@ -54,12 +57,38 @@ export const projectCreateResponseSchema = z.object({
   project: projectSummarySchema,
 });
 
+export const designTaskParamsSchema = z.object({ taskId: z.uuid() }).strict();
+export const designTaskPolicyResponseSchema = z.object({
+  task: z
+    .object({
+      taskId: z.uuid(),
+      projectId: z.uuid(),
+      canvasId: z.uuid(),
+      rootDirectory: z.string().min(1),
+      additionalDirectories: z.array(additionalDirectorySchema),
+      sandboxMode: sandboxModeSchema,
+      scopeGeneration: z.number().int().nonnegative().safe(),
+      branchGeneration: z.number().int().positive().safe(),
+      mode: z.enum(["build", "edit", "yolo"]),
+      planEnabled: z.boolean(),
+      planningEpoch: z.number().int().nonnegative().safe(),
+      activeRunId: runIdSchema.nullable(),
+      executionState: z.enum(["ready", "revoking", "failed"]),
+    })
+    .strict(),
+});
+
 export const unauthenticatedErrorResponseSchema = z.object({
   error: z.object({
     code: z.literal("unauthorized"),
     message: z.string().min(1),
   }),
 });
+
+export type DesignTaskParams = z.infer<typeof designTaskParamsSchema>;
+export type DesignTaskPolicyResponse = z.infer<
+  typeof designTaskPolicyResponseSchema
+>;
 
 // --- Code 模式 git 分支视图（工作目录=项目） ---
 
