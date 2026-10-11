@@ -8,6 +8,7 @@ import {
   type CodeUiWorkspace,
   codeUiControllerTaskListQuerySchema,
   zcodeUiProtocol as protocol,
+  resolveContextWindow,
   type StreamEvent,
 } from "@kenfutwork/shared";
 import {
@@ -3283,6 +3284,63 @@ export class CodeUiService {
     }
   }
 
+  /**
+   * run.usage 事件的模型窗口元数据缓存（G6 圆环数据链）。
+   * 只服务展示层读数：60s TTL 内允许目录变更后短暂滞后（局部常量，不进治理表——
+   * 不影响执行路径，仅决定圆环分母多久跟上用户改实例配置）。
+   */
+  private readonly runUsageModelMetaCache = new Map<
+    string,
+    { at: number; contextWindowTokens?: number; maxOutputTokens?: number }
+  >();
+  private static readonly RUN_USAGE_META_TTL_MS = 60_000;
+
+  /** 补齐 run.usage 的 contextWindowTokens/maxOutputTokens（目录声明优先，兜底表次之）。 */
+  private async enrichRunUsageWindow(
+    event: Extract<StreamEvent, { type: "run.usage" }>,
+    user: LocalActor,
+    model: string,
+  ): Promise<Extract<StreamEvent, { type: "run.usage" }>> {
+    if (event.contextWindowTokens !== undefined) return event;
+    const now = Date.now();
+    const cached = this.runUsageModelMetaCache.get(model);
+    let meta = cached && now - cached.at < CodeUiService.RUN_USAGE_META_TTL_MS
+      ? cached
+      : undefined;
+    if (!meta) {
+      meta = { at: now };
+      try {
+        const entries = await this.deps.modelCatalog.listCatalog(user);
+        // run 的 model 是「实例:模型」specifier（与 validateSpecifier 同口径）；目录里
+        // id 是模型名——两种写法都匹配，认不出时留空（界面只给绝对量，不编分母）。
+        const entry = entries.find(
+          (candidate) =>
+            `${candidate.provider.instanceId}:${candidate.id}` === model ||
+            candidate.id === model,
+        );
+        const declared =
+          entry?.model.contextWindow ?? entry?.hints?.contextWindow;
+        const window = resolveContextWindow(declared, entry?.id ?? model);
+        if (window !== null) meta.contextWindowTokens = window;
+        const maxOutput = entry?.model.maxOutputTokens;
+        if (typeof maxOutput === "number" && maxOutput > 0)
+          meta.maxOutputTokens = maxOutput;
+      } catch {
+        // 目录读取失败：不带窗口字段，客户端按「窗口未知」呈现
+      }
+      this.runUsageModelMetaCache.set(model, meta);
+    }
+    return {
+      ...event,
+      ...(meta.contextWindowTokens !== undefined
+        ? { contextWindowTokens: meta.contextWindowTokens }
+        : {}),
+      ...(meta.maxOutputTokens !== undefined
+        ? { maxOutputTokens: meta.maxOutputTokens }
+        : {}),
+    };
+  }
+
   private async runTurn(
     user: LocalActor,
     project: CodeUiWorkspace,
@@ -3393,8 +3451,16 @@ export class CodeUiService {
                       : currentInput.intent.mode,
                   }
                 : {}),
-              eventSink: (event) =>
-                this.recordRunEvent(user, project, sessionId, event, ++ordinal),
+              eventSink: async (event) =>
+                this.recordRunEvent(
+                  user,
+                  project,
+                  sessionId,
+                  event.type === "run.usage"
+                    ? await this.enrichRunUsageWindow(event, user, model)
+                    : event,
+                  ++ordinal,
+                ),
             },
           );
         },

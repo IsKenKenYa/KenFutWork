@@ -982,6 +982,26 @@ export function createCodeUiConversation(input: {
           event.runOutputTokens === undefined
         )
           return;
+        // G6 上下文容量圆环：占用 = 最近一次模型调用的输入（当前真正占着窗口的量），
+        // 窗口未知时 maxTokens 落 0（界面判 0 不画百分比，只给绝对量，不编分母）。
+        root.usage.contextWindow = {
+          usedTokens: event.inputTokens,
+          maxTokens: event.contextWindowTokens ?? 0,
+          autoCompactThresholdTokens: null,
+          cache: {
+            inputTokens: event.inputTokens,
+            cacheReadTokens: event.cachedInputTokens ?? 0,
+            cacheWriteTokens: 0,
+            totalInputTokens: event.runInputTokens,
+            totalCacheReadTokens: event.runCachedInputTokens ?? 0,
+            totalCacheWriteTokens: 0,
+            hitRate:
+              typeof event.runCachedInputTokens === "number" &&
+              event.runInputTokens > 0
+                ? event.runCachedInputTokens / event.runInputTokens
+                : null,
+          },
+        };
         const cached =
           event.runCachedInputTokens ??
           runUsage.get(event.runId)?.cachedInputTokens;

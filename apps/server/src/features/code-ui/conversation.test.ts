@@ -135,6 +135,37 @@ describe("Code 会话用量的公共投影与恢复", () => {
     ]);
   });
 
+  it("G6 上下文容量圆环：run.usage 填 contextWindow（占用=最近调用输入，窗口未知 maxTokens=0）", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "读取并回答" });
+    host.recordEvent({
+      ...usageA,
+      inputTokens: 45_000,
+      runInputTokens: 60_000,
+      contextWindowTokens: 1_000_000,
+    });
+    expect(host.getSnapshot().usage.contextWindow).toEqual({
+      usedTokens: 45_000,
+      maxTokens: 1_000_000,
+      autoCompactThresholdTokens: null,
+      cache: {
+        inputTokens: 45_000,
+        cacheReadTokens: 4,
+        cacheWriteTokens: 0,
+        totalInputTokens: 60_000,
+        totalCacheReadTokens: 4,
+        totalCacheWriteTokens: 0,
+        hitRate: 4 / 60_000,
+      },
+    });
+
+    // 老服务端事件（无窗口字段）：maxTokens 落 0，界面判 0 不画百分比
+    host.startTurn({ runId: "run-c", commandId: "send-c", text: "第三轮" });
+    host.recordEvent({ ...usageB, runId: "run-c" });
+    expect(host.getSnapshot().usage.contextWindow?.maxTokens).toBe(0);
+    expect(host.getSnapshot().usage.contextWindow?.usedTokens).toBe(7);
+  });
+
   it("exportState 重建后，B 的绝对修正仍保留 A 的已结算总量", () => {
     const host = createCodeUiConversation(input);
     host.startTurn({ runId: "run-a", commandId: "send-a", text: "第一轮" });
