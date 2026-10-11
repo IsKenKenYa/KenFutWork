@@ -3839,7 +3839,9 @@ export class CodeUiService {
         instanceId: workspace.instanceId,
         projectId: project.projectId,
         taskId: sessionId,
-        generation: 0,
+        // 授权版本从 1 起铸：Windows 原生 broker 拒绝 generation<=0（「Task 执行身份
+        // 或授权版本无效」），0 起铸会让首个 run/终端直接被沙箱挡掉。
+        generation: 1,
         rootDirectory,
         additionalDirectories,
         sandboxMode:
