@@ -19,6 +19,8 @@ import {
 import type { AgentRunService } from "../../agent/runtime.js";
 import { DEFAULT_SANDBOX_ROOT } from "../../agent/sandbox-dir.js";
 import type { ServerEnv } from "../../config/env.js";
+import type { ExecutionMode } from "@kenfutwork/shared";
+import type { ExecutionModeService } from "../agent-modes/execution-mode-service.js";
 import type {
   PromptExecutionContext,
   ToolExecutionContext,
@@ -136,6 +138,8 @@ export interface CodeUiServiceDeps {
   plugins?: PluginRegistryService;
   checkpoints?: CheckpointService;
   permissions?: PermissionService;
+  /** 六档执行模式（G2/Q7）：缺席时 Code run 按默认 agent 模式执行，不阻塞。 */
+  agentModes?: ExecutionModeService;
   userInputs?: CodeUserInputService;
   terminals?: CodeTerminalService;
   blob?: BlobStore;
@@ -158,6 +162,23 @@ export interface CodeUiServiceDeps {
   agentRunMetadata: AgentRunMetadataService;
   env: ServerEnv;
   taskWork: TaskWorkManager;
+}
+
+/**
+ * 读回线程持久化的六档执行模式并 warm 缓存（G2/Q7，Code run 派发前调用）。
+ * 读回失败回落缓存里的现值（默认 agent）——模式存储故障不挡 run，与 WS 路径同口径。
+ */
+export async function resolveCodeExecutionMode(
+  agentModes: ExecutionModeService | undefined,
+  threadId: string,
+  instanceId: string,
+): Promise<ExecutionMode | undefined> {
+  if (!agentModes) return undefined;
+  try {
+    return await agentModes.hydrate(threadId, { instanceId });
+  } catch {
+    return agentModes.getMode(threadId);
+  }
 }
 
 function canonical(value: unknown): string {
@@ -3304,6 +3325,15 @@ export class CodeUiService {
         threadId,
         model,
       });
+      // G2 六档执行模式（Q7）：Code run 与 Design 共用同一 agentModes 缝。
+      // 派发前按 threadId 读回持久化模式 warm 缓存——工具门（toolGateFor）、
+      // pre-step 引导、自动化分场景都按 threadId 消费；读回失败按现状（agent）继续，
+      // 不让模式存储故障挡掉 run（与 WS 路径同口径）。
+      const executionMode = await resolveCodeExecutionMode(
+        this.deps.agentModes,
+        threadId,
+        scopeHandle.describe().instanceId,
+      );
       const started = await this.deps.repository.startRunIfCurrent(
         scopeHandle.describe().instanceId,
         sessionId,
@@ -3326,6 +3356,7 @@ export class CodeUiService {
               preset: "code",
               prompt: text,
               model,
+              ...(executionMode ? { executionMode } : {}),
             },
             {
               runId,
