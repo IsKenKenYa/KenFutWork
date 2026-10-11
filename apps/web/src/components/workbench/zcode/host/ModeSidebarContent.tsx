@@ -77,7 +77,7 @@ export function HostModeSidebarContent({
       <button
         type="button"
         onClick={openInstanceSettings}
-        className="flex min-h-[36px] w-full items-center gap-2.5 border-t px-4 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="flex min-h-[36px] w-full items-center gap-2.5 border-t px-4 text-left text-sm text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground"
       >
         <HardDrive className="h-4 w-4 shrink-0" />
         本地实例
@@ -95,21 +95,21 @@ export function DesignProjectsSidebar() {
   return (
     <div className="flex min-h-0 flex-1 flex-col px-2 pt-2">
       <div className="flex items-center justify-between px-1 pb-1">
-        <span className="text-xs text-muted-foreground">项目</span>
+        <span className="text-xs text-foreground-subtle">项目</span>
         <button
           type="button"
           aria-label="创建项目"
           title="创建项目"
           disabled={creating}
           onClick={() => void createDesignProject()}
-          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+          className="rounded-md p-1 text-foreground-subtle hover:bg-surface-hover hover:text-foreground disabled:opacity-50"
         >
           <Plus className="h-3.5 w-3.5" />
         </button>
       </div>
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto pb-2">
         {projects.length === 0 ? (
-          <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+          <p className="px-2 py-6 text-center text-xs text-foreground-subtle">
             {creating ? "创建中…" : "暂无项目"}
           </p>
         ) : (
@@ -184,7 +184,7 @@ function ProjectRow({
   }
   return (
     <div
-      className="group/row relative flex items-center rounded-md hover:bg-muted data-[active=true]:bg-muted"
+      className="group/row relative flex items-center rounded-md hover:bg-surface-hover data-[active=true]:bg-selected"
       data-active={active ? "true" : undefined}
     >
       <button
@@ -192,7 +192,7 @@ function ProjectRow({
         onClick={onOpen}
         className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
       >
-        <Palette className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <Palette className="h-3.5 w-3.5 shrink-0 text-foreground-subtle" />
         <span className="truncate">{project.name}</span>
       </button>
       <div className="absolute right-1 hidden items-center group-hover/row:flex">
@@ -200,7 +200,7 @@ function ProjectRow({
           type="button"
           aria-label={`重命名 ${project.name}`}
           onClick={() => setEditing(true)}
-          className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+          className="rounded p-1 text-foreground-subtle hover:bg-background hover:text-foreground"
         >
           <Pencil className="h-3 w-3" />
         </button>
@@ -208,7 +208,7 @@ function ProjectRow({
           type="button"
           aria-label={`删除 ${project.name}`}
           onClick={onDelete}
-          className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+          className="rounded p-1 text-foreground-subtle hover:bg-background hover:text-foreground"
         >
           <Trash2 className="h-3 w-3" />
         </button>
@@ -230,7 +230,7 @@ function FlowNavSidebar() {
           key={item.path}
           type="button"
           onClick={() => navigateFlowSurface(item.path)}
-          className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground"
         >
           <item.icon className="h-4 w-4 shrink-0" />
           {item.label}
@@ -241,7 +241,7 @@ function FlowNavSidebar() {
         type="button"
         data-active={view === "engine" ? "true" : undefined}
         onClick={() => setFlowSurfaceView("engine")}
-        className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[active=true]:bg-muted data-[active=true]:text-foreground"
+        className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground data-[active=true]:bg-selected data-[active=true]:text-foreground"
       >
         <Cpu className="h-4 w-4 shrink-0" />
         引擎

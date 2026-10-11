@@ -34,7 +34,7 @@ export function HostDesignSurface({ active = true }: { active?: boolean }) {
   ) : (
     <div
       role="status"
-      className="flex h-full items-center justify-center bg-background text-sm text-muted-foreground"
+      className="flex h-full items-center justify-center bg-background text-sm text-foreground-subtle"
     >
       {projectsLoaded ? "准备画布…" : "读取画布项目…"}
     </div>

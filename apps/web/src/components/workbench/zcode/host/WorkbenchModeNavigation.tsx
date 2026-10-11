@@ -39,7 +39,7 @@ export function WorkbenchModeNavigation({
             aria-label={item.label}
             data-active={mode === item.id}
             onClick={() => onModeChange(item.id)}
-            className="rounded-md p-2 hover:bg-muted data-[active=true]:bg-muted data-[active=true]:text-foreground data-[active=false]:text-muted-foreground"
+            className="rounded-md p-2 hover:bg-surface-hover data-[active=true]:bg-selected data-[active=true]:text-foreground data-[active=false]:text-foreground-subtle"
           >
             {item.icon}
           </button>
@@ -64,7 +64,7 @@ export function WorkbenchModeNavigation({
             aria-checked={mode === item.id}
             data-active={mode === item.id}
             onClick={() => onModeChange(item.id)}
-            className="flex min-h-[34px] min-w-0 flex-1 items-center justify-center gap-1 py-1.5 text-[13px] whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground data-[active=true]:bg-muted data-[active=true]:font-medium data-[active=true]:text-foreground"
+            className="flex min-h-[34px] min-w-0 flex-1 items-center justify-center gap-1 py-1.5 text-[13px] whitespace-nowrap text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground data-[active=true]:bg-selected data-[active=true]:font-medium data-[active=true]:text-foreground"
           >
             {item.icon}
             <span className="truncate">{item.label}</span>
@@ -163,7 +163,7 @@ export function HostSidebarRail({ onExpand }: { onExpand: () => void }) {
         aria-label="展开侧栏"
         title="展开侧栏"
         onClick={onExpand}
-        className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+        className="rounded-md p-2 text-foreground-subtle hover:bg-surface-hover hover:text-foreground"
       >
         <PanelLeftOpen className="h-4 w-4" />
       </button>

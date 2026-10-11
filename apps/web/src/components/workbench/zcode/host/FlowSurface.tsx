@@ -193,7 +193,7 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
       ) : entry === null ? (
         <div
           role="status"
-          className="flex h-full items-center justify-center text-sm text-muted-foreground"
+          className="flex h-full items-center justify-center text-sm text-foreground-subtle"
         >
           正在获取 flow 宿主状态…
         </div>
@@ -202,7 +202,7 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
       ) : (
         <div
           role="status"
-          className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground"
+          className="flex h-full items-center justify-center px-8 text-center text-sm text-foreground-subtle"
         >
           {entry.reason}
         </div>
@@ -296,7 +296,7 @@ function FlowCanvasEmbed({
     return (
       <div
         role="status"
-        className="flex h-full items-center justify-center text-sm text-muted-foreground"
+        className="flex h-full items-center justify-center text-sm text-foreground-subtle"
       >
         flow 前端地址不合法（{frontendUrl}）· 检查 KENFUTWORK_FLOW_FRONTEND_URL
       </div>
@@ -319,7 +319,7 @@ function FlowCanvasEmbed({
       {!frameLoaded ? (
         <div
           role="status"
-          className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background text-sm text-muted-foreground"
+          className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background text-sm text-foreground-subtle"
         >
           {loadTimedOut ? (
             <>
@@ -339,7 +339,7 @@ function FlowCanvasEmbed({
       ) : !connected ? (
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-2 mx-auto w-fit rounded-full bg-muted/80 px-3 py-1 text-xs text-muted-foreground"
+          className="pointer-events-none absolute inset-x-0 top-2 mx-auto w-fit rounded-full bg-hover/80 px-3 py-1 text-xs text-foreground-subtle"
         >
           正在与 flow 画布握手…
         </div>
@@ -352,8 +352,8 @@ const ENGINE_STATE_META: Record<
   FlowEngineInstallState,
   { label: string; className: string }
 > = {
-  idle: { label: "未安装", className: "bg-muted text-muted-foreground" },
-  installing: { label: "安装中", className: "bg-muted text-foreground" },
+  idle: { label: "未安装", className: "bg-hover text-foreground-subtle" },
+  installing: { label: "安装中", className: "bg-hover text-foreground" },
   ready: { label: "已就绪", className: "bg-emerald-500/10 text-emerald-600" },
   error: { label: "安装失败", className: "bg-destructive/10 text-destructive" },
 };
@@ -423,7 +423,7 @@ function EngineView() {
               disabled={loading}
               aria-label="刷新"
               title="刷新"
-              className="flex h-7 w-7 items-center justify-center rounded-lg border text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
             >
               <RefreshCw className="h-3.5 w-3.5" />
             </button>
@@ -431,7 +431,7 @@ function EngineView() {
               <button
                 type="button"
                 onClick={() => void stop({ deleteData: false })}
-                className="rounded-lg border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                className="rounded-lg border px-3 py-1.5 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground"
               >
                 取消安装
               </button>
@@ -461,7 +461,7 @@ function EngineView() {
                   <button
                     type="button"
                     onClick={() => setStopAsk(false)}
-                    className="px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                    className="px-2 py-1.5 text-xs text-foreground-subtle transition-colors hover:text-foreground"
                   >
                     返回
                   </button>
@@ -478,12 +478,12 @@ function EngineView() {
             ) : (
               <>
                 {wslUsable ? (
-                  <div className="flex items-center gap-1 rounded-full bg-muted/60 p-1">
+                  <div className="flex items-center gap-1 rounded-full bg-hover/60 p-1">
                     <button
                       type="button"
                       aria-pressed={activeLaunch.kind === "host"}
                       onClick={() => setLaunchChoice({ kind: "host" })}
-                      className="rounded-full px-2.5 py-1 text-xs text-muted-foreground transition-colors aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
+                      className="rounded-full px-2.5 py-1 text-xs text-foreground-subtle transition-colors aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
                     >
                       本机容器
                     </button>
@@ -496,7 +496,7 @@ function EngineView() {
                           distro: wslPath?.distro ?? "",
                         })
                       }
-                      className="rounded-full px-2.5 py-1 text-xs text-muted-foreground transition-colors aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
+                      className="rounded-full px-2.5 py-1 text-xs text-foreground-subtle transition-colors aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
                     >
                       WSL2 · {wslPath?.distro}
                     </button>
@@ -525,7 +525,7 @@ function EngineView() {
         ) : null}
 
         <div className="mt-4 overflow-hidden rounded-xl border text-sm">
-          <div className="flex items-center gap-3 border-b px-4 py-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-3 border-b px-4 py-2 text-xs text-foreground-subtle">
             <span className="w-28 shrink-0">服务</span>
             <span className="w-20 shrink-0">健康</span>
             <span className="flex-1">端口</span>
@@ -551,13 +551,13 @@ function EngineView() {
                         ? "text-emerald-600"
                         : container.health
                           ? "text-destructive"
-                          : "text-muted-foreground"
+                          : "text-foreground-subtle"
                     }`}
                   >
                     {container.health ?? container.state}
                   </span>
                   <span
-                    className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground"
+                    className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground-subtle"
                     title={container.ports.join("  ")}
                   >
                     {container.ports.join("  ")}
@@ -566,7 +566,7 @@ function EngineView() {
               ),
             )
           ) : (
-            <p className="px-4 py-3 text-xs text-muted-foreground">
+            <p className="px-4 py-3 text-xs text-foreground-subtle">
               {info?.stack.error ?? "没有运行中的容器"}
             </p>
           )}
@@ -574,7 +574,7 @@ function EngineView() {
 
         {info ? (
           <div className="mt-4 overflow-hidden rounded-xl border text-sm">
-            <div className="flex items-center gap-3 border-b px-4 py-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-3 border-b px-4 py-2 text-xs text-foreground-subtle">
               <span className="w-28 shrink-0">项</span>
               <span className="flex-1">值</span>
             </div>
@@ -592,7 +592,7 @@ function EngineView() {
                   index === rows.length - 1 ? "" : "border-b"
                 }`}
               >
-                <span className="w-28 shrink-0 text-muted-foreground">
+                <span className="w-28 shrink-0 text-foreground-subtle">
                   {label}
                 </span>
                 <span

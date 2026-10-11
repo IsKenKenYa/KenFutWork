@@ -1476,7 +1476,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               aria-label="收起侧栏"
               title="收起侧栏"
               onClick={onToggleSidebar}
-              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="rounded-md p-1 text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground"
             >
               <PanelLeftClose className="size-4" />
             </button>
