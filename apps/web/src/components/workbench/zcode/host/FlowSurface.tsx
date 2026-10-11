@@ -11,28 +11,21 @@ import {
   FLOW_EMBED_PROTOCOL_VERSION,
   parseFlowInbound,
 } from "@kenfutwork/shared";
+import { CircleCheck, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
 import {
-  CircleCheck,
-  Cpu,
-  Layers,
-  ListChecks,
-  Loader2,
-  RefreshCw,
-  TriangleAlert,
-  Workflow,
-} from "lucide-react";
-import {
-  type RefObject,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
+import {
+  getFlowSurfaceView,
+  registerFlowNavigate,
+  subscribeFlowSurface,
+} from "./flowSurfaceState.js";
 import { surfaceFetch, surfaceJson } from "./surfaceApi.js";
-
-/** 跨视图切换的记忆：flow 主区上次停在画布还是引擎页。 */
-let rememberedView: "canvas" | "engine" = "canvas";
 
 /** 引擎安装状态（与 shared 的 flowEngineInstallStatusSchema.state 同一枚举）。 */
 type FlowEngineInstallState = "idle" | "installing" | "ready" | "error";
@@ -152,28 +145,18 @@ function useFlowEngineInstall(): {
   return { state, notice, install, stop };
 }
 
-/** Flow 主区导航项（原 CanvasSidebar flow 区同款元素：导航归宿主，ff-embed/navigate 驱动站内路由）。 */
-const FLOW_NAV_ITEMS = [
-  { path: "/", label: "工作流", icon: Workflow },
-  { path: "/plugins", label: "工作流插件", icon: Layers },
-  { path: "/tasks", label: "任务中心", icon: ListChecks },
-] as const;
-
 /**
  * Flow 主区视图（融合进 Code 壳后的承载面）。
  *
- * 布局沿袭原画布工作台（用户口径「侧边栏元素要参考原来的」）：左侧 flow 导航
- * （工作流 / 工作流插件 / 任务中心 / 引擎）+ 右侧内容面。画布 = 内嵌 flow 前端
- * （iframe）+ `ff-embed/v1` 握手（hello-ack → identity 票据）；引擎 = 紧凑信息页
- * （状态 / 容器 / 地址 / 安装与停止）。主区不被对话框顶掉（与 Design 同一条不变量）。
+ * 「侧边栏随模式变化」的融合形态：flow 导航（工作流/插件/任务中心/引擎）在
+ * **壳侧栏**（HostModeSidebarContent），这里只承载内容面——画布 = 内嵌 flow
+ * 前端（iframe）+ `ff-embed/v1` 握手（hello-ack → identity 票据）；引擎 =
+ * 紧凑信息页。主区不被对话框顶掉（与 Design 同一条不变量）；子视图与导航
+ * 把手共享于 flowSurfaceState.ts（模块级存储）。
  */
 export function HostFlowSurface({ active = true }: { active?: boolean }) {
-  const [view, setView] = useState<"canvas" | "engine">(rememberedView);
+  const view = useSyncExternalStore(subscribeFlowSurface, getFlowSurfaceView);
   const [entry, setEntry] = useState<FlowEntry | null>(null);
-  const navigateRef = useRef<(path: string) => void>(() => {});
-  useEffect(() => {
-    rememberedView = view;
-  }, [view]);
   useEffect(() => {
     let cancelled = false;
     surfaceJson<FlowHostStatusResponse>("/api/flow/host/status")
@@ -203,67 +186,26 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
   }, []);
 
   return (
-    <div className="flex h-full min-h-0 bg-background">
-      {/* flow 导航：原 CanvasSidebar flow 区同款（导航归宿主、点按让 iframe 内路由跳转）。 */}
-      <aside className="flex w-56 shrink-0 flex-col border-r bg-card px-2 pt-3">
-        <nav className="space-y-0.5" aria-label="Flow 导航">
-          {FLOW_NAV_ITEMS.map((item) => (
-            <button
-              key={item.path}
-              type="button"
-              disabled={!entry?.available}
-              onClick={() => {
-                setView("canvas");
-                navigateRef.current(item.path);
-              }}
-              className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <item.icon className="h-4 w-4 shrink-0" />
-              {item.label}
-            </button>
-          ))}
-          {/* 引擎（FORM-11 托管）：独立信息页——状态 / 承载路径 / 地址 / 栈容器事实。 */}
-          <button
-            type="button"
-            data-active={view === "engine" ? "true" : undefined}
-            onClick={() => setView("engine")}
-            className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[active=true]:bg-muted data-[active=true]:text-foreground"
-          >
-            <Cpu className="h-4 w-4 shrink-0" />
-            引擎
-          </button>
-        </nav>
-        {entry && !entry.available ? (
-          <p className="mt-2 px-3 text-xs leading-relaxed text-muted-foreground">
-            {entry.reason}
-          </p>
-        ) : null}
-      </aside>
-      <div className="min-w-0 flex-1">
-        {view === "engine" ? (
-          <EngineView />
-        ) : entry === null ? (
-          <div
-            role="status"
-            className="flex h-full items-center justify-center text-sm text-muted-foreground"
-          >
-            正在获取 flow 宿主状态…
-          </div>
-        ) : entry.available ? (
-          <FlowCanvasEmbed
-            frontendUrl={entry.frontendUrl}
-            active={active}
-            navigateRef={navigateRef}
-          />
-        ) : (
-          <div
-            role="status"
-            className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground"
-          >
-            {entry.reason}
-          </div>
-        )}
-      </div>
+    <div className="h-full min-h-0 bg-background">
+      {view === "engine" ? (
+        <EngineView />
+      ) : entry === null ? (
+        <div
+          role="status"
+          className="flex h-full items-center justify-center text-sm text-muted-foreground"
+        >
+          正在获取 flow 宿主状态…
+        </div>
+      ) : entry.available ? (
+        <FlowCanvasEmbed frontendUrl={entry.frontendUrl} active={active} />
+      ) : (
+        <div
+          role="status"
+          className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground"
+        >
+          {entry.reason}
+        </div>
+      )}
     </div>
   );
 }
@@ -272,12 +214,9 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
 function FlowCanvasEmbed({
   frontendUrl,
   active,
-  navigateRef,
 }: {
   frontendUrl: string;
   active: boolean;
-  /** 宿主导航把手：注册后侧栏导航项可驱动 iframe 内的 flow 路由。 */
-  navigateRef: RefObject<(path: string) => void>;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [connected, setConnected] = useState(false);
@@ -327,21 +266,22 @@ function FlowCanvasEmbed({
     };
   }, [flowOrigin]);
 
-  // 站内导航把手（握手前点击是 no-op，flow 会按默认页落地）。
+  // 站内导航把手（握手前点击是 no-op，flow 会按默认页落地）；注册进共享状态，
+  // 壳侧栏的 flow 导航项经 flowSurfaceState 驱动这里的 iframe 路由。
   useEffect(() => {
     if (!flowOrigin) return;
-    navigateRef.current = (path: string) => {
+    registerFlowNavigate((path) => {
       const frame = frameRef.current?.contentWindow;
       if (!frame) return;
       frame.postMessage(
         buildFlowNavigate(FLOW_EMBED_PROTOCOL_VERSION, path),
         flowOrigin,
       );
-    };
+    });
     return () => {
-      navigateRef.current = () => {};
+      registerFlowNavigate(() => {});
     };
-  }, [flowOrigin, navigateRef]);
+  }, [flowOrigin]);
 
   if (!flowOrigin) {
     return (

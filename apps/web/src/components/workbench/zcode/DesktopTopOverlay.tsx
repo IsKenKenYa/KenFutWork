@@ -1,5 +1,12 @@
 import type { IPlatformService, UpdateStatePayload } from "@zcode/shared";
 import { cn } from "@zui/components/lib/utils.js";
+import { DesktopTopOverlayActionButton } from "@zui/DesktopTopOverlayActionButton.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { UpdateStatusButton } from "@zui/UpdateStatusButton.js";
+import {
+  createWindowsCaptionControlsStyle,
+  WINDOWS_CAPTION_CONTROLS_RIGHT_INSET_VAR,
+} from "@zui/windowCaptionControls.js";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -7,13 +14,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import { UpdateStatusButton } from "@zui/UpdateStatusButton.js";
-import { DesktopTopOverlayActionButton } from "@zui/DesktopTopOverlayActionButton.js";
-import {
-  createWindowsCaptionControlsStyle,
-  WINDOWS_CAPTION_CONTROLS_RIGHT_INSET_VAR,
-} from "@zui/windowCaptionControls.js";
 
 interface DesktopTopOverlayProps {
   workspaceAbsPath: string;
@@ -76,7 +76,9 @@ export function DesktopTopOverlay({
 }: DesktopTopOverlayProps) {
   const { intl } = useZCodeIntl();
   const SidebarToggleIcon = isSidebarVisible ? PanelLeftClose : PanelLeftOpen;
-  const isLinuxDesktop = Boolean(isDesktop && !isMacDesktop && !isWindowsDesktop);
+  const isLinuxDesktop = Boolean(
+    isDesktop && !isMacDesktop && !isWindowsDesktop,
+  );
   const usesCustomCaptionArea = isWindowsDesktop || isLinuxDesktop;
   const toggleSidebarTitle = intl.formatMessage({
     id: "workspaceSidebar.toggleSidebar",
@@ -86,12 +88,16 @@ export function DesktopTopOverlay({
   const taskForwardTitle = intl.formatMessage({ id: "taskNav.forward" });
   const isNewTaskButtonVisible = showNewTaskButton ?? !isSidebarVisible;
   const macTopOverlayPaddingStyle =
-    isMacDesktop && !isMacFullscreen && Number.isFinite(macWindowControlsLeftPaddingPx)
+    isMacDesktop &&
+    !isMacFullscreen &&
+    Number.isFinite(macWindowControlsLeftPaddingPx)
       ? { paddingLeft: `${Math.round(macWindowControlsLeftPaddingPx ?? 96)}px` }
       : undefined;
   const windowsTopOverlayPaddingStyle = isWindowsDesktop
     ? {
-        ...createWindowsCaptionControlsStyle(windowsWindowControlsRightPaddingPx),
+        ...createWindowsCaptionControlsStyle(
+          windowsWindowControlsRightPaddingPx,
+        ),
         paddingRight: WINDOWS_CAPTION_CONTROLS_RIGHT_INSET_VAR,
       }
     : undefined;
@@ -120,7 +126,11 @@ export function DesktopTopOverlay({
           // Windows/Linux 工具组计入 4px 外沿留白和 1px 边框，较 8px 左边距右移 5px。
           usesCustomCaptionArea && "pl-3 ml-px",
           isMacDesktop &&
-            (isMacFullscreen ? (!isSidebarVisible ? "pl-5 pt-1" : "pl-3 pt-1") : "pt-1"),
+            (isMacFullscreen
+              ? !isSidebarVisible
+                ? "pl-5 pt-1"
+                : "pl-3 pt-1"
+              : "pt-1"),
         )}
       >
         <div
@@ -160,6 +170,19 @@ export function DesktopTopOverlay({
             </DesktopTopOverlayActionButton>
           )}
 
+          {/* 浏览器形态（无自绘标题栏）且侧栏已收起时的展开入口：桌面端有左上角
+              logo 按钮兜底，浏览器只有快捷键——不补这个按钮侧栏就回不来。 */}
+          {!usesCustomCaptionArea && !isMacDesktop && !isSidebarVisible ? (
+            <DesktopTopOverlayActionButton
+              title={toggleSidebarTitle}
+              shortcut={toggleSidebarShortcutLabel}
+              ariaLabel={toggleSidebarTitle}
+              onClick={onToggleSidebar}
+            >
+              <SidebarToggleIcon className="size-4" />
+            </DesktopTopOverlayActionButton>
+          ) : null}
+
           {/* 远程控制移动端左上角空间有限，任务前进/后退在这里会与主操作拥挤重叠。*/}
           {hideTaskNavigationButtons ? null : (
             <>
@@ -189,7 +212,9 @@ export function DesktopTopOverlay({
             aria-hidden={!isNewTaskButtonVisible}
             className={cn(
               "inline-flex overflow-hidden transition-[opacity,width] duration-300 ease-out",
-              isNewTaskButtonVisible ? "w-7 opacity-100" : "pointer-events-none w-0 opacity-0",
+              isNewTaskButtonVisible
+                ? "w-7 opacity-100"
+                : "pointer-events-none w-0 opacity-0",
             )}
           >
             <DesktopTopOverlayActionButton

@@ -1,6 +1,6 @@
 import type { HostWorkbenchMode, HostWorkbenchNavigation } from "@zcode/shared";
+import appLogoUrl from "@zui/assets/kenfutwork-mark.png";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
-import { WindowsTopLeftLogo } from "@zui/WindowsTopLeftLogo.js";
 import { Code2, Palette, Workflow } from "lucide-react";
 import { useSyncExternalStore } from "react";
 
@@ -51,7 +51,7 @@ export function WorkbenchModeNavigation({
       <div
         role="radiogroup"
         aria-label="模式切换"
-        className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5"
+        className="flex items-center gap-0.5"
       >
         {modeItems.map((item) => (
           // biome-ignore lint/a11y/useSemanticElements: 提取现有分段radio按钮，保持图标和布局
@@ -62,7 +62,7 @@ export function WorkbenchModeNavigation({
             aria-checked={mode === item.id}
             data-active={mode === item.id}
             onClick={() => onModeChange(item.id)}
-            className="flex min-h-[30px] min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-1.5 text-[13px] whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:text-foreground data-[active=true]:shadow-sm"
+            className="flex min-h-[30px] min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-1.5 text-[13px] whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground data-[active=true]:font-medium data-[active=true]:text-foreground"
           >
             {item.icon}
             <span className="truncate">{item.label}</span>
@@ -73,16 +73,28 @@ export function WorkbenchModeNavigation({
   );
 }
 
-export function HostWorkbenchModeNavigation() {
+export function HostWorkbenchModeNavigation({
+  actions,
+}: {
+  /** 品牌行右侧的动作槽（如收起侧栏按钮）；按钮自带 no-drag，不破坏拖拽区。 */
+  actions?: React.ReactNode;
+}) {
   const navigation = useOptionalPlatform()?.workbenchNavigation;
   if (!navigation) return null;
-  return <ConnectedWorkbenchModeNavigation navigation={navigation} />;
+  return (
+    <ConnectedWorkbenchModeNavigation
+      navigation={navigation}
+      actions={actions}
+    />
+  );
 }
 
 function ConnectedWorkbenchModeNavigation({
   navigation,
+  actions,
 }: {
   navigation: HostWorkbenchNavigation;
+  actions?: React.ReactNode;
 }) {
   const snapshot = useSyncExternalStore(
     navigation.subscribe,
@@ -90,25 +102,26 @@ function ConnectedWorkbenchModeNavigation({
   );
   return (
     <div className="pb-2">
-      {/* 品牌行（启动首屏即见）：黑底白标、铺满侧栏宽度、贴窗口顶——
-          同时承接标题栏拖拽区（原 h-12 空白拖拽条已按用户口径去掉）。
-          比例：标 24px（墨迹约 19px）配 20px 字标，视觉等高；字标用亮段渐变
-          （与 .dark 主题口径同款），纯白大字在黑底上会显得压闷。 */}
-      <div className="flex w-full items-center gap-2 border-b border-white/[0.08] bg-[linear-gradient(180deg,#000000_0%,#151718_100%)] px-3.5 py-3 [app-region:drag]">
-        {/* 白标：品牌图为蓝色墨迹，brightness-0 invert 转成纯白（黑底上唯一可读形态）。 */}
-        <WindowsTopLeftLogo
-          className="static m-0 h-auto p-0"
-          imageClassName="h-6 w-auto brightness-0 invert"
+      {/* 品牌行（用户口径·参考图）：正常侧栏背景、裸黑 logo + 黑字标、等高紧凑，
+          间距沿用原口径（px-3.5 / py-3 / gap-2）；无黑底条、无底片徽章。
+          拖拽区仍由本行承接（原 h-12 空白拖拽条已去掉）。 */}
+      <div className="flex w-full items-center gap-2 px-3.5 py-3 [app-region:drag]">
+        {/* 黑标：品牌图为蓝色墨迹，brightness(0) 转黑；高度与 20px 字标的大写高一致。 */}
+        {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
+        <img
+          src={appLogoUrl}
+          alt="KenFutWork"
+          className="h-[18px] w-auto brightness-0"
+          draggable={false}
         />
-        <span
-          className="font-wordmark bg-clip-text text-[20px] leading-none tracking-tight text-transparent"
-          style={{
-            backgroundImage:
-              "linear-gradient(90deg,#7f96ea 0%,#9db3f7 45%,#bccfff 100%)",
-          }}
-        >
+        <span className="font-wordmark text-[20px] leading-none tracking-tight text-foreground">
           KenFutWork
         </span>
+        {actions ? (
+          <div className="ml-auto flex items-center [app-region:no-drag]">
+            {actions}
+          </div>
+        ) : null}
       </div>
       <WorkbenchModeNavigation {...snapshot} onModeChange={navigation.open} />
     </div>

@@ -1,46 +1,46 @@
-import { ProxyChannel, type IChannelClient } from "@zcode/rpc";
+import { type IChannelClient, ProxyChannel } from "@zcode/rpc";
 import {
-  IFileService,
-  IMediaPreviewService,
-  IGitService,
-  IGitCheckpointService,
-  ISystemService,
-  ITerminalService,
-  ISettingService,
-  IOnboardingRecordService,
-  ICredentialService,
-  IBroadcastService,
-  IZCodeTaskService,
-  IZCodeAgentService,
-  IZCodeSessionService,
-  ICuaPermissionService,
-  IConversationShareService,
   IBotsService,
-  IFileWatcherService,
-  IOAuthService,
-  IModelSelectionService,
-  IProviderSettingsService,
-  IProviderProvisioningTargetService,
-  IUsageStatsService,
-  ICodingPlanSubscriptionService,
+  IBroadcastService,
   IClientConfigService,
   IClientScenesService,
-  IOffPeakTaskService,
-  ISkillsService,
-  ISkillSyncService,
+  ICodingPlanSubscriptionService,
+  ICommandsService,
+  IConversationShareService,
+  ICredentialService,
+  ICuaPermissionService,
+  IFeedbackService,
+  IFileService,
+  IFileWatcherService,
+  IGitCheckpointService,
+  IGitService,
+  IHooksService,
   IMcpSyncService,
+  IMediaPreviewService,
+  IMemoryService,
+  IModelSelectionService,
+  IOAuthService,
+  IOffPeakTaskService,
+  IOnboardingRecordService,
+  IPluginManagementService,
   IPluginSyncService,
   IPluginsService,
-  IPluginManagementService,
-  ISubagentsService,
-  ICommandsService,
-  IHooksService,
-  IMemoryService,
-  ISettingsSyncService,
-  IFeedbackService,
   IPromptAttachmentTransferService,
-  IWindowControllerService,
+  IProviderProvisioningTargetService,
+  IProviderSettingsService,
   type IServiceAccessor,
+  ISettingService,
+  ISettingsSyncService,
+  ISkillSyncService,
+  ISkillsService,
+  ISubagentsService,
+  ISystemService,
+  ITerminalService,
+  IUsageStatsService,
+  IWindowControllerService,
+  IZCodeAgentService,
+  IZCodeSessionService,
+  IZCodeTaskService,
 } from "@zcode/services";
 
 /**
@@ -117,9 +117,10 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.settingService = ProxyChannel.toService<ISettingService>(
       channelClient.getChannel(ISettingService.channelName),
     );
-    this.onboardingRecordService = ProxyChannel.toService<IOnboardingRecordService>(
-      channelClient.getChannel(IOnboardingRecordService.channelName),
-    );
+    this.onboardingRecordService =
+      ProxyChannel.toService<IOnboardingRecordService>(
+        channelClient.getChannel(IOnboardingRecordService.channelName),
+      );
     this.credentialService = ProxyChannel.toService<ICredentialService>(
       channelClient.getChannel(ICredentialService.channelName),
     );
@@ -129,9 +130,10 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.zcodeTaskService = ProxyChannel.toService<IZCodeTaskService>(
       channelClient.getChannel(IZCodeTaskService.channelName),
     );
-    this.windowControllerService = ProxyChannel.toService<IWindowControllerService>(
-      channelClient.getChannel(IWindowControllerService.channelName),
-    );
+    this.windowControllerService =
+      ProxyChannel.toService<IWindowControllerService>(
+        channelClient.getChannel(IWindowControllerService.channelName),
+      );
     this.zcodeAgentService = ProxyChannel.toService<IZCodeAgentService>(
       channelClient.getChannel(IZCodeAgentService.channelName),
     );
@@ -141,9 +143,10 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.cuaPermissionService = ProxyChannel.toService<ICuaPermissionService>(
       channelClient.getChannel(ICuaPermissionService.channelName),
     );
-    this.conversationShareService = ProxyChannel.toService<IConversationShareService>(
-      channelClient.getChannel(IConversationShareService.channelName),
-    );
+    this.conversationShareService =
+      ProxyChannel.toService<IConversationShareService>(
+        channelClient.getChannel(IConversationShareService.channelName),
+      );
     this.botsService = ProxyChannel.toService<IBotsService>(
       channelClient.getChannel(IBotsService.channelName),
     );
@@ -153,24 +156,28 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.oauthService = ProxyChannel.toService<IOAuthService>(
       channelClient.getChannel(IOAuthService.channelName),
     );
-    this.providerSettingsService = ProxyChannel.toService<IProviderSettingsService>(
-      channelClient.getChannel(IProviderSettingsService.channelName),
-    );
+    this.providerSettingsService =
+      ProxyChannel.toService<IProviderSettingsService>(
+        channelClient.getChannel(IProviderSettingsService.channelName),
+      );
     this.modelSelectionService = ProxyChannel.toService<IModelSelectionService>(
       channelClient.getChannel(IModelSelectionService.channelName),
     );
     Object.defineProperty(this, "providerProvisioningTargetService", {
       value: ProxyChannel.toService<IProviderProvisioningTargetService>(
-        channelClient.getChannel(IProviderProvisioningTargetService.channelName),
+        channelClient.getChannel(
+          IProviderProvisioningTargetService.channelName,
+        ),
       ),
       enumerable: false,
     });
     this.usageStatsService = ProxyChannel.toService<IUsageStatsService>(
       channelClient.getChannel(IUsageStatsService.channelName),
     );
-    this.codingPlanSubscriptionService = ProxyChannel.toService<ICodingPlanSubscriptionService>(
-      channelClient.getChannel(ICodingPlanSubscriptionService.channelName),
-    );
+    this.codingPlanSubscriptionService =
+      ProxyChannel.toService<ICodingPlanSubscriptionService>(
+        channelClient.getChannel(ICodingPlanSubscriptionService.channelName),
+      );
     this.clientConfigService = ProxyChannel.toService<IClientConfigService>(
       channelClient.getChannel(IClientConfigService.channelName),
     );
@@ -195,9 +202,10 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.pluginsService = ProxyChannel.toService<IPluginsService>(
       channelClient.getChannel(IPluginsService.channelName),
     );
-    this.pluginManagementService = ProxyChannel.toService<IPluginManagementService>(
-      channelClient.getChannel(IPluginManagementService.channelName),
-    );
+    this.pluginManagementService =
+      ProxyChannel.toService<IPluginManagementService>(
+        channelClient.getChannel(IPluginManagementService.channelName),
+      );
     this.subagentsService = ProxyChannel.toService<ISubagentsService>(
       channelClient.getChannel(ISubagentsService.channelName),
     );
@@ -216,8 +224,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.feedbackService = ProxyChannel.toService<IFeedbackService>(
       channelClient.getChannel(IFeedbackService.channelName),
     );
-    this.promptAttachmentTransferService = ProxyChannel.toService<IPromptAttachmentTransferService>(
-      channelClient.getChannel(IPromptAttachmentTransferService.channelName),
-    );
+    this.promptAttachmentTransferService =
+      ProxyChannel.toService<IPromptAttachmentTransferService>(
+        channelClient.getChannel(IPromptAttachmentTransferService.channelName),
+      );
   }
 }

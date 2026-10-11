@@ -9,6 +9,12 @@ import { ScopedErrorBoundary } from "@zui/ErrorBoundary.js";
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider.js";
 import { Root } from "@zui/Root.js";
 import { RootStartupLoading } from "@zui/root/RootStartupLoading.js";
+import {
+  applyTheme,
+  isTheme,
+  normalizeThemePreference,
+  type Theme,
+} from "@zui/useTheme.js";
 import { ensureAgentV4ConnectionHandshake } from "@zui/v4/agentV4ConnectionHandshake.js";
 import {
   CodeVoiceProvider,
@@ -30,7 +36,6 @@ import { requestManagementOpen } from "./managementNavigation.js";
 import { requestParentBootstrap } from "./parentBridge.js";
 import { createCodePlatform } from "./platform.js";
 import { setSurfaceApiBase } from "./surfaceApi.js";
-import { applyTheme, isTheme, normalizeThemePreference, type Theme } from "@zui/useTheme.js";
 import { createHostWorkbenchNavigation } from "./workbenchNavigation.js";
 import { installHostWorkspaceActivity } from "./workspaceActivity.js";
 import { createCodeWorkspaceContextResolver } from "./workspaceServiceController.js";
@@ -210,7 +215,10 @@ window.addEventListener(
 // 没有这座桥，外观切深色时 Code 工作台仍是浅色。内嵌场景（无父窗口）保持 zcode 自有默认。
 if (window.parent !== window && bootstrap) {
   window.addEventListener("message", (event) => {
-    if (event.source !== window.parent || event.origin !== window.location.origin)
+    if (
+      event.source !== window.parent ||
+      event.origin !== window.location.origin
+    )
       return;
     const type = (event.data as { type?: unknown } | null)?.type;
     if (type !== "kenfutwork:code-theme") return;
