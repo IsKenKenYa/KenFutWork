@@ -1,4 +1,8 @@
-import type { QueueClient, QueueMessage } from "../types.js";
+import {
+  type QueueClient,
+  QueueClosedError,
+  type QueueMessage,
+} from "../types.js";
 
 /**
  * 队列缝的**桌面 Provider**：进程内队列（FORM-2）。
@@ -118,6 +122,9 @@ export function createInProcessQueue(
       maxPollSeconds = 5,
       pollIntervalMs = 500,
     ) {
+      if (closed) {
+        throw new QueueClosedError();
+      }
       const immediate = takeVisible<T>(
         queue,
         visibilityTimeoutSeconds,
@@ -148,6 +155,7 @@ export function createInProcessQueue(
           waiters.set(queue, pending);
         });
 
+        if (closed) return [];
         const taken = takeVisible<T>(queue, visibilityTimeoutSeconds, quantity);
         if (taken.length > 0) {
           return taken;

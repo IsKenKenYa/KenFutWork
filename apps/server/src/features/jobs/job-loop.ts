@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { BackgroundJob, BackgroundJobType } from "@kenfutwork/shared";
 import type { ServerEnv } from "../../config/env.js";
-import type { QueueClient } from "../queue/types.js";
+import { type QueueClient, QueueClosedError } from "../queue/types.js";
 import { type ExecutorContext, getExecutor } from "./job-executor.js";
 import { JobServiceError } from "./job-service.js";
 
@@ -85,10 +85,11 @@ export function startJobLoop(
     `${tag} Started. concurrency={${concurrencyDesc}}, longPollTimeout=${pollTimeoutSeconds}s`,
   );
 
-  void (async () => {
+  const consumerPromise = (async () => {
     while (running) {
       // `queueName` 是队列名，`queue` 是队列缝客户端——两者都用，故名字必须区分
       for (const queueName of queues) {
+        if (!running) break;
         try {
           // 在建集合在启动期按 queues 建全，缺失分支不可达（仅用于类型收窄）
           const inFlight = inFlightByQueue.get(queueName);
@@ -105,6 +106,7 @@ export function startJobLoop(
             pollTimeoutSeconds,
             500,
           );
+          if (!running) break;
 
           for (const msg of messages) {
             const messageCtx: ExecutorContext = {
@@ -135,26 +137,60 @@ export function startJobLoop(
             inFlight.add(task);
           }
         } catch (error) {
+          if (error instanceof QueueClosedError) {
+            running = false;
+            break;
+          }
           console.error(`${tag} Error polling ${queueName}:`, error);
         }
+      }
+
+      if (!running) break;
+      const saturated = queues.every((queueName) => {
+        const inFlight = inFlightByQueue.get(queueName);
+        return (
+          inFlight && inFlight.size >= (concurrencyByQueue[queueName] ?? 1)
+        );
+      });
+      if (saturated) {
+        const pending = [...inFlightByQueue.values()].flatMap((set) => [
+          ...set,
+        ]);
+        if (pending.length === 0) {
+          running = false;
+          break;
+        }
+        await Promise.race(
+          pending.map((task) =>
+            task.then(
+              () => undefined,
+              () => undefined,
+            ),
+          ),
+        );
       }
     }
   })();
 
+  let shutdownPromise: Promise<void> | undefined;
   return {
     inFlightCount: totalInFlight,
-    async shutdown() {
-      const count = totalInFlight();
-      console.log(
-        `${tag} Shutting down, waiting for ${count} in-flight jobs...`,
-      );
-      running = false;
-      const tasks = [...inFlightByQueue.values()].flatMap((set) => [...set]);
-      if (tasks.length > 0) {
-        await Promise.allSettled(tasks);
-      }
-      await ctx.queue.shutdown();
-      console.log(`${tag} Shutdown complete.`);
+    shutdown() {
+      shutdownPromise ??= (async () => {
+        const count = totalInFlight();
+        console.log(
+          `${tag} Shutting down, waiting for ${count} in-flight jobs...`,
+        );
+        running = false;
+        const tasks = [...inFlightByQueue.values()].flatMap((set) => [...set]);
+        if (tasks.length > 0) {
+          await Promise.allSettled(tasks);
+        }
+        await ctx.queue.shutdown();
+        await consumerPromise;
+        console.log(`${tag} Shutdown complete.`);
+      })();
+      return shutdownPromise;
     },
   };
 }

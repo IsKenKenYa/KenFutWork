@@ -20,6 +20,15 @@ export type QueueMessage<T = Record<string, unknown>> = {
   message: T;
 };
 
+export class QueueClosedError extends Error {
+  readonly code = "queue_closed";
+
+  constructor() {
+    super("队列已关闭。");
+    this.name = "QueueClosedError";
+  }
+}
+
 export interface QueueClient {
   /** 投递消息，返回消息 id。`delaySeconds` 为首次可见前的延迟。 */
   send(
@@ -35,7 +44,8 @@ export interface QueueClient {
   ): Promise<QueueMessage<T>[]>;
   /**
    * 长轮询读：最多阻塞 `maxPollSeconds`，减少空闲轮询量。
-   * 桌面形态同样实现（靠内部条件变量唤醒，不是忙等）。
+   * 桌面形态同样实现（靠内部条件变量唤醒，不是忙等）。已关闭的队列抛出
+   * `QueueClosedError`，消费者据此停止而不是重试空轮询。
    */
   readWithPoll<T = Record<string, unknown>>(
     queue: string,

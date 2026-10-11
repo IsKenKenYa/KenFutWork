@@ -176,6 +176,9 @@ describe("进程内队列（桌面 Provider）", () => {
     await queue.shutdown();
 
     await expect(pending).resolves.toEqual([]);
+    await expect(queue.readWithPoll(QUEUE, 30, 1)).rejects.toMatchObject({
+      code: "queue_closed",
+    });
     await expect(queue.send(QUEUE, { job_id: "after-close" })).rejects.toThrow(
       /已关闭/,
     );
