@@ -36,6 +36,7 @@ import type {
 import type { TrustedCodeInput } from "../features/code-ui/attachments/input-types.js";
 import { codeInputContent } from "../features/code-ui/attachments/model-input.js";
 import type { ExecutionScopeHandle } from "../features/execution/scope-service.js";
+import { nativeEffectiveOutputTokens } from "./native-context-budget.js";
 // execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
 // 不需要自定义代码执行工具
 import type {
@@ -1811,10 +1812,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             declaredMaxOutput = entry?.model.maxOutputTokens ?? null;
           }
           if (autoCompactEnabled || run.operation?.kind === "compact") {
+            const wireMaxOutput =
+              resolvedModel && typeof resolvedModel !== "string"
+                ? nativeEffectiveOutputTokens(resolvedModel)
+                : declaredMaxOutput;
             const plan = resolveCompactionPlan({
               retention: compactionRetention,
               contextWindow: resolveContextWindow(declaredWindow, specifier),
-              maxOutputTokens: declaredMaxOutput,
+              maxOutputTokens: wireMaxOutput,
             });
             /**
              * 逃生口：窗口认不出的模型想自己定阈值、或要**真机验证压缩真的会发生**时，
@@ -2100,7 +2105,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                       entry?.model.contextWindow,
                       specifier,
                     ),
-                    maxOutputTokens: entry?.model.maxOutputTokens ?? null,
+                    maxOutputTokens: execution.effectiveOutputTokens,
                   });
                   const override = Number(
                     options.env.autoCompactTriggerTokens ?? Number.NaN,

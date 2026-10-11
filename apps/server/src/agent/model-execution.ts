@@ -14,6 +14,7 @@ import {
   MODEL_USAGE_OWNER_METADATA,
   type ModelUsageOwner,
 } from "./model-call-usage.js";
+import { nativeEffectiveOutputTokens } from "./native-context-budget.js";
 import type { AgentRunModelControl } from "./run-extension.js";
 
 /** 可信Run的冻结模型解析；凭据只交协议适配器，不进入调用归属或持久意图。 */
@@ -28,6 +29,8 @@ export async function resolveInstanceModelExecution(options: {
   model: BaseLanguageModel;
   owner: ModelUsageOwner;
   capabilities: { image: boolean; pdf: boolean };
+  /** Concrete native invocation output cap; null means no verified wire limit. */
+  effectiveOutputTokens: number | null;
 }> {
   const spec = parseInstanceSpecifier(options.specifier);
   if (!spec) throw new Error("模型执行需要真实供应商实例选择。");
@@ -77,6 +80,7 @@ export async function resolveInstanceModelExecution(options: {
   return {
     model,
     owner,
+    effectiveOutputTokens: nativeEffectiveOutputTokens(model),
     capabilities: {
       ...(invocation?.inputCapabilities ??
         resolveModelInputCapabilities(row ?? {})),
