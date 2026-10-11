@@ -121,15 +121,14 @@ export function CanvasSidebar({
             onMouseDown={startSidebarResize}
             className="absolute top-0 -right-0.5 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-foreground/20"
           />
-          <div className="flex items-center justify-between px-3 pt-3 pb-2">
-            {/* 左内边距与下面的模式切换控件对齐（外层 px-3 + 分段控件内 p-1 ⇒ pl-4）；
-                logo 与字标之间留 5px（用户口径） */}
-            <span className="flex items-center gap-[5px] pl-1">
-              <KenFutWorkLogo className="h-[15px] w-auto text-foreground" />
+          <div className="flex w-full items-center justify-between px-3.5 pt-0 pb-2">
+            {/* 与 Code 壳侧栏品牌行同一套口径：贴顶零留白、标与字标同尺寸（用户拍板统一） */}
+            <span className="flex items-center gap-2">
+              <KenFutWorkLogo className="h-6 w-auto text-foreground" />
               {/* 字标：Momo Trust Display + **三色**渐变（左深右浅；变量见 globals.css，
                   显式 sRGB 插值——oklab 中段会发灰显脏） */}
               <span
-                className="font-wordmark bg-clip-text text-xl tracking-tight text-transparent"
+                className="font-wordmark bg-clip-text text-[22px] leading-none tracking-tight text-transparent"
                 style={{ backgroundImage: "var(--wordmark-gradient)" }}
               >
                 KenFutWork

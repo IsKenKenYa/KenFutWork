@@ -4,6 +4,7 @@
  * i18n key `chat.empty.greeting.*` 一直保留）；边界时刻自动换档逻辑保真。
  * 手机远控复用同一组件，但继续保留 20px 紧凑标题；桌面草稿首页才按标题自身宽度适配。
  */
+import { Code2 } from "lucide-react";
 import { type CSSProperties, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import kenfutworkMarkUrl from "@zui/assets/kenfutwork-mark.png";
 import { cn } from "@zui/components/lib/utils.js";
@@ -13,7 +14,7 @@ import { logger } from "@zui/logger.js";
 
 const GREETING_BOUNDARY_HOURS = [5, 9, 12, 14, 18, 23] as const;
 const GREETING_MIN_FONT_SIZE_PX = 20;
-const GREETING_MAX_FONT_SIZE_PX = 30;
+const GREETING_MAX_FONT_SIZE_PX = 36;
 
 type ChatEmptyGreetingMessageId =
   | "chat.empty.greeting.morningEarly"
@@ -234,7 +235,7 @@ export function ConversationDraftEmptyState({ className }: { className?: string 
           )}
         />
       </div>
-      <p
+      <div
         ref={greetingContainerRef}
         data-v4-draft-greeting="true"
         style={
@@ -242,20 +243,28 @@ export function ConversationDraftEmptyState({ className }: { className?: string 
             "--v4-draft-greeting-font-size": `${greetingFontSizePx}px`,
           } as CSSProperties
         }
-        className={cn(
-          "relative z-10 w-full px-4 text-center font-medium text-foreground",
-          "text-[length:var(--v4-draft-greeting-font-size)]/[1.2]",
-        )}
+        className="relative z-10 flex w-full items-center justify-center gap-3 text-muted-foreground/50"
       >
-        <span
-          ref={greetingMeasurementRef}
-          aria-hidden="true"
-          className="pointer-events-none invisible absolute whitespace-nowrap text-3xl/[1.2]"
+        <Code2 className="size-8 shrink-0" strokeWidth={3} />
+        <p
+          style={
+            {
+              fontSize: "var(--v4-draft-greeting-font-size)",
+              lineHeight: 1.2,
+            } as CSSProperties
+          }
+          className="relative whitespace-nowrap font-medium"
         >
+          <span
+            ref={greetingMeasurementRef}
+            aria-hidden="true"
+            className="pointer-events-none invisible absolute whitespace-nowrap"
+          >
+            {greeting}
+          </span>
           {greeting}
-        </span>
-        <span>{greeting}</span>
-      </p>
+        </p>
+      </div>
     </div>
   );
 }
