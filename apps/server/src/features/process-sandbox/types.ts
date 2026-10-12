@@ -175,6 +175,11 @@ export interface ProcessSandboxOptions {
   ) => Promise<readonly string[]>;
   /** 宿主运行时只读目录（Node/动态库/系统命令），由 profile 按实际安装路径供给。 */
   runtimeReadRoots?: readonly string[];
+  /**
+   * 随包运行时的 bin 目录（前置进沙箱 PATH）。与 `runtimeReadRoots` 成对：
+   * PATH 决定「找得到」，readRoots 决定「跑得起来」——只给后者时 `python` 按名字找不到。
+   */
+  runtimePathAdditions?: readonly string[];
   onSnapshot?: (snapshot: ManagedProcessSnapshot) => void;
 }
 

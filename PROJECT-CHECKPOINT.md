@@ -44,8 +44,8 @@
 | U9 | 未做需求#9 Work/OpenDesign 规划 | P2 | BLOCKED | 两份规划待拍板 |
 | U10 | 未做需求#10 flow P7 + MIT LICENSE | P2 | BLOCKED | 远期/对外 |
 | U11 | 未做需求#11 语言回写竞态 | P1 | DONE | 60c9f06d + 回归测试 |
-| U12 | 未做需求#12 沙箱未授权随包运行时目录（本轮发现） | P0 | BLOCKED | 沙箱外 pytest 17/17 通过、沙箱内 python 一律拒绝访问；待立项 |
-| U13 | 未做需求#13 run.failed `unsupported Unicode escape sequence`（本轮发现） | P0 | BLOCKED | code_ui_events 两条实证；写库链路待定位 |
+| U12 | 未做需求#12 沙箱未授权随包运行时目录（本轮发现并修复） | P0 | **DONE** | 日志 §一百七十五；沙箱内 `python --version` → `Python 3.12.15`（解析到随包运行时） |
+| U13 | 未做需求#13 run.failed `unsupported Unicode escape sequence`（本轮发现并修复） | P0 | **DONE** | 日志 §一百七十五；根因=命令输出 NUL → jsonb 拒绝；修复后该报错 0 条 |
 | G1 | 浏览器面板整链（G1/Q3-Q4） | P0 | DONE | 9115d2eb |
 | G1q5 | 元素拾取（Q5） | P1 | DONE | e272b64（browser-pane 6/6） |
 | G2 | 六档执行模式回 Code 壳 | P0 | DONE | f4ae8179 + 本轮六档实测 |
