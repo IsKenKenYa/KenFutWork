@@ -2149,7 +2149,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: runCreateResponseSchema,
     summary: "创建智能体运行",
     description:
-      "以已授权本机身份启动运行。Code绑定Project与持久Task工作域，Design沿用Canvas；读取本地模型与执行模式，任何存储故障都拒绝启动，维护期间不接收新工作。BYOK不检查套餐或余额，成功202返回runId。",
+      "以已授权本机身份提交运行。Code与Design均须绑定所属持久Task工作域；Design核对Task、项目、画布及目录后交由持久宿主接纳或排队，保留模型选择与授权代际。缺失目录、身份不符、存储故障或维护状态拒绝接纳并返回可读原因。BYOK不检查套餐或余额，成功202返回runId。",
   },
   {
     method: "post",

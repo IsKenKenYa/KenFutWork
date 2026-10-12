@@ -338,6 +338,8 @@ export function createAgentRunsPlugin(
       };
     },
     mounted(ctx) {
+      const designTasks = ctx.tryGet("designTasks");
+      const designRunHost = ctx.tryGet("designRunHost");
       void registerRunRoutes(ctx.app, ctx.get("agentRuns"), {
         // 活动查询：mounted 与 apply 是两段作用域，这里按需新建一个仓储包装
         // （仓储是无状态包装，重建不引入额外连接/状态）
@@ -352,6 +354,8 @@ export function createAgentRunsPlugin(
         agentModes: ctx.get("agentModes"),
         executionScopes: ctx.get("executionScopes"),
         codeUi: ctx.get("codeUi"),
+        ...(designTasks ? { designTasks } : {}),
+        ...(designRunHost ? { designRunHost } : {}),
         agentRunMetadataService: ctx.get("agentRunMetadata"),
         localAccess: ctx.get("localAccess"),
         settingsService: ctx.get("settings"),

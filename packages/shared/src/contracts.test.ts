@@ -346,6 +346,23 @@ describe("@kenfutwork/shared contracts", () => {
     ).toThrow();
   });
 
+  it.each([
+    "scope_unavailable",
+    "scope_mismatch",
+    "scope_changed",
+    "admission_unavailable",
+    "design_task_unprovisioned",
+    "design_task_queue_busy",
+    "design_task_policy_changed",
+    "design_model_invalid",
+  ])("preserves Task admission error %s and its readable reason", (code) => {
+    const schema = getExportedSchema("applicationErrorResponseSchema");
+    const response = {
+      error: { code, message: "任务目录不可用，请重新关联。" },
+    };
+    expect(schema.parse(response)).toEqual(response);
+  });
+
   it("rejects invalid application error codes", () => {
     const applicationErrorResponseSchema = getExportedSchema(
       "applicationErrorResponseSchema",
