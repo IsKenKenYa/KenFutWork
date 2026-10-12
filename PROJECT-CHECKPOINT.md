@@ -1,0 +1,113 @@
+# PROJECT-CHECKPOINT — KenFutWork 遗留需求收口 + 融合兼容计划验收轮
+
+> 依据 goal-loop 规程维护。本文件是唯一状态真相源；memory/对话不是。
+> 启动：2026-10-12（用户会话）。分支 main。最近更新：2026-10-12 晚（E2E 验收轮收尾）。
+
+## PROJECT GOAL
+
+按用户 2026-10-12 指令：
+1. 完成 `docs/未做需求.md` 中未完成的功能 → 模拟点击检查；
+2. 完成 `docs/方案设计/工作台融合兼容计划.md` 中未完成的功能 → 模拟点击检查；
+3. 全部完成后做全流程模拟点击验收：**所有页面按钮/功能/对话/样式**；
+4. 重点验证：联网搜索、MCP、skill、对话、计划、目标、循环、自主、创造（创造插件/技能/MCP 工具）；
+5. 建 Python 项目 + MCP + skill 测试工程（工作目录 `D:\Desktop\test`），用计划档 + 自主档实测；
+6. 模型：GLM-5.3-Flash（https://www.aiping.cn/api/v1，key 仅入本机凭据库，严禁入库）。
+
+## DEFINITION OF DONE
+
+- 台账每一项有明确状态（DONE/BLOCKED/NOT_APPLICABLE…）且 BLOCKED 带证据；
+- 本环境可实施的代码项全部落地并有测试/构建证据；
+- 全流程模拟点击（playwright-core + Chromium + 真实 GLM run）覆盖：首屏/侧栏/设置全分区/composer 各 chip/对话/计划档/目标档/循环档/自主档/创造档/联网搜索/MCP/技能/终端/浏览器面板/插件市场；
+- `pnpm typecheck` 与相关测试绿（环境族红如实标注）；
+- 文档回写：`docs/日志.md` 同一提交内记账；`未做需求.md` 收口项移除。
+
+## HARD CONSTRAINTS
+
+- AGENTS.md 全部硬约束（提交纪律、文案门禁、测试纪律、禁提交密钥）；
+- vendored 改动最小化 + 登记 `docs/源码来源/ZCode源码清单.json`；
+- 契约改动走 `packages/shared` 单源 + Apifox 三连（import 为对外动作，无 CLI 登录则 BLOCKED）；
+- 不变量：工作台恒 Code 壳、Design 主区恒画布、Flow 入口随插件、Code Run 绑 Task 工作域；
+- 测试资源护栏：禁并行多测试实例。
+
+## MASTER GOAL LEDGER
+
+| ID | Requirement | Priority | Status | Evidence |
+|---|---|---|---|---|
+| U1 | 未做需求#1 沙箱 broker Windows 派生缺陷 | P0 | PARTIAL | 引号修 cc0764fe + stop_unconfirmed 修 c5dcc32e + generation 铸 1；**终端模拟点击实测可用**（工作目录提示符 + `echo KFWT` 回显）；剩 PSEC 环境族 8 红（service.test 18/26） |
+| U2 | 未做需求#2 格式基线轮 | P2 | DONE | 历史收口 2026-10-09 |
+| U3 | 未做需求#3 WSL2 真机验收 | P1 | BLOCKED | 本机仅 Docker Desktop 内部发行版，无通用 WSL2 |
+| U4 | 未做需求#4 桌面端 GUI 走查 | P1 | PARTIAL | **市场点装内置插件实测通过**（Computer Use，已安装 3→4）；安装器全链待真机 |
+| U5 | 未做需求#5 Design 语音点击 | P2 | DONE | 历史收口 2026-10-10 |
+| U6 | 未做需求#6 语音离线「想」档真机 | P2 | BLOCKED | 需 KENFUTWORK_VOICE_REAL_LLM=1 长时真机 |
+| U7 | 未做需求#7 Apifox 契约同步 | P1 | BLOCKED | 对外动作，本机无 apifox CLI 登录 |
+| U8 | 未做需求#8 HA 插件本体 | P1 | BLOCKED | §8-6 待用户拍板 |
+| U9 | 未做需求#9 Work/OpenDesign 规划 | P2 | BLOCKED | 两份规划待拍板 |
+| U10 | 未做需求#10 flow P7 + MIT LICENSE | P2 | BLOCKED | 远期/对外 |
+| U11 | 未做需求#11 语言回写竞态 | P1 | DONE | 60c9f06d + 回归测试 |
+| U12 | 未做需求#12 沙箱未授权随包运行时目录（本轮发现） | P0 | BLOCKED | 沙箱外 pytest 17/17 通过、沙箱内 python 一律拒绝访问；待立项 |
+| U13 | 未做需求#13 run.failed `unsupported Unicode escape sequence`（本轮发现） | P0 | BLOCKED | code_ui_events 两条实证；写库链路待定位 |
+| G1 | 浏览器面板整链（G1/Q3-Q4） | P0 | DONE | 9115d2eb |
+| G1q5 | 元素拾取（Q5） | P1 | DONE | e272b64（browser-pane 6/6） |
+| G2 | 六档执行模式回 Code 壳 | P0 | DONE | f4ae8179 + 本轮六档实测 |
+| G3 | 每轮自动 git 提交 | P1 | DONE | 1a9b8b25 |
+| G4 | worktree 三能力 | P1 | DONE | 19d23869 |
+| G5 | GitPane init | P1 | DONE | 2c18b297 |
+| G6 | 上下文圆环+修显示 | P0 | DONE | 8a3dded6（composer 圆环真机在渲染） |
+| G7 | 权限档旧四档 | P1 | DONE | 8cd530cb + 设置页权限分区真机 |
+| G8 | 检查点多轮时间线 | P1 | DONE | 7c28e890 |
+| G9 | 终端 shell 菜单+终端修复 | P0 | DONE | 8bafeecd + broker 修 + 本轮终端实测 |
+| G10 | 设置分区补充 | P1 | DONE | d609db0c 等 + 本轮 15 分区走查 |
+| G11p2 | 面板拖到上限自动收左栏 | P2 | DONE | e272b64 |
+| G11h1 | 会话头锁定目录 chip（只读） | P2 | DONE | e272b64 |
+| T-CLEAN | 阶段三孤儿清理 | P2 | BLOCKED | sidebar-row 已删；settings-modal 承载 Agent 治理面，迁移未立项 |
+| E2E | 全流程模拟点击验收（含 GLM 实测） | P0 | DONE | 侧栏 8/8、设置 15/15、右栏 4 卡、终端、市场点装、六档六轮全绿 |
+| E2E-K | 重点：联网搜索/MCP/skill/对话/计划/目标/循环/自主/创造 | P0 | PARTIAL | 联网搜索 ✓、技能 ✓、六档 ✓、Python 工程 ✓（沙箱外 17/17）；MCP 注册受 U12 阻断 |
+| FIX-SET | 设置页「集成终端 Shell」死下拉 | P2 | DONE | f234516a（无选项时隐藏，真机复看已消失） |
+
+## LATEST VERIFIED STATE
+
+- HEAD=f234516a（设置页修复 + 验收记账已提交）；工作区仅剩 PROJECT-CHECKPOINT.md 未跟踪。
+- 环境：server 3301（嵌入式 PG 55433，98 迁移落地）+ web dev 3300 + code-ui 重建暂存。
+- BYOK：`provider_instances` 1 条（新供应商 / openai-compatible / https://www.aiping.cn/api/v1 / GLM-5.3-Flash 1M），enabled。
+- 模拟点击证据（`tmp/e2e/shots/` 截图 + `tmp/e2e/report-*.json`）：
+  - 侧栏 4 入口 + 模式 pills + 搜索 8/8；设置 15 分区 15/15；
+  - 右栏启动卡 4 张（辅助对话/审查/终端/浏览器）；**终端命令执行 PASS**（`echo KFWT` → `KFWT`）；
+  - 插件市场点装 PASS（Computer Use 安装，已安装 3→4）；
+  - 六档模式 chip 切换 6/6 + 内容判定 6/6（含计划门「需要权限 · 实施计划」三选项 → 批准 + 提交）；
+  - 联网搜索 PASS（web_search 4 轮 + 拒绝编造来源）；技能 `create_skill` 发布 PASS（`instance_skills` 落库）；
+  - Python 工程 `D:\Desktop\test\kfw-e2e`：pytest 17/17（沙箱外）、MCP stdio 握手通过。
+- 测试/门禁：settings-copy-guard 12/12、settings-rows-structure 9/9、browser-pane 6/6、side-pane-model 2/2、locked-directory 1/1、workspace 29/29、api-spec 3/3、check-docs 通过；web tsc 与 zcode host/vendor tsc 双绿。
+
+## UNVERIFIED
+
+- 计划档单轮超过脚本 420s 上限（内容已达标、产物已落盘），未统计其完整耗时。
+- 浏览器面板（右栏「浏览器」卡）未在本轮点到——终端占用页签后启动卡列表收起；实现已在 G1 单测与上一轮覆盖。
+- `unsupported Unicode escape sequence`（U13）根因未定位到具体写库语句。
+- 沙箱运行时授权（U12）的修法未定（`additionalDirectories` 还是沙箱 ACL 等价机制）。
+- Flow 引擎栈本轮未拉起（8090/15010 未起），Flow 模式仅验证 pill 切换与页面加载。
+
+## IMPORTANT FILES
+
+- 台账：`docs/未做需求.md`（十二项）、`docs/方案设计/工作台融合兼容计划.md`
+- 日志：`docs/日志.md`（§一百七十三 收尾三件、§一百七十四 验收轮）
+- E2E 脚手架：`tmp/e2e/`（lib.mjs / walk-*.mjs / feature-*.mjs / probe-*.mjs；tmp/ 不入库）
+- 交付工程：`D:\Desktop\test\kfw-e2e`（wordstats 包 + pytest + FastMCP MCP 服务器 + SKILL.md）
+
+## DECISIONS
+
+- E2E 用 playwright-core + 本机缓存 Chromium（agent-browser 未安装）；模拟点击为主、DB/API 取证为辅。
+- 每档模式先暖场一轮建会话（六档 chip 需 sessionId 才渲染），再点 chip 切档，再发真实任务。
+- 计划门/权限门由脚本自动点「批准」+「提交」/「本次允许」+「确认」（等价真实用户点击）。
+- 设置页「集成终端 Shell」按「无选项即隐藏」处置（不新造与 G9 并行的第二套 shell 偏好）。
+
+## RISKS
+
+- U12/U13 两条 P0 未修，会在 Python 类任务与含 Windows 路径的命令上复现。
+- PSEC transitional 让终端族命令收尾报 stop_unconfirmed（环境族，非代码可修）。
+- GLM-5.3-Flash 单轮耗时长，六档全量实测约 45 分钟。
+
+## NEXT ACTION
+
+1. U12：把随包运行时根目录纳入沙箱只读授权（`additionalDirectories` 或沙箱 ACL），验收 = 沙箱内 `python -V` / `pytest` 可跑 + `create_mcp_server` 能连 Python 服务器；
+2. U13：定位把命令/输出写进 jsonb 的链路并参数化，回归测试锁死「命令含 `\Users`/`\nvm` 时 run 不失败」；
+3. 其余 BLOCKED 项按各自前置条件推进（真机/拍板/对外）。
