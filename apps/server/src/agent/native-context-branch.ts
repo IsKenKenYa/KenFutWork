@@ -231,9 +231,6 @@ export function createNativeContextBranchService(options: {
     input: AgentContextBranchHistoryCloneInput,
   ): Promise<AgentContextBranchHistoryCloneResult> => {
     const source = sourceConfig(input);
-    const resources = createNativeContextResourceRebinder(
-      input.resourceBindings ?? [],
-    );
     if (cloning.has(input.targetThreadId))
       throw new Error("上下文目标thread正在使用，不能重复克隆。");
     cloning.add(input.targetThreadId);
@@ -249,6 +246,15 @@ export function createNativeContextBranchService(options: {
             input.sourceThreadId,
           )
         : [];
+      const resources = createNativeContextResourceRebinder(
+        input.resourceBindings ?? [],
+        {
+          sourceThreadId: input.sourceThreadId,
+          targetThreadId: input.targetThreadId,
+          namespace: "",
+          checkpointIds: new Set(branch.map((tuple) => tuple.checkpoint.id)),
+        },
+      );
       // 全部引用在复制前验证；每个边界只重绑定key，不再次复制其prefix。
       const boundaries = rebaseBoundaries(input, branch);
       await assertNewTarget(persistence.checkpointer, input.targetThreadId);

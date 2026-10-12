@@ -15,6 +15,10 @@ import {
   createContextResourceRebinder,
   parseContextResourceBindings,
 } from "./context-resource-bindings.js";
+import {
+  createNativeArchiveRebinder,
+  type NativeArchiveCloneScope,
+} from "./native-archive-rebinding.js";
 
 const summaryMetadataKey = "kenfutwork_context_resource_bindings";
 
@@ -93,16 +97,24 @@ function summaryContext(
     typeof content === "string"
       ? `${content}${suffix}`
       : [...content, { type: "text", text: suffix }];
+  return summaryWithContent(message, nextContent, {
+    ...message.additional_kwargs,
+    [summaryMetadataKey]: { bindings: owned, suffix },
+  });
+}
+
+function summaryWithContent(
+  message: HumanMessage,
+  content: HumanMessage["content"],
+  additional_kwargs = message.additional_kwargs,
+) {
   const fields = {
     ...message.lc_kwargs,
     ...(message.id !== undefined ? { id: message.id } : {}),
     ...(message.name !== undefined ? { name: message.name } : {}),
-    content: nextContent,
+    content,
     response_metadata: message.response_metadata,
-    additional_kwargs: {
-      ...message.additional_kwargs,
-      [summaryMetadataKey]: { bindings: owned, suffix },
-    },
+    additional_kwargs,
   };
   const subtype = message.lc_id.at(-1);
   if (subtype === "HumanMessage") return new HumanMessage(fields);
@@ -312,11 +324,15 @@ function resourceMessage(
 /** 只在固定 SDK 的 messages/summary 通道重绑定；其它通道、消息配对与叙述原样保留。 */
 export function createNativeContextResourceRebinder(
   bindings: readonly AgentContextResourceBinding[],
+  archiveScope?: NativeArchiveCloneScope,
 ) {
+  const archives = archiveScope
+    ? createNativeArchiveRebinder(archiveScope)
+    : undefined;
   const resources = createContextResourceRebinder(bindings);
   const toolNames = new Map<string, string>();
   const channel = (name: string, value: unknown): unknown => {
-    if (!resources.bindings.length) return value;
+    if (!resources.bindings.length && !archives) return value;
     if (name === "messages") {
       if (isDeltaSnapshot(value))
         return new DeltaSnapshot(channel(name, value.value));
@@ -327,13 +343,26 @@ export function createNativeContextResourceRebinder(
     if (name === "_summarizationEvent" && record(value)) {
       if (!HumanMessage.isInstance(value.summaryMessage))
         throw new Error("原生摘要缺少实际 HumanMessage，未复制上下文。");
-      return {
-        ...value,
-        summaryMessage: summaryContext(
-          value.summaryMessage,
-          resources.bindings,
-        ),
-      };
+      let summary = value.summaryMessage;
+      let filePath = value.filePath;
+      if (archives) {
+        if (typeof filePath === "string") filePath = archives.uri(filePath);
+        const content =
+          typeof summary.content === "string"
+            ? archives.text(summary.content)
+            : mapChanged(summary.content, (block) =>
+                record(block) &&
+                block.type === "text" &&
+                typeof block.text === "string"
+                  ? { ...block, text: archives.text(block.text) }
+                  : block,
+              );
+        if (content !== summary.content)
+          summary = summaryWithContent(summary, content);
+      }
+      if (resources.bindings.length)
+        summary = summaryContext(summary, resources.bindings);
+      return { ...value, filePath, summaryMessage: summary };
     }
     return value;
   };

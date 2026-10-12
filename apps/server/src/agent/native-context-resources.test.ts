@@ -5,6 +5,7 @@ import {
   ToolMessage,
   ToolMessageChunk,
 } from "@langchain/core/messages";
+import { FakeListChatModel } from "@langchain/core/utils/testing";
 import {
   type CheckpointMetadata,
   DeltaSnapshot,
@@ -12,10 +13,19 @@ import {
   isDeltaSnapshot,
   type PendingWrite,
 } from "@langchain/langgraph-checkpoint";
+import { createDeepAgent } from "deepagents";
 import { expect, it } from "vitest";
 import type { AgentContextResourceBinding } from "./context-history.js";
+import {
+  encodeNativeArchiveBinding,
+  referenceFromNativeArchiveUri,
+} from "./native-checkpoint-archive.js";
+import { createNativeContextArchiveReader } from "./native-context-archive.js";
 import { createNativeContextBranchService } from "./native-context-branch.js";
-import { encodeNativeContextReference } from "./native-context-reference.js";
+import {
+  decodeNativeContextReference,
+  encodeNativeContextReference,
+} from "./native-context-reference.js";
 import { createNativeContextResourceRebinder } from "./native-context-resources.js";
 import { createAgentPersistenceService } from "./persistence/index.js";
 
@@ -33,16 +43,19 @@ const binding: AgentContextResourceBinding = {
 };
 
 async function fixture(
-  channels: Record<string, unknown>,
+  channels:
+    | Record<string, unknown>
+    | ((checkpointId: string) => Record<string, unknown>),
   writes: PendingWrite[] = [],
 ) {
   const persistence = createAgentPersistenceService({});
   const native = await persistence.getPersistence();
   if (!native) throw new Error("真实原生 MemorySaver 未装配");
   const checkpoint = emptyCheckpoint();
-  checkpoint.channel_values = channels;
+  checkpoint.channel_values =
+    typeof channels === "function" ? channels(checkpoint.id) : channels;
   checkpoint.channel_versions = Object.fromEntries(
-    Object.keys(channels).map((name) => [name, 1]),
+    Object.keys(checkpoint.channel_values).map((name) => [name, 1]),
   );
   const metadata: CheckpointMetadata<{ ownerFact: string }> = {
     source: "loop",
@@ -693,3 +706,131 @@ it("冲突资源映射与未完成的受影响 JSON chunk 可读拒绝，失败�
     await f.persistence.dispose();
   }
 });
+
+function archiveUri(threadId: string, checkpointId: string, namespace = "") {
+  const reference = encodeNativeContextReference(threadId, {
+    configurable: {
+      checkpoint_ns: namespace,
+      checkpoint_id: checkpointId,
+    },
+  });
+  if (!reference) throw new Error("archive fixture reference missing");
+  return encodeNativeArchiveBinding(reference).uri;
+}
+
+it("native fork rebinds exact archived checkpoint and summary URI without borrowing source Task access", async () => {
+  let sourceUri = "";
+  const context = await fixture((checkpointId) => {
+    sourceUri = archiveUri("source-thread", checkpointId);
+    return {
+      messages: [new HumanMessage("ORIGINAL_ARCHIVE_EVIDENCE")],
+      _summarizationEvent: {
+        cutoffIndex: 1,
+        filePath: sourceUri,
+        summaryMessage: new HumanMessage(
+          `Read history: ${sourceUri}\nRemaining work`,
+        ),
+      },
+    };
+  });
+  try {
+    await context.clone({
+      sourceThreadId: "source-thread",
+      targetThreadId: "archive-owned-target",
+      reference: context.reference,
+      boundaries: [],
+    });
+    const target = await context.read("archive-owned-target");
+    const event = target.checkpoint.channel_values._summarizationEvent as {
+      filePath: string;
+      summaryMessage: HumanMessage;
+    };
+    const key = decodeNativeContextReference(
+      referenceFromNativeArchiveUri(event.filePath),
+    );
+    expect(key).toEqual({
+      threadId: "archive-owned-target",
+      namespace: "",
+      checkpointId: target.checkpoint.id,
+    });
+    expect(event.summaryMessage.content).toContain(event.filePath);
+    expect(event.summaryMessage.content).not.toContain(sourceUri);
+    expect(target.checkpoint.channel_values.messages).toMatchObject([
+      { content: "ORIGINAL_ARCHIVE_EVIDENCE" },
+    ]);
+    const source = await context.read("source-thread");
+    expect(
+      (
+        source.checkpoint.channel_values._summarizationEvent as {
+          filePath: string;
+        }
+      ).filePath,
+    ).toBe(sourceUri);
+    const graph = createDeepAgent({
+      model: new FakeListChatModel({ responses: ["unused"] }),
+      checkpointer: context.native.checkpointer,
+    });
+    const readOwned = createNativeContextArchiveReader(
+      graph,
+      async (_reference, owner) => {
+        if (owner !== "archive-owned-target")
+          throw new Error("foreign Task archive denied");
+      },
+    );
+    await context.native.checkpointer.deleteThread("source-thread");
+    const page = await readOwned({
+      reference: referenceFromNativeArchiveUri(event.filePath),
+    });
+    expect(page.text).toContain("ORIGINAL_ARCHIVE_EVIDENCE");
+  } finally {
+    await context.persistence.dispose();
+  }
+});
+
+it.each([
+  "foreign-thread",
+  "outside-checkpoint",
+  "wrong-namespace",
+  "summary-only-outside",
+])(
+  "native fork rejects %s archive references instead of granting target Task access",
+  async (kind) => {
+    const context = await fixture((checkpointId) => {
+      const uri = archiveUri(
+        kind === "foreign-thread" ? "other-task" : "source-thread",
+        kind === "outside-checkpoint" ? "not-copied" : checkpointId,
+        kind === "wrong-namespace" ? "other-namespace" : "",
+      );
+      return {
+        messages: [new HumanMessage("SOURCE")],
+        _summarizationEvent: {
+          cutoffIndex: 1,
+          filePath: uri,
+          summaryMessage: new HumanMessage(
+            `History ${kind === "summary-only-outside" ? archiveUri("source-thread", "not-copied") : uri}`,
+          ),
+        },
+      };
+    });
+    try {
+      await expect(
+        context.clone({
+          sourceThreadId: "source-thread",
+          targetThreadId: `denied-${kind}`,
+          reference: context.reference,
+          boundaries: [],
+        }),
+      ).rejects.toThrow("已复制的上下文祖先链");
+      expect(
+        await context.native.checkpointer.getTuple({
+          configurable: {
+            thread_id: `denied-${kind}`,
+            checkpoint_ns: "",
+          },
+        }),
+      ).toBeUndefined();
+    } finally {
+      await context.persistence.dispose();
+    }
+  },
+);

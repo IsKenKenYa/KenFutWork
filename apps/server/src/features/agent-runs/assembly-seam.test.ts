@@ -16,6 +16,7 @@ import {
 } from "../../kernel/context.js";
 import { createAgentModesPlugin } from "../agent-modes/plugin.js";
 import { createPluginInventoryFixture } from "../code-ui/plugins.test-fixture.js";
+import { createContextHistoryPlugin } from "../context-history/plugin.js";
 import { createLocalInstanceService } from "../local-instance/service.js";
 import { createMemoryTaskWorkManager } from "../task-work/test-store.js";
 import { createAgentRunsPlugin } from "./plugin.js";
@@ -182,6 +183,7 @@ async function assembleSeamKernel(agentFactory: KenFutWorkAgentFactory) {
     makeEnv(),
     [
       createAgentModesPlugin(),
+      createContextHistoryPlugin(),
       createAgentRunsPlugin({
         connectionManager: {
           pushToCanvas: () => {},

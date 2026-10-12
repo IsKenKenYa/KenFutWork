@@ -16,6 +16,8 @@ import type { CompactionPlan } from "./auto-compact.js";
 import type { AgentBackendFactory } from "./backends/index.js";
 import type { AgentContextHistory } from "./context-history.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
+import type { NativeCheckpointArchive } from "./native-checkpoint-archive.js";
+import { createNativeRecoveryMiddleware } from "./native-recovery-middleware.js";
 import { nativeSummaryKey } from "./native-compaction.js";
 import { encodeNativeContextReference } from "./native-context-reference.js";
 
@@ -24,6 +26,7 @@ export interface NativeManualCompactionOptions {
   backend: AgentBackendFactory;
   store?: BaseStore;
   plan: CompactionPlan;
+  archive?: NativeCheckpointArchive;
   llmRetry: { maxAttempts: number; infinite: boolean };
 }
 
@@ -92,12 +95,20 @@ export function createNativeManualCompaction(
       ...(signal ? { signal } : {}),
       callbacks,
     });
-    const middleware = createSummarizationMiddleware({
-      backend: options.backend,
-      // 0是单次control operation的force sentinel，非用户预算/限额，故不进入治理数值表。
-      trigger: { type: "messages", value: 0 },
-      keep: options.plan.keep,
-    }) as unknown as AgentMiddleware;
+    const middleware = options.archive
+      ? createNativeRecoveryMiddleware({
+          backend: options.backend,
+          archive: options.archive,
+          archiveConfig: () => config,
+          // 0是单次control operation的force sentinel，非用户预算/限额，故不进入治理数值表。
+          trigger: { type: "messages", value: 0 },
+          keep: options.plan.keep,
+        })
+      : (createSummarizationMiddleware({
+          backend: options.backend,
+          trigger: { type: "messages", value: 0 },
+          keep: options.plan.keep,
+        }) as unknown as AgentMiddleware);
     const hook = middleware.wrapModelCall;
     if (!hook) throw new Error("当前native adapter未提供手动压缩hook。");
     const request = {

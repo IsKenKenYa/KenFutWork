@@ -35,8 +35,8 @@ import type {
 } from "../features/code-tools/project-instructions-types.js";
 import type { TrustedCodeInput } from "../features/code-ui/attachments/input-types.js";
 import { codeInputContent } from "../features/code-ui/attachments/model-input.js";
+import type { ContextHistoryArchiveBindings } from "../features/context-history/types.js";
 import type { ExecutionScopeHandle } from "../features/execution/scope-service.js";
-import { nativeEffectiveOutputTokens } from "./native-context-budget.js";
 // execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
 // 不需要自定义代码执行工具
 import type {
@@ -117,6 +117,7 @@ import {
   createRunModelControl,
   resolveInstanceModelExecution,
 } from "./model-execution.js";
+import { nativeEffectiveOutputTokens } from "./native-context-budget.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { measureTools } from "./prompt-composition.js";
 import type {
@@ -502,6 +503,7 @@ type CreateAgentRuntimeOptions = {
   runUsage?: RunUsageAccumulator;
   /** 内核统一工具注册表：按 run 的 preset 过滤后桥接进模型工具列表（§4.5）。 */
   tools?: ToolRegistry;
+  contextHistoryArchives?: ContextHistoryArchiveBindings;
   /** 内核系统提示段注册表：run 起始期组装系统提示（模式段/品牌/skills/规则与插件）。 */
   systemPromptRegistry?: SystemPromptRegistry;
   /** 事件缝（DEC-1）：turn 收尾时发射 turn-stopping，插件据此结算。 */
@@ -2163,6 +2165,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               : "",
             ...(run.canvasId ? { canvasId: run.canvasId } : {}),
             ...(persistence ? { checkpointer: persistence.checkpointer } : {}),
+            ...(options.contextHistoryArchives
+              ? { contextHistoryArchives: options.contextHistoryArchives }
+              : {}),
             ...(options.connectionManager
               ? { connectionManager: options.connectionManager }
               : {}),
@@ -2273,6 +2278,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             );
             yield event;
           }
+          agent?.releaseContextHistory?.();
           return;
         }
 
@@ -2734,6 +2740,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       } finally {
         // 后台/前台子代理兜底清理（DEC-15）：run 终态后不允许子代理再存活
         backgroundTaskRegistry?.abortAll("本轮 run 已结束");
+        agent?.releaseContextHistory?.();
         // DEC-1：turn 收尾（成功/失败/取消）发射 turn-stopping，用量等插件据此结算
         if (options.emitTurnStopping) {
           try {

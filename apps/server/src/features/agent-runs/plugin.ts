@@ -232,6 +232,7 @@ export function createAgentRunsPlugin(
               .list<AgentRunExtension>("agent-run-extension")
               .map((registration) => registration.value),
           agentPersistenceService: agentPersistence,
+          contextHistoryArchives: ctx.get("contextHistoryArchives"),
           contextBranchProvider:
             deps.contextBranchProvider ??
             createNativeContextBranchService({

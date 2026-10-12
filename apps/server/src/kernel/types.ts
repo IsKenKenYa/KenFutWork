@@ -18,6 +18,7 @@ import type { CheckpointService } from "../features/checkpoints/checkpoint-servi
 import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import type { CodeTerminalService } from "../features/code-terminal/types.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
+import type { ContextHistoryArchiveBindings } from "../features/context-history/types.js";
 import type {
   ExecutionScopeHandle,
   ExecutionScopes,
@@ -78,6 +79,7 @@ export interface ServiceMap {
   agentPersistence: AgentPersistenceService;
   agentRunMetadata: AgentRunMetadataService;
   agentRuns: AgentRunService;
+  contextHistoryArchives: ContextHistoryArchiveBindings;
   /** 领域服务（design 侧为主） */
   brandKit: BrandKitService;
   canvas: CanvasService;

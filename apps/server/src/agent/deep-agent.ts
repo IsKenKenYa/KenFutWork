@@ -29,6 +29,7 @@ import {
   createCodeFilesystemMiddleware,
   createNativeToolExclusionMiddleware,
 } from "../features/code-tools/native-tool-exclusion.js";
+import type { ContextHistoryArchiveBindings } from "../features/context-history/types.js";
 import {
   createTaskWorkNotificationMiddleware,
   type TaskWorkBinding,
@@ -45,12 +46,15 @@ import type { AgentContextHistory } from "./context-history.js";
 import { createExecuteBackgroundTool } from "./execute-background.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
+import { referenceFromNativeArchiveUri } from "./native-checkpoint-archive.js";
 import { attachNativeCheckpointDurability } from "./native-checkpoint-durability.js";
 import { createNativeCompactionTracker } from "./native-compaction.js";
 import {
   createNativeContextHistory,
   effectiveNativeMessages,
 } from "./native-context-history.js";
+import { createNativeRecoveryMiddleware } from "./native-recovery-middleware.js";
+import { createNativeTaskArchive } from "./native-task-archive.js";
 import type {
   AgentRunExtension,
   AgentRunExtensionContext,
@@ -70,7 +74,11 @@ import { createTaskNotificationMiddleware } from "./task-notifications.js";
 export type KenFutWorkAgent = Pick<
   ReturnType<typeof createDeepAgent>,
   "stream" | "streamEvents"
-> & { canonicalToolEvents?: boolean; contextHistory?: AgentContextHistory };
+> & {
+  canonicalToolEvents?: boolean;
+  contextHistory?: AgentContextHistory;
+  releaseContextHistory?: () => void;
+};
 
 /**
  * 执行模式工具门（solo/plan 硬约束）：拦截 deepagents 内置工具
@@ -304,6 +312,7 @@ export type KenFutWorkAgentFactory = (options: {
   kernelTools?: ToolDefinition[];
   /** 本次运行的工具执行上下文（runId/LocalActor）。 */
   runToolContext?: ToolExecutionContext;
+  contextHistoryArchives?: ContextHistoryArchiveBindings;
   /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
   toolGate?: ToolGate;
   /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
@@ -356,6 +365,7 @@ export function createKenFutWorkDeepAgent(options: {
   store?: BaseStore;
   kernelTools?: ToolDefinition[];
   runToolContext?: ToolExecutionContext;
+  contextHistoryArchives?: ContextHistoryArchiveBindings;
   /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
   toolGate?: ToolGate;
   /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
@@ -388,6 +398,14 @@ export function createKenFutWorkDeepAgent(options: {
 }): KenFutWorkAgent {
   const backendResult =
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
+  const execution = options.runToolContext;
+  let agent: ReturnType<typeof createDeepAgent>;
+  const archive =
+    options.checkpointer &&
+    execution?.scopeHandle &&
+    options.contextHistoryArchives
+      ? createNativeTaskArchive(() => agent, execution, options.preset)
+      : undefined;
 
   // 运行 preset（DEC-2）：本次装配的能力集口径——运行态工具、子代理清单共用
   const preset = options.preset;
@@ -580,12 +598,26 @@ export function createKenFutWorkDeepAgent(options: {
    *   （见 stream-adapter 的 `run.compacted`）；
    * - **backend**：与 agent 同一个后端工厂（offload 落到用户自己的工作目录，可追溯）。
    */
-  const nativeSummarization = createSummarizationMiddleware({
-    backend: backendResult.factory,
-    ...(options.autoCompact
-      ? { trigger: options.autoCompact.trigger, keep: options.autoCompact.keep }
-      : {}),
-  }) as unknown as AgentMiddleware;
+  const nativeSummarization = archive
+    ? createNativeRecoveryMiddleware({
+        backend: backendResult.factory,
+        archive,
+        ...(options.autoCompact
+          ? {
+              trigger: options.autoCompact.trigger,
+              keep: options.autoCompact.keep,
+            }
+          : {}),
+      })
+    : (createSummarizationMiddleware({
+        backend: backendResult.factory,
+        ...(options.autoCompact
+          ? {
+              trigger: options.autoCompact.trigger,
+              keep: options.autoCompact.keep,
+            }
+          : {}),
+      }) as unknown as AgentMiddleware);
   const compactionTracker = options.autoCompact
     ? createNativeCompactionTracker(nativeSummarization)
     : undefined;
@@ -639,7 +671,7 @@ export function createKenFutWorkDeepAgent(options: {
       options.llmRetry?.infinite ?? AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
   });
 
-  const agent = createDeepAgent({
+  agent = createDeepAgent({
     backend: backendResult.factory,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
     model: resolvedModel,
@@ -689,15 +721,28 @@ export function createKenFutWorkDeepAgent(options: {
         }),
     tools,
   });
+  const releaseContextHistory =
+    archive && options.contextHistoryArchives && execution?.scopeHandle
+      ? options.contextHistoryArchives.bind(execution, (input) =>
+          archive.read({
+            reference: referenceFromNativeArchiveUri(input.uri),
+            ...(input.offset !== undefined ? { offset: input.offset } : {}),
+            ...(input.limit !== undefined ? { limit: input.limit } : {}),
+            ...(input.signal ? { signal: input.signal } : {}),
+          }),
+        )
+      : undefined;
   if (options.checkpointer) attachNativeCheckpointDurability(agent);
   if (compactionTracker && options.checkpointer)
     compactionTracker.attach(agent);
   return Object.assign(agent, {
+    ...(releaseContextHistory ? { releaseContextHistory } : {}),
     ...(options.checkpointer
       ? {
           contextHistory: createNativeContextHistory(agent, {
             model: resolvedModel,
             backend: backendResult.factory,
+            ...(archive ? { archive } : {}),
             ...(options.store ? { store: options.store } : {}),
             plan:
               options.manualCompactPlan ??
