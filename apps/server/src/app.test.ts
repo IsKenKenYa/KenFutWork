@@ -1,6 +1,19 @@
+import { randomUUID } from "node:crypto";
+import { realpath } from "node:fs/promises";
+import {
+  AGENT_GOVERNANCE_DEFAULTS,
+  type CodeExecutionScope,
+} from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
+import type { KenFutWorkAgentFactory } from "./agent/deep-agent.js";
+import type { AgentRuntimeProvider } from "./agent/provider-contract.js";
 import { buildApp } from "./app.js";
-import { createMemoryTaskWorkManager } from "./features/task-work/test-store.js";
+import { createExecutionScopes } from "./features/execution/scope-service.js";
+import { createTaskWorkManager } from "./features/task-work/service.js";
+import {
+  createMemoryTaskWorkManager,
+  createMemoryTaskWorkStore,
+} from "./features/task-work/test-store.js";
 import { createStartupPersistenceFixture } from "./test-startup-persistence.js";
 
 /**
@@ -62,6 +75,154 @@ function buildProbeApp() {
       persistence,
     },
   });
+}
+
+function buildRuntimeProbeApp(
+  options: {
+    runtimeProvider?: AgentRuntimeProvider;
+    agentFactory?: KenFutWorkAgentFactory;
+  } = {},
+) {
+  const persistence = createStartupPersistenceFixture();
+  const taskPolicies = new Map<
+    string,
+    { instanceId: string; accessClientId: string | null; policy: object }
+  >();
+  const taskWorkStore = createMemoryTaskWorkStore();
+  const taskWork = createTaskWorkManager({
+    store: taskWorkStore,
+    executionHostId: randomUUID(),
+    resolveMaxConcurrent: async () =>
+      AGENT_GOVERNANCE_DEFAULTS.subagentMaxConcurrency,
+  });
+  const app = buildApp({
+    env: {
+      databaseUrl: "postgres://localhost:5432/kenfutwork-test",
+      blobDir: "D:/Desktop/KenFutWork/data/blobs-test",
+      desktopDataDir: persistence.dataDir,
+    },
+    ...options,
+    overrides: {
+      taskWork,
+      persistence,
+      modelCatalog: { listCatalog: async () => [] } as never,
+      designTasks: {
+        readPolicy: async (
+          actor: { instanceId: string; accessClientId: string | null },
+          taskId: string,
+        ) => {
+          const entry = taskPolicies.get(taskId);
+          if (
+            !entry ||
+            entry.instanceId !== actor.instanceId ||
+            entry.accessClientId !== actor.accessClientId
+          )
+            throw new Error("测试 Design Task scope 不匹配。");
+          return entry.policy;
+        },
+        recoverInterruptedTasks: async () => 0,
+        onLeaseLost: () => () => {},
+        close: async () => {},
+      } as never,
+      designGoals: {
+        initialize: async () => {},
+        close: async () => {},
+        onLost: () => () => {},
+        readTask: async () => null,
+        read: async () => null,
+        verify: async () => {
+          throw new Error("NoGoal Provider probe cannot verify goal evidence.");
+        },
+        observe: async () => ({ stop: false }),
+        continuation: async () => null,
+      } as never,
+    },
+  });
+  return {
+    app,
+    async openDesignTask(actor: {
+      instanceId: string;
+      accessClientId: string | null;
+    }) {
+      const localInstance = app.kernel.get("localInstance");
+      const instance = await localInstance.getContext();
+      const scope: CodeExecutionScope = {
+        instanceId: actor.instanceId,
+        projectId: randomUUID(),
+        taskId: randomUUID(),
+        generation: 0,
+        rootDirectory: await realpath(instance.dataDir),
+        additionalDirectories: [],
+        sandboxMode: "workspace-write",
+      };
+      const scopes = createExecutionScopes({
+        repository: {
+          load: async (instanceId, taskId) =>
+            instanceId === scope.instanceId && taskId === scope.taskId
+              ? {
+                  preset: "design",
+                  scope,
+                  state: "ready",
+                  branchGeneration: 1,
+                }
+              : null,
+        },
+        localInstance,
+      });
+      const handle = await scopes.openTask(actor, scope.taskId);
+      taskPolicies.set(scope.taskId, {
+        instanceId: actor.instanceId,
+        accessClientId: actor.accessClientId,
+        policy: {
+          mode: "build",
+          planEnabled: false,
+          planningEpoch: 0,
+          scopeGeneration: scope.generation,
+          branchGeneration: handle.branchGeneration,
+        },
+      });
+      taskWorkStore.setTask({
+        actor,
+        ownerKind: "design",
+        scope: handle.describe(),
+        agentId: handle.agentId,
+        runId: "provider-probe-setup",
+        branchGeneration: handle.branchGeneration,
+      });
+      return handle;
+    },
+  };
+}
+
+async function streamRuntimeProbe(
+  probe: ReturnType<typeof buildRuntimeProbeApp>,
+) {
+  const { app } = probe;
+  await app.ready();
+  const localAccess = app.kernel.get("localAccess");
+  const token = await localAccess.getDesktopToken();
+  const actor = await localAccess.authenticate({
+    ip: "127.0.0.1",
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!actor) throw new Error("测试桌面接入身份不可用。");
+  const scopeHandle = await probe.openDesignTask(actor);
+  const scope = scopeHandle.describe();
+  const runtime = app.kernel.get("agentRuns");
+  const { runId } = runtime.createRun(
+    {
+      sessionId: scope.taskId,
+      conversationId: scope.taskId,
+      taskId: scope.taskId,
+      projectId: scope.projectId,
+      prompt: "provider wiring probe",
+      preset: "design",
+    },
+    { actor, scopeHandle },
+  );
+  const events = [];
+  for await (const event of runtime.streamRun(runId)) events.push(event);
+  return events;
 }
 
 describe("buildApp 装配完整性（插件清单防漏挂）", () => {
@@ -163,6 +324,60 @@ describe("buildApp 装配完整性（插件清单防漏挂）", () => {
       expect(ticket.statusCode).toBe(401);
     } finally {
       await app.close();
+    }
+  });
+});
+
+describe("buildApp AgentRuntimeProvider bridge", () => {
+  it("passes the configured Provider into the real Runtime stream", async () => {
+    const open = vi.fn(
+      (context: Parameters<AgentRuntimeProvider["open"]>[0]) => ({
+        stream: () =>
+          (async function* () {
+            yield {
+              type: "run.started" as const,
+              runId: context.runId,
+              sessionId: context.sessionId,
+              conversationId: context.conversationId,
+              timestamp: "2026-10-12T00:00:00.000Z",
+            };
+            yield {
+              type: "run.completed" as const,
+              runId: context.runId,
+              timestamp: "2026-10-12T00:00:01.000Z",
+              stopReason: "completed" as const,
+            };
+          })(),
+      }),
+    );
+    const runtimeProvider: AgentRuntimeProvider = { id: "probe", open };
+    const probe = buildRuntimeProbeApp({ runtimeProvider });
+    try {
+      const events = await streamRuntimeProbe(probe);
+      expect(open).toHaveBeenCalledOnce();
+      expect(events.some((event) => event.type === "run.completed")).toBe(true);
+      expect(events.filter((event) => event.type === "run.failed")).toEqual([]);
+    } finally {
+      await probe.app.close();
+    }
+  });
+
+  it("keeps the default DeepAgents Provider when no Provider is configured", async () => {
+    const agentFactory = vi.fn(
+      () =>
+        ({
+          stream: async function* () {},
+          streamEvents: async function* () {},
+        }) as never,
+    );
+    const probe = buildRuntimeProbeApp({ agentFactory });
+    try {
+      const events = await streamRuntimeProbe(probe);
+      expect(agentFactory).toHaveBeenCalledOnce();
+      expect(events.some((event) => event.type === "run.completed")).toBe(true);
+      expect(events.filter((event) => event.type === "run.failed")).toEqual([]);
+    } finally {
+      await probe.app.close();
     }
   });
 });

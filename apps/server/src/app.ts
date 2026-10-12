@@ -1,6 +1,7 @@
 import multipart from "@fastify/multipart";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { KenFutWorkAgentFactory } from "./agent/deep-agent.js";
+import type { AgentRuntimeProvider } from "./agent/provider-contract.js";
 import { loadServerEnv, type ServerEnv } from "./config/env.js";
 import { registerCorsHook } from "./http/cors.js";
 import { registerInfraRoutes } from "./http/infra.js";
@@ -16,6 +17,7 @@ import { CanvasEventBuffer } from "./ws/event-buffer.js";
 export type AppOptions = {
   env?: Partial<ServerEnv>;
   agentFactory?: KenFutWorkAgentFactory;
+  runtimeProvider?: AgentRuntimeProvider;
   agentModel?: string;
   mockEventDelayMs?: number;
   connectionManager?: ConnectionManager;
@@ -47,6 +49,9 @@ export function buildApp(
       events: createKernelEvents(eventBus),
       env,
       ...(options.agentFactory ? { agentFactory: options.agentFactory } : {}),
+      ...(options.runtimeProvider
+        ? { runtimeProvider: options.runtimeProvider }
+        : {}),
       ...(options.agentModel ? { agentModel: options.agentModel } : {}),
       ...(options.mockEventDelayMs === undefined
         ? {}
