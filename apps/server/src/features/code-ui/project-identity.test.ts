@@ -829,6 +829,12 @@ it("Conversation订阅按Task项目，历史A上的index订阅用明确Project�
     throw new Error("订阅缺少真实发布回调");
   await subscribed.publish();
   expect(events).toEqual([
+    {
+      event: "service",
+      service: "zcodeAgentService",
+      name: "onGoalControlState",
+      data: { taskId, goal: null },
+    },
     expect.objectContaining({
       workspacePath: pathA,
       event: "onDynamicConversationFrame",
@@ -851,7 +857,7 @@ it("Conversation订阅按Task项目，历史A上的index订阅用明确Project�
   );
   if (!index || !("publish" in index)) throw new Error("索引订阅缺少发布回调");
   await index.publish();
-  expect(events[1]).toMatchObject({
+  expect(events[2]).toMatchObject({
     workspacePath: pathA,
     event: "onDynamicSessionsIndexFrame",
   });

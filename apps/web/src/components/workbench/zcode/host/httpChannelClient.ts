@@ -1,8 +1,11 @@
 import {
   AGENT_GOVERNANCE_DEFAULTS,
+  type CodeGoalControl,
+  type CodeGoalControlState,
   type CodeUiViewerScope,
   type CodeUiWorkspace,
   clampCodeUiReconnectDelayMs,
+  codeGoalControlStateSchema,
   codeUiWorkspaceSchema,
   isPluginIconResourceReference,
 } from "@kenfutwork/shared";
@@ -185,6 +188,8 @@ export class CodeHttpChannelClient implements IChannelClient {
   private readonly terminalListeners = new Map<string, Map<string, number>>();
   private readonly activatedTerminals = new Set<string>();
   private readonly ownedTerminals = new Set<string>();
+  private readonly goalStates = new Map<string, CodeGoalControlState["goal"]>();
+  private readonly goalCommands = new Map<string, CodeGoalControl>();
 
   constructor(readonly config: CodeHostConfig) {
     const terminal = this.servicesSnapshot.terminalService;
@@ -542,6 +547,7 @@ export class CodeHttpChannelClient implements IChannelClient {
           this.publishLifecycle("unavailable");
         }
         this.connectionId = "";
+        this.goalStates.clear();
         if (
           error instanceof CodeHostHttpError &&
           (error.status === 401 || error.status === 403)
@@ -622,6 +628,14 @@ export class CodeHttpChannelClient implements IChannelClient {
   private publishNotification(notification: Notification) {
     if (notification.event === "service") {
       const data = notification.data;
+      if (
+        notification.service === "zcodeAgentService" &&
+        notification.name === "onGoalControlState"
+      ) {
+        const state = codeGoalControlStateSchema.safeParse(data);
+        if (state.success)
+          this.goalStates.set(state.data.taskId, state.data.goal);
+      }
       if (data && typeof data === "object" && "taskMeta" in data)
         this.workspaces.registerTask(data.taskMeta);
       if (notification.service === IWindowControllerService.channelName) {
@@ -694,8 +708,35 @@ export class CodeHttpChannelClient implements IChannelClient {
     )
       updated.projectId = project.projectId;
     const command = first.envelope as
-      | { type?: string; payload?: Record<string, unknown> }
+      | {
+          type?: string;
+          sessionId?: string;
+          clientId?: string;
+          commandId?: string;
+          payload?: Record<string, unknown>;
+        }
       | undefined;
+    if (
+      method === "sendConversationCommandV4" &&
+      ["sendGoalCommand", "resumeGoal", "pauseGoal"].includes(
+        command?.type ?? "",
+      ) &&
+      first.goalControl === undefined
+    ) {
+      const key = JSON.stringify([
+        command?.sessionId,
+        command?.clientId,
+        command?.commandId,
+      ]);
+      let control = this.goalCommands.get(key);
+      if (!control) {
+        if (!command?.sessionId || !this.goalStates.has(command.sessionId))
+          throw new Error("目标状态尚未同步，请重新连接后重试。");
+        control = { expectedGoal: this.goalStates.get(command.sessionId)! };
+        this.goalCommands.set(key, structuredClone(control));
+      }
+      updated.goalControl = structuredClone(control);
+    }
     if (command?.type === "createSession") {
       let selected = project;
       if (!selected && typeof command.payload?.workspaceId === "string")
@@ -964,5 +1005,7 @@ export class CodeHttpChannelClient implements IChannelClient {
     this.terminalListeners.clear();
     this.activatedTerminals.clear();
     this.ownedTerminals.clear();
+    this.goalStates.clear();
+    this.goalCommands.clear();
   }
 }

@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import type { AgentRunExtension } from "../../agent/run-extension.js";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import { createGoalPrompt, createGoalTools } from "../goals/consumer.js";
 import { createTaskResourceCloser } from "../task-work/close-resources.js";
 import { createApprovedPlanPromptSection } from "./approved-plan-prompt.js";
 import { createAskUserQuestionToolDefinition } from "./ask-user-question.js";
@@ -22,6 +23,7 @@ export function createCodeUiPlugin(): PluginDefinition {
   return {
     name: "code-ui",
     inject: [
+      "goals",
       "localAccess",
       "localInstance",
       "persistence",
@@ -52,8 +54,12 @@ export function createCodeUiPlugin(): PluginDefinition {
                 CODE_UI_HOST_RPC_CAPABILITY,
                 `${service}.${method}`,
               ),
+          goals: ctx.get("goals"),
           userInputs,
-          repository: createCodeUiRepository(ctx.get("persistence")),
+          repository: createCodeUiRepository(
+            ctx.get("persistence"),
+            ctx.get("goals"),
+          ),
           executionScopes: ctx.get("executionScopes"),
           taskWork: ctx.get("taskWork"),
           permissions: ctx.get("permissions"),
@@ -86,6 +92,32 @@ export function createCodeUiPlugin(): PluginDefinition {
           env: ctx.env,
         });
       });
+      ctx.get("systemPrompt").register(
+        createGoalPrompt({
+          read: (context) => ctx.get("codeUi").taskGoals.read(context),
+          verify: (context, input) =>
+            ctx.get("codeUi").taskGoals.verify(context, input),
+        }),
+      );
+      for (const name of ["GetGoal", "VerifyGoal"])
+        ctx.get("tools").registerDynamic({
+          id: `code.goal.${name}`,
+          scope: "code",
+          resolve(run) {
+            if (
+              run.scopeHandle?.role !== "main" ||
+              run.scopeHandle.agentId !== "main"
+            )
+              return null;
+            return (
+              createGoalTools({
+                read: (context) => ctx.get("codeUi").taskGoals.read(context),
+                verify: (context, input) =>
+                  ctx.get("codeUi").taskGoals.verify(context, input),
+              }).find((tool) => tool.name === name) ?? null
+            );
+          },
+        });
       ctx.get("tools").registerDynamic({
         id: "code.planning.enter",
         scope: "code",

@@ -7,6 +7,7 @@ import {
   streamEventSchema,
 } from "@kenfutwork/shared";
 import { INTERRUPTED_RUN_MESSAGE } from "../agent-runs/reconcile.js";
+import { createGoalService, type GoalService } from "../goals/service.js";
 import type {
   InstanceSqlClient,
   PersistenceService,
@@ -338,7 +339,10 @@ async function lockActiveProject(
 }
 
 /** 工作区隔离、事务内根会话锁；子会话索引只指向同一权威聚合状态。 */
-export function createCodeUiRepository(persistence: PersistenceService) {
+export function createCodeUiRepository(
+  persistence: PersistenceService,
+  goals: GoalService = createGoalService(),
+) {
   return {
     preparations: createHistoryPreparations(persistence),
     async recoverRuntimeInputs(owner: {
@@ -368,6 +372,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
             (entry) => entry.sessionId === root.id,
           )!;
           const host = createCodeUiConversation({
+            goals,
             sessionId: root.id,
             workspacePath: root.root_directory!,
             config: snapshot.config,

@@ -1104,6 +1104,9 @@
     "KENFUTWORK_CODE_INPUT_TEST_PG": {
       "surface": "test",
       "readers": [
+        "apps/server/src/features/code-ui/goal-admission.integration.test.ts",
+        "apps/server/src/features/code-ui/goal-model-fence.integration.test.ts",
+        "apps/server/src/features/code-ui/goal-service.integration.test.ts",
         "apps/server/src/features/code-ui/input-restart.integration.test.ts"
       ],
       "inExamples": false,

@@ -4,11 +4,18 @@ import {
   type StreamEvent,
 } from "@kenfutwork/shared";
 import type { z } from "zod";
+import type { ModelInvocationSnapshot } from "../../providers/types.js";
 import { deriveSessionTitle } from "../chat/session-title.js";
+import {
+  createGoalService,
+  type GoalRecord,
+  type GoalService,
+} from "../goals/service.js";
 import type { ApprovalEvent } from "../permissions/approval-types.js";
 import type { RunUsageTotals } from "../usage/run-usage-accumulator.js";
 import { freezeChildSnapshots } from "./child-history.js";
 import { updateTurnFileSummary } from "./file-changes.js";
+import { projectGoalSnapshot } from "./goals.js";
 import { type CodeAdmittedInput, codeGuideMessageId } from "./input-intents.js";
 import type { OwnedHistoryOutput } from "./output-history-types.js";
 import type { CodeApprovedPlan } from "./planning-types.js";
@@ -55,6 +62,12 @@ export type CodeUiCompletedTurnView = Pick<
 };
 
 export interface CodeUiConversationState {
+  goalRecord?: GoalRecord | null;
+  goalModel?: {
+    goalId: string;
+    selection: NonNullable<Config["modelSelection"]>;
+    invocation: ModelInvocationSnapshot;
+  } | null;
   version: 1;
   runId: string;
   snapshots: Snapshot[];
@@ -130,6 +143,41 @@ function cancelSnapshot(
     snapshot.subagents.running = running;
     snapshot.subagents.revision += 1;
   }
+}
+
+/** Goal policy stops preserve the real Run outcome while explaining the pause in the original error surface. */
+function showGoalBudgetPause(
+  snapshot: Snapshot,
+  goal: GoalRecord | null,
+  runId: string,
+  at: number,
+) {
+  if (
+    !goal ||
+    goal.status !== "paused" ||
+    goal.lastSettledRunId !== runId ||
+    snapshot.control.lastError
+  )
+    return;
+  const reason = goal.reason;
+  let message: string;
+  switch (reason) {
+    case "budget.stop":
+      message = "目标预算已用尽，请提高或取消预算后恢复目标。";
+      break;
+    case "budget.usageUnavailable":
+      message = "本轮用量不可用，目标已暂停，请取消预算后恢复目标。";
+      break;
+    default:
+      return;
+  }
+  snapshot.control.lastError = {
+    code: reason,
+    message,
+    recoverable: true,
+    at,
+    source: "runtime",
+  };
 }
 
 function completeSnapshot(snapshot: Snapshot, at: number) {
@@ -303,6 +351,7 @@ export function createCodeUiConversation(input: {
   sessionId: string;
   workspacePath: string;
   config: z.input<typeof protocol.sessionConfigStateSchema>;
+  goals?: GoalService;
   clock?: () => number;
   state?: CodeUiConversationState;
 }) {
@@ -325,14 +374,22 @@ export function createCodeUiConversation(input: {
   const inheritedOutputs = structuredClone(input.state?.inheritedOutputs ?? []);
   const planningEpoch = input.state?.planningEpoch ?? 0;
   const approvedPlan = input.state?.approvedPlan;
+  let goalRecord = structuredClone(input.state?.goalRecord ?? null);
+  let goalModel = structuredClone(input.state?.goalModel ?? null);
   const config = protocol.sessionConfigStateSchema.parse(input.config);
   if (input.state) {
     if (input.state.version !== 1) throw new Error("Code 会话状态版本不匹配");
-    for (const snapshot of input.state.snapshots)
+    for (const snapshot of input.state.snapshots) {
+      const projected = structuredClone(snapshot);
+      projectGoalSnapshot(
+        projected,
+        snapshot.sessionId === input.sessionId ? goalRecord : null,
+      );
       snapshots.set(
         snapshot.sessionId,
-        protocol.conversationSnapshotSchema.parse(snapshot),
+        protocol.conversationSnapshotSchema.parse(projected),
       );
+    }
     for (const [key, childId] of input.state.dispatches)
       childByDispatch.set(key, childId);
   }
@@ -340,6 +397,8 @@ export function createCodeUiConversation(input: {
     snapshots.get(input.sessionId) ?? emptySnapshot(input.sessionId, config);
   snapshots.set(root.sessionId, root);
   let runId = input.state?.runId ?? "";
+  const goals = input.goals ?? createGoalService();
+  projectGoalSnapshot(root, goalRecord);
 
   const requireSnapshot = (sessionId: string): Snapshot => {
     const snapshot = snapshots.get(sessionId);
@@ -415,8 +474,23 @@ export function createCodeUiConversation(input: {
       });
       return { kind: "stopped", runId };
     },
+    getGoal() {
+      return structuredClone(goalRecord);
+    },
+    setGoal(
+      goal: GoalRecord | null,
+      model?: CodeUiConversationState["goalModel"],
+    ) {
+      goalRecord = structuredClone(goal);
+      goalModel = structuredClone(model ?? null);
+      projectGoalSnapshot(root, goalRecord);
+      root.seq += 1;
+      root.revision += 1;
+    },
     exportState(): CodeUiConversationState {
       return structuredClone({
+        goalRecord,
+        goalModel,
         version: 1,
         runId,
         snapshots: [...snapshots.values()],
@@ -838,6 +912,27 @@ export function createCodeUiConversation(input: {
       >;
     }) {
       const at = beginExecution(turn);
+      if (
+        goalRecord &&
+        ["active", "notSatisfied"].includes(goalRecord.status) &&
+        !goalRecord.claimedRunId
+      ) {
+        goalRecord = goals.claimRun(goalRecord, {
+          goalId: goalRecord.goalId,
+          revision: goalRecord.revision,
+          runId: turn.runId,
+          at,
+          foreground: {
+            branchGeneration: goalRecord.branchGeneration,
+            taskReady: true,
+            activeRunId: null,
+            userReserved: false,
+            userQueued: false,
+            approvalWaiting: false,
+          },
+        });
+        projectGoalSnapshot(root, goalRecord);
+      }
       if (!root.meta.title && turn.origin !== "backgroundResult")
         root.meta = {
           title: deriveSessionTitle(turn.text),
@@ -976,6 +1071,45 @@ export function createCodeUiConversation(input: {
         return;
       }
       if (event.runId !== runId || closedRuns.has(event.runId)) return;
+      if (goalRecord && event.runId === goalRecord.claimedRunId) {
+        if (
+          event.type === "run.completed" &&
+          (root.pendingInteractions.length || root.config.planEnabled)
+        )
+          goalRecord = goals.pause(goalRecord, {
+            goalId: goalRecord.goalId,
+            revision: goalRecord.revision,
+            reason: root.config.planEnabled
+              ? "plan.waiting"
+              : "interaction.waiting",
+            at: new Date(event.timestamp).getTime(),
+          });
+        if (
+          event.type === "run.usage" &&
+          event.runInputTokens !== undefined &&
+          event.runOutputTokens !== undefined
+        )
+          goalRecord = goals.observeUsage(goalRecord, {
+            runId: event.runId,
+            tokensUsed: event.runInputTokens + event.runOutputTokens,
+          });
+        if (
+          event.type === "run.completed" ||
+          event.type === "run.failed" ||
+          event.type === "run.canceled"
+        )
+          goalRecord = goals.observeTerminal(goalRecord, {
+            runId: event.runId,
+            outcome:
+              event.type === "run.completed"
+                ? "completed"
+                : event.type === "run.failed"
+                  ? "failed"
+                  : "canceled",
+            at: new Date(event.timestamp).getTime(),
+          });
+        projectGoalSnapshot(root, goalRecord);
+      }
       if (event.type === "run.usage") {
         if (
           event.runInputTokens === undefined ||
@@ -1098,6 +1232,8 @@ export function createCodeUiConversation(input: {
               },
             };
         }
+        if (event.type === "run.canceled")
+          showGoalBudgetPause(root, goalRecord, event.runId, at);
         return;
       }
       if (event.type === "run.completed") {
@@ -1111,6 +1247,7 @@ export function createCodeUiConversation(input: {
         root.seq += 1;
         root.revision += 1;
         completeSnapshot(root, at);
+        showGoalBudgetPause(root, goalRecord, event.runId, at);
         if (
           !completedTurnViews.has(event.runId) &&
           root.rows.window.some(

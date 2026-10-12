@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
+import { createGoalService } from "../goals/service.js";
 import type { LocalActor } from "../local-instance/types.js";
 import type { TrustedCodeInput } from "./attachments/input-types.js";
 import { createCodeUiConversation } from "./conversation.js";
@@ -34,7 +35,12 @@ type ModelPlan = {
 };
 type Deps = Pick<
   CodeUiServiceDeps,
-  "repository" | "agentRuns" | "agentRunMetadata" | "threads" | "settings"
+  | "repository"
+  | "agentRuns"
+  | "agentRunMetadata"
+  | "threads"
+  | "settings"
+  | "goals"
 > & {
   inputOwner: { hostId: string; runtimeId: string };
   load(actor: LocalActor, sessionId: string): Promise<Loaded>;
@@ -615,9 +621,16 @@ function decideEditPublication(
   const { prepared } = progress;
   const state = cutLatestTurn(root, prepared.turnId);
   state.inheritedHistory = prepared.history;
+  if (state.goalRecord)
+    state.goalRecord = (deps.goals ?? createGoalService()).rebranch(
+      state.goalRecord,
+      prepared.record.branchGeneration,
+      new Date(root.updated_at).getTime(),
+    );
   const snapshot = state.snapshots.find((entry) => entry.sessionId === root.id);
   if (!snapshot) throw new CodeUiRepositoryError("not_found", "根Task快照缺失");
   const host = createCodeUiConversation({
+    goals: deps.goals ?? createGoalService(),
     sessionId: root.id,
     workspacePath: operation.loaded.project.path,
     config: snapshot.config,
