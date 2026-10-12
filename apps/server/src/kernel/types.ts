@@ -11,6 +11,7 @@ import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-s
 import type { BlobStore } from "../features/blob/types.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
 import type { BrowserService } from "../features/browser/fetch-page.js";
+import type { CanvasAssetLocations } from "../features/canvas/asset-locations.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
 import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
@@ -46,6 +47,7 @@ import type { PermissionService } from "../features/permissions/permission-servi
 import type { PersistenceService } from "../features/persistence/types.js";
 import type { PluginRegistryService } from "../features/plugins/plugin-registry-service.js";
 import type { ProcessSandbox } from "../features/process-sandbox/types.js";
+import type { ProjectFileService } from "../features/project-files/types.js";
 import type { ProjectService } from "../features/projects/project-service.js";
 import type { QueueClient } from "../features/queue/types.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
@@ -83,6 +85,7 @@ export interface ServiceMap {
   /** 领域服务（design 侧为主） */
   brandKit: BrandKitService;
   canvas: CanvasService;
+  canvasAssets: CanvasAssetLocations;
   chat: ChatService;
   /**
    * Code 模式的 git 分支视图（工作目录=项目）：列分支 / 切分支。
@@ -143,6 +146,8 @@ export interface ServiceMap {
    * 启停与导出。插件代码是机器本地的，安装态落在 pluginsDir。
    */
   plugins: PluginRegistryService;
+  /** 项目普通文件索引与精确文件存取。 */
+  projectFiles: ProjectFileService;
   /** 执行模式缝（DEC-3：v1 agent + plan） */
   agentModes: ExecutionModeService;
   /** agent 链路 run 用量累积器（turn-stopping 结算） */

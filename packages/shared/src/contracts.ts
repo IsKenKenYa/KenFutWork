@@ -288,6 +288,7 @@ export const instanceSettingsSchema = z.object({
     "localServiceStartupTimeoutMs",
   ),
   localServiceStartupPollMs: governanceSetting("localServiceStartupPollMs"),
+  canvasExportMaxBytes: governanceSetting("canvasExportMaxBytes"),
   codeReadMaxBytes: governanceSetting("codeReadMaxBytes"),
   codeReadPageCharacters: governanceSetting("codeReadPageCharacters"),
   codeSearchMaxResults: governanceSetting("codeSearchMaxResults"),

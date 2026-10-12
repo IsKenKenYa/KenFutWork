@@ -9,7 +9,11 @@ import {
   governanceInputValues,
   parseAgentGovernanceInputs,
 } from "@/lib/agent-governance-settings";
-import { SETTINGS_TITLE } from "@/lib/settings-layout";
+import {
+  SETTINGS_CONTROL_WIDTH,
+  SETTINGS_ROW,
+  SETTINGS_TITLE,
+} from "@/lib/settings-layout";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 
@@ -102,7 +106,7 @@ function GovernanceNumericField({
 }) {
   const { min, max } = AGENT_GOVERNANCE_LIMITS[field.key];
   return (
-    <div className="space-y-2">
+    <div className={`${SETTINGS_ROW} justify-between`}>
       <Label htmlFor={field.key}>{field.label}</Label>
       <input
         id={field.key}
@@ -113,11 +117,8 @@ function GovernanceNumericField({
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="w-28 rounded-md border px-2 py-1 text-sm outline-none"
+        className={`${SETTINGS_CONTROL_WIDTH} rounded-md border px-2 py-1 text-sm outline-none`}
       />
-      <p className="text-xs text-muted-foreground">
-        {field.hint} · 范围 {min}–{max}
-      </p>
     </div>
   );
 }
@@ -161,7 +162,7 @@ export function AgentGovernanceSection(props: AgentGovernanceSectionProps) {
   return (
     <div>
       <h2 className={SETTINGS_TITLE}>Agent 治理</h2>
-      <form onSubmit={form.handleSubmit} className="space-y-4 max-w-md">
+      <form onSubmit={form.handleSubmit} className="space-y-4">
         {AGENT_GOVERNANCE_FIELDS.map((field) => (
           <GovernanceNumericField
             key={field.key}

@@ -1,6 +1,15 @@
 {
   "$comment": "env 名唯一权威机械表。新增/改名 env 先登记这里再使用——scripts/check-env.mjs（pnpm test:env 与 tests/workspace.test.mjs）会扫描全仓引用逐名对表：表外即 fail。surface: server|shell|script|test|build；status: active|test-gate|external|retired；inExamples=true 表示应在 .env.example 出现。第三方既有约定（OPENAI_/GOOGLE_ 等）标 external，允许不出现在 .env.example。",
   "vars": {
+    "KENFUTWORK_PROJECT_FILES_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/project-files/service.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "显式启用项目文件索引与固定Task目录临时PostgreSQL回归"
+    },
     "KENFUTWORK_DESKTOP_WEB_URL": {
       "surface": "shell",
       "readers": [
@@ -966,6 +975,13 @@
       "inExamples": false,
       "status": "active",
       "note": "自带插件目录覆盖（缺省仓库/安装目录内置位置；目录不存在时没有自带插件，不报错）"
+    },
+    "KENFUTWORK_CANVAS_EXPORT_MAX_BYTES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "画布导出布局与素材总量预算字节；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
     },
     "KENFUTWORK_CODE_READ_MAX_BYTES": {
       "surface": "server",

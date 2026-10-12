@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
+import { instanceSettingsSchema } from "@kenfutwork/shared";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AgentGovernanceSection } from "../src/components/agent-governance-section";
 import { AgentSection } from "../src/components/agent-section";
 import { PermissionSection } from "../src/components/permission-section";
 import { ProviderSettings } from "../src/components/provider-settings";
@@ -15,6 +17,10 @@ import { OnboardingSection } from "../src/components/workbench/onboarding-sectio
 import { RulesMemorySection } from "../src/components/workbench/rules-memory-section";
 import { TerminalSettingsSection } from "../src/components/workbench/terminal-settings-section";
 import { VoiceSettingsSection } from "../src/components/workbench/voice-settings-section";
+import {
+  AGENT_GOVERNANCE_FIELDS,
+  selectAgentGovernanceSettings,
+} from "../src/lib/agent-governance-settings";
 
 /**
  * 设置区「能左右就别说上下」的**结构性核对**（用户口径 2026-09-27）。
@@ -144,6 +150,28 @@ function expectControlRight(
 }
 
 describe("设置区结构：标签在左、控件在右（横排）", () => {
+  it("治理数字项与画布导出预算同行，控件固定宽度且不重复副标题", () => {
+    const { container } = render(
+      <AgentGovernanceSection
+        initial={selectAgentGovernanceSettings(
+          instanceSettingsSchema.parse({ defaultModel: "" }),
+        )}
+        onSave={async () => undefined}
+      />,
+    );
+    for (const field of AGENT_GOVERNANCE_FIELDS) {
+      const input = screen.getByRole("spinbutton", { name: field.label });
+      expectControlRight(input, field.label);
+      expect(input.parentElement?.querySelector("p")).toBeNull();
+    }
+    expect(
+      screen.getByRole("spinbutton", { name: "画布导出上限（字节）" }),
+    ).toHaveValue(268_435_456);
+    expect(container.querySelectorAll('input[type="number"]')).toHaveLength(
+      AGENT_GOVERNANCE_FIELDS.length,
+    );
+  });
+
   it("供应商表单：四个单行字段是横排行；两份 JSON 是多行编辑（标签在上，例外）", async () => {
     stubApi();
     const user = userEvent.setup();

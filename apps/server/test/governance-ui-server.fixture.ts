@@ -390,6 +390,7 @@ async function start() {
           executeTimeoutMs: timeout,
           agentStreamIdleTimeoutMs: governance.agentStreamIdleTimeoutMs ?? null,
           subagentMaxContinuations: continuations,
+          canvasExportMaxBytes: governance.canvasExportMaxBytes ?? null,
           compactKeepMessages: governance.compactKeepMessages ?? null,
           compactFallbackKeepMessages:
             governance.compactFallbackKeepMessages ?? null,

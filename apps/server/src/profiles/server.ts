@@ -7,6 +7,7 @@ import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
 import { createBlobPlugin } from "../features/blob/plugin.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
 import { createBrowserPlugin } from "../features/browser/plugin.js";
+import { createCanvasAssetLocationsPlugin } from "../features/canvas/asset-locations-plugin.js";
 import { createCanvasPlugin } from "../features/canvas/plugin.js";
 import { createChatPlugin } from "../features/chat/plugin.js";
 import { createRealtimePlugin } from "../features/chat/realtime-plugin.js";
@@ -44,6 +45,7 @@ import {
   type PluginCatalogEntry,
 } from "../features/plugins/plugin.js";
 import { createProcessSandboxPlugin } from "../features/process-sandbox/plugin.js";
+import { createProjectFilesPlugin } from "../features/project-files/plugin.js";
 import { createProjectsPlugin } from "../features/projects/plugin.js";
 import { createQueuePlugin } from "../features/queue/plugin.js";
 import { createSearchPlugin } from "../features/search/plugin.js";
@@ -190,6 +192,8 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createContextHistoryPlugin(),
     createUploadsPlugin(),
     createProjectsPlugin(),
+    createProjectFilesPlugin(),
+    createCanvasAssetLocationsPlugin(),
     createJobsPlugin({
       ...(deps.overrideJobs ? { injected: deps.overrideJobs } : {}),
     }),
