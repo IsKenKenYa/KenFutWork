@@ -7,11 +7,12 @@ import {
   archiveKernelFixture,
   archiveTaskFixture,
 } from "../features/context-history/test-fixture.js";
-import { AgentRunEventBus, ToolRegistryImpl } from "./context.js";
 import type { ToolDefinition, ToolExecutionObservation } from "./types.js";
 
 it("actual Registry execution emits trusted observations and strips the callback from the tool", async () => {
-  const registry = new ToolRegistryImpl(new AgentRunEventBus());
+  const task = await archiveTaskFixture();
+  const kernel = archiveKernelFixture();
+  const registry = kernel.get("tools");
   const schema = z.object({ value: z.string().trim() }).strict();
   const observations: ToolExecutionObservation[] = [];
   let observerReachedTool = false;
@@ -34,6 +35,7 @@ it("actual Registry execution emits trusted observations and strips the callback
         tool,
         { value: "  trusted  " },
         {
+          ...task.execution,
           runId: "run-1",
           toolCallId: "call-1",
           observeToolExecution: async (fact) => {
@@ -56,6 +58,8 @@ it("actual Registry execution emits trusted observations and strips the callback
     expect(observerReachedTool).toBe(false);
   } finally {
     unregister();
+    await kernel.dispose();
+    await task.cleanup();
   }
 });
 

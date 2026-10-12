@@ -1,7 +1,10 @@
 import { ToolMessage } from "@langchain/core/messages";
 import { type AgentMiddleware, tool } from "langchain";
 import { z } from "zod";
-import { kernelToolToStructuredTool } from "../../agent/kernel-tools-bridge.js";
+import {
+  jsonSchemaToZod,
+  kernelToolToStructuredTool,
+} from "../../agent/kernel-tools-bridge.js";
 import type { AgentRunExtensionContext } from "../../agent/run-extension.js";
 import { promptExecutionContext } from "../../kernel/prompt-execution.js";
 import type { ToolDefinition } from "../../kernel/types.js";
@@ -178,20 +181,13 @@ export function createToolCatalogueMiddleware(
           definition.exposure !== "deferred" ||
           activation.names.has(definition.name),
       );
-      const bound = definitions.map(
-        (definition) =>
-          request.tools.find(
-            (candidate) => candidate.name === definition.name,
-          ) ??
-          kernelToolToStructuredTool(
-            {
-              ...definition,
-              execute: (args, execCtx) =>
-                context.registry.executeDefinition(definition, args, execCtx),
-            },
-            context.execution,
-          ),
-      );
+      // SDK preserves registered Runnable identity. Advertise fresh model schemas;
+      // wrapToolCall below supplies the current receipt-bound execution implementation.
+      const bound = definitions.map((definition) => ({
+        name: definition.name,
+        description: definition.description,
+        schema: definition.zodSchema ?? jsonSchemaToZod(definition.parameters),
+      }));
       // SDK todo 工具仍由共同 scaffold 提供；其它工具全部从当前注册事实组装。
       const scaffold = request.tools.filter(
         (candidate) => candidate.name === "write_todos",

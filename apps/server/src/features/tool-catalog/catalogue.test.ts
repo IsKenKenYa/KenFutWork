@@ -82,7 +82,9 @@ it("下一模型请求重新核验真实scope代际，收紧权限撤销旧激�
       const request = { tools: [], messages: [] } as unknown as Parameters<
         NonNullable<AgentMiddleware["wrapModelCall"]>
       >[0];
-      await middleware.wrapModelCall!(request, async (next) => {
+      const wrap = middleware.wrapModelCall;
+      if (!wrap) throw new Error("Native catalogue middleware missing");
+      await wrap(request, async (next) => {
         names = next.tools.map((tool) => String(tool.name));
         return new AIMessage("done");
       });
@@ -100,4 +102,73 @@ it("下一模型请求重新核验真实scope代际，收紧权限撤销旧激�
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
+});
+
+it("next native model request receives the current dynamic schema even for an existing name", async () => {
+  const registry = new ToolRegistryImpl(new AgentRunEventBus());
+  let revision = "before";
+  registry.registerDynamic({
+    id: "changing-core",
+    scope: "code",
+    resolve: () => ({
+      name: "CurrentDynamic",
+      exposure: "core",
+      scope: "code",
+      access: "read",
+      description: "current dynamic enum",
+      parameters: {
+        type: "object",
+        properties: { revision: { type: "string", enum: [revision] } },
+        required: ["revision"],
+        additionalProperties: false,
+      },
+      execute: async () => revision,
+    }),
+  });
+  const middleware = createToolCatalogueMiddleware(
+    {
+      registry,
+      resolution: {
+        preset: "code",
+        backendFactory: () => {
+          throw new Error("No backend use");
+        },
+      },
+      execution: {},
+    },
+    { generation: 0, names: new Set() },
+    async () => 5,
+  );
+  const wrap = middleware.wrapModelCall;
+  if (!wrap) throw new Error("Native catalogue middleware missing");
+  let exposed: Parameters<
+    NonNullable<AgentMiddleware["wrapModelCall"]>
+  >[0]["tools"] = [];
+  const request = { tools: [], messages: [] } as unknown as Parameters<
+    NonNullable<AgentMiddleware["wrapModelCall"]>
+  >[0];
+  await wrap(request, async (next) => {
+    exposed = next.tools;
+    return new AIMessage("before");
+  });
+  revision = "after";
+  await wrap({ ...request, tools: exposed }, async (next) => {
+    const current = next.tools.find(
+      (candidate) => candidate.name === "CurrentDynamic",
+    );
+    if (!current || !("schema" in current))
+      throw new Error("Actual model request lacks current schema");
+    const schema = current.schema;
+    if (
+      !schema ||
+      typeof schema !== "object" ||
+      !("parse" in schema) ||
+      typeof schema.parse !== "function"
+    )
+      throw new Error("Expected native tool schema");
+    const parse = schema.parse;
+    expect(parse({ revision: "after" })).toEqual({ revision: "after" });
+    expect(() => parse({ revision: "before" })).toThrow();
+    return new AIMessage("after");
+  });
 });
