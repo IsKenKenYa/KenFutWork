@@ -1,13 +1,16 @@
-import type { BackendProtocolV2 } from "deepagents";
 import type {
   PluginDefinition,
   RunToolResolutionContext,
   ToolDefinition,
 } from "../../kernel/types.js";
+import { runFileOperation } from "../code-tools/file-operations.js";
 import { createPersistSandboxFileToolDefinition } from "./persist-sandbox-file.js";
 import { loadCodeProjectContext } from "./project-instructions.js";
 import { createProjectSearchToolDefinition } from "./project-search.js";
-import { codeModePromptSection } from "./prompt.js";
+import {
+  codeModePromptSection,
+  taskWorkDirectoryPromptSection,
+} from "./prompt.js";
 import { createCodeFileTools } from "./tool-definitions.js";
 
 const coreNames = [
@@ -28,34 +31,43 @@ export function createCodeToolsPlugin(): PluginDefinition {
     apply(ctx) {
       const tools = ctx.get("tools");
       const perRun = new WeakMap<RunToolResolutionContext, ToolDefinition[]>();
-      const resolveFiles = (run: RunToolResolutionContext) => {
+      const requireScope = (run: RunToolResolutionContext) => {
         if (!run.scopeHandle)
-          throw new Error("Code 文件工具必须绑定真实 Task 执行作用域");
+          throw new Error("文件工具必须绑定真实Task执行作用域");
+        if (run.scopeHandle.preset !== run.preset)
+          throw new Error("工具工作模式与可信Task作用域不匹配");
+        return run.scopeHandle;
+      };
+      const resolveFiles = (run: RunToolResolutionContext) => {
+        const handle = requireScope(run);
         const existing = perRun.get(run);
         if (existing) return existing;
-        const role = run.scopeHandle.role;
+        const role = handle.role;
         const readonly =
           role === "explore" ||
           role === "review" ||
-          run.scopeHandle.describe().sandboxMode === "read-only";
+          handle.describe().sandboxMode === "read-only";
         const files = createCodeFileTools({
-          backend: run.scopeHandle.backend,
+          backend: handle.backend,
           modelCapabilities: run.modelCapabilities ?? {
             image: false,
             pdf: false,
           },
-        }).filter((tool) => !readonly || tool.access === "read");
+        })
+          .filter((tool) => !readonly || tool.access === "read")
+          .map((tool) => ({ ...tool, scope: "shared" as const }));
         perRun.set(run, files);
         return files;
       };
       for (const name of coreNames)
         tools.registerDynamic({
           id: `code.files.${name}`,
-          scope: "code",
+          scope: "shared",
           resolve: (run) =>
             resolveFiles(run).find((tool) => tool.name === name) ?? null,
         });
       ctx.get("systemPrompt").register(codeModePromptSection);
+      ctx.get("systemPrompt").register(taskWorkDirectoryPromptSection);
       ctx.get("capabilities").register("code-project-context", {
         id: "code-tools:project-context",
         value: loadCodeProjectContext,
@@ -65,24 +77,46 @@ export function createCodeToolsPlugin(): PluginDefinition {
         scope: "design",
         resolve: (run) => ({
           ...createProjectSearchToolDefinition({
-            backend: run.backendFactory({
-              ...(run.store ? { store: run.store } : {}),
-              state: {},
-            } as never) as BackendProtocolV2,
+            backend: requireScope(run).backend,
           }),
+          access: "read",
           scope: "design",
         }),
       });
       tools.registerDynamic({
         id: "workspace.persist-sandbox-file",
         scope: "design",
-        resolve: (run) => ({
-          ...createPersistSandboxFileToolDefinition({
+        resolve: (run) => {
+          const handle = requireScope(run);
+          if (
+            handle.role === "explore" ||
+            handle.role === "review" ||
+            handle.describe().sandboxMode === "read-only"
+          )
+            return null;
+          const tool = createPersistSandboxFileToolDefinition({
             blob: ctx.get("blob"),
-            ...(run.sandboxDir ? { sandboxDir: run.sandboxDir } : {}),
-          }),
-          scope: "design",
-        }),
+          });
+          return {
+            ...tool,
+            access: "write",
+            scope: "design",
+            execute: (args, execution) =>
+              runFileOperation(handle, execution.signal, async (signal) => {
+                const filePath = await handle.resolvePath(
+                  String(args.filePath),
+                  "read",
+                );
+                signal.throwIfAborted();
+                const result = await tool.execute(
+                  { ...args, filePath },
+                  execution,
+                );
+                signal.throwIfAborted();
+                return result;
+              }),
+          };
+        },
       });
     },
   };

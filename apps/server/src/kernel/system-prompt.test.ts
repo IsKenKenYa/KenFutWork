@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   basePromptSection,
   createRulesPromptSection,
@@ -7,10 +10,52 @@ import {
 } from "../features/agent-runs/prompt-sections.js";
 import { brandKitPromptSection } from "../features/brand-kit/prompt.js";
 import { canvasDesignPromptSection } from "../features/canvas/prompt.js";
-import { codeModePromptSection } from "../features/code-tools/prompt.js";
+import {
+  codeModePromptSection,
+  taskWorkDirectoryPromptSection,
+} from "../features/code-tools/prompt.js";
 import { createDynamicUiPlugin } from "../features/dynamic-ui/plugin.js";
+import { createExecutionScopes } from "../features/execution/scope-service.js";
 import { SystemPromptRegistryImpl } from "./context.js";
 import type { PromptSectionDefinition } from "./types.js";
+
+const promptRoots: string[] = [];
+afterEach(async () => {
+  await Promise.all(
+    promptRoots
+      .splice(0)
+      .map((path) => rm(path, { recursive: true, force: true })),
+  );
+});
+async function promptTask(preset: "code" | "design") {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "task-prompt-")));
+  promptRoots.push(root);
+  const scope = {
+    instanceId: "00000000-0000-4000-8000-000000000001",
+    projectId: "00000000-0000-4000-8000-000000000002",
+    taskId: "00000000-0000-4000-8000-000000000003",
+    generation: 1,
+    rootDirectory: root,
+    additionalDirectories: [],
+    sandboxMode: "workspace-write" as const,
+  };
+  return createExecutionScopes({
+    repository: {
+      load: async () => ({
+        preset,
+        scope,
+        state: "ready",
+        branchGeneration: 1,
+      }),
+    },
+    localInstance: {
+      resolve: async () => ({ instanceId: scope.instanceId, dataDir: root }),
+    },
+  }).openTask(
+    { instanceId: scope.instanceId, accessClientId: null },
+    scope.taskId,
+  );
+}
 
 function section(input: Partial<PromptSectionDefinition> & { name: string }) {
   return {
@@ -20,6 +65,29 @@ function section(input: Partial<PromptSectionDefinition> & { name: string }) {
     ...input,
   } satisfies PromptSectionDefinition;
 }
+
+it("Design真实Task共享文件工作提示并保留画布，scope快照不能替代可信句柄", async () => {
+  const handle = await promptTask("design");
+  const registry = new SystemPromptRegistryImpl();
+  registry.register(canvasDesignPromptSection);
+  registry.register(codeModePromptSection);
+  registry.register(taskWorkDirectoryPromptSection);
+  const scoped = await registry.compose({
+    preset: "design",
+    scopeHandle: handle,
+  });
+  expect(scoped).toContain("Task 的主目录跨轮保持稳定");
+  expect(scoped).toContain("画布");
+  expect(scoped).not.toContain("以编码为重点");
+  const snapshotOnly = await registry.compose({
+    preset: "design",
+    executionScope: handle.describe(),
+  });
+  expect(snapshotOnly).not.toContain("Task 的主目录跨轮保持稳定");
+  await expect(
+    registry.compose({ preset: "code", scopeHandle: handle }),
+  ).rejects.toThrow(/工作模式/);
+});
 
 describe("SystemPromptRegistryImpl（内核提示段注册表）", () => {
   it("scope 过滤：always 恒挂，design/code 按 preset 互斥", async () => {
@@ -127,6 +195,7 @@ describe("内置提示段的模式互斥（装配契约）", () => {
     registry.register(basePromptSection);
     registry.register(canvasDesignPromptSection);
     registry.register(codeModePromptSection);
+    registry.register(taskWorkDirectoryPromptSection);
     registry.register(brandKitPromptSection);
     registry.register(skillsPromptSection);
     registry.register(
@@ -138,6 +207,7 @@ describe("内置提示段的模式互斥（装配契约）", () => {
   it("code：含编码指导段，不含画布/生图/品牌指导", async () => {
     const prompt = await registryWithBuiltinSections().compose({
       preset: "code",
+      scopeHandle: await promptTask("code"),
       brandKitId: "kit-1",
       instanceSkills: [],
     });

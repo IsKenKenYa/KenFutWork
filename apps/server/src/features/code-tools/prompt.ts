@@ -30,5 +30,26 @@ export const codeModePromptSection: PromptSectionDefinition = {
   name: "mode.code",
   order: 0,
   scope: "code",
-  resolve: () => CODE_MODE_PROMPT,
+  resolve: (ctx) =>
+    ctx.scopeHandle?.preset === "code" && ctx.preset === "code"
+      ? CODE_MODE_PROMPT
+      : null,
+};
+
+/** Design保持画布主区；文件工作指导只在真实Task句柄存在时贡献。 */
+export const TASK_WORK_DIRECTORY_PROMPT = CODE_MODE_PROMPT.replace(
+  "你在一个持久 Task 的真实工作目录里工作，以编码为重点，也承接调研、文档和数据处理。",
+  "你在一个持久Task的真实工作目录里处理文档、素材与文件工作，画布更新仍通过当前画布工具完成。",
+).replace(
+  "不默认上传文件，也不借用当前 Design 画布作为交付目标。",
+  "不默认上传文件；文件产物与画布更新分别使用当前真实工具，目录权限不代表画布权限。",
+);
+export const taskWorkDirectoryPromptSection: PromptSectionDefinition = {
+  name: "task.work-directory",
+  order: 0,
+  scope: "design",
+  resolve: (ctx) =>
+    ctx.scopeHandle?.preset === "design" && ctx.preset === "design"
+      ? TASK_WORK_DIRECTORY_PROMPT
+      : null,
 };

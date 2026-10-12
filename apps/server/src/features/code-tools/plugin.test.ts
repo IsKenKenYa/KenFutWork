@@ -5,9 +5,12 @@ import type { ExecutionScopeHandle } from "../execution/scope-service.js";
 import { createScopedBackend } from "../execution/scoped-filesystem.js";
 import { createCodeToolsPlugin } from "./plugin.js";
 
-function scope(role: ExecutionScopeHandle["role"]): ExecutionScopeHandle {
+function scope(
+  role: ExecutionScopeHandle["role"],
+  preset: ExecutionScopeHandle["preset"] = "code",
+): ExecutionScopeHandle {
   const input = {
-    preset: "code" as const,
+    preset,
     role,
     agentId: role,
     describe: () => ({
@@ -100,11 +103,46 @@ it("profiles mount core file tools by actual Task scope and readonly roles recei
     ]);
     const design = tools.resolveRunTools({
       preset: "design",
-      backendFactory: () => scope("main").backend,
+      backendFactory: () => scope("main", "design").backend,
+      scopeHandle: scope("main", "design"),
     });
     expect(design.map((tool) => tool.name)).toEqual([
+      "Read",
+      "Glob",
+      "Grep",
+      "Write",
+      "Edit",
+      "ApplyPatch",
+      "preview_file",
+      "diff_files",
       "project_search",
       "persist_sandbox_file",
+    ]);
+    expect(() =>
+      tools.resolveRunTools({
+        preset: "design",
+        backendFactory: () => scope("main").backend,
+      }),
+    ).toThrow(/作用域/);
+    expect(() =>
+      tools.resolveRunTools({
+        preset: "design",
+        scopeHandle: scope("main", "code"),
+        backendFactory: () => scope("main").backend,
+      }),
+    ).toThrow(/工作模式/);
+    const designReader = tools.resolveRunTools({
+      preset: "design",
+      scopeHandle: scope("review", "design"),
+      backendFactory: () => scope("review", "design").backend,
+    });
+    expect(designReader.map((tool) => tool.name)).toEqual([
+      "Read",
+      "Glob",
+      "Grep",
+      "preview_file",
+      "diff_files",
+      "project_search",
     ]);
   } finally {
     kernel.dispose();

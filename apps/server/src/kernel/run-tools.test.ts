@@ -16,12 +16,17 @@ import { createPersistSandboxFileToolDefinition } from "../features/code-tools/p
 import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
 import { createProjectSearchToolDefinition } from "../features/code-tools/project-search.js";
 import type { DesignTasksService } from "../features/execution/design-task-types.js";
+import { createDesignTasksPlugin } from "../features/execution/design-tasks-plugin.js";
 import { createExecutionScopes } from "../features/execution/scope-service.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
 import { createImageGenerateToolDefinition } from "../features/generation/tools/image-generate.js";
 import { createVideoGenerateToolDefinition } from "../features/generation/tools/video-generate.js";
 import { createConsumerLocalAccessService } from "../features/local-access/test-consumer-service.js";
 import { createLocalInstanceService } from "../features/local-instance/service.js";
+import type { LocalActor } from "../features/local-instance/types.js";
+import type { ProjectFileService } from "../features/project-files/types.js";
+import type { ProjectService } from "../features/projects/project-service.js";
+import type { ProjectDetailRow } from "../features/projects/repository.js";
 import { ConnectionManager } from "../ws/connection-manager.js";
 import { AgentRunEventBus, ToolRegistryImpl } from "./context.js";
 import type { ToolDefinition } from "./types.js";
@@ -292,7 +297,7 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
     );
   });
 
-  it("四家插件在真实 compose 中贡献齐全（装配缝：漏注册即红）", async () => {
+  it("Canvas Provider 与 Consumer 在真实 compose 中贡献齐全（漏注册即红）", async () => {
     const Fastify = (await import("fastify")).default;
     const { composePlugins } = await import("./compose.js");
     const app = Fastify();
@@ -319,12 +324,66 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
       version: "test",
       webOrigin: "http://localhost:3000",
     } as never;
+    const projects = {
+      getProject: async (
+        _actor: LocalActor,
+        projectId: string,
+      ): Promise<ProjectDetailRow> => ({
+        id: projectId,
+        kind: "design",
+        name: "测试项目",
+        slug: "test-project",
+        description: null,
+        instance_id: "00000000-0000-4000-8000-000000000001",
+        brand_kit_id: null,
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z",
+        work_dir: null,
+        additional_directories: [],
+      }),
+    } satisfies Pick<ProjectService, "getProject">;
+    const projectFiles = {
+      describe: async () => {
+        throw new Error("此工具面装配测试不查询项目文件");
+      },
+      prepareWrite: async () => {
+        throw new Error("此工具面装配测试不写项目文件");
+      },
+      publish: async () => {
+        throw new Error("此工具面装配测试不发布项目文件");
+      },
+      read: async () => {
+        throw new Error("此工具面装配测试不读项目文件");
+      },
+      move: async () => {
+        throw new Error("此工具面装配测试不移动项目文件");
+      },
+      remove: async () => {
+        throw new Error("此工具面装配测试不删除项目文件");
+      },
+      inspect: async () => {
+        throw new Error("工具面测试不检查素材");
+      },
+      relink: async () => {
+        throw new Error("工具面测试不重关联素材");
+      },
+      restoreIndex: async () => {
+        throw new Error("工具面测试不恢复索引");
+      },
+      namespaceProvider: {
+        upload: async () => {},
+        download: async () => new Uint8Array(),
+        copy: async () => {},
+        remove: async () => {},
+      },
+    } satisfies ProjectFileService;
 
     const kernel = composePlugins(
       env,
       [
         brandKitPlugin,
         createCanvasPlugin(),
+        createDesignTasksPlugin(),
         createCanvasToolsPlugin(),
         createCodeToolsPlugin(),
         createGenerationPlugin({ env }),
@@ -332,6 +391,15 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
       {
         app,
         overrides: {
+          designGoals: {
+            lifecycle: {
+              claim: async () => {},
+              settle: async () => {},
+              pause: async () => {},
+              recover: async () => {},
+              rebranch: async () => {},
+            },
+          } as never,
           localAccess: createConsumerLocalAccessService(),
           blob: blobStub,
           persistence: persistenceStub,
@@ -343,37 +411,19 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
           }),
           ws: { connectionManager: {} as never, eventBuffer: {} as never },
           usage: { record: async () => {} } as never,
-          projects: {} as never,
-          projectFiles: {} as never,
-          designTasks: {} as never,
           uploads: {} as never,
           jobs: {} as never,
           modelCatalog: { listCatalog: async () => ({ entries: [] }) } as never,
           modelProviders: {} as never,
+          projects: projects as never,
+          projectFiles,
         },
       },
     );
+    let toolDirectory: string | undefined;
     try {
       const tools = kernel.get("tools");
-      const designNames = tools
-        .resolveRunTools({ ...resolutionCtx(), preset: "design" })
-        .map((tool) => tool.name);
-      expect(designNames).toEqual(
-        expect.arrayContaining([
-          "inspect_canvas",
-          "manipulate_canvas",
-          "screenshot_canvas",
-          "get_brand_kit",
-          "project_search",
-          "persist_sandbox_file",
-          "generate_image",
-          "generate_video",
-        ]),
-      );
-      // code 能力层工具（preview/diff）不进 design 面
-      expect(designNames).not.toContain("preview_file");
-      // code 面含 code 能力层工具、不含画布/生图
-      const { mkdtemp, realpath, rm } = await import("node:fs/promises");
+      const { mkdtemp, realpath } = await import("node:fs/promises");
       const { tmpdir } = await import("node:os");
       const { join } = await import("node:path");
       const { createExecutionScopes } = await import(
@@ -382,6 +432,7 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
       const directory = await realpath(
         await mkdtemp(join(tmpdir(), "kfw-tool-mode-")),
       );
+      toolDirectory = directory;
       const scope = {
         instanceId: "00000000-0000-4000-8000-000000000001",
         projectId: "00000000-0000-4000-8000-000000000002",
@@ -410,6 +461,62 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
         { instanceId: scope.instanceId, accessClientId: null },
         scope.taskId,
       );
+      const designScope = {
+        ...scope,
+        taskId: "00000000-0000-4000-8000-000000000004",
+      };
+      const designHandle = await createExecutionScopes({
+        repository: {
+          load: async () => ({
+            preset: "design",
+            scope: designScope,
+            state: "ready",
+            branchGeneration: 1,
+          }),
+        },
+        localInstance: {
+          resolve: async () => ({
+            instanceId: designScope.instanceId,
+            dataDir: directory,
+          }),
+        } as never,
+      }).openTask(
+        { instanceId: designScope.instanceId, accessClientId: null },
+        designScope.taskId,
+      );
+      const designNames = tools
+        .resolveRunTools({
+          ...resolutionCtx(),
+          preset: "design",
+          scopeHandle: designHandle,
+        })
+        .map((tool) => tool.name);
+      expect(designNames).toEqual(
+        expect.arrayContaining([
+          "inspect_canvas",
+          "manipulate_canvas",
+          "screenshot_canvas",
+          "get_brand_kit",
+          "project_search",
+          "persist_sandbox_file",
+          "generate_image",
+          "generate_video",
+        ]),
+      );
+      // 文件工作能力共享，但实际Task/Canvas模式仍隔离。
+      expect(designNames).toEqual(
+        expect.arrayContaining([
+          "Read",
+          "Write",
+          "Edit",
+          "ApplyPatch",
+          "Glob",
+          "Grep",
+          "preview_file",
+          "diff_files",
+        ]),
+      );
+      // code 面含 code 能力层工具、不含画布/生图
       const codeNames = tools
         .resolveRunTools({
           ...resolutionCtx(),
@@ -433,8 +540,12 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
       expect(codeNames).not.toContain("generate_image");
       expect(codeNames).not.toContain("project_search");
       expect(codeNames).not.toContain("persist_sandbox_file");
-      await rm(directory, { recursive: true, force: true });
     } finally {
+      if (toolDirectory)
+        await (await import("node:fs/promises")).rm(toolDirectory, {
+          recursive: true,
+          force: true,
+        });
       kernel.dispose();
       await app.close();
     }
