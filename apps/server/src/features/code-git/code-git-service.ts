@@ -17,6 +17,7 @@ import type {
   GitDiffStat,
   GitGraph,
   GitRepoView,
+  GitWorktreeView,
 } from "./git-client.js";
 import { patchTargetsOnly } from "./hunk-patch.js";
 import {
@@ -57,6 +58,8 @@ export interface CodeGitStatus {
 }
 
 export type CodeGitDiffStat = GitDiffStat;
+
+export type CodeGitWorktreeView = GitWorktreeView;
 
 /** 图谱视图：多一个 `isRepo`，非仓库时前端显示初始化引导而不是空图。 */
 export type CodeGitGraph = GitGraph & { isRepo: boolean };
@@ -194,6 +197,23 @@ export type CodeGitService = {
     user: LocalActor,
     taskId: string,
     name: string,
+  ): Promise<CodeGitStatus>;
+  /** 工作树列表（G4/Q10）。 */
+  listWorktrees(
+    user: LocalActor,
+    taskId: string,
+  ): Promise<CodeGitWorktreeView[]>;
+  /** 新建工作树（写操作）：路径相对 Task 主目录且不越界。 */
+  createWorktree(
+    user: LocalActor,
+    taskId: string,
+    input: { path: string; branch: string; createBranch: boolean },
+  ): Promise<CodeGitWorktreeView>;
+  /** 删除工作树（写操作）：只删列表登记过的路径。 */
+  deleteWorktree(
+    user: LocalActor,
+    taskId: string,
+    path: string,
   ): Promise<CodeGitStatus>;
 };
 
@@ -675,6 +695,52 @@ export function createCodeGitService(options: {
           error,
         );
       }
+    },
+
+    /** 工作树列表（G4/Q10）：读操作，非仓库时回空列表（界面按无工作树呈现）。 */
+    async listWorktrees(user, taskId) {
+      requireGitForWrite();
+      const { dir, git } = await scopeFor(user, taskId);
+      try {
+        return await git.listWorktrees(dir);
+      } catch {
+        return [];
+      }
+    },
+
+    async createWorktree(user, taskId, input) {
+      requireGitForWrite();
+      const { dir, git } = await scopeFor(user, taskId, "write");
+      await requireRepo(git, dir);
+      try {
+        return await git.createWorktree(dir, input);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error && error.message
+            ? `新建工作树失败：${error.message}`
+            : "新建工作树失败。",
+          409,
+        );
+      }
+    },
+
+    async deleteWorktree(user, taskId, path) {
+      requireGitForWrite();
+      const { dir, git } = await scopeFor(user, taskId, "write");
+      await requireRepo(git, dir);
+      try {
+        await git.deleteWorktree(dir, path);
+      } catch (error) {
+        throw new CodeGitError(
+          "git_write_failed",
+          error instanceof Error && error.message
+            ? `删除工作树失败：${error.message}`
+            : "删除工作树失败。",
+          409,
+        );
+      }
+      return read(git, dir);
     },
 
     async commit(user, taskId, message) {

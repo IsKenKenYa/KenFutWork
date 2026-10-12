@@ -295,9 +295,10 @@
       "source": "references/zcode/packages/ui/src/GitBranchSwitcher.tsx",
       "target": "apps/web/src/components/workbench/zcode/GitBranchSwitcher.tsx",
       "sha256": "1c31139cfca4e8f2c4519839183b0f39a046be00080436c6faec7bb7d47e8630",
-      "copiedSha256": "0b66f38c4c966a23141135fdb1e8ffe1c71fcfa48f3975f71ed9f9c23c1ddb70",
+      "copiedSha256": "8df5dc6b186315a06dd63707bb10106778a9ffc7c75657b26dadee54a138c445",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork 宿主偏差：弹层 footer 挂宿主件 WorktreeMenu（G4/Q10 工作树管理入口）"
       ]
     },
     {
