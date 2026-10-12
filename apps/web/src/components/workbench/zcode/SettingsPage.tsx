@@ -33,6 +33,7 @@ import { useUsageEntitlement } from "@zui/hooks/useUsageEntitlement.js";
 import { useBaseWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
 import { HostAboutSection } from "@zui/host/AboutSection.js";
 import { InstanceModelSettings } from "@zui/host/InstanceModelSettings.js";
+import { PermissionTierSection } from "@zui/host/PermissionTierControl.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import {
   resolveEntitledAccountProviderAccess,
@@ -2240,6 +2241,8 @@ export function SettingsPage({
                           />
                         ) : activeSection === "about" ? (
                           <HostAboutSection isDesktop={Boolean(isDesktop)} />
+                        ) : activeSection === "permissions" ? (
+                          <PermissionTierSection />
                         ) : null}
                         {/* KenFutWork 宿主件（T4）：实例模型行为设置挂在供应商分区尾部。 */}
                         {activeSection === "modelProvider" ? (

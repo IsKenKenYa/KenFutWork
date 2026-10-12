@@ -2139,6 +2139,7 @@ const enUS: Record<string, string> = {
   "settings.nativeSearchEnhancements": "Enhanced Find and Grep",
   "settings.nativeSearchEnhancementsDescription":
     "Use enhanced Find and Grep in new sessions and sessions restored after an app restart. Active sessions keep their current setting; Find remains unchanged on Windows.",
+  "settings.permissions.title": "Permissions",
   "settings.memory": "Memory",
   "settings.memory.workspaceMemory": "Workspace Memory",
   "settings.memoryDescription":
@@ -2345,6 +2346,7 @@ const enUS: Record<string, string> = {
   "settings.migration.reason.session_not_found_or_workspace_mismatch":
     "The source session was not found, or it no longer matches the current workspace filter.",
   "settings.usageTitle": "Usage stats",
+  "settings.about.title": "About",
   "settings.usageDescription":
     "Review rough activity and model usage aggregated from local sessions.",
   "resourceManager.storage.summaryTotal": "Total used by KenFutWork",

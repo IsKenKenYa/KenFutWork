@@ -608,7 +608,7 @@
       "source": "references/zcode/packages/ui/src/SettingsPage.tsx",
       "target": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
       "sha256": "0f3d3b06be4fdb675f870e06dcc8bf89aeff9ad9fc880ca1f0f6338a6e76916a",
-      "copiedSha256": "d22e879180924d6fece9b7f3f700977b5ddc6cb8c396a8aaa9d728c0a2cb9486",
+      "copiedSha256": "21afa605b9018eb3f888ffd3265f382d9fc1796746e6acc8ee3a38bb1338df2e",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落",
@@ -618,7 +618,8 @@
         "设置目标统一复用isLocalWorkspaceTarget：本机Project身份不再误判远端，保留远端连接及目录匹配校验。",
         "宿主接口：独立文档的设置到市场导航不关闭文档；原返回、栏目、模型编辑器保留",
         "设置分区：新增 about 分区挂宿主关于信息面板（T16）",
-        "KenFutWork 宿主偏差：供应商分区尾部挂宿主件 InstanceModelSettings（T4 自动压缩开关，实例设置缝 /api/instance/settings）"
+        "KenFutWork 宿主偏差：供应商分区尾部挂宿主件 InstanceModelSettings（T4 自动压缩开关，实例设置缝 /api/instance/settings）",
+        "KenFutWork 宿主偏差：permissions 分支挂宿主件 PermissionTierSection"
       ]
     },
     {
@@ -5698,7 +5699,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "366c425662253829d91ec7bb717b1c222c3f302c6e0e57b54ad0d26d210f05e2",
+      "copiedSha256": "7ccb6e76ff02cedfeb23730a17c373f1ba159c41daea990a7707e79f2e48c578",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5709,14 +5710,15 @@
         "原Edit工具卡补丁预览预算截断提示英文本地化",
         "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
         "本机文案：原Personal分段改Local；空目录标签与真实本机来源一致",
-        "新增 settings.about.title（T16 关于分区标题）"
+        "新增 settings.about.title（T16 关于分区标题）",
+        "KenFutWork 宿主偏差：settings.permissions.title 词条"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "a3cab0eef6718742055f5de7f83de159c32752e3ae2011d3a5516254460e47ce",
+      "copiedSha256": "05ed9be02a8b239dded15293a105387f9032e5521d1aec3226d6febaaf86f5a3",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5727,7 +5729,8 @@
         "原Edit工具卡补丁预览预算截断提示中文本地化",
         "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
         "本机文案：原个人分段改本机；空目录短标签，不宣称未接市场源可创建",
-        "新增 settings.about.title（T16 关于分区标题）"
+        "新增 settings.about.title（T16 关于分区标题）",
+        "KenFutWork 宿主偏差：settings.permissions.title 词条"
       ]
     },
     {
@@ -7052,10 +7055,11 @@
       "source": "references/zcode/packages/ui/src/lib/settingsNavigation.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/settingsNavigation.ts",
       "sha256": "18fffab343c541b6c6170a081070eadca70edc63ee238d66a11e087b47716800",
-      "copiedSha256": "f4657a804e0f116bac1622231e50e77b0520a84171098f97c26f40d55c87cbbe",
+      "copiedSha256": "5cf6222bfa84b64cc1445d15b07394aa6d1de58d28c98f81d9d050ff967e9119",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "分区导航：新增 about 分区 id 供宿主关于页接线（T16）"
+        "分区导航：新增 about 分区 id 供宿主关于页接线（T16）",
+        "KenFutWork 宿主偏差：SettingsSectionId 增 permissions"
       ]
     },
     {
@@ -10942,12 +10946,13 @@
       "source": "references/zcode/packages/ui/src/settings/settingsPageConfig.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/settingsPageConfig.ts",
       "sha256": "a4959cdb8d8b4736c86325f232556ea090d043ae00655469e30f0f7d823b3be0",
-      "copiedSha256": "d682a1217637056c9bdfcd6792a393419b67418df354852c1e77338c7ed5d8bd",
+      "copiedSha256": "88566a4af9d3202e14e7b316e3f1e3c3d2a999a4fa24ed6eefca580edbacca98",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置分区数据按宿主自动化/浏览器/CUA能力过滤，原分组和组件保留",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
-        "分区配置：新增 about 分区条目（信息+更新入口，T16）"
+        "分区配置：新增 about 分区条目（信息+更新入口，T16）",
+        "KenFutWork 宿主分区：新增 permissions 分区（G7/T7 旧四档=新会话默认档，Q12）"
       ]
     },
     {
@@ -11786,14 +11791,15 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationComposer.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationComposer.tsx",
       "sha256": "9bfa3d1365cfa7bf10e45d521a3d7201381aa27697c79b4f33b356cd2f4a3c2d",
-      "copiedSha256": "ab9898fc86d3c0114b6dd5630e3b41066774134bcb870d3a0732b10ff181bc8c",
+      "copiedSha256": "148b09468b16e1fc9ce040e8142bf3dc2e472c00121ed880519d0ca3ca1c4a73",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
         "宿主接线：输入卡摊语音手势（onPointerDown）与状态行，转写经 inputApiRef.appendText 受控写回；完整回路在撤销窗口后走组件自身 submit——等 appendText 经 Lexical 事件回传草稿后再提交（立即提交会读到旧文本而空转，真机验收抓到并修复）。transport 由 @zui/voice/binding.js 宿主桥注入（host/main.tsx 装配），验证见 voice-wiring-guard 与 code-voice.test 及台账一百三十八补。",
         "语音补全接线：从 snapshot.rows 提取指代消解上下文（recentMessagesFromSnapshot，只取真实用户输入与已完成正文）喂给「想」段；回复从 streaming 转为 complete 时调 speakReply 播报（历史行不重念）。验证见 code-voice.test（播报开关/上下文注入）与 voice-wiring-guard，哈希随本次改动更新。",
         "KenFutWork 宿主偏差：composer 左下操作行插入六档执行模式 chip（G2/Q7，宿主件 ../../host/ExecutionModeChip.jsx，与 ZCode 协作档并排；选「计划」联动切 plan）",
-        "宿主扩展（G5 顺手修复）：G2 引入的执行模式 chip 宿主件导入路径 ../../host/ExecutionModeChip.js 越出包界（vendor tsc TS2307），改为与其它宿主件一致的 @zui/host/ExecutionModeChip.js；仅路径修正，逻辑不动"
+        "宿主扩展（G5 顺手修复）：G2 引入的执行模式 chip 宿主件导入路径 ../../host/ExecutionModeChip.js 越出包界（vendor tsc TS2307），改为与其它宿主件一致的 @zui/host/ExecutionModeChip.js；仅路径修正，逻辑不动",
+        "KenFutWork 宿主偏差：composer 挂权限档 chip PermissionTierChip（G7/C1 旧四档）"
       ]
     },
     {

@@ -138,6 +138,8 @@ import { useWebElementContexts } from "@zui/v4/composer/useWebElementContexts.js
 import { V4ComposerCuaEntry } from "@zui/v4/composer/V4ComposerCuaEntry.js";
 // KenFutWork 宿主件：六档执行模式 chip（G2/Q7），实现位于 host/ 非上游移植。
 import { ExecutionModeChip } from "@zui/host/ExecutionModeChip.js";
+// KenFutWork 宿主件：权限档 chip（G7/C1，旧四档语义）。
+import { PermissionTierChip } from "@zui/host/PermissionTierControl.js";
 import {
   type ModelSelectionSource,
   V4ComposerModelControls,
@@ -2311,6 +2313,7 @@ function ConversationComposerImpl({
           disabled={disabled}
           onSwitchMode={onSwitchMode}
         />
+        <PermissionTierChip />
         {/* 附件画廊重构曾整段覆盖 leadingActions，误删 CUA 常驻入口。
             入口自身继续负责平台、远程与设置可见性，不在 composer 重复判定。 */}
         <V4ComposerCuaEntry
