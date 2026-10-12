@@ -365,11 +365,11 @@ export class ToolRegistryImpl implements ToolRegistry {
       let approvedExecutionMode: ToolExecutionContext["approvedExecutionMode"];
       if (execCtx.scopeHandle) {
         await execCtx.scopeHandle.resolvePath(".", "read");
-        if (tool.scope === "design")
-          throw new ToolDeniedError(
-            tool.name,
-            "Code Task 不包含可视化画布目标。",
-          );
+        if (
+          tool.scope !== "shared" &&
+          tool.scope !== execCtx.scopeHandle.preset
+        )
+          throw new ToolDeniedError(tool.name, "工具模式与当前Task不匹配。");
         const readonly =
           execCtx.scopeHandle.role === "explore" ||
           execCtx.scopeHandle.role === "review" ||

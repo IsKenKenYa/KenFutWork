@@ -9,10 +9,10 @@ import { createPermissionService } from "../features/permissions/permission-serv
 import { AgentRunEventBus, ToolRegistryImpl } from "./context.js";
 import type { ToolDefinition, ToolExecutionContext } from "./types.js";
 
-async function fixture() {
+async function fixture(preset: "code" | "design" = "code") {
   const temporary = await mkdtemp(join(tmpdir(), "kfw-kernel-approval-"));
   const stored: StoredExecutionScope = {
-    preset: "code",
+    preset,
     state: "ready",
     branchGeneration: 1,
     scope: {
@@ -77,7 +77,7 @@ async function fixture() {
     .strict();
   const tool: ToolDefinition = {
     name: "Write",
-    scope: "code",
+    scope: preset,
     access: "write",
     description: "write",
     parameters: z.toJSONSchema(schema),
@@ -87,8 +87,9 @@ async function fixture() {
       return args;
     },
   };
-  registry.register(tool);
+  const unregister = registry.register(tool);
   return {
+    unregister,
     bus,
     registry,
     context,
@@ -253,6 +254,113 @@ it("规划控制不能被worker/explore/review、shared工具或资源access借�
       /规划控制/,
     );
     expect(executed).toBe(0);
+  } finally {
+    await f.close();
+  }
+});
+
+it.each(["code", "design"] as const)(
+  "真实%s Task仅执行匹配模式与共享工具，拒绝另一模式",
+  async (preset) => {
+    const f = await fixture(preset);
+    try {
+      const calls: string[] = [];
+      const probe = (
+        name: string,
+        scope: "code" | "design" | "shared",
+      ): ToolDefinition => ({
+        name,
+        scope,
+        access: "read",
+        description: "read task state",
+        parameters: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+        execute: async () => {
+          calls.push(name);
+          return name;
+        },
+      });
+      f.registry.register(probe("MatchingRead", preset));
+      f.registry.register(
+        probe("OtherRead", preset === "code" ? "design" : "code"),
+      );
+      f.registry.register(probe("SharedRead", "shared"));
+      await expect(
+        f.registry.execute("OtherRead", {}, f.context),
+      ).rejects.toThrow("工具模式与当前Task不匹配");
+      expect(calls).toEqual([]);
+      await expect(
+        f.registry.execute("MatchingRead", {}, f.context),
+      ).resolves.toBe("MatchingRead");
+      await expect(
+        f.registry.execute(
+          "SharedRead",
+          {},
+          { ...f.context, toolCallId: "shared-call" },
+        ),
+      ).resolves.toBe("SharedRead");
+      expect(calls).toEqual(["MatchingRead", "SharedRead"]);
+      expect(
+        f.permissions.listPending(
+          f.stored.scope.instanceId,
+          f.stored.scope.taskId,
+        ),
+      ).toEqual([]);
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+it("Design实际Task执行共享Write走同一审批绑定，不能调用Code规划控制", async () => {
+  const f = await fixture("design");
+  try {
+    let invokedPreset: string | undefined;
+    f.bus.on("tool-pre-execute", async (payload, next) => {
+      invokedPreset = payload.permissionInvocation?.preset;
+      return next(payload);
+    });
+    f.unregister();
+    const sharedTool: ToolDefinition = { ...f.tool, scope: "shared" };
+    f.registry.register(sharedTool);
+    expect(
+      await f.registry.executeDefinition(
+        sharedTool,
+        { content: " design " },
+        f.context,
+      ),
+    ).toEqual({ content: "design", suffix: "!" });
+    expect(invokedPreset).toBe("design");
+    expect(f.writes()).toBe(1);
+    await expect(
+      f.registry.executeDefinition(
+        {
+          ...f.tool,
+          scope: "code",
+          name: "EnterPlanMode",
+          access: undefined,
+          planControl: "enter",
+        },
+        { content: "control" },
+        f.context,
+      ),
+    ).rejects.toThrow(/规划控制/);
+    const codeTool: ToolDefinition = {
+      ...f.tool,
+      name: "CodeOnlyWrite",
+      scope: "code",
+    };
+    f.registry.register(codeTool);
+    await expect(
+      f.registry.executeDefinition(
+        codeTool,
+        { content: "wrong mode" },
+        f.context,
+      ),
+    ).rejects.toThrow(/工具模式/);
   } finally {
     await f.close();
   }
