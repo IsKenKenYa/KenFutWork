@@ -6,6 +6,7 @@ import type {
   TaskWorkContext,
   TaskWorkHostLease,
   TaskWorkOutcome,
+  TaskWorkOwnerKind,
   TaskWorkRecord,
   TaskWorkStore,
 } from "./types.js";
@@ -20,8 +21,11 @@ export function createMemoryTaskWorkStore(
 } {
   const records = new Map<string, TaskWorkRecord>();
   let current = true;
-  const taskKey = (instanceId: string, taskId: string) =>
-    JSON.stringify([instanceId, taskId]);
+  const taskKey = (
+    instanceId: string,
+    taskId: string,
+    ownerKind: TaskWorkOwnerKind = "code",
+  ) => JSON.stringify([ownerKind, instanceId, taskId]);
   const tasks = new Map<string, TaskWorkCloseFence & { projectId: string }>();
   const hosts = new Map<
     string,
@@ -31,16 +35,30 @@ export function createMemoryTaskWorkStore(
     context: TaskWorkContext,
     state: TaskWorkCloseFence["state"] = "ready",
   ) => {
-    tasks.set(taskKey(context.scope.instanceId, context.scope.taskId), {
-      projectId: context.scope.projectId,
-      scopeGeneration: context.scope.generation,
-      branchGeneration: context.branchGeneration,
-      state,
-    });
+    tasks.set(
+      taskKey(
+        context.scope.instanceId,
+        context.scope.taskId,
+        context.ownerKind,
+      ),
+      {
+        projectId: context.scope.projectId,
+        scopeGeneration: context.scope.generation,
+        branchGeneration: context.branchGeneration,
+        state,
+      },
+    );
   };
   for (const context of initialTasks) setTask(context);
-  const owned = (instanceId: string, taskId: string, record: TaskWorkRecord) =>
-    record.scope.instanceId === instanceId && record.scope.taskId === taskId;
+  const owned = (
+    instanceId: string,
+    taskId: string,
+    record: TaskWorkRecord,
+    ownerKind?: TaskWorkOwnerKind,
+  ) =>
+    record.scope.instanceId === instanceId &&
+    record.scope.taskId === taskId &&
+    (ownerKind === undefined || (record.ownerKind ?? "code") === ownerKind);
   return {
     invalidate() {
       current = false;
@@ -65,12 +83,18 @@ export function createMemoryTaskWorkStore(
       hosts.set(executionHostId, { ownerId, lease, controller });
       return lease;
     },
-    async closeFence(instanceId, taskId) {
-      return structuredClone(tasks.get(taskKey(instanceId, taskId)) ?? null);
+    async closeFence(instanceId, taskId, ownerKind) {
+      return structuredClone(
+        tasks.get(taskKey(instanceId, taskId, ownerKind)) ?? null,
+      );
     },
     async isCurrent(context, purpose) {
       const task = tasks.get(
-        taskKey(context.scope.instanceId, context.scope.taskId),
+        taskKey(
+          context.scope.instanceId,
+          context.scope.taskId,
+          context.ownerKind,
+        ),
       );
       return (
         current &&
@@ -84,7 +108,12 @@ export function createMemoryTaskWorkStore(
     async create(record) {
       const existing = [...records.values()].find(
         (candidate) =>
-          owned(record.scope.instanceId, record.scope.taskId, candidate) &&
+          owned(
+            record.scope.instanceId,
+            record.scope.taskId,
+            candidate,
+            record.ownerKind ?? "code",
+          ) &&
           candidate.originRunId === record.originRunId &&
           candidate.toolCallId === record.toolCallId &&
           candidate.branchGeneration === record.branchGeneration,
@@ -126,7 +155,12 @@ export function createMemoryTaskWorkStore(
       if (!current) return [];
       const pending = [...records.values()].filter(
         (record) =>
-          owned(context.scope.instanceId, context.scope.taskId, record) &&
+          owned(
+            context.scope.instanceId,
+            context.scope.taskId,
+            record,
+            context.ownerKind,
+          ) &&
           record.detached &&
           record.branchGeneration === context.branchGeneration &&
           record.status !== "running" &&

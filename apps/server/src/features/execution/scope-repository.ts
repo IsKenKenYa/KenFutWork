@@ -5,6 +5,7 @@ import {
   type SandboxMode,
 } from "@kenfutwork/shared";
 import type { PersistenceService, SqlRow } from "../persistence/types.js";
+import { loadOpenDesignProject } from "./design-project-authority.js";
 
 export type ScopeState = "ready" | "revoking" | "failed";
 export type StoredExecutionScope = {
@@ -18,6 +19,7 @@ export type TaskScopePatch = {
   sandboxMode?: SandboxMode | undefined;
 };
 export interface ScopeRepository {
+  isProjectOpen?(scope: CodeExecutionScope): Promise<boolean>;
   load(
     instanceId: string,
     taskId: string,
@@ -81,9 +83,63 @@ export function createScopeRepository(
             and s.parent_session_id is null`,
         [taskId],
       );
-      return row ? fromRow(row) : null;
+      if (row) return fromRow(row);
+      const mode = await persistence.forInstance(instanceId).queryOne(
+        `select c.mode from public.chat_sessions c join public.projects p on p.id=c.project_id
+          where c.instance_id=:instance and p.instance_id=:instance and c.id=$1
+            and c.mode='design' and p.kind='design' and p.archived_at is null`,
+        [taskId],
+      );
+      if (!mode) return null;
+      const design = await persistence
+        .forInstance(instanceId)
+        .queryOne<ScopeRow>(
+          `select d.*, d.task_id as id from public.design_task_executions d
+          where d.instance_id=:instance and d.task_id=$1`,
+          [taskId],
+        );
+      return design ? fromRow(design, "design") : null;
+    },
+    async isProjectOpen(scope) {
+      const project = await loadOpenDesignProject(
+        persistence.forInstance(scope.instanceId),
+        scope.taskId,
+      );
+      return project?.id === scope.projectId;
     },
     async beginUpdate(scope, patch) {
+      const current = await this.load(scope.instanceId, scope.taskId);
+      if (current?.preset === "design") {
+        return persistence.transaction(async (tx) => {
+          const sql = tx.forInstance(scope.instanceId);
+          if (
+            (await loadOpenDesignProject(sql, scope.taskId))?.id !==
+            scope.projectId
+          )
+            return null;
+          const row = await sql.queryOne<ScopeRow>(
+            `update public.design_task_executions d set
+             additional_directories=coalesce($3::jsonb,d.additional_directories),
+             sandbox_mode=coalesce($4::text,d.sandbox_mode),
+             scope_generation=scope_generation+1,execution_state='revoking'
+           from public.chat_sessions c, public.projects p
+           where d.instance_id=:instance and c.instance_id=:instance and p.instance_id=:instance
+             and c.id=d.task_id and c.project_id=d.project_id and p.id=d.project_id
+             and c.mode='design' and p.kind='design' and p.archived_at is null
+             and d.task_id=$1 and d.scope_generation=$2 and d.execution_state<>'revoking'
+           returning d.*,d.task_id as id`,
+            [
+              scope.taskId,
+              scope.generation,
+              patch.additionalDirectories === undefined
+                ? null
+                : JSON.stringify(patch.additionalDirectories),
+              patch.sandboxMode ?? null,
+            ],
+          );
+          return row ? fromRow(row, "design") : null;
+        });
+      }
       const row = await persistence
         .forInstance(scope.instanceId)
         .queryOne<ScopeRow>(
@@ -109,6 +165,26 @@ export function createScopeRepository(
       return row ? fromRow(row) : null;
     },
     async finishUpdate(scope, state) {
+      const current = await this.load(scope.instanceId, scope.taskId);
+      if (current?.preset === "design") {
+        return persistence.transaction(async (tx) => {
+          const sql = tx.forInstance(scope.instanceId);
+          if (
+            state === "ready" &&
+            (await loadOpenDesignProject(sql, scope.taskId))?.id !==
+              scope.projectId
+          )
+            return false;
+          return (
+            (await sql.execute(
+              `update public.design_task_executions set execution_state=$3
+            where instance_id=:instance and task_id=$1 and scope_generation=$2
+              and execution_state='revoking'`,
+              [scope.taskId, scope.generation, state],
+            )) === 1
+          );
+        });
+      }
       return (
         (await persistence.forInstance(scope.instanceId).execute(
           `update public.code_ui_sessions set execution_state = $3

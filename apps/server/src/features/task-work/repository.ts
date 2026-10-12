@@ -4,6 +4,7 @@ import { TaskWorkError } from "./service.js";
 import type {
   TaskWorkContext,
   TaskWorkHostLease,
+  TaskWorkOwnerKind,
   TaskWorkRecord,
   TaskWorkStore,
 } from "./types.js";
@@ -11,6 +12,7 @@ import type {
 type WorkRow = SqlRow & {
   id: string;
   scope: unknown;
+  owner_kind: TaskWorkOwnerKind;
   agent_id: string;
   kind: TaskWorkRecord["kind"];
   detached: boolean;
@@ -34,6 +36,7 @@ function fromRow(row: WorkRow): TaskWorkRecord {
   return {
     id: row.id,
     scope: codeExecutionScopeSchema.parse(row.scope),
+    ownerKind: row.owner_kind,
     agentId: row.agent_id,
     kind: row.kind,
     detached: row.detached,
@@ -56,13 +59,33 @@ function fromRow(row: WorkRow): TaskWorkRecord {
 }
 
 /** 此谓词也用于通知 admission，删除/归档/分支重绕的迟到工作不得唤醒模型。 */
-const CURRENT_TASK = `select s.id from public.code_ui_sessions s
-  join public.projects p on p.id = s.project_id and p.instance_id = s.instance_id
-  where s.instance_id = :instance and p.instance_id = :instance
-    and s.id = $1 and s.project_id = $2 and s.branch_generation = $3
-    and ($5::boolean or s.scope_generation = $4) and s.execution_state = 'ready'
-    and s.parent_session_id is null and s.deleted_at is null and s.archived = false
-    and p.archived_at is null and p.kind = 'code'`;
+const CURRENT_CODE_TASK = `select s.id from public.execution_task_owners o
+  join public.code_ui_sessions s on s.id=o.task_id and s.instance_id=o.instance_id and s.project_id=o.project_id
+  join public.projects p on p.id=s.project_id and p.instance_id=s.instance_id
+  where o.instance_id=:instance and o.task_id=$1 and o.project_id=$2 and o.task_kind='code'
+    and s.branch_generation=$3 and ($5::boolean or s.scope_generation=$4)
+    and s.execution_state='ready' and s.parent_session_id is null
+    and s.deleted_at is null and s.archived=false and p.archived_at is null and p.kind='code'`;
+const CURRENT_DESIGN_TASK = `select d.task_id from public.execution_task_owners o
+  join public.design_task_executions d on d.task_id=o.task_id and d.instance_id=o.instance_id and d.project_id=o.project_id
+  join public.chat_sessions c on c.id=d.task_id and c.instance_id=d.instance_id and c.project_id=d.project_id
+  join public.projects p on p.id=d.project_id and p.instance_id=d.instance_id
+  where o.instance_id=:instance and o.task_id=$1 and o.project_id=$2 and o.task_kind='design'
+    and d.branch_generation=$3 and ($5::boolean or d.scope_generation=$4)
+    and d.execution_state='ready' and c.mode='design' and p.archived_at is null and p.kind='design'`;
+const currentTaskQuery = (ownerKind: TaskWorkOwnerKind) =>
+  ownerKind === "design" ? CURRENT_DESIGN_TASK : CURRENT_CODE_TASK;
+const closeFenceQuery = (ownerKind: TaskWorkOwnerKind) =>
+  ownerKind === "design"
+    ? `select d.scope_generation,d.branch_generation,d.execution_state
+       from public.execution_task_owners o join public.design_task_executions d
+         on d.task_id=o.task_id and d.instance_id=o.instance_id and d.project_id=o.project_id
+       where o.instance_id=:instance and o.task_id=$1 and o.task_kind='design'`
+    : `select s.scope_generation,s.branch_generation,s.execution_state
+       from public.execution_task_owners o join public.code_ui_sessions s
+         on s.id=o.task_id and s.instance_id=o.instance_id and s.project_id=o.project_id
+       where o.instance_id=:instance and o.task_id=$1 and o.task_kind='code' and s.parent_session_id is null`;
+const ownerKindOf = (context: TaskWorkContext) => context.ownerKind ?? "code";
 const contextParams = (context: TaskWorkContext, notification = false) => [
   context.scope.taskId,
   context.scope.projectId,
@@ -98,17 +121,14 @@ export function createTaskWorkStore(
       hosts.set(executionHostId, { ownerId, lease });
       return lease;
     },
-    async closeFence(instanceId, taskId) {
+    async closeFence(instanceId, taskId, ownerKind = "code") {
       const row = await persistence.forInstance(instanceId).queryOne<
         SqlRow & {
           scope_generation: number | string;
           branch_generation: number | string;
           execution_state: "ready" | "revoking" | "failed";
         }
-      >(
-        "select scope_generation, branch_generation, execution_state from public.code_ui_sessions where instance_id = :instance and id = $1 and parent_session_id is null",
-        [taskId],
-      );
+      >(closeFenceQuery(ownerKind), [taskId]);
       return row
         ? {
             scopeGeneration: Number(row.scope_generation),
@@ -122,7 +142,7 @@ export function createTaskWorkStore(
         (await persistence
           .forInstance(context.scope.instanceId)
           .queryOne(
-            CURRENT_TASK,
+            currentTaskQuery(ownerKindOf(context)),
             contextParams(context, purpose === "notification"),
           )) !== null
       );
@@ -132,13 +152,14 @@ export function createTaskWorkStore(
         const scoped = transaction.forInstance(record.scope.instanceId);
         const context: TaskWorkContext = {
           scope: record.scope,
+          ownerKind: record.ownerKind ?? "code",
           agentId: record.agentId,
           runId: record.originRunId,
           branchGeneration: record.branchGeneration,
         };
         if (
           !(await scoped.queryOne(
-            `${CURRENT_TASK} for update of s`,
+            `${currentTaskQuery(ownerKindOf(context))} for update of ${ownerKindOf(context) === "design" ? "d" : "s"}`,
             contextParams(context),
           ))
         )
@@ -158,13 +179,14 @@ export function createTaskWorkStore(
         if (existing) return { record: fromRow(existing), created: false };
         await scoped.execute(
           `insert into public.task_works
-          (id, instance_id, project_id, task_id, scope, agent_id, kind, label, origin_run_id, tool_call_id, child_session_id, branch_generation, status, started_at, owner_id, execution_host_id, parameter_fingerprint, detached, consumed_at)
-          values ($1, :instance, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, 'running', $12, $13, $14, $15, $16, $17)`,
+          (id, instance_id, project_id, task_id, scope, owner_kind, agent_id, kind, label, origin_run_id, tool_call_id, child_session_id, branch_generation, status, started_at, owner_id, execution_host_id, parameter_fingerprint, detached, consumed_at)
+          values ($1, :instance, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, 'running', $13, $14, $15, $16, $17, $18)`,
           [
             record.id,
             record.scope.projectId,
             record.scope.taskId,
             JSON.stringify(record.scope),
+            record.ownerKind ?? "code",
             record.agentId,
             record.kind,
             record.label,
@@ -223,7 +245,7 @@ export function createTaskWorkStore(
         const scoped = transaction.forInstance(context.scope.instanceId);
         if (
           !(await scoped.queryOne(
-            `${CURRENT_TASK} for update of s`,
+            `${currentTaskQuery(ownerKindOf(context))} for update of ${ownerKindOf(context) === "design" ? "d" : "s"}`,
             contextParams(context),
           ))
         )

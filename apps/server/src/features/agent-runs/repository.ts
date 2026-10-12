@@ -42,6 +42,7 @@ export interface AgentRunRepository {
     instanceId: string;
     projectId: string;
     taskId: string;
+    taskKind: "code" | "design";
     runId: string;
     threadId: string;
   }): Promise<AgentTurnBoundaries>;
@@ -94,21 +95,39 @@ export function createAgentRunRepository(
 ): AgentRunRepository {
   return {
     async recordTurnBoundary(input) {
+      const taskKind = input.taskKind ?? "code";
       const rows = await persistence.forInstance(input.instanceId).query(
-        `insert into public.agent_turn_boundaries (run_id,phase,instance_id,project_id,task_id,boundary)
-         select r.id,$2,:instance,s.project_id,s.id,$5::jsonb
+        `insert into public.agent_turn_boundaries (run_id,phase,instance_id,project_id,task_id,task_kind,boundary)
+         select r.id,$2,:instance,o.project_id,o.task_id,$7,$5::jsonb
            from public.agent_runs r
-           join public.code_ui_sessions s on s.chat_session_id=r.session_id
-           join public.chat_sessions c on c.id=r.session_id
-          where r.id=$1 and r.thread_id=$6 and s.id=$3
-            and s.instance_id=:instance and c.instance_id=:instance
-            and s.project_id=$4 and c.project_id=$4 and c.mode='code'
-            and s.parent_session_id is null
+           join public.execution_task_owners o on o.instance_id=:instance
+             and o.task_id=$3 and o.project_id=$4 and o.task_kind=$7
+           join public.chat_sessions c on c.id=r.session_id and c.id=o.task_id
+             and c.instance_id=o.instance_id and c.project_id=o.project_id
+           join public.projects p on p.id=o.project_id and p.instance_id=o.instance_id
+           left join public.code_ui_sessions code_task on o.task_kind='code'
+             and code_task.id=o.task_id and code_task.instance_id=o.instance_id
+             and code_task.project_id=o.project_id and code_task.parent_session_id is null
+           left join public.design_task_executions design_task on o.task_kind='design'
+             and design_task.task_id=o.task_id and design_task.instance_id=o.instance_id
+             and design_task.project_id=o.project_id
+          where r.id=$1 and r.thread_id=$6 and r.session_id=o.task_id
+            and c.thread_id=$6 and c.mode=$7 and p.kind=$7 and p.archived_at is null
+            and ((o.task_kind='code' and code_task.deleted_at is null
+                  and code_task.archived=false and code_task.execution_state='ready'
+                  and code_task.scope_generation=($5::jsonb->>'scopeGeneration')::bigint
+                  and ((($5::jsonb->'branchGeneration')='null'::jsonb)
+                    or code_task.branch_generation=($5::jsonb->>'branchGeneration')::bigint))
+              or (o.task_kind='design' and design_task.execution_state='ready'
+                  and design_task.scope_generation=($5::jsonb->>'scopeGeneration')::bigint
+                  and ((($5::jsonb->'branchGeneration')='null'::jsonb)
+                    or design_task.branch_generation=($5::jsonb->>'branchGeneration')::bigint)))
          on conflict (run_id,phase) do update
            set boundary=agent_turn_boundaries.boundary
            where agent_turn_boundaries.instance_id=excluded.instance_id
              and agent_turn_boundaries.project_id=excluded.project_id
              and agent_turn_boundaries.task_id=excluded.task_id
+             and agent_turn_boundaries.task_kind=excluded.task_kind
              and agent_turn_boundaries.boundary=excluded.boundary
          returning run_id`,
         [
@@ -118,6 +137,7 @@ export function createAgentRunRepository(
           input.projectId,
           JSON.stringify(input),
           input.threadId,
+          taskKind,
         ],
       );
       return rows.length === 1;
@@ -128,14 +148,31 @@ export function createAgentRunRepository(
         .query<{ boundary: AgentTurnBoundary }>(
           `select b.boundary from public.agent_turn_boundaries b
            join public.agent_runs r on r.id=b.run_id
-           join public.code_ui_sessions s on s.id=b.task_id and s.instance_id=b.instance_id
-           join public.chat_sessions c on c.id=s.chat_session_id and c.id=r.session_id
-           join public.projects p on p.id=s.project_id and p.instance_id=s.instance_id
+           join public.execution_task_owners o on o.instance_id=b.instance_id
+             and o.task_id=b.task_id and o.project_id=b.project_id and o.task_kind=b.task_kind
+           join public.chat_sessions c on c.id=r.session_id and c.id=b.task_id
+             and c.instance_id=b.instance_id and c.project_id=b.project_id
+           join public.projects p on p.id=b.project_id and p.instance_id=b.instance_id
+           left join public.code_ui_sessions code_task on b.task_kind='code'
+             and code_task.id=b.task_id and code_task.instance_id=b.instance_id
+             and code_task.project_id=b.project_id and code_task.parent_session_id is null
+           left join public.design_task_executions design_task on b.task_kind='design'
+             and design_task.task_id=b.task_id and design_task.instance_id=b.instance_id
+             and design_task.project_id=b.project_id
           where b.instance_id=:instance and b.project_id=$1 and b.task_id=$2 and b.run_id=$3
+            and b.task_kind=$5
             and r.thread_id=$4 and c.thread_id=$4 and c.instance_id=:instance
-            and c.project_id=$1 and c.mode='code' and p.kind='code' and p.archived_at is null
-            and s.deleted_at is null and s.archived=false and s.parent_session_id is null`,
-          [input.projectId, input.taskId, input.runId, input.threadId],
+            and c.project_id=$1 and c.mode=$5 and p.kind=$5 and p.archived_at is null
+            and ((b.task_kind='code' and code_task.deleted_at is null
+                  and code_task.archived=false and code_task.parent_session_id is null)
+              or (b.task_kind='design' and design_task.task_id is not null))`,
+          [
+            input.projectId,
+            input.taskId,
+            input.runId,
+            input.threadId,
+            input.taskKind,
+          ],
         );
       return {
         pre: rows.find((row) => row.boundary.phase === "pre")?.boundary ?? null,

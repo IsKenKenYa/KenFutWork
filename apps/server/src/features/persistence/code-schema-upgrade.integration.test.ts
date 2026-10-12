@@ -172,6 +172,7 @@ async function readRecords(database: Database, seed: Seed) {
       instanceId: database.instanceId,
       projectId: context.scope.projectId,
       taskId: context.scope.taskId,
+      taskKind: "code",
       runId: context.runId,
       threadId: seed.threadId,
     }),

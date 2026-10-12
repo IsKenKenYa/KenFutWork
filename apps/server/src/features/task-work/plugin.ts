@@ -27,58 +27,77 @@ export function createTaskWorkPlugin(): PluginDefinition {
           },
         }),
       );
-      let commands: ReturnType<typeof createTaskCommandTools> | undefined;
-      const getCommands = () => {
-        commands ??= createTaskCommandTools({
-          manager: ctx.get("taskWork"),
-          sandbox: ctx.get("processSandbox"),
-          settings: ctx.get("settings"),
-          historicalOutputs: {
-            read: (context, id, offset, maxBytes) =>
-              ctx
-                .get("codeUi")
-                .outputHistory.read(context, id, offset, maxBytes),
-            manifest: (context) =>
-              ctx.get("codeUi").outputHistory.manifest(context),
-          },
-        });
-        return commands;
+      const commands = new Map<
+        "code" | "design",
+        ReturnType<typeof createTaskCommandTools>
+      >();
+      const getCommands = (ownerKind: "code" | "design") => {
+        let tools = commands.get(ownerKind);
+        if (!tools) {
+          tools = createTaskCommandTools(
+            {
+              manager: ctx.get("taskWork"),
+              sandbox: ctx.get("processSandbox"),
+              settings: ctx.get("settings"),
+              ...(ownerKind === "code"
+                ? {
+                    historicalOutputs: {
+                      read: (context, id, offset, maxBytes) =>
+                        ctx
+                          .get("codeUi")
+                          .outputHistory.read(context, id, offset, maxBytes),
+                      manifest: (context) =>
+                        ctx.get("codeUi").outputHistory.manifest(context),
+                    },
+                  }
+                : {}),
+            },
+            { scope: ownerKind },
+          );
+          commands.set(ownerKind, tools);
+        }
+        return tools;
       };
-      for (const name of ["Bash", "TaskOutput", "TaskInput", "TaskStop"]) {
-        ctx.get("tools").registerDynamic({
-          id: `task-work:${name}`,
-          scope: "code",
-          resolve(run) {
-            if (!run.scopeHandle) return null;
-            if (
-              (run.scopeHandle.role === "explore" ||
-                run.scopeHandle.role === "review") &&
-              name === "Bash"
-            )
-              return null;
-            if (
-              (run.scopeHandle.role === "explore" ||
-                run.scopeHandle.role === "review") &&
-              name === "TaskInput"
-            )
-              return null;
-            const tool = getCommands().tools.find((tool) => tool.name === name);
-            if (!tool) return null;
-            return name === "Bash"
-              ? {
-                  ...tool,
-                  readonlyExecution:
-                    ctx.get("processSandbox").readonlyExecution === true,
-                }
-              : tool;
-          },
-        });
+      for (const ownerKind of ["code", "design"] as const) {
+        for (const name of ["Bash", "TaskOutput", "TaskInput", "TaskStop"]) {
+          ctx.get("tools").registerDynamic({
+            id: `task-work:${ownerKind}:${name}`,
+            scope: ownerKind,
+            resolve(run) {
+              if (
+                !run.scopeHandle ||
+                run.scopeHandle.preset !== ownerKind ||
+                (run.taskWorkContext?.ownerKind ?? "code") !== ownerKind
+              )
+                return null;
+              if (
+                (run.scopeHandle.role === "explore" ||
+                  run.scopeHandle.role === "review") &&
+                (name === "Bash" || name === "TaskInput")
+              )
+                return null;
+              const tool = getCommands(ownerKind).tools.find(
+                (entry) => entry.name === name,
+              );
+              if (!tool) return null;
+              return name === "Bash"
+                ? {
+                    ...tool,
+                    readonlyExecution:
+                      ctx.get("processSandbox").readonlyExecution === true,
+                  }
+                : tool;
+            },
+          });
+        }
       }
       ctx.get("capabilities").register("task-close", {
         id: "task-work:command-handles",
         value: {
-          close: (instanceId: string, taskId: string) =>
-            getCommands().forgetTask(instanceId, taskId),
+          close(instanceId: string, taskId: string) {
+            for (const tools of commands.values())
+              tools.forgetTask(instanceId, taskId);
+          },
         },
       });
       ctx.get("capabilities").register("process-snapshot", {
@@ -86,7 +105,12 @@ export function createTaskWorkPlugin(): PluginDefinition {
         value: {
           receive: (
             snapshot: import("../process-sandbox/types.js").ManagedProcessSnapshot,
-          ) => getCommands().acceptSnapshot(snapshot),
+          ) =>
+            Promise.all(
+              [...commands.values()].map((tools) =>
+                tools.acceptSnapshot(snapshot),
+              ),
+            ).then(() => {}),
         },
       });
     },
@@ -102,12 +126,16 @@ export function createTaskWorkPlugin(): PluginDefinition {
       });
       ctx.effect(() =>
         manager.onChanged((record) =>
-          ctx.get("codeUi").onTaskWorkChanged(record),
+          (record.ownerKind ?? "code") === "code"
+            ? ctx.get("codeUi").onTaskWorkChanged(record)
+            : Promise.resolve(),
         ),
       );
       ctx.effect(() =>
-        manager.onReady(({ instanceId, taskId }) =>
-          ctx.get("codeUi").resumeTaskWork(instanceId, taskId),
+        manager.onReady(({ instanceId, taskId, ownerKind }) =>
+          ownerKind === "code"
+            ? ctx.get("codeUi").resumeTaskWork(instanceId, taskId)
+            : Promise.resolve(false),
         ),
       );
       ctx.effect(() =>
@@ -123,10 +151,12 @@ export function createTaskWorkPlugin(): PluginDefinition {
             "../execution/scoped-filesystem.js"
           );
           const results = await Promise.allSettled(
-            tasks.flatMap((task) => [
-              ctx.get("agentRuns").cancelTaskRuns(task.taskId),
-              revokeTaskFileOperations(task.instanceId, task.taskId),
-            ]),
+            tasks
+              .filter((task) => task.ownerKind === "code")
+              .flatMap((task) => [
+                ctx.get("agentRuns").cancelTaskRuns(task.taskId),
+                revokeTaskFileOperations(task.instanceId, task.taskId),
+              ]),
           );
           const failure = results.find(
             (result) => result.status === "rejected",

@@ -480,6 +480,21 @@ export function createExecutionScopes(options: ScopeOptions): ExecutionScopes {
           409,
         );
       const previous = codeExecutionScopeSchema.parse(stored.scope);
+      if (stored.preset === "design") {
+        if (!options.repository.isProjectOpen)
+          throw new ExecutionScopeError(
+            "revoker_unavailable",
+            "项目授权检查器不可用，不能修改Task。",
+            503,
+          );
+        if (!(await options.repository.isProjectOpen(previous)))
+          throw new ExecutionScopeError(
+            "scope_project_closed",
+            "项目正在关闭或关闭失败，请重试归档。",
+            409,
+          );
+      }
+
       if (
         (await canonicalDirectory(previous.rootDirectory)) !==
         previous.rootDirectory

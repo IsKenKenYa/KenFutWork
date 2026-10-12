@@ -39,6 +39,8 @@ export interface AgentTurnBoundary {
   instanceId: string;
   projectId: string;
   taskId: string;
+  /** Omitted legacy boundary fixtures are Code; runtime sends the real ScopeHandle preset. */
+  taskKind?: "code" | "design";
   runId: string;
   threadId: string;
   phase: AgentTurnBoundaryPhase;

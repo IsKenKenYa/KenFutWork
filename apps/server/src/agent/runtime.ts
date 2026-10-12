@@ -160,15 +160,15 @@ import type {
  */
 /**
  * run → agent preset（DEC-2 会话级能力集），**模式能力分离的口径源头**：
- * - Code 通过可信 Task scope 选择编码能力，画布身份不参与执行；
+ * - 可信 Task scope 持有模式，画布身份不参与执行模式判定；
  * - 未显式声明时按 canvasId 兜底：有画布归 design（画布页会话），无画布归 code。
  */
 export function resolvePresetForRun(run: {
   canvasId?: string | undefined;
   preset?: "design" | "code" | undefined;
-  scopeHandle?: ExecutionScopeHandle | undefined;
+  scopeHandle?: Pick<ExecutionScopeHandle, "preset"> | undefined;
 }): "design" | "code" {
-  if (run.scopeHandle) return "code";
+  if (run.scopeHandle) return run.scopeHandle.preset;
   return run.preset ?? (run.canvasId ? "design" : "code");
 }
 
@@ -464,7 +464,10 @@ type CreateAgentRuntimeOptions = {
     limits: CodeProjectContextLimits,
     signal?: AbortSignal,
   ) => Promise<CodeProjectContext>;
-  resolveCodeApprovalMode?: (scope: ExecutionScopeHandle) => Promise<{
+  resolveCodeApprovalMode?: (
+    scope: ExecutionScopeHandle,
+    actor: LocalActor,
+  ) => Promise<{
     mode: import("../features/permissions/approval-types.js").CodeApprovalMode;
     planEnabled?: boolean | undefined;
     planningEpoch?: number | undefined;
@@ -638,6 +641,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         instanceId: scope.instanceId,
         projectId: scope.projectId,
         taskId: scope.taskId,
+        taskKind: run.scopeHandle.preset,
         runId: run.runId,
         threadId: run.threadId,
         phase,
@@ -1983,7 +1987,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             const handle = run.scopeHandle;
             const resolver = options.resolveCodeApprovalMode;
             if (!resolver) throw new Error("Code Task 权限模式解析器未装配。");
-            const resolve = () => resolver(handle);
+            const resolve = () => resolver(handle, run.actor);
             const current = await resolve();
             codeApproval = {
               ceiling: run.approvalCeiling ?? current.mode,

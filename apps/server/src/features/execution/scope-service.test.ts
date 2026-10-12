@@ -97,13 +97,15 @@ async function withTaskScope(
     extra: string;
     taskId: string;
     changeBranch(): void;
+    changePreset(): void;
   }) => Promise<void>,
   sandboxMode: CodeExecutionScope["sandboxMode"] = "workspace-write",
+  preset: "code" | "design" = "code",
 ) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "code-policy-")));
   const extra = await realpath(await mkdtemp(join(tmpdir(), "code-extra-")));
   let current: StoredExecutionScope = {
-    preset: "code",
+    preset,
     state: "ready",
     branchGeneration: 1,
     scope: {
@@ -130,7 +132,7 @@ async function withTaskScope(
       )
         return null;
       current = {
-        preset: "code",
+        preset: current.preset,
         state: "revoking",
         branchGeneration: current.branchGeneration,
         scope: {
@@ -168,6 +170,12 @@ async function withTaskScope(
       root,
       extra,
       taskId: current.scope.taskId,
+      changePreset: () => {
+        current = {
+          ...current,
+          preset: current.preset === "code" ? "design" : "code",
+        };
+      },
       changeBranch: () => {
         current = {
           ...current,
@@ -398,4 +406,24 @@ it("固定目录被symlink替换时新句柄不得静默跟随到未授权位置
       await rename(saved, root);
     }
   });
+});
+
+it("Design可信preset来自持久Task，derive保留且既有句柄拒绝模式被改写", async () => {
+  await withTaskScope(
+    async ({ scopes, taskId, changePreset }) => {
+      const handle = await scopes.openTask(actor, taskId);
+      expect(handle.preset).toBe("design");
+      const reader = handle.derive("review");
+      expect(reader.preset).toBe("design");
+      await expect(
+        reader.resolvePath("read-only.txt", "write"),
+      ).rejects.toThrow();
+      changePreset();
+      await expect(
+        handle.resolvePath("late.txt", "read"),
+      ).rejects.toMatchObject({ code: "scope_changed" });
+    },
+    "workspace-write",
+    "design",
+  );
 });
