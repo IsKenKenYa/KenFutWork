@@ -98,6 +98,7 @@ describe("直连生成：会话上下文落进 job 行（§4.8 占位符渲染�
       expect(response.json().job_id).toBeTruthy();
       expect(createdJobs).toHaveLength(1);
       expect(createdJobs[0]?.sessionId).toBe(SESSION_ID);
+      expect(createdJobs[0]).toMatchObject({ interactiveRequest: true });
     } finally {
       await app.close();
     }

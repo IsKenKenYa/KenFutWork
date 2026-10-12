@@ -261,6 +261,7 @@ export async function registerGenerateRoutes(
 
       // ── Create job ──
       const job = await options.jobService.createJob(user, {
+        interactiveRequest: true,
         jobType: "video_generation",
         ...(payload.sessionId ? { sessionId: payload.sessionId } : {}),
         ...(payload.threadId ? { threadId: payload.threadId } : {}),
