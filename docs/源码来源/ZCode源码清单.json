@@ -11995,9 +11995,10 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationStatusPanel.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationStatusPanel.tsx",
       "sha256": "6d4d0efc27e23b635a59f047c04aadfab7aab73b84d2c3991a6007c174a61da4",
-      "copiedSha256": "06bf5e7eae69f34a55a016b99a2607dc8d9c6c687a0cf43bdc98be94d9b32bae",
+      "copiedSha256": "c607323266cb459be87bab4001f48e151d062c957b6134b51120f3fe379c2ef0",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork 宿主偏差：环境分区挂宿主件 CheckpointTimeline（G8/Q15 检查点多轮时间线回滚入口）"
       ]
     },
     {

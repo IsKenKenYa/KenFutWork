@@ -96,6 +96,8 @@ import {
 } from "@zui/v4/conversationStatusPanelModel.js";
 import type { ConversationStatusPanelWorkflowRunTarget } from "@zui/v4/conversationStatusPanelModel.js";
 import { workflowRunOpenTarget } from "@zui/v4/conversationStatusPanelModel.js";
+// KenFutWork 宿主件（G8/Q15）：检查点多轮时间线回滚入口。
+import { CheckpointTimeline } from "@zui/host/CheckpointTimeline.js";
 import {
   buildConversationGoalIterationSummaries,
   getConversationGoalElapsedSeconds,
@@ -448,6 +450,11 @@ function GitStatusSection({
           onRefreshGit={onRefreshGit}
           triggerLayout="status-row"
           className="w-full"
+        />
+        <CheckpointTimeline
+          workspacePath={workspacePath}
+          workspaceIdentity={workspaceIdentity}
+          onRestored={onRefreshGit}
         />
       </div>
     </StatusSection>
