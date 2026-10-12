@@ -8,7 +8,32 @@ const PROVIDER_PATTERN =
 const DB_PATTERN =
   /supabase|postgres|pgmq|database|relation|column|constraint/i;
 const AUTH_PATTERN =
-  /jwt|token|unauthorized|forbidden|credential|service.account/i;
+  /\bjwt\b|\bunauthorized\b|\bforbidden\b|\bcredentials?\b|\bservice[.\s_-]?account\b|\b(?:invalid|expired|revoked)\s+(?:(?:access|refresh|bearer|auth(?:entication)?)\s+)?token\b|\btoken\s+(?:is\s+)?(?:invalid|expired|revoked)\b|\b(?:invalid|expired|revoked)[\s_-]+(?:api[\s_-]*key|apikey)\b|\b(?:api[\s_-]*key|apikey)\s+(?:is\s+)?(?:invalid|expired|revoked)\b/i;
+const AUTH_STATUS_PATTERN =
+  /\b(?:HTTP(?:\s+status)?|status(?:\s+code)?)\s*[:=]?\s*401\b/i;
+
+function hasHttp401(error: unknown): boolean {
+  let current: unknown = error;
+  let depth = 0;
+  while (current !== undefined && current !== null && depth < 5) {
+    const record = current as {
+      cause?: unknown;
+      status?: unknown;
+      statusCode?: unknown;
+      response?: { status?: unknown; statusCode?: unknown } | null;
+    };
+    if (
+      record.status === 401 ||
+      record.statusCode === 401 ||
+      record.response?.status === 401 ||
+      record.response?.statusCode === 401
+    )
+      return true;
+    current = record.cause;
+    depth += 1;
+  }
+  return false;
+}
 const INFRA_PATTERN =
   /econnrefused|econnreset|etimedout|dns|socket|tls|certificate/i;
 
@@ -53,7 +78,7 @@ function clientFacingMessage(error: unknown): string | undefined {
 /**
  * 凭证脱敏：原始错误**要进结构化日志、也要给用户看**，所以先过这一遍。
  *
- * BYOK 红线是「Key 只写不读、日志脱敏」——上游报错常把请求头里的 Key 原样回显
+ * BYOK 凭据可以在授权设置读取，日志必须脱敏——上游报错常把请求头里的 Key 原样回显
  * （`401 {"error":"invalid api key sk-..."}`），不脱敏就等于把用户凭证写进日志文件
  * 再贴到对话里。
  */
@@ -101,57 +126,57 @@ export function describeErrorDetail(error: unknown, maxLength = 300): string {
 
 export function sanitizeErrorForClient(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
-  // Log full detail server-side for debugging
-  console.error("[error-sanitizer] Raw error:", raw);
+  // 与客户端详情共用脱敏器，错误原文与cause不得把凭据写进日志。
+  console.error("[error-sanitizer] Error:", describeErrorDetail(error, 2000));
   if (error instanceof Error) {
-    // Log nested cause chain (LangChain wraps errors multiple levels deep)
-    // cause 非标准字段，按 unknown 逐层收窄读取
-    let cause: unknown = (error as { cause?: unknown }).cause;
-    while (cause) {
-      const causeMessage = (cause as { message?: unknown }).message;
-      console.error("[error-sanitizer] Caused by:", causeMessage ?? cause);
-      cause = (cause as { cause?: unknown }).cause;
-    }
-    // Log response details if present (Google API errors attach response/details)
-    const response = (
-      error as {
-        response?: { status?: unknown; data?: unknown; body?: unknown };
-      }
-    ).response;
-    if (response) {
-      console.error("[error-sanitizer] Response status:", response.status);
+    const metadata = error as Error & {
+      response?: { status?: unknown; data?: unknown; body?: unknown };
+      details?: unknown;
+    };
+    if (metadata.response) {
+      console.error(
+        "[error-sanitizer] Response status:",
+        metadata.response.status,
+      );
       console.error(
         "[error-sanitizer] Response data:",
-        JSON.stringify(response.data ?? response.body ?? "").substring(0, 2000),
+        redactSecrets(
+          JSON.stringify(
+            metadata.response.data ?? metadata.response.body ?? "",
+          ),
+        ).slice(0, 2000),
       );
     }
-    if ((error as { details?: unknown }).details) {
+    if (metadata.details)
       console.error(
         "[error-sanitizer] Details:",
-        JSON.stringify((error as { details?: unknown }).details).substring(
-          0,
-          2000,
-        ),
+        redactSecrets(JSON.stringify(metadata.details)).slice(0, 2000),
       );
-    }
-    if (error.stack) {
-      console.error("[error-sanitizer] Stack:", error.stack);
-    }
+    if (error.stack)
+      console.error(
+        "[error-sanitizer] Stack:",
+        redactSecrets(error.stack).slice(0, 8000),
+      );
   }
 
   // Map to user-friendly messages
   const clientFacing = clientFacingMessage(error);
   if (clientFacing && clientFacing.length <= 200) {
-    return clientFacing;
+    return redactSecrets(clientFacing);
+  }
+  const classificationDetail = describeErrorDetail(error, 2000);
+  if (
+    hasHttp401(error) ||
+    AUTH_STATUS_PATTERN.test(classificationDetail) ||
+    AUTH_PATTERN.test(classificationDetail)
+  ) {
+    return withRawDetail("认证失败，请在模型或工具设置中检查凭据。", error);
   }
   if (PROVIDER_PATTERN.test(raw)) {
     return withRawDetail("AI 服务暂时不可用，请稍后重试。", error);
   }
   if (DB_PATTERN.test(raw)) {
     return withRawDetail("数据服务异常，请稍后重试。", error);
-  }
-  if (AUTH_PATTERN.test(raw)) {
-    return withRawDetail("认证失败，请刷新页面重新登录。", error);
   }
   if (INFRA_PATTERN.test(raw)) {
     return withRawDetail("网络连接异常，请检查网络后重试。", error);

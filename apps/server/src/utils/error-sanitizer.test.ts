@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { StreamIdleTimeoutError } from "../agent/stream-idle-guard.js";
 import {
@@ -53,6 +53,58 @@ describe("error-sanitizer 的面向用户错误透传", () => {
     expect(sanitizeErrorForClient(wrapped)).toBe(
       "web_search 请求失败（API密钥无效），请检查搜索供应商配置。",
     );
+  });
+
+  it("JSON解析的 Unexpected token 不会被误判成认证失败", () => {
+    const error = new SyntaxError(
+      `Unexpected token '工', "工" is not valid JSON`,
+    );
+    const message = sanitizeErrorForClient(error);
+
+    expect(message.startsWith("请求处理失败，请重试。")).toBe(true);
+    expect(message).not.toContain("认证凭证");
+    expect(message).not.toContain("重新登录");
+  });
+
+  it.each([
+    [
+      "HTTP 401 metadata",
+      Object.assign(new Error("OpenAI request failed"), {
+        response: { status: 401 },
+      }),
+    ],
+    ["invalid_api_key", new Error("OpenAI invalid_api_key")],
+    ["expired access token", new Error("expired access token")],
+  ])("真实凭证错误仍分类为认证失败：%s", (_label, error) => {
+    expect(sanitizeErrorForClient(error)).toContain(
+      "认证失败，请在模型或工具设置中检查凭据。",
+    );
+  });
+
+  it("凭据在message/cause/response/details/stack与客户端透传中统一脱敏", () => {
+    const key = "sk-abcdef1234567890abcdef";
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const inner = new Error(`invalid API key ${key}`);
+      const error = Object.assign(
+        new Error(`OpenAI request Bearer ${key}`, { cause: inner }),
+        {
+          response: { status: 401, data: { api_key: key } },
+          details: { password: "abcdefghijklmnop" },
+        },
+      );
+      const message = sanitizeErrorForClient(error);
+      const logs = JSON.stringify(spy.mock.calls);
+      expect(message).toContain("认证失败");
+      expect(message).not.toContain(key);
+      expect(logs).not.toContain(key);
+      expect(logs).not.toContain("abcdefghijklmnop");
+      expect(logs).toContain("***");
+      Object.defineProperty(inner, "exposeToClient", { value: true });
+      expect(sanitizeErrorForClient(inner)).not.toContain(key);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("cause 链里没有面向用户的错误时仍走通用文案", () => {
