@@ -13,12 +13,16 @@ import {
   it,
   vi,
 } from "vitest";
+import { createChatRepository } from "../chat/repository.js";
 import {
   type CodeUiConversationState,
   createCodeUiConversation,
 } from "../code-ui/conversation.js";
 import type { CodeAdmittedInput } from "../code-ui/input-intents.js";
 import { createCodeUiRepository } from "../code-ui/repository.js";
+import { createDesignTasksService } from "../execution/design-tasks.js";
+import { createPermissionService } from "../permissions/permission-service.js";
+import { createProjectRepository } from "../projects/repository.js";
 import { createSettingsRepository } from "../settings/repository.js";
 import { createSettingsService } from "../settings/settings-service.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
@@ -196,9 +200,137 @@ describe.skipIf(process.env.KENFUTWORK_LOCAL_ROOT_PG_TEST !== "1")(
           "update public.code_ui_sessions set state = null, active_run_id = null where instance_id = :instance and id = $1",
           [database.context.scope.taskId],
         );
+      const designSql = database.persistence.forInstance(database.instanceId);
+      await designSql.execute(
+        "update public.design_task_executions set active_run_id=null,run_state='idle',restore_operation_id=null where instance_id=:instance",
+      );
+      await designSql.execute(
+        "update public.design_task_inputs set status='canceled',request=null where instance_id=:instance and status in ('queued','running')",
+      );
       await Promise.allSettled(waiters);
       database.localInstance.cancelMaintenance();
     });
+    it.each(["approvalWaiting", "acceptedQueue"] as const)(
+      "Design %s cannot be mistaken for idle even with zero live Runtime",
+      async (condition) => {
+        const tasks = createDesignTasksService({
+          persistence: database.persistence,
+          localInstance: database.localInstance,
+        });
+        const permissions = createPermissionService();
+        let approval: Promise<unknown> | undefined;
+        let designTaskId: string | undefined;
+        try {
+          const { canvas } = await createProjectRepository(
+            database.persistence,
+          ).createProject({
+            instanceId: database.instanceId,
+            createdByClientId: database.actor.accessClientId,
+            kind: "design",
+            name: "Design等待",
+            slug: randomUUID(),
+            description: null,
+            canvasName: "Canvas",
+            workDir: database.context.scope.rootDirectory,
+          });
+          if (!canvas) throw new Error("Canvas缺失");
+          const prepared = await tasks.prepareCreation(
+            database.actor,
+            canvas.id,
+          );
+          if (!prepared) throw new Error("Task准备缺失");
+          const session = await createChatRepository(
+            database.persistence,
+          ).createSession(database.instanceId, {
+            canvasId: canvas.id,
+            threadId: randomUUID(),
+            createdByClientId: database.actor.accessClientId,
+            designTaskPreparation: prepared,
+          });
+          if (!session) throw new Error("Task缺失");
+          designTaskId = session.id;
+          const admit = (inputId: string) =>
+            tasks.admitInput(database.actor, {
+              taskId: session.id,
+              inputId,
+              runId: randomUUID(),
+              scopeGeneration: 1,
+              branchGeneration: 1,
+              request: {
+                sessionId: session.id,
+                conversationId: session.id,
+                prompt: "真实已接受输入",
+                preset: "design",
+              },
+            });
+          const first = await admit("first");
+          if (condition === "approvalWaiting") {
+            approval = permissions
+              .admit({
+                preset: "design",
+                instanceId: database.instanceId,
+                taskId: session.id,
+                runId: first.runId,
+                toolCallId: randomUUID(),
+                agentId: "main",
+                role: "main",
+                scopeGeneration: 1,
+                branchGeneration: 1,
+                mode: "build",
+                approvalCeiling: "build",
+                toolName: "Write",
+                access: "write",
+                args: { file_path: "approval.txt", content: "等待真实审批" },
+              })
+              .catch((error: unknown) => error);
+            expect(
+              permissions.listPending(database.instanceId, session.id),
+            ).toHaveLength(1);
+          }
+          if (condition === "acceptedQueue") {
+            await admit("queued");
+            await database.persistence
+              .forInstance(database.instanceId)
+              .execute(
+                "update public.design_task_executions set active_run_id=null,run_state='idle' where instance_id=:instance and task_id=$1",
+                [session.id],
+              );
+          }
+          const waiter = beginWait();
+          await waiter.blocked;
+          expect(waiter.finished()).toBe(false);
+          if (approval) {
+            await permissions.cancel(
+              { instanceId: database.instanceId, taskId: session.id },
+              "实际审批结束",
+            );
+            await approval;
+            expect(
+              permissions.listPending(database.instanceId, session.id),
+            ).toEqual([]);
+          }
+          const sql = database.persistence.forInstance(database.instanceId);
+          await sql.execute(
+            "update public.design_task_executions set active_run_id=null,run_state='idle' where instance_id=:instance and task_id=$1",
+            [session.id],
+          );
+          await sql.execute(
+            "update public.design_task_inputs set status='settled',request=null where instance_id=:instance and task_id=$1",
+            [session.id],
+          );
+          await waiter.done;
+          expect(waiter.finished()).toBe(true);
+        } finally {
+          if (designTaskId)
+            await permissions.cancel(
+              { instanceId: database.instanceId, taskId: designTaskId },
+              "fixture ended",
+            );
+          await approval;
+          await tasks.close();
+        }
+      },
+    );
 
     it("暂停queued立即可迁移，子snapshot的autoDrain不覆盖根且输入原样保留", async () => {
       const { state } = makeState(database, "queued", false, true);
