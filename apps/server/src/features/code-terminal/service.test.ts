@@ -36,7 +36,7 @@ it("显式Task终端并发同ID只认领一次，连接关闭期间迟到授权�
         load: async () => {
           opened();
           await admission;
-          return { scope, state: "ready", branchGeneration: 1 };
+          return { preset: "code", scope, state: "ready", branchGeneration: 1 };
         },
       },
       localInstance: {
@@ -133,7 +133,12 @@ it.skipIf(process.platform !== "darwin")(
     const service = createCodeTerminalService({
       scopes: createExecutionScopes({
         repository: {
-          load: async () => ({ scope, state: "ready", branchGeneration: 1 }),
+          load: async () => ({
+            preset: "code",
+            scope,
+            state: "ready",
+            branchGeneration: 1,
+          }),
         },
         localInstance: localInstance as never,
       }),

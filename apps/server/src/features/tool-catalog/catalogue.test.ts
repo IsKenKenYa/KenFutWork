@@ -15,6 +15,7 @@ it("下一模型请求重新核验真实scope代际，收紧权限撤销旧激�
   try {
     const root = await realpath(temporary);
     const stored: StoredExecutionScope = {
+      preset: "code",
       state: "ready",
       branchGeneration: 1,
       scope: {

@@ -53,7 +53,12 @@ async function fixture(
   const actor = RUNTIME_TEST_ACTOR;
   const handle = await createExecutionScopes({
     repository: {
-      load: async () => ({ state: "ready", branchGeneration: 1, scope }),
+      load: async () => ({
+        preset: "code",
+        state: "ready",
+        branchGeneration: 1,
+        scope,
+      }),
     },
     localInstance: createRuntimeTestInstance(),
   }).openTask(actor, scope.taskId);

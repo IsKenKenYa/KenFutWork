@@ -256,6 +256,8 @@ export type PromptSectionScope = "always" | "design" | "code";
  * 持有服务引用，按 ctx 定位——ctx 不装「已取好的数据」，只装定位键。
  */
 export interface PromptCompositionContext {
+  /** 原Run持有的可信Task句柄；不能从scope快照、画布或路径重建。 */
+  scopeHandle?: ExecutionScopeHandle | undefined;
   /** 私有执行定位；从实际Run复制，不由模型或路径签发，不缓存业务正文。 */
   execution?: PromptExecutionContext | undefined;
   executionScope?: import("@kenfutwork/shared").CodeExecutionScope | undefined;

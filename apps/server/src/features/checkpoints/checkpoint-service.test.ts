@@ -99,7 +99,7 @@ async function world() {
     repository: {
       load: async (_instanceId, task) =>
         task === TASK_ID
-          ? { scope: identity, state, branchGeneration: branch }
+          ? { preset: "code", scope: identity, state, branchGeneration: branch }
           : null,
     },
     localInstance: createRuntimeTestInstance(INSTANCE_ID),

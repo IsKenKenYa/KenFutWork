@@ -12,6 +12,7 @@ import type { ToolDefinition, ToolExecutionContext } from "./types.js";
 async function fixture() {
   const temporary = await mkdtemp(join(tmpdir(), "kfw-kernel-approval-"));
   const stored: StoredExecutionScope = {
+    preset: "code",
     state: "ready",
     branchGeneration: 1,
     scope: {

@@ -7,6 +7,7 @@ import { createCodeToolsPlugin } from "./plugin.js";
 
 function scope(role: ExecutionScopeHandle["role"]): ExecutionScopeHandle {
   const input = {
+    preset: "code" as const,
     role,
     agentId: role,
     describe: () => ({
@@ -23,7 +24,7 @@ function scope(role: ExecutionScopeHandle["role"]): ExecutionScopeHandle {
       throw new Error("本用例不派生作用域");
     },
   };
-  return { ...input, backend: createScopedBackend(input) };
+  return { ...input, branchGeneration: 1, backend: createScopedBackend(input) };
 }
 
 it("profiles mount core file tools by actual Task scope and readonly roles receive no mutation tools", () => {

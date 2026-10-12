@@ -101,6 +101,7 @@ async function makeStubs() {
         load: async () => {
           if (workDirState.deny) throw new Error("Task不属于当前实例。");
           return {
+            preset: "code",
             scope: {
               instanceId,
               projectId: "00000000-0000-4000-8000-000000000002",

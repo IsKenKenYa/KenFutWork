@@ -43,6 +43,7 @@ async function fixture() {
     sandboxMode: "workspace-write",
   };
   let current: StoredExecutionScope = {
+    preset: "code",
     scope: initial,
     state: "ready",
     branchGeneration: 1,
@@ -60,7 +61,12 @@ async function fixture() {
         }
         return taskId === initial.taskId
           ? current
-          : { scope: other, state: "ready", branchGeneration: 1 };
+          : {
+              preset: "code",
+              scope: other,
+              state: "ready",
+              branchGeneration: 1,
+            };
       },
     },
     localInstance: {
@@ -74,6 +80,7 @@ async function fixture() {
     async restoring() {
       current = {
         scope: { ...current.scope, generation: current.scope.generation + 1 },
+        preset: "code",
         state: "revoking",
         branchGeneration: current.branchGeneration + 1,
       };

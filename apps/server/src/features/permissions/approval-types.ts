@@ -27,7 +27,7 @@ export interface ApprovalIdentity {
 
 /** All fields except args originate from the trusted host/tool owner. */
 export interface PermissionInvocation extends ApprovalIdentity {
-  preset: "code";
+  preset: "code" | "design";
   threadId?: string | undefined;
   mode: CodeApprovalMode;
   /** Immutable dispatch-time ceiling for worker agents. */

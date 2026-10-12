@@ -369,6 +369,8 @@ export class SystemPromptRegistryImpl implements SystemPromptRegistry {
   }
 
   async compose(ctx: PromptCompositionContext): Promise<string> {
+    if (ctx.scopeHandle && ctx.scopeHandle.preset !== ctx.preset)
+      throw new Error("系统提示工作模式与可信Task不匹配。");
     const active = [...this.sections.values()].filter(
       (section) => section.scope === "always" || section.scope === ctx.preset,
     );

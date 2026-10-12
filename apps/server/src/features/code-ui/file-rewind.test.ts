@@ -106,7 +106,7 @@ async function world(
     repository: {
       load: async (workspace, task) =>
         workspace === identity.instanceId && task === identity.taskId
-          ? { scope: identity, state, branchGeneration: branch }
+          ? { preset: "code", scope: identity, state, branchGeneration: branch }
           : null,
     },
     localInstance: createCodeUiTestInstance(identity.instanceId).localInstance,

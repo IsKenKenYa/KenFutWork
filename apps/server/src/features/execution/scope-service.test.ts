@@ -42,6 +42,7 @@ it("Task 工作域拒绝越界和符号链接逃逸，只读角色不能提升�
     const scopes = createExecutionScopes({
       repository: {
         load: async () => ({
+          preset: "code" as const,
           scope: snapshot,
           state: "ready" as const,
           branchGeneration: 1,
@@ -102,6 +103,7 @@ async function withTaskScope(
   const root = await realpath(await mkdtemp(join(tmpdir(), "code-policy-")));
   const extra = await realpath(await mkdtemp(join(tmpdir(), "code-extra-")));
   let current: StoredExecutionScope = {
+    preset: "code",
     state: "ready",
     branchGeneration: 1,
     scope: {
@@ -128,6 +130,7 @@ async function withTaskScope(
       )
         return null;
       current = {
+        preset: "code",
         state: "revoking",
         branchGeneration: current.branchGeneration,
         scope: {
@@ -325,7 +328,12 @@ it("恢复期间普通Run打不开工作域，私有恢复句柄仅在精确代�
   let state: StoredExecutionScope["state"] = "revoking";
   const scopes = createExecutionScopes({
     repository: {
-      load: async () => ({ scope: identity, state, branchGeneration: 2 }),
+      load: async () => ({
+        preset: "code",
+        scope: identity,
+        state,
+        branchGeneration: 2,
+      }),
     },
     localInstance: createRuntimeTestInstance(identity.instanceId),
   });

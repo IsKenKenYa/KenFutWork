@@ -85,6 +85,7 @@ it("真实SDK graph跨Run复用deferred激活并在授权代际变化后撤销",
     const scopes = createExecutionScopes({
       repository: {
         load: async () => ({
+          preset: "code",
           scope: structuredClone(scope),
           state: "ready",
           branchGeneration: 1,

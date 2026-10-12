@@ -333,7 +333,12 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
       };
       const handle = await createExecutionScopes({
         repository: {
-          load: async () => ({ scope, state: "ready", branchGeneration: 1 }),
+          load: async () => ({
+            preset: "code",
+            scope,
+            state: "ready",
+            branchGeneration: 1,
+          }),
         },
         localInstance: {
           resolve: async () => ({

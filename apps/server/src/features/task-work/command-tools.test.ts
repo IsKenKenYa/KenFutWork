@@ -64,7 +64,12 @@ async function fixture() {
   };
   const scopes = createExecutionScopes({
     repository: {
-      load: async () => ({ scope, state: "ready", branchGeneration: 1 }),
+      load: async () => ({
+        preset: "code",
+        scope,
+        state: "ready",
+        branchGeneration: 1,
+      }),
     },
     localInstance: {
       resolve: async () => ({
