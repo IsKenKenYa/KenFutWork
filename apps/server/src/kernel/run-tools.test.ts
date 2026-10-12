@@ -128,12 +128,20 @@ describe("ToolRegistry 动态工具缝", () => {
       }
       return next(payload);
     });
-    const tool = def("dyn_dangerous", "shared");
+    registry.registerDynamic({
+      id: "dyn.dangerous",
+      scope: "shared",
+      resolve: () => def("dyn_dangerous", "shared"),
+    });
+    const tool = registry
+      .resolveRunTools({ ...resolutionCtx(), preset: "code" })
+      .find((entry) => entry.name === "dyn_dangerous");
+    if (!tool) throw new Error("Registered dynamic Consumer missing");
     await expect(registry.executeDefinition(tool, {}, {})).rejects.toThrow(
-      /dyn_dangerous/,
+      /被 tool-pre-execute 拦截拒绝/,
     );
     // 静态 execute 路径复用同一 guarded 实现
-    registry.register(tool);
+    registry.register(def("dyn_dangerous", "shared"));
     await expect(registry.execute("dyn_dangerous", {}, {})).rejects.toThrow(
       /被 tool-pre-execute 拦截拒绝/,
     );
