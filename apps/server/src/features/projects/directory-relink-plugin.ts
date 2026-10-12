@@ -16,10 +16,12 @@ export function createProjectDirectoryRelinkPlugin(): PluginDefinition {
       "processSandbox",
       "capabilities",
       "designRunHost",
+      "flowProjectControl",
     ],
     apply(ctx) {
       ctx.register("projectDirectoryRelink", () =>
         createProjectDirectoryRelinkService({
+          flowProjectControl: ctx.get("flowProjectControl"),
           persistence: ctx.get("persistence"),
           localInstance: ctx.get("localInstance"),
           goals: ctx.get("goals"),
@@ -40,6 +42,9 @@ export function createProjectDirectoryRelinkPlugin(): PluginDefinition {
       );
     },
     mounted(ctx) {
+      ctx.app.addHook("onReady", async () => {
+        await ctx.get("projectDirectoryRelink").initialize();
+      });
       void registerProjectDirectoryRelinkRoutes(ctx.app, {
         localAccess: ctx.get("localAccess"),
         relink: ctx.get("projectDirectoryRelink"),

@@ -8,6 +8,7 @@ import type {
 } from "@kenfutwork/shared";
 import type { CodeUiConversationState } from "../code-ui/conversation.js";
 import { syncGoal } from "../code-ui/goals.js";
+import type { FlowProjectControl } from "../flow/project-control.js";
 import type { GoalRecord, GoalService } from "../goals/service.js";
 import { rebindMissingProjectCheckpoints } from "../local-instance/root-binding.js";
 import type {
@@ -19,6 +20,7 @@ import type {
   PersistenceService,
   SqlRow,
 } from "../persistence/types.js";
+import { createFlowDirectoryRelink } from "./directory-relink-flow.js";
 
 export class ProjectDirectoryRelinkError extends Error {
   constructor(
@@ -29,6 +31,7 @@ export class ProjectDirectoryRelinkError extends Error {
   }
 }
 export interface ProjectDirectoryRelinkService {
+  initialize(): Promise<void>;
   snapshot(
     actor: LocalActor,
     projectId: string,
@@ -147,6 +150,7 @@ function pausedCodeState(
   return next;
 }
 type RelinkDeps = {
+  flowProjectControl?: FlowProjectControl;
   persistence: PersistenceService;
   localInstance: LocalInstanceService;
   goals: GoalService;
@@ -457,24 +461,11 @@ async function readSnapshot(
     );
   return deps.persistence.transaction(async (tx) => {
     const sql = tx.forInstance(actor.instanceId);
-    const project = await sql.queryOne<{
-      kind: string;
-      work_dir: string | null;
-    }>(
-      "select kind,work_dir from public.projects where instance_id=:instance and id=$1 and archived_at is null",
+    const project = await sql.queryOne<{ work_dir: string | null }>(
+      "select work_dir from public.projects where instance_id=:instance and id=$1 and archived_at is null and kind in ('code','design') for share",
       [projectId],
     );
-    if (project?.kind === "flow")
-      throw new ProjectDirectoryRelinkError(
-        "工作流目录恢复服务不可用，请检查工作流插件。",
-        503,
-      );
-    if (
-      !project ||
-      (project.kind !== "code" && project.kind !== "design") ||
-      !project.work_dir
-    )
-      throw conflict();
+    if (!project?.work_dir) throw conflict();
     await missingRoot(project.work_dir);
     const rows = await taskRows(sql, projectId);
     if (rows.some((row) => row.root_directory !== project.work_dir))
@@ -492,42 +483,33 @@ async function readSnapshot(
     };
   });
 }
-async function requireCodeDesignProject(
-  deps: RelinkDeps,
-  actor: LocalActor,
-  projectId: string,
-) {
-  await deps.localInstance.resolve(actor);
-  if (!actor.accessClientId)
-    throw new ProjectDirectoryRelinkError(
-      "重新关联需要已授权的接入客户端。",
-      403,
-    );
-  const project = await deps.persistence
-    .forInstance(actor.instanceId)
-    .queryOne<{ kind: string }>(
-      "select kind from public.projects where instance_id=:instance and id=$1 and archived_at is null",
-      [projectId],
-    );
-  if (!project) throw conflict();
-  if (project.kind === "flow")
-    throw new ProjectDirectoryRelinkError(
-      "工作流目录恢复服务不可用，请检查工作流插件。",
-      503,
-    );
-  if (project.kind !== "code" && project.kind !== "design") throw conflict();
-}
-
 export function createProjectDirectoryRelinkService(
   deps: RelinkDeps,
 ): ProjectDirectoryRelinkService {
+  const flow = createFlowDirectoryRelink({
+    persistence: deps.persistence,
+    localInstance: deps.localInstance,
+    ...(deps.flowProjectControl
+      ? { flowProjectControl: deps.flowProjectControl }
+      : {}),
+    missingRoot,
+    rootMissing,
+    targetRoot,
+    taskRows,
+    error: (message, statusCode) =>
+      new ProjectDirectoryRelinkError(message, statusCode),
+  });
   return {
+    initialize: flow.initialize,
     async snapshot(actor, projectId) {
-      await requireCodeDesignProject(deps, actor, projectId);
-      return readSnapshot(deps, actor, projectId);
+      const kind = await flow.projectKind(actor, projectId);
+      return kind === "flow"
+        ? flow.snapshot(actor, projectId)
+        : readSnapshot(deps, actor, projectId);
     },
     async relink(actor, projectId, input) {
-      await requireCodeDesignProject(deps, actor, projectId);
+      const kind = await flow.projectKind(actor, projectId);
+      if (kind === "flow") return flow.relink(actor, projectId, input);
       if (input.expectedFlow) throw conflict();
       const context = await deps.localInstance.resolve(actor);
       if (!actor.accessClientId)

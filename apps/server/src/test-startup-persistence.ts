@@ -68,6 +68,11 @@ export function createStartupPersistenceFixture(): PersistenceService & {
         )
       )
         row = null;
+      else if (
+        statement ===
+        "select count(*) as count from public.project_directory_relink_operations where instance_id=:instance and phase<>'complete'"
+      )
+        row = { count: 0 };
       else return unsupported(statement);
       // SQL驱动的泛型行边界；具体结果由上述精确语句白名单决定。
       return row as T | null;

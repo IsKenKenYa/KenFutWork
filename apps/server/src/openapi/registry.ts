@@ -1963,7 +1963,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: projectCreateResponseSchema,
     summary: "创建项目",
     description:
-      "按请求体创建新项目并返回创建结果。请求体校验失败返回 400 带 issues。",
+      "创建项目并绑定固定工作目录；省略目录时创建托管目录，指定路径须为存在的绝对目录。请求体校验失败返回 400 带 issues。",
   },
   {
     method: "patch",
@@ -1974,7 +1974,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     requestSchema: projectUpdateRequestSchema,
     summary: "更新项目",
     description:
-      "部分更新项目字段，成功返回 204 无响应体。请求体校验失败返回 400 带 issues。",
+      "部分更新项目字段；工作目录仅接受相同路径的幂等值，解绑或切换目录拒绝。成功返回 204 无响应体，请求体校验失败返回 400 带 issues。",
   },
   {
     method: "get",
@@ -1985,7 +1985,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: projectDirectoryRelinkSnapshotSchema,
     summary: "核对缺失项目目录",
     description:
-      "仅支持Code与Design项目。返回固定目录与真实Task授权代际；原目录存在或绑定不一致时拒绝，不扫描文件或猜测历史Task。Flow由独立项目控制Consumer处理。",
+      "返回固定目录与 Code/Design Task 授权代际；Flow 返回结构化 available 状态或持久恢复操作及实时网关回执，已发布新根的待确认操作仍可恢复。首次关联仅允许旧目录缺失，不扫描文件，不重放执行。",
   },
   {
     method: "post",
@@ -1997,7 +1997,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: projectDirectoryRelinkResponseSchema,
     summary: "重新关联缺失项目目录",
     description:
-      "仅支持Code与Design项目，且仅在原目录缺失时执行。先核对完整Task代际、关闭运行资源并暂停Goal，再原子迁移项目与Task固定根及检查点绑定；不重放输入。Flow由独立项目控制Consumer处理。",
+      "首次关联仅允许旧目录缺失；Code/Design 核对完整 Task 代际、关闭资源并暂停 Goal，再原子重绑根。Flow 先撤销文件准入并按持久 operationId 确认真正本地停稳，再 CAS 发布根；未知停止仅查询状态，远端未停止数量如实保留，重启后的待确认操作维持维护态。",
   },
   {
     method: "put",

@@ -130,6 +130,8 @@ export function createFlowHostPlugin(deps: {
         };
         return {
           snapshot: unavailable,
+          quiesce: unavailable,
+          completeRelink: unavailable,
         };
       });
       if (

@@ -9,6 +9,7 @@ import type { KenFutWorkAgentFactory } from "./agent/deep-agent.js";
 import type { AgentRuntimeProvider } from "./agent/provider-contract.js";
 import { buildApp } from "./app.js";
 import { createExecutionScopes } from "./features/execution/scope-service.js";
+import type { ProjectDirectoryRelinkService } from "./features/projects/directory-relink.js";
 import { createTaskWorkManager } from "./features/task-work/service.js";
 import {
   createMemoryTaskWorkManager,
@@ -61,7 +62,7 @@ const RETIRED_PROBES = [
 /** 无认证门但必须装配的路由（注册完整性用 200 探针）。 */
 const PUBLIC_GET_ROUTES = ["/api/health"] as const;
 
-function buildProbeApp() {
+function buildProbeApp(projectDirectoryRelink?: ProjectDirectoryRelinkService) {
   const persistence = createStartupPersistenceFixture();
   return buildApp({
     env: {
@@ -73,6 +74,7 @@ function buildProbeApp() {
     overrides: {
       taskWork: createMemoryTaskWorkManager(),
       persistence,
+      ...(projectDirectoryRelink ? { projectDirectoryRelink } : {}),
     },
   });
 }
@@ -378,6 +380,74 @@ describe("buildApp AgentRuntimeProvider bridge", () => {
       expect(events.filter((event) => event.type === "run.failed")).toEqual([]);
     } finally {
       await probe.app.close();
+    }
+  });
+});
+
+describe("directory recovery startup barrier", () => {
+  it("registers routes before ready and waits for persisted recovery initialization", async () => {
+    let begin!: () => void;
+    let release!: () => void;
+    const begun = new Promise<void>((resolve) => {
+      begin = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const restore: ProjectDirectoryRelinkService = {
+      initialize: async () => {
+        begin();
+        await blocked;
+      },
+      snapshot: async () => {
+        throw new Error("unused probe");
+      },
+      relink: async () => {
+        throw new Error("unused probe");
+      },
+    };
+    const app = buildProbeApp(restore);
+    let ready = false;
+    const startup = app.ready().then(() => {
+      ready = true;
+    });
+    try {
+      await begun;
+      expect(
+        app.hasRoute({
+          method: "GET",
+          url: "/api/projects/:projectId/relink-directory",
+        }),
+      ).toBe(true);
+      expect(ready).toBe(false);
+      release();
+      await startup;
+      expect(ready).toBe(true);
+    } finally {
+      release();
+      await startup;
+      await app.close();
+    }
+  });
+  it("fails app readiness when the durable recovery query fails", async () => {
+    const restore: ProjectDirectoryRelinkService = {
+      initialize: async () => {
+        throw new Error("durable directory recovery unavailable");
+      },
+      snapshot: async () => {
+        throw new Error("unused probe");
+      },
+      relink: async () => {
+        throw new Error("unused probe");
+      },
+    };
+    const app = buildProbeApp(restore);
+    try {
+      await expect(app.ready()).rejects.toThrow(
+        "durable directory recovery unavailable",
+      );
+    } finally {
+      await app.close();
     }
   });
 });

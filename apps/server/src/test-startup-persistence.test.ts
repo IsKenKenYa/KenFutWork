@@ -39,6 +39,11 @@ it("startup fixture keeps Design tasks empty and rejects unsupported lock keys a
       ),
     ).resolves.toEqual([]);
     await expect(
+      persistence.queryOne(
+        "select count(*) as count from public.project_directory_relink_operations where instance_id=:instance and phase<>'complete'",
+      ),
+    ).resolves.toEqual({ count: 0 });
+    await expect(
       persistence.acquireSessionLock("unsupported-host"),
     ).rejects.toThrow(/未提供数据库操作/);
     await expect(
