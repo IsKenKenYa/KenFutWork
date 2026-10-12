@@ -10,14 +10,9 @@ import { createPermissionSettingsStore } from "./tier-store.js";
  * permissions 插件（DEC-4，P6）：
  * - `permissions` ctx key：三档策略 + 审批记忆；
  * - 订阅 tool-pre-execute 事件做拦截（deny 等 审批），这是策略缝的消费点；
- * - design preset 不激活闸门（保持画布行为不变）：判据 = 危险工具名模式 **或**
- *   属主声明的非只读效果（`isDangerousCall`）——插件写工具（`access: "write"`、
- *   撤销声明即回落到 execute）靠声明进默认档审批，画布工具通常不命中名表。
- *
- * 全局档位持久化（app_config 单行表）：启动期读回（读失败只记日志，回落 default
- * ——fail-safe：权限档宁严勿松），PUT 路由写穿。
- *
- * 形参 `_deps` 目前未被消费（事件经 ctx.on 订阅），保留以维持 profiles 装配契约。
+ * - Kernel 工具在 `tool-pre-execute` 中按 payload 路径处理：有 `permissionInvocation` 时调用
+ *   `service.admit`，否则按工具名与属主声明的效果调用 `service.evaluate`。
+ * - DeepAgents 原生工具不经过此事件，由 `agent/tool-gate.ts` 的 permission verdict 控制。
  */
 export function createPermissionsPlugin(_deps: {
   events?: KernelEvents;

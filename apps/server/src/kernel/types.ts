@@ -104,8 +104,8 @@ export interface ServiceMap {
   codeTerminal: CodeTerminalService;
   executionScopes: ExecutionScopes;
   designTasks: DesignTasksService;
-  designRunHost: DesignRunHost;
   designGoals: DesignGoalsService;
+  designRunHost: DesignRunHost;
   processSandbox: ProcessSandbox;
   taskWork: TaskWorkManager;
   /**
@@ -153,12 +153,13 @@ export interface ServiceMap {
   usage: UsageService;
   /** 跨模式 tool-call 策略缝（DEC-4） */
   permissions: PermissionService;
-  goals: GoalService;
   /**
    * 插件注册表缝：第三方/内置插件的目录、安装（含安装前兼容性门禁）、
    * 启停与导出。插件代码是机器本地的，安装态落在 pluginsDir。
    */
   plugins: PluginRegistryService;
+  /** Task Goal 状态与计量规则，持久化和续跑由消费方持有。 */
+  goals: GoalService;
   /** 项目普通文件索引与精确文件存取。 */
   projectFiles: ProjectFileService;
   /** 生成接纳时冻结且在执行时复验的文件来源。 */
@@ -187,7 +188,6 @@ export interface ServiceMap {
    * 消费方 = 插件卸载路由（卸载 flow 插件时 purge 引擎、保留插件代码，见《flow插件集成规划》§9.1③）。
    */
   flowEngine: FlowEngineHostService;
-  /** Flow 项目文件准入所需的代际快照控制端口。 */
   flowProjectControl: FlowProjectControl;
   /** ConnectionManager + EventBuffer */
   ws: WsServices;
@@ -350,7 +350,7 @@ export interface SystemPromptRegistry {
   compose(ctx: PromptCompositionContext): Promise<string>;
 }
 
-/** Facts emitted by the guarded registry at the actual tool execution boundary. */
+/** Private executor observation; providers receive no capability to mint these facts. */
 export type ToolExecutionObservation = {
   phase: "started" | "completed" | "failed";
   runId: string | undefined;
@@ -363,7 +363,7 @@ export type ToolExecutionObservation = {
 };
 
 export interface ToolExecutionContext {
-  /** Kernel consumes and strips this callback before invoking the registered tool. */
+  /** Kernel consumes and strips this callback before calling the tool implementation. */
   observeToolExecution?:
     | ((fact: ToolExecutionObservation) => Promise<void>)
     | undefined;
@@ -472,8 +472,9 @@ export interface ToolRegistry {
     execCtx?: ToolExecutionContext,
   ): Promise<unknown>;
   /**
-   * guarded 执行本注册表签发且仍有效的定义。审批前后和执行前复核注册代际与schema；
-   * 注销或替换会拒绝旧调用，不自动重放副作用。动态产物不在静态表里。
+   * guarded 执行由本注册表签发的有效定义（register 的静态实例或 resolveRunTools
+   * 的动态产物）。审批前后及执行前核验原注册与schema；卸载/替换拒绝旧调用，
+   * 不自动重放副作用。动态产物不在静态表里，execute(name) 查不到。
    */
   executeDefinition(
     tool: ToolDefinition,

@@ -1262,7 +1262,7 @@
       "get": {
         "operationId": "getAgentRunsLatest",
         "summary": "查询会话最近一轮运行终态",
-        "description": "按持久会话和当前本地实例隔离，返回运行状态、结束原因与原始失败原因；没有可见运行时返回 null。",
+        "description": "按持久会话和当前本地实例隔离，返回运行状态、本轮停止原因、错误代码与失败文案；旧记录停止原因为空，没有可见运行时返回 null。",
         "tags": [
           "runs"
         ],
@@ -3902,7 +3902,7 @@
       "get": {
         "operationId": "getCanvasesByCanvasId",
         "summary": "读取画布内容",
-        "description": "按 canvasId 返回当前本地实例可见画布的内容与元信息。",
+        "description": "按 canvasId 返回项目文件中的画布内容、元信息与原字节 SHA256 版本，保存时用此版本检查并发修改。",
         "tags": [
           "canvases"
         ],
@@ -3961,7 +3961,7 @@
       "put": {
         "operationId": "putCanvasesByCanvasId",
         "summary": "保存画布内容",
-        "description": "整体覆盖保存画布内容并返回确认。内容可含 base64 图片数据，请求体上限 50MB。",
+        "description": "携带 expectedRevision 原子保存项目画布文件并返回新版本；文件已被其它编辑或 Git 修改时返回 409，不能静默覆盖。新增图片可含 base64 数据，请求体上限 50MB。",
         "tags": [
           "canvases"
         ],

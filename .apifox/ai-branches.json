@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-09T18:31:25.115Z",
+  "updatedAt": "2026-10-12T11:25:08.291Z",
   "projects": {
     "8892388": {
       "branches": {
@@ -150,10 +150,24 @@
           "branchType": "SPRINT",
           "sourceBranchId": 8691397,
           "isAiBranch": true,
+          "isAiWritableBranch": false,
+          "automationLifecycleStatus": "ARCHIVED",
+          "isArchived": true,
+          "fetchedAt": "2026-10-11T15:58:11.136Z",
+          "lastKnownStatus": "ARCHIVED"
+        },
+        "8714463": {
+          "projectId": 8892388,
+          "branchId": 8714463,
+          "name": "ai/20261012-from-main-harness-goal",
+          "branchKind": "ai",
+          "branchType": "SPRINT",
+          "sourceBranchId": 8691397,
+          "isAiBranch": true,
           "isAiWritableBranch": true,
           "automationLifecycleStatus": "ACTIVE",
           "isArchived": false,
-          "fetchedAt": "2026-10-09T18:31:25.115Z",
+          "fetchedAt": "2026-10-12T11:25:08.291Z",
           "lastKnownStatus": "ACTIVE"
         }
       },
@@ -533,6 +547,19 @@
       "projectId": 8892388,
       "branchId": 8708676,
       "createdAt": "2026-10-09T18:31:25.115Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8714463,
+      "sourceBranchId": 8691397,
+      "createdAt": "2026-10-11T16:01:41.950Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8714463,
+      "createdAt": "2026-10-12T11:25:08.291Z"
     }
   ]
 }
