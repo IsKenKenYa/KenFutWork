@@ -13,7 +13,10 @@ import { FilesystemBackend } from "deepagents";
 import { describe, expect, it } from "vitest";
 import { loadServerEnv } from "../config/env.js";
 import { createReadHistoryTool } from "../features/context-history/read-history-tool.js";
-import { createContextHistoryArchiveBindings } from "../features/context-history/service.js";
+import {
+  createContextHistoryArchiveBindings,
+  requireContextHistoryPageBudget,
+} from "../features/context-history/service.js";
 import { archiveTaskFixture } from "../features/context-history/test-fixture.js";
 import type { CompactionPlan } from "./auto-compact.js";
 import type { AgentBackendResult } from "./backends/index.js";
@@ -57,7 +60,12 @@ describe("Harness 真实上下文压缩生命周期", () => {
     );
     const task = await archiveTaskFixture();
     const archives = createContextHistoryArchiveBindings();
-    const kernelTools = [createReadHistoryTool(archives)];
+    const kernelTools = [
+      createReadHistoryTool(
+        archives,
+        requireContextHistoryPageBudget(task.handle),
+      ),
+    ];
     try {
       const env = loadServerEnv({
         agentBackendMode: "filesystem",
@@ -204,7 +212,12 @@ it("native历史port保存精确checkpoint引用，后续运行不改写旧引�
       model: new ControlledModel(),
       preset: "code",
       systemPrompt: "历史引用验证",
-      kernelTools: [createReadHistoryTool(archives)],
+      kernelTools: [
+        createReadHistoryTool(
+          archives,
+          requireContextHistoryPageBudget(task.handle),
+        ),
+      ],
       contextHistoryArchives: archives,
       runToolContext: {
         ...task.execution,
@@ -298,7 +311,12 @@ it("真实summary模型调用后checkpoint提交失败，pending write不能被�
   );
   const task = await archiveTaskFixture();
   const archives = createContextHistoryArchiveBindings();
-  const kernelTools = [createReadHistoryTool(archives)];
+  const kernelTools = [
+    createReadHistoryTool(
+      archives,
+      requireContextHistoryPageBudget(task.handle),
+    ),
+  ];
   try {
     const env = loadServerEnv({
       agentBackendMode: "filesystem",

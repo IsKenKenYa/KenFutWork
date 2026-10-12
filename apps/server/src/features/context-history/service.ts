@@ -1,11 +1,25 @@
-import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
+import { AGENT_GOVERNANCE_LIMITS } from "@kenfutwork/shared";
 import type { ToolExecutionContext } from "../../kernel/types.js";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
-import type { SettingsService } from "../settings/settings-service.js";
 import type {
   ContextHistoryArchiveBindings,
   ContextHistoryArchiveReader,
 } from "./types.js";
+
+/** Schema and archive IO consume the same budget fixed when this scope opened. */
+export function requireContextHistoryPageBudget(
+  handle: ExecutionScopeHandle,
+): number {
+  const budget = handle.backend.limits.codeReadPageCharacters;
+  const bounds = AGENT_GOVERNANCE_LIMITS.codeReadPageCharacters;
+  if (
+    !Number.isSafeInteger(budget) ||
+    budget < bounds.min ||
+    budget > bounds.max
+  )
+    throw new Error("历史分页预算缺失或无效，请检查Task执行作用域。");
+  return budget;
+}
 
 function requireOwner(owner: ToolExecutionContext) {
   const handle = owner.scopeHandle;
@@ -51,9 +65,7 @@ export function createContextHistoryArchiveAuthority(
   };
 }
 
-export function createContextHistoryArchiveBindings(
-  settings?: Pick<SettingsService, "getInstanceSettings">,
-): ContextHistoryArchiveBindings {
+export function createContextHistoryArchiveBindings(): ContextHistoryArchiveBindings {
   const providers = new WeakMap<
     ExecutionScopeHandle,
     {
@@ -96,15 +108,7 @@ export function createContextHistoryArchiveBindings(
         throw new Error("当前运行没有可读取的历史归档。");
       const threadId = execution.threadId;
       if (!threadId) throw new Error("历史归档缺少运行线程。");
-      const pageBudget =
-        settings && execution.actor
-          ? (
-              await settings.getInstanceSettings(
-                execution.actor,
-                handle.describe().instanceId,
-              )
-            ).codeReadPageCharacters
-          : AGENT_GOVERNANCE_DEFAULTS.codeReadPageCharacters;
+      const pageBudget = requireContextHistoryPageBudget(handle);
       const limit = input.limit ?? pageBudget;
       if (limit > pageBudget)
         throw new Error(`历史分页范围超过实例设置上限（${pageBudget}）。`);

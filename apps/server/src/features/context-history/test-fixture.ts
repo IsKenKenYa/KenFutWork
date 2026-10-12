@@ -3,7 +3,10 @@ import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CodeExecutionScope } from "@kenfutwork/shared";
-import { instanceSettingsSchema } from "@kenfutwork/shared";
+import {
+  AGENT_GOVERNANCE_DEFAULTS,
+  instanceSettingsSchema,
+} from "@kenfutwork/shared";
 import { loadServerEnv } from "../../config/env.js";
 import { composePlugins } from "../../kernel/compose.js";
 import { AgentRunEventBus } from "../../kernel/context.js";
@@ -12,7 +15,10 @@ import { createExecutionScopes } from "../execution/scope-service.js";
 import { createPermissionService } from "../permissions/permission-service.js";
 import { createContextHistoryPlugin } from "./plugin.js";
 
-export async function archiveTaskFixture(preset: "code" | "design" = "code") {
+export async function archiveTaskFixture(
+  preset: "code" | "design" = "code",
+  initialPageBudget: number = AGENT_GOVERNANCE_DEFAULTS.codeReadPageCharacters,
+) {
   const root = await realpath(
     await mkdtemp(join(tmpdir(), "kfw-history-consumer-")),
   );
@@ -26,11 +32,16 @@ export async function archiveTaskFixture(preset: "code" | "design" = "code") {
     sandboxMode: "workspace-write",
   };
   let branchGeneration = 1;
+  let pageBudget = initialPageBudget;
   const actor = {
     instanceId: identity.instanceId,
     accessClientId: randomUUID(),
   };
   const scopes = createExecutionScopes({
+    resolveFileLimits: async () => ({
+      ...AGENT_GOVERNANCE_DEFAULTS,
+      codeReadPageCharacters: pageBudget,
+    }),
     repository: {
       load: async () => ({
         preset,
@@ -66,6 +77,9 @@ export async function archiveTaskFixture(preset: "code" | "design" = "code") {
     actor,
     identity,
     scopes,
+    setPageBudget: (value: number) => {
+      pageBudget = value;
+    },
     staleBranch: () => {
       branchGeneration++;
     },
@@ -77,6 +91,7 @@ export async function archiveTaskFixture(preset: "code" | "design" = "code") {
 export function archiveKernelFixture() {
   const permissions = createPermissionService();
   const events = new AgentRunEventBus();
+  // Runtime Provider composition also consumes this shared fixture's settings port.
   const settings = {
     onUpdated: () => {
       throw new Error("归档fixture不支持设置订阅");

@@ -1,28 +1,23 @@
-import { AGENT_GOVERNANCE_LIMITS } from "@kenfutwork/shared";
 import { z } from "zod";
 import type { ToolDefinition } from "../../kernel/types.js";
 import type { ContextHistoryArchiveBindings } from "./types.js";
 
-const schema = z
-  .object({
-    uri: z.string().min(1).max(8192),
-    offset: z
-      .number()
-      .int()
-      .nonnegative()
-      .max(Number.MAX_SAFE_INTEGER)
-      .optional(),
-    limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(AGENT_GOVERNANCE_LIMITS.codeReadPageCharacters.max)
-      .optional(),
-  })
-  .strict();
 export function createReadHistoryTool(
   archives: ContextHistoryArchiveBindings,
+  pageBudget: number,
 ): ToolDefinition {
+  const schema = z
+    .object({
+      uri: z.string().min(1).max(8192),
+      offset: z
+        .number()
+        .int()
+        .nonnegative()
+        .max(Number.MAX_SAFE_INTEGER)
+        .optional(),
+      limit: z.number().int().min(1).max(pageBudget).optional(),
+    })
+    .strict();
   return {
     name: "ReadHistory",
     scope: "shared",

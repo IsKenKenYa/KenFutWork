@@ -10,7 +10,10 @@ import { createSummarizationMiddleware } from "deepagents";
 import { createAgent } from "langchain";
 import { afterEach, describe, expect, it } from "vitest";
 import { createReadHistoryTool } from "../features/context-history/read-history-tool.js";
-import { createContextHistoryArchiveBindings } from "../features/context-history/service.js";
+import {
+  createContextHistoryArchiveBindings,
+  requireContextHistoryPageBudget,
+} from "../features/context-history/service.js";
 import { archiveTaskFixture } from "../features/context-history/test-fixture.js";
 import { resolveCompactionPlan } from "./auto-compact.js";
 
@@ -199,7 +202,12 @@ describe("自动压缩的装配接线", () => {
       model: model as never,
       checkpointer: new MemorySaver(),
       contextHistoryArchives: archives,
-      kernelTools: [createReadHistoryTool(archives)],
+      kernelTools: [
+        createReadHistoryTool(
+          archives,
+          requireContextHistoryPageBudget(task.handle),
+        ),
+      ],
       runToolContext: task.execution,
       ...(autoCompact ? { autoCompact } : {}),
     });

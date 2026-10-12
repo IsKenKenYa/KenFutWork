@@ -67,16 +67,10 @@ it("branch revocation during archive IO blocks publication", async () => {
   }
 });
 
-it("uses the current instance page budget, fills its default, and rejects excess before provider IO", async () => {
-  const fixture = await archiveTaskFixture();
+it("uses the opened scope page budget and adopts settings changes only in a new scope", async () => {
+  const fixture = await archiveTaskFixture("code", 128);
   try {
-    let budget = 128;
-    const getInstanceSettings = vi.fn(
-      async () => ({ codeReadPageCharacters: budget }) as never,
-    );
-    const service = createContextHistoryArchiveBindings({
-      getInstanceSettings,
-    } as never);
+    const service = createContextHistoryArchiveBindings();
     const read = vi.fn(async (input) => ({
       ...page,
       text: String(input.limit),
@@ -91,20 +85,37 @@ it("uses the current instance page budget, fills its default, and rejects excess
     ).rejects.toThrow("实例设置上限（128）");
     expect(read).toHaveBeenCalledTimes(1);
 
-    budget = 256;
+    fixture.setPageBudget(256);
+    await expect(
+      service.read({ uri: "owned:checkpoint", limit: 200 }, fixture.execution),
+    ).rejects.toThrow("128");
+    expect(read).toHaveBeenCalledTimes(1);
+    const nextHandle = await fixture.scopes.openTask(
+      fixture.actor,
+      fixture.identity.taskId,
+    );
+    const nextExecution = {
+      ...fixture.execution,
+      scopeHandle: nextHandle,
+      runId: "next-run",
+    };
+    service.bind(nextExecution, read);
     expect(
       await service.read(
         { uri: "owned:checkpoint", limit: 200 },
-        fixture.execution,
+        nextExecution,
       ),
     ).toMatchObject({ text: "200" });
-    expect(getInstanceSettings).toHaveBeenCalledTimes(3);
+    expect(
+      await service.read({ uri: "owned:checkpoint" }, nextExecution),
+    ).toMatchObject({ text: "256" });
+    expect(read).toHaveBeenCalledTimes(3);
   } finally {
     await fixture.cleanup();
   }
 });
 
-it("uses the shared governance default when no settings resolver is supplied", async () => {
+it("uses the resolved scope default without a second settings resolver", async () => {
   const fixture = await archiveTaskFixture();
   try {
     const service = createContextHistoryArchiveBindings();

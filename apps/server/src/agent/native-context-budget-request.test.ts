@@ -10,7 +10,10 @@ import { expect, it } from "vitest";
 import { z } from "zod";
 import { loadServerEnv } from "../config/env.js";
 import { createReadHistoryTool } from "../features/context-history/read-history-tool.js";
-import { createContextHistoryArchiveBindings } from "../features/context-history/service.js";
+import {
+  createContextHistoryArchiveBindings,
+  requireContextHistoryPageBudget,
+} from "../features/context-history/service.js";
 import { archiveTaskFixture } from "../features/context-history/test-fixture.js";
 import { createKenFutWorkDeepAgent } from "./deep-agent.js";
 
@@ -56,7 +59,12 @@ it.each(["system", "tools"] as const)(
           ephemeral: false,
         },
         contextHistoryArchives: archives,
-        kernelTools: [createReadHistoryTool(archives)],
+        kernelTools: [
+          createReadHistoryTool(
+            archives,
+            requireContextHistoryPageBudget(fixture.handle),
+          ),
+        ],
         runToolContext: fixture.execution,
         autoCompact: {
           trigger: { type: "tokens", value: 10_000 },
@@ -137,7 +145,12 @@ it.each(["fixed-system", "fixed-tools", "retained-history"] as const)(
           ephemeral: false,
         },
         contextHistoryArchives: archives,
-        kernelTools: [createReadHistoryTool(archives)],
+        kernelTools: [
+          createReadHistoryTool(
+            archives,
+            requireContextHistoryPageBudget(fixture.handle),
+          ),
+        ],
         runToolContext: fixture.execution,
         contextBudget: { inputTokenLimit: 4_096 },
         autoCompact: {
@@ -227,7 +240,12 @@ it("disabling automatic compaction does not disable the actual model input cap",
         ephemeral: false,
       },
       contextHistoryArchives: archives,
-      kernelTools: [createReadHistoryTool(archives)],
+      kernelTools: [
+        createReadHistoryTool(
+          archives,
+          requireContextHistoryPageBudget(fixture.handle),
+        ),
+      ],
       runToolContext: fixture.execution,
       contextBudget: { inputTokenLimit: 4_096 },
       llmRetry: { maxAttempts: 1, infinite: false },
@@ -267,7 +285,12 @@ it("the same product budget object updates the next actual request even with aut
         ephemeral: false,
       },
       contextHistoryArchives: archives,
-      kernelTools: [createReadHistoryTool(archives)],
+      kernelTools: [
+        createReadHistoryTool(
+          archives,
+          requireContextHistoryPageBudget(fixture.handle),
+        ),
+      ],
       runToolContext: fixture.execution,
       contextBudget: budget,
       llmRetry: { maxAttempts: 1, infinite: false },
