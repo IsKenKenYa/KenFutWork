@@ -22,6 +22,7 @@ test("桌面源码启动按依赖图重建宿主与服务端协议，先于界�
   const workspaceBuild = commands.find(({ args }) => args.includes("turbo"));
   assert.ok(workspaceBuild, "桌面启动必须使用workspace依赖图，而非只编译叶包");
   const { stdout } = await exec(workspaceBuild.program, [
+    "--reporter=silent",
     ...workspaceBuild.args,
     "--dry=json",
   ]);
