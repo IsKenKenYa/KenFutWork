@@ -255,6 +255,7 @@ export function createImageGenerateToolDefinition(deps?: {
     name: "generate_image",
     description: `Generate an image using AI. Available models: ${modelSummary}. Returns the generated image URL.`,
     scope: "design",
+    access: "execute",
     zodSchema: schema,
     parameters: z.toJSONSchema(schema),
     execute: async (args, execCtx) =>

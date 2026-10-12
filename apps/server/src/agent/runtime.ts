@@ -1069,6 +1069,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         const canvasId = run.canvasId;
         const sessionId = run.sessionId;
         const runId = run.runId;
+        const generationOrigin = () => {
+          const scope = run.scopeHandle?.describe();
+          if (!scope) return run.projectId ? { projectId: run.projectId } : {};
+          if (typeof run.branchGeneration !== "number")
+            throw new Error("本轮Task授权信息缺失，请重新开启会话。");
+          return {
+            projectId: scope.projectId,
+            expectedScopeGeneration: scope.generation,
+            expectedBranchGeneration: run.branchGeneration,
+          };
+        };
 
         submitImageJob = async (input) => {
           const jobT0 = Date.now();
@@ -1084,6 +1095,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           if (!selected) throw new Error("请从本地供应商目录选择图像模型。");
 
           const job = await jobSvc.createJob(actor, {
+            ...generationOrigin(),
             ...(canvasId ? { canvasId } : {}),
             ...(sessionId ? { sessionId } : {}),
             jobType: "image_generation",
@@ -1234,6 +1246,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           if (!selected) throw new Error("请从本地供应商目录选择视频模型。");
 
           const job = await jobSvc.createJob(actor, {
+            ...generationOrigin(),
             ...(canvasId ? { canvasId } : {}),
             ...(sessionId ? { sessionId } : {}),
             jobType: "video_generation",
@@ -1281,6 +1294,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               const result = current.result as {
                 signed_url?: string;
                 duration_seconds?: number;
+                asset_id?: string;
                 width?: number;
                 height?: number;
                 mime_type?: string;
@@ -1305,6 +1319,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     await options.canvasService.insertVideoElement(actor, {
                       canvasId,
                       signedUrl: result.signed_url,
+                      ...(result.asset_id ? { assetId: result.asset_id } : {}),
                       width: result.width ?? 1280,
                       height: result.height ?? 720,
                       mimeType: result.mime_type ?? "video/mp4",

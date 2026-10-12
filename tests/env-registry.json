@@ -4,6 +4,7 @@
     "KENFUTWORK_GENERATION_FILES_TEST_PG": {
       "surface": "test",
       "readers": [
+        "apps/server/src/agent/runtime-generation-origin.integration.test.ts",
         "apps/server/src/features/generation/file-targets.integration.test.ts"
       ],
       "inExamples": false,

@@ -272,6 +272,7 @@ export function createVideoGenerateToolDefinition(deps?: {
     name: "generate_video",
     description: `Generate a video using AI. Available models: ${modelSummary}. Supports text-to-video, image-to-video, and video editing. Returns the generated video URL.`,
     scope: "design",
+    access: "execute",
     zodSchema: schema,
     parameters: z.toJSONSchema(schema),
     execute: async (args) =>
