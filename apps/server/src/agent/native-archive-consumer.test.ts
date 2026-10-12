@@ -177,85 +177,88 @@ it("production archive capability fails loud without its Consumer and never borr
   }
 });
 
-it("production manual maintenance uses the same owned Provider and registered readonly Consumer", async () => {
-  const fixture = await archiveTaskFixture();
-  const kernel = archiveKernelFixture();
-  try {
-    const registry = kernel.get("tools");
-    const definitions = registry.resolveRunTools({
-      preset: "code",
-      scopeHandle: fixture.handle,
-      backendFactory: () => fixture.handle.backend,
-    });
-    const agent = createKenFutWorkDeepAgent({
-      env: loadServerEnv({}, {}),
-      preset: "code",
-      model: new ReadingModel({}),
-      systemPrompt: "continue",
-      checkpointer: new MemorySaver(),
-      backendResult: {
-        factory: () => fixture.handle.backend,
-        ephemeral: false,
-      },
-      runToolContext: fixture.execution,
-      kernelTools: definitions,
-      contextHistoryArchives: kernel.get("contextHistoryArchives"),
-      manualCompactPlan: {
-        trigger: { type: "tokens", value: 4_000 },
-        keep: { type: "messages", value: 1 },
-        source: "fallback",
-      },
-      llmRetry: { maxAttempts: 1, infinite: false },
-    });
-    for await (const _event of agent.streamEvents(
-      {
-        messages: [
-          new HumanMessage("original objective"),
-          new AIMessage("unfinished evidence"),
-          new HumanMessage("continue"),
-        ],
-      },
-      {
-        configurable: { thread_id: fixture.execution.threadId },
-        version: "v2",
-      },
-    )) {
+it.each(["code", "design"] as const)(
+  "%s production manual maintenance uses the same owned Provider and registered readonly Consumer",
+  async (preset) => {
+    const fixture = await archiveTaskFixture(preset);
+    const kernel = archiveKernelFixture();
+    try {
+      const registry = kernel.get("tools");
+      const definitions = registry.resolveRunTools({
+        preset,
+        scopeHandle: fixture.handle,
+        backendFactory: () => fixture.handle.backend,
+      });
+      const agent = createKenFutWorkDeepAgent({
+        env: loadServerEnv({}, {}),
+        preset,
+        model: new ReadingModel({}),
+        systemPrompt: "continue",
+        checkpointer: new MemorySaver(),
+        backendResult: {
+          factory: () => fixture.handle.backend,
+          ephemeral: false,
+        },
+        runToolContext: fixture.execution,
+        kernelTools: definitions,
+        contextHistoryArchives: kernel.get("contextHistoryArchives"),
+        manualCompactPlan: {
+          trigger: { type: "tokens", value: 4_000 },
+          keep: { type: "messages", value: 1 },
+          source: "fallback",
+        },
+        llmRetry: { maxAttempts: 1, infinite: false },
+      });
+      for await (const _event of agent.streamEvents(
+        {
+          messages: [
+            new HumanMessage("original objective"),
+            new AIMessage("unfinished evidence"),
+            new HumanMessage("continue"),
+          ],
+        },
+        {
+          configurable: { thread_id: fixture.execution.threadId },
+          version: "v2",
+        },
+      )) {
+      }
+      const history = agent.contextHistory;
+      const threadId = fixture.execution.threadId;
+      if (!history || !threadId)
+        throw new Error("real native maintenance port missing");
+      const compacted = await history.compactCurrent({ threadId });
+      if (compacted.status !== "applied")
+        throw new Error("manual compaction did not apply");
+      const state = await history.getEffectiveState(compacted.reference);
+      const summary = state.messages.find((message) => message.summary);
+      if (typeof summary?.content !== "string")
+        throw new Error("committed summary missing");
+      const uri = /kfw-context-history:\/[A-Za-z0-9_-]+\.md/.exec(
+        summary.content,
+      )?.[0];
+      const read = definitions.find((tool) => tool.name === "ReadHistory");
+      if (!uri || !read) throw new Error("archive Consumer binding missing");
+      const result = await registry.executeDefinition(
+        read,
+        { uri },
+        fixture.execution,
+      );
+      expect(result).toMatchObject({
+        uri,
+        text: expect.stringContaining("unfinished evidence"),
+      });
+      fixture.staleBranch();
+      await expect(
+        registry.executeDefinition(read, { uri }, fixture.execution),
+      ).rejects.toThrow("分支");
+      agent.releaseContextHistory?.();
+    } finally {
+      kernel.dispose();
+      await fixture.cleanup();
     }
-    const history = agent.contextHistory;
-    const threadId = fixture.execution.threadId;
-    if (!history || !threadId)
-      throw new Error("real native maintenance port missing");
-    const compacted = await history.compactCurrent({ threadId });
-    if (compacted.status !== "applied")
-      throw new Error("manual compaction did not apply");
-    const state = await history.getEffectiveState(compacted.reference);
-    const summary = state.messages.find((message) => message.summary);
-    if (typeof summary?.content !== "string")
-      throw new Error("committed summary missing");
-    const uri = /kfw-context-history:\/[A-Za-z0-9_-]+\.md/.exec(
-      summary.content,
-    )?.[0];
-    const read = definitions.find((tool) => tool.name === "ReadHistory");
-    if (!uri || !read) throw new Error("archive Consumer binding missing");
-    const result = await registry.executeDefinition(
-      read,
-      { uri },
-      fixture.execution,
-    );
-    expect(result).toMatchObject({
-      uri,
-      text: expect.stringContaining("unfinished evidence"),
-    });
-    fixture.staleBranch();
-    await expect(
-      registry.executeDefinition(read, { uri }, fixture.execution),
-    ).rejects.toThrow("分支");
-    agent.releaseContextHistory?.();
-  } finally {
-    kernel.dispose();
-    await fixture.cleanup();
-  }
-});
+  },
+);
 
 class ShortDesignModel extends ReadingModel {
   override async _generate() {
