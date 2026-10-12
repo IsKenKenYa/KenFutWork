@@ -14,8 +14,14 @@ import {
  * 用户看到的是英文 `agent`、点开还是个空列表。
  */
 describe("执行模式标签的本地兜底", () => {
-  it("六档都有中文兜底标签，顺序固定", () => {
-    expect(EXECUTION_MODES_ORDER).toHaveLength(6);
+  it("五档都有中文兜底标签，顺序固定", () => {
+    expect(EXECUTION_MODES_ORDER).toEqual([
+      "agent",
+      "plan",
+      "solo",
+      "goal",
+      "creative",
+    ]);
     for (const id of EXECUTION_MODES_ORDER) {
       const label = executionModeLabel(id);
       expect(label).not.toBe(id); // 兜底也不该等于 id（否则等于没兜）
@@ -23,7 +29,7 @@ describe("执行模式标签的本地兜底", () => {
     }
   });
 
-  it("词表为空时下拉仍有六项（而不是空的）", () => {
+  it("词表为空时下拉仍有五项（而不是空的）", () => {
     const options = executionModeOptions([]);
     expect(options.map((option) => option.id)).toEqual([
       ...EXECUTION_MODES_ORDER,

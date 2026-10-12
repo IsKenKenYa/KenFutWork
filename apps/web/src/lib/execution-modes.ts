@@ -1,12 +1,12 @@
 import type { ExecutionMode } from "@kenfutwork/shared";
 
 /**
- * 六档执行模式的中文标签（本地兜底；唯一权威仍是服务端 `GET /api/execution-modes`）。
+ * 五档执行模式的中文标签（本地兜底；唯一权威仍是服务端 `GET /api/execution-modes`）。
  *
  * 为什么前端也要有一份：模式选择器的标签来自服务端词表，而词表要等本机实例连接（`/api/instance`）
  * 就绪后才拉得动——首屏那一小段时间 `executionModes` 是空数组，选择器**只能渲染原始 id**，
  * 于是用户看到的是英文 `agent`、点开还是空列表（2026-09-19 用户反馈：「它变成英文还是空的」）。
- * 这里与 `apps/server/src/features/agent-modes/execution-mode-service.ts` 的内置六档对齐：
+ * 这里与 `apps/server/src/features/agent-modes/execution-mode-service.ts` 的内置五档对齐：
  * 服务端词表到了就用它的（含描述与注入指令），没到也不会把 id 露出来。
  */
 export const EXECUTION_MODE_LABELS: Record<ExecutionMode, string> = {
@@ -24,7 +24,6 @@ export const EXECUTION_MODES_ORDER: readonly ExecutionMode[] = [
   "plan",
   "solo",
   "goal",
-  "loop",
   "creative",
 ];
 
@@ -51,13 +50,13 @@ export function executionModeLabel(
  * 下拉选项：服务端词表为准，缺失的档位用本地兜底补齐（顺序固定）。
  *
  * 用「并集」而不是「词表为空才兜底」：词表可能只到了一部分（例如后端加了新档），
- * 补齐能保证用户永远看得到全部六档。
+ * 补齐能保证用户永远看得到全部五档。
  */
 export function executionModeOptions(
   vocabulary: ReadonlyArray<ExecutionModeOption> = [],
 ): ExecutionModeOption[] {
   const extra = vocabulary.filter(
-    (mode) => !EXECUTION_MODES_ORDER.includes(mode.id),
+    (mode) => mode.id !== "loop" && !EXECUTION_MODES_ORDER.includes(mode.id),
   );
   return [
     ...EXECUTION_MODES_ORDER.map((id) => ({

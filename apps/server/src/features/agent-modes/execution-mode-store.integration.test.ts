@@ -157,7 +157,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
       }
     });
 
-    it("Design和Flow使用正式项目会话仓库创建后，两种id可持久往返现有六档模式", async () => {
+    it("Design和Flow使用正式项目会话仓库创建后，两种id可持久往返现有五档模式", async () => {
       const database = await createTaskWorkDatabase();
       try {
         const { scope, actor } = await prepareHarnessTask(database);
@@ -168,14 +168,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           createExecutionModeService({
             store: createExecutionModeStore(database.persistence),
           });
-        const modes = [
-          "agent",
-          "plan",
-          "solo",
-          "goal",
-          "loop",
-          "creative",
-        ] as const;
+        const modes = ["agent", "plan", "solo", "goal", "creative"] as const;
         expect(
           createService()
             .listModes()

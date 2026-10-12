@@ -1327,7 +1327,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     auth: "local",
     successStatus: 200,
     summary: "列出执行模式",
-    description: "返回六档执行模式词汇表，形如 { modes: [...] }。",
+    description: "返回五档执行模式词汇表，形如 { modes: [...] }。",
   },
   {
     method: "get",
@@ -1337,7 +1337,8 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     successStatus: 200,
     responseSchema: executionModeSchema,
     summary: "查询线程激活模式",
-    description: "返回线程当前激活的执行模式；缓存未命中时回读持久化值。",
+    description:
+      "返回线程当前激活的执行模式；缓存未命中时回读持久化值。历史 loop 模式返回 409 并要求重新选择。",
   },
   {
     method: "put",
@@ -1350,7 +1351,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     }),
     summary: "切换线程执行模式",
     description:
-      "激活并写穿持久化线程执行模式，返回 { mode }。会话不属当前实例返回 404；请求非法返回 400。",
+      "激活并写穿持久化线程执行模式，返回 { mode }。会话不属当前实例返回 404；请求非法或选择已停用的 loop 返回 400。",
   },
   // ---- flow-host.ts（flow 集成宿主缝；credentials/billing/events 用共享密钥而非用户令牌）----
   {

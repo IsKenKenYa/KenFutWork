@@ -50,13 +50,6 @@ export const BUILTIN_EXECUTION_MODES: Array<{
       '<execution_mode name="goal">\n本轮为目标驱动模式：先与用户明确成功标准（可验证），再围绕目标循环推进，每步说明进度与剩余差距。\n</execution_mode>',
   },
   {
-    id: "loop",
-    label: "循环",
-    description: "循环执行：按固定步骤反复迭代直到完成。",
-    inputDirective:
-      '<execution_mode name="loop">\n本轮为循环模式：按固定步骤反复迭代（执行→检查→修正），直到任务完成或达到用户设定的停止条件。\n</execution_mode>',
-  },
-  {
     id: "creative",
     label: "创造",
     description: "插件/技能创造引导：按规范产出 SKILL.md 或插件 bundle 产物。",
@@ -64,6 +57,13 @@ export const BUILTIN_EXECUTION_MODES: Array<{
       '<execution_mode name="creative">\n本轮为创造模式，目标是产出**可安装**的插件/技能产物：\n1. 先与用户确认交付物形态（SKILL.md 技能 / 插件 bundle 目录）；\n2. 技能以 SKILL.md 开头（YAML frontmatter 含 name/description，正文为操作指引，附属文件与 SKILL.md 同目录）；\n3. 技能写好后**调用 create_skill 工具发布到当前实例**（name/description/content 必填，content 即 SKILL.md 全文），发布即启用、后续会话可用——不要只把文件留在工作目录里让用户手动导入；\n4. 插件 bundle（目录须含 package.json / cordis.patch.yml / index.js）：package.json 用**嵌套声明** `"kenfutwork": {"bundle": {"patch": "./cordis.patch.yml"}}`（或 `"dsh"` 同形；平键 `"kenfutwork.bundle"` 无效），并含 `"type":"module"` 与 `"main":"index.js"`；cordis.patch.yml 的 `- insert:` 下为**数组**（每项含 id/name/inject）；index.js 为 ESM（导出 name/inject/apply(ctx)）；写好后调用 **install_plugin** 安装；\n5. MCP server 脚本（stdio 协议，.py/.js 均可）写好后调用 **create_mcp_server** 注册（name + 相对工作目录的 path；其工具以 mcp__<name>__<tool> 进入注册表）；\n6. 安装/注册都需要管理员：当前用户不是管理员时，如实说明并给出文件位置，让管理员去插件市场 / MCP 面板安装；\n7. 不要擅自删除或覆盖既有产物，生成前先检查目录现状。\n</execution_mode>',
   },
 ];
+
+export class RetiredExecutionModeError extends Error {
+  constructor() {
+    super("循环模式已停用，请重新选择执行模式");
+    this.name = "RetiredExecutionModeError";
+  }
+}
 
 /**
  * plan 模式放行的只读工具白名单（含 deepagents 内置文件工具与内核只读工具）。
@@ -261,6 +261,7 @@ export function createExecutionModeService(
       return active.get(threadId) ?? "agent";
     },
     async activate(threadId, mode, scope) {
+      if (mode === "loop") throw new RetiredExecutionModeError();
       if (!known.has(mode)) {
         throw new Error(`[agent-modes] 未知执行模式 ${mode}（fail loud）。`);
       }
@@ -281,6 +282,7 @@ export function createExecutionModeService(
       const row = await deps.store.lookup(scope.instanceId, threadId);
       if (!row.exists) return "agent";
       const mode = row.mode ?? "agent";
+      if (mode === "loop") throw new RetiredExecutionModeError();
       active.set(threadId, mode);
       return mode;
     },
