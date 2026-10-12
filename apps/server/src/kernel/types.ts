@@ -326,7 +326,23 @@ export interface SystemPromptRegistry {
   compose(ctx: PromptCompositionContext): Promise<string>;
 }
 
+/** Facts emitted by the guarded registry at the actual tool execution boundary. */
+export type ToolExecutionObservation = {
+  phase: "started" | "completed" | "failed";
+  runId: string | undefined;
+  toolCallId: string | undefined;
+  scopeHandle: ExecutionScopeHandle | undefined;
+  definition: ToolDefinition;
+  args: Record<string, unknown>;
+  output?: unknown;
+  error?: string;
+};
+
 export interface ToolExecutionContext {
+  /** Kernel consumes and strips this callback before invoking the registered tool. */
+  observeToolExecution?:
+    | ((fact: ToolExecutionObservation) => Promise<void>)
+    | undefined;
   /** 真实Run持久事件消费方；出口工具复用此通路，不持有已结束的SDK子run回调。 */
   publishToolEvent?:
     | ((
@@ -432,8 +448,8 @@ export interface ToolRegistry {
     execCtx?: ToolExecutionContext,
   ): Promise<unknown>;
   /**
-   * guarded 执行任意工具实例（含 per-run 动态解析的产物——它们不在静态
-   * 注册表里，`execute(name)` 查不到）。拦截语义与 execute 一致。
+   * guarded 执行本注册表签发且仍有效的定义。审批前后和执行前复核注册代际与schema；
+   * 注销或替换会拒绝旧调用，不自动重放副作用。动态产物不在静态表里。
    */
   executeDefinition(
     tool: ToolDefinition,

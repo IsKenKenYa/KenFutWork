@@ -87,6 +87,7 @@ async function fixture() {
       return args;
     },
   };
+  registry.register(tool);
   return {
     bus,
     registry,
@@ -181,6 +182,7 @@ it("主Task规划控制能在真实只读scope调用且不授予资源write，cl
         return "entered";
       },
     };
+    f.registry.register(control);
     expect(await f.registry.executeDefinition(control, {}, f.context)).toBe(
       "entered",
     );

@@ -88,7 +88,7 @@ export type ApprovalResolutionResult =
 export type ApprovalCancellation = Partial<
   Pick<
     ApprovalIdentity,
-    "runId" | "agentId" | "scopeGeneration" | "branchGeneration"
+    "runId" | "agentId" | "toolCallId" | "scopeGeneration" | "branchGeneration"
   >
 > &
   Pick<ApprovalIdentity, "instanceId" | "taskId">;
