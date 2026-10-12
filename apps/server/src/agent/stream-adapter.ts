@@ -39,7 +39,7 @@ type AdaptDeepAgentStreamOptions = {
   conversationId: string;
   now?: () => string;
   /** 用量采集点（§4.5）：chunk 携带 usage_metadata（cumulative）时回调最新累计值。 */
-  onUsage?: (usage: ModelCallUsage) => RunUsageTotals | void;
+  onUsage?: (usage: ModelCallUsage) => RunUsageTotals | undefined;
   runId: string;
   sessionId: string;
   /** 主 agent 的 lc_agent_name（createDeepAgent name）：归因时排除主 run。 */

@@ -318,6 +318,15 @@ export function createCodeUiConversation(input: {
   const completedTurnViews = new Map(
     structuredClone(input.state?.completedTurnViews ?? []),
   );
+  /**
+   * 会话里是否出现过**携带窗口字段**的 run.usage 事件。
+   *
+   * 冷恢复的语境：恢复态里的 contextWindow（如 4096/3000）是恢复时已知的窗口事实；
+   * 旧协议事件不携带窗口字段 ≠ 窗口消失——在这种会话里，无窗口事件**不得覆写**已恢复
+   * 的窗口（否则 maxTokens 4096→0、阈值 3000→null，圆环分母凭空丢失）。反过来，一旦
+   * 某次事件明示了窗口（新协议），窗口以事件为准，后续缺省窗口的旧事件按 G6 口径落 0。
+   */
+  let sawWindowInEvent = false;
   const inheritedHistory = structuredClone(input.state?.inheritedHistory ?? []);
   const inheritedSessions = structuredClone(
     input.state?.inheritedSessions ?? [],
@@ -984,24 +993,37 @@ export function createCodeUiConversation(input: {
           return;
         // G6 上下文容量圆环：占用 = 最近一次模型调用的输入（当前真正占着窗口的量），
         // 窗口未知时 maxTokens 落 0（界面判 0 不画百分比，只给绝对量，不编分母）。
-        root.usage.contextWindow = {
-          usedTokens: event.inputTokens,
-          maxTokens: event.contextWindowTokens ?? 0,
-          autoCompactThresholdTokens: null,
-          cache: {
-            inputTokens: event.inputTokens,
-            cacheReadTokens: event.cachedInputTokens ?? 0,
-            cacheWriteTokens: 0,
-            totalInputTokens: event.runInputTokens,
-            totalCacheReadTokens: event.runCachedInputTokens ?? 0,
-            totalCacheWriteTokens: 0,
-            hitRate:
-              typeof event.runCachedInputTokens === "number" &&
-              event.runInputTokens > 0
-                ? event.runCachedInputTokens / event.runInputTokens
-                : null,
-          },
-        };
+        // **例外（窗口来源语义）**：恢复态已携带窗口事实、且本会话尚无任何明示窗口的
+        // 事件时，无窗口事件保留恢复值不动（冷恢复用例：4096/3000 不被 20/0/null
+        // 覆写）；一旦有事件明示过窗口，后续缺省即按 G6 口径落 0。
+        const windowKnown = event.contextWindowTokens !== undefined;
+        if (windowKnown) sawWindowInEvent = true;
+        const previousWindow = root.usage.contextWindow;
+        const preserveRestoredWindow =
+          !windowKnown &&
+          !sawWindowInEvent &&
+          previousWindow != null &&
+          previousWindow.maxTokens > 0;
+        if (!preserveRestoredWindow) {
+          root.usage.contextWindow = {
+            usedTokens: event.inputTokens,
+            maxTokens: event.contextWindowTokens ?? 0,
+            autoCompactThresholdTokens: null,
+            cache: {
+              inputTokens: event.inputTokens,
+              cacheReadTokens: event.cachedInputTokens ?? 0,
+              cacheWriteTokens: 0,
+              totalInputTokens: event.runInputTokens,
+              totalCacheReadTokens: event.runCachedInputTokens ?? 0,
+              totalCacheWriteTokens: 0,
+              hitRate:
+                typeof event.runCachedInputTokens === "number" &&
+                event.runInputTokens > 0
+                  ? event.runCachedInputTokens / event.runInputTokens
+                  : null,
+            },
+          };
+        }
         const cached =
           event.runCachedInputTokens ??
           runUsage.get(event.runId)?.cachedInputTokens;

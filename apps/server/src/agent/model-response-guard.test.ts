@@ -70,7 +70,7 @@ it.each(["assistant", undefined])(
         false,
       );
       const failed = events.find((event) => event.type === "run.failed");
-      if (!failed || failed.type !== "run.failed")
+      if (failed?.type !== "run.failed")
         throw new Error("空响应未产生可见运行错误");
       expect(failed.error.message).toContain("模型返回空响应");
     } finally {

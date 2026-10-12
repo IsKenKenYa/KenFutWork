@@ -16,7 +16,7 @@ export async function* streamCompactOperation(options: {
   plan: CompactionPlan;
   signal: AbortSignal;
   now: () => string;
-  onUsage?: (usage: AgentOperationUsage) => RunUsageTotals | void;
+  onUsage?: (usage: AgentOperationUsage) => RunUsageTotals | undefined;
 }): AsyncGenerator<StreamEvent> {
   yield {
     type: "run.started",

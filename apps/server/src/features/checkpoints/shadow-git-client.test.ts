@@ -65,7 +65,7 @@ const client = createShadowGitClient({
 });
 
 /** 在 workTree 里造一个真实嵌套仓库（带自己的 .git 与已提交文件）。 */
-const makeNestedRepo = (workTree: string): void => {
+const _makeNestedRepo = (workTree: string): void => {
   const nested = join(workTree, "nested");
   mkdirSync(nested, { recursive: true });
   // 测试进程 env 里没有 GIT_DIR/GIT_WORK_TREE，普通 execFileSync 不会污染影子仓库

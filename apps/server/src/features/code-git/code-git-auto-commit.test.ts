@@ -58,7 +58,7 @@ function run(
 }
 
 /** 测试侧 ExecGit：跑本机真实 git（生产注入 Task 沙箱执行器，测试验证 git 行为本身）。 */
-const realExec: ExecGit = async (args, cwd, input) => {
+const realExec: ExecGit = async (args, cwd, _input) => {
   const result = await run(cwd, args);
   return { code: result.code, stdout: result.stdout, stderr: result.stderr };
 };
@@ -88,12 +88,12 @@ async function commitCount(root: string): Promise<number> {
  * `execOverride` 在真实 git 执行**之前**判定：返回合成结果即跳过真实执行
  * （模拟 index.lock 碰撞 / 干净竞态——不能「先真跑再把结果翻成失败」，真实提交会落盘）。
  */
-async function world(options: {
-  codeAutoCommitEnabled?: boolean;
-  execOverride?: (
-    args: readonly string[],
-  ) => GitCommandResult | undefined;
-} = {}) {
+async function world(
+  options: {
+    codeAutoCommitEnabled?: boolean;
+    execOverride?: (args: readonly string[]) => GitCommandResult | undefined;
+  } = {},
+) {
   const root = await realpath(
     await mkdtemp(join(tmpdir(), "kfw-git-autocommit-")),
   );
@@ -109,7 +109,11 @@ async function world(options: {
   };
   const scopes = createExecutionScopes({
     repository: {
-      load: async () => ({ scope: identity, state: "ready", branchGeneration: 1 }),
+      load: async () => ({
+        scope: identity,
+        state: "ready",
+        branchGeneration: 1,
+      }),
     },
     localInstance: createRuntimeTestInstance(INSTANCE_ID),
     resolveFileLimits: async () => ({ ...AGENT_GOVERNANCE_DEFAULTS }),
@@ -149,9 +153,9 @@ describe("toAutoCommitMessage（porcelain 摘要纯函数）", () => {
   });
 
   it("修改类变更列出文件名与数量", () => {
-    expect(
-      toAutoCommitMessage(status(" M a.ts\n M b.ts\n M c.ts\n")),
-    ).toBe("自动提交：修改 3 个文件（a.ts、b.ts、c.ts）");
+    expect(toAutoCommitMessage(status(" M a.ts\n M b.ts\n M c.ts\n"))).toBe(
+      "自动提交：修改 3 个文件（a.ts、b.ts、c.ts）",
+    );
   });
 
   it("全部新增（含未跟踪）用「新增」", () => {
@@ -161,9 +165,9 @@ describe("toAutoCommitMessage（porcelain 摘要纯函数）", () => {
   });
 
   it("超过 3 个文件只列 3 个代表名并以「等」收尾", () => {
-    expect(toAutoCommitMessage(status(" M a.ts\n M b.ts\n?? c.ts\n M d.ts\n"))).toBe(
-      "自动提交：修改 4 个文件（a.ts、b.ts、c.ts 等）",
-    );
+    expect(
+      toAutoCommitMessage(status(" M a.ts\n M b.ts\n?? c.ts\n M d.ts\n")),
+    ).toBe("自动提交：修改 4 个文件（a.ts、b.ts、c.ts 等）");
   });
 
   it("重命名认新路径；删除计入修改", () => {
@@ -223,7 +227,9 @@ describe("CodeGitService.autoCommitRun（真实 git）", () => {
     const { root, service } = await world();
     await writeFile(join(root, "a.ts"), "1\n");
 
-    await expect(service.autoCommitRun(ACTOR, TASK_ID)).resolves.toBeUndefined();
+    await expect(
+      service.autoCommitRun(ACTOR, TASK_ID),
+    ).resolves.toBeUndefined();
 
     const dir = await run(root, ["rev-parse", "--is-inside-work-tree"]);
     expect(dir.code).not.toBe(0);
@@ -239,19 +245,23 @@ describe("CodeGitService.autoCommitRun（真实 git）", () => {
   });
 
   it("git 失败重试一次仍失败：warn 可检索且不抛（不阻塞终态）", async () => {
-    const warn = vi
-      .spyOn(console, "warn")
-      .mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { root, service } = await world({
       execOverride: (args) =>
         args[0] === "commit"
-          ? { code: 1, stdout: "", stderr: "fatal: Unable to create index.lock" }
+          ? {
+              code: 1,
+              stdout: "",
+              stderr: "fatal: Unable to create index.lock",
+            }
           : undefined,
     });
     await initRepo(root);
     await writeFile(join(root, "a.ts"), "1\n");
 
-    await expect(service.autoCommitRun(ACTOR, TASK_ID)).resolves.toBeUndefined();
+    await expect(
+      service.autoCommitRun(ACTOR, TASK_ID),
+    ).resolves.toBeUndefined();
 
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).toContain("auto_commit");
@@ -265,7 +275,11 @@ describe("CodeGitService.autoCommitRun（真实 git）", () => {
         if (args[0] !== "commit") return undefined;
         commitAttempts += 1;
         return commitAttempts === 1
-          ? { code: 1, stdout: "", stderr: "fatal: Unable to create index.lock" }
+          ? {
+              code: 1,
+              stdout: "",
+              stderr: "fatal: Unable to create index.lock",
+            }
           : undefined;
       },
     });
@@ -281,9 +295,7 @@ describe("CodeGitService.autoCommitRun（真实 git）", () => {
   });
 
   it("并发窗口里别人先提交干净：视作跳过不 warn", async () => {
-    const warn = vi
-      .spyOn(console, "warn")
-      .mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { root, service } = await world({
       execOverride: (args) =>
         args[0] === "commit"
@@ -297,7 +309,9 @@ describe("CodeGitService.autoCommitRun（真实 git）", () => {
     await initRepo(root);
     await writeFile(join(root, "a.ts"), "1\n");
 
-    await expect(service.autoCommitRun(ACTOR, TASK_ID)).resolves.toBeUndefined();
+    await expect(
+      service.autoCommitRun(ACTOR, TASK_ID),
+    ).resolves.toBeUndefined();
     expect(warn).not.toHaveBeenCalled();
   });
 });

@@ -7,6 +7,7 @@
  * 安全前提：调用方必须传入**已校验归属**的沙箱目录（画布 → 项目 → 工作区），本模块
  * 不做路径校验。分支名一律先过 `isSafeBranchName` 再下发，杜绝把用户输入当参数注入。
  */
+import { realpathSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 
 export interface GitBranchView {
@@ -715,9 +716,7 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
       );
     }
     const listed = await listWorktrees(cwd);
-    const created = listed.find(
-      (entry) => entry.branch === input.branch,
-    );
+    const created = listed.find((entry) => entry.branch === input.branch);
     if (!created) throw new Error("新建工作树后未能在列表中确认。");
     return created;
   };
@@ -725,7 +724,17 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
   const deleteWorktree = async (cwd: string, path: string): Promise<void> => {
     const listed = await listWorktrees(cwd);
     // git 在 Windows 上回正斜杠路径，resolve 回反斜杠——两侧都归一化再比。
-    const normalize = (value: string) => resolve(value).toLowerCase();
+    // macOS 还有 /var ↔ /private/var 这类符号链接前缀：mkdtemp 给的路径与
+    // `git worktree list` 回的真实路径差一层，**必须 realpath 归一**，否则主工作
+    // 目录被误判成「未登记」、删主目录的保护守卫永远走不到（2026-09-25 真机回归）。
+    // 不存在的路径（删除未登记目录的用例）realpath 会抛——退回词法 resolve。
+    const normalize = (value: string): string => {
+      try {
+        return realpathSync(value).toLowerCase();
+      } catch {
+        return resolve(value).toLowerCase();
+      }
+    };
     const target = listed.find(
       (entry) => normalize(entry.path) === normalize(resolve(cwd, path)),
     );
