@@ -231,6 +231,7 @@ function designGoalStatusLabel(
 }
 
 const DESIGN_GOAL_REASON_LABELS: Record<string, string> = {
+  "project.directoryRelink": "目录已重新关联",
   "user.pause": "手动暂停",
   "budget.stop": "预算已用尽",
   "budget.usageUnavailable": "用量暂不可用",
@@ -674,6 +675,66 @@ export function ChatSidebar({
         );
       });
   }, [accessToken, activeSessionId, acceptDesignTaskPolicy, canvasId]);
+
+  useEffect(() => {
+    const refreshRelinkedTask = (event: MessageEvent) => {
+      if (
+        event.origin !== window.location.origin ||
+        event.source !== window.parent
+      )
+        return;
+      const data = event.data as {
+        type?: string;
+        projectId?: string;
+        tasks?: unknown;
+      } | null;
+      const policy = designTaskPolicyRef.current;
+      const taskId = activeSessionIdRef.current;
+      if (
+        data?.type !== "workbench:project-directory-relinked" ||
+        !policy ||
+        !taskId ||
+        policy.taskId !== taskId ||
+        policy.canvasId !== canvasId ||
+        policy.projectId !== data.projectId ||
+        !Array.isArray(data.tasks) ||
+        !data.tasks.includes(taskId)
+      )
+        return;
+      const requestId = ++policyRequestRef.current;
+      void fetchDesignTaskPolicy(accessToken, taskId)
+        .then(async ({ task }) => {
+          if (
+            requestId !== policyRequestRef.current ||
+            task.taskId !== taskId ||
+            task.projectId !== policy.projectId ||
+            task.canvasId !== canvasId
+          )
+            return;
+          acceptDesignTaskPolicy(task);
+          const goalRequestId = ++designGoalFetchRequestRef.current;
+          const goal = await fetchDesignGoal(accessToken, taskId);
+          if (
+            goalRequestId !== designGoalFetchRequestRef.current ||
+            goal.task.taskId !== taskId ||
+            goal.task.projectId !== policy.projectId ||
+            goal.task.canvasId !== canvasId
+          )
+            return;
+          designGoalResponseRef.current = goal;
+          setDesignGoalResponse(goal);
+        })
+        .catch((error: unknown) => {
+          if (requestId !== policyRequestRef.current) return;
+          setDesignTaskStatus("error");
+          setDesignTaskError(
+            error instanceof Error ? error.message : "刷新画布任务失败。",
+          );
+        });
+    };
+    window.addEventListener("message", refreshRelinkedTask);
+    return () => window.removeEventListener("message", refreshRelinkedTask);
+  }, [accessToken, acceptDesignTaskPolicy, activeSessionIdRef, canvasId]);
 
   useEffect(() => {
     const taskId = activeSessionId;
