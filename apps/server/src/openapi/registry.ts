@@ -50,6 +50,10 @@ import {
   codeGitStageRequestSchema,
   codeGitStageResponseSchema,
   codeGitStatusResponseSchema,
+  codeGitWorktreeCreateRequestSchema,
+  codeGitWorktreeCreateResponseSchema,
+  codeGitWorktreeDeleteRequestSchema,
+  codeGitWorktreeListResponseSchema,
   codeShellsResponseSchema,
   codeTaskScopeResponseSchema,
   codeTaskScopeUpdateRequestSchema,
@@ -406,7 +410,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     successStatus: 200,
     summary: "查询会话最近一轮运行终态",
     description:
-      "按持久会话和当前本地实例隔离，返回运行状态、结束原因与原始失败原因；没有可见运行时返回 null。",
+      "按持久会话和当前本地实例隔离，返回运行状态、本轮停止原因、错误代码与失败文案；旧记录停止原因为空，没有可见运行时返回 null。",
     responseSchema: agentRunLatestResponseSchema,
     querySchema: z.object({ sessionId: z.string().min(1) }),
   },
@@ -914,7 +918,8 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     successStatus: 200,
     responseSchema: canvasGetResponseSchema,
     summary: "读取画布内容",
-    description: "按 canvasId 返回当前本地实例可见画布的内容与元信息。",
+    description:
+      "按 canvasId 返回项目文件中的画布内容、元信息与原字节 SHA256 版本，保存时用此版本检查并发修改。",
   },
   {
     method: "put",
@@ -926,7 +931,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: canvasSaveResponseSchema,
     summary: "保存画布内容",
     description:
-      "整体覆盖保存画布内容并返回确认。内容可含 base64 图片数据，请求体上限 50MB。",
+      "携带 expectedRevision 原子保存项目画布文件并返回新版本；文件已被其它编辑或 Git 修改时返回 409，不能静默覆盖。新增图片可含 base64 数据，请求体上限 50MB。",
   },
   // ---- chat.ts（会话与消息）----
   {
@@ -1249,6 +1254,41 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     description: "在非仓库的工作目录上幂等初始化 git 仓库，返回最新状态。",
   },
   {
+    method: "get",
+    path: "/api/code/git/worktrees",
+    tag: "code",
+    auth: "local",
+    successStatus: 200,
+    querySchema: z.object({ taskId: z.string().describe("Task ID（必填）") }),
+    responseSchema: codeGitWorktreeListResponseSchema,
+    summary: "工作树列表",
+    description: "返回该 Task 工作目录关联的 git 工作树清单（G4）。",
+  },
+  {
+    method: "post",
+    path: "/api/code/git/worktrees",
+    tag: "code",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: codeGitWorktreeCreateRequestSchema,
+    responseSchema: codeGitWorktreeCreateResponseSchema,
+    summary: "新建工作树",
+    description:
+      "在 Task 工作目录内部新建 git 工作树（路径相对且不越界，分支名过白名单），返回新建工作树视图。",
+  },
+  {
+    method: "post",
+    path: "/api/code/git/worktrees/delete",
+    tag: "code",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: codeGitWorktreeDeleteRequestSchema,
+    responseSchema: codeGitStatusResponseSchema,
+    summary: "删除工作树",
+    description:
+      "删除列表内登记的 git 工作树（主工作目录与未登记路径拒绝），返回最新 git 状态。",
+  },
+  {
     method: "post",
     path: "/api/code/git/commit",
     tag: "code",
@@ -1417,7 +1457,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: flowHostEventsResponseSchema,
     summary: "接收 flow 运行事件批次",
     description:
-      "校验共享密钥后逐条解析事件归属，经 WebSocket 通道投递 flowRun.event；无法归属或契约不过的事件跳过并计数。批次可跨 run / 跨用户。",
+      "校验共享密钥、当前实例归属及项目代际；旧代际、排空或缺少作用域的事件跳过并计数，符合实时状态的事件经 WebSocket 投递 flowRun.event 并写入续传缓冲。",
   },
   {
     method: "post",

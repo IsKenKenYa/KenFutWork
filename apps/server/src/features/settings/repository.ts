@@ -44,11 +44,17 @@ export interface SettingsOperations {
   upsertCodeIndexEnabled(instanceId: string, enabled: boolean): Promise<void>;
   findCodeIndexAutoNewFolder(instanceId: string): Promise<boolean | null>;
   findAutoCompactEnabled(instanceId: string): Promise<boolean | null>;
+  /** 读 run 终态自动提交开关；无行返回 null（由服务落默认开）。 */
+  findCodeAutoCommitEnabled(instanceId: string): Promise<boolean | null>;
   findCommands(instanceId: string): Promise<unknown>;
   upsertCommands(instanceId: string, commands: unknown): Promise<void>;
   findHooks(instanceId: string): Promise<unknown>;
   upsertHooks(instanceId: string, hooks: unknown): Promise<void>;
   upsertAutoCompactEnabled(instanceId: string, enabled: boolean): Promise<void>;
+  upsertCodeAutoCommitEnabled(
+    instanceId: string,
+    enabled: boolean,
+  ): Promise<void>;
   upsertCodeIndexAutoNewFolder(
     instanceId: string,
     enabled: boolean,
@@ -82,6 +88,7 @@ type TerminalShellRow = { terminal_shell: TerminalShellId };
 type CodeIndexEnabledRow = { code_index_enabled: boolean };
 type CodeIndexAutoNewFolderRow = { code_index_auto_new_folder: boolean };
 type AutoCompactEnabledRow = { auto_compact_enabled: boolean };
+type CodeAutoCommitEnabledRow = { code_auto_commit_enabled: boolean };
 type CommandsRow = { commands: unknown };
 type HooksRow = { hooks: unknown };
 type UserRulesRow = { user_rules: string; rule_entries: unknown };
@@ -227,6 +234,18 @@ function createSettingsOperations(
       return row?.auto_compact_enabled ?? null;
     },
 
+    /** run 终态自动提交开关（G3/Q8）：同样逐列读写。 */
+    async findCodeAutoCommitEnabled(instanceId) {
+      const row = await persistence
+        .forInstance(instanceId)
+        .queryOne<CodeAutoCommitEnabledRow>(
+          `select code_auto_commit_enabled
+             from public.instance_settings
+            where instance_id = :instance`,
+        );
+      return row?.code_auto_commit_enabled ?? null;
+    },
+
     async findCommands(instanceId) {
       const row = await persistence
         .forInstance(instanceId)
@@ -344,6 +363,17 @@ function createSettingsOperations(
          values (:instance, $1)
          on conflict (instance_id)
          do update set auto_compact_enabled = excluded.auto_compact_enabled`,
+        [enabled],
+      );
+    },
+
+    /** run 终态自动提交开关（G3/Q8）：同样逐列 upsert。 */
+    async upsertCodeAutoCommitEnabled(instanceId, enabled) {
+      await persistence.forInstance(instanceId).query(
+        `insert into public.instance_settings (instance_id, code_auto_commit_enabled)
+         values (:instance, $1)
+         on conflict (instance_id)
+         do update set code_auto_commit_enabled = excluded.code_auto_commit_enabled`,
         [enabled],
       );
     },

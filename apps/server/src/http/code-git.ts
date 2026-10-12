@@ -15,6 +15,9 @@ import {
   codeGitStageRequestSchema,
   codeGitStageResponseSchema,
   codeGitStatusResponseSchema,
+  codeGitWorktreeCreateRequestSchema,
+  codeGitWorktreeDeleteRequestSchema,
+  codeGitWorktreeListResponseSchema,
   codeShellsResponseSchema,
   codeTerminalRequestSchema,
   codeTerminalResponseSchema,
@@ -353,6 +356,64 @@ export async function registerCodeGitRoutes(
         .pick({ taskId: true })
         .parse(request.body);
       const git = await options.codeGitService.init(user, payload.taskId);
+      return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  // --- G4 worktree 管理（Q10：新建/删除/列表；「绑为工作目录」由前端登记展示目录） ---
+
+  app.get<{ Querystring: { taskId?: string } }>(
+    "/api/code/git/worktrees",
+    async (request, reply) => {
+      const user = await options.localAccess.authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      try {
+        const taskId = request.query.taskId ?? "";
+        const worktrees = await options.codeGitService.listWorktrees(
+          user,
+          taskId,
+        );
+        return reply
+          .code(200)
+          .send(codeGitWorktreeListResponseSchema.parse({ worktrees }));
+      } catch (error) {
+        return sendCodeGitError(error, reply);
+      }
+    },
+  );
+
+  app.post("/api/code/git/worktrees", async (request, reply) => {
+    const user = await options.localAccess.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitWorktreeCreateRequestSchema.parse(request.body);
+      const worktree = await options.codeGitService.createWorktree(
+        user,
+        payload.taskId,
+        {
+          path: payload.path,
+          branch: payload.branch,
+          createBranch: payload.createBranch,
+        },
+      );
+      return reply.code(200).send({ worktree });
+    } catch (error) {
+      return sendCodeGitError(error, reply);
+    }
+  });
+
+  app.post("/api/code/git/worktrees/delete", async (request, reply) => {
+    const user = await options.localAccess.authenticate(request);
+    if (!user) return sendUnauthorized(reply);
+    try {
+      const payload = codeGitWorktreeDeleteRequestSchema.parse(request.body);
+      const git = await options.codeGitService.deleteWorktree(
+        user,
+        payload.taskId,
+        payload.path,
+      );
       return reply.code(200).send(codeGitStatusResponseSchema.parse({ git }));
     } catch (error) {
       return sendCodeGitError(error, reply);

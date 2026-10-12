@@ -96,6 +96,7 @@ export function TerminalSession({
   onOpenBrowserUrl,
   persistentKey,
   workspaceKey,
+  shell,
 }: {
   sessionId: string;
   services: IServiceAccessor;
@@ -120,6 +121,11 @@ export function TerminalSession({
    * 不传时 fallback 到 cwd。下侧 terminal 不传 persistentKey，此值不生效。
    */
   workspaceKey?: string;
+  /**
+   * 本会话显式选用的 shell id（下侧 terminal 的 shell 菜单，换 shell = 换会话）；
+   * 缺省走实例设置默认。side pane（persistentKey 路径）不传。
+   */
+  shell?: string;
 }) {
   const { intl } = useZCodeIntl();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -883,7 +889,7 @@ export function TerminalSession({
     // 优先使用 workspace 路径作为 terminal 工作目录，未设置时后端回退到 HOME
     const initialCreateSize = initialTerminalSize ?? { cols: term.cols, rows: term.rows };
     terminalService
-      .create({ cols: initialCreateSize.cols, rows: initialCreateSize.rows, cwd })
+      .create({ cols: initialCreateSize.cols, rows: initialCreateSize.rows, cwd, shell })
       .then(({ id, shell, fontFamily, fontSize, theme, fontFamilySource, windowsPty }) => {
         if (disposed) {
           terminalService.dispose({ id });
@@ -1082,6 +1088,7 @@ export function TerminalSession({
     services,
     sessionId,
     persistentKey,
+    shell,
   ]);
 
   const handleCopy = () => {

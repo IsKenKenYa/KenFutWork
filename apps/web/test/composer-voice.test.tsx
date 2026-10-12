@@ -177,7 +177,7 @@ describe("useComposerVoice", () => {
     expect(h.getByRole("status").textContent).toContain("设置 → 语音");
   });
 
-  it("录音期间：状态行提示「松开转文字」并临时禁选", async () => {
+  it("录音期间：不出状态行（只有图标与输入区变化）并临时禁选", async () => {
     const h = setup();
     h.press();
     // 起手阶段（未满 200ms）还没有状态行
@@ -188,7 +188,8 @@ describe("useComposerVoice", () => {
     });
     expect(h.calls).toContain("start");
     expect(h.composer.style.userSelect).toBe("none");
-    expect(h.getByRole("status").textContent).toContain("松开转文字");
+    // 回归：录音过程不再渲染「录音中/松开转文字」提示（用户拍板：只留图标变化）
+    expect(h.queryByRole("status")).toBeNull();
 
     fireEvent.pointerUp(window, { pointerId: 1 });
     await act(async () => {

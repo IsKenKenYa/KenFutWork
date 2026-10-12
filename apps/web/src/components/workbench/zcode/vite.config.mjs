@@ -23,8 +23,15 @@ export default defineConfig({
         ),
       },
       ...Object.entries({
+        // G6：composer 上下文容量换回旧版 16px 圆环 + HoverCard（宿主适配件）
+        "@zui/chat-input-toolbar/contextUsage.js": fileURLToPath(
+          new URL("./host/contextUsageAdapter.tsx", import.meta.url),
+        ),
         "@zui/settings/ComputerUseSection.js": fileURLToPath(
           new URL("./host/ComputerUseSectionAdapter.tsx", import.meta.url),
+        ),
+        "@zui/settings/BrowserSettingsSection.js": fileURLToPath(
+          new URL("./host/BrowserSettingsSectionAdapter.tsx", import.meta.url),
         ),
         "@zui/i18n/IntlProvider.js": fileURLToPath(
           new URL("./host/cuaIntlAdapter.ts", import.meta.url),

@@ -188,6 +188,13 @@ export const runUsageEventSchema = z.object({
       }),
     )
     .optional(),
+  /**
+   * 模型上下文窗口（G6 上下文容量圆环）：服务端按模型目录 + 共享兜底表解析后随事件
+   * 下发，客户端不再自行查表；模型两边都查不到时缺省（界面只给绝对量，不编分母）。
+   */
+  contextWindowTokens: z.number().int().positive().optional(),
+  /** 模型声明的单次最大输出（「预留输出」段来源）；未声明时缺省，界面不画该段。 */
+  maxOutputTokens: z.number().int().positive().optional(),
   timestamp: timestampSchema,
 });
 
@@ -305,6 +312,8 @@ export const canvasSyncEventSchema = z.object({
  */
 export const flowRunEventSchema = z.object({
   type: z.literal("flowRun.event"),
+  hostProjectId: z.uuid().optional(),
+  hostGeneration: z.number().int().positive().safe().optional(),
   /** flow 的 run id（宿主不解析，只透传）。 */
   runId: z.string().min(1).max(128),
   /** run 内单调序号（flow 侧生成）。 */

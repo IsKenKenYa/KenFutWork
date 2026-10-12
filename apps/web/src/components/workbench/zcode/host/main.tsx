@@ -9,6 +9,11 @@ import { ScopedErrorBoundary } from "@zui/ErrorBoundary.js";
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider.js";
 import { Root } from "@zui/Root.js";
 import { RootStartupLoading } from "@zui/root/RootStartupLoading.js";
+import {
+  applyTheme,
+  isTheme,
+  normalizeThemePreference,
+} from "@zui/useTheme.js";
 import { ensureAgentV4ConnectionHandshake } from "@zui/v4/agentV4ConnectionHandshake.js";
 import {
   CodeVoiceProvider,
@@ -28,8 +33,10 @@ import {
 import { renderManagementDocument } from "./managementDocument.js";
 import { requestManagementOpen } from "./managementNavigation.js";
 import { CodeDirectoryRecoveryProvider } from "./ProjectDirectoryRecovery.js";
-import { navigateToDesign, requestParentBootstrap } from "./parentBridge.js";
+import { requestParentBootstrap } from "./parentBridge.js";
+
 import { createCodePlatform } from "./platform.js";
+import { setSurfaceApiBase } from "./surfaceApi.js";
 import { createHostWorkbenchNavigation } from "./workbenchNavigation.js";
 import { installHostWorkspaceActivity } from "./workspaceActivity.js";
 import { createCodeWorkspaceContextResolver } from "./workspaceServiceController.js";
@@ -50,6 +57,8 @@ const config: CodeHostConfig = {
   ...(workspacePath ? { workspacePath } : {}),
 };
 const client = new CodeHttpChannelClient(config);
+// 壳内嵌面（Design/Flow 主区视图）的服务端访问缝：与 client 同一 apiBase/cookie 口径。
+setSurfaceApiBase(config.apiBase);
 const readCuaSnapshot = client.readCuaSnapshot.bind(client);
 /** 语音 transport：转写走 multipart、播报走二进制，改写/设置读走 JSON 通道（cookie 认证同 Code 宿主）。 */
 const voiceTransport: CodeVoiceTransport = {
@@ -124,12 +133,15 @@ function CodeHost({
                 : {})}
               workbenchGroupClientMode={clientMode}
               onInterfaceModeChange={(mode) => {
-                if (mode === "office") navigateToDesign();
+                // 融合后 Design 是壳内主区视图（不再换壳导航）；独立打开（无父窗口）时无处可切，保持 coding。
+                if (mode === "office") workbenchNavigation?.open("design");
               }}
               preferDirectoryBrowser
               restoreSession
               allowRemoteWorkspace={false}
-              supportsEmbeddedBrowser={false}
+              // G1/Q4：内嵌浏览器页签开放——内容已换宿主 CDP MJPEG 面板（BrowserPane），
+              // 不再依赖桌面主进程 BrowserView。
+              supportsEmbeddedBrowser={true}
               assistantCodeCommentCardsEnabled
               initialWorkspaceLoadingFallback={
                 <RootStartupLoading label="打开 Code 工作目录" />
@@ -158,6 +170,9 @@ try {
           window.location.origin,
         );
       },
+      // 父页 keep-alive 带来的本地实例主人：管理页底部显示「本地用户」
+      // 而不是「连接使用」（与 Code 壳同一份用户）。
+      bootstrap?.user ?? null,
     );
   } else {
     const hello = await ensureAgentV4ConnectionHandshake(
@@ -175,7 +190,9 @@ try {
       <CodeVoiceProvider transport={voiceTransport}>
         <CodeHost
           {...(workspace ? { workspace } : {})}
-          user={null}
+          // 父窗口 bootstrap 带来的本地实例主人（免账户形态下的当前用户），
+          // 侧栏底部据此显示用户而不是「连接使用」。
+          user={bootstrap?.user ?? null}
           clientMode={hello.clientMode}
         />
       </CodeVoiceProvider>,
@@ -202,3 +219,22 @@ window.addEventListener(
   },
   { once: true },
 );
+
+// 外观主题桥（宿主侧）：设置 → 外观（next-themes，默认跟随系统）解析出的 zai 主题
+// 经 postMessage 推过来，这里落到 Code UI 的主题系统（localStorage + applyTheme）。
+// 没有这座桥，外观切深色时 Code 工作台仍是浅色。内嵌场景（无父窗口）保持 zcode 自有默认。
+if (window.parent !== window && bootstrap) {
+  window.addEventListener("message", (event) => {
+    if (
+      event.source !== window.parent ||
+      event.origin !== window.location.origin
+    )
+      return;
+    const type = (event.data as { type?: unknown } | null)?.type;
+    if (type !== "kenfutwork:code-theme") return;
+    const theme = (event.data as { theme?: unknown }).theme;
+    if (typeof theme !== "string" || !isTheme(theme)) return;
+    localStorage.setItem("zcode-theme", normalizeThemePreference(theme));
+    applyTheme(normalizeThemePreference(theme));
+  });
+}

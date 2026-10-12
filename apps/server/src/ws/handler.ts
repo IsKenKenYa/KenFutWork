@@ -25,6 +25,7 @@ import {
   ExecutionScopeError,
   type ExecutionScopes,
 } from "../features/execution/scope-service.js";
+import type { FlowProjectControl } from "../features/flow/project-control.js";
 import type {
   LocalAccessService,
   LocalAccessVerifier,
@@ -60,6 +61,7 @@ type RegisterWsOptions = {
   codeTerminal?: CodeTerminalService;
   connectionManager: ConnectionManager;
   eventBuffer?: CanvasEventBuffer;
+  flowProjectControl?: Pick<FlowProjectControl, "snapshot">;
   settingsService?: SettingsService;
   threadService?: ThreadService;
   localInstance?: LocalInstanceService;
@@ -669,12 +671,30 @@ async function authenticateAndBind(
           instanceId: authenticatedUser.instanceId,
           lastSeq: msg.payload.lastSeq,
         });
-        const missed =
+        const buffered =
           options.eventBuffer?.getAfter(scope, msg.payload.lastSeq) ?? [];
+        const missed = [];
+        for (const entry of buffered) {
+          const event = entry.event;
+          if (
+            event.type !== "flowRun.event" ||
+            !event.hostProjectId ||
+            !event.hostGeneration ||
+            !options.flowProjectControl
+          )
+            continue;
+          const gate = await options.flowProjectControl.snapshot(
+            authenticatedUser,
+            event.hostProjectId,
+          );
+          if (!gate.draining && gate.generation === event.hostGeneration)
+            missed.push(entry);
+        }
         // ACK 先行（与 canvas.resume 同一时序口径）：客户端先注册监听再收重放
         connectionManager.sendTo(connectionId, {
           type: "command.ack",
           action: "flow.resume",
+          ...(msg.id ? { requestId: msg.id } : {}),
           payload: {
             latestSeq: options.eventBuffer?.getLatestSeq(scope) ?? 0,
             replayed: missed.length,

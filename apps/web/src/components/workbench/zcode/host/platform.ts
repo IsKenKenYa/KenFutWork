@@ -58,7 +58,10 @@ export function createCodePlatform(
       : {}),
     supportsCloudAccounts: false,
     supportsAutomations: false,
-    supportsEmbeddedBrowser: false,
+    // T6：宿主有自己的浏览器能力（服务端 browser 工具 + CDP），设置页浏览器分区
+    // 经适配层挂这些配置项；工作台侧栏的内置浏览器面板仍由 Root 的显式
+    // supportsEmbeddedBrowser={false} 单独关闭（App/Root 只消费自己的 prop）。
+    supportsEmbeddedBrowser: true,
     supportsComputerUse: Boolean(macDesktop),
     ...(macDesktop
       ? {

@@ -1,314 +1,197 @@
+import type { ProjectDirectoryRelinkResponse } from "@kenfutwork/shared";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useDesignProjects } from "@/components/workbench/canvas-workbench/use-design-projects";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useCanvasProjectDirectory } from "@/components/workbench/zcode/host/canvasProjectDirectories";
 
 const api = vi.hoisted(() => ({
-  createProject: vi.fn(),
-  deleteProject: vi.fn(),
-  fetchDirectoryPickerStatus: vi.fn(),
-  fetchProjectDirectoryRelinkSnapshot: vi.fn(),
-  fetchProjects: vi.fn(),
-  pickDirectory: vi.fn(),
-  relinkProjectDirectory: vi.fn(),
-  updateProject: vi.fn(),
+  surfaceFetch: vi.fn(),
+  surfaceJson: vi.fn(),
+  localCuaDesktopInvoke: vi.fn(),
+  desktopInvoke: vi.fn(),
 }));
-const desktop = vi.hoisted(() => ({ revealPath: vi.fn() }));
-
-vi.mock("@/lib/server-api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/server-api")>();
-  return { ...actual, ...api };
+vi.mock("@/components/workbench/zcode/host/surfaceApi.js", () => api);
+function requireSurfaceJsonCall(index: number) {
+  const call = api.surfaceJson.mock.calls[index];
+  if (!call) throw new Error(`Expected surfaceJson call ${index + 1}`);
+  return call;
+}
+vi.mock("@/components/workbench/zcode/host/cuaPermissionPlatform.js", () => ({
+  localCuaDesktopInvoke: api.localCuaDesktopInvoke,
+}));
+const projectId = "11111111-1111-4111-8111-111111111111";
+const taskId = "22222222-2222-4222-8222-222222222222";
+const snapshot = {
+  projectId,
+  workDir: "/missing/project",
+  tasks: [{ taskId, scopeGeneration: 2, branchGeneration: 3 }],
+};
+const receipt = {
+  projectId,
+  workDir: "/workspace/replacement",
+  affectedTaskIds: [taskId],
+  tasks: [{ taskId, scopeGeneration: 3, branchGeneration: 4, status: "ready" }],
+};
+function mount() {
+  return renderHook(() => useCanvasProjectDirectory("design", projectId));
+}
+async function create(kind: "design" | "flow", picked = false) {
+  if (kind === "design")
+    return (
+      await import("@/components/workbench/zcode/host/designProjects")
+    ).createDesignProject(picked);
+  return (
+    await import("@/components/workbench/zcode/host/flowProjects")
+  ).createFlowProject(picked);
+}
+beforeEach(() => {
+  vi.resetModules();
+  vi.resetAllMocks();
+  api.surfaceFetch.mockResolvedValue({ ok: true, json: async () => snapshot });
+  api.localCuaDesktopInvoke.mockReturnValue(api.desktopInvoke);
+  api.desktopInvoke.mockResolvedValue(undefined);
 });
-vi.mock("@/lib/desktop-system", () => desktop);
-
-function project(
-  workDir: string | null = null,
-  kind: "design" | "flow" = "design",
-) {
-  return {
-    id: "project-1",
-    name: "项目",
-    slug: "project",
-    kind,
-    description: null,
-    createdAt: "2026-10-11T00:00:00.000Z",
-    updatedAt: "2026-10-11T00:00:00.000Z",
-    instanceId: "instance-1",
-    workDir,
-    additionalDirectories: [],
-    primaryCanvas: {
-      id: "canvas-1",
-      name: "Main Canvas",
-      isPrimary: true,
-    },
-  };
-}
-
-function renderProjectsHook() {
-  return renderHook(() =>
-    useDesignProjects("access-token", "design", { current: null }),
-  );
-}
-
-function renderFlowProjectsHook() {
-  return renderHook(() =>
-    useDesignProjects("access-token", "flow", { current: null }),
-  );
-}
-
-describe("Design project directory creation", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    api.fetchProjects.mockReturnValue(new Promise(() => {}));
-    api.fetchDirectoryPickerStatus.mockResolvedValue({ available: true });
-  });
-
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+// These ten cases now exercise current stores/directory hooks. Real sidebar
+// bridge gating and relink-to-canvas notification have consumer coverage in
+// host-sidebar-directory-create.test.tsx; no retired UI or hook is imported.
+describe("Design and Flow project directories in the current host", () => {
   it("keeps quick creation on the default work directory path", async () => {
-    api.createProject.mockResolvedValue({ project: project() });
-    const { result } = renderProjectsHook();
-
-    await act(async () => {
-      await result.current.createProjectNamed("默认项目");
+    api.surfaceJson.mockResolvedValue({
+      project: { id: projectId, kind: "design" },
     });
-
-    expect(api.createProject).toHaveBeenCalledWith("access-token", {
+    await create("design");
+    expect(api.surfaceJson).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(requireSurfaceJsonCall(0)[1].body)).toEqual({
       kind: "design",
-      name: "默认项目",
+      name: "未命名画布",
     });
   });
-
   it("uses the picked path when creating a project", async () => {
-    api.pickDirectory.mockResolvedValue({
-      status: "picked",
+    api.surfaceJson
+      .mockResolvedValueOnce({ status: "picked", path: "/workspace/project" })
+      .mockResolvedValueOnce({ project: { id: projectId, kind: "design" } });
+    await create("design", true);
+    expect(requireSurfaceJsonCall(0)[0]).toBe("/api/system/pick-directory");
+    expect(JSON.parse(requireSurfaceJsonCall(1)[1].body).work_dir).toBe(
+      "/workspace/project",
+    );
+  });
+  it("does not create a project when directory selection is cancelled", async () => {
+    api.surfaceJson.mockResolvedValue({ status: "cancelled" });
+    await create("design", true);
+    expect(api.surfaceJson).toHaveBeenCalledTimes(1);
+    expect(requireSurfaceJsonCall(0)[0]).toBe("/api/system/pick-directory");
+  });
+  it("opens the selected project directory through the existing desktop bridge", async () => {
+    await api.localCuaDesktopInvoke()("reveal_path", {
       path: "/workspace/project",
     });
-    api.createProject.mockResolvedValue({
-      project: project("/workspace/project"),
-    });
-    const { result } = renderProjectsHook();
-    await waitFor(() =>
-      expect(result.current.directoryPickerAvailable).toBe(true),
-    );
-
-    await act(async () => {
-      await result.current.createProjectFromDirectory("选定项目");
-    });
-
-    expect(api.pickDirectory).toHaveBeenCalledWith("access-token");
-    expect(api.createProject).toHaveBeenCalledWith("access-token", {
-      kind: "design",
-      name: "选定项目",
-      work_dir: "/workspace/project",
+    expect(api.desktopInvoke).toHaveBeenCalledWith("reveal_path", {
+      path: "/workspace/project",
     });
   });
-
-  it("does not create a project when directory selection is cancelled", async () => {
-    api.pickDirectory.mockResolvedValue({ status: "cancelled" });
-    const { result } = renderProjectsHook();
-
-    await act(async () => {
-      await result.current.createProjectFromDirectory("取消项目");
-    });
-
-    expect(api.createProject).not.toHaveBeenCalled();
-  });
-
-  it("opens the selected project directory through the desktop bridge", async () => {
-    const { result } = renderProjectsHook();
-
-    await act(async () => {
-      await result.current.openProjectDirectory("/workspace/project");
-    });
-
-    expect(desktop.revealPath).toHaveBeenCalledWith("/workspace/project");
-  });
-
   it("does not open the picker when the server says the old directory exists", async () => {
-    api.fetchProjectDirectoryRelinkSnapshot.mockRejectedValue(
-      new Error("原项目目录仍存在，不能重新关联。"),
-    );
-    const { result } = renderProjectsHook();
-
-    await act(async () => {
-      await result.current.relinkProjectDirectoryFromPicker("project-1");
-    });
-
-    expect(api.pickDirectory).not.toHaveBeenCalled();
-    expect(api.relinkProjectDirectory).not.toHaveBeenCalled();
-    expect(result.current.notice).toBe("原项目目录仍存在，不能重新关联。");
-  });
-
-  it("shows relink only after the server proves the selected root is missing", async () => {
-    api.fetchProjects.mockResolvedValue({
-      projects: [project("/workspace/project")],
-    });
-    api.fetchProjectDirectoryRelinkSnapshot.mockRejectedValueOnce(
-      new Error("原项目目录仍存在，不能重新关联。"),
-    );
-    const existing = renderProjectsHook();
-    await waitFor(() =>
-      expect(existing.result.current.projects).toHaveLength(1),
-    );
-    await waitFor(() =>
-      expect(api.fetchProjectDirectoryRelinkSnapshot).toHaveBeenCalled(),
-    );
-    expect(existing.result.current.relinkableProjectId).toBeNull();
-    existing.unmount();
-
-    vi.clearAllMocks();
-    api.fetchProjects.mockResolvedValue({
-      projects: [project("/missing/project")],
-    });
-    api.fetchProjectDirectoryRelinkSnapshot.mockResolvedValue({
-      projectId: "project-1",
-      workDir: "/missing/project",
-      tasks: [],
-    });
-    const missing = renderProjectsHook();
-    await waitFor(() =>
-      expect(missing.result.current.relinkableProjectId).toBe("project-1"),
-    );
-  });
-
-  it("does not post a relink when the directory picker is cancelled", async () => {
-    api.fetchProjectDirectoryRelinkSnapshot.mockResolvedValue({
-      projectId: "project-1",
-      workDir: "/missing/project",
-      tasks: [{ taskId: "task-1", scopeGeneration: 2, branchGeneration: 3 }],
-    });
-    api.pickDirectory.mockResolvedValue({ status: "cancelled" });
-    const { result } = renderProjectsHook();
-
-    await act(async () => {
-      await result.current.relinkProjectDirectoryFromPicker("project-1");
-    });
-
-    expect(api.relinkProjectDirectory).not.toHaveBeenCalled();
-    expect(result.current.relinkDraft).toBeNull();
-  });
-
-  it("preserves the picked directory after a relink failure", async () => {
-    api.fetchProjectDirectoryRelinkSnapshot.mockResolvedValue({
-      projectId: "project-1",
-      workDir: "/missing/project",
-      tasks: [],
-    });
-    api.pickDirectory.mockResolvedValue({
-      status: "picked",
-      path: "/workspace/replacement",
-    });
-    api.relinkProjectDirectory.mockRejectedValue(
-      Object.assign(new Error("项目或Task已改变，请重新加载后关联。"), {
-        status: 409,
+    api.surfaceFetch.mockResolvedValue({
+      status: 400,
+      json: async () => ({
+        error: { message: "原项目目录仍存在，不能重新关联。" },
       }),
-    );
-    const { result } = renderProjectsHook();
-
+    });
+    const hook = mount();
+    await waitFor(() => expect(hook.result.current.checking).toBe(false));
     await act(async () => {
-      await result.current.relinkProjectDirectoryFromPicker("project-1");
+      await hook.result.current.recover();
     });
-
-    expect(result.current.relinkDraft).toEqual({
-      projectId: "project-1",
-      path: "/workspace/replacement",
-    });
-    expect(api.relinkProjectDirectory).toHaveBeenCalledWith(
-      "access-token",
-      "project-1",
-      {
-        expectedWorkDir: "/missing/project",
-        nextWorkDir: "/workspace/replacement",
-        expectedTasks: [],
-      },
-    );
-    expect(api.fetchProjectDirectoryRelinkSnapshot).toHaveBeenCalledTimes(1);
-    expect(api.relinkProjectDirectory).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.snapshot).toBeNull();
+    expect(api.surfaceJson).not.toHaveBeenCalled();
   });
-
-  it("keeps the same project selected and refreshes the active Task after relink", async () => {
-    api.fetchProjectDirectoryRelinkSnapshot.mockResolvedValue({
-      projectId: "project-1",
-      workDir: "/missing/project",
-      tasks: [{ taskId: "task-1", scopeGeneration: 2, branchGeneration: 3 }],
+  it("shows relink only after the server proves the selected root is missing", async () => {
+    const hook = mount();
+    expect(hook.result.current.snapshot).toBeNull();
+    await waitFor(() =>
+      expect(hook.result.current.snapshot?.projectId).toBe(projectId),
+    );
+    expect(api.surfaceFetch).toHaveBeenCalledWith(
+      `/api/projects/${projectId}/relink-directory`,
+    );
+  });
+  it("does not post a relink when the directory picker is cancelled", async () => {
+    api.surfaceJson.mockResolvedValue({ status: "cancelled" });
+    const hook = mount();
+    await waitFor(() =>
+      expect(hook.result.current.snapshot?.projectId).toBe(projectId),
+    );
+    await act(async () => {
+      await hook.result.current.recover();
     });
-    api.pickDirectory.mockResolvedValue({
-      status: "picked",
-      path: "/workspace/replacement",
-    });
-    api.relinkProjectDirectory.mockResolvedValue({
-      projectId: "project-1",
-      workDir: "/workspace/replacement",
-      tasks: [
-        {
-          taskId: "task-1",
-          scopeGeneration: 3,
-          branchGeneration: 4,
-          status: "ready",
-        },
-      ],
-    });
-    api.fetchProjects.mockResolvedValue({
-      projects: [project("/workspace/replacement")],
-    });
-    const frame = { postMessage: vi.fn() };
-    const frameRef = {
-      current: { contentWindow: frame } as unknown as HTMLIFrameElement,
+    expect(api.surfaceJson).toHaveBeenCalledTimes(1);
+    expect(requireSurfaceJsonCall(0)[0]).toBe("/api/system/pick-directory");
+  });
+  it("preserves the picked directory after a relink rejection with fresh Task fences", async () => {
+    const refreshed = {
+      ...snapshot,
+      tasks: [{ taskId, scopeGeneration: 4, branchGeneration: 5 }],
     };
-    const { result } = renderHook(() =>
-      useDesignProjects("access-token", "design", frameRef),
-    );
-    await waitFor(() => expect(result.current.projects).toHaveLength(1));
-
-    await act(async () => {
-      await result.current.relinkProjectDirectoryFromPicker("project-1");
-    });
+    api.surfaceJson
+      .mockResolvedValueOnce({ status: "picked", path: receipt.workDir })
+      .mockRejectedValueOnce(new Error("项目或Task已改变，请重新加载后关联。"))
+      .mockResolvedValueOnce(refreshed);
+    const hook = mount();
     await waitFor(() =>
-      expect(result.current.selectedProjectId).toBe("project-1"),
+      expect(hook.result.current.snapshot?.projectId).toBe(projectId),
     );
-
-    expect(result.current.relinkDraft).toBeNull();
-    expect(api.fetchProjects).toHaveBeenLastCalledWith(
-      "access-token",
-      "design",
-    );
-    expect(frame.postMessage).toHaveBeenCalledWith(
-      {
-        type: "workbench:project-directory-relinked",
-        projectId: "project-1",
-        tasks: ["task-1"],
-      },
-      window.location.origin,
-    );
+    await act(async () => {
+      await hook.result.current.recover();
+    });
+    expect(hook.result.current.error).toContain("已改变");
+    expect(JSON.parse(requireSurfaceJsonCall(1)[1].body)).toEqual({
+      expectedWorkDir: snapshot.workDir,
+      nextWorkDir: receipt.workDir,
+      expectedTasks: snapshot.tasks,
+    });
+    api.surfaceJson.mockResolvedValueOnce(receipt);
+    await act(async () => {
+      await hook.result.current.recover();
+    });
+    expect(
+      api.surfaceJson.mock.calls.filter(
+        ([url]) => url === "/api/system/pick-directory",
+      ),
+    ).toHaveLength(1);
+    expect(JSON.parse(requireSurfaceJsonCall(3)[1].body)).toEqual({
+      expectedWorkDir: snapshot.workDir,
+      nextWorkDir: receipt.workDir,
+      expectedTasks: refreshed.tasks,
+    });
   });
-
-  it("creates Flow projects with a selected fixed directory", async () => {
-    api.pickDirectory.mockResolvedValue({
-      status: "picked",
-      path: "/workspace/flow",
-    });
-    api.createProject.mockResolvedValue({
-      project: project("/workspace/flow", "flow"),
-    });
-    const { result } = renderFlowProjectsHook();
+  it("keeps the same project binding and returns the receipt for refreshing its active Tasks", async () => {
+    api.surfaceJson
+      .mockResolvedValueOnce({ status: "picked", path: receipt.workDir })
+      .mockResolvedValueOnce(receipt);
+    const hook = mount();
     await waitFor(() =>
-      expect(result.current.directoryPickerAvailable).toBe(true),
+      expect(hook.result.current.snapshot?.projectId).toBe(projectId),
     );
-
+    let recovered: ProjectDirectoryRelinkResponse | null = null;
     await act(async () => {
-      await result.current.createProjectFromDirectory("Flow 项目");
+      recovered = await hook.result.current.recover();
     });
-
-    expect(api.pickDirectory).toHaveBeenCalledWith("access-token");
-    expect(api.createProject).toHaveBeenCalledWith("access-token", {
+    expect(recovered).toEqual(receipt);
+    await waitFor(() => expect(api.surfaceFetch).toHaveBeenCalledTimes(2));
+    expect(hook.result.current.snapshot?.projectId).toBe(projectId);
+  });
+  it("creates Flow projects with a selected fixed directory", async () => {
+    api.surfaceJson
+      .mockResolvedValueOnce({ status: "picked", path: "/workspace/flow" })
+      .mockResolvedValueOnce({ project: { id: projectId, kind: "flow" } });
+    await create("flow", true);
+    expect(JSON.parse(requireSurfaceJsonCall(1)[1].body)).toEqual({
       kind: "flow",
-      name: "Flow 项目",
+      name: "未命名工作流",
       work_dir: "/workspace/flow",
     });
-    expect(api.fetchProjectDirectoryRelinkSnapshot).not.toHaveBeenCalled();
-
-    await act(async () => {
-      await result.current.relinkProjectDirectoryFromPicker("project-1");
-    });
-    expect(api.fetchProjectDirectoryRelinkSnapshot).not.toHaveBeenCalled();
-    expect(api.relinkProjectDirectory).not.toHaveBeenCalled();
+    expect(api.surfaceFetch).not.toHaveBeenCalled();
   });
 });

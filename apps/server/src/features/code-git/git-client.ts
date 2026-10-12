@@ -7,6 +7,7 @@
  * 安全前提：调用方必须传入**已校验归属**的沙箱目录（画布 → 项目 → 工作区），本模块
  * 不做路径校验。分支名一律先过 `isSafeBranchName` 再下发，杜绝把用户输入当参数注入。
  */
+import { relative, resolve, sep } from "node:path";
 
 export interface GitBranchView {
   name: string;
@@ -21,6 +22,50 @@ export interface GitRepoView {
   branches: GitBranchView[];
   /** 有未提交改动——切分支前要提示，避免用户以为文件丢了。 */
   dirty: boolean;
+}
+
+/** `git worktree list --porcelain` 的一个工作树视图（G4 worktree 管理）。 */
+export interface GitWorktreeView {
+  path: string;
+  head: string;
+  branch: string | null;
+}
+
+/**
+ * 解析 `git worktree list --porcelain`：空行分块，每块 `worktree/HEAD/branch`
+ * 三行（detached 块没有 branch 行 → null）。
+ */
+export function parseWorktreeList(stdout: string): GitWorktreeView[] {
+  const worktrees: GitWorktreeView[] = [];
+  let current: { path?: string; head?: string; branch?: string } = {};
+  const flush = () => {
+    if (current.path && current.head) {
+      worktrees.push({
+        path: current.path,
+        head: current.head,
+        branch: current.branch ?? null,
+      });
+    }
+    current = {};
+  };
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flush();
+      continue;
+    }
+    const separator = trimmed.indexOf(" ");
+    const key = separator === -1 ? trimmed : trimmed.slice(0, separator);
+    const value = separator === -1 ? "" : trimmed.slice(separator + 1);
+    if (key === "worktree") current.path = value;
+    else if (key === "HEAD") current.head = value;
+    else if (key === "branch") {
+      const name = value.replace(/^refs\/heads\//, "");
+      if (name) current.branch = name;
+    }
+  }
+  flush();
+  return worktrees;
 }
 
 export interface GitCommandResult {
@@ -100,6 +145,20 @@ export interface GitClient {
   createBranch(cwd: string, name: string): Promise<void>;
   /** 把普通目录初始化成仓库（`git init`；已是仓库时无副作用）。 */
   init(cwd: string): Promise<void>;
+  /** 工作树列表（G4/Q10，`worktree list --porcelain`）。 */
+  listWorktrees(cwd: string): Promise<GitWorktreeView[]>;
+  /** 新建工作树（G4/Q10）：路径必须相对且不越出主目录；分支名过白名单。 */
+  createWorktree(
+    cwd: string,
+    input: { path: string; branch: string; createBranch: boolean },
+  ): Promise<GitWorktreeView>;
+  /** 删除工作树（G4/Q10）：只允许删除列表里登记过的路径（防任意路径删除）。 */
+  deleteWorktree(cwd: string, path: string): Promise<void>;
+  /**
+   * Run 终态自动提交（G3/Q8）：非仓库 / 干净工作区返回 false（静默跳过，
+   * 不自动 init）；有变更时按 `toAutoCommitMessage` 的统计信息 `add -A` + commit。
+   */
+  autoCommit(cwd: string): Promise<GitAutoCommitResult>;
   /** git 图谱（R2-1 条目 6）：最近 N 条提交的图形行。 */
   graph(cwd: string, limit: number): Promise<GitGraph>;
   /** 变更文件清单（R3-2）：逐文件增删行数与状态。 */
@@ -392,6 +451,48 @@ export interface GitDiffStat {
   untracked: number;
 }
 
+/** 自动提交（G3/Q8）结果：true = 已提交，false = 无需提交（非仓库 / 干净）。 */
+export type GitAutoCommitResult = boolean;
+
+/** 自动提交信息里列出的代表文件数上限（启发式摘要，不是治理数值）。 */
+const AUTO_COMMIT_SAMPLE_FILES = 3;
+
+/**
+ * `git status --porcelain` → 自动提交信息（G3/Q8，纯函数）。
+ *
+ * 按实际变更统计生成一句话中文，**不调 LLM**：
+ * - 全部是新增（`A*`/`??`）→「自动提交：新增 N 个文件（…）」；
+ * - 其余一律「自动提交：修改 N 个文件（…）」（修改/删除/重命名混排时不逐类罗列，
+ *   启发式的目标是「一眼认出这轮动了什么」，不是精确分类账）；
+ * - 最多列 3 个代表文件名，更多时以「等」收尾；
+ * - 无变更返回 null（干净工作区，调用方静默跳过）。
+ *
+ * porcelain 的未跟踪目录是折叠条目（`?? dir/`），按 1 个条目计入——启发式允许的误差。
+ */
+export function toAutoCommitMessage(status: GitCommandResult): string | null {
+  const entries: Array<{ code: string; path: string }> = [];
+  for (const line of status.stdout.split("\n")) {
+    if (line.length < 4) continue;
+    const code = line.slice(0, 2);
+    let rest = line.slice(3);
+    if (rest.includes(" -> ")) rest = rest.split(" -> ").pop() ?? rest;
+    // 带特殊字符的路径会被 git 成对引号包住；展示用去掉引号即可
+    if (rest.startsWith('"') && rest.endsWith('"')) rest = rest.slice(1, -1);
+    if (rest) entries.push({ code, path: rest });
+  }
+  if (entries.length === 0) return null;
+
+  // porcelain 分段输出（已跟踪在前、未跟踪在后）；按路径重排让「代表文件」稳定可比
+  entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const sample = entries.slice(0, AUTO_COMMIT_SAMPLE_FILES).map((e) => e.path);
+  const suffix = `（${sample.join("、")}${entries.length > AUTO_COMMIT_SAMPLE_FILES ? " 等" : ""}）`;
+  const allAdded = entries.every(
+    (entry) => entry.code === "??" || entry.code.trim().startsWith("A"),
+  );
+  const verb = allAdded ? "新增" : "修改";
+  return `自动提交：${verb} ${entries.length} 个文件${suffix}`;
+}
+
 /**
  * 由 `diff --numstat HEAD` 与 `status --porcelain` 拼 heirloom 统计（纯函数）。
  *
@@ -571,6 +672,101 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     }
   };
 
+  /** 工作树路径校验：相对、不带前导 `-`、resolve 后不越出主目录且不等于主目录本身。 */
+  function validateWorktreeRelativePath(cwd: string, input: string): string {
+    if (input.startsWith("-")) throw new Error("工作树路径无效。");
+    const resolved = resolve(cwd, input);
+    const root = resolve(cwd);
+    if (resolved === root || !resolved.startsWith(root + sep)) {
+      throw new Error("工作树路径必须位于工作目录内部。");
+    }
+    return relative(root, resolved);
+  }
+
+  const listWorktrees = async (cwd: string): Promise<GitWorktreeView[]> => {
+    const result = await exec(["worktree", "list", "--porcelain"], cwd);
+    if (result.code !== 0) {
+      throw new Error(
+        result.stderr.trim() || "读取工作树列表失败（可能不是 git 仓库）。",
+      );
+    }
+    return parseWorktreeList(result.stdout);
+  };
+
+  const createWorktree = async (
+    cwd: string,
+    input: { path: string; branch: string; createBranch: boolean },
+  ): Promise<GitWorktreeView> => {
+    if (!isSafeBranchName(input.branch)) {
+      throw new Error("分支名无效。");
+    }
+    const relativePath = validateWorktreeRelativePath(cwd, input.path);
+    const args = ["worktree", "add"];
+    if (input.createBranch) args.push("-b", input.branch);
+    args.push(relativePath);
+    if (!input.createBranch) args.push(input.branch);
+    const result = await exec(args, cwd);
+    if (result.code !== 0) {
+      const reason = result.stderr.trim() || result.stdout.trim();
+      throw new Error(
+        /already exists/i.test(reason)
+          ? "该目录或分支已被工作树占用。"
+          : reason || "新建工作树失败。",
+      );
+    }
+    const listed = await listWorktrees(cwd);
+    const created = listed.find((entry) => entry.branch === input.branch);
+    if (!created) throw new Error("新建工作树后未能在列表中确认。");
+    return created;
+  };
+
+  const deleteWorktree = async (cwd: string, path: string): Promise<void> => {
+    const normalize = (value: string) => {
+      const absolutePath = resolve(value);
+      return process.platform === "win32"
+        ? absolutePath.toLowerCase()
+        : absolutePath;
+    };
+    if (normalize(resolve(cwd, path)) === normalize(cwd)) {
+      throw new Error("主工作目录不能删除。");
+    }
+    const listed = await listWorktrees(cwd);
+    // git 在 Windows 上回正斜杠路径，resolve 回反斜杠——两侧都归一化再比。
+    const target = listed.find(
+      (entry) => normalize(entry.path) === normalize(resolve(cwd, path)),
+    );
+    if (!target) throw new Error("工作树不存在或不在登记列表内。");
+    if (normalize(target.path) === normalize(resolve(cwd))) {
+      throw new Error("主工作目录不能删除。");
+    }
+    const result = await exec(["worktree", "remove", target.path], cwd);
+    if (result.code !== 0) {
+      const reason = result.stderr.trim() || result.stdout.trim();
+      throw new Error(
+        /dirty/i.test(reason)
+          ? "工作树有未提交改动，先提交或手动确认后再删。"
+          : reason || "删除工作树失败。",
+      );
+    }
+  };
+
+  /**
+   * Run 终态自动提交（G3/Q8）。仓库判定复用 `describe` 的 locale 无关口径
+   * （`rev-parse --is-inside-work-tree` 输出 `true`），不解析 stderr 文案；
+   * 提交复用 {@link commitAll}（`add -A` + `commit`，错误信息已中文化）。
+   */
+  const autoCommit = async (cwd: string): Promise<GitAutoCommitResult> => {
+    const inside = await exec(["rev-parse", "--is-inside-work-tree"], cwd);
+    if (inside.code !== 0 || inside.stdout.trim() !== "true") return false;
+    const status = await exec(["status", "--porcelain"], cwd);
+    if (status.code !== 0)
+      throw new Error(status.stderr.trim() || "git status 失败。");
+    const message = toAutoCommitMessage(status);
+    if (!message) return false;
+    await commitAll(cwd, message);
+    return true;
+  };
+
   const createBranch = async (cwd: string, name: string): Promise<void> => {
     if (!isSafeBranchName(name)) {
       throw new Error(`非法分支名：${name}`);
@@ -660,6 +856,10 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
     push,
     createBranch,
     init,
+    listWorktrees,
+    createWorktree,
+    deleteWorktree,
+    autoCommit,
     graph,
     changedFiles,
     fileDiff,

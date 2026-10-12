@@ -11,7 +11,7 @@ use learning_mode_windows::SecurityEnvironmentApi;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::io::BufRead;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use wxc_common::cmdline::{CommandLineContext, cmdline_from_argv_for_context};
@@ -35,6 +35,37 @@ pub fn capability_probe() -> Result<()> {
         "此 Windows build 无法落实目录拒绝规则"
     );
     Ok(())
+}
+
+/// Node 宿主 windowsCommand 固定以 shell 包装字符串命令：cmd `/d /s /c`、pwsh
+/// `-NoLogo -NoProfile -Command`、bash `-lc`。cmd.exe 解析自己的命令行时按引号
+/// 开闭处理、不认 MSVCRT 的 `\"` 转义——payload 里的引号必须原样保留、只在整体
+/// 外再包一层引号交给 `/s` 的「剥首尾引号」规则；否则程序名会连内层引号一起被
+/// 当成路径（'"D:\...\node.exe"' 不是内部或外部命令）。pwsh/bash 的启动解析按
+/// MSVCRT 规则解引号，维持 cmdline_from_argv_for_context 的原渲染。
+fn script_command_line(argv: &[String]) -> Result<String, wxc_common::cmdline::CommandLineError> {
+    if let Some((payload, head)) = argv.split_last() {
+        if head.len() == 4
+            && is_cmd_exe(&head[0])
+            && head[1] == "/d"
+            && head[2] == "/s"
+            && head[3] == "/c"
+        {
+            let head_line =
+                cmdline_from_argv_for_context(head, CommandLineContext::WindowsCreateProcess)?;
+            return Ok(format!("{head_line} \"{payload}\""));
+        }
+    }
+    cmdline_from_argv_for_context(argv, CommandLineContext::WindowsCreateProcess)
+}
+
+fn is_cmd_exe(path: &str) -> bool {
+    Path::new(path).file_name().is_some_and(|name| {
+        matches!(
+            name.to_string_lossy().to_ascii_lowercase().as_str(),
+            "cmd" | "cmd.exe"
+        )
+    })
 }
 
 // 此 policy/launch 形状由 Codex mxc-sandbox 的一手实现改编，不含其 AgentLoop。
@@ -96,10 +127,7 @@ fn execution_request(input: &Launch) -> Result<ExecutionRequest> {
     }
     Ok(ExecutionRequest {
         container_id: format!("kfw-{}", input.process_id),
-        script_code: cmdline_from_argv_for_context(
-            &input.command,
-            CommandLineContext::WindowsCreateProcess,
-        )?,
+        script_code: script_command_line(&input.command)?,
         working_directory: input.cwd.clone(),
         env: input
             .env
@@ -363,4 +391,60 @@ pub fn serve() -> Result<()> {
     // Parent IPC EOF or errors cannot leave any per-command controller/workload Job alive.
     let cleanup = stop_all(&processes);
     result.and(cleanup)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::script_command_line;
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|t| (*t).to_string()).collect()
+    }
+
+    #[test]
+    fn cmd_wrapped_payload_keeps_inner_quotes_verbatim() {
+        let line = script_command_line(&s(&[
+            "C:\\Windows\\System32\\cmd.exe",
+            "/d",
+            "/s",
+            "/c",
+            "\"D:\\nvm4w\\nodejs\\node.exe\" -e \"print('hi')\"",
+        ]))
+        .unwrap();
+        // cmd /s 剥首尾引号后得到原始命令串；内层引号不得被 MSVCRT 转义。
+        assert_eq!(
+            line,
+            "C:\\Windows\\System32\\cmd.exe /d /s /c \"\"D:\\nvm4w\\nodejs\\node.exe\" -e \"print('hi')\"\""
+        );
+    }
+
+    #[test]
+    fn cmd_shell_path_with_spaces_is_quoted_but_payload_stays_verbatim() {
+        let line = script_command_line(&s(&["C:\\Tool Dir\\CMD.EXE", "/d", "/s", "/c", "echo ok"]))
+            .unwrap();
+        assert_eq!(line, "\"C:\\Tool Dir\\CMD.EXE\" /d /s /c \"echo ok\"");
+    }
+
+    #[test]
+    fn plain_argv_keeps_msvcrt_rendering() {
+        assert_eq!(
+            script_command_line(&s(&["py", "hello world.py"])).unwrap(),
+            "py \"hello world.py\""
+        );
+    }
+
+    #[test]
+    fn powershell_wrapped_payload_keeps_msvcrt_rendering() {
+        assert_eq!(
+            script_command_line(&s(&[
+                "pwsh.exe",
+                "-NoLogo",
+                "-NoProfile",
+                "-Command",
+                "Write-Output \"x\""
+            ]))
+            .unwrap(),
+            "pwsh.exe -NoLogo -NoProfile -Command \"Write-Output \\\"x\\\"\""
+        );
+    }
 }

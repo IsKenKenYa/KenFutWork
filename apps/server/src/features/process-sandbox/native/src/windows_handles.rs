@@ -140,16 +140,70 @@ impl ProcessJob {
             "TerminateJobObject",
         )
     }
+    pub fn process_ids(&self) -> Result<Vec<usize>> {
+        let mut needed: u32 = 0;
+        unsafe {
+            QueryInformationJobObject(
+                self.raw(),
+                JobObjectBasicProcessIdList,
+                std::ptr::null_mut(),
+                0,
+                &mut needed,
+            );
+        }
+        if needed == 0 {
+            return Ok(Vec::new());
+        }
+        let mut buffer = vec![0u8; needed as usize];
+        check(
+            unsafe {
+                QueryInformationJobObject(
+                    self.raw(),
+                    JobObjectBasicProcessIdList,
+                    buffer.as_mut_ptr() as *mut c_void,
+                    needed,
+                    &mut needed,
+                )
+            },
+            "Query ProcessIdList",
+        )?;
+        let list = unsafe { &*(buffer.as_ptr() as *const JOBOBJECT_BASIC_PROCESS_ID_LIST) };
+        Ok(unsafe {
+            std::slice::from_raw_parts(
+                list.ProcessIdList.as_ptr(),
+                list.NumberOfProcessIdsInList as usize,
+            )
+        }
+        .to_vec())
+    }
     pub fn wait_active(&self, expected: u32, grace_ms: u64, yield_ms: u64) -> Result<()> {
         let started = Instant::now();
         loop {
             if self.active()? == expected {
                 return Ok(());
             }
-            ensure!(
-                started.elapsed() < Duration::from_millis(grace_ms),
-                "Job 范围仍有进程，停止未确认"
-            );
+            if started.elapsed() >= Duration::from_millis(grace_ms) {
+                // ActiveProcesses 对「已退出但句柄/引用尚未收尾」的成员保持计数，
+                // 且 TerminateJobObject 之后清零仍是异步的。真实判据是成员列表：
+                // 查询成功且列表长度不超过期望值，就没有存活进程需要确认。
+                match self.process_ids() {
+                    Ok(ids) if ids.len() <= expected as usize => return Ok(()),
+                    Ok(ids) => {
+                        let active = self.active().unwrap_or_default();
+                        anyhow::bail!(
+                            "Job 范围仍有进程，停止未确认（active={}，成员={}：{:?}）",
+                            active,
+                            ids.len(),
+                            ids
+                        );
+                    }
+                    Err(error) => {
+                        anyhow::bail!(
+                            "Job 范围停止未确认，且成员列表查询失败：{error}"
+                        );
+                    }
+                }
+            }
             thread::sleep(Duration::from_millis(yield_ms));
         }
     }

@@ -9,7 +9,9 @@ import {
   type CodeUiWorkspace,
   codeGoalControlSchema,
   codeUiControllerTaskListQuerySchema,
+  type ExecutionMode,
   zcodeUiProtocol as protocol,
+  resolveContextWindow,
   type StreamEvent,
 } from "@kenfutwork/shared";
 import {
@@ -26,10 +28,15 @@ import type {
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import type { ModelInvocationSnapshot } from "../../providers/types.js";
+import {
+  type ExecutionModeService,
+  RetiredExecutionModeError,
+} from "../agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../agent-runs/agent-run-service.js";
 import type { BlobStore } from "../blob/types.js";
 import type { ThreadService } from "../chat/thread-service.js";
 import type { CheckpointService } from "../checkpoints/checkpoint-service.js";
+import type { CodeGitService } from "../code-git/code-git-service.js";
 import { createScopedGitExec } from "../code-git/scoped-git-exec.js";
 import type {
   ChildSession,
@@ -145,8 +152,15 @@ export interface CodeUiServiceDeps {
   plugins?: PluginRegistryService;
   checkpoints?: CheckpointService;
   permissions?: PermissionService;
+  /** 六档执行模式（G2/Q7）：缺席时 Code run 按默认 agent 模式执行，不阻塞。 */
+  agentModes?: ExecutionModeService;
   userInputs?: CodeUserInputService;
   terminals?: CodeTerminalService;
+  /**
+   * Run 终态自动提交（G3/Q8）：code-git 域的收口缝。缺席（测试装配）时终态不提交，
+   * 不影响 run 生命周期；开关/跳过/失败静默全部在 code-git 侧收口。
+   */
+  codeGit?: Pick<CodeGitService, "autoCommitRun">;
   blob?: BlobStore;
   attachmentRepository?: CodeAttachmentRepository;
   processSandbox?: ProcessSandbox;
@@ -173,6 +187,23 @@ type CodePreparedModel = {
   selection: NonNullable<protocol.SessionConfigState["modelSelection"]>;
   modelInvocation: ModelInvocationSnapshot;
 };
+/**
+ * 读回线程持久化的执行模式并 warm 缓存（G2/Q7，Code run 派发前调用）。
+ * 模式存储故障回落缓存；已退役模式必须拒绝本轮执行。
+ */
+export async function resolveCodeExecutionMode(
+  agentModes: ExecutionModeService | undefined,
+  threadId: string,
+  instanceId: string,
+): Promise<ExecutionMode | undefined> {
+  if (!agentModes) return undefined;
+  try {
+    return await agentModes.hydrate(threadId, { instanceId });
+  } catch (error) {
+    if (error instanceof RetiredExecutionModeError) throw error;
+    return agentModes.getMode(threadId);
+  }
+}
 
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -3612,8 +3643,16 @@ export class CodeUiService {
         goal.claimedRunId === event.runId
       )
         this.deps.agentRuns.cancelRun(event.runId);
-      if (["run.completed", "run.failed", "run.canceled"].includes(event.type))
+      if (
+        ["run.completed", "run.failed", "run.canceled"].includes(event.type)
+      ) {
         await this.notifyTask(user, project, sessionId, "task_status_changed");
+        // Run 终态自动提交（G3/Q8）：先于 drainQueuedInput 的下一轮派发（runTurn 的
+        // finally 在事件流之后），保证提交的就是本轮变更；autoCommitRun 永不抛，
+        // 开关关/非仓库/干净/失败全在 code-git 侧静默收口，不阻塞终态链路。
+        if (this.deps.codeGit)
+          await this.deps.codeGit.autoCommitRun(user, sessionId);
+      }
     }
   }
 
@@ -3682,6 +3721,64 @@ export class CodeUiService {
     }
   }
 
+  /**
+   * run.usage 事件的模型窗口元数据缓存（G6 圆环数据链）。
+   * 只服务展示层读数：60s TTL 内允许目录变更后短暂滞后（局部常量，不进治理表——
+   * 不影响执行路径，仅决定圆环分母多久跟上用户改实例配置）。
+   */
+  private readonly runUsageModelMetaCache = new Map<
+    string,
+    { at: number; contextWindowTokens?: number; maxOutputTokens?: number }
+  >();
+  private static readonly RUN_USAGE_META_TTL_MS = 60_000;
+
+  /** 补齐 run.usage 的 contextWindowTokens/maxOutputTokens（目录声明优先，兜底表次之）。 */
+  private async enrichRunUsageWindow(
+    event: Extract<StreamEvent, { type: "run.usage" }>,
+    user: LocalActor,
+    model: string,
+  ): Promise<Extract<StreamEvent, { type: "run.usage" }>> {
+    if (event.contextWindowTokens !== undefined) return event;
+    const now = Date.now();
+    const cached = this.runUsageModelMetaCache.get(model);
+    let meta =
+      cached && now - cached.at < CodeUiService.RUN_USAGE_META_TTL_MS
+        ? cached
+        : undefined;
+    if (!meta) {
+      meta = { at: now };
+      try {
+        const entries = await this.deps.modelCatalog.listCatalog(user);
+        // run 的 model 是「实例:模型」specifier（与 validateSpecifier 同口径）；目录里
+        // id 是模型名——两种写法都匹配，认不出时留空（界面只给绝对量，不编分母）。
+        const entry = entries.find(
+          (candidate) =>
+            `${candidate.provider.instanceId}:${candidate.id}` === model ||
+            candidate.id === model,
+        );
+        const declared =
+          entry?.model.contextWindow ?? entry?.hints?.contextWindow;
+        const window = resolveContextWindow(declared, entry?.id ?? model);
+        if (window !== null) meta.contextWindowTokens = window;
+        const maxOutput = entry?.model.maxOutputTokens;
+        if (typeof maxOutput === "number" && maxOutput > 0)
+          meta.maxOutputTokens = maxOutput;
+      } catch {
+        // 目录读取失败：不带窗口字段，客户端按「窗口未知」呈现
+      }
+      this.runUsageModelMetaCache.set(model, meta);
+    }
+    return {
+      ...event,
+      ...(meta.contextWindowTokens !== undefined
+        ? { contextWindowTokens: meta.contextWindowTokens }
+        : {}),
+      ...(meta.maxOutputTokens !== undefined
+        ? { maxOutputTokens: meta.maxOutputTokens }
+        : {}),
+    };
+  }
+
   private async runTurn(
     user: LocalActor,
     project: CodeUiWorkspace,
@@ -3724,6 +3821,15 @@ export class CodeUiService {
         threadId,
         model,
       });
+      // G2 六档执行模式（Q7）：Code run 与 Design 共用同一 agentModes 缝。
+      // 派发前按 threadId 读回持久化模式 warm 缓存——工具门（toolGateFor）、
+      // pre-step 引导、自动化分场景都按 threadId 消费；读回失败按现状（agent）继续，
+      // 不让模式存储故障挡掉 run（与 WS 路径同口径）。
+      const executionMode = await resolveCodeExecutionMode(
+        this.deps.agentModes,
+        threadId,
+        scopeHandle.describe().instanceId,
+      );
       const started = await this.deps.repository.startRunIfCurrent(
         scopeHandle.describe().instanceId,
         sessionId,
@@ -3746,6 +3852,7 @@ export class CodeUiService {
               preset: "code",
               prompt: text,
               model,
+              ...(executionMode ? { executionMode } : {}),
             },
             {
               runId,
@@ -3782,8 +3889,16 @@ export class CodeUiService {
                       : currentInput.intent.mode,
                   }
                 : {}),
-              eventSink: (event) =>
-                this.recordRunEvent(user, project, sessionId, event, ++ordinal),
+              eventSink: async (event) =>
+                this.recordRunEvent(
+                  user,
+                  project,
+                  sessionId,
+                  event.type === "run.usage"
+                    ? await this.enrichRunUsageWindow(event, user, model)
+                    : event,
+                  ++ordinal,
+                ),
             },
           );
         },
@@ -4375,7 +4490,9 @@ export class CodeUiService {
         instanceId: workspace.instanceId,
         projectId: project.projectId,
         taskId: sessionId,
-        generation: 0,
+        // 授权版本从 1 起铸：Windows 原生 broker 拒绝 generation<=0（「Task 执行身份
+        // 或授权版本无效」），0 起铸会让首个 run/终端直接被沙箱挡掉。
+        generation: 1,
         rootDirectory,
         additionalDirectories,
         sandboxMode:

@@ -4,23 +4,34 @@ import {
   type CodeUiBootstrap,
   codeUiParentRequestSchema,
   type ManagementTarget,
+  managementNavigationSchema,
 } from "@kenfutwork/shared";
-import { X } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { Button } from "@/components/ui/button";
 import { getServerBaseUrl } from "@/lib/env";
 import { LOCAL_ACCESS_LOST_EVENT } from "@/lib/local-access";
+import { useLocalInstance } from "@/lib/local-instance-context";
 import { PLUGIN_INVENTORY_CHANGED_EVENT } from "@/lib/plugin-panels";
 
-/** 独立原文档；关闭仅释放管理页，不触碰后台工作区。 */
+/**
+ * 独立管理文档（设置/插件市场）。父页 keep-alive 复用同一 iframe——重复打开
+ * 不重载；换目标经 `kenfutwork:management-target` 推送（文档内切换分区/页面）。
+ * 关闭走文档内「返回工作区」（onBack → management-close）；不提供外置关闭按钮
+ * （用户口径：右边的关闭按钮去掉）。
+ */
 export function ManagementDocumentFrame({
   target,
+  visible,
   onClose,
 }: {
   target: ManagementTarget;
+  /** keep-alive 模式：false 时隐藏不卸载（避免下次打开整文档重载）。 */
+  visible: boolean;
   onClose: () => void;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
+  // 本地实例主人（DEC-20 免账户）：与 Code 壳同一份用户，管理页底部显示
+  // 「本地用户」而不是「连接使用」。
+  const { instance: localInstance } = useLocalInstance();
   useEffect(() => {
     const receive = (event: MessageEvent) => {
       if (
@@ -39,7 +50,13 @@ export function ManagementDocumentFrame({
           )
             .toString()
             .replace(/\/$/, ""),
-          user: null,
+          user: localInstance
+            ? {
+                id: localInstance.instanceId,
+                username: "local",
+                displayName: "本地用户",
+              }
+            : null,
           management: target,
         };
         frame.current?.contentWindow?.postMessage(
@@ -54,25 +71,27 @@ export function ManagementDocumentFrame({
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [target, onClose]);
+  }, [target, onClose, localInstance]);
+
+  // 打开期间目标变化（例：设置→插件市场）：推给文档内切换，不重载。
+  useEffect(() => {
+    if (!visible) return;
+    frame.current?.contentWindow?.postMessage(
+      managementNavigationSchema.parse({
+        type: "kenfutwork:management-target",
+        target,
+      }),
+      window.location.origin,
+    );
+  }, [target, visible]);
+
   return (
-    <>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        aria-label="关闭管理页"
-        className="fixed right-3 top-3 z-50 bg-background"
-        onClick={onClose}
-      >
-        <X className="size-4" />
-      </Button>
-      <iframe
-        ref={frame}
-        title="管理设置"
-        src="/code-ui/index.html?document=management"
-        className="fixed inset-0 z-40 h-dvh w-full border-0"
-      />
-    </>
+    <iframe
+      ref={frame}
+      title="管理设置"
+      src="/code-ui/index.html?document=management"
+      hidden={!visible}
+      className="fixed inset-0 z-40 h-dvh w-full border-0"
+    />
   );
 }

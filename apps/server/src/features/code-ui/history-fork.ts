@@ -512,7 +512,8 @@ async function prepareFork(
       instanceId: operation.loaded.instanceId,
       projectId: root.project_id,
       taskId: id,
-      generation: 0,
+      // 与 createRoot 同口径从 1 起铸：Windows 原生 broker 拒绝 generation<=0。
+      generation: 1,
       rootDirectory: root.root_directory,
       additionalDirectories: structuredClone(root.additional_directories ?? []),
       sandboxMode: root.sandbox_mode,

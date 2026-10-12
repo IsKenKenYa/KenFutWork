@@ -142,6 +142,8 @@ export const flowHostEventsRequestSchema = z.object({
         payload: z.unknown(),
         at: z.string().min(1).max(64),
         hostSubject: z.string().min(1).max(256),
+        hostProjectId: z.uuid().optional(),
+        hostGeneration: z.number().int().positive().safe().optional(),
       }),
     )
     .min(1)
@@ -301,3 +303,143 @@ export const flowHostEngineInfoResponseSchema = z.object({
 export type FlowHostEngineInfoResponse = z.infer<
   typeof flowHostEngineInfoResponseSchema
 >;
+
+/**
+ * Flow 模式入口门控（纯逻辑，接线在各端宿主 hook）。
+ *
+ * 入口纪律（《flow 集成方案》P2 / AGENTS.md 不变量）：flow 以插件形态交付，
+ * **未安装插件或宿主适配层未配齐时不出现 Flow 入口**——不摆空壳、不放假开关。
+ */
+export type FlowEntry =
+  | { available: true; frontendUrl: string }
+  | { available: false; reason: string };
+
+export function resolveFlowEntry(input: {
+  /** flow 插件（`kenfutwork-flow`）是否已安装。 */
+  pluginInstalled: boolean;
+  pluginEnabled: boolean;
+  /** 宿主适配层状态；null = 探针请求失败（按不可用处理，不猜）。 */
+  status: FlowHostStatusResponse | null;
+}): FlowEntry {
+  if (!input.pluginInstalled) {
+    return {
+      available: false,
+      reason: "未安装 flow 插件（插件市场可安装）。",
+    };
+  }
+  if (!input.pluginEnabled)
+    return { available: false, reason: "Flow 插件已停用。" };
+  if (!input.status) {
+    return {
+      available: false,
+      reason: "无法获取 flow 宿主状态（/api/flow/host/status 不可达）。",
+    };
+  }
+  if (!input.status.enabled || !input.status.frontendUrl) {
+    return {
+      available: false,
+      reason: input.status.reasons.length
+        ? `宿主适配层未配齐：${input.status.reasons.join(" ")}`
+        : "宿主适配层未配齐。",
+    };
+  }
+  return { available: true, frontendUrl: input.status.frontendUrl };
+}
+
+/**
+ * `ff-embed/v1` 宿主侧出站消息（唯一权威在 `flow/docs/ff-embed-v1.md` 与
+ * flow 前端 `frontend/src/embed/protocol.ts`；这里只构造宿主要发的那几条）。
+ * web 工作台与 code-ui 壳内嵌面（FlowSurface）共用这一份，不再各留副本。
+ */
+export type FfEmbedOutboundMessage =
+  | { type: "ff-embed/hello-ack"; version: string }
+  | { type: "ff-embed/identity"; version: string; hostToken: string }
+  | { type: "ff-embed/navigate"; version: string; path: string };
+
+export function buildFlowHelloAck(version: string): FfEmbedOutboundMessage {
+  return { type: "ff-embed/hello-ack", version };
+}
+
+export function buildFlowIdentity(
+  version: string,
+  hostToken: string,
+): FfEmbedOutboundMessage {
+  return { type: "ff-embed/identity", version, hostToken };
+}
+
+export function buildFlowNavigate(
+  version: string,
+  path: string,
+): FfEmbedOutboundMessage {
+  return { type: "ff-embed/navigate", version, path };
+}
+
+/** flow 前端会发来的消息类型（宿主侧只认这个集合，其余忽略）。 */
+export type FfEmbedInboundMessage =
+  | { type: "ff-embed/hello"; version?: unknown }
+  | {
+      type: "ff-embed/ready";
+      projectId?: unknown;
+      generation?: unknown;
+      extensions?: unknown;
+    }
+  | {
+      type: "ff-embed/run-event";
+      hostProjectId?: unknown;
+      hostGeneration?: unknown;
+    }
+  | { type: "ff-embed/navigation" }
+  | { type: "ff-embed/error" }
+  | { type: "ff-embed/bye" };
+
+const FF_EMBED_INBOUND_TYPES = new Set([
+  "ff-embed/hello",
+  "ff-embed/ready",
+  "ff-embed/run-event",
+  "ff-embed/navigation",
+  "ff-embed/error",
+  "ff-embed/bye",
+]);
+
+export function isFlowProjectReady(
+  message: FfEmbedInboundMessage,
+  projectId: string,
+): message is Extract<FfEmbedInboundMessage, { type: "ff-embed/ready" }> & {
+  projectId: string;
+  generation: number;
+} {
+  if (
+    message.type !== "ff-embed/ready" ||
+    message.projectId !== projectId ||
+    typeof message.generation !== "number" ||
+    !Number.isSafeInteger(message.generation) ||
+    message.generation < 1
+  )
+    return false;
+  return (
+    message.extensions !== null &&
+    typeof message.extensions === "object" &&
+    !Array.isArray(message.extensions) &&
+    (message.extensions as Record<string, unknown>).projectFiles === "v1"
+  );
+}
+
+/**
+ * 解析一条来自 flow iframe 的消息。
+ *
+ * 安全边界（§3.3）：origin 必须等于 flow 前端 origin（服务端下发的
+ * `KENFUTWORK_FLOW_FRONTEND_URL`），白名单外的消息**静默丢弃**——页面里可能
+ * 同时有别的 iframe / 库在 postMessage，把噪音当故障会让排查看错方向。
+ */
+export function parseFlowInbound(
+  raw: unknown,
+  context: { origin: string; allowedOrigin: string },
+): FfEmbedInboundMessage | null {
+  if (context.origin !== context.allowedOrigin) return null;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw))
+    return null;
+  const candidate = raw as Record<string, unknown>;
+  if (typeof candidate.type !== "string") return null;
+  if (!FF_EMBED_INBOUND_TYPES.has(candidate.type)) return null;
+  return candidate as FfEmbedInboundMessage;
+}

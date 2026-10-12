@@ -1,3 +1,4 @@
+import { terminalShellSchema } from "@kenfutwork/shared";
 import { resolveTerminalFontProfile } from "@zcode/services/terminal-profile";
 import type { AppSettings } from "@zcode/shared";
 import { z } from "zod";
@@ -12,6 +13,8 @@ const size = z.object({
 const create = size.extend({
   taskId: z.string().uuid(),
   cwd: z.string().optional(),
+  /** 本会话用的 shell（终端面板 shell 菜单）；缺省走实例设置默认。 */
+  shell: terminalShellSchema.optional(),
 });
 const input = identity.extend({ data: z.string() });
 const resize = identity.merge(size);

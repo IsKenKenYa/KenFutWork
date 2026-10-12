@@ -231,6 +231,7 @@ function designGoalStatusLabel(
 }
 
 const DESIGN_GOAL_REASON_LABELS: Record<string, string> = {
+  "project.directoryRelink": "目录已重新关联",
   "user.pause": "手动暂停",
   "budget.stop": "预算已用尽",
   "budget.usageUnavailable": "用量暂不可用",
@@ -320,7 +321,9 @@ export function ChatSidebar({
   filesPanel,
 }: ChatSidebarProps) {
   const breakpoint = useBreakpoint();
-  const isOverlay = breakpoint !== "desktop";
+  // 抽屉只留给手机；平板档（768–1023，含工作台内嵌的 ~700–800px iframe）也并排
+  // ——用户口径：1080×720 下右侧面板不许抽屉弹出，两侧都窄一点按宽度自适应。
+  const isOverlay = breakpoint === "mobile";
 
   // ── Session & message management (extracted hook with LRU cache) ──
   const {
@@ -676,6 +679,66 @@ export function ChatSidebar({
   }, [accessToken, activeSessionId, acceptDesignTaskPolicy, canvasId]);
 
   useEffect(() => {
+    const refreshRelinkedTask = (event: MessageEvent) => {
+      if (
+        event.origin !== window.location.origin ||
+        event.source !== window.parent
+      )
+        return;
+      const data = event.data as {
+        type?: string;
+        projectId?: string;
+        tasks?: unknown;
+      } | null;
+      const policy = designTaskPolicyRef.current;
+      const taskId = activeSessionIdRef.current;
+      if (
+        data?.type !== "workbench:project-directory-relinked" ||
+        !policy ||
+        !taskId ||
+        policy.taskId !== taskId ||
+        policy.canvasId !== canvasId ||
+        policy.projectId !== data.projectId ||
+        !Array.isArray(data.tasks) ||
+        !data.tasks.includes(taskId)
+      )
+        return;
+      const requestId = ++policyRequestRef.current;
+      void fetchDesignTaskPolicy(accessToken, taskId)
+        .then(async ({ task }) => {
+          if (
+            requestId !== policyRequestRef.current ||
+            task.taskId !== taskId ||
+            task.projectId !== policy.projectId ||
+            task.canvasId !== canvasId
+          )
+            return;
+          acceptDesignTaskPolicy(task);
+          const goalRequestId = ++designGoalFetchRequestRef.current;
+          const goal = await fetchDesignGoal(accessToken, taskId);
+          if (
+            goalRequestId !== designGoalFetchRequestRef.current ||
+            goal.task.taskId !== taskId ||
+            goal.task.projectId !== policy.projectId ||
+            goal.task.canvasId !== canvasId
+          )
+            return;
+          designGoalResponseRef.current = goal;
+          setDesignGoalResponse(goal);
+        })
+        .catch((error: unknown) => {
+          if (requestId !== policyRequestRef.current) return;
+          setDesignTaskStatus("error");
+          setDesignTaskError(
+            error instanceof Error ? error.message : "刷新画布任务失败。",
+          );
+        });
+    };
+    window.addEventListener("message", refreshRelinkedTask);
+    return () => window.removeEventListener("message", refreshRelinkedTask);
+  }, [accessToken, acceptDesignTaskPolicy, activeSessionIdRef, canvasId]);
+
+  useEffect(() => {
     const taskId = activeSessionId;
     if (designGoalTaskIdRef.current !== taskId) {
       designGoalTaskIdRef.current = taskId;
@@ -918,11 +981,15 @@ export function ChatSidebar({
   ]);
 
   // ── Sidebar resize ──
-  const SIDEBAR_MIN = 300;
+  const SIDEBAR_MIN = 216;
   const SIDEBAR_MAX = 600;
   const SIDEBAR_KEYBOARD_STEP = 20;
   const [sidebarWidth, setSidebarWidth] = useState(400);
   const isResizing = useRef(false);
+  // 实际渲染宽度：用户拖的宽度为上限，按容器可用宽自动收缩（最小 260 / 至多 42%）。
+  // 用 CSS min()/max() 百分比实现——容器宽度变化即时生效，不依赖 window resize
+  // 事件（宿主拖窄窗口不发 resize 的坑，用户发过两次火，一律走 CSS 自适应）。
+  const sidebarStyleWidth = `min(${sidebarWidth}px, max(${SIDEBAR_MIN}px, 36%))`;
 
   const clampWidth = useCallback(
     (w: number) => Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, w)),
@@ -2571,21 +2638,12 @@ export function ChatSidebar({
         <button
           onClick={onToggle}
           type="button"
+          aria-label="打开面板"
           className="group inline-flex items-center gap-1 rounded-xl bg-card border border-border px-2.5 py-1.5 text-xs text-foreground/60 shadow-sm hover:bg-card hover:text-foreground transition-colors cursor-pointer md:px-2.5 md:py-1.5 min-h-[36px] md:min-h-0"
         >
-          <svg
-            className="size-4 md:size-3.5"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              fill="currentColor"
-              fillOpacity={0.9}
-              d="M18.25 3c2.071 0 3.946 2.16 3.946 4.23L22 15.75a3.75 3.75 0 0 1-3.75 3.75h-2.874a.25.25 0 0 0-.16.058l-2.098 1.738a1.75 1.75 0 0 1-2.24-.007l-2.065-1.73a.25.25 0 0 0-.162-.059H5.75A3.75 3.75 0 0 1 2 15.75v-9A3.75 3.75 0 0 1 5.75 3zM7.5 10q-.053 0-.104.005a1.25 1.25 0 0 0-1.14 1.117l-.006.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 7.5 10m4.5 0q-.053 0-.104.005a1.25 1.25 0 0 0-1.14 1.117l-.006.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 12 10m4.5 0q-.053 0-.105.005a1.25 1.25 0 0 0-1.138 1.117l-.007.128.007.128a1.25 1.25 0 1 0 1.37-1.371l-.02-.002A1 1 0 0 0 16.5 10"
-            />
-          </svg>
-          对话
+          {/* 面板开关（用户口径：不叫「对话」，叫「面板」；图标用面板形而不是对话气泡） */}
+          <PanelRightIcon className="size-4 md:size-3.5" />
+          面板
         </button>
       </div>
     );
@@ -2724,13 +2782,14 @@ export function ChatSidebar({
             onDelete={handleDeleteSession}
           />
         )}
-        {/* 视图切换：对话 / 图层 / 生成文件（不遮标签行，点哪个切哪个视图） */}
+        {/* 视图切换：面板 / 图层 / 生成文件（不遮标签行，点哪个切哪个视图）。
+            「对话」改叫「面板」（用户口径：这个右栏是三视图面板，不只对话）。 */}
         <div className="ml-auto flex shrink-0 items-center justify-end gap-0.5">
           <button
             type="button"
-            aria-label="对话"
+            aria-label="面板"
             aria-pressed={panelTab === "chat"}
-            title="对话"
+            title="面板"
             onClick={() => onPanelTabChange?.("chat")}
             className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
               panelTab === "chat"
@@ -3267,7 +3326,7 @@ export function ChatSidebar({
   return (
     <div
       className="flex h-full shrink-0"
-      style={{ width: sidebarWidth }}
+      style={{ width: sidebarStyleWidth }}
       {...eventIsolationProps}
     >
       {/* Resize handle -- supports mouse, touch, and keyboard (ArrowLeft/ArrowRight) */}

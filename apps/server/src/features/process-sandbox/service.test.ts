@@ -22,7 +22,26 @@ import type { ProcessSandbox, ProcessSpawnRequest } from "./types.js";
 
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  for (const cleanup of cleanups.splice(0).reverse()) {
+    // PSEC workload 退出后其句柄/目录锁释放有短暂的 Windows 收尾滞后，
+    // rmdir 撞上 EBUSY/EPERM/ENOTEMPTY 时退避重试，不改变断言语义。
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await cleanup();
+        break;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (
+          (code === "EBUSY" || code === "EPERM" || code === "ENOTEMPTY") &&
+          attempt < 20
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
 });
 
 test("shell 不能绕过附加目录的只读授权，扩权保留后台进程而收紧确认终止", async () => {

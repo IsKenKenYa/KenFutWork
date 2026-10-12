@@ -80,6 +80,10 @@ export interface HoldToTalk {
   onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
   /** 用户手动清掉错误提示。 */
   dismissError: () => void;
+  /** 麦克风按钮按下沿：立即开麦（按住录音）。 */
+  startRecording: () => void;
+  /** 麦克风按钮松开沿：停止并提交转写。 */
+  stopRecording: () => void;
 }
 
 /** 起手就要放行的交互控件（规划 §7 点名的四类 + 同族控件）。 */
@@ -395,6 +399,29 @@ export function useHoldToTalk(options: HoldToTalkOptions): HoldToTalk {
     setStatusText(null);
   }, []);
 
+  /**
+   * 麦克风按钮「按住录音」的按下沿：立即开麦（跳过手势阈值与暖身窗口）。
+   * pointerId 用占位 -1——window 的 pointerup 监听按指针过滤，真实松手不会误触发提交，
+   * 停止必须走显式的 stopRecording（按钮松开沿）。
+   */
+  const startRecording = useCallback(() => {
+    if (!enabled || phase === "transcribing") {
+      return;
+    }
+    if (pending.current || session.current.kind !== "idle") {
+      return;
+    }
+    void beginRecording(-1);
+  }, [beginRecording, enabled, phase]);
+
+  /** 麦克风按钮「按住录音」的松开沿：提交转写（仅在活跃录音时）。 */
+  const stopRecording = useCallback(() => {
+    if (session.current.kind !== "active") {
+      return;
+    }
+    void submit();
+  }, [submit]);
+
   const displayStatus = useMemo(() => {
     if (phase === "recording") {
       const seconds = Math.floor(elapsedMs / 1000);
@@ -409,5 +436,7 @@ export function useHoldToTalk(options: HoldToTalkOptions): HoldToTalk {
     lockSelection: phase === "recording",
     onPointerDown,
     dismissError,
+    startRecording,
+    stopRecording,
   };
 }

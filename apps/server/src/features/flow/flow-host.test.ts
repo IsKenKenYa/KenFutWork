@@ -30,6 +30,8 @@ function fixture(
     secret?: string;
     gatewayUrl?: string | null;
     authorized?: boolean;
+    generation?: number;
+    draining?: boolean;
     configured?: boolean;
     baseUrl?: string;
     engineInfo?: { info(): Promise<unknown> };
@@ -77,6 +79,12 @@ function fixture(
       authenticate: async () => (options.authorized === false ? null : actor),
     },
     localInstance,
+    projectControl: {
+      snapshot: async () => ({
+        generation: options.generation ?? 1,
+        draining: options.draining ?? false,
+      }),
+    },
     providers: {
       listInstances,
       resolveCredentialsById: async () => credentials,
@@ -365,6 +373,8 @@ describe("Flow 本地实例基础设施", () => {
     try {
       const event = {
         hostSubject: INSTANCE_ID,
+        hostProjectId: PROVIDER_ID,
+        hostGeneration: 1,
         runId: "run-1",
         seq: 1,
         type: "completed",
@@ -392,11 +402,59 @@ describe("Flow 本地实例基础设施", () => {
     }
   });
 
+  it.each([
+    {
+      gate: { generation: 2 },
+      scope: { hostProjectId: PROVIDER_ID, hostGeneration: 1 },
+    },
+    {
+      gate: { draining: true },
+      scope: { hostProjectId: PROVIDER_ID, hostGeneration: 1 },
+    },
+    { gate: {}, scope: {} },
+    { gate: {}, scope: { hostProjectId: PROVIDER_ID } },
+    { gate: {}, scope: { hostGeneration: 1 } },
+  ])(
+    "旧代、排空或缺少作用域事件不广播也不写入重放缓冲",
+    async ({ gate, scope }) => {
+      const { app, pushed, eventBuffer } = fixture({ secret: SECRET, ...gate });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/flow/host/events",
+          headers: { authorization: `Bearer ${SECRET}` },
+          payload: {
+            events: [
+              {
+                hostSubject: INSTANCE_ID,
+                ...scope,
+                runId: "late-run",
+                seq: 1,
+                type: "completed",
+                payload: {},
+                at: "2026-10-12T00:00:00Z",
+              },
+            ],
+          },
+        });
+        expect(response.json()).toEqual({ accepted: 0, skipped: 1 });
+        expect(pushed).toEqual([]);
+        expect(eventBuffer.getAfter(flowEventScopeKey(INSTANCE_ID), 0)).toEqual(
+          [],
+        );
+      } finally {
+        await app.close();
+      }
+    },
+  );
+
   it("事件同时入 EventBuffer（P5 断线续传的数据面）", async () => {
     const { app, eventBuffer } = fixture({ secret: SECRET });
     try {
       const event = {
         hostSubject: INSTANCE_ID,
+        hostProjectId: PROVIDER_ID,
+        hostGeneration: 1,
         runId: "run-2",
         seq: 1,
         type: "node_finished",

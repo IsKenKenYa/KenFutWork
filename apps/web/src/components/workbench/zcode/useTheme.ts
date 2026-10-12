@@ -69,7 +69,7 @@ export function applyTheme(theme: Theme) {
   syncBrowserThemeSurface(resolved);
 }
 
-function isTheme(value: string | null): value is Theme {
+export function isTheme(value: string | null): value is Theme {
   return (
     value === "light" ||
     value === "dark" ||

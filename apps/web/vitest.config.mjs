@@ -19,9 +19,18 @@ export default defineConfig({
         ),
       },
       ...Object.entries({
+        // G6：圆环适配件与 code-ui vite 构建同口径替换
+        "@zui/chat-input-toolbar/contextUsage.js": path.resolve(
+          import.meta.dirname,
+          "src/components/workbench/zcode/host/contextUsageAdapter.tsx",
+        ),
         "@zui/settings/ComputerUseSection.js": path.resolve(
           import.meta.dirname,
           "src/components/workbench/zcode/host/ComputerUseSectionAdapter.tsx",
+        ),
+        "@zui/settings/BrowserSettingsSection.js": path.resolve(
+          import.meta.dirname,
+          "src/components/workbench/zcode/host/BrowserSettingsSectionAdapter.tsx",
         ),
         "@zui/i18n/IntlProvider.js": path.resolve(
           import.meta.dirname,

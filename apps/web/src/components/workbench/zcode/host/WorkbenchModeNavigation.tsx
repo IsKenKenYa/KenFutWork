@@ -1,9 +1,13 @@
 import type { HostWorkbenchMode, HostWorkbenchNavigation } from "@zcode/shared";
+import appLogoUrl from "@zui/assets/kenfutwork-mark.png";
+
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
-import { WindowsTopLeftLogo } from "@zui/WindowsTopLeftLogo.js";
-import { Code2, Palette, Workflow } from "lucide-react";
+import { Code2, Palette, PanelLeftOpen, Workflow } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { ProjectDirectoryRecovery } from "./ProjectDirectoryRecovery.js";
+
+// 与 AboutSection 同一边界：Code 宿主的 Vite PNG 导入在运行时为 URL 字符串。
+const logoSrc = appLogoUrl as unknown as string;
 
 /** 从CanvasSidebar原横排及收起按钮提取，Code／Design／Flow共用展示。 */
 export function WorkbenchModeNavigation({
@@ -40,7 +44,7 @@ export function WorkbenchModeNavigation({
             aria-label={item.label}
             data-active={mode === item.id}
             onClick={() => onModeChange(item.id)}
-            className="rounded-md p-2 hover:bg-muted data-[active=true]:bg-muted data-[active=true]:text-foreground data-[active=false]:text-muted-foreground"
+            className="rounded-md p-2 hover:bg-surface-hover data-[active=true]:bg-selected data-[active=true]:text-foreground data-[active=false]:text-foreground-subtle"
           >
             {item.icon}
           </button>
@@ -48,11 +52,13 @@ export function WorkbenchModeNavigation({
       </>
     );
   return (
-    <div className="px-2 pt-1 pb-0.5">
+    <div className="px-2 pt-3 pb-1">
+      {/* 用户口径：模式行上下加分界线（tab 轨道式 hairline），选中项灰底填充
+          顶满两线——一眼可辨当前模式，又不回到胶囊容器的突兀。 */}
       <div
         role="radiogroup"
         aria-label="模式切换"
-        className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5"
+        className="flex items-stretch border-y"
       >
         {modeItems.map((item) => (
           // biome-ignore lint/a11y/useSemanticElements: 提取现有分段radio按钮，保持图标和布局
@@ -63,7 +69,7 @@ export function WorkbenchModeNavigation({
             aria-checked={mode === item.id}
             data-active={mode === item.id}
             onClick={() => onModeChange(item.id)}
-            className="flex min-h-[30px] min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-1.5 text-[13px] whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground data-[active=true]:bg-card data-[active=true]:font-medium data-[active=true]:text-foreground data-[active=true]:shadow-sm"
+            className="flex min-h-[34px] min-w-0 flex-1 items-center justify-center gap-1 py-1.5 text-[13px] whitespace-nowrap text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground data-[active=true]:bg-selected data-[active=true]:text-foreground"
           >
             {item.icon}
             <span className="truncate">{item.label}</span>
@@ -74,22 +80,31 @@ export function WorkbenchModeNavigation({
   );
 }
 
-export function HostWorkbenchModeNavigation() {
+export function HostWorkbenchModeNavigation({
+  actions,
+}: {
+  /** 品牌行右侧的动作槽（如收起侧栏按钮）；按钮自带 no-drag，不破坏拖拽区。 */
+  actions?: React.ReactNode;
+}) {
   const navigation = useOptionalPlatform()?.workbenchNavigation;
   return (
     <>
       {navigation ? (
-        <ConnectedWorkbenchModeNavigation navigation={navigation} />
+        <ConnectedWorkbenchModeNavigation
+          navigation={navigation}
+          actions={actions}
+        />
       ) : null}
-      <ProjectDirectoryRecovery />
     </>
   );
 }
 
 function ConnectedWorkbenchModeNavigation({
   navigation,
+  actions,
 }: {
   navigation: HostWorkbenchNavigation;
+  actions?: React.ReactNode;
 }) {
   const snapshot = useSyncExternalStore(
     navigation.subscribe,
@@ -97,19 +112,78 @@ function ConnectedWorkbenchModeNavigation({
   );
   return (
     <div className="pb-2">
-      <div className="flex items-center gap-[5px] px-4 pt-3 pb-2">
-        <WindowsTopLeftLogo
-          className="static m-0 h-auto p-0"
-          imageClassName="h-[15px] w-auto"
+      {/* 品牌行（用户口径·参考图）：正常侧栏背景、裸黑 logo + 黑字标、等高紧凑，
+          间距沿用原口径（px-3.5 / py-3 / gap-2）；无黑底条、无底片徽章。
+          拖拽区仍由本行承接（原 h-12 空白拖拽条已去掉）。 */}
+      <div className="flex w-full items-center gap-2 px-3.5 py-3 [app-region:drag]">
+        {/* 黑标：品牌图为蓝色墨迹，brightness(0) 只留黑白；盒高 20px=字标行高，
+            墨迹(盒的 71%)≈字标大写高——垂直居中即光学对齐（实测墨迹在画布中
+            上下均分 148/147，无需位移补偿）。 */}
+        {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
+        <img
+          src={logoSrc}
+          alt="KenFutWork"
+          className="h-5 w-auto brightness-0"
+          draggable={false}
         />
-        <span
-          className="font-wordmark bg-clip-text text-xl tracking-tight text-transparent"
-          style={{ backgroundImage: "var(--wordmark-gradient)" }}
-        >
+        <span className="font-wordmark text-[20px] leading-none tracking-tight text-foreground">
           KenFutWork
         </span>
+        {actions ? (
+          <div className="ml-auto flex items-center [app-region:no-drag]">
+            {actions}
+          </div>
+        ) : null}
       </div>
       <WorkbenchModeNavigation {...snapshot} onModeChange={navigation.open} />
+      {snapshot.mode === "code" ? <ProjectDirectoryRecovery /> : null}
+    </div>
+  );
+}
+
+const NOOP_SUBSCRIBE = () => () => {};
+const FALLBACK_SNAPSHOT = {
+  mode: "code" as const,
+  availableModes: [] as readonly never[],
+};
+
+/**
+ * 收起态图标栏（用户口径：收起不要收缩到什么都没有，像之前一样留一条 rail）：
+ * 黑标 + 展开按钮 + 模式图标（复用 WorkbenchModeNavigation 的 collapsed 形态）。
+ * 挂在壳侧栏 48px 宽的收起轨道里；桌面 chrome 形态不启用（那边有顶部浮层按钮）。
+ */
+export function HostSidebarRail({ onExpand }: { onExpand: () => void }) {
+  const navigation = useOptionalPlatform()?.workbenchNavigation;
+  const snapshot = useSyncExternalStore(
+    navigation?.subscribe ?? NOOP_SUBSCRIBE,
+    navigation?.getSnapshot ?? (() => FALLBACK_SNAPSHOT),
+  );
+  return (
+    <div className="flex h-full w-full flex-col items-center gap-1 py-2">
+      {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
+      <img
+        src={logoSrc}
+        alt="KenFutWork"
+        className="my-1 h-5 w-auto brightness-0"
+        draggable={false}
+      />
+      <button
+        type="button"
+        aria-label="展开侧栏"
+        title="展开侧栏"
+        onClick={onExpand}
+        className="rounded-md p-2 text-foreground-subtle hover:bg-surface-hover hover:text-foreground"
+      >
+        <PanelLeftOpen className="h-4 w-4" />
+      </button>
+      <div className="my-1 w-5 border-t" />
+      {navigation ? (
+        <WorkbenchModeNavigation
+          {...snapshot}
+          onModeChange={navigation.open}
+          collapsed
+        />
+      ) : null}
     </div>
   );
 }

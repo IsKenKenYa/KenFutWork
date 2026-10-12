@@ -114,6 +114,39 @@ export const codeGitCheckoutRequestSchema = z.object({
   branch: z.string().min(1),
 });
 
+// --- G4 worktree 管理（Q10：新建/删除/绑为工作目录的列表面） ---
+
+export const codeGitWorktreeViewSchema = z.object({
+  /** 工作树绝对路径（服务端解析后的真实位置）。 */
+  path: z.string().min(1),
+  head: z.string().min(1),
+  /** 分支短名；detached 工作树为 null。 */
+  branch: z.string().nullable(),
+});
+
+export const codeGitWorktreeListResponseSchema = z.object({
+  worktrees: z.array(codeGitWorktreeViewSchema),
+});
+
+export const codeGitWorktreeCreateResponseSchema = z.object({
+  worktree: codeGitWorktreeViewSchema,
+});
+
+export const codeGitWorktreeCreateRequestSchema = z.object({
+  taskId: z.string().min(1),
+  /** 相对 Task 工作域的目录名；服务端解析并校验不越出主目录。 */
+  path: z.string().min(1),
+  branch: z.string().min(1),
+  /** true = 从当前 HEAD 新建该分支；false = 检出已存在的分支。 */
+  createBranch: z.boolean().default(false),
+});
+
+export const codeGitWorktreeDeleteRequestSchema = z.object({
+  taskId: z.string().min(1),
+  /** 列表里的工作树绝对路径（防止任意路径删除）。 */
+  path: z.string().min(1),
+});
+
 // --- Code 模式 git 写操作（R2-1：更改统计 / 提交 / 推送 / 新建分支） ---
 
 export const codeGitDiffStatResponseSchema = z.object({

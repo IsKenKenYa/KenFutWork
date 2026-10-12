@@ -77,6 +77,8 @@ export interface CodeUiConversationState {
   inputs?: CodeAdmittedInput[];
   inputOwner?: { hostId: string; runtimeId: string };
   runUsage?: Array<[string, RunUsageTotals]>;
+  /** Private provenance for windows derived by this consumer, never runtime facts. */
+  contextWindowProjections?: Array<[string, string]>;
   childRunUsage?: Array<[string, Array<[string, RunUsageTotals]>]>;
   planningEpoch?: number;
   approvedPlan?: CodeApprovedPlan;
@@ -363,6 +365,9 @@ export function createCodeUiConversation(input: {
   const inputs = structuredClone(input.state?.inputs ?? []);
   let inputOwner = input.state?.inputOwner;
   const runUsage = new Map(input.state?.runUsage ?? []);
+  const contextWindowProjections = new Map(
+    input.state?.contextWindowProjections ?? [],
+  );
   const childRunUsage = new Map(input.state?.childRunUsage ?? []);
   const completedTurnViews = new Map(
     structuredClone(input.state?.completedTurnViews ?? []),
@@ -419,6 +424,11 @@ export function createCodeUiConversation(input: {
     createdAtSeq: snapshot.seq,
   });
   const beginExecution = (turn: ExecutionStart) => {
+    const projectedRun = contextWindowProjections.get(root.sessionId);
+    if (projectedRun && projectedRun !== turn.runId) {
+      root.usage.contextWindow = null;
+      contextWindowProjections.delete(root.sessionId);
+    }
     runId = turn.runId;
     root.config = protocol.sessionConfigStateSchema.parse({
       ...root.config,
@@ -499,6 +509,9 @@ export function createCodeUiConversation(input: {
         detachedChildSessionIds: [...detachedChildren],
         inputs,
         runUsage: [...runUsage],
+        ...(contextWindowProjections.size
+          ? { contextWindowProjections: [...contextWindowProjections] }
+          : {}),
         childRunUsage: [...childRunUsage],
         completedTurnViews: [...completedTurnViews],
         inheritedHistory,
@@ -733,6 +746,9 @@ export function createCodeUiConversation(input: {
           version: 1,
           runId: event.runId,
           runUsage: childRunUsage.get(childSessionId) ?? [],
+          contextWindowProjections: [...contextWindowProjections].filter(
+            ([id]) => descendants.has(id),
+          ),
           childRunUsage: [...childRunUsage].filter(([id]) =>
             descendants.has(id),
           ),
@@ -754,6 +770,9 @@ export function createCodeUiConversation(input: {
         });
       host.recordEvent(event);
       const state = host.exportState();
+      for (const id of descendants) contextWindowProjections.delete(id);
+      for (const [id, projectedRun] of state.contextWindowProjections ?? [])
+        contextWindowProjections.set(id, projectedRun);
       childRunUsage.set(childSessionId, state.runUsage ?? []);
       for (const [id, usage] of state.childRunUsage ?? [])
         childRunUsage.set(id, usage);
@@ -1116,6 +1135,47 @@ export function createCodeUiConversation(input: {
           event.runOutputTokens === undefined
         )
           return;
+        // Runtime context facts survive usage accounting and completed-view capture.
+        // Catalog metadata may fill a missing capacity, never replace actual usage.
+        const contextWindow = root.usage.contextWindow;
+        const projectedRun = contextWindowProjections.get(root.sessionId);
+        const capacity =
+          event.contextWindowTokens ??
+          (projectedRun === event.runId ? contextWindow?.maxTokens : undefined);
+        if (
+          contextWindow &&
+          !projectedRun &&
+          contextWindow.maxTokens <= 0 &&
+          event.contextWindowTokens !== undefined
+        ) {
+          root.usage.contextWindow = {
+            ...contextWindow,
+            maxTokens: event.contextWindowTokens,
+          };
+        } else if (
+          (!contextWindow || projectedRun === event.runId) &&
+          capacity !== undefined
+        ) {
+          root.usage.contextWindow = {
+            usedTokens: event.inputTokens,
+            maxTokens: capacity,
+            autoCompactThresholdTokens: null,
+            cache: {
+              inputTokens: event.inputTokens,
+              cacheReadTokens: event.cachedInputTokens ?? 0,
+              cacheWriteTokens: 0,
+              totalInputTokens: event.runInputTokens,
+              totalCacheReadTokens: event.runCachedInputTokens ?? 0,
+              totalCacheWriteTokens: 0,
+              hitRate:
+                typeof event.runCachedInputTokens === "number" &&
+                event.runInputTokens > 0
+                  ? event.runCachedInputTokens / event.runInputTokens
+                  : null,
+            },
+          };
+          contextWindowProjections.set(root.sessionId, event.runId);
+        }
         const cached =
           event.runCachedInputTokens ??
           runUsage.get(event.runId)?.cachedInputTokens;

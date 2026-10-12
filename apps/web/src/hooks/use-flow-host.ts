@@ -2,11 +2,12 @@
 
 import {
   FLOW_PLUGIN_BUNDLE_NAME,
+  type FlowEntry,
   type FlowHostStatusResponse,
+  resolveFlowEntry,
 } from "@kenfutwork/shared";
 import { useCallback, useEffect, useState } from "react";
 import { getServerBaseUrl } from "@/lib/env";
-import { type FlowEntry, resolveFlowEntry } from "@/lib/flow-embed";
 import { serverFetch } from "@/lib/local-access";
 import { PLUGIN_INVENTORY_CHANGED_EVENT } from "@/lib/plugin-panels";
 
@@ -19,8 +20,8 @@ import { PLUGIN_INVENTORY_CHANGED_EVENT } from "@/lib/plugin-panels";
  *
  * **发布纪律（真机踩过）**：两路探针必须**都落定后一次性发布**，中途不给
  * 「插件已答、状态未答」的中间态——那个中间态会被 `resolveFlowEntry` 判成
- * available=false，工作台的兜底跳转（见 canvas-workbench 的 mode===flow 守卫）
- * 会据此把 `?mode=flow` 改写成 design，Flow 模式一秒后被弹回 Design 画布。
+ * available=false，父页的深链兜底（workbench.tsx 的 mode 解析）会据此把
+ * `?mode=flow` 回落成 design，Flow 模式一秒后被弹回 Design 画布。
  */
 export function useFlowHostEntry(enabled = true): {
   entry: FlowEntry | null;

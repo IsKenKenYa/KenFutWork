@@ -72,6 +72,14 @@ function preferencesWrites({
       writer.upsertAutoCompactEnabled(instanceId, patch.autoCompactEnabled),
     );
   }
+  if (patch.codeAutoCommitEnabled !== undefined) {
+    writes.push(
+      writer.upsertCodeAutoCommitEnabled(
+        instanceId,
+        patch.codeAutoCommitEnabled,
+      ),
+    );
+  }
   if (patch.hooks !== undefined) {
     writes.push(writer.upsertHooks(instanceId, patch.hooks));
   }

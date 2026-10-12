@@ -539,6 +539,8 @@ export interface HostWorkbenchNavigation {
   getSnapshot(): { mode: HostWorkbenchMode; availableModes: readonly HostWorkbenchMode[] };
   subscribe(listener: () => void): () => void;
   open(mode: HostWorkbenchMode): void;
+  /** 壳内主区视图变化后回写当前模式（模式 pills 的 active 态以此为准）。 */
+  setActiveMode(mode: HostWorkbenchMode): void;
 }
 
 export interface IPlatformService {

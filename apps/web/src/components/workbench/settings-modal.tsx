@@ -22,6 +22,7 @@ import { IndexLibrarySection } from "@/components/workbench/index-library-sectio
 import { ListLoading } from "@/components/workbench/list-state";
 import { LocalAccessClientsSection } from "@/components/workbench/local-access-clients-section";
 import { LocalInstanceSection } from "@/components/workbench/local-instance-section";
+import { LocaleSection } from "@/components/workbench/locale-section";
 import { OnboardingSection } from "@/components/workbench/onboarding-section";
 import { RulesMemorySection } from "@/components/workbench/rules-memory-section";
 import { SubagentsSection } from "@/components/workbench/subagents-section";
@@ -347,6 +348,7 @@ export function SettingsModal({
                 <LocalInstanceSection />
                 <TerminalSettingsSection accessToken={token} />
                 <ConversationVisualsSection />
+                <LocaleSection />
               </div>
             ) : activeTab === "appearance" ? (
               <AppearanceSection />

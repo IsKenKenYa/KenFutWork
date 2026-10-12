@@ -41,7 +41,7 @@ afterEach(() => {
   restoreCodeRootBrowser();
 });
 
-it("原自动化入口在宿主未接入时保留原页面与图标，禁用创建且零运行请求", async () => {
+it("侧栏自动化入口已移除（用户拍板）：未接入宿主下侧栏无自动化入口且零运行请求", async () => {
   const calls: Array<{ service: string; method: string; args: unknown[] }> = [];
   installBrowserLayout();
   vi.stubGlobal("fetch", createCodeRootHostFetch(calls, { rejectOpen: false }));
@@ -64,19 +64,8 @@ it("原自动化入口在宿主未接入时保留原页面与图标，禁用创�
   );
   await screen.findByRole("textbox");
   const beforeOpen = calls.length;
-  for (let round = 0; round < 2; round += 1) {
-    fireEvent.click(await screen.findByRole("button", { name: "自动化" }));
-    expect(
-      await screen.findByRole("heading", { name: "自动化" }),
-    ).not.toBeNull();
-    expect(screen.getByText("未接入").getAttribute("role")).toBe("status");
-    const create = screen.getByRole("button", {
-      name: "创建定时任务",
-    });
-    expect(create.hasAttribute("disabled")).toBe(true);
-    fireEvent.click(create);
-    expect(screen.getByRole("heading", { name: "自动化" })).not.toBeNull();
-  }
+  // 侧栏入口移除后无自动化按钮可达主视图；无入口即零自动化请求。
+  expect(screen.queryByRole("button", { name: "自动化" })).toBeNull();
   expect(
     calls
       .slice(beforeOpen)

@@ -27,19 +27,6 @@ export function requestParentBootstrap(
   });
 }
 
-export function navigateToDesign() {
-  if (window.parent === window) {
-    const target = new URL("/workbench", window.location.origin);
-    target.searchParams.set("mode", "design");
-    window.location.assign(target.href);
-  } else {
-    window.parent.postMessage(
-      { type: "kenfutwork:code-navigate", mode: "design" },
-      window.location.origin,
-    );
-  }
-}
-
 export function openPluginPanel(pluginId: string, entryId: string) {
   window.parent.postMessage(
     { type: "kenfutwork:code-open-plugin", pluginId, entryId },

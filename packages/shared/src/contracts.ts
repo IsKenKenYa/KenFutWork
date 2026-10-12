@@ -182,12 +182,24 @@ export const terminalShellSchema = z.enum([
 
 export type TerminalShellId = z.infer<typeof terminalShellSchema>;
 
+/**
+ * Code run 终态自动 git 提交的默认开关（G3/Q8）：默认开。
+ * 唯一属主——schema 的 `.default` 与服务端读侧兜底都引用本常量，禁止另写字面量。
+ */
+export const CODE_AUTO_COMMIT_ENABLED_DEFAULT = true;
+
 export const instanceSettingsSchema = z.object({
   modelDefaults: modelDefaultsSchema.optional(),
   /** 未配置默认模型时为真实空值，局部设置保存不要求先选模型。 */
   defaultModel: z.string(),
   /** 终端默认 shell（用户口径：「可以在设置里配置默认的」）。 */
   terminalShell: terminalShellSchema.default("auto"),
+  /**
+   * Code run 终态自动 git 提交（G3/Q8）：每轮 run 进入终态时把 Task 工作目录的全部
+   * 变更 `add -A` + commit（提交信息按变更统计生成，不调 LLM）。非仓库与干净工作区
+   * 静默跳过（不自动 init）；失败不阻塞 run 终态。
+   */
+  codeAutoCommitEnabled: z.boolean().default(CODE_AUTO_COMMIT_ENABLED_DEFAULT),
   /**
    * R4-3「索引存储库以实现即时搜索」（索引文件是本机缓存，不进库表）。
    * 关掉时右栏「文件目录」的搜索**如实拒绝并指路**，不是回空列表。

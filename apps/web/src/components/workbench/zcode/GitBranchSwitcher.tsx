@@ -18,6 +18,8 @@ import {
 import { GitGraphDialog } from "@zui/git-graph/GitGraphDialog.js";
 import { useGitBranchSwitcher } from "@zui/hooks/useGitBranchSwitcher.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+// KenFutWork 宿主件（G4/Q10）：工作树管理入口。
+import { WorktreeMenu } from "@zui/host/WorktreeMenu.js";
 import {
   matchesGitBranchSearch,
   resolveGitBranchTriggerLabel,
@@ -328,6 +330,11 @@ export function GitBranchSwitcher({
                   <GitGraph className="size-4 text-foreground-subtle" />
                   {intl.formatMessage({ id: "gitGraph.menuAction" })}
                 </Button>
+                {/* KenFutWork 宿主件（G4/Q10）：工作树管理入口。 */}
+                <WorktreeMenu
+                  workspacePath={workspacePath}
+                  onDone={onRefreshGit}
+                />
               </div>
             ) : null}
           </PopoverContent>

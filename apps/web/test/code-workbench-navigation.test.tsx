@@ -90,12 +90,14 @@ it("原Code侧栏使用横排模式按钮，可信宿主能力才显示Flow；�
   const code = await screen.findByRole("radio", { name: "Code" });
   expect(code.getAttribute("aria-checked")).toBe("true");
   expect(screen.queryByRole("radio", { name: "Flow" })).toBeNull();
+  // 融合后点 Design：壳内切主区视图（不再向父窗口发 code-navigate——该消息已删）。
   fireEvent.click(screen.getByRole("radio", { name: "Design" }));
-  expect(post).toHaveBeenCalledWith(
-    { type: "kenfutwork:code-navigate", mode: "design" },
-    window.location.origin,
-  );
-  expect(code.getAttribute("aria-checked")).toBe("true");
+  expect(
+    screen.getByRole("radio", { name: "Design" }).getAttribute("aria-checked"),
+  ).toBe("true");
+  expect(
+    document.querySelector('[data-workspace-embedded-surface="design"]'),
+  ).not.toBeNull();
   const update = {
     type: "kenfutwork:workbench-navigation",
     availableModes: ["code", "design", "flow"],
@@ -120,10 +122,19 @@ it("原Code侧栏使用横排模式按钮，可信宿主能力才显示Flow；�
     ),
   );
   fireEvent.click(await screen.findByRole("radio", { name: "Flow" }));
-  expect(post).toHaveBeenLastCalledWith(
-    { type: "kenfutwork:code-navigate", mode: "flow" },
-    window.location.origin,
-  );
+  expect(
+    screen.getByRole("radio", { name: "Flow" }).getAttribute("aria-checked"),
+  ).toBe("true");
+  expect(
+    document.querySelector('[data-workspace-embedded-surface="flow"]'),
+  ).not.toBeNull();
+  // 全程没有换壳导航请求（唯一权威：workbench-navigation 由父推、壳内自切）。
+  expect(
+    post.mock.calls.every(
+      ([data]) =>
+        (data as { type?: string }).type !== "kenfutwork:code-navigate",
+    ),
+  ).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "连接使用" }));
   expect(screen.queryByText("界面模式")).toBeNull();
   await waitFor(() => expect(theme).toHaveBeenCalled());

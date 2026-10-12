@@ -4,39 +4,40 @@ import {
   type CodeUiBootstrap,
   codeUiParentRequestSchema,
   type ManagementTarget,
+  type WorkbenchMode,
   type WorkbenchModes,
 } from "@kenfutwork/shared";
+import { useTheme } from "next-themes";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AgentGovernanceSettingsPanel } from "@/components/agent-governance-settings";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { getServerBaseUrl } from "@/lib/env";
 import { LOCAL_ACCESS_LOST_EVENT } from "@/lib/local-access";
+import { useLocalInstance } from "@/lib/local-instance-context";
 import {
   PLUGIN_INVENTORY_CHANGED_EVENT,
   type PluginPanelEntry,
   PluginPanelOverlay,
   usePluginPanels,
 } from "@/lib/plugin-panels";
-import { LocalAccessClientsSection } from "./local-access-clients-section";
-import { LocalInstanceSection } from "./local-instance-section";
-import { VoiceSettingsSection } from "./voice-settings-section";
 
 const DEFAULT_MODES: WorkbenchModes = ["code", "design"];
 
 /** Code 的独立原文档保护 Design 的 CSS、theme 与 portal。 */
 export function CodeWorkbenchFrame({
-  onModeChange,
+  mode = "code",
   active = true,
   onOpenManagement,
   availableModes = DEFAULT_MODES,
 }: {
-  onModeChange: (mode: "design" | "flow") => void;
+  /** 当前工作台模式（深链解析结果）；融合后 Design/Flow 是壳内视图，由这里推给壳。 */
+  mode?: WorkbenchMode;
   active?: boolean;
   onOpenManagement?: (target: ManagementTarget) => void;
   availableModes?: WorkbenchModes;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
-  const [instanceOpen, setInstanceOpen] = useState(false);
+  // 本地实例的主人即当前用户（DEC-20 免账户）：bootstrap 带给 Code 壳，
+  // 侧栏底部显示用户而不是「连接使用」。
+  const { instance: localInstance } = useLocalInstance();
   const [activePanel, setActivePanel] = useState<PluginPanelEntry | null>(null);
   const {
     panels,
@@ -48,7 +49,7 @@ export function CodeWorkbenchFrame({
     () => () => {
       panelRequest.current++;
     },
-    [active],
+    [],
   );
   useEffect(() => {
     setActivePanel((current) =>
@@ -67,10 +68,10 @@ export function CodeWorkbenchFrame({
   useEffect(sendActivity, [sendActivity]);
   const sendNavigation = useCallback(() => {
     frame.current?.contentWindow?.postMessage(
-      { type: "kenfutwork:workbench-navigation", availableModes },
+      { type: "kenfutwork:workbench-navigation", availableModes, mode },
       window.location.origin,
     );
-  }, [availableModes]);
+  }, [availableModes, mode]);
   useEffect(sendNavigation, [sendNavigation]);
   const bootstrap = useCallback(() => {
     if (!ready.current) return;
@@ -82,12 +83,33 @@ export function CodeWorkbenchFrame({
       )
         .toString()
         .replace(/\/$/, ""),
-      user: null,
+      user: localInstance
+        ? {
+            id: localInstance.instanceId,
+            username: "local",
+            displayName: "本地用户",
+          }
+        : null,
       ...(onOpenManagement ? { managementAvailable: true } : {}),
       workbenchModes: availableModes,
     };
     frame.current?.contentWindow?.postMessage(message, window.location.origin);
-  }, [onOpenManagement, availableModes]);
+  }, [onOpenManagement, availableModes, localInstance]);
+  /**
+   * 外观主题桥：设置 → 外观（next-themes，默认跟随系统）解析后的结果同步给 Code iframe
+   * （zai 主题口径 zai-light/zai-dark）——没有这座桥，外观切深色时 Code 工作台仍是浅色。
+   * 握手响应后立即推一次（iframe 的监听器这时才就位），之后主题变化实时推。
+   */
+  const { resolvedTheme } = useTheme();
+  const themeRef = useRef<"zai-dark" | "zai-light">("zai-light");
+  const postTheme = useCallback((theme: "zai-dark" | "zai-light") => {
+    themeRef.current = theme;
+    localStorage.setItem("zcode-theme", theme);
+    frame.current?.contentWindow?.postMessage(
+      { type: "kenfutwork:code-theme", theme },
+      window.location.origin,
+    );
+  }, []);
   useEffect(() => {
     const receive = (event: MessageEvent) => {
       if (
@@ -97,10 +119,7 @@ export function CodeWorkbenchFrame({
         return;
       const parsed = codeUiParentRequestSchema.safeParse(event.data);
       if (!parsed.success) return;
-      if (parsed.data.type === "kenfutwork:code-navigate") {
-        if (active && availableModes.includes(parsed.data.mode))
-          onModeChange(parsed.data.mode);
-      } else if (parsed.data.type === "kenfutwork:open-management") {
+      if (parsed.data.type === "kenfutwork:open-management") {
         if (active) onOpenManagement?.(parsed.data.target);
       } else if (parsed.data.type === "kenfutwork:code-plugins-changed")
         window.dispatchEvent(new Event(PLUGIN_INVENTORY_CHANGED_EVENT));
@@ -129,6 +148,8 @@ export function CodeWorkbenchFrame({
       else if (parsed.data.type === "kenfutwork:code-ready") {
         ready.current = true;
         bootstrap();
+        // iframe 的主题监听器这时才就位，补推当前外观主题
+        postTheme(themeRef.current);
         sendActivity();
         sendNavigation();
       }
@@ -140,14 +161,17 @@ export function CodeWorkbenchFrame({
     };
   }, [
     bootstrap,
-    onModeChange,
     refreshPanels,
     active,
     sendActivity,
     onOpenManagement,
-    availableModes,
     sendNavigation,
+    postTheme,
   ]);
+  useEffect(() => {
+    const zcodeTheme = resolvedTheme === "dark" ? "zai-dark" : "zai-light";
+    postTheme(zcodeTheme);
+  }, [postTheme, resolvedTheme]);
   return (
     <>
       <iframe
@@ -158,13 +182,6 @@ export function CodeWorkbenchFrame({
         inert={!active}
         tabIndex={active ? 0 : -1}
       />
-      <button
-        type="button"
-        onClick={() => setInstanceOpen(true)}
-        className="fixed bottom-3 right-3 z-20 rounded-md border bg-background/95 px-3 py-1.5 text-xs shadow-sm"
-      >
-        本地实例
-      </button>
       {panelError ? (
         <p
           role="alert"
@@ -181,19 +198,6 @@ export function CodeWorkbenchFrame({
           setActivePanel(null);
         }}
       />
-      <Dialog open={active && instanceOpen} onOpenChange={setInstanceOpen}>
-        <DialogContent
-          className="max-h-[85vh] overflow-y-auto sm:max-w-xl"
-          aria-describedby={undefined}
-        >
-          <DialogTitle>本地实例设置</DialogTitle>
-          <LocalInstanceSection />
-          <LocalAccessClientsSection />
-          {/* 语音设置复用设置页同一段：Code 模式就地调档，不必切回 Design */}
-          <VoiceSettingsSection accessToken={null} />
-          <AgentGovernanceSettingsPanel enabled={instanceOpen} />
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

@@ -55,6 +55,7 @@ import { useWorkspaceSessionReload } from "@zui/app-shell/useWorkspaceSessionRel
 import { useWorkspaceShellLifecycle } from "@zui/app-shell/useWorkspaceShellLifecycle.js";
 import { useWorkspaceShellZCodeState } from "@zui/app-shell/useWorkspaceShellZCodeState.js";
 import { useWorkspaceMainViewSettingsExit } from "@zui/app-shell/useWorkspaceMainViewSettingsExit.js";
+import { useWorkbenchSurfaceMode } from "@zui/host/useWorkbenchSurfaceMode.js";
 import {
   useWorkspaceTaskNavigation,
   type AutomationsNavigationTarget,
@@ -948,6 +949,11 @@ export function App({
     });
     openSettingsTab();
   }, [openSettingsTab, pluginStoreReturnScopeKey]);
+  // 融合缝：工作台模式（pills / 父窗口推送）↔ 主区视图（design/flow 内嵌面）双向同步。
+  useWorkbenchSurfaceMode({
+    workspaceMainView,
+    setWorkspaceMainView,
+  });
   const handlePrimaryNavigationBack =
     workspaceMainView === "plugin-store" ? handleManageInstalledPlugins : handleTaskNavBack;
   const canPrimaryNavigationBack = workspaceMainView === "plugin-store" || canTaskNavBack;

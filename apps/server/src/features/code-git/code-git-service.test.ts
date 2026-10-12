@@ -82,6 +82,14 @@ async function world(
   const git: GitClient = {
     checkout: vi.fn(async () => {}),
     init: vi.fn(async () => {}),
+    autoCommit: vi.fn(async () => false),
+    listWorktrees: vi.fn(async () => []),
+    createWorktree: vi.fn(async (_cwd, input) => ({
+      path: `/worktrees/${input.branch}`,
+      head: "0".repeat(40),
+      branch: input.branch,
+    })),
+    deleteWorktree: vi.fn(async () => {}),
     describe: vi.fn(async () => view),
     diffStat: vi.fn(async () => ({
       files: 0,

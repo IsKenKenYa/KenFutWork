@@ -2009,6 +2009,7 @@ const zhCN: Record<string, string> = {
   "settings.nativeSearchEnhancements": "增强 Find 和 Grep",
   "settings.nativeSearchEnhancementsDescription":
     "在新建会话或应用重启后恢复的会话中使用增强 Find 和 Grep。当前会话保持现有设置；Windows 的 Find 保持不变。",
+  "settings.permissions.title": "权限",
   "settings.memory": "记忆",
   "settings.memory.workspaceMemory": "工作区记忆",
   "settings.memoryDescription":
@@ -2206,6 +2207,7 @@ const zhCN: Record<string, string> = {
   "settings.migration.reason.session_not_found_or_workspace_mismatch":
     "源会话不存在，或已经不匹配当前 workspace 筛选。",
   "settings.usageTitle": "使用统计",
+  "settings.about.title": "关于",
   "settings.usageDescription": "查看会话活跃度与模型用量的粗略统计。",
   "resourceManager.storage.summaryTotal": "KenFutWork 总占用",
   "resourceManager.storage.scanning": "正在计算…",

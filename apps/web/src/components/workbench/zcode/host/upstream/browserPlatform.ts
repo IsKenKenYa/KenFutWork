@@ -1,8 +1,12 @@
 import type { IPlatformService, RemoteTarget } from "@zcode/shared";
 import { playTaskNotificationSound } from "@zui/lib/taskNotificationSound.js";
 
-async function resolveFeedbackUrl() { return "https://github.com/IsKenKenYa/KenFutWork/issues"; }
-async function resolveWebCommunityUrl(_locale: string) { return "https://github.com/IsKenKenYa/KenFutWork/discussions"; }
+async function resolveFeedbackUrl() {
+  return "https://github.com/IsKenKenYa/KenFutWork/issues";
+}
+async function resolveWebCommunityUrl(_locale: string) {
+  return "https://github.com/IsKenKenYa/KenFutWork/discussions";
+}
 
 export function createWebPlatform(): IPlatformService {
   return {
@@ -14,7 +18,9 @@ export function createWebPlatform(): IPlatformService {
     selectFiles: () => Promise.resolve([]),
     getPathForFile: () => null,
     createTempTextAttachment: () =>
-      Promise.reject(new Error("Temporary text attachments require a desktop host")),
+      Promise.reject(
+        new Error("Temporary text attachments require a desktop host"),
+      ),
     onRemoteConnectionLog: () => () => {},
     onRemoteSessionClosed: () => () => {},
     onBotRemoteWorkspaceReconnected: () => () => {},
@@ -59,7 +65,8 @@ export function createWebPlatform(): IPlatformService {
       window.open(feedbackUrl, "_blank", "noopener,noreferrer");
     },
     openCommunity: async () => {
-      const locale = document.documentElement.lang === "en-US" ? "en-US" : "zh-CN";
+      const locale =
+        document.documentElement.lang === "en-US" ? "en-US" : "zh-CN";
       const communityUrl = await resolveWebCommunityUrl(locale);
       if (!communityUrl) {
         return;
@@ -72,7 +79,8 @@ export function createWebPlatform(): IPlatformService {
     },
     openInFileManager: () =>
       Promise.resolve({ success: false, error: "Not supported in web mode" }),
-    openExternalFile: () => Promise.resolve({ success: false, error: "Not supported in web mode" }),
+    openExternalFile: () =>
+      Promise.resolve({ success: false, error: "Not supported in web mode" }),
     registerOAuthState: (_payload) => {},
     onOAuthCallback: () => () => {},
     onPaymentCallback: () => () => {},
@@ -115,7 +123,8 @@ export function createWebPlatform(): IPlatformService {
     onOpenWorkspace: () => () => {},
     onWindowFullscreenChanged: () => () => {},
     onTaskNotificationClick: () => () => {},
-    exportLogs: () => Promise.resolve({ success: false, error: "Not supported in web mode" }),
+    exportLogs: () =>
+      Promise.resolve({ success: false, error: "Not supported in web mode" }),
     captureWindowScreenshot: () => Promise.resolve(null),
     importChromeBrowserData: (_options) =>
       Promise.resolve({
@@ -140,7 +149,8 @@ export function createWebPlatform(): IPlatformService {
     getUpdateState: () => Promise.resolve({ kind: "idle", enabled: true }),
     downloadUpdate: () => Promise.resolve(),
     cancelUpdateDownload: () => Promise.resolve(),
-    getDesktopSessionActivity: () => Promise.resolve({ runningAgentSessionCount: 0 }),
+    getDesktopSessionActivity: () =>
+      Promise.resolve({ runningAgentSessionCount: 0 }),
     getDesktopZoomLevel: () => Promise.resolve({ zoomLevel: 0 }),
     onDesktopZoomLevelChanged: () => () => {},
     onPostUpdateReleaseNotes: () => () => {},
@@ -148,7 +158,8 @@ export function createWebPlatform(): IPlatformService {
     skipUpdateVersion: () => Promise.resolve(),
     quitAndInstallUpdate: () => Promise.resolve(),
     getInstalledEditors: () => Promise.resolve([]),
-    openInEditor: () => Promise.resolve({ success: false, error: "Not supported in web mode" }),
+    openInEditor: () =>
+      Promise.resolve({ success: false, error: "Not supported in web mode" }),
     executeDesktopCommand: () => Promise.resolve(),
     setApplicationLocale: (_locale) => Promise.resolve(),
     setTitleBarTheme: () => Promise.resolve(),
@@ -168,4 +179,3 @@ export function createWebPlatform(): IPlatformService {
     },
   };
 }
-

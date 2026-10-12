@@ -1,104 +1,82 @@
 "use client";
 
-import type { ManagementTarget, WorkbenchModes } from "@kenfutwork/shared";
+import type {
+  ManagementTarget,
+  WorkbenchMode,
+  WorkbenchModes,
+} from "@kenfutwork/shared";
 import { installDesktopTitlebarDrag } from "@zcode/ui/design-shared";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useFlowHostEntry } from "@/hooks/use-flow-host";
-import type { WorkbenchMode } from "@/lib/workbench-surface";
 import { CodeWorkbenchFrame } from "./code-workbench-frame";
 import { ManagementDocumentFrame } from "./management-document-frame";
 
-const CanvasWorkbench = lazy(() =>
-  import("./canvas-workbench").then((module) => ({
-    default: module.CanvasWorkbench,
-  })),
-);
-
+/**
+ * 工作台（融合后唯一形态）：恒渲染 Code 壳（zcode UI），Design / Flow 是壳内的
+ * 主区视图——模式不再换壳，深链 `?mode=` 解析后经 workbench-navigation 推给壳。
+ * 原画布工作台壳（白底标题栏 + 顶部模式页签）已退役。
+ */
 function WorkbenchModeSurface() {
   useEffect(() => installDesktopTitlebarDrag(document), []);
   const search = useSearchParams();
-  const router = useRouter();
-  const requested = search.get("mode");
+  // 深链意图只在挂载时取一次：随后 URL 参数会被清掉（见 Workbench），不能让
+  // 「参数消失」把已进入的 design/flow 又弹回 code——壳内切模式才是后续的真相源。
+  const [requested] = useState(() => search.get("mode"));
   const { entry: flowEntry } = useFlowHostEntry();
   const availableModes = useMemo<WorkbenchModes>(
     () =>
       flowEntry?.available ? ["code", "design", "flow"] : ["code", "design"],
     [flowEntry?.available],
   );
-  const mode =
-    requested === "design"
-      ? "design"
-      : requested === "flow" && flowEntry?.available
-        ? "flow"
-        : "code";
-  const pendingFlow = requested === "flow" && flowEntry === null;
-  const [visited, setVisited] = useState<WorkbenchMode[]>([]);
+  // 深链解析：flow 探针未落定前不推 flow（落定后可用才推，不可用回落 design——
+  // 与旧壳「flow 不可用时弹回 Design」同一条纪律）。
+  const mode = useMemo<WorkbenchMode>(() => {
+    if (requested === "design") return "design";
+    if (requested === "flow")
+      return flowEntry === null
+        ? "code"
+        : flowEntry.available
+          ? "flow"
+          : "design";
+    return "code";
+  }, [requested, flowEntry]);
+  // 管理文档 keep-alive：首次打开后持续挂载（hidden 收起），重复打开不重载。
   const [management, setManagement] = useState<ManagementTarget | null>(null);
+  const openManagement = useCallback((target: ManagementTarget) => {
+    setManagement(target);
+  }, []);
   const closeManagement = useCallback(() => setManagement(null), []);
-  if (!pendingFlow && !visited.includes(mode)) setVisited([...visited, mode]);
-  const navigate = useCallback(
-    (next: WorkbenchMode) => {
-      router.replace(
-        next === "code" ? "/workbench" : `/workbench?mode=${next}`,
-      );
-    },
-    [router],
-  );
+
   return (
     <>
-      {visited.map((workspaceMode) => (
-        <div
-          key={workspaceMode}
-          data-workbench-mode={workspaceMode}
-          hidden={pendingFlow || mode !== workspaceMode}
-          inert={pendingFlow || mode !== workspaceMode || management !== null}
-          aria-hidden={
-            pendingFlow || mode !== workspaceMode || management !== null
-          }
-        >
-          {workspaceMode === "code" ? (
-            <CodeWorkbenchFrame
-              availableModes={availableModes}
-              active={
-                !pendingFlow && mode === workspaceMode && management === null
-              }
-              onModeChange={navigate}
-              onOpenManagement={setManagement}
-            />
-          ) : (
-            <CanvasWorkbench
-              flowEntry={flowEntry}
-              mode={workspaceMode}
-              active={
-                !pendingFlow && mode === workspaceMode && management === null
-              }
-              onModeChange={navigate}
-              onOpenManagement={setManagement}
-            />
-          )}
-        </div>
-      ))}
-      {pendingFlow ? <div role="status">加载中</div> : null}
-      {management ? (
-        <ManagementDocumentFrame
-          target={management}
-          onClose={closeManagement}
-        />
-      ) : null}
+      <CodeWorkbenchFrame
+        availableModes={availableModes}
+        mode={mode}
+        onOpenManagement={openManagement}
+      />
+      {/* 管理文档**预加载**：页面挂载即后台建好 iframe（hidden），点设置/插件市场
+          零加载（用户口径：不想看到加载）。目标变化经 management-target 推送，
+          文档内切换不重载。 */}
+      <ManagementDocumentFrame
+        target={management ?? { page: "settings" }}
+        visible={management !== null}
+        onClose={closeManagement}
+      />
     </>
   );
 }
 
-/** 已访问文档持续挂载，模式导航只改变活动面，不结束Task或画布运行。 */
+/** 管理文档持续挂载；模式切换只发生在壳内，不卸载工作台。 */
 export function Workbench() {
+  // 一次性消费深链参数：壳已按初始模式启动，URL 上的 ?mode= 不再参与后续渲染，
+  // 避免刷新/分享时旧参数压着壳内已切换的模式。
+  const search = useSearchParams();
+  const router = useRouter();
+  const [stripped] = useState(() => !search.get("mode"));
+  useEffect(() => {
+    if (!stripped) router.replace("/workbench");
+  }, [stripped, router]);
   return (
     <Suspense>
       <WorkbenchModeSurface />

@@ -4,16 +4,25 @@
  * i18n key `chat.empty.greeting.*` 一直保留）；边界时刻自动换档逻辑保真。
  * 手机远控复用同一组件，但继续保留 20px 紧凑标题；桌面草稿首页才按标题自身宽度适配。
  */
-import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
-import darkEmptyStateLogoUrl from "@zui/assets/Z.svg";
+
+import kenfutworkMarkUrl from "@zui/assets/kenfutwork-mark.png";
 import { cn } from "@zui/components/lib/utils.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { logger } from "@zui/logger.js";
+import { Code2 } from "lucide-react";
+import {
+  type CSSProperties,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 const GREETING_BOUNDARY_HOURS = [5, 9, 12, 14, 18, 23] as const;
 const GREETING_MIN_FONT_SIZE_PX = 20;
-const GREETING_MAX_FONT_SIZE_PX = 30;
+const GREETING_MAX_FONT_SIZE_PX = 36;
 
 type ChatEmptyGreetingMessageId =
   | "chat.empty.greeting.morningEarly"
@@ -23,7 +32,9 @@ type ChatEmptyGreetingMessageId =
   | "chat.empty.greeting.evening"
   | "chat.empty.greeting.lateNight";
 
-function getChatEmptyGreetingMessageId(date: Date = new Date()): ChatEmptyGreetingMessageId {
+function getChatEmptyGreetingMessageId(
+  date: Date = new Date(),
+): ChatEmptyGreetingMessageId {
   const hour = date.getHours();
 
   if (hour >= 5 && hour < 9) return "chat.empty.greeting.morningEarly";
@@ -46,7 +57,8 @@ function getNextChatEmptyGreetingDelayMs(date: Date = new Date()) {
   tomorrowFirstBoundary.setHours(GREETING_BOUNDARY_HOURS[0], 0, 0, 0);
 
   const nextBoundary =
-    candidates.find((candidate) => candidate.getTime() > date.getTime()) ?? tomorrowFirstBoundary;
+    candidates.find((candidate) => candidate.getTime() > date.getTime()) ??
+    tomorrowFirstBoundary;
 
   return Math.max(1, nextBoundary.getTime() - date.getTime());
 }
@@ -72,20 +84,32 @@ function resolveGreetingFontSizePx({
     GREETING_MIN_FONT_SIZE_PX,
     Math.min(
       GREETING_MAX_FONT_SIZE_PX,
-      Math.floor(GREETING_MAX_FONT_SIZE_PX * (availableWidthPx / naturalTextWidthPx)),
+      Math.floor(
+        GREETING_MAX_FONT_SIZE_PX * (availableWidthPx / naturalTextWidthPx),
+      ),
     ),
   );
 }
 
-export function ConversationDraftEmptyState({ className }: { className?: string }) {
+export function ConversationDraftEmptyState({
+  className,
+}: {
+  className?: string;
+}) {
   const { intl } = useZCodeIntl();
+  // 线稿描边滤镜 id：组件可能多处挂载（手机远控复用），id 不能撞
+  const outlineFilterId = `kfw-mark-outline-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const isOfficeMode = useIsOfficeMode();
   const [greetingDate, setGreetingDate] = useState(() => new Date());
-  const [greetingFontSizePx, setGreetingFontSizePx] = useState(GREETING_MAX_FONT_SIZE_PX);
+  const [greetingFontSizePx, setGreetingFontSizePx] = useState(
+    GREETING_MAX_FONT_SIZE_PX,
+  );
   const greetingContainerRef = useRef<HTMLParagraphElement | null>(null);
   const greetingMeasurementRef = useRef<HTMLSpanElement | null>(null);
   const greeting = intl.formatMessage({
-    id: isOfficeMode ? "chat.empty.greeting.office" : getChatEmptyGreetingMessageId(greetingDate),
+    id: isOfficeMode
+      ? "chat.empty.greeting.office"
+      : getChatEmptyGreetingMessageId(greetingDate),
   });
 
   useEffect(() => {
@@ -181,9 +205,79 @@ export function ConversationDraftEmptyState({ className }: { className?: string 
           "-translate-x-1/2 -translate-y-1/2 text-foreground-subtlest",
         )}
       >
-        <ZCodeEmptyStateLogo className="h-full w-full" />
+        {/* 以 Code 原版空态样式为基底，只换标：
+            浅色 = KenFutWork 标的线稿描边（feMorphology 内缩/外扩取环，currentColor 同原 Z 线稿的浅淡口径）；
+            暗色 = 白色标（brightness-0 invert 取纯白剪影）。两套同款向下渐隐遮罩。 */}
+        <svg
+          aria-hidden="true"
+          data-v4-draft-logo="light"
+          className={cn(
+            className,
+            "h-full w-full object-contain opacity-45",
+            "[-webkit-mask-image:linear-gradient(to_bottom,black_0%,transparent_70%,transparent_100%)]",
+            "[-webkit-mask-repeat:no-repeat] [-webkit-mask-size:100%_100%]",
+            "[mask-image:linear-gradient(to_bottom,black_0%,transparent_70%,transparent_100%)]",
+            "[mask-repeat:no-repeat] [mask-size:100%_100%]",
+          )}
+          viewBox="0 0 400 400"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <filter
+            id={outlineFilterId}
+            x="-10%"
+            y="-10%"
+            width="120%"
+            height="120%"
+          >
+            <feMorphology
+              in="SourceAlpha"
+              operator="dilate"
+              radius="1.5"
+              result="kfw-dil"
+            />
+            <feMorphology
+              in="SourceAlpha"
+              operator="erode"
+              radius="1.5"
+              result="kfw-ero"
+            />
+            <feComposite
+              in="kfw-dil"
+              in2="kfw-ero"
+              operator="xor"
+              result="kfw-ring"
+            />
+            <feFlood floodColor="currentColor" />
+            <feComposite in2="kfw-ring" operator="in" />
+          </filter>
+          <image
+            href={kenfutworkMarkUrl}
+            width="400"
+            height="400"
+            preserveAspectRatio="xMidYMax meet"
+            filter={`url(#${outlineFilterId})`}
+          />
+        </svg>
+        {/* 暗色：白色标剪影（原暗色 Z.svg 的渐变贴图口径换成纯白，同一渐隐遮罩） */}
+        {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
+        <img
+          aria-hidden="true"
+          data-v4-draft-logo="dark"
+          src={kenfutworkMarkUrl}
+          alt=""
+          draggable={false}
+          className={cn(
+            className,
+            "h-full w-full object-contain object-bottom opacity-30 brightness-0 invert",
+            "[-webkit-mask-image:linear-gradient(to_bottom,black_0%,transparent_70%,transparent_100%)]",
+            "[-webkit-mask-repeat:no-repeat] [-webkit-mask-size:100%_100%]",
+            "[mask-image:linear-gradient(to_bottom,black_0%,transparent_70%,transparent_100%)]",
+            "[mask-repeat:no-repeat] [mask-size:100%_100%]",
+          )}
+        />
       </div>
-      <p
+      <div
         ref={greetingContainerRef}
         data-v4-draft-greeting="true"
         style={
@@ -191,57 +285,34 @@ export function ConversationDraftEmptyState({ className }: { className?: string 
             "--v4-draft-greeting-font-size": `${greetingFontSizePx}px`,
           } as CSSProperties
         }
-        className={cn(
-          "relative z-10 w-full px-4 text-center font-medium text-foreground",
-          "text-[length:var(--v4-draft-greeting-font-size)]/[1.2]",
-        )}
+        className="relative z-10 flex w-full flex-col items-center justify-center gap-2 text-muted-foreground/50"
       >
-        <span
-          ref={greetingMeasurementRef}
-          aria-hidden="true"
-          className="pointer-events-none invisible absolute whitespace-nowrap text-3xl/[1.2]"
-        >
-          {greeting}
-        </span>
-        <span>{greeting}</span>
-      </p>
+        {/* 用户口径：Code 空态与 Design 同款命名式标题（「Code with KenFutWork」，
+            font-wordmark 字体 + tracking-tight——与 canvas-empty-hint 的 Design 版同款），
+            时间问候语降为次行小字。 */}
+        <div className="flex items-center justify-center gap-3">
+          <Code2 className="size-10 shrink-0" strokeWidth={3} />
+          <p
+            style={
+              {
+                fontSize: "var(--v4-draft-greeting-font-size)",
+                lineHeight: 1.2,
+              } as CSSProperties
+            }
+            className="relative whitespace-nowrap font-wordmark font-medium tracking-tight"
+          >
+            <span
+              ref={greetingMeasurementRef}
+              aria-hidden="true"
+              className="pointer-events-none invisible absolute whitespace-nowrap"
+            >
+              Code with KenFutWork
+            </span>
+            Code with KenFutWork
+          </p>
+        </div>
+        <p className="text-sm text-muted-foreground/70">{greeting}</p>
+      </div>
     </div>
-  );
-}
-
-function ZCodeEmptyStateLogo({ className }: { className?: string }) {
-  return (
-    <>
-      {/* 夜间资源已自带渐变和透明度，公共容器叠加遮罩会让它重复变淡；渐隐效果只属于浅色线框。*/}
-      <svg
-        aria-hidden="true"
-        className={cn(
-          className,
-          "opacity-70 dark:hidden",
-          "[-webkit-mask-image:linear-gradient(to_bottom,black_0%,transparent_70%,transparent_100%)]",
-          "[-webkit-mask-repeat:no-repeat] [-webkit-mask-size:100%_100%]",
-          "[mask-image:linear-gradient(to_bottom,black_0%,transparent_70%,transparent_100%)]",
-          "[mask-repeat:no-repeat] [mask-size:100%_100%]",
-        )}
-        width="400"
-        height="320"
-        viewBox="0 0 400 320"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path
-          d="M398.97 0.5L147.576 319.5H1.03027L37.5996 273.081L120.167 169.603L120.171 169.598L215.342 47.5605L215.343 47.5615L252.424 0.5H398.97ZM264.544 273.271H372.527L336.082 319.498H189.886L202.642 303.307C217.584 284.34 240.398 273.271 264.544 273.271ZM209.164 0.5L202.786 8.58887C183.782 32.6885 154.782 46.752 124.091 46.752H25.9805L62.4268 0.5H209.164Z"
-          stroke="currentColor"
-        />
-      </svg>
-      {/* 深色资源包含专用渐变与模糊效果，不能通过 currentColor 复刻；主题类保证两套 Logo 互斥显示。 */}
-      <img
-        aria-hidden="true"
-        className={cn(className, "hidden dark:block")}
-        data-v4-draft-logo="dark"
-        src={darkEmptyStateLogoUrl}
-        alt=""
-      />
-    </>
   );
 }

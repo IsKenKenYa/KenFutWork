@@ -62,9 +62,9 @@
     "KENFUTWORK_SERVER_PORT": {
       "surface": "server",
       "readers": [
-        "apps/server/src/config/env.ts",
         "apps/desktop/scripts/dev-macos.mjs",
-        "apps/desktop/src-tauri/src/lib.rs"
+        "apps/desktop/src-tauri/src/lib.rs",
+        "apps/server/src/config/env.ts"
       ],
       "inExamples": true,
       "status": "active",
@@ -93,8 +93,8 @@
     "KENFUTWORK_FLOW_FRONTEND_URL": {
       "surface": "server",
       "readers": [
-        "apps/server/src/config/env.ts",
-        "apps/server/src/config/env.test.ts"
+        "apps/server/src/config/env.test.ts",
+        "apps/server/src/config/env.ts"
       ],
       "inExamples": false,
       "status": "active",
@@ -103,8 +103,8 @@
     "KENFUTWORK_WEB_ORIGIN": {
       "surface": "server",
       "readers": [
-        "apps/server/src/config/env.ts",
-        "apps/desktop/scripts/dev-macos.mjs"
+        "apps/desktop/scripts/dev-macos.mjs",
+        "apps/server/src/config/env.ts"
       ],
       "inExamples": true,
       "status": "active",
@@ -113,9 +113,9 @@
     "NEXT_PUBLIC_SERVER_BASE_URL": {
       "surface": "web",
       "readers": [
-        "apps/web/src/lib/env.ts",
+        "apps/desktop/scripts/dev-macos.mjs",
         "apps/web/next.config.ts",
-        "apps/desktop/scripts/dev-macos.mjs"
+        "apps/web/src/lib/env.ts"
       ],
       "inExamples": true,
       "status": "active",
@@ -190,13 +190,13 @@
     "KENFUTWORK_DATA_DIR": {
       "surface": "server",
       "readers": [
+        "apps/desktop/scripts/dev-macos.mjs",
+        "apps/desktop/src-tauri/src/server_handle.rs",
         "apps/server/src/config/env.ts",
         "apps/server/src/desktop/paths.ts",
-        "apps/desktop/src-tauri/src/server_handle.rs",
         "apps/server/src/features/computer-use/desktop.app.integration.test.ts",
-        "apps/server/src/ws/logger.ts",
         "apps/server/src/ws/logger-packaged.test.ts",
-        "apps/desktop/scripts/dev-macos.mjs"
+        "apps/server/src/ws/logger.ts"
       ],
       "inExamples": true,
       "status": "active",
@@ -270,8 +270,8 @@
     "KENFUTWORK_LOCAL_ROOT_PG_TEST": {
       "surface": "test",
       "readers": [
-        "apps/server/src/features/local-instance/root-binding.integration.test.ts",
         "apps/server/src/features/local-instance/idle.integration.test.ts",
+        "apps/server/src/features/local-instance/root-binding.integration.test.ts",
         "apps/server/src/features/projects/directory-relink-code-design.integration.test.ts"
       ],
       "inExamples": false,
@@ -297,12 +297,12 @@
     "KENFUTWORK_TEST_DESKTOP": {
       "surface": "test",
       "readers": [
-        "apps/server/src/features/computer-use/desktop.native.integration.test.ts",
-        "apps/server/src/features/computer-use/application-icon.native.integration.test.ts",
         "apps/server/src/features/computer-use/agent.native.integration.test.ts",
-        "apps/server/src/features/computer-use/desktop.linux.integration.test.ts",
-        "apps/server/src/features/computer-use/desktop.windows.integration.test.ts",
+        "apps/server/src/features/computer-use/application-icon.native.integration.test.ts",
         "apps/server/src/features/computer-use/desktop.app.integration.test.ts",
+        "apps/server/src/features/computer-use/desktop.linux.integration.test.ts",
+        "apps/server/src/features/computer-use/desktop.native.integration.test.ts",
+        "apps/server/src/features/computer-use/desktop.windows.integration.test.ts",
         "apps/server/src/features/computer-use/snapshot-archive.integration.test.ts"
       ],
       "inExamples": false,
@@ -328,8 +328,8 @@
     "KENFUTWORK_VOICE_MODELS_ROOT": {
       "surface": "test",
       "readers": [
-        "apps/server/src/features/voice/sherpa.integration.test.ts",
-        "apps/server/src/features/voice/providers/llamafile.integration.test.ts"
+        "apps/server/src/features/voice/providers/llamafile.integration.test.ts",
+        "apps/server/src/features/voice/sherpa.integration.test.ts"
       ],
       "inExamples": true,
       "status": "test-gate",
@@ -361,8 +361,8 @@
     "KENFUTWORK_SUBAGENT_MAX_DEPTH": {
       "surface": "server",
       "readers": [
-        "packages/shared/src/governance.ts",
-        "packages/shared/src/governance.test.ts"
+        "packages/shared/src/governance.test.ts",
+        "packages/shared/src/governance.ts"
       ],
       "inExamples": true,
       "status": "active",
@@ -385,8 +385,8 @@
     "KENFUTWORK_SUBAGENT_MAX_CONCURRENCY": {
       "surface": "server",
       "readers": [
-        "packages/shared/src/governance.ts",
-        "packages/shared/src/governance.test.ts"
+        "packages/shared/src/governance.test.ts",
+        "packages/shared/src/governance.ts"
       ],
       "inExamples": true,
       "status": "active",
@@ -395,8 +395,8 @@
     "KENFUTWORK_LLM_REQUEST_MAX_RETRIES": {
       "surface": "server",
       "readers": [
-        "packages/shared/src/governance.ts",
-        "packages/shared/src/governance.test.ts"
+        "packages/shared/src/governance.test.ts",
+        "packages/shared/src/governance.ts"
       ],
       "inExamples": true,
       "status": "active",
@@ -405,8 +405,8 @@
     "KENFUTWORK_LLM_INFINITE_RETRY": {
       "surface": "server",
       "readers": [
-        "packages/shared/src/governance.ts",
-        "packages/shared/src/governance.test.ts"
+        "packages/shared/src/governance.test.ts",
+        "packages/shared/src/governance.ts"
       ],
       "inExamples": true,
       "status": "active",
@@ -415,8 +415,8 @@
     "KENFUTWORK_EXECUTE_TIMEOUT_MS": {
       "surface": "server",
       "readers": [
-        "packages/shared/src/governance.ts",
-        "packages/shared/src/governance.test.ts"
+        "packages/shared/src/governance.test.ts",
+        "packages/shared/src/governance.ts"
       ],
       "inExamples": true,
       "status": "active",
@@ -425,8 +425,8 @@
     "KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS": {
       "surface": "server",
       "readers": [
-        "packages/shared/src/governance.ts",
-        "packages/shared/src/code-ui-reconnect-governance.test.ts"
+        "packages/shared/src/code-ui-reconnect-governance.test.ts",
+        "packages/shared/src/governance.ts"
       ],
       "inExamples": true,
       "status": "active",
@@ -435,8 +435,8 @@
     "KENFUTWORK_SUBAGENT_MAX_CONTINUATIONS": {
       "surface": "server",
       "readers": [
-        "packages/shared/src/governance.ts",
-        "packages/shared/src/governance.test.ts"
+        "packages/shared/src/governance.test.ts",
+        "packages/shared/src/governance.ts"
       ],
       "inExamples": true,
       "status": "active",
@@ -578,8 +578,8 @@
     "KENFUTWORK_WEB_DIST": {
       "surface": "server",
       "readers": [
-        "apps/server/src/config/env.ts",
-        "apps/desktop/src-tauri/src/lib.rs"
+        "apps/desktop/src-tauri/src/lib.rs",
+        "apps/server/src/config/env.ts"
       ],
       "inExamples": false,
       "status": "active",
@@ -672,9 +672,9 @@
     "KENFUTWORK_DESKTOP_SERVER_CWD": {
       "surface": "shell",
       "readers": [
-        "apps/desktop/src-tauri/src/lib.rs",
         "apps/desktop/dev.sh",
-        "apps/desktop/scripts/dev-macos.mjs"
+        "apps/desktop/scripts/dev-macos.mjs",
+        "apps/desktop/src-tauri/src/lib.rs"
       ],
       "inExamples": true,
       "status": "active",
@@ -729,8 +729,8 @@
     "OPENAI_API_KEY": {
       "surface": "server",
       "readers": [
-        "apps/server/src/config/env.ts",
-        "apps/server/src/agent/deep-agent.ts"
+        "apps/server/src/agent/deep-agent.ts",
+        "apps/server/src/config/env.ts"
       ],
       "inExamples": true,
       "status": "external",
@@ -759,7 +759,7 @@
     },
     "GOOGLE_APPLICATION_CREDENTIALS": {
       "surface": "server",
-      "readers": ["apps/server/src/config/env.ts", "apps/server/Dockerfile"],
+      "readers": ["apps/server/Dockerfile", "apps/server/src/config/env.ts"],
       "inExamples": true,
       "status": "external",
       "note": "Vertex 服务账号文件"
@@ -767,8 +767,8 @@
     "GOOGLE_VERTEX_PROJECT": {
       "surface": "server",
       "readers": [
-        "apps/server/src/config/env.ts",
-        "apps/server/src/agent/deep-agent.ts"
+        "apps/server/src/agent/deep-agent.ts",
+        "apps/server/src/config/env.ts"
       ],
       "inExamples": true,
       "status": "external",
@@ -777,8 +777,8 @@
     "GOOGLE_VERTEX_LOCATION": {
       "surface": "server",
       "readers": [
-        "apps/server/src/config/env.ts",
-        "apps/server/src/agent/deep-agent.ts"
+        "apps/server/src/agent/deep-agent.ts",
+        "apps/server/src/config/env.ts"
       ],
       "inExamples": true,
       "status": "external",
@@ -1277,10 +1277,10 @@
     "KENFUTWORK_HARNESS_TEST_PG": {
       "surface": "test",
       "readers": [
-        "apps/server/src/features/agent-runs/turn-boundaries.integration.test.ts",
-        "apps/server/src/features/code-ui/manual-compact-v4.integration.test.ts",
+        "apps/server/src/features/agent-modes/execution-mode-cache.integration.test.ts",
         "apps/server/src/features/agent-modes/execution-mode-store.integration.test.ts",
-        "apps/server/src/features/agent-modes/execution-mode-cache.integration.test.ts"
+        "apps/server/src/features/agent-runs/turn-boundaries.integration.test.ts",
+        "apps/server/src/features/code-ui/manual-compact-v4.integration.test.ts"
       ],
       "inExamples": false,
       "status": "test-gate",
@@ -1316,9 +1316,9 @@
     "KENFUTWORK_CONFIG_DIR": {
       "surface": "server",
       "readers": [
-        "apps/server/src/desktop/paths.ts",
+        "apps/desktop/scripts/dev-macos.mjs",
         "apps/desktop/src-tauri/src/lib.rs",
-        "apps/desktop/scripts/dev-macos.mjs"
+        "apps/server/src/desktop/paths.ts"
       ],
       "inExamples": true,
       "status": "active",
@@ -1362,12 +1362,12 @@
     "KENFUTWORK_CRUD_TEST_PG": {
       "surface": "test",
       "readers": [
-        "apps/server/src/features/uploads/uploads.integration.test.ts",
+        "apps/server/src/features/brand-kit/brand-kit.integration.test.ts",
+        "apps/server/src/features/canvas/canvas.integration.test.ts",
+        "apps/server/src/features/chat/chat.integration.test.ts",
         "apps/server/src/features/projects/projects.integration.test.ts",
         "apps/server/src/features/skills/skills.integration.test.ts",
-        "apps/server/src/features/brand-kit/brand-kit.integration.test.ts",
-        "apps/server/src/features/chat/chat.integration.test.ts",
-        "apps/server/src/features/canvas/canvas.integration.test.ts"
+        "apps/server/src/features/uploads/uploads.integration.test.ts"
       ],
       "inExamples": false,
       "status": "test-gate",
@@ -1396,6 +1396,15 @@
       "inExamples": false,
       "status": "retired",
       "note": "付费套餐映射已退役，仅供负向回归登记历史名称。"
+    },
+    "KENFUTWORK_TEST_APP_ROOT": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/computer-use/desktop.app.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "复用有本验收所属标记的临时.app安装根，保持系统TCC权限主体；每次另建数据目录，不接管既有进程"
     }
   },
   "legacy": {

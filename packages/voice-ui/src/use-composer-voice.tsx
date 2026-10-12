@@ -57,6 +57,14 @@ export interface ComposerVoiceBinding {
   lockSelection: boolean;
   /** 状态行（null = 不显示）。放到输入框下方同一位置。 */
   status: React.ReactNode;
+  /** 麦克风按钮按下沿：立即开麦（按住录音）。 */
+  startRecording: () => void;
+  /** 麦克风按钮松开沿：停止并提交转写。 */
+  stopRecording: () => void;
+  /** 麦克风按钮点击切换：录音中 → 停止并转写；空闲 → 开麦。 */
+  toggleRecording: () => void;
+  /** 是否正在录音（按钮的激活态）。 */
+  recording: boolean;
 }
 
 /** 「没听到语音」这类提示的自动收起时长。 */
@@ -229,21 +237,13 @@ export function useComposerVoice({
     ...(recorder ? { recorder } : {}),
   });
 
+  // 录音/转写过程不出文字提示（只有图标与输入区变化）；状态行只在错误时出现
   const baseStatus =
-    voice.statusText === null ? null : (
-      <p
-        role="status"
-        className={`mt-1 text-xs ${
-          voice.phase === "error"
-            ? "text-destructive"
-            : "text-foreground-subtle"
-        }`}
-      >
-        {voice.phase === "recording"
-          ? `${voice.statusText} · 松开转文字`
-          : voice.statusText}
+    voice.phase === "error" && voice.statusText !== null ? (
+      <p role="status" className="mt-1 text-xs text-destructive">
+        {voice.statusText}
       </p>
-    );
+    ) : null;
 
   /** 方案 B 的状态行：完整需求 + 倒计时 + 「等等」——**显示的就是将要发出的那句话**。 */
   const loopStatus =
@@ -273,6 +273,19 @@ export function useComposerVoice({
   return {
     onPointerDown: voice.onPointerDown,
     lockSelection: voice.lockSelection,
+    /** 麦克风按钮按下沿：立即开麦。 */
+    startRecording: voice.startRecording,
+    /** 麦克风按钮松开沿：停止并提交转写。 */
+    stopRecording: voice.stopRecording,
+    /** 点击切换：开麦/停止由钩子的 idle/active 守卫兜底，起手期与转写期不会重复开麦。 */
+    toggleRecording: () => {
+      if (voice.phase === "recording") {
+        voice.stopRecording();
+      } else {
+        voice.startRecording();
+      }
+    },
+    recording: voice.phase === "recording",
     status: loopStatus ?? (
       <>
         {notice ? (

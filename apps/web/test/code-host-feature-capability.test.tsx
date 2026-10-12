@@ -146,14 +146,17 @@ async function renderOriginalSurfaces(originalCapabilities = false) {
   return { calls, openToolAutomation };
 }
 
-it("自动化保留原侧栏入口；未接通的浏览器/CUA与旧设置跳转保持能力限制", async () => {
+it("侧栏自动化入口已移除（用户拍板）；浏览器分区已接宿主适配件（T6），CUA与旧设置跳转保持能力限制", async () => {
   const { calls } = await renderOriginalSurfaces();
   await screen.findByTestId("settings-section-nav-appearance");
-  expect(
-    screen.getByTestId("automations-open").getAttribute("aria-pressed"),
-  ).toBe("false");
-  for (const id of ["automations", "browser", "computerUse"])
-    expect(screen.queryByTestId(`settings-section-nav-${id}`)).toBeNull();
+  expect(screen.queryByTestId("automations-open")).toBeNull();
+  // T6：浏览器分区挂旧工作台浏览器设置（宿主适配件），导航可见；
+  // 自动化与电脑控制仍未接通，保持隐藏。
+  expect(screen.getByTestId("settings-section-nav-browser").isConnected).toBe(
+    true,
+  );
+  expect(screen.queryByTestId("settings-section-nav-automations")).toBeNull();
+  expect(screen.queryByTestId("settings-section-nav-computerUse")).toBeNull();
   expect(screen.getByText("定时任务结果").textContent).toBe("定时任务结果");
   expect(screen.getByText("闲时任务结果").textContent).toBe("闲时任务结果");
   for (const id of ["cron-create-open", "offpeak-create-open"])
@@ -162,7 +165,7 @@ it("自动化保留原侧栏入口；未接通的浏览器/CUA与旧设置跳转
   expect(screen.getByTestId("settings-page").dataset.activeSection).toBe(
     "appearance",
   );
-  for (const id of ["automations", "browser", "computerUse"] as const) {
+  for (const id of ["automations", "computerUse"] as const) {
     await act(async () => setPendingSettingsSectionIntent(id));
     expect(screen.getByTestId("settings-page").dataset.activeSection).toBe(
       "appearance",
@@ -184,23 +187,16 @@ it("自动化保留原侧栏入口；未接通的浏览器/CUA与旧设置跳转
   ).toBe("true");
 });
 
-it("未声明能力的原宿主保留自动化主入口和浏览器设置及原点击语义", async () => {
+it("未声明能力的原宿主无侧栏自动化入口（用户拍板移除），浏览器设置保留原导航", async () => {
   const { openToolAutomation } = await renderOriginalSurfaces(true);
   await screen.findByTestId("settings-section-nav-appearance");
   expect(screen.getByTestId("settings-section-nav-browser").isConnected).toBe(
     true,
   );
-  // 固定原版将自动化放在主视图，CUA 设置分区也默认隐藏。
+  // CUA 设置分区默认隐藏；侧栏无自动化入口，自动化主视图不再从侧栏可达
+  // （定时/闲时任务入口保留在任务行菜单）。
   for (const id of ["automations", "computerUse"])
     expect(screen.queryByTestId(`settings-section-nav-${id}`)).toBeNull();
-  await userEvent.click(screen.getByTestId("automations-open"));
-  expect(
-    screen.getByTestId("automations-open").getAttribute("aria-pressed"),
-  ).toBe("true");
-  await userEvent.click(screen.getByTestId("cron-create-open"));
-  await userEvent.click(screen.getByTestId("offpeak-create-open"));
-  expect(openToolAutomation.mock.calls).toEqual([
-    ["scheduled"],
-    ["idle", "idle"],
-  ]);
+  expect(screen.queryByTestId("automations-open")).toBeNull();
+  expect(openToolAutomation.mock.calls).toEqual([]);
 });

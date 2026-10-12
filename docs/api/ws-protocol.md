@@ -140,3 +140,16 @@ Design Run ACK 回 `taskId/sessionId/inputId/runId`、`delivery`（running/queue
 - `replayGap`：缓冲截断或服务重启导致序号缺口；客户端重新读取持久消息和 policy，不能把没有缓存解释为运行成功。
 - `agent.cancel`：Design 必须同时给 `taskId/runId`；仅匹配当前 Run 才停止，回执 `status` 为 stopping/idle/targetChanged。旧 Run 的迟到取消不能停止新 Run。
 - Plan 先通过 policy CAS 切换并取新代际，再发送；WS 不在 Run admission 内隐式改变授权。执行模式在宿主实际认领队列后激活，排队输入不改变当前 Run。
+- 旧 WS `agent.run` 中的 `goal/loop` 字段不接纳，返回 `design_mode_unsupported`；Design Goal 通过独立 HTTP Goal 端点与同一受控 Task FIFO 推进，不使用旧 WS 字段另建循环。
+
+
+## 第一方 Code Goal 控制扩展
+
+`sendConversationCommandV4` 的原 V4 envelope 保持字节来源契约；第一方 RPC 参数同级可携 `goalControl: { expectedGoal: {goalId, revision} | null, resumeModelSelection? }`。订阅 Task 时独立 `onGoalControlState` 通知返回该 Task 的真实已观察目标身份与修订。宿主适配器未观察状态时拒绝发送 Goal 控制；替换请求在 Task 根锁内核验旧目标，不能替旧客户端自动读取新目标补 fence。同命令重连保留最初观察值，缓存按 Task 区分；服务端既有命令幂等域不变。
+
+Goal 续跑与默认恢复消费持久的无密钥模型调用快照并核验供应商修订。显式重新选择由第一方参数 `goalControl.resumeModelSelection` 精确编译，不把失效选择换成默认模型。原 UI 恢复使用冻结值，本轮没有新增恢复模型 picker；供应商修订变化会给出可读拒绝。
+
+
+## Flow 事件代际与续传
+
+Flow 事件携带 `hostProjectId` 与 `hostGeneration`。宿主只广播并缓存当前代际且未排空项目的事件；`flow.resume` 重放前再次校验代际，旧代际、排空或不完整作用域的事件不进入当前流。续传 ACK 通过 `requestId` 对应原命令。

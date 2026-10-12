@@ -136,6 +136,10 @@ import { usePptxElementReferences } from "@zui/v4/composer/usePptxElementReferen
 import { usePrimaryFollowupModifier } from "@zui/v4/composer/usePrimaryFollowupModifier.js";
 import { useWebElementContexts } from "@zui/v4/composer/useWebElementContexts.js";
 import { V4ComposerCuaEntry } from "@zui/v4/composer/V4ComposerCuaEntry.js";
+// KenFutWork 宿主件：六档执行模式 chip（G2/Q7），实现位于 host/ 非上游移植。
+import { ExecutionModeChip } from "@zui/host/ExecutionModeChip.js";
+// KenFutWork 宿主件：权限档 chip（G7/C1，旧四档语义）。
+import { PermissionTierChip } from "@zui/host/PermissionTierControl.js";
 import {
   type ModelSelectionSource,
   V4ComposerModelControls,
@@ -150,6 +154,7 @@ import {
   ArrowUpIcon,
   ClipboardPenLineIcon,
   InfoIcon,
+  MicIcon,
   RotateCcwIcon,
   SquareIcon,
   XIcon,
@@ -1717,13 +1722,15 @@ function ConversationComposerImpl({
 
   // 动态 placeholder（旧 chatViewPlaceholder 语义）：无历史 → newTask；
   // 有历史空闲 → followUpAsk；有历史处理中 → followUpQueue。
-  const placeholder = intl.formatMessage({
-    id: resolveChatPlaceholderKey({
-      hasHistoryMessages: (snapshot?.rows.totalCount ?? 0) > 0,
-      isTaskProcessing: canStop,
-      compactNewTask: false,
-    }),
-  });
+  const placeholder = voice?.recording
+    ? "开始说话"
+    : intl.formatMessage({
+        id: resolveChatPlaceholderKey({
+          hasHistoryMessages: (snapshot?.rows.totalCount ?? 0) > 0,
+          isTaskProcessing: canStop,
+          compactNewTask: false,
+        }),
+      });
   const sendTooltipTitle = intl.formatMessage({
     id: mode === "enqueue" ? "chat.queue.enqueue" : "chat.send",
   });
@@ -2187,6 +2194,26 @@ function ConversationComposerImpl({
             onSendCompressionCommand={onSendCompressionCommand}
           />
         </span>
+        {/* 语音入口（可见麦克风）：常显，点击开麦 / 再点提交转写；按住输入卡的手势并存 */}
+        {voice ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-md"
+            disabled={disabled}
+            onClick={() => voice.toggleRecording()}
+            data-testid="v4-composer-voice"
+            aria-label={voice.recording ? "停止录音并转写" : "语音输入"}
+            className={cn(
+              "cursor-pointer rounded-lg text-muted-foreground transition-colors",
+              voice.recording &&
+                "animate-pulse bg-foreground text-background hover:bg-foreground/90",
+            )}
+          >
+            <MicIcon className="size-4" />
+            <span className="sr-only">{voice.recording ? "停止录音并转写" : "语音输入"}</span>
+          </Button>
+        ) : null}
         {showStopControl ? (
           <ControlHintTooltip title={stopTooltipTitle} shortcut="Esc">
             <Button
@@ -2259,6 +2286,7 @@ function ConversationComposerImpl({
       sessionId,
       showStopControl,
       stopTooltipTitle,
+      voice,
       workspaceIdentity,
       workspacePath,
     ],
@@ -2279,6 +2307,13 @@ function ConversationComposerImpl({
           onConfigPickerOpenChange={handleConfigPickerOpenChange}
           onSwitchMode={onSwitchMode}
         />
+        {/* KenFutWork 宿主件：六档执行模式与 ZCode 协作档并排（Q6），选「计划」联动切 plan。 */}
+        <ExecutionModeChip
+          sessionId={sessionId}
+          disabled={disabled}
+          onSwitchMode={onSwitchMode}
+        />
+        <PermissionTierChip />
         {/* 附件画廊重构曾整段覆盖 leadingActions，误删 CUA 常驻入口。
             入口自身继续负责平台、远程与设置可见性，不在 composer 重复判定。 */}
         <V4ComposerCuaEntry
@@ -2307,6 +2342,7 @@ function ConversationComposerImpl({
       provider,
       remoteSessionId,
       runningSubagentCount,
+      sessionId,
       snapshot?.backgroundWorks,
       workspaceIdentity,
       workspacePath,
@@ -2358,8 +2394,10 @@ function ConversationComposerImpl({
       ) : null}
       <div
         className={cn(
-          "chat-composer-input-surface w-full",
+          "chat-composer-input-surface w-full transition-[min-height]",
           contextHeader && "rounded-2xl bg-surface shadow-xl/5",
+          // 录音时输入区顶上去（参考视频：占位变「开始说话」、输入区加高）
+          voice?.recording && "min-h-32",
         )}
         onPointerDown={voice?.onPointerDown}
         style={voice?.lockSelection ? { userSelect: "none" } : undefined}
@@ -2428,6 +2466,7 @@ function ConversationComposerImpl({
             <span>{attachmentsApi.attachmentError}</span>
           </p>
         ) : null}
+        {/* 录音中只有图标变化：麦克风高亮脉动，不出状态文字 */}
         {voice?.status}
       </div>
       <ImagePreviewDialog

@@ -358,6 +358,208 @@ describe("ChatSidebar", () => {
     );
   });
 
+  it("refreshes only the active relinked Design Task from authoritative state", async () => {
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+    await screen.findByPlaceholderText(/输入你的想法/);
+    await waitFor(() =>
+      expect(fetchDesignGoalMock).toHaveBeenCalledWith(
+        "token_abc",
+        "session-real",
+      ),
+    );
+    fetchDesignTaskPolicyMock.mockClear();
+    fetchDesignGoalMock.mockClear();
+    const message = (origin: string, source: WindowProxy, taskId: string) =>
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          origin,
+          source,
+          data: {
+            type: "workbench:project-directory-relinked",
+            projectId: "project-real",
+            tasks: [taskId],
+          },
+        }),
+      );
+
+    message("https://other.example", window.parent, "session-real");
+    message(window.location.origin, {} as WindowProxy, "session-real");
+    message(window.location.origin, window.parent, "another-task");
+    expect(fetchDesignTaskPolicyMock).not.toHaveBeenCalled();
+
+    fetchDesignTaskPolicyMock.mockResolvedValue({
+      task: {
+        taskId: "session-real",
+        projectId: "project-real",
+        canvasId: "canvas-1",
+        rootDirectory: "/workspace/replacement",
+        additionalDirectories: [],
+        sandboxMode: "workspace-write",
+        scopeGeneration: 4,
+        branchGeneration: 4,
+        mode: "build",
+        planEnabled: false,
+        planningEpoch: 0,
+        activeRunId: null,
+        executionState: "ready",
+      },
+    });
+    fetchDesignGoalMock.mockResolvedValue({
+      goal: null,
+      task: {
+        taskId: "session-real",
+        projectId: "project-real",
+        canvasId: "canvas-1",
+        rootDirectory: "/workspace/replacement",
+        additionalDirectories: [],
+        sandboxMode: "workspace-write",
+        scopeGeneration: 4,
+        branchGeneration: 4,
+        mode: "build",
+        planEnabled: false,
+        planningEpoch: 0,
+        activeRunId: null,
+        executionState: "ready",
+      },
+      acceptedRunId: null,
+    });
+    message(window.location.origin, window.parent, "session-real");
+
+    await waitFor(() =>
+      expect(fetchDesignTaskPolicyMock).toHaveBeenCalledWith(
+        "token_abc",
+        "session-real",
+      ),
+    );
+    await waitFor(() =>
+      expect(fetchDesignGoalMock).toHaveBeenCalledWith(
+        "token_abc",
+        "session-real",
+      ),
+    );
+    await userEvent.type(
+      screen.getByPlaceholderText(/输入你的想法/),
+      "重关联后继续{Enter}",
+    );
+    await waitFor(() =>
+      expect(mockWs.startRun).toHaveBeenCalledWith(
+        expect.objectContaining({ scopeGeneration: 4, branchGeneration: 4 }),
+        expect.any(Function),
+      ),
+    );
+  });
+
+  it("does not let an older reconnect read replace the relinked Task fence", async () => {
+    const oldTask = {
+      taskId: "session-real",
+      projectId: "project-real",
+      canvasId: "canvas-1",
+      rootDirectory: "/workspace",
+      additionalDirectories: [],
+      sandboxMode: "workspace-write",
+      scopeGeneration: 2,
+      branchGeneration: 3,
+      mode: "build" as const,
+      planEnabled: false,
+      planningEpoch: 0,
+      activeRunId: null,
+      executionState: "ready" as const,
+    };
+    const relinkedTask = {
+      ...oldTask,
+      rootDirectory: "/workspace/replacement",
+      scopeGeneration: 4,
+      branchGeneration: 4,
+    };
+    mockWs.connected = false;
+    let resolveLateRead: ((value: { task: typeof oldTask }) => void) | null =
+      null;
+    let relinkRequested = false;
+    fetchDesignTaskPolicyMock.mockImplementation(() => {
+      if (mockWs.connected && !relinkRequested) {
+        return new Promise((resolve) => {
+          resolveLateRead = resolve;
+        });
+      }
+      return Promise.resolve({
+        task: relinkRequested ? relinkedTask : oldTask,
+      });
+    });
+    fetchDesignGoalMock.mockImplementation(async () => ({
+      goal: null,
+      task: relinkRequested ? relinkedTask : oldTask,
+      acceptedRunId: null,
+    }));
+    let connect: (() => void) | null = null;
+    function ConnectionHarness() {
+      const [connected, setConnected] = useState(false);
+      mockWs.connected = connected;
+      connect = () => setConnected(true);
+      return (
+        <ToastProvider>
+          <ChatSidebar
+            accessToken="token_abc"
+            canvasId="canvas-1"
+            open
+            onToggle={() => {}}
+            ws={mockWs}
+          />
+        </ToastProvider>
+      );
+    }
+    render(<ConnectionHarness />);
+    await waitFor(() => expect(fetchDesignGoalMock).toHaveBeenCalled());
+    fetchDesignGoalMock.mockClear();
+    await act(async () => connect?.());
+    await waitFor(() => expect(resolveLateRead).toBeTypeOf("function"));
+    relinkRequested = true;
+
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          origin: window.location.origin,
+          source: window.parent,
+          data: {
+            type: "workbench:project-directory-relinked",
+            projectId: "project-real",
+            tasks: ["session-real"],
+          },
+        }),
+      );
+    });
+    await waitFor(() => expect(fetchDesignGoalMock).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      resolveLateRead?.({ task: oldTask });
+      await Promise.resolve();
+    });
+    createDesignGoalMock.mockResolvedValue({
+      goal: null,
+      task: relinkedTask,
+      acceptedRunId: null,
+    });
+    await userEvent.type(await screen.findByLabelText("目标"), "继续工作");
+    await userEvent.click(screen.getByRole("button", { name: "开始目标" }));
+
+    await waitFor(() =>
+      expect(createDesignGoalMock).toHaveBeenCalledWith(
+        "token_abc",
+        "session-real",
+        expect.objectContaining({ expectedBranchGeneration: 4 }),
+      ),
+    );
+  });
+
   it("creates a persistent goal with the current branch-generation fence", async () => {
     const response = {
       goal: null,
@@ -543,6 +745,62 @@ describe("ChatSidebar", () => {
       );
     },
   );
+
+  it("shows a readable directory relink reason for a paused Goal", async () => {
+    const task = {
+      taskId: "session-real",
+      projectId: "project-real",
+      canvasId: "canvas-1",
+      rootDirectory: "/workspace/replacement",
+      additionalDirectories: [],
+      sandboxMode: "workspace-write",
+      scopeGeneration: 4,
+      branchGeneration: 4,
+      mode: "build",
+      planEnabled: false,
+      planningEpoch: 0,
+      activeRunId: null,
+      executionState: "ready",
+    };
+    fetchDesignGoalMock.mockResolvedValue({
+      goal: {
+        goalId: "goal-paused",
+        revision: 2,
+        objective: "完成设计",
+        status: "paused",
+        branchGeneration: 4,
+        tokenBudget: null,
+        tokensUsed: 12,
+        timeUsedSeconds: 5,
+        iteration: 1,
+        claimedRunId: null,
+        lastSettledRunId: "run-paused",
+        runTokensUsed: 12,
+        runUsageObserved: true,
+        runStartedAt: null,
+        verification: null,
+        reason: "project.directoryRelink",
+      },
+      task,
+      acceptedRunId: null,
+    });
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    expect(await screen.findByText("目录已重新关联")).toBeInTheDocument();
+    expect(
+      screen.queryByText("project.directoryRelink"),
+    ).not.toBeInTheDocument();
+  });
 
   it("replaces a terminal Goal using its persisted identity and revision", async () => {
     const task = {
@@ -1154,7 +1412,7 @@ describe("ChatSidebar", () => {
     expect(screen.queryByText("图层列表占位")).toBeNull();
 
     // 点「对话」→ 切回对话视图（新增的回到对话按钮）
-    await userEvent.click(screen.getByRole("button", { name: "对话" }));
+    await userEvent.click(screen.getByRole("button", { name: "面板" }));
     expect(
       await screen.findByPlaceholderText(/输入你的想法/),
     ).toBeInTheDocument();
@@ -1192,7 +1450,7 @@ describe("ChatSidebar", () => {
     expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     // 三个视图图标：**空心**（fill=none）且尺寸一致（用户反馈有的大有的小、有的实心）
-    for (const name of ["对话", "图层", "生成文件"]) {
+    for (const name of ["面板", "图层", "生成文件"]) {
       const svg = screen.getByRole("button", { name }).querySelector("svg");
       expect(svg).not.toBeNull();
       expect(svg?.getAttribute("fill")).toBe("none");

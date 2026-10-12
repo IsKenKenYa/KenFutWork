@@ -20,7 +20,10 @@ use windows_sys::Win32::System::Threading::WaitForSingleObject;
 
 pub struct NativeProcess {
     job: Arc<ProcessJob>,
-    process: OwnedHandle,
+    /// controller 进程句柄。controller 退出后必须立即释放：Job 的
+    /// ActiveProcesses 计数在「已退出但句柄未关」期间仍 >0，攥着句柄会让
+    /// wait_active(0) 永远失败（stop_unconfirmed 假阳性）。
+    process: Mutex<Option<OwnedHandle>>,
     control: Mutex<File>,
     input: Mutex<Option<File>>,
     console: Option<Arc<PseudoConsole>>,
@@ -50,7 +53,7 @@ impl NativeProcess {
         Ok((
             Arc::new(Self {
                 job,
-                process,
+                process: Mutex::new(Some(process)),
                 control: Mutex::new(control_write),
                 input: Mutex::new(input),
                 console,
@@ -65,6 +68,13 @@ impl NativeProcess {
             events_read,
             output,
         ))
+    }
+    /// 释放 controller 句柄。TerminateJobObject 只认 Job 成员，不依赖句柄，
+    /// 因此 terminate/wait_active 之前先 reap 才能得到真实的 ActiveProcesses。
+    pub fn reap(&self) {
+        if let Ok(mut slot) = self.process.lock() {
+            drop(slot.take());
+        }
     }
     pub fn forward(&self, request: &Request) -> Result<()> {
         ensure!(
@@ -124,6 +134,7 @@ impl NativeProcess {
             return Ok(true);
         }
         if !self.initial.load(Ordering::Acquire) {
+            self.reap();
             self.job.terminate()?;
             self.job.wait_active(0, self.grace_ms, self.yield_ms)?;
             Ok(true)
@@ -135,6 +146,7 @@ impl NativeProcess {
                     .insert(id.clone());
             }
             if self.forward(request).is_err() {
+                self.reap();
                 self.terminate()?;
                 return Ok(true);
             }
@@ -145,6 +157,7 @@ impl NativeProcess {
         if let Some(gate) = &self.gate {
             gate.cancel();
         }
+        self.reap();
         self.job.terminate()?;
         self.job.wait_active(0, self.grace_ms, self.yield_ms)
     }
@@ -249,8 +262,20 @@ pub fn watch(
     thread::spawn(move || {
         let result = (|| -> Result<Value> {
             loop {
-                let status = unsafe { WaitForSingleObject(process.process.as_raw_handle(), 0) };
+                let raw = process
+                    .process
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("controller 句柄锁不可用"))?
+                    .as_ref()
+                    .map(|handle| handle.as_raw_handle());
+                let Some(raw) = raw else {
+                    break;
+                };
+                let status = unsafe { WaitForSingleObject(raw, 0) };
                 if status == WAIT_OBJECT_0 {
+                    // controller 已退出：立即释放句柄，否则它作为 Job 成员会让
+                    // ActiveProcesses 停在 1，把成功执行误报成 stop_unconfirmed。
+                    process.reap();
                     break;
                 }
                 ensure!(status == WAIT_TIMEOUT, "controller wait 失败");
@@ -270,9 +295,16 @@ pub fn watch(
             {
                 process.terminate()?;
             }
-            process
+            // controller 视角的 rangeEmpty 之后，外层 Job 仍可能短暂保留已退出
+            // 成员的关联计数（PSEC workload/conhost 的句柄释放是异步收尾）。
+            // 先等、等不到就 TerminateJobObject 强制收尸再等；清零即视为正常完成。
+            if process
                 .job
-                .wait_active(0, process.grace_ms, process.yield_ms)?;
+                .wait_active(0, process.grace_ms, process.yield_ms)
+                .is_err()
+            {
+                process.terminate()?;
+            }
             if let Some(console) = &process.console {
                 console.close()?;
             }
