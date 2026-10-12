@@ -28,6 +28,7 @@ import type {
   ExecutionScopes,
 } from "../features/execution/scope-service.js";
 import type { FlowEngineHostService } from "../features/flow/engine/install.js";
+import type { FlowProjectControl } from "../features/flow/project-control.js";
 import type { GenerationTargets } from "../features/generation/file-targets.js";
 import type {
   PersistImageFn,
@@ -186,6 +187,8 @@ export interface ServiceMap {
    * 消费方 = 插件卸载路由（卸载 flow 插件时 purge 引擎、保留插件代码，见《flow插件集成规划》§9.1③）。
    */
   flowEngine: FlowEngineHostService;
+  /** Flow 项目文件准入所需的代际快照控制端口。 */
+  flowProjectControl: FlowProjectControl;
   /** ConnectionManager + EventBuffer */
   ws: WsServices;
 }

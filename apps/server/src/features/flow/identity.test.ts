@@ -6,6 +6,22 @@ import { createFlowIdentityTickets } from "./identity.js";
 const INSTANCE = "11111111-1111-4111-8111-111111111111";
 
 describe("flow 宿主身份票据", () => {
+  it("项目绑定随一次性票据保持，不能用同一票据切换项目", () => {
+    const tickets = createFlowIdentityTickets();
+    const projectId = "22222222-2222-4222-8222-222222222222";
+    const { token } = tickets.issue({
+      instanceId: INSTANCE,
+      accessClientId: "client-1",
+      projectId,
+      ttlMs: 60_000,
+    });
+    expect(tickets.consume(token)).toEqual({
+      instanceId: INSTANCE,
+      accessClientId: "client-1",
+      projectId,
+    });
+    expect(tickets.consume(token)).toBeNull();
+  });
   it("签发的票据消费一次即得归属；令牌形状与本机接入一致", () => {
     const tickets = createFlowIdentityTickets();
     const { token, expiresAt } = tickets.issue({

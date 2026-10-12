@@ -17,12 +17,14 @@ export interface FlowIdentityTickets {
     instanceId: string;
     /** 哪个接入客户端换的（审计用；身份 subject 只取 instanceId）。 */
     accessClientId: string | null;
+    projectId?: string;
     ttlMs: number;
   }): { token: string; expiresAt: string };
   /** 消费票据（一次性）：未知/过期/已用过一律返回 null。 */
   consume(token: string): {
     instanceId: string;
     accessClientId: string | null;
+    projectId?: string;
   } | null;
 }
 
@@ -32,7 +34,12 @@ export function createFlowIdentityTickets(
   const now = options.now ?? Date.now;
   const tickets = new Map<
     string,
-    { instanceId: string; accessClientId: string | null; expiresAt: number }
+    {
+      instanceId: string;
+      accessClientId: string | null;
+      projectId?: string;
+      expiresAt: number;
+    }
   >();
   const digest = (token: string) =>
     createHash("sha256").update(token, "utf8").digest("hex");
@@ -51,6 +58,7 @@ export function createFlowIdentityTickets(
       tickets.set(digest(token), {
         instanceId: input.instanceId,
         accessClientId: input.accessClientId,
+        ...(input.projectId ? { projectId: input.projectId } : {}),
         expiresAt,
       });
       return { token, expiresAt: new Date(expiresAt).toISOString() };
@@ -66,6 +74,7 @@ export function createFlowIdentityTickets(
       return {
         instanceId: entry.instanceId,
         accessClientId: entry.accessClientId,
+        ...(entry.projectId ? { projectId: entry.projectId } : {}),
       };
     },
   };

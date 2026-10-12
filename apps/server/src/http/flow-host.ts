@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import {
   applicationErrorResponseSchema,
   FLOW_EMBED_PROTOCOL_VERSION,
@@ -16,6 +15,7 @@ import {
   flowHostEventsResponseSchema,
   flowHostIdentityRequestSchema,
   flowHostIdentityResponseSchema,
+  flowHostIdentityTicketRequestSchema,
   flowHostIdentityTicketResponseSchema,
   flowHostStatusResponseSchema,
   flowRunEventSchema,
@@ -30,6 +30,7 @@ import type {
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { WsServices } from "../kernel/types.js";
 import { flowEventScopeKey } from "../ws/event-buffer.js";
+import { authorizeFlowGateway } from "./flow-gateway-auth.js";
 
 /** Flow 的凭据、事件、身份与引擎探测基础设施（本地实例身份适配见 `identity`）。 */
 export async function registerFlowHostRoutes(
@@ -58,13 +59,22 @@ export async function registerFlowHostRoutes(
      * `verify` 在网关带票据回来时换出稳定身份（subject = 本实例 instanceId）。
      */
     identity: {
-      issue(actor: LocalActor): Promise<{
+      issue(
+        actor: LocalActor,
+        projectId?: string,
+      ): Promise<{
         token: string;
         expiresAt: string;
       }>;
       verify(token: string): Promise<{
         subject: string;
         displayName?: string;
+        projectFiles?: {
+          version: "v1";
+          generation: number;
+          projectId: string;
+          bindingToken: string;
+        };
       } | null>;
     };
     /** 引擎栈托管（FORM-11）：确认后按承载目标拉镜像起栈，状态可轮询。 */
@@ -98,6 +108,7 @@ export async function registerFlowHostRoutes(
     /** 共享密钥；缺省表示本实例未启用 flow 宿主能力。 */
     secret?: string | undefined;
     frontendUrl?: string | undefined;
+    gatewayUrl?: string | undefined;
   },
 ): Promise<void> {
   const error = (
@@ -122,42 +133,7 @@ export async function registerFlowHostRoutes(
   const gatewayAuthorized = (
     request: FastifyRequest,
     reply: FastifyReply,
-  ): boolean => {
-    const expected = options.secret?.trim();
-    if (!expected) {
-      error(
-        reply,
-        503,
-        "service_unavailable",
-        "未配置 Flow 网关共享密钥，宿主回调不可用。",
-      );
-      return false;
-    }
-    const header = request.headers.authorization;
-    const provided = header?.startsWith("Bearer ")
-      ? header.slice(7).trim()
-      : "";
-    const actualBytes = Buffer.from(provided);
-    const expectedBytes = Buffer.from(expected);
-    if (
-      actualBytes.length !== expectedBytes.length ||
-      !timingSafeEqual(actualBytes, expectedBytes)
-    ) {
-      unauthorized(reply, "Flow 网关共享密钥不匹配。");
-      return false;
-    }
-    const version = String(request.headers["x-ff-embed-protocol"] ?? "").trim();
-    if (version && version !== FLOW_EMBED_PROTOCOL_VERSION) {
-      error(
-        reply,
-        400,
-        "application_error",
-        `Flow 协议版本不匹配：支持 ${FLOW_EMBED_PROTOCOL_VERSION}。`,
-      );
-      return false;
-    }
-    return true;
-  };
+  ): boolean => authorizeFlowGateway(request, reply, options.secret);
 
   app.get("/api/flow/host/status", async (request, reply) => {
     if (!(await options.localAccess.authenticate(request)))
@@ -165,6 +141,7 @@ export async function registerFlowHostRoutes(
     const reasons: string[] = [];
     if (!options.secret?.trim()) reasons.push("未配置 Flow 网关共享密钥。");
     if (!options.frontendUrl?.trim()) reasons.push("未配置 Flow 前端地址。");
+    if (!options.gatewayUrl?.trim()) reasons.push("未配置 Flow 网关控制地址。");
     return reply.send(
       flowHostStatusResponseSchema.parse({
         enabled: reasons.length === 0,
@@ -188,11 +165,16 @@ export async function registerFlowHostRoutes(
     const actor = await options.localAccess.authenticate(request);
     if (!actor) return unauthorized(reply, "缺少或无效的本机接入凭据。");
     await options.localInstance.resolve(actor);
+    const parsed = flowHostIdentityTicketRequestSchema.safeParse(
+      request.body ?? {},
+    );
+    if (!parsed.success)
+      return error(reply, 400, "application_error", "Flow 项目标识无效。");
     return reply
       .code(200)
       .send(
         flowHostIdentityTicketResponseSchema.parse(
-          await options.identity.issue(actor),
+          await options.identity.issue(actor, parsed.data.projectId),
         ),
       );
   });

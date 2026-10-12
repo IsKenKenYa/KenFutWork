@@ -28,6 +28,7 @@ const localInstance: LocalInstanceService = {
 function fixture(
   options: {
     secret?: string;
+    gatewayUrl?: string | null;
     authorized?: boolean;
     configured?: boolean;
     baseUrl?: string;
@@ -124,6 +125,9 @@ function fixture(
     },
     ...(options.secret ? { secret: options.secret } : {}),
     frontendUrl: "http://127.0.0.1:8081",
+    ...(options.gatewayUrl === null
+      ? {}
+      : { gatewayUrl: options.gatewayUrl ?? "http://127.0.0.1:9087" }),
   });
   return {
     app,
@@ -136,6 +140,21 @@ function fixture(
 }
 
 describe("Flow 本地实例基础设施", () => {
+  it("没有显式网关地址时入口保持关闭", async () => {
+    const { app } = fixture({ secret: SECRET, gatewayUrl: null });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/flow/host/status",
+      });
+      expect(response.json()).toMatchObject({
+        enabled: false,
+        reasons: ["未配置 Flow 网关控制地址。"],
+      });
+    } finally {
+      await app.close();
+    }
+  });
   it("配置齐全即开放入口；身份票据经本机接入签发、网关单次验签（重放拒绝）", async () => {
     const { app } = fixture({ secret: SECRET });
     try {

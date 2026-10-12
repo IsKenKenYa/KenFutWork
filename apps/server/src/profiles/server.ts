@@ -243,6 +243,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createFlowHostPlugin({
       secret: deps.env.flowEmbedSecret,
       frontendUrl: deps.env.flowFrontendUrl,
+      gatewayUrl: deps.env.flowGatewayUrl,
     }),
     createBrowserPlugin(),
     // 语音助手（内建插件，默认开启）：听/说走内置 sherpa 或 BYOK 实例端点

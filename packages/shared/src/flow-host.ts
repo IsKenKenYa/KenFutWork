@@ -56,6 +56,16 @@ export const flowHostIdentityTicketResponseSchema = z.object({
   token: z.string().min(1).max(2048),
   expiresAt: z.string().min(1).max(64),
 });
+/** 项目由宿主认证；前端只提供项目标识，不能指定目录或权限。 */
+export const flowHostIdentityTicketRequestSchema = z.object({
+  projectId: z.string().uuid().optional(),
+});
+export const flowProjectFilesBindingSchema = z.object({
+  version: z.literal("v1"),
+  generation: z.number().int().positive().safe(),
+  projectId: z.string().uuid(),
+  bindingToken: z.string().min(1).max(2048),
+});
 export type FlowHostIdentityTicketResponse = z.infer<
   typeof flowHostIdentityTicketResponseSchema
 >;
@@ -76,6 +86,7 @@ export const flowHostIdentityRequestSchema = z.object({
 export const flowHostIdentityResponseSchema = z.object({
   subject: z.string().min(1).max(256),
   displayName: z.string().min(1).max(128).optional(),
+  projectFiles: flowProjectFilesBindingSchema.optional(),
 });
 export type FlowHostIdentityResponse = z.infer<
   typeof flowHostIdentityResponseSchema
