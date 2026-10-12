@@ -34,6 +34,10 @@ it("profiles mount core file tools by actual Task scope and readonly roles recei
     {
       overrides: {
         blob: {
+          registerNamespace: () => {
+            throw new Error("Code 文件工具不能注册存储");
+          },
+          resolveNamespace: () => null,
           bucket: () => {
             throw new Error("Code 文件工具不能上传");
           },

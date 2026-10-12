@@ -7,12 +7,16 @@ import {
   resolveBlobPath,
   verifyBlobUrlSignature,
 } from "../features/blob/providers/local-fs.js";
-import { LOCAL_PUBLIC_BUCKETS } from "../features/blob/types.js";
+import {
+  type BlobStore,
+  LOCAL_PUBLIC_BUCKETS,
+} from "../features/blob/types.js";
 
 /**
  * 本地 blob 读取路由（仅 `KENFUTWORK_BLOB_DRIVER=local` 时挂载）。
  *
- * 桌面单用户形态下，`getPublicUrl` 指向这里；公开桶直接放行，非公开桶要求有效签名
+ * 桌面单用户形态下，`getPublicUrl` 指向这里；namespace策略优先于默认桶公开性。
+ * 非公开对象要求有效签名
  * （`?exp=<秒>&sig=<hmac>`）——签名由 `local-fs` Provider 生成，密钥是
  * 数据目录内的独立 `blob-signing-key`，与上传侧同源。
  *
@@ -39,13 +43,20 @@ export async function registerBlobRoutes(
   options: {
     rootDir: string;
     signingSecret: string;
+    blob: BlobStore;
   },
 ): Promise<void> {
   app.get("/api/blobs/:bucket/*", async (request, reply) => {
     const { bucket } = request.params as { bucket: string };
     const objectPath = (request.params as Record<string, string>)["*"] ?? "";
 
-    if (!LOCAL_PUBLIC_BUCKETS.has(bucket)) {
+    let namespace: ReturnType<BlobStore["resolveNamespace"]>;
+    try {
+      namespace = options.blob.resolveNamespace(bucket, objectPath);
+    } catch {
+      return reply.code(404).send({ error: "Object not found." });
+    }
+    if (namespace ? !namespace.publicRead : !LOCAL_PUBLIC_BUCKETS.has(bucket)) {
       const query = request.query as Record<string, string>;
       const authorized = verifyBlobUrlSignature({
         bucket,
@@ -56,6 +67,18 @@ export async function registerBlobRoutes(
       });
       if (!authorized) {
         return reply.code(403).send({ error: "Invalid or expired signature." });
+      }
+    }
+
+    if (namespace) {
+      try {
+        const body = await namespace.provider.download(objectPath);
+        const contentType = await namespace.provider.contentType?.(objectPath);
+        return reply
+          .header("content-type", contentType ?? "application/octet-stream")
+          .send(Buffer.from(body));
+      } catch {
+        return reply.code(404).send({ error: "Object not found." });
       }
     }
 
