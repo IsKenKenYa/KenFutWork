@@ -131,7 +131,7 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 
 | 项 | 许可 | 状态 |
 | --- | --- | --- |
-| 根 `flow/`（[futureFlow](https://github.com/future73807/futureFlow) 子模块，@ `7406e8a5`） | `package.json` 声明 MIT | 上游仓库**无 LICENSE 文本文件**。作者 future73807 即本仓协作者，自有代码并入本仓无版权障碍；补齐标准 MIT LICENSE 文件属对外规范动作，随上游节奏处理，不阻塞集成阶段（结论与理由见 `docs/插件/flow插件集成规划.md` §7）。并入产物分发时须带该文本 |
+| 根 `flow/`（[futureFlow](https://github.com/future73807/futureFlow) 子模块，@ `bf71bb55`） | `package.json` 声明 MIT | 上游仓库**无 LICENSE 文本文件**。作者 future73807 即本仓协作者，自有代码并入本仓无版权障碍；补齐标准 MIT LICENSE 文件属对外规范动作，随上游节奏处理，不阻塞集成阶段（结论与理由见 `docs/插件/flow插件集成规划.md` §7）。并入产物分发时须带该文本 |
 | `flow/` 内 vendored Python wheels（pg8000、asn1crypto、six、python-dateutil、scramp） | 各自原生许可 | **待核**：随 flow 分发前逐 wheel 抄录许可与版权行 |
 | Dify（flow 的执行引擎方向，`DEC-11`） | Apache-2.0 + 附加条款（source-available） | 以**独立容器 + API 通信**接入，属聚合而非衍生作品；**禁止把 Dify 的 Python 代码复制进本 monorepo**，保持容器边界，分发时附其 `LICENSE`/`NOTICE` |
 | `references/` 全部子模块（Codex、Cherry Studio、Jaaz、kimi-code、langgraph、MCP SDK、Octop、nomifun-tauri、Loomic 等） | 各自许可（Apache-2.0/MIT 等） | **只作方向参考，未复制代码、schema、字段名与素材**（`flow/` 与 Code 模式的 ZCode 全量移植是明确例外，见 `AGENTS.md`）。子模块内容不随本仓库产物分发 |
