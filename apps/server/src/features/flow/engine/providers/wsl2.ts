@@ -163,7 +163,9 @@ async function probeDistroDocker(
     };
   }
   const dockerVersion = decodeCommandText(info.stdout).trim().split("\n")[0];
-  const composeVersion = decodeCommandText(compose.stdout).trim().split("\n")[0];
+  const composeVersion = decodeCommandText(compose.stdout)
+    .trim()
+    .split("\n")[0];
   return {
     ok: true,
     detail:

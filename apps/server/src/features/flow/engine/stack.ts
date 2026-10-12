@@ -62,7 +62,9 @@ export async function listEngineStackContainers(
   try {
     // 新版本输出单个 JSON 数组；老版本是逐行 NDJSON——先整体解、失败再逐行解。
     const parsed: unknown = JSON.parse(text);
-    rows = Array.isArray(parsed) ? (parsed as RawPsRow[]) : [parsed as RawPsRow];
+    rows = Array.isArray(parsed)
+      ? (parsed as RawPsRow[])
+      : [parsed as RawPsRow];
   } catch {
     rows = [];
     for (const line of text.split(/\r?\n/)) {
@@ -80,8 +82,7 @@ export async function listEngineStackContainers(
     .map((row): FlowEngineStackContainer => {
       const ports = (row.Publishers ?? [])
         .filter(
-          (item) =>
-            typeof item.TargetPort === "number" && item.TargetPort > 0,
+          (item) => typeof item.TargetPort === "number" && item.TargetPort > 0,
         )
         .map((item) => {
           const protocol = item.Protocol || "tcp";

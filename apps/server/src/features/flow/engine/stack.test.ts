@@ -24,7 +24,12 @@ const PS_ARRAY = JSON.stringify([
     State: "running",
     Health: "healthy",
     Publishers: [
-      { URL: "127.0.0.1", TargetPort: 5001, PublishedPort: 15001, Protocol: "tcp" },
+      {
+        URL: "127.0.0.1",
+        TargetPort: 5001,
+        PublishedPort: 15001,
+        Protocol: "tcp",
+      },
     ],
   },
   {
@@ -43,7 +48,12 @@ const PS_NDJSON = [
     State: "running",
     Health: "healthy",
     Publishers: [
-      { URL: "0.0.0.0", TargetPort: 5432, PublishedPort: 55433, Protocol: "tcp" },
+      {
+        URL: "0.0.0.0",
+        TargetPort: 5432,
+        PublishedPort: 55433,
+        Protocol: "tcp",
+      },
     ],
   }),
   "{ not json — 跳过这一行 }",
@@ -81,7 +91,10 @@ describe("引擎栈容器清单：docker compose ps 解析", () => {
   });
 
   it("新版本 JSON 数组：服务/健康/端口映射齐全，按服务名排序", async () => {
-    const { containers, error } = await listEngineStackContainers("compose.yml", { run: runWith(PS_ARRAY) });
+    const { containers, error } = await listEngineStackContainers(
+      "compose.yml",
+      { run: runWith(PS_ARRAY) },
+    );
     expect(error).toBeUndefined();
     expect(containers.map((item) => item.service)).toEqual([
       "dify-api",
@@ -99,22 +112,30 @@ describe("引擎栈容器清单：docker compose ps 解析", () => {
   });
 
   it("老版本逐行 NDJSON：脏行跳过，0.0.0.0 归一成 127.0.0.1", async () => {
-    const { containers } = await listEngineStackContainers("compose.yml", { run: runWith(PS_NDJSON) });
+    const { containers } = await listEngineStackContainers("compose.yml", {
+      run: runWith(PS_NDJSON),
+    });
     expect(containers).toHaveLength(2);
-    expect(containers.find((item) => item.service === "postgres")?.ports).toEqual(
-      ["127.0.0.1:55433->5432/tcp"],
-    );
+    expect(
+      containers.find((item) => item.service === "postgres")?.ports,
+    ).toEqual(["127.0.0.1:55433->5432/tcp"]);
   });
 
   it("docker 不可用：不抛，回空清单 + 可读原因", async () => {
-    const { containers, error } = await listEngineStackContainers("compose.yml", { run: runWith("", 127, "docker: command not found") });
+    const { containers, error } = await listEngineStackContainers(
+      "compose.yml",
+      { run: runWith("", 127, "docker: command not found") },
+    );
     expect(containers).toEqual([]);
     expect(error).toContain("docker compose ps 失败");
     expect(error).toContain("command not found");
   });
 
   it("空输出（栈没起）：空清单且无错误", async () => {
-    const { containers, error } = await listEngineStackContainers("compose.yml", { run: runWith("") });
+    const { containers, error } = await listEngineStackContainers(
+      "compose.yml",
+      { run: runWith("") },
+    );
     expect(containers).toEqual([]);
     expect(error).toBeUndefined();
   });
@@ -129,8 +150,18 @@ describe("引擎栈容器清单：端口口径与状态校正材料", () => {
         State: "running",
         Health: "healthy",
         Publishers: [
-          { URL: "127.0.0.1", TargetPort: 5432, PublishedPort: 0, Protocol: "tcp" },
-          { URL: "127.0.0.1", TargetPort: 5001, PublishedPort: 15001, Protocol: "tcp" },
+          {
+            URL: "127.0.0.1",
+            TargetPort: 5432,
+            PublishedPort: 0,
+            Protocol: "tcp",
+          },
+          {
+            URL: "127.0.0.1",
+            TargetPort: 5001,
+            PublishedPort: 15001,
+            Protocol: "tcp",
+          },
         ],
       },
     ]);

@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { FLOW_PLUGIN_BUNDLE_NAME } from "@kenfutwork/shared";
-import { isPackagedRuntime, resolveEntryRoot } from "../../desktop/entry-root.js";
+import {
+  isPackagedRuntime,
+  resolveEntryRoot,
+} from "../../desktop/entry-root.js";
 import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import { registerFlowHostRoutes } from "../../http/flow-host.js";
 import type { PluginDefinition } from "../../kernel/types.js";
@@ -38,7 +41,10 @@ function resolveDifyDir(): string {
       "dify",
     );
   }
-  return join(fileURLToPath(new URL("../../../../..", import.meta.url)), "dify");
+  return join(
+    fileURLToPath(new URL("../../../../..", import.meta.url)),
+    "dify",
+  );
 }
 
 /** 安装生成的密钥 env（存在才用于 compose 查询；信息页是只读路径，不创建）。 */
@@ -167,7 +173,10 @@ export function createFlowHostPlugin(deps: {
               platform: process.platform,
               release: os.release(),
               run: createProcessRunCommand(),
-              listInstances: async () => ctx.get("modelProviders").listInstances(await ctx.get("localInstance").serviceActor()),
+              listInstances: async () =>
+                ctx
+                  .get("modelProviders")
+                  .listInstances(await ctx.get("localInstance").serviceActor()),
             }),
         },
         engineInstall: {
