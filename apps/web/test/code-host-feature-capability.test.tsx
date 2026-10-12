@@ -146,12 +146,17 @@ async function renderOriginalSurfaces(originalCapabilities = false) {
   return { calls, openToolAutomation };
 }
 
-it("侧栏自动化入口已移除（用户拍板）；未接通的浏览器/CUA与旧设置跳转保持能力限制", async () => {
+it("侧栏自动化入口已移除（用户拍板）；浏览器分区已接宿主适配件（T6），CUA与旧设置跳转保持能力限制", async () => {
   const { calls } = await renderOriginalSurfaces();
   await screen.findByTestId("settings-section-nav-appearance");
   expect(screen.queryByTestId("automations-open")).toBeNull();
-  for (const id of ["automations", "browser", "computerUse"])
-    expect(screen.queryByTestId(`settings-section-nav-${id}`)).toBeNull();
+  // T6：浏览器分区挂旧工作台浏览器设置（宿主适配件），导航可见；
+  // 自动化与电脑控制仍未接通，保持隐藏。
+  expect(screen.getByTestId("settings-section-nav-browser").isConnected).toBe(
+    true,
+  );
+  expect(screen.queryByTestId("settings-section-nav-automations")).toBeNull();
+  expect(screen.queryByTestId("settings-section-nav-computerUse")).toBeNull();
   expect(screen.getByText("定时任务结果").textContent).toBe("定时任务结果");
   expect(screen.getByText("闲时任务结果").textContent).toBe("闲时任务结果");
   for (const id of ["cron-create-open", "offpeak-create-open"])
@@ -160,7 +165,7 @@ it("侧栏自动化入口已移除（用户拍板）；未接通的浏览器/CUA
   expect(screen.getByTestId("settings-page").dataset.activeSection).toBe(
     "appearance",
   );
-  for (const id of ["automations", "browser", "computerUse"] as const) {
+  for (const id of ["automations", "computerUse"] as const) {
     await act(async () => setPendingSettingsSectionIntent(id));
     expect(screen.getByTestId("settings-page").dataset.activeSection).toBe(
       "appearance",

@@ -28,6 +28,10 @@ export default defineConfig({
           import.meta.dirname,
           "src/components/workbench/zcode/host/ComputerUseSectionAdapter.tsx",
         ),
+        "@zui/settings/BrowserSettingsSection.js": path.resolve(
+          import.meta.dirname,
+          "src/components/workbench/zcode/host/BrowserSettingsSectionAdapter.tsx",
+        ),
         "@zui/i18n/IntlProvider.js": path.resolve(
           import.meta.dirname,
           "src/components/workbench/zcode/host/cuaIntlAdapter.ts",
