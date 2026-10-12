@@ -1599,7 +1599,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     requestSchema: generateImageRequestSchema,
     summary: "同步生成图片并入库",
     description:
-      "按套餐做模型/分辨率/并发校验并预扣积分，经 BYOK 实例图像适配器生成，结果下载转存对象存储后返回签名 URL 与资产 id。缺 providerInstanceId 或 model 返回 400；上游失败 502。",
+      "以已授权本机身份调用指定BYOK供应商实例和模型同步生成图片，下载产物并登记素材，返回签名URL、assetId、MIME与尺寸。缺少providerInstanceId或model返回400；维护期间返回503；上游或适配器失败返回502。",
   },
   {
     method: "post",
@@ -1610,7 +1610,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     requestSchema: generateVideoRequestSchema,
     summary: "受理视频生成任务",
     description:
-      "校验套餐与积分后创建 video_generation 任务并预扣积分，由 worker 异步执行，进度经 GET /api/jobs/{jobId} 轮询。返回 { job_id, status, prompt }。",
+      "核对本机接入及指定BYOK供应商实例、模型后创建video_generation后台任务，由worker异步执行，进度经GET /api/jobs/{jobId}轮询。成功202返回job_id、status和prompt；任务服务未配置时返回503。",
   },
   // ---- health.ts（健康检查；免鉴权）----
   {
