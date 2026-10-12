@@ -571,7 +571,7 @@ function parseFlowOrigin(
 }
 
 /** 正整数（毫秒阈值一类）：未设置返回 undefined；设置了但非法则 fail loud。 */
-function parsePositiveInt(
+function _parsePositiveInt(
   raw: string | number | undefined,
 ): number | undefined {
   if (raw === undefined) {

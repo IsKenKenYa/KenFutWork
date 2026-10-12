@@ -58,7 +58,7 @@ function run(
 }
 
 /** 测试侧 ExecGit：跑本机真实 git（生产注入 Task 沙箱执行器，测试验证 git 行为本身）。 */
-const realExec: ExecGit = async (args, cwd, input) => {
+const realExec: ExecGit = async (args, cwd, _input) => {
   const result = await run(cwd, args);
   return { code: result.code, stdout: result.stdout, stderr: result.stderr };
 };

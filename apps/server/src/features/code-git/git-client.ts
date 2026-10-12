@@ -7,6 +7,7 @@
  * 安全前提：调用方必须传入**已校验归属**的沙箱目录（画布 → 项目 → 工作区），本模块
  * 不做路径校验。分支名一律先过 `isSafeBranchName` 再下发，杜绝把用户输入当参数注入。
  */
+import { realpathSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 
 export interface GitBranchView {
@@ -723,9 +724,15 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
   const deleteWorktree = async (cwd: string, path: string): Promise<void> => {
     const normalize = (value: string) => {
       const absolutePath = resolve(value);
+      let canonicalPath = absolutePath;
+      try {
+        canonicalPath = realpathSync(absolutePath);
+      } catch {
+        // 未登记或已丢失路径仍用精确词法路径拒绝。
+      }
       return process.platform === "win32"
-        ? absolutePath.toLowerCase()
-        : absolutePath;
+        ? canonicalPath.toLowerCase()
+        : canonicalPath;
     };
     if (normalize(resolve(cwd, path)) === normalize(cwd)) {
       throw new Error("主工作目录不能删除。");
