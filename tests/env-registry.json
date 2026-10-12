@@ -17,6 +17,7 @@
         "apps/server/src/features/checkpoints/design-checkpoints.integration.test.ts",
         "apps/server/src/features/execution/design-goals-runtime.integration.test.ts",
         "apps/server/src/features/execution/design-goals.integration.test.ts",
+        "apps/server/src/features/execution/design-model-selection.integration.test.ts",
         "apps/server/src/features/execution/design-run-host.integration.test.ts",
         "apps/server/src/features/execution/design-tasks.integration.test.ts"
       ],
@@ -297,7 +298,6 @@
       "status": "test-gate",
       "note": "真实桌面验收入口，只有明确开启才操作第一方测试窗口；skip不代表能力通过"
     },
-
     "KENFUTWORK_MCP_HTTP_TEST": {
       "surface": "test",
       "readers": [
