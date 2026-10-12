@@ -89,7 +89,13 @@ export function McpServerForm({
     ? serverToForm(initial)
     : {
         ...EMPTY_FORM,
-        storageLevel: scopeKey === "user" ? "user" : "workspace",
+        // 宿主没有项目级 MCP 时必须默认 user 档：默认 workspace 会让
+        // configurationUnavailable 恒真，而作用域选择器此时又被禁用，
+        // 新建表单会陷入「保存永远禁用」的死锁。
+        storageLevel:
+          scopeKey === "user" || capabilities?.projectScope === false
+            ? "user"
+            : "workspace",
       };
   const [form, setForm] = useState<FormState>(initialForm);
   const [jsonDraft, setJsonDraft] = useState<string>(() => formToJsonDraft(initialForm));

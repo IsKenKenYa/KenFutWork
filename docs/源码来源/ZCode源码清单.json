@@ -9418,10 +9418,11 @@
       "source": "references/zcode/packages/ui/src/settings/McpServerForm.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/McpServerForm.tsx",
       "sha256": "67c9ca3284c69baee8c674542203e12f749fd6675e3da555395857ef75cd2fe8",
-      "copiedSha256": "dd23cba662e56be9d8e9c9cf6a473c3db762f115df224c7fc1a22c60f2a498c3",
+      "copiedSha256": "5a89868ae9d31b4861fc2baf37240003218d98b20cf4bc6e93860d2e9fbd6c61",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "宿主接口：异步写入保留草稿；非法env及JSON模式转换显式校验；按真实MCP能力禁用项目/请求头/服务参数/SSE配置，保留原表单装配"
+        "宿主接口：异步写入保留草稿；非法env及JSON模式转换显式校验；按真实MCP能力禁用项目/请求头/服务参数/SSE配置，保留原表单装配",
+        "宿主无项目级 MCP（projectScope=false）时新建表单默认 user 档：默认 workspace 会让保存恒禁用且作用域选择器被禁用，形成死锁"
       ]
     },
     {
