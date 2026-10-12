@@ -22,7 +22,8 @@ import { WorkspaceSidePaneToggleButton } from "@zui/WorkspaceSidePaneToggleButto
 import { DesktopWindowControls } from "@zui/DesktopWindowControls.js";
 import { BrowserUseSidePaneContent } from "@zui/browser-use/BrowserUseSidePaneContent.js";
 import { findScreenshotSurfaceTabForRender } from "@zui/browser-use/useBrowserScreenshotSurfaceRequest.js";
-import { HumanBrowserView } from "@zui/browser-use/HumanBrowserView.js";
+// KenFutWork 宿主件（G1/Q4）：内嵌浏览器页签内容换 CDP MJPEG 面板（Web 宿主无主进程 BrowserView；HumanBrowserView 随之不再被本文件消费）。
+import { BrowserPane } from "@zui/host/BrowserPane.js";
 import { ScopedErrorBoundary } from "@zui/ErrorBoundary.js";
 import { GitPane } from "@zui/GitPane.js";
 import { TreemappingPane } from "@zui/TreemappingPane.js";
@@ -1264,41 +1265,7 @@ export function AnimatedSidePanePanel({
                             onOpenBrowserUrl={onOpenBrowserUrl}
                           />
                         ) : (
-                          <HumanBrowserView
-                            browserKey={tab.id}
-                            agentOpened={tab.agentOpened}
-                            deferEmptyGuest
-                            isResidencyRestore={tab.residency === "restoring"}
-                            isVisible={isVisible && isBrowserOpen && tab.id === visibleActiveTabId}
-                            isSelected={tab.id === visibleActiveTabId}
-                            isCurrentTask={tab.ownerTaskId === sidePaneOwnerId}
-                            // restoring 只挂载不会提交 document 的 bootstrap URL，
-                            // 由 main 独占 pageState/URL 恢复事务。
-                            initialUrl={
-                              tab.residency === "restoring"
-                                ? undefined
-                                : (browserRestoreUrls[tab.id] ?? tab.initialUrl)
-                            }
-                            faviconUrl={tab.faviconUrl}
-                            workspacePath={workspaceAbsPath}
-                            workspaceIdentity={workspaceIdentity}
-                            remoteSessionId={tab.remoteSessionId ?? workspaceRemoteSessionId}
-                            residencyGeneration={tab.residencyGeneration}
-                            sessionId={tab.ownerTaskId ?? "unscoped"}
-                            onUrlChange={(url) => onBrowserUrlChange(tab.id, url)}
-                            onPageMetadataChange={(metadata) =>
-                              onBrowserPageMetadataChange(tab.id, metadata)
-                            }
-                            navigationRequest={
-                              browserNavigationRequest?.targetTabId === tab.id
-                                ? {
-                                    id: browserNavigationRequest.id,
-                                    url: browserNavigationRequest.url,
-                                  }
-                                : null
-                            }
-                            onNavigationRequestHandled={onBrowserNavigationRequestHandled}
-                          />
+                          <BrowserPane initialUrl={browserRestoreUrls[tab.id] ?? tab.initialUrl ?? undefined} />
                         )}
                       </TabsContent>
                     );

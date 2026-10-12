@@ -134,7 +134,9 @@ function CodeHost({
             preferDirectoryBrowser
             restoreSession
             allowRemoteWorkspace={false}
-            supportsEmbeddedBrowser={false}
+            // G1/Q4：内嵌浏览器页签开放——内容已换宿主 CDP MJPEG 面板（BrowserPane），
+            // 不再依赖桌面主进程 BrowserView。
+            supportsEmbeddedBrowser={true}
             assistantCodeCommentCardsEnabled
             initialWorkspaceLoadingFallback={
               <RootStartupLoading label="打开 Code 工作目录" />
