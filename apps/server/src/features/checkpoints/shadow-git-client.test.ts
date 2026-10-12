@@ -4,11 +4,12 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ExecShadowGit } from "./shadow-git-client.js";
 import {
@@ -27,7 +28,6 @@ import {
 
 // 纯 Git 客户端语义测试的执行替身；生产执行只走 ProcessSandbox。
 const exec: ExecShadowGit = async (args, scope, input) => {
-  mkdirSync(scope.gitDir, { recursive: true });
   try {
     return {
       code: 0,
@@ -60,6 +60,7 @@ const exec: ExecShadowGit = async (args, scope, input) => {
 const client = createShadowGitClient({
   exec,
   writeTextFile: async (path, content) => {
+    mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, content, "utf8");
   },
 });
@@ -99,6 +100,37 @@ describe("影子 git（Code 模式检查点核心）", () => {
   });
 
   describe("ensureRepo", () => {
+    it("首次执行前创建精确私有目录，沙箱 realpath 可解析且产生真实基线", async () => {
+      const base = makeScope();
+      const scope = {
+        ...base,
+        gitDir: join(base.gitDir, "instance", "project", "task.git"),
+      };
+      const sandboxClient = createShadowGitClient({
+        exec: async (args, directory, input) => {
+          // 生产 spawnCheckpoint 在启动 Git 前解析精确私有写入根。
+          realpathSync(directory.gitDir);
+          return exec(args, directory, input);
+        },
+        writeTextFile: async (path, content) => {
+          mkdirSync(dirname(path), { recursive: true });
+          writeFileSync(path, content, "utf8");
+        },
+      });
+      expect(existsSync(scope.gitDir)).toBe(false);
+
+      await sandboxClient.ensureRepo({ ...scope, excludes: SHADOW_EXCLUDES });
+      const baseline = await sandboxClient.commitSnapshot({
+        ...scope,
+        message: "首次基线",
+      });
+      await sandboxClient.ensureRepo({ ...scope, excludes: SHADOW_EXCLUDES });
+
+      expect(baseline?.sha).toMatch(/^[0-9a-f]{40}$/);
+      expect(await sandboxClient.head(scope)).toBe(baseline?.sha);
+      expect(existsSync(join(scope.workTree, ".git"))).toBe(false);
+    });
+
     it("幂等：两次调用不报错，excludes 文件落盘且含关键忽略项", async () => {
       const scope = makeScope();
       await setup(scope);

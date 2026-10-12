@@ -38,7 +38,7 @@ export type ExecShadowGit = (
   input?: string,
 ) => Promise<ShadowGitCommandResult>;
 
-/** 写文本文件（ensureRepo 落 excludes 清单用；生产是 utf8 的 writeFileSync）。 */
+/** 写文本文件并创建父目录（ensureRepo 落 excludes 清单用）。 */
 export type WriteTextFile = (path: string, content: string) => Promise<void>;
 
 /**
@@ -174,18 +174,19 @@ export function createShadowGitClient(deps: {
   const ensureRepo = async (
     input: ShadowGitScope & { excludes: readonly string[] },
   ): Promise<void> => {
+    const excludesPath = join(input.gitDir, "excludes");
+    // 写入器先创建精确私有根；沙箱启动任何 Git 命令前都会 realpath 此目录。
+    // 不能依赖 git init 建目录，否则首次 probe 尚未执行就会被 ENOENT 阻断。
+    await writeTextFile(excludesPath, `${[...input.excludes].join("\n")}\n`);
     const probe = await exec(["rev-parse", "--git-dir"], input);
     if (probe.code !== 0) {
       // 注意不能用 `--bare`：git 拒绝在 GIT_WORK_TREE 存在时做 bare init（实测 fatal）。
       // 非 bare 仓库目录在 GIT_DIR+GIT_WORK_TREE env 双指定下行为完全一致；
-      // init 会自动创建缺失的父目录。
       const init = await exec(["init", input.gitDir], input);
       if (init.code !== 0) {
         throw new Error(init.stderr.trim() || "初始化影子仓库失败。");
       }
     }
-    const excludesPath = join(input.gitDir, "excludes");
-    await writeTextFile(excludesPath, `${[...input.excludes].join("\n")}\n`);
     const config = await exec(
       ["config", "core.excludesFile", excludesPath],
       input,

@@ -1,8 +1,32 @@
+import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import type { CodeExecutionScope } from "@kenfutwork/shared";
 import { resolveEntryRoot } from "../../desktop/entry-root.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import {
+  checkpointWorkRoots,
+  resolveCheckpointGitDirectory,
+} from "../checkpoints/git-directory.js";
 import { resolveProcessRuntime } from "./runtime-paths.js";
 import { createProcessSandbox } from "./service.js";
+
+/** 仅由可信 provider 从 Task 授权根签发，不能从模型 argv/env 获取路径。 */
+export async function resolveCheckpointWriteRoots(
+  checkpointRoot: string,
+  scope: CodeExecutionScope,
+): Promise<string[]> {
+  const roots: string[] = [];
+  for (const workRoot of checkpointWorkRoots(scope)) {
+    const gitDir = await resolveCheckpointGitDirectory(
+      checkpointRoot,
+      scope,
+      workRoot,
+    );
+    await mkdir(gitDir, { recursive: true });
+    roots.push(gitDir);
+  }
+  return roots;
+}
 
 /** Profile 自带执行能力；模型参数不能签发内部 checkpoint 目录授权。 */
 export function createProcessSandboxPlugin(): PluginDefinition {
@@ -39,14 +63,8 @@ export function createProcessSandboxPlugin(): PluginDefinition {
                 );
             }
           },
-          resolveInternalWriteRoots: async (scope) => [
-            join(
-              dataRoot,
-              scope.instanceId,
-              scope.projectId,
-              `${scope.taskId}.git`,
-            ),
-          ],
+          resolveInternalWriteRoots: (scope) =>
+            resolveCheckpointWriteRoots(dataRoot, scope),
         }),
       );
     },
