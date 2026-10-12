@@ -13,40 +13,43 @@ it("requires actual Task, actor and private native thread binding", () => {
   expect(() => service.bind({}, async () => page)).toThrow("真实Task");
 });
 
-it("Code Task readonly history checks active branch before and after IO", async () => {
-  const fixture = await archiveTaskFixture();
-  try {
-    const service = createContextHistoryArchiveBindings();
-    const read = vi.fn(async () => page);
-    service.bind(fixture.execution, read);
-    expect(
-      await service.read({ uri: "owned:checkpoint" }, fixture.execution),
-    ).toEqual(page);
-    await expect(
-      service.read(
-        { uri: "owned:checkpoint" },
-        { ...fixture.execution, threadId: "foreign" },
-      ),
-    ).rejects.toThrow("没有可读取");
-    const forged = await fixture.scopes.openTask(
-      fixture.actor,
-      fixture.identity.taskId,
-    );
-    await expect(
-      service.read(
-        { uri: "owned:checkpoint" },
-        { ...fixture.execution, scopeHandle: forged },
-      ),
-    ).rejects.toThrow("没有可读取");
-    fixture.staleBranch();
-    await expect(
-      service.read({ uri: "owned:checkpoint" }, fixture.execution),
-    ).rejects.toThrow("分支");
-    expect(read).toHaveBeenCalledTimes(1);
-  } finally {
-    await fixture.cleanup();
-  }
-});
+it.each(["code", "design"] as const)(
+  "%s Task readonly history checks active branch before and after IO",
+  async (preset) => {
+    const fixture = await archiveTaskFixture(preset);
+    try {
+      const service = createContextHistoryArchiveBindings();
+      const read = vi.fn(async () => page);
+      service.bind(fixture.execution, read);
+      expect(
+        await service.read({ uri: "owned:checkpoint" }, fixture.execution),
+      ).toEqual(page);
+      await expect(
+        service.read(
+          { uri: "owned:checkpoint" },
+          { ...fixture.execution, threadId: "foreign" },
+        ),
+      ).rejects.toThrow("没有可读取");
+      const forged = await fixture.scopes.openTask(
+        fixture.actor,
+        fixture.identity.taskId,
+      );
+      await expect(
+        service.read(
+          { uri: "owned:checkpoint" },
+          { ...fixture.execution, scopeHandle: forged },
+        ),
+      ).rejects.toThrow("没有可读取");
+      fixture.staleBranch();
+      await expect(
+        service.read({ uri: "owned:checkpoint" }, fixture.execution),
+      ).rejects.toThrow("分支");
+      expect(read).toHaveBeenCalledTimes(1);
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
 
 it("branch revocation during archive IO blocks publication", async () => {
   const fixture = await archiveTaskFixture();

@@ -12,7 +12,7 @@ import { createExecutionScopes } from "../execution/scope-service.js";
 import { createPermissionService } from "../permissions/permission-service.js";
 import { createContextHistoryPlugin } from "./plugin.js";
 
-export async function archiveTaskFixture() {
+export async function archiveTaskFixture(preset: "code" | "design" = "code") {
   const root = await realpath(
     await mkdtemp(join(tmpdir(), "kfw-history-consumer-")),
   );
@@ -33,7 +33,7 @@ export async function archiveTaskFixture() {
   const scopes = createExecutionScopes({
     repository: {
       load: async () => ({
-        preset: "code",
+        preset,
         scope: structuredClone(identity),
         state: "ready",
         branchGeneration,

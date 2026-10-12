@@ -71,6 +71,7 @@ export const BUILTIN_EXECUTION_MODES: Array<{
  */
 const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "Read",
+  "ReadHistory",
   "Glob",
   "Grep",
   "TaskOutput",

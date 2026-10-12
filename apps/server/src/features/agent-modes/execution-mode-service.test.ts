@@ -131,7 +131,7 @@ describe("模式工具策略（evaluateToolPolicy）", () => {
     const service = createExecutionModeService();
     service.activate("code-plan", "plan");
     const policy = service.resolveToolPolicy("code-plan");
-    for (const tool of ["Read", "Glob", "Grep", "TaskOutput"]) {
+    for (const tool of ["Read", "ReadHistory", "Glob", "Grep", "TaskOutput"]) {
       expect(evaluateToolPolicy(policy, tool).allowed, tool).toBe(true);
     }
     expect(
