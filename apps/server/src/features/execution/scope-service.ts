@@ -28,7 +28,7 @@ import {
 } from "./scoped-filesystem.js";
 
 export type ExecutionRole = "main" | "explore" | "review" | "worker";
-export type ExecutionPreset = "code";
+export type ExecutionPreset = "code" | "design";
 export interface ExecutionScopeHandle {
   readonly preset: ExecutionPreset;
   readonly branchGeneration: number;
@@ -391,7 +391,7 @@ export function createExecutionScopes(options: ScopeOptions): ExecutionScopes {
     );
     const branchGeneration = opened.branchGeneration;
     const preset = opened.preset;
-    if (preset !== "code")
+    if (preset !== "code" && preset !== "design")
       throw new ExecutionScopeError(
         "invalid_scope",
         "Task工作模式缺少可信绑定。",

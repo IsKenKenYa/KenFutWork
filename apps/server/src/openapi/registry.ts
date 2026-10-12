@@ -67,6 +67,8 @@ import {
   computerUseSnapshotQuerySchema,
   createImageJobRequestSchema,
   createVideoJobRequestSchema,
+  designTaskPolicyResponseSchema,
+  designTaskPolicyUpdateRequestSchema,
   directoryPickerStatusSchema,
   executionModeSchema,
   flowEngineInstallStatusSchema,
@@ -257,6 +259,43 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     description:
       "按权威布局的确切路径和版本原子恢复索引，不改动素材文件或用户Git工作区。",
   },
+  {
+    method: "post",
+    path: "/api/design-tasks/:taskId/provision",
+    tag: "runs",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: designTaskPolicyResponseSchema,
+    summary: "登记画布任务执行信息",
+    description:
+      "为指定的Design Task显式登记固定项目、画布、执行目录和代际；重复调用只返回现有策略，不自动启动模型运行。taskId必须是UUID。",
+  },
+
+  {
+    method: "patch",
+    path: "/api/design-tasks/:taskId",
+    tag: "runs",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: designTaskPolicyUpdateRequestSchema,
+    responseSchema: designTaskPolicyResponseSchema,
+    summary: "更新画布任务权限与规划",
+    description:
+      "以客户端观察到的scope与branch代际核对当前Task，再使用服务端planning代际执行真实CAS；活动Run、队列占用或旧代际返回409，不启动运行。",
+  },
+
+  {
+    method: "get",
+    path: "/api/design-tasks/:taskId",
+    tag: "runs",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: designTaskPolicyResponseSchema,
+    summary: "读取画布任务执行策略",
+    description:
+      "读取已登记Design Task绑定的项目与画布、执行目录、沙箱、权限和scope/branch代际；不创建Task执行信息，也不启动模型运行。taskId必须是UUID。",
+  },
+
   {
     method: "get",
     path: "/api/agent/runs/latest",

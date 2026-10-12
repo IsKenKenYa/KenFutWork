@@ -583,6 +583,197 @@
         }
       }
     },
+    "/api/design-tasks/{taskId}/provision": {
+      "post": {
+        "operationId": "postDesignTasksByTaskIdProvision",
+        "summary": "登记画布任务执行信息",
+        "description": "为指定的Design Task显式登记固定项目、画布、执行目录和代际；重复调用只返回现有策略，不自动启动模型运行。taskId必须是UUID。",
+        "tags": [
+          "runs"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/designTaskPolicyResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/design-tasks/{taskId}": {
+      "patch": {
+        "operationId": "patchDesignTasksByTaskId",
+        "summary": "更新画布任务权限与规划",
+        "description": "以客户端观察到的scope与branch代际核对当前Task，再使用服务端planning代际执行真实CAS；活动Run、队列占用或旧代际返回409，不启动运行。",
+        "tags": [
+          "runs"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/designTaskPolicyUpdateRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/designTaskPolicyResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getDesignTasksByTaskId",
+        "summary": "读取画布任务执行策略",
+        "description": "读取已登记Design Task绑定的项目与画布、执行目录、沙箱、权限和scope/branch代际；不创建Task执行信息，也不启动模型运行。taskId必须是UUID。",
+        "tags": [
+          "runs"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/designTaskPolicyResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/agent/runs/latest": {
       "get": {
         "operationId": "getAgentRunsLatest",
@@ -13755,6 +13946,165 @@
           "model",
           "provider_instance_id"
         ]
+      },
+      "designTaskPolicyResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "object",
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "projectId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "canvasId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "rootDirectory": {
+                "type": "string",
+                "minLength": 1
+              },
+              "additionalDirectories": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "access": {
+                      "type": "string",
+                      "enum": [
+                        "read-only",
+                        "read-write"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "access"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "sandboxMode": {
+                "type": "string",
+                "enum": [
+                  "read-only",
+                  "workspace-write",
+                  "danger-full-access"
+                ]
+              },
+              "scopeGeneration": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "branchGeneration": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "build",
+                  "edit",
+                  "yolo"
+                ]
+              },
+              "planEnabled": {
+                "type": "boolean"
+              },
+              "planningEpoch": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "activeRunId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "executionState": {
+                "type": "string",
+                "enum": [
+                  "ready",
+                  "revoking",
+                  "failed"
+                ]
+              }
+            },
+            "required": [
+              "taskId",
+              "projectId",
+              "canvasId",
+              "rootDirectory",
+              "additionalDirectories",
+              "sandboxMode",
+              "scopeGeneration",
+              "branchGeneration",
+              "mode",
+              "planEnabled",
+              "planningEpoch",
+              "activeRunId",
+              "executionState"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "additionalProperties": false
+      },
+      "designTaskPolicyUpdateRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "expectedScopeGeneration": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "expectedBranchGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "build",
+              "edit",
+              "yolo"
+            ]
+          },
+          "planEnabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expectedScopeGeneration",
+          "expectedBranchGeneration"
+        ],
+        "additionalProperties": false
       },
       "directoryPickerStatusSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

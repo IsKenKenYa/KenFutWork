@@ -8,7 +8,7 @@ import type { PersistenceService, SqlRow } from "../persistence/types.js";
 
 export type ScopeState = "ready" | "revoking" | "failed";
 export type StoredExecutionScope = {
-  preset: "code";
+  preset: "code" | "design";
   scope: CodeExecutionScope;
   state: ScopeState;
   branchGeneration: number;
@@ -44,7 +44,10 @@ type ScopeRow = SqlRow & {
   execution_state: ScopeState;
 };
 
-function fromRow(row: ScopeRow, preset: "code" = "code"): StoredExecutionScope {
+function fromRow(
+  row: ScopeRow,
+  preset: "code" | "design" = "code",
+): StoredExecutionScope {
   return {
     preset,
     branchGeneration: Number(row.branch_generation),

@@ -20,6 +20,8 @@ import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import type { CodeTerminalService } from "../features/code-terminal/types.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
 import type { ContextHistoryArchiveBindings } from "../features/context-history/types.js";
+import type { DesignGoalsService } from "../features/execution/design-goals-types.js";
+import type { DesignTasksService } from "../features/execution/design-task-types.js";
 import type {
   ExecutionScopeHandle,
   ExecutionScopes,
@@ -30,6 +32,7 @@ import type {
   SubmitImageJobFn,
   SubmitVideoJobFn,
 } from "../features/generation/tool-types.js";
+import type { GoalService } from "../features/goals/service.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import type { LocalAccessService } from "../features/local-access/types.js";
 import type {
@@ -95,6 +98,8 @@ export interface ServiceMap {
   codeUi: CodeUiService;
   codeTerminal: CodeTerminalService;
   executionScopes: ExecutionScopes;
+  designTasks: DesignTasksService;
+  designGoals: DesignGoalsService;
   processSandbox: ProcessSandbox;
   taskWork: TaskWorkManager;
   /**
@@ -141,6 +146,7 @@ export interface ServiceMap {
   usage: UsageService;
   /** 跨模式 tool-call 策略缝（DEC-4） */
   permissions: PermissionService;
+  goals: GoalService;
   /**
    * 插件注册表缝：第三方/内置插件的目录、安装（含安装前兼容性门禁）、
    * 启停与导出。插件代码是机器本地的，安装态落在 pluginsDir。

@@ -21,9 +21,13 @@ import { createCodeUiPlugin } from "../features/code-ui/plugin.js";
 import { createComputerUsePlugin } from "../features/computer-use/plugin.js";
 import { createContextHistoryPlugin } from "../features/context-history/plugin.js";
 import { createDynamicUiPlugin } from "../features/dynamic-ui/plugin.js";
+import { createDesignGoalsPlugin } from "../features/execution/design-goals-plugin.js";
+import { createDesignTaskHttpPlugin } from "../features/execution/design-task-http-plugin.js";
+import { createDesignTasksPlugin } from "../features/execution/design-tasks-plugin.js";
 import { createExecutionScopesPlugin } from "../features/execution/plugin.js";
 import { createFlowHostPlugin } from "../features/flow/plugin.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
+import { createGoalsPlugin } from "../features/goals/plugin.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import { createJobsPlugin } from "../features/jobs/plugin.js";
 import {
@@ -180,6 +184,10 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createCodeGitPlugin(),
     // 检查点（影子 git）在 agent-runs 之前装配：后者的轮次钩子经 tryGet 消费它
     createCheckpointsPlugin(),
+    createGoalsPlugin(),
+    createDesignGoalsPlugin(),
+    createDesignTasksPlugin(),
+    createDesignTaskHttpPlugin(),
     createChatPlugin(),
     createSettingsPlugin(),
     createSettingsRoutesPlugin(),
