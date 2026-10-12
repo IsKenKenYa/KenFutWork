@@ -86,6 +86,31 @@
 - 沙箱运行时授权（U12）的修法未定（`additionalDirectories` 还是沙箱 ACL 等价机制）。
 - Flow 引擎栈本轮未拉起（8090/15010 未起），Flow 模式仅验证 pill 切换与页面加载。
 
+## 存量红基线（2026-10-12 全量复跑，与本轮改动无关）
+
+本轮改动面 = `apps/web/**` + `docs/**` + `packages/zcode-shared/src/test-ids.ts`（纯常量新增），
+`apps/server` 与 `packages/shared` 改动文件数 **0**，故以下红均为存量/环境族：
+
+| 范围 | 结果 | 判定 |
+|---|---|---|
+| 全包 typecheck（13 个包 + web + zcode host/vendor） | 全绿 | — |
+| 根门禁 `workspace` + `api-spec-consistency` | 32/32 | — |
+| `apps/web` 全量 | 777 过 / 26 skip / **0 红** | 本轮改动面，全绿 |
+| `packages/shared` | 141 过 / **1 红** | `mcp-contracts.test.ts` → `spawnSync node.exe EBUSY`（Windows 文件锁；手工复跑同逻辑 0.5s 返回正确结果） |
+| `apps/server` | 2220 过 / 313 skip / **90 红（18 文件）** | 见下分类 |
+
+90 红的归类（按错误串聚合）：
+
+| 族 | 例数 | 代表文件 | 性质 |
+|---|---|---|---|
+| 沙箱授权「目录未授权」 | 24 | `execution/scoped-filesystem.test.ts`(21)、`code-tools/tool-definitions.test.ts`(3) | Windows 路径规范化 → 授权判定偏差（测试直写 rootDirectory 后期待「read/读取」，实得「目录未授权」） |
+| git/检查点「Git失败」 | 37 | `code-ui/file-rewind.test.ts`(19)、`checkpoints/shadow-git-client.test.ts`(10)、`checkpoints/checkpoint-service.test.ts`(8) | Windows 临时目录 git 操作（`renaming failed: Invalid argument`、`EBUSY rmdir`） |
+| process-sandbox PSEC 环境族 | 8 | `process-sandbox/service.test.ts` | 已在《日志》§一百三十七/七十三/一百六十二/一百七十二 登记（`stop_unconfirmed`、broker ENOENT、拒绝访问乱码） |
+| 平台语义错配（macOS/POSIX 用例跑在 Windows） | 4 | `desktop/runtimes.test.ts`（`\opt\custom git\bin\git`）、`local-instance/service.test.ts`（`D:\tmp\new` vs `/tmp/new`） | 测试自身平台假设 |
+| 单点杂项 | 17 | `local-credential-store`（promise 未 reject）、`blob/providers`、`completed-turn-config`、`host-git-rpc`、`root-binding`、`files.test.ts`（临时文件名含 TAB → EPERM） | 待逐个定性 |
+
+**未做**：未在 `c5dcc32e`（改动前）跑一次同口径全量做对照——上述判定基于「改动面零交集 + 失败原因全为平台/沙箱/文件锁」的推断，属 `INFERRED` 而非 `VERIFIED`。
+
 ## IMPORTANT FILES
 
 - 台账：`docs/未做需求.md`（十二项）、`docs/方案设计/工作台融合兼容计划.md`
