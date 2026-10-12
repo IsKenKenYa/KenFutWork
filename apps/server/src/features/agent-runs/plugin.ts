@@ -177,8 +177,20 @@ export function createAgentRunsPlugin(
               limits,
               signal,
             ),
-          resolveCodeApprovalMode: async (handle) => {
+          resolveCodeApprovalMode: async (handle, actor) => {
             const scope = handle.describe();
+            if (handle.preset === "design") {
+              const policy = await ctx
+                .get("designTasks")
+                .readPolicy(actor, scope.taskId);
+              return {
+                mode: policy.planEnabled ? "plan" : policy.mode,
+                planEnabled: policy.planEnabled,
+                planningEpoch: policy.planningEpoch,
+                scopeGeneration: policy.scopeGeneration,
+                branchGeneration: policy.branchGeneration,
+              };
+            }
             const row = await ctx
               .get("persistence")
               .forInstance(scope.instanceId)
@@ -216,6 +228,19 @@ export function createAgentRunsPlugin(
           processSandbox: ctx.get("processSandbox"),
           resolveTaskWorkContext: async (actor, scopeHandle, runId) => {
             const scope = scopeHandle.describe();
+            if (scopeHandle.preset === "design") {
+              const policy = await ctx
+                .get("designTasks")
+                .readPolicy(actor, scope.taskId);
+              return {
+                actor,
+                scope,
+                ownerKind: "design" as const,
+                agentId: scopeHandle.agentId,
+                runId,
+                branchGeneration: policy.branchGeneration,
+              };
+            }
             const row = await ctx
               .get("persistence")
               .forInstance(scope.instanceId)
@@ -227,6 +252,7 @@ export function createAgentRunsPlugin(
             return {
               actor,
               scope,
+              ownerKind: "code" as const,
               agentId: scopeHandle.agentId,
               runId,
               branchGeneration: Number(row.branch_generation),

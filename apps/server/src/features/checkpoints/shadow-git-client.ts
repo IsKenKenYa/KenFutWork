@@ -20,6 +20,8 @@ export interface ShadowGitScope {
   workTree: string;
   /** 执行授权边界，不能被用户 .gitignore 的反向规则覆盖。 */
   excludedPaths?: readonly string[];
+  /** 精确、由拥有者确认的文件；仅用于恢复必需但被用户忽略规则排除的项目文件。 */
+  forceIncludePaths?: readonly string[];
 }
 
 export interface ShadowGitCommandResult {
@@ -144,6 +146,7 @@ export function createShadowGitClient(deps: {
           .filter(
             (path) =>
               path &&
+              !scope.forceIncludePaths?.includes(path) &&
               !excluded.some(
                 (boundary) =>
                   path === boundary || path.startsWith(`${boundary}/`),
@@ -151,20 +154,56 @@ export function createShadowGitClient(deps: {
           ),
       ),
     ];
-    if (!paths.length) return;
-    const staged = await exec(
-      [
-        "--literal-pathspecs",
-        "add",
-        "-A",
-        "--pathspec-from-file=-",
-        "--pathspec-file-nul",
-      ],
-      scope,
-      `${paths.join("\0")}\0`,
-    );
-    if (staged.code !== 0)
-      throw new Error(staged.stderr.trim() || "影子仓库暂存失败。");
+    if (!paths.length && !scope.forceIncludePaths?.length) return;
+    if (paths.length) {
+      const staged = await exec(
+        [
+          "--literal-pathspecs",
+          "add",
+          // 清单只含既有跟踪项与未忽略的新文件；外部新增ignore不能阻断已收录布局。
+          "-f",
+          "-A",
+          "--pathspec-from-file=-",
+          "--pathspec-file-nul",
+        ],
+        scope,
+        `${paths.join("\0")}\0`,
+      );
+      if (staged.code !== 0)
+        throw new Error(staged.stderr.trim() || "影子仓库暂存失败。");
+    }
+
+    const forceInclude = scope.forceIncludePaths ?? [];
+    if (forceInclude.length) {
+      if (
+        forceInclude.some(
+          (path) =>
+            !path ||
+            path.startsWith("/") ||
+            path.includes("\0") ||
+            path.split("/").includes("..") ||
+            excluded.some(
+              (boundary) =>
+                path === boundary || path.startsWith(`${boundary}/`),
+            ),
+        )
+      )
+        throw new Error("影子Git被拒绝强制收录检查点边界外的文件。");
+      const forced = await exec(
+        [
+          "--literal-pathspecs",
+          "add",
+          "-f",
+          "-A",
+          "--pathspec-from-file=-",
+          "--pathspec-file-nul",
+        ],
+        scope,
+        `${[...new Set(forceInclude)].join("\0")}\0`,
+      );
+      if (forced.code !== 0)
+        throw new Error(forced.stderr.trim() || "画布布局素材检查点暂存失败。");
+    }
   };
 
   /**

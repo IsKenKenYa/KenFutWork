@@ -1,6 +1,19 @@
 {
   "$comment": "env 名唯一权威机械表。新增/改名 env 先登记这里再使用——scripts/check-env.mjs（pnpm test:env 与 tests/workspace.test.mjs）会扫描全仓引用逐名对表：表外即 fail。surface: server|shell|script|test|build；status: active|test-gate|external|retired；inExamples=true 表示应在 .env.example 出现。第三方既有约定（OPENAI_/GOOGLE_ 等）标 external，允许不出现在 .env.example。",
   "vars": {
+    "KENFUTWORK_DESIGN_TASK_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/canvas/root-directory.integration.test.ts",
+        "apps/server/src/features/checkpoints/design-checkpoints.integration.test.ts",
+        "apps/server/src/features/execution/design-goals.integration.test.ts",
+        "apps/server/src/features/execution/design-run-host.integration.test.ts",
+        "apps/server/src/features/execution/design-tasks.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "显式启用真实Design Task/RunHost/检查点临时PostgreSQL回归"
+    },
     "KENFUTWORK_PROJECT_FILES_TEST_PG": {
       "surface": "test",
       "readers": [

@@ -12,6 +12,7 @@ import {
   runIdSchema,
   terminalShellSchema,
 } from "./contracts.js";
+import { runStopReasonSchema } from "./events.js";
 import {
   additionalDirectorySchema,
   sandboxModeSchema,
@@ -392,6 +393,10 @@ export const agentRunLatestResponseSchema = z.object({
     .object({
       /** 运行状态（`accepted` / `running` / `completed` / `failed` / `canceled`）。 */
       status: z.string().min(1),
+      stopReason: runStopReasonSchema
+        .nullable()
+        .optional()
+        .describe("本轮结束原因；旧记录为空"),
       errorCode: z.string().nullable(),
       /** 面向用户的失败原因原文（服务端写的可读文案）。 */
       errorMessage: z.string().nullable(),

@@ -4,6 +4,8 @@ import { registerCheckpointsRoutes } from "../../http/checkpoints.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { acquireTaskFileRestoreBarrier } from "../execution/scoped-filesystem.js";
 import { createCheckpointService } from "./checkpoint-service.js";
+import { createDesignLayoutFiles } from "./design-layout-files.js";
+import { createDesignTaskRestore } from "./design-task-restore.js";
 import { createCheckpointRepository } from "./repository.js";
 import { createShadowGitClient } from "./shadow-git-client.js";
 import { createShadowGitExec } from "./shadow-git-exec.js";
@@ -17,6 +19,7 @@ export function createCheckpointsPlugin(): PluginDefinition {
       "settings",
       "executionScopes",
       "processSandbox",
+      "designRunHost",
     ],
     apply(ctx) {
       const gitBinDir = ctx.env.gitBinDir;
@@ -25,6 +28,20 @@ export function createCheckpointsPlugin(): PluginDefinition {
         : "git";
       ctx.register("checkpoints", () =>
         createCheckpointService({
+          designRestore: createDesignTaskRestore({
+            // 恢复时才取得宿主：宿主自身消费运行时，而运行时消费检查点。
+            host: {
+              beginRestore: (actor, input) =>
+                ctx.get("designRunHost").beginRestore(actor, input),
+              finishRestore: (actor, input) =>
+                ctx.get("designRunHost").finishRestore(actor, input),
+            },
+            executionScopes: ctx.get("executionScopes"),
+          }),
+          forceIncludePaths: async (scope, actor, rootDirectory) =>
+            rootDirectory === scope.describe().rootDirectory
+              ? createDesignLayoutFiles(ctx.get("persistence"))(scope, actor)
+              : [],
           repository: createCheckpointRepository(ctx.get("persistence")),
           gitSource: ctx.env.gitSource ?? (gitBinDir ? "bundled" : "system"),
           checkpointRoot: resolve(ctx.env.checkpointRoot ?? "data/checkpoints"),

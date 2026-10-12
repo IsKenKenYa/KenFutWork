@@ -437,6 +437,8 @@ type RuntimeRunRecord = RunCreateRequest & {
   delegationDepth?: number;
   roleInstructions?: string;
   eventSink?: (event: StreamEvent) => Promise<void>;
+  /** 可信持久宿主在自身事务内结算账本，客户端请求不能选择所有权。 */
+  terminalPersistence: "runtime" | "host";
   /** Code 的可信 Task 工作域；目录与角色授权由服务端解析，不能由请求伪造。 */
   scopeHandle?: ExecutionScopeHandle;
   actor: LocalActor;
@@ -806,12 +808,18 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         sandboxScopeId?: string;
         threadId?: string;
         eventSink?: (event: StreamEvent) => Promise<void>;
+        terminalPersistence?: "host";
         delegationDepth?: number;
         roleInstructions?: string;
         approvalCeiling?: import("../features/permissions/approval-types.js").CodeApprovalMode;
       },
     ): RunCreateResponse {
       if (!runOptions?.actor) throw new Error("运行缺少可信的本地实例身份。");
+      if (
+        runOptions.terminalPersistence === "host" &&
+        (!runOptions.scopeHandle || !runOptions.eventSink)
+      )
+        throw new Error("宿主结算缺少真实任务或持久事件入口。");
       const actor: LocalActor = Object.freeze({
         instanceId: runOptions.actor.instanceId,
         accessClientId: runOptions.actor.accessClientId,
@@ -849,6 +857,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           ? { inputOrigin: runOptions.inputOrigin }
           : {}),
         actor,
+        terminalPersistence: runOptions.terminalPersistence ?? "runtime",
         consumed: false,
         controller: new AbortController(),
         publishedToolFacts: new WeakSet<StreamEvent>(),
@@ -2141,6 +2150,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           };
           const initialPolicy = await codeApproval?.resolve();
           if (run.scopeHandle) {
+            promptCompositionContext.scopeHandle = run.scopeHandle;
             promptCompositionContext.executionScope =
               run.scopeHandle.describe();
             promptCompositionContext.executionRole = run.scopeHandle.role;
@@ -3085,6 +3095,7 @@ async function updatePersistedRunStatus(
     stopReason?: RunStopReason;
   },
 ) {
+  if (run.terminalPersistence === "host") return;
   if (!agentRunMetadataService || !run.threadId) {
     return;
   }
@@ -3103,6 +3114,7 @@ async function updatePersistedRunFailure(
   now: () => string,
   error: unknown,
 ) {
+  if (run.terminalPersistence === "host") return;
   if (!agentRunMetadataService || !run.threadId) {
     return;
   }

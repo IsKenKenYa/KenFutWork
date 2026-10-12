@@ -432,6 +432,7 @@ describe("Task 检查点", () => {
       instanceId: INSTANCE_ID,
       projectId: PROJECT_ID,
       taskId: "other-task",
+      taskKind: "code",
       rootDirectory: scope.describe().rootDirectory,
       directorySnapshots: [],
       shadowCommit: "a".repeat(40),

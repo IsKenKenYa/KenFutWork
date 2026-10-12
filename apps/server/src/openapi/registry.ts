@@ -330,7 +330,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     successStatus: 200,
     summary: "查询会话最近一轮运行终态",
     description:
-      "按持久会话和当前本地实例隔离，返回原始失败原因；没有可见运行时返回 null。",
+      "按持久会话和当前本地实例隔离，返回运行状态、结束原因与原始失败原因；没有可见运行时返回 null。",
     responseSchema: agentRunLatestResponseSchema,
     querySchema: z.object({ sessionId: z.string().min(1) }),
   },

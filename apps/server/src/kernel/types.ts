@@ -21,6 +21,7 @@ import type { CodeTerminalService } from "../features/code-terminal/types.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
 import type { ContextHistoryArchiveBindings } from "../features/context-history/types.js";
 import type { DesignGoalsService } from "../features/execution/design-goals-types.js";
+import type { DesignRunHost } from "../features/execution/design-run-host-types.js";
 import type { DesignTasksService } from "../features/execution/design-task-types.js";
 import type {
   ExecutionScopeHandle,
@@ -99,6 +100,7 @@ export interface ServiceMap {
   codeTerminal: CodeTerminalService;
   executionScopes: ExecutionScopes;
   designTasks: DesignTasksService;
+  designRunHost: DesignRunHost;
   designGoals: DesignGoalsService;
   processSandbox: ProcessSandbox;
   taskWork: TaskWorkManager;

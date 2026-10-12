@@ -130,6 +130,7 @@ async function prepareHistory(
   ];
   const checkpointId = randomUUID();
   await createCheckpointRepository(database.persistence).insert({
+    taskKind: "code",
     id: checkpointId,
     instanceId: database.instanceId,
     projectId: scope.projectId,

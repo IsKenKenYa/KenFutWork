@@ -172,6 +172,12 @@ export function createCheckpointService(options: {
   ) => Promise<ShadowGitClient>;
   gitSource: GitSource;
   checkpointRoot: string;
+  /** Design may force-include only canonical Canvas layout and referenced assets. */
+  forceIncludePaths?: (
+    scope: ExecutionScopeHandle,
+    actor: LocalActor,
+    rootDirectory: string,
+  ) => Promise<readonly string[]>;
   files: CheckpointFileTransactions;
   acquireRestoreBarrier: (
     scope: ExecutionScopeHandle,
@@ -186,6 +192,17 @@ export function createCheckpointService(options: {
     actor: LocalActor,
     success: boolean,
   ) => Promise<void>;
+  designRestore?: {
+    begin(
+      scope: ExecutionScopeHandle,
+      actor: LocalActor,
+    ): Promise<ExecutionScopeHandle>;
+    finish(
+      scope: ExecutionScopeHandle,
+      actor: LocalActor,
+      success: boolean,
+    ): Promise<void>;
+  };
 }): CheckpointService {
   const locks = new Map<string, Promise<unknown>>();
   const previews = new Map<
@@ -293,7 +310,30 @@ export function createCheckpointService(options: {
       await input.scope.resolvePath(rootDirectory, "read");
       const gitDir = await gitDirectory(input.scope, rootDirectory);
       await mkdir(gitDir, { recursive: true });
-      const nested = excludedPathsFor(input.scope, rootDirectory);
+      const excludedPaths = excludedPathsFor(input.scope, rootDirectory);
+      const forceIncludePaths =
+        input.scope.preset === "design"
+          ? (
+              (await options.forceIncludePaths?.(
+                input.scope,
+                input.actor,
+                rootDirectory,
+              )) ?? []
+            ).map((path) => requireRelative(path.replaceAll("\\", "/")))
+          : [];
+      if (
+        forceIncludePaths.some((path) =>
+          excludedPaths.some(
+            (boundary) => path === boundary || path.startsWith(`${boundary}/`),
+          ),
+        )
+      )
+        throw new CodeCheckpointError(
+          "checkpoint_failed",
+          "画布布局或素材超出当前检查点目录边界。",
+          409,
+        );
+      const nested = excludedPaths;
       const excludes = [
         ...SHADOW_EXCLUDES,
         ...nested.map((path) => `/${path.replace(/[\\*?[\]#! ]/g, "\\$&")}/`),
@@ -301,11 +341,12 @@ export function createCheckpointService(options: {
       const directory = {
         gitDir,
         workTree: rootDirectory,
-        excludedPaths: excludedPathsFor(input.scope, rootDirectory),
+        excludedPaths,
       };
       await git.ensureRepo({ ...directory, excludes });
       const committed = await git.commitSnapshot({
         ...directory,
+        forceIncludePaths,
         message: label,
       });
       const shadowCommit = committed?.sha ?? (await git.head(directory));
@@ -360,6 +401,7 @@ export function createCheckpointService(options: {
       taskId: identity.taskId,
       rootDirectory: identity.rootDirectory,
       directorySnapshots,
+      taskKind: input.scope.preset,
       runId: input.runId,
       kind,
       label,
@@ -714,7 +756,9 @@ export function createCheckpointService(options: {
         plan.entries,
         async () => {
           restoringScope = barrier.authorize(
-            await options.onBeforeRestore(input.scope, input.actor),
+            input.scope.preset === "design" && options.designRestore
+              ? await options.designRestore.begin(input.scope, input.actor)
+              : await options.onBeforeRestore(input.scope, input.actor),
           );
           return restoringScope;
         },
@@ -727,12 +771,18 @@ export function createCheckpointService(options: {
         )) ?? row;
       await barrier.release();
       released = true;
-      await options.onAfterRestore(nextScope, input.actor, true);
+      if (nextScope.preset === "design" && options.designRestore)
+        await options.designRestore.finish(nextScope, input.actor, true);
+      else await options.onAfterRestore(nextScope, input.actor, true);
       previews.delete(key);
       return restored;
     } catch (error) {
-      if (restoringScope)
-        await options.onAfterRestore(restoringScope, input.actor, false);
+      const failedScope = restoringScope as ExecutionScopeHandle | null;
+      if (failedScope) {
+        if (failedScope.preset === "design" && options.designRestore)
+          await options.designRestore.finish(failedScope, input.actor, false);
+        else await options.onAfterRestore(failedScope, input.actor, false);
+      }
       throw error;
     } finally {
       if (!released) await barrier.release();

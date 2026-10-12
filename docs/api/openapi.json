@@ -919,7 +919,7 @@
       "get": {
         "operationId": "getAgentRunsLatest",
         "summary": "查询会话最近一轮运行终态",
-        "description": "按持久会话和当前本地实例隔离，返回原始失败原因；没有可见运行时返回 null。",
+        "description": "按持久会话和当前本地实例隔离，返回运行状态、结束原因与原始失败原因；没有可见运行时返回 null。",
         "tags": [
           "runs"
         ],
@@ -10650,6 +10650,24 @@
                   "status": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "stopReason": {
+                    "description": "本轮结束原因；旧记录为空",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "completed",
+                          "output_limit",
+                          "user_cancelled",
+                          "task_stopped",
+                          "host_shutdown"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "errorCode": {
                     "type": [

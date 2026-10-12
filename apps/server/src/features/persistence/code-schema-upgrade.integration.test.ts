@@ -107,6 +107,7 @@ async function seedRecords(database: Database, manager: TaskWorkManager) {
     },
   );
   const checkpoint: CheckpointRow = {
+    taskKind: "code",
     id: randomUUID(),
     instanceId: database.instanceId,
     taskId: context.scope.taskId,

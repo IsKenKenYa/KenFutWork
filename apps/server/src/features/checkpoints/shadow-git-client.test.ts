@@ -196,6 +196,44 @@ describe("影子 git（Code 模式检查点核心）", () => {
       expect(await client.hasCommits(scope)).toBe(true);
     });
 
+    it("普通文件为空时也能强制捕获唯一授权的 Canvas 布局", async () => {
+      const base = makeScope();
+      const scope = {
+        ...base,
+        forceIncludePaths: [".kenfutwork/canvases/canvas.json"],
+      };
+      const layout = join(scope.workTree, ".kenfutwork/canvases/canvas.json");
+      mkdirSync(join(scope.workTree, ".kenfutwork", "canvases"), {
+        recursive: true,
+      });
+      writeFileSync(layout, '{"elements":[]}\n');
+      await setup(scope);
+
+      const snapshot = await client.commitSnapshot({
+        ...scope,
+        message: "canvas",
+      });
+
+      expect(snapshot?.sha).toMatch(/^[0-9a-f]{40}$/);
+      const listed = await exec(
+        ["ls-tree", "-r", "--name-only", snapshot?.sha ?? ""],
+        scope,
+      );
+      expect(listed.stdout).toBe(".kenfutwork/canvases/canvas.json\n");
+      writeFileSync(join(scope.workTree, ".gitignore"), ".kenfutwork/\n");
+      writeFileSync(layout, '{"elements":[{"id":"updated"}]}\n');
+      const updated = await client.commitSnapshot({
+        ...scope,
+        message: "updated ignored canvas",
+      });
+      expect(updated?.sha).not.toBe(snapshot?.sha);
+      const contents = await exec(
+        ["show", `${updated?.sha}:.kenfutwork/canvases/canvas.json`],
+        scope,
+      );
+      expect(contents.stdout).toContain('"updated"');
+    });
+
     it("再次调用无变化返回 null（跳过空检查点）", async () => {
       const scope = makeScope();
       await setup(scope);
