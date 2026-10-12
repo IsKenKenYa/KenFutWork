@@ -47,7 +47,7 @@ export const projectCreateRequestSchema = z.object({
    */
   kind: projectKindSchema.optional(),
   /**
-   * 本机工作目录绝对路径（Code 项目）。服务端校验「绝对路径 + 存在 + 是目录」，
+   * 项目固定工作目录绝对路径；省略时创建托管目录。服务端校验「绝对路径 + 存在 + 是目录」，
    * 不合格返回 400 `invalid_work_dir` 并给出可读原因。
    */
   work_dir: z.string().trim().min(1).optional(),
@@ -85,7 +85,6 @@ export const unauthenticatedErrorResponseSchema = z.object({
     message: z.string().min(1),
   }),
 });
-
 export type DesignTaskParams = z.infer<typeof designTaskParamsSchema>;
 export type DesignTaskPolicyResponse = z.infer<
   typeof designTaskPolicyResponseSchema
@@ -455,6 +454,8 @@ export const applicationErrorCodeSchema = z.enum([
   "brand_kit_asset_create_failed",
   "canvas_not_found",
   "canvas_save_failed",
+  "canvas_revision_conflict",
+  "canvas_file_missing",
   "chat_error",
   "profile_update_failed",
   "project_query_failed",
@@ -564,10 +565,16 @@ export const canvasGetResponseSchema = z.object({
 
 export const canvasSaveRequestSchema = z.object({
   content: canvasContentSchema,
+  expectedRevision: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/u)
+    .nullable(),
 });
 
 export const canvasSaveResponseSchema = z.object({
   ok: z.literal(true),
+  revision: z.string().regex(/^[a-f0-9]{64}$/u),
+  fileReferences: z.record(z.string(), z.string()),
 });
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
@@ -676,7 +683,7 @@ export type AssetSignedUrlResponse = z.infer<
 export const projectUpdateRequestSchema = z.object({
   brand_kit_id: z.uuid().nullable().optional(),
   name: z.string().min(1).max(100).optional(),
-  /** 本机工作目录绝对路径；显式 `null` = 解绑（回落到沙箱目录）。 */
+  /** 固定项目目录；仅接受与已有目录相同的幂等值，null 或切换目录均拒绝。 */
   work_dir: z.string().trim().min(1).nullable().optional(),
   additional_directories: z.array(additionalDirectorySchema).optional(),
 });

@@ -8,7 +8,10 @@ import { createBlobPlugin } from "../features/blob/plugin.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
 import { createBrowserPlugin } from "../features/browser/plugin.js";
 import { createCanvasAssetLocationsPlugin } from "../features/canvas/asset-locations-plugin.js";
-import { createCanvasPlugin } from "../features/canvas/plugin.js";
+import {
+  createCanvasPlugin,
+  createCanvasToolsPlugin,
+} from "../features/canvas/plugin.js";
 import { createChatPlugin } from "../features/chat/plugin.js";
 import { createRealtimePlugin } from "../features/chat/realtime-plugin.js";
 import { createCheckpointsPlugin } from "../features/checkpoints/plugin.js";
@@ -183,6 +186,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createBlobPlugin(),
     brandKitPlugin,
     createCanvasPlugin(),
+    createCanvasToolsPlugin(),
     createCodeGitPlugin(),
     // 检查点（影子 git）在 agent-runs 之前装配：后者的轮次钩子经 tryGet 消费它
     createCheckpointsPlugin(),

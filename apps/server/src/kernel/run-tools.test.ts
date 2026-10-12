@@ -1,8 +1,12 @@
+import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { createBrandKitToolDefinition } from "../features/brand-kit/brand-kit-tool.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
-import { createCanvasPlugin } from "../features/canvas/plugin.js";
+import {
+  createCanvasPlugin,
+  createCanvasToolsPlugin,
+} from "../features/canvas/plugin.js";
 import {
   createInspectCanvasToolDefinition,
   createManipulateCanvasToolDefinition,
@@ -11,11 +15,14 @@ import {
 import { createPersistSandboxFileToolDefinition } from "../features/code-tools/persist-sandbox-file.js";
 import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
 import { createProjectSearchToolDefinition } from "../features/code-tools/project-search.js";
+import type { DesignTasksService } from "../features/execution/design-task-types.js";
+import { createExecutionScopes } from "../features/execution/scope-service.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
 import { createImageGenerateToolDefinition } from "../features/generation/tools/image-generate.js";
 import { createVideoGenerateToolDefinition } from "../features/generation/tools/video-generate.js";
 import { createConsumerLocalAccessService } from "../features/local-access/test-consumer-service.js";
 import { createLocalInstanceService } from "../features/local-instance/service.js";
+import { ConnectionManager } from "../ws/connection-manager.js";
 import { AgentRunEventBus, ToolRegistryImpl } from "./context.js";
 import type { ToolDefinition } from "./types.js";
 
@@ -134,40 +141,75 @@ describe("ToolRegistry 动态工具缝", () => {
  * Code 会话工具面结构性不含画布/生图能力。
  */
 describe("内置工具的模式工具面（静态+动态装配契约）", () => {
-  function registryWithBuiltins() {
+  async function registryWithBuiltins() {
     const registry = new ToolRegistryImpl(new AgentRunEventBus());
-    registry.register(
-      createInspectCanvasToolDefinition({
-        localInstance: createLocalInstanceService({
-          repository: {
-            ensure: async () => "00000000-0000-4000-8000-000000000001",
-          },
-          dataDir: tmpdir(),
-        }),
+    const instanceId = "00000000-0000-4000-8000-000000000001";
+    const projectId = "00000000-0000-4000-8000-000000000002";
+    const designTaskId = "00000000-0000-4000-8000-000000000003";
+    const codeTaskId = "00000000-0000-4000-8000-000000000004";
+    const actor = { instanceId, accessClientId: null };
+    const localInstance = createLocalInstanceService({
+      repository: { ensure: async () => instanceId },
+      dataDir: tmpdir(),
+    });
+    const rootDirectory = realpathSync(tmpdir());
+    const makeScope = (taskId: string) => ({
+      instanceId,
+      projectId,
+      taskId,
+      generation: 1,
+      rootDirectory,
+      additionalDirectories: [],
+      sandboxMode: "workspace-write" as const,
+    });
+    const designTasks: Pick<DesignTasksService, "readPolicy"> = {
+      readPolicy: async (_actor, taskId) => ({
+        taskId,
+        projectId,
+        canvasId: "canvas-1",
+        rootDirectory,
+        additionalDirectories: [],
+        sandboxMode: "workspace-write",
+        scopeGeneration: 1,
+        branchGeneration: 1,
+        mode: "build",
+        planEnabled: false,
+        planningEpoch: 0,
+        activeRunId: "run-1",
+        executionState: "ready",
       }),
+    };
+    const handleFor = async (taskId: string, preset: "code" | "design") =>
+      createExecutionScopes({
+        localInstance,
+        repository: {
+          load: async () => ({
+            preset,
+            scope: makeScope(taskId),
+            state: "ready",
+            branchGeneration: 1,
+          }),
+        },
+      }).openTask(actor, taskId);
+    registry.register(
+      createInspectCanvasToolDefinition({ localInstance, designTasks }),
     );
     registry.register(
-      createManipulateCanvasToolDefinition({
-        localInstance: createLocalInstanceService({
-          repository: {
-            ensure: async () => "00000000-0000-4000-8000-000000000001",
-          },
-          dataDir: tmpdir(),
-        }),
-      }),
+      createManipulateCanvasToolDefinition({ localInstance, designTasks }),
     );
     registry.register(
-      createScreenshotCanvasToolDefinition({ connectionManager: {} as never }),
+      createScreenshotCanvasToolDefinition({
+        connectionManager: new ConnectionManager(),
+        localInstance,
+        designTasks,
+        blob: {} as never,
+        projectFiles: {} as never,
+      }),
     );
     registry.register(
       createBrandKitToolDefinition({
         brandKitService: {} as never,
-        localInstance: createLocalInstanceService({
-          repository: {
-            ensure: async () => "00000000-0000-4000-8000-000000000001",
-          },
-          dataDir: tmpdir(),
-        }),
+        localInstance,
       }),
     );
     // 动态四条：与各插件 apply 内同一工厂（backend/沙箱以 stub 满足签名）
@@ -193,12 +235,21 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
       resolve: () =>
         createPersistSandboxFileToolDefinition({ blob: {} as never }),
     });
-    return registry;
+    return {
+      registry,
+      designHandle: await handleFor(designTaskId, "design"),
+      codeHandle: await handleFor(codeTaskId, "code"),
+    };
   }
 
-  it("code 工具面：无画布/生图（静态与动态都不出现）", () => {
-    const names = registryWithBuiltins()
-      .resolveRunTools({ ...resolutionCtx(), preset: "code" })
+  it("code 工具面：无画布/生图（静态与动态都不出现）", async () => {
+    const { registry, codeHandle } = await registryWithBuiltins();
+    const names = registry
+      .resolveRunTools({
+        ...resolutionCtx(),
+        preset: "code",
+        scopeHandle: codeHandle,
+      })
       .map((tool) => tool.name);
 
     expect(names).toEqual([]);
@@ -216,9 +267,14 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
     }
   });
 
-  it("design 工具面：画布三件+品牌+生图生频+shared 全量", () => {
-    const names = registryWithBuiltins()
-      .resolveRunTools({ ...resolutionCtx(), preset: "design" })
+  it("design 工具面：画布三件+品牌+生图生频+shared 全量", async () => {
+    const { registry, designHandle } = await registryWithBuiltins();
+    const names = registry
+      .resolveRunTools({
+        ...resolutionCtx(),
+        preset: "design",
+        scopeHandle: designHandle,
+      })
       .map((tool) => tool.name);
 
     // 顺序（静态先、动态按注册序）不是契约；齐全性才是
@@ -269,6 +325,7 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
       [
         brandKitPlugin,
         createCanvasPlugin(),
+        createCanvasToolsPlugin(),
         createCodeToolsPlugin(),
         createGenerationPlugin({ env }),
       ],
@@ -286,6 +343,9 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
           }),
           ws: { connectionManager: {} as never, eventBuffer: {} as never },
           usage: { record: async () => {} } as never,
+          projects: {} as never,
+          projectFiles: {} as never,
+          designTasks: {} as never,
           uploads: {} as never,
           jobs: {} as never,
           modelCatalog: { listCatalog: async () => ({ entries: [] }) } as never,

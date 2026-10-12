@@ -79,8 +79,6 @@ function canvasRepo(
     },
     findById: async () => null,
     findProjectBrandKitId,
-    saveContent: async () => 1,
-    appendContent: async () => 1,
   };
 }
 

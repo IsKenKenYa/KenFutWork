@@ -185,28 +185,22 @@ export async function resolveCanvasStateForRun(
     preset?: "design" | "code" | undefined;
   },
   deps: {
-    canvasRepository?: CanvasRepository;
-    localInstance?: LocalInstanceService;
+    canvasService?: Pick<CanvasService, "readCanvasContent">;
   },
 ): Promise<string | null> {
   if (
     resolvePresetForRun(run) !== "design" ||
     !run.canvasId ||
     !run.actor ||
-    !deps.canvasRepository
+    !deps.canvasService
   ) {
     return null;
   }
   try {
-    const canvasWorkspace = await deps.localInstance
-      ?.resolve(run.actor)
-      .catch(() => null);
-    const canvasRow = canvasWorkspace
-      ? await deps.canvasRepository
-          .findById(canvasWorkspace.instanceId, run.canvasId)
-          .catch(() => null)
-      : null;
-    const content = canvasRow?.content as { elements?: unknown[] } | undefined;
+    const content = await deps.canvasService.readCanvasContent(
+      run.actor,
+      run.canvasId,
+    );
     if (content?.elements) {
       return buildCanvasSummaryForContext(
         content.elements as Array<Record<string, unknown>>,
@@ -2495,10 +2489,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           // of what's on the canvas without needing to call inspect_canvas first.
           // 门控在 resolveCanvasStateForRun：design 才注入（Code 会话无画布）。
           const canvasSummary = await resolveCanvasStateForRun(run, {
-            ...(options.canvasRepository
-              ? { canvasRepository: options.canvasRepository }
+            ...(options.canvasService
+              ? { canvasService: options.canvasService }
               : {}),
-            localInstance: options.localInstance,
           });
 
           // 附件在下载与提示词构建两处消费：收窄成局部 const（缺省空数组，分支内不再判空）

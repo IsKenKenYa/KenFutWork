@@ -33,29 +33,6 @@ export interface CanvasRepository {
     canvasId: string,
   ): Promise<string | null>;
   /** 覆盖写画布内容；返回受影响行数（0 = 不存在或不属本工作区）。 */
-  saveContent(
-    instanceId: string,
-    canvasId: string,
-    content: unknown,
-  ): Promise<number>;
-  /**
-   * **原子追加**元素与文件（单条 SQL 内做 jsonb 合并）；返回受影响行数。
-   *
-   * 为什么必须原子：生成物落画布原先走「读 content → 追加 → 覆盖写」，两个任务并发
-   * 落同一块画布时后写者会覆盖前者，**丢元素**（与《AGENTS.md》「持久副作用与幂等性」
-   * 冲突）。把合并放进语句里，读-改-写之间就不存在窗口。
-   *
-   * 位置计算仍基于调用前的读取：并发插入**不会丢**元素，但可能算出相近落点（元素重叠，
-   * 可拖动）。这是「不丢数据」与「不为落图加行锁」之间的取舍。
-   */
-  appendContent(
-    instanceId: string,
-    canvasId: string,
-    input: {
-      elements: readonly unknown[];
-      files?: Record<string, unknown> | undefined;
-    },
-  ): Promise<number>;
   recordFileIndex(instanceId: string, canvasId: string): Promise<number>;
 }
 
@@ -82,7 +59,7 @@ export function createCanvasRepository(
              from public.canvases c
              join public.projects p on p.id = c.project_id
             where c.id = $1
-              and p.instance_id = :instance`,
+              and p.instance_id = :instance and p.archived_at is null`,
           [canvasId],
         );
       return row?.brand_kit_id ?? null;
@@ -94,52 +71,12 @@ export function createCanvasRepository(
              from public.canvases c
              join public.projects p on p.id = c.project_id
             where c.id = $1
-              and p.instance_id = :instance`,
+              and p.instance_id = :instance and p.archived_at is null`,
         [canvasId],
       );
       return row ?? null;
     },
 
-    async saveContent(instanceId, canvasId, content) {
-      // jsonb 写入：显式序列化后由 cast 落库，避免驱动对对象做隐式推断。
-      return persistence.forInstance(instanceId).execute(
-        `update public.canvases c
-            set content = $2::jsonb
-           from public.projects p
-          where p.id = c.project_id
-            and c.id = $1
-            and p.instance_id = :instance`,
-        [canvasId, JSON.stringify(content)],
-      );
-    },
-
-    async appendContent(instanceId, canvasId, input) {
-      // 合并全在语句内完成：elements 数组拼接、files 顶层键合并（缺失即建）。
-      // 空 content（新建画布）与缺 elements/files 键都由 coalesce 兜住。
-      return persistence.forInstance(instanceId).execute(
-        `update public.canvases c
-            set content = jsonb_set(
-                  jsonb_set(
-                    coalesce(c.content, '{}'::jsonb),
-                    '{elements}',
-                    coalesce(c.content -> 'elements', '[]'::jsonb) || $2::jsonb,
-                    true
-                  ),
-                  '{files}',
-                  coalesce(c.content -> 'files', '{}'::jsonb) || $3::jsonb,
-                  true
-                )
-           from public.projects p
-          where p.id = c.project_id
-            and c.id = $1
-            and p.instance_id = :instance`,
-        [
-          canvasId,
-          JSON.stringify(input.elements),
-          JSON.stringify(input.files ?? {}),
-        ],
-      );
-    },
     async recordFileIndex(instanceId, canvasId) {
       // jsonb 写入：显式序列化后由 cast 落库，避免驱动对对象做隐式推断。
       return persistence.forInstance(instanceId).execute(

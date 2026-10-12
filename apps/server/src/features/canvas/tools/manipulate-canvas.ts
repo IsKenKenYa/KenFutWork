@@ -1,8 +1,10 @@
+import { canvasContentSchema } from "@kenfutwork/shared";
 import { z } from "zod";
 import type { ToolDefinition } from "../../../kernel/types.js";
+import type { DesignTasksService } from "../../execution/design-task-types.js";
 import type { LocalInstanceService } from "../../local-instance/types.js";
 import { resolveCanvasActor } from "../canvas-actor.js";
-import type { CanvasRepository } from "../repository.js";
+import type { CanvasService } from "../canvas-service.js";
 import {
   BINDING_GAP,
   bumpVersion,
@@ -815,14 +817,16 @@ const handlers: Record<
  */
 export function createManipulateCanvasToolDefinition(deps: {
   /** 画布数据访问（工作区作用域）：内容读写不再直连 SDK。 */
-  canvasRepository?: CanvasRepository;
+  canvasService?: Pick<CanvasService, "getCanvas" | "saveCanvasContent">;
   localInstance: LocalInstanceService;
+  designTasks: Pick<DesignTasksService, "readPolicy">;
 }): ToolDefinition {
   return {
     name: "manipulate_canvas",
     description:
       "Manipulate elements on the canvas. Supports: move, resize, delete (cascades to bound text), update_style, update_text (modify text content of any element or its label), add_text, add_shape (with optional label for centered text), add_line (with optional element binding for auto-connected arrows), align, distribute, reorder. Use inspect_canvas first to understand the current layout. Returns created element IDs for subsequent binding.",
     scope: "design",
+    access: "write",
     zodSchema: manipulateCanvasSchema,
     parameters: z.toJSONSchema(manipulateCanvasSchema),
     execute: async (args, execCtx) => {
@@ -839,18 +843,19 @@ export function createManipulateCanvasToolDefinition(deps: {
       const input = manipulateCanvasSchema.parse(args);
 
       // --- Read current canvas -------------------------------------------------
-      const actor = await resolveCanvasActor(deps.localInstance, execCtx);
-      const instanceId = actor.instanceId;
-      const canvasRow = await deps.canvasRepository?.findById(
-        instanceId,
-        canvasId,
+      const actor = await resolveCanvasActor(
+        deps.localInstance,
+        execCtx,
+        deps.designTasks,
       );
+      const service = deps.canvasService;
+      const canvasRow = await service?.getCanvas(actor, canvasId);
 
       const data = canvasRow
         ? { content: canvasRow.content as { elements?: unknown[] } }
         : null;
 
-      if (!data) {
+      if (!data || !canvasRow || !service) {
         return JSON.stringify({
           error: "canvas_not_found",
           message: "Canvas not found or access denied.",
@@ -891,18 +896,27 @@ export function createManipulateCanvasToolDefinition(deps: {
 
       // --- Write back ----------------------------------------------------------
       const updatedContent = { ...content, elements };
-      const writeError =
-        instanceId &&
-        (await deps.canvasRepository
-          ?.saveContent(instanceId, canvasId, updatedContent)
-          .catch(() => 0)) === 0
-          ? new Error("write_failed")
-          : null;
-
-      if (writeError) {
+      try {
+        await resolveCanvasActor(deps.localInstance, execCtx, deps.designTasks);
+        await execCtx.scopeHandle?.resolvePath(".", "write");
+        await service.saveCanvasContent(
+          actor,
+          canvasId,
+          canvasContentSchema.parse(updatedContent),
+          canvasRow.revision,
+          async () => {
+            await resolveCanvasActor(
+              deps.localInstance,
+              execCtx,
+              deps.designTasks,
+            );
+            await execCtx.scopeHandle?.resolvePath(".", "write");
+          },
+        );
+      } catch (error) {
         return JSON.stringify({
           error: "write_failed",
-          message: `Failed to save canvas: ${writeError.message}`,
+          message: error instanceof Error ? error.message : "画布保存失败。",
         });
       }
 

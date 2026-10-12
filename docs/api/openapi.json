@@ -10815,6 +10815,8 @@
                   "brand_kit_asset_create_failed",
                   "canvas_not_found",
                   "canvas_save_failed",
+                  "canvas_revision_conflict",
+                  "canvas_file_missing",
                   "chat_error",
                   "profile_update_failed",
                   "project_query_failed",
@@ -11445,13 +11447,18 @@
                   "files"
                 ],
                 "additionalProperties": false
+              },
+              "revision": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
               }
             },
             "required": [
               "id",
               "name",
               "projectId",
-              "content"
+              "content",
+              "revision"
             ],
             "additionalProperties": false
           }
@@ -11502,10 +11509,22 @@
                 }
               }
             }
+          },
+          "expectedRevision": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
-          "content"
+          "content",
+          "expectedRevision"
         ]
       },
       "canvasSaveResponseSchema": {
@@ -11515,10 +11534,25 @@
           "ok": {
             "type": "boolean",
             "const": true
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "fileReferences": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         },
         "required": [
-          "ok"
+          "ok",
+          "revision",
+          "fileReferences"
         ],
         "additionalProperties": false
       },
@@ -13678,6 +13712,8 @@
                       "brand_kit_asset_create_failed",
                       "canvas_not_found",
                       "canvas_save_failed",
+                      "canvas_revision_conflict",
+                      "canvas_file_missing",
                       "chat_error",
                       "profile_update_failed",
                       "project_query_failed",
@@ -25639,6 +25675,10 @@
                 "type": "string",
                 "minLength": 1
               },
+              "taskId": {
+                "type": "string",
+                "minLength": 1
+              },
               "title": {
                 "type": "string"
               },
@@ -25685,6 +25725,10 @@
               "type": "object",
               "properties": {
                 "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "taskId": {
                   "type": "string",
                   "minLength": 1
                 },

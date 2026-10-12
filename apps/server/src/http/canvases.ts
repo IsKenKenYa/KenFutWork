@@ -10,8 +10,10 @@ import {
   type CanvasService,
   CanvasServiceError,
 } from "../features/canvas/canvas-service.js";
+import { CanvasFileStoreError } from "../features/canvas/file-store.js";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import { LocalInstanceError } from "../features/local-instance/service.js";
+import { ProjectFileError } from "../features/project-files/types.js";
 import { isZodError } from "./zod-error.js";
 
 export async function registerCanvasRoutes(
@@ -46,10 +48,11 @@ export async function registerCanvasRoutes(
         const user = await options.localAccess.authenticate(request);
         if (!user) return sendUnauthorized(reply);
         const payload = canvasSaveRequestSchema.parse(request.body);
-        await options.canvasService.saveCanvasContent(
+        const saved = await options.canvasService.saveCanvasContent(
           user,
           request.params.canvasId,
           payload.content,
+          payload.expectedRevision,
         );
         const bodySize = JSON.stringify(request.body).length;
         request.log.info(
@@ -58,7 +61,7 @@ export async function registerCanvasRoutes(
         );
         return reply
           .code(200)
-          .send(canvasSaveResponseSchema.parse({ ok: true }));
+          .send(canvasSaveResponseSchema.parse({ ok: true, ...saved }));
       } catch (error) {
         request.log.error(
           { canvasId: request.params.canvasId, err: error },
@@ -82,6 +85,32 @@ function sendUnauthorized(reply: FastifyReply) {
 }
 
 function sendCanvasError(error: unknown, reply: FastifyReply) {
+  if (error instanceof ProjectFileError) {
+    const code =
+      error.code === "file_missing" || error.code === "not_found"
+        ? "canvas_file_missing"
+        : error.code === "file_conflict"
+          ? "canvas_revision_conflict"
+          : "canvas_save_failed";
+    return reply.code(error.statusCode).send(
+      applicationErrorResponseSchema.parse({
+        error: { code, message: error.message },
+      }),
+    );
+  }
+  if (error instanceof CanvasFileStoreError) {
+    return reply.code(error.statusCode).send(
+      applicationErrorResponseSchema.parse({
+        error: {
+          code:
+            error.code === "revision_conflict"
+              ? "canvas_revision_conflict"
+              : "canvas_save_failed",
+          message: error.message,
+        },
+      }),
+    );
+  }
   if (
     error instanceof CanvasServiceError ||
     error instanceof LocalInstanceError

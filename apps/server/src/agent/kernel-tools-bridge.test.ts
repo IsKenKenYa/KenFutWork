@@ -1,8 +1,7 @@
-import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import type { CanvasService } from "../features/canvas/canvas-service.js";
 import { archiveTaskFixture } from "../features/context-history/test-fixture.js";
-import { createLocalInstanceService } from "../features/local-instance/service.js";
 import { ToolDeniedError } from "../kernel/context.js";
 import type { ToolDefinition } from "../kernel/types.js";
 import {
@@ -370,19 +369,14 @@ describe("resolveCanvasStateForRun（DEC-2 画布状态门控：design 才注入
     { id: "r1", type: "rectangle", x: 0, y: 0, width: 100, height: 50 },
   ];
 
-  function deps(overrides: { findById?: () => unknown } = {}) {
+  function deps(
+    overrides: Partial<Pick<CanvasService, "readCanvasContent">> = {},
+  ) {
     return {
-      localInstance: createLocalInstanceService({
-        repository: { ensure: async () => CANVAS_ACTOR.instanceId },
-        dataDir: tmpdir(),
-      }),
-      canvasRepository: {
-        findById: async () => ({ content: { elements } }),
-        findProjectBrandKitId: async () => null,
-        saveContent: async () => 1,
-        appendContent: async () => 1,
+      canvasService: {
+        readCanvasContent: async () => ({ elements, appState: {}, files: {} }),
         ...overrides,
-      } as never,
+      },
     };
   }
 
@@ -420,7 +414,11 @@ describe("resolveCanvasStateForRun（DEC-2 画布状态门控：design 才注入
     expect(
       await resolveCanvasStateForRun(
         { canvasId: CANVAS_ID, actor: CANVAS_ACTOR, preset: "design" },
-        deps({ findById: () => null }),
+        deps({
+          readCanvasContent: async () => {
+            throw new Error("画布文件缺失");
+          },
+        }),
       ),
     ).toBeNull();
   });

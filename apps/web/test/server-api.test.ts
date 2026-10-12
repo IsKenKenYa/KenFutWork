@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+
+import type { DesignApprovalResolveRequest } from "@kenfutwork/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -6,10 +8,16 @@ import {
   connectCdp,
   createProject,
   createRun,
+  fetchDesignTaskApprovals,
+  fetchDesignTaskPolicy,
   fetchDirectoryPickerStatus,
   fetchProjects,
   fetchVideoModels,
   pickDirectory,
+  provisionDesignTask,
+  resolveDesignTaskApproval,
+  saveCanvas,
+  updateDesignTaskPolicy,
 } from "../src/lib/server-api";
 
 const mockFetch = vi.fn();
@@ -241,6 +249,183 @@ describe("本机Cookie与显式Bearer API", () => {
     });
 
     await expect(fetchProjects("expired")).rejects.toThrow("unauthorized");
+  });
+});
+
+describe("Canvas CAS API", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("NEXT_PUBLIC_SERVER_BASE_URL", "http://localhost:3001");
+  });
+
+  it("发送 expectedRevision 并返回新的 revision 与文件引用", async () => {
+    const response = {
+      ok: true,
+      revision: "a".repeat(64),
+      fileReferences: { image: "oss://stable-image-reference" },
+    };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => response,
+    });
+    const content = {
+      elements: [{ id: "image" }],
+      appState: {},
+      files: { image: { dataURL: "data:image/png;base64,bytes" } },
+    };
+
+    await expect(
+      saveCanvas("token_abc", "canvas-1", content, "b".repeat(64)),
+    ).resolves.toEqual(response);
+
+    const init = mockFetch.mock.calls[0]?.[1] as {
+      method?: string;
+      body?: string;
+    };
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body ?? "{}")).toEqual({
+      content,
+      expectedRevision: "b".repeat(64),
+    });
+  });
+
+  it("keepalive save preserves the same CAS body", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        revision: "c".repeat(64),
+        fileReferences: {},
+      }),
+    });
+
+    await saveCanvas(
+      "token_abc",
+      "canvas-1",
+      { elements: [], appState: {}, files: {} },
+      null,
+      { keepalive: true },
+    );
+
+    const init = mockFetch.mock.calls[0]?.[1] as {
+      body?: string;
+      keepalive?: boolean;
+    };
+    expect(init.keepalive).toBe(true);
+    expect(JSON.parse(init.body ?? "{}")).toMatchObject({
+      expectedRevision: null,
+    });
+  });
+});
+
+describe("Design Task policy API", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("NEXT_PUBLIC_SERVER_BASE_URL", "http://localhost:3001");
+  });
+
+  it("reads and explicitly provisions by Task ID", async () => {
+    const response = { task: { taskId: "task-id", canvasId: "canvas-id" } };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => response,
+    });
+
+    await expect(fetchDesignTaskPolicy("token", "task-id")).resolves.toEqual(
+      response,
+    );
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      "http://localhost:3001/api/design-tasks/task-id",
+      expect.objectContaining({ headers: { Authorization: "Bearer token" } }),
+    );
+
+    await provisionDesignTask("token", "task-id");
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      "http://localhost:3001/api/design-tasks/task-id/provision",
+      expect.objectContaining({
+        method: "POST",
+        headers: { Authorization: "Bearer token" },
+      }),
+    );
+  });
+
+  it("updates task planning policy with both expected epochs", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ task: { taskId: "task-id", planEnabled: true } }),
+    });
+    const request = {
+      expectedScopeGeneration: 4,
+      expectedBranchGeneration: 2,
+      planEnabled: true,
+    };
+
+    await updateDesignTaskPolicy("token", "task-id", request);
+
+    const init = mockFetch.mock.calls[0]?.[1] as {
+      method?: string;
+      body?: string;
+    };
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body ?? "{}")).toEqual(request);
+  });
+});
+
+describe("Design Task approvals API", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("NEXT_PUBLIC_SERVER_BASE_URL", "http://localhost:3001");
+  });
+
+  it("lists approvals for the selected Task", async () => {
+    const response = { approvals: [] };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => response,
+    });
+    await expect(fetchDesignTaskApprovals("token", "task-id")).resolves.toEqual(
+      response,
+    );
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/design-tasks/task-id/approvals",
+      expect.objectContaining({ headers: { Authorization: "Bearer token" } }),
+    );
+  });
+
+  it("resolves by Task and interaction IDs with the canonical answer", async () => {
+    const input = {
+      answer: {
+        action: "accept",
+        content: {
+          answers: { "Approve this plan?": "approve" },
+          answer_0: "approve",
+          answer: "approve",
+        },
+      },
+    } satisfies DesignApprovalResolveRequest;
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "resolved", decision: "allow" }),
+    });
+
+    await resolveDesignTaskApproval(
+      "token",
+      "task-id",
+      "interaction-id",
+      input,
+    );
+
+    const [url, init] = mockFetch.mock.calls[0] ?? [];
+    expect(url).toBe(
+      "http://localhost:3001/api/design-tasks/task-id/approvals/interaction-id/resolve",
+    );
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual(input);
   });
 });
 

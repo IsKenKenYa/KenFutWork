@@ -1,7 +1,14 @@
 import type {
   AssetSignedUrlResponse,
+  CanvasAssetMoveRequest,
+  CanvasAssetRestoreReceipt,
   CanvasDetail,
+  CanvasSaveResponse,
   ChatMessageCreateRequest,
+  DesignApprovalListResponse,
+  DesignApprovalResolveRequest,
+  DesignApprovalResolveResponse,
+  DesignTaskPolicyResponse,
   DirectoryPickerStatus,
   ExecutionMode,
   InstanceSettings,
@@ -15,6 +22,9 @@ import type {
   PickDirectoryResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
+  ProjectFileLocation,
+  ProjectFileMoveRequest,
+  ProjectFileRelinkRequest,
   ProjectKind,
   ProjectListResponse,
   ProjectUpdateRequest,
@@ -206,16 +216,118 @@ export async function saveCanvas(
     appState: Record<string, unknown>;
     files: Record<string, Record<string, unknown>>;
   },
-): Promise<void> {
+  expectedRevision: string | null,
+  options?: { keepalive?: boolean },
+): Promise<CanvasSaveResponse> {
   const response = await serverFetch(
     `${getServerBaseUrl()}/api/canvases/${canvasId}`,
     {
       method: "PUT",
       headers: authJsonHeaders(accessToken),
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, expectedRevision }),
+      ...(options?.keepalive ? { keepalive: true } : {}),
     },
   );
   if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as CanvasSaveResponse;
+}
+
+export async function moveProjectFile(
+  accessToken: string | null | undefined,
+  assetId: string,
+  request: ProjectFileMoveRequest,
+): Promise<ProjectFileLocation> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/project-files/${assetId}/move`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(request),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ProjectFileLocation;
+}
+
+export async function moveCanvasAsset(
+  accessToken: string | null | undefined,
+  canvasId: string,
+  assetId: string,
+  request: CanvasAssetMoveRequest,
+): Promise<ProjectFileLocation> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/canvases/${canvasId}/assets/${assetId}/move`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(request),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ProjectFileLocation;
+}
+
+export async function inspectProjectFile(
+  accessToken: string | null | undefined,
+  assetId: string,
+): Promise<ProjectFileLocation> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/project-files/${assetId}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ProjectFileLocation;
+}
+
+export async function relinkProjectFile(
+  accessToken: string | null | undefined,
+  assetId: string,
+  request: ProjectFileRelinkRequest,
+): Promise<ProjectFileLocation> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/project-files/${assetId}/relink`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(request),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as ProjectFileLocation;
+}
+
+export async function exportCanvasAssets(
+  accessToken: string | null | undefined,
+  canvasId: string,
+  expectedRevision: string,
+): Promise<Blob> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/canvases/${canvasId}/export`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify({ expectedRevision }),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return response.blob();
+}
+
+export async function restoreCanvasAssets(
+  accessToken: string | null | undefined,
+  canvasId: string,
+  expectedRevision: string,
+): Promise<CanvasAssetRestoreReceipt> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/canvases/${canvasId}/restore-assets`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify({ expectedRevision }),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as CanvasAssetRestoreReceipt;
 }
 
 export async function uploadThumbnail(
@@ -347,6 +459,85 @@ export async function fetchExecutionMode(
   );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as { mode: ExecutionMode };
+}
+
+export async function fetchDesignTaskPolicy(
+  accessToken: string | null | undefined,
+  taskId: string,
+): Promise<DesignTaskPolicyResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/design-tasks/${taskId}`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as DesignTaskPolicyResponse;
+}
+
+export async function provisionDesignTask(
+  accessToken: string | null | undefined,
+  taskId: string,
+): Promise<DesignTaskPolicyResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/design-tasks/${taskId}/provision`,
+    {
+      method: "POST",
+      headers: authHeaders(accessToken),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as DesignTaskPolicyResponse;
+}
+
+export async function updateDesignTaskPolicy(
+  accessToken: string | null | undefined,
+  taskId: string,
+  input: {
+    expectedScopeGeneration: number;
+    expectedBranchGeneration: number;
+    mode?: "build" | "edit" | "yolo";
+    planEnabled?: boolean;
+  },
+): Promise<DesignTaskPolicyResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/design-tasks/${taskId}`,
+    {
+      method: "PATCH",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as DesignTaskPolicyResponse;
+}
+
+export async function fetchDesignTaskApprovals(
+  accessToken: string | null | undefined,
+  taskId: string,
+): Promise<DesignApprovalListResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/design-tasks/${taskId}/approvals`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as DesignApprovalListResponse;
+}
+
+export async function resolveDesignTaskApproval(
+  accessToken: string | null | undefined,
+  taskId: string,
+  interactionId: string,
+  input: DesignApprovalResolveRequest,
+): Promise<DesignApprovalResolveResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/design-tasks/${taskId}/approvals/${interactionId}/resolve`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as DesignApprovalResolveResponse;
 }
 
 export async function updateExecutionMode(

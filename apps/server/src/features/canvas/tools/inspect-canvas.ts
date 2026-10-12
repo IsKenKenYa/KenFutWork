@@ -1,8 +1,9 @@
 import { z } from "zod";
 import type { ToolDefinition } from "../../../kernel/types.js";
+import type { DesignTasksService } from "../../execution/design-task-types.js";
 import type { LocalInstanceService } from "../../local-instance/types.js";
 import { resolveCanvasActor } from "../canvas-actor.js";
-import type { CanvasRepository } from "../repository.js";
+import type { CanvasService } from "../canvas-service.js";
 
 const inspectCanvasSchema = z.object({
   detail_level: z
@@ -168,14 +169,16 @@ export function buildCanvasSummaryForContext(
  */
 export function createInspectCanvasToolDefinition(deps: {
   /** 画布数据访问（工作区作用域）：内容读取不再直连 SDK。 */
-  canvasRepository?: CanvasRepository;
+  canvasService?: Pick<CanvasService, "getCanvas" | "saveCanvasContent">;
   localInstance: LocalInstanceService;
+  designTasks: Pick<DesignTasksService, "readPolicy">;
 }): ToolDefinition {
   return {
     name: "inspect_canvas",
     description:
       "Inspect the current canvas state. Returns element positions, sizes, and types. Use before placing new elements to avoid overlaps. Set detail_level='full' for complete properties, or query a specific element_id. Use filter_type to narrow by element type(s) and filter_region to narrow by spatial area.",
     scope: "design",
+    access: "read",
     zodSchema: inspectCanvasSchema,
     parameters: z.toJSONSchema(inspectCanvasSchema),
     execute: async (args, execCtx) => {
@@ -189,24 +192,24 @@ export function createInspectCanvasToolDefinition(deps: {
         });
       }
 
-      if (!deps.canvasRepository) {
+      if (!deps.canvasService) {
         // 缺数据访问必须说清原因，不能伪装成「画布不存在」
         return JSON.stringify({
           error: "canvas_context_unavailable",
           message:
-            "Canvas data access is not wired into this agent runtime (canvasRepository missing).",
+            "Canvas data access is not wired into this agent runtime (canvasService missing).",
         });
       }
 
       const input = inspectCanvasSchema.parse(args);
 
       // 经 projects 父链解析工作区，再按工作区作用域取内容（不直连 SDK）
-      const actor = await resolveCanvasActor(deps.localInstance, execCtx);
-      const instanceId = actor.instanceId;
-      const canvasRow = await deps.canvasRepository?.findById(
-        instanceId,
-        canvasId,
+      const actor = await resolveCanvasActor(
+        deps.localInstance,
+        execCtx,
+        deps.designTasks,
       );
+      const canvasRow = await deps.canvasService?.getCanvas(actor, canvasId);
 
       if (!canvasRow) {
         return JSON.stringify({

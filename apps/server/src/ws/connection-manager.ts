@@ -3,6 +3,7 @@ import type { StreamEvent } from "@kenfutwork/shared";
 import type { WebSocket } from "ws";
 
 type PendingRPC = {
+  sourceConnectionId?: string;
   /**
    * RPC 返回值经 JSON 往返只剩 unknown，故存储侧按 unknown 收下（方法签名而非函数属性，
    * 使 Promise<T> 的 resolver 能直接存入）；类型收窄由 `rpc<T>` 的调用方声明负责。
@@ -288,6 +289,22 @@ export class ConnectionManager {
   // RPC (unchanged semantics, keyed by UUID)
   // ---------------------------------------------------------------------------
 
+  /** 画布RPC只能选择已经绑定该画布且属于该实例的连接。 */
+  async rpcCanvas<T = unknown>(
+    instanceId: string,
+    canvasId: string,
+    method: string,
+    params: Record<string, unknown>,
+    timeout = 10_000,
+  ): Promise<T> {
+    for (const id of this.canvasIndex.get(canvasId) ?? []) {
+      const entry = this.connections.get(id);
+      if (entry?.instanceId === instanceId && entry.ws.readyState === 1)
+        return this.rpc<T>(id, method, params, timeout, id);
+    }
+    throw new Error("目标画布未连接，请打开该画布。");
+  }
+
   /**
    * RPC to a specific connection by connectionId.
    */
@@ -296,6 +313,7 @@ export class ConnectionManager {
     method: string,
     params: Record<string, unknown>,
     timeout = 10_000,
+    sourceConnectionId?: string,
   ): Promise<T> {
     // First try connectionId as a direct lookup
     let ws = this.connections.get(connectionId)?.ws;
@@ -318,7 +336,12 @@ export class ConnectionManager {
         reject(new Error(`RPC timeout: ${method} (${timeout}ms)`));
       }, timeout);
 
-      this.pendingRPCs.set(id, { resolve, reject, timer });
+      this.pendingRPCs.set(id, {
+        resolve,
+        reject,
+        timer,
+        ...(sourceConnectionId ? { sourceConnectionId } : {}),
+      });
 
       ws.send(
         JSON.stringify({
@@ -336,11 +359,16 @@ export class ConnectionManager {
    * so connectionId is accepted but not needed for dispatch.
    */
   handleRpcResponse(
-    _connectionId: string,
+    connectionId: string,
     msg: { type: "rpc.response"; id: string; result?: unknown; error?: string },
   ): void {
     const pending = this.pendingRPCs.get(msg.id);
     if (!pending) return;
+    if (
+      pending.sourceConnectionId &&
+      pending.sourceConnectionId !== connectionId
+    )
+      return;
 
     this.pendingRPCs.delete(msg.id);
     clearTimeout(pending.timer);

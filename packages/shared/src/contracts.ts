@@ -127,7 +127,7 @@ const projectSummaryFields = {
   name: z.string().min(1),
   slug: z.string().min(1),
   description: z.string().nullable(),
-  /** Code 项目主目录；现有 Task 固定创建时的目录快照。 */
+  /** 项目固定主目录；Canvas 定位与 Task 执行快照必须与其一致。 */
   workDir: z.string().min(1).nullable().optional(),
   additionalDirectories: z.array(additionalDirectorySchema).default([]),
   thumbnailUrl: z.string().nullable().optional(),
@@ -161,6 +161,7 @@ export const canvasDetailSchema = z.object({
   name: z.string().min(1),
   projectId: projectIdSchema,
   content: canvasContentSchema,
+  revision: z.string().regex(/^[a-f0-9]{64}$/u),
 });
 
 /**
@@ -366,6 +367,7 @@ export const chatToolActivitySchema = z.object({
 
 export const chatSessionSummarySchema = z.object({
   id: chatSessionIdSchema,
+  taskId: chatSessionIdSchema.optional(),
   title: z.string(),
   updatedAt: timestampSchema,
   projectId: projectIdSchema,
