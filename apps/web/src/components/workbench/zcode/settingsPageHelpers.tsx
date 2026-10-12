@@ -32,6 +32,7 @@ import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { useOptionalServices } from "@zui/hooks/useServices.js";
 import { ProactiveSuggestionsSetting } from "@zui/settings/ProactiveSuggestionsSetting.js";
+import { HostInstanceAutoCompactSetting } from "@zui/host/InstanceAutoCompactSetting.js";
 import { normalizeInterfaceMode, type InterfaceMode } from "@zui/lib/interfaceMode.js";
 import {
   createSettingsPageConfig,
@@ -857,6 +858,9 @@ export function GeneralSectionContent({
           }
         />
       </SettingsGroupCard>
+
+      {/* 宿主实例设置：上下文自动压缩（instance_settings；vendored 无此配置项） */}
+      <HostInstanceAutoCompactSetting />
 
       <SettingsGroupCard>
         <SettingsRow

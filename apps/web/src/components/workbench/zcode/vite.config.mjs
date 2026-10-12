@@ -30,6 +30,9 @@ export default defineConfig({
         "@zui/settings/ComputerUseSection.js": fileURLToPath(
           new URL("./host/ComputerUseSectionAdapter.tsx", import.meta.url),
         ),
+        "@zui/settings/BrowserSettingsSection.js": fileURLToPath(
+          new URL("./host/BrowserSettingsSectionAdapter.tsx", import.meta.url),
+        ),
         "@zui/i18n/IntlProvider.js": fileURLToPath(
           new URL("./host/cuaIntlAdapter.ts", import.meta.url),
         ),
