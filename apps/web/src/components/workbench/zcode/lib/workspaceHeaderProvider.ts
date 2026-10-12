@@ -8,3 +8,12 @@ export function resolveWorkspaceHeaderProvider(
   // 否则在“仅切换新建任务 provider”后会误显示成 workspace 级选择，和当前会话上下文不一致。
   return activeTaskProvider ?? selectedProvider;
 }
+
+/**
+ * H1（G11）：会话头锁定目录 chip 显示名——取工作目录末段（兼容 Win 反斜杠与
+ * POSIX 正斜杠；根路径/空串时回退原串）。Task 主目录身份不可变，chip 只读。
+ */
+export function resolveLockedDirectoryName(workspacePath: string): string {
+  const segments = workspacePath.split(/[\\/]+/u).filter(Boolean);
+  return segments.at(-1) ?? workspacePath;
+}

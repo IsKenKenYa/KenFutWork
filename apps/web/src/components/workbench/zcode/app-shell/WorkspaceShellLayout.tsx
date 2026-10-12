@@ -611,6 +611,19 @@ export const WorkspaceShellLayout = memo(
       workspaceSidebarPanelWidthPxRef.current = workspaceSidebarPanelWidthPx;
     }, [workspaceSidebarPanelWidthPx]);
 
+    // P2（G11）：右栏拖到宽度上限 → 收起左侧栏腾地方（旧版布局行为；
+    // 与窗口过窄自动收起共用同一个开关，已收起时不再动作）。
+    const handleSidePaneReachMaxSize = useCallback(() => {
+      if (!isSidebarVisible) {
+        return;
+      }
+      logger.info(
+        "[WorkspaceShellLayout] 右栏拖到宽度上限，自动收起左侧栏",
+        { workspaceKey },
+      );
+      handleToggleSidebar();
+    }, [handleToggleSidebar, isSidebarVisible, workspaceKey]);
+
     const applyWorkspaceSidebarWidthDuringDrag = useCallback(
       (nextWidthPx: number) => {
         workspaceSidebarPanelWidthPxRef.current = nextWidthPx;
@@ -1626,6 +1639,7 @@ export const WorkspaceShellLayout = memo(
         isVisible={isSidePaneVisible}
         onCloseSidePane={handleToggleSidePane}
         toggleSidePaneShortcutLabel={toggleSidePaneShortcutLabel}
+        onSidePaneReachMaxSize={handleSidePaneReachMaxSize}
         sidePaneState={sidePaneState}
         recentClosedSidePaneTabs={recentClosedSidePaneTabs}
         isBrowserOpen={isBrowserOpen}
