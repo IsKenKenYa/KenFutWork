@@ -70,6 +70,15 @@ it("dispatches one Task event to the highest-priority run consumer", () => {
     "resume",
     resumeConsumer,
   );
+  const goalConsumer = vi.fn(
+    (event: StreamEvent, _seq?: number, taskId?: string) =>
+      result.current.applyStreamEvent(event, "assistant", taskId ?? ""),
+  );
+  const unsubscribeGoal = result.current.subscribeTaskEvents(
+    "task",
+    "goal",
+    goalConsumer,
+  );
   const unsubscribeSend = result.current.subscribeTaskEvents(
     "task",
     "send",
@@ -90,6 +99,7 @@ it("dispatches one Task event to the highest-priority run consumer", () => {
     );
   });
   expect(sendConsumer).not.toHaveBeenCalled();
+  expect(goalConsumer).not.toHaveBeenCalled();
 
   act(() => {
     dispatch?.(
@@ -109,7 +119,27 @@ it("dispatches one Task event to the highest-priority run consumer", () => {
   expect(resumeConsumer).not.toHaveBeenCalled();
   expect(sendConsumer).toHaveBeenCalledOnce();
   expect(messages[0]?.contentBlocks).toEqual([{ type: "text", text: "token" }]);
+  expect(goalConsumer).not.toHaveBeenCalled();
   unsubscribeSend();
+  act(() => {
+    dispatch?.(
+      {
+        type: "message.delta",
+        runId: "00000000-0000-4000-8000-000000000001",
+        messageId: "assistant",
+        delta: "goal-token",
+        timestamp: "2026-10-11T00:00:01.000Z",
+      },
+      2,
+      "task",
+    );
+  });
+  expect(goalConsumer).toHaveBeenCalledOnce();
+  expect(resumeConsumer).not.toHaveBeenCalled();
+  expect(messages[0]?.contentBlocks).toEqual([
+    { type: "text", text: "tokengoal-token" },
+  ]);
+  unsubscribeGoal();
   unsubscribeResume();
 });
 

@@ -15,6 +15,11 @@ const {
   deleteSessionMock,
   fetchDesignTaskPolicyMock,
   fetchDesignTaskApprovalsMock,
+  fetchDesignGoalMock,
+  createDesignGoalMock,
+  pauseDesignGoalMock,
+  resumeDesignGoalMock,
+  setDesignGoalBudgetMock,
   fetchExecutionModeMock,
   fetchExecutionModesMock,
   fetchImageModelsMock,
@@ -33,6 +38,11 @@ const {
   deleteSessionMock: vi.fn(),
   fetchDesignTaskPolicyMock: vi.fn(),
   fetchDesignTaskApprovalsMock: vi.fn(),
+  fetchDesignGoalMock: vi.fn(),
+  createDesignGoalMock: vi.fn(),
+  pauseDesignGoalMock: vi.fn(),
+  resumeDesignGoalMock: vi.fn(),
+  setDesignGoalBudgetMock: vi.fn(),
   fetchExecutionModeMock: vi.fn(),
   fetchExecutionModesMock: vi.fn(),
   fetchImageModelsMock: vi.fn(),
@@ -60,6 +70,11 @@ vi.mock("../src/lib/server-api", () => ({
   deleteSession: deleteSessionMock,
   fetchDesignTaskPolicy: fetchDesignTaskPolicyMock,
   fetchDesignTaskApprovals: fetchDesignTaskApprovalsMock,
+  fetchDesignGoal: fetchDesignGoalMock,
+  createDesignGoal: createDesignGoalMock,
+  pauseDesignGoal: pauseDesignGoalMock,
+  resumeDesignGoal: resumeDesignGoalMock,
+  setDesignGoalBudget: setDesignGoalBudgetMock,
   fetchExecutionMode: fetchExecutionModeMock,
   fetchExecutionModes: fetchExecutionModesMock,
   fetchImageModels: fetchImageModelsMock,
@@ -193,7 +208,29 @@ describe("ChatSidebar", () => {
     });
     fetchDesignTaskApprovalsMock.mockReset();
     fetchDesignTaskApprovalsMock.mockResolvedValue({ approvals: [] });
-
+    fetchDesignGoalMock.mockReset().mockResolvedValue({
+      goal: null,
+      task: {
+        taskId: "session-real",
+        projectId: "project-real",
+        canvasId: "canvas-1",
+        rootDirectory: "/workspace",
+        additionalDirectories: [],
+        sandboxMode: "workspace-write",
+        scopeGeneration: 2,
+        branchGeneration: 3,
+        mode: "build",
+        planEnabled: false,
+        planningEpoch: 0,
+        activeRunId: null,
+        executionState: "ready",
+      },
+      acceptedRunId: null,
+    });
+    createDesignGoalMock.mockReset();
+    pauseDesignGoalMock.mockReset();
+    resumeDesignGoalMock.mockReset();
+    setDesignGoalBudgetMock.mockReset();
     fetchExecutionModesMock.mockReset();
     fetchExecutionModesMock.mockResolvedValue({ modes: ["agent", "plan"] });
     fetchExecutionModeMock.mockReset();
@@ -318,6 +355,540 @@ describe("ChatSidebar", () => {
         sessionId: "session-canvas-1",
       }),
       expect.anything(),
+    );
+  });
+
+  it("creates a persistent goal with the current branch-generation fence", async () => {
+    const response = {
+      goal: null,
+      acceptedRunId: null,
+      task: {
+        taskId: "session-real",
+        projectId: "project-real",
+        canvasId: "canvas-1",
+        rootDirectory: "/workspace",
+        additionalDirectories: [],
+        sandboxMode: "workspace-write",
+        scopeGeneration: 2,
+        branchGeneration: 3,
+        mode: "build",
+        planEnabled: false,
+        planningEpoch: 0,
+        activeRunId: null,
+        executionState: "ready",
+      },
+    };
+    createDesignGoalMock.mockResolvedValue(response);
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+    await userEvent.type(
+      await screen.findByRole("textbox", { name: "目标" }),
+      "完成画布首页",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "开始目标" }));
+
+    await waitFor(() =>
+      expect(createDesignGoalMock).toHaveBeenCalledWith(
+        "token_abc",
+        "session-real",
+        {
+          objective: "完成画布首页",
+          tokenBudget: null,
+          expectedBranchGeneration: 3,
+          expectedGoal: null,
+        },
+      ),
+    );
+  });
+
+  it("creates a persistent goal with the explicitly selected model", async () => {
+    localStorage.setItem("kenfutwork:agent-model", "provider-uuid:model-id");
+    createDesignGoalMock.mockResolvedValue({
+      goal: null,
+      acceptedRunId: null,
+      task: {
+        taskId: "session-real",
+        projectId: "project-real",
+        canvasId: "canvas-1",
+        rootDirectory: "/workspace",
+        additionalDirectories: [],
+        sandboxMode: "workspace-write",
+        scopeGeneration: 2,
+        branchGeneration: 3,
+        mode: "build",
+        planEnabled: false,
+        planningEpoch: 0,
+        activeRunId: null,
+        executionState: "ready",
+      },
+    });
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+    await userEvent.type(
+      await screen.findByRole("textbox", { name: "目标" }),
+      "按选择模型创建",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "开始目标" }));
+
+    await waitFor(() =>
+      expect(createDesignGoalMock).toHaveBeenCalledWith(
+        "token_abc",
+        "session-real",
+        expect.objectContaining({
+          expectedBranchGeneration: 3,
+          model: "provider-uuid:model-id",
+        }),
+      ),
+    );
+  });
+
+  it.each([
+    { selectedModel: null, modelRequest: {} },
+    {
+      selectedModel: "provider-uuid:model-id",
+      modelRequest: { model: "provider-uuid:model-id" },
+    },
+  ])(
+    "resumes a persistent Goal with the selected model when present",
+    async ({ selectedModel, modelRequest }) => {
+      if (selectedModel)
+        localStorage.setItem("kenfutwork:agent-model", selectedModel);
+      const task = {
+        taskId: "session-real",
+        projectId: "project-real",
+        canvasId: "canvas-1",
+        rootDirectory: "/workspace",
+        additionalDirectories: [],
+        sandboxMode: "workspace-write",
+        scopeGeneration: 2,
+        branchGeneration: 3,
+        mode: "build",
+        planEnabled: false,
+        planningEpoch: 0,
+        activeRunId: null,
+        executionState: "ready",
+      };
+      const goal = {
+        goalId: "goal-paused",
+        revision: 2,
+        objective: "完成设计",
+        status: "paused",
+        branchGeneration: 3,
+        tokenBudget: null,
+        tokensUsed: 12,
+        timeUsedSeconds: 5,
+        iteration: 1,
+        claimedRunId: null,
+        lastSettledRunId: "run-paused",
+        runTokensUsed: 12,
+        runUsageObserved: true,
+        runStartedAt: null,
+        verification: null,
+        reason: "手动暂停",
+      };
+      fetchDesignGoalMock.mockResolvedValue({
+        goal,
+        task,
+        acceptedRunId: null,
+      });
+      resumeDesignGoalMock.mockResolvedValue({
+        goal: { ...goal, status: "active" },
+        task,
+        acceptedRunId: null,
+      });
+      render(
+        <ToastProvider>
+          <ChatSidebar
+            accessToken="token_abc"
+            canvasId="canvas-1"
+            open
+            onToggle={() => {}}
+            ws={mockWs}
+          />
+        </ToastProvider>,
+      );
+      await userEvent.click(
+        await screen.findByRole("button", { name: "恢复" }),
+      );
+
+      await waitFor(() =>
+        expect(resumeDesignGoalMock).toHaveBeenCalledWith(
+          "token_abc",
+          "session-real",
+          {
+            goalId: "goal-paused",
+            revision: 2,
+            branchGeneration: 3,
+            ...modelRequest,
+          },
+        ),
+      );
+    },
+  );
+
+  it("replaces a terminal Goal using its persisted identity and revision", async () => {
+    const task = {
+      taskId: "session-real",
+      projectId: "project-real",
+      canvasId: "canvas-1",
+      rootDirectory: "/workspace",
+      additionalDirectories: [],
+      sandboxMode: "workspace-write",
+      scopeGeneration: 2,
+      branchGeneration: 3,
+      mode: "build",
+      planEnabled: false,
+      planningEpoch: 0,
+      activeRunId: null,
+      executionState: "ready",
+    };
+    const oldGoal = {
+      goalId: "goal-old",
+      revision: 4,
+      objective: "旧目标",
+      status: "complete",
+      branchGeneration: 3,
+      tokenBudget: null,
+      tokensUsed: 10,
+      timeUsedSeconds: 4,
+      iteration: 1,
+      claimedRunId: null,
+      lastSettledRunId: "run-old",
+      runTokensUsed: 10,
+      runUsageObserved: true,
+      runStartedAt: null,
+      verification: null,
+      reason: "已完成",
+    };
+    const nextGoal = {
+      ...oldGoal,
+      goalId: "goal-new",
+      revision: 1,
+      objective: "新目标",
+      status: "active",
+      reason: null,
+    };
+    const response = (goal: typeof oldGoal | typeof nextGoal) => ({
+      goal,
+      task,
+      acceptedRunId: null,
+    });
+    let created = false;
+    let reads = 0;
+    let finishBackgroundRefresh:
+      | ((value: ReturnType<typeof response>) => void)
+      | undefined;
+    fetchDesignGoalMock.mockImplementation(() => {
+      reads += 1;
+      if (reads === 2)
+        return new Promise((resolve) => {
+          finishBackgroundRefresh = resolve;
+        });
+      return Promise.resolve(response(created ? nextGoal : oldGoal));
+    });
+    createDesignGoalMock.mockImplementation(async () => {
+      created = true;
+      return response(nextGoal);
+    });
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+    const objectiveInput = await screen.findByRole("textbox", {
+      name: "新目标",
+    });
+    const budgetInput = screen.getByRole("textbox", {
+      name: "新目标 Token 预算",
+    });
+    await userEvent.type(objectiveInput, "新目标");
+    await userEvent.type(budgetInput, "512");
+    await waitFor(() => expect(finishBackgroundRefresh).toBeDefined());
+    finishBackgroundRefresh?.(response(oldGoal));
+    await waitFor(() => {
+      expect(objectiveInput).toHaveValue("新目标");
+      expect(budgetInput).toHaveValue("512");
+    });
+    await userEvent.click(screen.getByRole("button", { name: "开始目标" }));
+
+    await waitFor(() =>
+      expect(createDesignGoalMock).toHaveBeenCalledWith(
+        "token_abc",
+        "session-real",
+        {
+          objective: "新目标",
+          tokenBudget: 512,
+          expectedBranchGeneration: 3,
+          expectedGoal: { goalId: "goal-old", revision: 4 },
+        },
+      ),
+    );
+  });
+
+  it("applies a refreshed active Goal Run delta once through the Task event consumer", async () => {
+    const task = {
+      taskId: "session-real",
+      projectId: "project-real",
+      canvasId: "canvas-1",
+      rootDirectory: "/workspace",
+      additionalDirectories: [],
+      sandboxMode: "workspace-write",
+      scopeGeneration: 2,
+      branchGeneration: 3,
+      mode: "build",
+      planEnabled: false,
+      planningEpoch: 0,
+      activeRunId: "goal-run",
+      executionState: "ready",
+    };
+    const goal = {
+      goalId: "goal-real",
+      revision: 1,
+      objective: "完成设计",
+      status: "active",
+      branchGeneration: 3,
+      tokenBudget: null,
+      tokensUsed: 0,
+      timeUsedSeconds: 0,
+      iteration: 1,
+      claimedRunId: "goal-run",
+      lastSettledRunId: null,
+      runTokensUsed: 0,
+      runUsageObserved: false,
+      runStartedAt: null,
+      verification: null,
+      reason: null,
+    };
+    const response = { goal, task, acceptedRunId: "goal-run" };
+    fetchDesignGoalMock.mockResolvedValue(response);
+    mockWs.resumeTask = vi.fn((_taskId, _seq, onAck) => {
+      onAck?.({
+        type: "command.ack",
+        action: "task.resume",
+        payload: {
+          taskId: "session-real",
+          canvasId: "canvas-1",
+          latestSeq: 0,
+          activeRunId: "goal-run",
+          replayGap: false,
+        },
+      });
+    });
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+    await waitFor(() => expect(mockWs.resumeTask).toHaveBeenCalled());
+    await waitFor(() => expect(eventListeners).toHaveLength(1));
+
+    act(() => {
+      for (const listener of [...eventListeners])
+        listener(
+          {
+            type: "message.delta",
+            runId: "goal-run",
+            messageId: "message-1",
+            delta: "single-delta",
+            timestamp: new Date().toISOString(),
+          },
+          1,
+          "session-real",
+        );
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole("log").textContent).toContain("single-delta"),
+    );
+    expect(
+      screen.getByRole("log").textContent?.match(/single-delta/g),
+    ).toHaveLength(1);
+  });
+
+  it("persists selected Canvas images into a queued Goal input and keeps the user Run stoppable after Goal completion", async () => {
+    const task = {
+      taskId: "session-real",
+      projectId: "project-real",
+      canvasId: "canvas-1",
+      rootDirectory: "/workspace",
+      additionalDirectories: [],
+      sandboxMode: "workspace-write",
+      scopeGeneration: 2,
+      branchGeneration: 3,
+      mode: "build",
+      planEnabled: false,
+      planningEpoch: 0,
+      activeRunId: null,
+      executionState: "ready",
+    };
+    const goal = (status: "active" | "complete") => ({
+      goalId: "goal-real",
+      revision: status === "active" ? 1 : 2,
+      objective: "完成画布首页",
+      status,
+      branchGeneration: 3,
+      tokenBudget: null,
+      tokensUsed: 10,
+      timeUsedSeconds: 2,
+      iteration: 1,
+      claimedRunId: status === "active" ? "goal-run" : null,
+      lastSettledRunId: status === "complete" ? "goal-run" : null,
+      runTokensUsed: 10,
+      runUsageObserved: true,
+      runStartedAt: null,
+      verification: null,
+      reason: null,
+    });
+    const goalResponse = (state: "active" | "complete") => ({
+      goal: goal(state),
+      task: state === "complete" ? { ...task, activeRunId: "run_123" } : task,
+      acceptedRunId: state === "active" ? "goal-run" : null,
+    });
+    let goalCreated = false;
+    let goalCompleted = false;
+    fetchDesignGoalMock.mockImplementation(async () => {
+      if (!goalCreated) return { goal: null, task, acceptedRunId: null };
+      return goalResponse(goalCompleted ? "complete" : "active");
+    });
+    createDesignGoalMock.mockImplementation(async () => {
+      goalCreated = true;
+      return goalResponse("active");
+    });
+    nextDelivery = "queued";
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+          selectedCanvasElements={[
+            {
+              id: "canvas-image-1",
+              type: "image",
+              x: 0,
+              y: 0,
+              width: 32,
+              height: 32,
+              fileId: "file-1",
+              dataUrl: "data:image/png;base64,AA==",
+            },
+          ]}
+        />
+      </ToastProvider>,
+    );
+    await userEvent.type(
+      await screen.findByRole("textbox", { name: "目标" }),
+      "完成画布首页",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "开始目标" }));
+    await waitFor(() =>
+      expect(screen.getByText(/第 1 轮/)).toBeInTheDocument(),
+    );
+
+    const composer = screen.getByPlaceholderText(/输入你的想法/);
+    await userEvent.type(composer, "用户补充{Enter}");
+    await waitFor(() =>
+      expect(saveMessageMock).toHaveBeenCalledWith(
+        "token_abc",
+        "session-real",
+        expect.objectContaining({ content: "用户补充" }),
+      ),
+    );
+    expect(saveMessageMock).toHaveBeenCalledWith(
+      "token_abc",
+      "session-real",
+      expect.objectContaining({
+        contentBlocks: expect.arrayContaining([
+          expect.objectContaining({ type: "image", assetId: "canvas-image-1" }),
+        ]),
+      }),
+    );
+    await waitFor(() =>
+      expect(mockWs.startRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prompt: "用户补充",
+          taskId: "session-real",
+          inputId: "message-persisted",
+          attachments: expect.arrayContaining([
+            expect.objectContaining({
+              assetId: "canvas-image-1",
+              source: "canvas-ref",
+            }),
+          ]),
+        }),
+        expect.any(Function),
+      ),
+    );
+    expect(screen.getByText(/已排队 1 条消息/)).toBeInTheDocument();
+
+    for (const listener of [...eventListeners]) {
+      goalCompleted = true;
+      listener(
+        {
+          type: "run.completed",
+          runId: "goal-run",
+          timestamp: new Date().toISOString(),
+        },
+        undefined,
+        "session-real",
+      );
+      listener(
+        {
+          type: "run.started",
+          runId: "run_123",
+          sessionId: "session-real",
+          conversationId: "session-real",
+          timestamp: new Date().toISOString(),
+        },
+        undefined,
+        "session-real",
+      );
+    }
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "停止本轮" }),
+      ).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "停止本轮" }));
+    expect(mockWs.cancelRun).toHaveBeenCalledWith(
+      "session-real",
+      "run_123",
+      expect.any(Function),
     );
   });
 

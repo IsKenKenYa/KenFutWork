@@ -26,6 +26,7 @@ import { createComputerUsePlugin } from "../features/computer-use/plugin.js";
 import { createContextHistoryPlugin } from "../features/context-history/plugin.js";
 import { createDynamicUiPlugin } from "../features/dynamic-ui/plugin.js";
 import { createDesignApprovalsPlugin } from "../features/execution/design-approvals-plugin.js";
+import { createDesignGoalHttpPlugin } from "../features/execution/design-goal-http-plugin.js";
 import { createDesignGoalsPlugin } from "../features/execution/design-goals-plugin.js";
 import { createDesignRunHostPlugin } from "../features/execution/design-run-host-plugin.js";
 import { createDesignTaskHttpPlugin } from "../features/execution/design-task-http-plugin.js";
@@ -197,6 +198,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createDesignGoalsPlugin(),
     createDesignTasksPlugin(),
     createDesignTaskHttpPlugin(),
+    createDesignGoalHttpPlugin(),
     createDesignApprovalsPlugin(),
     createChatPlugin(),
     createSettingsPlugin(),

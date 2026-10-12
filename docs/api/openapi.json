@@ -915,6 +915,349 @@
         }
       }
     },
+    "/api/design-tasks/{taskId}/goal": {
+      "get": {
+        "operationId": "getDesignTasksByTaskIdGoal",
+        "summary": "读取画布任务目标",
+        "description": "读取真实Task的持久目标、当前权限策略及匹配的目标Run；没有目标时返回null。",
+        "tags": [
+          "runs"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/designGoalResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postDesignTasksByTaskIdGoal",
+        "summary": "创建画布任务目标",
+        "description": "以当前branch与已观察目标身份创建Goal；预算省略或null表示不设预算。创建成功后仅通过Host调度一个受控输入，返回当前Goal与Task状态。",
+        "tags": [
+          "runs"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/designGoalCreateRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/designGoalResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/design-tasks/{taskId}/goal/pause": {
+      "post": {
+        "operationId": "postDesignTasksByTaskIdGoalPause",
+        "summary": "暂停画布任务目标",
+        "description": "在Task事务中核对Goal身份、revision与branch后暂停；仅停止匹配的目标Run，不取消其他用户Run。",
+        "tags": [
+          "runs"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/designGoalFenceSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/designGoalResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/design-tasks/{taskId}/goal/resume": {
+      "post": {
+        "operationId": "postDesignTasksByTaskIdGoalResume",
+        "summary": "恢复画布任务目标",
+        "description": "核对Goal身份、revision与branch，前一Run已结束且预算仍可用时显式恢复，再由Host调度一个受控输入。",
+        "tags": [
+          "runs"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/designGoalResumeRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/designGoalResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/design-tasks/{taskId}/goal/budget": {
+      "patch": {
+        "operationId": "patchDesignTasksByTaskIdGoalBudget",
+        "summary": "调整画布任务目标预算",
+        "description": "以Goal身份、revision与branch核对持久状态；null移除预算，已用量达到新预算时暂停并停止匹配目标Run，调整预算不会自动恢复。",
+        "tags": [
+          "runs"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/designGoalBudgetRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/designGoalResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/agent/runs/latest": {
       "get": {
         "operationId": "getAgentRunsLatest",
@@ -16274,6 +16617,493 @@
             "additionalProperties": false
           }
         ]
+      },
+      "designGoalBudgetRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "goalId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "branchGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "tokenBudget": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "goalId",
+          "revision",
+          "branchGeneration",
+          "tokenBudget"
+        ],
+        "additionalProperties": false
+      },
+      "designGoalCreateRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "objective": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model": {
+            "description": "所选模型引用；省略时冻结创建时的实际默认选择",
+            "type": "string",
+            "minLength": 1
+          },
+          "tokenBudget": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expectedBranchGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "expectedGoal": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "goalId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "goalId",
+                  "revision"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "objective",
+          "expectedBranchGeneration",
+          "expectedGoal"
+        ],
+        "additionalProperties": false
+      },
+      "designGoalFenceSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "goalId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "branchGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "goalId",
+          "revision",
+          "branchGeneration"
+        ],
+        "additionalProperties": false
+      },
+      "designGoalResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "goal": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "goalId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "objective": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "paused",
+                      "verifying",
+                      "complete",
+                      "notSatisfied",
+                      "failed"
+                    ]
+                  },
+                  "branchGeneration": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "tokenBudget": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "tokensUsed": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "timeUsedSeconds": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "iteration": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "claimedRunId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "lastSettledRunId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "runTokensUsed": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "runUsageObserved": {
+                    "type": "boolean"
+                  },
+                  "runStartedAt": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "verification": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "runId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "evidence": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "sourceId": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "passed": {
+                                  "type": "boolean"
+                                },
+                                "detail": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "sourceId",
+                                "passed"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "passed": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "runId",
+                          "evidence",
+                          "passed",
+                          "reason",
+                          "at"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "goalId",
+                  "revision",
+                  "objective",
+                  "status",
+                  "branchGeneration",
+                  "tokenBudget",
+                  "tokensUsed",
+                  "timeUsedSeconds",
+                  "iteration",
+                  "claimedRunId",
+                  "lastSettledRunId",
+                  "runTokensUsed",
+                  "runUsageObserved",
+                  "runStartedAt",
+                  "verification",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "task": {
+            "type": "object",
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "projectId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "canvasId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "rootDirectory": {
+                "type": "string",
+                "minLength": 1
+              },
+              "additionalDirectories": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "access": {
+                      "type": "string",
+                      "enum": [
+                        "read-only",
+                        "read-write"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "access"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "sandboxMode": {
+                "type": "string",
+                "enum": [
+                  "read-only",
+                  "workspace-write",
+                  "danger-full-access"
+                ]
+              },
+              "scopeGeneration": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "branchGeneration": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "build",
+                  "edit",
+                  "yolo"
+                ]
+              },
+              "planEnabled": {
+                "type": "boolean"
+              },
+              "planningEpoch": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "activeRunId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "executionState": {
+                "type": "string",
+                "enum": [
+                  "ready",
+                  "revoking",
+                  "failed"
+                ]
+              }
+            },
+            "required": [
+              "taskId",
+              "projectId",
+              "canvasId",
+              "rootDirectory",
+              "additionalDirectories",
+              "sandboxMode",
+              "scopeGeneration",
+              "branchGeneration",
+              "mode",
+              "planEnabled",
+              "planningEpoch",
+              "activeRunId",
+              "executionState"
+            ],
+            "additionalProperties": false
+          },
+          "acceptedRunId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "goal",
+          "task",
+          "acceptedRunId"
+        ],
+        "additionalProperties": false
+      },
+      "designGoalResumeRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "goalId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "branchGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "model": {
+            "description": "显式选择重新捕获模型；省略时核验已有调用快照",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "goalId",
+          "revision",
+          "branchGeneration"
+        ],
+        "additionalProperties": false
       },
       "designTaskPolicyResponseSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

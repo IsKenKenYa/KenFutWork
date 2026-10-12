@@ -10,10 +10,11 @@ type MessageUpdater = (
   updater: (prev: Message[]) => Message[],
 ) => void;
 
-type StreamConsumerOwner = "resume" | "replay" | "send";
+type StreamConsumerOwner = "resume" | "replay" | "goal" | "send";
 type StreamEventConsumer = Parameters<WebSocketHandle["onEvent"]>[0];
 const consumerPriority: Record<StreamConsumerOwner, number> = {
   resume: 1,
+  goal: 2,
   send: 3,
   replay: 4,
 };

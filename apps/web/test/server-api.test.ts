@@ -6,17 +6,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiAccessError,
   connectCdp,
+  createDesignGoal,
   createProject,
   createRun,
+  fetchDesignGoal,
   fetchDesignTaskApprovals,
   fetchDesignTaskPolicy,
   fetchDirectoryPickerStatus,
   fetchProjects,
   fetchVideoModels,
+  pauseDesignGoal,
   pickDirectory,
   provisionDesignTask,
   resolveDesignTaskApproval,
+  resumeDesignGoal,
   saveCanvas,
+  setDesignGoalBudget,
   updateDesignTaskPolicy,
 } from "../src/lib/server-api";
 
@@ -162,6 +167,63 @@ describe("本机Cookie与显式Bearer API", () => {
         credentials: "include",
       }),
     );
+  });
+
+  it("reads the persistent Design Goal for its Task", async () => {
+    const response = { goal: null, task: {}, acceptedRunId: null };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => response,
+    });
+    await expect(fetchDesignGoal("token_abc", "task-id")).resolves.toEqual(
+      response,
+    );
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/design-tasks/task-id/goal",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer token_abc" },
+      }),
+    );
+  });
+
+  it("creates, pauses, resumes, and budgets by persistent Goal identity", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    const fence = {
+      goalId: "00000000-0000-4000-8000-000000000001",
+      revision: 2,
+      branchGeneration: 3,
+    };
+    await createDesignGoal("token_abc", "task-id", {
+      objective: "完成画布",
+      expectedBranchGeneration: 3,
+      expectedGoal: null,
+      tokenBudget: null,
+    });
+    await pauseDesignGoal("token_abc", "task-id", fence);
+    await resumeDesignGoal("token_abc", "task-id", {
+      ...fence,
+      model: "provider:model",
+    });
+    await setDesignGoalBudget("token_abc", "task-id", {
+      ...fence,
+      tokenBudget: 5000,
+    });
+    expect(
+      mockFetch.mock.calls.map(([url, init]) => [
+        url,
+        (init as RequestInit).method,
+      ]),
+    ).toEqual([
+      ["http://localhost:3001/api/design-tasks/task-id/goal", "POST"],
+      ["http://localhost:3001/api/design-tasks/task-id/goal/pause", "POST"],
+      ["http://localhost:3001/api/design-tasks/task-id/goal/resume", "POST"],
+      ["http://localhost:3001/api/design-tasks/task-id/goal/budget", "PATCH"],
+    ]);
   });
 
   it("fetchVideoModels preserves capability, limits, and verified pricing metadata", async () => {

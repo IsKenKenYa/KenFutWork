@@ -8,6 +8,11 @@ import type {
   DesignApprovalListResponse,
   DesignApprovalResolveRequest,
   DesignApprovalResolveResponse,
+  DesignGoalBudgetRequest,
+  DesignGoalCreateRequest,
+  DesignGoalFence,
+  DesignGoalResponse,
+  DesignGoalResumeRequest,
   DesignTaskPolicyResponse,
   DirectoryPickerStatus,
   ExecutionMode,
@@ -508,6 +513,86 @@ export async function updateDesignTaskPolicy(
   );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as DesignTaskPolicyResponse;
+}
+
+export async function fetchDesignGoal(
+  accessToken: string | null | undefined,
+  taskId: string,
+): Promise<DesignGoalResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/design-tasks/${taskId}/goal`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as DesignGoalResponse;
+}
+
+export async function createDesignGoal(
+  accessToken: string | null | undefined,
+  taskId: string,
+  request: DesignGoalCreateRequest,
+): Promise<DesignGoalResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/design-tasks/${taskId}/goal`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(request),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as DesignGoalResponse;
+}
+
+export async function pauseDesignGoal(
+  accessToken: string | null | undefined,
+  taskId: string,
+  request: DesignGoalFence,
+): Promise<DesignGoalResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/design-tasks/${taskId}/goal/pause`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(request),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as DesignGoalResponse;
+}
+
+export async function resumeDesignGoal(
+  accessToken: string | null | undefined,
+  taskId: string,
+  request: DesignGoalResumeRequest,
+): Promise<DesignGoalResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/design-tasks/${taskId}/goal/resume`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(request),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as DesignGoalResponse;
+}
+
+export async function setDesignGoalBudget(
+  accessToken: string | null | undefined,
+  taskId: string,
+  request: DesignGoalBudgetRequest,
+): Promise<DesignGoalResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/design-tasks/${taskId}/goal/budget`,
+    {
+      method: "PATCH",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(request),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as DesignGoalResponse;
 }
 
 export async function fetchDesignTaskApprovals(

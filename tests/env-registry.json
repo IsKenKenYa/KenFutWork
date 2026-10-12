@@ -15,6 +15,7 @@
       "readers": [
         "apps/server/src/features/canvas/root-directory.integration.test.ts",
         "apps/server/src/features/checkpoints/design-checkpoints.integration.test.ts",
+        "apps/server/src/features/execution/design-goals-runtime.integration.test.ts",
         "apps/server/src/features/execution/design-goals.integration.test.ts",
         "apps/server/src/features/execution/design-run-host.integration.test.ts",
         "apps/server/src/features/execution/design-tasks.integration.test.ts"
