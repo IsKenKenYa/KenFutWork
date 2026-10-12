@@ -59,6 +59,7 @@ import {
 } from "../features/plugins/plugin.js";
 import { createProcessSandboxPlugin } from "../features/process-sandbox/plugin.js";
 import { createProjectFilesPlugin } from "../features/project-files/plugin.js";
+import { createProjectDirectoryRelinkPlugin } from "../features/projects/directory-relink-plugin.js";
 import { createProjectsPlugin } from "../features/projects/plugin.js";
 import { createQueuePlugin } from "../features/queue/plugin.js";
 import { createSearchPlugin } from "../features/search/plugin.js";
@@ -212,6 +213,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createContextHistoryPlugin(),
     createUploadsPlugin(),
     createProjectsPlugin(),
+    createProjectDirectoryRelinkPlugin(),
     createProjectFilesPlugin(),
     createCanvasAssetLocationsPlugin(),
     createGenerationTargetsPlugin(),

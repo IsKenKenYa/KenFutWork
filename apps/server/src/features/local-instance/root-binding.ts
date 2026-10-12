@@ -444,6 +444,7 @@ async function rebindCheckpoints(options: {
   mapper: Rebinder;
   binary: string;
   undo: Undo[];
+  projectId?: string;
 }) {
   const { scoped, mapper, binary, undo } = options;
   const checkpoints = await scoped.query<
@@ -455,7 +456,8 @@ async function rebindCheckpoints(options: {
       directory_snapshots: unknown;
     }
   >(
-    "select id, project_id, task_id, root_directory, directory_snapshots from public.project_checkpoints where instance_id=:instance for update",
+    `select id, project_id, task_id, root_directory, directory_snapshots from public.project_checkpoints where instance_id=:instance ${options.projectId ? "and project_id=$1" : ""} for update`,
+    options.projectId ? [options.projectId] : [],
   );
   const reboundRepos = new Set<string>();
   for (const row of checkpoints) {
@@ -489,6 +491,62 @@ async function rebindCheckpoints(options: {
         [row.id, path, JSON.stringify(snapshots)],
       );
   }
+}
+/** Explicit missing-Project recovery only: exact root mapping, no filesystem discovery or user-file move. */
+export async function rebindMissingProjectCheckpoints(options: {
+  scoped: InstanceSqlClient;
+  projectId: string;
+  dataDir: string;
+  previousRoot: string;
+  nextRoot: string;
+}) {
+  const base = await createManagedRootRebinder(
+    options.dataDir,
+    options.dataDir,
+  );
+  const rewritePath = async (value: string) => {
+    if (!isAbsolute(value)) return value;
+    const suffix = relative(options.previousRoot, value);
+    if (isAbsolute(suffix) || suffix === ".." || suffix.startsWith(`..${sep}`))
+      return value;
+    const target = await physicalPath(join(options.nextRoot, suffix));
+    const inside = relative(options.nextRoot, target);
+    if (isAbsolute(inside) || inside === ".." || inside.startsWith(`..${sep}`))
+      throw new Error("重新关联目录存在越界软链，拒绝恢复检查点。");
+    return target;
+  };
+  const rewriteJson = async (value: unknown, field = ""): Promise<unknown> => {
+    if (typeof value === "string")
+      return PATH_FIELDS.has(field) ? rewritePath(value) : value;
+    if (Array.isArray(value))
+      return Promise.all(value.map((entry) => rewriteJson(entry, field)));
+    if (!value || typeof value !== "object") return value;
+    return Object.fromEntries(
+      await Promise.all(
+        Object.entries(value).map(async ([key, entry]) => [
+          key,
+          await rewriteJson(entry, key),
+        ]),
+      ),
+    );
+  };
+  const undo: Undo[] = [];
+  const rollback = async () => {
+    for (const restore of [...undo].reverse()) await restore();
+  };
+  try {
+    await rebindCheckpoints({
+      scoped: options.scoped,
+      projectId: options.projectId,
+      mapper: { ...base, rewritePath, rewriteJson },
+      binary: "git",
+      undo,
+    });
+  } catch (error) {
+    await rollback();
+    throw error;
+  }
+  return rollback;
 }
 
 /** 启动内部调用：旧根仅来自实例账本，当前根仅来自可信native配置，不接受HTTP路径。 */

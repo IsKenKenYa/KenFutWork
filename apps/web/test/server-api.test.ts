@@ -13,11 +13,13 @@ import {
   fetchDesignTaskApprovals,
   fetchDesignTaskPolicy,
   fetchDirectoryPickerStatus,
+  fetchProjectDirectoryRelinkSnapshot,
   fetchProjects,
   fetchVideoModels,
   pauseDesignGoal,
   pickDirectory,
   provisionDesignTask,
+  relinkProjectDirectory,
   resolveDesignTaskApproval,
   resumeDesignGoal,
   saveCanvas,
@@ -94,6 +96,90 @@ describe("本机Cookie与显式Bearer API", () => {
         headers: {
           "content-type": "application/json",
         },
+      }),
+    );
+  });
+
+  it("reads the controlled project directory snapshot before relinking", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        projectId: "00000000-0000-4000-8000-000000000001",
+        workDir: "/missing/project",
+        tasks: [
+          {
+            taskId: "00000000-0000-4000-8000-000000000002",
+            scopeGeneration: 2,
+            branchGeneration: 3,
+          },
+        ],
+      }),
+    });
+
+    await fetchProjectDirectoryRelinkSnapshot(
+      "token_abc",
+      "00000000-0000-4000-8000-000000000001",
+    );
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/projects/00000000-0000-4000-8000-000000000001/relink-directory",
+      expect.objectContaining({
+        credentials: "include",
+        headers: { Authorization: "Bearer token_abc" },
+      }),
+    );
+  });
+
+  it("posts the selected directory with the unchanged task fences", async () => {
+    const response = {
+      projectId: "00000000-0000-4000-8000-000000000001",
+      workDir: "/workspace/new-project",
+      tasks: [
+        {
+          taskId: "00000000-0000-4000-8000-000000000002",
+          scopeGeneration: 3,
+          branchGeneration: 4,
+          status: "ready",
+        },
+      ],
+      affectedTaskIds: ["00000000-0000-4000-8000-000000000002"],
+    };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => response,
+    });
+    const input = {
+      expectedWorkDir: "/missing/project",
+      nextWorkDir: "/workspace/new-project",
+      expectedTasks: [
+        {
+          taskId: "00000000-0000-4000-8000-000000000002",
+          scopeGeneration: 2,
+          branchGeneration: 3,
+        },
+      ],
+    };
+
+    await expect(
+      relinkProjectDirectory(
+        "token_abc",
+        "00000000-0000-4000-8000-000000000001",
+        input,
+      ),
+    ).resolves.toEqual(response);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3001/api/projects/00000000-0000-4000-8000-000000000001/relink-directory",
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+        headers: {
+          Authorization: "Bearer token_abc",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(input),
       }),
     );
   });

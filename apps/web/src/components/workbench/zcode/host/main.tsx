@@ -27,6 +27,7 @@ import {
 } from "./httpChannelClient.js";
 import { renderManagementDocument } from "./managementDocument.js";
 import { requestManagementOpen } from "./managementNavigation.js";
+import { CodeDirectoryRecoveryProvider } from "./ProjectDirectoryRecovery.js";
 import { navigateToDesign, requestParentBootstrap } from "./parentBridge.js";
 import { createCodePlatform } from "./platform.js";
 import { createHostWorkbenchNavigation } from "./workbenchNavigation.js";
@@ -107,30 +108,34 @@ function CodeHost({
         broadcastService={services.broadcastService}
       >
         <ScopedErrorBoundary scope="kenfutwork-code-host">
-          <Root
-            services={services}
-            platform={platform}
-            isMacDesktop={Boolean(desktopChrome)}
-            directoryServices={client.directoryServices()}
-            onWorkspaceContextChange={onWorkspaceContextChange}
-            initialUserInfo={user}
-            {...(workspace ? { initialWorkspaceAbsPath: workspace.path } : {})}
-            {...(workspaceIdentity
-              ? { initialWorkspaceIdentity: workspaceIdentity }
-              : {})}
-            workbenchGroupClientMode={clientMode}
-            onInterfaceModeChange={(mode) => {
-              if (mode === "office") navigateToDesign();
-            }}
-            preferDirectoryBrowser
-            restoreSession
-            allowRemoteWorkspace={false}
-            supportsEmbeddedBrowser={false}
-            assistantCodeCommentCardsEnabled
-            initialWorkspaceLoadingFallback={
-              <RootStartupLoading label="打开 Code 工作目录" />
-            }
-          />
+          <CodeDirectoryRecoveryProvider client={client}>
+            <Root
+              services={services}
+              platform={platform}
+              isMacDesktop={Boolean(desktopChrome)}
+              directoryServices={client.directoryServices()}
+              onWorkspaceContextChange={onWorkspaceContextChange}
+              initialUserInfo={user}
+              {...(workspace
+                ? { initialWorkspaceAbsPath: workspace.path }
+                : {})}
+              {...(workspaceIdentity
+                ? { initialWorkspaceIdentity: workspaceIdentity }
+                : {})}
+              workbenchGroupClientMode={clientMode}
+              onInterfaceModeChange={(mode) => {
+                if (mode === "office") navigateToDesign();
+              }}
+              preferDirectoryBrowser
+              restoreSession
+              allowRemoteWorkspace={false}
+              supportsEmbeddedBrowser={false}
+              assistantCodeCommentCardsEnabled
+              initialWorkspaceLoadingFallback={
+                <RootStartupLoading label="打开 Code 工作目录" />
+              }
+            />
+          </CodeDirectoryRecoveryProvider>
         </ScopedErrorBoundary>
       </ZCodeIntlProvider>
     </CuaSnapshotReader>

@@ -3,6 +3,7 @@ import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { WindowsTopLeftLogo } from "@zui/WindowsTopLeftLogo.js";
 import { Code2, Palette, Workflow } from "lucide-react";
 import { useSyncExternalStore } from "react";
+import { ProjectDirectoryRecovery } from "./ProjectDirectoryRecovery.js";
 
 /** 从CanvasSidebar原横排及收起按钮提取，Code／Design／Flow共用展示。 */
 export function WorkbenchModeNavigation({
@@ -75,8 +76,14 @@ export function WorkbenchModeNavigation({
 
 export function HostWorkbenchModeNavigation() {
   const navigation = useOptionalPlatform()?.workbenchNavigation;
-  if (!navigation) return null;
-  return <ConnectedWorkbenchModeNavigation navigation={navigation} />;
+  return (
+    <>
+      {navigation ? (
+        <ConnectedWorkbenchModeNavigation navigation={navigation} />
+      ) : null}
+      <ProjectDirectoryRecovery />
+    </>
+  );
 }
 
 function ConnectedWorkbenchModeNavigation({

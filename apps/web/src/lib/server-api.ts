@@ -27,6 +27,9 @@ import type {
   PickDirectoryResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
+  ProjectDirectoryRelinkRequest,
+  ProjectDirectoryRelinkResponse,
+  ProjectDirectoryRelinkSnapshot,
   ProjectFileLocation,
   ProjectFileMoveRequest,
   ProjectFileRelinkRequest,
@@ -50,6 +53,10 @@ import type {
   VoiceSettingsResponse,
   VoiceSettingsUpdateRequest,
   VoiceTranscribeResponse,
+} from "@kenfutwork/shared";
+import {
+  projectDirectoryRelinkResponseSchema,
+  projectDirectoryRelinkSnapshotSchema,
 } from "@kenfutwork/shared";
 import { bearerHeaders, serverFetch } from "@/lib/local-access";
 
@@ -197,6 +204,35 @@ export async function updateProject(
     },
   );
   if (!response.ok) return handleErrorResponse(response);
+}
+
+export async function fetchProjectDirectoryRelinkSnapshot(
+  accessToken: string | null | undefined,
+  projectId: string,
+): Promise<ProjectDirectoryRelinkSnapshot> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/projects/${projectId}/relink-directory`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return projectDirectoryRelinkSnapshotSchema.parse(await response.json());
+}
+
+export async function relinkProjectDirectory(
+  accessToken: string | null | undefined,
+  projectId: string,
+  input: ProjectDirectoryRelinkRequest,
+): Promise<ProjectDirectoryRelinkResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/projects/${projectId}/relink-directory`,
+    {
+      method: "POST",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return projectDirectoryRelinkResponseSchema.parse(await response.json());
 }
 
 // --- Canvas API ---

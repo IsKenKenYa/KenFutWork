@@ -9,10 +9,16 @@ import {
   useState,
 } from "react";
 import { resolveDesignAutoCanvas } from "@/lib/design-auto-canvas";
+import { revealPath } from "@/lib/desktop-system";
 import {
+  ApiApplicationError,
   createProject,
   deleteProject,
+  fetchDirectoryPickerStatus,
+  fetchProjectDirectoryRelinkSnapshot,
   fetchProjects,
+  pickDirectory,
+  relinkProjectDirectory,
   updateProject,
 } from "@/lib/server-api";
 
@@ -30,6 +36,19 @@ export function useDesignProjects(
     null,
   );
   const [creatingProject, setCreatingProject] = useState(false);
+  const [selectingDirectory, setSelectingDirectory] = useState(false);
+  const [relinkingProjectId, setRelinkingProjectId] = useState<string | null>(
+    null,
+  );
+  const [relinkDraft, setRelinkDraft] = useState<{
+    projectId: string;
+    path: string;
+  } | null>(null);
+  const [directoryPickerAvailable, setDirectoryPickerAvailable] =
+    useState(false);
+  const [relinkableProjectId, setRelinkableProjectId] = useState<string | null>(
+    null,
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const autoCanvasTried = useRef(false);
   const readGeneration = useRef(0);
@@ -65,6 +84,46 @@ export function useDesignProjects(
     };
   }, [refreshProjects]);
   useEffect(() => {
+    let current = true;
+    fetchDirectoryPickerStatus(accessToken)
+      .then(({ available }) => {
+        if (current) setDirectoryPickerAvailable(available);
+      })
+      .catch(() => {
+        if (current) setDirectoryPickerAvailable(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [accessToken]);
+  useEffect(() => {
+    let current = true;
+    const selected = projects.find(
+      (project) => project.id === selectedProjectId,
+    );
+    setRelinkableProjectId(null);
+    if (mode !== "design" || !selected?.workDir) return;
+    void fetchProjectDirectoryRelinkSnapshot(accessToken, selected.id)
+      .then((snapshot) => {
+        if (current && snapshot.workDir === selected.workDir)
+          setRelinkableProjectId(selected.id);
+      })
+      .catch((error: unknown) => {
+        if (!current) return;
+        if (
+          error instanceof ApiApplicationError &&
+          error.message === "原项目目录仍存在，不能重新关联。"
+        )
+          return;
+        setNotice(
+          error instanceof Error ? error.message : "项目目录状态无法读取。",
+        );
+      });
+    return () => {
+      current = false;
+    };
+  }, [accessToken, mode, projects, selectedProjectId]);
+  useEffect(() => {
     const handler = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
       const frame = frameRef.current?.contentWindow;
@@ -86,12 +145,13 @@ export function useDesignProjects(
     return () => window.removeEventListener("message", handler);
   }, [refreshProjects, frameRef]);
   const createProjectNamed = useCallback(
-    async (name: string): Promise<CanvasProject | null> => {
+    async (name: string, workDir?: string): Promise<CanvasProject | null> => {
       setCreatingProject(true);
       try {
         const result = await createProject(accessToken, {
           kind: mode,
           name,
+          ...(workDir !== undefined ? { work_dir: workDir } : {}),
         });
         const project = result.project;
         if (project.kind !== mode) throw new Error("画布项目类型不匹配。");
@@ -107,6 +167,81 @@ export function useDesignProjects(
     },
     [accessToken, mode],
   );
+  const createProjectFromDirectory = useCallback(
+    async (name: string): Promise<CanvasProject | null> => {
+      setSelectingDirectory(true);
+      try {
+        const result = await pickDirectory(accessToken);
+        if (result.status === "cancelled") return null;
+        if (result.status !== "picked") {
+          setNotice(result.reason);
+          if (result.status === "unavailable")
+            setDirectoryPickerAvailable(false);
+          return null;
+        }
+        return await createProjectNamed(name, result.path);
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "目录选择失败。");
+        return null;
+      } finally {
+        setSelectingDirectory(false);
+      }
+    },
+    [accessToken, createProjectNamed],
+  );
+  const relinkProjectDirectoryFromPicker = useCallback(
+    async (projectId: string) => {
+      if (mode !== "design") return;
+      setRelinkingProjectId(projectId);
+      setNotice(null);
+      try {
+        const snapshot = await fetchProjectDirectoryRelinkSnapshot(
+          accessToken,
+          projectId,
+        );
+        const picked = await pickDirectory(accessToken);
+        if (picked.status === "cancelled") return;
+        if (picked.status !== "picked") {
+          setNotice(picked.reason);
+          if (picked.status === "unavailable")
+            setDirectoryPickerAvailable(false);
+          return;
+        }
+        const nextWorkDir = picked.path;
+        setRelinkDraft({ projectId, path: nextWorkDir });
+        const result = await relinkProjectDirectory(accessToken, projectId, {
+          expectedWorkDir: snapshot.workDir,
+          nextWorkDir,
+          expectedTasks: snapshot.tasks,
+        });
+        setRelinkDraft(null);
+        setSelectedProjectId(projectId);
+        refreshProjects(projectId);
+        frameRef.current?.contentWindow?.postMessage(
+          {
+            type: "workbench:project-directory-relinked",
+            projectId,
+            tasks: result.tasks.map(({ taskId }) => taskId),
+          },
+          window.location.origin,
+        );
+      } catch (error) {
+        setNotice(
+          error instanceof Error ? error.message : "目录重新关联失败。",
+        );
+      } finally {
+        setRelinkingProjectId(null);
+      }
+    },
+    [accessToken, frameRef, mode, refreshProjects],
+  );
+  const openProjectDirectory = useCallback(async (path: string) => {
+    try {
+      await revealPath(path);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "无法打开工作目录。");
+    }
+  }, []);
   const renameProject = useCallback(
     async (projectId: string, name: string) => {
       try {
@@ -171,7 +306,15 @@ export function useDesignProjects(
     selectedProject:
       projects.find((project) => project.id === selectedProjectId) ?? null,
     creatingProject,
+    selectingDirectory,
+    relinkingProjectId,
+    relinkDraft,
+    directoryPickerAvailable,
+    relinkableProjectId,
     createProjectNamed,
+    createProjectFromDirectory,
+    relinkProjectDirectoryFromPicker,
+    openProjectDirectory,
     renameProject,
     removeProject,
     notice,

@@ -54,6 +54,7 @@ import type { PersistenceService } from "../features/persistence/types.js";
 import type { PluginRegistryService } from "../features/plugins/plugin-registry-service.js";
 import type { ProcessSandbox } from "../features/process-sandbox/types.js";
 import type { ProjectFileService } from "../features/project-files/types.js";
+import type { ProjectDirectoryRelinkService } from "../features/projects/directory-relink.js";
 import type { ProjectService } from "../features/projects/project-service.js";
 import type { QueueClient } from "../features/queue/types.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
@@ -113,6 +114,7 @@ export interface ServiceMap {
    */
   checkpoints: CheckpointService;
   projects: ProjectService;
+  projectDirectoryRelink: ProjectDirectoryRelinkService;
   settings: SettingsService;
   threads: ThreadService;
   uploads: UploadService;

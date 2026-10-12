@@ -4,6 +4,8 @@ import { WorkbenchModeNavigation } from "@zcode/ui/design-shared";
 import {
   Blocks,
   Cpu,
+  FolderInput,
+  FolderOpen,
   Layers,
   ListChecks,
   Palette,
@@ -14,7 +16,9 @@ import {
   Workflow,
 } from "lucide-react";
 import type { Dispatch, MouseEvent, RefObject, SetStateAction } from "react";
+import { useEffect, useState } from "react";
 import { KenFutWorkLogo } from "@/components/icons/kenfutwork-logo";
+import { isDesktopShell } from "@/lib/desktop-embed";
 import type { FlowEntry } from "@/lib/flow-embed";
 import { PluginIcon, PluginPanelButtons } from "@/lib/plugin-panels";
 import type { WorkbenchMode } from "@/lib/workbench-surface";
@@ -47,7 +51,16 @@ export function CanvasSidebar({
   selectedProjectId,
   setSelectedProjectId,
   creatingProject,
+  selectingDirectory,
+  relinkingProjectId,
+  relinkDraft,
+  directoryPickerAvailable,
+  relinkableProjectId,
+  notice,
   createProjectNamed,
+  createProjectFromDirectory,
+  relinkProjectDirectoryFromPicker,
+  openProjectDirectory,
   renameProject,
   removeProject,
   sidebarWidth,
@@ -65,6 +78,8 @@ export function CanvasSidebar({
   flowView,
   setFlowView,
 }: Props) {
+  const [desktopShell, setDesktopShell] = useState(false);
+  useEffect(() => setDesktopShell(isDesktopShell()), []);
   const availableModes: WorkbenchMode[] = flowEntry?.available
     ? ["code", "design", "flow"]
     : ["code", "design"];
@@ -267,42 +282,123 @@ export function CanvasSidebar({
             <div className="flex min-h-0 flex-1 flex-col px-2">
               <div className="flex items-center justify-between px-1 pb-1">
                 <span className="text-xs text-muted-foreground">项目</span>
-                <button
-                  type="button"
-                  aria-label="创建项目"
-                  title="创建项目"
-                  disabled={creatingProject}
-                  onClick={() => {
-                    void createProjectNamed("未命名画布").then((project) => {
-                      if (project) setSelectedProjectId(project.id);
-                    });
-                  }}
-                  className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
+                <div className="flex items-center gap-1">
+                  {directoryPickerAvailable ? (
+                    <button
+                      type="button"
+                      aria-label="选目录新建"
+                      title="选目录新建"
+                      disabled={creatingProject || selectingDirectory}
+                      onClick={() => {
+                        void createProjectFromDirectory("未命名画布").then(
+                          (project) => {
+                            if (project) setSelectedProjectId(project.id);
+                          },
+                        );
+                      }}
+                      className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                    >
+                      <FolderInput className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    aria-label="创建项目"
+                    title="创建项目"
+                    disabled={creatingProject || selectingDirectory}
+                    onClick={() => {
+                      void createProjectNamed("未命名画布").then((project) => {
+                        if (project) setSelectedProjectId(project.id);
+                      });
+                    }}
+                    className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
+              {notice ? (
+                <p role="alert" className="px-2 pb-2 text-xs text-destructive">
+                  {notice}
+                </p>
+              ) : null}
               <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto pb-1">
                 {projects.length === 0 ? (
                   <p className="px-2 py-6 text-center text-xs text-muted-foreground">
                     {creatingProject ? "创建中…" : "暂无项目"}
                   </p>
                 ) : (
-                  projects.map((p) => (
-                    <SidebarRow
-                      key={p.id}
-                      label={p.name}
-                      active={selectedProjectId === p.id}
-                      icon={
-                        <Palette className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      }
-                      onOpen={() => {
-                        setSelectedProjectId(p.id);
-                      }}
-                      onRename={(next) => void renameProject(p.id, next)}
-                      onDelete={() => void removeProject(p.id)}
-                    />
-                  ))
+                  projects.map((project) => {
+                    const canOpen =
+                      desktopShell &&
+                      selectedProjectId === project.id &&
+                      Boolean(project.workDir);
+                    const canRelink =
+                      directoryPickerAvailable &&
+                      selectedProjectId === project.id &&
+                      relinkableProjectId === project.id &&
+                      Boolean(project.workDir);
+                    return (
+                      <div
+                        key={project.id}
+                        className="group/project-row relative"
+                      >
+                        <div className={canOpen ? "pr-16" : undefined}>
+                          <SidebarRow
+                            label={project.name}
+                            active={selectedProjectId === project.id}
+                            icon={
+                              <Palette className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            }
+                            onOpen={() => setSelectedProjectId(project.id)}
+                            onRename={(name) =>
+                              void renameProject(project.id, name)
+                            }
+                            onDelete={() => void removeProject(project.id)}
+                          />
+                        </div>
+                        {canOpen && project.workDir ? (
+                          <button
+                            type="button"
+                            aria-label="打开项目目录"
+                            title="打开项目目录"
+                            onClick={() =>
+                              void openProjectDirectory(project.workDir!)
+                            }
+                            className="absolute right-8 top-1/2 hidden -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground group-hover/project-row:block"
+                          >
+                            <FolderOpen className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
+                        {canRelink && project.workDir ? (
+                          <button
+                            type="button"
+                            aria-label="重新关联目录"
+                            title="重新关联目录"
+                            disabled={relinkingProjectId === project.id}
+                            onClick={() =>
+                              void relinkProjectDirectoryFromPicker(project.id)
+                            }
+                            className="absolute right-1 top-1/2 hidden -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground group-hover/project-row:block disabled:opacity-50"
+                          >
+                            <FolderInput className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
+                        {relinkDraft?.projectId === project.id ? (
+                          <span
+                            className="block truncate px-2 text-[10px] text-muted-foreground"
+                            title={relinkDraft.path}
+                          >
+                            新目录 ·{" "}
+                            {relinkDraft.path
+                              .split(/[\\/]/)
+                              .filter(Boolean)
+                              .at(-1) ?? relinkDraft.path}
+                          </span>
+                        ) : null}
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>

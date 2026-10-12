@@ -129,6 +129,9 @@ import {
   pluginToggleResponseSchema,
   projectCreateRequestSchema,
   projectCreateResponseSchema,
+  projectDirectoryRelinkRequestSchema,
+  projectDirectoryRelinkResponseSchema,
+  projectDirectoryRelinkSnapshotSchema,
   projectFileLocationSchema,
   projectFileMoveRequestSchema,
   projectFileRelinkRequestSchema,
@@ -1870,6 +1873,29 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "更新项目",
     description:
       "部分更新项目字段，成功返回 204 无响应体。请求体校验失败返回 400 带 issues。",
+  },
+  {
+    method: "get",
+    path: "/api/projects/:projectId/relink-directory",
+    tag: "projects",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: projectDirectoryRelinkSnapshotSchema,
+    summary: "核对缺失项目目录",
+    description:
+      "仅支持Code与Design项目。返回固定目录与真实Task授权代际；原目录存在或绑定不一致时拒绝，不扫描文件或猜测历史Task。Flow由独立项目控制Consumer处理。",
+  },
+  {
+    method: "post",
+    path: "/api/projects/:projectId/relink-directory",
+    tag: "projects",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: projectDirectoryRelinkRequestSchema,
+    responseSchema: projectDirectoryRelinkResponseSchema,
+    summary: "重新关联缺失项目目录",
+    description:
+      "仅支持Code与Design项目，且仅在原目录缺失时执行。先核对完整Task代际、关闭运行资源并暂停Goal，再原子迁移项目与Task固定根及检查点绑定；不重放输入。Flow由独立项目控制Consumer处理。",
   },
   {
     method: "put",

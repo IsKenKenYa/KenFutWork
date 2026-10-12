@@ -8,6 +8,9 @@ import {
   codeGoalControlStateSchema,
   codeUiWorkspaceSchema,
   isPluginIconResourceReference,
+  type ProjectDirectoryRelinkSnapshot,
+  projectDirectoryRelinkResponseSchema,
+  projectDirectoryRelinkSnapshotSchema,
 } from "@kenfutwork/shared";
 import {
   Emitter,
@@ -234,6 +237,34 @@ export class CodeHttpChannelClient implements IChannelClient {
     );
     this.workspaces.replaceProjects(result.workspaces);
     return result.workspaces;
+  }
+  async directoryRelinkSnapshot(projectId: string) {
+    try {
+      return projectDirectoryRelinkSnapshotSchema.parse(
+        await this.request(
+          `/api/projects/${encodeURIComponent(projectId)}/relink-directory`,
+        ),
+      );
+    } catch (error) {
+      if (error instanceof CodeHostHttpError && error.status === 400)
+        return null;
+      throw error;
+    }
+  }
+  async relinkDirectory(
+    snapshot: ProjectDirectoryRelinkSnapshot,
+    path: string,
+  ) {
+    return projectDirectoryRelinkResponseSchema.parse(
+      await this.request(
+        `/api/projects/${encodeURIComponent(snapshot.projectId)}/relink-directory`,
+        {
+          expectedWorkDir: snapshot.workDir,
+          nextWorkDir: path,
+          expectedTasks: snapshot.tasks,
+        },
+      ),
+    );
   }
   setViewerContextResolver(resolve: (() => CodeUiViewerScope | null) | null) {
     this.viewerContext = resolve;

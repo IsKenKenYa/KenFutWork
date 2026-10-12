@@ -259,7 +259,8 @@
       "surface": "test",
       "readers": [
         "apps/server/src/features/local-instance/root-binding.integration.test.ts",
-        "apps/server/src/features/local-instance/idle.integration.test.ts"
+        "apps/server/src/features/local-instance/idle.integration.test.ts",
+        "apps/server/src/features/projects/directory-relink-code-design.integration.test.ts"
       ],
       "inExamples": false,
       "status": "test-gate",
