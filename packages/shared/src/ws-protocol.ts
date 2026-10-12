@@ -7,6 +7,9 @@ import { streamEventSchema } from "./events.js";
 export const wsServerEventSchema = z.object({
   type: z.literal("event"),
   event: streamEventSchema,
+  /** Task缓冲的服务端单调序号；旧Canvas/Code传输可省略。 */
+  seq: z.number().int().min(1).optional(),
+  taskId: z.string().uuid().optional(),
 });
 
 // --- Server → Client: RPC Request ---
@@ -23,6 +26,7 @@ export const wsRpcRequestSchema = z.object({
 export const wsCommandAckSchema = z.object({
   type: z.literal("command.ack"),
   action: z.string().min(1),
+  requestId: z.string().min(1).max(128).optional(),
   payload: z.record(z.string(), z.unknown()),
 });
 
@@ -30,21 +34,42 @@ export const wsCommandAckSchema = z.object({
 
 export const wsRunCommandSchema = z.object({
   type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
   action: z.literal("agent.run"),
-  payload: runCreateRequestSchema,
+  payload: runCreateRequestSchema.extend({
+    /** Design持久输入去重；重连必须复用同一inputId。 */
+    inputId: z.string().min(1).max(128).optional(),
+    scopeGeneration: z.number().int().positive().optional(),
+    branchGeneration: z.number().int().positive().optional(),
+  }),
 });
 
 export const wsCancelCommandSchema = z.object({
   type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
   action: z.literal("agent.cancel"),
-  payload: z.object({ runId: z.string().min(1) }),
+  payload: z.object({
+    runId: z.string().min(1),
+    taskId: z.string().uuid().optional(),
+  }),
 });
 
 export const wsResumeCommandSchema = z.object({
   type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
   action: z.literal("canvas.resume"),
   payload: z.object({
     canvasId: z.string().min(1),
+    lastSeq: z.number().int().min(0).default(0),
+  }),
+});
+
+export const wsTaskResumeCommandSchema = z.object({
+  type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
+  action: z.literal("task.resume"),
+  payload: z.object({
+    taskId: z.string().uuid(),
     lastSeq: z.number().int().min(0).default(0),
   }),
 });
@@ -73,6 +98,7 @@ export const wsFlowResumeCommandSchema = z.object({
  */
 export const wsTerminalStartCommandSchema = z.object({
   type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
   action: z.literal("terminal.start"),
   payload: z.object({
     sessionId: z.string().min(1).max(64),
@@ -89,6 +115,7 @@ export const wsTerminalStartCommandSchema = z.object({
 
 export const wsTerminalInputCommandSchema = z.object({
   type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
   action: z.literal("terminal.input"),
   payload: z.object({
     sessionId: z.string().min(1).max(64),
@@ -103,6 +130,7 @@ export const wsTerminalInputCommandSchema = z.object({
 
 export const wsTerminalResizeCommandSchema = z.object({
   type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
   action: z.literal("terminal.resize"),
   payload: z.object({
     sessionId: z.string().min(1).max(64),
@@ -113,6 +141,7 @@ export const wsTerminalResizeCommandSchema = z.object({
 
 export const wsTerminalStopCommandSchema = z.object({
   type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
   action: z.literal("terminal.stop"),
   payload: z.object({ sessionId: z.string().min(1).max(64) }),
 });
@@ -128,6 +157,7 @@ export const wsCommandSchema = z.discriminatedUnion("action", [
   wsRunCommandSchema,
   wsCancelCommandSchema,
   wsResumeCommandSchema,
+  wsTaskResumeCommandSchema,
   wsFlowResumeCommandSchema,
   wsTerminalStartCommandSchema,
   wsTerminalInputCommandSchema,
@@ -153,6 +183,7 @@ export const wsClientMessageSchema = z.union([
   wsRunCommandSchema,
   wsCancelCommandSchema,
   wsResumeCommandSchema,
+  wsTaskResumeCommandSchema,
   wsFlowResumeCommandSchema,
   wsTerminalStartCommandSchema,
   wsTerminalInputCommandSchema,
@@ -185,8 +216,17 @@ export const wsTerminalExitSchema = z.object({
 export type WsTerminalOutput = z.infer<typeof wsTerminalOutputSchema>;
 export type WsTerminalExit = z.infer<typeof wsTerminalExitSchema>;
 
+export const wsServerErrorSchema = z.object({
+  type: z.literal("error"),
+  message: z.string(),
+  code: z.string().optional(),
+  requestId: z.string().min(1).max(128).optional(),
+  action: z.string().optional(),
+});
+
 export const wsServerMessageSchema = z.discriminatedUnion("type", [
   wsServerEventSchema,
+  wsServerErrorSchema,
   wsRpcRequestSchema,
   wsCommandAckSchema,
   wsTerminalOutputSchema,
@@ -195,11 +235,13 @@ export const wsServerMessageSchema = z.discriminatedUnion("type", [
 
 // --- Type exports ---
 
+export type WsServerError = z.infer<typeof wsServerErrorSchema>;
 export type WsServerEvent = z.infer<typeof wsServerEventSchema>;
 export type WsRpcRequest = z.infer<typeof wsRpcRequestSchema>;
 export type WsCommandAck = z.infer<typeof wsCommandAckSchema>;
 export type WsRunCommand = z.infer<typeof wsRunCommandSchema>;
 export type WsCancelCommand = z.infer<typeof wsCancelCommandSchema>;
+export type WsTaskResumeCommand = z.infer<typeof wsTaskResumeCommandSchema>;
 export type WsResumeCommand = z.infer<typeof wsResumeCommandSchema>;
 export type WsFlowResumeCommand = z.infer<typeof wsFlowResumeCommandSchema>;
 export type WsTerminalResizeCommand = z.infer<

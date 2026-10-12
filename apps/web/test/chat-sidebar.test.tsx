@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import type { StreamEvent } from "@kenfutwork/shared";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,6 +13,8 @@ import type { WebSocketHandle } from "../src/hooks/use-websocket";
 const {
   createSessionMock,
   deleteSessionMock,
+  fetchDesignTaskPolicyMock,
+  fetchDesignTaskApprovalsMock,
   fetchExecutionModeMock,
   fetchExecutionModesMock,
   fetchImageModelsMock,
@@ -20,10 +23,16 @@ const {
   fetchSessionsMock,
   fetchInstanceSkillsMock,
   saveMessageMock,
+  provisionDesignTaskMock,
+  updateDesignTaskPolicyMock,
+  resolveDesignTaskApprovalMock,
   updateSessionTitleMock,
+  ApiApplicationErrorMock,
 } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
   deleteSessionMock: vi.fn(),
+  fetchDesignTaskPolicyMock: vi.fn(),
+  fetchDesignTaskApprovalsMock: vi.fn(),
   fetchExecutionModeMock: vi.fn(),
   fetchExecutionModesMock: vi.fn(),
   fetchImageModelsMock: vi.fn(),
@@ -32,12 +41,25 @@ const {
   fetchSessionsMock: vi.fn(),
   fetchInstanceSkillsMock: vi.fn(),
   saveMessageMock: vi.fn(),
+  provisionDesignTaskMock: vi.fn(),
+  updateDesignTaskPolicyMock: vi.fn(),
+  resolveDesignTaskApprovalMock: vi.fn(),
   updateSessionTitleMock: vi.fn(),
+  ApiApplicationErrorMock: class extends Error {
+    constructor(
+      public code: string,
+      message: string,
+    ) {
+      super(message);
+    }
+  },
 }));
 
 vi.mock("../src/lib/server-api", () => ({
   createSession: createSessionMock,
   deleteSession: deleteSessionMock,
+  fetchDesignTaskPolicy: fetchDesignTaskPolicyMock,
+  fetchDesignTaskApprovals: fetchDesignTaskApprovalsMock,
   fetchExecutionMode: fetchExecutionModeMock,
   fetchExecutionModes: fetchExecutionModesMock,
   fetchImageModels: fetchImageModelsMock,
@@ -45,6 +67,10 @@ vi.mock("../src/lib/server-api", () => ({
   fetchModels: fetchModelsMock,
   fetchSessions: fetchSessionsMock,
   fetchInstanceSkills: fetchInstanceSkillsMock,
+  provisionDesignTask: provisionDesignTaskMock,
+  updateDesignTaskPolicy: updateDesignTaskPolicyMock,
+  resolveDesignTaskApproval: resolveDesignTaskApprovalMock,
+  ApiApplicationError: ApiApplicationErrorMock,
 
   // 语音：输入框挂载时会读一次功能模式（读不到按默认档，不影响本文件用例）
   fetchVoiceSettings: vi.fn(async () => ({
@@ -62,21 +88,41 @@ vi.mock("../src/lib/server-api", () => ({
   updateSessionTitle: updateSessionTitleMock,
 }));
 
+const eventListeners: Array<
+  (event: StreamEvent, seq?: number, taskId?: string) => void
+> = [];
+let nextDelivery: "running" | "queued" = "running";
+
 function createMockWs(): WebSocketHandle {
   return {
     connected: true,
+    resumeTask: vi.fn(),
     resumeCanvas: vi.fn(),
     reconnectNow: vi.fn(),
-    startRun: vi.fn((_payload, onAck) => {
+    startRun: vi.fn((payload, onAck) => {
       // Simulate server ack
       onAck?.({
         type: "command.ack",
         action: "agent.run",
-        payload: { runId: "run_123" },
+        payload: {
+          runId: "run_123",
+          sessionId: payload.sessionId,
+          taskId: payload.taskId,
+          inputId: payload.inputId,
+          scopeGeneration: payload.scopeGeneration,
+          branchGeneration: payload.branchGeneration,
+          delivery: nextDelivery,
+        },
       });
     }),
     cancelRun: vi.fn(),
-    onEvent: vi.fn(() => () => {}),
+    onEvent: vi.fn((callback: Parameters<WebSocketHandle["onEvent"]>[0]) => {
+      eventListeners.push(callback);
+      return () => {
+        const index = eventListeners.indexOf(callback);
+        if (index >= 0) eventListeners.splice(index, 1);
+      };
+    }),
     registerRPC: vi.fn(() => () => {}),
     startTerminal: vi.fn(),
     sendTerminalInput: vi.fn(),
@@ -90,6 +136,7 @@ describe("ChatSidebar", () => {
   let mockWs: WebSocketHandle;
 
   beforeEach(() => {
+    localStorage.removeItem("kenfutwork:agent-model");
     Object.defineProperty(Element.prototype, "scrollIntoView", {
       configurable: true,
       value: vi.fn(),
@@ -110,6 +157,8 @@ describe("ChatSidebar", () => {
       })),
     });
     mockWs = createMockWs();
+    eventListeners.length = 0;
+    nextDelivery = "running";
     createSessionMock.mockReset();
     createSessionMock.mockResolvedValue({
       session: {
@@ -124,6 +173,27 @@ describe("ChatSidebar", () => {
     fetchModelsMock.mockReset();
     fetchModelsMock.mockResolvedValue({ models: [] });
     fetchImageModelsMock.mockReset();
+    fetchDesignTaskPolicyMock.mockReset();
+    fetchDesignTaskPolicyMock.mockResolvedValue({
+      task: {
+        taskId: "session-real",
+        projectId: "project-real",
+        canvasId: "canvas-1",
+        rootDirectory: "/workspace",
+        additionalDirectories: [],
+        sandboxMode: "workspace-write",
+        scopeGeneration: 2,
+        branchGeneration: 3,
+        mode: "build",
+        planEnabled: false,
+        planningEpoch: 0,
+        activeRunId: null,
+        executionState: "ready",
+      },
+    });
+    fetchDesignTaskApprovalsMock.mockReset();
+    fetchDesignTaskApprovalsMock.mockResolvedValue({ approvals: [] });
+
     fetchExecutionModesMock.mockReset();
     fetchExecutionModesMock.mockResolvedValue({ modes: ["agent", "plan"] });
     fetchExecutionModeMock.mockReset();
@@ -142,7 +212,50 @@ describe("ChatSidebar", () => {
       ],
     });
     saveMessageMock.mockReset();
-    saveMessageMock.mockResolvedValue(undefined);
+    saveMessageMock.mockResolvedValue({
+      message: { id: "message-persisted", role: "user", contentBlocks: [] },
+    });
+    provisionDesignTaskMock.mockReset();
+    provisionDesignTaskMock.mockResolvedValue({
+      task: {
+        taskId: "session-real",
+        projectId: "project-real",
+        canvasId: "canvas-1",
+        rootDirectory: "/workspace",
+        additionalDirectories: [],
+        sandboxMode: "workspace-write",
+        scopeGeneration: 2,
+        branchGeneration: 3,
+        mode: "build",
+        planEnabled: false,
+        planningEpoch: 0,
+        activeRunId: null,
+        executionState: "ready",
+      },
+    });
+    updateDesignTaskPolicyMock.mockReset();
+    updateDesignTaskPolicyMock.mockResolvedValue({
+      task: {
+        taskId: "session-real",
+        projectId: "project-real",
+        canvasId: "canvas-1",
+        rootDirectory: "/workspace",
+        additionalDirectories: [],
+        sandboxMode: "workspace-write",
+        scopeGeneration: 3,
+        branchGeneration: 3,
+        mode: "build",
+        planEnabled: true,
+        planningEpoch: 1,
+        activeRunId: null,
+        executionState: "ready",
+      },
+    });
+    resolveDesignTaskApprovalMock.mockReset();
+    resolveDesignTaskApprovalMock.mockResolvedValue({
+      status: "resolved",
+      decision: "allow",
+    });
     updateSessionTitleMock.mockReset();
     updateSessionTitleMock.mockResolvedValue(undefined);
   });
@@ -167,24 +280,235 @@ describe("ChatSidebar", () => {
     );
 
     const input = await screen.findByPlaceholderText(/输入你的想法/);
+    await waitFor(() =>
+      expect(mockWs.resumeTask).toHaveBeenCalledWith(
+        "session-real",
+        0,
+        expect.any(Function),
+      ),
+    );
+    expect(mockWs.resumeCanvas).not.toHaveBeenCalled();
     await userEvent.type(input, "hello loom{Enter}");
 
     await waitFor(() =>
       expect(mockWs.startRun).toHaveBeenCalledWith(
         expect.objectContaining({
           sessionId: "session-real",
-          conversationId: "canvas-1",
+          conversationId: "session-real",
+          taskId: "session-real",
+          inputId: "message-persisted",
+          scopeGeneration: 2,
+          branchGeneration: 3,
           prompt: "hello loom",
           canvasId: "canvas-1",
+          preset: "design",
         }),
         expect.any(Function),
       ),
+    );
+    expect(saveMessageMock.mock.invocationCallOrder[0]).toBeLessThan(
+      (
+        mockWs.startRun as unknown as {
+          mock: { invocationCallOrder: number[] };
+        }
+      ).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
     );
     expect(mockWs.startRun).not.toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "session-canvas-1",
       }),
       expect.anything(),
+    );
+  });
+
+  it("persists the stable input ID before CAS-updating Design policy and sending", async () => {
+    fetchExecutionModeMock.mockResolvedValue({ mode: "plan" });
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(/输入你的想法/);
+    await userEvent.type(input, "列计划{Enter}");
+
+    await waitFor(() => expect(mockWs.startRun).toHaveBeenCalled());
+    expect(updateDesignTaskPolicyMock).toHaveBeenCalledWith(
+      "token_abc",
+      "session-real",
+      {
+        expectedScopeGeneration: 2,
+        expectedBranchGeneration: 3,
+        planEnabled: true,
+      },
+    );
+    expect(saveMessageMock.mock.invocationCallOrder[0]).toBeLessThan(
+      updateDesignTaskPolicyMock.mock.invocationCallOrder[0] ?? Infinity,
+    );
+    expect(updateDesignTaskPolicyMock.mock.invocationCallOrder[0]).toBeLessThan(
+      (
+        mockWs.startRun as unknown as {
+          mock: { invocationCallOrder: number[] };
+        }
+      ).mock.invocationCallOrder[0] ?? Infinity,
+    );
+    expect(mockWs.startRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputId: "message-persisted",
+        executionMode: "plan",
+        scopeGeneration: 3,
+        branchGeneration: 3,
+      }),
+      expect.any(Function),
+    );
+  });
+
+  it("requires an explicit user action to provision an old Design session", async () => {
+    fetchDesignTaskPolicyMock.mockRejectedValue(
+      new ApiApplicationErrorMock("session_not_found", "任务尚未配置执行目录"),
+    );
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const prepare = await screen.findByRole("button", { name: "准备任务" });
+    expect(provisionDesignTaskMock).not.toHaveBeenCalled();
+    await userEvent.click(prepare);
+    await waitFor(() =>
+      expect(provisionDesignTaskMock).toHaveBeenCalledWith(
+        "token_abc",
+        "session-real",
+      ),
+    );
+    expect(await screen.findByPlaceholderText(/输入你的想法/)).toBeEnabled();
+  });
+
+  it("resolves the real permission option through its Task-bound interaction ID", async () => {
+    fetchDesignTaskApprovalsMock.mockResolvedValueOnce({
+      approvals: [
+        {
+          interactionId: "approval-1",
+          kind: "permission",
+          anchorRowId: 1,
+          createdAt: "2026-10-11T00:00:00.000Z",
+          payload: {
+            kind: "permission",
+            toolCallId: "tool-call",
+            toolName: "write_file",
+            summary: "写入 /workspace/result.txt",
+            detail: { path: "/workspace/result.txt" },
+            options: [
+              { optionId: "allow-once", label: "允许一次", kind: "allowOnce" },
+              { optionId: "deny", label: "拒绝", kind: "deny" },
+            ],
+          },
+        },
+      ],
+    });
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "允许一次" }),
+    );
+    await waitFor(() =>
+      expect(resolveDesignTaskApprovalMock).toHaveBeenCalledWith(
+        "token_abc",
+        "session-real",
+        "approval-1",
+        { answer: { optionId: "allow-once" } },
+      ),
+    );
+  });
+
+  it("submits plan approval with the original answer content, not the display label", async () => {
+    fetchDesignTaskApprovalsMock.mockResolvedValueOnce({
+      approvals: [
+        {
+          interactionId: "plan-approval-1",
+          kind: "userInput",
+          anchorRowId: 2,
+          createdAt: "2026-10-11T00:00:00.000Z",
+          payload: {
+            kind: "userInput",
+            prompt: "Approve the plan?",
+            freeText: false,
+            toolName: "ExitPlanMode",
+            schema: { interaction: "plan_approval", toolName: "ExitPlanMode" },
+            input: { plan: "# Steps\n1. Implement" },
+            questions: [
+              {
+                question: "Approve this plan?",
+                header: "Plan",
+                options: [
+                  { value: "approve", label: "Approve" },
+                  { value: "reject", label: "Reject" },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    });
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const planApproval = await screen.findByRole("region", {
+      name: "计划审批",
+    });
+    expect(planApproval).toHaveTextContent("# Steps");
+    expect(planApproval).toHaveTextContent("1. Implement");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Approve" }),
+    );
+    await waitFor(() =>
+      expect(resolveDesignTaskApprovalMock).toHaveBeenCalledWith(
+        "token_abc",
+        "session-real",
+        "plan-approval-1",
+        {
+          answer: {
+            action: "accept",
+            content: {
+              answers: { "Approve this plan?": "approve" },
+              answer_0: "approve",
+              answer: "approve",
+            },
+          },
+        },
+      ),
     );
   });
 
@@ -210,7 +534,11 @@ describe("ChatSidebar", () => {
 
     const stop = await screen.findByRole("button", { name: "停止本轮" });
     await userEvent.click(stop);
-    expect(mockWs.cancelRun).toHaveBeenCalledWith("run_123");
+    expect(mockWs.cancelRun).toHaveBeenCalledWith(
+      "session-real",
+      "run_123",
+      expect.any(Function),
+    );
   });
 
   it("图层/文件是另两个视图（图标切换），且切过去不顶掉对话标签行", async () => {

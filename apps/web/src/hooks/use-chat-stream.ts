@@ -1,20 +1,77 @@
 "use client";
 
 import type { StreamEvent, ToolBlock } from "@kenfutwork/shared";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { Message } from "./use-chat-sessions";
+import type { WebSocketHandle } from "./use-websocket";
 
 type MessageUpdater = (
   targetSessionId: string,
   updater: (prev: Message[]) => Message[],
 ) => void;
 
+type StreamConsumerOwner = "resume" | "replay" | "send";
+type StreamEventConsumer = Parameters<WebSocketHandle["onEvent"]>[0];
+const consumerPriority: Record<StreamConsumerOwner, number> = {
+  resume: 1,
+  send: 3,
+  replay: 4,
+};
+
 /**
  * Extracts the stream event handling logic into a reusable hook.
  * Used by both the main send flow and the reconnection resume flow,
  * eliminating the ~70 lines of duplicated event-handling code.
  */
-export function useChatStream(updateSessionMessages: MessageUpdater) {
+export function useChatStream(
+  updateSessionMessages: MessageUpdater,
+  ws?: WebSocketHandle,
+) {
+  const consumersRef = useRef(
+    new Map<
+      string,
+      Map<StreamConsumerOwner, { token: symbol; callback: StreamEventConsumer }>
+    >(),
+  );
+  const subscribeTaskEvents = useCallback(
+    (
+      taskId: string,
+      owner: StreamConsumerOwner,
+      callback: StreamEventConsumer,
+    ) => {
+      let consumers = consumersRef.current.get(taskId);
+      if (!consumers) {
+        consumers = new Map();
+        consumersRef.current.set(taskId, consumers);
+      }
+      const token = Symbol(owner);
+      consumers.set(owner, { token, callback });
+      return () => {
+        const registered = consumersRef.current.get(taskId);
+        if (registered?.get(owner)?.token !== token) return;
+        registered.delete(owner);
+        if (registered.size === 0) consumersRef.current.delete(taskId);
+      };
+    },
+    [],
+  );
+
+  const onWsEvent = ws?.onEvent;
+  useEffect(() => {
+    if (!onWsEvent) return;
+    return onWsEvent((event, seq, eventTaskId) => {
+      const taskId =
+        eventTaskId ?? (event.type === "run.started" ? event.sessionId : null);
+      if (!taskId) return;
+      const consumers = consumersRef.current.get(taskId);
+      if (!consumers?.size) return;
+      const selected = [...consumers.entries()].sort(
+        ([ownerA], [ownerB]) =>
+          consumerPriority[ownerB] - consumerPriority[ownerA],
+      )[0]?.[1];
+      selected?.callback(event, seq, taskId);
+    });
+  }, [onWsEvent]);
   /**
    * Apply a single StreamEvent to the assistant message identified by assistantId
    * in the given session. This is the single source of truth for how events
@@ -164,16 +221,20 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
                     }
                   : block,
               );
-              const hasText = blocks.some((b) => b.type === "text");
+              const hasFailureReason = blocks.some(
+                (block) =>
+                  block.type === "text" &&
+                  block.text.includes(event.error.message),
+              );
               return {
                 ...m,
-                contentBlocks: hasText
+                contentBlocks: hasFailureReason
                   ? blocks
                   : [
                       ...blocks,
                       {
                         type: "text" as const,
-                        text: "\u62b1\u6b49\uff0c\u5904\u7406\u8fc7\u7a0b\u4e2d\u9047\u5230\u95ee\u9898\uff0c\u8bf7\u91cd\u8bd5\u3002",
+                        text: event.error.message,
                       },
                     ],
               };
@@ -182,24 +243,66 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
           break;
 
         case "run.canceled":
-          // Clean up running tool blocks when run is aborted
           update((prev) =>
             prev.map((m) => {
               if (m.id !== assistantId) return m;
+              const message =
+                event.stopReason === "user_cancelled"
+                  ? "本轮已停止。"
+                  : event.stopReason === "task_stopped"
+                    ? "任务已停止。"
+                    : event.stopReason === "host_shutdown"
+                      ? "服务重启，本轮中断。"
+                      : null;
               const hasRunning = m.contentBlocks.some(
-                (b) => b.type === "tool" && b.status === "running",
+                (block) => block.type === "tool" && block.status === "running",
               );
-              if (!hasRunning) return m;
+              const hasReason =
+                message &&
+                m.contentBlocks.some(
+                  (block) =>
+                    block.type === "text" && block.text.includes(message),
+                );
+              if (!hasRunning && (!message || hasReason)) return m;
               return {
                 ...m,
-                contentBlocks: m.contentBlocks.map((block) =>
-                  block.type === "tool" && block.status === "running"
-                    ? { ...block, status: "completed" as const }
-                    : block,
-                ),
+                contentBlocks: [
+                  ...m.contentBlocks.map((block) =>
+                    block.type === "tool" && block.status === "running"
+                      ? { ...block, status: "completed" as const }
+                      : block,
+                  ),
+                  ...(message && !hasReason
+                    ? [{ type: "text" as const, text: message }]
+                    : []),
+                ],
               };
             }),
           );
+          break;
+
+        case "run.completed":
+          if (event.stopReason === "output_limit")
+            update((prev) =>
+              prev.map((message) => {
+                if (message.id !== assistantId) return message;
+                const note = "达到输出长度上限，本轮内容可能不完整。";
+                if (
+                  message.contentBlocks.some(
+                    (block) =>
+                      block.type === "text" && block.text.includes(note),
+                  )
+                )
+                  return message;
+                return {
+                  ...message,
+                  contentBlocks: [
+                    ...message.contentBlocks,
+                    { type: "text" as const, text: note },
+                  ],
+                };
+              }),
+            );
           break;
 
         default:
@@ -211,5 +314,5 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
     [updateSessionMessages],
   );
 
-  return { applyStreamEvent };
+  return { applyStreamEvent, subscribeTaskEvents };
 }

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { createChatService } from "../chat/chat-service.js";
 import { createChatRepository } from "../chat/repository.js";
+import { createThreadService } from "../chat/thread-service.js";
 import { createPostgresPersistence } from "../persistence/providers/postgres.js";
 import { createProjectService } from "../projects/project-service.js";
 import { createProjectRepository } from "../projects/repository.js";
@@ -76,6 +78,53 @@ async function fixture() {
 describe.skipIf(process.env.KENFUTWORK_DESIGN_TASK_TEST_PG !== "1")(
   "Design真实Task/FIFO/host恢复",
   () => {
+    it("Chat创建并发会话回传持久Task身份，两会话工作域独立且不使用画布ID", async () => {
+      const f = await fixture();
+      try {
+        const repository = createChatRepository(f.persistence);
+        const chat = createChatService({
+          repository,
+          localInstance: f.localInstance,
+          designTasks: f.service,
+          threadService: createThreadService({
+            repository,
+            localInstance: f.localInstance,
+          }),
+        });
+        const sessions = await Promise.all([
+          chat.createSession(f.actor, f.canvas.id, "第一会话"),
+          chat.createSession(f.actor, f.canvas.id, "第二会话"),
+        ]);
+        const scopes = createExecutionScopes({
+          repository: createScopeRepository(f.persistence),
+          localInstance: f.localInstance,
+        });
+        expect(new Set(sessions.map((session) => session.id)).size).toBe(2);
+        for (const session of sessions) {
+          expect(session.taskId).toBe(session.id);
+          expect(session.taskId).not.toBe(f.canvas.id);
+          const policy = await f.service.readPolicy(f.actor, session.id);
+          expect(policy).toMatchObject({
+            taskId: session.id,
+            canvasId: f.canvas.id,
+            projectId: f.project.id,
+            rootDirectory: f.project.work_dir,
+            scopeGeneration: 1,
+            branchGeneration: 1,
+            activeRunId: null,
+          });
+          const handle = await scopes.openTask(f.actor, session.id);
+          expect(handle.preset).toBe("design");
+          expect(handle.describe()).toMatchObject({
+            taskId: session.id,
+            projectId: f.project.id,
+            rootDirectory: f.project.work_dir,
+          });
+        }
+      } finally {
+        await f.close();
+      }
+    });
     it("项目关闭意图拒绝并发新Task/Run，失败保留代际，旧Run可结算并重试归档", async () => {
       const f = await fixture();
       const single = createPostgresPersistence({

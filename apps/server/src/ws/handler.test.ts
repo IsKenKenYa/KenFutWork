@@ -2,7 +2,11 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import websocket from "@fastify/websocket";
-import { flowRunEventSchema, instanceSettingsSchema } from "@kenfutwork/shared";
+import {
+  flowRunEventSchema,
+  instanceSettingsSchema,
+  wsServerMessageSchema,
+} from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
@@ -294,18 +298,26 @@ describe("WS 早期消息不丢失（回归）", () => {
 
   it("open 后立即发送的合法 action + 非法 payload 会回命令格式错误", async () => {
     const { app, port, headers } = await startServer();
+    const requestId = "invalid-cancel-early";
     try {
       const { got } = await sendImmediatelyOnOpen(
         port,
         JSON.stringify({
           type: "command",
+          id: requestId,
           action: "agent.cancel",
           payload: {},
         }),
         headers,
       );
-      expect(got).not.toBeNull();
-      expect(got).toContain("Invalid command format");
+      if (got === null) throw new Error("未收到非法命令的WS错误回执");
+      expect(wsServerMessageSchema.parse(JSON.parse(got))).toEqual({
+        type: "error",
+        code: "invalid_command",
+        message: "请求格式无效",
+        action: "agent.cancel",
+        requestId,
+      });
     } finally {
       await app.close();
     }
@@ -469,16 +481,25 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
   it("未带Task身份的终端拒绝，不能借用服务端启动目录", async () => {
     const { app, port, headers } = await startServer();
     const session = await connect(port, headers);
+    const requestId = "terminal-without-task";
     try {
       const rejected = await session.sendAndWait(
         {
           type: "command",
+          id: requestId,
           action: "terminal.start",
           payload: { sessionId: "t-no-task", cols: 80, rows: 24 },
         },
-        (message) => message.type === "error",
+        (message) =>
+          message.type === "error" && message.requestId === requestId,
       );
-      expect(rejected.message).toBe("Invalid command format");
+      expect(wsServerMessageSchema.parse(rejected)).toEqual({
+        type: "error",
+        code: "invalid_command",
+        message: "请求格式无效",
+        action: "terminal.start",
+        requestId,
+      });
     } finally {
       session.client.close();
       await app.close();

@@ -15,7 +15,8 @@
 | action | payload 要点 | 用途 |
 | --- | --- | --- |
 | `agent.run` | `runCreateRequestSchema`（同 `POST /api/agent/runs`） | 启动一次智能体运行 |
-| `agent.cancel` | `{ runId }` | 取消进行中的运行 |
+| `agent.cancel` | `{ runId, taskId? }`（Design 必填 Task） | 取消进行中的运行 |
+| `task.resume` | `{ taskId, lastSeq }` | Design 持久 Task 的断线续传 |
 | `canvas.resume` | `{ canvasId, lastSeq }` | 断线续传：从 `lastSeq` 起重放画布事件流 |
 | `terminal.start` | `{ taskId, sessionId, cols, rows, cwd?, shell? }` | 显式Task目录与授权中的真实PTY终端，断线等待管理范围退出 |
 | `terminal.input` | `{ sessionId, data }` | 向终端会话写入输入 |
@@ -126,3 +127,16 @@ Code V4与Design原`agent.run`传输保留用户原文。现有运行设置读�
 `plugin-management.inspectPluginSource/installPluginFromSource` 由 plugins feature 贡献，参数／结果沿既有 `pluginInspectRequest/Response` 与 `pluginInstallRequest/Response` 公共schema。来源检查与安装直接消费同一注册表，支持链接和本机目录，不创建Project／Task；原市场源添加、更新、删除是独立操作，未接入时保留原页并禁用。
 
 来源安装不开放生命周期脚本授权；安装阶段重新执行既有兼容门禁，拒绝时原HTTP/RPC返回真实报告与422。停用后重装保持停用。原来源表单输入与检查结果绑定服务、目标、来源及弹窗代际；关闭表单仍给有效库存目标只读对账，迟到响应不清新表单或作废新目标读取，未知写入响应不自动重试。Native顶栏「刷新库存」仅重新读取目录，不冒充市场源更新。工作目录授权安装与导出入口仍待接线。
+
+## Design 持久 Task 传输
+
+Design `agent.run` 复用 Run 字段，额外声明 `taskId`（等于 `sessionId`）、稳定 `inputId`、`scopeGeneration`、`branchGeneration`。新会话的创建回执持有 Task；旧会话须先显式 provision，再读取 policy。缺失执行元数据明确拒绝，不借用画布身份或自动供给。
+
+命令外层 `id` 是本次传输请求的关联号；同一持久输入重连时复用 `inputId`，传输 `id` 可更新。成功 `command.ack` 与拒绝 `error` 均回 `requestId` 和 `action`。拒绝还带 `code/message`，客户端立即拒绝对应请求，不能等待超时。其他历史错误帧可以省略这些字段。
+
+Design Run ACK 回 `taskId/sessionId/inputId/runId`、`delivery`（running/queued/duplicate）、当前 `activeRunId` 与授权代际。Task 缓冲按真实 instance/Task 隔离。宿主唯一消费 Run stream；WS 仅订阅，先发送 ACK，再投递本连接等待 ACK 期间的事件。事件信封附带 `taskId` 和单调 `seq`。
+
+- `task.resume`：`taskId/lastSeq`；先 ACK 当前 `activeRunId/latestSeq/replayed` 及代际，再回放该 Task 的事件。
+- `replayGap`：缓冲截断或服务重启导致序号缺口；客户端重新读取持久消息和 policy，不能把没有缓存解释为运行成功。
+- `agent.cancel`：Design 必须同时给 `taskId/runId`；仅匹配当前 Run 才停止，回执 `status` 为 stopping/idle/targetChanged。旧 Run 的迟到取消不能停止新 Run。
+- Plan 先通过 policy CAS 切换并取新代际，再发送；WS 不在 Run admission 内隐式改变授权。执行模式在宿主实际认领队列后激活，排队输入不改变当前 Run。

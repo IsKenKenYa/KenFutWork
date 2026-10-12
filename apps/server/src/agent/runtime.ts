@@ -894,6 +894,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     hasRun(runId: string) {
       return runs.has(runId);
     },
+    getRunIdentity(runId: string) {
+      const run = runs.get(runId);
+      if (!run) return null;
+      return {
+        instanceId: run.actor.instanceId,
+        ...(run.scopeHandle
+          ? { taskId: run.scopeHandle.describe().taskId }
+          : {}),
+        preset: resolvePresetForRun(run),
+      };
+    },
 
     activeRunCount(): number {
       return [...runs.values()].filter(

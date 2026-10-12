@@ -12,7 +12,7 @@ import { createThreadService } from "./thread-service.js";
 export function createChatPlugin(): PluginDefinition {
   return {
     name: "chat",
-    inject: ["localAccess", "persistence", "localInstance"],
+    inject: ["localAccess", "persistence", "localInstance", "designTasks"],
     apply(ctx) {
       const repository = createChatRepository(ctx.get("persistence"));
 
@@ -27,6 +27,7 @@ export function createChatPlugin(): PluginDefinition {
           repository,
           threadService: d.get("threads"),
           localInstance: ctx.get("localInstance"),
+          designTasks: d.get("designTasks"),
         }),
       );
     },
