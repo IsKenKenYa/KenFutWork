@@ -67,6 +67,9 @@ import {
   computerUseSnapshotQuerySchema,
   createImageJobRequestSchema,
   createVideoJobRequestSchema,
+  designApprovalListResponseSchema,
+  designApprovalResolveRequestSchema,
+  designApprovalResolveResponseSchema,
   designTaskPolicyResponseSchema,
   designTaskPolicyUpdateRequestSchema,
   directoryPickerStatusSchema,
@@ -284,6 +287,29 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
       "以客户端观察到的scope与branch代际核对当前Task，再使用服务端planning代际执行真实CAS；活动Run、队列占用或旧代际返回409，不启动运行。",
   },
 
+  {
+    method: "get",
+    path: "/api/design-tasks/:taskId/approvals",
+    tag: "permissions",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: designApprovalListResponseSchema,
+    summary: "读取画布任务当前审批",
+    description:
+      "仅列出真实Design Task当前活动Run及有效scope、branch、planning代际的permission和计划批准；不包含通用提问、其他Task或已取消审批。",
+  },
+  {
+    method: "post",
+    path: "/api/design-tasks/:taskId/approvals/:interactionId/resolve",
+    tag: "permissions",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: designApprovalResolveRequestSchema,
+    responseSchema: designApprovalResolveResponseSchema,
+    summary: "提交画布任务审批答案",
+    description:
+      "客户端仅提交原生permission或计划批准答案；绑定由服务端当前Task策略和实际审批构造，旧Run或旧代际返回409，外Task审批返回404。重复答案不重复授权，取消或停止后的审批不能恢复执行。",
+  },
   {
     method: "get",
     path: "/api/design-tasks/:taskId",
