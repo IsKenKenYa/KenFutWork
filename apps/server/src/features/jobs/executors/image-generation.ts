@@ -1,6 +1,7 @@
 import type { BackgroundJob } from "@kenfutwork/shared";
 import type { GeneratedImage } from "../../../generation/types.js";
 import { type ExecutorContext, registerExecutor } from "../job-executor.js";
+import { publishGeneratedFile } from "./generated-file.js";
 import { resolveInstanceImageProviderFromPayload } from "./instance-provider.js";
 
 registerExecutor(
@@ -25,6 +26,8 @@ registerExecutor(
     const lap = (label: string) =>
       console.log(`${tag} ${label} +${Date.now() - t0}ms`);
     lap("db_fetch");
+
+    await ctx.generationTargets.resolve(jobRow);
 
     const payload = (jobRow.payload ?? {}) as {
       prompt: string;
@@ -141,33 +144,23 @@ registerExecutor(
       const buffer: Buffer = Buffer.from(arrayBuffer);
       lap("image_download_done");
 
-      // Upload to object storage under the project-assets bucket（经 blob 缝）
-      const timestamp = Date.now();
-      const objectPath = `${instanceId}/generated/${timestamp}-${jobId}.png`;
-
-      const bucket = ctx.blob.bucket("project-assets");
-      await bucket.upload(objectPath, buffer, {
-        contentType: generated.mimeType ?? "image/png",
-        upsert: false,
-      });
-      lap("storage_upload_done");
-
-      // Insert asset_objects record（经 assetWriter 缝：executor 无用户身份，
-      // 按任务记录的工作区写入；`created_by_client_id` 可空）
-      const assetId = await ctx.assetWriter.recordGeneratedAsset({
-        byteSize: buffer.length,
-        mimeType: generated.mimeType ?? "image/png",
-        objectPath,
-        ...(createdBy ? { accessClientId: createdBy } : {}),
-        instanceId,
-      });
-
-      lap("asset_record_done");
-
-      // Generate a public URL for the result consumer
-      // 公开性由存储侧回答（实测 project-assets 可能非公开）
-      const resultUrl = await bucket.resolveUrl(objectPath);
-
+      const mimeType = generated.mimeType ?? "image/png";
+      const extension =
+        mimeType === "image/jpeg"
+          ? "jpg"
+          : mimeType === "image/webp"
+            ? "webp"
+            : "png";
+      const stored = await publishGeneratedFile(
+        jobRow,
+        buffer,
+        mimeType,
+        extension,
+        ctx,
+      );
+      const assetId = stored.assetId;
+      const objectPath = stored.objectPath;
+      const resultUrl = stored.url;
       lap("total");
       return {
         asset_id: assetId,

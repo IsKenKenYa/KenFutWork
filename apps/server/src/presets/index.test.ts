@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { createLocalInstanceService } from "../features/local-instance/service.js";
+import type { PostgresQueryRunner } from "../features/persistence/providers/postgres.js";
+import { createPersistenceFromRunner } from "../features/persistence/providers/postgres.js";
 
 import { composePlugins } from "../kernel/compose.js";
 import type { KernelEvents, ToolRegistry } from "../kernel/types.js";
@@ -62,7 +65,73 @@ describe("profiles（P7 单一插件清单）", async () => {
   const { serverProfile } = await import("../profiles/server.js");
   const { workerProfile } = await import("../profiles/worker.js");
 
-  it("server/worker profile 均可装配（无 app 时 ctx.app 访问抛错但不崩）", () => {
+  it("worker Project Provider reads scoped projects and denies archive for every kind", async () => {
+    const instanceId = "worker-instance";
+    const actor = { instanceId, accessClientId: null };
+    const rows = new Map([
+      ["project-code", { id: "project-code", kind: "code" }],
+      ["project-design", { id: "project-design", kind: "design" }],
+      ["project-flow", { id: "project-flow", kind: "flow" }],
+    ]);
+    const calls: Array<{ text: string; values: unknown[] }> = [];
+    const query = async (text: string, values: unknown[]) => {
+      calls.push({ text, values });
+      if (!/^\s*select\b/iu.test(text))
+        throw new Error("worker read fixture rejected SQL mutation");
+      const row = rows.get(String(values[0]));
+      return { rowCount: row ? 1 : 0, rows: row ? [row] : [] };
+    };
+    const runner: PostgresQueryRunner = {
+      query,
+      acquire: async () => ({ query, release() {} }),
+      acquireSession: async () => {
+        throw new Error("worker fixture does not open sessions");
+      },
+      end: async () => {},
+    };
+    const localInstance = createLocalInstanceService({
+      repository: { ensure: async () => instanceId },
+      dataDir: "/tmp/kenfut-worker-profile-test",
+    });
+    const worker = composePlugins(
+      { ...env, queueDriver: "in-process" },
+      workerProfile(),
+      {
+        overrides: {
+          localInstance,
+          persistence: createPersistenceFromRunner(runner),
+        },
+      },
+    );
+
+    try {
+      const projects = worker.get("projects");
+      for (const [projectId, kind] of [
+        ["project-code", "code"],
+        ["project-design", "design"],
+        ["project-flow", "flow"],
+      ] as const) {
+        expect(await projects.getProject(actor, projectId)).toMatchObject({
+          id: projectId,
+          kind,
+        });
+        await expect(
+          projects.archiveProject(actor, projectId),
+        ).rejects.toMatchObject({
+          code: "project_delete_failed",
+          statusCode: 503,
+        });
+      }
+      expect(calls).toHaveLength(3);
+      expect(calls.every(({ text }) => /^\s*select\b/iu.test(text))).toBe(true);
+      expect(calls.every(({ values }) => values.includes(instanceId))).toBe(
+        true,
+      );
+      expect(worker.get("jobLoop").inFlightCount()).toBe(0);
+    } finally {
+      await worker.dispose();
+    }
+
     const deps = {
       connectionManager: {} as never,
       events: {
@@ -72,9 +141,6 @@ describe("profiles（P7 单一插件清单）", async () => {
       } satisfies KernelEvents,
       env,
     };
-    expect(() => composePlugins(env, workerProfile())).not.toThrow();
-    // server profile 需要真实依赖（agentRuns 构造），无 app 时只校验清单——
-    // 这里只断言清单本身可被引用与展开（插件清单漂移在编译期消失）。
     expect(() => serverProfile(deps)).not.toThrow();
   });
 });

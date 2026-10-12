@@ -1,13 +1,65 @@
 import { registerProjectRoutes } from "../../http/projects.js";
-import type { PluginDefinition } from "../../kernel/types.js";
+import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
 import { createCodeUiRepository } from "../code-ui/repository.js";
 import { createTaskResourceCloser } from "../task-work/close-resources.js";
-import { createProjectService } from "./project-service.js";
+import {
+  createProjectService,
+  ProjectServiceError,
+} from "./project-service.js";
 import { createProjectRepository } from "./repository.js";
 
+type ProjectArchiveConsumers = Pick<
+  Parameters<typeof createProjectService>[0],
+  "beforeArchiveCodeProject" | "beforeArchiveDesignProject"
+>;
+
+/** Archive closing is an HTTP/server consumer; the queue worker only reads projects. */
+function createProjectArchiveConsumers(
+  ctx: PluginContext,
+): ProjectArchiveConsumers {
+  const close = createTaskResourceCloser({
+    localInstance: ctx.get("localInstance"),
+    resources: () => ({
+      runs: ctx.get("agentRuns"),
+      work: ctx.get("taskWork"),
+      sandbox: ctx.get("processSandbox"),
+      capabilities: ctx.get("capabilities"),
+    }),
+  });
+  return {
+    beforeArchiveDesignProject: async (actor, _projectId, taskIds) => {
+      const settled = await Promise.allSettled(
+        taskIds.map(async (taskId) => {
+          const closed = await Promise.allSettled([
+            ctx.get("designRunHost").stop(actor, { taskId }),
+            close(actor, taskId, "项目已关闭", "design"),
+          ]);
+          const failure = closed.find((result) => result.status === "rejected");
+          if (failure?.status === "rejected") throw failure.reason;
+        }),
+      );
+      const failure = settled.find((result) => result.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
+    },
+    beforeArchiveCodeProject: async (actor, projectId) => {
+      const context = await ctx.get("localInstance").resolve(actor);
+      const roots = (
+        await createCodeUiRepository(ctx.get("persistence")).listRoots(
+          context.instanceId,
+        )
+      ).filter((root) => root.project_id === projectId && !root.deleted_at);
+      const settled = await Promise.allSettled(
+        roots.map((root) => close(actor, root.id, "项目已关闭")),
+      );
+      const failure = settled.find((result) => result.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
+    },
+  };
+}
+
 /**
- * projects 插件：项目 CRUD + 缩略图服务 + HTTP 路由（路由注册放 mounted）。
- * 数据访问经 `persistence` 缝，缩略图经 `blob` 缝——不再持有旧账户客户端。
+ * projects 插件：项目服务与可选HTTP路由。
+ * 无路由的worker形态只提供查询Consumer，归档入口对所有kind明确关闭。
  */
 export function createProjectsPlugin(
   options: { withRoutes?: boolean } = {},
@@ -27,69 +79,31 @@ export function createProjectsPlugin(
           "capabilities",
           "designRunHost",
         ]
-      : [
-          "blob",
-          "persistence",
-          "localInstance",
-          "agentRuns",
-          "taskWork",
-          "processSandbox",
-          "capabilities",
-          "designRunHost",
-        ],
+      : ["blob", "persistence", "localInstance"],
     apply(ctx) {
-      const close = createTaskResourceCloser({
-        localInstance: ctx.get("localInstance"),
-        resources: () => ({
-          runs: ctx.get("agentRuns"),
-          work: ctx.get("taskWork"),
-          sandbox: ctx.get("processSandbox"),
-          capabilities: ctx.get("capabilities"),
-        }),
-      });
-      ctx.register("projects", () =>
-        createProjectService({
+      const archiveConsumers = withRoutes
+        ? createProjectArchiveConsumers(ctx)
+        : {};
+      ctx.register("projects", () => {
+        const projects = createProjectService({
           blob: ctx.get("blob"),
           repository: createProjectRepository(ctx.get("persistence")),
           localInstance: ctx.get("localInstance"),
           sandboxRoot: ctx.env.sandboxRoot,
-          beforeArchiveDesignProject: async (actor, _projectId, taskIds) => {
-            const settled = await Promise.allSettled(
-              taskIds.map(async (taskId) => {
-                const closed = await Promise.allSettled([
-                  ctx.get("designRunHost").stop(actor, { taskId }),
-                  close(actor, taskId, "项目已关闭", "design"),
-                ]);
-                const failure = closed.find(
-                  (result) => result.status === "rejected",
-                );
-                if (failure?.status === "rejected") throw failure.reason;
-              }),
+          ...archiveConsumers,
+        });
+        if (withRoutes) return projects;
+        return {
+          ...projects,
+          async archiveProject() {
+            throw new ProjectServiceError(
+              "project_delete_failed",
+              "项目关闭服务不可用，请在工作台归档。",
+              503,
             );
-            const failure = settled.find(
-              (result) => result.status === "rejected",
-            );
-            if (failure?.status === "rejected") throw failure.reason;
           },
-          beforeArchiveCodeProject: async (actor, projectId) => {
-            const context = await ctx.get("localInstance").resolve(actor);
-            const roots = (
-              await createCodeUiRepository(ctx.get("persistence")).listRoots(
-                context.instanceId,
-              )
-            ).filter(
-              (root) => root.project_id === projectId && !root.deleted_at,
-            );
-            const settled = await Promise.allSettled(
-              roots.map((root) => close(actor, root.id, "项目已关闭")),
-            );
-            const failure = settled.find(
-              (result) => result.status === "rejected",
-            );
-            if (failure?.status === "rejected") throw failure.reason;
-          },
-        }),
-      );
+        };
+      });
     },
     mounted(ctx) {
       if (!withRoutes) return;

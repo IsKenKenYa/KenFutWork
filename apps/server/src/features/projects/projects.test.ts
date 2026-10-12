@@ -7,6 +7,7 @@ import { loadServerEnv } from "../../config/env.js";
 import { composePlugins } from "../../kernel/compose.js";
 import { CapabilityRegistryImpl } from "../../kernel/context.js";
 import { BlobError } from "../blob/types.js";
+import { createConsumerLocalAccessService } from "../local-access/test-consumer-service.js";
 import { createLocalInstanceService } from "../local-instance/service.js";
 import type {
   LocalActor,
@@ -938,11 +939,14 @@ it.each(["settled", "work-close-failed"] as const)(
       await process;
       trace.push("process-settled");
     });
+    const app = (await import("fastify")).default();
     const kernel = composePlugins(
       loadServerEnv({}, {}),
-      [createProjectsPlugin({ withRoutes: false })],
+      [createProjectsPlugin()],
       {
+        app,
         overrides: {
+          localAccess: createConsumerLocalAccessService(),
           persistence: createPersistenceFromRunner(runner),
           localInstance: LOCAL_INSTANCE,
           blob: {} as never,
@@ -1003,6 +1007,7 @@ it.each(["settled", "work-close-failed"] as const)(
       processDone();
       await archive.catch(() => {});
       await kernel.dispose();
+      await app.close();
     }
   },
 );

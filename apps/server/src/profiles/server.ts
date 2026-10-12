@@ -2,6 +2,7 @@ import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { KenFutWorkAgentFactory } from "../agent/deep-agent.js";
 import type { AgentRuntimeProvider } from "../agent/provider-contract.js";
 import type { ServerEnv } from "../config/env.js";
+import { isDesktopRuntime } from "../desktop/runtime.js";
 import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
 import { createBlobPlugin } from "../features/blob/plugin.js";
@@ -31,8 +32,10 @@ import { createDesignTaskHttpPlugin } from "../features/execution/design-task-ht
 import { createDesignTasksPlugin } from "../features/execution/design-tasks-plugin.js";
 import { createExecutionScopesPlugin } from "../features/execution/plugin.js";
 import { createFlowHostPlugin } from "../features/flow/plugin.js";
+import { createGenerationTargetsPlugin } from "../features/generation/file-targets-plugin.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
 import { createGoalsPlugin } from "../features/goals/plugin.js";
+import { createJobLoopPlugin } from "../features/jobs/job-loop-plugin.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import { createJobsPlugin } from "../features/jobs/plugin.js";
 import {
@@ -209,9 +212,11 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createProjectsPlugin(),
     createProjectFilesPlugin(),
     createCanvasAssetLocationsPlugin(),
+    createGenerationTargetsPlugin(),
     createJobsPlugin({
       ...(deps.overrideJobs ? { injected: deps.overrideJobs } : {}),
     }),
+    createJobLoopPlugin({ enabled: isDesktopRuntime, tag: "[desktop-worker]" }),
     createSkillsPlugin(),
     createUsagePlugin(),
     createPermissionsPlugin({ events: deps.events }),

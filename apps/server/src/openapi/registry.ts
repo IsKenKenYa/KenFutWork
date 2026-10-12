@@ -1450,7 +1450,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: jobResponseSchema,
     summary: "创建图片生成任务",
     description:
-      "校验套餐模型访问与并发后创建 image_generation 任务并扣减积分，扣费失败自动取消任务。",
+      "核对本地实例、供应商及项目/Task来源后创建图片生成任务。成果来源由服务端固定，Code成果进入真实Task工作目录，显式无关联请求独立生成。",
   },
   {
     method: "post",
@@ -1462,7 +1462,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: jobResponseSchema,
     summary: "创建视频生成任务",
     description:
-      "创建 video_generation 任务并预扣积分，支持时长、分辨率、宽高比、参考图/参考视频等参数透传给 worker。",
+      "核对来源后创建视频生成任务，支持时长、分辨率、宽高比及参考图/视频。成果来源由服务端固定，关联被删除后不会退回独立生成。",
   },
   {
     method: "get",
@@ -1473,7 +1473,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: jobResponseSchema,
     summary: "查询单个任务状态",
     description:
-      "按 jobId 返回当前本地实例的任务详情，供客户端轮询异步任务进度。不存在返回 404。",
+      "按jobId返回当前本地实例的任务详情及只读成果来源，供客户端轮询异步进度。不存在返回404。",
   },
   {
     method: "get",

@@ -6,10 +6,6 @@ import { type QueueClient, QueueClosedError } from "../queue/types.js";
 import { type ExecutorContext, getExecutor } from "./job-executor.js";
 import { JobServiceError } from "./job-service.js";
 
-// 副作用导入：executor 在模块加载时自注册（进程级注册表）
-import "./executors/image-generation.js";
-import "./executors/video-generation.js";
-
 /**
  * 生成类任务的消费循环（worker 与桌面单进程共用）。
  *
@@ -48,6 +44,7 @@ export type JobLoopHandle = {
   /** 当前在建任务数（诊断用）。 */
   inFlightCount(): number;
 };
+export type JobLoopService = JobLoopHandle;
 
 export function startJobLoop(
   ctx: JobLoopContext,

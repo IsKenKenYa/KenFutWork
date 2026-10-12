@@ -28,12 +28,14 @@ import type {
   ExecutionScopes,
 } from "../features/execution/scope-service.js";
 import type { FlowEngineHostService } from "../features/flow/engine/install.js";
+import type { GenerationTargets } from "../features/generation/file-targets.js";
 import type {
   PersistImageFn,
   SubmitImageJobFn,
   SubmitVideoJobFn,
 } from "../features/generation/tool-types.js";
 import type { GoalService } from "../features/goals/service.js";
+import type { JobLoopService } from "../features/jobs/job-loop.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import type { LocalAccessService } from "../features/local-access/types.js";
 import type {
@@ -156,6 +158,10 @@ export interface ServiceMap {
   plugins: PluginRegistryService;
   /** 项目普通文件索引与精确文件存取。 */
   projectFiles: ProjectFileService;
+  /** 生成接纳时冻结且在执行时复验的文件来源。 */
+  generationTargets: GenerationTargets;
+  /** 既有后台生成队列循环及关闭状态。 */
+  jobLoop: JobLoopService;
   /** 执行模式缝（DEC-3：v1 agent + plan） */
   agentModes: ExecutionModeService;
   /** agent 链路 run 用量累积器（turn-stopping 结算） */

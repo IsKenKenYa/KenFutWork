@@ -66,6 +66,31 @@ export type CreateVideoJobRequest = z.infer<typeof createVideoJobRequestSchema>;
 
 // --- Job entity ---
 
+/** 服务端接纳时固定的成果归属，不随关联外键被清空而改变。 */
+export const generationFileTargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("standalone") }).strict(),
+  z
+    .object({
+      kind: z.literal("project"),
+      projectId: z.uuid(),
+      sessionId: z.uuid().nullable(),
+      canvasId: z.uuid().nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("task"),
+      taskId: z.uuid(),
+      projectId: z.uuid(),
+      sessionId: z.uuid(),
+      canvasId: z.uuid().optional(),
+      scopeGeneration: z.number().int().nonnegative(),
+      branchGeneration: z.number().int().nonnegative(),
+    })
+    .strict(),
+]);
+export type GenerationFileTarget = z.infer<typeof generationFileTargetSchema>;
+
 export const backgroundJobSchema = z.object({
   id: z.uuid(),
   instance_id: z.uuid(),
@@ -73,6 +98,8 @@ export const backgroundJobSchema = z.object({
   canvas_id: z.uuid().nullable(),
   session_id: z.uuid().nullable(),
   thread_id: z.string().nullable(),
+  /** 只读来源事实；历史缺失的队列记录不得推定为独立生成或自动重放。 */
+  file_target: generationFileTargetSchema.nullable().optional(),
   queue_name: z.string(),
   job_type: backgroundJobTypeSchema,
   status: backgroundJobStatusSchema,
