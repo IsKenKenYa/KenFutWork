@@ -772,7 +772,12 @@ it("Task元信息按真实projectId，默认A改B后显式项目列表仍返回T
         { workspacePath: pathA, taskId },
       ])
     )?.result,
-  ).toMatchObject({ taskId, projectId: secondId, workspacePath: pathA });
+  ).toMatchObject({
+    taskId,
+    projectId: secondId,
+    workspacePath: pathA,
+    workspaceIdentity: JSON.stringify([secondId, pathA]),
+  });
   projects[1]!.workDir = pathB;
   expect(
     (
@@ -785,6 +790,7 @@ it("Task元信息按真实projectId，默认A改B后显式项目列表仍返回T
       taskId,
       workspacePath: pathA,
       projectId: secondId,
+      workspaceIdentity: JSON.stringify([secondId, pathA]),
     }),
   ]);
   await expect(
@@ -792,6 +798,44 @@ it("Task元信息按真实projectId，默认A改B后显式项目列表仍返回T
       { workspacePath: pathA, taskId, projectId: firstId },
     ]),
   ).rejects.toMatchObject({ code: "not_found" });
+});
+
+it("已完成Task列表携带Project与固定root限定身份，同path不同Project不串行", async () => {
+  const { actor, service, root, pathA, firstId, secondId, taskId } =
+    await fixture();
+  const snapshot = root.state?.snapshots.find(
+    (entry) => entry.sessionId === taskId,
+  );
+  if (!snapshot) throw new Error("测试缺少真实Task snapshot");
+  snapshot.control = {
+    ...snapshot.control,
+    phase: "completedSuccess",
+    sessionEnded: true,
+  };
+  const identity = JSON.stringify([secondId, pathA]);
+  const listed = await service.hostRpc(actor, "zcode-task", "listTasks", [
+    { workspacePath: pathA, projectId: secondId, workspaceIdentity: identity },
+  ]);
+  const tasks = zcodeTaskMetaSchema.array().parse(listed?.result);
+  expect(tasks).toEqual([
+    expect.objectContaining({
+      taskId,
+      workspacePath: pathA,
+      workspaceIdentity: identity,
+      status: "completed",
+    }),
+  ]);
+  expect(
+    (
+      await service.hostRpc(actor, "zcode-task", "listTasks", [
+        {
+          workspacePath: pathA,
+          projectId: firstId,
+          workspaceIdentity: JSON.stringify([firstId, pathA]),
+        },
+      ])
+    )?.result,
+  ).toEqual([]);
 });
 
 it("Conversation订阅按Task项目，历史A上的index订阅用明确Project且不漂到B", async () => {
