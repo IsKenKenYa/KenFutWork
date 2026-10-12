@@ -608,7 +608,7 @@
       "source": "references/zcode/packages/ui/src/SettingsPage.tsx",
       "target": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
       "sha256": "0f3d3b06be4fdb675f870e06dcc8bf89aeff9ad9fc880ca1f0f6338a6e76916a",
-      "copiedSha256": "4e0f3f882baf2e65ca983129fc73e6f356ae202cd183549048741f3436284bb7",
+      "copiedSha256": "c0cbccf8b13f9baefd9c1a06d49312627af8f011c43c2c3ed30fc9f2bd42c5a0",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落",
@@ -618,7 +618,8 @@
         "设置目标统一复用isLocalWorkspaceTarget：本机Project身份不再误判远端，保留远端连接及目录匹配校验。",
         "宿主接口：独立文档的设置到市场导航不关闭文档；原返回、栏目、模型编辑器保留",
         "设置分区：新增 about 分区挂宿主关于信息面板（T16）",
-        "KenFutWork 宿主偏差：permissions 分支挂宿主件 PermissionTierSection"
+        "KenFutWork 宿主偏差：permissions 分支挂宿主件 PermissionTierSection",
+        "KenFutWork 宿主偏差：集成终端 Shell 行在宿主无 shell 选项时隐藏（宿主未接 system.listIntegratedTerminalShells；shell 切换由终端工具栏菜单承担）"
       ]
     },
     {
