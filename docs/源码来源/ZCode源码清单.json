@@ -608,7 +608,7 @@
       "source": "references/zcode/packages/ui/src/SettingsPage.tsx",
       "target": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
       "sha256": "0f3d3b06be4fdb675f870e06dcc8bf89aeff9ad9fc880ca1f0f6338a6e76916a",
-      "copiedSha256": "21afa605b9018eb3f888ffd3265f382d9fc1796746e6acc8ee3a38bb1338df2e",
+      "copiedSha256": "4e0f3f882baf2e65ca983129fc73e6f356ae202cd183549048741f3436284bb7",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落",
@@ -618,7 +618,6 @@
         "设置目标统一复用isLocalWorkspaceTarget：本机Project身份不再误判远端，保留远端连接及目录匹配校验。",
         "宿主接口：独立文档的设置到市场导航不关闭文档；原返回、栏目、模型编辑器保留",
         "设置分区：新增 about 分区挂宿主关于信息面板（T16）",
-        "KenFutWork 宿主偏差：供应商分区尾部挂宿主件 InstanceModelSettings（T4 自动压缩开关，实例设置缝 /api/instance/settings）",
         "KenFutWork 宿主偏差：permissions 分支挂宿主件 PermissionTierSection"
       ]
     },
