@@ -718,3 +718,111 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
     }
   }, 30_000);
 });
+
+it("WS correlated admission rejection preserves packet id and action instead of becoming a client timeout", async () => {
+  const { app, port, headers } = await startServer();
+  try {
+    const { got } = await sendImmediatelyOnOpen(
+      port,
+      JSON.stringify({
+        type: "command",
+        id: "invalid-input",
+        action: "agent.run",
+        payload: { prompt: 123 },
+      }),
+      headers,
+    );
+    if (got === null) throw new Error("未收到命令关联回执");
+    expect(JSON.parse(got)).toMatchObject({
+      type: "error",
+      requestId: "invalid-input",
+      action: "agent.run",
+      code: "invalid_command",
+      message: "请求格式无效",
+    });
+  } finally {
+    await app.close();
+  }
+});
+it("task.resume without a configured real host returns its exact correlated configuration failure", async () => {
+  const { app, port, headers } = await startServer();
+  try {
+    const { got } = await sendImmediatelyOnOpen(
+      port,
+      JSON.stringify({
+        type: "command",
+        id: "resume-request",
+        action: "task.resume",
+        payload: { taskId: "00000000-0000-4000-8000-000000000003", lastSeq: 0 },
+      }),
+      headers,
+    );
+    if (got === null) throw new Error("未收到命令关联回执");
+    expect(JSON.parse(got)).toMatchObject({
+      type: "error",
+      requestId: "resume-request",
+      action: "task.resume",
+      code: "design_host_unavailable",
+    });
+  } finally {
+    await app.close();
+  }
+});
+
+it("canvas.resume, flow.resume and legacy Code cancel return the original command requestId", async () => {
+  const { app, port, headers } = await startServer();
+  try {
+    for (const [action, payload] of [
+      ["canvas.resume", { canvasId: "canvas", lastSeq: 0 }],
+      ["flow.resume", { lastSeq: 0 }],
+      ["agent.cancel", { runId: "run-1" }],
+    ] as const) {
+      const requestId = `request-${action}`;
+      const { got } = await sendImmediatelyOnOpen(
+        port,
+        JSON.stringify({ type: "command", id: requestId, action, payload }),
+        headers,
+      );
+      if (got === null) throw new Error("未收到命令关联回执");
+      expect(JSON.parse(got)).toMatchObject({
+        type: "command.ack",
+        action,
+        requestId,
+      });
+    }
+  } finally {
+    await app.close();
+  }
+});
+it.skipIf(!ptyAvailable)(
+  "terminal.start ACK is correlated before any terminal stream output",
+  async () => {
+    const { app, port, headers, stubs } = await startServer();
+    try {
+      const { got } = await sendImmediatelyOnOpen(
+        port,
+        JSON.stringify({
+          type: "command",
+          id: "terminal-request",
+          action: "terminal.start",
+          payload: {
+            taskId: stubs.taskId,
+            sessionId: "correlated-terminal",
+            shell: "sh",
+            cols: 80,
+            rows: 24,
+          },
+        }),
+        headers,
+      );
+      if (got === null) throw new Error("未收到命令关联回执");
+      expect(JSON.parse(got)).toMatchObject({
+        type: "command.ack",
+        action: "terminal.start",
+        requestId: "terminal-request",
+      });
+    } finally {
+      await app.close();
+    }
+  },
+);
