@@ -1417,7 +1417,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: flowHostEventsResponseSchema,
     summary: "接收 flow 运行事件批次",
     description:
-      "校验共享密钥后逐条解析事件归属，经 WebSocket 通道投递 flowRun.event；无法归属或契约不过的事件跳过并计数。批次可跨 run / 跨用户。",
+      "校验共享密钥、当前实例归属及项目代际；旧代际、排空或缺少作用域的事件跳过并计数，符合实时状态的事件经 WebSocket 投递 flowRun.event 并写入续传缓冲。",
   },
   {
     method: "post",

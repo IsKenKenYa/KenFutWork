@@ -305,6 +305,8 @@ export const canvasSyncEventSchema = z.object({
  */
 export const flowRunEventSchema = z.object({
   type: z.literal("flowRun.event"),
+  hostProjectId: z.uuid().optional(),
+  hostGeneration: z.number().int().positive().safe().optional(),
   /** flow 的 run id（宿主不解析，只透传）。 */
   runId: z.string().min(1).max(128),
   /** run 内单调序号（flow 侧生成）。 */

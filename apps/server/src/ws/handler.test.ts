@@ -72,6 +72,7 @@ async function makeStubs() {
       },
     },
   );
+  const flowGate = { generation: 1, draining: false };
   const agentRuns = {
     createRun: () => ({ runId: "run-1" }),
     cancelRun: () => true,
@@ -145,6 +146,7 @@ async function makeStubs() {
     captureRoot,
     workDirState,
     eventBuffer: new CanvasEventBuffer(),
+    flowGate,
   };
 }
 
@@ -159,6 +161,18 @@ async function startServer() {
     codeTerminal: stubs.terminals,
     localInstance: stubs.localInstance,
     eventBuffer: stubs.eventBuffer,
+    flowProjectControl: {
+      snapshot: async (_actor, projectId) => ({
+        ...stubs.flowGate,
+        projectId,
+        localSettled: true,
+        activeRunIds: [],
+        remoteStopped: 0,
+        remoteOutstanding: 0,
+        operationId: null,
+        quiesceSettled: false,
+      }),
+    },
   });
   app.addHook("onClose", async () => {
     await stubs.terminals.close("test_cleanup");
@@ -241,6 +255,8 @@ describe("flow 事件续传（flow.resume，P5）", () => {
       const instanceId = stubs.access.instanceId;
       const flowEvent = flowRunEventSchema.parse({
         type: "flowRun.event",
+        hostProjectId: "00000000-0000-4000-8000-000000000002",
+        hostGeneration: 1,
         runId: "run-9",
         seq: 1,
         eventType: "workflow_started",
@@ -254,6 +270,7 @@ describe("flow 事件续传（flow.resume，P5）", () => {
         port,
         JSON.stringify({
           type: "command",
+          id: "resume-1",
           action: "flow.resume",
           payload: { lastSeq: 0 },
         }),
@@ -261,6 +278,7 @@ describe("flow 事件续传（flow.resume，P5）", () => {
         2,
       );
       expect(messages[0]).toContain("flow.resume");
+      expect(messages[0]).toContain("resume-1");
       expect(messages[0]).toContain('"replayed":1');
       expect(messages[1]).toContain("flowRun.event");
       expect(messages[1]).toContain("run-9");
@@ -278,6 +296,37 @@ describe("flow 事件续传（flow.resume，P5）", () => {
       );
       expect(again[0]).toContain("flow.resume");
       expect(again[0]).toContain('"replayed":0');
+      stubs.flowGate.generation = 2;
+      const stale = await collectMessages(
+        port,
+        JSON.stringify({
+          type: "command",
+          action: "flow.resume",
+          payload: { lastSeq: 0 },
+        }),
+        headers,
+        1,
+      );
+      expect(stale[0]).toContain('"replayed":0');
+      stubs.flowGate.generation = 1;
+      stubs.flowGate.draining = true;
+      const draining = await collectMessages(
+        port,
+        JSON.stringify({
+          type: "command",
+          id: "resume-draining",
+          action: "flow.resume",
+          payload: { lastSeq: 0 },
+        }),
+        headers,
+        1,
+      );
+      expect(JSON.parse(String(draining[0]))).toMatchObject({
+        type: "command.ack",
+        action: "flow.resume",
+        requestId: "resume-draining",
+        payload: { replayed: 0 },
+      });
     } finally {
       await app.close();
     }

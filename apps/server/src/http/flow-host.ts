@@ -53,6 +53,12 @@ export async function registerFlowHostRoutes(
        */
       eventBuffer?: Pick<WsServices["eventBuffer"], "push">;
     };
+    projectControl?: {
+      snapshot(
+        actor: LocalActor,
+        projectId: string,
+      ): Promise<{ generation: number; draining: boolean }>;
+    };
     engine: { probe(): Promise<FlowHostEngineResponse> };
     /**
      * 本地实例身份缝（`ff-embed/v1`）：`issue` 凭本机接入签发一次性短时票据；
@@ -385,7 +391,8 @@ export async function registerFlowHostRoutes(
           "application_error",
           "Flow 事件请求格式或版本不正确。",
         );
-      const { instanceId } = await options.localInstance.serviceActor();
+      const serviceActor = await options.localInstance.serviceActor();
+      const { instanceId } = serviceActor;
       let accepted = 0;
       let skipped = 0;
       for (const event of parsed.data.events) {
@@ -393,8 +400,26 @@ export async function registerFlowHostRoutes(
           skipped += 1;
           continue;
         }
+        if (
+          !event.hostProjectId ||
+          !event.hostGeneration ||
+          !options.projectControl
+        ) {
+          skipped += 1;
+          continue;
+        }
+        const gate = await options.projectControl.snapshot(
+          serviceActor,
+          event.hostProjectId,
+        );
+        if (gate.draining || gate.generation !== event.hostGeneration) {
+          skipped += 1;
+          continue;
+        }
         const streamEvent = flowRunEventSchema.safeParse({
           type: "flowRun.event",
+          hostProjectId: event.hostProjectId,
+          hostGeneration: event.hostGeneration,
           runId: event.runId,
           seq: event.seq,
           eventType: event.type,

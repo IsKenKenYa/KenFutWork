@@ -186,6 +186,7 @@ export function createFlowHostPlugin(deps: {
         localAccess: ctx.get("localAccess"),
         localInstance: ctx.get("localInstance"),
         providers: ctx.get("modelProviders"),
+        projectControl: ctx.get("flowProjectControl"),
         // 事件缝透出走内核声明的 ws 缝（app.ts 装配时注册 connectionManager/eventBuffer）。
         ws: {
           connectionManager: ctx.get("ws").connectionManager,

@@ -83,6 +83,7 @@ export const wsTaskResumeCommandSchema = z.object({
  */
 export const wsFlowResumeCommandSchema = z.object({
   type: z.literal("command"),
+  id: z.string().min(1).max(128).optional(),
   action: z.literal("flow.resume"),
   payload: z.object({
     lastSeq: z.number().int().min(0).default(0),

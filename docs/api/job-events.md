@@ -36,7 +36,8 @@
 - 事件均为服务端 → 客户端单向推送；客户端命令通道见《ws-protocol.md》。
 - `stopReason` 是产品停止语义：`run.completed` 使用 `completed`（正常完成）或 `output_limit`（模型输出到达上限）；`run.canceled` 使用 `user_cancelled`（用户取消）、`task_stopped`（Task资源关闭）或 `host_shutdown`（宿主停止）。原始模型 finish metadata 和 abort 细节不进入公共事件；旧事件可缺省，旧账本记录保留空值。停止不自动重放工具副作用。
 - 终态事件（`run.completed` / `run.failed` / `run.canceled`）必须整条保留消息块，禁止中途抹除（对齐 dsh 口径）。
-- 事件经 WS 断线后可用 `canvas.resume`（`lastSeq`）重放，不丢事件。
+- 事件经 WS 断线后可用 `canvas.resume`（`lastSeq`）重放，不丢事件。Flow 事件重放还会校验项目代际；旧代际或排空期间的事件不进入当前流。
+
 ### 运行停止原因
 
 `run.completed.stopReason` 为 `completed`（正常结束）或 `output_limit`（模型输出达到上限）。`run.canceled.stopReason` 为 `user_cancelled`（用户停止）、`task_stopped`（Task 资源停止）或 `host_shutdown`（宿主停机）。Runtime 新终态始终给出原因；旧持久事件可缺省。`run.failed` 保留原错误代码与可读原因。供应商原始结束字段不进入公开事件。

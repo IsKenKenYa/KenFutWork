@@ -142,6 +142,8 @@ export const flowHostEventsRequestSchema = z.object({
         payload: z.unknown(),
         at: z.string().min(1).max(64),
         hostSubject: z.string().min(1).max(256),
+        hostProjectId: z.uuid().optional(),
+        hostGeneration: z.number().int().positive().safe().optional(),
       }),
     )
     .min(1)
