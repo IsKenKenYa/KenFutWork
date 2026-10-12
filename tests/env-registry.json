@@ -1077,6 +1077,7 @@
     "KENFUTWORK_TASK_WORK_PG_TEST": {
       "surface": "test",
       "readers": [
+        "apps/server/src/features/persistence/code-schema-upgrade.integration.test.ts",
         "apps/server/src/features/persistence/session-lock.integration.test.ts",
         "apps/server/src/features/task-work/repository.integration.test.ts"
       ],
