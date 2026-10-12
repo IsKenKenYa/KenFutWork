@@ -13,6 +13,7 @@ import {
   type AgentPersistenceService,
   createAgentPersistenceService,
 } from "../../agent/persistence/index.js";
+import type { AgentRuntimeProvider } from "../../agent/provider-contract.js";
 import type { AgentRunExtension } from "../../agent/run-extension.js";
 import { createAgentRunService } from "../../agent/runtime.js";
 import { composeToolGate } from "../../agent/tool-gate.js";
@@ -57,6 +58,7 @@ export interface AgentRunsPluginDeps {
     },
   ) => Promise<{ input: unknown }>;
   agentFactory?: KenFutWorkAgentFactory;
+  runtimeProvider?: AgentRuntimeProvider;
   contextBranchProvider?: AgentContextBranchService;
   agentModel?: BaseLanguageModel | string;
   mockEventDelayMs?: number;
@@ -81,6 +83,10 @@ export function createAgentRunsPlugin(
       "plugins",
     ],
     apply(ctx) {
+      let runtime: ReturnType<typeof createAgentRunService> | undefined;
+      ctx.effect(() => async () => {
+        await runtime?.stopAllRuns("host_shutdown");
+      });
       let persistence: AgentPersistenceService | undefined;
       ctx.register("agentPersistence", () => {
         persistence = createAgentPersistenceService(ctx.env);
@@ -156,7 +162,7 @@ export function createAgentRunsPlugin(
               : {}),
           });
         };
-        return createAgentRunService({
+        runtime = createAgentRunService({
           codeProjectContextLoader: (scope, limits, signal) =>
             ctx
               .get("capabilities")
@@ -239,6 +245,9 @@ export function createAgentRunsPlugin(
               agentPersistenceService: agentPersistence,
             }),
           ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
+          ...(deps.runtimeProvider
+            ? { runtimeProvider: deps.runtimeProvider }
+            : {}),
           agentRunMetadataService: d.get("agentRunMetadata"),
           canvasRepository,
           canvasService: d.get("canvas"),
@@ -296,6 +305,7 @@ export function createAgentRunsPlugin(
           toolGateFor,
           localInstance: d.get("localInstance"),
         });
+        return runtime;
       });
       return async () => {
         await persistence?.dispose();

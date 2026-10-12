@@ -39,7 +39,7 @@ type AdaptDeepAgentStreamOptions = {
   conversationId: string;
   now?: () => string;
   /** 用量采集点（§4.5）：chunk 携带 usage_metadata（cumulative）时回调最新累计值。 */
-  onUsage?: (usage: ModelCallUsage) => RunUsageTotals | void;
+  onUsage?: (usage: ModelCallUsage) => RunUsageTotals | undefined;
   runId: string;
   sessionId: string;
   /** 主 agent 的 lc_agent_name（createDeepAgent name）：归因时排除主 run。 */
@@ -165,6 +165,7 @@ export async function* adaptDeepAgentStream(
   const activeSubAgentRuns = new Set<string>();
   const usageTracker = createModelCallUsageTracker();
   const activeModelRuns = new Set<string>();
+  let outputLimited = false;
   /**
    * 派发栈（DEC-19 兜底归因）：metadata 传播在 createAgent 嵌套链上不可靠
    * （真机实测子代理嵌套工具事件缺 lc_agent_name）。前台派发是栈式嵌套——
@@ -246,7 +247,10 @@ export async function* adaptDeepAgentStream(
         continue;
       }
 
-      if (evt.event === "on_chat_model_start") usageTracker.start(evt);
+      if (evt.event === "on_chat_model_start") {
+        usageTracker.start(evt);
+        if (!readSubagentName(evt, mainAgentName)) outputLimited = false;
+      }
       if (
         evt.event === "on_chat_model_stream" ||
         evt.event === "on_chat_model_end"
@@ -259,6 +263,13 @@ export async function* adaptDeepAgentStream(
           AIMessageClass.isInstance(message) ||
           AIMessageChunkClass.isInstance(message)
         ) {
+          if (!readSubagentName(evt, mainAgentName)) {
+            const reason =
+              message.response_metadata?.finish_reason ??
+              message.response_metadata?.stop_reason;
+            if (reason === "length" || reason === "max_tokens")
+              outputLimited = true;
+          }
           const observed = usageTracker.observe(evt, message);
           if (observed) {
             let totals = observed.totals;
@@ -682,6 +693,7 @@ export async function* adaptDeepAgentStream(
     runId: options.runId,
     timestamp: now(),
     type: "run.completed",
+    stopReason: outputLimited ? "output_limit" : "completed",
   };
 }
 

@@ -1,5 +1,6 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { KenFutWorkAgentFactory } from "../agent/deep-agent.js";
+import type { AgentRuntimeProvider } from "../agent/provider-contract.js";
 import type { ServerEnv } from "../config/env.js";
 import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
@@ -70,6 +71,7 @@ export interface ServerProfileDeps {
   events: KernelEvents;
   env: ServerEnv;
   agentFactory?: KenFutWorkAgentFactory;
+  runtimeProvider?: AgentRuntimeProvider;
   agentModel?: BaseLanguageModel | string;
   mockEventDelayMs?: number;
   /** overrides 直填的条件装配插件需感知注入实例（enabled 判定，保持历史行为）。 */
@@ -229,6 +231,9 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
       // DEC-1 事件缝：pre-step 改写权交给事件监听器（执行模式指令注入等）
       emitPreStep: (payload) => deps.events.emitPreStep(payload),
       ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
+      ...(deps.runtimeProvider
+        ? { runtimeProvider: deps.runtimeProvider }
+        : {}),
       ...(deps.agentModel ? { agentModel: deps.agentModel } : {}),
       ...(deps.mockEventDelayMs === undefined
         ? {}

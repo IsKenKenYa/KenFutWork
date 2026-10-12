@@ -1412,3 +1412,38 @@ describe("stream-adapter 派发栈兜底归因（DEC-19：metadata 缺失时）"
     expect(started[0]).not.toHaveProperty("agentName");
   });
 });
+
+it.each(["stop", "length", "max_tokens"])(
+  "maps private provider %s into a stable product completion reason",
+  async (finishReason) => {
+    const message = new AIMessage({
+      content: "actual result",
+      response_metadata: {
+        finish_reason: finishReason,
+        private_provider_value: "never expose",
+      },
+    });
+    const stream = (async function* () {
+      yield { event: "on_chat_model_start", run_id: "main-model" };
+      yield {
+        event: "on_chat_model_end",
+        run_id: "main-model",
+        data: { output: message },
+      };
+    })();
+    const events: StreamEvent[] = [];
+    for await (const event of adaptDeepAgentStream({
+      runId: "stop-reason-run",
+      sessionId: "stop-reason-task",
+      conversationId: "stop-reason-task",
+      stream,
+    }))
+      events.push(event);
+    expect(events.at(-1)).toMatchObject({
+      type: "run.completed",
+      stopReason: finishReason === "stop" ? "completed" : "output_limit",
+    });
+    expect(JSON.stringify(events)).not.toContain("never expose");
+    expect(JSON.stringify(events)).not.toContain("finish_reason");
+  },
+);

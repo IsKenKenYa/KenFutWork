@@ -40,6 +40,8 @@ export interface StreamIdleGuardOptions {
   idleMs?: number;
   /** 仅在调用方确认等待受监控的上游时计时；取消保护始终保留。 */
   idleEnabled?: () => boolean;
+  /** Trusted tool/approval transitions suspend and restart model-wait timing without polling. */
+  onIdleStateChange?: (listener: () => void) => () => void;
   signal?: AbortSignal;
   /** 空闲超时触发时调用（用于中止底层请求）。抛错不影响终止。 */
   onIdle?: () => void;
@@ -64,6 +66,7 @@ async function stepWithGuard<T>(
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
+  let unsubscribeIdleState: (() => void) | undefined;
   /** 停滞错误：`onIdle` 会中止同一信号，须让「停滞」优先于「取消」胜出。 */
   let idleError: StreamIdleTimeoutError | undefined;
   try {
@@ -71,23 +74,29 @@ async function stepWithGuard<T>(
       iterator.next(),
     ];
 
-    if (
-      (options.idleEnabled?.() ?? true) &&
-      idleMs > 0 &&
-      Number.isFinite(idleMs)
-    ) {
+    if (idleMs > 0 && Number.isFinite(idleMs)) {
       racers.push(
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            idleError = new StreamIdleTimeoutError(idleMs);
-            try {
-              options.onIdle?.();
-            } catch {
-              // 中止回调失败不改变「本轮已停滞」的结论
+          const updateTimer = () => {
+            if (timer !== undefined) {
+              clearTimeout(timer);
+              timer = undefined;
             }
-            reject(idleError);
-          }, idleMs);
-          (timer as { unref?: () => void }).unref?.();
+            if (!(options.idleEnabled?.() ?? true)) return;
+            timer = setTimeout(() => {
+              if (!(options.idleEnabled?.() ?? true)) return;
+              idleError = new StreamIdleTimeoutError(idleMs);
+              try {
+                options.onIdle?.();
+              } catch {
+                /* termination remains authoritative */
+              }
+              reject(idleError);
+            }, idleMs);
+            (timer as { unref?: () => void }).unref?.();
+          };
+          unsubscribeIdleState = options.onIdleStateChange?.(updateTimer);
+          updateTimer();
         }),
       );
     }
@@ -113,6 +122,7 @@ async function stepWithGuard<T>(
       ? { kind: "end" }
       : { kind: "value", value: result.value };
   } finally {
+    unsubscribeIdleState?.();
     if (timer !== undefined) {
       clearTimeout(timer);
     }

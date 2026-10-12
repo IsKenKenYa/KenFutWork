@@ -7,19 +7,16 @@ import {
 import type { LLMResult } from "@langchain/core/outputs";
 import { isCommand } from "@langchain/langgraph";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
-import {
-  type createDeepAgent,
-  createSummarizationMiddleware,
-} from "deepagents";
+import type { createDeepAgent } from "deepagents";
 import type { AgentMiddleware } from "langchain";
 import type { CompactionPlan } from "./auto-compact.js";
 import type { AgentBackendFactory } from "./backends/index.js";
 import type { AgentContextHistory } from "./context-history.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
 import type { NativeCheckpointArchive } from "./native-checkpoint-archive.js";
-import { createNativeRecoveryMiddleware } from "./native-recovery-middleware.js";
 import { nativeSummaryKey } from "./native-compaction.js";
 import { encodeNativeContextReference } from "./native-context-reference.js";
+import { createNativeRecoveryMiddleware } from "./native-recovery-middleware.js";
 
 export interface NativeManualCompactionOptions {
   model: BaseLanguageModel;
@@ -27,7 +24,36 @@ export interface NativeManualCompactionOptions {
   store?: BaseStore;
   plan: CompactionPlan;
   archive?: NativeCheckpointArchive;
+  inputTokenLimit?: () => number | null;
   llmRetry: { maxAttempts: number; infinite: boolean };
+}
+
+/** Fixed SDK adapter: select the actual compiled AgentNode's writer, independent of its graph key or agent name. */
+export function nativeMaintenanceWriter(
+  agent: ReturnType<typeof createDeepAgent>,
+): string {
+  const candidates = Object.entries(agent.graph.nodes).filter(([, node]) => {
+    if (
+      typeof node !== "object" ||
+      node === null ||
+      !("bound" in node) ||
+      !("getWriters" in node) ||
+      typeof node.getWriters !== "function"
+    )
+      return false;
+    const bound = node.bound;
+    if (
+      typeof bound !== "object" ||
+      bound === null ||
+      bound.constructor.name !== "AgentNode"
+    )
+      return false;
+    const writers: unknown = node.getWriters();
+    return Array.isArray(writers) && writers.length > 0;
+  });
+  if (candidates.length !== 1 || !candidates[0])
+    throw new Error("当前native adapter没有唯一的模型状态写入器。");
+  return candidates[0][0];
 }
 
 /** 正式维护operation：原native完整消息不重建，只提交SDK实际生成的summary Command。 */
@@ -95,20 +121,18 @@ export function createNativeManualCompaction(
       ...(signal ? { signal } : {}),
       callbacks,
     });
-    const middleware = options.archive
-      ? createNativeRecoveryMiddleware({
-          backend: options.backend,
-          archive: options.archive,
-          archiveConfig: () => config,
-          // 0是单次control operation的force sentinel，非用户预算/限额，故不进入治理数值表。
-          trigger: { type: "messages", value: 0 },
-          keep: options.plan.keep,
-        })
-      : (createSummarizationMiddleware({
-          backend: options.backend,
-          trigger: { type: "messages", value: 0 },
-          keep: options.plan.keep,
-        }) as unknown as AgentMiddleware);
+    const middleware = createNativeRecoveryMiddleware({
+      backend: options.backend,
+      ...(options.inputTokenLimit
+        ? { inputTokenLimit: options.inputTokenLimit }
+        : {}),
+      ...(options.archive
+        ? { archive: options.archive, archiveConfig: () => config }
+        : {}),
+      // 0是单次control operation的force sentinel，非用户预算/限额，故不进入治理数值表。
+      trigger: { type: "messages", value: 0 },
+      keep: options.plan.keep,
+    }) as unknown as AgentMiddleware;
     const hook = middleware.wrapModelCall;
     if (!hook) throw new Error("当前native adapter未提供手动压缩hook。");
     const request = {
@@ -145,7 +169,13 @@ export function createNativeManualCompaction(
       : result.update;
     const expected = nativeSummaryKey(update?._summarizationEvent);
     if (!expected) throw new Error("native压缩没有返回实际summary更新。");
-    const saved = await options.agent.graph.updateState(config, update);
+    // Explicit native model writer accepts summary channels. Inferring __start__ from an
+    // input-only checkpoint silently drops middleware state; this does not invoke the model.
+    const saved = await options.agent.graph.updateState(
+      config,
+      update,
+      nativeMaintenanceWriter(options.agent),
+    );
     const reference = encodeNativeContextReference(threadId, saved);
     if (!reference) throw new Error("手动压缩未返回实际checkpoint引用。");
     const committed = await options.agent.graph.getState({

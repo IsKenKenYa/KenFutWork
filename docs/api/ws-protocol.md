@@ -35,6 +35,8 @@
 | `terminal.output` | 终端输出（base64 数据块） |
 | `terminal.exit` | 终端会话退出（含退出码） |
 
+终态事件的 `stopReason` 随 `event` 帧透传，语义见《job-events.md》；WebSocket断线重放保留原原因，不触发新的模型或工具执行。
+
 ## 相关文件
 
 - 契约：`packages/shared/src/ws-protocol.ts`

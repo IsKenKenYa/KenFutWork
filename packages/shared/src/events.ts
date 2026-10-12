@@ -25,6 +25,20 @@ export {
   videoArtifactSchema,
 } from "./artifacts.js";
 
+/** Stable product reasons; raw provider finish metadata stays private to adapters. */
+export const runStopReasonSchema = z.enum([
+  "completed",
+  "output_limit",
+  "user_cancelled",
+  "task_stopped",
+  "host_shutdown",
+]);
+export type RunStopReason = z.infer<typeof runStopReasonSchema>;
+export type RunCancellationReason = Extract<
+  RunStopReason,
+  "user_cancelled" | "task_stopped" | "host_shutdown"
+>;
+
 export const runStartedEventSchema = z.object({
   type: z.literal("run.started"),
   runId: runIdSchema,
@@ -117,6 +131,7 @@ export const taskWorkUpdatedEventSchema = z.object({
 });
 
 export const runCompletedEventSchema = z.object({
+  stopReason: z.enum(["completed", "output_limit"]).optional(),
   type: z.literal("run.completed"),
   operationResult: z
     .object({
@@ -229,6 +244,9 @@ export const runHookEventSchema = z.object({
 });
 
 export const runCanceledEventSchema = z.object({
+  stopReason: z
+    .enum(["user_cancelled", "task_stopped", "host_shutdown"])
+    .optional(),
   type: z.literal("run.canceled"),
   runId: runIdSchema,
   timestamp: timestampSchema,

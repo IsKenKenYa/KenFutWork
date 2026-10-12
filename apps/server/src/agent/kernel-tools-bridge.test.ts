@@ -1,6 +1,7 @@
 import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { archiveTaskFixture } from "../features/context-history/test-fixture.js";
 import { createLocalInstanceService } from "../features/local-instance/service.js";
 import { ToolDeniedError } from "../kernel/context.js";
 import type { ToolDefinition } from "../kernel/types.js";
@@ -336,6 +337,20 @@ describe("权限拒绝转工具级结果（回归）", () => {
 });
 
 describe("resolvePresetForRun（DEC-2 会话级 preset）", () => {
+  it("可信Code Task优先于调用参数与画布身份", async () => {
+    const task = await archiveTaskFixture();
+    try {
+      expect(
+        resolvePresetForRun({
+          canvasId: "c1",
+          preset: "design",
+          scopeHandle: task.handle,
+        }),
+      ).toBe("code");
+    } finally {
+      await task.cleanup();
+    }
+  });
   it("画布运行归 design，纯会话归 code，显式传入优先", () => {
     expect(resolvePresetForRun({ canvasId: "c1" })).toBe("design");
     expect(resolvePresetForRun({})).toBe("code");

@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   FRAMEWORK_FALLBACK_TRIGGER_TOKENS,
-  MIN_TRIGGER_TOKENS,
   resolveCompactionPlan,
+  resolveInputTokenLimit,
 } from "./auto-compact.js";
 
 /**
@@ -36,13 +36,25 @@ describe("自动压缩触发线", () => {
     expect(plan.source).toBe("fallback");
   });
 
-  it("最大输出大于窗口（配置写错）：预留封顶到窗口，触发线落到下限而不是负数", () => {
-    const plan = resolveCompactionPlan({
-      contextWindow: 1000,
-      maxOutputTokens: 5000,
-    });
-    expect(plan.trigger.value).toBe(MIN_TRIGGER_TOKENS);
-    expect(plan.source).toBe("reserved-output");
+  it("真实输出上限占满或超出已知窗口：拒绝虚构可用输入预算", () => {
+    for (const maxOutputTokens of [1000, 5000]) {
+      expect(() =>
+        resolveCompactionPlan({ contextWindow: 1000, maxOutputTokens }),
+      ).toThrow("输出上限已占满上下文");
+    }
+  });
+  it("小剩余预算不被4000 floor扩大；未知窗口fallback保持不变", () => {
+    expect(
+      resolveCompactionPlan({ contextWindow: 8192, maxOutputTokens: 8000 })
+        .trigger.value,
+    ).toBe(192);
+    expect(resolveCompactionPlan({ contextWindow: 1000 }).trigger.value).toBe(
+      850,
+    );
+    expect(
+      resolveCompactionPlan({ contextWindow: null, maxOutputTokens: 8000 })
+        .trigger.value,
+    ).toBe(170_000);
   });
 
   it("垃圾输入（0 / 负数 / NaN）当作未知，走回退", () => {
@@ -55,4 +67,19 @@ describe("自动压缩触发线", () => {
       expect(plan.trigger.value).toBe(FRAMEWORK_FALLBACK_TRIGGER_TOKENS);
     }
   });
+});
+
+it("hard input cap is separate from an earlier trigger and never invents unknown output/window", () => {
+  expect(
+    resolveInputTokenLimit({ contextWindow: 8192, maxOutputTokens: 8000 }),
+  ).toBe(192);
+  expect(
+    resolveInputTokenLimit({ contextWindow: 8192, maxOutputTokens: null }),
+  ).toBe(8192);
+  expect(
+    resolveInputTokenLimit({ contextWindow: null, maxOutputTokens: 8000 }),
+  ).toBeNull();
+  expect(() =>
+    resolveInputTokenLimit({ contextWindow: 8192, maxOutputTokens: 8192 }),
+  ).toThrow("输出上限已占满");
 });

@@ -1,3 +1,4 @@
+import type { RunStopReason } from "@kenfutwork/shared";
 import type { PersistenceService } from "../persistence/types.js";
 import type { AgentTurnBoundaries, AgentTurnBoundary } from "./types.js";
 
@@ -20,6 +21,7 @@ export type NewAgentRun = {
 /** 最近一轮 run 的终态（失败原因要给界面看服务端原文）。 */
 export type AgentRunTerminal = {
   status: string;
+  stopReason?: RunStopReason | null;
   errorCode: string | null;
   errorMessage: string | null;
   startedAt: string;
@@ -218,12 +220,13 @@ export function createAgentRunRepository(
     async latestForSession(input) {
       const rows = await persistence.forInstance(input.instanceId).query<{
         status: string;
+        stop_reason: RunStopReason | null;
         error_code: string | null;
         error_message: string | null;
         created_at: string | Date;
         completed_at: string | Date | null;
       }>(
-        `select r.status, r.error_code, r.error_message,
+        `select r.status, r.stop_reason, r.error_code, r.error_message,
                   r.created_at, r.completed_at
              from public.agent_runs r
              join public.chat_sessions s on s.id = r.session_id
@@ -237,6 +240,7 @@ export function createAgentRunRepository(
       if (!row) return null;
       return {
         status: row.status,
+        stopReason: row.stop_reason ?? null,
         errorCode: row.error_code,
         errorMessage: row.error_message,
         startedAt: new Date(row.created_at).toISOString(),

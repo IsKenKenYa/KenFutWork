@@ -41,6 +41,7 @@ export function createNativeToolExclusionMiddleware(): AgentMiddleware {
       if (!excluded.has(request.toolCall.name)) return handler(request);
       return new ToolMessage({
         tool_call_id: request.toolCall.id ?? "",
+        status: "error",
         content:
           "该 SDK 内置工具没有绑定当前 Task 的工作域、观察版本或执行生命周期。请使用本轮提供的 Read/Glob/Grep/Write/Edit/ApplyPatch/Bash 与子代理工具。",
       });

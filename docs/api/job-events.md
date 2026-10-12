@@ -34,5 +34,6 @@
 - Code 原 V4 宿主按 Run 的绝对总量维护 Task 累计并持久恢复，关闭 Run 的迟到事件不覆盖新 Run；原 V4 的必填缓存数字字段保留原协议形状，其 0 不能作为上游确实上报缓存的证据。外部流事件的缓存字段仍保持可选。
 
 - 事件均为服务端 → 客户端单向推送；客户端命令通道见《ws-protocol.md》。
+- `stopReason` 是产品停止语义：`run.completed` 使用 `completed`（正常完成）或 `output_limit`（模型输出到达上限）；`run.canceled` 使用 `user_cancelled`（用户取消）、`task_stopped`（Task资源关闭）或 `host_shutdown`（宿主停止）。原始模型 finish metadata 和 abort 细节不进入公共事件；旧事件可缺省，旧账本记录保留空值。停止不自动重放工具副作用。
 - 终态事件（`run.completed` / `run.failed` / `run.canceled`）必须整条保留消息块，禁止中途抹除（对齐 dsh 口径）。
 - 事件经 WS 断线后可用 `canvas.resume`（`lastSeq`）重放，不丢事件。

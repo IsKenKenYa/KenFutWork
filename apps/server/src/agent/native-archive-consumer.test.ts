@@ -6,6 +6,7 @@ import {
   ToolMessage,
 } from "@langchain/core/messages";
 import { MemorySaver } from "@langchain/langgraph-checkpoint";
+import { StateBackend } from "deepagents";
 import { expect, it } from "vitest";
 import { loadServerEnv } from "../config/env.js";
 import {
@@ -154,6 +155,28 @@ it("production adapter compacts actual Task history and model reads exact origin
   }
 });
 
+it("production archive capability fails loud without its Consumer and never borrows a canvas scope", async () => {
+  const fixture = await archiveTaskFixture();
+  try {
+    expect(() =>
+      createKenFutWorkDeepAgent({
+        env: loadServerEnv({}, {}),
+        preset: "code",
+        model: new ReadingModel({}),
+        systemPrompt: "test",
+        checkpointer: new MemorySaver(),
+        runToolContext: fixture.execution,
+        backendResult: {
+          factory: () => fixture.handle.backend,
+          ephemeral: false,
+        },
+      }),
+    ).toThrow("未完整装配");
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
 it("production manual maintenance uses the same owned Provider and registered readonly Consumer", async () => {
   const fixture = await archiveTaskFixture();
   const kernel = archiveKernelFixture();
@@ -232,4 +255,47 @@ it("production manual maintenance uses the same owned Provider and registered re
     kernel.dispose();
     await fixture.cleanup();
   }
+});
+
+class ShortDesignModel extends ReadingModel {
+  override async _generate() {
+    return { generations: [{ text: "done", message: new AIMessage("done") }] };
+  }
+}
+
+it("legacy Design with a checkpointer and no Task still performs its short first model call", async () => {
+  const agent = createKenFutWorkDeepAgent({
+    env: loadServerEnv({}, {}),
+    preset: "design",
+    model: new ShortDesignModel({}),
+    backendResult: { factory: () => new StateBackend(), ephemeral: false },
+    systemPrompt: "short Design request",
+    checkpointer: new MemorySaver(),
+  });
+  try {
+    const events = [];
+    for await (const event of agent.streamEvents(
+      { messages: [new HumanMessage("hello")] },
+      {
+        configurable: { thread_id: "legacy-design-first-call" },
+        version: "v2",
+      },
+    ))
+      events.push(event.event);
+    expect(events).toContain("on_chat_model_end");
+  } finally {
+    agent.releaseContextHistory?.();
+  }
+});
+
+it("Code with persistent history refuses a missing real Task scope before opening its model", () => {
+  expect(() =>
+    createKenFutWorkDeepAgent({
+      env: loadServerEnv({}, {}),
+      preset: "code",
+      model: new ReadingModel({}),
+      systemPrompt: "Code without Task",
+      checkpointer: new MemorySaver(),
+    }),
+  ).toThrow("Task");
 });

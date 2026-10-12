@@ -6,22 +6,19 @@ import type { AgentRunExtensionContext } from "../../agent/run-extension.js";
 import { publicToolArguments } from "../../kernel/tool-arguments.js";
 
 /** 展示是独立公开投影；不改handler返回值、canonical artifact或模型内容。 */
-function publicToolOutput(output: unknown): unknown {
+export function publicToolOutput(output: unknown): unknown {
   if (!ToolMessage.isInstance(output)) return output;
   const artifact = output.artifact as
     | { canonicalOutput?: unknown; display?: unknown }
     | undefined;
   const canonical = artifact?.canonicalOutput;
-  if (
-    !artifact?.display ||
-    !canonical ||
-    typeof canonical !== "object" ||
-    Array.isArray(canonical)
-  )
+  if (!canonical || typeof canonical !== "object" || Array.isArray(canonical))
     return output;
   const projected = {
     ...structuredClone(canonical),
-    display: structuredClone(artifact.display),
+    ...(artifact?.display
+      ? { display: structuredClone(artifact.display) }
+      : {}),
   };
   const failures =
     "failures" in projected && Array.isArray(projected.failures)
@@ -32,7 +29,8 @@ function publicToolOutput(output: unknown): unknown {
     tool_call_id: output.tool_call_id,
     ...(output.name ? { name: output.name } : {}),
     ...(failures.length ||
-    ("isError" in canonical && canonical.isError === true)
+    ("isError" in canonical && canonical.isError === true) ||
+    ("status" in canonical && canonical.status === "denied")
       ? { status: "error" as const }
       : output.status
         ? { status: output.status }

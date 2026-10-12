@@ -1,3 +1,4 @@
+import type { RunStopReason } from "@kenfutwork/shared";
 export type PersistedAgentRunStatus =
   | "accepted"
   | "running"
@@ -17,6 +18,7 @@ export type CreateAcceptedAgentRunInput = {
 };
 
 export type UpdateAgentRunInput = {
+  stopReason?: RunStopReason;
   completedAt?: string;
   errorCode?: string;
   errorMessage?: string;

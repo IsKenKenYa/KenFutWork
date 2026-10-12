@@ -12,6 +12,9 @@ import { BaseCheckpointSaver } from "@langchain/langgraph-checkpoint";
 import { FilesystemBackend } from "deepagents";
 import { describe, expect, it } from "vitest";
 import { loadServerEnv } from "../config/env.js";
+import { createReadHistoryTool } from "../features/context-history/read-history-tool.js";
+import { createContextHistoryArchiveBindings } from "../features/context-history/service.js";
+import { archiveTaskFixture } from "../features/context-history/test-fixture.js";
 import type { CompactionPlan } from "./auto-compact.js";
 import type { AgentBackendResult } from "./backends/index.js";
 import { createKenFutWorkDeepAgent } from "./deep-agent.js";
@@ -52,6 +55,9 @@ describe("Harness 真实上下文压缩生命周期", () => {
     const directory = await mkdtemp(
       join(tmpdir(), "kfw-compaction-lifecycle-"),
     );
+    const task = await archiveTaskFixture();
+    const archives = createContextHistoryArchiveBindings();
+    const kernelTools = [createReadHistoryTool(archives)];
     try {
       const env = loadServerEnv({
         agentBackendMode: "filesystem",
@@ -59,10 +65,7 @@ describe("Harness 真实上下文压缩生命周期", () => {
       });
       const persistenceService = createAgentPersistenceService({});
       const model = new ControlledModel();
-      const backend = new FilesystemBackend({
-        rootDir: directory,
-        virtualMode: true,
-      });
+      const backend = task.handle.backend;
       const backendResult: AgentBackendResult = {
         factory: () => backend,
         sandboxDir: directory,
@@ -87,6 +90,13 @@ describe("Harness 真实上下文压缩生命周期", () => {
         model,
         preset: "code",
         systemPrompt: "测试上下文生命周期",
+        kernelTools,
+        contextHistoryArchives: archives,
+        runToolContext: {
+          ...task.execution,
+          threadId: "owned-task-compaction",
+          runId: "first-run",
+        },
         autoCompact: plan,
         ...firstPersistence,
       });
@@ -125,6 +135,7 @@ describe("Harness 真实上下文压缩生命周期", () => {
             message.content.includes("x".repeat(10_000)),
         ),
       ).toBe(false);
+      firstAgent.releaseContextHistory?.();
       const beforeSecond = model.requests.length;
       const nextPersistence = await persistenceService.getPersistence();
       if (!nextPersistence) throw new Error("下一轮必须复用实际持久化");
@@ -134,6 +145,13 @@ describe("Harness 真实上下文压缩生命周期", () => {
         model,
         preset: "code",
         systemPrompt: "测试上下文生命周期",
+        kernelTools,
+        contextHistoryArchives: archives,
+        runToolContext: {
+          ...task.execution,
+          threadId: "owned-task-compaction",
+          runId: "second-run",
+        },
         autoCompact: plan,
         ...nextPersistence,
       });
@@ -160,7 +178,9 @@ describe("Harness 真实上下文压缩生命周期", () => {
         [],
       );
       expect(second.at(-1)?.type).toBe("run.completed");
+      nextAgent.releaseContextHistory?.();
     } finally {
+      await task.cleanup();
       await rm(directory, { recursive: true, force: true });
     }
   });
@@ -168,6 +188,9 @@ describe("Harness 真实上下文压缩生命周期", () => {
 
 it("native历史port保存精确checkpoint引用，后续运行不改写旧引用也不保存调用凭据", async () => {
   const directory = await mkdtemp(join(tmpdir(), "kfw-context-reference-"));
+  const task = await archiveTaskFixture();
+  const archives = createContextHistoryArchiveBindings();
+  let release: (() => void) | undefined;
   try {
     const env = loadServerEnv({
       agentBackendMode: "filesystem",
@@ -175,15 +198,19 @@ it("native历史port保存精确checkpoint引用，后续运行不改写旧引�
     });
     const saved = await createAgentPersistenceService({}).getPersistence();
     if (!saved) throw new Error("实际历史port需要MemorySaver");
-    const backend = new FilesystemBackend({
-      rootDir: directory,
-      virtualMode: true,
-    });
+    const backend = task.handle.backend;
     const agent = createKenFutWorkDeepAgent({
       env,
       model: new ControlledModel(),
       preset: "code",
       systemPrompt: "历史引用验证",
+      kernelTools: [createReadHistoryTool(archives)],
+      contextHistoryArchives: archives,
+      runToolContext: {
+        ...task.execution,
+        threadId: "history-port",
+        runId: "history-port-run",
+      },
       backendResult: {
         factory: () => backend,
         sandboxDir: directory,
@@ -191,6 +218,7 @@ it("native历史port保存精确checkpoint引用，后续运行不改写旧引�
       },
       ...saved,
     });
+    release = agent.releaseContextHistory;
     const port = agent.contextHistory;
     if (!port) throw new Error("实际native adapter必须提供contextHistory");
     expect(await port.captureCurrentReference("history-port")).toBeNull();
@@ -229,6 +257,8 @@ it("native历史port保存精确checkpoint引用，后续运行不改写旧引�
       expect.objectContaining({ id: "second", content: "第二轮" }),
     );
   } finally {
+    release?.();
+    await task.cleanup();
     await rm(directory, { recursive: true, force: true });
   }
 });
@@ -266,6 +296,9 @@ it("真实summary模型调用后checkpoint提交失败，pending write不能被�
   const directory = await mkdtemp(
     join(tmpdir(), "kfw-compaction-storage-failure-"),
   );
+  const task = await archiveTaskFixture();
+  const archives = createContextHistoryArchiveBindings();
+  const kernelTools = [createReadHistoryTool(archives)];
   try {
     const env = loadServerEnv({
       agentBackendMode: "filesystem",
@@ -296,6 +329,13 @@ it("真实summary模型调用后checkpoint提交失败，pending write不能被�
       model,
       preset: "code",
       systemPrompt: "持久提交故障边界",
+      kernelTools,
+      contextHistoryArchives: archives,
+      runToolContext: {
+        ...task.execution,
+        threadId: "storage-failure",
+        runId: "storage-failure-run",
+      },
       backendResult: {
         factory: () => backend,
         sandboxDir: directory,
@@ -337,6 +377,7 @@ it("真实summary模型调用后checkpoint提交失败，pending write不能被�
       [],
     );
   } finally {
+    await task.cleanup();
     await rm(directory, { recursive: true, force: true });
   }
 });
