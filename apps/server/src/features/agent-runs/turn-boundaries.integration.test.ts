@@ -9,7 +9,16 @@ import {
 } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
 import { createKenFutWorkDeepAgent } from "../../agent/deep-agent.js";
-import type { createTaskWorkManager } from "../task-work/service.js";
+import { createAgentPersistenceService } from "../../agent/persistence/index.js";
+import { loadServerEnv } from "../../config/env.js";
+import { composePlugins } from "../../kernel/compose.js";
+import type {
+  RunToolResolutionContext,
+  ToolExecutionContext,
+} from "../../kernel/types.js";
+import { createContextHistoryPlugin } from "../context-history/plugin.js";
+import { createSettingsRepository } from "../settings/repository.js";
+import { createSettingsService } from "../settings/settings-service.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import {
   BoundaryModel,
@@ -17,6 +26,55 @@ import {
   createSnapshots,
   prepareHarnessTask,
 } from "./test-harness.js";
+
+async function createArchiveHarness(
+  database: Parameters<typeof createHarness>[0],
+  controlledModel?: Parameters<typeof createHarness>[1],
+  checkpointHooks?: Parameters<typeof createHarness>[2],
+  singleAttempt = false,
+) {
+  const settings = createSettingsService({
+    repository: createSettingsRepository(database.persistence),
+    localInstance: database.localInstance,
+    defaultModel: "boundary-model",
+  });
+  const kernel = composePlugins(
+    loadServerEnv({}, {}),
+    [createContextHistoryPlugin()],
+    { overrides: { settings } },
+  );
+  const persistence = createAgentPersistenceService({});
+  try {
+    const harness = await createHarness(
+      database,
+      controlledModel,
+      checkpointHooks,
+      singleAttempt,
+      {
+        agentPersistenceService: persistence,
+        tools: kernel.get("tools"),
+        contextHistoryArchives: kernel.get("contextHistoryArchives"),
+      },
+    );
+    return {
+      ...harness,
+      kernel,
+      async close() {
+        try {
+          await harness.runtime.stopAllRuns("host_shutdown");
+          await harness.work.close("test cleanup");
+        } finally {
+          await persistence.dispose();
+          await kernel.dispose();
+        }
+      },
+    };
+  } catch (error) {
+    await persistence.dispose();
+    await kernel.dispose();
+    throw error;
+  }
+}
 
 /** 一次性本机集群；不解析.env或连接任何现有数据库。 */
 describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
@@ -94,10 +152,10 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
     });
     it("真实RunService把原输入native身份与前后context引用写进owned持久账本", async () => {
       const database = await createTaskWorkDatabase();
-      let work: ReturnType<typeof createTaskWorkManager> | undefined;
+      let cleanup: (() => Promise<void>) | undefined;
       try {
-        const f = await createHarness(database);
-        work = f.work;
+        const f = await createArchiveHarness(database);
+        cleanup = f.close;
         const {
           scope,
           actor,
@@ -169,16 +227,16 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           sourceCommandId: "real-command",
         });
       } finally {
-        await work?.close("test cleanup");
+        await cleanup?.();
         await database.close();
       }
     });
     it("accepted Run在从未消费stream时被cancelAndWait，仍持久化partial边界并释放活动等待", async () => {
       const database = await createTaskWorkDatabase();
-      let work: ReturnType<typeof createTaskWorkManager> | undefined;
+      let cleanup: (() => Promise<void>) | undefined;
       try {
-        const f = await createHarness(database);
-        work = f.work;
+        const f = await createArchiveHarness(database);
+        cleanup = f.close;
         const runId = randomUUID();
         await f.service.createAcceptedRun({
           runId,
@@ -225,13 +283,13 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
             },
           });
       } finally {
-        await work?.close("test cleanup");
+        await cleanup?.();
         await database.close();
       }
     });
     it("重复stream消费者不能提前完成活动Run或为仍在执行的native图写partial post", async () => {
       const database = await createTaskWorkDatabase();
-      let work: ReturnType<typeof createTaskWorkManager> | undefined;
+      let cleanup: (() => Promise<void>) | undefined;
       let release!: () => void;
       const gate = new Promise<void>((resolve) => {
         release = resolve;
@@ -242,14 +300,14 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
       });
       let first: Promise<StreamEvent[]> | undefined;
       try {
-        const f = await createHarness(
+        const f = await createArchiveHarness(
           database,
           new BoundaryModel(async () => {
             started();
             await gate;
           }),
         );
-        work = f.work;
+        cleanup = f.close;
         const runId = randomUUID();
         await f.service.createAcceptedRun({
           runId,
@@ -306,26 +364,26 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
       } finally {
         release();
         await first;
-        await work?.close("test cleanup");
+        await cleanup?.();
         await database.close();
       }
     });
     it("真实Git没有文件变化时，两轮pre/post都消费同一effective引用且phase归本run", async () => {
       const database = await createTaskWorkDatabase();
-      let work: ReturnType<typeof createTaskWorkManager> | undefined;
+      let cleanup: (() => Promise<void>) | undefined;
       try {
         await writeFile(
           join(database.context.scope.rootDirectory, "note.txt"),
           "既存内容\n",
         );
         const snapshots = createSnapshots(database);
-        const f = await createHarness(database, undefined, {
+        const f = await createArchiveHarness(database, undefined, {
           beforeTurn: (input) =>
             snapshots.captureTurnBoundary({ ...input, phase: "pre" }),
           afterTurn: (input) =>
             snapshots.captureTurnBoundary({ ...input, phase: "post" }),
         });
-        work = f.work;
+        cleanup = f.close;
         const ids: string[] = [];
         for (const sourceCommandId of ["first-no-change", "second-no-change"]) {
           const runId = randomUUID();
@@ -376,15 +434,15 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
             });
         }
       } finally {
-        await work?.close("test cleanup");
+        await cleanup?.();
         await database.close();
       }
     });
     it("实际native模型失败仍保存两phase，文件hook失败不能伪装成captured null", async () => {
       const database = await createTaskWorkDatabase();
-      let work: ReturnType<typeof createTaskWorkManager> | undefined;
+      let cleanup: (() => Promise<void>) | undefined;
       try {
-        const f = await createHarness(
+        const f = await createArchiveHarness(
           database,
           new BoundaryModel(async () => {
             throw new Error("controlled upstream unavailable");
@@ -399,7 +457,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           },
           true,
         );
-        work = f.work;
+        cleanup = f.close;
         const runId = randomUUID();
         await f.service.createAcceptedRun({
           runId,
@@ -447,13 +505,13 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         expect(f.model.requests).toHaveLength(1);
         expect(f.runtime.hasActiveRunForTask(f.scope.taskId)).toBe(false);
       } finally {
-        await work?.close("test cleanup");
+        await cleanup?.();
         await database.close();
       }
     });
     it("实际native LLM在途取消后保存两phase与已提交引用，再释放前台等待", async () => {
       const database = await createTaskWorkDatabase();
-      let work: ReturnType<typeof createTaskWorkManager> | undefined;
+      let cleanup: (() => Promise<void>) | undefined;
       let entered!: () => void;
       const started = new Promise<void>((resolve) => {
         entered = resolve;
@@ -464,7 +522,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
       });
       let draining: Promise<StreamEvent[]> | undefined;
       try {
-        const f = await createHarness(
+        const f = await createArchiveHarness(
           database,
           new BoundaryModel(async (signal) => {
             entered();
@@ -473,7 +531,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
             await gate;
           }),
         );
-        work = f.work;
+        cleanup = f.close;
         const runId = randomUUID();
         await f.service.createAcceptedRun({
           runId,
@@ -525,23 +583,56 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
       } finally {
         release();
         await draining;
-        await work?.close("test cleanup");
+        await cleanup?.();
         await database.close();
       }
     });
     it("手动compact经真实Harness提交summary，不新增Human或assistant行且ledger为control operation", async () => {
       const database = await createTaskWorkDatabase();
-      let work: ReturnType<typeof createTaskWorkManager> | undefined;
+      let cleanup: (() => Promise<void>) | undefined;
+      let seed: ReturnType<typeof createKenFutWorkDeepAgent> | undefined;
       try {
-        const f = await createHarness(database);
-        work = f.work;
+        const f = await createArchiveHarness(database);
+        cleanup = f.close;
         const saved = await f.persistence.getPersistence();
         if (!saved) throw new Error("手动compact必须共享真实MemorySaver");
+        const seedExecution: ToolExecutionContext = {
+          actor: f.actor,
+          instanceId: f.scope.instanceId,
+          sessionId: f.scope.taskId,
+          runId: randomUUID(),
+          threadId: f.threadId,
+          scopeHandle: f.handle,
+          codeApproval: {
+            ceiling: "build",
+            resolve: async () => ({
+              mode: "build",
+              scopeGeneration: f.handle.describe().generation,
+              branchGeneration: f.handle.branchGeneration,
+            }),
+          },
+        };
+        const resolution: RunToolResolutionContext = {
+          preset: "code",
+          sessionId: f.scope.taskId,
+          scopeHandle: f.handle,
+          backendFactory: () => f.handle.backend,
+        };
+        const registry = f.kernel.get("tools");
         const native = createKenFutWorkDeepAgent({
           env: f.env,
           model: f.model,
           preset: "code",
           systemPrompt: "手动压缩真实历史",
+          runToolContext: seedExecution,
+          contextHistoryArchives: f.kernel.get("contextHistoryArchives"),
+          kernelTools: registry
+            .resolveRunTools(resolution)
+            .map((definition) => ({
+              ...definition,
+              execute: (args, execution) =>
+                registry.executeDefinition(definition, args, execution),
+            })),
           backendResult: {
             factory: () => f.handle.backend,
             sandboxDir: f.scope.rootDirectory,
@@ -549,6 +640,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           },
           ...saved,
         });
+        seed = native;
         const history = Array.from(
           { length: 30 },
           (_, index): BaseMessage =>
@@ -570,6 +662,8 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         if (!before || !native.contextHistory)
           throw new Error("seed没有真实引用");
         const original = await native.contextHistory.getEffectiveState(before);
+        // 同一真实Task句柄下一Run会绑定自己的reader，seed不保留活动归档绑定。
+        native.releaseContextHistory?.();
         const modelCallsBefore = f.model.requests.length;
         const runId = randomUUID();
         await f.service.createAcceptedRun({
@@ -649,7 +743,8 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           reference: after,
         });
       } finally {
-        await work?.close("test cleanup");
+        seed?.releaseContextHistory?.();
+        await cleanup?.();
         await database.close();
       }
     });
