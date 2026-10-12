@@ -59,6 +59,12 @@ type RepoOptions = {
 
 function repo(overrides: RepoOptions = {}): CanvasRepository {
   return {
+    claimRoot: async () => {
+      throw new Error("旧画布工具测试不绑定文件目录");
+    },
+    recordFileIndex: async () => {
+      throw new Error("旧画布工具测试不发布文件索引");
+    },
     findById: async () => null,
     findProjectBrandKitId: async () => null,
     saveContent: async () => 1,

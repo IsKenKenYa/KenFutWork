@@ -1,10 +1,12 @@
 import type { PersistenceService } from "../persistence/types.js";
+import { claimCanvasRootInTransaction } from "./root-directory.js";
 
 export type CanvasRow = {
   id: string;
   name: string;
   project_id: string;
   content: unknown;
+  root_directory?: string | null;
 };
 
 /**
@@ -13,6 +15,11 @@ export type CanvasRow = {
  * （`FORM-9` 单一隔离入口）——归属校验与查询是同一条语句。
  */
 export interface CanvasRepository {
+  claimRoot(
+    instanceId: string,
+    canvasId: string,
+    resolveDefault: (workDir: string | null) => Promise<string>,
+  ): Promise<string>;
   /** 读画布（含内容）；不属本工作区或不存在均返回 null。 */
   findById(instanceId: string, canvasId: string): Promise<CanvasRow | null>;
   /**
@@ -49,14 +56,24 @@ export interface CanvasRepository {
       files?: Record<string, unknown> | undefined;
     },
   ): Promise<number>;
+  recordFileIndex(instanceId: string, canvasId: string): Promise<number>;
 }
 
-const CANVAS_COLUMNS = "c.id, c.name, c.project_id, c.content";
+const CANVAS_COLUMNS =
+  "c.id, c.name, c.project_id, c.content, c.root_directory";
 
 export function createCanvasRepository(
   persistence: PersistenceService,
 ): CanvasRepository {
   return {
+    claimRoot: (instanceId, canvasId, resolveDefault) =>
+      persistence.transaction((tx) =>
+        claimCanvasRootInTransaction(
+          tx.forInstance(instanceId),
+          canvasId,
+          resolveDefault,
+        ),
+      ),
     async findProjectBrandKitId(instanceId, canvasId) {
       const row = await persistence
         .forInstance(instanceId)
@@ -120,6 +137,24 @@ export function createCanvasRepository(
           canvasId,
           JSON.stringify(input.elements),
           JSON.stringify(input.files ?? {}),
+        ],
+      );
+    },
+    async recordFileIndex(instanceId, canvasId) {
+      // jsonb 写入：显式序列化后由 cast 落库，避免驱动对对象做隐式推断。
+      return persistence.forInstance(instanceId).execute(
+        `update public.canvases c
+            set content = $2::jsonb
+           from public.projects p
+          where p.id = c.project_id
+            and c.id = $1
+            and p.instance_id = :instance and p.archived_at is null`,
+        [
+          canvasId,
+          JSON.stringify({
+            storage: "project-files",
+            path: `.kenfutwork/canvases/${canvasId}.json`,
+          }),
         ],
       );
     },

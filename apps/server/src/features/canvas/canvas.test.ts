@@ -213,6 +213,12 @@ function createFakeRepository(
   overrides: Partial<CanvasRepository> = {},
 ): CanvasRepository {
   return {
+    claimRoot: async () => {
+      throw new Error("旧画布测试不绑定文件目录");
+    },
+    recordFileIndex: async () => {
+      throw new Error("旧画布测试不发布文件索引");
+    },
     findById: async () => CANVAS_ROW,
     findProjectBrandKitId: async () => null,
     saveContent: async () => 1,

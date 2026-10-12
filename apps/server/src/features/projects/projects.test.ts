@@ -330,11 +330,12 @@ describe("projects repository（SQL 与隔离谓词）", () => {
     expect(canvasInsert?.sql).toContain("insert into public.canvases");
     // canvases 无 instance_id 列：经 projects 父链校验归属，实例谓词不可省。
     expect(canvasInsert?.sql).toContain("from public.projects p");
-    expect(canvasInsert?.sql).toContain("p.instance_id = $4");
+    expect(canvasInsert?.sql).toContain("p.instance_id = $5");
     expect(canvasInsert?.values).toEqual([
       "Main Canvas",
       CLIENT_ID,
       PROJECT_ID,
+      null,
       INSTANCE_ID,
     ]);
   });

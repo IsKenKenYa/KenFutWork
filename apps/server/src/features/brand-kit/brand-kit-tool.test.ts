@@ -71,6 +71,12 @@ function canvasRepo(
   findProjectBrandKitId: CanvasRepository["findProjectBrandKitId"],
 ): CanvasRepository {
   return {
+    claimRoot: async () => {
+      throw new Error("品牌套件测试不绑定画布目录");
+    },
+    recordFileIndex: async () => {
+      throw new Error("品牌套件测试不发布文件索引");
+    },
     findById: async () => null,
     findProjectBrandKitId,
     saveContent: async () => 1,

@@ -288,13 +288,18 @@ export function createProjectRepository(
         const canvas = await scoped.queryOne<CreatedCanvasRow>(
           // canvases 无 instance_id 列：经 projects 父链施加谓词，
           // 守卫因此同时是「该项目确属本工作区」的归属校验。
-          `insert into public.canvases (project_id, name, is_primary, created_by_client_id)
-           select p.id, $1, true, $2
+          `insert into public.canvases (project_id, name, is_primary, created_by_client_id, root_directory)
+           select p.id, $1, true, $2, $4
              from public.projects p
             where p.id = $3
               and p.instance_id = :instance
            returning id, name, is_primary`,
-          [input.canvasName, input.createdByClientId, project.id],
+          [
+            input.canvasName,
+            input.createdByClientId,
+            project.id,
+            input.workDir ?? null,
+          ],
         );
 
         if (!canvas) {
