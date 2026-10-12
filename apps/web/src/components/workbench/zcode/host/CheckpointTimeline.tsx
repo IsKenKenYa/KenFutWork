@@ -208,7 +208,7 @@ export function CheckpointTimeline({
               )}
             </div>
             <p className="text-ui-sm text-foreground-subtle">
-              回滚会丢弃所选时点之后的未提交改动；可再从更早的检查点恢复
+              丢弃所选时点后的未提交改动
             </p>
           </div>
           <DialogFooter>
