@@ -29,6 +29,14 @@ it("验收根据canonical退出事实，不猜命令或输出文本", () => {
     "printf answer",
   ]) {
     expect(
+      goalEvidence([row(command, { state: "exited", exitCode: 0 })], "r", [
+        "row:1",
+      ])[0]?.tool,
+    ).toEqual({
+      name: "Bash",
+      inputText: JSON.stringify({ command }),
+    });
+    expect(
       goalEvidence(
         [row(command, { state: "exited", exitCode: 0, output: "" })],
         "r",

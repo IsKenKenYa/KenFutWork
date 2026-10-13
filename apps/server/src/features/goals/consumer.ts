@@ -59,7 +59,7 @@ export function createGoalTools(
       exposure: "core",
       access: "read",
       description:
-        "Verify every requirement of the current goal using current Run evidence candidates from GetGoal (successful tools or actual assistant content). Provide their evidence IDs, the current goal revision and a reason explaining what the evidence proves. Ordinary completion or an empty/trivial command is not evidence. This only updates Task goal metadata; it grants no file or execution permission.",
+        "Submit a completion proposal using current Run evidence IDs from GetGoal, the current goal revision, and a reason explaining every requirement. An independent tool-free evaluation makes the final decision; passed is only your proposal. Ordinary completion or an empty/trivial command is not evidence. This grants no file or execution permission.",
       parameters: z.toJSONSchema(verifySchema),
       zodSchema: verifySchema,
       execute: async (args, context) =>

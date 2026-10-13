@@ -148,6 +148,14 @@ async function fixture() {
           timestamp: new Date().toISOString(),
         });
         const context = {
+          requestModel: async () => ({
+            text: JSON.stringify({
+              passed: executed >= finishAfter,
+              reason: "Independent fixture evaluation of actual Read",
+            }),
+            hasToolCalls: false,
+            usageObserved: true,
+          }),
           actor: db.actor,
           runId,
           toolCallId: "verify",

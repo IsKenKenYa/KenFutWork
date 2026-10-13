@@ -10,6 +10,8 @@ export interface GoalEvidence {
   sourceId: string;
   passed: boolean;
   detail?: string;
+  /** Private evaluation context; public verification retains only source/result/detail. */
+  tool?: { name: string; inputText: string };
 }
 export interface GoalVerification {
   runId: string;
@@ -34,6 +36,14 @@ export interface GoalRecord {
   runUsageObserved: boolean;
   runStartedAt: number | null;
   verification: GoalVerification | null;
+  /** Persisted under the Task lock before sending an independent model request. */
+  evaluation?: {
+    requestId: string;
+    runId: string;
+    revision: number;
+    evidence: GoalEvidence[];
+    proposal: { passed: boolean; reason: string };
+  } | null;
   reason: string | null;
 }
 export interface GoalFence {
@@ -158,6 +168,11 @@ const provider: GoalService = {
     const goal = clone(current);
     goal.tokenBudget = input.tokenBudget;
     goal.revision += 1;
+    if (goal.status === "verifying") {
+      goal.status = "paused";
+      goal.reason = "goal.evaluationChanged";
+      if (goal.evaluation) goal.evaluation = null;
+    }
     if (
       goal.tokenBudget !== null &&
       goal.tokensUsed >= goal.tokenBudget &&
@@ -182,6 +197,7 @@ const provider: GoalService = {
     const goal = clone(current);
     if (goal.status === "complete") return goal;
     goal.status = "paused";
+    if (goal.evaluation) goal.evaluation = null;
     goal.reason = input.reason;
     goal.revision += 1;
     return goal;
@@ -302,7 +318,11 @@ const provider: GoalService = {
       input.evidence.every((item) => item.passed);
     goal.verification = structuredClone({
       runId: input.runId,
-      evidence: input.evidence,
+      evidence: input.evidence.map(({ sourceId, passed, detail }) => ({
+        sourceId,
+        passed,
+        ...(detail === undefined ? {} : { detail }),
+      })),
       passed,
       reason: input.verdict.reason,
       at: input.at,
@@ -331,11 +351,13 @@ const provider: GoalService = {
     goal.runTokensUsed = 0;
     goal.runUsageObserved = false;
     goal.verification = null;
+    if (goal.evaluation) goal.evaluation = null;
     goal.revision += 1;
     return goal;
   },
   recover(current, at) {
     const goal = clone(current);
+    if (goal.evaluation) goal.evaluation = null;
     if (goal.claimedRunId) {
       settleTime(goal, at);
       goal.lastSettledRunId = goal.claimedRunId;

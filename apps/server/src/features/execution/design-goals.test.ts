@@ -1,3 +1,4 @@
+import { designGoalSchema } from "@kenfutwork/shared";
 import { expect, it } from "vitest";
 import { createGoalService, type GoalRecord } from "../goals/service.js";
 import { createDesignGoals } from "./design-goals.js";
@@ -104,6 +105,11 @@ function fixture() {
     permissions: { listPending: () => (pending ? [{}] : []) },
   } as unknown as Parameters<typeof createDesignGoals>[0]);
   const context = {
+    requestModel: async () => ({
+      text: '{"passed":true,"reason":"Independent evidence review"}',
+      hasToolCalls: false,
+      usageObserved: true,
+    }),
     actor,
     runId: "run",
     toolCallId: "verify",
@@ -524,4 +530,134 @@ it("user queue and approval block continuation; Stop preserves pause; rebranch a
     reason: "host.restarted",
   });
   await f.service.close();
+});
+
+it.each(["rejected", "invalid", "pause", "budget", "scope", "branch"])(
+  "Design独立评估%s不能完成目标，模型请求期间Task锁可供暂停使用",
+  async (scenario) => {
+    const f = fixture();
+    await f.service.initialize();
+    try {
+      await f.service.create(f.actor, {
+        taskId: "task",
+        objective: "Create report",
+      });
+      await f.service.lifecycle.claim(f.sql, f.task, {
+        actor: f.actor,
+        runId: "run",
+        inputId: "user",
+        origin: "userInput",
+      });
+      f.task.active_run_id = "run";
+      await f.service.observe(f.actor, "task", {
+        type: "message.delta",
+        runId: "run",
+        messageId: "answer",
+        delta: "Report",
+        timestamp: new Date().toISOString(),
+      });
+      f.context.requestModel = async () => {
+        expect(f.state()?.status).toBe("verifying");
+        const visible = await f.service.readTask(f.actor, "task");
+        expect(visible).not.toHaveProperty("evaluation");
+        expect(designGoalSchema.safeParse(visible).success).toBe(true);
+        expect(f.state()?.evaluation?.evidence).toEqual([
+          expect.objectContaining({ detail: "Report" }),
+        ]);
+        if (scenario === "pause")
+          await f.service.pause(f.actor, {
+            taskId: "task",
+            goalId: f.state()!.goalId,
+            revision: f.state()!.revision,
+          });
+        if (scenario === "budget")
+          await f.service.setBudget(f.actor, {
+            taskId: "task",
+            goalId: f.state()!.goalId,
+            revision: f.state()!.revision,
+            tokenBudget: 1,
+          });
+        if (scenario === "scope") f.task.scope_generation = 2;
+        if (scenario === "branch") f.task.branch_generation = 2;
+        return {
+          text:
+            scenario === "invalid"
+              ? "passed"
+              : JSON.stringify({
+                  passed: scenario !== "rejected",
+                  reason: "Independent review",
+                }),
+          hasToolCalls: false,
+          usageObserved: true,
+        };
+      };
+      const pending = f.service.verify(f.context, {
+        revision: f.state()!.revision,
+        evidenceIds: ["assistant:run/answer"],
+        passed: true,
+        reason: "Done",
+      });
+      if (["pause", "budget", "scope", "branch"].includes(scenario)) {
+        await expect(pending).rejects.toMatchObject({
+          code: "design_goal_conflict",
+        });
+      } else {
+        expect((await pending).status).toBe(
+          scenario === "invalid" ? "paused" : "notSatisfied",
+        );
+      }
+      expect(f.state()?.status).not.toBe("complete");
+    } finally {
+      await f.service.close();
+    }
+  },
+);
+
+it("Design重复完成申请不重复评估或公开私有快照，同ID不同申请被拒绝", async () => {
+  const f = fixture();
+  await f.service.initialize();
+  try {
+    await f.service.create(f.actor, { taskId: "task", objective: "Report" });
+    await f.service.lifecycle.claim(f.sql, f.task, {
+      actor: f.actor,
+      runId: "run",
+      inputId: "user",
+      origin: "userInput",
+    });
+    f.task.active_run_id = "run";
+    await f.service.observe(f.actor, "task", {
+      type: "message.delta",
+      runId: "run",
+      messageId: "answer",
+      delta: "Report",
+      timestamp: new Date().toISOString(),
+    });
+    const input = {
+      revision: f.state()!.revision,
+      evidenceIds: ["assistant:run/answer"],
+      passed: true,
+      reason: "Done",
+    };
+    let calls = 0;
+    f.context.requestModel = async () => {
+      calls += 1;
+      const replay = await f.service.verify(f.context, input);
+      expect(replay.status).toBe("verifying");
+      expect(replay).not.toHaveProperty("evaluation");
+      await expect(
+        f.service.verify(f.context, { ...input, reason: "Changed" }),
+      ).rejects.toMatchObject({ code: "design_goal_conflict" });
+      return {
+        text: '{"passed":true,"reason":"Independent review"}',
+        hasToolCalls: false,
+        usageObserved: true,
+      };
+    };
+    const result = await f.service.verify(f.context, input);
+    expect(result.status).toBe("complete");
+    expect(result).not.toHaveProperty("evaluation");
+    expect(calls).toBe(1);
+  } finally {
+    await f.service.close();
+  }
 });

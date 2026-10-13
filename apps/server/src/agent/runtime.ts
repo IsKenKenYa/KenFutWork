@@ -122,6 +122,7 @@ import {
   createRunModelControl,
   resolveInstanceModelExecution,
 } from "./model-execution.js";
+import { createRunModelRequestPort } from "./model-request.js";
 import { nativeEffectiveOutputTokens } from "./native-context-budget.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { measureTools } from "./prompt-composition.js";
@@ -2048,6 +2049,30 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           toolReceipts = executionReceipts;
           const runToolContext: ToolExecutionContext = {
             observeToolExecution: executionReceipts.observe,
+            ...(options.modelProviders && options.runUsage && run.eventSink
+              ? {
+                  requestModel: createRunModelRequestPort({
+                    actor: run.actor,
+                    runId,
+                    sessionId: run.sessionId,
+                    threadId: run.threadId,
+                    signal: run.controller.signal,
+                    providers: options.modelProviders,
+                    catalog: options.modelCatalog,
+                    usage: options.runUsage,
+                    now,
+                    assertCurrent: () => {
+                      if (completions.get(runId)?.settled)
+                        throw new Error("模型请求所属Run已结束。");
+                    },
+                    publish: async (event) => {
+                      if (completions.get(runId)?.settled)
+                        throw new Error("模型请求所属Run已结束。");
+                      await run.eventSink!(event);
+                    },
+                  }),
+                }
+              : {}),
 
             ...(run.eventSink
               ? {

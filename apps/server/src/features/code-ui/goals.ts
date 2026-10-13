@@ -1,4 +1,6 @@
 import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
+import type { ModelInvocationSnapshot } from "../../providers/types.js";
+import { evaluateGoal } from "../goals/evaluation.js";
 import type { GoalRecord, GoalService } from "../goals/service.js";
 import { isGoalToolEvidence } from "../goals/tool-evidence.js";
 import type { CodeUiConversationState } from "./conversation.js";
@@ -106,6 +108,69 @@ export function createTaskGoalHost(deps: {
     context.signal?.throwIfAborted();
     return scope;
   }
+  async function settleEvaluation(
+    context: ToolExecutionContext,
+    scope: ReturnType<typeof scopeOf>,
+    captured: { goal: GoalRecord },
+    verdict: Awaited<ReturnType<typeof evaluateGoal>>,
+  ) {
+    const requestId = captured.goal.evaluation!.requestId;
+    await deps.repository.appendEvent(
+      scope.instanceId,
+      scope.taskId,
+      {
+        key: `${requestId}:result`,
+        fingerprint: createHash("sha256")
+          .update(JSON.stringify(verdict))
+          .digest("hex"),
+        event: {
+          type: "goal.evaluation",
+          runId: context.runId,
+          requestId,
+          verdict,
+        },
+      },
+      (root) => {
+        const goal = root.state?.goalRecord;
+        if (
+          !matchesActiveCodeRun(root, context) ||
+          !goal ||
+          goal.revision !== captured.goal.revision ||
+          goal.status !== "verifying" ||
+          goal.evaluation?.requestId !== requestId ||
+          goal.branchGeneration !== Number(root.branch_generation)
+        )
+          throw new Error(
+            "独立评估所属目标、Run或授权代际已改变，旧结果不再生效。",
+          );
+        const state = structuredClone(root.state!);
+        state.goalRecord =
+          "error" in verdict
+            ? deps.goals.pause(goal, {
+                goalId: goal.goalId,
+                revision: goal.revision,
+                reason: verdict.error,
+                at: Date.now(),
+              })
+            : deps.goals.verify(goal, {
+                goalId: goal.goalId,
+                revision: goal.revision,
+                runId: context.runId!,
+                evidence: captured.goal.evaluation!.evidence,
+                verdict,
+                at: Date.now(),
+              });
+        state.goalRecord.evaluation = null;
+        syncGoal(state, root.id);
+        const snapshot = state.snapshots.find(
+          (item) => item.sessionId === root.id,
+        )!;
+        snapshot.revision += 1;
+        snapshot.seq += 1;
+        return { state, activeRunId: root.active_run_id };
+      },
+    );
+  }
   return {
     async read(context) {
       const scope = scopeOf(context);
@@ -118,6 +183,7 @@ export function createTaskGoalHost(deps: {
         (item) => item.sessionId === root.id,
       );
       const visible = goal ? structuredClone(goal) : null;
+      if (visible) delete visible.evaluation;
       for (const evidence of visible?.verification?.evidence ?? [])
         delete evidence.detail;
       return goal && visible
@@ -134,7 +200,10 @@ export function createTaskGoalHost(deps: {
     async verify(context: ToolExecutionContext, input) {
       const scope = scopeOf(context);
       if (!context.toolCallId) throw new Error("验证缺少可信工具调用身份");
-      let result: GoalRecord | undefined;
+      let pending:
+        | { goal: GoalRecord; invocation: ModelInvocationSnapshot | null }
+        | undefined;
+      const requestId = `goal-verify:${context.runId}/${context.toolCallId}`;
       const event = {
         type: "goal.verify",
         runId: context.runId,
@@ -145,7 +214,7 @@ export function createTaskGoalHost(deps: {
         scope.instanceId,
         scope.taskId,
         {
-          key: `goal-verify:${context.runId}/${context.toolCallId}`,
+          key: requestId,
           fingerprint: createHash("sha256")
             .update(JSON.stringify(event))
             .digest("hex"),
@@ -166,29 +235,57 @@ export function createTaskGoalHost(deps: {
             context.runId!,
             input.evidenceIds,
           );
-          result = deps.goals.verify(goal, {
+          const started = deps.goals.beginVerification(goal, {
             goalId: goal.goalId,
             revision: input.revision,
             runId: context.runId!,
-            evidence,
-            verdict: { passed: input.passed, reason: input.reason },
-            at: Date.now(),
           });
-          state.goalRecord = result;
+          started.evaluation = {
+            requestId,
+            runId: context.runId!,
+            revision: started.revision,
+            evidence,
+            proposal: { passed: input.passed, reason: input.reason },
+          };
+          state.goalRecord = started;
+          pending = {
+            goal: structuredClone(started),
+            invocation:
+              state.goalModel?.goalId === goal.goalId
+                ? structuredClone(state.goalModel.invocation)
+                : null,
+          };
           syncGoal(state, root.id);
           snapshot.revision += 1;
           snapshot.seq += 1;
           return { state, activeRunId: root.active_run_id };
         },
       );
+      // A replay reads persisted state; it must not send a second billable request.
+      if (pending) {
+        const captured = pending;
+        const verdict = await evaluateGoal({
+          request: context.requestModel,
+          invocation: captured.invocation,
+          goal: captured.goal,
+          evidence: captured.goal.evaluation!.evidence,
+          proposal: captured.goal.evaluation!.proposal,
+        });
+        context.signal?.throwIfAborted();
+        await settleEvaluation(context, scope, captured, verdict);
+      }
       const root = await deps.repository.find(scope.instanceId, scope.taskId);
       if (!root?.state?.goalRecord) throw new Error("目标已删除");
+      if (!matchesActiveCodeRun(root, context))
+        throw new Error("目标所属Run或授权代际已失效。");
       await deps.refresh(
         scope.instanceId,
         root.root_directory!,
         root.project_id,
       );
-      return result ?? structuredClone(root.state.goalRecord);
+      const visible = structuredClone(root.state.goalRecord);
+      delete visible.evaluation;
+      return visible;
     },
   };
 }
@@ -263,6 +360,18 @@ export function goalEvidence(
     const detail = row ? evidenceDetail(row, runId) : null;
     if (detail === null)
       throw new Error("验收引用不属于当前Run的有效结果，请先读取GetGoal候选");
-    return { sourceId: id, passed: true, detail };
+    return {
+      sourceId: id,
+      passed: true,
+      detail,
+      ...(row?.kind === "toolCall"
+        ? {
+            tool: {
+              name: row.toolName,
+              inputText: row.input ? JSON.stringify(row.input) : row.inputText,
+            },
+          }
+        : {}),
+    };
   });
 }

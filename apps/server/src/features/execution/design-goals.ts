@@ -6,6 +6,7 @@ import type {
 } from "../../kernel/types.js";
 import type { ModelInvocationSnapshot } from "../../providers/types.js";
 import type { GoalEvidenceCandidate } from "../goals/consumer.js";
+import { evaluateGoal } from "../goals/evaluation.js";
 import type { GoalFence, GoalRecord, GoalService } from "../goals/service.js";
 import { isGoalToolEvidence } from "../goals/tool-evidence.js";
 import type {
@@ -210,6 +211,43 @@ export function createDesignGoals(options: {
       `select source_id,kind,tool_name,input,detail,status from public.design_goal_evidence where instance_id=:instance and task_id=$1 and run_id=$2`,
       [taskId, runId],
     );
+  async function settleEvaluation(
+    context: ToolExecutionContext,
+    taskId: string,
+    captured: GoalRecord,
+    verdict: Awaited<ReturnType<typeof evaluateGoal>>,
+  ): Promise<GoalRecord> {
+    const requestId = captured.evaluation!.requestId;
+    return mutate(context.actor!, taskId, async (sql, t, row) => {
+      if (
+        !row ||
+        !currentRun(t, context) ||
+        row.state.status !== "verifying" ||
+        row.state.revision !== captured.revision ||
+        row.state.evaluation?.requestId !== requestId
+      )
+        throw conflict();
+      const state =
+        "error" in verdict
+          ? goals.pause(row.state, {
+              goalId: row.state.goalId,
+              revision: row.state.revision,
+              reason: verdict.error,
+              at: at(),
+            })
+          : goals.verify(row.state, {
+              goalId: row.state.goalId,
+              revision: row.state.revision,
+              runId: context.runId!,
+              evidence: captured.evaluation!.evidence,
+              verdict,
+              at: at(),
+            });
+      state.evaluation = null;
+      await save(sql, taskId, state);
+      return state;
+    });
+  }
   const service: DesignGoalsService = {
     initialize,
     onLost(listener) {
@@ -366,11 +404,12 @@ export function createDesignGoals(options: {
     },
     async readTask(actor, taskId) {
       await localInstance.resolve(actor);
-      return mutate(
-        actor,
-        taskId,
-        async (_sql, _task, row) => row?.state ?? null,
-      );
+      return mutate(actor, taskId, async (_sql, _task, row) => {
+        if (!row) return null;
+        const visible = structuredClone(row.state);
+        delete visible.evaluation;
+        return visible;
+      });
     },
     async create(actor, input) {
       const modelInvocation = await options.modelSelection.capture(
@@ -485,6 +524,7 @@ export function createDesignGoals(options: {
         if (!row) return null;
         if (!currentRun(t, context)) throw conflict();
         const state = structuredClone(row.state);
+        delete state.evaluation;
         for (const proof of state.verification?.evidence ?? [])
           delete proof.detail;
         const candidates = (await evidence(sql, opened.taskId, context.runId!))
@@ -502,33 +542,88 @@ export function createDesignGoals(options: {
     },
     async verify(context: ToolExecutionContext, input) {
       const opened = scope(context);
-      return mutate(context.actor!, opened.taskId, async (sql, t, row) => {
-        if (!row || !context.toolCallId || !currentRun(t, context))
-          throw conflict();
-        const records = await evidence(sql, opened.taskId, context.runId!);
-        const selected = input.evidenceIds.map((id) =>
-          records.find((row) => row.source_id === id),
-        );
-        if (!selected.length || selected.some((row) => !row || !usable(row)))
-          throw new DesignTaskError(
-            "design_goal_evidence_invalid",
-            "验收引用不属于当前Run的有效结果，请先读取GetGoal候选",
+      const requestId = `goal-verify:${context.runId}/${context.toolCallId}`;
+      const captured = await mutate(
+        context.actor!,
+        opened.taskId,
+        async (sql, t, row) => {
+          if (!row || !context.toolCallId || !currentRun(t, context))
+            throw conflict();
+          if (row.state.evaluation?.requestId === requestId) {
+            const pending = row.state.evaluation;
+            if (
+              pending.revision !== input.revision + 1 ||
+              pending.proposal.passed !== input.passed ||
+              pending.proposal.reason !== input.reason ||
+              JSON.stringify(
+                pending.evidence.map((proof) => proof.sourceId),
+              ) !== JSON.stringify(input.evidenceIds)
+            )
+              throw conflict();
+            return { replay: true as const, goal: row.state };
+          }
+          const records = await evidence(sql, opened.taskId, context.runId!);
+          const selected = input.evidenceIds.map((id) =>
+            records.find((row) => row.source_id === id),
           );
-        const state = goals.verify(row.state, {
-          goalId: row.state.goalId,
-          revision: input.revision,
-          runId: context.runId!,
-          evidence: selected.map((row) => ({
-            sourceId: row!.source_id,
-            passed: true,
-            detail: row!.detail,
-          })),
-          verdict: { passed: input.passed, reason: input.reason },
-          at: at(),
-        });
-        await save(sql, opened.taskId, state);
-        return state;
+          if (!selected.length || selected.some((row) => !row || !usable(row)))
+            throw new DesignTaskError(
+              "design_goal_evidence_invalid",
+              "验收引用不属于当前Run的有效结果，请先读取GetGoal候选",
+            );
+          const state = goals.beginVerification(row.state, {
+            goalId: row.state.goalId,
+            revision: input.revision,
+            runId: context.runId!,
+          });
+          state.evaluation = {
+            requestId,
+            runId: context.runId!,
+            revision: state.revision,
+            evidence: selected.map((row) => ({
+              sourceId: row!.source_id,
+              passed: true,
+              detail: row!.detail,
+              ...(row!.kind === "toolCall"
+                ? {
+                    tool: {
+                      name: row!.tool_name ?? "",
+                      inputText: JSON.stringify(row!.input ?? {}),
+                    },
+                  }
+                : {}),
+            })),
+            proposal: { passed: input.passed, reason: input.reason },
+          };
+          await save(sql, opened.taskId, state);
+          return {
+            replay: false as const,
+            goal: state,
+            invocation: row.model_invocation,
+          };
+        },
+      );
+      if (captured.replay) {
+        const visible = structuredClone(captured.goal);
+        delete visible.evaluation;
+        return visible;
+      }
+      const verdict = await evaluateGoal({
+        request: context.requestModel,
+        invocation: captured.invocation,
+        goal: captured.goal,
+        evidence: captured.goal.evaluation!.evidence,
+        proposal: captured.goal.evaluation!.proposal,
       });
+      context.signal?.throwIfAborted();
+      const settled = await settleEvaluation(
+        context,
+        opened.taskId,
+        captured.goal,
+        verdict,
+      );
+      delete settled.evaluation;
+      return settled;
     },
     async observe(actor, taskId, event: StreamEvent) {
       return mutate(actor, taskId, async (sql, t, row) => {

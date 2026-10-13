@@ -363,6 +363,10 @@ export type ToolExecutionObservation = {
 };
 
 export interface ToolExecutionContext {
+  /** Fresh tool-free model invocation; private host configuration and Run usage ownership. */
+  requestModel?:
+    | import("../agent/model-request.js").ModelRequestPort
+    | undefined;
   /** Kernel consumes and strips this callback before calling the tool implementation. */
   observeToolExecution?:
     | ((fact: ToolExecutionObservation) => Promise<void>)
