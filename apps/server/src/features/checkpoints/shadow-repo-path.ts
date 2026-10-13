@@ -15,10 +15,7 @@ import { join } from "node:path";
  * `Filename too long`；`core.longpaths=true` 治不了）。旧布局仓库由
  * checkpoint-service 原地搬家兼容，本公式只负责新仓库。
  */
-export function shadowRepositoryName(
-  taskId: string,
-  workTree: string,
-): string {
+export function shadowRepositoryName(taskId: string, workTree: string): string {
   const digest = createHash("sha256").update(workTree).digest("hex");
   return `${taskId}-${digest.slice(0, 16)}.git`;
 }

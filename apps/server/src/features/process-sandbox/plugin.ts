@@ -1,8 +1,8 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { resolveEntryRoot } from "../../desktop/entry-root.js";
-import { shadowRepositoryPath } from "../checkpoints/shadow-repo-path.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import { shadowRepositoryPath } from "../checkpoints/shadow-repo-path.js";
 import { resolveProcessRuntime } from "./runtime-paths.js";
 import { createProcessSandbox } from "./service.js";
 
