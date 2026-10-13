@@ -26,7 +26,13 @@ export function createShadowGitExec(options: {
         // `--work-tree` 显式给工作树：沙箱只把请求 env 里的 GIT_DIR 送到了 git，
         // GIT_WORK_TREE 没到（实测 `git add` 报「this operation must be run in a work tree」），
         // 而影子仓库是 GIT_DIR 指向的独立仓库、cwd 不在其中，必须显式声明工作树。
-        args: ["--no-optional-locks", `--work-tree=${cwd}`, ...args],
+        args: [
+          "--no-optional-locks",
+          "-c",
+          `core.worktree=${cwd}`,
+          `--work-tree=${cwd}`,
+          ...args,
+        ],
       },
       cwd,
       background: false,
