@@ -121,6 +121,24 @@
 - `D:\wsl` 下测试产物占用 ~21GB（`images/dify-stack.tar` 5.6GB + `kfw-ubuntu` 15.7GB），清理前需确认不再复跑 #3。
 - 仓库内 `error-sanitizer.test.ts` 夹具用了真实 key 前缀（44/74 字符，不可鉴权）并登记进 `.gitleaks.toml`——建议换合成串。
 
+## 2026-10-13 晚（第二轮：外部并发 merge 收口 + 模拟点击复验）
+
+| ID | 内容 | 状态 | 证据 |
+|---|---|---|---|
+| M1 | 外部并发 `git merge origin/main`（协作者 `1eccca61`，478 文件）4 冲突解法定型 | **DONE** | `44231e76` 合并提交 + `e5e7c627` 补 `hash` 助手；`pnpm typecheck` 25/25 |
+| M2 | 合并带来的 13 条迁移前向应用 | **DONE** | `migrate apply` 13 条；服务端由 `42P01` fail-loud 恢复 |
+| M3 | flow 子模块指针（`cc10b0b8`→`d6c6af79`，属前进） | **DONE** | `git submodule update flow`；LICENSE 在 |
+| E2E-2 | 模拟点击复验：侧栏 4 入口 / 设置 15 分区 / pills（Code+Design，Flow 已正确隐藏）/ Design 主区=画布 / shells 三档 / MCP 9 工具 / 技能在库 | **DONE** | `tmp/e2e/shots/`、`tmp/e2e/report.jsonl` |
+| RUN-1 | 对话档真实 run | **DONE（被服务重启打断一次）** | 改用无 watch 直启 server 后复验 |
+| RUN-2 | 自主档真实 run：写 `D:\Desktop\test\kfw-probe.txt` + 读回 | **DONE** | 落盘内容 `hello-kfw`，`type` 退出码 0 |
+| RUN-3 | 计划档：只读调查 → 实施计划 → 计划门批准 | **DONE（门链路）** | 「计划已批准，开始实施」 |
+| **P0-RECEIPT** | **回执门误杀目录层 SDK 工具**：计划门后 `write_todos` / 工具发现 `ToolSearch` 的 `tool.completed(success)` 无内核回执 → `verify` 抛「工具成功事件缺少真实执行结果」→ run 中断 | **BLOCKED（未修）** | 栈 `tool-execution-receipts.ts:58 ← provider-contract.ts:191 ← runtime.ts:2691`；`code_ui_events` run `694fb438…`（write_todos）、`d04fcc29…`（ToolSearch） |
+| PYPROJ | `D:\Desktop\test` Python+MCP+skill 工程（计划实施 + 自主验证） | **BLOCKED（被 P0-RECEIPT 阻断）** | 计划门后第一步即崩 |
+| ENV-GIT | 沙箱内 `git` 启动失败（本机 git 不在系统/用户 PATH，`runtimePathAdditions` 不含 git） | **待收口** | `[turn-boundary] 文件边界捕获失败： error launching git` |
+
 ## NEXT ACTION
 
-**Complete**。全部台账条目已收口或按用户口径暂缓定性，`docs/未做需求.md` 已删除；仅剩「换 PSEC 正常 Windows 真机复跑 `service.test.ts` + `pnpm smoke:desktop` 全绿」（环境条件转移）、flow P7（等上游稳定）、#8/#9 暂缓（不在当前范围）。
+1. **修 P0-RECEIPT（最高优先）**：上游 `provider-contract.ts:191` 对每条 provider 侧 `tool.completed(success)` 无条件 `verify`，而目录层自带 SDK 工具（`ToolSearch`=`catalogue.ts:156`，`write_todos`=共同 scaffold）不经内核注册表执行、没有内核回执。需定契约 + 回归测试后再改（涉及执行路径顺序/身份键 `[toolCallId, agentCallId]`）。
+2. **收口 ENV-GIT**：随包运行时把 `git` 并入 `runtimePathAdditions`/`runtimeReadRoots`，或明确「宿主须有 git」并 fail-loud 提示；否则检查点时间线 / 自动提交 / worktree / init 在本机不可用。
+3. 下述 BLOCKED 项在 P0 修复后复跑：`D:\Desktop\test` Python+MCP+skill 工程（计划档实施 + 自主档验证）、联网搜索、技能创建、MCP 注册、目标/循环/创造三档、浏览器面板（G1）。
+
