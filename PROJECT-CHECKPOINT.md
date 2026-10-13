@@ -139,7 +139,7 @@
 | SEARCH | 联网搜索 | **DONE（工具可用）** | 多轮真实 `web_search` 返回真实来源；模型如实报出代理的上游退化与 5002 |
 | RUN-AUTO | 自主档真实 run | **DONE** | `kfw-probe.txt` 落盘 + `type` 读回退出码 0 |
 | MODE6 | 六档执行模式端到端 | **DONE（五档实测 + 循环设计退役）** | 方法：暖场建会话→点 `[data-testid="execution-mode-chip"]`→取证 `chat_sessions.execution_mode`。结果：`对话=solo`（答 1024）、`计划=plan`（只读+计划门）、`目标=goal`（标准+差距）、`自主=agent`（落盘并读回）、`创造=creative`（技能 `mode-creative-demo` 落库）；`循环` 不在 `/api/execution-modes`（`RetiredExecutionModeError`，设计退役） |
-| MCPREG | MCP 注册/发现（`install_mcp_server` → ToolSearch → 调用） | **NOT VERIFIED** | 模型自报成功，但 ToolSearch 查该工具 0 命中、`mcp_servers` 表无新增；Task 运行时作用域连接不落库 |
+| MCPREG | MCP 注册/发现（`install_mcp_server` → ToolSearch → 调用） | **NOT VERIFIED（根因已定位）** | 单 Task 内安装报 `MCP error -32000: Connection closed`（脚本在 Task 授权目录之外，进程起不来）；`list_mcp_servers` 该 Task 内为空。实例级 `memory-demo`（9 工具）与 MCP server stdio 握手均正常 |
 | ENV-GIT2 | 沙箱 git 报 `fatal: this operation must be run in a work tree` | **待收口** | git 已能启动；`GIT_WORK_TREE` 疑似未透传 |
 | G1BROWSER | 浏览器面板点击验收 | **未做** | — |
 
