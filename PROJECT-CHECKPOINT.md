@@ -39,13 +39,14 @@
 | U4 | 未做需求#4 桌面端 GUI 走查 | P1 | PARTIAL | **市场点装内置插件实测通过**（Computer Use，已安装 3→4）；安装器全链待真机 |
 | U5 | 未做需求#5 Design 语音点击 | P2 | DONE | 历史收口 2026-10-10 |
 | U6 | 未做需求#6 语音离线「想」档真机 | P2 | BLOCKED | 需 KENFUTWORK_VOICE_REAL_LLM=1 长时真机 |
-| U7 | 未做需求#7 Apifox 契约同步 | P1 | BLOCKED | 对外动作，本机无 apifox CLI 登录 |
-| U8 | 未做需求#8 HA 插件本体 | P1 | BLOCKED | §8-6 待用户拍板 |
-| U9 | 未做需求#9 Work/OpenDesign 规划 | P2 | BLOCKED | 两份规划待拍板 |
-| U10 | 未做需求#10 flow P7 + MIT LICENSE | P2 | BLOCKED | 远期/对外 |
+| U7 | 未做需求#7 Apifox 契约同步 | P1 | PARTIAL | `apifox-cli@2.2.12` 已全局安装（`apifox --version` 通）；差 API 令牌登录（用户凭据） |
+| U8 | 未做需求#8 HA 插件本体 | P1 | 暂缓 | 用户 2026-10-13 口径：不在当前融合范围内 |
+| U9 | 未做需求#9 Work/OpenDesign 规划 | P2 | 暂缓 | 用户 2026-10-13 口径：不在当前融合范围内 |
+| U10 | 未做需求#10 flow P7 + 上游 MIT LICENSE | P2 | PARTIAL | P7 评估方案已成稿并登记文档地图；LICENSE 已在子模块本地提交 `b62fcbe`，待推上游 |
 | U11 | 未做需求#11 语言回写竞态 | P1 | DONE | 60c9f06d + 回归测试 |
-| U12 | 未做需求#12 沙箱未授权随包运行时目录（本轮发现并修复） | P0 | **DONE** | 日志 §一百七十五；沙箱内 `python --version` → `Python 3.12.15`（解析到随包运行时） |
-| U13 | 未做需求#13 run.failed `unsupported Unicode escape sequence`（本轮发现并修复） | P0 | **DONE** | 日志 §一百七十五；根因=命令输出 NUL → jsonb 拒绝；修复后该报错 0 条 |
+| U12 | 未做需求#12 随包 Python 缺 pytest | P1 | **DONE** | 日志 §一百七十六；沙箱内 `python -m pytest -q` → 17 passed / exit 0 |
+| U13 | 未做需求#13 run.failed `unsupported Unicode escape sequence` | P0 | **DONE** | 日志 §一百七十五；根因=命令输出 NUL → jsonb 拒绝；修复后该报错 0 条 |
+| U14 | 未做需求#12 沙箱未授权随包运行时目录 | P0 | **DONE** | 日志 §一百七十五；沙箱内 `python --version` → `Python 3.12.15`（解析到随包运行时） |
 | G1 | 浏览器面板整链（G1/Q3-Q4） | P0 | DONE | 9115d2eb |
 | G1q5 | 元素拾取（Q5） | P1 | DONE | e272b64（browser-pane 6/6） |
 | G2 | 六档执行模式回 Code 壳 | P0 | DONE | f4ae8179 + 本轮六档实测 |
