@@ -43,6 +43,7 @@ graph LR
 | `插件/opendesgin集成规划.md` | OpenDesign（Figma 类似物、写代码/原型用的设计引擎，`nexu-io/open-design`，Apache-2.0）集成方案：**不作独立模式**、作为 Code 模式右侧画布面板（与浏览器面板同位互斥）、插件形态交付 + 本地自托管/Electron 承载 + BYOK、`OD-1`…`OD-6` 待拍板决策、分阶段路线与开放问题 | **方案稿**：OpenDesign 集成蓝图；决策结论拍板后以《改造计划》§6 为准；上游以 `nexu-io/open-design` 为准 |
 | `调研/02-当前项目实现状态.md` | 代码现状快照（组件/路由/features/迁移盘点） | **权威**：全部现状数字（行数/import/路由/组件/迁移计数/provider 数量）；允许滞后于代码，刷新规则见下 |
 | `调研/01-deepseek-harness插件调研.md` | dsh 插件架构调研记录 | 调研：结论已被权威文档吸收，只读 |
+| `调研/ZCode目标与完成判定源码核对.md`、`调研/Kimi与DSH目标及完成判定源码核对.md`、`调研/Codex目标与完成判定源码核对.md` | 固定参考源码的持久 Goal、完成判定、独立评估及用户控制对照 | **调研**：2026-10-13 源码核对；不等同于桌面验收，产品选择归《Harness稳定性与Goal实施规格》 |
 | `调研/04-模型Provider调研.md` | 参考项目（cherry-studio / kimi-code / nomifun / dsh / jaaz / jellyfish / futureFlow）的模型 Provider 调研：LLM / IGM（图像生成）/ VGM（视频生成 + 视觉输入）三维度对比与本项目可学习点 | 调研：只作方向参考，落地结论写入《改造计划》§4.8/§4.10 与 《日志》四十六 |
 | `调研/05-生成通道轮子选型.md` | 生成通道生态尽调结论（已闭环）：AI SDK 生态本地实测（video 三段式 / edits 缝 / bytedance 包 / 反向适配不存在）、models.dev 能力库 vendor（快照 + 刷新脚本，实测 220 providers）、视频直连 poll 5/5 自含、`/v1/videos` 借形状不绑路径、视频词表借 fal 形状、中转 4 探测项、队列维持 PGMQ（否证理由勘误）；含触发器 T1–T3 与实现期确证点 | 调研结论：落地走《日志》台账；生成通道引 AI SDK 包，chat 层边界以 §4.8 为准 |
 | `调研/03-改造建议与路线.md` | 双模式改造建议稿（v3） | **收口中**：§0–§7 为冻结区（`<!-- frozen:start/end -->` + `docs/frozen-lock.json` 校验，禁改）；**仅 §8 可编辑**；P0 定稿后整篇归档 |
