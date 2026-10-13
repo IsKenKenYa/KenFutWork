@@ -1,6 +1,7 @@
-import { type BaseMessage, HumanMessage } from "@langchain/core/messages";
+import type { BaseMessage } from "@langchain/core/messages";
 import type { createDeepAgent } from "deepagents";
 import type { AgentContextHistory } from "./context-history.js";
+import { effectiveNativeMessages } from "./native-compaction.js";
 import {
   decodeNativeContextReference,
   encodeNativeContextReference,
@@ -10,27 +11,7 @@ import {
   type NativeManualCompactionOptions,
 } from "./native-manual-compaction.js";
 
-/** 固定SDK的有效消息投影；关闭自动压缩仍须消费已提交的手动摘要。 */
-export function effectiveNativeMessages(
-  messages: BaseMessage[],
-  state: object,
-): BaseMessage[] {
-  const value =
-    "_summarizationEvent" in state ? state._summarizationEvent : undefined;
-  if (value == null) return messages;
-  if (typeof value !== "object")
-    throw new Error("当前DA版本的摘要状态不完整。");
-  const event = value as { cutoffIndex?: unknown; summaryMessage?: unknown };
-  if (
-    typeof event.cutoffIndex !== "number" ||
-    !Number.isInteger(event.cutoffIndex) ||
-    event.cutoffIndex < 0 ||
-    event.cutoffIndex > messages.length ||
-    !HumanMessage.isInstance(event.summaryMessage)
-  )
-    throw new Error("当前DA版本的摘要状态不完整。");
-  return [event.summaryMessage, ...messages.slice(event.cutoffIndex)];
-}
+export { effectiveNativeMessages } from "./native-compaction.js";
 
 /** 固定DA版本的公开graph适配；_summarizationEvent仅在adapter内重建有效输入。 */
 export function createNativeContextHistory(

@@ -138,7 +138,7 @@ export const runCompletedEventSchema = z.object({
       kind: z.literal("compact"),
       origin: z.literal("manual"),
       status: z.enum(["applied", "unchanged"]),
-      reason: z.literal("insufficient_history").optional(),
+      reason: z.enum(["insufficient_history", "not_reduced"]).optional(),
     })
     .optional(),
   runId: runIdSchema,

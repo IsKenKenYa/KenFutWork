@@ -212,8 +212,8 @@ it.each(["code", "design"] as const)(
       for await (const _event of agent.streamEvents(
         {
           messages: [
-            new HumanMessage("original objective"),
-            new AIMessage("unfinished evidence"),
+            new HumanMessage(`original objective ${"o".repeat(4_000)}`),
+            new AIMessage(`unfinished evidence ${"e".repeat(4_000)}`),
             new HumanMessage("continue"),
           ],
         },

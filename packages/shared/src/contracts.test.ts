@@ -378,6 +378,24 @@ describe("@kenfutwork/shared contracts", () => {
     ).toThrow();
   });
 
+  it.each(["insufficient_history", "not_reduced"])(
+    "preserves manual compaction unchanged reason %s",
+    (reason) => {
+      const event = {
+        type: "run.completed",
+        runId: "run_compact",
+        timestamp: "2026-10-13T00:00:00.000Z",
+        operationResult: {
+          kind: "compact",
+          origin: "manual",
+          status: "unchanged",
+          reason,
+        },
+      };
+      expect(streamEventSchema.parse(event)).toEqual(event);
+    },
+  );
+
   it("includes the required minimum stream event union", () => {
     const eventTypes = [
       "run.started",

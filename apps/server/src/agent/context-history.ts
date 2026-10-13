@@ -74,7 +74,7 @@ export type AgentCompactResult =
   | {
       status: "unchanged";
       reference: AgentContextHistoryReference | null;
-      reason: "insufficient_history";
+      reason: "insufficient_history" | "not_reduced";
     };
 export interface AgentContextHistory {
   compactCurrent(input: {

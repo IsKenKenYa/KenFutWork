@@ -16,6 +16,7 @@ import {
 import { MemorySaver } from "@langchain/langgraph-checkpoint";
 import { createDeepAgent, StateBackend } from "deepagents";
 import type { AgentMiddleware } from "langchain";
+import { countTokensApproximately } from "langchain";
 import { expect, it, vi } from "vitest";
 import { createExecutionScopes } from "../features/execution/scope-service.js";
 import {
@@ -23,21 +24,26 @@ import {
   nativeArchiveCheckpointConfig,
   referenceFromNativeArchiveUri,
 } from "./native-checkpoint-archive.js";
+import { effectiveNativeMessages } from "./native-context-history.js";
+import { encodeNativeContextReference } from "./native-context-reference.js";
 import { createNativeManualCompaction } from "./native-manual-compaction.js";
 import { createNativeRecoveryMiddleware } from "./native-recovery-middleware.js";
 
 class SummaryModel extends BaseChatModel {
   readonly requests: BaseMessage[][] = [];
+  summaryText = "recovery";
   _llmType() {
     return "scoped-archive-regression";
   }
   bindTools() {
     return this;
   }
-  async _generate(_messages: BaseMessage[]) {
-    this.requests.push(_messages);
+  async _generate(messages: BaseMessage[]) {
+    this.requests.push(messages);
     return {
-      generations: [{ text: "recovery", message: new AIMessage("recovery") }],
+      generations: [
+        { text: this.summaryText, message: new AIMessage(this.summaryText) },
+      ],
     };
   }
 }
@@ -314,8 +320,8 @@ it("manual operation commits the same native readonly archive and recovery seman
     { configurable: { thread_id: threadId } },
     {
       messages: [
-        new HumanMessage("objective"),
-        new AIMessage("unfinished work"),
+        new HumanMessage(`objective ${"o".repeat(4_000)}`),
+        new AIMessage(`unfinished work ${"w".repeat(4_000)}`),
         new HumanMessage("continue"),
       ],
     },
@@ -339,11 +345,21 @@ it("manual operation commits the same native readonly archive and recovery seman
     },
     llmRetry: { maxAttempts: 1, infinite: false },
   });
+  const before = await agent.graph.getState({
+    configurable: { thread_id: threadId },
+  });
+  const beforeMessages = before.values.messages as BaseMessage[];
+  const beforeEstimate = countTokensApproximately(beforeMessages);
   const result = await compact({ threadId });
   expect(result.status).toBe("applied");
   const snapshot = await agent.graph.getState({
     configurable: { thread_id: threadId },
   });
+  const effective = effectiveNativeMessages(
+    snapshot.values.messages as BaseMessage[],
+    snapshot.values,
+  );
+  expect(countTokensApproximately(effective)).toBeLessThan(beforeEstimate);
   const event = snapshot.values._summarizationEvent as { filePath: string };
   const page = await archive.read({
     reference: referenceFromNativeArchiveUri(event.filePath),
@@ -356,6 +372,141 @@ it("manual operation commits the same native readonly archive and recovery seman
     "actual persistent Task on every turn",
   );
   expect(summaryRequest.content).toContain("Evidence and gaps");
+});
+
+it("manual compaction refuses a summary whose product estimate grows and leaves the checkpoint untouched", async () => {
+  const threadId = randomUUID();
+  const model = new SummaryModel({});
+  const messages = [
+    new HumanMessage(`old objective ${"o".repeat(4_000)}`),
+    new AIMessage(`old work ${"w".repeat(4_000)}`),
+    new HumanMessage("preserved tail"),
+  ];
+  const agent = createDeepAgent({ model, checkpointer: new MemorySaver() });
+  const saved = await agent.graph.updateState(
+    { configurable: { thread_id: threadId } },
+    { messages },
+    "__start__",
+  );
+  const before = await agent.graph.getState(saved);
+  const beforeMessages = before.values.messages as BaseMessage[];
+  const beforeEstimate = countTokensApproximately(beforeMessages);
+  model.summaryText = "expanded summary ".repeat(beforeEstimate * 4);
+  expect(
+    countTokensApproximately([new HumanMessage(model.summaryText)]),
+  ).toBeGreaterThan(beforeEstimate);
+  const archive = createNativeCheckpointArchive(
+    () => agent,
+    async () => {},
+  );
+  const compact = createNativeManualCompaction({
+    agent,
+    archive,
+    model,
+    backend: () => new StateBackend(),
+    plan: {
+      trigger: { type: "tokens", value: 4_000 },
+      keep: { type: "messages", value: 1 },
+      source: "fallback",
+    },
+    llmRetry: { maxAttempts: 1, infinite: false },
+  });
+
+  const result = await compact({ threadId });
+  expect(result).toMatchObject({
+    status: "unchanged",
+    reason: "not_reduced",
+    reference: encodeNativeContextReference(threadId, before.config),
+  });
+  const after = await agent.graph.getState({
+    configurable: { thread_id: threadId },
+  });
+  expect(after.config.configurable?.checkpoint_id).toBe(
+    before.config.configurable?.checkpoint_id,
+  );
+  expect(after.values.messages).toEqual(before.values.messages);
+  expect(after.values._summarizationEvent).toBeUndefined();
+  expect(
+    effectiveNativeMessages(
+      after.values.messages as BaseMessage[],
+      after.values,
+    ),
+  ).toEqual(beforeMessages);
+});
+
+it("manual compaction refuses an equal projection and preserves the previous summary and archive", async () => {
+  const threadId = randomUUID();
+  const model = new SummaryModel({});
+  const agent = createDeepAgent({ model, checkpointer: new MemorySaver() });
+  await agent.graph.updateState(
+    { configurable: { thread_id: threadId } },
+    {
+      messages: [
+        new HumanMessage(`objective ${"o".repeat(4_000)}`),
+        new AIMessage(`unfinished work ${"w".repeat(4_000)}`),
+        new HumanMessage("continue"),
+      ],
+    },
+    "__start__",
+  );
+  const archive = createNativeCheckpointArchive(
+    () => agent,
+    async () => {},
+  );
+  const compact = createNativeManualCompaction({
+    agent,
+    archive,
+    model,
+    backend: () => new StateBackend(),
+    plan: {
+      trigger: { type: "tokens", value: 4_000 },
+      keep: { type: "messages", value: 1 },
+      source: "fallback",
+    },
+    llmRetry: { maxAttempts: 1, infinite: false },
+  });
+
+  const first = await compact({ threadId });
+  expect(first.status).toBe("applied");
+  const prior = await agent.graph.getState({
+    configurable: { thread_id: threadId },
+  });
+  const priorEvent = prior.values._summarizationEvent as {
+    cutoffIndex: number;
+    filePath: string;
+    summaryMessage: HumanMessage;
+  };
+  const priorEffective = effectiveNativeMessages(
+    prior.values.messages as BaseMessage[],
+    prior.values,
+  );
+  const priorEstimate = countTokensApproximately(priorEffective);
+  expect(priorEvent.filePath).toMatch(/^kfw-context-history:\//u);
+  // Same thread, keep target, summary text and fixed-width checkpoint URI yield an equal-sized projection.
+  const second = await compact({ threadId });
+  expect(second).toMatchObject({
+    status: "unchanged",
+    reason: "not_reduced",
+    reference: encodeNativeContextReference(threadId, prior.config),
+  });
+  const after = await agent.graph.getState({
+    configurable: { thread_id: threadId },
+  });
+  expect(after.config.configurable?.checkpoint_id).toBe(
+    prior.config.configurable?.checkpoint_id,
+  );
+  expect(after.values.messages).toEqual(prior.values.messages);
+  expect(after.values._summarizationEvent).toEqual(priorEvent);
+  const afterEffective = effectiveNativeMessages(
+    after.values.messages as BaseMessage[],
+    after.values,
+  );
+  expect(countTokensApproximately(afterEffective)).toBe(priorEstimate);
+  expect(afterEffective).toEqual(priorEffective);
+  const page = await archive.read({
+    reference: referenceFromNativeArchiveUri(priorEvent.filePath),
+  });
+  expect(page.text).toContain("unfinished work");
 });
 
 it("revocation while the SDK summary model is running blocks continuation and compaction commit", async () => {

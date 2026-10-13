@@ -8,13 +8,16 @@ import type { LLMResult } from "@langchain/core/outputs";
 import { isCommand } from "@langchain/langgraph";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import type { createDeepAgent } from "deepagents";
-import type { AgentMiddleware } from "langchain";
+import { type AgentMiddleware, countTokensApproximately } from "langchain";
 import type { CompactionPlan } from "./auto-compact.js";
 import type { AgentBackendFactory } from "./backends/index.js";
 import type { AgentContextHistory } from "./context-history.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
 import type { NativeCheckpointArchive } from "./native-checkpoint-archive.js";
-import { nativeSummaryKey } from "./native-compaction.js";
+import {
+  effectiveNativeMessages,
+  nativeSummaryKey,
+} from "./native-compaction.js";
 import { encodeNativeContextReference } from "./native-context-reference.js";
 import { createNativeRecoveryMiddleware } from "./native-recovery-middleware.js";
 
@@ -169,6 +172,20 @@ export function createNativeManualCompaction(
       : result.update;
     const expected = nativeSummaryKey(update?._summarizationEvent);
     if (!expected) throw new Error("native压缩没有返回实际summary更新。");
+    const beforeEstimate = countTokensApproximately(
+      effectiveNativeMessages(messages, snapshot.values),
+    );
+    const afterEstimate = countTokensApproximately(
+      effectiveNativeMessages(messages, {
+        _summarizationEvent: update?._summarizationEvent,
+      }),
+    );
+    if (afterEstimate >= beforeEstimate)
+      return {
+        status: "unchanged",
+        reference: before,
+        reason: "not_reduced",
+      };
     // Explicit native model writer accepts summary channels. Inferring __start__ from an
     // input-only checkpoint silently drops middleware state; this does not invoke the model.
     const saved = await options.agent.graph.updateState(
