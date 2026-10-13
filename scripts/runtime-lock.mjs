@@ -105,7 +105,7 @@ export function buildLockEntry({ version, fileName, sha256, url }) {
  *
  * 为什么要有它：随包 Python 解压出来只有 pip，跑不了测试类工作——实测
  * `python -m pytest` 报 `No module named pytest`，而沙箱网络 deny-all、运行时树又是只读根，
- * 沙箱内装不了（《未做需求》#12）。清单是**钉死版本**的 `name==version` 列表，
+ * 沙箱内装不了（原《未做需求》#12，已收口）。清单是**钉死版本**的 `name==version` 列表，
  * `fetch-runtimes.mjs` 解压完 Python 后照单 `pip install`，换台机器重拉运行时也能得到同一套。
  *
  * 口径与 lock 其余条目一致：结构不符一律 fail loud；缺省返回空数组（过渡态，

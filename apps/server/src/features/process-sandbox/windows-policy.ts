@@ -55,7 +55,7 @@ export async function windowsLaunch(input: {
   }
   const env = executionEnvironment(process.env, input.request.env);
   // 随包运行时 bin 目录前置进 PATH：宿主机没装 python/node 也能按名字跑。
-  // 与下面的 readRoots 成对——只给 readRoots 时命令名解析不到（《未做需求》#12）。
+  // 与下面的 readRoots 成对——只给 readRoots 时命令名解析不到（原《未做需求》#12，已收口）。
   prependExecutionPath(env, input.runtimePathAdditions);
   const home = join(input.temporaryDirectory, "home");
   env.HOME ??= home;

@@ -16,7 +16,7 @@ import { ProcessSandboxError } from "./types.js";
  *
  * 为什么必须逐个列全：启动期 `runtimePathAdditions` 把 node/python/uv/java 的 bin 目录
  * 前置进了 sandbox PATH，但 PATH 只决定「找得到」，沙箱的读/执行授权决定「能不能跑」。
- * 此前这里只给了 Node 的根，于是 `python` 在沙箱里恒被拒（《未做需求》#12：智能体能写
+ * 此前这里只给了 Node 的根，于是 `python` 在沙箱里恒被拒（原《未做需求》#12，已收口：智能体能写
  * Python 却跑不了、Python MCP 服务器也注册不了）。git 不在列——它优先用宿主的，宿主
  * 没有时也走 PATH，且 git 自身不需要读运行时树。
  */
