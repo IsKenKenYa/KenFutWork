@@ -132,13 +132,22 @@
 | RUN-1 | 对话档真实 run | **DONE（被服务重启打断一次）** | 改用无 watch 直启 server 后复验 |
 | RUN-2 | 自主档真实 run：写 `D:\Desktop\test\kfw-probe.txt` + 读回 | **DONE** | 落盘内容 `hello-kfw`，`type` 退出码 0 |
 | RUN-3 | 计划档：只读调查 → 实施计划 → 计划门批准 | **DONE（门链路）** | 「计划已批准，开始实施」 |
-| **P0-RECEIPT** | **回执门误杀目录层 SDK 工具**：计划门后 `write_todos` / 工具发现 `ToolSearch` 的 `tool.completed(success)` 无内核回执 → `verify` 抛「工具成功事件缺少真实执行结果」→ run 中断 | **BLOCKED（未修）** | 栈 `tool-execution-receipts.ts:58 ← provider-contract.ts:191 ← runtime.ts:2691`；`code_ui_events` run `694fb438…`（write_todos）、`d04fcc29…`（ToolSearch） |
-| PYPROJ | `D:\Desktop\test` Python+MCP+skill 工程（计划实施 + 自主验证） | **BLOCKED（被 P0-RECEIPT 阻断）** | 计划门后第一步即崩 |
-| ENV-GIT | 沙箱内 `git` 启动失败（本机 git 不在系统/用户 PATH，`runtimePathAdditions` 不含 git） | **待收口** | `[turn-boundary] 文件边界捕获失败： error launching git` |
+| **P0-RECEIPT** | 回执门误杀目录层 SDK 工具（`ToolSearch` / `write_todos`）：provider 侧 `tool.completed` 先于中间件自铸回执到达 → `verify` 抛错中断 run | **FIXED** | 插桩取证（`started` 有键 / `completed` 空）；修 `tool-execution-receipts.ts`（`sdkBundledTools` 豁免，未观察工具仍严校）；新增 4 例回归测试全绿；修后 `缺少真实执行结果` 计数 0 |
+| **P0-GITPATH** | 随包 `git` 未进沙箱 PATH/readRoots（宿主无 git 时检查点/提交整族不可用） | **FIXED** | `runtime-paths.ts` 的 `BUNDLED_RUNTIME_NAMES` 加 `git`；`runtime-paths.test.ts` 加断言（6/6 绿）；实测 `error launching git` 消失 |
+| PYPROJ | `D:\Desktop\test` Python+MCP+skill 工程 | **DONE** | `kfw-e2e2`：wordstats 包 + CLI + 3 个测试文件 + 纯标准库 MCP stdio 服务器 + SKILL.md；**独立复跑 pytest 32 passed**；MCP 握手 `MCP stdio handshake: OK` |
+| SKILLPUB | 技能发布（创造路径） | **DONE** | `/api/skills` 落库 `kfw-wordstats` |
+| SEARCH | 联网搜索 | **DONE（工具可用）** | 多轮真实 `web_search` 返回真实来源；模型如实报出代理的上游退化与 5002 |
+| RUN-AUTO | 自主档真实 run | **DONE** | `kfw-probe.txt` 落盘 + `type` 读回退出码 0 |
+| MODE6 | 六档执行模式端到端 | **NOT VERIFIED** | 每个 run 的 `chat_sessions.execution_mode` 均为 `null`：模拟点击未能驱动六档 chip（`切换模式`＝ZCode 权限菜单、`权限档`＝旧四档）。服务端六档缝有单测，但无端到端证据 → §一百八十二 的档位归因作废 |
+| MCPREG | MCP 注册/发现（`install_mcp_server` → ToolSearch → 调用） | **NOT VERIFIED** | 模型自报成功，但 ToolSearch 查该工具 0 命中、`mcp_servers` 表无新增；Task 运行时作用域连接不落库 |
+| ENV-GIT2 | 沙箱 git 报 `fatal: this operation must be run in a work tree` | **待收口** | git 已能启动；`GIT_WORK_TREE` 疑似未透传 |
+| G1BROWSER | 浏览器面板点击验收 | **未做** | — |
 
 ## NEXT ACTION
 
-1. **修 P0-RECEIPT（最高优先）**：上游 `provider-contract.ts:191` 对每条 provider 侧 `tool.completed(success)` 无条件 `verify`，而目录层自带 SDK 工具（`ToolSearch`=`catalogue.ts:156`，`write_todos`=共同 scaffold）不经内核注册表执行、没有内核回执。需定契约 + 回归测试后再改（涉及执行路径顺序/身份键 `[toolCallId, agentCallId]`）。
-2. **收口 ENV-GIT**：随包运行时把 `git` 并入 `runtimePathAdditions`/`runtimeReadRoots`，或明确「宿主须有 git」并 fail-loud 提示；否则检查点时间线 / 自动提交 / worktree / init 在本机不可用。
-3. 下述 BLOCKED 项在 P0 修复后复跑：`D:\Desktop\test` Python+MCP+skill 工程（计划档实施 + 自主档验证）、联网搜索、技能创建、MCP 注册、目标/循环/创造三档、浏览器面板（G1）。
+1. **六档执行模式端到端**（最高优先，用户点名）：先定位 composer 六档触发器的真实 aria-label/结构（`packages/zcode-*` + `zcode/host` 宿主件），再驱动 6 档各跑一轮，用 `chat_sessions.execution_mode` 取证；必要时补宿主侧测试。
+2. **MCP 注册链路**：查 `install_mcp_server` → `ToolSearch` 发现 → 调用的断点（Task 运行时作用域连接的登记与可见性），补端到端验证。
+3. **ENV-GIT2**：查 `spawnCheckpoint` 的 `GIT_WORK_TREE` 为何未生效（env 透传/沙箱策略），恢复检查点时间线与每轮自动提交。
+4. 未点/未测：浏览器面板（G1）、创造档位单独实测。
+
 

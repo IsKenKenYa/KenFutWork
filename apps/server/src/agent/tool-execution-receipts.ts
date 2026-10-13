@@ -29,6 +29,17 @@ export function createToolExecutionReceipts(options: {
 }) {
   const completed = new Map<string, ProductToolEvent>();
   const started = new Set<string>();
+  /**
+   * 目录层自带的 SDK 工具（`ToolSearch`、`write_todos` 等）名集。
+   *
+   * 它们不经内核注册表执行（`registry.resolveRunTools()` 里没有这些名字），因此**没有内核回执**：
+   * 其 started/completed 事实由 `NativeActualToolExecutionProof` 中间件在 `wrapToolCall` 收尾时
+   * 自铸，而 provider 流里的 `tool.completed` 事件可能**先于**那次回填到达（实测：verify 时
+   * `started` 已有该键、`completed` 为空）。这类工具按内核回执校验必然误杀，故按名豁免；
+   * 豁免只覆盖**已被观察到**（`registered:false`，即 handler 工具真实存在）的名字，
+   * 未观察过的工具依旧按内核回执严格校验。
+   */
+  const sdkBundledTools = new Set<string>();
   const pending: ProductToolEvent[] = [];
   const activityListeners = new Set<() => void>();
   const key = (event: ProductToolEvent) =>
@@ -52,6 +63,8 @@ export function createToolExecutionReceipts(options: {
   };
   const verify = (event: ProductToolEvent) => {
     if (event.type === "tool.started") return;
+    // 目录层自带 SDK 工具的回执由证明中间件自铸，可能晚于 provider 事件到达；按内核回执校验必然误杀。
+    if (sdkBundledTools.has(event.toolName)) return;
     const actual = completed.get(key(event));
     if (!actual) {
       if (event.status === "error" || event.status === "cancelled") return;
@@ -95,6 +108,9 @@ export function createToolExecutionReceipts(options: {
             verify(event);
         return;
       }
+      // 未注册＝目录层自带的 SDK 工具（handler 真实存在，证明中间件已守住「有实际 handler」这一条）：
+      // 登记其名，供 provider 侧 verify 豁免内核回执校验。
+      sdkBundledTools.add(proof.toolName);
       for (const event of proof.events) await emit(event);
     },
     gate: {

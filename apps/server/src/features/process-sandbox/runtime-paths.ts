@@ -12,19 +12,22 @@ import {
 import { ProcessSandboxError } from "./types.js";
 
 /**
- * 随包运行时里要交给沙箱「可读」的那些。
+ * 随包运行时里要交给沙箱「可读 + 可执行」的那些。
  *
- * 为什么必须逐个列全：启动期 `runtimePathAdditions` 把 node/python/uv/java 的 bin 目录
- * 前置进了 sandbox PATH，但 PATH 只决定「找得到」，沙箱的读/执行授权决定「能不能跑」。
- * 此前这里只给了 Node 的根，于是 `python` 在沙箱里恒被拒（原《未做需求》#12，已收口：智能体能写
- * Python 却跑不了、Python MCP 服务器也注册不了）。git 不在列——它优先用宿主的，宿主
- * 没有时也走 PATH，且 git 自身不需要读运行时树。
+ * 为什么必须逐个列全：启动期 `runtimePathAdditions` 把它们的 bin 目录前置进 sandbox PATH，
+ * 但 PATH 只决定「找得到」，沙箱的读/执行授权决定「能不能跑」。此前这里只给了 Node 的根，
+ * 于是 `python` 在沙箱里恒被拒（原《未做需求》#12，已收口）。**git 原先刻意不在列**
+ * （理由曾是「优先用宿主的，宿主没有才走 PATH」）——实测在宿主没装 git 或 git 不在系统/用户
+ * PATH 的机器上（本机即是），沙箱侧 `spawnCheckpoint` 直接 `error launching git: …`，
+ * 检查点时间线 / 每轮自动提交 / worktree / init 整族不可用；随包 `runtime/git` 又拿不到 PATH。
+ * 故与其余运行时同列：PATH 给 bin 目录、readRoots 给整棵树（git 要读自己的 lib/libexec）。
  */
 const BUNDLED_RUNTIME_NAMES: readonly RuntimeName[] = [
   "node",
   "python",
   "uv",
   "java",
+  "git",
 ];
 
 /** Profile 私有启动资源；不接受模型路径，不另造运行时配置或目录真相。 */

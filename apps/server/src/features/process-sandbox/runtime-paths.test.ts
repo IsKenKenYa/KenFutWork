@@ -18,9 +18,9 @@ afterEach(() => {
 function fakeBundle() {
   const root = mkdtempSync(join(tmpdir(), "kfw-runtime-paths-"));
   dirs.push(root);
-  const layout = (name: "node" | "python" | "uv" | "java") =>
+  const layout = (name: "node" | "python" | "uv" | "java" | "git") =>
     runtimeLayout(name, process.platform);
-  for (const name of ["node", "python", "uv", "java"] as const) {
+  for (const name of ["node", "python", "uv", "java", "git"] as const) {
     const bin = join(root, "runtime", layout(name).dir, layout(name).bin);
     mkdirSync(bin, { recursive: true });
     writeFileSync(join(bin, layout(name).probe), "");
@@ -67,6 +67,18 @@ it("runtimeReadRoots 覆盖全部随包运行时（不只 Node）——否则沙
     ).replaceAll("\\", "/"),
   );
   expect(new Set(bins).size).toBe(bins.length);
+  // 随包 git 必须同时进 readRoots 与 PATH：宿主没装 git / git 不在系统 PATH 的机器上，
+  // 否则沙箱侧 spawnCheckpoint 直接 `error launching git`，检查点与自动提交整族不可用。
+  const gitLayout = runtimeLayout("git", process.platform);
+  expect(roots, "runtimeReadRoots 缺 git 树").toContain(
+    join(resourceRoot, "runtime", gitLayout.dir).replaceAll("\\", "/"),
+  );
+  expect(bins, "runtimePathAdditions 缺 git bin").toContain(
+    join(resourceRoot, "runtime", gitLayout.dir, gitLayout.bin).replaceAll(
+      "\\",
+      "/",
+    ),
+  );
   // helper Node 路径仍解析得到
   expect(resolved.nodePath.length).toBeGreaterThan(0);
 });
