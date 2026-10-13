@@ -68,13 +68,14 @@ describe("工具执行回执门：目录层自带 SDK 工具的豁免", () => {
     );
   });
 
-  it("已注册（内核）工具只要回执齐备即通过校验，且身份/结果不一致仍被拦", async () => {
-    const completed = event({
+  it("已注册（内核）工具回执齐备即通过；两侧都有内容且不一致仍被拦", async () => {
+    const receipt = event({
       type: "tool.completed",
       toolName: "Write",
       toolCallId: "call_write",
+      outputText: "真实结果",
     });
-    const { receipts } = makeReceipts([completed]);
+    const { receipts } = makeReceipts([receipt]);
     await receipts.observe({
       runId: RUN_ID,
       toolCallId: "call_write",
@@ -83,18 +84,45 @@ describe("工具执行回执门：目录层自带 SDK 工具的豁免", () => {
       toolName: "Write",
       toolCallId: "call_write",
       registered: true,
-      events: [completed],
+      events: [receipt],
     });
-    expect(() => receipts.gate.verify(completed)).not.toThrow();
+    expect(() => receipts.gate.verify(receipt)).not.toThrow();
     const tampered = event({
       type: "tool.completed",
       toolName: "Write",
       toolCallId: "call_write",
-      output: { 伪造: true },
+      outputText: "伪造结果",
     });
     expect(() => receipts.gate.verify(tampered)).toThrow(
       "工具事件替换了真实执行结果。",
     );
+  });
+
+  it("宿主回执该字段为空时不判为替换（list_mcp_servers 实测：宿主 outputText=空、provider 带真实内容）", async () => {
+    const receipt = event({
+      type: "tool.completed",
+      toolName: "list_mcp_servers",
+      toolCallId: "call_list",
+      outputText: "",
+    });
+    const { receipts } = makeReceipts([receipt]);
+    await receipts.observe({
+      runId: RUN_ID,
+      toolCallId: "call_list",
+    } as unknown as Parameters<typeof receipts.observe>[0]);
+    await receipts.observeNative({
+      toolName: "list_mcp_servers",
+      toolCallId: "call_list",
+      registered: true,
+      events: [receipt],
+    });
+    const incoming = event({
+      type: "tool.completed",
+      toolName: "list_mcp_servers",
+      toolCallId: "call_list",
+      outputText: '[{"name":"kfwstats","status":"connected"}]',
+    });
+    expect(() => receipts.gate.verify(incoming)).not.toThrow();
   });
 
   it("失败的完成事件不需要回执（error/cancelled 通道保持原样）", () => {

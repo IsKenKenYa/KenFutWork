@@ -84,12 +84,25 @@ export function createToolExecutionReceipts(options: {
       "artifacts",
       "agentName",
       "agentCallId",
-    ] as const)
+    ] as const) {
+      /**
+       * 宿主回执该字段为空、provider 事件却带内容时**不判为替换**：
+       * 两侧投影来源不同（宿主走 `projectKernelToolExecution`，provider 走原生 handler 返回值），
+       * 宿主没投影出内容 ≠ provider 篡改结果；而且 provider 事件在回执齐备时会被 `continue` 丢弃，
+       * 不进入下发链路。实测 `list_mcp_servers`：宿主 `outputText=""`、provider 带真实 JSON 列表，
+       * 旧逻辑直接中断 run。只放行「宿主为空」这一侧，两侧都有内容时仍按身份/内容严格比对。
+       */
+      const hostEmpty =
+        actual[field] === undefined ||
+        actual[field] === null ||
+        (typeof actual[field] === "string" && actual[field].length === 0);
+      if (hostEmpty) continue;
       if (
         event[field] !== undefined &&
         !isDeepStrictEqual(event[field], actual[field])
       )
         throw new Error("工具事件替换了真实执行结果。");
+    }
   };
   return {
     async observe(fact: ToolExecutionObservation) {
