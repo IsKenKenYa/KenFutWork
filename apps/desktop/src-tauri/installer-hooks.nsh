@@ -10,7 +10,6 @@
 ; 变量约定：`$INSTDIR` = 安装目录；`SHCTX` = 模板 SetContext 的结果（AllUsers→HKLM，CurrentUser→HKCU）。
 
 !include "WinMessages.nsh"
-!include "nsDialogs.nsh"
 !include "LogicLib.nsh"
 
 !define KFW_MACHINE_ENV_KEY "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
@@ -58,67 +57,94 @@
   DeleteRegValue ${ROOT} "${SUBKEY}" "KENFUTWORK_HOME"
 !macroend
 
-; ── 内置运行时逐项选择（安装末尾的 nsDialogs 对话框） ──
+; ── 内置运行时逐项选择（向导页：一页复选框） ──
 ;
-; 五个复选框默认全选；确定后未勾选的目录逐个删除（对应 runtimes.ts 的包内布局：
-; app\runtime\{node,python,jdk,uv,git}）。静默安装（/S）直接跳过（默认全保留）；
-; 点「取消」时勾选状态保持默认，即不删任何目录（等价「什么都不改」）。
-; 变量占用：句柄 $1-$5、读状态 $R0——都在 Section 内临时使用，不跨调用存活。
-!macro KFW_RUNTIME_PICK
-  IfSilent kfw_runtime_pick_done
+; 对应 runtimes.ts 的包内布局：app\runtime\{node,python,jdk,uv,git}。默认全勾选；
+; 取消勾选的目录在解压完成后（NSIS_HOOK_POSTINSTALL）删除——磁盘结果与「按需安装」一致
+; （下载体积不变：运行时仍在安装器资源里，真·不下载需 fork 自定义 NSIS 模板）。
+;
+; 为什么挂成**向导页**而不是在安装 Section 内弹 nsDialogs 对话框：nsDialogs 在
+;「正在安装」Section 内弹出时，向导三键（上一步/下一步/取消）会被整体置为 Disabled——
+; 整页死锁、连取消都点不了（2026-10-13 真机实测：Win32 IsWindowEnabled 三键全 False）。
+; `Page custom` 由 MUI 正常驱动向导按钮，勾选 UI 与按钮可用性两者兼得。
+; 静默安装（/S）不显示任何页面 → 变量保持空串 → 视为全保留。
+;
+; 位置说明：Tauri 模板把本 hook 文件 `!include` 在页面清单之前，故这一页排在欢迎页之前。
+!include "nsDialogs.nsh"
+
+Var KFW_RUNTIME_DIALOG
+Var KFW_RT_NODE
+Var KFW_RT_PYTHON
+Var KFW_RT_JDK
+Var KFW_RT_UV
+Var KFW_RT_GIT
+Var KFW_KEEP_NODE
+Var KFW_KEEP_PYTHON
+Var KFW_KEEP_JDK
+Var KFW_KEEP_UV
+Var KFW_KEEP_GIT
+
+Page custom KfwRuntimePageCreate KfwRuntimePageLeave
+
+Function KfwRuntimePageCreate
+  !insertmacro MUI_HEADER_TEXT "选择内置运行时" "不勾选的将从安装目录删除"
 
   nsDialogs::Create 1018
-  Pop $0
-  ${If} $0 == error
-    Goto kfw_runtime_pick_done
+  Pop $KFW_RUNTIME_DIALOG
+  ${If} $KFW_RUNTIME_DIALOG == error
+    Abort
   ${EndIf}
 
-  ${NSD_CreateLabel} 0 0 100% 26u "选择要保留的内置运行时（不勾选的将从安装目录删除，Agent 改用系统里已安装的对应工具）："
-  Pop $0
+  ${NSD_CreateCheckBox} 0 0 100% 12u "Node 运行时（约 63MB）"
+  Pop $KFW_RT_NODE
+  ${NSD_Check} $KFW_RT_NODE
 
-  ${NSD_CreateCheckBox} 0 32u 100% 12u "Node（约 63MB）"
-  Pop $1
-  ${NSD_Check} $1
-  ${NSD_CreateCheckBox} 0 46u 100% 12u "Python（约 89MB）"
-  Pop $2
-  ${NSD_Check} $2
-  ${NSD_CreateCheckBox} 0 60u 100% 12u "JDK（约 81MB）"
-  Pop $3
-  ${NSD_Check} $3
-  ${NSD_CreateCheckBox} 0 74u 100% 12u "uv（约 23MB）"
-  Pop $4
-  ${NSD_Check} $4
-  ${NSD_CreateCheckBox} 0 88u 100% 12u "Git（约 65MB；系统已装 Git 时此项无影响）"
-  Pop $5
-  ${NSD_Check} $5
+  ${NSD_CreateCheckBox} 0 16u 100% 12u "Python 运行时（约 89MB）"
+  Pop $KFW_RT_PYTHON
+  ${NSD_Check} $KFW_RT_PYTHON
+
+  ${NSD_CreateCheckBox} 0 32u 100% 12u "JDK（约 81MB）"
+  Pop $KFW_RT_JDK
+  ${NSD_Check} $KFW_RT_JDK
+
+  ${NSD_CreateCheckBox} 0 48u 100% 12u "uv（约 23MB）"
+  Pop $KFW_RT_UV
+  ${NSD_Check} $KFW_RT_UV
+
+  ${NSD_CreateCheckBox} 0 64u 100% 12u "Git（约 65MB；系统已装 Git 时无影响）"
+  Pop $KFW_RT_GIT
+  ${NSD_Check} $KFW_RT_GIT
 
   nsDialogs::Show
+FunctionEnd
 
-  ${NSD_GetState} $1 $R0
-  ${If} $R0 != ${BST_CHECKED}
+Function KfwRuntimePageLeave
+  ${NSD_GetState} $KFW_RT_NODE $KFW_KEEP_NODE
+  ${NSD_GetState} $KFW_RT_PYTHON $KFW_KEEP_PYTHON
+  ${NSD_GetState} $KFW_RT_JDK $KFW_KEEP_JDK
+  ${NSD_GetState} $KFW_RT_UV $KFW_KEEP_UV
+  ${NSD_GetState} $KFW_RT_GIT $KFW_KEEP_GIT
+FunctionEnd
+
+; 选完只记状态；解压完成后按状态删目录。静默安装变量为空 → 一个都不删。
+!macro KFW_RUNTIME_APPLY
+  ${If} $KFW_KEEP_NODE == "0"
     RMDir /r "$INSTDIR\app\runtime\node"
   ${EndIf}
-  ${NSD_GetState} $2 $R0
-  ${If} $R0 != ${BST_CHECKED}
+  ${If} $KFW_KEEP_PYTHON == "0"
     RMDir /r "$INSTDIR\app\runtime\python"
   ${EndIf}
-  ${NSD_GetState} $3 $R0
-  ${If} $R0 != ${BST_CHECKED}
+  ${If} $KFW_KEEP_JDK == "0"
     RMDir /r "$INSTDIR\app\runtime\jdk"
   ${EndIf}
-  ${NSD_GetState} $4 $R0
-  ${If} $R0 != ${BST_CHECKED}
+  ${If} $KFW_KEEP_UV == "0"
     RMDir /r "$INSTDIR\app\runtime\uv"
   ${EndIf}
-  ${NSD_GetState} $5 $R0
-  ${If} $R0 != ${BST_CHECKED}
+  ${If} $KFW_KEEP_GIT == "0"
     RMDir /r "$INSTDIR\app\runtime\git"
   ${EndIf}
-
-  ; 全不勾时 runtime 可能已空，顺手收掉空目录（还有别的文件则保留）
+  ; 全不保留时 runtime 可能已空，顺手收掉空目录（还有别的文件则保留）
   RMDir "$INSTDIR\app\runtime"
-
-  kfw_runtime_pick_done:
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL
@@ -143,15 +169,8 @@
   WriteRegStr SHCTX "Software\KenFutWork" "Version" "${VERSION}"
   !insertmacro KFW_BROADCAST_ENV
 
-  ; ── 内置运行时（Node / Python / JDK / uv / Git）：逐项选择是否保留 ──
-  ;
-  ; 为什么不是标准「组件页」：Tauri 的 NSIS 模板是**单 Section 统一解压** resources，
-  ; 配置层面无法把 runtime 分节、hooks 也没有「加页面」的插入点；这里用 nsDialogs
-  ; 在安装末尾弹一个五复选框对话框，未勾选的目录逐个删除——磁盘结果与「按需安装」
-  ; 一致（下载体积不变，运行时仍在安装器里）。真·「不下载/不解压」需 fork 自定义
-  ; NSIS 模板（把 runtime 从 resources 拆出来单独 File），维护成本高，暂不做。
-  ; 静默安装（/S）不弹窗，默认全保留；点「取消」等同保持默认（全保留、不删任何东西）。
-  !insertmacro KFW_RUNTIME_PICK
+  ; ── 内置运行时（Node / Python / JDK / uv / Git）：按向导页的勾选删掉未保留的目录 ──
+  !insertmacro KFW_RUNTIME_APPLY
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
