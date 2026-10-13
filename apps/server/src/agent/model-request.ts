@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { StreamEvent } from "@kenfutwork/shared";
+import { resolveContextWindow, type StreamEvent } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import {
   AIMessage,
@@ -10,10 +10,13 @@ import {
 import { countTokensApproximately } from "langchain";
 import { z } from "zod";
 import type { LocalActor } from "../features/local-instance/types.js";
+import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
 import type { ModelInvocationSnapshot } from "../providers/types.js";
+import { resolveInputTokenLimit } from "./auto-compact.js";
 import type { ModelCallUsage, ModelUsageOwner } from "./model-call-usage.js";
 import { resolveInstanceModelExecution } from "./model-execution.js";
+import { assertNativeInputTokenLimit } from "./native-context-budget.js";
 import { withStreamIdleGuard } from "./stream-idle-guard.js";
 
 /** Private host port: a fresh, tool-free request, accounted to the owning Run. */
@@ -109,6 +112,7 @@ export function createModelRequestPort(options: {
     model: BaseLanguageModel;
     owner: ModelUsageOwner;
     effectiveOutputTokens: number | null;
+    inputTokenLimit: number | null;
   }>;
   signal: AbortSignal;
   onUsage(usage: ModelCallUsage): Promise<void>;
@@ -120,6 +124,7 @@ export function createModelRequestPort(options: {
       new SystemMessage(request.system),
       new HumanMessage(request.input),
     ];
+    assertNativeInputTokenLimit(messages, null, execution.inputTokenLimit);
     if (
       request.remainingTokens !== null &&
       (execution.effectiveOutputTokens === null ||
@@ -172,7 +177,9 @@ export function createRunModelRequestPort(options: {
   threadId: string | undefined;
   signal: AbortSignal;
   providers: Parameters<typeof resolveInstanceModelExecution>[0]["providers"];
-  catalog: Parameters<typeof resolveInstanceModelExecution>[0]["catalog"];
+  catalog:
+    | Pick<ModelCatalogService, "validateSpecifier" | "listCatalog">
+    | undefined;
   usage: RunUsageAccumulator;
   assertCurrent(): void;
   publish(event: Extract<StreamEvent, { type: "run.usage" }>): Promise<void>;
@@ -180,15 +187,34 @@ export function createRunModelRequestPort(options: {
 }): ModelRequestPort {
   return createModelRequestPort({
     signal: options.signal,
-    resolve: (invocation) =>
-      resolveInstanceModelExecution({
+    resolve: async (invocation) => {
+      const execution = await resolveInstanceModelExecution({
         actor: options.actor,
         specifier: `${invocation.providerId}:${invocation.modelId}`,
         invocation,
         providers: options.providers,
         catalog: options.catalog,
         headers: { sessionId: options.sessionId, threadId: options.threadId },
-      }),
+      });
+      const entries = options.catalog
+        ? await options.catalog.listCatalog(options.actor)
+        : [];
+      const entry = entries.find(
+        (item) =>
+          item.provider.instanceId === invocation.providerId &&
+          item.id === invocation.modelId,
+      );
+      return {
+        ...execution,
+        inputTokenLimit: resolveInputTokenLimit({
+          contextWindow: resolveContextWindow(
+            entry?.model.contextWindow,
+            invocation.modelId,
+          ),
+          maxOutputTokens: execution.effectiveOutputTokens,
+        }),
+      };
+    },
     onUsage: async (usage) => {
       options.assertCurrent();
       const owner = usage.owner;

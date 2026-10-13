@@ -1,7 +1,14 @@
 import { createServer } from "node:http";
+import { modelCatalogEntrySchema } from "@kenfutwork/shared";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { AIMessage, type BaseMessage } from "@langchain/core/messages";
+import {
+  AIMessage,
+  type BaseMessage,
+  HumanMessage,
+  SystemMessage,
+} from "@langchain/core/messages";
 import type { ChatResult } from "@langchain/core/outputs";
+import { countTokensApproximately } from "langchain";
 import { expect, it, vi } from "vitest";
 import { createRunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
 import {
@@ -53,13 +60,14 @@ const request = {
   input: "Real receipt",
   remainingTokens: null,
 };
-function fixture() {
+function fixture(inputTokenLimit: number | null = null) {
   const model = new RequestModel();
   const controller = new AbortController();
   const resolve = vi.fn(async () => ({
     model,
     owner: { provider: "instance", model: "m" },
     effectiveOutputTokens: 10,
+    inputTokenLimit,
   }));
   const onUsage = vi.fn(async () => {});
   return {
@@ -106,6 +114,57 @@ it("预算不足时不发模型请求，不改变冻结输出参数", async () =
   expect(f.onUsage).not.toHaveBeenCalled();
   expect(invocation.body).toEqual({ max_tokens: 10 });
 });
+
+it("没有Goal总预算也必须在发送前拒绝超出模型窗口的完整请求", async () => {
+  const f = fixture();
+  const port = createModelRequestPort({
+    signal: f.controller.signal,
+    onUsage: f.onUsage,
+    resolve: async () => ({ ...(await f.resolve()), inputTokenLimit: 100 }),
+  });
+  await expect(
+    port({ ...request, input: "actual evidence ".repeat(2_000) }),
+  ).rejects.toThrow("模型输入预算");
+  expect(f.model.requests).toEqual([]);
+  expect(f.onUsage).not.toHaveBeenCalled();
+});
+
+it.each(["system", "input"] as const)(
+  "完整请求的%s正文都进入窗口预检",
+  async (part) => {
+    const f = fixture(100);
+    await expect(
+      f.port({ ...request, [part]: "actual request context ".repeat(2_000) }),
+    ).rejects.toThrow("模型输入预算");
+    expect(f.model.requests).toEqual([]);
+  },
+);
+
+it("窗口输入边界允许等于上限，少一个token即拒绝且未知窗口不猜上限", async () => {
+  const estimate = countTokensApproximately([
+    new SystemMessage(request.system),
+    new HumanMessage(request.input),
+  ]);
+  const equal = fixture(estimate);
+  expect((await equal.port(request)).usageObserved).toBe(true);
+  const smaller = fixture(estimate - 1);
+  await expect(smaller.port(request)).rejects.toThrow("模型输入预算");
+  expect(smaller.model.requests).toEqual([]);
+  const unknown = fixture();
+  expect(
+    (await unknown.port({ ...request, input: "evidence ".repeat(2_000) }))
+      .usageObserved,
+  ).toBe(true);
+});
+
+it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY, 1.5])(
+  "无效输入上限%s不能发送请求",
+  async (limit) => {
+    const f = fixture(limit);
+    await expect(f.port(request)).rejects.toThrow("模型输入预算无效");
+    expect(f.model.requests).toEqual([]);
+  },
+);
 it("取消后不发送请求", async () => {
   const f = fixture();
   f.controller.abort();
@@ -136,6 +195,7 @@ it("评估期间配置修订变化拒绝返回结果，但已产生用量仍归�
     model: f.model,
     owner: { provider: "instance", model: "m" },
     effectiveOutputTokens: 10,
+    inputTokenLimit: null,
   }));
   f.resolve.mockRejectedValueOnce(new Error("配置已改变"));
   await expect(f.port(request)).rejects.toThrow("配置已改变");
@@ -188,6 +248,38 @@ it("真实协议适配器发送冻结无工具请求，用量加入原Run账本�
       outputTokens: 20,
     });
     const publish = vi.fn(async () => {});
+    const entry = modelCatalogEntrySchema.parse({
+      id: "m",
+      name: "M",
+      capability: "chat",
+      model: {
+        id: "m",
+        name: "M",
+        capability: "chat",
+        contextWindow: 256,
+        maxOutputTokens: 9_999,
+      },
+      provider: {
+        instanceId: providerId,
+        name: "stub",
+        protocol: "openai-compatible",
+        scope: "local",
+      },
+    });
+    const catalog = {
+      validateSpecifier: async (): Promise<{ ok: true }> => ({ ok: true }),
+      listCatalog: vi.fn(async () => [
+        {
+          ...entry,
+          provider: {
+            ...entry.provider,
+            instanceId: "00000000-0000-4000-8000-000000000002",
+          },
+          model: { ...entry.model, contextWindow: 1 },
+        },
+        entry,
+      ]),
+    };
     const port = createRunModelRequestPort({
       actor,
       runId: "run",
@@ -198,7 +290,7 @@ it("真实协议适配器发送冻结无工具请求，用量加入原Run账本�
       publish,
       assertCurrent: () => {},
       now: () => "2026-10-13T00:00:00.000Z",
-      catalog: undefined,
+      catalog,
       providers: {
         resolveCredentials: async () => ({
           instanceId: providerId,
@@ -211,6 +303,15 @@ it("真实协议适配器发送冻结无工具请求，用量加入原Run账本�
         }),
       },
     });
+    await expect(
+      port({
+        ...request,
+        invocation: { ...invocation, providerId },
+        input: "real evidence ".repeat(2_000),
+      }),
+    ).rejects.toThrow("模型输入预算");
+    expect(bodies).toEqual([]);
+    expect(publish).not.toHaveBeenCalled();
     expect(
       await port({ ...request, invocation: { ...invocation, providerId } }),
     ).toEqual({
@@ -235,6 +336,11 @@ it("真实协议适配器发送冻结无工具请求，用量加入原Run账本�
     expect(usage.take("run")).toEqual([
       expect.objectContaining({ inputTokens: 112, outputTokens: 25 }),
     ]);
+    catalog.listCatalog.mockRejectedValueOnce(new Error("catalog unavailable"));
+    await expect(
+      port({ ...request, invocation: { ...invocation, providerId } }),
+    ).rejects.toThrow("catalog unavailable");
+    expect(bodies).toHaveLength(1);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }

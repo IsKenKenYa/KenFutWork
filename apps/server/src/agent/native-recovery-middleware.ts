@@ -11,12 +11,13 @@ import {
   createSummarizationMiddleware,
   StateBackend,
 } from "deepagents";
-import { type AgentMiddleware, countTokensApproximately } from "langchain";
+import type { AgentMiddleware } from "langchain";
 import {
   type NativeArchiveBinding,
   type NativeCheckpointArchive,
   nativeArchivePrefix,
 } from "./native-checkpoint-archive.js";
+import { assertNativeInputTokenLimit } from "./native-context-budget.js";
 import { recoverySummaryPrompt } from "./native-recovery-summary.js";
 
 type NativeRequest = Parameters<
@@ -37,11 +38,7 @@ export function assertNativeContextInputBudget(
       ? profile.maxInputTokens
       : undefined;
   const limit = configured ?? profileLimit;
-  if (limit === undefined || limit === null) return;
-  if (typeof limit !== "number" || !Number.isSafeInteger(limit) || limit <= 0)
-    throw new Error("模型输入预算无效，请检查模型设置。");
-  if (countTokensApproximately(messages, tools.length ? tools : null) > limit)
-    throw new Error("上下文估算超出模型输入预算，请调整模型或保留设置。");
+  assertNativeInputTokenLimit(messages, tools, limit);
 }
 
 /** Keep native trigger/keep/counting. Never commit a summary after failed SDK offload. */
