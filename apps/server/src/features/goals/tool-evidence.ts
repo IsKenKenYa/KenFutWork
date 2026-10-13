@@ -23,6 +23,7 @@ export function isGoalToolEvidence(
     const result = objectValue(outputText);
     const normalized = command.trim().replace(/;$/u, "").trim();
     return (
+      normalized.length > 0 &&
       result?.state === "exited" &&
       result.exitCode === 0 &&
       !["true", ":", "exit 0"].includes(normalized)

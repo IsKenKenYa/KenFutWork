@@ -209,6 +209,7 @@ function objectValue(value: unknown): Record<string, unknown> | null {
 }
 function commandOf(row: protocol.ToolCallRow): string {
   const input = objectValue(row.input) ?? objectValue(row.inputText);
+  if (input && typeof input.command !== "string") return "";
   return typeof input?.command === "string"
     ? input.command.trim().replace(/;$/, "").trim()
     : row.inputText.trim().replace(/;$/, "").trim();

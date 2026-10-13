@@ -150,3 +150,20 @@ it("Goal control tools remain excluded from real tool evidence", () => {
       ),
     ).toEqual([]);
 });
+
+it("缺少原始命令的成功退出结果不能作为Goal验收证据", () => {
+  for (const command of ["", " ", ";"]) {
+    const receipt = row(command, { state: "exited", exitCode: 0 });
+    expect(goalEvidenceCandidates([receipt], "r", 7)).toEqual([]);
+    expect(() => goalEvidence([receipt], "r", ["row:1"])).toThrow();
+  }
+  for (const input of [{}, { command: null }, { command: 123 }]) {
+    const receipt = {
+      ...row("ignored", { state: "exited", exitCode: 0 }),
+      input,
+      inputText: JSON.stringify(input),
+    };
+    expect(goalEvidenceCandidates([receipt], "r", 7)).toEqual([]);
+    expect(() => goalEvidence([receipt], "r", ["row:1"])).toThrow();
+  }
+});
