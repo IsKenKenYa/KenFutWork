@@ -37,6 +37,7 @@ import {
   type ModelProviderNavGroup,
 } from "./model-provider-section/constants.js";
 import { ModelProviderSectionDetail } from "./model-provider-section/Detail.js";
+import { ModelProviderEmptyState } from "./model-provider-section/EmptyState.js";
 import { ModelProviderSectionLayout } from "./model-provider-section/SectionLayout.js";
 import { ProviderTemplatePicker } from "./model-provider-section/ProviderTemplatePicker.js";
 import type { CodingPlanLoginOptions } from "./model-provider-section/codingPlanPricingCards.js";
@@ -1043,6 +1044,9 @@ export function ModelProviderSection({
   // 这里改为始终先渲染布局壳子，再按分组展示 loading，避免用户误以为页面坏了。
   const presetLoading = loading || modelProvidersRefreshing;
   const customLoading = loading || modelProvidersRefreshing;
+  // KenFutWork 宿主偏差：BYOK-only 关闭云账号后，零供应商是合法稳态而非加载态，
+  // 原渲染会让 Detail 的 !selectedNavItem 分支永久显示加载占位。
+  const navigationEmpty = !presetLoading && navigationItems.length === 0;
 
   if (loadError) {
     return (
@@ -1100,6 +1104,8 @@ export function ModelProviderSection({
             return handleCreateProvider({ providerName: label });
           }}
         />
+      ) : navigationEmpty ? (
+        <ModelProviderEmptyState onAddProvider={() => setTemplatePickerOpen(true)} />
       ) : (
         <ModelProviderSectionDetail
           connectionSelections={effectiveConnectionSelections}

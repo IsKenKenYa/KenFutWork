@@ -5711,7 +5711,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "7d329fce6134d2b5b81c8a1340336ae482a7eba25d3f39a64040db7c21d8a844",
+      "copiedSha256": "45ecd8286d2ff85447efa6dc9a531f20ba90965893c937064591982add81d706",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5724,14 +5724,15 @@
         "本机文案：原Personal分段改Local；空目录标签与真实本机来源一致",
         "新增 settings.about.title（T16 关于分区标题）",
         "KenFutWork 宿主偏差：settings.permissions.title 词条",
-        "KenFutWork 宿主偏差：新增 workspaceHeader.lockedDirectory（H1 chip 文案）"
+        "KenFutWork 宿主偏差：新增 workspaceHeader.lockedDirectory（H1 chip 文案）",
+        "KenFutWork 宿主偏差：新增 settings.modelProvider.emptyTitle 文案"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "ffbd8828aee451ef0207d55c9e708d102d18ec311ef02a7367d634edeccd956d",
+      "copiedSha256": "c510ef8adaf82b0f828ef669361a4d47d208c27c8597a4d5609a9ce4f21816b2",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5744,7 +5745,8 @@
         "本机文案：原个人分段改本机；空目录短标签，不宣称未接市场源可创建",
         "新增 settings.about.title（T16 关于分区标题）",
         "KenFutWork 宿主偏差：settings.permissions.title 词条",
-        "KenFutWork 宿主偏差：新增 workspaceHeader.lockedDirectory（H1 chip 文案）"
+        "KenFutWork 宿主偏差：新增 workspaceHeader.lockedDirectory（H1 chip 文案）",
+        "KenFutWork 宿主偏差：新增 settings.modelProvider.emptyTitle 文案"
       ]
     },
     {
@@ -9503,11 +9505,12 @@
       "source": "references/zcode/packages/ui/src/settings/ModelProviderSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/ModelProviderSection.tsx",
       "sha256": "05f5f3f95fe45c2d0c2d8454718c9f46fc052a27dfd19cda3966be74628faca7",
-      "copiedSha256": "8f25c623cccdb45f91cd85cee690e697319f8956d1cffe3ff77c3041d2ce3d17",
+      "copiedSha256": "d54b649f481f5f2150cf00daf6b13078b12fffad7da166996d406d3f0c45c1a0",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义",
-        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输"
+        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
+        "KenFutWork 宿主偏差：BYOK 零供应商空态——非加载且导航为空时渲染 EmptyState 引导卡，替代原 !selectedNavItem 分支的永久加载占位"
       ]
     },
     {

@@ -149,6 +149,8 @@ function fixture() {
     notifyViews,
     testConnectivity,
     preferences,
+    /** 模拟进程重启：全新 RPC 实例共享同一持久账本与实例数据。 */
+    spawnRpc: () => createCodeUiProviderSettingsRpc(deps),
   };
 }
 
@@ -566,4 +568,30 @@ it("连接测试使用所选实际model callback，draft/disabled不冒充成功
     await call("testModelConnectivity", [{ providerId, modelId: "target" }]),
   ).toMatchObject({ success: false, error: { code: "model-unavailable" } });
   expect(testConnectivity).toHaveBeenCalledTimes(1);
+});
+
+it("视图修订跨进程重启单调：同指纹续用持久值，变更递增并持久化，不重启归零", async () => {
+  const f = fixture();
+  await f.rpc.readViews(actor);
+  const restarted = f.spawnRpc();
+  expect((await restarted.readViews(actor)).settings.revision).toBe(0);
+  await restarted.call(
+    actor,
+    "providerSettingsService",
+    "createPersonalProvider",
+    [{ providerName: "重启后新增" }],
+  );
+  const bumped = (await restarted.readViews(actor)).settings.revision;
+  expect(bumped).toBe(1);
+  expect(f.preferences.get(actor.instanceId)?.codeUiViewRevision).toBe(1);
+  const again = f.spawnRpc();
+  expect((await again.readViews(actor)).settings.revision).toBe(bumped);
+  await again.call(actor, "providerSettingsService", "createPersonalProvider", [
+    { providerName: "再次变更" },
+  ]);
+  const next = f.spawnRpc();
+  expect((await next.readViews(actor)).settings.revision).toBe(bumped + 1);
+  expect(f.preferences.get(actor.instanceId)?.codeUiViewRevision).toBe(
+    bumped + 1,
+  );
 });
