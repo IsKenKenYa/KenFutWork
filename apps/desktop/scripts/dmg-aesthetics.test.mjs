@@ -4,6 +4,7 @@
  * 任何平台上跑，不依赖真实出包产物，也不真的挂载镜像。
  */
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   mkdirSync,
@@ -18,6 +19,22 @@ import { test } from "node:test";
 import { verifyDmgAesthetics } from "./dmg-aesthetics.mjs";
 
 const BACKGROUND_KEY = "backgroundImageAlias";
+
+/**
+ * 夹具是 `#!/bin/sh` 假 hdiutil，Windows 不能直接 exec 它（status=null）。
+ * 与 dist-manifest.test.mjs 同口径：跑不了就如实跳过，不假装通过。
+ */
+const shellFixturesSupported = (() => {
+  const dir = mkdtempSync(join(tmpdir(), "kfw-sh-probe-"));
+  try {
+    const probe = join(dir, "probe");
+    writeFileSync(probe, "#!/bin/sh\nexit 0\n");
+    chmodSync(probe, 0o755);
+    return spawnSync(probe, [], { shell: false }).status === 0;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+})();
 
 /** @param {(volume: string) => void} build 往「卷根」里摆夹具内容 */
 function fixture(build) {
@@ -61,6 +78,10 @@ function withBackground(volume) {
 }
 
 test("DMG 取证：卷根没有 .DS_Store 时判「无背景布局」并说清后果", () => {
+  if (!shellFixturesSupported) {
+    console.log("· 跳过：本机不能直接 exec sh 夹具");
+    return;
+  }
   const f = fixture(() => {});
   try {
     const verdict = verifyDmgAesthetics(f.dmg, { hdiutil: f.hdiutil });
@@ -72,6 +93,10 @@ test("DMG 取证：卷根没有 .DS_Store 时判「无背景布局」并说清�
 });
 
 test("DMG 取证：有 .DS_Store 但不引用背景图时按「背景没生效」判", () => {
+  if (!shellFixturesSupported) {
+    console.log("· 跳过：本机不能直接 exec sh 夹具");
+    return;
+  }
   const f = fixture((volume) => {
     writeFileSync(join(volume, ".DS_Store"), "WindowBoundsiconSize");
     mkdirSync(join(volume, ".background"), { recursive: true });
@@ -87,6 +112,10 @@ test("DMG 取证：有 .DS_Store 但不引用背景图时按「背景没生效�
 });
 
 test("DMG 取证：引用了背景但图不在卷内也要报（不能只看 .DS_Store）", () => {
+  if (!shellFixturesSupported) {
+    console.log("· 跳过：本机不能直接 exec sh 夹具");
+    return;
+  }
   const f = fixture((volume) => {
     writeFileSync(join(volume, ".DS_Store"), BACKGROUND_KEY);
   });
@@ -100,6 +129,10 @@ test("DMG 取证：引用了背景但图不在卷内也要报（不能只看 .DS
 });
 
 test("DMG 取证：齐全判通过，并且取证完必须卸载", () => {
+  if (!shellFixturesSupported) {
+    console.log("· 跳过：本机不能直接 exec sh 夹具");
+    return;
+  }
   const f = fixture(withBackground);
   try {
     const verdict = verifyDmgAesthetics(f.dmg, { hdiutil: f.hdiutil });
@@ -113,6 +146,10 @@ test("DMG 取证：齐全判通过，并且取证完必须卸载", () => {
 });
 
 test("DMG 取证：挂不上时如实报「无法取证」，不假装通过", () => {
+  if (!shellFixturesSupported) {
+    console.log("· 跳过：本机不能直接 exec sh 夹具");
+    return;
+  }
   const root = mkdtempSync(join(tmpdir(), "kfw-dmg-broken-"));
   const hdiutil = join(root, "hdiutil");
   writeFileSync(hdiutil, '#!/bin/sh\necho "mount 失败" >&2\nexit 1\n');
