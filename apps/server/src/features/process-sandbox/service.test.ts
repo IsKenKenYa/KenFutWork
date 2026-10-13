@@ -21,6 +21,62 @@ import { createProcessSandbox } from "./service.js";
 import type { ProcessSandbox, ProcessSpawnRequest } from "./types.js";
 
 const cleanups: Array<() => Promise<unknown>> = [];
+
+test.skipIf(process.platform !== "darwin")(
+  "macOS 系统 Git 在真实只读沙箱内可读取开发工具选择器并列出未跟踪文件",
+  async () => {
+    const fixture = await realpath(
+      await mkdtemp(join(tmpdir(), "kfw-apple-git-")),
+    );
+    cleanups.push(() => rm(fixture, { recursive: true, force: true }));
+    const root = join(fixture, "project");
+    await mkdir(root);
+    await promisify(execFile)("/usr/bin/git", ["init", "--quiet", root]);
+    await writeFile(join(root, "untracked.txt"), "git sandbox proof");
+    const sandbox = createProcessSandbox({
+      captureRoot: join(fixture, "capture"),
+      network: { allowedDomains: [], deniedDomains: [] },
+    });
+    cleanups.push(() => sandbox.close("test_cleanup"));
+    const child = await sandbox.spawn({
+      scope: {
+        instanceId: "workspace",
+        projectId: "project",
+        taskId: "apple-git-task",
+        generation: 1,
+        rootDirectory: root,
+        additionalDirectories: [],
+        sandboxMode: "read-only",
+      },
+      agentId: "main",
+      invocationId: "apple-git-status",
+      command: "/usr/bin/git status --porcelain=v1 --untracked-files=all",
+      background: true,
+      timeoutMs: 5000,
+      limits: {
+        maxOutputBytes: 65536,
+        previewMaxChars: 8000,
+        yieldMs: 50,
+        killGraceMs: 2000,
+      },
+    });
+    const exit = await child.waitForExit();
+    const output = await child.readOutput({ offset: 0, maxBytes: 8192 });
+    expect(exit, output.data).toMatchObject({
+      exitCode: 0,
+      stopped: false,
+      rangeEmpty: true,
+    });
+    const stdout = await child.readOutput({
+      offset: 0,
+      maxBytes: 8192,
+      stream: "stdout",
+    });
+    expect(stdout.data).toBe("?? untracked.txt\n");
+    expect(child.snapshot().enforcement?.backend).toBe("srt-seatbelt");
+  },
+);
+
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) {
     // PSEC workload 退出后其句柄/目录锁释放有短暂的 Windows 收尾滞后，
