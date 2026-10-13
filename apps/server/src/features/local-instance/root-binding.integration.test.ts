@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   chmod,
   cp,
@@ -14,6 +14,7 @@ import { promisify } from "node:util";
 import type { CodeExecutionScope } from "@kenfutwork/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createCheckpointRepository } from "../checkpoints/repository.js";
+import { shadowRepositoryPath } from "../checkpoints/shadow-repo-path.js";
 import type {
   PersistenceService,
   SqlRow,
@@ -25,17 +26,13 @@ import { bindLocalInstanceDataRoot } from "./root-binding.js";
 
 const run = promisify(execFile);
 type Database = Awaited<ReturnType<typeof createTaskWorkDatabase>>;
-const hash = (value: string) =>
-  createHash("sha256").update(value).digest("hex");
 
 function shadowDirectory(database: Database, dataDir: string, root: string) {
-  return join(
-    dataDir,
-    "checkpoints",
-    database.instanceId,
-    database.context.scope.projectId,
-    `${database.context.scope.taskId}.git`,
-    hash(root),
+  // 短布局（与生产同一公式）：仓库目录名是 `<taskId>-<rootHash16>.git`，不再走三层 UUID。
+  return shadowRepositoryPath(
+    join(dataDir, "checkpoints"),
+    database.context.scope.taskId,
+    root,
   );
 }
 

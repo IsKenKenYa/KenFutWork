@@ -15,6 +15,7 @@ import {
   type ShadowGitClient,
   type ShadowNumstatFile,
 } from "./shadow-git-client.js";
+import { shadowRepositoryPath } from "./shadow-repo-path.js";
 
 export const EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 export class CodeCheckpointError extends Error {
@@ -231,10 +232,7 @@ export function createCheckpointService(options: {
     root: string,
   ): Promise<string> => {
     const id = scope.describe();
-    const short = join(
-      options.checkpointRoot,
-      `${id.taskId}-${createHash("sha256").update(root).digest("hex").slice(0, 16)}.git`,
-    );
+    const short = shadowRepositoryPath(options.checkpointRoot, id.taskId, root);
     if (await isDirectory(short)) return short;
     const legacy = legacyGitDirectory(scope, root);
     if (await isDirectory(legacy)) {

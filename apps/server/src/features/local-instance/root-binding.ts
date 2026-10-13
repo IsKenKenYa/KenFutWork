@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   chmod,
   mkdir,
@@ -12,6 +12,7 @@ import {
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
+import { shadowRepositoryPath } from "../checkpoints/shadow-repo-path.js";
 import type {
   InstanceSqlClient,
   PersistenceService,
@@ -174,17 +175,20 @@ async function rebindShadowRepository(input: {
   binary: string;
   undo: Undo[];
 }) {
-  const hash = (value: string) =>
-    createHash("sha256").update(value).digest("hex");
-  const base = join(
-    input.mapper.current,
-    "checkpoints",
-    input.instanceId,
-    input.projectId,
-    `${input.taskId}.git`,
+  // 短布局（与 checkpoint-service 的 shadowRepositoryPath 同一公式）：数据目录整体
+  // 复制后，仓库目录名仍带旧根的 hash，需改名到新根 hash。旧三层布局在短布局改造
+  // （Windows 长路径）后已不再产出；按旧布局算路径会误报「缺少检查点影子仓库」。
+  const checkpoints = join(input.mapper.current, "checkpoints");
+  const source = shadowRepositoryPath(
+    checkpoints,
+    input.taskId,
+    input.previousRoot,
   );
-  const source = join(base, hash(input.previousRoot));
-  const target = join(base, hash(input.currentRoot));
+  const target = shadowRepositoryPath(
+    checkpoints,
+    input.taskId,
+    input.currentRoot,
+  );
   for (const path of [source, target])
     if ((await physicalPath(path)) !== path)
       throw new Error("检查点影子仓库路径包含越界或别名软链，拒绝重绑定。");
@@ -227,13 +231,10 @@ async function rebindShadowRepository(input: {
         continue;
       throw error;
     }
-    const previousGitDir = join(
-      input.mapper.previous,
-      "checkpoints",
-      input.instanceId,
-      input.projectId,
-      `${input.taskId}.git`,
-      hash(input.previousRoot),
+    const previousGitDir = shadowRepositoryPath(
+      join(input.mapper.previous, "checkpoints"),
+      input.taskId,
+      input.previousRoot,
     );
     const insideGit = isAbsolute(value)
       ? relative(previousGitDir, await physicalPath(value))

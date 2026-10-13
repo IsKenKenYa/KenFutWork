@@ -2,7 +2,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { resolveEntryRoot } from "./entry-root.js";
+import { isPackagedRuntime, resolveEntryRoot } from "./entry-root.js";
 
 const REPO = resolve("D:/repo");
 const SERVER_SRC = join(REPO, "apps", "server", "src", "server.ts");
@@ -70,5 +70,24 @@ describe("入口资源根解析", () => {
         sea: true,
       }),
     ).toBe(join("D:/a/KenFutWork/KenFutWork/release"));
+  });
+});
+
+describe("打包态判定（isPackagedRuntime）", () => {
+  /**
+   * 回归：banner 会给 SEA 宿主灌入 <exe>/server.cjs 的**合法 file URL**，
+   * 「import.meta.url 为空 ⇒ SEA」判据已失效——flow 插件曾据此走成源码上溯分支，
+   * 把打包态资源根解析成盘符根，引擎页报「找不到 compose 文件 D:\dify\…」
+   * （2026-10-13 真机）。
+   */
+  it("回归：SEA 宿主即使拥有合法 import.meta.url 也算打包态", () => {
+    expect(isPackagedRuntime(pathToFileURL(SERVER_SRC).href, true)).toBe(true);
+  });
+
+  it("源码态（非 SEA、有合法 URL）不是打包态；空 URL 兜底仍视为打包", () => {
+    expect(isPackagedRuntime(pathToFileURL(SERVER_SRC).href, false)).toBe(
+      false,
+    );
+    expect(isPackagedRuntime(undefined, false)).toBe(true);
   });
 });

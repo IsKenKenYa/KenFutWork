@@ -24,6 +24,7 @@ import { createCheckpointService } from "../checkpoints/checkpoint-service.js";
 import { createCheckpointRepository } from "../checkpoints/repository.js";
 import { createShadowGitClient } from "../checkpoints/shadow-git-client.js";
 import { createShadowGitExec } from "../checkpoints/shadow-git-exec.js";
+import { shadowRepositoryPath } from "../checkpoints/shadow-repo-path.js";
 import { createCodeFileTools } from "../code-tools/tool-definitions.js";
 import { createScopeRepository } from "../execution/scope-repository.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
@@ -133,14 +134,17 @@ async function hostFixture(database: Database) {
   const sandbox = createProcessSandbox({
     captureRoot: join(database.directory, "capture"),
     network: { allowedDomains: [], deniedDomains: [] },
-    resolveInternalWriteRoots: async (scope) => [
-      join(
+    resolveInternalWriteRoots: async (scope) => {
+      // 与 process-sandbox 插件同式：checkpoint 私有写根 = 短布局影子仓库目录，
+      // 且 spawnCheckpoint 的 realpath 要求路径已存在——先建目录。
+      const directory = shadowRepositoryPath(
         checkpointRoot,
-        scope.instanceId,
-        scope.projectId,
-        `${scope.taskId}.git`,
-      ),
-    ],
+        scope.taskId,
+        scope.rootDirectory,
+      );
+      await mkdir(directory, { recursive: true });
+      return [directory];
+    },
   });
   const work = createTaskWorkManager({
     store: createTaskWorkStore(database.persistence),
