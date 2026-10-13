@@ -138,16 +138,16 @@
 | SKILLPUB | 技能发布（创造路径） | **DONE** | `/api/skills` 落库 `kfw-wordstats` |
 | SEARCH | 联网搜索 | **DONE（工具可用）** | 多轮真实 `web_search` 返回真实来源；模型如实报出代理的上游退化与 5002 |
 | RUN-AUTO | 自主档真实 run | **DONE** | `kfw-probe.txt` 落盘 + `type` 读回退出码 0 |
-| MODE6 | 六档执行模式端到端 | **NOT VERIFIED** | 每个 run 的 `chat_sessions.execution_mode` 均为 `null`：模拟点击未能驱动六档 chip（`切换模式`＝ZCode 权限菜单、`权限档`＝旧四档）。服务端六档缝有单测，但无端到端证据 → §一百八十二 的档位归因作废 |
+| MODE6 | 六档执行模式端到端 | **DONE（五档实测 + 循环设计退役）** | 方法：暖场建会话→点 `[data-testid="execution-mode-chip"]`→取证 `chat_sessions.execution_mode`。结果：`对话=solo`（答 1024）、`计划=plan`（只读+计划门）、`目标=goal`（标准+差距）、`自主=agent`（落盘并读回）、`创造=creative`（技能 `mode-creative-demo` 落库）；`循环` 不在 `/api/execution-modes`（`RetiredExecutionModeError`，设计退役） |
 | MCPREG | MCP 注册/发现（`install_mcp_server` → ToolSearch → 调用） | **NOT VERIFIED** | 模型自报成功，但 ToolSearch 查该工具 0 命中、`mcp_servers` 表无新增；Task 运行时作用域连接不落库 |
 | ENV-GIT2 | 沙箱 git 报 `fatal: this operation must be run in a work tree` | **待收口** | git 已能启动；`GIT_WORK_TREE` 疑似未透传 |
 | G1BROWSER | 浏览器面板点击验收 | **未做** | — |
 
 ## NEXT ACTION
 
-1. **六档执行模式端到端**（最高优先，用户点名）：先定位 composer 六档触发器的真实 aria-label/结构（`packages/zcode-*` + `zcode/host` 宿主件），再驱动 6 档各跑一轮，用 `chat_sessions.execution_mode` 取证；必要时补宿主侧测试。
-2. **MCP 注册链路**：查 `install_mcp_server` → `ToolSearch` 发现 → 调用的断点（Task 运行时作用域连接的登记与可见性），补端到端验证。
-3. **ENV-GIT2**：查 `spawnCheckpoint` 的 `GIT_WORK_TREE` 为何未生效（env 透传/沙箱策略），恢复检查点时间线与每轮自动提交。
-4. 未点/未测：浏览器面板（G1）、创造档位单独实测。
+1. **MCP 注册链路**：查 `install_mcp_server` → `ToolSearch` 发现 → 调用的断点（Task 运行时作用域连接的登记与可见性），补端到端验证。
+2. **ENV-GIT2**：查 `spawnCheckpoint` 的 `GIT_WORK_TREE` 为何未生效（env 透传/沙箱策略），恢复检查点时间线与每轮自动提交。
+3. 未点：浏览器面板（G1）。
+4. 提示：六档端到端驱动方式已定型（暖场建会话 → 点 `[data-testid="execution-mode-chip"]`），后续复跑直接复用 `tmp/e2e/run-mode.mjs`。
 
 
