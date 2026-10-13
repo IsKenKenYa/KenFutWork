@@ -1500,6 +1500,7 @@ const enUS: Record<string, string> = {
   "workspaceHeader.help.productRequestDraft": "I would like to suggest: ",
   "workspaceHeader.help.community": "User community",
   "workspaceHeader.help.docs": "Product docs",
+  "workspaceHeader.lockedDirectory": "Working directory",
   "titleBar.menu.file": "File",
   "titleBar.menu.view": "View",
   "titleBar.menu.help": "Help",

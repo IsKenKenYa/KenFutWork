@@ -30,7 +30,11 @@ export type HelperRequest =
       taskId: string;
       options: Pick<
         ProcessSandboxOptions,
-        "captureRoot" | "network" | "runtimeReadRoots" | "windowsBrokerPath"
+        | "captureRoot"
+        | "network"
+        | "runtimeReadRoots"
+        | "runtimePathAdditions"
+        | "windowsBrokerPath"
       >;
       initial: ProcessSpawnRequest;
     }

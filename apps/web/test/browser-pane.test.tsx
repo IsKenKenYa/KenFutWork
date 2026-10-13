@@ -1,12 +1,25 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 
 const surfaceJson = vi.fn();
+const requestComposerTextInsert = vi.fn();
 
 vi.mock("@zui/host/surfaceApi.js", () => ({
   surfaceJson: (path: string, init?: RequestInit) => surfaceJson(path, init),
   getSurfaceApiBase: () => "",
+}));
+
+vi.mock("@zui/store/zcodeSessionStore.js", () => ({
+  useZCodeSessionStore: {
+    getState: () => ({ requestComposerTextInsert }),
+  },
 }));
 
 const { BrowserPane } = await import(
@@ -18,6 +31,7 @@ const user = userEvent.setup();
 afterEach(() => {
   cleanup();
   surfaceJson.mockReset();
+  requestComposerTextInsert.mockReset();
 });
 
 function connectedApis() {
@@ -152,6 +166,8 @@ test("连接失败显示可读原因与重载入口；调试控制台按钮调 c
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith("/api/browser/cdp/console", {
       method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com" }),
     }),
   );
 });
@@ -172,5 +188,127 @@ test("视口预设切换改变 view 的 width/height（真视口，非缩放伪�
         }),
       }),
     ),
+  );
+});
+
+test("拾取元素：snapshot 拉盒模型→叠框→点选把坐标引用填进 composer", async () => {
+  connectedApis();
+  surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === "/api/browser/snapshot") {
+      expect(init?.method).toBe("POST");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        url: "https://example.com",
+      });
+      return {
+        snapshot: {
+          url: "https://example.com",
+          title: "示例",
+          viewport: { width: 1280, height: 720 },
+          elements: [
+            {
+              tag: "button",
+              text: "提交订单",
+              hint: "立即购买",
+              box: { x: 100, y: 50, width: 200, height: 40 },
+            },
+            { tag: "a", text: "无几何", hint: "", box: null },
+          ],
+        },
+        source: "cdp",
+      };
+    }
+    if (path === "/api/browser/cdp/status") {
+      return { status: "connected", currentUrl: "https://example.com" };
+    }
+    if (path === "/api/browser/cdp/view") {
+      return {
+        ticket: "ticket-1",
+        viewport: { width: 1280, height: 720, scale: 1 },
+      };
+    }
+    return {};
+  });
+  render(
+    <BrowserPane
+      initialUrl="https://example.com"
+      workspacePath="D:/Desktop/test"
+      workspaceIdentity="ws-1"
+    />,
+  );
+  await screen.findByAltText("浏览器画面");
+
+  await user.click(screen.getByRole("button", { name: "拾取元素" }));
+  const box = await screen.findByRole("button", { name: "拾取 button" });
+  // 视口 1280×720 下盒 {100,50,200,40} → 百分比定位
+  expect(box.getAttribute("style")).toContain("left: 7.8125%");
+  expect(box.getAttribute("style")).toContain("top: 6.944444444444445%");
+  expect(box.getAttribute("style")).toContain("width: 15.625%");
+  expect(box.getAttribute("style")).toContain("height: 5.555555555555555%");
+  // 无几何元素不叠框（只进不了列表热点）
+  expect(screen.queryByRole("button", { name: "拾取 a" })).toBeNull();
+
+  // jsdom 无布局（矩形全零），userEvent 的坐标命中会落到 (0,0) 的 img 上；
+  // 叠框按钮用 fireEvent 直派 click（与真实浏览器点选同一处理器）。
+  fireEvent.click(box);
+  await waitFor(() =>
+    expect(requestComposerTextInsert).toHaveBeenCalledWith(
+      "D:/Desktop/test",
+      "【页面元素】<button> 提交订单 ｜ 定位提示：立即购买 ｜ 中心坐标：200,70 ｜ 视口：1280×720 ｜ 来自：https://example.com",
+      "ws-1",
+    ),
+  );
+  // 点选后退出拾取态
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "拾取 button" })).toBeNull(),
+  );
+});
+
+test("拾取中 Esc 退出；调试控制台注入带上当前 url", async () => {
+  surfaceJson.mockImplementation(async (path: string) => {
+    if (path === "/api/browser/snapshot") {
+      return {
+        snapshot: {
+          url: "https://example.com",
+          title: "示例",
+          viewport: { width: 1280, height: 720 },
+          elements: [],
+        },
+        source: "cdp",
+      };
+    }
+    if (path === "/api/browser/cdp/status") {
+      return { status: "connected", currentUrl: "https://example.com" };
+    }
+    if (path === "/api/browser/cdp/view") {
+      return {
+        ticket: "ticket-1",
+        viewport: { width: 1280, height: 720, scale: 1 },
+      };
+    }
+    return {};
+  });
+  render(<BrowserPane initialUrl="https://example.com" />);
+  await screen.findByAltText("浏览器画面");
+
+  await user.click(screen.getByRole("button", { name: "拾取元素" }));
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/browser/snapshot",
+      expect.objectContaining({ method: "POST" }),
+    ),
+  );
+  expect(screen.getByText("点选元素填入输入框 · Esc 取消")).toBeTruthy();
+  await user.keyboard("{Escape}");
+  await waitFor(() =>
+    expect(screen.queryByText("点选元素填入输入框 · Esc 取消")).toBeNull(),
+  );
+
+  await user.click(screen.getByRole("button", { name: "调试控制台" }));
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith("/api/browser/cdp/console", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com" }),
+    }),
   );
 });

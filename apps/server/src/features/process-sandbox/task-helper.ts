@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
 import { unixCommand } from "./command.js";
-import { executionEnvironment } from "./environment.js";
+import { executionEnvironment, prependExecutionPath } from "./environment.js";
 import { prepareLinuxSandboxArgv } from "./linux-launch.js";
 import type { ProcessOwner } from "./managed-process.js";
 import { ProcessOutputCapture } from "./output-capture.js";
@@ -305,6 +305,12 @@ class TaskProcessHelper {
           ...(this.requireOptions().runtimeReadRoots
             ? { runtimeReadRoots: this.requireOptions().runtimeReadRoots }
             : {}),
+          ...(this.requireOptions().runtimePathAdditions
+            ? {
+                runtimePathAdditions:
+                  this.requireOptions().runtimePathAdditions,
+              }
+            : {}),
         });
         if (!probe) this.assertReady(request);
         abort.signal.throwIfAborted();
@@ -358,6 +364,11 @@ class TaskProcessHelper {
         HOME: process.env.HOME,
         CLAUDE_CODE_TMPDIR: this.temporaryDirectory,
       };
+      // POSIX 侧同样补随包运行时 PATH（与 Windows 路径口径一致，见 environment.ts）。
+      prependExecutionPath(
+        descriptor.env as Record<string, string>,
+        this.requireOptions().runtimePathAdditions,
+      );
       if (request.pty)
         this.ptyRuntime ??= loadTaskPtyRuntime(
           this.privateDirectory,

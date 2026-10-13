@@ -1,7 +1,9 @@
 import { WorkspaceContextPath } from "@zui/WorkspaceHeaderSections/WorkspaceContextPath.js";
 import { WorkspaceLastActivity } from "@zui/WorkspaceHeaderSections/WorkspaceLastActivity.js";
+import { resolveLockedDirectoryName } from "@zui/lib/workspaceHeaderProvider.js";
 /* eslint-disable max-lines -- Header 标题区当前同时承载 task 菜单、路径上下文和 workspace 级状态提示，先保持单文件收口，避免菜单链路迁移时再引入回归。 */
 import {
+  TID_WORKSPACE_LOCKED_DIRECTORY,
   TID_WORKSPACE_MORE_BUTTON,
   TID_WORKSPACE_PATH,
   TID_WORKSPACE_TITLE,
@@ -12,7 +14,7 @@ import { useMemo, useRef, useState } from "react";
 import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
 import { cn } from "@zui/components/lib/utils.js";
 import { Button } from "@zui/components/ui/button.js";
-import { Cloud, Ellipsis, Folder, GitBranch, LoaderIcon } from "lucide-react";
+import { Cloud, Ellipsis, Folder, GitBranch, LoaderIcon, Lock } from "lucide-react";
 import { useConfirmDialog } from "@zui/hooks/useConfirmDialog.js";
 import { useGlobalTaskList } from "@zui/hooks/useGlobalTaskList.js";
 import { useBaseWorkspaceServices, useWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
@@ -198,6 +200,12 @@ export function WorkspaceHeaderTitleSection({
         fallbackLabel: intl.formatMessage({ id: "git.branchSwitcher.label" }),
       })
     : null;
+  // H1（G11）：Task 主目录身份不可变（执行作用域硬约束）——会话头呈只读 chip，
+  // 名字取目录末段，完整路径进 title；草稿态还没有稳定 Task，不摆这个 chip。
+  const lockedDirectoryName = useMemo(
+    () => resolveLockedDirectoryName(workspaceAbsPath),
+    [workspaceAbsPath],
+  );
   const isRemoteWorkspace = Boolean(
     remoteWorkspaceHostLabel || workspaceIdentity?.trim() || remoteSessionId,
   );
@@ -490,6 +498,16 @@ export function WorkspaceHeaderTitleSection({
           </>
         ) : null} */}
       </h1>
+      {!isDraftNewTask ? (
+        <span
+          data-testid={TID_WORKSPACE_LOCKED_DIRECTORY}
+          className="hidden max-w-56 shrink-0 items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-xs text-foreground-subtle @max-[560px]/workspace-header:hidden @[36rem]/workspace-header:inline-flex"
+          title={`${intl.formatMessage({ id: "workspaceHeader.lockedDirectory" })} · ${workspaceAbsPath}`}
+        >
+          <Lock className="size-3 shrink-0" />
+          <span className="min-w-0 truncate">{lockedDirectoryName}</span>
+        </span>
+      ) : null}
       <div className="flex min-w-0 shrink-0 items-center gap-1">
         {!isDraftNewTask ? (
           <DropdownMenu open={taskMenuOpen} onOpenChange={setTaskMenuOpen}>

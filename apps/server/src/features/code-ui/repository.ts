@@ -6,6 +6,11 @@ import {
   type StreamEvent,
   streamEventSchema,
 } from "@kenfutwork/shared";
+// 本模块所有喂给 `::jsonb` 参数的值一律走 jsonbSafeStringify：命令输出/模型文本/
+// 文件内容都可能带 U+0000（Windows 上 UTF-16LE 输出被按 UTF-8 解码即每字符后跟一个），
+// JSON.stringify 会把它转义成字面量 `\u0000`，Postgres 的 jsonb 直接拒绝
+// （unsupported Unicode escape sequence）→ 整轮 run 被 run_failed 终结（《未做需求》#13）。
+import { jsonbSafeStringify } from "../../utils/text-sanitize.js";
 import { INTERRUPTED_RUN_MESSAGE } from "../agent-runs/reconcile.js";
 import { createGoalService, type GoalService } from "../goals/service.js";
 import type {
@@ -188,7 +193,7 @@ async function writeChildSessionIndexes(
         child.parentSessionId,
         child.parentToolCallId,
         root.root_directory,
-        JSON.stringify(root.additional_directories),
+        jsonbSafeStringify(root.additional_directories),
         root.sandbox_mode,
         root.scope_generation,
         root.execution_state,
@@ -227,9 +232,9 @@ async function insertRoot(scoped: InstanceSqlClient, input: CodeUiRootInsert) {
     [
       input.sessionId,
       input.projectId,
-      JSON.stringify(input.state),
+      jsonbSafeStringify(input.state),
       input.scope.rootDirectory,
-      JSON.stringify(input.scope.additionalDirectories),
+      jsonbSafeStringify(input.scope.additionalDirectories),
       input.scope.sandboxMode,
       input.scope.generation,
     ],
@@ -257,7 +262,7 @@ async function writeState(
   await scoped.execute(
     `update public.code_ui_sessions set state = $2::jsonb, revision = revision + 1, active_run_id = $3, updated_at = now()
       where instance_id = :instance and id = $1 and deleted_at is null`,
-    [root.id, JSON.stringify(state), activeRunId],
+    [root.id, jsonbSafeStringify(state), activeRunId],
   );
   await writeChildSessionIndexes(scoped, root, state);
 }
@@ -420,7 +425,7 @@ export function createCodeUiRepository(
                 root.id,
                 record.intent.clientId,
                 record.intent.sourceCommandId,
-                JSON.stringify(ack),
+                jsonbSafeStringify(ack),
               ],
             );
           }
@@ -458,7 +463,7 @@ export function createCodeUiRepository(
            code_ui_preferences=(instance_settings.code_ui_preferences || excluded.code_ui_preferences) - $2::text[]
          returning instance_id`,
           [
-            JSON.stringify(patch),
+            jsonbSafeStringify(patch),
             options.removeKeys ?? [],
             referencedProjectIds,
           ],
@@ -666,7 +671,7 @@ export function createCodeUiRepository(
             input.command.commandId,
             input.sessionId,
             input.command.fingerprint,
-            JSON.stringify(ack),
+            jsonbSafeStringify(ack),
           ],
         );
         return ack;
@@ -787,7 +792,9 @@ export function createCodeUiRepository(
               root.id,
               settlement.clientId,
               settlement.commandId,
-              JSON.stringify(protocol.commandAckSchema.parse(settlement.ack)),
+              jsonbSafeStringify(
+                protocol.commandAckSchema.parse(settlement.ack),
+              ),
             ],
           );
         await scoped.execute(
@@ -798,7 +805,7 @@ export function createCodeUiRepository(
             envelope.commandId,
             root.id,
             fingerprint,
-            JSON.stringify(ack),
+            jsonbSafeStringify(ack),
           ],
         );
         return ack;
@@ -924,7 +931,7 @@ export function createCodeUiRepository(
           const written = await scoped.execute(
             `update public.code_ui_commands set ack = $3::jsonb, status = 'accepted'
               where instance_id = :instance and client_id = $1 and command_id = $2 and status = 'pending'`,
-            [envelope.clientId, envelope.commandId, JSON.stringify(ack)],
+            [envelope.clientId, envelope.commandId, jsonbSafeStringify(ack)],
           );
           if (written !== 1)
             throw new CodeUiRepositoryError(
@@ -958,7 +965,7 @@ export function createCodeUiRepository(
           await persistence.forInstance(instanceId).execute(
             `update public.code_ui_commands set ack = $3::jsonb, status = 'failed'
             where instance_id = :instance and client_id = $1 and command_id = $2 and status = 'pending'`,
-            [envelope.clientId, envelope.commandId, JSON.stringify(ack)],
+            [envelope.clientId, envelope.commandId, jsonbSafeStringify(ack)],
           );
           return ack;
         }
@@ -1049,7 +1056,9 @@ export function createCodeUiRepository(
               root.id,
               settlement.clientId,
               settlement.commandId,
-              JSON.stringify(protocol.commandAckSchema.parse(settlement.ack)),
+              jsonbSafeStringify(
+                protocol.commandAckSchema.parse(settlement.ack),
+              ),
             ],
           );
         if (decision.childChat) {
@@ -1073,7 +1082,12 @@ export function createCodeUiRepository(
         await scoped.execute(
           `insert into public.code_ui_events (instance_id, root_session_id, seq, event_key, parameter_fingerprint, payload)
            select :instance, $1::uuid, coalesce(max(seq), 0) + 1, $2, $3, $4::jsonb from public.code_ui_events where instance_id = :instance and root_session_id = $1::uuid`,
-          [root.id, input.key, input.fingerprint, JSON.stringify(input.event)],
+          [
+            root.id,
+            input.key,
+            input.fingerprint,
+            jsonbSafeStringify(input.event),
+          ],
         );
         return true;
       });

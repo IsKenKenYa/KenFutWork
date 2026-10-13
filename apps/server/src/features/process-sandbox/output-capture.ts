@@ -1,4 +1,5 @@
 import { closeSync, openSync, readSync, writeSync } from "node:fs";
+import { stripNulCharacters } from "../../utils/text-sanitize.js";
 import type { ProcessOutput, ProcessOutputStream } from "./types.js";
 import { ProcessSandboxError } from "./types.js";
 
@@ -48,7 +49,11 @@ function readDescriptor(
     if (end - start < length) end = start;
   }
   return {
-    data: bytes.subarray(0, end).toString("utf8"),
+    // 命令输出是任意字节：NUL（Windows 上 UTF-16LE 输出被按 UTF-8 解码即每字符后跟一个）
+    // 必须在这里剥掉——它经 JSON.stringify 会变成字面量 `\u0000`，Postgres 的 jsonb
+    // 直接拒绝（unsupported Unicode escape sequence），整轮 run 会被终结。
+    // 字节游标（nextOffset/retainedBytes）仍按原始字节计，不受影响。
+    data: stripNulCharacters(bytes.subarray(0, end).toString("utf8")),
     offset,
     nextOffset: offset + end,
     retainedBytes: stats.retainedBytes,

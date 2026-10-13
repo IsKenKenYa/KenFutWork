@@ -492,6 +492,8 @@ export const TID_WORKSPACE_HEADER = "workspace-header";
 export const TID_WORKSPACE_TITLE = "workspace-title";
 /** 工作区路径 */
 export const TID_WORKSPACE_PATH = "workspace-path";
+/** 会话头锁定工作目录只读 chip（Task 身份不可变） */
+export const TID_WORKSPACE_LOCKED_DIRECTORY = "workspace-locked-directory";
 /** 工作区 Header 更多菜单按钮 */
 export const TID_WORKSPACE_MORE_BUTTON = "workspace-more-button";
 /** 右上角问号帮助菜单触发按钮 */

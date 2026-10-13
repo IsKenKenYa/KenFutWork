@@ -156,6 +156,9 @@ class TaskConnection {
         ...(this.options.runtimeReadRoots
           ? { runtimeReadRoots: this.options.runtimeReadRoots }
           : {}),
+        ...(this.options.runtimePathAdditions
+          ? { runtimePathAdditions: this.options.runtimePathAdditions }
+          : {}),
         ...(this.options.windowsBrokerPath
           ? { windowsBrokerPath: this.options.windowsBrokerPath }
           : {}),

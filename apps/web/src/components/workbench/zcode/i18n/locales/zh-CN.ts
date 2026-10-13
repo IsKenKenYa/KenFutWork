@@ -1386,6 +1386,7 @@ const zhCN: Record<string, string> = {
   "workspaceHeader.help.productRequestDraft": "我想建议：",
   "workspaceHeader.help.community": "用户社群",
   "workspaceHeader.help.docs": "产品文档",
+  "workspaceHeader.lockedDirectory": "工作目录",
   "titleBar.menu.file": "文件",
   "titleBar.menu.view": "视图",
   "titleBar.menu.help": "帮助",

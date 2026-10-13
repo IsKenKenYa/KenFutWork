@@ -41,6 +41,7 @@ import {
   LOCK_FILE_NAME,
   lockEntryFor,
   mergeLockTargets,
+  readPythonPackages,
   readRuntimeLock,
 } from "./runtime-lock.mjs";
 
@@ -546,6 +547,46 @@ async function writeLock(specs) {
   log(`已写 ${relative(ROOT, file)}（本次只覆盖 ${TARGET} 那一节）。`);
 }
 
+/**
+ * 给随包 Python 装 lock 里钉死的附加包（`pythonPackages`）。
+ *
+ * 幂等：已装的版本相同则 pip 直接跳过，所以「python 已存在被跳过」的路径也照样跑，
+ * 不会漏装。清单为空（lock 里没这一节）时什么也不做，与 lock 其余条目的过渡态一致。
+ */
+async function installPythonPackages(lock) {
+  const packages = readPythonPackages(lock);
+  if (packages.length === 0) return;
+  const spec = SPECS[TARGET].python;
+  const python = join(RUNTIME_DIR, "python", spec.probe);
+  if (!existsSync(python)) {
+    throw new Error(
+      `要装附加包但随包 Python 不在位（${python}）：先跑 --only python 拉取，再重跑本次命令。`,
+    );
+  }
+  log(
+    `随包 Python 安装附加包（${packages.length} 项）：${packages.join(", ")}`,
+  );
+  try {
+    execFileSync(
+      python,
+      [
+        "-m",
+        "pip",
+        "install",
+        "--no-input",
+        "--disable-pip-version-check",
+        ...packages,
+      ],
+      { stdio: "inherit" },
+    );
+  } catch (error) {
+    throw new Error(
+      `随包 Python 装附加包失败（${error.message}）：清单在 ${LOCK_FILE_NAME} 的 pythonPackages，改完重跑。`,
+    );
+  }
+  log(`附加包就位：${join(RUNTIME_DIR, "python", "Lib", "site-packages")}`);
+}
+
 async function main() {
   const specs = SPECS[TARGET];
   if (!specs) {
@@ -577,6 +618,7 @@ async function main() {
   for (const [name, spec] of selected) {
     await fetchWithSha({ name, ...spec }, { force, lock });
   }
+  if (only.includes("python")) await installPythonPackages(lock);
   log(`完成（目标 ${TARGET}）。运行时目录：${RUNTIME_DIR}`);
   log(
     "打包时 scripts/package-win.mjs / package-mac.mjs 会把它拷进发布包的 <exeDir>/runtime/。",

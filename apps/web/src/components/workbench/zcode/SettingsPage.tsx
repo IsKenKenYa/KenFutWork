@@ -1924,7 +1924,11 @@ export function SettingsPage({
                             httpProxyCaCertPath={httpProxyCaCertPath}
                             defaultHomeDir={defaultHomeDir}
                             showIntegratedTerminalShell={
-                              hostPlatform === "win32"
+                              // KenFutWork 宿主偏差：宿主未实现 system.listIntegratedTerminalShells
+                              // （终端 shell 切换由终端工具栏菜单承担，走 /api/code/shells），
+                              // 选项为空时不摆这个死下拉。
+                              hostPlatform === "win32" &&
+                              integratedTerminalShellOptions.length > 0
                             }
                             setLocalePreference={handleFooterLocaleChange}
                             setNotificationEnabled={(enabled) =>

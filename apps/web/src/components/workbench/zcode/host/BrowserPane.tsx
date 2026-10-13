@@ -1,9 +1,11 @@
 import { Button } from "@zui/components/ui/button.js";
 import { Input } from "@zui/components/ui/input.js";
 import { toast } from "@zui/components/ui/toast.js";
+import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import {
   ArrowLeft,
   ArrowRight,
+  Crosshair,
   HistoryIcon,
   RotateCw,
   SquareTerminal,
@@ -19,6 +21,8 @@ import { getSurfaceApiBase, surfaceJson } from "./surfaceApi.js";
  * 画面流 GET /api/browser/cdp/stream?ticket=…（票据在 query，img 不带登录头）。
  * 交互按视口 CSS 坐标回填（显示盒线性映射）；键盘走 1px 透明 textarea（输入法合成可达）。
  * 面板内历史栈（跨源 iframe 读不到页面自己的 history）；视口预设是真视口（非缩放伪装）。
+ * Q5 元素拾取：/api/browser/snapshot 取带真实盒模型的元素列表 → 视口叠框点选 →
+ * 坐标引用经 requestComposerTextInsert 填进 composer（草稿态生效，与插件提及同语义）。
  */
 
 interface CdpStatus {
@@ -31,6 +35,24 @@ interface CdpViewport {
   width: number;
   height: number;
   scale: number;
+}
+
+/** 拾取候选元素（服务端 readPickables：DOM.getBoxModel 真实盒模型，视口坐标）。 */
+interface PickableElement {
+  tag: string;
+  text: string;
+  hint: string;
+  box: { x: number; y: number; width: number; height: number } | null;
+}
+
+interface PickSnapshot {
+  snapshot: {
+    url: string;
+    title: string;
+    viewport: { width: number; height: number };
+    elements: PickableElement[];
+  };
+  source: "cdp" | "static";
 }
 
 interface CdpInputEvent {
@@ -108,7 +130,16 @@ function toViewportPoint(
   };
 }
 
-export function BrowserPane({ initialUrl }: { initialUrl?: string }) {
+export function BrowserPane({
+  initialUrl,
+  workspacePath,
+  workspaceIdentity,
+}: {
+  initialUrl?: string;
+  /** 坐标引用填入 composer 所需（与插件提及同一 store 动作，草稿态生效）。 */
+  workspacePath?: string;
+  workspaceIdentity?: string;
+}) {
   const [urlInput, setUrlInput] = useState(initialUrl ?? "");
   const [activeUrl, setActiveUrl] = useState(initialUrl ?? "");
   /** 面板内历史栈（页面跨源，读不到它自己的 history）。 */
@@ -130,6 +161,11 @@ export function BrowserPane({ initialUrl }: { initialUrl?: string }) {
     height: 0,
     scale: 1,
   });
+  /** Q5 拾取态：元素盒（视口坐标）+ 拾取视口尺寸；null=未在拾取。 */
+  const [pick, setPick] = useState<{
+    elements: PickableElement[];
+    viewport: { width: number; height: number };
+  } | null>(null);
 
   const imgRef = useRef<HTMLImageElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -236,6 +272,7 @@ export function BrowserPane({ initialUrl }: { initialUrl?: string }) {
 
   const handleMouseDown = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
+      if (pick) return;
       sinkRef.current?.focus();
       const point = pointFrom(event);
       if (!point) return;
@@ -257,6 +294,7 @@ export function BrowserPane({ initialUrl }: { initialUrl?: string }) {
 
   const handleMouseUp = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
+      if (pick) return;
       const point = pointFrom(event);
       draggingRef.current = false;
       if (!point) return;
@@ -275,6 +313,7 @@ export function BrowserPane({ initialUrl }: { initialUrl?: string }) {
 
   const handleMouseMove = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
+      if (pick) return;
       const now = Date.now();
       if (!draggingRef.current && now - lastHoverRef.current < 120) return;
       lastHoverRef.current = now;
@@ -297,6 +336,7 @@ export function BrowserPane({ initialUrl }: { initialUrl?: string }) {
     const host = viewerRef.current;
     if (!host) return;
     const onWheel = (event: WheelEvent) => {
+      if (pick) return;
       event.preventDefault();
       const point = pointFrom(event);
       if (!point) return;
@@ -311,7 +351,7 @@ export function BrowserPane({ initialUrl }: { initialUrl?: string }) {
     };
     host.addEventListener("wheel", onWheel, { passive: false });
     return () => host.removeEventListener("wheel", onWheel);
-  }, [pointFrom, send]);
+  }, [pick, pointFrom, send]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -379,13 +419,87 @@ export function BrowserPane({ initialUrl }: { initialUrl?: string }) {
   );
 
   const injectConsole = useCallback(async () => {
+    if (!activeUrl) {
+      toast("先打开一个页面再注入调试控制台。");
+      return;
+    }
     try {
-      await surfaceJson("/api/browser/cdp/console", { method: "POST" });
+      await surfaceJson("/api/browser/cdp/console", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: activeUrl }),
+      });
       toast("调试控制台已注入页面");
     } catch (error) {
       toast(error instanceof Error ? error.message : "注入失败。");
     }
-  }, []);
+  }, [activeUrl]);
+
+  /** Q5：进入/退出拾取。进入时拉一次带盒模型的元素快照。 */
+  const togglePicking = useCallback(async () => {
+    if (pick) {
+      setPick(null);
+      return;
+    }
+    if (!activeUrl) {
+      toast("先打开一个页面再拾取元素。");
+      return;
+    }
+    try {
+      const result = await surfaceJson<PickSnapshot>("/api/browser/snapshot", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: activeUrl }),
+      });
+      setPick({
+        elements: result.snapshot.elements,
+        viewport: result.snapshot.viewport,
+      });
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "读取页面元素失败。");
+    }
+  }, [activeUrl, pick]);
+
+  /** Q5：点选元素 → 生成坐标引用 → 填进 composer（草稿态；与插件提及同语义）。 */
+  const insertElementReference = useCallback(
+    (element: PickableElement) => {
+      if (!element.box || !pick) return;
+      const centerX = Math.round(element.box.x + element.box.width / 2);
+      const centerY = Math.round(element.box.y + element.box.height / 2);
+      const label = element.text.trim();
+      const reference = [
+        `【页面元素】<${element.tag}>${label ? ` ${label}` : ""}`,
+        ` ｜ 定位提示：${element.hint.trim() || "无"}`,
+        ` ｜ 中心坐标：${centerX},${centerY}`,
+        ` ｜ 视口：${pick.viewport.width}×${pick.viewport.height}`,
+        ` ｜ 来自：${activeUrl}`,
+      ].join("");
+      if (workspacePath) {
+        useZCodeSessionStore
+          .getState()
+          .requestComposerTextInsert(
+            workspacePath,
+            reference,
+            workspaceIdentity,
+          );
+        toast("元素引用已填入输入框");
+      } else {
+        toast("当前工作区不可用，引用未填入");
+      }
+      setPick(null);
+    },
+    [activeUrl, pick, workspaceIdentity, workspacePath],
+  );
+
+  // 拾取中按 Esc 退出（与「再点一次工具栏按钮」等价）。
+  useEffect(() => {
+    if (!pick) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPick(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [pick]);
 
   const canBack = historyIndex > 0;
   const canForward = historyIndex < history.length - 1;
@@ -448,6 +562,17 @@ export function BrowserPane({ initialUrl }: { initialUrl?: string }) {
         >
           <SquareTerminal className="size-4" />
         </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="拾取元素"
+          aria-pressed={pick !== null}
+          className={pick ? "bg-hover" : undefined}
+          onClick={() => void togglePicking()}
+        >
+          <Crosshair className="size-4" />
+        </Button>
       </div>
       <div className="flex items-center gap-1.5 border-b px-2 py-1 text-xs">
         {VIEWPORT_PRESETS.map((preset) => (
@@ -475,7 +600,7 @@ export function BrowserPane({ initialUrl }: { initialUrl?: string }) {
         ref={viewerRef}
         role="group"
         aria-label="内嵌浏览器画面"
-        className="relative min-h-0 flex-1 overflow-hidden"
+        className={`relative min-h-0 flex-1 overflow-hidden${pick ? " cursor-crosshair" : ""}`}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -510,6 +635,36 @@ export function BrowserPane({ initialUrl }: { initialUrl?: string }) {
             </button>
           </div>
         )}
+        {pick
+          ? pick.elements.map((element, index) =>
+              element.box ? (
+                <button
+                  key={`${element.tag}-${index}`}
+                  type="button"
+                  aria-label={`拾取 ${element.tag}`}
+                  title={element.text || element.hint || element.tag}
+                  className="absolute rounded-sm border border-primary/70 bg-primary/15 hover:border-primary hover:bg-primary/30"
+                  style={{
+                    left: `${(element.box.x / pick.viewport.width) * 100}%`,
+                    top: `${(element.box.y / pick.viewport.height) * 100}%`,
+                    width: `${(element.box.width / pick.viewport.width) * 100}%`,
+                    height: `${(element.box.height / pick.viewport.height) * 100}%`,
+                  }}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onMouseUp={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    insertElementReference(element);
+                  }}
+                />
+              ) : null,
+            )
+          : null}
+        {pick ? (
+          <p className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/80 p-1 text-center text-xs text-foreground-subtle">
+            点选元素填入输入框 · Esc 取消
+          </p>
+        ) : null}
       </div>
       <textarea
         ref={sinkRef}

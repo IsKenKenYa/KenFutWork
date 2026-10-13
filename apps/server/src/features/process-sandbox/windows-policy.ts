@@ -1,6 +1,6 @@
 import { realpath, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { executionEnvironment } from "./environment.js";
+import { executionEnvironment, prependExecutionPath } from "./environment.js";
 import type { ProcessSpawnRequest } from "./types.js";
 import type { NativeLaunch } from "./windows-broker.js";
 import { windowsCommand } from "./windows-broker.js";
@@ -13,6 +13,7 @@ export async function windowsLaunch(input: {
   temporaryDirectory: string;
   brokerPath: string;
   runtimeReadRoots?: readonly string[];
+  runtimePathAdditions?: readonly string[];
   internalWriteRoots?: readonly string[];
 }): Promise<NativeLaunch> {
   const scope = input.request.scope;
@@ -53,6 +54,9 @@ export async function windowsLaunch(input: {
     }
   }
   const env = executionEnvironment(process.env, input.request.env);
+  // 随包运行时 bin 目录前置进 PATH：宿主机没装 python/node 也能按名字跑。
+  // 与下面的 readRoots 成对——只给 readRoots 时命令名解析不到（《未做需求》#12）。
+  prependExecutionPath(env, input.runtimePathAdditions);
   const home = join(input.temporaryDirectory, "home");
   env.HOME ??= home;
   env.USERPROFILE ??= home;
