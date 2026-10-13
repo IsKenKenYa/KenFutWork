@@ -1,10 +1,9 @@
-import { describe, expect, it } from "vitest";
-
 import {
   switchTerminalSessionShell,
   type TerminalPanelState,
   type TerminalSessionDescriptor,
 } from "@zui/terminal/terminalPanelState.js";
+import { describe, expect, it } from "vitest";
 
 /**
  * 换 shell = 换会话（G9/Q17）的状态层回归锁：
@@ -19,7 +18,9 @@ function workspaceOf(state: TerminalPanelState) {
   return workspace;
 }
 
-function session(overrides: Partial<TerminalSessionDescriptor>): TerminalSessionDescriptor {
+function session(
+  overrides: Partial<TerminalSessionDescriptor>,
+): TerminalSessionDescriptor {
   return {
     id: "session",
     workspaceKey: "ws",
@@ -35,10 +36,17 @@ function makePanel(): TerminalPanelState {
   return {
     sessions: {
       "first-id": session({ id: "first-id", index: 1 }),
-      "second-id": session({ id: "second-id", index: 2, shellLabel: "PowerShell" }),
+      "second-id": session({
+        id: "second-id",
+        index: 2,
+        shellLabel: "PowerShell",
+      }),
     },
     workspaces: {
-      ws: { sessionIds: ["first-id", "second-id"], activeSessionId: "second-id" },
+      ws: {
+        sessionIds: ["first-id", "second-id"],
+        activeSessionId: "second-id",
+      },
       other: { sessionIds: ["other-1"], activeSessionId: "other-1" },
     },
   };
@@ -122,7 +130,10 @@ describe("switchTerminalSessionShell（换 shell = 换会话）", () => {
 
     expect(twice.sessions[onceId]).toBeUndefined();
     expect(twice.sessions["second-id"]).toBeUndefined();
-    expect(workspaceOf(twice).sessionIds).toEqual(["first-id", expect.any(String)]);
+    expect(workspaceOf(twice).sessionIds).toEqual([
+      "first-id",
+      expect.any(String),
+    ]);
     expect(
       twice.sessions[workspaceOf(twice).activeSessionId ?? ""]?.shell,
     ).toBe("powershell");

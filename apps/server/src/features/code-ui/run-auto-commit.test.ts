@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   instanceSettingsSchema,
-  providerInstanceResponseSchema,
   zcodeUiProtocol as protocol,
+  providerInstanceResponseSchema,
   type StreamEvent,
 } from "@kenfutwork/shared";
 import { afterEach, expect, it, vi } from "vitest";
@@ -167,9 +167,7 @@ async function fixture(options: { withCodeGit?: boolean } = {}) {
     async queryCommands(_workspace, client, query) {
       return {
         results: query.map((input) => {
-          const value = commands.get(
-            JSON.stringify([client, input.commandId]),
-          );
+          const value = commands.get(JSON.stringify([client, input.commandId]));
           return { key: input, result: value?.ack ?? ("unknown" as const) };
         }),
       };
@@ -230,7 +228,8 @@ async function fixture(options: { withCodeGit?: boolean } = {}) {
 }
 
 it("run 终态事件触发 code-git 自动提交缝，非终态与重复终态不触发", async () => {
-  const { actor, taskId, service, autoCommitRun, scopeHandle } = await fixture();
+  const { actor, taskId, service, autoCommitRun, scopeHandle } =
+    await fixture();
   const runId = randomUUID();
   const sink = await service.admitExternalRun(
     actor,

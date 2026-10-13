@@ -14,6 +14,7 @@ export interface CheckpointRow {
   id: string;
   instanceId: string;
   taskId: string;
+  taskKind: "code" | "design";
   projectId: string;
   rootDirectory: string;
   directorySnapshots: DirectorySnapshot[];
@@ -65,13 +66,14 @@ export interface CheckpointRepository {
 }
 
 const CHECKPOINT_COLUMNS =
-  "id, instance_id, project_id, task_id, root_directory, directory_snapshots, run_id, kind, label, shadow_commit, files_changed, insertions, deletions, created_at";
+  "id, instance_id, project_id, task_id, task_kind, root_directory, directory_snapshots, run_id, kind, label, shadow_commit, files_changed, insertions, deletions, created_at";
 
 // type alias（而非 interface）才能获得隐式索引签名，满足 SqlRow 的泛型约束
 type CheckpointDbRow = {
   id: string;
   instance_id: string;
   task_id: string;
+  task_kind: "code" | "design";
   project_id: string;
   root_directory: string;
   directory_snapshots: DirectorySnapshot[] | string;
@@ -91,6 +93,7 @@ function toDomain(row: CheckpointDbRow): CheckpointRow {
     id: row.id,
     instanceId: row.instance_id,
     taskId: row.task_id,
+    taskKind: row.task_kind,
     projectId: row.project_id,
     rootDirectory: row.root_directory,
     directorySnapshots:
@@ -121,8 +124,8 @@ export function createCheckpointRepository(
       await persistence.forInstance(row.instanceId).execute(
         `insert into public.project_checkpoints
            (id, instance_id, project_id, task_id, root_directory, directory_snapshots, run_id, kind, label, shadow_commit,
-            files_changed, insertions, deletions, created_at)
-         values ($1, :instance, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13)`,
+            files_changed, insertions, deletions, created_at, task_kind)
+         values ($1, :instance, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         [
           row.id,
           row.projectId,
@@ -137,6 +140,7 @@ export function createCheckpointRepository(
           row.insertions,
           row.deletions,
           row.createdAt,
+          row.taskKind,
         ],
       );
     },

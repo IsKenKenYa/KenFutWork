@@ -14,11 +14,58 @@ import { createAgentPersistenceService } from "../../agent/persistence/index.js"
 import { createCodeUiHttpFixture } from "../code-ui/code-ui-http.fixture.js";
 import { createTemporaryPostgres } from "../task-work/test-postgres.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
-import { createHarness } from "./test-harness.js";
+import { createAgentRunRepository } from "./repository.js";
+import { createHarness, prepareHarnessTask } from "./test-harness.js";
 
 const enabled = process.env.RUN_AGENT_PERSISTENCE_INTEGRATION === "1";
 
 describe.skipIf(!enabled)("Harness真实数据库持久化 integration", () => {
+  it("结束原因随主账本保存，重建查询Consumer仍读取实际原因且不泄漏其他实例", async () => {
+    const database = await createTaskWorkDatabase();
+    try {
+      const task = await prepareHarnessTask(database);
+      const metadata = task.metadata();
+      for (const reason of [
+        "completed",
+        "output_limit",
+        "user_cancelled",
+        "task_stopped",
+        "host_shutdown",
+      ] as const) {
+        const runId = randomUUID();
+        await metadata.createAcceptedRun({
+          runId,
+          sessionId: task.scope.taskId,
+          threadId: task.threadId,
+        });
+        await metadata.updateRun({
+          runId,
+          status:
+            reason === "completed" || reason === "output_limit"
+              ? "completed"
+              : "canceled",
+          stopReason: reason,
+          completedAt: new Date().toISOString(),
+        });
+        const fresh = createAgentRunRepository(database.persistence);
+        expect(
+          await fresh.latestForSession({
+            sessionId: task.scope.taskId,
+            instanceId: task.scope.instanceId,
+          }),
+        ).toMatchObject({ stopReason: reason });
+        expect(
+          await fresh.latestForSession({
+            sessionId: task.scope.taskId,
+            instanceId: randomUUID(),
+          }),
+        ).toBeNull();
+      }
+    } finally {
+      await database.close();
+    }
+  }, 90_000);
+
   it("已配置Postgres但初始化失败时Run明确失败，不能以MemorySaver继续执行模型", async () => {
     const database = await createTaskWorkDatabase();
     let f: Awaited<ReturnType<typeof createHarness>> | undefined;

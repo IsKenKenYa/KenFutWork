@@ -7,6 +7,7 @@ import type {
   TaskWorkHostLoss,
   TaskWorkManager,
   TaskWorkOutcome,
+  TaskWorkOwnerKind,
   TaskWorkRecord,
   TaskWorkStore,
 } from "./types.js";
@@ -69,7 +70,11 @@ export function createTaskWorkManager(options: {
   const waking = new Set<string>();
   const queues = new Map<string, Promise<unknown>>();
   const readyListeners = new Set<
-    (identity: { instanceId: string; taskId: string }) => Promise<boolean>
+    (identity: {
+      instanceId: string;
+      taskId: string;
+      ownerKind: TaskWorkOwnerKind;
+    }) => Promise<boolean>
   >();
   const changeListeners = new Set<(record: TaskWorkRecord) => Promise<void>>();
   let closed = false;
@@ -79,10 +84,13 @@ export function createTaskWorkManager(options: {
   const hostLossListeners = new Set<
     (event: TaskWorkHostLoss) => Promise<void>
   >();
-  const keyOf = (instanceId: string, taskId: string) =>
-    JSON.stringify([instanceId, taskId]);
+  const keyOf = (
+    instanceId: string,
+    taskId: string,
+    ownerKind: TaskWorkOwnerKind = "code",
+  ) => JSON.stringify([ownerKind, instanceId, taskId]);
   const keyFor = (context: TaskWorkContext) =>
-    keyOf(context.scope.instanceId, context.scope.taskId);
+    keyOf(context.scope.instanceId, context.scope.taskId, context.ownerKind);
 
   const serial = async <T>(
     key: string,
@@ -137,8 +145,12 @@ export function createTaskWorkManager(options: {
           ...[...live.values()].map((entry) => keyFor(entry.context)),
         ]);
         const tasks = [...taskKeys].map((key) => {
-          const [instanceId, taskId]: [string, string] = JSON.parse(key);
-          return { instanceId, taskId };
+          const [ownerKind, instanceId, taskId]: [
+            TaskWorkOwnerKind,
+            string,
+            string,
+          ] = JSON.parse(key);
+          return { instanceId, taskId, ownerKind };
         });
         for (const listener of hostLossListeners)
           void Promise.resolve()
@@ -198,6 +210,7 @@ export function createTaskWorkManager(options: {
         await store.list(context.scope.instanceId, context.scope.taskId)
       ).some(
         (record) =>
+          (record.ownerKind ?? "code") === (context.ownerKind ?? "code") &&
           record.detached &&
           record.branchGeneration === context.branchGeneration &&
           record.status !== "running" &&
@@ -215,6 +228,7 @@ export function createTaskWorkManager(options: {
           await listener({
             instanceId: context.scope.instanceId,
             taskId: context.scope.taskId,
+            ownerKind: context.ownerKind ?? "code",
           })
         )
           admitted = true;
@@ -359,6 +373,7 @@ export function createTaskWorkManager(options: {
         const record: TaskWorkRecord = {
           id: randomUUID(),
           scope: structuredClone(context.scope),
+          ownerKind: context.ownerKind ?? "code",
           agentId: context.agentId,
           kind: input.kind,
           detached,
@@ -404,7 +419,10 @@ export function createTaskWorkManager(options: {
         context.scope.taskId,
         workId,
       );
-      if (!record)
+      if (
+        !record ||
+        (record.ownerKind ?? "code") !== (context.ownerKind ?? "code")
+      )
         throw new TaskWorkError("work_not_found", "后台工作不属于当前 Task。");
       if (record.status !== "running") return;
       const entry = live.get(workId);
@@ -415,11 +433,11 @@ export function createTaskWorkManager(options: {
         );
       await stopEntry(workId, entry, reason);
     },
-    async closeTask(instanceId, taskId, reason) {
+    async closeTask(instanceId, taskId, reason, ownerKind = "code") {
       await initialize();
-      const key = keyOf(instanceId, taskId);
+      const key = keyOf(instanceId, taskId, ownerKind);
       const closing = await serial(key, async () => {
-        const authority = await store.closeFence(instanceId, taskId);
+        const authority = await store.closeFence(instanceId, taskId, ownerKind);
         // CodeUI beginClose/rewind 已推进 scope/branch；关闭墓碑属于被关闭的旧版本。
         const increment = authority?.state === "revoking" ? 1 : 0;
         const previous = closedTasks.get(key);
@@ -502,17 +520,23 @@ export function createTaskWorkManager(options: {
       const fence = closedTasks.get(keyFor(context));
       return records.filter(
         (record) =>
-          record.detached && (!fence || record.scope.generation > fence.floor),
+          (record.ownerKind ?? "code") === (context.ownerKind ?? "code") &&
+          record.detached &&
+          (!fence || record.scope.generation > fence.floor),
       );
     },
-    async notifyReady(instanceId, taskId) {
+    async notifyReady(instanceId, taskId, ownerKind = "code") {
       const records = await store.list(instanceId, taskId);
       for (const record of records.filter(
         (record) =>
-          record.detached && record.status !== "running" && !record.consumed,
+          (record.ownerKind ?? "code") === ownerKind &&
+          record.detached &&
+          record.status !== "running" &&
+          !record.consumed,
       )) {
         await wake({
           scope: record.scope,
+          ownerKind,
           agentId: record.agentId,
           runId: record.originRunId,
           branchGeneration: record.branchGeneration,

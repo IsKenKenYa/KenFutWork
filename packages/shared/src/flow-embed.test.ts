@@ -3,9 +3,37 @@ import { describe, expect, it } from "vitest";
 import {
   buildFlowHelloAck,
   buildFlowIdentity,
+  isFlowProjectReady,
   parseFlowInbound,
   resolveFlowEntry,
 } from "./flow-host.js";
+
+describe("Flow project-ready binding", () => {
+  it("requires the exact project and supported project-files extension", () => {
+    const ready = {
+      type: "ff-embed/ready" as const,
+      projectId: "project-a",
+      generation: 2,
+      extensions: { projectFiles: "v1" },
+    };
+    expect(isFlowProjectReady(ready, "project-a")).toBe(true);
+    expect(isFlowProjectReady(ready, "project-b")).toBe(false);
+    expect(isFlowProjectReady({ ...ready, extensions: {} }, "project-a")).toBe(
+      false,
+    );
+    for (const generation of [
+      0,
+      -1,
+      1.5,
+      Number.NaN,
+      Number.MAX_SAFE_INTEGER + 1,
+    ]) {
+      expect(isFlowProjectReady({ ...ready, generation }, "project-a")).toBe(
+        false,
+      );
+    }
+  });
+});
 
 /**
  * Flow 模式入口门控 + `ff-embed/v1` 宿主侧消息逻辑的回归锁。

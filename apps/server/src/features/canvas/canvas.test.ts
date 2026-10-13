@@ -1,17 +1,283 @@
-import { describe, expect, it } from "vitest";
-import { BlobError } from "../blob/types.js";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import type { BlobStore } from "../blob/types.js";
 import { createLocalInstanceService } from "../local-instance/service.js";
-import type {
-  LocalActor,
-  LocalInstanceService,
-} from "../local-instance/types.js";
-import { SqlError } from "../persistence/errors.js";
+import type { LocalActor } from "../local-instance/types.js";
 import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
 } from "../persistence/providers/postgres.js";
-import { CanvasServiceError, createCanvasService } from "./canvas-service.js";
-import { type CanvasRepository, createCanvasRepository } from "./repository.js";
+import type {
+  ProjectFileReceipt,
+  ProjectFileService,
+} from "../project-files/types.js";
+import { ProjectFileError } from "../project-files/types.js";
+import type { ProjectService } from "../projects/project-service.js";
+import type { ProjectDetailRow } from "../projects/repository.js";
+import { createCanvasAssetLocations } from "./asset-locations.js";
+import { createCanvasService } from "./canvas-service.js";
+import { createCanvasFileStore } from "./file-store.js";
+
+it("素材处理期间Task撤权，原子发布拒绝旧布局并保留原版本", async () => {
+  const f = await fileService();
+  const before = await f.service.getCanvas(ACTOR, CANVAS_ID);
+  let revoked = false;
+  const prepare = f.projectFiles.prepareWrite.bind(f.projectFiles);
+  f.projectFiles.prepareWrite = async (...args) => {
+    const receipt = await prepare(...args);
+    revoked = true;
+    return receipt;
+  };
+  await expect(
+    f.service.saveCanvasContent(
+      ACTOR,
+      CANVAS_ID,
+      {
+        elements: [{ id: "late-layout" }],
+        appState: {},
+        files: { image: { dataURL: "data:image/png;base64,YQ==" } },
+      },
+      before.revision,
+      async () => {
+        if (revoked) throw new Error("Task权限已撤销");
+      },
+    ),
+  ).rejects.toThrow("权限已撤销");
+  const after = await f.service.getCanvas(ACTOR, CANVAS_ID);
+  expect(after.revision).toBe(before.revision);
+  expect(after.content.elements).toEqual(before.content.elements);
+});
+it.each(["moved", "version", "missing"] as const)(
+  "Git恢复image/video布局后%s索引不能改写权威引用，显式恢复后才提供URL",
+  async (state) => {
+    const f = await fileService();
+    const initial = await f.service.getCanvas(ACTOR, CANVAS_ID);
+    const image = randomUUID(),
+      video = randomUUID();
+    const bytes = Buffer.from("old-Git-material");
+    const version = createHash("sha256").update(bytes).digest("hex");
+    const newer = createHash("sha256").update("new-material").digest("hex");
+    for (const name of ["old-image.png", "old-video.mp4"])
+      await writeFile(join(f.root, name), bytes);
+    for (const name of ["new-image.png", "new-video.mp4"])
+      await writeFile(join(f.root, name), "new-material");
+    const refs = new Map<string, { path: string; mime: string }>([
+      [image, { path: "old-image.png", mime: "image/png" }],
+      [video, { path: "old-video.mp4", mime: "video/mp4" }],
+    ]);
+    let restored = false;
+    f.projectFiles.describe = async (_actor, assetId) => {
+      const ref = refs.get(assetId)!;
+      if (!restored && state === "missing")
+        throw new ProjectFileError("file_missing", "素材缺失");
+      return {
+        assetId,
+        bucket: "project-assets",
+        objectPath: `${INSTANCE_ID}/project-files/${assetId}`,
+        relativePath:
+          !restored && state === "moved"
+            ? ref.path.replace("old-", "new-")
+            : ref.path,
+        version: restored ? version : newer,
+      };
+    };
+    const marker = (assetId: string) =>
+      `oss://project-assets/${INSTANCE_ID}/project-files/${assetId}`;
+    const content = {
+      elements: [
+        { id: "image", type: "image", fileId: "image" },
+        {
+          id: "video",
+          link: marker(video),
+          customData: {
+            isVideo: true,
+            assetId: video,
+            relativePath: "old-video.mp4",
+            version,
+          },
+        },
+      ],
+      appState: {},
+      files: {
+        image: {
+          assetId: image,
+          relativePath: "old-image.png",
+          version,
+          mimeType: "image/png",
+          storageRef: marker(image),
+          dataURL: marker(image),
+        },
+      },
+    };
+    const store = createCanvasFileStore({ projectRoot: f.root });
+    const saved = await store.save(CANVAS_ID, content, initial.revision);
+    const path = join(f.root, ".kenfutwork", "canvases", `${CANVAS_ID}.json`);
+    const before = await readFile(path);
+    const view = await f.service.getCanvas(ACTOR, CANVAS_ID);
+    expect(view.revision).toBe(saved.revision);
+    expect(await readFile(path)).toEqual(before);
+    expect(view.content.files.image).toMatchObject({
+      relativePath: "old-image.png",
+      version,
+      assetError: "请恢复素材索引",
+    });
+    expect(view.content.files.image?.storageUrl).toBeUndefined();
+    expect(view.content.elements[1]).toMatchObject({
+      link: null,
+      customData: {
+        relativePath: "old-video.mp4",
+        version,
+        assetError: "请恢复素材索引",
+      },
+    });
+    expect(await f.service.readCanvasContent(ACTOR, CANVAS_ID)).toEqual(
+      content,
+    );
+    await expect(
+      f.service.saveCanvasContent(ACTOR, CANVAS_ID, content, saved.revision),
+    ).rejects.toThrow(state === "missing" ? "素材缺失" : "恢复素材索引");
+    expect(await readFile(path)).toEqual(before);
+    f.projectFiles.restoreIndex = async (
+      _actor,
+      _project,
+      references,
+      beforePublish,
+    ) => {
+      expect(references).toEqual([
+        { assetId: image, relativePath: "old-image.png", version },
+        { assetId: video, relativePath: "old-video.mp4", version },
+      ]);
+      for (const ref of references)
+        expect(
+          createHash("sha256")
+            .update(await readFile(join(f.root, ref.relativePath)))
+            .digest("hex"),
+        ).toBe(ref.version);
+      await beforePublish();
+      restored = true;
+      return Promise.all(
+        references.map(async (ref) => ({
+          ...(await f.projectFiles.describe(ACTOR, ref.assetId)),
+          projectId: "project",
+          taskId: null,
+          version,
+        })),
+      );
+    };
+    const assets = createCanvasAssetLocations({
+      canvases: {
+        findById: async () => f.row(),
+        claimRoot: async () => f.root,
+      },
+      localInstance: {
+        resolve: async () => ({ instanceId: INSTANCE_ID, dataDir: f.root }),
+      },
+      projects: { getProject: async () => ({ work_dir: f.root }) },
+      projectFiles: f.projectFiles,
+    } as unknown as Parameters<typeof createCanvasAssetLocations>[0]);
+    await assets.restoreReferences(ACTOR, CANVAS_ID, saved.revision);
+    const recovered = await f.service.getCanvas(ACTOR, CANVAS_ID);
+    expect(recovered.content.files.image?.storageUrl).toContain(image);
+    expect(recovered.content.files.image?.relativePath).toBe("old-image.png");
+    expect(recovered.content.elements[1]?.link).toBe(marker(video));
+    expect(recovered.revision).toBe(saved.revision);
+    expect(await readFile(path)).toEqual(before);
+  },
+);
+
+it("登记视频保存稳定位置与版本，跨项目视频拒绝插入", async () => {
+  const f = await fileService();
+  const assetId = randomUUID();
+  let projectId = "project";
+  let relativePath = "clips/video.mp4";
+  f.projectFiles.inspect = async () => ({
+    assetId,
+    projectId,
+    taskId: null,
+    bucket: "project-assets",
+    objectPath: `${INSTANCE_ID}/project-files/${assetId}`,
+    relativePath,
+    version: "original-sha",
+  });
+  f.projectFiles.describe = f.projectFiles.inspect;
+  const request = {
+    canvasId: CANVAS_ID,
+    assetId,
+    signedUrl: "https://wrong.test/video.mp4",
+    width: 640,
+    height: 360,
+    mimeType: "video/mp4",
+  };
+  await f.service.insertVideoElement(ACTOR, request);
+  const saved = await f.service.readCanvasContent(ACTOR, CANVAS_ID);
+  expect(saved.elements[0]?.customData).toMatchObject({
+    assetId,
+    relativePath: "clips/video.mp4",
+    version: "original-sha",
+  });
+  expect(saved.elements[0]?.link).toBe(
+    `https://assets.test/${INSTANCE_ID}/project-files/${assetId}`,
+  );
+  relativePath = "renamed/video.mp4";
+  const moved = await f.service.getCanvas(ACTOR, CANVAS_ID);
+  expect(moved.content.elements[0]?.customData).toMatchObject({
+    relativePath: "clips/video.mp4",
+    version: "original-sha",
+    assetError: "请恢复素材索引",
+  });
+  expect(moved.content.elements[0]?.link).toBeNull();
+  const stored = await f.service.readCanvasContent(ACTOR, CANVAS_ID);
+  expect(stored.elements[0]?.customData).toMatchObject({
+    relativePath: "clips/video.mp4",
+  });
+  projectId = "other-project";
+  await expect(f.service.insertVideoElement(ACTOR, request)).rejects.toThrow(
+    "不属于",
+  );
+  expect(
+    (await f.service.readCanvasContent(ACTOR, CANVAS_ID)).elements,
+  ).toHaveLength(1);
+  expect(f.uploads).toHaveLength(0);
+});
+
+it("外部移走登记图片后仍可打开布局，保存拒绝缺失引用且不重建或删除文件", async () => {
+  const f = await fileService();
+  const initial = await f.service.getCanvas(ACTOR, CANVAS_ID);
+  await f.service.saveCanvasContent(
+    ACTOR,
+    CANVAS_ID,
+    {
+      elements: [{ id: "image", type: "image", fileId: "image" }],
+      appState: {},
+      files: { image: { dataURL: "data:image/png;base64,YQ==" } },
+    },
+    initial.revision,
+  );
+  const before = await f.service.readCanvasContent(ACTOR, CANVAS_ID);
+  f.projectFiles.describe = async () => {
+    throw new ProjectFileError("file_missing", "素材缺失，请重新关联");
+  };
+  const view = await f.service.getCanvas(ACTOR, CANVAS_ID);
+  expect(view.content.elements).toEqual(before.elements);
+  expect(view.content.files.image?.assetId).toBe(before.files.image?.assetId);
+  const writes = f.writes.length;
+  await expect(
+    f.service.saveCanvasContent(ACTOR, CANVAS_ID, before, view.revision),
+  ).rejects.toThrow("素材缺失");
+  expect(f.writes).toHaveLength(writes);
+  expect((await f.service.getCanvas(ACTOR, CANVAS_ID)).revision).toBe(
+    view.revision,
+  );
+});
+
+import {
+  type CanvasRepository,
+  type CanvasRow,
+  createCanvasRepository,
+} from "./repository.js";
 
 const CLIENT_ID = "client-1";
 const INSTANCE_ID = "instance-1";
@@ -64,67 +330,6 @@ function createRunner(
   };
 }
 
-const LOCAL_INSTANCE = createLocalInstanceService({
-  repository: { ensure: async () => INSTANCE_ID },
-  dataDir: "/tmp/canvas-instance-test",
-});
-
-/** 未知值的对象收窄：repository 的 content 参数与 elements 元素都是 unknown。 */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** 从 saveContent 收到的内容里取 files 表（取不到时返回空表，断言照常失败）。 */
-function filesOf(content: unknown): Record<string, unknown> {
-  const files = isRecord(content) ? content.files : undefined;
-  return isRecord(files) ? files : {};
-}
-
-function createStorageStub(
-  options: {
-    downloadBytes?: Buffer | null;
-    uploadError?: { message: string };
-  } = {},
-) {
-  const calls: string[] = [];
-
-  // blob 缝替身：不是 Provider 细节的复刻，只记录调用并提供夹具数据
-  const blob = {
-    bucket: (bucket: string) => ({
-      upload: async (path: string) => {
-        calls.push(`upload:${bucket}:${path}`);
-        if (options.uploadError) {
-          throw new BlobError(
-            "upload",
-            bucket,
-            path,
-            options.uploadError.message,
-          );
-        }
-      },
-      download: async (path: string) => {
-        calls.push(`download:${bucket}:${path}`);
-        // 注意用 === undefined 判定：null 是「下载失败」的显式夹具。
-        const bytes =
-          options.downloadBytes === undefined
-            ? Buffer.from("png-bytes")
-            : options.downloadBytes;
-        if (bytes === null) {
-          throw new BlobError("download", bucket, path, "not found");
-        }
-        return new Uint8Array(bytes);
-      },
-      isPublic: async () => true,
-      resolveUrl: async (path: string) => {
-        calls.push(`resolveUrl:${bucket}:${path}`);
-        return `https://blob.test/${bucket}/${path}`;
-      },
-    }),
-  };
-
-  return { calls, blob: blob as never };
-}
-
 const CANVAS_ROW = {
   id: CANVAS_ID,
   name: "Main Canvas",
@@ -153,14 +358,11 @@ describe("canvas repository（canvases 无 instance_id 列 → JOIN projects）"
 
   it("写入画布同样带父链谓词，jsonb 显式序列化", async () => {
     const { calls, runner } = createRunner(() => ({ rowCount: 1, rows: [] }));
-    const content = { appState: {}, elements: [{ id: "el-1", type: "image" }] };
 
     await expect(
-      createCanvasRepository(createPersistenceFromRunner(runner)).saveContent(
-        INSTANCE_ID,
-        CANVAS_ID,
-        content,
-      ),
+      createCanvasRepository(
+        createPersistenceFromRunner(runner),
+      ).recordFileIndex(INSTANCE_ID, CANVAS_ID),
     ).resolves.toBe(1);
 
     const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
@@ -169,7 +371,10 @@ describe("canvas repository（canvases 无 instance_id 列 → JOIN projects）"
     expect(sql).toContain("and p.instance_id = $3");
     expect(calls[0]?.values).toEqual([
       CANVAS_ID,
-      JSON.stringify(content),
+      JSON.stringify({
+        storage: "project-files",
+        path: `.kenfutwork/canvases/${CANVAS_ID}.json`,
+      }),
       INSTANCE_ID,
     ]);
   });
@@ -200,369 +405,488 @@ describe("canvas repository（canvases 无 instance_id 列 → JOIN projects）"
   it("0 行受影响即未命中（不属本实例或不存在）", async () => {
     const { runner } = createRunner();
     await expect(
-      createCanvasRepository(createPersistenceFromRunner(runner)).saveContent(
-        INSTANCE_ID,
-        CANVAS_ID,
-        { elements: [] },
-      ),
+      createCanvasRepository(
+        createPersistenceFromRunner(runner),
+      ).recordFileIndex(INSTANCE_ID, CANVAS_ID),
     ).resolves.toBe(0);
   });
 });
 
-function createFakeRepository(
-  overrides: Partial<CanvasRepository> = {},
-): CanvasRepository {
-  return {
-    findById: async () => CANVAS_ROW,
-    findProjectBrandKitId: async () => null,
-    saveContent: async () => 1,
-    appendContent: async () => 1,
-    ...overrides,
-  };
-}
-
-function buildService(options: {
-  repository?: Partial<CanvasRepository>;
-  storage?: ReturnType<typeof createStorageStub>;
-  localInstance?: LocalInstanceService;
-}) {
-  const storage = options.storage ?? createStorageStub();
-  return {
-    service: createCanvasService({
-      blob: storage.blob,
-      repository: createFakeRepository(options.repository),
-      localInstance: options.localInstance ?? LOCAL_INSTANCE,
-    }),
-    storage,
-  };
-}
-
-describe("canvas service", () => {
-  it("读画布返回契约形状，并把 oss:// 标记解析成存储 URL", async () => {
-    const { service, storage } = buildService({
-      repository: {
-        findById: async () => ({
-          ...CANVAS_ROW,
-          content: {
-            appState: {},
-            elements: [],
-            files: {
-              "f-inline": {
-                id: "f-inline",
-                dataURL: "data:image/png;base64,AA",
-              },
-              "f-oss": {
-                id: "f-oss",
-                dataURL: "oss://project-assets/canvas-files/c1/f-oss.png",
-              },
-            },
-          },
-        }),
-      },
-    });
-
-    const detail = await service.getCanvas(ACTOR, CANVAS_ID);
-
-    expect(detail.id).toBe(CANVAS_ID);
-    expect(detail.projectId).toBe("project-1");
-    const files = detail.content.files;
-    expect(files["f-inline"]?.dataURL).toBe("data:image/png;base64,AA");
-    expect(files["f-oss"]?.storageUrl).toBe(
-      "https://blob.test/project-assets/canvas-files/c1/f-oss.png",
-    );
-    expect(files["f-oss"]?.dataURL).toBeUndefined();
-    // 走 blob 缝的 resolveUrl（公开性由存储侧回答），不再自己判公开桶
-    expect(
-      storage.calls.some((call) =>
-        call.startsWith("resolveUrl:project-assets:canvas-files/c1/f-oss.png"),
-      ),
-    ).toBe(true);
-  });
-
-  it("画布不存在（或不属本实例）返回 404", async () => {
-    const { service } = buildService({
-      repository: { findById: async () => null },
-    });
-    await expect(service.getCanvas(ACTOR, CANVAS_ID)).rejects.toMatchObject({
-      code: "canvas_not_found",
-      statusCode: 404,
-    });
-  });
-
-  it("保存时把 base64 文件抽到对象存储并写回 oss:// 标记", async () => {
-    let writtenContent: unknown;
-    const { service, storage } = buildService({
-      repository: {
-        saveContent: async (_instanceId, _canvasId, content) => {
-          writtenContent = content;
-          return 1;
-        },
-      },
-    });
-
-    await service.saveCanvasContent(ACTOR, CANVAS_ID, {
-      appState: {},
-      elements: [],
-      files: {
-        "f-1": { id: "f-1", dataURL: "data:image/webp;base64,AAAA" },
-      },
-    } as never);
-
-    expect(
-      storage.calls.some((call) =>
-        call.startsWith("upload:project-assets:canvas-files/"),
-      ),
-    ).toBe(true);
-    expect(filesOf(writtenContent)["f-1"]).toMatchObject({
-      dataURL: "oss://project-assets/canvas-files/canvas-1/f-1.webp",
-    });
-  });
-
-  it("上传失败时保留原始 base64（优雅降级，不阻断保存）", async () => {
-    let writtenContent: unknown;
-    const { service } = buildService({
-      repository: {
-        saveContent: async (_instanceId, _canvasId, content) => {
-          writtenContent = content;
-          return 1;
-        },
-      },
-      storage: createStorageStub({
-        uploadError: { message: "quota exceeded" },
-      }),
-    });
-
-    await service.saveCanvasContent(ACTOR, CANVAS_ID, {
-      appState: {},
-      elements: [],
-      files: { "f-1": { id: "f-1", dataURL: "data:image/png;base64,AAAA" } },
-    } as never);
-
-    expect(filesOf(writtenContent)["f-1"]).toMatchObject({
-      dataURL: "data:image/png;base64,AAAA",
-    });
-  });
-
-  it("保存未命中（0 行）返回 404；仓库异常返回 500 canvas_save_failed", async () => {
-    const notFound = buildService({
-      repository: { saveContent: async () => 0 },
-    });
-    await expect(
-      notFound.service.saveCanvasContent(ACTOR, CANVAS_ID, {
-        appState: {},
-        elements: [],
-      } as never),
-    ).rejects.toMatchObject({ code: "canvas_not_found", statusCode: 404 });
-
-    const failing = buildService({
-      repository: {
-        saveContent: async () => {
-          throw new SqlError("connection reset", { code: "08006" });
-        },
-      },
-    });
-    const error = await failing.service
-      .saveCanvasContent(ACTOR, CANVAS_ID, {
-        appState: {},
-        elements: [],
-      } as never)
-      .catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(CanvasServiceError);
-    expect(error).toMatchObject({
-      code: "canvas_save_failed",
-      statusCode: 500,
-    });
-  });
-
-  it("实例解析失败时不落到画布数据访问（fail loud）", async () => {
-    let reads = 0;
-    const { service } = buildService({
-      repository: {
-        findById: async () => {
-          reads += 1;
-          return CANVAS_ROW;
-        },
-      },
-      localInstance: {
-        ...LOCAL_INSTANCE,
-        resolve: async () => {
-          throw new Error("本地实例暂不可用");
-        },
-      },
-    });
-
-    await expect(service.getCanvas(ACTOR, CANVAS_ID)).rejects.toThrow(
-      "本地实例暂不可用",
-    );
-    expect(reads).toBe(0);
-  });
-
-  it("插入图片元素：下载对象→内联 dataURL→**原子追加**元素与 files 条目", async () => {
-    let appended: Parameters<CanvasRepository["appendContent"]>[2] | undefined;
-    const { service, storage } = buildService({
-      repository: {
-        findById: async () => ({
-          ...CANVAS_ROW,
-          content: {
-            appState: {},
-            elements: [{ id: "el-old", x: 0, width: 10 }],
-          },
-        }),
-        appendContent: async (_instanceId, _canvasId, input) => {
-          appended = input;
-          return 1;
-        },
-      },
-      storage: createStorageStub({ downloadBytes: Buffer.from("img") }),
-    });
-
-    const { elementId } = await service.insertImageElement(ACTOR, {
-      canvasId: CANVAS_ID,
-      mimeType: "image/png",
-      objectPath: "gen/shot.png",
-      height: 512,
-      width: 512,
-      title: "生成图",
-    });
-
-    expect(storage.calls[0]).toBe("download:project-assets:gen/shot.png");
-    if (!appended) {
-      throw new Error("未记录到 appendContent 调用");
-    }
-    // 只追加新元素（不是整份元素表）——覆盖写会在并发落图时丢元素
-    expect(appended.elements).toHaveLength(1);
-    const element = appended.elements[0];
-    if (!isRecord(element)) {
-      throw new Error("追加的元素不是对象");
-    }
-    expect(element).toMatchObject({ type: "image", id: elementId, angle: 0 });
-    expect(element.customData).toEqual({
-      title: "生成图",
-      source: "generated",
-    });
-    const { fileId } = element;
-    if (typeof fileId !== "string") {
-      throw new Error("追加的元素未带 fileId");
-    }
-    // 图片以 base64 内联进 files，Excalidraw 才能原生渲染
-    expect(appended.files?.[fileId]).toMatchObject({
-      dataURL: `data:image/png;base64,${Buffer.from("img").toString("base64")}`,
-    });
-    // 新元素排在原有元素右侧（读回的元素表参与落点计算）
-    expect(element.x).toBeGreaterThan(0);
-  });
-
-  it("插入图片：对象下载失败即中止，不写画布", async () => {
-    let writes = 0;
-    const { service } = buildService({
-      repository: {
-        appendContent: async () => {
-          writes += 1;
-          return 1;
-        },
-      },
-      storage: createStorageStub({ downloadBytes: null }),
-    });
-
-    await expect(
-      service.insertImageElement(ACTOR, {
-        canvasId: CANVAS_ID,
-        mimeType: "image/png",
-        objectPath: "gen/missing.png",
-        height: 10,
-        width: 10,
-      }),
-    ).rejects.toThrow(/Failed to download image from storage/);
-    expect(writes).toBe(0);
-  });
-
-  it("插入视频元素：embeddable 类型 + link 指向签名 URL，无 files 条目", async () => {
-    let written: Parameters<CanvasRepository["appendContent"]>[2] | undefined;
-    const { service } = buildService({
-      repository: {
-        findById: async () => CANVAS_ROW,
-        appendContent: async (_instanceId, _canvasId, input) => {
-          written = input;
-          return 1;
-        },
-      },
-    });
-
-    const { elementId } = await service.insertVideoElement(ACTOR, {
-      canvasId: CANVAS_ID,
-      mimeType: "video/mp4",
-      signedUrl: "https://blob.test/v.mp4",
-      durationSeconds: 5,
-      height: 720,
-      width: 1280,
-      prompt: "海浪",
-    });
-
-    if (!written) {
-      throw new Error("未记录到 appendContent 调用");
-    }
-    expect(written.elements).toHaveLength(1);
-    const element = written.elements[0];
-    if (!isRecord(element)) {
-      throw new Error("追加的元素不是对象");
-    }
-    expect(element).toMatchObject({
-      type: "embeddable",
-      id: elementId,
-      link: "https://blob.test/v.mp4",
-    });
-    expect(element.customData).toMatchObject({
-      isVideo: true,
-      mimeType: "video/mp4",
-      durationSeconds: 5,
-      prompt: "海浪",
-    });
-    expect(written.files).toBeUndefined();
-  });
-
-  it("插入元素时写入未命中（0 行）抛错，不再静默成功", async () => {
-    const { service } = buildService({
-      repository: { appendContent: async () => 0 },
-    });
-
-    await expect(
-      service.insertVideoElement(ACTOR, {
-        canvasId: CANVAS_ID,
-        mimeType: "video/mp4",
-        signedUrl: "https://blob.test/v.mp4",
-        height: 10,
-        width: 10,
-      }),
-    ).rejects.toThrow(/Failed to append to canvas/);
-  });
+const roots: string[] = [];
+afterEach(async () => {
+  await Promise.all(
+    roots.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+  );
 });
-
-it("画布服务的实例 Actor 在内容读取和写入前复验", async () => {
-  let reads = 0;
-  let writes = 0;
-  const { service } = buildService({
-    repository: {
-      findById: async () => {
-        reads += 1;
-        return CANVAS_ROW;
+async function fileService(options: { uploadFails?: boolean } = {}) {
+  const root = await mkdtemp(join(tmpdir(), "canvas-service-"));
+  roots.push(root);
+  let row: CanvasRow | null = {
+    id: CANVAS_ID,
+    name: "画布",
+    project_id: "project",
+    content: { elements: [], appState: {}, files: {} },
+  };
+  let active = true;
+  const uploads: string[] = [];
+  const downloads: string[] = [];
+  const sourceBytes = new Map<string, Uint8Array>([
+    ["existing.png", Buffer.from("legacy-image")],
+    ["generated.png", Buffer.from("generated-image")],
+  ]);
+  const prepared = new Map<string, string>();
+  const assetReceipts = new Map<string, ProjectFileReceipt>();
+  const descriptions: string[] = [];
+  const reads: string[] = [];
+  const projectFileBytes = new Map<string, Uint8Array>();
+  const writes: Array<{
+    assetId: string;
+    relativePath: string;
+    writeFingerprint: string;
+    projectId: string;
+  }> = [];
+  const instance = createLocalInstanceService({
+    repository: { ensure: async () => INSTANCE_ID },
+    dataDir: root,
+  });
+  const repository: CanvasRepository = {
+    claimRoot: async () => root,
+    findById: async (id) => (id === INSTANCE_ID ? structuredClone(row) : null),
+    findProjectBrandKitId: async () => null,
+    recordFileIndex: async () => {
+      if (!row || !active) return 0;
+      row.content = {
+        storage: "project-files",
+        path: `.kenfutwork/canvases/${CANVAS_ID}.json`,
+      };
+      return 1;
+    },
+  };
+  const blob = {
+    bucket: () => ({
+      upload: async (path: string, body: Uint8Array) => {
+        uploads.push(path);
+        if (options.uploadFails) throw new Error("素材上传失败");
+        const assetId = prepared.get(path);
+        if (assetId) projectFileBytes.set(assetId, Buffer.from(body));
       },
-      saveContent: async () => {
-        writes += 1;
-        return 1;
+      resolveUrl: async (path: string) => `https://assets.test/${path}`,
+      download: async (path: string) => {
+        downloads.push(path);
+        const bytes = sourceBytes.get(path);
+        if (!bytes) throw new Error(`素材不存在: ${path}`);
+        return Buffer.from(bytes);
+      },
+    }),
+  } as unknown as BlobStore;
+  const projects = {
+    getProject: async (
+      _actor: LocalActor,
+      projectId: string,
+    ): Promise<ProjectDetailRow> => {
+      if (!active) throw new Error("项目已归档");
+      return {
+        id: projectId,
+        kind: "design",
+        name: "测试项目",
+        slug: "test-project",
+        description: null,
+        instance_id: INSTANCE_ID,
+        brand_kit_id: null,
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z",
+        work_dir: root,
+        additional_directories: [],
+      };
+    },
+  } satisfies Pick<ProjectService, "getProject">;
+  const projectFiles: ProjectFileService = {
+    async describe(_actor, assetId) {
+      descriptions.push(assetId);
+      const receipt = assetReceipts.get(assetId);
+      if (!receipt) throw new Error(`项目素材不存在: ${assetId}`);
+      return receipt;
+    },
+    async prepareWrite(_actor, input) {
+      if (input.target.kind !== "canvas" || input.target.canvasId !== CANVAS_ID)
+        throw new Error("画布素材必须绑定父项目");
+      writes.push({
+        assetId: input.assetId,
+        relativePath: input.relativePath,
+        writeFingerprint: input.writeFingerprint,
+        projectId: input.target.projectId,
+      });
+      const objectPath = `${INSTANCE_ID}/project-files/${input.assetId}`;
+      prepared.set(objectPath, input.assetId);
+      const receipt: ProjectFileReceipt = {
+        assetId: input.assetId,
+        bucket: "project-assets",
+        objectPath,
+        relativePath: input.relativePath,
+      };
+      assetReceipts.set(input.assetId, receipt);
+      return receipt;
+    },
+    async publish() {
+      throw new Error("画布测试不发布项目素材");
+    },
+    async read(_actor, assetId) {
+      reads.push(assetId);
+      const bytes = projectFileBytes.get(assetId);
+      if (!bytes) throw new Error(`项目素材不存在: ${assetId}`);
+      return Buffer.from(bytes);
+    },
+    async move() {
+      throw new Error("画布测试不移动项目素材");
+    },
+    async remove() {
+      throw new Error("画布测试不删除项目素材");
+    },
+    async inspect() {
+      throw new Error("日常画布保存不重读素材哈希");
+    },
+    async relink() {
+      throw new Error("画布保存不重关联素材");
+    },
+    async restoreIndex() {
+      throw new Error("画布保存不恢复素材索引");
+    },
+    namespaceProvider: {
+      upload: async () => {},
+      download: async () => new Uint8Array(),
+      copy: async () => {},
+      remove: async () => {},
+    },
+  };
+  const service = createCanvasService({
+    blob,
+    repository,
+    localInstance: instance,
+    projects,
+    projectFiles,
+  });
+  return {
+    root,
+    service,
+    projectFiles,
+    uploads,
+    downloads,
+    writes,
+    descriptions,
+    reads,
+    seedProjectFile: (assetId: string, relativePath: string) => {
+      assetReceipts.set(assetId, {
+        assetId,
+        bucket: "project-assets",
+        objectPath: `${INSTANCE_ID}/project-files/${assetId}`,
+        relativePath,
+      });
+    },
+    row: () => row,
+    remove: () => {
+      row = null;
+    },
+    archive: () => {
+      active = false;
+    },
+    hasSource: (path: string) => sourceBytes.has(path),
+  };
+}
+
+it("显式读取首次导入旧内容，DB仅索引，GET返回文件revision与轻量素材引用", async () => {
+  const f = await fileService();
+  f.row()!.content = {
+    elements: [],
+    appState: { theme: "dark" },
+    files: {
+      image: {
+        dataURL: "oss://project-assets/existing.png",
+        mimeType: "image/png",
+      },
+    },
+  };
+  const detail = await f.service.getCanvas(ACTOR, CANVAS_ID);
+  expect(detail.revision).toMatch(/^[a-f0-9]{64}$/u);
+  expect(detail.content.files.image).toMatchObject({
+    relativePath: expect.stringMatching(/^canvas-[a-f0-9-]{36}\.png$/u),
+    storageRef: expect.stringMatching(
+      /^oss:\/\/project-assets\/instance-1\/project-files\/[a-f0-9-]{36}$/u,
+    ),
+  });
+  expect(detail.content.files.image).toHaveProperty("assetId");
+  expect(detail.content.files.image?.storageUrl).toContain(
+    "/instance-1/project-files/",
+  );
+  expect(f.writes).toHaveLength(1);
+  expect(f.writes[0]?.projectId).toBe("project");
+  expect(f.writes[0]?.writeFingerprint).toBe(
+    createHash("sha256").update("legacy-image").digest("hex"),
+  );
+  expect(f.hasSource("existing.png")).toBe(true);
+  const lean = await f.service.readCanvasContent(ACTOR, CANVAS_ID);
+  expect(lean.files.image).toMatchObject({
+    assetId: expect.any(String),
+    relativePath: expect.stringMatching(/^canvas-[a-f0-9-]{36}\.png$/u),
+    storageRef: expect.stringMatching(
+      /^oss:\/\/project-assets\/instance-1\/project-files\//u,
+    ),
+  });
+  expect(f.row()!.content).toEqual({
+    storage: "project-files",
+    path: `.kenfutwork/canvases/${CANVAS_ID}.json`,
+  });
+  expect(
+    JSON.parse(
+      await readFile(
+        join(f.root, ".kenfutwork", "canvases", `${CANVAS_ID}.json`),
+        "utf8",
+      ),
+    ),
+  ).toMatchObject({
+    appState: { theme: "dark" },
+    files: {
+      image: {
+        storageRef: expect.stringMatching(
+          /^oss:\/\/project-assets\/instance-1\/project-files\//u,
+        ),
       },
     },
   });
-  const actor = { instanceId: "foreign", accessClientId: ACTOR.accessClientId };
-  await expect(service.getCanvas(actor, CANVAS_ID)).rejects.toMatchObject({
-    code: "instance_forbidden",
-    statusCode: 403,
+});
+it("生成的project-files namespace引用直连索引，不下载或复制素材", async () => {
+  const f = await fileService();
+  const assetId = randomUUID();
+  const relativePath = "media/已登记.png";
+  f.seedProjectFile(assetId, relativePath);
+  await f.service.getCanvas(ACTOR, CANVAS_ID);
+
+  await f.service.insertImageElement(ACTOR, {
+    canvasId: CANVAS_ID,
+    objectPath: `${INSTANCE_ID}/project-files/${assetId}`,
+    width: 100,
+    height: 100,
+    mimeType: "image/png",
+  });
+
+  const detail = await f.service.getCanvas(ACTOR, CANVAS_ID);
+  expect(Object.values(detail.content.files)).toEqual([
+    expect.objectContaining({
+      assetId,
+      relativePath,
+      storageRef: `oss://project-assets/${INSTANCE_ID}/project-files/${assetId}`,
+    }),
+  ]);
+  expect(f.descriptions).toContain(assetId);
+  expect(f.reads).toEqual([]);
+  expect(f.uploads).toEqual([]);
+  expect(f.downloads).toEqual([]);
+  expect(f.writes).toEqual([]);
+});
+it("已登记素材读取时用describe同步移动后的relativePath，不读取二进制", async () => {
+  const f = await fileService();
+  const assetId = randomUUID();
+  const storageRef = `oss://project-assets/${INSTANCE_ID}/project-files/${assetId}`;
+  f.seedProjectFile(assetId, "media/current.png");
+  f.row()!.content = {
+    elements: [],
+    appState: {},
+    files: {
+      image: {
+        id: "image",
+        assetId,
+        relativePath: "media/old.png",
+        storageRef,
+        dataURL: storageRef,
+        mimeType: "image/png",
+      },
+    },
+  };
+
+  const detail = await f.service.getCanvas(ACTOR, CANVAS_ID);
+  expect(detail.content.files.image).toMatchObject({
+    assetId,
+    relativePath: "media/current.png",
+    storageRef,
+  });
+  expect(f.downloads).toEqual([]);
+  expect(f.reads).toEqual([]);
+  expect(f.uploads).toEqual([]);
+  expect(f.writes).toEqual([]);
+});
+it("namespace素材describe失败时不伪造引用或登记Canvas索引", async () => {
+  const f = await fileService();
+  const assetId = randomUUID();
+  const storageRef = `oss://project-assets/${INSTANCE_ID}/project-files/${assetId}`;
+  f.row()!.content = {
+    elements: [],
+    appState: {},
+    files: { image: { dataURL: storageRef, mimeType: "image/png" } },
+  };
+
+  await expect(f.service.getCanvas(ACTOR, CANVAS_ID)).rejects.toThrow(
+    "项目素材不存在",
+  );
+  expect(f.row()!.content).toMatchObject({
+    files: { image: { dataURL: storageRef } },
+  });
+  expect(f.row()!.content).not.toHaveProperty("storage");
+  expect(f.descriptions).toContain(assetId);
+  expect(f.downloads).toEqual([]);
+  expect(f.reads).toEqual([]);
+  expect(f.uploads).toEqual([]);
+  expect(f.writes).toEqual([]);
+});
+it("用户save强制字节CAS，冲突发生在素材上传之前", async () => {
+  const f = await fileService();
+  const initial = await f.service.getCanvas(ACTOR, CANVAS_ID);
+  const input = {
+    ...initial.content,
+    files: { image: { dataURL: "data:image/png;base64,YQ==" } },
+  };
+  await expect(
+    f.service.saveCanvasContent(ACTOR, CANVAS_ID, input, null),
+  ).rejects.toMatchObject({ statusCode: 409 });
+  expect(f.uploads).toEqual([]);
+  const saved = await f.service.saveCanvasContent(
+    ACTOR,
+    CANVAS_ID,
+    input,
+    initial.revision,
+  );
+  expect(saved.fileReferences.image).toEqual(
+    expect.stringMatching(
+      /^oss:\/\/project-assets\/instance-1\/project-files\/[a-f0-9-]{36}$/u,
+    ),
+  );
+  expect(f.writes).toHaveLength(1);
+  expect(f.writes[0]?.relativePath).toMatch(/^canvas-[a-f0-9-]{36}\.png$/u);
+  expect(f.writes[0]?.writeFingerprint).toBe(
+    createHash("sha256").update("a").digest("hex"),
+  );
+  const reloaded = await f.service.getCanvas(ACTOR, CANVAS_ID);
+  await f.service.saveCanvasContent(
+    ACTOR,
+    CANVAS_ID,
+    reloaded.content,
+    saved.revision,
+  );
+  expect(f.uploads).toHaveLength(1);
+  expect(f.writes).toHaveLength(1);
+});
+it("新base64上传失败不降级保存内联内容", async () => {
+  const f = await fileService({ uploadFails: true });
+  const initial = await f.service.getCanvas(ACTOR, CANVAS_ID);
+  await expect(
+    f.service.saveCanvasContent(
+      ACTOR,
+      CANVAS_ID,
+      {
+        ...initial.content,
+        files: { image: { dataURL: "data:image/png;base64,YQ==" } },
+      },
+      initial.revision,
+    ),
+  ).rejects.toThrow("素材上传失败");
+  expect((await f.service.getCanvas(ACTOR, CANVAS_ID)).revision).toBe(
+    initial.revision,
+  );
+});
+it("旧blob迁移失败时不登记项目文件索引", async () => {
+  const f = await fileService({ uploadFails: true });
+  f.row()!.content = {
+    elements: [],
+    appState: {},
+    files: {
+      image: {
+        dataURL: "oss://project-assets/existing.png",
+        mimeType: "image/png",
+      },
+    },
+  };
+  await expect(f.service.getCanvas(ACTOR, CANVAS_ID)).rejects.toThrow(
+    "素材上传失败",
+  );
+  expect(f.row()!.content).toMatchObject({
+    files: {
+      image: {
+        dataURL: "oss://project-assets/existing.png",
+        mimeType: "image/png",
+      },
+    },
+  });
+  expect(f.row()!.content).not.toHaveProperty("storage");
+});
+it("生成图片与视频接文件追加，已有图片blob迁移一次并保留源", async () => {
+  const f = await fileService();
+  await f.service.getCanvas(ACTOR, CANVAS_ID);
+  await Promise.all([
+    f.service.insertImageElement(ACTOR, {
+      canvasId: CANVAS_ID,
+      objectPath: "generated.png",
+      width: 100,
+      height: 100,
+      mimeType: "image/png",
+    }),
+    f.service.insertVideoElement(ACTOR, {
+      canvasId: CANVAS_ID,
+      signedUrl: "https://assets.test/video.mp4",
+      width: 100,
+      height: 100,
+      mimeType: "video/mp4",
+    }),
+  ]);
+  const detail = await f.service.getCanvas(ACTOR, CANVAS_ID);
+  expect(detail.content.elements).toHaveLength(2);
+  expect(Object.values(detail.content.files)).toMatchObject([
+    {
+      assetId: expect.any(String),
+      relativePath: expect.stringMatching(/^canvas-[a-f0-9-]{36}\.png$/u),
+      storageRef: expect.stringMatching(
+        /^oss:\/\/project-assets\/instance-1\/project-files\//u,
+      ),
+    },
+  ]);
+  expect(f.uploads).toHaveLength(1);
+  expect(f.writes).toHaveLength(1);
+  expect(f.writes[0]?.writeFingerprint).toBe(
+    createHash("sha256").update("generated-image").digest("hex"),
+  );
+  expect(f.hasSource("generated.png")).toBe(true);
+});
+it("索引存在但文件缺失不fallback，删除及项目归档后不可迟到写", async () => {
+  const f = await fileService();
+  const initial = await f.service.getCanvas(ACTOR, CANVAS_ID);
+  await rm(join(f.root, ".kenfutwork", "canvases", `${CANVAS_ID}.json`));
+  await expect(f.service.getCanvas(ACTOR, CANVAS_ID)).rejects.toMatchObject({
+    code: "canvas_file_missing",
   });
   await expect(
-    service.saveCanvasContent(actor, CANVAS_ID, {
-      elements: [],
-      files: {},
-      appState: {},
-    }),
-  ).rejects.toMatchObject({ code: "instance_forbidden" });
-  expect([reads, writes]).toEqual([0, 0]);
+    f.service.saveCanvasContent(
+      ACTOR,
+      CANVAS_ID,
+      initial.content,
+      initial.revision,
+    ),
+  ).rejects.toMatchObject({ code: "canvas_file_missing" });
+  f.remove();
+  await expect(f.service.getCanvas(ACTOR, CANVAS_ID)).rejects.toMatchObject({
+    statusCode: 404,
+  });
+  const archived = await fileService();
+  const previous = await archived.service.getCanvas(ACTOR, CANVAS_ID);
+  archived.archive();
+  await expect(
+    archived.service.saveCanvasContent(
+      ACTOR,
+      CANVAS_ID,
+      previous.content,
+      previous.revision,
+    ),
+  ).rejects.toThrow("项目已归档");
+});
+it("不可信Actor在画布读写前拒绝", async () => {
+  const f = await fileService();
+  await expect(
+    f.service.getCanvas({ ...ACTOR, instanceId: "foreign" }, CANVAS_ID),
+  ).rejects.toThrow();
 });

@@ -55,6 +55,7 @@ async function fixture(fileLimits: Partial<FileLimits> = {}) {
     }),
     repository: {
       load: async () => ({
+        preset: "code",
         scope: snapshot,
         state: "ready",
         branchGeneration: 1,

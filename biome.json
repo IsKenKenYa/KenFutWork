@@ -30,7 +30,7 @@
       "!**/data",
       "!**/logs",
       "!**/runtime",
-      "!**/flow",
+      "!flow",
       "!**/docs/api/openapi.json",
       "!**/dist-types",
       "!**/dist-host",

@@ -33,6 +33,7 @@ export async function taskMcpFixture(
   const actor = { instanceId: scope.instanceId, accessClientId: null };
   let stored: StoredExecutionScope = {
     scope,
+    preset: "code",
     state: "ready",
     branchGeneration: 1,
   };

@@ -20,6 +20,10 @@ export async function waitForLocalInstanceIdle(options: {
       .queryOne<{ active: string | number }>(
         `select (select count(*) from public.task_works where instance_id = :instance and status = 'running')
         + (select count(*) from public.background_jobs where instance_id = :instance and status in ('queued', 'running'))
+        + (select count(*) from public.design_task_executions d where d.instance_id=:instance
+          and (d.active_run_id is not null or d.restore_operation_id is not null
+            or (d.execution_state='ready' and exists(select 1 from public.projects p where p.id=d.project_id and p.instance_id=:instance and p.archived_at is null)
+              and exists(select 1 from public.design_task_inputs i where i.instance_id=d.instance_id and i.task_id=d.task_id and i.status='queued'))))
         + (select count(*) from public.code_ui_sessions code_session where instance_id = :instance and deleted_at is null
           and (active_run_id is not null or exists(select 1 from jsonb_array_elements(coalesce(state->'inputs','[]'::jsonb)) input
             where input->>'status' = 'reserved'

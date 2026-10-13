@@ -162,6 +162,7 @@
           "name": "ai/20261012-from-main-harness-goal",
           "branchKind": "ai",
           "branchType": "SPRINT",
+          "sourceBranchId": 8691397,
           "isAiBranch": true,
           "isAiWritableBranch": true,
           "automationLifecycleStatus": "ACTIVE",
@@ -259,18 +260,6 @@
     {
       "type": "branch_recorded",
       "projectId": 8892388,
-      "branchId": 8699426,
-      "createdAt": "2026-10-09T13:40:26.059Z"
-    },
-    {
-      "type": "branch_recorded",
-      "projectId": 8892388,
-      "branchId": 8703011,
-      "createdAt": "2026-10-09T13:40:26.060Z"
-    },
-    {
-      "type": "branch_recorded",
-      "projectId": 8892388,
       "branchId": 8708676,
       "sourceBranchId": 8691397,
       "createdAt": "2026-10-09T13:42:16.402Z"
@@ -334,6 +323,19 @@
       "projectId": 8892388,
       "branchId": 8708676,
       "createdAt": "2026-10-09T18:31:25.115Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8714463,
+      "sourceBranchId": 8691397,
+      "createdAt": "2026-10-11T16:01:41.950Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8714463,
+      "createdAt": "2026-10-12T11:25:08.291Z"
     },
     {
       "type": "branch_recorded",

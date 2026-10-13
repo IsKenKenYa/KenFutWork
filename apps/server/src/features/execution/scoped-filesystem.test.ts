@@ -397,9 +397,27 @@ it("images expose separate model blocks and preview metadata while unsupported m
     mimeType: "image/png",
     sizeBytes: pixels.length,
   });
-  expect(image.modelContent).toMatchObject([
-    { type: "image", source_type: "base64", mime_type: "image/png" },
+  expect(image.modelContent).toEqual([
+    {
+      type: "text",
+      text: JSON.stringify({
+        type: "image",
+        filePath: image.filePath,
+        version: image.version,
+        mimeType: "image/png",
+        width: 2,
+        height: 3,
+        sizeBytes: pixels.length,
+      }),
+    },
+    {
+      type: "image",
+      source_type: "base64",
+      mime_type: "image/png",
+      data: pixels.toString("base64"),
+    },
   ]);
+  expect(image.modelContent[0]?.text).not.toContain(pixels.toString("base64"));
 });
 
 it("PDF text extraction works without Poppler and native PDF models receive a file block", async () => {

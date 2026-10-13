@@ -65,6 +65,6 @@ export function decodeCommandText(buffer: Buffer): string {
   // 顺带清掉 BOM 与残留 NUL（后续按行解析才干净）
   return text
     .replace(/^\uFEFF/, "")
-    .replace(/\u0000/g, "")
+    .replaceAll("\u0000", "")
     .trim();
 }

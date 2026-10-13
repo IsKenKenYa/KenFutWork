@@ -36,9 +36,23 @@ function makeFakeStore(): ExecutionModeStore & {
 }
 
 describe("执行模式词汇表", () => {
-  it("六档内置：agent/plan/solo/goal/loop/creative，creative 有创造引导指令", () => {
+  it("retired prompt-only loop cannot activate or hydrate and never becomes Goal", async () => {
+    const store = makeFakeStore();
+    const service = createExecutionModeService({ store });
+    await expect(
+      service.activate("legacy", "loop", { instanceId: "instance" }),
+    ).rejects.toThrow("请重新选择");
+    expect(store.saved).toEqual([]);
+    store.rows.set("legacy", { exists: true, mode: "loop" });
+    await expect(
+      service.hydrate("legacy", { instanceId: "instance" }),
+    ).rejects.toThrow("请重新选择");
+    expect(service.getMode("legacy")).toBe("agent");
+    expect(service.listModes().some((mode) => mode.id === "loop")).toBe(false);
+  });
+  it("五档内置：agent/plan/solo/goal/creative，creative 有创造引导指令", () => {
     const ids = BUILTIN_EXECUTION_MODES.map((m) => m.id);
-    expect(ids).toEqual(["agent", "plan", "solo", "goal", "loop", "creative"]);
+    expect(ids).toEqual(["agent", "plan", "solo", "goal", "creative"]);
     const creative = BUILTIN_EXECUTION_MODES.find((m) => m.id === "creative");
     expect(creative?.inputDirective).toContain("SKILL.md");
   });
@@ -62,9 +76,9 @@ describe("执行模式词汇表", () => {
       { instanceId: "ws-1", threadId: "t-w", mode: "goal" },
     ]);
 
-    await service.activate("t-m", "loop");
+    await service.activate("t-m", "creative");
     expect(store.saved).toHaveLength(1);
-    expect(service.getMode("t-m")).toBe("loop");
+    expect(service.getMode("t-m")).toBe("creative");
   });
 
   it("hydrate：带store时按当前Scope读回模式并warm缓存，无行回落agent", async () => {
@@ -131,7 +145,7 @@ describe("模式工具策略（evaluateToolPolicy）", () => {
     const service = createExecutionModeService();
     service.activate("code-plan", "plan");
     const policy = service.resolveToolPolicy("code-plan");
-    for (const tool of ["Read", "Glob", "Grep", "TaskOutput"]) {
+    for (const tool of ["Read", "ReadHistory", "Glob", "Grep", "TaskOutput"]) {
       expect(evaluateToolPolicy(policy, tool).allowed, tool).toBe(true);
     }
     expect(
@@ -194,9 +208,9 @@ describe("模式工具策略（evaluateToolPolicy）", () => {
     }
   });
 
-  it("agent/goal/loop/creative：allow-all，工具不拦截", () => {
+  it("agent/goal/creative：allow-all，工具不拦截", () => {
     const service = createExecutionModeService();
-    for (const mode of ["agent", "goal", "loop", "creative"] as const) {
+    for (const mode of ["agent", "goal", "creative"] as const) {
       service.activate(`t-${mode}`, mode);
       const policy = service.resolveToolPolicy(`t-${mode}`);
       expect(policy.kind, mode).toBe("allow-all");

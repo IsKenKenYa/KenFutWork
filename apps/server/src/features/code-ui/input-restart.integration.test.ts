@@ -6,6 +6,7 @@ import {
   providerInstanceResponseSchema,
 } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
+import { INTERRUPTED_RUN_MESSAGE } from "../agent-runs/reconcile.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createCodeUiConversation } from "./conversation.js";
 import { createCodeUiTestInstance } from "./host-session.fixture.js";
@@ -215,7 +216,7 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
           sessionId: null,
           type: "createSession",
           payload: {
-            instanceId: scope.projectId,
+            workspaceId: scope.projectId,
             config: { modelSelection: selection },
           },
           issuedAt: Date.now(),
@@ -238,7 +239,13 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         const restartedRpc = await connect(restarted);
         const snapshot = await restarted.getSnapshot(actor, scope.taskId);
         expect(snapshot.queue.items).toEqual([]);
-        expect(snapshot.control.phase).toBe("completedInterrupted");
+        expect(snapshot.control.phase).toBe("error");
+        expect(snapshot.control.lastError).toMatchObject({
+          code: "run_failed",
+          message: INTERRUPTED_RUN_MESSAGE,
+          recoverable: true,
+          source: "runtime",
+        });
         expect(snapshot.pendingCommands).toEqual([]);
         expect(
           snapshot.rows.window.filter((row) => row.kind === "userInput"),
@@ -285,6 +292,59 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         expect(await restarted.getSnapshot(actor, scope.taskId)).toEqual(
           snapshot,
         );
+        // 历史版本已把丢失的Run投影为取消；后到的持久失败不能再丢掉原因。
+        const stored = await repository.find(scope.instanceId, scope.taskId);
+        const historical = structuredClone(stored!.state!);
+        const interrupted = historical.snapshots.find(
+          (entry) => entry.sessionId === scope.taskId,
+        )!;
+        interrupted.control.phase = "completedInterrupted";
+        interrupted.control.lastError = null;
+        await repository.save(
+          scope.instanceId,
+          scope.taskId,
+          Number(stored!.revision),
+          historical,
+          null,
+        );
+        await database.persistence.forInstance(scope.instanceId).execute(
+          `insert into public.chat_sessions (id, instance_id, project_id, mode, thread_id)
+           values ($1, :instance, $2, 'code', $3) on conflict (id) do nothing`,
+          [scope.taskId, scope.projectId, `thread:${scope.taskId}`],
+        );
+        await database.persistence.execute(
+          `insert into public.agent_runs (id, session_id, thread_id, status, error_code, error_message, completed_at)
+           values ($1, $2, $3, 'failed', 'run_failed', $4, now())`,
+          [
+            historical.runId,
+            scope.taskId,
+            `thread:${scope.taskId}`,
+            INTERRUPTED_RUN_MESSAGE,
+          ],
+        );
+        const restored = await restarted.getSnapshot(actor, scope.taskId);
+        expect(restored.control).toMatchObject({
+          phase: "error",
+          canStop: false,
+          lastError: { code: "run_failed", message: INTERRUPTED_RUN_MESSAGE },
+        });
+        expect(await restarted.getSnapshot(actor, scope.taskId)).toEqual(
+          restored,
+        );
+        expect(runs).toHaveLength(2);
+        await database.persistence.execute(
+          "update public.agent_runs set status = 'canceled', error_code = null, error_message = null where id = $1",
+          [historical.runId],
+        );
+        await database.persistence.execute(
+          `insert into public.agent_runs (id, session_id, thread_id, status, error_code, error_message)
+           values ($1, $2, $3, 'failed', 'run_failed', '另一轮失败')`,
+          [randomUUID(), scope.taskId, `thread:${scope.taskId}`],
+        );
+        const canceled = await restarted.getSnapshot(actor, scope.taskId);
+        expect(canceled.control.phase).toBe("completedInterrupted");
+        expect(canceled.control.lastError).toBeNull();
+        expect(runs).toHaveLength(2);
       } finally {
         for (const service of services.reverse())
           await service.closeConnections();

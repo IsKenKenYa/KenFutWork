@@ -8,14 +8,16 @@ vi.mock("@zui/host/surfaceApi.js", () => ({
   surfaceJson: (path: string, init?: RequestInit) => surfaceJson(path, init),
 }));
 
-const { ExecutionModeChip } = await import("../src/components/workbench/zcode/host/ExecutionModeChip.js");
+const { ExecutionModeChip } = await import(
+  "../src/components/workbench/zcode/host/ExecutionModeChip.js"
+);
 
 const MODES = {
   modes: [
     { id: "agent", label: "自主" },
     { id: "plan", label: "计划" },
     { id: "goal", label: "目标" },
-    { id: "loop", label: "循环" },
+    { id: "creative", label: "创造" },
   ],
 };
 
@@ -24,7 +26,7 @@ afterEach(() => {
   surfaceJson.mockReset();
 });
 
-test("六档 chip 菜单交互：PUT 写入、计划联动 plan、失败回退", async () => {
+test("执行模式 chip 菜单交互：PUT 写入、计划联动 plan、失败回退", async () => {
   let putFails = false;
   surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
     if (path === "/api/execution-modes") return MODES;
@@ -47,17 +49,17 @@ test("六档 chip 菜单交互：PUT 写入、计划联动 plan、失败回退",
   const chip = await screen.findByTestId("execution-mode-chip");
   expect(chip.textContent).toContain("自主");
 
-  // 循环：PUT 生效，不干预 ZCode 协作档
+  // 创造：PUT 生效，不干预 ZCode 协作档
   await userEvent.click(chip);
   await userEvent.click(
-    await screen.findByRole("menuitemradio", { name: "循环" }),
+    await screen.findByRole("menuitemradio", { name: "创造" }),
   );
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith(
       "/api/execution-modes/s1",
       expect.objectContaining({
         method: "PUT",
-        body: JSON.stringify({ mode: "loop" }),
+        body: JSON.stringify({ mode: "creative" }),
       }),
     ),
   );
@@ -79,7 +81,10 @@ test("六档 chip 菜单交互：PUT 写入、计划联动 plan、失败回退",
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenLastCalledWith(
       "/api/execution-modes/s1",
-      expect.objectContaining({ method: "PUT", body: JSON.stringify({ mode: "goal" }) }),
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ mode: "goal" }),
+      }),
     ),
   );
   await waitFor(() =>

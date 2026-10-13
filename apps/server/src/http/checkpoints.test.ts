@@ -27,6 +27,7 @@ const identity: CodeExecutionScope = {
 };
 const scope = { describe: () => identity } as ExecutionScopeHandle;
 const row: CheckpointRow = {
+  taskKind: "code",
   id: "checkpoint",
   ...identity,
   directorySnapshots: [

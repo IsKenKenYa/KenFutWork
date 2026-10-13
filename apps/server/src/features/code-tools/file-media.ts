@@ -137,6 +137,18 @@ export async function readMedia(
     canonicalOutput,
     modelContent: [
       {
+        type: "text",
+        text: JSON.stringify({
+          type: "image",
+          filePath: binary.path,
+          version: binary.version,
+          mimeType,
+          width: metadata.width,
+          height: metadata.height,
+          sizeBytes: binary.bytes.length,
+        }),
+      },
+      {
         type: "image",
         source_type: "base64",
         mime_type: mimeType,

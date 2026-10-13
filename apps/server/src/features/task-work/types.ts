@@ -9,9 +9,13 @@ export type TaskWorkStatus =
   | "failed"
   | "canceled"
   | "interrupted";
+export type TaskWorkOwnerKind = "code" | "design";
+
 export interface TaskWorkRecord {
   id: string;
   scope: CodeExecutionScope;
+  /** Existing Code callers omit this and default to Code; persisted rows always carry it. */
+  ownerKind?: TaskWorkOwnerKind;
   agentId: string;
   kind: TaskWorkKind;
   detached: boolean;
@@ -52,7 +56,11 @@ export interface TaskWorkCloseFence {
 }
 export interface TaskWorkHostLoss {
   executionHostId: string;
-  tasks: Array<{ instanceId: string; taskId: string }>;
+  tasks: Array<{
+    instanceId: string;
+    taskId: string;
+    ownerKind: TaskWorkOwnerKind;
+  }>;
 }
 export interface TaskWorkStore {
   acquireHost(
@@ -62,6 +70,7 @@ export interface TaskWorkStore {
   closeFence(
     instanceId: string,
     taskId: string,
+    ownerKind?: TaskWorkOwnerKind,
   ): Promise<TaskWorkCloseFence | null>;
   create(
     record: TaskWorkRecord,
@@ -109,6 +118,8 @@ export interface TaskWorkContext {
   actor?: LocalActor;
   signal?: AbortSignal;
   scope: CodeExecutionScope;
+  /** Omitted legacy contexts are Code; Design is always explicit. */
+  ownerKind?: TaskWorkOwnerKind;
   agentId: string;
   runId: string;
   branchGeneration: number;
@@ -133,10 +144,19 @@ export interface TaskWorkManager {
   ): Promise<TaskWorkRecord | null>;
   list(context: TaskWorkContext): Promise<TaskWorkRecord[]>;
   stop(context: TaskWorkContext, workId: string, reason: string): Promise<void>;
-  closeTask(instanceId: string, taskId: string, reason: string): Promise<void>;
+  closeTask(
+    instanceId: string,
+    taskId: string,
+    reason: string,
+    ownerKind?: TaskWorkOwnerKind,
+  ): Promise<void>;
   enterForeground(context: TaskWorkContext): Promise<() => Promise<void>>;
   consumeNotifications(context: TaskWorkContext): Promise<TaskWorkRecord[]>;
-  notifyReady(instanceId: string, taskId: string): Promise<void>;
+  notifyReady(
+    instanceId: string,
+    taskId: string,
+    ownerKind?: TaskWorkOwnerKind,
+  ): Promise<void>;
   recordOutput(
     context: TaskWorkContext,
     workId: string,
@@ -147,6 +167,7 @@ export interface TaskWorkManager {
     listener: (identity: {
       instanceId: string;
       taskId: string;
+      ownerKind: TaskWorkOwnerKind;
     }) => Promise<boolean>,
   ): () => void;
   onHostLost(listener: (event: TaskWorkHostLoss) => Promise<void>): () => void;

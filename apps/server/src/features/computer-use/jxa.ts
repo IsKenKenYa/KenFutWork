@@ -451,7 +451,11 @@ export async function runJxa(
       code?: string | number;
     };
     const reason = failure.stderr?.trim();
-    const code = reason?.match(/\b(element_stale|app_not_found):/)?.[1];
+    const code =
+      reason?.match(/\b(element_stale|app_not_found):/)?.[1] ??
+      (/(?:\(-25211\)|\bpermission_denied:)/iu.test(reason ?? "")
+        ? "permission_denied"
+        : undefined);
     // child_process默认message包含整段脚本（可能含输入文本），不得把它回传到日志/事件。
     throw Object.assign(
       new Error(
@@ -459,7 +463,7 @@ export async function runJxa(
       ),
       {
         code: signal?.aborted ? "cancelled" : (code ?? "internal"),
-        // 已知绑定拒绝发生在动作前；其它桥失败可能发生在AX动作之后，由调用方保守判定。
+        // 已识别的绑定或权限拒绝明确发生在动作前；其它桥失败由调用方保守判定。
         ...(code ? { actionSent: false } : {}),
       },
     );

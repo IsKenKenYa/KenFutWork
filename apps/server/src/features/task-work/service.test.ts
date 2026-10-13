@@ -86,6 +86,42 @@ it("Task 工作跨前台 Run 存活，空闲终态只唤醒一次，新 Run 在�
   await manager.close("test complete");
 });
 
+it("Design Task 使用真实 owner kind 隔离状态与通知", async () => {
+  const designContext = { ...context, ownerKind: "design" as const };
+  const manager = createTaskWorkManager({
+    store: createMemoryTaskWorkStore([designContext]),
+    executionHostId: "design-owner-host",
+    resolveMaxConcurrent: async () => 4,
+  });
+  const ready = vi.fn(async () => true);
+  manager.onReady(ready);
+  try {
+    const record = await manager.start(
+      designContext,
+      { kind: "command", label: "Design work", toolCallId: "design-work" },
+      {
+        run: async () => ({ status: "completed", summary: "已完成" }),
+        stop: async () => {},
+      },
+    );
+    await vi.waitFor(() => expect(ready).toHaveBeenCalledOnce());
+    expect(record.ownerKind).toBe("design");
+    expect(ready).toHaveBeenCalledWith({
+      instanceId: designContext.scope.instanceId,
+      taskId: designContext.scope.taskId,
+      ownerKind: "design",
+    });
+    await expect(manager.consumeNotifications(context)).rejects.toMatchObject({
+      code: "task_closed",
+    });
+    expect(await manager.consumeNotifications(designContext)).toMatchObject([
+      { id: record.id, ownerKind: "design", status: "completed" },
+    ]);
+  } finally {
+    await manager.close("cleanup");
+  }
+});
+
 it("停止先等待真实退出，期间保持running，退出后保留输出与真实截断统计", async () => {
   const manager = createTaskWorkManager({
     store: createMemoryTaskWorkStore([context]),

@@ -16,7 +16,6 @@ function createRecordingStore(
 ) {
   const calls: Array<{ elements: unknown[]; files?: Record<string, unknown> }> =
     [];
-  let writeContentCalls = 0;
 
   const store: CanvasContentStore = {
     async readContent() {
@@ -29,25 +28,17 @@ function createRecordingStore(
         files: {},
       }) as CanvasContent;
     },
-    async writeContent() {
-      writeContentCalls += 1;
-    },
     async appendContent(_canvasId, input) {
       calls.push({
         elements: [...input.elements],
         ...(input.files ? { files: input.files } : {}),
       });
     },
-    async downloadObject() {
-      return Buffer.from("image-bytes");
-    },
   };
 
   return {
     calls,
-    get writeContentCalls() {
-      return writeContentCalls;
-    },
+
     store,
   };
 }
@@ -64,7 +55,6 @@ describe("画布元素写入器：原子追加", () => {
       width: 200,
     });
 
-    expect(recorder.writeContentCalls).toBe(0);
     expect(recorder.calls).toHaveLength(1);
     const appended = recorder.calls[0];
     if (!appended) {
@@ -73,7 +63,7 @@ describe("画布元素写入器：原子追加", () => {
     // 只带新增的一个元素（不是整份元素表）
     expect(appended.elements).toHaveLength(1);
     expect((appended.elements[0] as { id: string }).id).toBe(result.elementId);
-    // 只带新增的一个文件项，且是 base64 dataURL（Excalidraw 原生渲染需要）
+    // 只带新增的一个文件项，保留原对象引用（不下载重编码）
     const fileKeys = Object.keys(appended.files ?? {});
     expect(fileKeys).toHaveLength(1);
     const fileKey = fileKeys[0];
@@ -86,9 +76,7 @@ describe("画布元素写入器：原子追加", () => {
     });
     expect(
       (appended.files?.[fileKey] as { dataURL: string } | undefined)?.dataURL,
-    ).toBe(
-      `data:image/png;base64,${Buffer.from("image-bytes").toString("base64")}`,
-    );
+    ).toBe("oss://project-assets/project-assets/canvas-1/a.png");
   });
 
   it("视频：只追加新元素，不写 files（可嵌入类型无需文件表项）", async () => {
@@ -100,12 +88,21 @@ describe("画布元素写入器：原子追加", () => {
       mimeType: "video/mp4",
       signedUrl: "http://127.0.0.1:3001/api/blobs/canvases/v.mp4?sig=x",
       width: 400,
+      assetId: "video-asset",
+      relativePath: "clips/video.mp4",
+      assetVersion: "sha256-original",
     });
 
-    expect(recorder.writeContentCalls).toBe(0);
     expect(recorder.calls).toHaveLength(1);
     expect(recorder.calls[0]?.elements).toHaveLength(1);
     expect(recorder.calls[0]?.files).toBeUndefined();
+    expect(recorder.calls[0]?.elements[0]).toMatchObject({
+      customData: {
+        assetId: "video-asset",
+        relativePath: "clips/video.mp4",
+        version: "sha256-original",
+      },
+    });
   });
 
   it("显式位置优先于自动排布（两个并发落图里第二个可指定落点避免重叠）", async () => {
@@ -140,6 +137,5 @@ describe("画布元素写入器：原子追加", () => {
       }),
     ).rejects.toThrow(/Canvas not found/);
     expect(recorder.calls).toHaveLength(0);
-    expect(recorder.writeContentCalls).toBe(0);
   });
 });

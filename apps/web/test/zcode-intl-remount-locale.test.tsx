@@ -1,6 +1,6 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
+import { useZCodeIntl, ZCodeIntlProvider } from "@zui/i18n/IntlProvider.js";
 import { afterEach, expect, test } from "vitest";
-import { ZCodeIntlProvider, useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 
 const LOCALE_PREFERENCE_KEY = "zcode-locale-preference";
 

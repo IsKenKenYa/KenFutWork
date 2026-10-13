@@ -1,6 +1,6 @@
 import type { BackgroundJob } from "@kenfutwork/shared";
-
 import { type ExecutorContext, registerExecutor } from "../job-executor.js";
+import { publishGeneratedFile } from "./generated-file.js";
 import { resolveInstanceVideoProviderFromPayload } from "./instance-provider.js";
 
 /**
@@ -55,6 +55,8 @@ registerExecutor(
     const tag = `[video-job:${jobId.slice(0, 8)} session:${sessionShort}]`;
     const lap = (label: string) =>
       console.log(`${tag} ${label} +${Date.now() - t0}ms`);
+
+    await ctx.generationTargets.resolve(jobRow);
 
     const payload = (jobRow.payload ?? {}) as {
       prompt: string;
@@ -157,6 +159,7 @@ registerExecutor(
         return await finishVideoJob(
           { url: pollResult.videoUrl, mimeType: "video/mp4" },
           {
+            job: jobRow,
             jobId,
             instanceId,
             createdBy,
@@ -266,6 +269,7 @@ registerExecutor(
       return await finishVideoJob(
         generated,
         {
+          job: jobRow,
           jobId,
           instanceId,
           createdBy,
@@ -295,6 +299,7 @@ registerExecutor(
 );
 
 interface FinishContext {
+  job: BackgroundJob;
   jobId: string;
   instanceId: string;
   createdBy: string | null;
@@ -311,7 +316,7 @@ async function finishVideoJob(
   ctx: ExecutorContext,
   lap: (label: string) => void,
 ): Promise<Record<string, unknown>> {
-  const { jobId, instanceId, createdBy } = meta;
+  const { jobId, instanceId } = meta;
 
   // 用量落账（DEC-6 直连生成链路）：视频 provider 不报 token，记 0 留痕不留盲区
   if (instanceId) {
@@ -349,29 +354,16 @@ async function finishVideoJob(
   lap("video_download_done");
 
   const ext = generated.mimeType === "video/webm" ? "webm" : "mp4";
-  const timestamp = Date.now();
-  const objectPath = `${instanceId}/generated/${timestamp}-${jobId}.${ext}`;
-
-  const bucket = ctx.blob.bucket("project-assets");
-  await bucket.upload(objectPath, buffer, {
-    contentType: generated.mimeType ?? "video/mp4",
-    upsert: false,
-  });
-  lap("storage_upload_done");
-
-  // 经 assetWriter 缝：executor 无用户身份，按任务记录的工作区写入
-  const assetId = await ctx.assetWriter.recordGeneratedAsset({
-    byteSize: buffer.length,
-    mimeType: generated.mimeType ?? "video/mp4",
-    objectPath,
-    ...(createdBy ? { accessClientId: createdBy } : {}),
-    instanceId,
-  });
-  lap("asset_record_done");
-
-  // 公开性由存储侧回答（实测 project-assets 可能非公开）
-  const resultUrl = await bucket.resolveUrl(objectPath);
-
+  const stored = await publishGeneratedFile(
+    meta.job,
+    buffer,
+    generated.mimeType ?? "video/mp4",
+    ext,
+    ctx,
+  );
+  const assetId = stored.assetId;
+  const objectPath = stored.objectPath;
+  const resultUrl = stored.url;
   lap("total");
   return {
     asset_id: assetId,

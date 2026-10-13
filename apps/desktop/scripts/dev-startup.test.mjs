@@ -9,11 +9,34 @@ import { test } from "node:test";
 import { promisify } from "node:util";
 import {
   acquireLauncherLock,
+  buildSourceArtifacts,
   freePort,
   isSourceDevelopmentLaunch,
 } from "./dev-macos.mjs";
 
 const exec = promisify(execFile);
+
+test("桌面源码启动按依赖图重建宿主与服务端协议，先于界面构建", async () => {
+  const commands = [];
+  buildSourceArtifacts((program, args) => commands.push({ program, args }));
+  const workspaceBuild = commands.find(({ args }) => args.includes("turbo"));
+  assert.ok(workspaceBuild, "桌面启动必须使用workspace依赖图，而非只编译叶包");
+  const { stdout } = await exec(workspaceBuild.program, [
+    "--reporter=silent",
+    ...workspaceBuild.args,
+    "--dry=json",
+  ]);
+  const graph = JSON.parse(stdout);
+  const tasks = new Map(graph.tasks.map((task) => [task.taskId, task]));
+  const host = tasks.get("@zcode/ui#build");
+  const controller = tasks.get("@zcode/window-controller#build");
+  assert.ok(host && controller, "启动需同时构建界面与服务端宿主协议");
+  for (const dependency of ["@zcode/shared#build", "@zcode/services#build"]) {
+    assert.ok(tasks.has(dependency), `缺少协议依赖 ${dependency}`);
+    assert.ok(host.dependencies.includes(dependency));
+    assert.ok(controller.dependencies.includes(dependency));
+  }
+});
 
 test("开发入口锁只允许一个持有者，空锁不抢占，退出遗留锁可恢复", async () => {
   const root = await mkdtemp(join(tmpdir(), "kfw-launcher-lock-"));

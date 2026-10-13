@@ -10,29 +10,31 @@ import { createCodeSessionFixture as createSession } from "./host-session.fixtur
 import { heldModel } from "./model-stream.fixture.js";
 
 const isolatedHttp = useCodeUiHttpFixture();
-const { request, openCodeStream } = isolatedHttp;
 
 const enabled = process.env.RUN_CODE_UI_INTEGRATION === "1";
 
-async function nextTaskChange(
-  stream: Awaited<ReturnType<typeof openCodeStream>>,
-  reason: string,
-  taskId: string,
-) {
-  for (;;) {
-    const event = await stream.next();
-    if (
-      event.event === "service" &&
-      event.name === "onDynamicWorkspaceEvent" &&
-      event.data?.reason === reason &&
-      event.data?.taskId === taskId
-    )
-      return event.data;
+async function waitForCanceledRun(runId: string, assertModel?: () => void) {
+  const client = new Client({ connectionString: isolatedHttp.databaseUrl() });
+  await client.connect();
+  try {
+    await vi.waitFor(
+      async () => {
+        assertModel?.();
+        const result = await client.query(
+          "select status from public.agent_runs where id=$1",
+          [runId],
+        );
+        expect(result.rows).toEqual([{ status: "canceled" }]);
+      },
+      { timeout: 30_000 },
+    );
+  } finally {
+    await client.end();
   }
 }
 
-async function delayRunRegistration() {
-  const connectionString = isolatedHttp.databaseUrl();
+async function delayRunRegistration(databaseUrl = isolatedHttp.databaseUrl()) {
+  const connectionString = databaseUrl;
   if (!connectionString) throw new Error("延迟场景必须指定独占测试数据库");
   const client = new Client({ connectionString });
   await client.connect();
@@ -181,10 +183,11 @@ describe.skipIf(!enabled)("原停止命令公开宿主 integration", () => {
         );
         if (!blocked.rows.length) throw new Error("等待停止事务到达延迟点");
       });
-      expect(
-        (await request(`/api/projects/${host.projectId}`, undefined, "DELETE"))
-          .status,
-      ).toBe(204);
+      // 归档API本身也需要根锁；同一延迟事务注入归档事实，避免测试相互等锁。
+      await delay.query(
+        "update public.projects set archived_at=now() where id=$1",
+        [host.projectId],
+      );
       await delay.query("commit");
       const late = await stop;
       expect(late.status, JSON.stringify(late.body)).toBe(404);
@@ -216,7 +219,6 @@ describe.skipIf(!enabled)("原停止命令公开宿主 integration", () => {
       const running = await host.snapshot();
       expect(running.control.phase).toBe("running");
       const runId = running.control.activeWorks[0].foregroundExecutionId;
-      await nextTaskChange(host.stream, "task_created", host.sessionId);
       const stopped = await host.command("stop", {
         expectedForegroundExecutionId: runId,
       });
@@ -224,14 +226,8 @@ describe.skipIf(!enabled)("原停止命令公开宿主 integration", () => {
       expect((await host.snapshot()).control.phase).toBe(
         "completedInterrupted",
       );
-      await nextTaskChange(host.stream, "task_status_changed", host.sessionId);
       await delay.release();
-      await Promise.race([
-        nextTaskChange(host.stream, "task_status_changed", host.sessionId),
-        model.firstRequest.then(() => {
-          throw new Error("已停止运行仍启动了模型");
-        }),
-      ]);
+      await waitForCanceledRun(runId, () => expect(model.requests).toEqual([]));
       expect(model.requests).toEqual([]);
     } finally {
       await delay.close();
@@ -239,28 +235,55 @@ describe.skipIf(!enabled)("原停止命令公开宿主 integration", () => {
     }
   });
   it("前一轮取消事件迟到到达已获 ACK 的下一轮，不改变新运行身份", async () => {
+    const fixture = await createCodeUiHttpFixture();
     const model = await heldModel();
-    const host = await createSession(model.baseUrl, { client: isolatedHttp });
+    const host = await createSession(model.baseUrl, { client: fixture.client });
+    const runtime = fixture.app.kernel.get("agentRuns");
+    const createRun = runtime.createRun.bind(runtime);
+    let replayCancellation: (() => Promise<void>) | undefined;
+    const capture = vi
+      .spyOn(runtime, "createRun")
+      .mockImplementation((input, options) => {
+        const sink = options?.eventSink;
+        if (!sink) return createRun(input, options);
+        return createRun(input, {
+          ...options,
+          eventSink: async (event) => {
+            if (event.type === "run.canceled" && !replayCancellation)
+              replayCancellation = () => Promise.resolve(sink(event));
+            await sink(event);
+          },
+        });
+      });
     let delay: Awaited<ReturnType<typeof delayRunRegistration>> | undefined;
     try {
       await host.command("sendText", { text: "第一轮等待停止。" });
       const first = await waitForText(host, "正在运行 1");
-      await nextTaskChange(host.stream, "task_created", host.sessionId);
-      delay = await delayRunRegistration();
       const stopped = await host.command("stop", {
         expectedForegroundExecutionId:
           first.control.activeWorks[0].foregroundExecutionId,
       });
       expect(stopped.body.result.status).toBe("accepted");
-      await nextTaskChange(host.stream, "task_status_changed", host.sessionId);
+      expect((await host.snapshot()).control.phase).toBe(
+        "completedInterrupted",
+      );
       await vi.waitFor(() => expect(model.requests[0]?.closed).toBe(true));
+      if (!replayCancellation) throw new Error("未捕获第一轮真实取消事件");
+      // 取消等待包含账本收尾，不能锁旧Run再等stop；只延迟下一轮注册。
+      delay = await delayRunRegistration(fixture.database.connectionString);
       await host.command("sendText", {
         text: "第二轮在前一轮结算迟到前创建。",
       });
       const second = await host.snapshot();
       expect(second.control.phase).toBe("running");
       const runId = second.control.activeWorks[0].foregroundExecutionId;
-      await nextTaskChange(host.stream, "user_message_saved", host.sessionId);
+      // 将真实旧终态重投到原eventSink，经过持久事件消费与同一reducer。
+      await replayCancellation();
+      expect((await host.snapshot()).control).toMatchObject({
+        phase: "running",
+        canStop: true,
+        activeWorks: [{ foregroundExecutionId: runId }],
+      });
       await delay.release();
       const running = await waitForText(host, "正在运行 2");
       expect(running.control.activeWorks[0].foregroundExecutionId).toBe(runId);
@@ -275,8 +298,10 @@ describe.skipIf(!enabled)("原停止命令公开宿主 integration", () => {
         ]),
       );
     } finally {
+      capture.mockRestore();
       await delay?.close();
       await disposeModelRun(host, model);
+      await fixture.close();
     }
   });
   it("原 stop 真正取消流式引擎，并发/重放幂等，迟到停止不误杀下一轮", async () => {

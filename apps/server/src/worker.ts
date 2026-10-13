@@ -14,7 +14,6 @@ async function setupProxy() {
 
 import { loadServerEnv } from "./config/env.js";
 import { resolveLocalRuntimeEnv } from "./desktop/runtime.js";
-import { startJobLoop } from "./features/jobs/job-loop.js";
 // Register all image/video providers via shared helper (keeps parity with app.ts)
 import { composePlugins } from "./kernel/compose.js";
 import { workerProfile } from "./profiles/worker.js";
@@ -40,15 +39,7 @@ async function main() {
   const kernel = composePlugins(env, workerProfile());
   await kernel.get("localInstance").getContext();
 
-  const loop = startJobLoop({
-    assetWriter: kernel.get("assetWriter"),
-    blob: kernel.get("blob"),
-    env,
-    jobService: kernel.get("jobs"),
-    modelProviders: kernel.get("modelProviders"),
-    queue: kernel.get("queue"),
-    usageService: kernel.get("usage"),
-  });
+  const loop = kernel.get("jobLoop");
 
   // Graceful shutdown — wait for in-flight jobs then exit
   const shutdown = async () => {

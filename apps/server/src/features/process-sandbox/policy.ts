@@ -64,7 +64,15 @@ export function unixRuntimeReadRoots(
       "/private/etc",
       "/System",
       "/Library",
-      ...(platform === "darwin" ? ["/opt/homebrew"] : []),
+      ...(platform === "darwin"
+        ? [
+            "/opt/homebrew",
+            // 缺失 selector 的 readlink 会检查父级 /var vnode；只开放目录本身。
+            // 固定 SRT 将单字符 glob 编译为首尾锚定 regex，不开放任何子树。
+            "/[v]ar",
+            "/private/[v]ar",
+          ]
+        : []),
       // Darwin 的 /bin/sh 经此系统 selector 解析；只允许系统 selector，不放开 /var。
       "/var/select",
       "/private/var/select",

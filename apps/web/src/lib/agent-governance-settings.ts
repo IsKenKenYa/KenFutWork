@@ -14,6 +14,7 @@ export type AgentGovernanceSettings = Pick<
   | "subagentMaxContinuations"
   | "compactKeepMessages"
   | "compactFallbackKeepMessages"
+  | "canvasExportMaxBytes"
 >;
 type NumericKey = Exclude<keyof AgentGovernanceSettings, "llmInfiniteRetry">;
 export type AgentGovernanceInputs = Record<NumericKey, string>;
@@ -22,47 +23,42 @@ export const AGENT_GOVERNANCE_FIELDS = [
   {
     key: "subagentMaxDepth",
     label: "子代理派生深度",
-    hint: "子代理可以再派生几层；1 = 不允许子代理派生子代理。",
   },
   {
     key: "subagentMaxConcurrency",
     label: "后台任务并发上限",
-    hint: "同时运行的后台子代理 / 长命令数量上限。",
   },
   {
     key: "llmRequestMaxRetries",
     label: "模型请求重试次数",
-    hint: "上游抖动时最多尝试几次（含首次），0 表示不重试。",
   },
   {
     key: "executeTimeoutMs",
     label: "命令超时（毫秒）",
-    hint: "Code 模式后台命令的超时上限。",
   },
   {
     key: "agentStreamIdleTimeoutMs",
     label: "模型流无输出超时（毫秒）",
-    hint: "仅计算真实模型请求的等待；工具执行和人工审批不计，0 表示关闭。",
   },
   {
     key: "subagentMaxContinuations",
     label: "后台任务等待轮数上限",
-    hint: "收尾时若后台任务未结束，最多再等几轮。",
   },
   {
     key: "compactKeepMessages",
     label: "压缩保留目标（窗口已知）",
-    hint: "模型上下文窗口已知时，希望保留的最近消息条数。",
   },
   {
     key: "compactFallbackKeepMessages",
     label: "压缩保留目标（窗口未知）",
-    hint: "模型未声明上下文窗口且无法识别时使用的保留目标。",
+  },
+  {
+    key: "canvasExportMaxBytes",
+    label: "画布导出上限（字节）",
   },
 ] as const satisfies readonly {
   key: NumericKey;
   label: string;
-  hint: string;
 }[];
 
 function validNumber(key: NumericKey, value: number) {

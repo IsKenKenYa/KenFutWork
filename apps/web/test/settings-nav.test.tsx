@@ -27,6 +27,14 @@ vi.mock("../src/lib/server-api.js", () => ({
   updateInstanceSettings: vi.fn(async () => ({ settings: {} })),
 }));
 
+vi.mock("../src/lib/terminal-api", () => ({
+  fetchTerminalShells: vi.fn(async () => ({
+    shells: [{ id: "bash", label: "Bash", executable: "/bin/bash" }],
+    defaultShell: "auto",
+    resolvedShell: "bash",
+  })),
+}));
+
 afterEach(cleanup);
 
 describe("设置导航：一个页面只出现一次", () => {

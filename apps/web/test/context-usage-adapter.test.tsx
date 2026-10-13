@@ -6,9 +6,10 @@ import { afterEach, expect, test } from "vitest";
 // dist-types 仍是 vendored 原签名（cache 只声明 hitRate、必填 intl/locale 等），
 // 宿主件运行时签名更宽——测试按运行时传参，类型断言放宽。
 const module = await import("@zui/chat-input-toolbar/contextUsage.js");
-const ChatContextUsage = module.ChatContextUsage as unknown as React.ComponentType<{
-  taskUsage: unknown;
-}>;
+const ChatContextUsage =
+  module.ChatContextUsage as unknown as React.ComponentType<{
+    taskUsage: unknown;
+  }>;
 const getRenderableTaskUsage = module.getRenderableTaskUsage as <
   T extends { used: number; size: number },
 >(

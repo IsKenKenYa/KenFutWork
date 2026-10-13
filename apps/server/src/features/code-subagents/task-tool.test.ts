@@ -25,7 +25,12 @@ async function fixture() {
   const actor = { instanceId: scope.instanceId, accessClientId: null };
   const handle = await createExecutionScopes({
     repository: {
-      load: async () => ({ state: "ready", branchGeneration: 1, scope }),
+      load: async () => ({
+        preset: "code",
+        state: "ready",
+        branchGeneration: 1,
+        scope,
+      }),
     },
     localInstance: createRuntimeTestInstance(scope.instanceId),
   }).openTask(actor, scope.taskId);

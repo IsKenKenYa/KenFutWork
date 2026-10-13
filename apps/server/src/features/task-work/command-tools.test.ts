@@ -42,7 +42,7 @@ const outputResult = z.object({
 });
 const quote = (text: string) => `'${text.replace(/'/g, "'\\''")}'`;
 
-async function fixture() {
+async function fixture(preset: "code" | "design" = "code") {
   const directory = await realpath(
     await mkdtemp(join(tmpdir(), "command-ownership-")),
   );
@@ -64,7 +64,12 @@ async function fixture() {
   };
   const scopes = createExecutionScopes({
     repository: {
-      load: async () => ({ scope, state: "ready", branchGeneration: 1 }),
+      load: async () => ({
+        preset,
+        scope,
+        state: "ready",
+        branchGeneration: 1,
+      }),
     },
     localInstance: {
       resolve: async () => ({
@@ -77,6 +82,7 @@ async function fixture() {
   const context: TaskWorkContext = {
     actor,
     scope,
+    ownerKind: preset,
     agentId: "main",
     runId: "run-main",
     branchGeneration: 1,
@@ -108,7 +114,10 @@ async function fixture() {
       dataDir: directory,
     }),
   });
-  const controller = createTaskCommandTools({ manager, sandbox, settings });
+  const controller = createTaskCommandTools(
+    { manager, sandbox, settings },
+    { scope: preset },
+  );
   const tool = (name: string) => {
     const found = controller.tools.find((entry) => entry.name === name);
     if (!found) throw new Error(`缺少 ${name}`);
@@ -168,6 +177,22 @@ async function fixture() {
   };
   return { root, main, manager, context, tool, execution, start, failFast };
 }
+
+it("Design Task 命令沿真实 Design ScopeHandle 接入共享 TaskWork", async () => {
+  const f = await fixture("design");
+  expect(f.tool("Bash").scope).toBe("design");
+  const workId = await f.start(f.main, "design-command");
+  expect(await f.manager.find(f.context, workId)).toMatchObject({
+    ownerKind: "design",
+    scope: {
+      instanceId: f.context.scope.instanceId,
+      projectId: f.context.scope.projectId,
+      taskId: f.context.scope.taskId,
+      rootDirectory: f.root,
+    },
+  });
+  await f.manager.stop(f.context, workId, "test complete");
+});
 
 it.each(["TaskInput", "TaskStop"] as const)(
   "只读child不能通过%s控制parent，TaskOutput仍可读而主代理可停止",

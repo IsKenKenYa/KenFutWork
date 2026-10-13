@@ -6,16 +6,18 @@ import {
   type StreamEvent,
   streamEventSchema,
 } from "@kenfutwork/shared";
-import type {
-  InstanceSqlClient,
-  PersistenceService,
-  SqlRow,
-} from "../persistence/types.js";
 // 本模块所有喂给 `::jsonb` 参数的值一律走 jsonbSafeStringify：命令输出/模型文本/
 // 文件内容都可能带 U+0000（Windows 上 UTF-16LE 输出被按 UTF-8 解码即每字符后跟一个），
 // JSON.stringify 会把它转义成字面量 `\u0000`，Postgres 的 jsonb 直接拒绝
 // （unsupported Unicode escape sequence）→ 整轮 run 被 run_failed 终结（《未做需求》#13）。
 import { jsonbSafeStringify } from "../../utils/text-sanitize.js";
+import { INTERRUPTED_RUN_MESSAGE } from "../agent-runs/reconcile.js";
+import { createGoalService, type GoalService } from "../goals/service.js";
+import type {
+  InstanceSqlClient,
+  PersistenceService,
+  SqlRow,
+} from "../persistence/types.js";
 import {
   type CodeUiConversationState,
   createCodeUiConversation,
@@ -316,6 +318,13 @@ async function claimScopeCommand(
     };
   }
   const root = await lockRoot(scoped, envelope.sessionId!);
+  if (
+    envelope.type === "stop" &&
+    (root.archived ||
+      root.execution_state !== "ready" ||
+      !(await lockActiveProject(scoped, root)))
+  )
+    throw new CodeUiRepositoryError("not_found", "Code 项目已归档或正在关闭");
   await scoped.execute(
     `insert into public.code_ui_commands (instance_id, client_id, command_id, session_id, parameter_fingerprint, status)
      values (:instance, $1, $2, $3, $4, 'pending')`,
@@ -335,7 +344,10 @@ async function lockActiveProject(
 }
 
 /** 工作区隔离、事务内根会话锁；子会话索引只指向同一权威聚合状态。 */
-export function createCodeUiRepository(persistence: PersistenceService) {
+export function createCodeUiRepository(
+  persistence: PersistenceService,
+  goals: GoalService = createGoalService(),
+) {
   return {
     preparations: createHistoryPreparations(persistence),
     async recoverRuntimeInputs(owner: {
@@ -365,6 +377,7 @@ export function createCodeUiRepository(persistence: PersistenceService) {
             (entry) => entry.sessionId === root.id,
           )!;
           const host = createCodeUiConversation({
+            goals,
             sessionId: root.id,
             workspacePath: root.root_directory!,
             config: snapshot.config,
@@ -372,9 +385,10 @@ export function createCodeUiRepository(persistence: PersistenceService) {
           });
           if (root.active_run_id)
             host.recordEvent({
-              type: "run.canceled",
+              type: "run.failed",
               runId: root.active_run_id,
               timestamp: new Date().toISOString(),
+              error: { code: "run_failed", message: INTERRUPTED_RUN_MESSAGE },
             });
           const state = host.exportState();
           const current = state.snapshots.find(
@@ -663,6 +677,20 @@ export function createCodeUiRepository(persistence: PersistenceService) {
         return ack;
       });
     },
+    async readRunFailure(instanceId: string, sessionId: string, runId: string) {
+      return persistence.forInstance(instanceId).queryOne<{
+        error_code: string | null;
+        error_message: string;
+        completed_at: string | Date | null;
+      }>(
+        `select r.error_code, r.error_message, r.completed_at
+         from public.agent_runs r
+         join public.chat_sessions s on s.id = r.session_id
+         where s.instance_id = :instance and r.session_id = $1 and r.id = $2
+           and r.status = 'failed' and r.error_message is not null`,
+        [sessionId, runId],
+      );
+    },
     async find(
       instanceId: string,
       sessionId: string,
@@ -764,7 +792,9 @@ export function createCodeUiRepository(persistence: PersistenceService) {
               root.id,
               settlement.clientId,
               settlement.commandId,
-              jsonbSafeStringify(protocol.commandAckSchema.parse(settlement.ack)),
+              jsonbSafeStringify(
+                protocol.commandAckSchema.parse(settlement.ack),
+              ),
             ],
           );
         await scoped.execute(
@@ -1026,7 +1056,9 @@ export function createCodeUiRepository(persistence: PersistenceService) {
               root.id,
               settlement.clientId,
               settlement.commandId,
-              jsonbSafeStringify(protocol.commandAckSchema.parse(settlement.ack)),
+              jsonbSafeStringify(
+                protocol.commandAckSchema.parse(settlement.ack),
+              ),
             ],
           );
         if (decision.childChat) {
@@ -1050,7 +1082,12 @@ export function createCodeUiRepository(persistence: PersistenceService) {
         await scoped.execute(
           `insert into public.code_ui_events (instance_id, root_session_id, seq, event_key, parameter_fingerprint, payload)
            select :instance, $1::uuid, coalesce(max(seq), 0) + 1, $2, $3, $4::jsonb from public.code_ui_events where instance_id = :instance and root_session_id = $1::uuid`,
-          [root.id, input.key, input.fingerprint, jsonbSafeStringify(input.event)],
+          [
+            root.id,
+            input.key,
+            input.fingerprint,
+            jsonbSafeStringify(input.event),
+          ],
         );
         return true;
       });

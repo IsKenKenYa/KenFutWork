@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@zui/components/ui/button.js";
+import { Input } from "@zui/components/ui/input.js";
+import { toast } from "@zui/components/ui/toast.js";
+import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import {
   ArrowLeft,
   ArrowRight,
@@ -7,10 +10,7 @@ import {
   RotateCw,
   SquareTerminal,
 } from "lucide-react";
-import { Button } from "@zui/components/ui/button.js";
-import { Input } from "@zui/components/ui/input.js";
-import { toast } from "@zui/components/ui/toast.js";
-import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSurfaceApiBase, surfaceJson } from "./surfaceApi.js";
 
 /**
@@ -70,7 +70,11 @@ interface CdpInputEvent {
   text?: string;
 }
 
-const VIEWPORT_PRESETS: ReadonlyArray<{ label: string; width: number; height: number }> = [
+const VIEWPORT_PRESETS: ReadonlyArray<{
+  label: string;
+  width: number;
+  height: number;
+}> = [
   { label: "1280 × 720", width: 1280, height: 720 },
   { label: "1024 × 768", width: 1024, height: 768 },
   { label: "375 × 812", width: 375, height: 812 },
@@ -94,7 +98,10 @@ function modifiersOf(event: {
 const IME_NOISE = new Set(["Process", "Unidentified", "Dead"]);
 
 /** 有名字的键走按键转发；单字符（含组合键）走文本或不转发（剪贴板跨不过去）。 */
-function isRemoteKeyEvent(event: { key: string; composing?: boolean }): boolean {
+function isRemoteKeyEvent(event: {
+  key: string;
+  composing?: boolean;
+}): boolean {
   if (event.composing) return false;
   if (event.key.length <= 1) return false;
   return !IME_NOISE.has(event.key);
@@ -136,7 +143,9 @@ export function BrowserPane({
   const [urlInput, setUrlInput] = useState(initialUrl ?? "");
   const [activeUrl, setActiveUrl] = useState(initialUrl ?? "");
   /** 面板内历史栈（页面跨源，读不到它自己的 history）。 */
-  const [history, setHistory] = useState<string[]>(initialUrl ? [initialUrl] : []);
+  const [history, setHistory] = useState<string[]>(
+    initialUrl ? [initialUrl] : [],
+  );
   const [historyIndex, setHistoryIndex] = useState(initialUrl ? 0 : -1);
   const [frameSize, setFrameSize] = useState<(typeof VIEWPORT_PRESETS)[number]>(
     VIEWPORT_PRESETS[0] ?? { label: "1280 × 720", width: 1280, height: 720 },
@@ -197,19 +206,19 @@ export function BrowserPane({
           );
         }
       }
-      const opened = await surfaceJson<{ ticket: string; viewport: CdpViewport }>(
-        "/api/browser/cdp/view",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            url: activeUrl,
-            width: frameSize.width,
-            height: frameSize.height,
-            ...(forceReload ? { reload: true } : {}),
-          }),
-        },
-      );
+      const opened = await surfaceJson<{
+        ticket: string;
+        viewport: CdpViewport;
+      }>("/api/browser/cdp/view", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          url: activeUrl,
+          width: frameSize.width,
+          height: frameSize.height,
+          ...(forceReload ? { reload: true } : {}),
+        }),
+      });
       setViewport(opened.viewport);
       setState({
         status: "live",
@@ -230,7 +239,10 @@ export function BrowserPane({
 
   const handleFrameError = useCallback(() => {
     if (retriesRef.current >= 2) {
-      setState({ status: "error", message: "画面已断开（浏览器可能被关闭）。" });
+      setState({
+        status: "error",
+        message: "画面已断开（浏览器可能被关闭）。",
+      });
       return;
     }
     retriesRef.current += 1;
@@ -247,13 +259,16 @@ export function BrowserPane({
     });
   }, []);
 
-  const pointFrom = useCallback((event: { clientX: number; clientY: number }) => {
-    const rect =
-      imgRef.current?.getBoundingClientRect() ??
-      viewerRef.current?.getBoundingClientRect();
-    if (!rect) return null;
-    return toViewportPoint(rect, event, viewportRef.current);
-  }, []);
+  const pointFrom = useCallback(
+    (event: { clientX: number; clientY: number }) => {
+      const rect =
+        imgRef.current?.getBoundingClientRect() ??
+        viewerRef.current?.getBoundingClientRect();
+      if (!rect) return null;
+      return toViewportPoint(rect, event, viewportRef.current);
+    },
+    [],
+  );
 
   const handleMouseDown = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -380,7 +395,10 @@ export function BrowserPane({
       const normalized = /^[a-z][a-z0-9+.-]*:\/\//i.test(next)
         ? next
         : `https://${next}`;
-      setHistory((current) => [...current.slice(0, historyIndex + 1), normalized]);
+      setHistory((current) => [
+        ...current.slice(0, historyIndex + 1),
+        normalized,
+      ]);
       setHistoryIndex((current) => current + 1);
       setActiveUrl(normalized);
       setUrlInput(normalized);
@@ -459,7 +477,11 @@ export function BrowserPane({
       if (workspacePath) {
         useZCodeSessionStore
           .getState()
-          .requestComposerTextInsert(workspacePath, reference, workspaceIdentity);
+          .requestComposerTextInsert(
+            workspacePath,
+            reference,
+            workspaceIdentity,
+          );
         toast("元素引用已填入输入框");
       } else {
         toast("当前工作区不可用，引用未填入");
@@ -487,7 +509,10 @@ export function BrowserPane({
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background" data-testid="browser-pane">
+    <div
+      className="flex h-full min-h-0 flex-col bg-background"
+      data-testid="browser-pane"
+    >
       <div className="flex items-center gap-1 border-b px-1.5 py-1">
         <Button
           type="button"
@@ -555,7 +580,9 @@ export function BrowserPane({
             key={preset.label}
             type="button"
             className={`rounded px-1.5 py-0.5 transition-colors hover:bg-hover ${
-              preset === frameSize ? "bg-hover font-medium" : "text-foreground-subtle"
+              preset === frameSize
+                ? "bg-hover font-medium"
+                : "text-foreground-subtle"
             }`}
             onClick={() => setFrameSize(preset)}
           >
@@ -571,6 +598,7 @@ export function BrowserPane({
       </div>
       <div
         ref={viewerRef}
+        role="group"
         aria-label="内嵌浏览器画面"
         className={`relative min-h-0 flex-1 overflow-hidden${pick ? " cursor-crosshair" : ""}`}
         onMouseDown={handleMouseDown}

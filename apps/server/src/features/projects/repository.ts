@@ -87,6 +87,11 @@ export type CreateProjectInput = {
  */
 export interface ProjectRepository {
   beginCloseProject(instanceId: string, projectId: string): Promise<void>;
+  beginCloseDesignProject(
+    instanceId: string,
+    projectId: string,
+  ): Promise<string[]>;
+  failCloseDesignProject(instanceId: string, projectId: string): Promise<void>;
   failCloseProject(instanceId: string, projectId: string): Promise<void>;
   findActiveCodeDirectory(
     instanceId: string,
@@ -143,6 +148,39 @@ export function createProjectRepository(
   persistence: PersistenceService,
 ): ProjectRepository {
   return {
+    async beginCloseDesignProject(instanceId, projectId) {
+      return persistence.transaction(async (tx) => {
+        const sql = tx.forInstance(instanceId);
+        const changed = await sql.execute(
+          `update public.projects set archive_state = 'closing'
+           where instance_id=:instance and id=$1 and kind='design' and archived_at is null and archive_state in ('open', 'failed')`,
+          [projectId],
+        );
+        if (!changed) throw new Error("画布项目不可用，关闭未开始。");
+        const tasks = await sql.query<{ task_id: string }>(
+          `update public.design_task_executions set execution_state = 'revoking',
+             scope_generation = scope_generation + 1, branch_generation = branch_generation + 1
+           where instance_id=:instance and project_id=$1 returning task_id`,
+          [projectId],
+        );
+        return tasks.map((task) => task.task_id);
+      });
+    },
+    async failCloseDesignProject(instanceId, projectId) {
+      await persistence.transaction(async (tx) => {
+        const sql = tx.forInstance(instanceId);
+        await sql.execute(
+          `update public.projects set archive_state = 'failed'
+          where instance_id=:instance and id=$1 and kind='design' and archive_state='closing' and archived_at is null`,
+          [projectId],
+        );
+        await sql.execute(
+          `update public.design_task_executions set execution_state = 'failed'
+          where instance_id=:instance and project_id=$1 and execution_state='revoking'`,
+          [projectId],
+        );
+      });
+    },
     async beginCloseProject(instanceId, projectId) {
       await persistence.forInstance(instanceId).execute(
         `update public.code_ui_sessions set execution_state = 'revoking',
@@ -224,6 +262,7 @@ export function createProjectRepository(
       // $1 固定是 project_id；SET 的占位符从 $2 起编号。
       const values: unknown[] = [projectId];
       let brandKitFilter = "";
+      let fixedRootFilter = "";
 
       if (patch.name !== undefined) {
         values.push(patch.name);
@@ -237,6 +276,7 @@ export function createProjectRepository(
       if (patch.workDir !== undefined) {
         values.push(patch.workDir);
         assignments.push(`work_dir = $${values.length}`);
+        fixedRootFilter = `and work_dir is not distinct from $${values.length}::text`;
       }
 
       if (patch.additionalDirectories !== undefined) {
@@ -253,7 +293,7 @@ export function createProjectRepository(
             set ${assignments.join(", ")}
           where instance_id = :instance
             and id = $1
-            ${brandKitFilter}`,
+            ${brandKitFilter} ${fixedRootFilter}`,
         values,
       );
     },
@@ -288,13 +328,18 @@ export function createProjectRepository(
         const canvas = await scoped.queryOne<CreatedCanvasRow>(
           // canvases 无 instance_id 列：经 projects 父链施加谓词，
           // 守卫因此同时是「该项目确属本工作区」的归属校验。
-          `insert into public.canvases (project_id, name, is_primary, created_by_client_id)
-           select p.id, $1, true, $2
+          `insert into public.canvases (project_id, name, is_primary, created_by_client_id, root_directory)
+           select p.id, $1, true, $2, $4
              from public.projects p
             where p.id = $3
               and p.instance_id = :instance
            returning id, name, is_primary`,
-          [input.canvasName, input.createdByClientId, project.id],
+          [
+            input.canvasName,
+            input.createdByClientId,
+            project.id,
+            input.workDir ?? null,
+          ],
         );
 
         if (!canvas) {

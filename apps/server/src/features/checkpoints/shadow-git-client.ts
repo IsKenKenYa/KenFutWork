@@ -20,6 +20,8 @@ export interface ShadowGitScope {
   workTree: string;
   /** 执行授权边界，不能被用户 .gitignore 的反向规则覆盖。 */
   excludedPaths?: readonly string[];
+  /** 精确、由拥有者确认的文件；仅用于恢复必需但被用户忽略规则排除的项目文件。 */
+  forceIncludePaths?: readonly string[];
 }
 
 export interface ShadowGitCommandResult {
@@ -38,7 +40,7 @@ export type ExecShadowGit = (
   input?: string,
 ) => Promise<ShadowGitCommandResult>;
 
-/** 写文本文件（ensureRepo 落 excludes 清单用；生产是 utf8 的 writeFileSync）。 */
+/** 写文本文件并创建父目录（ensureRepo 落 excludes 清单用）。 */
 export type WriteTextFile = (path: string, content: string) => Promise<void>;
 
 /**
@@ -144,6 +146,7 @@ export function createShadowGitClient(deps: {
           .filter(
             (path) =>
               path &&
+              !scope.forceIncludePaths?.includes(path) &&
               !excluded.some(
                 (boundary) =>
                   path === boundary || path.startsWith(`${boundary}/`),
@@ -151,20 +154,56 @@ export function createShadowGitClient(deps: {
           ),
       ),
     ];
-    if (!paths.length) return;
-    const staged = await exec(
-      [
-        "--literal-pathspecs",
-        "add",
-        "-A",
-        "--pathspec-from-file=-",
-        "--pathspec-file-nul",
-      ],
-      scope,
-      `${paths.join("\0")}\0`,
-    );
-    if (staged.code !== 0)
-      throw new Error(staged.stderr.trim() || "影子仓库暂存失败。");
+    if (!paths.length && !scope.forceIncludePaths?.length) return;
+    if (paths.length) {
+      const staged = await exec(
+        [
+          "--literal-pathspecs",
+          "add",
+          // 清单只含既有跟踪项与未忽略的新文件；外部新增ignore不能阻断已收录布局。
+          "-f",
+          "-A",
+          "--pathspec-from-file=-",
+          "--pathspec-file-nul",
+        ],
+        scope,
+        `${paths.join("\0")}\0`,
+      );
+      if (staged.code !== 0)
+        throw new Error(staged.stderr.trim() || "影子仓库暂存失败。");
+    }
+
+    const forceInclude = scope.forceIncludePaths ?? [];
+    if (forceInclude.length) {
+      if (
+        forceInclude.some(
+          (path) =>
+            !path ||
+            path.startsWith("/") ||
+            path.includes("\0") ||
+            path.split("/").includes("..") ||
+            excluded.some(
+              (boundary) =>
+                path === boundary || path.startsWith(`${boundary}/`),
+            ),
+        )
+      )
+        throw new Error("影子Git被拒绝强制收录检查点边界外的文件。");
+      const forced = await exec(
+        [
+          "--literal-pathspecs",
+          "add",
+          "-f",
+          "-A",
+          "--pathspec-from-file=-",
+          "--pathspec-file-nul",
+        ],
+        scope,
+        `${[...new Set(forceInclude)].join("\0")}\0`,
+      );
+      if (forced.code !== 0)
+        throw new Error(forced.stderr.trim() || "画布布局素材检查点暂存失败。");
+    }
   };
 
   /**
@@ -174,18 +213,19 @@ export function createShadowGitClient(deps: {
   const ensureRepo = async (
     input: ShadowGitScope & { excludes: readonly string[] },
   ): Promise<void> => {
+    const excludesPath = join(input.gitDir, "excludes");
+    // 写入器先创建精确私有根；沙箱启动任何 Git 命令前都会 realpath 此目录。
+    // 不能依赖 git init 建目录，否则首次 probe 尚未执行就会被 ENOENT 阻断。
+    await writeTextFile(excludesPath, `${[...input.excludes].join("\n")}\n`);
     const probe = await exec(["rev-parse", "--git-dir"], input);
     if (probe.code !== 0) {
       // 注意不能用 `--bare`：git 拒绝在 GIT_WORK_TREE 存在时做 bare init（实测 fatal）。
       // 非 bare 仓库目录在 GIT_DIR+GIT_WORK_TREE env 双指定下行为完全一致；
-      // init 会自动创建缺失的父目录。
       const init = await exec(["init", input.gitDir], input);
       if (init.code !== 0) {
         throw new Error(init.stderr.trim() || "初始化影子仓库失败。");
       }
     }
-    const excludesPath = join(input.gitDir, "excludes");
-    await writeTextFile(excludesPath, `${[...input.excludes].join("\n")}\n`);
     const config = await exec(
       ["config", "core.excludesFile", excludesPath],
       input,

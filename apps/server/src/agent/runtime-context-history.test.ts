@@ -1,6 +1,3 @@
-import { mkdtemp, realpath, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { StreamEvent } from "@kenfutwork/shared";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import {
@@ -8,20 +5,19 @@ import {
   type BaseMessage,
   HumanMessage,
 } from "@langchain/core/messages";
-import { FilesystemBackend } from "deepagents";
 import { expect, it } from "vitest";
 import { loadServerEnv } from "../config/env.js";
-import { createExecutionScopes } from "../features/execution/scope-service.js";
+import {
+  archiveKernelFixture,
+  archiveTaskFixture,
+} from "../features/context-history/test-fixture.js";
 import { createTaskWorkManager } from "../features/task-work/service.js";
 import { createMemoryTaskWorkStore } from "../features/task-work/test-store.js";
 import type { TaskWorkContext } from "../features/task-work/types.js";
 import { createKenFutWorkDeepAgent } from "./deep-agent.js";
 import { createAgentPersistenceService } from "./persistence/index.js";
 import { createAgentRunService } from "./runtime.js";
-import {
-  createRuntimeTestInstance,
-  RUNTIME_TEST_ACTOR,
-} from "./runtime-test-fixtures.js";
+import { createRuntimeTestInstance } from "./runtime-test-fixtures.js";
 
 class ControlledModel extends BaseChatModel {
   readonly requests: BaseMessage[][] = [];
@@ -43,25 +39,11 @@ class ControlledModel extends BaseChatModel {
 }
 
 async function fixture() {
-  const directory = await realpath(
-    await mkdtemp(join(tmpdir(), "kfw-harness-history-")),
-  );
-  const scope = {
-    instanceId: "00000000-0000-4000-8000-000000000001",
-    projectId: "00000000-0000-4000-8000-000000000002",
-    taskId: "00000000-0000-4000-8000-000000000003",
-    generation: 1,
-    rootDirectory: directory,
-    additionalDirectories: [],
-    sandboxMode: "workspace-write" as const,
-  };
-  const actor = RUNTIME_TEST_ACTOR;
-  const handle = await createExecutionScopes({
-    repository: {
-      load: async () => ({ state: "ready", branchGeneration: 1, scope }),
-    },
-    localInstance: createRuntimeTestInstance(),
-  }).openTask(actor, scope.taskId);
+  const task = await archiveTaskFixture();
+  const directory = task.identity.rootDirectory;
+  const scope = task.identity;
+  const actor = task.actor;
+  const handle = task.handle;
   const context: TaskWorkContext = {
     actor,
     scope,
@@ -81,12 +63,15 @@ async function fixture() {
   });
   const persistence = createAgentPersistenceService({});
   const model = new ControlledModel();
+  const kernel = archiveKernelFixture();
   const runtime = createAgentRunService({
-    localInstance: createRuntimeTestInstance(),
+    localInstance: createRuntimeTestInstance(actor.instanceId),
     blob: {} as never,
     env,
     model,
     agentPersistenceService: persistence,
+    tools: kernel.get("tools"),
+    contextHistoryArchives: kernel.get("contextHistoryArchives"),
     taskWork: work,
     resolveTaskWorkContext: async (_actor, current, runId) => ({
       ...context,
@@ -95,7 +80,7 @@ async function fixture() {
     }),
     resolveCodeApprovalMode: async () => ({
       mode: "build",
-      scopeGeneration: 1,
+      scopeGeneration: scope.generation,
       branchGeneration: 1,
     }),
   });
@@ -128,13 +113,26 @@ async function fixture() {
   };
   return {
     directory,
+    handle,
+    seedExecution: {
+      ...task.execution,
+      threadId: "harness-thread",
+      runId: "seed",
+    },
+    archives: kernel.get("contextHistoryArchives"),
+    kernelTools: kernel.get("tools").resolveRunTools({
+      preset: "code",
+      scopeHandle: handle,
+      backendFactory: () => handle.backend,
+    }),
     env,
     persistence,
     model,
     run,
     close: async () => {
+      kernel.dispose();
       await work.close("test cleanup");
-      await rm(directory, { recursive: true, force: true });
+      await task.cleanup();
     },
   };
 }
@@ -144,15 +142,15 @@ it("真实RunService只报告本轮已提交的新压缩，下一轮重用摘要
   try {
     const saved = await f.persistence.getPersistence();
     if (!saved) throw new Error("真实Harness需要MemorySaver");
-    const backend = new FilesystemBackend({
-      rootDir: f.directory,
-      virtualMode: true,
-    });
+    const backend = f.handle.backend;
     const seed = createKenFutWorkDeepAgent({
       env: f.env,
       model: f.model,
       preset: "code",
       systemPrompt: "实际历史种子",
+      kernelTools: f.kernelTools,
+      contextHistoryArchives: f.archives,
+      runToolContext: f.seedExecution,
       backendResult: {
         factory: () => backend,
         sandboxDir: f.directory,
@@ -170,6 +168,7 @@ it("真实RunService只报告本轮已提交的新压缩，下一轮重用摘要
       { version: "v2", configurable: { thread_id: "harness-thread" } },
     )) {
     }
+    seed.releaseContextHistory?.();
     const first = await f.run("继续工作", "first-input");
     expect(first.events.at(-1)?.type).toBe("run.completed");
     expect(

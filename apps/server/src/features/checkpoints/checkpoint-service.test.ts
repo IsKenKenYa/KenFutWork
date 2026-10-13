@@ -19,6 +19,7 @@ import {
 } from "../execution/scope-service.js";
 import { acquireTaskFileRestoreBarrier } from "../execution/scoped-filesystem.js";
 import type { LocalActor } from "../local-instance/types.js";
+import { resolveCheckpointWriteRoots } from "../process-sandbox/plugin.js";
 import {
   type CheckpointFileTransactions,
   createCheckpointService,
@@ -99,14 +100,23 @@ async function world() {
     repository: {
       load: async (_instanceId, task) =>
         task === TASK_ID
-          ? { scope: identity, state, branchGeneration: branch }
+          ? { preset: "code", scope: identity, state, branchGeneration: branch }
           : null,
     },
     localInstance: createRuntimeTestInstance(INSTANCE_ID),
   });
   const scope = await scopes.openTask(actor, TASK_ID);
   const git = createShadowGitClient({
-    exec,
+    exec: async (args, directory, input) => {
+      const authorized = await resolveCheckpointWriteRoots(
+        join(base, "checkpoints"),
+        scope.describe(),
+      );
+      // 与生产 spawnCheckpoint 一样，精确授权根必须存在且包含该 Git 仓库。
+      await Promise.all(authorized.map((path) => realpath(path)));
+      expect(authorized).toContain(directory.gitDir);
+      return exec(args, directory, input);
+    },
     writeTextFile: (path, text) => writeFile(path, text, "utf8"),
   });
   const beforeRestore = vi.fn(async () => {
@@ -422,6 +432,7 @@ describe("Task 检查点", () => {
       instanceId: INSTANCE_ID,
       projectId: PROJECT_ID,
       taskId: "other-task",
+      taskKind: "code",
       rootDirectory: scope.describe().rootDirectory,
       directorySnapshots: [],
       shadowCommit: "a".repeat(40),

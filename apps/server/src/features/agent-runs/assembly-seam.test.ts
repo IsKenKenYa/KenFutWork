@@ -16,7 +16,10 @@ import {
 } from "../../kernel/context.js";
 import { createAgentModesPlugin } from "../agent-modes/plugin.js";
 import { createPluginInventoryFixture } from "../code-ui/plugins.test-fixture.js";
+import { createContextHistoryPlugin } from "../context-history/plugin.js";
+import { archiveTaskFixture } from "../context-history/test-fixture.js";
 import { createLocalInstanceService } from "../local-instance/service.js";
+import { createPermissionService } from "../permissions/permission-service.js";
 import { createMemoryTaskWorkManager } from "../task-work/test-store.js";
 import { createAgentRunsPlugin } from "./plugin.js";
 
@@ -176,12 +179,23 @@ async function assembleSeamKernel(agentFactory: KenFutWorkAgentFactory) {
   const inventory = await createPluginInventoryFixture();
   pluginCleanups.push(inventory.dispose);
   const bus = new AgentRunEventBus();
+  const permissions = createPermissionService();
+  bus.on("tool-pre-execute", async (payload, next) => {
+    if (!payload.permissionInvocation) return next(payload);
+    const decision = await permissions.admit(payload.permissionInvocation);
+    return next({
+      ...payload,
+      decision: decision.decision,
+      ...(decision.reason ? { denyReason: decision.reason } : {}),
+    });
+  });
   const kernelEvents = createKernelEvents(bus);
   const app = Fastify();
   const kernel = composePlugins(
     makeEnv(),
     [
       createAgentModesPlugin(),
+      createContextHistoryPlugin(),
       createAgentRunsPlugin({
         connectionManager: {
           pushToCanvas: () => {},
@@ -196,6 +210,7 @@ async function assembleSeamKernel(agentFactory: KenFutWorkAgentFactory) {
       app,
       events: bus,
       overrides: {
+        permissions,
         plugins: inventory.registry,
         taskWork: createMemoryTaskWorkManager(),
         processSandbox: {} as never,
@@ -222,3 +237,77 @@ async function assembleSeamKernel(agentFactory: KenFutWorkAgentFactory) {
   );
   return { kernel, app };
 }
+
+it.each(["solo", "plan"] as const)(
+  "Design %s mode still gates actual Kernel permission invocations",
+  async (mode) => {
+    const task = await archiveTaskFixture("design");
+    const { kernel, app } = await assembleSeamKernel(() => {
+      throw new Error("No native agent needed");
+    });
+    let executed = 0;
+    try {
+      const threadId = `design-mode-${mode}`;
+      await kernel.get("agentModes").activate(threadId, mode);
+      const execution = {
+        ...task.execution,
+        threadId,
+        codeApproval: {
+          ceiling: "yolo" as const,
+          resolve: async () => ({
+            mode: "yolo" as const,
+            scopeGeneration: task.identity.generation,
+            branchGeneration: 1,
+          }),
+        },
+      };
+      const tools = kernel.get("tools");
+      const definition = {
+        name: "Write",
+        description: "actual Design write probe",
+        scope: "shared" as const,
+        access: "write" as const,
+        parameters: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+        execute: async () => {
+          executed++;
+          return "written";
+        },
+      };
+      const unregister = tools.register(definition);
+      try {
+        await expect(
+          tools.executeDefinition(definition, {}, execution),
+        ).rejects.toThrow(ToolDeniedError);
+        expect(executed).toBe(0);
+        const read = { ...definition, name: "Read", access: "read" as const };
+        const unregisterRead = tools.register(read);
+        try {
+          const result = tools.executeDefinition(
+            read,
+            {},
+            {
+              ...execution,
+              toolCallId: `${task.execution.toolCallId}-read`,
+            },
+          );
+          if (mode === "solo")
+            await expect(result).rejects.toThrow(ToolDeniedError);
+          else await expect(result).resolves.toBe("written");
+          expect(executed).toBe(mode === "solo" ? 0 : 1);
+        } finally {
+          unregisterRead();
+        }
+      } finally {
+        unregister();
+      }
+    } finally {
+      await kernel.dispose();
+      await app.close();
+      await task.cleanup();
+    }
+  },
+);

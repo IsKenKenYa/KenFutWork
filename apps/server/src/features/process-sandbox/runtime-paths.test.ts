@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, it } from "vitest";
 import { runtimeLayout } from "../../desktop/runtimes.js";
@@ -31,23 +31,41 @@ function fakeBundle() {
 it("runtimeReadRoots 覆盖全部随包运行时（不只 Node）——否则沙箱里 python 跑不了", () => {
   const resourceRoot = fakeBundle();
   const resolved = resolveProcessRuntime({ resourceRoot, env: {} });
-  const roots = resolved.runtimeReadRoots.map((path) => path.replaceAll("\\", "/"));
-  const expected = (["node", "python", "uv", "java"] as const).map((name) => {
-    const layout = runtimeLayout(name, process.platform);
-    const binDir = join(resourceRoot, "runtime", layout.dir, layout.bin);
-    // homeOf：bin 非空时取上一级（java 的根是 runtime/jdk）
-    const homeDir = layout.bin ? join(resourceRoot, "runtime", layout.dir) : binDir;
-    return homeDir.replaceAll("\\", "/");
-  });
+  const roots = resolved.runtimeReadRoots.map((path) =>
+    path.replaceAll("\\", "/"),
+  );
+  const expectedHomes =
+    process.platform === "win32"
+      ? ["node", "python", "uv", "jdk"]
+      : ["node", "python", "uv", "jdk/Contents/Home"];
+  const expected = expectedHomes.map((path) =>
+    join(resourceRoot, "runtime", path).replaceAll("\\", "/"),
+  );
   for (const dir of expected) {
     expect(roots, `runtimeReadRoots 缺 ${dir}`).toContain(dir);
   }
   // 去重
   expect(new Set(roots).size).toBe(roots.length);
   // PATH 前置项 = 各运行时的 bin 目录（与 readRoots 成对）
-  const bins = resolved.runtimePathAdditions.map((path) => path.replaceAll("\\", "/"));
-  expect(bins).toContain(join(resourceRoot, "runtime", "python").replaceAll("\\", "/"));
-  expect(bins).toContain(join(resourceRoot, "runtime", "node").replaceAll("\\", "/"));
+  const bins = resolved.runtimePathAdditions.map((path) =>
+    path.replaceAll("\\", "/"),
+  );
+  expect(bins).toContain(
+    join(
+      resourceRoot,
+      "runtime",
+      "python",
+      process.platform === "win32" ? "" : "bin",
+    ).replaceAll("\\", "/"),
+  );
+  expect(bins).toContain(
+    join(
+      resourceRoot,
+      "runtime",
+      "node",
+      process.platform === "win32" ? "" : "bin",
+    ).replaceAll("\\", "/"),
+  );
   expect(new Set(bins).size).toBe(bins.length);
   // helper Node 路径仍解析得到
   expect(resolved.nodePath.length).toBeGreaterThan(0);
@@ -60,7 +78,9 @@ it("一个随包运行时都没有时，退化成 helper Node 所在目录（不
     resourceRoot: empty,
     env: {},
     // 没有发布包布局时必须显式给 helper 源（否则按设计 fail loud）。
-    sourceHelperPath: fileURLToPath(new URL("./task-helper.ts", import.meta.url)),
+    sourceHelperPath: fileURLToPath(
+      new URL("./task-helper.ts", import.meta.url),
+    ),
   });
   // 非 SEA 形态下 nodePath 回落到 process.execPath，可读根就是它所在目录。
   expect(resolved.runtimeReadRoots).toEqual([dirname(process.execPath)]);

@@ -65,11 +65,11 @@ export function createBlobPlugin(
         return;
       }
       const rootDir = ctx.env.blobDir;
-      if (!rootDir || !signingSecret) {
+      if (!rootDir || !signingSecret || !blob) {
         // apply 已 fail loud；此处只是类型收窄（同一次启动不会走到这里）
         throw new Error("[blob] 本地对象根目录或签名密钥未初始化。");
       }
-      void registerBlobRoutes(ctx.app, { rootDir, signingSecret });
+      void registerBlobRoutes(ctx.app, { rootDir, signingSecret, blob });
     },
   };
 }

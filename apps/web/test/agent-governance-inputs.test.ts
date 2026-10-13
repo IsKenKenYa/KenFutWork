@@ -41,11 +41,39 @@ describe("公开治理表单输入与真实响应选择", () => {
     }
   });
 
+  it("画布导出预算保留合法整数，拒绝空值、小数、零与越界", () => {
+    const selected = selectAgentGovernanceSettings(settings());
+    expect(selected.canvasExportMaxBytes).toBe(268_435_456);
+    for (const value of ["1024", " 268435456 ", "1073741824"]) {
+      const values = governanceInputValues(selected);
+      values.canvasExportMaxBytes = value;
+      expect(parseAgentGovernanceInputs(values, false)).toEqual({
+        ...selected,
+        canvasExportMaxBytes: Number(value),
+      });
+    }
+    for (const value of [
+      "",
+      " ",
+      "0",
+      "-1",
+      "1023",
+      "1024.5",
+      "1073741825",
+      "256MiB",
+    ]) {
+      const values = governanceInputValues(selected);
+      values.canvasExportMaxBytes = value;
+      expect(parseAgentGovernanceInputs(values, false)).toBeNull();
+    }
+  });
+
   it("缺失或非法响应值如实拒绝，不填本地默认当已读取配置", () => {
     for (const key of [
       "compactKeepMessages",
       "compactFallbackKeepMessages",
       "subagentMaxDepth",
+      "canvasExportMaxBytes",
     ] as const) {
       const missing = settings();
       Reflect.deleteProperty(missing, key);

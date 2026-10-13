@@ -22,7 +22,6 @@ import {
   resolveSystemGitExecutable,
 } from "./desktop/runtimes.js";
 import { reconcileInterruptedRuns } from "./features/agent-runs/reconcile.js";
-import { startJobLoop } from "./features/jobs/job-loop.js";
 import { createLocalConnectionUrl } from "./features/local-access/connection-url.js";
 import { registerDataLocationControl } from "./features/local-instance/data-control.js";
 import { runDataLocationCommand } from "./features/local-instance/data-location.js";
@@ -112,20 +111,7 @@ async function main() {
   const app = buildApp({ env });
 
   // 桌面单进程：HTTP 与生成任务同进程；服务端形态仍由独立 worker 进程消费
-  const jobLoop = isDesktopRuntime(env)
-    ? startJobLoop(
-        {
-          assetWriter: app.kernel.get("assetWriter"),
-          blob: app.kernel.get("blob"),
-          env,
-          jobService: app.kernel.get("jobs"),
-          modelProviders: app.kernel.get("modelProviders"),
-          queue: app.kernel.get("queue"),
-          usageService: app.kernel.get("usage"),
-        },
-        { tag: "[desktop-worker]" },
-      )
-    : undefined;
+  const jobLoop = isDesktopRuntime(env) ? app.kernel.get("jobLoop") : undefined;
 
   const host = env.serverHost ?? "127.0.0.1";
 

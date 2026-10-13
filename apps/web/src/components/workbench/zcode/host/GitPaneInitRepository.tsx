@@ -1,6 +1,6 @@
-import { useCallback, useState } from "react";
 import { Button } from "@zui/components/ui/button.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
+import { useCallback, useState } from "react";
 import { surfaceJson } from "./surfaceApi.js";
 
 /**
@@ -60,7 +60,9 @@ export function GitPaneInitRepositoryAction({
         初始化仓库
       </Button>
       {error ? (
-        <p className="max-w-full text-ui-base text-foreground-subtle">{error}</p>
+        <p className="max-w-full text-ui-base text-foreground-subtle">
+          {error}
+        </p>
       ) : null}
     </div>
   );

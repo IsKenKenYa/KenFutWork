@@ -69,7 +69,7 @@ if (existsSync(inventoryPath)) {
   );
   if (drift.length) {
     process.stdout.write(
-      drift.map((record) => record.target).join("\n") + "\n",
+      `${drift.map((record) => record.target).join("\n")}\n`,
     );
     process.exitCode = 1;
   }

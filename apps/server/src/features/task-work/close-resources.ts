@@ -9,7 +9,7 @@ import type {
   LocalInstanceService,
 } from "../local-instance/types.js";
 import type { ProcessSandbox } from "../process-sandbox/types.js";
-import type { TaskWorkManager } from "./types.js";
+import type { TaskWorkManager, TaskWorkOwnerKind } from "./types.js";
 
 /** 延迟解析跨域引用以避免装配环；关闭失败保留 revoking/failed，不报告资源已退出。 */
 export function createTaskResourceCloser(deps: {
@@ -21,12 +21,17 @@ export function createTaskResourceCloser(deps: {
     capabilities: CapabilityRegistry;
   };
 }) {
-  return async (actor: LocalActor, taskId: string, reason: string) => {
+  return async (
+    actor: LocalActor,
+    taskId: string,
+    reason: string,
+    ownerKind: TaskWorkOwnerKind = "code",
+  ) => {
     const workspace = await deps.localInstance.resolve(actor);
     const resources = deps.resources();
     const stopped = await Promise.allSettled([
       resources.runs.cancelTaskRuns(taskId),
-      resources.work.closeTask(workspace.instanceId, taskId, reason),
+      resources.work.closeTask(workspace.instanceId, taskId, reason, ownerKind),
       revokeTaskFileOperations(workspace.instanceId, taskId),
     ]);
     const failure = stopped.find((result) => result.status === "rejected");

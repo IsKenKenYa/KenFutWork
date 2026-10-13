@@ -756,12 +756,8 @@ test("runtime-lock：无条目放行、哈希不符与改名必拦、按目标�
 
 test("runtime-lock：随包 Python 附加包清单（钉死版本）读写与合并保留", async () => {
   const lockModule = await import("../scripts/runtime-lock.mjs");
-  const {
-    readPythonPackages,
-    mergeLockTargets,
-    buildLockEntry,
-    LOCK_SCHEMA,
-  } = lockModule;
+  const { readPythonPackages, mergeLockTargets, buildLockEntry, LOCK_SCHEMA } =
+    lockModule;
 
   // 1) 缺省=空数组（过渡态不阻断），不是错误
   assert.deepEqual(readPythonPackages(null), []);
@@ -770,7 +766,9 @@ test("runtime-lock：随包 Python 附加包清单（钉死版本）读写与合
 
   // 2) 合法清单原样返回并去空白
   assert.deepEqual(
-    readPythonPackages({ pythonPackages: ["pytest==9.1.1", " pluggy==1.6.0 "] }),
+    readPythonPackages({
+      pythonPackages: ["pytest==9.1.1", " pluggy==1.6.0 "],
+    }),
     ["pytest==9.1.1", "pluggy==1.6.0"],
   );
 

@@ -1,10 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
-import {
-  Hand,
-  ShieldAlert,
-  ShieldCheck,
-  Zap,
-} from "lucide-react";
+import { Button } from "@zui/components/ui/button.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,12 +6,13 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
-import { Button } from "@zui/components/ui/button.js";
+import { toast } from "@zui/components/ui/toast.js";
 import {
   SettingsGroupCard,
   SettingsRow,
 } from "@zui/settings/SettingsPageParts.js";
-import { toast } from "@zui/components/ui/toast.js";
+import { Hand, ShieldAlert, ShieldCheck, Zap } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { surfaceJson } from "./surfaceApi.js";
 
 /**
@@ -66,22 +61,25 @@ export function usePermissionTier() {
     };
   }, []);
 
-  const save = useCallback(async (next: PermissionTier) => {
-    const previous = tier;
-    setTier(next);
-    try {
-      await surfaceJson<TierView>("/api/permissions/tier", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tier: next }),
-      });
-      return true;
-    } catch (error) {
-      if (previous) setTier(previous);
-      toast(readableError(error));
-      return false;
-    }
-  }, [tier]);
+  const save = useCallback(
+    async (next: PermissionTier) => {
+      const previous = tier;
+      setTier(next);
+      try {
+        await surfaceJson<TierView>("/api/permissions/tier", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ tier: next }),
+        });
+        return true;
+      } catch (error) {
+        if (previous) setTier(previous);
+        toast(readableError(error));
+        return false;
+      }
+    },
+    [tier],
+  );
 
   return { tier, save };
 }
@@ -130,8 +128,9 @@ export function PermissionTierChip() {
 /** 设置页「权限」分区（T7）：默认档选择 + 自动化任务档 + 说明行。 */
 export function PermissionTierSection() {
   const { tier, save } = usePermissionTier();
-  const [automationTier, setAutomationTier] =
-    useState<PermissionTier | null>(null);
+  const [automationTier, setAutomationTier] = useState<PermissionTier | null>(
+    null,
+  );
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {

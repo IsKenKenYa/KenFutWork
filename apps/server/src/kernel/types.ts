@@ -11,6 +11,7 @@ import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-s
 import type { BlobStore } from "../features/blob/types.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
 import type { BrowserService } from "../features/browser/fetch-page.js";
+import type { CanvasAssetLocations } from "../features/canvas/asset-locations.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
 import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
@@ -18,16 +19,24 @@ import type { CheckpointService } from "../features/checkpoints/checkpoint-servi
 import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import type { CodeTerminalService } from "../features/code-terminal/types.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
+import type { ContextHistoryArchiveBindings } from "../features/context-history/types.js";
+import type { DesignGoalsService } from "../features/execution/design-goals-types.js";
+import type { DesignRunHost } from "../features/execution/design-run-host-types.js";
+import type { DesignTasksService } from "../features/execution/design-task-types.js";
 import type {
   ExecutionScopeHandle,
   ExecutionScopes,
 } from "../features/execution/scope-service.js";
 import type { FlowEngineHostService } from "../features/flow/engine/install.js";
+import type { FlowProjectControl } from "../features/flow/project-control.js";
+import type { GenerationTargets } from "../features/generation/file-targets.js";
 import type {
   PersistImageFn,
   SubmitImageJobFn,
   SubmitVideoJobFn,
 } from "../features/generation/tool-types.js";
+import type { GoalService } from "../features/goals/service.js";
+import type { JobLoopService } from "../features/jobs/job-loop.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import type { LocalAccessService } from "../features/local-access/types.js";
 import type {
@@ -45,6 +54,8 @@ import type { PermissionService } from "../features/permissions/permission-servi
 import type { PersistenceService } from "../features/persistence/types.js";
 import type { PluginRegistryService } from "../features/plugins/plugin-registry-service.js";
 import type { ProcessSandbox } from "../features/process-sandbox/types.js";
+import type { ProjectFileService } from "../features/project-files/types.js";
+import type { ProjectDirectoryRelinkService } from "../features/projects/directory-relink.js";
 import type { ProjectService } from "../features/projects/project-service.js";
 import type { QueueClient } from "../features/queue/types.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
@@ -78,9 +89,11 @@ export interface ServiceMap {
   agentPersistence: AgentPersistenceService;
   agentRunMetadata: AgentRunMetadataService;
   agentRuns: AgentRunService;
+  contextHistoryArchives: ContextHistoryArchiveBindings;
   /** 领域服务（design 侧为主） */
   brandKit: BrandKitService;
   canvas: CanvasService;
+  canvasAssets: CanvasAssetLocations;
   chat: ChatService;
   /**
    * Code 模式的 git 分支视图（工作目录=项目）：列分支 / 切分支。
@@ -90,6 +103,9 @@ export interface ServiceMap {
   codeUi: CodeUiService;
   codeTerminal: CodeTerminalService;
   executionScopes: ExecutionScopes;
+  designTasks: DesignTasksService;
+  designGoals: DesignGoalsService;
+  designRunHost: DesignRunHost;
   processSandbox: ProcessSandbox;
   taskWork: TaskWorkManager;
   /**
@@ -99,6 +115,7 @@ export interface ServiceMap {
    */
   checkpoints: CheckpointService;
   projects: ProjectService;
+  projectDirectoryRelink: ProjectDirectoryRelinkService;
   settings: SettingsService;
   threads: ThreadService;
   uploads: UploadService;
@@ -141,6 +158,14 @@ export interface ServiceMap {
    * 启停与导出。插件代码是机器本地的，安装态落在 pluginsDir。
    */
   plugins: PluginRegistryService;
+  /** Task Goal 状态与计量规则，持久化和续跑由消费方持有。 */
+  goals: GoalService;
+  /** 项目普通文件索引与精确文件存取。 */
+  projectFiles: ProjectFileService;
+  /** 生成接纳时冻结且在执行时复验的文件来源。 */
+  generationTargets: GenerationTargets;
+  /** 既有后台生成队列循环及关闭状态。 */
+  jobLoop: JobLoopService;
   /** 执行模式缝（DEC-3：v1 agent + plan） */
   agentModes: ExecutionModeService;
   /** agent 链路 run 用量累积器（turn-stopping 结算） */
@@ -163,6 +188,7 @@ export interface ServiceMap {
    * 消费方 = 插件卸载路由（卸载 flow 插件时 purge 引擎、保留插件代码，见《flow插件集成规划》§9.1③）。
    */
   flowEngine: FlowEngineHostService;
+  flowProjectControl: FlowProjectControl;
   /** ConnectionManager + EventBuffer */
   ws: WsServices;
 }
@@ -256,6 +282,8 @@ export type PromptSectionScope = "always" | "design" | "code";
  * 持有服务引用，按 ctx 定位——ctx 不装「已取好的数据」，只装定位键。
  */
 export interface PromptCompositionContext {
+  /** 原Run持有的可信Task句柄；不能从scope快照、画布或路径重建。 */
+  scopeHandle?: ExecutionScopeHandle | undefined;
   /** 私有执行定位；从实际Run复制，不由模型或路径签发，不缓存业务正文。 */
   execution?: PromptExecutionContext | undefined;
   executionScope?: import("@kenfutwork/shared").CodeExecutionScope | undefined;
@@ -322,7 +350,23 @@ export interface SystemPromptRegistry {
   compose(ctx: PromptCompositionContext): Promise<string>;
 }
 
+/** Private executor observation; providers receive no capability to mint these facts. */
+export type ToolExecutionObservation = {
+  phase: "started" | "completed" | "failed";
+  runId: string | undefined;
+  toolCallId: string | undefined;
+  scopeHandle: ExecutionScopeHandle | undefined;
+  definition: ToolDefinition;
+  args: Record<string, unknown>;
+  output?: unknown;
+  error?: string;
+};
+
 export interface ToolExecutionContext {
+  /** Kernel consumes and strips this callback before calling the tool implementation. */
+  observeToolExecution?:
+    | ((fact: ToolExecutionObservation) => Promise<void>)
+    | undefined;
   /** 真实Run持久事件消费方；出口工具复用此通路，不持有已结束的SDK子run回调。 */
   publishToolEvent?:
     | ((
@@ -428,8 +472,9 @@ export interface ToolRegistry {
     execCtx?: ToolExecutionContext,
   ): Promise<unknown>;
   /**
-   * guarded 执行任意工具实例（含 per-run 动态解析的产物——它们不在静态
-   * 注册表里，`execute(name)` 查不到）。拦截语义与 execute 一致。
+   * guarded 执行由本注册表签发的有效定义（register 的静态实例或 resolveRunTools
+   * 的动态产物）。审批前后及执行前核验原注册与schema；卸载/替换拒绝旧调用，
+   * 不自动重放副作用。动态产物不在静态表里，execute(name) 查不到。
    */
   executeDefinition(
     tool: ToolDefinition,

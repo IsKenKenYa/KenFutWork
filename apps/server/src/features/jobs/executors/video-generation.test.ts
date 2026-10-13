@@ -17,6 +17,7 @@ const JOB_ID = "aaaaaaaa-1111-1111-1111-111111111111";
 function jobRow(overrides: Partial<BackgroundJob> = {}): BackgroundJob {
   return {
     id: JOB_ID,
+    file_target: { kind: "standalone" },
     instance_id: "ws-1",
     project_id: null,
     canvas_id: null,
@@ -80,6 +81,15 @@ function makeCtx(job: BackgroundJob) {
       bucket: () => ({
         upload: vi.fn(async () => {}),
         resolveUrl: vi.fn(async () => "https://blobs.example/video.mp4"),
+      }),
+    },
+    generationTargets: {
+      resolve: vi.fn(async () => null),
+      prepareOrigin: vi.fn(async () => ({ kind: "standalone" })),
+    },
+    projectFiles: {
+      prepareWrite: vi.fn(async () => {
+        throw new Error("standalone fixture cannot write project files");
       }),
     },
     assetWriter: {

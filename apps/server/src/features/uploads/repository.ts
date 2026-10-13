@@ -10,6 +10,11 @@ export type AssetRecord = {
   instance_id: string;
   project_id: string | null;
   created_at: string;
+  relative_path?: string;
+  task_id?: string | null;
+  write_fingerprint?: string;
+  scope_generation?: number | null;
+  file_state?: "pending" | "ready";
 };
 
 export type AssetLocation = {
@@ -44,7 +49,7 @@ export interface UploadRepository {
 }
 
 const ASSET_COLUMNS =
-  "id, bucket, object_path, mime_type, byte_size, instance_id, project_id, created_at";
+  "id, bucket, object_path, mime_type, byte_size, instance_id, project_id, created_at, relative_path, task_id, write_fingerprint, scope_generation, file_state";
 
 type RawAssetRow = {
   id: string;
@@ -55,6 +60,11 @@ type RawAssetRow = {
   instance_id: string;
   project_id: string | null;
   created_at: string;
+  relative_path?: string | null;
+  task_id?: string | null;
+  write_fingerprint?: string | null;
+  scope_generation?: string | number | null;
+  file_state?: "legacy" | "pending" | "ready";
 };
 
 export function createUploadRepository(
@@ -109,6 +119,19 @@ export function createUploadRepository(
 
 function mapAsset(row: RawAssetRow): AssetRecord {
   return {
+    ...(row.relative_path &&
+    row.write_fingerprint &&
+    row.file_state &&
+    row.file_state !== "legacy"
+      ? {
+          relative_path: row.relative_path,
+          task_id: row.task_id ?? null,
+          write_fingerprint: row.write_fingerprint,
+          scope_generation:
+            row.scope_generation == null ? null : Number(row.scope_generation),
+          file_state: row.file_state,
+        }
+      : {}),
     bucket: row.bucket,
     byte_size: row.byte_size === null ? null : Number(row.byte_size),
     created_at: row.created_at,

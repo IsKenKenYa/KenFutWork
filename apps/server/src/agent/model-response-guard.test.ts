@@ -11,9 +11,38 @@ import { createInstanceChatModel } from "../providers/openai-compatible/index.js
 import { createKenFutWorkDeepAgent } from "./deep-agent.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
 
-it.each(["assistant", undefined])(
-  "%s role空响应必须透出错误，不能被记为成功完成",
-  async (role) => {
+it.each([
+  {
+    label: "assistant空响应",
+    role: "assistant",
+    invalid: false,
+    content: "",
+    reason: "模型返回空响应",
+  },
+  {
+    label: "缺失role空响应",
+    role: undefined,
+    invalid: false,
+    content: "",
+    reason: "模型返回空响应",
+  },
+  {
+    label: "invalid-only工具参数",
+    role: "assistant",
+    invalid: true,
+    content: "",
+    reason: "模型工具调用参数格式异常",
+  },
+  {
+    label: "正文加invalid工具参数",
+    role: "assistant",
+    invalid: true,
+    content: "visible content",
+    reason: "模型工具调用参数格式异常",
+  },
+])(
+  "$label必须透出错误，不能被记为成功完成",
+  async ({ role, invalid, content, reason }) => {
     const directory = await mkdtemp(join(tmpdir(), "kfw-empty-model-"));
     const server = createServer(async (request, response) => {
       for await (const _chunk of request) {
@@ -21,7 +50,7 @@ it.each(["assistant", undefined])(
       }
       response.writeHead(200, { "content-type": "text/event-stream" });
       response.write(
-        `data: ${JSON.stringify({ id: "empty-reply", object: "chat.completion.chunk", created: 1, model: "test", choices: [{ index: 0, delta: { role, content: "" }, finish_reason: "stop" }] })}\n\n`,
+        `data: ${JSON.stringify({ id: "empty-reply", object: "chat.completion.chunk", created: 1, model: "test", choices: [{ index: 0, delta: { role, content, ...(invalid ? { tool_calls: [{ index: 0, id: "invalid-call", type: "function", function: { name: "Write", arguments: "{broken json" } }] } : {}) }, finish_reason: invalid ? "tool_calls" : "stop" }] })}\n\n`,
       );
       response.end("data: [DONE]\n\n");
     });
@@ -70,9 +99,9 @@ it.each(["assistant", undefined])(
         false,
       );
       const failed = events.find((event) => event.type === "run.failed");
-      if (!failed || failed.type !== "run.failed")
+      if (failed?.type !== "run.failed")
         throw new Error("空响应未产生可见运行错误");
-      expect(failed.error.message).toContain("模型返回空响应");
+      expect(failed.error.message).toContain(reason);
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),

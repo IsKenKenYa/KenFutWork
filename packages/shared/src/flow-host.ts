@@ -56,6 +56,16 @@ export const flowHostIdentityTicketResponseSchema = z.object({
   token: z.string().min(1).max(2048),
   expiresAt: z.string().min(1).max(64),
 });
+/** 项目由宿主认证；前端只提供项目标识，不能指定目录或权限。 */
+export const flowHostIdentityTicketRequestSchema = z.object({
+  projectId: z.string().uuid().optional(),
+});
+export const flowProjectFilesBindingSchema = z.object({
+  version: z.literal("v1"),
+  generation: z.number().int().positive().safe(),
+  projectId: z.string().uuid(),
+  bindingToken: z.string().min(1).max(2048),
+});
 export type FlowHostIdentityTicketResponse = z.infer<
   typeof flowHostIdentityTicketResponseSchema
 >;
@@ -76,6 +86,7 @@ export const flowHostIdentityRequestSchema = z.object({
 export const flowHostIdentityResponseSchema = z.object({
   subject: z.string().min(1).max(256),
   displayName: z.string().min(1).max(128).optional(),
+  projectFiles: flowProjectFilesBindingSchema.optional(),
 });
 export type FlowHostIdentityResponse = z.infer<
   typeof flowHostIdentityResponseSchema
@@ -131,6 +142,8 @@ export const flowHostEventsRequestSchema = z.object({
         payload: z.unknown(),
         at: z.string().min(1).max(64),
         hostSubject: z.string().min(1).max(256),
+        hostProjectId: z.uuid().optional(),
+        hostGeneration: z.number().int().positive().safe().optional(),
       }),
     )
     .min(1)
@@ -364,8 +377,17 @@ export function buildFlowNavigate(
 /** flow 前端会发来的消息类型（宿主侧只认这个集合，其余忽略）。 */
 export type FfEmbedInboundMessage =
   | { type: "ff-embed/hello"; version?: unknown }
-  | { type: "ff-embed/ready" }
-  | { type: "ff-embed/run-event" }
+  | {
+      type: "ff-embed/ready";
+      projectId?: unknown;
+      generation?: unknown;
+      extensions?: unknown;
+    }
+  | {
+      type: "ff-embed/run-event";
+      hostProjectId?: unknown;
+      hostGeneration?: unknown;
+    }
   | { type: "ff-embed/navigation" }
   | { type: "ff-embed/error" }
   | { type: "ff-embed/bye" };
@@ -378,6 +400,29 @@ const FF_EMBED_INBOUND_TYPES = new Set([
   "ff-embed/error",
   "ff-embed/bye",
 ]);
+
+export function isFlowProjectReady(
+  message: FfEmbedInboundMessage,
+  projectId: string,
+): message is Extract<FfEmbedInboundMessage, { type: "ff-embed/ready" }> & {
+  projectId: string;
+  generation: number;
+} {
+  if (
+    message.type !== "ff-embed/ready" ||
+    message.projectId !== projectId ||
+    typeof message.generation !== "number" ||
+    !Number.isSafeInteger(message.generation) ||
+    message.generation < 1
+  )
+    return false;
+  return (
+    message.extensions !== null &&
+    typeof message.extensions === "object" &&
+    !Array.isArray(message.extensions) &&
+    (message.extensions as Record<string, unknown>).projectFiles === "v1"
+  );
+}
 
 /**
  * 解析一条来自 flow iframe 的消息。

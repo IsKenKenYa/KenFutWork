@@ -1,12 +1,18 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { KenFutWorkAgentFactory } from "../agent/deep-agent.js";
+import type { AgentRuntimeProvider } from "../agent/provider-contract.js";
 import type { ServerEnv } from "../config/env.js";
+import { isDesktopRuntime } from "../desktop/runtime.js";
 import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
 import { createBlobPlugin } from "../features/blob/plugin.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
 import { createBrowserPlugin } from "../features/browser/plugin.js";
-import { createCanvasPlugin } from "../features/canvas/plugin.js";
+import { createCanvasAssetLocationsPlugin } from "../features/canvas/asset-locations-plugin.js";
+import {
+  createCanvasPlugin,
+  createCanvasToolsPlugin,
+} from "../features/canvas/plugin.js";
 import { createChatPlugin } from "../features/chat/plugin.js";
 import { createRealtimePlugin } from "../features/chat/realtime-plugin.js";
 import { createCheckpointsPlugin } from "../features/checkpoints/plugin.js";
@@ -17,10 +23,20 @@ import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
 import { createCodeUiAgentEventsPlugin } from "../features/code-ui/agent-events-plugin.js";
 import { createCodeUiPlugin } from "../features/code-ui/plugin.js";
 import { createComputerUsePlugin } from "../features/computer-use/plugin.js";
+import { createContextHistoryPlugin } from "../features/context-history/plugin.js";
 import { createDynamicUiPlugin } from "../features/dynamic-ui/plugin.js";
+import { createDesignApprovalsPlugin } from "../features/execution/design-approvals-plugin.js";
+import { createDesignGoalHttpPlugin } from "../features/execution/design-goal-http-plugin.js";
+import { createDesignGoalsPlugin } from "../features/execution/design-goals-plugin.js";
+import { createDesignRunHostPlugin } from "../features/execution/design-run-host-plugin.js";
+import { createDesignTaskHttpPlugin } from "../features/execution/design-task-http-plugin.js";
+import { createDesignTasksPlugin } from "../features/execution/design-tasks-plugin.js";
 import { createExecutionScopesPlugin } from "../features/execution/plugin.js";
 import { createFlowHostPlugin } from "../features/flow/plugin.js";
+import { createGenerationTargetsPlugin } from "../features/generation/file-targets-plugin.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
+import { createGoalsPlugin } from "../features/goals/plugin.js";
+import { createJobLoopPlugin } from "../features/jobs/job-loop-plugin.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import { createJobsPlugin } from "../features/jobs/plugin.js";
 import {
@@ -42,6 +58,8 @@ import {
   type PluginCatalogEntry,
 } from "../features/plugins/plugin.js";
 import { createProcessSandboxPlugin } from "../features/process-sandbox/plugin.js";
+import { createProjectFilesPlugin } from "../features/project-files/plugin.js";
+import { createProjectDirectoryRelinkPlugin } from "../features/projects/directory-relink-plugin.js";
 import { createProjectsPlugin } from "../features/projects/plugin.js";
 import { createQueuePlugin } from "../features/queue/plugin.js";
 import { createSearchPlugin } from "../features/search/plugin.js";
@@ -69,6 +87,7 @@ export interface ServerProfileDeps {
   events: KernelEvents;
   env: ServerEnv;
   agentFactory?: KenFutWorkAgentFactory;
+  runtimeProvider?: AgentRuntimeProvider;
   agentModel?: BaseLanguageModel | string;
   mockEventDelayMs?: number;
   /** overrides 直填的条件装配插件需感知注入实例（enabled 判定，保持历史行为）。 */
@@ -172,9 +191,16 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createBlobPlugin(),
     brandKitPlugin,
     createCanvasPlugin(),
+    createCanvasToolsPlugin(),
     createCodeGitPlugin(),
     // 检查点（影子 git）在 agent-runs 之前装配：后者的轮次钩子经 tryGet 消费它
     createCheckpointsPlugin(),
+    createGoalsPlugin(),
+    createDesignGoalsPlugin(),
+    createDesignTasksPlugin(),
+    createDesignTaskHttpPlugin(),
+    createDesignGoalHttpPlugin(),
+    createDesignApprovalsPlugin(),
     createChatPlugin(),
     createSettingsPlugin(),
     createSettingsRoutesPlugin(),
@@ -184,11 +210,17 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createTaskWorkPlugin(),
     createCodeSubagentsPlugin(),
     createToolCatalogPlugin(),
+    createContextHistoryPlugin(),
     createUploadsPlugin(),
     createProjectsPlugin(),
+    createProjectDirectoryRelinkPlugin(),
+    createProjectFilesPlugin(),
+    createCanvasAssetLocationsPlugin(),
+    createGenerationTargetsPlugin(),
     createJobsPlugin({
       ...(deps.overrideJobs ? { injected: deps.overrideJobs } : {}),
     }),
+    createJobLoopPlugin({ enabled: isDesktopRuntime, tag: "[desktop-worker]" }),
     createSkillsPlugin(),
     createUsagePlugin(),
     createPermissionsPlugin({ events: deps.events }),
@@ -211,6 +243,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createFlowHostPlugin({
       secret: deps.env.flowEmbedSecret,
       frontendUrl: deps.env.flowFrontendUrl,
+      gatewayUrl: deps.env.flowGatewayUrl,
     }),
     createBrowserPlugin(),
     // 语音助手（内建插件，默认开启）：听/说走内置 sherpa 或 BYOK 实例端点
@@ -227,12 +260,16 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
       // DEC-1 事件缝：pre-step 改写权交给事件监听器（执行模式指令注入等）
       emitPreStep: (payload) => deps.events.emitPreStep(payload),
       ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
+      ...(deps.runtimeProvider
+        ? { runtimeProvider: deps.runtimeProvider }
+        : {}),
       ...(deps.agentModel ? { agentModel: deps.agentModel } : {}),
       ...(deps.mockEventDelayMs === undefined
         ? {}
         : { mockEventDelayMs: deps.mockEventDelayMs }),
     }),
     createCodeUiPlugin(),
+    createDesignRunHostPlugin(),
     createRealtimePlugin(),
   ];
 }

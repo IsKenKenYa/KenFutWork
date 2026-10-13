@@ -1,9 +1,13 @@
-import { mkdtempSync, realpathSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { loadServerEnv } from "../../config/env.js";
+import { composePlugins } from "../../kernel/compose.js";
+import { CapabilityRegistryImpl } from "../../kernel/context.js";
 import { BlobError } from "../blob/types.js";
+import { createConsumerLocalAccessService } from "../local-access/test-consumer-service.js";
 import { createLocalInstanceService } from "../local-instance/service.js";
 import type {
   LocalActor,
@@ -14,6 +18,11 @@ import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
 } from "../persistence/providers/postgres.js";
+import { createTaskResourceCloser } from "../task-work/close-resources.js";
+import { createTaskWorkManager } from "../task-work/service.js";
+import { createMemoryTaskWorkStore } from "../task-work/test-store.js";
+import type { TaskWorkContext, TaskWorkOutcome } from "../task-work/types.js";
+import { createProjectsPlugin } from "./plugin.js";
 import {
   createProjectService,
   ProjectServiceError,
@@ -330,11 +339,12 @@ describe("projects repository（SQL 与隔离谓词）", () => {
     expect(canvasInsert?.sql).toContain("insert into public.canvases");
     // canvases 无 instance_id 列：经 projects 父链校验归属，实例谓词不可省。
     expect(canvasInsert?.sql).toContain("from public.projects p");
-    expect(canvasInsert?.sql).toContain("p.instance_id = $4");
+    expect(canvasInsert?.sql).toContain("p.instance_id = $5");
     expect(canvasInsert?.values).toEqual([
       "Main Canvas",
       CLIENT_ID,
       PROJECT_ID,
+      null,
       INSTANCE_ID,
     ]);
   });
@@ -361,6 +371,7 @@ describe("project service（错误映射与行为保持不变）", () => {
   const buildService = (options: {
     repository: Partial<ReturnType<typeof createProjectRepository>>;
     localInstance?: LocalInstanceService;
+    sandboxRoot?: string;
     uploadError?: { message: string } | null;
   }) =>
     createProjectService({
@@ -394,6 +405,7 @@ describe("project service（错误映射与行为保持不变）", () => {
         ...options.repository,
       } as ReturnType<typeof createProjectRepository>,
       localInstance: options.localInstance ?? LOCAL_INSTANCE,
+      sandboxRoot: options.sandboxRoot,
     });
 
   it("列表把行映射为契约形状（含 primaryCanvas）", async () => {
@@ -680,9 +692,64 @@ describe("project service（错误映射与行为保持不变）", () => {
     expect(summary).not.toHaveProperty("primaryCanvas");
   });
 
+  it("三种项目类型缺省工作目录时共用实例与项目目录算法", async () => {
+    const sandboxRoot = realpathSync(
+      mkdtempSync(join(tmpdir(), "kfw-project-defaults-")),
+    );
+    const captured: CreateProjectInput[] = [];
+    const service = buildService({
+      sandboxRoot,
+      repository: {
+        createProject: async (input) => {
+          captured.push(input);
+          return {
+            canvas: {
+              id: `canvas-${input.name}`,
+              name: "Main Canvas",
+              is_primary: true,
+            },
+            project: {
+              id: input.id ?? PROJECT_ID,
+              kind: input.kind ?? "design",
+              name: input.name,
+              slug: input.slug,
+              description: null,
+              created_at: "2026-09-17T00:00:00+00:00",
+              updated_at: "2026-09-17T00:00:00+00:00",
+              instance_id: INSTANCE_ID,
+              work_dir: input.workDir ?? null,
+              additional_directories: input.additionalDirectories ?? [],
+            },
+          };
+        },
+      },
+    });
+
+    try {
+      for (const kind of ["design", "code", "flow"] as const) {
+        const summary = await service.createProject(ACTOR, {
+          kind,
+          name: kind,
+        });
+        const input = captured.at(-1);
+        if (!input?.id) throw new Error("项目创建没有提供项目 ID");
+        const expected = resolve(sandboxRoot, INSTANCE_ID, input.id);
+
+        expect(input.workDir).toBe(expected);
+        expect(summary.workDir).toBe(expected);
+        expect(summary.kind).toBe(kind);
+        expect(statSync(expected).isDirectory()).toBe(true);
+      }
+    } finally {
+      rmSync(sandboxRoot, { recursive: true, force: true });
+    }
+  });
+
   it("建项目带工作目录：不合格路径 400 invalid_work_dir，且不落库", async () => {
     let created = 0;
+    const sandboxRoot = mkdtempSync(join(tmpdir(), "kfw-invalid-project-dir-"));
     const service = buildService({
+      sandboxRoot,
       repository: {
         createProject: async () => {
           created += 1;
@@ -691,47 +758,78 @@ describe("project service（错误映射与行为保持不变）", () => {
       },
     });
 
-    await expect(
-      service.createProject(ACTOR, {
-        kind: "code",
-        name: "test",
-        work_dir: "相对路径",
-      }),
-    ).rejects.toMatchObject({ code: "invalid_work_dir", statusCode: 400 });
+    try {
+      for (const kind of ["design", "code", "flow"] as const) {
+        await expect(
+          service.createProject(ACTOR, {
+            kind,
+            name: "test",
+            work_dir: "相对路径",
+          }),
+        ).rejects.toMatchObject({ code: "invalid_work_dir", statusCode: 400 });
 
-    await expect(
-      service.createProject(ACTOR, {
-        kind: "code",
-        name: "test",
-        work_dir: join(tmpdir(), "kfw-definitely-missing-dir"),
-      }),
-    ).rejects.toMatchObject({ code: "invalid_work_dir", statusCode: 400 });
+        await expect(
+          service.createProject(ACTOR, {
+            kind,
+            name: "test",
+            work_dir: join(sandboxRoot, "missing"),
+          }),
+        ).rejects.toMatchObject({ code: "invalid_work_dir", statusCode: 400 });
+      }
 
-    expect(created).toBe(0);
+      expect(created).toBe(0);
+    } finally {
+      rmSync(sandboxRoot, { recursive: true, force: true });
+    }
   });
 
-  it("更新工作目录：null 解绑走显式 null，字符串重绑先校验", async () => {
+  it("Project目录固定：同目录幂等，其它目录与解绑拒绝，缺失需要显式重新关联", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kfw-fixed-project-"));
+    const other = mkdtempSync(join(tmpdir(), "kfw-other-project-"));
     const patches: ProjectUpdatePatch[] = [];
+    let root = realpathSync(dir);
     const service = buildService({
       repository: {
-        update: async (_instanceId, _projectId, patch) => {
+        findActiveById: async () => ({
+          id: PROJECT_ID,
+          instance_id: INSTANCE_ID,
+          kind: "design",
+          name: "Project",
+          slug: "project",
+          description: null,
+          work_dir: root,
+          additional_directories: [],
+          brand_kit_id: null,
+          created_at: "now",
+          updated_at: "now",
+        }),
+        update: async (_instance, _project, patch) => {
           patches.push(patch);
           return 1;
         },
       },
     });
-
-    await service.updateProject(ACTOR, PROJECT_ID, { work_dir: null });
-    expect(patches[0]?.workDir).toBeNull();
-
-    const dir = mkdtempSync(join(tmpdir(), "kfw-projdir2-"));
-    await service.updateProject(ACTOR, PROJECT_ID, { work_dir: dir });
-    expect(patches[1]?.workDir).toBe(realpathSync(dir));
-
-    await expect(
-      service.updateProject(ACTOR, PROJECT_ID, { work_dir: "nope/relative" }),
-    ).rejects.toMatchObject({ code: "invalid_work_dir" });
-    expect(patches).toHaveLength(2);
+    try {
+      await service.updateProject(ACTOR, PROJECT_ID, { work_dir: dir });
+      expect(patches).toEqual([]);
+      for (const work_dir of [null, other])
+        await expect(
+          service.updateProject(ACTOR, PROJECT_ID, { work_dir }),
+        ).rejects.toMatchObject({ code: "invalid_work_dir", statusCode: 400 });
+      await service.updateProject(ACTOR, PROJECT_ID, {
+        name: "Renamed",
+        work_dir: dir,
+      });
+      expect(patches).toEqual([{ name: "Renamed" }]);
+      root = join(dir, "missing");
+      await expect(
+        service.updateProject(ACTOR, PROJECT_ID, { work_dir: other }),
+      ).rejects.toThrow("重新关联");
+      expect(patches).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(other, { recursive: true, force: true });
+    }
   });
   it("伪造实例在项目列表及空更新前被拒绝，不触碰仓储", async () => {
     let reads = 0;
@@ -756,4 +854,256 @@ describe("project service（错误映射与行为保持不变）", () => {
     ).rejects.toMatchObject({ code: "instance_forbidden" });
     expect(reads).toBe(0);
   });
+});
+
+it.each(["settled", "work-close-failed"] as const)(
+  "the real projects DI consumer waits for Design foreground/TaskWork/process closure: %s",
+  async (ending) => {
+    const taskId = "design-task-archive";
+    let foregroundDone!: () => void;
+    const foreground = new Promise<void>((resolve) => {
+      foregroundDone = resolve;
+    });
+    let workDone!: () => void;
+    let workFailed!: (error: Error) => void;
+    const work = new Promise<void>((resolve, reject) => {
+      workDone = resolve;
+      workFailed = reject;
+    });
+    let processDone!: () => void;
+    const process = new Promise<void>((resolve) => {
+      processDone = resolve;
+    });
+    let stopStarted!: () => void;
+    const stopRequested = new Promise<void>((resolve) => {
+      stopStarted = resolve;
+    });
+    let archived = false;
+    const trace: string[] = [];
+    const { calls, runner } = createRunner((text) => {
+      if (text.includes("set archived_at = now()")) {
+        archived = true;
+        trace.push("archive");
+        return { rowCount: 1, rows: [] };
+      }
+      if (text.includes("design_task_executions"))
+        return { rowCount: 1, rows: [{ task_id: taskId, id: taskId }] };
+      if (text.includes("from public.projects"))
+        return {
+          rowCount: 1,
+          rows: [
+            {
+              id: PROJECT_ID,
+              instance_id: INSTANCE_ID,
+              kind: "design",
+              name: "Design",
+              slug: "design",
+              description: null,
+              brand_kit_id: null,
+              work_dir: "/tmp/design-project-archive",
+              additional_directories: [],
+              created_at: "2026-01-01T00:00:00Z",
+              updated_at: "2026-01-01T00:00:00Z",
+            },
+          ],
+        };
+      return { rowCount: 1, rows: [] };
+    });
+    const stop = vi.fn(
+      async (_actor: LocalActor, input: { taskId: string }) => {
+        expect(input.taskId).toBe(taskId);
+        trace.push("foreground-stop");
+        stopStarted();
+        await foreground;
+        trace.push("foreground-settled");
+        return { kind: "idle" as const };
+      },
+    );
+    const closeWork = vi.fn(
+      async (
+        instanceId: string,
+        closingTaskId: string,
+        _reason: string,
+        ownerKind: "code" | "design",
+      ) => {
+        expect(ownerKind).toBe("design");
+        expect([instanceId, closingTaskId]).toEqual([INSTANCE_ID, taskId]);
+        trace.push("work-close");
+        await work;
+        trace.push("work-settled");
+      },
+    );
+    const closeProcess = vi.fn(async (closingTaskId: string) => {
+      expect(closingTaskId).toBe(taskId);
+      trace.push("process-close");
+      await process;
+      trace.push("process-settled");
+    });
+    const app = (await import("fastify")).default();
+    const kernel = composePlugins(
+      loadServerEnv({}, {}),
+      [createProjectsPlugin()],
+      {
+        app,
+        overrides: {
+          localAccess: createConsumerLocalAccessService(),
+          persistence: createPersistenceFromRunner(runner),
+          localInstance: LOCAL_INSTANCE,
+          blob: {} as never,
+          designRunHost: { stop } as never,
+          agentRuns: { cancelTaskRuns: async () => foreground } as never,
+          taskWork: { closeTask: closeWork } as never,
+          processSandbox: { closeTask: closeProcess } as never,
+        },
+      },
+    );
+    const archive = kernel.get("projects").archiveProject(ACTOR, PROJECT_ID);
+    void archive.catch(() => {});
+    try {
+      // Current Design archives immediately; a real close Consumer must win this race.
+      expect(
+        await Promise.race([
+          stopRequested.then(() => "stopping"),
+          archive.then(() => "archived"),
+        ]),
+      ).toBe("stopping");
+      expect(archived).toBe(false);
+      expect(closeProcess).not.toHaveBeenCalled();
+      foregroundDone();
+      await vi.waitFor(() => expect(closeWork).toHaveBeenCalledOnce());
+      expect(archived).toBe(false);
+      if (ending === "work-close-failed") {
+        workFailed(new Error("TaskWork close was not confirmed"));
+        await expect(archive).rejects.toMatchObject({
+          code: "project_delete_failed",
+          statusCode: 503,
+        });
+        expect(archived).toBe(false);
+        expect(closeProcess).not.toHaveBeenCalled();
+        expect(
+          calls.some((call) =>
+            call.text.includes("execution_state = 'failed'"),
+          ),
+        ).toBe(true);
+      } else {
+        workDone();
+        await vi.waitFor(() => expect(closeProcess).toHaveBeenCalledOnce());
+        expect(archived).toBe(false);
+        processDone();
+        await archive;
+        expect(trace.indexOf("archive")).toBeGreaterThan(
+          trace.indexOf("foreground-settled"),
+        );
+        expect(trace.indexOf("archive")).toBeGreaterThan(
+          trace.indexOf("work-settled"),
+        );
+        expect(trace.indexOf("archive")).toBeGreaterThan(
+          trace.indexOf("process-settled"),
+        );
+      }
+    } finally {
+      foregroundDone();
+      workDone();
+      processDone();
+      await archive.catch(() => {});
+      await kernel.dispose();
+      await app.close();
+    }
+  },
+);
+
+it("Design resource closer waits for actual TaskWork exit and preserves a Code sibling", async () => {
+  const design: TaskWorkContext = {
+    actor: ACTOR,
+    ownerKind: "design",
+    agentId: "main",
+    runId: "design-run",
+    branchGeneration: 1,
+    scope: {
+      instanceId: INSTANCE_ID,
+      projectId: PROJECT_ID,
+      taskId: "design-work-task",
+      generation: 1,
+      rootDirectory: "/tmp/design-work-project",
+      additionalDirectories: [],
+      sandboxMode: "workspace-write",
+    },
+  };
+  const code: TaskWorkContext = {
+    ...design,
+    ownerKind: "code",
+    runId: "code-run",
+    scope: { ...design.scope, taskId: "code-sibling-task" },
+  };
+  const manager = createTaskWorkManager({
+    store: createMemoryTaskWorkStore([design, code]),
+    executionHostId: "project-archive-host",
+    resolveMaxConcurrent: async () => 4,
+  });
+  let finishDesign!: (outcome: TaskWorkOutcome) => void;
+  const designResult = new Promise<TaskWorkOutcome>((resolve) => {
+    finishDesign = resolve;
+  });
+  let finishCode!: (outcome: TaskWorkOutcome) => void;
+  const codeResult = new Promise<TaskWorkOutcome>((resolve) => {
+    finishCode = resolve;
+  });
+  let confirmExit!: () => void;
+  const exit = new Promise<void>((resolve) => {
+    confirmExit = resolve;
+  });
+  const stopDesign = vi.fn(async () => {
+    await exit;
+    finishDesign({ status: "canceled", summary: "范围已退出" });
+  });
+  const stopCode = vi.fn(async () => {
+    finishCode({ status: "canceled", summary: "cleanup" });
+  });
+  const designRecord = await manager.start(
+    design,
+    { kind: "command", label: "Design Bash", toolCallId: "design-bash" },
+    { run: () => designResult, stop: stopDesign },
+  );
+  const codeRecord = await manager.start(
+    code,
+    { kind: "command", label: "Code sibling", toolCallId: "code-bash" },
+    { run: () => codeResult, stop: stopCode },
+  );
+  const sandboxClose = vi.fn(async () => {});
+  const closer = createTaskResourceCloser({
+    localInstance: LOCAL_INSTANCE,
+    resources: () => ({
+      runs: { cancelTaskRuns: async () => {} } as never,
+      work: manager,
+      sandbox: { closeTask: sandboxClose } as never,
+      capabilities: new CapabilityRegistryImpl(),
+    }),
+  });
+  let settled = false;
+  const closing = closer(ACTOR, design.scope.taskId, "项目已关闭", "design");
+  void closing.then(() => {
+    settled = true;
+  });
+  try {
+    await vi.waitFor(() => expect(stopDesign).toHaveBeenCalledOnce());
+    expect(settled).toBe(false);
+    expect((await manager.find(design, designRecord.id))?.status).toBe(
+      "running",
+    );
+    expect(sandboxClose).not.toHaveBeenCalled();
+    confirmExit();
+    await closing;
+    expect((await manager.find(design, designRecord.id))?.status).toBe(
+      "canceled",
+    );
+    expect((await manager.find(code, codeRecord.id))?.status).toBe("running");
+    expect(stopCode).not.toHaveBeenCalled();
+    expect(sandboxClose).toHaveBeenCalledOnce();
+  } finally {
+    confirmExit();
+    finishDesign({ status: "canceled", summary: "cleanup" });
+    finishCode({ status: "completed", summary: "cleanup" });
+    await closing;
+    await manager.close("cleanup");
+  }
 });

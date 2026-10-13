@@ -7,17 +7,24 @@ vi.mock("@zui/host/surfaceApi.js", () => ({
   surfaceJson: (path: string, init?: RequestInit) => surfaceJson(path, init),
 }));
 
-const { ExecutionModeChip } = await import("../src/components/workbench/zcode/host/ExecutionModeChip.js");
+const { ExecutionModeChip } = await import(
+  "../src/components/workbench/zcode/host/ExecutionModeChip.js"
+);
 
 afterEach(() => {
   cleanup();
   surfaceJson.mockReset();
 });
 
-test("六档 chip：加载后显示当前模式，隐藏于草稿态与端点失败", async () => {
+test("执行模式 chip：加载后显示当前模式，隐藏于草稿态与端点失败", async () => {
   surfaceJson.mockImplementation(async (path: string) => {
     if (path === "/api/execution-modes") {
-      return { modes: [{ id: "agent", label: "自主" }, { id: "goal", label: "目标" }] };
+      return {
+        modes: [
+          { id: "agent", label: "自主" },
+          { id: "goal", label: "目标" },
+        ],
+      };
     }
     return { mode: "goal" };
   });

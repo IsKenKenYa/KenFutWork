@@ -25,6 +25,20 @@ export {
   videoArtifactSchema,
 } from "./artifacts.js";
 
+/** Stable product reasons; raw provider finish metadata stays private to adapters. */
+export const runStopReasonSchema = z.enum([
+  "completed",
+  "output_limit",
+  "user_cancelled",
+  "task_stopped",
+  "host_shutdown",
+]);
+export type RunStopReason = z.infer<typeof runStopReasonSchema>;
+export type RunCancellationReason = Extract<
+  RunStopReason,
+  "user_cancelled" | "task_stopped" | "host_shutdown"
+>;
+
 export const runStartedEventSchema = z.object({
   type: z.literal("run.started"),
   runId: runIdSchema,
@@ -117,13 +131,14 @@ export const taskWorkUpdatedEventSchema = z.object({
 });
 
 export const runCompletedEventSchema = z.object({
+  stopReason: z.enum(["completed", "output_limit"]).optional(),
   type: z.literal("run.completed"),
   operationResult: z
     .object({
       kind: z.literal("compact"),
       origin: z.literal("manual"),
       status: z.enum(["applied", "unchanged"]),
-      reason: z.literal("insufficient_history").optional(),
+      reason: z.enum(["insufficient_history", "not_reduced"]).optional(),
     })
     .optional(),
   runId: runIdSchema,
@@ -236,6 +251,9 @@ export const runHookEventSchema = z.object({
 });
 
 export const runCanceledEventSchema = z.object({
+  stopReason: z
+    .enum(["user_cancelled", "task_stopped", "host_shutdown"])
+    .optional(),
   type: z.literal("run.canceled"),
   runId: runIdSchema,
   timestamp: timestampSchema,
@@ -294,6 +312,8 @@ export const canvasSyncEventSchema = z.object({
  */
 export const flowRunEventSchema = z.object({
   type: z.literal("flowRun.event"),
+  hostProjectId: z.uuid().optional(),
+  hostGeneration: z.number().int().positive().safe().optional(),
   /** flow 的 run id（宿主不解析，只透传）。 */
   runId: z.string().min(1).max(128),
   /** run 内单调序号（flow 侧生成）。 */

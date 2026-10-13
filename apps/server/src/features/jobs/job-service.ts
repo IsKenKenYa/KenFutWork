@@ -3,6 +3,10 @@ import type {
   BackgroundJobStatus,
   BackgroundJobType,
 } from "@kenfutwork/shared";
+import {
+  GenerationTargetError,
+  type GenerationTargets,
+} from "../generation/file-targets.js";
 import type {
   LocalActor,
   LocalInstanceService,
@@ -38,6 +42,10 @@ export class JobServiceError extends Error {
 
 /** 实例归属由本地服务验证（`FORM-9`），故不由调用方传入。 */
 export type CreateJobInput = {
+  /** Only the authenticated HTTP consumer sets this; never a request/tool schema field. */
+  interactiveRequest?: true;
+  expectedScopeGeneration?: number;
+  expectedBranchGeneration?: number;
   projectId?: string;
   canvasId?: string;
   sessionId?: string;
@@ -85,6 +93,7 @@ function mapJobRow(row: BackgroundJobRecord): BackgroundJob {
   return {
     id: row.id,
     instance_id: row.instance_id,
+    file_target: row.file_target ?? null,
     project_id: row.project_id ?? null,
     canvas_id: row.canvas_id ?? null,
     session_id: row.session_id ?? null,
@@ -112,6 +121,7 @@ function mapJobRow(row: BackgroundJobRecord): BackgroundJob {
 export function createJobService(options: {
   /** 队列缝（M3.2）：投递与消费，Provider 随形态替换。 */
   queue: QueueClient;
+  generationTargets?: GenerationTargets;
   repository: JobRepository;
   /**
    * 接入路径（建/查/列/取消）需要它验证实例归属；worker 进程只走按 id 的
@@ -153,10 +163,31 @@ export function createJobService(options: {
       // 新请求在HTTP准入处认领；在途Run提交的生成工作仍须正常完成。
       const instanceId = await requireInstanceId(actor, "job_create_failed");
       const queueName = QUEUE_MAP[input.jobType];
+      if (!options.generationTargets)
+        throw new JobServiceError(
+          "job_create_failed",
+          "生成文件来源服务未装配",
+          500,
+        );
+      const fileTarget = await options.generationTargets
+        .prepareOrigin({
+          actor,
+          ...input,
+        })
+        .catch((error: unknown) => {
+          if (error instanceof GenerationTargetError)
+            throw new JobServiceError(
+              "job_create_failed",
+              error.message,
+              error.statusCode,
+            );
+          throw error;
+        });
 
       const job = await repository
         .insert({
           ...(input.canvasId ? { canvasId: input.canvasId } : {}),
+          fileTarget,
           jobType: input.jobType,
           payload: input.payload,
           ...(input.projectId ? { projectId: input.projectId } : {}),
@@ -166,7 +197,15 @@ export function createJobService(options: {
           createdByClientId: actor.accessClientId,
           instanceId,
         })
-        .catch(() => null);
+        .catch((error: unknown) => {
+          if (error instanceof GenerationTargetError)
+            throw new JobServiceError(
+              "job_create_failed",
+              error.message,
+              error.statusCode,
+            );
+          return null;
+        });
 
       if (!job) {
         throw new JobServiceError(

@@ -27,9 +27,7 @@ export async function probeEnginePaths(deps: {
   platform: NodeJS.Platform;
   release: string;
   run: RunCommand;
-  listInstances: Parameters<
-    typeof probeRemotePath
-  >[0]["listInstances"];
+  listInstances: Parameters<typeof probeRemotePath>[0]["listInstances"];
 }): Promise<FlowHostEngineResponse> {
   const [wsl2, container, remote] = await Promise.all([
     probeWsl2Path(deps),

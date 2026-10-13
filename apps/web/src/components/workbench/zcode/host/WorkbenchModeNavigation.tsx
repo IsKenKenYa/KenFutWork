@@ -1,8 +1,13 @@
 import type { HostWorkbenchMode, HostWorkbenchNavigation } from "@zcode/shared";
 import appLogoUrl from "@zui/assets/kenfutwork-mark.png";
+
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { Code2, Palette, PanelLeftOpen, Workflow } from "lucide-react";
 import { useSyncExternalStore } from "react";
+import { ProjectDirectoryRecovery } from "./ProjectDirectoryRecovery.js";
+
+// 与 AboutSection 同一边界：Code 宿主的 Vite PNG 导入在运行时为 URL 字符串。
+const logoSrc = appLogoUrl as unknown as string;
 
 /** 从CanvasSidebar原横排及收起按钮提取，Code／Design／Flow共用展示。 */
 export function WorkbenchModeNavigation({
@@ -82,12 +87,15 @@ export function HostWorkbenchModeNavigation({
   actions?: React.ReactNode;
 }) {
   const navigation = useOptionalPlatform()?.workbenchNavigation;
-  if (!navigation) return null;
   return (
-    <ConnectedWorkbenchModeNavigation
-      navigation={navigation}
-      actions={actions}
-    />
+    <>
+      {navigation ? (
+        <ConnectedWorkbenchModeNavigation
+          navigation={navigation}
+          actions={actions}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -113,7 +121,7 @@ function ConnectedWorkbenchModeNavigation({
             上下均分 148/147，无需位移补偿）。 */}
         {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
         <img
-          src={appLogoUrl}
+          src={logoSrc}
           alt="KenFutWork"
           className="h-5 w-auto brightness-0"
           draggable={false}
@@ -128,6 +136,7 @@ function ConnectedWorkbenchModeNavigation({
         ) : null}
       </div>
       <WorkbenchModeNavigation {...snapshot} onModeChange={navigation.open} />
+      {snapshot.mode === "code" ? <ProjectDirectoryRecovery /> : null}
     </div>
   );
 }
@@ -153,7 +162,7 @@ export function HostSidebarRail({ onExpand }: { onExpand: () => void }) {
     <div className="flex h-full w-full flex-col items-center gap-1 py-2">
       {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
       <img
-        src={appLogoUrl}
+        src={logoSrc}
         alt="KenFutWork"
         className="my-1 h-5 w-auto brightness-0"
         draggable={false}

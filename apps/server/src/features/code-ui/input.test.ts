@@ -32,6 +32,7 @@ async function fixture(
     hang?: boolean;
     backgroundReady?: boolean;
     compactOutcome?: "applied" | "unchanged" | "failed" | "canceled";
+    compactReason?: "insufficient_history" | "not_reduced";
   } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), "kfw-code-input-"));
@@ -135,6 +136,7 @@ async function fixture(
       planObject: async () => {},
     },
     recoverRuntimeInputs: async () => {},
+    readRunFailure: async () => null,
     readHumanPreferences: async () => ({}),
     find: async (workspace: string, id: string) =>
       workspace === instanceId && id === taskId ? structuredClone(root) : null,
@@ -209,8 +211,10 @@ async function fixture(
       }
       await change(structuredClone(root));
       const decision = decide(structuredClone(root));
-      root.state = decision.state;
-      root.revision = Number(root.revision) + 1;
+      if (decision.state) {
+        root.state = decision.state;
+        root.revision = Number(root.revision) + 1;
+      }
       const ack = protocol.commandAckSchema.parse(decision.ack);
       commands.set(key, { fingerprint, ack });
       return ack;
@@ -371,7 +375,9 @@ async function fixture(
                   origin: "manual",
                   status: options.compactOutcome,
                   ...(options.compactOutcome === "unchanged"
-                    ? { reason: "insufficient_history" }
+                    ? {
+                        reason: options.compactReason ?? "insufficient_history",
+                      }
                     : {}),
                 },
               }
@@ -761,21 +767,24 @@ it("手动压缩完成更新原运行标记，不另造自动压缩或用户行"
   }
 });
 
-it("历史不足时手动压缩明确无变化，冷读仍为原noop标记", async () => {
-  const host = await fixture({ compactOutcome: "unchanged" });
-  const before = await host.service.getSnapshot(host.actor, host.taskId);
-  const command = await host.command("compact", {}, before.revision);
-  await command!.publish!();
-  const completed = await host.service.getSnapshot(host.actor, host.taskId);
-  expect(completed.rows.window).toMatchObject([
-    {
-      kind: "timelineMarker",
-      marker: { type: "compact", origin: "manual", status: "noop" },
-    },
-  ]);
-  expect(completed.rows.window).toHaveLength(1);
-  expect(completed.control.phase).toBe("completedSuccess");
-});
+it.each(["insufficient_history", "not_reduced"] as const)(
+  "手动压缩无变化（%s），冷读仍为原noop标记",
+  async (compactReason) => {
+    const host = await fixture({ compactOutcome: "unchanged", compactReason });
+    const before = await host.service.getSnapshot(host.actor, host.taskId);
+    const command = await host.command("compact", {}, before.revision);
+    await command!.publish!();
+    const completed = await host.service.getSnapshot(host.actor, host.taskId);
+    expect(completed.rows.window).toMatchObject([
+      {
+        kind: "timelineMarker",
+        marker: { type: "compact", origin: "manual", status: "noop" },
+      },
+    ]);
+    expect(completed.rows.window).toHaveLength(1);
+    expect(completed.control.phase).toBe("completedSuccess");
+  },
+);
 
 it("手动压缩失败结束原标记并保留摘要错误，不发用户消息已保存通知", async () => {
   const host = await fixture({ compactOutcome: "failed" });

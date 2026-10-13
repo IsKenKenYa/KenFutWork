@@ -38,9 +38,17 @@ test("工作树菜单：列表渲染、新建 POST、删除确认、成功后刷
     if (init?.method === "POST") {
       const body = JSON.parse(String(init.body)) as { path?: string };
       if (path.endsWith("/delete")) {
-        return { git: { isRepo: true, branch: "main", branches: [], dirty: false } };
+        return {
+          git: { isRepo: true, branch: "main", branches: [], dirty: false },
+        };
       }
-      return { worktree: { path: `/repo/${body.path}`, head: "c".repeat(40), branch: "new" } };
+      return {
+        worktree: {
+          path: `/repo/${body.path}`,
+          head: "c".repeat(40),
+          branch: "new",
+        },
+      };
     }
     return { worktrees };
   });
@@ -75,9 +83,7 @@ test("工作树菜单：列表渲染、新建 POST、删除确认、成功后刷
   expect(onDone).toHaveBeenCalled();
 
   // 删除
-  await user.click(
-    screen.getByRole("button", { name: "删除工作树 feat-a" }),
-  );
+  await user.click(screen.getByRole("button", { name: "删除工作树 feat-a" }));
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith(
       "/api/code/git/worktrees/delete",

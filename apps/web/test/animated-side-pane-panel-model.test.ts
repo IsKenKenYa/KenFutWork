@@ -1,11 +1,9 @@
 import { expect, test } from "vitest";
 
-const {
-  parsePanelMaxSizePercent,
-  shouldCollapseSidebarAtPanelMax,
-} = await import(
-  "../src/components/workbench/zcode/app-shell/animatedSidePanePanelModel.js"
-);
+const { parsePanelMaxSizePercent, shouldCollapseSidebarAtPanelMax } =
+  await import(
+    "../src/components/workbench/zcode/app-shell/animatedSidePanePanelModel.js"
+  );
 
 test("parsePanelMaxSizePercent：百分比字符串与数字可解析，px 返回 null", () => {
   expect(parsePanelMaxSizePercent("65%")).toBe(65);

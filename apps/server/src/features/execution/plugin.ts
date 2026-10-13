@@ -5,10 +5,15 @@ import { createScopeRepository } from "./scope-repository.js";
 import { createExecutionScopes } from "./scope-service.js";
 import { revokeTaskFileOperations } from "./scoped-filesystem.js";
 
-export function createExecutionScopesPlugin(): PluginDefinition {
+export function createExecutionScopesPlugin(
+  options: { withRoutes?: boolean } = {},
+): PluginDefinition {
+  const withRoutes = options.withRoutes ?? true;
   return {
     name: "execution-scopes",
-    inject: ["localAccess", "persistence", "localInstance", "settings"],
+    inject: withRoutes
+      ? ["localAccess", "persistence", "localInstance", "settings"]
+      : ["persistence", "localInstance", "settings"],
     apply(ctx) {
       ctx.get("systemPrompt").register(executionScopePromptSection);
       ctx.register("executionScopes", () =>
@@ -40,6 +45,7 @@ export function createExecutionScopesPlugin(): PluginDefinition {
             revokeTaskFileOperations(previous.instanceId, previous.taskId),
           ),
       );
+      if (!withRoutes) return;
       void registerExecutionScopeRoutes(ctx.app, {
         localAccess: ctx.get("localAccess"),
         scopes: ctx.get("executionScopes"),

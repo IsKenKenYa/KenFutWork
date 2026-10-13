@@ -11,7 +11,19 @@ describe("沙箱运行时读取基线", () => {
   });
 
   it("非 darwin 不引入 macOS 专有前缀", () => {
-    expect(unixRuntimeReadRoots([], "linux")).not.toContain("/opt/homebrew");
+    const roots = unixRuntimeReadRoots([], "linux");
+    expect(roots).not.toContain("/opt/homebrew");
+    expect(roots).not.toContain("/[v]ar");
+    expect(roots).not.toContain("/private/[v]ar");
+  });
+
+  it("darwin 缺失开发工具选择器的查询仅开放父目录自身", () => {
+    const roots = unixRuntimeReadRoots([], "darwin");
+    expect(roots).toContain("/[v]ar");
+    expect(roots).toContain("/private/[v]ar");
+    expect(roots).not.toContain("/private/var");
+    expect(roots).not.toContain("/var/select/*");
+    expect(roots).not.toContain("/private/var/select/*");
   });
 
   it("基线只覆盖软件目录，不放开用户数据目录", () => {

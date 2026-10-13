@@ -371,7 +371,10 @@ export async function registerCodeGitRoutes(
       if (!user) return sendUnauthorized(reply);
       try {
         const taskId = request.query.taskId ?? "";
-        const worktrees = await options.codeGitService.listWorktrees(user, taskId);
+        const worktrees = await options.codeGitService.listWorktrees(
+          user,
+          taskId,
+        );
         return reply
           .code(200)
           .send(codeGitWorktreeListResponseSchema.parse({ worktrees }));
@@ -417,7 +420,8 @@ export async function registerCodeGitRoutes(
     }
   });
 
-  app.post("/api/code/git/commit", async (request, reply) => {    const user = await options.localAccess.authenticate(request);
+  app.post("/api/code/git/commit", async (request, reply) => {
+    const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthorized(reply);
     try {
       const payload = codeGitCommitRequestSchema.parse(request.body);

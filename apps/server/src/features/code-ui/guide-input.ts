@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ToolExecutionContext } from "../../kernel/types.js";
+import { createGoalService, type GoalService } from "../goals/service.js";
 import { matchesActiveCodeRun as matchingRun } from "./active-run-binding.js";
 import { createCodeUiConversation } from "./conversation.js";
 import { codeGuideMessageId } from "./input-intents.js";
@@ -16,6 +17,7 @@ function guidesForRun(root: CodeUiSessionRecord, runId: string) {
 
 /** Provider：同一Task事务持久提升指导；模型消费者用稳定消息ID防止重复注入。 */
 export function createCodeGuideInputs(deps: {
+  goals?: GoalService;
   repository: CodeUiRepository;
   refresh(instanceId: string, path: string, projectId: string): Promise<void>;
 }) {
@@ -69,6 +71,7 @@ export function createCodeGuideInputs(deps: {
             );
             if (!snapshot) throw new Error("指导所属根Task快照缺失。");
             const host = createCodeUiConversation({
+              goals: deps.goals ?? createGoalService(),
               sessionId: current.id,
               workspacePath: scope.rootDirectory,
               config: snapshot.config,

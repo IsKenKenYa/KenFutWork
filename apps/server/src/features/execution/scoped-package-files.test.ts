@@ -68,6 +68,7 @@ async function fixture(
   const scopes = createExecutionScopes({
     repository: {
       load: async () => ({
+        preset: "code",
         scope: structuredClone(identity),
         state,
         branchGeneration: 1,

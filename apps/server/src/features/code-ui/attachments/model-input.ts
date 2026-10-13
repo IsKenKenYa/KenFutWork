@@ -81,7 +81,9 @@ export async function codeInputContent(
         );
       content.push({
         type: "image_url",
-        image_url: `data:${mime};base64,${Buffer.from(input.bytes).toString("base64")}`,
+        image_url: {
+          url: `data:${mime};base64,${Buffer.from(input.bytes).toString("base64")}`,
+        },
       });
       continue;
     }

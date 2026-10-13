@@ -8,15 +8,16 @@ import {
   type ImageGenerationPreference,
   type InstanceSettings,
   type MessageMention,
+  type RunCancellationReason,
   type RunCancelResponse,
   type RunCreateRequest,
   type RunCreateResponse,
+  type RunStopReason,
   resolveContextWindow,
   type StreamEvent,
   type VideoGenerationPreference,
 } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import { HumanMessage } from "@langchain/core/messages";
 import type { ServerEnv } from "../config/env.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type {
@@ -35,6 +36,7 @@ import type {
 } from "../features/code-tools/project-instructions-types.js";
 import type { TrustedCodeInput } from "../features/code-ui/attachments/input-types.js";
 import { codeInputContent } from "../features/code-ui/attachments/model-input.js";
+import type { ContextHistoryArchiveBindings } from "../features/context-history/types.js";
 import type { ExecutionScopeHandle } from "../features/execution/scope-service.js";
 // execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
 // 不需要自定义代码执行工具
@@ -89,6 +91,7 @@ import {
   type CompactionPlan,
   type CompactionRetention,
   resolveCompactionPlan,
+  resolveInputTokenLimit,
 } from "./auto-compact.js";
 import { createAgentBackend } from "./backends/index.js";
 import {
@@ -105,9 +108,12 @@ import type { ToolGate, ToolGateHooks } from "./deep-agent.js";
 import {
   createDefaultModelSpecifier,
   createKenFutWorkDeepAgent,
-  type KenFutWorkAgent,
   type KenFutWorkAgentFactory,
 } from "./deep-agent.js";
+import {
+  createDeepAgentsProvider,
+  projectKernelToolExecution,
+} from "./deepagents-provider.js";
 import {
   MODEL_USAGE_OWNER_METADATA,
   type ModelCallUsage,
@@ -116,19 +122,29 @@ import {
   createRunModelControl,
   resolveInstanceModelExecution,
 } from "./model-execution.js";
+import { nativeEffectiveOutputTokens } from "./native-context-budget.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { measureTools } from "./prompt-composition.js";
+import {
+  type AgentProviderContext,
+  type AgentProviderMessage,
+  type AgentProviderSession,
+  type AgentRuntimeProvider,
+  consumeAgentProviderStream,
+  openAgentProviderSession,
+} from "./provider-contract.js";
+import { createAgentProviderTools } from "./provider-tools.js";
 import type {
   AgentRunExtension,
   AgentRunModelControl,
 } from "./run-extension.js";
 import { withBoundWorkDir } from "./sandbox-dir.js";
-import { adaptDeepAgentStream } from "./stream-adapter.js";
 import { formatTaskNotificationsXml } from "./task-notifications.js";
 import {
   createToolDenialTracker,
   type ToolDenialRecord,
 } from "./tool-denial.js";
+import { createToolExecutionReceipts } from "./tool-execution-receipts.js";
 import {
   type AgentTurnBoundaryFacts,
   captureAgentTurnBoundaryFacts,
@@ -144,15 +160,15 @@ import type {
  */
 /**
  * run → agent preset（DEC-2 会话级能力集），**模式能力分离的口径源头**：
- * - Code 通过可信 Task scope 选择编码能力，画布身份不参与执行；
+ * - 可信 Task scope 持有模式，画布身份不参与执行模式判定；
  * - 未显式声明时按 canvasId 兜底：有画布归 design（画布页会话），无画布归 code。
  */
 export function resolvePresetForRun(run: {
   canvasId?: string | undefined;
   preset?: "design" | "code" | undefined;
-  scopeHandle?: ExecutionScopeHandle | undefined;
+  scopeHandle?: Pick<ExecutionScopeHandle, "preset"> | undefined;
 }): "design" | "code" {
-  if (run.scopeHandle) return "code";
+  if (run.scopeHandle) return run.scopeHandle.preset;
   return run.preset ?? (run.canvasId ? "design" : "code");
 }
 
@@ -169,28 +185,22 @@ export async function resolveCanvasStateForRun(
     preset?: "design" | "code" | undefined;
   },
   deps: {
-    canvasRepository?: CanvasRepository;
-    localInstance?: LocalInstanceService;
+    canvasService?: Pick<CanvasService, "readCanvasContent">;
   },
 ): Promise<string | null> {
   if (
     resolvePresetForRun(run) !== "design" ||
     !run.canvasId ||
     !run.actor ||
-    !deps.canvasRepository
+    !deps.canvasService
   ) {
     return null;
   }
   try {
-    const canvasWorkspace = await deps.localInstance
-      ?.resolve(run.actor)
-      .catch(() => null);
-    const canvasRow = canvasWorkspace
-      ? await deps.canvasRepository
-          .findById(canvasWorkspace.instanceId, run.canvasId)
-          .catch(() => null)
-      : null;
-    const content = canvasRow?.content as { elements?: unknown[] } | undefined;
+    const content = await deps.canvasService.readCanvasContent(
+      run.actor,
+      run.canvasId,
+    );
     if (content?.elements) {
       return buildCanvasSummaryForContext(
         content.elements as Array<Record<string, unknown>>,
@@ -421,11 +431,15 @@ type RuntimeRunRecord = RunCreateRequest & {
   delegationDepth?: number;
   roleInstructions?: string;
   eventSink?: (event: StreamEvent) => Promise<void>;
+  /** 可信持久宿主在自身事务内结算账本，客户端请求不能选择所有权。 */
+  terminalPersistence: "runtime" | "host";
   /** Code 的可信 Task 工作域；目录与角色授权由服务端解析，不能由请求伪造。 */
   scopeHandle?: ExecutionScopeHandle;
   actor: LocalActor;
   consumed: boolean;
   controller: AbortController;
+  stopReason?: RunCancellationReason;
+  publishedToolFacts: WeakSet<StreamEvent>;
   modelOverride?: string;
   runId: string;
   /** Design 的显式画布沙箱；Code 工作域完全由 scopeHandle 持有。 */
@@ -446,7 +460,10 @@ type CreateAgentRuntimeOptions = {
     limits: CodeProjectContextLimits,
     signal?: AbortSignal,
   ) => Promise<CodeProjectContext>;
-  resolveCodeApprovalMode?: (scope: ExecutionScopeHandle) => Promise<{
+  resolveCodeApprovalMode?: (
+    scope: ExecutionScopeHandle,
+    actor: LocalActor,
+  ) => Promise<{
     mode: import("../features/permissions/approval-types.js").CodeApprovalMode;
     planEnabled?: boolean | undefined;
     planningEpoch?: number | undefined;
@@ -464,6 +481,7 @@ type CreateAgentRuntimeOptions = {
   agentPersistenceService?: Pick<AgentPersistenceService, "getPersistence">;
   contextBranchProvider?: AgentContextBranchService;
   agentFactory?: KenFutWorkAgentFactory;
+  runtimeProvider?: AgentRuntimeProvider;
   agentRunMetadataService?: AgentRunMetadataService;
   /** 画布数据访问（实例作用域）：run 启动时读画布摘要、解析 brandKitId。 */
   canvasRepository?: CanvasRepository;
@@ -490,7 +508,7 @@ type CreateAgentRuntimeOptions = {
   jobService?: JobService;
   model?: BaseLanguageModel | string;
   /** BYOK：实例 specifier（<instanceId>:<model>）经此解析为协议适配器模型。 */
-  modelProviders?: ModelProviderService;
+  modelProviders?: Pick<ModelProviderService, "resolveCredentials">;
   /** 模型目录（run 起始期校验「实例:模型」是否存在；缺省跳过校验）。 */
   modelCatalog?:
     | Pick<ModelCatalogService, "validateSpecifier" | "listCatalog">
@@ -501,6 +519,7 @@ type CreateAgentRuntimeOptions = {
   runUsage?: RunUsageAccumulator;
   /** 内核统一工具注册表：按 run 的 preset 过滤后桥接进模型工具列表（§4.5）。 */
   tools?: ToolRegistry;
+  contextHistoryArchives?: ContextHistoryArchiveBindings;
   /** 内核系统提示段注册表：run 起始期组装系统提示（模式段/品牌/skills/规则与插件）。 */
   systemPromptRegistry?: SystemPromptRegistry;
   /** 事件缝（DEC-1）：turn 收尾时发射 turn-stopping，插件据此结算。 */
@@ -618,6 +637,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         instanceId: scope.instanceId,
         projectId: scope.projectId,
         taskId: scope.taskId,
+        taskKind: run.scopeHandle.preset,
         runId: run.runId,
         threadId: run.threadId,
         phase,
@@ -655,7 +675,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           options.agentRunMetadataService,
           run,
           "canceled",
-          { completedAt: now() },
+          {
+            completedAt: now(),
+            stopReason: run.stopReason ?? "user_cancelled",
+          },
         );
       } catch {
         console.warn("[agent-runtime] 未启动Run的取消元数据保存失败。");
@@ -737,14 +760,18 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         throw new Error("当前Agent未装配上下文分支能力。");
       await options.contextBranchProvider.release(input);
     },
-    cancelRun(runId: string): RunCancelResponse | null {
+    cancelRun(
+      runId: string,
+      reason: RunCancellationReason = "user_cancelled",
+    ): RunCancelResponse | null {
       const run = runs.get(runId);
       if (!run) {
         return null;
       }
 
       if (!run.controller.signal.aborted) {
-        run.controller.abort();
+        run.stopReason ??= reason;
+        run.controller.abort(run.stopReason);
       }
       // 后台任务连带取消（DEC-15）：abort 回调联动各子代理/长命令的中止信号
       backgroundTaskRegistries.get(run)?.abortAll("用户取消了本轮 run");
@@ -775,12 +802,18 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         sandboxScopeId?: string;
         threadId?: string;
         eventSink?: (event: StreamEvent) => Promise<void>;
+        terminalPersistence?: "host";
         delegationDepth?: number;
         roleInstructions?: string;
         approvalCeiling?: import("../features/permissions/approval-types.js").CodeApprovalMode;
       },
     ): RunCreateResponse {
       if (!runOptions?.actor) throw new Error("运行缺少可信的本地实例身份。");
+      if (
+        runOptions.terminalPersistence === "host" &&
+        (!runOptions.scopeHandle || !runOptions.eventSink)
+      )
+        throw new Error("宿主结算缺少真实任务或持久事件入口。");
       const actor: LocalActor = Object.freeze({
         instanceId: runOptions.actor.instanceId,
         accessClientId: runOptions.actor.accessClientId,
@@ -818,8 +851,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           ? { inputOrigin: runOptions.inputOrigin }
           : {}),
         actor,
+        terminalPersistence: runOptions.terminalPersistence ?? "runtime",
         consumed: false,
         controller: new AbortController(),
+        publishedToolFacts: new WeakSet<StreamEvent>(),
         ...(runOptions?.model ? { modelOverride: runOptions.model } : {}),
         ...(runOptions?.modelInvocation
           ? { modelInvocation: structuredClone(runOptions.modelInvocation) }
@@ -859,6 +894,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     hasRun(runId: string) {
       return runs.has(runId);
     },
+    getRunIdentity(runId: string) {
+      const run = runs.get(runId);
+      if (!run) return null;
+      return {
+        instanceId: run.actor.instanceId,
+        ...(run.scopeHandle
+          ? { taskId: run.scopeHandle.describe().taskId }
+          : {}),
+        preset: resolvePresetForRun(run),
+      };
+    },
 
     activeRunCount(): number {
       return [...runs.values()].filter(
@@ -876,7 +922,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     async cancelRunAndWait(runId: string): Promise<void> {
       const run = runs.get(runId);
       if (!run) return;
-      run.controller.abort("用户停止本次执行");
+      run.stopReason ??= "user_cancelled";
+      run.controller.abort(run.stopReason);
       const completion = completions.get(runId);
       await settleAcceptedCancellation(run);
       await completion?.promise;
@@ -885,10 +932,28 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       const waits: Promise<void>[] = [];
       for (const run of runs.values()) {
         if (run.scopeHandle?.describe().taskId !== taskId) continue;
-        run.controller.abort("Task 执行资源正在关闭");
+        run.stopReason ??= "task_stopped";
+        run.controller.abort(run.stopReason);
         const completion = completions.get(run.runId);
         const accepted = settleAcceptedCancellation(run);
         if (accepted) waits.push(accepted);
+        if (completion) waits.push(completion.promise);
+      }
+      await Promise.all(waits);
+    },
+
+    async stopAllRuns(
+      reason: RunCancellationReason = "host_shutdown",
+    ): Promise<void> {
+      const waits: Promise<void>[] = [];
+      for (const run of runs.values()) {
+        if (completions.get(run.runId)?.settled) continue;
+        run.stopReason ??= reason;
+        run.controller.abort(run.stopReason);
+        backgroundTaskRegistries.get(run)?.abortAll("宿主停止执行");
+        const accepted = settleAcceptedCancellation(run);
+        if (accepted) waits.push(accepted);
+        const completion = completions.get(run.runId);
         if (completion) waits.push(completion.promise);
       }
       await Promise.all(waits);
@@ -921,7 +986,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       if (run.controller.signal.aborted) {
         await run.acceptedCancellation;
         run.status = "canceled";
-        yield { type: "run.canceled", runId, timestamp: now() };
+        yield {
+          type: "run.canceled",
+          runId,
+          timestamp: now(),
+          stopReason: run.stopReason ?? "user_cancelled",
+        };
         return;
       }
 
@@ -999,6 +1069,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         const canvasId = run.canvasId;
         const sessionId = run.sessionId;
         const runId = run.runId;
+        const generationOrigin = () => {
+          const scope = run.scopeHandle?.describe();
+          if (!scope) return run.projectId ? { projectId: run.projectId } : {};
+          if (typeof run.branchGeneration !== "number")
+            throw new Error("本轮Task授权信息缺失，请重新开启会话。");
+          return {
+            projectId: scope.projectId,
+            expectedScopeGeneration: scope.generation,
+            expectedBranchGeneration: run.branchGeneration,
+          };
+        };
 
         submitImageJob = async (input) => {
           const jobT0 = Date.now();
@@ -1014,6 +1095,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           if (!selected) throw new Error("请从本地供应商目录选择图像模型。");
 
           const job = await jobSvc.createJob(actor, {
+            ...generationOrigin(),
             ...(canvasId ? { canvasId } : {}),
             ...(sessionId ? { sessionId } : {}),
             jobType: "image_generation",
@@ -1164,6 +1246,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           if (!selected) throw new Error("请从本地供应商目录选择视频模型。");
 
           const job = await jobSvc.createJob(actor, {
+            ...generationOrigin(),
             ...(canvasId ? { canvasId } : {}),
             ...(sessionId ? { sessionId } : {}),
             jobType: "video_generation",
@@ -1211,6 +1294,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               const result = current.result as {
                 signed_url?: string;
                 duration_seconds?: number;
+                asset_id?: string;
                 width?: number;
                 height?: number;
                 mime_type?: string;
@@ -1235,6 +1319,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     await options.canvasService.insertVideoElement(actor, {
                       canvasId,
                       signedUrl: result.signed_url,
+                      ...(result.asset_id ? { assetId: result.asset_id } : {}),
                       width: result.width ?? 1280,
                       height: result.height ?? 720,
                       mimeType: result.mime_type ?? "video/mp4",
@@ -1413,7 +1498,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       let backgroundTaskRegistry: BackgroundTaskRegistry | null = null;
       let taskWorkContext: TaskWorkContext | undefined;
       let leaveForeground: (() => Promise<void>) | undefined;
-      let agent: KenFutWorkAgent | undefined;
+      let agent: AgentProviderSession | undefined;
+      let toolReceipts:
+        | ReturnType<typeof createToolExecutionReceipts>
+        | undefined;
+      const publishedToolFacts = run.publishedToolFacts;
+      let providerContext: AgentProviderContext;
+      let attachmentDataMap: Record<string, string> = {};
       /** 捕获被跳过的原因每个 Run 只报一次，避免逐轮刷屏。 */
       let captureSkipReported = false;
       const captureBoundary = async (phase: AgentTurnBoundaryPhase) => {
@@ -1810,11 +1901,22 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             declaredWindow = entry?.model.contextWindow ?? null;
             declaredMaxOutput = entry?.model.maxOutputTokens ?? null;
           }
+          const wireMaxOutput =
+            resolvedModel && typeof resolvedModel !== "string"
+              ? nativeEffectiveOutputTokens(resolvedModel)
+              : declaredMaxOutput;
+          const contextWindow = resolveContextWindow(declaredWindow, specifier);
+          const contextBudget = {
+            inputTokenLimit: resolveInputTokenLimit({
+              contextWindow,
+              maxOutputTokens: wireMaxOutput,
+            }),
+          };
           if (autoCompactEnabled || run.operation?.kind === "compact") {
             const plan = resolveCompactionPlan({
               retention: compactionRetention,
-              contextWindow: resolveContextWindow(declaredWindow, specifier),
-              maxOutputTokens: declaredMaxOutput,
+              contextWindow,
+              maxOutputTokens: wireMaxOutput,
             });
             /**
              * 逃生口：窗口认不出的模型想自己定阈值、或要**真机验证压缩真的会发生**时，
@@ -1828,7 +1930,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               Number.isFinite(override) && override > 0
                 ? {
                     ...plan,
-                    trigger: { type: "tokens", value: Math.floor(override) },
+                    trigger: {
+                      type: "tokens",
+                      value: Math.min(plan.trigger.value, Math.floor(override)),
+                    },
                   }
                 : plan;
             manualCompactPlan = autoCompact;
@@ -1911,14 +2016,39 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             const handle = run.scopeHandle;
             const resolver = options.resolveCodeApprovalMode;
             if (!resolver) throw new Error("Code Task 权限模式解析器未装配。");
-            const resolve = () => resolver(handle);
+            const resolve = () => resolver(handle, run.actor);
             const current = await resolve();
             codeApproval = {
               ceiling: run.approvalCeiling ?? current.mode,
               resolve,
             };
           }
+          const receiptIdentity = {
+            runId,
+            sessionId: run.sessionId,
+            conversationId: run.conversationId,
+          };
+          const executionReceipts = createToolExecutionReceipts({
+            runId,
+            ...(run.scopeHandle ? { scopeHandle: run.scopeHandle } : {}),
+            project: (fact) =>
+              projectKernelToolExecution(fact, receiptIdentity),
+            publish: async (event) => {
+              if (
+                completions.get(runId)?.settled ||
+                (event.type === "tool.started" && run.status !== "running")
+              )
+                throw new Error("工具事实所属Run已结束。");
+              if (run.eventSink) {
+                await run.eventSink(event);
+                publishedToolFacts.add(event);
+              }
+            },
+          });
+          toolReceipts = executionReceipts;
           const runToolContext: ToolExecutionContext = {
+            observeToolExecution: executionReceipts.observe,
+
             ...(run.eventSink
               ? {
                   publishToolEvent: async (
@@ -2040,6 +2170,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           };
           const initialPolicy = await codeApproval?.resolve();
           if (run.scopeHandle) {
+            promptCompositionContext.scopeHandle = run.scopeHandle;
             promptCompositionContext.executionScope =
               run.scopeHandle.describe();
             promptCompositionContext.executionRole = run.scopeHandle.role;
@@ -2087,26 +2218,34 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               },
               async apply(execution, invocation) {
                 const specifier = `${invocation.providerId}:${invocation.modelId}`;
+                const entries = await options.modelCatalog?.listCatalog(
+                  run.actor,
+                );
+                const entry = entries?.find(
+                  (candidate) => toInstanceSpecifier(candidate) === specifier,
+                );
+                const nextContextWindow = resolveContextWindow(
+                  entry?.model.contextWindow,
+                  specifier,
+                );
+                contextBudget.inputTokenLimit = resolveInputTokenLimit({
+                  contextWindow: nextContextWindow,
+                  maxOutputTokens: execution.effectiveOutputTokens,
+                });
                 if (autoCompact) {
-                  const entries = await options.modelCatalog?.listCatalog(
-                    run.actor,
-                  );
-                  const entry = entries?.find(
-                    (candidate) => toInstanceSpecifier(candidate) === specifier,
-                  );
                   const plan = resolveCompactionPlan({
                     retention: compactionRetention,
-                    contextWindow: resolveContextWindow(
-                      entry?.model.contextWindow,
-                      specifier,
-                    ),
-                    maxOutputTokens: entry?.model.maxOutputTokens ?? null,
+                    contextWindow: nextContextWindow,
+                    maxOutputTokens: execution.effectiveOutputTokens,
                   });
                   const override = Number(
                     options.env.autoCompactTriggerTokens ?? Number.NaN,
                   );
                   if (Number.isFinite(override) && override > 0)
-                    plan.trigger.value = Math.floor(override);
+                    plan.trigger.value = Math.min(
+                      plan.trigger.value,
+                      Math.floor(override),
+                    );
                   // SDK持有trigger/keep引用；更新同一对象，不留下A的压缩阈值。
                   Object.assign(autoCompact.trigger, plan.trigger);
                   Object.assign(autoCompact.keep, plan.keep);
@@ -2121,7 +2260,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             });
           }
 
-          agent = resolvedAgentFactory({
+          const nativeOptions: Parameters<KenFutWorkAgentFactory>[0] = {
+            nativeToolProof: {
+              identity: receiptIdentity,
+              observe: executionReceipts.observeNative,
+            },
+            ...(options.contextHistoryArchives
+              ? { contextHistoryArchives: options.contextHistoryArchives }
+              : {}),
             ...(options.runExtensions
               ? {
                   runExtensions: options
@@ -2169,6 +2315,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               : {}),
             ...(manualCompactPlan ? { manualCompactPlan } : {}),
             compactionRetention,
+            contextBudget,
             // execute 工具由 LocalShellBackend 自动提供，无需手动传递
             ...(persistence ? { store: persistence.store } : {}),
             ...(kernelToolDefinitions.length > 0
@@ -2198,7 +2345,98 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             executeTimeoutMs: governanceExecuteTimeoutMs,
             llmRetry: governanceLlmRetry,
             runToolContext,
-          });
+          };
+          providerContext = {
+            systemPrompt: nativeOptions.systemPrompt,
+            runId,
+            sessionId: run.sessionId,
+            conversationId: run.conversationId,
+            tools: kernelToolRegistry
+              ? createAgentProviderTools(
+                  kernelToolRegistry,
+                  toolResolutionContext,
+                  runToolContext,
+                )
+              : {
+                  catalog: [],
+                  execute: async () => {
+                    throw new Error("当前运行缺少工具执行服务。");
+                  },
+                },
+            now,
+            ...(options.runUsage
+              ? {
+                  onUsage: (usage: ModelCallUsage) => {
+                    const owner = usage.owner ?? run.usageMeta;
+                    return options.runUsage?.update(runId, usage.modelCallId, {
+                      inputTokens: usage.inputTokens,
+                      outputTokens: usage.outputTokens,
+                      provider: owner?.provider ?? "builtin",
+                      model: owner?.model ?? "unknown",
+                      ...(usage.cachedInputTokens === undefined
+                        ? {}
+                        : { cachedInputTokens: usage.cachedInputTokens }),
+                      ...(owner?.providerInstanceId
+                        ? { providerInstanceId: owner.providerInstanceId }
+                        : {}),
+                      instanceId: run.actor.instanceId,
+                      accessClientId: run.actor.accessClientId,
+                    });
+                  },
+                }
+              : {}),
+            ...(autoCompact ? { autoCompact } : {}),
+            signal: run.controller.signal,
+            idleTimeoutMs: governanceStreamIdleTimeoutMs,
+            abortRun: () => run.controller.abort(),
+          };
+          let nativeStreamRound = 0;
+          const provider =
+            options.runtimeProvider ??
+            createDeepAgentsProvider({
+              createAgent: () => resolvedAgentFactory(nativeOptions),
+              config: () => ({
+                configurable: {
+                  ...(run.threadId ? { thread_id: run.threadId } : {}),
+                  ...(run.canvasId ? { canvas_id: run.canvasId } : {}),
+                  instance_id: run.actor.instanceId,
+                  access_client_id: run.actor.accessClientId,
+                  ...(nativeStreamRound++ === 0 &&
+                  Object.keys(attachmentDataMap).length > 0
+                    ? { user_attachment_map: attachmentDataMap }
+                    : {}),
+                },
+                signal: run.controller.signal,
+                version: "v2",
+              }),
+            });
+          agent = await openAgentProviderSession(
+            provider,
+            providerContext,
+            toolReceipts?.gate,
+          );
+          if (!agent) {
+            const event: StreamEvent = {
+              type: "run.canceled",
+              runId,
+              timestamp: now(),
+              stopReason: run.stopReason ?? "user_cancelled",
+            };
+            run.status = "canceled";
+            await syncPersistedRunFromEvent(
+              options.agentRunMetadataService,
+              run,
+              event,
+              now,
+            );
+            yield event;
+            return;
+          }
+          providerContext.toolComposition = measureTools(
+            options.runtimeProvider
+              ? providerContext.tools.catalog
+              : lastToolInventory,
+          );
           rlog.lap("agent_factory_done");
         } catch (error) {
           const failedEvent = toFailedEvent(runId, now, error);
@@ -2271,24 +2509,22 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           return;
         }
 
-        let stream: AsyncIterable<unknown>;
+        let stream: AsyncIterable<StreamEvent>;
         try {
           // Auto-inject canvas state summary so the agent has immediate awareness
           // of what's on the canvas without needing to call inspect_canvas first.
           // 门控在 resolveCanvasStateForRun：design 才注入（Code 会话无画布）。
           const canvasSummary = await resolveCanvasStateForRun(run, {
-            ...(options.canvasRepository
-              ? { canvasRepository: options.canvasRepository }
+            ...(options.canvasService
+              ? { canvasService: options.canvasService }
               : {}),
-            localInstance: options.localInstance,
           });
 
           // 附件在下载与提示词构建两处消费：收窄成局部 const（缺省空数组，分支内不再判空）
           const attachments = run.attachments ?? [];
           const hasAttachments = attachments.length > 0;
           const userMessageId = inputMessageIdFor(run);
-          let userMessage: HumanMessage;
-          let attachmentDataMap: Record<string, string> = {};
+          let userMessage: AgentProviderMessage;
 
           if (run.codeInputs?.length) {
             if (!run.scopeHandle)
@@ -2309,10 +2545,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               modelCapabilities,
               run.controller.signal,
             );
-            userMessage = new HumanMessage({
+            userMessage = {
               id: userMessageId,
               content: [{ type: "text", text: enrichedPrompt }, ...content],
-            });
+            };
           } else if (hasAttachments) {
             if (run.scopeHandle)
               throw new Error(
@@ -2389,13 +2625,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             // Build assetId → data URI map for tool-level resolution
             attachmentDataMap = buildAttachmentDataMap(downloaded);
 
-            userMessage = new HumanMessage({
+            userMessage = {
               id: userMessageId,
               content: [
                 { type: "text" as const, text: enrichedPrompt },
                 ...imageBlocks,
               ],
-            });
+            };
           } else {
             let { text: enrichedPrompt } = buildUserMessage(
               executionPrompt,
@@ -2407,35 +2643,23 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               run.scopeHandle ? "database" : undefined,
             );
             enrichedPrompt = await applyPreStep(enrichedPrompt, run);
-            userMessage = new HumanMessage({
+            userMessage = {
               id: userMessageId,
               content: enrichedPrompt,
-            });
+            };
           }
 
-          // HumanMessage进入graph之前捕获真实context与有效文件版本，并绑定本run的pre。
+          // 产品消息进入Provider之前捕获真实context与有效文件版本，并绑定本run的pre。
           await captureBoundary("pre");
 
           // 首轮流在这里创建（含 prestep/hooks 前置）；后台任务续轮的流在
           // 下方消费循环里重建（DEC-15 轮末闸门）
           rlog.lap("stream_call_start");
-          stream = agent.streamEvents(
-            {
-              messages: [userMessage],
-            },
-            {
-              configurable: {
-                ...(run.threadId ? { thread_id: run.threadId } : {}),
-                ...(run.canvasId ? { canvas_id: run.canvasId } : {}),
-                instance_id: run.actor.instanceId,
-                access_client_id: run.actor.accessClientId,
-                ...(Object.keys(attachmentDataMap).length > 0
-                  ? { user_attachment_map: attachmentDataMap }
-                  : {}),
-              },
-              signal: run.controller.signal,
-              version: "v2",
-            },
+          stream = consumeAgentProviderStream(
+            agent,
+            { messages: [userMessage] },
+            providerContext,
+            toolReceipts?.gate,
           );
           rlog.lap("stream_call_returned");
         } catch (error) {
@@ -2451,7 +2675,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           return;
         }
 
-        const usageActor = run.actor;
         // 终态事件哨兵：正常路径适配器必发 run.completed / run.canceled / run.failed；
         // 异常路径可能静默结束，收尾必须补失败事件。
         // DEC-15 轮末闸门循环：模型收尾时若后台任务未结算，吞掉这次
@@ -2465,50 +2688,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         while (true) {
           let sawTerminalEvent = false;
           try {
-            for await (const event of adaptDeepAgentStream({
-              canonicalToolEvents: agent.canonicalToolEvents === true,
-              conversationId: run.conversationId,
-              now,
-              ...(options.runUsage && usageActor
-                ? {
-                    onUsage: (usage: ModelCallUsage) => {
-                      const owner = usage.owner ?? run.usageMeta;
-                      return options.runUsage?.update(
-                        runId,
-                        usage.modelCallId,
-                        {
-                          inputTokens: usage.inputTokens,
-                          outputTokens: usage.outputTokens,
-                          provider: owner?.provider ?? "builtin",
-                          model: owner?.model ?? "unknown",
-                          ...(usage.cachedInputTokens === undefined
-                            ? {}
-                            : { cachedInputTokens: usage.cachedInputTokens }),
-                          ...(owner?.providerInstanceId
-                            ? {
-                                providerInstanceId: owner.providerInstanceId,
-                              }
-                            : {}),
-                          instanceId: usageActor.instanceId,
-                          accessClientId: usageActor.accessClientId,
-                        },
-                      );
-                    },
-                  }
-                : {}),
-              runId,
-              sessionId: run.sessionId,
-              // 分类占比（R4-1）：工具 schema 在这里量（装配刚回吐），消息侧由适配器在
-              // on_chat_model_start 里量；两边在适配器里合并成一条 composition 随 run.usage 下发。
-              toolComposition: measureTools(lastToolInventory),
-              // 压缩口径与装配同一份：适配器据此检测摘要消息并发 run.compacted
-              ...(autoCompact ? { autoCompact } : {}),
-              signal: run.controller.signal,
-              idleTimeoutMs: governanceStreamIdleTimeoutMs,
-              // 空闲超时即中止底层请求（释放上游连接），本轮按有界失败收尾
-              abortRun: () => run.controller.abort(),
-              stream,
-            })) {
+            for await (const event of stream) {
               // 被拒的工具调用先合成 tool.* 事件下发（否则界面上「谁被拦了、为什么」
               // 完全没有记录——门在中间件里直接回了 ToolMessage，不产生任何工具事件）
               for (const denied of denialTracker?.drain() ?? []) {
@@ -2674,29 +2854,22 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           if (suppressCompletedForContinuation) {
             suppressCompletedForContinuation = false;
             // 续轮：附件映射随首轮消息已进 thread 历史，无需重带
-            stream = agent.streamEvents(
+            stream = consumeAgentProviderStream(
+              agent,
               {
                 messages: [
-                  new HumanMessage({
+                  {
                     id: JSON.stringify([
                       "background-continuation",
                       runId,
                       continuationRounds,
                     ]),
                     content: continuationInput ?? "",
-                  }),
+                  },
                 ],
               },
-              {
-                configurable: {
-                  ...(run.threadId ? { thread_id: run.threadId } : {}),
-                  ...(run.canvasId ? { canvas_id: run.canvasId } : {}),
-                  instance_id: run.actor.instanceId,
-                  access_client_id: run.actor.accessClientId,
-                },
-                signal: run.controller.signal,
-                version: "v2",
-              },
+              providerContext,
+              toolReceipts?.gate,
             );
             continue;
           }
@@ -2727,6 +2900,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           break;
         }
       } finally {
+        agent?.release?.();
         // 后台/前台子代理兜底清理（DEC-15）：run 终态后不允许子代理再存活
         backgroundTaskRegistry?.abortAll("本轮 run 已结束");
         // DEC-1：turn 收尾（成功/失败/取消）发射 turn-stopping，用量等插件据此结算
@@ -2808,20 +2982,30 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       for await (const event of execute(runId)) {
         if (isTerminalEvent(event)) {
           // 模型结束仍有真实turn-end/post捕获/前台释放；公共完成不能早于它们。
-          terminal = event;
+          terminal =
+            event.type === "run.completed"
+              ? { ...event, stopReason: event.stopReason ?? "completed" }
+              : event.type === "run.canceled"
+                ? {
+                    ...event,
+                    stopReason:
+                      event.stopReason ?? run?.stopReason ?? "user_cancelled",
+                  }
+                : event;
           continue;
         }
-        const run = runs.get(runId);
+        const currentRun = runs.get(runId);
         const visible =
           event.type === "tool.started" && event.input
             ? {
                 ...event,
                 input:
-                  run?.projectToolInput?.(event.toolName, event.input) ??
+                  currentRun?.projectToolInput?.(event.toolName, event.input) ??
                   event.input,
               }
             : event;
-        await run?.eventSink?.(visible);
+        if (!run?.publishedToolFacts.has(event))
+          await currentRun?.eventSink?.(visible);
         yield visible;
       }
       if (terminal) {
@@ -2927,14 +3111,17 @@ async function updatePersistedRunStatus(
   status: "running" | "completed" | "canceled",
   options?: {
     completedAt?: string;
+    stopReason?: RunStopReason;
   },
 ) {
+  if (run.terminalPersistence === "host") return;
   if (!agentRunMetadataService || !run.threadId) {
     return;
   }
 
   await agentRunMetadataService.updateRun({
     ...(options?.completedAt ? { completedAt: options.completedAt } : {}),
+    ...(options?.stopReason ? { stopReason: options.stopReason } : {}),
     runId: run.runId,
     status,
   });
@@ -2946,6 +3133,7 @@ async function updatePersistedRunFailure(
   now: () => string,
   error: unknown,
 ) {
+  if (run.terminalPersistence === "host") return;
   if (!agentRunMetadataService || !run.threadId) {
     return;
   }
@@ -2969,6 +3157,7 @@ async function syncPersistedRunFromEvent(
   if (event.type === "run.completed") {
     await updatePersistedRunStatus(agentRunMetadataService, run, "completed", {
       completedAt: now(),
+      stopReason: event.stopReason ?? "completed",
     });
     return;
   }
@@ -2991,6 +3180,7 @@ async function syncPersistedRunFromEvent(
   if (event.type === "run.canceled") {
     await updatePersistedRunStatus(agentRunMetadataService, run, "canceled", {
       completedAt: now(),
+      stopReason: event.stopReason ?? run.stopReason ?? "user_cancelled",
     });
   }
 }

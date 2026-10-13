@@ -306,7 +306,10 @@ class TaskProcessHelper {
             ? { runtimeReadRoots: this.requireOptions().runtimeReadRoots }
             : {}),
           ...(this.requireOptions().runtimePathAdditions
-            ? { runtimePathAdditions: this.requireOptions().runtimePathAdditions }
+            ? {
+                runtimePathAdditions:
+                  this.requireOptions().runtimePathAdditions,
+              }
             : {}),
         });
         if (!probe) this.assertReady(request);

@@ -98,6 +98,8 @@ export async function createHarness(
     | "contextBranchProvider"
     | "emitPreStep"
     | "runUsage"
+    | "tools"
+    | "contextHistoryArchives"
   >,
 ) {
   const { scope, actor, threadId, localInstance, threads, metadata } =

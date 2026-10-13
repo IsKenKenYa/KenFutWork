@@ -18,8 +18,8 @@ import {
  * 自己那把 Key）。理由：多配一个「摘要专用模型」意味着多一份凭证/费用/可用性耦合，
  * 而压缩是运行期的自保动作，不该因为第二个模型没配好就失败。
  *
- * **③ 历史对齐**：压缩**不动用户看到的转录**——被压掉的消息由框架 offload 到工作区的
- * `/conversation_history/`，模型上下文里替换成一条摘要（`lc_source="summarization"` 的
+ * **③ 历史对齐**：压缩**不动用户看到的转录**——被压掉的消息保留于精确的
+ * 产品只读checkpoint归档，模型上下文里替换成一条摘要（`lc_source="summarization"` 的
  * HumanMessage）。转录仍是完整历史（与 Claude Code 一类产品同口径：库里留全量，
  * 上下文里留摘要），因此「库里消息数」与「模型看到的上下文」本来就会不一致——这是
  * **设计**，不是 bug；界面上用一条提示说明发生了什么（见 stream-adapter 的 notice）。
@@ -31,8 +31,11 @@ import {
 /** deepagents 的框架约定（不自己发明数字，改这里必须同步核对依赖版本）。 */
 export const FRAMEWORK_TRIGGER_FRACTION = 0.85;
 export const FRAMEWORK_FALLBACK_TRIGGER_TOKENS = 170_000;
-/** 触发线的下限：窗口很小的模型也不能一上来就压（避免病态配置把每轮都压一遍）。 */
-export const MIN_TRIGGER_TOKENS = 4_000;
+
+/** Product-owned hard input budget for the current frozen model, separate from an earlier compaction trigger. */
+export interface AgentContextBudget {
+  inputTokenLimit: number | null;
+}
 
 export interface CompactionPlan {
   trigger: { type: "tokens"; value: number };
@@ -49,26 +52,36 @@ export type CompactionRetention = Pick<
 /**
  * 算压缩触发线。
  *
- * `reserve` = 模型声明的单次最大输出（与上下文条的「预留输出」段同一口径）：
+ * `reserve` = 本轮实际wire的单次输出上限（与上下文条的「预留输出」段同一口径）：
  * 它是**为回复留的空间**，已经吃掉它就意味着下一轮回复可能被上游截断——压缩要在这之前发生。
  */
+function budgetNumber(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 1
+    ? Math.floor(value)
+    : null;
+}
+
+/** Shared current-model input cap; unknown output consumes no invented reserve, unknown window has no hard cap. */
+export function resolveInputTokenLimit(input: {
+  contextWindow?: number | null;
+  maxOutputTokens?: number | null;
+}): number | null {
+  const window = budgetNumber(input.contextWindow);
+  if (window === null) return null;
+  const output = budgetNumber(input.maxOutputTokens);
+  if (output !== null && output >= window)
+    throw new Error("模型输出上限已占满上下文，请降低输出上限。");
+  return window - (output ?? 0);
+}
+
 export function resolveCompactionPlan(input: {
   contextWindow?: number | null;
   maxOutputTokens?: number | null;
   retention?: CompactionRetention;
 }): CompactionPlan {
-  const window =
-    typeof input.contextWindow === "number" &&
-    Number.isFinite(input.contextWindow) &&
-    input.contextWindow > 0
-      ? Math.floor(input.contextWindow)
-      : null;
-  const maxOutput =
-    typeof input.maxOutputTokens === "number" &&
-    Number.isFinite(input.maxOutputTokens) &&
-    input.maxOutputTokens > 0
-      ? Math.floor(input.maxOutputTokens)
-      : null;
+  const window = budgetNumber(input.contextWindow);
+  const maxOutput = budgetNumber(input.maxOutputTokens);
+  const inputLimit = resolveInputTokenLimit(input);
 
   if (window === null) {
     return {
@@ -87,10 +100,10 @@ export function resolveCompactionPlan(input: {
   const value =
     maxOutput === null
       ? Math.floor(window * FRAMEWORK_TRIGGER_FRACTION)
-      : window - Math.min(maxOutput, window);
+      : (inputLimit ?? window);
 
   return {
-    trigger: { type: "tokens", value: Math.max(MIN_TRIGGER_TOKENS, value) },
+    trigger: { type: "tokens", value: Math.max(1, value) },
     keep: {
       type: "messages",
       value: resolveGovernanceNumber(

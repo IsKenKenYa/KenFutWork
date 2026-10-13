@@ -32,7 +32,10 @@ export function stripNulCharacters(text: string): string {
  * 两个字段引用）必须也拿到清洗后的副本，否则第二次出现会漏洗。真环交给
  * `JSON.stringify` 去抛（保持原有报错行为），这里只保证不死循环。
  */
-export function sanitizeNulDeep(value: unknown, seen = new Map<object, unknown>()): unknown {
+export function sanitizeNulDeep(
+  value: unknown,
+  seen = new Map<object, unknown>(),
+): unknown {
   if (typeof value === "string") return stripNulCharacters(value);
   if (value === null || typeof value !== "object") return value;
   const cached = seen.get(value);

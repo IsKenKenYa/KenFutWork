@@ -4,7 +4,10 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance } from "fastify";
-import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
+import {
+  type ExecutionModeService,
+  RetiredExecutionModeError,
+} from "../features/agent-modes/execution-mode-service.js";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import type { LocalInstanceService } from "../features/local-instance/types.js";
 
@@ -16,7 +19,7 @@ export async function registerExecutionModeRoutes(
     agentModes: ExecutionModeService;
   },
 ) {
-  // GET /api/execution-modes — 模式词汇表（DEC-3：六档）
+  // GET /api/execution-modes — 模式词汇表（DEC-3：五档）
   app.get("/api/execution-modes", async (request, reply) => {
     const user = await options.localAccess.authenticate(request);
     if (!user) {
@@ -56,7 +59,13 @@ export async function registerExecutionModeRoutes(
           })
         : options.agentModes.getMode(threadId);
       return reply.code(200).send({ mode: executionModeSchema.parse(mode) });
-    } catch {
+    } catch (error) {
+      if (error instanceof RetiredExecutionModeError)
+        return reply.code(409).send(
+          applicationErrorResponseSchema.parse({
+            error: { code: "invalid_request", message: error.message },
+          }),
+        );
       return reply.code(500).send(
         applicationErrorResponseSchema.parse({
           error: {
@@ -129,7 +138,10 @@ export async function registerExecutionModeRoutes(
         applicationErrorResponseSchema.parse({
           error: {
             code: "invalid_request",
-            message: "切换执行模式失败（模式非法或会话不存在）。",
+            message:
+              error instanceof RetiredExecutionModeError
+                ? error.message
+                : "切换执行模式失败（模式非法或会话不存在）。",
           },
         }),
       );

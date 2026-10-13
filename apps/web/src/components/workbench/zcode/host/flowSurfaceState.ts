@@ -9,8 +9,8 @@ export type FlowSurfaceView = "canvas" | "engine";
 
 let view: FlowSurfaceView = "canvas";
 const listeners = new Set<() => void>();
-/** 宿主 → flow 的站内导航把手（FlowSurface 的 iframe 握手后注册；未注册时 no-op）。 */
-let navigateToFlow: (path: string) => void = () => {};
+/** 宿主 → flow 的站内导航把手（仅在匹配 iframe 握手就绪后注册）。 */
+let navigateToFlow: ((path: string) => void) | null = null;
 
 export function subscribeFlowSurface(listener: () => void): () => void {
   listeners.add(listener);
@@ -29,12 +29,20 @@ export function setFlowSurfaceView(next: FlowSurfaceView): void {
   for (const listener of listeners) listener();
 }
 
-/** 侧栏导航项：回画布子视图并让 iframe 内的 flow 路由跳转（握手前点击按默认页落地）。 */
-export function navigateFlowSurface(path: string): void {
-  setFlowSurfaceView("canvas");
-  navigateToFlow(path);
+export function getFlowNavigationReady(): boolean {
+  return navigateToFlow !== null;
 }
 
-export function registerFlowNavigate(navigate: (path: string) => void): void {
+/** 侧栏导航项：回画布子视图并在 iframe 就绪时驱动站内路由。 */
+export function navigateFlowSurface(path: string): void {
+  setFlowSurfaceView("canvas");
+  navigateToFlow?.(path);
+}
+
+export function registerFlowNavigate(
+  navigate: ((path: string) => void) | null,
+): void {
+  if (navigateToFlow === navigate) return;
   navigateToFlow = navigate;
+  for (const listener of listeners) listener();
 }

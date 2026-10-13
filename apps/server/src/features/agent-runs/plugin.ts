@@ -13,6 +13,7 @@ import {
   type AgentPersistenceService,
   createAgentPersistenceService,
 } from "../../agent/persistence/index.js";
+import type { AgentRuntimeProvider } from "../../agent/provider-contract.js";
 import type { AgentRunExtension } from "../../agent/run-extension.js";
 import { createAgentRunService } from "../../agent/runtime.js";
 import { composeToolGate } from "../../agent/tool-gate.js";
@@ -57,6 +58,7 @@ export interface AgentRunsPluginDeps {
     },
   ) => Promise<{ input: unknown }>;
   agentFactory?: KenFutWorkAgentFactory;
+  runtimeProvider?: AgentRuntimeProvider;
   contextBranchProvider?: AgentContextBranchService;
   agentModel?: BaseLanguageModel | string;
   mockEventDelayMs?: number;
@@ -81,6 +83,10 @@ export function createAgentRunsPlugin(
       "plugins",
     ],
     apply(ctx) {
+      let runtime: ReturnType<typeof createAgentRunService> | undefined;
+      ctx.effect(() => async () => {
+        await runtime?.stopAllRuns("host_shutdown");
+      });
       let persistence: AgentPersistenceService | undefined;
       ctx.register("agentPersistence", () => {
         persistence = createAgentPersistenceService(ctx.env);
@@ -156,7 +162,7 @@ export function createAgentRunsPlugin(
               : {}),
           });
         };
-        return createAgentRunService({
+        runtime = createAgentRunService({
           codeProjectContextLoader: (scope, limits, signal) =>
             ctx
               .get("capabilities")
@@ -171,8 +177,20 @@ export function createAgentRunsPlugin(
               limits,
               signal,
             ),
-          resolveCodeApprovalMode: async (handle) => {
+          resolveCodeApprovalMode: async (handle, actor) => {
             const scope = handle.describe();
+            if (handle.preset === "design") {
+              const policy = await ctx
+                .get("designTasks")
+                .readPolicy(actor, scope.taskId);
+              return {
+                mode: policy.planEnabled ? "plan" : policy.mode,
+                planEnabled: policy.planEnabled,
+                planningEpoch: policy.planningEpoch,
+                scopeGeneration: policy.scopeGeneration,
+                branchGeneration: policy.branchGeneration,
+              };
+            }
             const row = await ctx
               .get("persistence")
               .forInstance(scope.instanceId)
@@ -210,6 +228,19 @@ export function createAgentRunsPlugin(
           processSandbox: ctx.get("processSandbox"),
           resolveTaskWorkContext: async (actor, scopeHandle, runId) => {
             const scope = scopeHandle.describe();
+            if (scopeHandle.preset === "design") {
+              const policy = await ctx
+                .get("designTasks")
+                .readPolicy(actor, scope.taskId);
+              return {
+                actor,
+                scope,
+                ownerKind: "design" as const,
+                agentId: scopeHandle.agentId,
+                runId,
+                branchGeneration: policy.branchGeneration,
+              };
+            }
             const row = await ctx
               .get("persistence")
               .forInstance(scope.instanceId)
@@ -221,6 +252,7 @@ export function createAgentRunsPlugin(
             return {
               actor,
               scope,
+              ownerKind: "code" as const,
               agentId: scopeHandle.agentId,
               runId,
               branchGeneration: Number(row.branch_generation),
@@ -232,12 +264,16 @@ export function createAgentRunsPlugin(
               .list<AgentRunExtension>("agent-run-extension")
               .map((registration) => registration.value),
           agentPersistenceService: agentPersistence,
+          contextHistoryArchives: ctx.get("contextHistoryArchives"),
           contextBranchProvider:
             deps.contextBranchProvider ??
             createNativeContextBranchService({
               agentPersistenceService: agentPersistence,
             }),
           ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
+          ...(deps.runtimeProvider
+            ? { runtimeProvider: deps.runtimeProvider }
+            : {}),
           agentRunMetadataService: d.get("agentRunMetadata"),
           canvasRepository,
           canvasService: d.get("canvas"),
@@ -295,12 +331,15 @@ export function createAgentRunsPlugin(
           toolGateFor,
           localInstance: d.get("localInstance"),
         });
+        return runtime;
       });
       return async () => {
         await persistence?.dispose();
       };
     },
     mounted(ctx) {
+      const designTasks = ctx.tryGet("designTasks");
+      const designRunHost = ctx.tryGet("designRunHost");
       void registerRunRoutes(ctx.app, ctx.get("agentRuns"), {
         // 活动查询：mounted 与 apply 是两段作用域，这里按需新建一个仓储包装
         // （仓储是无状态包装，重建不引入额外连接/状态）
@@ -315,6 +354,8 @@ export function createAgentRunsPlugin(
         agentModes: ctx.get("agentModes"),
         executionScopes: ctx.get("executionScopes"),
         codeUi: ctx.get("codeUi"),
+        ...(designTasks ? { designTasks } : {}),
+        ...(designRunHost ? { designRunHost } : {}),
         agentRunMetadataService: ctx.get("agentRunMetadata"),
         localAccess: ctx.get("localAccess"),
         settingsService: ctx.get("settings"),

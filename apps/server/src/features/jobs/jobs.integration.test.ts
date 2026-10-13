@@ -38,6 +38,7 @@ describe.skipIf(!DATABASE_URL)("jobs 真实库集成", () => {
         queueName: "image_generation_jobs",
         createdByClientId: null,
         instanceId,
+        fileTarget: { kind: "standalone" },
       });
       const jobId = created?.id as string;
       expect(jobId).toBeTruthy();

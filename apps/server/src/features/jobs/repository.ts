@@ -1,8 +1,11 @@
+import type { GenerationFileTarget } from "@kenfutwork/shared";
+import { assertGenerationOriginForInsert } from "../generation/file-target-lock.js";
 import type { PersistenceService } from "../persistence/types.js";
 
 export type BackgroundJobRecord = {
   id: string;
   instance_id: string;
+  file_target?: GenerationFileTarget | null;
   project_id: string | null;
   canvas_id: string | null;
   session_id: string | null;
@@ -27,6 +30,7 @@ export type BackgroundJobRecord = {
 };
 
 export type NewJobInput = {
+  fileTarget: GenerationFileTarget;
   canvasId?: string | undefined;
   jobType: string;
   payload: Record<string, unknown>;
@@ -98,7 +102,7 @@ export interface JobRepository {
 }
 
 const JOB_COLUMNS =
-  "id, instance_id, project_id, canvas_id, session_id, thread_id, queue_name, job_type, status, payload, result, error_code, error_message, attempt_count, max_attempts, provider_job_id, created_by_client_id, created_at, updated_at, started_at, completed_at, failed_at, canceled_at";
+  "id, instance_id, project_id, canvas_id, session_id, thread_id, file_target, queue_name, job_type, status, payload, result, error_code, error_message, attempt_count, max_attempts, provider_job_id, created_by_client_id, created_at, updated_at, started_at, completed_at, failed_at, canceled_at";
 
 const LIST_LIMIT = 50;
 
@@ -109,13 +113,14 @@ export function createJobRepository(
 ): JobRepository {
   return {
     async insert(input) {
-      return persistence
-        .forInstance(input.instanceId)
-        .queryOne<BackgroundJobRecord>(
+      return persistence.transaction(async (transaction) => {
+        const scoped = transaction.forInstance(input.instanceId);
+        await assertGenerationOriginForInsert(scoped, input.fileTarget, input);
+        return scoped.queryOne<BackgroundJobRecord>(
           `insert into public.background_jobs
                 (instance_id, project_id, canvas_id, session_id, thread_id,
-                 queue_name, job_type, payload, created_by_client_id)
-         values (:instance, $1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+                 queue_name, job_type, payload, created_by_client_id, file_target)
+         values (:instance, $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb)
          returning ${JOB_COLUMNS}`,
           [
             input.projectId ?? null,
@@ -126,8 +131,10 @@ export function createJobRepository(
             input.jobType,
             JSON.stringify(input.payload),
             input.createdByClientId,
+            JSON.stringify(input.fileTarget),
           ],
         );
+      });
     },
 
     async findByIdInInstance(instanceId, jobId) {

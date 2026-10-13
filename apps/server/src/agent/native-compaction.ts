@@ -1,9 +1,31 @@
-import { HumanMessage } from "@langchain/core/messages";
+import { type BaseMessage, HumanMessage } from "@langchain/core/messages";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { IterableReadableStream } from "@langchain/core/utils/stream";
 import { isCommand } from "@langchain/langgraph";
 import type { createDeepAgent } from "deepagents";
 import type { AgentMiddleware } from "langchain";
+
+/** 固定SDK的有效消息投影；关闭自动压缩仍须消费已提交的手动摘要。 */
+export function effectiveNativeMessages(
+  messages: BaseMessage[],
+  state: object,
+): BaseMessage[] {
+  const value =
+    "_summarizationEvent" in state ? state._summarizationEvent : undefined;
+  if (value == null) return messages;
+  if (typeof value !== "object")
+    throw new Error("当前DA版本的摘要状态不完整。");
+  const event = value as { cutoffIndex?: unknown; summaryMessage?: unknown };
+  if (
+    typeof event.cutoffIndex !== "number" ||
+    !Number.isInteger(event.cutoffIndex) ||
+    event.cutoffIndex < 0 ||
+    event.cutoffIndex > messages.length ||
+    !HumanMessage.isInstance(event.summaryMessage)
+  )
+    throw new Error("当前DA版本的摘要状态不完整。");
+  return [event.summaryMessage, ...messages.slice(event.cutoffIndex)];
+}
 
 /** 私有DA字段仅在固定版本adapter内读取，产品事件只携带已确认checkpoint引用。 */
 export function nativeSummaryKey(value: unknown): string | null {

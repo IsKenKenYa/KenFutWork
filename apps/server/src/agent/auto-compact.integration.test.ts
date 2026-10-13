@@ -5,10 +5,16 @@ import {
   HumanMessage,
   SystemMessage,
 } from "@langchain/core/messages";
+import { MemorySaver } from "@langchain/langgraph-checkpoint";
 import { createSummarizationMiddleware } from "deepagents";
 import { createAgent } from "langchain";
-import { describe, expect, it } from "vitest";
-
+import { afterEach, describe, expect, it } from "vitest";
+import { createReadHistoryTool } from "../features/context-history/read-history-tool.js";
+import {
+  createContextHistoryArchiveBindings,
+  requireContextHistoryPageBudget,
+} from "../features/context-history/service.js";
+import { archiveTaskFixture } from "../features/context-history/test-fixture.js";
 import { resolveCompactionPlan } from "./auto-compact.js";
 
 /**
@@ -102,7 +108,7 @@ async function runWith(
 }
 
 describe("自动压缩机制（deepagents summarization middleware）", () => {
-  // 触发线压到 4000（= MIN_TRIGGER_TOKENS），保留 20 条
+  // 精确剩余输入预算4000，保留20条
   const plan = resolveCompactionPlan({
     contextWindow: 1_000_000,
     maxOutputTokens: 996_000,
@@ -164,21 +170,27 @@ describe("自动压缩机制（deepagents summarization middleware）", () => {
  * 两者缺一，功能都可能只是看起来存在。
  */
 describe("自动压缩的装配接线", () => {
+  const cleanups: Array<() => Promise<void>> = [];
+  afterEach(async () => {
+    for (const cleanup of cleanups.splice(0)) await cleanup();
+  });
   async function buildAgent(
     autoCompact?: ReturnType<typeof resolveCompactionPlan>,
   ) {
     const { createKenFutWorkDeepAgent } = await import("./deep-agent.js");
     const { loadServerEnv } = await import("../config/env.js");
-    const { createAgentBackend } = await import("./backends/index.js");
-    const { mkdtempSync } = await import("node:fs");
-    const { tmpdir } = await import("node:os");
-    const { join } = await import("node:path");
-
+    const task = await archiveTaskFixture();
+    cleanups.push(task.cleanup);
+    task.execution.threadId = autoCompact ? "t-compact" : "t-nocompact";
+    const archives = createContextHistoryArchiveBindings();
     const env = loadServerEnv({
       agentBackendMode: "filesystem",
-      agentFilesRoot: mkdtempSync(join(tmpdir(), "kfw-compact-")),
+      agentFilesRoot: task.identity.rootDirectory,
     });
-    const backendResult = createAgentBackend(env, "canvas-compact-test");
+    const backendResult = {
+      factory: () => task.handle.backend,
+      ephemeral: false,
+    };
     const model = new RecordingChatModel();
     const agent = createKenFutWorkDeepAgent({
       backendResult,
@@ -188,6 +200,15 @@ describe("自动压缩的装配接线", () => {
       systemPrompt: "test",
       env,
       model: model as never,
+      checkpointer: new MemorySaver(),
+      contextHistoryArchives: archives,
+      kernelTools: [
+        createReadHistoryTool(
+          archives,
+          requireContextHistoryPageBudget(task.handle),
+        ),
+      ],
+      runToolContext: task.execution,
       ...(autoCompact ? { autoCompact } : {}),
     });
     return { agent, model };

@@ -33,12 +33,18 @@ import {
   getViewportCenter,
   scaleToFit,
 } from "@/lib/canvas-elements";
-import { deleteProject } from "@/lib/server-api";
+import {
+  deleteProject,
+  exportCanvasAssets,
+  restoreCanvasAssets,
+} from "@/lib/server-api";
 
 interface CanvasLogoMenuProps {
   accessToken: string | null;
   projectId: string;
   canvasId: string;
+  onCanvasSync: () => Promise<void>;
+  prepareCanvas: () => Promise<string | null>;
   /** 项目名——导出画布时用作文件名（缺省回落到 canvas）。 */
   projectName?: string | undefined;
   excalidrawApi: ExcalidrawImperativeAPI | null;
@@ -72,6 +78,9 @@ function generateFileId(): string {
 export function CanvasLogoMenu({
   accessToken,
   projectId,
+  canvasId,
+  onCanvasSync,
+  prepareCanvas,
   projectName,
   excalidrawApi,
 }: CanvasLogoMenuProps) {
@@ -163,6 +172,45 @@ export function CanvasLogoMenu({
       setConfirmingDelete(false);
     }
   }, [accessToken, projectId, confirmingDelete, toastError]);
+
+  const handleExportAssets = useCallback(async () => {
+    try {
+      const currentRevision = await prepareCanvas();
+      if (!currentRevision) {
+        toastError("画布保存失败，未导出素材");
+        return;
+      }
+      const blob = await exportCanvasAssets(
+        accessToken,
+        canvasId,
+        currentRevision,
+      );
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${projectName || "canvas"}-assets.tar`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.warn("Export canvas assets failed:", err);
+      toastError("导出素材失败");
+    }
+  }, [accessToken, canvasId, prepareCanvas, projectName, toastError]);
+
+  const handleRestoreAssets = useCallback(async () => {
+    try {
+      const currentRevision = await prepareCanvas();
+      if (!currentRevision) {
+        toastError("画布保存失败，未恢复素材");
+        return;
+      }
+      await restoreCanvasAssets(accessToken, canvasId, currentRevision);
+      await onCanvasSync();
+    } catch (err) {
+      console.warn("Restore canvas assets failed:", err);
+      toastError(err instanceof Error ? err.message : "恢复素材失败");
+    }
+  }, [accessToken, canvasId, onCanvasSync, prepareCanvas, toastError]);
 
   const handleFileImport = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -273,6 +321,14 @@ export function CanvasLogoMenu({
               <Download className="size-4" />
               导出画布
               <DropdownMenuShortcut>.excalidraw</DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void handleExportAssets()}>
+              <Download className="size-4" />
+              导出素材包
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void handleRestoreAssets()}>
+              <ImagePlus className="size-4" />
+              恢复素材索引
             </DropdownMenuItem>
           </DropdownMenuGroup>
 

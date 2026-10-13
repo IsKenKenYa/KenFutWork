@@ -20,6 +20,9 @@ import {
   brandKitDetailResponseSchema,
   brandKitListResponseSchema,
   brandKitUpdateRequestSchema,
+  canvasAssetMoveRequestSchema,
+  canvasAssetRestoreReceiptSchema,
+  canvasAssetRevisionRequestSchema,
   canvasGetResponseSchema,
   canvasSaveRequestSchema,
   canvasSaveResponseSchema,
@@ -68,6 +71,16 @@ import {
   computerUseSnapshotQuerySchema,
   createImageJobRequestSchema,
   createVideoJobRequestSchema,
+  designApprovalListResponseSchema,
+  designApprovalResolveRequestSchema,
+  designApprovalResolveResponseSchema,
+  designGoalBudgetRequestSchema,
+  designGoalCreateRequestSchema,
+  designGoalPauseRequestSchema,
+  designGoalResponseSchema,
+  designGoalResumeRequestSchema,
+  designTaskPolicyResponseSchema,
+  designTaskPolicyUpdateRequestSchema,
   directoryPickerStatusSchema,
   executionModeSchema,
   flowEngineInstallStatusSchema,
@@ -79,8 +92,17 @@ import {
   flowHostEventsResponseSchema,
   flowHostIdentityRequestSchema,
   flowHostIdentityResponseSchema,
+  flowHostIdentityTicketRequestSchema,
   flowHostIdentityTicketResponseSchema,
   flowHostStatusResponseSchema,
+  flowLayoutSnapshotSchema,
+  flowLayoutWriteSchema,
+  flowProjectFileDeleteReceiptSchema,
+  flowProjectFileMetadataSchema,
+  flowProjectFileMoveSchema,
+  flowProjectFileReceiptSchema,
+  flowProjectFileUploadSchema,
+  flowProjectFileVersionSchema,
   generateImageRequestSchema,
   generateVideoRequestSchema,
   healthResponseSchema,
@@ -120,6 +142,12 @@ import {
   pluginToggleResponseSchema,
   projectCreateRequestSchema,
   projectCreateResponseSchema,
+  projectDirectoryRelinkRequestSchema,
+  projectDirectoryRelinkResponseSchema,
+  projectDirectoryRelinkSnapshotSchema,
+  projectFileLocationSchema,
+  projectFileMoveRequestSchema,
+  projectFileRelinkRequestSchema,
   projectListQuerySchema,
   projectListResponseSchema,
   projectUpdateRequestSchema,
@@ -186,6 +214,195 @@ export interface OpenApiRouteEntry {
 
 export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
   {
+    method: "post",
+    path: "/api/canvases/:canvasId/assets/:assetId/move",
+    tag: "canvases",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: canvasAssetMoveRequestSchema,
+    responseSchema: projectFileLocationSchema,
+    summary: "移动画布素材并更新布局引用",
+    description:
+      "仅移动当前权威布局声明的确切素材，核对布局revision与文件版本，在布局锁内发布路径和引用更新。已知冲突不先移动；布局最终发布失败执行条件补偿，补偿无法完成返回409并保留可恢复文件，不覆盖外部编辑，不自动重放。",
+  },
+  {
+    method: "get",
+    path: "/api/project-files/:assetId",
+    tag: "uploads",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: projectFileLocationSchema,
+    summary: "检查项目素材位置与版本",
+    description:
+      "读取已登记素材的确切位置并核对文件版本，缺失与外部修改明确返回错误。",
+  },
+  {
+    method: "post",
+    path: "/api/project-files/:assetId/move",
+    tag: "uploads",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: projectFileMoveRequestSchema,
+    responseSchema: projectFileLocationSchema,
+    summary: "移动项目素材",
+    description: "按预期路径及版本移动普通文件，保留素材身份，不覆盖已有目标。",
+  },
+  {
+    method: "post",
+    path: "/api/project-files/:assetId/relink",
+    tag: "uploads",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: projectFileRelinkRequestSchema,
+    responseSchema: projectFileLocationSchema,
+    summary: "重新关联项目素材",
+    description:
+      "仅关联用户指定的已授权相对路径并校验真实文件版本，不扫描或猜测文件。",
+  },
+  {
+    method: "post",
+    path: "/api/canvases/:canvasId/export",
+    tag: "canvases",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: canvasAssetRevisionRequestSchema,
+    binaryResponse: "application/x-tar",
+    summary: "导出自包含画布",
+    description:
+      "以确切布局版本导出独立JSON与已登记素材，缺失或外改素材使导出明确失败。",
+  },
+  {
+    method: "post",
+    path: "/api/canvases/:canvasId/restore-assets",
+    tag: "canvases",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: canvasAssetRevisionRequestSchema,
+    responseSchema: canvasAssetRestoreReceiptSchema,
+    summary: "恢复画布素材索引",
+    description:
+      "按权威布局的确切路径和版本原子恢复索引，不改动素材文件或用户Git工作区。",
+  },
+  {
+    method: "post",
+    path: "/api/design-tasks/:taskId/provision",
+    tag: "runs",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: designTaskPolicyResponseSchema,
+    summary: "登记画布任务执行信息",
+    description:
+      "为指定的Design Task显式登记固定项目、画布、执行目录和代际；重复调用只返回现有策略，不自动启动模型运行。taskId必须是UUID。",
+  },
+
+  {
+    method: "patch",
+    path: "/api/design-tasks/:taskId",
+    tag: "runs",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: designTaskPolicyUpdateRequestSchema,
+    responseSchema: designTaskPolicyResponseSchema,
+    summary: "更新画布任务权限与规划",
+    description:
+      "以客户端观察到的scope与branch代际核对当前Task，再使用服务端planning代际执行真实CAS；活动Run、队列占用或旧代际返回409，不启动运行。",
+  },
+
+  {
+    method: "get",
+    path: "/api/design-tasks/:taskId/approvals",
+    tag: "permissions",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: designApprovalListResponseSchema,
+    summary: "读取画布任务当前审批",
+    description:
+      "仅列出真实Design Task当前活动Run及有效scope、branch、planning代际的permission和计划批准；不包含通用提问、其他Task或已取消审批。",
+  },
+  {
+    method: "post",
+    path: "/api/design-tasks/:taskId/approvals/:interactionId/resolve",
+    tag: "permissions",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: designApprovalResolveRequestSchema,
+    responseSchema: designApprovalResolveResponseSchema,
+    summary: "提交画布任务审批答案",
+    description:
+      "客户端仅提交原生permission或计划批准答案；绑定由服务端当前Task策略和实际审批构造，旧Run或旧代际返回409，外Task审批返回404。重复答案不重复授权，取消或停止后的审批不能恢复执行。",
+  },
+  {
+    method: "get",
+    path: "/api/design-tasks/:taskId",
+    tag: "runs",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: designTaskPolicyResponseSchema,
+    summary: "读取画布任务执行策略",
+    description:
+      "读取已登记Design Task绑定的项目与画布、执行目录、沙箱、权限和scope/branch代际；不创建Task执行信息，也不启动模型运行。taskId必须是UUID。",
+  },
+
+  {
+    method: "get",
+    path: "/api/design-tasks/:taskId/goal",
+    tag: "runs",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: designGoalResponseSchema,
+    summary: "读取画布任务目标",
+    description:
+      "读取真实Task的持久目标、当前权限策略及匹配的目标Run；没有目标时返回null。",
+  },
+  {
+    method: "post",
+    path: "/api/design-tasks/:taskId/goal",
+    tag: "runs",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: designGoalCreateRequestSchema,
+    responseSchema: designGoalResponseSchema,
+    summary: "创建画布任务目标",
+    description:
+      "以当前branch与已观察目标身份创建Goal；预算省略或null表示不设预算。创建成功后仅通过Host调度一个受控输入，返回当前Goal与Task状态。",
+  },
+  {
+    method: "post",
+    path: "/api/design-tasks/:taskId/goal/pause",
+    tag: "runs",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: designGoalPauseRequestSchema,
+    responseSchema: designGoalResponseSchema,
+    summary: "暂停画布任务目标",
+    description:
+      "在Task事务中核对Goal身份、revision与branch后暂停；仅停止匹配的目标Run，不取消其他用户Run。",
+  },
+  {
+    method: "post",
+    path: "/api/design-tasks/:taskId/goal/resume",
+    tag: "runs",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: designGoalResumeRequestSchema,
+    responseSchema: designGoalResponseSchema,
+    summary: "恢复画布任务目标",
+    description:
+      "核对Goal身份、revision与branch，前一Run已结束且预算仍可用时显式恢复，再由Host调度一个受控输入。",
+  },
+  {
+    method: "patch",
+    path: "/api/design-tasks/:taskId/goal/budget",
+    tag: "runs",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: designGoalBudgetRequestSchema,
+    responseSchema: designGoalResponseSchema,
+    summary: "调整画布任务目标预算",
+    description:
+      "以Goal身份、revision与branch核对持久状态；null移除预算，已用量达到新预算时暂停并停止匹配目标Run，调整预算不会自动恢复。",
+  },
+  {
     method: "get",
     path: "/api/agent/runs/latest",
     tag: "runs",
@@ -193,7 +410,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     successStatus: 200,
     summary: "查询会话最近一轮运行终态",
     description:
-      "按持久会话和当前本地实例隔离，返回原始失败原因；没有可见运行时返回 null。",
+      "按持久会话和当前本地实例隔离，返回运行状态、本轮停止原因、错误代码与失败文案；旧记录停止原因为空，没有可见运行时返回 null。",
     responseSchema: agentRunLatestResponseSchema,
     querySchema: z.object({ sessionId: z.string().min(1) }),
   },
@@ -701,7 +918,8 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     successStatus: 200,
     responseSchema: canvasGetResponseSchema,
     summary: "读取画布内容",
-    description: "按 canvasId 返回当前本地实例可见画布的内容与元信息。",
+    description:
+      "按 canvasId 返回项目文件中的画布内容、元信息与原字节 SHA256 版本，保存时用此版本检查并发修改。",
   },
   {
     method: "put",
@@ -713,7 +931,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: canvasSaveResponseSchema,
     summary: "保存画布内容",
     description:
-      "整体覆盖保存画布内容并返回确认。内容可含 base64 图片数据，请求体上限 50MB。",
+      "携带 expectedRevision 原子保存项目画布文件并返回新版本；文件已被其它编辑或 Git 修改时返回 409，不能静默覆盖。新增图片可含 base64 数据，请求体上限 50MB。",
   },
   // ---- chat.ts（会话与消息）----
   {
@@ -1158,7 +1376,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     auth: "local",
     successStatus: 200,
     summary: "列出执行模式",
-    description: "返回六档执行模式词汇表，形如 { modes: [...] }。",
+    description: "返回五档执行模式词汇表，形如 { modes: [...] }。",
   },
   {
     method: "get",
@@ -1168,7 +1386,8 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     successStatus: 200,
     responseSchema: executionModeSchema,
     summary: "查询线程激活模式",
-    description: "返回线程当前激活的执行模式；缓存未命中时回读持久化值。",
+    description:
+      "返回线程当前激活的执行模式；缓存未命中时回读持久化值。历史 loop 模式返回 409 并要求重新选择。",
   },
   {
     method: "put",
@@ -1181,7 +1400,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     }),
     summary: "切换线程执行模式",
     description:
-      "激活并写穿持久化线程执行模式，返回 { mode }。会话不属当前实例返回 404；请求非法返回 400。",
+      "激活并写穿持久化线程执行模式，返回 { mode }。会话不属当前实例返回 404；请求非法或选择已停用的 loop 返回 400。",
   },
   // ---- flow-host.ts（flow 集成宿主缝；credentials/billing/events 用共享密钥而非用户令牌）----
   {
@@ -1238,7 +1457,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: flowHostEventsResponseSchema,
     summary: "接收 flow 运行事件批次",
     description:
-      "校验共享密钥后逐条解析事件归属，经 WebSocket 通道投递 flowRun.event；无法归属或契约不过的事件跳过并计数。批次可跨 run / 跨用户。",
+      "校验共享密钥、当前实例归属及项目代际；旧代际、排空或缺少作用域的事件跳过并计数，符合实时状态的事件经 WebSocket 投递 flowRun.event 并写入续传缓冲。",
   },
   {
     method: "post",
@@ -1246,6 +1465,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     tag: "flow",
     auth: "local",
     successStatus: 200,
+    requestSchema: flowHostIdentityTicketRequestSchema,
     responseSchema: flowHostIdentityTicketResponseSchema,
     summary: "签发一次性宿主身份票据",
     description:
@@ -1262,6 +1482,97 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "验签宿主身份票据",
     description:
       "校验共享密钥后一次性消费票据，换出稳定 subject（本地实例模型下即实例 instanceId）；伪造、过期与重放一律 401，版本不符 400。",
+  },
+  {
+    method: "post",
+    path: "/api/flow/host/project-files/upload",
+    tag: "flow",
+    auth: "shared-secret",
+    successStatus: 200,
+    requestSchema: flowProjectFileUploadSchema,
+    responseSchema: flowProjectFileReceiptSchema,
+    multipart: {
+      fileField: "file",
+      fields: {
+        assetId: "必填：素材 UUID",
+        relativePath: "必填：项目内相对路径",
+        mimeType: "必填：文件 MIME",
+        writeFingerprint: "必填：原始字节 SHA256",
+      },
+    },
+    summary: "发布 Flow 项目素材",
+    description:
+      "同时校验网关共享密钥与 x-ff-project-binding 项目绑定。原始文件原子发布到固定项目目录，上限250MiB；指纹、路径或授权变化明确拒绝，不自动重放。",
+  },
+  {
+    method: "get",
+    path: "/api/flow/host/project-files/:assetId/metadata",
+    tag: "flow",
+    auth: "shared-secret",
+    successStatus: 200,
+    responseSchema: flowProjectFileMetadataSchema,
+    summary: "读取 Flow 项目素材索引",
+    description:
+      "以网关密钥和项目绑定校验素材真实归属，返回相对路径、内容版本、MIME与字节数，不暴露绝对目录或绑定令牌。",
+  },
+  {
+    method: "get",
+    path: "/api/flow/host/project-files/:assetId",
+    tag: "flow",
+    auth: "shared-secret",
+    successStatus: 200,
+    querySchema: flowProjectFileVersionSchema,
+    binaryResponse: "application/octet-stream",
+    summary: "读取 Flow 项目素材字节",
+    description:
+      "网关密钥、项目绑定与精确内容版本均通过后读取文件。支持单段Range的206响应，越界或多段Range返回416；丢失或外部编辑不会回退扫描或返回另一份文件。",
+  },
+  {
+    method: "post",
+    path: "/api/flow/host/project-files/:assetId/move",
+    tag: "flow",
+    auth: "shared-secret",
+    successStatus: 200,
+    requestSchema: flowProjectFileMoveSchema,
+    responseSchema: flowProjectFileReceiptSchema,
+    summary: "移动 Flow 项目素材",
+    description:
+      "网关密钥与项目绑定通过后，按预期相对路径和内容版本移动同项目文件并更新索引；目标冲突、撤销或外部修改返回明确错误。",
+  },
+  {
+    method: "delete",
+    path: "/api/flow/host/project-files/:assetId",
+    tag: "flow",
+    auth: "shared-secret",
+    successStatus: 200,
+    querySchema: flowProjectFileVersionSchema,
+    responseSchema: flowProjectFileDeleteReceiptSchema,
+    summary: "删除 Flow 项目素材文件",
+    description:
+      "验证网关密钥、项目绑定及精确内容版本后删除文件，保留审计索引。已缺失文件仅在归属与预期版本仍匹配时幂等完成，外部改变的文件拒绝删除。",
+  },
+  {
+    method: "get",
+    path: "/api/flow/host/project-files/layouts/:workflowId",
+    tag: "flow",
+    auth: "shared-secret",
+    successStatus: 200,
+    responseSchema: flowLayoutSnapshotSchema,
+    summary: "读取 Flow 工作流布局文件",
+    description:
+      "以网关密钥和固定项目绑定读取独立JSON布局及内容版本；文件是权威，缺失返回404，不回退数据库草稿或全盘猜测。",
+  },
+  {
+    method: "put",
+    path: "/api/flow/host/project-files/layouts/:workflowId",
+    tag: "flow",
+    auth: "shared-secret",
+    successStatus: 200,
+    requestSchema: flowLayoutWriteSchema,
+    responseSchema: flowLayoutSnapshotSchema,
+    summary: "按版本保存 Flow 工作流布局",
+    description:
+      "网关密钥和项目绑定通过后，以expectedVersion原子保存至项目内JSON布局；null仅用于创建。正文上限4MiB，版本冲突保留外部编辑并返回409，发布前再次核验授权。",
   },
   // ---- fonts.ts（字体；免鉴权）----
   {
@@ -1288,7 +1599,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     requestSchema: generateImageRequestSchema,
     summary: "同步生成图片并入库",
     description:
-      "按套餐做模型/分辨率/并发校验并预扣积分，经 BYOK 实例图像适配器生成，结果下载转存对象存储后返回签名 URL 与资产 id。缺 providerInstanceId 或 model 返回 400；上游失败 502。",
+      "以已授权本机身份调用指定BYOK供应商实例和模型同步生成图片，下载产物并登记素材，返回签名URL、assetId、MIME与尺寸。缺少providerInstanceId或model返回400；维护期间返回503；上游或适配器失败返回502。",
   },
   {
     method: "post",
@@ -1299,7 +1610,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     requestSchema: generateVideoRequestSchema,
     summary: "受理视频生成任务",
     description:
-      "校验套餐与积分后创建 video_generation 任务并预扣积分，由 worker 异步执行，进度经 GET /api/jobs/{jobId} 轮询。返回 { job_id, status, prompt }。",
+      "核对本机接入及指定BYOK供应商实例、模型后创建video_generation后台任务，由worker异步执行，进度经GET /api/jobs/{jobId}轮询。成功202返回job_id、status和prompt；任务服务未配置时返回503。",
   },
   // ---- health.ts（健康检查；免鉴权）----
   {
@@ -1348,7 +1659,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: jobResponseSchema,
     summary: "创建图片生成任务",
     description:
-      "校验套餐模型访问与并发后创建 image_generation 任务并扣减积分，扣费失败自动取消任务。",
+      "核对本地实例、供应商及项目/Task来源后创建图片生成任务。成果来源由服务端固定，Code成果进入真实Task工作目录，显式无关联请求独立生成。",
   },
   {
     method: "post",
@@ -1360,7 +1671,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: jobResponseSchema,
     summary: "创建视频生成任务",
     description:
-      "创建 video_generation 任务并预扣积分，支持时长、分辨率、宽高比、参考图/参考视频等参数透传给 worker。",
+      "核对来源后创建视频生成任务，支持时长、分辨率、宽高比及参考图/视频。成果来源由服务端固定，关联被删除后不会退回独立生成。",
   },
   {
     method: "get",
@@ -1371,7 +1682,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: jobResponseSchema,
     summary: "查询单个任务状态",
     description:
-      "按 jobId 返回当前本地实例的任务详情，供客户端轮询异步任务进度。不存在返回 404。",
+      "按jobId返回当前本地实例的任务详情及只读成果来源，供客户端轮询异步进度。不存在返回404。",
   },
   {
     method: "get",
@@ -1692,7 +2003,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: projectCreateResponseSchema,
     summary: "创建项目",
     description:
-      "按请求体创建新项目并返回创建结果。请求体校验失败返回 400 带 issues。",
+      "创建项目并绑定固定工作目录；省略目录时创建托管目录，指定路径须为存在的绝对目录。请求体校验失败返回 400 带 issues。",
   },
   {
     method: "patch",
@@ -1703,7 +2014,30 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     requestSchema: projectUpdateRequestSchema,
     summary: "更新项目",
     description:
-      "部分更新项目字段，成功返回 204 无响应体。请求体校验失败返回 400 带 issues。",
+      "部分更新项目字段；工作目录仅接受相同路径的幂等值，解绑或切换目录拒绝。成功返回 204 无响应体，请求体校验失败返回 400 带 issues。",
+  },
+  {
+    method: "get",
+    path: "/api/projects/:projectId/relink-directory",
+    tag: "projects",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: projectDirectoryRelinkSnapshotSchema,
+    summary: "核对缺失项目目录",
+    description:
+      "返回固定目录与 Code/Design Task 授权代际；Flow 返回结构化 available 状态或持久恢复操作及实时网关回执，已发布新根的待确认操作仍可恢复。首次关联仅允许旧目录缺失，不扫描文件，不重放执行。",
+  },
+  {
+    method: "post",
+    path: "/api/projects/:projectId/relink-directory",
+    tag: "projects",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: projectDirectoryRelinkRequestSchema,
+    responseSchema: projectDirectoryRelinkResponseSchema,
+    summary: "重新关联缺失项目目录",
+    description:
+      "首次关联仅允许旧目录缺失；Code/Design 核对完整 Task 代际、关闭资源并暂停 Goal，再原子重绑根。Flow 先撤销文件准入并按持久 operationId 确认真正本地停稳，再 CAS 发布根；未知停止仅查询状态，远端未停止数量如实保留，重启后的待确认操作维持维护态。",
   },
   {
     method: "put",
@@ -1815,7 +2149,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: runCreateResponseSchema,
     summary: "创建智能体运行",
     description:
-      "以已授权本机身份启动运行。Code绑定Project与持久Task工作域，Design沿用Canvas；读取本地模型与执行模式，任何存储故障都拒绝启动，维护期间不接收新工作。BYOK不检查套餐或余额，成功202返回runId。",
+      "以已授权本机身份提交运行。Code与Design均须绑定所属持久Task工作域；Design核对Task、项目、画布及目录后交由持久宿主接纳或排队，保留模型选择与授权代际。缺失目录、身份不符、存储故障或维护状态拒绝接纳并返回可读原因。BYOK不检查套餐或余额，成功202返回runId。",
   },
   {
     method: "post",

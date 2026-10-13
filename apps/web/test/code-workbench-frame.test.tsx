@@ -136,7 +136,9 @@ it("窗口聚焦与模式能力更新交错时，插件打开仍读取最新库�
   fireEvent(window, new Event("focus"));
   await waitFor(() => expect(reads).toBe(3));
   if (!finishOpen) throw new Error("未建立插件打开目录请求");
-  view.rerender(<CodeWorkbenchFrame availableModes={["code", "design", "flow"]} />);
+  view.rerender(
+    <CodeWorkbenchFrame availableModes={["code", "design", "flow"]} />,
+  );
   finishOpen(Response.json(payload));
   expect(await screen.findByTitle("米家")).not.toBeNull();
 });

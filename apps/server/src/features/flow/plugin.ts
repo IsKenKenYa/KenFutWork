@@ -4,9 +4,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { FLOW_PLUGIN_BUNDLE_NAME } from "@kenfutwork/shared";
-import { isPackagedRuntime, resolveEntryRoot } from "../../desktop/entry-root.js";
+import {
+  isPackagedRuntime,
+  resolveEntryRoot,
+} from "../../desktop/entry-root.js";
 import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import { registerFlowHostRoutes } from "../../http/flow-host.js";
+import { registerFlowProjectFileRoutes } from "../../http/flow-project-files.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { createProcessRunCommand } from "./engine/exec.js";
 import {
@@ -20,6 +24,11 @@ import {
 import { probeEnginePaths } from "./engine/probe.js";
 import { listEngineStackContainers } from "./engine/stack.js";
 import { createFlowIdentityTickets } from "./identity.js";
+import { createFlowProjectControl } from "./project-control.js";
+import {
+  createFlowProjectFiles,
+  type FlowProjectFiles,
+} from "./project-files.js";
 
 /**
  * 引擎资源目录（`dify/`，内含 `docker-compose.dify.yml` 与 `ssrf_proxy/squid.conf`）。
@@ -38,7 +47,10 @@ function resolveDifyDir(): string {
       "dify",
     );
   }
-  return join(fileURLToPath(new URL("../../../../..", import.meta.url)), "dify");
+  return join(
+    fileURLToPath(new URL("../../../../..", import.meta.url)),
+    "dify",
+  );
 }
 
 /** 安装生成的密钥 env（存在才用于 compose 查询；信息页是只读路径，不创建）。 */
@@ -88,7 +100,9 @@ export function createFlowHostPlugin(deps: {
   secret?: string | undefined;
   /** `KENFUTWORK_FLOW_FRONTEND_URL`；工作台 Flow 模式的 iframe src。 */
   frontendUrl?: string | undefined;
+  gatewayUrl?: string | undefined;
 }): PluginDefinition {
+  let flowFiles: FlowProjectFiles | undefined;
   return {
     name: "flow-host",
     inject: [
@@ -97,12 +111,37 @@ export function createFlowHostPlugin(deps: {
       "modelProviders",
       "settings",
       "ws",
+      "projects",
+      "projectFiles",
+      "blob",
     ],
     apply(ctx) {
-      if (!deps.secret?.trim() || !deps.frontendUrl?.trim()) {
+      ctx.register("flowProjectControl", () => {
+        if (deps.gatewayUrl && deps.secret)
+          return createFlowProjectControl({
+            gatewayUrl: deps.gatewayUrl,
+            sharedSecret: deps.secret,
+          });
+        const unavailable = async (): Promise<never> => {
+          throw Object.assign(
+            new Error("Flow 网关控制地址或共享密钥未配置。"),
+            { statusCode: 503 },
+          );
+        };
+        return {
+          snapshot: unavailable,
+          quiesce: unavailable,
+          completeRelink: unavailable,
+        };
+      });
+      if (
+        !deps.secret?.trim() ||
+        !deps.frontendUrl?.trim() ||
+        !deps.gatewayUrl?.trim()
+      ) {
         // 不视为错误：status 端点会如实回答 disabled + 缺什么，前端不摆空壳入口。
         console.log(
-          "[flow] flow 宿主适配层未配齐（KENFUTWORK_FLOW_EMBED_SECRET / KENFUTWORK_FLOW_FRONTEND_URL）：" +
+          "[flow] flow 宿主适配层未配齐（KENFUTWORK_FLOW_EMBED_SECRET / KENFUTWORK_FLOW_FRONTEND_URL / KENFUTWORK_FLOW_GATEWAY_URL）：" +
             "身份交换不可用，工作台不出现 Flow 模式入口（GET /api/flow/host/status 可查原因）。",
         );
       }
@@ -122,6 +161,7 @@ export function createFlowHostPlugin(deps: {
         },
       }));
       ctx.effect(() => () => {
+        flowFiles?.dispose();
         // 路由由 Fastify 生命周期回收，这里只留一条可追溯日志（便于排查「明明配了却没生效」）。
         console.log("[flow] flow 宿主适配层路由已停用。");
       });
@@ -129,10 +169,24 @@ export function createFlowHostPlugin(deps: {
     mounted(ctx) {
       // 本地实例身份缝（DEC-20）：一次性短时票据在内存里存哈希（同本机接入 connect 票据）。
       const identityTickets = createFlowIdentityTickets();
+      const files = createFlowProjectFiles({
+        projectControl: ctx.get("flowProjectControl"),
+        localInstance: ctx.get("localInstance"),
+        localAccess: ctx.get("localAccess"),
+        projects: ctx.get("projects"),
+        projectFiles: ctx.get("projectFiles"),
+        blob: ctx.get("blob"),
+      });
+      flowFiles = files;
+      void registerFlowProjectFileRoutes(ctx.app, {
+        files,
+        secret: deps.secret,
+      });
       void registerFlowHostRoutes(ctx.app, {
         localAccess: ctx.get("localAccess"),
         localInstance: ctx.get("localInstance"),
         providers: ctx.get("modelProviders"),
+        projectControl: ctx.get("flowProjectControl"),
         // 事件缝透出走内核声明的 ws 缝（app.ts 装配时注册 connectionManager/eventBuffer）。
         ws: {
           connectionManager: ctx.get("ws").connectionManager,
@@ -141,7 +195,16 @@ export function createFlowHostPlugin(deps: {
         },
         // 身份缝：宿主前端换票（本机接入）→ flow 网关回验（共享密钥）→ 稳定 subject。
         identity: {
-          issue: async (actor) => {
+          issue: async (actor, projectId) => {
+            if (projectId) {
+              const project = await ctx
+                .get("projects")
+                .getProject(actor, projectId);
+              if (project.kind !== "flow")
+                throw Object.assign(new Error("请选择 Flow 项目。"), {
+                  statusCode: 403,
+                });
+            }
             const settings = await ctx
               .get("settings")
               .getInstanceSettings(actor, actor.instanceId);
@@ -149,6 +212,7 @@ export function createFlowHostPlugin(deps: {
               instanceId: actor.instanceId,
               accessClientId: actor.accessClientId,
               ttlMs: settings.localAccessTicketTtlMs,
+              ...(projectId ? { projectId } : {}),
             });
           },
           verify: async (token) => {
@@ -157,7 +221,20 @@ export function createFlowHostPlugin(deps: {
             // 票据只在本实例签发：归属必须与当前实例一致（防跨实例拼装）。
             const context = await ctx.get("localInstance").getContext();
             if (entry.instanceId !== context.instanceId) return null;
-            return { subject: context.instanceId, displayName: "本机" };
+            const projectFiles = entry.projectId
+              ? await files.issue(
+                  {
+                    instanceId: entry.instanceId,
+                    accessClientId: entry.accessClientId,
+                  },
+                  entry.projectId,
+                )
+              : undefined;
+            return {
+              subject: context.instanceId,
+              displayName: "本机",
+              ...(projectFiles ? { projectFiles } : {}),
+            };
           },
         },
         // 引擎探测层 + 托管（FORM-11）：探测路径，确认后拉镜像起栈，状态可轮询。
@@ -167,7 +244,10 @@ export function createFlowHostPlugin(deps: {
               platform: process.platform,
               release: os.release(),
               run: createProcessRunCommand(),
-              listInstances: async () => ctx.get("modelProviders").listInstances(await ctx.get("localInstance").serviceActor()),
+              listInstances: async () =>
+                ctx
+                  .get("modelProviders")
+                  .listInstances(await ctx.get("localInstance").serviceActor()),
             }),
         },
         engineInstall: {
@@ -228,6 +308,7 @@ export function createFlowHostPlugin(deps: {
         },
         secret: deps.secret,
         frontendUrl: deps.frontendUrl,
+        gatewayUrl: deps.gatewayUrl,
       });
     },
   };

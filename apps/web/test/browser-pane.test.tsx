@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -58,9 +64,7 @@ test("连接→开流→MJPEG 画面渲染；地址栏导航走 view；历史栈
       "/api/browser/cdp/stream?ticket=ticket-1",
     ),
   );
-  expect(
-    surfaceJson,
-  ).toHaveBeenCalledWith(
+  expect(surfaceJson).toHaveBeenCalledWith(
     "/api/browser/cdp/view",
     expect.objectContaining({
       method: "POST",
@@ -296,9 +300,7 @@ test("拾取中 Esc 退出；调试控制台注入带上当前 url", async () =>
   expect(screen.getByText("点选元素填入输入框 · Esc 取消")).toBeTruthy();
   await user.keyboard("{Escape}");
   await waitFor(() =>
-    expect(
-      screen.queryByText("点选元素填入输入框 · Esc 取消"),
-    ).toBeNull(),
+    expect(screen.queryByText("点选元素填入输入框 · Esc 取消")).toBeNull(),
   );
 
   await user.click(screen.getByRole("button", { name: "调试控制台" }));

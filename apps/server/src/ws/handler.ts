@@ -1,10 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { WsCommand, WsTerminalStartCommand } from "@kenfutwork/shared";
-import {
-  type RunCreateRequest,
-  wsCommandSchema,
-  wsRpcResponseSchema,
-} from "@kenfutwork/shared";
+import { wsCommandSchema, wsRpcResponseSchema } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import {
@@ -22,10 +18,14 @@ import type { ThreadService } from "../features/chat/thread-service.js";
 import { chunkForFrames } from "../features/code-git/terminal-session.js";
 import type { CodeTerminalService } from "../features/code-terminal/types.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
+import type { DesignRunHost } from "../features/execution/design-run-host-types.js";
+import { DesignTaskError } from "../features/execution/design-task-errors.js";
+import type { DesignTasksService } from "../features/execution/design-task-types.js";
 import {
   ExecutionScopeError,
   type ExecutionScopes,
 } from "../features/execution/scope-service.js";
+import type { FlowProjectControl } from "../features/flow/project-control.js";
 import type {
   LocalAccessService,
   LocalAccessVerifier,
@@ -40,11 +40,19 @@ import {
   ConnectionIdentityConflictError,
   type ConnectionManager,
 } from "./connection-manager.js";
-import { type CanvasEventBuffer, flowEventScopeKey } from "./event-buffer.js";
+import {
+  createDesignTransport,
+  type DesignTransport,
+} from "./design-transport.js";
+import { CanvasEventBuffer, flowEventScopeKey } from "./event-buffer.js";
 import { createPipelineLogger } from "./logger.js";
 
+type WsRunPayload = Extract<WsCommand, { action: "agent.run" }>["payload"];
 type RegisterWsOptions = {
   agentRuns: AgentRunService;
+  designRunHost?: DesignRunHost;
+  designTasks?: DesignTasksService;
+  designTransport?: DesignTransport;
   agentModes?: ExecutionModeService;
   agentRunMetadataService?: AgentRunMetadataService;
   localAccess?: LocalAccessVerifier &
@@ -53,6 +61,7 @@ type RegisterWsOptions = {
   codeTerminal?: CodeTerminalService;
   connectionManager: ConnectionManager;
   eventBuffer?: CanvasEventBuffer;
+  flowProjectControl?: Pick<FlowProjectControl, "snapshot">;
   settingsService?: SettingsService;
   threadService?: ThreadService;
   localInstance?: LocalInstanceService;
@@ -65,6 +74,23 @@ export async function registerWsRoute(
   options: RegisterWsOptions,
 ) {
   const { agentRuns, connectionManager } = options;
+  const designTransport =
+    options.designRunHost && options.designTasks && options.threadService
+      ? createDesignTransport({
+          host: options.designRunHost,
+          tasks: options.designTasks,
+          threads: options.threadService,
+          connections: connectionManager,
+          buffer: options.eventBuffer ?? new CanvasEventBuffer(),
+        })
+      : undefined;
+  const routeOptions = {
+    ...options,
+    ...(designTransport ? { designTransport } : {}),
+  };
+  app.addHook("onClose", async () => {
+    designTransport?.close();
+  });
 
   app.get(
     "/api/ws",
@@ -79,7 +105,7 @@ export async function registerWsRoute(
       void authenticateAndBind(
         socket,
         request,
-        options,
+        routeOptions,
         agentRuns,
         connectionManager,
       );
@@ -117,9 +143,11 @@ async function authenticateAndBind(
   let revoked = false;
   let unsubscribeRevoked = () => {};
   let removeRegistered = () => {};
+  let releaseDesignConnection = () => {};
   const releaseAuth = () => {
     unsubscribeRevoked();
     unsubscribeRevoked = () => {};
+    releaseDesignConnection();
   };
   const rejectConnection = (code: number, reason: string) => {
     // 先撤销服务端路由资格，再发close帧；客户端close可能早于服务端close事件。
@@ -198,7 +226,13 @@ async function authenticateAndBind(
       socket,
       authenticatedUser.accessClientId,
     );
-    removeRegistered = () => connectionManager.remove(connectionId, socket);
+    releaseDesignConnection =
+      options.designTransport?.connect(connectionId, authenticatedUser) ??
+      (() => {});
+    removeRegistered = () => {
+      connectionManager.remove(connectionId, socket);
+      releaseDesignConnection();
+    };
   } catch (error) {
     if (error instanceof ConnectionIdentityConflictError) {
       rejectConnection(4001, error.message);
@@ -265,14 +299,31 @@ async function authenticateAndBind(
         error ? reject(error) : resolve(),
       );
     });
-  const terminalFailure = (id: string, error: unknown) =>
+  const terminalFailure = (
+    id: string,
+    error: unknown,
+    action?: string,
+    requestId?: string,
+  ) => {
+    if (requestId)
+      sendToClient({
+        type: "error",
+        requestId,
+        action,
+        code: "terminal_failed",
+        message: error instanceof Error ? error.message : "终端操作失败",
+      });
     sendToClient({
       type: "terminal.exit",
       sessionId: id,
       exitCode: null,
       reason: error instanceof Error ? error.message : String(error),
     });
-  const startTerminal = async (payload: WsTerminalStartCommand["payload"]) => {
+  };
+  const startTerminal = async (
+    payload: WsTerminalStartCommand["payload"],
+    requestId?: string,
+  ) => {
     const terminals = options.codeTerminal;
     if (!terminals || !terminalOwner)
       throw new Error("服务端没有装配Task终端能力。");
@@ -286,6 +337,7 @@ async function authenticateAndBind(
     await sendTerminal({
       type: "command.ack",
       action: "terminal.start",
+      ...(requestId ? { requestId } : {}),
       payload: {
         sessionId: opened.id,
         shell: opened.shell,
@@ -380,19 +432,36 @@ async function authenticateAndBind(
         msg = wsCommandSchema.parse(parsed);
       } catch {
         socket.send(
-          JSON.stringify({ type: "error", message: "Invalid command format" }),
+          JSON.stringify({
+            type: "error",
+            code: "invalid_command",
+            message: "请求格式无效",
+            ...(typeof obj.id === "string" && obj.id.length <= 128
+              ? { requestId: obj.id }
+              : {}),
+            ...(typeof obj.action === "string" ? { action: obj.action } : {}),
+          }),
         );
         return;
       }
 
       if (msg.action === "agent.run") {
         const p = msg.payload;
+        const releaseGate =
+          options.designTransport?.gate(connectionId) ?? (() => {});
         void handleRunCommand(
           authenticatedUser,
           connectionId,
           {
             sessionId: p.sessionId,
             conversationId: p.conversationId,
+            ...(p.inputId !== undefined ? { inputId: p.inputId } : {}),
+            ...(p.scopeGeneration !== undefined
+              ? { scopeGeneration: p.scopeGeneration }
+              : {}),
+            ...(p.branchGeneration !== undefined
+              ? { branchGeneration: p.branchGeneration }
+              : {}),
             ...(p.projectId !== undefined ? { projectId: p.projectId } : {}),
             ...(p.taskId !== undefined ? { taskId: p.taskId } : {}),
             prompt: p.prompt,
@@ -416,28 +485,146 @@ async function authenticateAndBind(
           agentRuns,
           connectionManager,
           options,
-        ).catch((error: unknown) => {
-          socket.send(
-            JSON.stringify({
-              type: "error",
-              message: error instanceof Error ? error.message : String(error),
-            }),
+          msg.id,
+        )
+          .catch((error: unknown) => {
+            socket.send(
+              JSON.stringify({
+                type: "error",
+                action: msg.action,
+                ...(msg.id ? { requestId: msg.id } : {}),
+                ...(error instanceof DesignTaskError
+                  ? { code: error.code }
+                  : {}),
+                message: error instanceof Error ? error.message : String(error),
+              }),
+            );
+          })
+          .finally(releaseGate);
+      } else if (msg.action === "task.resume") {
+        if (!options.designTransport) {
+          connectionManager.sendTo(connectionId, {
+            type: "error",
+            action: msg.action,
+            ...(msg.id ? { requestId: msg.id } : {}),
+            code: "design_host_unavailable",
+            message: "Design任务宿主未装配",
+          });
+          return;
+        }
+        const releaseGate = options.designTransport.gate(connectionId);
+        try {
+          await options.designTransport.resume(
+            authenticatedUser,
+            connectionId,
+            msg.payload.taskId,
+            msg.payload.lastSeq,
+            msg.id,
           );
-        });
+        } catch (error) {
+          connectionManager.sendTo(connectionId, {
+            type: "error",
+            action: msg.action,
+            ...(msg.id ? { requestId: msg.id } : {}),
+            code:
+              error instanceof DesignTaskError
+                ? error.code
+                : "task_resume_failed",
+            message: error instanceof Error ? error.message : "任务续接失败",
+          });
+        } finally {
+          releaseGate();
+        }
       } else if (msg.action === "agent.cancel") {
         log.info("run_cancel", {
           instanceId: authenticatedUser.instanceId,
           runId: msg.payload.runId,
         });
+        const identity = agentRuns.getRunIdentity?.(msg.payload.runId);
+        if (identity && identity.instanceId !== authenticatedUser.instanceId) {
+          connectionManager.sendTo(connectionId, {
+            type: "error",
+            action: msg.action,
+            ...(msg.id ? { requestId: msg.id } : {}),
+            code: "run_not_found",
+            message: "运行不存在",
+          });
+          return;
+        }
+        if (
+          identity?.preset === "code" &&
+          msg.payload.taskId &&
+          identity.taskId !== msg.payload.taskId
+        ) {
+          connectionManager.sendTo(connectionId, {
+            type: "error",
+            action: msg.action,
+            ...(msg.id ? { requestId: msg.id } : {}),
+            code: "scope_mismatch",
+            message: "取消目标与Task不匹配",
+          });
+          return;
+        }
+        if (
+          (msg.payload.taskId && identity?.preset !== "code") ||
+          identity?.preset === "design"
+        ) {
+          if (
+            !msg.payload.taskId ||
+            (identity?.taskId && identity.taskId !== msg.payload.taskId) ||
+            !options.designTransport
+          ) {
+            connectionManager.sendTo(connectionId, {
+              type: "error",
+              action: msg.action,
+              ...(msg.id ? { requestId: msg.id } : {}),
+              code: "design_task_required",
+              message: "取消Design运行需要真实Task",
+            });
+            return;
+          }
+          const releaseGate = options.designTransport.gate(connectionId);
+          try {
+            await options.designTransport.cancel(
+              authenticatedUser,
+              connectionId,
+              msg.payload.taskId,
+              msg.payload.runId,
+              msg.id,
+            );
+          } catch (error) {
+            connectionManager.sendTo(connectionId, {
+              type: "error",
+              action: msg.action,
+              ...(msg.id ? { requestId: msg.id } : {}),
+              code:
+                error instanceof DesignTaskError
+                  ? error.code
+                  : "task_cancel_failed",
+              message: error instanceof Error ? error.message : "任务取消失败",
+            });
+          } finally {
+            releaseGate();
+          }
+          return;
+        }
         const cancelResult = agentRuns.cancelRun(msg.payload.runId);
         if (!cancelResult) {
           socket.send(
             JSON.stringify({
               type: "error",
+              action: msg.action,
+              ...(msg.id ? { requestId: msg.id } : {}),
               message: `Run not found: ${msg.payload.runId}`,
             }),
           );
-        }
+        } else
+          connectionManager.sendTo(connectionId, {
+            type: "command.ack",
+            action: msg.action,
+            ...(msg.id ? { requestId: msg.id } : {}),
+            payload: cancelResult,
+          });
       } else if (msg.action === "canvas.resume") {
         const p = msg.payload;
         log.info("canvas_resume", {
@@ -458,6 +645,7 @@ async function authenticateAndBind(
         connectionManager.sendTo(connectionId, {
           type: "command.ack",
           action: "canvas.resume",
+          ...(msg.id ? { requestId: msg.id } : {}),
           payload: {
             canvasId: p.canvasId,
             latestSeq: options.eventBuffer?.getLatestSeq(p.canvasId) ?? 0,
@@ -483,12 +671,30 @@ async function authenticateAndBind(
           instanceId: authenticatedUser.instanceId,
           lastSeq: msg.payload.lastSeq,
         });
-        const missed =
+        const buffered =
           options.eventBuffer?.getAfter(scope, msg.payload.lastSeq) ?? [];
+        const missed = [];
+        for (const entry of buffered) {
+          const event = entry.event;
+          if (
+            event.type !== "flowRun.event" ||
+            !event.hostProjectId ||
+            !event.hostGeneration ||
+            !options.flowProjectControl
+          )
+            continue;
+          const gate = await options.flowProjectControl.snapshot(
+            authenticatedUser,
+            event.hostProjectId,
+          );
+          if (!gate.draining && gate.generation === event.hostGeneration)
+            missed.push(entry);
+        }
         // ACK 先行（与 canvas.resume 同一时序口径）：客户端先注册监听再收重放
         connectionManager.sendTo(connectionId, {
           type: "command.ack",
           action: "flow.resume",
+          ...(msg.id ? { requestId: msg.id } : {}),
           payload: {
             latestSeq: options.eventBuffer?.getLatestSeq(scope) ?? 0,
             replayed: missed.length,
@@ -501,8 +707,8 @@ async function authenticateAndBind(
           });
         }
       } else if (msg.action === "terminal.start") {
-        void startTerminal(msg.payload).catch((error: unknown) =>
-          terminalFailure(msg.payload.sessionId, error),
+        void startTerminal(msg.payload, msg.id).catch((error: unknown) =>
+          terminalFailure(msg.payload.sessionId, error, msg.action, msg.id),
         );
       } else if (msg.action === "terminal.input") {
         void options.codeTerminal
@@ -512,8 +718,17 @@ async function authenticateAndBind(
             msg.payload.sessionId,
             msg.payload.data,
           )
+          .then(() => {
+            if (msg.id)
+              sendToClient({
+                type: "command.ack",
+                action: msg.action,
+                requestId: msg.id,
+                payload: { sessionId: msg.payload.sessionId },
+              });
+          })
           .catch((error: unknown) =>
-            terminalFailure(msg.payload.sessionId, error),
+            terminalFailure(msg.payload.sessionId, error, msg.action, msg.id),
           );
       } else if (msg.action === "terminal.resize") {
         void options.codeTerminal
@@ -524,8 +739,17 @@ async function authenticateAndBind(
             msg.payload.cols,
             msg.payload.rows,
           )
+          .then(() => {
+            if (msg.id)
+              sendToClient({
+                type: "command.ack",
+                action: msg.action,
+                requestId: msg.id,
+                payload: { sessionId: msg.payload.sessionId },
+              });
+          })
           .catch((error: unknown) =>
-            terminalFailure(msg.payload.sessionId, error),
+            terminalFailure(msg.payload.sessionId, error, msg.action, msg.id),
           );
       } else if (msg.action === "terminal.stop") {
         void options.codeTerminal
@@ -535,8 +759,17 @@ async function authenticateAndBind(
             msg.payload.sessionId,
             "客户端关闭终端",
           )
+          .then(() => {
+            if (msg.id)
+              sendToClient({
+                type: "command.ack",
+                action: msg.action,
+                requestId: msg.id,
+                payload: { sessionId: msg.payload.sessionId },
+              });
+          })
           .catch((error: unknown) =>
-            terminalFailure(msg.payload.sessionId, error),
+            terminalFailure(msg.payload.sessionId, error, msg.action, msg.id),
           );
       }
     }
@@ -613,10 +846,11 @@ async function authenticateAndBind(
 async function handleRunCommand(
   actor: LocalActor,
   connectionId: string,
-  payload: RunCreateRequest,
+  payload: WsRunPayload,
   agentRuns: AgentRunService,
   connectionManager: ConnectionManager,
   services: RegisterWsOptions,
+  requestId?: string,
 ) {
   if (!services.localInstance) throw new Error("本地实例准入服务未装配。");
   const release = services.localInstance.beginAdmission();
@@ -628,6 +862,7 @@ async function handleRunCommand(
       agentRuns,
       connectionManager,
       services,
+      requestId,
     );
   } finally {
     release();
@@ -637,10 +872,11 @@ async function handleRunCommand(
 async function handleAdmittedRunCommand(
   authenticatedUser: LocalActor,
   connectionId: string,
-  payload: RunCreateRequest,
+  payload: WsRunPayload,
   agentRuns: AgentRunService,
   connectionManager: ConnectionManager,
   services: RegisterWsOptions,
+  requestId?: string,
 ) {
   const log = createPipelineLogger("agent.run", {
     instanceId: authenticatedUser.instanceId,
@@ -663,6 +899,20 @@ async function handleAdmittedRunCommand(
   const model = settings?.defaultModel;
   const threadId = sessionBinding?.threadId;
   const codeMode = sessionBinding?.mode === "code" || payload.preset === "code";
+  if (sessionBinding?.mode === "design") {
+    if (!services.designTransport)
+      throw new DesignTaskError(
+        "design_host_unavailable",
+        "Design任务宿主未装配",
+        503,
+      );
+    return services.designTransport.run(
+      authenticatedUser,
+      connectionId,
+      payload,
+      requestId,
+    );
+  }
   if (
     sessionBinding &&
     payload.preset &&
@@ -842,6 +1092,7 @@ async function handleAdmittedRunCommand(
     const ackMessage = {
       type: "command.ack",
       action: "agent.run",
+      ...(requestId ? { requestId } : {}),
       payload: response,
     };
     let ackSent = connectionManager.sendTo(connectionId, ackMessage);

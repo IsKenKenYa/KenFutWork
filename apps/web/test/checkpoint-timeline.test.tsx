@@ -64,16 +64,12 @@ test("时间线倒序渲染、预览随目标切换、确认回滚 POST restore"
     return TIMELINE;
   });
   const onRestored = vi.fn();
-  render(
-    <CheckpointTimeline workspacePath="/repo" onRestored={onRestored} />,
-  );
+  render(<CheckpointTimeline workspacePath="/repo" onRestored={onRestored} />);
   // 列表非空才出现入口（最新在前默认选 cp-2）
   const trigger = await screen.findByTestId("checkpoint-timeline-trigger");
   await user.click(trigger);
   await waitFor(() =>
-    expect(
-      screen.getByText(/将覆盖 2 个文件的未提交改动/),
-    ).toBeTruthy(),
+    expect(screen.getByText(/将覆盖 2 个文件的未提交改动/)).toBeTruthy(),
   );
 
   await user.click(screen.getByRole("button", { name: "回滚" }));
@@ -92,15 +88,11 @@ test("无 Task 或空时间线时入口不渲染（不摆空壳）", async () =>
     <CheckpointTimeline workspacePath="/repo" onRestored={() => {}} />,
   );
   await new Promise((resolve) => setTimeout(resolve, 30));
-  expect(
-    screen.queryByTestId("checkpoint-timeline-trigger"),
-  ).toBeNull();
+  expect(screen.queryByTestId("checkpoint-timeline-trigger")).toBeNull();
 
   getWorkspaceState.mockReturnValue({ activeTaskId: "task-2" });
   surfaceJson.mockImplementation(async () => ({ checkpoints: [] }));
   rerender(<CheckpointTimeline workspacePath="/repo" onRestored={() => {}} />);
   await new Promise((resolve) => setTimeout(resolve, 30));
-  expect(
-    screen.queryByTestId("checkpoint-timeline-trigger"),
-  ).toBeNull();
+  expect(screen.queryByTestId("checkpoint-timeline-trigger")).toBeNull();
 });

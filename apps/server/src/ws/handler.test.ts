@@ -2,7 +2,11 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import websocket from "@fastify/websocket";
-import { flowRunEventSchema, instanceSettingsSchema } from "@kenfutwork/shared";
+import {
+  flowRunEventSchema,
+  instanceSettingsSchema,
+  wsServerMessageSchema,
+} from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
@@ -68,6 +72,7 @@ async function makeStubs() {
       },
     },
   );
+  const flowGate = { generation: 1, draining: false };
   const agentRuns = {
     createRun: () => ({ runId: "run-1" }),
     cancelRun: () => true,
@@ -101,6 +106,7 @@ async function makeStubs() {
         load: async () => {
           if (workDirState.deny) throw new Error("Task不属于当前实例。");
           return {
+            preset: "code",
             scope: {
               instanceId,
               projectId: "00000000-0000-4000-8000-000000000002",
@@ -140,6 +146,7 @@ async function makeStubs() {
     captureRoot,
     workDirState,
     eventBuffer: new CanvasEventBuffer(),
+    flowGate,
   };
 }
 
@@ -154,6 +161,18 @@ async function startServer() {
     codeTerminal: stubs.terminals,
     localInstance: stubs.localInstance,
     eventBuffer: stubs.eventBuffer,
+    flowProjectControl: {
+      snapshot: async (_actor, projectId) => ({
+        ...stubs.flowGate,
+        projectId,
+        localSettled: true,
+        activeRunIds: [],
+        remoteStopped: 0,
+        remoteOutstanding: 0,
+        operationId: null,
+        quiesceSettled: false,
+      }),
+    },
   });
   app.addHook("onClose", async () => {
     await stubs.terminals.close("test_cleanup");
@@ -236,6 +255,8 @@ describe("flow 事件续传（flow.resume，P5）", () => {
       const instanceId = stubs.access.instanceId;
       const flowEvent = flowRunEventSchema.parse({
         type: "flowRun.event",
+        hostProjectId: "00000000-0000-4000-8000-000000000002",
+        hostGeneration: 1,
         runId: "run-9",
         seq: 1,
         eventType: "workflow_started",
@@ -249,6 +270,7 @@ describe("flow 事件续传（flow.resume，P5）", () => {
         port,
         JSON.stringify({
           type: "command",
+          id: "resume-1",
           action: "flow.resume",
           payload: { lastSeq: 0 },
         }),
@@ -256,6 +278,7 @@ describe("flow 事件续传（flow.resume，P5）", () => {
         2,
       );
       expect(messages[0]).toContain("flow.resume");
+      expect(messages[0]).toContain("resume-1");
       expect(messages[0]).toContain('"replayed":1');
       expect(messages[1]).toContain("flowRun.event");
       expect(messages[1]).toContain("run-9");
@@ -273,6 +296,37 @@ describe("flow 事件续传（flow.resume，P5）", () => {
       );
       expect(again[0]).toContain("flow.resume");
       expect(again[0]).toContain('"replayed":0');
+      stubs.flowGate.generation = 2;
+      const stale = await collectMessages(
+        port,
+        JSON.stringify({
+          type: "command",
+          action: "flow.resume",
+          payload: { lastSeq: 0 },
+        }),
+        headers,
+        1,
+      );
+      expect(stale[0]).toContain('"replayed":0');
+      stubs.flowGate.generation = 1;
+      stubs.flowGate.draining = true;
+      const draining = await collectMessages(
+        port,
+        JSON.stringify({
+          type: "command",
+          id: "resume-draining",
+          action: "flow.resume",
+          payload: { lastSeq: 0 },
+        }),
+        headers,
+        1,
+      );
+      expect(JSON.parse(String(draining[0]))).toMatchObject({
+        type: "command.ack",
+        action: "flow.resume",
+        requestId: "resume-draining",
+        payload: { replayed: 0 },
+      });
     } finally {
       await app.close();
     }
@@ -293,18 +347,26 @@ describe("WS 早期消息不丢失（回归）", () => {
 
   it("open 后立即发送的合法 action + 非法 payload 会回命令格式错误", async () => {
     const { app, port, headers } = await startServer();
+    const requestId = "invalid-cancel-early";
     try {
       const { got } = await sendImmediatelyOnOpen(
         port,
         JSON.stringify({
           type: "command",
+          id: requestId,
           action: "agent.cancel",
           payload: {},
         }),
         headers,
       );
-      expect(got).not.toBeNull();
-      expect(got).toContain("Invalid command format");
+      if (got === null) throw new Error("未收到非法命令的WS错误回执");
+      expect(wsServerMessageSchema.parse(JSON.parse(got))).toEqual({
+        type: "error",
+        code: "invalid_command",
+        message: "请求格式无效",
+        action: "agent.cancel",
+        requestId,
+      });
     } finally {
       await app.close();
     }
@@ -468,16 +530,25 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
   it("未带Task身份的终端拒绝，不能借用服务端启动目录", async () => {
     const { app, port, headers } = await startServer();
     const session = await connect(port, headers);
+    const requestId = "terminal-without-task";
     try {
       const rejected = await session.sendAndWait(
         {
           type: "command",
+          id: requestId,
           action: "terminal.start",
           payload: { sessionId: "t-no-task", cols: 80, rows: 24 },
         },
-        (message) => message.type === "error",
+        (message) =>
+          message.type === "error" && message.requestId === requestId,
       );
-      expect(rejected.message).toBe("Invalid command format");
+      expect(wsServerMessageSchema.parse(rejected)).toEqual({
+        type: "error",
+        code: "invalid_command",
+        message: "请求格式无效",
+        action: "terminal.start",
+        requestId,
+      });
     } finally {
       session.client.close();
       await app.close();
@@ -647,3 +718,111 @@ describe.skipIf(!ptyAvailable)("终端会话（WS 通道）", () => {
     }
   }, 30_000);
 });
+
+it("WS correlated admission rejection preserves packet id and action instead of becoming a client timeout", async () => {
+  const { app, port, headers } = await startServer();
+  try {
+    const { got } = await sendImmediatelyOnOpen(
+      port,
+      JSON.stringify({
+        type: "command",
+        id: "invalid-input",
+        action: "agent.run",
+        payload: { prompt: 123 },
+      }),
+      headers,
+    );
+    if (got === null) throw new Error("未收到命令关联回执");
+    expect(JSON.parse(got)).toMatchObject({
+      type: "error",
+      requestId: "invalid-input",
+      action: "agent.run",
+      code: "invalid_command",
+      message: "请求格式无效",
+    });
+  } finally {
+    await app.close();
+  }
+});
+it("task.resume without a configured real host returns its exact correlated configuration failure", async () => {
+  const { app, port, headers } = await startServer();
+  try {
+    const { got } = await sendImmediatelyOnOpen(
+      port,
+      JSON.stringify({
+        type: "command",
+        id: "resume-request",
+        action: "task.resume",
+        payload: { taskId: "00000000-0000-4000-8000-000000000003", lastSeq: 0 },
+      }),
+      headers,
+    );
+    if (got === null) throw new Error("未收到命令关联回执");
+    expect(JSON.parse(got)).toMatchObject({
+      type: "error",
+      requestId: "resume-request",
+      action: "task.resume",
+      code: "design_host_unavailable",
+    });
+  } finally {
+    await app.close();
+  }
+});
+
+it("canvas.resume, flow.resume and legacy Code cancel return the original command requestId", async () => {
+  const { app, port, headers } = await startServer();
+  try {
+    for (const [action, payload] of [
+      ["canvas.resume", { canvasId: "canvas", lastSeq: 0 }],
+      ["flow.resume", { lastSeq: 0 }],
+      ["agent.cancel", { runId: "run-1" }],
+    ] as const) {
+      const requestId = `request-${action}`;
+      const { got } = await sendImmediatelyOnOpen(
+        port,
+        JSON.stringify({ type: "command", id: requestId, action, payload }),
+        headers,
+      );
+      if (got === null) throw new Error("未收到命令关联回执");
+      expect(JSON.parse(got)).toMatchObject({
+        type: "command.ack",
+        action,
+        requestId,
+      });
+    }
+  } finally {
+    await app.close();
+  }
+});
+it.skipIf(!ptyAvailable)(
+  "terminal.start ACK is correlated before any terminal stream output",
+  async () => {
+    const { app, port, headers, stubs } = await startServer();
+    try {
+      const { got } = await sendImmediatelyOnOpen(
+        port,
+        JSON.stringify({
+          type: "command",
+          id: "terminal-request",
+          action: "terminal.start",
+          payload: {
+            taskId: stubs.taskId,
+            sessionId: "correlated-terminal",
+            shell: "sh",
+            cols: 80,
+            rows: 24,
+          },
+        }),
+        headers,
+      );
+      if (got === null) throw new Error("未收到命令关联回执");
+      expect(JSON.parse(got)).toMatchObject({
+        type: "command.ack",
+        action: "terminal.start",
+        requestId: "terminal-request",
+      });
+    } finally {
+      await app.close();
+    }
+  },
+);

@@ -131,7 +131,8 @@ it("原Code侧栏使用横排模式按钮，可信宿主能力才显示Flow；�
   // 全程没有换壳导航请求（唯一权威：workbench-navigation 由父推、壳内自切）。
   expect(
     post.mock.calls.every(
-      ([data]) => (data as { type?: string }).type !== "kenfutwork:code-navigate",
+      ([data]) =>
+        (data as { type?: string }).type !== "kenfutwork:code-navigate",
     ),
   ).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "连接使用" }));

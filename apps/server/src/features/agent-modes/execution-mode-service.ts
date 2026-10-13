@@ -50,13 +50,6 @@ export const BUILTIN_EXECUTION_MODES: Array<{
       '<execution_mode name="goal">\n本轮为目标驱动模式：先与用户明确成功标准（可验证），再围绕目标循环推进，每步说明进度与剩余差距。\n</execution_mode>',
   },
   {
-    id: "loop",
-    label: "循环",
-    description: "循环执行：按固定步骤反复迭代直到完成。",
-    inputDirective:
-      '<execution_mode name="loop">\n本轮为循环模式：按固定步骤反复迭代（执行→检查→修正），直到任务完成或达到用户设定的停止条件。\n</execution_mode>',
-  },
-  {
     id: "creative",
     label: "创造",
     description: "插件/技能创造引导：按规范产出 SKILL.md 或插件 bundle 产物。",
@@ -65,12 +58,20 @@ export const BUILTIN_EXECUTION_MODES: Array<{
   },
 ];
 
+export class RetiredExecutionModeError extends Error {
+  constructor() {
+    super("循环模式已停用，请重新选择执行模式");
+    this.name = "RetiredExecutionModeError";
+  }
+}
+
 /**
  * plan 模式放行的只读工具白名单（含 deepagents 内置文件工具与内核只读工具）。
  * 白名单外一律拒绝：修改类文件工具、execute、子代理 task、MCP/生成/画布写操作。
  */
 const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "Read",
+  "ReadHistory",
   "Glob",
   "Grep",
   "TaskOutput",
@@ -260,6 +261,7 @@ export function createExecutionModeService(
       return active.get(threadId) ?? "agent";
     },
     async activate(threadId, mode, scope) {
+      if (mode === "loop") throw new RetiredExecutionModeError();
       if (!known.has(mode)) {
         throw new Error(`[agent-modes] 未知执行模式 ${mode}（fail loud）。`);
       }
@@ -280,6 +282,7 @@ export function createExecutionModeService(
       const row = await deps.store.lookup(scope.instanceId, threadId);
       if (!row.exists) return "agent";
       const mode = row.mode ?? "agent";
+      if (mode === "loop") throw new RetiredExecutionModeError();
       active.set(threadId, mode);
       return mode;
     },

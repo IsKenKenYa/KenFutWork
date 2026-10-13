@@ -20,9 +20,7 @@ import {
 interface AdapterTaskUsage {
   used: number;
   size: number;
-  cache?:
-    | (Record<string, unknown> & { hitRate?: number | null })
-    | undefined;
+  cache?: (Record<string, unknown> & { hitRate?: number | null }) | undefined;
   breakdown?: ReadonlyArray<{ source: string; chars: number }> | undefined;
 }
 
@@ -67,7 +65,9 @@ function usageView(
   }
   const rawPercent = window === null ? null : (used / window) * 100;
   const percent =
-    rawPercent === null ? null : Math.min(100, Math.round(rawPercent * 10) / 10);
+    rawPercent === null
+      ? null
+      : Math.min(100, Math.round(rawPercent * 10) / 10);
   const finePercent =
     rawPercent === null
       ? null
@@ -77,7 +77,9 @@ function usageView(
   const runInput = cache?.totalInputTokens;
   const runCached = cache?.totalCacheReadTokens;
   const hitRate =
-    typeof runInput === "number" && runInput > 0 && typeof runCached === "number"
+    typeof runInput === "number" &&
+    runInput > 0 &&
+    typeof runCached === "number"
       ? (runCached / runInput) * 100
       : null;
   return {
@@ -97,9 +99,9 @@ function usageView(
 }
 
 /** taskUsage 为空或非法时不渲染（不把兜底 0 当真实占用）。 */
-export function getRenderableTaskUsage<T extends { used: number; size: number }>(
-  taskUsage: T | null,
-): T | null {
+export function getRenderableTaskUsage<
+  T extends { used: number; size: number },
+>(taskUsage: T | null): T | null {
   if (
     !taskUsage ||
     !Number.isFinite(taskUsage.used) ||

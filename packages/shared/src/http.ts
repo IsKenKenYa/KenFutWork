@@ -12,7 +12,11 @@ import {
   runIdSchema,
   terminalShellSchema,
 } from "./contracts.js";
-import { additionalDirectorySchema } from "./execution-contracts.js";
+import { runStopReasonSchema } from "./events.js";
+import {
+  additionalDirectorySchema,
+  sandboxModeSchema,
+} from "./execution-contracts.js";
 
 export const healthResponseSchema = z.object({
   ok: z.literal(true),
@@ -43,7 +47,7 @@ export const projectCreateRequestSchema = z.object({
    */
   kind: projectKindSchema.optional(),
   /**
-   * 本机工作目录绝对路径（Code 项目）。服务端校验「绝对路径 + 存在 + 是目录」，
+   * 项目固定工作目录绝对路径；省略时创建托管目录。服务端校验「绝对路径 + 存在 + 是目录」，
    * 不合格返回 400 `invalid_work_dir` 并给出可读原因。
    */
   work_dir: z.string().trim().min(1).optional(),
@@ -54,12 +58,37 @@ export const projectCreateResponseSchema = z.object({
   project: projectSummarySchema,
 });
 
+export const designTaskParamsSchema = z.object({ taskId: z.uuid() }).strict();
+export const designTaskPolicyResponseSchema = z.object({
+  task: z
+    .object({
+      taskId: z.uuid(),
+      projectId: z.uuid(),
+      canvasId: z.uuid(),
+      rootDirectory: z.string().min(1),
+      additionalDirectories: z.array(additionalDirectorySchema),
+      sandboxMode: sandboxModeSchema,
+      scopeGeneration: z.number().int().nonnegative().safe(),
+      branchGeneration: z.number().int().positive().safe(),
+      mode: z.enum(["build", "edit", "yolo"]),
+      planEnabled: z.boolean(),
+      planningEpoch: z.number().int().nonnegative().safe(),
+      activeRunId: runIdSchema.nullable(),
+      executionState: z.enum(["ready", "revoking", "failed"]),
+    })
+    .strict(),
+});
+
 export const unauthenticatedErrorResponseSchema = z.object({
   error: z.object({
     code: z.literal("unauthorized"),
     message: z.string().min(1),
   }),
 });
+export type DesignTaskParams = z.infer<typeof designTaskParamsSchema>;
+export type DesignTaskPolicyResponse = z.infer<
+  typeof designTaskPolicyResponseSchema
+>;
 
 // --- Code 模式 git 分支视图（工作目录=项目） ---
 
@@ -396,6 +425,10 @@ export const agentRunLatestResponseSchema = z.object({
     .object({
       /** 运行状态（`accepted` / `running` / `completed` / `failed` / `canceled`）。 */
       status: z.string().min(1),
+      stopReason: runStopReasonSchema
+        .nullable()
+        .optional()
+        .describe("本轮结束原因；旧记录为空"),
       errorCode: z.string().nullable(),
       /** 面向用户的失败原因原文（服务端写的可读文案）。 */
       errorMessage: z.string().nullable(),
@@ -454,6 +487,8 @@ export const applicationErrorCodeSchema = z.enum([
   "brand_kit_asset_create_failed",
   "canvas_not_found",
   "canvas_save_failed",
+  "canvas_revision_conflict",
+  "canvas_file_missing",
   "chat_error",
   "profile_update_failed",
   "project_query_failed",
@@ -532,6 +567,43 @@ export const applicationErrorCodeSchema = z.enum([
   "checkpoint_not_found",
   "checkpoint_failed",
   "run_in_progress",
+  // Task 准入、工作域和 Design 宿主的可读拒绝；HTTP 保留领域错误码。
+  "admission_unavailable",
+  "mode_mismatch",
+  "scope_mismatch",
+  "branch_changed",
+  "invalid_path",
+  "invalid_scope",
+  "path_denied",
+  "read_only",
+  "revoker_unavailable",
+  "scope_changed",
+  "scope_conflict",
+  "scope_project_closed",
+  "scope_revoking",
+  "scope_unavailable",
+  "task_not_found",
+  "design_goal_conflict",
+  "design_input_conflict",
+  "design_restore_conflict",
+  "design_run_missing",
+  "design_task_busy",
+  "design_task_host_busy",
+  "design_task_identity_mismatch",
+  "design_task_policy_changed",
+  "design_task_queue_busy",
+  "design_task_unavailable",
+  "design_task_unprovisioned",
+  "design_client_required",
+  "design_goal_paused",
+  "design_host_closing",
+  "design_input_reserved",
+  "design_mode_unsupported",
+  "design_model_invalid",
+  "design_plan_update_required",
+  "design_run_conflict",
+  "design_run_incomplete",
+  "design_task_lease_lost",
   // 用户侧使用统计（R4-2）
   "usage_query_failed",
   /**
@@ -563,10 +635,16 @@ export const canvasGetResponseSchema = z.object({
 
 export const canvasSaveRequestSchema = z.object({
   content: canvasContentSchema,
+  expectedRevision: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/u)
+    .nullable(),
 });
 
 export const canvasSaveResponseSchema = z.object({
   ok: z.literal(true),
+  revision: z.string().regex(/^[a-f0-9]{64}$/u),
+  fileReferences: z.record(z.string(), z.string()),
 });
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
@@ -675,7 +753,7 @@ export type AssetSignedUrlResponse = z.infer<
 export const projectUpdateRequestSchema = z.object({
   brand_kit_id: z.uuid().nullable().optional(),
   name: z.string().min(1).max(100).optional(),
-  /** 本机工作目录绝对路径；显式 `null` = 解绑（回落到沙箱目录）。 */
+  /** 固定项目目录；仅接受与已有目录相同的幂等值，null 或切换目录均拒绝。 */
   work_dir: z.string().trim().min(1).nullable().optional(),
   additional_directories: z.array(additionalDirectorySchema).optional(),
 });

@@ -1,5 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -12,7 +19,11 @@ import { createRuntimeTestInstance } from "../../agent/runtime-test-fixtures.js"
 import { createExecutionScopes } from "../execution/scope-service.js";
 import type { LocalActor } from "../local-instance/types.js";
 import { createCodeGitService } from "./code-git-service.js";
-import { createGitClient, type ExecGit, type GitCommandResult } from "./git-client.js";
+import {
+  createGitClient,
+  type ExecGit,
+  type GitCommandResult,
+} from "./git-client.js";
 
 const INSTANCE_ID = "2cdb5c27-a1f7-4109-9927-40e0b0822956";
 const PROJECT_ID = "c15b75a5-b7ef-46b5-8b0c-d543dd7769d5";
@@ -59,7 +70,8 @@ function createRealGitExec(): { exec: ExecGit; initCalls: () => number } {
 
 async function world(options: { readOnly?: boolean; root?: string } = {}) {
   const root =
-    options.root ?? (await realpath(await mkdtemp(join(tmpdir(), "kfw-git-init-"))));
+    options.root ??
+    (await realpath(await mkdtemp(join(tmpdir(), "kfw-git-init-"))));
   temporary.push(root);
   const identity: CodeExecutionScope = {
     instanceId: INSTANCE_ID,
@@ -72,7 +84,12 @@ async function world(options: { readOnly?: boolean; root?: string } = {}) {
   };
   const scopes = createExecutionScopes({
     repository: {
-      load: async () => ({ scope: identity, state: "ready", branchGeneration: 1 }),
+      load: async () => ({
+        preset: "code",
+        scope: identity,
+        state: "ready",
+        branchGeneration: 1,
+      }),
     },
     localInstance: createRuntimeTestInstance(INSTANCE_ID),
     resolveFileLimits: async () => ({ ...AGENT_GOVERNANCE_DEFAULTS }),
@@ -123,7 +140,9 @@ describe("Code Git init（真实 git）", () => {
   });
 
   it("目录不可用（.git 被同名文件占用）时给可读中文原因", async () => {
-    const outer = await realpath(await mkdtemp(join(tmpdir(), "kfw-git-block-")));
+    const outer = await realpath(
+      await mkdtemp(join(tmpdir(), "kfw-git-block-")),
+    );
     temporary.push(outer);
     const root = join(outer, "blocked");
     await mkdir(root);

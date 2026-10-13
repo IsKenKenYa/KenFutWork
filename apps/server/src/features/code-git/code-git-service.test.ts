@@ -65,7 +65,12 @@ async function world(
       load: async () =>
         options.missingTask
           ? null
-          : { scope: identity, state: "ready", branchGeneration: 1 },
+          : {
+              preset: "code",
+              scope: identity,
+              state: "ready",
+              branchGeneration: 1,
+            },
     },
     localInstance: createRuntimeTestInstance(INSTANCE_ID),
     resolveFileLimits: async () => ({

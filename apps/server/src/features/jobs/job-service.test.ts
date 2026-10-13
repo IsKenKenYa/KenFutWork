@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { GenerationTargetError } from "../generation/file-targets.js";
 import type {
   LocalActor,
   LocalInstanceService,
@@ -118,6 +119,12 @@ describe("jobs repository（background_jobs）", () => {
     }));
 
     await createJobRepository(createPersistenceFromRunner(runner)).insert({
+      fileTarget: {
+        kind: "project",
+        projectId: "project-1",
+        sessionId: null,
+        canvasId: "canvas-1",
+      },
       canvasId: "canvas-1",
       jobType: "image_generation",
       payload: { prompt: "一只猫" },
@@ -126,11 +133,16 @@ describe("jobs repository（background_jobs）", () => {
       instanceId: INSTANCE_ID,
     });
 
-    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    const inserted = calls.find((call) =>
+      call.text.includes("insert into public.background_jobs"),
+    );
+    const sql = inserted?.text.replace(/\s+/g, " ").trim() ?? "";
     expect(sql).toContain("insert into public.background_jobs");
     expect(sql).toContain("$7::jsonb");
-    expect(sql).toContain("values ($9, $1, $2, $3, $4, $5, $6, $7::jsonb, $8)");
-    expect(calls[0]?.values).toEqual([
+    expect(sql).toContain(
+      "values ($10, $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb)",
+    );
+    expect(inserted?.values).toEqual([
       null,
       "canvas-1",
       null,
@@ -139,6 +151,12 @@ describe("jobs repository（background_jobs）", () => {
       "image_generation",
       JSON.stringify({ prompt: "一只猫" }),
       CLIENT_ID,
+      JSON.stringify({
+        kind: "project",
+        projectId: "project-1",
+        sessionId: null,
+        canvasId: "canvas-1",
+      }),
       INSTANCE_ID,
     ]);
   });
@@ -266,6 +284,10 @@ function buildService(
   } = {},
 ) {
   return createJobService({
+    generationTargets: {
+      prepareOrigin: async () => ({ kind: "standalone" }),
+      resolve: async () => null,
+    },
     queue: options.queue ?? fakeQueue(),
     repository: createFakeRepository(options.repository),
     ...(options.localInstance === null
@@ -425,4 +447,49 @@ describe("job service", () => {
       service.createJob(USER, { jobType: "image_generation", payload: {} }),
     ).rejects.toBeInstanceOf(JobServiceError);
   });
+});
+
+it("Job创建保存服务器来源，忽略payload伪造file_target", async () => {
+  const insert = vi.fn(async () => JOB_ROW);
+  const service = createJobService({
+    queue: fakeQueue(),
+    localInstance: INSTANCE_STUB,
+    repository: createFakeRepository({ insert }),
+    generationTargets: {
+      prepareOrigin: async () => ({ kind: "standalone" }),
+      resolve: async () => null,
+    },
+  });
+  await service.createJob(USER, {
+    jobType: "image_generation",
+    payload: { file_target: { kind: "task", taskId: "forged" } },
+  });
+  expect(insert).toHaveBeenCalledWith(
+    expect.objectContaining({ fileTarget: { kind: "standalone" } }),
+  );
+});
+
+it("来源归属失败返回可读409，不落Job或投队列", async () => {
+  const insert = vi.fn(async () => JOB_ROW),
+    send = vi.fn(async () => 1);
+  const service = createJobService({
+    queue: fakeQueue({ send }),
+    localInstance: INSTANCE_STUB,
+    repository: createFakeRepository({ insert }),
+    generationTargets: {
+      prepareOrigin: async () => {
+        throw new GenerationTargetError("生成任务的原Run授权代际已失效");
+      },
+      resolve: async () => null,
+    },
+  });
+  await expect(
+    service.createJob(USER, { jobType: "image_generation", payload: {} }),
+  ).rejects.toMatchObject({
+    code: "job_create_failed",
+    statusCode: 409,
+    message: "生成任务的原Run授权代际已失效",
+  });
+  expect(insert).not.toHaveBeenCalled();
+  expect(send).not.toHaveBeenCalled();
 });

@@ -10,8 +10,8 @@ import {
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getServerBaseUrl } from "@/lib/env";
-import { useLocalInstance } from "@/lib/local-instance-context";
 import { LOCAL_ACCESS_LOST_EVENT } from "@/lib/local-access";
+import { useLocalInstance } from "@/lib/local-instance-context";
 import {
   PLUGIN_INVENTORY_CHANGED_EVENT,
   type PluginPanelEntry,

@@ -12,8 +12,15 @@ import {
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
+  useCanvasProjectDirectory,
+  useDirectoryPickerAvailable,
+} from "./canvasProjectDirectories.js";
+import { localCuaDesktopInvoke } from "./cuaPermissionPlatform.js";
+import {
   type CanvasProject,
+  canvasFrameRef,
   createDesignProject,
+  refreshDesignProjects,
   removeDesignProject,
   renameDesignProject,
   selectDesignProject,
@@ -21,6 +28,13 @@ import {
   useDesignProjectsSnapshot,
 } from "./designProjects.js";
 import {
+  createFlowProject,
+  selectFlowProject,
+  useFlowProjectsController,
+  useFlowProjectsSnapshot,
+} from "./flowProjects.js";
+import {
+  getFlowNavigationReady,
   getFlowSurfaceView,
   navigateFlowSurface,
   setFlowSurfaceView,
@@ -81,6 +95,11 @@ export function DesignProjectsSidebar() {
   useDesignProjectsController(true);
   const { projects, selectedProjectId, creating, notice } =
     useDesignProjectsSnapshot();
+  const directory = useCanvasProjectDirectory("design", selectedProjectId);
+  const pickerAvailable = useDirectoryPickerAvailable();
+  const selectedProject = projects.find(
+    (project) => project.id === selectedProjectId,
+  );
   return (
     <div className="flex min-h-0 flex-1 flex-col px-2 pt-2">
       <div className="flex items-center justify-between px-1 pb-1">
@@ -96,6 +115,17 @@ export function DesignProjectsSidebar() {
           <Plus className="h-3.5 w-3.5" />
         </button>
       </div>
+      <ProjectDirectoryOpen path={selectedProject?.workDir ?? null} />
+      {pickerAvailable ? (
+        <button
+          type="button"
+          disabled={creating}
+          onClick={() => void createDesignProject(true)}
+          className="rounded-md px-2 py-1.5 text-left text-xs text-foreground-subtle hover:bg-surface-hover"
+        >
+          选目录新建
+        </button>
+      ) : null}
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto pb-2">
         {projects.length === 0 ? (
           <p className="px-2 py-6 text-center text-xs text-foreground-subtle">
@@ -114,6 +144,34 @@ export function DesignProjectsSidebar() {
           ))
         )}
       </div>
+      {directory.snapshot ? (
+        <button
+          type="button"
+          disabled={directory.busy}
+          onClick={() => {
+            void directory.recover().then((receipt) => {
+              if (!receipt) return;
+              void refreshDesignProjects(receipt.projectId);
+              canvasFrameRef.current?.contentWindow?.postMessage(
+                {
+                  type: "workbench:project-directory-relinked",
+                  projectId: receipt.projectId,
+                  tasks: receipt.affectedTaskIds,
+                },
+                window.location.origin,
+              );
+            });
+          }}
+          className="rounded-md border px-2 py-1.5 text-xs"
+        >
+          重新关联
+        </button>
+      ) : null}
+      {directory.error ? (
+        <p role="alert" className="px-2 py-2 text-xs text-destructive">
+          {directory.error}
+        </p>
+      ) : null}
       {notice ? (
         <p role="alert" className="border-t px-2 py-2 text-xs text-destructive">
           {notice}
@@ -209,22 +267,78 @@ function ProjectRow({
 /** Flow 模式的侧栏内容：工作流/插件/任务中心/引擎（原 CanvasSidebar flow 区同款）。 */
 function FlowNavSidebar() {
   const view = useSyncExternalStore(subscribeFlowSurface, getFlowSurfaceView);
+  const navigationReady = useSyncExternalStore(
+    subscribeFlowSurface,
+    getFlowNavigationReady,
+  );
+  useFlowProjectsController();
+  const { projects, selectedProjectId, creating, notice } =
+    useFlowProjectsSnapshot();
+  const pickerAvailable = useDirectoryPickerAvailable();
+  const selectedProject = projects.find(
+    (project) => project.id === selectedProjectId,
+  );
   return (
     <nav
       className="flex min-h-0 flex-1 flex-col px-2 pt-2"
       aria-label="Flow 导航"
     >
-      {FLOW_NAV_ITEMS.map((item) => (
-        <button
-          key={item.path}
-          type="button"
-          onClick={() => navigateFlowSurface(item.path)}
-          className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground"
+      <div className="flex items-center gap-2 pb-2">
+        <select
+          aria-label="Flow 项目"
+          value={selectedProjectId ?? ""}
+          onChange={(event) => selectFlowProject(event.target.value || null)}
+          className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1.5 text-sm"
         >
-          <item.icon className="h-4 w-4 shrink-0" />
-          {item.label}
+          <option value="">选择项目</option>
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          aria-label="创建 Flow 项目"
+          disabled={creating}
+          onClick={() => void createFlowProject()}
+          className="rounded-md p-1"
+        >
+          <Plus className="h-3.5 w-3.5" />
         </button>
-      ))}
+      </div>
+      <ProjectDirectoryOpen path={selectedProject?.workDir ?? null} />
+      {pickerAvailable ? (
+        <button
+          type="button"
+          disabled={creating}
+          onClick={() => void createFlowProject(true)}
+          className="rounded-md px-2 py-1.5 text-left text-xs text-foreground-subtle hover:bg-surface-hover"
+        >
+          选目录新建
+        </button>
+      ) : null}
+      {notice ? (
+        <p role="alert" className="pb-2 text-xs text-destructive">
+          {notice}
+        </p>
+      ) : null}
+      {FLOW_NAV_ITEMS.map((item) => {
+        const disabled =
+          !selectedProjectId || (item.path !== "/" && !navigationReady);
+        return (
+          <button
+            key={item.path}
+            type="button"
+            disabled={disabled}
+            onClick={() => navigateFlowSurface(item.path)}
+            className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <item.icon className="h-4 w-4 shrink-0" />
+            {item.label}
+          </button>
+        );
+      })}
       {/* 引擎（FORM-11 托管）：独立信息页——状态 / 承载路径 / 地址 / 栈容器事实。 */}
       <button
         type="button"
@@ -236,5 +350,36 @@ function FlowNavSidebar() {
         引擎
       </button>
     </nav>
+  );
+}
+
+function ProjectDirectoryOpen({ path }: { path: string | null }) {
+  const [error, setError] = useState<string | null>(null);
+  if (!path || !localCuaDesktopInvoke()) return null;
+  return (
+    <>
+      <button
+        type="button"
+        className="rounded-md px-2 py-1.5 text-left text-xs text-foreground-subtle hover:bg-surface-hover"
+        onClick={() => {
+          setError(null);
+          void localCuaDesktopInvoke()?.("reveal_path", { path }).catch(
+            (failure: unknown) =>
+              setError(
+                failure instanceof Error
+                  ? failure.message
+                  : "目录无法打开，请检查目录权限。",
+              ),
+          );
+        }}
+      >
+        打开目录
+      </button>
+      {error ? (
+        <p role="alert" className="px-2 py-1 text-xs text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </>
   );
 }

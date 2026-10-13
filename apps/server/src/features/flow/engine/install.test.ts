@@ -103,7 +103,10 @@ describe("引擎承载目标（双 Provider）", () => {
 
   it("composeCommand：host 走 docker；wsl2 走 wsl.exe 且 compose/env 路径换成 /mnt/…", () => {
     const host = composeCommand(
-      { composeFile: "C:\\repo\\dify\\docker-compose.dify.yml", envFile: "C:\\data\\dify-stack.env" },
+      {
+        composeFile: "C:\\repo\\dify\\docker-compose.dify.yml",
+        envFile: "C:\\data\\dify-stack.env",
+      },
       ["--profile", "dify", "down"],
     );
     expect(host.command).toBe("docker");
@@ -131,10 +134,9 @@ describe("引擎承载目标（双 Provider）", () => {
     expect(wsl.args).toContain("/mnt/c/data/dify-stack.env");
     expect(wsl.args).toContain("/mnt/c/repo/dify/docker-compose.dify.yml");
     // 不带 env 的只读查询路径：没有 --env-file（不创建密钥文件）
-    const ps = composeCommand(
-      { composeFile: "/x/docker-compose.dify.yml" },
-      ["ps"],
-    );
+    const ps = composeCommand({ composeFile: "/x/docker-compose.dify.yml" }, [
+      "ps",
+    ]);
     expect(ps.args).not.toContain("--env-file");
   });
 
@@ -172,10 +174,18 @@ describe("引擎承载目标（双 Provider）", () => {
     );
     expect(started).toBe(true);
     expect(calls[0]?.command).toBe("wsl.exe");
-    expect(calls[0]?.args.slice(0, 4)).toEqual(["-d", "Ubuntu", "--", "docker"]);
+    expect(calls[0]?.args.slice(0, 4)).toEqual([
+      "-d",
+      "Ubuntu",
+      "--",
+      "docker",
+    ]);
     expect(calls[0]?.args).toContain("up");
     // 落盘：停止/查询都按它执行（否则 down 找不到另一侧起的容器）
-    expect(readStackRuntime(dataDir)).toEqual({ kind: "wsl2", distro: "Ubuntu" });
+    expect(readStackRuntime(dataDir)).toEqual({
+      kind: "wsl2",
+      distro: "Ubuntu",
+    });
     // 收尾：模块级安装态归零，不给后续用例留「installing」
     cancelEngineInstall();
     expect(getEngineInstallSnapshot().state).toBe("idle");

@@ -1,6 +1,10 @@
 import pg from "pg";
 
-import type { QueueClient, QueueMessage } from "../types.js";
+import {
+  type QueueClient,
+  QueueClosedError,
+  type QueueMessage,
+} from "../types.js";
 
 /**
  * 队列缝的**服务端/自托管 Provider**：Postgres 扩展 PGMQ。
@@ -20,6 +24,8 @@ export function createPgmqQueue(options: {
     keepAliveInitialDelayMillis: 10_000,
     max: options.maxConnections ?? 5,
   });
+  let closed = false;
+  let shutdownPromise: Promise<void> | undefined;
 
   // 瞬时断连不该把进程带走
   pool.on("error", (error) => {
@@ -58,17 +64,24 @@ export function createPgmqQueue(options: {
       maxPollSeconds = 5,
       pollIntervalMs = 500,
     ) {
-      const { rows } = await pool.query(
-        "SELECT * FROM pgmq.read_with_poll($1::text, $2::integer, $3::integer, $4::integer, $5::integer)",
-        [
-          queue,
-          visibilityTimeoutSeconds,
-          quantity,
-          maxPollSeconds,
-          pollIntervalMs,
-        ],
-      );
-      return rows as QueueMessage<T>[];
+      if (closed) throw new QueueClosedError();
+      try {
+        const { rows } = await pool.query(
+          "SELECT * FROM pgmq.read_with_poll($1::text, $2::integer, $3::integer, $4::integer, $5::integer)",
+          [
+            queue,
+            visibilityTimeoutSeconds,
+            quantity,
+            maxPollSeconds,
+            pollIntervalMs,
+          ],
+        );
+        if (closed) throw new QueueClosedError();
+        return rows as QueueMessage<T>[];
+      } catch (error) {
+        if (closed) throw new QueueClosedError();
+        throw error;
+      }
     },
 
     async deleteMessage(queue, msgId) {
@@ -95,7 +108,11 @@ export function createPgmqQueue(options: {
     },
 
     async shutdown() {
-      await pool.end();
+      shutdownPromise ??= (async () => {
+        closed = true;
+        await pool.end();
+      })();
+      await shutdownPromise;
     },
   };
 }

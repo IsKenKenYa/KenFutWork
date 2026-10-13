@@ -2,6 +2,10 @@
 
 import type {
   ContentBlock,
+  DesignApprovalListResponse,
+  DesignApprovalResolveRequest,
+  DesignGoalResponse,
+  DesignTaskPolicyResponse,
   ImageArtifact,
   ImageGenerationPreference,
   MessageMention,
@@ -41,9 +45,21 @@ import {
   VIEW_TAB_TITLES,
 } from "../lib/chat-tabs";
 import {
+  ApiApplicationError,
+  createDesignGoal,
+  fetchDesignGoal,
+  fetchDesignTaskApprovals,
+  fetchDesignTaskPolicy,
+  fetchExecutionMode,
   fetchImageModels,
   fetchInstanceSkills,
+  pauseDesignGoal,
+  provisionDesignTask,
+  resolveDesignTaskApproval,
+  resumeDesignGoal,
   saveMessage,
+  setDesignGoalBudget,
+  updateDesignTaskPolicy,
 } from "../lib/server-api";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import {
@@ -104,6 +120,158 @@ function GeneratedFileIcon({ className }: { className?: string }) {
 
 /** 面板的三个视图：对话 / 图层 / 生成文件（对话视图内部再分「对话标签页」）。 */
 export type SidePanelTab = "chat" | "layers" | "files";
+
+type DesignTaskApproval = DesignApprovalListResponse["approvals"][number];
+type DesignTaskApprovalPayload = DesignTaskApproval["payload"];
+type DesignTaskApprovalOfKind<Kind extends DesignTaskApprovalPayload["kind"]> =
+  Omit<DesignTaskApproval, "kind" | "payload"> & {
+    kind: Kind;
+    payload: Extract<DesignTaskApprovalPayload, { kind: Kind }>;
+  };
+type DesignTaskPermissionPayload = Extract<
+  DesignTaskApprovalPayload,
+  { kind: "permission" }
+>;
+type DesignTaskUserInputPayload = Extract<
+  DesignTaskApprovalPayload,
+  { kind: "userInput" }
+>;
+
+function mergeSelectedCanvasAttachments(
+  attachments: ReadyAttachment[],
+  selectedElements: CanvasSelectedElement[] | undefined = [],
+  includeSelection: boolean,
+): ReadyAttachment[] {
+  if (!includeSelection) return attachments;
+  const existingIds = new Set(
+    attachments.map((attachment) => attachment.assetId),
+  );
+  const selected = (selectedElements ?? [])
+    .filter(
+      (element) =>
+        element.type === "image" &&
+        element.fileId &&
+        (element.storageUrl || element.dataUrl),
+    )
+    .filter((element) => !existingIds.has(element.id))
+    .map(
+      (element): ReadyAttachment => ({
+        assetId: element.id,
+        url: element.storageUrl ?? element.dataUrl ?? "",
+        mimeType: "image/png",
+        source: "canvas-ref",
+        name: `Canvas selection ${element.id.slice(0, 6)}`,
+      }),
+    );
+  return selected.length ? [...attachments, ...selected] : attachments;
+}
+
+function createUserContentBlocks(
+  text: string,
+  mentions: MessageMention[],
+  attachments: ReadyAttachment[],
+): ContentBlock[] {
+  const mentionBlocks: ContentBlock[] = mentions.map((mention) => {
+    if (mention.mentionType === "image-model")
+      return {
+        type: "mention",
+        mentionType: "image-model",
+        id: mention.id,
+        label: mention.label,
+      };
+    if (mention.mentionType === "brand-kit-asset")
+      return {
+        type: "mention",
+        mentionType: "brand-kit-asset",
+        id: mention.id,
+        label: mention.label,
+        assetType: mention.assetType,
+        ...(mention.textContent !== undefined && mention.textContent !== null
+          ? { textContent: mention.textContent }
+          : {}),
+        ...(mention.fileUrl !== undefined && mention.fileUrl !== null
+          ? { fileUrl: mention.fileUrl }
+          : {}),
+      };
+    return {
+      type: "mention",
+      mentionType: "skill",
+      id: mention.id,
+      label: mention.label,
+      slug: mention.slug,
+    };
+  });
+  return [
+    { type: "text", text },
+    ...mentionBlocks,
+    ...attachments.map(
+      (attachment): ContentBlock => ({
+        type: "image",
+        assetId: attachment.assetId,
+        url: attachment.url,
+        mimeType: attachment.mimeType,
+        source: attachment.source,
+        ...(attachment.name ? { name: attachment.name } : {}),
+      }),
+    ),
+  ];
+}
+
+function designGoalStatusLabel(
+  status: NonNullable<DesignGoalResponse["goal"]>["status"],
+): string {
+  return {
+    active: "进行中",
+    paused: "已暂停",
+    verifying: "验证中",
+    complete: "已完成",
+    notSatisfied: "未满足",
+    failed: "失败",
+  }[status];
+}
+
+const DESIGN_GOAL_REASON_LABELS: Record<string, string> = {
+  "project.directoryRelink": "目录已重新关联",
+  "user.pause": "手动暂停",
+  "budget.stop": "预算已用尽",
+  "budget.usageUnavailable": "用量暂不可用",
+  "run.failed": "任务失败",
+  "run.canceled": "任务已取消",
+  "run.cancelled": "任务已取消",
+  "task.branchChanged": "工作分支已变更",
+  "host.restarted": "服务已重启",
+  "plan.waiting": "等待计划确认",
+  "interaction.waiting": "等待用户输入",
+};
+
+function designGoalReasonLabel(reason: string): string {
+  return DESIGN_GOAL_REASON_LABELS[reason] ?? reason;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPlanApprovalInteraction(
+  interaction: DesignTaskApproval,
+): interaction is DesignTaskApprovalOfKind<"userInput"> {
+  if (
+    interaction.kind !== "userInput" ||
+    interaction.payload.kind !== "userInput"
+  )
+    return false;
+  const schema = interaction.payload.schema;
+  return (
+    isRecord(schema) &&
+    schema.interaction === "plan_approval" &&
+    schema.toolName === "ExitPlanMode"
+  );
+}
+
+function planText(payload: DesignTaskUserInputPayload): string | null {
+  if (!isRecord(payload.input)) return null;
+  return typeof payload.input.plan === "string" ? payload.input.plan : null;
+}
 
 type ChatSidebarProps = {
   accessToken: string | null;
@@ -183,7 +351,10 @@ export function ChatSidebar({
   });
 
   // ── Stream event handler (extracted hook, shared between send & reconnect) ──
-  const { applyStreamEvent } = useChatStream(updateSessionMessages);
+  const { applyStreamEvent, subscribeTaskEvents } = useChatStream(
+    updateSessionMessages,
+    ws,
+  );
 
   /**
    * 语音播报（规划 §4.2「说」段 + §7 的「朗读回复」开关）：完整回路 + 开关打开时，
@@ -360,6 +531,67 @@ export function ChatSidebar({
    * 「等整轮跑完」一条路；重试换 id（run.retrying）时要同步更新，否则停的是旧 id。
    */
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const activeRunTaskIdRef = useRef<string | null>(null);
+  const foregroundRunRef = useRef<{ taskId: string; runId: string } | null>(
+    null,
+  );
+  const lastSeqByTaskRef = useRef(new Map<string, number>());
+  const pendingAssistantByTaskRef = useRef(new Map<string, string>());
+  const policyRequestRef = useRef(0);
+  const designTaskPolicyRef = useRef<DesignTaskPolicyResponse["task"] | null>(
+    null,
+  );
+  const [designGoalResponse, setDesignGoalResponse] =
+    useState<DesignGoalResponse | null>(null);
+  const [designGoalObjective, setDesignGoalObjective] = useState("");
+  const [designGoalBudget, setDesignGoalBudgetInput] = useState("");
+  const [designGoalError, setDesignGoalError] = useState<string | null>(null);
+  const [designGoalBusy, setDesignGoalBusy] = useState(false);
+  const [queuedGoalMessages, setQueuedGoalMessages] = useState(0);
+  const [pendingGoalUserRuns, setPendingGoalUserRuns] = useState(0);
+  const [pendingGoalAdmissions, setPendingGoalAdmissions] = useState(0);
+  const pendingGoalAdmissionsRef = useRef(0);
+  const designGoalResponseRef = useRef<DesignGoalResponse | null>(null);
+  designGoalResponseRef.current = designGoalResponse;
+  const designGoalTaskIdRef = useRef<string | null>(null);
+  const designGoalFetchRequestRef = useRef(0);
+  const goalUserInputChainRef = useRef<Promise<void>>(Promise.resolve());
+  const goalUserRunIdsRef = useRef(
+    new Map<string, { assistantId: string; queued: boolean }>(),
+  );
+  const queueTaskIdRef = useRef(activeSessionId);
+  useEffect(() => {
+    if (queueTaskIdRef.current === activeSessionId) return;
+    queueTaskIdRef.current = activeSessionId;
+    setDesignGoalObjective("");
+    setDesignGoalBudgetInput("");
+    goalUserRunIdsRef.current.clear();
+    goalUserInputChainRef.current = Promise.resolve();
+    setQueuedGoalMessages(0);
+    setPendingGoalUserRuns(0);
+    pendingGoalAdmissionsRef.current = 0;
+    setPendingGoalAdmissions(0);
+  }, [activeSessionId]);
+  const [designTaskStatus, setDesignTaskStatus] = useState<
+    "loading" | "ready" | "unprovisioned" | "provisioning" | "error"
+  >("loading");
+  const [designTaskError, setDesignTaskError] = useState<string | null>(null);
+  const [designApprovals, setDesignApprovals] = useState<DesignTaskApproval[]>(
+    [],
+  );
+  const [designApprovalsTaskId, setDesignApprovalsTaskId] = useState<
+    string | null
+  >(null);
+  const [designApprovalError, setDesignApprovalError] = useState<string | null>(
+    null,
+  );
+  const [designApprovalErrorTaskId, setDesignApprovalErrorTaskId] = useState<
+    string | null
+  >(null);
+  const [resolvingInteractionId, setResolvingInteractionId] = useState<
+    string | null
+  >(null);
+  const approvalRequestRef = useRef(0);
   const messageMentionsRef = useRef(messageMentions);
   messageMentionsRef.current = messageMentions;
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
@@ -394,6 +626,359 @@ export function ChatSidebar({
   agentModelRef.current = agentModel;
 
   const { toast: showToast } = useToast();
+  const acceptDesignTaskPolicy = useCallback(
+    (policy: DesignTaskPolicyResponse["task"]) => {
+      if (policy.executionState !== "ready") {
+        designTaskPolicyRef.current = null;
+        setDesignTaskStatus("error");
+        setDesignTaskError("画布任务当前不可运行，请重新加载。");
+        return;
+      }
+      designTaskPolicyRef.current = policy;
+      setDesignTaskStatus("ready");
+      setDesignTaskError(null);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const requestId = ++policyRequestRef.current;
+    const sessionId = activeSessionId;
+    designTaskPolicyRef.current = null;
+    setDesignTaskError(null);
+    if (!sessionId) {
+      setDesignTaskStatus("error");
+      setDesignTaskError("当前画布没有可用对话。");
+      return;
+    }
+    setDesignTaskStatus("loading");
+    void fetchDesignTaskPolicy(accessToken, sessionId)
+      .then(({ task }) => {
+        if (requestId !== policyRequestRef.current) return;
+        if (task.taskId !== sessionId || task.canvasId !== canvasId) {
+          setDesignTaskStatus("error");
+          setDesignTaskError("当前对话与画布关联不一致，请重新加载。");
+          return;
+        }
+        acceptDesignTaskPolicy(task);
+      })
+      .catch((error: unknown) => {
+        if (requestId !== policyRequestRef.current) return;
+        if (
+          error instanceof ApiApplicationError &&
+          error.code === "session_not_found"
+        ) {
+          setDesignTaskStatus("unprovisioned");
+          return;
+        }
+        setDesignTaskStatus("error");
+        setDesignTaskError(
+          error instanceof Error ? error.message : "读取画布任务失败。",
+        );
+      });
+  }, [accessToken, activeSessionId, acceptDesignTaskPolicy, canvasId]);
+
+  useEffect(() => {
+    const refreshRelinkedTask = (event: MessageEvent) => {
+      if (
+        event.origin !== window.location.origin ||
+        event.source !== window.parent
+      )
+        return;
+      const data = event.data as {
+        type?: string;
+        projectId?: string;
+        tasks?: unknown;
+      } | null;
+      const policy = designTaskPolicyRef.current;
+      const taskId = activeSessionIdRef.current;
+      if (
+        data?.type !== "workbench:project-directory-relinked" ||
+        !policy ||
+        !taskId ||
+        policy.taskId !== taskId ||
+        policy.canvasId !== canvasId ||
+        policy.projectId !== data.projectId ||
+        !Array.isArray(data.tasks) ||
+        !data.tasks.includes(taskId)
+      )
+        return;
+      const requestId = ++policyRequestRef.current;
+      void fetchDesignTaskPolicy(accessToken, taskId)
+        .then(async ({ task }) => {
+          if (
+            requestId !== policyRequestRef.current ||
+            task.taskId !== taskId ||
+            task.projectId !== policy.projectId ||
+            task.canvasId !== canvasId
+          )
+            return;
+          acceptDesignTaskPolicy(task);
+          const goalRequestId = ++designGoalFetchRequestRef.current;
+          const goal = await fetchDesignGoal(accessToken, taskId);
+          if (
+            goalRequestId !== designGoalFetchRequestRef.current ||
+            goal.task.taskId !== taskId ||
+            goal.task.projectId !== policy.projectId ||
+            goal.task.canvasId !== canvasId
+          )
+            return;
+          designGoalResponseRef.current = goal;
+          setDesignGoalResponse(goal);
+        })
+        .catch((error: unknown) => {
+          if (requestId !== policyRequestRef.current) return;
+          setDesignTaskStatus("error");
+          setDesignTaskError(
+            error instanceof Error ? error.message : "刷新画布任务失败。",
+          );
+        });
+    };
+    window.addEventListener("message", refreshRelinkedTask);
+    return () => window.removeEventListener("message", refreshRelinkedTask);
+  }, [accessToken, acceptDesignTaskPolicy, activeSessionIdRef, canvasId]);
+
+  useEffect(() => {
+    const taskId = activeSessionId;
+    if (designGoalTaskIdRef.current !== taskId) {
+      designGoalTaskIdRef.current = taskId;
+      designGoalResponseRef.current = null;
+      setDesignGoalResponse(null);
+    }
+    setDesignGoalError(null);
+    if (!taskId || designTaskStatus !== "ready") return;
+    const requestId = ++designGoalFetchRequestRef.current;
+    let cancelled = false;
+    void fetchDesignGoal(accessToken, taskId)
+      .then((response) => {
+        if (
+          !cancelled &&
+          requestId === designGoalFetchRequestRef.current &&
+          response.task.taskId === taskId &&
+          response.task.canvasId === canvasId
+        ) {
+          designGoalResponseRef.current = response;
+          setDesignGoalResponse(response);
+          if (
+            response.goal?.status === "active" ||
+            response.goal?.status === "verifying"
+          ) {
+            setStreaming(true);
+            if (response.acceptedRunId) {
+              activeRunTaskIdRef.current = taskId;
+              setActiveRunId(response.acceptedRunId);
+            }
+          }
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled)
+          setDesignGoalError(
+            error instanceof Error ? error.message : "读取目标失败。",
+          );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, activeSessionId, canvasId, designTaskStatus, setStreaming]);
+
+  const acceptGoalResponse = useCallback(
+    (response: DesignGoalResponse) => {
+      const taskId = activeSessionIdRef.current;
+      if (
+        !taskId ||
+        response.task.taskId !== taskId ||
+        response.task.canvasId !== canvasId
+      ) {
+        setDesignGoalError("目标与当前任务不匹配，请刷新后重试。");
+        return false;
+      }
+      designGoalFetchRequestRef.current += 1;
+      acceptDesignTaskPolicy(response.task);
+      designGoalResponseRef.current = response;
+      setDesignGoalResponse(response);
+      setDesignGoalError(null);
+      const foregroundRun = foregroundRunRef.current;
+      const taskRunId = response.task.activeRunId;
+      if (
+        taskRunId &&
+        ((foregroundRun?.taskId === taskId &&
+          foregroundRun.runId === taskRunId) ||
+          goalUserRunIdsRef.current.has(taskRunId))
+      ) {
+        setStreaming(true);
+        activeRunTaskIdRef.current = taskId;
+        setActiveRunId(taskRunId);
+      } else if (
+        goalUserRunIdsRef.current.size > 0 ||
+        pendingGoalAdmissionsRef.current > 0
+      ) {
+        setStreaming(true);
+        activeRunTaskIdRef.current = taskId;
+        setActiveRunId(null);
+      } else if (
+        response.goal?.status === "active" ||
+        response.goal?.status === "verifying"
+      ) {
+        setStreaming(true);
+        const runId = response.acceptedRunId ?? taskRunId;
+        if (runId) {
+          activeRunTaskIdRef.current = taskId;
+          setActiveRunId(runId);
+        }
+      } else {
+        setStreaming(false);
+        setActiveRunId(null);
+        activeRunTaskIdRef.current = null;
+      }
+      return true;
+    },
+    [acceptDesignTaskPolicy, activeSessionIdRef, canvasId, setStreaming],
+  );
+
+  const mutateDesignGoal = useCallback(
+    async (action: "create" | "pause" | "resume" | "budget") => {
+      const task = designTaskPolicyRef.current;
+      const goal = designGoalResponse?.goal;
+      const taskId = activeSessionIdRef.current;
+      if (!task || !taskId || task.taskId !== taskId || designGoalBusy) return;
+      setDesignGoalBusy(true);
+      setDesignGoalError(null);
+      try {
+        const fence = goal
+          ? {
+              goalId: goal.goalId,
+              revision: goal.revision,
+              branchGeneration: task.branchGeneration,
+            }
+          : null;
+        let response: DesignGoalResponse;
+        if (action === "create") {
+          const tokenBudget = designGoalBudget.trim()
+            ? Number(designGoalBudget)
+            : null;
+          if (
+            tokenBudget !== null &&
+            (!Number.isSafeInteger(tokenBudget) || tokenBudget <= 0)
+          ) {
+            setDesignGoalError("预算必须是正整数。");
+            return;
+          }
+          response = await createDesignGoal(accessTokenRef.current, taskId, {
+            objective: designGoalObjective,
+            tokenBudget,
+            expectedBranchGeneration: task.branchGeneration,
+            expectedGoal: fence
+              ? { goalId: fence.goalId, revision: fence.revision }
+              : null,
+            ...(typeof agentModelRef.current === "string"
+              ? { model: agentModelRef.current }
+              : {}),
+          });
+        } else {
+          if (!fence) return;
+          const request = { ...fence };
+          if (action === "pause")
+            response = await pauseDesignGoal(
+              accessTokenRef.current,
+              taskId,
+              request,
+            );
+          else if (action === "resume")
+            response = await resumeDesignGoal(accessTokenRef.current, taskId, {
+              ...request,
+              ...(typeof agentModelRef.current === "string"
+                ? { model: agentModelRef.current }
+                : {}),
+            });
+          else {
+            const tokenBudget = designGoalBudget.trim()
+              ? Number(designGoalBudget)
+              : null;
+            if (
+              tokenBudget !== null &&
+              (!Number.isSafeInteger(tokenBudget) || tokenBudget <= 0)
+            ) {
+              setDesignGoalError("预算必须是正整数。");
+              return;
+            }
+            response = await setDesignGoalBudget(
+              accessTokenRef.current,
+              taskId,
+              { ...request, tokenBudget },
+            );
+          }
+        }
+        if (acceptGoalResponse(response)) {
+          if (action === "create") {
+            setDesignGoalObjective("");
+            setDesignGoalBudgetInput("");
+          }
+          if (response.acceptedRunId) {
+            setActiveRunId(response.acceptedRunId);
+            activeRunTaskIdRef.current = taskId;
+            setStreaming(true);
+          } else if (action === "create" || action === "resume") {
+            const [refreshed] = await Promise.all([
+              fetchDesignGoal(accessTokenRef.current, taskId),
+              reloadMessages(taskId),
+            ]);
+            acceptGoalResponse(refreshed);
+          }
+        }
+      } catch (error) {
+        setDesignGoalError(
+          error instanceof Error ? error.message : "目标操作失败。",
+        );
+      } finally {
+        setDesignGoalBusy(false);
+      }
+    },
+    [
+      accessTokenRef,
+      acceptGoalResponse,
+      activeSessionIdRef,
+      designGoalBudget,
+      designGoalBusy,
+      designGoalObjective,
+      designGoalResponse,
+      reloadMessages,
+      setStreaming,
+    ],
+  );
+
+  const handleProvisionDesignTask = useCallback(async () => {
+    const taskId = activeSessionIdRef.current;
+    if (!taskId || designTaskStatus !== "unprovisioned") return;
+    const requestId = ++policyRequestRef.current;
+    setDesignTaskStatus("provisioning");
+    setDesignTaskError(null);
+    try {
+      const { task } = await provisionDesignTask(
+        accessTokenRef.current,
+        taskId,
+      );
+      if (requestId !== policyRequestRef.current) return;
+      if (task.taskId !== taskId || task.canvasId !== canvasId) {
+        setDesignTaskStatus("error");
+        setDesignTaskError("当前对话与画布关联不一致，请重新加载。");
+        return;
+      }
+      acceptDesignTaskPolicy(task);
+    } catch (error) {
+      if (requestId !== policyRequestRef.current) return;
+      setDesignTaskStatus("error");
+      setDesignTaskError(
+        error instanceof Error ? error.message : "准备画布任务失败。",
+      );
+    }
+  }, [
+    acceptDesignTaskPolicy,
+    activeSessionIdRef,
+    canvasId,
+    designTaskStatus,
+    accessTokenRef,
+  ]);
 
   // ── Sidebar resize ──
   const SIDEBAR_MIN = 216;
@@ -587,6 +1172,171 @@ export function ChatSidebar({
     };
   }, [currentBrandKitId, accessTokenRef]);
 
+  const submitGoalUserInput = useCallback(
+    async (
+      expectedTaskId: string,
+      text: string,
+      attachmentsOverride?: ReadyAttachment[],
+      imagePreferenceOverride?: ImageGenerationPreference,
+      mentionsOverride?: MessageMention[],
+    ) => {
+      const taskId = expectedTaskId;
+      const task = designTaskPolicyRef.current;
+      if (
+        !taskId ||
+        activeSessionIdRef.current !== taskId ||
+        !task ||
+        task.taskId !== taskId ||
+        task.executionState !== "ready"
+      )
+        return;
+      const mentions = mentionsOverride ?? messageMentionsRef.current;
+      const attachments = mergeSelectedCanvasAttachments(
+        attachmentsOverride ?? readyAttachments,
+        selectedCanvasElementsRef.current,
+        !attachmentsOverride,
+      );
+      const blocks = createUserContentBlocks(text, mentions, attachments);
+      try {
+        const saved = await saveMessage(accessTokenRef.current, taskId, {
+          role: "user",
+          content: text,
+          contentBlocks: blocks,
+        });
+        if (activeSessionIdRef.current !== taskId) return;
+        const inputId = saved.message.id;
+        updateSessionMessages(taskId, (previous) => [
+          ...previous,
+          { id: inputId, role: "user" as const, contentBlocks: blocks },
+        ]);
+        autoTitleSession(text);
+        const assistantId = `assistant-${inputId}`;
+        pendingAssistantByTaskRef.current.set(taskId, assistantId);
+        updateSessionMessages(taskId, (previous) => [
+          ...previous,
+          { id: assistantId, role: "assistant" as const, contentBlocks: [] },
+        ]);
+
+        let currentTask = (
+          await fetchDesignTaskPolicy(accessTokenRef.current, taskId)
+        ).task;
+        if (
+          activeSessionIdRef.current !== taskId ||
+          currentTask.taskId !== taskId ||
+          currentTask.canvasId !== canvasId ||
+          currentTask.executionState !== "ready"
+        )
+          throw new Error("当前对话与画布关联不一致，请重新加载。");
+        const mode = await fetchExecutionMode(accessTokenRef.current, taskId);
+        if (activeSessionIdRef.current !== taskId) return;
+        const planEnabled = mode.mode === "plan";
+        if (currentTask.planEnabled !== planEnabled) {
+          currentTask = (
+            await updateDesignTaskPolicy(accessTokenRef.current, taskId, {
+              expectedScopeGeneration: currentTask.scopeGeneration,
+              expectedBranchGeneration: currentTask.branchGeneration,
+              planEnabled,
+            })
+          ).task;
+          if (activeSessionIdRef.current !== taskId) return;
+        }
+        acceptDesignTaskPolicy(currentTask);
+
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(
+            () => reject(new Error("WebSocket ack timeout")),
+            10_000,
+          );
+          ws.startRun(
+            {
+              sessionId: taskId,
+              conversationId: taskId,
+              projectId: currentTask.projectId,
+              taskId,
+              canvasId: currentTask.canvasId,
+              preset: "design",
+              executionMode: mode.mode,
+              inputId,
+              scopeGeneration: currentTask.scopeGeneration,
+              branchGeneration: currentTask.branchGeneration,
+              prompt: text,
+              ...(attachments.length ? { attachments } : {}),
+              ...(mentions.length ? { mentions } : {}),
+              ...((imagePreferenceOverride ??
+              activeImageGenerationPreferenceRef.current)
+                ? {
+                    imageGenerationPreference:
+                      imagePreferenceOverride ??
+                      activeImageGenerationPreferenceRef.current,
+                  }
+                : {}),
+              ...(activeVideoGenerationPreferenceRef.current
+                ? {
+                    videoGenerationPreference:
+                      activeVideoGenerationPreferenceRef.current,
+                  }
+                : {}),
+              ...(agentModelRef.current
+                ? { model: agentModelRef.current }
+                : {}),
+            },
+            (ack) => {
+              clearTimeout(timeout);
+              const payload = ack.payload as Record<string, unknown>;
+              const id = payload.runId;
+              if (payload.status === "rejected") {
+                reject(
+                  new ApiApplicationError(
+                    typeof payload.code === "string"
+                      ? payload.code
+                      : "invalid_request",
+                    typeof payload.message === "string"
+                      ? payload.message
+                      : "消息未能加入任务队列。",
+                  ),
+                );
+                return;
+              }
+              if (
+                payload.taskId !== taskId ||
+                payload.sessionId !== taskId ||
+                payload.inputId !== inputId ||
+                typeof id !== "string"
+              ) {
+                reject(new Error("运行确认与当前对话不匹配，请刷新后重试。"));
+                return;
+              }
+              const queued = payload.delivery === "queued";
+              goalUserRunIdsRef.current.set(id, { assistantId, queued });
+              setPendingGoalUserRuns((count) => count + 1);
+              if (queued) setQueuedGoalMessages((count) => count + 1);
+              clearAttachments();
+              setMessageMentions([]);
+              resolve();
+            },
+          );
+        });
+      } catch (error) {
+        showToast(
+          error instanceof Error ? error.message : "消息未能加入任务队列。",
+          "error",
+        );
+      }
+    },
+    [
+      accessTokenRef,
+      acceptDesignTaskPolicy,
+      activeSessionIdRef,
+      autoTitleSession,
+      canvasId,
+      clearAttachments,
+      readyAttachments,
+      showToast,
+      updateSessionMessages,
+      ws,
+    ],
+  );
+
   // ── Send message ──
   const handleSend = useCallback(
     async (
@@ -596,33 +1346,76 @@ export function ChatSidebar({
       mentionsOverride?: MessageMention[],
     ) => {
       const currentSessionId = activeSessionIdRef.current;
-      if (streaming || !currentSessionId) return;
+      const goal = designGoalResponseRef.current?.goal;
+      const taskQueueActive =
+        goal?.status === "active" ||
+        goal?.status === "verifying" ||
+        goalUserRunIdsRef.current.size > 0 ||
+        pendingGoalAdmissionsRef.current > 0;
+      if (streaming || taskQueueActive) {
+        if (
+          currentSessionId &&
+          taskQueueActive &&
+          designTaskPolicyRef.current?.taskId === currentSessionId
+        ) {
+          pendingGoalAdmissionsRef.current += 1;
+          setPendingGoalAdmissions(pendingGoalAdmissionsRef.current);
+          goalUserInputChainRef.current = goalUserInputChainRef.current
+            .then(() =>
+              submitGoalUserInput(
+                currentSessionId,
+                text,
+                attachmentsOverride,
+                imageGenerationPreferenceOverride,
+                mentionsOverride,
+              ),
+            )
+            .catch((error: unknown) =>
+              showToast(
+                error instanceof Error
+                  ? error.message
+                  : "消息未能加入任务队列。",
+                "error",
+              ),
+            )
+            .finally(() => {
+              pendingGoalAdmissionsRef.current = Math.max(
+                0,
+                pendingGoalAdmissionsRef.current - 1,
+              );
+              setPendingGoalAdmissions(pendingGoalAdmissionsRef.current);
+              const currentGoal = designGoalResponseRef.current?.goal;
+              if (
+                pendingGoalAdmissionsRef.current === 0 &&
+                goalUserRunIdsRef.current.size === 0 &&
+                currentGoal?.status !== "active" &&
+                currentGoal?.status !== "verifying"
+              ) {
+                setStreaming(false);
+                setActiveRunId(null);
+                activeRunTaskIdRef.current = null;
+              }
+            });
+        }
+        return;
+      }
+      if (!currentSessionId) return;
+      if (designTaskStatus !== "ready") {
+        if (designTaskStatus === "unprovisioned")
+          showToast("请先准备画布任务", "error");
+        else if (designTaskError) showToast(designTaskError, "error");
+        return;
+      }
 
       // 新的一次发送：上一句播报立刻让位（念着旧回复等新回复是最刺耳的形态）
       getVoicePlayback().stop();
 
       // Merge explicitly-attached images with auto-sensed canvas selection images
-      let currentAttachments = attachmentsOverride ?? readyAttachments;
-      const selectedEls = selectedCanvasElementsRef.current ?? [];
-      const selectedImageEls = selectedEls.filter(
-        (el) =>
-          el.type === "image" && el.fileId && (el.storageUrl || el.dataUrl),
+      const currentAttachments = mergeSelectedCanvasAttachments(
+        attachmentsOverride ?? readyAttachments,
+        selectedCanvasElementsRef.current,
+        !attachmentsOverride,
       );
-      if (selectedImageEls.length > 0 && !attachmentsOverride) {
-        const existingIds = new Set(currentAttachments.map((a) => a.assetId));
-        const selectionAttachments: ReadyAttachment[] = selectedImageEls
-          .filter((el) => !existingIds.has(el.id))
-          .map((el) => ({
-            assetId: el.id,
-            url: el.storageUrl ?? el.dataUrl ?? "",
-            mimeType: "image/png",
-            source: "canvas-ref" as const,
-            name: `Canvas selection ${el.id.slice(0, 6)}`,
-          }));
-        if (selectionAttachments.length > 0) {
-          currentAttachments = [...currentAttachments, ...selectionAttachments];
-        }
-      }
       const currentImageGenerationPreference =
         imageGenerationPreferenceOverride ??
         activeImageGenerationPreferenceRef.current;
@@ -630,85 +1423,76 @@ export function ChatSidebar({
         activeVideoGenerationPreferenceRef.current;
       const currentMentions = mentionsOverride ?? messageMentionsRef.current;
 
-      // Add user message locally
-      const imageBlocks: ContentBlock[] = currentAttachments.map((a) => ({
-        type: "image" as const,
-        assetId: a.assetId,
-        url: a.url,
-        mimeType: a.mimeType,
-        source: a.source,
-        ...(a.name ? { name: a.name } : {}),
-      }));
-      const mentionBlocks: ContentBlock[] = currentMentions.map((mention) => {
-        if (mention.mentionType === "image-model") {
-          return {
-            type: "mention" as const,
-            mentionType: "image-model" as const,
-            id: mention.id,
-            label: mention.label,
-          };
-        }
-        if (mention.mentionType === "brand-kit-asset") {
-          return {
-            type: "mention" as const,
-            mentionType: "brand-kit-asset" as const,
-            id: mention.id,
-            label: mention.label,
-            assetType: mention.assetType,
-            ...(mention.textContent !== undefined &&
-            mention.textContent !== null
-              ? { textContent: mention.textContent }
-              : {}),
-            ...(mention.fileUrl !== undefined && mention.fileUrl !== null
-              ? { fileUrl: mention.fileUrl }
-              : {}),
-          };
-        }
-        return {
-          type: "mention" as const,
-          mentionType: "skill" as const,
-          id: mention.id,
-          label: mention.label,
-          slug: mention.slug,
-        };
-      });
-      const userMsg = {
-        id: `user-${Date.now()}`,
-        role: "user" as const,
-        contentBlocks: [
-          { type: "text" as const, text },
-          ...mentionBlocks,
-          ...imageBlocks,
-        ],
-      };
-      updateSessionMessages(currentSessionId, (prev) => [...prev, userMsg]);
-
-      // Persist user message (fire-and-forget)
-      saveMessage(accessTokenRef.current, currentSessionId, {
-        role: "user",
-        content: text,
-        contentBlocks: [
-          { type: "text" as const, text },
-          ...mentionBlocks,
-          ...imageBlocks,
-        ],
-      }).catch((err) =>
-        console.error("[chat] Failed to save user message:", err),
-      );
-
-      // Auto-title from first user message
-      autoTitleSession(text);
-
-      // Create assistant placeholder
-      const assistantId = `assistant-${Date.now()}`;
-      updateSessionMessages(currentSessionId, (prev) => [
-        ...prev,
-        { id: assistantId, role: "assistant" as const, contentBlocks: [] },
-      ]);
       setStreaming(true);
       abortRef.current = false;
+      let assistantId: string | null = null;
+      let cleanup: (() => void) | null = null;
 
       try {
+        const contentBlocks = createUserContentBlocks(
+          text,
+          currentMentions,
+          currentAttachments,
+        );
+        const saved = await saveMessage(
+          accessTokenRef.current,
+          currentSessionId,
+          { role: "user", content: text, contentBlocks },
+        );
+        const inputId = saved.message.id;
+        updateSessionMessages(currentSessionId, (prev) => [
+          ...prev,
+          { id: inputId, role: "user" as const, contentBlocks },
+        ]);
+        autoTitleSession(text);
+
+        assistantId = `assistant-${inputId}`;
+        pendingAssistantByTaskRef.current.set(currentSessionId, assistantId);
+        updateSessionMessages(currentSessionId, (prev) => [
+          ...prev,
+          {
+            id: assistantId as string,
+            role: "assistant" as const,
+            contentBlocks: [],
+          },
+        ]);
+        let taskPolicy = (
+          await fetchDesignTaskPolicy(accessTokenRef.current, currentSessionId)
+        ).task;
+        if (
+          taskPolicy.taskId !== currentSessionId ||
+          taskPolicy.canvasId !== canvasId
+        )
+          throw new Error("当前对话与画布关联不一致，请重新加载。");
+        if (taskPolicy.executionState !== "ready")
+          throw new Error("画布任务当前不可运行，请重新加载。");
+        const { mode } = await fetchExecutionMode(
+          accessTokenRef.current,
+          currentSessionId,
+        );
+        const planEnabled = mode === "plan";
+        if (taskPolicy.planEnabled !== planEnabled) {
+          taskPolicy = (
+            await updateDesignTaskPolicy(
+              accessTokenRef.current,
+              currentSessionId,
+              {
+                expectedScopeGeneration: taskPolicy.scopeGeneration,
+                expectedBranchGeneration: taskPolicy.branchGeneration,
+                planEnabled,
+              },
+            )
+          ).task;
+          if (
+            taskPolicy.taskId !== currentSessionId ||
+            taskPolicy.canvasId !== canvasId ||
+            taskPolicy.planEnabled !== planEnabled ||
+            taskPolicy.executionState !== "ready"
+          )
+            throw new Error("画布任务策略更新未生效，请重新加载。");
+        }
+        acceptDesignTaskPolicy(taskPolicy);
+
         const perf = {
           t0Send: performance.now(),
           tAck: 0,
@@ -720,97 +1504,128 @@ export function ChatSidebar({
         const streamDone = new Promise<void>((r) => {
           resolveStream = r;
         });
-        const runIdRef = { current: "" };
-
-        const cleanup = ws.onEvent((event) => {
-          // 重试会换一个新 runId（服务端 run.retrying 带着新 id）：先认领再过滤，
-          // 否则这一轮后续事件（含终态）全被丢掉，助手永远停在「正在生成」。
-          if (event.type === "run.retrying" && runIdRef.current) {
-            runIdRef.current = event.runId;
-            setActiveRunId(event.runId);
-          }
-          if (!runIdRef.current || event.runId !== runIdRef.current) return;
-          if (abortRef.current) {
-            resolveStream();
-            return;
-          }
-
-          // Track first token timing
-          if (!perf.gotFirstToken && event.type === "message.delta") {
-            perf.tFirstToken = performance.now();
-            perf.gotFirstToken = true;
-            console.log(
-              `[perf] send → first token: ${(perf.tFirstToken - perf.t0Send).toFixed(0)}ms` +
-                ` (ack→token: ${(perf.tFirstToken - perf.tAck).toFixed(0)}ms)`,
-            );
-          }
-
-          // Apply event to messages (single source of truth — shared with reconnect)
-          applyStreamEvent(event, assistantId, currentSessionId);
-
-          // Forward event to parent for fallback job polling (timed-out generation recovery)
-          onStreamEvent?.(event);
-
-          // Fire canvas insertion callbacks for image/video artifacts.
-          // Skip if the backend already inserted the element (elementId in output).
-          const backendInserted =
-            event.type === "tool.completed" &&
-            event.output &&
-            typeof (event.output as Record<string, unknown>).elementId ===
-              "string";
-          if (
-            event.type === "tool.completed" &&
-            event.artifacts &&
-            event.toolName !== "screenshot_canvas" &&
-            !backendInserted
-          ) {
-            for (const artifact of event.artifacts) {
-              if (artifact.type === "image" && onImageGenerated) {
-                onImageGenerated(artifact as ImageArtifact);
-              }
-              if (artifact.type === "video" && onVideoGenerated) {
-                onVideoGenerated(artifact as VideoArtifact);
-              }
+        let currentRunId = "";
+        cleanup = subscribeTaskEvents(
+          currentSessionId,
+          "send",
+          (event, seq, eventTaskId) => {
+            if (
+              activeRunTaskIdRef.current !== currentSessionId ||
+              (eventTaskId !== undefined && eventTaskId !== currentSessionId)
+            )
+              return;
+            // 重试会换一个新 runId（服务端 run.retrying 带着新 id）：先认领再过滤，
+            // 否则这一轮后续事件（含终态）全被丢掉，助手永远停在「正在生成」。
+            if (event.type === "run.retrying" && currentRunId) {
+              currentRunId = event.runId;
+              foregroundRunRef.current = {
+                taskId: currentSessionId,
+                runId: event.runId,
+              };
+              setActiveRunId(event.runId);
             }
-          }
+            if (!currentRunId || event.runId !== currentRunId) return;
+            if (seq !== undefined)
+              lastSeqByTaskRef.current.set(
+                currentSessionId,
+                Math.max(
+                  lastSeqByTaskRef.current.get(currentSessionId) ?? 0,
+                  seq,
+                ),
+              );
+            if (abortRef.current) {
+              resolveStream();
+              return;
+            }
 
-          if (event.type === "canvas.sync" && onCanvasSync) {
-            onCanvasSync();
-          }
-
-          // Preview model hint: suggest switching when run fails
-          if (event.type === "run.failed") {
-            const currentModel = agentModelRef.current ?? "";
-            if (currentModel.includes("preview")) {
-              showToast(
-                "当前 Preview 模型请求不稳定，建议切换模型后重试",
-                "error",
+            // Track first token timing
+            if (!perf.gotFirstToken && event.type === "message.delta") {
+              perf.tFirstToken = performance.now();
+              perf.gotFirstToken = true;
+              console.log(
+                `[perf] send → first token: ${(perf.tFirstToken - perf.t0Send).toFixed(0)}ms` +
+                  ` (ack→token: ${(perf.tFirstToken - perf.tAck).toFixed(0)}ms)`,
               );
             }
-          }
 
-          if (
-            event.type === "run.completed" ||
-            event.type === "run.failed" ||
-            event.type === "run.canceled"
-          ) {
-            resolveStream();
-          }
-        });
+            // Apply event to messages (single source of truth — shared with reconnect)
+            applyStreamEvent(event, assistantId as string, currentSessionId);
+
+            // Forward event to parent for fallback job polling (timed-out generation recovery)
+            onStreamEvent?.(event);
+
+            // Fire canvas insertion callbacks for image/video artifacts.
+            // Skip if the backend already inserted the element (elementId in output).
+            const backendInserted =
+              event.type === "tool.completed" &&
+              event.output &&
+              typeof (event.output as Record<string, unknown>).elementId ===
+                "string";
+            if (
+              event.type === "tool.completed" &&
+              event.artifacts &&
+              event.toolName !== "screenshot_canvas" &&
+              !backendInserted
+            ) {
+              for (const artifact of event.artifacts) {
+                if (artifact.type === "image" && onImageGenerated) {
+                  onImageGenerated(artifact as ImageArtifact);
+                }
+                if (artifact.type === "video" && onVideoGenerated) {
+                  onVideoGenerated(artifact as VideoArtifact);
+                }
+              }
+            }
+
+            if (event.type === "canvas.sync" && onCanvasSync) {
+              onCanvasSync();
+            }
+
+            // Preview model hint: suggest switching when run fails
+            if (event.type === "run.failed") {
+              const currentModel = agentModelRef.current ?? "";
+              if (currentModel.includes("preview")) {
+                showToast(
+                  "当前 Preview 模型请求不稳定，建议切换模型后重试",
+                  "error",
+                );
+              }
+            }
+
+            if (
+              event.type === "run.completed" ||
+              event.type === "run.failed" ||
+              event.type === "run.canceled"
+            ) {
+              if (foregroundRunRef.current?.taskId === currentSessionId)
+                foregroundRunRef.current = null;
+              pendingAssistantByTaskRef.current.delete(currentSessionId);
+              resolveStream();
+            }
+          },
+        );
 
         // Start run via WebSocket
         await new Promise<string>((resolve, reject) => {
           const timeout = setTimeout(() => {
-            cleanup();
+            cleanup?.();
+            cleanup = null;
             reject(new Error("WebSocket ack timeout — connection may be down"));
           }, 10_000);
 
           ws.startRun(
             {
               sessionId: currentSessionId,
-              conversationId: canvasId,
+              conversationId: currentSessionId,
+              projectId: taskPolicy.projectId,
+              taskId: currentSessionId,
+              canvasId: taskPolicy.canvasId,
+              preset: "design",
+              executionMode: mode,
+              inputId,
+              scopeGeneration: taskPolicy.scopeGeneration,
+              branchGeneration: taskPolicy.branchGeneration,
               prompt: text,
-              canvasId,
               ...(currentAttachments.length > 0
                 ? { attachments: currentAttachments }
                 : {}),
@@ -837,8 +1652,39 @@ export function ChatSidebar({
               console.log(
                 `[perf] send → ack: ${(perf.tAck - perf.t0Send).toFixed(0)}ms`,
               );
-              const id = ack.payload.runId as string;
-              runIdRef.current = id;
+              const payload = ack.payload as Record<string, unknown>;
+              if (payload.status === "rejected") {
+                pendingAssistantByTaskRef.current.delete(currentSessionId);
+                reject(
+                  new ApiApplicationError(
+                    typeof payload.code === "string"
+                      ? payload.code
+                      : "invalid_request",
+                    typeof payload.message === "string"
+                      ? payload.message
+                      : "画布任务未能受理此消息。",
+                  ),
+                );
+                return;
+              }
+              const id = payload.runId;
+              if (
+                payload.taskId !== currentSessionId ||
+                payload.sessionId !== currentSessionId ||
+                payload.inputId !== inputId ||
+                payload.scopeGeneration !== taskPolicy.scopeGeneration ||
+                payload.branchGeneration !== taskPolicy.branchGeneration ||
+                typeof id !== "string"
+              ) {
+                reject(new Error("运行确认与当前对话不匹配，请重新加载。"));
+                return;
+              }
+              currentRunId = id;
+              activeRunTaskIdRef.current = currentSessionId;
+              foregroundRunRef.current = {
+                taskId: currentSessionId,
+                runId: id,
+              };
               setActiveRunId(id);
               resolve(id);
             },
@@ -849,6 +1695,7 @@ export function ChatSidebar({
 
         await streamDone;
         cleanup();
+        cleanup = null;
 
         // 「说」段（规划 §4.2）：念这一轮的助手正文（代码块剔除）。只念该念的，
         // 失败静默——正文已在屏幕上，念不出来不影响用。
@@ -867,28 +1714,50 @@ export function ChatSidebar({
               .catch(() => undefined);
           }
         }
-      } catch {
-        updateSessionMessages(currentSessionId, (prev) =>
-          prev.map((m) => {
-            if (m.id !== assistantId) return m;
-            const hasText = m.contentBlocks.some((b) => b.type === "text");
-            if (hasText) return m;
-            return {
-              ...m,
-              contentBlocks: [
-                ...m.contentBlocks,
-                { type: "text" as const, text: "没有收到回复，请重试。" },
-              ],
-            };
-          }),
-        );
+      } catch (error) {
+        cleanup?.();
+        const ackTimedOut =
+          error instanceof Error && error.message.includes("ack timeout");
+        const reason =
+          error instanceof Error ? error.message : "发送消息失败。";
+        if (ackTimedOut) {
+          showToast("连接中断，正在续接任务。", "error");
+          ws.reconnectNow();
+        }
+        if (assistantId) {
+          if (!ackTimedOut)
+            pendingAssistantByTaskRef.current.delete(currentSessionId);
+          updateSessionMessages(currentSessionId, (prev) =>
+            prev.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    contentBlocks: ackTimedOut
+                      ? message.contentBlocks
+                      : [
+                          ...message.contentBlocks.filter(
+                            (block) => block.type !== "text",
+                          ),
+                          { type: "text" as const, text: reason },
+                        ],
+                  }
+                : message,
+            ),
+          );
+        } else showToast(reason, "error");
       } finally {
         setStreaming(false);
         setActiveRunId(null);
+        activeRunTaskIdRef.current = null;
+        if (foregroundRunRef.current?.taskId === currentSessionId)
+          foregroundRunRef.current = null;
       }
     },
     [
       streaming,
+      designTaskStatus,
+      designTaskError,
+      acceptDesignTaskPolicy,
       canvasId,
       applyStreamEvent,
       setStreaming,
@@ -904,9 +1773,100 @@ export function ChatSidebar({
       autoTitleSession,
       accessTokenRef,
       activeSessionIdRef,
+      submitGoalUserInput,
+      subscribeTaskEvents,
       readSessionMessages,
     ],
   );
+
+  const handleResolveDesignApproval = useCallback(
+    async (
+      interaction: DesignTaskApproval,
+      answer: DesignApprovalResolveRequest["answer"],
+    ) => {
+      const taskId = activeSessionIdRef.current;
+      if (!taskId || taskId !== designApprovalsTaskId) return;
+      setResolvingInteractionId(interaction.interactionId);
+      setDesignApprovalError(null);
+      try {
+        await resolveDesignTaskApproval(
+          accessTokenRef.current,
+          taskId,
+          interaction.interactionId,
+          { answer },
+        );
+        if (activeSessionIdRef.current !== taskId) return;
+        setDesignApprovals((previous) =>
+          previous.filter(
+            (item) => item.interactionId !== interaction.interactionId,
+          ),
+        );
+      } catch (error) {
+        if (activeSessionIdRef.current !== taskId) return;
+        setDesignApprovalError(
+          error instanceof Error
+            ? error.message
+            : "审批未能提交，请刷新后重试。",
+        );
+        setDesignApprovalErrorTaskId(taskId);
+      } finally {
+        setResolvingInteractionId(null);
+      }
+    },
+    [accessTokenRef, activeSessionIdRef, designApprovalsTaskId],
+  );
+
+  useEffect(() => {
+    const taskId = activeSessionId;
+    const requestId = ++approvalRequestRef.current;
+    setDesignApprovals([]);
+    setDesignApprovalsTaskId(taskId);
+    setDesignApprovalError(null);
+    setDesignApprovalErrorTaskId(taskId);
+    setResolvingInteractionId(null);
+    if (!taskId || designTaskStatus !== "ready") return;
+
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const response = await fetchDesignTaskApprovals(
+          accessTokenRef.current,
+          taskId,
+        );
+        if (
+          cancelled ||
+          requestId !== approvalRequestRef.current ||
+          activeSessionIdRef.current !== taskId
+        )
+          return;
+        setDesignApprovalsTaskId(taskId);
+        setDesignApprovals(response.approvals);
+        setDesignApprovalError(null);
+      } catch (error) {
+        if (cancelled || activeSessionIdRef.current !== taskId) return;
+        setDesignApprovalError(
+          error instanceof Error ? error.message : "读取审批请求失败。",
+        );
+        setDesignApprovalErrorTaskId(taskId);
+      }
+    };
+    void refresh();
+    const polling =
+      streaming && activeRunId !== null && activeRunTaskIdRef.current === taskId
+        ? window.setInterval(refresh, 1000)
+        : null;
+    return () => {
+      cancelled = true;
+      if (polling !== null) window.clearInterval(polling);
+    };
+  }, [
+    accessTokenRef,
+    activeRunId,
+    activeSessionId,
+    activeSessionIdRef,
+    designTaskStatus,
+    streaming,
+  ]);
 
   // ── Mention picker ──
   const mentionPickerItems: MessageMentionPickerItem[] = [
@@ -986,6 +1946,7 @@ export function ChatSidebar({
       !initialPrompt ||
       sessionsLoading ||
       !ws.connected ||
+      designTaskStatus !== "ready" ||
       initialPromptSent.current
     )
       return;
@@ -1038,11 +1999,12 @@ export function ChatSidebar({
     initialPrompt,
     sessionsLoading,
     ws.connected,
+    designTaskStatus,
     handleSend,
     activeSessionIdRef,
   ]);
 
-  // ── Reconnection: resume canvas binding + reload messages ──
+  // ── Reconnection: resume the exact Design Task + reload messages ──
   // Uses the shared applyStreamEvent to handle live events — no duplicated logic.
   useEffect(() => {
     if (!ws.connected || sessionsLoading) {
@@ -1057,96 +2019,311 @@ export function ChatSidebar({
 
     // Skip if initialPrompt effect will handle binding
     if (initialPrompt && !initialPromptSent.current) return;
+    const policyRequestId = ++policyRequestRef.current;
 
     void (async () => {
       // Reload messages from DB (server may have persisted while disconnected)
       await reloadMessages(sessionId);
+      if (policyRequestId !== policyRequestRef.current) return;
 
-      // Resume canvas binding (after DB messages are set)
-      ws.resumeCanvas(canvasId, (ack) => {
-        const activeRunId = (ack.payload as Record<string, unknown>)
-          .activeRunId;
-        /**
-         * 服务端说「没有在跑的 run」时要把本地的「生成中」收掉。
-         *
-         * GUI 实测踩到：进程重启（含 dev 的 --watch 重建）会把在飞的 run 收敛成 failed，
-         * 但客户端不知道——`streaming` 停在 true ⇒ 停止键常驻、输入框一直禁用，而那颗键
-         * 指向一个已经不存在的 run（点了没反应）。这里是「run 失踪」的唯一兜底信号。
-         */
-        if (!activeRunId || typeof activeRunId !== "string") {
-          setStreaming(false);
-          setActiveRunId(null);
+      try {
+        const { task } = await fetchDesignTaskPolicy(
+          accessTokenRef.current,
+          sessionId,
+        );
+        if (policyRequestId !== policyRequestRef.current) return;
+        if (task.taskId !== sessionId || task.canvasId !== canvasId) {
+          setDesignTaskStatus("error");
+          setDesignTaskError("当前对话与画布关联不一致，请重新加载。");
           return;
         }
-        {
-          setStreaming(true);
-          // 断线重连接上的这一轮同样要能停（否则重连后按钮消失，只能干等）
-          setActiveRunId(activeRunId);
+        acceptDesignTaskPolicy(task);
+      } catch (error) {
+        if (policyRequestId !== policyRequestRef.current) return;
+        if (
+          error instanceof ApiApplicationError &&
+          error.code === "session_not_found"
+        ) {
+          designTaskPolicyRef.current = null;
+          setDesignTaskStatus("unprovisioned");
+          return;
+        }
+        setDesignTaskStatus("error");
+        setDesignTaskError(
+          error instanceof Error ? error.message : "读取画布任务失败。",
+        );
+        return;
+      }
 
-          const assistantId = `resumed_${activeRunId}`;
-          // Must use updateSessionMessages (not setMessages) so the placeholder
-          // lands in msgCacheRef as well as React state. applyStreamEvent reads
-          // from the cache — if the placeholder only lives in React state, stream
-          // events can't find it and the first updateSessionMessages call
-          // overwrites state back to the stale cache (losing the placeholder).
-          updateSessionMessages(sessionId, (prev) => {
-            if (prev.some((m) => m.id === assistantId)) return prev;
-            return [
-              ...prev,
-              {
-                id: assistantId,
-                role: "assistant" as const,
-                contentBlocks: [],
-              },
-            ];
-          });
+      try {
+        const requestId = ++designGoalFetchRequestRef.current;
+        const goalResponse = await fetchDesignGoal(
+          accessTokenRef.current,
+          sessionId,
+        );
+        if (
+          requestId === designGoalFetchRequestRef.current &&
+          activeSessionIdRef.current === sessionId &&
+          goalResponse.task.taskId === sessionId &&
+          goalResponse.task.canvasId === canvasId
+        ) {
+          designGoalTaskIdRef.current = sessionId;
+          designGoalResponseRef.current = goalResponse;
+          setDesignGoalResponse(goalResponse);
+        }
+      } catch (error) {
+        if (activeSessionIdRef.current === sessionId)
+          setDesignGoalError(
+            error instanceof Error ? error.message : "读取目标失败。",
+          );
+      }
 
-          // Reuse the shared stream event handler — eliminates ~70 lines of duplication
-          const unsub = ws.onEvent((evt) => {
-            if (evt.runId !== activeRunId) return;
-
-            applyStreamEvent(evt, assistantId, sessionId);
-            onStreamEvent?.(evt);
-
-            // Fire canvas insertion callbacks for artifacts arriving after reconnect.
-            // Skip if the backend already inserted the element (elementId in output).
-            const wsBackendInserted =
-              evt.type === "tool.completed" &&
-              evt.output &&
-              typeof (evt.output as Record<string, unknown>).elementId ===
-                "string";
-            if (
-              evt.type === "tool.completed" &&
-              evt.artifacts &&
-              evt.toolName !== "screenshot_canvas" &&
-              !wsBackendInserted
-            ) {
-              for (const artifact of evt.artifacts) {
-                if (artifact.type === "image" && onImageGenerated) {
-                  onImageGenerated(artifact as ImageArtifact);
-                }
-                if (artifact.type === "video" && onVideoGenerated) {
-                  onVideoGenerated(artifact as VideoArtifact);
-                }
-              }
+      try {
+        ws.resumeTask(
+          sessionId,
+          lastSeqByTaskRef.current.get(sessionId) ?? 0,
+          (ack) => {
+            const payload = ack.payload as Record<string, unknown>;
+            if (payload.status === "rejected") {
+              setDesignTaskStatus("error");
+              setDesignTaskError(
+                typeof payload.message === "string"
+                  ? payload.message
+                  : "任务续接失败。",
+              );
+              return;
             }
-
-            if (evt.type === "canvas.sync" && onCanvasSync) {
-              onCanvasSync();
-            }
-
             if (
-              evt.type === "run.completed" ||
-              evt.type === "run.failed" ||
-              evt.type === "run.canceled"
+              payload.taskId !== sessionId ||
+              payload.canvasId !== canvasId ||
+              typeof payload.latestSeq !== "number"
             ) {
+              setDesignTaskStatus("error");
+              setDesignTaskError("任务续接确认与当前对话不匹配，请重新加载。");
               setStreaming(false);
               setActiveRunId(null);
-              unsub();
+              return;
             }
-          });
-        }
-      });
+            lastSeqByTaskRef.current.set(sessionId, payload.latestSeq);
+            const replayGap = payload.replayGap === true;
+            const activeRunId = payload.activeRunId;
+            const refreshAfterGap = async () => {
+              const requestId = ++policyRequestRef.current;
+              await reloadMessages(sessionId);
+              if (requestId !== policyRequestRef.current) return;
+              const refreshed = await fetchDesignTaskPolicy(
+                accessTokenRef.current,
+                sessionId,
+              );
+              if (requestId !== policyRequestRef.current) return;
+              if (
+                refreshed.task.taskId !== sessionId ||
+                refreshed.task.canvasId !== canvasId
+              )
+                throw new Error("当前对话与画布关联不一致，请重新加载。");
+              acceptDesignTaskPolicy(refreshed.task);
+            };
+            /**
+             * 服务端说「没有在跑的 run」时要把本地的「生成中」收掉。
+             *
+             * GUI 实测踩到：进程重启（含 dev 的 --watch 重建）会把在飞的 run 收敛成 failed，
+             * 但客户端不知道——`streaming` 停在 true ⇒ 停止键常驻、输入框一直禁用，而那颗键
+             * 指向一个已经不存在的 run（点了没反应）。这里是「run 失踪」的唯一兜底信号。
+             */
+            if (!activeRunId || typeof activeRunId !== "string") {
+              setStreaming(false);
+              setActiveRunId(null);
+              activeRunTaskIdRef.current = null;
+              if (foregroundRunRef.current?.taskId === sessionId)
+                foregroundRunRef.current = null;
+              pendingAssistantByTaskRef.current.delete(sessionId);
+              if (replayGap)
+                void refreshAfterGap().catch((error: unknown) => {
+                  setDesignTaskStatus("error");
+                  setDesignTaskError(
+                    error instanceof Error ? error.message : "刷新对话失败。",
+                  );
+                });
+              return;
+            }
+            {
+              setStreaming(true);
+              // 断线重连接上的这一轮同样要能停（否则重连后按钮消失，只能干等）
+              activeRunTaskIdRef.current = sessionId;
+              foregroundRunRef.current =
+                designGoalResponseRef.current?.acceptedRunId === activeRunId
+                  ? null
+                  : { taskId: sessionId, runId: activeRunId };
+              setActiveRunId(activeRunId);
+
+              const assistantId =
+                goalUserRunIdsRef.current.get(activeRunId)?.assistantId ??
+                (designGoalResponseRef.current?.acceptedRunId === activeRunId &&
+                designGoalResponseRef.current.goal
+                  ? `goal-${designGoalResponseRef.current.goal.goalId}-${activeRunId}`
+                  : (pendingAssistantByTaskRef.current.get(sessionId) ??
+                    `resumed_${activeRunId}`));
+              // Must use updateSessionMessages (not setMessages) so the placeholder
+              // lands in msgCacheRef as well as React state. applyStreamEvent reads
+              // from the cache — if the placeholder only lives in React state, stream
+              // events can't find it and the first updateSessionMessages call
+              // overwrites state back to the stale cache (losing the placeholder).
+              updateSessionMessages(sessionId, (prev) => {
+                if (prev.some((m) => m.id === assistantId)) return prev;
+                return [
+                  ...prev,
+                  {
+                    id: assistantId,
+                    role: "assistant" as const,
+                    contentBlocks: [],
+                  },
+                ];
+              });
+
+              // Reuse the shared stream event handler — eliminates ~70 lines of duplication
+              let runId = activeRunId;
+              let replayReady = !replayGap;
+              const replayQueue: Array<{
+                event: StreamEvent;
+                seq?: number;
+                taskId?: string;
+              }> = [];
+              const applyResumedEvent = (
+                evt: StreamEvent,
+                seq?: number,
+                eventTaskId?: string,
+              ) => {
+                if (
+                  activeRunTaskIdRef.current !== sessionId ||
+                  (eventTaskId !== undefined && eventTaskId !== sessionId)
+                )
+                  return;
+                if (evt.type === "run.retrying" && runId) {
+                  runId = evt.runId;
+                  foregroundRunRef.current = {
+                    taskId: sessionId,
+                    runId: evt.runId,
+                  };
+                  setActiveRunId(runId);
+                }
+                if (evt.runId !== runId) return;
+                if (seq !== undefined)
+                  lastSeqByTaskRef.current.set(
+                    sessionId,
+                    Math.max(lastSeqByTaskRef.current.get(sessionId) ?? 0, seq),
+                  );
+
+                applyStreamEvent(evt, assistantId, sessionId);
+                onStreamEvent?.(evt);
+
+                // Fire canvas insertion callbacks for artifacts arriving after reconnect.
+                // Skip if the backend already inserted the element (elementId in output).
+                const wsBackendInserted =
+                  evt.type === "tool.completed" &&
+                  evt.output &&
+                  typeof (evt.output as Record<string, unknown>).elementId ===
+                    "string";
+                if (
+                  evt.type === "tool.completed" &&
+                  evt.artifacts &&
+                  evt.toolName !== "screenshot_canvas" &&
+                  !wsBackendInserted
+                ) {
+                  for (const artifact of evt.artifacts) {
+                    if (artifact.type === "image" && onImageGenerated) {
+                      onImageGenerated(artifact as ImageArtifact);
+                    }
+                    if (artifact.type === "video" && onVideoGenerated) {
+                      onVideoGenerated(artifact as VideoArtifact);
+                    }
+                  }
+                }
+
+                if (evt.type === "canvas.sync" && onCanvasSync) {
+                  onCanvasSync();
+                }
+
+                if (
+                  evt.type === "run.completed" ||
+                  evt.type === "run.failed" ||
+                  evt.type === "run.canceled"
+                ) {
+                  const currentGoal = designGoalResponseRef.current?.goal;
+                  if (currentGoal) {
+                    void Promise.all([
+                      fetchDesignGoal(accessTokenRef.current, sessionId),
+                      reloadMessages(sessionId),
+                    ]).then(([next]) => acceptGoalResponse(next));
+                  } else {
+                    setStreaming(false);
+                    setActiveRunId(null);
+                    activeRunTaskIdRef.current = null;
+                    if (foregroundRunRef.current?.taskId === sessionId)
+                      foregroundRunRef.current = null;
+                    pendingAssistantByTaskRef.current.delete(sessionId);
+                  }
+                  unsub();
+                }
+              };
+              let unsub = subscribeTaskEvents(
+                sessionId,
+                replayGap ? "replay" : "resume",
+                (evt, seq, eventTaskId) => {
+                  if (!replayReady) {
+                    replayQueue.push({
+                      event: evt,
+                      ...(seq !== undefined ? { seq } : {}),
+                      ...(eventTaskId ? { taskId: eventTaskId } : {}),
+                    });
+                    return;
+                  }
+                  applyResumedEvent(evt, seq, eventTaskId);
+                },
+              );
+              if (replayGap)
+                void refreshAfterGap()
+                  .catch((error: unknown) => {
+                    setDesignTaskStatus("error");
+                    setDesignTaskError(
+                      error instanceof Error ? error.message : "刷新对话失败。",
+                    );
+                  })
+                  .finally(() => {
+                    updateSessionMessages(sessionId, (previous) =>
+                      previous.some((message) => message.id === assistantId)
+                        ? previous
+                        : [
+                            ...previous,
+                            {
+                              id: assistantId,
+                              role: "assistant" as const,
+                              contentBlocks: [],
+                            },
+                          ],
+                    );
+                    replayReady = true;
+                    for (const queued of replayQueue)
+                      applyResumedEvent(
+                        queued.event,
+                        queued.seq,
+                        queued.taskId,
+                      );
+                    unsub();
+                    unsub = subscribeTaskEvents(
+                      sessionId,
+                      "resume",
+                      applyResumedEvent,
+                    );
+                  });
+            }
+          },
+        );
+      } catch (error) {
+        setDesignTaskStatus("error");
+        setDesignTaskError(
+          error instanceof Error ? error.message : "任务续接失败。",
+        );
+      }
     })();
   }, [
     ws.connected,
@@ -1159,11 +2336,300 @@ export function ChatSidebar({
     onVideoGenerated,
     onCanvasSync,
     activeSessionIdRef,
+    accessTokenRef,
+    acceptDesignTaskPolicy,
     reloadMessages,
     updateSessionMessages,
     setStreaming,
     initialPrompt,
+    subscribeTaskEvents,
+    acceptGoalResponse,
   ]);
+
+  const currentDesignApprovals =
+    designApprovalsTaskId === activeSessionId ? designApprovals : [];
+  const currentDesignGoal =
+    designGoalResponse?.task.taskId === activeSessionId
+      ? designGoalResponse.goal
+      : null;
+  const queuedGoalMessageCount = queuedGoalMessages;
+
+  useEffect(() => {
+    const response = designGoalResponse;
+    const taskId = activeSessionId;
+    const goal = response?.goal;
+    const goalActive =
+      goal?.status === "active" || goal?.status === "verifying";
+    const activeTaskRunId = response?.task.activeRunId;
+    const taskRunBelongsToOtherInput =
+      activeTaskRunId !== null &&
+      activeTaskRunId !== undefined &&
+      response?.acceptedRunId !== activeTaskRunId &&
+      !goalUserRunIdsRef.current.has(activeTaskRunId);
+    if (
+      !taskId ||
+      !goal ||
+      (goalActive && taskRunBelongsToOtherInput) ||
+      (!goalActive && goalUserRunIdsRef.current.size === 0)
+    )
+      return;
+    let runId =
+      response.acceptedRunId ??
+      (activeTaskRunId && goalUserRunIdsRef.current.has(activeTaskRunId)
+        ? activeTaskRunId
+        : null);
+    let assistantId = runId
+      ? (goalUserRunIdsRef.current.get(runId)?.assistantId ??
+        `goal-${goal.goalId}-${runId}`)
+      : "";
+    if (runId && goalUserRunIdsRef.current.has(runId))
+      foregroundRunRef.current = { taskId, runId };
+    let cancelled = false;
+    if (runId) {
+      activeRunTaskIdRef.current = taskId;
+      setActiveRunId(runId);
+      setStreaming(true);
+      updateSessionMessages(taskId, (previous) =>
+        previous.some((message) => message.id === assistantId)
+          ? previous
+          : [
+              ...previous,
+              {
+                id: assistantId,
+                role: "assistant" as const,
+                contentBlocks: [],
+              },
+            ],
+      );
+    }
+    let ownershipCheckRunId: string | null = null;
+    let ownershipCheckEvents: Array<{
+      event: StreamEvent;
+      seq?: number;
+      taskId?: string;
+    }> = [];
+    const handleGoalEvent = (
+      event: StreamEvent,
+      seq?: number,
+      eventTaskId?: string,
+    ) => {
+      if (
+        cancelled ||
+        activeSessionIdRef.current !== taskId ||
+        (eventTaskId && eventTaskId !== taskId)
+      )
+        return;
+      if (ownershipCheckRunId) {
+        if (event.runId === ownershipCheckRunId)
+          ownershipCheckEvents.push({
+            event,
+            ...(seq !== undefined ? { seq } : {}),
+            ...(eventTaskId ? { taskId: eventTaskId } : {}),
+          });
+        return;
+      }
+      if (
+        event.type === "run.started" &&
+        !runId &&
+        !goalUserRunIdsRef.current.has(event.runId) &&
+        goalActive
+      ) {
+        ownershipCheckRunId = event.runId;
+        ownershipCheckEvents = [
+          {
+            event,
+            ...(seq !== undefined ? { seq } : {}),
+            ...(eventTaskId ? { taskId: eventTaskId } : {}),
+          },
+        ];
+        void fetchDesignGoal(accessTokenRef.current, taskId)
+          .then(async (authoritative) => {
+            if (
+              cancelled ||
+              activeSessionIdRef.current !== taskId ||
+              ownershipCheckRunId !== event.runId
+            )
+              return;
+            const isGoalRun = authoritative.acceptedRunId === event.runId;
+            const isTaskForegroundRun =
+              authoritative.task.activeRunId === event.runId;
+            if (!isGoalRun && !isTaskForegroundRun) {
+              ownershipCheckEvents = [];
+              ownershipCheckRunId = null;
+              return;
+            }
+            if (!isGoalRun) await reloadMessages(taskId);
+            if (cancelled || activeSessionIdRef.current !== taskId) return;
+            const userInput = goalUserRunIdsRef.current.get(event.runId);
+            runId = event.runId;
+            assistantId =
+              userInput?.assistantId ??
+              (isGoalRun
+                ? `goal-${goal.goalId}-${event.runId}`
+                : (pendingAssistantByTaskRef.current.get(taskId) ??
+                  `resumed_${event.runId}`));
+            if (!isGoalRun)
+              foregroundRunRef.current = { taskId, runId: event.runId };
+            activeRunTaskIdRef.current = taskId;
+            setActiveRunId(runId);
+            setStreaming(true);
+            updateSessionMessages(taskId, (previous) =>
+              previous.some((message) => message.id === assistantId)
+                ? previous
+                : [
+                    ...previous,
+                    {
+                      id: assistantId,
+                      role: "assistant" as const,
+                      contentBlocks: [],
+                    },
+                  ],
+            );
+            const buffered = ownershipCheckEvents;
+            ownershipCheckEvents = [];
+            ownershipCheckRunId = null;
+            for (const queued of buffered)
+              handleGoalEvent(queued.event, queued.seq, queued.taskId);
+          })
+          .catch((error: unknown) => {
+            ownershipCheckEvents = [];
+            ownershipCheckRunId = null;
+            if (!cancelled)
+              setDesignGoalError(
+                error instanceof Error ? error.message : "读取运行归属失败。",
+              );
+          });
+        return;
+      }
+      if (event.type === "run.started" && !runId) {
+        const userInput = goalUserRunIdsRef.current.get(event.runId);
+        if (!userInput && !goalActive) return;
+        runId = event.runId;
+        assistantId = userInput?.assistantId ?? `goal-${goal.goalId}-${runId}`;
+        activeRunTaskIdRef.current = taskId;
+        if (userInput)
+          foregroundRunRef.current = { taskId, runId: event.runId };
+        setActiveRunId(runId);
+        setStreaming(true);
+        updateSessionMessages(taskId, (previous) => [
+          ...previous,
+          { id: assistantId, role: "assistant" as const, contentBlocks: [] },
+        ]);
+      }
+      if (event.type === "run.retrying" && runId) {
+        const userInput = goalUserRunIdsRef.current.get(runId);
+        if (userInput) {
+          goalUserRunIdsRef.current.delete(runId);
+          goalUserRunIdsRef.current.set(event.runId, userInput);
+          if (foregroundRunRef.current?.taskId === taskId)
+            foregroundRunRef.current = { taskId, runId: event.runId };
+        }
+        runId = event.runId;
+        assistantId =
+          goalUserRunIdsRef.current.get(runId)?.assistantId ??
+          `goal-${goal.goalId}-${runId}`;
+        setActiveRunId(runId);
+      }
+      if (!runId || event.runId !== runId) return;
+      applyStreamEvent(event, assistantId, taskId);
+      onStreamEvent?.(event);
+      if (event.type === "canvas.sync") onCanvasSync?.();
+      if (
+        event.type === "run.completed" ||
+        event.type === "run.failed" ||
+        event.type === "run.canceled"
+      ) {
+        const userInput = goalUserRunIdsRef.current.get(runId);
+        goalUserRunIdsRef.current.delete(runId);
+        if (userInput)
+          setPendingGoalUserRuns((count) => Math.max(0, count - 1));
+        if (foregroundRunRef.current?.taskId === taskId)
+          foregroundRunRef.current = null;
+        if (userInput?.queued)
+          setQueuedGoalMessages((count) => Math.max(0, count - 1));
+        runId = null;
+        setActiveRunId(null);
+        void Promise.all([
+          fetchDesignGoal(accessTokenRef.current, taskId),
+          reloadMessages(taskId),
+        ])
+          .then(([next]) => {
+            if (cancelled || activeSessionIdRef.current !== taskId) return;
+            acceptGoalResponse(next);
+            if (
+              next.goal &&
+              (next.goal.status === "active" ||
+                next.goal.status === "verifying")
+            ) {
+              if (next.acceptedRunId) {
+                runId = next.acceptedRunId;
+                assistantId =
+                  goalUserRunIdsRef.current.get(runId)?.assistantId ??
+                  `goal-${next.goal.goalId}-${runId}`;
+                updateSessionMessages(taskId, (previous) =>
+                  previous.some((message) => message.id === assistantId)
+                    ? previous
+                    : [
+                        ...previous,
+                        {
+                          id: assistantId,
+                          role: "assistant" as const,
+                          contentBlocks: [],
+                        },
+                      ],
+                );
+              }
+              setStreaming(true);
+            } else if (
+              next.task.activeRunId &&
+              ((foregroundRunRef.current?.taskId === taskId &&
+                foregroundRunRef.current.runId === next.task.activeRunId) ||
+                goalUserRunIdsRef.current.has(next.task.activeRunId))
+            ) {
+              runId = next.task.activeRunId;
+              assistantId =
+                goalUserRunIdsRef.current.get(runId)?.assistantId ??
+                pendingAssistantByTaskRef.current.get(taskId) ??
+                `resumed_${runId}`;
+              foregroundRunRef.current = { taskId, runId };
+              activeRunTaskIdRef.current = taskId;
+              setActiveRunId(runId);
+              setStreaming(true);
+            } else {
+              setStreaming(false);
+              activeRunTaskIdRef.current = null;
+            }
+          })
+          .catch((error: unknown) => {
+            if (!cancelled)
+              setDesignGoalError(
+                error instanceof Error ? error.message : "刷新目标状态失败。",
+              );
+          });
+      }
+    };
+    const unsubscribe = subscribeTaskEvents(taskId, "goal", handleGoalEvent);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [
+    acceptGoalResponse,
+    accessTokenRef,
+    activeSessionId,
+    activeSessionIdRef,
+    applyStreamEvent,
+    designGoalResponse,
+    onCanvasSync,
+    onStreamEvent,
+    reloadMessages,
+    setStreaming,
+    subscribeTaskEvents,
+    updateSessionMessages,
+  ]);
+
+  const currentDesignApprovalError =
+    designApprovalErrorTaskId === activeSessionId ? designApprovalError : null;
 
   // ── Collapsed state ──
   if (!open) {
@@ -1426,12 +2892,335 @@ export function ChatSidebar({
                   />
                 ))
               )}
+              {currentDesignApprovalError ? (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-destructive/40 p-3 text-sm text-destructive"
+                >
+                  {currentDesignApprovalError}
+                </div>
+              ) : null}
+              {currentDesignApprovals.map((interaction) => {
+                if (
+                  interaction.kind === "permission" &&
+                  interaction.payload.kind === "permission"
+                ) {
+                  const payload: DesignTaskPermissionPayload =
+                    interaction.payload;
+                  const options = [
+                    ...payload.options,
+                    ...(payload.fullAccessOption
+                      ? [payload.fullAccessOption]
+                      : []),
+                  ];
+                  return (
+                    <section
+                      key={interaction.interactionId}
+                      aria-label="工具审批"
+                      className="rounded-xl border border-border bg-card p-3"
+                    >
+                      <div className="mb-2 text-sm font-medium">
+                        {payload.toolName}
+                      </div>
+                      <p className="mb-3 whitespace-pre-wrap text-sm text-muted-foreground">
+                        {payload.summary}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {options.map((option) => (
+                          <button
+                            key={option.optionId}
+                            type="button"
+                            disabled={resolvingInteractionId !== null}
+                            onClick={() =>
+                              void handleResolveDesignApproval(interaction, {
+                                optionId: option.optionId,
+                              })
+                            }
+                            className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+                          >
+                            {resolvingInteractionId ===
+                            interaction.interactionId
+                              ? "提交中…"
+                              : option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  );
+                }
+                if (!isPlanApprovalInteraction(interaction)) return null;
+                const question = interaction.payload.questions?.[0];
+                if (!question) return null;
+                const plan = planText(interaction.payload);
+                return (
+                  <section
+                    key={interaction.interactionId}
+                    aria-label="计划审批"
+                    className="rounded-xl border border-border bg-card p-3"
+                  >
+                    <div className="mb-2 text-sm font-medium">
+                      {question.question}
+                    </div>
+                    {plan ? (
+                      <pre className="mb-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 text-xs">
+                        {plan}
+                      </pre>
+                    ) : null}
+                    <div className="flex flex-wrap gap-2">
+                      {question.options.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          disabled={resolvingInteractionId !== null}
+                          onClick={() =>
+                            void handleResolveDesignApproval(interaction, {
+                              action:
+                                option.value === "approve"
+                                  ? "accept"
+                                  : "decline",
+                              content: {
+                                answers: { [question.question]: option.value },
+                                answer_0: option.value,
+                                answer: option.value,
+                              },
+                            })
+                          }
+                          className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+                        >
+                          {resolvingInteractionId === interaction.interactionId
+                            ? "提交中…"
+                            : option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
               <div ref={messagesEndRef} />
             </div>
           </ErrorBoundary>
 
           {/* Input */}
           <div className="relative">
+            {designTaskStatus === "loading" ? (
+              <div
+                className="mb-2 px-1 text-xs text-muted-foreground"
+                aria-live="polite"
+              >
+                读取任务…
+              </div>
+            ) : null}
+            {designTaskStatus === "provisioning" ? (
+              <div
+                className="mb-2 px-1 text-xs text-muted-foreground"
+                aria-live="polite"
+              >
+                准备中…
+              </div>
+            ) : null}
+            {designTaskStatus === "unprovisioned" ? (
+              <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
+                <span>此对话尚未准备画布任务</span>
+                <button
+                  type="button"
+                  onClick={() => void handleProvisionDesignTask()}
+                  className="shrink-0 rounded px-2 py-1 font-medium text-foreground hover:bg-muted"
+                >
+                  准备任务
+                </button>
+              </div>
+            ) : null}
+            {designTaskStatus === "error" && designTaskError ? (
+              <div role="alert" className="mb-2 px-1 text-xs text-destructive">
+                {designTaskError}
+              </div>
+            ) : null}
+            {designTaskStatus === "ready" ? (
+              <section
+                aria-label="持续目标"
+                className="mb-2 rounded-lg border border-border p-3"
+              >
+                {currentDesignGoal ? (
+                  <>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium">
+                          {currentDesignGoal.objective}
+                        </div>
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          {designGoalStatusLabel(currentDesignGoal.status)} · 第{" "}
+                          {currentDesignGoal.iteration} 轮 ·{" "}
+                          {Math.round(currentDesignGoal.tokensUsed)} tokens ·{" "}
+                          {Math.round(currentDesignGoal.timeUsedSeconds)} 秒
+                        </div>
+                      </div>
+                      {currentDesignGoal.status === "active" ||
+                      currentDesignGoal.status === "verifying" ? (
+                        <button
+                          type="button"
+                          disabled={designGoalBusy}
+                          onClick={() => void mutateDesignGoal("pause")}
+                          className="shrink-0 rounded border border-border px-2 py-1 text-xs"
+                        >
+                          暂停
+                        </button>
+                      ) : currentDesignGoal.status === "paused" ? (
+                        <button
+                          type="button"
+                          disabled={designGoalBusy}
+                          onClick={() => void mutateDesignGoal("resume")}
+                          className="shrink-0 rounded border border-border px-2 py-1 text-xs"
+                        >
+                          恢复
+                        </button>
+                      ) : null}
+                    </div>
+                    {currentDesignGoal.reason ||
+                    currentDesignGoal.verification ? (
+                      <div className="mt-2 rounded bg-muted/50 p-2 text-xs">
+                        {currentDesignGoal.reason ? (
+                          <div>
+                            {designGoalReasonLabel(currentDesignGoal.reason)}
+                          </div>
+                        ) : null}
+                        {currentDesignGoal.verification ? (
+                          <div className="mt-1">
+                            <div>
+                              {currentDesignGoal.verification.passed
+                                ? "验证通过"
+                                : "验证未通过"}{" "}
+                              · {currentDesignGoal.verification.reason}
+                            </div>
+                            {currentDesignGoal.verification.evidence.map(
+                              (item) => (
+                                <div
+                                  key={item.sourceId}
+                                  className="mt-1 text-muted-foreground"
+                                >
+                                  {item.passed ? "通过" : "未通过"} ·{" "}
+                                  {item.detail ?? item.sourceId}
+                                </div>
+                              ),
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {currentDesignGoal.status === "active" ||
+                    currentDesignGoal.status === "paused" ||
+                    currentDesignGoal.status === "verifying" ? (
+                      <div className="mt-2 flex gap-2">
+                        <input
+                          aria-label="目标 Token 预算"
+                          inputMode="numeric"
+                          value={designGoalBudget}
+                          onChange={(event) =>
+                            setDesignGoalBudgetInput(event.target.value)
+                          }
+                          placeholder={
+                            currentDesignGoal.tokenBudget === null
+                              ? "不限预算"
+                              : String(currentDesignGoal.tokenBudget)
+                          }
+                          className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs"
+                        />
+                        <button
+                          type="button"
+                          disabled={designGoalBusy}
+                          onClick={() => void mutateDesignGoal("budget")}
+                          className="rounded border border-border px-2 py-1 text-xs"
+                        >
+                          更新预算
+                        </button>
+                      </div>
+                    ) : null}
+                    {currentDesignGoal.status === "complete" ||
+                    currentDesignGoal.status === "notSatisfied" ||
+                    currentDesignGoal.status === "failed" ? (
+                      <div className="mt-2">
+                        <div className="mb-2 text-xs font-medium">新建目标</div>
+                        <div>
+                          <input
+                            aria-label="新目标"
+                            value={designGoalObjective}
+                            onChange={(event) =>
+                              setDesignGoalObjective(event.target.value)
+                            }
+                            placeholder="描述要完成的工作"
+                            className="mb-2 w-full rounded border border-border bg-background px-2 py-1.5 text-xs"
+                          />
+                          <div className="flex gap-2">
+                            <input
+                              aria-label="新目标 Token 预算"
+                              inputMode="numeric"
+                              value={designGoalBudget}
+                              onChange={(event) =>
+                                setDesignGoalBudgetInput(event.target.value)
+                              }
+                              placeholder="不限预算"
+                              className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs"
+                            />
+                            <button
+                              type="button"
+                              disabled={
+                                designGoalBusy || !designGoalObjective.trim()
+                              }
+                              onClick={() => void mutateDesignGoal("create")}
+                              className="rounded border border-border px-2 py-1 text-xs"
+                            >
+                              开始目标
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                    {queuedGoalMessageCount > 0 ? (
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        已排队 {queuedGoalMessageCount} 条消息
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <div className="mb-2 text-xs font-medium">持续目标</div>
+                    <input
+                      aria-label="目标"
+                      value={designGoalObjective}
+                      onChange={(event) =>
+                        setDesignGoalObjective(event.target.value)
+                      }
+                      placeholder="描述要完成的工作"
+                      className="mb-2 w-full rounded border border-border bg-background px-2 py-1.5 text-xs"
+                    />
+                    <div className="flex gap-2">
+                      <input
+                        aria-label="目标 Token 预算"
+                        inputMode="numeric"
+                        value={designGoalBudget}
+                        onChange={(event) =>
+                          setDesignGoalBudgetInput(event.target.value)
+                        }
+                        placeholder="不限预算"
+                        className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs"
+                      />
+                      <button
+                        type="button"
+                        disabled={designGoalBusy || !designGoalObjective.trim()}
+                        onClick={() => void mutateDesignGoal("create")}
+                        className="rounded border border-border px-2 py-1 text-xs"
+                      >
+                        开始目标
+                      </button>
+                    </div>
+                  </>
+                )}
+                {designGoalError ? (
+                  <div role="alert" className="mt-2 text-xs text-destructive">
+                    {designGoalError}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
             {atQuery !== null && mentionPickerItems.length > 0 && (
               <MessageMentionPicker
                 items={mentionPickerItems}
@@ -1447,11 +3236,43 @@ export function ChatSidebar({
             <ChatInput
               ref={chatInputRef}
               onSend={handleSend}
-              disabled={streaming || sessionsLoading}
+              disabled={
+                (streaming &&
+                  currentDesignGoal?.status !== "active" &&
+                  currentDesignGoal?.status !== "verifying" &&
+                  pendingGoalUserRuns === 0 &&
+                  pendingGoalAdmissions === 0) ||
+                sessionsLoading ||
+                designTaskStatus !== "ready"
+              }
               // 有活跃 run 才给停止键：没有 runId 时的「停止」是假按钮（点了不生效）
               onStop={
-                streaming && activeRunId
-                  ? () => ws.cancelRun(activeRunId)
+                streaming &&
+                activeRunId &&
+                activeSessionId &&
+                activeRunTaskIdRef.current === activeSessionId
+                  ? () =>
+                      ws.cancelRun(activeSessionId, activeRunId, (ack) => {
+                        const payload = ack.payload as Record<string, unknown>;
+                        if (payload.status === "rejected") {
+                          showToast(
+                            typeof payload.message === "string"
+                              ? payload.message
+                              : "停止任务失败。",
+                            "error",
+                          );
+                        } else if (
+                          payload.taskId !== activeSessionId ||
+                          payload.runId !== activeRunId
+                        ) {
+                          showToast(
+                            "停止确认与当前运行不匹配，请刷新任务。",
+                            "error",
+                          );
+                        } else if (payload.status === "targetChanged") {
+                          showToast("当前运行已结束，请刷新任务。", "error");
+                        }
+                      })
                   : undefined
               }
               attachments={imageAttachments}

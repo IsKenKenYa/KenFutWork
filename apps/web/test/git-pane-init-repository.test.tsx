@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { GitPane } from "@zui/GitPane.js";
 import type {
   GitPaneDataset,
@@ -65,7 +71,10 @@ Object.defineProperty(window, "matchMedia", {
   }),
 });
 
-function emptyDataset(id: GitPaneDataset["id"], readonly: boolean): GitPaneDataset {
+function emptyDataset(
+  id: GitPaneDataset["id"],
+  readonly: boolean,
+): GitPaneDataset {
   return { id, readonly, sections: [], comparisonLabel: null, turnIndex: null };
 }
 

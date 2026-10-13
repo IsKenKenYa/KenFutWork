@@ -40,6 +40,7 @@ describe.skipIf(
         id: randomUUID(),
         instanceId,
         taskId,
+        taskKind: "code" as const,
         projectId: stored.project_id,
         rootDirectory: stored.root_directory,
         directorySnapshots: [

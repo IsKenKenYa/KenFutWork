@@ -29,15 +29,17 @@ export function createJobsPlugin(
           "localAccess",
           "persistence",
           "queue",
+          "generationTargets",
           "localInstance",
           "modelProviders",
         ]
-      : ["persistence", "queue"],
+      : ["persistence", "queue", "generationTargets"],
     enabled: (env) => isEnabled(Boolean(env.databaseUrl)),
     apply(ctx) {
       const localInstance = ctx.tryGet("localInstance");
       ctx.register("jobs", () => {
         return createJobService({
+          generationTargets: ctx.get("generationTargets"),
           queue: ctx.get("queue"),
           repository: createJobRepository(ctx.get("persistence")),
           ...(localInstance ? { localInstance } : {}),

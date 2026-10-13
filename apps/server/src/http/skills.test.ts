@@ -890,7 +890,12 @@ describe("工作目录里的技能包（从工作目录导入）", () => {
       repository: {
         load: async (_instanceId, id) =>
           id === taskId
-            ? { scope: scopeIdentity, state: "ready", branchGeneration: 1 }
+            ? {
+                preset: "code",
+                scope: scopeIdentity,
+                state: "ready",
+                branchGeneration: 1,
+              }
             : null,
       },
       localInstance,

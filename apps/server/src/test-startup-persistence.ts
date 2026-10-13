@@ -17,6 +17,8 @@ export function createStartupPersistenceFixture(): PersistenceService & {
   let lastDataDir: string | null = null;
   let desktop: SqlRow | undefined;
   let tokenHash: unknown;
+  let sessionLock: AbortController | undefined;
+  let closed = false;
   const unsupported = (operation: string): never => {
     throw new Error(`路由装配夹具未提供数据库操作：${operation}`);
   };
@@ -24,7 +26,7 @@ export function createStartupPersistenceFixture(): PersistenceService & {
     async query<T extends SqlRow>(statement: string): Promise<T[]> {
       if (
         /^select\b/i.test(statement.trim()) &&
-        /\bfrom public\.(code_ui_sessions|code_history_preparations|mcp_servers|provider_instances)\b/i.test(
+        /\bfrom public\.(code_ui_sessions|code_history_preparations|mcp_servers|provider_instances|design_task_goals|design_task_executions|design_task_inputs)\b/i.test(
           statement,
         )
       )
@@ -66,6 +68,11 @@ export function createStartupPersistenceFixture(): PersistenceService & {
         )
       )
         row = null;
+      else if (
+        statement ===
+        "select count(*) as count from public.project_directory_relink_operations where instance_id=:instance and phase<>'complete'"
+      )
+        row = { count: 0 };
       else return unsupported(statement);
       // SQL驱动的泛型行边界；具体结果由上述精确语句白名单决定。
       return row as T | null;
@@ -90,9 +97,26 @@ export function createStartupPersistenceFixture(): PersistenceService & {
     },
     transaction: async (fn) =>
       fn({ ...sql, forInstance: (id) => persistence.forInstance(id) }),
-    acquireSessionLock: async () => unsupported("acquireSessionLock"),
+    acquireSessionLock: async (key) => {
+      if (key !== `design-goals-host:${instanceId}`)
+        return unsupported(`acquireSessionLock(${key})`);
+      if (closed) return unsupported("acquireSessionLock after close");
+      if (sessionLock) return null;
+      const controller = new AbortController();
+      sessionLock = controller;
+      return {
+        signal: controller.signal,
+        release: async () => {
+          if (sessionLock === controller) sessionLock = undefined;
+          controller.abort();
+        },
+      };
+    },
     ping: async () => {},
     close: async () => {
+      closed = true;
+      sessionLock?.abort();
+      sessionLock = undefined;
       rmSync(dataDir, { recursive: true, force: true });
     },
   };

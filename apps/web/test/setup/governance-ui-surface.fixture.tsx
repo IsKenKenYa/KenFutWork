@@ -55,11 +55,7 @@ export async function mountSurface(surface: Surface, server: Server) {
   render(
     <LocalInstanceProvider>
       <InstanceProbe />
-      {surface === "code" ? (
-        <CodeWorkbenchFrame />
-      ) : (
-        <DesignEntry />
-      )}
+      {surface === "code" ? <CodeWorkbenchFrame /> : <DesignEntry />}
     </LocalInstanceProvider>,
   );
   await waitFor(

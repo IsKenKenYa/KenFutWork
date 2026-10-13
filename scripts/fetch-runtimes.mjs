@@ -563,7 +563,9 @@ async function installPythonPackages(lock) {
       `要装附加包但随包 Python 不在位（${python}）：先跑 --only python 拉取，再重跑本次命令。`,
     );
   }
-  log(`随包 Python 安装附加包（${packages.length} 项）：${packages.join(", ")}`);
+  log(
+    `随包 Python 安装附加包（${packages.length} 项）：${packages.join(", ")}`,
+  );
   try {
     execFileSync(
       python,

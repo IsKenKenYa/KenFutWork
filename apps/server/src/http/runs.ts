@@ -12,7 +12,6 @@ import {
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { AgentRunService } from "../agent/runtime.js";
-import { resolveSandboxScopeId } from "../agent/sandbox-dir.js";
 import {
   listSubagentDefinitions,
   SUBAGENT_DISPATCH_TOOLS,
@@ -28,6 +27,9 @@ import {
   ThreadServiceError,
 } from "../features/chat/thread-service.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
+import type { DesignRunHost } from "../features/execution/design-run-host-types.js";
+import { DesignTaskError } from "../features/execution/design-task-errors.js";
+import type { DesignTasksService } from "../features/execution/design-task-types.js";
 import {
   ExecutionScopeError,
   type ExecutionScopes,
@@ -60,6 +62,8 @@ export async function registerRunRoutes(
     modelProviders?: ModelProviderService;
     executionScopes?: ExecutionScopes;
     codeUi?: Pick<CodeUiService, "admitExternalRun">;
+    designTasks?: Pick<DesignTasksService, "readPolicy">;
+    designRunHost?: Pick<DesignRunHost, "submit">;
   },
 ) {
   /**
@@ -193,6 +197,79 @@ export async function registerRunRoutes(
           "Code Run 只能使用所属 Task 工作域，不能传 Canvas 或另一 Task。",
           400,
         );
+      if (!codeMode) {
+        if (
+          !sessionThread ||
+          sessionThread.mode !== "design" ||
+          !payload.taskId ||
+          payload.taskId !== payload.sessionId
+        )
+          throw new ExecutionScopeError(
+            "scope_mismatch",
+            "Design 运行需要所属的持久 Task。",
+            400,
+          );
+        if (!options.designTasks || !options.designRunHost)
+          throw new ExecutionScopeError(
+            "admission_unavailable",
+            "Design 任务运行服务不可用，请稍后重试。",
+            503,
+          );
+        const policy = await options.designTasks.readPolicy(
+          authenticatedUser,
+          payload.taskId,
+        );
+        if (
+          policy.taskId !== payload.sessionId ||
+          policy.projectId !== sessionThread.projectId ||
+          policy.canvasId !== sessionThread.canvasId ||
+          (payload.projectId && payload.projectId !== policy.projectId) ||
+          (payload.canvasId && payload.canvasId !== policy.canvasId)
+        )
+          throw new ExecutionScopeError(
+            "scope_mismatch",
+            "运行的任务、项目或画布不一致。",
+            409,
+          );
+        if (!options.executionScopes)
+          throw new ExecutionScopeError(
+            "scope_unavailable",
+            "Design 执行需要持久 Task 工作域。",
+            503,
+          );
+        const preflight = await options.executionScopes.openTask(
+          authenticatedUser,
+          policy.taskId,
+        );
+        const scope = preflight.describe();
+        if (
+          preflight.preset !== "design" ||
+          scope.instanceId !== authenticatedUser.instanceId ||
+          scope.taskId !== policy.taskId ||
+          scope.projectId !== policy.projectId ||
+          scope.rootDirectory !== policy.rootDirectory
+        )
+          throw new ExecutionScopeError(
+            "scope_mismatch",
+            "任务工作目录或授权身份不一致，请重新关联。",
+            409,
+          );
+        const receipt = await options.designRunHost.submit(authenticatedUser, {
+          taskId: policy.taskId,
+          inputId: randomUUID(),
+          scopeGeneration: policy.scopeGeneration,
+          branchGeneration: policy.branchGeneration,
+          request: payload,
+        });
+        return reply.code(202).send(
+          runCreateResponseSchema.parse({
+            runId: receipt.runId,
+            sessionId: payload.sessionId,
+            conversationId: payload.conversationId,
+            status: "accepted",
+          }),
+        );
+      }
       const scopeHandle = codeMode
         ? authenticatedUser && options.executionScopes
           ? await options.executionScopes.openTask(
@@ -276,17 +353,6 @@ export async function registerRunRoutes(
               }
             : {}),
           ...(model ? { model } : {}),
-          // 与 WS 路径同口径：客户端只能给会话 UUID 时，沙箱目录名改用会话的真实画布
-          ...(() => {
-            const sandboxScopeId = scopeHandle
-              ? undefined
-              : resolveSandboxScopeId({
-                  conversationId: payload.conversationId,
-                  requestedCanvasId: payload.canvasId ?? payload.conversationId,
-                  sessionCanvasId: sessionThread?.canvasId,
-                });
-            return sandboxScopeId ? { sandboxScopeId } : {};
-          })(),
           ...(sessionThread ? { threadId: sessionThread.threadId } : {}),
         }),
       );
@@ -306,7 +372,10 @@ export async function registerRunRoutes(
         return reply
           .code(503)
           .send({ error: { code: error.code, message: error.message } });
-      if (error instanceof ExecutionScopeError)
+      if (
+        error instanceof DesignTaskError ||
+        error instanceof ExecutionScopeError
+      )
         return reply.code(error.statusCode).send(
           applicationErrorResponseSchema.parse({
             error: { code: error.code, message: error.message },

@@ -1,11 +1,11 @@
 "use client";
 
-import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type {
-  BinaryFileData,
-  ExcalidrawImperativeAPI,
-} from "@excalidraw/excalidraw/types";
-import type { ImageArtifact, VideoArtifact } from "@kenfutwork/shared";
+  CanvasContent,
+  ImageArtifact,
+  VideoArtifact,
+} from "@kenfutwork/shared";
 import { PanelsTopLeft } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
@@ -34,6 +34,7 @@ import {
   ApiAccessError,
   fetchCanvas,
   fetchProject,
+  restoreCanvasAssets,
 } from "../../lib/server-api";
 
 function CanvasPageContent() {
@@ -52,12 +53,25 @@ function CanvasPageContent() {
     id: string;
     name: string;
     projectId: string;
+    revision: string;
     content: {
       elements: Record<string, unknown>[];
       appState: Record<string, unknown>;
       files: Record<string, Record<string, unknown>>;
     };
   } | null>(null);
+  const [remoteSnapshot, setRemoteSnapshot] = useState<{
+    revision: string;
+    content: CanvasContent;
+  } | null>(null);
+  const [canvasRevision, setCanvasRevision] = useState<string | null>(null);
+  const [prepareCanvasAssetOperation, setPrepareCanvasAssetOperation] =
+    useState<() => Promise<string | null>>(() => async () => null);
+  const registerCanvasAssetOperation = useCallback(
+    (prepare: () => Promise<string | null>) =>
+      setPrepareCanvasAssetOperation(() => prepare),
+    [],
+  );
   const [error, setError] = useState<string | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
   // Default chat open on desktop, closed on mobile/tablet to avoid blocking canvas.
@@ -89,6 +103,7 @@ function CanvasPageContent() {
   >([]);
 
   const excalidrawApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const remoteSyncWaitersRef = useRef(new Map<string, () => void>());
   const [excalidrawApi, setExcalidrawApi] =
     useState<ExcalidrawImperativeAPI | null>(null);
 
@@ -130,31 +145,43 @@ function CanvasPageContent() {
   }, []);
 
   // Must be defined BEFORE useJobFallbackPolling which references it
+  const handleRemoteSnapshotHandled = useCallback((revision: string) => {
+    setRemoteSnapshot((snapshot) =>
+      snapshot?.revision === revision ? null : snapshot,
+    );
+    remoteSyncWaitersRef.current.get(revision)?.();
+    remoteSyncWaitersRef.current.delete(revision);
+  }, []);
+
   const handleCanvasSync = useCallback(async () => {
-    const api = excalidrawApiRef.current;
     const token = accessTokenRef.current;
-    if (!api || !canvasData) return;
+    if (!canvasData) return;
     try {
       const { canvas } = await fetchCanvas(token, canvasData.id);
-      const elements = canvas.content.elements ?? [];
-      const files = canvas.content.files ?? {};
-
-      // Sync files (base64 dataURLs from backend-inserted images) into Excalidraw
-      if (Object.keys(files).length > 0) {
-        // 服务端契约里的 files/elements 是宽松 JSON，与 Excalidraw 官方类型在入参位
-        // 互不可比（官方口径见 canvas-editor 的 initialData 同款收窄），故在这两处
-        // 边界调用上收窄，运行时不改数据。
-        api.addFiles(Object.values(files) as unknown as BinaryFileData[]);
-      }
-
-      api.updateScene({
-        elements: elements as unknown as readonly ExcalidrawElement[],
-        captureUpdate: "IMMEDIATELY",
+      if (canvas.revision === canvasRevision) return;
+      await new Promise<void>((resolve) => {
+        remoteSyncWaitersRef.current.set(canvas.revision, resolve);
+        setRemoteSnapshot({
+          revision: canvas.revision,
+          content: {
+            elements: canvas.content.elements ?? [],
+            appState: canvas.content.appState ?? {},
+            files: canvas.content.files ?? {},
+          },
+        });
       });
     } catch (err) {
       console.warn("Failed to sync canvas:", err);
     }
-  }, [canvasData]);
+  }, [canvasData, canvasRevision]);
+
+  const handleRestoreCanvasAssets = useCallback(async () => {
+    if (!canvasData) throw new Error("当前画布尚未加载。");
+    const revision = await prepareCanvasAssetOperation();
+    if (!revision) throw new Error("画布保存失败，未恢复素材。");
+    await restoreCanvasAssets(accessTokenRef.current, canvasData.id, revision);
+    await handleCanvasSync();
+  }, [canvasData, handleCanvasSync, prepareCanvasAssetOperation]);
 
   // Fallback polling for timed-out generation jobs.
   // When the agent's tool times out but the worker eventually succeeds,
@@ -222,12 +249,14 @@ function CanvasPageContent() {
           id: c.id,
           name: c.name,
           projectId: c.projectId,
+          revision: c.revision,
           content: {
             elements: c.content.elements ?? [],
             appState: c.content.appState ?? {},
             files: c.content.files ?? {},
           },
         });
+        setCanvasRevision(c.revision);
         setPageLoading(false);
         // Fetch project to get brand_kit_id and name
         fetchProject(token, c.projectId)
@@ -278,6 +307,8 @@ function CanvasPageContent() {
           accessToken={accessToken}
           projectId={canvasData.projectId}
           canvasId={canvasData.id}
+          onCanvasSync={handleCanvasSync}
+          prepareCanvas={prepareCanvasAssetOperation}
           projectName={projectName}
           excalidrawApi={excalidrawApi}
         />
@@ -315,10 +346,16 @@ function CanvasPageContent() {
       {/* Canvas always takes full width; on mobile/tablet, ChatSidebar overlays instead of side-by-side */}
       <div className="flex-1 relative min-w-0 overflow-hidden">
         <CanvasEditor
+          key={canvasData.id}
           canvasId={canvasData.id}
           projectId={canvasData.projectId}
+          revision={canvasRevision ?? canvasData.revision}
           accessToken={accessToken}
           initialContent={canvasData.content}
+          remoteSnapshot={remoteSnapshot}
+          onRemoteSnapshotHandled={handleRemoteSnapshotHandled}
+          onRevisionChanged={setCanvasRevision}
+          onPrepareAssetOperation={registerCanvasAssetOperation}
           onApiReady={handleApiReady}
           ws={ws}
           onSelectionChange={setSelectedCanvasElements}
@@ -363,8 +400,13 @@ function CanvasPageContent() {
         }
         filesPanel={
           <CanvasFilesPanel
+            canvasId={canvasData.id}
+            prepareCanvasAssetOperation={prepareCanvasAssetOperation}
             excalidrawApi={excalidrawApi}
             active={panelTab === "files"}
+            accessToken={accessToken}
+            onCanvasSync={handleCanvasSync}
+            onRestoreAssets={handleRestoreCanvasAssets}
           />
         }
       />

@@ -76,6 +76,8 @@ export type ServerEnv = {
    * 与 `flowEmbedSecret` 都配好，`GET /api/flow/host/status` 才回 `enabled: true`。
    */
   flowFrontendUrl?: string;
+  /** Flow 网关控制端点的显式 origin，不从前端端口推导。 */
+  flowGatewayUrl?: string;
   /**
    * 自管 Postgres 连接串（`persistence` 缝）。
    * 去 Supabase 收口后只认 `DATABASE_URL`。
@@ -201,7 +203,13 @@ export function loadServerEnv(
     normalizeOptionalString(source.KENFUTWORK_FLOW_EMBED_SECRET);
   const flowFrontendUrl =
     overrides.flowFrontendUrl ??
-    parseFlowFrontendUrl(source.KENFUTWORK_FLOW_FRONTEND_URL);
+    parseFlowOrigin(source.KENFUTWORK_FLOW_FRONTEND_URL);
+  const flowGatewayUrl =
+    overrides.flowGatewayUrl ??
+    parseFlowOrigin(
+      source.KENFUTWORK_FLOW_GATEWAY_URL,
+      "KENFUTWORK_FLOW_GATEWAY_URL",
+    );
   const mcpServers =
     overrides.mcpServers ?? parseMcpServers(source.KENFUTWORK_MCP_SERVERS);
   const canvasWorkDirs =
@@ -383,6 +391,7 @@ export function loadServerEnv(
       : {}),
     ...(flowEmbedSecret ? { flowEmbedSecret } : {}),
     ...(flowFrontendUrl ? { flowFrontendUrl } : {}),
+    ...(flowGatewayUrl ? { flowGatewayUrl } : {}),
     ...(autoCompactTriggerTokens ? { autoCompactTriggerTokens } : {}),
     ...(databaseUrl ? { databaseUrl } : {}),
     ...(queueDriver ? { queueDriver } : {}),
@@ -532,32 +541,37 @@ function normalizeOptionalString(value: string | undefined) {
  * 它会被浏览器当 iframe src、被前端当 postMessage 的 origin 白名单，带路径或写错协议
  * 都会在运行期才暴露，所以这里直接 fail loud。
  */
-function parseFlowFrontendUrl(raw: string | undefined) {
+function parseFlowOrigin(
+  raw: string | undefined,
+  variable = "KENFUTWORK_FLOW_FRONTEND_URL",
+) {
   const value = normalizeOptionalString(raw);
   if (!value) return undefined;
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    throw new Error(
-      `KENFUTWORK_FLOW_FRONTEND_URL 不是合法 URL：${value}。请写 origin 形式（例如 http://127.0.0.1:8080），不要带路径。`,
-    );
+    throw new Error(`${variable} 不是合法 URL，请使用 HTTP(S) origin。`);
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error(
-      `KENFUTWORK_FLOW_FRONTEND_URL 只支持 http/https：${value}。`,
-    );
+    throw new Error(`${variable} 只支持 http/https。`);
   }
-  if (url.pathname !== "/" || url.search || url.hash) {
+  if (
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
+  ) {
     throw new Error(
-      `KENFUTWORK_FLOW_FRONTEND_URL 只接受 origin（当前带路径/查询/锚点）：${value}。工作台会自己拼 flow 画布的路径。`,
+      `${variable} 只接受 origin，不接受认证信息、路径、查询或锚点。`,
     );
   }
   return url.origin;
 }
 
 /** 正整数（毫秒阈值一类）：未设置返回 undefined；设置了但非法则 fail loud。 */
-function parsePositiveInt(
+function _parsePositiveInt(
   raw: string | number | undefined,
 ): number | undefined {
   if (raw === undefined) {

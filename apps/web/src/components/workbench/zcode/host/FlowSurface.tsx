@@ -9,10 +9,12 @@ import {
   buildFlowIdentity,
   buildFlowNavigate,
   FLOW_EMBED_PROTOCOL_VERSION,
+  isFlowProjectReady,
   parseFlowInbound,
 } from "@kenfutwork/shared";
-import { CircleCheck, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
 import appLogoUrl from "@zui/assets/kenfutwork-mark.png";
+
+import { CircleCheck, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -21,6 +23,11 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { useCanvasProjectDirectory } from "./canvasProjectDirectories.js";
+import {
+  refreshFlowProjects,
+  useFlowProjectsSnapshot,
+} from "./flowProjects.js";
 import {
   getFlowSurfaceView,
   registerFlowNavigate,
@@ -28,6 +35,9 @@ import {
   subscribeFlowSurface,
 } from "./flowSurfaceState.js";
 import { surfaceFetch, surfaceJson } from "./surfaceApi.js";
+
+// 与 AboutSection 同一边界：Code 宿主的 Vite PNG 导入在运行时为 URL 字符串。
+const logoSrc = appLogoUrl as unknown as string;
 
 /** 引擎安装状态（与 shared 的 flowEngineInstallStatusSchema.state 同一枚举）。 */
 type FlowEngineInstallState = "idle" | "installing" | "ready" | "error";
@@ -41,12 +51,12 @@ type FlowEntry =
  * 随 `ff-embed/identity` 注入 flow；票据由 flow 网关带回宿主验签。
  * 换票失败返回 null——不拿假身份硬握，flow 侧会如实降级并给出原因。
  */
-async function fetchIdentityTicket(): Promise<string | null> {
+async function fetchIdentityTicket(projectId: string): Promise<string | null> {
   try {
     const response = await surfaceFetch("/api/flow/host/identity-ticket", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: "{}",
+      body: JSON.stringify({ projectId }),
     });
     if (!response.ok) return null;
     const body = (await response.json()) as { token?: unknown };
@@ -158,6 +168,8 @@ function useFlowEngineInstall(): {
  */
 export function HostFlowSurface({ active = true }: { active?: boolean }) {
   const view = useSyncExternalStore(subscribeFlowSurface, getFlowSurfaceView);
+  const { selectedProjectId } = useFlowProjectsSnapshot();
+  const directory = useCanvasProjectDirectory("flow", selectedProjectId);
   const [entry, setEntry] = useState<FlowEntry | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -198,8 +210,50 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
         >
           正在获取 flow 宿主状态…
         </div>
+      ) : entry.available &&
+        selectedProjectId &&
+        directory.snapshot?.flow?.phase === "available" ? (
+        <FlowCanvasEmbed
+          key={`${selectedProjectId}:${directory.snapshot.flow.generation}`}
+          projectId={selectedProjectId}
+          generation={directory.snapshot.flow.generation}
+          frontendUrl={entry.frontendUrl}
+          active={active}
+        />
       ) : entry.available ? (
-        <FlowCanvasEmbed frontendUrl={entry.frontendUrl} active={active} />
+        <div
+          role="status"
+          className="flex h-full flex-col items-center justify-center gap-3 text-sm text-foreground-subtle"
+        >
+          {directory.error ??
+            (!selectedProjectId
+              ? "选择项目"
+              : directory.checking
+                ? "检查目录…"
+                : "项目目录待恢复")}
+          {directory.snapshot?.flow &&
+          directory.snapshot.flow.phase !== "available" ? (
+            <button
+              type="button"
+              disabled={directory.busy}
+              onClick={() => {
+                void directory.recover().then((receipt) => {
+                  if (receipt) void refreshFlowProjects();
+                });
+              }}
+              className="rounded-md border px-3 py-1.5"
+            >
+              {directory.snapshot.flow.phase === "idle"
+                ? "重新关联"
+                : "继续恢复"}
+            </button>
+          ) : null}
+          {directory.snapshot?.flow?.receipt ? (
+            <span>
+              {directory.snapshot.flow.receipt.remoteOutstanding} 远端待确认
+            </span>
+          ) : null}
+        </div>
       ) : (
         <div
           role="status"
@@ -216,12 +270,17 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
 function FlowCanvasEmbed({
   frontendUrl,
   active,
+  projectId,
+  generation,
 }: {
   frontendUrl: string;
   active: boolean;
+  projectId: string;
+  generation: number;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const [, setConnected] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [frameLoaded, setFrameLoaded] = useState(false);
   // 引擎没起时 iframe 永远不 onLoad：8 秒后把「正在打开」换成去引擎页的引导，
   // 不让用户对着无限加载发呆（fail loud，不猜「也许马上好」）。
@@ -242,6 +301,11 @@ function FlowCanvasEmbed({
   useEffect(() => {
     if (!flowOrigin) return;
     let disposed = false;
+    let identityAttempt = 0;
+    let identitySent = false;
+    const handshakeTimer = window.setTimeout(() => {
+      if (!disposed) setConnectionError("Flow 握手超时，请检查网关状态。");
+    }, 15_000);
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== flowOrigin) return;
       const frame = frameRef.current?.contentWindow;
@@ -252,46 +316,75 @@ function FlowCanvasEmbed({
       });
       if (!message) return;
       if (message.type === "ff-embed/hello") {
+        const attempt = ++identityAttempt;
+        identitySent = false;
         frame.postMessage(
           buildFlowHelloAck(FLOW_EMBED_PROTOCOL_VERSION),
           flowOrigin,
         );
-        void fetchIdentityTicket().then((hostToken) => {
+        setConnected(false);
+        void fetchIdentityTicket(projectId).then((hostToken) => {
           const target = frameRef.current?.contentWindow;
-          if (!disposed && hostToken && target === frame) {
+          if (
+            !disposed &&
+            attempt === identityAttempt &&
+            hostToken &&
+            target === frame
+          ) {
             target.postMessage(
               buildFlowIdentity(FLOW_EMBED_PROTOCOL_VERSION, hostToken),
               flowOrigin,
             );
+            identitySent = true;
+          } else if (!disposed && attempt === identityAttempt && !hostToken) {
+            setConnectionError("Flow 身份验证失败，请检查网关配置。");
           }
         });
         return;
       }
-      if (message.type === "ff-embed/ready") setConnected(true);
+      if (message.type === "ff-embed/ready") {
+        window.clearTimeout(handshakeTimer);
+        const valid =
+          identitySent &&
+          isFlowProjectReady(message, projectId) &&
+          message.generation === generation;
+        setConnected(valid);
+        setConnectionError(
+          valid ? null : "Flow 项目绑定不匹配，请重新打开项目。",
+        );
+      }
+      if (
+        message.type === "ff-embed/error" ||
+        message.type === "ff-embed/bye"
+      ) {
+        setConnected(false);
+        setConnectionError("Flow 连接失败，请检查网关状态。");
+      }
     };
     window.addEventListener("message", onMessage);
     return () => {
       disposed = true;
+      window.clearTimeout(handshakeTimer);
       window.removeEventListener("message", onMessage);
     };
-  }, [flowOrigin]);
+  }, [flowOrigin, projectId, generation]);
 
   // 站内导航把手（握手前点击是 no-op，flow 会按默认页落地）；注册进共享状态，
   // 壳侧栏的 flow 导航项经 flowSurfaceState 驱动这里的 iframe 路由。
   useEffect(() => {
-    if (!flowOrigin) return;
+    if (!flowOrigin || !connected) return;
     registerFlowNavigate((path) => {
       const frame = frameRef.current?.contentWindow;
-      if (!frame) return;
+      if (!frame || !connected) return;
       frame.postMessage(
         buildFlowNavigate(FLOW_EMBED_PROTOCOL_VERSION, path),
         flowOrigin,
       );
     });
     return () => {
-      registerFlowNavigate(() => {});
+      registerFlowNavigate(null);
     };
-  }, [flowOrigin]);
+  }, [flowOrigin, connected]);
 
   if (!flowOrigin) {
     return (
@@ -305,6 +398,14 @@ function FlowCanvasEmbed({
   }
   return (
     <div className="relative h-full w-full">
+      {connectionError ? (
+        <p
+          role="alert"
+          className="absolute inset-x-0 top-0 z-10 bg-background px-3 py-2 text-xs text-destructive"
+        >
+          {connectionError}
+        </p>
+      ) : null}
       <iframe
         ref={frameRef}
         src={frontendUrl}
@@ -325,7 +426,7 @@ function FlowCanvasEmbed({
           {/* 与启动屏/连接屏同款加载动画（logo 黑白 + 旋转），全程无文字跳动 */}
           {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
           <img
-            src={appLogoUrl}
+            src={logoSrc}
             alt=""
             className="h-14 w-auto select-none brightness-0"
             draggable={false}

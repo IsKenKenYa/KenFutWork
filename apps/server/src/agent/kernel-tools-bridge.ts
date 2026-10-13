@@ -20,6 +20,21 @@ export function jsonSchemaToZod(schema: Record<string, unknown>): ZodTypeAny {
   return z.fromJSONSchema({ type: "object", ...schema });
 }
 
+/** Shared adapter result assembly; receipts and native bridge use the same actual result. */
+export function kernelToolResultParts(output: unknown) {
+  const record =
+    output && typeof output === "object" && !Array.isArray(output)
+      ? (output as Record<string, unknown>)
+      : undefined;
+  return [
+    Array.isArray(record?.modelContent) ? record.modelContent : output,
+    {
+      canonicalOutput: record?.canonicalOutput ?? output,
+      ...(record?.display ? { display: record.display } : {}),
+    },
+  ] as const;
+}
+
 /** ToolDefinition → LangChain StructuredTool（透传 execute 与执行上下文）。 */
 export function kernelToolToStructuredTool(
   definition: ToolDefinition,
@@ -49,20 +64,7 @@ export function kernelToolToStructuredTool(
           args as Record<string, unknown>,
           effectiveCtx,
         );
-        const record =
-          output && typeof output === "object" && !Array.isArray(output)
-            ? (output as Record<string, unknown>)
-            : undefined;
-        const content = Array.isArray(record?.modelContent)
-          ? record.modelContent
-          : output;
-        return [
-          content,
-          {
-            canonicalOutput: record?.canonicalOutput ?? output,
-            ...(record?.display ? { display: record.display } : {}),
-          },
-        ];
+        return kernelToolResultParts(output);
       } catch (error) {
         /**
          * 权限拒绝是**工具级结果**，不是运行级失败。

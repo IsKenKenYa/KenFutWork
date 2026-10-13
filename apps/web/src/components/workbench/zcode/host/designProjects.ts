@@ -1,5 +1,6 @@
 import type { ProjectSummary } from "@kenfutwork/shared";
 import { useEffect, useSyncExternalStore } from "react";
+import { pickCanvasProjectDirectory } from "./canvasProjectDirectories.js";
 import { resolveDesignAutoCanvas } from "./designAutoCanvas.js";
 import { surfaceFetch, surfaceJson } from "./surfaceApi.js";
 
@@ -69,21 +70,34 @@ export function selectDesignProject(projectId: string | null): void {
   }
 }
 
-async function createProjectNamed(name: string): Promise<CanvasProject | null> {
+async function createProjectNamed(
+  name: string,
+  fromDirectory = false,
+): Promise<CanvasProject | null> {
+  if (state.creating) return null;
   setSnapshot({ creating: true });
   try {
+    const workDir = fromDirectory
+      ? await pickCanvasProjectDirectory()
+      : undefined;
+    if (workDir === null) return null;
     const result = await surfaceJson<{ project: ProjectSummary }>(
       "/api/projects",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kind: "design", name }),
+        body: JSON.stringify({
+          kind: "design",
+          name,
+          ...(workDir !== undefined ? { work_dir: workDir } : {}),
+        }),
       },
     );
     if (result.project.kind !== "design") {
       throw new Error("画布项目类型不匹配。");
     }
     const project = result.project as CanvasProject;
+    ++readGeneration;
     setSnapshot({
       projects: [project, ...state.projects],
       notice: null,
@@ -150,8 +164,10 @@ export async function removeDesignProject(projectId: string): Promise<void> {
   }
 }
 
-export function createDesignProject(): Promise<CanvasProject | null> {
-  return createProjectNamed("未命名画布").then((project) => {
+export function createDesignProject(
+  fromDirectory = false,
+): Promise<CanvasProject | null> {
+  return createProjectNamed("未命名画布", fromDirectory).then((project) => {
     if (project) selectDesignProject(project.id);
     return project;
   });

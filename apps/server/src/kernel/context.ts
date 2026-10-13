@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { ServerEnv } from "../config/env.js";
@@ -116,10 +117,46 @@ export class AgentRunEventBus {
   }
 }
 
+class ToolRegistrationRevokedError extends ToolDeniedError {}
+
+function registrationSignature(tool: ToolDefinition) {
+  return {
+    name: tool.name,
+    scope: tool.scope,
+    access: tool.access,
+    planControl: tool.planControl,
+    readonlyExecution: tool.readonlyExecution,
+    parameters: structuredClone(tool.parameters),
+  };
+}
+type RegistrationReceipt = {
+  token: symbol;
+  key: string;
+  signature: ReturnType<typeof registrationSignature>;
+} & (
+  | {
+      kind: "static";
+      definition: ToolDefinition;
+      execute: ToolDefinition["execute"];
+      schema: ToolDefinition["zodSchema"];
+    }
+  | {
+      kind: "dynamic";
+      resolver: DynamicToolEntry["resolve"];
+      resolution: RunToolResolutionContext;
+    }
+);
+
 /** 统一工具注册表：schema + scope + guarded 执行（先过 tool-pre-execute 事件）。 */
 export class ToolRegistryImpl implements ToolRegistry {
   private readonly tools = new Map<string, ToolDefinition>();
   private readonly dynamicEntries = new Map<string, DynamicToolEntry>();
+  private readonly staticTokens = new Map<string, symbol>();
+  private readonly dynamicTokens = new Map<string, symbol>();
+  private readonly receipts = new WeakMap<
+    ToolDefinition,
+    RegistrationReceipt
+  >();
 
   constructor(
     private readonly events: AgentRunEventBus,
@@ -130,9 +167,23 @@ export class ToolRegistryImpl implements ToolRegistry {
     if (this.tools.has(tool.name)) {
       throw new Error(`[kernel] 工具 ${tool.name} 重复注册。`);
     }
-    this.tools.set(tool.name, tool);
+    const key = tool.name;
+    const token = Symbol(key);
+    this.tools.set(key, tool);
+    this.staticTokens.set(key, token);
+    this.receipts.set(tool, {
+      kind: "static",
+      key,
+      token,
+      definition: tool,
+      execute: tool.execute,
+      schema: tool.zodSchema,
+      signature: registrationSignature(tool),
+    });
     return () => {
-      this.tools.delete(tool.name);
+      if (this.staticTokens.get(key) !== token) return;
+      this.tools.delete(key);
+      this.staticTokens.delete(key);
     };
   }
 
@@ -140,21 +191,38 @@ export class ToolRegistryImpl implements ToolRegistry {
     if (this.dynamicEntries.has(entry.id)) {
       throw new Error(`[kernel] 动态工具 ${entry.id} 重复注册。`);
     }
-    this.dynamicEntries.set(entry.id, entry);
+    const key = entry.id;
+    const token = Symbol(key);
+    this.dynamicEntries.set(key, entry);
+    this.dynamicTokens.set(key, token);
     return () => {
-      this.dynamicEntries.delete(entry.id);
+      if (this.dynamicTokens.get(key) !== token) return;
+      this.dynamicEntries.delete(key);
+      this.dynamicTokens.delete(key);
     };
   }
 
   resolveRunTools(ctx: RunToolResolutionContext): ToolDefinition[] {
     const resolved: ToolDefinition[] = [];
-    for (const entry of this.dynamicEntries.values()) {
+    for (const [key, entry] of this.dynamicEntries) {
       if (entry.scope !== "shared" && entry.scope !== ctx.preset) {
         continue;
       }
       const tool = entry.resolve(ctx);
       if (tool && (tool.scope === "shared" || tool.scope === ctx.preset)) {
-        resolved.push(tool);
+        // Each resolved receipt carries its own Run context, even when a factory reuses an object.
+        const definition = { ...tool };
+        const token = this.dynamicTokens.get(key);
+        if (!token) throw new Error("动态工具注册缺少有效凭据。");
+        this.receipts.set(definition, {
+          kind: "dynamic",
+          key,
+          token,
+          resolver: entry.resolve,
+          resolution: ctx,
+          signature: registrationSignature(tool),
+        });
+        resolved.push(definition);
       }
     }
     return [...this.list(ctx.preset), ...resolved];
@@ -190,164 +258,277 @@ export class ToolRegistryImpl implements ToolRegistry {
     return this.executeDefinition(this.require(name), args, execCtx);
   }
 
+  private currentDefinition(
+    tool: ToolDefinition,
+    receipt: RegistrationReceipt | undefined,
+  ): ToolDefinition {
+    const denied = () =>
+      new ToolRegistrationRevokedError(
+        tool.name,
+        "工具注册或schema已改变，请重新发起工具调用。",
+      );
+    if (!receipt) throw denied();
+    let current: ToolDefinition | undefined | null;
+    if (receipt.kind === "static") {
+      current = this.tools.get(receipt.key);
+      if (
+        this.staticTokens.get(receipt.key) !== receipt.token ||
+        current !== receipt.definition ||
+        current.execute !== receipt.execute ||
+        current.zodSchema !== receipt.schema
+      )
+        throw denied();
+    } else {
+      const entry = this.dynamicEntries.get(receipt.key);
+      if (
+        !entry ||
+        this.dynamicTokens.get(receipt.key) !== receipt.token ||
+        entry.resolve !== receipt.resolver
+      )
+        throw denied();
+      current = entry.resolve(receipt.resolution);
+    }
+    if (
+      !current ||
+      !isDeepStrictEqual(registrationSignature(current), receipt.signature)
+    )
+      throw denied();
+    return current;
+  }
+
   async executeDefinition(
     tool: ToolDefinition,
     args: Record<string, unknown>,
     execCtx: ToolExecutionContext = {},
   ): Promise<unknown> {
     execCtx.signal?.throwIfAborted();
+    const receipt = this.receipts.get(tool);
     const handle = execCtx.scopeHandle;
     const approval = execCtx.codeApproval;
     const permissions = handle ? this.permissions?.() : undefined;
-    const planControl = tool.planControl !== undefined;
-    if (
-      planControl &&
-      (!handle ||
-        tool.scope !== "code" ||
-        !allowsPlanControl({
-          role: handle.role,
-          access: tool.access,
-          planControl: tool.planControl,
-        }))
-    )
-      throw new ToolDeniedError(
-        tool.name,
-        "规划控制必须由主Code Task独立声明，不能混合资源访问效果。",
-      );
-    const normalized = execCtx.scopeHandle
-      ? ((tool.zodSchema ?? z.fromJSONSchema(tool.parameters)).parse(
-          args,
-        ) as Record<string, unknown>)
-      : args;
     let invocation: PermissionInvocation | undefined;
-    let approvedExecutionMode: ToolExecutionContext["approvedExecutionMode"];
-    if (execCtx.scopeHandle) {
-      await execCtx.scopeHandle.resolvePath(".", "read");
-      if (tool.scope === "design")
-        throw new ToolDeniedError(
-          tool.name,
-          "Code Task 不包含可视化画布目标。",
-        );
-      const readonly =
-        execCtx.scopeHandle.role === "explore" ||
-        execCtx.scopeHandle.role === "review" ||
-        execCtx.scopeHandle.describe().sandboxMode === "read-only";
-      if (
-        readonly &&
-        !planControl &&
-        tool.access !== "read" &&
-        !(tool.access === "execute" && tool.readonlyExecution)
-      )
-        throw new ToolDeniedError(
-          tool.name,
-          "当前作用域只读，该工具没有声明可验证的只读执行能力。",
-        );
-      if (
-        !approval ||
-        !execCtx.runId ||
-        !execCtx.toolCallId ||
-        !execCtx.actor ||
-        !permissions
-      )
-        throw new ToolDeniedError(tool.name, "缺少可信逐调用审批上下文。");
-      const scope = execCtx.scopeHandle.describe();
-      if (execCtx.actor.instanceId !== scope.instanceId) {
-        throw new ToolDeniedError(
-          tool.name,
-          "调用者与工作域不属于同一本地实例。",
-        );
-      }
-      const policy = await approval.resolve();
-      if (
-        tool.planControl === "exit" &&
-        (policy.planEnabled !== true ||
-          !Number.isSafeInteger(policy.planningEpoch))
-      )
-        throw new ToolDeniedError(
-          tool.name,
-          "退出规划要求当前Task持久规划仍开启。",
-        );
-      if (policy.scopeGeneration !== scope.generation)
-        throw new ToolDeniedError(tool.name, "工具调用的授权代际已失效。");
-      invocation = {
-        preset: "code",
-        instanceId: scope.instanceId,
-        taskId: scope.taskId,
+    let observedStarted = false;
+    let executionCompleted = false;
+    let normalizedArgs = args;
+    const observe = async (
+      phase: "started" | "completed" | "failed",
+      output?: unknown,
+      error?: string,
+    ) => {
+      await execCtx.observeToolExecution?.({
+        phase,
         runId: execCtx.runId,
         toolCallId: execCtx.toolCallId,
-        agentId: execCtx.scopeHandle.agentId,
-        role: execCtx.scopeHandle.role,
-        scopeGeneration: policy.scopeGeneration,
-        branchGeneration: policy.branchGeneration,
-        mode: policy.mode,
-        approvalCeiling: approval.ceiling,
-        toolName: tool.name,
-        args: normalized,
-        displayArgs: publicToolArguments(tool, normalized),
-        access: tool.access,
-        planControl: tool.planControl,
-        ...(tool.planControl === "exit"
-          ? { planningEpoch: policy.planningEpoch }
-          : {}),
-        readonlyExecution: tool.readonlyExecution,
-        signal: execCtx.signal,
-        ...(execCtx.threadId ? { threadId: execCtx.threadId } : {}),
-      };
-    }
-    const decision = await this.events.emitWaterfall("tool-pre-execute", {
-      args: normalized,
-      ...(invocation ? { permissionInvocation: invocation } : {}),
-      decision: "allow",
-      runId: execCtx.runId,
-      ...(execCtx.threadId ? { threadId: execCtx.threadId } : {}),
-      toolName: tool.name,
-      ...(tool.access ? { access: tool.access } : {}),
-    });
-    if (decision.decision === "deny") {
-      throw new ToolDeniedError(tool.name, decision.denyReason);
-    }
-    execCtx.signal?.throwIfAborted();
-    if (invocation && handle && approval && permissions) {
-      await handle.resolvePath(".", "read");
-      const current = await approval.resolve();
-      if (
-        invocation.planControl === "exit" &&
-        (current.planEnabled !== true ||
-          current.planningEpoch !== invocation.planningEpoch)
-      )
-        throw new ToolDeniedError(
-          tool.name,
-          "等待批准期间规划代际已改变，原批准不能退出新规划。",
-        );
-      if (
-        current.scopeGeneration !== invocation.scopeGeneration ||
-        current.branchGeneration !== invocation.branchGeneration
-      )
-        throw new ToolDeniedError(
-          tool.name,
-          "等待审批期间 Task 授权代际或分支已改变。",
-        );
-      const claim = permissions.claim({
-        ...invocation,
-        mode: current.mode,
+        scopeHandle: handle,
+        definition: tool,
+        args: normalizedArgs,
+        ...(phase === "completed" ? { output } : {}),
+        ...(error ? { error } : {}),
       });
-      if (claim.decision === "deny")
-        throw new ToolDeniedError(tool.name, claim.reason);
-      approvedExecutionMode =
-        invocation.mode === "plan" || current.mode === "plan"
-          ? "plan"
-          : current.mode;
+    };
+    try {
+      const planControl = tool.planControl !== undefined;
+      if (
+        planControl &&
+        (handle?.preset !== "code" ||
+          tool.scope !== "code" ||
+          !allowsPlanControl({
+            role: handle.role,
+            access: tool.access,
+            planControl: tool.planControl,
+          }))
+      )
+        throw new ToolDeniedError(
+          tool.name,
+          "规划控制必须由主Code Task独立声明，不能混合资源访问效果。",
+        );
+      const registered = this.currentDefinition(tool, receipt);
+      const normalized = (
+        registered.zodSchema ?? z.fromJSONSchema(registered.parameters)
+      ).parse(args) as Record<string, unknown>;
+      normalizedArgs = normalized;
+      const revalidateRegistration = () => {
+        const current = this.currentDefinition(tool, receipt);
+        try {
+          const fresh = (
+            current.zodSchema ?? z.fromJSONSchema(current.parameters)
+          ).parse(args);
+          if (!isDeepStrictEqual(fresh, normalized))
+            throw new Error("schema normalization changed");
+        } catch {
+          throw new ToolRegistrationRevokedError(
+            tool.name,
+            "工具schema已改变，原审批参数不再有效，请重新发起工具调用。",
+          );
+        }
+      };
+      let approvedExecutionMode: ToolExecutionContext["approvedExecutionMode"];
+      if (execCtx.scopeHandle) {
+        await execCtx.scopeHandle.resolvePath(".", "read");
+        if (
+          tool.scope !== "shared" &&
+          tool.scope !== execCtx.scopeHandle.preset
+        )
+          throw new ToolDeniedError(tool.name, "工具模式与当前Task不匹配。");
+        const readonly =
+          execCtx.scopeHandle.role === "explore" ||
+          execCtx.scopeHandle.role === "review" ||
+          execCtx.scopeHandle.describe().sandboxMode === "read-only";
+        if (
+          readonly &&
+          !planControl &&
+          tool.access !== "read" &&
+          !(tool.access === "execute" && tool.readonlyExecution)
+        )
+          throw new ToolDeniedError(
+            tool.name,
+            "当前作用域只读，该工具没有声明可验证的只读执行能力。",
+          );
+        if (
+          !approval ||
+          !execCtx.runId ||
+          !execCtx.toolCallId ||
+          !execCtx.actor ||
+          !permissions
+        )
+          throw new ToolDeniedError(tool.name, "缺少可信逐调用审批上下文。");
+        const scope = execCtx.scopeHandle.describe();
+        if (execCtx.actor.instanceId !== scope.instanceId) {
+          throw new ToolDeniedError(
+            tool.name,
+            "调用者与工作域不属于同一本地实例。",
+          );
+        }
+        const policy = await approval.resolve();
+        if (
+          tool.planControl === "exit" &&
+          (policy.planEnabled !== true ||
+            !Number.isSafeInteger(policy.planningEpoch))
+        )
+          throw new ToolDeniedError(
+            tool.name,
+            "退出规划要求当前Task持久规划仍开启。",
+          );
+        if (policy.scopeGeneration !== scope.generation)
+          throw new ToolDeniedError(tool.name, "工具调用的授权代际已失效。");
+        invocation = {
+          preset: execCtx.scopeHandle.preset,
+          instanceId: scope.instanceId,
+          taskId: scope.taskId,
+          runId: execCtx.runId,
+          toolCallId: execCtx.toolCallId,
+          agentId: execCtx.scopeHandle.agentId,
+          role: execCtx.scopeHandle.role,
+          scopeGeneration: policy.scopeGeneration,
+          branchGeneration: policy.branchGeneration,
+          mode: policy.mode,
+          approvalCeiling: approval.ceiling,
+          toolName: tool.name,
+          args: normalized,
+          displayArgs: publicToolArguments(tool, normalized),
+          access: tool.access,
+          planControl: tool.planControl,
+          ...(tool.planControl === "exit"
+            ? { planningEpoch: policy.planningEpoch }
+            : {}),
+          readonlyExecution: tool.readonlyExecution,
+          signal: execCtx.signal,
+          ...(execCtx.threadId ? { threadId: execCtx.threadId } : {}),
+        };
+      }
+      revalidateRegistration();
+      await observe("started");
+      observedStarted = true;
+      const decision = await this.events.emitWaterfall("tool-pre-execute", {
+        args: normalized,
+        ...(invocation ? { permissionInvocation: invocation } : {}),
+        decision: "allow",
+        runId: execCtx.runId,
+        ...(execCtx.threadId ? { threadId: execCtx.threadId } : {}),
+        toolName: tool.name,
+        ...(tool.access ? { access: tool.access } : {}),
+      });
+      if (decision.decision === "deny") {
+        throw new ToolDeniedError(tool.name, decision.denyReason);
+      }
+      execCtx.signal?.throwIfAborted();
+      revalidateRegistration();
+      if (invocation && handle && approval && permissions) {
+        await handle.resolvePath(".", "read");
+        const current = await approval.resolve();
+        if (
+          invocation.planControl === "exit" &&
+          (current.planEnabled !== true ||
+            current.planningEpoch !== invocation.planningEpoch)
+        )
+          throw new ToolDeniedError(
+            tool.name,
+            "等待批准期间规划代际已改变，原批准不能退出新规划。",
+          );
+        if (
+          current.scopeGeneration !== invocation.scopeGeneration ||
+          current.branchGeneration !== invocation.branchGeneration
+        )
+          throw new ToolDeniedError(
+            tool.name,
+            "等待审批期间 Task 授权代际或分支已改变。",
+          );
+        revalidateRegistration();
+        const claim = permissions.claim({
+          ...invocation,
+          mode: current.mode,
+        });
+        if (claim.decision === "deny")
+          throw new ToolDeniedError(tool.name, claim.reason);
+        approvedExecutionMode =
+          invocation.mode === "plan" || current.mode === "plan"
+            ? "plan"
+            : current.mode;
+      }
+      revalidateRegistration();
+      const { observeToolExecution: _observer, ...implementationContext } =
+        execCtx;
+      const output = await tool.execute(
+        normalized,
+        invocation
+          ? {
+              ...implementationContext,
+              permissionInvocation: invocation,
+              approvedExecutionMode,
+            }
+          : implementationContext,
+      );
+      executionCompleted = true;
+      await observe("completed", output);
+      return output;
+    } catch (error) {
+      if (
+        error instanceof ToolRegistrationRevokedError &&
+        invocation &&
+        permissions
+      )
+        await permissions
+          .cancel(
+            {
+              instanceId: invocation.instanceId,
+              taskId: invocation.taskId,
+              runId: invocation.runId,
+              agentId: invocation.agentId,
+              toolCallId: invocation.toolCallId,
+            },
+            "工具注册已撤销，原审批不能重用。",
+          )
+          .catch(() => {});
+      if (!executionCompleted) {
+        if (!observedStarted) await observe("started");
+        await observe(
+          "failed",
+          undefined,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+      throw error;
     }
-    return tool.execute(
-      normalized,
-      invocation
-        ? {
-            ...execCtx,
-            permissionInvocation: invocation,
-            approvedExecutionMode,
-          }
-        : execCtx,
-    );
   }
 }
 
@@ -369,6 +550,8 @@ export class SystemPromptRegistryImpl implements SystemPromptRegistry {
   }
 
   async compose(ctx: PromptCompositionContext): Promise<string> {
+    if (ctx.scopeHandle && ctx.scopeHandle.preset !== ctx.preset)
+      throw new Error("系统提示工作模式与可信Task不匹配。");
     const active = [...this.sections.values()].filter(
       (section) => section.scope === "always" || section.scope === ctx.preset,
     );

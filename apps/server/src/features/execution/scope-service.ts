@@ -28,7 +28,10 @@ import {
 } from "./scoped-filesystem.js";
 
 export type ExecutionRole = "main" | "explore" | "review" | "worker";
+export type ExecutionPreset = "code" | "design";
 export interface ExecutionScopeHandle {
+  readonly preset: ExecutionPreset;
+  readonly branchGeneration: number;
   describe(): CodeExecutionScope;
   readonly role: ExecutionRole;
   readonly agentId: string;
@@ -287,6 +290,8 @@ class ScopeHandle implements ExecutionScopeHandle {
   constructor(
     private readonly load: () => Promise<CodeExecutionScope>,
     private readonly ceiling: CodeExecutionScope,
+    readonly preset: ExecutionPreset,
+    readonly branchGeneration: number,
     readonly role: ExecutionRole,
     readonly agentId: string,
     private readonly readOnly: boolean,
@@ -302,6 +307,8 @@ class ScopeHandle implements ExecutionScopeHandle {
     return new ScopeHandle(
       this.load,
       this.current,
+      this.preset,
+      this.branchGeneration,
       role,
       agentId,
       this.readOnly || role === "explore" || role === "review",
@@ -383,6 +390,13 @@ export function createExecutionScopes(options: ScopeOptions): ExecutionScopes {
       taskId,
     );
     const branchGeneration = opened.branchGeneration;
+    const preset = opened.preset;
+    if (preset !== "code" && preset !== "design")
+      throw new ExecutionScopeError(
+        "invalid_scope",
+        "Task工作模式缺少可信绑定。",
+        409,
+      );
     if (!Number.isSafeInteger(branchGeneration) || branchGeneration < 1)
       throw new ExecutionScopeError(
         "invalid_scope",
@@ -407,6 +421,12 @@ export function createExecutionScopes(options: ScopeOptions): ExecutionScopes {
         workspace.instanceId,
         taskId,
       );
+      if (stored.preset !== preset)
+        throw new ExecutionScopeError(
+          "scope_changed",
+          "Task工作模式已改变，旧执行句柄已失效。",
+          409,
+        );
       if (stored.branchGeneration !== branchGeneration)
         throw new ExecutionScopeError(
           "branch_changed",
@@ -432,6 +452,8 @@ export function createExecutionScopes(options: ScopeOptions): ExecutionScopes {
     return new ScopeHandle(
       load,
       scope,
+      preset,
+      branchGeneration,
       "main",
       restoringGeneration === undefined
         ? "main"
@@ -458,6 +480,21 @@ export function createExecutionScopes(options: ScopeOptions): ExecutionScopes {
           409,
         );
       const previous = codeExecutionScopeSchema.parse(stored.scope);
+      if (stored.preset === "design") {
+        if (!options.repository.isProjectOpen)
+          throw new ExecutionScopeError(
+            "revoker_unavailable",
+            "项目授权检查器不可用，不能修改Task。",
+            503,
+          );
+        if (!(await options.repository.isProjectOpen(previous)))
+          throw new ExecutionScopeError(
+            "scope_project_closed",
+            "项目正在关闭或关闭失败，请重试归档。",
+            409,
+          );
+      }
+
       if (
         (await canonicalDirectory(previous.rootDirectory)) !==
         previous.rootDirectory

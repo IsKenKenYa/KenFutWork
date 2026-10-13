@@ -1,10 +1,32 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import type { CodeExecutionScope } from "@kenfutwork/shared";
 import { resolveEntryRoot } from "../../desktop/entry-root.js";
 import type { PluginDefinition } from "../../kernel/types.js";
-import { shadowRepositoryPath } from "../checkpoints/shadow-repo-path.js";
+import {
+  checkpointWorkRoots,
+  resolveCheckpointGitDirectory,
+} from "../checkpoints/git-directory.js";
 import { resolveProcessRuntime } from "./runtime-paths.js";
 import { createProcessSandbox } from "./service.js";
+
+/** 仅由可信 provider 从 Task 授权根签发，不能从模型 argv/env 获取路径。 */
+export async function resolveCheckpointWriteRoots(
+  checkpointRoot: string,
+  scope: CodeExecutionScope,
+): Promise<string[]> {
+  const roots: string[] = [];
+  for (const workRoot of checkpointWorkRoots(scope)) {
+    const gitDir = await resolveCheckpointGitDirectory(
+      checkpointRoot,
+      scope,
+      workRoot,
+    );
+    await mkdir(gitDir, { recursive: true });
+    roots.push(gitDir);
+  }
+  return roots;
+}
 
 /** Profile 自带执行能力；模型参数不能签发内部 checkpoint 目录授权。 */
 export function createProcessSandboxPlugin(): PluginDefinition {
@@ -41,25 +63,8 @@ export function createProcessSandboxPlugin(): PluginDefinition {
                 );
             }
           },
-          // checkpoint 私有写根 = 短布局影子仓库目录（与 checkpoint-service 同一公式；
-          // 旧三层布局在短布局改造后是死路径，spawnCheckpoint 的 realpath 直接 ENOENT
-          // ——2026-10-13 实测事故）。仓库目录在「首个快照」才被创建，而 realpath 要求
-          // 路径已存在：授权前先建目录，消除首拍之前的时间窗。
-          resolveInternalWriteRoots: async (scope) => {
-            const roots = [
-              scope.rootDirectory,
-              ...scope.additionalDirectories
-                .filter((entry) => entry.access === "read-write")
-                .map((entry) => entry.path),
-            ];
-            const directories = [...new Set(roots)].map((root) =>
-              shadowRepositoryPath(dataRoot, scope.taskId, root),
-            );
-            for (const directory of directories) {
-              await mkdir(directory, { recursive: true });
-            }
-            return directories;
-          },
+          resolveInternalWriteRoots: (scope) =>
+            resolveCheckpointWriteRoots(dataRoot, scope),
         }),
       );
     },

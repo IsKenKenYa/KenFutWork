@@ -4,9 +4,12 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
   type CodeExecutionScope,
+  type CodeGoalControl,
   type CodeUiEvent,
   type CodeUiWorkspace,
+  codeGoalControlSchema,
   codeUiControllerTaskListQuerySchema,
+  type ExecutionMode,
   zcodeUiProtocol as protocol,
   resolveContextWindow,
   type StreamEvent,
@@ -20,13 +23,15 @@ import {
 import type { AgentRunService } from "../../agent/runtime.js";
 import { DEFAULT_SANDBOX_ROOT } from "../../agent/sandbox-dir.js";
 import type { ServerEnv } from "../../config/env.js";
-import type { ExecutionMode } from "@kenfutwork/shared";
-import type { ExecutionModeService } from "../agent-modes/execution-mode-service.js";
 import type {
   PromptExecutionContext,
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import type { ModelInvocationSnapshot } from "../../providers/types.js";
+import {
+  type ExecutionModeService,
+  RetiredExecutionModeError,
+} from "../agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../agent-runs/agent-run-service.js";
 import type { BlobStore } from "../blob/types.js";
 import type { ThreadService } from "../chat/thread-service.js";
@@ -46,6 +51,7 @@ import {
   resolveReadOnlyProjectPath,
 } from "../execution/scope-service.js";
 import { forgetTaskFileState } from "../execution/scoped-filesystem.js";
+import { createGoalService, type GoalService } from "../goals/service.js";
 import type {
   LocalActor,
   LocalInstanceService,
@@ -81,13 +87,18 @@ import { CodeAttachmentError } from "./attachments/types.js";
 import { createCodeUiBackgroundOutputView } from "./background-output-view.js";
 import { CodeUiConnections } from "./connections.js";
 import { createCodeUiWindowController } from "./controller-host.js";
-import { createCodeUiConversation } from "./conversation.js";
+import {
+  type CodeUiConversationState,
+  createCodeUiConversation,
+} from "./conversation.js";
 import {
   collectTurnFileChanges,
   requireFileChangesTarget,
 } from "./file-changes.js";
 import { createCodeUiFileHistory } from "./file-history.js";
 import { CodeUiFileIndex, codeUiViewerRpc } from "./files.js";
+import { claimGoalContinuation } from "./goal-admission.js";
+import { createTaskGoalHost, pauseTaskGoal, syncGoal } from "./goals.js";
 import { createCodeGuideInputs } from "./guide-input.js";
 import { createCodeUiHistoryEdit } from "./history-edit.js";
 import { createCodeUiHistoryFork } from "./history-fork.js";
@@ -133,6 +144,7 @@ import {
 } from "./workspace-rpc.js";
 
 export interface CodeUiServiceDeps {
+  goals?: GoalService;
   hostRpcHandler?: (
     service: string,
     method: string,
@@ -171,9 +183,13 @@ export interface CodeUiServiceDeps {
   taskWork: TaskWorkManager;
 }
 
+type CodePreparedModel = {
+  selection: NonNullable<protocol.SessionConfigState["modelSelection"]>;
+  modelInvocation: ModelInvocationSnapshot;
+};
 /**
- * 读回线程持久化的六档执行模式并 warm 缓存（G2/Q7，Code run 派发前调用）。
- * 读回失败回落缓存里的现值（默认 agent）——模式存储故障不挡 run，与 WS 路径同口径。
+ * 读回线程持久化的执行模式并 warm 缓存（G2/Q7，Code run 派发前调用）。
+ * 模式存储故障回落缓存；已退役模式必须拒绝本轮执行。
  */
 export async function resolveCodeExecutionMode(
   agentModes: ExecutionModeService | undefined,
@@ -183,7 +199,8 @@ export async function resolveCodeExecutionMode(
   if (!agentModes) return undefined;
   try {
     return await agentModes.hydrate(threadId, { instanceId });
-  } catch {
+  } catch (error) {
+    if (error instanceof RetiredExecutionModeError) throw error;
     return agentModes.getMode(threadId);
   }
 }
@@ -235,6 +252,7 @@ function publishOnce(operation: () => Promise<void>): () => Promise<void> {
 
 export function codeUiCommandFingerprint(
   envelope: protocol.CommandEnvelope,
+  goalControl?: CodeGoalControl,
 ): string {
   return createHash("sha256")
     .update(
@@ -242,6 +260,7 @@ export function codeUiCommandFingerprint(
         sessionId: envelope.sessionId,
         type: envelope.type,
         payload: envelope.payload,
+        ...(goalControl ? { goalControl } : {}),
       }),
     )
     .digest("hex");
@@ -249,6 +268,9 @@ export function codeUiCommandFingerprint(
 
 /** 服务定义的具体 Provider；原 GUI 仅调用该域提供的 RPC/会话消费接口。 */
 export class CodeUiService {
+  private readonly goals: GoalService;
+  readonly taskGoals: ReturnType<typeof createTaskGoalHost>;
+  private readonly stoppingCommands = new Map<string, Promise<unknown>>();
   private readonly guideInputs: ReturnType<typeof createCodeGuideInputs>;
   private readonly planning: ReturnType<typeof createCodePlanningControl>;
   private readonly approvedPlans: ReturnType<
@@ -288,6 +310,13 @@ export class CodeUiService {
     | ReturnType<typeof createCodeUiPluginsHost>
     | undefined;
   constructor(private readonly deps: CodeUiServiceDeps) {
+    this.goals = deps.goals ?? createGoalService();
+    this.taskGoals = createTaskGoalHost({
+      goals: this.goals,
+      repository: deps.repository,
+      refresh: (instanceId, path, projectId) =>
+        this.refreshTaskProjection(instanceId, path, projectId),
+    });
     const files = createCodeApprovedPlanStore();
     this.approvedPlans = createCodeApprovedPlanReader({
       repository: deps.repository,
@@ -303,6 +332,7 @@ export class CodeUiService {
         this.refreshTaskProjection(instanceId, path, projectId),
     });
     this.guideInputs = createCodeGuideInputs({
+      goals: this.goals,
       repository: deps.repository,
       refresh: (instanceId, path, projectId) =>
         this.refreshTaskProjection(instanceId, path, projectId),
@@ -352,6 +382,7 @@ export class CodeUiService {
       settings: deps.settings,
     });
     this.historyFork = createCodeUiHistoryFork({
+      goals: this.goals,
       owner: this.inputOwner,
       blob: deps.blob,
       repository: deps.repository,
@@ -371,6 +402,7 @@ export class CodeUiService {
       fingerprint: codeUiCommandFingerprint,
     });
     this.historyEdit = createCodeUiHistoryEdit({
+      goals: this.goals,
       repository: deps.repository,
       settings: deps.settings,
       agentRuns: deps.agentRuns,
@@ -653,6 +685,7 @@ export class CodeUiService {
           (entry) => entry.sessionId === root.id,
         )!;
         const host = createCodeUiConversation({
+          goals: this.goals,
           sessionId: root.id,
           workspacePath: root.root_directory!,
           config: current.config,
@@ -746,6 +779,7 @@ export class CodeUiService {
           (entry) => entry.sessionId === current.id,
         )!;
         const host = createCodeUiConversation({
+          goals: this.goals,
           sessionId: current.id,
           workspacePath: current.root_directory!,
           config: snapshot.config,
@@ -832,6 +866,7 @@ export class CodeUiService {
           (entry) => entry.sessionId === root.id,
         )!;
         const host = createCodeUiConversation({
+          goals: this.goals,
           sessionId: root.id,
           workspacePath: root.root_directory!,
           config: snapshot.config,
@@ -877,6 +912,7 @@ export class CodeUiService {
               (entry) => entry.sessionId === root.id,
             )!;
             const host = createCodeUiConversation({
+              goals: this.goals,
               sessionId: root.id,
               workspacePath: root.root_directory!,
               config: snapshot.config,
@@ -982,6 +1018,7 @@ export class CodeUiService {
         (entry) => entry.sessionId === current.id,
       )!;
       const host = createCodeUiConversation({
+        goals: this.goals,
         sessionId: current.id,
         workspacePath: current.root_directory!,
         config: snapshot.config,
@@ -1122,6 +1159,7 @@ export class CodeUiService {
           (entry) => entry.sessionId === current.id,
         )!;
         const host = createCodeUiConversation({
+          goals: this.goals,
           sessionId: current.id,
           workspacePath: current.root_directory!,
           config: snapshot.config,
@@ -1172,15 +1210,29 @@ export class CodeUiService {
     );
     if (pending.length === 0) return false;
     const snapshot = loaded.host.getSnapshot();
-    const selection = (
-      await this.modelViews(actor, snapshot.config.modelSelection)
-    ).selection.effectiveSelection;
-    if (!selection)
-      throw new CodeUiRepositoryError(
-        "command_conflict",
-        "后台结果已就绪，但当前模型不可执行，请检查供应商配置",
-      );
-    const modelInvocation = await this.prepareModelInvocation(actor, selection);
+    const goal = loaded.root.state?.goalRecord;
+    if (goal && !["active", "notSatisfied", "complete"].includes(goal.status))
+      return false;
+    if (
+      goal &&
+      goal.status !== "complete" &&
+      (snapshot.queue.items.length ||
+        snapshot.pendingInteractions.length ||
+        loaded.root.state?.inputs?.some((input) => input.status === "queued"))
+    )
+      return false;
+    let prepared: CodePreparedModel;
+    try {
+      prepared =
+        goal && goal.status !== "complete"
+          ? await this.prepareGoalModel(actor, loaded.root.state!)
+          : await this.prepareInputModel(actor, snapshot.config.modelSelection);
+    } catch (error) {
+      if (!goal || goal.status === "complete") throw error;
+      await this.pauseGoalForModel(actor, loaded.root, goal, error);
+      return false;
+    }
+    const { selection, modelInvocation } = prepared;
     const thread = await this.deps.threads.resolveOwnedSessionThread(
       actor,
       taskId,
@@ -1212,7 +1264,9 @@ export class CodeUiService {
         if (
           root.active_run_id ||
           root.state?.inputs?.some((record) => record.status === "reserved") ||
-          Number(root.branch_generation) !== context.branchGeneration
+          Number(root.branch_generation) !== context.branchGeneration ||
+          root.state?.goalRecord?.goalId !== goal?.goalId ||
+          root.state?.goalRecord?.revision !== goal?.revision
         )
           throw new CodeUiRepositoryError(
             "command_conflict",
@@ -1222,12 +1276,19 @@ export class CodeUiService {
           (entry) => entry.sessionId === root.id,
         )!;
         const host = createCodeUiConversation({
+          goals: this.goals,
           sessionId: root.id,
           workspacePath: root.root_directory!,
           config: current.config,
           state: root.state!,
         });
-        host.startTurn({ runId, commandId, text, origin: "backgroundResult" });
+        host.startTurn({
+          runId,
+          commandId,
+          text,
+          origin: "backgroundResult",
+          modelSelection: selection,
+        });
         return {
           state: host.exportState(),
           activeRunId: runId,
@@ -1485,6 +1546,83 @@ export class CodeUiService {
     }
     if (contributed) {
       return { result: await contributed.call(user, args) };
+    }
+    if (service === "zcode-session" && method === "setGoalBudget") {
+      const value = args[0];
+      if (!value || typeof value !== "object" || Array.isArray(value))
+        throw new Error("目标预算参数无效");
+      const input = value as Record<string, unknown>;
+      if (
+        typeof input.taskId !== "string" ||
+        typeof input.commandId !== "string" ||
+        typeof input.revision !== "number" ||
+        !(input.tokenBudget === null || typeof input.tokenBudget === "number")
+      )
+        throw new Error("目标预算参数无效");
+      const loaded = await this.loadConversation(user, input.taskId);
+      if (loaded.entry.parent_session_id)
+        throw new Error("目标预算只能设置当前根Task");
+      const envelope: protocol.CommandEnvelope = {
+        clientId: `host.budget:${user.accessClientId ?? "script"}`,
+        commandId: input.commandId,
+        sessionId: input.taskId,
+        type: "sendText",
+        payload: { revision: input.revision, tokenBudget: input.tokenBudget },
+        issuedAt: Date.now(),
+      };
+      const ack = await this.deps.repository.applyCommand(
+        loaded.instanceId,
+        envelope,
+        codeUiCommandFingerprint(envelope),
+        (root) => {
+          const state = structuredClone(root.state!);
+          if (
+            !state.goalRecord ||
+            root.archived ||
+            root.execution_state !== "ready"
+          )
+            throw new Error("当前Task没有有效目标");
+          state.goalRecord = this.goals.setBudget(state.goalRecord, {
+            goalId: state.goalRecord.goalId,
+            revision: input.revision as number,
+            tokenBudget: input.tokenBudget as number | null,
+          });
+          syncGoal(state, root.id);
+          const snapshot = state.snapshots.find(
+            (item) => item.sessionId === root.id,
+          )!;
+          snapshot.seq += 1;
+          snapshot.revision += 1;
+          return {
+            state,
+            activeRunId: root.active_run_id,
+            ack: {
+              commandId: envelope.commandId,
+              status: "accepted",
+              revisionAtDecision: snapshot.revision,
+            },
+          };
+        },
+      );
+      const current = await this.deps.repository.find(
+        loaded.instanceId,
+        input.taskId,
+      );
+      if (
+        ack.status === "accepted" &&
+        current?.state?.goalRecord?.reason === "budget.stop" &&
+        current.active_run_id
+      )
+        this.deps.agentRuns.cancelRun(current.active_run_id);
+      return {
+        result: ack,
+        publish: () =>
+          this.refreshTaskProjection(
+            loaded.instanceId,
+            loaded.project.path,
+            loaded.project.projectId,
+          ),
+      };
     }
     if (service === "window-controller") {
       const owner = await this.deps.localInstance.resolve(user);
@@ -1893,6 +2031,20 @@ export class CodeUiService {
         const snapshot = loaded.host.getSnapshot(sessionId);
         await this.historyEdit.decorate(user, loaded, snapshot);
         await this.historyFork.decorate(user, loaded, snapshot);
+        if (connectionId && sessionId === loaded.root.id) {
+          const goal = loaded.root.state?.goalRecord;
+          await this.connections.send(workspace.instanceId, connectionId, {
+            event: "service",
+            service: "zcodeAgentService",
+            name: "onGoalControlState",
+            data: {
+              taskId: sessionId,
+              goal: goal
+                ? { goalId: goal.goalId, revision: goal.revision }
+                : null,
+            },
+          });
+        }
         return { snapshot, seq: snapshot.seq };
       };
       return this.connections.subscribe(workspace.instanceId, connectionId, {
@@ -2149,9 +2301,17 @@ export class CodeUiService {
       };
     }
     if (method === "sendConversationCommandV4") {
-      const input = args[0] as { envelope?: unknown; workspacePath: string };
+      const input = args[0] as {
+        envelope?: unknown;
+        workspacePath: string;
+        goalControl?: unknown;
+      };
       const parsed = protocol.parseCommandEnvelope(input.envelope);
       if (!parsed.ok) throw parsed.error;
+      const goalControl =
+        input.goalControl === undefined
+          ? undefined
+          : codeGoalControlSchema.parse(input.goalControl);
       if (connectionId) {
         const bound = this.connections.require(
           workspace.instanceId,
@@ -2190,9 +2350,15 @@ export class CodeUiService {
       }
       if (
         parsed.envelope.type === "sendText" ||
+        parsed.envelope.type === "sendGoalCommand" ||
         parsed.envelope.type === "compact"
       )
-        return this.sendText(user, input.workspacePath, parsed.envelope);
+        return this.sendText(
+          user,
+          input.workspacePath,
+          parsed.envelope,
+          goalControl,
+        );
       if (
         parsed.envelope.type === "editUserQuery" ||
         parsed.envelope.type === "retryTurn"
@@ -2214,12 +2380,198 @@ export class CodeUiService {
           input.workspacePath,
           parsed.envelope,
         );
+      if (
+        parsed.envelope.type === "pauseGoal" ||
+        parsed.envelope.type === "resumeGoal"
+      )
+        return this.goalCommand(
+          user,
+          input.workspacePath,
+          parsed.envelope,
+          goalControl,
+        );
       if (parsed.envelope.type === "stop")
         return this.stopExecution(user, parsed.envelope);
       if (parsed.envelope.type === "cancelBackgroundWork")
         return this.cancelBackgroundWork(user, parsed.envelope);
     }
     return null;
+  }
+
+  private async goalCommand(
+    user: LocalActor,
+    workspacePath: string,
+    envelope: protocol.CommandEnvelope,
+    goalControl?: CodeGoalControl,
+  ) {
+    if (!envelope.sessionId) throw new Error("目标缺少Task身份");
+    const loaded = await this.loadConversation(user, envelope.sessionId);
+    if (loaded.entry.parent_session_id || loaded.project.path !== workspacePath)
+      throw new Error("目标不属于当前Task");
+    const goals = this.goals;
+    const resumedModel =
+      envelope.type === "resumeGoal"
+        ? goalControl?.resumeModelSelection
+          ? {
+              selection: goalControl.resumeModelSelection,
+              modelInvocation: await this.prepareModelInvocation(
+                user,
+                goalControl.resumeModelSelection,
+              ),
+            }
+          : await this.prepareGoalModel(user, loaded.root.state!)
+        : undefined;
+    const ack = await this.deps.repository.applyCommand(
+      loaded.instanceId,
+      envelope,
+      codeUiCommandFingerprint(envelope, goalControl),
+      (root) => {
+        const state = structuredClone(root.state!);
+        const goal = state.goalRecord;
+        if (goalControl) this.requireGoalFence(goal, goalControl);
+        if (!goal || root.archived || root.execution_state !== "ready")
+          throw new Error("当前Task没有可控制目标");
+        state.goalRecord =
+          envelope.type === "pauseGoal"
+            ? goals.pause(goal, {
+                goalId: goal.goalId,
+                revision: goal.revision,
+                reason: "user.pause",
+                at: Date.now(),
+              })
+            : goals.resume(goal, {
+                goalId: goal.goalId,
+                revision: goal.revision,
+                branchGeneration: Number(root.branch_generation),
+              });
+        if (resumedModel)
+          state.goalModel = {
+            goalId: goal.goalId,
+            selection: resumedModel.selection,
+            invocation: resumedModel.modelInvocation,
+          };
+        syncGoal(state, root.id);
+        const snapshot = state.snapshots.find(
+          (item) => item.sessionId === root.id,
+        )!;
+        snapshot.seq += 1;
+        snapshot.revision += 1;
+        return {
+          state,
+          activeRunId: root.active_run_id,
+          ack: {
+            commandId: envelope.commandId,
+            status: "accepted",
+            revisionAtDecision: snapshot.revision,
+          },
+        };
+      },
+    );
+    return {
+      result: ack,
+      publish: async () => {
+        if (
+          ack.status === "accepted" &&
+          envelope.type === "pauseGoal" &&
+          loaded.root.active_run_id
+        )
+          await this.deps.agentRuns.cancelRunAndWait(loaded.root.active_run_id);
+        await this.refreshTaskProjection(
+          loaded.instanceId,
+          workspacePath,
+          loaded.project.projectId,
+        );
+        if (ack.status === "accepted" && envelope.type === "resumeGoal")
+          await this.resumeGoal(user, loaded.root.id);
+      },
+    };
+  }
+
+  private async resumeGoal(user: LocalActor, taskId: string): Promise<void> {
+    if (this.closing) return;
+    const loaded = await this.loadConversation(user, taskId);
+    const goal = loaded.root.state?.goalRecord;
+    if (
+      !goal ||
+      !["active", "notSatisfied"].includes(goal.status) ||
+      goal.claimedRunId
+    )
+      return;
+    const snapshot = loaded.host.getSnapshot();
+    if (
+      snapshot.config.planEnabled ||
+      loaded.root.active_run_id ||
+      snapshot.queue.items.length ||
+      snapshot.pendingInteractions.length ||
+      loaded.root.state?.inputs?.some(
+        (input) => input.status === "reserved" || input.status === "queued",
+      )
+    )
+      return;
+    let prepared: CodePreparedModel;
+    try {
+      prepared = await this.prepareGoalModel(user, loaded.root.state!);
+    } catch (error) {
+      await this.pauseGoalForModel(user, loaded.root, goal, error);
+      return;
+    }
+    const { selection, modelInvocation } = prepared;
+    const thread = await this.deps.threads.resolveOwnedSessionThread(
+      user,
+      taskId,
+    );
+    const runId = randomUUID();
+    const text = `继续推进当前目标：${goal.objective}。检查实际结果；未通过验收时继续工作，有真实证据后调用 VerifyGoal。`;
+    const commandId = `goal:${goal.goalId}:${goal.revision}:${goal.iteration}`;
+    const envelope: protocol.CommandEnvelope = {
+      clientId: "host.goal",
+      commandId,
+      sessionId: taskId,
+      type: "sendText",
+      payload: { text },
+      issuedAt: Date.now(),
+    };
+    const ack = await this.deps.repository.applyCommand(
+      loaded.instanceId,
+      envelope,
+      codeUiCommandFingerprint(envelope),
+      (root) => {
+        return claimGoalContinuation(
+          root,
+          {
+            goalId: goal.goalId,
+            revision: goal.revision,
+            runId,
+            commandId,
+            text,
+            owner: this.inputOwner,
+            at: Date.now(),
+            modelSelection: selection,
+          },
+          this.goals,
+        );
+      },
+    );
+    if (ack.status !== "accepted") return;
+    await this.refreshTaskProjection(
+      loaded.instanceId,
+      loaded.project.path,
+      loaded.project.projectId,
+    );
+    void this.runTurn(
+      user,
+      loaded.project,
+      taskId,
+      thread.threadId,
+      runId,
+      text,
+      `${selection.providerId}:${selection.modelId}`,
+      modelInvocation,
+      undefined,
+      { clientId: envelope.clientId, sourceCommandId: commandId },
+    ).catch((error: unknown) =>
+      console.warn("[code-ui] Goal运行失败：", error),
+    );
   }
 
   private async setFollowupMode(
@@ -2478,10 +2830,34 @@ export class CodeUiService {
     user: LocalActor,
     envelope: protocol.CommandEnvelope,
   ) {
+    const key = JSON.stringify([
+      user.instanceId,
+      envelope.clientId,
+      envelope.commandId,
+    ]);
+    const previous = this.stoppingCommands.get(key) ?? Promise.resolve();
+    const next = previous.then(
+      () => this.applyStopExecution(user, envelope),
+      () => this.applyStopExecution(user, envelope),
+    );
+    this.stoppingCommands.set(key, next);
+    try {
+      return await next;
+    } finally {
+      if (this.stoppingCommands.get(key) === next)
+        this.stoppingCommands.delete(key);
+    }
+  }
+
+  private async applyStopExecution(
+    user: LocalActor,
+    envelope: protocol.CommandEnvelope,
+  ) {
     if (!envelope.sessionId)
       throw new CodeUiRepositoryError("not_found", "停止缺少会话身份");
     const loaded = await this.loadConversation(user, envelope.sessionId);
     const payload = protocol.commandPayloadSchemas.stop.parse(envelope.payload);
+    let targetChanged = false;
     const ack = await this.deps.repository.applyScopeCommand(
       loaded.instanceId,
       { ...envelope, sessionId: loaded.root.id },
@@ -2504,8 +2880,11 @@ export class CodeUiService {
         if (
           payload.expectedForegroundExecutionId &&
           payload.expectedForegroundExecutionId !== execution
-        )
+        ) {
+          targetChanged = true;
           return;
+        }
+        if (!execution) return;
         if (loaded.entry.id === root.id)
           await this.deps.repository.appendEvent(
             loaded.instanceId,
@@ -2522,7 +2901,9 @@ export class CodeUiService {
               )!;
               const activeExecution =
                 currentSnapshot.control.activeWorks.find(
-                  (work) => work.kind === "primaryTurn",
+                  (work) =>
+                    work.kind === "primaryTurn" ||
+                    work.kind === "foregroundSubagent",
                 )?.foregroundExecutionId ??
                 current.active_run_id ??
                 state.inputs?.find((entry) => entry.status === "reserved")
@@ -2563,6 +2944,13 @@ export class CodeUiService {
                   };
                 },
               );
+              pauseTaskGoal(
+                state,
+                current.id,
+                "user.stop",
+                Date.now(),
+                this.goals,
+              );
               currentSnapshot.queue.autoDrain = false;
               currentSnapshot.queue.pauseReason = "stopped";
               currentSnapshot.seq += 1;
@@ -2585,6 +2973,7 @@ export class CodeUiService {
                 (entry) => entry.sessionId === current.id,
               )!;
               const host = createCodeUiConversation({
+                goals: this.goals,
                 sessionId: current.id,
                 workspacePath: current.root_directory!,
                 config: currentSnapshot.config,
@@ -2607,10 +2996,11 @@ export class CodeUiService {
           );
       },
       (root) => ({
-        state: root.state!,
+        state: null,
         ack: {
           commandId: envelope.commandId,
-          status: "accepted",
+          status: targetChanged ? "noop" : "accepted",
+          ...(targetChanged ? { reasonCode: "guard.stopTargetChanged" } : {}),
           revisionAtDecision: Number(root.revision),
         },
       }),
@@ -2752,10 +3142,11 @@ export class CodeUiService {
     user: LocalActor,
     workspacePath: string,
     envelope: protocol.CommandEnvelope,
+    goalControl?: CodeGoalControl,
   ) {
     const release = this.deps.localInstance.beginAdmission();
     try {
-      return await this.admitText(user, workspacePath, envelope);
+      return await this.admitText(user, workspacePath, envelope, goalControl);
     } finally {
       release();
     }
@@ -2785,6 +3176,7 @@ export class CodeUiService {
     user: LocalActor,
     workspacePath: string,
     envelope: protocol.CommandEnvelope,
+    goalControl?: CodeGoalControl,
   ) {
     if (!envelope.sessionId)
       throw new CodeUiRepositoryError("not_found", "发送命令缺少会话");
@@ -2831,9 +3223,10 @@ export class CodeUiService {
       loaded.instanceId,
       envelope,
       // 运行身份来自本次事务；忙时立即发送先只认领，停止确认后才投影新一轮。
-      codeUiCommandFingerprint(envelope),
+      codeUiCommandFingerprint(envelope, goalControl),
       (root) => {
         const host = createCodeUiConversation({
+          goals: this.goals,
           sessionId: root.id,
           workspacePath,
           config: snapshot.config,
@@ -3015,6 +3408,25 @@ export class CodeUiService {
               }
             : {}),
         };
+        if (envelope.type === "sendGoalCommand") {
+          this.requireGoalFence(host.getGoal(), goalControl);
+          if (busy || delivery !== "startNow")
+            throw new CodeUiRepositoryError(
+              "command_conflict",
+              "请等待当前运行结束后创建目标",
+            );
+          const goal = this.goals.create(host.getGoal(), {
+            goalId: envelope.commandId,
+            objective: payload.text,
+            branchGeneration: Number(root.branch_generation),
+            at: Date.now(),
+          });
+          host.setGoal(goal, {
+            goalId: goal.goalId,
+            selection,
+            invocation: modelInvocation,
+          });
+        }
         host.admitInput(record, this.inputOwner);
         if (delivery === "startNow" && !preempt) host.startInput(record);
         return {
@@ -3149,6 +3561,7 @@ export class CodeUiService {
           };
         }
         const host = createCodeUiConversation({
+          goals: this.goals,
           sessionId: root.id,
           workspacePath: root.root_directory!,
           config: snapshot.config,
@@ -3194,6 +3607,7 @@ export class CodeUiService {
           (entry) => entry.sessionId === root.id,
         )!;
         const host = createCodeUiConversation({
+          goals: this.goals,
           sessionId: root.id,
           workspacePath: project.path,
           config: rootSnapshot.config,
@@ -3220,7 +3634,18 @@ export class CodeUiService {
         project.path,
         project.projectId,
       );
-      if (["run.completed", "run.failed", "run.canceled"].includes(event.type)) {
+      const goal = (
+        await this.deps.repository.find(workspace.instanceId, sessionId)
+      )?.state?.goalRecord;
+      if (
+        event.type === "run.usage" &&
+        goal?.reason === "budget.stop" &&
+        goal.claimedRunId === event.runId
+      )
+        this.deps.agentRuns.cancelRun(event.runId);
+      if (
+        ["run.completed", "run.failed", "run.canceled"].includes(event.type)
+      ) {
         await this.notifyTask(user, project, sessionId, "task_status_changed");
         // Run 终态自动提交（G3/Q8）：先于 drainQueuedInput 的下一轮派发（runTurn 的
         // finally 在事件流之后），保证提交的就是本轮变更；autoCommitRun 永不抛，
@@ -3316,9 +3741,10 @@ export class CodeUiService {
     if (event.contextWindowTokens !== undefined) return event;
     const now = Date.now();
     const cached = this.runUsageModelMetaCache.get(model);
-    let meta = cached && now - cached.at < CodeUiService.RUN_USAGE_META_TTL_MS
-      ? cached
-      : undefined;
+    let meta =
+      cached && now - cached.at < CodeUiService.RUN_USAGE_META_TTL_MS
+        ? cached
+        : undefined;
     if (!meta) {
       meta = { at: now };
       try {
@@ -3530,6 +3956,9 @@ export class CodeUiService {
         .catch((error: unknown) => {
           console.warn("[code-ui] Run收尾后的后台通知 admission失败：", error);
         });
+      await this.resumeGoal(user, sessionId).catch((error: unknown) =>
+        console.warn("[code-ui] Goal continuation admission失败：", error),
+      );
     }
   }
 
@@ -3570,6 +3999,7 @@ export class CodeUiService {
           (item) => item.sessionId === root.id,
         )!;
         const host = createCodeUiConversation({
+          goals: this.goals,
           sessionId: root.id,
           workspacePath: root.root_directory!,
           config: current.config,
@@ -3856,10 +4286,121 @@ export class CodeUiService {
     return this.providerSettings.readViews(user, selection);
   }
 
+  private requireGoalFence(
+    goal: CodeUiConversationState["goalRecord"],
+    control: CodeGoalControl | undefined,
+  ) {
+    const expected = control?.expectedGoal;
+    if (
+      !control ||
+      (goal
+        ? !expected ||
+          expected.goalId !== goal.goalId ||
+          expected.revision !== goal.revision
+        : expected !== null)
+    )
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "目标已改变，请刷新后重新提交目标",
+      );
+  }
+
+  private async prepareGoalModel(
+    user: LocalActor,
+    state: CodeUiConversationState,
+  ): Promise<CodePreparedModel> {
+    const model = state.goalModel;
+    if (!model || model.goalId !== state.goalRecord?.goalId)
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "目标缺少模型快照，当前目标无法直接恢复",
+      );
+    const available = await this.deps.modelCatalog.validateSpecifier(
+      user,
+      `${model.invocation.providerId}:${model.invocation.modelId}`,
+    );
+    if (!available.ok)
+      throw new CodeUiRepositoryError("command_conflict", available.message);
+    const current = await this.deps.modelProviders.resolveCredentials(
+      user,
+      model.invocation.providerId,
+    );
+    if (
+      current.instanceId !== model.invocation.providerId ||
+      current.configRevision !== model.invocation.configRevision
+    )
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "目标模型配置已改变，当前目标无法直接恢复",
+      );
+    return {
+      selection: structuredClone(model.selection),
+      modelInvocation: structuredClone(model.invocation),
+    };
+  }
+
+  private async pauseGoalForModel(
+    user: LocalActor,
+    root: NonNullable<Awaited<ReturnType<CodeUiRepository["find"]>>>,
+    goal: NonNullable<CodeUiConversationState["goalRecord"]>,
+    error: unknown,
+  ) {
+    await this.deps.repository.appendEvent(
+      user.instanceId,
+      root.id,
+      {
+        key: `goal-model-invalid:${goal.goalId}:${goal.revision}`,
+        fingerprint: `${goal.goalId}:${goal.revision}`,
+        event: {
+          type: "goal.modelInvalid",
+          goalId: goal.goalId,
+          revision: goal.revision,
+        },
+      },
+      (current) => {
+        const state = structuredClone(current.state!);
+        if (
+          state.goalRecord?.goalId === goal.goalId &&
+          state.goalRecord.revision === goal.revision &&
+          !current.active_run_id
+        ) {
+          pauseTaskGoal(
+            state,
+            current.id,
+            "goal.modelInvalid",
+            Date.now(),
+            this.goals,
+          );
+          const snapshot = state.snapshots.find(
+            (item) => item.sessionId === current.id,
+          )!;
+          snapshot.control.lastError = {
+            code: "goal.modelInvalid",
+            message:
+              error instanceof CodeUiRepositoryError
+                ? error.message
+                : "目标模型暂不可用，请稍后重试恢复",
+            recoverable: true,
+            at: Date.now(),
+            source: "runtime",
+          };
+          snapshot.revision += 1;
+          snapshot.seq += 1;
+        }
+        return { state, activeRunId: current.active_run_id };
+      },
+    );
+    await this.refreshTaskProjection(
+      user.instanceId,
+      root.root_directory!,
+      root.project_id,
+    );
+  }
+
   private async prepareInputModel(
     user: LocalActor,
     selection: protocol.SessionConfigState["modelSelection"],
-  ) {
+  ): Promise<CodePreparedModel> {
     const views = await this.modelViews(user, selection);
     const effective = views.selection.effectiveSelection;
     if (!effective)
@@ -3927,6 +4468,7 @@ export class CodeUiService {
         : {}),
     });
     const host = createCodeUiConversation({
+      goals: this.goals,
       sessionId,
       workspacePath: rootDirectory,
       config: {
@@ -3999,7 +4541,74 @@ export class CodeUiService {
       (item) => item.sessionId === root.id,
     );
     if (!snapshot) throw new Error("Code 根快照缺失，无法恢复");
+    // 旧恢复投影先按取消收尾；Run账本的启动对账在listen之后才写入失败。
+    // 仅同一Run的持久失败可恢复原因，无原因取消保留原终态。
+    if (
+      snapshot.control.phase === "completedInterrupted" &&
+      !snapshot.control.lastError &&
+      root.state.runId
+    ) {
+      const failure = await this.deps.repository.readRunFailure(
+        workspace.instanceId,
+        root.id,
+        root.state.runId,
+      );
+      if (failure) {
+        snapshot.control = {
+          ...snapshot.control,
+          phase: "error",
+          sessionEnded: false,
+          lastError: {
+            code: failure.error_code ?? "run_failed",
+            message: failure.error_message,
+            recoverable: true,
+            at: failure.completed_at
+              ? new Date(failure.completed_at).getTime()
+              : new Date(root.updated_at).getTime(),
+            source: "runtime",
+          },
+        };
+        snapshot.queue.pauseReason = "error";
+      }
+    }
+    if (
+      root.state.goalRecord &&
+      root.state.inputOwner?.hostId === this.inputOwner.hostId &&
+      root.state.inputOwner.runtimeId !== this.inputOwner.runtimeId &&
+      ["active", "verifying", "notSatisfied"].includes(
+        root.state.goalRecord.status,
+      )
+    ) {
+      await this.deps.repository.appendEvent(
+        workspace.instanceId,
+        root.id,
+        {
+          key: `goal-recover:${this.inputOwner.runtimeId}`,
+          fingerprint: this.inputOwner.runtimeId,
+          event: { type: "goal.recover" },
+        },
+        (current) => {
+          const state = structuredClone(current.state!);
+          if (
+            state.goalRecord &&
+            state.inputOwner?.runtimeId !== this.inputOwner.runtimeId
+          )
+            state.goalRecord = this.goals.recover(
+              state.goalRecord,
+              new Date(current.updated_at).getTime(),
+            );
+          syncGoal(state, current.id);
+          return { state, activeRunId: current.active_run_id };
+        },
+      );
+      const recovered = await this.deps.repository.find(
+        workspace.instanceId,
+        root.id,
+      );
+      if (recovered?.state) root.state = recovered.state;
+    }
     const host = createCodeUiConversation({
+      goals: this.goals,
       sessionId: root.id,
       workspacePath: project.path,
       config: snapshot.config,

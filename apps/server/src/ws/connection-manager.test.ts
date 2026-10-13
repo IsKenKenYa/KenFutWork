@@ -42,6 +42,50 @@ function fakeSocket() {
  * 调 remove(connectionId) 把**新注册**删掉——连接活着但 map entry 没了，
  * run 的 ack/流式事件全部 delivered=false（消息进得来、推送出不去，实测整轮假失败）。
  */
+describe("ConnectionManager 画布RPC绑定", () => {
+  it("只向同实例且绑定目标画布的在线连接发送RPC", async () => {
+    const manager = new ConnectionManager();
+    const foreignInstance = fakeSocket();
+    const wrongCanvas = fakeSocket();
+    const target = fakeSocket();
+    manager.register("foreign", "instance-B", foreignInstance);
+    manager.register("other-canvas", "instance-A", wrongCanvas);
+    manager.register("target", "instance-A", target);
+    manager.bindCanvas("foreign", "canvas-A");
+    manager.bindCanvas("other-canvas", "canvas-B");
+    manager.bindCanvas("target", "canvas-A");
+
+    const response = manager.rpcCanvas(
+      "instance-A",
+      "canvas-A",
+      "canvas.screenshot",
+      { mode: "full" },
+    );
+    expect(target.sent).toHaveLength(1);
+    expect(foreignInstance.sent).toHaveLength(0);
+    expect(wrongCanvas.sent).toHaveLength(0);
+    const request = JSON.parse(target.sent[0] ?? "null") as { id: string };
+    manager.handleRpcResponse("foreign", {
+      type: "rpc.response",
+      id: request.id,
+      result: "forged",
+    });
+    manager.handleRpcResponse("target", {
+      type: "rpc.response",
+      id: request.id,
+      result: { ok: true },
+    });
+    await expect(response).resolves.toEqual({ ok: true });
+  });
+
+  it("没有匹配的Canvas连接时拒绝", async () => {
+    const manager = new ConnectionManager();
+    await expect(
+      manager.rpcCanvas("instance-A", "canvas-A", "canvas.screenshot", {}),
+    ).rejects.toThrow("目标画布未连接");
+  });
+});
+
 describe("ConnectionManager 重连身份校验", () => {
   it("旧 socket 迟到的 close 不得删除新 socket 的注册", () => {
     const manager = new ConnectionManager();

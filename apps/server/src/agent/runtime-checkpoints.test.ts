@@ -53,7 +53,12 @@ async function fixture(
   const actor = RUNTIME_TEST_ACTOR;
   const handle = await createExecutionScopes({
     repository: {
-      load: async () => ({ state: "ready", branchGeneration: 1, scope }),
+      load: async () => ({
+        preset: "code",
+        state: "ready",
+        branchGeneration: 1,
+        scope,
+      }),
     },
     localInstance: createRuntimeTestInstance(),
   }).openTask(actor, scope.taskId);
@@ -262,7 +267,7 @@ it("Code图片附件进入真实多模态消息；所选模型明确不支持图
     { type: "text", text: expect.stringContaining("work") },
     {
       type: "image_url",
-      image_url: `data:image/png;base64,${bytes.toString("base64")}`,
+      image_url: { url: `data:image/png;base64,${bytes.toString("base64")}` },
     },
   ]);
   const unsupported = await fixture({ codeInputs, vision: false });

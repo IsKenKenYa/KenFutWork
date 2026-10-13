@@ -369,6 +369,58 @@ async function rebindTasks(scoped: InstanceSqlClient, mapper: Rebinder) {
   }
 }
 
+async function rebindCanvasAndDesignTasks(
+  scoped: InstanceSqlClient,
+  mapper: Rebinder,
+) {
+  const canvases = await scoped.query<
+    SqlRow & { id: string; root_directory: string | null }
+  >(
+    "select c.id,c.root_directory from public.canvases c join public.projects p on p.id=c.project_id where p.instance_id=:instance for update of c",
+  );
+  const roots = new Map<string, string | null>();
+  for (const canvas of canvases) {
+    const root =
+      canvas.root_directory === null
+        ? null
+        : await mapper.rewritePath(canvas.root_directory);
+    roots.set(canvas.id, root);
+    if (root !== canvas.root_directory)
+      await scoped.execute(
+        "update public.canvases c set root_directory=$2 from public.projects p where c.id=$1 and p.id=c.project_id and p.instance_id=:instance",
+        [canvas.id, root],
+      );
+  }
+  const tasks = await scoped.query<
+    SqlRow & {
+      task_id: string;
+      canvas_id: string;
+      project_id: string;
+      canvas_project_id: string | null;
+      root_directory: string;
+      additional_directories: unknown;
+    }
+  >(
+    "select d.task_id,s.canvas_id,d.project_id,c.project_id as canvas_project_id,d.root_directory,d.additional_directories from public.design_task_executions d join public.chat_sessions s on s.id=d.task_id and s.instance_id=d.instance_id and s.project_id=d.project_id left join public.canvases c on c.id=s.canvas_id where d.instance_id=:instance and s.mode='design' for update of d",
+  );
+  for (const task of tasks) {
+    if (task.canvas_project_id !== task.project_id)
+      throw new Error("画布与Design Task项目归属不一致，拒绝迁移。");
+    const root = await mapper.rewritePath(task.root_directory);
+    if (roots.get(task.canvas_id) !== root)
+      throw new Error("画布与Design Task目录不一致，拒绝迁移。");
+    const additional = await mapper.rewriteJson(task.additional_directories);
+    if (
+      root !== task.root_directory ||
+      JSON.stringify(additional) !== JSON.stringify(task.additional_directories)
+    )
+      await scoped.execute(
+        "update public.design_task_executions set root_directory=$2,additional_directories=$3::jsonb,scope_generation=scope_generation+1 where instance_id=:instance and task_id=$1",
+        [task.task_id, root, JSON.stringify(additional)],
+      );
+  }
+}
+
 function snapshotRoots(value: unknown): string[] {
   if (!Array.isArray(value) || value.length === 0)
     throw new Error("检查点缺少目录快照，拒绝重绑定。");
@@ -393,6 +445,7 @@ async function rebindCheckpoints(options: {
   mapper: Rebinder;
   binary: string;
   undo: Undo[];
+  projectId?: string;
 }) {
   const { scoped, mapper, binary, undo } = options;
   const checkpoints = await scoped.query<
@@ -404,7 +457,8 @@ async function rebindCheckpoints(options: {
       directory_snapshots: unknown;
     }
   >(
-    "select id, project_id, task_id, root_directory, directory_snapshots from public.project_checkpoints where instance_id=:instance for update",
+    `select id, project_id, task_id, root_directory, directory_snapshots from public.project_checkpoints where instance_id=:instance ${options.projectId ? "and project_id=$1" : ""} for update`,
+    options.projectId ? [options.projectId] : [],
   );
   const reboundRepos = new Set<string>();
   for (const row of checkpoints) {
@@ -439,6 +493,62 @@ async function rebindCheckpoints(options: {
       );
   }
 }
+/** Explicit missing-Project recovery only: exact root mapping, no filesystem discovery or user-file move. */
+export async function rebindMissingProjectCheckpoints(options: {
+  scoped: InstanceSqlClient;
+  projectId: string;
+  dataDir: string;
+  previousRoot: string;
+  nextRoot: string;
+}) {
+  const base = await createManagedRootRebinder(
+    options.dataDir,
+    options.dataDir,
+  );
+  const rewritePath = async (value: string) => {
+    if (!isAbsolute(value)) return value;
+    const suffix = relative(options.previousRoot, value);
+    if (isAbsolute(suffix) || suffix === ".." || suffix.startsWith(`..${sep}`))
+      return value;
+    const target = await physicalPath(join(options.nextRoot, suffix));
+    const inside = relative(options.nextRoot, target);
+    if (isAbsolute(inside) || inside === ".." || inside.startsWith(`..${sep}`))
+      throw new Error("重新关联目录存在越界软链，拒绝恢复检查点。");
+    return target;
+  };
+  const rewriteJson = async (value: unknown, field = ""): Promise<unknown> => {
+    if (typeof value === "string")
+      return PATH_FIELDS.has(field) ? rewritePath(value) : value;
+    if (Array.isArray(value))
+      return Promise.all(value.map((entry) => rewriteJson(entry, field)));
+    if (!value || typeof value !== "object") return value;
+    return Object.fromEntries(
+      await Promise.all(
+        Object.entries(value).map(async ([key, entry]) => [
+          key,
+          await rewriteJson(entry, key),
+        ]),
+      ),
+    );
+  };
+  const undo: Undo[] = [];
+  const rollback = async () => {
+    for (const restore of [...undo].reverse()) await restore();
+  };
+  try {
+    await rebindCheckpoints({
+      scoped: options.scoped,
+      projectId: options.projectId,
+      mapper: { ...base, rewritePath, rewriteJson },
+      binary: "git",
+      undo,
+    });
+  } catch (error) {
+    await rollback();
+    throw error;
+  }
+  return rollback;
+}
 
 /** 启动内部调用：旧根仅来自实例账本，当前根仅来自可信native配置，不接受HTTP路径。 */
 export async function bindLocalInstanceDataRoot(options: {
@@ -470,6 +580,7 @@ export async function bindLocalInstanceDataRoot(options: {
         );
         await rebindProjects(scoped, mapper);
         await rebindTasks(scoped, mapper);
+        await rebindCanvasAndDesignTasks(scoped, mapper);
         await rebindCheckpoints({
           scoped,
           mapper,

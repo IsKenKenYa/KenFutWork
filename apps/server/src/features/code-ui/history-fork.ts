@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import type { AgentContextHistoryReference } from "../../agent/context-history.js";
+import { createGoalService, type GoalService } from "../goals/service.js";
 import type { LocalActor } from "../local-instance/types.js";
 import type {
   CodeAttachmentHistoryCopy,
@@ -49,6 +50,7 @@ type Target = {
 };
 type Deps = Pick<
   CodeUiServiceDeps,
+  | "goals"
   | "repository"
   | "agentRuns"
   | "agentRunMetadata"
@@ -174,6 +176,7 @@ async function ownedPost(
 }
 
 function forkState(
+  goals: GoalService,
   id: string,
   path: string,
   source: Selection,
@@ -190,6 +193,7 @@ function forkState(
   delete config.permissionGrant;
   delete config.planTransition;
   const state = createCodeUiConversation({
+    goals,
     sessionId: id,
     workspacePath: path,
     config,
@@ -515,6 +519,7 @@ async function prepareFork(
       sandboxMode: root.sandbox_mode,
     },
     state: forkState(
+      deps.goals ?? createGoalService(),
       id,
       root.root_directory,
       selected,

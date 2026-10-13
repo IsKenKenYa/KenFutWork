@@ -135,7 +135,7 @@ describe("Code 会话用量的公共投影与恢复", () => {
     ]);
   });
 
-  it("G6 上下文容量圆环：run.usage 填 contextWindow（占用=最近调用输入，窗口未知 maxTokens=0）", () => {
+  it("G6 派生圆环同Run实时更新，下一Run窗口未知时不沿用旧容量", () => {
     const host = createCodeUiConversation(input);
     host.startTurn({ runId: "run-a", commandId: "send-a", text: "读取并回答" });
     host.recordEvent({
@@ -159,11 +159,80 @@ describe("Code 会话用量的公共投影与恢复", () => {
       },
     });
 
-    // 老服务端事件（无窗口字段）：maxTokens 落 0，界面判 0 不画百分比
+    host.recordEvent({
+      ...usageA,
+      inputTokens: 46_000,
+      runInputTokens: 106_000,
+    });
+    expect(host.getSnapshot().usage.contextWindow).toMatchObject({
+      usedTokens: 46_000,
+      maxTokens: 1_000_000,
+      cache: { totalInputTokens: 106_000 },
+    });
+    expect(host.exportState().contextWindowProjections).toEqual([
+      [input.sessionId, "run-a"],
+    ]);
+    // A different model/run cannot inherit capacity from this consumer's old projection.
     host.startTurn({ runId: "run-c", commandId: "send-c", text: "第三轮" });
     host.recordEvent({ ...usageB, runId: "run-c" });
-    expect(host.getSnapshot().usage.contextWindow?.maxTokens).toBe(0);
-    expect(host.getSnapshot().usage.contextWindow?.usedTokens).toBe(7);
+    expect(host.getSnapshot().usage.contextWindow).toBeNull();
+    expect(host.exportState()).not.toHaveProperty("contextWindowProjections");
+  });
+
+  it("冷恢复仍更新同Run派生圆环，实际Runtime上下文不被事件metadata覆盖", () => {
+    const original = createCodeUiConversation(input);
+    original.startTurn({ runId: "run-a", commandId: "send-a", text: "读取" });
+    original.recordEvent({ ...usageA, contextWindowTokens: 4096 });
+    const restored = createCodeUiConversation({
+      ...input,
+      state: original.exportState(),
+    });
+    restored.recordEvent({
+      ...usageA,
+      inputTokens: 30,
+      runInputTokens: 50,
+      contextWindowTokens: 8192,
+    });
+    expect(restored.getSnapshot().usage.contextWindow).toMatchObject({
+      usedTokens: 30,
+      maxTokens: 8192,
+    });
+    const state = restored.exportState();
+    delete state.contextWindowProjections;
+    const snapshot = state.snapshots.find(
+      (value) => value.sessionId === input.sessionId,
+    );
+    if (!snapshot) throw new Error("Missing root snapshot");
+    snapshot.usage.contextWindow = {
+      usedTokens: 87,
+      maxTokens: 4096,
+      autoCompactThresholdTokens: 3000,
+    };
+    const runtime = createCodeUiConversation({ ...input, state });
+    runtime.recordEvent({
+      ...usageA,
+      inputTokens: 20,
+      contextWindowTokens: 1_000_000,
+    });
+    expect(runtime.getSnapshot().usage.contextWindow).toEqual({
+      usedTokens: 87,
+      maxTokens: 4096,
+      autoCompactThresholdTokens: 3000,
+    });
+    expect(runtime.exportState()).not.toHaveProperty(
+      "contextWindowProjections",
+    );
+    snapshot.usage.contextWindow.maxTokens = 0;
+    const missingCapacity = createCodeUiConversation({ ...input, state });
+    missingCapacity.recordEvent({ ...usageA, contextWindowTokens: 8192 });
+    expect(missingCapacity.getSnapshot().usage.contextWindow).toEqual({
+      usedTokens: 87,
+      maxTokens: 8192,
+      autoCompactThresholdTokens: 3000,
+    });
+    expect(missingCapacity.exportState()).not.toHaveProperty(
+      "contextWindowProjections",
+    );
   });
 
   it("exportState 重建后，B 的绝对修正仍保留 A 的已结算总量", () => {
@@ -353,6 +422,7 @@ describe("Code 会话用量的公共投影与恢复", () => {
       type: "run.usage",
       runId: "child-run",
       modelCallId: "child-call-a",
+      contextWindowTokens: 1000,
       inputTokens: 10,
       outputTokens: 3,
       cachedInputTokens: 4,
@@ -378,6 +448,7 @@ describe("Code 会话用量的公共投影与恢复", () => {
     const secondCall = {
       ...firstCall,
       modelCallId: "child-call-b",
+      inputTokens: 12,
       outputTokens: 7,
       cachedInputTokens: 0,
       runInputTokens: 20,
@@ -385,6 +456,13 @@ describe("Code 会话用量的公共投影与恢复", () => {
     };
     host.recordChildRunEvent(childId, secondCall);
     host.recordChildRunEvent(childId, secondCall);
+    expect(host.getSnapshot(childId).usage.contextWindow).toMatchObject({
+      usedTokens: 12,
+      maxTokens: 1000,
+    });
+    expect(host.exportState().contextWindowProjections).toEqual([
+      [childId, "child-run"],
+    ]);
     expect(host.getSnapshot(childId).usage.cumulative).toEqual({
       inputTokens: 20,
       outputTokens: 10,
@@ -406,7 +484,7 @@ describe("Code 会话用量的公共投影与恢复", () => {
       type: "run.usage",
       runId: "child-run",
       modelCallId: "child-call-b",
-      inputTokens: 10,
+      inputTokens: 14,
       outputTokens: 6,
       runInputTokens: 20,
       runOutputTokens: 9,
@@ -418,6 +496,13 @@ describe("Code 会话用量的公共投影与恢复", () => {
       cacheReadTokens: 4,
       cacheWriteTokens: 0,
     });
+    expect(restored.getSnapshot(childId).usage.contextWindow).toMatchObject({
+      usedTokens: 14,
+      maxTokens: 1000,
+    });
+    expect(restored.exportState().contextWindowProjections).toEqual([
+      [childId, "child-run"],
+    ]);
     expect(restored.getSnapshot().usage.cumulative).toEqual({
       inputTokens: 20,
       outputTokens: 10,

@@ -22,7 +22,13 @@ import { createTemporaryPostgres } from "./test-postgres.js";
 import type { TaskWorkContext } from "./types.js";
 
 /** Schema 唯一来源仍为bootstrap+migrations；夹具只通过服务/公开SQL入口创建业务数据。 */
-export async function createTaskWorkDatabase() {
+export async function createTaskWorkDatabase(
+  options: {
+    /** Historical schema cutoff; alsoIncludeMigrations preserves committed out-of-order versions. */
+    stopAtMigration?: string;
+    alsoIncludeMigrations?: readonly string[];
+  } = {},
+) {
   const database = await createTemporaryPostgres();
   const client = new Client({ connectionString: database.connectionString });
   await client.connect();
@@ -32,10 +38,20 @@ export async function createTaskWorkDatabase() {
       binDir: database.binDir,
       shimDir: resolvePgmqShimDir({ env: {}, repoRoot: root }),
     });
-    const files = loadMigrationSet({
+    const available = loadMigrationSet({
       bootstrapDir: join(root, "supabase", "bootstrap"),
       migrationsDir: join(root, "supabase", "migrations"),
     });
+    const cutoff = options.stopAtMigration;
+    if (cutoff && !available.some((file) => file.version === cutoff))
+      throw new Error("临时数据库的历史迁移截止版本不存在");
+    const files = cutoff
+      ? available.filter(
+          (file) =>
+            file.version <= cutoff ||
+            options.alsoIncludeMigrations?.includes(file.version),
+        )
+      : available;
     const queryable = {
       async query<T = Record<string, unknown>>(
         text: string,

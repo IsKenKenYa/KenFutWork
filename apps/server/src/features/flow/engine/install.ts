@@ -110,9 +110,7 @@ export interface EngineInstallOptions {
 }
 
 /** 引擎承载目标（FORM-11 双 Provider）：宿主 docker 或 WSL2 发行版内 docker。 */
-export type EngineLaunch =
-  | { kind: "host" }
-  | { kind: "wsl2"; distro: string };
+export type EngineLaunch = { kind: "host" } | { kind: "wsl2"; distro: string };
 
 /** 承载记录文件名（数据目录内）：安装时写，停止/查询读。 */
 export const STACK_RUNTIME_FILE = "dify-stack.runtime.json";
@@ -153,7 +151,9 @@ export function composeCommand(
       : inWsl
         ? toWslPath(options.envFile)
         : options.envFile;
-  const composeFile = inWsl ? toWslPath(options.composeFile) : options.composeFile;
+  const composeFile = inWsl
+    ? toWslPath(options.composeFile)
+    : options.composeFile;
   const composeArgs = [
     "compose",
     ...(envFile === undefined ? [] : ["--env-file", envFile]),
@@ -235,10 +235,12 @@ export function startEngineInstall(
     logFile,
   };
 
-  const command = composeCommand(
-    { ...options, envFile },
-    ["--profile", "dify", "up", "-d"],
-  );
+  const command = composeCommand({ ...options, envFile }, [
+    "--profile",
+    "dify",
+    "up",
+    "-d",
+  ]);
   const child = (deps.spawn ?? spawn)(command.command, command.args, {
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
@@ -312,16 +314,13 @@ export async function stopEngineStack(
   // 停止是交互式操作（用户点了按钮）：超时只作兜底，给 compose 收尾留足时间。
   const run = deps.run ?? createProcessRunCommand({ timeoutMs: 120_000 });
   const envFile = ensureStackEnvFile(options.dataDir);
-  const command = composeCommand(
-    { ...options, envFile },
-    [
-      "--profile",
-      "dify",
-      "down",
-      ...(options.deleteData ? ["--volumes"] : []),
-      ...(options.purgeImages ? ["--rmi", "all"] : []),
-    ],
-  );
+  const command = composeCommand({ ...options, envFile }, [
+    "--profile",
+    "dify",
+    "down",
+    ...(options.deleteData ? ["--volumes"] : []),
+    ...(options.purgeImages ? ["--rmi", "all"] : []),
+  ]);
   const result = await run(command.command, command.args);
   if (result.code !== 0) {
     const detail = decodeCommandText(result.stderr).split("\n")[0]?.trim();

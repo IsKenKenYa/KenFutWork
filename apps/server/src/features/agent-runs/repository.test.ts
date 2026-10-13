@@ -223,6 +223,7 @@ describe("latestForSession（会话最近一轮 run 的终态）", () => {
 
     expect(terminal).toEqual({
       status: "failed",
+      stopReason: null,
       errorCode: "run_failed",
       errorMessage: "服务重启，本轮已中断。",
       startedAt: "2026-09-29T12:00:00.000Z",

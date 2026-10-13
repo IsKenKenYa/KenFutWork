@@ -118,3 +118,39 @@ test("删除未登记路径与主工作目录被拒", async () => {
     /主工作目录不能删除/,
   );
 });
+
+test("当前工作目录在查询Git登记列表前拒绝删除", async () => {
+  let calls = 0;
+  const client = createGitClient({
+    exec: async () => {
+      calls += 1;
+      throw new Error("不应触达Git");
+    },
+  });
+  await expect(client.deleteWorktree("/tmp/project", ".")).rejects.toThrow(
+    /主工作目录不能删除/,
+  );
+  expect(calls).toBe(0);
+});
+
+test.skipIf(process.platform === "win32")(
+  "大小写不同的Unix路径不得匹配另一已登记工作树",
+  async () => {
+    const calls: Array<readonly string[]> = [];
+    const client = createGitClient({
+      exec: async (args) => {
+        calls.push(args);
+        return {
+          code: 0,
+          stdout:
+            "worktree /tmp/project/Feature\nHEAD abc\nbranch refs/heads/feature\n\n",
+          stderr: "",
+        };
+      },
+    });
+    await expect(
+      client.deleteWorktree("/tmp/project", "feature"),
+    ).rejects.toThrow(/登记列表/);
+    expect(calls).toEqual([["worktree", "list", "--porcelain"]]);
+  },
+);

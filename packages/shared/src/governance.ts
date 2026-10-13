@@ -42,6 +42,8 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   localServiceStartupTimeoutMs: 120_000,
   /** 冷启动健康复核间隔，同时约束单次健康请求的等待。 */
   localServiceStartupPollMs: 1_000,
+  /** 画布导出布局与素材的tar总量预算。 */
+  canvasExportMaxBytes: 268_435_456,
   /** 文件读取/编辑的单文件预算；分页展示不改变观察版本。 */
   codeReadMaxBytes: 1_048_576,
   codeReadPageCharacters: 8_000,
@@ -103,6 +105,7 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "localDataMigrationPollMs",
   "localServiceStartupTimeoutMs",
   "localServiceStartupPollMs",
+  "canvasExportMaxBytes",
   "codeReadMaxBytes",
   "codeReadPageCharacters",
   "codeSearchMaxResults",
@@ -151,6 +154,7 @@ export type AgentGovernanceOverrides = {
   localDataMigrationPollMs?: number | undefined;
   localServiceStartupTimeoutMs?: number | undefined;
   localServiceStartupPollMs?: number | undefined;
+  canvasExportMaxBytes?: number | undefined;
   codeReadMaxBytes?: number | undefined;
   codeReadPageCharacters?: number | undefined;
   codeSearchMaxResults?: number | undefined;
@@ -249,6 +253,7 @@ export const AGENT_GOVERNANCE_LIMITS = {
   localDataMigrationPollMs: { min: 10, max: 60_000 },
   localServiceStartupTimeoutMs: { min: 100, max: 1_800_000 },
   localServiceStartupPollMs: { min: 10, max: 60_000 },
+  canvasExportMaxBytes: { min: 1_024, max: 1_073_741_824 },
   codeReadMaxBytes: { min: 1_024, max: 67_108_864 },
   codeReadPageCharacters: { min: 128, max: 1_048_576 },
   codeSearchMaxResults: { min: 1, max: 100_000 },
@@ -355,6 +360,10 @@ export function resolveGovernanceEnvOverrides(
       Number.isSafeInteger(Number(source.KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS))
         ? Number(source.KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS)
         : undefined,
+    canvasExportMaxBytes: (() => {
+      const value = parseStrictInt(source.KENFUTWORK_CANVAS_EXPORT_MAX_BYTES);
+      return value !== undefined && value > 0 ? value : undefined;
+    })(),
     codeReadMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_READ_MAX_BYTES),
     codeReadPageCharacters: parseStrictInt(
       source.KENFUTWORK_CODE_READ_PAGE_CHARACTERS,

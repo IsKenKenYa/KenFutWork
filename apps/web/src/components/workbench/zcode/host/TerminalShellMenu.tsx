@@ -1,5 +1,3 @@
-import { useEffect, useState } from "react";
-import { ChevronDown } from "lucide-react";
 import { Button } from "@zui/components/ui/button.js";
 import {
   DropdownMenu,
@@ -8,6 +6,8 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
+import { ChevronDown } from "lucide-react";
+import { useEffect, useState } from "react";
 import { surfaceJson } from "./surfaceApi.js";
 
 export interface TerminalShellMenuOption {

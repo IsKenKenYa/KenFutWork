@@ -1,4 +1,4 @@
-import { prependRuntimePath } from "../../desktop/runtimes.js";
+import { prependRuntimePath } from "../../desktop/runtime-path.js";
 
 /** 操作系统与显式安装的运行时入口，服务端数据库/provider 配置一律不继承。 */
 const EXECUTION_ENV_KEYS = [

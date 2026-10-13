@@ -7,6 +7,7 @@
  * 安全前提：调用方必须传入**已校验归属**的沙箱目录（画布 → 项目 → 工作区），本模块
  * 不做路径校验。分支名一律先过 `isSafeBranchName` 再下发，杜绝把用户输入当参数注入。
  */
+import { realpathSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 
 export interface GitBranchView {
@@ -715,17 +716,29 @@ export function createGitClient(deps: { exec: ExecGit }): GitClient {
       );
     }
     const listed = await listWorktrees(cwd);
-    const created = listed.find(
-      (entry) => entry.branch === input.branch,
-    );
+    const created = listed.find((entry) => entry.branch === input.branch);
     if (!created) throw new Error("新建工作树后未能在列表中确认。");
     return created;
   };
 
   const deleteWorktree = async (cwd: string, path: string): Promise<void> => {
+    const normalize = (value: string) => {
+      const absolutePath = resolve(value);
+      let canonicalPath = absolutePath;
+      try {
+        canonicalPath = realpathSync(absolutePath);
+      } catch {
+        // 未登记或已丢失路径仍用精确词法路径拒绝。
+      }
+      return process.platform === "win32"
+        ? canonicalPath.toLowerCase()
+        : canonicalPath;
+    };
+    if (normalize(resolve(cwd, path)) === normalize(cwd)) {
+      throw new Error("主工作目录不能删除。");
+    }
     const listed = await listWorktrees(cwd);
     // git 在 Windows 上回正斜杠路径，resolve 回反斜杠——两侧都归一化再比。
-    const normalize = (value: string) => resolve(value).toLowerCase();
     const target = listed.find(
       (entry) => normalize(entry.path) === normalize(resolve(cwd, path)),
     );

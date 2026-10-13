@@ -86,6 +86,11 @@ export function createProjectService(options: {
   repository: ProjectRepository;
   localInstance: LocalInstanceService;
   sandboxRoot?: string | undefined;
+  beforeArchiveDesignProject?: (
+    actor: LocalActor,
+    projectId: string,
+    taskIds: string[],
+  ) => Promise<void>;
   beforeArchiveCodeProject?: (
     actor: LocalActor,
     projectId: string,
@@ -182,6 +187,41 @@ export function createProjectService(options: {
         }
       }
 
+      if (project.kind === "design") {
+        if (!options.beforeArchiveDesignProject)
+          throw new ProjectServiceError(
+            "project_delete_failed",
+            "画布任务关闭器不可用，项目未归档。",
+            503,
+          );
+        let taskIds: string[];
+        try {
+          taskIds = await repository.beginCloseDesignProject(
+            context.instanceId,
+            projectId,
+          );
+        } catch (error) {
+          throw new ProjectServiceError(
+            "project_delete_failed",
+            error instanceof Error ? error.message : "画布项目关闭未开始。",
+            503,
+          );
+        }
+        try {
+          await options.beforeArchiveDesignProject(actor, projectId, taskIds);
+        } catch (error) {
+          await repository.failCloseDesignProject(
+            context.instanceId,
+            projectId,
+          );
+          throw new ProjectServiceError(
+            "project_delete_failed",
+            error instanceof Error ? error.message : "画布任务尚未确认关闭。",
+            503,
+          );
+        }
+      }
+
       const archived = await repository
         .archive(context.instanceId, projectId)
         .catch(() => {
@@ -232,20 +272,15 @@ export function createProjectService(options: {
       // 不留到 run 时才发现「目录不存在」——那时用户已经等了一轮。
       const projectId = randomUUID();
       const kind = input.kind ?? "design";
-      const workDir =
-        kind === "code"
-          ? await resolveProjectWorkDirectory({
-              instanceId: context.instanceId,
-              projectId,
-              sandboxRoot:
-                options.sandboxRoot ?? join(context.dataDir, "sandbox"),
-              workDir: input.work_dir
-                ? requireWorkDir(input.work_dir)
-                : undefined,
-            })
-          : input.work_dir
+      const workDir = await resolveProjectWorkDirectory({
+        instanceId: context.instanceId,
+        projectId,
+        sandboxRoot: options.sandboxRoot ?? join(context.dataDir, "sandbox"),
+        workDir:
+          input.work_dir !== undefined
             ? requireWorkDir(input.work_dir)
-            : undefined;
+            : undefined,
+      });
       const additionalDirectories = requireAdditionalDirectories(
         input.additional_directories ?? [],
       );
@@ -420,9 +455,31 @@ export function createProjectService(options: {
         patch.name = input.name;
       }
       if (input.work_dir !== undefined) {
-        // `null` = 解绑；字符串 = 重绑（同样先校验）。
-        patch.workDir =
-          input.work_dir === null ? null : requireWorkDir(input.work_dir);
+        const current = await repository.findActiveById(
+          context.instanceId,
+          projectId,
+        );
+        if (!current)
+          throw new ProjectServiceError(
+            "project_not_found",
+            PROJECT_NOT_FOUND_MESSAGE,
+            404,
+          );
+        if (!current.work_dir || !validateWorkDir(current.work_dir).ok)
+          throw new ProjectServiceError(
+            "invalid_work_dir",
+            "项目目录缺失，请重新关联项目。",
+            400,
+          );
+        if (
+          input.work_dir === null ||
+          requireWorkDir(input.work_dir) !== requireWorkDir(current.work_dir)
+        )
+          throw new ProjectServiceError(
+            "invalid_work_dir",
+            "项目目录固定，不能在设置中更改。",
+            400,
+          );
       }
       if (input.additional_directories !== undefined) {
         patch.additionalDirectories = requireAdditionalDirectories(

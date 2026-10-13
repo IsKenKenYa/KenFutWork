@@ -53,10 +53,20 @@ it("readCapturedOutput：从落盘文件读也剥 NUL，且分页游标不受影
   const path = tempPath();
   writeFileSync(path, Buffer.from("ab", "utf16le"));
   const stats = { retainedBytes: 4, totalBytes: 4, discardedBytes: 0 };
-  const first = readCapturedOutput(path, stats, { offset: 0, maxBytes: 2 }, true);
+  const first = readCapturedOutput(
+    path,
+    stats,
+    { offset: 0, maxBytes: 2 },
+    true,
+  );
   expect(first.data).not.toContain(NUL);
   expect(first.nextOffset).toBe(2);
-  const rest = readCapturedOutput(path, stats, { offset: 2, maxBytes: 2 }, true);
+  const rest = readCapturedOutput(
+    path,
+    stats,
+    { offset: 2, maxBytes: 2 },
+    true,
+  );
   expect(rest.data).toBe("b");
   expect(rest.nextOffset).toBe(4);
 });

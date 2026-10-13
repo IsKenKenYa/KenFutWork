@@ -1,7 +1,7 @@
-import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { createLocalInstanceService } from "../features/local-instance/service.js";
+import type { CanvasService } from "../features/canvas/canvas-service.js";
+import { archiveTaskFixture } from "../features/context-history/test-fixture.js";
 import { ToolDeniedError } from "../kernel/context.js";
 import type { ToolDefinition } from "../kernel/types.js";
 import {
@@ -336,6 +336,20 @@ describe("权限拒绝转工具级结果（回归）", () => {
 });
 
 describe("resolvePresetForRun（DEC-2 会话级 preset）", () => {
+  it("可信Code Task优先于调用参数与画布身份", async () => {
+    const task = await archiveTaskFixture();
+    try {
+      expect(
+        resolvePresetForRun({
+          canvasId: "c1",
+          preset: "design",
+          scopeHandle: task.handle,
+        }),
+      ).toBe("code");
+    } finally {
+      await task.cleanup();
+    }
+  });
   it("画布运行归 design，纯会话归 code，显式传入优先", () => {
     expect(resolvePresetForRun({ canvasId: "c1" })).toBe("design");
     expect(resolvePresetForRun({})).toBe("code");
@@ -355,19 +369,14 @@ describe("resolveCanvasStateForRun（DEC-2 画布状态门控：design 才注入
     { id: "r1", type: "rectangle", x: 0, y: 0, width: 100, height: 50 },
   ];
 
-  function deps(overrides: { findById?: () => unknown } = {}) {
+  function deps(
+    overrides: Partial<Pick<CanvasService, "readCanvasContent">> = {},
+  ) {
     return {
-      localInstance: createLocalInstanceService({
-        repository: { ensure: async () => CANVAS_ACTOR.instanceId },
-        dataDir: tmpdir(),
-      }),
-      canvasRepository: {
-        findById: async () => ({ content: { elements } }),
-        findProjectBrandKitId: async () => null,
-        saveContent: async () => 1,
-        appendContent: async () => 1,
+      canvasService: {
+        readCanvasContent: async () => ({ elements, appState: {}, files: {} }),
         ...overrides,
-      } as never,
+      },
     };
   }
 
@@ -405,7 +414,11 @@ describe("resolveCanvasStateForRun（DEC-2 画布状态门控：design 才注入
     expect(
       await resolveCanvasStateForRun(
         { canvasId: CANVAS_ID, actor: CANVAS_ACTOR, preset: "design" },
-        deps({ findById: () => null }),
+        deps({
+          readCanvasContent: async () => {
+            throw new Error("画布文件缺失");
+          },
+        }),
       ),
     ).toBeNull();
   });

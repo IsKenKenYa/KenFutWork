@@ -55,7 +55,7 @@ const TAG_META: Record<string, { folder: string; description: string }> = {
   },
   "execution-modes": {
     folder: "执行模式",
-    description: "线程级执行模式（六档）的查询与切换。",
+    description: "线程级执行模式（五档）的查询与切换。",
   },
   flow: {
     folder: "Flow 集成",

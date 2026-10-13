@@ -1,4 +1,9 @@
-import type { CodeUiWorkspace } from "@kenfutwork/shared";
+import {
+  type CodeUiWorkspace,
+  type ProjectDirectoryRelinkResponse,
+  type ProjectDirectoryRelinkSnapshot,
+  projectDirectoryRelinkResponseSchema,
+} from "@kenfutwork/shared";
 
 export interface TaskWorkspaceIdentity {
   taskId: string;
@@ -113,6 +118,93 @@ export class TaskWorkspaceRegistry {
   }
   task(taskId: string) {
     return this.tasks.get(taskId) ?? null;
+  }
+  applyDirectoryRelink(
+    snapshot: ProjectDirectoryRelinkSnapshot,
+    value: ProjectDirectoryRelinkResponse,
+  ): () => void {
+    const receipt = projectDirectoryRelinkResponseSchema.parse(value);
+    const project = this.projects.get(snapshot.projectId);
+    const expected = new Map(snapshot.tasks.map((task) => [task.taskId, task]));
+    if (
+      !project ||
+      project.path !== snapshot.workDir ||
+      receipt.projectId !== snapshot.projectId ||
+      expected.size !== snapshot.tasks.length ||
+      receipt.tasks.length !== expected.size
+    )
+      throw new Error("目录关联回执与项目不一致。");
+    const observed = new Set<string>();
+    for (const task of receipt.tasks) {
+      const previous = expected.get(task.taskId),
+        known = this.tasks.get(task.taskId);
+      if (
+        observed.has(task.taskId) ||
+        !previous ||
+        task.scopeGeneration !== previous.scopeGeneration + 1 ||
+        task.branchGeneration !== previous.branchGeneration + 1 ||
+        (known &&
+          (known.projectId !== snapshot.projectId ||
+            known.rootDirectory !== snapshot.workDir))
+      )
+        throw new Error("目录关联回执与Task不一致。");
+      observed.add(task.taskId);
+    }
+    const affected = new Set(receipt.affectedTaskIds);
+    if (
+      affected.size !== receipt.affectedTaskIds.length ||
+      [...observed].some((id) => !affected.has(id))
+    )
+      throw new Error("目录关联回执缺少受影响Task。");
+    for (const taskId of affected) {
+      const task = this.tasks.get(taskId);
+      if (
+        task &&
+        (task.projectId !== snapshot.projectId ||
+          task.rootDirectory !== snapshot.workDir)
+      )
+        throw new Error("目录关联回执包含其它项目Task。");
+    }
+    const old = {
+      projects: new Map(this.projects),
+      paths: new Map(
+        [...this.projectIdsByPath].map(([path, ids]) => [path, new Set(ids)]),
+      ),
+      identities: new Map(this.workspaceByIdentity),
+      selected: new Map(this.selectedProjectByPath),
+      tasks: new Map(this.tasks),
+    };
+    const restore = () => {
+      this.projects.clear();
+      for (const item of old.projects) this.projects.set(...item);
+      this.projectIdsByPath.clear();
+      for (const item of old.paths) this.projectIdsByPath.set(...item);
+      this.workspaceByIdentity.clear();
+      for (const item of old.identities) this.workspaceByIdentity.set(...item);
+      this.selectedProjectByPath.clear();
+      for (const item of old.selected) this.selectedProjectByPath.set(...item);
+      this.tasks.clear();
+      for (const item of old.tasks) this.tasks.set(...item);
+      this.notify();
+    };
+    for (const taskId of affected) this.tasks.delete(taskId);
+    const oldIdentity = JSON.stringify([snapshot.projectId, snapshot.workDir]);
+    this.workspaceByIdentity.delete(oldIdentity);
+    const ids = this.projectIdsByPath.get(snapshot.workDir);
+    ids?.delete(snapshot.projectId);
+    if (!ids?.size) this.projectIdsByPath.delete(snapshot.workDir);
+    if (this.selectedProjectByPath.get(snapshot.workDir) === snapshot.projectId)
+      this.selectedProjectByPath.delete(snapshot.workDir);
+    this.projects.set(project.projectId, { ...project, path: receipt.workDir });
+    this.recordWorkspace(project.projectId, receipt.workDir);
+    this.selectedProjectByPath.set(receipt.workDir, project.projectId);
+    try {
+      this.notify();
+    } catch (error) {
+      restore();
+      throw error;
+    }
+    return restore;
   }
   defaultFor(
     path: string,

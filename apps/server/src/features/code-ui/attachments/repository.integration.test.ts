@@ -238,6 +238,8 @@ describe.skipIf(process.env.KENFUTWORK_ATTACHMENT_TEST_PG !== "1")(
         service = createCodeAttachmentsService({
           repository,
           blob: {
+            registerNamespace: localBlob.registerNamespace.bind(localBlob),
+            resolveNamespace: localBlob.resolveNamespace.bind(localBlob),
             bucket(name) {
               const bucket = localBlob.bucket(name);
               return {

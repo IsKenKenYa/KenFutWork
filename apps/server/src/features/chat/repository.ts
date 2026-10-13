@@ -1,5 +1,10 @@
 import type { ProjectKind } from "@kenfutwork/shared";
-import type { PersistenceService } from "../persistence/types.js";
+import { insertDesignTaskInTransaction } from "../execution/design-task-metadata.js";
+import type { DesignTaskPreparation } from "../execution/design-task-types.js";
+import type {
+  InstanceSqlClient,
+  PersistenceService,
+} from "../persistence/types.js";
 
 export type ChatSessionRow = {
   id: string;
@@ -38,6 +43,7 @@ export type NewChatMessage = {
 
 export type NewChatSession = {
   canvasId: string;
+  designTaskPreparation?: DesignTaskPreparation | undefined;
   /** 缺省即省略该列，由 `chat_sessions.title` 的默认值落库（不写 NULL）。 */
   title?: string | undefined;
   threadId: string;
@@ -125,16 +131,25 @@ export function createChatRepository(
         ? [input.canvasId, input.createdByClientId, input.threadId, input.title]
         : [input.canvasId, input.createdByClientId, input.threadId];
 
-      return persistence.forInstance(instanceId).queryOne<ChatSessionRow>(
-        `insert into public.chat_sessions ${columns}
+      const insert = (sql: InstanceSqlClient) =>
+        sql.queryOne<ChatSessionRow>(
+          `insert into public.chat_sessions ${columns}
          select :instance, p.id, p.kind, c.id, ${selectList}
            from public.canvases c
            join public.projects p on p.id = c.project_id
           where c.id = $1
             and p.instance_id = :instance and p.kind <> 'code'
          returning id, title, updated_at, project_id, mode`,
-        params,
-      );
+          params,
+        );
+      const prepared = input.designTaskPreparation;
+      if (!prepared) return insert(persistence.forInstance(instanceId));
+      return persistence.transaction(async (tx) => {
+        const sql = tx.forInstance(instanceId);
+        const row = await insert(sql);
+        if (row) await insertDesignTaskInTransaction(sql, row.id, prepared);
+        return row;
+      });
     },
 
     async ensureSessionWithId(instanceId, input) {

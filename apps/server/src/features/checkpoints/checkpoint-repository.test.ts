@@ -20,6 +20,7 @@ const row = (overrides: Partial<CheckpointRow> = {}): CheckpointRow => ({
   id: "ck-1",
   instanceId: "ws-1",
   taskId: "task-1",
+  taskKind: "code",
   projectId: "project-1",
   rootDirectory: "/workspace",
   directorySnapshots: [
@@ -89,6 +90,7 @@ describe("检查点仓储：SQL 形状（录制假 persistence）", () => {
       1,
       0,
       "2026-01-01T00:00:00.000Z",
+      "code",
     ]);
   });
 
@@ -97,6 +99,7 @@ describe("检查点仓储：SQL 形状（录制假 persistence）", () => {
       id: "ck-9",
       instance_id: "ws-1",
       task_id: "c-9",
+      task_kind: "code",
       project_id: "project-1",
       root_directory: "/workspace",
       directory_snapshots: [
@@ -119,6 +122,7 @@ describe("检查点仓储：SQL 形状（录制假 persistence）", () => {
       id: "ck-9",
       instanceId: "ws-1",
       taskId: "c-9",
+      taskKind: "code",
       projectId: "project-1",
       rootDirectory: "/workspace",
       directorySnapshots: [

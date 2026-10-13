@@ -9,7 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join, normalize, resolve, sep } from "node:path";
-
+import { createNamespacedBlobStore } from "../namespace.js";
 import {
   type BlobBucket,
   type BlobOperation,
@@ -36,7 +36,7 @@ export function createLocalFsBlobStore(options: {
 }): BlobStore {
   const root = resolve(options.rootDir);
 
-  return {
+  return createNamespacedBlobStore({
     bucket(name) {
       return createBucket({
         bucket: name,
@@ -45,7 +45,7 @@ export function createLocalFsBlobStore(options: {
         signingSecret: options.signingSecret,
       });
     },
-  };
+  });
 }
 
 /** 把对象路径解析为绝对路径；越界即抛（段级拒绝 `..`/`.` + 前缀校验）。 */
@@ -98,7 +98,7 @@ export function verifyBlobUrlSignature(input: {
 }
 
 /** Bounded consumers verify object size before allocation and reject a file changed during the read. */
-async function readBoundedBlob(
+export async function readBoundedBlob(
   path: string,
   maximum: number,
 ): Promise<Uint8Array> {

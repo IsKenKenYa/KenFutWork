@@ -72,7 +72,8 @@ export type SignedUrlEntry = {
 /** 单桶句柄：方法与存量调用点一一对应，便于逐处替换。 */
 export type BlobBucket = {
   /**
-   * 桶是否公开可读。**消费方不应硬编码公开桶清单**——实际公开性由存储侧决定
+   * 默认桶是否公开可读；namespace可单独收窄，取对象URL应使用resolveUrl。
+   * **消费方不应硬编码公开桶清单**——实际公开性由存储侧决定
    * （迁移声明 public=true 也可能因环境状态不一致而未生效，实测踩过：
    * `project-assets` 在本地库里 public=false，公网路由会把非公开桶报成
    * 「Bucket not found」，于是硬编码假设会产出 400 的死链）。
@@ -108,6 +109,26 @@ export type BlobBucket = {
 
 export type BlobStore = {
   bucket(name: string): BlobBucket;
+  registerNamespace(registration: BlobNamespaceRegistration): void;
+  /** HTTP与Bucket共用的严格分派；命中后不得回退默认Provider。 */
+  resolveNamespace(
+    bucket: string,
+    path: string,
+  ): BlobNamespaceRegistration | null;
+};
+
+export type BlobNamespaceProvider = Pick<
+  BlobBucket,
+  "upload" | "download" | "copy" | "remove"
+> & {
+  contentType?(path: string): Promise<string | undefined>;
+};
+export type BlobNamespaceRegistration = {
+  bucket: string;
+  /** objectPath格式为instanceId/namespace/opaqueKey，传给Provider的是完整objectPath。 */
+  namespace: string;
+  provider: BlobNamespaceProvider;
+  publicRead: boolean;
 };
 
 /**

@@ -1,7 +1,12 @@
 import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 import type { Callbacks } from "@langchain/core/callbacks/manager";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
+import {
+  AIMessage,
+  HumanMessage,
+  SystemMessage,
+  ToolMessage,
+} from "@langchain/core/messages";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatVertexAI } from "@langchain/google-vertexai";
 import { isCommand } from "@langchain/langgraph";
@@ -29,13 +34,18 @@ import {
   createCodeFilesystemMiddleware,
   createNativeToolExclusionMiddleware,
 } from "../features/code-tools/native-tool-exclusion.js";
+import type { ContextHistoryArchiveBindings } from "../features/context-history/types.js";
 import {
   createTaskWorkNotificationMiddleware,
   type TaskWorkBinding,
 } from "../features/task-work/model-mailbox.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
-import type { CompactionPlan, CompactionRetention } from "./auto-compact.js";
+import type {
+  AgentContextBudget,
+  CompactionPlan,
+  CompactionRetention,
+} from "./auto-compact.js";
 import { resolveCompactionPlan } from "./auto-compact.js";
 import {
   type AgentBackendResult,
@@ -45,12 +55,19 @@ import type { AgentContextHistory } from "./context-history.js";
 import { createExecuteBackgroundTool } from "./execute-background.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
+import { referenceFromNativeArchiveUri } from "./native-checkpoint-archive.js";
 import { attachNativeCheckpointDurability } from "./native-checkpoint-durability.js";
 import { createNativeCompactionTracker } from "./native-compaction.js";
 import {
   createNativeContextHistory,
   effectiveNativeMessages,
 } from "./native-context-history.js";
+import {
+  assertNativeContextInputBudget,
+  createNativeRecoveryMiddleware,
+} from "./native-recovery-middleware.js";
+import { createNativeTaskArchive } from "./native-task-archive.js";
+import { createNativeToolProofMiddleware } from "./native-tool-proof.js";
 import type {
   AgentRunExtension,
   AgentRunExtensionContext,
@@ -66,11 +83,16 @@ import {
   type SubagentChildRunner,
 } from "./subagent-tools.js";
 import { createTaskNotificationMiddleware } from "./task-notifications.js";
+import type { NativeToolProof } from "./tool-execution-receipts.js";
 
 export type KenFutWorkAgent = Pick<
   ReturnType<typeof createDeepAgent>,
   "stream" | "streamEvents"
-> & { canonicalToolEvents?: boolean; contextHistory?: AgentContextHistory };
+> & {
+  canonicalToolEvents?: boolean;
+  contextHistory?: AgentContextHistory;
+  releaseContextHistory?: () => void;
+};
 
 /**
  * 执行模式工具门（solo/plan 硬约束）：拦截 deepagents 内置工具
@@ -139,6 +161,7 @@ function createUnknownToolGuardMiddleware(): AgentMiddleware {
       }
       return new ToolMessage({
         tool_call_id: request.toolCall.id ?? request.toolCall.name,
+        status: "error",
         content: `工具 ${request.toolCall.name} 当前不可用（可能已被停用或卸载）。请改用其它方式完成，或请用户重新启用相关插件。`,
       });
     },
@@ -205,6 +228,8 @@ ${advice}`,
  */
 function createModelResponseGuardMiddleware(): AgentMiddleware {
   const requireResponse = (message: AIMessage) => {
+    if (message.invalid_tool_calls?.length)
+      throw new Error("模型工具调用参数格式异常，请修正模型配置后重试。");
     const hasContent =
       typeof message.content === "string"
         ? Boolean(message.content.trim())
@@ -304,6 +329,11 @@ export type KenFutWorkAgentFactory = (options: {
   kernelTools?: ToolDefinition[];
   /** 本次运行的工具执行上下文（runId/LocalActor）。 */
   runToolContext?: ToolExecutionContext;
+  nativeToolProof?: {
+    identity: { runId: string; sessionId: string; conversationId: string };
+    observe(proof: NativeToolProof): Promise<void>;
+  };
+  contextHistoryArchives?: ContextHistoryArchiveBindings;
   /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
   toolGate?: ToolGate;
   /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
@@ -313,6 +343,7 @@ export type KenFutWorkAgentFactory = (options: {
    * 传了才挂中间件——设置里关掉时**一个字都不挂**，不是挂上再短路。
    */
   autoCompact?: CompactionPlan;
+  contextBudget?: AgentContextBudget;
   /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
   manualCompactPlan?: CompactionPlan;
   /** 原生维护适配器缺省预算仍消费本 Run 已解析的实例保留目标。 */
@@ -356,12 +387,18 @@ export function createKenFutWorkDeepAgent(options: {
   store?: BaseStore;
   kernelTools?: ToolDefinition[];
   runToolContext?: ToolExecutionContext;
+  nativeToolProof?: {
+    identity: { runId: string; sessionId: string; conversationId: string };
+    observe(proof: NativeToolProof): Promise<void>;
+  };
+  contextHistoryArchives?: ContextHistoryArchiveBindings;
   /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
   toolGate?: ToolGate;
   /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
   toolGateHooks?: ToolGateHooks;
   /** 上下文自动压缩的口径（见 agent/auto-compact.ts）。 */
   autoCompact?: CompactionPlan;
+  contextBudget?: AgentContextBudget;
   /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
   manualCompactPlan?: CompactionPlan;
   compactionRetention?: CompactionRetention;
@@ -386,8 +423,27 @@ export function createKenFutWorkDeepAgent(options: {
   /** 本 run 的系统提示：runtime 经内核段注册表组装后传入（deep-agent 只消费）。 */
   systemPrompt: string;
 }): KenFutWorkAgent {
+  const execution = options.runToolContext;
+  const scopeHandle = execution?.scopeHandle;
+  if (options.autoCompact && !options.checkpointer)
+    throw new Error("上下文压缩缺少持久历史Provider。");
+  if (options.checkpointer && options.preset === "code" && !scopeHandle)
+    throw new Error("Code持久历史必须绑定真实Task执行作用域。");
+  if (
+    options.checkpointer &&
+    scopeHandle &&
+    (!options.contextHistoryArchives ||
+      !options.kernelTools?.some((tool) => tool.name === "ReadHistory"))
+  )
+    throw new Error("上下文归档Provider与ReadHistory Consumer未完整装配。");
   const backendResult =
     options.backendResult ?? createAgentBackend(options.env, options.canvasId);
+
+  let agent: ReturnType<typeof createDeepAgent>;
+  const archive =
+    options.checkpointer && scopeHandle
+      ? createNativeTaskArchive(() => agent, execution, options.preset)
+      : undefined;
 
   // 运行 preset（DEC-2）：本次装配的能力集口径——运行态工具、子代理清单共用
   const preset = options.preset;
@@ -570,50 +626,74 @@ export function createKenFutWorkDeepAgent(options: {
 
   options.onToolInventory?.(tools);
 
-  /**
-   * 上下文自动压缩（R4-1 输出预留线的执行面）：只在设置开着、且算得出触发线时挂。
-   *
-   * - **摘要模型**：不传 `model` → 中间件用本轮 run 的模型（BYOK 就是用户那把 Key，
-   *   不引入第二个模型配置）；
-   * - **历史对齐**：被压掉的消息 offload 到工作区 `/conversation_history/`，模型上下文里
-   *   换成一条摘要（`lc_source="summarization"`）。库里的转录不动——界面上用一条提示说明
-   *   （见 stream-adapter 的 `run.compacted`）；
-   * - **backend**：与 agent 同一个后端工厂（offload 落到用户自己的工作目录，可追溯）。
-   */
-  const nativeSummarization = createSummarizationMiddleware({
+  // Native SDK remains the sole trigger/keep/count implementation. Archive receipts bind
+  // exact durable checkpoints; ReadHistory is the only consumer, never ordinary file Read.
+  const summaryOptions = {
     backend: backendResult.factory,
     ...(options.autoCompact
       ? { trigger: options.autoCompact.trigger, keep: options.autoCompact.keep }
       : {}),
-  }) as unknown as AgentMiddleware;
+  };
+  // Until Design has a real Task, preserve its SDK history rather than inventing an archive owner.
+  const nativeSummarization = archive
+    ? createNativeRecoveryMiddleware({
+        ...summaryOptions,
+        archive,
+        inputTokenLimit: () => options.contextBudget?.inputTokenLimit ?? null,
+      })
+    : (createSummarizationMiddleware(
+        summaryOptions,
+      ) as unknown as AgentMiddleware);
   const compactionTracker = options.autoCompact
     ? createNativeCompactionTracker(nativeSummarization)
     : undefined;
-  // 同名覆盖DA默认auto行为，仍保留summary state schema供显式维护operation。
-  const summaryExecution: AgentMiddleware = compactionTracker?.middleware ?? {
-    ...nativeSummarization,
-    wrapModelCall: (request, handler) =>
-      handler({
-        ...request,
-        messages: effectiveNativeMessages(request.messages, request.state),
-      }),
-  };
-  const summaryCall = summaryExecution.wrapModelCall;
-  if (!summaryCall) throw new Error("摘要模型请求入口未装配。");
+  // SDK preserves named defaults at their original position. Keep only its native state
+  // carrier there; actual counting must run after all request/tool/prompt decorators.
   const summarizationMiddleware: AgentMiddleware[] = [
     {
-      ...summaryExecution,
+      ...nativeSummarization,
       async wrapModelCall(request, handler) {
-        // SDK默认摘要位于普通扩展之前；这里统一采用已消费输入的冻结模型。
         const model =
           await options.extensionContext?.modelControl?.resolveCurrent();
-        return summaryCall(
-          { ...request, ...(model ? { model } : {}) },
-          handler,
-        );
+        return handler({
+          ...request,
+          ...(model ? { model } : {}),
+          // The late SDK hook projects automatic history exactly once. Manual summaries
+          // still need their effective projection when automatic compaction is disabled.
+          messages: options.autoCompact
+            ? request.messages
+            : effectiveNativeMessages(request.messages, request.state),
+        });
       },
     },
   ];
+  const summaryCall = compactionTracker?.middleware.wrapModelCall;
+  if (options.autoCompact && !summaryCall)
+    throw new Error("摘要模型请求入口未装配。");
+  const finalContextBudgetMiddleware: AgentMiddleware[] = summaryCall
+    ? [
+        {
+          name: "KenFutWorkContextBudget",
+          stateSchema: nativeSummarization.stateSchema,
+          wrapModelCall: summaryCall,
+        },
+      ]
+    : [
+        {
+          name: "KenFutWorkContextBudget",
+          wrapModelCall(request, handler) {
+            assertNativeContextInputBudget(
+              SystemMessage.isInstance(request.systemMessage)
+                ? [request.systemMessage, ...request.messages]
+                : request.messages,
+              request.tools,
+              request.model,
+              () => options.contextBudget?.inputTokenLimit ?? null,
+            );
+            return handler(request);
+          },
+        },
+      ];
 
   // 后台任务通知（DEC-15）：每次模型调用前注入已结算未消费的通知
   const notificationMiddleware: AgentMiddleware[] = [
@@ -639,7 +719,7 @@ export function createKenFutWorkDeepAgent(options: {
       options.llmRetry?.infinite ?? AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
   });
 
-  const agent = createDeepAgent({
+  agent = createDeepAgent({
     backend: backendResult.factory,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
     model: resolvedModel,
@@ -660,6 +740,16 @@ export function createKenFutWorkDeepAgent(options: {
     ...(options.toolGate
       ? {
           middleware: [
+            ...(options.nativeToolProof
+              ? [
+                  createNativeToolProofMiddleware({
+                    ...options.nativeToolProof,
+                    ...(options.extensionContext
+                      ? { context: options.extensionContext }
+                      : {}),
+                  }),
+                ]
+              : []),
             ...runExtensions.map((extension) =>
               extension.createMiddleware({}, options.extensionContext),
             ),
@@ -671,10 +761,21 @@ export function createKenFutWorkDeepAgent(options: {
             createModelResponseGuardMiddleware(),
             createUnknownToolGuardMiddleware(),
             createToolGateMiddleware(options.toolGate, options.toolGateHooks),
+            ...finalContextBudgetMiddleware,
           ],
         }
       : {
           middleware: [
+            ...(options.nativeToolProof
+              ? [
+                  createNativeToolProofMiddleware({
+                    ...options.nativeToolProof,
+                    ...(options.extensionContext
+                      ? { context: options.extensionContext }
+                      : {}),
+                  }),
+                ]
+              : []),
             ...runExtensions.map((extension) =>
               extension.createMiddleware({}, options.extensionContext),
             ),
@@ -685,19 +786,35 @@ export function createKenFutWorkDeepAgent(options: {
             createToolErrorGuardMiddleware(),
             createModelResponseGuardMiddleware(),
             createUnknownToolGuardMiddleware(),
+            ...finalContextBudgetMiddleware,
           ],
         }),
     tools,
   });
+  const releaseContextHistory =
+    archive && options.contextHistoryArchives && execution?.scopeHandle
+      ? options.contextHistoryArchives.bind(execution, (input) =>
+          archive.read({
+            reference: referenceFromNativeArchiveUri(input.uri),
+            ...(input.offset !== undefined ? { offset: input.offset } : {}),
+            ...(input.limit !== undefined ? { limit: input.limit } : {}),
+            ...(input.signal ? { signal: input.signal } : {}),
+          }),
+        )
+      : undefined;
   if (options.checkpointer) attachNativeCheckpointDurability(agent);
   if (compactionTracker && options.checkpointer)
     compactionTracker.attach(agent);
   return Object.assign(agent, {
+    ...(releaseContextHistory ? { releaseContextHistory } : {}),
     ...(options.checkpointer
       ? {
           contextHistory: createNativeContextHistory(agent, {
             model: resolvedModel,
             backend: backendResult.factory,
+            ...(archive ? { archive } : {}),
+            inputTokenLimit: () =>
+              options.contextBudget?.inputTokenLimit ?? null,
             ...(options.store ? { store: options.store } : {}),
             plan:
               options.manualCompactPlan ??
@@ -714,9 +831,9 @@ export function createKenFutWorkDeepAgent(options: {
           }),
         }
       : {}),
-    canonicalToolEvents: runExtensions.some(
-      (extension) => extension.canonicalToolEvents,
-    ),
+    canonicalToolEvents:
+      Boolean(options.nativeToolProof) ||
+      runExtensions.some((extension) => extension.canonicalToolEvents),
   });
 }
 

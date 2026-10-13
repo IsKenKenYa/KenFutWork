@@ -56,13 +56,26 @@ function scopeOf(context: ToolExecutionContext): ExecutionScopeHandle {
   return context.scopeHandle;
 }
 function contextOf(context: ToolExecutionContext): CommandContext {
-  if (!context.taskWorkContext?.actor || !context.scopeHandle)
+  const work = context.taskWorkContext;
+  const handle = context.scopeHandle;
+  if (!work?.actor || !handle)
     throw new Error("命令工具缺少可信 Task 工作域与运行身份。");
+  const scope = handle.describe();
+  const ownerKind = handle.preset;
+  if (
+    work.actor.instanceId !== work.scope.instanceId ||
+    (work.ownerKind ?? "code") !== ownerKind ||
+    work.scope.instanceId !== scope.instanceId ||
+    work.scope.projectId !== scope.projectId ||
+    work.scope.taskId !== scope.taskId ||
+    work.scope.generation !== scope.generation
+  )
+    throw new Error("命令工具的Task身份或授权代际已改变。");
   return {
-    ...context.taskWorkContext,
-    actor: context.taskWorkContext.actor,
-    scope: context.scopeHandle.describe(),
-    agentId: context.scopeHandle.agentId,
+    ...work,
+    ownerKind,
+    actor: work.actor,
+    agentId: handle.agentId,
   };
 }
 function requireWorkControl(
@@ -117,12 +130,16 @@ function projection(
 }
 
 /** 一个 profile 的控制器跨 Run 持有命令句柄；数据库记录提供重启后的只读输出。 */
-export function createTaskCommandTools(deps: {
-  manager: TaskWorkManager;
-  sandbox: ProcessSandbox;
-  settings: SettingsService;
-  historicalOutputs?: Pick<CodeUiOutputHistory, "read" | "manifest">;
-}) {
+export function createTaskCommandTools(
+  deps: {
+    manager: TaskWorkManager;
+    sandbox: ProcessSandbox;
+    settings: SettingsService;
+    historicalOutputs?: Pick<CodeUiOutputHistory, "read" | "manifest">;
+  },
+  options: { scope?: "code" | "design" } = {},
+) {
+  const toolScope = options.scope ?? "code";
   const commands = new Map<string, ManagedProcess>();
   const invocations = new Map<
     string,
@@ -179,7 +196,7 @@ export function createTaskCommandTools(deps: {
     execute: ToolDefinition["execute"],
   ): ToolDefinition => ({
     name,
-    scope: "code",
+    scope: toolScope,
     exposure: "core",
     access,
     description,
@@ -201,7 +218,10 @@ export function createTaskCommandTools(deps: {
         execCtx.permissionInvocation?.mode === "plan"
           ? handle.derive("review", handle.agentId)
           : handle;
-      const context = { ...contextOf(execCtx), scope: processScope.describe() };
+      const context = {
+        ...contextOf(execCtx),
+        scope: processScope.describe(),
+      };
       if (!execCtx.toolCallId)
         throw new Error("命令缺少稳定工具调用身份，不能派发。");
       const settings = await settingsFor(context);

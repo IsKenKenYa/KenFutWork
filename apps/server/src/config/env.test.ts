@@ -192,3 +192,48 @@ describe("KENFUTWORK_FLOW_FRONTEND_URL 解析", () => {
     ).toThrow(/合法 URL/);
   });
 });
+
+describe("Flow gateway control origin", () => {
+  it("reads an explicit gateway without deriving the frontend port", () => {
+    const env = loadServerEnv(
+      {},
+      { KENFUTWORK_FLOW_FRONTEND_URL: "http://127.0.0.1:8080" },
+    );
+    expect(env.flowGatewayUrl).toBeUndefined();
+    expect(
+      loadServerEnv(
+        {},
+        { KENFUTWORK_FLOW_GATEWAY_URL: "http://127.0.0.1:9090/" },
+      ).flowGatewayUrl,
+    ).toBe("http://127.0.0.1:9090");
+  });
+  it.each(["file:///tmp/gateway", "http://127.0.0.1:9090/path", "bad-url"])(
+    "rejects invalid gateway %s",
+    (value) => {
+      expect(() =>
+        loadServerEnv({}, { KENFUTWORK_FLOW_GATEWAY_URL: value }),
+      ).toThrow("KENFUTWORK_FLOW_GATEWAY_URL");
+    },
+  );
+});
+
+it.each(["KENFUTWORK_FLOW_GATEWAY_URL", "KENFUTWORK_FLOW_FRONTEND_URL"])(
+  "%s rejects URL credentials without echoing them",
+  (variable) => {
+    let failure: unknown;
+    try {
+      loadServerEnv(
+        {},
+        { [variable]: "http://user:credential-marker@127.0.0.1:9090" },
+      );
+    } catch (error) {
+      failure = error;
+    }
+    if (!(failure instanceof Error))
+      throw new Error(
+        "Expected origin validation to reject embedded credentials",
+      );
+    expect(failure.message).toContain("不接受认证信息");
+    expect(failure.message).not.toContain("credential-marker");
+  },
+);

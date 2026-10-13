@@ -96,16 +96,21 @@ export function createAgentRunMetadataService(options: {
             .resolveOwnedSessionThread(actor, input.taskId)
             .catch(() => null)
         : null;
-      if (!workspace || !binding || binding.mode !== "code")
+      if (
+        !workspace ||
+        !binding ||
+        (binding.mode !== "code" && binding.mode !== "design")
+      )
         throw new AgentTurnBoundaryError(
           "not_found",
-          "Code Task不存在或不属于当前用户。",
+          "Task不存在或不属于当前用户。",
           404,
         );
       return repository.getTurnBoundaries({
         instanceId: workspace.instanceId,
         projectId: binding.projectId,
         taskId: input.taskId,
+        taskKind: binding.mode,
         runId: input.runId,
         threadId: binding.threadId,
       });
@@ -126,6 +131,7 @@ export function createAgentRunMetadataService(options: {
 
     async updateRun(input) {
       const patch = {
+        ...(input.stopReason ? { stop_reason: input.stopReason } : {}),
         ...(input.completedAt ? { completed_at: input.completedAt } : {}),
         ...(input.errorCode ? { error_code: input.errorCode } : {}),
         ...(input.errorMessage ? { error_message: input.errorMessage } : {}),

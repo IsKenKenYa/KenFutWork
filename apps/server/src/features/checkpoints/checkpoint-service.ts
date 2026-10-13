@@ -1,9 +1,13 @@
-import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { randomUUID } from "node:crypto";
+import { lstat, mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { GitSource } from "../code-git/code-git-service.js";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
 import type { LocalActor } from "../local-instance/types.js";
+import {
+  checkpointWorkRoots,
+  resolveCheckpointGitDirectory,
+} from "./git-directory.js";
 import type {
   CheckpointKind,
   CheckpointRepository,
@@ -15,7 +19,6 @@ import {
   type ShadowGitClient,
   type ShadowNumstatFile,
 } from "./shadow-git-client.js";
-import { shadowRepositoryPath } from "./shadow-repo-path.js";
 
 export const EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 export class CodeCheckpointError extends Error {
@@ -169,6 +172,12 @@ export function createCheckpointService(options: {
   ) => Promise<ShadowGitClient>;
   gitSource: GitSource;
   checkpointRoot: string;
+  /** Design may force-include only canonical Canvas layout and referenced assets. */
+  forceIncludePaths?: (
+    scope: ExecutionScopeHandle,
+    actor: LocalActor,
+    rootDirectory: string,
+  ) => Promise<readonly string[]>;
   files: CheckpointFileTransactions;
   acquireRestoreBarrier: (
     scope: ExecutionScopeHandle,
@@ -183,6 +192,17 @@ export function createCheckpointService(options: {
     actor: LocalActor,
     success: boolean,
   ) => Promise<void>;
+  designRestore?: {
+    begin(
+      scope: ExecutionScopeHandle,
+      actor: LocalActor,
+    ): Promise<ExecutionScopeHandle>;
+    finish(
+      scope: ExecutionScopeHandle,
+      actor: LocalActor,
+      success: boolean,
+    ): Promise<void>;
+  };
 }): CheckpointService {
   const locks = new Map<string, Promise<unknown>>();
   const previews = new Map<
@@ -198,54 +218,12 @@ export function createCheckpointService(options: {
   >();
   const identityKey = (scope: ExecutionScopeHandle) =>
     `${scope.describe().instanceId}:${scope.describe().taskId}`;
-  /** 旧布局（三层 UUID + 64 位摘要）——只用于兼容既有影子仓库，新仓库不再用它。 */
-  const legacyGitDirectory = (scope: ExecutionScopeHandle, root: string) => {
-    const id = scope.describe();
-    return join(
+  const gitDirectory = (scope: ExecutionScopeHandle, root: string) =>
+    resolveCheckpointGitDirectory(
       options.checkpointRoot,
-      id.instanceId,
-      id.projectId,
-      `${id.taskId}.git`,
-      createHash("sha256").update(root).digest("hex"),
+      scope.describe(),
+      root,
     );
-  };
-  const isDirectory = async (path: string) => {
-    try {
-      return (await lstat(path)).isDirectory();
-    } catch {
-      // 不存在 / 路径过长（Windows ENAMETOOLONG）都当作「没有」
-      return false;
-    }
-  };
-  /**
-   * 影子仓库目录（**短布局**）：`<checkpointRoot>/<taskId>-<rootHash16>.git`。
-   *
-   * 为什么不再用「三层 UUID + 64 位摘要」：临时目录 / AppData 前缀一叠就 230+ 字符，
-   * Windows 上 git 自己都打不开——`fatal: '$GIT_DIR' too big` / `Filename too long`
-   * （2026-10-09 实测：checkpoint-service 九条用例全红、打包冒烟卡在 shadow checkpoint 一步；
-   * `-c core.longpaths=true` 治不了，那是 git 的长度校验而非 Windows 路径 API）。
-   * 旧布局的仓库若已存在则**原地搬家**到短布局——数据库只存 sha、不存路径，搬家不动任何
-   * 检查点记录；搬不动（被占用 / 权限）就沿用旧路径，行为与修前一致。
-   */
-  const gitDirectory = async (
-    scope: ExecutionScopeHandle,
-    root: string,
-  ): Promise<string> => {
-    const id = scope.describe();
-    const short = shadowRepositoryPath(options.checkpointRoot, id.taskId, root);
-    if (await isDirectory(short)) return short;
-    const legacy = legacyGitDirectory(scope, root);
-    if (await isDirectory(legacy)) {
-      try {
-        await mkdir(dirname(short), { recursive: true });
-        await rename(legacy, short);
-        return short;
-      } catch {
-        return legacy;
-      }
-    }
-    return short;
-  };
   const excludedPathsFor = (
     scope: ExecutionScopeHandle,
     root: string,
@@ -315,15 +293,8 @@ export function createCheckpointService(options: {
       );
     return row;
   };
-  const rootsFor = (scope: ExecutionScopeHandle) => {
-    const identity = scope.describe();
-    return [
-      identity.rootDirectory,
-      ...identity.additionalDirectories
-        .filter((entry) => entry.access === "read-write")
-        .map((entry) => entry.path),
-    ];
-  };
+  const rootsFor = (scope: ExecutionScopeHandle) =>
+    checkpointWorkRoots(scope.describe());
   const captureSnapshot = async (
     input: ScopeInput & { runId: string | null },
     kind: CheckpointKind,
@@ -339,7 +310,30 @@ export function createCheckpointService(options: {
       await input.scope.resolvePath(rootDirectory, "read");
       const gitDir = await gitDirectory(input.scope, rootDirectory);
       await mkdir(gitDir, { recursive: true });
-      const nested = excludedPathsFor(input.scope, rootDirectory);
+      const excludedPaths = excludedPathsFor(input.scope, rootDirectory);
+      const forceIncludePaths =
+        input.scope.preset === "design"
+          ? (
+              (await options.forceIncludePaths?.(
+                input.scope,
+                input.actor,
+                rootDirectory,
+              )) ?? []
+            ).map((path) => requireRelative(path.replaceAll("\\", "/")))
+          : [];
+      if (
+        forceIncludePaths.some((path) =>
+          excludedPaths.some(
+            (boundary) => path === boundary || path.startsWith(`${boundary}/`),
+          ),
+        )
+      )
+        throw new CodeCheckpointError(
+          "checkpoint_failed",
+          "画布布局或素材超出当前检查点目录边界。",
+          409,
+        );
+      const nested = excludedPaths;
       const excludes = [
         ...SHADOW_EXCLUDES,
         ...nested.map((path) => `/${path.replace(/[\\*?[\]#! ]/g, "\\$&")}/`),
@@ -347,11 +341,12 @@ export function createCheckpointService(options: {
       const directory = {
         gitDir,
         workTree: rootDirectory,
-        excludedPaths: excludedPathsFor(input.scope, rootDirectory),
+        excludedPaths,
       };
       await git.ensureRepo({ ...directory, excludes });
       const committed = await git.commitSnapshot({
         ...directory,
+        forceIncludePaths,
         message: label,
       });
       const shadowCommit = committed?.sha ?? (await git.head(directory));
@@ -406,6 +401,7 @@ export function createCheckpointService(options: {
       taskId: identity.taskId,
       rootDirectory: identity.rootDirectory,
       directorySnapshots,
+      taskKind: input.scope.preset,
       runId: input.runId,
       kind,
       label,
@@ -760,7 +756,9 @@ export function createCheckpointService(options: {
         plan.entries,
         async () => {
           restoringScope = barrier.authorize(
-            await options.onBeforeRestore(input.scope, input.actor),
+            input.scope.preset === "design" && options.designRestore
+              ? await options.designRestore.begin(input.scope, input.actor)
+              : await options.onBeforeRestore(input.scope, input.actor),
           );
           return restoringScope;
         },
@@ -773,12 +771,18 @@ export function createCheckpointService(options: {
         )) ?? row;
       await barrier.release();
       released = true;
-      await options.onAfterRestore(nextScope, input.actor, true);
+      if (nextScope.preset === "design" && options.designRestore)
+        await options.designRestore.finish(nextScope, input.actor, true);
+      else await options.onAfterRestore(nextScope, input.actor, true);
       previews.delete(key);
       return restored;
     } catch (error) {
-      if (restoringScope)
-        await options.onAfterRestore(restoringScope, input.actor, false);
+      const failedScope = restoringScope as ExecutionScopeHandle | null;
+      if (failedScope) {
+        if (failedScope.preset === "design" && options.designRestore)
+          await options.designRestore.finish(failedScope, input.actor, false);
+        else await options.onAfterRestore(failedScope, input.actor, false);
+      }
       throw error;
     } finally {
       if (!released) await barrier.release();

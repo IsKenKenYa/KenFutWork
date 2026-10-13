@@ -50,9 +50,7 @@ describe("终端 shell 菜单", () => {
     stubShellsResponse();
     const user = userEvent.setup();
     const onSelectShell = vi.fn();
-    const view = render(
-      <TerminalShellMenu onSelectShell={onSelectShell} />,
-    );
+    const view = render(<TerminalShellMenu onSelectShell={onSelectShell} />);
 
     // 未显式选过 shell：触发展示 resolved 默认（auto 解析后的那个）
     const trigger = await screen.findByRole("button", { name: "Shell" });
@@ -79,12 +77,15 @@ describe("终端 shell 菜单", () => {
 
     // 会话显式选定 shell 后：触发显示该 shell，重开菜单对应项选中
     view.rerender(
-      <TerminalShellMenu activeShell="git-bash" onSelectShell={onSelectShell} />,
+      <TerminalShellMenu
+        activeShell="git-bash"
+        onSelectShell={onSelectShell}
+      />,
     );
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Shell" }).textContent).toContain(
-        "Git Bash",
-      ),
+      expect(
+        screen.getByRole("button", { name: "Shell" }).textContent,
+      ).toContain("Git Bash"),
     );
     await user.click(screen.getByRole("button", { name: "Shell" }));
     expect(
@@ -101,9 +102,7 @@ describe("终端 shell 菜单", () => {
 
   it("清单请求失败：不渲染菜单（不摆空壳）", async () => {
     stubShellsResponse({ error: { code: "x", message: "boom" } }, 500);
-    const { container } = render(
-      <TerminalShellMenu onSelectShell={vi.fn()} />,
-    );
+    const { container } = render(<TerminalShellMenu onSelectShell={vi.fn()} />);
 
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Shell" })).toBeNull(),
