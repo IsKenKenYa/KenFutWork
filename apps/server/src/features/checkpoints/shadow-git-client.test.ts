@@ -131,6 +131,20 @@ describe("影子 git（Code 模式检查点核心）", () => {
       expect(existsSync(join(scope.workTree, ".git"))).toBe(false);
     });
 
+    it("existsRepo 把工作树写进影子仓库本地 config（core.worktree）——沙箱只送到 GIT_DIR 时 git add 也能跑", async () => {
+      const scope = makeScope();
+      await setup(scope);
+      const recorded = execFileSync(
+        "git",
+        ["config", "--file", join(scope.gitDir, "config"), "--get", "core.worktree"],
+        { encoding: "utf8" },
+      ).trim();
+      // git 会把 Windows 路径规范成正斜杠，按同一口径比对。
+      expect(recorded.replaceAll("\\", "/")).toBe(
+        scope.workTree.replaceAll("\\", "/"),
+      );
+    });
+
     it("幂等：两次调用不报错，excludes 文件落盘且含关键忽略项", async () => {
       const scope = makeScope();
       await setup(scope);

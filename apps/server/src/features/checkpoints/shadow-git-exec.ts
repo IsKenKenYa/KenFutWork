@@ -32,9 +32,15 @@ export function createShadowGitExec(options: {
       background: false,
       limits: options.limits,
       timeoutMs: options.timeoutMs,
+      /**
+       * 只发 GIT_DIR，**不发 GIT_WORK_TREE**：沙箱（Windows broker）把请求 env/argv 吃掉了一部分，
+       * 发过去的 `GIT_WORK_TREE` 与 argv `--work-tree` 都到不了 git（实测仍报
+       * `fatal: this operation must be run in a work tree`），而 GIT_WORK_TREE 一旦被设成非空值又会
+       * **压过**仓库 config 的 `core.worktree`。工作树改由 `ensureRepo` 写进影子仓库本地 config
+       * （`core.worktree`，宿主与随包 git 都实测有效），这条通道不依赖 env/argv 传递。
+       */
       env: {
         GIT_DIR: directory.gitDir,
-        GIT_WORK_TREE: cwd,
         GIT_TERMINAL_PROMPT: "0",
       },
     });

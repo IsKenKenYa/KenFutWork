@@ -243,6 +243,21 @@ export function createShadowGitClient(deps: {
     if (autocrlf.code !== 0) {
       throw new Error(autocrlf.stderr.trim() || "配置影子仓库行尾转换失败。");
     }
+    /**
+     * 工作树写进仓库**本地 config**：影子仓库是「GIT_DIR 独立仓库 + 外部工作区」，
+     * 沙箱只把 GIT_DIR 送到了 git、`GIT_WORK_TREE` 与 argv `--work-tree` 都没到
+     * （真机实测 `git add` 报 `fatal: this operation must be run in a work tree`，
+     * 检查点与每轮自动提交整族失效）。`core.worktree` 是 git 自己读 config 的通道，
+     * 不依赖 env/argv 传递；`root-binding.ts` 的数据目录重绑本就在读/改这个键。
+     * 本地 config 覆盖全局，不影响用户自己的 git 配置。
+     */
+    const worktree = await exec(
+      ["config", "core.worktree", input.workTree],
+      input,
+    );
+    if (worktree.code !== 0) {
+      throw new Error(worktree.stderr.trim() || "配置影子仓库工作树失败。");
+    }
   };
 
   /**
