@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   chmod,
   cp,
@@ -39,6 +39,8 @@ import { bindLocalInstanceDataRoot } from "./root-binding.js";
 
 const run = promisify(execFile);
 type Database = Awaited<ReturnType<typeof createTaskWorkDatabase>>;
+const hash = (value: string) =>
+  createHash("sha256").update(value).digest("hex");
 
 function shadowDirectory(database: Database, dataDir: string, root: string) {
   // 短布局（与生产同一公式）：仓库目录名是 `<taskId>-<rootHash16>.git`，不再走三层 UUID。
