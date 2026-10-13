@@ -754,6 +754,67 @@ test("runtime-lock：无条目放行、哈希不符与改名必拦、按目标�
   }
 });
 
+test("runtime-lock：随包 Python 附加包清单（钉死版本）读写与合并保留", async () => {
+  const lockModule = await import("../scripts/runtime-lock.mjs");
+  const {
+    readPythonPackages,
+    mergeLockTargets,
+    buildLockEntry,
+    LOCK_SCHEMA,
+  } = lockModule;
+
+  // 1) 缺省=空数组（过渡态不阻断），不是错误
+  assert.deepEqual(readPythonPackages(null), []);
+  assert.deepEqual(readPythonPackages({ schema: LOCK_SCHEMA }), []);
+  assert.deepEqual(readPythonPackages({ pythonPackages: [] }), []);
+
+  // 2) 合法清单原样返回并去空白
+  assert.deepEqual(
+    readPythonPackages({ pythonPackages: ["pytest==9.1.1", " pluggy==1.6.0 "] }),
+    ["pytest==9.1.1", "pluggy==1.6.0"],
+  );
+
+  // 3) 结构不符 fail loud（不静默当空表——那会让出包悄悄少装包）
+  assert.throws(
+    () => readPythonPackages({ pythonPackages: "pytest==9.1.1" }),
+    /必须是数组/,
+  );
+  for (const bad of ["pytest", "pytest==", "==1.0", "", 42, null]) {
+    assert.throws(
+      () => readPythonPackages({ pythonPackages: [bad] }),
+      /name==version/,
+      `非法项必须拦下：${JSON.stringify(bad)}`,
+    );
+  }
+
+  // 4) 合并写只换 targets 一节，顶层 pythonPackages 必须原样保留
+  //    （否则打包机跑一次 --write-lock 就会把附加包清单悄悄抹掉）
+  const merged = mergeLockTargets(
+    { schema: LOCK_SCHEMA, pythonPackages: ["pytest==9.1.1"], targets: {} },
+    "win-x64",
+    {
+      python: buildLockEntry({
+        version: "3.12",
+        fileName: "python.zip",
+        sha256: "b".repeat(64),
+        url: "https://example.invalid/python.zip",
+      }),
+    },
+  );
+  assert.deepEqual(merged.pythonPackages, ["pytest==9.1.1"]);
+
+  // 5) 仓库里那份真 lock 必须能被本函数读通（真实文件护栏）
+  const realLock = JSON.parse(
+    readFileSync(path.join(rootDir, "runtime-lock.json"), "utf8"),
+  );
+  const real = readPythonPackages(realLock);
+  assert.ok(real.length > 0, "随包 Python 至少要钉一个包（当前：pytest）");
+  assert.ok(
+    real.some((item) => item.startsWith("pytest==")),
+    "清单里必须有 pytest——沙箱内跑 Python 测试靠它",
+  );
+});
+
 // --- GitHub Actions 护栏 ---
 //
 // 拦的是「Actions UI 显示绿色、实际什么都没干」这一类失败：job 级 `if` 与 workflow 级

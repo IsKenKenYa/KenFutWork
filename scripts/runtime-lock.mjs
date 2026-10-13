@@ -100,6 +100,36 @@ export function buildLockEntry({ version, fileName, sha256, url }) {
   };
 }
 
+/**
+ * 读随包 Python 的附加包清单（`pythonPackages`，顶层、各平台共用）。
+ *
+ * 为什么要有它：随包 Python 解压出来只有 pip，跑不了测试类工作——实测
+ * `python -m pytest` 报 `No module named pytest`，而沙箱网络 deny-all、运行时树又是只读根，
+ * 沙箱内装不了（《未做需求》#12）。清单是**钉死版本**的 `name==version` 列表，
+ * `fetch-runtimes.mjs` 解压完 Python 后照单 `pip install`，换台机器重拉运行时也能得到同一套。
+ *
+ * 口径与 lock 其余条目一致：结构不符一律 fail loud；缺省返回空数组（过渡态，
+ * 与「lock 里没有的条目沿用解析结果」同一精神，不阻断本机开发）。
+ */
+export function readPythonPackages(lock) {
+  const raw = lock?.pythonPackages;
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) {
+    throw new Error(
+      `${LOCK_FILE_NAME} 的 pythonPackages 必须是数组（形如 ["pytest==9.1.1"]）。`,
+    );
+  }
+  return raw.map((item, index) => {
+    const value = typeof item === "string" ? item.trim() : "";
+    if (!/^[A-Za-z0-9._-]+==[^\s=]+$/.test(value)) {
+      throw new Error(
+        `${LOCK_FILE_NAME} 的 pythonPackages[${index}] 必须是「name==version」形式的非空字符串，实际：${JSON.stringify(item)}。`,
+      );
+    }
+    return value;
+  });
+}
+
 /** 合并写：只覆盖本次目标平台的条目，另一台打包机的条目保持不动。 */
 export function mergeLockTargets(lock, target, entries) {
   const base =
