@@ -1535,11 +1535,14 @@ export class CodeUiService {
     connectionId?: string,
   ) {
     const contributed = this.deps.hostRpcHandler?.(service, method);
-    if (connectionId !== undefined || contributed) {
+    // 空字符串是客户端「尚未绑定连接」的载具口径，与未传等价；
+    // 否则重连窗口的 connection-less 读取会被所有权守卫误报成连接丢失。
+    const bound = connectionId ? connectionId : undefined;
+    if (bound !== undefined || contributed) {
       const owner = await this.deps.localInstance.resolve(user);
       this.connections.require(
         owner.instanceId,
-        connectionId,
+        bound,
         false,
         user.accessClientId,
       );
@@ -1628,7 +1631,7 @@ export class CodeUiService {
       const owner = await this.deps.localInstance.resolve(user);
       const connection = this.connections.require(
         owner.instanceId,
-        connectionId,
+        bound,
         true,
         user.accessClientId,
       );
@@ -1672,7 +1675,7 @@ export class CodeUiService {
       const owner = await this.deps.localInstance.resolve(user);
       this.connections.require(
         owner.instanceId,
-        connectionId,
+        bound,
         false,
         user.accessClientId,
       );
@@ -1682,7 +1685,7 @@ export class CodeUiService {
       const owner = await this.deps.localInstance.resolve(user);
       const current = this.connections.require(
         owner.instanceId,
-        connectionId,
+        bound,
         false,
       );
       if (current.hello.auth.userId !== user.instanceId)
@@ -1691,7 +1694,7 @@ export class CodeUiService {
           "宿主连接不属于当前用户。",
         );
       const connection = {
-        connectionId: connectionId!,
+        connectionId: bound!,
         instanceId: owner.instanceId,
       };
       return service === "file-watcher"
@@ -1702,20 +1705,23 @@ export class CodeUiService {
       service === "providerSettingsService" ||
       service === "modelSelectionService"
     ) {
-      const owner = await this.deps.localInstance.resolve(user);
-      this.connections.require(owner.instanceId, connectionId, false);
+      // 实例作用域读写不依赖通知连接；仅在携带绑定时校验连接所有权。
+      if (bound !== undefined) {
+        const owner = await this.deps.localInstance.resolve(user);
+        this.connections.require(owner.instanceId, bound, false);
+      }
       return this.providerSettings.call(user, service, method, args);
     }
     if (service === "terminal" && this.deps.terminals) {
       const owner = await this.deps.localInstance.resolve(user);
-      this.connections.require(owner.instanceId, connectionId, false);
+      this.connections.require(owner.instanceId, bound, false);
       const preferences = appSettingsSchema.parse(
         await this.deps.repository.readHumanPreferences(owner.instanceId),
       );
       return codeUiTerminalRpc({
         terminals: this.deps.terminals,
         actor: user,
-        connectionId: connectionId!,
+        connectionId: bound!,
         method,
         args,
         preferences: {
@@ -1727,7 +1733,7 @@ export class CodeUiService {
         },
         subscriber: (terminalId) => ({
           output: (data) =>
-            this.connections.send(owner.instanceId, connectionId!, {
+            this.connections.send(owner.instanceId, bound!, {
               event: "service",
               service: "terminal",
               name: "onDynamicData",
@@ -1735,7 +1741,7 @@ export class CodeUiService {
               data,
             }),
           exit: (exit) =>
-            this.connections.send(owner.instanceId, connectionId!, {
+            this.connections.send(owner.instanceId, bound!, {
               event: "service",
               service: "terminal",
               name: "onDynamicExit",
@@ -1753,7 +1759,7 @@ export class CodeUiService {
       const owner = await this.deps.localInstance.resolve(user);
       const connection = this.connections.require(
         owner.instanceId,
-        connectionId,
+        bound,
         false,
       );
       const human = await this.humanWorkspace.call(user, service, method, args);

@@ -173,3 +173,5 @@ file.ensureConversationWorkspace 按真实 Workspace 身份在配置的 sandboxR
 自带包的真实重启恢复已锁定：禁止第三方的宿主仍装载原命令安装的可信自带包；可信性必须同时符合安装source与本次自带目录id，不能只按名称/id。公开完整app关闭重建后，自带路由200及实际注册工具导出可读；同名URL包不恢复，原启用接口也明确失败，不绕过实际策略。原目录的enabled配置不作为运行恢复的充分证据。本项未改原GUI或引入自有卡片，详情与完整插件发现仍继续。
 
 自带目录统一采用原安装器的ID规范化，包括scoped npm名称。原overview与安装记录按同一稳定id关联，资产、恢复与启用不另猜身份；公开scoped包目录installed:true、重启路由和启用均通过。与自带同名同id的URL来源包仍被策略阻止，不以目录命中替代真实source。
+
+BYOK 零供应商空态已补齐：supportsCloudAccounts:false 关闭云账号后 presetProviders 恒空、preset 分组整组移除，零自定义供应商时导航项为零，原 Detail 的 !selectedNavItem 分支（上游仅作加载期兜底，上游稳态必有预置项）把合法稳态渲染成永久加载占位。现 ModelProviderSection 在非加载且导航为空时改渲染 EmptyState 引导卡（「还没有供应商」+「添加供应商」，复用原 ProviderTemplatePicker），加载期原加载卡语义保留。源码偏差登记：ModelProviderSection.tsx（空态分支接线）与 zh-CN/en-US locale（新增 settings.modelProvider.emptyTitle），清单哈希同变更更新，漂移 0。
