@@ -58,7 +58,6 @@ import {
   resolveDesignTaskApproval,
   resumeDesignGoal,
   saveMessage,
-  setDesignGoalBudget,
   updateDesignTaskPolicy,
 } from "../lib/server-api";
 import type { CanvasSelectedElement } from "./canvas-editor";
@@ -79,6 +78,7 @@ import { ErrorBoundary } from "./error-boundary";
 import { ExecutionModeSelect } from "./execution-mode-select";
 import { SessionSelector } from "./session-selector";
 import { useToast } from "./toast";
+import { parseV4VisibleSlashCommand } from "./workbench/zcode/v4/slashCommands";
 
 /** 图层图标：空心叠层（同一套线宽与视框）。 */
 function LayersStackIcon({ className }: { className?: string }) {
@@ -215,37 +215,6 @@ function createUserContentBlocks(
       }),
     ),
   ];
-}
-
-function designGoalStatusLabel(
-  status: NonNullable<DesignGoalResponse["goal"]>["status"],
-): string {
-  return {
-    active: "进行中",
-    paused: "已暂停",
-    verifying: "验证中",
-    complete: "已完成",
-    notSatisfied: "未满足",
-    failed: "失败",
-  }[status];
-}
-
-const DESIGN_GOAL_REASON_LABELS: Record<string, string> = {
-  "project.directoryRelink": "目录已重新关联",
-  "user.pause": "手动暂停",
-  "budget.stop": "预算已用尽",
-  "budget.usageUnavailable": "用量暂不可用",
-  "run.failed": "任务失败",
-  "run.canceled": "任务已取消",
-  "run.cancelled": "任务已取消",
-  "task.branchChanged": "工作分支已变更",
-  "host.restarted": "服务已重启",
-  "plan.waiting": "等待计划确认",
-  "interaction.waiting": "等待用户输入",
-};
-
-function designGoalReasonLabel(reason: string): string {
-  return DESIGN_GOAL_REASON_LABELS[reason] ?? reason;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -543,11 +512,8 @@ export function ChatSidebar({
   );
   const [designGoalResponse, setDesignGoalResponse] =
     useState<DesignGoalResponse | null>(null);
-  const [designGoalObjective, setDesignGoalObjective] = useState("");
-  const [designGoalBudget, setDesignGoalBudgetInput] = useState("");
   const [designGoalError, setDesignGoalError] = useState<string | null>(null);
   const [designGoalBusy, setDesignGoalBusy] = useState(false);
-  const [queuedGoalMessages, setQueuedGoalMessages] = useState(0);
   const [pendingGoalUserRuns, setPendingGoalUserRuns] = useState(0);
   const [pendingGoalAdmissions, setPendingGoalAdmissions] = useState(0);
   const pendingGoalAdmissionsRef = useRef(0);
@@ -563,11 +529,8 @@ export function ChatSidebar({
   useEffect(() => {
     if (queueTaskIdRef.current === activeSessionId) return;
     queueTaskIdRef.current = activeSessionId;
-    setDesignGoalObjective("");
-    setDesignGoalBudgetInput("");
     goalUserRunIdsRef.current.clear();
     goalUserInputChainRef.current = Promise.resolve();
-    setQueuedGoalMessages(0);
     setPendingGoalUserRuns(0);
     pendingGoalAdmissionsRef.current = 0;
     setPendingGoalAdmissions(0);
@@ -837,11 +800,12 @@ export function ChatSidebar({
   );
 
   const mutateDesignGoal = useCallback(
-    async (action: "create" | "pause" | "resume" | "budget") => {
+    async (action: "create" | "pause" | "resume", objective = "") => {
       const task = designTaskPolicyRef.current;
-      const goal = designGoalResponse?.goal;
+      const goal = designGoalResponseRef.current?.goal;
       const taskId = activeSessionIdRef.current;
-      if (!task || !taskId || task.taskId !== taskId || designGoalBusy) return;
+      if (!task || !taskId || task.taskId !== taskId || designGoalBusy)
+        return false;
       setDesignGoalBusy(true);
       setDesignGoalError(null);
       try {
@@ -852,84 +816,49 @@ export function ChatSidebar({
               branchGeneration: task.branchGeneration,
             }
           : null;
+        const model =
+          typeof agentModelRef.current === "string"
+            ? { model: agentModelRef.current }
+            : {};
         let response: DesignGoalResponse;
         if (action === "create") {
-          const tokenBudget = designGoalBudget.trim()
-            ? Number(designGoalBudget)
-            : null;
-          if (
-            tokenBudget !== null &&
-            (!Number.isSafeInteger(tokenBudget) || tokenBudget <= 0)
-          ) {
-            setDesignGoalError("预算必须是正整数。");
-            return;
-          }
           response = await createDesignGoal(accessTokenRef.current, taskId, {
-            objective: designGoalObjective,
-            tokenBudget,
+            objective,
+            tokenBudget: null,
             expectedBranchGeneration: task.branchGeneration,
             expectedGoal: fence
               ? { goalId: fence.goalId, revision: fence.revision }
               : null,
-            ...(typeof agentModelRef.current === "string"
-              ? { model: agentModelRef.current }
-              : {}),
+            ...model,
           });
         } else {
-          if (!fence) return;
-          const request = { ...fence };
-          if (action === "pause")
-            response = await pauseDesignGoal(
-              accessTokenRef.current,
-              taskId,
-              request,
-            );
-          else if (action === "resume")
-            response = await resumeDesignGoal(accessTokenRef.current, taskId, {
-              ...request,
-              ...(typeof agentModelRef.current === "string"
-                ? { model: agentModelRef.current }
-                : {}),
-            });
-          else {
-            const tokenBudget = designGoalBudget.trim()
-              ? Number(designGoalBudget)
-              : null;
-            if (
-              tokenBudget !== null &&
-              (!Number.isSafeInteger(tokenBudget) || tokenBudget <= 0)
-            ) {
-              setDesignGoalError("预算必须是正整数。");
-              return;
-            }
-            response = await setDesignGoalBudget(
-              accessTokenRef.current,
-              taskId,
-              { ...request, tokenBudget },
-            );
-          }
+          if (!fence) throw new Error("当前会话没有目标。");
+          response =
+            action === "pause"
+              ? await pauseDesignGoal(accessTokenRef.current, taskId, fence)
+              : await resumeDesignGoal(accessTokenRef.current, taskId, {
+                  ...fence,
+                  ...model,
+                });
         }
-        if (acceptGoalResponse(response)) {
-          if (action === "create") {
-            setDesignGoalObjective("");
-            setDesignGoalBudgetInput("");
-          }
-          if (response.acceptedRunId) {
-            setActiveRunId(response.acceptedRunId);
-            activeRunTaskIdRef.current = taskId;
-            setStreaming(true);
-          } else if (action === "create" || action === "resume") {
-            const [refreshed] = await Promise.all([
-              fetchDesignGoal(accessTokenRef.current, taskId),
-              reloadMessages(taskId),
-            ]);
-            acceptGoalResponse(refreshed);
-          }
+        if (!acceptGoalResponse(response)) return false;
+        if (response.acceptedRunId) {
+          setActiveRunId(response.acceptedRunId);
+          activeRunTaskIdRef.current = taskId;
+          setStreaming(true);
+        } else if (action === "create" || action === "resume") {
+          const [refreshed] = await Promise.all([
+            fetchDesignGoal(accessTokenRef.current, taskId),
+            reloadMessages(taskId),
+          ]);
+          acceptGoalResponse(refreshed);
         }
+        return true;
       } catch (error) {
         setDesignGoalError(
           error instanceof Error ? error.message : "目标操作失败。",
         );
+        return false;
       } finally {
         setDesignGoalBusy(false);
       }
@@ -938,10 +867,7 @@ export function ChatSidebar({
       accessTokenRef,
       acceptGoalResponse,
       activeSessionIdRef,
-      designGoalBudget,
       designGoalBusy,
-      designGoalObjective,
-      designGoalResponse,
       reloadMessages,
       setStreaming,
     ],
@@ -1309,7 +1235,6 @@ export function ChatSidebar({
               const queued = payload.delivery === "queued";
               goalUserRunIdsRef.current.set(id, { assistantId, queued });
               setPendingGoalUserRuns((count) => count + 1);
-              if (queued) setQueuedGoalMessages((count) => count + 1);
               clearAttachments();
               setMessageMentions([]);
               resolve();
@@ -1346,6 +1271,41 @@ export function ChatSidebar({
       mentionsOverride?: MessageMention[],
     ) => {
       const currentSessionId = activeSessionIdRef.current;
+      const command = parseV4VisibleSlashCommand(
+        text,
+        attachmentsOverride ?? readyAttachments,
+      );
+      if (
+        command &&
+        [
+          "sendGoalCommand",
+          "resumeGoal",
+          "emptyGoal",
+          "unsupportedGoal",
+        ].includes(command.kind)
+      ) {
+        let accepted = false;
+        if (command.kind === "sendGoalCommand")
+          accepted = await mutateDesignGoal("create", command.objective);
+        else if (command.kind === "resumeGoal")
+          accepted = await mutateDesignGoal("resume");
+        else if (
+          command.kind === "unsupportedGoal" &&
+          command.action === "pause"
+        )
+          accepted = await mutateDesignGoal("pause");
+        else
+          showToast(
+            "请在 /goal 后输入目标，或使用 /goal resume 恢复。",
+            "error",
+          );
+        if (!accepted) {
+          await Promise.resolve();
+          if (currentSessionId === activeSessionIdRef.current)
+            chatInputRef.current?.appendText(text);
+        }
+        return;
+      }
       const goal = designGoalResponseRef.current?.goal;
       const taskQueueActive =
         goal?.status === "active" ||
@@ -1755,6 +1715,7 @@ export function ChatSidebar({
     },
     [
       streaming,
+      mutateDesignGoal,
       designTaskStatus,
       designTaskError,
       acceptDesignTaskPolicy,
@@ -2352,7 +2313,6 @@ export function ChatSidebar({
     designGoalResponse?.task.taskId === activeSessionId
       ? designGoalResponse.goal
       : null;
-  const queuedGoalMessageCount = queuedGoalMessages;
 
   useEffect(() => {
     const response = designGoalResponse;
@@ -2545,9 +2505,7 @@ export function ChatSidebar({
           setPendingGoalUserRuns((count) => Math.max(0, count - 1));
         if (foregroundRunRef.current?.taskId === taskId)
           foregroundRunRef.current = null;
-        if (userInput?.queued)
-          setQueuedGoalMessages((count) => Math.max(0, count - 1));
-        runId = null;
+        if (userInput?.queued) runId = null;
         setActiveRunId(null);
         void Promise.all([
           fetchDesignGoal(accessTokenRef.current, taskId),
@@ -3035,191 +2993,10 @@ export function ChatSidebar({
                 {designTaskError}
               </div>
             ) : null}
-            {designTaskStatus === "ready" ? (
-              <section
-                aria-label="持续目标"
-                className="mb-2 rounded-lg border border-border p-3"
-              >
-                {currentDesignGoal ? (
-                  <>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-xs font-medium">
-                          {currentDesignGoal.objective}
-                        </div>
-                        <div className="mt-1 text-[11px] text-muted-foreground">
-                          {designGoalStatusLabel(currentDesignGoal.status)} · 第{" "}
-                          {currentDesignGoal.iteration} 轮 ·{" "}
-                          {Math.round(currentDesignGoal.tokensUsed)} tokens ·{" "}
-                          {Math.round(currentDesignGoal.timeUsedSeconds)} 秒
-                        </div>
-                      </div>
-                      {currentDesignGoal.status === "active" ||
-                      currentDesignGoal.status === "verifying" ? (
-                        <button
-                          type="button"
-                          disabled={designGoalBusy}
-                          onClick={() => void mutateDesignGoal("pause")}
-                          className="shrink-0 rounded border border-border px-2 py-1 text-xs"
-                        >
-                          暂停
-                        </button>
-                      ) : currentDesignGoal.status === "paused" ? (
-                        <button
-                          type="button"
-                          disabled={designGoalBusy}
-                          onClick={() => void mutateDesignGoal("resume")}
-                          className="shrink-0 rounded border border-border px-2 py-1 text-xs"
-                        >
-                          恢复
-                        </button>
-                      ) : null}
-                    </div>
-                    {currentDesignGoal.reason ||
-                    currentDesignGoal.verification ? (
-                      <div className="mt-2 rounded bg-muted/50 p-2 text-xs">
-                        {currentDesignGoal.reason ? (
-                          <div>
-                            {designGoalReasonLabel(currentDesignGoal.reason)}
-                          </div>
-                        ) : null}
-                        {currentDesignGoal.verification ? (
-                          <div className="mt-1">
-                            <div>
-                              {currentDesignGoal.verification.passed
-                                ? "验证通过"
-                                : "验证未通过"}{" "}
-                              · {currentDesignGoal.verification.reason}
-                            </div>
-                            {currentDesignGoal.verification.evidence.map(
-                              (item) => (
-                                <div
-                                  key={item.sourceId}
-                                  className="mt-1 text-muted-foreground"
-                                >
-                                  {item.passed ? "通过" : "未通过"} ·{" "}
-                                  {item.detail ?? item.sourceId}
-                                </div>
-                              ),
-                            )}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {currentDesignGoal.status === "active" ||
-                    currentDesignGoal.status === "paused" ||
-                    currentDesignGoal.status === "verifying" ? (
-                      <div className="mt-2 flex gap-2">
-                        <input
-                          aria-label="目标 Token 预算"
-                          inputMode="numeric"
-                          value={designGoalBudget}
-                          onChange={(event) =>
-                            setDesignGoalBudgetInput(event.target.value)
-                          }
-                          placeholder={
-                            currentDesignGoal.tokenBudget === null
-                              ? "不限预算"
-                              : String(currentDesignGoal.tokenBudget)
-                          }
-                          className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs"
-                        />
-                        <button
-                          type="button"
-                          disabled={designGoalBusy}
-                          onClick={() => void mutateDesignGoal("budget")}
-                          className="rounded border border-border px-2 py-1 text-xs"
-                        >
-                          更新预算
-                        </button>
-                      </div>
-                    ) : null}
-                    {currentDesignGoal.status === "complete" ||
-                    currentDesignGoal.status === "notSatisfied" ||
-                    currentDesignGoal.status === "failed" ? (
-                      <div className="mt-2">
-                        <div className="mb-2 text-xs font-medium">新建目标</div>
-                        <div>
-                          <input
-                            aria-label="新目标"
-                            value={designGoalObjective}
-                            onChange={(event) =>
-                              setDesignGoalObjective(event.target.value)
-                            }
-                            placeholder="描述要完成的工作"
-                            className="mb-2 w-full rounded border border-border bg-background px-2 py-1.5 text-xs"
-                          />
-                          <div className="flex gap-2">
-                            <input
-                              aria-label="新目标 Token 预算"
-                              inputMode="numeric"
-                              value={designGoalBudget}
-                              onChange={(event) =>
-                                setDesignGoalBudgetInput(event.target.value)
-                              }
-                              placeholder="不限预算"
-                              className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs"
-                            />
-                            <button
-                              type="button"
-                              disabled={
-                                designGoalBusy || !designGoalObjective.trim()
-                              }
-                              onClick={() => void mutateDesignGoal("create")}
-                              className="rounded border border-border px-2 py-1 text-xs"
-                            >
-                              开始目标
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-                    {queuedGoalMessageCount > 0 ? (
-                      <div className="mt-1 text-[11px] text-muted-foreground">
-                        已排队 {queuedGoalMessageCount} 条消息
-                      </div>
-                    ) : null}
-                  </>
-                ) : (
-                  <>
-                    <div className="mb-2 text-xs font-medium">持续目标</div>
-                    <input
-                      aria-label="目标"
-                      value={designGoalObjective}
-                      onChange={(event) =>
-                        setDesignGoalObjective(event.target.value)
-                      }
-                      placeholder="描述要完成的工作"
-                      className="mb-2 w-full rounded border border-border bg-background px-2 py-1.5 text-xs"
-                    />
-                    <div className="flex gap-2">
-                      <input
-                        aria-label="目标 Token 预算"
-                        inputMode="numeric"
-                        value={designGoalBudget}
-                        onChange={(event) =>
-                          setDesignGoalBudgetInput(event.target.value)
-                        }
-                        placeholder="不限预算"
-                        className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs"
-                      />
-                      <button
-                        type="button"
-                        disabled={designGoalBusy || !designGoalObjective.trim()}
-                        onClick={() => void mutateDesignGoal("create")}
-                        className="rounded border border-border px-2 py-1 text-xs"
-                      >
-                        开始目标
-                      </button>
-                    </div>
-                  </>
-                )}
-                {designGoalError ? (
-                  <div role="alert" className="mt-2 text-xs text-destructive">
-                    {designGoalError}
-                  </div>
-                ) : null}
-              </section>
+            {designGoalError ? (
+              <div role="alert" className="mb-2 px-1 text-xs text-destructive">
+                {designGoalError}
+              </div>
             ) : null}
             {atQuery !== null && mentionPickerItems.length > 0 && (
               <MessageMentionPicker
@@ -3243,6 +3020,7 @@ export function ChatSidebar({
                   pendingGoalUserRuns === 0 &&
                   pendingGoalAdmissions === 0) ||
                 sessionsLoading ||
+                designGoalBusy ||
                 designTaskStatus !== "ready"
               }
               // 有活跃 run 才给停止键：没有 runId 时的「停止」是假按钮（点了不生效）

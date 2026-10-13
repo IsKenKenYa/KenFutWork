@@ -548,8 +548,10 @@ describe("ChatSidebar", () => {
       task: relinkedTask,
       acceptedRunId: null,
     });
-    await userEvent.type(await screen.findByLabelText("目标"), "继续工作");
-    await userEvent.click(screen.getByRole("button", { name: "开始目标" }));
+    await userEvent.type(
+      await screen.findByPlaceholderText(/输入你的想法/),
+      "/goal 继续工作{Enter}",
+    );
 
     await waitFor(() =>
       expect(createDesignGoalMock).toHaveBeenCalledWith(
@@ -593,10 +595,9 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
     await userEvent.type(
-      await screen.findByRole("textbox", { name: "目标" }),
-      "完成画布首页",
+      await screen.findByPlaceholderText(/输入你的想法/),
+      "/goal 完成画布首页{Enter}",
     );
-    await userEvent.click(screen.getByRole("button", { name: "开始目标" }));
 
     await waitFor(() =>
       expect(createDesignGoalMock).toHaveBeenCalledWith(
@@ -645,10 +646,9 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
     await userEvent.type(
-      await screen.findByRole("textbox", { name: "目标" }),
-      "按选择模型创建",
+      await screen.findByPlaceholderText(/输入你的想法/),
+      "/goal 按选择模型创建{Enter}",
     );
-    await userEvent.click(screen.getByRole("button", { name: "开始目标" }));
 
     await waitFor(() =>
       expect(createDesignGoalMock).toHaveBeenCalledWith(
@@ -727,8 +727,9 @@ describe("ChatSidebar", () => {
           />
         </ToastProvider>,
       );
-      await userEvent.click(
-        await screen.findByRole("button", { name: "恢复" }),
+      await userEvent.type(
+        await screen.findByPlaceholderText(/输入你的想法/),
+        "/goal resume{Enter}",
       );
 
       await waitFor(() =>
@@ -796,7 +797,8 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    expect(await screen.findByText("目录已重新关联")).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText(/输入你的想法/)).toBeEnabled();
+    expect(screen.queryByRole("region", { name: "持续目标" })).toBeNull();
     expect(
       screen.queryByText("project.directoryRelink"),
     ).not.toBeInTheDocument();
@@ -878,21 +880,12 @@ describe("ChatSidebar", () => {
         />
       </ToastProvider>,
     );
-    const objectiveInput = await screen.findByRole("textbox", {
-      name: "新目标",
-    });
-    const budgetInput = screen.getByRole("textbox", {
-      name: "新目标 Token 预算",
-    });
-    await userEvent.type(objectiveInput, "新目标");
-    await userEvent.type(budgetInput, "512");
+    const objectiveInput = await screen.findByPlaceholderText(/输入你的想法/);
+    await userEvent.type(objectiveInput, "/goal 新目标");
     await waitFor(() => expect(finishBackgroundRefresh).toBeDefined());
     finishBackgroundRefresh?.(response(oldGoal));
-    await waitFor(() => {
-      expect(objectiveInput).toHaveValue("新目标");
-      expect(budgetInput).toHaveValue("512");
-    });
-    await userEvent.click(screen.getByRole("button", { name: "开始目标" }));
+    await waitFor(() => expect(objectiveInput).toHaveValue("/goal 新目标"));
+    await userEvent.type(objectiveInput, "{Enter}");
 
     await waitFor(() =>
       expect(createDesignGoalMock).toHaveBeenCalledWith(
@@ -900,7 +893,7 @@ describe("ChatSidebar", () => {
         "session-real",
         {
           objective: "新目标",
-          tokenBudget: 512,
+          tokenBudget: null,
           expectedBranchGeneration: 3,
           expectedGoal: { goalId: "goal-old", revision: 4 },
         },
@@ -1070,13 +1063,10 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
     await userEvent.type(
-      await screen.findByRole("textbox", { name: "目标" }),
-      "完成画布首页",
+      await screen.findByPlaceholderText(/输入你的想法/),
+      "/goal 完成画布首页{Enter}",
     );
-    await userEvent.click(screen.getByRole("button", { name: "开始目标" }));
-    await waitFor(() =>
-      expect(screen.getByText(/第 1 轮/)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(createDesignGoalMock).toHaveBeenCalled());
 
     const composer = screen.getByPlaceholderText(/输入你的想法/);
     await userEvent.type(composer, "用户补充{Enter}");
@@ -1112,7 +1102,9 @@ describe("ChatSidebar", () => {
         expect.any(Function),
       ),
     );
-    expect(screen.getByText(/已排队 1 条消息/)).toBeInTheDocument();
+    expect(screen.getByText("用户补充")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "持续目标" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "开始目标" })).toBeNull();
 
     for (const listener of [...eventListeners]) {
       goalCompleted = true;
