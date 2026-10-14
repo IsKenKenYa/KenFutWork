@@ -79,6 +79,11 @@ export interface OpenDesignSidePaneTab {
   ownerTaskId?: string | null;
   workspaceKey?: string | null;
   openedAt?: number;
+  /**
+   * 深链目标（O2 `od/navigate`）：打开面板时交给 OpenDesign 定位到的路径。
+   * 与 browser tab 的 `initialUrl` 同口径——目标随 tab 走，不落全局队列。
+   */
+  navigatePath?: string | null;
 }
 
 export interface ModelTrajectorySidePaneTab {
@@ -1588,15 +1593,26 @@ export function openWhiteboardSidePane(
   return activateSidePaneTab(current, createWhiteboardSidePaneTab(options));
 }
 
-function createOpenDesignSidePaneTab(): OpenDesignSidePaneTab {
+function createOpenDesignSidePaneTab(options?: {
+  navigatePath?: string | null;
+}): OpenDesignSidePaneTab {
   // 单例：稳定 id 让 activateSidePaneTab 原地复用（重复打开即激活，不叠出第二个面）。
-  return { id: "open-design", type: "open-design", openedAt: Date.now() };
+  return {
+    id: "open-design",
+    type: "open-design",
+    openedAt: Date.now(),
+    ...(options?.navigatePath ? { navigatePath: options.navigatePath } : {}),
+  };
 }
 
 export function openOpenDesignSidePane(
   current: WorkspaceSidePaneState | null,
+  options?: {
+    /** 深链目标：打开后交给 OpenDesign 定位的路径（O2 最小档）。 */
+    navigatePath?: string | null;
+  },
 ): WorkspaceSidePaneState {
-  return activateSidePaneTab(current, createOpenDesignSidePaneTab());
+  return activateSidePaneTab(current, createOpenDesignSidePaneTab(options));
 }
 
 export function openModelTrajectorySidePane(

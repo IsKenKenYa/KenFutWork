@@ -1801,13 +1801,13 @@
       "source": "references/zcode/packages/ui/src/app-shell/AnimatedSidePanePanel.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/AnimatedSidePanePanel.tsx",
       "sha256": "0c5980f1abab4d9351e25abaef00a21ad50c861f98a9d6710adeeeea10306804",
-      "copiedSha256": "a1a786f896bea4c11bc5280245922b34a1bcfa705136e70fa25f5ab015923ab5",
+      "copiedSha256": "f1a1b9cd6f0dff77803dd735867d181d20611643633bac0b3fe436f048b0b238",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork 宿主偏差：browser 页签内容换宿主件 BrowserPane（G1/Q4 CDP MJPEG；HumanBrowserView 桌面主进程视图不再被消费）",
         "KenFutWork 宿主偏差：BrowserPane 增 Q5 元素拾取（workspacePath/workspaceIdentity 传入，坐标引用经 requestComposerTextInsert 填 composer）",
         "KenFutWork 宿主偏差：P2 右栏拖到宽度上限经 onSidePaneReachMaxSize 通知壳层收左栏（G11）",
-    "2026-10-14 OpenDesign 集成（O0）：加 OpenDesign 启动卡与「添加页签」菜单项（按 useOpenDesignEntry 门控）+ 面板渲染分支。"
+    "2026-10-14 OpenDesign 集成（O0+O2）：加 OpenDesign 启动卡与「添加页签」菜单项（按 useOpenDesignEntry 门控）、面板渲染分支，并把 tab 的 navigatePath 透给面板。"
       ]
     },
     {
@@ -7814,10 +7814,10 @@
       "source": "references/zcode/packages/ui/src/lib/workspaceSidePane.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/workspaceSidePane.ts",
       "sha256": "b411b074341a798639a30cebaa3dc600edd728027a9afa51cc74c3d6839d135d",
-      "copiedSha256": "b3389b3caf007642dbfb6ef965ae1455b6da241572681dfa26e66060cb2ce6ee",
+      "copiedSha256": "1105734a6b6a0acf3318adaefdf513f72ea0f2b67e0d6a11955bacf664b1a654",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-    "2026-10-14 OpenDesign 集成（O0）：新增 open-design 侧栏 tab 类型与单例 opener，并列入 workspace-global tab。"
+    "2026-10-14 OpenDesign 集成（O0+O2）：新增 open-design 侧栏 tab 类型、单例 opener 与深链目标 navigatePath（随 tab 走，同 browser 的 initialUrl 口径），并列入 workspace-global tab。"
       ]
     },
     {

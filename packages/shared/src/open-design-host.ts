@@ -81,3 +81,93 @@ export function resolveOpenDesignEntry(input: {
   }
   return { available: true, frontendUrl: input.status.frontendUrl };
 }
+
+/* ------------------------------------------------------------------ *
+ * `od/v1` 嵌入协议（O2：iframe 双向链接的最小档）
+ *
+ * 方向约定（与 `ff-embed/v1` 同思路，但只做「链接」这一件事，不做身份/凭证）：
+ * - 宿主 → 面板：`od/hello-ack`（握手应答）与 `od/navigate`（深链打开一个路径）；
+ * - 面板 → 宿主：`od/hello`（握手）与 `od/navigate-complete`（深链已就位）。
+ *
+ * 安全口径（《OpenDesign 集成规划》§8 风险 5）：**origin 白名单 + 入站消息 schema 校验**。
+ * 只收配置里那个前端 origin 发来的消息，schema 之外或类型不明的消息一律丢弃——
+ * 不收「也许能用的宽进宽出」。
+ * ------------------------------------------------------------------ */
+
+export const OPEN_DESIGN_EMBED_PROTOCOL_VERSION = "v1";
+
+/** 面板 → 宿主的入站消息。schema 之外一律视为噪声丢弃。 */
+export const openDesignInboundMessageSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("od/hello"),
+    version: z.string().min(1).max(16),
+  }),
+  z.object({
+    type: z.literal("od/navigate-complete"),
+    version: z.string().min(1).max(16),
+    path: z.string().min(1).max(2048),
+  }),
+]);
+export type OpenDesignInboundMessage = z.infer<
+  typeof openDesignInboundMessageSchema
+>;
+
+/** 宿主 → 面板的出站消息。 */
+export const openDesignOutboundMessageSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("od/hello"),
+    version: z.string().min(1).max(16),
+  }),
+  z.object({
+    type: z.literal("od/hello-ack"),
+    version: z.string().min(1).max(16),
+  }),
+  z.object({
+    type: z.literal("od/navigate"),
+    version: z.string().min(1).max(16),
+    path: z.string().min(1).max(2048),
+  }),
+]);
+export type OpenDesignOutboundMessage = z.infer<
+  typeof openDesignOutboundMessageSchema
+>;
+
+export function buildOpenDesignHello(): OpenDesignOutboundMessage {
+  return { type: "od/hello", version: OPEN_DESIGN_EMBED_PROTOCOL_VERSION };
+}
+
+export function buildOpenDesignHelloAck(): OpenDesignOutboundMessage {
+  return { type: "od/hello-ack", version: OPEN_DESIGN_EMBED_PROTOCOL_VERSION };
+}
+
+export function buildOpenDesignNavigate(
+  path: string,
+): OpenDesignOutboundMessage {
+  return {
+    type: "od/navigate",
+    version: OPEN_DESIGN_EMBED_PROTOCOL_VERSION,
+    path,
+  };
+}
+
+/**
+ * 入站消息的**来源**必须是配置里的前端 origin（origin 白名单）。
+ * 事件 origin 与配置不一致即返回 null——跨源伪造直接丢，不做宽容处理。
+ */
+export function isAllowedOpenDesignOrigin(
+  eventOrigin: string,
+  allowedOrigin: string,
+): boolean {
+  return eventOrigin.length > 0 && eventOrigin === allowedOrigin;
+}
+
+/**
+ * 入站消息的**内容**校验：过 schema 才认，其余（含类型不明的宽对象）一律 null。
+ * 与 origin 白名单是两道独立的闸，缺一不可。
+ */
+export function parseOpenDesignInbound(
+  raw: unknown,
+): OpenDesignInboundMessage | null {
+  const parsed = openDesignInboundMessageSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}

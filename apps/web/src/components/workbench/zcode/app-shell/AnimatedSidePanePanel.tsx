@@ -1323,7 +1323,7 @@ export function AnimatedSidePanePanel({
                             onOpenBrowserUrl={onOpenBrowserUrl}
                           />
                         ) : tab.type === "open-design" ? (
-                          <OpenDesignPane />
+                          <OpenDesignPane navigatePath={tab.navigatePath} />
                         ) : (
                           <BrowserPane
                             initialUrl={browserRestoreUrls[tab.id] ?? tab.initialUrl ?? undefined}
