@@ -64,19 +64,18 @@
 | E2E-K | 重点：联网搜索/MCP/skill/对话/计划/目标/循环/自主/创造 | P0 | PARTIAL | 联网搜索 ✓、技能 ✓、六档 ✓、Python 工程 ✓（沙箱外 17/17）；MCP 注册受 U12 阻断 |
 | FIX-SET | 设置页「集成终端 Shell」死下拉 | P2 | DONE | f234516a（无选项时隐藏，真机复看已消失） |
 
-## LATEST VERIFIED STATE（2026-10-13 晚）
+## LATEST VERIFIED STATE（2026-10-14 下午）
 
-- HEAD=`1ad3a222`（#6/#7 收口记账）；本轮改动（`entry-root` / `build-helper` / `shadow-repo-path` / `checkpoint-service` / `process-sandbox` plugin / `root-binding` / `installer-hooks.nsh` / `dmg-aesthetics.test` + 三处测试夹具 + 文档）待提交。
+- HEAD=`f4ebc8ac`（BASH-DIR 记账）；**本轮 G1 修复 + 文档待同一提交**（BrowserPane 信封、CDP 会话静止帧、流单路收口、SessionPane Live 插入 + 三处回归测试）。
 - 运行形态：安装版 0.1.3 落 `D:\Program Files\KenFutWork`（19,211 文件，`KENFUTWORK_HOME` 机器级；HKLM 卸载项 `0.1.3`）；`kenfutwork-desktop.exe` → `KenFutWork-server` 监听 `127.0.0.1:3001`（无本机凭据的 `/api/*` 返回 401）。
 - BYOK：`credentials/byok.json` 两条（含 `93cfffb2-…` 新供应商 / openai-compatible / https://www.aiping.cn/api/v1 / GLM-5.3-Flash 1M）；工作台底栏显示「新供应商 · GLM-5.3-Flash」。
 - 引擎栈（#3）：WSL2 `kfw-ubuntu` 内 `docker ps` 9/9 Up（api healthy）；停止并保留数据后容器清零、6 卷保留、distro Stopped。
 - 模拟点击证据（上一轮，`tmp/e2e/shots/` + `report-*.json`）：侧栏/设置 15 分区/右栏 4 卡/终端 `echo KFWT`/市场点装 3→4/六档 6/6/联网搜索/技能发布/Python 工程 pytest 17/17 + MCP stdio。
-- 测试与门禁（本轮全量）：`apps/web` 777 过 / 26 skip / **0 红**；`packages/shared` 全绿；`apps/server` 2268 过 / 313 skip / **60 红（17 文件，全为存量环境/平台族）**；`pnpm typecheck` **25/25 全绿**；`pnpm test:workspace` 33/33；`pnpm test:docs` 通过（50 md）。
+- 测试与门禁（本轮）：`pnpm typecheck` **25/25 全绿**；`apps/web` 全量 **876 过 / 26 skip / 0 红**；`apps/server` browser 套件 **118 过**（含 3 个 G1 新回归）。
 
 ## UNVERIFIED
 
 - 计划档单轮耗时未统计（脚本 420s 上限，内容与产物已达标）。
-- 浏览器面板本轮未点（上一轮已由 G1 单测 + 点装覆盖）。
 - 运行时选择页「取消勾选即删目录」路径本轮只走默认（全保留）；页面逻辑由编译产物 + 上一轮 MessageBox 版同构逻辑背书。
 
 ## 存量红基线（2026-10-13 全量复跑）
@@ -142,11 +141,11 @@
 | MCPREG | MCP 注册/发现（`install_mcp_server` → ToolSearch → 调用） | **DONE** | Task 绑到脚本所在目录后三步一次跑通：install（connected、PYTHONPATH 生效）→ `list_mcp_servers`（列出 kfwstats + 两工具）→ ToolSearch 发现 → 真实调用 `word_stats`（total_tokens=3 / unique_words=2 / isError:false）。此前「不可用」的根因是回执门第二处误判（宿主 `outputText` 空 vs provider 有内容 → 判成「替换了真实执行结果」），已修 + 回归测试 |
 | ENV-GIT2 | 沙箱 git 报 `fatal: this operation must be run in a work tree` | **DONE（两个根因都已修，端到端复跑通过）** | 根因一：检查点 Git 之前跑在 `derive("review")` 只读作用域，Windows PSEC 只读授权不含目录 traverse ⇒ `chdir` 报 Permission denied；`git add`/`commit` 的 `setup_work_tree()` 必须 chdir（git 源码：`if (!work_tree \|\| chdir_notify(work_tree)) die("this operation must be run in a work tree")`）⇒ 整族失效。已改 `derive("review")` → `derive("worker")`（固定 argv 的系统 consumer，模型输入到不了）。根因二：沙箱捕获层 `stripNulCharacters` 把 `-z` 清单的 NUL 剥掉，路径被粘成一条（`pathspec ... did not match any files`）；已加显式 `preserveNul` 开口，只在影子 Git 读取时开启。**验证**：影子仓库出现 `轮次开始快照`/`轮次结束快照` 两个真实提交、日志不再有 `[turn-boundary] 文件边界捕获失败`；三个定向套件 29/29 绿 |
 | BASH-DIR | cmd `dir` 在沙箱内恒报 `Access is denied.` | **DONE** | 根因：沙箱只读根缺**系统盘根**（cmd 的 `dir` 先取卷信息）。非 cmd 枚举器（bundled node `readdirSync`）在同一作用域**列出 26 项**⇒沙箱枚举权本就正常。修法 1 行：runtime 只读根加 `SystemDrive\`（只读，不扩写域）。验证：沙箱级 `dir` 0 + 真实卷信息；**计划档模拟点击**：`dir` 0（26 文件/4 目录）、`cd sub` 0、`dir /b` 0（`inner.txt`）、`type sub\inner.txt` ✓（《日志》§一百八十七） |
-| G1BROWSER | 浏览器面板点击验收 | **未做** | — |
+| G1BROWSER | 浏览器面板点击验收 | **DONE** | 模拟点击 **16/16**：入口→挂载→导航 2s 出画面→流解出真实帧 1280×720→服务端 connected 同 URL→视口换真视口→拾取叠框→引用进 composer→调试口注入→历史栈前后退且保持画面态→收起隐藏→关闭移除（`tmp/e2e/report.jsonl` + `shots/browser-*.png`；《日志》§一百八十八）。**验收修出 4 个真实缺陷**：①面板读错 `{cdp:…}` 信封恒报「浏览器启动失败」（改读信封+夹具对齐真契约）；②静态页单帧永不渲染（开流立即补一张 JPEG 静止帧；Chromium 只在下一分界结束 part）；③旧流占满连接池致面板卡「正在打开…」（新流开起时收掉上一路流）；④Q5 引用被上游草稿门挡掉+toast 虚报（放开到 Live 会话） |
 
 ## NEXT ACTION
 
-1. **未点：浏览器面板（G1）** —— 唯一剩下的功能项。
+1. **融合计划功能项已全部点完**（G1–G11 + G1BROWSER 均有真机证据）。
 2. **已查清、不作为本计划修复项：Windows 只读档缺目录 traverse。** 机制（一手证据）：Windows 分两条执行层 —— T3 宿主路径 DACL 的只读掩码 `RO_MASK = FILE_GENERIC_READ \| FILE_GENERIC_EXECUTE` 含 traverse；而**本机（Win11 26340 insider）走的是 T1 原生 PSEC**，其 `fs_read_only` 只给「读 + 列目录」，**不含目录 traverse**。实测：只读作用域下 `git -C <workTree> …` 报 `Permission denied`（chdir 被拒），而 `rev-parse --show-toplevel` / `--is-inside-work-tree` / `ls-files --others` 全部 exit 0 —— 即「读得到、进不去」，`git add`/`commit` 的 `setup_work_tree()` 恰好死在 chdir 那一步。
    **已实测过 T3 路线（结论：可恢复 traverse，但不作为本轮改动）**：把只读档临时指到 DACL 层（`AppContainerScriptRunner::with_filesystem_mode(Dacl)` + 自己打 RW/RO ACE）后，沙箱内实测 `cd sub` ✓、`type sub\inner.txt` 读到 `ok-inner` ✓、`echo > evil2.txt` 被拒（`Access is denied`，只读保持）✓、私有影子仓库目录可写 ✓；失败的是 `mkdir` 既有目录正常而 **`move`（rename）被拒** —— rename 需要源文件 `DELETE`，只读掩码本就不含它（对只读档是正确行为）。代价面：① T3 要临时改写**宿主路径安全描述符**（与 `FallbackPolicy { allow_dacl_mutation: false }` 的取向冲突，MXC 定义该开关为「operator consent for host-impacting containment fallbacks」）；② MXC 的 `build_t3_dacl`/`derive_sid_string` 等 glue 部分私有，要在 adapter 里复刻；③ 每 spawn 会现建 AppContainer profile，需接 `sandbox_tracking` 的清理/身份生命周期。**故本轮只把检查点 Git 放行到可写档（已修）；只读档未改**——若后续确有「计划档 Bash 需要 `cd`/读子目录」的真实诉求，再单独立项落 T3 DACL，并按上面三条代价评估。（取证：`tmp/e2e-server29/30/31.log` 的 `[probe-ro]` 行）
 3. 提示：六档端到端驱动方式已定型（暖场建会话 → 点 `[data-testid="execution-mode-chip"]`），复跑直接复用 `tmp/e2e/run-mode.mjs`；MCP 端到端复用 `tmp/e2e/run-mcp-e2e.mjs`（需 Task 绑到脚本所在目录）；检查点/落盘复跑复用 `tmp/e2e/run-task.mjs`（复用绑定 `test` 项目的会话）。

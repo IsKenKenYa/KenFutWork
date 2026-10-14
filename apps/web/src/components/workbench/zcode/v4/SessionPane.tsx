@@ -4519,7 +4519,9 @@ export function SessionPane({
       centered={isDraft}
       blockingRequestId={blockingInteractionId}
       listenAddToChatEvents={focused}
-      externalTextInsertRequest={focused && sessionId === null ? composerTextInsertRequest : null}
+      // Q5 外部插入按 host 语义放开到 Live 会话：右栏浏览器拾取的坐标引用
+      // 就是要填进当前会话的下一条消息输入框（上游只有草稿在用，故原本只放行草稿）。
+      externalTextInsertRequest={focused ? composerTextInsertRequest : null}
       onExternalTextInsertApplied={handleExternalTextInsertApplied}
       autoFocusEnabled={focused}
       disabled={
