@@ -13,6 +13,7 @@ export interface ProcessOwner {
     offset: number,
     maxBytes: number,
     stream?: ProcessOutputStream,
+    preserveNul?: boolean,
   ): ProcessOutput;
   stdin(data: string): Promise<void>;
   resize?(cols: number, rows: number): Promise<void>;

@@ -11,6 +11,7 @@ export async function collectManagedOutput(
   process: ManagedProcess,
   maxBytes: number,
   stream?: "stdout" | "stderr",
+  preserveNul = false,
 ): Promise<string> {
   let offset = 0;
   const parts: string[] = [];
@@ -19,6 +20,7 @@ export async function collectManagedOutput(
       offset,
       maxBytes: maxBytes - offset,
       ...(stream ? { stream } : {}),
+      ...(preserveNul ? { preserveNul } : {}),
     });
     if (page.data) parts.push(page.data);
     if (page.nextOffset <= offset) break;

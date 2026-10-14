@@ -332,12 +332,18 @@ export class UnixManagedProcess {
   snapshot(): ManagedProcessSnapshot {
     return structuredClone(this.snapshotValue);
   }
-  output(offset: number, maxBytes: number, stream?: ProcessOutputStream) {
+  output(
+    offset: number,
+    maxBytes: number,
+    stream?: ProcessOutputStream,
+    preserveNul = false,
+  ) {
     return this.capture.read(
       offset,
       maxBytes,
       this.snapshotValue.exit !== null,
       stream,
+      preserveNul,
     );
   }
   wait(): Promise<ProcessExit> {

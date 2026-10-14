@@ -101,6 +101,8 @@ export interface ManagedProcess {
     offset: number;
     maxBytes: number;
     stream?: ProcessOutputStream;
+    /** 保留 NUL 分隔字节（影子 Git 的 `-z` 清单等）；默认剥掉以免进 jsonb。 */
+    preserveNul?: boolean;
   }): Promise<ProcessOutput>;
   writeStdin(data: string): Promise<void>;
   endStdin(): Promise<void>;

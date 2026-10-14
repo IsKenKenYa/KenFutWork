@@ -50,9 +50,23 @@ export function createCheckpointsPlugin(): PluginDefinition {
               .get("settings")
               .getInstanceSettings(actor, scope.describe().instanceId);
             return createShadowGitClient({
-              // Git 只读用户目录，系统 authority 仅开放 Task 私有 metadata。
+              /**
+               * 检查点 Git 是固定 argv 的系统 consumer（`spawnCheckpoint` 只接受精确 argv，
+               * 模型输入到不了这里），签发**可写**作用域而不是「review」只读作用域：
+               *
+               * `git add` / `git commit` 内部走 `setup_work_tree()`，它必须 chdir 进工作树；
+               * 而 Windows 只读授权（PSEC `fs_read_only`）不含目录 traverse，只读作用域下
+               * `chdir` 直接 Permission denied —— Git 随即以
+               * `fatal: this operation must be run in a work tree` 退出（真机实测，检查点
+               * 时间线与每轮自动提交整族失效）。Git 自己写不了工作树：全部命令集只有
+               * `--cached`/索引/私有影子仓库三个写目标，工作树只被读。
+               *
+               * 只读的额外目录不受影响：scope 的 per-directory access 已把它们标成
+               * `read-only`，与 scope 的只读位无关；Git 的写权限仍由 `internalWriteRoots`
+               * 收敛在 Task 私有影子仓库。
+               */
               exec: createShadowGitExec({
-                scope: scope.derive("review", "checkpoint-git"),
+                scope: scope.derive("worker", "checkpoint-git"),
                 sandbox: ctx.get("processSandbox"),
                 binary,
                 timeoutMs: settings.executeTimeoutMs,

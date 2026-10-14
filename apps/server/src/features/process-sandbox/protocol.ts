@@ -51,6 +51,8 @@ export type HelperRequest =
       offset: number;
       maxBytes: number;
       stream?: ProcessOutputStream;
+      /** 需要逐字节保真的系统 consumer（如影子 Git 的 `-z` 清单）显式要求保留 NUL。 */
+      preserveNul?: boolean;
     }
   | { id: string; method: "stdin"; processId: string; data: string }
   | {

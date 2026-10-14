@@ -140,13 +140,13 @@
 | RUN-AUTO | 自主档真实 run | **DONE** | `kfw-probe.txt` 落盘 + `type` 读回退出码 0 |
 | MODE6 | 六档执行模式端到端 | **DONE（五档实测 + 循环设计退役）** | 方法：暖场建会话→点 `[data-testid="execution-mode-chip"]`→取证 `chat_sessions.execution_mode`。结果：`对话=solo`（答 1024）、`计划=plan`（只读+计划门）、`目标=goal`（标准+差距）、`自主=agent`（落盘并读回）、`创造=creative`（技能 `mode-creative-demo` 落库）；`循环` 不在 `/api/execution-modes`（`RetiredExecutionModeError`，设计退役） |
 | MCPREG | MCP 注册/发现（`install_mcp_server` → ToolSearch → 调用） | **DONE** | Task 绑到脚本所在目录后三步一次跑通：install（connected、PYTHONPATH 生效）→ `list_mcp_servers`（列出 kfwstats + 两工具）→ ToolSearch 发现 → 真实调用 `word_stats`（total_tokens=3 / unique_words=2 / isError:false）。此前「不可用」的根因是回执门第二处误判（宿主 `outputText` 空 vs provider 有内容 → 判成「替换了真实执行结果」），已修 + 回归测试 |
-| ENV-GIT2 | 沙箱 git 报 `fatal: this operation must be run in a work tree` | **部分（已定位到 Windows 原生 broker）** | 已试四通道全无效：请求 env `GIT_WORK_TREE`、argv `--work-tree`、仓库 config `core.worktree`、以及「只发 GIT_DIR 让 config 生效」。宿主机用系统 git 与随包 MinGit 分别实测 `GIT_DIR + core.worktree` **都能跑通** `git add`/`status`。**决定性取证**：在 `windows-policy.ts` 里给 git 命中打点，**日志里一次都没有出现** → Windows 上这条 git 不走该 policy，而是走 `WindowsTaskBroker`（Rust）自拼命令行/环境；残留点在 Rust 侧（`windows_launch.rs`/`windows_protocol.rs` 的 argv/env 转发）。改动已落：`core.worktree` 写进仓库 config + argv 显式 `--work-tree` + 不再发 `GIT_WORK_TREE`（避免压过 config） |
+| ENV-GIT2 | 沙箱 git 报 `fatal: this operation must be run in a work tree` | **DONE（两个根因都已修，端到端复跑通过）** | 根因一：检查点 Git 之前跑在 `derive("review")` 只读作用域，Windows PSEC 只读授权不含目录 traverse ⇒ `chdir` 报 Permission denied；`git add`/`commit` 的 `setup_work_tree()` 必须 chdir（git 源码：`if (!work_tree \|\| chdir_notify(work_tree)) die("this operation must be run in a work tree")`）⇒ 整族失效。已改 `derive("review")` → `derive("worker")`（固定 argv 的系统 consumer，模型输入到不了）。根因二：沙箱捕获层 `stripNulCharacters` 把 `-z` 清单的 NUL 剥掉，路径被粘成一条（`pathspec ... did not match any files`）；已加显式 `preserveNul` 开口，只在影子 Git 读取时开启。**验证**：影子仓库出现 `轮次开始快照`/`轮次结束快照` 两个真实提交、日志不再有 `[turn-boundary] 文件边界捕获失败`；三个定向套件 29/29 绿 |
 | G1BROWSER | 浏览器面板点击验收 | **未做** | — |
 
 ## NEXT ACTION
 
-1. **ENV-GIT2（唯一还开着的功能项）**：Windows 原生 broker 侧修 argv/env 转发 —— 对着 `apps/server/src/features/process-sandbox/native/src/windows_launch.rs` / `windows_protocol.rs`，确认 `argv.args` 与请求 `env` 是否原样进 `CreateProcess`（现状：调用点四个通道全部无效，policy 路径根本没被走到 → 基本可判定 broker 丢了 env 或 argv 增量）。可在 broker 里对 `git` 打一次同类打点做对照，再决定「修转发」或「给 git 单独放行」。
-2. 未点：浏览器面板（G1）。
-3. 提示：六档端到端驱动方式已定型（暖场建会话 → 点 `[data-testid="execution-mode-chip"]`），复跑直接复用 `tmp/e2e/run-mode.mjs`；MCP 端到端复用 `tmp/e2e/run-mcp-e2e.mjs`（需 Task 绑到脚本所在目录）。
+1. **未点：浏览器面板（G1）** —— 唯一剩下的功能项。
+2. 已登记但未决（非本计划项）：Windows 只读作用域（`review`/`explore`/计划档 Bash）的 PSEC 授权不含目录 traverse，需要 `chdir`/相对路径穿越的命令在该作用域下会被拒。检查点 Git 因固定 argv 已放行到可写作用域；`code-ui` 人工 Git 面板只暴露只读操作（写操作在 `unavailableMethods`）、计划档 Bash 的只读是安全属性，二者**未**改动 —— 若后续发现只读作用域下的子目录读/`cd` 失败，按同一机制处理。
+3. 提示：六档端到端驱动方式已定型（暖场建会话 → 点 `[data-testid="execution-mode-chip"]`），复跑直接复用 `tmp/e2e/run-mode.mjs`；MCP 端到端复用 `tmp/e2e/run-mcp-e2e.mjs`（需 Task 绑到脚本所在目录）；检查点/落盘复跑复用 `tmp/e2e/run-task.mjs`（复用绑定 `test` 项目的会话）。
 
 

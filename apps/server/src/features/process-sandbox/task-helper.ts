@@ -66,7 +66,12 @@ class TaskProcessHelper {
     if (!child)
       throw new ProcessSandboxError("process_closed", "命令句柄不存在。");
     if (input.method === "output")
-      return child.output(input.offset, input.maxBytes, input.stream);
+      return child.output(
+        input.offset,
+        input.maxBytes,
+        input.stream,
+        input.preserveNul,
+      );
     if (input.method === "outputreader") {
       if (!child.setOutputReader)
         throw new ProcessSandboxError(

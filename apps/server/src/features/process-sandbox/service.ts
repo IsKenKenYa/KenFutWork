@@ -481,13 +481,14 @@ export function createProcessSandbox(
     const processId = snapshot.id;
     const child: ManagedTerminalProcess & ManagedStdioProcess = {
       id: processId,
-      readOutput: async ({ offset, maxBytes, stream }) => {
+      readOutput: async ({ offset, maxBytes, stream, preserveNul }) => {
         const output = (await connection.rpc({
           method: "output",
           processId,
           offset,
           maxBytes,
           ...(stream ? { stream } : {}),
+          ...(preserveNul ? { preserveNul } : {}),
         })) as ProcessOutput;
         if (request.pty)
           await connection.outputConsumer(processId).consumeCaptured();
