@@ -146,7 +146,8 @@
 ## NEXT ACTION
 
 1. **未点：浏览器面板（G1）** —— 唯一剩下的功能项。
-2. 已登记但未决（非本计划项）：Windows 只读作用域（`review`/`explore`/计划档 Bash）的 PSEC 授权不含目录 traverse，需要 `chdir`/相对路径穿越的命令在该作用域下会被拒。检查点 Git 因固定 argv 已放行到可写作用域；`code-ui` 人工 Git 面板只暴露只读操作（写操作在 `unavailableMethods`）、计划档 Bash 的只读是安全属性，二者**未**改动 —— 若后续发现只读作用域下的子目录读/`cd` 失败，按同一机制处理。
+2. **已查清、不作为本计划修复项：Windows 只读档缺目录 traverse。** 机制（一手证据）：Windows 分两条执行层 —— T3 宿主路径 DACL 的只读掩码 `RO_MASK = FILE_GENERIC_READ \| FILE_GENERIC_EXECUTE` 含 traverse；而**本机（Win11 26340 insider）走的是 T1 原生 PSEC**，其 `fs_read_only` 只给「读 + 列目录」，**不含目录 traverse**。实测：只读作用域下 `git -C <workTree> …` 报 `Permission denied`（chdir 被拒），而 `rev-parse --show-toplevel` / `--is-inside-work-tree` / `ls-files --others` 全部 exit 0 —— 即「读得到、进不去」，`git add`/`commit` 的 `setup_work_tree()` 恰好死在 chdir 那一步。
+   **已实测过 T3 路线（结论：可恢复 traverse，但不作为本轮改动）**：把只读档临时指到 DACL 层（`AppContainerScriptRunner::with_filesystem_mode(Dacl)` + 自己打 RW/RO ACE）后，沙箱内实测 `cd sub` ✓、`type sub\inner.txt` 读到 `ok-inner` ✓、`echo > evil2.txt` 被拒（`Access is denied`，只读保持）✓、私有影子仓库目录可写 ✓；失败的是 `mkdir` 既有目录正常而 **`move`（rename）被拒** —— rename 需要源文件 `DELETE`，只读掩码本就不含它（对只读档是正确行为）。代价面：① T3 要临时改写**宿主路径安全描述符**（与 `FallbackPolicy { allow_dacl_mutation: false }` 的取向冲突，MXC 定义该开关为「operator consent for host-impacting containment fallbacks」）；② MXC 的 `build_t3_dacl`/`derive_sid_string` 等 glue 部分私有，要在 adapter 里复刻；③ 每 spawn 会现建 AppContainer profile，需接 `sandbox_tracking` 的清理/身份生命周期。**故本轮只把检查点 Git 放行到可写档（已修）；只读档未改**——若后续确有「计划档 Bash 需要 `cd`/读子目录」的真实诉求，再单独立项落 T3 DACL，并按上面三条代价评估。（取证：`tmp/e2e-server29/30/31.log` 的 `[probe-ro]` 行）
 3. 提示：六档端到端驱动方式已定型（暖场建会话 → 点 `[data-testid="execution-mode-chip"]`），复跑直接复用 `tmp/e2e/run-mode.mjs`；MCP 端到端复用 `tmp/e2e/run-mcp-e2e.mjs`（需 Task 绑到脚本所在目录）；检查点/落盘复跑复用 `tmp/e2e/run-task.mjs`（复用绑定 `test` 项目的会话）。
 
 
