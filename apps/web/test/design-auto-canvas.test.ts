@@ -6,7 +6,7 @@ import { resolveDesignAutoCanvas } from "../src/components/workbench/zcode/host/
  *
  * 历史事故：跨上下文残留的选中 id 曾把自动进画布整段挡掉（判「选中即保持」，
  * 但选中的项目根本不在本列表里），主区永远停在空态。这里的用例锁死：
- * 按本列表过滤、列表未回来不动作、空列表只自动建一次。
+ * 按本列表过滤、列表未回来不动作、空列表保持空态，不创建项目或画布。
  */
 describe("resolveDesignAutoCanvas", () => {
   it("列表未回来（未 loaded）→ 不动作", () => {
@@ -16,7 +16,6 @@ describe("resolveDesignAutoCanvas", () => {
         projectsLoaded: false,
         projectIds: [],
         selectedProjectId: null,
-        autoCreateTried: false,
       }),
     ).toEqual({ kind: "idle" });
   });
@@ -28,7 +27,6 @@ describe("resolveDesignAutoCanvas", () => {
         projectsLoaded: true,
         projectIds: ["p1"],
         selectedProjectId: null,
-        autoCreateTried: false,
       }),
     ).toEqual({ kind: "idle" });
   });
@@ -40,7 +38,6 @@ describe("resolveDesignAutoCanvas", () => {
         projectsLoaded: true,
         projectIds: ["p1", "p2"],
         selectedProjectId: "p2",
-        autoCreateTried: false,
       }),
     ).toEqual({ kind: "keep" });
   });
@@ -52,7 +49,6 @@ describe("resolveDesignAutoCanvas", () => {
         projectsLoaded: true,
         projectIds: ["p1", "p2"],
         selectedProjectId: "code-project-id",
-        autoCreateTried: false,
       }),
     ).toEqual({ kind: "select", projectId: "p1" });
   });
@@ -64,32 +60,29 @@ describe("resolveDesignAutoCanvas", () => {
         projectsLoaded: true,
         projectIds: ["p1"],
         selectedProjectId: null,
-        autoCreateTried: false,
       }),
     ).toEqual({ kind: "select", projectId: "p1" });
   });
 
-  it("空列表且没建过 → 自动建一张空白画布", () => {
+  it("空列表 → 等待用户选择或创建", () => {
     expect(
       resolveDesignAutoCanvas({
         creatingProject: false,
         projectsLoaded: true,
         projectIds: [],
         selectedProjectId: null,
-        autoCreateTried: false,
       }),
-    ).toEqual({ kind: "create" });
+    ).toEqual({ kind: "empty" });
   });
 
-  it("空列表且已建过（可能失败）→ 不再重试", () => {
+  it("空列表的再次进入仍不自动创建", () => {
     expect(
       resolveDesignAutoCanvas({
         creatingProject: false,
         projectsLoaded: true,
         projectIds: [],
         selectedProjectId: null,
-        autoCreateTried: true,
       }),
-    ).toEqual({ kind: "give-up" });
+    ).toEqual({ kind: "empty" });
   });
 });

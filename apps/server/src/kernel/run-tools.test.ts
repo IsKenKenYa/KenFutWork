@@ -339,6 +339,7 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
       ): Promise<ProjectDetailRow> => ({
         id: projectId,
         kind: "design",
+        enabled_modes: ["design"],
         name: "测试项目",
         slug: "test-project",
         description: null,

@@ -188,6 +188,7 @@ async function fixture(now: () => number = Date.now) {
     ): Promise<ProjectDetailRow> => ({
       id,
       kind: projectKind,
+      enabled_modes: [projectKind],
       name: "Flow 项目",
       slug: "flow-project",
       description: null,

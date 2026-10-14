@@ -120,6 +120,7 @@ async function fixture(
     id: projectId,
     instance_id: actor.instanceId,
     kind: "design",
+    enabled_modes: ["design"],
     name: "HTTP files",
     slug: "http-files",
     description: null,

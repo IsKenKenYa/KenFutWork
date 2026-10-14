@@ -1982,7 +1982,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: projectListResponseSchema,
     summary: "列出项目",
     description:
-      "按 kind（design/code/flow）过滤列出当前本地实例可见的项目列表。",
+      "按 kind 指定的已启用工作方式过滤当前实例项目；kind 表达默认工作方式，enabledModes 表达显式共享归属。",
   },
   {
     method: "delete",
@@ -2003,7 +2003,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: projectCreateResponseSchema,
     summary: "创建项目",
     description:
-      "创建项目并绑定固定工作目录；省略目录时创建托管目录，指定路径须为存在的绝对目录。请求体校验失败返回 400 带 issues。",
+      "创建项目并仅启用默认工作方式；Code/Design 不自动创建画布，Flow 保留主画布。省略目录时使用托管目录，指定路径须为存在的绝对目录。",
   },
   {
     method: "patch",
@@ -2014,7 +2014,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     requestSchema: projectUpdateRequestSchema,
     summary: "更新项目",
     description:
-      "部分更新项目字段；工作目录仅接受相同路径的幂等值，解绑或切换目录拒绝。成功返回 204 无响应体，请求体校验失败返回 400 带 issues。",
+      "部分更新项目字段；enabled_modes 显式启用 Code/Design 共享归属，必须保留默认方式且 Flow 独立。工作目录仅接受原路径幂等值。成功返回 204。",
   },
   {
     method: "get",

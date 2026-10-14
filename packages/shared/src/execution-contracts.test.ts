@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { projectSummarySchema } from "./contracts.js";
 
 describe("Code 项目工作域契约", () => {
-  it("Code 项目使用真实目录且不含画布，Design 项目仍要求主画布", () => {
+  it("Task 文件工作域保持真实目录，项目画布按需求创建", () => {
     const project = {
       id: "c15b75a5-b7ef-46b5-8b0c-d543dd7769d5",
       name: "应用",
@@ -15,6 +15,7 @@ describe("Code 项目工作域契约", () => {
     const code = projectSummarySchema.parse({
       ...project,
       kind: "code",
+      enabledModes: ["code"],
       workDir: "/home/user/app",
       additionalDirectories: [
         { path: "/home/user/reference", access: "read-only" },
@@ -23,7 +24,11 @@ describe("Code 项目工作域契约", () => {
     expect(code).not.toHaveProperty("primaryCanvas");
     expect(code.workDir).toBe("/home/user/app");
     expect(
-      projectSummarySchema.safeParse({ ...project, kind: "design" }).success,
-    ).toBe(false);
+      projectSummarySchema.safeParse({
+        ...project,
+        kind: "design",
+        enabledModes: ["design"],
+      }).success,
+    ).toBe(true);
   });
 });

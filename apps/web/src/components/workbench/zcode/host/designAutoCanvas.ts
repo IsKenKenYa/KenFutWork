@@ -14,10 +14,8 @@ export type DesignAutoCanvasDecision =
   | { kind: "keep" }
   /** 选中列表里的第一个项目。 */
   | { kind: "select"; projectId: string }
-  /** 一个项目都没有：自动建一张空白画布。 */
-  | { kind: "create" }
-  /** 建过一次了（可能失败）：不再重试，交给用户手动新建。 */
-  | { kind: "give-up" };
+  /** 没有项目：等待显式创建或选择。 */
+  | { kind: "empty" };
 
 export function resolveDesignAutoCanvas(input: {
   creatingProject: boolean;
@@ -26,8 +24,6 @@ export function resolveDesignAutoCanvas(input: {
   /** 画布项目 id（顺序即「第一个」）。 */
   projectIds: readonly string[];
   selectedProjectId: string | null;
-  /** 是否已经尝试过自动创建（避免列表拉取失败时反复发创建请求）。 */
-  autoCreateTried: boolean;
 }): DesignAutoCanvasDecision {
   if (input.creatingProject) return { kind: "idle" };
   if (
@@ -39,5 +35,5 @@ export function resolveDesignAutoCanvas(input: {
   if (!input.projectsLoaded) return { kind: "idle" };
   const first = input.projectIds[0];
   if (first) return { kind: "select", projectId: first };
-  return input.autoCreateTried ? { kind: "give-up" } : { kind: "create" };
+  return { kind: "empty" };
 }

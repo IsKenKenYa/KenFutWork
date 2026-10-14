@@ -9226,7 +9226,7 @@
       "patch": {
         "operationId": "patchProjectsByProjectId",
         "summary": "更新项目",
-        "description": "部分更新项目字段；工作目录仅接受相同路径的幂等值，解绑或切换目录拒绝。成功返回 204 无响应体，请求体校验失败返回 400 带 issues。",
+        "description": "部分更新项目字段；enabled_modes 显式启用 Code/Design 共享归属，必须保留默认方式且 Flow 独立。工作目录仅接受原路径幂等值。成功返回 204。",
         "tags": [
           "projects"
         ],
@@ -9290,7 +9290,7 @@
       "get": {
         "operationId": "getProjects",
         "summary": "列出项目",
-        "description": "按 kind（design/code/flow）过滤列出当前本地实例可见的项目列表。",
+        "description": "按 kind 指定的已启用工作方式过滤当前实例项目；kind 表达默认工作方式，enabledModes 表达显式共享归属。",
         "tags": [
           "projects"
         ],
@@ -9353,7 +9353,7 @@
       "post": {
         "operationId": "postProjects",
         "summary": "创建项目",
-        "description": "创建项目并绑定固定工作目录；省略目录时创建托管目录，指定路径须为存在的绝对目录。请求体校验失败返回 400 带 issues。",
+        "description": "创建项目并仅启用默认工作方式；Code/Design 不自动创建画布，Flow 保留主画布。省略目录时使用托管目录，指定路径须为存在的绝对目录。",
         "tags": [
           "projects"
         ],
@@ -11882,6 +11882,7 @@
                   "project_not_found",
                   "project_slug_taken",
                   "project_update_failed",
+                  "invalid_project_modes",
                   "index_disabled",
                   "index_not_built",
                   "index_too_large",
@@ -14933,6 +14934,7 @@
                       "project_not_found",
                       "project_slug_taken",
                       "project_update_failed",
+                      "invalid_project_modes",
                       "index_disabled",
                       "index_not_built",
                       "index_too_large",
@@ -24617,12 +24619,44 @@
                     "format": "date-time",
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                   },
+                  "enabledModes": {
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "design",
+                        "code",
+                        "flow"
+                      ]
+                    }
+                  },
                   "kind": {
                     "type": "string",
                     "const": "code"
                   },
                   "primaryCanvas": {
-                    "not": {}
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "isPrimary": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "isPrimary"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
@@ -24635,6 +24669,7 @@
                   "instanceId",
                   "createdAt",
                   "updatedAt",
+                  "enabledModes",
                   "kind"
                 ],
                 "additionalProperties": false
@@ -24716,12 +24751,22 @@
                     "format": "date-time",
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                   },
+                  "enabledModes": {
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "design",
+                        "code",
+                        "flow"
+                      ]
+                    }
+                  },
                   "kind": {
                     "type": "string",
-                    "enum": [
-                      "design",
-                      "flow"
-                    ]
+                    "const": "design"
                   },
                   "primaryCanvas": {
                     "type": "object",
@@ -24755,6 +24800,138 @@
                   "instanceId",
                   "createdAt",
                   "updatedAt",
+                  "enabledModes",
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "slug": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "workDir": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "additionalDirectories": {
+                    "default": [],
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "access": {
+                          "type": "string",
+                          "enum": [
+                            "read-only",
+                            "read-write"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "access"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "thumbnailUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "instanceId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  "updatedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  "enabledModes": {
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "design",
+                        "code",
+                        "flow"
+                      ]
+                    }
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "flow"
+                  },
+                  "primaryCanvas": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "isPrimary": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "isPrimary"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "slug",
+                  "description",
+                  "additionalDirectories",
+                  "instanceId",
+                  "createdAt",
+                  "updatedAt",
+                  "enabledModes",
                   "kind",
                   "primaryCanvas"
                 ],
@@ -25387,12 +25564,44 @@
                       "format": "date-time",
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                     },
+                    "enabledModes": {
+                      "minItems": 1,
+                      "maxItems": 3,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "design",
+                          "code",
+                          "flow"
+                        ]
+                      }
+                    },
                     "kind": {
                       "type": "string",
                       "const": "code"
                     },
                     "primaryCanvas": {
-                      "not": {}
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "isPrimary": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "isPrimary"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -25405,6 +25614,7 @@
                     "instanceId",
                     "createdAt",
                     "updatedAt",
+                    "enabledModes",
                     "kind"
                   ],
                   "additionalProperties": false
@@ -25486,12 +25696,22 @@
                       "format": "date-time",
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                     },
+                    "enabledModes": {
+                      "minItems": 1,
+                      "maxItems": 3,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "design",
+                          "code",
+                          "flow"
+                        ]
+                      }
+                    },
                     "kind": {
                       "type": "string",
-                      "enum": [
-                        "design",
-                        "flow"
-                      ]
+                      "const": "design"
                     },
                     "primaryCanvas": {
                       "type": "object",
@@ -25525,6 +25745,138 @@
                     "instanceId",
                     "createdAt",
                     "updatedAt",
+                    "enabledModes",
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "slug": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "workDir": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "additionalDirectories": {
+                      "default": [],
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "access": {
+                            "type": "string",
+                            "enum": [
+                              "read-only",
+                              "read-write"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "access"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "thumbnailUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "instanceId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    "enabledModes": {
+                      "minItems": 1,
+                      "maxItems": 3,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "design",
+                          "code",
+                          "flow"
+                        ]
+                      }
+                    },
+                    "kind": {
+                      "type": "string",
+                      "const": "flow"
+                    },
+                    "primaryCanvas": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "isPrimary": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "isPrimary"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "slug",
+                    "description",
+                    "additionalDirectories",
+                    "instanceId",
+                    "createdAt",
+                    "updatedAt",
+                    "enabledModes",
                     "kind",
                     "primaryCanvas"
                   ],
@@ -25543,6 +25895,19 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
+          "enabled_modes": {
+            "minItems": 1,
+            "maxItems": 3,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "design",
+                "code",
+                "flow"
+              ]
+            }
+          },
           "brand_kit_id": {
             "anyOf": [
               {

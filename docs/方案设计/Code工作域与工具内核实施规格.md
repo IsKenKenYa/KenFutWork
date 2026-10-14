@@ -141,3 +141,26 @@ Task的基础权限mode与独立planEnabled分别持有。输入接纳即冻结�
 - 新目录 Scope Provider、Project/Chat/Code UI 存储改造、Unix helper/真实进程管理器已在施工；Windows native backend仍未完整验收。运行时已接可信 scopeHandle 的 backend，后续仍需子代理、后台工作、工具目录及 UI 全链。
 - 官方 CLI 生成前向迁移 `20261002192638_code_task_execution_scope.sql`；根会话直接人类授权审核后安全源码写入成功。仅保留/归档旧 Code 内容并解除列依赖，未连接或执行现存数据库；空库重放/实际 schema/no-op 尚待验证。
 - 测试资源：文件 worker 暂持唯一 token，主代理及其他 worker 不同时启动 tests；Scope/Process green 待该 token 归还后串行运行。当前尚无 commit/push/PR，完整 Goal 保持 active。
+
+## Code/Design 统一实施（2026-10-14，用户确认，实施中）
+
+本节取代前文的 Code/Design 会话隔离、单画布绑定与互斥项目归属规则；Task 文件授权、代际、租约及原 ZCode 协议要求继续有效。
+
+### 已确认行为
+
+- 项目是资源与会话容器；默认工作方式与启用列表由服务端持有。新建默认隔离，跨模式显式复用项目；同目录提示，不自动合并。共享项目默认显示全部会话，可按使用过的工作方式筛选。
+- 复用 ZCode 会话聚合为唯一 Task 权威，同一 Task、历史与 Goal 可跨 Code/Design 继续。Run 接纳时冻结工作方式、能力、资源、模型及授权代际；切换界面不改当前执行。
+- 未选外部目录继续使用真实托管目录。Task 固定目录与文档授权分别持有，选择画布不改变 cwd 或文件权限。画布文件继续是权威，不搬回 DB jsonb。
+- 可收起项目导航、左侧原 SessionPane、右侧内容标签。Design 默认画布；用户显式打开文件/浏览器才切标签。消息、审批及恢复不抢占内容，画布状态保留。
+- 项目/会话/目录/画布分别创建，画布按需创建。Design 发送自动附当前画布可移除引用；画布工具在项目内按权限搜索、读写及创建文档，跨项目需显式资源授权。
+- Design 插件贡献选区、品牌素材、生成偏好、图片/视频投影、落画布与同步；图层/资源/编辑工具留在内容面。通用提问、审批、Goal、队列与恢复只使用共享会话链路。
+- 旧 Design 开发会话不兼容，本轮不做历史导入/运行兼容。备份停机后清理旧执行状态，保留画布、素材、外部目录、Code 会话及审计。
+
+### 交付顺序与公共测试面
+
+1. 项目与 Task 权威：项目公共接口、输入接纳/冻结、真实 FS 与文档授权；覆盖默认隔离、共享、同目录、并发、取消与迟到请求。
+2. 共用 UI 与内容槽：原宿主协议、SessionPane、项目导航、标签切换及画布状态；保留 ACK/租约与来源清单。
+3. Design 插件：媒体、选区、文档工具、审批、生成同步及补放；接通后删除旧运行/UI/接口生产引用。
+4. 门禁与桌面验收：`pnpm test:workspace`、`pnpm exec turbo run test --concurrency=1`、`pnpm typecheck`、`pnpm lint`；`pnpm desktop` 下现有 GLM 验证真实文件、画布、审批、跨模式、重启恢复。GUI 与自动化证据分别记录。
+
+每步独立验证与提交，日志记录实际完成项。Work 规划同步改为共享会话/内容插件接缝，不实现 Office；future OpenDesign 与 Flow 编辑逻辑不扩入本轮。

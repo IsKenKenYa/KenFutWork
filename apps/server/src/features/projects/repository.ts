@@ -7,6 +7,7 @@ export type ProjectListRow = {
   name: string;
   slug: string;
   kind: ProjectKind;
+  enabled_modes: ProjectKind[];
   description: string | null;
   created_at: string;
   updated_at: string;
@@ -19,6 +20,7 @@ export type ProjectListRow = {
 export type ProjectDetailRow = {
   id: string;
   kind: ProjectKind;
+  enabled_modes: ProjectKind[];
   name: string;
   slug: string;
   description: string | null;
@@ -42,6 +44,7 @@ export type CreatedProjectRow = {
   name: string;
   slug: string;
   kind: ProjectKind;
+  enabled_modes: ProjectKind[];
   description: string | null;
   created_at: string;
   updated_at: string;
@@ -59,6 +62,7 @@ export type CreatedCanvasRow = {
 /** 更新补丁：`undefined` = 不改；显式 `null` = 清空（如解绑品牌套件）。 */
 export type ProjectUpdatePatch = {
   name?: string | undefined;
+  enabledModes?: ProjectKind[];
   brandKitId?: string | null | undefined;
   /** 绑定的本机工作目录；`null` = 解绑（回落沙箱目录）。 */
   workDir?: string | null | undefined;
@@ -138,11 +142,11 @@ export interface ProjectRepository {
 }
 
 const PROJECT_LIST_COLUMNS =
-  "id, name, slug, kind, description, created_at, updated_at, instance_id, thumbnail_path, work_dir, additional_directories";
+  "id, name, slug, kind, description, created_at, updated_at, instance_id, thumbnail_path, work_dir, additional_directories, enabled_modes";
 const PROJECT_DETAIL_COLUMNS =
-  "id, name, slug, kind, description, instance_id, brand_kit_id, created_at, updated_at, work_dir, additional_directories";
+  "id, name, slug, kind, description, instance_id, brand_kit_id, created_at, updated_at, work_dir, additional_directories, enabled_modes";
 const PROJECT_CREATED_COLUMNS =
-  "id, name, slug, kind, description, created_at, updated_at, instance_id, work_dir, additional_directories";
+  "id, name, slug, kind, description, created_at, updated_at, instance_id, work_dir, additional_directories, enabled_modes";
 
 export function createProjectRepository(
   persistence: PersistenceService,
@@ -202,7 +206,7 @@ export function createProjectRepository(
         .queryOne<{ project: CreatedProjectRow; canvas: null }>(
           `select to_jsonb(p) as project, null::jsonb as canvas
          from public.projects p
-         where p.instance_id=:instance and p.archived_at is null and p.kind='code' and p.work_dir=$1
+         where p.instance_id=:instance and p.archived_at is null and 'code' = any(p.enabled_modes) and p.work_dir=$1
          order by p.created_at asc limit 1`,
           [path],
         );
@@ -213,7 +217,7 @@ export function createProjectRepository(
            from public.projects
           where instance_id = :instance
             and archived_at is null
-            and kind = $1
+            and $1 = any(enabled_modes)
           order by updated_at desc`,
         [kind],
       );
@@ -284,6 +288,11 @@ export function createProjectRepository(
         assignments.push(`additional_directories = $${values.length}::jsonb`);
       }
 
+      if (patch.enabledModes !== undefined) {
+        values.push(patch.enabledModes);
+        assignments.push(`enabled_modes = $${values.length}::text[]`);
+      }
+
       if (assignments.length === 0) {
         return 0;
       }
@@ -304,8 +313,8 @@ export function createProjectRepository(
 
         const project = await scoped.queryOne<CreatedProjectRow>(
           `insert into public.projects
-                  (id, instance_id, name, slug, kind, description, work_dir, created_by_client_id, additional_directories)
-           values (coalesce($7::uuid, gen_random_uuid()), :instance, $1, $2, $3, $4, $5, $6, $8::jsonb)
+                  (id, instance_id, name, slug, kind, description, work_dir, created_by_client_id, additional_directories, enabled_modes)
+           values (coalesce($7::uuid, gen_random_uuid()), :instance, $1, $2, $3, $4, $5, $6, $8::jsonb, $9::text[])
            returning ${PROJECT_CREATED_COLUMNS}`,
           [
             input.name,
@@ -316,6 +325,7 @@ export function createProjectRepository(
             input.createdByClientId,
             input.id ?? null,
             JSON.stringify(input.additionalDirectories ?? []),
+            [input.kind ?? "design"],
           ],
         );
 
@@ -323,7 +333,7 @@ export function createProjectRepository(
           throw new Error("[projects] 建项目未返回行。");
         }
 
-        if (project.kind === "code") return { canvas: null, project };
+        if (project.kind !== "flow") return { canvas: null, project };
 
         const canvas = await scoped.queryOne<CreatedCanvasRow>(
           // canvases 无 instance_id 列：经 projects 父链施加谓词，
@@ -370,7 +380,7 @@ export function createProjectRepository(
            join public.projects p on p.id = c.project_id
           where p.instance_id = :instance
             and c.id = $1
-            and p.archived_at is null and p.kind <> 'code'`,
+            and p.archived_at is null and ('design' = any(p.enabled_modes) or p.kind = 'flow')`,
         [canvasId],
       );
       return row?.work_dir ?? null;

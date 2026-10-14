@@ -8,6 +8,7 @@ import {
   instanceSettingsSchema,
   modelInfoSchema,
   projectKindSchema,
+  projectModesSchema,
   projectSummarySchema,
   runIdSchema,
   terminalShellSchema,
@@ -34,7 +35,7 @@ export const projectListResponseSchema = z.object({
 });
 
 export const projectListQuerySchema = z.object({
-  /** 只取该类型的项目；缺省取 design（画布项目）。 */
+  /** 按已启用工作方式筛选；缺省 design。 */
   kind: projectKindSchema.optional(),
 });
 
@@ -497,6 +498,7 @@ export const applicationErrorCodeSchema = z.enum([
   "project_not_found",
   "project_slug_taken",
   "project_update_failed",
+  "invalid_project_modes",
   // 索引库（R4-3）：两个开关各自的可读拒绝（不在枚举里 → 响应会退化成 ZodError 转储）
   "index_disabled",
   "index_not_built",
@@ -751,6 +753,8 @@ export type AssetSignedUrlResponse = z.infer<
 >;
 
 export const projectUpdateRequestSchema = z.object({
+  /** 显式跨模式打开项目；默认工作方式必须保留，Flow 不混用。 */
+  enabled_modes: projectModesSchema.optional(),
   brand_kit_id: z.uuid().nullable().optional(),
   name: z.string().min(1).max(100).optional(),
   /** 固定项目目录；仅接受与已有目录相同的幂等值，null 或切换目录均拒绝。 */

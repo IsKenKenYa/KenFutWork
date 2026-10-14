@@ -53,6 +53,7 @@ async function world() {
       return {
         id,
         kind: "code",
+        enabledModes: ["code"],
         name: input.name,
         slug: id,
         description: null,

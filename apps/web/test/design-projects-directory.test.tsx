@@ -65,7 +65,7 @@ describe("Design and Flow project directories in the current host", () => {
     expect(api.surfaceJson).toHaveBeenCalledTimes(1);
     expect(JSON.parse(requireSurfaceJsonCall(0)[1].body)).toEqual({
       kind: "design",
-      name: "未命名画布",
+      name: "未命名项目",
     });
   });
   it("uses the picked path when creating a project", async () => {

@@ -23,7 +23,7 @@ it("creates a Design project in the server-managed directory by default", async 
   expect(requireSurfaceJsonCall(0)[0]).toBe("/api/projects");
   expect(JSON.parse(requireSurfaceJsonCall(0)[1].body)).toEqual({
     kind: "design",
-    name: "未命名画布",
+    name: "未命名项目",
   });
 });
 it("passes the selected Design directory without changing its path", async () => {

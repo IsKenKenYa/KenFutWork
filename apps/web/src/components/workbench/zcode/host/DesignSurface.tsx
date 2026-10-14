@@ -16,7 +16,7 @@ export function HostDesignSurface({ active = true }: { active?: boolean }) {
   // 画布页是 web 应用路由（与 code-ui 同源）；panel=chat 让画布右侧面板
   // （会话/图层/文件）在嵌入态默认打开——iframe 宽度通常低于 1024，
   // 画布页自己的宽度阈值会把面板收起来（用户口径：右边面板要参考原来的）。
-  const canvasSrc = selectedProject
+  const canvasSrc = selectedProject?.primaryCanvas
     ? `/canvas?id=${encodeURIComponent(selectedProject.primaryCanvas.id)}&panel=chat`
     : null;
   return canvasSrc ? (
@@ -36,7 +36,7 @@ export function HostDesignSurface({ active = true }: { active?: boolean }) {
       role="status"
       className="flex h-full items-center justify-center bg-background text-sm text-foreground-subtle"
     >
-      {projectsLoaded ? "准备画布…" : "读取画布项目…"}
+      {projectsLoaded ? "还没有画布" : "读取项目…"}
     </div>
   );
 }

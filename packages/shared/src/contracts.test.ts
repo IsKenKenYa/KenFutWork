@@ -12,6 +12,37 @@ import {
 } from "./index.js";
 
 describe("@kenfutwork/shared contracts", () => {
+  it("项目可显式启用 Code/Design，画布作为可选文档而非项目身份", () => {
+    const project = {
+      id: "project-shared",
+      name: "共享项目",
+      slug: "shared",
+      kind: "code",
+      enabledModes: ["code", "design"],
+      workDir: "/project",
+      description: null,
+      instanceId: "00000000-0000-4000-8000-000000000001",
+      createdAt: "2026-10-14T00:00:00.000Z",
+      updatedAt: "2026-10-14T00:00:00.000Z",
+      primaryCanvas: { id: "canvas-1", name: "海报", isPrimary: true },
+    };
+    const schema = getExportedSchema("projectSummarySchema");
+    expect(schema.parse(project)).toMatchObject({
+      enabledModes: ["code", "design"],
+      primaryCanvas: { id: "canvas-1" },
+    });
+    expect(
+      schema.safeParse({ ...project, kind: "design", primaryCanvas: undefined })
+        .success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({ ...project, enabledModes: ["design"] }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({ ...project, enabledModes: ["code", "code"] }).success,
+    ).toBe(false);
+  });
+
   it("shares the health response schema for server and web", () => {
     const parsed = healthResponseSchema.parse({
       ok: true,
@@ -233,6 +264,7 @@ describe("@kenfutwork/shared contracts", () => {
           name: createRequest.name,
           slug: "brand-system",
           kind: "design",
+          enabledModes: ["design"],
           description: createRequest.description,
           instanceId: "00000000-0000-4000-8000-000000000001",
           primaryCanvas: {

@@ -488,6 +488,7 @@ async function fileService(options: { uploadFails?: boolean } = {}) {
       return {
         id: projectId,
         kind: "design",
+        enabled_modes: ["design"],
         name: "测试项目",
         slug: "test-project",
         description: null,

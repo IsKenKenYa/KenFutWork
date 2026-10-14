@@ -3,7 +3,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { pickCanvasProjectDirectory } from "./canvasProjectDirectories.js";
 import { surfaceJson } from "./surfaceApi.js";
 
-type FlowProject = Extract<ProjectSummary, { kind: "design" | "flow" }>;
+type FlowProject = Extract<ProjectSummary, { kind: "flow" }>;
 let state = {
   projects: [] as FlowProject[],
   selectedProjectId: null as string | null,

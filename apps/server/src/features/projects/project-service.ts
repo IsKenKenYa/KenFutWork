@@ -8,6 +8,7 @@ import type {
   ProjectSummary,
   ProjectUpdateRequest,
 } from "@kenfutwork/shared";
+import { projectModesSchema } from "@kenfutwork/shared";
 import type { BlobStore } from "../blob/types.js";
 import type {
   LocalActor,
@@ -40,7 +41,8 @@ type ProjectErrorCode =
   | "project_not_found"
   | "project_query_failed"
   | "project_slug_taken"
-  | "project_update_failed";
+  | "project_update_failed"
+  | "invalid_project_modes";
 
 export type ProjectService = {
   openCodeDirectory(actor: LocalActor, path: string): Promise<ProjectSummary>;
@@ -328,26 +330,6 @@ export function createProjectService(options: {
         return [];
       }
 
-      if (kind === "code") {
-        return Promise.all(
-          projects.map(async (project) =>
-            mapProjectSummary({
-              project: {
-                ...project,
-                work_dir:
-                  project.work_dir ??
-                  resolve(
-                    options.sandboxRoot ?? join(context.dataDir, "sandbox"),
-                    context.instanceId,
-                    project.id,
-                  ),
-              },
-              instanceId: context.instanceId,
-            }),
-          ),
-        );
-      }
-
       const canvases = await repository
         .listPrimaryCanvases(
           context.instanceId,
@@ -365,7 +347,8 @@ export function createProjectService(options: {
         canvases.map((canvas) => [canvas.project_id, canvas]),
       );
       const projectIdsMissingCanvas = projects.filter(
-        (project) => !primaryCanvasByProjectId.has(project.id),
+        (project) =>
+          project.kind === "flow" && !primaryCanvasByProjectId.has(project.id),
       );
 
       if (projectIdsMissingCanvas.length > 0) {
@@ -384,11 +367,7 @@ export function createProjectService(options: {
       return projects.map((project) =>
         mapProjectSummary({
           // 上面的缺失检查保证存在；此处断言避免在每个 map 里再抛一次。
-          canvas: primaryCanvasByProjectId.get(project.id) as {
-            id: string;
-            is_primary: boolean;
-            name: string;
-          },
+          canvas: primaryCanvasByProjectId.get(project.id) ?? null,
           project,
           thumbnailUrl: thumbnailUrls.get(project.id) ?? null,
           instanceId: context.instanceId,
@@ -448,6 +427,26 @@ export function createProjectService(options: {
     async updateProject(actor, projectId, input) {
       const context = await localInstance.resolve(actor);
       const patch: ProjectUpdatePatch = {};
+      if (input.enabled_modes !== undefined) {
+        const current = await repository.findActiveById(
+          context.instanceId,
+          projectId,
+        );
+        if (!current)
+          throw new ProjectServiceError(
+            "project_not_found",
+            PROJECT_NOT_FOUND_MESSAGE,
+            404,
+          );
+        const modes = projectModesSchema.parse(input.enabled_modes);
+        if (!modes.includes(current.kind))
+          throw new ProjectServiceError(
+            "invalid_project_modes",
+            "默认工作方式必须保留。",
+            400,
+          );
+        patch.enabledModes = modes;
+      }
       if (input.brand_kit_id !== undefined) {
         patch.brandKitId = input.brand_kit_id;
       }
@@ -491,7 +490,8 @@ export function createProjectService(options: {
         patch.name === undefined &&
         patch.brandKitId === undefined &&
         patch.workDir === undefined &&
-        patch.additionalDirectories === undefined
+        patch.additionalDirectories === undefined &&
+        patch.enabledModes === undefined
       ) {
         return;
       }
@@ -574,6 +574,7 @@ function mapProjectSummary(options: {
     description: string | null;
     id: string;
     kind: ProjectKind;
+    enabled_modes: ProjectKind[];
     name: string;
     slug: string;
     updated_at: string;
@@ -588,6 +589,7 @@ function mapProjectSummary(options: {
     description: options.project.description,
     id: options.project.id,
     name: options.project.name,
+    enabledModes: options.project.enabled_modes,
     slug: options.project.slug,
     // 显式 null 也回传：界面要能区分「未绑定」与「字段缺省」（列表里显示绑定状态）
     workDir: options.project.work_dir ?? null,
@@ -596,29 +598,39 @@ function mapProjectSummary(options: {
     updatedAt: options.project.updated_at,
     instanceId: options.instanceId,
   };
+  const primaryCanvas = options.canvas && {
+    id: options.canvas.id,
+    isPrimary: options.canvas.is_primary,
+    name: options.canvas.name,
+  };
   if (options.project.kind === "code") {
-    if (!options.project.work_dir)
+    const workDir = options.project.work_dir;
+    if (!workDir)
       throw new ProjectServiceError(
         "invalid_work_dir",
-        "Code 项目缺少主工作目录。",
+        "项目缺少主工作目录。",
         500,
       );
-    return { ...base, kind: "code", workDir: options.project.work_dir };
+    return {
+      ...base,
+      kind: "code",
+      workDir,
+      ...(primaryCanvas ? { primaryCanvas } : {}),
+    };
   }
-  if (!options.canvas)
-    throw new ProjectServiceError(
-      "project_query_failed",
-      "画布项目缺少主画布。",
-      500,
-    );
+  if (options.project.kind === "flow") {
+    if (!primaryCanvas)
+      throw new ProjectServiceError(
+        "project_query_failed",
+        "工作流项目缺少主画布。",
+        500,
+      );
+    return { ...base, kind: "flow", primaryCanvas };
+  }
   return {
     ...base,
-    kind: options.project.kind,
-    primaryCanvas: {
-      id: options.canvas.id,
-      isPrimary: options.canvas.is_primary,
-      name: options.canvas.name,
-    },
+    kind: "design",
+    ...(primaryCanvas ? { primaryCanvas } : {}),
   };
 }
 

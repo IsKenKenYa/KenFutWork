@@ -125,7 +125,8 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         });
         expect(created.status, JSON.stringify(created.body)).toBe(201);
         const project = projectCreateResponseSchema.parse(created.body).project;
-        if (project.kind !== "design") throw new Error("Design项目未建立");
+        if (project.kind !== "design" || !project.primaryCanvas)
+          throw new Error("测试夹具需要显式创建 Design 画布。");
         const sessionResponse = await fixture.client.request(
           `/api/canvases/${project.primaryCanvas.id}/sessions`,
           {},

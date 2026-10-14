@@ -22,6 +22,7 @@ const designProject = (
   id,
   name,
   kind: "design" as const,
+  enabledModes: ["design"],
   primaryCanvas: { id: canvasId },
   createdAt: "2026-10-04T00:00:00Z",
   updatedAt: "2026-10-04T00:00:00Z",
@@ -79,7 +80,7 @@ it("列表回来后自动选第一个项目，主区即画布 iframe（panel=cha
   expect(frame.getAttribute("src")).toBe("/canvas?id=canvas-p1&panel=chat");
 });
 
-it("空列表自动建一张「未命名画布」并进入", async () => {
+it("空列表不创建；用户显式新建项目也不自动产生画布", async () => {
   let created = 0;
   vi.stubGlobal(
     "fetch",
@@ -90,7 +91,10 @@ it("空列表自动建一张「未命名画布」并进入", async () => {
       if (path.endsWith("/api/projects") && init?.method === "POST") {
         created++;
         return Response.json({
-          project: designProject(`new-${created}`, "未命名画布"),
+          project: {
+            ...designProject(`new-${created}`, "未命名项目"),
+            primaryCanvas: undefined,
+          },
         });
       }
       throw new Error(`意外的请求：${path}`);
@@ -103,12 +107,12 @@ it("空列表自动建一张「未命名画布」并进入", async () => {
       <HostDesignSurface />
     </>,
   );
-  const frame = (await screen.findByTitle(
-    "未命名画布 画布",
-    {},
-    { timeout: 5000 },
-  )) as HTMLIFrameElement;
-  expect(frame.getAttribute("src")).toBe("/canvas?id=canvas-new-1&panel=chat");
+  await screen.findByText("还没有画布");
+  expect(created).toBe(0);
+  fireEvent.click(screen.getByLabelText("创建项目"));
+  await screen.findByText("未命名项目");
+  expect(created).toBe(1);
+  expect(screen.queryByTitle("未命名项目 画布")).toBeNull();
 });
 
 it("画布 iframe 的 project-created 消息刷新并切新项目，来历不明同消息不生效；侧栏点选即换画布", async () => {

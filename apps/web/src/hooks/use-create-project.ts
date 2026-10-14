@@ -112,7 +112,7 @@ export function useCreateProject() {
         if (result.project.kind === "code") {
           throw new Error("新建画布返回了工作目录项目。");
         }
-        const canvasId = result.project.primaryCanvas.id;
+        const canvasId = result.project.primaryCanvas?.id;
         // 嵌入工作台 iframe：通知宿主刷新项目列表并切到新画布
         if (embedded) {
           window.parent.postMessage(
@@ -125,9 +125,11 @@ export function useCreateProject() {
           );
         }
 
-        const url = opts?.prompt
-          ? `/canvas?id=${canvasId}&prompt=${encodeURIComponent(opts.prompt)}`
-          : `/canvas?id=${canvasId}`;
+        const url = !canvasId
+          ? "/workbench?mode=design"
+          : opts?.prompt
+            ? `/canvas?id=${canvasId}&prompt=${encodeURIComponent(opts.prompt)}`
+            : `/canvas?id=${canvasId}`;
 
         if (embedded) {
           // 宿主负责切换（上面的 postMessage）；本页不跳转

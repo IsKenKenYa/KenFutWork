@@ -4,11 +4,8 @@ import { pickCanvasProjectDirectory } from "./canvasProjectDirectories.js";
 import { resolveDesignAutoCanvas } from "./designAutoCanvas.js";
 import { surfaceFetch, surfaceJson } from "./surfaceApi.js";
 
-/** design 与 flow 共用「画布项目」形状（contract 里是同一个 schema 成员，kind 二选一）。 */
-export type CanvasProject = Extract<
-  ProjectSummary,
-  { kind: "design" | "flow" }
->;
+/** 项目可启用多种工作方式；画布只是可选文档。 */
+export type CanvasProject = ProjectSummary;
 
 /**
  * Design 模式的项目状态（壳侧栏与主区画布共享）。
@@ -36,8 +33,6 @@ const EMPTY: DesignProjectsState = {
 
 let state: DesignProjectsState = EMPTY;
 const listeners = new Set<() => void>();
-/** 自动建画布只试一次（防列表拉取失败时反复发创建请求）；跨挂载记忆。 */
-let autoCreateTried = false;
 /** 主区画布 iframe（DesignSurface 注册）：项目增删消息只认它。 */
 export const canvasFrameRef = { current: null as HTMLIFrameElement | null };
 
@@ -167,7 +162,7 @@ export async function removeDesignProject(projectId: string): Promise<void> {
 export function createDesignProject(
   fromDirectory = false,
 ): Promise<CanvasProject | null> {
-  return createProjectNamed("未命名画布", fromDirectory).then((project) => {
+  return createProjectNamed("未命名项目", fromDirectory).then((project) => {
     if (project) selectDesignProject(project.id);
     return project;
   });
@@ -181,8 +176,8 @@ export async function refreshDesignProjects(selectId?: string): Promise<void> {
       "/api/projects?kind=design",
     );
     if (generation !== readGeneration) return;
-    const visible = data.projects.filter(
-      (project): project is CanvasProject => project.kind === "design",
+    const visible = data.projects.filter((project): project is CanvasProject =>
+      project.enabledModes.includes("design"),
     );
     setSnapshot({
       projects: visible,
@@ -200,9 +195,6 @@ export async function refreshDesignProjects(selectId?: string): Promise<void> {
   }
 }
 
-/** 进入 design 的一次性重置标记（自动建画布的尝试记忆按「本轮进入」计）。 */
-let enterResetDone = false;
-
 /**
  * Design 模式的数据控制器（由壳侧栏挂载，design 模式激活时才取数）。
  * 画布 iframe 的项目增删回报也在这里收（只认 canvasFrameRef 注册的那只 iframe）。
@@ -212,10 +204,6 @@ export function useDesignProjectsController(enabled: boolean): void {
     useDesignProjectsSnapshot();
   useEffect(() => {
     if (!enabled) return;
-    if (!enterResetDone) {
-      autoCreateTried = Boolean(state.selectedProjectId);
-      enterResetDone = true;
-    }
     void refreshDesignProjects();
   }, [enabled]);
 
@@ -227,13 +215,8 @@ export function useDesignProjectsController(enabled: boolean): void {
       projectsLoaded: projectsLoaded,
       projectIds: projects.map((project) => project.id),
       selectedProjectId: selectedProjectId,
-      autoCreateTried,
     });
     if (decision.kind === "select") selectDesignProject(decision.projectId);
-    if (decision.kind === "create") {
-      autoCreateTried = true;
-      void createDesignProject();
-    }
   }, [enabled, creating, projectsLoaded, projects, selectedProjectId]);
 
   useEffect(() => {
