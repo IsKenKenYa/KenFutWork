@@ -36,18 +36,26 @@ export type OpenTabLauncherItemId =
   | "review"
   | "terminal"
   | "browser"
-  | "developer-tools";
+  | "developer-tools"
+  | "open-design";
 
 export function resolveOpenTabLauncherItemIds({
   developerToolsEnabled,
   hasReviewTab,
   canOpenSelectionSideConversation = false,
   supportsEmbeddedBrowser = true,
+  openDesignEnabled = false,
 }: {
   developerToolsEnabled: boolean;
   hasReviewTab: boolean;
   canOpenSelectionSideConversation?: boolean;
   supportsEmbeddedBrowser?: boolean;
+  /**
+   * OpenDesign 入口（Code 模式右侧栏的联动画布）。
+   * 缺省 false：它是插件形态交付的能力，未安装插件或宿主未就绪时**不出现**入口
+   * （由调用方按壳内 `useOpenDesignEntry` 的结果传入，不摆空壳）。
+   */
+  openDesignEnabled?: boolean;
 }): OpenTabLauncherItemId[] {
   const itemIds: OpenTabLauncherItemId[] = [];
 
@@ -63,6 +71,10 @@ export function resolveOpenTabLauncherItemIds({
 
   if (supportsEmbeddedBrowser) {
     itemIds.push("browser");
+  }
+
+  if (openDesignEnabled) {
+    itemIds.push("open-design");
   }
 
   if (developerToolsEnabled) {

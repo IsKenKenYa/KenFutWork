@@ -6,22 +6,110 @@ import {
   type FlowHostStatusResponse,
   resolveFlowEntry,
 } from "@kenfutwork/shared";
-import { usePluginHostEntry } from "@/hooks/use-plugin-host-entry";
+import { useCallback, useEffect, useState } from "react";
+import { getServerBaseUrl } from "@/lib/env";
+import { serverFetch } from "@/lib/local-access";
+import { PLUGIN_INVENTORY_CHANGED_EVENT } from "@/lib/plugin-panels";
 
 /**
  * Flow 模式入口的接线层：插件安装态 + 宿主适配层探针 → `resolveFlowEntry`。
  *
- * 两路探针的拉取时机与发布纪律见 `usePluginHostEntry`（共用实现，
- * 避免 flow / OpenDesign 两份拷贝把「都落定后一次性发布」的纪律走岔）。
+ * 拉取时机：本机连接就绪后一次 + 手动 `refresh()`（插件市场装/卸 flow 后工作台要能立即反应，
+ * 不等下一次进页面）。两路请求任何一路失败都按「不可用」处理（fail loud 给 reason，
+ * 不猜「也许能用」）。
+ *
+ * **发布纪律（真机踩过）**：两路探针必须**都落定后一次性发布**，中途不给
+ * 「插件已答、状态未答」的中间态——那个中间态会被 `resolveFlowEntry` 判成
+ * available=false，父页的深链兜底（workbench.tsx 的 mode 解析）会据此把
+ * `?mode=flow` 回落成 design，Flow 模式一秒后被弹回 Design 画布。
  */
 export function useFlowHostEntry(enabled = true): {
   entry: FlowEntry | null;
   refresh: () => void;
 } {
-  return usePluginHostEntry<FlowHostStatusResponse, FlowEntry>({
-    enabled,
-    bundleName: FLOW_PLUGIN_BUNDLE_NAME,
-    statusPath: "/api/flow/host/status",
-    resolve: resolveFlowEntry,
-  });
+  const [probe, setProbe] = useState<{
+    pluginInstalled: boolean;
+    pluginEnabled: boolean;
+    status: FlowHostStatusResponse | null;
+  } | null>(null);
+  const [tick, setTick] = useState(0);
+
+  const refresh = useCallback(() => setTick((n) => n + 1), []);
+  useEffect(() => {
+    if (!enabled) return;
+    window.addEventListener(PLUGIN_INVENTORY_CHANGED_EVENT, refresh);
+    return () =>
+      window.removeEventListener(PLUGIN_INVENTORY_CHANGED_EVENT, refresh);
+  }, [enabled, refresh]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tick 是手动刷新信号（refresh() 递增它以重跑本 effect），effect 体内不读它
+  useEffect(() => {
+    if (!enabled) {
+      setProbe(null);
+      return;
+    }
+    let cancelled = false;
+
+    void (async () => {
+      const [plugin, status] = await Promise.all([
+        (async () => {
+          try {
+            const response = await serverFetch(
+              `${getServerBaseUrl()}/api/plugins`,
+              { headers: {} },
+            );
+            if (!response.ok) return { installed: false, enabled: false };
+            const body = (await response.json()) as {
+              plugins?: Array<{
+                name: string;
+                installed: boolean;
+                enabled: boolean;
+              }>;
+            };
+            const flow = body.plugins?.filter(
+              (candidate) => candidate.name === FLOW_PLUGIN_BUNDLE_NAME,
+            );
+            return {
+              installed:
+                flow?.some((candidate) => candidate.installed === true) ??
+                false,
+              enabled:
+                flow?.some(
+                  (candidate) =>
+                    candidate.installed === true && candidate.enabled === true,
+                ) ?? false,
+            };
+          } catch {
+            return { installed: false, enabled: false };
+          }
+        })(),
+        (async () => {
+          try {
+            const response = await serverFetch(
+              `${getServerBaseUrl()}/api/flow/host/status`,
+              { headers: {} },
+            );
+            if (!response.ok) return null;
+            return (await response.json()) as FlowHostStatusResponse;
+          } catch {
+            return null;
+          }
+        })(),
+      ]);
+      if (!cancelled)
+        setProbe({
+          pluginInstalled: plugin.installed,
+          pluginEnabled: plugin.enabled,
+          status,
+        });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, tick]);
+
+  // 两路都落定前不发布：调用方先不渲染入口也不报错（entry=null）。
+  if (!probe) return { entry: null, refresh };
+  return { entry: resolveFlowEntry(probe), refresh };
 }

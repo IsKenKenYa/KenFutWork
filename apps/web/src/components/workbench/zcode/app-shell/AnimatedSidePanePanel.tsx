@@ -24,6 +24,8 @@ import { BrowserUseSidePaneContent } from "@zui/browser-use/BrowserUseSidePaneCo
 import { findScreenshotSurfaceTabForRender } from "@zui/browser-use/useBrowserScreenshotSurfaceRequest.js";
 // KenFutWork 宿主件（G1/Q4）：内嵌浏览器页签内容换 CDP MJPEG 面板（Web 宿主无主进程 BrowserView；HumanBrowserView 随之不再被本文件消费）。
 import { BrowserPane } from "@zui/host/BrowserPane.js";
+import { OpenDesignPane } from "@zui/host/OpenDesignPane.js";
+import { useOpenDesignEntry } from "@zui/host/openDesignHost.js";
 import { ScopedErrorBoundary } from "@zui/ErrorBoundary.js";
 import { GitPane } from "@zui/GitPane.js";
 import { TreemappingPane } from "@zui/TreemappingPane.js";
@@ -97,6 +99,7 @@ import {
   FileDiffIcon,
   GlobeIcon,
   MessageSquareTextIcon,
+  PenToolIcon,
   PlusIcon,
   SquareTerminalIcon,
   type LucideIcon,
@@ -317,6 +320,7 @@ export function AnimatedSidePanePanel({
   onOpenWhiteboard: _onOpenWhiteboard,
   onOpenDeveloperTools,
   onOpenTerminalTab,
+  onOpenOpenDesignTab,
   onOpenReviewTab,
   onOpenSelectionSideConversation,
   onRevealGitFileInTree,
@@ -385,6 +389,7 @@ export function AnimatedSidePanePanel({
   onOpenWhiteboard: () => void;
   onOpenDeveloperTools: () => void;
   onOpenTerminalTab: () => void;
+  onOpenOpenDesignTab: () => void;
   onOpenReviewTab: () => void;
   onOpenSelectionSideConversation: () => void;
   onRevealGitFileInTree?: (path: string) => void;
@@ -706,6 +711,13 @@ export function AnimatedSidePanePanel({
     };
   }, [visibleActiveTabId, visibleTabs]);
 
+  /**
+   * OpenDesign 入口：插件安装态 + 宿主就绪两路都落定后才有结论
+   * （`null` = 尚未落定，此时不摆入口，也不报错）。下拉菜单与启动卡都用它。
+   */
+  const openDesignEntry = useOpenDesignEntry();
+  const openDesignEnabled = openDesignEntry?.available === true;
+
   const addTabMenu = (
     <DropdownMenu open={isAddMenuOpen} onOpenChange={setIsAddMenuOpen}>
       <DropdownMenuTrigger asChild>
@@ -774,6 +786,17 @@ export function AnimatedSidePanePanel({
             <span>{intl.formatMessage({ id: "browser.title" })}</span>
           </DropdownMenuItem>
         ) : null}
+        {openDesignEnabled ? (
+          <DropdownMenuItem
+            data-side-pane-add-item="open-design"
+            onSelect={() => {
+              onOpenOpenDesignTab();
+            }}
+          >
+            <PenToolIcon className="size-4" />
+            <span>{intl.formatMessage({ id: "sidePane.openDesign" })}</span>
+          </DropdownMenuItem>
+        ) : null}
         {developerToolsEnabled ? (
           <DropdownMenuItem
             data-side-pane-add-item="developer-tools"
@@ -813,6 +836,12 @@ export function AnimatedSidePanePanel({
       icon: GlobeIcon,
       onOpen: onOpenBrowserTab,
     },
+    "open-design": {
+      id: "open-design",
+      label: intl.formatMessage({ id: "sidePane.openDesign" }),
+      icon: PenToolIcon,
+      onOpen: onOpenOpenDesignTab,
+    },
     "developer-tools": {
       id: "developer-tools",
       label: intl.formatMessage({ id: "developerTools.title" }),
@@ -825,6 +854,7 @@ export function AnimatedSidePanePanel({
     developerToolsEnabled,
     hasReviewTab,
     supportsEmbeddedBrowser,
+    openDesignEnabled,
   })
     .filter((itemId) => !isOfficeMode || (itemId !== "terminal" && itemId !== "review"))
     .map((itemId) => openTabLauncherItemById[itemId]);
@@ -907,6 +937,7 @@ export function AnimatedSidePanePanel({
         codeViewerTitle: intl.formatMessage({ id: "codeViewer.title" }),
         treemappingTitle: intl.formatMessage({ id: "treemapping.title" }),
         whiteboardTitle: intl.formatMessage({ id: "whiteboard.title" }),
+        openDesignTitle: intl.formatMessage({ id: "sidePane.openDesign" }),
         modelTrajectoryTitle: intl.formatMessage({
           id: "modelTrajectory.title",
         }),
@@ -1291,6 +1322,8 @@ export function AnimatedSidePanePanel({
                             isWindowsDesktop={isWindowsDesktop}
                             onOpenBrowserUrl={onOpenBrowserUrl}
                           />
+                        ) : tab.type === "open-design" ? (
+                          <OpenDesignPane />
                         ) : (
                           <BrowserPane
                             initialUrl={browserRestoreUrls[tab.id] ?? tab.initialUrl ?? undefined}

@@ -14,6 +14,7 @@ import {
   NotepadTextIcon,
   PackageIcon,
   PaletteIcon,
+  PenToolIcon,
   SquareTerminalIcon,
   TerminalIcon,
   WaypointsIcon,
@@ -320,6 +321,10 @@ export function SidePaneTabIcon({ tab }: { tab: WorkspaceSidePaneTab }) {
     return <PaletteIcon className="size-3.5" />;
   }
 
+  if (tab.type === "open-design") {
+    return <PenToolIcon className="size-3.5" />;
+  }
+
   if (tab.type === "model-trajectory") {
     return <WaypointsIcon className="size-3.5" />;
   }
@@ -526,6 +531,12 @@ export function getSidePaneTabTitle(
 
   if (tab.type === "whiteboard") {
     return tab.title || formatMessage({ id: "whiteboard.title" });
+  }
+
+  // open-design 无 title/source 字段：必须在此分派，否则会 fallthrough 到底部
+  // `tab.source.title` 读 undefined 触发 React 崩溃（browser-use 踩过同一个坑）。
+  if (tab.type === "open-design") {
+    return formatMessage({ id: "sidePane.openDesign" });
   }
 
   if (tab.type === "model-trajectory") {

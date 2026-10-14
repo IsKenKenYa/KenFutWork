@@ -886,6 +886,7 @@ const zhCN: Record<string, string> = {
   "sidePane.restoreSize": "恢复面板宽度",
   "sidePane.addTab": "新增标签",
   "sidePane.openTab": "打开标签页",
+  "sidePane.openDesign": "OpenDesign",
   "sidePane.subagent": "子智能体",
   "sidePane.subagentDirectory": "子智能体目录",
   "sidePane.selectionChat": "辅助对话",

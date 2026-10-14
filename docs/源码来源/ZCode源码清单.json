@@ -16,14 +16,15 @@
       "source": "references/zcode/packages/ui/src/App.tsx",
       "target": "apps/web/src/components/workbench/zcode/App.tsx",
       "sha256": "ad78d4e881b8706bf708a5acd08aff900c66784a8a435603fd50cf1b8670a987",
-      "copiedSha256": "6e3033f4793de351701577fe26b2691fa888fe96db5d758aeed8ae8e43963818",
+      "copiedSha256": "43c1478d75a3be6957c5d2a3c9abc3e707ae22a28fa4963021ef150392d17a0e",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "品牌适配：应用 chrome 标识换 KenFutWork 自有标，ZCode 归属保留于 About 与 NOTICE",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "能力显隐：原自动化导航保留，未接入宿主进入原页禁用态；通知仍不轮询闲时任务",
         "宿主接口：原市场导航交给独立管理文档，保留Task工作区及原页面装配",
-        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。"
+        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
+    "2026-10-14 OpenDesign 集成（O0）：透传 handleOpenOpenDesign 到工作台外壳。"
       ]
     },
     {
@@ -1800,12 +1801,13 @@
       "source": "references/zcode/packages/ui/src/app-shell/AnimatedSidePanePanel.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/AnimatedSidePanePanel.tsx",
       "sha256": "0c5980f1abab4d9351e25abaef00a21ad50c861f98a9d6710adeeeea10306804",
-      "copiedSha256": "1378e245ff7f020b21fc1e9ca625cea58c580127b163f04738f49db05e238f65",
+      "copiedSha256": "a1a786f896bea4c11bc5280245922b34a1bcfa705136e70fa25f5ab015923ab5",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork 宿主偏差：browser 页签内容换宿主件 BrowserPane（G1/Q4 CDP MJPEG；HumanBrowserView 桌面主进程视图不再被消费）",
         "KenFutWork 宿主偏差：BrowserPane 增 Q5 元素拾取（workspacePath/workspaceIdentity 传入，坐标引用经 requestComposerTextInsert 填 composer）",
-        "KenFutWork 宿主偏差：P2 右栏拖到宽度上限经 onSidePaneReachMaxSize 通知壳层收左栏（G11）"
+        "KenFutWork 宿主偏差：P2 右栏拖到宽度上限经 onSidePaneReachMaxSize 通知壳层收左栏（G11）",
+    "2026-10-14 OpenDesign 集成（O0）：加 OpenDesign 启动卡与「添加页签」菜单项（按 useOpenDesignEntry 门控）+ 面板渲染分支。"
       ]
     },
     {
@@ -1884,9 +1886,10 @@
       "source": "references/zcode/packages/ui/src/app-shell/SidePaneTabTrigger.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/SidePaneTabTrigger.tsx",
       "sha256": "7949761bdb39ae9438407387465ec754d199f9c6ee63dbe3aab902f6222a6b52",
-      "copiedSha256": "366746052b6a3cb4ea3ec910961d2828268bed255f34dfa3b7f1463a25ee8129",
+      "copiedSha256": "cbddfe8779790a5aa3e97a9a99a924fdadf9ad4b2d7b41154246fcd44f2197f3",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+    "2026-10-14 OpenDesign 集成（O0）：补 open-design 的图标与标题分派（不补会 fallthrough 到 tab.source 触发崩溃）。"
       ]
     },
     {
@@ -2046,21 +2049,23 @@
       "source": "references/zcode/packages/ui/src/app-shell/WorkspaceShellLayout.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/WorkspaceShellLayout.tsx",
       "sha256": "57ab98aaf8f6953f7a31575b201546982d9b1d7969c1e426f4b9921b2c4e2210",
-      "copiedSha256": "eff8c084e574471e220147adfa4a46936f4411b3cb19269fffb57e12e999f459",
+      "copiedSha256": "c8483406fb6508f162242e725fbf278fbfab93c585211756368d67dda883799c",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
-        "合并 origin/main e41d9fb8：保留宿主融合与右栏达到上限收起左栏的布局联动，复制哈希按合并后实际字节刷新；上游原始哈希保持。"
+        "合并 origin/main e41d9fb8：保留宿主融合与右栏达到上限收起左栏的布局联动，复制哈希按合并后实际字节刷新；上游原始哈希保持。",
+    "2026-10-14 OpenDesign 集成（O0）：把 handleOpenOpenDesign 接到侧栏面板。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/app-shell/animatedSidePanePanelModel.ts",
       "target": "apps/web/src/components/workbench/zcode/app-shell/animatedSidePanePanelModel.ts",
       "sha256": "3436e685496d8804638db44fbd5fb35ebcae6057c6475a4d5cccd0c6bec5a7eb",
-      "copiedSha256": "a4ef58a0ea8b360a2b9cc38305cc53617d1bdc4ccf3948a73a62b111e007fd3f",
+      "copiedSha256": "f6a69e1f850a0bbaca317af687d545e4aedc36cae0332aa6f3438b3a2f8d67e6",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "KenFutWork 宿主偏差：P2 助手 parsePanelMaxSizePercent / shouldCollapseSidebarAtPanelMax（G11 右栏到上限收左栏）"
+        "KenFutWork 宿主偏差：P2 助手 parsePanelMaxSizePercent / shouldCollapseSidebarAtPanelMax（G11 右栏到上限收左栏）",
+    "2026-10-14 OpenDesign 集成（O0）：启动卡新增 open-design 项（openDesignEnabled 缺省 false，不摆空壳）。"
       ]
     },
     {
@@ -2076,9 +2081,10 @@
       "source": "references/zcode/packages/ui/src/app-shell/sidePaneTabPresentation.ts",
       "target": "apps/web/src/components/workbench/zcode/app-shell/sidePaneTabPresentation.ts",
       "sha256": "eea4d4f2c1ec609b67c63591f5440ea24fa0ae85a0aaaeaf609ad19aceb8769c",
-      "copiedSha256": "19ca9028b0460fd2e5cdf218dc243db603fa899557894efd27b208292f5af5d5",
+      "copiedSha256": "dfbf786f37b3d7e0a39029ef8147872867a55a58ff35f16afb49ce5fb24afec4",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+    "2026-10-14 OpenDesign 集成（O0）：补 open-design 的标题标签与搜索词。"
       ]
     },
     {
@@ -2103,10 +2109,11 @@
       "source": "references/zcode/packages/ui/src/app-shell/types.ts",
       "target": "apps/web/src/components/workbench/zcode/app-shell/types.ts",
       "sha256": "9ce881d8e9a5f9f684beff6971ca5d1d04bf26d84df68dc449101a5fb55fc27f",
-      "copiedSha256": "c5efc28cc7409276b716bd5415b760a6f21e10450f61b22effbad2df17c9b21e",
+      "copiedSha256": "1b1e59b8110bf8bb122f9e3888b9f946e29017ef01ef979b610d3a462cac4905",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。"
+        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
+    "2026-10-14 OpenDesign 集成（O0）：WorkspaceShellLayoutProps 新增 handleOpenOpenDesign。"
       ]
     },
     {
@@ -4829,9 +4836,10 @@
       "source": "references/zcode/packages/ui/src/hooks/useAppPanels.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useAppPanels.ts",
       "sha256": "543b38d5f9e7f6f962001613986b4292d9ecb5db4f3da95305f654c853fb69cd",
-      "copiedSha256": "797b75a6ce219da4bf3d059d878d8873d3d7650ba53f68f0d1f49e6bdb16e494",
+      "copiedSha256": "b385acea6b6e4f3a2432addc15d448fac621fad116fbfb5c19f1e6eb005a59f3",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+    "2026-10-14 OpenDesign 集成（O0）：新增 handleOpenOpenDesign 开合回调。"
       ]
     },
     {
@@ -5711,7 +5719,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "7d329fce6134d2b5b81c8a1340336ae482a7eba25d3f39a64040db7c21d8a844",
+      "copiedSha256": "fc94e0450a638cd9d7d0c8ee19c4287850fcf1912543b09e3967c6cdc6f89fe7",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5724,14 +5732,15 @@
         "本机文案：原Personal分段改Local；空目录标签与真实本机来源一致",
         "新增 settings.about.title（T16 关于分区标题）",
         "KenFutWork 宿主偏差：settings.permissions.title 词条",
-        "KenFutWork 宿主偏差：新增 workspaceHeader.lockedDirectory（H1 chip 文案）"
+        "KenFutWork 宿主偏差：新增 workspaceHeader.lockedDirectory（H1 chip 文案）",
+    "2026-10-14 OpenDesign 集成（O0）：补 sidePane.openDesign 词条。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "ffbd8828aee451ef0207d55c9e708d102d18ec311ef02a7367d634edeccd956d",
+      "copiedSha256": "e43e18f3e284ed6c54ae2367d132044ba82a566853eb960ce073907c88923ed6",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5744,7 +5753,8 @@
         "本机文案：原个人分段改本机；空目录短标签，不宣称未接市场源可创建",
         "新增 settings.about.title（T16 关于分区标题）",
         "KenFutWork 宿主偏差：settings.permissions.title 词条",
-        "KenFutWork 宿主偏差：新增 workspaceHeader.lockedDirectory（H1 chip 文案）"
+        "KenFutWork 宿主偏差：新增 workspaceHeader.lockedDirectory（H1 chip 文案）",
+    "2026-10-14 OpenDesign 集成（O0）：补 sidePane.openDesign 词条。"
       ]
     },
     {
@@ -7804,9 +7814,10 @@
       "source": "references/zcode/packages/ui/src/lib/workspaceSidePane.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/workspaceSidePane.ts",
       "sha256": "b411b074341a798639a30cebaa3dc600edd728027a9afa51cc74c3d6839d135d",
-      "copiedSha256": "f6867ff7e408e15e3df48914a0ec3ad2dcb1e67d8fb559e8ddd318ab560485e7",
+      "copiedSha256": "b3389b3caf007642dbfb6ef965ae1455b6da241572681dfa26e66060cb2ce6ee",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+    "2026-10-14 OpenDesign 集成（O0）：新增 open-design 侧栏 tab 类型与单例 opener，并列入 workspace-global tab。"
       ]
     },
     {
