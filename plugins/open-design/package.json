@@ -1,0 +1,20 @@
+{
+  "name": "kenfutwork-open-design",
+  "version": "0.1.0",
+  "description": "OpenDesign：安装后 Code 模式右侧栏出现设计联动画布（与浏览器面板同位互斥），把自然语言或设计稿变成可运行原型、落地页、仪表盘，并可直接回填代码。需要服务端配置 KENFUTWORK_OPEN_DESIGN_FRONTEND_URL（见 README）。",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "GPL-3.0",
+  "kenfutwork": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "title": "OpenDesign",
+    "category": "设计"
+  }
+}

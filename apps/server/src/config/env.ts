@@ -79,6 +79,12 @@ export type ServerEnv = {
   /** Flow 网关控制端点的显式 origin，不从前端端口推导。 */
   flowGatewayUrl?: string;
   /**
+   * OpenDesign 前端地址（`KENFUTWORK_OPEN_DESIGN_FRONTEND_URL`，如 `http://127.0.0.1:7456`）。
+   * Code 模式右侧栏用它作 iframe src 并做 postMessage 的 origin 白名单；
+   * 配好**且服务可达**时 `GET /api/open-design/host/status` 才回 `enabled: true`。
+   */
+  openDesignFrontendUrl?: string;
+  /**
    * 自管 Postgres 连接串（`persistence` 缝）。
    * 去 Supabase 收口后只认 `DATABASE_URL`。
    */
@@ -203,12 +209,21 @@ export function loadServerEnv(
     normalizeOptionalString(source.KENFUTWORK_FLOW_EMBED_SECRET);
   const flowFrontendUrl =
     overrides.flowFrontendUrl ??
-    parseFlowOrigin(source.KENFUTWORK_FLOW_FRONTEND_URL);
+    parseHttpOrigin(
+      source.KENFUTWORK_FLOW_FRONTEND_URL,
+      "KENFUTWORK_FLOW_FRONTEND_URL",
+    );
   const flowGatewayUrl =
     overrides.flowGatewayUrl ??
-    parseFlowOrigin(
+    parseHttpOrigin(
       source.KENFUTWORK_FLOW_GATEWAY_URL,
       "KENFUTWORK_FLOW_GATEWAY_URL",
+    );
+  const openDesignFrontendUrl =
+    overrides.openDesignFrontendUrl ??
+    parseHttpOrigin(
+      source.KENFUTWORK_OPEN_DESIGN_FRONTEND_URL,
+      "KENFUTWORK_OPEN_DESIGN_FRONTEND_URL",
     );
   const mcpServers =
     overrides.mcpServers ?? parseMcpServers(source.KENFUTWORK_MCP_SERVERS);
@@ -392,6 +407,7 @@ export function loadServerEnv(
     ...(flowEmbedSecret ? { flowEmbedSecret } : {}),
     ...(flowFrontendUrl ? { flowFrontendUrl } : {}),
     ...(flowGatewayUrl ? { flowGatewayUrl } : {}),
+    ...(openDesignFrontendUrl ? { openDesignFrontendUrl } : {}),
     ...(autoCompactTriggerTokens ? { autoCompactTriggerTokens } : {}),
     ...(databaseUrl ? { databaseUrl } : {}),
     ...(queueDriver ? { queueDriver } : {}),
@@ -537,14 +553,11 @@ function normalizeOptionalString(value: string | undefined) {
 }
 
 /**
- * flow 前端地址（`KENFUTWORK_FLOW_FRONTEND_URL`）：只收 http(s) 的 origin 形式。
+ * 宿主 iframe 前端地址（flow / OpenDesign 共用）：只收 http(s) 的 origin 形式。
  * 它会被浏览器当 iframe src、被前端当 postMessage 的 origin 白名单，带路径或写错协议
  * 都会在运行期才暴露，所以这里直接 fail loud。
  */
-function parseFlowOrigin(
-  raw: string | undefined,
-  variable = "KENFUTWORK_FLOW_FRONTEND_URL",
-) {
+function parseHttpOrigin(raw: string | undefined, variable: string) {
   const value = normalizeOptionalString(raw);
   if (!value) return undefined;
   let url: URL;

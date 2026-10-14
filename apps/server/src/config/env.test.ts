@@ -193,6 +193,55 @@ describe("KENFUTWORK_FLOW_FRONTEND_URL 解析", () => {
   });
 });
 
+/**
+ * OpenDesign 前端地址（Code 模式右侧栏 iframe src + postMessage origin 白名单）。
+ * 与 flow 前端地址共用同一条解析规则（`parseHttpOrigin`），同样启动期 fail loud。
+ */
+describe("KENFUTWORK_OPEN_DESIGN_FRONTEND_URL 解析", () => {
+  it("空值返回 undefined；合法 origin 原样收下（尾斜杠归一）", () => {
+    expect(loadServerEnv({}, {}).openDesignFrontendUrl).toBeUndefined();
+    expect(
+      loadServerEnv(
+        {},
+        { KENFUTWORK_OPEN_DESIGN_FRONTEND_URL: "http://127.0.0.1:7456" },
+      ).openDesignFrontendUrl,
+    ).toBe("http://127.0.0.1:7456");
+    expect(
+      loadServerEnv(
+        {},
+        { KENFUTWORK_OPEN_DESIGN_FRONTEND_URL: "http://127.0.0.1:7456/" },
+      ).openDesignFrontendUrl,
+    ).toBe("http://127.0.0.1:7456");
+  });
+
+  it("带路径 / 查询 / 锚点 → fail loud（只收 origin）", () => {
+    expect(() =>
+      loadServerEnv(
+        {},
+        { KENFUTWORK_OPEN_DESIGN_FRONTEND_URL: "http://127.0.0.1:7456/app" },
+      ),
+    ).toThrow(/origin/);
+    expect(() =>
+      loadServerEnv(
+        {},
+        { KENFUTWORK_OPEN_DESIGN_FRONTEND_URL: "http://127.0.0.1:7456/?x=1" },
+      ),
+    ).toThrow(/origin/);
+  });
+
+  it("非 http(s) 或非法 URL → fail loud，且报错点名 OpenDesign 变量", () => {
+    expect(() =>
+      loadServerEnv(
+        {},
+        { KENFUTWORK_OPEN_DESIGN_FRONTEND_URL: "ftp://127.0.0.1:7456" },
+      ),
+    ).toThrow(/http\/https/);
+    expect(() =>
+      loadServerEnv({}, { KENFUTWORK_OPEN_DESIGN_FRONTEND_URL: "不是地址" }),
+    ).toThrow(/KENFUTWORK_OPEN_DESIGN_FRONTEND_URL/);
+  });
+});
+
 describe("Flow gateway control origin", () => {
   it("reads an explicit gateway without deriving the frontend port", () => {
     const env = loadServerEnv(

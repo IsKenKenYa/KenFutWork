@@ -131,6 +131,7 @@ import {
   messageListResponseSchema,
   modelCatalogResponseSchema,
   modelListResponseSchema,
+  openDesignHostStatusResponseSchema,
   pickDirectoryResponseSchema,
   pluginExportRequestSchema,
   pluginInspectRequestSchema,
@@ -1573,6 +1574,18 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "按版本保存 Flow 工作流布局",
     description:
       "网关密钥和项目绑定通过后，以expectedVersion原子保存至项目内JSON布局；null仅用于创建。正文上限4MiB，版本冲突保留外部编辑并返回409，发布前再次核验授权。",
+  },
+  // ---- open-design-host.ts（OpenDesign 集成宿主缝）----
+  {
+    method: "get",
+    path: "/api/open-design/host/status",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: openDesignHostStatusResponseSchema,
+    summary: "查询 OpenDesign 宿主就绪状态",
+    description:
+      "返回 OpenDesign 右侧栏面板是否可以出现：配置齐备且服务可达时为 enabled=true；未配置前端地址或服务不可达时返回 200 + enabled=false，并在 reasons 里给出可读原因。",
   },
   // ---- fonts.ts（字体；免鉴权）----
   {

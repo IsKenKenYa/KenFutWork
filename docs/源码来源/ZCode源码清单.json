@@ -12135,13 +12135,14 @@
       "source": "references/zcode/packages/ui/src/v4/SessionPane.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/SessionPane.tsx",
       "sha256": "70542a0b03f61e3b4b4d61e29a7b69ca8cf354e3a51f71d0c21fde1d930e9629",
-      "copiedSha256": "047d6ffc651bb370cb99f12b04e42c188a18bf600a2687a3299042a2ff75cb16",
+      "copiedSha256": "f41e48d448c9c12b66b8a19ceeb640604da52814d9e4fb1148107622b7d0fed3",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：未接通自动化服务时撤下原行上下文与草稿建议的全部跳转回调；原会话装配不变",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "Workspace配置消费：仅metadata恢复prepare传实际目标agent与resolved endpoint，保留Task附件与文件能力并行接线",
-        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
+    "2026-10-14 补登记 f723ec1d（G1 右栏浏览器面板真机验收 修法四/Q5）：元素拾取引用放开到 Live 会话（externalTextInsertRequest 不再只认草稿门）。"
       ]
     },
     {

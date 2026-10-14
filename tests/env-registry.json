@@ -100,6 +100,16 @@
       "status": "active",
       "note": "flow 前端地址（iframe src 与 postMessage origin 白名单）；本机联调各不相同，不进 .env.example"
     },
+    "KENFUTWORK_OPEN_DESIGN_FRONTEND_URL": {
+      "surface": "server",
+      "readers": [
+        "apps/server/src/config/env.test.ts",
+        "apps/server/src/config/env.ts"
+      ],
+      "inExamples": false,
+      "status": "active",
+      "note": "OpenDesign 前端地址（Code 右侧栏 iframe src 与 postMessage origin 白名单）；本机联调各不相同，不进 .env.example"
+    },
     "KENFUTWORK_WEB_ORIGIN": {
       "surface": "server",
       "readers": [

@@ -93,6 +93,11 @@
       "x-apifox-folder": "模型"
     },
     {
+      "name": "open-design",
+      "description": "OpenDesign 设计联动画布的宿主状态探针；未配置或服务不可达时如实返回原因。",
+      "x-apifox-folder": "OpenDesign 集成"
+    },
+    {
       "name": "permissions",
       "description": "权限档位、自动化档位与人工放行授权。",
       "x-apifox-folder": "权限"
@@ -7256,6 +7261,56 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/flowLayoutSnapshotSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/status": {
+      "get": {
+        "operationId": "getOpenDesignHostStatus",
+        "summary": "查询 OpenDesign 宿主就绪状态",
+        "description": "返回 OpenDesign 右侧栏面板是否可以出现：配置齐备且服务可达时为 enabled=true；未配置前端地址或服务不可达时返回 200 + enabled=false，并在 reasons 里给出可读原因。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostStatusResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
                 }
               }
             }
@@ -23191,6 +23246,33 @@
         },
         "required": [
           "models"
+        ],
+        "additionalProperties": false
+      },
+      "openDesignHostStatusResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "frontendUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "enabled",
+          "frontendUrl",
+          "reasons"
         ],
         "additionalProperties": false
       },
