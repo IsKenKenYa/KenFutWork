@@ -36,6 +36,10 @@ export async function windowsLaunch(input: {
   const runtime = [
     process.env.SystemRoot,
     process.env.WINDIR,
+    // 系统盘根：cmd 的 `dir` 会取卷信息/枚举 `..`，没有盘根授权时整条 `dir` 直接
+    // 报 `Access is denied.`（真机实测：同一写档作用域下 `cd`/`type`/node 的
+    // `readdirSync` 全部正常，只有 cmd `dir` 被拒）。只读授权，不扩大写域。
+    process.env.SystemDrive ? `${process.env.SystemDrive}\\` : undefined,
     process.env.ProgramFiles,
     process.env["ProgramFiles(x86)"],
     dirname(process.execPath),
