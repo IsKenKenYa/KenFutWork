@@ -188,9 +188,12 @@ export function BrowserPane({
     lastReloadRef.current = reloadToken;
     setState({ status: "connecting" });
     try {
-      const status = await surfaceJson<CdpStatus>("/api/browser/cdp/status");
-      if (status.status !== "connected") {
-        const connected = await surfaceJson<CdpStatus>(
+      // 服务端这几个端点的信封与设置页适配器一致：`{ cdp: {...} }`。
+      const status = await surfaceJson<{ cdp: CdpStatus }>(
+        "/api/browser/cdp/status",
+      );
+      if (status.cdp.status !== "connected") {
+        const connected = await surfaceJson<{ cdp: CdpStatus }>(
           "/api/browser/cdp/connect",
           {
             method: "POST",
@@ -198,10 +201,10 @@ export function BrowserPane({
             body: JSON.stringify({ headless: true }),
           },
         );
-        if (connected.status !== "connected") {
+        if (connected.cdp.status !== "connected") {
           throw new Error(
-            connected.status === "error"
-              ? (connected.message ?? "浏览器启动失败。")
+            connected.cdp.status === "error"
+              ? (connected.cdp.message ?? "浏览器启动失败。")
               : "浏览器启动失败。",
           );
         }

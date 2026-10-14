@@ -17,6 +17,7 @@ import { createCanvasFileStore } from "../canvas/file-store.js";
 import { createCanvasRepository } from "../canvas/repository.js";
 import { createChatRepository } from "../chat/repository.js";
 import { createCheckpointRepository } from "../checkpoints/repository.js";
+import { shadowRepositoryPath } from "../checkpoints/shadow-repo-path.js";
 import { createDesignGoals } from "../execution/design-goals.js";
 import { createTestDesignModelSelection } from "../execution/design-goals-test-fixture.js";
 import { createDesignTasksService } from "../execution/design-tasks.js";
@@ -42,13 +43,11 @@ const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 
 function shadowDirectory(database: Database, dataDir: string, root: string) {
-  return join(
-    dataDir,
-    "checkpoints",
-    database.instanceId,
-    database.context.scope.projectId,
-    `${database.context.scope.taskId}.git`,
-    hash(root),
+  // 短布局（与生产同一公式）：仓库目录名是 `<taskId>-<rootHash16>.git`，不再走三层 UUID。
+  return shadowRepositoryPath(
+    join(dataDir, "checkpoints"),
+    database.context.scope.taskId,
+    root,
   );
 }
 

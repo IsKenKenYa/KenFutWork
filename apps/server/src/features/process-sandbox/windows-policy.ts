@@ -36,6 +36,10 @@ export async function windowsLaunch(input: {
   const runtime = [
     process.env.SystemRoot,
     process.env.WINDIR,
+    // 系统盘根：cmd 的 `dir` 会取卷信息/枚举 `..`，没有盘根授权时整条 `dir` 直接
+    // 报 `Access is denied.`（真机实测：同一写档作用域下 `cd`/`type`/node 的
+    // `readdirSync` 全部正常，只有 cmd `dir` 被拒）。只读授权，不扩大写域。
+    process.env.SystemDrive ? `${process.env.SystemDrive}\\` : undefined,
     process.env.ProgramFiles,
     process.env["ProgramFiles(x86)"],
     dirname(process.execPath),
@@ -55,7 +59,7 @@ export async function windowsLaunch(input: {
   }
   const env = executionEnvironment(process.env, input.request.env);
   // 随包运行时 bin 目录前置进 PATH：宿主机没装 python/node 也能按名字跑。
-  // 与下面的 readRoots 成对——只给 readRoots 时命令名解析不到（《未做需求》#12）。
+  // 与下面的 readRoots 成对——只给 readRoots 时命令名解析不到（原《未做需求》#12，已收口）。
   prependExecutionPath(env, input.runtimePathAdditions);
   const home = join(input.temporaryDirectory, "home");
   env.HOME ??= home;

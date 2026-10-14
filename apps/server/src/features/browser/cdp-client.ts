@@ -772,6 +772,23 @@ export async function captureScreenshot(
   return Buffer.from(result.data, "base64");
 }
 
+/** 截图（JPEG bytes）：右栏画面流的保底帧用，体积比 PNG 小一个量级。 */
+export async function captureScreenshotJpeg(
+  client: CdpClient,
+  sessionId: string,
+  quality: number,
+): Promise<Buffer> {
+  const result = (await client.send(
+    "Page.captureScreenshot",
+    { format: "jpeg", quality, captureBeyondViewport: false },
+    sessionId,
+  )) as { data?: string };
+  if (!result.data) {
+    throw new CdpError("command_failed", "截图没有返回数据");
+  }
+  return Buffer.from(result.data, "base64");
+}
+
 /** 点击：优先选择器（在页面里算中心点），也支持直接给坐标。 */
 export async function clickOn(
   client: CdpClient,

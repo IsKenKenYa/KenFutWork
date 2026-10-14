@@ -45,7 +45,7 @@ export function executionEnvironment(
  * 为什么必须显式做：`executionEnvironment` 只从宿主 `process.env.PATH` 取 PATH，
  * 而随包运行时（`<resourceRoot>/runtime/{node,python,uv,jdk/bin}`）**不在宿主 PATH 上**——
  * 启动期 `runtimePathAdditions` 只喂给了 deepagents 后端，进程沙箱拿不到。
- * 结果就是沙箱里 `python` 按名字找不到（《未做需求》#12：智能体能写 Python 却跑不了、
+ * 结果就是沙箱里 `python` 按名字找不到（原《未做需求》#12，已收口：智能体能写 Python 却跑不了、
  * Python MCP 服务器也注册不了）。这里把 bin 目录补进沙箱 PATH，与 readRoots 成对使用：
  * **PATH 决定找得到，readRoots 决定跑得起来**，缺一不可。
  */

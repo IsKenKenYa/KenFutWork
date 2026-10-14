@@ -12,7 +12,7 @@ export interface CapturedOutputStats {
 function readDescriptor(
   descriptor: number,
   stats: CapturedOutputStats,
-  input: { offset: number; maxBytes: number },
+  input: { offset: number; maxBytes: number; preserveNul?: boolean },
   done: boolean,
 ): ProcessOutput {
   const { offset, maxBytes } = input;
@@ -48,12 +48,19 @@ function readDescriptor(
             : 1;
     if (end - start < length) end = start;
   }
+  const text = bytes.subarray(0, end).toString("utf8");
   return {
     // 命令输出是任意字节：NUL（Windows 上 UTF-16LE 输出被按 UTF-8 解码即每字符后跟一个）
-    // 必须在这里剥掉——它经 JSON.stringify 会变成字面量 `\u0000`，Postgres 的 jsonb
+    // 默认在这里剥掉——它经 JSON.stringify 会变成字面量 `\u0000`，Postgres 的 jsonb
     // 直接拒绝（unsupported Unicode escape sequence），整轮 run 会被终结。
     // 字节游标（nextOffset/retainedBytes）仍按原始字节计，不受影响。
-    data: stripNulCharacters(bytes.subarray(0, end).toString("utf8")),
+    //
+    // `preserveNul` 是给需要逐字节保真的系统 consumer 的显式开口：`git ls-files -z`
+    // /`--pathspec-from-file=-` 用 NUL 作分隔符（路径里不可能含 NUL），剥掉它会把整份
+    // 清单粘成一个路径（真机实测：检查点每轮自动提交报 `pathspec ... did not match
+    // any files`）。这些 consumer 的输出只在服务端内部解析，路径本身不含 NUL，
+    // 因此不会把 NUL 送进 jsonb。
+    data: input.preserveNul ? text : stripNulCharacters(text),
     offset,
     nextOffset: offset + end,
     retainedBytes: stats.retainedBytes,
@@ -68,7 +75,7 @@ function readDescriptor(
 export function readCapturedOutput(
   path: string,
   stats: CapturedOutputStats,
-  input: { offset: number; maxBytes: number },
+  input: { offset: number; maxBytes: number; preserveNul?: boolean },
   done: boolean,
 ): ProcessOutput {
   const descriptor = openSync(path, "r");
@@ -116,7 +123,12 @@ export class OutputCapture {
     this.retainedBytes += retained.byteLength;
   }
 
-  read(offset: number, maxBytes: number, done: boolean): ProcessOutput {
+  read(
+    offset: number,
+    maxBytes: number,
+    done: boolean,
+    preserveNul = false,
+  ): ProcessOutput {
     const stats = {
       retainedBytes: this.retainedBytes,
       totalBytes: this.totalBytes,
@@ -124,7 +136,12 @@ export class OutputCapture {
     };
     const descriptor = this.closed ? openSync(this.path, "r") : this.descriptor;
     try {
-      return readDescriptor(descriptor, stats, { offset, maxBytes }, done);
+      return readDescriptor(
+        descriptor,
+        stats,
+        { offset, maxBytes, preserveNul },
+        done,
+      );
     } finally {
       if (this.closed) closeSync(descriptor);
     }
@@ -172,11 +189,13 @@ export class ProcessOutputCapture {
     maxBytes: number,
     done: boolean,
     stream?: ProcessOutputStream,
+    preserveNul = false,
   ) {
     return (stream ? this.streams[stream] : this.merged).read(
       offset,
       maxBytes,
       done,
+      preserveNul,
     );
   }
 

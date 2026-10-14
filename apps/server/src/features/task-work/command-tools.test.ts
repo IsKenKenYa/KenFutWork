@@ -294,23 +294,27 @@ it("worker可向自身派发的命令输入并停止，TaskOutput仍能读取整
 });
 
 it.each([
-  { original: "plan", approved: "yolo" },
-  { original: "build", approved: "plan" },
+  { original: "plan", approved: "yolo", readonly: false },
+  { original: "build", approved: "plan", readonly: false },
+  { original: "plan", approved: "plan", readonly: true },
 ] as const)(
-  "原$original/final $approved真实process始终向只读收紧并如实记账",
-  async ({ original, approved }) => {
+  "原$original/final $approved 的 Bash 保留真实 Task 作用域（只读child=$readonly）",
+  async ({ original, approved, readonly }) => {
     const state = await fixture();
-    const exec = state.execution(state.main, "readonly-plan");
-    const marker = join(state.root, "plan-must-not-write.txt");
-    const program = `require('node:fs').writeFileSync(${JSON.stringify(marker)},'forbidden')`;
+    const handle = readonly
+      ? state.main.derive("review", "review-plan")
+      : state.main;
+    const exec = state.execution(handle, "approved-plan");
+    const marker = join(state.root, "plan-command-output.txt");
+    const program = `require('node:fs').writeFileSync(${JSON.stringify(marker)},'approved')`;
     exec.permissionInvocation = {
       preset: "code",
       instanceId: state.context.scope.instanceId,
       taskId: state.context.scope.taskId,
       runId: state.context.runId,
-      toolCallId: "readonly-plan",
-      agentId: "main",
-      role: "main",
+      toolCallId: "approved-plan",
+      agentId: handle.agentId,
+      role: readonly ? "review" : "main",
       scopeGeneration: 1,
       branchGeneration: 1,
       mode: original,
@@ -344,12 +348,20 @@ it.each([
           (await state.manager.find(state.context, work.taskId))?.status,
         { timeout: SANDBOX_STARTUP_MS },
       )
-      .toBe("failed");
+      .toBe(readonly ? "failed" : "completed");
     expect(await state.manager.find(state.context, work.taskId)).toMatchObject({
-      scope: { sandboxMode: "read-only" },
+      scope: { sandboxMode: readonly ? "read-only" : "workspace-write" },
     });
-    await expect(
-      state.main.backend.readPage({ path: marker }),
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    if (readonly) {
+      await expect(
+        state.main.backend.readPage({ path: marker }),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+    } else {
+      expect(await state.main.backend.readPage({ path: marker })).toMatchObject(
+        {
+          content: "approved",
+        },
+      );
+    }
   },
 );

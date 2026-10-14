@@ -1683,11 +1683,7 @@ export class CodeUiService {
     }
     if (service === "file-watcher" || service === "git") {
       const owner = await this.deps.localInstance.resolve(user);
-      const current = this.connections.require(
-        owner.instanceId,
-        bound,
-        false,
-      );
+      const current = this.connections.require(owner.instanceId, bound, false);
       if (current.hello.auth.userId !== user.instanceId)
         throw new CodeUiRepositoryError(
           "not_found",

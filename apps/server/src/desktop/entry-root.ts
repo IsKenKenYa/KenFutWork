@@ -19,11 +19,21 @@ export function resolveEntryRootForPackagedCjs(entryFilePath: string): string {
 /**
  * 打包态判定（给「开发=仓库根、打包=资源根」这类资源定位复用）：
  * - mac 打包（CJS）：`KFW_PACKAGED_CJS` 编译期定义；
- * - Windows 打包（Node SEA）：`import.meta.url` 为空。
- * 源码态两者都不成立（import.meta.url 是合法的 file URL）。
+ * - Windows 打包（Node SEA）：`node:sea` 的 `isSea()`。
+ *
+ * 注意：**不能再用「`import.meta.url` 为空」判 SEA**——SEA banner 会给
+ * `import.meta.url` 灌入以 exe 为基准的合法 file URL（外部原生包要按它解析），
+ * 该判据已失效：flow 插件的 `resolveDifyDir` 曾据此走成源码上溯分支，把打包态
+ * 资源根解析成 `D:\`（2026-10-13 真机：引擎页报「找不到 compose 文件
+ * D:\dify\docker-compose.dify.yml」）。
  */
-export function isPackagedRuntime(entryFileUrl: string | undefined): boolean {
+export function isPackagedRuntime(
+  entryFileUrl: string | undefined,
+  /** 是否 Node SEA 单文件宿主；缺省用 node:sea 自检（测试可显式注入）。 */
+  sea: boolean = isSea(),
+): boolean {
   if (typeof KFW_PACKAGED_CJS !== "undefined" && KFW_PACKAGED_CJS) return true;
+  if (sea) return true;
   return !entryFileUrl;
 }
 

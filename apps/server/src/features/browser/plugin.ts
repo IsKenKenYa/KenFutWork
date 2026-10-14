@@ -462,6 +462,8 @@ export function registerBrowserRoutes(
    * 每个装配一份（`registerBrowserRoutes` 每进程只调一次）。
    */
   const tickets = createViewTicketStore();
+  /** 当前那一路画面流的收尾函数（同一时刻只留一路，新流开起来时把上一路收掉）。 */
+  let activeStreamFinish: (() => void) | null = null;
   const authenticate = async (
     request: Parameters<LocalAccessVerifier["authenticate"]>[0],
     reply: FastifyReply,
@@ -668,9 +670,21 @@ export function registerBrowserRoutes(
     const finish = () => {
       if (closed) return;
       closed = true;
+      if (activeStreamFinish === finish) activeStreamFinish = null;
       void stop?.();
       response.end();
     };
+    /**
+     * 同一时刻只留**一路**画面流：上一路（面板换页/换视口时留下的那条）在这里收掉。
+     *
+     * 为什么必须收：每个流都占一条 `Connection: close` 的独立连接（不会进 keep-alive 池），
+     * 不收就是越开越多；浏览器的每主机连接上限（6）被占满之后，面板自己的
+     * `status` / `view` 请求会排在队列里发不出去——真机实测：多次换地址后面板卡在
+     * 「正在打开内嵌浏览器…」再也不回来（pane 侧日志停在 `open() 开始`，服务端看不到那次
+     * `status`）。上一路流下游已没人看（img 被换掉/卸载），收掉它不损失任何画面。
+     */
+    activeStreamFinish?.();
+    activeStreamFinish = finish;
     try {
       stop = await options.browser.cdp.watch(meta, async (jpeg) => {
         if (closed) return;

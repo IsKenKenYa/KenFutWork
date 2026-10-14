@@ -435,4 +435,56 @@ describe("面板画面流接口", () => {
       await app.close();
     }
   });
+
+  it("/stream：开第二路流时把第一路收掉（不堆 Connection: close 连接）", async () => {
+    const frame = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+    const { app, headers } = await buildBrowserApp({
+      cdp: {
+        isConnected: () => true,
+        status: () => ({ status: "connected", currentUrl: "about:blank" }),
+        viewport: async () => ({ width: 800, height: 600, scale: 1 }),
+        resize: async () => {},
+        watch: async (
+          _options: unknown,
+          onFrame: (jpeg: Buffer) => Promise<void>,
+        ) => {
+          await onFrame(frame);
+          return async () => {};
+        },
+      },
+    });
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const address = app.server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const openStream = async () => {
+      const minted = await app.inject({
+        headers,
+        method: "POST",
+        url: "/api/browser/cdp/view",
+        payload: { url: "https://example.com", width: 800, height: 600 },
+      });
+      const ticket = (minted.json() as { ticket: string }).ticket;
+      const response = await fetch(
+        `http://127.0.0.1:${port}/api/browser/cdp/stream?ticket=${ticket}`,
+        { headers },
+      );
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("流没有可读通道");
+      return reader;
+    };
+    try {
+      const first = await openStream();
+      await first.read();
+      const second = await openStream();
+      // 第一路没有被下游看了：新流一开就该收掉它（否则每路流都占一条连接，浏览器连不上来）
+      const closed = await Promise.race([
+        first.read().then((result) => result.done),
+        new Promise((resolve) => setTimeout(() => resolve(false), 3000)),
+      ]);
+      expect(closed).toBe(true);
+      await second.cancel().catch(() => {});
+    } finally {
+      await app.close();
+    }
+  });
 });

@@ -108,12 +108,18 @@ export class WindowsManagedProcess implements ProcessOwner {
   snapshot() {
     return structuredClone(this.value);
   }
-  output(offset: number, maxBytes: number, stream?: ProcessOutputStream) {
+  output(
+    offset: number,
+    maxBytes: number,
+    stream?: ProcessOutputStream,
+    preserveNul = false,
+  ) {
     return this.capture.read(
       offset,
       maxBytes,
       this.value.exit !== null,
       stream,
+      preserveNul,
     );
   }
   wait() {

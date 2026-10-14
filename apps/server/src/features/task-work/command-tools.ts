@@ -213,11 +213,15 @@ export function createTaskCommandTools(
     async (raw, execCtx) => {
       const input = bashSchema.parse(raw);
       const handle = scopeOf(execCtx);
-      const processScope =
-        execCtx.approvedExecutionMode === "plan" ||
-        execCtx.permissionInvocation?.mode === "plan"
-          ? handle.derive("review", handle.agentId)
-          : handle;
+      /**
+       * 进程作用域与自主档同权：**不再**为计划档派生只读作用域。
+       *
+       * 为什么：Windows 上「只读作用域」的沙箱授权（T1 原生 PSEC `fs_read_only`）只给
+       * 「读 + 列目录」、不含目录 traverse，于是计划档里 Bash 的 `cd`、按路径打开子目录
+       * 文件、`rename` 一律被拒 —— 命令看着能跑、其实跑不动，是**假可用**。只读由内核层
+       * （文件工具仍按只读被拒）与 `access: "execute"` 的逐次审批兜底，不由沙箱假装。
+       */
+      const processScope = handle;
       const context = {
         ...contextOf(execCtx),
         scope: processScope.describe(),

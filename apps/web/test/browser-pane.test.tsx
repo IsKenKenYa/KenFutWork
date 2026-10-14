@@ -36,8 +36,9 @@ afterEach(() => {
 
 function connectedApis() {
   surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
+    // 信封与服务端一致：`{ cdp: {...} }`（见 apps/server/src/features/browser/plugin.ts）。
     if (path === "/api/browser/cdp/status") {
-      return { status: "connected", currentUrl: "" };
+      return { cdp: { status: "connected", currentUrl: "" } };
     }
     if (path === "/api/browser/cdp/view") {
       return {
@@ -116,10 +117,10 @@ test("连接→开流→MJPEG 画面渲染；地址栏导航走 view；历史栈
 test("未连接时自动以无头模式连一次再开流", async () => {
   surfaceJson.mockImplementation(async (path: string) => {
     if (path === "/api/browser/cdp/status") {
-      return { status: "disconnected" };
+      return { cdp: { status: "disconnected" } };
     }
     if (path === "/api/browser/cdp/connect") {
-      return { status: "connected" };
+      return { cdp: { status: "connected" } };
     }
     if (path === "/api/browser/cdp/view") {
       return {
@@ -146,12 +147,14 @@ test("连接失败显示可读原因与重载入口；调试控制台按钮调 c
   surfaceJson.mockImplementation(async (path: string) => {
     if (path === "/api/browser/cdp/status") {
       return {
-        status: "error",
-        message: "端口未开",
+        cdp: {
+          status: "error",
+          message: "端口未开",
+        },
       };
     }
     if (path === "/api/browser/cdp/connect") {
-      return { status: "error", message: "浏览器没起来" };
+      return { cdp: { status: "error", message: "浏览器没起来" } };
     }
     if (path === "/api/browser/cdp/console") {
       return {};
@@ -218,7 +221,9 @@ test("拾取元素：snapshot 拉盒模型→叠框→点选把坐标引用填�
       };
     }
     if (path === "/api/browser/cdp/status") {
-      return { status: "connected", currentUrl: "https://example.com" };
+      return {
+        cdp: { status: "connected", currentUrl: "https://example.com" },
+      };
     }
     if (path === "/api/browser/cdp/view") {
       return {
@@ -277,7 +282,9 @@ test("拾取中 Esc 退出；调试控制台注入带上当前 url", async () =>
       };
     }
     if (path === "/api/browser/cdp/status") {
-      return { status: "connected", currentUrl: "https://example.com" };
+      return {
+        cdp: { status: "connected", currentUrl: "https://example.com" },
+      };
     }
     if (path === "/api/browser/cdp/view") {
       return {

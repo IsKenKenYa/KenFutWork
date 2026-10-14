@@ -52,7 +52,13 @@ await build({
   platform: "node",
   format: "esm",
   target: "node22",
-  packages: "external",
+  // 只把「随包 materialize 的原生重依赖」留在外部；其余包（含 @kenfutwork/shared
+  // 及其 zod / @zcode/shared 运行时闭包）打进单文件。此前用 `packages: "external"`
+  // 把 @kenfutwork/shared 一并外置，而 materialize 清单里没有它——打包后的 helper
+  // 启动即 `ERR_MODULE_NOT_FOUND: Cannot find package '@kenfutwork/shared'`
+  // （打包冒烟第 7 步「shadow checkpoint 空列表」的真根因；2026-10-13 在
+  // release/process-helper 直跑 task-helper.mjs 复现）。
+  external: ["@anthropic-ai/sandbox-runtime", "node-pty"],
   sourcemap: false,
 });
 
@@ -186,5 +192,29 @@ const native = process.argv[3];
 if (native) {
   await access(native);
   await copyFile(native, join(output, "process-broker.exe"));
+}
+
+// 打包自检：产物里的裸包引用必须都能在随包 node_modules 里解析到——helper 在用户机器上
+// 没有仓库的 node_modules 可退，缺一个就是「启动即崩」（2026-10-13 的 @kenfutwork/shared
+// 事故：bundle 里残留裸 import，materialize 清单却没有它）。materialize 清单（含递归子
+// 依赖）之外的包引用一律拒绝出包，宁可打不出包也不要发一个跑不起来的 helper。
+const bundled = await readFile(join(output, "task-helper.mjs"), "utf8");
+const materialized = new Set(copied.map((entry) => entry.name));
+const missing = new Set();
+for (const pattern of [/from\s+"([^"]+)"/g, /require\("([^"]+)"\)/g]) {
+  for (const match of bundled.matchAll(pattern)) {
+    const specifier = match[1];
+    if (specifier.startsWith("node:") || specifier.startsWith(".")) continue;
+    const name = specifier.startsWith("@")
+      ? specifier.split("/").slice(0, 2).join("/")
+      : specifier.split("/")[0];
+    if (!materialized.has(name)) missing.add(name);
+  }
+}
+if (missing.size > 0) {
+  throw new Error(
+    `helper 产物含未随包的运行时依赖：${[...missing].join("、")}。` +
+      "把它们打进 bundle（esbuild external 只留 materialize 清单里的包），或补进 materialize 清单。",
+  );
 }
 console.log(`进程 helper 已生成：${output}`);

@@ -8,6 +8,7 @@ import {
   type CdpClient,
   CdpError,
   captureScreenshot,
+  captureScreenshotJpeg,
   clickOn,
   connectCdpClient,
   dispatchKey,
@@ -962,6 +963,19 @@ export function createCdpBrowserSession(deps: {
         ...(options.height ? { maxHeight: options.height } : {}),
         ...(options.quality ? { quality: options.quality } : {}),
       });
+      /**
+       * 开流先推一张静止帧。
+       *
+       * 为什么必须有：CDP 的画面推送**只在页面有变化时**来帧（静态页面上往往只有首帧），
+       * 而浏览器的多分片图片解码器要看到后续分片才渲染——真机实测：只推一帧时右栏面板
+       * 一直白屏（`img.naturalWidth=0`），页面下一次变化才出画面。先补一张静止帧，
+       * 面板开流就有画面，也顺手把「这一页现在长什么样」定住。
+       */
+      void captureScreenshotJpeg(cdp, id, options.quality ?? 70)
+        .then(async (jpeg) => {
+          await Promise.resolve(onFrame(jpeg)).catch(() => undefined);
+        })
+        .catch(() => undefined);
       const off = cdp.on("Page.screencastFrame", (params, eventSessionId) => {
         // 别的标签的帧不要（事件按 CDP 会话分发，我们的页面是当前会话）
         if (eventSessionId && eventSessionId !== id) return;

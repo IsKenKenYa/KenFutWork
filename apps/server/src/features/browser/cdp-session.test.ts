@@ -34,6 +34,10 @@ function fakeClient() {
     body: string;
     base64Encoded?: boolean;
   } | null = { body: "" };
+  /** `Page.captureScreenshot` 的返回（默认 2 字节假图，够断言帧长度）。 */
+  let screenshotResult: Record<string, unknown> = {
+    data: Buffer.from([9, 9]).toString("base64"),
+  };
   const client: CdpClient = {
     async send(method, params = {}, sessionId) {
       sent.push({ method, params, ...(sessionId ? { sessionId } : {}) });
@@ -42,6 +46,7 @@ function fakeClient() {
           cssVisualViewport: { clientWidth: 900, clientHeight: 600, scale: 1 },
         };
       }
+      if (method === "Page.captureScreenshot") return screenshotResult;
       if (method === "Runtime.evaluate") return evalResult;
       if (method === "Network.getResponseBody") {
         if (!responseBodyResult) {
@@ -136,6 +141,29 @@ function sessionWith(
 }
 
 describe("CDP 会话：面板画面流", () => {
+  it("开流先推一张静止帧（CDP 只在页面变化时来帧，静态页面上没有它面板就是白的）", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    const frames: number[] = [];
+    await session.watch({ width: 900, height: 600 }, async (jpeg) => {
+      frames.push(jpeg.length);
+    });
+    await vi.waitFor(() => expect(frames).toEqual([2]));
+    // 静止帧走 JPEG 截图（PNG 比它大一个量级），不是别的路
+    const shot = fake.sent.find(
+      (entry) => entry.method === "Page.captureScreenshot",
+    );
+    expect(shot?.params.format).toBe("jpeg");
+    // 随后 CDP 的变化帧照旧转发（静止帧不顶替变化帧）
+    fake.emit(
+      "Page.screencastFrame",
+      { data: Buffer.from([1, 2, 3]).toString("base64"), sessionId: 9 },
+      "S1",
+    );
+    await vi.waitFor(() => expect(frames).toEqual([2, 3]));
+  });
+
   it("开流后每帧先给回调、再 ack（Chrome 以 ack 做背压）", async () => {
     const fake = fakeClient();
     const session = sessionWith(fake);
@@ -156,12 +184,14 @@ describe("CDP 会话：面板画面流", () => {
       fake.sent.some((entry) => entry.method === "Page.startScreencast"),
     ).toBe(true);
 
+    // 先等开流的静止帧落地，再看变化帧（两者顺序由这里显式钉住，避免竞态）
+    await vi.waitFor(() => expect(order).toEqual(["frame:2"]));
     fake.emit(
       "Page.screencastFrame",
       { data: Buffer.from([1, 2, 3]).toString("base64"), sessionId: 7 },
       "S1",
     );
-    await vi.waitFor(() => expect(order).toEqual(["frame:3"]));
+    await vi.waitFor(() => expect(order).toEqual(["frame:2", "frame:3"]));
     await vi.waitFor(() =>
       expect(
         fake.sent.some(
@@ -177,10 +207,11 @@ describe("CDP 会话：面板画面流", () => {
     const fake = fakeClient();
     const session = sessionWith(fake);
     await session.connect();
-    let frames = 0;
-    await session.watch({}, async () => {
-      frames += 1;
+    const sizes: number[] = [];
+    await session.watch({}, async (jpeg) => {
+      sizes.push(jpeg.length);
     });
+    await vi.waitFor(() => expect(sizes).toEqual([2]));
     fake.emit(
       "Page.screencastFrame",
       { data: Buffer.from([1]).toString("base64"), sessionId: 1 },
@@ -191,7 +222,8 @@ describe("CDP 会话：面板画面流", () => {
       { data: Buffer.from([1]).toString("base64"), sessionId: 2 },
       "S1",
     );
-    await vi.waitFor(() => expect(frames).toBe(1));
+    // 开流的静止帧（2 字节）+ 本会话的那一帧（1 字节）；别的会话的不算
+    await vi.waitFor(() => expect(sizes).toEqual([2, 1]));
   });
 
   it("同时只留一个画面订阅：新开流会把上一个收掉，订阅表不堆积", async () => {
