@@ -261,7 +261,6 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
             id: "gpt-image-1",
             name: "原生多图模型",
             capability: "image",
-            imageGeneration: { maxOutputs: 3 },
           },
         ],
       });
@@ -429,8 +428,7 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
               id: "gpt-image-1",
               name: "多图模型",
               capability: "image",
-              imageGeneration: { maxOutputs: 3 },
-            },
+              },
           ],
         });
         const job = await jobs.createJob(db.actor, {
