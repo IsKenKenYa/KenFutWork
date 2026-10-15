@@ -60,7 +60,37 @@ fn desktop_env(data_dir: &Path, web_dir: &Path, port: u16) -> Vec<(String, Strin
         ("KENFUTWORK_WEB_ORIGIN".into(), format!("http://127.0.0.1:{port}")),
         ("KENFUTWORK_WEB_DIST".into(), web_dir.to_string_lossy().to_string()),
     ]);
+    env.extend(open_design_config_env(data_dir));
     env
+}
+
+/// OpenDesign 承载配置（规划 §9-3 伴随容器 / 《日志》§205 桌面最小闭环）：
+/// 读 `<dataDir>/config/open-design.env`（`KEY=VALUE` 行），**白名单只放行服务端那两个键**
+/// ——任意 env 注入会把桌面变成提权面。伴随容器起停由服务端在装配期按 env 定形，
+/// 所以这里是「改文件 → 重启桌面生效」的最小注入面；设置页写入口后续再开。
+fn open_design_config_env(data_dir: &Path) -> Vec<(String, String)> {
+    const ALLOWED: [&str; 2] = [
+        "KENFUTWORK_OPEN_DESIGN_FRONTEND_URL",
+        "KENFUTWORK_OPEN_DESIGN_EMBED_SECRET",
+    ];
+    let Ok(text) = std::fs::read_to_string(data_dir.join("config").join("open-design.env")) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let (key, value) = (key.trim(), value.trim());
+        if ALLOWED.contains(&key) && !value.is_empty() {
+            out.push((key.to_string(), value.to_string()));
+        }
+    }
+    out
 }
 
 fn desktop_runtime_env(data_dir: &Path, port: u16) -> Vec<(String, String)> {
@@ -675,5 +705,51 @@ mod desktop_env_tests {
             .any(|(k, v)| k == "KENFUTWORK_SANDBOX_ROOT" && v.ends_with("sandbox")));
         assert!(env.iter().all(|(k, _)| k != "KENFUTWORK_AUTH_DRIVER"));
         assert_eq!(env.len(), 7);
+    }
+
+    /** OpenDesign 承载文件注入（§205）：白名单两键进 env，其余一律不进。 */
+    #[test]
+    fn open_design_config_env_injects_only_whitelisted_keys() {
+        let dir = std::env::temp_dir().join(format!(
+            "kfw-od-env-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(dir.join("config")).unwrap();
+        std::fs::write(
+            dir.join("config").join("open-design.env"),
+            "# 伴随容器承载\nKENFUTWORK_OPEN_DESIGN_FRONTEND_URL=http://127.0.0.1:7456\nKENFUTWORK_OPEN_DESIGN_EMBED_SECRET=paired\nKENFUTWORK_EMBEDDED_PG=0\nPATH=/evil\nEMPTY_VAL=\n",
+        )
+        .unwrap();
+        let injected = open_design_config_env(&dir);
+        assert_eq!(
+            injected,
+            vec![
+                (
+                    "KENFUTWORK_OPEN_DESIGN_FRONTEND_URL".to_string(),
+                    "http://127.0.0.1:7456".to_string()
+                ),
+                (
+                    "KENFUTWORK_OPEN_DESIGN_EMBED_SECRET".to_string(),
+                    "paired".to_string()
+                ),
+            ]
+        );
+        // 经 desktop_env 汇总后同样不得混入白名单外的键
+        let env = desktop_env(&dir, &dir.join("web"), 3001);
+        assert!(env.iter().all(|(k, _)| k != "PATH" && k != "EMPTY_VAL"));
+        assert_eq!(
+            env.iter()
+                .filter(|(k, _)| k.starts_with("KENFUTWORK_OPEN_DESIGN_"))
+                .count(),
+            2
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 文件不存在 = 零注入（默认关闭，不影响既有 env 面）。
+    #[test]
+    fn open_design_config_env_absent_file_is_empty() {
+        let dir = std::env::temp_dir().join("kfw-od-env-absent-xyz");
+        assert!(open_design_config_env(&dir).is_empty());
     }
 }
