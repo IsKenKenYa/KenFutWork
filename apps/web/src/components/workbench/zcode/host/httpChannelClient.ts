@@ -4,6 +4,7 @@ import {
   type CodeGoalControlState,
   type CodeUiViewerScope,
   type CodeUiWorkspace,
+  canvasDocumentUpdatedMessageSchema,
   clampCodeUiReconnectDelayMs,
   codeGoalControlStateSchema,
   codeUiWorkspaceSchema,
@@ -29,6 +30,11 @@ import {
   clientHelloSchema,
   windowHostControllerTaskFrameSchema,
 } from "@zcode/shared/zcode-protocol-v4";
+import {
+  chooseDirectoryProject,
+  confirmDirectoryRelink,
+  DirectoryChoiceCancelledError,
+} from "./ProjectDirectoryChoice.js";
 import { notifyPluginInventoryChanged } from "./parentBridge.js";
 import { TaskWorkspaceRegistry } from "./taskWorkspaceRegistry.js";
 import { RemoteServiceAccess } from "./upstream/remoteServiceAccess.js";
@@ -80,6 +86,7 @@ class CodeHostHttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -255,36 +262,93 @@ export class CodeHttpChannelClient implements IChannelClient {
     snapshot: ProjectDirectoryRelinkSnapshot,
     path: string,
   ) {
-    return projectDirectoryRelinkResponseSchema.parse(
-      await this.request(
+    let choice = await confirmDirectoryRelink(path, snapshot.projectId);
+    if (!choice) throw new DirectoryChoiceCancelledError();
+    const submit = () =>
+      this.request(
         `/api/projects/${encodeURIComponent(snapshot.projectId)}/relink-directory`,
         {
           expectedWorkDir: snapshot.workDir,
           nextWorkDir: path,
           expectedTasks: snapshot.tasks,
+          ...(choice === "independent" ? { directoryChoice: choice } : {}),
         },
-      ),
-    );
+      );
+    let result: unknown;
+    try {
+      result = await submit();
+    } catch (error) {
+      if (
+        choice === "independent" ||
+        !(error instanceof CodeHostHttpError) ||
+        error.status !== 409 ||
+        error.code !== "project_directory_conflict"
+      )
+        throw error;
+      choice = await confirmDirectoryRelink(path, snapshot.projectId);
+      if (!choice) throw new DirectoryChoiceCancelledError();
+      result = await submit();
+    }
+    return projectDirectoryRelinkResponseSchema.parse(result);
   }
+  setWorkPresetResolver(resolve: () => "code" | "design") {
+    this.workPreset = resolve;
+  }
+  currentWorkPreset() {
+    return this.workPreset();
+  }
+  private workPreset: () => "code" | "design" = () => "code";
   setViewerContextResolver(resolve: (() => CodeUiViewerScope | null) | null) {
     this.viewerContext = resolve;
   }
   async openWorkspace(
     path: string,
     projectId?: string,
+    requestedPreset?: "code" | "design",
+    shouldSelect: () => boolean = () => true,
   ): Promise<CodeUiWorkspace> {
+    const preset = requestedPreset ?? this.workPreset();
     await this.connect();
-    const response = await this.request<{ result: CodeUiWorkspace }>(
-      "/api/code-ui/rpc",
-      {
+    let independent = false;
+    const select = async () => {
+      const choice = await chooseDirectoryProject(path, preset);
+      if (!choice) throw new DirectoryChoiceCancelledError();
+      if ("projectId" in choice) projectId = choice.projectId;
+      else independent = "independent" in choice;
+    };
+    if (!projectId) await select();
+    const submit = () =>
+      this.request<{ result: CodeUiWorkspace }>("/api/code-ui/rpc", {
         connectionId: this.connectionId,
         service: "workspace",
         method: "open",
-        args: [{ path, ...(projectId ? { projectId } : {}) }],
-      },
-    );
+        args: [
+          {
+            path,
+            ...(projectId ? { projectId } : {}),
+            ...(independent ? { directoryChoice: "independent" } : {}),
+            preset,
+          },
+        ],
+      });
+    let response: { result: CodeUiWorkspace };
+    try {
+      response = await submit();
+    } catch (error) {
+      if (
+        projectId ||
+        independent ||
+        !(error instanceof CodeHostHttpError) ||
+        error.status !== 409 ||
+        error.code !== "project_directory_conflict"
+      )
+        throw error;
+      await select();
+      response = await submit();
+    }
     this.registerWorkspaces([response.result]);
-    this.workspaces.selectProject(response.result.projectId);
+    if (shouldSelect())
+      this.workspaces.selectProject(response.result.projectId);
     return response.result;
   }
   directoryServices(): IServiceAccessor {
@@ -329,6 +393,7 @@ export class CodeHttpChannelClient implements IChannelClient {
       throw new CodeHostHttpError(
         response.status,
         result.error?.message ?? `Code 宿主请求失败：${response.status}`,
+        result.error?.code,
       );
     return result as T;
   }
@@ -657,6 +722,20 @@ export class CodeHttpChannelClient implements IChannelClient {
   }
 
   private publishNotification(notification: Notification) {
+    if (notification.event === "canvasDocumentUpdated") {
+      const message = canvasDocumentUpdatedMessageSchema.safeParse(
+        notification.data,
+      );
+      if (!message.success) return;
+      window.dispatchEvent(
+        new CustomEvent(
+          message.data.deleted
+            ? "kenfutwork:document-deleted"
+            : "kenfutwork:document-updated",
+          { detail: message.data },
+        ),
+      );
+    }
     if (notification.event === "service") {
       const data = notification.data;
       if (

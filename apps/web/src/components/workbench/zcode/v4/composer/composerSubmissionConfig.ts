@@ -1,3 +1,4 @@
+import type { ConversationWorkContext } from "@zcode/shared/zcode-protocol-v4";
 import { resolveExecutionState, type ModelSelection } from "@zcode/shared";
 import { submissionModeSchema, type SubmissionMode } from "@zcode/shared/zcode-protocol-v4";
 import type { ModelSelectionView } from "@zcode/services";
@@ -7,12 +8,13 @@ export interface ComposerSubmissionConfig {
   modelSelection: ModelSelection;
   mode: SubmissionMode;
   planEnabled: boolean;
+  workContext?: ConversationWorkContext;
 }
 
 /** 在点击提交的瞬间，把 Composer 意图冻结成本次 Submission 的执行配置。 */
 export function createComposerSubmissionConfig(
   composer:
-    | { mode?: string; planEnabled?: boolean; modelSelection?: ModelSelection }
+    | { mode?: string; planEnabled?: boolean; modelSelection?: ModelSelection; workContext?: ConversationWorkContext }
     | null
     | undefined,
   view: ModelSelectionView | null,
@@ -33,6 +35,7 @@ export function createComposerSubmissionConfig(
     return null;
   // 不读取 Session 或显示别名；复制所有选择叶子，防止 await 后用户切模改变本次请求。
   return Object.freeze({
+    ...(composer.workContext ? { workContext: structuredClone(composer.workContext) } : {}),
     mode: mode.data === "plan" ? "build" : mode.data,
     planEnabled: resolveExecutionState(composer).planEnabled,
     modelSelection: Object.freeze({

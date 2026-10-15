@@ -23,6 +23,7 @@ function WorkbenchModeSurface() {
   // 深链意图只在挂载时取一次：随后 URL 参数会被清掉（见 Workbench），不能让
   // 「参数消失」把已进入的 design/flow 又弹回 code——壳内切模式才是后续的真相源。
   const [requested] = useState(() => search.get("mode"));
+  const [requestedCanvas] = useState(() => search.get("canvasId"));
   const { entry: flowEntry } = useFlowHostEntry();
   const availableModes = useMemo<WorkbenchModes>(
     () =>
@@ -53,6 +54,7 @@ function WorkbenchModeSurface() {
       <CodeWorkbenchFrame
         availableModes={availableModes}
         mode={mode}
+        {...(requestedCanvas ? { canvasId: requestedCanvas } : {})}
         onOpenManagement={openManagement}
       />
       {/* 管理文档**预加载**：页面挂载即后台建好 iframe（hidden），点设置/插件市场

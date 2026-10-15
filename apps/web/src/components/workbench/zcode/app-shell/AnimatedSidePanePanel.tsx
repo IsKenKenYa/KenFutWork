@@ -92,6 +92,7 @@ import { inferMediaPreview, type CodeViewerSource } from "@zui/lib/codeViewer.js
 import type { MessageFileLinkTarget } from "@zui/components/ai-elements/message.js";
 import { getVisibleSidePaneTabs } from "@zui/lib/workspaceSidePane.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { DocumentSidePaneContent } from "@zui/host/DocumentPane.js";
 import {
   BugIcon,
   FileDiffIcon,
@@ -290,6 +291,7 @@ export function AnimatedSidePanePanel({
   supportsEmbeddedBrowser = true,
   workspaceAbsPath,
   workspaceIdentity,
+  projectId,
   workspaceRemoteSessionId,
   activeTaskId,
   sidePaneOwnerId,
@@ -358,6 +360,7 @@ export function AnimatedSidePanePanel({
   supportsEmbeddedBrowser?: boolean;
   workspaceAbsPath: string;
   workspaceIdentity?: string;
+  projectId?: string | null;
   workspaceRemoteSessionId?: string;
   activeTaskId: string | null;
   sidePaneOwnerId: string | null;
@@ -426,8 +429,9 @@ export function AnimatedSidePanePanel({
       getVisibleSidePaneTabs(tabs, {
         workspaceKey,
         ownerTaskId: sidePaneOwnerId,
+        projectId,
       }),
-    [sidePaneOwnerId, tabs, workspaceKey],
+    [projectId, sidePaneOwnerId, tabs, workspaceKey],
   );
   const activeTabId = sidePaneState?.activeTabId ?? "";
   const visibleActiveTabId = visibleTabs.some((tab) => tab.id === activeTabId)
@@ -1087,6 +1091,21 @@ export function AnimatedSidePanePanel({
 
                 <div className="relative min-h-0 flex-1 isolate">
                   {tabs.map((tab) => {
+                    if (tab.type === "document") {
+                      const documentVisible = isVisible &&
+                        tab.projectId === projectId && tab.workspaceKey === workspaceKey &&
+                        tab.id === visibleActiveTabId;
+                      return (
+                        <DocumentSidePaneContent
+                          key={tab.id}
+                          tab={tab}
+                          isVisible={documentVisible}
+                          workspaceAbsPath={workspaceAbsPath}
+                          workspaceIdentity={workspaceIdentity}
+                          activeTaskId={activeTaskId}
+                        />
+                      );
+                    }
                     if (
                       (tab.type === "browser" || tab.type === "browser-use") &&
                       !shouldMountBrowserTabGuest(tab)

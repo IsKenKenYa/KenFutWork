@@ -10,7 +10,7 @@
 // 与「v4 composer 不做附件草稿持久化」的裁决一致）。
 import { logger } from "@zui/logger.js";
 import { modelSelectionSchema, type ModelSelection } from "@zcode/shared";
-import { submissionModeSchema, type SubmissionMode } from "@zcode/shared/zcode-protocol-v4";
+import { conversationWorkContextSchema, type ConversationWorkContext, submissionModeSchema, type SubmissionMode } from "@zcode/shared/zcode-protocol-v4";
 import type { ComposerMentionPrefill } from "@zui/store/zcodeSessionStoreTypes.js";
 
 export interface V4ComposerDraft {
@@ -24,6 +24,7 @@ export interface V4ComposerDraft {
   lastPlanTransitionId?: string;
   lastPermissionGrantId?: string;
   modelSelection?: ModelSelection;
+  workContext?: ConversationWorkContext | undefined;
   /** 首次分享导入等待公共新任务初始化；不能由空 Session snapshot 抢先填充。 */
   initializeFromNewTask?: true;
   updatedAt: number;
@@ -93,6 +94,7 @@ function readDraft(value: unknown): V4ComposerDraft | null {
   if (!isRecord(value) || typeof value.text !== "string") return null;
   const mode = submissionModeSchema.safeParse(value.mode);
   const selection = modelSelectionSchema.safeParse(value.modelSelection);
+  const workContext = conversationWorkContextSchema.safeParse(value.workContext);
   // 坏 options 不应连带丢掉可确定的模型身份；不读取旧 provider/model/thought 别名。
   const identity = isRecord(value.modelSelection)
     ? modelSelectionSchema.safeParse({
@@ -133,6 +135,7 @@ function readDraft(value: unknown): V4ComposerDraft | null {
       ? { lastPlanTransitionId: value.lastPlanTransitionId }
       : {}),
     ...(modelSelection ? { modelSelection } : {}),
+    ...(workContext.success ? { workContext: workContext.data } : {}),
     ...(value.initializeFromNewTask === true && !mode.success
       ? { initializeFromNewTask: true as const }
       : {}),

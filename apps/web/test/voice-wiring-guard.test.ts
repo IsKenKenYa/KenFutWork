@@ -22,11 +22,6 @@ const WORKBENCH = readFileSync(
   join(COMPONENTS, "workbench", "workbench.tsx"),
   "utf-8",
 );
-const CHAT_INPUT = readFileSync(join(COMPONENTS, "chat-input.tsx"), "utf-8");
-const CHAT_SIDEBAR = readFileSync(
-  join(COMPONENTS, "chat-sidebar.tsx"),
-  "utf-8",
-);
 const ZCODE = join(COMPONENTS, "workbench", "zcode");
 const CODE_COMPOSER = readFileSync(
   join(ZCODE, "v4", "ConversationComposer.tsx"),
@@ -45,40 +40,8 @@ const CODE_HTTP_CLIENT = readFileSync(
 describe("语音接线守卫", () => {
   it("占位麦克风按钮已删干净（两处 workbench 输入框都不再有假按钮）", () => {
     expect(WORKBENCH).not.toContain("语音（即将上线）");
-    expect(CHAT_INPUT).not.toContain("语音（即将上线）");
     // 图标 import 也要清掉，否则留下无人使用的死 import
     expect(WORKBENCH).not.toMatch(/^\s*Mic,\s*$/m);
-  });
-
-  it("画布助手保留手势、状态行与受控文本写回", () => {
-    expect(CHAT_INPUT).toContain("onPointerDown={voice.onPointerDown}");
-    expect(CHAT_INPUT).toContain("{voice.status}");
-    expect(CHAT_INPUT).toMatch(
-      /onTranscript:\s*\(text\)\s*=>\s*\{\s*setValue\(/,
-    );
-    expect(WORKBENCH).toContain("CodeWorkbenchFrame");
-    expect(WORKBENCH).not.toContain("useComposerVoice({");
-  });
-
-  it("播报接线：run 收尾念回复 + 开始说话即打断（Design 画布助手）", () => {
-    // 收尾播报：读缓存里的完整正文 → 只念该念的 → 共享播报实例
-    expect(CHAT_SIDEBAR).toContain("readSessionMessages(currentSessionId)");
-    expect(CHAT_SIDEBAR).toContain("extractSpeakableText(text)");
-    expect(CHAT_SIDEBAR).toContain("getVoicePlayback()");
-    expect(CHAT_SIDEBAR).toContain(
-      'voice.mode === "loop" && voice.speakReplies',
-    );
-    // 打断三触点：发送即停、录音起手即停、换画布/卸载即停
-    expect(CHAT_SIDEBAR).toContain("getVoicePlayback().stop();");
-    expect(CHAT_INPUT).toContain(
-      "onRecordingStart: () => getVoicePlayback().stop()",
-    );
-  });
-
-  it("中指代消解：会话上下文喂进「想」段（Design 侧）", () => {
-    expect(CHAT_SIDEBAR).toContain("buildRefineContext(");
-    expect(CHAT_SIDEBAR).toContain("recentMessages={voiceRecentMessages}");
-    expect(CHAT_INPUT).toContain("recentMessages");
   });
 
   it("Code 输入框接上语音桥（composer 三触点 + 宿主注入 transport）", () => {

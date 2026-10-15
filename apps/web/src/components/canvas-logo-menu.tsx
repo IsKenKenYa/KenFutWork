@@ -27,7 +27,6 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useCreateProject } from "@/hooks/use-create-project";
 import {
   createExcalidrawImageElement,
   getViewportCenter,
@@ -45,6 +44,7 @@ interface CanvasLogoMenuProps {
   canvasId: string;
   onCanvasSync: () => Promise<void>;
   prepareCanvas: () => Promise<string | null>;
+  onNewProject: () => void;
   /** 项目名——导出画布时用作文件名（缺省回落到 canvas）。 */
   projectName?: string | undefined;
   excalidrawApi: ExcalidrawImperativeAPI | null;
@@ -81,11 +81,11 @@ export function CanvasLogoMenu({
   canvasId,
   onCanvasSync,
   prepareCanvas,
+  onNewProject,
   projectName,
   excalidrawApi,
 }: CanvasLogoMenuProps) {
   const { error: toastError } = useToast();
-  const { create: createNewProject } = useCreateProject();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -288,7 +288,7 @@ export function CanvasLogoMenu({
         <DropdownMenuContent align="start" sideOffset={6} className="w-56">
           {/* Group 1 — Project actions */}
           <DropdownMenuGroup>
-            <DropdownMenuItem onClick={() => createNewProject()}>
+            <DropdownMenuItem onClick={onNewProject}>
               <Plus className="size-4" />
               新建项目
             </DropdownMenuItem>

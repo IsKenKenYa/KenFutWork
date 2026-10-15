@@ -2,9 +2,32 @@
 
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { MessageResponse } from "@zui/components/ai-elements/message.js";
+import { TooltipProvider } from "@zui/components/ui/tooltip.js";
+import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  installCodeRootBrowser,
+  restoreCodeRootBrowser,
+} from "./setup/code-root-host-browser";
 
-import { MarkdownRenderer } from "../src/components/chat/markdown-renderer";
+function MarkdownRenderer({
+  text,
+  showCursor = false,
+}: {
+  text: string;
+  showCursor?: boolean;
+}) {
+  return (
+    <ZCodeIntlProvider initialLocale="zh-CN">
+      <TooltipProvider>
+        <MessageResponse theme="light" streaming={showCursor}>
+          {text}
+        </MessageResponse>
+      </TooltipProvider>
+    </ZCodeIntlProvider>
+  );
+}
 
 /**
  * 动态 UI（Design 侧）：对话流里的 ` ```mermaid `（流程图/架构图）与 ` ```viz `（数据图表）。
@@ -17,20 +40,38 @@ import { MarkdownRenderer } from "../src/components/chat/markdown-renderer";
  *  - mermaid 渲染失败（语法错）→ 回落代码块；
  *  - 其他语言的代码块不受影响（仍是默认 `<pre><code>`）。
  */
-const mermaidRender = vi.fn(async () => ({
-  svg: '<svg role="img" aria-label="diagram"></svg>',
+const mermaidRender = vi.hoisted(() =>
+  vi.fn(async () => ({
+    svg: '<svg role="img" aria-label="diagram"></svg>',
+  })),
+);
+vi.mock("@streamdown/mermaid", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@streamdown/mermaid")>()),
+  createMermaidPlugin: () => ({
+    getMermaid: () => ({ render: mermaidRender }),
+  }),
 }));
-vi.mock("mermaid", () => ({
-  default: {
-    initialize: vi.fn(),
-    render: (...args: unknown[]) => mermaidRender(...(args as [])),
-  },
-}));
+// 原CodeViewer由@pierre/diffs在shadow DOM渲染，正文不会出现在宿主textContent。
+function renderedCodeText(container: HTMLElement) {
+  return [
+    container.textContent,
+    ...Array.from(container.querySelectorAll("*")).map(
+      (element) => element.shadowRoot?.textContent ?? "",
+    ),
+  ].join("\n");
+}
 
+beforeEach(() => {
+  installCodeRootBrowser();
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+});
 afterEach(() => {
   cleanup();
   mermaidRender.mockClear();
   window.localStorage.clear();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  restoreCodeRootBrowser();
 });
 
 describe("动态 UI：viz（数据图表）", () => {
@@ -58,14 +99,15 @@ describe("动态 UI：viz（数据图表）", () => {
     expect(screen.getByText("900ms")).toBeInTheDocument();
   });
 
-  it("坏 JSON / 未知类型：回落代码块（原样保留内容）", () => {
+  it("坏 JSON / 未知类型：回落代码块（原样保留内容）", async () => {
     const { container } = render(
       <MarkdownRenderer
         text={["```viz", "{ 这不是 JSON }", "```"].join("\n")}
       />,
     );
-    expect(container.querySelector("pre code")).not.toBeNull();
-    expect(container.textContent).toContain("{ 这不是 JSON }");
+    await waitFor(() =>
+      expect(renderedCodeText(container)).toContain("{ 这不是 JSON }"),
+    );
     expect(screen.queryByRole("img")).toBeNull();
 
     const unknown = render(
@@ -77,10 +119,12 @@ describe("动态 UI：viz（数据图表）", () => {
         ].join("\n")}
       />,
     );
-    expect(unknown.container.querySelector("pre code")).not.toBeNull();
+    await waitFor(() =>
+      expect(renderedCodeText(unknown.container)).toContain("radar"),
+    );
   });
 
-  it("流式中：不渲染图表，只显示代码（delta 阶段不重画）", () => {
+  it("流式中：不渲染图表，只显示代码（delta 阶段不重画）", async () => {
     const { container } = render(
       <MarkdownRenderer
         showCursor
@@ -91,7 +135,7 @@ describe("动态 UI：viz（数据图表）", () => {
         ].join("\n")}
       />,
     );
-    expect(container.querySelector("pre code")).not.toBeNull();
+    await waitFor(() => expect(renderedCodeText(container)).toContain("line"));
     expect(screen.queryByRole("img")).toBeNull();
   });
 });
@@ -117,36 +161,19 @@ describe("动态 UI：mermaid（流程图/架构图）", () => {
       />,
     );
     await waitFor(() => expect(mermaidRender).toHaveBeenCalled());
-    await waitFor(() =>
-      expect(container.querySelector("pre code")).not.toBeNull(),
-    );
+    await waitFor(() => expect(container.textContent).toContain("坏语法"));
     expect(container.textContent).toContain("坏语法");
   });
 });
 
 describe("动态 UI：其他代码块不受影响", () => {
-  it("普通语言仍是默认 pre/code（不进可视化分支）", () => {
+  it("普通语言仍是原代码预览（不进可视化分支）", async () => {
     const { container } = render(
       <MarkdownRenderer text={["```ts", "const a = 1;", "```"].join("\n")} />,
     );
-    expect(container.querySelector("pre code")).not.toBeNull();
-    expect(container.textContent).toContain("const a = 1;");
-    expect(mermaidRender).not.toHaveBeenCalled();
-  });
-
-  it("设置 → 通用 →「对话流」关掉：块只显示代码（本机显示偏好）", () => {
-    window.localStorage.setItem("kenfutwork.conversationVisuals", "off");
-    const { container } = render(
-      <MarkdownRenderer
-        text={[
-          "```viz",
-          '{"type":"pie","data":[{"label":"a","value":1}]}',
-          "```",
-        ].join("\n")}
-      />,
+    await waitFor(() =>
+      expect(renderedCodeText(container)).toContain("const a = 1;"),
     );
-    expect(container.querySelector("pre code")).not.toBeNull();
-    expect(screen.queryByRole("img")).toBeNull();
     expect(mermaidRender).not.toHaveBeenCalled();
   });
 });

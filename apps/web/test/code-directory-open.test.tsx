@@ -20,6 +20,8 @@ it("原选择器等待真实Project绑定，失败保留目录与重试，Human 
     vi.fn(async (input, options) => {
       if (String(input).endsWith("/events"))
         return codeHostNotificationResponse(options?.signal);
+      if (String(input).includes("/api/projects/directory-candidates?"))
+        return Response.json({ projects: [] });
       const call = JSON.parse(options.body);
       calls.push(call);
       if (call.service === "system")
@@ -69,7 +71,7 @@ it("原选择器等待真实Project绑定，失败保留目录与重试，Human 
     complete(
       Response.json({
         result: {
-          projectId: "actual-project",
+          projectId: "71000000-0000-4000-8000-000000000001",
           name: "目录",
           path: "/目录",
           additionalDirectories: [],
@@ -88,7 +90,10 @@ it("原选择器等待真实Project绑定，失败保留目录与重试，Human 
       calls
         .filter((call) => call.service === "workspace")
         .map((call) => call.args),
-    ).toEqual([[{ path: "/目录" }], [{ path: "/目录" }]]);
+    ).toEqual([
+      [{ path: "/目录", preset: "code" }],
+      [{ path: "/目录", preset: "code" }],
+    ]);
     expect(JSON.stringify(calls)).not.toMatch(/canvasId|taskId/);
   } finally {
     client.dispose();

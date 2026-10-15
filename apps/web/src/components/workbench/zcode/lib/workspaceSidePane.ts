@@ -66,6 +66,24 @@ export interface WhiteboardSidePaneTab {
   title: string;
 }
 
+export interface OpenDocumentSidePaneRequest {
+  resourceType: "canvas";
+  projectId: string;
+  documentId?: string;
+  title: string;
+  /** 仅用于模式默认进入；显式打开仍以请求中的文档为准。 */
+  restoreExisting?: boolean;
+}
+
+/** 项目文档独立于会话；选中文档不会授予文件目录权限。 */
+export interface DocumentSidePaneTab extends Omit<OpenDocumentSidePaneRequest, "restoreExisting"> {
+  id: string;
+  type: "document";
+  workspaceKey: string;
+  ownerTaskId?: null;
+  openedAt?: number;
+}
+
 export interface ModelTrajectorySidePaneTab {
   id: string;
   type: "model-trajectory";
@@ -520,6 +538,7 @@ export type WorkspaceSidePaneTab =
   | CodeViewerSidePaneTab
   | TreemappingSidePaneTab
   | WhiteboardSidePaneTab
+  | DocumentSidePaneTab
   | ModelTrajectorySidePaneTab
   | DeveloperToolsSidePaneTab
   | TerminalSidePaneTab
@@ -545,7 +564,7 @@ export function shouldMountSidePaneContent(
   return (
     isVisible ||
     tabs.some(
-      (tab) => tab.type === "browser" || tab.type === "browser-use" || tab.type === "bash-output",
+      (tab) => tab.type === "browser" || tab.type === "browser-use" || tab.type === "bash-output" || tab.type === "document",
     )
   );
 }
@@ -1046,6 +1065,18 @@ export function getActiveSidePaneTab(
   return current.tabs.find((tab) => tab.id === current.activeTabId) ?? null;
 }
 
+/** 自动工具事件保留用户正在查看的文档；浏览器shell及后台guest仍照常装配。 */
+export function preserveDocumentSidePaneForAutomaticEvent(
+  current: WorkspaceSidePaneState | null,
+  next: WorkspaceSidePaneState | null,
+  scope: { projectId: string | null | undefined; workspaceKey: string },
+): WorkspaceSidePaneState | null {
+  const active = getActiveSidePaneTab(current);
+  if (!next || active?.type !== "document" || active.projectId !== scope.projectId ||
+    active.workspaceKey !== scope.workspaceKey || !next.tabs.some((tab) => tab.id === active.id)) return next;
+  return next.activeTabId === active.id ? next : { ...next, activeTabId: active.id };
+}
+
 /** 把草稿态的 null/undefined 归一，供侧栏按对话隔离。 */
 export function sidePaneOwnerKey(taskId: string | null | undefined): string {
   return taskId ?? "__draft__";
@@ -1064,6 +1095,7 @@ function isWorkspaceGlobalSidePaneTab(tab: WorkspaceSidePaneTab): boolean {
 interface SidePaneVisibilityScope {
   workspaceKey: string | null;
   ownerTaskId: string | null;
+  projectId?: string | null;
 }
 
 function sidePaneTabMatchesWorkspace(
@@ -1109,6 +1141,7 @@ function getVisibleSidePaneTabsByScope(
   const ownerKey = sidePaneOwnerKey(scope.ownerTaskId);
   return tabs.filter((tab) => {
     if (!sidePaneTabMatchesWorkspace(tab, scope.workspaceKey)) return false;
+    if (tab.type === "document") return tab.projectId === scope.projectId;
     if (isWorkspaceGlobalSidePaneTab(tab)) return true;
     if (tab.type === "browser-use") return tab.sessionId === scope.ownerTaskId;
     if (
@@ -1140,6 +1173,10 @@ function resolveActiveTabForOwner(
   if (!state) return null;
   const visibleTabs = getVisibleSidePaneTabsByScope(state.tabs, scope);
   if (visibleTabs.length === 0) return null;
+  const activeDocument = visibleTabs.find((tab) =>
+    tab.type === "document" && tab.id === state.activeTabId,
+  );
+  if (activeDocument) return activeDocument.id;
   if (preferredTabId && visibleTabs.some((tab) => tab.id === preferredTabId)) {
     return preferredTabId;
   }
@@ -1279,8 +1316,8 @@ export function openOrActivateBrowserSidePaneByUrl(
   return activateBrowserSidePane(current, {
     initialUrl: options.initialUrl,
     ...(options.tabId ? { tabId: options.tabId } : {}),
-    ownerTaskId: options.ownerTaskId,
-    workspaceKey: options.workspaceKey,
+    ...(options.ownerTaskId !== undefined ? { ownerTaskId: options.ownerTaskId } : {}),
+    ...(options.workspaceKey !== undefined ? { workspaceKey: options.workspaceKey } : {}),
     ...(options.remoteSessionId ? { remoteSessionId: options.remoteSessionId } : {}),
   });
 }
@@ -1568,6 +1605,34 @@ export function openWhiteboardSidePane(
   },
 ): WorkspaceSidePaneState {
   return activateSidePaneTab(current, createWhiteboardSidePaneTab(options));
+}
+
+export function openDocumentSidePane(
+  current: WorkspaceSidePaneState | null,
+  options: OpenDocumentSidePaneRequest & { workspaceKey: string },
+): WorkspaceSidePaneState {
+  const { restoreExisting: _restoreExisting, ...target } = options;
+  if (options.restoreExisting && !options.documentId) {
+    const documents = current?.tabs.filter((tab): tab is DocumentSidePaneTab => tab.type === "document" &&
+      tab.projectId === options.projectId && tab.workspaceKey === options.workspaceKey) ?? [];
+    const retained = documents.find((tab) => tab.id === current?.activeTabId) ??
+      [...documents].reverse().find((tab) => tab.documentId) ?? documents.at(-1);
+    if (retained) return activateSidePaneTab(current, retained);
+  }
+  const id = `document:${JSON.stringify([
+    options.workspaceKey,
+    options.projectId,
+    options.resourceType,
+    options.documentId ?? null,
+  ])}`;
+  const existing = current?.tabs.find((tab) => tab.id === id);
+  return activateSidePaneTab(current, {
+    ...target,
+    id,
+    type: "document",
+    ownerTaskId: null,
+    openedAt: existing?.openedAt ?? Date.now(),
+  });
 }
 
 export function openModelTrajectorySidePane(
@@ -1900,7 +1965,9 @@ export function openWorkflowArtifactSidePane(
 export function isSidePaneTabVisibleForParent(
   tab: WorkspaceSidePaneTab,
   parentSessionId: string | null,
+  projectId?: string | null,
 ): boolean {
+  if (tab.type === "document") return tab.projectId === projectId;
   if (tab.type === "browser-use") {
     return tab.sessionId === parentSessionId;
   }
@@ -1933,25 +2000,28 @@ export function getVisibleSidePaneTabs(
 export function getVisibleSidePaneTabs(
   current: WorkspaceSidePaneState | null,
   parentSessionId: string | null,
+  projectId?: string | null,
 ): WorkspaceSidePaneTab[];
 export function getVisibleSidePaneTabs(
   input: WorkspaceSidePaneTab[] | WorkspaceSidePaneState | null,
   scopeOrParent: SidePaneVisibilityScope | string | null,
+  projectId?: string | null,
 ): WorkspaceSidePaneTab[] {
   if (Array.isArray(input)) {
     return getVisibleSidePaneTabsByScope(input, scopeOrParent as SidePaneVisibilityScope);
   }
   const parentSessionId = scopeOrParent as string | null;
-  return input?.tabs.filter((tab) => isSidePaneTabVisibleForParent(tab, parentSessionId)) ?? [];
+  return input?.tabs.filter((tab) => isSidePaneTabVisibleForParent(tab, parentSessionId, projectId)) ?? [];
 }
 
 function selectSidePaneTabsForParent(
   current: WorkspaceSidePaneState | null,
   parentSessionId: string | null,
   preferredTabId?: string | null,
+  projectId?: string | null,
 ): WorkspaceSidePaneState | null {
   if (!current) return null;
-  const visibleTabs = getVisibleSidePaneTabs(current, parentSessionId);
+  const visibleTabs = getVisibleSidePaneTabs(current, parentSessionId, projectId);
   if (visibleTabs.length === 0) {
     return current.activeTabId === "" ? current : { ...current, activeTabId: "" };
   }
@@ -1962,7 +2032,7 @@ function selectSidePaneTabsForParent(
   const nextActive =
     currentActive ??
     preferred ??
-    visibleTabs.findLast(
+    [...visibleTabs].reverse().find(
       (tab) =>
         tab.type === "subagent-session" ||
         tab.type === "subagent-directory" ||
@@ -1983,9 +2053,10 @@ export function closeVisibleOtherSidePaneTabs(
   current: WorkspaceSidePaneState | null,
   tabId: string,
   parentSessionId: string | null,
+  projectId?: string | null,
 ): WorkspaceSidePaneState | null {
   if (!current) return null;
-  const visibleTabs = getVisibleSidePaneTabs(current, parentSessionId);
+  const visibleTabs = getVisibleSidePaneTabs(current, parentSessionId, projectId);
   const target = visibleTabs.find((tab) => tab.id === tabId);
   if (!target) return current;
   const closingIds = new Set(visibleTabs.filter((tab) => tab.id !== tabId).map((tab) => tab.id));
@@ -1998,9 +2069,10 @@ export function closeVisibleOtherSidePaneTabs(
 export function closeVisibleSidePaneTabs(
   current: WorkspaceSidePaneState | null,
   parentSessionId: string | null,
+  projectId?: string | null,
 ): WorkspaceSidePaneState | null {
   if (!current) return null;
-  const closingIds = new Set(getVisibleSidePaneTabs(current, parentSessionId).map((tab) => tab.id));
+  const closingIds = new Set(getVisibleSidePaneTabs(current, parentSessionId, projectId).map((tab) => tab.id));
   const tabs = current.tabs.filter((tab) => !closingIds.has(tab.id));
   return tabs.length === 0 ? null : { tabs, activeTabId: "" };
 }
@@ -2010,9 +2082,10 @@ export function closeSidePaneTabForParent(
   tabId: string,
   parentSessionId: string | null,
   preferredTabId?: string | null,
+  projectId?: string | null,
 ): WorkspaceSidePaneState | null {
   const next = closeSidePaneTab(current, tabId);
-  return selectSidePaneTabsForParent(next, parentSessionId, preferredTabId);
+  return selectSidePaneTabsForParent(next, parentSessionId, preferredTabId, projectId);
 }
 
 export function closeSidePaneTab(
@@ -2171,7 +2244,7 @@ export function toggleBrowserSidePane(
   }
 
   return activateBrowserSidePane(current, {
-    ownerTaskId,
+    ...(ownerTaskId !== undefined ? { ownerTaskId } : {}),
     ...(remoteSessionId ? { remoteSessionId } : {}),
   });
 }

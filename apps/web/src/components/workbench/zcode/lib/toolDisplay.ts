@@ -28,6 +28,8 @@ export interface ToolPlanResult {
 }
 
 export interface ToolDisplayModel {
+  /** 结构化展示事实；具体插件独立验证其schema并贡献renderer。 */
+  contributedDisplay?: unknown;
   inlinePreview: ToolInlinePreview;
   planResult: ToolPlanResult | null;
   viewerSource: CodeViewerSource | null;
@@ -78,7 +80,7 @@ function extractToolPlanResultFromValue(
 
   return {
     plan: rawPlan.trim(),
-    planFilePath,
+    ...(planFilePath ? { planFilePath } : {}),
   };
 }
 
@@ -282,10 +284,11 @@ export function buildToolDisplayModel(
     identity,
     preview,
     contentPreview,
-    errorText,
+    ...(errorText ? { errorText } : {}),
   };
 
   const defaultModel: ToolDisplayModel = {
+    contributedDisplay: isRecord(toolCall.raw) ? toolCall.raw.display : undefined,
     inlinePreview: { type: "none" },
     planResult,
     viewerSource: preview,

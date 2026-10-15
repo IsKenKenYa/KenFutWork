@@ -11,6 +11,16 @@ import { applyDirectoryRelinkStores } from "../src/components/workbench/zcode/ho
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
 import { TaskWorkspaceRegistry } from "../src/components/workbench/zcode/host/taskWorkspaceRegistry";
 
+vi.mock(
+  "../src/components/workbench/zcode/host/ProjectDirectoryChoice.js",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("../src/components/workbench/zcode/host/ProjectDirectoryChoice")
+    >()),
+    confirmDirectoryRelink: vi.fn(async () => "unassociated"),
+  }),
+);
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();

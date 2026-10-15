@@ -1,12 +1,14 @@
 "use client";
 
 import type {
+  CanvasDocumentUpdatedMessage,
   StreamEvent,
   TerminalShellId,
   WsCommandAck,
   WsRpcRequest,
   WsRunCommand,
 } from "@kenfutwork/shared";
+import { canvasDocumentUpdatedMessageSchema } from "@kenfutwork/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LOCAL_ACCESS_LOST_EVENT } from "@/lib/local-access";
 import { getServerBaseUrl } from "../lib/env";
@@ -37,6 +39,7 @@ export type TerminalChannelEvent =
     };
 
 type TerminalCallback = (event: TerminalChannelEvent) => void;
+type DocumentUpdatedCallback = (message: CanvasDocumentUpdatedMessage) => void;
 type RPCHandler = (
   params: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
@@ -59,6 +62,7 @@ export type WebSocketHandle = {
     onAck?: (ack: WsCommandAck) => void,
   ) => void;
   onEvent: (cb: EventCallback) => () => void;
+  onDocumentUpdated: (cb: DocumentUpdatedCallback) => () => void;
   /** 起一个持久 shell 会话（同一个 id 重复起时服务端复用已有会话）。 */
   startTerminal: (payload: {
     sessionId: string;
@@ -93,10 +97,15 @@ export type WebSocketHandle = {
   reconnectNow: () => void;
 };
 
-export function useWebSocket(): WebSocketHandle {
+export function useWebSocket(options?: {
+  documentScope?: string | undefined;
+}): WebSocketHandle {
   const wsRef = useRef<WebSocket | null>(null);
   const connectionIdRef = useRef(
     (() => {
+      // 每个常驻编辑器都有自己的socket；同一iframe实例重连继续使用此Ref中的UUID。
+      // 文档ID只是作用域标签，两个同文档编辑器也不能认领同一个connectionId。
+      if (options?.documentScope) return createWsRequestId();
       if (typeof sessionStorage !== "undefined") {
         const stored = sessionStorage.getItem("ws_connection_id");
         if (stored) return stored;
@@ -118,6 +127,9 @@ export function useWebSocket(): WebSocketHandle {
   const disposed = useRef(false);
 
   const eventListeners = useRef<Set<EventCallback>>(new Set());
+  const documentUpdatedListeners = useRef<Set<DocumentUpdatedCallback>>(
+    new Set(),
+  );
   const terminalListeners = useRef<Set<TerminalCallback>>(new Set());
   const ackListeners = useRef(
     new Map<
@@ -204,7 +216,17 @@ export function useWebSocket(): WebSocketHandle {
         return;
       }
 
-      if (msg.type === "event") {
+      if (msg.type === "canvas.document.updated") {
+        const parsed = canvasDocumentUpdatedMessageSchema.safeParse(msg);
+        if (!parsed.success) return;
+        for (const cb of documentUpdatedListeners.current) {
+          try {
+            cb(parsed.data);
+          } catch (listenerErr) {
+            console.error("[ws] document listener threw:", listenerErr);
+          }
+        }
+      } else if (msg.type === "event") {
         const streamEvent = msg.event as StreamEvent;
         // Defensive: skip malformed events without proper structure
         if (!streamEvent || typeof streamEvent !== "object") {
@@ -520,6 +542,13 @@ export function useWebSocket(): WebSocketHandle {
     };
   }, []);
 
+  const onDocumentUpdated = useCallback((cb: DocumentUpdatedCallback) => {
+    documentUpdatedListeners.current.add(cb);
+    return () => {
+      documentUpdatedListeners.current.delete(cb);
+    };
+  }, []);
+
   const registerRPC = useCallback((method: string, handler: RPCHandler) => {
     rpcHandlers.current.set(method, handler);
     return () => {
@@ -532,6 +561,7 @@ export function useWebSocket(): WebSocketHandle {
     startRun,
     cancelRun,
     onEvent,
+    onDocumentUpdated,
     registerRPC,
     resumeTask,
     resumeCanvas,

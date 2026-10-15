@@ -320,7 +320,7 @@ export interface ComposerRestoreRequest {
   inputKind: "sendText" | "sendGoalCommand";
   text: string;
   attachments: readonly AttachmentRef[];
-  config?: Pick<V4ComposerDraft, "mode" | "planEnabled" | "modelSelection">;
+  config?: Pick<V4ComposerDraft, "mode" | "planEnabled" | "modelSelection" | "workContext">;
 }
 
 function applyComposerRestoreRequestToComposer({

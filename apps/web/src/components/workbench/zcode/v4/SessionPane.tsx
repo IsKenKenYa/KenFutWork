@@ -1,3 +1,4 @@
+import { ComposerContextHeader } from "@zui/v4/composer/ComposerContext.js";
 import type {
   ConversationShareAllowedArtifact,
   ConversationShareTurnPreflightResult,
@@ -473,6 +474,7 @@ function resolveQueuedComposerRestore(
   );
   if (!item || item.kind === "compact") return null;
   const config = {
+    ...(item.workContext ? { workContext: structuredClone(item.workContext) } : {}),
     ...(item.mode ? { mode: item.mode } : {}),
     ...(typeof item.planEnabled === "boolean" ? { planEnabled: item.planEnabled } : {}),
     ...(item.modelSelection ? { modelSelection: item.modelSelection } : {}),
@@ -1331,11 +1333,12 @@ export function SessionPane({
   }, [draftConfigRef, modelSelectionView?.revision, sessionId, workspaceIdentity, workspacePath,
   ]);
   const recommendStartPlan = useStartPlanRecommendation(modelSelectionView);
-  const createSubmissionFromComposer = useCallback(
-    () => createComposerSubmissionConfig(draftConfigRef.current, modelSelectionView,
-      ),
-    [draftConfigRef, modelSelectionView],
-  );
+  const createSubmissionFromComposer = useCallback(() => {
+    const config = createComposerSubmissionConfig(draftConfigRef.current, modelSelectionView);
+    if (!config) return null;
+    const workContext = composerDraft.workContext ?? platform?.getConversationWorkContext?.({workspacePath, ...(workspaceIdentity ? {workspaceIdentity} : {})});
+    return workContext ? Object.freeze({...config, workContext: structuredClone(workContext)}) : config;
+  }, [composerDraft.workContext, draftConfigRef, modelSelectionView, platform, workspacePath, workspaceIdentity]);
   const composerSubmissionReady = useMemo(
     () => createComposerSubmissionConfig(draftConfig, modelSelectionView) !== null,
     [draftConfig, modelSelectionView],
@@ -4515,7 +4518,10 @@ export function SessionPane({
       submissionReady={composerSubmissionReady}
       updateComposerContent={updateComposerContent}
       createSubmissionFromComposer={createSubmissionFromComposer}
-      contextHeader={isDraft ? draftComposerHeader : undefined}
+      contextHeader={<>
+        {isDraft ? draftComposerHeader : null}
+        {!readOnly ? <ComposerContextHeader workspacePath={workspacePath} {...(workspaceIdentity ? { workspaceIdentity } : {})} {...(composerDraft.workContext ? { contextOverride: composerDraft.workContext } : {})} onChangeContext={(context) => replaceComposerDraft({ ...composerDraft, workContext: context })} /> : null}
+      </>}
       centered={isDraft}
       blockingRequestId={blockingInteractionId}
       listenAddToChatEvents={focused}

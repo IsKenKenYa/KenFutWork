@@ -69,6 +69,8 @@ export function createCodeRootHostFetch(
       return codeHostNotificationResponse(options?.signal ?? undefined);
     if (url.endsWith("/workspaces"))
       return Response.json({ workspaces: [rootWorkspace] });
+    if (url.includes("/api/projects/directory-candidates?"))
+      return Response.json({ projects: [] });
     const call = JSON.parse(String(options?.body));
     calls.push(call);
     if (call.service === "setting")

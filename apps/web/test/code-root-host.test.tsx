@@ -102,7 +102,8 @@ it.each([true, false])(
       [];
     const selection = { rejectOpen: true };
     installBrowserLayout();
-    vi.stubGlobal("fetch", createCodeRootHostFetch(calls, selection));
+    const fetch = vi.fn(createCodeRootHostFetch(calls, selection));
+    vi.stubGlobal("fetch", fetch);
     const client = new CodeHttpChannelClient({
       apiBase: "https://host.example",
     });
@@ -194,7 +195,21 @@ it.each([true, false])(
           (call) => call.service === "workspace" && call.method === "open",
         )
         .map((call) => call.args),
-    ).toEqual([[{ path: "/fixture" }], [{ path: "/fixture" }]]);
+    ).toEqual([
+      [{ path: "/fixture", preset: "code" }],
+      [{ path: "/fixture", preset: "code" }],
+    ]);
+    const candidateRequests = fetch.mock.calls.filter(([url]) =>
+      url.includes("/api/projects/directory-candidates?"),
+    );
+    expect(candidateRequests).toHaveLength(2);
+    for (const request of candidateRequests)
+      expect(request).toEqual([
+        expect.stringMatching(
+          /\/api\/projects\/directory-candidates\?path=%2Ffixture$/,
+        ),
+        { credentials: "include" },
+      ]);
     const alert = useAlertDialogStore.getState().requestAlert({
       title: "原全局提示",
       description: "真实宿主操作提示",

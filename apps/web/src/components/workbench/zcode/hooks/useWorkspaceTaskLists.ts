@@ -47,6 +47,7 @@ import {
 import { resolveWorkspaceTaskVisibleLimit } from "@zui/lib/workspaceTaskPagination.js";
 
 interface WorkspaceTaskListQueryConfig {
+  workModeFilter?: "code" | "design";
   scope: {
     workspacePath: string;
     workspaceIdentity?: string;
@@ -199,6 +200,7 @@ export function useWorkspaceTaskLists(params: {
   sortBy: "created" | "updated";
   visibleLimitByWorkspaceKey: Readonly<Record<string, number>>;
   defaultVisibleLimit: number;
+  workModeFilter?: "code" | "design";
 }) {
   const baseServices = useBaseWorkspaceServices();
   const sessionsById = useRemoteWorkspaceSessionStore((state) => state.sessionsById);
@@ -307,6 +309,7 @@ export function useWorkspaceTaskLists(params: {
           visibleLimit,
         });
         return {
+          ...(params.workModeFilter ? { workModeFilter: params.workModeFilter } : {}),
           scope,
           workspaceKey,
           remoteSessionId: resolvedRemoteSessionId,
@@ -319,11 +322,12 @@ export function useWorkspaceTaskLists(params: {
           // 这里改成只使用当前 workspace 自己的版本，避免无关 workspace 被连带清空。
           queryKey:
             buildTaskListCacheKeyFromDescriptor(descriptor) +
-            `::version=${taskListVersionByWorkspaceKey.get(workspaceKey) ?? 0}`,
+            `::version=${taskListVersionByWorkspaceKey.get(workspaceKey) ?? 0}::workMode=${params.workModeFilter ?? "all"}`,
         };
       }),
     [
       params.defaultVisibleLimit,
+      params.workModeFilter,
       params.sortBy,
       params.visibleLimitByWorkspaceKey,
       params.workspaceTabs,
@@ -547,13 +551,15 @@ export function useWorkspaceTaskLists(params: {
                 hasMore: false,
                 unreadTaskKeys: [],
               };
-              const visibleItems = group.items.slice(0, config.visibleLimit);
+              // 筛选展示整条会话，先过滤再分页；不修改历史或会话归属。
+              const matching = config.workModeFilter ? group.items.filter((task) => (task.workModes ?? ["code"]).includes(config.workModeFilter!)) : group.items;
+              const visibleItems = matching.slice(0, config.visibleLimit);
               return {
                 queryKey: config.queryKey,
                 descriptor: config.descriptor,
                 items: visibleItems,
-                total: group.total,
-                hasMore: group.total > visibleItems.length,
+                total: matching.length,
+                hasMore: matching.length > visibleItems.length,
                 unreadTaskKeys: group.unreadTaskKeys,
                 expectedInvalidationVersion: expectedInvalidationVersionByQueryKey.get(
                   config.queryKey,

@@ -11,8 +11,7 @@ type CanvasEmptyHintProps = {
 
 /**
  * Floating overlay hint shown when the Excalidraw canvas has no visible
- * elements. Pressing the `C` key opens the chat sidebar and focuses the
- * chat input textarea.
+ * elements. Pressing the `C` key asks the shared workbench to focus its session.
  */
 export function CanvasEmptyHint({
   excalidrawApi,
@@ -44,6 +43,7 @@ export function CanvasEmptyHint({
     if (hasElements) return;
 
     function handleKeyDown(e: KeyboardEvent) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       // Ignore when the user is typing in an input or textarea.
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
@@ -53,24 +53,6 @@ export function CanvasEmptyHint({
       if (e.key === "c" || e.key === "C") {
         e.preventDefault();
         onOpenChatRef.current();
-
-        // The textarea may not be in the DOM yet (sidebar was closed), so
-        // retry focus with a short delay.
-        requestAnimationFrame(() => {
-          const textarea = document.querySelector<HTMLTextAreaElement>(
-            "textarea[data-chat-input]",
-          );
-          if (textarea) {
-            textarea.focus();
-          } else {
-            // Sidebar might animate open; retry once more.
-            setTimeout(() => {
-              document
-                .querySelector<HTMLTextAreaElement>("textarea[data-chat-input]")
-                ?.focus();
-            }, 100);
-          }
-        });
       }
     }
 

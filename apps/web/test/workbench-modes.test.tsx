@@ -7,6 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { CodeWorkbenchFrame } from "../src/components/workbench/code-workbench-frame";
 import { Workbench } from "../src/components/workbench/workbench";
 import {
   LocalInstanceBoundary,
@@ -57,7 +58,7 @@ function installFixture(
         };
       if (path.endsWith("/api/plugins"))
         result = {
-          plugins:
+          plugins: (
             plugins ??
             (flowInstalled
               ? [
@@ -67,7 +68,8 @@ function installFixture(
                     enabled: pluginEnabled,
                   },
                 ]
-              : []),
+              : [])
+          ).map((plugin) => ({ ...plugin, id: plugin.name, ui: [] })),
         };
       if (path.endsWith("/api/flow/host/status")) {
         if (flowStatus) return flowStatus.then((response) => response.clone());
@@ -155,17 +157,70 @@ it("flow可用时availableModes带flow；插件停用后库存事件即时收口
   const { send } = await renderCodeFrame();
   await waitFor(() => {
     expect(send).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         type: "kenfutwork:workbench-navigation",
         availableModes: ["code", "design", "flow"],
-        mode: "code",
-      },
+      }),
       window.location.origin,
     );
   });
+  const initialNavigation = send.mock.calls
+    .map(([message]) => message)
+    .filter((message) => message.type === "kenfutwork:workbench-navigation");
+  expect(initialNavigation[0]).toMatchObject({ mode: "code" });
+  expect(initialNavigation.filter((message) => "mode" in message)).toHaveLength(
+    1,
+  );
   send.mockClear();
   plugin.enabled = false;
   fireEvent(window, new Event(PLUGIN_INVENTORY_CHANGED_EVENT));
+  await waitFor(() =>
+    expect(send).toHaveBeenCalledWith(
+      {
+        type: "kenfutwork:workbench-navigation",
+        availableModes: ["code", "design"],
+      },
+      window.location.origin,
+    ),
+  );
+  expect(
+    send.mock.calls
+      .map(([message]) => message)
+      .filter((message) => message.type === "kenfutwork:workbench-navigation")
+      .every((message) => !("mode" in message)),
+  ).toBe(true);
+});
+
+it("同一Code文档仅初始与明确外部模式变更带mode，能力更新不重推旧mode", async () => {
+  installFixture();
+  const tree = (mode: "code" | "design", flow = false) => (
+    <LocalInstanceProvider>
+      <LocalInstanceBoundary>
+        <CodeWorkbenchFrame
+          mode={mode}
+          availableModes={
+            flow ? ["code", "design", "flow"] : ["code", "design"]
+          }
+        />
+      </LocalInstanceBoundary>
+    </LocalInstanceProvider>
+  );
+  const view = render(tree("code"));
+  const frame = (await screen.findByTitle(
+    "Code 工作台",
+    {},
+    LAZY,
+  )) as HTMLIFrameElement;
+  if (!frame.contentWindow) throw new Error("Code文档未创建");
+  const send = vi.spyOn(frame.contentWindow, "postMessage");
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      source: frame.contentWindow,
+      origin: window.location.origin,
+      data: { type: "kenfutwork:code-ready" },
+    }),
+  );
   await waitFor(() =>
     expect(send).toHaveBeenCalledWith(
       {
@@ -176,6 +231,36 @@ it("flow可用时availableModes带flow；插件停用后库存事件即时收口
       window.location.origin,
     ),
   );
+  send.mockClear();
+  view.rerender(tree("code", true));
+  await waitFor(() =>
+    expect(send).toHaveBeenCalledWith(
+      {
+        type: "kenfutwork:workbench-navigation",
+        availableModes: ["code", "design", "flow"],
+      },
+      window.location.origin,
+    ),
+  );
+  expect(
+    send.mock.calls
+      .map(([message]) => message)
+      .filter((message) => message.type === "kenfutwork:workbench-navigation")
+      .every((message) => !("mode" in message)),
+  ).toBe(true);
+  send.mockClear();
+  view.rerender(tree("design", true));
+  await waitFor(() =>
+    expect(send).toHaveBeenCalledWith(
+      {
+        type: "kenfutwork:workbench-navigation",
+        availableModes: ["code", "design", "flow"],
+        mode: "design",
+      },
+      window.location.origin,
+    ),
+  );
+  expect(screen.getByTitle("Code 工作台")).toBe(frame);
 });
 
 it("状态探针慢于插件探针：?mode=flow 不被中间态改写成 design，落定后按真实可用性推送", async () => {
