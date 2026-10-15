@@ -6,6 +6,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { Profiler } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { VideoGeneratorPanel } from "../src/components/canvas/video-generator-panel";
 import { ToastProvider } from "../src/components/toast";
@@ -555,6 +556,83 @@ it("视频参数与首尾帧随模型恢复，音频和参数实际提交", asyn
       ],
     }),
   );
+});
+
+it("目录载入后立即编辑的视频参数不会被旧参数规范化覆盖", async () => {
+  const firstModel = "11111111-1111-4111-8111-111111111111:video-a";
+  const secondModel = "11111111-1111-4111-8111-111111111111:video-b";
+  vi.stubGlobal("fetch", async () =>
+    Response.json({
+      models: [
+        {
+          id: firstModel,
+          displayName: "视频 A",
+          provider: "供应商",
+          videoGeneration: { durations: [5, 10], resolutions: ["720p"] },
+        },
+        {
+          id: secondModel,
+          displayName: "视频 B",
+          provider: "供应商",
+          videoGeneration: { durations: [4] },
+        },
+      ],
+    }),
+  );
+  const data: VideoGeneratorData = {
+    type: "video-generator",
+    status: "idle",
+    prompt: "猫",
+    model: firstModel,
+    aspectRatio: "16:9",
+    duration: 5,
+  };
+  const api = createGeneratorApi("generator", data);
+  let edited = false;
+  let editedSnapshot: unknown;
+  render(
+    <ToastProvider>
+      <Profiler
+        id="catalog-ready-input"
+        onRender={() => {
+          const duration = screen.queryByLabelText("时长");
+          if (edited || !(duration instanceof HTMLSelectElement)) return;
+          // 在目录对应的控件提交后、被动规范化之前输入，固定真实输入与加载交错。
+          edited = true;
+          duration.value = "10";
+          duration.dispatchEvent(new Event("change", { bubbles: true }));
+          editedSnapshot = api.getSceneElements()[0]?.customData;
+        }}
+      >
+        <VideoGeneratorPanel
+          canvasId="aaaaaaaa-1111-4111-8111-111111111111"
+          projectId="bbbbbbbb-1111-4111-8111-111111111111"
+          prepare={async () => "1"}
+          elementId="generator"
+          elementBounds={{ x: 0, y: 0, width: 400, height: 225 }}
+          data={data}
+          excalidrawApi={api}
+          accessToken={null}
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+        />
+      </Profiler>
+    </ToastProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /16:9.*5s/ }));
+  await screen.findByText("视频 A");
+  expect(edited).toBe(true);
+  expect(editedSnapshot).toMatchObject({ duration: 10 });
+  expect((screen.getByLabelText("时长") as HTMLSelectElement).value).toBe("10");
+  expect(api.getSceneElements()[0]?.customData).toMatchObject({
+    duration: 10,
+    resolution: "720p",
+    modelDrafts: { [firstModel]: { duration: 10, resolution: "720p" } },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "视频 A" }));
+  fireEvent.click(screen.getByRole("button", { name: "视频 B" }));
+  fireEvent.click(screen.getByRole("button", { name: "视频 B" }));
+  fireEvent.click(screen.getByRole("button", { name: "视频 A" }));
+  expect((screen.getByLabelText("时长") as HTMLSelectElement).value).toBe("10");
 });
 
 it("实例声明的参考图能力优先于旧目录的不支持标记", async () => {

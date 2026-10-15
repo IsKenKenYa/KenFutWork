@@ -6,6 +6,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { Profiler } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ImageGeneratorPanel } from "../src/components/canvas/image-generator-panel";
 import { ToastProvider } from "../src/components/toast";
@@ -306,11 +307,37 @@ it("图片参数跟随模型声明，切回模型恢复原参数并原样提交"
   fireEvent.change(screen.getByLabelText("质量"), {
     target: { value: "high" },
   });
+  expect((screen.getByLabelText("质量") as HTMLSelectElement).value).toBe(
+    "high",
+  );
+  expect(api.getSceneElements()[0]?.customData).toMatchObject({
+    quality: "high",
+    modelDrafts: { [firstModel]: { quality: "high" } },
+  });
   fireEvent.change(screen.getByLabelText("尺寸"), {
     target: { value: "1024x1536" },
   });
+  expect(api.getSceneElements()[0]?.customData).toMatchObject({
+    quality: "high",
+    size: "1024x1536",
+    modelDrafts: {
+      [firstModel]: { quality: "high", size: "1024x1536" },
+    },
+  });
   fireEvent.change(screen.getByLabelText("格式"), {
     target: { value: "webp" },
+  });
+  expect(api.getSceneElements()[0]?.customData).toMatchObject({
+    quality: "high",
+    size: "1024x1536",
+    outputFormat: "webp",
+    modelDrafts: {
+      [firstModel]: {
+        quality: "high",
+        size: "1024x1536",
+        outputFormat: "webp",
+      },
+    },
   });
   fireEvent.click(screen.getByRole("button", { name: "图片 A" }));
   fireEvent.click(screen.getByRole("button", { name: "图片 B" }));
@@ -341,6 +368,89 @@ it("图片参数跟随模型声明，切回模型恢复原参数并原样提交"
       height: 1536,
       outputFormat: "webp",
     }),
+  );
+});
+
+it("目录载入后立即编辑的图片参数不会被旧参数规范化覆盖", async () => {
+  const firstModel = "11111111-1111-4111-8111-111111111111:image-a";
+  const secondModel = "11111111-1111-4111-8111-111111111111:image-b";
+  vi.stubGlobal("fetch", async () =>
+    Response.json({
+      models: [
+        {
+          id: firstModel,
+          displayName: "图片 A",
+          provider: "供应商",
+          imageGeneration: {
+            qualities: ["low", "high"],
+            sizes: ["1024x1024"],
+          },
+        },
+        {
+          id: secondModel,
+          displayName: "图片 B",
+          provider: "供应商",
+          imageGeneration: { qualities: ["standard"] },
+        },
+      ],
+    }),
+  );
+  const data: ImageGeneratorData = {
+    type: "image-generator",
+    status: "idle",
+    prompt: "猫",
+    model: firstModel,
+    aspectRatio: "1:1",
+    quality: "low",
+  };
+  const api = createGeneratorApi("generator", data);
+  let edited = false;
+  let editedSnapshot: unknown;
+  render(
+    <ToastProvider>
+      <Profiler
+        id="catalog-ready-input"
+        onRender={() => {
+          const quality = screen.queryByLabelText("质量");
+          if (edited || !(quality instanceof HTMLSelectElement)) return;
+          // 在目录对应的控件提交后、被动规范化之前输入，固定真实输入与加载交错。
+          edited = true;
+          quality.value = "high";
+          quality.dispatchEvent(new Event("change", { bubbles: true }));
+          editedSnapshot = api.getSceneElements()[0]?.customData;
+        }}
+      >
+        <ImageGeneratorPanel
+          canvasId="aaaaaaaa-1111-4111-8111-111111111111"
+          projectId="bbbbbbbb-1111-4111-8111-111111111111"
+          prepare={async () => "1"}
+          elementId="generator"
+          elementBounds={{ x: 0, y: 0, width: 400, height: 400 }}
+          data={data}
+          excalidrawApi={api}
+          accessToken={null}
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+        />
+      </Profiler>
+    </ToastProvider>,
+  );
+  await screen.findByText("图片 A");
+  expect(edited).toBe(true);
+  expect(editedSnapshot).toMatchObject({ quality: "high" });
+  expect((screen.getByLabelText("质量") as HTMLSelectElement).value).toBe(
+    "high",
+  );
+  expect(api.getSceneElements()[0]?.customData).toMatchObject({
+    quality: "high",
+    size: "1024x1024",
+    modelDrafts: { [firstModel]: { quality: "high", size: "1024x1024" } },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "图片 A" }));
+  fireEvent.click(screen.getByRole("button", { name: "图片 B" }));
+  fireEvent.click(screen.getByRole("button", { name: "图片 B" }));
+  fireEvent.click(screen.getByRole("button", { name: "图片 A" }));
+  expect((screen.getByLabelText("质量") as HTMLSelectElement).value).toBe(
+    "high",
   );
 });
 

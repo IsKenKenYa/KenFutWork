@@ -200,9 +200,10 @@ export function ImageGeneratorPanel({
   );
 
   useEffect(() => {
-    if (!currentModel) return;
-    const next = modelParams(params, currentModel.imageGeneration);
-    if (JSON.stringify(next) !== JSON.stringify(params)) updateParams(next);
+    if (!currentModel || currentModel.id !== modelRef.current) return;
+    const latest = paramsRef.current;
+    const next = modelParams(latest, currentModel.imageGeneration);
+    if (JSON.stringify(next) !== JSON.stringify(latest)) updateParams(next);
   }, [currentModel, params, updateParams]);
 
   const handleModelChange = useCallback(
