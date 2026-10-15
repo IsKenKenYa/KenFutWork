@@ -74,6 +74,8 @@ OpenDesign 挂在 **Code 模式右侧栏**，与浏览器面板互斥切换。**
 
 纪律：每阶段一个可验证行为变化 + 测试护航；ZCode 照搬区改动守 UI 保真（同《Code 模式 ZCode-UI 照搬执行手册》）；《日志》台账同提交记账。
 
+> **实施状态（2026-10-15）**：O0 `42b8fdfc` / O1 `5ae2d7b8` / O2 `d37e1994`（+ 收尾 `e08af975`：深链 UI 调用方）/ O3 `1b375fd4`（BYOK 凭证下发）均已完成并入 main；各阶段验证与踩坑见《日志》第一百九十一至一百九十四节。仍待：O3 的「端到端 design-to-code」需真 OpenDesign daemon 联调（本环境无上游栈）；§9-3 承载形态未拍板；O4 远期另立方案。
+
 ## 7. 许可证与合规
 
 - OpenDesign 主仓 **Apache-2.0** ⊂ GPL-3.0 单向兼容，可并入。**bundled skills / templates 保留各自 license**（`guizang-ppt` MIT、`html-ppt` MIT、`web-clone` MIT），分发时逐一随附。
