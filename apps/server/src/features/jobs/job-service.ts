@@ -352,31 +352,37 @@ export function createJobService(options: {
         throw new JobServiceError("job_create_failed", error.message, 400);
       throw error;
     });
-    const inputs: NewJobInput[] = (outputCounts ?? [1]).map((count, index) => ({
-      instanceId: prepared.instanceId,
-      fileTarget: prepared.fileTarget,
-      jobType: input.jobType,
-      queueName,
-      createdByClientId: actor.accessClientId,
-      ...(input.canvasId ? { canvasId: input.canvasId } : {}),
-      ...(input.projectId ? { projectId: input.projectId } : {}),
-      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-      ...(input.threadId ? { threadId: input.threadId } : {}),
-      payload: {
-        ...stored.payload,
-        ...(outputCounts
-          ? { count, requested_count: input.payload.count }
-          : {}),
-        _generation_execution: { phase: "ready" },
-        ...(input.requestId
-          ? {
-              request_id: input.requestId,
-              request_index: outputCounts ? index : (input.requestIndex ?? 0),
-              request_fingerprint: prepared.fingerprint,
-            }
-          : {}),
-      },
-    }));
+    let outputOffset = 0;
+    const inputs: NewJobInput[] = (outputCounts ?? [1]).map((count, index) => {
+      const requestOutputOffset = outputOffset;
+      outputOffset += count;
+      return {
+        instanceId: prepared.instanceId,
+        fileTarget: prepared.fileTarget,
+        jobType: input.jobType,
+        queueName,
+        createdByClientId: actor.accessClientId,
+        ...(input.canvasId ? { canvasId: input.canvasId } : {}),
+        ...(input.projectId ? { projectId: input.projectId } : {}),
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+        ...(input.threadId ? { threadId: input.threadId } : {}),
+        payload: {
+          ...stored.payload,
+          request_output_offset: requestOutputOffset,
+          ...(outputCounts
+            ? { count, requested_count: input.payload.count }
+            : {}),
+          _generation_execution: { phase: "ready" },
+          ...(input.requestId
+            ? {
+                request_id: input.requestId,
+                request_index: outputCounts ? index : (input.requestIndex ?? 0),
+                request_fingerprint: prepared.fingerprint,
+              }
+            : {}),
+        },
+      };
+    });
     const first = inputs[0];
     if (!first)
       throw new JobServiceError("job_create_failed", "生成任务组为空。", 400);

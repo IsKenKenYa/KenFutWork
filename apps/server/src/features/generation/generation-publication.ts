@@ -18,6 +18,7 @@ export async function publishGeneratedCanvas(
   result: Record<string, unknown>,
   ctx: Pick<ExecutorContext, "canvas" | "generationTargets">,
   publicationId: string = job.id,
+  outputIndex = 0,
 ): Promise<{ element_id?: string }> {
   const target = generationFileTargetSchema.parse(job.file_target);
   if (target.kind === "standalone" || !target.canvasId) return {};
@@ -40,6 +41,10 @@ export async function publishGeneratedCanvas(
       payload.placement === undefined
         ? undefined
         : placementSchema.parse(payload.placement);
+    // 旧Job缺少冻结偏移时保持原位置，确保已提交但检查点丢失的发布仍可重放。
+    if (placement && typeof payload.request_output_offset === "number")
+      placement.x +=
+        (payload.request_output_offset + outputIndex) * placement.width;
     const mimeType =
       typeof result.mime_type === "string"
         ? result.mime_type

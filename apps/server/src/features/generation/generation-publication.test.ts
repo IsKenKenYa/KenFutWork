@@ -99,6 +99,55 @@ it("后台结果按冻结Task和画布发布，带原Job幂等身份与placement
   );
 });
 
+it("旧Job缺少冻结偏移时，后续产物仍沿用原placement与发布身份", async () => {
+  const f = fixture();
+  await publishGeneratedCanvas(f.job, f.result, f.ctx, "second-output", 1);
+  expect(f.insertImageElement).toHaveBeenCalledWith(
+    { instanceId: f.job.instance_id, accessClientId: null },
+    expect.objectContaining({
+      insertionId: "second-output",
+      placement: { x: 3, y: 4, width: 20, height: 30 },
+    }),
+    expect.any(Function),
+  );
+});
+
+it("新Job按冻结请求偏移与原产物序号排布，不随完成顺序压缩槽位", async () => {
+  const f = fixture();
+  await publishGeneratedCanvas(
+    { ...f.job, payload: { ...f.job.payload, request_output_offset: 2 } },
+    f.result,
+    f.ctx,
+    "second-output",
+    1,
+  );
+  expect(f.insertImageElement).toHaveBeenCalledWith(
+    { instanceId: f.job.instance_id, accessClientId: null },
+    expect.objectContaining({
+      insertionId: "second-output",
+      placement: { x: 63, y: 4, width: 20, height: 30 },
+    }),
+    expect.any(Function),
+  );
+});
+
+it("新Job没有显式placement时保留画布自动排布", async () => {
+  const f = fixture();
+  await publishGeneratedCanvas(
+    { ...f.job, payload: { request_output_offset: 2 } },
+    f.result,
+    f.ctx,
+    "second-output",
+    1,
+  );
+  const request = f.insertImageElement.mock.calls[0]?.[1];
+  expect(request).toMatchObject({
+    insertionId: "second-output",
+    objectPath: "verified-project-file",
+  });
+  expect(request).not.toHaveProperty("placement");
+});
+
 it("来源事务中断后，最终写入guard阻止发布", async () => {
   const f = fixture();
   f.insertImageElement.mockImplementationOnce(

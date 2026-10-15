@@ -181,6 +181,7 @@ async function publishOutput(
             freshResult,
             ctx,
             generatedOutputId(job.id, index),
+            index,
           )),
     },
   };
