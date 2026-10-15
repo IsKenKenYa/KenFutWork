@@ -4,7 +4,6 @@ import type {
   ChatSessionSummary,
   ContentBlock,
 } from "@kenfutwork/shared";
-import type { DesignTasksService } from "../execution/design-task-types.js";
 import type {
   LocalActor,
   LocalInstanceService,
@@ -96,7 +95,6 @@ function toChatMessage(row: ChatMessageRow): ChatMessage {
 
 export function createChatService(options: {
   repository: ChatRepository;
-  designTasks?: Pick<DesignTasksService, "prepareCreation">;
   threadService: Pick<ThreadService, "createThreadId">;
   localInstance: LocalInstanceService;
 }): ChatService {
@@ -114,10 +112,10 @@ export function createChatService(options: {
           503,
         );
       });
-    if (!session || session.mode === "code")
+    if (!session || session.mode !== "flow")
       throw new ChatServiceError(
         "session_not_found",
-        "此入口只接受画布会话。",
+        "请在工作台打开此会话。",
         404,
       );
   };
@@ -151,13 +149,8 @@ export function createChatService(options: {
     async createSession(actor, canvasId, title) {
       const instanceId = await requireInstanceId(actor);
 
-      const designTaskPreparation = await options.designTasks?.prepareCreation(
-        actor,
-        canvasId,
-      );
       const row = await repository
         .createSession(instanceId, {
-          ...(designTaskPreparation ? { designTaskPreparation } : {}),
           canvasId,
           threadId: options.threadService.createThreadId(),
           createdByClientId: actor.accessClientId,
@@ -176,9 +169,6 @@ export function createChatService(options: {
 
       return {
         id: row.id,
-        ...(designTaskPreparation && row.mode === "design"
-          ? { taskId: row.id }
-          : {}),
         title: row.title,
         updatedAt: row.updated_at,
         projectId: row.project_id,

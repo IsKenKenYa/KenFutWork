@@ -23,7 +23,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           { enabled_modes: ["code", "design"] },
           "PATCH",
         );
-        expect(shared.status).toBe(200);
+        expect(shared.status).toBe(204);
         const payload = {
           sessionId: host.sessionId,
           taskId: host.sessionId,

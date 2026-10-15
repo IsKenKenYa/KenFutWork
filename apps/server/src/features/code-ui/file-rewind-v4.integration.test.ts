@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
+import {
+  zcodeUiProtocol as protocol,
+  providerInstanceResponseSchema,
+  type StreamEvent,
+} from "@kenfutwork/shared";
 import { HumanMessage } from "@langchain/core/messages";
 import { createAgent, FakeToolCallingModel } from "langchain";
 import { describe, expect, it } from "vitest";
@@ -46,7 +50,7 @@ import { CodeUiService, type CodeUiServiceDeps } from "./service.js";
 import { createToolLifecycleMiddleware } from "./tool-lifecycle.js";
 
 type Database = Awaited<ReturnType<typeof createTaskWorkDatabase>>;
-async function ownedTask(database: Database) {
+async function ownedTask(database: Database, providerId: string) {
   const { scope } = database.context;
 
   const actor = { instanceId: scope.instanceId, accessClientId: null };
@@ -100,6 +104,12 @@ async function ownedTask(database: Database) {
         model: "fixture",
         thought: "",
         followupMode: "queue",
+        // 准入执行要求会话绑定含思考档位的完整模型选择（档位不被静默补全）
+        modelSelection: {
+          providerId,
+          modelId: "fixture",
+          options: { reasoningLevel: "low" },
+        },
       },
     }).exportState(),
     null,
@@ -120,7 +130,28 @@ async function ownedTask(database: Database) {
 }
 
 async function hostFixture(database: Database) {
-  const binding = await ownedTask(database);
+  // 模型档位随会话 config 绑定（normalize 不补档位），provider 须先于会话种子存在。
+  const provider = providerInstanceResponseSchema.parse({
+    id: randomUUID(),
+    scope: "local",
+    name: "File rewind fixture",
+    protocol: "openai-compatible",
+    enabled: true,
+    hasCredential: true,
+    configRevision: 1,
+    headerKeys: [],
+    models: [
+      {
+        id: "fixture",
+        name: "Fixture",
+        capability: "chat",
+        vision: false,
+        inputModalities: ["text"],
+        reasoningEfforts: ["low"],
+      },
+    ],
+  });
+  const binding = await ownedTask(database, provider.id);
   const checkpointRoot = join(database.directory, "checkpoints");
   // Darwin /usr/bin/git为developer selector入口；既有gitBinDir缝指向xcrun核实的实际安装二进制。
   const gitBinDir =
@@ -249,9 +280,18 @@ async function hostFixture(database: Database) {
       await host.finishTaskRestore(scope, actor, success);
     },
   });
+  let executeSink: ((event: StreamEvent) => Promise<void>) | undefined;
+  let ready!: () => void;
+  const executorReady = new Promise<void>((resolve) => {
+    ready = resolve;
+  });
+  let finish!: () => void;
+  const executorFinished = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
   const instances: CodeUiService[] = [];
   const createHost = () => {
-    // 空BYOK目录是外部模型目录边界；文件、身份、日志、恢复与执行域均使用真实provider。
+    // 模型使用本机FakeToolCallingModel；输入准入、事件、文件、身份、日志与恢复走真实服务。
     host = new CodeUiService({
       repository: createCodeUiRepository(database.persistence),
       localInstance: binding.localInstance,
@@ -259,7 +299,8 @@ async function hostFixture(database: Database) {
       projects: createProjectService({
         repository: createProjectRepository(database.persistence),
         localInstance: binding.localInstance,
-        blob: {} as never,
+        // 统一准入经 listWorkspaces→listProjects 解析缩略图 URL；夹具无缩略图，仅补桶形状
+        blob: { bucket: () => ({ resolveUrl: async () => "" }) } as never,
       }),
       settings: binding.settings,
       executionScopes: binding.scopes,
@@ -267,10 +308,27 @@ async function hostFixture(database: Database) {
       checkpoints,
       processSandbox: sandbox,
       taskWork: work,
-      agentRuns: runtime,
+      agentRuns: {
+        ...runtime,
+        createRun: (
+          _request: unknown,
+          options: {
+            runId: string;
+            eventSink: (event: StreamEvent) => Promise<void>;
+          },
+        ) => {
+          executeSink = options.eventSink;
+          ready();
+          return { runId: options.runId };
+        },
+        async *streamRun() {
+          await executorFinished;
+          yield* [];
+        },
+      },
       beforeCloseTask: closer,
       modelProviders: {
-        listInstances: async () => [],
+        listInstances: async () => [provider],
         listProviderPresets: () => [],
       },
       modelCatalog: { listCatalog: async () => [] },
@@ -285,7 +343,15 @@ async function hostFixture(database: Database) {
     checkpoints,
     work,
     createHost,
+    provider,
+    executorReady,
+    finishExecutor: finish,
+    sendExecutorEvent: async (event: StreamEvent) => {
+      if (!executeSink) throw new Error("canonical执行器未启动");
+      await executeSink(event);
+    },
     async close() {
+      finish();
       for (const item of instances) await item.closeConnections();
       await work.close("integration cleanup");
       await sandbox.close("integration cleanup");
@@ -297,23 +363,27 @@ async function nativeTurn(
   fixture: Awaited<ReturnType<typeof hostFixture>>,
   host: CodeUiService,
 ) {
-  const runId = randomUUID();
+  const inputCommandId = randomUUID();
   const inputMessageId = randomUUID();
   const input = new HumanMessage({
     id: inputMessageId,
     content: "把before改为after，保留聊天",
   });
-  await fixture.metadata.createAcceptedRun({
-    runId,
-    sessionId: fixture.scope.taskId,
-    threadId: fixture.threadId,
-  });
-  const sink = await host.admitExternalRun(
+  const admission = await host.admitExternalRun(
     fixture.actor,
     fixture.handle,
-    runId,
+    inputCommandId,
     "把before改为after，保留聊天",
+    {
+      sessionId: fixture.scope.taskId,
+      conversationId: fixture.scope.taskId,
+      prompt: "把before改为after，保留聊天",
+    },
   );
+  const runId = admission.runId;
+  // publish 会陪跑到本轮结束；本测试就是执行器替身，先并发启动再喂数据。
+  const running = admission.publish();
+  await fixture.executorReady;
   const boundary = async (phase: AgentTurnBoundary["phase"]) => {
     const captured = await fixture.checkpoints.captureTurnBoundary({
       scope: fixture.handle,
@@ -332,7 +402,7 @@ async function nativeTurn(
       branchGeneration: fixture.branchGeneration,
       inputIdentity: {
         clientId: "host.agent-runs",
-        sourceCommandId: `agent-run:${runId}`,
+        sourceCommandId: inputCommandId,
       },
       inputOrigin: "userInput",
       inputMessageId,
@@ -402,13 +472,15 @@ async function nativeTurn(
     canonicalToolEvents: true,
     stream: agent.streamEvents({ messages: [input] }, { version: "v2" }),
   }))
-    await sink(event);
+    await fixture.sendExecutorEvent(event);
   await boundary("post");
   await fixture.metadata.updateRun({
     runId,
     status: "completed",
     completedAt: new Date().toISOString(),
   });
+  fixture.finishExecutor();
+  await running;
   return runId;
 }
 

@@ -19,8 +19,6 @@ export function createRealtimePlugin(): PluginDefinition {
       "settings",
       "threads",
       "localInstance",
-      "designTasks",
-      "designRunHost",
       "flowProjectControl",
     ],
     apply() {},
@@ -36,8 +34,6 @@ export function createRealtimePlugin(): PluginDefinition {
         await registerWsRoute(instance, {
           flowProjectControl: ctx.get("flowProjectControl"),
           agentRuns: ctx.get("agentRuns"),
-          designTasks: ctx.get("designTasks"),
-          designRunHost: ctx.get("designRunHost"),
           agentModes: ctx.get("agentModes"),
           agentRunMetadataService: ctx.get("agentRunMetadata"),
           localAccess: ctx.get("localAccess"),

@@ -13,7 +13,7 @@ export function createEnterPlanModeToolDefinition(options: {
 }): ToolDefinition {
   return {
     name: ENTER_PLAN_MODE_TOOL_NAME,
-    scope: "code",
+    scope: "shared",
     exposure: "core",
     planControl: "enter",
     description:

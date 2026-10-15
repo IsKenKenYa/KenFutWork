@@ -192,17 +192,6 @@ export function createCheckpointService(options: {
     actor: LocalActor,
     success: boolean,
   ) => Promise<void>;
-  designRestore?: {
-    begin(
-      scope: ExecutionScopeHandle,
-      actor: LocalActor,
-    ): Promise<ExecutionScopeHandle>;
-    finish(
-      scope: ExecutionScopeHandle,
-      actor: LocalActor,
-      success: boolean,
-    ): Promise<void>;
-  };
 }): CheckpointService {
   const locks = new Map<string, Promise<unknown>>();
   const previews = new Map<
@@ -311,16 +300,13 @@ export function createCheckpointService(options: {
       const gitDir = await gitDirectory(input.scope, rootDirectory);
       await mkdir(gitDir, { recursive: true });
       const excludedPaths = excludedPathsFor(input.scope, rootDirectory);
-      const forceIncludePaths =
-        input.scope.preset === "design"
-          ? (
-              (await options.forceIncludePaths?.(
-                input.scope,
-                input.actor,
-                rootDirectory,
-              )) ?? []
-            ).map((path) => requireRelative(path.replaceAll("\\", "/")))
-          : [];
+      const forceIncludePaths = (
+        (await options.forceIncludePaths?.(
+          input.scope,
+          input.actor,
+          rootDirectory,
+        )) ?? []
+      ).map((path) => requireRelative(path.replaceAll("\\", "/")));
       if (
         forceIncludePaths.some((path) =>
           excludedPaths.some(
@@ -756,9 +742,7 @@ export function createCheckpointService(options: {
         plan.entries,
         async () => {
           restoringScope = barrier.authorize(
-            input.scope.preset === "design" && options.designRestore
-              ? await options.designRestore.begin(input.scope, input.actor)
-              : await options.onBeforeRestore(input.scope, input.actor),
+            await options.onBeforeRestore(input.scope, input.actor),
           );
           return restoringScope;
         },
@@ -771,17 +755,13 @@ export function createCheckpointService(options: {
         )) ?? row;
       await barrier.release();
       released = true;
-      if (nextScope.preset === "design" && options.designRestore)
-        await options.designRestore.finish(nextScope, input.actor, true);
-      else await options.onAfterRestore(nextScope, input.actor, true);
+      await options.onAfterRestore(nextScope, input.actor, true);
       previews.delete(key);
       return restored;
     } catch (error) {
       const failedScope = restoringScope as ExecutionScopeHandle | null;
       if (failedScope) {
-        if (failedScope.preset === "design" && options.designRestore)
-          await options.designRestore.finish(failedScope, input.actor, false);
-        else await options.onAfterRestore(failedScope, input.actor, false);
+        await options.onAfterRestore(failedScope, input.actor, false);
       }
       throw error;
     } finally {

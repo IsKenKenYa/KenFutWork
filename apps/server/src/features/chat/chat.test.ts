@@ -80,7 +80,7 @@ const SESSION_ROW = {
   title: "New Chat",
   updated_at: "2026-09-13T00:00:00+00:00",
   project_id: PROJECT_ID,
-  mode: "design" as const,
+  mode: "flow" as const,
 };
 
 const MESSAGE_ROW = {
@@ -176,7 +176,7 @@ describe("chat repository（会话与消息经画布→项目链限定）", () =
     ).updateSessionTitle(INSTANCE_ID, SESSION_ID, "新标题");
 
     expect(rename.sqls()[0]).toContain(
-      "update public.chat_sessions s set title = $1 from public.projects p where p.id = s.project_id and s.instance_id = $3 and s.id = $2 and s.mode <> 'code' and p.instance_id = $3",
+      "update public.chat_sessions s set title = $1 from public.projects p where p.id = s.project_id and s.instance_id = $3 and s.id = $2 and s.mode = 'flow' and p.instance_id = $3",
     );
     expect(rename.calls[0]?.values).toEqual([
       "新标题",
@@ -282,13 +282,13 @@ function createFakeRepository(
       thread_id: input.threadId,
       canvas_id: input.canvasId ?? null,
       project_id: PROJECT_ID,
-      mode: "design",
+      mode: "flow",
     }),
     deleteSession: async () => 1,
     findSessionThread: async () => ({
       canvas_id: CANVAS_ID,
       project_id: PROJECT_ID,
-      mode: "design",
+      mode: "flow",
       id: SESSION_ID,
       thread_id: "thread_1",
     }),
@@ -324,6 +324,37 @@ function buildService(
 }
 
 describe("chat service", () => {
+  it.each(["code", "design"] as const)(
+    "%s不通过退役聊天写入链路派发或读取消息",
+    async (mode) => {
+      let writes = 0;
+      const { chat } = buildService({
+        repository: {
+          findSessionThread: async () => ({
+            id: SESSION_ID,
+            thread_id: "thread",
+            canvas_id: CANVAS_ID,
+            project_id: PROJECT_ID,
+            mode,
+          }),
+          insertMessage: async () => {
+            writes++;
+            return MESSAGE_ROW;
+          },
+        },
+      });
+      await expect(chat.listMessages(ACTOR, SESSION_ID)).rejects.toMatchObject({
+        code: "session_not_found",
+      });
+      await expect(
+        chat.createMessage(ACTOR, SESSION_ID, {
+          role: "user",
+          content: "执行",
+        }),
+      ).rejects.toMatchObject({ code: "session_not_found" });
+      expect(writes).toBe(0);
+    },
+  );
   it("generic视觉聊天入口拒绝CodeTask写/删/改名/读取，V4是唯一聚合", async () => {
     let writes = 0;
     const { chat } = buildService({
@@ -377,7 +408,7 @@ describe("chat service", () => {
         title: "New Chat",
         updatedAt: SESSION_ROW.updated_at,
         projectId: PROJECT_ID,
-        mode: "design",
+        mode: "flow",
       },
     ]);
   });
@@ -531,7 +562,7 @@ describe("thread service（会话线程绑定）", () => {
     ).resolves.toEqual({
       canvasId: CANVAS_ID,
       projectId: PROJECT_ID,
-      mode: "design",
+      mode: "flow",
       sessionId: SESSION_ID,
       threadId: "thread_1",
     });
@@ -555,7 +586,7 @@ describe("thread service（会话线程绑定）", () => {
         findSessionThread: async () => ({
           canvas_id: CANVAS_ID,
           project_id: PROJECT_ID,
-          mode: "design",
+          mode: "flow",
           id: SESSION_ID,
           thread_id: null,
         }),

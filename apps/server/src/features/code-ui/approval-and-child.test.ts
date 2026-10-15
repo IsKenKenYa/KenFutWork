@@ -24,46 +24,49 @@ function host() {
   return conversation;
 }
 
-it("审批先于流工具事件到达时，后到工具row恢复真实pending锚点", async () => {
-  const conversation = host();
-  const service = createPermissionService();
-  service.onEvent((event) => conversation.recordApprovalEvent(event));
-  const pending = service.admit({
-    preset: "code",
-    instanceId: "workspace",
-    taskId: "root",
-    runId: "parent",
-    toolCallId: "write",
-    agentId: "main",
-    role: "main",
-    scopeGeneration: 1,
-    branchGeneration: 1,
-    mode: "build",
-    approvalCeiling: "build",
-    toolName: "Write",
-    args: { content: "hello" },
-    access: "write",
-  });
-  try {
-    conversation.recordEvent({
-      type: "tool.started",
+it.each(["code", "design"] as const)(
+  "%s审批先于流工具事件到达时，后到工具row恢复真实pending锚点",
+  async (preset) => {
+    const conversation = host();
+    const service = createPermissionService();
+    service.onEvent((event) => conversation.recordApprovalEvent(event));
+    const pending = service.admit({
+      preset,
+      instanceId: "workspace",
+      taskId: "root",
       runId: "parent",
       toolCallId: "write",
+      agentId: "main",
+      role: "main",
+      scopeGeneration: 1,
+      branchGeneration: 1,
+      mode: "build",
+      approvalCeiling: "build",
       toolName: "Write",
-      timestamp: "2026-10-03T00:00:00Z",
+      args: { content: "hello" },
+      access: "write",
     });
-    const snapshot = conversation.getSnapshot();
-    const tool = snapshot.rows.window.find((row) => row.kind === "toolCall")!;
-    expect(snapshot.pendingInteractions[0]?.anchorRowId).toBe(tool.rowId);
-    expect(tool).toMatchObject({ status: "pendingApproval" });
-  } finally {
-    await service.cancel(
-      { instanceId: "workspace", taskId: "root" },
-      "cleanup",
-    );
-    await pending;
-  }
-});
+    try {
+      conversation.recordEvent({
+        type: "tool.started",
+        runId: "parent",
+        toolCallId: "write",
+        toolName: "Write",
+        timestamp: "2026-10-03T00:00:00Z",
+      });
+      const snapshot = conversation.getSnapshot();
+      const tool = snapshot.rows.window.find((row) => row.kind === "toolCall")!;
+      expect(snapshot.pendingInteractions[0]?.anchorRowId).toBe(tool.rowId);
+      expect(tool).toMatchObject({ status: "pendingApproval" });
+    } finally {
+      await service.cancel(
+        { instanceId: "workspace", taskId: "root" },
+        "cleanup",
+      );
+      await pending;
+    }
+  },
+);
 
 it("审批请求进入原pendingInteractions，批准后移除阻塞且保留原工具身份", () => {
   const conversation = host();

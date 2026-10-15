@@ -26,12 +26,6 @@ import { createCodeUiPlugin } from "../features/code-ui/plugin.js";
 import { createComputerUsePlugin } from "../features/computer-use/plugin.js";
 import { createContextHistoryPlugin } from "../features/context-history/plugin.js";
 import { createDynamicUiPlugin } from "../features/dynamic-ui/plugin.js";
-import { createDesignApprovalsPlugin } from "../features/execution/design-approvals-plugin.js";
-import { createDesignGoalHttpPlugin } from "../features/execution/design-goal-http-plugin.js";
-import { createDesignGoalsPlugin } from "../features/execution/design-goals-plugin.js";
-import { createDesignRunHostPlugin } from "../features/execution/design-run-host-plugin.js";
-import { createDesignTaskHttpPlugin } from "../features/execution/design-task-http-plugin.js";
-import { createDesignTasksPlugin } from "../features/execution/design-tasks-plugin.js";
 import { createExecutionScopesPlugin } from "../features/execution/plugin.js";
 import { createFlowHostPlugin } from "../features/flow/plugin.js";
 import { createGenerationTargetsPlugin } from "../features/generation/file-targets-plugin.js";
@@ -198,11 +192,6 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     // 检查点（影子 git）在 agent-runs 之前装配：后者的轮次钩子经 tryGet 消费它
     createCheckpointsPlugin(),
     createGoalsPlugin(),
-    createDesignGoalsPlugin(),
-    createDesignTasksPlugin(),
-    createDesignTaskHttpPlugin(),
-    createDesignGoalHttpPlugin(),
-    createDesignApprovalsPlugin(),
     createChatPlugin(),
     createSettingsPlugin(),
     createSettingsRoutesPlugin(),
@@ -271,7 +260,6 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
         : { mockEventDelayMs: deps.mockEventDelayMs }),
     }),
     createCodeUiPlugin(),
-    createDesignRunHostPlugin(),
     createRealtimePlugin(),
   ];
 }

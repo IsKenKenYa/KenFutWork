@@ -37,7 +37,7 @@ export function requirePlanningCall(
     handle.role !== "main" ||
     handle.agentId !== "main" ||
     actor.instanceId !== scope.instanceId ||
-    invocation.preset !== "code" ||
+    !["code", "design"].includes(invocation.preset) ||
     invocation.instanceId !== scope.instanceId ||
     invocation.taskId !== scope.taskId ||
     invocation.runId !== context.runId ||

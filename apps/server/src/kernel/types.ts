@@ -20,9 +20,6 @@ import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import type { CodeTerminalService } from "../features/code-terminal/types.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
 import type { ContextHistoryArchiveBindings } from "../features/context-history/types.js";
-import type { DesignGoalsService } from "../features/execution/design-goals-types.js";
-import type { DesignRunHost } from "../features/execution/design-run-host-types.js";
-import type { DesignTasksService } from "../features/execution/design-task-types.js";
 import type {
   ExecutionScopeHandle,
   ExecutionScopes,
@@ -103,9 +100,6 @@ export interface ServiceMap {
   codeUi: CodeUiService;
   codeTerminal: CodeTerminalService;
   executionScopes: ExecutionScopes;
-  designTasks: DesignTasksService;
-  designGoals: DesignGoalsService;
-  designRunHost: DesignRunHost;
   processSandbox: ProcessSandbox;
   taskWork: TaskWorkManager;
   /**

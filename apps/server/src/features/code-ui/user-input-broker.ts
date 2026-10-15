@@ -292,7 +292,7 @@ export function createUserInputBroker(): CodeUserInputService {
       if (closed) throw cancelled("结构化提问宿主已关闭。");
       invocation.signal.throwIfAborted();
       if (
-        invocation.preset !== "code" ||
+        !["code", "design"].includes(invocation.preset) ||
         invocation.toolName !== ASK_USER_QUESTION_TOOL_NAME ||
         invocation.access !== "read"
       )

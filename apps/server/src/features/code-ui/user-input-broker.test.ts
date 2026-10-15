@@ -98,10 +98,13 @@ function resolveAnswer(
   });
 }
 
-function questionInvocation(signal: AbortSignal): UserInputInvocation {
+function questionInvocation(
+  signal: AbortSignal,
+  preset: "code" | "design" = "code",
+): UserInputInvocation {
   return {
     ...identity,
-    preset: "code",
+    preset,
     mode: "build",
     approvalCeiling: "build",
     toolName: "AskUserQuestion",
@@ -193,118 +196,121 @@ describe("CodeUserInputService公开发布与结算", () => {
       unsubscribe();
     }
   });
-  it("requested先完成持久发布，resolved发布完成前请求与不同答案的并发回执均等待，首答案唯一结算", async () => {
-    const broker = createUserInputBroker();
-    const controller = new AbortController();
-    const invocation = questionInvocation(controller.signal);
-    const publication = controlledPublications(broker);
-    const request = broker.request(invocation);
-    const requestState = observeSettlement(request);
-    const completions: Promise<unknown>[] = [request];
-    try {
-      const requested = await Promise.race([
-        publication.requestedEntered.promise,
-        request.then(() => {
-          throw new Error("尚未发布问题，请求就提前完成。");
-        }),
-      ]);
-      expect(requested).toMatchObject({
-        type: "requested",
-        identity,
-        interaction: {
-          kind: "userInput",
-          payload: {
+  it.each(["code", "design"] as const)(
+    "%s requested先完成持久发布，resolved发布完成前请求与不同答案的并发回执均等待，首答案唯一结算",
+    async (preset) => {
+      const broker = createUserInputBroker();
+      const controller = new AbortController();
+      const invocation = questionInvocation(controller.signal, preset);
+      const publication = controlledPublications(broker);
+      const request = broker.request(invocation);
+      const requestState = observeSettlement(request);
+      const completions: Promise<unknown>[] = [request];
+      try {
+        const requested = await Promise.race([
+          publication.requestedEntered.promise,
+          request.then(() => {
+            throw new Error("尚未发布问题，请求就提前完成。");
+          }),
+        ]);
+        expect(requested).toMatchObject({
+          type: "requested",
+          identity,
+          interaction: {
             kind: "userInput",
-            toolName: "AskUserQuestion",
-            toolCallId: identity.toolCallId,
-            questions: [{ question: questionText, header: "运行能力" }],
+            payload: {
+              kind: "userInput",
+              toolName: "AskUserQuestion",
+              toolCallId: identity.toolCallId,
+              questions: [{ question: questionText, header: "运行能力" }],
+            },
           },
-        },
-      });
-      const interactionId = requested.interaction.interactionId;
-      expect(
-        broker.listPending(identity.instanceId, identity.taskId),
-      ).toHaveLength(1);
-      expect(
-        broker.find(identity.instanceId, identity.taskId, interactionId),
-      ).toMatchObject({ identity, interaction: { interactionId } });
-      const first = resolveAnswer(broker, interactionId, "共享内核");
-      const second = resolveAnswer(broker, interactionId, "分别运行");
-      completions.push(first, second);
-      const firstState = observeSettlement(first);
-      const secondState = observeSettlement(second);
-      const states = [requestState, firstState, secondState];
-      await Promise.resolve();
-      expect(publication.started.map((event) => event.type)).toEqual([
-        "requested",
-      ]);
-      expect(publication.published).toEqual([]);
-      expect(states.map((state) => state.settled)).toEqual([
-        false,
-        false,
-        false,
-      ]);
+        });
+        const interactionId = requested.interaction.interactionId;
+        expect(
+          broker.listPending(identity.instanceId, identity.taskId),
+        ).toHaveLength(1);
+        expect(
+          broker.find(identity.instanceId, identity.taskId, interactionId),
+        ).toMatchObject({ identity, interaction: { interactionId } });
+        const first = resolveAnswer(broker, interactionId, "共享内核");
+        const second = resolveAnswer(broker, interactionId, "分别运行");
+        completions.push(first, second);
+        const firstState = observeSettlement(first);
+        const secondState = observeSettlement(second);
+        const states = [requestState, firstState, secondState];
+        await Promise.resolve();
+        expect(publication.started.map((event) => event.type)).toEqual([
+          "requested",
+        ]);
+        expect(publication.published).toEqual([]);
+        expect(states.map((state) => state.settled)).toEqual([
+          false,
+          false,
+          false,
+        ]);
 
-      publication.requestedPublication.resolve(undefined);
-      const resolving = await Promise.race([
-        publication.resolvedEntered.promise,
-        first.then(() => {
-          throw new Error("答案尚未发布，回执就提前完成。");
-        }),
-      ]);
-      expect(resolving).toMatchObject({
-        type: "resolved",
-        action: "accept",
-        identity,
-        result: { questions, answers: { [questionText]: "共享内核" } },
-      });
-      expect(publication.started.map((event) => event.type)).toEqual([
-        "requested",
-        "resolved",
-      ]);
-      expect(publication.published.map((event) => event.type)).toEqual([
-        "requested",
-      ]);
-      expect(states.map((state) => state.settled)).toEqual([
-        false,
-        false,
-        false,
-      ]);
+        publication.requestedPublication.resolve(undefined);
+        const resolving = await Promise.race([
+          publication.resolvedEntered.promise,
+          first.then(() => {
+            throw new Error("答案尚未发布，回执就提前完成。");
+          }),
+        ]);
+        expect(resolving).toMatchObject({
+          type: "resolved",
+          action: "accept",
+          identity,
+          result: { questions, answers: { [questionText]: "共享内核" } },
+        });
+        expect(publication.started.map((event) => event.type)).toEqual([
+          "requested",
+          "resolved",
+        ]);
+        expect(publication.published.map((event) => event.type)).toEqual([
+          "requested",
+        ]);
+        expect(states.map((state) => state.settled)).toEqual([
+          false,
+          false,
+          false,
+        ]);
 
-      publication.resolvedPublication.resolve(undefined);
-      const [firstResult, secondResult, answer] = await Promise.all([
-        first,
-        second,
-        request,
-      ]);
-      expect(firstResult).toEqual({ status: "resolved", action: "accept" });
-      expect(secondResult).toEqual({
-        status: "alreadyResolved",
-        reasonCode: "proto.alreadyResolved",
-      });
-      expect(answer).toEqual({
-        questions,
-        answers: { [questionText]: "共享内核" },
-      });
-      expect(publication.published.map((event) => event.type)).toEqual([
-        "requested",
-        "resolved",
-      ]);
-      expect(broker.listPending(identity.instanceId, identity.taskId)).toEqual(
-        [],
-      );
-      expect(
-        broker.find(identity.instanceId, identity.taskId, interactionId),
-      ).toMatchObject({ identity, interaction: { interactionId } });
-    } finally {
-      publication.requestedPublication.resolve(undefined);
-      publication.resolvedPublication.resolve(undefined);
-      controller.abort();
-      await broker.close("test cleanup");
-      await Promise.allSettled(completions);
-      publication.unsubscribe();
-    }
-  });
+        publication.resolvedPublication.resolve(undefined);
+        const [firstResult, secondResult, answer] = await Promise.all([
+          first,
+          second,
+          request,
+        ]);
+        expect(firstResult).toEqual({ status: "resolved", action: "accept" });
+        expect(secondResult).toEqual({
+          status: "alreadyResolved",
+          reasonCode: "proto.alreadyResolved",
+        });
+        expect(answer).toEqual({
+          questions,
+          answers: { [questionText]: "共享内核" },
+        });
+        expect(publication.published.map((event) => event.type)).toEqual([
+          "requested",
+          "resolved",
+        ]);
+        expect(
+          broker.listPending(identity.instanceId, identity.taskId),
+        ).toEqual([]);
+        expect(
+          broker.find(identity.instanceId, identity.taskId, interactionId),
+        ).toMatchObject({ identity, interaction: { interactionId } });
+      } finally {
+        publication.requestedPublication.resolve(undefined);
+        publication.resolvedPublication.resolve(undefined);
+        controller.abort();
+        await broker.close("test cleanup");
+        await Promise.allSettled(completions);
+        publication.unsubscribe();
+      }
+    },
+  );
   it("caller修改已返回答案、嵌套注解和问题后，同一合法工具调用重放仍返回首次Alpha与原始内容", async () => {
     const broker = createUserInputBroker();
     const controller = new AbortController();

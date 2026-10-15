@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { instanceSettingsSchema } from "@kenfutwork/shared";
+import { type CodeUiEvent, instanceSettingsSchema } from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { afterEach, expect, it } from "vitest";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
@@ -61,9 +61,12 @@ async function fixture() {
     env: {},
   } as unknown as CodeUiServiceDeps);
   cleanups.push(() => service.closeConnections());
+  const notifications: CodeUiEvent[] = [];
   const connection = await service.openConnection(
     instance.actor,
-    async () => {},
+    async (event) => {
+      notifications.push(event);
+    },
     () => {},
   );
   const app = Fastify();
@@ -74,8 +77,41 @@ async function fixture() {
   cleanups.push(() => app.close());
   const rpc = (payload: Record<string, unknown>) =>
     app.inject({ method: "POST", url: "/api/code-ui/rpc", payload });
-  return { actor: instance.actor, connection, rpc };
+  return { actor: instance.actor, connection, rpc, service, notifications };
 }
+
+it("无Task/画布订阅的宿主SSE收到文档索引通知，剥离正文/凭据且连接释放后不再发送", async () => {
+  const f = await fixture();
+  const message = {
+    type: "canvas.document.updated" as const,
+    canvasId: randomUUID(),
+    projectId: randomUUID(),
+    revision: "a".repeat(64),
+    deleted: false,
+    content: "private-document",
+    credential: "private-key",
+  };
+  await f.service.notifyCanvasDocumentUpdated(f.actor.instanceId, message);
+  expect(f.notifications).toEqual([
+    {
+      event: "canvasDocumentUpdated",
+      data: {
+        type: message.type,
+        canvasId: message.canvasId,
+        projectId: message.projectId,
+        revision: message.revision,
+        deleted: false,
+      },
+    },
+  ]);
+  expect(JSON.stringify(f.notifications)).not.toContain("private");
+  await f.connection.dispose();
+  await f.service.notifyCanvasDocumentUpdated(f.actor.instanceId, {
+    ...message,
+    deleted: true,
+  });
+  expect(f.notifications).toHaveLength(1);
+});
 
 it("空 connectionId 视为未绑定：connection-less 读取照常返回，不误报连接丢失", async () => {
   const f = await fixture();
