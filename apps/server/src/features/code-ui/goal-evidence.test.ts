@@ -175,3 +175,34 @@ it("缺少原始命令的成功退出结果不能作为Goal验收证据", () => 
     expect(() => goalEvidence([receipt], "r", ["row:1"])).toThrow();
   }
 });
+
+it("画布工具的失败和零应用结果不能验收，部分成功保留真实结果", () => {
+  for (const result of [
+    { error: "write_failed", message: "画布保存失败。" },
+    { success: false },
+    { ok: false },
+    { success: true, applied: 0, errors: ["[skip] element not found"] },
+  ]) {
+    const receipt = {
+      ...row("ignored", result),
+      toolName: "manipulate_canvas",
+    };
+    expect(goalEvidenceCandidates([receipt], "r", 7)).toEqual([]);
+    expect(() => goalEvidence([receipt], "r", ["row:1"])).toThrow();
+  }
+
+  const result = {
+    success: true,
+    applied: 1,
+    summary: "added text",
+    errors: ["[skip] element not found"],
+  };
+  const receipt = { ...row("ignored", result), toolName: "manipulate_canvas" };
+  expect(goalEvidenceCandidates([receipt], "r", 7)).toEqual([
+    { id: "row:1", kind: "toolCall", revision: 7 },
+  ]);
+  expect(goalEvidence([receipt], "r", ["row:1"])[0]).toMatchObject({
+    passed: true,
+    detail: JSON.stringify(result),
+  });
+});
