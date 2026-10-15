@@ -5,8 +5,8 @@ import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import { registerBlobRoutes } from "../../http/blobs.js";
 import { createLocalFsBlobStore } from "../blob/providers/local-fs.js";
-import { createChatRepository } from "../chat/repository.js";
-import { createDesignTasksService } from "../execution/design-tasks.js";
+import { createCodeUiConversation } from "../code-ui/conversation.js";
+import { createCodeUiRepository } from "../code-ui/repository.js";
 import { createScopeRepository } from "../execution/scope-repository.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import { createProjectFileRepository } from "../project-files/repository.js";
@@ -21,17 +21,13 @@ describe.skipIf(process.env.KENFUTWORK_DESIGN_TASK_TEST_PG !== "1")(
     it("Project稳定目录：Canvas与新Task同根，旧分流目录明确冲突，素材读写保持同根", async () => {
       const db = await createTaskWorkDatabase();
       const app = Fastify();
-      const tasks = createDesignTasksService({
-        persistence: db.persistence,
-        localInstance: db.localInstance,
-      });
       try {
         const oldRoot = join(db.directory, "old-canvas"),
           newRoot = join(db.directory, "new-canvas");
         await mkdir(oldRoot);
         await mkdir(newRoot);
         const projects = createProjectRepository(db.persistence);
-        const { project, canvas } = await projects.createProject({
+        const { project } = await projects.createProject({
           instanceId: db.instanceId,
           createdByClientId: db.actor.accessClientId,
           kind: "design",
@@ -41,14 +37,25 @@ describe.skipIf(process.env.KENFUTWORK_DESIGN_TASK_TEST_PG !== "1")(
           canvasName: "旧画布",
           workDir: oldRoot,
         });
-        if (!canvas) throw new Error("Canvas缺失");
         const sql = db.persistence.forInstance(db.instanceId);
+        await sql.execute(
+          "update public.projects set enabled_modes=array['design','code']::text[] where id=$1",
+          [project.id],
+        );
+        const canvases = createCanvasRepository(db.persistence);
+        const canvas = await canvases.create({
+          instanceId: db.instanceId,
+          projectId: project.id,
+          canvasId: randomUUID(),
+          name: "旧画布",
+        });
+        if (!canvas) throw new Error("Canvas缺失");
+        await canvases.claimRoot(db.instanceId, canvas.id, async () => oldRoot);
         // Corrupted or historical divergent Project paths are rejected, not adopted.
         await sql.execute(
           "update public.projects set work_dir=$2 where instance_id=:instance and id=$1",
           [project.id, newRoot],
         );
-        const canvases = createCanvasRepository(db.persistence);
         await expect(
           canvases.claimRoot(
             db.instanceId,
@@ -70,20 +77,40 @@ describe.skipIf(process.env.KENFUTWORK_DESIGN_TASK_TEST_PG !== "1")(
             async (workDir) => workDir!,
           ),
         ).toBe(oldRoot);
-        const chat = createChatRepository(db.persistence);
+        const tasks = createCodeUiRepository(db.persistence);
         for (let index = 0; index < 2; index++) {
-          const prepared = await tasks.prepareCreation(db.actor, canvas.id);
-          if (!prepared) throw new Error("Task准备缺失");
-          expect(prepared.rootDirectory).toBe(oldRoot);
-          const session = await chat.createSession(db.instanceId, {
-            canvasId: canvas.id,
-            threadId: randomUUID(),
-            createdByClientId: db.actor.accessClientId,
-            designTaskPreparation: prepared,
+          const sessionId = randomUUID();
+          const host = createCodeUiConversation({
+            sessionId,
+            workspacePath: oldRoot,
+            config: {
+              provider: "zcode",
+              model: "test",
+              thought: "",
+              followupMode: "queue",
+            },
+            workContext: { preset: "design", canvasId: canvas.id },
           });
-          if (!session) throw new Error("Task缺失");
+          await tasks.createRoot(db.instanceId, {
+            sessionId,
+            projectId: project.id,
+            scope: {
+              ...db.context.scope,
+              taskId: sessionId,
+              projectId: project.id,
+              rootDirectory: oldRoot,
+            },
+            createdByClientId: db.actor.accessClientId,
+            threadId: randomUUID(),
+            state: host.exportState(),
+            command: {
+              clientId: "fixture",
+              commandId: randomUUID(),
+              fingerprint: randomUUID(),
+            },
+          });
           expect(
-            (await tasks.readPolicy(db.actor, session.id)).rootDirectory,
+            (await tasks.find(db.instanceId, sessionId))?.root_directory,
           ).toBe(oldRoot);
         }
         const newCanvasId = randomUUID();
@@ -253,7 +280,6 @@ describe.skipIf(process.env.KENFUTWORK_DESIGN_TASK_TEST_PG !== "1")(
         }
       } finally {
         await app.close();
-        await tasks.close();
         await db.close();
       }
     }, 60000);

@@ -29,16 +29,19 @@ export interface CanvasAssetLocations {
       expectedVersion: string;
       expectedRevision: string;
     },
+    beforePublish?: () => Promise<void>,
   ): Promise<import("../project-files/types.js").ProjectFileReceipt>;
   export(
     actor: LocalActor,
     canvasId: string,
     expectedRevision: string,
+    beforePublish?: () => Promise<void>,
   ): Promise<{ filename: string; bytes: Uint8Array; revision: string }>;
   restoreReferences(
     actor: LocalActor,
     canvasId: string,
     expectedRevision: string,
+    beforePublish?: () => Promise<void>,
   ): Promise<{ revision: string; assetIds: string[] }>;
 }
 const conflict = () =>
@@ -59,7 +62,10 @@ const knownVideo = (actor: LocalActor, link: unknown) => {
   return link.slice(prefix.length);
 };
 export function createCanvasAssetLocations(deps: {
-  canvases: Pick<CanvasRepository, "findById" | "claimRoot">;
+  canvases: Pick<
+    CanvasRepository,
+    "findById" | "claimRoot" | "withDocumentLock" | "notifyChanged"
+  >;
   localInstance: Pick<LocalInstanceService, "resolve">;
   projects: Pick<ProjectService, "getProject">;
   exportMaxBytes(actor: LocalActor): Promise<number>;
@@ -72,7 +78,9 @@ export function createCanvasAssetLocations(deps: {
     actor: LocalActor,
     canvasId: string,
     expectedRevision: string,
+    beforePublish?: () => Promise<void>,
   ) {
+    await beforePublish?.();
     const instance = await deps.localInstance.resolve(actor);
     const row = await deps.canvases.findById(actor.instanceId, canvasId);
     if (!row) throw new ProjectFileError("not_found", "画布不存在", 404);
@@ -97,6 +105,7 @@ export function createCanvasAssetLocations(deps: {
         "画布布局文件缺失，请恢复已登记的布局",
       );
     if (stored.revision !== expectedRevision) throw conflict();
+    await beforePublish?.();
     return { content: stored.content, projectId: row.project_id, root };
   }
   async function unchanged(
@@ -106,12 +115,13 @@ export function createCanvasAssetLocations(deps: {
   ) {
     await snapshot(actor, canvasId, revision);
   }
-  return {
-    async move(actor, canvasId, assetId, input) {
+  const service: CanvasAssetLocations = {
+    async move(actor, canvasId, assetId, input, beforePublish) {
       const { content, projectId, root } = await snapshot(
         actor,
         canvasId,
         input.expectedRevision,
+        beforePublish,
       );
       const location = await deps.projectFiles.inspect(actor, assetId);
       if (
@@ -167,15 +177,25 @@ export function createCanvasAssetLocations(deps: {
 
       let moved = false;
       try {
-        await createCanvasFileStore({ projectRoot: root }).update(
+        await createCanvasFileStore({
+          projectRoot: root,
+          ...(beforePublish ? { beforePublish } : {}),
+        }).update(
           canvasId,
           { ...content, files, elements },
           input.expectedRevision,
           async () => {
-            await deps.projectFiles.move(actor, assetId, input.relativePath, {
-              expectedRelativePath: input.expectedRelativePath,
-              expectedVersion: input.expectedVersion,
-            });
+            await beforePublish?.();
+            await deps.projectFiles.move(
+              actor,
+              assetId,
+              input.relativePath,
+              {
+                expectedRelativePath: input.expectedRelativePath,
+                expectedVersion: input.expectedVersion,
+              },
+              beforePublish,
+            );
             moved = true;
           },
         );
@@ -201,11 +221,12 @@ export function createCanvasAssetLocations(deps: {
       }
       return deps.projectFiles.inspect(actor, assetId);
     },
-    async export(actor, canvasId, expectedRevision) {
+    async export(actor, canvasId, expectedRevision, beforePublish) {
       const { content, projectId } = await snapshot(
         actor,
         canvasId,
         expectedRevision,
+        beforePublish,
       );
       const maximum = await deps.exportMaxBytes(actor);
       let archiveSize = 1024; // ustar 以两个512字节块结束。
@@ -291,6 +312,7 @@ export function createCanvasAssetLocations(deps: {
         } else elements.push(element);
       }
       await unchanged(actor, canvasId, expectedRevision);
+      await beforePublish?.();
       const layout = Buffer.from(
         JSON.stringify({ ...content, elements, files }),
       );
@@ -305,11 +327,12 @@ export function createCanvasAssetLocations(deps: {
         ]),
       };
     },
-    async restoreReferences(actor, canvasId, expectedRevision) {
+    async restoreReferences(actor, canvasId, expectedRevision, beforePublish) {
       const { content, projectId } = await snapshot(
         actor,
         canvasId,
         expectedRevision,
+        beforePublish,
       );
       const references = Object.values(content.files).map((file) => {
         if (
@@ -356,14 +379,56 @@ export function createCanvasAssetLocations(deps: {
         actor,
         projectId,
         references,
-        () => unchanged(actor, canvasId, expectedRevision),
+        async () => {
+          await beforePublish?.();
+          await unchanged(actor, canvasId, expectedRevision);
+        },
         canvasId,
       );
       await unchanged(actor, canvasId, expectedRevision);
+      await beforePublish?.();
       return {
         revision: expectedRevision,
         assetIds: [...new Set(restored.map((file) => file.assetId))],
       };
     },
+  };
+  const locked = <T>(
+    actor: LocalActor,
+    canvasId: string,
+    guard: (() => Promise<void>) | undefined,
+    operation: (authorize: () => Promise<void>) => Promise<T>,
+  ) =>
+    deps.canvases.withDocumentLock(actor.instanceId, canvasId, (signal) =>
+      operation(async () => {
+        signal.throwIfAborted();
+        await guard?.();
+        signal.throwIfAborted();
+      }),
+    );
+  return {
+    move: (actor, id, assetId, input, guard) =>
+      locked(actor, id, guard, async (authorize) => {
+        const moved = await service.move(actor, id, assetId, input, authorize);
+        if (input.relativePath !== input.expectedRelativePath)
+          await deps.canvases.notifyChanged(actor.instanceId, id);
+        return moved;
+      }),
+    export: (actor, id, revision, guard) =>
+      locked(actor, id, guard, (authorize) =>
+        service.export(actor, id, revision, authorize),
+      ),
+    restoreReferences: (actor, id, revision, guard) =>
+      locked(actor, id, guard, async (authorize) => {
+        const restored = await service.restoreReferences(
+          actor,
+          id,
+          revision,
+          authorize,
+        );
+        if (restored.assetIds.length)
+          await deps.canvases.notifyChanged(actor.instanceId, id);
+        return restored;
+      }),
   };
 }

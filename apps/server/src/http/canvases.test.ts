@@ -34,6 +34,14 @@ async function fixture(
     };
   });
   const service: CanvasService = {
+    listCanvases: async () => [],
+    createCanvas: async () => {
+      throw new Error("unused");
+    },
+    renameCanvas: async () => {
+      throw new Error("unused");
+    },
+    deleteCanvas: async () => {},
     readCanvasContent: async () => content,
     getCanvas: async () => {
       if (options.readError) throw options.readError;

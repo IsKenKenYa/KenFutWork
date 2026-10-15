@@ -169,6 +169,12 @@ it.each(["moved", "version", "missing"] as const)(
     };
     const assets = createCanvasAssetLocations({
       canvases: {
+        notifyChanged: async () => {},
+        withDocumentLock: async (
+          _instance: string,
+          _id: string,
+          operation: (signal: AbortSignal) => Promise<unknown>,
+        ) => operation(new AbortController().signal),
         findById: async () => f.row(),
         claimRoot: async () => f.root,
       },
@@ -450,6 +456,14 @@ async function fileService(options: { uploadFails?: boolean } = {}) {
     dataDir: root,
   });
   const repository: CanvasRepository = {
+    notificationTarget: async () => null,
+    notifyChanged: async () => {},
+    withDocumentLock: async (_instance, _id, operation) =>
+      operation(new AbortController().signal),
+    list: async () => (row && active ? [structuredClone(row)] : []),
+    create: async () => null,
+    rename: async () => 0,
+    remove: async () => 0,
     claimRoot: async () => root,
     findById: async (id) => (id === INSTANCE_ID ? structuredClone(row) : null),
     findProjectBrandKitId: async () => null,

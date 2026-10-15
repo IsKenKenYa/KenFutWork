@@ -19,6 +19,12 @@ export type CanvasFileAppend = {
   files?: Record<string, Record<string, unknown>> | undefined;
 };
 export type CanvasFileStore = {
+  /** 元数据变更与内容写入共用锁；CAS通过后才提交索引变更。 */
+  mutateIndex<T>(
+    canvasId: string,
+    expectedRevision: string,
+    mutation: () => Promise<T>,
+  ): Promise<T>;
   appendLatest(
     canvasId: string,
     input: CanvasFileAppend,
@@ -224,6 +230,28 @@ export function createCanvasFileStore(options: {
     }
   };
   return {
+    async mutateIndex(canvasId, expectedRevision, mutation) {
+      canvasContentPath(options.projectRoot, canvasId);
+      const root = await realpath(options.projectRoot);
+      const path = canvasContentPath(root, canvasId);
+      const previousLock = locks.get(path) ?? Promise.resolve();
+      const operation = previousLock
+        .catch(() => {})
+        .then(async () => {
+          await options.beforePublish?.();
+          if ((await checkedRoot(options.projectRoot, false)) !== root)
+            throw invalidPath();
+          if ((await readPath(path))?.revision !== expectedRevision)
+            throw conflict();
+          return mutation();
+        });
+      locks.set(path, operation);
+      try {
+        return await operation;
+      } finally {
+        if (locks.get(path) === operation) locks.delete(path);
+      }
+    },
     read,
     save: (canvasId, content, expectedRevision) =>
       publish(canvasId, expectedRevision, () => content),
@@ -255,7 +283,17 @@ function mergeAppend(
         ? elements.find((entry) => entry.id === element.id)
         : undefined;
     if (previous) {
-      if (!isDeepStrictEqual(previous, element)) throw conflict();
+      const published = (
+        previous.customData as Record<string, unknown> | undefined
+      )?.generationFingerprint;
+      const incoming = (
+        element.customData as Record<string, unknown> | undefined
+      )?.generationFingerprint;
+      if (
+        !(typeof published === "string" && published === incoming) &&
+        !isDeepStrictEqual(previous, element)
+      )
+        throw conflict();
     } else elements.push(element);
   }
   const files = { ...content.files };

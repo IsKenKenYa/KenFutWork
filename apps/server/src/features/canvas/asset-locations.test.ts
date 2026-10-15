@@ -67,6 +67,7 @@ async function fixture(maximum = 256 * 1024 * 1024) {
       _assetId: string,
       nextPath: string,
       expected?: { expectedRelativePath: string; expectedVersion: string },
+      beforePublish?: () => Promise<void>,
     ) => {
       if (
         !expected ||
@@ -75,6 +76,7 @@ async function fixture(maximum = 256 * 1024 * 1024) {
         fingerprintOf(await readFile(join(root, currentPath))) !== version
       )
         throw Object.assign(new Error("素材已改变"), { code: "file_conflict" });
+      await beforePublish?.();
       await mkdir(dirname(join(root, nextPath)), { recursive: true });
       await rename(join(root, currentPath), join(root, nextPath));
       currentPath = nextPath;
@@ -91,6 +93,12 @@ async function fixture(maximum = 256 * 1024 * 1024) {
   const restoreIndex = vi.fn(async () => [{ assetId }]);
   const deps = {
     canvases: {
+      notifyChanged: async () => {},
+      withDocumentLock: async (
+        _instance: string,
+        _id: string,
+        operation: (signal: AbortSignal) => Promise<unknown>,
+      ) => operation(new AbortController().signal),
       claimRoot: async () => root,
       findById: async () => ({
         id: canvasId,
@@ -344,7 +352,8 @@ it("compensates the file move when an external layout change wins publication", 
   ).rejects.toMatchObject({ code: "revision_conflict" });
 
   expect(f.move).toHaveBeenCalledTimes(2);
-  expect(f.move.mock.calls.map((call) => call.slice(1))).toEqual([
+  expect(f.move.mock.calls[0]?.[4]).toEqual(expect.any(Function));
+  expect(f.move.mock.calls.map((call) => call.slice(1, 4))).toEqual([
     [
       f.assetId,
       "new.png",
