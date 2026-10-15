@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   toolRefresh: vi.fn(),
   editorMount: vi.fn(),
   editorUnmount: vi.fn(),
+  editorRender: vi.fn(),
   startRun: vi.fn(),
   cancelRun: vi.fn(),
   connected: false,
@@ -70,6 +71,7 @@ vi.mock("../src/components/canvas-editor", async () => {
   const { useEffect } = await import("react");
   return {
     CanvasEditor(props: Parameters<typeof CanvasEditor>[0]) {
+      mocks.editorRender(props);
       useEffect(() => {
         mocks.editorMount(props.canvasId);
         props.onPrepareAssetOperation?.(mocks.prepareAssets);
@@ -458,6 +460,107 @@ test("生成器刷新GET迟到前切文档，旧等待结束且不把旧快照�
   expect(mocks.applySnapshot).not.toHaveBeenCalled();
   expect(mocks.fetchCanvas).toHaveBeenCalledTimes(reads);
   expect(view.getByTestId("editor").textContent).toContain("revision-b");
+});
+
+test("切文档后旧编辑器保存回执不能覆盖新revision或干扰素材恢复与刷新", async () => {
+  mocks.editorApiReady = true;
+  const view = render(<CanvasPage />);
+  await view.findByTestId("editor");
+  const oldEditor: Parameters<typeof CanvasEditor>[0] =
+    mocks.editorRender.mock.calls.at(-1)?.[0];
+
+  mocks.query = new URLSearchParams("id=canvas-b&editor=1");
+  mocks.fetchCanvas.mockResolvedValue(
+    canvas("revision-b", "canvas-b", "project-b"),
+  );
+  mocks.prepareAssets.mockResolvedValue("saved-revision-b");
+  view.rerender(<CanvasPage />);
+  await waitFor(() =>
+    expect(view.getByTestId("editor").textContent).toContain(
+      "canvas-b: revision-b",
+    ),
+  );
+
+  await act(async () => oldEditor.onRevisionChanged?.("old-saved-revision"));
+  expect(view.getByTestId("editor").textContent).toContain(
+    "canvas-b: revision-b",
+  );
+  fireEvent.click(view.getByRole("button", { name: "生成结果刷新" }));
+  await act(async () => {
+    const pending: Promise<void> = mocks.toolRefresh.mock.calls[0]?.[0];
+    await pending;
+  });
+  fireEvent.click(view.getByRole("button", { name: "恢复素材" }));
+  await waitFor(() =>
+    expect(mocks.restoreAssets).toHaveBeenCalledWith(
+      null,
+      "canvas-b",
+      "saved-revision-b",
+    ),
+  );
+  expect(mocks.prepareAssets).toHaveBeenCalledOnce();
+  expect(mocks.applySnapshot).not.toHaveBeenCalled();
+  expect(mocks.assetOperationError).not.toHaveBeenCalled();
+});
+
+test("跨文档相同revision的旧快照回执不能提前确认新画布刷新", async () => {
+  mocks.editorApiReady = true;
+  mocks.handleSnapshot.mockImplementation(() => {});
+  mocks.fetchCanvas
+    .mockResolvedValueOnce(canvas())
+    .mockResolvedValueOnce(canvas("shared-revision"));
+  const view = render(<CanvasPage />);
+  fireEvent.click(await view.findByRole("button", { name: "生成结果刷新" }));
+  await waitFor(() => expect(mocks.applySnapshot).toHaveBeenCalledOnce());
+  const oldEditor: Parameters<typeof CanvasEditor>[0] =
+    mocks.editorRender.mock.calls.at(-1)?.[0];
+
+  mocks.query = new URLSearchParams("id=canvas-b&editor=1");
+  mocks.fetchCanvas.mockResolvedValue(
+    canvas("revision-b", "canvas-b", "project-b"),
+  );
+  view.rerender(<CanvasPage />);
+  await waitFor(() =>
+    expect(view.getByTestId("editor").textContent).toContain("canvas-b"),
+  );
+  expect(mocks.applySnapshot).toHaveBeenCalledOnce();
+  mocks.fetchCanvas.mockResolvedValue(
+    canvas("shared-revision", "canvas-b", "project-b"),
+  );
+  const snapshotsBeforeRefresh = mocks.applySnapshot.mock.calls.length;
+  fireEvent.click(view.getByRole("button", { name: "生成结果刷新" }));
+  await waitFor(() => {
+    expect(mocks.applySnapshot).toHaveBeenCalledTimes(
+      snapshotsBeforeRefresh + 1,
+    );
+    const editor: Parameters<typeof CanvasEditor>[0] =
+      mocks.editorRender.mock.calls.at(-1)?.[0];
+    expect(editor.canvasId).toBe("canvas-b");
+    expect(editor.remoteSnapshot?.revision).toBe("shared-revision");
+    expect(mocks.toolRefresh).toHaveBeenCalledTimes(2);
+  });
+  const finished = vi.fn();
+  const pending: Promise<void> = mocks.toolRefresh.mock.calls[1]?.[0];
+  void pending.then(finished);
+
+  await act(async () => oldEditor.onRemoteSnapshotHandled?.("shared-revision"));
+  expect(finished).not.toHaveBeenCalled();
+  const editor: Parameters<typeof CanvasEditor>[0] =
+    mocks.editorRender.mock.calls.at(-1)?.[0];
+  expect(editor.remoteSnapshot?.revision).toBe("shared-revision");
+  expect(view.getByTestId("editor").textContent).toContain(
+    "canvas-b: revision-b",
+  );
+
+  await act(async () => {
+    editor.onRevisionChanged?.("shared-revision");
+    editor.onRemoteSnapshotHandled?.("shared-revision");
+    await pending;
+  });
+  expect(finished).toHaveBeenCalledOnce();
+  expect(view.getByTestId("editor").textContent).toContain(
+    "canvas-b: shared-revision",
+  );
 });
 
 test("素材恢复先等待保存再用真实revision恢复，最后走同一快照链", async () => {

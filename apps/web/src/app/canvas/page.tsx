@@ -97,13 +97,24 @@ function CanvasPageContent() {
     canvasRevisionRef.current = revision;
     setCanvasRevision(revision);
   }, []);
-  const handleRemoteSnapshotHandled = useCallback((revision: string) => {
-    setRemoteSnapshot((snapshot) =>
-      snapshot?.revision === revision ? null : snapshot,
-    );
-    remoteSyncWaitersRef.current.get(revision)?.();
-    remoteSyncWaitersRef.current.delete(revision);
-  }, []);
+  const handleEditorRevisionChanged = useCallback(
+    (revision: string) => {
+      if (!canvasData || activeCanvasIdRef.current !== canvasData.id) return;
+      handleRevisionChanged(revision);
+    },
+    [canvasData, handleRevisionChanged],
+  );
+  const handleRemoteSnapshotHandled = useCallback(
+    (revision: string) => {
+      if (!canvasData || activeCanvasIdRef.current !== canvasData.id) return;
+      setRemoteSnapshot((snapshot) =>
+        snapshot?.revision === revision ? null : snapshot,
+      );
+      remoteSyncWaitersRef.current.get(revision)?.();
+      remoteSyncWaitersRef.current.delete(revision);
+    },
+    [canvasData],
+  );
   const markCanvasDeleted = useCallback((id: string, projectId: string) => {
     if (activeCanvasIdRef.current !== id) return;
     bridgeRef.current?.publishDocumentUpdated({
@@ -295,6 +306,7 @@ function CanvasPageContent() {
     setError(null);
     setSyncError(null);
     setCanvasData(null);
+    setRemoteSnapshot(null);
     setActiveTaskId(null);
     setBrandKitId(null);
     prepareCanvasAssetOperationRef.current = null;
@@ -409,7 +421,7 @@ function CanvasPageContent() {
           initialContent={canvasData.content}
           remoteSnapshot={remoteSnapshot}
           onRemoteSnapshotHandled={handleRemoteSnapshotHandled}
-          onRevisionChanged={handleRevisionChanged}
+          onRevisionChanged={handleEditorRevisionChanged}
           onPrepareAssetOperation={registerCanvasAssetOperation}
           onApiReady={setExcalidrawApi}
           ws={ws}
