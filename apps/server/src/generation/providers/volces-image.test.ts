@@ -3,6 +3,34 @@ import { resolveInstanceImageProvider } from "../../providers/resolve.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
+it("Seedream HTTP429保留状态等待时间和上游错误码", async () => {
+  const request = vi.fn<typeof fetch>(async () =>
+    Response.json(
+      { error: { code: "RateLimitExceeded", message: "请求过于频繁" } },
+      { status: 429, headers: { "Retry-After": "13" } },
+    ),
+  );
+  vi.stubGlobal("fetch", request);
+  const provider = resolveInstanceImageProvider("volces", {
+    credentials: {
+      apiKey: "ark-key",
+      baseUrl: "https://ark.example/api/v3",
+    },
+    models: [{ id: "ep-user-endpoint", name: "Seedream" }],
+  });
+
+  await expect(
+    provider.generate({ model: "ep-user-endpoint", prompt: "一只猫" }),
+  ).rejects.toMatchObject({
+    provider: "volces",
+    code: "api_error",
+    status: 429,
+    retryAfter: "13",
+    upstreamCode: "RateLimitExceeded",
+  });
+  expect(request).toHaveBeenCalledOnce();
+});
+
 it("Seedream原生档位不丢画幅约束，显式像素保持优先", async () => {
   const request = vi.fn<typeof fetch>(async () =>
     Response.json({

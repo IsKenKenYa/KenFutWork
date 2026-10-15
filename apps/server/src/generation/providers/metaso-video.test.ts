@@ -21,6 +21,62 @@ describe("MetasoVideoProvider", () => {
     fetchMock.mockReset();
   });
 
+  it("Metaso非JSON HTTP429和401仍保留状态及等待时间", async () => {
+    const provider = new MetasoVideoProvider("secret", undefined, {
+      fetch: fetchMock as typeof fetch,
+    });
+
+    for (const status of [429, 401]) {
+      fetchMock.mockResolvedValueOnce(
+        new Response("非JSON供应商响应", {
+          status,
+          headers: { "content-type": "text/plain", "Retry-After": "23" },
+        }),
+      );
+
+      await expect(
+        provider.startAsync({ model: METASO_VIDEO_MODEL_ID, prompt: "一只猫" }),
+      ).rejects.toMatchObject({ status, retryAfter: "23" });
+      expect(fetchMock).toHaveBeenCalledOnce();
+      fetchMock.mockClear();
+    }
+  });
+
+  it("Metaso HTTP429保留状态等待时间和上游错误类型", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: {
+            type: "rate_limit_error",
+            message: "请求过于频繁",
+            http_code: 429,
+          },
+        }),
+        {
+          status: 429,
+          headers: {
+            "content-type": "application/json",
+            "Retry-After": "19",
+          },
+        },
+      ),
+    );
+    const provider = new MetasoVideoProvider("secret", undefined, {
+      fetch: fetchMock as typeof fetch,
+    });
+
+    await expect(
+      provider.startAsync({ model: METASO_VIDEO_MODEL_ID, prompt: "一只猫" }),
+    ).rejects.toMatchObject({
+      provider: "metaso",
+      code: "rate_limit_error",
+      status: 429,
+      retryAfter: "19",
+      upstreamCode: "rate_limit_error",
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("creates and polls a text-to-video task with the documented defaults", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ task_id: "task-1" }))

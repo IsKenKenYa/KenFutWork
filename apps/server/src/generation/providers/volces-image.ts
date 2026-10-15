@@ -6,6 +6,7 @@ import type {
 import {
   aspectRatioToDimensions,
   GenerationError,
+  generationHttpError,
   readGeneratedImage,
 } from "../utils.js";
 
@@ -106,11 +107,14 @@ export class VolcesImageProvider implements ImageProvider {
     });
 
     if (!response.ok) {
-      const errorBody = await response.json().catch(() => null);
-      throw new GenerationError(
+      const errorBody = (await response.json().catch(() => null)) as {
+        error?: { message?: string; code?: string };
+      } | null;
+      throw generationHttpError(
         "volces",
-        "api_error",
-        `Volces API error ${response.status}: ${(errorBody as { error?: { message?: string } })?.error?.message ?? "Unknown error"}`,
+        response,
+        `Volces API error ${response.status}: ${errorBody?.error?.message ?? "Unknown error"}`,
+        errorBody?.error?.code,
       );
     }
 

@@ -365,11 +365,20 @@ export class MetasoVideoProvider implements VideoProvider {
         PROVIDER_NAME,
         "malformed_response",
         `Metaso returned invalid JSON (HTTP ${response.status})`,
+        {
+          status: response.status,
+          retryAfter: response.headers.get("retry-after"),
+        },
       );
     }
 
     if (!response.ok) {
-      throw mapApiError(response.status, body, this.apiKey);
+      throw mapApiError(
+        response.status,
+        body,
+        this.apiKey,
+        response.headers.get("retry-after"),
+      );
     }
     if (!isRecord(body)) {
       throw new GenerationError(
@@ -583,6 +592,7 @@ function mapApiError(
   status: number,
   body: unknown,
   sensitiveValue: string,
+  retryAfter?: string | null,
 ): GenerationError {
   const envelope = isRecord(body) ? (body as ApiErrorEnvelope) : undefined;
   const apiType =
@@ -616,7 +626,11 @@ function mapApiError(
     "api_error";
   const detail = apiMessage ?? `Metaso API request failed with HTTP ${status}`;
   const suffix = requestId ? ` (request ${requestId})` : "";
-  return new GenerationError(PROVIDER_NAME, code, `${detail}${suffix}`);
+  return new GenerationError(PROVIDER_NAME, code, `${detail}${suffix}`, {
+    status,
+    retryAfter,
+    upstreamCode: apiType,
+  });
 }
 
 function redactSensitiveValue(value: string, sensitiveValue: string): string {
