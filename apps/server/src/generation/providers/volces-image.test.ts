@@ -3,6 +3,141 @@ import { resolveInstanceImageProvider } from "../../providers/resolve.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
+it("Seedream原生档位不丢画幅约束，显式像素保持优先", async () => {
+  const request = vi.fn<typeof fetch>(async () =>
+    Response.json({
+      data: [{ url: "https://cdn.example/pixels.png", size: "3072x2048" }],
+    }),
+  );
+  vi.stubGlobal("fetch", request);
+  const provider = resolveInstanceImageProvider("volces", {
+    credentials: {
+      apiKey: "ark-key",
+      baseUrl: "https://ark.example/api/v3",
+    },
+    models: [{ id: "ep-seedream-5-lite", name: "Seedream 5.0 lite" }],
+  });
+
+  for (const quality of ["2K", "4K"]) {
+    await expect(
+      provider.generate({
+        model: "ep-seedream-5-lite",
+        prompt: "一只猫",
+        quality,
+        aspectRatio: "16:9",
+      }),
+    ).rejects.toMatchObject({ provider: "volces", code: "unsupported" });
+  }
+  expect(request).not.toHaveBeenCalled();
+
+  await expect(
+    provider.generate({
+      model: "ep-seedream-5-lite",
+      prompt: "一只猫",
+      quality: "4K",
+      aspectRatio: "1:1",
+      width: 3072,
+      height: 2048,
+    }),
+  ).resolves.toMatchObject({ width: 3072, height: 2048 });
+  expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({
+    size: "3072x2048",
+  });
+
+  expect(request).toHaveBeenCalledOnce();
+});
+
+it("Seedream原生质量与格式发送合法组合，像素优先且不支持选项在HTTP前拒绝", async () => {
+  // 官方图片 API：5.0 lite 支持 2K/4K 与 png/jpeg；此 Endpoint fixture 代表该模型。
+  const combinations = [
+    {
+      quality: "4K",
+      outputFormat: "png",
+      dimensions: {},
+      size: "4K",
+      outputSize: "4096x4096",
+      wireFormat: "png",
+      mimeType: "image/png",
+    },
+    {
+      quality: "2K",
+      outputFormat: "jpg",
+      dimensions: {},
+      size: "2K",
+      outputSize: "2048x2048",
+      wireFormat: "jpeg",
+      mimeType: "image/jpeg",
+    },
+    {
+      quality: "4K",
+      outputFormat: "jpg",
+      dimensions: { width: 3072, height: 2048 },
+      size: "3072x2048",
+      outputSize: "3072x2048",
+      wireFormat: "jpeg",
+      mimeType: "image/jpeg",
+    },
+  ] as const;
+  let responseIndex = 0;
+  const request = vi.fn<typeof fetch>(async () =>
+    Response.json({
+      data: [
+        {
+          b64_json: "aGk=",
+          size: combinations[responseIndex++]?.outputSize,
+        },
+      ],
+    }),
+  );
+  vi.stubGlobal("fetch", request);
+  const provider = resolveInstanceImageProvider("volces", {
+    credentials: {
+      apiKey: "ark-key",
+      baseUrl: "https://ark.example/api/v3",
+    },
+    models: [{ id: "ep-seedream-5-lite", name: "Seedream 5.0 lite" }],
+  });
+
+  for (const combination of combinations) {
+    const image = await provider.generate({
+      model: "ep-seedream-5-lite",
+      prompt: "一只猫",
+      quality: combination.quality,
+      outputFormat: combination.outputFormat,
+      ...combination.dimensions,
+    });
+
+    expect(
+      JSON.parse(String(request.mock.calls.at(-1)?.[1]?.body)),
+    ).toMatchObject({
+      model: "ep-seedream-5-lite",
+      size: combination.size,
+      output_format: combination.wireFormat,
+      response_format: "b64_json",
+    });
+    expect(image).toMatchObject({
+      url: `data:${combination.mimeType};base64,aGk=`,
+      mimeType: combination.mimeType,
+    });
+  }
+  expect(request).toHaveBeenCalledTimes(3);
+
+  request.mockClear();
+  for (const option of [
+    { outputFormat: "webp" as const },
+    { quality: "cinematic" },
+  ]) {
+    await expect(
+      provider.generate({
+        model: "ep-seedream-5-lite",
+        prompt: "一只猫",
+        ...option,
+      }),
+    ).rejects.toMatchObject({ provider: "volces", code: "unsupported" });
+  }
+  expect(request).not.toHaveBeenCalled();
+});
+
 it("Seedream显式宽高发送精确像素，单个维度在HTTP前拒绝", async () => {
   const request = vi.fn<typeof fetch>(async () =>
     Response.json({ data: [{ url: "https://cdn.example/image.png" }] }),

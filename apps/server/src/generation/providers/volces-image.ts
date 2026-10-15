@@ -37,6 +37,37 @@ export class VolcesImageProvider implements ImageProvider {
         "图片宽高需同时填写，请补齐宽度和高度。",
       );
     }
+    const nativeSize =
+      params.quality === "2K" || params.quality === "4K"
+        ? params.quality
+        : undefined;
+    if (
+      params.quality != null &&
+      !nativeSize &&
+      !["standard", "hd", "ultra"].includes(params.quality)
+    ) {
+      throw new GenerationError(
+        "volces",
+        "unsupported",
+        "当前火山图片接入不支持此质量，请更换质量选项。",
+      );
+    }
+    if (nativeSize && params.aspectRatio && params.width == null) {
+      throw new GenerationError(
+        "volces",
+        "unsupported",
+        "原生尺寸档位不能同时指定画幅，请改用图片宽高。",
+      );
+    }
+    if (params.outputFormat === "webp") {
+      throw new GenerationError(
+        "volces",
+        "unsupported",
+        "当前火山图片接口不支持 WebP 输出，请选择 PNG 或 JPG。",
+      );
+    }
+    const wireFormat =
+      params.outputFormat === "jpg" ? "jpeg" : params.outputFormat;
     const aspectRatio = params.aspectRatio ?? "1:1";
     const [rw, rh] = aspectRatio.split(":").map(Number);
     const ratio = rw && rh ? Math.max(rw / rh, rh / rw) : 1;
@@ -53,7 +84,13 @@ export class VolcesImageProvider implements ImageProvider {
     const body = {
       model: params.model,
       prompt: params.prompt,
-      size: `${width}x${height}`,
+      size:
+        params.width != null
+          ? `${width}x${height}`
+          : (nativeSize ?? `${width}x${height}`),
+      ...(wireFormat
+        ? { output_format: wireFormat, response_format: "b64_json" }
+        : {}),
       ...(params.inputImages?.length ? { image: params.inputImages } : {}),
     };
 
@@ -78,12 +115,18 @@ export class VolcesImageProvider implements ImageProvider {
     }
 
     const data = (await response.json()) as {
-      data?: Array<{ url?: string; b64_json?: string; size?: string }>;
+      data?: Array<{
+        url?: string;
+        b64_json?: string;
+        size?: string;
+        output_format?: string;
+      }>;
     };
-    return readGeneratedImage("volces", data, {
-      width,
-      height,
-      mimeType: "image/png",
-    });
+    const outputFormat = data.data?.[0]?.output_format ?? wireFormat;
+    return readGeneratedImage(
+      "volces",
+      { ...data, ...(outputFormat ? { output_format: outputFormat } : {}) },
+      { width, height, mimeType: "image/png" },
+    );
   }
 }
