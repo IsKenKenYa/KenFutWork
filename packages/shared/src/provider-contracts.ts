@@ -22,6 +22,7 @@ export const providerProtocolSchema = z.enum([
   "volces",
   "metaso",
   "grsai",
+  "apimart",
   "dify-engine",
 ]);
 export type ProviderProtocol = z.infer<typeof providerProtocolSchema>;

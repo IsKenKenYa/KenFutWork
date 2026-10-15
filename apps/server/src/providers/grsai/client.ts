@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   GenerationError,
   generationHttpError,
+  redactGenerationMessage,
 } from "../../generation/utils.js";
 import type { InstanceCredentials } from "../types.js";
 
@@ -82,16 +83,10 @@ export class GrsaiClient {
     return this.request(`result?id=${encodeURIComponent(id)}`);
   }
   safeMessage(message: string): string {
-    for (const value of [
+    return redactGenerationMessage(message, [
       this.credentials.apiKey,
       ...Object.values(this.credentials.headers ?? {}),
-    ]) {
-      if (value)
-        message = message
-          .replaceAll(value, "[redacted]")
-          .replaceAll(encodeURIComponent(value), "[redacted]");
-    }
-    return message.replace(/[\r\n\t]+/g, " ").slice(0, 500);
+    ]);
   }
 }
 

@@ -117,9 +117,12 @@ async function acceptGeneration(
         },
         models: [{ id: payload.model, name: model?.name ?? payload.model }],
       });
-      const limit = provider.generateMany
-        ? (model?.imageGeneration?.maxOutputs ?? 1)
-        : 1;
+      const nativeBatch =
+        provider.generateMany ||
+        (provider.supportsAsyncBatch &&
+          provider.startAsync &&
+          provider.pollAsync);
+      const limit = nativeBatch ? (model?.imageGeneration?.maxOutputs ?? 1) : 1;
       const counts = Array.from(
         { length: Math.ceil(imageRequest.count / limit) },
         (_, index) => Math.min(limit, imageRequest.count - index * limit),

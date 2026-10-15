@@ -151,17 +151,27 @@ export function generationHttpError(
   });
 }
 
+/** 供应商错误只保留可读原因，清除明文及URL编码凭据。 */
+export function redactGenerationMessage(
+  message: string,
+  sensitiveValues: readonly string[],
+): string {
+  for (const value of sensitiveValues) {
+    if (value)
+      message = message
+        .replaceAll(value, "[redacted]")
+        .replaceAll(encodeURIComponent(value), "[redacted]");
+  }
+  return message.replace(/[\r\n\t]+/g, " ").slice(0, 500);
+}
+
 /** SDK 的 HTTP 边界保留 Job 调度需要的安全字段，不保留请求与凭据。 */
 export function createGenerationFetch(
   provider: string,
   sensitiveValues: readonly string[] = [],
 ): typeof fetch {
-  const redact = (value: string) => {
-    for (const sensitive of sensitiveValues) {
-      if (sensitive) value = value.replaceAll(sensitive, "[redacted]");
-    }
-    return value.replace(/[\r\n\t]+/g, " ").slice(0, 500);
-  };
+  const redact = (value: string) =>
+    redactGenerationMessage(value, sensitiveValues);
   return async (input, init) => {
     const response = await fetch(input, init);
     if (response.ok) return response;

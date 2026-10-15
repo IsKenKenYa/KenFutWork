@@ -2019,7 +2019,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: providerInstanceResponseSchema,
     summary: "创建供应商实例",
     description:
-      "创建供应商实例；GRSAI等原生媒体协议由对应驱动接入共享Job，模型能力随实例声明。apiKey存于本地明文凭据文件，授权设置可读取；非法头名/保留头/CRLF 等校验失败返回400。",
+      "创建供应商实例；GRSAI、APIMart等原生媒体协议由对应驱动接入共享Job，模型能力随实例声明。apiKey存于本地明文凭据文件，授权设置可读取；非法头名/保留头/CRLF 等校验失败返回400。",
   },
   {
     method: "patch",

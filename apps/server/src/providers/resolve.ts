@@ -6,6 +6,7 @@ import * as openaiAudio from "../features/voice/providers/openai-audio.js";
 import type { VoiceProvider } from "../features/voice/types.js";
 import type { ImageProvider, VideoProvider } from "../generation/types.js";
 import * as anthropic from "./anthropic/index.js";
+import * as apimart from "./apimart/index.js";
 import * as gemini from "./gemini/index.js";
 import * as googleImage from "./google-image/index.js";
 import * as grsai from "./grsai/index.js";
@@ -50,6 +51,7 @@ const IMAGE_ADAPTERS: Partial<
   "openai-compatible": openaiCompatible.createInstanceImageProvider,
   "google-image": googleImage.createInstanceImageProvider,
   grsai: grsai.createInstanceImageProvider,
+  apimart: apimart.createInstanceImageProvider,
   replicate: replicate.createInstanceImageProvider,
   volces: volces.createInstanceImageProvider,
 };
@@ -63,6 +65,7 @@ const VIDEO_ADAPTERS: Partial<
   replicate: replicate.createInstanceVideoProvider,
   metaso: metaso.createInstanceVideoProvider,
   grsai: grsai.createInstanceVideoProvider,
+  apimart: apimart.createInstanceVideoProvider,
   volces: volces.createInstanceVideoProvider,
 };
 

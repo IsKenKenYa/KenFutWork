@@ -55,6 +55,8 @@ export interface ImageProvider {
   prepareInputs?(params: ImageGenerateParams): Promise<ImageGenerateParams>;
   generate(params: ImageGenerateParams): Promise<GeneratedImage>;
   generateMany?(params: ImageGenerateParams): Promise<GeneratedImage[]>;
+  /** startAsync可按count原生批量；仍须模型明确声明maxOutputs，未知模型按单图。 */
+  readonly supportsAsyncBatch?: true;
   startAsync?(params: ImageGenerateParams): Promise<{ providerJobId: string }>;
   pollAsync?(providerJobId: string): Promise<ImageAsyncPollResult>;
   cancelAsync?(providerJobId: string): Promise<void>;

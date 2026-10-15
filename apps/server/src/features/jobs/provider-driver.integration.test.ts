@@ -21,9 +21,16 @@ import "./executors/image-generation.js";
 
 it
   .skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")
-  .each(["complete", "local-cancel"])(
-  "GRSAI驱动接入共享HTTP/Job、恢复与本地取消：%s",
+  .each([
+    "complete",
+    "local-cancel",
+    "apimart-multi",
+    "apimart-split",
+    "apimart-unknown",
+  ])(
+  "原生驱动接入共享HTTP/Job、恢复与本地取消：%s",
   async (mode) => {
+    const apimart = mode.startsWith("apimart");
     const db = await createTaskWorkDatabase();
     const png = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2Z0AAAAASUVORK5CYII=",
@@ -36,34 +43,74 @@ it
     const downloads: Array<string | undefined> = [];
     let baseUrl = "";
     const supplier = createServer(async (request, response) => {
-      if (request.url === "/output.png") {
+      if (request.url?.startsWith("/output.png")) {
         downloads.push(request.headers.authorization);
         response.setHeader("content-type", "image/png");
         response.end(png);
         return;
       }
       response.setHeader("content-type", "application/json");
-      if (request.method === "POST" && request.url === "/v1/api/generate") {
+      if (
+        request.method === "POST" &&
+        request.url ===
+          (apimart ? "/v1/images/generations" : "/v1/api/generate")
+      ) {
         let body = "";
         for await (const chunk of request) body += String(chunk);
         bodies.push(JSON.parse(body));
         submissions++;
         response.end(
-          JSON.stringify({ id: "durable-grsai-task", status: "running" }),
+          JSON.stringify(
+            apimart
+              ? {
+                  code: 200,
+                  data: [
+                    { task_id: "durable-apimart-task", status: "submitted" },
+                  ],
+                }
+              : { id: "durable-grsai-task", status: "running" },
+          ),
         );
         return;
       }
-      if (request.url === "/v1/api/result?id=durable-grsai-task") {
+      if (
+        request.url ===
+        (apimart
+          ? "/v1/tasks/durable-apimart-task"
+          : "/v1/api/result?id=durable-grsai-task")
+      ) {
         queries++;
         response.end(
           JSON.stringify(
-            completed
+            apimart
               ? {
-                  id: "durable-grsai-task",
-                  status: "succeeded",
-                  results: [{ url: `${baseUrl}/output.png` }],
+                  code: 200,
+                  data: {
+                    id: "durable-apimart-task",
+                    status: completed ? "completed" : "processing",
+                    ...(completed
+                      ? {
+                          result: {
+                            images: [
+                              {
+                                url: [
+                                  `${baseUrl}/output.png?a`,
+                                  `${baseUrl}/output.png?b`,
+                                ],
+                              },
+                            ],
+                          },
+                        }
+                      : {}),
+                  },
                 }
-              : { id: "durable-grsai-task", status: "running" },
+              : completed
+                ? {
+                    id: "durable-grsai-task",
+                    status: "succeeded",
+                    results: [{ url: `${baseUrl}/output.png` }],
+                  }
+                : { id: "durable-grsai-task", status: "running" },
           ),
         );
         return;
@@ -105,18 +152,20 @@ it
       });
       const instance = await providers.createInstance(db.actor, {
         name: "独立GRSAI驱动",
-        protocol: "grsai",
+        protocol: apimart ? "apimart" : "grsai",
         baseUrl,
         apiKey: "test-only-secret",
         models: [
           {
-            id: "nano-banana-2",
+            id: apimart ? "gpt-image-1-official" : "nano-banana-2",
             name: "我的图片",
             capability: "image",
             imageGeneration: {
-              qualities: ["1K"],
+              qualities: apimart ? ["high"] : ["1K"],
               outputFormats: [],
-              maxOutputs: 1,
+              ...(mode === "apimart-unknown"
+                ? {}
+                : { maxOutputs: apimart ? 4 : 1 }),
             },
           },
         ],
@@ -165,10 +214,15 @@ it
       const payload = {
         requestId: randomUUID(),
         providerInstanceId: instance.id,
-        model: "nano-banana-2",
+        model: apimart ? "gpt-image-1-official" : "nano-banana-2",
         prompt: "纸鹤",
-        quality: "1K",
-        inputImages: [`data:image/png;base64,${png.toString("base64")}`],
+        quality: apimart ? "high" : "1K",
+        count: mode === "apimart-split" ? 5 : apimart ? 3 : 1,
+        ...(apimart
+          ? {}
+          : {
+              inputImages: [`data:image/png;base64,${png.toString("base64")}`],
+            }),
       };
       const accepted = await app.inject({
         method: "POST",
@@ -177,6 +231,32 @@ it
         payload,
       });
       expect(accepted.statusCode).toBe(202);
+      const counts =
+        mode === "apimart-split"
+          ? [4, 1]
+          : mode === "apimart-unknown"
+            ? [1, 1, 1]
+            : [apimart ? 3 : 1];
+      expect(accepted.json().jobs).toHaveLength(counts.length);
+      const acceptedJobs = await Promise.all(
+        accepted
+          .json()
+          .jobs.map((item: { job_id: string }) =>
+            first.jobs.getJob(db.actor, item.job_id),
+          ),
+      );
+      expect(acceptedJobs.map((job) => job.payload.count)).toEqual(counts);
+      if (mode === "apimart-split" || mode === "apimart-unknown") {
+        const replay = await app.inject({
+          method: "POST",
+          url: "/api/agent/generate-image",
+          headers: { authorization: `Bearer ${db.desktopToken}` },
+          payload,
+        });
+        expect(replay.json()).toEqual(accepted.json());
+        expect(submissions).toBe(0);
+        return;
+      }
       const jobId = accepted.json().jobs[0].job_id as string;
       const loop = startJobLoop(first.context, {
         queues: ["image_generation_jobs"],
@@ -185,7 +265,9 @@ it
       await vi.waitFor(
         async () =>
           expect(await first.jobs.getJob(db.actor, jobId)).toMatchObject({
-            provider_job_id: "durable-grsai-task",
+            provider_job_id: apimart
+              ? "durable-apimart-task"
+              : "durable-grsai-task",
           }),
         { timeout: 5000 },
       );
@@ -224,21 +306,28 @@ it
       expect(submissions).toBe(1);
       expect(queries).toBeGreaterThan(0);
       expect(bodies).toEqual([
-        {
-          model: "nano-banana-2",
-          prompt: "纸鹤",
-          replyType: "async",
-          imageSize: "1K",
-          images: [png.toString("base64")],
-        },
+        apimart
+          ? {
+              model: "gpt-image-1-official",
+              prompt: "纸鹤",
+              n: 3,
+              quality: "high",
+            }
+          : {
+              model: "nano-banana-2",
+              prompt: "纸鹤",
+              replyType: "async",
+              imageSize: "1K",
+              images: [png.toString("base64")],
+            },
       ]);
       expect(JSON.stringify(final.payload)).not.toContain("test-only-secret");
       expect(JSON.stringify(final.payload)).not.toContain(
         png.toString("base64"),
       );
-      expect(final.result?.outputs).toHaveLength(1);
+      expect(final.result?.outputs).toHaveLength(apimart ? 2 : 1);
       expect(final.result?.outputs?.[0]).toMatchObject({ width: 1, height: 1 });
-      expect(downloads).toEqual([undefined]);
+      expect(downloads).toEqual(apimart ? [undefined, undefined] : [undefined]);
       const output = final.result?.outputs?.[0];
       if (!output) throw new Error("产物未保存");
       expect(
