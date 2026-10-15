@@ -27,6 +27,7 @@ const outputSchema = z.object({
 });
 const executionSchema = z.object({
   phase: z.enum(["ready", "submitting", "polling", "saving", "publishing"]),
+  attemptId: z.string().uuid().optional(),
   generated: mediaSchema.optional(),
   sourceObjectPath: z.string().optional(),
   stored: storedSchema.optional(),
@@ -41,6 +42,22 @@ export type JobExecutionWrite = {
   providerRevision?: number;
   leaseToken?: string;
 };
+
+const cancellationSchema = z.object({
+  state: z.enum(["pending", "requested", "local_only", "unknown"]),
+  attempts: z.number().int().nonnegative().default(0),
+  errorCode: z.string().optional(),
+  errorMessage: z.string().optional(),
+});
+export type JobCancellation = z.infer<typeof cancellationSchema>;
+
+export function readJobCancellation(
+  job: BackgroundJob,
+): JobCancellation | undefined {
+  return job.payload._generation_cancel === undefined
+    ? undefined
+    : cancellationSchema.parse(job.payload._generation_cancel);
+}
 
 export function readJobExecution(job: BackgroundJob): JobExecution {
   return executionSchema.parse(

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type {
   BackgroundJob,
   BackgroundJobStatus,
@@ -16,10 +16,12 @@ import type { QueueClient } from "../queue/types.js";
 import type { UploadService } from "../uploads/upload-service.js";
 import { JobInputError, persistJobInputs } from "./job-inputs.js";
 import type {
+  JobCancellation,
   JobExecution,
   JobExecutionWrite,
   JobRetry,
 } from "./job-progress.js";
+import { readJobCancellation } from "./job-progress.js";
 import {
   type BackgroundJobRecord,
   type JobRepository,
@@ -70,6 +72,23 @@ export type CreateJobInput = {
 };
 
 export type JobService = {
+  beginSubmission(
+    jobId: string,
+    revision: number,
+    token?: string,
+  ): Promise<string>;
+  recordSubmission(
+    jobId: string,
+    attemptId: string,
+    providerJobId: string,
+  ): Promise<void>;
+  saveCancellation(
+    jobId: string,
+    progress: JobCancellation,
+    seconds: number,
+    token: string,
+  ): Promise<void>;
+
   retryJob(jobId: string, input: JobRetry, token: string): Promise<void>;
   markUncertain(jobId: string, message: string, token: string): Promise<void>;
   saveExecution(
@@ -238,6 +257,56 @@ export function createJobService(options: {
   }
 
   return {
+    async beginSubmission(jobId, revision, token) {
+      const attemptId = randomUUID();
+      assertLeaseWrite(
+        await repository.beginSubmission(jobId, attemptId, revision, token),
+        token ?? attemptId,
+      );
+      return attemptId;
+    },
+    async recordSubmission(jobId, attemptId, providerJobId) {
+      const job = await repository.recordSubmission(
+        jobId,
+        attemptId,
+        providerJobId,
+      );
+      if (!job)
+        throw Object.assign(new Error("任务提交回执已失效"), {
+          code: "job_lease_lost",
+        });
+      if (job.status === "canceled") {
+        try {
+          await queue.send(job.queue_name, {
+            job_id: job.id,
+            job_type: job.job_type,
+          });
+        } catch (error) {
+          console.error(
+            "[job-service] cancellation receipt wakeup failed:",
+            error,
+          );
+        }
+      }
+    },
+    async saveCancellation(jobId, progress, seconds, token) {
+      assertLeaseWrite(
+        await repository.saveCancellation(jobId, progress, seconds, token),
+        token,
+      );
+      if (progress.state !== "pending") return;
+      const job = await repository.findById(jobId);
+      if (!job) return;
+      try {
+        await queue.send(
+          job.queue_name,
+          { job_id: job.id, job_type: job.job_type },
+          seconds,
+        );
+      } catch (error) {
+        console.error("[job-service] cancellation retry wakeup failed:", error);
+      }
+    },
     async retryJob(jobId, input, token) {
       assertLeaseWrite(await repository.retry(jobId, input, token), token);
       const job = await repository.findById(jobId);
@@ -307,7 +376,10 @@ export function createJobService(options: {
       await repository.releaseLease(jobId, token);
     },
     async createJob(actor, input) {
-      if ("_generation_execution" in input.payload)
+      if (
+        "_generation_execution" in input.payload ||
+        "_generation_cancel" in input.payload
+      )
         throw new JobServiceError(
           "job_create_failed",
           "生成执行记录由服务端维护。",
@@ -498,6 +570,14 @@ export function createJobService(options: {
           "Job not found or already completed.",
           404,
         );
+      }
+      try {
+        await queue.send(job.queue_name, {
+          job_id: job.id,
+          job_type: job.job_type,
+        });
+      } catch (error) {
+        console.error("[job-service] cancellation wakeup failed:", error);
       }
       return mapJobRow(job);
     },

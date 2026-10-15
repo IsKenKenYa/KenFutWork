@@ -33,6 +33,7 @@ async function imageParams(
   job: BackgroundJob,
   payload: ImageJobPayload,
   ctx: ExecutorContext,
+  abortable = true,
 ): Promise<ImageGenerateParams> {
   return {
     prompt: payload.prompt,
@@ -44,7 +45,7 @@ async function imageParams(
     ...(payload.height !== undefined ? { height: payload.height } : {}),
     ...(payload.output_format ? { outputFormat: payload.output_format } : {}),
     ...(await resolveJobMediaInputs(job, ctx.uploads)),
-    ...(ctx.signal ? { signal: ctx.signal } : {}),
+    ...(abortable && ctx.signal ? { signal: ctx.signal } : {}),
   };
 }
 
@@ -70,7 +71,7 @@ async function generateImage(
   if (!provider.startAsync || !provider.pollAsync) {
     const params = await imageParams(job, payload, ctx);
     await ctx.assertExecution?.();
-    await ctx.jobService.saveExecution(job.id, { phase: "submitting" });
+    await ctx.jobService.beginSubmission(job.id, instance.configRevision);
     return provider.generateMany
       ? provider.generateMany(params)
       : [await provider.generate(params)];
@@ -92,18 +93,16 @@ async function generateImage(
       return result.images;
     }
   } else {
-    const params = await imageParams(job, payload, ctx);
+    // 云端可能已接纳后才取消，本次响应仍须保留以登记句柄和补发远端取消。
+    const params = await imageParams(job, payload, ctx, false);
     await ctx.assertExecution?.();
-    await ctx.jobService.saveExecution(job.id, { phase: "submitting" });
-    const { providerJobId } = await provider.startAsync(params);
-    await ctx.jobService.saveExecution(
+    const attemptId = await ctx.jobService.beginSubmission(
       job.id,
-      { phase: "polling" },
-      {
-        providerJobId,
-        providerRevision: instance.configRevision,
-      },
+      instance.configRevision,
     );
+    const { providerJobId } = await provider.startAsync(params);
+    await ctx.jobService.recordSubmission(job.id, attemptId, providerJobId);
+    await ctx.assertExecution?.();
   }
   await ctx.jobService.scheduleJob(job.id, 10);
   throw jobError("provider_poll_scheduled", "图片任务已提交，等待供应商结果。");

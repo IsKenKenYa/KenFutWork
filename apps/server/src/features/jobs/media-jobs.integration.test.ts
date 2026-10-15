@@ -770,5 +770,163 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
         );
       }
     }, 20_000);
+
+    it("显式取消在途Replicate提交，迟到句柄仍远端取消且不保存产物", async () => {
+      if (!realImageExecutor) throw new Error("真实图片执行器未注册");
+      const previousExecutor = getExecutor("image_generation");
+      registerExecutor("image_generation", realImageExecutor);
+      let submits = 0;
+      let cancellations = 0;
+      let downloads = 0;
+      let baseUrl = "";
+      let releaseSubmission: () => void = () => {};
+      const heldSubmission = new Promise<void>((resolve) => {
+        releaseSubmission = resolve;
+      });
+      const provider = createServer(async (request, response) => {
+        for await (const _chunk of request) {
+          /* 消费模拟供应商请求体 */
+        }
+        response.setHeader("content-type", "application/json");
+        if (request.url === "/v1/predictions/late-canceled-image/cancel") {
+          cancellations++;
+          response.end(
+            JSON.stringify({ id: "late-canceled-image", status: "canceled" }),
+          );
+          return;
+        }
+        if (request.method === "POST") {
+          submits++;
+          await heldSubmission;
+          response.end(
+            JSON.stringify({
+              id: "late-canceled-image",
+              status: "processing",
+              output: null,
+            }),
+          );
+          return;
+        }
+        if (request.url === "/v1/predictions/late-canceled-image") {
+          response.end(
+            JSON.stringify({
+              id: "late-canceled-image",
+              status: "succeeded",
+              input: { aspect_ratio: "1:1", output_format: "png" },
+              output: [`${baseUrl}/late-image.png`],
+            }),
+          );
+          return;
+        }
+        if (request.url === "/late-image.png") {
+          downloads++;
+          response.setHeader("content-type", "image/png");
+          response.end(Buffer.from("late image"));
+          return;
+        }
+        response.statusCode = 404;
+        response.end("unexpected provider endpoint");
+      });
+      let loop: ReturnType<typeof startJobLoop> | undefined;
+      try {
+        await new Promise<void>((resolve) =>
+          provider.listen(0, "127.0.0.1", resolve),
+        );
+        const address = provider.address();
+        if (!address || typeof address === "string")
+          throw new Error("模拟供应商未启动");
+        baseUrl = `http://127.0.0.1:${address.port}`;
+        const modelProviders = createModelProviderService({
+          repository: createModelProviderRepository(db.persistence),
+          localInstance: db.localInstance,
+        });
+        const configured = await modelProviders.createInstance(db.actor, {
+          name: "Replicate取消回归",
+          apiKey: "replicate-cancel-test-only",
+          baseUrl: `${baseUrl}/v1`,
+          protocol: "replicate",
+          models: [
+            {
+              id: "custom-owner/cancel-image",
+              name: "取消图片模型",
+              capability: "image",
+            },
+          ],
+        });
+        const { jobs, queue } = fixture();
+        const accepted = await jobs.createJob(db.actor, {
+          requestId: randomUUID(),
+          jobType: "image_generation",
+          payload: {
+            prompt: "猫",
+            model: "custom-owner/cancel-image",
+            provider_instance_id: configured.id,
+          },
+        });
+        const assetWriter = createAssetWriter(
+          createUploadRepository(db.persistence),
+        );
+        const saveAsset = vi.spyOn(assetWriter, "recordGeneratedAsset");
+        const insertImageElement = vi.fn();
+        const insertVideoElement = vi.fn();
+        loop = startJobLoop(
+          {
+            queue,
+            jobService: jobs,
+            modelProviders,
+            assetWriter,
+            canvas: { insertImageElement, insertVideoElement },
+            projectFiles: {} as never,
+            generationTargets: createGenerationTargets({
+              persistence: db.persistence,
+              executionScopes: createExecutionScopes({
+                repository: createScopeRepository(db.persistence),
+                localInstance: db.localInstance,
+              }),
+            }),
+            blob: createLocalFsBlobStore({
+              rootDir: `${db.directory}/replicate-cancel-output`,
+              signingSecret: "cancel-test-only",
+              publicBaseUrl: baseUrl,
+            }),
+            env: {
+              agentBackendMode: "state",
+              agentModel: "test",
+              port: 0,
+              version: "test",
+              webOrigin: baseUrl,
+              workerPollIntervalMs: 1000,
+            },
+          },
+          { queues: ["image_generation_jobs"] },
+        );
+        await vi.waitFor(() => expect(submits).toBe(1));
+        expect(await jobs.cancelJob(db.actor, accepted.id)).toMatchObject({
+          status: "canceled",
+        });
+        releaseSubmission();
+        await vi.waitFor(() => expect(cancellations).toBe(1), {
+          timeout: 4000,
+        });
+        expect(await jobs.getJob(db.actor, accepted.id)).toMatchObject({
+          status: "canceled",
+          provider_job_id: "late-canceled-image",
+          result: null,
+        });
+        expect(submits).toBe(1);
+        expect(downloads).toBe(0);
+        expect(saveAsset).not.toHaveBeenCalled();
+        expect(insertImageElement).not.toHaveBeenCalled();
+        expect(insertVideoElement).not.toHaveBeenCalled();
+      } finally {
+        releaseSubmission();
+        await loop?.shutdown();
+        if (previousExecutor)
+          registerExecutor("image_generation", previousExecutor);
+        await new Promise<void>((resolve, reject) =>
+          provider.close((error) => (error ? reject(error) : resolve())),
+        );
+      }
+    }, 20_000);
   },
 );

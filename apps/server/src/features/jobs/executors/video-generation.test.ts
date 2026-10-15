@@ -55,6 +55,17 @@ function makeCtx(job: BackgroundJob) {
   }> = [];
   const ctx = {
     jobService: {
+      beginSubmission: vi.fn(async (_id: string, revision: number) => {
+        job.payload._generation_execution = { phase: "submitting" };
+        job.payload.provider_config_revision = revision;
+        return "11111111-1111-4111-8111-111111111111";
+      }),
+      recordSubmission: vi.fn(
+        async (_id: string, _attemptId: string, providerJobId: string) => {
+          job.payload._generation_execution = { phase: "polling" };
+          job.provider_job_id = providerJobId;
+        },
+      ),
       saveExecution: vi.fn(async (_id, execution, options) => {
         job.payload._generation_execution = execution;
         if (options?.providerJobId) job.provider_job_id = options.providerJobId;
@@ -181,14 +192,11 @@ describe("video executor 状态机（S6）", () => {
     await expect(runExecutor(ctx)).rejects.toMatchObject({
       code: PROVIDER_POLL_SCHEDULED,
     });
-    expect(ctx.jobService.saveExecution).toHaveBeenCalledWith(
-      JOB_ID,
-      { phase: "polling" },
-      {
-        providerJobId: "cloud-task-1",
-        providerRevision: 7,
-      },
-    );
+    expect(job.provider_job_id).toBe("cloud-task-1");
+    expect(job.payload).toMatchObject({
+      provider_config_revision: 7,
+      _generation_execution: { phase: "polling" },
+    });
     expect(ctx.sent).toHaveLength(1);
     expect(ctx.sent[0]?.payload).toMatchObject({
       job_id: JOB_ID,

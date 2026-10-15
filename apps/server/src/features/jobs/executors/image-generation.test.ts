@@ -84,6 +84,14 @@ it.each([false, true, "download-retry"])(
     const context = {
       jobService: {
         getJobForWorker: async () => job,
+        beginSubmission: async () => {
+          const attemptId = randomUUID();
+          job.payload._generation_execution = {
+            phase: "submitting",
+            attemptId,
+          };
+          return attemptId;
+        },
         saveExecution: async (_id: string, execution: unknown) => {
           job.payload._generation_execution = execution;
         },

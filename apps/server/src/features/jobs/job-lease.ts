@@ -6,11 +6,12 @@ export function createLeasedContext(
   jobId: string,
   token: string,
   seconds: number,
+  options: { allowCanceled?: boolean } = {},
 ) {
   const controller = new AbortController();
   const lost = () =>
     Object.assign(new Error("任务执行租约已失效"), { code: "job_lease_lost" });
-  async function assertActive() {
+  async function renew() {
     controller.signal.throwIfAborted();
     try {
       if (!(await ctx.jobService.renewLease(jobId, token, seconds)))
@@ -21,10 +22,17 @@ export function createLeasedContext(
       controller.signal.throwIfAborted();
     }
   }
+  async function assertActive() {
+    await renew();
+    if (!options.allowCanceled) {
+      const current = await ctx.jobService.getJobForWorker(jobId);
+      if (current.status === "canceled") throw lost();
+    }
+  }
   // 与队列可见性共用租期，续租间隔由租期推导，无第二份执行时限。
   const heartbeat = setInterval(
     () => {
-      void assertActive().catch(() => {});
+      void renew().catch(() => {});
     },
     (seconds * 1000) / 3,
   );
@@ -34,6 +42,8 @@ export function createLeasedContext(
     assertExecution: assertActive,
     jobService: {
       ...ctx.jobService,
+      beginSubmission: (id, revision) =>
+        ctx.jobService.beginSubmission(id, revision, token),
       getJobForWorker: async (id) => {
         await assertActive();
         return ctx.jobService.getJobForWorker(id);

@@ -174,7 +174,9 @@ describe("jobs repository（background_jobs）", () => {
     ).cancel(INSTANCE_ID, JOB_ID);
     const cancelSql = cancel.sqls()[0] ?? "";
     expect(cancelSql).toContain("set status = 'canceled'");
-    expect(cancelSql).toContain("and status in ('queued', 'running')");
+    expect(cancelSql).toContain(
+      "and status in ('queued', 'running', 'failed', 'canceled')",
+    );
     expect(cancelSql).toContain("where instance_id = $2 and id = $1");
   });
 
@@ -264,6 +266,9 @@ function createFakeRepository(
   overrides: Partial<JobRepository> = {},
 ): JobRepository {
   return {
+    beginSubmission: async () => 1,
+    recordSubmission: async () => JOB_ROW,
+    saveCancellation: async () => 1,
     retry: async () => 1,
     markUncertain: async () => 1,
     saveExecution: async () => 1,

@@ -281,7 +281,7 @@ describe("本地任务消费终态", () => {
             claimJob: async () => ({ status: "running" }),
             renewLease: async () => true,
             releaseLease: async () => {},
-            getJobForWorker: async () => ({ status }),
+            getJobForWorker: async () => ({ status, payload: {} }),
             incrementAttempt,
           } as never,
           blob: {} as never,

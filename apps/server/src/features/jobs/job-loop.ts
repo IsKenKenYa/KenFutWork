@@ -3,10 +3,11 @@ import { randomUUID } from "node:crypto";
 import type { BackgroundJob, BackgroundJobType } from "@kenfutwork/shared";
 import type { ServerEnv } from "../../config/env.js";
 import { type QueueClient, QueueClosedError } from "../queue/types.js";
+import { executeJobCancellation } from "./job-cancellation.js";
 import { type ExecutorContext, getExecutor } from "./job-executor.js";
 import { classifyJobFailure } from "./job-failure.js";
-import { readJobExecution } from "./job-progress.js";
 import { createLeasedContext } from "./job-lease.js";
+import { readJobCancellation, readJobExecution } from "./job-progress.js";
 import { JobServiceError } from "./job-service.js";
 
 /**
@@ -217,16 +218,6 @@ async function processMessage(
   );
 
   const executor = getExecutor(jobType);
-  if (!executor) {
-    console.error(`${tag} No executor for job type: ${jobType}`);
-    await ctx.jobService.markFailed(
-      jobId,
-      "no_executor",
-      `No executor registered for ${jobType}`,
-    );
-    await ctx.queue.archive(queue, msg.msg_id);
-    return;
-  }
 
   let current: BackgroundJob;
   try {
@@ -238,8 +229,11 @@ async function processMessage(
     return;
   }
   if (
-    current.error_code === "submission_unknown" ||
-    current.status === "canceled" ||
+    (current.error_code === "submission_unknown" &&
+      !current.provider_job_id &&
+      current.status !== "canceled") ||
+    (current.status === "canceled" &&
+      readJobCancellation(current)?.state !== "pending") ||
     current.status === "succeeded" ||
     current.status === "dead_letter"
   ) {
@@ -254,9 +248,26 @@ async function processMessage(
     await ctx.queue.setVisibilityTimeout(queue, msg.msg_id, leaseSeconds);
     return;
   }
-  const lease = createLeasedContext(ctx, jobId, token, leaseSeconds);
+  const lease = createLeasedContext(ctx, jobId, token, leaseSeconds, {
+    allowCanceled: claimed.status === "canceled",
+  });
 
   try {
+    if (claimed.status === "canceled") {
+      await executeJobCancellation(claimed, lease.context, token);
+      await ctx.queue.archive(queue, msg.msg_id);
+      return;
+    }
+    if (!executor) {
+      await ctx.jobService.markDeadLetter(
+        jobId,
+        "no_executor",
+        `No executor registered for ${jobType}`,
+        token,
+      );
+      await ctx.queue.archive(queue, msg.msg_id);
+      return;
+    }
     const result = await executor(
       jobId,
       msg.message as Record<string, unknown>,
@@ -297,6 +308,10 @@ async function handleExecutionFailure(
   }
 
   const current = await ctx.jobService.getJobForWorker(jobId);
+  if (current.status === "canceled") {
+    await ctx.queue.archive(ctx.queueName, ctx.msgId);
+    return;
+  }
   const policy = classifyJobFailure(
     current,
     err,

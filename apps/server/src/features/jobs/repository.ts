@@ -2,6 +2,7 @@ import type { GenerationFileTarget } from "@kenfutwork/shared";
 import { assertGenerationOriginForInsert } from "../generation/file-target-lock.js";
 import type { PersistenceService } from "../persistence/types.js";
 import type {
+  JobCancellation,
   JobExecution,
   JobExecutionWrite,
   JobRetry,
@@ -71,6 +72,24 @@ export type JobListFilters = {
  *   与「实例隔离」不冲突（拿不到实例就无法用实例谓词）。
  */
 export interface JobRepository {
+  beginSubmission(
+    jobId: string,
+    attemptId: string,
+    revision: number,
+    token?: string,
+  ): Promise<number>;
+  recordSubmission(
+    jobId: string,
+    attemptId: string,
+    providerJobId: string,
+  ): Promise<BackgroundJobRecord | null>;
+  saveCancellation(
+    jobId: string,
+    progress: JobCancellation,
+    seconds: number,
+    token: string,
+  ): Promise<number>;
+
   retry(jobId: string, input: JobRetry, token: string): Promise<number>;
   markUncertain(jobId: string, message: string, token: string): Promise<number>;
   saveExecution(
@@ -165,6 +184,46 @@ export function createJobRepository(
   persistence: PersistenceService,
 ): JobRepository {
   return {
+    async beginSubmission(jobId, attemptId, revision, token) {
+      return persistence.execute(
+        `update public.background_jobs set payload=payload || jsonb_build_object(
+          '_generation_execution',jsonb_build_object('phase','submitting','attemptId',$2::text),
+          'provider_config_revision',$3::int)
+         where id=$1 and status in ('queued','running') and provider_job_id is null ${leaseGuard(4)}`,
+        [jobId, attemptId, revision, token ?? null],
+      );
+    },
+    async recordSubmission(jobId, attemptId, providerJobId) {
+      // 仅匹配这一轮提交的回执可补句柄；取消和租约过期不得把云端任务变成孤儿。
+      return persistence.queryOne<BackgroundJobRecord>(
+        `update public.background_jobs set provider_job_id=$3,
+          payload=jsonb_set(payload,'{_generation_execution,phase}','"polling"'::jsonb)
+            || case when status='canceled' and provider_job_id is null
+              and coalesce(payload->'_generation_cancel'->>'state','')<>'requested'
+              then jsonb_build_object('_generation_cancel',jsonb_build_object('state','pending','attempts',0)) else '{}'::jsonb end,
+          next_action_at=now(),wakeup_at=now()
+         where id=$1 and payload->'_generation_execution'->>'attemptId'=$2
+           and (provider_job_id is null or provider_job_id=$3)
+           and status in ('queued','running','failed','canceled') and result is null
+         returning ${JOB_COLUMNS}`,
+        [jobId, attemptId, providerJobId],
+      );
+    },
+    async saveCancellation(jobId, progress, seconds, token) {
+      return persistence.execute(
+        `update public.background_jobs set payload=payload||jsonb_build_object('_generation_cancel',$2::jsonb),
+           next_action_at=now()+$3*interval '1 second',wakeup_at=now()+$3*interval '1 second'
+         where id=$1 and status='canceled' and (not $5::boolean or provider_job_id is null) ${leaseGuard(4)}`,
+        [
+          jobId,
+          JSON.stringify(progress),
+          seconds,
+          token,
+          progress.state === "unknown" &&
+            progress.errorCode === "submission_unknown",
+        ],
+      );
+    },
     async retry(jobId, input, token) {
       return persistence.execute(
         `update public.background_jobs set status='queued',error_code=$2,error_message=$3,failed_at=now(),
@@ -222,9 +281,11 @@ export function createJobRepository(
       return persistence.query<BackgroundJobRecord>(
         `with ready as (
           select id from public.background_jobs
-           where queue_name=any($1::text[]) and status in ('queued','running','failed')
-             and error_code is distinct from 'submission_unknown'
-             and (status='queued' or provider_job_id is not null or payload->'_generation_execution'->>'phase' in ('ready','saving','publishing'))
+           where queue_name=any($1::text[])
+             and ((status='canceled' and payload->'_generation_cancel'->>'state'='pending')
+               or (status in ('queued','running','failed')
+                 and (error_code is distinct from 'submission_unknown' or provider_job_id is not null)
+                 and (status='queued' or provider_job_id is not null or payload->'_generation_execution'->>'phase' in ('ready','saving','publishing'))))
              and next_action_at<=now() and wakeup_at<=now()
              and (lease_until is null or lease_until<=now())
            for update skip locked)
@@ -252,18 +313,22 @@ export function createJobRepository(
       );
       return persistence.queryOne<BackgroundJobRecord>(
         `update public.background_jobs set lease_token=$2, lease_until=now()+$3*interval '1 second',
-          status='running', started_at=coalesce(started_at,now())
-         where id=$1 and status in ('queued','running','failed')
+          status=(case when status='canceled' then 'canceled' else 'running' end)::public.background_job_status, started_at=coalesce(started_at,now())
+         where id=$1
            and (lease_until is null or lease_until<=now())
-           and next_action_at<=now() and error_code is distinct from 'submission_unknown'
-           and (started_at is null or provider_job_id is not null or payload->'_generation_execution'->>'phase' in ('ready','saving','publishing')) returning ${JOB_COLUMNS}`,
+           and next_action_at<=now()
+           and ((status='canceled' and payload->'_generation_cancel'->>'state'='pending')
+             or (status in ('queued','running','failed')
+               and (error_code is distinct from 'submission_unknown' or provider_job_id is not null)
+               and (started_at is null or provider_job_id is not null or payload->'_generation_execution'->>'phase' in ('ready','saving','publishing')))) returning ${JOB_COLUMNS}`,
         [jobId, token, seconds],
       );
     },
     async renewLease(jobId, token, seconds) {
       return persistence.execute(
         `update public.background_jobs set lease_until=now()+$3*interval '1 second'
-         where id=$1 and lease_token=$2 and lease_until>now() and status='running'`,
+         where id=$1 and lease_token=$2 and lease_until>now()
+           and (status='running' or (status='canceled' and payload->'_generation_cancel'->>'state'='pending'))`,
         [jobId, token, seconds],
       );
     },
@@ -363,10 +428,15 @@ export function createJobRepository(
       return persistence.forInstance(instanceId).queryOne<BackgroundJobRecord>(
         `update public.background_jobs
               set status = 'canceled',
-                  canceled_at = now()
+                  canceled_at = coalesce(canceled_at,now()),
+                  payload=case when status='canceled' then payload else payload||jsonb_build_object('_generation_cancel',jsonb_build_object('state','pending','attempts',0)) end,
+                  lease_token=case when status='canceled' then lease_token else null end,
+                  lease_until=case when status='canceled' then lease_until else null end,
+                  next_action_at=case when status='canceled' then next_action_at else now() end,
+                  wakeup_at=case when status='canceled' then wakeup_at else now() end
             where instance_id = :instance
               and id = $1
-              and status in ('queued', 'running')
+              and status in ('queued', 'running', 'failed', 'canceled')
           returning ${JOB_COLUMNS}`,
         [jobId],
       );
@@ -446,7 +516,7 @@ export function createJobRepository(
     async markFailed(jobId, errorCode, errorMessage, leaseToken) {
       return persistence.execute(
         `update public.background_jobs
-            set status = case when $4::uuid is null then 'failed' else 'queued' end,
+            set status = (case when $4::uuid is null then 'failed' else 'queued' end)::public.background_job_status,
                 error_code = $2,
                 error_message = $3,
                 failed_at = now()

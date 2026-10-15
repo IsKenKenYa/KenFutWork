@@ -170,7 +170,10 @@ registerExecutor(
       // ── submit 分支：提交即落引用，投首条延迟 poll 消息，本次执行结束 ──
       lap(`${providerName}_submit_start`);
       await ctx.assertExecution?.();
-      await ctx.jobService.saveExecution(jobId, { phase: "submitting" });
+      const attemptId = await ctx.jobService.beginSubmission(
+        jobId,
+        instance.configRevision,
+      );
       const { providerJobId } = await startAsync({
         prompt: payload.prompt,
         model,
@@ -184,14 +187,8 @@ registerExecutor(
           ? { enableAudio: payload.enable_audio }
           : {}),
       });
-      await ctx.jobService.saveExecution(
-        jobId,
-        { phase: "polling" },
-        {
-          providerJobId,
-          providerRevision: instance.configRevision,
-        },
-      );
+      await ctx.jobService.recordSubmission(jobId, attemptId, providerJobId);
+      await ctx.assertExecution?.();
       await scheduleNextPoll();
       lap(`${providerName}_submitted`);
       throw fatal(PROVIDER_POLL_SCHEDULED, "提交完成，轮询已排程");
@@ -224,7 +221,7 @@ registerExecutor(
       };
       lap(`${providerName}_call_start`);
       await ctx.assertExecution?.();
-      await ctx.jobService.saveExecution(jobId, { phase: "submitting" });
+      await ctx.jobService.beginSubmission(jobId, instance.configRevision);
       return instance.provider.generate(generateParams);
     })();
 
