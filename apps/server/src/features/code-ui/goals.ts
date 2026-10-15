@@ -5,36 +5,57 @@ import type { GoalRecord, GoalService } from "../goals/service.js";
 import { isGoalToolEvidence } from "../goals/tool-evidence.js";
 import type { CodeUiConversationState } from "./conversation.js";
 
+function verificationIteration(goal: GoalRecord): number | null {
+  const verification = goal.verification;
+  if (!verification) return null;
+  if (verification.iteration !== undefined)
+    return Number.isSafeInteger(verification.iteration) &&
+      verification.iteration > 0 &&
+      verification.iteration <= goal.iteration
+      ? verification.iteration
+      : null;
+  if (verification.runId === goal.claimedRunId) return goal.iteration;
+  if (verification.runId !== goal.lastSettledRunId) return null;
+  // Only the current or immediately preceding claim can be recovered from legacy Run identities.
+  return goal.claimedRunId ? Math.max(0, goal.iteration - 1) : goal.iteration;
+}
+
 export function projectGoal(
   goal: GoalRecord | null,
 ): protocol.GoalState | null {
   if (!goal) return null;
   const status = goal.status === "complete" ? "verified" : goal.status;
+  const verifiedIteration = verificationIteration(goal);
   return {
     targetId: goal.goalId,
     objective: goal.objective,
     summaryTitle: null,
     status,
-    iteration: goal.iteration,
+    // V4 active means the next open iteration; GoalRecord already counts its claimed Run.
+    iteration:
+      goal.status === "active" && goal.claimedRunId
+        ? Math.max(0, goal.iteration - 1)
+        : goal.iteration,
     iterations: [],
     timeUsedSeconds: goal.timeUsedSeconds,
     activeRunStartedAtMs: goal.runStartedAt,
-    verifications: goal.verification
-      ? [
-          {
-            iteration: goal.iteration,
-            outcome:
-              goal.status === "failed"
-                ? "failed"
-                : goal.verification.passed
-                  ? "pass"
-                  : "notSatisfied",
-            at: goal.verification.at,
-            anchorRowId: null,
-            reason: goal.verification.reason,
-          },
-        ]
-      : [],
+    verifications:
+      goal.verification && verifiedIteration !== null
+        ? [
+            {
+              iteration: verifiedIteration,
+              outcome:
+                goal.status === "failed"
+                  ? "failed"
+                  : goal.verification.passed
+                    ? "pass"
+                    : "notSatisfied",
+              at: goal.verification.at,
+              anchorRowId: null,
+              reason: goal.verification.reason,
+            },
+          ]
+        : [],
   };
 }
 export function projectGoalSnapshot(

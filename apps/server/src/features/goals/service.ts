@@ -15,6 +15,8 @@ export interface GoalEvidence {
 }
 export interface GoalVerification {
   runId: string;
+  /** Captured at verification; absent only in older persisted Goal records. */
+  iteration?: number;
   evidence: GoalEvidence[];
   passed: boolean;
   reason: string;
@@ -318,6 +320,7 @@ const provider: GoalService = {
       input.evidence.every((item) => item.passed);
     goal.verification = structuredClone({
       runId: input.runId,
+      iteration: goal.iteration,
       evidence: input.evidence.map(({ sourceId, passed, detail }) => ({
         sourceId,
         passed,

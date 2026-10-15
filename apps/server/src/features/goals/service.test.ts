@@ -115,6 +115,7 @@ describe("Task Goal lifecycle", () => {
       at: 2000,
     });
     expect(complete.status).toBe("complete");
+    expect(complete.verification).toMatchObject({ runId: "r", iteration: 1 });
     expect(
       service.observeTerminal(complete, {
         runId: "r",
