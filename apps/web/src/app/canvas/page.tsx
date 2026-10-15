@@ -426,7 +426,7 @@ function CanvasPageContent() {
             canvasId={canvasData.id}
             projectId={canvasData.projectId}
             prepare={prepareCanvasAssetOperation}
-            refresh={refreshCanvas}
+            refresh={handleCanvasSync}
             accessToken={accessToken}
             excalidrawApi={excalidrawApi}
             sessionId={activeTaskId ?? undefined}

@@ -1,7 +1,15 @@
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { CanvasEditor } from "../src/components/canvas-editor";
 import type { CanvasFilesPanelProps } from "../src/components/canvas-files-panel";
+import type { CanvasToolMenu } from "../src/components/canvas-tool-menu";
 import type { WebSocketHandle } from "../src/hooks/use-websocket";
 import { ApiApplicationError } from "../src/lib/server-api";
 
@@ -16,6 +24,9 @@ const mocks = vi.hoisted(() => ({
   assetOperationError: vi.fn(),
   prepareAssets: vi.fn(),
   applySnapshot: vi.fn(),
+  handleSnapshot: vi.fn(),
+  editorApiReady: false,
+  toolRefresh: vi.fn(),
   editorMount: vi.fn(),
   editorUnmount: vi.fn(),
   startRun: vi.fn(),
@@ -62,6 +73,8 @@ vi.mock("../src/components/canvas-editor", async () => {
       useEffect(() => {
         mocks.editorMount(props.canvasId);
         props.onPrepareAssetOperation?.(mocks.prepareAssets);
+        if (mocks.editorApiReady)
+          props.onApiReady?.({} as ExcalidrawImperativeAPI);
         return () => {
           mocks.editorUnmount(props.canvasId);
         };
@@ -69,8 +82,11 @@ vi.mock("../src/components/canvas-editor", async () => {
       useEffect(() => {
         if (!props.remoteSnapshot) return;
         mocks.applySnapshot(props.remoteSnapshot);
-        props.onRevisionChanged?.(props.remoteSnapshot.revision);
-        props.onRemoteSnapshotHandled?.(props.remoteSnapshot.revision);
+        const revision = props.remoteSnapshot.revision;
+        mocks.handleSnapshot(() => {
+          props.onRevisionChanged?.(revision);
+          props.onRemoteSnapshotHandled?.(revision);
+        });
       }, [
         props.onRemoteSnapshotHandled,
         props.onRevisionChanged,
@@ -141,7 +157,11 @@ vi.mock("../src/components/canvas-logo-menu", () => ({
   ),
 }));
 vi.mock("../src/components/canvas-tool-menu", () => ({
-  CanvasToolMenu: () => null,
+  CanvasToolMenu: ({ refresh }: Parameters<typeof CanvasToolMenu>[0]) => (
+    <button type="button" onClick={() => mocks.toolRefresh(refresh())}>
+      生成结果刷新
+    </button>
+  ),
 }));
 vi.mock("../src/components/brand-kit-modal", () => ({
   BrandKitModal: () => null,
@@ -196,6 +216,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.connected = false;
   mocks.restoreOnEditorReady = false;
+  mocks.editorApiReady = false;
+  mocks.handleSnapshot.mockReset().mockImplementation((handled: () => void) => {
+    handled();
+  });
   mocks.onEvent.mockReset().mockReturnValue(() => {});
   mocks.onDocumentUpdated.mockReset().mockReturnValue(() => {});
   mocks.resumeCanvas.mockReset();
@@ -311,6 +335,129 @@ test("重放刷新只应用一次最新快照，编辑器不重挂且不发Run",
   expect(mocks.editorUnmount).not.toHaveBeenCalled();
   expect(mocks.startRun).not.toHaveBeenCalled();
   expect(view.getByTestId("editor").textContent).toContain("revision-2");
+});
+
+test("生成器和WS并发刷新同一revision，快照回执后两路继续完成", async () => {
+  mocks.connected = true;
+  mocks.editorApiReady = true;
+  mocks.handleSnapshot.mockImplementation(() => {});
+  mocks.fetchCanvas
+    .mockResolvedValueOnce(canvas())
+    .mockResolvedValue(canvas("revision-2"));
+  const view = render(<CanvasPage />);
+  const tool = await view.findByRole("button", { name: "生成结果刷新" });
+  await waitFor(() => expect(mocks.onEvent).toHaveBeenCalledOnce());
+  const listener: Parameters<WebSocketHandle["onEvent"]>[0] =
+    mocks.onEvent.mock.calls[0]?.[0];
+
+  await act(async () => {
+    fireEvent.click(tool);
+    listener({
+      type: "canvas.sync",
+      runId: "run-a",
+      timestamp: new Date().toISOString(),
+    });
+  });
+  await waitFor(() => expect(mocks.applySnapshot).toHaveBeenCalledOnce());
+  const toolFinished = vi.fn();
+  const toolRefresh: Promise<void> = mocks.toolRefresh.mock.calls[0]?.[0];
+  void toolRefresh.then(toolFinished);
+  expect(toolFinished).not.toHaveBeenCalled();
+
+  await act(async () => {
+    const handled: () => void = mocks.handleSnapshot.mock.calls[0]?.[0];
+    handled();
+  });
+  await waitFor(() => expect(toolFinished).toHaveBeenCalledOnce());
+  expect(view.getByTestId("editor").textContent).toContain("revision-2");
+
+  mocks.handleSnapshot.mockImplementation((handled: () => void) => handled());
+  mocks.fetchCanvas.mockResolvedValue(canvas("revision-3"));
+  listener({
+    type: "canvas.sync",
+    runId: "run-b",
+    timestamp: new Date().toISOString(),
+  });
+  await waitFor(() =>
+    expect(view.getByTestId("editor").textContent).toContain("revision-3"),
+  );
+  expect(mocks.editorMount).toHaveBeenCalledOnce();
+  expect(mocks.startRun).not.toHaveBeenCalled();
+});
+
+test("并发刷新等待快照期间卸载，生成器等待结束且排队通知不再读取", async () => {
+  mocks.connected = true;
+  mocks.editorApiReady = true;
+  mocks.handleSnapshot.mockImplementation(() => {});
+  mocks.fetchCanvas
+    .mockResolvedValueOnce(canvas())
+    .mockResolvedValue(canvas("revision-2"));
+  const view = render(<CanvasPage />);
+  const tool = await view.findByRole("button", { name: "生成结果刷新" });
+  await waitFor(() => expect(mocks.onEvent).toHaveBeenCalledOnce());
+  const listener: Parameters<WebSocketHandle["onEvent"]>[0] =
+    mocks.onEvent.mock.calls[0]?.[0];
+  await act(async () => {
+    fireEvent.click(tool);
+    listener({
+      type: "canvas.sync",
+      runId: "run-a",
+      timestamp: new Date().toISOString(),
+    });
+  });
+  await waitFor(() => expect(mocks.applySnapshot).toHaveBeenCalledOnce());
+  const finished = vi.fn();
+  const toolRefresh: Promise<void> = mocks.toolRefresh.mock.calls[0]?.[0];
+  void toolRefresh.then(finished);
+  const reads = mocks.fetchCanvas.mock.calls.length;
+
+  view.unmount();
+  await waitFor(() => expect(finished).toHaveBeenCalledOnce());
+  expect(mocks.fetchCanvas).toHaveBeenCalledTimes(reads);
+  expect(mocks.editorUnmount).toHaveBeenCalledOnce();
+});
+
+test("生成器刷新GET迟到前切文档，旧等待结束且不把旧快照交给新编辑器", async () => {
+  let completeRefresh = (_value: ReturnType<typeof canvas>) => {};
+  mocks.connected = true;
+  mocks.editorApiReady = true;
+  mocks.fetchCanvas.mockResolvedValueOnce(canvas()).mockImplementationOnce(
+    () =>
+      new Promise<ReturnType<typeof canvas>>((resolve) => {
+        completeRefresh = resolve;
+      }),
+  );
+  const view = render(<CanvasPage />);
+  const tool = await view.findByRole("button", { name: "生成结果刷新" });
+  await waitFor(() => expect(mocks.onEvent).toHaveBeenCalledOnce());
+  const listener: Parameters<WebSocketHandle["onEvent"]>[0] =
+    mocks.onEvent.mock.calls[0]?.[0];
+  await act(async () => {
+    fireEvent.click(tool);
+    listener({
+      type: "canvas.sync",
+      runId: "run-a",
+      timestamp: new Date().toISOString(),
+    });
+  });
+  const finished = vi.fn();
+  const toolRefresh: Promise<void> = mocks.toolRefresh.mock.calls[0]?.[0];
+  void toolRefresh.then(finished);
+  mocks.query = new URLSearchParams("id=canvas-b&editor=1");
+  mocks.fetchCanvas.mockResolvedValue(
+    canvas("revision-b", "canvas-b", "project-b"),
+  );
+  view.rerender(<CanvasPage />);
+  await waitFor(() =>
+    expect(view.getByTestId("editor").textContent).toContain("canvas-b"),
+  );
+  const reads = mocks.fetchCanvas.mock.calls.length;
+
+  await act(async () => completeRefresh(canvas("revision-2")));
+  await waitFor(() => expect(finished).toHaveBeenCalledOnce());
+  expect(mocks.applySnapshot).not.toHaveBeenCalled();
+  expect(mocks.fetchCanvas).toHaveBeenCalledTimes(reads);
+  expect(view.getByTestId("editor").textContent).toContain("revision-b");
 });
 
 test("素材恢复先等待保存再用真实revision恢复，最后走同一快照链", async () => {
