@@ -73,7 +73,8 @@ export function createUsageRepository(
                 (instance_id, access_client_id, provider, model, capability,
                  provider_instance_id, run_id, job_id,
                  input_tokens, output_tokens, total_tokens, cost_usd)
-         values (:instance, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+         values (:instance, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         on conflict (instance_id,job_id) where job_id is not null and capability in ('image','video') do nothing`,
         [
           record.accessClientId ?? null,
           record.provider,
