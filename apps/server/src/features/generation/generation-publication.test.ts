@@ -53,12 +53,7 @@ function fixture() {
     height: 200,
     mime_type: "image/png",
   };
-  let current = job;
-  let revoked = false;
-  const resolve = vi.fn(async () => {
-    if (revoked) throw new Error("原Run代际已撤销");
-    return { kind: "task", taskId };
-  });
+  const origin = new AbortController();
   const insertImageElement = vi.fn(
     async (_actor: unknown, _request: unknown, guard?: () => Promise<void>) => {
       await guard?.();
@@ -68,29 +63,21 @@ function fixture() {
   const ctx = {
     canvas: { insertImageElement, insertVideoElement: vi.fn() },
     generationTargets: {
-      resolve,
       withOriginLock: async (
         _job: unknown,
         operation: (signal: AbortSignal) => Promise<unknown>,
-      ) => operation(new AbortController().signal),
+      ) => operation(origin.signal),
     },
-    jobService: { getJobForWorker: async () => current },
   } as unknown as Pick<
     ExecutorContext,
-    "canvas" | "generationTargets" | "jobService"
+    "canvas" | "generationTargets"
   >;
   return {
     job,
     result,
     ctx,
     insertImageElement,
-    resolve,
-    cancel: () => {
-      current = { ...job, status: "canceled" };
-    },
-    revoke: () => {
-      revoked = true;
-    },
+    abortOrigin: () => origin.abort(new Error("来源事务已中断")),
   };
 }
 
@@ -113,32 +100,19 @@ it("后台结果按冻结Task和画布发布，带原Job幂等身份与placement
     }),
     expect.any(Function),
   );
-  expect(f.resolve).toHaveBeenCalledTimes(2);
 });
 
-it.each(["cancel", "revoke"] as const)(
-  "%s后迟到结果不发布到画布",
-  async (change) => {
-    const f = fixture();
-    f[change]();
-    await expect(
-      publishGeneratedCanvas(f.job, f.result, f.ctx),
-    ).rejects.toThrow();
-    expect(f.insertImageElement).not.toHaveBeenCalled();
-  },
-);
-
-it("准备期间取消，最终写入guard复验真实Job", async () => {
+it("来源事务中断后，最终写入guard阻止发布", async () => {
   const f = fixture();
   f.insertImageElement.mockImplementationOnce(
     async (_actor, _request, guard) => {
-      f.cancel();
+      f.abortOrigin();
       await guard?.();
       return { elementId: "must-not-publish" };
     },
   );
   await expect(publishGeneratedCanvas(f.job, f.result, f.ctx)).rejects.toThrow(
-    "已停止",
+    "来源事务已中断",
   );
 });
 

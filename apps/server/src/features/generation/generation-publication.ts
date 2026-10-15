@@ -16,7 +16,7 @@ const placementSchema = z.object({
 export async function publishGeneratedCanvas(
   job: BackgroundJob,
   result: Record<string, unknown>,
-  ctx: Pick<ExecutorContext, "canvas" | "generationTargets" | "jobService">,
+  ctx: Pick<ExecutorContext, "canvas" | "generationTargets">,
   publicationId: string = job.id,
 ): Promise<{ element_id?: string }> {
   const target = generationFileTargetSchema.parse(job.file_target);
@@ -26,14 +26,8 @@ export async function publishGeneratedCanvas(
   if (!canvas) throw new Error("画布成果发布服务未接通，请检查工作节点配置。 ");
   return ctx.generationTargets.withOriginLock(job, async (signal) => {
     const guard = async () => {
-      signal.throwIfAborted();
-      const current = await ctx.jobService.getJobForWorker(job.id);
-      if (current.status === "canceled" || current.status === "failed")
-        throw new Error("生成任务已停止，结果不会发布到画布。 ");
-      await ctx.generationTargets.resolve(current);
-      const original = generationFileTargetSchema.parse(current.file_target);
-      if (JSON.stringify(original) !== JSON.stringify(target))
-        throw new Error("生成任务的冻结来源已改变。 ");
+      // 来源事务已验证并锁住Job和Task；锁内跨连接续租会等待自身的行锁。
+      // 文档/项目权限仍由CanvasService在最终写入前复验。
       signal.throwIfAborted();
     };
     await guard();
