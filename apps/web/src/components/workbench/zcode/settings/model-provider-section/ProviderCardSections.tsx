@@ -273,7 +273,7 @@ export function ProviderConnectionSection({
           <label className="mb-1 block text-ui-base text-foreground-subtle">
             {intl.formatMessage({ id: "settings.modelProvider.apiFormat" })}
           </label>
-          <ProviderApiFormatSelect value={apiFormat} onChange={onApiFormatChange} nativeProtocol={nativeProtocol} onNativeProtocolChange={onNativeProtocolChange} />
+          <ProviderApiFormatSelect value={apiFormat} onChange={onApiFormatChange} nativeProtocol={nativeProtocol} onNativeProtocolChange={provider.native ? onNativeProtocolChange : undefined} />
         </div>
       ) : null}
     </>

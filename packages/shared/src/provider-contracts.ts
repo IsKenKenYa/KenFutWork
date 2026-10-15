@@ -7,7 +7,7 @@ import { z } from "zod";
  */
 
 /**
- * 线协议封闭集合：聊天 3 种 + 图视频 4 种 + flow 引擎 1 种；新增协议先扩这里再写适配器。
+ * 线协议封闭集合：聊天、媒体与Flow引擎；新增驱动先声明协议，再注册消费方。
  *
  * `dify-engine`（《flow 集成方案》P3 凭证缝）：Dify 引擎实例——**本仓不消费它的模型**，
  * 唯一读出方是 flow 宿主凭证回调（`POST /api/flow/host/credentials`，服务端到服务端，
@@ -21,6 +21,7 @@ export const providerProtocolSchema = z.enum([
   "replicate",
   "volces",
   "metaso",
+  "grsai",
   "dify-engine",
 ]);
 export type ProviderProtocol = z.infer<typeof providerProtocolSchema>;

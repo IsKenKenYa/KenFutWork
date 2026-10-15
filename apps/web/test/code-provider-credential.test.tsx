@@ -126,6 +126,7 @@ function renderOriginalCard(
   };
   const savedKeys: Array<string | null | undefined> = [];
   const savedModels: unknown[] = [];
+  const savedProviders: unknown[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (_input, options) => {
@@ -133,6 +134,15 @@ function renderOriginalCard(
         return codeHostNotificationResponse(options?.signal);
       const request = JSON.parse(options.body);
       if (request.service === "providerSettingsService") {
+        if (request.method === "saveManagedProvider") {
+          savedProviders.push(request.args[0]);
+          if (provider.native) {
+            Object.assign(provider.native, request.args[0].patch);
+            provider.native.configRevision += 1;
+            provider.configRevision = provider.native.configRevision;
+            serverView.revision += 1;
+          }
+        }
         if (request.method === "saveManagedModel") {
           savedModels.push(request.args[0]);
           await beforeSave();
@@ -194,7 +204,7 @@ function renderOriginalCard(
       </PlatformProvider>
     </ServiceProvider>,
   );
-  return { client, savedKeys, savedModels };
+  return { client, savedKeys, savedModels, savedProviders };
 }
 
 it("原添加弹窗创建视频模型使用生成用途和打开时的供应商修订", async () => {
@@ -594,5 +604,42 @@ it("原供应商保存失败保留 Key 草稿，原重试操作成功后才清�
     expect(savedKeys).toEqual(["retry-private-key", "retry-private-key"]);
   } finally {
     client.dispose();
+  }
+});
+
+it("Code供应商卡可从标准协议切换到GRSAI并保留原生协议修订", async () => {
+  const { client, savedProviders } = renderOriginalCard(async () => {}, {
+    id: "c0a03eb2-d58c-4637-9fda-c796230a751a",
+    name: "图片网关",
+    scope: "local",
+    protocol: "openai-compatible",
+    hasCredential: true,
+    configRevision: 1,
+    enabled: true,
+    headerKeys: [],
+    models: [],
+  });
+  try {
+    const trigger = await screen.findByTestId(
+      "model-provider-api-format-trigger",
+    );
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    await userEvent.click(await screen.findByRole("option", { name: "GRSAI" }));
+    await waitFor(() =>
+      expect(savedProviders).toEqual([
+        {
+          providerId: "c0a03eb2-d58c-4637-9fda-c796230a751a",
+          patch: { protocol: "grsai", expectedRevision: 1 },
+        },
+      ]),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("model-provider-api-format-trigger").textContent,
+      ).toContain("GRSAI"),
+    );
+  } finally {
+    await act(async () => client.dispose());
   }
 });

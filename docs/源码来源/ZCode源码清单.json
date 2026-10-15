@@ -10215,24 +10215,26 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderApiFormatSelect.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderApiFormatSelect.tsx",
       "sha256": "ea0f7234753f8300a2f70b190bc878ddf711a73a05f9fcd93810349715eda81f",
-      "copiedSha256": "f18373f902c2929fba2b5d64336be39cb26ecbf2349866f2c48f8200e051652f",
+      "copiedSha256": "8c566e0ddaaa0cbc82aa69f37979adef9b6120d1aa0ecdbc6831d76d63548b53",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；授权设置可查看／复制，普通目录／通知不含秘密值，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
-        "宿主协议扩展：原Select展示生成/Flow真实协议，聊天四API选项保留；原生协议使用统一修订保存"
+        "宿主协议扩展：原Select展示生成/Flow真实协议，聊天四API选项保留；原生协议使用统一修订保存",
+        "2026-10-15媒体驱动：本地供应商原API格式控件从共享协议枚举展示已安装驱动，标准实例可切换；非本地wire供应商保持原聊天选项。公开卡片回归验证修订保存。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderCardSections.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderCardSections.tsx",
       "sha256": "d01c7b6a18b1b5c93bc176988751821f0f29f435613c399380ba8e4d8dd0ef09",
-      "copiedSha256": "a91ebc07b04045066261159835cbc458ec1140ed460dbfede53a200c50443aad",
+      "copiedSha256": "3fd1320fb5b11492d5fa14e8e21f5f7f04b760b6b6d0f9e745bfd6a92eee599d",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主接口：原 Key 区段透传 presence 与 clear 回调",
         "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；授权设置可查看／复制，普通目录／通知不含秘密值，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
         "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
-        "生成叶子扩展：原新增对话框及列表承载真实模型用途，创建捕获供应商修订；生成不显示聊天校验"
+        "生成叶子扩展：原新增对话框及列表承载真实模型用途，创建捕获供应商修订；生成不显示聊天校验",
+        "2026-10-15媒体驱动：本地供应商原API格式控件从共享协议枚举展示已安装驱动，标准实例可切换；非本地wire供应商保持原聊天选项。公开卡片回归验证修订保存。"
       ]
     },
     {
