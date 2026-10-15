@@ -144,6 +144,7 @@ export const generateImageRequestSchema = z.object({
   providerInstanceId: z.string().uuid().optional(),
   aspectRatio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional(),
   quality: z.enum(["standard", "hd", "ultra"]).optional(),
+  outputFormat: z.enum(["png", "jpg", "webp"]).optional(),
   /**
    * 参考图（URL / data URL / 裸 base64）：非空时适配器走 `/images/edits`
    * （参考图编辑/inpainting），空缺省仍走 `/images/generations`。
@@ -166,9 +167,11 @@ export const generateVideoRequestSchema = z.object({
   /** BYOK：本地供应商实例 id；携带时任务载荷透传，worker 按实例实例化适配器。 */
   providerInstanceId: z.string().uuid().optional(),
   duration: z.number().int().min(3).max(16).optional(),
-  resolution: z.enum(["720p", "1080p", "4k"]).optional(),
+  resolution: z.string().min(1).optional(),
   aspectRatio: z.enum(["16:9", "9:16"]).optional(),
-  inputImages: z.array(z.string()).max(3).optional(),
+  inputImages: z.array(z.string().min(1)).optional(),
+  inputVideo: z.string().min(1).optional(),
+  enableAudio: z.boolean().optional(),
   /** 会话标识：随 job 行落库，worker 侧按同一口径渲染自定义头（§4.8）。口径同 run 路径。 */
   sessionId: z.string().min(1).optional(),
   threadId: z.string().min(1).optional(),

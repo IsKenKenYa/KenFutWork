@@ -116,6 +116,9 @@ export async function registerGenerateRoutes(
           model,
           aspectRatio: payload.aspectRatio ?? "1:1",
           ...(payload.quality ? { quality: payload.quality } : {}),
+          ...(payload.outputFormat
+            ? { outputFormat: payload.outputFormat }
+            : {}),
           ...(payload.inputImages?.length
             ? { inputImages: payload.inputImages }
             : {}),
@@ -274,6 +277,10 @@ export async function registerGenerateRoutes(
           ...(payload.duration != null ? { duration: payload.duration } : {}),
           ...(payload.resolution ? { resolution: payload.resolution } : {}),
           ...(payload.aspectRatio ? { aspect_ratio: payload.aspectRatio } : {}),
+          ...(payload.inputVideo ? { input_video: payload.inputVideo } : {}),
+          ...(payload.enableAudio !== undefined
+            ? { enable_audio: payload.enableAudio }
+            : {}),
           ...(payload.inputImages?.length
             ? { input_images: payload.inputImages }
             : {}),

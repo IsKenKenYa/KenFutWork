@@ -30,6 +30,9 @@ export async function registerVideoModelRoutes(
 
     const models = entries.map((entry) => ({
       id: toInstanceSpecifier(entry),
+      providerInstanceId: entry.provider.instanceId,
+      modelId: entry.id,
+      videoGeneration: entry.model.videoGeneration,
       displayName: entry.name,
       description: `${entry.name}（实例：${entry.provider.name}）`,
       iconUrl: undefined,
@@ -40,14 +43,11 @@ export async function registerVideoModelRoutes(
       minTier: "free" as const,
       capabilities: {
         textToVideo: true,
-        imageToVideo: false,
-        videoToVideo: false,
-        audio: false,
-      },
-      limits: {
-        maxDuration: 15,
-        maxResolution: "1080p" as const,
-        maxInputImages: 4,
+        imageToVideo:
+          entry.model.videoGeneration?.referenceImages === undefined
+            ? undefined
+            : entry.model.videoGeneration.referenceImages > 0,
+        audio: entry.model.videoGeneration?.audio,
       },
       pricing: undefined,
     }));

@@ -49,6 +49,7 @@ function supportedResolutions(
   model?: VideoModelInfo,
 ): readonly VideoResolution[] {
   const max = model?.limits?.maxResolution;
+  if (max === undefined) return VIDEO_RESOLUTIONS;
   if (max === "2160p") return VIDEO_RESOLUTIONS;
   if (max === "1080p") return VIDEO_RESOLUTIONS.slice(0, 2);
   return VIDEO_RESOLUTIONS.slice(0, 1);
@@ -159,8 +160,13 @@ export function VideoGeneratorPanel({
   const screenY = (elementBounds.y + elementBounds.height + scrollY) * zoom + 8;
 
   const currentModel = models.find((m) => m.id === model);
-  const durationOptions = currentModel?.limits?.allowedDurations ?? DURATIONS;
-  const resolutionOptions = supportedResolutions(currentModel);
+  const durationOptions =
+    currentModel?.videoGeneration?.durations ??
+    currentModel?.limits?.allowedDurations ??
+    DURATIONS;
+  const resolutionOptions =
+    currentModel?.videoGeneration?.resolutions ??
+    supportedResolutions(currentModel);
   const currentPriceRate = currentModel?.pricing?.rates.find(
     (rate) => rate.resolution === resolution,
   );
@@ -191,7 +197,7 @@ export function VideoGeneratorPanel({
   );
 
   const handleResolutionChange = useCallback(
-    (value: VideoResolution) => {
+    (value: string) => {
       setResolution(value);
       updateVideoGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
         resolution: value,
@@ -204,14 +210,16 @@ export function VideoGeneratorPanel({
     (m: string) => {
       const selected = models.find((candidate) => candidate.id === m);
       const nextDurations: readonly number[] =
-        selected?.limits?.allowedDurations ?? DURATIONS;
+        selected?.videoGeneration?.durations ??
+        selected?.limits?.allowedDurations ??
+        DURATIONS;
       const nextDuration = nextDurations.includes(duration)
         ? duration
         : (nextDurations[0] ?? duration);
-      const nextResolutions = supportedResolutions(selected);
-      const nextResolution = nextResolutions.includes(
-        resolution as VideoResolution,
-      )
+      const nextResolutions: readonly string[] =
+        selected?.videoGeneration?.resolutions ??
+        supportedResolutions(selected);
+      const nextResolution = nextResolutions.includes(resolution)
         ? (resolution as VideoResolution)
         : (nextResolutions[0] ?? "720p");
       setModel(m);

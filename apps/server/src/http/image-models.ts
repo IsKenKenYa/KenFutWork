@@ -31,6 +31,9 @@ export async function registerImageModelRoutes(
       )
       .map((entry) => ({
         id: toInstanceSpecifier(entry),
+        providerInstanceId: entry.provider.instanceId,
+        modelId: entry.id,
+        imageGeneration: entry.model.imageGeneration,
         displayName: entry.name,
         description: `${entry.name}（实例：${entry.provider.name}）`,
         iconUrl: undefined,

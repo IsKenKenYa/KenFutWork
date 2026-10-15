@@ -7340,7 +7340,7 @@
       "post": {
         "operationId": "postAgentGenerateImage",
         "summary": "同步生成图片并入库",
-        "description": "以已授权本机身份调用指定BYOK供应商实例和模型同步生成图片，下载产物并登记素材，返回签名URL、assetId、MIME与尺寸。缺少providerInstanceId或model返回400；维护期间返回503；上游或适配器失败返回502。",
+        "description": "以已授权本机身份调用指定BYOK供应商实例和模型同步生成图片，支持参考图、质量与输出格式，下载产物并登记素材，返回签名URL、assetId、MIME与尺寸。缺少providerInstanceId或model返回400；维护期间返回503；上游或适配器失败返回502。",
         "tags": [
           "generate"
         ],
@@ -7393,7 +7393,7 @@
       "post": {
         "operationId": "postAgentGenerateVideo",
         "summary": "受理视频生成任务",
-        "description": "核对本机接入及指定BYOK供应商实例、模型后创建video_generation后台任务，由worker异步执行，进度经GET /api/jobs/{jobId}轮询。成功202返回job_id、status和prompt；任务服务未配置时返回503。",
+        "description": "核对本机接入及指定BYOK供应商实例、模型后创建video_generation后台任务，由worker异步执行，进度经GET /api/jobs/{jobId}轮询。支持参考图、参考视频、原生分辨率及音频开关。成功202返回job_id、status和prompt；任务服务未配置时返回503。",
         "tags": [
           "generate"
         ],
@@ -18910,6 +18910,14 @@
               "ultra"
             ]
           },
+          "outputFormat": {
+            "type": "string",
+            "enum": [
+              "png",
+              "jpg",
+              "webp"
+            ]
+          },
           "inputImages": {
             "maxItems": 4,
             "type": "array",
@@ -18956,11 +18964,7 @@
           },
           "resolution": {
             "type": "string",
-            "enum": [
-              "720p",
-              "1080p",
-              "4k"
-            ]
+            "minLength": 1
           },
           "aspectRatio": {
             "type": "string",
@@ -18970,11 +18974,18 @@
             ]
           },
           "inputImages": {
-            "maxItems": 3,
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1
             }
+          },
+          "inputVideo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "enableAudio": {
+            "type": "boolean"
           },
           "sessionId": {
             "type": "string",

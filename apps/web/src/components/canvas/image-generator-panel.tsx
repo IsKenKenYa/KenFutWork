@@ -196,7 +196,13 @@ export function ImageGeneratorPanel({
       const result = await generateImageDirect(
         accessTokenRef.current,
         prompt.trim(),
-        { model, aspectRatio, quality, ...(sessionId ? { sessionId } : {}) },
+        {
+          model,
+          aspectRatio,
+          quality,
+          inputImages: refImages.map((image) => image.dataUrl),
+          ...(sessionId ? { sessionId } : {}),
+        },
       );
 
       // Check if this generation was cancelled while awaiting
@@ -263,6 +269,7 @@ export function ImageGeneratorPanel({
     model,
     aspectRatio,
     quality,
+    refImages,
     sessionId,
     excalidrawApi,
     elementId,

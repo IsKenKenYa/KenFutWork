@@ -451,3 +451,23 @@ export const modelCatalogResponseSchema = z.object({
   models: z.array(modelCatalogEntrySchema),
 });
 export type ModelCatalogResponse = z.infer<typeof modelCatalogResponseSchema>;
+
+/** 解析 instance specifier；非实例 specifier（内置目录/裸模型名）返回 undefined。 */
+export function parseInstanceSpecifier(
+  specifier: string,
+): { instanceId: string; model: string } | undefined {
+  const separatorIndex = specifier.indexOf(":");
+  if (separatorIndex <= 0 || separatorIndex >= specifier.length - 1) {
+    return undefined;
+  }
+  const instanceId = specifier.slice(0, separatorIndex);
+  // 内置目录用 "openai:"/"google:" 等协议词前缀，实例 id 是 uuid（含连字符）。
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      instanceId,
+    )
+  ) {
+    return undefined;
+  }
+  return { instanceId, model: specifier.slice(separatorIndex + 1) };
+}

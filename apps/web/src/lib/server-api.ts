@@ -16,6 +16,7 @@ import type {
   DesignTaskPolicyResponse,
   DirectoryPickerStatus,
   ExecutionMode,
+  ImageGenerationCaps,
   InstanceSettings,
   InstanceSettingsResponse,
   InstanceSkillListResponse,
@@ -45,6 +46,7 @@ import type {
   SessionCreateResponse,
   SessionListResponse,
   UploadResponse,
+  VideoGenerationCaps,
   VoiceDiagnoseResponse,
   VoiceModelListResponse,
   VoiceModelResponse,
@@ -55,6 +57,7 @@ import type {
   VoiceTranscribeResponse,
 } from "@kenfutwork/shared";
 import {
+  parseInstanceSpecifier,
   projectDirectoryRelinkResponseSchema,
   projectDirectoryRelinkSnapshotSchema,
 } from "@kenfutwork/shared";
@@ -982,6 +985,9 @@ export type GenerateImageResponse = {
 };
 
 export type ImageModelInfo = {
+  providerInstanceId?: string;
+  modelId?: string;
+  imageGeneration?: ImageGenerationCaps;
   id: string;
   displayName: string;
   description: string;
@@ -1001,6 +1007,9 @@ export async function fetchImageModels(): Promise<{
 }
 
 export type VideoModelInfo = {
+  providerInstanceId?: string;
+  modelId?: string;
+  videoGeneration?: VideoGenerationCaps;
   id: string;
   displayName: string;
   description: string;
@@ -1008,10 +1017,10 @@ export type VideoModelInfo = {
   iconUrl?: string;
   minTier?: string;
   capabilities?: {
-    textToVideo: boolean;
-    imageToVideo: boolean;
-    videoToVideo: boolean;
-    audio: boolean;
+    textToVideo?: boolean;
+    imageToVideo?: boolean;
+    videoToVideo?: boolean;
+    audio?: boolean;
   };
   limits?: {
     maxDuration: number;
@@ -1072,13 +1081,27 @@ export async function fetchVideoModels(): Promise<{
   return (await response.json()) as { models: VideoModelInfo[] };
 }
 
+function generationModel(
+  model: string | undefined,
+  providerInstanceId?: string,
+) {
+  if (!model) return {};
+  const parsed = parseInstanceSpecifier(model);
+  if (parsed)
+    return { providerInstanceId: parsed.instanceId, model: parsed.model };
+  return { model, ...(providerInstanceId ? { providerInstanceId } : {}) };
+}
+
 export async function generateImageDirect(
   accessToken: string | null | undefined,
   prompt: string,
   options?: {
     model?: string;
+    providerInstanceId?: string;
     aspectRatio?: string;
     quality?: string;
+    inputImages?: string[];
+    outputFormat?: "png" | "jpg" | "webp";
     /** 会话标识（§4.8）：实例自定义头里的 `{{sessionId}}` 按它渲染。 */
     sessionId?: string;
   },
@@ -1090,9 +1113,15 @@ export async function generateImageDirect(
       headers: authJsonHeaders(accessToken),
       body: JSON.stringify({
         prompt,
-        ...(options?.model ? { model: options.model } : {}),
+        ...generationModel(options?.model, options?.providerInstanceId),
         ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
         ...(options?.quality ? { quality: options.quality } : {}),
+        ...(options?.inputImages?.length
+          ? { inputImages: options.inputImages }
+          : {}),
+        ...(options?.outputFormat
+          ? { outputFormat: options.outputFormat }
+          : {}),
         ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
       }),
     },
@@ -1116,10 +1145,13 @@ export async function generateVideoDirect(
   prompt: string,
   options?: {
     model?: string;
+    providerInstanceId?: string;
     duration?: number;
     resolution?: string;
     aspectRatio?: string;
     inputImages?: string[];
+    inputVideo?: string;
+    enableAudio?: boolean;
     /** 会话标识（§4.8）：随任务落库，worker 侧按它渲染自定义头占位符。 */
     sessionId?: string;
   },
@@ -1131,12 +1163,16 @@ export async function generateVideoDirect(
       headers: authJsonHeaders(accessToken),
       body: JSON.stringify({
         prompt,
-        ...(options?.model ? { model: options.model } : {}),
+        ...generationModel(options?.model, options?.providerInstanceId),
         ...(options?.duration != null ? { duration: options.duration } : {}),
         ...(options?.resolution ? { resolution: options.resolution } : {}),
         ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
         ...(options?.inputImages?.length
           ? { inputImages: options.inputImages }
+          : {}),
+        ...(options?.inputVideo ? { inputVideo: options.inputVideo } : {}),
+        ...(options?.enableAudio !== undefined
+          ? { enableAudio: options.enableAudio }
           : {}),
         ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
       }),
