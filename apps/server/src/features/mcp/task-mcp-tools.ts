@@ -17,7 +17,7 @@ function definition(
   return {
     name,
     description,
-    scope: "code",
+    scope: "shared",
     exposure: "deferred",
     access,
     parameters: z.toJSONSchema(schema),
@@ -58,7 +58,7 @@ export function createTaskMcpTools(service: TaskMcpService): ToolDefinition[] {
     ),
     definition(
       "list_mcp_servers",
-      "列出当前Task的MCP连接状态、工具名称与env键名；不回显env值。全局Design MCP仍在原管理面板维护。",
+      "列出当前Task的MCP连接状态、工具名称与env键名；不回显env值。实例MCP配置在设置面板维护。",
       z.object({}).strict(),
       "read",
       (_args, context) => service.list(context),

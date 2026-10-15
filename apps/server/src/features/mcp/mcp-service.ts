@@ -7,7 +7,13 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { ServerEnv } from "../../config/env.js";
 import type { ToolExecutionContext, ToolRegistry } from "../../kernel/types.js";
 import type { ComputerUseMcpConnection } from "../computer-use/mcp-backend.js";
-import { type McpClientLike, registerMcpServerTools } from "./mcp-tools.js";
+import {
+  assertMcpContribution,
+  type McpClientLike,
+  type McpServerToolLike,
+  mcpConfigurationVersion,
+  registerMcpServerTools,
+} from "./mcp-tools.js";
 import type {
   McpServerCreateRaw,
   McpServerPatch,
@@ -15,7 +21,11 @@ import type {
   PublicMcpServer,
   StoredMcpServer,
 } from "./server-store.js";
-import { mcpFailure } from "./task-mcp-context.js";
+import {
+  mcpFailure,
+  refreshMcpScope,
+  taskMcpContext,
+} from "./task-mcp-context.js";
 
 /**
  * MCP server 运行态管理（连接生命周期 + 配置变更后的收敛）。
@@ -87,11 +97,24 @@ interface Connection {
   call: McpClientLike["callTool"];
 }
 
+export type McpConnectionConfiguration = Pick<
+  McpSettingsConfiguration,
+  "name" | "kind" | "command" | "url" | "args" | "env" | "headers"
+>;
+
 export function createMcpService(options: {
   env: ServerEnv;
   registry: ToolRegistry;
   store: McpServerStore;
   resolveTimeoutMs?: () => Promise<number>;
+  executeTool?: (
+    source: McpConnectionConfiguration,
+    tool: McpServerToolLike,
+    args: Record<string, unknown>,
+    context: ToolExecutionContext,
+    remoteCall: () => Promise<unknown>,
+  ) => Promise<unknown>;
+  onDisconnect?: (name: string) => Promise<void>;
 }): McpService {
   /** name → 已连接（含工具注销器）。 */
   const connections = new Map<string, Connection>();
@@ -138,6 +161,9 @@ export function createMcpService(options: {
       if (connection?.client !== mcpClient) return;
       connections.delete(name);
       connection.disposeTools();
+      void options.onDisconnect?.(name).catch((error: unknown) => {
+        console.warn(`[mcp] ${name} Task连接停止失败：`, error);
+      });
       if (!closed) failures.set(name, "MCP连接已断开，请在库存中重连。");
     };
     initializing.add(mcpClient);
@@ -201,17 +227,42 @@ export function createMcpService(options: {
       const { tools } = await client.listTools();
       ensureOpen();
       if (closedDuringConnect) throw new Error("MCP握手期间连接已经关闭。");
+      const source = structuredClone({ ...spec, name });
+      const taskClient: McpClientLike = {
+        listTools: client.listTools,
+        callTool: async (args, signal, context) => {
+          if (!context || !options.executeTool)
+            throw new Error("MCP调用缺少Task执行接线，请重启应用。");
+          await refreshMcpScope(taskMcpContext(context));
+          const metadata = tools.find((tool) => tool.name === args.name);
+          if (!metadata || connections.get(name)?.client !== mcpClient)
+            throw new Error("MCP工具或连接已改变，请重新发起调用。");
+          assertMcpContribution(
+            options.registry,
+            `mcp:instance:mcp__${name}__${metadata.name}`,
+            context,
+          );
+          return options.executeTool(
+            source,
+            metadata,
+            args.arguments ?? {},
+            context,
+            () => client.callTool(args, signal),
+          );
+        },
+      };
       const disposeTools = registerMcpServerTools(
         options.registry,
         name,
         tools,
-        client,
+        taskClient,
+        mcpConfigurationVersion(source),
       );
       connections.set(name, {
         client: mcpClient,
         disposeTools,
         toolCount: tools.length,
-        call: client.callTool,
+        call: taskClient.callTool,
       });
       failures.delete(name);
       console.log(
@@ -230,6 +281,7 @@ export function createMcpService(options: {
   async function disconnect(name: string) {
     const connection = connections.get(name);
     if (!connection) {
+      await options.onDisconnect?.(name);
       return;
     }
     connections.delete(name);
@@ -238,11 +290,14 @@ export function createMcpService(options: {
     } catch (error) {
       console.warn(`[mcp] ${name} 工具注销失败：`, error);
     }
-    try {
-      await connection.client.close();
-    } catch (error) {
-      console.warn(`[mcp] ${name} 连接关闭失败：`, error);
-    }
+    await Promise.all([
+      options.onDisconnect?.(name),
+      connection.client
+        .close()
+        .catch((error: unknown) =>
+          console.warn(`[mcp] ${name} 连接关闭失败：`, error),
+        ),
+    ]);
   }
 
   async function reconcile(server: {
@@ -379,6 +434,7 @@ export function createMcpService(options: {
               return connection.call(
                 { name: tool, arguments: args },
                 context.signal,
+                context,
               );
             },
           },

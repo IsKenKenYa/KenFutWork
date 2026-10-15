@@ -47,7 +47,7 @@ it("Code创建绑定真实Task工作域、只发显式env，动态发现经共�
     .find((tool) => created.toolNames.includes(tool.name));
   if (!imported) throw new Error("Task MCP工具未进入共同registry动态发现。");
   expect(imported.access).toBe("execute");
-  expect(imported.scope).toBe("code");
+  expect(imported.scope).toBe("shared");
   expect(imported.name).toMatch(/^mcp__task_/);
   const next = {
     ...f.context,
@@ -266,3 +266,55 @@ it("点/中文/长名称由公共ToolSearch找到ASCII协议alias，调用保留
     .find((message) => message.method === "tools/call");
   expect(call?.params.name).toBe(original);
 });
+
+it.each(["code", "design"] as const)(
+  "%s实例stdio调用按当前Task建连接，拒绝schema漂移且不把实例连接二次注册为Task工具",
+  async (preset) => {
+    const f = await fixture();
+    const source = {
+      name: "managed",
+      kind: "stdio" as const,
+      command: "node",
+      args: ["server.mjs"],
+      env: { TOKEN: "private" },
+      headers: {},
+      url: null,
+    };
+    const context = { ...f.context, workContext: { preset } };
+    const metadata = {
+      name: "echo",
+      inputSchema: {
+        type: "object",
+        properties: { text: { type: "string" } },
+        required: ["text"],
+      },
+    };
+    expect(
+      await f.service.callConfigured(
+        source,
+        metadata,
+        { text: preset },
+        context,
+      ),
+    ).toMatchObject({ content: [{ text: preset }] });
+    expect(f.calls[0]).toMatchObject({
+      scope: f.scope,
+      cwd: f.root,
+      env: source.env,
+    });
+    expect(f.registry.resolveRunTools({ ...f.resolution(), preset })).toEqual(
+      [],
+    );
+    expect(await f.service.list(f.context)).toEqual([]);
+    await expect(
+      f.service.callConfigured(
+        source,
+        { ...metadata, inputSchema: { type: "object" } },
+        { text: "漂移" },
+        context,
+      ),
+    ).rejects.toMatchObject({ code: "mcp_schema_changed" });
+    await f.service.closeSource(source.name);
+    expect(f.children[0]?.process.snapshot().exit?.rangeEmpty).toBe(true);
+  },
+);
