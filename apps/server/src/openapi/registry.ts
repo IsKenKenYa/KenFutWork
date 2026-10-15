@@ -131,6 +131,8 @@ import {
   messageListResponseSchema,
   modelCatalogResponseSchema,
   modelListResponseSchema,
+  openDesignHostConfigResponseSchema,
+  openDesignHostConfigUpdateSchema,
   openDesignHostCredentialsRequestSchema,
   openDesignHostCredentialsResponseSchema,
   openDesignHostStatusResponseSchema,
@@ -1600,6 +1602,29 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "下发 OpenDesign agent CLI 的 BYOK 凭证",
     description:
       "OpenDesign daemon 持共享密钥（Bearer，与 KENFUTWORK_OPEN_DESIGN_EMBED_SECRET 成对）调用，宿主返回全部启用且有 Key 的 BYOK 实例清单（providerId/name/protocol/apiBase/明文 apiKey），由 daemon 按各 coding-agent CLI 自行选用。未配密钥 503；协议版本不符 400；无可用实例 404；Key 读不到或地址非法 409（失败消息不含 Key 明文）。明文 Key 仅经此机器对机器通道下发，浏览器 iframe 不经过它。",
+  },
+  {
+    method: "get",
+    path: "/api/open-design/host/config",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: openDesignHostConfigResponseSchema,
+    summary: "读取 OpenDesign 桌面承载配置",
+    description:
+      "返回桌面数据目录 config/open-design.env 里的当前配置（前端地址与成对密钥）、生效来源（env 覆盖 / 文件 / 未启用）与是否需要重启桌面才生效。本机接入验证。",
+  },
+  {
+    method: "put",
+    path: "/api/open-design/host/config",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: openDesignHostConfigUpdateSchema,
+    responseSchema: openDesignHostConfigResponseSchema,
+    summary: "写入 OpenDesign 桌面承载配置",
+    description:
+      "全量替换两键（空值=清除）：前端地址只接受 http(s) origin；写入桌面数据目录的配置文件，重启桌面后经壳白名单注入生效（装配期定形）。本机接入验证。",
   },
   // ---- fonts.ts（字体；免鉴权）----
   {

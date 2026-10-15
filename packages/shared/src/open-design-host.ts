@@ -83,6 +83,37 @@ export function resolveOpenDesignEntry(input: {
 }
 
 /* ------------------------------------------------------------------ *
+ * 桌面承载配置（§205 闭环：设置页写入口）
+ *
+ * 桌面形态的 OpenDesign 承载走 `<dataDir>/config/open-design.env`（Tauri 启动时
+ * 白名单注入，改文件重启生效）。这对缝给设置页读写：GET 回文件值 + 是否待重启；
+ * PUT 全量替换两键（空值 = 清除）。明文回显按 DEC-7 本地凭据口径（可查看/复制）。
+ * ------------------------------------------------------------------ */
+
+/** GET 响应：文件里的当前配置 + 生效判定。 */
+export const openDesignHostConfigResponseSchema = z.object({
+  /** 文件值（未配置为 null）。 */
+  frontendUrl: z.string().nullable(),
+  embedSecret: z.string().nullable(),
+  /** 文件与运行中进程的实际生效值不一致 → 需要重启桌面才生效。 */
+  restartRequired: z.boolean(),
+  /** 生效来源：env 覆盖（dev/自托管）优先于桌面配置文件。 */
+  source: z.enum(["env", "file", "none"]),
+});
+export type OpenDesignHostConfigResponse = z.infer<
+  typeof openDesignHostConfigResponseSchema
+>;
+
+/** PUT 请求：两键全量替换；null/缺省 = 清除该键。 */
+export const openDesignHostConfigUpdateSchema = z.object({
+  frontendUrl: z.string().trim().min(1).max(2048).nullable().optional(),
+  embedSecret: z.string().trim().min(1).max(256).nullable().optional(),
+});
+export type OpenDesignHostConfigUpdate = z.infer<
+  typeof openDesignHostConfigUpdateSchema
+>;
+
+/* ------------------------------------------------------------------ *
  * `od/v1` 嵌入协议（O2：iframe 双向链接的最小档）
  *
  * 方向约定（与 `ff-embed/v1` 同思路，只做握手，不做身份/凭证）：

@@ -48,6 +48,9 @@ KENFUTWORK_OPEN_DESIGN_EMBED_SECRET=<与 OpenDesign 栈 OD_API_TOKEN 成对；�
   KENFUTWORK_OPEN_DESIGN_EMBED_SECRET=<自选成对值>
   ```
 
+  也可以走**设置页 → OpenDesign**（写同一文件，保存后重启桌面生效；环境变量在场时
+  以 env 为准，界面会如实标出来源）。
+
 - 镜像钉 digest（`ghcr.io/nexu-io/od@sha256:587a99…`，2026-10-15 观测 = release
   `open-design-v0.24.1`），升级走 compose 改动 + 回归；归属登记 `THIRD-PARTY-NOTICES.md` §F。
 

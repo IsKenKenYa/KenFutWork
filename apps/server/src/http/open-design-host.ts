@@ -1,5 +1,7 @@
 import {
   applicationErrorResponseSchema,
+  openDesignHostConfigResponseSchema,
+  openDesignHostConfigUpdateSchema,
   openDesignHostCredentialsRequestSchema,
   openDesignHostCredentialsResponseSchema,
   openDesignHostStatusResponseSchema,
@@ -10,6 +12,11 @@ import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import type { LocalActor } from "../features/local-instance/types.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { OpenDesignCompanionSnapshot } from "../features/open-design/companion.js";
+import {
+  readOpenDesignFileConfig,
+  resolveOpenDesignConfigView,
+  writeOpenDesignFileConfig,
+} from "../features/open-design/config-store.js";
 import {
   resolveOpenDesignCredentials,
   resolveOpenDesignProtocolVersion,
@@ -49,6 +56,8 @@ export async function registerOpenDesignHostRoutes(
     localInstance?: { serviceActor(): Promise<LocalActor> };
     /** 伴随容器快照（§9-3 承载；缺省 = 不托管，status 只报 HTTP 事实）。 */
     companion?: (() => OpenDesignCompanionSnapshot) | undefined;
+    /** 桌面数据目录（config 读写缝；缺省 = 不注册 config 路由，如远端自托管）。 */
+    dataDir?: string | undefined;
   },
 ): Promise<void> {
   const error = (
@@ -85,6 +94,87 @@ export async function registerOpenDesignHostRoutes(
       ),
     );
   });
+
+  if (options.dataDir) {
+    const dataDir = options.dataDir;
+    // 桌面承载配置读写（§205 闭环）：本机接入门；文件值重启后经 Tauri 注入生效。
+    app.get("/api/open-design/host/config", async (request, reply) => {
+      if (!(await options.localAccess.authenticate(request)))
+        return unauthorized(reply, "本机接入凭据缺失或无效。");
+      return reply.send(
+        openDesignHostConfigResponseSchema.parse(
+          resolveOpenDesignConfigView({
+            file: readOpenDesignFileConfig({ dataDir }),
+            envFrontendUrl: options.frontendUrl,
+            envSecret: options.secret,
+          }),
+        ),
+      );
+    });
+
+    app.put("/api/open-design/host/config", async (request, reply) => {
+      if (!(await options.localAccess.authenticate(request)))
+        return unauthorized(reply, "本机接入凭据缺失或无效。");
+      const parsed = openDesignHostConfigUpdateSchema.safeParse(
+        request.body ?? {},
+      );
+      if (!parsed.success) {
+        return error(
+          reply,
+          400,
+          "application_error",
+          "OpenDesign 承载配置格式不正确。",
+        );
+      }
+      const frontendUrl = parsed.data.frontendUrl ?? null;
+      if (frontendUrl) {
+        // 与 env 的 parseHttpOrigin 同口径：只收 http(s) origin，不带路径/凭据
+        let url: URL;
+        try {
+          url = new URL(frontendUrl);
+        } catch {
+          return error(
+            reply,
+            400,
+            "application_error",
+            "前端地址不是合法 URL，请填写 http(s) origin。",
+          );
+        }
+        if (url.protocol !== "http:" && url.protocol !== "https:") {
+          return error(
+            reply,
+            400,
+            "application_error",
+            "前端地址只支持 http/https。",
+          );
+        }
+        if (url.username || url.password || url.pathname !== "/") {
+          return error(
+            reply,
+            400,
+            "application_error",
+            "前端地址只接受 origin，如 http://127.0.0.1:7456。",
+          );
+        }
+      }
+      writeOpenDesignFileConfig({
+        dataDir,
+        config: {
+          frontendUrl,
+          embedSecret: parsed.data.embedSecret ?? null,
+        },
+      });
+      return reply.send(
+        openDesignHostConfigResponseSchema.parse(
+          resolveOpenDesignConfigView({
+            file: readOpenDesignFileConfig({ dataDir }),
+            envFrontendUrl: options.frontendUrl,
+            envSecret: options.secret,
+          }),
+        ),
+      );
+    });
+  }
 
   app.post(
     "/api/open-design/host/credentials",

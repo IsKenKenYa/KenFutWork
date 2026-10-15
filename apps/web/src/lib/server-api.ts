@@ -1283,6 +1283,41 @@ export type CdpStatusView =
     }
   | { status: "error"; message: string };
 
+/** OpenDesign 桌面承载配置（§205）：读写 `<dataDir>/config/open-design.env`。 */
+export interface OpenDesignConfigView {
+  frontendUrl: string | null;
+  embedSecret: string | null;
+  restartRequired: boolean;
+  source: "env" | "file" | "none";
+}
+
+export async function fetchOpenDesignConfig(
+  accessToken: string | null | undefined,
+): Promise<OpenDesignConfigView> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/open-design/host/config`,
+    { headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as OpenDesignConfigView;
+}
+
+export async function updateOpenDesignConfig(
+  accessToken: string | null | undefined,
+  input: { frontendUrl: string | null; embedSecret: string | null },
+): Promise<OpenDesignConfigView> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/open-design/host/config`,
+    {
+      method: "PUT",
+      headers: authHeaders(accessToken),
+      body: JSON.stringify(input),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as OpenDesignConfigView;
+}
+
 export async function fetchCdpStatus(
   accessToken: string | null | undefined,
 ): Promise<CdpStatusView> {

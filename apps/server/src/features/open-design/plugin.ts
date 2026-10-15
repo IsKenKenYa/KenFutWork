@@ -5,6 +5,7 @@ import {
   isPackagedRuntime,
   resolveEntryRoot,
 } from "../../desktop/entry-root.js";
+import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import { registerOpenDesignHostRoutes } from "../../http/open-design-host.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import {
@@ -98,6 +99,10 @@ export function createOpenDesignHostPlugin(deps: {
         providers: ctx.get("modelProviders"),
         localInstance: ctx.get("localInstance"),
         companion: () => companion.snapshot(),
+        // 桌面承载配置读写（设置页写入口，§205）：数据目录口径同 flow 引擎记录
+        dataDir: resolveDesktopDataDir({
+          env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
+        }),
       });
       const mode = resolveOpenDesignCarrierMode(deps.frontendUrl);
       if (mode === "managed") {

@@ -1,3 +1,7 @@
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import type { LocalInstanceService } from "../features/local-instance/types.js";
@@ -186,5 +190,135 @@ describe("POST /api/open-design/host/credentials", () => {
     expect(authorized.statusCode).toBe(200);
     expect(authorized.json().enabled).toBe(false);
     expect(authorized.json().reasons.join("")).toContain("未配置");
+  });
+});
+
+/**
+ * 桌面承载配置读写（§205 设置页写入口）：本机接入门 + origin 校验 + 文件往返。
+ */
+describe("GET/PUT /api/open-design/host/config", () => {
+  const configFixture = (
+    options: { authorized?: boolean; withDir?: boolean } = {},
+  ) => {
+    const app = Fastify();
+    const dataDir =
+      options.withDir === false
+        ? undefined
+        : mkdtempSync(join(tmpdir(), "kfw-od-route-"));
+    void registerOpenDesignHostRoutes(app, {
+      localAccess: {
+        authenticate: async () => (options.authorized === false ? null : actor),
+      },
+      localInstance,
+      ...(dataDir ? { dataDir } : {}),
+    });
+    return { app, dataDir };
+  };
+
+  it("空目录 GET → 全空 + source=none；PUT 合法 origin 后 GET 回读（file + 待重启）", async () => {
+    const { app, dataDir } = configFixture();
+    const empty = await app.inject({
+      method: "GET",
+      url: "/api/open-design/host/config",
+    });
+    expect(empty.statusCode).toBe(200);
+    expect(empty.json()).toEqual({
+      frontendUrl: null,
+      embedSecret: null,
+      restartRequired: false,
+      source: "none",
+    });
+
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/open-design/host/config",
+      payload: {
+        frontendUrl: "http://127.0.0.1:7456",
+        embedSecret: "paired-value",
+      },
+    });
+    expect(put.statusCode).toBe(200);
+    expect(put.json()).toEqual({
+      frontendUrl: "http://127.0.0.1:7456",
+      embedSecret: "paired-value",
+      restartRequired: true,
+      source: "file",
+    });
+    // 落盘的是 Tauri 认识的白名单文件格式
+    const raw = readFileSync(
+      join(dataDir!, "config", "open-design.env"),
+      "utf8",
+    );
+    expect(raw).toContain(
+      "KENFUTWORK_OPEN_DESIGN_FRONTEND_URL=http://127.0.0.1:7456",
+    );
+    expect(raw).toContain("KENFUTWORK_OPEN_DESIGN_EMBED_SECRET=paired-value");
+  });
+
+  it("origin 校验三拒：坏 URL / 带路径 / 非 http(s)——都不落盘", async () => {
+    const { app, dataDir } = configFixture();
+    for (const bad of [
+      "not a url",
+      "http://127.0.0.1:7456/some/path",
+      "ftp://h/p",
+    ]) {
+      const res = await app.inject({
+        method: "PUT",
+        url: "/api/open-design/host/config",
+        payload: { frontendUrl: bad },
+      });
+      expect(res.statusCode, bad).toBe(400);
+    }
+    expect(existsSync(join(dataDir!, "config", "open-design.env"))).toBe(false);
+  });
+
+  it("两键全 null → 清除文件内容（回到 none）", async () => {
+    const { app } = configFixture();
+    await app.inject({
+      method: "PUT",
+      url: "/api/open-design/host/config",
+      payload: { frontendUrl: "http://localhost:7456", embedSecret: "x" },
+    });
+    const cleared = await app.inject({
+      method: "PUT",
+      url: "/api/open-design/host/config",
+      payload: { frontendUrl: null, embedSecret: null },
+    });
+    expect(cleared.json()).toMatchObject({
+      frontendUrl: null,
+      embedSecret: null,
+      source: "none",
+    });
+  });
+
+  it("本机接入未授权 → GET/PUT 都 401；未配 dataDir → 路由不注册（404）", async () => {
+    const denied = configFixture({ authorized: false });
+    expect(
+      (
+        await denied.app.inject({
+          method: "GET",
+          url: "/api/open-design/host/config",
+        })
+      ).statusCode,
+    ).toBe(401);
+    expect(
+      (
+        await denied.app.inject({
+          method: "PUT",
+          url: "/api/open-design/host/config",
+          payload: {},
+        })
+      ).statusCode,
+    ).toBe(401);
+
+    const noDir = configFixture({ withDir: false });
+    expect(
+      (
+        await noDir.app.inject({
+          method: "GET",
+          url: "/api/open-design/host/config",
+        })
+      ).statusCode,
+    ).toBe(404);
   });
 });
