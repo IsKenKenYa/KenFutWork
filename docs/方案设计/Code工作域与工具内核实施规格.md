@@ -164,3 +164,94 @@ Task的基础权限mode与独立planEnabled分别持有。输入接纳即冻结�
 4. 门禁与桌面验收：`pnpm test:workspace`、`pnpm exec turbo run test --concurrency=1`、`pnpm typecheck`、`pnpm lint`；`pnpm desktop` 下现有 GLM 验证真实文件、画布、审批、跨模式、重启恢复。GUI 与自动化证据分别记录。
 
 每步独立验证与提交，日志记录实际完成项。Work 规划同步改为共享会话/内容插件接缝，不实现 Office；future OpenDesign 与 Flow 编辑逻辑不扩入本轮。
+
+### 持续 Goal 执行账本（2026-10-15）
+
+Goal 为本节完整目标，阶段回执不能代替完成。起点 `ec13c97f`；项目基础已提交，所有后续条目在实际验收前保持未完成。
+
+| 条目 | 状态 | 验收依据 |
+| --- | --- | --- |
+| 默认工作方式与显式启用列表、按需求创建基础 | 已完成 | 日志一百九十六；全量门禁与真实临时 PG |
+| 同目录提示与复用/独立创建 | 实施中 | 公共项目接口 + 原项目选择交互 |
+| 统一 Task、Run 上下文冻结、队列/Goal/恢复 | 实施中 | 原 V4 命令/公共 Run/真实 Scope，重放及代际回归 |
+| 共用 SessionPane 与右侧文档标签 | 实施中 | 原 UI 操作与桌面三栏，内容不抢占 |
+| 文档 CRUD/权限与媒体、选区、品牌插件 | 实施中 | 文档/生成发布公共接口，CAS及删除迟到验证 |
+| 旧 Design UI/运行链路退役 | 待接线验收 | 全仓生产引用清零，Code/Flow回归 |
+| Work 规划与 API/来源/日志同步 | 待最终收口 | 文档与来源门禁，Apifox AI分支 |
+| 完整真实桌面 GLM 验收 | 未执行 | 正确 pnpm desktop 实例，真实文件/媒体/跨模式/恢复证据 |
+
+主代理持有唯一测试/构建/提交入口；Task/Run、文档插件、内容标签按文件所有权并行实现，共享契约逐 hunk 协调。用户要求发现目标漂移时停止：新增 Work/Flow/OpenDesign 编辑范围、另写 Agent UI/第三套 Task 状态、隐式合并项目、伪造或降低验收均属漂移；停下对应改动、记录偏差并重新对齐。常规失败和接线缺口应修复，不用「已完成」掩盖。
+
+
+#### 2026-10-15 集成检查点（未完成）
+
+- Goal仍active；只在`啃啃在开发`施工，`main`/`future`和他人reference改动未纳入。
+- 原Task/V4输入增加工作上下文与贡献快照；HTTP/WS正迁向同一准入，旧Design执行插件与UI被替换。源码删除不等于已完成验收。
+- 文档第一轮34项通过（`/tmp/kfw-unified-document-first.log`）；后台核心第一轮106项通过（`/tmp/kfw-unified-first-core-suite.log`）。第二轮扩大UI检查73通过/8失败，包含新桥接回执和原Markdown组件测试材料差异，正在修复；不得引用为全绿。
+- 全量门禁、当前HEAD完整类型检查、来源清单、真实PG发布/取消并发、桌面GLM与重启恢复尚未完成。全部实现和删除仍是WIP，不据此标Goal complete。
+- 媒体统一由worker对冻结Job/Task/文档发布，以真实assetId投影到原会话；原Run取消窗口、撤销授权与最后文件发布的屏障仍需真实并发验证。文档锁经persistence专用连接，避免持池连接等待同一池的资源饥饿。
+
+#### 2026-10-15 接线复核（仍未完成）
+
+- 原UI独立类型检查通过（`/tmp/kfw-unified-ui-sixth-typecheck.log`）。媒体偏好从Next依赖迁入宿主共享入口，Next画布通过编译入口复用同一实现，没有复制媒体UI。
+- 扩大前端回归72项：71通过、1个旧显式项目打开夹具失败；该夹具已补真实项目ID，待复跑。媒体、文档桥接/标签、原Markdown、预热与独立文档通知在该轮通过，不能代替完整桌面验收。
+- 服务端定向123项：122通过、1个迟到截图错误措辞夹具失败；已核RPC返回后重新验权且未上传/登记文件，修正夹具后待复跑。
+- 同目录409恢复和重新关联显式共用正在实现；Goal能力改为逐Run捕获，旧Run保持冻结。原Goal模型/目标不因此变化，后台续轮不借用已完成Goal的旧上下文。
+- 临时PG真实并发和退役迁移本轮在运行，结果未定；完整门禁、Apifox和pnpm desktop/GLM仍未完成。品牌冻结套件ID，工具读取时核真实资产版本；未声称Run启动即冻结套件全部资产内容。
+
+#### 2026-10-15 扩大验收与审阅（仍未完成）
+
+- 完整 `pnpm typecheck` 26/26、`pnpm test:workspace` 38/38通过；原UI构建成功。它们是对应检查时的WIP证据，后续审阅修复必须复验。
+- 全包串行第一轮未通过：服务端2790通过、29失败、345默认跳过，12个失败文件。旧运行夹具与退役聊天入口测试正在修正，EmptyProviderResultError闸门不放宽。不能把此轮描述为全包green。
+- 根线程后续窄回归：服务端退役/公共Run/文件工具49项通过；UI恢复/媒体/共享宿主43项通过（含断线删除后GET事实清理旧编辑器和引用）。新增Code/Design不能走旧聊天写入的两项负向测试还待下一轮执行。
+- 临时PG第五轮12项10通过2夹具失败（Task创建顺序、Canvas实例权限join），均已修材料待复跑。目录PG12项11通过1失败；失败为手工影子Git路径与生产short-layout不同，已改用同一helper并加强真实Git/excludes及缺仓拒绝证据，待复跑。
+- 双轴源码审阅发现原ACK去重前重新验资源会阻断已接纳输入重放，Task实现代理正在修正并补PG回归。导航审阅发现深链重试、迟到目标与初始跨方式准入缺口；容量错误前已有部分源码写入，根线程接管并补RPC迟到选择guard及真实Zustand存储修正，行为测试正在补齐。审阅不是GUI或执行通过证明。
+- SessionPane改为通用ComposerContext贡献接口，品牌/媒体/画布header和移除引用留在宿主插件侧；贡献指纹规范化由Kernel/MCP共用内部实现。原UI独立类型检查第七轮通过。
+- OpenAPI已生成189端点/169组件，尚未同步本轮Apifox AI分支；首次lint有格式阻断，已只修所属第一方文件，未格式化来源原件，最终lint待跑。尚未提交后续里程碑，Goal仍active，桌面GLM/媒体/重启恢复尚未执行。
+
+#### 2026-10-15 重放与导航回归阶段结果（未完成）
+
+- 公共Runtime/审批/原输入定向8文件78项通过（`/tmp/kfw-unified-runtime-retirement-second.log`）；正常Provider夹具产生实际消息，空结果闸门保持拒绝，autoCommit未延长超时。
+- 导航4文件27项通过（`/tmp/kfw-unified-navigation-first.log`），含真实TabStore与HTTP client；权威404清理引用后的Web类型检查也通过。贡献指纹/Canvas工具/Flow旧聊天限制/MCP定向53项通过。
+- 临时PG8文件14项通过、TaskWork独立开关4项跳过；随后单独打开该开关4/4通过。目录先前11项通过，手工Git夹具纠正后的Code检查点场景单独1/1通过，保留额外缺仓拒绝证据；这不是本轮完整桌面证明。
+- Task发送ACK重放已通过真实PG；Goal控制与Session创建同类准备顺序仍在补修，不把发送路径green等同所有命令幂等已完成。全包、最终typecheck/lint、Apifox、真实桌面与分步提交仍待闭合。
+
+#### 2026-10-15 收口检查点（仍未完成）
+
+- Goal实时核对为active，HEAD仍`ec13c97f`，暂存区为空；只有`啃啃在开发`主工作区。后续实现和退役文件尚未提交，不改动main/future或其他作者分支。
+- Goal控制、会话创建与输入原ACK重放的临时真实PG回归4/4通过（`/tmp/kfw-unified-control-replay-pg-first.log`）；真正macOS沙箱内的Task MCP场景1/1通过（`/tmp/kfw-unified-mcp-native-second.log`）。首次MCP材料误传shell启动器的失败保留，不据此声称产品故障。
+- Canvas编辑器准备注册改为同步的当前文档ref，保存前后复核画布身份；恢复准备、挂起保存、缺失revision与切换文档14/14通过（`/tmp/kfw-unified-canvas-prepare-sixth.log`）。
+- 最新workspace门禁38/38通过（`/tmp/kfw-unified-workspace-final.log`）；完整串行包测试第四轮正在运行。此前第三轮Web失败未被当作完成证据，最终typecheck/lint待跑。
+- Apifox仅更新AI分支`ai/20261014-from-main-code-design-unification`（8729198）：189个spec端点完整存在、无重复，10个旧Design端点已移除；36个原有spec外接口保留。未合并Apifox主支。
+- 停机备份已取得7498文件/2600583312字节核验回执；当前尚未启动本轮pnpm desktop，没有GUI/GLM/媒体/重启恢复完成证据。真实桌面数据迁移与验收仍待执行。
+
+#### 2026-10-15 首轮真实桌面结果（未完成）
+
+- 原仓`pnpm desktop`已启动`KenFutWork.app`（API3301/Web3400），实际日志完成两条新前向迁移。新项目无画布，显式共享后出现Design文档入口，手动创建才产生画布和可移除引用；这一GUI链已观察。
+- “启用Design”误报已实际复现：PATCH成功204，但宿主继续JSON解析。真实204进入原导航测试后RED，修复后导航/宿主19/19 GREEN，重建并重启后的新项目显式共享成功。首个已共享项目保留，未以重复mutation抹掉失败。
+- 合成项目`9f7c96dd-54ad-44c1-9e81-bf384cdfbdb7`的首发Task`6b9fb047-14b6-4acb-8db0-a9f6cef70327`、Run`d75f28fd-ac69-4176-9e5e-ee87aeb68e0f`失败：创建回执把界面自动切回Code；真实Run报“系统提示工作模式与可信Task不匹配”。没有文件/画布工具执行成功证据。
+- 只读PG回执证明该Run仍冻结Design、画布`87fe795b-78d6-4230-bc3c-421f8217e988`与原选区，Task初始预热上下文是Code。Task身份不等于Run工作方式；提示校验与原Task导航接线分别修复，不能删除强校验、覆盖失败Run或自动重放原输入。
+- Runtime+真实Scope+PromptRegistry回归已取得对应RED（`/tmp/kfw-unified-desktop-prompt-red.log`）；GREEN和原桌面复验待执行。当前图片/视频模型列表仍为空，媒体真实验收等待可用配置。此前全绿门禁只对应首轮桌面前的实现，最终门禁需覆盖桌面发现的修复。
+
+#### 2026-10-15 桌面缺陷回归（待真机复验）
+
+- Runtime+Scope+PromptRegistry修复23/23通过（`/tmp/kfw-unified-desktop-prompt-green.log`）：使用绑定同一真实Task句柄、Run与实例的冻结工作方式，未放宽跨Task/Project/只读角色/缺失身份拒绝。原失败文件实际不存在，原Run仍failed且activeRun为空，没有重放。
+- UI最初缺真实共享Provider的材料2/2未登记为GREEN；补齐后取得Design/Flow自动切Code的两项RED。原Root导航修复后，新建会话又取得画布面板被收起的真实RED。最终四文件23/23通过（`/tmp/kfw-unified-desktop-task-nav-green-second.log`），保留显式Code切换与文档同一iframe实例，Task文件/终端不扩入保留规则。
+- 项目导航读取服务端项目名，不再把托管目录UUID当项目名；名称更新不改Task/目录身份。独立RED后与共享导航11/11通过。只登记App实际适配复制哈希及说明，原始来源SHA/基线未改。
+- 第三次原仓`pnpm desktop`正在重建/启动；真实工具、审批、Goal重启恢复和最终四门禁仍待执行，媒体配置仍待用户提供。
+
+#### 2026-10-15 真实GLM文件与冻结目标验收（全目标仍未完成）
+
+- 第三次原桌面构建/启动通过；同一Task`6b9fb047-14b6-4acb-8db0-a9f6cef70327`保留旧失败后接纳新Design Run`f12fec32-8a3e-4244-8ff8-45ed306541b8`。manipulate_canvas与Write真实到达原共享“本次允许”审批，批准一次后两工具成功、Run持久状态completed。
+- 等待画布工具审批时，手动创建并切到画布B`2189b678-e295-4d86-a840-b1b1d382abe4`。实际文件/API核对：19字节`统一验收B.txt`等于`unified-recovery-B\n`（SHA256`1e14099de8f134024d9ad207cb428819ae7dc47a1b95fecf48715adfe7e2f149`）；蓝色矩形与“统一会话 B”实际落在冻结画布A，B仍为空，界面仍显示B。不是以模型文字当操作证据。
+- 同一Task显式切Code，Run`8b76f494-6de8-4a73-8645-86d017dd62a9`实际Read成功；Bash审批等待期间切界面到Design，批准后真实`cat 统一验收B.txt`exitCode0、19字节、未截断，Runcompleted。持久Run上下文仍为Code，未借当前界面切换改变执行。
+- GUI三栏/导航收起、共享项目名称、手动文档创建、审批期间内容不抢占与跨模式同会话已有对应观察；原错误仍在历史且原失败文件不存在。证据位于ignored`统一工作台验收`目录，GUI与持久Run/文件/API回执分开记录。
+- 正在同一Task创建有限文件Goal以核对暂停、冷重启和显式恢复；尚未完成这一项或最终门禁/提交，媒体模型仍为空。
+
+#### 2026-10-15 Goal冷恢复与独立评估真实回执（仍未完成）
+
+- 合成Goal`01a13c99-3448-7421-b738-6992e27f242f`在Write审批前暂停：Run`9f5c3cab-8d9e-4f5f-9dcd-e75f921c72aa`canceled，C文件不存在，保留21841tokens/103秒。冷关闭再原仓启动后，同Goal保持paused、用量不变、新Run数0、C不存在；旧操作没有重放。
+- 在Design视图显式恢复后，新Run`4ccc61d6-33b3-4507-837c-f5b226ffb4f4`仍冻结Code，实际重新Read并创建C文件。C实际16字节等于`goal-recovery-C\n`，SHA256`f0ce81030fb442c3ba6119bd446d22e5f5bcfd35c56f75bea9da5d4019b7d806`，既有B文件未变。但独立评估报缺用量并暂停，不能算Goal已验收。
+- SDK源码与真实SDK后台queue gate取得RED：默认后台handleLLMEnd可能晚于invoke返回，旧port已关闭用量接收。回调与返回AIMessage共享一次真实记账、等待成功后才返回的修复44/44 GREEN（`/tmp/kfw-unified-model-request-usage-green.log`）；缺用量/非法字段/异步失败/取消仍拒验，无估算、假零、睡眠或重试。
+- 再恢复的新Run`c74f4fb3-73dc-4f14-a1fc-10f3ffbb4e73`取得真正独立评估，明确notSatisfied：本轮证据只有Read，缺上轮真实Write创建回执，assistant叙述不能替代它。已暂停测试Goal（rev15），无活跃Run，原拒绝及实物保留。正在修同一Goal跨Run可信证据归属，不重复写既有文件、不放宽验收标准。
+- 原Goal轮次投影及真实验收轮次持久化40/40 GREEN；未知旧轮次保留审计不猜。最终门禁和分步提交尚未执行；图片/视频配置仍待用户提供。本聊天整体实施Goal仍active，未因测试Goal暂停而停止目标。
