@@ -100,39 +100,36 @@ export function startJobLoop(
     void recover();
   }, pollTimeoutSeconds * 1000);
 
-  const consumerPromise = (async () => {
-    while (running) {
-      // `queueName` 是队列名，`queue` 是队列缝客户端——两者都用，故名字必须区分
-      for (const queueName of queues) {
-        if (!running) break;
+  // 两种队列独立长轮询，空队列和显式限流不阻塞另一种媒体。
+  const consumerPromise = Promise.all(
+    queues.map(async (queueName) => {
+      const inFlight = inFlightByQueue.get(queueName);
+      if (!inFlight) return;
+      const cap = concurrencyByQueue[queueName] ?? 1;
+      while (running) {
+        const available = Math.min(
+          env.workerMaxBatchSize ?? 1,
+          cap - inFlight.size,
+        );
+        if (available <= 0) {
+          await Promise.race(inFlight);
+          continue;
+        }
         try {
-          // 在建集合在启动期按 queues 建全，缺失分支不可达（仅用于类型收窄）
-          const inFlight = inFlightByQueue.get(queueName);
-          if (!inFlight) continue;
-          const cap = concurrencyByQueue[queueName] ?? 1;
-          // 缺省每次取一条后继续读取；这是传输批次，不限制同时在途任务。
-          const available = Math.min(
-            env.workerMaxBatchSize ?? 1,
-            cap - inFlight.size,
-          );
-          if (available <= 0) continue;
-
-          const vt = VT_BY_QUEUE[queueName] ?? 120;
           const messages = await ctx.queue.readWithPoll(
             queueName,
-            vt,
+            VT_BY_QUEUE[queueName] ?? 120,
             available,
             pollTimeoutSeconds,
             500,
           );
           if (!running) break;
-
           for (const msg of messages) {
             const messageCtx: ExecutorContext = {
               ...ctx,
               queueName,
               msgId: msg.msg_id,
-              renewVt: async (vtSeconds: number) => {
+              renewVt: async (vtSeconds) => {
                 try {
                   await ctx.queue.setVisibilityTimeout(
                     queueName,
@@ -149,7 +146,7 @@ export function startJobLoop(
             };
             const task = processMessage(queueName, msg, messageCtx, tag)
               .catch((error) => {
-                // 数据库暂不可用时保留消息；不能绕过认领执行供应商请求。
+                // 数据库暂不可用时保留消息，不能绕过认领执行供应商请求。
                 console.error(`${tag} Message execution interrupted:`, error);
               })
               .finally(() => inFlight.delete(task));
@@ -163,33 +160,8 @@ export function startJobLoop(
           console.error(`${tag} Error polling ${queueName}:`, error);
         }
       }
-
-      if (!running) break;
-      const saturated = queues.every((queueName) => {
-        const inFlight = inFlightByQueue.get(queueName);
-        return (
-          inFlight && inFlight.size >= (concurrencyByQueue[queueName] ?? 1)
-        );
-      });
-      if (saturated) {
-        const pending = [...inFlightByQueue.values()].flatMap((set) => [
-          ...set,
-        ]);
-        if (pending.length === 0) {
-          running = false;
-          break;
-        }
-        await Promise.race(
-          pending.map((task) =>
-            task.then(
-              () => undefined,
-              () => undefined,
-            ),
-          ),
-        );
-      }
-    }
-  })();
+    }),
+  );
 
   let shutdownPromise: Promise<void> | undefined;
   return {

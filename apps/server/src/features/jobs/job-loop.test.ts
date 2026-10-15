@@ -483,3 +483,53 @@ it("失租后不再越过成果发布边界，也不消耗失败次数", async (
     await loop.shutdown();
   }
 });
+
+it("空视频队列不阻塞连续图片请求同时进入执行", async () => {
+  execute.mockReset();
+  const queue = createInProcessQueue();
+  let finish: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  execute.mockImplementation(async () => {
+    await held;
+    return { url: "done" };
+  });
+  for (let index = 0; index < 8; index++)
+    await queue.send("image_generation_jobs", {
+      job_id: `parallel-${index}`,
+      job_type: "image_generation",
+    });
+  const loop = startJobLoop({
+    queue,
+    env: {
+      agentBackendMode: "state",
+      agentModel: "test",
+      port: 0,
+      version: "test",
+      webOrigin: "http://127.0.0.1",
+      workerPollIntervalMs: 1000,
+    },
+    jobService: {
+      recoverPendingJobs: async () => {},
+      claimJob: async () => ({ status: "running" }),
+      renewLease: async () => true,
+      releaseLease: async () => {},
+      getJobForWorker: async () => ({ status: "queued" }),
+      markSucceeded: async () => {},
+    } as never,
+    blob: {} as never,
+    projectFiles: {} as never,
+    generationTargets: {} as never,
+    assetWriter: {} as never,
+  });
+  try {
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(8), {
+      timeout: 1500,
+    });
+    expect(loop.inFlightCount()).toBe(8);
+  } finally {
+    finish();
+    await loop.shutdown();
+  }
+});
