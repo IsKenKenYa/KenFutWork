@@ -1,0 +1,57 @@
+.animated-title {
+  width: fit-content;
+}
+
+.animated-title .animated-title-accessible {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.letter-swap-line {
+  display: block;
+  perspective: 900px;
+}
+
+.letter-swap-character {
+  position: relative;
+  display: inline-block;
+  transform-style: preserve-3d;
+  transform-origin: 50% 50% -0.55em;
+  transition: transform 0.6s cubic-bezier(0.22, 0.68, 0, 1.05);
+  transition-delay: var(--letter-delay);
+}
+
+.letter-swap-front,
+.letter-swap-back {
+  display: inline-block;
+  backface-visibility: hidden;
+}
+
+.letter-swap-back {
+  position: absolute;
+  inset: 0;
+  color: #234195;
+  transform: rotateX(90deg);
+  transform-origin: 50% 50% -0.55em;
+}
+
+.letter-swap-character:nth-child(3n) .letter-swap-back {
+  color: #5836a0;
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .animated-title:hover .letter-swap-character {
+    transform: rotateX(-90deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .letter-swap-character {
+    transition: none;
+  }
+}

@@ -44,7 +44,6 @@ test("静态入口及 CSS 资源支持 Pages 子路径部署", () => {
 test("品牌素材和字体许可随静态产物分发", () => {
   for (const asset of [
     "assets/logo-mark.png",
-    "assets/hero-logo-halftone.png",
     "favicon.png",
     "fonts/momo-trust-display.woff2",
     "fonts/LICENSE.txt",

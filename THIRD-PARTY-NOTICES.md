@@ -47,7 +47,7 @@
 
 ### A5. 图标库 lucide-react（ISC）
 
-npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/package.json`）。上游 [lucide-icons/lucide](https://github.com/lucide-icons/lucide)，许可 ISC。义务按 B 段随依赖清单一并履行。
+npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/package.json`、`apps/landing/package.json`）。上游 [lucide-icons/lucide](https://github.com/lucide-icons/lucide)，许可 ISC。义务按 B 段随依赖清单一并履行。
 
 ## B. 运行时与构建期开源依赖
 
@@ -104,7 +104,7 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 
 | 素材 | 许可 | 状态 |
 | --- | --- | --- |
-| Momo Trust Display（字标在用） | SIL Open Font License 1.1 | 合规：随产物分发于 `apps/web/public/fonts/`，同目录带 `LICENSE.txt`（OFL 全文）；无保留字体名（Reserved Font Name） |
+| Momo Trust Display（字标在用） | SIL Open Font License 1.1 | 合规：随产物分发于 `apps/web/public/fonts/` 与 `apps/landing/public/fonts/`，同目录带 `LICENSE.txt`（OFL 全文）；无保留字体名（Reserved Font Name） |
 | CaveatBrush、ChakraPetch、GochiHand、K2D、Pacifico、PermanentMarker | SIL OFL 1.1 | 仅作为 `docs/视觉设计/logo/字体/` 的候选样张存在，未打进产物 |
 | ArtierEN-2、No.019-Sounso-Quality-2、YEFONTPaws-Bold-2 | **需商业授权**（分别来自天津卓漫、上首品牌策划、深圳仪品） | 样张留在仓库**不构成授权**；未在产物中使用。逐字段落原文见 `docs/视觉设计/logo/字体/字体说明.md` |
 | `skills/canvas-design/canvas-fonts/` | **54 个字体文件，仓库内无任何许可文本** | **待核**：分发前必须逐支确认来源与许可，不能默认沿用 GPL 或 OFL |
@@ -119,6 +119,7 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | --- | --- | --- |
 | 现行 KF 标识（2026-09-15 换版） | `apps/web/src/components/icons/kenfutwork-logo.tsx`、`docs/视觉设计/logo/新版.png`（源图）、`docs/视觉设计/logo/应用图标-白底圆角.png` | 组件注释记载为 **GPT 生成图定稿**，源图即上表 PNG |
 | Web 静态标识 | `apps/web/public/` 的 `logo.png`、`logo-mark.png`、`app-icon.png`、`apple-touch-icon.png`、`favicon.png`、`og-image.png` | 由现行源图派生 |
+| 落地页标识与点阵 | `apps/landing/public/assets/logo-mark.png`、`apps/landing/public/favicon.png` | 复用正式 Web 品牌；浏览器通过格点遮罩呈现点阵，不重画 Logo。装饰使用上列 Lucide 图标；动效视觉参考与独立实现说明见 `apps/landing/素材生成说明.md` |
 | 桌面/移动应用图标 | `apps/desktop/src-tauri/icons/`（含 android `mipmap-*`、Windows `SquareNxNLogo.png`、StoreLogo） | 由 `apps/desktop/scripts/icons.mjs` 从**同一份墨迹**批量生成（2026-09-26 口径：墨迹占画布 80%） |
 | 旧版字标 KF-2 骨架版 C（留档） | `docs/视觉设计/旧版/品牌Logo说明.md`（权威说明与几何/色值）、`docs/视觉设计/旧版/字体风格对比.html` | 纯手写 SVG；白字形是 **Chakra Petch Italic**（SIL OFL-1.1）字形的 K 轮廓 + 裁短 F 顶横的布尔并集，样张 `docs/视觉设计/logo/字体/ChakraPetch.woff2` |
 

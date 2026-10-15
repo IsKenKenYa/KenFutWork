@@ -23,11 +23,6 @@ button, a { touch-action: manipulation; }
 button:focus-visible, a:focus-visible { outline: 3px solid var(--brand); outline-offset: 5px; }
 button svg, a svg { flex-shrink: 0; }
 .landing { position: relative; isolation: isolate; min-height: 720px; height: 100svh; overflow: clip; display: flex; flex-direction: column; }
-.hero-art { position: absolute; z-index: -1; inset: 0; pointer-events: none; opacity: .6; --pointer-x: -400px; --pointer-y: -400px; }
-.hero-layer { position: absolute; inset: -3%; background: url("/assets/hero-logo-halftone.png") center top / cover no-repeat; animation: drift 24s ease-in-out infinite alternate; }
-.hero-reveal { position: absolute; inset: 0; opacity: 0; transition: opacity .5s ease; mask-image: radial-gradient(circle 280px at var(--pointer-x) var(--pointer-y), #000 0%, #0009 20%, #0006 40%, #0003 60%, #0001 80%, transparent 100%); }
-.hero-art[data-active="true"] .hero-reveal { opacity: 1; transition-duration: .15s; }
-.hero-layer-tinted { filter: hue-rotate(48deg) saturate(1.35); }
 .header { display: flex; align-items: center; padding: 38px 4.4vw 0; gap: 48px; position: relative; z-index: 2; }
 .brand { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .brand img { width: 41px; height: 41px; }
@@ -40,7 +35,6 @@ button svg, a svg { flex-shrink: 0; }
 .hero { flex: 1; display: grid; grid-template-columns: 1fr 300px; align-items: center; gap: 8vw; padding: 0 4.4vw; transform: translateY(-7px); }
 .hero-title { margin: 0; display: flex; flex-direction: column; font: 500 clamp(52px, 5.7vw, 98px)/1.08 "Momo Trust Display", sans-serif; letter-spacing: -3.5px; color: #0e1118; }
 .hero-title > span { white-space: nowrap; }
-.hero-title em { font-style: normal; }
 .hero-content { padding-top: 7px; }
 .product-name { font-size: 24px; line-height: 1.4; margin: 0 0 13px; color: var(--muted); }
 h1 { font-size: 25px; line-height: 1.5; font-weight: 400; margin: 0 0 16px; }
@@ -92,7 +86,6 @@ h1 { font-size: 25px; line-height: 1.5; font-weight: 400; margin: 0 0 16px; }
 .product-facts { display: flex; gap: 24px; margin-bottom: 27px; }
 .product-facts span { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); }
 
-@keyframes drift { from { transform: scale(1.01) translate(-.3%, -.3%); } to { transform: scale(1.045) translate(.6%, .6%); } }
 @media (min-width: 1600px) { .hero { grid-template-columns: 1fr 350px; } }
 @media (max-width: 1000px) and (min-width: 701px) {
   .header { gap: 24px; }
@@ -110,8 +103,6 @@ h1 { font-size: 25px; line-height: 1.5; font-weight: 400; margin: 0 0 16px; }
   .brand span { font-size: 19px; letter-spacing: -.7px; }
   .desktop-nav, .header-download { display: none; }
   .menu-button { display: flex; width: 38px; height: 38px; border: 0; background: transparent; }
-  .hero-art { opacity: .53; }
-  .hero-layer { background-position: 15% center; }
   .hero { display: flex; flex-direction: column; justify-content: space-between; align-items: stretch; padding: 0 26px; gap: 70px; transform: none; }
   .hero-title { font-size: clamp(36px, 9.8vw, 60px); line-height: 1.12; letter-spacing: -1.8px; margin-top: clamp(90px, 19svh, 185px); }
   .hero-content { padding: 0; margin-bottom: 35px; }

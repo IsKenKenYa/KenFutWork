@@ -1,5 +1,6 @@
 import { ArrowDownToLine, ArrowUpRight, Menu, X } from "lucide-react";
 import { useState } from "react";
+import { AnimatedTitle } from "./AnimatedTitle.js";
 import { Dialog } from "./Dialog.js";
 import { DownloadPanel } from "./DownloadPanel.js";
 import { HeroBackground } from "./HeroBackground.js";
@@ -89,12 +90,7 @@ export function App() {
         </nav>
       )}
       <main id="main" className="hero">
-        <p className="hero-title">
-          <span>From idea to</span>
-          <span>
-            real <em>work.</em>
-          </span>
-        </p>
+        <AnimatedTitle />
         <div className="hero-content">
           <p className="product-name">KenFutWork</p>
           <h1>你的 AI 工作台</h1>
