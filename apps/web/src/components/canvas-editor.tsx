@@ -568,11 +568,13 @@ export function CanvasEditor({
           files,
         };
 
-        // 空场景覆盖护栏（与卸载前 flush 共用同一判定）：空内容一律不写——整表替换下
-        // 「写空」等于删光，而空场景本身没有可写的信息。实测吃过两次亏：挂载期 Excalidraw
-        // 先回调一次空列表，以及同一画布在别处（工作台 iframe）也开着、那份空场景因焦点
-        // 变化触发保存。判定收敛在纯函数里，两条写路径共用，别再各自漂移。
-        if (shouldRefuseEmptySave({ incomingCount: content.elements.length })) {
+        if (
+          shouldRefuseEmptySave({
+            incomingCount: content.elements.length,
+            deletedCount: elements.filter((element) => element.isDeleted)
+              .length,
+          })
+        ) {
           console.warn("[canvas-editor] 跳过空场景保存（空内容不写库）");
           pendingSaveRef.current = null;
           return;
@@ -801,13 +803,18 @@ export function CanvasEditor({
     // Never flush before hydration — Excalidraw may not have loaded elements yet
     if (!hydratedRef.current) return null;
     try {
-      const sceneElements = excalidrawApi.getSceneElements();
+      const sceneElements = excalidrawApi.getSceneElementsIncludingDeleted();
       const rawFiles = excalidrawApi.getFiles();
       const appState = excalidrawApi.getAppState();
 
       // 与防抖自动保存共用同一判定（canvas-save-guard），两条路径不再各写一份。
       const liveCount = sceneElements.filter((el) => !el.isDeleted).length;
-      if (shouldRefuseEmptySave({ incomingCount: liveCount })) {
+      if (
+        shouldRefuseEmptySave({
+          incomingCount: liveCount,
+          deletedCount: sceneElements.length - liveCount,
+        })
+      ) {
         console.warn("[canvas-editor] skipping save: 空场景不写库");
         return null;
       }
@@ -830,7 +837,7 @@ export function CanvasEditor({
    * 立即保存（Ctrl/Cmd+S 与右键菜单「保存画布」共用）。
    *
    * 自动保存是防抖的（1.5s），手动保存要的是「按下去就落库」：先取消挂起的防抖任务，
-   * 再从 Excalidraw 当前状态取一份完整 payload 写库。空场景依旧不写（见 canvas-save-guard），
+   * 再从 Excalidraw 当前状态取一份完整 payload 写库。没有显式删除的空场景不写，
    * 且**空场景不算失败**——提示语区分「已保存 / 画布为空无需保存 / 保存失败」。
    */
   const saveNow = useCallback(async (): Promise<SaveOutcome> => {

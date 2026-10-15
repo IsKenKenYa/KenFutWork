@@ -56,6 +56,7 @@ vi.mock("next/dynamic", async () => {
             getAppState: () => mocks.appState,
             getFiles: () => mocks.files,
             getSceneElements: () => mocks.elements,
+            getSceneElementsIncludingDeleted: () => mocks.elements,
             updateScene: mocks.updateScene,
           }),
           [],
@@ -303,6 +304,32 @@ describe("CanvasEditor remote snapshot sync", () => {
     ]);
     expect(screen.queryByRole("alert")).toBeNull();
   });
+
+  it.each(["auto", "manual", "unmount"])(
+    "persists an explicit deletion of every element through %s save",
+    async (method) => {
+      const view = render(<CanvasEditor {...editorProps()} />);
+      await finishHydration();
+      mocks.elements = [{ ...baseElement, isDeleted: true, version: 2 }];
+      fireEvent.click(screen.getByTestId("mock-excalidraw"));
+      if (method === "auto") {
+        await act(async () => vi.advanceTimersByTimeAsync(1500));
+      } else if (method === "manual") {
+        await act(async () => {
+          fireEvent.keyDown(window, { key: "s", ctrlKey: true });
+        });
+      } else {
+        view.unmount();
+        await act(async () => {});
+      }
+      expect(mocks.saveCanvas).toHaveBeenCalledWith(
+        null,
+        "canvas-1",
+        expect.objectContaining({ elements: [] }),
+        "revision-1",
+      );
+    },
+  );
 
   it("keeps a dirty local draft and does not apply the remote scene", async () => {
     const view = render(<CanvasEditor {...editorProps()} />);
