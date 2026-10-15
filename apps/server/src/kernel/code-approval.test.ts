@@ -12,7 +12,7 @@ import type { ToolDefinition, ToolExecutionContext } from "./types.js";
 async function fixture(preset: "code" | "design" = "code") {
   const temporary = await mkdtemp(join(tmpdir(), "kfw-kernel-approval-"));
   const stored: StoredExecutionScope = {
-    preset,
+    preset: "code",
     state: "ready",
     branchGeneration: 1,
     scope: {
@@ -58,6 +58,7 @@ async function fixture(preset: "code" | "design" = "code") {
   });
   const registry = new ToolRegistryImpl(bus, () => permissions);
   const context: ToolExecutionContext = {
+    workContext: { preset },
     scopeHandle: scope,
     actor: { instanceId: stored.scope.instanceId, accessClientId: null },
     runId: "run",
@@ -213,7 +214,7 @@ it("主Task规划控制能在真实只读scope调用且不授予资源write，cl
   }
 });
 
-it("规划控制不能被worker/explore/review、shared工具或资源access借用", async () => {
+it("规划控制不能被worker/explore/review或资源access借用", async () => {
   const f = await fixture();
   try {
     let executed = 0;
@@ -243,13 +244,6 @@ it("规划控制不能被worker/explore/review、shared工具或资源access借�
       await expect(
         f.registry.executeDefinition({ ...control, access }, {}, f.context),
       ).rejects.toThrow(/混合|规划控制/);
-    await expect(
-      f.registry.executeDefinition(
-        { ...control, scope: "shared" },
-        {},
-        f.context,
-      ),
-    ).rejects.toThrow(/规划控制/);
     await expect(f.registry.executeDefinition(control, {}, {})).rejects.toThrow(
       /规划控制/,
     );
@@ -258,6 +252,41 @@ it("规划控制不能被worker/explore/review、shared工具或资源access借�
     await f.close();
   }
 });
+
+it.each(["code", "design"] as const)(
+  "%s Run的主Task可执行真实注册shared规划控制，不能授予资源写权限",
+  async (preset) => {
+    const f = await fixture(preset);
+    let controls = 0;
+    const tool: ToolDefinition = {
+      name: "SharedEnterPlanMode",
+      scope: "shared",
+      planControl: "enter",
+      description: "规划控制",
+      parameters: { type: "object" },
+      execute: async () => {
+        controls += 1;
+        return { planEnabled: true };
+      },
+    };
+    const dispose = f.registry.register(tool);
+    try {
+      expect(f.context.scopeHandle!.preset).toBe("code");
+      expect(
+        await f.registry.executeDefinition(
+          tool,
+          {},
+          { ...f.context, toolCallId: `shared-control-${preset}` },
+        ),
+      ).toEqual({ planEnabled: true });
+      expect(controls).toBe(1);
+      expect(f.writes()).toBe(0);
+    } finally {
+      dispose();
+      await f.close();
+    }
+  },
+);
 
 it.each(["code", "design"] as const)(
   "真实%s Task仅执行匹配模式与共享工具，拒绝另一模式",
@@ -315,7 +344,7 @@ it.each(["code", "design"] as const)(
   },
 );
 
-it("Design实际Task执行共享Write走同一审批绑定，不能调用Code规划控制", async () => {
+it("Design Run沿Code Task执行共享Write与同一审批，不能调用Code专属工具", async () => {
   const f = await fixture("design");
   try {
     let invokedPreset: string | undefined;
@@ -335,19 +364,25 @@ it("Design实际Task执行共享Write走同一审批绑定，不能调用Code规
     ).toEqual({ content: "design", suffix: "!" });
     expect(invokedPreset).toBe("design");
     expect(f.writes()).toBe(1);
-    await expect(
-      f.registry.executeDefinition(
-        {
-          ...f.tool,
-          scope: "code",
-          name: "EnterPlanMode",
-          access: undefined,
-          planControl: "enter",
-        },
-        { content: "control" },
-        f.context,
-      ),
-    ).rejects.toThrow(/规划控制/);
+    const codeControl: ToolDefinition = {
+      ...f.tool,
+      scope: "code",
+      name: "EnterPlanMode",
+      access: undefined,
+      planControl: "enter",
+    };
+    const removeControl = f.registry.register(codeControl);
+    try {
+      await expect(
+        f.registry.executeDefinition(
+          codeControl,
+          { content: "control" },
+          f.context,
+        ),
+      ).rejects.toThrow(/工具模式/);
+    } finally {
+      removeControl();
+    }
     const codeTool: ToolDefinition = {
       ...f.tool,
       name: "CodeOnlyWrite",

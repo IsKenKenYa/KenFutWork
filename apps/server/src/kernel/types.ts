@@ -324,7 +324,12 @@ export interface PromptCompositionContext {
 
 export type PromptExecutionContext = Pick<
   ToolExecutionContext,
-  "actor" | "scopeHandle" | "taskWorkContext" | "runId" | "signal"
+  | "actor"
+  | "scopeHandle"
+  | "taskWorkContext"
+  | "runId"
+  | "signal"
+  | "workContext"
 >;
 
 /**
@@ -363,6 +368,11 @@ export type ToolExecutionObservation = {
 };
 
 export interface ToolExecutionContext {
+  frozenContributions?: ToolContributionSnapshot | undefined;
+  /** Frozen input resource references; filesystem permissions remain in scopeHandle. */
+  workContext?:
+    | import("@zcode/shared/zcode-protocol-v4").ConversationWorkContext
+    | undefined;
   /** Fresh tool-free model invocation; private host configuration and Run usage ownership. */
   requestModel?:
     | import("../agent/model-request.js").ModelRequestPort
@@ -435,6 +445,8 @@ export interface ToolExecutionContext {
  * MCP 工具命名约定：`mcp__<server>__<tool>`。
  */
 export interface ToolDefinition {
+  /** Stable owner configuration revision for closures whose source does not encode configuration. */
+  configurationVersion?: string | undefined;
   name: string;
   description: string;
   scope: ToolScope;
@@ -463,6 +475,7 @@ export interface ToolDefinition {
 }
 
 export interface ToolRegistry {
+  captureContributions(preset: "code" | "design"): ToolContributionSnapshot;
   /** 注册工具，返回注销 disposer；重名 fail loud。 */
   register(tool: ToolDefinition): () => void;
   get(name: string): ToolDefinition | undefined;
@@ -497,6 +510,10 @@ export interface ToolRegistry {
 
 /** per-run 工具解析上下文：runtime 在 run 起始期构建，动态工具据此实例化。 */
 export interface RunToolResolutionContext {
+  frozenContributions?: ToolContributionSnapshot | undefined;
+  workContext?:
+    | import("@zcode/shared/zcode-protocol-v4").ConversationWorkContext
+    | undefined;
   sessionId?: string | undefined;
   modelSpecifier?: string | undefined;
   delegationDepth?: number | undefined;
@@ -526,8 +543,15 @@ export interface RunToolResolutionContext {
 export interface DynamicToolEntry {
   id: string;
   scope: ToolScope;
+  configurationVersion?: string | undefined;
   resolve: (ctx: RunToolResolutionContext) => ToolDefinition | null;
 }
+
+export type ToolContributionSnapshot = {
+  version: 1;
+  preset: "code" | "design";
+  entries: Array<{ kind: "static" | "dynamic"; id: string; signature: string }>;
+};
 
 /** 非工具能力贡献者条目（由运行时按 key 解析，模型不可见）。 */
 export interface CapabilityRegistration<T = unknown> {

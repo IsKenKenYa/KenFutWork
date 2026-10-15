@@ -5,6 +5,7 @@ import type { ServerEnv } from "../config/env.js";
 import type { PermissionInvocation } from "../features/permissions/approval-types.js";
 import { allowsPlanControl } from "../features/permissions/code-policy.js";
 import type { PermissionService } from "../features/permissions/permission-service.js";
+import { contributionFingerprint } from "./contribution-fingerprint.js";
 import { publicToolArguments } from "./tool-arguments.js";
 import type {
   AgentRunEvent,
@@ -23,6 +24,7 @@ import type {
   ServiceKey,
   ServiceMap,
   SystemPromptRegistry,
+  ToolContributionSnapshot,
   ToolDefinition,
   ToolExecutionContext,
   ToolRegistry,
@@ -127,12 +129,33 @@ function registrationSignature(tool: ToolDefinition) {
     planControl: tool.planControl,
     readonlyExecution: tool.readonlyExecution,
     parameters: structuredClone(tool.parameters),
+    configurationVersion: tool.configurationVersion,
   };
+}
+
+function contributionSignature(
+  kind: "static" | "dynamic",
+  entry: ToolDefinition | DynamicToolEntry,
+) {
+  const value =
+    kind === "static"
+      ? {
+          ...registrationSignature(entry as ToolDefinition),
+          execute: (entry as ToolDefinition).execute.toString(),
+        }
+      : {
+          id: (entry as DynamicToolEntry).id,
+          scope: entry.scope,
+          configurationVersion: entry.configurationVersion,
+          resolve: (entry as DynamicToolEntry).resolve.toString(),
+        };
+  return contributionFingerprint(value);
 }
 type RegistrationReceipt = {
   token: symbol;
   key: string;
   signature: ReturnType<typeof registrationSignature>;
+  frozenSignature?: string;
 } & (
   | {
       kind: "static";
@@ -203,11 +226,42 @@ export class ToolRegistryImpl implements ToolRegistry {
   }
 
   resolveRunTools(ctx: RunToolResolutionContext): ToolDefinition[] {
+    if (
+      ctx.frozenContributions &&
+      ctx.frozenContributions.preset !== ctx.preset
+    )
+      throw new Error("运行能力快照与工作方式不一致，不能解析工具。");
+    const matches = (
+      kind: "static" | "dynamic",
+      key: string,
+      entry: ToolDefinition | DynamicToolEntry,
+    ) =>
+      !ctx.frozenContributions ||
+      ctx.frozenContributions.entries.some(
+        (frozen) =>
+          frozen.kind === kind &&
+          frozen.id === key &&
+          frozen.signature === contributionSignature(kind, entry),
+      );
+    const statics = this.list(ctx.preset).flatMap((tool) => {
+      if (!matches("static", tool.name, tool)) return [];
+      if (!ctx.frozenContributions) return [tool];
+      const definition = { ...tool };
+      const receipt = this.receipts.get(tool);
+      if (!receipt || receipt.kind !== "static")
+        throw new Error("静态工具注册缺少有效凭据。");
+      this.receipts.set(definition, {
+        ...receipt,
+        frozenSignature: contributionSignature("static", tool),
+      });
+      return [definition];
+    });
     const resolved: ToolDefinition[] = [];
     for (const [key, entry] of this.dynamicEntries) {
       if (entry.scope !== "shared" && entry.scope !== ctx.preset) {
         continue;
       }
+      if (!matches("dynamic", key, entry)) continue;
       const tool = entry.resolve(ctx);
       if (tool && (tool.scope === "shared" || tool.scope === ctx.preset)) {
         // Each resolved receipt carries its own Run context, even when a factory reuses an object.
@@ -221,11 +275,41 @@ export class ToolRegistryImpl implements ToolRegistry {
           resolver: entry.resolve,
           resolution: ctx,
           signature: registrationSignature(tool),
+          ...(ctx.frozenContributions
+            ? { frozenSignature: contributionSignature("dynamic", entry) }
+            : {}),
         });
         resolved.push(definition);
       }
     }
-    return [...this.list(ctx.preset), ...resolved];
+    return [...statics, ...resolved];
+  }
+
+  captureContributions(preset: "code" | "design"): ToolContributionSnapshot {
+    return {
+      version: 1,
+      preset,
+      entries: [
+        ...this.list(preset).map((tool) => ({
+          kind: "static" as const,
+          id: tool.name,
+          signature: contributionSignature("static", tool),
+        })),
+        ...[...this.dynamicEntries.values()]
+          .filter((entry) => entry.scope === "shared" || entry.scope === preset)
+          .map((entry) => ({
+            kind: "dynamic" as const,
+            id: entry.id,
+            signature: contributionSignature("dynamic", entry),
+          })),
+      ].sort((left, right) =>
+        `${left.kind}:${left.id}` < `${right.kind}:${right.id}`
+          ? -1
+          : `${left.kind}:${left.id}` > `${right.kind}:${right.id}`
+            ? 1
+            : 0,
+      ),
+    };
   }
 
   get(name: string): ToolDefinition | undefined {
@@ -278,12 +362,22 @@ export class ToolRegistryImpl implements ToolRegistry {
         current.zodSchema !== receipt.schema
       )
         throw denied();
+      if (
+        receipt.frozenSignature &&
+        receipt.frozenSignature !== contributionSignature("static", current)
+      )
+        throw denied();
     } else {
       const entry = this.dynamicEntries.get(receipt.key);
       if (
         !entry ||
         this.dynamicTokens.get(receipt.key) !== receipt.token ||
         entry.resolve !== receipt.resolver
+      )
+        throw denied();
+      if (
+        receipt.frozenSignature &&
+        receipt.frozenSignature !== contributionSignature("dynamic", entry)
       )
         throw denied();
       current = entry.resolve(receipt.resolution);
@@ -331,7 +425,7 @@ export class ToolRegistryImpl implements ToolRegistry {
       if (
         planControl &&
         (handle?.preset !== "code" ||
-          tool.scope !== "code" ||
+          (tool.scope !== "code" && tool.scope !== "shared") ||
           !allowsPlanControl({
             role: handle.role,
             access: tool.access,
@@ -349,6 +443,29 @@ export class ToolRegistryImpl implements ToolRegistry {
       normalizedArgs = normalized;
       const revalidateRegistration = () => {
         const current = this.currentDefinition(tool, receipt);
+        if (execCtx.frozenContributions && receipt) {
+          if (
+            execCtx.workContext &&
+            execCtx.frozenContributions.preset !== execCtx.workContext.preset
+          )
+            throw new ToolRegistrationRevokedError(
+              tool.name,
+              "能力快照与本轮工作方式不一致。",
+            );
+          const admitted = execCtx.frozenContributions.entries.find(
+            (entry) => entry.kind === receipt?.kind && entry.id === receipt.key,
+          );
+          const live = this.captureContributions(
+            execCtx.frozenContributions.preset,
+          ).entries.find(
+            (entry) => entry.kind === receipt?.kind && entry.id === receipt.key,
+          );
+          if (!admitted || !live || admitted.signature !== live.signature)
+            throw new ToolRegistrationRevokedError(
+              tool.name,
+              "工具不属于本轮已接纳能力，请重新提交输入。",
+            );
+        }
         try {
           const fresh = (
             current.zodSchema ?? z.fromJSONSchema(current.parameters)
@@ -367,7 +484,8 @@ export class ToolRegistryImpl implements ToolRegistry {
         await execCtx.scopeHandle.resolvePath(".", "read");
         if (
           tool.scope !== "shared" &&
-          tool.scope !== execCtx.scopeHandle.preset
+          tool.scope !==
+            (execCtx.workContext?.preset ?? execCtx.scopeHandle.preset)
         )
           throw new ToolDeniedError(tool.name, "工具模式与当前Task不匹配。");
         const readonly =
@@ -412,7 +530,7 @@ export class ToolRegistryImpl implements ToolRegistry {
         if (policy.scopeGeneration !== scope.generation)
           throw new ToolDeniedError(tool.name, "工具调用的授权代际已失效。");
         invocation = {
-          preset: execCtx.scopeHandle.preset,
+          preset: execCtx.workContext?.preset ?? execCtx.scopeHandle.preset,
           instanceId: scope.instanceId,
           taskId: scope.taskId,
           runId: execCtx.runId,
@@ -550,7 +668,20 @@ export class SystemPromptRegistryImpl implements SystemPromptRegistry {
   }
 
   async compose(ctx: PromptCompositionContext): Promise<string> {
-    if (ctx.scopeHandle && ctx.scopeHandle.preset !== ctx.preset)
+    const execution = ctx.execution;
+    const workContext = execution?.workContext;
+    // Task preset identifies the execution host; the admitted Run freezes its working mode.
+    // A work snapshot is usable only with the same actual Task handle and Run actor.
+    if (
+      workContext
+        ? !ctx.scopeHandle ||
+          execution?.scopeHandle !== ctx.scopeHandle ||
+          !execution?.runId ||
+          execution?.actor?.instanceId !==
+            ctx.scopeHandle.describe().instanceId ||
+          workContext.preset !== ctx.preset
+        : ctx.scopeHandle && ctx.scopeHandle.preset !== ctx.preset
+    )
       throw new Error("系统提示工作模式与可信Task不匹配。");
     const active = [...this.sections.values()].filter(
       (section) => section.scope === "always" || section.scope === ctx.preset,
