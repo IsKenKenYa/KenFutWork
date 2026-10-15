@@ -58,6 +58,15 @@ KENFUTWORK_OPEN_DESIGN_EMBED_SECRET=<与 OpenDesign 栈的 OD_API_TOKEN 配成�
   日志与错误消息同样不落明文；无可用实例 404、Key 读不到 / 地址非法 409（失败消息只提实例名）；
 - 配哪些实例、什么 Key，仍在「供应商设置」里管（本仓 BYOK 的唯一入口）。
 
+## 深链「打开当前文件」的现状（2026-10-15）
+
+`od/v1` 联动协议本仓已完整实现（握手 / 深链 / 回执，origin + schema 双闸），但**上游
+OpenDesign 前端尚未实现该协议**（源码检索 0 命中；已提功能请求
+[nexu-io/open-design#8776](https://github.com/nexu-io/open-design/issues/8776)）。
+因此当前点击「在 OpenDesign 中打开当前文件」：画布浏览不受影响，面板会如实提示
+「该 OpenDesign 版本暂不支持打开指定文件」（握手等待 4s 后判定，不静默失败、不摆假开关）。
+上游一旦支持，本仓无需改动即自动打通（回执与验收通道已就绪）。
+
 ## 边界
 
 - 只走 **local-first + BYOK**，不接 OpenDesign Cloud / 付费计划；
