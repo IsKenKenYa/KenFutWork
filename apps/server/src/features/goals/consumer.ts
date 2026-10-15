@@ -36,7 +36,7 @@ const verifySchema = z
   .strict();
 export function createGoalTools(
   host: TaskGoalHost,
-  options: { scope?: "code" | "design" } = {},
+  options: { scope?: "code" | "design" | "shared" } = {},
 ): ToolDefinition[] {
   return [
     {
@@ -45,7 +45,7 @@ export function createGoalTools(
       exposure: "core",
       access: "read",
       description:
-        "Read the current Task goal, revision and verification state.",
+        "Read the current Task goal, revision, verification state and authenticated evidence candidates from this Goal's Runs in the current branch.",
       parameters: {
         type: "object",
         properties: {},
@@ -59,7 +59,7 @@ export function createGoalTools(
       exposure: "core",
       access: "read",
       description:
-        "Submit a completion proposal using current Run evidence IDs from GetGoal, the current goal revision, and a reason explaining every requirement. An independent tool-free evaluation makes the final decision; passed is only your proposal. Ordinary completion or an empty/trivial command is not evidence. This grants no file or execution permission.",
+        "Submit a completion proposal using this Goal's authenticated evidence IDs from GetGoal, the current goal revision, and a reason explaining every requirement. Successful operations from prior Goal Runs can support the proposal; stale files must be read again. An independent tool-free evaluation makes the final decision; passed is only your proposal. Ordinary completion or an empty/trivial command is not evidence. This grants no file or execution permission.",
       parameters: z.toJSONSchema(verifySchema),
       zodSchema: verifySchema,
       execute: async (args, context) =>
@@ -69,12 +69,12 @@ export function createGoalTools(
 }
 export function createGoalPrompt(
   host: TaskGoalHost,
-  options: { scope?: "code" | "design" } = {},
+  options: { scope?: "code" | "design" | "shared" } = {},
 ): PromptSectionDefinition {
   return {
     name: `${options.scope ?? "code"}.goal`,
     order: 35,
-    scope: options.scope ?? "code",
+    scope: options.scope === "shared" ? "always" : (options.scope ?? "code"),
     async resolve(context) {
       if (
         !context.execution ||

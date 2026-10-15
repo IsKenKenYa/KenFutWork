@@ -8,10 +8,20 @@ export type GoalStatus =
 /** Evidence is accepted only after the Task consumer validates its real Run provenance. */
 export interface GoalEvidence {
   sourceId: string;
+  sourceRunId?: string;
   passed: boolean;
   detail?: string;
   /** Private evaluation context; public verification retains only source/result/detail. */
-  tool?: { name: string; inputText: string };
+  tool?: {
+    name: string;
+    inputText: string;
+    files?: Array<{ path: string; version: string }>;
+  };
+}
+export interface GoalRunMember {
+  runId: string;
+  branchGeneration: number;
+  iteration: number;
 }
 export interface GoalVerification {
   runId: string;
@@ -32,6 +42,8 @@ export interface GoalRecord {
   tokensUsed: number;
   timeUsedSeconds: number;
   iteration: number;
+  /** Real claims within this Goal; older records can lack this membership ledger. */
+  runs?: GoalRunMember[];
   claimedRunId: string | null;
   lastSettledRunId: string | null;
   runTokensUsed: number;
@@ -155,6 +167,7 @@ const provider: GoalService = {
       tokensUsed: 0,
       timeUsedSeconds: 0,
       iteration: 0,
+      runs: [],
       claimedRunId: null,
       lastSettledRunId: null,
       runTokensUsed: 0,
@@ -251,6 +264,14 @@ const provider: GoalService = {
     goal.runTokensUsed = 0;
     goal.runUsageObserved = false;
     goal.iteration += 1;
+    goal.runs = [
+      ...(goal.runs ?? []),
+      {
+        runId: input.runId,
+        branchGeneration: goal.branchGeneration,
+        iteration: goal.iteration,
+      },
+    ];
     goal.revision += 1;
     return goal;
   },
@@ -321,11 +342,14 @@ const provider: GoalService = {
     goal.verification = structuredClone({
       runId: input.runId,
       iteration: goal.iteration,
-      evidence: input.evidence.map(({ sourceId, passed, detail }) => ({
-        sourceId,
-        passed,
-        ...(detail === undefined ? {} : { detail }),
-      })),
+      evidence: input.evidence.map(
+        ({ sourceId, sourceRunId, passed, detail }) => ({
+          sourceId,
+          ...(sourceRunId === undefined ? {} : { sourceRunId }),
+          passed,
+          ...(detail === undefined ? {} : { detail }),
+        }),
+      ),
       passed,
       reason: input.verdict.reason,
       at: input.at,

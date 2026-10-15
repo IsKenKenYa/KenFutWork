@@ -1,12 +1,33 @@
+import { mkdtemp, realpath, rm, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import {
+  createRuntimeTestInstance,
+  RUNTIME_TEST_ACTOR,
+} from "../../agent/runtime-test-fixtures.js";
 import type { ToolExecutionContext } from "../../kernel/types.js";
+import { fileDiffDisplay } from "../code-tools/file-display.js";
+import {
+  createExecutionScopes,
+  type ExecutionScopeHandle,
+} from "../execution/scope-service.js";
 import { createGoalService } from "../goals/service.js";
 import { createCodeUiConversation } from "./conversation.js";
 import { createTaskGoalHost } from "./goals.js";
 import type { CodeUiRepository, CodeUiSessionRecord } from "./repository.js";
 
-async function fixture() {
+async function fixture(handle?: ExecutionScopeHandle) {
+  const scope = handle?.describe() ?? {
+    instanceId: "instance",
+    projectId: "project",
+    taskId: "task",
+    rootDirectory: "/project",
+    additionalDirectories: [],
+    sandboxMode: "workspace-write" as const,
+    generation: 1,
+  };
   const base = createGoalService();
   let verified = false;
   const goals = {
@@ -17,8 +38,8 @@ async function fixture() {
     },
   };
   const conversation = createCodeUiConversation({
-    sessionId: "task",
-    workspacePath: "/project",
+    sessionId: scope.taskId,
+    workspacePath: scope.rootDirectory,
     config: {
       provider: "zcode",
       model: "test",
@@ -60,17 +81,17 @@ async function fixture() {
     }),
   );
   const root: CodeUiSessionRecord = {
-    id: "task",
-    instance_id: "instance",
-    project_id: "project",
-    root_directory: "/project",
+    id: scope.taskId,
+    instance_id: scope.instanceId,
+    project_id: scope.projectId,
+    root_directory: scope.rootDirectory,
     additional_directories: [],
     sandbox_mode: "workspace-write",
     scope_generation: 1,
     branch_generation: 1,
     execution_state: "ready",
-    chat_session_id: "task",
-    root_session_id: "task",
+    chat_session_id: scope.taskId,
+    root_session_id: scope.taskId,
     parent_session_id: null,
     parent_tool_call_id: null,
     state,
@@ -104,21 +125,13 @@ async function fixture() {
       hasToolCalls: false,
       usageObserved: true,
     })),
-    actor: { instanceId: "instance", accessClientId: null },
+    actor: { instanceId: scope.instanceId, accessClientId: null },
     runId: "r",
     toolCallId: "verify",
-    scopeHandle: {
+    scopeHandle: handle ?? {
       agentId: "main",
       role: "main",
-      describe: () => ({
-        instanceId: "instance",
-        projectId: "project",
-        taskId: "task",
-        rootDirectory: "/project",
-        additionalDirectories: [],
-        sandboxMode: "workspace-write",
-        generation: 1,
-      }),
+      describe: () => scope,
     },
     taskWorkContext: { branchGeneration: 1 },
   } as unknown as ToolExecutionContext;
@@ -127,8 +140,298 @@ async function fixture() {
     repository,
     refresh: async () => {},
   });
-  return { host, root, context, goals, verified: () => verified };
+  return { host, root, context, goals, conversation, verified: () => verified };
 }
+
+const roots: string[] = [];
+afterEach(async () => {
+  for (const root of roots.splice(0))
+    await rm(root, { recursive: true, force: true });
+});
+async function crossRunFixture(legacy = false, canceled = false) {
+  const directory = await realpath(
+    await mkdtemp(join(tmpdir(), "goal-evidence-")),
+  );
+  roots.push(directory);
+  const scope = {
+    instanceId: RUNTIME_TEST_ACTOR.instanceId,
+    projectId: "00000000-0000-4000-8000-000000000002",
+    taskId: "00000000-0000-4000-8000-000000000003",
+    rootDirectory: directory,
+    additionalDirectories: [],
+    sandboxMode: "workspace-write" as const,
+    generation: 1,
+  };
+  const handle = await createExecutionScopes({
+    repository: {
+      load: async () => ({
+        preset: "code",
+        state: "ready",
+        branchGeneration: 1,
+        scope,
+      }),
+    },
+    localInstance: createRuntimeTestInstance(),
+  }).openTask(RUNTIME_TEST_ACTOR, scope.taskId);
+  const f = await fixture(handle);
+  const model = f.root.state!.goalModel;
+  const sync = () => {
+    f.root.state = f.conversation.exportState();
+    if (model === undefined) delete f.root.state.goalModel;
+    else f.root.state.goalModel = model;
+  };
+  const tool = (
+    name: string,
+    id: string,
+    input: Record<string, unknown>,
+    output: Record<string, unknown>,
+  ) => {
+    f.conversation.recordEvent({
+      type: "tool.started",
+      runId: "r",
+      toolCallId: id,
+      toolName: name,
+      input,
+      timestamp: new Date(1000).toISOString(),
+    });
+    f.conversation.recordEvent({
+      type: "tool.completed",
+      runId: "r",
+      toolCallId: id,
+      toolName: name,
+      status: "success",
+      output,
+      timestamp: new Date(2000).toISOString(),
+    });
+    sync();
+  };
+  sync();
+  const receipt = await f.host.read(f.context);
+  tool("GetGoal", "read-goal", {}, { ...receipt! });
+  const commit = await handle.backend.writeFile({
+    path: "C.txt",
+    content: "goal-recovery-C\n",
+    createOnly: true,
+  });
+  tool(
+    "Write",
+    "write-C",
+    { file_path: "C.txt", content: "goal-recovery-C\n" },
+    {
+      display: fileDiffDisplay(commit, 10000),
+    },
+  );
+  const writeRow = f.root.state!.snapshots[0]!.rows.window.find(
+    (row) => row.kind === "toolCall" && row.toolName === "Write",
+  );
+  if (writeRow?.kind !== "toolCall")
+    throw new Error("Missing actual Write receipt");
+  writeRow.output!.text = `已创建 ${commit.filePath}，版本 ${commit.version}`;
+  const state = JSON.parse(JSON.stringify(f.root.state!));
+  f.conversation = createCodeUiConversation({
+    sessionId: scope.taskId,
+    workspacePath: directory,
+    config: state.snapshots[0].config,
+    state,
+  });
+  f.conversation.recordEvent({
+    type: canceled ? "run.canceled" : "run.completed",
+    runId: "r",
+    timestamp: new Date(3000).toISOString(),
+  });
+  if (canceled) {
+    const paused = f.conversation.getGoal()!;
+    f.conversation.setGoal(
+      f.goals.resume(paused, {
+        goalId: paused.goalId,
+        revision: paused.revision,
+        branchGeneration: 1,
+      }),
+      model,
+    );
+  }
+  f.conversation.startTurn({
+    runId: "r2",
+    commandId: "continue",
+    text: "验收已有C文件",
+  });
+  sync();
+  if (legacy)
+    delete (f.root.state!.goalRecord as unknown as Record<string, unknown>)
+      .runs;
+  f.root.state = JSON.parse(JSON.stringify(f.root.state));
+  f.root.active_run_id = "r2";
+  f.context.runId = "r2";
+  return {
+    ...f,
+    handle,
+    path: commit.filePath,
+    writeId: `row:${writeRow.rowId}`,
+  };
+}
+
+it.each([false, true])(
+  "同Goal真实claim跨Run及冷恢复继承成功Write，前Run取消=%s",
+  async (canceled) => {
+    const f = await crossRunFixture(false, canceled);
+    const view = await f.host.read(f.context);
+    expect(view?.evidenceCandidates).toContainEqual({
+      id: f.writeId,
+      kind: "toolCall",
+      revision: f.root.state!.goalRecord!.revision,
+    });
+    const result = await f.host.verify(f.context, {
+      ...proposal,
+      revision: f.root.state!.goalRecord!.revision,
+      evidenceIds: [f.writeId],
+    });
+    expect(result.status).toBe("complete");
+    expect(f.context.requestModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.stringContaining("goal-recovery-C"),
+      }),
+    );
+  },
+);
+
+it("旧Goal只依据同Task已认证GetGoal回执确定历史成员并持久保留", async () => {
+  const f = await crossRunFixture(true);
+  expect((await f.host.read(f.context))?.evidenceCandidates).toContainEqual({
+    id: f.writeId,
+    kind: "toolCall",
+    revision: f.root.state!.goalRecord!.revision,
+  });
+  await f.host.verify(f.context, {
+    ...proposal,
+    revision: f.root.state!.goalRecord!.revision,
+    evidenceIds: [f.writeId],
+  });
+  expect(f.root.state!.goalRecord).toMatchObject({
+    runs: expect.arrayContaining([
+      { runId: "r", branchGeneration: 1, iteration: 1 },
+    ]),
+  });
+});
+
+it.each([
+  "goalId",
+  "objective",
+  "branch",
+  "run",
+  "pending",
+  "assistant",
+  "prefix",
+])("%s伪造或不匹配的旧GetGoal来源不能认领历史证据", async (change) => {
+  const f = await crossRunFixture(true);
+  const rows = f.root.state!.snapshots[0]!.rows.window;
+  const membership = rows.find(
+    (row) => row.kind === "toolCall" && row.toolName === "GetGoal",
+  );
+  if (membership?.kind !== "toolCall")
+    throw new Error("Missing GetGoal source");
+  const body = JSON.parse(membership.output!.text);
+  if (change === "goalId") body.goalId = "another-goal";
+  if (change === "objective") body.objective = "another objective";
+  if (change === "branch") body.branchGeneration = 2;
+  if (change === "run") body.claimedRunId = "foreign-run";
+  if (change === "pending") membership.status = "pendingApproval";
+  if (change === "prefix") membership.toolCallId = "foreign-run/copied";
+  membership.output!.text = JSON.stringify(body);
+  if (change === "assistant")
+    rows.splice(
+      rows.indexOf(membership),
+      1,
+      protocol.assistantTextRowSchema.parse({
+        rowId: membership.rowId,
+        turnId: "r",
+        kind: "assistantText",
+        text: JSON.stringify(body),
+        state: "complete",
+        createdAt: 0,
+        createdAtSeq: 0,
+      }),
+    );
+  expect((await f.host.read(f.context))?.evidenceCandidates).not.toContainEqual(
+    expect.objectContaining({ id: f.writeId }),
+  );
+  await expect(
+    f.host.verify(f.context, {
+      ...proposal,
+      revision: f.root.state!.goalRecord!.revision,
+      evidenceIds: [f.writeId],
+    }),
+  ).rejects.toThrow("验收引用");
+  expect(f.context.requestModel).not.toHaveBeenCalled();
+});
+
+it.each(["error", "cancelled", "pendingApproval"] as const)(
+  "历史Write回执%s不继承未完成操作",
+  async (status) => {
+    const f = await crossRunFixture();
+    const row = f.root.state!.snapshots[0]!.rows.window.find(
+      (row) => `row:${row.rowId}` === f.writeId,
+    );
+    if (row?.kind !== "toolCall") throw new Error("Missing Write source");
+    row.status = status;
+    expect(
+      (await f.host.read(f.context))?.evidenceCandidates,
+    ).not.toContainEqual(expect.objectContaining({ id: f.writeId }));
+    await expect(
+      f.host.verify(f.context, {
+        ...proposal,
+        revision: f.root.state!.goalRecord!.revision,
+        evidenceIds: [f.writeId],
+      }),
+    ).rejects.toThrow("验收引用");
+    expect(f.context.requestModel).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["before", "during"])(
+  "文件在%s独立评估删除时旧Write不能完成Goal",
+  async (phase) => {
+    const f = await crossRunFixture();
+    if (phase === "before") await unlink(f.path);
+    else
+      f.context.requestModel = vi.fn(async () => {
+        await unlink(f.path);
+        return {
+          text: '{"passed":true,"reason":"Review"}',
+          hasToolCalls: false,
+          usageObserved: true,
+        };
+      });
+    await expect(
+      f.host.verify(f.context, {
+        ...proposal,
+        revision: f.root.state!.goalRecord!.revision,
+        evidenceIds: [f.writeId],
+      }),
+    ).rejects.toThrow();
+    expect(f.root.state!.goalRecord!.status).not.toBe("complete");
+    if (phase === "before")
+      expect(f.context.requestModel).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["task", "project", "branch", "scope"])(
+  "跨Run证据不绕过当前%s绑定",
+  async (boundary) => {
+    const f = await crossRunFixture();
+    if (boundary === "task") f.root.id = "foreign-task";
+    if (boundary === "project") f.root.project_id = "foreign-project";
+    if (boundary === "branch") f.root.branch_generation = 2;
+    if (boundary === "scope") f.root.scope_generation = 2;
+    await expect(
+      f.host.verify(f.context, {
+        ...proposal,
+        revision: f.root.state!.goalRecord!.revision,
+        evidenceIds: [f.writeId],
+      }),
+    ).rejects.toThrow();
+    expect(f.context.requestModel).not.toHaveBeenCalled();
+  },
+);
 const proposal = {
   revision: 2,
   evidenceIds: ["row:99"],
