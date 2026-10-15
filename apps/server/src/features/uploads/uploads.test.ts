@@ -153,13 +153,23 @@ describe("uploads repository", () => {
   it("取对象位置与删除都限定实例", async () => {
     const location = createRunner(() => ({
       rowCount: 1,
-      rows: [{ bucket: "project-assets", object_path: "p/a.png" }],
+      rows: [
+        {
+          bucket: "project-assets",
+          object_path: "p/a.png",
+          mime_type: "image/png",
+        },
+      ],
     }));
     await expect(
       createUploadRepository(
         createPersistenceFromRunner(location.runner),
       ).findLocation(INSTANCE_ID, ASSET_ID),
-    ).resolves.toEqual({ bucket: "project-assets", object_path: "p/a.png" });
+    ).resolves.toEqual({
+      bucket: "project-assets",
+      object_path: "p/a.png",
+      mime_type: "image/png",
+    });
     expect(location.calls[0]?.text.replace(/\s+/g, " ")).toContain(
       "where instance_id = $2 and id = $1",
     );
@@ -276,6 +286,7 @@ describe("upload service", () => {
         findLocation: async () => ({
           bucket: "project-assets",
           object_path: "p/a.png",
+          mime_type: "image/png",
         }),
       },
     });
@@ -288,6 +299,7 @@ describe("upload service", () => {
         findLocation: async () => ({
           bucket: "user-avatars",
           object_path: "u/a.png",
+          mime_type: "image/png",
         }),
       },
     });
@@ -302,6 +314,7 @@ describe("upload service", () => {
         findLocation: async () => ({
           bucket: "project-assets",
           object_path: "p/a.png",
+          mime_type: "image/png",
         }),
       },
     });
@@ -314,6 +327,7 @@ describe("upload service", () => {
         findLocation: async () => ({
           bucket: "project-assets",
           object_path: "p/a.png",
+          mime_type: "image/png",
         }),
       },
     });

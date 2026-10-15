@@ -11,6 +11,7 @@ import { createInProcessQueue } from "../queue/providers/in-process.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createAssetWriter } from "../uploads/asset-writer.js";
 import { createUploadRepository } from "../uploads/repository.js";
+import { createUploadService } from "../uploads/upload-service.js";
 import { createUsageRepository } from "../usage/repository.js";
 import { createUsageService } from "../usage/usage-service.js";
 import { startJobLoop } from "./job-loop.js";
@@ -27,6 +28,133 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
     }, 30_000);
     afterAll(async () => {
       await db?.close();
+    });
+
+    it("桌面重建上传服务后参考图字节直接送达供应商，不依赖本机素材HTTP服务", async () => {
+      const requests: Array<Record<string, unknown>> = [];
+      const png =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2Z0AAAAASUVORK5CYII=";
+      const source = `data:image/png;base64,${png}`;
+      const provider = createServer(async (request, response) => {
+        let body = "";
+        for await (const chunk of request) body += String(chunk);
+        requests.push(JSON.parse(body));
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify({ data: [{ b64_json: png }] }));
+      });
+      await new Promise<void>((resolve) =>
+        provider.listen(0, "127.0.0.1", resolve),
+      );
+      const address = provider.address();
+      if (!address || typeof address === "string")
+        throw new Error("模拟供应商未启动");
+      const baseUrl = `http://127.0.0.1:${address.port}`;
+      const blobOptions = {
+        rootDir: `${db.directory}/desktop-reference-input`,
+        signingSecret: "test-only",
+        // 本例不启动素材读取路由；唯一HTTP服务只模拟上游生成接口。
+        publicBaseUrl: "http://127.0.0.1:1",
+      };
+      const makeUploads = () =>
+        createUploadService({
+          blob: createLocalFsBlobStore(blobOptions),
+          repository: createUploadRepository(db.persistence),
+          localInstance: db.localInstance,
+        });
+      const generationTargets = createGenerationTargets({
+        persistence: db.persistence,
+        executionScopes: createExecutionScopes({
+          repository: createScopeRepository(db.persistence),
+          localInstance: db.localInstance,
+        }),
+      });
+      const modelProviders = createModelProviderService({
+        repository: createModelProviderRepository(db.persistence),
+        localInstance: db.localInstance,
+      });
+      const configured = await modelProviders.createInstance(db.actor, {
+        name: "桌面参考图模拟供应商",
+        apiKey: "test-only",
+        baseUrl,
+        protocol: "volces",
+        models: [
+          { id: "doubao-seedream-4-0", name: "图片模型", capability: "image" },
+        ],
+      });
+      const initialQueue = createInProcessQueue();
+      const initialJobs = createJobService({
+        queue: initialQueue,
+        uploads: makeUploads(),
+        repository: createJobRepository(db.persistence),
+        localInstance: db.localInstance,
+        generationTargets,
+      });
+      const accepted = await initialJobs.createJob(db.actor, {
+        requestId: randomUUID(),
+        jobType: "image_generation",
+        payload: {
+          prompt: "猫",
+          model: "doubao-seedream-4-0",
+          provider_instance_id: configured.id,
+          input_images: [source],
+        },
+      });
+      expect(accepted.payload.input_images).toEqual([
+        expect.stringMatching(/^asset:\/\//),
+      ]);
+      expect(JSON.stringify(accepted.payload)).not.toContain(png);
+      await initialQueue.shutdown();
+      const queue = createInProcessQueue();
+      const uploads = makeUploads();
+      const jobs = createJobService({
+        queue,
+        uploads,
+        repository: createJobRepository(db.persistence),
+        localInstance: db.localInstance,
+        generationTargets,
+      });
+      const loop = startJobLoop(
+        {
+          queue,
+          uploads,
+          jobService: jobs,
+          blob: createLocalFsBlobStore(blobOptions),
+          generationTargets,
+          modelProviders,
+          assetWriter: createAssetWriter(
+            createUploadRepository(db.persistence),
+          ),
+          projectFiles: {} as never,
+          env: {
+            agentBackendMode: "state",
+            agentModel: "test",
+            port: 0,
+            version: "test",
+            webOrigin: baseUrl,
+          },
+        },
+        { queues: ["image_generation_jobs"] },
+      );
+      try {
+        await vi.waitFor(
+          async () =>
+            expect((await jobs.getJob(db.actor, accepted.id)).status).toBe(
+              "succeeded",
+            ),
+          { timeout: 4000 },
+        );
+        expect(requests).toHaveLength(1);
+        expect(requests[0]).toMatchObject({ image: [source] });
+        expect(JSON.stringify(requests[0])).not.toContain("127.0.0.1");
+        expect(
+          JSON.stringify((await jobs.getJob(db.actor, accepted.id)).payload),
+        ).not.toContain(png);
+      } finally {
+        await loop.shutdown();
+        await new Promise<void>((resolve, reject) =>
+          provider.close((error) => (error ? reject(error) : resolve())),
+        );
+      }
     });
 
     it.each(["url", "inline", "download-failed"])(
@@ -428,7 +556,7 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
               id: "gpt-image-1",
               name: "多图模型",
               capability: "image",
-              },
+            },
           ],
         });
         const job = await jobs.createJob(db.actor, {

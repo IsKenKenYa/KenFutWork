@@ -15,7 +15,7 @@ export type ExecutorContext = {
   retryBaseDelayMs: number;
   signal?: AbortSignal;
   assertExecution?: () => Promise<void>;
-  uploads?: Pick<UploadService, "getAssetUrl">;
+  uploads?: Pick<UploadService, "readAsset">;
   canvas?: Pick<CanvasService, "insertImageElement" | "insertVideoElement">;
   projectFiles: ProjectFileService;
   generationTargets: GenerationTargets;

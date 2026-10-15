@@ -20,6 +20,7 @@ export type AssetRecord = {
 export type AssetLocation = {
   bucket: string;
   object_path: string;
+  mime_type: string | null;
 };
 
 export type NewAssetInput = {
@@ -42,7 +43,7 @@ export type NewAssetInput = {
 export interface UploadRepository {
   /** 删除元数据行；返回受影响行数。 */
   deleteById(instanceId: string, assetId: string): Promise<number>;
-  /** 取对象位置（bucket + path），用于签发 URL 或删除对象。 */
+  /** 取对象位置与MIME，用于读取字节、签发URL或删除对象。 */
   findLocation(
     instanceId: string,
     assetId: string,
@@ -107,7 +108,7 @@ export function createUploadRepository(
       const row = await persistence
         .forInstance(instanceId)
         .queryOne<AssetLocation>(
-          `select bucket, object_path
+          `select bucket, object_path, mime_type
              from public.asset_objects
             where instance_id = :instance
               and id = $1`,

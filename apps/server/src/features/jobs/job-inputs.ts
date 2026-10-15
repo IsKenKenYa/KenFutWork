@@ -10,7 +10,7 @@ export class JobInputError extends Error {
   }
 }
 
-/** 在共享接纳入口保存输入字节；执行时只持有素材引用并重新签发URL。 */
+/** 接纳时保存输入字节；Job只持有素材引用，执行时读取字节交给适配器。 */
 export async function persistJobInputs(
   actor: LocalActor,
   payload: Record<string, unknown>,
@@ -89,16 +89,24 @@ export async function persistJobInputs(
 
 export async function resolveJobMediaInputs(
   job: BackgroundJob,
-  uploads?: Pick<UploadService, "getAssetUrl">,
+  uploads?: Pick<UploadService, "readAsset">,
 ): Promise<{ inputImages?: string[]; inputVideo?: string }> {
   async function resolve(source: string) {
     if (!source.startsWith("asset://")) return source;
-    if (!uploads)
-      throw new Error("参考素材读取服务未接通，请检查工作节点配置。");
-    return uploads.getAssetUrl(
-      { instanceId: job.instance_id, accessClientId: job.created_by_client_id },
-      source.slice("asset://".length),
-    );
+    try {
+      if (!uploads)
+        throw new Error("参考素材读取服务未接通，请检查工作节点配置。");
+      const asset = await uploads.readAsset(
+        { instanceId: job.instance_id, accessClientId: job.created_by_client_id },
+        source.slice("asset://".length),
+      );
+      return `data:${asset.mimeType};base64,${Buffer.from(asset.bytes).toString("base64")}`;
+    } catch (cause) {
+      throw Object.assign(
+        new Error("参考素材读取失败，请检查素材后重试。", { cause }),
+        { code: "input_fetch_error" },
+      );
+    }
   }
   const images = job.payload.input_images;
   const video = job.payload.input_video;
