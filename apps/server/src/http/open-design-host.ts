@@ -9,6 +9,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import type { LocalActor } from "../features/local-instance/types.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
+import type { OpenDesignCompanionSnapshot } from "../features/open-design/companion.js";
 import {
   resolveOpenDesignCredentials,
   resolveOpenDesignProtocolVersion,
@@ -46,6 +47,8 @@ export async function registerOpenDesignHostRoutes(
     >;
     /** 本机实例作用域（凭证缝装配；缺省 = 未接线，503）。 */
     localInstance?: { serviceActor(): Promise<LocalActor> };
+    /** 伴随容器快照（§9-3 承载；缺省 = 不托管，status 只报 HTTP 事实）。 */
+    companion?: (() => OpenDesignCompanionSnapshot) | undefined;
   },
 ): Promise<void> {
   const error = (
@@ -77,6 +80,7 @@ export async function registerOpenDesignHostRoutes(
         await resolveOpenDesignHostStatus({
           frontendUrl: options.frontendUrl,
           fetchImpl: options.fetchImpl,
+          companion: options.companion?.(),
         }),
       ),
     );

@@ -15,12 +15,31 @@ OpenDesign 是写代码 / 原型用的设计引擎（Figma 同类位，但由 co
 
 ```
 KENFUTWORK_OPEN_DESIGN_FRONTEND_URL=<OpenDesign 前端地址，origin 形式，如 http://127.0.0.1:7456>
+KENFUTWORK_OPEN_DESIGN_EMBED_SECRET=<与 OpenDesign 栈 OD_API_TOKEN 成对；不配则凭证下发不可用（503），画布不受影响>
 ```
 
 配齐与否、服务是否可达，可用 `GET /api/open-design/host/status` 探测（未配齐 / 不可达都会如实
 返回缺失原因，界面把原因透出，不放无提示的假开关）。
 
-自托管形态：OpenDesign 官方 `deploy/docker-compose.yml` 起在本机 `127.0.0.1:7456`。
+自托管形态：见下节——配成伴随地址即可由主程序托管起停，无需手动跑上游 compose。
+
+## 承载形态：伴随容器（2026-10-15 拍板，规划 §9-3）
+
+- `KENFUTWORK_OPEN_DESIGN_FRONTEND_URL=http://127.0.0.1:7456`（或 localhost / [::1] 同端口）
+  = **伴随容器**：主程序启动即拉起 `open-design/docker-compose.open-design.yml` 的栈，
+  退出即停（数据卷保留）；首次启动需拉镜像（分钟级、异步不阻塞），期间入口如实显示
+  「正在启动」而不是空壳；
+- 伴随栈固定 `OD_DISABLE_API_AUTH=1`：入站免认证只服务宿主 `127.0.0.1:7456`（与上游
+  「环回免 token」同一信任边界；真机实证：带 token 的 Basic Auth 会把 iframe 锁死在
+  登录弹窗）。`OD_API_TOKEN` 仍随起栈注入成对密钥，供 daemon **出站**调本仓凭证缝；
+  未配密钥画布照常可用，凭证下发如实 503；
+- 指向其它地址（远端实例 / https 反代）= 用户自管，主程序不起不停不动容器；
+- 未装 Docker / 守护进程没起：伴随模式起栈失败，`GET /api/open-design/host/status`
+  透出退出码与首行错误，界面把原因带出来；
+- 配了 `KENFUTWORK_OPEN_DESIGN_EMBED_SECRET` 时，同一值以 `OD_API_TOKEN` 注入容器
+  （凭证下发门的成对半边）；
+- 镜像钉 digest（`ghcr.io/nexu-io/od@sha256:587a99…`，2026-10-15 观测 = release
+  `open-design-v0.24.1`），升级走 compose 改动 + 回归；归属登记 `THIRD-PARTY-NOTICES.md` §F。
 
 ## BYOK 凭证下发（O3 / `OD-4`）
 

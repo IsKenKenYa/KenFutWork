@@ -49,7 +49,8 @@ describe("OpenDesign 宿主状态探针", () => {
       reasons: [],
     });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(fetchImpl.mock.calls[0]?.[0]).toBe(ORIGIN);
+    // 探活打上游免鉴权健康端点（真机实证：配 token 时 GET / 回 Basic Auth 401）
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe(`${ORIGIN}/api/health`);
     // 探针必须带超时：承载是独立服务，探不通不能把 status 拖成挂起。
     expect(fetchImpl.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
   });
@@ -106,5 +107,69 @@ describe("OpenDesign 宿主状态探针", () => {
   it("默认探活超时有上界（status 是门控同步依赖，不能挂起）", () => {
     expect(OPEN_DESIGN_PROBE_TIMEOUT_MS).toBeGreaterThan(0);
     expect(OPEN_DESIGN_PROBE_TIMEOUT_MS).toBeLessThanOrEqual(3000);
+  });
+
+  // ---- 伴随容器承载事实（§9-3 拍板：伴随容器随主程序起停）----
+
+  it("托管模式 + 容器启动中 → 探活失败原因追加「正在启动」的等待说明", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error("connect ECONNREFUSED 127.0.0.1:7456");
+    });
+    const status = await resolveOpenDesignHostStatus({
+      frontendUrl: ORIGIN,
+      fetchImpl: asFetch(fetchImpl),
+      companion: { state: "starting" },
+    });
+    expect(status.enabled).toBe(false);
+    expect(status.reasons.join(" ")).toContain("正在启动");
+    expect(status.reasons.join(" ")).toContain("拉取镜像");
+  });
+
+  it("托管模式 + 容器启动失败 → 原因透传失败摘要（不是只说「不可达」）", async () => {
+    const fetchImpl = vi.fn(async () => new Response("", { status: 502 }));
+    const status = await resolveOpenDesignHostStatus({
+      frontendUrl: ORIGIN,
+      fetchImpl: asFetch(fetchImpl),
+      companion: {
+        state: "error",
+        error: "docker compose up 失败（退出码 125）：pull access denied",
+      },
+    });
+    expect(status.reasons.join(" ")).toContain("pull access denied");
+  });
+
+  it("外部地址（非伴随 origin）→ 伴随快照不掺和，原因只有 HTTP 事实", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error("connect ECONNREFUSED 10.0.0.9:7456");
+    });
+    const status = await resolveOpenDesignHostStatus({
+      frontendUrl: "http://10.0.0.9:7456",
+      fetchImpl: asFetch(fetchImpl),
+      companion: { state: "error", error: "不该出现" },
+    });
+    expect(status.reasons.join(" ")).not.toContain("伴随容器");
+    expect(status.reasons.join(" ")).not.toContain("不该出现");
+  });
+
+  it("托管模式 + 容器 ready 但 HTTP 不通 → 不追加容器侧原因（基线已说明）", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error("connect ECONNREFUSED 127.0.0.1:7456");
+    });
+    const status = await resolveOpenDesignHostStatus({
+      frontendUrl: ORIGIN,
+      fetchImpl: asFetch(fetchImpl),
+      companion: { state: "ready" },
+    });
+    expect(status.reasons).toHaveLength(1);
+  });
+
+  it("服务可达时不受伴随快照影响（enabled 语义 = 真的能用）", async () => {
+    const fetchImpl = vi.fn(async () => new Response("ok", { status: 200 }));
+    const status = await resolveOpenDesignHostStatus({
+      frontendUrl: ORIGIN,
+      fetchImpl: asFetch(fetchImpl),
+      companion: { state: "error", error: "陈旧失败" },
+    });
+    expect(status).toEqual({ enabled: true, frontendUrl: ORIGIN, reasons: [] });
   });
 });

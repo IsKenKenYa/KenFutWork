@@ -401,6 +401,16 @@ function main() {
   cpSync(join(ROOT, "dify"), join(RELEASE, "dify"), { recursive: true });
   console.log("[package] 捆绑 flow 引擎资源（dify/：compose + ssrf_proxy）");
 
+  // 4b-2b) OpenDesign 伴随容器资源（open-design/：compose 文件）：服务端按资源根解析
+  //        （desktop/entry-root.ts → <exeDir>/open-design/），装配即 up -d、退出 down
+  //        （§9-3 拍板：伴随容器随主程序起停）；镜像不随包（伴随启动时按需拉取）。
+  cpSync(join(ROOT, "open-design"), join(RELEASE, "open-design"), {
+    recursive: true,
+  });
+  console.log(
+    "[package] 捆绑 OpenDesign 伴随容器资源（open-design/：compose）",
+  );
+
   // 4b-3) 自带插件 bundle（plugins/：flow / mihome 等）：壳以应用目录为服务端 cwd 拉起
   //       （src/lib.rs 的 packaged_spawn_config），插件加载器的 `<cwd>/plugins` 候选即命中这里；
   //       不拷则市场里「自带插件」永远是空的。
