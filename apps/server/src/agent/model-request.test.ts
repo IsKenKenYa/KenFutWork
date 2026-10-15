@@ -1,5 +1,9 @@
 import { createServer } from "node:http";
 import { modelCatalogEntrySchema } from "@kenfutwork/shared";
+import {
+  awaitAllCallbacks,
+  consumeCallback,
+} from "@langchain/core/callbacks/promises";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import {
   AIMessage,
@@ -9,7 +13,9 @@ import {
 } from "@langchain/core/messages";
 import type { ChatResult } from "@langchain/core/outputs";
 import { countTokensApproximately } from "langchain";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import { evaluateGoal } from "../features/goals/evaluation.js";
+import { createGoalService } from "../features/goals/service.js";
 import { createRunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
 import {
   createModelRequestPort,
@@ -47,6 +53,19 @@ class RequestModel extends BaseChatModel {
     };
   }
 }
+class CallbackDroppingRequestModel extends RequestModel {
+  override invoke(
+    input: Parameters<RequestModel["invoke"]>[0],
+    options?: Parameters<RequestModel["invoke"]>[1],
+  ) {
+    const { callbacks: _callbacks, ...forwarded } = options ?? {};
+    return super.invoke(input, forwarded);
+  }
+}
+afterEach(async () => {
+  await awaitAllCallbacks();
+  vi.unstubAllEnvs();
+});
 const invocation = {
   providerId: "p",
   modelId: "m",
@@ -60,8 +79,10 @@ const request = {
   input: "Real receipt",
   remainingTokens: null,
 };
-function fixture(inputTokenLimit: number | null = null) {
-  const model = new RequestModel();
+function fixture(
+  inputTokenLimit: number | null = null,
+  model = new RequestModel(),
+) {
   const controller = new AbortController();
   const resolve = vi.fn(async () => ({
     model,
@@ -82,6 +103,136 @@ function fixture(inputTokenLimit: number | null = null) {
     }),
   };
 }
+it("SDK后台用量回调尚未运行时从返回AIMessage真实用量归账", async () => {
+  vi.stubEnv("LANGCHAIN_CALLBACKS_BACKGROUND", "true");
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await consumeCallback(() => blocked, false);
+  const f = fixture();
+  try {
+    const result = await f.port(request);
+    expect(result.usageObserved).toBe(true);
+    expect(f.onUsage).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ inputTokens: 12, outputTokens: 5 }),
+    );
+  } finally {
+    release();
+    await awaitAllCallbacks();
+  }
+  expect(f.onUsage).toHaveBeenCalledTimes(1);
+});
+
+it("真实SDK模型wrapper未转发callback时仍使用返回消息用量，不能伪造零值", async () => {
+  const f = fixture(null, new CallbackDroppingRequestModel());
+  expect((await f.port(request)).usageObserved).toBe(true);
+  expect(f.onUsage).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ inputTokens: 12, outputTokens: 5 }),
+  );
+});
+
+it("同步SDK回调与返回结果的同一用量只归账一次", async () => {
+  vi.stubEnv("LANGCHAIN_CALLBACKS_BACKGROUND", "false");
+  const f = fixture();
+  expect((await f.port(request)).usageObserved).toBe(true);
+  await awaitAllCallbacks();
+  expect(f.onUsage).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ inputTokens: 12, outputTokens: 5 }),
+  );
+});
+
+it.each(["callback", "result"] as const)(
+  "%s来源的异步记账未成功前不能返回验收结果，失败必须透出",
+  async (source) => {
+    vi.stubEnv("LANGCHAIN_CALLBACKS_BACKGROUND", "false");
+    const f = fixture(
+      null,
+      source === "result"
+        ? new CallbackDroppingRequestModel()
+        : new RequestModel(),
+    );
+    let release!: () => void;
+    let started!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    f.onUsage.mockImplementationOnce(async () => {
+      started();
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      throw new Error("usage persistence failed");
+    });
+    let finished = false;
+    const pending = f.port(request).finally(() => {
+      finished = true;
+    });
+    const outcome = pending.then(
+      () => {},
+      () => {},
+    );
+    try {
+      await Promise.race([
+        entered,
+        outcome.then(() => {
+          throw new Error("Request finished before usage accounting");
+        }),
+      ]);
+      expect(finished).toBe(false);
+      release();
+      await expect(pending).rejects.toThrow("usage persistence failed");
+    } finally {
+      release?.();
+    }
+    expect(f.onUsage).toHaveBeenCalledTimes(1);
+  },
+);
+
+it.each(["callback", "result"] as const)(
+  "%s来源的记账等待可取消，已开始的真实用量不重复记账或返回验收结果",
+  async (source) => {
+    vi.stubEnv("LANGCHAIN_CALLBACKS_BACKGROUND", "false");
+    const f = fixture(
+      null,
+      source === "result"
+        ? new CallbackDroppingRequestModel()
+        : new RequestModel(),
+    );
+    let release!: () => void;
+    let started!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    f.onUsage.mockImplementationOnce(async () => {
+      started();
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+    const pending = f.port(request);
+    const outcome = pending.then(
+      () => {},
+      () => {},
+    );
+    try {
+      await Promise.race([
+        entered,
+        outcome.then(() => {
+          throw new Error("Request finished before usage accounting");
+        }),
+      ]);
+      f.controller.abort();
+      await expect(pending).rejects.toThrow();
+    } finally {
+      release?.();
+      await awaitAllCallbacks();
+    }
+    expect(f.onUsage).toHaveBeenCalledTimes(1);
+    expect(f.resolve).toHaveBeenCalledTimes(1);
+  },
+);
+
 it("独立请求不绑定工具或历史，使用冻结配置并在返回前归账", async () => {
   const f = fixture();
   expect(await f.port(request)).toEqual({
@@ -174,9 +325,50 @@ it("取消后不发送请求", async () => {
 });
 it("缺少真实用量不会伪造零用量", async () => {
   const f = fixture();
-  f.model.answer = new AIMessage("Review");
+  f.model.answer = new AIMessage('{"passed":true,"reason":"Evidence"}');
+  expect(
+    await evaluateGoal({
+      request: f.port,
+      invocation,
+      goal: createGoalService().create(null, {
+        goalId: "goal",
+        objective: "真实文件操作",
+        branchGeneration: 1,
+        at: 0,
+      }),
+      evidence: [{ sourceId: "actual-receipt", passed: true }],
+      proposal: { passed: true, reason: "File receipt" },
+    }),
+  ).toEqual({ error: "独立评估未返回用量，目标尚未验收。" });
+  expect(f.onUsage).not.toHaveBeenCalled();
+});
+it.each([
+  { output_tokens: 5 },
+  { input_tokens: -1, output_tokens: 5 },
+  { input_tokens: 12, output_tokens: 1.5 },
+  { input_tokens: Number.MAX_SAFE_INTEGER + 1, output_tokens: 5 },
+  {
+    input_tokens: 12,
+    output_tokens: 5,
+    input_token_details: { cache_read: -1 },
+  },
+])("返回消息无效用量%j拒绝记账，不估算或补零", async (usage) => {
+  const answer = Object.assign(new AIMessage("Review"), {
+    usage_metadata: usage,
+  });
+  const f = fixture(null, new CallbackDroppingRequestModel(answer));
   expect((await f.port(request)).usageObserved).toBe(false);
   expect(f.onUsage).not.toHaveBeenCalled();
+});
+it("供应商明确返回零用量时只记录真实零值", async () => {
+  const answer = Object.assign(new AIMessage("Review"), {
+    usage_metadata: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+  });
+  const f = fixture(null, new CallbackDroppingRequestModel(answer));
+  expect((await f.port(request)).usageObserved).toBe(true);
+  expect(f.onUsage).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ inputTokens: 0, outputTokens: 0 }),
+  );
 });
 it("意外工具调用仅作为失败事实返回，绝不执行", async () => {
   const f = fixture();

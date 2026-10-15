@@ -56,35 +56,52 @@ async function invokeModelRequest(
   const controller = new AbortController();
   const signal = AbortSignal.any([options.signal, controller.signal]);
   let acceptingUsage = true;
-  const pending = options.model.invoke(messages, {
-    runId: modelCallId,
-    signal,
-    callbacks: [
-      {
-        async handleLLMEnd(output) {
-          if (!acceptingUsage || signal.aborted) return;
-          const message = output.generations[0]?.[0];
-          const native: unknown =
-            message && "message" in message ? message.message : undefined;
-          const parsed = usageSchema.safeParse(
-            AIMessage.isInstance(native) ? native.usage_metadata : undefined,
-          );
-          if (!parsed.success) return;
-          const usage = parsed.data;
-          await options.onUsage({
-            modelCallId,
-            owner: options.owner,
-            inputTokens: usage.input_tokens,
-            outputTokens: usage.output_tokens,
-            ...(usage.input_token_details?.cache_read === undefined
-              ? {}
-              : { cachedInputTokens: usage.input_token_details.cache_read }),
-          });
-          usageObserved = true;
+  let usagePending: Promise<void> | undefined;
+  const observeUsage = (native: unknown) => {
+    if (!acceptingUsage || signal.aborted) return;
+    if (usagePending) return usagePending;
+    const parsed = usageSchema.safeParse(
+      AIMessage.isInstance(native) ? native.usage_metadata : undefined,
+    );
+    if (!parsed.success) return;
+    const usage = parsed.data;
+    usagePending = Promise.resolve().then(async () => {
+      signal.throwIfAborted();
+      await options.onUsage({
+        modelCallId,
+        owner: options.owner,
+        inputTokens: usage.input_tokens,
+        outputTokens: usage.output_tokens,
+        ...(usage.input_token_details?.cache_read === undefined
+          ? {}
+          : { cachedInputTokens: usage.input_token_details.cache_read }),
+      });
+      if (acceptingUsage && !signal.aborted) usageObserved = true;
+    });
+    return usagePending;
+  };
+  const pending = options.model
+    .invoke(messages, {
+      runId: modelCallId,
+      signal,
+      callbacks: [
+        {
+          async handleLLMEnd(output) {
+            const generation = output.generations[0]?.[0];
+            await observeUsage(
+              generation && "message" in generation
+                ? generation.message
+                : undefined,
+            );
+          },
         },
-      },
-    ],
-  });
+      ],
+    })
+    .then(async (result) => {
+      // SDK callbacks may run in the background; returned native usage is the same call's receipt.
+      await observeUsage(result);
+      return result;
+    });
   let result: unknown;
   try {
     const source: AsyncIterable<unknown> = {
