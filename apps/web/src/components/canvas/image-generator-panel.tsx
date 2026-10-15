@@ -1,7 +1,10 @@
 "use client";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type { ImageGenerationCaps } from "@kenfutwork/shared";
+import {
+  hasImageGenerationInput,
+  type ImageGenerationCaps,
+} from "@kenfutwork/shared";
 import { ImageUp } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -318,7 +321,15 @@ export function ImageGeneratorPanel({
   );
 
   const handleGenerate = useCallback(async () => {
-    if (!prompt.trim() || loading) return;
+    if (
+      !hasImageGenerationInput(
+        prompt,
+        refImages,
+        currentModel?.imageGeneration,
+      ) ||
+      loading
+    )
+      return;
     if (uploading || uploadFailures[model]) {
       setError(
         uploading
@@ -710,7 +721,11 @@ export function ImageGeneratorPanel({
             type="button"
             onClick={() => void handleGenerate()}
             disabled={
-              !prompt.trim() ||
+              !hasImageGenerationInput(
+                prompt,
+                refImages,
+                currentModel?.imageGeneration,
+              ) ||
               loading ||
               uploading ||
               uploadFailures[model] ||

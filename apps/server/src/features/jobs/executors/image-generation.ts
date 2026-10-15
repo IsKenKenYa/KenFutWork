@@ -1,4 +1,7 @@
-import type { BackgroundJob } from "@kenfutwork/shared";
+import {
+  type BackgroundJob,
+  hasImageGenerationInput,
+} from "@kenfutwork/shared";
 import type {
   GeneratedImage,
   ImageGenerateParams,
@@ -33,9 +36,10 @@ async function imageParams(
   job: BackgroundJob,
   payload: ImageJobPayload,
   ctx: ExecutorContext,
+  instance: ImageProviderSnapshot,
   abortable = true,
 ): Promise<ImageGenerateParams> {
-  return {
+  const params: ImageGenerateParams = {
     prompt: payload.prompt,
     count: payload.count ?? 1,
     model: payload.model,
@@ -47,6 +51,18 @@ async function imageParams(
     ...(await resolveJobMediaInputs(job, ctx.uploads)),
     ...(abortable && ctx.signal ? { signal: ctx.signal } : {}),
   };
+  if (
+    !hasImageGenerationInput(
+      params.prompt,
+      params.inputImages,
+      instance.modelConfig?.imageGeneration,
+    )
+  )
+    throw jobError(
+      "invalid_input",
+      "请输入提示词；无需提示词的模型请添加参考图。",
+    );
+  return params;
 }
 
 async function generateImage(
@@ -69,7 +85,7 @@ async function generateImage(
     );
   }
   if (!provider.startAsync || !provider.pollAsync) {
-    let params = await imageParams(job, payload, ctx);
+    let params = await imageParams(job, payload, ctx, instance);
     if (provider.prepareInputs) params = await provider.prepareInputs(params);
     await ctx.assertExecution?.();
     await ctx.jobService.beginSubmission(job.id, instance.configRevision);
@@ -95,7 +111,7 @@ async function generateImage(
     }
   } else {
     // 云端可能已接纳后才取消，本次响应仍须保留以登记句柄和补发远端取消。
-    let params = await imageParams(job, payload, ctx, false);
+    let params = await imageParams(job, payload, ctx, instance, false);
     if (provider.prepareInputs) params = await provider.prepareInputs(params);
     await ctx.assertExecution?.();
     const attemptId = await ctx.jobService.beginSubmission(
@@ -119,7 +135,11 @@ registerExecutor(
     if (execution.generated || execution.stored || execution.outputs?.length)
       return completeMediaJob(job, undefined, ctx);
     const payload = job.payload as ImageJobPayload;
-    if (!payload.prompt || !payload.model || !payload.provider_instance_id)
+    if (
+      typeof payload.prompt !== "string" ||
+      !payload.model ||
+      !payload.provider_instance_id
+    )
       throw jobError("invalid_input", "请先选择供应商和图片模型。");
     const instance = await resolveInstanceImageProviderFromPayload(
       payload.provider_instance_id,
@@ -128,6 +148,7 @@ registerExecutor(
         ...(job.session_id ? { sessionId: job.session_id } : {}),
         ...(job.thread_id ? { threadId: job.thread_id } : {}),
       },
+      payload.model,
     );
     if (!instance) throw jobError("invalid_input", "图片供应商不可用。");
     return completeMediaJob(

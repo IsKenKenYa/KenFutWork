@@ -1,3 +1,4 @@
+import type { ProviderInstanceModel } from "@kenfutwork/shared";
 import type {
   ImageProvider,
   VideoProvider,
@@ -35,7 +36,15 @@ export async function resolveInstanceImageProviderFromPayload(
   instanceId: string | undefined,
   ctx: ExecutorCtx,
   headerContext: HeaderRenderContext = {},
-): Promise<{ provider: ImageProvider; configRevision: number } | undefined> {
+  modelId?: string,
+): Promise<
+  | {
+      provider: ImageProvider;
+      configRevision: number;
+      modelConfig?: ProviderInstanceModel;
+    }
+  | undefined
+> {
   if (!instanceId) {
     return undefined;
   }
@@ -50,7 +59,12 @@ export async function resolveInstanceImageProviderFromPayload(
       .filter((m) => m.capability === "image" || m.capability === "image-edit")
       .map((m) => ({ id: m.id, name: m.name })),
   });
-  return { provider, configRevision: credentials.configRevision };
+  const modelConfig = credentials.models.find((model) => model.id === modelId);
+  return {
+    provider,
+    configRevision: credentials.configRevision,
+    ...(modelConfig ? { modelConfig } : {}),
+  };
 }
 
 /**

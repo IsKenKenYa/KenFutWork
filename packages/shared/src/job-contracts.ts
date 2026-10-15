@@ -175,7 +175,8 @@ const generationTargetFields = {
 export const generateImageRequestSchema = z.object({
   ...generationTargetFields,
   count: z.number().int().positive().default(1),
-  prompt: z.string().min(1),
+  /** 是否允许空提示词由服务端按模型能力与参考图共同校验。 */
+  prompt: z.string(),
   model: z.string().min(1),
   /** BYOK：本地供应商实例 id；携带时按实例实例化协议适配器（P4）。 */
   providerInstanceId: z.string().uuid().optional(),

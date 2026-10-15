@@ -1529,7 +1529,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: generationSubmissionSchema,
     summary: "受理图片生成任务",
     description:
-      "核对本机接入、供应商与冻结画布目标，创建共享图片Job并立即返回202及request_id/jobs。支持参考图、质量和格式；可用requestId幂等受理并通过GET /api/jobs?request_id查询恢复。成果由worker保存和发布。",
+      "核对本机接入、供应商与冻结画布目标，创建共享图片Job并立即返回202及request_id/jobs。支持参考图、质量和格式；仅明确声明requirePrompt=false且有参考图时允许空提示词。可用requestId幂等受理并通过GET /api/jobs?request_id查询恢复。成果由worker保存和发布。",
   },
   {
     method: "post",

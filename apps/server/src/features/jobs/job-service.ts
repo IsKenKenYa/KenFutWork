@@ -117,6 +117,8 @@ export type JobService = {
     actor: LocalActor,
     input: CreateJobInput & { requestId: string },
     outputCounts: readonly number[],
+    /** 原请求通过来源与指纹验证后直接重放；仅新请求执行当前能力校验。 */
+    validateNewRequest?: () => void,
   ): Promise<BackgroundJob[]>;
   getJob(actor: LocalActor, jobId: string): Promise<BackgroundJob>;
   listJobs(
@@ -324,6 +326,7 @@ export function createJobService(options: {
     actor: LocalActor,
     input: CreateJobInput,
     outputCounts?: readonly number[],
+    validateNewRequest?: () => void,
   ) {
     if (
       outputCounts &&
@@ -337,6 +340,7 @@ export function createJobService(options: {
       outputCounts !== undefined,
     );
     if (prepared.existing.length) return prepared.existing.map(mapJobRow);
+    validateNewRequest?.();
     const queueName = QUEUE_MAP[input.jobType];
     const stored = await persistJobInputs(
       actor,
@@ -554,8 +558,8 @@ export function createJobService(options: {
         );
       return job;
     },
-    createJobs: (actor, input, outputCounts) =>
-      createAcceptedJobs(actor, input, outputCounts),
+    createJobs: (actor, input, outputCounts, validateNewRequest) =>
+      createAcceptedJobs(actor, input, outputCounts, validateNewRequest),
 
     async getJob(actor, jobId) {
       const instanceId = await requireInstanceId(actor, "job_query_failed");

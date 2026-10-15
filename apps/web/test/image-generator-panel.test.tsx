@@ -635,3 +635,85 @@ it("数量独立于单次上游上限，随模型草稿恢复并提交", async (
     expect(submitted).toMatchObject({ model: "image-a", count: 3 }),
   );
 });
+
+it.each(["click", "enter"])(
+  "明确无需提示词的模型以%s提交已有参考图",
+  async (action) => {
+    const model = "11111111-1111-4111-8111-111111111111:reference-only";
+    let submitted: unknown;
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/image-models"))
+        return Response.json({
+          models: [
+            {
+              id: model,
+              displayName: "参考图处理",
+              provider: "供应商",
+              imageGeneration: { requirePrompt: false },
+            },
+          ],
+        });
+      if (String(url).endsWith("/url"))
+        return Response.json({ url: "https://assets.example/reference.png" });
+      submitted = JSON.parse(String(init?.body));
+      return Response.json(
+        {
+          request_id: "cccccccc-1111-4111-8111-111111111111",
+          jobs: [
+            {
+              job_id: "dddddddd-1111-4111-8111-111111111111",
+              status: "queued",
+            },
+          ],
+        },
+        { status: 202 },
+      );
+    });
+    const api = {
+      getSceneElements: () => [],
+      updateScene: vi.fn(),
+    } as unknown as ExcalidrawImperativeAPI;
+    render(
+      <ToastProvider>
+        <ImageGeneratorPanel
+          canvasId="aaaaaaaa-1111-4111-8111-111111111111"
+          projectId="bbbbbbbb-1111-4111-8111-111111111111"
+          prepare={async () => "1"}
+          elementId="generator"
+          elementBounds={{ x: 0, y: 0, width: 400, height: 400 }}
+          data={{
+            type: "image-generator",
+            status: "idle",
+            prompt: "  ",
+            model,
+            aspectRatio: "",
+            quality: "",
+            inputImages: ["asset://eeeeeeee-1111-4111-8111-111111111111"],
+          }}
+          excalidrawApi={api}
+          accessToken={null}
+          canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+        />
+      </ToastProvider>,
+    );
+    await screen.findByText("参考图处理");
+    if (action === "enter")
+      fireEvent.keyDown(screen.getByPlaceholderText("今天我们要创作什么"), {
+        key: "Enter",
+      });
+    else {
+      const buttons = screen.getAllByRole("button");
+      const generate = buttons.at(-1);
+      if (!generate) throw new Error("生成入口未渲染");
+      expect(generate.hasAttribute("disabled")).toBe(false);
+      fireEvent.click(generate);
+    }
+    await waitFor(() =>
+      expect(submitted).toMatchObject({
+        prompt: "",
+        model: "reference-only",
+        inputImages: ["asset://eeeeeeee-1111-4111-8111-111111111111"],
+      }),
+    );
+  },
+);

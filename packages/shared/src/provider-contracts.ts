@@ -67,6 +67,19 @@ export const imageGenerationCapsSchema = z.object({
 });
 export type ImageGenerationCaps = z.infer<typeof imageGenerationCapsSchema>;
 
+/** 仅明确声明无需提示词的参考图任务允许空提示词；未知能力仍要求文字输入。 */
+export function hasImageGenerationInput(
+  prompt: string,
+  inputImages: readonly string[] | undefined,
+  caps: ImageGenerationCaps | undefined,
+): boolean {
+  return (
+    prompt.trim().length > 0 ||
+    (caps?.requirePrompt === false &&
+      inputImages?.some((source) => source.trim().length > 0) === true)
+  );
+}
+
 /** 视频任务能力（fal per-model input schema 收窄版）。缺省字段同样 = 未知。 */
 export const videoGenerationCapsSchema = z.object({
   /** 允许的时长取值（秒）。 */

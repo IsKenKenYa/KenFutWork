@@ -7,6 +7,7 @@ import {
   generateImageRequestSchema,
   generateVideoRequestSchema,
   generationSubmissionSchema,
+  hasImageGenerationInput,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { JobService } from "../features/jobs/job-service.js";
@@ -123,7 +124,20 @@ async function acceptGeneration(
         { length: Math.ceil(imageRequest.count / limit) },
         (_, index) => Math.min(limit, imageRequest.count - index * limit),
       );
-      jobs = await options.jobService.createJobs(actor, input, counts);
+      jobs = await options.jobService.createJobs(actor, input, counts, () => {
+        if (
+          !hasImageGenerationInput(
+            imageRequest.prompt,
+            imageRequest.inputImages,
+            model?.imageGeneration,
+          )
+        )
+          throw new JobServiceError(
+            "job_create_failed",
+            "请输入提示词；无需提示词的模型请添加参考图。",
+            400,
+          );
+      });
     } else jobs = [await options.jobService.createJob(actor, input)];
     return generationSubmissionSchema.parse({
       request_id: requestId,
