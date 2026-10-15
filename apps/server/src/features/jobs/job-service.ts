@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   BackgroundJob,
   BackgroundJobStatus,
@@ -12,7 +13,11 @@ import type {
   LocalInstanceService,
 } from "../local-instance/types.js";
 import type { QueueClient } from "../queue/types.js";
-import type { BackgroundJobRecord, JobRepository } from "./repository.js";
+import {
+  type BackgroundJobRecord,
+  type JobRepository,
+  JobRequestConflictError,
+} from "./repository.js";
 
 // Queue name mapping
 const QUEUE_MAP: Record<BackgroundJobType, string> = {
@@ -26,7 +31,8 @@ export class JobServiceError extends Error {
     | "job_not_found"
     | "job_create_failed"
     | "job_query_failed"
-    | "job_cancel_failed";
+    | "job_cancel_failed"
+    | "job_request_conflict";
 
   constructor(
     code: JobServiceError["code"],
@@ -42,6 +48,8 @@ export class JobServiceError extends Error {
 
 /** 实例归属由本地服务验证（`FORM-9`），故不由调用方传入。 */
 export type CreateJobInput = {
+  requestId?: string;
+  requestIndex?: number;
   /** Only the authenticated HTTP consumer sets this; never a request/tool schema field. */
   interactiveRequest?: true;
   expectedScopeGeneration?: number;
@@ -88,6 +96,22 @@ export type JobService = {
     jobId: string,
   ): Promise<{ attempt_count: number; max_attempts: number }>;
 };
+
+function requestFingerprint(input: unknown): string {
+  function canonical(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === "object")
+      return Object.fromEntries(
+        Object.entries(value)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, entry]) => [key, canonical(entry)]),
+      );
+    return value;
+  }
+  return createHash("sha256")
+    .update(JSON.stringify(canonical(input)))
+    .digest("hex");
+}
 
 function mapJobRow(row: BackgroundJobRecord): BackgroundJob {
   return {
@@ -184,12 +208,23 @@ export function createJobService(options: {
           throw error;
         });
 
+      const { requestId, requestIndex, ...request } = input;
       const job = await repository
         .insert({
           ...(input.canvasId ? { canvasId: input.canvasId } : {}),
           fileTarget,
           jobType: input.jobType,
-          payload: input.payload,
+          payload: requestId
+            ? {
+                ...input.payload,
+                request_id: requestId,
+                request_index: requestIndex ?? 0,
+                request_fingerprint: requestFingerprint({
+                  ...request,
+                  fileTarget,
+                }),
+              }
+            : input.payload,
           ...(input.projectId ? { projectId: input.projectId } : {}),
           queueName,
           ...(input.sessionId ? { sessionId: input.sessionId } : {}),
@@ -198,6 +233,12 @@ export function createJobService(options: {
           instanceId,
         })
         .catch((error: unknown) => {
+          if (error instanceof JobRequestConflictError)
+            throw new JobServiceError(
+              "job_request_conflict",
+              error.message,
+              409,
+            );
           if (error instanceof GenerationTargetError)
             throw new JobServiceError(
               "job_create_failed",
@@ -214,6 +255,8 @@ export function createJobService(options: {
           500,
         );
       }
+
+      if (job.requestReplay) return mapJobRow(job);
 
       // 投递到队列缝 — 失败即回滚（不留孤儿 job 行）
       try {

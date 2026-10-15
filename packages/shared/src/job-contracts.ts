@@ -48,6 +48,7 @@ export type VideoGenerationPayload = z.infer<
 >;
 
 export const createVideoJobRequestSchema = z.object({
+  request_id: z.uuid().optional(),
   project_id: z.uuid().optional(),
   canvas_id: z.uuid().optional(),
   session_id: z.uuid().optional(),
@@ -126,6 +127,7 @@ export type BackgroundJob = z.infer<typeof backgroundJobSchema>;
 // --- API Request schemas ---
 
 export const createImageJobRequestSchema = z.object({
+  request_id: z.uuid().optional(),
   project_id: z.uuid().optional(),
   canvas_id: z.uuid().optional(),
   session_id: z.uuid().optional(),
@@ -164,6 +166,7 @@ export const generateImageRequestSchema = z.object({
 export type GenerateImageRequest = z.infer<typeof generateImageRequestSchema>;
 
 export const generateVideoRequestSchema = z.object({
+  requestId: z.uuid().optional(),
   prompt: z.string().min(1),
   model: z.string().min(1),
   /** BYOK：本地供应商实例 id；携带时任务载荷透传，worker 按实例实例化适配器。 */

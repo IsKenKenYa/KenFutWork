@@ -49,6 +49,26 @@ function buildGenerateApp() {
 }
 
 describe("直连生成：会话上下文落进 job 行（§4.8 占位符渲染依赖它）", () => {
+  it("视频受理传递客户端持久请求标识", async () => {
+    const { app, createdJobs } = buildGenerateApp();
+    const requestId = "aaaaaaaa-1111-4111-8111-111111111111";
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/agent/generate-video",
+        payload: {
+          requestId,
+          prompt: "猫",
+          model: "video",
+          providerInstanceId: "11111111-2222-4333-8444-555555555555",
+        },
+      });
+      expect(response.statusCode).toBe(202);
+      expect(createdJobs[0]).toMatchObject({ requestId });
+    } finally {
+      await app.close();
+    }
+  });
   it("入队失败释放实例准入；准备迁移后拒绝新任务且不再提交", async () => {
     const { app, jobService, localInstance } = buildGenerateApp();
     const payload = {

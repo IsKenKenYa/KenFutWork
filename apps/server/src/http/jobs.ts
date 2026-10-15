@@ -50,6 +50,7 @@ export async function registerJobRoutes(
 
       const job = await options.jobService.createJob(user, {
         interactiveRequest: true,
+        ...(payload.request_id ? { requestId: payload.request_id } : {}),
         ...(payload.project_id !== undefined
           ? { projectId: payload.project_id }
           : {}),
@@ -103,6 +104,7 @@ export async function registerJobRoutes(
 
       const job = await options.jobService.createJob(user, {
         interactiveRequest: true,
+        ...(payload.request_id ? { requestId: payload.request_id } : {}),
         ...(payload.project_id !== undefined
           ? { projectId: payload.project_id }
           : {}),

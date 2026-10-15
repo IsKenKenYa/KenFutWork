@@ -2,7 +2,15 @@ import type { GenerationFileTarget } from "@kenfutwork/shared";
 import { assertGenerationOriginForInsert } from "../generation/file-target-lock.js";
 import type { PersistenceService } from "../persistence/types.js";
 
+export class JobRequestConflictError extends Error {
+  constructor() {
+    super("同一请求标识已用于其他生成参数，请重新提交。");
+    this.name = "JobRequestConflictError";
+  }
+}
+
 export type BackgroundJobRecord = {
+  requestReplay?: boolean;
   id: string;
   instance_id: string;
   file_target?: GenerationFileTarget | null;
@@ -115,6 +123,30 @@ export function createJobRepository(
     async insert(input) {
       return persistence.transaction(async (transaction) => {
         const scoped = transaction.forInstance(input.instanceId);
+        if (typeof input.payload.request_id === "string") {
+          await transaction.query(
+            "select pg_advisory_xact_lock(hashtextextended($1,0))",
+            [
+              `${input.instanceId}:${input.payload.request_id}:${input.payload.request_index ?? 0}`,
+            ],
+          );
+          const existing = await scoped.queryOne<BackgroundJobRecord>(
+            `select ${JOB_COLUMNS} from public.background_jobs where instance_id=:instance
+             and payload->>'request_id'=$1 and coalesce(payload->>'request_index','0')=$2`,
+            [
+              input.payload.request_id,
+              String(input.payload.request_index ?? 0),
+            ],
+          );
+          if (existing) {
+            if (
+              existing.payload?.request_fingerprint !==
+              input.payload.request_fingerprint
+            )
+              throw new JobRequestConflictError();
+            return { ...existing, requestReplay: true };
+          }
+        }
         await assertGenerationOriginForInsert(scoped, input.fileTarget, input);
         return scoped.queryOne<BackgroundJobRecord>(
           `insert into public.background_jobs

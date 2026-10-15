@@ -1610,7 +1610,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     requestSchema: generateVideoRequestSchema,
     summary: "受理视频生成任务",
     description:
-      "核对本机接入及指定BYOK供应商实例、模型后创建video_generation后台任务，由worker异步执行，进度经GET /api/jobs/{jobId}轮询。支持参考图、参考视频、原生分辨率及音频开关。成功202返回job_id、status和prompt；任务服务未配置时返回503。",
+      "核对本机接入及指定BYOK供应商实例、模型后创建video_generation后台任务，由worker异步执行，进度经GET /api/jobs/{jobId}轮询。支持参考图、参考视频、原生分辨率及音频开关，可传requestId幂等受理。成功202返回job_id、status和prompt；任务服务未配置时返回503。",
   },
   // ---- health.ts（健康检查；免鉴权）----
   {
