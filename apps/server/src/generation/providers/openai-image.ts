@@ -13,25 +13,41 @@ import {
 } from "../utils.js";
 
 function imageOptions(params: ImageGenerateParams) {
-  const dimensions = aspectRatioToDimensions(params.aspectRatio ?? "1:1");
+  if ((params.width === undefined) !== (params.height === undefined))
+    throw new GenerationError(
+      "openai",
+      "invalid_input",
+      "请同时填写图片宽度和高度。",
+    );
+  const dimensions =
+    params.width !== undefined && params.height !== undefined
+      ? { width: params.width, height: params.height }
+      : aspectRatioToDimensions(params.aspectRatio ?? "1:1");
   // GPT Image 的标准尺寸不能用通用画布比例生成任意像素值。
   const gptImage =
     params.model.startsWith("gpt-image-") ||
     params.model === "chatgpt-image-latest";
-  const { width, height } = gptImage
-    ? dimensions.width === dimensions.height
-      ? { width: 1024, height: 1024 }
-      : dimensions.width > dimensions.height
-        ? { width: 1536, height: 1024 }
-        : { width: 1024, height: 1536 }
-    : dimensions;
-  const outputFormat: "png" | "jpeg" | "webp" | undefined = !gptImage
+  const { width, height } =
+    gptImage && params.width === undefined
+      ? dimensions.width === dimensions.height
+        ? { width: 1024, height: 1024 }
+        : dimensions.width > dimensions.height
+          ? { width: 1536, height: 1024 }
+          : { width: 1024, height: 1536 }
+      : dimensions;
+  const legacyDalle = params.model === "dall-e-2" || params.model === "dall-e-3";
+  const outputFormat: "png" | "jpeg" | "webp" | undefined = legacyDalle
     ? undefined
     : params.outputFormat === "jpg"
       ? "jpeg"
       : params.outputFormat;
+  const semanticQuality: Record<string, string> = {
+    standard: "low",
+    hd: "medium",
+    ultra: "high",
+  };
   const quality = params.quality
-    ? { standard: "low", hd: "medium", ultra: "high" }[params.quality]
+    ? (gptImage ? (semanticQuality[params.quality] ?? params.quality) : params.quality)
     : undefined;
   return {
     width,
@@ -43,7 +59,7 @@ function imageOptions(params: ImageGenerateParams) {
         : outputFormat === "webp"
           ? "image/webp"
           : "image/png",
-    ...(gptImage && quality
+    ...(!legacyDalle && quality
       ? { quality: quality as "low" | "medium" | "high" }
       : {}),
     ...(outputFormat ? { output_format: outputFormat } : {}),

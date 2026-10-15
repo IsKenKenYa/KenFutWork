@@ -45,6 +45,54 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("自定义网关模型的原生质量格式和像素在生成与编辑中一致发送", async () => {
+  const requests = captureFetch([{ data: [{ b64_json: "aGk=" }] }]);
+  const provider = new OpenAIImageProvider(
+    "gateway-key",
+    "https://gw.example/v1",
+  );
+  const params = {
+    model: "gateway-custom-image-v2",
+    prompt: "一只猫",
+    width: 3072,
+    height: 2048,
+    aspectRatio: "1:1",
+    quality: "cinematic",
+    outputFormat: "jpg",
+  } as const;
+
+  const generated = await provider.generate(params);
+  const edited = await provider.generate({
+    ...params,
+    inputImages: ["data:image/png;base64,aGk="],
+  });
+
+  expect(requests).toHaveLength(2);
+  expect(requests[0]?.url).toBe("https://gw.example/v1/images/generations");
+  expect(requests[0]?.json).toMatchObject({
+    model: "gateway-custom-image-v2",
+    size: "3072x2048",
+    quality: "cinematic",
+    output_format: "jpeg",
+  });
+  expect(requests[1]?.url).toBe("https://gw.example/v1/images/edits");
+  const form = requests[1]?.body;
+  expect(form).toBeInstanceOf(FormData);
+  expect(form?.get("model")).toBe("gateway-custom-image-v2");
+  expect(form?.get("size")).toBe("3072x2048");
+  expect(form?.get("quality")).toBe("cinematic");
+  expect(form?.get("output_format")).toBe("jpeg");
+  expect(form?.get("image")).toBeInstanceOf(File);
+  for (const image of [generated, edited]) {
+    expect(image).toMatchObject({
+      url: "data:image/jpeg;base64,aGk=",
+      mimeType: "image/jpeg",
+      width: 3072,
+      height: 2048,
+    });
+  }
+});
+
 describe("OpenAIImageProvider（生成路径，行为不变回归）", () => {
   it("GPT官方别名使用标准横图与质量参数", async () => {
     const requests = captureFetch([{ data: [{ b64_json: "aGk=" }] }]);
