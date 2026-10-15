@@ -1,6 +1,9 @@
 import type { CanvasContent } from "@kenfutwork/shared";
 import { expect, test } from "vitest";
-import { createCanvasSceneState } from "../src/lib/canvas-scene-state";
+import {
+  createCanvasSceneState,
+  reconcileCanvasScene,
+} from "../src/lib/canvas-scene-state";
 
 const content: CanvasContent = {
   elements: [{ id: "a", type: "rectangle", x: 0 }],
@@ -68,4 +71,159 @@ test("scene fingerprints are frozen even if the source object is mutated afterwa
   expect(state.isDirty).toBe(true);
   state.acceptRemote(content, "r3");
   expect(state.isDirty).toBe(false);
+});
+
+test("three-way reconciliation keeps independent additions and moves", () => {
+  const a = content.elements[0]!;
+  const b = { id: "b", type: "rectangle", x: 0 };
+  const localNew = { id: "local-new", type: "rectangle", x: 10 };
+  const remoteNew = { id: "remote-new", type: "image", fileId: "file-a" };
+  const base = { ...content, elements: [a, b] };
+  const result = reconcileCanvasScene({
+    base,
+    local: { ...base, elements: [{ ...a, x: 25 }, b, localNew] },
+    remote: { ...base, elements: [a, { ...b, x: 40 }, remoteNew] },
+  });
+  expect(result?.merged.elements).toEqual([
+    { ...a, x: 25 },
+    { ...b, x: 40 },
+    localNew,
+    remoteNew,
+  ]);
+  expect(base.elements).toEqual([a, b]);
+});
+
+test("remote deletion is not revived by an unrelated local move", () => {
+  const a = content.elements[0]!;
+  const b = { id: "b", type: "rectangle", x: 0 };
+  const base = { ...content, elements: [a, b] };
+  const result = reconcileCanvasScene({
+    base,
+    local: { ...base, elements: [a, { ...b, x: 25 }] },
+    remote: { ...base, elements: [b] },
+  });
+  expect(result?.merged.elements).toEqual([{ ...b, x: 25 }]);
+});
+
+test.each([false, true])(
+  "local deletion keeps a tombstone for the pending empty save (explicit tombstone: %s)",
+  (explicit) => {
+    const a = content.elements[0]!;
+    const result = reconcileCanvasScene({
+      base: content,
+      local: {
+        ...content,
+        elements: explicit ? [{ ...a, isDeleted: true }] : [],
+      },
+      remote: content,
+    });
+    expect(result?.merged.elements).toEqual([{ ...a, isDeleted: true }]);
+    expect(result?.remote.elements).toEqual([a]);
+  },
+);
+
+test.each([
+  { local: [{ id: "a", x: 25 }], remote: [{ id: "a", x: 40 }] },
+  { local: [{ id: "a", x: 25 }], remote: [] },
+  { local: [], remote: [{ id: "a", x: 40 }] },
+  {
+    local: [...content.elements, { id: "new", x: 25 }],
+    remote: [...content.elements, { id: "new", x: 40 }],
+  },
+])("different changes to the same element remain a conflict: %j", (fixture) => {
+  expect(
+    reconcileCanvasScene({
+      base: content,
+      local: { ...content, elements: fixture.local },
+      remote: { ...content, elements: fixture.remote },
+    }),
+  ).toBeNull();
+});
+
+test("identical element changes ignore JSON object key order", () => {
+  const result = reconcileCanvasScene({
+    base: content,
+    local: { ...content, elements: [{ id: "a", type: "rectangle", x: 25 }] },
+    remote: { ...content, elements: [{ x: 25, type: "rectangle", id: "a" }] },
+  });
+  expect(result?.merged.elements).toEqual([
+    { id: "a", type: "rectangle", x: 25 },
+  ]);
+});
+
+test("document settings merge per field and omit viewport and selection", () => {
+  const result = reconcileCanvasScene({
+    base: content,
+    local: {
+      ...content,
+      appState: {
+        ...content.appState,
+        viewBackgroundColor: "#000",
+        scrollX: -20,
+      },
+    },
+    remote: {
+      ...content,
+      appState: {
+        ...content.appState,
+        gridModeEnabled: true,
+        selectedElementIds: { a: true },
+      },
+    },
+  });
+  expect(result?.merged.appState).toEqual({
+    viewBackgroundColor: "#000",
+    gridModeEnabled: true,
+  });
+  expect(result?.remote.appState).toEqual({
+    viewBackgroundColor: "#fff",
+    gridModeEnabled: true,
+  });
+  expect(
+    reconcileCanvasScene({
+      base: content,
+      local: { ...content, appState: { viewBackgroundColor: "#000" } },
+      remote: { ...content, appState: { viewBackgroundColor: "#eee" } },
+    }),
+  ).toBeNull();
+});
+
+test("rebasing a merged draft advances only the remote baseline until its save is acknowledged", () => {
+  const state = createCanvasSceneState({ revision: "r1", content });
+  const local = { ...content, elements: [{ ...content.elements[0], x: 25 }] };
+  const remote = {
+    ...content,
+    elements: [...content.elements, { id: "remote", x: 40 }],
+  };
+  state.observe(local);
+  const result = state.reconcileRemote(local, remote);
+  expect(result).not.toBeNull();
+  if (!result) return;
+  state.acceptRemote(result.remote, "r2");
+  state.observe(result.merged);
+  expect(state.isDirty).toBe(true);
+  state.acknowledgeSave(state.captureSave(result.merged), "r3");
+  expect(state.isDirty).toBe(false);
+  expect(state.hasKnownRevision("r2")).toBe(true);
+});
+
+test("a single local layer reorder is kept while a conflicting remote reorder is rejected", () => {
+  const a = content.elements[0]!;
+  const b = { id: "b", x: 0 };
+  const c = { id: "c", x: 0 };
+  const base = { ...content, elements: [a, b, c] };
+  expect(
+    reconcileCanvasScene({
+      base,
+      local: { ...base, elements: [b, a, c] },
+      remote: base,
+    })?.merged.elements,
+  ).toEqual([b, a, c]);
+  expect(
+    reconcileCanvasScene({
+      base,
+      local: { ...base, elements: [b, a, c] },
+      remote: { ...base, elements: [a, c, b] },
+    }),
+  ).toBeNull();
 });

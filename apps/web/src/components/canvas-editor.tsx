@@ -14,7 +14,7 @@ import type {
   ExcalidrawInitialDataState,
   ExcalidrawProps,
 } from "@excalidraw/excalidraw/types";
-import type { CanvasContent, CanvasSaveResponse } from "@kenfutwork/shared";
+import type { CanvasContent } from "@kenfutwork/shared";
 import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -31,6 +31,7 @@ import {
   canvasDocumentSettings,
   createCanvasSceneState,
 } from "../lib/canvas-scene-state";
+import { resolveCanvasSnapshotFiles } from "../lib/canvas-snapshot-files";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
 import { CanvasStatsPanel } from "./canvas-stats-panel";
@@ -114,7 +115,6 @@ export function CanvasEditor({
     canvasId: string;
     session: ReturnType<typeof createCanvasSaveSession>;
     scene: ReturnType<typeof createCanvasSceneState>;
-    saves: Set<Promise<unknown>>;
   } | null>(null);
   let activeSaveSession = saveSessionRef.current;
   if (!activeSaveSession || activeSaveSession.canvasId !== canvasId) {
@@ -126,13 +126,11 @@ export function CanvasEditor({
         files: initialContent.files,
       }),
       scene: createCanvasSceneState({ revision, content: initialContent }),
-      saves: new Set(),
     };
     saveSessionRef.current = activeSaveSession;
   }
   const canvasSaveSession = activeSaveSession.session;
   const canvasSceneState = activeSaveSession.scene;
-  const sceneSaves = activeSaveSession.saves;
   const [saveConflict, setSaveConflict] = useState<{
     session: ReturnType<typeof createCanvasSaveSession>;
     message: string;
@@ -154,7 +152,7 @@ export function CanvasEditor({
     (content: CanvasContent, expectedRevision: string | null) => {
       const snapshot = structuredClone(content);
       const savedScene = canvasSceneState.captureSave(snapshot);
-      const operation: Promise<CanvasSaveResponse> = saveCanvas(
+      return saveCanvas(
         accessTokenRef.current,
         canvasId,
         snapshot,
@@ -162,16 +160,12 @@ export function CanvasEditor({
         {
           keepalive: true,
         },
-      )
-        .then((result) => {
-          canvasSceneState.acknowledgeSave(savedScene, result.revision);
-          return result;
-        })
-        .finally(() => sceneSaves.delete(operation));
-      sceneSaves.add(operation);
-      return operation;
+      ).then((result) => {
+        canvasSceneState.acknowledgeSave(savedScene, result.revision);
+        return result;
+      });
     },
-    [canvasId, canvasSceneState, sceneSaves],
+    [canvasId, canvasSceneState],
   );
   const onSaveConflict = useCallback(
     (error: Error) =>
@@ -180,25 +174,41 @@ export function CanvasEditor({
   );
   const saveCanvasContent = useCallback(
     (content: CanvasContent) => {
-      const snapshot = structuredClone(content);
-      const savedScene = canvasSceneState.captureSave(snapshot);
-      const operation: Promise<CanvasSaveResponse> = canvasSaveSession
-        .save(snapshot, sendCanvasSave, onSaveConflict)
+      let snapshot = structuredClone(content);
+      const deferred = canvasSaveSession.isAcceptingRemote;
+      let savedScene = deferred ? null : canvasSceneState.captureSave(snapshot);
+      const latestContent = () => {
+        if (saveSessionRef.current?.session !== canvasSaveSession)
+          throw new Error("画布已切换，未保存旧操作");
+        const latest = buildSavePayloadRef.current();
+        if (!latest) throw new Error("画布尚未就绪，请稍后保存");
+        snapshot = structuredClone(latest);
+        savedScene = canvasSceneState.captureSave(snapshot);
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+        pendingSaveRef.current = snapshot;
+        return snapshot;
+      };
+      return canvasSaveSession
+        .save(
+          deferred ? latestContent : snapshot,
+          sendCanvasSave,
+          onSaveConflict,
+        )
         .then((result) => {
-          canvasSceneState.acknowledgeSave(savedScene, result.revision);
+          if (savedScene)
+            canvasSceneState.acknowledgeSave(savedScene, result.revision);
+          if (pendingSaveRef.current === snapshot)
+            pendingSaveRef.current = null;
           onRevisionChanged?.(canvasSaveSession.revision ?? result.revision);
           return result;
-        })
-        .finally(() => sceneSaves.delete(operation));
-      sceneSaves.add(operation);
-      return operation;
+        });
     },
     [
       canvasSaveSession,
       canvasSceneState,
       onRevisionChanged,
       onSaveConflict,
-      sceneSaves,
       sendCanvasSave,
     ],
   );
@@ -219,7 +229,6 @@ export function CanvasEditor({
   // Ref to hold initialContent.files for storageUrl lookup in handleChange
   // without adding the full initialContent to the dependency array.
   const initialFilesRef = useRef(initialContent.files);
-  const remoteApplyingRef = useRef(false);
 
   const buildKnownFiles = useCallback(
     (live: BinaryFiles) => {
@@ -347,6 +356,7 @@ export function CanvasEditor({
     if (handledRemoteRevisionRef.current === remoteSnapshot.revision) return;
 
     let cancelled = false;
+    const releaseRemote = canvasSaveSession.beginRemoteSnapshot();
     const finishRemote = () => {
       handledRemoteRevisionRef.current = remoteSnapshot.revision;
       onRemoteSnapshotHandled?.(remoteSnapshot.revision);
@@ -357,128 +367,108 @@ export function CanvasEditor({
         onSaveConflict,
       );
     const adopt = async () => {
-      while (sceneSaves.size > 0) await Promise.allSettled([...sceneSaves]);
+      await canvasSaveSession.waitForIdle();
       if (cancelled) return;
       if (canvasSceneState.hasKnownRevision(remoteSnapshot.revision)) {
-        finishRemote();
-        return;
-      }
-      if (canvasSceneState.isDirty || !canvasSaveSession.isIdle) {
-        preserveDraft();
         finishRemote();
         return;
       }
       const localVersion = canvasSceneState.version;
       const localRevision = canvasSaveSession.revision;
       const content = remoteSnapshot.content;
-      const resolved: BinaryFileData[] = [];
-      for (const [fileId, value] of Object.entries(content.files)) {
-        const storageUrl =
-          typeof value.storageUrl === "string" ? value.storageUrl : null;
-        if (!storageUrl) {
-          if (typeof value.dataURL === "string") {
-            resolved.push(value as unknown as BinaryFileData);
-          }
-          continue;
-        }
-        const response = await serverFetch(storageUrl);
-        if (!response.ok) throw new Error(`文件 ${fileId} 加载失败`);
-        const blob = await response.blob();
-        const dataURL = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-        resolved.push({
-          id: (typeof value.id === "string"
-            ? value.id
-            : fileId) as BinaryFileData["id"],
-          mimeType: (typeof value.mimeType === "string"
-            ? value.mimeType
-            : blob.type) as BinaryFileData["mimeType"],
-          created:
-            typeof value.created === "number" ? value.created : Date.now(),
-          dataURL: dataURL as BinaryFileData["dataURL"],
-        });
+      const reconcile = () =>
+        canvasSceneState.reconcileRemote(
+          {
+            elements: excalidrawApi.getSceneElementsIncludingDeleted(),
+            appState: canvasDocumentSettings(excalidrawApi.getAppState()),
+          },
+          content,
+        );
+      let reconciliation = reconcile();
+      if (!reconciliation) {
+        preserveDraft();
+        finishRemote();
+        return;
       }
+      const resolved = await resolveCanvasSnapshotFiles(content.files);
       if (cancelled) return;
       if (
-        canvasSceneState.version !== localVersion ||
-        canvasSceneState.isDirty ||
         canvasSaveSession.revision !== localRevision ||
         !canvasSaveSession.isIdle
       ) {
-        canvasSaveSession.conflict(
-          "画布已在其他位置更新，当前草稿已保留。请复制草稿后重新加载。",
-          onSaveConflict,
-        );
-      } else if (
-        canvasSaveSession.acceptRemoteSnapshot({
+        preserveDraft();
+        finishRemote();
+        return;
+      }
+      if (canvasSceneState.version !== localVersion) {
+        reconciliation = reconcile();
+        if (!reconciliation) {
+          preserveDraft();
+          finishRemote();
+          return;
+        }
+      }
+      const files = { ...canvasSaveSession.knownFiles, ...content.files };
+      if (
+        !canvasSaveSession.acceptRemoteSnapshot({
           revision: remoteSnapshot.revision,
-          fileReferences: initialCanvasFileReferences(content.files),
-          files: content.files,
+          fileReferences: {
+            ...canvasSaveSession.fileReferences,
+            ...initialCanvasFileReferences(files),
+          },
+          files,
         })
       ) {
-        onRevisionChanged?.(remoteSnapshot.revision);
-        remoteApplyingRef.current = true;
-        initialFilesRef.current = content.files;
-        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        pendingSaveRef.current = null;
-        const appState = {
-          viewBackgroundColor:
-            typeof content.appState.viewBackgroundColor === "string"
-              ? content.appState.viewBackgroundColor
-              : excalidrawApi.getAppState().viewBackgroundColor,
-          gridModeEnabled:
-            typeof content.appState.gridModeEnabled === "boolean"
-              ? content.appState.gridModeEnabled
-              : excalidrawApi.getAppState().gridModeEnabled,
-        };
-        canvasSceneState.acceptRemote(
-          { elements: content.elements, appState },
-          remoteSnapshot.revision,
-        );
-        if (resolved.length) excalidrawApi.addFiles(resolved);
-        excalidrawApi.updateScene({
-          elements: content.elements as unknown as readonly ExcalidrawElement[],
-          appState,
-          captureUpdate: "IMMEDIATELY",
-        });
-        canvasSceneState.acceptRemote(
-          {
-            elements: excalidrawApi.getSceneElements(),
-            appState,
-          },
-          remoteSnapshot.revision,
-        );
-        queueMicrotask(() => {
-          remoteApplyingRef.current = false;
-        });
-      } else {
-        canvasSaveSession.conflict(
-          "画布已在其他位置更新，当前草稿已保留。请复制草稿后重新加载。",
-          onSaveConflict,
-        );
+        preserveDraft();
+        finishRemote();
+        return;
       }
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      pendingSaveRef.current = null;
+      initialFilesRef.current = files;
+      onRevisionChanged?.(remoteSnapshot.revision);
+      canvasSceneState.acceptRemote(
+        reconciliation.remote,
+        remoteSnapshot.revision,
+      );
+      const currentAppState = excalidrawApi.getAppState();
+      const appState = {
+        viewBackgroundColor:
+          typeof reconciliation.merged.appState.viewBackgroundColor === "string"
+            ? reconciliation.merged.appState.viewBackgroundColor
+            : currentAppState.viewBackgroundColor,
+        gridModeEnabled:
+          typeof reconciliation.merged.appState.gridModeEnabled === "boolean"
+            ? reconciliation.merged.appState.gridModeEnabled
+            : currentAppState.gridModeEnabled,
+      };
+      if (resolved.length) excalidrawApi.addFiles(resolved);
+      excalidrawApi.updateScene({
+        elements: reconciliation.merged
+          .elements as unknown as readonly ExcalidrawElement[],
+        appState,
+        captureUpdate: "NEVER",
+      });
       finishRemote();
     };
-    adopt().catch(() => {
-      if (cancelled) return;
-      canvasSaveSession.conflict(
-        "远端画布文件加载失败，当前草稿已保留。请复制草稿后重新加载。",
-        onSaveConflict,
-      );
-      handledRemoteRevisionRef.current = remoteSnapshot.revision;
-      onRemoteSnapshotHandled?.(remoteSnapshot.revision);
-    });
+    adopt()
+      .catch(() => {
+        if (cancelled) return;
+        canvasSaveSession.conflict(
+          "远端画布文件加载失败，当前草稿已保留。请复制草稿后重新加载。",
+          onSaveConflict,
+        );
+        handledRemoteRevisionRef.current = remoteSnapshot.revision;
+        onRemoteSnapshotHandled?.(remoteSnapshot.revision);
+      })
+      .finally(releaseRemote);
     return () => {
       cancelled = true;
+      releaseRemote();
     };
   }, [
     canvasSaveSession,
     canvasSceneState,
-    sceneSaves,
     excalidrawApi,
     initialFilesHydrated,
     isHydrated,
@@ -693,14 +683,12 @@ export function CanvasEditor({
 
   const handleChange = useCallback(
     (elements: readonly ExcalidrawElement[], appState: AppState) => {
-      // 初始化与远端应用不产生本地保存；视口/选区更新仍发布真实上下文。
+      // 远端基线已先确认；onChange仍记录合并后保留的本地改动。
       if (!hydratedRef.current) return;
-      const sceneChanged =
-        !remoteApplyingRef.current &&
-        canvasSceneState.observe({
-          elements,
-          appState: canvasDocumentSettings(appState),
-        });
+      const sceneChanged = canvasSceneState.observe({
+        elements,
+        appState: canvasDocumentSettings(appState),
+      });
       if (sceneChanged) {
         queueSceneSave(elements, appState);
         queueThumbnail();
@@ -971,11 +959,11 @@ export function CanvasEditor({
       // canvases with very large embedded files this may exceed the limit, but
       // it's the best-effort approach -- sendBeacon has the same constraint.
       try {
-        canvasSaveSession.saveKeepalive(payload, sendCanvasKeepalive);
+        if (canvasSaveSession.saveKeepalive(payload, sendCanvasKeepalive))
+          pendingSaveRef.current = null;
       } catch {
         // Best-effort -- nothing we can do if it fails during page teardown
       }
-      pendingSaveRef.current = null;
     };
 
     window.addEventListener("beforeunload", flushBeforeUnload);
