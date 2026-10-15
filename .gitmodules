@@ -60,3 +60,6 @@
 	path = references/octop
 	url = https://github.com/TencentCloud/Octop.git
 	shallow = true
+[submodule "references/new-api"]
+	path = references/new-api
+	url = https://github.com/QuantumNous/new-api.git
