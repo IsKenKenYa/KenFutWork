@@ -233,6 +233,7 @@ export function App({
     handleOpenWhiteboard,
     handleOpenDeveloperTools,
     handleOpenOpenDesign,
+    handleOpenOpenDesignPath,
     handleOpenTerminalTab,
     handleOpenSubagentSession,
     handleOpenBackgroundBash,
@@ -1256,6 +1257,7 @@ export function App({
         handleOpenWhiteboard={handleOpenWhiteboard}
         handleOpenDeveloperTools={handleOpenDeveloperTools}
         handleOpenOpenDesign={handleOpenOpenDesign}
+        handleOpenOpenDesignPath={handleOpenOpenDesignPath}
         handleOpenTerminalTab={handleOpenTerminalTabIfWritable}
         handleToggleGit={handleToggleGitIfWritable}
         handleToggleSidePane={handleToggleSidePane}

@@ -1,7 +1,10 @@
 // 经 `@zui/*` 引用移植区模块（与仓库其它 web 测试同口径）：类型走 dist-types、
 // 运行时走 vitest 别名；直接相对 import 源码会把 zcode 目录拉进 web 的 program，
 // 而 apps/web/tsconfig.json 明确 exclude 了它。
-import { resolveOpenTabLauncherItemIds } from "@zui/app-shell/animatedSidePanePanelModel";
+import {
+  resolveOpenDesignNavigateSource,
+  resolveOpenTabLauncherItemIds,
+} from "@zui/app-shell/animatedSidePanePanelModel";
 import {
   getLocalizedSidePaneTabTitle,
   type SidePaneTabPresentationLabels,
@@ -46,6 +49,59 @@ test("open-design 是单例 tab：重复打开只激活同一个，不叠出第�
   const second = openOpenDesignSidePane(first);
   expect(second.tabs).toHaveLength(1);
   expect(getActiveSidePaneTab(second)?.type).toBe("open-design");
+});
+
+test("open-design tab 可带深链目标；重复深链替换目标且仍是单例（O2 od/navigate）", () => {
+  const first = openOpenDesignSidePane(null, {
+    navigatePath: "src/app/page.tsx",
+  });
+  expect(getActiveSidePaneTab(first)).toMatchObject({
+    type: "open-design",
+    navigatePath: "src/app/page.tsx",
+  });
+
+  // 重复触发「在 OpenDesign 中打开」另一个文件：原地替换，不叠第二个面板，
+  // 目标换成新文件（activateSidePaneTab 的既有语义）。
+  const second = openOpenDesignSidePane(first, {
+    navigatePath: "src/lib/other.ts",
+  });
+  expect(second.tabs).toHaveLength(1);
+  expect(getActiveSidePaneTab(second)?.type).toBe("open-design");
+  expect(
+    (getActiveSidePaneTab(second) as { navigatePath?: string | null })
+      .navigatePath,
+  ).toBe("src/lib/other.ts");
+
+  // 不带深链的普通打开：navigatePath 缺省（不残留上一个目标）。
+  const plain = openOpenDesignSidePane(second);
+  expect(
+    (getActiveSidePaneTab(plain) as { navigatePath?: string | null })
+      .navigatePath,
+  ).toBeUndefined();
+});
+
+test("深链来源只认当前在看的 code-viewer；其它 tab / 空 / 无 path 都不给（不摆空开关）", () => {
+  // 源码 / diff / 预览都是带 path 的 code-viewer——都算深链来源。
+  expect(
+    resolveOpenDesignNavigateSource({
+      type: "code-viewer",
+      source: { path: "src/a.ts" },
+    }),
+  ).toBe("src/a.ts");
+  // code-viewer 但没 path（如目录态）：不给，菜单项不出现。
+  expect(
+    resolveOpenDesignNavigateSource({
+      type: "code-viewer",
+      source: { path: null },
+    }),
+  ).toBeNull();
+  expect(
+    resolveOpenDesignNavigateSource({ type: "code-viewer", source: {} }),
+  ).toBeNull();
+  // 在看的不是 code-viewer（浏览器 / git / open-design 自己…）：不给。
+  expect(resolveOpenDesignNavigateSource({ type: "browser" })).toBeNull();
+  expect(resolveOpenDesignNavigateSource(null)).toBeNull();
+  expect(resolveOpenDesignNavigateSource(undefined)).toBeNull();
 });
 
 test("open-design 与浏览器面板同位互斥（单 activeTabId 语义）", () => {

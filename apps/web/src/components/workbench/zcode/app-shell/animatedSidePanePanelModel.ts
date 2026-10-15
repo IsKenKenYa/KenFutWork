@@ -92,6 +92,29 @@ export function shouldOfferSelectionSideConversation({
   return Boolean(activeTaskId);
 }
 
+/**
+ * O2 深链来源：「在 OpenDesign 中打开当前文件」要交给面板定位的路径。
+ *
+ * 入参是调用方已解析出的**可见活跃 tab**（不可见的 tab 不该成为深链来源，
+ * 这一步在组件里做）。这里只判「它是不是一个带 path 的 code-viewer」：
+ * 源码 / diff / 预览都算；没有在看的文件（非 code-viewer / 无 path / 空串）时
+ * 返回 null——菜单项不出现，不摆空开关（AGENTS.md 入口纪律）。
+ *
+ * `source` 用 `object` 兜底：tab 联合里各成员的 source 形状不同（如 treemapping
+ * 的 `{kind}` 与 path 无共同属性，窄类型会触发弱类型拒绝），读取时再收窄。
+ */
+export function resolveOpenDesignNavigateSource(
+  activeTab:
+    | { type: string; source?: object | null }
+    | null
+    | undefined,
+): string | null {
+  if (!activeTab || activeTab.type !== "code-viewer") return null;
+  const path = (activeTab.source as { path?: unknown } | null | undefined)
+    ?.path;
+  return typeof path === "string" && path.length > 0 ? path : null;
+}
+
 export function resolveAnimatedSidePanePanelLayout() {
   return {
     collapsedSize: "0px",

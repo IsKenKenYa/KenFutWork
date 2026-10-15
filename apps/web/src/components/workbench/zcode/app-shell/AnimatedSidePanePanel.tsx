@@ -65,6 +65,7 @@ import {
 import {
   parsePanelMaxSizePercent,
   resolveAnimatedSidePanePanelLayout,
+  resolveOpenDesignNavigateSource,
   resolveOpenTabLauncherItemIds,
   shouldCollapseSidebarAtPanelMax,
   shouldOfferSelectionSideConversation,
@@ -321,6 +322,7 @@ export function AnimatedSidePanePanel({
   onOpenDeveloperTools,
   onOpenTerminalTab,
   onOpenOpenDesignTab,
+  onOpenOpenDesignPath,
   onOpenReviewTab,
   onOpenSelectionSideConversation,
   onRevealGitFileInTree,
@@ -390,6 +392,8 @@ export function AnimatedSidePanePanel({
   onOpenDeveloperTools: () => void;
   onOpenTerminalTab: () => void;
   onOpenOpenDesignTab: () => void;
+  /** 深链：把当前正在查看的文件交给 OpenDesign 打开（O2 `od/navigate`）。 */
+  onOpenOpenDesignPath: (path: string) => void;
   onOpenReviewTab: () => void;
   onOpenSelectionSideConversation: () => void;
   onRevealGitFileInTree?: (path: string) => void;
@@ -438,6 +442,14 @@ export function AnimatedSidePanePanel({
   const visibleActiveTabId = visibleTabs.some((tab) => tab.id === activeTabId)
     ? activeTabId
     : (visibleTabs.at(-1)?.id ?? "");
+  /**
+   * 「在 OpenDesign 中打开」的深链来源：右侧栏**当前正在查看**的那个文件。
+   * 取**可见的**活跃 tab（而不是 `sidePaneState.activeTabId`）——不可见的 tab
+   * 不该成为深链来源。没有在看的文件时该项不出现，不摆空开关。
+   */
+  const openDesignCurrentFile = resolveOpenDesignNavigateSource(
+    visibleTabs.find((tab) => tab.id === visibleActiveTabId),
+  );
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const tabsScrollViewportRef = useRef<HTMLDivElement | null>(null);
   const tabsScrollContentRef = useRef<HTMLDivElement | null>(null);
@@ -795,6 +807,19 @@ export function AnimatedSidePanePanel({
           >
             <PenToolIcon className="size-4" />
             <span>{intl.formatMessage({ id: "sidePane.openDesign" })}</span>
+          </DropdownMenuItem>
+        ) : null}
+        {openDesignEnabled && openDesignCurrentFile ? (
+          <DropdownMenuItem
+            data-side-pane-add-item="open-design-current-file"
+            onSelect={() => {
+              onOpenOpenDesignPath(openDesignCurrentFile);
+            }}
+          >
+            <PenToolIcon className="size-4" />
+            <span>
+              {intl.formatMessage({ id: "sidePane.openDesignCurrentFile" })}
+            </span>
           </DropdownMenuItem>
         ) : null}
         {developerToolsEnabled ? (

@@ -37,6 +37,8 @@ export function OpenDesignPane({
   const [handshake, setHandshake] = useState<"pending" | "ok" | "rejected">(
     "pending",
   );
+  /** 面板侧确认已就位的深链路径（`od/navigate-complete` 回执），便于验收取证。 */
+  const [navigateDone, setNavigateDone] = useState<string | null>(null);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
 
   const allowedOrigin = entry?.available
@@ -68,6 +70,9 @@ export function OpenDesignPane({
         post(buildOpenDesignHelloAck());
         if (navigatePath) post(buildOpenDesignNavigate(navigatePath));
       }
+      if (parsed.type === "od/navigate-complete") {
+        setNavigateDone(parsed.path);
+      }
     };
     window.addEventListener("message", onMessage);
     // 宿主先开口：面板侧按协议回 hello 才算握手成立。
@@ -84,6 +89,7 @@ export function OpenDesignPane({
       <div
         data-testid="open-design-pane"
         data-od-handshake={handshake}
+        data-od-navigate={navigateDone ?? ""}
         className="flex h-full items-center justify-center gap-2 bg-background text-xs text-foreground-subtle"
       >
         <Loader2 className="size-3.5 animate-spin" />
@@ -97,6 +103,7 @@ export function OpenDesignPane({
       <div
         data-testid="open-design-pane"
         data-od-handshake={handshake}
+        data-od-navigate={navigateDone ?? ""}
         className="flex h-full items-center justify-center bg-background px-6 text-center text-xs text-foreground-subtle"
       >
         {entry.reason}
@@ -108,6 +115,7 @@ export function OpenDesignPane({
     <div
       data-testid="open-design-pane"
       data-od-handshake={handshake}
+      data-od-navigate={navigateDone ?? ""}
       className="h-full w-full bg-background"
     >
       <iframe

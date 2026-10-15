@@ -887,6 +887,7 @@ const zhCN: Record<string, string> = {
   "sidePane.addTab": "新增标签",
   "sidePane.openTab": "打开标签页",
   "sidePane.openDesign": "OpenDesign",
+  "sidePane.openDesignCurrentFile": "在 OpenDesign 中打开当前文件",
   "sidePane.subagent": "子智能体",
   "sidePane.subagentDirectory": "子智能体目录",
   "sidePane.selectionChat": "辅助对话",
