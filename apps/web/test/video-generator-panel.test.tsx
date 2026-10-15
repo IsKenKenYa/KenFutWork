@@ -37,6 +37,158 @@ function frameUploadResponse(
   return undefined;
 }
 
+it("参考视频上传为素材引用并按模型恢复，生成请求实际发送inputVideo", async () => {
+  const firstModel = "11111111-1111-4111-8111-111111111111:kwaivgi/kling-o1";
+  const unknownModel = "11111111-1111-4111-8111-111111111111:custom-video";
+  const unsupportedModel = "11111111-1111-4111-8111-111111111111:text-video";
+  const projectId = "bbbbbbbb-1111-4111-8111-111111111111";
+  const assetId = "eeeeeeee-1111-4111-8111-111111111111";
+  const uploaded: Array<{
+    filename: string;
+    projectId: FormDataEntryValue | null;
+  }> = [];
+  const requests: Array<{ url: string; method: string }> = [];
+  let submitted: Record<string, unknown> | undefined;
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    requests.push({ url: String(url), method: init?.method ?? "GET" });
+    if (String(url).endsWith("/api/video-models"))
+      return Response.json({
+        models: [
+          {
+            id: firstModel,
+            displayName: "视频编辑",
+            provider: "供应商",
+            capabilities: { videoToVideo: true, imageToVideo: false },
+          },
+          { id: unknownModel, displayName: "自定义视频", provider: "供应商" },
+          {
+            id: unsupportedModel,
+            displayName: "文字视频",
+            provider: "供应商",
+            capabilities: { videoToVideo: false },
+          },
+        ],
+      });
+    if (
+      String(url).endsWith("/api/uploads") &&
+      init?.body instanceof FormData
+    ) {
+      const file = init.body.get("file");
+      if (!(file instanceof File)) throw new Error("缺少上传视频");
+      uploaded.push({
+        filename: file.name,
+        projectId: init.body.get("projectId"),
+      });
+      return Response.json(
+        {
+          asset: { id: assetId },
+          url: "https://assets.example/upload/source.mp4",
+        },
+        { status: 201 },
+      );
+    }
+    if (String(url).endsWith(`/api/uploads/${assetId}/url`))
+      return Response.json({ url: "https://assets.example/signed/source.mp4" });
+    submitted = JSON.parse(String(init?.body));
+    return Response.json(
+      {
+        request_id: "cccccccc-1111-4111-8111-111111111111",
+        jobs: [
+          { job_id: "dddddddd-1111-4111-8111-111111111111", status: "queued" },
+        ],
+      },
+      { status: 202 },
+    );
+  });
+  const data: VideoGeneratorData = {
+    type: "video-generator",
+    status: "idle",
+    prompt: "把背景改成雪山",
+    model: firstModel,
+  };
+  let elements = [
+    {
+      id: "generator",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 225,
+      version: 1,
+      customData: data,
+    },
+  ];
+  const api = {
+    getSceneElements: () => elements,
+    updateScene: (update: { elements: typeof elements }) => {
+      elements = update.elements;
+    },
+  } as unknown as ExcalidrawImperativeAPI;
+  render(
+    <ToastProvider>
+      <VideoGeneratorPanel
+        canvasId="aaaaaaaa-1111-4111-8111-111111111111"
+        projectId={projectId}
+        prepare={async () => "1"}
+        elementId="generator"
+        elementBounds={{ x: 0, y: 0, width: 400, height: 225 }}
+        data={data}
+        excalidrawApi={api}
+        accessToken={null}
+        canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
+      />
+    </ToastProvider>,
+  );
+  await screen.findByText("视频编辑");
+  fireEvent.change(screen.getByLabelText("参考视频文件"), {
+    target: {
+      files: [new File(["video"], "source.mp4", { type: "video/mp4" })],
+    },
+  });
+  await waitFor(() =>
+    expect(uploaded).toEqual([{ filename: "source.mp4", projectId }]),
+  );
+  await waitFor(() =>
+    expect(elements[0]?.customData).toMatchObject({
+      inputVideo: `asset://${assetId}`,
+      modelDrafts: { [firstModel]: { inputVideo: `asset://${assetId}` } },
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText("参考视频预览").getAttribute("src")).toBe(
+      "https://assets.example/signed/source.mp4",
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "视频编辑" }));
+  fireEvent.click(screen.getByRole("button", { name: "自定义视频" }));
+  expect(screen.getByLabelText("参考视频文件").getAttribute("type")).toBe(
+    "file",
+  );
+  expect(screen.queryByLabelText("参考视频预览")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "自定义视频" }));
+  fireEvent.click(screen.getByRole("button", { name: "文字视频" }));
+  expect(screen.queryByLabelText("参考视频文件")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "文字视频" }));
+  fireEvent.click(screen.getByRole("button", { name: "视频编辑" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("参考视频预览").getAttribute("src")).toBe(
+      "https://assets.example/signed/source.mp4",
+    ),
+  );
+  fireEvent.keyDown(screen.getByPlaceholderText("今天我们要创作什么"), {
+    key: "Enter",
+  });
+  await waitFor(() =>
+    expect(submitted).toMatchObject({
+      model: "kwaivgi/kling-o1",
+      inputVideo: `asset://${assetId}`,
+    }),
+  );
+  expect(JSON.stringify(elements[0]?.customData)).not.toMatch(
+    /data:video|https:\/\/assets\.example/,
+  );
+  expect(requests.some((request) => request.method === "DELETE")).toBe(false);
+});
+
 it("本地首尾帧上传后只持久素材引用，重开与切模型恢复签名预览", async () => {
   const firstModel = "11111111-1111-4111-8111-111111111111:video-a";
   const secondModel = "11111111-1111-4111-8111-111111111111:video-b";

@@ -23,6 +23,7 @@ export type VideoGeneratorParams = {
   resolution?: string | undefined;
   firstFrame?: string | undefined;
   lastFrame?: string | undefined;
+  inputVideo?: string | undefined;
   enableAudio?: boolean | undefined;
 };
 

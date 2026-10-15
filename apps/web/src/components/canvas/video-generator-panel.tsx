@@ -31,9 +31,9 @@ import { ModelParameterField } from "./model-parameter-field";
  * 运行时传的是同一个 API 对象，故按助手的入参口径断言。
  */
 type GeneratorLibApi = Parameters<typeof updateVideoGeneratorElement>[0];
-type FrameField = "firstFrame" | "lastFrame";
-type FrameUploadState = Partial<
-  Record<FrameField, "uploading" | "failed" | undefined>
+type ReferenceField = "firstFrame" | "lastFrame" | "inputVideo";
+type ReferenceUploadState = Partial<
+  Record<ReferenceField, "uploading" | "failed" | undefined>
 >;
 
 type VideoGeneratorPanelProps = {
@@ -79,6 +79,10 @@ function modelParams(
     resolution: supported(params.resolution, caps?.resolutions),
     firstFrame: params.firstFrame,
     lastFrame: params.lastFrame,
+    inputVideo:
+      model?.capabilities?.videoToVideo === false
+        ? undefined
+        : params.inputVideo,
     enableAudio: params.enableAudio,
   };
   if (switching) {
@@ -114,6 +118,7 @@ export function VideoGeneratorPanel({
     resolution: data.resolution,
     firstFrame: data.firstFrame ?? data.inputImages?.[0],
     lastFrame: data.lastFrame ?? data.inputImages?.[1],
+    inputVideo: data.inputVideo,
     enableAudio: data.enableAudio,
   }));
   const {
@@ -122,6 +127,7 @@ export function VideoGeneratorPanel({
     resolution,
     firstFrame,
     lastFrame,
+    inputVideo,
     enableAudio,
   } = params;
   const modelDraftsRef = useRef(data.modelDrafts ?? {});
@@ -134,13 +140,13 @@ export function VideoGeneratorPanel({
   const [error, setError] = useState<string | null>(data.errorMessage ?? null);
   const [models, setModels] = useState<VideoModelInfo[]>([]);
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
-  const [frameUploads, setFrameUploads] = useState<
-    Record<string, FrameUploadState>
+  const [referenceUploads, setReferenceUploads] = useState<
+    Record<string, ReferenceUploadState>
   >({});
-  const uploading = Object.values(frameUploads[model] ?? {}).includes(
+  const uploading = Object.values(referenceUploads[model] ?? {}).includes(
     "uploading",
   );
-  const uploadFailed = Object.values(frameUploads[model] ?? {}).includes(
+  const uploadFailed = Object.values(referenceUploads[model] ?? {}).includes(
     "failed",
   );
   const [showModelDropdown, setShowModelDropdown] = useState(false);
@@ -149,6 +155,7 @@ export function VideoGeneratorPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const firstFrameInputRef = useRef<HTMLInputElement>(null);
   const lastFrameInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   const accessTokenRef = useRef(accessToken);
   accessTokenRef.current = accessToken;
   const { handleGenerationError } = useGenerationErrorHandler();
@@ -290,7 +297,7 @@ export function VideoGeneratorPanel({
 
   useEffect(() => {
     let cancelled = false;
-    for (const source of [firstFrame, lastFrame]) {
+    for (const source of [firstFrame, lastFrame, inputVideo]) {
       if (!source?.startsWith("asset://")) continue;
       getAssetUrl(accessTokenRef.current, source.slice("asset://".length))
         .then(({ url }) => {
@@ -298,16 +305,16 @@ export function VideoGeneratorPanel({
             setPreviewUrls((previous) => ({ ...previous, [source]: url }));
         })
         .catch(() => {
-          if (!cancelled) setError("参考帧暂时无法读取，请重新添加。");
+          if (!cancelled) setError("参考素材暂时无法读取，请重新添加。");
         });
     }
     return () => {
       cancelled = true;
     };
-  }, [firstFrame, lastFrame]);
+  }, [firstFrame, lastFrame, inputVideo]);
 
-  const handleFrameUpload = useCallback(
-    (field: FrameField) => {
+  const handleReferenceUpload = useCallback(
+    (field: ReferenceField) => {
       return async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         event.target.value = "";
@@ -318,7 +325,7 @@ export function VideoGeneratorPanel({
           [uploadModel]: paramsRef.current,
         };
         const updateUpload = (state: "uploading" | "failed" | undefined) => {
-          setFrameUploads((previous) => ({
+          setReferenceUploads((previous) => ({
             ...previous,
             [uploadModel]: { ...previous[uploadModel], [field]: state },
           }));
@@ -352,7 +359,7 @@ export function VideoGeneratorPanel({
         } catch {
           updateUpload("failed");
           if (modelRef.current === uploadModel)
-            setError("参考帧上传失败，请重新添加或移除失败项。");
+            setError("参考素材上传失败，请重新添加或移除失败项。");
         }
       };
     },
@@ -364,8 +371,8 @@ export function VideoGeneratorPanel({
     if (uploading || uploadFailed) {
       setError(
         uploading
-          ? "参考帧正在上传。"
-          : "参考帧上传失败，请重新添加或移除失败项。",
+          ? "参考素材正在上传。"
+          : "参考素材上传失败，请重新添加或移除失败项。",
       );
       return;
     }
@@ -415,6 +422,7 @@ export function VideoGeneratorPanel({
       resolution,
       firstFrame,
       lastFrame,
+      inputVideo,
       enableAudio,
       requestId,
       jobIds: [],
@@ -442,6 +450,7 @@ export function VideoGeneratorPanel({
           inputImages: [firstFrame, lastFrame].filter(
             (source): source is string => Boolean(source),
           ),
+          ...(inputVideo ? { inputVideo } : {}),
           ...(sessionId ? { sessionId } : {}),
         },
       );
@@ -479,6 +488,7 @@ export function VideoGeneratorPanel({
     resolution,
     firstFrame,
     lastFrame,
+    inputVideo,
     enableAudio,
     uploading,
     uploadFailed,
@@ -522,16 +532,16 @@ export function VideoGeneratorPanel({
           className="hidden"
           aria-label="首帧"
           disabled={
-            frameUploads[model]?.firstFrame === "uploading" ||
+            referenceUploads[model]?.firstFrame === "uploading" ||
             frameLimit(currentModel) === 0
           }
-          onChange={handleFrameUpload("firstFrame")}
+          onChange={handleReferenceUpload("firstFrame")}
         />
         <button
           type="button"
           onClick={() => firstFrameInputRef.current?.click()}
           disabled={
-            frameUploads[model]?.firstFrame === "uploading" ||
+            referenceUploads[model]?.firstFrame === "uploading" ||
             frameLimit(currentModel) === 0
           }
           className="flex h-[68px] w-[56px] flex-col items-center justify-center gap-1 rounded-2xl bg-muted/60 transition-colors hover:bg-muted"
@@ -562,18 +572,18 @@ export function VideoGeneratorPanel({
           className="hidden"
           aria-label="尾帧"
           disabled={
-            frameUploads[model]?.lastFrame === "uploading" ||
+            referenceUploads[model]?.lastFrame === "uploading" ||
             frameLimit(currentModel) === 0 ||
             frameLimit(currentModel) === 1 ||
             currentModel?.videoGeneration?.firstLastFrame === false
           }
-          onChange={handleFrameUpload("lastFrame")}
+          onChange={handleReferenceUpload("lastFrame")}
         />
         <button
           type="button"
           onClick={() => lastFrameInputRef.current?.click()}
           disabled={
-            frameUploads[model]?.lastFrame === "uploading" ||
+            referenceUploads[model]?.lastFrame === "uploading" ||
             frameLimit(currentModel) === 0 ||
             frameLimit(currentModel) === 1 ||
             currentModel?.videoGeneration?.firstLastFrame === false
@@ -601,7 +611,7 @@ export function VideoGeneratorPanel({
           <button
             type="button"
             className="text-xs text-muted-foreground"
-            disabled={frameUploads[model]?.firstFrame === "uploading"}
+            disabled={referenceUploads[model]?.firstFrame === "uploading"}
             onClick={() => updateParams({ firstFrame: undefined })}
           >
             移除首帧
@@ -611,7 +621,7 @@ export function VideoGeneratorPanel({
           <button
             type="button"
             className="text-xs text-muted-foreground"
-            disabled={frameUploads[model]?.lastFrame === "uploading"}
+            disabled={referenceUploads[model]?.lastFrame === "uploading"}
             onClick={() => updateParams({ lastFrame: undefined })}
           >
             移除尾帧
@@ -630,7 +640,7 @@ export function VideoGeneratorPanel({
             type="button"
             className="text-xs text-muted-foreground"
             onClick={() => {
-              setFrameUploads((previous) => ({
+              setReferenceUploads((previous) => ({
                 ...previous,
                 [model]: Object.fromEntries(
                   Object.entries(previous[model] ?? {}).filter(
@@ -645,6 +655,51 @@ export function VideoGeneratorPanel({
           </button>
         )}
       </div>
+
+      {currentModel?.capabilities?.videoToVideo !== false && (
+        <div className="flex items-center gap-2 px-4 pt-2">
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept="video/mp4,video/webm,video/quicktime"
+            aria-label="参考视频文件"
+            className="hidden"
+            disabled={referenceUploads[model]?.inputVideo === "uploading"}
+            onChange={handleReferenceUpload("inputVideo")}
+          />
+          <button
+            type="button"
+            disabled={referenceUploads[model]?.inputVideo === "uploading"}
+            onClick={() => videoInputRef.current?.click()}
+            className="shrink-0 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-muted disabled:cursor-not-allowed"
+          >
+            参考视频
+          </button>
+          {inputVideo && (
+            <>
+              {/* biome-ignore lint/a11y/useMediaCaption: 用户上传的参考视频未提供字幕轨。 */}
+              <video
+                aria-label="参考视频预览"
+                src={
+                  previewUrls[inputVideo] ??
+                  (inputVideo.startsWith("asset://") ? undefined : inputVideo)
+                }
+                controls
+                preload="metadata"
+                className="max-h-28 min-w-0 flex-1 rounded-lg"
+              />
+              <button
+                type="button"
+                disabled={referenceUploads[model]?.inputVideo === "uploading"}
+                onClick={() => updateParams({ inputVideo: undefined })}
+                className="shrink-0 text-xs text-muted-foreground disabled:cursor-not-allowed"
+              >
+                移除视频
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Prompt textarea */}
       <div className="px-4 py-3">
