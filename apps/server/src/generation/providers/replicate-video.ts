@@ -1,3 +1,4 @@
+import { ReplicatePredictionsClient } from "../../providers/replicate/predictions.js";
 import type {
   GeneratedVideo,
   VideoAsyncPollResult,
@@ -6,8 +7,6 @@ import type {
   VideoProvider,
 } from "../types.js";
 import { GenerationError } from "../utils.js";
-
-const REPLICATE_API_BASE = "https://api.replicate.com/v1";
 
 // ── Icons ──────────────────────────────────────────────────────────────────
 const ICON_KLING = "https://github.com/nicekid1.png";
@@ -344,11 +343,14 @@ function buildModelInput(params: VideoGenerateParams): {
     }
 
     default:
-      throw new GenerationError(
-        "replicate",
-        "unknown_model",
-        `Unknown video model: ${params.model}`,
-      );
+      input.duration = duration;
+      input.aspect_ratio = aspectRatio;
+      if (params.resolution !== undefined) input.resolution = params.resolution;
+      if (params.inputImages?.length) input.image_input = params.inputImages;
+      if (params.inputVideo !== undefined)
+        input.input_video = params.inputVideo;
+      if (params.enableAudio !== undefined)
+        input.generate_audio = params.enableAudio;
   }
 
   return { endpoint, input };
@@ -387,53 +389,31 @@ function getVideoDimensions(
 export class ReplicateVideoProvider implements VideoProvider {
   readonly name = "replicate";
   readonly models = REPLICATE_VIDEO_MODELS;
-  private apiToken: string;
-  private headers: Record<string, string> | undefined;
+  private readonly predictions: ReplicatePredictionsClient;
 
-  constructor(apiToken: string, headers?: Record<string, string>) {
-    this.apiToken = apiToken;
-    this.headers = headers;
+  constructor(
+    apiToken: string,
+    headers?: Record<string, string>,
+    baseUrl?: string,
+  ) {
+    this.predictions = new ReplicatePredictionsClient(
+      apiToken,
+      headers,
+      baseUrl,
+    );
   }
 
   /**
-   * 异步任务面（S6）：直接异步提交（不带 `Prefer: wait=300`），返回 prediction id
+   * 单次异步提交返回 prediction id，不带同步等待头
    * 交由 executor 落库；轮询节奏由队列延迟消息承载。
    */
   async startAsync(
     params: VideoGenerateParams,
   ): Promise<{ providerJobId: string }> {
-    const modelInfo = REPLICATE_VIDEO_MODELS.find((m) => m.id === params.model);
-    if (!modelInfo) {
-      throw new GenerationError(
-        "replicate",
-        "unknown_model",
-        `Unknown video model: ${params.model}`,
-      );
-    }
     const { endpoint, input } = buildModelInput(params);
-    const response = await fetch(
-      `${REPLICATE_API_BASE}/models/${endpoint}/predictions`,
-      {
-        method: "POST",
-        headers: {
-          // 自定义头（§4.8）在前，凭证与内容类型随后——保留头永远由适配器说了算
-          ...this.headers,
-          Authorization: `Bearer ${this.apiToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ input }),
-        signal: AbortSignal.timeout(30_000),
-      },
-    );
-    if (!response.ok) {
-      const errorBody = await response.json().catch(() => null);
-      throw new GenerationError(
-        "replicate",
-        "api_error",
-        `Replicate API error ${response.status}: ${(errorBody as { detail?: string })?.detail ?? "Unknown error"}`,
-      );
-    }
-    const data = (await response.json()) as { id: string };
+    const data = await this.predictions.create(endpoint, input, {
+      ...(params.signal ? { signal: params.signal } : {}),
+    });
     if (!data.id) {
       throw new GenerationError(
         "replicate",
@@ -445,30 +425,7 @@ export class ReplicateVideoProvider implements VideoProvider {
   }
 
   async pollAsync(providerJobId: string): Promise<VideoAsyncPollResult> {
-    const res = await fetch(
-      `${REPLICATE_API_BASE}/predictions/${providerJobId}`,
-      {
-        // 自定义头（§4.8）随每次轮询一并带上，凭证头在后
-        headers: {
-          ...this.headers,
-          Authorization: `Bearer ${this.apiToken}`,
-        },
-        signal: AbortSignal.timeout(15_000),
-      },
-    );
-    if (!res.ok) {
-      // 轮询单次网络/HTTP 故障 ≠ 任务失败：交回引擎按瞬态重试（消息重投）
-      throw new GenerationError(
-        "replicate",
-        "api_error",
-        `Replicate poll error ${res.status}`,
-      );
-    }
-    const pred = (await res.json()) as {
-      status: string;
-      output: string | string[] | null;
-      error?: string;
-    };
+    const pred = await this.predictions.get(providerJobId);
     if (pred.status === "succeeded") {
       const outputUrl = Array.isArray(pred.output)
         ? pred.output[0]
@@ -490,16 +447,11 @@ export class ReplicateVideoProvider implements VideoProvider {
     return { state: "in_progress" };
   }
 
-  async generate(params: VideoGenerateParams): Promise<GeneratedVideo> {
-    const modelInfo = REPLICATE_VIDEO_MODELS.find((m) => m.id === params.model);
-    if (!modelInfo) {
-      throw new GenerationError(
-        "replicate",
-        "unknown_model",
-        `Unknown video model: ${params.model}`,
-      );
-    }
+  cancelAsync(providerJobId: string): Promise<void> {
+    return this.predictions.cancel(providerJobId);
+  }
 
+  async generate(params: VideoGenerateParams): Promise<GeneratedVideo> {
     const { endpoint, input } = buildModelInput(params);
     const resolution = params.resolution ?? "720p";
     const { width, height } = getVideoDimensions(
@@ -507,44 +459,24 @@ export class ReplicateVideoProvider implements VideoProvider {
       params.aspectRatio ?? "16:9",
     );
 
-    // Try synchronous wait first (Prefer: wait=300), fall back to polling.
-    // AbortSignal.timeout guards against Replicate hanging indefinitely.
-    const response = await fetch(
-      `${REPLICATE_API_BASE}/models/${endpoint}/predictions`,
-      {
-        method: "POST",
-        headers: {
-          // 自定义头（§4.8）在前，凭证与内容类型随后——保留头永远由适配器说了算
-          ...this.headers,
-          Authorization: `Bearer ${this.apiToken}`,
-          "Content-Type": "application/json",
-          Prefer: "wait=300",
-        },
-        body: JSON.stringify({ input }),
-        signal: AbortSignal.timeout(330_000), // 330s — slightly above Prefer: wait=300
-      },
-    );
+    const data = await this.predictions.create(endpoint, input, {
+      wait: true,
+      ...(params.signal ? { signal: params.signal } : {}),
+    });
 
-    if (!response.ok) {
-      const errorBody = await response.json().catch(() => null);
-      throw new GenerationError(
-        "replicate",
-        "api_error",
-        `Replicate API error ${response.status}: ${(errorBody as { detail?: string })?.detail ?? "Unknown error"}`,
-      );
-    }
-
-    const data = (await response.json()) as {
-      id: string;
-      output: string | string[] | null;
-      status: string;
-      urls?: { get?: string };
-    };
-
-    // If prediction is still processing (Prefer: wait timed out), poll for result
     let output = data.output;
-    if (!output && data.status === "processing" && data.urls?.get) {
-      output = await this.pollForResult(data.urls.get);
+    if (
+      !output &&
+      (data.status === "processing" || data.status === "starting")
+    ) {
+      if (!data.id) {
+        throw new GenerationError(
+          "replicate",
+          "malformed_response",
+          "Replicate response missing prediction id",
+        );
+      }
+      output = await this.pollForResult(data.id);
     }
 
     const outputUrl = Array.isArray(output) ? output[0] : output;
@@ -566,7 +498,7 @@ export class ReplicateVideoProvider implements VideoProvider {
   }
 
   private async pollForResult(
-    predictionUrl: string,
+    predictionId: string,
     maxWaitMs = 300_000,
   ): Promise<string | null> {
     const start = Date.now();
@@ -575,21 +507,7 @@ export class ReplicateVideoProvider implements VideoProvider {
     while (Date.now() - start < maxWaitMs) {
       await new Promise((r) => setTimeout(r, interval));
 
-      const res = await fetch(predictionUrl, {
-        // 自定义头（§4.8）随每次轮询一并带上，凭证头在后
-        headers: {
-          ...this.headers,
-          Authorization: `Bearer ${this.apiToken}`,
-        },
-        signal: AbortSignal.timeout(15_000), // 15s per poll request
-      });
-      if (!res.ok) continue;
-
-      const pred = (await res.json()) as {
-        output: string | string[] | null;
-        status: string;
-        error?: string;
-      };
+      const pred = await this.predictions.get(predictionId);
 
       if (pred.status === "succeeded" && pred.output) {
         return Array.isArray(pred.output)

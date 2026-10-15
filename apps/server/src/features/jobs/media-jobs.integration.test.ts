@@ -1,20 +1,27 @@
 import { randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createLocalFsBlobStore } from "../blob/providers/local-fs.js";
 import { createScopeRepository } from "../execution/scope-repository.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import { createGenerationTargets } from "../generation/file-targets.js";
+import { createModelProviderService } from "../model-providers/model-provider-service.js";
+import { createModelProviderRepository } from "../model-providers/repository.js";
 import { createInProcessQueue } from "../queue/providers/in-process.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
+import { createAssetWriter } from "../uploads/asset-writer.js";
 import { createUploadRepository } from "../uploads/repository.js";
 import {
   createUploadService,
   type UploadService,
 } from "../uploads/upload-service.js";
-import { registerExecutor } from "./job-executor.js";
+import { getExecutor, registerExecutor } from "./job-executor.js";
 import { startJobLoop } from "./job-loop.js";
 import { createJobService } from "./job-service.js";
 import { createJobRepository } from "./repository.js";
+import "./executors/image-generation.js";
+
+const realImageExecutor = getExecutor("image_generation");
 
 describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
   "媒体Job真实数据库生命周期",
@@ -592,5 +599,176 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
         await queue.shutdown();
       }
     });
+
+    it("Replicate图片提交句柄持久化，重建worker只续查不重提", async () => {
+      if (!realImageExecutor) throw new Error("真实图片执行器未注册");
+      const previousExecutor = getExecutor("image_generation");
+      registerExecutor("image_generation", realImageExecutor);
+      let submits = 0;
+      let polls = 0;
+      let downloads = 0;
+      let resumed = false;
+      let baseUrl = "";
+      const provider = createServer(async (request, response) => {
+        for await (const _chunk of request) {
+          /* 消费模拟供应商请求体 */
+        }
+        if (request.method === "POST") {
+          submits++;
+          response.setHeader("content-type", "application/json");
+          response.end(
+            JSON.stringify({
+              id: "durable-image-prediction",
+              status: "processing",
+              output: null,
+            }),
+          );
+          return;
+        }
+        if (request.url === "/v1/predictions/durable-image-prediction") {
+          polls++;
+          response.setHeader("content-type", "application/json");
+          response.end(
+            JSON.stringify({
+              id: "durable-image-prediction",
+              status: resumed ? "succeeded" : "processing",
+              input: { aspect_ratio: "1:1", output_format: "png" },
+              output: resumed ? [`${baseUrl}/image.png`] : null,
+            }),
+          );
+          return;
+        }
+        if (request.url === "/image.png") {
+          downloads++;
+          response.setHeader("content-type", "image/png");
+          response.end(
+            Buffer.from(
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2Z0AAAAASUVORK5CYII=",
+              "base64",
+            ),
+          );
+          return;
+        }
+        response.statusCode = 404;
+        response.end("unexpected provider endpoint");
+      });
+      let firstLoop: ReturnType<typeof startJobLoop> | undefined;
+      let secondLoop: ReturnType<typeof startJobLoop> | undefined;
+      try {
+        await new Promise<void>((resolve) =>
+          provider.listen(0, "127.0.0.1", resolve),
+        );
+        const address = provider.address();
+        if (!address || typeof address === "string")
+          throw new Error("模拟供应商未启动");
+        baseUrl = `http://127.0.0.1:${address.port}`;
+        const modelProviders = createModelProviderService({
+          repository: createModelProviderRepository(db.persistence),
+          localInstance: db.localInstance,
+        });
+        const configured = await modelProviders.createInstance(db.actor, {
+          name: "Replicate恢复回归",
+          apiKey: "replicate-recovery-test-only",
+          baseUrl: `${baseUrl}/v1`,
+          protocol: "replicate",
+          models: [
+            {
+              id: "custom-owner/durable-image",
+              name: "恢复图片模型",
+              capability: "image",
+            },
+          ],
+        });
+        const blob = createLocalFsBlobStore({
+          rootDir: `${db.directory}/replicate-recovery-output`,
+          signingSecret: "recovery-test-only",
+          publicBaseUrl: baseUrl,
+        });
+        const generationTargets = createGenerationTargets({
+          persistence: db.persistence,
+          executionScopes: createExecutionScopes({
+            repository: createScopeRepository(db.persistence),
+            localInstance: db.localInstance,
+          }),
+        });
+        const initial = fixture();
+        const accepted = await initial.jobs.createJob(db.actor, {
+          requestId: randomUUID(),
+          jobType: "image_generation",
+          payload: {
+            prompt: "猫",
+            model: "custom-owner/durable-image",
+            provider_instance_id: configured.id,
+          },
+        });
+        const context = {
+          blob,
+          generationTargets,
+          projectFiles: {} as never,
+          assetWriter: createAssetWriter(
+            createUploadRepository(db.persistence),
+          ),
+          modelProviders,
+          env: {
+            agentBackendMode: "state" as const,
+            agentModel: "test",
+            port: 0,
+            version: "test",
+            webOrigin: baseUrl,
+            workerPollIntervalMs: 1000,
+          },
+        };
+        firstLoop = startJobLoop(
+          { ...context, queue: initial.queue, jobService: initial.jobs },
+          { queues: ["image_generation_jobs"] },
+        );
+        await vi.waitFor(
+          async () =>
+            expect(
+              await initial.jobs.getJob(db.actor, accepted.id),
+            ).toMatchObject({
+              provider_job_id: "durable-image-prediction",
+              payload: {
+                provider_config_revision: 1,
+                _generation_execution: { phase: "polling" },
+              },
+            }),
+          { timeout: 2000 },
+        );
+        expect(submits).toBe(1);
+        await firstLoop.shutdown();
+        firstLoop = undefined;
+
+        // 新的队列与Job服务从真实数据库恢复；没有内存中的提交句柄可复用。
+        const restarted = fixture();
+        resumed = true;
+        secondLoop = startJobLoop(
+          { ...context, queue: restarted.queue, jobService: restarted.jobs },
+          { queues: ["image_generation_jobs"] },
+        );
+        await vi.waitFor(
+          async () =>
+            expect(
+              await restarted.jobs.getJob(db.actor, accepted.id),
+            ).toMatchObject({
+              status: "succeeded",
+              provider_job_id: "durable-image-prediction",
+              result: { asset_id: accepted.id },
+            }),
+          { timeout: 12_000 },
+        );
+        expect(submits).toBe(1);
+        expect(polls).toBeGreaterThanOrEqual(1);
+        expect(downloads).toBe(1);
+      } finally {
+        await firstLoop?.shutdown();
+        await secondLoop?.shutdown();
+        if (previousExecutor)
+          registerExecutor("image_generation", previousExecutor);
+        await new Promise<void>((resolve, reject) =>
+          provider.close((error) => (error ? reject(error) : resolve())),
+        );
+      }
+    }, 20_000);
   },
 );

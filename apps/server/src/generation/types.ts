@@ -23,6 +23,7 @@ export type OutputFormat = "png" | "jpg" | "webp";
 export interface ImageGenerateParams {
   width?: number;
   height?: number;
+  signal?: AbortSignal;
   prompt: string;
   model: string;
   aspectRatio?: string;
@@ -41,16 +42,25 @@ export interface GeneratedImage {
   height: number;
 }
 
+export type ImageAsyncPollResult =
+  | { state: "in_progress" }
+  | { state: "succeeded"; images: GeneratedImage[] }
+  | { state: "failed"; errorMessage: string };
+
 export interface ImageProvider {
   readonly name: string;
   readonly models: readonly ModelInfo[];
   generate(params: ImageGenerateParams): Promise<GeneratedImage>;
+  startAsync?(params: ImageGenerateParams): Promise<{ providerJobId: string }>;
+  pollAsync?(providerJobId: string): Promise<ImageAsyncPollResult>;
+  cancelAsync?(providerJobId: string): Promise<void>;
 }
 
 export interface VideoGenerateParams {
+  signal?: AbortSignal;
   prompt: string;
   model: string;
-  resolution?: "480p" | "720p" | "1080p";
+  resolution?: string;
   duration?: number;
   aspectRatio?: string;
   inputImages?: string[];
@@ -89,6 +99,7 @@ export interface VideoProvider {
    */
   startAsync?(params: VideoGenerateParams): Promise<{ providerJobId: string }>;
   pollAsync?(providerJobId: string): Promise<VideoAsyncPollResult>;
+  cancelAsync?(providerJobId: string): Promise<void>;
 }
 
 export interface VideoPriceRate {
@@ -123,16 +134,16 @@ export interface AvailableVideoModel extends VideoModelInfo {
 /** Extended model info with video-specific capabilities metadata. */
 export interface VideoModelInfo extends ModelInfo {
   capabilities: {
-    textToVideo: boolean;
-    imageToVideo: boolean;
-    videoToVideo: boolean;
-    audio: boolean;
+    textToVideo?: boolean;
+    imageToVideo?: boolean;
+    videoToVideo?: boolean;
+    audio?: boolean;
   };
   limits: {
-    maxDuration: number;
+    maxDuration?: number;
     allowedDurations?: number[];
-    maxResolution: "480p" | "720p" | "1080p" | "2160p";
-    maxInputImages: number;
+    maxResolution?: "480p" | "720p" | "1080p" | "2160p";
+    maxInputImages?: number;
   };
   /** Verified provider pricing, separate from KenFutWork's own credit balance. */
   pricing?: VideoPricingInfo;

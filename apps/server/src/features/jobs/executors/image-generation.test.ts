@@ -13,8 +13,8 @@ const { generate } = vi.hoisted(() => ({
 }));
 vi.mock("./instance-provider.js", () => ({
   resolveInstanceImageProviderFromPayload: async () => ({
-    name: "test-provider",
-    generate,
+    provider: { name: "test-provider", generate },
+    configRevision: 7,
   }),
 }));
 

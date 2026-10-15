@@ -178,9 +178,7 @@ export async function runVideoGenerate(
     };
   }
 
-  const enableAudio = selectedModel.capabilities.audio
-    ? input.enableAudio
-    : undefined;
+  const enableAudio = input.enableAudio;
 
   // Job mode: submit to PGMQ and wait for worker
   if (submitVideoJob) {
@@ -288,16 +286,24 @@ function validateCapabilities(
   input: VideoGenerateInput,
   model: AvailableVideoModel,
 ): string | undefined {
-  if (input.inputImages?.length && !model.capabilities.imageToVideo) {
+  if (input.enableAudio === true && model.capabilities.audio === false)
+    return `${model.displayName} does not support audio generation`;
+  if (input.inputImages?.length && model.capabilities.imageToVideo === false) {
     return `${model.displayName} does not support image-to-video input`;
   }
-  if ((input.inputImages?.length ?? 0) > model.limits.maxInputImages) {
+  if (
+    model.limits.maxInputImages !== undefined &&
+    (input.inputImages?.length ?? 0) > model.limits.maxInputImages
+  ) {
     return `${model.displayName} accepts at most ${model.limits.maxInputImages} input image(s)`;
   }
-  if (input.inputVideo && !model.capabilities.videoToVideo) {
+  if (input.inputVideo && model.capabilities.videoToVideo === false) {
     return `${model.displayName} does not support reference-video input`;
   }
-  if (input.duration > model.limits.maxDuration) {
+  if (
+    model.limits.maxDuration !== undefined &&
+    input.duration > model.limits.maxDuration
+  ) {
     return `${model.displayName} supports at most ${model.limits.maxDuration} seconds`;
   }
   if (
@@ -316,8 +322,9 @@ function validateCapabilities(
     "2160p": 3,
   } as const;
   if (
+    model.limits.maxResolution !== undefined &&
     resolutionRank[requestedResolution] >
-    resolutionRank[model.limits.maxResolution]
+      resolutionRank[model.limits.maxResolution]
   ) {
     return `${model.displayName} supports up to ${model.limits.maxResolution}`;
   }

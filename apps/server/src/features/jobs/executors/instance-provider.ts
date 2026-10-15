@@ -35,12 +35,12 @@ export async function resolveInstanceImageProviderFromPayload(
   instanceId: string | undefined,
   ctx: ExecutorCtx,
   headerContext: HeaderRenderContext = {},
-): Promise<ImageProvider | undefined> {
+): Promise<{ provider: ImageProvider; configRevision: number } | undefined> {
   if (!instanceId) {
     return undefined;
   }
   const credentials = await resolveCredentials(instanceId, ctx);
-  return resolveInstanceImageProvider(credentials.protocol, {
+  const provider = resolveInstanceImageProvider(credentials.protocol, {
     credentials: {
       apiKey: credentials.apiKey,
       ...(credentials.baseUrl ? { baseUrl: credentials.baseUrl } : {}),
@@ -50,10 +50,11 @@ export async function resolveInstanceImageProviderFromPayload(
       .filter((m) => m.capability === "image" || m.capability === "image-edit")
       .map((m) => ({ id: m.id, name: m.name })),
   });
+  return { provider, configRevision: credentials.configRevision };
 }
 
 /**
- * 视频版额外透出实例的 `configRevision`——异步任务 submit 时把修订号落进
+ * 与图片版一致透出实例的 `configRevision`——异步任务 submit 时把修订号落进
  * job payload，poll 执行时比对不一致即拒（跨修订不复活旧任务，S6 老化治理）。
  */
 export async function resolveInstanceVideoProviderFromPayload(

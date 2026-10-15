@@ -1,12 +1,15 @@
+import {
+  type ReplicatePrediction,
+  ReplicatePredictionsClient,
+} from "../../providers/replicate/predictions.js";
 import type {
   GeneratedImage,
+  ImageAsyncPollResult,
   ImageGenerateParams,
   ImageProvider,
   ModelInfo,
 } from "../types.js";
 import { aspectRatioToDimensions, GenerationError } from "../utils.js";
-
-const REPLICATE_API_BASE = "https://api.replicate.com/v1";
 
 /**
  * Image input parameter mapping per model.
@@ -279,15 +282,112 @@ function applyOutputFormat(
 export class ReplicateImageProvider implements ImageProvider {
   readonly name = "replicate";
   readonly models = REPLICATE_IMAGE_MODELS;
-  private apiToken: string;
-  private headers: Record<string, string> | undefined;
+  private readonly predictions: ReplicatePredictionsClient;
 
-  constructor(apiToken: string, headers?: Record<string, string>) {
-    this.apiToken = apiToken;
-    this.headers = headers;
+  constructor(
+    apiToken: string,
+    headers?: Record<string, string>,
+    baseUrl?: string,
+  ) {
+    this.predictions = new ReplicatePredictionsClient(
+      apiToken,
+      headers,
+      baseUrl,
+    );
+  }
+
+  async startAsync(
+    params: ImageGenerateParams,
+  ): Promise<{ providerJobId: string }> {
+    const { input } = this.buildInput(params);
+    const prediction = await this.predictions.create(params.model, input, {
+      ...(params.signal ? { signal: params.signal } : {}),
+    });
+    if (!prediction.id) {
+      throw new GenerationError(
+        "replicate",
+        "malformed_response",
+        "Replicate submit response missing prediction id",
+      );
+    }
+    return { providerJobId: prediction.id };
+  }
+
+  async pollAsync(providerJobId: string): Promise<ImageAsyncPollResult> {
+    const prediction = await this.predictions.get(providerJobId);
+    if (prediction.status === "succeeded") {
+      const images = this.readImages(prediction);
+      return images.length
+        ? { state: "succeeded", images }
+        : {
+            state: "failed",
+            errorMessage: "Replicate returned no image output URL",
+          };
+    }
+    if (prediction.status === "failed" || prediction.status === "canceled") {
+      return {
+        state: "failed",
+        errorMessage: prediction.error ?? prediction.status,
+      };
+    }
+    return { state: "in_progress" };
+  }
+
+  cancelAsync(providerJobId: string): Promise<void> {
+    return this.predictions.cancel(providerJobId);
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
+    const { input, width, height } = this.buildInput(params);
+    const prediction = await this.predictions.create(params.model, input, {
+      wait: true,
+      ...(params.signal ? { signal: params.signal } : {}),
+    });
+    const image = this.readImages({ ...prediction, input })[0];
+    if (!image) {
+      throw new GenerationError(
+        "replicate",
+        "no_output",
+        "Replicate returned no output URL",
+      );
+    }
+    return { ...image, width, height };
+  }
+
+  private readImages(prediction: ReplicatePrediction): GeneratedImage[] {
+    const input = prediction.input ?? {};
+    const dimensions = aspectRatioToDimensions(
+      typeof input.aspect_ratio === "string" ? input.aspect_ratio : "1:1",
+    );
+    const width =
+      typeof input.width === "number" ? input.width : dimensions.width;
+    const height =
+      typeof input.height === "number" ? input.height : dimensions.height;
+    const outputs = Array.isArray(prediction.output)
+      ? prediction.output
+      : prediction.output
+        ? [prediction.output]
+        : [];
+    return outputs
+      .filter((url) => typeof url === "string" && url.length > 0)
+      .map((url) => ({
+        url,
+        mimeType:
+          input.output_format === "jpg"
+            ? "image/jpeg"
+            : input.output_format === "webp"
+              ? "image/webp"
+              : "image/png",
+        width,
+        height,
+      }));
+  }
+
+  private buildInput(params: ImageGenerateParams): {
+    input: Record<string, unknown>;
+    width: number;
+    height: number;
+  } {
     const rawRatio = params.aspectRatio ?? "1:1";
     const aspectRatio = normalizeAspectRatio(params.model, rawRatio);
     const { width, height } = aspectRatioToDimensions(aspectRatio);
@@ -318,52 +418,10 @@ export class ReplicateImageProvider implements ImageProvider {
     applyQuality(input, params.model, params.quality);
     applyOutputFormat(input, params.model, params.outputFormat);
 
-    const response = await fetch(
-      `${REPLICATE_API_BASE}/models/${params.model}/predictions`,
-      {
-        method: "POST",
-        headers: {
-          // 自定义头（§4.8）在前，凭证与内容类型随后——保留头永远由适配器说了算
-          ...this.headers,
-          Authorization: `Bearer ${this.apiToken}`,
-          "Content-Type": "application/json",
-          Prefer: "wait",
-        },
-        body: JSON.stringify({ input }),
-        signal: AbortSignal.timeout(120_000), // 120s — guard against Replicate hanging
-      },
-    );
-
-    if (!response.ok) {
-      const errorBody = await response.json().catch(() => null);
-      throw new GenerationError(
-        "replicate",
-        "api_error",
-        `Replicate API error ${response.status}: ${(errorBody as { detail?: string })?.detail ?? "Unknown error"}`,
-      );
-    }
-
-    const data = (await response.json()) as {
-      output: string[] | string;
-      status: string;
+    return {
+      input,
+      width: params.width ?? width,
+      height: params.height ?? height,
     };
-    const outputUrl = Array.isArray(data.output) ? data.output[0] : data.output;
-
-    if (!outputUrl) {
-      throw new GenerationError(
-        "replicate",
-        "no_output",
-        "Replicate returned no output URL",
-      );
-    }
-
-    const mimeType =
-      params.outputFormat === "jpg"
-        ? "image/jpeg"
-        : params.outputFormat === "webp"
-          ? "image/webp"
-          : "image/png";
-
-    return { url: outputUrl, mimeType, width, height };
   }
 }
