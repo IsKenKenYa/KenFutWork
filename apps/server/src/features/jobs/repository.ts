@@ -429,6 +429,14 @@ export function createJobRepository(
         `update public.background_jobs
               set status = 'canceled',
                   canceled_at = coalesce(canceled_at,now()),
+                  result=coalesce(result,(
+                    select saved.outputs->0 || jsonb_build_object('outputs',saved.outputs)
+                    from (
+                      select jsonb_agg(item->'stored' order by ordinal) as outputs
+                      from jsonb_array_elements(coalesce(payload->'_generation_execution'->'outputs','[]'::jsonb)) with ordinality as output(item,ordinal)
+                      where item->'stored' is not null
+                    ) saved where jsonb_array_length(saved.outputs)>0
+                  )),
                   payload=case when status='canceled' then payload else payload||jsonb_build_object('_generation_cancel',jsonb_build_object('state','pending','attempts',0)) end,
                   lease_token=case when status='canceled' then lease_token else null end,
                   lease_until=case when status='canceled' then lease_until else null end,

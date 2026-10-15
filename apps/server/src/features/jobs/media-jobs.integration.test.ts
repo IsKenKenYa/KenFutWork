@@ -2,11 +2,16 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createLocalFsBlobStore } from "../blob/providers/local-fs.js";
+import { createCanvasService } from "../canvas/canvas-service.js";
+import { createCanvasRepository } from "../canvas/repository.js";
 import { createScopeRepository } from "../execution/scope-repository.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import { createGenerationTargets } from "../generation/file-targets.js";
 import { createModelProviderService } from "../model-providers/model-provider-service.js";
 import { createModelProviderRepository } from "../model-providers/repository.js";
+import { createProjectFileRepository } from "../project-files/repository.js";
+import { createProjectFileService } from "../project-files/service.js";
+import { createProjectRepository } from "../projects/repository.js";
 import { createInProcessQueue } from "../queue/providers/in-process.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createAssetWriter } from "../uploads/asset-writer.js";
@@ -763,6 +768,225 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
       } finally {
         await firstLoop?.shutdown();
         await secondLoop?.shutdown();
+        if (previousExecutor)
+          registerExecutor("image_generation", previousExecutor);
+        await new Promise<void>((resolve, reject) =>
+          provider.close((error) => (error ? reject(error) : resolve())),
+        );
+      }
+    }, 20_000);
+
+    it("取消多图下载保留已成功产物，迟到字节不保存也不继续发布", async () => {
+      if (!realImageExecutor) throw new Error("真实图片执行器未注册");
+      const previousExecutor = getExecutor("image_generation");
+      registerExecutor("image_generation", realImageExecutor);
+      const png =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2Z0AAAAASUVORK5CYII=";
+      const downloads: string[] = [];
+      let submissions = 0;
+      let baseUrl = "";
+      let releaseMiddle: () => void = () => {};
+      const heldMiddle = new Promise<void>((resolve) => {
+        releaseMiddle = resolve;
+      });
+      const provider = createServer(async (request, response) => {
+        if (request.method === "POST") {
+          for await (const _chunk of request) {
+            /* 消费请求体 */
+          }
+          submissions++;
+          response.setHeader("content-type", "application/json");
+          response.end(
+            JSON.stringify({
+              data: ["first", "middle", "last"].map((name) => ({
+                url: `${baseUrl}/${name}.png`,
+              })),
+            }),
+          );
+          return;
+        }
+        downloads.push(request.url ?? "/");
+        if (request.url === "/middle.png") await heldMiddle;
+        response.setHeader("content-type", "image/png");
+        response.end(Buffer.from(png, "base64"));
+      });
+      let loop: ReturnType<typeof startJobLoop> | undefined;
+      try {
+        await new Promise<void>((resolve) =>
+          provider.listen(0, "127.0.0.1", resolve),
+        );
+        const address = provider.address();
+        if (!address || typeof address === "string")
+          throw new Error("模拟供应商未启动");
+        baseUrl = `http://127.0.0.1:${address.port}`;
+        const projectId = db.context.scope.projectId;
+        await db.persistence
+          .forInstance(db.instanceId)
+          .execute(
+            "update public.projects set enabled_modes=array['code','design']::text[] where id=$1 and instance_id=:instance",
+            [projectId],
+          );
+        const projects = createProjectRepository(db.persistence);
+        const projectAccess = {
+          getProject: async (actor: typeof db.actor, id: string) => {
+            const project = await projects.findActiveById(actor.instanceId, id);
+            if (!project) throw new Error("项目不存在");
+            return project;
+          },
+        };
+        const executionScopes = createExecutionScopes({
+          repository: createScopeRepository(db.persistence),
+          localInstance: db.localInstance,
+        });
+        const canvases = createCanvasRepository(db.persistence);
+        const projectFiles = createProjectFileService({
+          repository: createProjectFileRepository(db.persistence),
+          localInstance: db.localInstance,
+          projects: projectAccess,
+          executionScopes,
+          canvases,
+        });
+        const blob = createLocalFsBlobStore({
+          rootDir: `${db.directory}/cancel-partial-blobs`,
+          signingSecret: "test-only",
+          publicBaseUrl: baseUrl,
+        });
+        blob.registerNamespace({
+          bucket: "project-assets",
+          namespace: "project-files",
+          provider: projectFiles.namespaceProvider,
+          publicRead: false,
+        });
+        const canvas = createCanvasService({
+          repository: canvases,
+          localInstance: db.localInstance,
+          projects: projectAccess,
+          projectFiles,
+          blob,
+        });
+        const document = await canvas.createCanvas(db.actor, projectId, {
+          name: "取消多图回归",
+        });
+        const generatorId = "partial-image-generator";
+        await canvas.saveCanvasContent(
+          db.actor,
+          document.id,
+          {
+            elements: [
+              {
+                id: generatorId,
+                type: "rectangle",
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 200,
+                isDeleted: false,
+                customData: { type: "image-generator", status: "idle" },
+              },
+            ],
+            appState: {},
+            files: {},
+          },
+          document.revision,
+        );
+        const generationTargets = createGenerationTargets({
+          persistence: db.persistence,
+          executionScopes,
+        });
+        const queue = createInProcessQueue();
+        const jobs = createJobService({
+          queue,
+          repository: createJobRepository(db.persistence),
+          localInstance: db.localInstance,
+          generationTargets,
+        });
+        const modelProviders = createModelProviderService({
+          repository: createModelProviderRepository(db.persistence),
+          localInstance: db.localInstance,
+        });
+        const configured = await modelProviders.createInstance(db.actor, {
+          name: "取消多图模拟供应商",
+          apiKey: "test-only",
+          baseUrl: `${baseUrl}/v1`,
+          protocol: "openai-compatible",
+          models: [
+            { id: "gpt-image-1", name: "多图模型", capability: "image" },
+          ],
+        });
+        const job = await jobs.createJob(db.actor, {
+          requestId: randomUUID(),
+          interactiveRequest: true,
+          projectId,
+          canvasId: document.id,
+          jobType: "image_generation",
+          payload: {
+            prompt: "三只猫",
+            model: "gpt-image-1",
+            provider_instance_id: configured.id,
+            generator_id: generatorId,
+            count: 3,
+          },
+        });
+        loop = startJobLoop(
+          {
+            queue,
+            jobService: jobs,
+            modelProviders,
+            generationTargets,
+            projectFiles,
+            canvas,
+            blob,
+            assetWriter: createAssetWriter(
+              createUploadRepository(db.persistence),
+            ),
+            env: {
+              agentBackendMode: "state",
+              agentModel: "test",
+              port: 0,
+              version: "test",
+              webOrigin: baseUrl,
+              workerPollIntervalMs: 1000,
+            },
+          },
+          { queues: ["image_generation_jobs"] },
+        );
+        await vi.waitFor(
+          () => expect(downloads).toEqual(["/first.png", "/middle.png"]),
+          { timeout: 5000 },
+        );
+        const before = await canvas.getCanvas(db.actor, document.id);
+        const first = before.content.elements.find(
+          (element) => element.type === "image" && !element.isDeleted,
+        );
+        expect(first).toMatchObject({ id: expect.any(String) });
+        await jobs.cancelJob(db.actor, job.id);
+        releaseMiddle();
+        await vi.waitFor(() => expect(loop?.inFlightCount()).toBe(0), {
+          timeout: 3000,
+        });
+        const final = await jobs.getJob(db.actor, job.id);
+        expect(final).toMatchObject({
+          status: "canceled",
+          result: {
+            asset_id: job.id,
+            element_id: first?.id,
+            outputs: [{ asset_id: job.id, element_id: first?.id }],
+          },
+        });
+        expect(submissions).toBe(1);
+        expect(downloads).toEqual(["/first.png", "/middle.png"]);
+        const after = await canvas.getCanvas(db.actor, document.id);
+        expect(
+          after.content.elements.filter(
+            (element) => element.type === "image" && !element.isDeleted,
+          ),
+        ).toEqual([first]);
+        expect(await projectFiles.read(db.actor, job.id)).toEqual(
+          Buffer.from(png, "base64"),
+        );
+      } finally {
+        releaseMiddle();
+        await loop?.shutdown();
         if (previousExecutor)
           registerExecutor("image_generation", previousExecutor);
         await new Promise<void>((resolve, reject) =>
