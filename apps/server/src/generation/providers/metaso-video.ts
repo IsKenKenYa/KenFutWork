@@ -482,8 +482,9 @@ function buildCreateRequest(params: VideoGenerateParams) {
 function mapResolution(
   resolution: VideoGenerateParams["resolution"],
 ): "768P" | "2K" {
-  if (resolution == null || resolution === "720p") return "768P";
-  if (resolution === "1080p") return "2K";
+  if (resolution == null || resolution === "720p" || resolution === "768P")
+    return "768P";
+  if (resolution === "1080p" || resolution === "2K") return "2K";
   throw new GenerationError(
     PROVIDER_NAME,
     "invalid_input",

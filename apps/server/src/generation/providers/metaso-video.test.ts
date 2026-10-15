@@ -21,6 +21,43 @@ describe("MetasoVideoProvider", () => {
     fetchMock.mockReset();
   });
 
+  it("Metaso原生分辨率原样发送并保留旧别名与原生模型ID", async () => {
+    const provider = new MetasoVideoProvider("secret", undefined, {
+      fetch: fetchMock as typeof fetch,
+    });
+
+    for (const [resolution, expectedResolution] of [
+      ["768P", "768P"],
+      ["2K", "2K"],
+      ["720p", "768P"],
+      ["1080p", "2K"],
+    ] as const) {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ task_id: "task-resolution" }),
+      );
+
+      await expect(
+        provider.startAsync({
+          model: "MiniMax-H3",
+          prompt: "一只猫",
+          resolution,
+        }),
+      ).resolves.toEqual({ providerJobId: "task-resolution" });
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+      expect(url.toString()).toBe(
+        `${METASO_DEFAULT_BASE_URL}v2/video_generation`,
+      );
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(String(init.body))).toMatchObject({
+        model: "MiniMax-H3",
+        resolution: expectedResolution,
+      });
+      fetchMock.mockClear();
+    }
+  });
+
   it("Metaso非JSON HTTP429和401仍保留状态及等待时间", async () => {
     const provider = new MetasoVideoProvider("secret", undefined, {
       fetch: fetchMock as typeof fetch,
