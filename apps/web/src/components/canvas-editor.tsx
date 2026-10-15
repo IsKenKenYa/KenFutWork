@@ -14,7 +14,7 @@ import type {
   ExcalidrawInitialDataState,
   ExcalidrawProps,
 } from "@excalidraw/excalidraw/types";
-import type { CanvasContent } from "@kenfutwork/shared";
+import type { CanvasContent, CanvasSaveResponse } from "@kenfutwork/shared";
 import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -27,6 +27,10 @@ import {
   createCanvasSaveSession,
   initialCanvasFileReferences,
 } from "../lib/canvas-save-session";
+import {
+  canvasDocumentSettings,
+  createCanvasSceneState,
+} from "../lib/canvas-scene-state";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
 import { CanvasStatsPanel } from "./canvas-stats-panel";
@@ -109,6 +113,8 @@ export function CanvasEditor({
   const saveSessionRef = useRef<{
     canvasId: string;
     session: ReturnType<typeof createCanvasSaveSession>;
+    scene: ReturnType<typeof createCanvasSceneState>;
+    saves: Set<Promise<unknown>>;
   } | null>(null);
   let activeSaveSession = saveSessionRef.current;
   if (!activeSaveSession || activeSaveSession.canvasId !== canvasId) {
@@ -119,10 +125,14 @@ export function CanvasEditor({
         fileReferences: initialCanvasFileReferences(initialContent.files),
         files: initialContent.files,
       }),
+      scene: createCanvasSceneState({ revision, content: initialContent }),
+      saves: new Set(),
     };
     saveSessionRef.current = activeSaveSession;
   }
   const canvasSaveSession = activeSaveSession.session;
+  const canvasSceneState = activeSaveSession.scene;
+  const sceneSaves = activeSaveSession.saves;
   const [saveConflict, setSaveConflict] = useState<{
     session: ReturnType<typeof createCanvasSaveSession>;
     message: string;
@@ -141,11 +151,27 @@ export function CanvasEditor({
     [canvasId],
   );
   const sendCanvasKeepalive = useCallback(
-    (content: CanvasContent, expectedRevision: string | null) =>
-      saveCanvas(accessTokenRef.current, canvasId, content, expectedRevision, {
-        keepalive: true,
-      }),
-    [canvasId],
+    (content: CanvasContent, expectedRevision: string | null) => {
+      const snapshot = structuredClone(content);
+      const savedScene = canvasSceneState.captureSave(snapshot);
+      const operation: Promise<CanvasSaveResponse> = saveCanvas(
+        accessTokenRef.current,
+        canvasId,
+        snapshot,
+        expectedRevision,
+        {
+          keepalive: true,
+        },
+      )
+        .then((result) => {
+          canvasSceneState.acknowledgeSave(savedScene, result.revision);
+          return result;
+        })
+        .finally(() => sceneSaves.delete(operation));
+      sceneSaves.add(operation);
+      return operation;
+    },
+    [canvasId, canvasSceneState, sceneSaves],
   );
   const onSaveConflict = useCallback(
     (error: Error) =>
@@ -153,22 +179,35 @@ export function CanvasEditor({
     [canvasSaveSession],
   );
   const saveCanvasContent = useCallback(
-    async (content: CanvasContent) => {
-      const result = await canvasSaveSession.save(
-        content,
-        sendCanvasSave,
-        onSaveConflict,
-      );
-      onRevisionChanged?.(canvasSaveSession.revision ?? result.revision);
-      return result;
+    (content: CanvasContent) => {
+      const snapshot = structuredClone(content);
+      const savedScene = canvasSceneState.captureSave(snapshot);
+      const operation: Promise<CanvasSaveResponse> = canvasSaveSession
+        .save(snapshot, sendCanvasSave, onSaveConflict)
+        .then((result) => {
+          canvasSceneState.acknowledgeSave(savedScene, result.revision);
+          onRevisionChanged?.(canvasSaveSession.revision ?? result.revision);
+          return result;
+        })
+        .finally(() => sceneSaves.delete(operation));
+      sceneSaves.add(operation);
+      return operation;
     },
-    [canvasSaveSession, onRevisionChanged, onSaveConflict, sendCanvasSave],
+    [
+      canvasSaveSession,
+      canvasSceneState,
+      onRevisionChanged,
+      onSaveConflict,
+      sceneSaves,
+      sendCanvasSave,
+    ],
   );
 
   // Guard: prevent auto-save until Excalidraw has fully hydrated with initial data.
   // Without this, a page reload can fire onChange with empty elements before
   // initialData is applied, causing a FULL REPLACE that wipes existing content.
   const hydratedRef = useRef(false);
+  const [isHydrated, setIsHydrated] = useState(false);
 
   // Track pending save payload so we can flush on tab close / unmount
   const pendingSaveRef = useRef<{
@@ -180,7 +219,6 @@ export function CanvasEditor({
   // Ref to hold initialContent.files for storageUrl lookup in handleChange
   // without adding the full initialContent to the dependency array.
   const initialFilesRef = useRef(initialContent.files);
-  const localChangeVersionRef = useRef(0);
   const remoteApplyingRef = useRef(false);
 
   const buildKnownFiles = useCallback(
@@ -302,24 +340,36 @@ export function CanvasEditor({
     if (
       !remoteSnapshot ||
       !excalidrawApi ||
-      !hydratedRef.current ||
+      !isHydrated ||
       !initialFilesHydrated
     )
       return;
     if (handledRemoteRevisionRef.current === remoteSnapshot.revision) return;
-    if (localChangeVersionRef.current > 0 || !canvasSaveSession.isIdle) {
+
+    let cancelled = false;
+    const finishRemote = () => {
+      handledRemoteRevisionRef.current = remoteSnapshot.revision;
+      onRemoteSnapshotHandled?.(remoteSnapshot.revision);
+    };
+    const preserveDraft = () =>
       canvasSaveSession.conflict(
         "画布已在其他位置更新，当前草稿已保留。请复制草稿后重新加载。",
         onSaveConflict,
       );
-      handledRemoteRevisionRef.current = remoteSnapshot.revision;
-      onRemoteSnapshotHandled?.(remoteSnapshot.revision);
-      return;
-    }
-
-    let cancelled = false;
-    const localVersion = localChangeVersionRef.current;
     const adopt = async () => {
+      while (sceneSaves.size > 0) await Promise.allSettled([...sceneSaves]);
+      if (cancelled) return;
+      if (canvasSceneState.hasKnownRevision(remoteSnapshot.revision)) {
+        finishRemote();
+        return;
+      }
+      if (canvasSceneState.isDirty || !canvasSaveSession.isIdle) {
+        preserveDraft();
+        finishRemote();
+        return;
+      }
+      const localVersion = canvasSceneState.version;
+      const localRevision = canvasSaveSession.revision;
       const content = remoteSnapshot.content;
       const resolved: BinaryFileData[] = [];
       for (const [fileId, value] of Object.entries(content.files)) {
@@ -354,7 +404,9 @@ export function CanvasEditor({
       }
       if (cancelled) return;
       if (
-        localChangeVersionRef.current !== localVersion ||
+        canvasSceneState.version !== localVersion ||
+        canvasSceneState.isDirty ||
+        canvasSaveSession.revision !== localRevision ||
         !canvasSaveSession.isIdle
       ) {
         canvasSaveSession.conflict(
@@ -371,22 +423,35 @@ export function CanvasEditor({
         onRevisionChanged?.(remoteSnapshot.revision);
         remoteApplyingRef.current = true;
         initialFilesRef.current = content.files;
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        pendingSaveRef.current = null;
+        const appState = {
+          viewBackgroundColor:
+            typeof content.appState.viewBackgroundColor === "string"
+              ? content.appState.viewBackgroundColor
+              : excalidrawApi.getAppState().viewBackgroundColor,
+          gridModeEnabled:
+            typeof content.appState.gridModeEnabled === "boolean"
+              ? content.appState.gridModeEnabled
+              : excalidrawApi.getAppState().gridModeEnabled,
+        };
+        canvasSceneState.acceptRemote(
+          { elements: content.elements, appState },
+          remoteSnapshot.revision,
+        );
         if (resolved.length) excalidrawApi.addFiles(resolved);
         excalidrawApi.updateScene({
           elements: content.elements as unknown as readonly ExcalidrawElement[],
-          appState: {
-            viewBackgroundColor:
-              typeof content.appState.viewBackgroundColor === "string"
-                ? content.appState.viewBackgroundColor
-                : excalidrawApi.getAppState().viewBackgroundColor,
-            gridModeEnabled:
-              typeof content.appState.gridModeEnabled === "boolean"
-                ? content.appState.gridModeEnabled
-                : excalidrawApi.getAppState().gridModeEnabled,
-          },
+          appState,
           captureUpdate: "IMMEDIATELY",
         });
-        localChangeVersionRef.current = 0;
+        canvasSceneState.acceptRemote(
+          {
+            elements: excalidrawApi.getSceneElements(),
+            appState,
+          },
+          remoteSnapshot.revision,
+        );
         queueMicrotask(() => {
           remoteApplyingRef.current = false;
         });
@@ -396,8 +461,7 @@ export function CanvasEditor({
           onSaveConflict,
         );
       }
-      handledRemoteRevisionRef.current = remoteSnapshot.revision;
-      onRemoteSnapshotHandled?.(remoteSnapshot.revision);
+      finishRemote();
     };
     adopt().catch(() => {
       if (cancelled) return;
@@ -413,8 +477,11 @@ export function CanvasEditor({
     };
   }, [
     canvasSaveSession,
+    canvasSceneState,
+    sceneSaves,
     excalidrawApi,
     initialFilesHydrated,
+    isHydrated,
     onRevisionChanged,
     onRemoteSnapshotHandled,
     onSaveConflict,
@@ -440,6 +507,10 @@ export function CanvasEditor({
     const idleHandle = ric(() => {
       try {
         const sceneElements = excalidrawApi.getSceneElements();
+        canvasSceneState.hydrate({
+          elements: sceneElements,
+          appState: canvasDocumentSettings(excalidrawApi.getAppState()),
+        });
         // Create mutable copies for normalization
         const mutableElements = sceneElements.map((el) => ({ ...el }));
         const { changed } = normalizeCanvasElements(mutableElements);
@@ -457,10 +528,7 @@ export function CanvasEditor({
           const appState = excalidrawApi.getAppState();
           saveCanvasContent({
             elements: mutableElements.filter((el) => !el.isDeleted),
-            appState: {
-              viewBackgroundColor: appState.viewBackgroundColor,
-              gridModeEnabled: appState.gridModeEnabled,
-            },
+            appState: canvasDocumentSettings(appState),
             files,
           }).catch((err: Error) =>
             console.warn("[canvas-editor] normalization save failed:", err),
@@ -475,18 +543,13 @@ export function CanvasEditor({
       // during Excalidraw's internal initialization, which would cause a
       // FULL REPLACE with empty content and silently wipe existing data.
       hydratedRef.current = true;
+      setIsHydrated(true);
     });
     return () => cic(idleHandle);
-  }, [buildKnownFiles, excalidrawApi, saveCanvasContent]);
+  }, [buildKnownFiles, canvasSceneState, excalidrawApi, saveCanvasContent]);
 
-  const handleChange = useCallback(
+  const queueSceneSave = useCallback(
     (elements: readonly ExcalidrawElement[], appState: AppState) => {
-      // Skip auto-save until Excalidraw has fully hydrated with initial data.
-      // During initialization, onChange may fire with empty/partial elements
-      // which would wipe the persisted canvas via FULL REPLACE.
-      if (!hydratedRef.current) return;
-      if (!remoteApplyingRef.current) localChangeVersionRef.current++;
-
       // --- 1. Debounced save ---
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
@@ -501,10 +564,7 @@ export function CanvasEditor({
           : { ...initialFilesRef.current };
         const content = {
           elements: elements.filter((el) => !el.isDeleted),
-          appState: {
-            viewBackgroundColor: appState.viewBackgroundColor,
-            gridModeEnabled: appState.gridModeEnabled,
-          },
+          appState: canvasDocumentSettings(appState),
           files,
         };
 
@@ -527,40 +587,47 @@ export function CanvasEditor({
           })
           .catch((err) => console.error("[canvas-editor] save failed:", err));
       }, SAVE_DEBOUNCE_MS);
+    },
+    [buildKnownFiles, excalidrawApi, saveCanvasContent],
+  );
 
-      // --- 2. Debounced thumbnail (runs much less frequently than save) ---
-      if (thumbnailTimerRef.current) clearTimeout(thumbnailTimerRef.current);
-      thumbnailTimerRef.current = setTimeout(async () => {
-        if (!excalidrawApi) return;
-        try {
-          const { exportToBlob } = await import("@excalidraw/excalidraw");
-          const sceneElements = excalidrawApi.getSceneElements();
-          const sceneFiles = excalidrawApi.getFiles();
-          if (!sceneElements.length) return;
+  const queueThumbnail = useCallback(() => {
+    // --- 2. Debounced thumbnail (runs much less frequently than save) ---
+    if (thumbnailTimerRef.current) clearTimeout(thumbnailTimerRef.current);
+    thumbnailTimerRef.current = setTimeout(async () => {
+      if (!excalidrawApi) return;
+      try {
+        const { exportToBlob } = await import("@excalidraw/excalidraw");
+        const sceneElements = excalidrawApi.getSceneElements();
+        const sceneFiles = excalidrawApi.getFiles();
+        if (!sceneElements.length) return;
 
-          const blob = await exportToBlob({
-            elements: sceneElements,
-            appState: { exportBackground: true },
-            files: sceneFiles,
-            mimeType: "image/webp",
-            quality: 0.8,
-            maxWidthOrHeight: THUMBNAIL_MAX_SIZE,
-          });
+        const blob = await exportToBlob({
+          elements: sceneElements,
+          appState: { exportBackground: true },
+          files: sceneFiles,
+          mimeType: "image/webp",
+          quality: 0.8,
+          maxWidthOrHeight: THUMBNAIL_MAX_SIZE,
+        });
 
-          console.log(
-            "[canvas-editor] uploading thumbnail, blob size:",
-            blob.size,
-          );
-          await uploadThumbnail(accessTokenRef.current, projectId, blob);
-          console.log("[canvas-editor] thumbnail uploaded OK");
-        } catch (err) {
-          console.warn(
-            "[canvas-editor] thumbnail generation/upload failed:",
-            err,
-          );
-        }
-      }, THUMBNAIL_DEBOUNCE_MS);
+        console.log(
+          "[canvas-editor] uploading thumbnail, blob size:",
+          blob.size,
+        );
+        await uploadThumbnail(accessTokenRef.current, projectId, blob);
+        console.log("[canvas-editor] thumbnail uploaded OK");
+      } catch (err) {
+        console.warn(
+          "[canvas-editor] thumbnail generation/upload failed:",
+          err,
+        );
+      }
+    }, THUMBNAIL_DEBOUNCE_MS);
+  }, [excalidrawApi, projectId]);
 
+  const publishSelection = useCallback(
+    (elements: readonly ExcalidrawElement[], appState: AppState) => {
       // --- 3. Selection change detection ---
       // Cheap string comparison avoids unnecessary downstream re-renders.
       const selectedIds = appState.selectedElementIds
@@ -570,8 +637,12 @@ export function CanvasEditor({
             .join(",")
         : "";
 
-      if (selectedIds !== prevSelectedIdsRef.current) {
-        prevSelectedIdsRef.current = selectedIds;
+      const selectionKey = JSON.stringify([
+        selectedIds,
+        canvasSceneState.version,
+      ]);
+      if (selectionKey !== prevSelectedIdsRef.current) {
+        prevSelectedIdsRef.current = selectionKey;
         if (onSelectionChangeRef.current) {
           if (!selectedIds) {
             onSelectionChangeRef.current([]);
@@ -615,7 +686,26 @@ export function CanvasEditor({
         }
       }
     },
-    [projectId, buildKnownFiles, excalidrawApi, saveCanvasContent],
+    [canvasSceneState, excalidrawApi],
+  );
+
+  const handleChange = useCallback(
+    (elements: readonly ExcalidrawElement[], appState: AppState) => {
+      // 初始化与远端应用不产生本地保存；视口/选区更新仍发布真实上下文。
+      if (!hydratedRef.current) return;
+      const sceneChanged =
+        !remoteApplyingRef.current &&
+        canvasSceneState.observe({
+          elements,
+          appState: canvasDocumentSettings(appState),
+        });
+      if (sceneChanged) {
+        queueSceneSave(elements, appState);
+        queueThumbnail();
+      }
+      publishSelection(elements, appState);
+    },
+    [canvasSceneState, publishSelection, queueSceneSave, queueThumbnail],
   );
 
   // Register screenshot RPC handler so the server can request canvas captures
@@ -724,10 +814,7 @@ export function CanvasEditor({
       const files = buildKnownFiles(rawFiles);
       return {
         elements: sceneElements.filter((el) => !el.isDeleted),
-        appState: {
-          viewBackgroundColor: appState.viewBackgroundColor,
-          gridModeEnabled: appState.gridModeEnabled,
-        },
+        appState: canvasDocumentSettings(appState),
         files,
       };
     } catch (err) {
@@ -771,12 +858,18 @@ export function CanvasEditor({
 
   const prepareAssetOperation = useCallback(async () => {
     const outcome = await saveNowRef.current();
-    if (outcome !== "saved") return null;
+    if (
+      outcome === "error" ||
+      !hydratedRef.current ||
+      canvasSceneState.isDirty ||
+      !canvasSaveSession.isIdle
+    )
+      return null;
     const currentRevision = canvasSaveSession.revision;
     if (!currentRevision) return null;
     onRevisionChanged?.(currentRevision);
     return currentRevision;
-  }, [canvasSaveSession, onRevisionChanged]);
+  }, [canvasSaveSession, canvasSceneState, onRevisionChanged]);
 
   useEffect(() => {
     onPrepareAssetOperation?.(prepareAssetOperation);

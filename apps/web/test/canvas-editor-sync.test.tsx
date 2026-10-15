@@ -16,6 +16,14 @@ const mocks = vi.hoisted(() => ({
   saveCanvas: vi.fn(),
   serverFetch: vi.fn(),
   updateScene: vi.fn(),
+  appState: {
+    viewBackgroundColor: "#fff",
+    gridModeEnabled: false,
+    scrollX: 0,
+    scrollY: 0,
+    zoom: { value: 1 },
+    selectedElementIds: {} as Record<string, boolean>,
+  },
 }));
 
 vi.mock("next-themes", () => ({
@@ -47,10 +55,7 @@ vi.mock("next/dynamic", async () => {
         const api = React.useMemo(
           () => ({
             addFiles: mocks.addFiles,
-            getAppState: () => ({
-              viewBackgroundColor: "#fff",
-              gridModeEnabled: false,
-            }),
+            getAppState: () => mocks.appState,
             getFiles: () => mocks.files,
             getSceneElements: () => mocks.elements,
             updateScene: mocks.updateScene,
@@ -70,12 +75,7 @@ vi.mock("next/dynamic", async () => {
           "button",
           {
             "data-testid": "mock-excalidraw",
-            onClick: () =>
-              mocks.onChange?.(mocks.elements, {
-                selectedElementIds: {},
-                viewBackgroundColor: "#fff",
-                gridModeEnabled: false,
-              }),
+            onClick: () => mocks.onChange?.(mocks.elements, mocks.appState),
             type: "button",
           },
           "Canvas",
@@ -125,6 +125,25 @@ describe("CanvasEditor remote snapshot sync", () => {
     vi.useFakeTimers();
     mocks.addFiles.mockReset();
     mocks.updateScene.mockReset();
+    mocks.appState = {
+      viewBackgroundColor: "#fff",
+      gridModeEnabled: false,
+      scrollX: 0,
+      scrollY: 0,
+      zoom: { value: 1 },
+      selectedElementIds: {},
+    };
+    mocks.updateScene.mockImplementation(
+      (update: {
+        elements?: Array<Record<string, unknown>>;
+        appState?: Partial<typeof mocks.appState>;
+      }) => {
+        if (update.elements) mocks.elements = update.elements;
+        if (update.appState)
+          mocks.appState = { ...mocks.appState, ...update.appState };
+        mocks.onChange?.(mocks.elements, mocks.appState);
+      },
+    );
     mocks.elements = [baseElement];
     mocks.files = {};
     mocks.onChange = null;
@@ -182,6 +201,28 @@ describe("CanvasEditor remote snapshot sync", () => {
     );
   });
 
+  it("applies a snapshot received before editor hydration finishes", async () => {
+    render(
+      <CanvasEditor
+        {...editorProps({
+          remoteSnapshot: {
+            revision: "revision-early",
+            content: {
+              ...baseContent,
+              elements: [{ ...baseElement, id: "early-remote" }],
+            },
+          },
+        })}
+      />,
+    );
+    await finishHydration();
+    await act(async () => {});
+    expect(mocks.elements).toEqual([
+      expect.objectContaining({ id: "early-remote" }),
+    ]);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("keeps a dirty local draft and does not apply the remote scene", async () => {
     const view = render(<CanvasEditor {...editorProps()} />);
     await finishHydration();
@@ -209,6 +250,198 @@ describe("CanvasEditor remote snapshot sync", () => {
     expect(mocks.elements).toEqual([
       expect.objectContaining({ id: "local-draft" }),
     ]);
+  });
+
+  it("adopts remote content after viewport and selection changes while preserving both", async () => {
+    const selection = vi.fn();
+    const view = render(
+      <CanvasEditor {...editorProps({ onSelectionChange: selection })} />,
+    );
+    await finishHydration();
+    mocks.updateScene.mockClear();
+    mocks.appState = {
+      ...mocks.appState,
+      scrollX: -123,
+      scrollY: 45,
+      zoom: { value: 0.5 },
+      selectedElementIds: { "element-1": true },
+    };
+    fireEvent.click(screen.getByTestId("mock-excalidraw"));
+    view.rerender(
+      <CanvasEditor
+        {...editorProps({
+          onSelectionChange: selection,
+          remoteSnapshot: {
+            revision: "revision-remote",
+            content: { ...baseContent, elements: [{ ...baseElement, x: 40 }] },
+          },
+        })}
+      />,
+    );
+    await act(async () => {});
+    expect(mocks.updateScene).toHaveBeenCalledWith(
+      expect.objectContaining({
+        elements: [expect.objectContaining({ id: "element-1", x: 40 })],
+      }),
+    );
+    expect(mocks.appState).toMatchObject({
+      scrollX: -123,
+      scrollY: 45,
+      zoom: { value: 0.5 },
+      selectedElementIds: { "element-1": true },
+    });
+    expect(selection).toHaveBeenLastCalledWith([
+      expect.objectContaining({ id: "element-1", x: 40 }),
+    ]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(mocks.saveCanvas).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("acknowledges the saved scene so later remote changes can continue", async () => {
+    const view = render(<CanvasEditor {...editorProps()} />);
+    await finishHydration();
+    mocks.elements = [{ ...baseElement, id: "saved-local" }];
+    fireEvent.click(screen.getByTestId("mock-excalidraw"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(mocks.saveCanvas).toHaveBeenCalledOnce();
+    mocks.updateScene.mockClear();
+    view.rerender(
+      <CanvasEditor
+        {...editorProps({
+          remoteSnapshot: {
+            revision: "revision-after-save",
+            content: {
+              ...baseContent,
+              elements: [{ ...baseElement, id: "remote-later" }],
+            },
+          },
+        })}
+      />,
+    );
+    await act(async () => {});
+    expect(mocks.elements).toEqual([
+      expect.objectContaining({ id: "remote-later" }),
+    ]);
+    expect(mocks.updateScene).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("waits for the in-flight save before applying a later remote revision", async () => {
+    let completeSave: ((value: CanvasSaveResponse) => void) | undefined;
+    mocks.saveCanvas.mockImplementationOnce(
+      () =>
+        new Promise<CanvasSaveResponse>((resolve) => {
+          completeSave = resolve;
+        }),
+    );
+    const view = render(<CanvasEditor {...editorProps()} />);
+    await finishHydration();
+    mocks.elements = [{ ...baseElement, id: "saving-local" }];
+    fireEvent.click(screen.getByTestId("mock-excalidraw"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    mocks.updateScene.mockClear();
+    view.rerender(
+      <CanvasEditor
+        {...editorProps({
+          remoteSnapshot: {
+            revision: "revision-after-save",
+            content: {
+              ...baseContent,
+              elements: [{ ...baseElement, id: "remote-later" }],
+            },
+          },
+        })}
+      />,
+    );
+    await act(async () => {});
+    expect(mocks.updateScene).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+    await act(async () => {
+      completeSave?.({ ok: true, revision: "revision-2", fileReferences: {} });
+    });
+    expect(mocks.elements).toEqual([
+      expect.objectContaining({ id: "remote-later" }),
+    ]);
+    expect(mocks.updateScene).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("does not acknowledge edits made after a save was submitted", async () => {
+    let completeSave: ((value: CanvasSaveResponse) => void) | undefined;
+    mocks.saveCanvas.mockImplementationOnce(
+      () =>
+        new Promise<CanvasSaveResponse>((resolve) => {
+          completeSave = resolve;
+        }),
+    );
+    const view = render(<CanvasEditor {...editorProps()} />);
+    await finishHydration();
+    mocks.elements = [{ ...baseElement, id: "submitted-local" }];
+    fireEvent.click(screen.getByTestId("mock-excalidraw"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    mocks.elements = [{ ...baseElement, id: "newer-unsaved-local" }];
+    fireEvent.click(screen.getByTestId("mock-excalidraw"));
+    await act(async () => {
+      completeSave?.({ ok: true, revision: "revision-2", fileReferences: {} });
+    });
+    mocks.updateScene.mockClear();
+    view.rerender(
+      <CanvasEditor
+        {...editorProps({
+          remoteSnapshot: {
+            revision: "revision-after-save",
+            content: baseContent,
+          },
+        })}
+      />,
+    );
+    await act(async () => {});
+    expect(mocks.updateScene).not.toHaveBeenCalled();
+    expect(mocks.elements).toEqual([
+      expect.objectContaining({ id: "newer-unsaved-local" }),
+    ]);
+    expect(screen.getByRole("alert").textContent).toContain("当前草稿已保留");
+    expect(mocks.saveCanvas.mock.calls[0]?.[2].elements).toEqual([
+      expect.objectContaining({ id: "submitted-local" }),
+    ]);
+  });
+
+  it("ignores a replay of a known old revision without rolling back the saved scene", async () => {
+    const handled = vi.fn();
+    const view = render(
+      <CanvasEditor {...editorProps({ onRemoteSnapshotHandled: handled })} />,
+    );
+    await finishHydration();
+    mocks.elements = [{ ...baseElement, id: "saved-local" }];
+    fireEvent.click(screen.getByTestId("mock-excalidraw"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    mocks.updateScene.mockClear();
+    view.rerender(
+      <CanvasEditor
+        {...editorProps({
+          onRemoteSnapshotHandled: handled,
+          remoteSnapshot: { revision: "revision-1", content: baseContent },
+        })}
+      />,
+    );
+    await act(async () => {});
+    expect(mocks.updateScene).not.toHaveBeenCalled();
+    expect(mocks.elements).toEqual([
+      expect.objectContaining({ id: "saved-local" }),
+    ]);
+    expect(handled).toHaveBeenCalledWith("revision-1");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("flushes the current draft and exposes the new CAS revision for asset operations", async () => {
