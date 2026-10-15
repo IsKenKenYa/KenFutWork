@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import Fastify from "fastify";
 import { expect, it, vi } from "vitest";
 import type { DesignGoalsService } from "../features/execution/design-goals-types.js";
+import { projectDesignGoal } from "../features/execution/design-goals.js";
 import { DesignTaskError } from "../features/execution/design-task-errors.js";
 import { createGoalService } from "../features/goals/service.js";
 import { registerDesignGoalRoutes } from "./design-goals.js";
@@ -78,7 +79,7 @@ async function fixture() {
   await registerDesignGoalRoutes(app, {
     localAccess: { authenticate: async () => (authenticated ? actor : null) },
     designGoals: {
-      readTask: async () => goal,
+      readTask: async () => projectDesignGoal(goal),
       create,
       pause,
       resume,

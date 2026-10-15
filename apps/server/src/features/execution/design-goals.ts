@@ -39,6 +39,20 @@ type EvidenceRow = SqlRow & {
   detail: string;
   status: string;
 };
+/** 旧Design公开契约不携带内部Run成员、独立评估或验收轮次账本。 */
+export function projectDesignGoal(state: GoalRecord): GoalRecord {
+  const visible = structuredClone(state);
+  delete visible.evaluation;
+  delete visible.runs;
+  if (visible.verification) {
+    delete visible.verification.iteration;
+    for (const proof of visible.verification.evidence) {
+      delete proof.sourceRunId;
+      delete proof.tool;
+    }
+  }
+  return visible;
+}
 const at = () => Date.now();
 const conflict = () =>
   new DesignTaskError(
@@ -406,9 +420,7 @@ export function createDesignGoals(options: {
       await localInstance.resolve(actor);
       return mutate(actor, taskId, async (_sql, _task, row) => {
         if (!row) return null;
-        const visible = structuredClone(row.state);
-        delete visible.evaluation;
-        return visible;
+        return projectDesignGoal(row.state);
       });
     },
     async create(actor, input) {

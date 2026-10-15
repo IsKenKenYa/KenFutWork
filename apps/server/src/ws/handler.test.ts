@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -56,8 +57,12 @@ async function makeStubs() {
           };
         }
         if (prop === "remove") {
-          return (connectionId: string) => {
-            sockets.delete(connectionId);
+          return (
+            connectionId: string,
+            expectedSocket?: { readyState: number; send: (d: string) => void },
+          ) => {
+            if (!expectedSocket || sockets.get(connectionId) === expectedSocket)
+              sockets.delete(connectionId);
           };
         }
         if (prop === "sendTo") {
@@ -195,7 +200,7 @@ async function sendImmediatelyOnOpen(
   headers: LocalAccessRequest["headers"],
 ): Promise<{ got: string | null }> {
   const client = new WebSocket(
-    `ws://127.0.0.1:${port}/api/ws?connectionId=c-${Date.now()}`,
+    `ws://127.0.0.1:${port}/api/ws?connectionId=c-${randomUUID()}`,
     { headers },
   );
   const got = await new Promise<string | null>((resolve) => {
@@ -225,7 +230,7 @@ async function collectMessages(
   count: number,
 ): Promise<string[]> {
   const client = new WebSocket(
-    `ws://127.0.0.1:${port}/api/ws?connectionId=c-flow-${Date.now()}`,
+    `ws://127.0.0.1:${port}/api/ws?connectionId=c-flow-${randomUUID()}`,
     { headers },
   );
   const collected = await new Promise<string[]>((resolve) => {

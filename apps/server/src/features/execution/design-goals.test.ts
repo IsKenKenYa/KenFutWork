@@ -386,6 +386,15 @@ it("persisted current Run text can verify a text result with revision and owners
   expect(f.state()?.status).toBe("active");
   const verified = await f.service.verify(f.context, input);
   expect(verified.status).toBe("complete");
+  const publicGoal = await f.service.readTask(f.actor, "task");
+  expect(designGoalSchema.safeParse(publicGoal).success).toBe(true);
+  expect(publicGoal).not.toHaveProperty("runs");
+  expect(publicGoal).not.toHaveProperty("evaluation");
+  expect(publicGoal?.verification).not.toHaveProperty("iteration");
+  expect(f.state()?.verification?.iteration).toBe(1);
+  expect(f.state()?.runs).toEqual([
+    { runId: "run", branchGeneration: 1, iteration: 1 },
+  ]);
   expect(verified.verification?.evidence).toEqual([
     {
       sourceId: "assistant:run/answer",
@@ -560,7 +569,11 @@ it.each(["rejected", "invalid", "pause", "budget", "scope", "branch"])(
         expect(f.state()?.status).toBe("verifying");
         const visible = await f.service.readTask(f.actor, "task");
         expect(visible).not.toHaveProperty("evaluation");
+        expect(visible).not.toHaveProperty("runs");
         expect(designGoalSchema.safeParse(visible).success).toBe(true);
+        expect(f.state()?.runs).toEqual([
+          { runId: "run", branchGeneration: 1, iteration: 1 },
+        ]);
         expect(f.state()?.evaluation?.evidence).toEqual([
           expect.objectContaining({ detail: "Report" }),
         ]);
