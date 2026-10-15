@@ -531,6 +531,63 @@ it("生成编辑的Enter提交当前输入，中文候选确认不提交", async
   }
 });
 
+it("图片能力编辑保存画幅尺寸质量格式及多图上限，不物化未知能力", async () => {
+  const { client, savedModels } = renderOriginalCard(async () => {}, {
+    id: "c0a03eb2-d58c-4637-9fda-c796230a751a",
+    name: "图片连接",
+    scope: "local",
+    protocol: "openai-compatible",
+    hasCredential: true,
+    configRevision: 7,
+    enabled: true,
+    headerKeys: [],
+    models: [{ id: "image", name: "图片模型", capability: "image" }],
+  });
+  try {
+    await userEvent.click(
+      await screen.findByRole("button", { name: "编辑模型配置" }),
+    );
+    await userEvent.type(screen.getByLabelText("画幅"), "1:1,16:9");
+    await userEvent.type(screen.getByLabelText("尺寸"), "1024x1024,1536x1024");
+    await userEvent.type(screen.getByLabelText("质量"), "auto,high");
+    await userEvent.type(screen.getByLabelText("输出格式"), "png,gif");
+    await userEvent.click(screen.getByRole("button", { name: "保存" }));
+    await screen.findByText("输出格式仅支持 png、jpg 或 webp。");
+    expect(savedModels).toEqual([]);
+    expect(screen.getByLabelText("输出格式")).toHaveProperty(
+      "value",
+      "png,gif",
+    );
+    await userEvent.clear(screen.getByLabelText("输出格式"));
+    await userEvent.type(screen.getByLabelText("输出格式"), "png,webp");
+    await userEvent.type(screen.getByLabelText("单次多图上限"), "4");
+    await userEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() =>
+      expect(savedModels).toEqual([
+        {
+          providerId: "c0a03eb2-d58c-4637-9fda-c796230a751a",
+          originalModelId: "image",
+          expectedRevision: 7,
+          model: {
+            id: "image",
+            name: "图片模型",
+            capability: "image",
+            imageGeneration: {
+              aspectRatios: ["1:1", "16:9"],
+              sizes: ["1024x1024", "1536x1024"],
+              qualities: ["auto", "high"],
+              outputFormats: ["png", "webp"],
+              maxOutputs: 4,
+            },
+          },
+        },
+      ]),
+    );
+  } finally {
+    await act(async () => client.dispose());
+  }
+});
+
 it("原供应商卡片只显示真实凭证 presence，替换后清本次草稿，明确清除发送 null", async () => {
   const { client, savedKeys } = renderOriginalCard();
   try {
