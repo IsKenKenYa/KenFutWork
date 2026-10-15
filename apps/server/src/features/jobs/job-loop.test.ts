@@ -67,7 +67,16 @@ async function pollBudgetFixture(steps: ExecutorStep[]) {
         claimJob: async () => ({ status: "running" }),
         renewLease: async () => true,
         releaseLease: async () => {},
-        getJobForWorker: async () => ({ status }),
+        getJobForWorker: async () => ({
+          status,
+          payload: {},
+          provider_job_id: "cloud-test",
+          attempt_count: attempts,
+        }),
+        retryJob: async () => {
+          await markFailed();
+          await queue.send(queueName, message);
+        },
         incrementAttempt,
         markRunning: async () => {
           status = "running";

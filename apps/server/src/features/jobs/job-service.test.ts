@@ -264,12 +264,14 @@ function createFakeRepository(
   overrides: Partial<JobRepository> = {},
 ): JobRepository {
   return {
+    retry: async () => 1,
+    markUncertain: async () => 1,
+    saveExecution: async () => 1,
     cancel: async () => JOB_ROW,
     countActive: async () => 0,
     delete: async () => 1,
     findById: async () => JOB_ROW,
     findByIdInInstance: async () => JOB_ROW,
-    saveExecution: async () => 1,
     takeWakeups: async () => [],
     schedule: async () => 1,
     claim: async () => null,

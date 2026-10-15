@@ -15,7 +15,11 @@ import type {
 import type { QueueClient } from "../queue/types.js";
 import type { UploadService } from "../uploads/upload-service.js";
 import { JobInputError, persistJobInputs } from "./job-inputs.js";
-import type { JobExecution, JobExecutionWrite } from "./job-progress.js";
+import type {
+  JobExecution,
+  JobExecutionWrite,
+  JobRetry,
+} from "./job-progress.js";
 import {
   type BackgroundJobRecord,
   type JobRepository,
@@ -66,6 +70,8 @@ export type CreateJobInput = {
 };
 
 export type JobService = {
+  retryJob(jobId: string, input: JobRetry, token: string): Promise<void>;
+  markUncertain(jobId: string, message: string, token: string): Promise<void>;
   saveExecution(
     jobId: string,
     execution: JobExecution,
@@ -231,6 +237,26 @@ export function createJobService(options: {
   }
 
   return {
+    async retryJob(jobId, input, token) {
+      assertLeaseWrite(await repository.retry(jobId, input, token), token);
+      const job = await repository.findById(jobId);
+      if (!job) return;
+      try {
+        await queue.send(
+          job.queue_name,
+          { job_id: jobId, job_type: job.job_type },
+          input.delaySeconds,
+        );
+      } catch (error) {
+        console.error("[job-service] retry wakeup failed:", error);
+      }
+    },
+    async markUncertain(jobId, message, token) {
+      assertLeaseWrite(
+        await repository.markUncertain(jobId, message, token),
+        token,
+      );
+    },
     async saveExecution(jobId, execution, write = {}) {
       assertLeaseWrite(
         await repository.saveExecution(jobId, execution, write),

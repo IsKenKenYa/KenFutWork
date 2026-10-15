@@ -4,6 +4,7 @@ import type { BackgroundJob, BackgroundJobType } from "@kenfutwork/shared";
 import type { ServerEnv } from "../../config/env.js";
 import { type QueueClient, QueueClosedError } from "../queue/types.js";
 import { type ExecutorContext, getExecutor } from "./job-executor.js";
+import { classifyJobFailure } from "./job-failure.js";
 import { createLeasedContext } from "./job-lease.js";
 import { JobServiceError } from "./job-service.js";
 
@@ -36,7 +37,7 @@ const VT_BY_QUEUE: Record<string, number> = {
 /** 除逐消息字段（queueName/msgId/renewVt）外的执行上下文。 */
 export type JobLoopContext = Omit<
   ExecutorContext,
-  "msgId" | "queueName" | "renewVt"
+  "msgId" | "queueName" | "renewVt" | "retryBaseDelayMs"
 > & { env: ServerEnv };
 
 export type JobLoopHandle = {
@@ -129,6 +130,7 @@ export function startJobLoop(
               ...ctx,
               queueName,
               msgId: msg.msg_id,
+              retryBaseDelayMs: pollTimeoutSeconds * 1000,
               renewVt: async (vtSeconds) => {
                 try {
                   await ctx.queue.setVisibilityTimeout(
@@ -279,7 +281,6 @@ async function handleExecutionFailure(
   tag: string,
   startTime: number,
 ) {
-  const errorMessage = err instanceof Error ? err.message : String(err);
   const errorCode = (err as { code?: string })?.code ?? "executor_error";
 
   if (errorCode === "job_lease_lost") return;
@@ -294,38 +295,40 @@ async function handleExecutionFailure(
     return;
   }
 
-  // 查询尚未完成是正常进度；只有真实失败才消耗重试预算。
+  const current = await ctx.jobService.getJobForWorker(jobId);
+  const policy = classifyJobFailure(
+    current,
+    err,
+    current.attempt_count + 1,
+    ctx.retryBaseDelayMs,
+  );
+  if (policy.kind === "uncertain") {
+    await ctx.jobService.markUncertain(jobId, policy.message, token);
+    await ctx.queue.archive(ctx.queueName, ctx.msgId);
+    return;
+  }
   const { attempt_count, max_attempts } = await ctx.jobService.incrementAttempt(
     jobId,
     token,
   );
-
-  // 不可重试的错误：同输入重试必然再失败，直接死信，让调用方快速拿到反馈
-  const NON_RETRYABLE_CODES = new Set([
-    "invalid_input",
-    "model_not_found",
-    "provider_not_found",
-    "safety_filter",
-    // 厂商明确失败 / 绝对超时 / 跨修订拒绝：同输入重试必然再失败
-    "provider_task_failed",
-    "video_job_timeout",
-    "provider_config_stale",
-  ]);
-  const shouldDeadLetter =
-    attempt_count >= max_attempts || NON_RETRYABLE_CODES.has(errorCode);
-
-  if (shouldDeadLetter) {
-    await ctx.jobService.markDeadLetter(jobId, errorCode, errorMessage, token);
-    await ctx.queue.archive(ctx.queueName, ctx.msgId);
-
-    console.error(
-      `${tag} Job ${jobId} dead-lettered after ${attempt_count} attempts +${Date.now() - startTime}ms: ${errorMessage}`,
+  if (policy.kind === "terminal" || attempt_count >= max_attempts) {
+    await ctx.jobService.markDeadLetter(
+      jobId,
+      policy.code,
+      policy.message,
+      token,
     );
   } else {
-    await ctx.jobService.markFailed(jobId, errorCode, errorMessage, token);
-    // 消息在可见性超时后重新可见，走重试
-    console.warn(
-      `${tag} Job ${jobId} failed (attempt ${attempt_count}/${max_attempts}) +${Date.now() - startTime}ms: ${errorMessage}`,
+    await ctx.jobService.retryJob(
+      jobId,
+      {
+        errorCode: policy.code,
+        errorMessage: policy.message,
+        delaySeconds: policy.delaySeconds,
+        ...(policy.execution ? { execution: policy.execution } : {}),
+      },
+      token,
     );
   }
+  await ctx.queue.archive(ctx.queueName, ctx.msgId);
 }

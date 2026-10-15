@@ -39,3 +39,10 @@ export function readJobExecution(job: BackgroundJob): JobExecution {
     },
   );
 }
+
+export type JobRetry = {
+  errorCode: string;
+  errorMessage: string;
+  delaySeconds: number;
+  execution?: JobExecution;
+};

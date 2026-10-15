@@ -1,7 +1,11 @@
 import type { GenerationFileTarget } from "@kenfutwork/shared";
 import { assertGenerationOriginForInsert } from "../generation/file-target-lock.js";
 import type { PersistenceService } from "../persistence/types.js";
-import type { JobExecution, JobExecutionWrite } from "./job-progress.js";
+import type {
+  JobExecution,
+  JobExecutionWrite,
+  JobRetry,
+} from "./job-progress.js";
 
 export class JobRequestConflictError extends Error {
   constructor() {
@@ -67,6 +71,8 @@ export type JobListFilters = {
  *   与「实例隔离」不冲突（拿不到实例就无法用实例谓词）。
  */
 export interface JobRepository {
+  retry(jobId: string, input: JobRetry, token: string): Promise<number>;
+  markUncertain(jobId: string, message: string, token: string): Promise<number>;
   saveExecution(
     jobId: string,
     execution: JobExecution,
@@ -158,6 +164,29 @@ export function createJobRepository(
   persistence: PersistenceService,
 ): JobRepository {
   return {
+    async retry(jobId, input, token) {
+      return persistence.execute(
+        `update public.background_jobs set status='queued',error_code=$2,error_message=$3,failed_at=now(),
+           next_action_at=now()+$4*interval '1 second',wakeup_at=now()+$4*interval '1 second',
+           payload=case when $5::jsonb is null then payload else payload||jsonb_build_object('_generation_execution',$5::jsonb) end
+         where id=$1 and status='running' ${leaseGuard(6)}`,
+        [
+          jobId,
+          input.errorCode,
+          input.errorMessage,
+          input.delaySeconds,
+          input.execution ? JSON.stringify(input.execution) : null,
+          token,
+        ],
+      );
+    },
+    async markUncertain(jobId, message, token) {
+      return persistence.execute(
+        `update public.background_jobs set status='failed',error_code='submission_unknown',error_message=$2,failed_at=now()
+         where id=$1 and status='running' ${leaseGuard(3)}`,
+        [jobId, message, token],
+      );
+    },
     async saveExecution(jobId, execution, options) {
       return persistence.execute(
         `update public.background_jobs set

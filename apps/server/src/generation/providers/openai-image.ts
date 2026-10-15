@@ -8,6 +8,7 @@ import type {
 import {
   aspectRatioToDimensions,
   GenerationError,
+  generationHttpError,
   readGeneratedImage,
 } from "../utils.js";
 
@@ -145,12 +146,13 @@ export class OpenAIImageProvider implements ImageProvider {
 
     if (!response.ok) {
       const errorBody = (await response.json().catch(() => null)) as {
-        error?: { message?: string };
+        error?: { message?: string; code?: string };
       } | null;
-      throw new GenerationError(
+      throw generationHttpError(
         "openai",
-        "api_error",
+        response,
         `OpenAI edits error ${response.status}: ${errorBody?.error?.message ?? "Unknown error"}`,
+        errorBody?.error?.code,
       );
     }
 
@@ -186,6 +188,13 @@ export class OpenAIImageProvider implements ImageProvider {
         "openai",
         "api_error",
         error instanceof Error ? error.message : "Unknown OpenAI error",
+        error instanceof OpenAI.APIError
+          ? {
+              status: error.status,
+              retryAfter: error.headers?.get("retry-after"),
+              upstreamCode: error.code,
+            }
+          : {},
       );
     }
   }
