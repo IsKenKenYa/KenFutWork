@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createLocalFsBlobStore } from "../blob/providers/local-fs.js";
 import { createScopeRepository } from "../execution/scope-repository.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import { createGenerationTargets } from "../generation/file-targets.js";
 import { createInProcessQueue } from "../queue/providers/in-process.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
+import { createUploadRepository } from "../uploads/repository.js";
+import {
+  createUploadService,
+  type UploadService,
+} from "../uploads/upload-service.js";
 import { createJobService } from "./job-service.js";
 import { createJobRepository } from "./repository.js";
 
@@ -18,9 +24,10 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
     afterAll(async () => {
       await db?.close();
     });
-    function fixture() {
+    function fixture(uploads?: UploadService) {
       const queue = createInProcessQueue();
       const jobs = createJobService({
+        ...(uploads ? { uploads } : {}),
         queue,
         localInstance: db.localInstance,
         repository: createJobRepository(db.persistence),
@@ -34,6 +41,85 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
       });
       return { jobs, queue };
     }
+
+    it("参考图持久保存为素材引用，Job不保存base64", async () => {
+      const uploads = createUploadService({
+        blob: createLocalFsBlobStore({
+          rootDir: `${db.directory}/media-inputs`,
+          signingSecret: "media-input-test",
+          publicBaseUrl: "http://127.0.0.1",
+        }),
+        repository: createUploadRepository(db.persistence),
+        localInstance: db.localInstance,
+      });
+      const { jobs, queue } = fixture(uploads);
+      try {
+        const source =
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2Z0AAAAASUVORK5CYII=";
+        const accepted = await jobs.createJob(db.actor, {
+          requestId: randomUUID(),
+          jobType: "image_generation",
+          payload: { prompt: "猫", input_images: [source] },
+        });
+        const stored = await jobs.getJob(db.actor, accepted.id);
+        expect(stored.payload.input_images).toEqual([
+          expect.stringMatching(/^asset:\/\//),
+        ]);
+        expect(JSON.stringify(stored.payload)).not.toContain("base64,");
+        const sources = stored.payload.input_images;
+        if (!Array.isArray(sources) || typeof sources[0] !== "string")
+          throw new Error("参考素材未保存");
+        const reference = sources[0];
+        expect(
+          await uploads.getAssetUrl(
+            db.actor,
+            reference.slice("asset://".length),
+          ),
+        ).toMatch(/^http:\/\/127\.0\.0\.1/);
+      } finally {
+        await queue.shutdown();
+      }
+    });
+
+    it("完成后重放先返回原回执，不重新读取已删除的参考素材", async () => {
+      const uploads = createUploadService({
+        blob: createLocalFsBlobStore({
+          rootDir: `${db.directory}/deleted-inputs`,
+          signingSecret: "media-input-test",
+          publicBaseUrl: "http://127.0.0.1",
+        }),
+        repository: createUploadRepository(db.persistence),
+        localInstance: db.localInstance,
+      });
+      const { jobs, queue } = fixture(uploads);
+      try {
+        const asset = await uploads.uploadFile(db.actor, {
+          bucket: "project-assets",
+          fileName: "reference.png",
+          mimeType: "image/png",
+          fileBuffer: Buffer.from("reference"),
+        });
+        const input = {
+          requestId: randomUUID(),
+          jobType: "image_generation" as const,
+          payload: {
+            prompt: "猫",
+            input_images: [`asset://${asset.asset.id}`],
+          },
+        };
+        const original = await jobs.createJob(db.actor, input);
+        await jobs.markSucceeded(original.id, {
+          signed_url: "https://assets.example/result.png",
+        });
+        await uploads.deleteAsset(db.actor, asset.asset.id);
+        expect(await jobs.createJob(db.actor, input)).toMatchObject({
+          id: original.id,
+          status: "succeeded",
+        });
+      } finally {
+        await queue.shutdown();
+      }
+    });
 
     it("同一请求并发重放只创建并投递一个Job", async () => {
       const { jobs, queue } = fixture();

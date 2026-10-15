@@ -1,5 +1,6 @@
 import type { BackgroundJob } from "@kenfutwork/shared";
 import { type ExecutorContext, registerExecutor } from "../job-executor.js";
+import { resolveJobMediaInputs } from "../job-inputs.js";
 import { publishGeneratedFile } from "./generated-file.js";
 import { resolveInstanceVideoProviderFromPayload } from "./instance-provider.js";
 
@@ -101,6 +102,7 @@ registerExecutor(
       );
     }
     const providerName = instance.provider.name;
+    const references = await resolveJobMediaInputs(jobRow, ctx.uploads);
 
     const startAsync = instance.provider.startAsync;
     const pollAsync = instance.provider.pollAsync;
@@ -183,10 +185,7 @@ registerExecutor(
           ? { resolution: payload.resolution as "480p" | "720p" | "1080p" }
           : {}),
         ...(payload.aspect_ratio ? { aspectRatio: payload.aspect_ratio } : {}),
-        ...(payload.input_images?.length
-          ? { inputImages: payload.input_images }
-          : {}),
-        ...(payload.input_video ? { inputVideo: payload.input_video } : {}),
+        ...references,
         ...(payload.enable_audio != null
           ? { enableAudio: payload.enable_audio }
           : {}),
@@ -221,10 +220,7 @@ registerExecutor(
           ? { resolution: payload.resolution as "480p" | "720p" | "1080p" }
           : {}),
         ...(payload.aspect_ratio ? { aspectRatio: payload.aspect_ratio } : {}),
-        ...(payload.input_images?.length
-          ? { inputImages: payload.input_images }
-          : {}),
-        ...(payload.input_video ? { inputVideo: payload.input_video } : {}),
+        ...references,
         ...(payload.enable_audio != null
           ? { enableAudio: payload.enable_audio }
           : {}),

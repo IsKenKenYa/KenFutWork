@@ -6,10 +6,12 @@ import type { ModelProviderService } from "../model-providers/model-provider-ser
 import type { ProjectFileService } from "../project-files/types.js";
 import type { QueueClient } from "../queue/types.js";
 import type { AssetWriter } from "../uploads/asset-writer.js";
+import type { UploadService } from "../uploads/upload-service.js";
 import type { UsageService } from "../usage/usage-service.js";
 import type { JobService } from "./job-service.js";
 
 export type ExecutorContext = {
+  uploads?: Pick<UploadService, "getAssetUrl">;
   projectFiles: ProjectFileService;
   generationTargets: GenerationTargets;
   jobService: JobService;

@@ -14,6 +14,7 @@ export function createJobLoopPlugin(options: {
     enabled: options.enabled,
     inject: [
       "assetWriter",
+      "uploads",
       "blob",
       "jobs",
       "modelProviders",
@@ -29,6 +30,7 @@ export function createJobLoopPlugin(options: {
           {
             env: ctx.env,
             assetWriter: ctx.get("assetWriter"),
+            uploads: ctx.get("uploads"),
             blob: ctx.get("blob"),
             jobService: ctx.get("jobs"),
             modelProviders: ctx.get("modelProviders"),

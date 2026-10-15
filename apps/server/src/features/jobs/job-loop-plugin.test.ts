@@ -20,6 +20,7 @@ beforeEach(() => {
 it("JobLoop使用同内核依赖只启动一次，get返回原handle，disposer关闭同一loop", async () => {
   const dependencies = {
     assetWriter: {},
+    uploads: {},
     blob: {},
     jobs: {},
     modelProviders: {},
@@ -41,6 +42,7 @@ it("JobLoop使用同内核依赖只启动一次，get返回原handle，disposer�
     {
       env,
       assetWriter: dependencies.assetWriter,
+      uploads: dependencies.uploads,
       blob: dependencies.blob,
       jobService: dependencies.jobs,
       modelProviders: dependencies.modelProviders,

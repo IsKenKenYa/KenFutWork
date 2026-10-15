@@ -13,6 +13,8 @@ import type {
   LocalInstanceService,
 } from "../local-instance/types.js";
 import type { QueueClient } from "../queue/types.js";
+import type { UploadService } from "../uploads/upload-service.js";
+import { JobInputError, persistJobInputs } from "./job-inputs.js";
 import {
   type BackgroundJobRecord,
   type JobRepository,
@@ -67,7 +69,11 @@ export type JobService = {
   getJob(actor: LocalActor, jobId: string): Promise<BackgroundJob>;
   listJobs(
     actor: LocalActor,
-    filters?: { status?: BackgroundJobStatus; jobType?: BackgroundJobType },
+    filters?: {
+      status?: BackgroundJobStatus;
+      jobType?: BackgroundJobType;
+      requestId?: string;
+    },
   ): Promise<BackgroundJob[]>;
   cancelJob(actor: LocalActor, jobId: string): Promise<BackgroundJob>;
   getJobForWorker(jobId: string): Promise<BackgroundJob>;
@@ -145,6 +151,7 @@ function mapJobRow(row: BackgroundJobRecord): BackgroundJob {
 export function createJobService(options: {
   /** 队列缝（M3.2）：投递与消费，Provider 随形态替换。 */
   queue: QueueClient;
+  uploads?: UploadService;
   generationTargets?: GenerationTargets;
   repository: JobRepository;
   /**
@@ -209,6 +216,36 @@ export function createJobService(options: {
         });
 
       const { requestId, requestIndex, ...request } = input;
+      const fingerprint = requestId
+        ? requestFingerprint({ ...request, fileTarget })
+        : undefined;
+      if (requestId) {
+        const existing = (
+          await repository.listForInstance(instanceId, { requestId })
+        ).find(
+          (row) =>
+            Number(row.payload?.request_index ?? 0) === (requestIndex ?? 0),
+        );
+        if (existing) {
+          if (existing.payload?.request_fingerprint !== fingerprint)
+            throw new JobServiceError(
+              "job_request_conflict",
+              "同一请求标识已用于其他生成参数，请重新提交。",
+              409,
+            );
+          return mapJobRow(existing);
+        }
+      }
+      const storedInputs = await persistJobInputs(
+        actor,
+        input.payload,
+        options.uploads,
+        input.projectId,
+      ).catch((error: unknown) => {
+        if (error instanceof JobInputError)
+          throw new JobServiceError("job_create_failed", error.message, 400);
+        throw error;
+      });
       const job = await repository
         .insert({
           ...(input.canvasId ? { canvasId: input.canvasId } : {}),
@@ -216,15 +253,12 @@ export function createJobService(options: {
           jobType: input.jobType,
           payload: requestId
             ? {
-                ...input.payload,
+                ...storedInputs.payload,
                 request_id: requestId,
                 request_index: requestIndex ?? 0,
-                request_fingerprint: requestFingerprint({
-                  ...request,
-                  fileTarget,
-                }),
+                request_fingerprint: fingerprint,
               }
-            : input.payload,
+            : storedInputs.payload,
           ...(input.projectId ? { projectId: input.projectId } : {}),
           queueName,
           ...(input.sessionId ? { sessionId: input.sessionId } : {}),
@@ -232,19 +266,24 @@ export function createJobService(options: {
           createdByClientId: actor.accessClientId,
           instanceId,
         })
-        .catch((error: unknown) => {
-          if (error instanceof JobRequestConflictError)
+        .catch(async (error: unknown) => {
+          if (error instanceof JobRequestConflictError) {
+            await storedInputs.discard();
             throw new JobServiceError(
               "job_request_conflict",
               error.message,
               409,
             );
-          if (error instanceof GenerationTargetError)
+          }
+          if (error instanceof GenerationTargetError) {
+            await storedInputs.discard();
             throw new JobServiceError(
               "job_create_failed",
               error.message,
               error.statusCode,
             );
+          }
+          // 回执不明时保留可能已被持久Job引用的输入，不能先删除字节。
           return null;
         });
 
@@ -256,7 +295,10 @@ export function createJobService(options: {
         );
       }
 
-      if (job.requestReplay) return mapJobRow(job);
+      if (job.requestReplay) {
+        await storedInputs.discard();
+        return mapJobRow(job);
+      }
 
       // 投递到队列缝 — 失败即回滚（不留孤儿 job 行）
       try {
@@ -306,6 +348,7 @@ export function createJobService(options: {
         .listForInstance(instanceId, {
           ...(filters?.jobType ? { jobType: filters.jobType } : {}),
           ...(filters?.status ? { status: filters.status } : {}),
+          ...(filters?.requestId ? { requestId: filters.requestId } : {}),
         })
         .catch(() => {
           throw new JobServiceError(

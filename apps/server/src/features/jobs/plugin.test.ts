@@ -26,6 +26,7 @@ describe("jobs 插件（enabled 条件装配）", () => {
         overrides: {
           localAccess: createConsumerLocalAccessService(),
           generationTargets: {} as never,
+          uploads: {} as never,
           persistence: {} as never,
           // jobs 插件经队列缝投递（M3.2）
           queue: {} as never,
@@ -58,6 +59,7 @@ describe("jobs 插件（enabled 条件装配）", () => {
       app,
       overrides: {
         generationTargets: {} as never,
+        uploads: {} as never,
         jobs: injected,
         localAccess: createConsumerLocalAccessService(),
         persistence: {} as never,

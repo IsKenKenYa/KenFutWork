@@ -1,6 +1,7 @@
 import type { BackgroundJob } from "@kenfutwork/shared";
 import type { GeneratedImage } from "../../../generation/types.js";
 import { type ExecutorContext, registerExecutor } from "../job-executor.js";
+import { resolveJobMediaInputs } from "../job-inputs.js";
 import { publishGeneratedFile } from "./generated-file.js";
 import { resolveInstanceImageProviderFromPayload } from "./instance-provider.js";
 
@@ -70,6 +71,7 @@ registerExecutor(
       throw wrapped;
     }
     const providerName = instanceProvider.name;
+    const references = await resolveJobMediaInputs(jobRow, ctx.uploads);
 
     // Renew VT every 60s (half of the 120s image queue VT) to prevent
     // the message from becoming visible while we are still processing.
@@ -100,9 +102,7 @@ registerExecutor(
           ...(payload.aspect_ratio !== undefined
             ? { aspectRatio: payload.aspect_ratio }
             : {}),
-          ...(payload.input_images?.length
-            ? { inputImages: payload.input_images }
-            : {}),
+          ...references,
         });
       } catch (genError) {
         const detail =

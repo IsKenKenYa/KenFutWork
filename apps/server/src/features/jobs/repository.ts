@@ -51,6 +51,7 @@ export type NewJobInput = {
 };
 
 export type JobListFilters = {
+  requestId?: string;
   jobType?: string | undefined;
   status?: string | undefined;
 };
@@ -194,7 +195,11 @@ export function createJobRepository(
         sql += ` and job_type = $${params.length}`;
       }
 
-      sql += ` order by created_at desc limit ${LIST_LIMIT}`;
+      if (filters.requestId) {
+        params.push(filters.requestId);
+        sql += ` and payload->>'request_id'=$${params.length}`;
+      }
+      sql += ` order by created_at desc${filters.requestId ? "" : ` limit ${LIST_LIMIT}`}`;
 
       return persistence
         .forInstance(instanceId)

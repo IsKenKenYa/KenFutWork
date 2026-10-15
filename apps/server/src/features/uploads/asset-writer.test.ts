@@ -171,11 +171,11 @@ describe("uploads 插件：两条路径的装配形状", () => {
     );
   }
 
-  it("worker 形态（withRoutes: false）：只注册 assetWriter，不注册 uploads", () => {
+  it("worker 形态（withRoutes: false）：注册素材读取服务与 assetWriter", () => {
     const k = kernel(false);
 
     expect(k.get("assetWriter").recordGeneratedAsset).toBeTypeOf("function");
-    expect(() => k.get("uploads")).toThrow();
+    expect(k.get("uploads").getAssetUrl).toBeTypeOf("function");
   });
 
   it("路由形态：assetWriter 与 uploads 都注册", () => {
