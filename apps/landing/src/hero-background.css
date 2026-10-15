@@ -29,13 +29,17 @@
   transition: transform .7s cubic-bezier(.18,.75,.25,1);
 }
 .hero-art[data-logo-active="true"] .hero-logo-motion { transition-duration: .25s; }
+.hero-logo-art, .spotlight-decoration {
+  mask-image: repeating-linear-gradient(0deg, #000 0 var(--dot-size), transparent var(--dot-size) var(--dot-pitch)), repeating-linear-gradient(90deg, #000 0 var(--dot-size), transparent var(--dot-size) var(--dot-pitch));
+  mask-composite: intersect;
+}
 .hero-logo-art {
+  --dot-size: 5.5px;
+  --dot-pitch: 8px;
   position: absolute;
   inset: 0;
   background: url("/assets/logo-mark.png") center / contain no-repeat;
   opacity: .46;
-  mask-image: repeating-linear-gradient(0deg, #000 0 5.5px, transparent 5.5px 8px), repeating-linear-gradient(90deg, #000 0 5.5px, transparent 5.5px 8px);
-  mask-composite: intersect;
 }
 .hero-logo-tinted { filter: hue-rotate(48deg) saturate(1.5); opacity: .6; }
 .hero-reveal {
@@ -46,8 +50,8 @@
   mask-image: radial-gradient(circle 260px at var(--pointer-x) var(--pointer-y), #000 0%, #000c 27%, #0005 64%, transparent 100%);
 }
 .hero-art[data-active="true"] .hero-reveal { opacity: 1; transition-duration: .15s; }
-.spotlight-decoration { position: absolute; width: 110px; height: 110px; color: #6c78e4; opacity: .75; }
-.spotlight-decoration svg { width: 100%; height: 100%; stroke-width: .9; }
+.spotlight-decoration { --dot-size: 4px; --dot-pitch: 6px; position: absolute; width: 110px; height: 110px; color: #6c78e4; opacity: .75; }
+.spotlight-decoration svg { width: 100%; height: 100%; stroke-width: 1.8; }
 .decoration-code { left: 76%; top: 70%; transform: rotate(-14deg); }
 .decoration-terminal { left: 84%; top: 13%; transform: rotate(12deg); }
 .decoration-branches { left: 25%; top: 8%; transform: rotate(-16deg); }
