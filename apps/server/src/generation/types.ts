@@ -51,6 +51,8 @@ export type ImageAsyncPollResult =
 export interface ImageProvider {
   readonly name: string;
   readonly models: readonly ModelInfo[];
+  /** 上传参考素材等准备工作；Job须在登记付费提交阶段之前完成。 */
+  prepareInputs?(params: ImageGenerateParams): Promise<ImageGenerateParams>;
   generate(params: ImageGenerateParams): Promise<GeneratedImage>;
   generateMany?(params: ImageGenerateParams): Promise<GeneratedImage[]>;
   startAsync?(params: ImageGenerateParams): Promise<{ providerJobId: string }>;
@@ -92,6 +94,8 @@ export type VideoAsyncPollResult =
 export interface VideoProvider {
   readonly name: string;
   readonly models: readonly VideoModelInfo[];
+  /** 上传参考素材等准备工作；不创建上游生成任务。 */
+  prepareInputs?(params: VideoGenerateParams): Promise<VideoGenerateParams>;
   generate(params: VideoGenerateParams): Promise<GeneratedVideo>;
   /**
    * 异步任务面（可选，S6）：submit 立即返回外部任务引用，由 executor 落库

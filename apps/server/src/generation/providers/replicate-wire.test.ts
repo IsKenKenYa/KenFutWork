@@ -1,11 +1,11 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, expect, it } from "vitest";
-import type { ImageGenerateParams, VideoGenerateParams } from "../types.js";
 import {
   createInstanceImageProvider,
   createInstanceVideoProvider,
 } from "../../providers/replicate/index.js";
+import type { ImageGenerateParams, VideoGenerateParams } from "../types.js";
 
 let server: Server | undefined;
 afterEach(async () => {
@@ -20,6 +20,117 @@ async function requestBody(req: IncomingMessage): Promise<unknown> {
   for await (const chunk of req) chunks.push(Buffer.from(chunk));
   return chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : null;
 }
+
+it("Replicate大参考图先上传完整文件，再用签名URL提交且不向文件URL发送凭据", async () => {
+  const bytes = Buffer.alloc(1024 * 1024 + 1, 0x5a);
+  const inputImage = `data:image/png;base64,${bytes.toString("base64")}`;
+  const requests: Array<{
+    method: string | undefined;
+    url: string | undefined;
+    authorization: string | undefined;
+    tenant: string | string[] | undefined;
+    body: unknown;
+  }> = [];
+  let signedUrl = "";
+  let uploaded: { mimeType: string; name: string; bytes: Buffer } | undefined;
+  server = createServer(async (req, res) => {
+    let body: unknown;
+    if (req.url === "/gateway/v1/files") {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(Buffer.from(chunk));
+      const form = await new Response(Buffer.concat(chunks), {
+        headers: { "content-type": req.headers["content-type"] ?? "" },
+      }).formData();
+      const content = form.get("content");
+      if (content && typeof content !== "string")
+        uploaded = {
+          mimeType: content.type,
+          name: content.name,
+          bytes: Buffer.from(await content.arrayBuffer()),
+        };
+      body = "multipart";
+    } else {
+      body = await requestBody(req);
+    }
+    requests.push({
+      method: req.method,
+      url: req.url,
+      authorization: req.headers.authorization,
+      tenant: req.headers["x-tenant"],
+      body,
+    });
+    res.writeHead(req.url === "/gateway/v1/files" ? 201 : 200, {
+      "content-type": "application/json",
+    });
+    res.end(
+      JSON.stringify(
+        req.url === "/gateway/v1/files"
+          ? {
+              id: "uploaded-reference",
+              content_type: "image/png",
+              size: bytes.length,
+              urls: { get: signedUrl },
+            }
+          : { id: "file-prediction", status: "starting", output: null },
+      ),
+    );
+  });
+  const active = server;
+  await new Promise<void>((resolve) => active.listen(0, "127.0.0.1", resolve));
+  const { port } = active.address() as AddressInfo;
+  signedUrl = `http://127.0.0.1:${port}/signed-input?signature=test-only`;
+  const provider = createInstanceImageProvider({
+    credentials: {
+      apiKey: "file-upload-test-key",
+      baseUrl: `http://127.0.0.1:${port}/gateway/v1`,
+      headers: { "x-tenant": "reference-upload" },
+    },
+    models: [{ id: "custom-owner/custom-image", name: "Image" }],
+  });
+  if (!provider.startAsync) throw new Error("Replicate图片异步提交未接线");
+  await expect(
+    provider.startAsync({
+      model: "custom-owner/custom-image",
+      prompt: "a cat",
+      inputImages: [inputImage],
+    }),
+  ).resolves.toEqual({ providerJobId: "file-prediction" });
+  expect(requests.map(({ method, url }) => ({ method, url }))).toEqual([
+    { method: "POST", url: "/gateway/v1/files" },
+    {
+      method: "POST",
+      url: "/gateway/v1/models/custom-owner/custom-image/predictions",
+    },
+  ]);
+  expect(JSON.stringify(requests[1]?.body ?? null).includes("data:")).toBe(
+    false,
+  );
+  expect(requests).toEqual([
+    {
+      method: "POST",
+      url: "/gateway/v1/files",
+      authorization: "Bearer file-upload-test-key",
+      tenant: "reference-upload",
+      body: "multipart",
+    },
+    {
+      method: "POST",
+      url: "/gateway/v1/models/custom-owner/custom-image/predictions",
+      authorization: "Bearer file-upload-test-key",
+      tenant: "reference-upload",
+      body: {
+        input: {
+          prompt: "a cat",
+          aspect_ratio: "1:1",
+          image_input: [signedUrl],
+        },
+      },
+    },
+  ]);
+  expect(uploaded?.mimeType).toBe("image/png");
+  expect(uploaded?.name).toMatch(/\.png$/);
+  expect(uploaded?.bytes.equals(bytes)).toBe(true);
+});
 
 it("Replicate图片受理processing后保存句柄，新适配器只续查一次", async () => {
   const requests: Array<{

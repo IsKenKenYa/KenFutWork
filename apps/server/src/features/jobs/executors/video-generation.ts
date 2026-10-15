@@ -1,4 +1,5 @@
 import type { BackgroundJob } from "@kenfutwork/shared";
+import type { VideoGenerateParams } from "../../../generation/types.js";
 import { type ExecutorContext, registerExecutor } from "../job-executor.js";
 import { resolveJobMediaInputs } from "../job-inputs.js";
 import { readJobExecution } from "../job-progress.js";
@@ -169,12 +170,7 @@ registerExecutor(
 
       // ── submit 分支：提交即落引用，投首条延迟 poll 消息，本次执行结束 ──
       lap(`${providerName}_submit_start`);
-      await ctx.assertExecution?.();
-      const attemptId = await ctx.jobService.beginSubmission(
-        jobId,
-        instance.configRevision,
-      );
-      const { providerJobId } = await startAsync({
+      let params: VideoGenerateParams = {
         prompt: payload.prompt,
         model,
         ...(payload.duration != null ? { duration: payload.duration } : {}),
@@ -186,7 +182,15 @@ registerExecutor(
         ...(payload.enable_audio != null
           ? { enableAudio: payload.enable_audio }
           : {}),
-      });
+      };
+      if (instance.provider.prepareInputs)
+        params = await instance.provider.prepareInputs(params);
+      await ctx.assertExecution?.();
+      const attemptId = await ctx.jobService.beginSubmission(
+        jobId,
+        instance.configRevision,
+      );
+      const { providerJobId } = await startAsync(params);
       await ctx.jobService.recordSubmission(jobId, attemptId, providerJobId);
       await ctx.assertExecution?.();
       await scheduleNextPoll();
@@ -206,7 +210,7 @@ registerExecutor(
 
     let timeoutTimer: NodeJS.Timeout | undefined;
     const generatePromise = (async () => {
-      const generateParams = {
+      let generateParams: VideoGenerateParams = {
         prompt: payload.prompt,
         model,
         ...(payload.duration != null ? { duration: payload.duration } : {}),
@@ -219,6 +223,8 @@ registerExecutor(
           ? { enableAudio: payload.enable_audio }
           : {}),
       };
+      if (instance.provider.prepareInputs)
+        generateParams = await instance.provider.prepareInputs(generateParams);
       lap(`${providerName}_call_start`);
       await ctx.assertExecution?.();
       await ctx.jobService.beginSubmission(jobId, instance.configRevision);

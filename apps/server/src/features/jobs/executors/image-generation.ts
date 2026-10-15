@@ -69,7 +69,8 @@ async function generateImage(
     );
   }
   if (!provider.startAsync || !provider.pollAsync) {
-    const params = await imageParams(job, payload, ctx);
+    let params = await imageParams(job, payload, ctx);
+    if (provider.prepareInputs) params = await provider.prepareInputs(params);
     await ctx.assertExecution?.();
     await ctx.jobService.beginSubmission(job.id, instance.configRevision);
     return provider.generateMany
@@ -94,7 +95,8 @@ async function generateImage(
     }
   } else {
     // 云端可能已接纳后才取消，本次响应仍须保留以登记句柄和补发远端取消。
-    const params = await imageParams(job, payload, ctx, false);
+    let params = await imageParams(job, payload, ctx, false);
+    if (provider.prepareInputs) params = await provider.prepareInputs(params);
     await ctx.assertExecution?.();
     const attemptId = await ctx.jobService.beginSubmission(
       job.id,

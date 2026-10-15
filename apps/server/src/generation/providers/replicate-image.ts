@@ -302,9 +302,15 @@ export class ReplicateImageProvider implements ImageProvider {
     );
   }
 
+  prepareInputs(params: ImageGenerateParams): Promise<ImageGenerateParams> {
+    this.buildInput(params);
+    return this.predictions.prepareInputs(params);
+  }
+
   async startAsync(
     params: ImageGenerateParams,
   ): Promise<{ providerJobId: string }> {
+    params = await this.prepareInputs(params);
     const { input } = this.buildInput(params);
     const prediction = await this.predictions.create(params.model, input, {
       ...(params.signal ? { signal: params.signal } : {}),
@@ -344,6 +350,7 @@ export class ReplicateImageProvider implements ImageProvider {
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
+    params = await this.prepareInputs(params);
     const { input, width, height } = this.buildInput(params);
     const prediction = await this.predictions.create(params.model, input, {
       wait: true,

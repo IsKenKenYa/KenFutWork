@@ -418,6 +418,11 @@ export class ReplicateVideoProvider implements VideoProvider {
     );
   }
 
+  prepareInputs(params: VideoGenerateParams): Promise<VideoGenerateParams> {
+    buildModelInput(params);
+    return this.predictions.prepareInputs(params);
+  }
+
   /**
    * 单次异步提交返回 prediction id，不带同步等待头
    * 交由 executor 落库；轮询节奏由队列延迟消息承载。
@@ -425,6 +430,7 @@ export class ReplicateVideoProvider implements VideoProvider {
   async startAsync(
     params: VideoGenerateParams,
   ): Promise<{ providerJobId: string }> {
+    params = await this.prepareInputs(params);
     const { endpoint, input } = buildModelInput(params);
     const data = await this.predictions.create(endpoint, input, {
       ...(params.signal ? { signal: params.signal } : {}),
@@ -467,6 +473,7 @@ export class ReplicateVideoProvider implements VideoProvider {
   }
 
   async generate(params: VideoGenerateParams): Promise<GeneratedVideo> {
+    params = await this.prepareInputs(params);
     const { endpoint, input } = buildModelInput(params);
     const resolution = params.resolution ?? "720p";
     const { width, height } = getVideoDimensions(
