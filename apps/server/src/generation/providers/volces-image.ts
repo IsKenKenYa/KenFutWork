@@ -30,6 +30,13 @@ export class VolcesImageProvider implements ImageProvider {
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
+    if ((params.width != null) !== (params.height != null)) {
+      throw new GenerationError(
+        "volces",
+        "invalid_input",
+        "图片宽高需同时填写，请补齐宽度和高度。",
+      );
+    }
     const aspectRatio = params.aspectRatio ?? "1:1";
     const [rw, rh] = aspectRatio.split(":").map(Number);
     const ratio = rw && rh ? Math.max(rw / rh, rh / rw) : 1;
@@ -38,7 +45,10 @@ export class VolcesImageProvider implements ImageProvider {
     const baseSize = params.model.includes("seedream-3-")
       ? 1024
       : Math.sqrt(pixels * ratio);
-    const { width, height } = aspectRatioToDimensions(aspectRatio, baseSize);
+    const { width, height } =
+      params.width != null && params.height != null
+        ? { width: params.width, height: params.height }
+        : aspectRatioToDimensions(aspectRatio, baseSize);
 
     const body = {
       model: params.model,
