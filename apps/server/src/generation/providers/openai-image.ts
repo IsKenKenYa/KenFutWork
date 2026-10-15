@@ -98,6 +98,8 @@ export class OpenAIImageProvider implements ImageProvider {
   ) {
     this.client = new OpenAI({
       apiKey,
+      // 适配器只执行一次请求；可调重试由共享Job引擎统一负责。
+      maxRetries: 0,
       ...(baseURL ? { baseURL } : {}),
       // 自定义头（§4.8）：authorization 等保留头由 SDK 按 apiKey 生成，不受其影响
       ...(headers ? { defaultHeaders: headers } : {}),

@@ -259,3 +259,20 @@ describe("OpenAIImageProvider（编辑路径 S5）", () => {
     ).rejects.toMatchObject({ code: "api_error" });
   });
 });
+
+it("429由共享Job引擎调度，SDK不在一次执行中隐式重发", async () => {
+  const request = vi.fn(async () =>
+    Response.json(
+      { error: { code: "rate_limit_exceeded", message: "模拟限流" } },
+      { status: 429, headers: { "Retry-After": "0.001" } },
+    ),
+  );
+  vi.stubGlobal("fetch", request);
+  await expect(
+    new OpenAIImageProvider(
+      "test-only",
+      "https://controlled.invalid/v1",
+    ).generate({ model: "gpt-image-1", prompt: "cat" }),
+  ).rejects.toMatchObject({ code: "api_error" });
+  expect(request).toHaveBeenCalledOnce();
+});
