@@ -2349,6 +2349,7 @@ const enUS: Record<string, string> = {
     "The source session was not found, or it no longer matches the current workspace filter.",
   "settings.usageTitle": "Usage stats",
   "settings.about.title": "About",
+  "settings.openDesign.title": "OpenDesign",
   "settings.usageDescription":
     "Review rough activity and model usage aggregated from local sessions.",
   "resourceManager.storage.summaryTotal": "Total used by KenFutWork",

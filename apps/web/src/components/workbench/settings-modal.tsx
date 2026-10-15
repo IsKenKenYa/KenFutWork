@@ -24,7 +24,6 @@ import { LocalAccessClientsSection } from "@/components/workbench/local-access-c
 import { LocalInstanceSection } from "@/components/workbench/local-instance-section";
 import { LocaleSection } from "@/components/workbench/locale-section";
 import { OnboardingSection } from "@/components/workbench/onboarding-section";
-import { OpenDesignSettingsSection } from "@/components/workbench/open-design-settings-section";
 import { RulesMemorySection } from "@/components/workbench/rules-memory-section";
 import { SubagentsSection } from "@/components/workbench/subagents-section";
 import { TerminalSettingsSection } from "@/components/workbench/terminal-settings-section";
@@ -47,7 +46,6 @@ export type SettingsTab =
   | "providers"
   | "permissions"
   | "browser"
-  | "openDesign"
   | "rules"
   | "subagents"
   | "usage"
@@ -77,7 +75,6 @@ const TAB_GROUPS: Array<{
       { id: "agentGovernance", label: "Agent 治理" },
       { id: "providers", label: "供应商" },
       { id: "browser", label: "浏览器" },
-      { id: "openDesign", label: "OpenDesign" },
       { id: "voice", label: "语音" },
     ],
   },
@@ -377,8 +374,6 @@ export function SettingsModal({
               <PermissionSection accessToken={token} />
             ) : activeTab === "browser" ? (
               <BrowserSettingsSection accessToken={accessToken} />
-            ) : activeTab === "openDesign" ? (
-              <OpenDesignSettingsSection accessToken={accessToken} />
             ) : activeTab === "pluginPanels" ? (
               <PluginPanelsSettings accessToken={accessToken} />
             ) : activeTab === "usage" ? (

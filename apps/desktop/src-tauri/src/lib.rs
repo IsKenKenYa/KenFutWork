@@ -67,7 +67,8 @@ fn desktop_env(data_dir: &Path, web_dir: &Path, port: u16) -> Vec<(String, Strin
 /// OpenDesign 承载配置（规划 §9-3 伴随容器 / 《日志》§205 桌面最小闭环）：
 /// 读 `<dataDir>/config/open-design.env`（`KEY=VALUE` 行），**白名单只放行服务端那两个键**
 /// ——任意 env 注入会把桌面变成提权面。伴随容器起停由服务端在装配期按 env 定形，
-/// 所以这里是「改文件 → 重启桌面生效」的最小注入面；设置页写入口后续再开。
+/// 所以这里是「改文件 → 重启桌面生效」的最小注入面；写入口是设置页的 OpenDesign 分区
+/// （服务端 `GET/PUT /api/open-design/host/config` 落同一文件）。
 fn open_design_config_env(data_dir: &Path) -> Vec<(String, String)> {
     const ALLOWED: [&str; 2] = [
         "KENFUTWORK_OPEN_DESIGN_FRONTEND_URL",
@@ -739,7 +740,10 @@ mod desktop_env_tests {
         assert!(env.iter().all(|(k, _)| k != "PATH" && k != "EMPTY_VAL"));
         assert_eq!(
             env.iter()
-                .filter(|(k, _)| k.starts_with("KENFUTWORK_OPEN_DESIGN_"))
+                .filter(|(k, _)| {
+                    k == "KENFUTWORK_OPEN_DESIGN_FRONTEND_URL"
+                        || k == "KENFUTWORK_OPEN_DESIGN_EMBED_SECRET"
+                })
                 .count(),
             2
         );

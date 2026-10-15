@@ -2210,6 +2210,7 @@ const zhCN: Record<string, string> = {
     "源会话不存在，或已经不匹配当前 workspace 筛选。",
   "settings.usageTitle": "使用统计",
   "settings.about.title": "关于",
+  "settings.openDesign.title": "OpenDesign",
   "settings.usageDescription": "查看会话活跃度与模型用量的粗略统计。",
   "resourceManager.storage.summaryTotal": "KenFutWork 总占用",
   "resourceManager.storage.scanning": "正在计算…",

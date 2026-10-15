@@ -21,6 +21,8 @@ export type SettingsSectionId =
   | "computerUse"
   | "automations"
   | "shortcuts"
+  // KenFutWork 宿主分区：OpenDesign 伴随容器承载配置。
+  | "openDesign"
   | "about";
 
 type SettingsUsageTabTarget = "app" | "codingPlan";
@@ -81,6 +83,7 @@ function isSettingsSectionId(value: string): value is SettingsSectionId {
     value === "computerUse" ||
     value === "automations" ||
     value === "shortcuts" ||
+    value === "openDesign" ||
     value === "about"
   );
 }

@@ -41,7 +41,7 @@ KENFUTWORK_OPEN_DESIGN_EMBED_SECRET=<与 OpenDesign 栈 OD_API_TOKEN 成对；�
 - **桌面版启用（免系统环境变量）**：把下面两行写进数据目录的
   `config/open-design.env`（Windows 数据目录 = `%APPDATA%`… 实际以桌面「关于」页显示
   的根为准，即 `Roaming/com.kenfutwork.desktop/data`），重启桌面生效——壳只白名单
-  注入这两个键，其余一概不进子进程；应用内设置页后续单独开：
+  注入这两个键，其余一概不进子进程：
 
   ```
   KENFUTWORK_OPEN_DESIGN_FRONTEND_URL=http://127.0.0.1:7456

@@ -2,38 +2,31 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 
-const api = {
-  fetchOpenDesignConfig: vi.fn(),
-  updateOpenDesignConfig: vi.fn(),
-};
+const surfaceJson = vi.fn();
 
-vi.mock("@/lib/server-api", () => ({
-  fetchOpenDesignConfig: (token: string | null) =>
-    api.fetchOpenDesignConfig(token),
-  updateOpenDesignConfig: (
-    token: string | null,
-    input: { frontendUrl: string | null; embedSecret: string | null },
-  ) => api.updateOpenDesignConfig(token, input),
+vi.mock("@zui/host/surfaceApi.js", () => ({
+  surfaceJson: (path: string, init?: RequestInit) => surfaceJson(path, init),
 }));
 
-const { OpenDesignSettingsSection } = await import(
-  "@/components/workbench/open-design-settings-section"
+const { HostOpenDesignSettingsSection } = await import(
+  "../src/components/workbench/zcode/host/OpenDesignSettingsSection.js"
 );
+
+const user = userEvent.setup();
 
 afterEach(() => {
   cleanup();
-  api.fetchOpenDesignConfig.mockReset();
-  api.updateOpenDesignConfig.mockReset();
+  surfaceJson.mockReset();
 });
 
-test("读取文件配置回填表单；未启用状态如实显示", async () => {
-  api.fetchOpenDesignConfig.mockResolvedValue({
+test("读取文件配置回填表单；重启时差如实显示", async () => {
+  surfaceJson.mockResolvedValue({
     frontendUrl: "http://127.0.0.1:7456",
     embedSecret: "paired",
     restartRequired: true,
     source: "file",
   });
-  render(<OpenDesignSettingsSection accessToken="t" />);
+  render(<HostOpenDesignSettingsSection />);
   await waitFor(() =>
     expect(screen.getByTestId("od-config-status").textContent).toBe(
       "已保存 重启桌面后生效",
@@ -47,38 +40,45 @@ test("读取文件配置回填表单；未启用状态如实显示", async () =>
   );
 });
 
-test("env 生效中：状态行说明来源，保存按钮无改动时禁用", async () => {
-  api.fetchOpenDesignConfig.mockResolvedValue({
+test("env 生效中：状态行说明来源，无改动时保存禁用", async () => {
+  surfaceJson.mockResolvedValue({
     frontendUrl: "http://127.0.0.1:7456",
     embedSecret: "x",
     restartRequired: false,
     source: "env",
   });
-  render(<OpenDesignSettingsSection accessToken="t" />);
+  render(<HostOpenDesignSettingsSection />);
   await waitFor(() =>
     expect(screen.getByTestId("od-config-status").textContent).toBe(
       "环境变量生效中",
     ),
   );
-  const save = screen.getByRole("button", { name: "保存" });
-  expect(save.hasAttribute("disabled")).toBe(true);
+  expect(
+    screen.getByRole("button", { name: "保存" }).hasAttribute("disabled"),
+  ).toBe(true);
 });
 
-test("编辑后保存：提交两键（空串→null），回显服务端结果", async () => {
-  const user = userEvent.setup();
-  api.fetchOpenDesignConfig.mockResolvedValue({
-    frontendUrl: null,
-    embedSecret: null,
-    restartRequired: false,
-    source: "none",
+test("编辑后保存：空串按 null 提交，回显服务端结果", async () => {
+  surfaceJson.mockImplementation(async (_path: string, init?: RequestInit) => {
+    if (init?.method === "PUT") {
+      const body = JSON.parse(String(init.body)) as {
+        frontendUrl: string | null;
+      };
+      return {
+        frontendUrl: body.frontendUrl,
+        embedSecret: null,
+        restartRequired: true,
+        source: "file" as const,
+      };
+    }
+    return {
+      frontendUrl: null,
+      embedSecret: null,
+      restartRequired: false,
+      source: "none" as const,
+    };
   });
-  api.updateOpenDesignConfig.mockResolvedValue({
-    frontendUrl: "http://127.0.0.1:7456",
-    embedSecret: null,
-    restartRequired: true,
-    source: "file",
-  });
-  render(<OpenDesignSettingsSection accessToken="t" />);
+  render(<HostOpenDesignSettingsSection />);
   await waitFor(() =>
     expect(screen.getByTestId("od-config-status").textContent).toBe("未启用"),
   );
@@ -90,10 +90,16 @@ test("编辑后保存：提交两键（空串→null），回显服务端结果"
   expect(save.hasAttribute("disabled")).toBe(false);
   await user.click(save);
   await waitFor(() =>
-    expect(api.updateOpenDesignConfig).toHaveBeenCalledWith("t", {
-      frontendUrl: "http://127.0.0.1:7456",
-      embedSecret: null,
-    }),
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/open-design/host/config",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          frontendUrl: "http://127.0.0.1:7456",
+          embedSecret: null,
+        }),
+      }),
+    ),
   );
   await waitFor(() =>
     expect(screen.getByTestId("od-config-status").textContent).toBe(
@@ -103,8 +109,8 @@ test("编辑后保存：提交两键（空串→null），回显服务端结果"
 });
 
 test("读取失败不摆假表单：状态行如实报错", async () => {
-  api.fetchOpenDesignConfig.mockRejectedValue(new Error("连不上"));
-  render(<OpenDesignSettingsSection accessToken="t" />);
+  surfaceJson.mockRejectedValue(new Error("连不上"));
+  render(<HostOpenDesignSettingsSection />);
   await waitFor(() =>
     expect(screen.getByTestId("od-config-status").textContent).toContain(
       "读取失败",
