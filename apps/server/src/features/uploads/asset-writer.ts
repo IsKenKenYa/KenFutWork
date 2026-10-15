@@ -8,6 +8,8 @@ export class AssetWriterError extends Error {
 }
 
 export type GeneratedAssetInput = {
+  assetId?: string;
+  contentFingerprint?: string;
   byteSize: number;
   mimeType: string;
   objectPath: string;
@@ -35,6 +37,10 @@ export function createAssetWriter(repository: UploadRepository): AssetWriter {
     async recordGeneratedAsset(input) {
       const asset = await repository.insert({
         bucket: "project-assets",
+        ...(input.assetId ? { assetId: input.assetId } : {}),
+        ...(input.contentFingerprint
+          ? { generationFingerprint: input.contentFingerprint }
+          : {}),
         byteSize: input.byteSize,
         mimeType: input.mimeType,
         objectPath: input.objectPath,

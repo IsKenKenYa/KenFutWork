@@ -269,6 +269,7 @@ function createFakeRepository(
     delete: async () => 1,
     findById: async () => JOB_ROW,
     findByIdInInstance: async () => JOB_ROW,
+    saveExecution: async () => 1,
     takeWakeups: async () => [],
     schedule: async () => 1,
     claim: async () => null,

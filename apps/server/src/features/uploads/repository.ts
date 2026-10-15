@@ -23,6 +23,8 @@ export type AssetLocation = {
 };
 
 export type NewAssetInput = {
+  assetId?: string;
+  generationFingerprint?: string;
   bucket: string;
   byteSize: number;
   mimeType: string;
@@ -76,9 +78,14 @@ export function createUploadRepository(
         .forInstance(input.instanceId)
         .queryOne<RawAssetRow>(
           `insert into public.asset_objects
-                  (instance_id, bucket, object_path, mime_type, byte_size, created_by_client_id, project_id)
-           select :instance, $1, $2, $3, $4, $5::uuid, $6::uuid
+                  (instance_id, bucket, object_path, mime_type, byte_size, created_by_client_id, project_id${input.assetId ? ", id, generation_fingerprint" : ""})
+           select :instance, $1, $2, $3, $4, $5::uuid, $6::uuid${input.assetId ? ", $7::uuid, $8" : ""}
            where $6::uuid is null or exists (select 1 from public.projects p where p.id = $6::uuid and p.instance_id = :instance)
+           on conflict (id) do update set id=excluded.id
+           where asset_objects.instance_id=excluded.instance_id
+             and asset_objects.bucket=excluded.bucket
+             and asset_objects.object_path=excluded.object_path
+             and asset_objects.generation_fingerprint is not distinct from excluded.generation_fingerprint
            returning ${ASSET_COLUMNS}`,
           [
             input.bucket,
@@ -87,6 +94,9 @@ export function createUploadRepository(
             input.byteSize,
             input.createdByClientId ?? null,
             input.projectId ?? null,
+            ...(input.assetId
+              ? [input.assetId, input.generationFingerprint ?? null]
+              : []),
           ],
         );
 

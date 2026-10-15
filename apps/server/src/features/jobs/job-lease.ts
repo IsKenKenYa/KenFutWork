@@ -15,6 +15,7 @@ export function createLeasedContext(
     try {
       if (!(await ctx.jobService.renewLease(jobId, token, seconds)))
         throw lost();
+      await ctx.renewVt(seconds);
     } catch {
       controller.abort(lost());
       controller.signal.throwIfAborted();
@@ -37,6 +38,11 @@ export function createLeasedContext(
         await assertActive();
         return ctx.jobService.getJobForWorker(id);
       },
+      saveExecution: (id, execution, options) =>
+        ctx.jobService.saveExecution(id, execution, {
+          ...options,
+          leaseToken: token,
+        }),
       scheduleJob: (id, seconds) =>
         ctx.jobService.scheduleJob(id, seconds, token),
       setProviderJobId: (id, handle) =>

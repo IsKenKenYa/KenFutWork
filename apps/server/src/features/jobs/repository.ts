@@ -1,6 +1,7 @@
 import type { GenerationFileTarget } from "@kenfutwork/shared";
 import { assertGenerationOriginForInsert } from "../generation/file-target-lock.js";
 import type { PersistenceService } from "../persistence/types.js";
+import type { JobExecution, JobExecutionWrite } from "./job-progress.js";
 
 export class JobRequestConflictError extends Error {
   constructor() {
@@ -66,6 +67,11 @@ export type JobListFilters = {
  *   与「实例隔离」不冲突（拿不到实例就无法用实例谓词）。
  */
 export interface JobRepository {
+  saveExecution(
+    jobId: string,
+    execution: JobExecution,
+    options: JobExecutionWrite,
+  ): Promise<number>;
   takeWakeups(
     queues: readonly string[],
     seconds: number,
@@ -152,13 +158,33 @@ export function createJobRepository(
   persistence: PersistenceService,
 ): JobRepository {
   return {
+    async saveExecution(jobId, execution, options) {
+      return persistence.execute(
+        `update public.background_jobs set
+          payload=payload || jsonb_build_object('_generation_execution',$2::jsonb) || $4::jsonb,
+          provider_job_id=coalesce($3,provider_job_id)
+         where id=$1 and status in ('queued','running') ${leaseGuard(5)}`,
+        [
+          jobId,
+          JSON.stringify(execution),
+          options.providerJobId ?? null,
+          JSON.stringify(
+            options.providerRevision !== undefined
+              ? { provider_config_revision: options.providerRevision }
+              : {},
+          ),
+          options.leaseToken ?? null,
+        ],
+      );
+    },
     async takeWakeups(queues, seconds) {
       // 无上游句柄的在途提交无法判断是否已受理，不能靠补投重发付费请求。
       await persistence.execute(
         `update public.background_jobs set status='failed',error_code='submission_unknown',
           error_message='提交结果待确认，请核对供应商记录。'
-         where queue_name=any($1::text[]) and status in ('running','failed')
+         where queue_name=any($1::text[]) and status in ('queued','running','failed')
            and provider_job_id is null and started_at is not null
+           and coalesce(payload->'_generation_execution'->>'phase','') not in ('ready','saving','publishing')
            and (lease_until is null or lease_until<=now())
            and error_code is distinct from 'submission_unknown'`,
         [queues],
@@ -168,7 +194,7 @@ export function createJobRepository(
           select id from public.background_jobs
            where queue_name=any($1::text[]) and status in ('queued','running','failed')
              and error_code is distinct from 'submission_unknown'
-             and (status='queued' or provider_job_id is not null)
+             and (status='queued' or provider_job_id is not null or payload->'_generation_execution'->>'phase' in ('ready','saving','publishing'))
              and next_action_at<=now() and wakeup_at<=now()
              and (lease_until is null or lease_until<=now())
            for update skip locked)
@@ -189,8 +215,9 @@ export function createJobRepository(
       await persistence.execute(
         `update public.background_jobs set status='failed', error_code='submission_unknown',
           error_message='提交结果待确认，请核对供应商记录。'
-         where id=$1 and status in ('running','failed') and provider_job_id is null
-           and started_at is not null and (lease_until is null or lease_until<=now())`,
+         where id=$1 and status in ('queued','running','failed') and provider_job_id is null
+           and started_at is not null
+           and coalesce(payload->'_generation_execution'->>'phase','') not in ('ready','saving','publishing') and (lease_until is null or lease_until<=now())`,
         [jobId],
       );
       return persistence.queryOne<BackgroundJobRecord>(
@@ -199,7 +226,7 @@ export function createJobRepository(
          where id=$1 and status in ('queued','running','failed')
            and (lease_until is null or lease_until<=now())
            and next_action_at<=now() and error_code is distinct from 'submission_unknown'
-           and (started_at is null or provider_job_id is not null) returning ${JOB_COLUMNS}`,
+           and (started_at is null or provider_job_id is not null or payload->'_generation_execution'->>'phase' in ('ready','saving','publishing')) returning ${JOB_COLUMNS}`,
         [jobId, token, seconds],
       );
     },
@@ -389,7 +416,7 @@ export function createJobRepository(
     async markFailed(jobId, errorCode, errorMessage, leaseToken) {
       return persistence.execute(
         `update public.background_jobs
-            set status = 'failed',
+            set status = case when $4::uuid is null then 'failed' else 'queued' end,
                 error_code = $2,
                 error_message = $3,
                 failed_at = now()

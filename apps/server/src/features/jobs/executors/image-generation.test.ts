@@ -24,7 +24,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
-it.each([false, true])(
+it.each([false, true, "download-retry"])(
   "真实image executor按ProjectFile receipt上传并拒绝失租调用（%s）",
   async (lostLease) => {
     const projectId = randomUUID();
@@ -48,6 +48,7 @@ it.each([false, true])(
         prompt: "image",
         model: "model",
         provider_instance_id: randomUUID(),
+        output_format: "webp",
       },
       result: null,
       error_code: null,
@@ -71,7 +72,9 @@ it.each([false, true])(
       bucket: "project-assets",
     }));
     const recordGeneratedAsset = vi.fn();
-    const upload = vi.fn(async () => {});
+    const upload = vi.fn(
+      async (_path: string, _body?: Uint8Array, _options?: unknown) => {},
+    );
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -79,18 +82,30 @@ it.each([false, true])(
       ),
     );
     const context = {
-      jobService: { getJobForWorker: async () => job },
+      jobService: {
+        getJobForWorker: async () => job,
+        saveExecution: async (_id: string, execution: unknown) => {
+          job.payload._generation_execution = execution;
+        },
+      },
       generationTargets: {
         resolve: async () => ({ kind: "project", projectId }),
       },
       projectFiles: { prepareWrite },
       assetWriter: { recordGeneratedAsset },
       blob: {
-        bucket: () => ({ upload, resolveUrl: async () => "project-url" }),
+        bucket: () => ({
+          upload,
+          resolveUrl: async () => "project-url",
+          download: async () => {
+            throw Object.assign(new Error("missing"), { code: "ENOENT" });
+          },
+          remove: async () => {},
+        }),
       },
       renewVt: async () => {},
     } as unknown as ExecutorContext;
-    if (lostLease) {
+    if (lostLease === true) {
       context.assertExecution = async () => {
         throw Object.assign(new Error("失租"), { code: "job_lease_lost" });
       };
@@ -101,7 +116,30 @@ it.each([false, true])(
       expect(upload).not.toHaveBeenCalled();
       return;
     }
+    if (lostLease === "download-retry") {
+      const request = vi
+        .fn()
+        .mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
+        .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3])));
+      vi.stubGlobal("fetch", request);
+      context.jobService.saveExecution = async (_id, execution) => {
+        job.payload._generation_execution = execution;
+      };
+      await expect(
+        getExecutor("image_generation")!(job.id, {}, context),
+      ).rejects.toThrow();
+      await getExecutor("image_generation")!(job.id, {}, context);
+      expect(generate).toHaveBeenCalledOnce();
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(
+        upload.mock.calls.filter(([path]) => path === objectPath),
+      ).toHaveLength(1);
+      return;
+    }
     const result = await getExecutor("image_generation")!(job.id, {}, context);
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({ outputFormat: "webp" }),
+    );
     expect(prepareWrite).toHaveBeenCalledWith(
       { instanceId: job.instance_id, accessClientId: null },
       expect.objectContaining({
@@ -111,7 +149,7 @@ it.each([false, true])(
     );
     expect(upload).toHaveBeenCalledWith(objectPath, Buffer.from([1, 2, 3]), {
       contentType: "image/png",
-      upsert: false,
+      upsert: true,
     });
     expect(recordGeneratedAsset).not.toHaveBeenCalled();
     expect(result).toMatchObject({

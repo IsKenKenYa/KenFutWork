@@ -25,7 +25,7 @@ export async function publishGeneratedFile(
     await ctx.generationTargets.resolve(job);
     await bucket.upload(receipt.objectPath, buffer, {
       contentType: mimeType,
-      upsert: false,
+      upsert: true,
     });
     await ctx.generationTargets.resolve(job);
     return {
@@ -36,12 +36,11 @@ export async function publishGeneratedFile(
   }
   if (job.project_id || job.session_id || job.canvas_id)
     throw new Error("有关联的生成任务不能退回独立文件存储");
-  const objectPath = `${job.instance_id}/generated/${Date.now()}-${job.id}.${extension}`;
-  await bucket.upload(objectPath, buffer, {
-    contentType: mimeType,
-    upsert: false,
-  });
+  const objectPath = `${job.instance_id}/generated/${job.id}.${extension}`;
+  // 先认领稳定资产身份及内容指纹，再允许相同字节重放存储。
   const assetId = await ctx.assetWriter.recordGeneratedAsset({
+    assetId: job.id,
+    contentFingerprint: createHash("sha256").update(buffer).digest("hex"),
     byteSize: buffer.length,
     mimeType,
     objectPath,
@@ -49,6 +48,11 @@ export async function publishGeneratedFile(
     ...(job.created_by_client_id
       ? { createdByClientId: job.created_by_client_id }
       : {}),
+  });
+  await ctx.generationTargets.resolve(job);
+  await bucket.upload(objectPath, buffer, {
+    contentType: mimeType,
+    upsert: true,
   });
   return { assetId, objectPath, url: await bucket.resolveUrl(objectPath) };
 }

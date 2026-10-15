@@ -275,7 +275,13 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
           jobType: "image_generation",
           payload: { prompt: "猫" },
         });
-        expect(await jobs.claimJob(job.id, randomUUID(), 0.05)).not.toBeNull();
+        const token = randomUUID();
+        expect(await jobs.claimJob(job.id, token, 0.05)).not.toBeNull();
+        await jobs.saveExecution(
+          job.id,
+          { phase: "submitting" },
+          { leaseToken: token },
+        );
         await new Promise((resolve) => setTimeout(resolve, 80));
         await jobs.recoverPendingJobs(["image_generation_jobs"], 1);
         expect(await jobs.getJob(db.actor, job.id)).toMatchObject({
@@ -355,6 +361,11 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
           });
           const first = randomUUID();
           await jobs.claimJob(job.id, first, 120);
+          await jobs.saveExecution(
+            job.id,
+            { phase: "submitting" },
+            { leaseToken: first },
+          );
           const [replacement] = await Promise.all([
             jobs.claimJob(job.id, randomUUID(), 120),
             jobs.releaseLease(job.id, first),

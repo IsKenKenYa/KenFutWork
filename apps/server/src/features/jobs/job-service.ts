@@ -15,6 +15,7 @@ import type {
 import type { QueueClient } from "../queue/types.js";
 import type { UploadService } from "../uploads/upload-service.js";
 import { JobInputError, persistJobInputs } from "./job-inputs.js";
+import type { JobExecution, JobExecutionWrite } from "./job-progress.js";
 import {
   type BackgroundJobRecord,
   type JobRepository,
@@ -65,6 +66,11 @@ export type CreateJobInput = {
 };
 
 export type JobService = {
+  saveExecution(
+    jobId: string,
+    execution: JobExecution,
+    options?: JobExecutionWrite,
+  ): Promise<void>;
   recoverPendingJobs(
     queues: readonly string[],
     intervalSeconds: number,
@@ -225,6 +231,12 @@ export function createJobService(options: {
   }
 
   return {
+    async saveExecution(jobId, execution, write = {}) {
+      assertLeaseWrite(
+        await repository.saveExecution(jobId, execution, write),
+        write.leaseToken,
+      );
+    },
     async recoverPendingJobs(queues, intervalSeconds) {
       const ready = await repository.takeWakeups(queues, intervalSeconds);
       await Promise.all(
@@ -268,6 +280,12 @@ export function createJobService(options: {
       await repository.releaseLease(jobId, token);
     },
     async createJob(actor, input) {
+      if ("_generation_execution" in input.payload)
+        throw new JobServiceError(
+          "job_create_failed",
+          "生成执行记录由服务端维护。",
+          400,
+        );
       // 新请求在HTTP准入处认领；在途Run提交的生成工作仍须正常完成。
       const instanceId = await requireInstanceId(actor, "job_create_failed");
       const queueName = QUEUE_MAP[input.jobType];
@@ -331,11 +349,15 @@ export function createJobService(options: {
           payload: requestId
             ? {
                 ...storedInputs.payload,
+                _generation_execution: { phase: "ready" },
                 request_id: requestId,
                 request_index: requestIndex ?? 0,
                 request_fingerprint: fingerprint,
               }
-            : storedInputs.payload,
+            : {
+                ...storedInputs.payload,
+                _generation_execution: { phase: "ready" },
+              },
           ...(input.projectId ? { projectId: input.projectId } : {}),
           queueName,
           ...(input.sessionId ? { sessionId: input.sessionId } : {}),

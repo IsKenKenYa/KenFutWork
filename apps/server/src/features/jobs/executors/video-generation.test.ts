@@ -55,6 +55,12 @@ function makeCtx(job: BackgroundJob) {
   }> = [];
   const ctx = {
     jobService: {
+      saveExecution: vi.fn(async (_id, execution, options) => {
+        job.payload._generation_execution = execution;
+        if (options?.providerJobId) job.provider_job_id = options.providerJobId;
+        if (options?.providerRevision)
+          job.payload.provider_config_revision = options.providerRevision;
+      }),
       scheduleJob: vi.fn(async (id: string, delay: number) => {
         sent.push({
           payload: { job_id: id, job_type: "video_generation" },
@@ -86,6 +92,10 @@ function makeCtx(job: BackgroundJob) {
     blob: {
       bucket: () => ({
         upload: vi.fn(async () => {}),
+        download: async () => {
+          throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        },
+        remove: async () => {},
         resolveUrl: vi.fn(async () => "https://blobs.example/video.mp4"),
       }),
     },
@@ -171,13 +181,14 @@ describe("video executor 状态机（S6）", () => {
     await expect(runExecutor(ctx)).rejects.toMatchObject({
       code: PROVIDER_POLL_SCHEDULED,
     });
-    expect(ctx.jobService.setProviderJobId).toHaveBeenCalledWith(
+    expect(ctx.jobService.saveExecution).toHaveBeenCalledWith(
       JOB_ID,
-      "cloud-task-1",
+      { phase: "polling" },
+      {
+        providerJobId: "cloud-task-1",
+        providerRevision: 7,
+      },
     );
-    expect(ctx.jobService.appendJobPayload).toHaveBeenCalledWith(JOB_ID, {
-      provider_config_revision: 7,
-    });
     expect(ctx.sent).toHaveLength(1);
     expect(ctx.sent[0]?.payload).toMatchObject({
       job_id: JOB_ID,
