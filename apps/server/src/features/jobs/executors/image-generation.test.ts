@@ -25,7 +25,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
-it.each([false, true, "download-retry", "actual-image"])(
+it.each([
+  false,
+  true,
+  "download-retry",
+  "actual-image",
+  "actual-jpeg",
+  "actual-webp",
+])(
   "真实image executor按ProjectFile receipt上传并拒绝失租调用（%s）",
   async (lostLease) => {
     const projectId = randomUUID();
@@ -145,15 +152,34 @@ it.each([false, true, "download-retry", "actual-image"])(
       ).toHaveLength(1);
       return;
     }
-    const bytes =
-      lostLease === "actual-image"
-        ? await sharp({
-            create: { width: 48, height: 32, channels: 3, background: "red" },
-          })
-            .png()
-            .toBuffer()
-        : Buffer.from([1, 2, 3]);
-    if (lostLease === "actual-image")
+    const actual =
+      typeof lostLease === "string" && lostLease.startsWith("actual-");
+    const format =
+      lostLease === "actual-jpeg"
+        ? "jpeg"
+        : lostLease === "actual-webp"
+          ? "webp"
+          : "png";
+    const expectedMime =
+      lostLease === "actual-jpeg"
+        ? "image/jpeg"
+        : lostLease === "actual-webp"
+          ? "image/webp"
+          : "image/png";
+    const extension =
+      lostLease === "actual-jpeg"
+        ? "jpg"
+        : lostLease === "actual-webp"
+          ? "webp"
+          : "png";
+    const bytes = actual
+      ? await sharp({
+          create: { width: 48, height: 32, channels: 3, background: "red" },
+        })
+          .toFormat(format)
+          .toBuffer()
+      : Buffer.from([1, 2, 3]);
+    if (actual)
       vi.stubGlobal(
         "fetch",
         vi.fn(async () => new Response(bytes)),
@@ -166,11 +192,12 @@ it.each([false, true, "download-retry", "actual-image"])(
       { instanceId: job.instance_id, accessClientId: null },
       expect.objectContaining({
         assetId: job.id,
-        relativePath: `${job.id}.png`,
+        relativePath: `${job.id}.${extension}`,
+        mimeType: expectedMime,
       }),
     );
     expect(upload).toHaveBeenCalledWith(objectPath, bytes, {
-      contentType: "image/png",
+      contentType: expectedMime,
       upsert: true,
     });
     expect(recordGeneratedAsset).not.toHaveBeenCalled();
@@ -178,8 +205,9 @@ it.each([false, true, "download-retry", "actual-image"])(
       asset_id: job.id,
       object_path: objectPath,
       signed_url: "project-url",
-      width: lostLease === "actual-image" ? 48 : 12,
-      height: lostLease === "actual-image" ? 32 : 13,
+      mime_type: expectedMime,
+      width: actual ? 48 : 12,
+      height: actual ? 32 : 13,
     });
   },
 );

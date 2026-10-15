@@ -107,14 +107,20 @@ async function saveOutput(
       code: "media_output_missing",
     });
   const buffer = await loadMediaSource(job, sourceOutput, ctx, outputId);
-  // 任务回执常不包含尺寸；从已下载字节取真实尺寸，恢复同样走此保存阶段。
+  // 任务回执可能缺少尺寸或猜错格式；从已下载字节读取，恢复同样走此保存阶段。
   // 不能识别的格式保留供应商元数据，延续既有产物兼容性。
-  const dimensions = generated.mimeType.startsWith("image/")
+  const imageMetadata = generated.mimeType.startsWith("image/")
     ? await sharp(buffer)
         .metadata()
         .catch(() => undefined)
     : undefined;
-  const mime = generated.mimeType;
+  const imageMimes: Record<string, string> = {
+    png: "image/png",
+    jpeg: "image/jpeg",
+    webp: "image/webp",
+    gif: "image/gif",
+  };
+  const mime = imageMimes[imageMetadata?.format ?? ""] ?? generated.mimeType;
   const extension =
     mime === "image/jpeg" ? "jpg" : (mime.split("/")[1] ?? "bin");
   const stored = await publishGeneratedFile(
@@ -133,11 +139,11 @@ async function saveOutput(
       object_path: stored.objectPath,
       signed_url: stored.url,
       mime_type: mime,
-      ...((dimensions?.width ?? generated.width) !== undefined
-        ? { width: dimensions?.width ?? generated.width }
+      ...((imageMetadata?.width ?? generated.width) !== undefined
+        ? { width: imageMetadata?.width ?? generated.width }
         : {}),
-      ...((dimensions?.height ?? generated.height) !== undefined
-        ? { height: dimensions?.height ?? generated.height }
+      ...((imageMetadata?.height ?? generated.height) !== undefined
+        ? { height: imageMetadata?.height ?? generated.height }
         : {}),
       ...(generated.durationSeconds !== undefined
         ? { duration_seconds: generated.durationSeconds }
