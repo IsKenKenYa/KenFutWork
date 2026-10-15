@@ -306,6 +306,176 @@ it.each([
   ]);
 });
 
+it.each(["单图", "视频"])(
+  "%s取消后新请求不被旧成功回执覆盖，新回执仍可正常接回",
+  async (media) => {
+    const canvasId = "aaaaaaaa-1111-4111-8111-111111111111";
+    const projectId = "bbbbbbbb-1111-4111-8111-111111111111";
+    const video = media === "视频";
+    const modelName = video ? "视频模型" : "图片模型";
+    let elements = [
+      {
+        id: "generator",
+        type: "rectangle",
+        x: 0,
+        y: 0,
+        width: 400,
+        height: 400,
+        version: 1,
+        isDeleted: false,
+        customData: {
+          type: video ? "video-generator" : "image-generator",
+          status: "idle",
+          prompt: "猫",
+          model: "11111111-1111-4111-8111-111111111111:media-model",
+          aspectRatio: "",
+          quality: "",
+          count: 1,
+          requestId: "",
+          jobIds: [] as string[],
+          cancelRequested: false,
+          errorMessage: "",
+        },
+      },
+    ];
+    const appState = {
+      zoom: { value: 1 },
+      selectedElementIds: { generator: true },
+      activeTool: { type: "selection" },
+    };
+    let notify = () => {};
+    const api = {
+      getSceneElements: () => elements.filter((element) => !element.isDeleted),
+      getSceneElementsIncludingDeleted: () => elements,
+      getAppState: () => appState,
+      onChange: (
+        callback: (scene: typeof elements, state: typeof appState) => void,
+      ) => {
+        notify = () => callback(elements, appState);
+        return () => {};
+      },
+      updateScene: (update: { elements: typeof elements }) => {
+        elements = update.elements;
+        notify();
+      },
+    } as unknown as ExcalidrawImperativeAPI;
+    const firstJob = generationJob({
+      job_type: video ? "video_generation" : "image_generation",
+      queue_name: video ? "video_generation" : "image_generation",
+    });
+    const secondJobId = "ffffffff-1111-4111-8111-111111111111";
+    const submissions: Array<{
+      requestId: string;
+      reply: (response: Response) => void;
+    }> = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      const path = String(url);
+      if (path.endsWith(video ? "/api/video-models" : "/api/image-models"))
+        return Response.json({
+          models: [
+            {
+              id: elements[0]?.customData.model,
+              displayName: modelName,
+              provider: "供应商",
+            },
+          ],
+        });
+      if (path.endsWith(`/api/jobs/${firstJob.id}/cancel`))
+        return Response.json({
+          job: {
+            ...firstJob,
+            status: "canceled",
+            payload: {
+              ...firstJob.payload,
+              _generation_cancel: { state: "local_only" },
+            },
+          },
+        });
+      if (
+        path.endsWith(
+          video ? "/api/agent/generate-video" : "/api/agent/generate-image",
+        )
+      ) {
+        const body = JSON.parse(String(init?.body));
+        return new Promise<Response>((resolve) => {
+          submissions.push({ requestId: body.requestId, reply: resolve });
+        });
+      }
+      const requestId = new URL(path, "http://localhost").searchParams.get(
+        "request_id",
+      );
+      return Response.json({
+        jobs: requestId === submissions[0]?.requestId ? [firstJob] : [],
+      });
+    });
+    render(
+      <ToastProvider>
+        <CanvasToolMenu
+          canvasId={canvasId}
+          projectId={projectId}
+          prepare={async () => "1"}
+          refresh={async () => {}}
+          accessToken={null}
+          excalidrawApi={api}
+        />
+      </ToastProvider>,
+    );
+    act(() => notify());
+    await screen.findByText(modelName);
+    const submit = () =>
+      fireEvent.keyDown(screen.getByPlaceholderText("今天我们要创作什么"), {
+        key: "Enter",
+      });
+    submit();
+    await waitFor(() => expect(submissions).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "停止" }));
+    await screen.findByText(
+      `已生成0/1${video ? "段" : "张"} · 已本地停止`,
+      {},
+      { timeout: 3500 },
+    );
+    submit();
+    await waitFor(() => expect(submissions).toHaveLength(2));
+    const first = submissions[0];
+    const second = submissions[1];
+    if (!first || !second) throw new Error("缺少两次生成请求");
+    expect(first.requestId).not.toBe(second.requestId);
+    const currentRequest = { ...elements[0]?.customData };
+    await act(async () => {
+      first.reply(
+        Response.json(
+          {
+            request_id: first.requestId,
+            jobs: [{ job_id: firstJob.id, status: "queued" }],
+          },
+          { status: 202 },
+        ),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(elements[0]?.customData).toEqual(currentRequest);
+    await act(async () => {
+      second.reply(
+        Response.json(
+          {
+            request_id: second.requestId,
+            jobs: [{ job_id: secondJobId, status: "queued" }],
+          },
+          { status: 202 },
+        ),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(elements[0]?.customData).toMatchObject({
+      requestId: second.requestId,
+      jobIds: [secondJobId],
+      status: "generating",
+      cancelRequested: false,
+    });
+    expect(submissions).toHaveLength(2);
+  },
+);
+
 it("重开画布从持久请求恢复完成状态，只同步服务器成果并保留删除记录", async () => {
   const canvasId = "aaaaaaaa-1111-4111-8111-111111111111";
   const projectId = "bbbbbbbb-1111-4111-8111-111111111111";
@@ -694,4 +864,164 @@ it("多图取消尚待确认时立即同步已成功成果与数量，继续查�
   expect(elements[0]?.customData.status).toBe("error");
   expect(refresh).toHaveBeenCalledOnce();
   expect(posts).toEqual([]);
+});
+
+it.each([
+  ["单图", "网络错误"],
+  ["视频", "网络错误"],
+  ["单图", "400错误"],
+  ["视频", "400错误"],
+])("%s迟到提交%s保留已确认的取消状态", async (media, failure) => {
+  const canvasId = "aaaaaaaa-1111-4111-8111-111111111111";
+  const projectId = "bbbbbbbb-1111-4111-8111-111111111111";
+  const video = media === "视频";
+  const modelName = video ? "视频模型" : "图片模型";
+  let elements = [
+    {
+      id: "generator",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 400,
+      version: 1,
+      isDeleted: false,
+      customData: {
+        type: video ? "video-generator" : "image-generator",
+        status: "idle",
+        prompt: "猫",
+        model: "11111111-1111-4111-8111-111111111111:media-model",
+        aspectRatio: "",
+        quality: "",
+        count: 1,
+        requestId: "",
+        jobIds: [] as string[],
+        cancelRequested: false,
+        errorMessage: "",
+      },
+    },
+  ];
+  const appState = {
+    zoom: { value: 1 },
+    selectedElementIds: { generator: true },
+    activeTool: { type: "selection" },
+  };
+  let notify = () => {};
+  const api = {
+    getSceneElements: () => elements.filter((element) => !element.isDeleted),
+    getSceneElementsIncludingDeleted: () => elements,
+    getAppState: () => appState,
+    onChange: (
+      callback: (scene: typeof elements, state: typeof appState) => void,
+    ) => {
+      notify = () => callback(elements, appState);
+      return () => {};
+    },
+    updateScene: (update: { elements: typeof elements }) => {
+      elements = update.elements;
+      notify();
+    },
+  } as unknown as ExcalidrawImperativeAPI;
+  const job = generationJob({
+    job_type: video ? "video_generation" : "image_generation",
+    queue_name: video ? "video_generation" : "image_generation",
+  });
+  let finishPost = () => {};
+  const requests: Array<{ url: string; method: string }> = [];
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    const path = String(url);
+    requests.push({ url: path, method: init?.method ?? "GET" });
+    if (path.endsWith(video ? "/api/video-models" : "/api/image-models"))
+      return Response.json({
+        models: [
+          {
+            id: elements[0]?.customData.model,
+            displayName: modelName,
+            provider: "供应商",
+          },
+        ],
+      });
+    if (path.endsWith(`/api/jobs/${job.id}/cancel`))
+      return Response.json({
+        job: {
+          ...job,
+          status: "canceled",
+          payload: {
+            ...job.payload,
+            _generation_cancel: { state: "local_only" },
+          },
+        },
+      });
+    if (
+      path.endsWith(
+        video ? "/api/agent/generate-video" : "/api/agent/generate-image",
+      )
+    )
+      return new Promise<Response>((resolve, reject) => {
+        finishPost = () => {
+          if (failure === "400错误")
+            resolve(
+              Response.json(
+                {
+                  error: {
+                    code: "invalid_request",
+                    message: "迟到的提交失败",
+                  },
+                },
+                { status: 400 },
+              ),
+            );
+          else reject(new TypeError("Network error"));
+        };
+      });
+    return Response.json({ jobs: [job] });
+  });
+  render(
+    <ToastProvider>
+      <CanvasToolMenu
+        canvasId={canvasId}
+        projectId={projectId}
+        prepare={async () => "1"}
+        refresh={async () => {}}
+        accessToken={null}
+        excalidrawApi={api}
+      />
+    </ToastProvider>,
+  );
+  act(() => notify());
+  await screen.findByText(modelName);
+  fireEvent.keyDown(screen.getByPlaceholderText("今天我们要创作什么"), {
+    key: "Enter",
+  });
+  await waitFor(() =>
+    expect(
+      requests.filter((request) =>
+        request.url.includes("/api/agent/generate-"),
+      ),
+    ).toHaveLength(1),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "停止" }));
+  const message = `已生成0/1${video ? "段" : "张"} · 已本地停止`;
+  await screen.findByText(message, {}, { timeout: 3500 });
+  const confirmed = { ...elements[0]?.customData };
+  await act(async () => {
+    finishPost();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(screen.getByText(message)).toBeTruthy();
+  expect(screen.queryByText("提交结果待确认")).toBeNull();
+  expect(screen.queryByText("迟到的提交失败")).toBeNull();
+  expect(elements[0]?.customData).toEqual(confirmed);
+  expect(requests.filter((request) => request.method === "POST")).toEqual([
+    {
+      url: expect.stringContaining(
+        video ? "/api/agent/generate-video" : "/api/agent/generate-image",
+      ),
+      method: "POST",
+    },
+    {
+      url: expect.stringContaining(`/api/jobs/${job.id}/cancel`),
+      method: "POST",
+    },
+  ]);
 });

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useGenerationErrorHandler } from "../../hooks/use-generation-error-handler";
 import {
+  getImageGeneratorData,
   type ImageGeneratorData,
   type ImageGeneratorParams,
   resizeImageGeneratorElement,
@@ -362,6 +363,16 @@ export function ImageGeneratorPanel({
     const controller = new AbortController();
     abortRef.current = controller;
     const requestId = crypto.randomUUID();
+    const activeRequest = () => {
+      const active = getImageGeneratorData(
+        excalidrawApi
+          .getSceneElements()
+          .find((element) => element.id === elementId && !element.isDeleted),
+      );
+      return active?.requestId === requestId && active.status === "generating"
+        ? active
+        : null;
+    };
     setLoading(true);
     setStopping(false);
     setError(null);
@@ -407,13 +418,15 @@ export function ImageGeneratorPanel({
           ...(sessionId ? { sessionId } : {}),
         },
       );
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || !activeRequest()) return;
       updateImageGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
         requestId: submission.request_id,
         jobIds: submission.jobs.map((job) => job.job_id),
       });
     } catch (error) {
       if (controller.signal.aborted) return;
+      const active = activeRequest();
+      if (!active || active.cancelRequested || active.jobIds?.length) return;
       if (
         submitted &&
         !(error instanceof ApiApplicationError) &&
