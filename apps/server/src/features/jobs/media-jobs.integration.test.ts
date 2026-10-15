@@ -82,6 +82,7 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
         const first = randomUUID(),
           second = randomUUID();
         expect(await jobs.claimJob(job.id, first, 0.05)).not.toBeNull();
+        await jobs.setProviderJobId(job.id, "original-provider", first);
         await new Promise((resolve) => setTimeout(resolve, 80));
         expect(await jobs.claimJob(job.id, second, 120)).not.toBeNull();
         expect(await jobs.renewLease(job.id, first, 120)).toBe(false);
@@ -222,6 +223,148 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
         }
       },
     );
+
+    it("队列投递失败仍保留受理回执，重开后扫描恢复原Job", async () => {
+      const initial = fixture();
+      await initial.queue.shutdown();
+      const accepted = await initial.jobs.createJob(db.actor, {
+        requestId: randomUUID(),
+        jobType: "image_generation",
+        payload: { prompt: "猫" },
+      });
+      const resumed = fixture();
+      const execute = vi.fn(async () => ({ url: "recovered" }));
+      registerExecutor("image_generation", execute);
+      const loop = startJobLoop(
+        {
+          queue: resumed.queue,
+          jobService: resumed.jobs,
+          env: {
+            agentBackendMode: "state",
+            agentModel: "test",
+            port: 0,
+            version: "test",
+            webOrigin: "http://127.0.0.1",
+          },
+          blob: {} as never,
+          projectFiles: {} as never,
+          generationTargets: {} as never,
+          assetWriter: {} as never,
+        },
+        { queues: ["image_generation_jobs"] },
+      );
+      try {
+        await vi.waitFor(async () =>
+          expect(
+            await resumed.jobs.getJob(db.actor, accepted.id),
+          ).toMatchObject({
+            status: "succeeded",
+            result: { url: "recovered" },
+          }),
+        );
+        expect(execute).toHaveBeenCalledOnce();
+      } finally {
+        await loop.shutdown();
+      }
+    });
+
+    it("在途提交没有上游句柄时，重启只标待确认而不重发", async () => {
+      const { jobs, queue } = fixture();
+      try {
+        const job = await jobs.createJob(db.actor, {
+          jobType: "image_generation",
+          payload: { prompt: "猫" },
+        });
+        expect(await jobs.claimJob(job.id, randomUUID(), 0.05)).not.toBeNull();
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        await jobs.recoverPendingJobs(["image_generation_jobs"], 1);
+        expect(await jobs.getJob(db.actor, job.id)).toMatchObject({
+          status: "failed",
+          error_code: "submission_unknown",
+        });
+        expect(await jobs.claimJob(job.id, randomUUID(), 120)).toBeNull();
+      } finally {
+        await queue.shutdown();
+      }
+    });
+
+    it("有上游句柄的延迟任务重开队列后仅续查，保留下一动作时间", async () => {
+      const initial = fixture();
+      const job = await initial.jobs.createJob(db.actor, {
+        jobType: "video_generation",
+        payload: { prompt: "猫" },
+      });
+      const token = randomUUID();
+      await initial.jobs.claimJob(job.id, token, 120);
+      await initial.jobs.setProviderJobId(
+        job.id,
+        "persisted-provider-operation",
+        token,
+      );
+      await initial.jobs.scheduleJob(job.id, 0.1, token);
+      await initial.jobs.releaseLease(job.id, token);
+      await initial.queue.shutdown();
+      const resumed = fixture();
+      const execute = vi.fn(async () => {
+        const current = await resumed.jobs.getJobForWorker(job.id);
+        expect(current.provider_job_id).toBe("persisted-provider-operation");
+        return { url: "resumed-video" };
+      });
+      registerExecutor("video_generation", execute);
+      const loop = startJobLoop(
+        {
+          queue: resumed.queue,
+          jobService: resumed.jobs,
+          env: {
+            agentBackendMode: "state",
+            agentModel: "test",
+            port: 0,
+            version: "test",
+            webOrigin: "http://127.0.0.1",
+            workerPollIntervalMs: 1000,
+          },
+          blob: {} as never,
+          projectFiles: {} as never,
+          generationTargets: {} as never,
+          assetWriter: {} as never,
+        },
+        { queues: ["video_generation_jobs"] },
+      );
+      try {
+        expect(execute).not.toHaveBeenCalled();
+        await vi.waitFor(
+          async () =>
+            expect((await resumed.jobs.getJob(db.actor, job.id)).status).toBe(
+              "succeeded",
+            ),
+          { timeout: 3000 },
+        );
+        expect(execute).toHaveBeenCalledOnce();
+      } finally {
+        await loop.shutdown();
+      }
+    });
+
+    it("旧worker在认领检查期间释放租约，也不能重发无句柄请求", async () => {
+      const { jobs, queue } = fixture();
+      try {
+        for (let index = 0; index < 6; index++) {
+          const job = await jobs.createJob(db.actor, {
+            jobType: "image_generation",
+            payload: { prompt: "猫" },
+          });
+          const first = randomUUID();
+          await jobs.claimJob(job.id, first, 120);
+          const [replacement] = await Promise.all([
+            jobs.claimJob(job.id, randomUUID(), 120),
+            jobs.releaseLease(job.id, first),
+          ]);
+          expect(replacement).toBeNull();
+        }
+      } finally {
+        await queue.shutdown();
+      }
+    });
 
     it("参考图持久保存为素材引用，Job不保存base64", async () => {
       const uploads = createUploadService({

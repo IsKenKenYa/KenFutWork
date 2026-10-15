@@ -269,6 +269,8 @@ function createFakeRepository(
     delete: async () => 1,
     findById: async () => JOB_ROW,
     findByIdInInstance: async () => JOB_ROW,
+    takeWakeups: async () => [],
+    schedule: async () => 1,
     claim: async () => null,
     renewLease: async () => 1,
     releaseLease: async () => 1,
@@ -354,7 +356,7 @@ describe("job service", () => {
     expect(listing).toHaveBeenCalledWith(INSTANCE_ID, {});
   });
 
-  it("投递失败时回滚任务行并报 job_create_failed", async () => {
+  it("投递失败时保留持久任务及受理回执", async () => {
     const removed: string[] = [];
     const service = buildService({
       queue: fakeQueue({
@@ -375,8 +377,8 @@ describe("job service", () => {
         jobType: "video_generation",
         payload: { prompt: "x" },
       }),
-    ).rejects.toMatchObject({ code: "job_create_failed", statusCode: 500 });
-    expect(removed).toEqual([JOB_ID]);
+    ).resolves.toMatchObject({ id: JOB_ID });
+    expect(removed).toEqual([]);
   });
 
   it("落库失败报 job_create_failed 且不投递", async () => {

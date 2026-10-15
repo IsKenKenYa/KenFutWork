@@ -63,6 +63,7 @@ async function pollBudgetFixture(steps: ExecutorStep[]) {
         workerVideoConcurrency: 1,
       },
       jobService: {
+        recoverPendingJobs: async () => {},
         claimJob: async () => ({ status: "running" }),
         renewLease: async () => true,
         releaseLease: async () => {},
@@ -122,6 +123,7 @@ describe("本地任务消费终态", () => {
           workerImageConcurrency: 1,
         },
         jobService: {
+          recoverPendingJobs: async () => {},
           claimJob: async () => ({ status: "running" }),
           renewLease: async () => true,
           releaseLease: async () => {},
@@ -159,7 +161,9 @@ describe("本地任务消费终态", () => {
           version: "test",
           webOrigin: "http://127.0.0.1",
         },
-        jobService: {} as never,
+        jobService: {
+          recoverPendingJobs: async () => {},
+        } as never,
         blob: {} as never,
         projectFiles: {} as never,
         generationTargets: {} as never,
@@ -207,6 +211,7 @@ describe("本地任务消费终态", () => {
           webOrigin: "http://127.0.0.1",
         },
         jobService: {
+          recoverPendingJobs: async () => {},
           claimJob: async () => ({ status: "running" }),
           renewLease: async () => true,
           releaseLease: async () => {},
@@ -263,6 +268,7 @@ describe("本地任务消费终态", () => {
             webOrigin: "http://127.0.0.1",
           },
           jobService: {
+            recoverPendingJobs: async () => {},
             claimJob: async () => ({ status: "running" }),
             renewLease: async () => true,
             releaseLease: async () => {},
@@ -305,6 +311,7 @@ describe("本地任务消费终态", () => {
           webOrigin: "http://127.0.0.1",
         },
         jobService: {
+          recoverPendingJobs: async () => {},
           claimJob: async () => ({ status: "running" }),
           renewLease: async () => true,
           releaseLease: async () => {},
@@ -407,6 +414,7 @@ it("租约占用时保留原队列消息，不能吞掉失败后的唯一重试�
         webOrigin: "http://127.0.0.1",
       },
       jobService: {
+        recoverPendingJobs: async () => {},
         getJobForWorker: async () => ({ status: "running" }),
         claimJob: async () => null,
       } as never,
@@ -452,6 +460,7 @@ it("失租后不再越过成果发布边界，也不消耗失败次数", async (
         webOrigin: "http://127.0.0.1",
       },
       jobService: {
+        recoverPendingJobs: async () => {},
         getJobForWorker: async () => ({ status: "running" }),
         claimJob: async () => ({ status: "running" }),
         renewLease: async () => false,

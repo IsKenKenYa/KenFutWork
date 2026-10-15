@@ -66,6 +66,15 @@ export type JobListFilters = {
  *   与「实例隔离」不冲突（拿不到实例就无法用实例谓词）。
  */
 export interface JobRepository {
+  takeWakeups(
+    queues: readonly string[],
+    seconds: number,
+  ): Promise<BackgroundJobRecord[]>;
+  schedule(
+    jobId: string,
+    seconds: number,
+    leaseToken?: string,
+  ): Promise<number>;
   claim(
     jobId: string,
     token: string,
@@ -143,12 +152,54 @@ export function createJobRepository(
   persistence: PersistenceService,
 ): JobRepository {
   return {
+    async takeWakeups(queues, seconds) {
+      // 无上游句柄的在途提交无法判断是否已受理，不能靠补投重发付费请求。
+      await persistence.execute(
+        `update public.background_jobs set status='failed',error_code='submission_unknown',
+          error_message='提交结果待确认，请核对供应商记录。'
+         where queue_name=any($1::text[]) and status in ('running','failed')
+           and provider_job_id is null and started_at is not null
+           and (lease_until is null or lease_until<=now())
+           and error_code is distinct from 'submission_unknown'`,
+        [queues],
+      );
+      return persistence.query<BackgroundJobRecord>(
+        `with ready as (
+          select id from public.background_jobs
+           where queue_name=any($1::text[]) and status in ('queued','running','failed')
+             and error_code is distinct from 'submission_unknown'
+             and (status='queued' or provider_job_id is not null)
+             and next_action_at<=now() and wakeup_at<=now()
+             and (lease_until is null or lease_until<=now())
+           for update skip locked)
+         update public.background_jobs j set wakeup_at=now()+$2*interval '1 second'
+         from ready where j.id=ready.id returning j.*`,
+        [queues, seconds],
+      );
+    },
+    async schedule(jobId, seconds, leaseToken) {
+      return persistence.execute(
+        `update public.background_jobs
+         set next_action_at=now()+$2*interval '1 second', wakeup_at=now()+$2*interval '1 second'
+         where id=$1 and status in ('queued','running','failed') ${leaseGuard(3)}`,
+        [jobId, seconds, leaseToken ?? null],
+      );
+    },
     async claim(jobId, token, seconds) {
+      await persistence.execute(
+        `update public.background_jobs set status='failed', error_code='submission_unknown',
+          error_message='提交结果待确认，请核对供应商记录。'
+         where id=$1 and status in ('running','failed') and provider_job_id is null
+           and started_at is not null and (lease_until is null or lease_until<=now())`,
+        [jobId],
+      );
       return persistence.queryOne<BackgroundJobRecord>(
         `update public.background_jobs set lease_token=$2, lease_until=now()+$3*interval '1 second',
           status='running', started_at=coalesce(started_at,now())
          where id=$1 and status in ('queued','running','failed')
-           and (lease_until is null or lease_until<=now()) returning ${JOB_COLUMNS}`,
+           and (lease_until is null or lease_until<=now())
+           and next_action_at<=now() and error_code is distinct from 'submission_unknown'
+           and (started_at is null or provider_job_id is not null) returning ${JOB_COLUMNS}`,
         [jobId, token, seconds],
       );
     },

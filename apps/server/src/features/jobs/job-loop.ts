@@ -85,6 +85,21 @@ export function startJobLoop(
     `${tag} Started. concurrency={${concurrencyDesc}}, longPollTimeout=${pollTimeoutSeconds}s`,
   );
 
+  let recoveryTask: Promise<void> | undefined;
+  const recover = () => {
+    recoveryTask ??= ctx.jobService
+      .recoverPendingJobs(queues, pollTimeoutSeconds)
+      .catch((error) => console.error(`${tag} Job recovery failed:`, error))
+      .finally(() => {
+        recoveryTask = undefined;
+      });
+    return recoveryTask;
+  };
+  void recover();
+  const recoveryTimer = setInterval(() => {
+    void recover();
+  }, pollTimeoutSeconds * 1000);
+
   const consumerPromise = (async () => {
     while (running) {
       // `queueName` 是队列名，`queue` 是队列缝客户端——两者都用，故名字必须区分
@@ -186,6 +201,8 @@ export function startJobLoop(
           `${tag} Shutting down, waiting for ${count} in-flight jobs...`,
         );
         running = false;
+        clearInterval(recoveryTimer);
+        await recoveryTask;
         const tasks = [...inFlightByQueue.values()].flatMap((set) => [...set]);
         if (tasks.length > 0) {
           await Promise.allSettled(tasks);
@@ -246,6 +263,7 @@ async function processMessage(
     return;
   }
   if (
+    current.error_code === "submission_unknown" ||
     current.status === "canceled" ||
     current.status === "succeeded" ||
     current.status === "dead_letter"

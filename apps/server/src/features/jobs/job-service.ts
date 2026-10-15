@@ -65,6 +65,15 @@ export type CreateJobInput = {
 };
 
 export type JobService = {
+  recoverPendingJobs(
+    queues: readonly string[],
+    intervalSeconds: number,
+  ): Promise<void>;
+  scheduleJob(
+    jobId: string,
+    seconds: number,
+    leaseToken?: string,
+  ): Promise<void>;
   claimJob(
     jobId: string,
     token: string,
@@ -216,6 +225,38 @@ export function createJobService(options: {
   }
 
   return {
+    async recoverPendingJobs(queues, intervalSeconds) {
+      const ready = await repository.takeWakeups(queues, intervalSeconds);
+      await Promise.all(
+        ready.map(async (job) => {
+          try {
+            await queue.send(job.queue_name, {
+              job_id: job.id,
+              job_type: job.job_type,
+            });
+          } catch (error) {
+            console.error("[job-service] recovery wakeup failed:", error);
+          }
+        }),
+      );
+    },
+    async scheduleJob(jobId, seconds, leaseToken) {
+      assertLeaseWrite(
+        await repository.schedule(jobId, seconds, leaseToken),
+        leaseToken,
+      );
+      const job = await repository.findById(jobId);
+      if (!job) return;
+      try {
+        await queue.send(
+          job.queue_name,
+          { job_id: jobId, job_type: job.job_type },
+          seconds,
+        );
+      } catch (error) {
+        console.error("[job-service] scheduled wakeup failed:", error);
+      }
+    },
     async claimJob(jobId, token, seconds) {
       const row = await repository.claim(jobId, token, seconds);
       return row ? mapJobRow(row) : null;
@@ -336,7 +377,7 @@ export function createJobService(options: {
         return mapJobRow(job);
       }
 
-      // 投递到队列缝 — 失败即回滚（不留孤儿 job 行）
+      // Job已经持久受理。队列故障保留回执，由启动/周期扫描补投。
       try {
         await queue.send(queueName, {
           job_id: job.id,
@@ -345,14 +386,8 @@ export function createJobService(options: {
           ...(input.canvasId ? { canvas_id: input.canvasId } : {}),
           ...(input.sessionId ? { session_id: input.sessionId } : {}),
         });
-      } catch (enqueueErr) {
-        console.error("[job-service] queue.send failed:", enqueueErr);
-        await repository.delete(instanceId, job.id).catch(() => 0);
-        throw new JobServiceError(
-          "job_create_failed",
-          "Failed to enqueue job.",
-          500,
-        );
+      } catch (error) {
+        console.error("[job-service] initial wakeup failed:", error);
       }
 
       return mapJobRow(job);

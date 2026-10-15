@@ -37,6 +37,8 @@ export function createLeasedContext(
         await assertActive();
         return ctx.jobService.getJobForWorker(id);
       },
+      scheduleJob: (id, seconds) =>
+        ctx.jobService.scheduleJob(id, seconds, token),
       setProviderJobId: (id, handle) =>
         ctx.jobService.setProviderJobId(id, handle, token),
       appendJobPayload: (id, fields) =>

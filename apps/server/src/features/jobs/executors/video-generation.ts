@@ -112,8 +112,10 @@ registerExecutor(
     if (instance && jobRow.provider_job_id) {
       const submittedRevision = payload.provider_config_revision;
       if (
-        submittedRevision != null &&
-        Number(submittedRevision) !== instance.configRevision
+        submittedRevision == null ||
+        Number(submittedRevision) !== instance.configRevision ||
+        !startAsync ||
+        !pollAsync
       ) {
         throw fatal(
           PROVIDER_CONFIG_STALE,
@@ -131,11 +133,7 @@ registerExecutor(
         ctx.env.videoJobTimeoutMs ?? DEFAULT_VIDEO_JOB_TIMEOUT_MS;
 
       const scheduleNextPoll = () =>
-        ctx.queue.send(
-          ctx.queueName,
-          { job_id: jobId, job_type: "video_generation" },
-          pollDelaySeconds,
-        );
+        ctx.jobService.scheduleJob(jobId, pollDelaySeconds);
 
       if (jobRow.provider_job_id) {
         // ── poll 分支（含崩溃恢复：重启后消息重投，见 provider_job_id 即续查）──

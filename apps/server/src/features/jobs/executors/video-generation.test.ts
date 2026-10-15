@@ -55,6 +55,12 @@ function makeCtx(job: BackgroundJob) {
   }> = [];
   const ctx = {
     jobService: {
+      scheduleJob: vi.fn(async (id: string, delay: number) => {
+        sent.push({
+          payload: { job_id: id, job_type: "video_generation" },
+          delay,
+        });
+      }),
       getJobForWorker: vi.fn(async () => job),
       setProviderJobId: vi.fn(async () => {}),
       appendJobPayload: vi.fn(async () => {}),
@@ -314,4 +320,15 @@ describe("video executor 状态机（S6）", () => {
       code: "video_job_timeout",
     });
   });
+});
+
+it("已保存句柄但提交修订缺失，不能退回同步付费生成", async () => {
+  const job = jobRow({ provider_job_id: "accepted-upstream" });
+  const instance = stubInstance({});
+  instance.provider.generate.mockResolvedValue({ url: "duplicate" });
+  mockInstanceResolver(instance);
+  await expect(runExecutor(makeCtx(job))).rejects.toMatchObject({
+    code: "provider_config_stale",
+  });
+  expect(instance.provider.generate).not.toHaveBeenCalled();
 });
