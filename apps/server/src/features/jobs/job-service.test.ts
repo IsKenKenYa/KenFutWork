@@ -299,6 +299,8 @@ function buildService(
 ) {
   return createJobService({
     generationTargets: {
+      withOriginLock: async (_job, operation) =>
+        operation(new AbortController().signal),
       prepareOrigin: async () => ({ kind: "standalone" }),
       resolve: async () => null,
     },
@@ -470,6 +472,8 @@ it("Job创建保存服务器来源，忽略payload伪造file_target", async () =
     localInstance: INSTANCE_STUB,
     repository: createFakeRepository({ insert }),
     generationTargets: {
+      withOriginLock: async (_job, operation) =>
+        operation(new AbortController().signal),
       prepareOrigin: async () => ({ kind: "standalone" }),
       resolve: async () => null,
     },
@@ -491,6 +495,8 @@ it("来源归属失败返回可读409，不落Job或投队列", async () => {
     localInstance: INSTANCE_STUB,
     repository: createFakeRepository({ insert }),
     generationTargets: {
+      withOriginLock: async (_job, operation) =>
+        operation(new AbortController().signal),
       prepareOrigin: async () => {
         throw new GenerationTargetError("生成任务的原Run授权代际已失效");
       },

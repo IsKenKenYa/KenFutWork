@@ -124,6 +124,7 @@ export type JobService = {
     errorCode: string,
     errorMessage: string,
     leaseToken?: string,
+    partialResult?: Record<string, unknown>,
   ): Promise<void>;
   /** submit 成功后落外部厂商任务引用（崩溃恢复：重启后据此续 poll）。 */
   setProviderJobId(
@@ -532,13 +533,20 @@ export function createJobService(options: {
         leaseToken,
       );
     },
-    async markDeadLetter(jobId, errorCode, errorMessage, leaseToken) {
+    async markDeadLetter(
+      jobId,
+      errorCode,
+      errorMessage,
+      leaseToken,
+      partialResult,
+    ) {
       assertLeaseWrite(
         await repository.markDeadLetter(
           jobId,
           errorCode,
           errorMessage,
           leaseToken,
+          partialResult,
         ),
         leaseToken,
       );

@@ -325,5 +325,187 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
         );
       }
     });
+
+    it.each(["download", "inline-checkpoint"])(
+      "多图中间产物%s失败仍保存前后产物，不重复生成并在失败回执展示成功结果",
+      async (mode) => {
+        let submits = 0;
+        let baseUrl = "";
+        const downloads = new Map<string, number>();
+        const png =
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2Z0AAAAASUVORK5CYII=";
+        const middlePng =
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==";
+        const provider = createServer(async (request, response) => {
+          if (request.method === "POST") {
+            for await (const _chunk of request) {
+              /* 消费请求体 */
+            }
+            submits++;
+            response.setHeader("content-type", "application/json");
+            response.end(
+              JSON.stringify({
+                data:
+                  mode === "download"
+                    ? ["first", "middle", "last"].map((name) => ({
+                        url: `${baseUrl}/${name}.png`,
+                      }))
+                    : [
+                        { b64_json: png },
+                        { b64_json: middlePng },
+                        { b64_json: png },
+                      ],
+              }),
+            );
+            return;
+          }
+          const path = request.url ?? "/";
+          downloads.set(path, (downloads.get(path) ?? 0) + 1);
+          if (path === "/middle.png") {
+            response.statusCode = 503;
+            response.end("middle image unavailable");
+            return;
+          }
+          response.setHeader("content-type", "image/png");
+          response.end(Buffer.from(png, "base64"));
+        });
+        await new Promise<void>((resolve) =>
+          provider.listen(0, "127.0.0.1", resolve),
+        );
+        const address = provider.address();
+        if (!address || typeof address === "string")
+          throw new Error("模拟供应商未启动");
+        baseUrl = `http://127.0.0.1:${address.port}`;
+        const backing = createLocalFsBlobStore({
+          rootDir: `${db.directory}/pipeline-partial-${mode}`,
+          signingSecret: "test-only",
+          publicBaseUrl: baseUrl,
+        });
+        const blob = {
+          ...backing,
+          bucket(name: string) {
+            const bucket = backing.bucket(name);
+            return {
+              ...bucket,
+              async upload(...args: Parameters<typeof bucket.upload>) {
+                if (
+                  mode === "inline-checkpoint" &&
+                  Buffer.compare(
+                    Buffer.from(args[1]),
+                    Buffer.from(middlePng, "base64"),
+                  ) === 0
+                )
+                  throw new Error("模拟中间产物暂存失败");
+                await bucket.upload(...args);
+              },
+            };
+          },
+        };
+        const queue = createInProcessQueue();
+        const generationTargets = createGenerationTargets({
+          persistence: db.persistence,
+          executionScopes: createExecutionScopes({
+            repository: createScopeRepository(db.persistence),
+            localInstance: db.localInstance,
+          }),
+        });
+        const jobs = createJobService({
+          queue,
+          repository: createJobRepository(db.persistence),
+          localInstance: db.localInstance,
+          generationTargets,
+        });
+        const modelProviders = createModelProviderService({
+          repository: createModelProviderRepository(db.persistence),
+          localInstance: db.localInstance,
+        });
+        const configured = await modelProviders.createInstance(db.actor, {
+          name: "部分成功模拟供应商",
+          apiKey: "test-only",
+          baseUrl: `${baseUrl}/v1`,
+          protocol: "openai-compatible",
+          models: [
+            {
+              id: "gpt-image-1",
+              name: "多图模型",
+              capability: "image",
+              imageGeneration: { maxOutputs: 3 },
+            },
+          ],
+        });
+        const job = await jobs.createJob(db.actor, {
+          requestId: randomUUID(),
+          jobType: "image_generation",
+          payload: {
+            prompt: "三只猫",
+            model: "gpt-image-1",
+            provider_instance_id: configured.id,
+            count: 3,
+          },
+        });
+        const loop = startJobLoop(
+          {
+            queue,
+            jobService: jobs,
+            blob,
+            generationTargets,
+            projectFiles: {} as never,
+            assetWriter: createAssetWriter(
+              createUploadRepository(db.persistence),
+            ),
+            modelProviders,
+            env: {
+              agentBackendMode: "state",
+              agentModel: "test",
+              port: 0,
+              version: "test",
+              webOrigin: baseUrl,
+              workerPollIntervalMs: 1000,
+            },
+          },
+          { queues: ["image_generation_jobs"] },
+        );
+        try {
+          await vi.waitFor(
+            async () =>
+              expect(await jobs.getJob(db.actor, job.id)).toMatchObject({
+                status: "dead_letter",
+                result: {
+                  asset_id: job.id,
+                  outputs: [{ asset_id: job.id }, { mime_type: "image/png" }],
+                },
+              }),
+            { timeout: 15000 },
+          );
+          const final = await jobs.getJob(db.actor, job.id);
+          const outputs = final.result?.outputs as Array<{
+            asset_id: string;
+            object_path: string;
+          }>;
+          expect(submits).toBe(1);
+          expect(new Set(outputs.map((output) => output.asset_id)).size).toBe(
+            2,
+          );
+          for (const output of outputs)
+            expect(
+              await backing
+                .bucket("project-assets")
+                .download(output.object_path),
+            ).toEqual(new Uint8Array(Buffer.from(png, "base64")));
+          if (mode === "download") {
+            expect(downloads.get("/first.png")).toBe(1);
+            expect(downloads.get("/last.png")).toBe(1);
+            expect(downloads.get("/middle.png")).toBe(3);
+          }
+          expect(JSON.stringify(final.payload)).not.toContain(png);
+          expect(JSON.stringify(final.payload)).not.toContain(middlePng);
+        } finally {
+          await loop.shutdown();
+          await new Promise<void>((resolve, reject) =>
+            provider.close((error) => (error ? reject(error) : resolve())),
+          );
+        }
+      },
+    );
   },
 );

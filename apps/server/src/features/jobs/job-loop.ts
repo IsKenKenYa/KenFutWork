@@ -5,6 +5,7 @@ import type { ServerEnv } from "../../config/env.js";
 import { type QueueClient, QueueClosedError } from "../queue/types.js";
 import { type ExecutorContext, getExecutor } from "./job-executor.js";
 import { classifyJobFailure } from "./job-failure.js";
+import { readJobExecution } from "./job-progress.js";
 import { createLeasedContext } from "./job-lease.js";
 import { JobServiceError } from "./job-service.js";
 
@@ -312,11 +313,19 @@ async function handleExecutionFailure(
     token,
   );
   if (policy.kind === "terminal" || attempt_count >= max_attempts) {
+    const completed =
+      readJobExecution(current).outputs?.flatMap((output) =>
+        output.stored ? [output.stored] : [],
+      ) ?? [];
+    const partialResult = completed.length
+      ? { ...completed[0], outputs: completed }
+      : undefined;
     await ctx.jobService.markDeadLetter(
       jobId,
       policy.code,
       policy.message,
       token,
+      partialResult,
     );
   } else {
     await ctx.jobService.retryJob(

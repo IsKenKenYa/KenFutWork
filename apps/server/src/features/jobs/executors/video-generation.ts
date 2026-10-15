@@ -60,7 +60,7 @@ registerExecutor(
 
     await ctx.generationTargets.resolve(jobRow);
     const execution = readJobExecution(jobRow);
-    if (execution.generated || execution.stored)
+    if (execution.outputs?.length || execution.generated || execution.stored)
       return completeMediaJob(jobRow, undefined, ctx);
 
     const payload = (jobRow.payload ?? {}) as {

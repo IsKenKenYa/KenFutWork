@@ -120,6 +120,7 @@ export interface JobRepository {
     errorCode: string,
     errorMessage: string,
     leaseToken?: string,
+    partialResult?: Record<string, unknown>,
   ): Promise<number>;
   markFailed(
     jobId: string,
@@ -455,16 +456,28 @@ export function createJobRepository(
       );
     },
 
-    async markDeadLetter(jobId, errorCode, errorMessage, leaseToken) {
+    async markDeadLetter(
+      jobId,
+      errorCode,
+      errorMessage,
+      leaseToken,
+      partialResult,
+    ) {
       return persistence.execute(
         `update public.background_jobs
             set status = 'dead_letter',
                 error_code = $2,
                 error_message = $3,
-                failed_at = now()
+                failed_at = now()${partialResult ? ", result=$5::jsonb" : ""}
           where id = $1
             and status in ('queued', 'running', 'failed') ${leaseGuard(4)}`,
-        [jobId, errorCode, errorMessage, leaseToken ?? null],
+        [
+          jobId,
+          errorCode,
+          errorMessage,
+          leaseToken ?? null,
+          ...(partialResult ? [JSON.stringify(partialResult)] : []),
+        ],
       );
     },
 

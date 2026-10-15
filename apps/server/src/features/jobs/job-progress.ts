@@ -19,6 +19,7 @@ const storedSchema = z.object({
   element_id: z.string().optional(),
 });
 const outputSchema = z.object({
+  pendingInline: mediaSchema.omit({ url: true }).optional(),
   generated: mediaSchema.optional(),
   sourceObjectPath: z.string().optional(),
   stored: storedSchema.optional(),
