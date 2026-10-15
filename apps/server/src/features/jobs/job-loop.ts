@@ -57,8 +57,10 @@ export function startJobLoop(
   const env = ctx.env;
 
   const concurrencyByQueue: Record<string, number> = {
-    image_generation_jobs: env.workerImageConcurrency ?? 3,
-    video_generation_jobs: env.workerVideoConcurrency ?? 2,
+    image_generation_jobs:
+      env.workerImageConcurrency ?? Number.POSITIVE_INFINITY,
+    video_generation_jobs:
+      env.workerVideoConcurrency ?? Number.POSITIVE_INFINITY,
   };
 
   const inFlightByQueue = new Map<string, Set<Promise<void>>>(
@@ -93,7 +95,11 @@ export function startJobLoop(
           const inFlight = inFlightByQueue.get(queueName);
           if (!inFlight) continue;
           const cap = concurrencyByQueue[queueName] ?? 1;
-          const available = cap - inFlight.size;
+          // 缺省每次取一条后继续读取；这是传输批次，不限制同时在途任务。
+          const available = Math.min(
+            env.workerMaxBatchSize ?? 1,
+            cap - inFlight.size,
+          );
           if (available <= 0) continue;
 
           const vt = VT_BY_QUEUE[queueName] ?? 120;

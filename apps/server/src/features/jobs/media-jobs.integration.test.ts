@@ -161,6 +161,68 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
       }
     });
 
+    it.each([
+      ["image_generation", 8],
+      ["video_generation", 5],
+    ] as const)(
+      "%s没有默认业务并发上限，%i个请求可同时在途",
+      async (jobType, count) => {
+        const { jobs, queue } = fixture();
+        const accepted = await Promise.all(
+          Array.from({ length: count }, () =>
+            jobs.createJob(db.actor, { jobType, payload: { prompt: "猫" } }),
+          ),
+        );
+        let finish: () => void = () => {};
+        const held = new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        const execute = vi.fn(async () => {
+          await held;
+          return { url: "done" };
+        });
+        registerExecutor(jobType, execute);
+        const queueName =
+          jobType === "image_generation"
+            ? "image_generation_jobs"
+            : "video_generation_jobs";
+        const loop = startJobLoop(
+          {
+            queue,
+            jobService: jobs,
+            env: {
+              agentBackendMode: "state",
+              agentModel: "test",
+              port: 0,
+              version: "test",
+              webOrigin: "http://127.0.0.1",
+            },
+            blob: {} as never,
+            projectFiles: {} as never,
+            generationTargets: {} as never,
+            assetWriter: {} as never,
+          },
+          { queues: [queueName] },
+        );
+        try {
+          await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(count));
+          expect(loop.inFlightCount()).toBe(count);
+          finish();
+          await vi.waitFor(async () => {
+            const states = await Promise.all(
+              accepted.map((job) => jobs.getJob(db.actor, job.id)),
+            );
+            expect(states.every((job) => job.status === "succeeded")).toBe(
+              true,
+            );
+          });
+        } finally {
+          finish();
+          await loop.shutdown();
+        }
+      },
+    );
+
     it("参考图持久保存为素材引用，Job不保存base64", async () => {
       const uploads = createUploadService({
         blob: createLocalFsBlobStore({
