@@ -128,20 +128,19 @@ Code V4与Design原`agent.run`传输保留用户原文。现有运行设置读�
 
 来源安装不开放生命周期脚本授权；安装阶段重新执行既有兼容门禁，拒绝时原HTTP/RPC返回真实报告与422。停用后重装保持停用。原来源表单输入与检查结果绑定服务、目标、来源及弹窗代际；关闭表单仍给有效库存目标只读对账，迟到响应不清新表单或作废新目标读取，未知写入响应不自动重试。Native顶栏「刷新库存」仅重新读取目录，不冒充市场源更新。工作目录授权安装与导出入口仍待接线。
 
-## Design 持久 Task 传输
+## Code/Design 共享 Task 传输
 
-Design `agent.run` 复用 Run 字段，额外声明 `taskId`（等于 `sessionId`）、稳定 `inputId`、`scopeGeneration`、`branchGeneration`。新会话的创建回执持有 Task；旧会话须先显式 provision，再读取 policy。缺失执行元数据明确拒绝，不借用画布身份或自动供给。
+Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画布引用、选区、生成偏好在 `workContext` 内随输入接纳冻结。Task 持有固定文件目录与授权代际，画布引用不能签发目录授权。Goal、审批、取消、队列及重连使用同一会话协议；后续 Goal Run 重新捕获当时能力，已接纳输入保留自己的能力快照。
 
-命令外层 `id` 是本次传输请求的关联号；同一持久输入重连时复用 `inputId`，传输 `id` 可更新。成功 `command.ack` 与拒绝 `error` 均回 `requestId` 和 `action`。拒绝还带 `code/message`，客户端立即拒绝对应请求，不能等待超时。其他历史错误帧可以省略这些字段。
+外部 HTTP `/api/runs` 与 WS `agent.run` 使用同一 `codeUi.admitExternalRun`。必须提供真实 Task 及匹配的项目、授权代际；`inputId` 是稳定命令身份，同身份重放不重新执行。WS 先发送 `command.ack`（含 taskId/sessionId/inputId/runId），再触发同一原会话发布；运行事件与恢复通过原会话订阅读取。旧 `task.resume` 返回 `shared_conversation_required`，不保留第二套 Design 事件回放或独立 Goal/审批端点。
 
-Design Run ACK 回 `taskId/sessionId/inputId/runId`、`delivery`（running/queued/duplicate）、当前 `activeRunId` 与授权代际。Task 缓冲按真实 instance/Task 隔离。宿主唯一消费 Run stream；WS 仅订阅，先发送 ACK，再投递本连接等待 ACK 期间的事件。事件信封附带 `taskId` 和单调 `seq`。
+`agent.cancel` 由 canonical Task 输入和运行控制核验身份，先记录停止意图，再等待实际取消。旧素材参数与非 Agent 的外部执行模式明确拒绝，素材及策略由共享会话接纳。
 
-- `task.resume`：`taskId/lastSeq`；先 ACK 当前 `activeRunId/latestSeq/replayed` 及代际，再回放该 Task 的事件。
-- `replayGap`：缓冲截断或服务重启导致序号缺口；客户端重新读取持久消息和 policy，不能把没有缓存解释为运行成功。
-- `agent.cancel`：Design 必须同时给 `taskId/runId`；仅匹配当前 Run 才停止，回执 `status` 为 stopping/idle/targetChanged。旧 Run 的迟到取消不能停止新 Run。
-- Plan 先通过 policy CAS 切换并取新代际，再发送；WS 不在 Run admission 内隐式改变授权。执行模式在宿主实际认领队列后激活，排队输入不改变当前 Run。
-- 旧 WS `agent.run` 中的 `goal/loop` 字段不接纳，返回 `design_mode_unsupported`；Design Goal 通过独立 HTTP Goal 端点与同一受控 Task FIFO 推进，不使用旧 WS 字段另建循环。
+## 文档资源变更
 
+独立 `canvas.document.updated` 帧包含 `projectId`、`canvasId`、`deleted` 及可选真实 SHA-256 `revision`。它由文件变更和后台发布经 PostgreSQL 通知传递到实例 WS 与原宿主 SSE，不伪造 Agent Run 事件。宿主 SSE 的 `canvasDocumentUpdated` 通知投影为文档更新/删除事件，空文档列表也能收到更新。
+
+画布编辑器在 `canvas.resume` ACK 后读取权威文档；重连与重复通知同样重新读取实际版本，保留视口、选区及尚未保存编辑。更新不改变内容标签焦点；删除关闭对应标签、清理引用并拒绝迟到桥接消息。通知是失效提示，真实内容与 CAS 仍由文档服务校验。
 
 ## 第一方 Code Goal 控制扩展
 

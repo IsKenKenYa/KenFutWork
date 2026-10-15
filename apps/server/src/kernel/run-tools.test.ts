@@ -16,7 +16,6 @@ import {
 import { createPersistSandboxFileToolDefinition } from "../features/code-tools/persist-sandbox-file.js";
 import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
 import { createProjectSearchToolDefinition } from "../features/code-tools/project-search.js";
-import { createDesignTasksPlugin } from "../features/execution/design-tasks-plugin.js";
 import { createExecutionScopes } from "../features/execution/scope-service.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
 import { createImageGenerateToolDefinition } from "../features/generation/tools/image-generate.js";
@@ -387,7 +386,6 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
       [
         brandKitPlugin,
         createCanvasPlugin(),
-        createDesignTasksPlugin(),
         createCanvasToolsPlugin(),
         createCodeToolsPlugin(),
         createGenerationPlugin({ env }),
@@ -395,15 +393,6 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
       {
         app,
         overrides: {
-          designGoals: {
-            lifecycle: {
-              claim: async () => {},
-              settle: async () => {},
-              pause: async () => {},
-              recover: async () => {},
-              rebranch: async () => {},
-            },
-          } as never,
           localAccess: createConsumerLocalAccessService(),
           blob: blobStub,
           persistence: persistenceStub,

@@ -88,16 +88,14 @@ export const runCreateRequestSchema = z.object({
   imageGenerationPreference: imageGenerationPreferenceSchema.optional(),
   videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
   mentions: z.array(messageMentionSchema).optional(),
-  accessToken: z.string().optional(),
   model: z.string().optional(),
   /**
-   * agent preset（DEC-2，会话级）：design=画布工具集，code=编码工具集；
-   * 会话模式由服务端持久 Task 持有；preset 仅是声明，不能改变模式或授权。
+   * 本次输入请求的工作方式；由统一Task宿主核验项目启用列表并冻结到Run。
+   * 画布是资源引用，preset不改变Task固定目录、文件授权或当前Run。
    */
   preset: z.enum(["design", "code"]).optional(),
   /**
-   * 执行模式（DEC-3，会话级）：WS 路径随 run 声明，服务端按真实 threadId 激活
-   * （threadId 是服务端内部 ID，客户端拿不到，故不走 PUT /execution-modes）。
+   * 旧传输策略字段；共享宿主只接受agent，其余方式通过原会话控制切换。
    */
   executionMode: executionModeSchema.optional(),
 });

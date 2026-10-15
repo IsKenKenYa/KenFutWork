@@ -23,17 +23,11 @@
     "KENFUTWORK_DESIGN_TASK_TEST_PG": {
       "surface": "test",
       "readers": [
-        "apps/server/src/features/canvas/root-directory.integration.test.ts",
-        "apps/server/src/features/checkpoints/design-checkpoints.integration.test.ts",
-        "apps/server/src/features/execution/design-goals-runtime.integration.test.ts",
-        "apps/server/src/features/execution/design-goals.integration.test.ts",
-        "apps/server/src/features/execution/design-model-selection.integration.test.ts",
-        "apps/server/src/features/execution/design-run-host.integration.test.ts",
-        "apps/server/src/features/execution/design-tasks.integration.test.ts"
+        "apps/server/src/features/canvas/root-directory.integration.test.ts"
       ],
       "inExamples": false,
       "status": "test-gate",
-      "note": "显式启用真实Design Task/RunHost/检查点临时PostgreSQL回归"
+      "note": "显式启用统一Task画布目录临时PostgreSQL回归；旧Design宿主已退役。"
     },
     "KENFUTWORK_PROJECT_FILES_TEST_PG": {
       "surface": "test",
