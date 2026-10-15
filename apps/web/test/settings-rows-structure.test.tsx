@@ -3,12 +3,9 @@
 import "@testing-library/jest-dom/vitest";
 import { instanceSettingsSchema } from "@kenfutwork/shared";
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentGovernanceSection } from "../src/components/agent-governance-section";
-import { AgentSection } from "../src/components/agent-section";
 import { PermissionSection } from "../src/components/permission-section";
-import { ProviderSettings } from "../src/components/provider-settings";
 import { BrowserSettingsSection } from "../src/components/workbench/browser-settings-section";
 import { CommandsSection } from "../src/components/workbench/commands-section";
 import { HooksSection } from "../src/components/workbench/hooks-section";
@@ -172,28 +169,6 @@ describe("设置区结构：标签在左、控件在右（横排）", () => {
     );
   });
 
-  it("供应商表单：四个单行字段是横排行；两份 JSON 是多行编辑（标签在上，例外）", async () => {
-    stubApi();
-    const user = userEvent.setup();
-    render(<ProviderSettings accessToken="tok" />);
-    await screen.findByRole("button", { name: "添加供应商" });
-    await user.click(screen.getByRole("button", { name: "添加供应商" }));
-
-    expectControlRight(screen.getByLabelText("实例名称"), "实例名称");
-    expectControlRight(screen.getByLabelText("协议"), "协议");
-    expectControlRight(screen.getByLabelText("Base URL"), "Base URL");
-    expectControlRight(screen.getByLabelText("API Key"), "API Key");
-
-    for (const label of ["模型清单（JSON）", "自定义请求头"]) {
-      const editor = screen.getByLabelText(label);
-      // 多行编辑器**不挤进**横排行：它按「标签在上、控件铺满」渲染
-      expect(editor.closest(".justify-between")).toBeNull();
-      const wrapper = editor.parentElement as HTMLElement;
-      expect(wrapper.className).toMatch(/space-y-1/);
-      expect(wrapper.textContent).toContain(label);
-    }
-  });
-
   it("权限页：常规/自动化两组各四档**横排**（grid），不是一行一档的竖排", async () => {
     stubApi();
     render(<PermissionSection accessToken="tok" />);
@@ -249,34 +224,12 @@ describe("设置区结构：标签在左、控件在右（横排）", () => {
     expect(document.querySelector(".block.text-xs")).toBeNull();
   });
 
-  it("终端 / 模型 / 个人资料：单行控件固定宽度、右对齐；没有 flex-col 行", async () => {
+  it("终端：单行控件固定宽度、右对齐；没有 flex-col 行", async () => {
     stubApi();
     render(<TerminalSettingsSection accessToken="tok" />);
     expectControlRight(
       await screen.findByLabelText("默认 shell"),
       "默认 shell",
-    );
-
-    render(
-      <AgentSection
-        agentMaxRetries={10}
-        defaultModel="gpt-4.1"
-        autoCompactEnabled
-        onToggleAutoCompact={async () => undefined}
-        fetchModels={async () => ({
-          models: [{ id: "gpt-4.1", name: "GPT 4.1", provider: "openai" }],
-        })}
-        onSave={async () => undefined}
-      />,
-    );
-    expectControlRight(await screen.findByLabelText("默认模型"), "默认模型");
-    expectControlRight(
-      screen.getByLabelText("失败自动重试次数"),
-      "失败自动重试次数",
-    );
-    expectControlRight(
-      screen.getByRole("switch", { name: "上下文自动压缩" }),
-      "上下文自动压缩",
     );
 
     // 通栏检查：这一批设置行里没有任何上下排布的容器

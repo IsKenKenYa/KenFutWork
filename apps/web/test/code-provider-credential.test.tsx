@@ -128,6 +128,7 @@ function renderOriginalCard(
     providers: [provider],
   };
   const savedKeys: Array<string | null | undefined> = [];
+  const savedOverlays: unknown[] = [];
   const savedModels: unknown[] = [];
   const savedProviders: unknown[] = [];
   vi.stubGlobal(
@@ -178,6 +179,7 @@ function renderOriginalCard(
           }
         }
         if (request.method === "savePersonalProviderOverlay") {
+          savedOverlays.push(request.args[1]);
           const key = request.args[1].access?.apiKey;
           savedKeys.push(key);
           await beforeSave();
@@ -207,7 +209,7 @@ function renderOriginalCard(
       </PlatformProvider>
     </ServiceProvider>,
   );
-  return { client, savedKeys, savedModels, savedProviders };
+  return { client, savedKeys, savedModels, savedProviders, savedOverlays };
 }
 
 it("原添加弹窗创建视频模型使用生成用途和打开时的供应商修订", async () => {
@@ -645,9 +647,7 @@ it("兼容网关新增图片模型可选择用途并走原生保存，不误存�
     );
     act(() => screen.getByLabelText("用途").focus());
     await userEvent.keyboard("[Space]");
-    await userEvent.click(
-      await screen.findByRole("option", { name: "图像" }),
-    );
+    await userEvent.click(await screen.findByRole("option", { name: "图像" }));
     expect(screen.queryByLabelText("上下文窗口")).toBeNull();
     await userEvent.type(screen.getByLabelText("模型 ID"), "native-image");
     await userEvent.type(screen.getByLabelText("名称"), "图片模型");
@@ -742,19 +742,30 @@ it("原供应商保存失败保留 Key 草稿，原重试操作成功后才清�
   }
 });
 
-it("Code供应商卡可从标准协议切换到GRSAI并保留原生协议修订", async () => {
-  const { client, savedProviders } = renderOriginalCard(async () => {}, {
-    id: "c0a03eb2-d58c-4637-9fda-c796230a751a",
-    name: "图片网关",
-    scope: "local",
-    protocol: "openai-compatible",
-    hasCredential: true,
-    configRevision: 1,
-    enabled: true,
-    headerKeys: [],
-    models: [],
-  });
+it("Code供应商卡可从标准协议切换到GRSAI并保留修订及未提交请求头草稿", async () => {
+  const { client, savedProviders, savedOverlays } = renderOriginalCard(
+    async () => {},
+    {
+      id: "c0a03eb2-d58c-4637-9fda-c796230a751a",
+      name: "图片网关",
+      scope: "local",
+      protocol: "openai-compatible",
+      hasCredential: true,
+      configRevision: 1,
+      enabled: true,
+      headerKeys: [],
+      models: [],
+    },
+    true,
+  );
   try {
+    await userEvent.click(
+      await screen.findByRole("button", { name: "连接设置" }),
+    );
+    await userEvent.click(screen.getByText("高级配置"));
+    fireEvent.change(screen.getByLabelText("自定义请求头"), {
+      target: { value: '{"x-route":"{{sessionId}}"}' },
+    });
     const trigger = await screen.findByTestId(
       "model-provider-api-format-trigger",
     );
@@ -773,6 +784,16 @@ it("Code供应商卡可从标准协议切换到GRSAI并保留原生协议修订"
       expect(
         screen.getByTestId("model-provider-api-format-trigger").textContent,
       ).toContain("GRSAI"),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "完成" }));
+    await waitFor(() =>
+      expect(savedOverlays).toEqual([
+        expect.objectContaining({
+          api: expect.objectContaining({
+            headers: { "x-route": "{{sessionId}}" },
+          }),
+        }),
+      ]),
     );
   } finally {
     await act(async () => client.dispose());
@@ -806,6 +827,48 @@ it("连接弹窗等待失焦保存完成，失败保留弹窗及当前输入", a
       "value",
       "https://new.example.invalid",
     );
+  } finally {
+    await act(async () => client.dispose());
+  }
+});
+
+it("统一连接设置保留自定义头编辑，非法JSON不保存且不丢输入", async () => {
+  const { client, savedOverlays } = renderOriginalCard(
+    async () => {},
+    undefined,
+    true,
+  );
+  try {
+    await userEvent.click(
+      await screen.findByRole("button", { name: "连接设置" }),
+    );
+    await userEvent.click(screen.getByText("高级配置"));
+    const input = screen.getByLabelText("自定义请求头");
+    fireEvent.change(input, { target: { value: "not-json" } });
+    await userEvent.click(screen.getByRole("button", { name: "完成" }));
+    await within(screen.getByRole("dialog")).findByRole("alert");
+    expect(input).toHaveProperty("value", "not-json");
+    expect(savedOverlays).toEqual([]);
+    fireEvent.change(input, {
+      target: { value: '{"authorization":"fixture"}' },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "完成" }));
+    await within(screen.getByRole("dialog")).findByRole("alert");
+    expect(savedOverlays).toEqual([]);
+    fireEvent.change(input, {
+      target: { value: '{"x-route":"{{sessionId}}"}' },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "完成" }));
+    await waitFor(() =>
+      expect(savedOverlays).toEqual([
+        expect.objectContaining({
+          api: expect.objectContaining({
+            headers: { "x-route": "{{sessionId}}" },
+          }),
+        }),
+      ]),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
   } finally {
     await act(async () => client.dispose());
   }

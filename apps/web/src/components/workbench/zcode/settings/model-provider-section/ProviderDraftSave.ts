@@ -1,3 +1,4 @@
+import { providerInstanceHeadersSchema } from "@kenfutwork/shared";
 import { isApiKeyAccess, type ProviderApiType } from "@zcode/provider";
 import {
   getProviderFormLabel,
@@ -9,6 +10,8 @@ export interface ProviderDraftValues {
   apiFormat: ProviderApiType;
   baseUrlValue: string;
   apiKeyValue: string;
+  /** 未编辑时缺省；空白保留现值，显式 {} 清空。 */
+  headersValue?: string;
 }
 
 function normalizeConfiguredBaseUrl(value: string): string {
@@ -28,6 +31,16 @@ function normalizeConfiguredBaseUrl(value: string): string {
   } catch {
     return normalized;
   }
+}
+
+function parseHeadersDraft(raw: string | undefined): Record<string, string> | undefined {
+  if (!raw?.trim()) return undefined;
+  let value: unknown;
+  try { value = JSON.parse(raw); }
+  catch { throw new Error("请求头需为合法 JSON 对象，请检查输入。"); }
+  const result = providerInstanceHeadersSchema.safeParse(value);
+  if (!result.success) throw new Error("请求头配置无效，请检查字段与文本值。");
+  return result.data;
 }
 
 export function resolvePendingProviderDraftSave({
@@ -56,16 +69,19 @@ export function resolvePendingProviderDraftSave({
     isApiKeyAccess(provider.config.access) &&
     (clearApiKey || draft.apiKeyValue !== (provider.config.access.apiKey ?? ""));
   const nextKey = clearApiKey ? null : draft.apiKeyValue;
-  if (!labelChanged && !typeChanged && !urlChanged && !keyChanged) return null;
+  const headers = parseHeadersDraft(draft.headersValue);
+  const headersChanged = headers !== undefined && (JSON.stringify(headers) !== JSON.stringify(provider.config.api?.headers ?? {}) || Boolean(provider.native?.headerKeys.length));
+  if (!labelChanged && !typeChanged && !urlChanged && !keyChanged && !headersChanged) return null;
 
-  // 表单只拥有名称、连接类型、地址和 Key；重建整个 api 会删除隐藏 headers，
+  // 表单只覆盖已编辑的名称、连接、Key与请求头；重建整个api会删除隐藏字段，
   // 保存 Effective 对象又会把继承字段物化。分别在各自基线上只应用修改过的叶子。
   const apiChanges = {
     ...(typeChanged || (urlChanged && !provider.config.api?.type) ? { type: draft.apiFormat } : {}),
     ...(urlChanged ? { baseUrl: baseURL || undefined } : {}),
+    ...(headersChanged ? { headers } : {}),
   };
   const api =
-    typeChanged || urlChanged ? { ...provider.config.api, ...apiChanges } : provider.config.api;
+    typeChanged || urlChanged || headersChanged ? { ...provider.config.api, ...apiChanges } : provider.config.api;
   const access =
     keyChanged && isApiKeyAccess(provider.config.access)
       ? { ...provider.config.access, apiKey: nextKey }
@@ -87,12 +103,12 @@ export function resolvePendingProviderDraftSave({
           },
         }
       : {}),
-    ...(typeChanged || urlChanged
+    ...(typeChanged || urlChanged || headersChanged
       ? { api: { ...provider.personalConfig.api, ...apiChanges } }
       : {}),
   };
 
-  if (!labelChanged && JSON.stringify(config) === JSON.stringify(provider.config)) {
+  if (!labelChanged && !headersChanged && JSON.stringify(config) === JSON.stringify(provider.config)) {
     return null;
   }
   return {

@@ -391,12 +391,20 @@ export function InlineEditableProviderCard({
   const saveProviderWithCleanupGuard = useCallback(
     async (nextProvider: ProviderSettingsFormProvider, onFailure?: () => void): Promise<void> => {
       const keyRevision = apiKeyDraftRevisionRef.current;
+      // 原生协议/模型补丁不会提交连接字段，不能确认或清理这些字段的草稿。
+      const submitsProviderFields = !nextProvider.nativeProtocolUpdate && !nextProvider.nativeModelUpdate;
+      const submittedHeaders = submitsProviderFields && nextProvider.personalConfig.api?.headers !== undefined
+        ? draftRef.current.headersValue : undefined;
       const submittedProviderId = nextProvider.providerId;
-      const submittedKey = isApiKeyAccess(nextProvider.personalConfig.access)
+      const submittedKey = submitsProviderFields && isApiKeyAccess(nextProvider.personalConfig.access)
         ? nextProvider.personalConfig.access.apiKey
         : undefined;
       const operation = async () => {
         await onSave(nextProvider);
+        if (submittedHeaders !== undefined && providerIdRef.current === submittedProviderId && draftRef.current.headersValue === submittedHeaders) {
+          delete draftRef.current.headersValue;
+          dirtyProviderFieldsRef.current.delete("headersValue");
+        }
         // 只清除已成功写入且未继续编辑的 Key；不覆盖其它字段或新供应商草稿。
         if (
           provider.credentialConfigured !== undefined &&
@@ -856,7 +864,7 @@ export function InlineEditableProviderCard({
       {statusSection}
 
       <div className="space-y-3">
-        <ProviderConnectionPanel provider={provider} collapsed={connectionCollapsed} onCommit={() => commitPendingDraft("connection-close")}>
+        <ProviderConnectionPanel provider={provider} collapsed={connectionCollapsed} onCommit={() => commitPendingDraft("connection-close")} onHeadersChange={value => { draftRef.current.headersValue = value; markDraftDirty("headersValue"); }}>
         {isAccountProvider ? null : (
           <ProviderConnectionSection
             provider={provider}

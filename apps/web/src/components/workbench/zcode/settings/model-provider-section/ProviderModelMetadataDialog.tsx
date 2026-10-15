@@ -163,7 +163,7 @@ export function ProviderModelMetadataDialog({
             })}
           </DialogTitle>
           <DialogDescription className="sr-only">
-            {intl.formatMessage({
+            {editorContent ? "模型用途与能力配置" : intl.formatMessage({
               id: "settings.modelProvider.editModelDescription",
             })}
           </DialogDescription>

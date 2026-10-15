@@ -505,8 +505,8 @@ export function ProviderModelsSection({
 
   return (
     <div>
-      <Tabs value={kind} onValueChange={(value) => { setKind(value as ModelKind | "all"); setQuery(""); }}>
-        <TabsList variant="line" className="mb-4 max-w-full overflow-x-auto">
+      <Tabs className="max-w-full overflow-x-auto" value={kind} onValueChange={(value) => { setKind(value as ModelKind | "all"); setQuery(""); }}>
+        <TabsList variant="line" className="mb-4">
           <TabsTrigger value="all">全部 {models.length}</TabsTrigger>
           {(Object.keys(MODEL_KIND_LABELS) as ModelKind[]).map(value => {
             const count = models.filter(model => modelKind(model) === value).length;

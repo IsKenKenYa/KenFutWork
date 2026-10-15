@@ -64,7 +64,7 @@ export function ModelProviderSectionLayout({
 
       <div className="overflow-clip rounded-xl border border-border bg-card">
         <div
-          className="grid min-h-[36rem] grid-cols-[56px_minmax(0,1fr)] gap-0 md:grid-cols-[224px_minmax(0,1fr)]"
+          className="grid min-h-[26rem] grid-cols-[56px_minmax(0,1fr)] gap-0 md:grid-cols-[224px_minmax(0,1fr)]"
           data-model-provider-split-panel="true"
         >
           <div

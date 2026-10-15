@@ -10169,14 +10169,15 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/InlineEditableProviderCard.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/InlineEditableProviderCard.tsx",
       "sha256": "2158d97081523c1423a1b4c7c0318e92d89c3e7f3610cf6001e7923588efe0d1",
-      "copiedSha256": "c633a31d5a243beaf2e966c149d833f3b69e914eef4f33de7ba566dfe8a1d523",
+      "copiedSha256": "6043219c6db0fb83c3f32cdbfb4aec91676679b0c756ae537106eb362727694a",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主 BYOK 接线：沿原保存链明确 clear，仅清成功提交且未继续编辑的对应 Key 草稿，保护迟到应答",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
         "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
         "宿主接线：原卡片生成模型新增编辑和真实协议保存；Flow隐藏本机模型；保留原反馈与操作生命周期",
-        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。"
+        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。",
+        "统一模型配置入口：旧表单退役；原连接草稿承接共享请求头校验，实际媒体Dialog修正页脚与朗读标签。"
       ]
     },
     {
@@ -10233,7 +10234,7 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderCardSections.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderCardSections.tsx",
       "sha256": "d01c7b6a18b1b5c93bc176988751821f0f29f435613c399380ba8e4d8dd0ef09",
-      "copiedSha256": "3c83bfdcd1f568717856d6bebdd0b4be793e1189164bb91d8be2ed1fde1a6ee5",
+      "copiedSha256": "81e51d27362cde6c24f4d8a8b526378582e210072921cb424dcee321ea192d7d",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主接口：原 Key 区段透传 presence 与 clear 回调",
@@ -10241,7 +10242,8 @@
         "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
         "生成叶子扩展：原新增对话框及列表承载真实模型用途，创建捕获供应商修订；生成不显示聊天校验",
         "2026-10-15媒体驱动：本地供应商原API格式控件从共享协议枚举展示已安装驱动，标准实例可切换；非本地wire供应商保持原聊天选项。公开卡片回归验证修订保存。",
-        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。"
+        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。",
+        "统一模型配置入口：旧表单退役；原连接草稿承接共享请求头校验，实际媒体Dialog修正页脚与朗读标签。"
       ]
     },
     {
@@ -10257,11 +10259,12 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderDraftSave.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderDraftSave.ts",
       "sha256": "8b6845842d8963d1903092e6a7625049067d1474de2c6a12ead1cc631a706aee",
-      "copiedSha256": "286aa4c3ba343b77624820480e77fe0b5b876789a8fc1976fc5a0898bb5e33ad",
+      "copiedSha256": "7c0b0239a65b3471aeab4807f2deb67ab055e0b55970672de1059497d9a94cc1",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主只写契约：原稀疏草稿以显式 null 表达清除 Key",
-        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。"
+        "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；保持只写不读，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
+        "统一模型配置入口：旧表单退役；原连接草稿承接共享请求头校验，实际媒体Dialog修正页脚与朗读标签。"
       ]
     },
     {
@@ -10316,22 +10319,24 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderModelMetadataDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderModelMetadataDialog.tsx",
       "sha256": "9d3f08fae02d05ee885ae331a9ae38f1cb46608f74dc3da52c493bd444a61c15",
-      "copiedSha256": "41187789acd6458a8c0fb696937c82b66e06455013cf718e29e7af00f37043d8",
+      "copiedSha256": "4977ab83eaefc89ed2d97cef3f78f196d2cc67d92b0b6f55622afd4f7d05718b",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
         "生成叶子slot：保留原Dialog触发器/操作/错误/保存；生成隐藏聊天智能推荐与恢复提示",
         "生成叶子沿用原Enter/IME提交与保存中inert保护，技术输入失焦后读取最新草稿",
-        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。"
+        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。",
+        "统一模型配置入口：旧表单退役；原连接草稿承接共享请求头校验，实际媒体Dialog修正页脚与朗读标签。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderModelMetadataDialogActions.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderModelMetadataDialogActions.tsx",
       "sha256": "17f5ba828661b08301263718cd81d0808d3a0818a978b77dbd6175083cfd2cfd",
-      "copiedSha256": "74bab671eb80560f1fc765d3c4596aace6308ebb91fcf7e5c0dd92e13f73c31b",
+      "copiedSha256": "eb567a70e95f7cfb8e2e790694458d2a498e2fe33cadfd1865086a75d175123e",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "统一模型配置入口：旧表单退役；原连接草稿承接共享请求头校验，实际媒体Dialog修正页脚与朗读标签。"
       ]
     },
     {
@@ -10392,10 +10397,11 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/SectionLayout.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/SectionLayout.tsx",
       "sha256": "d8e6516c5f4b879ecbef919a485924532c0720e69d010bd9f32ea5c027c81d12",
-      "copiedSha256": "5367f7a4d20875d0bc80004037d7a8430fb54bb5a8843a3f7cfd20da2e31d34d",
+      "copiedSha256": "749a6db10b5180b923450770704a4ca969d32663521834832411a1b4c824a1e4",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。"
+        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。",
+        "统一模型配置入口：旧表单退役；原连接草稿承接共享请求头校验，实际媒体Dialog修正页脚与朗读标签。"
       ]
     },
     {

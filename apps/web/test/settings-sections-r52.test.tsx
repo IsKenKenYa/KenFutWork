@@ -81,55 +81,6 @@ describe("设置 → 子智能体", () => {
 });
 
 /**
- * 「上下文自动压缩」开关（R4-1 输出预留线的执行面）。
- *
- * 锁两件事：① 口径必须写在界面上（阈值 = 窗口 − 预留输出、摘要用本轮模型、转录不变），
- * 用户才知道打开它意味着什么；② 开关**立即写**（部分更新），不是等「保存」按钮。
- */
-describe("设置 → 模型：上下文自动压缩开关", () => {
-  it("文案写清行为（何时压缩 / 关掉后的后果）", async () => {
-    const { AgentSection } = await import("../src/components/agent-section");
-    render(
-      <AgentSection
-        agentMaxRetries={10}
-        defaultModel="inst-1:glm-5.3-flash"
-        fetchModels={async () => ({ models: [] })}
-        onSave={async () => {}}
-        autoCompactEnabled
-        onToggleAutoCompact={async () => {}}
-      />,
-    );
-    expect(
-      screen.getByRole("switch", { name: "上下文自动压缩" }),
-    ).toBeChecked();
-    expect(
-      screen.getByRole("switch", { name: "上下文自动压缩" }),
-    ).toBeVisible();
-    expect(screen.queryByText(/压缩成摘要/)).toBeNull();
-    expect(screen.queryByText(/超长对话会被模型拒绝/)).toBeNull();
-  });
-
-  it("关掉时立即回调（部分更新），不依赖「保存」按钮", async () => {
-    const { AgentSection } = await import("../src/components/agent-section");
-    const onToggleAutoCompact = vi.fn(async () => {});
-    render(
-      <AgentSection
-        agentMaxRetries={10}
-        defaultModel="inst-1:glm-5.3-flash"
-        fetchModels={async () => ({ models: [] })}
-        onSave={async () => {}}
-        autoCompactEnabled
-        onToggleAutoCompact={onToggleAutoCompact}
-      />,
-    );
-    await userEvent.click(
-      screen.getByRole("switch", { name: "上下文自动压缩" }),
-    );
-    expect(onToggleAutoCompact).toHaveBeenCalledWith(false);
-  });
-});
-
-/**
  * 设置 → 钩子（R5-2「钩子」条目）。
  *
  * 这一页最重要的不是控件，而是**边界写清楚**：模型不能触发钩子、钩子在项目工作目录里跑、

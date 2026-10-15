@@ -9,6 +9,7 @@ import { installDesktopTitlebarDrag } from "@zcode/ui/design-shared";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useFlowHostEntry } from "@/hooks/use-flow-host";
+import { addModelSettingsOpenListener } from "@/lib/model-settings-navigation";
 import { CodeWorkbenchFrame } from "./code-workbench-frame";
 import { ManagementDocumentFrame } from "./management-document-frame";
 
@@ -47,6 +48,13 @@ function WorkbenchModeSurface() {
   const openManagement = useCallback((target: ManagementTarget) => {
     setManagement(target);
   }, []);
+  useEffect(
+    () =>
+      addModelSettingsOpenListener(() =>
+        openManagement({ page: "settings", section: "modelProvider" }),
+      ),
+    [openManagement],
+  );
   const closeManagement = useCallback(() => setManagement(null), []);
 
   return (

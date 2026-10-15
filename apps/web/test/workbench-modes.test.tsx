@@ -435,3 +435,28 @@ it("管理文档加载中或失败时宿主仍能关闭并恢复原Codeiframe", 
   ).toBe(true);
   expect(screen.getByTitle("Code 工作台")).toBe(frame);
 });
+
+it("旧模型入口打开同一管理文档并定位模型设置，重复打开不创建第二个页面", async () => {
+  installFixture();
+  render(host());
+  const manager = (await screen.findByTitle(
+    "管理设置",
+    {},
+    LAZY,
+  )) as HTMLIFrameElement;
+  expect(manager.hidden).toBe(true);
+  if (!manager.contentWindow) throw new Error("管理文档未创建");
+  const send = vi.spyOn(manager.contentWindow, "postMessage");
+  act(() => window.dispatchEvent(new Event("kenfutwork:open-model-settings")));
+  await waitFor(() => expect(manager.hidden).toBe(false));
+  expect(send).toHaveBeenCalledWith(
+    {
+      type: "kenfutwork:management-target",
+      target: { page: "settings", section: "modelProvider" },
+    },
+    window.location.origin,
+  );
+  act(() => window.dispatchEvent(new Event("kenfutwork:open-model-settings")));
+  expect(screen.getAllByTitle("管理设置")).toHaveLength(1);
+  expect(screen.getByTitle("管理设置")).toBe(manager);
+});

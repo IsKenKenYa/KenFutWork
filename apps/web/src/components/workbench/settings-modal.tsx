@@ -1,16 +1,12 @@
 "use client";
 
-import {
-  type InstanceSettings,
-  instanceSettingsSchema,
-} from "@kenfutwork/shared";
+import type { InstanceSettings } from "@kenfutwork/shared";
 import { PanelsTopLeft } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AgentGovernanceSettingsView } from "@/components/agent-governance-settings";
-import { AgentSection } from "@/components/agent-section";
+import { ModelSettingsLink } from "@/components/model-settings-link";
 import { PermissionSection } from "@/components/permission-section";
-import { ProviderSettings } from "@/components/provider-settings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { AboutSection } from "@/components/workbench/about-section";
 import { AppearanceSection } from "@/components/workbench/appearance-section";
@@ -28,8 +24,8 @@ import { RulesMemorySection } from "@/components/workbench/rules-memory-section"
 import { SubagentsSection } from "@/components/workbench/subagents-section";
 import { TerminalSettingsSection } from "@/components/workbench/terminal-settings-section";
 import { UsageStatsSection } from "@/components/workbench/usage-stats-section";
+import { requestModelSettingsOpen } from "@/lib/model-settings-navigation";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
-import { fetchModels } from "@/lib/server-api";
 import { useInstanceSettings } from "@/lib/use-instance-settings";
 import { VoiceSettingsSection } from "./voice-settings-section";
 
@@ -71,9 +67,8 @@ const TAB_GROUPS: Array<{
     tabs: [
       { id: "general", label: "通用" },
       { id: "appearance", label: "外观" },
-      { id: "model", label: "模型" },
+      { id: "model", label: "模型设置" },
       { id: "agentGovernance", label: "Agent 治理" },
-      { id: "providers", label: "供应商" },
       { id: "browser", label: "浏览器" },
       { id: "voice", label: "语音" },
     ],
@@ -103,7 +98,6 @@ const TAB_GROUPS: Array<{
 ];
 
 const INSTANCE_SETTINGS_TABS = new Set<SettingsTab>([
-  "model",
   "agentGovernance",
   "index",
   "commands",
@@ -146,17 +140,19 @@ export function SettingsModal({
     initialTab ?? "general",
   );
 
-  // 每次打开按 initialTab 重新定位
+  const openUnifiedModelSettings = useCallback(() => {
+    requestModelSettingsOpen();
+    onClose();
+  }, [onClose]);
+  // 历史 model/providers 深链统一打开原Code管理文档。
   useEffect(() => {
-    if (open && initialTab) setActiveTab(initialTab);
-  }, [open, initialTab]);
-  const [defaultModel, setDefaultModel] = useState("");
-  const [agentMaxRetries, setAgentMaxRetries] = useState(
-    instanceSettingsSchema.shape.agentMaxRetries.parse(undefined),
-  );
+    if (!open || !initialTab) return;
+    if (initialTab === "model" || initialTab === "providers")
+      openUnifiedModelSettings();
+    else setActiveTab(initialTab);
+  }, [open, initialTab, openUnifiedModelSettings]);
   const [codeIndexEnabled, setCodeIndexEnabled] = useState(false);
   const [codeIndexAutoNewFolder, setCodeIndexAutoNewFolder] = useState(true);
-  const [autoCompactEnabled, setAutoCompactEnabled] = useState(true);
   const [commands, setCommands] = useState<InstanceSettings["commands"]>([]);
   const [hooks, setHooks] = useState<InstanceSettings["hooks"]>([]);
   const settingsState = useInstanceSettings(open, accessToken);
@@ -172,11 +168,8 @@ export function SettingsModal({
 
   useEffect(() => {
     if (!currentSettings) return;
-    setDefaultModel(currentSettings.defaultModel);
-    setAgentMaxRetries(currentSettings.agentMaxRetries);
     setCodeIndexEnabled(currentSettings.codeIndexEnabled);
     setCodeIndexAutoNewFolder(currentSettings.codeIndexAutoNewFolder);
-    setAutoCompactEnabled(currentSettings.autoCompactEnabled);
     setCommands((previous) =>
       previous.length === currentSettings.commands.length &&
       previous.every((command, index) => {
@@ -234,30 +227,6 @@ export function SettingsModal({
     [saveSettings],
   );
 
-  /** 上下文自动压缩开关：立即写（部分更新），失败回滚。 */
-  const handleAutoCompactToggle = useCallback(
-    async (next: boolean) => {
-      setAutoCompactEnabled(next);
-      try {
-        const result = await saveSettings({ autoCompactEnabled: next });
-        if (result) setAutoCompactEnabled(result.autoCompactEnabled);
-      } catch {
-        setAutoCompactEnabled(!next);
-      }
-    },
-    [saveSettings],
-  );
-
-  const handleModelSave = useCallback(
-    async (next: { agentMaxRetries: number; defaultModel: string }) => {
-      const result = await saveSettings(next);
-      if (!result) return;
-      setDefaultModel(result.defaultModel);
-      setAgentMaxRetries(result.agentMaxRetries);
-    },
-    [saveSettings],
-  );
-
   const handleCommandsSave = useCallback(
     async (next: InstanceSettings["commands"]) => {
       const saved = await saveSettings({ commands: next });
@@ -274,18 +243,20 @@ export function SettingsModal({
     [saveSettings],
   );
 
-  const stableFetchModels = useCallback(
-    () => fetchModels(getToken() ?? undefined),
-    [getToken],
-  );
-
   const token = getToken();
   /** 内容滚动容器引用：切 tab 时重置滚动位置（旧位置残留是明显的交互脏感）。 */
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
-  const handleTabChange = useCallback((next: SettingsTab) => {
-    setActiveTab(next);
-    if (contentScrollRef.current) contentScrollRef.current.scrollTop = 0;
-  }, []);
+  const handleTabChange = useCallback(
+    (next: SettingsTab) => {
+      if (next === "model" || next === "providers") {
+        openUnifiedModelSettings();
+        return;
+      }
+      setActiveTab(next);
+      if (contentScrollRef.current) contentScrollRef.current.scrollTop = 0;
+    },
+    [openUnifiedModelSettings],
+  );
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -352,15 +323,8 @@ export function SettingsModal({
               </div>
             ) : activeTab === "appearance" ? (
               <AppearanceSection />
-            ) : activeTab === "model" ? (
-              <AgentSection
-                agentMaxRetries={agentMaxRetries}
-                defaultModel={defaultModel}
-                fetchModels={stableFetchModels}
-                onSave={handleModelSave}
-                autoCompactEnabled={autoCompactEnabled}
-                onToggleAutoCompact={handleAutoCompactToggle}
-              />
+            ) : activeTab === "model" || activeTab === "providers" ? (
+              <ModelSettingsLink onOpen={onClose} />
             ) : activeTab === "agentGovernance" ? (
               currentSettings ? (
                 <AgentGovernanceSettingsView
@@ -368,8 +332,6 @@ export function SettingsModal({
                   save={saveSettings}
                 />
               ) : null
-            ) : activeTab === "providers" ? (
-              <ProviderSettings accessToken={token} />
             ) : activeTab === "permissions" ? (
               <PermissionSection accessToken={token} />
             ) : activeTab === "browser" ? (

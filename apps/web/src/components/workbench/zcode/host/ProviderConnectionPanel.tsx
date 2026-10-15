@@ -11,18 +11,20 @@ import type { ProviderSettingsFormProvider } from "@zui/lib/providerSettingsForm
 import { resolveProviderConnectionApiFormatDisplayLabel } from "@zui/settings/model-provider-section/ProviderApiFormatSelect.js";
 import { KeyRound, SlidersHorizontal } from "lucide-react";
 import type { ReactNode } from "react";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 /** 折叠仅改变原连接表单的承载位置；保存、凭据与修订仍归原卡片。 */
 export function ProviderConnectionPanel({
   provider,
   collapsed,
   onCommit,
+  onHeadersChange,
   children,
 }: {
   provider: ProviderSettingsFormProvider;
   collapsed: boolean;
   onCommit(): Promise<void>;
+  onHeadersChange(value: string): void;
   children: ReactNode;
 }) {
   const { intl } = useZCodeIntl();
@@ -30,6 +32,8 @@ export function ProviderConnectionPanel({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const busy = useRef(false);
+  const headersId = useId();
+  const [headersText, setHeadersText] = useState("");
   const close = async () => {
     if (busy.current) return;
     busy.current = true;
@@ -97,8 +101,38 @@ export function ProviderConnectionPanel({
               {provider.providerName}
             </DialogDescription>
           </DialogHeader>
-          <fieldset disabled={saving} className="space-y-4 border-0 p-0">
+          <fieldset
+            disabled={saving}
+            className="space-y-4 border-0 p-0 [&>div]:grid [&>div]:grid-cols-[minmax(0,1fr)_minmax(0,16rem)] [&>div]:items-center [&>div]:gap-4 [&>div>label]:mb-0 [&>div>input]:min-w-0 [&>div>div]:min-w-0"
+          >
             {children}
+            <details className="space-y-3 text-ui-base">
+              <summary className="cursor-pointer text-foreground-subtle">
+                高级配置
+              </summary>
+              <label
+                htmlFor={headersId}
+                className="block text-ui-base text-foreground-subtle"
+              >
+                自定义请求头
+              </label>
+              <textarea
+                id={headersId}
+                value={headersText}
+                placeholder="留空则不改"
+                spellCheck={false}
+                className="min-h-24 w-full rounded-lg border border-input-border bg-input px-3 py-2 font-mono text-ui-base outline-none focus:border-input-border-focused"
+                onChange={(event) => {
+                  setHeadersText(event.target.value);
+                  onHeadersChange(event.target.value);
+                }}
+              />
+              {provider.native?.headerKeys.length ? (
+                <p className="text-ui-sm text-foreground-subtle">
+                  已存：{provider.native.headerKeys.join("、")}
+                </p>
+              ) : null}
+            </details>
           </fieldset>
           {error ? (
             <p role="alert" className="text-ui-sm text-destructive">
