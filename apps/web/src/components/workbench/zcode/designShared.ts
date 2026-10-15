@@ -14,6 +14,21 @@ export {
   installDesktopTitlebarDrag,
 } from "./host/desktopChrome.js";
 export { CodeHttpChannelClient } from "./host/httpChannelClient.js";
+export { MediaModelPreferencePopover } from "./host/media/MediaModelPreferencePopover.js";
+export {
+  type MediaModelPreference,
+  toggleMediaModel,
+} from "./host/media/mediaModelPreference.js";
+export {
+  type ImageModelPreference,
+  readImageModelPreference,
+  useImageModelPreference,
+} from "./host/media/useImageModelPreference.js";
+export {
+  readVideoModelPreference,
+  useVideoModelPreference,
+  type VideoModelPreference,
+} from "./host/media/useVideoModelPreference.js";
 export { createWebPlatform } from "./host/upstream/browserPlatform.js";
 export { WorkbenchModeNavigation } from "./host/WorkbenchModeNavigation.js";
 export { ZCodeIntlProvider } from "./i18n/IntlProvider.js";
