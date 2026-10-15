@@ -114,13 +114,9 @@ export class VolcesVideoProvider implements VideoProvider {
       prompt: params.prompt,
       ...(params.duration != null ? { duration: params.duration } : {}),
       ...(params.resolution
-        ? {
-            resolution: {
-              "480p": "864x480",
-              "720p": "1280x720",
-              "1080p": "1920x1080",
-            }[params.resolution] as `${number}x${number}`,
-          }
+        ? /^\d+x\d+$/.test(params.resolution)
+          ? { resolution: params.resolution as `${number}x${number}` }
+          : { providerOptions: { bytedance: { resolution: params.resolution } } }
         : {}),
       // spec 的 aspectRatio 形如 `${number}:${number}`；非常规值交给上层校验拒绝
       ...(params.aspectRatio

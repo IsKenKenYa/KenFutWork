@@ -3,6 +3,40 @@ import { resolveInstanceVideoProvider } from "../../providers/resolve.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
+it("Seedance自定义Endpoint原生分辨率和标准像素值均实际发送", async () => {
+  const request = vi.fn<typeof fetch>(async () =>
+    Response.json({ id: "cgt-native-resolution" }),
+  );
+  vi.stubGlobal("fetch", request);
+  const provider = resolveInstanceVideoProvider("volces", {
+    credentials: {
+      apiKey: "ark-key",
+      baseUrl: "https://ark-gateway.example/api/v3",
+    },
+    models: [{ id: "ep-custom-video", name: "自定义视频模型" }],
+  });
+  if (!provider.startAsync) throw new Error("Seedance异步接口未接线");
+
+  // 仅验证自定义网关参数保留，不声明官方 Seedance 模型支持 512p。
+  for (const resolution of ["512p", "1024x576"]) {
+    await provider.startAsync({
+      model: "ep-custom-video",
+      prompt: "一只猫",
+      resolution,
+    });
+
+    expect(request).toHaveBeenCalledOnce();
+    expect(String(request.mock.calls[0]?.[0])).toBe(
+      "https://ark-gateway.example/api/v3/contents/generations/tasks",
+    );
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({
+      model: "ep-custom-video",
+      resolution,
+    });
+    request.mockClear();
+  }
+});
+
 it.each(["480p", "720p", "1080p"] as const)(
   "Seedance真实SDK传首尾帧/%s/声音，恢复句柄只查询一次",
   async (resolution) => {
