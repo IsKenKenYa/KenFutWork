@@ -5,7 +5,22 @@ import type {
   ToolDefinition,
   ToolExecutionContext,
 } from "../../kernel/types.js";
-import type { GoalRecord } from "./service.js";
+import type { GoalEvidence, GoalRecord } from "./service.js";
+
+export const GOAL_TOOL_EVIDENCE_VALIDATOR_CAPABILITY =
+  "goal-tool-evidence-validator";
+
+/** Document plugins qualify durable receipts and revalidate them using the current Task Run. */
+export interface GoalToolEvidenceValidator {
+  accepts(outputText: string): boolean;
+  validate(
+    context: ToolExecutionContext,
+    evidence: GoalEvidence,
+  ): Promise<void>;
+}
+export type GoalToolEvidenceValidatorResolver = (
+  toolName: string,
+) => GoalToolEvidenceValidator | undefined;
 export interface GoalEvidenceCandidate {
   id: string;
   kind: "toolCall" | "assistantText";
@@ -59,7 +74,7 @@ export function createGoalTools(
       exposure: "core",
       access: "read",
       description:
-        "Submit a completion proposal using this Goal's authenticated evidence IDs from GetGoal, the current goal revision, and a reason explaining every requirement. Successful operations from prior Goal Runs can support the proposal; stale files must be read again. An independent tool-free evaluation makes the final decision; passed is only your proposal. Ordinary completion or an empty/trivial command is not evidence. This grants no file or execution permission.",
+        "Submit a completion proposal using this Goal's authenticated evidence IDs from GetGoal, the current goal revision, and a reason explaining every requirement. Successful operations from prior Goal Runs can support the proposal; files and canvas creations are revalidated against their current versions. Unversioned or stale results must be checked again. An independent tool-free evaluation makes the final decision; passed is only your proposal. Ordinary completion or an empty/trivial command is not evidence. This grants no file or execution permission.",
       parameters: z.toJSONSchema(verifySchema),
       zodSchema: verifySchema,
       execute: async (args, context) =>

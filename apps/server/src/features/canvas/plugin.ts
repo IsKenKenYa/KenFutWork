@@ -1,8 +1,10 @@
 import { registerCanvasRoutes } from "../../http/canvases.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { CODE_UI_WORK_CONTEXT_CAPABILITY } from "../code-ui/work-context.js";
+import { GOAL_TOOL_EVIDENCE_VALIDATOR_CAPABILITY } from "../goals/consumer.js";
 import { createCanvasService } from "./canvas-service.js";
 import { createCanvasDocumentAccess } from "./document-access.js";
+import { createCanvasGoalToolEvidenceValidator } from "./goal-evidence.js";
 import {
   canvasDesignPromptSection,
   canvasSelectionPromptSection,
@@ -83,6 +85,15 @@ export function createCanvasToolsPlugin(): PluginDefinition {
         id: "design",
         value: documentAccess,
       });
+      ctx
+        .get("capabilities")
+        .register(GOAL_TOOL_EVIDENCE_VALIDATOR_CAPABILITY, {
+          id: "manipulate_canvas",
+          value: createCanvasGoalToolEvidenceValidator({
+            canvas: ctx.get("canvas"),
+            access: documentAccess,
+          }),
+        });
       const tools = ctx.get("tools");
       for (const tool of createCanvasDocumentToolDefinitions({
         canvas: ctx.get("canvas"),

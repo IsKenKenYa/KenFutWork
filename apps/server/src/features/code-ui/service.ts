@@ -55,6 +55,7 @@ import {
   resolveReadOnlyProjectPath,
 } from "../execution/scope-service.js";
 import { forgetTaskFileState } from "../execution/scoped-filesystem.js";
+import type { GoalToolEvidenceValidatorResolver } from "../goals/consumer.js";
 import { createGoalService, type GoalService } from "../goals/service.js";
 import type {
   LocalActor,
@@ -163,6 +164,7 @@ export interface CodeUiServiceDeps {
     preset: "code" | "design",
   ) => ConversationWorkContextProvider | undefined;
   goals?: GoalService;
+  goalToolEvidenceValidator?: GoalToolEvidenceValidatorResolver;
   hostRpcHandler?: (
     service: string,
     method: string,
@@ -332,6 +334,9 @@ export class CodeUiService {
     this.taskGoals = createTaskGoalHost({
       goals: this.goals,
       repository: deps.repository,
+      ...(deps.goalToolEvidenceValidator
+        ? { goalToolEvidenceValidator: deps.goalToolEvidenceValidator }
+        : {}),
       refresh: (instanceId, path, projectId) =>
         this.refreshTaskProjection(instanceId, path, projectId),
     });

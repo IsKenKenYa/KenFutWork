@@ -348,6 +348,47 @@ describe("inspect_canvas：内容读取经 canvas repository（不再直连 SDK�
 });
 
 describe("manipulate_canvas：读写经 canvas repository", () => {
+  it("创建成果回执包含已保存图形及绑定文字，不把原有元素计入创建", async () => {
+    const saved: Array<{ elements: Record<string, unknown>[] }> = [];
+    const output = await invokeManipulate(
+      repo({
+        findById: async () => canvasRow([rect("existing", 0, 0)]),
+        saveContent: async (_instance, _canvas, content) => {
+          saved.push(canvasContentSchema.parse(content));
+          return 1;
+        },
+      }),
+      {
+        operations: [
+          {
+            action: "add_shape",
+            shape: "rectangle",
+            x: 10,
+            y: 20,
+            label: { text: "Goal成果" },
+          },
+        ],
+      },
+    );
+    const shape = saved[0]!.elements.find(
+      (element) => element.id === output.createdIds.op_0,
+    )!;
+    const label = saved[0]!.elements.find(
+      (element) => element.containerId === shape.id,
+    )!;
+    expect(output).toMatchObject({
+      success: true,
+      applied: 1,
+      canvasId: CANVAS_ID,
+      revision: "1".repeat(64),
+    });
+    expect(output.createdElements).toEqual([
+      { id: shape.id, version: expect.stringMatching(/^[a-f0-9]{64}$/u) },
+      { id: label.id, version: expect.stringMatching(/^[a-f0-9]{64}$/u) },
+    ]);
+    expect(label.text).toBe("Goal成果");
+  });
+
   it("移动元素后按解析出的实例覆盖写，不回退直连客户端", async () => {
     const saved: Array<[string, string, unknown]> = [];
     const output = await invokeManipulate(

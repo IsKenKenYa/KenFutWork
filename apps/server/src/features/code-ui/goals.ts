@@ -111,7 +111,11 @@ import type {
   PromptExecutionContext,
   ToolExecutionContext,
 } from "../../kernel/types.js";
-import type { TaskGoalHost } from "../goals/consumer.js";
+import type {
+  GoalToolEvidenceValidator,
+  GoalToolEvidenceValidatorResolver,
+  TaskGoalHost,
+} from "../goals/consumer.js";
 import { matchesActiveCodeRun } from "./active-run-binding.js";
 import type { CodeUiRepository, CodeUiSessionRecord } from "./repository.js";
 
@@ -130,11 +134,12 @@ function matchesGoalTaskRun(
 }
 
 async function revalidateEvidence(
-  context: PromptExecutionContext,
+  context: ToolExecutionContext,
   evidence: GoalEvidence[],
+  resolve?: GoalToolEvidenceValidatorResolver,
 ) {
   context.signal?.throwIfAborted();
-  for (const entry of evidence)
+  for (const entry of evidence) {
     for (const file of entry.tool?.files ?? []) {
       if (!context.scopeHandle)
         throw new Error("验收证据缺少可信Task目录授权。");
@@ -145,11 +150,29 @@ async function revalidateEvidence(
       if (current.path !== file.path || current.version !== file.version)
         throw new Error("验收文件已删除或变化，请重新读取实际结果。");
     }
+    if (!entry.tool) continue;
+    const validator = resolve?.(entry.tool.name);
+    if (!hasToolEvidenceProof(entry.tool.name, entry.detail ?? "", validator))
+      throw new Error("画布成果缺少版本核验，请重新读取实际结果。");
+    await validator?.validate(context, entry);
+    context.signal?.throwIfAborted();
+  }
+}
+
+function hasToolEvidenceProof(
+  toolName: string,
+  outputText: string,
+  validator?: GoalToolEvidenceValidator,
+): boolean {
+  return validator
+    ? validator.accepts(outputText)
+    : toolName !== "manipulate_canvas";
 }
 
 export function createTaskGoalHost(deps: {
   goals: GoalService;
   repository: Pick<CodeUiRepository, "find" | "appendEvent">;
+  goalToolEvidenceValidator?: GoalToolEvidenceValidatorResolver;
   refresh(instanceId: string, path: string, projectId: string): Promise<void>;
 }): TaskGoalHost {
   function scopeOf(context: PromptExecutionContext) {
@@ -173,7 +196,11 @@ export function createTaskGoalHost(deps: {
     verdict: Awaited<ReturnType<typeof evaluateGoal>>,
   ) {
     const requestId = captured.goal.evaluation!.requestId;
-    await revalidateEvidence(context, captured.goal.evaluation!.evidence);
+    await revalidateEvidence(
+      context,
+      captured.goal.evaluation!.evidence,
+      deps.goalToolEvidenceValidator,
+    );
     await deps.repository.appendEvent(
       scope.instanceId,
       scope.taskId,
@@ -252,7 +279,15 @@ export function createTaskGoalHost(deps: {
         ? {
             ...visible,
             evidenceCandidates: goalEvidenceCandidates(
-              snapshot?.rows.window ?? [],
+              (snapshot?.rows.window ?? []).filter(
+                (row) =>
+                  row.kind !== "toolCall" ||
+                  hasToolEvidenceProof(
+                    row.toolName,
+                    row.output?.text ?? "",
+                    deps.goalToolEvidenceValidator?.(row.toolName),
+                  ),
+              ),
               context.runId!,
               goal.revision,
               boundGoal ?? undefined,
@@ -276,7 +311,11 @@ export function createTaskGoalHost(deps: {
         input.evidenceIds,
         beforeGoal,
       );
-      await revalidateEvidence(context, evidence);
+      await revalidateEvidence(
+        context,
+        evidence,
+        deps.goalToolEvidenceValidator,
+      );
       let pending:
         | { goal: GoalRecord; invocation: ModelInvocationSnapshot | null }
         | undefined;

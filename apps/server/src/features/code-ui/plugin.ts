@@ -2,7 +2,12 @@ import { resolve } from "node:path";
 import type { AgentRunExtension } from "../../agent/run-extension.js";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
 import type { PluginDefinition } from "../../kernel/types.js";
-import { createGoalPrompt, createGoalTools } from "../goals/consumer.js";
+import {
+  createGoalPrompt,
+  createGoalTools,
+  GOAL_TOOL_EVIDENCE_VALIDATOR_CAPABILITY,
+  type GoalToolEvidenceValidator,
+} from "../goals/consumer.js";
 import { createTaskResourceCloser } from "../task-work/close-resources.js";
 import { createApprovedPlanPromptSection } from "./approved-plan-prompt.js";
 import { createAskUserQuestionToolDefinition } from "./ask-user-question.js";
@@ -61,6 +66,13 @@ export function createCodeUiPlugin(): PluginDefinition {
               .get<ConversationWorkContextProvider>(
                 CODE_UI_WORK_CONTEXT_CAPABILITY,
                 preset,
+              ),
+          goalToolEvidenceValidator: (toolName) =>
+            ctx
+              .get("capabilities")
+              .get<GoalToolEvidenceValidator>(
+                GOAL_TOOL_EVIDENCE_VALIDATOR_CAPABILITY,
+                toolName,
               ),
           hostRpcHandler: (service, method) =>
             ctx

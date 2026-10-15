@@ -1,24 +1,35 @@
 import { mkdtemp, realpath, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
+import {
+  type CanvasContent,
+  zcodeUiProtocol as protocol,
+} from "@kenfutwork/shared";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   createRuntimeTestInstance,
   RUNTIME_TEST_ACTOR,
 } from "../../agent/runtime-test-fixtures.js";
 import type { ToolExecutionContext } from "../../kernel/types.js";
+import type { CanvasService } from "../canvas/canvas-service.js";
+import { createCanvasGoalToolEvidenceValidator } from "../canvas/goal-evidence.js";
+import { createManipulateCanvasToolDefinition } from "../canvas/tools/manipulate-canvas.js";
 import { fileDiffDisplay } from "../code-tools/file-display.js";
 import {
   createExecutionScopes,
   type ExecutionScopeHandle,
 } from "../execution/scope-service.js";
+import type { GoalToolEvidenceValidator } from "../goals/consumer.js";
 import { createGoalService } from "../goals/service.js";
+import type { LocalActor } from "../local-instance/types.js";
 import { createCodeUiConversation } from "./conversation.js";
 import { createTaskGoalHost } from "./goals.js";
 import type { CodeUiRepository, CodeUiSessionRecord } from "./repository.js";
 
-async function fixture(handle?: ExecutionScopeHandle) {
+async function fixture(
+  handle?: ExecutionScopeHandle,
+  toolEvidenceValidator?: GoalToolEvidenceValidator,
+) {
   const scope = handle?.describe() ?? {
     instanceId: "instance",
     projectId: "project",
@@ -139,8 +150,24 @@ async function fixture(handle?: ExecutionScopeHandle) {
     goals,
     repository,
     refresh: async () => {},
+    ...(toolEvidenceValidator
+      ? {
+          goalToolEvidenceValidator: (toolName: string) =>
+            toolName === "manipulate_canvas"
+              ? toolEvidenceValidator
+              : undefined,
+        }
+      : {}),
   });
-  return { host, root, context, goals, conversation, verified: () => verified };
+  return {
+    host,
+    root,
+    context,
+    goals,
+    repository,
+    conversation,
+    verified: () => verified,
+  };
 }
 
 const roots: string[] = [];
@@ -148,7 +175,20 @@ afterEach(async () => {
   for (const root of roots.splice(0))
     await rm(root, { recursive: true, force: true });
 });
-async function crossRunFixture(legacy = false, canceled = false) {
+async function crossRunFixture(
+  legacy = false,
+  canceled = false,
+  toolEvidenceValidator?: GoalToolEvidenceValidator,
+  onFirstRun?: (
+    context: ToolExecutionContext,
+    record: (
+      name: string,
+      id: string,
+      input: Record<string, unknown>,
+      output: Record<string, unknown>,
+    ) => void,
+  ) => Promise<void>,
+) {
   const directory = await realpath(
     await mkdtemp(join(tmpdir(), "goal-evidence-")),
   );
@@ -173,7 +213,7 @@ async function crossRunFixture(legacy = false, canceled = false) {
     },
     localInstance: createRuntimeTestInstance(),
   }).openTask(RUNTIME_TEST_ACTOR, scope.taskId);
-  const f = await fixture(handle);
+  const f = await fixture(handle, toolEvidenceValidator);
   const model = f.root.state!.goalModel;
   const sync = () => {
     f.root.state = f.conversation.exportState();
@@ -227,6 +267,7 @@ async function crossRunFixture(legacy = false, canceled = false) {
   if (writeRow?.kind !== "toolCall")
     throw new Error("Missing actual Write receipt");
   writeRow.output!.text = `已创建 ${commit.filePath}，版本 ${commit.version}`;
+  await onFirstRun?.(f.context, tool);
   const state = JSON.parse(JSON.stringify(f.root.state!));
   f.conversation = createCodeUiConversation({
     sessionId: scope.taskId,
@@ -408,6 +449,324 @@ it.each(["before", "during"])(
         evidenceIds: [f.writeId],
       }),
     ).rejects.toThrow();
+    expect(f.root.state!.goalRecord!.status).not.toBe("complete");
+    if (phase === "before")
+      expect(f.context.requestModel).not.toHaveBeenCalled();
+  },
+);
+
+function canvasEvidenceStore() {
+  const canvasId = "00000000-0000-4000-8000-000000000004";
+  let content: CanvasContent = {
+    elements: [{ id: "unrelated", type: "rectangle", x: 0, version: 1 }],
+    appState: {},
+    files: {},
+  };
+  let revision = "a".repeat(64);
+  let activeRunId = "r";
+  let authorized = true;
+  let revokeDuringRead = false;
+  const access = {
+    authorize: vi.fn(
+      async (
+        context: ToolExecutionContext,
+        id?: string,
+        operation?: "read" | "write",
+      ) => {
+        if (context.runId !== activeRunId || id !== canvasId || !authorized)
+          throw new Error("画布任务或运行授权已改变，请重新提交。");
+        expect(["read", "write"]).toContain(operation);
+        return RUNTIME_TEST_ACTOR;
+      },
+    ),
+  } satisfies Parameters<
+    typeof createCanvasGoalToolEvidenceValidator
+  >[0]["access"];
+  const canvas: Pick<
+    CanvasService,
+    "getCanvas" | "saveCanvasContent" | "readCanvasContent"
+  > = {
+    getCanvas: async () => ({
+      id: canvasId,
+      name: "Goal画布",
+      projectId: "00000000-0000-4000-8000-000000000002",
+      content: structuredClone(content),
+      revision,
+    }),
+    saveCanvasContent: async (_actor, _id, saved, expected, guard) => {
+      expect(expected).toBe(revision);
+      await guard?.();
+      content = structuredClone(saved);
+      revision = "b".repeat(64);
+      return { revision, fileReferences: {} };
+    },
+    readCanvasContent: vi.fn(
+      async (_actor: LocalActor, id: string, guard?: () => Promise<void>) => {
+        expect(id).toBe(canvasId);
+        await guard?.();
+        if (revokeDuringRead) authorized = false;
+        return structuredClone(content);
+      },
+    ),
+  };
+  const created = () =>
+    content.elements.filter((element) => element.id !== "unrelated");
+  return {
+    canvasId,
+    access,
+    canvas,
+    activateCurrentRun: () => {
+      activeRunId = "r2";
+      access.authorize.mockClear();
+    },
+    remove: () => {
+      content.elements = content.elements.filter(
+        (element) => element.id === "unrelated",
+      );
+    },
+    change: (kind: "shape" | "label" | "unrelated" | "tombstone") => {
+      const element =
+        kind === "unrelated"
+          ? content.elements.find((entry) => entry.id === "unrelated")!
+          : created().find(
+              (entry) =>
+                entry.type === (kind === "label" ? "text" : "rectangle"),
+            )!;
+      if (kind === "label") element.text = "changed label";
+      else if (kind === "tombstone") element.isDeleted = true;
+      else element.x = Number(element.x) + 1;
+      revision = "c".repeat(64);
+    },
+    revoke: () => {
+      authorized = false;
+    },
+    revokeDuringRead: () => {
+      revokeDuringRead = true;
+    },
+    reorderProperties: () => {
+      content.elements = content.elements.map((element) =>
+        Object.fromEntries(Object.entries(element).reverse()),
+      );
+      revision = "c".repeat(64);
+    },
+  };
+}
+
+async function canvasGoalFixture() {
+  const store = canvasEvidenceStore();
+  const { canvasId, canvas, access } = store;
+  const validator = createCanvasGoalToolEvidenceValidator({ canvas, access });
+  vi.spyOn(validator, "validate");
+  const f = await crossRunFixture(
+    false,
+    false,
+    validator,
+    async (context, record) => {
+      context.instanceId = RUNTIME_TEST_ACTOR.instanceId;
+      context.canvasId = canvasId;
+      context.workContext = { preset: "design", canvasId };
+      const tool = createManipulateCanvasToolDefinition({
+        localInstance: createRuntimeTestInstance(),
+        canvasService: canvas,
+        documentAccess: access,
+      });
+      const input = {
+        operations: [
+          {
+            action: "add_shape",
+            shape: "rectangle",
+            x: 10,
+            y: 20,
+            width: 120,
+            height: 60,
+            label: { text: "Goal成果" },
+          },
+        ],
+      };
+      record(
+        "manipulate_canvas",
+        "create-shape",
+        input,
+        JSON.parse(String(await tool.execute(input, context))),
+      );
+    },
+  );
+  store.activateCurrentRun();
+  const receipt = f.root.state!.snapshots[0]!.rows.window.find(
+    (row) => row.kind === "toolCall" && row.toolName === "manipulate_canvas",
+  );
+  if (receipt?.kind !== "toolCall") throw new Error("Missing canvas receipt");
+  return {
+    ...f,
+    ...store,
+    canvasEvidenceId: `row:${receipt.rowId}`,
+    receipt,
+    validator,
+  };
+}
+
+it("跨Run未改动的画布创建成果可以完成Goal", async () => {
+  const f = await canvasGoalFixture();
+  const result = await f.host.verify(f.context, {
+    ...proposal,
+    revision: f.root.state!.goalRecord!.revision,
+    evidenceIds: [f.canvasEvidenceId],
+  });
+  expect(result.status).toBe("complete");
+  expect(f.validator.validate).toHaveBeenCalledTimes(2);
+  expect(
+    f.access.authorize.mock.calls.every(
+      ([context, id, operation]) =>
+        context.runId === "r2" && id === f.canvasId && operation === "read",
+    ),
+  ).toBe(true);
+});
+
+it.each(["unrelated", "propertyOrder"])(
+  "%s变化不使未改动的画布创建成果失效",
+  async (change) => {
+    const f = await canvasGoalFixture();
+    if (change === "unrelated") f.change("unrelated");
+    else f.reorderProperties();
+    expect(
+      (
+        await f.host.verify(f.context, {
+          ...proposal,
+          revision: f.root.state!.goalRecord!.revision,
+          evidenceIds: [f.canvasEvidenceId],
+        })
+      ).status,
+    ).toBe("complete");
+  },
+);
+
+it.each(["shape", "label", "tombstone"] as const)(
+  "画布%s变化未递增Excalidraw版本也使旧创建成果失效",
+  async (change) => {
+    const f = await canvasGoalFixture();
+    f.change(change);
+    await expect(
+      f.host.verify(f.context, {
+        ...proposal,
+        revision: f.root.state!.goalRecord!.revision,
+        evidenceIds: [f.canvasEvidenceId],
+      }),
+    ).rejects.toThrow("画布成果已删除或变化");
+    expect(f.context.requestModel).not.toHaveBeenCalled();
+    expect(f.root.state!.goalRecord!.status).not.toBe("complete");
+  },
+);
+
+it.each(["before", "read", "evaluation"])(
+  "画布授权在%s撤销后不能验收旧创建成果",
+  async (phase) => {
+    const f = await canvasGoalFixture();
+    if (phase === "before") f.revoke();
+    else if (phase === "read") f.revokeDuringRead();
+    else
+      f.context.requestModel = vi.fn(async () => {
+        f.revoke();
+        return {
+          text: '{"passed":true,"reason":"Review"}',
+          hasToolCalls: false,
+          usageObserved: true,
+        };
+      });
+    await expect(
+      f.host.verify(f.context, {
+        ...proposal,
+        revision: f.root.state!.goalRecord!.revision,
+        evidenceIds: [f.canvasEvidenceId],
+      }),
+    ).rejects.toThrow("画布任务或运行授权已改变");
+    expect(f.root.state!.goalRecord!.status).not.toBe("complete");
+    if (phase !== "evaluation")
+      expect(f.context.requestModel).not.toHaveBeenCalled();
+    if (phase === "before")
+      expect(f.canvas.readCanvasContent).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["before", "evaluation"])(
+  "画布证据provider在%s缺席不能完成Goal",
+  async (phase) => {
+    const f = await canvasGoalFixture();
+    let available = phase !== "before";
+    const host = createTaskGoalHost({
+      goals: f.goals,
+      repository: f.repository,
+      refresh: async () => {},
+      goalToolEvidenceValidator: () => (available ? f.validator : undefined),
+    });
+    if (phase === "before")
+      expect(
+        (await host.read(f.context))?.evidenceCandidates,
+      ).not.toContainEqual(expect.objectContaining({ id: f.canvasEvidenceId }));
+    else
+      f.context.requestModel = vi.fn(async () => {
+        available = false;
+        return {
+          text: '{"passed":true,"reason":"Review"}',
+          hasToolCalls: false,
+          usageObserved: true,
+        };
+      });
+    await expect(
+      host.verify(f.context, {
+        ...proposal,
+        revision: f.root.state!.goalRecord!.revision,
+        evidenceIds: [f.canvasEvidenceId],
+      }),
+    ).rejects.toThrow("画布成果缺少版本核验");
+    expect(f.root.state!.goalRecord!.status).not.toBe("complete");
+    if (phase === "before")
+      expect(f.context.requestModel).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["canvasId", "revision", "createdElements", "elementVersion"])(
+  "旧画布回执缺少%s时不能补造版本证明或进入候选",
+  async (missing) => {
+    const f = await canvasGoalFixture();
+    const output = JSON.parse(f.receipt.output!.text);
+    if (missing === "elementVersion") delete output.createdElements[0].version;
+    else delete output[missing];
+    f.receipt.output!.text = JSON.stringify(output);
+    expect(
+      (await f.host.read(f.context))?.evidenceCandidates,
+    ).not.toContainEqual(expect.objectContaining({ id: f.canvasEvidenceId }));
+    await expect(
+      f.host.verify(f.context, {
+        ...proposal,
+        revision: f.root.state!.goalRecord!.revision,
+        evidenceIds: [f.canvasEvidenceId],
+      }),
+    ).rejects.toThrow("画布成果缺少版本核验");
+    expect(f.context.requestModel).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["before", "during"])(
+  "跨Run创建图形在%s独立评估删除后不能完成Goal",
+  async (phase) => {
+    const f = await canvasGoalFixture();
+    if (phase === "before") f.remove();
+    else
+      f.context.requestModel = vi.fn(async () => {
+        f.remove();
+        return {
+          text: '{"passed":true,"reason":"Review"}',
+          hasToolCalls: false,
+          usageObserved: true,
+        };
+      });
+    await expect(
+      f.host.verify(f.context, {
+        ...proposal,
+        revision: f.root.state!.goalRecord!.revision,
+        evidenceIds: [f.canvasEvidenceId],
+      }),
+    ).rejects.toThrow("画布成果已删除或变化");
     expect(f.root.state!.goalRecord!.status).not.toBe("complete");
     if (phase === "before")
       expect(f.context.requestModel).not.toHaveBeenCalled();

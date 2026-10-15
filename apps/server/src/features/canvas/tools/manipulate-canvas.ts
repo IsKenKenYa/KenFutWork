@@ -5,6 +5,7 @@ import type { LocalInstanceService } from "../../local-instance/types.js";
 import { resolveCanvasActor } from "../canvas-actor.js";
 import type { CanvasService } from "../canvas-service.js";
 import type { CanvasDocumentAccess } from "../document-access.js";
+import { canvasElementVersion } from "../goal-evidence.js";
 import {
   BINDING_GAP,
   bumpVersion,
@@ -874,6 +875,7 @@ export function createManipulateCanvasToolDefinition(deps: {
         appState?: Record<string, unknown>;
       };
       const elements: CanvasElement[] = content.elements ?? [];
+      const previousIds = new Set(elements.map((element) => element.id));
 
       // --- Apply operations ----------------------------------------------------
       const descriptions: string[] = [];
@@ -903,6 +905,7 @@ export function createManipulateCanvasToolDefinition(deps: {
 
       // --- Write back ----------------------------------------------------------
       const updatedContent = { ...content, elements };
+      let revision: string;
       try {
         await resolveCanvasActor(
           deps.localInstance,
@@ -911,7 +914,7 @@ export function createManipulateCanvasToolDefinition(deps: {
           "write",
           canvasId,
         );
-        await service.saveCanvasContent(
+        const saved = await service.saveCanvasContent(
           actor,
           canvasId,
           canvasContentSchema.parse(updatedContent),
@@ -926,6 +929,7 @@ export function createManipulateCanvasToolDefinition(deps: {
             );
           },
         );
+        revision = saved.revision;
       } catch (error) {
         return JSON.stringify({
           error: "write_failed",
@@ -938,6 +942,15 @@ export function createManipulateCanvasToolDefinition(deps: {
         success: true,
         applied: descriptions.length,
         summary: descriptions.join("; "),
+        canvasId,
+        revision,
+        createdElements: updatedContent.elements.flatMap((element) =>
+          typeof element.id === "string" &&
+          !element.isDeleted &&
+          !previousIds.has(element.id)
+            ? [{ id: element.id, version: canvasElementVersion(element) }]
+            : [],
+        ),
       };
       if (Object.keys(createdIds).length > 0) {
         result.createdIds = createdIds;
