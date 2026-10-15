@@ -8,6 +8,7 @@ import {
 import { z } from "zod";
 import { additionalDirectorySchema } from "./execution-contracts.js";
 import { governanceSetting } from "./governance.js";
+import { canvasDocumentUpdatedMessageSchema } from "./ws-protocol.js";
 
 export type {
   ModelConfigObject,
@@ -61,6 +62,8 @@ export * as zcodeUiProtocol from "@zcode/shared/zcode-protocol-v4";
 
 export const codeUiWorkspaceSchema = z.object({
   projectId: z.string().uuid(),
+  kind: z.enum(["code", "design"]).optional(),
+  enabledModes: z.array(z.enum(["code", "design"])).optional(),
   name: z.string(),
   path: z.string().min(1),
   additionalDirectories: z.array(additionalDirectorySchema).default([]),
@@ -113,8 +116,12 @@ export const codeUiEventStreamSchema = z
     "SSE 文本流，每条 data 记录的结构见原 Code 宿主事件契约与 ws-protocol.md",
   );
 
-/** SSE 仅承载原 physical wire frame；原 SessionDataLayer 负责 ownership、激活与装配。 */
+/** 原 SessionDataLayer 持有physical wire frame；内容通知不进入Task协议。 */
 export const codeUiEventSchema = z.discriminatedUnion("event", [
+  z.object({
+    event: z.literal("canvasDocumentUpdated"),
+    data: canvasDocumentUpdatedMessageSchema,
+  }),
   z.object({
     event: z.literal("ready"),
     hello: helloMessageSchema,

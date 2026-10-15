@@ -412,7 +412,7 @@ type RuntimeRunStatus =
 
 type RuntimeRunRecord = RunCreateRequest & {
   acceptedCancellation?: Promise<void>;
-  branchGeneration?: number;
+  branchGeneration?: number | undefined;
   turnBoundaryWrites?: Partial<
     Record<
       AgentTurnBoundaryPhase,

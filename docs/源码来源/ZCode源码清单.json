@@ -14632,7 +14632,7 @@
       "source": "references/zcode/packages/shared/src/platform.ts",
       "target": "packages/zcode-shared/src/platform.ts",
       "sha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "copiedSha256": "31573b92b83cf88159124b6c04a5f8f12ef0f52cfa84d63bd1861a3abb76cc70",
+      "copiedSha256": "478e63e5c040c6f9d033e0c074534eab1bc56c228f6d2d2b47f7bce05461702b",
       "adaptations": [
         "宿主能力接口：增加可选云账户支持标记；未声明的原宿主行为不变",
         "宿主接口：可选自动化/嵌入浏览器/CUA/远程能力声明；未声明保持原平台语义",
@@ -14649,7 +14649,8 @@
         "宿主能力声明：来源安装与市场源管理独立显隐，不改变未声明宿主的原行为",
         "宿主接口：独立管理文档导航、真实实例插件作用域和实例设置模式显隐；缺省原平台行为",
         "宿主接口：可选workbenchNavigation承接同源Code／Design／可信Flow导航，原coding执行树不变",
-        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。"
+        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
+        "Code/Design统一实施：平台端口贡献会话上下文与文档能力，原宿主transport保持不变。"
       ]
     },
     {
@@ -14950,8 +14951,10 @@
       "source": "references/zcode/packages/shared/src/task-realtime-core.ts",
       "target": "packages/zcode-shared/src/task-realtime-core.ts",
       "sha256": "cba2956048f69d51cd4df6f9070fcab42cd3609f4a1faa3af96bea337910cb52",
-      "copiedSha256": "cba2956048f69d51cd4df6f9070fcab42cd3609f4a1faa3af96bea337910cb52",
-      "adaptations": []
+      "copiedSha256": "ab87e68d0542e0fd38f15380fca0ad3cca772eb5f02d2b4122ab9174a6c7b10c",
+      "adaptations": [
+        "Code/Design统一实施：统一Task投影保留使用过的工作方式。"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/task-realtime.ts",
@@ -15043,9 +15046,10 @@
       "source": "references/zcode/packages/shared/src/validation.ts",
       "target": "packages/zcode-shared/src/validation.ts",
       "sha256": "49d7fccf518195c1ab4eb89ee816c878bfa4e0227108e207ec3cf5a1ddb2b84c",
-      "copiedSha256": "5a3a232e53b186c2b49563cc39838cc6fb77ffaa4502c05950e9f918952c7d11",
+      "copiedSha256": "1299cc76b35a01769bbd91fec6567bf925ff2351b54c86400522b2f4298a3504",
       "adaptations": [
-        "Code宿主必要适配: zcodeTaskMetaSchema保留optional真实Project UUID，qualified workspaceIdentity只作source键，不解码执行权限；公开parsed Controller frame回归RED后修复"
+        "Code宿主必要适配: zcodeTaskMetaSchema保留optional真实Project UUID，qualified workspaceIdentity只作source键，不解码执行权限；公开parsed Controller frame回归RED后修复",
+        "Code/Design统一实施：Task元数据校验接纳工作方式列表。"
       ]
     },
     {
@@ -15209,8 +15213,10 @@
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/command.ts",
       "target": "packages/zcode-shared/src/zcode-protocol-v4/command.ts",
       "sha256": "9597a0499a7dd82de9580a9e7c69d2e3ff1ce2655c87154e73dd2c8d05d76223",
-      "copiedSha256": "9597a0499a7dd82de9580a9e7c69d2e3ff1ce2655c87154e73dd2c8d05d76223",
-      "adaptations": []
+      "copiedSha256": "96502748d4b04e0a213e7d02852b0f573ed12ddfaafd962ec4b2005e0132eb26",
+      "adaptations": [
+        "Code/Design统一实施：原命令可携冻结工作上下文，Goal与输入沿原命令幂等域。"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/controller.ts",
@@ -15258,15 +15264,19 @@
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/index.ts",
       "target": "packages/zcode-shared/src/zcode-protocol-v4/index.ts",
       "sha256": "438dac346461293f2fc2de47fcee49e48ce44c0dcfac04f8bb66f155ef62b6c8",
-      "copiedSha256": "438dac346461293f2fc2de47fcee49e48ce44c0dcfac04f8bb66f155ef62b6c8",
-      "adaptations": []
+      "copiedSha256": "187421816f1377d21fea3c37894c491f92ac1ec139a90e405a15b4b51910f060",
+      "adaptations": [
+        "Code/Design统一实施：导出第一方工作上下文与媒体展示扩展契约。"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/input-intent.ts",
       "target": "packages/zcode-shared/src/zcode-protocol-v4/input-intent.ts",
       "sha256": "b316dfb1bf89eebce5a69254c4245dc415a482382533547d31a7ef33afbaefa7",
-      "copiedSha256": "b316dfb1bf89eebce5a69254c4245dc415a482382533547d31a7ef33afbaefa7",
-      "adaptations": []
+      "copiedSha256": "b9e7447e5dd2c795759186bb5367825850497680e8ccb4e8f58cde8bdc74f17c",
+      "adaptations": [
+        "Code/Design统一实施：原输入意图持有工作上下文，入队和重放保留最初目标。"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/profiles.ts",
@@ -15342,9 +15352,10 @@
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/toolDisplay.ts",
       "target": "packages/zcode-shared/src/zcode-protocol-v4/toolDisplay.ts",
       "sha256": "a0400e1c7e37e757a2187b70c6f281eb0f4cefd3cc657d17feda163c82c023ed",
-      "copiedSha256": "1cde06dc7ffb2d14d4806012d133fba802a3b8da9ebb06c6e46a7089f7402bfc",
+      "copiedSha256": "284fe8eef4ad752aad27f26227ae1d991bf1a659b452bd7051635e95f59958ef",
       "adaptations": [
-        "原ToolOutput结果展示联合增加真实ApplyPatch的file_diffs复用file_diff schema；row顶层display联合保持原契约"
+        "原ToolOutput结果展示联合增加真实ApplyPatch的file_diffs复用file_diff schema；row顶层display联合保持原契约",
+        "Code/Design统一实施：注册真实assetId的图片/视频结构化display契约，不持久化临时预览URL。"
       ]
     },
     {
@@ -15612,8 +15623,10 @@
       "source": "references/zcode/packages/shared/src/zcode-task-types-core.ts",
       "target": "packages/zcode-shared/src/zcode-task-types-core.ts",
       "sha256": "e75cc0a5f7e6fcbe37acdab259fbc5a0448adcf9d69a5b1f3683b72eee5c75f0",
-      "copiedSha256": "e75cc0a5f7e6fcbe37acdab259fbc5a0448adcf9d69a5b1f3683b72eee5c75f0",
-      "adaptations": []
+      "copiedSha256": "2092d0021381feafbd3545ac7978ed4c08fbc51dfd442b47cdce59c5eeff4891",
+      "adaptations": [
+        "Code/Design统一实施：统一Task元数据含实际使用过的工作方式，筛选不创建另一份聚合。"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/zcode-task-types.ts",

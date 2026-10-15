@@ -1206,6 +1206,7 @@ export const zcodeTaskMetaSchema = z.object({
   taskId: nonEmptyStringSchema,
   // KenFutWork宿主的真实Project归属；qualified identity仅作source键。
   projectId: z.uuid().optional(),
+  workModes: z.array(z.enum(["code", "design"])).optional(),
   traceId: nonEmptyStringSchema,
   title: z.string(),
   titleOverridden: z.boolean().optional(),

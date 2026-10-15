@@ -1,3 +1,4 @@
+import { conversationWorkContextSchema } from "@zcode/shared/zcode-protocol-v4";
 import { z } from "zod";
 
 import { toolArtifactSchema } from "./artifacts.js";
@@ -78,6 +79,10 @@ export const runCreateRequestSchema = z.object({
   projectId: projectIdSchema.optional(),
   taskId: sessionIdSchema.optional(),
   prompt: z.string(),
+  inputId: identifierSchema.optional(),
+  scopeGeneration: z.number().int().nonnegative().safe().optional(),
+  branchGeneration: z.number().int().positive().safe().optional(),
+  workContext: conversationWorkContextSchema.optional(),
   canvasId: canvasIdSchema.optional(),
   attachments: z.array(imageAttachmentSchema).optional(),
   imageGenerationPreference: imageGenerationPreferenceSchema.optional(),

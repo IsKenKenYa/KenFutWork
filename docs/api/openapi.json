@@ -3931,7 +3931,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/canvasGetResponseSchema"
+                  "$ref": "#/components/schemas/canvasCreateResponseSchema"
                 }
               }
             }
@@ -11883,6 +11883,7 @@
                   "project_slug_taken",
                   "project_update_failed",
                   "invalid_project_modes",
+                  "project_directory_conflict",
                   "index_disabled",
                   "index_not_built",
                   "index_too_large",
@@ -12479,7 +12480,7 @@
         ],
         "additionalProperties": false
       },
-      "canvasGetResponseSchema": {
+      "canvasCreateResponseSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
@@ -14787,6 +14788,23 @@
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                 },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "code",
+                    "design"
+                  ]
+                },
+                "enabledModes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "code",
+                      "design"
+                    ]
+                  }
+                },
                 "name": {
                   "type": "string"
                 },
@@ -14935,6 +14953,7 @@
                       "project_slug_taken",
                       "project_update_failed",
                       "invalid_project_modes",
+                      "project_directory_conflict",
                       "index_disabled",
                       "index_not_built",
                       "index_too_large",
@@ -20512,6 +20531,17 @@
                               "format": "uuid",
                               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                             },
+                            "originRunId": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
                             "scopeGeneration": {
                               "type": "integer",
                               "minimum": 0,
@@ -20834,6 +20864,17 @@
                             "type": "string",
                             "format": "uuid",
                             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "originRunId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "scopeGeneration": {
                             "type": "integer",
@@ -24525,6 +24566,10 @@
             "type": "string",
             "minLength": 1
           },
+          "directory_choice": {
+            "type": "string",
+            "const": "independent"
+          },
           "additional_directories": {
             "type": "array",
             "items": {
@@ -24967,6 +25012,10 @@
           "nextWorkDir": {
             "type": "string",
             "minLength": 1
+          },
+          "directoryChoice": {
+            "type": "string",
+            "const": "independent"
           },
           "expectedTasks": {
             "type": "array",
@@ -28247,6 +28296,102 @@
           },
           "prompt": {
             "type": "string"
+          },
+          "inputId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scopeGeneration": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "branchGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "workContext": {
+            "type": "object",
+            "properties": {
+              "preset": {
+                "type": "string",
+                "enum": [
+                  "code",
+                  "design"
+                ]
+              },
+              "canvasId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "selectedCanvasElements": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "brandKitId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "imageGenerationPreference": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "manual"
+                    ]
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "mode",
+                  "models"
+                ],
+                "additionalProperties": false
+              },
+              "videoGenerationPreference": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "manual"
+                    ]
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "mode",
+                  "models"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "preset"
+            ],
+            "additionalProperties": false
           },
           "canvasId": {
             "type": "string",
@@ -33980,6 +34125,88 @@
                     "planEnabled": {
                       "type": "boolean"
                     },
+                    "workContext": {
+                      "type": "object",
+                      "properties": {
+                        "preset": {
+                          "type": "string",
+                          "enum": [
+                            "code",
+                            "design"
+                          ]
+                        },
+                        "canvasId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "selectedCanvasElements": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {}
+                          }
+                        },
+                        "brandKitId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "imageGenerationPreference": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "auto",
+                                "manual"
+                              ]
+                            },
+                            "models": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "models"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "videoGenerationPreference": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "auto",
+                                "manual"
+                              ]
+                            },
+                            "models": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "models"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "preset"
+                      ],
+                      "additionalProperties": false
+                    },
                     "sharedContextRefs": {
                       "maxItems": 1,
                       "type": "array",
@@ -37336,6 +37563,60 @@
               },
               "display": {
                 "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "generated_media"
+                      },
+                      "version": {
+                        "type": "number",
+                        "const": 1
+                      },
+                      "jobId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "enum": [
+                          "image",
+                          "video"
+                        ]
+                      },
+                      "assetId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "mimeType": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "width": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "height": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "title": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "version",
+                      "jobId",
+                      "mediaType",
+                      "assetId",
+                      "mimeType"
+                    ],
+                    "additionalProperties": false
+                  },
                   {
                     "type": "object",
                     "properties": {

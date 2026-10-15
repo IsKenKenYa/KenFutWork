@@ -37,7 +37,20 @@ export const fileDiffToolResultDisplaySchema = z.object({
     truncated: z.boolean().optional(),
   });
 
+export const generatedMediaDisplaySchema = z.object({
+  kind: z.literal("generated_media"),
+  version: z.literal(1),
+  jobId: z.string().uuid(),
+  mediaType: z.enum(["image", "video"]),
+  assetId: z.string().uuid(),
+  mimeType: z.string().min(1),
+  width: z.number().positive().optional(),
+  height: z.number().positive().optional(),
+  title: z.string().optional(),
+}).strict();
+export type GeneratedMediaDisplay = z.infer<typeof generatedMediaDisplaySchema>;
 const toolResultDisplaySchema = z.discriminatedUnion("kind", [
+  generatedMediaDisplaySchema,
   bashOutputDisplaySchema,
   fileDiffToolResultDisplaySchema,
   z.object({

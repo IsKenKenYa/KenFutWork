@@ -84,6 +84,8 @@ export const generationFileTargetSchema = z.discriminatedUnion("kind", [
       projectId: z.uuid(),
       sessionId: z.uuid(),
       canvasId: z.uuid().optional(),
+      /** 明确null表示鉴权交互式来源；Agent须保存真实Run身份。 */
+      originRunId: z.string().min(1).nullable().optional(),
       scopeGeneration: z.number().int().nonnegative(),
       branchGeneration: z.number().int().nonnegative(),
     })

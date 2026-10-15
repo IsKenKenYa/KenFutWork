@@ -3,6 +3,7 @@ import {
   assetObjectSchema,
   canvasContentSchema,
   canvasDetailSchema,
+  canvasSummarySchema,
   chatMessageSchema,
   chatSessionSummarySchema,
   instanceSettingsSchema,
@@ -52,7 +53,23 @@ export const projectCreateRequestSchema = z.object({
    * 不合格返回 400 `invalid_work_dir` 并给出可读原因。
    */
   work_dir: z.string().trim().min(1).optional(),
+  directory_choice: z.literal("independent").optional(),
   additional_directories: z.array(additionalDirectorySchema).optional(),
+});
+
+export const projectDirectoryQuerySchema = z.object({
+  path: z.string().trim().min(1),
+});
+export const projectDirectoryCandidatesSchema = z.object({
+  projects: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      kind: projectKindSchema,
+      enabledModes: projectModesSchema,
+      workDir: z.string(),
+    }),
+  ),
 });
 
 export const projectCreateResponseSchema = z.object({
@@ -499,6 +516,7 @@ export const applicationErrorCodeSchema = z.enum([
   "project_slug_taken",
   "project_update_failed",
   "invalid_project_modes",
+  "project_directory_conflict",
   // 索引库（R4-3）：两个开关各自的可读拒绝（不在枚举里 → 响应会退化成 ZodError 转储）
   "index_disabled",
   "index_not_built",
@@ -635,6 +653,27 @@ export const canvasGetResponseSchema = z.object({
   canvas: canvasDetailSchema,
 });
 
+export const canvasListRequestSchema = z.object({
+  query: z.string().trim().max(200).optional(),
+});
+export const canvasListResponseSchema = z.object({
+  canvases: z.array(canvasSummarySchema),
+});
+export const canvasCreateRequestSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  requestId: z.uuid().optional(),
+});
+export const canvasCreateResponseSchema = canvasGetResponseSchema;
+export const canvasRenameRequestSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  expectedName: z.string().min(1).max(200),
+  expectedRevision: z.string().regex(/^[a-f0-9]{64}$/u),
+});
+export const canvasDeleteRequestSchema = z.object({
+  expectedRevision: z.string().regex(/^[a-f0-9]{64}$/u),
+});
+export const canvasDeleteResponseSchema = z.object({ ok: z.literal(true) });
+
 export const canvasSaveRequestSchema = z.object({
   content: canvasContentSchema,
   expectedRevision: z
@@ -728,6 +767,13 @@ export type SessionCreateResponse = z.infer<typeof sessionCreateResponseSchema>;
 export type MessageListResponse = z.infer<typeof messageListResponseSchema>;
 export type MessageCreateResponse = z.infer<typeof messageCreateResponseSchema>;
 export type CanvasGetResponse = z.infer<typeof canvasGetResponseSchema>;
+export type CanvasListRequest = z.infer<typeof canvasListRequestSchema>;
+export type CanvasListResponse = z.infer<typeof canvasListResponseSchema>;
+export type CanvasCreateRequest = z.infer<typeof canvasCreateRequestSchema>;
+export type CanvasCreateResponse = z.infer<typeof canvasCreateResponseSchema>;
+export type CanvasRenameRequest = z.infer<typeof canvasRenameRequestSchema>;
+export type CanvasDeleteRequest = z.infer<typeof canvasDeleteRequestSchema>;
+export type CanvasDeleteResponse = z.infer<typeof canvasDeleteResponseSchema>;
 export type CanvasSaveRequest = z.infer<typeof canvasSaveRequestSchema>;
 export type CanvasSaveResponse = z.infer<typeof canvasSaveResponseSchema>;
 export type InstanceSettingsResponse = z.infer<

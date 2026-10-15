@@ -2,6 +2,21 @@ import { z } from "zod";
 import { runCreateRequestSchema, terminalShellSchema } from "./contracts.js";
 import { streamEventSchema } from "./events.js";
 
+/** 文档变化与Agent执行事件独立；只唤醒权威读取，不代表任何Run或工具完成。 */
+export const canvasDocumentUpdatedMessageSchema = z.object({
+  type: z.literal("canvas.document.updated"),
+  canvasId: z.uuid(),
+  projectId: z.uuid(),
+  revision: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/u)
+    .optional(),
+  deleted: z.boolean(),
+});
+export type CanvasDocumentUpdatedMessage = z.infer<
+  typeof canvasDocumentUpdatedMessageSchema
+>;
+
 // --- Server → Client: Push Event (replaces SSE) ---
 
 export const wsServerEventSchema = z.object({
@@ -226,6 +241,7 @@ export const wsServerErrorSchema = z.object({
 });
 
 export const wsServerMessageSchema = z.discriminatedUnion("type", [
+  canvasDocumentUpdatedMessageSchema,
   wsServerEventSchema,
   wsServerErrorSchema,
   wsRpcRequestSchema,

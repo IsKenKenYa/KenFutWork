@@ -817,3 +817,22 @@ describe("子代理与后台任务契约（DEC-14…DEC-19）", () => {
     ).toThrow();
   });
 });
+
+it("公共Run保留有效零代际Task，拒绝负代际、不安全整数与零分支", () => {
+  const input = {
+    sessionId: "task",
+    conversationId: "task",
+    prompt: "继续",
+    scopeGeneration: 0,
+    branchGeneration: 1,
+  };
+  expect(runCreateRequestSchema.parse(input).scopeGeneration).toBe(0);
+  for (const value of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1])
+    expect(
+      runCreateRequestSchema.safeParse({ ...input, scopeGeneration: value })
+        .success,
+    ).toBe(false);
+  expect(
+    runCreateRequestSchema.safeParse({ ...input, branchGeneration: 0 }).success,
+  ).toBe(false);
+});

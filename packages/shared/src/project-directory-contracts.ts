@@ -36,6 +36,8 @@ export const projectDirectoryRelinkRequestSchema = z
   .object({
     expectedWorkDir: z.string().min(1),
     nextWorkDir: z.string().min(1),
+    /** 恢复项目仍保留独立身份；共用已有项目目录须显式确认。 */
+    directoryChoice: z.literal("independent").optional(),
     expectedTasks: z.array(taskFence),
     expectedFlow: z
       .object({
