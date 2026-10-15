@@ -12,7 +12,10 @@ import {
 } from "@zcode/shared";
 import { z } from "zod";
 import type { LocalActor } from "../local-instance/types.js";
-import type { ProjectService } from "../projects/project-service.js";
+import {
+  type ProjectService,
+  ProjectServiceError,
+} from "../projects/project-service.js";
 import { validateWorkDir } from "../projects/work-dir.js";
 import type { CodeUiRepository } from "./repository.js";
 import { CodeUiRepositoryError } from "./repository.js";
@@ -203,16 +206,28 @@ export function createHumanWorkspaceRpc(options: {
 }): HumanWorkspaceRpc {
   const opening = new Map<string, Promise<CodeUiWorkspace>>();
   const conversationOpening = new Map<string, Promise<ConversationWorkspace>>();
-  const ensureConversationWorkspace = async (actor: LocalActor) => {
+  const enabledFor = (project: CodeUiWorkspace, preset: "code" | "design") =>
+    project.enabledModes?.includes(preset) ??
+    (project.kind ?? "code") === preset;
+  const ensureConversationWorkspace = async (
+    actor: LocalActor,
+    preset: "code" | "design",
+  ) => {
     const instanceId = await options.instanceId(actor);
-    const current = conversationOpening.get(instanceId);
+    const openingKey = `${instanceId}:${preset}`;
+    const preferenceKey =
+      preset === "code"
+        ? "defaultConversationProjectId"
+        : "defaultDesignConversationProjectId";
+    const current = conversationOpening.get(openingKey);
     if (current) return current;
     const ensuring = (async (): Promise<ConversationWorkspace> => {
       const preferences =
         await options.preferences.readHumanPreferences(instanceId);
-      const savedId = preferences.defaultConversationProjectId;
+      const savedId = preferences[preferenceKey];
       const existing = (await options.listWorkspaces(actor)).find(
-        (project) => project.projectId === savedId,
+        (project) =>
+          project.projectId === savedId && enabledFor(project, preset),
       );
       if (existing)
         return {
@@ -221,23 +236,32 @@ export function createHumanWorkspaceRpc(options: {
           workspacePurpose: "conversation",
         };
       const created = await options.projects.createProject(actor, {
-        kind: "code",
+        kind: preset,
         name: "默认对话",
       });
-      if (created.kind !== "code")
+      if (created.kind !== preset)
         throw new CodeUiRepositoryError(
           "command_conflict",
           "默认对话项目创建类型不匹配。",
         );
+      if (!created.workDir)
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "项目工作目录未准备完成，请重试。",
+        );
       const project = canonicalWorkspace({
         projectId: created.id,
+        kind: preset,
+        enabledModes: created.enabledModes.filter(
+          (mode) => mode === "code" || mode === "design",
+        ),
         name: created.name,
         path: created.workDir,
         additionalDirectories: created.additionalDirectories,
       });
       const saved = await options.preferences.updateHumanPreferences(
         instanceId,
-        { defaultConversationProjectId: project.projectId },
+        { [preferenceKey]: project.projectId },
         { referencedProjectIds: [project.projectId] },
       );
       if (!saved)
@@ -247,12 +271,12 @@ export function createHumanWorkspaceRpc(options: {
         );
       return { ...project, created: true, workspacePurpose: "conversation" };
     })();
-    conversationOpening.set(instanceId, ensuring);
+    conversationOpening.set(openingKey, ensuring);
     try {
       return await ensuring;
     } finally {
-      if (conversationOpening.get(instanceId) === ensuring)
-        conversationOpening.delete(instanceId);
+      if (conversationOpening.get(openingKey) === ensuring)
+        conversationOpening.delete(openingKey);
     }
   };
   const preferenceOwners = async (
@@ -294,7 +318,9 @@ export function createHumanWorkspaceRpc(options: {
   const openProject = async (
     actor: LocalActor,
     inputPath: string,
-    projectId?: string,
+    projectId: string | undefined,
+    preset: "code" | "design",
+    directoryChoice?: "independent",
   ): Promise<CodeUiWorkspace> => {
     if (!isAbsolute(inputPath))
       throw new CodeUiRepositoryError("not_found", "请选择绝对目录路径。");
@@ -302,14 +328,19 @@ export function createHumanWorkspaceRpc(options: {
     if (!(await stat(path)).isDirectory())
       throw new CodeUiRepositoryError("not_found", "选中的路径不是目录。");
     const instanceId = await options.instanceId(actor);
-    const key = `${instanceId}:${projectId ?? ""}:${path}`;
-    const existing = opening.get(key);
+    const key = projectId
+      ? JSON.stringify([instanceId, preset, projectId, path])
+      : null;
+    const existing = key ? opening.get(key) : undefined;
     if (existing) return existing;
     const openingProject = (async () => {
       const projects = await options.listWorkspaces(actor);
       if (projectId) {
         const project = projects.find(
-          (entry) => entry.projectId === projectId && entry.path === path,
+          (entry) =>
+            entry.projectId === projectId &&
+            entry.path === path &&
+            enabledFor(entry, preset),
         );
         if (!project)
           throw new CodeUiRepositoryError(
@@ -319,34 +350,44 @@ export function createHumanWorkspaceRpc(options: {
         return project;
       }
       const matches = projects.filter((entry) => entry.path === path);
-      if (matches.length > 1)
-        throw new CodeUiRepositoryError(
-          "command_conflict",
-          "多个 Code 项目共享此目录，请明确选择项目。",
+      if (matches.length && directoryChoice !== "independent")
+        throw new ProjectServiceError(
+          "project_directory_conflict",
+          "该目录已有项目，请选择复用或独立创建。",
+          409,
         );
-      if (matches[0]) return matches[0];
       const created = await options.projects.createProject(actor, {
-        kind: "code",
+        kind: preset,
         name: basename(path) || path,
         work_dir: path,
+        ...(directoryChoice ? { directory_choice: directoryChoice } : {}),
       });
-      if (created.kind !== "code")
+      if (created.kind !== preset)
         throw new CodeUiRepositoryError(
           "command_conflict",
           "Code 项目创建返回了错误类型。",
         );
+      if (!created.workDir)
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "项目工作目录未准备完成，请重试。",
+        );
       return {
         projectId: created.id,
+        kind: preset,
+        enabledModes: created.enabledModes.filter(
+          (mode) => mode === "code" || mode === "design",
+        ),
         name: created.name,
         path: created.workDir,
         additionalDirectories: created.additionalDirectories,
       };
     })();
-    opening.set(key, openingProject);
+    if (key) opening.set(key, openingProject);
     try {
       return await openingProject;
     } finally {
-      if (opening.get(key) === openingProject) opening.delete(key);
+      if (key && opening.get(key) === openingProject) opening.delete(key);
     }
   };
   const settingsFor = async (
@@ -387,14 +428,34 @@ export function createHumanWorkspaceRpc(options: {
   };
   return {
     async call(actor, service, method, args) {
-      if (service === "file" && method === "ensureConversationWorkspace")
-        return { result: await ensureConversationWorkspace(actor) };
+      if (service === "file" && method === "ensureConversationWorkspace") {
+        const { preset } = z
+          .object({ preset: z.enum(["code", "design"]).default("code") })
+          .parse(args[0] ?? {});
+        return { result: await ensureConversationWorkspace(actor, preset) };
+      }
       if (service === "workspace" && method === "open") {
         const params = z
-          .object({ path: z.string().min(1), projectId: z.uuid().optional() })
+          .object({
+            path: z.string().min(1),
+            projectId: z.uuid().optional(),
+            preset: z.enum(["code", "design"]).default("code"),
+            directoryChoice: z.literal("independent").optional(),
+          })
           .parse(args[0]);
+        if (params.projectId && params.directoryChoice)
+          throw new CodeUiRepositoryError(
+            "command_conflict",
+            "复用项目与独立创建不能同时选择。",
+          );
         return {
-          result: await openProject(actor, params.path, params.projectId),
+          result: await openProject(
+            actor,
+            params.path,
+            params.projectId,
+            params.preset,
+            params.directoryChoice,
+          ),
         };
       }
       if (
@@ -440,22 +501,34 @@ export function createHumanWorkspaceRpc(options: {
         (method === "createDefaultWorkspace" ||
           method === "createScratchWorkspace")
       ) {
+        const { preset } = z
+          .object({ preset: z.enum(["code", "design"]).default("code") })
+          .parse(args[0] ?? {});
         const name =
           method === "createScratchWorkspace"
             ? z.object({ name: z.string().trim().min(1) }).parse(args[0]).name
             : "新建 Code 项目";
         const project = await options.projects.createProject(actor, {
-          kind: "code",
+          kind: preset,
           name,
         });
-        if (project.kind !== "code")
+        if (project.kind !== preset)
           throw new CodeUiRepositoryError(
             "command_conflict",
             "Code 项目创建类型不匹配。",
           );
+        if (!project.workDir)
+          throw new CodeUiRepositoryError(
+            "command_conflict",
+            "项目工作目录未准备完成，请重试。",
+          );
         return {
           result: canonicalWorkspace({
             projectId: project.id,
+            kind: preset,
+            enabledModes: project.enabledModes.filter(
+              (mode) => mode === "code" || mode === "design",
+            ),
             name: project.name,
             path: project.workDir,
             additionalDirectories: project.additionalDirectories,

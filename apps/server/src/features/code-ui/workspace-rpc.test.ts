@@ -41,19 +41,23 @@ async function world() {
       _actor: LocalActor,
       input: ProjectCreateRequest,
     ): Promise<ProjectSummary> => {
+      const kind = input.kind ?? "code";
+      if (kind === "flow") throw new Error("fixture不创建Flow");
       const id = randomUUID();
       const path = input.work_dir ?? join(root, id);
       await mkdir(path, { recursive: true });
       workspaces.push({
         projectId: id,
+        kind,
+        enabledModes: [kind],
         name: input.name,
         path,
         additionalDirectories: [],
       });
       return {
         id,
-        kind: "code",
-        enabledModes: ["code"],
+        kind,
+        enabledModes: [kind],
         name: input.name,
         slug: id,
         description: null,
@@ -86,6 +90,72 @@ async function world() {
   return { root, rpc, createRpc, createProject, preferencesApi, workspaces };
 }
 describe("Human-only Code workspace RPC", () => {
+  it("Code/Design默认对话项目独立创建；同目录须显式选择共享项目或独立创建", async () => {
+    const { rpc, root, workspaces, createProject } = await world();
+    const code = codeUiWorkspaceSchema.parse(
+      (
+        await rpc.call(actor, "file", "ensureConversationWorkspace", [
+          { preset: "code" },
+        ])
+      )?.result,
+    );
+    const design = codeUiWorkspaceSchema.parse(
+      (
+        await rpc.call(actor, "file", "ensureConversationWorkspace", [
+          { preset: "design" },
+        ])
+      )?.result,
+    );
+    expect(code.projectId).not.toBe(design.projectId);
+    expect(design).toMatchObject({ kind: "design", enabledModes: ["design"] });
+    await expect(
+      rpc.call(actor, "workspace", "open", [
+        { path: code.path, preset: "design" },
+      ]),
+    ).rejects.toMatchObject({
+      code: "project_directory_conflict",
+      statusCode: 409,
+    });
+    await expect(
+      rpc.call(actor, "workspace", "open", [
+        { path: code.path, projectId: code.projectId, preset: "design" },
+      ]),
+    ).rejects.toMatchObject({ code: "not_found" });
+    workspaces.find(
+      (project) => project.projectId === code.projectId,
+    )!.enabledModes = ["code", "design"];
+    expect(
+      (
+        await rpc.call(actor, "workspace", "open", [
+          { path: code.path, projectId: code.projectId, preset: "design" },
+        ])
+      )?.result,
+    ).toMatchObject({ projectId: code.projectId });
+    const independent = codeUiWorkspaceSchema.parse(
+      (
+        await rpc.call(actor, "workspace", "open", [
+          { path: code.path, preset: "design", directoryChoice: "independent" },
+        ])
+      )?.result,
+    );
+    expect(independent.projectId).not.toBe(code.projectId);
+    expect(createProject).toHaveBeenLastCalledWith(
+      actor,
+      expect.objectContaining({
+        kind: "design",
+        work_dir: code.path,
+        directory_choice: "independent",
+      }),
+    );
+    const scratch = await rpc.call(actor, "file", "createScratchWorkspace", [
+      { preset: "design", name: "草稿" },
+    ]);
+    expect(scratch?.result).toMatchObject({
+      kind: "design",
+      enabledModes: ["design"],
+    });
+    expect(root).not.toBe(code.path);
+  });
   it("原ensureConversationWorkspace并发和cold复用真实Code Project，返回可注册身份且不靠Canvas或Task", async () => {
     const { rpc, createRpc, createProject, preferencesApi, workspaces, root } =
       await world();
@@ -212,21 +282,84 @@ describe("Human-only Code workspace RPC", () => {
     );
     expect(createProject).toHaveBeenCalledTimes(2);
   });
-  it("同一路径并发显式打开只创建一个无Canvas项目，刷新后复用身份", async () => {
+  it("两个客户端显式独立创建同目录，不合并Promise或Project身份", async () => {
     const { rpc, root, createProject } = await world();
-    const [first, second] = await Promise.all([
+    await rpc.call(actor, "workspace", "open", [{ path: root }]);
+    const create = createProject.getMockImplementation()!;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    createProject.mockImplementation(async (owner, input) => {
+      await gate;
+      return create(owner, input);
+    });
+    const creating = Promise.all([
+      rpc.call(
+        { ...actor, accessClientId: randomUUID() },
+        "workspace",
+        "open",
+        [{ path: root, directoryChoice: "independent" }],
+      ),
+      rpc.call(
+        { ...actor, accessClientId: randomUUID() },
+        "workspace",
+        "open",
+        [{ path: root, directoryChoice: "independent" }],
+      ),
+    ]);
+    try {
+      await vi.waitFor(() => expect(createProject).toHaveBeenCalledTimes(3));
+    } finally {
+      release();
+    }
+    const [first, second] = await creating;
+    expect(codeUiWorkspaceSchema.parse(first?.result).projectId).not.toBe(
+      codeUiWorkspaceSchema.parse(second?.result).projectId,
+    );
+    expect(
+      createProject.mock.calls
+        .slice(1)
+        .map(([, input]) => input.directory_choice),
+    ).toEqual(["independent", "independent"]);
+  });
+  it("两个无choice空目录探测各自创建身份，不因同路径缓存隐式共享；显式projectId才复用", async () => {
+    const { rpc, root, createProject } = await world();
+    const create = createProject.getMockImplementation()!;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    createProject.mockImplementation(async (owner, input) => {
+      await gate;
+      return create(owner, input);
+    });
+    const creating = Promise.all([
       rpc.call(actor, "workspace", "open", [{ path: root }]),
       rpc.call(actor, "workspace", "open", [{ path: root }]),
     ]);
-    expect(first).toEqual(second);
-    expect(createProject).toHaveBeenCalledTimes(1);
-    expect(createProject).toHaveBeenCalledWith(
-      actor,
-      expect.objectContaining({ kind: "code", work_dir: root }),
+    try {
+      await vi.waitFor(() => expect(createProject).toHaveBeenCalledTimes(2));
+    } finally {
+      release();
+    }
+    const [first, second] = await creating;
+    const selected = codeUiWorkspaceSchema.parse(first?.result);
+    expect(selected.projectId).not.toBe(
+      codeUiWorkspaceSchema.parse(second?.result).projectId,
     );
-    expect(
-      (await rpc.call(actor, "workspace", "open", [{ path: root }]))?.result,
-    ).toEqual(first?.result);
+    const reused = await Promise.all(
+      [1, 2].map(() =>
+        rpc.call(actor, "workspace", "open", [
+          { path: root, projectId: selected.projectId },
+        ]),
+      ),
+    );
+    expect(reused.map((entry) => entry?.result)).toEqual([
+      first?.result,
+      first?.result,
+    ]);
+    expect(createProject).toHaveBeenCalledTimes(2);
     expect(first?.result).not.toHaveProperty("canvasId");
   });
   it("目录选择仅返回目录元数据，普通readdir不会获得Human浏览authority", async () => {
@@ -366,7 +499,10 @@ describe("Human-only Code workspace RPC", () => {
     workspaces.push(first, second);
     await expect(
       rpc.call(actor, "workspace", "open", [{ path: root }]),
-    ).rejects.toMatchObject({ code: "command_conflict" });
+    ).rejects.toMatchObject({
+      code: "project_directory_conflict",
+      statusCode: 409,
+    });
     expect(
       (
         await rpc.call(actor, "workspace", "open", [

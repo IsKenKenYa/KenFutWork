@@ -73,7 +73,7 @@ export function createCodeSubagentTool(deps: {
 }): ToolDefinition {
   return {
     name: "Task",
-    scope: "code",
+    scope: "shared",
     exposure: "core",
     access: "read",
     zodSchema: schema,
@@ -118,6 +118,16 @@ export function createCodeSubagentTool(deps: {
           input.subagent_type === "worker" ? "write" : "read",
         );
       const request: CodeChildRequest = {
+        ...(execution.frozenContributions
+          ? {
+              frozenContributions: structuredClone(
+                execution.frozenContributions,
+              ),
+            }
+          : {}),
+        ...(execution.workContext
+          ? { workContext: structuredClone(execution.workContext) }
+          : {}),
         childSessionId: childSessionId(context, execution.toolCallId),
         approvalCeiling:
           handle.role === "main"

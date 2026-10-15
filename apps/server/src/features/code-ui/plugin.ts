@@ -18,6 +18,10 @@ import { createCodeHistoryOutputPrompt } from "./output-history-prompt.js";
 import { createCodeUiRepository } from "./repository.js";
 import { createCodeUiService } from "./service.js";
 import { createUserInputBroker } from "./user-input-broker.js";
+import {
+  CODE_UI_WORK_CONTEXT_CAPABILITY,
+  type ConversationWorkContextProvider,
+} from "./work-context.js";
 
 export function createCodeUiPlugin(): PluginDefinition {
   return {
@@ -49,6 +53,15 @@ export function createCodeUiPlugin(): PluginDefinition {
       ctx.register("codeUi", () => {
         const userInputs = createUserInputBroker();
         return createCodeUiService({
+          captureContributions: (preset) =>
+            ctx.get("tools").captureContributions(preset),
+          workContextProvider: (preset) =>
+            ctx
+              .get("capabilities")
+              .get<ConversationWorkContextProvider>(
+                CODE_UI_WORK_CONTEXT_CAPABILITY,
+                preset,
+              ),
           hostRpcHandler: (service, method) =>
             ctx
               .get("capabilities")
@@ -98,16 +111,19 @@ export function createCodeUiPlugin(): PluginDefinition {
         });
       });
       ctx.get("systemPrompt").register(
-        createGoalPrompt({
-          read: (context) => ctx.get("codeUi").taskGoals.read(context),
-          verify: (context, input) =>
-            ctx.get("codeUi").taskGoals.verify(context, input),
-        }),
+        createGoalPrompt(
+          {
+            read: (context) => ctx.get("codeUi").taskGoals.read(context),
+            verify: (context, input) =>
+              ctx.get("codeUi").taskGoals.verify(context, input),
+          },
+          { scope: "shared" },
+        ),
       );
       for (const name of ["GetGoal", "VerifyGoal"])
         ctx.get("tools").registerDynamic({
           id: `code.goal.${name}`,
-          scope: "code",
+          scope: "shared",
           resolve(run) {
             if (
               run.scopeHandle?.role !== "main" ||
@@ -115,17 +131,20 @@ export function createCodeUiPlugin(): PluginDefinition {
             )
               return null;
             return (
-              createGoalTools({
-                read: (context) => ctx.get("codeUi").taskGoals.read(context),
-                verify: (context, input) =>
-                  ctx.get("codeUi").taskGoals.verify(context, input),
-              }).find((tool) => tool.name === name) ?? null
+              createGoalTools(
+                {
+                  read: (context) => ctx.get("codeUi").taskGoals.read(context),
+                  verify: (context, input) =>
+                    ctx.get("codeUi").taskGoals.verify(context, input),
+                },
+                { scope: "shared" },
+              ).find((tool) => tool.name === name) ?? null
             );
           },
         });
       ctx.get("tools").registerDynamic({
         id: "code.planning.enter",
-        scope: "code",
+        scope: "shared",
         resolve(run) {
           if (
             run.scopeHandle?.role !== "main" ||
@@ -152,7 +171,7 @@ export function createCodeUiPlugin(): PluginDefinition {
       );
       ctx.get("tools").registerDynamic({
         id: "code.planning.exit",
-        scope: "code",
+        scope: "shared",
         resolve(run) {
           if (
             run.scopeHandle?.role !== "main" ||
@@ -168,7 +187,7 @@ export function createCodeUiPlugin(): PluginDefinition {
       });
       ctx.get("tools").registerDynamic({
         id: "code.user-input.ask-user-question",
-        scope: "code",
+        scope: "shared",
         resolve(run) {
           if (!run.scopeHandle) return null;
           const broker = ctx.get("codeUi").userInputs;
@@ -179,7 +198,7 @@ export function createCodeUiPlugin(): PluginDefinition {
     },
     mounted(ctx) {
       const guideExtension: AgentRunExtension = {
-        preset: "code",
+        preset: "shared",
         createMiddleware(identity, context) {
           return createCodeGuideMiddleware(
             ctx.get("codeUi"),

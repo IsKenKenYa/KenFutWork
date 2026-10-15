@@ -9,7 +9,7 @@ export function createCodeUiAgentEventsPlugin(): PluginDefinition {
     inject: [],
     apply(ctx) {
       const extension: AgentRunExtension = {
-        preset: "code",
+        preset: "shared",
         canonicalToolEvents: true,
         createMiddleware: createToolLifecycleMiddleware,
       };

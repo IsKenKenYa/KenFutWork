@@ -11,7 +11,7 @@ import type { TaskWorkContext } from "../task-work/types.js";
 import { createCodeSubagentTool } from "./task-tool.js";
 import type { CodeChildRequest, CodeChildResult } from "./types.js";
 
-async function fixture() {
+async function fixture(preset: "code" | "design" = "code") {
   const directory = await mkdtemp(join(tmpdir(), "kfw-child-tool-"));
   const scope = {
     instanceId: "00000000-0000-4000-8000-000000000001",
@@ -48,6 +48,10 @@ async function fixture() {
   });
   const controller = new AbortController();
   const execution: ToolExecutionContext = {
+    workContext: {
+      preset,
+      ...(preset === "design" ? { canvasId: "canvas-original" } : {}),
+    },
     scopeHandle: handle,
     taskWorkContext: context,
     signal: controller.signal,
@@ -120,29 +124,36 @@ const input = {
   completion_criteria: "return source paths",
 };
 
-it("前台Task随父signal退出，只有一次持久派发，无后台通知重复消费", async () => {
-  const f = await fixture();
-  try {
-    const pending = f.tool.execute(input, f.execution);
-    await f.ready;
-    f.controller.abort("parent stopped");
-    expect(await pending).toMatchObject({
-      status: "canceled",
-      summary: "stop",
-    });
-    expect(
-      await f.manager.consumeNotifications(f.execution.taskWorkContext!),
-    ).toEqual([]);
-    expect(f.requests).toHaveLength(1);
-    expect(f.requests[0]).toMatchObject({
-      parentSessionId: f.execution.sessionId,
-      approvalCeiling: "build",
-      detached: false,
-    });
-  } finally {
-    await f.cleanup();
-  }
-});
+it.each(["code", "design"] as const)(
+  "%s前台Task随父signal退出，只有一次持久派发，无后台通知重复消费",
+  async (preset) => {
+    const f = await fixture(preset);
+    try {
+      const pending = f.tool.execute(input, f.execution);
+      await f.ready;
+      f.controller.abort("parent stopped");
+      expect(await pending).toMatchObject({
+        status: "canceled",
+        summary: "stop",
+      });
+      expect(
+        await f.manager.consumeNotifications(f.execution.taskWorkContext!),
+      ).toEqual([]);
+      expect(f.requests).toHaveLength(1);
+      expect(f.requests[0]).toMatchObject({
+        parentSessionId: f.execution.sessionId,
+        approvalCeiling: "build",
+        detached: false,
+        workContext: {
+          preset,
+          ...(preset === "design" ? { canvasId: "canvas-original" } : {}),
+        },
+      });
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
 
 it("后台Task不随父停止，重放返回同一child identity，完整输出引用保留", async () => {
   const f = await fixture();
@@ -190,23 +201,26 @@ it("后台Task不随父停止，重放返回同一child identity，完整输出�
   }
 });
 
-it("只读派生不能通过Task创建worker，深度限制来自宿主配置", async () => {
-  const f = await fixture();
-  try {
-    await expect(
-      f.tool.execute(
-        { ...input, subagent_type: "worker" },
-        {
-          ...f.execution,
-          scopeHandle: f.execution.scopeHandle!.derive("review"),
-        },
-      ),
-    ).rejects.toThrow(/只读父/);
-    await expect(
-      f.tool.execute(input, { ...f.execution, delegationDepth: 2 }),
-    ).rejects.toThrow(/深度/);
-    expect(f.requests).toEqual([]);
-  } finally {
-    await f.cleanup();
-  }
-});
+it.each(["code", "design"] as const)(
+  "%s只读派生不能通过Task创建worker，深度限制来自宿主配置",
+  async (preset) => {
+    const f = await fixture(preset);
+    try {
+      await expect(
+        f.tool.execute(
+          { ...input, subagent_type: "worker" },
+          {
+            ...f.execution,
+            scopeHandle: f.execution.scopeHandle!.derive("review"),
+          },
+        ),
+      ).rejects.toThrow(/只读父/);
+      await expect(
+        f.tool.execute(input, { ...f.execution, delegationDepth: 2 }),
+      ).rejects.toThrow(/深度/);
+      expect(f.requests).toEqual([]);
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
