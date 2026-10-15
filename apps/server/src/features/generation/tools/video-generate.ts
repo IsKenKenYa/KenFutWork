@@ -91,7 +91,6 @@ function buildVideoGenerateSchema(models: AvailableVideoModel[]) {
     enableAudio: z
       .boolean()
       .optional()
-      .default(true)
       .describe(
         "Generate synchronized audio (dialogue, sound effects, ambient). This option is only sent to models that advertise audio capability.",
       ),
@@ -339,13 +338,19 @@ function validateCapabilities(
   if (input.inputImages?.length && model.capabilities.imageToVideo === false) {
     return `${model.displayName} does not support image-to-video input`;
   }
-  if (model.limits.maxInputImages !== undefined && (input.inputImages?.length ?? 0) > model.limits.maxInputImages) {
+  if (
+    model.limits.maxInputImages !== undefined &&
+    (input.inputImages?.length ?? 0) > model.limits.maxInputImages
+  ) {
     return `${model.displayName} accepts at most ${model.limits.maxInputImages} input image(s)`;
   }
   if (input.inputVideo && model.capabilities.videoToVideo === false) {
     return `${model.displayName} does not support reference-video input`;
   }
-  if (model.limits.maxDuration !== undefined && input.duration > model.limits.maxDuration) {
+  if (
+    model.limits.maxDuration !== undefined &&
+    input.duration > model.limits.maxDuration
+  ) {
     return `${model.displayName} supports at most ${model.limits.maxDuration} seconds`;
   }
   if (
@@ -365,7 +370,8 @@ function validateCapabilities(
   } as const;
   if (
     model.limits.maxResolution !== undefined &&
-    resolutionRank[requestedResolution] > resolutionRank[model.limits.maxResolution]
+    resolutionRank[requestedResolution] >
+      resolutionRank[model.limits.maxResolution]
   ) {
     return `${model.displayName} supports up to ${model.limits.maxResolution}`;
   }

@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AvailableVideoModel } from "../../../generation/types.js";
-import { runVideoGenerate, type SubmitVideoJobFn } from "./video-generate.js";
+import {
+  createVideoGenerateToolDefinition,
+  runVideoGenerate,
+  type SubmitVideoJobFn,
+} from "./video-generate.js";
 
 const metasoModel: AvailableVideoModel = {
   id: "metaso/minimax-h3",
@@ -32,7 +36,6 @@ function input(
     duration: 5,
     resolution: "720p",
     aspectRatio: "16:9",
-    enableAudio: true,
     ...overrides,
   };
 }
@@ -48,10 +51,28 @@ describe("runVideoGenerate capability enforcement", () => {
       mimeType: "video/mp4",
     });
 
-    await runVideoGenerate(input(), [metasoModel], submit);
+    const tool = createVideoGenerateToolDefinition({
+      availableModels: [metasoModel],
+      submitVideoJob: submit,
+    });
+    await tool.execute(
+      { title: "Test video", prompt: "A paper crane takes flight" },
+      {} as never,
+    );
 
     expect(submit).toHaveBeenCalledOnce();
     expect(submit.mock.calls[0]?.[0]).not.toHaveProperty("enableAudio");
+  });
+
+  it("rejects explicit audio for a model without audio capability", async () => {
+    const submit = vi.fn<SubmitVideoJobFn>();
+    const result = await runVideoGenerate(
+      input({ enableAudio: true }),
+      [metasoModel],
+      submit,
+    );
+    expect(result.error).toContain("audio generation");
+    expect(submit).not.toHaveBeenCalled();
   });
 
   it("rejects unsupported reference video and excess images before job submission", async () => {
