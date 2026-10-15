@@ -47,6 +47,44 @@ afterEach(() => {
 });
 
 describe("Google image BYOK 实例适配器", () => {
+  it("Google HTTP 限流保留状态和等待时间且错误不泄漏凭据", async () => {
+    const request = vi.fn<typeof fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 429,
+            status: "RESOURCE_EXHAUSTED",
+            message: "限流 google-instance-secret",
+          },
+        },
+        { status: 429, headers: { "retry-after": "17" } },
+      ),
+    );
+    vi.stubGlobal("fetch", request);
+    const provider = resolveInstanceImageProvider("google-image", {
+      credentials: {
+        apiKey: "google-instance-secret",
+        baseUrl: "https://gemini-gateway.example",
+      },
+      models: [{ id: "gemini-custom-image-preview", name: "Gemini 图片" }],
+    });
+
+    const error = await provider
+      .generate({ model: "gemini-custom-image-preview", prompt: "一只猫" })
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject({
+      provider: "google",
+      code: "api_error",
+      status: 429,
+      retryAfter: "17",
+      upstreamCode: "RESOURCE_EXHAUSTED",
+      message: "限流 [redacted]",
+    });
+    expect(JSON.stringify(error)).not.toContain("google-instance-secret");
+    expect(request).toHaveBeenCalledOnce();
+  });
+
   it("无法兑现的 Google 图片选项在发送前明确拒绝", async () => {
     const requests = captureGenerateContent();
     const provider = resolveInstanceImageProvider("google-image", {
@@ -77,7 +115,9 @@ describe("Google image BYOK 实例适配器", () => {
         apiKey: "google-instance-key",
         baseUrl: "https://gemini-gateway.example",
       },
-      models: [{ id: "gemini-custom-image-preview", name: "自定义 Gemini 图片" }],
+      models: [
+        { id: "gemini-custom-image-preview", name: "自定义 Gemini 图片" },
+      ],
     });
 
     await provider.generate({
@@ -238,4 +278,38 @@ describe("Google image BYOK 实例适配器", () => {
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent",
     );
   });
+});
+
+it("Gemini一次执行不由SDK隐式重发429", async () => {
+  vi.useFakeTimers();
+  try {
+    const request = vi.fn<typeof fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 429,
+            status: "RESOURCE_EXHAUSTED",
+            message: "模拟限流",
+          },
+        },
+        { status: 429 },
+      ),
+    );
+    vi.stubGlobal("fetch", request);
+    const provider = resolveInstanceImageProvider("google-image", {
+      credentials: {
+        apiKey: "test-only",
+        baseUrl: "https://controlled.invalid",
+      },
+      models: [{ id: "gemini-2.5-flash-image", name: "模拟" }],
+    });
+    const finished = provider
+      .generate({ model: "gemini-2.5-flash-image", prompt: "cat" })
+      .catch(() => {});
+    await vi.runAllTimersAsync();
+    await finished;
+    expect(request).toHaveBeenCalledOnce();
+  } finally {
+    vi.useRealTimers();
+  }
 });

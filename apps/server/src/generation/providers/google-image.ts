@@ -8,6 +8,7 @@ import type {
 } from "../types.js";
 import {
   aspectRatioToDimensions,
+  createGenerationFetch,
   fetchAsBase64,
   GenerationError,
 } from "../utils.js";
@@ -90,6 +91,8 @@ export class GoogleImageProvider implements ImageProvider {
       httpOptions: {
         ...(baseUrl ? { baseUrl } : {}),
         ...(headers ? { headers } : {}),
+        retryOptions: { attempts: 1 },
+        fetch: createGenerationFetch(PROVIDER_NAME, [apiKey]),
       },
     });
   }
@@ -153,10 +156,11 @@ export class GoogleImageProvider implements ImageProvider {
         },
       });
     } catch (err) {
+      if (err instanceof GenerationError) throw err;
       throw new GenerationError(
         PROVIDER_NAME,
         "api_error",
-        `Gemini API error: ${err instanceof Error ? err.message : String(err)}`,
+        "Google 图片请求失败，请检查供应商设置。",
       );
     }
 
