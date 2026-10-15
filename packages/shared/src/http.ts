@@ -620,6 +620,17 @@ export const applicationErrorCodeSchema = z.enum([
   "flow_billing_failed",
   /** flow 引擎托管（FORM-11）：安装已在进行中（409），轮询 status 即可。 */
   "flow_engine_install_running",
+  /**
+   * OpenDesign 凭证缝（O3 / OD-4）：没有任何启用且有 Key 的 BYOK 实例（404）。
+   * 同 `flow_engine_not_configured` 的教训——码必须先落枚举，否则 parse 抛错，
+   * 可读原因被 ZodError 转储顶掉。
+   */
+  "open_design_not_configured",
+  /**
+   * OpenDesign 凭证缝（O3 / OD-4）：实例在但 Key 读不到或地址非法（409），
+   * 凭证不下发半截（partial 比没有更危险）。
+   */
+  "open_design_credential_unavailable",
 ]);
 
 export const applicationErrorResponseSchema = z.object({

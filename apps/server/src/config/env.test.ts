@@ -242,6 +242,37 @@ describe("KENFUTWORK_OPEN_DESIGN_FRONTEND_URL 解析", () => {
   });
 });
 
+describe("KENFUTWORK_OPEN_DESIGN_EMBED_SECRET 解析", () => {
+  it("空值返回 undefined；非空原样收下（去首尾空白）", () => {
+    expect(loadServerEnv({}, {}).openDesignEmbedSecret).toBeUndefined();
+    expect(
+      loadServerEnv({}, { KENFUTWORK_OPEN_DESIGN_EMBED_SECRET: "  " })
+        .openDesignEmbedSecret,
+    ).toBeUndefined();
+    expect(
+      loadServerEnv(
+        {},
+        { KENFUTWORK_OPEN_DESIGN_EMBED_SECRET: "od-embed-secret" },
+      ).openDesignEmbedSecret,
+    ).toBe("od-embed-secret");
+    expect(
+      loadServerEnv(
+        {},
+        { KENFUTWORK_OPEN_DESIGN_EMBED_SECRET: "  od-embed-secret  " },
+      ).openDesignEmbedSecret,
+    ).toBe("od-embed-secret");
+  });
+
+  it("overrides 优先于进程环境", () => {
+    expect(
+      loadServerEnv(
+        { openDesignEmbedSecret: "from-override" },
+        { KENFUTWORK_OPEN_DESIGN_EMBED_SECRET: "from-env" },
+      ).openDesignEmbedSecret,
+    ).toBe("from-override");
+  });
+});
+
 describe("Flow gateway control origin", () => {
   it("reads an explicit gateway without deriving the frontend port", () => {
     const env = loadServerEnv(

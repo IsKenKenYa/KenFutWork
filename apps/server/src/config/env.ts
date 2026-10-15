@@ -85,6 +85,12 @@ export type ServerEnv = {
    */
   openDesignFrontendUrl?: string;
   /**
+   * OpenDesign 宿主适配层共享密钥（`KENFUTWORK_OPEN_DESIGN_EMBED_SECRET`）：
+   * OpenDesign daemon 调 `POST /api/open-design/host/credentials` 取 BYOK 凭证时出示。
+   * 缺省 = 该端点 503（daemon 拿不到凭证，OpenDesign 的 agent CLI 就不会被本仓凭据驱动）。
+   */
+  openDesignEmbedSecret?: string;
+  /**
    * 自管 Postgres 连接串（`persistence` 缝）。
    * 去 Supabase 收口后只认 `DATABASE_URL`。
    */
@@ -207,6 +213,9 @@ export function loadServerEnv(
   const flowEmbedSecret =
     overrides.flowEmbedSecret ??
     normalizeOptionalString(source.KENFUTWORK_FLOW_EMBED_SECRET);
+  const openDesignEmbedSecret =
+    overrides.openDesignEmbedSecret ??
+    normalizeOptionalString(source.KENFUTWORK_OPEN_DESIGN_EMBED_SECRET);
   const flowFrontendUrl =
     overrides.flowFrontendUrl ??
     parseHttpOrigin(
@@ -405,6 +414,7 @@ export function loadServerEnv(
       ? { agentGovernance }
       : {}),
     ...(flowEmbedSecret ? { flowEmbedSecret } : {}),
+    ...(openDesignEmbedSecret ? { openDesignEmbedSecret } : {}),
     ...(flowFrontendUrl ? { flowFrontendUrl } : {}),
     ...(flowGatewayUrl ? { flowGatewayUrl } : {}),
     ...(openDesignFrontendUrl ? { openDesignFrontendUrl } : {}),

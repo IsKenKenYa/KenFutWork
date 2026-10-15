@@ -131,6 +131,8 @@ import {
   messageListResponseSchema,
   modelCatalogResponseSchema,
   modelListResponseSchema,
+  openDesignHostCredentialsRequestSchema,
+  openDesignHostCredentialsResponseSchema,
   openDesignHostStatusResponseSchema,
   pickDirectoryResponseSchema,
   pluginExportRequestSchema,
@@ -1586,6 +1588,18 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "查询 OpenDesign 宿主就绪状态",
     description:
       "返回 OpenDesign 右侧栏面板是否可以出现：配置齐备且服务可达时为 enabled=true；未配置前端地址或服务不可达时返回 200 + enabled=false，并在 reasons 里给出可读原因。",
+  },
+  {
+    method: "post",
+    path: "/api/open-design/host/credentials",
+    tag: "open-design",
+    auth: "shared-secret",
+    successStatus: 200,
+    requestSchema: openDesignHostCredentialsRequestSchema,
+    responseSchema: openDesignHostCredentialsResponseSchema,
+    summary: "下发 OpenDesign agent CLI 的 BYOK 凭证",
+    description:
+      "OpenDesign daemon 持共享密钥（Bearer，与 KENFUTWORK_OPEN_DESIGN_EMBED_SECRET 成对）调用，宿主返回全部启用且有 Key 的 BYOK 实例清单（providerId/name/protocol/apiBase/明文 apiKey），由 daemon 按各 coding-agent CLI 自行选用。未配密钥 503；协议版本不符 400；无可用实例 404；Key 读不到或地址非法 409（失败消息不含 Key 明文）。明文 Key 仅经此机器对机器通道下发，浏览器 iframe 不经过它。",
   },
   // ---- fonts.ts（字体；免鉴权）----
   {

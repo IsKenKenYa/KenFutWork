@@ -171,3 +171,60 @@ export function parseOpenDesignInbound(
   const parsed = openDesignInboundMessageSchema.safeParse(raw);
   return parsed.success ? parsed.data : null;
 }
+
+/* ------------------------------------------------------------------ *
+ * 凭证下发（O3 / `OD-4`：BYOK 接入）
+ *
+ * `POST /api/open-design/host/credentials`（OpenDesign daemon → 宿主，共享密钥门）：
+ * OpenDesign 驱动 coding-agent CLI 的 Key 由本仓 BYOK 实例下发。
+ *
+ * 与 flow credentials 缝（`flowHostCredentials*`）的差别：flow 是「一个 dify-engine
+ * 实例」的单发；OpenDesign 支持 **25+ coding-agent CLI**（DeepSeek Harness 一等原生），
+ * daemon 侧按各 CLI 的需要自己挑——所以宿主给**全量启用且有 Key 的实例清单**。
+ *
+ * 红线（与 flow 同口径）：响应里的明文 `apiKey` 是这条缝的**目的**（机器对机器、
+ * 服务端到服务端，持有共享密钥的 daemon 才拿得到）；浏览器 iframe 永远不经过它，
+ * 日志同样不落明文。
+ * ------------------------------------------------------------------ */
+
+/** 凭证请求：只有协议版本（与 od/v1 同一版本常量；缺省按当前版本受理）。 */
+export const openDesignHostCredentialsRequestSchema = z.object({
+  protocolVersion: z.string().min(1).max(16).optional(),
+});
+
+/** 单条凭证：实例身份 + 协议 + Key（明文，仅本缝）。 */
+export const openDesignHostCredentialEntrySchema = z.object({
+  /** 供应商实例 id（`providerInstanceResponseSchema.id` 同口径）。 */
+  providerId: z.string().min(1).max(64),
+  /** 实例显示名（daemon 侧按它给 CLI 做标签）。 */
+  name: z.string().min(1).max(64),
+  /** 实例协议（`providerProtocolSchema` 的取值；宿主侧原样透出，不在此收敛联合）。 */
+  protocol: z.string().min(1).max(64),
+  /** 实例 http(s) 基址；未配置（CLI 用官方默认端点）为 null。 */
+  apiBase: z
+    .string()
+    .url()
+    // 只收 http(s)：`z.url()` 放行 file:// 等其它 scheme，API 基址必须显式收敛
+    .refine((value) => /^https?:\/\//u.test(value), {
+      message: "apiBase 必须是 http(s) 地址",
+    })
+    .nullable(),
+  /** BYOK Key 明文。 */
+  apiKey: z.string().min(1).max(512),
+});
+
+export const openDesignHostCredentialsResponseSchema = z.object({
+  /** 受理的协议版本（回显，便于 daemon 侧核对）。 */
+  protocolVersion: z.string().min(1).max(16),
+  /** 启用且有 Key 的实例凭证；上限 64 条（单用户本机远够，防无界载荷）。 */
+  credentials: z.array(openDesignHostCredentialEntrySchema).max(64),
+});
+export type OpenDesignHostCredentialsRequest = z.infer<
+  typeof openDesignHostCredentialsRequestSchema
+>;
+export type OpenDesignHostCredentialEntry = z.infer<
+  typeof openDesignHostCredentialEntrySchema
+>;
+export type OpenDesignHostCredentialsResponse = z.infer<
+  typeof openDesignHostCredentialsResponseSchema
+>;

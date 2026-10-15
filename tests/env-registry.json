@@ -110,6 +110,16 @@
       "status": "active",
       "note": "OpenDesign 前端地址（Code 右侧栏 iframe src 与 postMessage origin 白名单）；本机联调各不相同，不进 .env.example"
     },
+    "KENFUTWORK_OPEN_DESIGN_EMBED_SECRET": {
+      "surface": "server",
+      "readers": [
+        "apps/server/src/config/env.test.ts",
+        "apps/server/src/config/env.ts"
+      ],
+      "inExamples": false,
+      "status": "active",
+      "note": "OpenDesign daemon 调宿主凭证下发端点（POST /api/open-design/host/credentials）的共享密钥；含密钥语义，不进 .env.example，部署时与 OpenDesign 栈的 OD_API_TOKEN 成对配置"
+    },
     "KENFUTWORK_WEB_ORIGIN": {
       "surface": "server",
       "readers": [

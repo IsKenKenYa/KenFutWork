@@ -247,9 +247,13 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
       gatewayUrl: deps.env.flowGatewayUrl,
     }),
     // OpenDesign 宿主适配层：Code 模式右侧栏的能力探针 /api/open-design/host/status
-    // （入口本身由 plugins/open-design 的安装态门控，见 features/open-design/plugin.ts）
+    // （入口本身由 plugins/open-design 的安装态门控，见 features/open-design/plugin.ts）；
+    // O3/OD-4：配了共享密钥，daemon 才能调 /credentials 把 BYOK 凭证下发给它的 agent CLI
     createOpenDesignHostPlugin({
       frontendUrl: deps.env.openDesignFrontendUrl,
+      ...(deps.env.openDesignEmbedSecret
+        ? { secret: deps.env.openDesignEmbedSecret }
+        : {}),
     }),
     createBrowserPlugin(),
     // 语音助手（内建插件，默认开启）：听/说走内置 sherpa 或 BYOK 实例端点

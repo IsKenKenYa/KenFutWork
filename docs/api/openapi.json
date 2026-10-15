@@ -7328,6 +7328,53 @@
         }
       }
     },
+    "/api/open-design/host/credentials": {
+      "post": {
+        "operationId": "postOpenDesignHostCredentials",
+        "summary": "下发 OpenDesign agent CLI 的 BYOK 凭证",
+        "description": "OpenDesign daemon 持共享密钥（Bearer，与 KENFUTWORK_OPEN_DESIGN_EMBED_SECRET 成对）调用，宿主返回全部启用且有 Key 的 BYOK 实例清单（providerId/name/protocol/apiBase/明文 apiKey），由 daemon 按各 coding-agent CLI 自行选用。未配密钥 503；协议版本不符 400；无可用实例 404；Key 读不到或地址非法 409（失败消息不含 Key 明文）。明文 Key 仅经此机器对机器通道下发，浏览器 iframe 不经过它。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostCredentialsRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostCredentialsResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/fonts": {
       "get": {
         "operationId": "getFonts",
@@ -12028,7 +12075,9 @@
                   "flow_engine_invalid",
                   "flow_billing_conflict",
                   "flow_billing_failed",
-                  "flow_engine_install_running"
+                  "flow_engine_install_running",
+                  "open_design_not_configured",
+                  "open_design_credential_unavailable"
                 ]
               },
               "message": {
@@ -15079,7 +15128,9 @@
                       "flow_engine_invalid",
                       "flow_billing_conflict",
                       "flow_billing_failed",
-                      "flow_engine_install_running"
+                      "flow_engine_install_running",
+                      "open_design_not_configured",
+                      "open_design_credential_unavailable"
                     ]
                   },
                   "message": {
@@ -23246,6 +23297,81 @@
         },
         "required": [
           "models"
+        ],
+        "additionalProperties": false
+      },
+      "openDesignHostCredentialsRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "protocolVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16
+          }
+        }
+      },
+      "openDesignHostCredentialsResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "protocolVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16
+          },
+          "credentials": {
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "providerId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "protocol": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "apiBase": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "apiKey": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                }
+              },
+              "required": [
+                "providerId",
+                "name",
+                "protocol",
+                "apiBase",
+                "apiKey"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "credentials"
         ],
         "additionalProperties": false
       },

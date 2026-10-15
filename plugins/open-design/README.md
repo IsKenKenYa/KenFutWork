@@ -22,6 +22,23 @@ KENFUTWORK_OPEN_DESIGN_FRONTEND_URL=<OpenDesign 前端地址，origin 形式，�
 
 自托管形态：OpenDesign 官方 `deploy/docker-compose.yml` 起在本机 `127.0.0.1:7456`。
 
+## BYOK 凭证下发（O3 / `OD-4`）
+
+OpenDesign 的 coding-agent CLI（Claude Code / Codex / Cursor / DeepSeek Harness / …）用的
+API Key 由**本仓 BYOK 实例**下发，不另配一套：
+
+```
+KENFUTWORK_OPEN_DESIGN_EMBED_SECRET=<与 OpenDesign 栈的 OD_API_TOKEN 配成同一值>
+```
+
+- OpenDesign daemon 持该密钥调 `POST /api/open-design/host/credentials`（Bearer + 共享密钥
+  门，协议版本头 `x-od-embed-protocol: v1`），宿主返回**全部启用且有 Key 的实例清单**
+  （`providerId / name / protocol / apiBase / apiKey`），daemon 按各 CLI 需要自行选用；
+- **没配密钥 = 这条缝没开**：端点返回 503 与可读原因（不是静默空响应）；
+- 明文 Key 只在这条**机器对机器**的通道里流动（服务端 → daemon），浏览器 iframe 永远不经过它，
+  日志与错误消息同样不落明文；无可用实例 404、Key 读不到 / 地址非法 409（失败消息只提实例名）；
+- 配哪些实例、什么 Key，仍在「供应商设置」里管（本仓 BYOK 的唯一入口）。
+
 ## 边界
 
 - 只走 **local-first + BYOK**，不接 OpenDesign Cloud / 付费计划；
