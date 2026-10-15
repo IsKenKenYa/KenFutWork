@@ -80,7 +80,7 @@ it("项目生成消费receipt落普通根目录文件，资产只由prepare登�
   );
   expect(upload).toHaveBeenCalledWith(result.objectPath, bytes, {
     contentType: "image/png",
-    upsert: false,
+    upsert: true,
   });
   expect(record).not.toHaveBeenCalled();
   expect(resolve).toHaveBeenCalledTimes(3);
