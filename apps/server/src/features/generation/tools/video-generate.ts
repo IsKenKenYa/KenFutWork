@@ -1,7 +1,10 @@
+import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { z } from "zod";
-
 import type { AvailableVideoModel } from "../../../generation/types.js";
 import type { ToolDefinition } from "../../../kernel/types.js";
+import type { CanvasDocumentAccess } from "../../canvas/document-access.js";
+import { generatedMediaDisplay } from "../media-display.js";
+import { mediaReferenceInput } from "../media-reference-input.js";
 import type { SubmitVideoJobFn } from "../tool-types.js";
 
 export type { SubmitVideoJobFn } from "../tool-types.js";
@@ -29,6 +32,12 @@ function buildVideoGenerateSchema(models: AvailableVideoModel[]) {
           );
 
   return z.object({
+    canvas_id: z
+      .uuid({ error: "画布引用无效，请从项目画布列表重新选择。" })
+      .optional()
+      .describe(
+        "Target canvas document in the current project; defaults to the input canvas.",
+      ),
     title: z
       .string()
       .min(1)
@@ -115,6 +124,8 @@ function buildVideoGenerateSchema(models: AvailableVideoModel[]) {
 type VideoGenerateInput = z.infer<ReturnType<typeof buildVideoGenerateSchema>>;
 
 type VideoGenerateResult = {
+  assetId?: string;
+  display?: protocol.GeneratedMediaDisplay;
   summary: string;
   title?: string;
   prompt?: string;
@@ -146,19 +157,16 @@ export async function runVideoGenerate(
     );
   };
 
-  // Filter invalid image references
-  if (input.inputImages?.length) {
-    const validImages = input.inputImages.filter(
-      (img) =>
-        img.startsWith("http://") ||
-        img.startsWith("https://") ||
-        img.startsWith("data:"),
-    );
+  if (input.inputImages?.length)
     input = {
       ...input,
-      inputImages: validImages.length > 0 ? validImages : undefined,
+      inputImages: mediaReferenceInput(input.inputImages, "image"),
     };
-  }
+  if (input.inputVideo)
+    input = {
+      ...input,
+      inputVideo: mediaReferenceInput([input.inputVideo], "video")[0],
+    };
 
   const selectedModel = availableModels.find(
     (candidate) => candidate.id === input.model,
@@ -185,6 +193,7 @@ export async function runVideoGenerate(
     try {
       lap("job_submit", { model: input.model });
       const jobResult = await submitVideoJob({
+        ...(input.canvas_id ? { canvasId: input.canvas_id } : {}),
         prompt: input.prompt,
         model: input.model,
         duration: input.duration,
@@ -193,6 +202,19 @@ export async function runVideoGenerate(
         ...(input.inputImages ? { inputImages: input.inputImages } : {}),
         ...(input.inputVideo ? { inputVideo: input.inputVideo } : {}),
         ...(enableAudio != null ? { enableAudio } : {}),
+        ...(input.title ? { title: input.title } : {}),
+        ...(input.placementX !== undefined
+          ? { placementX: input.placementX }
+          : {}),
+        ...(input.placementY !== undefined
+          ? { placementY: input.placementY }
+          : {}),
+        ...(input.placementWidth !== undefined
+          ? { placementWidth: input.placementWidth }
+          : {}),
+        ...(input.placementHeight !== undefined
+          ? { placementHeight: input.placementHeight }
+          : {}),
       });
 
       if (jobResult.error) {
@@ -210,15 +232,22 @@ export async function runVideoGenerate(
         };
       }
       lap("job_complete", { jobId: jobResult.jobId });
+      const display = generatedMediaDisplay(jobResult, "video", input.title);
 
       const result: VideoGenerateResult = {
-        summary: `Generated ${jobResult.durationSeconds ?? input.duration}s video (${jobResult.width ?? 0}x${jobResult.height ?? 0}) via ${input.model}`,
+        jobId: jobResult.jobId,
+        ...(jobResult.assetId ? { assetId: jobResult.assetId } : {}),
+        ...(display ? { display } : {}),
+        summary:
+          jobResult.durationSeconds !== undefined
+            ? `Generated ${jobResult.durationSeconds}s video via ${input.model}`
+            : `Generated video via ${input.model}`,
         title: input.title,
         prompt: input.prompt,
         ...(jobResult.elementId != null
           ? { elementId: jobResult.elementId }
           : {}),
-        mimeType: jobResult.mimeType ?? "video/mp4",
+        ...(jobResult.mimeType != null ? { mimeType: jobResult.mimeType } : {}),
         ...(jobResult.videoUrl != null ? { videoUrl: jobResult.videoUrl } : {}),
         ...(jobResult.width != null ? { width: jobResult.width } : {}),
         ...(jobResult.height != null ? { height: jobResult.height } : {}),
@@ -256,6 +285,7 @@ export async function runVideoGenerate(
 // ── Tool factory ───────────────────────────────────────────────────────────
 
 export function createVideoGenerateToolDefinition(deps?: {
+  resolveMediaReferences?: CanvasDocumentAccess["resolveMediaReferences"];
   submitVideoJob?: SubmitVideoJobFn;
   /** 工作区实例的模型清单（BYOK 目录 specifier）；缺省 = 未配置任何实例。 */
   availableModels?: AvailableVideoModel[];
@@ -273,12 +303,30 @@ export function createVideoGenerateToolDefinition(deps?: {
     access: "execute",
     zodSchema: schema,
     parameters: z.toJSONSchema(schema),
-    execute: async (args) =>
-      runVideoGenerate(
-        schema.parse(args) as VideoGenerateInput,
-        models,
-        deps?.submitVideoJob,
-      ),
+    execute: async (args, execCtx) => {
+      let input = schema.parse(args);
+      const requests = [
+        ...(input.inputImages ?? []).map((reference) => ({
+          reference,
+          mediaType: "image" as const,
+        })),
+        ...(input.inputVideo
+          ? [{ reference: input.inputVideo, mediaType: "video" as const }]
+          : []),
+      ];
+      if (deps?.resolveMediaReferences && requests.length) {
+        const references = await deps.resolveMediaReferences(execCtx, requests);
+        const imageCount = input.inputImages?.length ?? 0;
+        input = {
+          ...input,
+          ...(imageCount
+            ? { inputImages: references.slice(0, imageCount) }
+            : {}),
+          ...(input.inputVideo ? { inputVideo: references[imageCount] } : {}),
+        };
+      }
+      return runVideoGenerate(input, models, deps?.submitVideoJob);
+    },
   };
 }
 
@@ -291,19 +339,13 @@ function validateCapabilities(
   if (input.inputImages?.length && model.capabilities.imageToVideo === false) {
     return `${model.displayName} does not support image-to-video input`;
   }
-  if (
-    model.limits.maxInputImages !== undefined &&
-    (input.inputImages?.length ?? 0) > model.limits.maxInputImages
-  ) {
+  if (model.limits.maxInputImages !== undefined && (input.inputImages?.length ?? 0) > model.limits.maxInputImages) {
     return `${model.displayName} accepts at most ${model.limits.maxInputImages} input image(s)`;
   }
   if (input.inputVideo && model.capabilities.videoToVideo === false) {
     return `${model.displayName} does not support reference-video input`;
   }
-  if (
-    model.limits.maxDuration !== undefined &&
-    input.duration > model.limits.maxDuration
-  ) {
+  if (model.limits.maxDuration !== undefined && input.duration > model.limits.maxDuration) {
     return `${model.displayName} supports at most ${model.limits.maxDuration} seconds`;
   }
   if (
@@ -323,8 +365,7 @@ function validateCapabilities(
   } as const;
   if (
     model.limits.maxResolution !== undefined &&
-    resolutionRank[requestedResolution] >
-      resolutionRank[model.limits.maxResolution]
+    resolutionRank[requestedResolution] > resolutionRank[model.limits.maxResolution]
   ) {
     return `${model.displayName} supports up to ${model.limits.maxResolution}`;
   }

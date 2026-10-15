@@ -9,6 +9,7 @@ import { createBlobPlugin } from "../features/blob/plugin.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
 import { createBrowserPlugin } from "../features/browser/plugin.js";
 import { createCanvasAssetLocationsPlugin } from "../features/canvas/asset-locations-plugin.js";
+import { createCanvasPublicationRelayPlugin } from "../features/canvas/generation-publication-relay.js";
 import {
   createCanvasPlugin,
   createCanvasToolsPlugin,
@@ -192,6 +193,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     brandKitPlugin,
     createCanvasPlugin(),
     createCanvasToolsPlugin(),
+    createCanvasPublicationRelayPlugin(),
     createCodeGitPlugin(),
     // 检查点（影子 git）在 agent-runs 之前装配：后者的轮次钩子经 tryGet 消费它
     createCheckpointsPlugin(),

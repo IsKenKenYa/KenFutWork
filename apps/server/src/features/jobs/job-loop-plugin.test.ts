@@ -28,6 +28,7 @@ it("JobLoop使用同内核依赖只启动一次，get返回原handle，disposer�
     usage: {},
     projectFiles: {},
     generationTargets: {},
+    canvas: {},
   } as unknown as Partial<ServiceMap>;
   const env = loadServerEnv({}, {});
   const kernel = composePlugins(
@@ -50,6 +51,7 @@ it("JobLoop使用同内核依赖只启动一次，get返回原handle，disposer�
       usageService: dependencies.usage,
       projectFiles: dependencies.projectFiles,
       generationTargets: dependencies.generationTargets,
+      canvas: dependencies.canvas,
     },
     { tag: "[fixture-worker]" },
   );

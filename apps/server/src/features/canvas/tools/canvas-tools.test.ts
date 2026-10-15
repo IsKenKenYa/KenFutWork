@@ -4,11 +4,11 @@ import { canvasContentSchema } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { ToolExecutionContext } from "../../../kernel/types.js";
 import { ConnectionManager } from "../../../ws/connection-manager.js";
-import type { DesignTasksService } from "../../execution/design-task-types.js";
 import { createExecutionScopes } from "../../execution/scope-service.js";
 import { createLocalInstanceService } from "../../local-instance/service.js";
 import type { LocalActor } from "../../local-instance/types.js";
 import type { ProjectFileWrite } from "../../project-files/types.js";
+import type { CanvasDocumentAccess } from "../document-access.js";
 import type { CanvasRow } from "../repository.js";
 import { createInspectCanvasToolDefinition } from "./inspect-canvas.js";
 import { createManipulateCanvasToolDefinition } from "./manipulate-canvas.js";
@@ -43,22 +43,22 @@ const scopes = createExecutionScopes({
     }),
   },
 });
-const designTasks: Pick<DesignTasksService, "readPolicy"> = {
-  readPolicy: async () => ({
-    taskId: TASK_ID,
-    projectId: PROJECT_ID,
-    canvasId: CANVAS_ID,
-    rootDirectory: tmpdir(),
-    additionalDirectories: [],
-    sandboxMode: "workspace-write",
-    scopeGeneration: 1,
-    branchGeneration: 1,
-    mode: "build",
-    planEnabled: false,
-    planningEpoch: 0,
-    activeRunId: "run-1",
-    executionState: "ready",
-  }),
+const documentAccess: Pick<CanvasDocumentAccess, "authorize"> = {
+  authorize: async (context, canvasId, operation) => {
+    if (!context.scopeHandle || !context.runId) throw new Error("缺少真实Task");
+    if (
+      context.canvasId !== context.workContext?.canvasId ||
+      context.runId !== "run-1" ||
+      (canvasId && canvasId !== CANVAS_ID)
+    )
+      throw new Error("画布与冻结Run不匹配");
+    if (
+      operation === "write" &&
+      ["explore", "review"].includes(context.scopeHandle.role)
+    )
+      throw new Error("只读");
+    return ACTOR;
+  },
 };
 
 function canvasRow(elements: unknown[]): CanvasRow {
@@ -154,7 +154,7 @@ async function invokeInspect(
 ) {
   const definition = createInspectCanvasToolDefinition({
     localInstance,
-    designTasks,
+    documentAccess,
     ...(repository ? { canvasService: canvasService(repository) } : {}),
   });
   const result = await definition.execute(input, {
@@ -162,6 +162,7 @@ async function invokeInspect(
     instanceId: INSTANCE_ID,
     scopeHandle: await scopes.openTask(ACTOR, TASK_ID),
     runId: "run-1",
+    workContext: { preset: "design", canvasId: CANVAS_ID },
     ...execCtx,
   });
   return JSON.parse(result as string);
@@ -173,7 +174,7 @@ async function invokeManipulate(
 ) {
   const definition = createManipulateCanvasToolDefinition({
     localInstance,
-    designTasks,
+    documentAccess,
     ...(repository ? { canvasService: canvasService(repository) } : {}),
   });
   const result = await definition.execute(input, {
@@ -182,6 +183,7 @@ async function invokeManipulate(
     canvasId: CANVAS_ID,
     scopeHandle: await scopes.openTask(ACTOR, TASK_ID),
     runId: "run-1",
+    workContext: { preset: "design", canvasId: CANVAS_ID },
   });
   return JSON.parse(result as string);
 }
@@ -191,7 +193,7 @@ describe("inspect_canvas：内容读取经 canvas repository（不再直连 SDK�
     const findById = vi.fn();
     const definition = createInspectCanvasToolDefinition({
       localInstance,
-      designTasks,
+      documentAccess,
       canvasService: canvasService(repo({ findById })),
     });
     await expect(
@@ -202,9 +204,10 @@ describe("inspect_canvas：内容读取经 canvas repository（不再直连 SDK�
           instanceId: INSTANCE_ID,
           canvasId: CANVAS_ID,
           runId: "run-1",
+          workContext: { preset: "design", canvasId: CANVAS_ID },
         },
       ),
-    ).rejects.toThrow("真实Design Task");
+    ).rejects.toThrow("真实Task");
     await expect(
       invokeInspect(repo({ findById }), { canvasId: "other-canvas" }),
     ).rejects.toThrow("不匹配");
@@ -375,7 +378,7 @@ describe("manipulate_canvas：读写经 canvas repository", () => {
     const saveContent = vi.fn();
     const definition = createManipulateCanvasToolDefinition({
       localInstance,
-      designTasks,
+      documentAccess,
       canvasService: canvasService(repo({ saveContent: saveContent as never })),
     });
 
@@ -455,11 +458,12 @@ describe("画布截图的真实 Task 文件发布", () => {
     let activeRunId = "run-1";
     const definition = createScreenshotCanvasToolDefinition({
       localInstance,
-      designTasks: {
-        readPolicy: async (actor, taskId) => ({
-          ...(await designTasks.readPolicy(actor, taskId)),
-          activeRunId,
-        }),
+      documentAccess: {
+        authorize: async (context, canvasId, operation) => {
+          if (context.runId !== activeRunId)
+            throw new Error("画布任务或运行授权已改变，请重新提交。");
+          return documentAccess.authorize(context, canvasId, operation);
+        },
       },
       connectionManager,
       projectFiles: { prepareWrite },
@@ -479,12 +483,13 @@ describe("画布截图的真实 Task 文件发布", () => {
         }),
       },
     });
-    const context = {
+    const context: ToolExecutionContext = {
       actor: ACTOR,
       instanceId: INSTANCE_ID,
       canvasId: CANVAS_ID,
       scopeHandle: await scopes.openTask(ACTOR, TASK_ID),
       runId: "run-1",
+      workContext: { preset: "design", canvasId: CANVAS_ID },
     };
     return {
       upload,
@@ -532,7 +537,9 @@ describe("画布截图的真实 Task 文件发布", () => {
       f.revoke();
       return { url: "data:image/png;base64,aW1hZ2U=", width: 10, height: 20 };
     });
-    await expect(f.execute()).rejects.toThrow("运行授权不匹配");
+    await expect(f.execute()).rejects.toThrow(
+      "画布截图失败：画布任务或运行授权已改变",
+    );
     expect(f.prepareWrite).not.toHaveBeenCalled();
     expect(f.upload).not.toHaveBeenCalled();
   });

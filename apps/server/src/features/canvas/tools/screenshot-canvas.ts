@@ -7,10 +7,10 @@ import type {
 } from "../../../kernel/types.js";
 import type { ConnectionManager } from "../../../ws/connection-manager.js";
 import type { BlobStore } from "../../blob/types.js";
-import type { DesignTasksService } from "../../execution/design-task-types.js";
 import type { LocalInstanceService } from "../../local-instance/types.js";
 import type { ProjectFileService } from "../../project-files/types.js";
 import { resolveCanvasActor } from "../canvas-actor.js";
+import type { CanvasDocumentAccess } from "../document-access.js";
 
 const screenshotCanvasSchema = z.object({
   mode: z
@@ -42,7 +42,7 @@ const screenshotCanvasSchema = z.object({
 export function createScreenshotCanvasToolDefinition(deps: {
   connectionManager: ConnectionManager;
   localInstance: LocalInstanceService;
-  designTasks: Pick<DesignTasksService, "readPolicy">;
+  documentAccess: Pick<CanvasDocumentAccess, "authorize">;
   blob: BlobStore;
   projectFiles: Pick<ProjectFileService, "prepareWrite">;
   rpcTimeout?: number;
@@ -61,7 +61,7 @@ export function createScreenshotCanvasToolDefinition(deps: {
       const actor = await resolveCanvasActor(
         deps.localInstance,
         execCtx,
-        deps.designTasks,
+        deps.documentAccess,
       );
       const instanceId = actor.instanceId;
       const canvasId = execCtx.canvasId;
@@ -132,7 +132,7 @@ async function persistImageViaBlob(
     const actor = await resolveCanvasActor(
       deps.localInstance,
       context,
-      deps.designTasks,
+      deps.documentAccess,
     );
     await context.scopeHandle?.resolvePath(".", "write");
     return actor;

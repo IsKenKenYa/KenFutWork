@@ -22,6 +22,7 @@ export function createJobLoopPlugin(options: {
       "usage",
       "projectFiles",
       "generationTargets",
+      "canvas",
     ],
     apply(ctx) {
       let loop: JobLoopService | undefined;
@@ -38,6 +39,7 @@ export function createJobLoopPlugin(options: {
             usageService: ctx.get("usage"),
             projectFiles: ctx.get("projectFiles"),
             generationTargets: ctx.get("generationTargets"),
+            canvas: ctx.get("canvas"),
           },
           options.tag ? { tag: options.tag } : {},
         );

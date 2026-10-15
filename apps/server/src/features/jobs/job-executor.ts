@@ -1,6 +1,7 @@
 import type { BackgroundJobType } from "@kenfutwork/shared";
 import type { ServerEnv } from "../../config/env.js";
 import type { BlobStore } from "../blob/types.js";
+import type { CanvasService } from "../canvas/canvas-service.js";
 import type { GenerationTargets } from "../generation/file-targets.js";
 import type { ModelProviderService } from "../model-providers/model-provider-service.js";
 import type { ProjectFileService } from "../project-files/types.js";
@@ -15,6 +16,7 @@ export type ExecutorContext = {
   signal?: AbortSignal;
   assertExecution?: () => Promise<void>;
   uploads?: Pick<UploadService, "getAssetUrl">;
+  canvas?: Pick<CanvasService, "insertImageElement" | "insertVideoElement">;
   projectFiles: ProjectFileService;
   generationTargets: GenerationTargets;
   jobService: JobService;
