@@ -16,6 +16,13 @@ const storedSchema = z.object({
   width: z.number().optional(),
   height: z.number().optional(),
   duration_seconds: z.number().optional(),
+  element_id: z.string().optional(),
+});
+const outputSchema = z.object({
+  generated: mediaSchema.optional(),
+  sourceObjectPath: z.string().optional(),
+  stored: storedSchema.optional(),
+  published: z.boolean().optional(),
 });
 const executionSchema = z.object({
   phase: z.enum(["ready", "submitting", "polling", "saving", "publishing"]),
@@ -23,8 +30,10 @@ const executionSchema = z.object({
   sourceObjectPath: z.string().optional(),
   stored: storedSchema.optional(),
   usageRecorded: z.boolean().optional(),
+  outputs: z.array(outputSchema).optional(),
 });
 export type GeneratedMedia = z.infer<typeof mediaSchema>;
+export type JobMediaOutput = z.infer<typeof outputSchema>;
 export type JobExecution = z.infer<typeof executionSchema>;
 export type JobExecutionWrite = {
   providerJobId?: string;

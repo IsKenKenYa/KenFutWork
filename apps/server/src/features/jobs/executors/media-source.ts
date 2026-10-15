@@ -1,17 +1,18 @@
 import type { BackgroundJob } from "@kenfutwork/shared";
 import type { ExecutorContext } from "../job-executor.js";
-import type { JobExecution } from "../job-progress.js";
+import type { JobMediaOutput } from "../job-progress.js";
 
-export const mediaSourcePath = (job: BackgroundJob) =>
-  `${job.instance_id}/job-checkpoints/${job.id}.bin`;
+export const mediaSourcePath = (job: BackgroundJob, outputId = job.id) =>
+  `${job.instance_id}/job-checkpoints/${outputId}.bin`;
 
 export async function storeInlineSource(
   job: BackgroundJob,
   bytes: Buffer,
   mime: string,
   ctx: ExecutorContext,
+  outputId = job.id,
 ) {
-  const path = mediaSourcePath(job);
+  const path = mediaSourcePath(job, outputId);
   const bucket = ctx.blob.bucket("project-assets");
   try {
     const existing = await bucket.download(path);
@@ -47,10 +48,11 @@ function missing(error: unknown): boolean {
 /** 已保存的暂存字节优先于短期上游URL；未知存储错误不能被当成文件不存在。 */
 export async function loadMediaSource(
   job: BackgroundJob,
-  execution: JobExecution,
+  execution: JobMediaOutput,
   ctx: ExecutorContext,
+  outputId = job.id,
 ) {
-  const path = execution.sourceObjectPath ?? mediaSourcePath(job);
+  const path = execution.sourceObjectPath ?? mediaSourcePath(job, outputId);
   const bucket = ctx.blob.bucket("project-assets");
   try {
     return Buffer.from(await bucket.download(path));

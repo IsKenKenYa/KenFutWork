@@ -118,12 +118,12 @@ export class OpenAIImageProvider implements ImageProvider {
   private async generateEdit(
     params: ImageGenerateParams,
     options: ReturnType<typeof imageOptions>,
-  ): Promise<GeneratedImage> {
+  ): Promise<GeneratedImage[]> {
     const baseURL = this.baseURL ?? "https://api.openai.com/v1";
     const form = new FormData();
     form.append("model", params.model);
     form.append("prompt", params.prompt);
-    form.append("n", "1");
+    form.append("n", String(params.count ?? 1));
     form.append("size", options.size);
     if (options.quality) form.append("quality", options.quality);
     if (options.output_format)
@@ -159,10 +159,26 @@ export class OpenAIImageProvider implements ImageProvider {
     const data = (await response.json()) as {
       data: Array<{ url?: string; b64_json?: string }>;
     };
-    return readGeneratedImage("openai", data, options);
+    return this.readImages(data, options);
+  }
+
+  private readImages(
+    response: Parameters<typeof readGeneratedImage>[1],
+    options: ReturnType<typeof imageOptions>,
+  ): GeneratedImage[] {
+    if (!response.data?.length)
+      return [readGeneratedImage("openai", response, options)];
+    return response.data.map((image) =>
+      readGeneratedImage("openai", { ...response, data: [image] }, options),
+    );
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
+    const images = await this.generateMany({ ...params, count: 1 });
+    return images[0]!;
+  }
+
+  async generateMany(params: ImageGenerateParams): Promise<GeneratedImage[]> {
     const options = imageOptions(params);
 
     try {
@@ -175,13 +191,13 @@ export class OpenAIImageProvider implements ImageProvider {
         model: params.model,
         prompt: params.prompt,
         size: options.size as "1024x1024",
-        n: 1,
+        n: params.count ?? 1,
         ...(options.quality ? { quality: options.quality } : {}),
         ...(options.output_format
           ? { output_format: options.output_format }
           : {}),
       });
-      return readGeneratedImage("openai", response, options);
+      return this.readImages(response, options);
     } catch (error) {
       if (error instanceof GenerationError) throw error;
       throw new GenerationError(

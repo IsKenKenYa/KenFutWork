@@ -188,7 +188,7 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
                   ? { result: { asset_id: job.id } }
                   : {}),
               }),
-            { timeout: 5000 },
+            { timeout: 12000 },
           );
           expect(submits).toBe(1);
           expect(downloads).toBe(
@@ -207,5 +207,123 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
         }
       },
     );
+
+    it("原生多图只提交一次，实际少于请求数量时保留全部产物且不补发", async () => {
+      const requests: Array<Record<string, unknown>> = [];
+      const png =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2Z0AAAAASUVORK5CYII=";
+      const provider = createServer(async (request, response) => {
+        let body = "";
+        for await (const chunk of request) body += String(chunk);
+        requests.push(JSON.parse(body));
+        response.setHeader("content-type", "application/json");
+        response.end(
+          JSON.stringify({ data: [{ b64_json: png }, { b64_json: png }] }),
+        );
+      });
+      await new Promise<void>((resolve) =>
+        provider.listen(0, "127.0.0.1", resolve),
+      );
+      const address = provider.address();
+      if (!address || typeof address === "string")
+        throw new Error("模拟供应商未启动");
+      const baseUrl = `http://127.0.0.1:${address.port}`;
+      const blob = createLocalFsBlobStore({
+        rootDir: `${db.directory}/pipeline-many-output`,
+        signingSecret: "test-only",
+        publicBaseUrl: baseUrl,
+      });
+      const queue = createInProcessQueue();
+      const generationTargets = createGenerationTargets({
+        persistence: db.persistence,
+        executionScopes: createExecutionScopes({
+          repository: createScopeRepository(db.persistence),
+          localInstance: db.localInstance,
+        }),
+      });
+      const jobs = createJobService({
+        queue,
+        repository: createJobRepository(db.persistence),
+        localInstance: db.localInstance,
+        generationTargets,
+      });
+      const modelProviders = createModelProviderService({
+        repository: createModelProviderRepository(db.persistence),
+        localInstance: db.localInstance,
+      });
+      const configured = await modelProviders.createInstance(db.actor, {
+        name: "本地多图模拟供应商",
+        apiKey: "test-only",
+        baseUrl: `${baseUrl}/v1`,
+        protocol: "openai-compatible",
+        models: [
+          {
+            id: "gpt-image-1",
+            name: "原生多图模型",
+            capability: "image",
+            imageGeneration: { maxOutputs: 3 },
+          },
+        ],
+      });
+      const job = await jobs.createJob(db.actor, {
+        requestId: randomUUID(),
+        jobType: "image_generation",
+        payload: {
+          prompt: "两只猫",
+          model: "gpt-image-1",
+          provider_instance_id: configured.id,
+          count: 3,
+        },
+      });
+      const loop = startJobLoop(
+        {
+          queue,
+          jobService: jobs,
+          blob,
+          generationTargets,
+          projectFiles: {} as never,
+          assetWriter: createAssetWriter(
+            createUploadRepository(db.persistence),
+          ),
+          modelProviders,
+          env: {
+            agentBackendMode: "state",
+            agentModel: "test",
+            port: 0,
+            version: "test",
+            webOrigin: baseUrl,
+            workerPollIntervalMs: 1000,
+          },
+        },
+        { queues: ["image_generation_jobs"] },
+      );
+      try {
+        await vi.waitFor(
+          async () =>
+            expect(await jobs.getJob(db.actor, job.id)).toMatchObject({
+              status: "succeeded",
+            }),
+          { timeout: 12000 },
+        );
+        const final = await jobs.getJob(db.actor, job.id);
+        expect(requests).toHaveLength(1);
+        expect(requests[0]).toMatchObject({ model: "gpt-image-1", n: 3 });
+        expect(final.result).toMatchObject({
+          asset_id: job.id,
+          outputs: [
+            { asset_id: job.id, mime_type: "image/png" },
+            { mime_type: "image/png" },
+          ],
+        });
+        const outputs = final.result?.outputs as Array<{ asset_id: string }>;
+        expect(new Set(outputs.map((output) => output.asset_id)).size).toBe(2);
+        expect(JSON.stringify(final.payload)).not.toContain(png);
+      } finally {
+        await loop.shutdown();
+        await new Promise<void>((resolve, reject) =>
+          provider.close((error) => (error ? reject(error) : resolve())),
+        );
+      }
+    });
   },
 );

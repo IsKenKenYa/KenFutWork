@@ -220,5 +220,6 @@ export function createInstanceImageProvider(
       description: "BYOK instance model",
     })),
     generate: (params) => delegate.generate(params),
+    generateMany: (params) => delegate.generateMany(params),
   };
 }

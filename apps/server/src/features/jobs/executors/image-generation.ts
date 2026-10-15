@@ -10,6 +10,7 @@ import { resolveInstanceImageProviderFromPayload } from "./instance-provider.js"
 import { completeMediaJob } from "./media-result.js";
 
 type ImageJobPayload = {
+  count?: number;
   prompt: string;
   model: string;
   provider_instance_id: string;
@@ -35,6 +36,7 @@ async function imageParams(
 ): Promise<ImageGenerateParams> {
   return {
     prompt: payload.prompt,
+    count: payload.count ?? 1,
     model: payload.model,
     ...(payload.aspect_ratio ? { aspectRatio: payload.aspect_ratio } : {}),
     ...(payload.quality ? { quality: payload.quality } : {}),
@@ -51,7 +53,7 @@ async function generateImage(
   payload: ImageJobPayload,
   instance: ImageProviderSnapshot,
   ctx: ExecutorContext,
-): Promise<GeneratedImage> {
+): Promise<GeneratedImage[]> {
   const provider = instance.provider;
   if (
     job.provider_job_id &&
@@ -69,7 +71,9 @@ async function generateImage(
     const params = await imageParams(job, payload, ctx);
     await ctx.assertExecution?.();
     await ctx.jobService.saveExecution(job.id, { phase: "submitting" });
-    return provider.generate(params);
+    return provider.generateMany
+      ? provider.generateMany(params)
+      : [await provider.generate(params)];
   }
   if (!Number.isInteger(instance.configRevision)) {
     throw jobError(
@@ -83,15 +87,9 @@ async function generateImage(
     if (result.state === "failed")
       throw jobError("provider_task_failed", result.errorMessage);
     if (result.state === "succeeded") {
-      if (result.images.length > 1) {
-        throw jobError(
-          "unsupported",
-          `图片供应商返回${result.images.length}张图片，当前任务尚不能保存该结果，请核对供应商记录。`,
-        );
-      }
-      const image = result.images[0];
-      if (!image) throw jobError("no_output", "图片供应商未返回生成结果。");
-      return image;
+      if (!result.images.length)
+        throw jobError("no_output", "图片供应商未返回生成结果。");
+      return result.images;
     }
   } else {
     const params = await imageParams(job, payload, ctx);
@@ -117,7 +115,7 @@ registerExecutor(
     const job = await ctx.jobService.getJobForWorker(jobId);
     await ctx.generationTargets.resolve(job);
     const execution = readJobExecution(job);
-    if (execution.generated || execution.stored)
+    if (execution.generated || execution.stored || execution.outputs?.length)
       return completeMediaJob(job, undefined, ctx);
     const payload = job.payload as ImageJobPayload;
     if (!payload.prompt || !payload.model || !payload.provider_instance_id)

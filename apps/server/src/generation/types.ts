@@ -21,6 +21,7 @@ export type ImageQuality = string;
 export type OutputFormat = "png" | "jpg" | "webp";
 
 export interface ImageGenerateParams {
+  count?: number;
   width?: number;
   height?: number;
   signal?: AbortSignal;
@@ -51,6 +52,7 @@ export interface ImageProvider {
   readonly name: string;
   readonly models: readonly ModelInfo[];
   generate(params: ImageGenerateParams): Promise<GeneratedImage>;
+  generateMany?(params: ImageGenerateParams): Promise<GeneratedImage[]>;
   startAsync?(params: ImageGenerateParams): Promise<{ providerJobId: string }>;
   pollAsync?(providerJobId: string): Promise<ImageAsyncPollResult>;
   cancelAsync?(providerJobId: string): Promise<void>;
