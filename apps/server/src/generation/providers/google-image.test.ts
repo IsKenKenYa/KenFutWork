@@ -47,6 +47,51 @@ afterEach(() => {
 });
 
 describe("Google image BYOK 实例适配器", () => {
+  it("无法兑现的 Google 图片选项在发送前明确拒绝", async () => {
+    const requests = captureGenerateContent();
+    const provider = resolveInstanceImageProvider("google-image", {
+      credentials: { apiKey: "google-instance-key" },
+      models: [
+        { id: "gemini-3-pro-image-preview", name: "Gemini 图片" },
+        { id: "gemini-2.5-flash-image", name: "Gemini 2.5 图片" },
+      ],
+    });
+
+    for (const options of [
+      { model: "gemini-3-pro-image-preview", outputFormat: "png" as const },
+      { model: "gemini-3-pro-image-preview", width: 2048, height: 1024 },
+      { model: "gemini-2.5-flash-image", quality: "2K" },
+      { model: "google-official/gemini-2.5-flash-image", quality: "standard" },
+    ]) {
+      await expect(
+        provider.generate({ prompt: "一只猫", ...options }),
+      ).rejects.toMatchObject({ provider: "google", code: "unsupported" });
+    }
+    expect(requests).toHaveLength(0);
+  });
+
+  it("原生 4K 质量实际发送为 4K，不回落到默认尺寸", async () => {
+    const requests = captureGenerateContent();
+    const provider = resolveInstanceImageProvider("google-image", {
+      credentials: {
+        apiKey: "google-instance-key",
+        baseUrl: "https://gemini-gateway.example",
+      },
+      models: [{ id: "gemini-custom-image-preview", name: "自定义 Gemini 图片" }],
+    });
+
+    await provider.generate({
+      model: "gemini-custom-image-preview",
+      prompt: "一只猫",
+      quality: "4K",
+    });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.body).toMatchObject({
+      generationConfig: { imageConfig: { imageSize: "4K" } },
+    });
+  });
+
   it("用户声明的原生 Gemini 模型经真实 SDK 发往实例网关并返回图片", async () => {
     const requests = captureGenerateContent();
     const provider = resolveInstanceImageProvider("google-image", {

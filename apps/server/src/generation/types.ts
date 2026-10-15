@@ -16,11 +16,13 @@ export interface ModelInfo {
  * - hd:       ~2K (default, production quality)
  * - ultra:    ~4K (highest, print quality — not all models support this)
  */
-export type ImageQuality = "standard" | "hd" | "ultra";
+export type ImageQuality = string;
 
 export type OutputFormat = "png" | "jpg" | "webp";
 
 export interface ImageGenerateParams {
+  width?: number;
+  height?: number;
   prompt: string;
   model: string;
   aspectRatio?: string;

@@ -96,11 +96,31 @@ export class GoogleImageProvider implements ImageProvider {
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
     const apiModel = MODEL_MAP[params.model] ?? params.model;
+    if (params.outputFormat != null) {
+      throw new GenerationError(
+        PROVIDER_NAME,
+        "unsupported",
+        "当前 Google 图片接口不能指定输出格式，请清空格式选项。",
+      );
+    }
+    if (params.width != null || params.height != null) {
+      throw new GenerationError(
+        PROVIDER_NAME,
+        "unsupported",
+        "当前 Google 图片接口不能指定像素宽高，请改用比例与质量。",
+      );
+    }
+    if (apiModel === "gemini-2.5-flash-image" && params.quality != null) {
+      throw new GenerationError(
+        PROVIDER_NAME,
+        "unsupported",
+        "Gemini 2.5 图片模型不能指定质量，请清空质量选项。",
+      );
+    }
 
     const aspectRatio = params.aspectRatio ?? "1:1";
-    const imageSize = QUALITY_TO_IMAGE_SIZE[params.quality ?? "hd"] ?? "2K";
-    // Note: outputFormat is ignored — Gemini API does not support output format
-    // selection; it always returns PNG via inlineData.
+    const imageSize =
+      QUALITY_TO_IMAGE_SIZE[params.quality ?? "hd"] ?? params.quality ?? "2K";
 
     // Build content parts: text prompt + optional input images.
     const parts: Array<
