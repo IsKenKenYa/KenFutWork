@@ -1,3 +1,4 @@
+import type { ExcalidrawProps } from "@excalidraw/excalidraw/types";
 import {
   act,
   cleanup,
@@ -34,11 +35,7 @@ vi.mock("@/lib/server-api", () => ({
   saveCanvas: mocks.saveCanvas,
   uploadThumbnail: vi.fn(),
 }));
-vi.mock("@/lib/canvas-elements", () => ({ isVideoUrl: () => false }));
 vi.mock("./canvas-stats-panel", () => ({ CanvasStatsPanel: () => null }));
-vi.mock("./canvas/video-canvas-element", () => ({
-  VideoCanvasElement: () => null,
-}));
 vi.mock("next/dynamic", async () => {
   const React = await import("react");
   return {
@@ -50,6 +47,7 @@ vi.mock("next/dynamic", async () => {
         };
         onChange: (elements: unknown[], appState: unknown) => void;
         excalidrawAPI: (api: unknown) => void;
+        renderEmbeddable: NonNullable<ExcalidrawProps["renderEmbeddable"]>;
       }) {
         const initialized = React.useRef(false);
         const api = React.useMemo(
@@ -72,13 +70,36 @@ vi.mock("next/dynamic", async () => {
         }, [api, props.excalidrawAPI, props.initialData]);
         mocks.onChange = props.onChange;
         return React.createElement(
-          "button",
-          {
-            "data-testid": "mock-excalidraw",
-            onClick: () => mocks.onChange?.(mocks.elements, mocks.appState),
-            type: "button",
-          },
-          "Canvas",
+          React.Fragment,
+          null,
+          React.createElement(
+            "button",
+            {
+              "data-testid": "mock-excalidraw",
+              onClick: () => mocks.onChange?.(mocks.elements, mocks.appState),
+              type: "button",
+            },
+            "Canvas",
+          ),
+          ...props.initialData.elements
+            .filter((element) => element.type === "embeddable")
+            .map((element) => {
+              // The third-party canvas receives the persisted opaque scene here.
+              const rendered = props.renderEmbeddable(
+                element as unknown as Parameters<
+                  typeof props.renderEmbeddable
+                >[0],
+                mocks.appState as Parameters<typeof props.renderEmbeddable>[1],
+              );
+              return React.createElement(
+                "div",
+                { key: String(element.id) },
+                rendered ??
+                  React.createElement("div", {
+                    "data-testid": "default-embeddable",
+                  }),
+              );
+            }),
         );
       },
   };
@@ -158,6 +179,66 @@ describe("CanvasEditor remote snapshot sync", () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+  });
+
+  it.each([
+    {
+      name: "signed video link without a file extension",
+      link: "https://media.test/api/blobs/video-output?expires=123&signature=abc",
+      customData: { isVideo: true, mimeType: "video/mp4" },
+      video: true,
+    },
+    {
+      name: "legacy mp4 link",
+      link: "https://media.test/output.mp4?signature=abc",
+      customData: {},
+      video: true,
+    },
+    {
+      name: "ordinary web link",
+      link: "https://example.test/article",
+      customData: {},
+      video: false,
+    },
+    {
+      name: "video metadata without a link",
+      link: null,
+      customData: { isVideo: true, mimeType: "video/mp4" },
+      video: false,
+    },
+  ])("renders $name through the correct canvas player", async (fixture) => {
+    const view = render(
+      <CanvasEditor
+        {...editorProps({
+          initialContent: {
+            ...baseContent,
+            elements: [
+              {
+                ...baseElement,
+                type: "embeddable",
+                width: 640,
+                height: 360,
+                link: fixture.link,
+                customData: fixture.customData,
+              },
+            ],
+          },
+        })}
+      />,
+    );
+    await finishHydration();
+
+    if (fixture.video) {
+      const player = screen.getByRole("button", { name: "播放视频" });
+      expect(player.querySelector("video")?.getAttribute("src")).toBe(
+        fixture.link,
+      );
+      expect(screen.queryByTestId("default-embeddable")).toBeNull();
+    } else {
+      expect(screen.queryByRole("button", { name: "播放视频" })).toBeNull();
+      expect(view.container.querySelector("video")).toBeNull();
+      expect(screen.getByTestId("default-embeddable")).not.toBeNull();
+    }
   });
 
   it("adopts a pristine remote revision and uses it for the next save", async () => {

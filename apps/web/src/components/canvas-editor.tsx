@@ -997,7 +997,10 @@ export function CanvasEditor({
   const renderEmbeddable: NonNullable<ExcalidrawProps["renderEmbeddable"]> =
     useCallback((element, _appState) => {
       const link = element.link;
-      if (typeof link === "string" && isVideoUrl(link)) {
+      if (
+        typeof link === "string" &&
+        (element.customData?.isVideo === true || isVideoUrl(link))
+      ) {
         return (
           <VideoCanvasElement
             src={link}
