@@ -1,6 +1,5 @@
 import { registerBrandKitRoutes } from "../../http/brand-kits.js";
 import type { PluginDefinition } from "../../kernel/types.js";
-import { createCanvasRepository } from "../canvas/repository.js";
 import { createBrandKitService } from "./brand-kit-service.js";
 import { createBrandKitToolDefinition } from "./brand-kit-tool.js";
 import { brandKitPromptSection } from "./prompt.js";
@@ -28,7 +27,6 @@ export const brandKitPlugin: PluginDefinition = {
         // apply 内取即实例化（纯构造无 IO；compose 启动期本就强制全量定例化）
         brandKitService: ctx.get("brandKit"),
         localInstance: ctx.get("localInstance"),
-        canvasRepository: createCanvasRepository(ctx.get("persistence")),
       }),
     );
     // 品牌段：与 get_brand_kit 工具同属主（design + 已绑定才出现）

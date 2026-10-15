@@ -1,7 +1,6 @@
 import type { BrandKitDetail } from "@kenfutwork/shared";
 import { z } from "zod";
 import type { ToolDefinition } from "../../kernel/types.js";
-import type { CanvasRepository } from "../canvas/repository.js";
 import type { LocalInstanceService } from "../local-instance/types.js";
 import {
   type BrandKitService,
@@ -14,20 +13,19 @@ const brandKitSchema = z.object({});
  * `get_brand_kit`（design preset）：复用 brand-kit 服务读取套件（含签名 URL
  * 解析），经内核工具注册表（`ctx.tools`）贡献。
  *
- * 身份与套件绑定都在 execute 期从 `execCtx` 解析：可信 `instanceId`
- * 构造服务侧 `:instance` 隔离谓词；`brandKitId` 由画布 → 项目单条 JOIN 重推导
- * （与 runtime 起始期解析同一口径），绑定不存在时如实告知。
+ * 可信 Actor 提供实例隔离，套件绑定只读取接纳输入时冻结的 workContext。
+ * 界面或项目默认品牌的后续切换不改变当前Run。
  */
 export function createBrandKitToolDefinition(deps: {
   brandKitService: BrandKitService;
   localInstance: LocalInstanceService;
-  canvasRepository?: CanvasRepository;
 }): ToolDefinition {
   return {
     name: "get_brand_kit",
     description:
       "查询当前项目绑定的品牌套件信息，包含设计指南、颜色、字体、Logo等品牌资产。当用户提到品牌、风格、设计规范时使用此工具。",
     scope: "design",
+    access: "read",
     zodSchema: brandKitSchema,
     parameters: z.toJSONSchema(brandKitSchema),
     execute: async (_args, execCtx) => {
@@ -42,19 +40,13 @@ export function createBrandKitToolDefinition(deps: {
       }
       await deps.localInstance.resolve(actor);
 
-      // 画布 → 项目 → 绑定的品牌套件（单条 JOIN，工作区作用域）
-      const brandKitId =
-        execCtx.canvasId && execCtx.instanceId && deps.canvasRepository
-          ? await deps.canvasRepository.findProjectBrandKitId(
-              execCtx.instanceId,
-              execCtx.canvasId,
-            )
-          : null;
+      // 套件目标来自已接纳输入，不从可变项目默认值重推。
+      const brandKitId = execCtx.workContext?.brandKitId;
 
       if (!brandKitId) {
         return JSON.stringify({
           error: "no_brand_kit_bound",
-          message: "当前画布对应的项目未绑定品牌套件。",
+          message: "本轮未选择品牌套件，请选择品牌后重新发送。",
         });
       }
 
@@ -90,6 +82,10 @@ export function createBrandKitToolDefinition(deps: {
         logos: assets
           .filter((a) => a.asset_type === "logo")
           .map((a) => ({
+            assetId: a.id,
+            ...(typeof a.metadata.mime_type === "string"
+              ? { mimeType: a.metadata.mime_type }
+              : {}),
             name: a.display_name,
             url: a.file_url,
             role: a.role,
@@ -97,6 +93,10 @@ export function createBrandKitToolDefinition(deps: {
         images: assets
           .filter((a) => a.asset_type === "image")
           .map((a) => ({
+            assetId: a.id,
+            ...(typeof a.metadata.mime_type === "string"
+              ? { mimeType: a.metadata.mime_type }
+              : {}),
             name: a.display_name,
             url: a.file_url,
           })),
