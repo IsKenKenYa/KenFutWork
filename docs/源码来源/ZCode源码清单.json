@@ -2123,9 +2123,10 @@
       "source": "references/zcode/packages/ui/src/app-shell/useAnimatedResizablePanel.ts",
       "target": "apps/web/src/components/workbench/zcode/app-shell/useAnimatedResizablePanel.ts",
       "sha256": "ae5ea4512b17c5c8a756fde46533b91db9062bff5687151d9b32eb48550c68ce",
-      "copiedSha256": "ae5ea4512b17c5c8a756fde46533b91db9062bff5687151d9b32eb48550c68ce",
+      "copiedSha256": "4cb349ff394063a4dfb6ab69cd1c79139513e414f3bc4bc94ddfdad128e9ce14",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "主区只卸载Panel时，动画帧执行前核对句柄与DOM实例，拒绝已注销或替换面板的迟到命令；保留动画、尺寸记忆及首次可见挂载行为。"
       ]
     },
     {

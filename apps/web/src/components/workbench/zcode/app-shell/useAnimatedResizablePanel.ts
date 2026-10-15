@@ -105,6 +105,10 @@ export function useAnimatedResizablePanel({
     // 如果我们同一拍就立刻调用 collapse/expand，偶发会早于约束注册完成，触发
     // “Panel constraints not found” 崩溃。这里延后一帧，确保面板先完成注册再执行动画命令。
     const rafId = window.requestAnimationFrame(() => {
+      // 主区切换可能只卸载 Panel，Hook 的可见态依赖仍未变化；此时旧句柄的布局已注销。
+      if (panelRef.current !== panel || panelElementRef.current !== panelElement) {
+        return;
+      }
       if (isVisible) {
         const nextExpandedSize = expandedSizeRef.current;
         if (nextExpandedSize) {
