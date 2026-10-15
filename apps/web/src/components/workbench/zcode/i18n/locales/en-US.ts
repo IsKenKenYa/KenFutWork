@@ -970,7 +970,6 @@ const enUS: Record<string, string> = {
   "sidePane.addTab": "Add tab",
   "sidePane.openTab": "Open tab",
   "sidePane.openDesign": "OpenDesign",
-  "sidePane.openDesignCurrentFile": "Open current file in OpenDesign",
   "sidePane.subagent": "Subagent",
   "sidePane.subagentDirectory": "Subagents",
   "sidePane.selectionChat": "Side conversation",

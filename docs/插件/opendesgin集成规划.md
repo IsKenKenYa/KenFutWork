@@ -23,7 +23,7 @@
 | --- | --- | --- |
 | `OD-1` | OpenDesign **不作为独立模式**，作为 **Code 模式右侧画布面板**（与浏览器面板同位、互斥切换） | 不改 `WorkbenchMode` / `projectKindSchema`；主区判定 code 分支不变；纯右侧栏槽位扩展 |
 | `OD-2` | **插件形态交付**（同 flow `FORM-11`），入口按插件安装态出现 | 复用插件 `ui` 能力 + 侧栏槽位机制；未安装时不摆空壳 |
-| `OD-3` | **原生支持链接**：右侧面板以 iframe 嵌入 OpenDesign，支持双向链接（宿主 ↔ OpenDesign 的深链 / 状态同步） | 复用 `/canvas` / flow `ff-embed` 的 iframe 同源鉴权 + postMessage 通道范式 |
+| `OD-3` | **原生支持链接**：右侧面板以 iframe 嵌入 OpenDesign，支持双向链接（宿主 ↔ OpenDesign 的深链 / 状态同步）**——2026-10-15 口径收窄**：深链已移除（上游未实现 od/v1，#8776 追踪），面板只做画布自动连接 / 打开 / 直接编辑 | 复用 `/canvas` / flow `ff-embed` 的 iframe 同源鉴权 + postMessage 通道范式 |
 | `OD-4` | **BYOK 接入**：OpenDesign 支持 **25+ coding-agent CLI**（Claude Code / Codex / Cursor / OpenCode / …）经 BYOK 驱动；**DeepSeek Harness 为一等原生运行时**（官方 `dsh` CLI，`od agent setup deepseek-harness`） | 凭证走本仓 BYOK 实例（`DEC-7`）；不引远程托管引擎（同 `DEC-11` 精神） |
 | `OD-5` | OpenDesign **本地 daemon + PATH 扫描 agent 检测**（其 multica 血统架构）作为**唯一特权进程**；**承载已拍板（2026-10-15 用户口径）= 伴随容器**：`open-design/docker-compose.open-design.yml`（`ghcr.io/nexu-io/od`，`127.0.0.1:7456`，`OD_API_TOKEN` 与 `KENFUTWORK_OPEN_DESIGN_EMBED_SECRET` 成对）跟 KenFutWork 主程序绑定起停；桌面 Electron sidecar 不采用 | 启动探活 + 失败可读原因；拉起生命周期归宿主服务端（装配 up / dispose down），见《日志》第一百九十五节 |
 | `OD-6` | （可选）**反向 MCP**：OpenDesign 把能力以 MCP 暴露给 agent（`od mcp install <agent>`，支持 claude / codex / cursor / opencode / …）——让本仓 Code agent 经 MCP 直接驱动 OpenDesign（与 iframe 展示并行，非替代） | 复用本仓 `apps/server/src/features/mcp`（stdio / http 两传输）；不做则只保留 iframe 通路（用户口径"原生支持链接就行"的最小面） |
@@ -74,7 +74,7 @@ OpenDesign 挂在 **Code 模式右侧栏**，与浏览器面板互斥切换。**
 
 纪律：每阶段一个可验证行为变化 + 测试护航；ZCode 照搬区改动守 UI 保真（同《Code 模式 ZCode-UI 照搬执行手册》）；《日志》台账同提交记账。
 
-> **实施状态（2026-10-15）**：O0 `42b8fdfc` / O1 `5ae2d7b8` / O2 `d37e1994`（+ 收尾 `e08af975`：深链 UI 调用方）/ O3 `1b375fd4`（BYOK 凭证下发）均已完成并入 main；各阶段验证与踩坑见《日志》第一百九十一至一百九十四节。§9-3 承载形态已拍板（**伴随容器**），栈拉起随拍板落地（见《日志》第一百九十五节）。仍待：O3 的「端到端 design-to-code」需真 daemon 联调（伴随栈现为可用载体，《日志》第一百九十六节）；深链上游缺口已按「诚实提示 + 上游 issue #8776」处置（《日志》第一百九十八、一百九十九节），上游支持后本仓零改动打通；O4 远期另立方案。
+> **实施状态（2026-10-15）**：O0 `42b8fdfc` / O1 `5ae2d7b8` / O2 `d37e1994`（+ 收尾 `e08af975`：深链 UI 调用方）/ O3 `1b375fd4`（BYOK 凭证下发）均已完成并入 main；各阶段验证与踩坑见《日志》第一百九十一至一百九十四节。§9-3 承载形态已拍板（**伴随容器**），栈拉起随拍板落地（见《日志》第一百九十五节）。仍待：O3 的「端到端 design-to-code」需真 daemon 联调（伴随栈现为可用载体，《日志》第一百九十六节）；深链「打开当前文件」已于 2026-10-15 按用户口径**整链移除**（上游未实现 od/v1，#8776 追踪协议支持；《日志》第一百九十八至二百零二节），面板保留画布自动连接 / 打开 / 编辑与 od/v1 握手；O4 远期另立方案。
 
 ## 7. 许可证与合规
 
@@ -101,5 +101,6 @@ OpenDesign 挂在 **Code 模式右侧栏**，与浏览器面板互斥切换。**
    **已按并存路线落地（O0 `42b8fdfc` 右侧栏常驻 tab + O1 `5ae2d7b8` 插件门控，《日志》第一百九十一、一百九十二节）**，不再是开放问题。
 2. **双向链接的深度**：最小可用 = 深链打开文件；完整 = 选中态 / 光标双向同步。本期先做哪档？
    **本期已落最小档**（O2 `d37e1994` od/v1 握手 + 深链、`e08af975` 深链 UI 调用方，《日志》第一百九十三节）；完整档（选中态 / 光标同步）仍属远期，随 O4 另立方案时再议。
+   **2026-10-15 再收窄**：深链最小档也随用户口径移除（上游实测不支持 od/v1），本期口径 = 画布自动连接 / 打开 / 直接编辑，握手通道保留（《日志》§202）。
 3. **承载形态三选（已拍板，2026-10-15 用户口径）**：作为**「伴随容器」跟 KenFutWork 主程序绑在一起跑**——① Docker 栈语义与伴随形态结合：`open-design/docker-compose.open-design.yml` 由宿主服务端持生命周期（装配即 `up -d`、kernel dispose 即 `down` 保留数据卷）；前端地址指向伴随 origin `http://127.0.0.1:7456` = 托管，外部地址 = 用户自管实例、服务端一个 docker 命令都不发；② 桌面 Electron sidecar 与 ③ 源码 dev 不采用。**是否复用 flow `engineRuntime` Provider 抽象**：不移植三条路径抽象——那是 dify 重栈的平台矩阵（WSL2 / 本机容器 / 远端）；伴随是单容器薄托管，只沿 flow 的纪律层（`execFile` 参数数组不过 shell、失败压成一句可读原因、密钥不进错误）。Windows WSL2 承载档暂沿 flow 先例不随做（伴随镜像轻，宿主 docker 够用；真机出问题再对位补齐）。实现落点 `apps/server/src/features/open-design/companion.ts`，《日志》第一百九十五节。
 4. **与 work 模式的编辑器是否共用"右侧画布"概念**：OpenDesign 在 Code 右侧，work 的 craft 编辑器在主区——两者都是"代码 ↔ 设计/编辑"的联动面，远期是否统一为一套"联动画布"抽象？

@@ -802,26 +802,6 @@ export function useAppPanels(options: {
     });
   }, [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, workspaceAbsPath]);
 
-  /**
-   * 深链：把指定文件交给 OpenDesign 面板打开（O2 `od/navigate` 的来源）。
-   * 入口在侧栏「添加页签」里，按当前正在查看的文件出现——没在看的文件就不出现。
-   */
-  const handleOpenOpenDesignPath = useCallback(
-    (path: string) => {
-      revealSidePaneForCurrentOwner();
-      commitOpenedSidePaneState((current) => {
-        const next = openOpenDesignSidePane(current, {
-          navigatePath: path,
-        });
-        logger.info(
-          `[App] 打开右侧面板 mode=open-design workspace=${workspaceAbsPath} navigate=${path} tabs=${next.tabs.length}`,
-        );
-        return next;
-      });
-    },
-    [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, workspaceAbsPath],
-  );
-
   const handleOpenTerminalTab = useCallback(() => {
     if (isOfficeMode) return;
     revealSidePaneForCurrentOwner();
@@ -1624,7 +1604,6 @@ export function useAppPanels(options: {
     handleOpenWhiteboard,
     handleOpenDeveloperTools,
     handleOpenOpenDesign,
-    handleOpenOpenDesignPath,
     handleOpenTerminalTab,
     handleOpenModelTrajectory,
     handleOpenSubagentSession,

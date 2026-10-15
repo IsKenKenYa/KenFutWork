@@ -85,9 +85,11 @@ export function resolveOpenDesignEntry(input: {
 /* ------------------------------------------------------------------ *
  * `od/v1` 嵌入协议（O2：iframe 双向链接的最小档）
  *
- * 方向约定（与 `ff-embed/v1` 同思路，但只做「链接」这一件事，不做身份/凭证）：
- * - 宿主 → 面板：`od/hello-ack`（握手应答）与 `od/navigate`（深链打开一个路径）；
- * - 面板 → 宿主：`od/hello`（握手）与 `od/navigate-complete`（深链已就位）。
+ * 方向约定（与 `ff-embed/v1` 同思路，只做握手，不做身份/凭证）：
+ * - 宿主 → 面板：`od/hello`（探测）与 `od/hello-ack`（握手应答）；
+ * - 面板 → 宿主：`od/hello`（应答握手）。
+ * 深链 `od/navigate` 曾按 O2 最小档实现，2026-10-15 随用户口径移除
+ * （面板自动连接、打开、编辑画布本身即可；上游协议支持见 nexu-io/open-design#8776）。
  *
  * 安全口径（《OpenDesign 集成规划》§8 风险 5）：**origin 白名单 + 入站消息 schema 校验**。
  * 只收配置里那个前端 origin 发来的消息，schema 之外或类型不明的消息一律丢弃——
@@ -101,11 +103,6 @@ export const openDesignInboundMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("od/hello"),
     version: z.string().min(1).max(16),
-  }),
-  z.object({
-    type: z.literal("od/navigate-complete"),
-    version: z.string().min(1).max(16),
-    path: z.string().min(1).max(2048),
   }),
 ]);
 export type OpenDesignInboundMessage = z.infer<
@@ -122,11 +119,6 @@ export const openDesignOutboundMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("od/hello-ack"),
     version: z.string().min(1).max(16),
   }),
-  z.object({
-    type: z.literal("od/navigate"),
-    version: z.string().min(1).max(16),
-    path: z.string().min(1).max(2048),
-  }),
 ]);
 export type OpenDesignOutboundMessage = z.infer<
   typeof openDesignOutboundMessageSchema
@@ -138,16 +130,6 @@ export function buildOpenDesignHello(): OpenDesignOutboundMessage {
 
 export function buildOpenDesignHelloAck(): OpenDesignOutboundMessage {
   return { type: "od/hello-ack", version: OPEN_DESIGN_EMBED_PROTOCOL_VERSION };
-}
-
-export function buildOpenDesignNavigate(
-  path: string,
-): OpenDesignOutboundMessage {
-  return {
-    type: "od/navigate",
-    version: OPEN_DESIGN_EMBED_PROTOCOL_VERSION,
-    path,
-  };
 }
 
 /**
