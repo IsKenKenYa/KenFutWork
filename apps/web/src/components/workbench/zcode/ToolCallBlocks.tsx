@@ -13,6 +13,7 @@ import {
 import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
 import { CuaGroupToolCallBlock } from "@zui/ToolCallBlocks/renderers/cua-group.js";
 import { resolveToolCallRenderer } from "@zui/ToolCallBlocks/resolveRenderer.js";
+import { useToolCallRendererContributions } from "@zui/ToolCallBlocks/contributedRenderers.js";
 import { resolveToolCallIdentity } from "@zui/lib/toolIdentity.js";
 import {
   readRawToolCallFileSummaries,
@@ -154,6 +155,7 @@ function ToolCallBlockComponent({
   const { toolCall, childToolCalls } = toolCallNode;
   const { intl } = useZCodeIntl();
   const isOfficeMode = useIsOfficeMode();
+  const contributedRenderers = useToolCallRendererContributions();
   const toolEntranceAnimationKey = `${streamingEntranceKeyPrefix}:${toolCall.toolId}`;
   // tool 在流式对话中新出现时如果没有淡入，会和同一段文字的渐入节奏割裂。
   // 这里按 toolId 记录已经展示过的 tool，切换任务或虚拟列表重挂时不重复播放。
@@ -361,7 +363,7 @@ function ToolCallBlockComponent({
     ],
   );
 
-  const ToolCallRenderer = useMemo(() => resolveToolCallRenderer(renderContext), [renderContext]);
+  const ToolCallRenderer = useMemo(() => resolveToolCallRenderer(renderContext, contributedRenderers), [renderContext, contributedRenderers]);
   // early return 必须在所有 hook 之后（见上方注释说明的崩溃原因）
   if (!showTodoToolCalls && identity.family === "todo") {
     return null;

@@ -53,8 +53,9 @@ import { TodoToolCallBlock } from "@zui/ToolCallBlocks/renderers/todo.js";
 import { AskQuestionToolCallBlock } from "@zui/ToolCallBlocks/renderers/ask-question.js";
 import { resolveToolCallIdentity } from "@zui/lib/toolIdentity.js";
 import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
+import { resolveContributedToolCallRenderer, type ToolCallRendererContribution } from "@zui/ToolCallBlocks/contributedRenderers.js";
 
-export function resolveToolCallRenderer(context: ToolCallBlockRenderContext) {
+export function resolveToolCallRenderer(context: ToolCallBlockRenderContext, contributed: readonly ToolCallRendererContribution[] = []) {
   if (context.toolCallNode.toolCall.kind === "changesGroup") {
     return ChangesGroupToolCallBlock;
   }
@@ -67,6 +68,8 @@ export function resolveToolCallRenderer(context: ToolCallBlockRenderContext) {
   if (isCuaToolCall(context.toolCallNode.toolCall)) {
     return CuaToolCallBlock;
   }
+  const contributedRenderer = resolveContributedToolCallRenderer(context, contributed);
+  if (contributedRenderer) return contributedRenderer;
 
   const identity = resolveToolCallIdentity(context.toolCallNode.toolCall);
 

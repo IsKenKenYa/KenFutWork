@@ -737,9 +737,10 @@
       "source": "references/zcode/packages/ui/src/ToolCallBlocks.tsx",
       "target": "apps/web/src/components/workbench/zcode/ToolCallBlocks.tsx",
       "sha256": "c6569f142796dbc6f44dcffb1f2114fbf78da7f68d582959b6f7f80469234b24",
-      "copiedSha256": "fd430927b7d896de0911b4d2f9dc07e0786201af985d5d8ab7fa9af0d69be3a2",
+      "copiedSha256": "2332d9fb0393c5206c9ed9894bdf06a4fb500f43c5cac570aee349e0f278c449",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "Code/Design统一实施：原工具卡消费宿主贡献的通用展示renderer，不在SessionPane分叉媒体业务。"
       ]
     },
     {
@@ -1401,9 +1402,10 @@
       "source": "references/zcode/packages/ui/src/ToolCallBlocks/resolveRenderer.ts",
       "target": "apps/web/src/components/workbench/zcode/ToolCallBlocks/resolveRenderer.ts",
       "sha256": "a114a75d32a2ba148bf0998b500a23b5f5402bb0fa10da4acbdb69431c383e92",
-      "copiedSha256": "1007c3ba7f2a726adda3abb6fc628e461fb236478754015a5e08a72d992a24f2",
+      "copiedSha256": "81c01feec426382240048acb69dd4704299d1f75c397efdb89cd5e1ac780e524",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "Code/Design统一实施：工具展示优先解析已注册贡献，原工具身份与fallback语义保留。"
       ]
     },
     {
