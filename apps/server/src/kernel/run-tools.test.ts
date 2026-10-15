@@ -1,6 +1,7 @@
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
+import type { CanvasDocumentAccess } from "../features/canvas/document-access.js";
 import { createBrandKitToolDefinition } from "../features/brand-kit/brand-kit-tool.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
 import {
@@ -15,7 +16,6 @@ import {
 import { createPersistSandboxFileToolDefinition } from "../features/code-tools/persist-sandbox-file.js";
 import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
 import { createProjectSearchToolDefinition } from "../features/code-tools/project-search.js";
-import type { DesignTasksService } from "../features/execution/design-task-types.js";
 import { createDesignTasksPlugin } from "../features/execution/design-tasks-plugin.js";
 import { createExecutionScopes } from "../features/execution/scope-service.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
@@ -175,22 +175,17 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
       additionalDirectories: [],
       sandboxMode: "workspace-write" as const,
     });
-    const designTasks: Pick<DesignTasksService, "readPolicy"> = {
-      readPolicy: async (_actor, taskId) => ({
-        taskId,
-        projectId,
-        canvasId: "canvas-1",
-        rootDirectory,
-        additionalDirectories: [],
-        sandboxMode: "workspace-write",
-        scopeGeneration: 1,
-        branchGeneration: 1,
-        mode: "build",
-        planEnabled: false,
-        planningEpoch: 0,
-        activeRunId: "run-1",
-        executionState: "ready",
-      }),
+    const documentAccess: Pick<CanvasDocumentAccess, "authorize"> = {
+      authorize: async (context) => {
+        if (
+          !context.actor ||
+          !context.scopeHandle ||
+          !context.runId ||
+          context.actor.instanceId !== context.scopeHandle.describe().instanceId
+        )
+          throw new Error("文档缺少真实Task身份");
+        return context.actor;
+      },
     };
     const handleFor = async (taskId: string, preset: "code" | "design") =>
       createExecutionScopes({
@@ -205,16 +200,16 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
         },
       }).openTask(actor, taskId);
     registry.register(
-      createInspectCanvasToolDefinition({ localInstance, designTasks }),
+      createInspectCanvasToolDefinition({ localInstance, documentAccess }),
     );
     registry.register(
-      createManipulateCanvasToolDefinition({ localInstance, designTasks }),
+      createManipulateCanvasToolDefinition({ localInstance, documentAccess }),
     );
     registry.register(
       createScreenshotCanvasToolDefinition({
         connectionManager: new ConnectionManager(),
         localInstance,
-        designTasks,
+        documentAccess,
         blob: {} as never,
         projectFiles: {} as never,
       }),
@@ -426,6 +421,11 @@ describe("内置工具的模式工具面（静态+动态装配契约）", () => 
           modelProviders: {} as never,
           projects: projects as never,
           projectFiles,
+          settings: {
+            getInstanceSettings: async () => {
+              throw new Error("工具装配测试不读取素材设置");
+            },
+          } as never,
         },
       },
     );

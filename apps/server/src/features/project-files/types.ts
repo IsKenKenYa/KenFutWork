@@ -111,6 +111,9 @@ export type ProjectFileRecord = {
   task_id: string | null;
   canvas_id?: string | null;
   task_kind: "code" | "design" | null;
+  /** 退役Design的只读存储位置，不签发执行权限。 */
+  legacy_design_root?: string | null;
+  legacy_design_canvas_id?: string | null;
   relative_path: string;
   pending_relative_path: string | null;
   write_fingerprint: string;

@@ -137,7 +137,7 @@ export function createTaskCommandTools(
     settings: SettingsService;
     historicalOutputs?: Pick<CodeUiOutputHistory, "read" | "manifest">;
   },
-  options: { scope?: "code" | "design" } = {},
+  options: { scope?: ToolDefinition["scope"] } = {},
 ) {
   const toolScope = options.scope ?? "code";
   const commands = new Map<string, ManagedProcess>();

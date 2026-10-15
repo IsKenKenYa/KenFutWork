@@ -77,7 +77,10 @@ describe("agent-runs × agent-modes 装配缝（pre-step 指令 + 工具门）",
       return {
         streamEvents: async function* (input: never) {
           inputs.push(input);
-          yield* [] as never[];
+          yield {
+            event: "on_chat_model_stream",
+            data: { chunk: { content: "已列出项目规划" } },
+          };
         },
       } as unknown as KenFutWorkAgent;
     };
@@ -122,7 +125,12 @@ describe("agent-runs × agent-modes 装配缝（pre-step 指令 + 工具门）",
     const agentFactory: KenFutWorkAgentFactory = (options) => {
       gates.push(options.toolGate);
       return {
-        streamEvents: async function* () {},
+        streamEvents: async function* () {
+          yield {
+            event: "on_chat_model_stream",
+            data: { chunk: { content: "纯聊天回复" } },
+          };
+        },
       } as unknown as KenFutWorkAgent;
     };
 

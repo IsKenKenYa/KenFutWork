@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { BackgroundJob } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
 import { loadServerEnv } from "../config/env.js";
-import { createChatRepository } from "../features/chat/repository.js";
-import { createDesignTasksService } from "../features/execution/design-tasks.js";
+import { createCodeUiConversation } from "../features/code-ui/conversation.js";
+import { createCodeUiRepository } from "../features/code-ui/repository.js";
 import { createScopeRepository } from "../features/execution/scope-repository.js";
 import { createExecutionScopes } from "../features/execution/scope-service.js";
 import { createGenerationTargets } from "../features/generation/file-targets.js";
@@ -11,7 +11,6 @@ import { createGenerationPlugin } from "../features/generation/plugin.js";
 import { createJobService } from "../features/jobs/job-service.js";
 import { createJobRepository } from "../features/jobs/repository.js";
 import { createPermissionService } from "../features/permissions/permission-service.js";
-import { createProjectRepository } from "../features/projects/repository.js";
 import type { QueueClient } from "../features/queue/types.js";
 import { createTaskWorkDatabase } from "../features/task-work/test-postgres-schema.js";
 import { AgentRunEventBus, ToolRegistryImpl } from "../kernel/context.js";
@@ -25,13 +24,16 @@ function resultFor(kind: "image" | "video") {
   return kind === "image"
     ? {
         signed_url: "https://example.invalid/image.png",
+        asset_id: "48469ae8-31e0-4c43-864e-c8a044ce2e18",
+        element_id: "image-element",
         width: 64,
         height: 64,
         mime_type: "image/png",
       }
     : {
         signed_url: "https://example.invalid/video.mp4",
-        asset_id: "asset-video-1",
+        asset_id: "d7ee2a31-6b32-4ff6-a0a1-92b21fcc545b",
+        element_id: "video-element",
         duration_seconds: 5,
         width: 1280,
         height: 720,
@@ -44,37 +46,51 @@ async function fixture(
   missingBranchGeneration = false,
 ) {
   const db = await createTaskWorkDatabase();
-  const tasks = createDesignTasksService({
-    persistence: db.persistence,
-    localInstance: db.localInstance,
-    sandboxRoot: db.directory,
-  });
   try {
-    const { project, canvas } = await createProjectRepository(
-      db.persistence,
-    ).createProject({
-      instanceId: db.instanceId,
-      createdByClientId: db.actor.accessClientId,
-      kind: "design",
-      name: `runtime-${kind}`,
-      slug: randomUUID(),
-      canvasName: "Generation canvas",
-      description: null,
-      workDir: db.context.scope.rootDirectory,
-    });
-    if (!canvas) throw new Error("Design canvas missing");
-    const preparation = await tasks.prepareCreation(db.actor, canvas.id);
-    if (!preparation) throw new Error("Design Task preparation missing");
-    const task = await createChatRepository(db.persistence).createSession(
-      db.instanceId,
-      {
-        canvasId: canvas.id,
-        threadId: randomUUID(),
-        createdByClientId: db.actor.accessClientId,
-        designTaskPreparation: preparation,
+    const project = { id: db.context.scope.projectId };
+    const task = { id: randomUUID() };
+    const canvas = { id: randomUUID() };
+    await db.persistence
+      .forInstance(db.instanceId)
+      .execute(
+        "update public.projects set enabled_modes=array['code','design']::text[] where instance_id=:instance and id=$1",
+        [project.id],
+      );
+    await db.persistence
+      .forInstance(db.instanceId)
+      .execute(
+        "insert into public.canvases(id,project_id,name,created_by_client_id,root_directory) select $1,p.id,'Generation canvas',$3,$4 from public.projects p where p.id=$2 and p.instance_id=:instance",
+        [
+          canvas.id,
+          project.id,
+          db.actor.accessClientId,
+          db.context.scope.rootDirectory,
+        ],
+      );
+    const host = createCodeUiConversation({
+      sessionId: task.id,
+      workspacePath: db.context.scope.rootDirectory,
+      config: {
+        provider: "fixture",
+        model: "fixture",
+        thought: "",
+        followupMode: "queue",
       },
-    );
-    if (!task) throw new Error("Design Task missing");
+      workContext: { preset: "design", canvasId: canvas.id },
+    });
+    await createCodeUiRepository(db.persistence).createRoot(db.instanceId, {
+      sessionId: task.id,
+      projectId: project.id,
+      scope: { ...db.context.scope, taskId: task.id },
+      createdByClientId: db.actor.accessClientId,
+      threadId: randomUUID(),
+      state: host.exportState(),
+      command: {
+        clientId: "fixture",
+        commandId: randomUUID(),
+        fingerprint: randomUUID(),
+      },
+    });
     const scopes = createExecutionScopes({
       repository: createScopeRepository(db.persistence),
       localInstance: db.localInstance,
@@ -197,7 +213,7 @@ async function fixture(
       taskWork: { enterForeground: async () => async () => {} } as never,
       resolveTaskWorkContext: async (_actor, handle, runId) => ({
         actor: db.actor,
-        ownerKind: "design",
+        ownerKind: "code",
         scope: handle.describe(),
         agentId: handle.agentId,
         runId,
@@ -213,7 +229,6 @@ async function fixture(
     });
     return {
       db,
-      tasks,
       actor: db.actor,
       canvasId: canvas.id,
       projectId: project.id,
@@ -229,12 +244,10 @@ async function fixture(
       toolErrors,
       toolAccess,
       async close() {
-        await tasks.close();
         await db.close();
       },
     };
   } catch (error) {
-    await tasks.close();
     await db.close();
     throw error;
   }
@@ -251,8 +264,38 @@ async function run(f: Awaited<ReturnType<typeof fixture>>) {
       preset: "design",
       prompt: "generate",
     },
-    { actor: f.actor, scopeHandle: f.scopeHandle },
+    {
+      actor: f.actor,
+      scopeHandle: f.scopeHandle,
+      workContext: { preset: "design", canvasId: f.canvasId },
+    },
   );
+  const host = createCodeUiConversation({
+    sessionId: f.taskId,
+    workspacePath: f.scopeHandle.describe().rootDirectory,
+    config: {
+      provider: "zcode",
+      model: "fixture",
+      thought: "",
+      followupMode: "queue",
+    },
+    workContext: { preset: "design", canvasId: f.canvasId },
+  });
+  host.startTurn({
+    runId: accepted.runId,
+    commandId: randomUUID(),
+    text: "generate",
+  });
+  const state = host.exportState();
+  state.runWorkContexts = [
+    [accepted.runId, { preset: "design", canvasId: f.canvasId }],
+  ];
+  await f.db.persistence
+    .forInstance(f.db.instanceId)
+    .execute(
+      "update public.code_ui_sessions set active_run_id=$2,state=$3::jsonb where instance_id=:instance and id=$1",
+      [f.taskId, accepted.runId, JSON.stringify(state)],
+    );
   const events = [];
   for await (const event of f.runtime.streamRun(accepted.runId))
     events.push(event);
@@ -285,15 +328,11 @@ describe.skipIf(!enabled)(
           );
           expect(f.queueSend).toHaveBeenCalledOnce();
           expect(f.toolResults[0]).not.toHaveProperty("error");
-          if (kind === "video") {
-            expect(f.canvasService.insertVideoElement).toHaveBeenCalledWith(
-              f.actor,
-              expect.objectContaining({
-                assetId: "asset-video-1",
-                canvasId: f.canvasId,
-              }),
-            );
-          }
+          expect(f.canvasService.insertVideoElement).not.toHaveBeenCalled();
+          expect(f.canvasService.insertImageElement).not.toHaveBeenCalled();
+          expect(f.toolResults[0]).toMatchObject({
+            elementId: `${kind}-element`,
+          });
         } finally {
           await f.close();
         }

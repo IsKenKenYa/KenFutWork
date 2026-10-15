@@ -11,7 +11,7 @@ export function createCodeSubagentsPlugin(): PluginDefinition {
       let task: ReturnType<typeof createCodeSubagentTool> | undefined;
       ctx.get("tools").registerDynamic({
         id: "code.subagents.Task",
-        scope: "code",
+        scope: "shared",
         resolve(run) {
           if (!run.scopeHandle) return null;
           if (task) return task;
@@ -42,7 +42,7 @@ export function createCodeSubagentsPlugin(): PluginDefinition {
       });
       ctx.get("systemPrompt").register({
         name: "code.subagents",
-        scope: "code",
+        scope: "always",
         order: 110,
         resolve: () =>
           "## 子任务\nTask派发explore/review/worker到独立会话。明确ownership与完成标准，子正文与父转录分开；worker继承派发时权限上限。前台子任务随父Run停止；显式后台子任务归Task，结束后自动通知。TaskOutput读取状态和完整结果，TaskStop等待真实停止。",

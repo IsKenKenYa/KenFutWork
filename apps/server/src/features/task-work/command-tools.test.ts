@@ -65,7 +65,7 @@ async function fixture(preset: "code" | "design" = "code") {
   const scopes = createExecutionScopes({
     repository: {
       load: async () => ({
-        preset,
+        preset: "code",
         scope,
         state: "ready",
         branchGeneration: 1,
@@ -82,7 +82,7 @@ async function fixture(preset: "code" | "design" = "code") {
   const context: TaskWorkContext = {
     actor,
     scope,
-    ownerKind: preset,
+    ownerKind: "code",
     agentId: "main",
     runId: "run-main",
     branchGeneration: 1,
@@ -116,7 +116,7 @@ async function fixture(preset: "code" | "design" = "code") {
   });
   const controller = createTaskCommandTools(
     { manager, sandbox, settings },
-    { scope: preset },
+    { scope: "shared" },
   );
   const tool = (name: string) => {
     const found = controller.tools.find((entry) => entry.name === name);
@@ -128,6 +128,7 @@ async function fixture(preset: "code" | "design" = "code") {
     call: string,
   ): ToolExecutionContext => ({
     actor,
+    workContext: { preset },
     scopeHandle: handle,
     taskWorkContext: { ...context, runId: `run-${handle.agentId}` },
     toolCallId: call,
@@ -178,12 +179,13 @@ async function fixture(preset: "code" | "design" = "code") {
   return { root, main, manager, context, tool, execution, start, failFast };
 }
 
-it("Design Task 命令沿真实 Design ScopeHandle 接入共享 TaskWork", async () => {
+it("Design Run命令使用固定Code Task Scope与共享TaskWork", async () => {
   const f = await fixture("design");
-  expect(f.tool("Bash").scope).toBe("design");
+  expect(f.tool("Bash").scope).toBe("shared");
+  expect(f.main.preset).toBe("code");
   const workId = await f.start(f.main, "design-command");
   expect(await f.manager.find(f.context, workId)).toMatchObject({
-    ownerKind: "design",
+    ownerKind: "code",
     scope: {
       instanceId: f.context.scope.instanceId,
       projectId: f.context.scope.projectId,

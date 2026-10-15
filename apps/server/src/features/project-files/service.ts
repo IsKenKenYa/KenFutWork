@@ -77,7 +77,9 @@ export function createProjectFileService(deps: {
       if (
         scope.instanceId !== instance.instanceId ||
         scope.taskId !== target.taskId ||
-        project.kind !== handle.preset
+        !project.enabled_modes.some(
+          (mode) => mode === "code" || mode === "design",
+        )
       )
         throw new ProjectFileError(
           "scope_changed",
@@ -95,7 +97,11 @@ export function createProjectFileService(deps: {
       };
     }
     const project = await deps.projects.getProject(actor, target.projectId);
-    if (project.kind === "code")
+    if (
+      !project.enabled_modes.some(
+        (mode) => mode === "design" || mode === "flow",
+      )
+    )
       throw new ProjectFileError(
         "scope_changed",
         "Code素材必须绑定真实Task工作域。",
@@ -111,28 +117,33 @@ export function createProjectFileService(deps: {
       const canvas = await deps.canvases.findById(
         actor.instanceId,
         target.canvasId,
+        { includeDeleted: operation === "read" },
       );
       if (
         !canvas ||
         canvas.project_id !== target.projectId ||
-        (project.kind !== "design" && project.kind !== "flow")
+        !project.enabled_modes.some(
+          (mode) => mode === "design" || mode === "flow",
+        )
       )
         throw new ProjectFileError(
           "scope_changed",
           "画布文件归属不匹配。",
           403,
         );
-      const root = await deps.canvases.claimRoot(
-        actor.instanceId,
-        target.canvasId,
-        (workDir) =>
-          resolveProjectWorkDirectory({
-            instanceId: instance.instanceId,
-            projectId: target.projectId,
-            sandboxRoot: join(instance.dataDir, "sandbox"),
-            workDir,
-          }),
-      );
+      const root =
+        canvas.root_directory ??
+        (await deps.canvases.claimRoot(
+          actor.instanceId,
+          target.canvasId,
+          (workDir) =>
+            resolveProjectWorkDirectory({
+              instanceId: instance.instanceId,
+              projectId: target.projectId,
+              sandboxRoot: join(instance.dataDir, "sandbox"),
+              workDir,
+            }),
+        ));
       return {
         root,
         projectId: target.projectId,
@@ -169,6 +180,45 @@ export function createProjectFileService(deps: {
     path: string,
     operation: "read" | "write",
   ) => {
+    if (record.task_kind === "design") {
+      if (
+        operation !== "read" ||
+        record.file_state !== "ready" ||
+        !record.legacy_design_root ||
+        !record.legacy_design_canvas_id ||
+        !deps.canvases
+      )
+        throw new ProjectFileError(
+          "scope_changed",
+          "旧画布素材只供读取，请通过当前任务创建新文件。",
+          403,
+        );
+      await deps.localInstance.resolve(actor);
+      await deps.projects.getProject(actor, record.project_id);
+      const canvas = await deps.canvases.findById(
+        actor.instanceId,
+        record.legacy_design_canvas_id,
+        { includeDeleted: true },
+      );
+      if (
+        !canvas ||
+        canvas.project_id !== record.project_id ||
+        canvas.root_directory !== record.legacy_design_root
+      )
+        throw new ProjectFileError(
+          "scope_changed",
+          "旧素材目录与画布不一致，请重新关联素材。",
+          409,
+        );
+      validateRelativePath(path);
+      return {
+        root: record.legacy_design_root,
+        projectId: record.project_id,
+        generation: record.scope_generation,
+        taskKind: record.task_kind,
+        handle: undefined,
+      };
+    }
     const target: ProjectFileTarget = record.task_id
       ? { kind: "task", taskId: record.task_id }
       : record.canvas_id

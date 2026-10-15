@@ -369,54 +369,21 @@ async function rebindTasks(scoped: InstanceSqlClient, mapper: Rebinder) {
   }
 }
 
-async function rebindCanvasAndDesignTasks(
-  scoped: InstanceSqlClient,
-  mapper: Rebinder,
-) {
+async function rebindCanvases(scoped: InstanceSqlClient, mapper: Rebinder) {
   const canvases = await scoped.query<
     SqlRow & { id: string; root_directory: string | null }
   >(
     "select c.id,c.root_directory from public.canvases c join public.projects p on p.id=c.project_id where p.instance_id=:instance for update of c",
   );
-  const roots = new Map<string, string | null>();
   for (const canvas of canvases) {
     const root =
       canvas.root_directory === null
         ? null
         : await mapper.rewritePath(canvas.root_directory);
-    roots.set(canvas.id, root);
     if (root !== canvas.root_directory)
       await scoped.execute(
         "update public.canvases c set root_directory=$2 from public.projects p where c.id=$1 and p.id=c.project_id and p.instance_id=:instance",
         [canvas.id, root],
-      );
-  }
-  const tasks = await scoped.query<
-    SqlRow & {
-      task_id: string;
-      canvas_id: string;
-      project_id: string;
-      canvas_project_id: string | null;
-      root_directory: string;
-      additional_directories: unknown;
-    }
-  >(
-    "select d.task_id,s.canvas_id,d.project_id,c.project_id as canvas_project_id,d.root_directory,d.additional_directories from public.design_task_executions d join public.chat_sessions s on s.id=d.task_id and s.instance_id=d.instance_id and s.project_id=d.project_id left join public.canvases c on c.id=s.canvas_id where d.instance_id=:instance and s.mode='design' for update of d",
-  );
-  for (const task of tasks) {
-    if (task.canvas_project_id !== task.project_id)
-      throw new Error("画布与Design Task项目归属不一致，拒绝迁移。");
-    const root = await mapper.rewritePath(task.root_directory);
-    if (roots.get(task.canvas_id) !== root)
-      throw new Error("画布与Design Task目录不一致，拒绝迁移。");
-    const additional = await mapper.rewriteJson(task.additional_directories);
-    if (
-      root !== task.root_directory ||
-      JSON.stringify(additional) !== JSON.stringify(task.additional_directories)
-    )
-      await scoped.execute(
-        "update public.design_task_executions set root_directory=$2,additional_directories=$3::jsonb,scope_generation=scope_generation+1 where instance_id=:instance and task_id=$1",
-        [task.task_id, root, JSON.stringify(additional)],
       );
   }
 }
@@ -580,7 +547,7 @@ export async function bindLocalInstanceDataRoot(options: {
         );
         await rebindProjects(scoped, mapper);
         await rebindTasks(scoped, mapper);
-        await rebindCanvasAndDesignTasks(scoped, mapper);
+        await rebindCanvases(scoped, mapper);
         await rebindCheckpoints({
           scoped,
           mapper,

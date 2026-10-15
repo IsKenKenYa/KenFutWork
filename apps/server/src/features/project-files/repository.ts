@@ -17,8 +17,11 @@ export function createProjectFileRepository(
       .forInstance(instanceId)
       .queryOne<ProjectFileRecord>(
         `select a.id, a.instance_id, a.project_id, a.task_id, a.task_kind, a.canvas_id, a.relative_path,
-      a.pending_relative_path, a.write_fingerprint, a.scope_generation, a.file_state, a.mime_type, a.byte_size
+      a.pending_relative_path, a.write_fingerprint, a.scope_generation, a.file_state, a.mime_type, a.byte_size,
+      d.root_directory as legacy_design_root, s.canvas_id as legacy_design_canvas_id
      from public.asset_objects a join public.projects p on p.id=a.project_id and p.instance_id=a.instance_id
+     left join public.design_task_executions d on a.task_kind='design' and d.task_id=a.task_id and d.instance_id=a.instance_id and d.project_id=a.project_id
+     left join public.chat_sessions s on s.id=d.task_id and s.instance_id=d.instance_id and s.project_id=d.project_id
      where a.instance_id=:instance and a.id=$1 and a.file_state<>'legacy' and p.archived_at is null`,
         [assetId],
       );
@@ -42,7 +45,7 @@ export function createProjectFileRepository(
           where a.instance_id=:instance and a.id=$1 and a.relative_path=$2 and a.write_fingerprint=$3
             and a.file_state='ready' and a.pending_relative_path is null
             and exists(select 1 from public.projects p where p.id=a.project_id and p.instance_id=:instance and p.archived_at is null)
-            and ($7::uuid is null or (a.task_id is null and (a.canvas_id is null or a.canvas_id=$7) and exists(select 1 from public.canvases c where c.id=$7 and c.project_id=a.project_id)))`,
+            and ($7::uuid is null or (a.task_id is null and (a.canvas_id is null or a.canvas_id=$7) and exists(select 1 from public.canvases c where c.id=$7 and c.project_id=a.project_id and c.deleted_at is null)))`,
       [
         assetId,
         input.expectedRelativePath,
@@ -82,8 +85,8 @@ export function createProjectFileRepository(
           (id, instance_id, project_id, task_id, task_kind, canvas_id, relative_path, write_fingerprint, scope_generation, file_state, bucket, object_path, mime_type, created_by_client_id)
          select $1, :instance, $2, $3, $10, $11, $4, $5, $6, 'pending', 'project-assets', $7, $8, $9
          where exists(select 1 from public.projects p where p.id=$2 and p.instance_id=:instance and p.archived_at is null)
-          and ($11::uuid is null or ($3::uuid is null and exists(select 1 from public.canvases c join public.projects p on p.id=c.project_id where c.id=$11 and c.project_id=$2 and p.instance_id=:instance and p.kind in ('design','flow') and p.archived_at is null)))
-          and ($3::uuid is null or exists(select 1 from public.execution_task_owners o left join public.code_ui_sessions c on o.task_kind='code' and c.id=o.task_id and c.instance_id=o.instance_id left join public.design_task_executions d on o.task_kind='design' and d.task_id=o.task_id and d.instance_id=o.instance_id where o.instance_id=:instance and o.task_id=$3 and o.project_id=$2 and o.task_kind=$10 and ((o.task_kind='code' and c.parent_session_id is null and c.deleted_at is null and c.execution_state='ready' and c.scope_generation=$6) or (o.task_kind='design' and d.execution_state='ready' and d.scope_generation=$6))))
+          and ($11::uuid is null or ($3::uuid is null and exists(select 1 from public.canvases c join public.projects p on p.id=c.project_id where c.id=$11 and c.project_id=$2 and p.instance_id=:instance and ('design'=any(p.enabled_modes) or 'flow'=any(p.enabled_modes)) and c.deleted_at is null and p.archived_at is null)))
+          and ($3::uuid is null or exists(select 1 from public.execution_task_owners o join public.code_ui_sessions c on c.id=o.task_id and c.instance_id=o.instance_id where o.instance_id=:instance and o.task_id=$3 and o.project_id=$2 and o.task_kind=$10 and o.task_kind='code' and c.parent_session_id is null and c.deleted_at is null and c.archived=false and c.execution_state='ready' and c.scope_generation=$6))
          on conflict(id) do nothing`,
         [
           record.id,
@@ -106,8 +109,8 @@ export function createProjectFileRepository(
          where a.instance_id=:instance and a.id=$1 and a.file_state='legacy'
           and (a.project_id is null or a.project_id=$2)
           and exists(select 1 from public.projects p where p.id=$2 and p.instance_id=:instance and p.archived_at is null)
-          and ($9::uuid is null or ($3::uuid is null and exists(select 1 from public.canvases c join public.projects p on p.id=c.project_id where c.id=$9 and c.project_id=$2 and p.instance_id=:instance and p.kind in ('design','flow') and p.archived_at is null)))
-          and ($3::uuid is null or exists(select 1 from public.execution_task_owners o left join public.code_ui_sessions c on o.task_kind='code' and c.id=o.task_id and c.instance_id=o.instance_id left join public.design_task_executions d on o.task_kind='design' and d.task_id=o.task_id and d.instance_id=o.instance_id where o.instance_id=:instance and o.task_id=$3 and o.project_id=$2 and o.task_kind=$8 and ((o.task_kind='code' and c.parent_session_id is null and c.deleted_at is null and c.execution_state='ready' and c.scope_generation=$6) or (o.task_kind='design' and d.execution_state='ready' and d.scope_generation=$6))))`,
+          and ($9::uuid is null or ($3::uuid is null and exists(select 1 from public.canvases c join public.projects p on p.id=c.project_id where c.id=$9 and c.project_id=$2 and p.instance_id=:instance and ('design'=any(p.enabled_modes) or 'flow'=any(p.enabled_modes)) and c.deleted_at is null and p.archived_at is null)))
+          and ($3::uuid is null or exists(select 1 from public.execution_task_owners o join public.code_ui_sessions c on c.id=o.task_id and c.instance_id=o.instance_id where o.instance_id=:instance and o.task_id=$3 and o.project_id=$2 and o.task_kind=$8 and o.task_kind='code' and c.parent_session_id is null and c.deleted_at is null and c.archived=false and c.execution_state='ready' and c.scope_generation=$6))`,
         [
           record.id,
           record.project_id,
@@ -131,7 +134,7 @@ export function createProjectFileRepository(
           bucket='project-assets', object_path=$4
          where a.instance_id=:instance and a.id=$1 and a.write_fingerprint=$2 and a.file_state in ('pending','ready')
           and exists(select 1 from public.projects p where p.id=a.project_id and p.instance_id=:instance and p.archived_at is null)
-          and (a.file_state='ready' or a.task_id is null or exists(select 1 from public.execution_task_owners o left join public.code_ui_sessions c on o.task_kind='code' and c.id=o.task_id and c.instance_id=o.instance_id left join public.design_task_executions d on o.task_kind='design' and d.task_id=o.task_id and d.instance_id=o.instance_id where o.instance_id=:instance and o.task_id=a.task_id and o.project_id=a.project_id and o.task_kind=a.task_kind and ((o.task_kind='code' and c.parent_session_id is null and c.deleted_at is null and c.execution_state='ready' and c.scope_generation=a.scope_generation) or (o.task_kind='design' and d.execution_state='ready' and d.scope_generation=a.scope_generation))))`,
+          and (a.file_state='ready' or a.task_id is null or exists(select 1 from public.execution_task_owners o join public.code_ui_sessions c on c.id=o.task_id and c.instance_id=o.instance_id where o.instance_id=:instance and o.task_id=a.task_id and o.project_id=a.project_id and o.task_kind=a.task_kind and o.task_kind='code' and c.parent_session_id is null and c.deleted_at is null and c.archived=false and c.execution_state='ready' and c.scope_generation=a.scope_generation))`,
         [
           assetId,
           fingerprint,

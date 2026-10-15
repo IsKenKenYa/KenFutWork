@@ -331,7 +331,12 @@ async function fixture() {
     localInstance,
     executionScopes,
     projects: {
-      getProject: async () => ({ id: projectId, kind, work_dir: root }),
+      getProject: async () => ({
+        id: projectId,
+        kind,
+        enabled_modes: [kind],
+        work_dir: root,
+      }),
     },
   } as unknown as Parameters<typeof createProjectFileService>[0];
   const service = createProjectFileService(deps);

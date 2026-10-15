@@ -59,7 +59,10 @@ describe("BYOK运行时退役计费门", () => {
                 }),
               );
             }
-            yield { event: "__test_noop__" };
+            yield {
+              event: "on_chat_model_stream",
+              data: { chunk: { content: "处理完成" } },
+            };
           },
         }) as KenFutWorkAgent;
       const options: Parameters<typeof createAgentRunService>[0] = {

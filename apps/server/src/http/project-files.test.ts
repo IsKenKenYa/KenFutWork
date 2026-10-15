@@ -137,7 +137,13 @@ async function fixture(
       return project;
     },
   };
-  const canvases: Pick<CanvasRepository, "findById" | "claimRoot"> = {
+  const canvases: Pick<
+    CanvasRepository,
+    "findById" | "claimRoot" | "withDocumentLock" | "notifyChanged"
+  > = {
+    notifyChanged: async () => {},
+    withDocumentLock: async (_instance, _id, operation) =>
+      operation(new AbortController().signal),
     findById: async (instance, id) =>
       instance === actor.instanceId && id === canvasId
         ? {
