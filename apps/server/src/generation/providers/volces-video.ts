@@ -9,7 +9,7 @@ import type {
   VideoModelInfo,
   VideoProvider,
 } from "../types.js";
-import { GenerationError } from "../utils.js";
+import { createGenerationFetch, GenerationError } from "../utils.js";
 
 /**
  * volces（火山方舟）视频 provider——Seedance 系（G4 关闭项）。
@@ -95,6 +95,7 @@ export class VolcesVideoProvider implements VideoProvider {
   private videoModel(modelId: string): Experimental_VideoModelV4 {
     return createVolcesProvider({
       apiKey: this.apiKey,
+      fetch: createGenerationFetch("volces", [this.apiKey]),
       ...(this.baseUrl ? { baseUrl: this.baseUrl } : {}),
       ...(this.headers ? { headers: this.headers } : {}),
     }).videoModel(modelId);
@@ -116,7 +117,9 @@ export class VolcesVideoProvider implements VideoProvider {
       ...(params.resolution
         ? /^\d+x\d+$/.test(params.resolution)
           ? { resolution: params.resolution as `${number}x${number}` }
-          : { providerOptions: { bytedance: { resolution: params.resolution } } }
+          : {
+              providerOptions: { bytedance: { resolution: params.resolution } },
+            }
         : {}),
       // spec 的 aspectRatio 形如 `${number}:${number}`；非常规值交给上层校验拒绝
       ...(params.aspectRatio

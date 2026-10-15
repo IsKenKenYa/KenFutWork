@@ -23,7 +23,7 @@ export interface AisdkInstanceCredentials {
   apiKey: string;
   /** 自定义请求头（占位符已按发送时刻上下文渲染为运行期值）。 */
   headers?: Record<string, string>;
-  /** fetch 注入口（诊断代理 / 抓包测试用；生产不传，走全局 fetch）。 */
+  /** fetch 注入口（供应商错误归一、诊断代理或抓包测试）；缺省走全局fetch。 */
   fetch?: typeof globalThis.fetch;
 }
 

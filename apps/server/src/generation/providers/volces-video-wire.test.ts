@@ -3,6 +3,76 @@ import { resolveInstanceVideoProvider } from "../../providers/resolve.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
+it("Seedance提交和查询的SDK错误仅暴露脱敏的安全分类字段", async () => {
+  const apiKey = "ark-wire-secret";
+  const request = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json({ id: "cgt-error-boundary" }));
+  vi.stubGlobal("fetch", request);
+  const provider = resolveInstanceVideoProvider("volces", {
+    credentials: {
+      apiKey,
+      baseUrl: "https://ark-gateway.example/api/v3",
+    },
+    models: [{ id: "ep-custom-video", name: "自定义视频模型" }],
+  });
+  if (!provider.startAsync || !provider.pollAsync) {
+    throw new Error("Seedance异步接口未接线");
+  }
+  const handle = await provider.startAsync({
+    model: "ep-custom-video",
+    prompt: "准备查询句柄",
+  });
+  request.mockClear();
+
+  for (const entry of ["start", "poll"]) {
+    for (const failure of [
+      { status: 429, code: "RateLimitExceeded", retryAfter: "17" },
+      { status: 403, code: "insufficient_quota", retryAfter: undefined },
+    ]) {
+      request.mockResolvedValueOnce(
+        Response.json(
+          { error: { code: failure.code, message: `请求被拒绝 ${apiKey}` } },
+          {
+            status: failure.status,
+            headers: failure.retryAfter
+              ? { "Retry-After": failure.retryAfter }
+              : {},
+          },
+        ),
+      );
+
+      const error = await (entry === "start"
+        ? provider.startAsync({ model: "ep-custom-video", prompt: "一只猫" })
+        : provider.pollAsync(handle.providerJobId)
+      ).catch((value: unknown) => value);
+
+      expect(error).toMatchObject({
+        name: "GenerationError",
+        provider: "volces",
+        code: "api_error",
+        status: failure.status,
+        retryAfter: failure.retryAfter,
+        upstreamCode: failure.code,
+        message: expect.not.stringContaining(apiKey),
+      });
+      expect(error).not.toHaveProperty("requestBodyValues");
+      expect(error).not.toHaveProperty("cause");
+      expect(JSON.stringify(error)).not.toContain(apiKey);
+      expect(request).toHaveBeenCalledOnce();
+      expect(String(request.mock.calls[0]?.[0])).toBe(
+        entry === "start"
+          ? "https://ark-gateway.example/api/v3/contents/generations/tasks"
+          : "https://ark-gateway.example/api/v3/contents/generations/tasks/cgt-error-boundary",
+      );
+      expect(request.mock.calls[0]?.[1]?.method ?? "GET").toBe(
+        entry === "start" ? "POST" : "GET",
+      );
+      request.mockClear();
+    }
+  }
+});
+
 it("Seedance自定义Endpoint原生分辨率和标准像素值均实际发送", async () => {
   const request = vi.fn<typeof fetch>(async () =>
     Response.json({ id: "cgt-native-resolution" }),
