@@ -48,6 +48,8 @@ import type {
   VoiceTranscribeResponse,
 } from "@kenfutwork/shared";
 import {
+  generationSubmissionSchema,
+  jobResponseSchema,
   parseInstanceSpecifier,
   projectDirectoryRelinkResponseSchema,
   projectDirectoryRelinkSnapshotSchema,
@@ -808,13 +810,8 @@ export async function deleteAsset(
 
 // --- Canvas-Native Generation API ---
 
-export type GenerateImageResponse = {
-  url: string;
-  prompt: string;
-  mimeType: string;
-  width: number;
-  height: number;
-};
+export type GenerateImageResponse =
+  import("@kenfutwork/shared").GenerationSubmission;
 
 export type ImageModelInfo = {
   providerInstanceId?: string;
@@ -924,14 +921,29 @@ function generationModel(
   return { model, ...(providerInstanceId ? { providerInstanceId } : {}) };
 }
 
+/** 服务端可能已接纳；调用方继续按持久请求标识查回执。 */
+async function readGenerationSubmission(response: Response) {
+  if (response.status >= 500) throw new Error("提交结果待确认");
+  if (!response.ok) return handleErrorResponse(response);
+  return generationSubmissionSchema.parse(await response.json());
+}
+
 export async function generateImageDirect(
   accessToken: string | null | undefined,
   prompt: string,
   options?: {
+    count?: number;
+    requestId?: string;
+    canvasId?: string;
+    projectId?: string;
+    generatorId?: string;
+    placement?: { x: number; y: number; width: number; height: number };
     model?: string;
     providerInstanceId?: string;
     aspectRatio?: string;
     quality?: string;
+    width?: number;
+    height?: number;
     inputImages?: string[];
     outputFormat?: "png" | "jpg" | "webp";
     /** 会话标识（§4.8）：实例自定义头里的 `{{sessionId}}` 按它渲染。 */
@@ -945,9 +957,17 @@ export async function generateImageDirect(
       headers: authJsonHeaders(accessToken),
       body: JSON.stringify({
         prompt,
+        ...(options?.count !== undefined ? { count: options.count } : {}),
+        ...(options?.requestId ? { requestId: options.requestId } : {}),
+        ...(options?.canvasId ? { canvasId: options.canvasId } : {}),
+        ...(options?.projectId ? { projectId: options.projectId } : {}),
+        ...(options?.generatorId ? { generatorId: options.generatorId } : {}),
+        ...(options?.placement ? { placement: options.placement } : {}),
         ...generationModel(options?.model, options?.providerInstanceId),
         ...(options?.aspectRatio ? { aspectRatio: options.aspectRatio } : {}),
         ...(options?.quality ? { quality: options.quality } : {}),
+        ...(options?.width !== undefined ? { width: options.width } : {}),
+        ...(options?.height !== undefined ? { height: options.height } : {}),
         ...(options?.inputImages?.length
           ? { inputImages: options.inputImages }
           : {}),
@@ -958,24 +978,25 @@ export async function generateImageDirect(
       }),
     },
   );
-  if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as GenerateImageResponse;
+  return readGenerationSubmission(response);
 }
 
 /**
  * 视频生成受理（202）：任务由 worker 异步执行（异步任务面 submit + 队列轮询），
  * 进度经 fetchJob 轮询到终态。S6 之前是 HTTP 内挂起等 5 分钟，已退役。
  */
-export type GenerateVideoSubmission = {
-  job_id: string;
-  status: string;
-  prompt: string;
-};
+export type GenerateVideoSubmission =
+  import("@kenfutwork/shared").GenerationSubmission;
 
 export async function generateVideoDirect(
   accessToken: string | null | undefined,
   prompt: string,
   options?: {
+    requestId?: string;
+    canvasId?: string;
+    projectId?: string;
+    generatorId?: string;
+    placement?: { x: number; y: number; width: number; height: number };
     model?: string;
     providerInstanceId?: string;
     duration?: number;
@@ -995,6 +1016,11 @@ export async function generateVideoDirect(
       headers: authJsonHeaders(accessToken),
       body: JSON.stringify({
         prompt,
+        ...(options?.requestId ? { requestId: options.requestId } : {}),
+        ...(options?.canvasId ? { canvasId: options.canvasId } : {}),
+        ...(options?.projectId ? { projectId: options.projectId } : {}),
+        ...(options?.generatorId ? { generatorId: options.generatorId } : {}),
+        ...(options?.placement ? { placement: options.placement } : {}),
         ...generationModel(options?.model, options?.providerInstanceId),
         ...(options?.duration != null ? { duration: options.duration } : {}),
         ...(options?.resolution ? { resolution: options.resolution } : {}),
@@ -1010,8 +1036,23 @@ export async function generateVideoDirect(
       }),
     },
   );
+  return readGenerationSubmission(response);
+}
+
+export async function fetchGenerationRequest(
+  accessToken: string | null | undefined,
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<import("@kenfutwork/shared").JobListResponse> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/jobs?request_id=${encodeURIComponent(requestId)}`,
+    {
+      headers: authHeaders(accessToken),
+      ...(signal ? { signal } : {}),
+    },
+  );
   if (!response.ok) return handleErrorResponse(response);
-  return (await response.json()) as GenerateVideoSubmission;
+  return await response.json();
 }
 
 // --- Jobs API ---
@@ -1028,6 +1069,18 @@ export async function fetchJob(
   );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as JobResponse;
+}
+
+export async function cancelBackgroundJob(
+  accessToken: string | null | undefined,
+  jobId: string,
+): Promise<import("@kenfutwork/shared").BackgroundJob> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/jobs/${encodeURIComponent(jobId)}/cancel`,
+    { method: "POST", headers: authHeaders(accessToken) },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return jobResponseSchema.parse(await response.json()).job;
 }
 
 // --- Instance Skills API（画布聊天技能目录）---

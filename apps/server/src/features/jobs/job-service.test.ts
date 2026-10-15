@@ -284,6 +284,7 @@ function createFakeRepository(
     releaseLease: async () => 1,
     incrementAttempt: async () => ({ attempt_count: 1, max_attempts: 3 }),
     insert: async () => JOB_ROW,
+    insertMany: async () => [JOB_ROW],
     listForInstance: async () => [],
     markDeadLetter: async () => 1,
     markFailed: async () => 1,

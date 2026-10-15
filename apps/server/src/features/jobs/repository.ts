@@ -1,6 +1,9 @@
 import type { GenerationFileTarget } from "@kenfutwork/shared";
 import { assertGenerationOriginForInsert } from "../generation/file-target-lock.js";
-import type { PersistenceService } from "../persistence/types.js";
+import type {
+  InstanceSqlClient,
+  PersistenceService,
+} from "../persistence/types.js";
 import type {
   JobCancellation,
   JobExecution,
@@ -89,7 +92,6 @@ export interface JobRepository {
     seconds: number,
     token: string,
   ): Promise<number>;
-
   retry(jobId: string, input: JobRetry, token: string): Promise<number>;
   markUncertain(jobId: string, message: string, token: string): Promise<number>;
   saveExecution(
@@ -130,6 +132,7 @@ export interface JobRepository {
     leaseToken?: string,
   ): Promise<{ attempt_count: number; max_attempts: number }>;
   insert(input: NewJobInput): Promise<BackgroundJobRecord | null>;
+  insertMany(inputs: readonly NewJobInput[]): Promise<BackgroundJobRecord[]>;
   listForInstance(
     instanceId: string,
     filters: JobListFilters,
@@ -179,6 +182,27 @@ function leaseGuard(parameter: number) {
 const LIST_LIMIT = 50;
 
 type AttemptRow = { attempt_count: number; max_attempts: number | null };
+
+async function insertJobRow(scoped: InstanceSqlClient, input: NewJobInput) {
+  return scoped.queryOne<BackgroundJobRecord>(
+    `insert into public.background_jobs
+                (instance_id, project_id, canvas_id, session_id, thread_id,
+                 queue_name, job_type, payload, created_by_client_id, file_target)
+         values (:instance, $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb)
+         returning ${JOB_COLUMNS}`,
+    [
+      input.projectId ?? null,
+      input.canvasId ?? null,
+      input.sessionId ?? null,
+      input.threadId ?? null,
+      input.queueName,
+      input.jobType,
+      JSON.stringify(input.payload),
+      input.createdByClientId,
+      JSON.stringify(input.fileTarget),
+    ],
+  );
+}
 
 export function createJobRepository(
   persistence: PersistenceService,
@@ -345,9 +369,7 @@ export function createJobRepository(
         if (typeof input.payload.request_id === "string") {
           await transaction.query(
             "select pg_advisory_xact_lock(hashtextextended($1,0))",
-            [
-              `${input.instanceId}:${input.payload.request_id}:${input.payload.request_index ?? 0}`,
-            ],
+            [`${input.instanceId}:${input.payload.request_id}`],
           );
           const existing = await scoped.queryOne<BackgroundJobRecord>(
             `select ${JOB_COLUMNS} from public.background_jobs where instance_id=:instance
@@ -367,24 +389,53 @@ export function createJobRepository(
           }
         }
         await assertGenerationOriginForInsert(scoped, input.fileTarget, input);
-        return scoped.queryOne<BackgroundJobRecord>(
-          `insert into public.background_jobs
-                (instance_id, project_id, canvas_id, session_id, thread_id,
-                 queue_name, job_type, payload, created_by_client_id, file_target)
-         values (:instance, $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb)
-         returning ${JOB_COLUMNS}`,
-          [
-            input.projectId ?? null,
-            input.canvasId ?? null,
-            input.sessionId ?? null,
-            input.threadId ?? null,
-            input.queueName,
-            input.jobType,
-            JSON.stringify(input.payload),
-            input.createdByClientId,
-            JSON.stringify(input.fileTarget),
-          ],
+        return insertJobRow(scoped, input);
+      });
+    },
+
+    async insertMany(inputs) {
+      const first = inputs[0];
+      if (!first) return [];
+      return persistence.transaction(async (transaction) => {
+        const scoped = transaction.forInstance(first.instanceId);
+        await transaction.query(
+          "select pg_advisory_xact_lock(hashtextextended($1,0))",
+          [`${first.instanceId}:${first.payload.request_id}`],
         );
+        const existing = await scoped.query<BackgroundJobRecord>(
+          `select ${JOB_COLUMNS} from public.background_jobs
+           where instance_id=:instance and payload->>'request_id'=$1
+           order by coalesce((payload->>'request_index')::int,0)`,
+          [first.payload.request_id],
+        );
+        if (existing.length) {
+          if (
+            existing.some(
+              (row) =>
+                row.payload?.request_fingerprint !==
+                first.payload.request_fingerprint,
+            )
+          )
+            throw new JobRequestConflictError();
+          return existing.map((row) => ({ ...row, requestReplay: true }));
+        }
+        const result: BackgroundJobRecord[] = [];
+        for (const input of inputs) {
+          if (
+            input.instanceId !== first.instanceId ||
+            input.payload.request_id !== first.payload.request_id
+          )
+            throw new Error("生成任务组的来源不一致。");
+          await assertGenerationOriginForInsert(
+            scoped,
+            input.fileTarget,
+            input,
+          );
+          const row = await insertJobRow(scoped, input);
+          if (!row) throw new Error("生成任务组保存失败。");
+          result.push(row);
+        }
+        return result;
       });
     },
 
@@ -511,12 +562,13 @@ export function createJobRepository(
 
     async markSucceeded(jobId, result, leaseToken) {
       return persistence.execute(
-        `update public.background_jobs
+        `with completed as (update public.background_jobs
             set status = 'succeeded',
                 result = $2::jsonb,
                 completed_at = now()
           where id = $1
-            and status in ('queued', 'running', 'failed') ${leaseGuard(3)}`,
+            and status in ('queued', 'running', 'failed') ${leaseGuard(3)} returning id)
+         select pg_notify('kenfutwork_generation_complete',id::text) from completed`,
         [jobId, JSON.stringify(result), leaseToken ?? null],
       );
     },

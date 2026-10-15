@@ -1,10 +1,8 @@
 import { cleanup, render } from "@testing-library/react";
-import type { ComponentType } from "react";
-import { afterEach, expect, it, vi } from "vitest";
 import { buildToolDisplayModel } from "@zui/lib/toolDisplay.js";
 import {
-  ToolCallRendererProvider,
   type ToolCallRendererContribution,
+  ToolCallRendererProvider,
   useToolCallRendererContributions,
 } from "@zui/ToolCallBlocks/contributedRenderers.js";
 import { ChangesGroupToolCallBlock } from "@zui/ToolCallBlocks/renderers/changes-group.js";
@@ -15,13 +13,12 @@ import { FallbackToolCallBlock } from "@zui/ToolCallBlocks/renderers/fallback.js
 import { ReadToolCallBlock } from "@zui/ToolCallBlocks/renderers/read.js";
 import { resolveToolCallRenderer } from "@zui/ToolCallBlocks/resolveRenderer.js";
 import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
+import type { ComponentType } from "react";
+import { afterEach, expect, it, vi } from "vitest";
 
 afterEach(cleanup);
 
-function context(
-  kind = "read",
-  toolName = "Read",
-): ToolCallBlockRenderContext {
+function context(kind = "read", toolName = "Read"): ToolCallBlockRenderContext {
   const toolCall = {
     toolId: "tool-contribution",
     kind,
@@ -42,7 +39,9 @@ function context(
   };
 }
 
-function ContributedToolCallBlock({ toolCallNode }: ToolCallBlockRenderContext) {
+function ContributedToolCallBlock({
+  toolCallNode,
+}: ToolCallBlockRenderContext) {
   return (
     <output>
       {toolCallNode.toolCall.toolId}:{String(toolCallNode.toolCall.output)}

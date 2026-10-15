@@ -108,7 +108,10 @@ describe("同目录项目候选的HTTP边界", () => {
         },
       ],
     });
-    expect(f.directoryProjects).toHaveBeenCalledExactlyOnceWith(actor, directory);
+    expect(f.directoryProjects).toHaveBeenCalledExactlyOnceWith(
+      actor,
+      directory,
+    );
     expect(f.createProject).not.toHaveBeenCalled();
     expect(f.updateProject).not.toHaveBeenCalled();
   });
@@ -145,9 +148,14 @@ describe("同目录项目候选的HTTP边界", () => {
     "无效查询 %s 返回可读400，不读取目录归属",
     async (query) => {
       const f = await fixture();
-      const response = await f.app.inject({ method: "GET", url: `${url}${query}` });
+      const response = await f.app.inject({
+        method: "GET",
+        url: `${url}${query}`,
+      });
       expect(response.statusCode).toBe(400);
-      expect(response.json()).toEqual({ message: "目录参数无效，请重新选择文件夹。" });
+      expect(response.json()).toEqual({
+        message: "目录参数无效，请重新选择文件夹。",
+      });
       expect(f.directoryProjects).not.toHaveBeenCalled();
     },
   );
@@ -156,25 +164,42 @@ describe("同目录项目候选的HTTP边界", () => {
     {
       status: 400,
       code: "invalid_work_dir",
-      error: new ProjectServiceError("invalid_work_dir", "目录不可用，请重新选择。", 400),
+      error: new ProjectServiceError(
+        "invalid_work_dir",
+        "目录不可用，请重新选择。",
+        400,
+      ),
     },
     {
       status: 503,
       code: "project_query_failed",
-      error: new ProjectServiceError("project_query_failed", "项目暂不可读，请稍后重试。", 503),
+      error: new ProjectServiceError(
+        "project_query_failed",
+        "项目暂不可读，请稍后重试。",
+        503,
+      ),
     },
-    { status: 403, code: "instance_forbidden", error: new LocalInstanceError() },
-  ])("服务拒绝$status保留状态、错误码与原因", async ({ status, code, error }) => {
-    const f = await fixture({ error });
-    const response = await f.app.inject({
-      method: "GET",
-      url: `${url}?path=${encodeURIComponent(directory)}`,
-    });
-    expect(response.statusCode).toBe(status);
-    expect(response.json()).toEqual({ error: { code, message: error.message } });
-    expect(f.createProject).not.toHaveBeenCalled();
-    expect(f.updateProject).not.toHaveBeenCalled();
-  });
+    {
+      status: 403,
+      code: "instance_forbidden",
+      error: new LocalInstanceError(),
+    },
+  ])(
+    "服务拒绝$status保留状态、错误码与原因",
+    async ({ status, code, error }) => {
+      const f = await fixture({ error });
+      const response = await f.app.inject({
+        method: "GET",
+        url: `${url}?path=${encodeURIComponent(directory)}`,
+      });
+      expect(response.statusCode).toBe(status);
+      expect(response.json()).toEqual({
+        error: { code, message: error.message },
+      });
+      expect(f.createProject).not.toHaveBeenCalled();
+      expect(f.updateProject).not.toHaveBeenCalled();
+    },
+  );
 
   it("未知服务异常返回查询失败，不暴露内部异常文字或伪造空列表", async () => {
     const f = await fixture({ error: new Error("private database failure") });
@@ -184,7 +209,10 @@ describe("同目录项目候选的HTTP边界", () => {
     });
     expect(response.statusCode).toBe(500);
     expect(response.json()).toEqual({
-      error: { code: "project_query_failed", message: "Unable to load projects." },
+      error: {
+        code: "project_query_failed",
+        message: "Unable to load projects.",
+      },
     });
   });
 });

@@ -144,7 +144,9 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
           apiKey: "test-only",
           baseUrl: `${baseUrl}/v1`,
           protocol: "openai-compatible",
-          models: [{ id: "gpt-image-1", name: "图片模型", capability: "image" }],
+          models: [
+            { id: "gpt-image-1", name: "图片模型", capability: "image" },
+          ],
         });
         const job = await jobs.createJob(db.actor, {
           requestId: randomUUID(),

@@ -11584,6 +11584,7 @@
                   "asset_not_found",
                   "job_not_found",
                   "job_create_failed",
+                  "job_request_conflict",
                   "job_query_failed",
                   "job_cancel_failed",
                   "skill_not_found",
@@ -14760,6 +14761,7 @@
                       "asset_not_found",
                       "job_not_found",
                       "job_create_failed",
+                      "job_request_conflict",
                       "job_query_failed",
                       "job_cancel_failed",
                       "skill_not_found",
@@ -17767,8 +17769,49 @@
                   "anyOf": [
                     {
                       "type": "object",
-                      "propertyNames": {
-                        "type": "string"
+                      "properties": {
+                        "outputs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "asset_id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "object_path": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "signed_url": {
+                                "type": "string"
+                              },
+                              "mime_type": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "width": {
+                                "type": "number"
+                              },
+                              "height": {
+                                "type": "number"
+                              },
+                              "duration_seconds": {
+                                "type": "number"
+                              },
+                              "element_id": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "asset_id",
+                              "object_path",
+                              "signed_url",
+                              "mime_type"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
                       },
                       "additionalProperties": {}
                     },
@@ -18101,8 +18144,49 @@
                 "anyOf": [
                   {
                     "type": "object",
-                    "propertyNames": {
-                      "type": "string"
+                    "properties": {
+                      "outputs": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "asset_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "object_path": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "signed_url": {
+                              "type": "string"
+                            },
+                            "mime_type": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "width": {
+                              "type": "number"
+                            },
+                            "height": {
+                              "type": "number"
+                            },
+                            "duration_seconds": {
+                              "type": "number"
+                            },
+                            "element_id": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "asset_id",
+                            "object_path",
+                            "signed_url",
+                            "mime_type"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
                     },
                     "additionalProperties": {}
                   },

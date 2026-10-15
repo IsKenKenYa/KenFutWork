@@ -21,11 +21,11 @@ import type {
   JobExecutionWrite,
   JobRetry,
 } from "./job-progress.js";
-import { readJobCancellation } from "./job-progress.js";
 import {
   type BackgroundJobRecord,
   type JobRepository,
   JobRequestConflictError,
+  type NewJobInput,
 } from "./repository.js";
 
 // Queue name mapping
@@ -59,6 +59,7 @@ export class JobServiceError extends Error {
 export type CreateJobInput = {
   requestId?: string;
   requestIndex?: number;
+  runId?: string;
   /** Only the authenticated HTTP consumer sets this; never a request/tool schema field. */
   interactiveRequest?: true;
   expectedScopeGeneration?: number;
@@ -88,7 +89,6 @@ export type JobService = {
     seconds: number,
     token: string,
   ): Promise<void>;
-
   retryJob(jobId: string, input: JobRetry, token: string): Promise<void>;
   markUncertain(jobId: string, message: string, token: string): Promise<void>;
   saveExecution(
@@ -113,6 +113,11 @@ export type JobService = {
   renewLease(jobId: string, token: string, seconds: number): Promise<boolean>;
   releaseLease(jobId: string, token: string): Promise<void>;
   createJob(actor: LocalActor, input: CreateJobInput): Promise<BackgroundJob>;
+  createJobs(
+    actor: LocalActor,
+    input: CreateJobInput & { requestId: string },
+    outputCounts: readonly number[],
+  ): Promise<BackgroundJob[]>;
   getJob(actor: LocalActor, jobId: string): Promise<BackgroundJob>;
   listJobs(
     actor: LocalActor,
@@ -256,6 +261,169 @@ export function createJobService(options: {
     return workspace.instanceId;
   }
 
+  async function prepareRequest(
+    actor: LocalActor,
+    input: CreateJobInput,
+    grouped: boolean,
+  ) {
+    if (
+      "_generation_execution" in input.payload ||
+      "_generation_cancel" in input.payload
+    )
+      throw new JobServiceError(
+        "job_create_failed",
+        "生成执行记录由服务端维护。",
+        400,
+      );
+    const instanceId = await requireInstanceId(actor, "job_create_failed");
+    if (!options.generationTargets)
+      throw new JobServiceError(
+        "job_create_failed",
+        "生成文件来源服务未装配",
+        500,
+      );
+    const fileTarget = await options.generationTargets
+      .prepareOrigin({ ...input, actor })
+      .catch((error: unknown) => {
+        if (error instanceof GenerationTargetError)
+          throw new JobServiceError(
+            "job_create_failed",
+            error.message,
+            error.statusCode,
+          );
+        throw error;
+      });
+    const { requestId, requestIndex, ...request } = input;
+    const fingerprint = requestId
+      ? requestFingerprint({ ...request, fileTarget })
+      : undefined;
+    const existing = requestId
+      ? (await repository.listForInstance(instanceId, { requestId })).filter(
+          (row) =>
+            grouped ||
+            Number(row.payload?.request_index ?? 0) === (requestIndex ?? 0),
+        )
+      : [];
+    if (
+      existing.some((row) => row.payload?.request_fingerprint !== fingerprint)
+    )
+      throw new JobServiceError(
+        "job_request_conflict",
+        "同一请求标识已用于其他生成参数，请重新提交。",
+        409,
+      );
+    existing.sort(
+      (a, b) =>
+        Number(a.payload?.request_index ?? 0) -
+        Number(b.payload?.request_index ?? 0),
+    );
+    return { instanceId, fileTarget, fingerprint, existing };
+  }
+
+  async function createAcceptedJobs(
+    actor: LocalActor,
+    input: CreateJobInput,
+    outputCounts?: readonly number[],
+  ) {
+    if (
+      outputCounts &&
+      (!outputCounts.length ||
+        outputCounts.some((count) => !Number.isSafeInteger(count) || count < 1))
+    )
+      throw new JobServiceError("job_create_failed", "图片数量无效。", 400);
+    const prepared = await prepareRequest(
+      actor,
+      input,
+      outputCounts !== undefined,
+    );
+    if (prepared.existing.length) return prepared.existing.map(mapJobRow);
+    const queueName = QUEUE_MAP[input.jobType];
+    const stored = await persistJobInputs(
+      actor,
+      input.payload,
+      options.uploads,
+      input.projectId,
+    ).catch((error: unknown) => {
+      if (error instanceof JobInputError)
+        throw new JobServiceError("job_create_failed", error.message, 400);
+      throw error;
+    });
+    const inputs: NewJobInput[] = (outputCounts ?? [1]).map((count, index) => ({
+      instanceId: prepared.instanceId,
+      fileTarget: prepared.fileTarget,
+      jobType: input.jobType,
+      queueName,
+      createdByClientId: actor.accessClientId,
+      ...(input.canvasId ? { canvasId: input.canvasId } : {}),
+      ...(input.projectId ? { projectId: input.projectId } : {}),
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      ...(input.threadId ? { threadId: input.threadId } : {}),
+      payload: {
+        ...stored.payload,
+        ...(outputCounts
+          ? { count, requested_count: input.payload.count }
+          : {}),
+        _generation_execution: { phase: "ready" },
+        ...(input.requestId
+          ? {
+              request_id: input.requestId,
+              request_index: outputCounts ? index : (input.requestIndex ?? 0),
+              request_fingerprint: prepared.fingerprint,
+            }
+          : {}),
+      },
+    }));
+    const first = inputs[0];
+    if (!first)
+      throw new JobServiceError("job_create_failed", "生成任务组为空。", 400);
+    const rows = await (outputCounts
+      ? repository.insertMany(inputs)
+      : repository.insert(first).then((row) => (row ? [row] : []))
+    ).catch(async (error: unknown) => {
+      if (
+        error instanceof JobRequestConflictError ||
+        error instanceof GenerationTargetError
+      ) {
+        await stored.discard();
+        throw new JobServiceError(
+          error instanceof JobRequestConflictError
+            ? "job_request_conflict"
+            : "job_create_failed",
+          error.message,
+          error instanceof JobRequestConflictError ? 409 : error.statusCode,
+        );
+      }
+      // 事务回执不明时保留可能已经被持久Job引用的素材。
+      throw new JobServiceError(
+        "job_create_failed",
+        "生成任务保存失败，请重试原请求。",
+        500,
+      );
+    });
+    if (!rows.length)
+      throw new JobServiceError("job_create_failed", "生成任务保存失败。", 500);
+    if (rows[0]?.requestReplay) {
+      await stored.discard();
+      return rows.map(mapJobRow);
+    }
+    await Promise.all(
+      rows.map(async (job) => {
+        try {
+          await queue.send(queueName, {
+            job_id: job.id,
+            job_type: input.jobType,
+            instance_id: prepared.instanceId,
+            ...(input.canvasId ? { canvas_id: input.canvasId } : {}),
+            ...(input.sessionId ? { session_id: input.sessionId } : {}),
+          });
+        } catch (error) {
+          console.error("[job-service] initial wakeup failed:", error);
+        }
+      }),
+    );
+    return rows.map(mapJobRow);
+  }
+
   return {
     async beginSubmission(jobId, revision, token) {
       const attemptId = randomUUID();
@@ -376,143 +544,18 @@ export function createJobService(options: {
       await repository.releaseLease(jobId, token);
     },
     async createJob(actor, input) {
-      if (
-        "_generation_execution" in input.payload ||
-        "_generation_cancel" in input.payload
-      )
+      const rows = await createAcceptedJobs(actor, input);
+      const job = rows[0];
+      if (!job)
         throw new JobServiceError(
           "job_create_failed",
-          "生成执行记录由服务端维护。",
-          400,
-        );
-      // 新请求在HTTP准入处认领；在途Run提交的生成工作仍须正常完成。
-      const instanceId = await requireInstanceId(actor, "job_create_failed");
-      const queueName = QUEUE_MAP[input.jobType];
-      if (!options.generationTargets)
-        throw new JobServiceError(
-          "job_create_failed",
-          "生成文件来源服务未装配",
+          "生成任务保存失败。",
           500,
         );
-      const fileTarget = await options.generationTargets
-        .prepareOrigin({
-          actor,
-          ...input,
-        })
-        .catch((error: unknown) => {
-          if (error instanceof GenerationTargetError)
-            throw new JobServiceError(
-              "job_create_failed",
-              error.message,
-              error.statusCode,
-            );
-          throw error;
-        });
-
-      const { requestId, requestIndex, ...request } = input;
-      const fingerprint = requestId
-        ? requestFingerprint({ ...request, fileTarget })
-        : undefined;
-      if (requestId) {
-        const existing = (
-          await repository.listForInstance(instanceId, { requestId })
-        ).find(
-          (row) =>
-            Number(row.payload?.request_index ?? 0) === (requestIndex ?? 0),
-        );
-        if (existing) {
-          if (existing.payload?.request_fingerprint !== fingerprint)
-            throw new JobServiceError(
-              "job_request_conflict",
-              "同一请求标识已用于其他生成参数，请重新提交。",
-              409,
-            );
-          return mapJobRow(existing);
-        }
-      }
-      const storedInputs = await persistJobInputs(
-        actor,
-        input.payload,
-        options.uploads,
-        input.projectId,
-      ).catch((error: unknown) => {
-        if (error instanceof JobInputError)
-          throw new JobServiceError("job_create_failed", error.message, 400);
-        throw error;
-      });
-      const job = await repository
-        .insert({
-          ...(input.canvasId ? { canvasId: input.canvasId } : {}),
-          fileTarget,
-          jobType: input.jobType,
-          payload: requestId
-            ? {
-                ...storedInputs.payload,
-                _generation_execution: { phase: "ready" },
-                request_id: requestId,
-                request_index: requestIndex ?? 0,
-                request_fingerprint: fingerprint,
-              }
-            : {
-                ...storedInputs.payload,
-                _generation_execution: { phase: "ready" },
-              },
-          ...(input.projectId ? { projectId: input.projectId } : {}),
-          queueName,
-          ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-          ...(input.threadId ? { threadId: input.threadId } : {}),
-          createdByClientId: actor.accessClientId,
-          instanceId,
-        })
-        .catch(async (error: unknown) => {
-          if (error instanceof JobRequestConflictError) {
-            await storedInputs.discard();
-            throw new JobServiceError(
-              "job_request_conflict",
-              error.message,
-              409,
-            );
-          }
-          if (error instanceof GenerationTargetError) {
-            await storedInputs.discard();
-            throw new JobServiceError(
-              "job_create_failed",
-              error.message,
-              error.statusCode,
-            );
-          }
-          // 回执不明时保留可能已被持久Job引用的输入，不能先删除字节。
-          return null;
-        });
-
-      if (!job) {
-        throw new JobServiceError(
-          "job_create_failed",
-          "Failed to create job record.",
-          500,
-        );
-      }
-
-      if (job.requestReplay) {
-        await storedInputs.discard();
-        return mapJobRow(job);
-      }
-
-      // Job已经持久受理。队列故障保留回执，由启动/周期扫描补投。
-      try {
-        await queue.send(queueName, {
-          job_id: job.id,
-          job_type: input.jobType,
-          instance_id: instanceId,
-          ...(input.canvasId ? { canvas_id: input.canvasId } : {}),
-          ...(input.sessionId ? { session_id: input.sessionId } : {}),
-        });
-      } catch (error) {
-        console.error("[job-service] initial wakeup failed:", error);
-      }
-
-      return mapJobRow(job);
+      return job;
     },
+    createJobs: (actor, input, outputCounts) =>
+      createAcceptedJobs(actor, input, outputCounts),
 
     async getJob(actor, jobId) {
       const instanceId = await requireInstanceId(actor, "job_query_failed");

@@ -102,6 +102,7 @@ import {
   flowProjectFileVersionSchema,
   generateImageRequestSchema,
   generateVideoRequestSchema,
+  generationSubmissionSchema,
   healthResponseSchema,
   instanceDataLocationPrepareRequestSchema,
   instanceDataLocationPrepareResponseSchema,
@@ -1523,11 +1524,12 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     path: "/api/agent/generate-image",
     tag: "generate",
     auth: "local",
-    successStatus: 200,
+    successStatus: 202,
     requestSchema: generateImageRequestSchema,
-    summary: "同步生成图片并入库",
+    responseSchema: generationSubmissionSchema,
+    summary: "受理图片生成任务",
     description:
-      "以已授权本机身份调用指定BYOK供应商实例和模型同步生成图片，支持参考图、质量与输出格式，下载产物并登记素材，返回签名URL、assetId、MIME与尺寸。缺少providerInstanceId或model返回400；维护期间返回503；上游或适配器失败返回502。",
+      "核对本机接入、供应商与冻结画布目标，创建共享图片Job并立即返回202及request_id/jobs。支持参考图、质量和格式；可用requestId幂等受理并通过GET /api/jobs?request_id查询恢复。成果由worker保存和发布。",
   },
   {
     method: "post",
@@ -1536,9 +1538,10 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     auth: "local",
     successStatus: 202,
     requestSchema: generateVideoRequestSchema,
+    responseSchema: generationSubmissionSchema,
     summary: "受理视频生成任务",
     description:
-      "核对本机接入及指定BYOK供应商实例、模型后创建video_generation后台任务，由worker异步执行，进度经GET /api/jobs/{jobId}轮询。支持参考图、参考视频、原生分辨率及音频开关，可传requestId幂等受理。成功202返回job_id、status和prompt；任务服务未配置时返回503。",
+      "核对本机接入及指定BYOK供应商实例、模型后创建video_generation后台任务，由worker异步执行，进度经GET /api/jobs/{jobId}轮询。支持参考图、参考视频、原生分辨率及音频开关，可传requestId幂等受理。成功202返回request_id及jobs列表；任务服务未配置时返回503。",
   },
   // ---- health.ts（健康检查；免鉴权）----
   {
@@ -1621,11 +1624,15 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     querySchema: z.object({
       status: z.string().optional().describe("按任务状态过滤（可选）"),
       job_type: z.string().optional().describe("按任务类型过滤（可选）"),
+      request_id: z
+        .string()
+        .optional()
+        .describe("按持久提交请求标识查询全部操作"),
     }),
     responseSchema: jobListResponseSchema,
     summary: "列出当前本地实例任务",
     description:
-      "返回当前本地实例任务列表，支持 status 与 job_type 两个可选查询参数过滤。",
+      "返回当前本地实例任务列表，支持status、job_type和request_id过滤；指定请求标识时返回该请求全部操作，供画布重开后恢复。",
   },
   {
     method: "post",

@@ -97,7 +97,10 @@ export async function resolveJobMediaInputs(
       if (!uploads)
         throw new Error("参考素材读取服务未接通，请检查工作节点配置。");
       const asset = await uploads.readAsset(
-        { instanceId: job.instance_id, accessClientId: job.created_by_client_id },
+        {
+          instanceId: job.instance_id,
+          accessClientId: job.created_by_client_id,
+        },
         source.slice("asset://".length),
       );
       return `data:${asset.mimeType};base64,${Buffer.from(asset.bytes).toString("base64")}`;

@@ -1,37 +1,33 @@
 "use client";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type {
-  CanvasContent,
-  ImageArtifact,
-  VideoArtifact,
-} from "@kenfutwork/shared";
+import type { CanvasContent } from "@kenfutwork/shared";
 import { PanelsTopLeft } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { PluginPanelButtons } from "@/lib/plugin-panels";
 import { BrandKitModal } from "../../components/brand-kit-modal";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
-import type { CanvasSelectedElement } from "../../components/canvas-editor";
-import { CanvasEditor } from "../../components/canvas-editor";
+import {
+  CanvasEditor,
+  type CanvasSelectedElement,
+} from "../../components/canvas-editor";
 import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
-import { CanvasFilesPanel } from "../../components/canvas-files-panel";
-import type { CanvasImageItem } from "../../components/canvas-image-picker";
-import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
+import { CanvasInspector } from "../../components/canvas-inspector";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
 import { CanvasToolMenu } from "../../components/canvas-tool-menu";
-import { ChatSidebar, type SidePanelTab } from "../../components/chat-sidebar";
 import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";
 import { installHostWorkspaceActivity } from "../../components/workbench/zcode/host/workspaceActivity";
-import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
 import { useWebSocket } from "../../hooks/use-websocket";
 import {
-  insertImageOnCanvas,
-  insertVideoOnCanvas,
-} from "../../lib/canvas-elements";
+  canvasWorkbenchUrl,
+  createCanvasRefreshCoordinator,
+  installCanvasEditorBridge,
+} from "../../lib/canvas-editor-bridge";
 import {
   ApiAccessError,
+  ApiApplicationError,
   fetchCanvas,
   fetchProject,
   restoreCanvasAssets,
@@ -41,110 +37,66 @@ function CanvasPageContent() {
   useEffect(() => installHostWorkspaceActivity(window.parent), []);
   const searchParams = useSearchParams();
   const canvasId = searchParams.get("id");
-  const initialSessionId = searchParams.get("session") ?? undefined;
-  // Capture prompt once — router.replace will strip it from URL, but the
-  // value must survive for the auto-send effect in ChatSidebar.
-  const [initialPrompt] = useState(
-    () => searchParams.get("prompt") ?? undefined,
-  );
+  const editorMode = searchParams.get("editor") === "1";
   const router = useRouter();
-
   const [canvasData, setCanvasData] = useState<{
     id: string;
     name: string;
     projectId: string;
     revision: string;
-    content: {
-      elements: Record<string, unknown>[];
-      appState: Record<string, unknown>;
-      files: Record<string, Record<string, unknown>>;
-    };
+    content: CanvasContent;
   } | null>(null);
   const [remoteSnapshot, setRemoteSnapshot] = useState<{
     revision: string;
     content: CanvasContent;
   } | null>(null);
   const [canvasRevision, setCanvasRevision] = useState<string | null>(null);
-  const [prepareCanvasAssetOperation, setPrepareCanvasAssetOperation] =
-    useState<() => Promise<string | null>>(() => async () => null);
+  const canvasRevisionRef = useRef(canvasRevision);
+  const prepareCanvasAssetOperationRef = useRef<{
+    canvasId: string;
+    prepare: () => Promise<string | null>;
+  } | null>(null);
+  const prepareCanvasAssetOperation = useCallback(async () => {
+    const registered = prepareCanvasAssetOperationRef.current;
+    if (!registered || activeCanvasIdRef.current !== registered.canvasId)
+      return null;
+    const revision = await registered.prepare();
+    return activeCanvasIdRef.current === registered.canvasId ? revision : null;
+  }, []);
   const registerCanvasAssetOperation = useCallback(
-    (prepare: () => Promise<string | null>) =>
-      setPrepareCanvasAssetOperation(() => prepare),
-    [],
+    (prepare: () => Promise<string | null>) => {
+      if (canvasData)
+        prepareCanvasAssetOperationRef.current = {
+          canvasId: canvasData.id,
+          prepare,
+        };
+    },
+    [canvasData],
   );
   const [error, setError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
-  // Default chat open on desktop, closed on mobile/tablet to avoid blocking canvas.
-  // 嵌入态（工作台内嵌面）传 ?panel=chat 强制打开：iframe 通常窄于 1024，
-  // 仅按宽度阈值会把右侧面板默认收起，丢失原工作台的默认观感。
-  const [chatOpen, setChatOpen] = useState(() => {
-    if (typeof window === "undefined") return true;
-    if (searchParams.get("panel") === "chat") return true;
-    return window.innerWidth >= 1024;
-  });
-  /**
-   * 右侧面板的标签：会话 / 图层 / 文件。
-   *
-   * 图层与生成文件原先各自是画布上的一层浮层（`fixed left-0` + 自己的标题栏），
-   * 与右侧助手面板三足鼎立：同一块信息分散在三处、画布还常被浮层压住。现在只有
-   * 一个右侧面板，三者是它的三个标签。
-   */
-  const [panelTab, setPanelTab] = useState<SidePanelTab>("chat");
-  /** 当前画布会话：由聊天侧栏回调更新（URL 只作初始值），供生成类工具渲染自定义头占位符。 */
-  const [activeSessionId, setActiveSessionId] = useState<string | undefined>(
-    initialSessionId,
-  );
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
-  /** 品牌套件管理浮窗（90%×85%）——此前是导航到 /brand-kit，会把整页换掉。 */
   const [brandKitOpen, setBrandKitOpen] = useState(false);
-  const [projectName, setProjectName] = useState("未命名画布");
-  const [selectedCanvasElements, setSelectedCanvasElements] = useState<
-    CanvasSelectedElement[]
-  >([]);
-
-  const excalidrawApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const [projectName, setProjectName] = useState("未命名项目");
+  const selectedCanvasElementsRef = useRef<CanvasSelectedElement[]>([]);
+  const bridgeRef = useRef<ReturnType<typeof installCanvasEditorBridge> | null>(
+    null,
+  );
   const remoteSyncWaitersRef = useRef(new Map<string, () => void>());
+  const activeCanvasIdRef = useRef(canvasId);
+  activeCanvasIdRef.current = canvasData?.id === canvasId ? canvasId : null;
   const [excalidrawApi, setExcalidrawApi] =
     useState<ExcalidrawImperativeAPI | null>(null);
-
-  const routerRef = useRef(router);
-  routerRef.current = router;
-
-  // Stable callbacks for panel toggles to prevent re-renders of child components
-  const handleOpenChat = useCallback(() => {
-    setPanelTab("chat");
-    setChatOpen(true);
-  }, []);
-  const handleToggleChat = useCallback(() => setChatOpen((v) => !v), []);
-
   const accessToken = null;
-  const accessTokenRef = useRef(accessToken);
-  accessTokenRef.current = accessToken;
+  // 画布截图 RPC 仍由真实编辑器提供；会话运行与消息由共享宿主持有。
+  const ws = useWebSocket({ documentScope: canvasId ?? undefined });
 
-  const ws = useWebSocket();
-
-  const handleApiReady = useCallback((api: ExcalidrawImperativeAPI) => {
-    excalidrawApiRef.current = api;
-    setExcalidrawApi(api);
+  const handleRevisionChanged = useCallback((revision: string) => {
+    canvasRevisionRef.current = revision;
+    setCanvasRevision(revision);
   }, []);
-
-  const handleImageGenerated = useCallback((artifact: ImageArtifact) => {
-    const api = excalidrawApiRef.current;
-    if (!api) return;
-    insertImageOnCanvas(api, artifact).catch((err) => {
-      console.warn("Failed to insert image on canvas:", err);
-    });
-  }, []);
-
-  const handleVideoGenerated = useCallback((artifact: VideoArtifact) => {
-    const api = excalidrawApiRef.current;
-    if (!api) return;
-    insertVideoOnCanvas(api, artifact).catch((err) => {
-      console.warn("Failed to insert video on canvas:", err);
-    });
-  }, []);
-
-  // Must be defined BEFORE useJobFallbackPolling which references it
   const handleRemoteSnapshotHandled = useCallback((revision: string) => {
     setRemoteSnapshot((snapshot) =>
       snapshot?.revision === revision ? null : snapshot,
@@ -152,156 +104,260 @@ function CanvasPageContent() {
     remoteSyncWaitersRef.current.get(revision)?.();
     remoteSyncWaitersRef.current.delete(revision);
   }, []);
-
-  const handleCanvasSync = useCallback(async () => {
-    const token = accessTokenRef.current;
-    if (!canvasData) return;
+  const markCanvasDeleted = useCallback((id: string, projectId: string) => {
+    if (activeCanvasIdRef.current !== id) return;
+    bridgeRef.current?.publishDocumentUpdated({
+      type: "canvas.document.updated",
+      canvasId: id,
+      projectId,
+      deleted: true,
+    });
+    activeCanvasIdRef.current = null;
+    for (const resolve of remoteSyncWaitersRef.current.values()) resolve();
+    remoteSyncWaitersRef.current.clear();
+    setRemoteSnapshot(null);
+    setCanvasData(null);
+    setError("画布已删除，请选择其他画布");
+  }, []);
+  const refreshCanvas = useCallback(async () => {
+    if (!canvasData || activeCanvasIdRef.current !== canvasData.id) return;
+    let canvas: Awaited<ReturnType<typeof fetchCanvas>>["canvas"];
     try {
-      const { canvas } = await fetchCanvas(token, canvasData.id);
-      if (canvas.revision === canvasRevision) return;
-      await new Promise<void>((resolve) => {
-        remoteSyncWaitersRef.current.set(canvas.revision, resolve);
-        setRemoteSnapshot({
-          revision: canvas.revision,
+      ({ canvas } = await fetchCanvas(accessToken, canvasData.id));
+    } catch (error) {
+      if (
+        error instanceof ApiApplicationError &&
+        error.code === "canvas_not_found"
+      ) {
+        markCanvasDeleted(canvasData.id, canvasData.projectId);
+        return;
+      }
+      throw error;
+    }
+    if (activeCanvasIdRef.current !== canvasData.id) return;
+    if (canvas.projectId !== canvasData.projectId)
+      throw new Error("画布所属项目已变更，请重新打开");
+    if (canvas.revision === canvasRevisionRef.current) return;
+    await new Promise<void>((resolve) => {
+      remoteSyncWaitersRef.current.set(canvas.revision, resolve);
+      setRemoteSnapshot({
+        revision: canvas.revision,
+        content: {
+          elements: canvas.content.elements ?? [],
+          appState: canvas.content.appState ?? {},
+          files: canvas.content.files ?? {},
+        },
+      });
+    });
+  }, [canvasData, markCanvasDeleted]);
+  const refreshCanvasRef = useRef(refreshCanvas);
+  refreshCanvasRef.current = refreshCanvas;
+  const refreshCoordinatorRef = useRef<ReturnType<
+    typeof createCanvasRefreshCoordinator
+  > | null>(null);
+  useEffect(() => {
+    activeCanvasIdRef.current = canvasId;
+    const coordinator = createCanvasRefreshCoordinator(() => {
+      if (activeCanvasIdRef.current !== canvasId) return Promise.resolve();
+      return refreshCanvasRef.current();
+    });
+    refreshCoordinatorRef.current = coordinator;
+    return () => {
+      coordinator.dispose();
+      if (refreshCoordinatorRef.current === coordinator)
+        refreshCoordinatorRef.current = null;
+      if (activeCanvasIdRef.current === canvasId)
+        activeCanvasIdRef.current = null;
+      for (const resolve of remoteSyncWaitersRef.current.values()) resolve();
+      remoteSyncWaitersRef.current.clear();
+    };
+  }, [canvasId]);
+  const handleCanvasSync = useCallback(async () => {
+    setSyncError(null);
+    try {
+      await refreshCoordinatorRef.current?.refresh();
+    } catch (err) {
+      setSyncError("画布同步失败，请重试");
+      throw err;
+    }
+  }, []);
+  useEffect(() => {
+    if (!editorMode || !canvasData || !ws.connected) return;
+    const targetId = canvasData.id;
+    let active = true;
+    const refresh = () => {
+      if (active && activeCanvasIdRef.current === targetId)
+        void handleCanvasSync().catch(() => {});
+    };
+    // 先监听再恢复订阅；ACK之后用文件事实补放，不接纳任何旧Task运行或媒体插入。
+    const release = ws.onEvent((event) => {
+      if (event.type === "canvas.sync") refresh();
+    });
+    const releaseDocuments = ws.onDocumentUpdated((message) => {
+      if (
+        !active ||
+        activeCanvasIdRef.current !== targetId ||
+        message.canvasId !== targetId ||
+        message.projectId !== canvasData.projectId
+      )
+        return;
+      if (message.deleted) {
+        markCanvasDeleted(targetId, canvasData.projectId);
+      } else {
+        bridgeRef.current?.publishDocumentUpdated(message);
+        refresh();
+      }
+    });
+    ws.resumeCanvas(targetId, (ack) => {
+      if (!active || activeCanvasIdRef.current !== targetId) return;
+      if (
+        ack.payload.status !== "rejected" &&
+        ack.payload.canvasId === targetId
+      )
+        refresh();
+      else setSyncError("画布订阅失败，请重新打开");
+    });
+    return () => {
+      active = false;
+      release();
+      releaseDocuments();
+    };
+  }, [
+    canvasData,
+    editorMode,
+    handleCanvasSync,
+    markCanvasDeleted,
+    ws.connected,
+    ws.onEvent,
+    ws.onDocumentUpdated,
+    ws.resumeCanvas,
+  ]);
+  const handleRestoreCanvasAssets = useCallback(async () => {
+    if (!canvasData) throw new Error("画布尚未加载，请稍后重试");
+    const revision = await prepareCanvasAssetOperation();
+    if (!revision) throw new Error("画布保存失败，未恢复素材");
+    await restoreCanvasAssets(accessToken, canvasData.id, revision);
+    await handleCanvasSync();
+  }, [canvasData, handleCanvasSync, prepareCanvasAssetOperation]);
+
+  useEffect(() => {
+    if (!editorMode || !canvasData) return;
+    const bridge = installCanvasEditorBridge({
+      target: { canvasId: canvasData.id, projectId: canvasData.projectId },
+      parent: window.parent,
+      origin: window.location.origin,
+      events: window,
+      onRefresh: () => {
+        void handleCanvasSync().catch(() => {});
+      },
+      onSessionChange: setActiveTaskId,
+      onPrepare: prepareCanvasAssetOperation,
+    });
+    bridgeRef.current = bridge;
+    return () => {
+      bridge.dispose();
+      if (bridgeRef.current === bridge) bridgeRef.current = null;
+    };
+  }, [canvasData, editorMode, handleCanvasSync, prepareCanvasAssetOperation]);
+  useEffect(() => {
+    bridgeRef.current?.publishContext(
+      selectedCanvasElementsRef.current,
+      brandKitId,
+    );
+  }, [brandKitId, canvasData, prepareCanvasAssetOperation]);
+  const handleSelectionChange = useCallback(
+    (elements: CanvasSelectedElement[]) => {
+      selectedCanvasElementsRef.current = elements;
+      bridgeRef.current?.publishContext(elements, brandKitId);
+    },
+    [brandKitId],
+  );
+  const handleOpenSession = useCallback(
+    () => bridgeRef.current?.focusSession(),
+    [],
+  );
+  const handleNewProject = useCallback(
+    () => bridgeRef.current?.requestProject(),
+    [],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!canvasId) {
+      if (!editorMode) router.replace(canvasWorkbenchUrl());
+      else {
+        setError("请从项目中打开画布");
+        setPageLoading(false);
+      }
+      return;
+    }
+    setPageLoading(true);
+    setError(null);
+    setSyncError(null);
+    setCanvasData(null);
+    setActiveTaskId(null);
+    setBrandKitId(null);
+    prepareCanvasAssetOperationRef.current = null;
+    selectedCanvasElementsRef.current = [];
+    fetchCanvas(accessToken, canvasId)
+      .then(async ({ canvas }) => {
+        if (cancelled) return;
+        if (!editorMode) {
+          router.replace(
+            canvasWorkbenchUrl({
+              canvasId: canvas.id,
+              projectId: canvas.projectId,
+            }),
+          );
+          return;
+        }
+        setCanvasData({
+          ...canvas,
           content: {
             elements: canvas.content.elements ?? [],
             appState: canvas.content.appState ?? {},
             files: canvas.content.files ?? {},
           },
         });
-      });
-    } catch (err) {
-      console.warn("Failed to sync canvas:", err);
-    }
-  }, [canvasData, canvasRevision]);
-
-  const handleRestoreCanvasAssets = useCallback(async () => {
-    if (!canvasData) throw new Error("当前画布尚未加载。");
-    const revision = await prepareCanvasAssetOperation();
-    if (!revision) throw new Error("画布保存失败，未恢复素材。");
-    await restoreCanvasAssets(accessTokenRef.current, canvasData.id, revision);
-    await handleCanvasSync();
-  }, [canvasData, handleCanvasSync, prepareCanvasAssetOperation]);
-
-  // Fallback polling for timed-out generation jobs.
-  // When the agent's tool times out but the worker eventually succeeds,
-  // the backend will have already inserted the element into the canvas.
-  // This hook detects completion and triggers a canvas re-fetch.
-  const { checkForTimedOutJobs } = useJobFallbackPolling({
-    accessTokenRef,
-    onJobSucceeded: useCallback(
-      (_jobId: string, _jobType: string) => {
-        // Element was inserted by backend — just refresh the canvas
-        handleCanvasSync();
-      },
-      [handleCanvasSync],
-    ),
-  });
-
-  const handleSessionChange = useCallback(
-    (sessionId: string) => {
-      if (!canvasId) return;
-      // 会话 id 同时留在状态里：生成类工具（图片/视频）要用它渲染实例自定义头的
-      // {{sessionId}} 占位符（§4.8）——只改 URL 的话面板取不到（此前正是如此）。
-      setActiveSessionId(sessionId);
-      // Update URL: set session param, remove prompt param to prevent re-send on refresh
-      routerRef.current.replace(`/canvas?id=${canvasId}&session=${sessionId}`);
-    },
-    [canvasId],
-  );
-
-  const handleRequestCanvasImages = useCallback((): CanvasImageItem[] => {
-    const api = excalidrawApiRef.current;
-    if (!api) return [];
-    const files = api.getFiles() ?? {};
-    const images: CanvasImageItem[] = [];
-    let idx = 0;
-    for (const el of api.getSceneElements() ?? []) {
-      // 只有带 fileId 的 image 元素才是「画布图片」：fileId 是取 files 的键
-      if (el.type !== "image" || el.isDeleted || !el.fileId) continue;
-      idx++;
-      const file = files[el.fileId];
-      const dataURL = file?.dataURL ?? "";
-      const title =
-        el.customData?.title || el.customData?.label || `Image ${idx}`;
-      images.push({
-        kind: "canvas-image",
-        id: el.id,
-        name: title,
-        thumbnailUrl: dataURL,
-        assetId: el.id,
-        url: dataURL,
-        mimeType: file?.mimeType ?? "image/png",
-      });
-    }
-    return images;
-  }, []);
-
-  useEffect(() => {
-    const token = accessTokenRef.current;
-    if (!canvasId) return;
-
-    setPageLoading(true);
-    fetchCanvas(token, canvasId)
-      .then((data) => {
-        const c = data.canvas;
-        setCanvasData({
-          id: c.id,
-          name: c.name,
-          projectId: c.projectId,
-          revision: c.revision,
-          content: {
-            elements: c.content.elements ?? [],
-            appState: c.content.appState ?? {},
-            files: c.content.files ?? {},
-          },
-        });
-        setCanvasRevision(c.revision);
+        handleRevisionChanged(canvas.revision);
         setPageLoading(false);
-        // Fetch project to get brand_kit_id and name
-        fetchProject(token, c.projectId)
-          .then((projectData) => {
-            setBrandKitId(projectData.project.brand_kit_id);
-            setProjectName(projectData.project.name ?? "未命名画布");
-          })
-          .catch((err) =>
-            console.warn("Failed to fetch project for brand kit:", err),
-          );
+        try {
+          const { project } = await fetchProject(accessToken, canvas.projectId);
+          if (cancelled) return;
+          setBrandKitId(project.brand_kit_id);
+          setProjectName(project.name ?? "未命名项目");
+        } catch (err) {
+          if (!cancelled)
+            console.warn("Failed to fetch project for brand kit:", err);
+        }
       })
       .catch((err) => {
-        if (err instanceof ApiAccessError) {
-          return;
-        }
-        setError("Failed to load canvas.");
+        if (cancelled) return;
+        setError(
+          err instanceof ApiAccessError
+            ? "无法打开画布，请检查本机访问权限"
+            : "画布加载失败，请重新打开",
+        );
         setPageLoading(false);
       });
-  }, [canvasId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [canvasId, editorMode, handleRevisionChanged, router]);
 
-  if (!canvasId) {
+  if (error)
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-muted-foreground">No canvas ID specified.</p>
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
       </div>
     );
-  }
-
-  if (pageLoading) {
-    return <LoadingScreen />;
-  }
-
-  if (error) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-destructive">{error}</p>
-      </div>
-    );
-  }
-
+  if (!editorMode || pageLoading) return <LoadingScreen />;
   if (!canvasData) return null;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden">
-      {/* Top-left navigation bar */}
+    <div className="relative flex h-screen w-screen overflow-hidden">
       <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5">
         <CanvasLogoMenu
           accessToken={accessToken}
@@ -309,6 +365,7 @@ function CanvasPageContent() {
           canvasId={canvasData.id}
           onCanvasSync={handleCanvasSync}
           prepareCanvas={prepareCanvasAssetOperation}
+          onNewProject={handleNewProject}
           projectName={projectName}
           excalidrawApi={excalidrawApi}
         />
@@ -321,10 +378,9 @@ function CanvasPageContent() {
           accessToken={accessToken}
           projectId={canvasData.projectId}
           currentBrandKitId={brandKitId}
-          onBrandKitChange={(kitId) => setBrandKitId(kitId)}
+          onBrandKitChange={setBrandKitId}
           onManage={() => setBrandKitOpen(true)}
         />
-        {/* 插件面板（能力 `ui`）：画布槽位 */}
         <PluginPanelButtons
           mode="design"
           accessToken={accessToken}
@@ -343,8 +399,7 @@ function CanvasPageContent() {
           )}
         />
       </div>
-      {/* Canvas always takes full width; on mobile/tablet, ChatSidebar overlays instead of side-by-side */}
-      <div className="flex-1 relative min-w-0 overflow-hidden">
+      <div className="relative min-w-0 flex-1 overflow-hidden">
         <CanvasEditor
           key={canvasData.id}
           canvasId={canvasData.id}
@@ -354,62 +409,46 @@ function CanvasPageContent() {
           initialContent={canvasData.content}
           remoteSnapshot={remoteSnapshot}
           onRemoteSnapshotHandled={handleRemoteSnapshotHandled}
-          onRevisionChanged={setCanvasRevision}
+          onRevisionChanged={handleRevisionChanged}
           onPrepareAssetOperation={registerCanvasAssetOperation}
-          onApiReady={handleApiReady}
+          onApiReady={setExcalidrawApi}
           ws={ws}
-          onSelectionChange={setSelectedCanvasElements}
+          onSelectionChange={handleSelectionChange}
           overlay={
             <CanvasEmptyHint
               excalidrawApi={excalidrawApi}
-              onOpenChat={handleOpenChat}
+              onOpenChat={handleOpenSession}
             />
           }
         />
         {excalidrawApi && (
           <CanvasToolMenu
+            canvasId={canvasData.id}
+            projectId={canvasData.projectId}
+            prepare={prepareCanvasAssetOperation}
+            refresh={refreshCanvas}
             accessToken={accessToken}
             excalidrawApi={excalidrawApi}
-            sessionId={activeSessionId}
+            sessionId={activeTaskId ?? undefined}
           />
         )}
+        <CanvasInspector
+          canvasId={canvasData.id}
+          prepareCanvasAssetOperation={prepareCanvasAssetOperation}
+          excalidrawApi={excalidrawApi}
+          accessToken={accessToken}
+          onCanvasSync={handleCanvasSync}
+          onRestoreAssets={handleRestoreCanvasAssets}
+        />
+        {syncError && (
+          <p
+            role="alert"
+            className="absolute bottom-3 left-3 z-20 rounded-md bg-card px-3 py-2 text-sm text-destructive"
+          >
+            {syncError}
+          </p>
+        )}
       </div>
-      <ChatSidebar
-        accessToken={accessToken}
-        canvasId={canvasData.id}
-        open={chatOpen}
-        onToggle={handleToggleChat}
-        onImageGenerated={handleImageGenerated}
-        onVideoGenerated={handleVideoGenerated}
-        onCanvasSync={handleCanvasSync}
-        onStreamEvent={checkForTimedOutJobs}
-        initialPrompt={initialPrompt}
-        initialSessionId={initialSessionId}
-        onSessionChange={handleSessionChange}
-        onRequestCanvasImages={handleRequestCanvasImages}
-        currentBrandKitId={brandKitId}
-        ws={ws}
-        selectedCanvasElements={selectedCanvasElements}
-        panelTab={panelTab}
-        onPanelTabChange={setPanelTab}
-        layersPanel={
-          <CanvasLayersPanel
-            excalidrawApi={excalidrawApi}
-            active={panelTab === "layers"}
-          />
-        }
-        filesPanel={
-          <CanvasFilesPanel
-            canvasId={canvasData.id}
-            prepareCanvasAssetOperation={prepareCanvasAssetOperation}
-            excalidrawApi={excalidrawApi}
-            active={panelTab === "files"}
-            accessToken={accessToken}
-            onCanvasSync={handleCanvasSync}
-            onRestoreAssets={handleRestoreCanvasAssets}
-          />
-        }
-      />
       <BrandKitModal
         open={brandKitOpen}
         onClose={() => setBrandKitOpen(false)}

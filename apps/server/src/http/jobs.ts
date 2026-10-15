@@ -177,13 +177,19 @@ export async function registerJobRoutes(
       const user = await options.localAccess.authenticate(request);
       if (!user) return sendUnauthenticated(reply);
 
-      const query = request.query as { status?: string; job_type?: string };
+      const query = request.query as {
+        status?: string;
+        job_type?: string;
+        request_id?: string;
+      };
       const filters: {
         status?: BackgroundJobStatus;
         jobType?: BackgroundJobType;
+        requestId?: string;
       } = {};
       if (query.status) filters.status = query.status as BackgroundJobStatus;
       if (query.job_type) filters.jobType = query.job_type as BackgroundJobType;
+      if (query.request_id) filters.requestId = query.request_id;
       const jobs = await options.jobService.listJobs(user, filters);
 
       return reply.code(200).send(jobListResponseSchema.parse({ jobs }));

@@ -737,7 +737,6 @@ describe("Code 宿主语音转写通道", () => {
   });
 });
 
-
 describe("Code 宿主数据面请求", () => {
   afterEach(() => setSurfaceApiBase(""));
 
@@ -778,14 +777,17 @@ describe("Code 宿主数据面请求", () => {
   ])("%s 保留服务端拒绝原因并拒绝非 JSON 错误", async (_name, request) => {
     vi.stubGlobal(
       "fetch",
-      vi.fn()
+      vi
+        .fn()
         .mockResolvedValueOnce(
           new Response(
             JSON.stringify({ error: { message: "项目已关闭，请重新打开" } }),
             { status: 409 },
           ),
         )
-        .mockResolvedValueOnce(new Response("upstream failure", { status: 502 })),
+        .mockResolvedValueOnce(
+          new Response("upstream failure", { status: 502 }),
+        ),
     );
 
     await expect(request("/api/projects/project")).rejects.toThrow(

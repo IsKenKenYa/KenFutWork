@@ -1,9 +1,9 @@
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import type { CanvasDocumentAccess } from "../features/canvas/document-access.js";
 import { createBrandKitToolDefinition } from "../features/brand-kit/brand-kit-tool.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
+import type { CanvasDocumentAccess } from "../features/canvas/document-access.js";
 import {
   createCanvasPlugin,
   createCanvasToolsPlugin,

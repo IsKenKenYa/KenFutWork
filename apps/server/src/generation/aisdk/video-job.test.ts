@@ -1,5 +1,5 @@
-import { APICallError } from "@ai-sdk/provider";
 import type { Experimental_VideoModelV4 } from "@ai-sdk/provider";
+import { APICallError } from "@ai-sdk/provider";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertOperationSerializable,
@@ -215,10 +215,18 @@ describe("createVideoJobDriver（取消两层语义）", () => {
   });
 });
 
-
 it("视频start SDK只调用一次，可重试429留给Job引擎", async () => {
-  const doStart=vi.fn().mockRejectedValue(new APICallError({message:"模拟限流",url:"https://controlled.invalid",
-    requestBodyValues:{},statusCode:429,responseHeaders:{"retry-after":"0.001"}}));
-  await expect(submitVideoJob(stubModel({doStart}),{prompt:"cat"})).rejects.toThrow();
+  const doStart = vi.fn().mockRejectedValue(
+    new APICallError({
+      message: "模拟限流",
+      url: "https://controlled.invalid",
+      requestBodyValues: {},
+      statusCode: 429,
+      responseHeaders: { "retry-after": "0.001" },
+    }),
+  );
+  await expect(
+    submitVideoJob(stubModel({ doStart }), { prompt: "cat" }),
+  ).rejects.toThrow();
   expect(doStart).toHaveBeenCalledOnce();
 });

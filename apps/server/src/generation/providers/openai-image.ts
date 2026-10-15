@@ -35,7 +35,8 @@ function imageOptions(params: ImageGenerateParams) {
           ? { width: 1536, height: 1024 }
           : { width: 1024, height: 1536 }
       : dimensions;
-  const legacyDalle = params.model === "dall-e-2" || params.model === "dall-e-3";
+  const legacyDalle =
+    params.model === "dall-e-2" || params.model === "dall-e-3";
   const outputFormat: "png" | "jpeg" | "webp" | undefined = legacyDalle
     ? undefined
     : params.outputFormat === "jpg"
@@ -47,7 +48,9 @@ function imageOptions(params: ImageGenerateParams) {
     ultra: "high",
   };
   const quality = params.quality
-    ? (gptImage ? (semanticQuality[params.quality] ?? params.quality) : params.quality)
+    ? gptImage
+      ? (semanticQuality[params.quality] ?? params.quality)
+      : params.quality
     : undefined;
   return {
     width,

@@ -1,8 +1,74 @@
-import type { GenerationFileTarget } from "@kenfutwork/shared";
+import {
+  canvasContentSchema,
+  type GenerationFileTarget,
+} from "@kenfutwork/shared";
+import {
+  CanvasFileStoreError,
+  createCanvasFileStore,
+} from "../canvas/file-store.js";
 import type { CodeUiConversationState } from "../code-ui/conversation.js";
 import { codeUiRunOutcome } from "../code-ui/run-outcome.js";
 import type { InstanceSqlClient, SqlRow } from "../persistence/types.js";
+import { validateWorkDir } from "../projects/work-dir.js";
 import { GenerationTargetError } from "./file-targets.js";
+
+type GeneratorCanvas = SqlRow & {
+  content: unknown;
+  root_directory: string | null;
+  work_dir: string | null;
+};
+
+async function assertCanvasGenerator(
+  canvas: GeneratorCanvas,
+  canvasId: string,
+  generatorId: string,
+  jobType: string | undefined,
+) {
+  let content = canvas.content;
+  const indexed =
+    (content as { storage?: unknown } | null)?.storage === "project-files";
+  if (indexed && !canvas.root_directory)
+    throw new GenerationTargetError("画布目录缺失，请重新关联项目目录");
+  if (canvas.root_directory) {
+    // 与CanvasService.claimRoot一致：只读服务端冻结根，显式项目根不可分叉。
+    if (canvas.work_dir && canvas.work_dir !== canvas.root_directory)
+      throw new GenerationTargetError("画布目录已改变，请重新关联项目目录");
+    const directory = validateWorkDir(canvas.root_directory);
+    if (!directory.ok || directory.path !== canvas.root_directory)
+      throw new GenerationTargetError("画布目录不可用，请重新关联项目目录");
+    try {
+      const snapshot = await createCanvasFileStore({
+        projectRoot: canvas.root_directory,
+      }).read(canvasId);
+      if (!snapshot && indexed)
+        throw new GenerationTargetError("画布文件缺失，请恢复后重试");
+      // 文件写入与索引标记之间若曾中断，仍按CanvasService.load优先读已存文件。
+      content = snapshot?.content ?? content;
+    } catch (error) {
+      if (error instanceof CanvasFileStoreError)
+        throw new GenerationTargetError(error.message);
+      throw error;
+    }
+  }
+  const parsed = canvasContentSchema.safeParse(content ?? {});
+  if (!parsed.success)
+    throw new GenerationTargetError("画布内容无效，请重新加载后重试");
+  const expectedType =
+    jobType === "image_generation"
+      ? "image-generator"
+      : jobType === "video_generation"
+        ? "video-generator"
+        : null;
+  const generator = parsed.data.elements.find(
+    (element) => element.id === generatorId && !element.isDeleted,
+  );
+  if (
+    !expectedType ||
+    (generator?.customData as { type?: unknown } | undefined)?.type !==
+      expectedType
+  )
+    throw new GenerationTargetError("生成器已删除或类型不匹配，请重新选择");
+}
 
 async function assertTaskOrigin(
   scoped: InstanceSqlClient,
@@ -48,8 +114,19 @@ export async function assertGenerationOriginForInsert(
     projectId?: string | undefined;
     sessionId?: string | undefined;
     canvasId?: string | undefined;
+    jobType?: string | undefined;
+    payload?: Record<string, unknown> | undefined;
   },
 ) {
+  const generatorId = association?.payload?.generator_id;
+  if (
+    generatorId !== undefined &&
+    (typeof generatorId !== "string" ||
+      !generatorId ||
+      target.kind === "standalone" ||
+      !target.canvasId)
+  )
+    throw new GenerationTargetError("生成器必须绑定当前画布，请重新选择");
   if (target.kind === "standalone") {
     if (
       association?.projectId ||
@@ -89,11 +166,23 @@ export async function assertGenerationOriginForInsert(
     }
   }
   if (target.canvasId) {
-    const canvas = await scoped.queryOne<SqlRow>(
-      `select c.id from public.canvases c join public.projects p on p.id=c.project_id where c.id=$1 and c.project_id=$2 and p.instance_id=:instance and p.archived_at is null and c.deleted_at is null and ('design'=any(p.enabled_modes) or 'flow'=any(p.enabled_modes)) for share of c`,
+    if (generatorId !== undefined)
+      await scoped.execute(
+        `select pg_advisory_xact_lock(hashtextextended('canvas-document:' || :instance || ':' || $1,0))`,
+        [target.canvasId],
+      );
+    const canvas = await scoped.queryOne<GeneratorCanvas>(
+      `select c.id,c.content,c.root_directory,p.work_dir from public.canvases c join public.projects p on p.id=c.project_id where c.id=$1 and c.project_id=$2 and p.instance_id=:instance and p.archived_at is null and c.deleted_at is null and ('design'=any(p.enabled_modes) or 'flow'=any(p.enabled_modes)) for share of c`,
       [target.canvasId, target.projectId],
     );
     if (!canvas)
       throw new GenerationTargetError("生成任务的原画布已删除或项目不一致");
+    if (typeof generatorId === "string")
+      await assertCanvasGenerator(
+        canvas,
+        target.canvasId,
+        generatorId,
+        association?.jobType,
+      );
   }
 }

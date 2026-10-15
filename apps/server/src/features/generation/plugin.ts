@@ -94,8 +94,6 @@ export function createGenerationPlugin(deps: {
       });
       void registerGenerateRoutes(ctx.app, {
         localAccess: ctx.get("localAccess"),
-        uploadService: ctx.get("uploads"),
-        usage: ctx.get("usage"),
         localInstance: ctx.get("localInstance"),
         modelProviders: ctx.get("modelProviders"),
         jobService: ctx.get("jobs"),

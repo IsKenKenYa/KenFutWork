@@ -147,7 +147,9 @@ export function createUploadService(options: {
           404,
         );
       return {
-        bytes: await blob.bucket(location.bucket).download(location.object_path),
+        bytes: await blob
+          .bucket(location.bucket)
+          .download(location.object_path),
         mimeType: location.mime_type ?? "application/octet-stream",
       };
     },

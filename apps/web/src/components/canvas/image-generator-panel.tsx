@@ -1,27 +1,32 @@
 "use client";
 
-import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
-import type {
-  BinaryFileData,
-  ExcalidrawImperativeAPI,
-} from "@excalidraw/excalidraw/types";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import type { ImageGenerationCaps } from "@kenfutwork/shared";
 import { ImageUp } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useGenerationErrorHandler } from "../../hooks/use-generation-error-handler";
 import {
-  createExcalidrawImageElement,
-  fetchAsDataURL,
-} from "../../lib/canvas-elements";
-import {
   type ImageGeneratorData,
+  type ImageGeneratorParams,
   resizeImageGeneratorElement,
   updateImageGeneratorElement,
 } from "../../lib/canvas-image-generator";
 import type { ImageModelInfo } from "../../lib/server-api";
-import { fetchImageModels, generateImageDirect } from "../../lib/server-api";
+import {
+  ApiAccessError,
+  ApiApplicationError,
+  fetchImageModels,
+  generateImageDirect,
+  getAssetUrl,
+  uploadFile,
+} from "../../lib/server-api";
+import { ModelParameterField } from "./model-parameter-field";
 
 type ImageGeneratorPanelProps = {
+  canvasId: string;
+  projectId: string;
+  prepare: () => Promise<string | null>;
   elementId: string;
   elementBounds: { x: number; y: number; width: number; height: number };
   data: ImageGeneratorData;
@@ -30,7 +35,6 @@ type ImageGeneratorPanelProps = {
   /** 当前画布会话（§4.8）：实例自定义头的 `{{sessionId}}` 按它渲染；无会话时缺省。 */
   sessionId?: string | undefined;
   canvasScrollZoom: { scrollX: number; scrollY: number; zoom: number };
-  onClose: () => void;
 };
 
 /**
@@ -40,20 +44,30 @@ type ImageGeneratorPanelProps = {
  */
 type GeneratorLibApi = Parameters<typeof updateImageGeneratorElement>[0];
 
-const ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
-const QUALITIES = [
-  { value: "standard", label: "1K" },
-  { value: "hd", label: "2K" },
-  { value: "ultra", label: "4K" },
-] as const;
-
-function generateId(): string {
-  return (
-    Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
-  ).slice(0, 20);
+function modelParams(
+  params: ImageGeneratorParams,
+  caps?: ImageGenerationCaps,
+): ImageGeneratorParams {
+  const supported = (value: string | undefined, options?: string[]) =>
+    options && !options.includes(value ?? "") ? options[0] : value;
+  return {
+    ...params,
+    count: params.count ?? 1,
+    inputImages: params.inputImages,
+    aspectRatio: supported(params.aspectRatio, caps?.aspectRatios) ?? "",
+    quality: supported(params.quality, caps?.qualities) ?? "",
+    size: supported(params.size, caps?.sizes),
+    outputFormat: supported(
+      params.outputFormat,
+      caps?.outputFormats,
+    ) as ImageGeneratorParams["outputFormat"],
+  };
 }
 
 export function ImageGeneratorPanel({
+  canvasId,
+  projectId,
+  prepare,
   elementId,
   elementBounds,
   data,
@@ -61,21 +75,38 @@ export function ImageGeneratorPanel({
   accessToken,
   sessionId,
   canvasScrollZoom,
-  onClose,
 }: ImageGeneratorPanelProps) {
   const [prompt, setPrompt] = useState(data.prompt);
   const [model, setModel] = useState(data.model);
-  const [aspectRatio, setAspectRatio] = useState(data.aspectRatio);
-  const [quality, setQuality] = useState(data.quality);
+  const [params, setParams] = useState<ImageGeneratorParams>(() => ({
+    aspectRatio: data.aspectRatio,
+    quality: data.quality,
+    size: data.size,
+    outputFormat: data.outputFormat,
+    inputImages: data.inputImages,
+    count: data.count ?? 1,
+  }));
+  const { aspectRatio, quality, size, outputFormat, count = 1 } = params;
+  const modelDraftsRef = useRef(data.modelDrafts ?? {});
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+  const modelRef = useRef(model);
+  modelRef.current = model;
   const [loading, setLoading] = useState(data.status === "generating");
+  const [stopping, setStopping] = useState(data.cancelRequested === true);
   const [error, setError] = useState<string | null>(data.errorMessage ?? null);
   const [models, setModels] = useState<ImageModelInfo[]>([]);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
-  const [showRatioDropdown, setShowRatioDropdown] = useState(false);
-  const [showQualityDropdown, setShowQualityDropdown] = useState(false);
-  const [refImages, setRefImages] = useState<
-    Array<{ id: string; dataUrl: string; file: File }>
-  >([]);
+
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [uploadingModels, setUploadingModels] = useState<
+    Record<string, boolean>
+  >({});
+  const [uploadFailures, setUploadFailures] = useState<Record<string, boolean>>(
+    {},
+  );
+  const refImages = params.inputImages ?? [];
+  const uploading = uploadingModels[model] === true;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const refInputRef = useRef<HTMLInputElement>(null);
@@ -84,6 +115,12 @@ export function ImageGeneratorPanel({
   const { handleGenerationError } = useGenerationErrorHandler();
   // AbortController for in-flight generation requests so we can cancel on unmount
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    setLoading(data.status === "generating");
+    setStopping(data.cancelRequested === true);
+    setError(data.errorMessage ?? null);
+  }, [data.status, data.errorMessage, data.cancelRequested]);
 
   // Fetch available models with error logging
   useEffect(() => {
@@ -105,8 +142,6 @@ export function ImageGeneratorPanel({
     const handleClickOutside = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         setShowModelDropdown(false);
-        setShowRatioDropdown(false);
-        setShowQualityDropdown(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -136,53 +171,188 @@ export function ImageGeneratorPanel({
 
   const currentModel = models.find((m) => m.id === model);
 
-  const handleAspectRatioChange = useCallback(
-    (ratio: string) => {
-      setAspectRatio(ratio);
-      setShowRatioDropdown(false);
+  const updateParams = useCallback(
+    (patch: Partial<ImageGeneratorParams>) => {
+      const next = { ...paramsRef.current, ...patch };
+      paramsRef.current = next;
+      setParams(next);
+      modelDraftsRef.current = {
+        ...modelDraftsRef.current,
+        [modelRef.current]: next,
+      };
+      if (patch.aspectRatio) {
+        resizeImageGeneratorElement(
+          excalidrawApi as GeneratorLibApi,
+          elementId,
+          patch.aspectRatio,
+        );
+      }
+      updateImageGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
+        ...next,
+        modelDrafts: modelDraftsRef.current,
+      });
+    },
+    [excalidrawApi, elementId],
+  );
+
+  useEffect(() => {
+    if (!currentModel) return;
+    const next = modelParams(params, currentModel.imageGeneration);
+    if (JSON.stringify(next) !== JSON.stringify(params)) updateParams(next);
+  }, [currentModel, params, updateParams]);
+
+  const handleModelChange = useCallback(
+    (id: string) => {
+      const selected = models.find((candidate) => candidate.id === id);
+      const next = modelParams(
+        modelDraftsRef.current[id] ?? {
+          aspectRatio: "",
+          quality: "",
+        },
+        selected?.imageGeneration,
+      );
+      modelDraftsRef.current = {
+        ...modelDraftsRef.current,
+        [model]: params,
+        [id]: next,
+      };
+      modelRef.current = id;
+      paramsRef.current = next;
+      setModel(id);
+      setParams(next);
+      setShowModelDropdown(false);
       resizeImageGeneratorElement(
         excalidrawApi as GeneratorLibApi,
         elementId,
-        ratio,
+        next.aspectRatio,
       );
       updateImageGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
-        aspectRatio: ratio,
+        model: id,
+        ...next,
+        modelDrafts: modelDraftsRef.current,
       });
     },
-    [excalidrawApi, elementId],
+    [model, params, models, excalidrawApi, elementId],
   );
 
-  const handleQualityChange = useCallback(
-    (q: string) => {
-      setQuality(q);
-      setShowQualityDropdown(false);
-      updateImageGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
-        quality: q,
-      });
-    },
-    [excalidrawApi, elementId],
-  );
+  useEffect(() => {
+    const first = models[0];
+    if (
+      !first ||
+      models.some((candidate) => candidate.id === model) ||
+      data.status === "generating"
+    )
+      return;
+    handleModelChange(first.id);
+  }, [models, model, data.status, handleModelChange]);
 
-  const handleModelChange = useCallback(
-    (m: string) => {
-      setModel(m);
-      setShowModelDropdown(false);
-      updateImageGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
-        model: m,
-      });
+  useEffect(() => {
+    let cancelled = false;
+    for (const source of params.inputImages ?? []) {
+      if (!source.startsWith("asset://")) continue;
+      getAssetUrl(accessTokenRef.current, source.slice("asset://".length))
+        .then(({ url }) => {
+          if (!cancelled)
+            setPreviewUrls((previous) => ({ ...previous, [source]: url }));
+        })
+        .catch(() => {
+          if (!cancelled) setError("参考图暂时无法读取，请重新添加。");
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [params.inputImages]);
+
+  const handleReferenceUpload = useCallback(
+    async (files: File[]) => {
+      const uploadModel = modelRef.current;
+      modelDraftsRef.current = {
+        ...modelDraftsRef.current,
+        [uploadModel]: paramsRef.current,
+      };
+      setUploadingModels((previous) => ({ ...previous, [uploadModel]: true }));
+      setUploadFailures((previous) => ({ ...previous, [uploadModel]: false }));
+      setError(null);
+      const results = await Promise.allSettled(
+        files.map((file) =>
+          uploadFile(accessTokenRef.current, file, projectId),
+        ),
+      );
+      const saved = results.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : [],
+      );
+      const sources = saved.map((result) => `asset://${result.asset.id}`);
+      setPreviewUrls((previous) => ({
+        ...previous,
+        ...Object.fromEntries(
+          saved.map((result) => [`asset://${result.asset.id}`, result.url]),
+        ),
+      }));
+      const previous =
+        modelRef.current === uploadModel
+          ? paramsRef.current
+          : modelDraftsRef.current[uploadModel];
+      if (previous && sources.length) {
+        const inputImages = [...(previous.inputImages ?? []), ...sources];
+        if (modelRef.current === uploadModel) updateParams({ inputImages });
+        else {
+          modelDraftsRef.current = {
+            ...modelDraftsRef.current,
+            [uploadModel]: { ...previous, inputImages },
+          };
+          updateImageGeneratorElement(
+            excalidrawApi as GeneratorLibApi,
+            elementId,
+            { modelDrafts: modelDraftsRef.current },
+          );
+        }
+      }
+      const failed = results.some((result) => result.status === "rejected");
+      setUploadingModels((previous) => ({ ...previous, [uploadModel]: false }));
+      setUploadFailures((previous) => ({ ...previous, [uploadModel]: failed }));
+      if (failed && modelRef.current === uploadModel)
+        setError("参考图上传失败，请重新添加或移除失败项。");
     },
-    [excalidrawApi, elementId],
+    [projectId, updateParams, excalidrawApi, elementId],
   );
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim() || loading) return;
-
-    // Cancel any previous in-flight request
-    abortRef.current?.abort();
+    if (uploading || uploadFailures[model]) {
+      setError(
+        uploading
+          ? "参考图正在上传。"
+          : "参考图上传失败，请重新添加或移除失败项。",
+      );
+      return;
+    }
+    if (!currentModel) {
+      setError("请选择可用模型。");
+      return;
+    }
+    if (!Number.isInteger(count) || count < 1) {
+      setError("请输入至少 1 张的整数数量。");
+      return;
+    }
+    if (size && !/^[1-9]\d*x[1-9]\d*$/.test(size)) {
+      setError("请输入有效的像素尺寸，例如 1024x1536。");
+      return;
+    }
+    if (
+      currentModel.imageGeneration?.maxInputImages !== undefined &&
+      refImages.length > currentModel.imageGeneration.maxInputImages
+    ) {
+      setError(
+        `此模型最多支持 ${currentModel.imageGeneration.maxInputImages} 张参考图。`,
+      );
+      return;
+    }
     const controller = new AbortController();
     abortRef.current = controller;
-
+    const requestId = crypto.randomUUID();
     setLoading(true);
+    setStopping(false);
     setError(null);
     updateImageGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
       status: "generating",
@@ -190,77 +360,65 @@ export function ImageGeneratorPanel({
       model,
       aspectRatio,
       quality,
+      size,
+      outputFormat,
+      count,
+      requestId,
+      jobIds: [],
+      cancelRequested: false,
+      errorMessage: "",
     });
-
+    let submitted = false;
     try {
-      const result = await generateImageDirect(
+      if (!(await prepare())) throw new Error("画布尚未保存，请保存后重试。");
+      submitted = true;
+      const submission = await generateImageDirect(
         accessTokenRef.current,
         prompt.trim(),
         {
+          requestId,
+          projectId,
+          canvasId,
+          generatorId: elementId,
+          placement: elementBounds,
           model,
+          count,
           aspectRatio,
           quality,
-          inputImages: refImages.map((image) => image.dataUrl),
+          ...(size
+            ? {
+                width: Number(size.split("x")[0]),
+                height: Number(size.split("x")[1]),
+              }
+            : {}),
+          ...(outputFormat ? { outputFormat } : {}),
+          inputImages: refImages,
           ...(sessionId ? { sessionId } : {}),
         },
       );
-
-      // Check if this generation was cancelled while awaiting
       if (controller.signal.aborted) return;
-
-      // Download and insert as real image element at same position
-      const dataURL = await fetchAsDataURL(result.url);
+      updateImageGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
+        requestId: submission.request_id,
+        jobIds: submission.jobs.map((job) => job.job_id),
+      });
+    } catch (error) {
       if (controller.signal.aborted) return;
-
-      const fileId = generateId();
-      excalidrawApi.addFiles([
-        {
-          // id/dataURL/mimeType 在 Excalidraw 类型里是品牌字符串（数据源是生成结果），
-          // 故在边界处断言。
-          id: fileId as BinaryFileData["id"],
-          dataURL: dataURL as BinaryFileData["dataURL"],
-          mimeType: result.mimeType as BinaryFileData["mimeType"],
-          created: Date.now(),
-        },
-      ]);
-
-      const imageElement = createExcalidrawImageElement({
-        fileId,
-        x: elementBounds.x,
-        y: elementBounds.y,
-        width: elementBounds.width,
-        height: elementBounds.height,
-        title: prompt.trim().slice(0, 60),
-      });
-
-      // Replace: delete placeholder, add image
-      const elements = excalidrawApi.getSceneElements().map((el) => {
-        if (el.id === elementId) return { ...el, isDeleted: true };
-        return el;
-      });
-      excalidrawApi.updateScene({
-        elements: [
-          ...elements,
-          // lib 生成器产出的是不透明记录（服务端契约口径），入场景时按官方元素类型收窄
-          imageElement as unknown as ExcalidrawElement,
-        ],
-        captureUpdate: "IMMEDIATELY",
-      });
-
-      onClose();
-    } catch (err) {
-      // Ignore aborted requests (user cancelled or component unmounted)
-      if (controller.signal.aborted) return;
-
-      console.error("[image-gen] Generation error:", err);
-      const handled = handleGenerationError(err);
-      if (!handled) {
-        setError("图片生成失败，请重试或更换模型。");
+      if (
+        submitted &&
+        !(error instanceof ApiApplicationError) &&
+        !(error instanceof ApiAccessError)
+      ) {
+        setError("提交结果待确认");
+        return;
       }
+      const message =
+        error instanceof Error ? error.message : "生成任务受理失败，请重试。";
+      handleGenerationError(error);
+      setError(message);
       setLoading(false);
       updateImageGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
         status: "error",
-        errorMessage: "生成失败",
+        errorMessage: message,
       });
     }
   }, [
@@ -269,13 +427,21 @@ export function ImageGeneratorPanel({
     model,
     aspectRatio,
     quality,
+    size,
+    outputFormat,
+    count,
     refImages,
+    uploading,
+    uploadFailures,
     sessionId,
     excalidrawApi,
     elementId,
     elementBounds,
-    onClose,
+    canvasId,
+    projectId,
+    prepare,
     handleGenerationError,
+    currentModel,
   ]);
 
   return createPortal(
@@ -316,6 +482,56 @@ export function ImageGeneratorPanel({
         </div>
       )}
 
+      <div className="mb-2 grid grid-cols-2 gap-2 px-1">
+        <ModelParameterField
+          label="数量"
+          value={String(count)}
+          numeric
+          onChange={(value) => updateParams({ count: Number(value) })}
+        />
+        <ModelParameterField
+          placeholder="自动"
+          label="画幅"
+          value={aspectRatio}
+          options={currentModel?.imageGeneration?.aspectRatios}
+          onChange={(value) => updateParams({ aspectRatio: value })}
+        />
+        <ModelParameterField
+          placeholder="自动"
+          label="质量"
+          value={quality}
+          options={currentModel?.imageGeneration?.qualities}
+          onChange={(value) => updateParams({ quality: value })}
+        />
+        <ModelParameterField
+          placeholder="自动"
+          label="尺寸"
+          value={size ?? ""}
+          options={currentModel?.imageGeneration?.sizes}
+          onChange={(value) => updateParams({ size: value })}
+        />
+        <ModelParameterField
+          placeholder="自动"
+          label="格式"
+          value={outputFormat ?? ""}
+          options={
+            currentModel?.imageGeneration?.outputFormats ?? [
+              "",
+              "png",
+              "jpg",
+              "webp",
+            ]
+          }
+          onChange={(value) =>
+            updateParams({
+              outputFormat: value
+                ? (value as ImageGeneratorParams["outputFormat"])
+                : undefined,
+            })
+          }
+        />
+      </div>
+
       {/* Bottom toolbar */}
       <div className="mt-1 flex items-center justify-between">
         {/* Left: model + ref image */}
@@ -336,7 +552,7 @@ export function ImageGeneratorPanel({
                 />
               )}
               <span className="text-foreground">
-                {currentModel?.displayName ?? model.split("/").pop()}
+                {currentModel?.displayName ?? "选择模型"}
               </span>
               <svg
                 aria-hidden="true"
@@ -394,29 +610,21 @@ export function ImageGeneratorPanel({
             accept="image/png,image/jpeg,image/webp,image/gif"
             multiple
             className="hidden"
-            onChange={(e) => {
-              const files = e.target.files;
-              if (!files) return;
-              Array.from(files).forEach((file) => {
-                const reader = new FileReader();
-                reader.onload = () => {
-                  setRefImages((prev) => [
-                    ...prev,
-                    {
-                      id: generateId(),
-                      dataUrl: reader.result as string,
-                      file,
-                    },
-                  ]);
-                };
-                reader.readAsDataURL(file);
-              });
-              e.target.value = "";
+            disabled={
+              uploading || currentModel?.imageGeneration?.maxInputImages === 0
+            }
+            onChange={(event) => {
+              const files = Array.from(event.target.files ?? []);
+              event.target.value = "";
+              if (files.length) void handleReferenceUpload(files);
             }}
           />
           <button
             type="button"
             onClick={() => refInputRef.current?.click()}
+            disabled={
+              uploading || currentModel?.imageGeneration?.maxInputImages === 0
+            }
             className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-muted ${
               refImages.length > 0
                 ? "text-foreground"
@@ -426,23 +634,48 @@ export function ImageGeneratorPanel({
           >
             <ImageUp className="h-3.5 w-3.5" />
           </button>
+          {uploading && (
+            <span role="status" className="text-xs text-muted-foreground">
+              上传中
+            </span>
+          )}
+          {uploadFailures[model] && (
+            <button
+              type="button"
+              className="text-xs text-muted-foreground"
+              onClick={() => {
+                setUploadFailures((previous) => ({
+                  ...previous,
+                  [model]: false,
+                }));
+                setError(null);
+              }}
+            >
+              移除失败项
+            </button>
+          )}
           {/* Ref image thumbnails */}
           {refImages.length > 0 && (
             <div className="flex items-center gap-1 ml-1">
               {refImages.map((img) => (
-                <div key={img.id} className="relative group">
+                <div key={img} className="relative group">
                   {/* biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用 */}
                   <img
-                    src={img.dataUrl}
+                    src={
+                      previewUrls[img] ??
+                      (img.startsWith("asset://") ? undefined : img)
+                    }
                     alt="ref"
                     className="h-7 w-7 rounded object-cover border border-border"
                   />
                   <button
                     type="button"
                     onClick={() =>
-                      setRefImages((prev) =>
-                        prev.filter((r) => r.id !== img.id),
-                      )
+                      updateParams({
+                        inputImages: refImages.filter(
+                          (source) => source !== img,
+                        ),
+                      })
                     }
                     className="absolute -top-1 -right-1 hidden group-hover:flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary text-primary-foreground text-[8px]"
                   >
@@ -454,81 +687,35 @@ export function ImageGeneratorPanel({
           )}
         </div>
 
-        {/* Right: quality + ratio + generate */}
         <div className="flex items-center gap-1">
-          {/* Quality (1K/2K/4K) */}
-          <div className="relative">
+          {loading && (
             <button
               type="button"
-              onClick={() => setShowQualityDropdown((v) => !v)}
-              className="flex h-8 items-center gap-0.5 rounded-lg px-2 text-xs text-muted-foreground transition-colors hover:bg-muted"
+              disabled={stopping}
+              onClick={() => {
+                setStopping(true);
+                updateImageGeneratorElement(
+                  excalidrawApi as GeneratorLibApi,
+                  elementId,
+                  { cancelRequested: true },
+                );
+              }}
+              className="h-8 rounded-full px-3 text-xs text-muted-foreground hover:bg-muted disabled:cursor-not-allowed"
             >
-              <span className="text-foreground">
-                {QUALITIES.find((q) => q.value === quality)?.label ?? "2K"}
-              </span>
-              <svg
-                aria-hidden="true"
-                className="h-3 w-3 text-muted-foreground"
-                viewBox="0 0 12 24"
-                fill="currentColor"
-              >
-                <path d="M8.546 10.33a.4.4 0 0 1 .566 0l.424.424a.4.4 0 0 1 0 .566l-3.041 3.041a.7.7 0 0 1-.99 0l-3.04-3.04a.4.4 0 0 1 0-.567l.423-.424a.4.4 0 0 1 .567 0L6 12.876z" />
-              </svg>
+              {stopping ? "停止中" : "停止"}
             </button>
-            {showQualityDropdown && (
-              <div className="absolute bottom-full right-0 z-50 mb-1 rounded-lg border-[0.5px] border-border bg-card py-1 shadow-card">
-                {QUALITIES.map((q) => (
-                  <button
-                    key={q.value}
-                    type="button"
-                    onClick={() => handleQualityChange(q.value)}
-                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors hover:bg-muted ${q.value === quality ? "bg-muted text-foreground" : "text-muted-foreground"}`}
-                  >
-                    {q.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Aspect ratio */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowRatioDropdown((v) => !v)}
-              className="flex h-8 items-center gap-0.5 rounded-lg px-2 text-xs text-muted-foreground transition-colors hover:bg-muted"
-            >
-              <span className="text-foreground">{aspectRatio}</span>
-              <svg
-                aria-hidden="true"
-                className="h-3 w-3 text-muted-foreground"
-                viewBox="0 0 12 24"
-                fill="currentColor"
-              >
-                <path d="M8.546 10.33a.4.4 0 0 1 .566 0l.424.424a.4.4 0 0 1 0 .566l-3.041 3.041a.7.7 0 0 1-.99 0l-3.04-3.04a.4.4 0 0 1 0-.567l.423-.424a.4.4 0 0 1 .567 0L6 12.876z" />
-              </svg>
-            </button>
-            {showRatioDropdown && (
-              <div className="absolute bottom-full right-0 z-50 mb-1 rounded-lg border-[0.5px] border-border bg-card py-1 shadow-card">
-                {ASPECT_RATIOS.map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => handleAspectRatioChange(r)}
-                    className={`flex w-full items-center px-3 py-1.5 text-xs transition-colors hover:bg-muted ${r === aspectRatio ? "bg-muted text-foreground" : "text-muted-foreground"}`}
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
+          )}
           {/* Generate button */}
           <button
             type="button"
             onClick={() => void handleGenerate()}
-            disabled={!prompt.trim() || loading}
+            disabled={
+              !prompt.trim() ||
+              loading ||
+              uploading ||
+              uploadFailures[model] ||
+              !currentModel
+            }
             className="flex h-8 min-w-12 items-center justify-center gap-1 rounded-full bg-primary p-2 text-primary-foreground transition-colors hover:bg-primary/80 hover:accent-glow disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
           >
             {loading ? (

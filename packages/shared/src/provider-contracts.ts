@@ -45,6 +45,16 @@ export type ModelCapability = z.infer<typeof modelCapabilitySchema>;
  * 处理（kimi-code 的 UNKNOWN 语义）；只有显式声明的取值才可参与运行期裁剪。
  */
 export const imageGenerationCapsSchema = z.object({
+  /** 允许的画幅比；缺省为未知，空数组为不支持。 */
+  aspectRatios: z.array(z.string().min(1)).optional(),
+  /** 原生质量值；不推导像素，空数组为不支持。 */
+  qualities: z.array(z.string().min(1)).optional(),
+  /** 像素尺寸（如 1024x1536）；空数组为不支持。 */
+  sizes: z.array(z.string().regex(/^[1-9]\d*x[1-9]\d*$/)).optional(),
+  /** 原生可选产物格式；空数组为不支持。 */
+  outputFormats: z.array(z.enum(["png", "jpg", "webp"])).optional(),
+  /** 已确认的原生单次多图上限；缺省按单图请求。 */
+  maxOutputs: z.number().int().positive().optional(),
   /** 支持的生成模式（cherry 词表收窄版；缺省视为仅 generate）。 */
   modes: z
     .array(z.enum(["generate", "edit", "upscale", "remix", "merge"]))

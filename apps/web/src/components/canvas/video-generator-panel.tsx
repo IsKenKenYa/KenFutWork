@@ -1,8 +1,6 @@
 "use client";
 
-import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type { VideoResolution } from "@kenfutwork/shared";
 import { Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -12,13 +10,18 @@ import {
   resizeVideoGeneratorElement,
   updateVideoGeneratorElement,
   type VideoGeneratorData,
+  type VideoGeneratorParams,
 } from "../../lib/canvas-video-generator";
 import type { VideoModelInfo } from "../../lib/server-api";
 import {
-  fetchJob,
+  ApiAccessError,
+  ApiApplicationError,
   fetchVideoModels,
   generateVideoDirect,
+  getAssetUrl,
+  uploadFile,
 } from "../../lib/server-api";
+import { ModelParameterField } from "./model-parameter-field";
 
 // No longer needs poster frame extraction -- videos use embeddable elements
 
@@ -28,8 +31,15 @@ import {
  * 运行时传的是同一个 API 对象，故按助手的入参口径断言。
  */
 type GeneratorLibApi = Parameters<typeof updateVideoGeneratorElement>[0];
+type FrameField = "firstFrame" | "lastFrame";
+type FrameUploadState = Partial<
+  Record<FrameField, "uploading" | "failed" | undefined>
+>;
 
 type VideoGeneratorPanelProps = {
+  canvasId: string;
+  projectId: string;
+  prepare: () => Promise<string | null>;
   elementId: string;
   elementBounds: { x: number; y: number; width: number; height: number };
   data: VideoGeneratorData;
@@ -38,24 +48,56 @@ type VideoGeneratorPanelProps = {
   /** 当前画布会话（§4.8）：实例自定义头的 `{{sessionId}}` 按它渲染；无会话时缺省。 */
   sessionId?: string | undefined;
   canvasScrollZoom: { scrollX: number; scrollY: number; zoom: number };
-  onClose: () => void;
 };
 
-const ASPECT_RATIOS = ["16:9", "9:16"] as const;
-const DURATIONS = [4, 5, 6, 8] as const;
-const VIDEO_RESOLUTIONS = ["720p", "1080p", "4k"] as const;
+function frameLimit(model?: VideoModelInfo): number | undefined {
+  if (model?.videoGeneration?.referenceImages !== undefined) {
+    return model.videoGeneration.referenceImages;
+  }
+  if (model?.videoGeneration?.firstLastFrame === true) return undefined;
+  if (model?.capabilities?.imageToVideo === false) return 0;
+  return model?.limits?.maxInputImages;
+}
 
-function supportedResolutions(
+function audioSupported(model?: VideoModelInfo): boolean | undefined {
+  return model?.videoGeneration?.audio ?? model?.capabilities?.audio;
+}
+
+function modelParams(
+  params: VideoGeneratorParams,
   model?: VideoModelInfo,
-): readonly VideoResolution[] {
-  const max = model?.limits?.maxResolution;
-  if (max === undefined) return VIDEO_RESOLUTIONS;
-  if (max === "2160p") return VIDEO_RESOLUTIONS;
-  if (max === "1080p") return VIDEO_RESOLUTIONS.slice(0, 2);
-  return VIDEO_RESOLUTIONS.slice(0, 1);
+  switching = false,
+): VideoGeneratorParams {
+  const caps = model?.videoGeneration;
+  const durations = caps?.durations ?? model?.limits?.allowedDurations;
+  const supported = <T,>(value: T | undefined, options?: T[]) =>
+    options && !options.some((option) => option === value) ? options[0] : value;
+  const next: VideoGeneratorParams = {
+    ...params,
+    aspectRatio: supported(params.aspectRatio, caps?.aspectRatios),
+    duration: supported(params.duration, durations),
+    resolution: supported(params.resolution, caps?.resolutions),
+    firstFrame: params.firstFrame,
+    lastFrame: params.lastFrame,
+    enableAudio: params.enableAudio,
+  };
+  if (switching) {
+    if (frameLimit(model) === 0) next.firstFrame = undefined;
+    if (
+      frameLimit(model) === 0 ||
+      frameLimit(model) === 1 ||
+      caps?.firstLastFrame === false
+    )
+      next.lastFrame = undefined;
+    if (audioSupported(model) === false) next.enableAudio = undefined;
+  }
+  return next;
 }
 
 export function VideoGeneratorPanel({
+  canvasId,
+  projectId,
+  prepare,
   elementId,
   elementBounds,
   data,
@@ -63,27 +105,46 @@ export function VideoGeneratorPanel({
   accessToken,
   sessionId,
   canvasScrollZoom,
-  onClose,
 }: VideoGeneratorPanelProps) {
   const [prompt, setPrompt] = useState(data.prompt);
   const [model, setModel] = useState(data.model);
-  const [aspectRatio, setAspectRatio] = useState(data.aspectRatio);
-  const [duration, setDuration] = useState(data.duration);
-  const [resolution, setResolution] = useState(data.resolution);
+  const [params, setParams] = useState<VideoGeneratorParams>(() => ({
+    aspectRatio: data.aspectRatio,
+    duration: data.duration,
+    resolution: data.resolution,
+    firstFrame: data.firstFrame ?? data.inputImages?.[0],
+    lastFrame: data.lastFrame ?? data.inputImages?.[1],
+    enableAudio: data.enableAudio,
+  }));
+  const {
+    aspectRatio,
+    duration,
+    resolution,
+    firstFrame,
+    lastFrame,
+    enableAudio,
+  } = params;
+  const modelDraftsRef = useRef(data.modelDrafts ?? {});
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+  const modelRef = useRef(model);
+  modelRef.current = model;
   const [loading, setLoading] = useState(data.status === "generating");
+  const [stopping, setStopping] = useState(data.cancelRequested === true);
   const [error, setError] = useState<string | null>(data.errorMessage ?? null);
   const [models, setModels] = useState<VideoModelInfo[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [frameUploads, setFrameUploads] = useState<
+    Record<string, FrameUploadState>
+  >({});
+  const uploading = Object.values(frameUploads[model] ?? {}).includes(
+    "uploading",
+  );
+  const uploadFailed = Object.values(frameUploads[model] ?? {}).includes(
+    "failed",
+  );
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showParamsPopover, setShowParamsPopover] = useState(false);
-  const [firstFrame, setFirstFrame] = useState<{
-    dataUrl: string;
-    file: File;
-  } | null>(null);
-  const [lastFrame, setLastFrame] = useState<{
-    dataUrl: string;
-    file: File;
-  } | null>(null);
-
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const firstFrameInputRef = useRef<HTMLInputElement>(null);
@@ -94,6 +155,12 @@ export function VideoGeneratorPanel({
   // AbortController for in-flight generation requests so we can cancel on unmount
   const abortRef = useRef<AbortController | null>(null);
 
+  useEffect(() => {
+    setLoading(data.status === "generating");
+    setStopping(data.cancelRequested === true);
+    setError(data.errorMessage ?? null);
+  }, [data.status, data.errorMessage, data.cancelRequested]);
+
   // Fetch available models with error logging
   useEffect(() => {
     let cancelled = false;
@@ -101,22 +168,6 @@ export function VideoGeneratorPanel({
       .then((r) => {
         if (cancelled) return;
         setModels(r.models);
-        setModel((current) => {
-          if (r.models.length === 0 || r.models.some((m) => m.id === current)) {
-            return current;
-          }
-          const fallback = r.models[0];
-          if (!fallback) return current;
-          const fallbackId = fallback.id;
-          updateVideoGeneratorElement(
-            excalidrawApi as GeneratorLibApi,
-            elementId,
-            {
-              model: fallbackId,
-            },
-          );
-          return fallbackId;
-        });
       })
       .catch((err) => {
         console.warn("[video-gen] Failed to fetch models:", err);
@@ -124,7 +175,7 @@ export function VideoGeneratorPanel({
     return () => {
       cancelled = true;
     };
-  }, [excalidrawApi, elementId]);
+  }, []);
 
   // Close dropdowns when clicking outside the panel
   useEffect(() => {
@@ -160,111 +211,200 @@ export function VideoGeneratorPanel({
   const screenY = (elementBounds.y + elementBounds.height + scrollY) * zoom + 8;
 
   const currentModel = models.find((m) => m.id === model);
-  const durationOptions =
-    currentModel?.videoGeneration?.durations ??
-    currentModel?.limits?.allowedDurations ??
-    DURATIONS;
-  const resolutionOptions =
-    currentModel?.videoGeneration?.resolutions ??
-    supportedResolutions(currentModel);
   const currentPriceRate = currentModel?.pricing?.rates.find(
     (rate) => rate.resolution === resolution,
   );
 
-  const handleAspectRatioChange = useCallback(
-    (ratio: string) => {
-      setAspectRatio(ratio);
+  const updateParams = useCallback(
+    (patch: Partial<VideoGeneratorParams>) => {
+      const next = { ...paramsRef.current, ...patch };
+      paramsRef.current = next;
+      setParams(next);
+      modelDraftsRef.current = {
+        ...modelDraftsRef.current,
+        [modelRef.current]: next,
+      };
+      if (patch.aspectRatio)
+        resizeVideoGeneratorElement(
+          excalidrawApi as GeneratorLibApi,
+          elementId,
+          patch.aspectRatio,
+        );
+      updateVideoGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
+        ...next,
+        modelDrafts: modelDraftsRef.current,
+      });
+    },
+    [excalidrawApi, elementId],
+  );
+
+  useEffect(() => {
+    if (!currentModel) return;
+    const next = modelParams(params, currentModel);
+    if (JSON.stringify(next) !== JSON.stringify(params)) updateParams(next);
+  }, [currentModel, params, updateParams]);
+
+  const handleModelChange = useCallback(
+    (id: string) => {
+      const selected = models.find((candidate) => candidate.id === id);
+      const next = modelParams(
+        modelDraftsRef.current[id] ?? {},
+        selected,
+        true,
+      );
+      modelDraftsRef.current = {
+        ...modelDraftsRef.current,
+        [model]: params,
+        [id]: next,
+      };
+      modelRef.current = id;
+      paramsRef.current = next;
+      setModel(id);
+      setParams(next);
+      setShowModelDropdown(false);
       resizeVideoGeneratorElement(
         excalidrawApi as GeneratorLibApi,
         elementId,
-        ratio,
+        next.aspectRatio ?? "16:9",
       );
       updateVideoGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
-        aspectRatio: ratio,
+        model: id,
+        ...next,
+        inputImages: undefined,
+        modelDrafts: modelDraftsRef.current,
       });
     },
-    [excalidrawApi, elementId],
+    [model, params, models, excalidrawApi, elementId],
   );
 
-  const handleDurationChange = useCallback(
-    (d: number) => {
-      setDuration(d);
-      updateVideoGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
-        duration: d,
-      });
-    },
-    [excalidrawApi, elementId],
-  );
+  useEffect(() => {
+    const first = models[0];
+    if (
+      !first ||
+      models.some((candidate) => candidate.id === model) ||
+      data.status === "generating"
+    )
+      return;
+    handleModelChange(first.id);
+  }, [models, model, data.status, handleModelChange]);
 
-  const handleResolutionChange = useCallback(
-    (value: string) => {
-      setResolution(value);
-      updateVideoGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
-        resolution: value,
-      });
-    },
-    [excalidrawApi, elementId],
-  );
-
-  const handleModelChange = useCallback(
-    (m: string) => {
-      const selected = models.find((candidate) => candidate.id === m);
-      const nextDurations: readonly number[] =
-        selected?.videoGeneration?.durations ??
-        selected?.limits?.allowedDurations ??
-        DURATIONS;
-      const nextDuration = nextDurations.includes(duration)
-        ? duration
-        : (nextDurations[0] ?? duration);
-      const nextResolutions: readonly string[] =
-        selected?.videoGeneration?.resolutions ??
-        supportedResolutions(selected);
-      const nextResolution = nextResolutions.includes(resolution)
-        ? (resolution as VideoResolution)
-        : (nextResolutions[0] ?? "720p");
-      setModel(m);
-      setDuration(nextDuration);
-      setResolution(nextResolution);
-      setShowModelDropdown(false);
-      updateVideoGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
-        model: m,
-        duration: nextDuration,
-        resolution: nextResolution,
-      });
-    },
-    [duration, excalidrawApi, elementId, models, resolution],
-  );
+  useEffect(() => {
+    let cancelled = false;
+    for (const source of [firstFrame, lastFrame]) {
+      if (!source?.startsWith("asset://")) continue;
+      getAssetUrl(accessTokenRef.current, source.slice("asset://".length))
+        .then(({ url }) => {
+          if (!cancelled)
+            setPreviewUrls((previous) => ({ ...previous, [source]: url }));
+        })
+        .catch(() => {
+          if (!cancelled) setError("参考帧暂时无法读取，请重新添加。");
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [firstFrame, lastFrame]);
 
   const handleFrameUpload = useCallback(
-    (
-      _type: "first" | "last",
-      setter: React.Dispatch<
-        React.SetStateAction<{ dataUrl: string; file: File } | null>
-      >,
-    ) => {
-      return (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
+    (field: FrameField) => {
+      return async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = "";
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-          setter({ dataUrl: reader.result as string, file });
+        const uploadModel = modelRef.current;
+        modelDraftsRef.current = {
+          ...modelDraftsRef.current,
+          [uploadModel]: paramsRef.current,
         };
-        reader.readAsDataURL(file);
-        e.target.value = "";
+        const updateUpload = (state: "uploading" | "failed" | undefined) => {
+          setFrameUploads((previous) => ({
+            ...previous,
+            [uploadModel]: { ...previous[uploadModel], [field]: state },
+          }));
+        };
+        updateUpload("uploading");
+        setError(null);
+        try {
+          const saved = await uploadFile(
+            accessTokenRef.current,
+            file,
+            projectId,
+          );
+          const source = `asset://${saved.asset.id}`;
+          setPreviewUrls((previous) => ({ ...previous, [source]: saved.url }));
+          const patch = { [field]: source };
+          if (modelRef.current === uploadModel) {
+            updateParams(patch);
+          } else {
+            const previous = modelDraftsRef.current[uploadModel];
+            modelDraftsRef.current = {
+              ...modelDraftsRef.current,
+              [uploadModel]: { ...previous, ...patch },
+            };
+            updateVideoGeneratorElement(
+              excalidrawApi as GeneratorLibApi,
+              elementId,
+              { modelDrafts: modelDraftsRef.current },
+            );
+          }
+          updateUpload(undefined);
+        } catch {
+          updateUpload("failed");
+          if (modelRef.current === uploadModel)
+            setError("参考帧上传失败，请重新添加或移除失败项。");
+        }
       };
     },
-    [],
+    [projectId, updateParams, excalidrawApi, elementId],
   );
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim() || loading) return;
-
-    // Cancel any previous in-flight request
-    abortRef.current?.abort();
+    if (uploading || uploadFailed) {
+      setError(
+        uploading
+          ? "参考帧正在上传。"
+          : "参考帧上传失败，请重新添加或移除失败项。",
+      );
+      return;
+    }
+    if (!currentModel) {
+      setError("请选择可用模型。");
+      return;
+    }
+    if (lastFrame && !firstFrame) {
+      setError("请先添加首帧，再添加尾帧。");
+      return;
+    }
+    const maxFrames = frameLimit(currentModel);
+    if (
+      maxFrames !== undefined &&
+      Number(Boolean(firstFrame)) + Number(Boolean(lastFrame)) > maxFrames
+    ) {
+      setError(`最多支持 ${maxFrames} 张参考图`);
+      return;
+    }
+    if (lastFrame && currentModel.videoGeneration?.firstLastFrame === false) {
+      setError("此模型不支持尾帧，请移除尾帧或切换模型。");
+      return;
+    }
+    if (enableAudio === true && audioSupported(currentModel) === false) {
+      setError("此模型不支持音频，请关闭音频或切换模型。");
+      return;
+    }
+    if (
+      duration !== undefined &&
+      (!Number.isFinite(duration) || duration <= 0)
+    ) {
+      setError("请输入有效时长。");
+      return;
+    }
     const controller = new AbortController();
     abortRef.current = controller;
-
+    const requestId = crypto.randomUUID();
     setLoading(true);
+    setStopping(false);
     setError(null);
     updateVideoGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
       status: "generating",
@@ -273,139 +413,61 @@ export function VideoGeneratorPanel({
       aspectRatio,
       duration,
       resolution,
+      firstFrame,
+      lastFrame,
+      enableAudio,
+      requestId,
+      jobIds: [],
+      cancelRequested: false,
+      errorMessage: "",
     });
-
+    let submitted = false;
     try {
-      const inputImages: string[] = [];
-      if (firstFrame) inputImages.push(firstFrame.dataUrl);
-      if (lastFrame) inputImages.push(lastFrame.dataUrl);
-
-      // S6：受理即返回（202），任务由 worker 异步执行——前端轮询 job 到终态
+      if (!(await prepare())) throw new Error("画布尚未保存，请保存后重试。");
+      submitted = true;
       const submission = await generateVideoDirect(
         accessTokenRef.current,
         prompt.trim(),
         {
+          requestId,
+          projectId,
+          canvasId,
+          generatorId: elementId,
+          placement: elementBounds,
           model,
-          duration,
-          resolution,
-          aspectRatio,
-          ...(inputImages.length ? { inputImages } : {}),
+          ...(aspectRatio ? { aspectRatio } : {}),
+          ...(duration !== undefined ? { duration } : {}),
+          ...(resolution ? { resolution } : {}),
+          ...(enableAudio !== undefined ? { enableAudio } : {}),
+          inputImages: [firstFrame, lastFrame].filter(
+            (source): source is string => Boolean(source),
+          ),
           ...(sessionId ? { sessionId } : {}),
         },
       );
-
-      // Check if this generation was cancelled while awaiting
       if (controller.signal.aborted) return;
-
-      const POLL_INTERVAL_MS = 3000;
-      const MAX_WAIT_MS = 10 * 60 * 1000;
-      const pollStartedAt = Date.now();
-      let terminal: {
-        url: string;
-        assetId: string;
-        mimeType: string;
-        durationSeconds: number;
-      } | null = null;
-      let terminalError: string | null = null;
-      while (Date.now() - pollStartedAt < MAX_WAIT_MS) {
-        if (controller.signal.aborted) return;
-        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-        if (controller.signal.aborted) return;
-        const response = await fetchJob(
-          accessTokenRef.current,
-          submission.job_id,
-        );
-        const current = response.job;
-        if (
-          current.status === "succeeded" &&
-          current.result &&
-          typeof current.result.signed_url === "string"
-        ) {
-          terminal = {
-            url: current.result.signed_url as string,
-            assetId: current.result.asset_id as string,
-            mimeType:
-              typeof current.result.mime_type === "string"
-                ? current.result.mime_type
-                : "video/mp4",
-            durationSeconds:
-              typeof current.result.duration_seconds === "number"
-                ? current.result.duration_seconds
-                : 0,
-          };
-          break;
-        }
-        if (
-          current.status === "failed" ||
-          current.status === "dead_letter" ||
-          current.status === "canceled"
-        ) {
-          terminalError =
-            typeof current.error_message === "string"
-              ? current.error_message
-              : `任务终态：${current.status}`;
-          break;
-        }
-      }
-      if (controller.signal.aborted) return;
-      if (!terminal) {
-        throw new Error(
-          terminalError ??
-            "视频生成超时（10 分钟）仍未完成，请稍后在任务列表查看",
-        );
-      }
-      const result = terminal;
-
-      // Create embeddable element for inline video playback on canvas.
-      // Dynamic import -- excalidraw is client-only.
-      const { convertToExcalidrawElements } = await import(
-        "@excalidraw/excalidraw"
-      );
-      if (controller.signal.aborted) return;
-
-      const newElements = convertToExcalidrawElements([
-        // 只给必要字段，其余（id/颜色/版本号…）由 convertToExcalidrawElements 补全；
-        // 骨架类型是「完整元素」口径，装不下这种部分元素，故双重断言到骨架类型。
-        {
-          type: "embeddable",
-          link: result.url,
-          x: elementBounds.x,
-          y: elementBounds.y,
-          width: elementBounds.width,
-          height: elementBounds.height,
-          customData: {
-            isVideo: true,
-            mimeType: result.mimeType,
-            durationSeconds: result.durationSeconds,
-            title: prompt.trim().slice(0, 60),
-            prompt: prompt.trim(),
-          },
-        } as unknown as ExcalidrawElementSkeleton,
-      ]);
-
-      // Replace generator placeholder with video embeddable element
-      const elements = excalidrawApi
-        .getSceneElements()
-        .map((el) => (el.id === elementId ? { ...el, isDeleted: true } : el));
-      excalidrawApi.updateScene({
-        elements: [...elements, ...newElements],
-        captureUpdate: "IMMEDIATELY",
+      updateVideoGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
+        requestId: submission.request_id,
+        jobIds: submission.jobs.map((job) => job.job_id),
       });
-
-      onClose();
-    } catch (err) {
-      // Ignore aborted requests (user cancelled or component unmounted)
+    } catch (error) {
       if (controller.signal.aborted) return;
-
-      console.error("[video-gen] Generation error:", err);
-      const handled = handleGenerationError(err);
-      if (!handled) {
-        setError("视频生成失败，请重试或更换模型。");
+      if (
+        submitted &&
+        !(error instanceof ApiApplicationError) &&
+        !(error instanceof ApiAccessError)
+      ) {
+        setError("提交结果待确认");
+        return;
       }
+      const message =
+        error instanceof Error ? error.message : "生成任务受理失败，请重试。";
+      handleGenerationError(error);
+      setError(message);
       setLoading(false);
       updateVideoGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
         status: "error",
-        errorMessage: "生成失败",
+        errorMessage: message,
       });
     }
   }, [
@@ -415,18 +477,31 @@ export function VideoGeneratorPanel({
     aspectRatio,
     duration,
     resolution,
-    sessionId,
     firstFrame,
     lastFrame,
+    enableAudio,
+    uploading,
+    uploadFailed,
+    sessionId,
     excalidrawApi,
     elementId,
     elementBounds,
-    onClose,
+    canvasId,
+    projectId,
+    prepare,
     handleGenerationError,
+    currentModel,
   ]);
 
   const resolutionLabel = currentPriceRate?.displayResolution ?? resolution;
-  const paramsLabel = `${aspectRatio} \u00B7 ${duration}s \u00B7 ${resolutionLabel}`;
+  const paramsLabel =
+    [
+      aspectRatio,
+      duration === undefined ? undefined : `${duration}s`,
+      resolutionLabel,
+    ]
+      .filter(Boolean)
+      .join(" · ") || "参数";
 
   return createPortal(
     <div
@@ -445,17 +520,29 @@ export function VideoGeneratorPanel({
           type="file"
           accept="image/png,image/jpeg,image/webp"
           className="hidden"
-          onChange={handleFrameUpload("first", setFirstFrame)}
+          aria-label="首帧"
+          disabled={
+            frameUploads[model]?.firstFrame === "uploading" ||
+            frameLimit(currentModel) === 0
+          }
+          onChange={handleFrameUpload("firstFrame")}
         />
         <button
           type="button"
           onClick={() => firstFrameInputRef.current?.click()}
+          disabled={
+            frameUploads[model]?.firstFrame === "uploading" ||
+            frameLimit(currentModel) === 0
+          }
           className="flex h-[68px] w-[56px] flex-col items-center justify-center gap-1 rounded-2xl bg-muted/60 transition-colors hover:bg-muted"
         >
           {firstFrame ? (
             // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
             <img
-              src={firstFrame.dataUrl}
+              src={
+                previewUrls[firstFrame] ??
+                (firstFrame.startsWith("asset://") ? undefined : firstFrame)
+              }
               alt="首帧"
               className="h-full w-full rounded-2xl object-cover"
             />
@@ -473,17 +560,33 @@ export function VideoGeneratorPanel({
           type="file"
           accept="image/png,image/jpeg,image/webp"
           className="hidden"
-          onChange={handleFrameUpload("last", setLastFrame)}
+          aria-label="尾帧"
+          disabled={
+            frameUploads[model]?.lastFrame === "uploading" ||
+            frameLimit(currentModel) === 0 ||
+            frameLimit(currentModel) === 1 ||
+            currentModel?.videoGeneration?.firstLastFrame === false
+          }
+          onChange={handleFrameUpload("lastFrame")}
         />
         <button
           type="button"
           onClick={() => lastFrameInputRef.current?.click()}
+          disabled={
+            frameUploads[model]?.lastFrame === "uploading" ||
+            frameLimit(currentModel) === 0 ||
+            frameLimit(currentModel) === 1 ||
+            currentModel?.videoGeneration?.firstLastFrame === false
+          }
           className="flex h-[68px] w-[56px] flex-col items-center justify-center gap-1 rounded-2xl bg-muted/60 transition-colors hover:bg-muted"
         >
           {lastFrame ? (
             // biome-ignore lint/performance/noImgElement: 运行时 URL（data:/blob:/签名），尺寸未知，静态导出（output: "export"）下 next/image 不能用
             <img
-              src={lastFrame.dataUrl}
+              src={
+                previewUrls[lastFrame] ??
+                (lastFrame.startsWith("asset://") ? undefined : lastFrame)
+              }
               alt="尾帧"
               className="h-full w-full rounded-2xl object-cover"
             />
@@ -494,6 +597,53 @@ export function VideoGeneratorPanel({
             </>
           )}
         </button>
+        {firstFrame && (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground"
+            disabled={frameUploads[model]?.firstFrame === "uploading"}
+            onClick={() => updateParams({ firstFrame: undefined })}
+          >
+            移除首帧
+          </button>
+        )}
+        {lastFrame && (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground"
+            disabled={frameUploads[model]?.lastFrame === "uploading"}
+            onClick={() => updateParams({ lastFrame: undefined })}
+          >
+            移除尾帧
+          </button>
+        )}
+        {uploading && (
+          <span
+            role="status"
+            className="self-center text-xs text-muted-foreground"
+          >
+            上传中
+          </span>
+        )}
+        {uploadFailed && (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground"
+            onClick={() => {
+              setFrameUploads((previous) => ({
+                ...previous,
+                [model]: Object.fromEntries(
+                  Object.entries(previous[model] ?? {}).filter(
+                    ([, state]) => state !== "failed",
+                  ),
+                ),
+              }));
+              setError(null);
+            }}
+          >
+            移除失败项
+          </button>
+        )}
       </div>
 
       {/* Prompt textarea */}
@@ -557,78 +707,45 @@ export function VideoGeneratorPanel({
             </svg>
           </button>
           {showParamsPopover && (
-            <div className="absolute bottom-full left-0 z-50 mb-1 w-[220px] rounded-xl border-[0.5px] border-border bg-card p-3 shadow-card">
-              {/* Aspect ratio row */}
-              <div className="mb-3">
-                <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Aspect Ratio
-                </div>
-                <div className="flex gap-1">
-                  {ASPECT_RATIOS.map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => handleAspectRatioChange(r)}
-                      className={`rounded-lg px-3 py-1 text-xs transition-colors ${
-                        r === aspectRatio
-                          ? "bg-muted text-foreground"
-                          : "text-muted-foreground hover:bg-muted/60"
-                      }`}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {/* Duration row */}
-              <div>
-                <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Duration
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {durationOptions.map((d) => (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => handleDurationChange(d)}
-                      className={`rounded-lg px-3 py-1 text-xs transition-colors ${
-                        d === duration
-                          ? "bg-muted text-foreground"
-                          : "text-muted-foreground hover:bg-muted/60"
-                      }`}
-                    >
-                      {d}s
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {/* Resolution row */}
-              <div className="mt-3">
-                <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Resolution
-                </div>
-                <div className="flex gap-1">
-                  {resolutionOptions.map((value) => {
-                    const providerLabel = currentModel?.pricing?.rates.find(
-                      (rate) => rate.resolution === value,
-                    )?.displayResolution;
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => handleResolutionChange(value)}
-                        className={`rounded-lg px-3 py-1 text-xs transition-colors ${
-                          value === resolution
-                            ? "bg-muted text-foreground"
-                            : "text-muted-foreground hover:bg-muted/60"
-                        }`}
-                      >
-                        {providerLabel ?? value}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+            <div className="absolute bottom-full left-0 z-50 mb-1 flex w-[240px] flex-col gap-2 rounded-xl border-[0.5px] border-border bg-card p-3 shadow-card">
+              <ModelParameterField
+                label="画幅"
+                value={aspectRatio ?? ""}
+                options={currentModel?.videoGeneration?.aspectRatios}
+                onChange={(value) => updateParams({ aspectRatio: value })}
+              />
+              <ModelParameterField
+                label="时长"
+                value={duration === undefined ? "" : String(duration)}
+                options={(
+                  currentModel?.videoGeneration?.durations ??
+                  currentModel?.limits?.allowedDurations
+                )?.map(String)}
+                numeric
+                onChange={(value) =>
+                  updateParams({ duration: value ? Number(value) : undefined })
+                }
+              />
+              <ModelParameterField
+                label="分辨率"
+                value={resolution ?? ""}
+                options={currentModel?.videoGeneration?.resolutions}
+                onChange={(value) => updateParams({ resolution: value })}
+              />
+              <label className="flex items-center justify-between text-xs text-muted-foreground">
+                音频
+                <input
+                  aria-label="音频"
+                  type="checkbox"
+                  checked={enableAudio ?? false}
+                  disabled={
+                    audioSupported(currentModel) === false && !enableAudio
+                  }
+                  onChange={(event) =>
+                    updateParams({ enableAudio: event.target.checked })
+                  }
+                />
+              </label>
             </div>
           )}
         </div>
@@ -651,7 +768,7 @@ export function VideoGeneratorPanel({
                 />
               )}
               <span className="text-foreground">
-                {currentModel?.displayName ?? model.split("/").pop()}
+                {currentModel?.displayName ?? "选择模型"}
               </span>
               <svg
                 aria-hidden="true"
@@ -702,11 +819,34 @@ export function VideoGeneratorPanel({
             )}
           </div>
 
+          {loading && (
+            <button
+              type="button"
+              disabled={stopping}
+              onClick={() => {
+                setStopping(true);
+                updateVideoGeneratorElement(
+                  excalidrawApi as GeneratorLibApi,
+                  elementId,
+                  { cancelRequested: true },
+                );
+              }}
+              className="h-8 rounded-full px-3 text-xs text-muted-foreground hover:bg-muted disabled:cursor-not-allowed"
+            >
+              {stopping ? "停止中" : "停止"}
+            </button>
+          )}
           {/* Generate button */}
           <button
             type="button"
             onClick={() => void handleGenerate()}
-            disabled={!prompt.trim() || loading}
+            disabled={
+              !prompt.trim() ||
+              loading ||
+              uploading ||
+              uploadFailed ||
+              !currentModel
+            }
             className="flex h-8 items-center justify-center gap-1 rounded-full bg-primary px-3 text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
           >
             {loading ? (
