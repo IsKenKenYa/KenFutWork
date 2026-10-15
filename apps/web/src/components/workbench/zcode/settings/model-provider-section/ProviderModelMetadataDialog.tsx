@@ -61,6 +61,7 @@ export function ProviderModelMetadataDialog({
   saving = false,
   modelDefaultsLoaded = false,
   editorContent,
+  headerContent,
   onModelIdBlur,
 }: {
   mode?: "add" | "edit";
@@ -80,6 +81,7 @@ export function ProviderModelMetadataDialog({
   saving?: boolean;
   modelDefaultsLoaded?: boolean;
   editorContent?: ReactNode;
+  headerContent?: ReactNode;
   onModelIdBlur?: () => void;
 }) {
   const { intl } = useZCodeIntl();
@@ -165,6 +167,7 @@ export function ProviderModelMetadataDialog({
               id: "settings.modelProvider.editModelDescription",
             })}
           </DialogDescription>
+          {headerContent}
           {editorContent ? null : <ModelSmartConfigSwitch
             disabled={saving}
             checked={smart}

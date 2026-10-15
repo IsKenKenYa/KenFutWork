@@ -21,6 +21,7 @@ const PROVIDER_CONNECTION_API_FORMATS: readonly ProviderApiType[] = [
   "google-generative-language",
 ];
 const NATIVE_PROTOCOL_LABELS: Partial<Record<ProviderProtocol, string>> = {
+  "openai-compatible": "OpenAI 兼容", anthropic: "Anthropic", gemini: "Gemini", apimart: "APIMart",
   "google-image": "Google Image",
   replicate: "Replicate",
   volces: "Volcengine",

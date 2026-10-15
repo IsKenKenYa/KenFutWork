@@ -1061,7 +1061,6 @@ export function ModelProviderSection({
 
   return (
     <ModelProviderSectionLayout
-      description={intl.formatMessage({ id: "settings.modelProviderDescription" })}
       refreshLabel={intl.formatMessage({ id: "settings.modelProvider.refresh" })}
       loadingLabel={intl.formatMessage({ id: "common.loading" })}
       presetLoading={presetLoading}

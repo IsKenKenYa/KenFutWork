@@ -1,17 +1,15 @@
+import { ModelSettingsSummary } from "@zui/host/ModelSettingsSummary.js";
 import { useCallback, useRef, useState } from "react";
 import { GenerationModelFields, parseGenerationModelDraft } from "@zui/host/GenerationModelFields.js";
 import type { ProviderSettingsFormModel } from "@zui/lib/providerSettingsFormTypes.js";
 import type { ModelConnectivityResult } from "@zcode/shared";
 import { Loader2Icon, Trash2, Unplug } from "lucide-react";
 import { Button } from "@zui/components/ui/button.js";
-import { ModelInputCapabilityBadge } from "@zui/components/ModelInputCapabilityBadge.js";
 import { Switch } from "@zui/components/ui/switch.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { useProviderModelDraft } from "@zui/settings/model-provider-section/useProviderModelDraft.js";
 import { ProviderModelMetadataDialog } from "@zui/settings/model-provider-section/ProviderModelMetadataDialog.js";
-import { formatModelContextWindowLabel } from "@zui/lib/tokenNumberFormat.js";
 import type { ModelConfigResolution, ProviderConfigObject } from "@zcode/provider";
-import { shouldShowModelVisionBadge } from "@zui/lib/modelVisionBadge.js";
 import { useProviderDetailFeedback } from "@zui/settings/model-provider-section/ProviderDetailFeedback.js";
 
 export function ModelRowInput({
@@ -48,7 +46,7 @@ export function ModelRowInput({
   onEnabledChange?: (enabled: boolean) => void;
   onTest?: (model: string) => Promise<ModelConnectivityResult>;
 }) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl } = useZCodeIntl();
   const generation = Boolean(model.native && model.native.capability !== "chat");
   const [nativeDraft, setNativeDraft] = useState(model.native);
   const nativeDraftRef = useRef(model.native);
@@ -246,40 +244,11 @@ export function ModelRowInput({
       : null);
   const shouldShowTestButton = !generation && Boolean(onTest);
   const testDisabled = !providerEnabled || isTesting || !draft.idValue.trim() || !onTest;
-  const contextWindowLabel = formatModelContextWindowLabel(
-    model.config.properties?.contextWindow ?? 0,
-    locale,
-  );
-  const contextWindowAccessibleLabel = intl.formatMessage(
-    { id: "settings.modelProvider.contextWindowBadgeLabel" },
-    { value: contextWindowLabel },
-  );
 
   return (
     <div className="space-y-2 px-3 py-2">
       <div className="flex items-center gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span
-            data-testid={inputTestId}
-            className="min-w-0 truncate font-mono text-ui-base text-foreground"
-          >
-            {model.modelId}
-          </span>
-          {generation ? null : <span
-            className="inline-flex h-5 max-w-20 shrink-0 items-center truncate rounded-md border border-border bg-surface px-1.5 font-mono text-ui-sm text-foreground-subtle"
-            aria-label={contextWindowAccessibleLabel}
-            title={contextWindowAccessibleLabel}
-          >
-            {contextWindowLabel}
-          </span>}
-          {shouldShowModelVisionBadge(
-            model.modelId,
-            model.config.properties?.inputFormat?.supportsImage,
-            providerAccess,
-          ) ? (
-            <ModelInputCapabilityBadge />
-          ) : null}
-        </div>
+        <ModelSettingsSummary model={model} inputTestId={inputTestId} />
         {shouldShowTestButton ? (
           <Button
             type="button"

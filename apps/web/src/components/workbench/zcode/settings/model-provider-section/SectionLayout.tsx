@@ -1,3 +1,4 @@
+import { ModelDefaultsSection } from "@zui/host/ModelDefaultsSection.js";
 import type { ReactNode } from "react";
 import { TID_MODEL_PROVIDER_ADD_PROVIDER_BUTTON } from "@zcode/shared";
 import type { ModelProviderNavGroup } from "@zui/settings/model-provider-section/constants.js";
@@ -6,7 +7,6 @@ import { ProviderDetailFeedbackBoundary } from "@zui/settings/model-provider-sec
 import { SettingsResourceHeaderActions } from "@zui/settings/SettingsResourceHeaderActions.js";
 
 interface ModelProviderSectionLayoutProps {
-  description: string;
   refreshLabel: string;
   loadingLabel: string;
   presetLoading: boolean;
@@ -30,7 +30,6 @@ function shouldShowModelProviderRefreshLoading(params: {
 }
 
 export function ModelProviderSectionLayout({
-  description,
   refreshLabel,
   loadingLabel,
   presetLoading,
@@ -52,8 +51,7 @@ export function ModelProviderSectionLayout({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-ui-base leading-6 text-foreground-subtle">{description}</p>
+      <div className="flex justify-end gap-3">
         <SettingsResourceHeaderActions
           onRefresh={onRefresh}
           onNew={onAddProvider}
@@ -93,6 +91,7 @@ export function ModelProviderSectionLayout({
           </div>
         </div>
       </div>
+      <ModelDefaultsSection />
     </div>
   );
 }

@@ -9519,12 +9519,13 @@
       "source": "references/zcode/packages/ui/src/settings/ModelProviderSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/ModelProviderSection.tsx",
       "sha256": "05f5f3f95fe45c2d0c2d8454718c9f46fc052a27dfd19cda3966be74628faca7",
-      "copiedSha256": "d54b649f481f5f2150cf00daf6b13078b12fffad7da166996d406d3f0c45c1a0",
+      "copiedSha256": "c68c6c64d3588afdc23c78dc7c22e6299e2b70d8479696249e1564856a2c85c1",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：沿原组件/导航/Hook 装配按 supportsCloudAccounts 隐藏不可用云账户与套餐，阻止凭据/权益请求；未声明能力时保留原语义",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
-        "KenFutWork 宿主偏差：BYOK 零供应商空态——非加载且导航为空时渲染 EmptyState 引导卡，替代原 !selectedNavItem 分支的永久加载占位"
+        "KenFutWork 宿主偏差：BYOK 零供应商空态——非加载且导航为空时渲染 EmptyState 引导卡，替代原 !selectedNavItem 分支的永久加载占位",
+        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。"
       ]
     },
     {
@@ -10157,22 +10158,24 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/Detail.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/Detail.tsx",
       "sha256": "d73f9134af4d5def56ab3d22678294c03a11209079457900cbd23a5b80937b69",
-      "copiedSha256": "0d80cf34f8ff73406e88b950310b1aa9c468719ae8942316e89ea664349015e3",
+      "copiedSha256": "fbfd2a7f9492f41df63bf53aafbbd17865dbd627689d49dc27c4512af4961995",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/InlineEditableProviderCard.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/InlineEditableProviderCard.tsx",
       "sha256": "2158d97081523c1423a1b4c7c0318e92d89c3e7f3610cf6001e7923588efe0d1",
-      "copiedSha256": "7bcd92bf585bb0b3b34129c96883656372ce7ca978f72c14d3d401a2ab5740c1",
+      "copiedSha256": "c633a31d5a243beaf2e966c149d833f3b69e914eef4f33de7ba566dfe8a1d523",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主 BYOK 接线：沿原保存链明确 clear，仅清成功提交且未继续编辑的对应 Key 草稿，保护迟到应答",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
         "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
-        "宿主接线：原卡片生成模型新增编辑和真实协议保存；Flow隐藏本机模型；保留原反馈与操作生命周期"
+        "宿主接线：原卡片生成模型新增编辑和真实协议保存；Flow隐藏本机模型；保留原反馈与操作生命周期",
+        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。"
       ]
     },
     {
@@ -10197,9 +10200,10 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/Navigation.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/Navigation.tsx",
       "sha256": "fea2e1f58d7ec4a57bac62d8716fbff7cd2348b9d9f48ea6927b74d9103960fe",
-      "copiedSha256": "840b2abc92dabdd1e55b4c4f9f4279b3fc99d4a0915ccf9f3b3934cf8ad6d0b1",
+      "copiedSha256": "73063bff3e5b05791ef76210fdf7615f3dbb383a98ed0390c374c61e69ec1dc0",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。"
       ]
     },
     {
@@ -10215,26 +10219,28 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderApiFormatSelect.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderApiFormatSelect.tsx",
       "sha256": "ea0f7234753f8300a2f70b190bc878ddf711a73a05f9fcd93810349715eda81f",
-      "copiedSha256": "8c566e0ddaaa0cbc82aa69f37979adef9b6120d1aa0ecdbc6831d76d63548b53",
+      "copiedSha256": "5e8097bbf339bee82c86395764b33c31bd200ca5cc7db1ffc04d2e3967ec03b1",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；授权设置可查看／复制，普通目录／通知不含秘密值，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
         "宿主协议扩展：原Select展示生成/Flow真实协议，聊天四API选项保留；原生协议使用统一修订保存",
-        "2026-10-15媒体驱动：本地供应商原API格式控件从共享协议枚举展示已安装驱动，标准实例可切换；非本地wire供应商保持原聊天选项。公开卡片回归验证修订保存。"
+        "2026-10-15媒体驱动：本地供应商原API格式控件从共享协议枚举展示已安装驱动，标准实例可切换；非本地wire供应商保持原聊天选项。公开卡片回归验证修订保存。",
+        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderCardSections.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderCardSections.tsx",
       "sha256": "d01c7b6a18b1b5c93bc176988751821f0f29f435613c399380ba8e4d8dd0ef09",
-      "copiedSha256": "3fd1320fb5b11492d5fa14e8e21f5f7f04b760b6b6d0f9e745bfd6a92eee599d",
+      "copiedSha256": "3c83bfdcd1f568717856d6bebdd0b4be793e1189164bb91d8be2ed1fde1a6ee5",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主接口：原 Key 区段透传 presence 与 clear 回调",
         "KenFutWork BYOK接线：无凭证草稿、修订号CAS、凭证存在标志及Gemini原生协议；授权设置可查看／复制，普通目录／通知不含秘密值，原设置/模型组件消费唯一服务权威。验证见Code内核施工回执与供应商公开回归。",
         "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
         "生成叶子扩展：原新增对话框及列表承载真实模型用途，创建捕获供应商修订；生成不显示聊天校验",
-        "2026-10-15媒体驱动：本地供应商原API格式控件从共享协议枚举展示已安装驱动，标准实例可切换；非本地wire供应商保持原聊天选项。公开卡片回归验证修订保存。"
+        "2026-10-15媒体驱动：本地供应商原API格式控件从共享协议枚举展示已安装驱动，标准实例可切换；非本地wire供应商保持原聊天选项。公开卡片回归验证修订保存。",
+        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。"
       ]
     },
     {
@@ -10270,11 +10276,12 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderFormControls.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderFormControls.tsx",
       "sha256": "ea46f9f4f4e21c9684f84b179370018c41f9db6a191a1332b3b1a59c623f34b3",
-      "copiedSha256": "21770b1d7bc8d70cbecec857dea9436bebd9f29bb70e896e062569077e2c5b42",
+      "copiedSha256": "d70f4eb89693d330c83e1270621564f71930ea5341bb6c1888d60d1bf0b81f06",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
-        "生成叶子扩展：原模型行及弹窗通过原onCommit返回真实定义，编辑固定打开修订；不展示聊天Token徽标"
+        "生成叶子扩展：原模型行及弹窗通过原onCommit返回真实定义，编辑固定打开修订；不展示聊天Token徽标",
+        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。"
       ]
     },
     {
@@ -10308,12 +10315,13 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderModelMetadataDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderModelMetadataDialog.tsx",
       "sha256": "9d3f08fae02d05ee885ae331a9ae38f1cb46608f74dc3da52c493bd444a61c15",
-      "copiedSha256": "7ed49e2663d233661038ad97f7c6e72fff854251d80cecde6e3319d47b53ab94",
+      "copiedSha256": "41187789acd6458a8c0fb696937c82b66e06455013cf718e29e7af00f37043d8",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
         "生成叶子slot：保留原Dialog触发器/操作/错误/保存；生成隐藏聊天智能推荐与恢复提示",
-        "生成叶子沿用原Enter/IME提交与保存中inert保护，技术输入失焦后读取最新草稿"
+        "生成叶子沿用原Enter/IME提交与保存中inert保护，技术输入失焦后读取最新草稿",
+        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。"
       ]
     },
     {
@@ -10383,9 +10391,10 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/SectionLayout.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/SectionLayout.tsx",
       "sha256": "d8e6516c5f4b879ecbef919a485924532c0720e69d010bd9f32ea5c027c81d12",
-      "copiedSha256": "0969d9ea5c516573422f95d320389416d45860d02ee38c5016858a609c329948",
+      "copiedSha256": "5367f7a4d20875d0bc80004037d7a8430fb54bb5a8843a3f7cfd20da2e31d34d",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。"
       ]
     },
     {

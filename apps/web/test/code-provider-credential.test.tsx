@@ -9,6 +9,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TooltipProvider } from "@zui/components/ui/tooltip";
@@ -51,7 +52,7 @@ afterEach(() => {
   localStorage.clear();
 });
 
-function OriginalProviderCard() {
+function OriginalProviderCard({ collapsed = false }: { collapsed?: boolean }) {
   const operation = useModelProviders({ workspacePath: "/fixture" });
   const save = useCallback(
     async (provider: ProviderSettingsFormProvider) => {
@@ -63,6 +64,7 @@ function OriginalProviderCard() {
   return provider ? (
     <InlineEditableProviderCard
       provider={provider}
+      connectionCollapsed={collapsed}
       onSave={save}
       settingsRevision={operation.providerSettingsView?.revision ?? 0}
       onSetPersonalModelEnabled={operation.setPersonalModelEnabled}
@@ -78,6 +80,7 @@ function OriginalProviderCard() {
 function renderOriginalCard(
   beforeSave: () => Promise<void> = async () => {},
   native?: ProviderInstanceResponse,
+  collapsed = false,
 ) {
   const provider = {
     ...(native ? { native } : {}),
@@ -197,7 +200,7 @@ function renderOriginalCard(
         <ZCodeIntlProvider initialLocale="zh-CN">
           <TooltipProvider>
             <ProviderDetailFeedbackBoundary>
-              <OriginalProviderCard />
+              <OriginalProviderCard collapsed={collapsed} />
             </ProviderDetailFeedbackBoundary>
           </TooltipProvider>
         </ZCodeIntlProvider>
@@ -588,6 +591,81 @@ it("图片能力编辑保存画幅尺寸质量格式及多图上限，不物化�
   }
 });
 
+it("同一供应商按用途筛选和搜索模型，清空搜索恢复当前用途", async () => {
+  const { client } = renderOriginalCard(async () => {}, {
+    id: "c0a03eb2-d58c-4637-9fda-c796230a751a",
+    name: "混合网关",
+    scope: "local",
+    protocol: "openai-compatible",
+    hasCredential: true,
+    configRevision: 1,
+    enabled: true,
+    headerKeys: [],
+    models: [
+      { id: "chat-native", name: "对话模型", capability: "chat" },
+      { id: "image-native", name: "图片模型", capability: "image" },
+      { id: "video-native", name: "视频模型", capability: "video" },
+    ],
+  });
+  try {
+    await userEvent.click(await screen.findByRole("tab", { name: "图片 1" }));
+    expect(screen.getByText("image-native")).toBeTruthy();
+    expect(screen.queryByText("chat-native")).toBeNull();
+    expect(screen.queryByText("video-native")).toBeNull();
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "搜索模型" }),
+      "not-found",
+    );
+    expect(screen.queryByText("image-native")).toBeNull();
+    await userEvent.clear(screen.getByRole("textbox", { name: "搜索模型" }));
+    expect(screen.getByText("image-native")).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: "全部 3" }));
+    expect(screen.getByText("chat-native")).toBeTruthy();
+    expect(screen.getByText("video-native")).toBeTruthy();
+  } finally {
+    await act(async () => client.dispose());
+  }
+});
+
+it("兼容网关新增图片模型可选择用途并走原生保存，不误存聊天参数", async () => {
+  const { client, savedModels } = renderOriginalCard(async () => {}, {
+    id: "c0a03eb2-d58c-4637-9fda-c796230a751a",
+    name: "兼容网关",
+    scope: "local",
+    protocol: "openai-compatible",
+    hasCredential: true,
+    configRevision: 3,
+    enabled: true,
+    headerKeys: [],
+    models: [],
+  });
+  try {
+    await userEvent.click(
+      await screen.findByRole("button", { name: "添加模型" }),
+    );
+    act(() => screen.getByLabelText("用途").focus());
+    await userEvent.keyboard("[Space]");
+    await userEvent.click(
+      await screen.findByRole("option", { name: "图像" }),
+    );
+    expect(screen.queryByLabelText("上下文窗口")).toBeNull();
+    await userEvent.type(screen.getByLabelText("模型 ID"), "native-image");
+    await userEvent.type(screen.getByLabelText("名称"), "图片模型");
+    await userEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() =>
+      expect(savedModels).toEqual([
+        {
+          providerId: "c0a03eb2-d58c-4637-9fda-c796230a751a",
+          expectedRevision: 3,
+          model: { id: "native-image", name: "图片模型", capability: "image" },
+        },
+      ]),
+    );
+  } finally {
+    await act(async () => client.dispose());
+  }
+});
+
 it("原供应商卡片只显示真实凭证 presence，替换后清本次草稿，明确清除发送 null", async () => {
   const { client, savedKeys } = renderOriginalCard();
   try {
@@ -695,6 +773,38 @@ it("Code供应商卡可从标准协议切换到GRSAI并保留原生协议修订"
       expect(
         screen.getByTestId("model-provider-api-format-trigger").textContent,
       ).toContain("GRSAI"),
+    );
+  } finally {
+    await act(async () => client.dispose());
+  }
+});
+
+it("连接弹窗等待失焦保存完成，失败保留弹窗及当前输入", async () => {
+  let rejectSave: (reason: Error) => void = () => {};
+  const pendingSave = new Promise<void>((_resolve, reject) => {
+    rejectSave = reject;
+  });
+  const { client, savedKeys } = renderOriginalCard(
+    () => pendingSave,
+    undefined,
+    true,
+  );
+  try {
+    await userEvent.click(
+      await screen.findByRole("button", { name: "连接设置" }),
+    );
+    const input = screen.getByTestId("model-provider-base-url-input");
+    await userEvent.clear(input);
+    await userEvent.type(input, "https://new.example.invalid");
+    await userEvent.click(screen.getByRole("button", { name: "完成" }));
+    await waitFor(() => expect(savedKeys.length).toBe(1));
+    expect(screen.getByRole("dialog", { name: "连接设置" })).toBeTruthy();
+    await act(async () => rejectSave(new Error("连接保存失败，请重试。")));
+    const dialog = screen.getByRole("dialog", { name: "连接设置" });
+    await within(dialog).findByRole("alert");
+    expect(screen.getByTestId("model-provider-base-url-input")).toHaveProperty(
+      "value",
+      "https://new.example.invalid",
     );
   } finally {
     await act(async () => client.dispose());

@@ -111,8 +111,10 @@ function BooleanField({
 export function GenerationModelFields({
   model,
   onChange,
+  hideCapability = false,
 }: {
   model: ProviderInstanceModel;
+  hideCapability?: boolean;
   onChange(model: ProviderInstanceModel): void;
 }) {
   const capabilityId = useId();
@@ -139,33 +141,35 @@ export function GenerationModelFields({
       : undefined;
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <label
-          htmlFor={capabilityId}
-          className="text-ui-base text-foreground-subtle"
-        >
-          用途
-        </label>
-        <Select
-          value={model.capability}
-          onValueChange={(value) =>
-            onChange({
-              ...model,
-              capability: modelCapabilitySchema.parse(value),
-            })
-          }
-        >
-          <SelectTrigger id={capabilityId} className="w-56">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="image">图像</SelectItem>
-            <SelectItem value="image-edit">图像编辑</SelectItem>
-            <SelectItem value="video">视频</SelectItem>
-            <SelectItem value="audio">音频</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      {hideCapability ? null : (
+        <div className="flex items-center justify-between gap-4">
+          <label
+            htmlFor={capabilityId}
+            className="text-ui-base text-foreground-subtle"
+          >
+            用途
+          </label>
+          <Select
+            value={model.capability}
+            onValueChange={(value) =>
+              onChange({
+                ...model,
+                capability: modelCapabilitySchema.parse(value),
+              })
+            }
+          >
+            <SelectTrigger id={capabilityId} className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="image">图像</SelectItem>
+              <SelectItem value="image-edit">图像编辑</SelectItem>
+              <SelectItem value="video">视频</SelectItem>
+              <SelectItem value="audio">音频</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <TextField
         label="模型 ID"
         value={model.id}
