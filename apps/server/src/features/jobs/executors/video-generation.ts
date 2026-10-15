@@ -149,6 +149,7 @@ registerExecutor(
           );
         }
 
+        await ctx.assertExecution?.();
         const pollResult = await pollAsync(jobRow.provider_job_id);
         if (pollResult.state === "in_progress") {
           await scheduleNextPoll();
@@ -177,6 +178,7 @@ registerExecutor(
 
       // ── submit 分支：提交即落引用，投首条延迟 poll 消息，本次执行结束 ──
       lap(`${providerName}_submit_start`);
+      await ctx.assertExecution?.();
       const { providerJobId } = await startAsync({
         prompt: payload.prompt,
         model,
@@ -226,6 +228,7 @@ registerExecutor(
           : {}),
       };
       lap(`${providerName}_call_start`);
+      await ctx.assertExecution?.();
       return instance.provider.generate(generateParams);
     })();
 

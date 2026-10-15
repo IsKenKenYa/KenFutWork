@@ -96,6 +96,7 @@ registerExecutor(
       let generated: GeneratedImage;
       try {
         lap("instance_provider_call");
+        await ctx.assertExecution?.();
         generated = await instanceProvider.generate({
           prompt: payload.prompt,
           model,

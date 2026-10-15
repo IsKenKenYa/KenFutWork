@@ -63,6 +63,9 @@ async function pollBudgetFixture(steps: ExecutorStep[]) {
         workerVideoConcurrency: 1,
       },
       jobService: {
+        claimJob: async () => ({ status: "running" }),
+        renewLease: async () => true,
+        releaseLease: async () => {},
         getJobForWorker: async () => ({ status }),
         incrementAttempt,
         markRunning: async () => {
@@ -119,6 +122,9 @@ describe("本地任务消费终态", () => {
           workerImageConcurrency: 1,
         },
         jobService: {
+          claimJob: async () => ({ status: "running" }),
+          renewLease: async () => true,
+          releaseLease: async () => {},
           getJobForWorker: async () => ({ status: "queued" }),
           incrementAttempt: async () => ({ attempt_count: 1, max_attempts: 3 }),
           markRunning: async () => {},
@@ -201,6 +207,9 @@ describe("本地任务消费终态", () => {
           webOrigin: "http://127.0.0.1",
         },
         jobService: {
+          claimJob: async () => ({ status: "running" }),
+          renewLease: async () => true,
+          releaseLease: async () => {},
           getJobForWorker: async () => ({ status: "queued" }),
           incrementAttempt: async () => ({ attempt_count: 1, max_attempts: 3 }),
           markRunning: async () => {},
@@ -254,6 +263,9 @@ describe("本地任务消费终态", () => {
             webOrigin: "http://127.0.0.1",
           },
           jobService: {
+            claimJob: async () => ({ status: "running" }),
+            renewLease: async () => true,
+            releaseLease: async () => {},
             getJobForWorker: async () => ({ status }),
             incrementAttempt,
           } as never,
@@ -293,6 +305,9 @@ describe("本地任务消费终态", () => {
           webOrigin: "http://127.0.0.1",
         },
         jobService: {
+          claimJob: async () => ({ status: "running" }),
+          renewLease: async () => true,
+          releaseLease: async () => {},
           getJobForWorker: async () => {
             throw new JobServiceError("job_not_found", "任务已删除", 404);
           },
@@ -370,4 +385,92 @@ describe("异步生成查询与失败预算", () => {
       await f.loop.shutdown();
     }
   });
+});
+
+it("租约占用时保留原队列消息，不能吞掉失败后的唯一重试唤醒", async () => {
+  execute.mockReset();
+  const queue = createInProcessQueue();
+  const archive = vi.spyOn(queue, "archive");
+  const postpone = vi.spyOn(queue, "setVisibilityTimeout");
+  await queue.send("image_generation_jobs", {
+    job_id: "leased",
+    job_type: "image_generation",
+  });
+  const loop = startJobLoop(
+    {
+      queue,
+      env: {
+        agentBackendMode: "state",
+        agentModel: "test",
+        port: 0,
+        version: "test",
+        webOrigin: "http://127.0.0.1",
+      },
+      jobService: {
+        getJobForWorker: async () => ({ status: "running" }),
+        claimJob: async () => null,
+      } as never,
+      blob: {} as never,
+      projectFiles: {} as never,
+      generationTargets: {} as never,
+      assetWriter: {} as never,
+    },
+    { queues: ["image_generation_jobs"] },
+  );
+  try {
+    await vi.waitFor(() => expect(postpone).toHaveBeenCalled());
+    expect(archive).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+  } finally {
+    await loop.shutdown();
+  }
+});
+
+it("失租后不再越过成果发布边界，也不消耗失败次数", async () => {
+  const queue = createInProcessQueue();
+  const publish = vi.fn();
+  const resolve = vi.fn(async () => null);
+  const incrementAttempt = vi.fn();
+  execute.mockImplementationOnce(async (_id, _payload, context) => {
+    await context.generationTargets.resolve({} as never);
+    publish();
+    return { url: "late" };
+  });
+  await queue.send("image_generation_jobs", {
+    job_id: "lost",
+    job_type: "image_generation",
+  });
+  const released = vi.fn(async () => {});
+  const loop = startJobLoop(
+    {
+      queue,
+      env: {
+        agentBackendMode: "state",
+        agentModel: "test",
+        port: 0,
+        version: "test",
+        webOrigin: "http://127.0.0.1",
+      },
+      jobService: {
+        getJobForWorker: async () => ({ status: "running" }),
+        claimJob: async () => ({ status: "running" }),
+        renewLease: async () => false,
+        releaseLease: released,
+        incrementAttempt,
+      } as never,
+      blob: {} as never,
+      projectFiles: {} as never,
+      generationTargets: { resolve } as never,
+      assetWriter: {} as never,
+    },
+    { queues: ["image_generation_jobs"] },
+  );
+  try {
+    await vi.waitFor(() => expect(released).toHaveBeenCalled());
+    expect(publish).not.toHaveBeenCalled();
+    expect(resolve).not.toHaveBeenCalled();
+    expect(incrementAttempt).not.toHaveBeenCalled();
+  } finally {
+    await loop.shutdown();
+  }
 });

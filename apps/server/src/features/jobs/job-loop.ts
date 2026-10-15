@@ -4,6 +4,7 @@ import type { BackgroundJob, BackgroundJobType } from "@kenfutwork/shared";
 import type { ServerEnv } from "../../config/env.js";
 import { type QueueClient, QueueClosedError } from "../queue/types.js";
 import { type ExecutorContext, getExecutor } from "./job-executor.js";
+import { createLeasedContext } from "./job-lease.js";
 import { JobServiceError } from "./job-service.js";
 
 /**
@@ -125,12 +126,12 @@ export function startJobLoop(
                 }
               },
             };
-            const task = processMessage(
-              queueName,
-              msg,
-              messageCtx,
-              tag,
-            ).finally(() => inFlight.delete(task));
+            const task = processMessage(queueName, msg, messageCtx, tag)
+              .catch((error) => {
+                // 数据库暂不可用时保留消息；不能绕过认领执行供应商请求。
+                console.error(`${tag} Message execution interrupted:`, error);
+              })
+              .finally(() => inFlight.delete(task));
             inFlight.add(task);
           }
         } catch (error) {
@@ -247,64 +248,88 @@ async function processMessage(
     return;
   }
 
-  await ctx.jobService.markRunning(jobId);
+  const token = randomUUID();
+  const leaseSeconds = VT_BY_QUEUE[queue] ?? 120;
+  const claimed = await ctx.jobService.claimJob(jobId, token, leaseSeconds);
+  if (!claimed) {
+    await ctx.queue.setVisibilityTimeout(queue, msg.msg_id, leaseSeconds);
+    return;
+  }
+  const lease = createLeasedContext(ctx, jobId, token, leaseSeconds);
 
   try {
     const result = await executor(
       jobId,
       msg.message as Record<string, unknown>,
-      ctx,
+      lease.context,
     );
-    await ctx.jobService.markSucceeded(jobId, result);
+    await ctx.jobService.markSucceeded(jobId, result, token);
     await ctx.queue.deleteMessage(queue, msg.msg_id);
     console.log(`${tag} Job ${jobId} succeeded +${Date.now() - startTime}ms`);
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    const errorCode = (err as { code?: string })?.code ?? "executor_error";
-
-    // 异步任务面（S6）：executor 已投下一条延迟 poll 消息——本次消费到此为止，
-    // job 行保持 running（轮询状态不在行上推进），当前消息直接归档。
-    if (errorCode === "provider_poll_scheduled") {
-      await ctx.queue.archive(queue, msg.msg_id);
-      console.log(
-        `${tag} Job ${jobId} poll scheduled +${Date.now() - startTime}ms`,
-      );
-      return;
-    }
-
-    // 查询尚未完成是正常进度；只有真实失败才消耗重试预算。
-    const { attempt_count, max_attempts } =
-      await ctx.jobService.incrementAttempt(jobId);
-
-    // 不可重试的错误：同输入重试必然再失败，直接死信，让调用方快速拿到反馈
-    const NON_RETRYABLE_CODES = new Set([
-      "invalid_input",
-      "model_not_found",
-      "provider_not_found",
-      "safety_filter",
-      // 厂商明确失败 / 绝对超时 / 跨修订拒绝：同输入重试必然再失败
-      "provider_task_failed",
-      "video_job_timeout",
-      "provider_config_stale",
-    ]);
-    const shouldDeadLetter =
-      attempt_count >= max_attempts || NON_RETRYABLE_CODES.has(errorCode);
-
-    if (shouldDeadLetter) {
-      await ctx.jobService.markDeadLetter(jobId, errorCode, errorMessage);
-      await ctx.queue.archive(queue, msg.msg_id);
-
-      console.error(
-        `${tag} Job ${jobId} dead-lettered after ${attempt_count} attempts +${Date.now() - startTime}ms: ${errorMessage}`,
-      );
-    } else {
-      await ctx.jobService.markFailed(jobId, errorCode, errorMessage);
-      // 消息在可见性超时后重新可见，走重试
-      console.warn(
-        `${tag} Job ${jobId} failed (attempt ${attempt_count}/${max_attempts}) +${Date.now() - startTime}ms: ${errorMessage}`,
-      );
-    }
+    await handleExecutionFailure(err, jobId, ctx, token, tag, startTime);
+  } finally {
+    await lease.close();
   }
 }
 
 export type { QueueClient };
+
+async function handleExecutionFailure(
+  err: unknown,
+  jobId: string,
+  ctx: ExecutorContext,
+  token: string,
+  tag: string,
+  startTime: number,
+) {
+  const errorMessage = err instanceof Error ? err.message : String(err);
+  const errorCode = (err as { code?: string })?.code ?? "executor_error";
+
+  if (errorCode === "job_lease_lost") return;
+
+  // 异步任务面（S6）：executor 已投下一条延迟 poll 消息——本次消费到此为止，
+  // job 行保持 running（轮询状态不在行上推进），当前消息直接归档。
+  if (errorCode === "provider_poll_scheduled") {
+    await ctx.queue.archive(ctx.queueName, ctx.msgId);
+    console.log(
+      `${tag} Job ${jobId} poll scheduled +${Date.now() - startTime}ms`,
+    );
+    return;
+  }
+
+  // 查询尚未完成是正常进度；只有真实失败才消耗重试预算。
+  const { attempt_count, max_attempts } = await ctx.jobService.incrementAttempt(
+    jobId,
+    token,
+  );
+
+  // 不可重试的错误：同输入重试必然再失败，直接死信，让调用方快速拿到反馈
+  const NON_RETRYABLE_CODES = new Set([
+    "invalid_input",
+    "model_not_found",
+    "provider_not_found",
+    "safety_filter",
+    // 厂商明确失败 / 绝对超时 / 跨修订拒绝：同输入重试必然再失败
+    "provider_task_failed",
+    "video_job_timeout",
+    "provider_config_stale",
+  ]);
+  const shouldDeadLetter =
+    attempt_count >= max_attempts || NON_RETRYABLE_CODES.has(errorCode);
+
+  if (shouldDeadLetter) {
+    await ctx.jobService.markDeadLetter(jobId, errorCode, errorMessage, token);
+    await ctx.queue.archive(ctx.queueName, ctx.msgId);
+
+    console.error(
+      `${tag} Job ${jobId} dead-lettered after ${attempt_count} attempts +${Date.now() - startTime}ms: ${errorMessage}`,
+    );
+  } else {
+    await ctx.jobService.markFailed(jobId, errorCode, errorMessage, token);
+    // 消息在可见性超时后重新可见，走重试
+    console.warn(
+      `${tag} Job ${jobId} failed (attempt ${attempt_count}/${max_attempts}) +${Date.now() - startTime}ms: ${errorMessage}`,
+    );
+  }
+}

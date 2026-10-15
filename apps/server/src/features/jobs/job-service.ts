@@ -65,6 +65,13 @@ export type CreateJobInput = {
 };
 
 export type JobService = {
+  claimJob(
+    jobId: string,
+    token: string,
+    seconds: number,
+  ): Promise<BackgroundJob | null>;
+  renewLease(jobId: string, token: string, seconds: number): Promise<boolean>;
+  releaseLease(jobId: string, token: string): Promise<void>;
   createJob(actor: LocalActor, input: CreateJobInput): Promise<BackgroundJob>;
   getJob(actor: LocalActor, jobId: string): Promise<BackgroundJob>;
   listJobs(
@@ -80,26 +87,38 @@ export type JobService = {
 
   // Worker 状态迁移不依赖接入客户端。
   markRunning(jobId: string): Promise<void>;
-  markSucceeded(jobId: string, result: Record<string, unknown>): Promise<void>;
+  markSucceeded(
+    jobId: string,
+    result: Record<string, unknown>,
+    leaseToken?: string,
+  ): Promise<void>;
   markFailed(
     jobId: string,
     errorCode: string,
     errorMessage: string,
+    leaseToken?: string,
   ): Promise<void>;
   markDeadLetter(
     jobId: string,
     errorCode: string,
     errorMessage: string,
+    leaseToken?: string,
   ): Promise<void>;
   /** submit 成功后落外部厂商任务引用（崩溃恢复：重启后据此续 poll）。 */
-  setProviderJobId(jobId: string, providerJobId: string): Promise<void>;
+  setProviderJobId(
+    jobId: string,
+    providerJobId: string,
+    leaseToken?: string,
+  ): Promise<void>;
   /** 任务执行上下文补充（浅合并进 payload），如 submit 时的实例修订号。 */
   appendJobPayload(
     jobId: string,
     fields: Record<string, unknown>,
+    leaseToken?: string,
   ): Promise<void>;
   incrementAttempt(
     jobId: string,
+    leaseToken?: string,
   ): Promise<{ attempt_count: number; max_attempts: number }>;
 };
 
@@ -148,6 +167,13 @@ function mapJobRow(row: BackgroundJobRecord): BackgroundJob {
   };
 }
 
+function assertLeaseWrite(count: number, token?: string) {
+  if (token && count === 0)
+    throw Object.assign(new Error("任务执行租约已失效"), {
+      code: "job_lease_lost",
+    });
+}
+
 export function createJobService(options: {
   /** 队列缝（M3.2）：投递与消费，Provider 随形态替换。 */
   queue: QueueClient;
@@ -190,6 +216,16 @@ export function createJobService(options: {
   }
 
   return {
+    async claimJob(jobId, token, seconds) {
+      const row = await repository.claim(jobId, token, seconds);
+      return row ? mapJobRow(row) : null;
+    },
+    async renewLease(jobId, token, seconds) {
+      return (await repository.renewLease(jobId, token, seconds)) > 0;
+    },
+    async releaseLease(jobId, token) {
+      await repository.releaseLease(jobId, token);
+    },
     async createJob(actor, input) {
       // 新请求在HTTP准入处认领；在途Run提交的生成工作仍须正常完成。
       const instanceId = await requireInstanceId(actor, "job_create_failed");
@@ -401,31 +437,44 @@ export function createJobService(options: {
       await repository.markRunning(jobId).catch(() => 0);
     },
 
-    async markSucceeded(jobId, result) {
-      await repository.markSucceeded(jobId, result).catch(() => 0);
+    async markSucceeded(jobId, result, leaseToken) {
+      assertLeaseWrite(
+        await repository.markSucceeded(jobId, result, leaseToken),
+        leaseToken,
+      );
+    },
+    async markFailed(jobId, errorCode, errorMessage, leaseToken) {
+      assertLeaseWrite(
+        await repository.markFailed(jobId, errorCode, errorMessage, leaseToken),
+        leaseToken,
+      );
+    },
+    async markDeadLetter(jobId, errorCode, errorMessage, leaseToken) {
+      assertLeaseWrite(
+        await repository.markDeadLetter(
+          jobId,
+          errorCode,
+          errorMessage,
+          leaseToken,
+        ),
+        leaseToken,
+      );
+    },
+    async setProviderJobId(jobId, providerJobId, leaseToken) {
+      assertLeaseWrite(
+        await repository.setProviderJobId(jobId, providerJobId, leaseToken),
+        leaseToken,
+      );
+    },
+    async appendJobPayload(jobId, fields, leaseToken) {
+      assertLeaseWrite(
+        await repository.appendJobPayload(jobId, fields, leaseToken),
+        leaseToken,
+      );
     },
 
-    async markFailed(jobId, errorCode, errorMessage) {
-      await repository
-        .markFailed(jobId, errorCode, errorMessage)
-        .catch(() => 0);
-    },
-
-    async markDeadLetter(jobId, errorCode, errorMessage) {
-      await repository
-        .markDeadLetter(jobId, errorCode, errorMessage)
-        .catch(() => 0);
-    },
-
-    async setProviderJobId(jobId, providerJobId) {
-      await repository.setProviderJobId(jobId, providerJobId);
-    },
-
-    async appendJobPayload(jobId, fields) {
-      await repository.appendJobPayload(jobId, fields);
-    },
-
-    async incrementAttempt(jobId) {
+    async incrementAttempt(jobId, leaseToken) {
+      if (leaseToken) return repository.incrementAttempt(jobId, leaseToken);
       return repository.incrementAttempt(jobId).catch((error: unknown) => {
         console.error(
           "[job-service] increment_job_attempt failed:",

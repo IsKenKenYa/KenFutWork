@@ -66,6 +66,13 @@ export type JobListFilters = {
  *   与「实例隔离」不冲突（拿不到实例就无法用实例谓词）。
  */
 export interface JobRepository {
+  claim(
+    jobId: string,
+    token: string,
+    seconds: number,
+  ): Promise<BackgroundJobRecord | null>;
+  renewLease(jobId: string, token: string, seconds: number): Promise<number>;
+  releaseLease(jobId: string, token: string): Promise<number>;
   cancel(
     instanceId: string,
     jobId: string,
@@ -80,6 +87,7 @@ export interface JobRepository {
   ): Promise<BackgroundJobRecord | null>;
   incrementAttempt(
     jobId: string,
+    leaseToken?: string,
   ): Promise<{ attempt_count: number; max_attempts: number }>;
   insert(input: NewJobInput): Promise<BackgroundJobRecord | null>;
   listForInstance(
@@ -90,28 +98,42 @@ export interface JobRepository {
     jobId: string,
     errorCode: string,
     errorMessage: string,
+    leaseToken?: string,
   ): Promise<number>;
   markFailed(
     jobId: string,
     errorCode: string,
     errorMessage: string,
+    leaseToken?: string,
   ): Promise<number>;
   markRunning(jobId: string): Promise<number>;
   markSucceeded(
     jobId: string,
     result: Record<string, unknown>,
+    leaseToken?: string,
   ): Promise<number>;
   /** submit 成功后落外部厂商任务引用（崩溃恢复：重启后据此续 poll）。 */
-  setProviderJobId(jobId: string, providerJobId: string): Promise<number>;
+  setProviderJobId(
+    jobId: string,
+    providerJobId: string,
+    leaseToken?: string,
+  ): Promise<number>;
   /** 任务执行上下文补充（如 provider_config_revision）：浅合并进 payload。 */
   appendJobPayload(
     jobId: string,
     fields: Record<string, unknown>,
+    leaseToken?: string,
   ): Promise<number>;
 }
 
 const JOB_COLUMNS =
   "id, instance_id, project_id, canvas_id, session_id, thread_id, file_target, queue_name, job_type, status, payload, result, error_code, error_message, attempt_count, max_attempts, provider_job_id, created_by_client_id, created_at, updated_at, started_at, completed_at, failed_at, canceled_at";
+
+// 未认领的系统操作仅能写未持租约行；持租约消费方必须同时匹配token及有效期。
+function leaseGuard(parameter: number) {
+  return `and ((lease_token is null and $${parameter}::uuid is null)
+    or (lease_token=$${parameter}::uuid and lease_until>now()))`;
+}
 
 const LIST_LIMIT = 50;
 
@@ -121,6 +143,29 @@ export function createJobRepository(
   persistence: PersistenceService,
 ): JobRepository {
   return {
+    async claim(jobId, token, seconds) {
+      return persistence.queryOne<BackgroundJobRecord>(
+        `update public.background_jobs set lease_token=$2, lease_until=now()+$3*interval '1 second',
+          status='running', started_at=coalesce(started_at,now())
+         where id=$1 and status in ('queued','running','failed')
+           and (lease_until is null or lease_until<=now()) returning ${JOB_COLUMNS}`,
+        [jobId, token, seconds],
+      );
+    },
+    async renewLease(jobId, token, seconds) {
+      return persistence.execute(
+        `update public.background_jobs set lease_until=now()+$3*interval '1 second'
+         where id=$1 and lease_token=$2 and lease_until>now() and status='running'`,
+        [jobId, token, seconds],
+      );
+    },
+    async releaseLease(jobId, token) {
+      return persistence.execute(
+        `update public.background_jobs set lease_token=null, lease_until=null where id=$1 and lease_token=$2`,
+        [jobId, token],
+      );
+    },
+
     async insert(input) {
       return persistence.transaction(async (transaction) => {
         const scoped = transaction.forInstance(input.instanceId);
@@ -248,22 +293,22 @@ export function createJobRepository(
       );
     },
 
-    async setProviderJobId(jobId, providerJobId) {
+    async setProviderJobId(jobId, providerJobId, leaseToken) {
       return persistence.execute(
         `update public.background_jobs
             set provider_job_id = $2
-          where id = $1`,
-        [jobId, providerJobId],
+          where id = $1 and status in ('queued','running') ${leaseGuard(3)}`,
+        [jobId, providerJobId, leaseToken ?? null],
       );
     },
 
-    async appendJobPayload(jobId, fields) {
+    async appendJobPayload(jobId, fields, leaseToken) {
       // jsonb || 浅合并：与既有 payload 字段并存，不整体替换
       return persistence.execute(
         `update public.background_jobs
             set payload = payload || $2::jsonb
-          where id = $1`,
-        [jobId, JSON.stringify(fields)],
+          where id = $1 and status in ('queued','running') ${leaseGuard(3)}`,
+        [jobId, JSON.stringify(fields), leaseToken ?? null],
       );
     },
 
@@ -278,19 +323,19 @@ export function createJobRepository(
       );
     },
 
-    async markSucceeded(jobId, result) {
+    async markSucceeded(jobId, result, leaseToken) {
       return persistence.execute(
         `update public.background_jobs
             set status = 'succeeded',
                 result = $2::jsonb,
                 completed_at = now()
           where id = $1
-            and status in ('queued', 'running', 'failed')`,
-        [jobId, JSON.stringify(result)],
+            and status in ('queued', 'running', 'failed') ${leaseGuard(3)}`,
+        [jobId, JSON.stringify(result), leaseToken ?? null],
       );
     },
 
-    async markFailed(jobId, errorCode, errorMessage) {
+    async markFailed(jobId, errorCode, errorMessage, leaseToken) {
       return persistence.execute(
         `update public.background_jobs
             set status = 'failed',
@@ -298,12 +343,12 @@ export function createJobRepository(
                 error_message = $3,
                 failed_at = now()
           where id = $1
-            and status in ('queued', 'running', 'failed')`,
-        [jobId, errorCode, errorMessage],
+            and status in ('queued', 'running', 'failed') ${leaseGuard(4)}`,
+        [jobId, errorCode, errorMessage, leaseToken ?? null],
       );
     },
 
-    async markDeadLetter(jobId, errorCode, errorMessage) {
+    async markDeadLetter(jobId, errorCode, errorMessage, leaseToken) {
       return persistence.execute(
         `update public.background_jobs
             set status = 'dead_letter',
@@ -311,12 +356,27 @@ export function createJobRepository(
                 error_message = $3,
                 failed_at = now()
           where id = $1
-            and status in ('queued', 'running', 'failed')`,
-        [jobId, errorCode, errorMessage],
+            and status in ('queued', 'running', 'failed') ${leaseGuard(4)}`,
+        [jobId, errorCode, errorMessage, leaseToken ?? null],
       );
     },
 
-    async incrementAttempt(jobId) {
+    async incrementAttempt(jobId, leaseToken) {
+      if (leaseToken) {
+        const row = await persistence.queryOne<AttemptRow>(
+          `update public.background_jobs set attempt_count=attempt_count+1
+           where id=$1 and status='running' ${leaseGuard(2)} returning attempt_count,max_attempts`,
+          [jobId, leaseToken],
+        );
+        if (!row)
+          throw Object.assign(new Error("任务执行租约已失效"), {
+            code: "job_lease_lost",
+          });
+        return {
+          attempt_count: row.attempt_count,
+          max_attempts: row.max_attempts ?? 3,
+        };
+      }
       // 原子累加走库函数：并发重投不会丢计数（此前经 RPC，函数本身与身份无关）。
       const row = await persistence.queryOne<AttemptRow>(
         "select attempt_count, max_attempts from public.increment_job_attempt($1)",

@@ -222,6 +222,7 @@ describe("jobs repository（background_jobs）", () => {
     expect(succeeded.calls[0]?.values).toEqual([
       JOB_ID,
       JSON.stringify({ url: "https://x/y.png" }),
+      null,
     ]);
 
     const failed = createRunner(() => ({ rowCount: 1, rows: [] }));
@@ -229,7 +230,12 @@ describe("jobs repository（background_jobs）", () => {
       createPersistenceFromRunner(failed.runner),
     ).markDeadLetter(JOB_ID, "provider_error", "超时");
     expect(failed.sqls()[0]).toContain("set status = 'dead_letter'");
-    expect(failed.calls[0]?.values).toEqual([JOB_ID, "provider_error", "超时"]);
+    expect(failed.calls[0]?.values).toEqual([
+      JOB_ID,
+      "provider_error",
+      "超时",
+      null,
+    ]);
   });
 
   it("尝试次数走库函数（原子累加）；未命中回默认值", async () => {
@@ -263,6 +269,9 @@ function createFakeRepository(
     delete: async () => 1,
     findById: async () => JOB_ROW,
     findByIdInInstance: async () => JOB_ROW,
+    claim: async () => null,
+    renewLease: async () => 1,
+    releaseLease: async () => 1,
     incrementAttempt: async () => ({ attempt_count: 1, max_attempts: 3 }),
     insert: async () => JOB_ROW,
     listForInstance: async () => [],

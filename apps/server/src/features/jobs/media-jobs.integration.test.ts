@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createLocalFsBlobStore } from "../blob/providers/local-fs.js";
 import { createScopeRepository } from "../execution/scope-repository.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
@@ -11,6 +11,8 @@ import {
   createUploadService,
   type UploadService,
 } from "../uploads/upload-service.js";
+import { registerExecutor } from "./job-executor.js";
+import { startJobLoop } from "./job-loop.js";
 import { createJobService } from "./job-service.js";
 import { createJobRepository } from "./repository.js";
 
@@ -41,6 +43,123 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
       });
       return { jobs, queue };
     }
+
+    it("重复消费只有一个worker取得执行租约，迟到token不能改写结果", async () => {
+      const { jobs, queue } = fixture();
+      try {
+        const job = await jobs.createJob(db.actor, {
+          jobType: "image_generation",
+          payload: { prompt: "猫" },
+        });
+        const tokens = Array.from({ length: 8 }, () => randomUUID());
+        const claimed = await Promise.all(
+          tokens.map((token) => jobs.claimJob(job.id, token, 120)),
+        );
+        expect(claimed.filter(Boolean)).toHaveLength(1);
+        const owner = tokens[claimed.findIndex(Boolean)];
+        if (!owner) throw new Error("没有认领者");
+        await expect(
+          jobs.markSucceeded(job.id, { url: "stale" }, randomUUID()),
+        ).rejects.toMatchObject({ code: "job_lease_lost" });
+        expect((await jobs.getJob(db.actor, job.id)).status).toBe("running");
+        await jobs.markSucceeded(job.id, { url: "winner" }, owner);
+        expect(await jobs.getJob(db.actor, job.id)).toMatchObject({
+          status: "succeeded",
+          result: { url: "winner" },
+        });
+      } finally {
+        await queue.shutdown();
+      }
+    });
+
+    it("租约过期换worker后，旧执行者不能覆盖新执行者", async () => {
+      const { jobs, queue } = fixture();
+      try {
+        const job = await jobs.createJob(db.actor, {
+          jobType: "video_generation",
+          payload: { prompt: "猫" },
+        });
+        const first = randomUUID(),
+          second = randomUUID();
+        expect(await jobs.claimJob(job.id, first, 0.05)).not.toBeNull();
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        expect(await jobs.claimJob(job.id, second, 120)).not.toBeNull();
+        expect(await jobs.renewLease(job.id, first, 120)).toBe(false);
+        await expect(
+          jobs.setProviderJobId(job.id, "stale-provider", first),
+        ).rejects.toMatchObject({ code: "job_lease_lost" });
+        await jobs.setProviderJobId(job.id, "current-provider", second);
+        await expect(
+          jobs.markSucceeded(job.id, { url: "stale" }, first),
+        ).rejects.toMatchObject({ code: "job_lease_lost" });
+        await jobs.markSucceeded(job.id, { url: "current" }, second);
+        expect(await jobs.getJob(db.actor, job.id)).toMatchObject({
+          status: "succeeded",
+          provider_job_id: "current-provider",
+          result: { url: "current" },
+        });
+      } finally {
+        await queue.shutdown();
+      }
+    });
+
+    it("两个消费循环读取重复消息，供应商只收到一次执行", async () => {
+      const { jobs, queue } = fixture();
+      const job = await jobs.createJob(db.actor, {
+        jobType: "image_generation",
+        payload: { prompt: "猫" },
+      });
+      for (let index = 0; index < 7; index++)
+        await queue.send("image_generation_jobs", {
+          job_id: job.id,
+          job_type: "image_generation",
+        });
+      let finish: () => void = () => {};
+      const held = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const execute = vi.fn(async () => {
+        await held;
+        return { url: "done" };
+      });
+      registerExecutor("image_generation", execute);
+      const context = {
+        queue,
+        jobService: jobs,
+        env: {
+          agentBackendMode: "state" as const,
+          agentModel: "test",
+          port: 0,
+          version: "test",
+          webOrigin: "http://127.0.0.1",
+          workerImageConcurrency: 4,
+        },
+        blob: {} as never,
+        projectFiles: {} as never,
+        generationTargets: {} as never,
+        assetWriter: {} as never,
+      };
+      const first = startJobLoop(context, {
+        queues: ["image_generation_jobs"],
+      });
+      const second = startJobLoop(context, {
+        queues: ["image_generation_jobs"],
+      });
+      try {
+        await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce());
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        expect(execute).toHaveBeenCalledOnce();
+        finish();
+        await vi.waitFor(async () =>
+          expect((await jobs.getJob(db.actor, job.id)).status).toBe(
+            "succeeded",
+          ),
+        );
+      } finally {
+        finish();
+        await Promise.all([first.shutdown(), second.shutdown()]);
+      }
+    });
 
     it("参考图持久保存为素材引用，Job不保存base64", async () => {
       const uploads = createUploadService({

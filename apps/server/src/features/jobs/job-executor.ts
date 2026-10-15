@@ -11,6 +11,8 @@ import type { UsageService } from "../usage/usage-service.js";
 import type { JobService } from "./job-service.js";
 
 export type ExecutorContext = {
+  signal?: AbortSignal;
+  assertExecution?: () => Promise<void>;
   uploads?: Pick<UploadService, "getAssetUrl">;
   projectFiles: ProjectFileService;
   generationTargets: GenerationTargets;
