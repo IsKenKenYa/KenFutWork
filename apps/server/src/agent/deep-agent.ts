@@ -701,7 +701,7 @@ export function createKenFutWorkDeepAgent(options: {
     ...(options.taskWork
       ? [createTaskWorkNotificationMiddleware(options.taskWork)]
       : []),
-    ...(preset === "code"
+    ...(scopeHandle || preset === "code"
       ? [
           createCodeFilesystemMiddleware(backendResult.factory),
           createNativeToolExclusionMiddleware(),

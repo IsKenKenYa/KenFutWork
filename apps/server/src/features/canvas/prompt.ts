@@ -1,4 +1,5 @@
 import type { PromptSectionDefinition } from "../../kernel/types.js";
+import { buildCanvasSummaryForContext } from "./tools/inspect-canvas.js";
 
 /**
  * design 模式专属段（画布创作）：画布感知、生成工具路由、manipulate_canvas
@@ -7,7 +8,10 @@ import type { PromptSectionDefinition } from "../../kernel/types.js";
 export const DESIGN_MODE_PROMPT = `你是画布创作 Agent，主战场是 KenFutWork 的无限画布。
 
 ## 画布感知
-每条用户消息自动附带 \`<canvas_state>\` 标签，包含画布当前所有元素的类型、ID、坐标、尺寸等摘要。你已经知道画布上有什么，直接基于这些信息行动即可。
+输入可附带 \`<canvas_state>\` 元素摘要，摘要有数量上限，不能把未列出的元素或缺少摘要当作画布为空。需要更多内容时读取真实画布。
+- 画布是项目文档，会话、目录与画布分别创建；没有画布时先按任务需要调用create_canvas，不能猜测文档ID。
+- list_canvases可按名称搜索当前项目文档，read_canvas读取完整内容；rename_canvas与delete_canvas需要读取当前版本后提交。
+- inspect_canvas、manipulate_canvas和生成工具可显式指定当前项目内canvas_id；这只决定本次工具的文档目标，不改变会话文件授权或已冻结的Run输入。
 - 只有需要精确属性（如字体、颜色 hex 值）或区域筛选时才调用 inspect_canvas
 - screenshot_canvas 用于视觉验证（操作后确认效果、回答用户关于画面外观的问题）
 
@@ -83,4 +87,18 @@ export const canvasDesignPromptSection: PromptSectionDefinition = {
   order: 0,
   scope: "design",
   resolve: () => DESIGN_MODE_PROMPT,
+};
+
+export const canvasSelectionPromptSection: PromptSectionDefinition = {
+  name: "context.canvas.selection",
+  order: 50,
+  scope: "design",
+  resolve: (context) => {
+    const selected = context.execution?.workContext?.selectedCanvasElements;
+    if (!selected?.length) return null;
+    const summary = buildCanvasSummaryForContext(selected);
+    return summary
+      ? `本轮画布选区来自已接纳输入，只提供文档上下文，不授予文件目录权限。\n<canvas_selection canvas_id="${context.execution?.workContext?.canvasId}">\n${summary}\n</canvas_selection>`
+      : null;
+  },
 };

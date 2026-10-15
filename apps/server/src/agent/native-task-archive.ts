@@ -19,7 +19,8 @@ export function createNativeTaskArchive(
       if (
         !authority ||
         !execution?.scopeHandle ||
-        execution.scopeHandle.preset !== preset
+        (execution.workContext?.preset ?? execution.scopeHandle.preset) !==
+          preset
       )
         throw new Error("历史归档必须绑定真实Task与运行线程。");
       const key = decodeNativeContextReference(reference);

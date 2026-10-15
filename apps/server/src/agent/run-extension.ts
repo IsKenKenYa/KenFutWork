@@ -27,7 +27,7 @@ export interface AgentRunExtensionContext {
 
 /** 插件贡献的 SDK middleware 缝；运行时只按 preset 消费，不认业务插件名。 */
 export interface AgentRunExtension {
-  preset: "code" | "design";
+  preset: "code" | "design" | "shared";
   canonicalToolEvents?: boolean;
   createMiddleware(
     identity: AgentEventIdentity,

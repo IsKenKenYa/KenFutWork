@@ -1,11 +1,23 @@
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { instanceSettingsSchema, type StreamEvent } from "@kenfutwork/shared";
+import {
+  instanceSettingsSchema,
+  type zcodeUiProtocol as protocol,
+  type StreamEvent,
+} from "@kenfutwork/shared";
 import type { HumanMessage } from "@langchain/core/messages";
 import { afterEach, expect, it } from "vitest";
 import type { ServerEnv } from "../config/env.js";
 import { codeRolePromptSection } from "../features/agent-runs/prompt-sections.js";
+import {
+  canvasDesignPromptSection,
+  canvasSelectionPromptSection,
+} from "../features/canvas/prompt.js";
+import {
+  codeModePromptSection,
+  taskWorkDirectoryPromptSection,
+} from "../features/code-tools/prompt.js";
 import type { TrustedCodeInput } from "../features/code-ui/attachments/input-types.js";
 import type { ExecutionRole } from "../features/execution/scope-service.js";
 import { createExecutionScopes } from "../features/execution/scope-service.js";
@@ -35,6 +47,7 @@ async function fixture(
     codeInputs?: TrustedCodeInput[];
     vision?: boolean;
     pdf?: boolean;
+    workContext?: protocol.ConversationWorkContext;
   } = {},
 ) {
   const directory = await realpath(
@@ -89,6 +102,10 @@ async function fixture(
   const messages: HumanMessage[] = [];
   const registry = new SystemPromptRegistryImpl();
   registry.register(codeRolePromptSection);
+  registry.register(codeModePromptSection);
+  registry.register(taskWorkDirectoryPromptSection);
+  registry.register(canvasDesignPromptSection);
+  registry.register(canvasSelectionPromptSection);
   let ready!: () => void;
   const started = new Promise<void>((resolve) => {
     ready = resolve;
@@ -109,6 +126,11 @@ async function fixture(
                 once: true,
               });
           });
+        if (!config?.signal?.aborted)
+          yield {
+            event: "on_chat_model_stream",
+            data: { chunk: { content: "检查点测试运行已处理" } },
+          };
       },
     };
   }) as KenFutWorkAgentFactory;
@@ -190,6 +212,7 @@ async function fixture(
     {
       scopeHandle: execution,
       actor,
+      ...(options.workContext ? { workContext: options.workContext } : {}),
       model: `${scope.projectId}:model`,
       ...(options.codeInputs ? { codeInputs: options.codeInputs } : {}),
       ...(options.role ? { roleInstructions: "readonly evidence" } : {}),
@@ -213,6 +236,7 @@ async function fixture(
     created,
     calls,
     scope,
+    execution,
     events,
     prompts,
     signals,
@@ -221,6 +245,38 @@ async function fixture(
     messages,
   };
 }
+
+it("共享Code Task的Design Run沿真实提示执行上下文保留冻结画布与目录授权", async () => {
+  const workContext: protocol.ConversationWorkContext = {
+    preset: "design",
+    canvasId: "accepted-canvas",
+    selectedCanvasElements: [
+      {
+        id: "accepted-shape",
+        type: "rectangle",
+        x: 10,
+        y: 20,
+        width: 120,
+        height: 60,
+      },
+    ],
+  };
+  const f = await fixture({ workContext });
+  workContext.preset = "code";
+  workContext.canvasId = "later-ui-canvas";
+  workContext.selectedCanvasElements![0]!.id = "later-ui-shape";
+  const events = await f.drain();
+  expect(events.filter((event) => event.type === "run.failed")).toEqual([]);
+  expect(events.at(-1)?.type).toBe("run.completed");
+  expect(f.prompts[0]).toContain("你是画布创作 Agent");
+  expect(f.prompts[0]).toContain("Task 的主目录跨轮保持稳定");
+  expect(f.prompts[0]).toContain('canvas_id="accepted-canvas"');
+  expect(f.prompts[0]).toContain("accepted-shape");
+  expect(f.prompts[0]).not.toMatch(/以编码为重点|later-ui/);
+  expect(f.execution.preset).toBe("code");
+  expect(f.execution.describe()).toEqual(f.scope);
+  expect(f.calls.map((call) => call.hook)).toEqual(["before", "after"]);
+});
 
 it("Code已授权文本附件确实进入模型消息，创建Run后修改调用端bytes不能改写输入", async () => {
   const bytes = new Uint8Array(Buffer.from("姓名,金额\n小明,12\n"));

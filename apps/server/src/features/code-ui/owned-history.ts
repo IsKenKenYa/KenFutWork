@@ -106,6 +106,7 @@ function replayInput(input: CodeAdmittedInput): CodeReplayInput {
     modelSelection,
     mode,
     planEnabled,
+    workContext,
   } = input.intent;
   return structuredClone({
     intent: {
@@ -117,8 +118,12 @@ function replayInput(input: CodeAdmittedInput): CodeReplayInput {
       modelSelection,
       mode,
       planEnabled,
+      ...(workContext ? { workContext } : {}),
     },
     modelInvocation: input.modelInvocation,
+    ...(input.frozenContributions
+      ? { frozenContributions: input.frozenContributions }
+      : {}),
   });
 }
 

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   BrandKitAsset,
   BrandKitAssetCreateRequest,
@@ -8,6 +9,7 @@ import type {
   BrandKitUpdateRequest,
 } from "@kenfutwork/shared";
 import type { BlobStore } from "../blob/types.js";
+import { binaryMimeType } from "../code-tools/file-media.js";
 import type {
   LocalActor,
   LocalInstanceService,
@@ -57,6 +59,12 @@ export class BrandKitServiceError extends Error {
 }
 
 export type BrandKitService = {
+  readAsset(
+    actor: LocalActor,
+    kitId: string,
+    assetId: string,
+    maxBytes: number,
+  ): Promise<{ bytes: Uint8Array; mimeType: string; version: string }>;
   listKits(actor: LocalActor): Promise<BrandKitSummary[]>;
   getKit(actor: LocalActor, kitId: string): Promise<BrandKitDetail>;
   createKit(
@@ -180,6 +188,60 @@ export function createBrandKitService(options: {
   }
 
   return {
+    async readAsset(actor, kitId, assetId, maxBytes) {
+      await options.localInstance.resolve(actor);
+      const asset = await repository.findAsset(
+        actor.instanceId,
+        kitId,
+        assetId,
+      );
+      if (!asset?.file_url || !["logo", "image"].includes(asset.asset_type))
+        throw new BrandKitServiceError(
+          "brand_kit_asset_not_found",
+          "品牌素材已删除或不属于所选品牌，请重新选择。",
+          404,
+        );
+      const bytes = await options.blob
+        .bucket(BRAND_KIT_BUCKET)
+        .download(asset.file_url, { maxBytes });
+      if (bytes.byteLength > maxBytes)
+        throw new BrandKitServiceError(
+          "brand_kit_asset_not_found",
+          "品牌素材超过读取限制，请调整设置。",
+          413,
+        );
+      const mimeType = binaryMimeType(Buffer.from(bytes));
+      if (!mimeType.startsWith("image/"))
+        throw new BrandKitServiceError(
+          "brand_kit_asset_not_found",
+          "品牌素材格式无法识别，请重新上传PNG、JPG或WebP。",
+          400,
+        );
+      const version = createHash("sha256").update(bytes).digest("hex");
+      const metadata = asset.metadata as Record<string, unknown> | null;
+      if (typeof metadata?.sha256 === "string" && metadata.sha256 !== version)
+        throw new BrandKitServiceError(
+          "brand_kit_asset_not_found",
+          "品牌素材文件已变化，请重新上传或选择。",
+          409,
+        );
+      const current = await repository.findAsset(
+        actor.instanceId,
+        kitId,
+        assetId,
+      );
+      if (
+        !current ||
+        current.file_url !== asset.file_url ||
+        JSON.stringify(current.metadata) !== JSON.stringify(asset.metadata)
+      )
+        throw new BrandKitServiceError(
+          "brand_kit_asset_not_found",
+          "品牌素材在读取期间变化，请重新选择。",
+          409,
+        );
+      return { bytes, mimeType, version };
+    },
     async listKits(actor) {
       await options.localInstance.resolve(actor);
       let kits: Awaited<ReturnType<typeof repository.listKits>>;
@@ -553,6 +615,11 @@ export function createBrandKitService(options: {
           asset_type: assetType,
           display_name: displayName,
           file_url: objectPath,
+          metadata: {
+            mime_type: mimeType,
+            sha256: createHash("sha256").update(fileBuffer).digest("hex"),
+            byte_size: fileBuffer.byteLength,
+          },
           sort_order: (maxSortOrder ?? -1) + 1,
         })
         .catch(() => null);
