@@ -2,6 +2,11 @@ import type { CodeUiViewerScope } from "@kenfutwork/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ServiceChannels } from "../../../packages/zcode-shared/dist/channels.js";
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
+import {
+  setSurfaceApiBase,
+  surfaceJson,
+  surfaceRequest,
+} from "../src/components/workbench/zcode/host/surfaceApi";
 import { codeHostNotificationResponse } from "./setup/code-host-http";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -634,5 +639,63 @@ describe("Code 宿主语音转写通道", () => {
     } finally {
       client.dispose();
     }
+  });
+});
+
+
+describe("Code 宿主数据面请求", () => {
+  afterEach(() => setSurfaceApiBase(""));
+
+  it("204 成功请求保留无正文响应，不强制解析 JSON", async () => {
+    setSurfaceApiBase("http://host.test/");
+    const response = new Response(null, { status: 204 });
+    const fetchRequest = vi.fn(async () => response);
+    vi.stubGlobal("fetch", fetchRequest);
+    const input = {
+      method: "PATCH",
+      body: JSON.stringify({ enabledModes: ["code", "design"] }),
+    };
+
+    await expect(surfaceRequest("/api/projects/project", input)).resolves.toBe(
+      response,
+    );
+    expect(response.bodyUsed).toBe(false);
+    expect(fetchRequest).toHaveBeenCalledWith(
+      "http://host.test/api/projects/project",
+      { credentials: "include", ...input },
+    );
+  });
+
+  it("JSON 读取继续解析成功响应", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ name: "项目" }))),
+    );
+
+    await expect(surfaceJson("/api/projects/project")).resolves.toEqual({
+      name: "项目",
+    });
+  });
+
+  it.each([
+    ["无正文请求", surfaceRequest],
+    ["JSON 读取", surfaceJson],
+  ])("%s 保留服务端拒绝原因并拒绝非 JSON 错误", async (_name, request) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ error: { message: "项目已关闭，请重新打开" } }),
+            { status: 409 },
+          ),
+        )
+        .mockResolvedValueOnce(new Response("upstream failure", { status: 502 })),
+    );
+
+    await expect(request("/api/projects/project")).rejects.toThrow(
+      "项目已关闭，请重新打开",
+    );
+    await expect(request("/api/projects/project")).rejects.toThrow("HTTP 502");
   });
 });
