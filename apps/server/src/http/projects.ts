@@ -2,6 +2,8 @@ import {
   applicationErrorResponseSchema,
   projectCreateRequestSchema,
   projectCreateResponseSchema,
+  projectDirectoryCandidatesSchema,
+  projectDirectoryQuerySchema,
   projectListQuerySchema,
   projectListResponseSchema,
   projectUpdateRequestSchema,
@@ -23,6 +25,43 @@ export async function registerProjectRoutes(
     projectService: ProjectService;
   },
 ) {
+  app.get("/api/projects/directory-candidates", async (request, reply) => {
+    try {
+      const actor = await options.localAccess.authenticate(request);
+      if (!actor)
+        return reply.code(401).send(
+          unauthenticatedErrorResponseSchema.parse({
+            error: {
+              code: "unauthorized",
+              message: "缺少或无效的本机接入凭据。",
+            },
+          }),
+        );
+      const { path } = projectDirectoryQuerySchema.parse(request.query);
+      const projects = await options.projectService.directoryProjects(
+        actor,
+        path,
+      );
+      return reply.send(
+        projectDirectoryCandidatesSchema.parse({
+          projects: projects.map((project) => ({
+            id: project.id,
+            name: project.name,
+            kind: project.kind,
+            enabledModes: project.enabled_modes,
+            workDir: project.work_dir,
+          })),
+        }),
+      );
+    } catch (error) {
+      if (isZodError(error))
+        return reply
+          .code(400)
+          .send({ message: "目录参数无效，请重新选择文件夹。" });
+      return sendProjectError(error, reply, "project_query_failed");
+    }
+  });
+
   app.get("/api/projects/:projectId", async (request, reply) => {
     try {
       const user = await options.localAccess.authenticate(request);

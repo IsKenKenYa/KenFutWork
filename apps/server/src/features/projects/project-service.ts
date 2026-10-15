@@ -1,6 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
-import { realpath } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import { join, resolve } from "node:path";
 import type {
   AdditionalDirectory,
   ProjectCreateRequest,
@@ -20,6 +19,7 @@ import type {
   ProjectRepository,
   ProjectUpdatePatch,
 } from "./repository.js";
+import { ProjectDirectoryConflictError } from "./repository.js";
 import {
   normalizeAdditionalDirectories,
   resolveProjectWorkDirectory,
@@ -42,10 +42,14 @@ type ProjectErrorCode =
   | "project_query_failed"
   | "project_slug_taken"
   | "project_update_failed"
-  | "invalid_project_modes";
+  | "invalid_project_modes"
+  | "project_directory_conflict";
 
 export type ProjectService = {
-  openCodeDirectory(actor: LocalActor, path: string): Promise<ProjectSummary>;
+  directoryProjects(
+    actor: LocalActor,
+    path: string,
+  ): Promise<ProjectDetailRow[]>;
   archiveProject(actor: LocalActor, projectId: string): Promise<void>;
   createProject(
     actor: LocalActor,
@@ -88,11 +92,6 @@ export function createProjectService(options: {
   repository: ProjectRepository;
   localInstance: LocalInstanceService;
   sandboxRoot?: string | undefined;
-  beforeArchiveDesignProject?: (
-    actor: LocalActor,
-    projectId: string,
-    taskIds: string[],
-  ) => Promise<void>;
   beforeArchiveCodeProject?: (
     actor: LocalActor,
     projectId: string,
@@ -101,59 +100,12 @@ export function createProjectService(options: {
   const { repository, localInstance } = options;
 
   return {
-    async openCodeDirectory(actor, path) {
+    async directoryProjects(actor, path) {
       const context = await localInstance.resolve(actor);
-      const workDir = await realpath(requireWorkDir(path)).catch((error) => {
-        throw new ProjectServiceError(
-          "invalid_work_dir",
-          `工作目录不可用：${error instanceof Error ? error.message : String(error)}`,
-          400,
-        );
-      });
-      const existing = await repository.findActiveCodeDirectory(
-        context.instanceId,
-        workDir,
-      );
-      if (existing)
-        return mapProjectSummary({
-          ...existing,
-          instanceId: context.instanceId,
-        });
-      try {
-        const created = await repository.createProject({
-          canvasName: "Main Canvas",
-          description: null,
-          kind: "code",
-          name: basename(workDir) || workDir,
-          slug: `code-directory-${createHash("sha256").update(workDir).digest("hex")}`,
-          workDir,
-          createdByClientId: actor.accessClientId,
-          instanceId: context.instanceId,
-        });
-        return mapProjectSummary({
-          canvas: created.canvas,
-          project: created.project,
-          instanceId: context.instanceId,
-        });
-      } catch (error) {
-        if ((error as { code?: string })?.code === SQLSTATE_UNIQUE_VIOLATION) {
-          const concurrent = await repository.findActiveCodeDirectory(
-            context.instanceId,
-            workDir,
-          );
-          if (concurrent)
-            return mapProjectSummary({
-              ...concurrent,
-              instanceId: context.instanceId,
-            });
-          throw new ProjectServiceError(
-            "project_slug_taken",
-            "工作目录对应的项目已归档，无法重新打开。",
-            409,
-          );
-        }
-        throw mapProjectCreateError(error);
-      }
+      const verdict = validateWorkDir(path);
+      if (!verdict.ok)
+        throw new ProjectServiceError("invalid_work_dir", verdict.reason, 400);
+      return repository.findDirectoryProjects(context.instanceId, verdict.path);
     },
     async archiveProject(actor, projectId) {
       const context = await localInstance.resolve(actor);
@@ -167,7 +119,7 @@ export function createProjectService(options: {
           PROJECT_NOT_FOUND_MESSAGE,
           404,
         );
-      if (project.kind === "code") {
+      if (project.kind !== "flow") {
         if (!options.beforeArchiveCodeProject)
           throw new ProjectServiceError(
             "project_delete_failed",
@@ -184,41 +136,6 @@ export function createProjectService(options: {
             error instanceof Error
               ? error.message
               : "Code 执行资源尚未确认关闭。",
-            503,
-          );
-        }
-      }
-
-      if (project.kind === "design") {
-        if (!options.beforeArchiveDesignProject)
-          throw new ProjectServiceError(
-            "project_delete_failed",
-            "画布任务关闭器不可用，项目未归档。",
-            503,
-          );
-        let taskIds: string[];
-        try {
-          taskIds = await repository.beginCloseDesignProject(
-            context.instanceId,
-            projectId,
-          );
-        } catch (error) {
-          throw new ProjectServiceError(
-            "project_delete_failed",
-            error instanceof Error ? error.message : "画布项目关闭未开始。",
-            503,
-          );
-        }
-        try {
-          await options.beforeArchiveDesignProject(actor, projectId, taskIds);
-        } catch (error) {
-          await repository.failCloseDesignProject(
-            context.instanceId,
-            projectId,
-          );
-          throw new ProjectServiceError(
-            "project_delete_failed",
-            error instanceof Error ? error.message : "画布任务尚未确认关闭。",
             503,
           );
         }
@@ -291,6 +208,9 @@ export function createProjectService(options: {
         .createProject({
           id: projectId,
           additionalDirectories,
+          ...(input.directory_choice
+            ? { directoryChoice: input.directory_choice }
+            : {}),
           canvasName: "Main Canvas",
           description: normalizeDescription(input.description),
           // 缺省 design：存量调用方（Design 建项目）语义不变
@@ -544,6 +464,12 @@ function requireAdditionalDirectories(
 }
 
 function mapProjectCreateError(error: unknown) {
+  if (error instanceof ProjectDirectoryConflictError)
+    return new ProjectServiceError(
+      "project_directory_conflict",
+      error.message,
+      409,
+    );
   if (
     error instanceof Error &&
     "code" in error &&

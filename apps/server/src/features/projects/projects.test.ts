@@ -31,6 +31,7 @@ import {
   type CreateProjectInput,
   createProjectRepository,
   type ProjectDetailRow,
+  ProjectDirectoryConflictError,
   type ProjectUpdatePatch,
 } from "./repository.js";
 
@@ -104,6 +105,52 @@ const LOCAL_INSTANCE = createLocalInstanceService({
 });
 
 describe("projects repository（SQL 与隔离谓词）", () => {
+  it("已有目录拒绝未确认的创建，独立创建使用池外事务保留各自项目", async () => {
+    const { runner } = createRunner((text) => ({
+      rowCount: 1,
+      rows: text.includes("select id from public.projects")
+        ? [{ id: "existing" }]
+        : text.includes("insert into public.projects")
+          ? [
+              {
+                id: PROJECT_ID,
+                kind: "code",
+                enabled_modes: ["code"],
+                work_dir: "/shared",
+              },
+            ]
+          : [],
+    }));
+    // 普通查询池即使忙碌，等待目录锁的创建也不能占用它。
+    runner.acquire = vi.fn(async () => {
+      throw new Error("普通池已满");
+    });
+    const repository = createProjectRepository(
+      createPersistenceFromRunner(runner),
+    );
+    const input = {
+      instanceId: INSTANCE_ID,
+      createdByClientId: CLIENT_ID,
+      name: "独立项目",
+      slug: "independent",
+      kind: "code" as const,
+      workDir: "/shared",
+      description: null,
+      canvasName: "unused",
+    };
+    await expect(repository.createProject(input)).rejects.toBeInstanceOf(
+      ProjectDirectoryConflictError,
+    );
+    expect(
+      (
+        await repository.createProject({
+          ...input,
+          directoryChoice: "independent",
+        })
+      ).project,
+    ).toMatchObject({ id: PROJECT_ID, kind: "code", work_dir: "/shared" });
+    expect(runner.acquire).not.toHaveBeenCalled();
+  });
   it("按已启用工作方式取项目，不按默认方式排除显式共享项目", async () => {
     const { calls, runner } = createRunner();
     await createProjectRepository(
@@ -973,8 +1020,11 @@ it.each(["settled", "work-close-failed"] as const)(
         trace.push("archive");
         return { rowCount: 1, rows: [] };
       }
-      if (text.includes("design_task_executions"))
-        return { rowCount: 1, rows: [{ task_id: taskId, id: taskId }] };
+      if (text.includes("from public.code_ui_sessions"))
+        return {
+          rowCount: 1,
+          rows: [{ id: taskId, project_id: PROJECT_ID, deleted_at: null }],
+        };
       if (text.includes("from public.projects"))
         return {
           rowCount: 1,
@@ -1014,7 +1064,7 @@ it.each(["settled", "work-close-failed"] as const)(
         _reason: string,
         ownerKind: "code" | "design",
       ) => {
-        expect(ownerKind).toBe("design");
+        expect(ownerKind).toBe("code");
         expect([instanceId, closingTaskId]).toEqual([INSTANCE_ID, taskId]);
         trace.push("work-close");
         await work;
@@ -1038,8 +1088,10 @@ it.each(["settled", "work-close-failed"] as const)(
           persistence: createPersistenceFromRunner(runner),
           localInstance: LOCAL_INSTANCE,
           blob: {} as never,
-          designRunHost: { stop } as never,
-          agentRuns: { cancelTaskRuns: async () => foreground } as never,
+          agentRuns: {
+            cancelTaskRuns: (closingTaskId: string) =>
+              stop(ACTOR, { taskId: closingTaskId }),
+          } as never,
           taskWork: { closeTask: closeWork } as never,
           processSandbox: { closeTask: closeProcess } as never,
         },
@@ -1103,7 +1155,7 @@ it.each(["settled", "work-close-failed"] as const)(
 it("Design resource closer waits for actual TaskWork exit and preserves a Code sibling", async () => {
   const design: TaskWorkContext = {
     actor: ACTOR,
-    ownerKind: "design",
+    ownerKind: "code",
     agentId: "main",
     runId: "design-run",
     branchGeneration: 1,
@@ -1157,6 +1209,8 @@ it("Design resource closer waits for actual TaskWork exit and preserves a Code s
     { kind: "command", label: "Code sibling", toolCallId: "code-bash" },
     { run: () => codeResult, stop: stopCode },
   );
+  expect(designRecord.ownerKind).toBe("code");
+  expect(codeRecord.ownerKind).toBe("code");
   const sandboxClose = vi.fn(async () => {});
   const closer = createTaskResourceCloser({
     localInstance: LOCAL_INSTANCE,
@@ -1168,7 +1222,7 @@ it("Design resource closer waits for actual TaskWork exit and preserves a Code s
     }),
   });
   let settled = false;
-  const closing = closer(ACTOR, design.scope.taskId, "项目已关闭", "design");
+  const closing = closer(ACTOR, design.scope.taskId, "项目已关闭");
   void closing.then(() => {
     settled = true;
   });
