@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { backgroundJobSchema } from "@kenfutwork/shared";
+import sharp from "sharp";
 import { afterEach, expect, it, vi } from "vitest";
 import { type ExecutorContext, getExecutor } from "../job-executor.js";
 
@@ -24,7 +25,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
-it.each([false, true, "download-retry"])(
+it.each([false, true, "download-retry", "actual-image"])(
   "真实image executor按ProjectFile receipt上传并拒绝失租调用（%s）",
   async (lostLease) => {
     const projectId = randomUUID();
@@ -144,6 +145,19 @@ it.each([false, true, "download-retry"])(
       ).toHaveLength(1);
       return;
     }
+    const bytes =
+      lostLease === "actual-image"
+        ? await sharp({
+            create: { width: 48, height: 32, channels: 3, background: "red" },
+          })
+            .png()
+            .toBuffer()
+        : Buffer.from([1, 2, 3]);
+    if (lostLease === "actual-image")
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(bytes)),
+      );
     const result = await getExecutor("image_generation")!(job.id, {}, context);
     expect(generate).toHaveBeenCalledWith(
       expect.objectContaining({ outputFormat: "webp" }),
@@ -155,7 +169,7 @@ it.each([false, true, "download-retry"])(
         relativePath: `${job.id}.png`,
       }),
     );
-    expect(upload).toHaveBeenCalledWith(objectPath, Buffer.from([1, 2, 3]), {
+    expect(upload).toHaveBeenCalledWith(objectPath, bytes, {
       contentType: "image/png",
       upsert: true,
     });
@@ -164,8 +178,8 @@ it.each([false, true, "download-retry"])(
       asset_id: job.id,
       object_path: objectPath,
       signed_url: "project-url",
-      width: 12,
-      height: 13,
+      width: lostLease === "actual-image" ? 48 : 12,
+      height: lostLease === "actual-image" ? 32 : 13,
     });
   },
 );

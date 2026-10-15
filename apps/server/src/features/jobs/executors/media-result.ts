@@ -1,4 +1,5 @@
 import type { BackgroundJob } from "@kenfutwork/shared";
+import sharp from "sharp";
 import { publishGeneratedCanvas } from "../../generation/generation-publication.js";
 import type { ExecutorContext } from "../job-executor.js";
 import {
@@ -106,6 +107,13 @@ async function saveOutput(
       code: "media_output_missing",
     });
   const buffer = await loadMediaSource(job, sourceOutput, ctx, outputId);
+  // 任务回执常不包含尺寸；从已下载字节取真实尺寸，恢复同样走此保存阶段。
+  // 不能识别的格式保留供应商元数据，延续既有产物兼容性。
+  const dimensions = generated.mimeType.startsWith("image/")
+    ? await sharp(buffer)
+        .metadata()
+        .catch(() => undefined)
+    : undefined;
   const mime = generated.mimeType;
   const extension =
     mime === "image/jpeg" ? "jpg" : (mime.split("/")[1] ?? "bin");
@@ -125,8 +133,12 @@ async function saveOutput(
       object_path: stored.objectPath,
       signed_url: stored.url,
       mime_type: mime,
-      ...(generated.width !== undefined ? { width: generated.width } : {}),
-      ...(generated.height !== undefined ? { height: generated.height } : {}),
+      ...((dimensions?.width ?? generated.width) !== undefined
+        ? { width: dimensions?.width ?? generated.width }
+        : {}),
+      ...((dimensions?.height ?? generated.height) !== undefined
+        ? { height: dimensions?.height ?? generated.height }
+        : {}),
       ...(generated.durationSeconds !== undefined
         ? { duration_seconds: generated.durationSeconds }
         : {}),
