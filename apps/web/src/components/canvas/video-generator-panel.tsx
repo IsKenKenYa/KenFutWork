@@ -441,8 +441,19 @@ export function VideoGeneratorPanel({
       errorMessage: "",
     });
     let submitted = false;
+    const finishLocalCancellation = () => {
+      if (submitted || !activeRequest()?.cancelRequested) return false;
+      setError("已本地停止");
+      setLoading(false);
+      updateVideoGeneratorElement(excalidrawApi as GeneratorLibApi, elementId, {
+        status: "error",
+        errorMessage: "已本地停止",
+      });
+      return true;
+    };
     try {
       if (!(await prepare())) throw new Error("画布尚未保存，请保存后重试。");
+      if (!activeRequest() || finishLocalCancellation()) return;
       submitted = true;
       const submission = await generateVideoDirect(
         accessTokenRef.current,
@@ -471,6 +482,7 @@ export function VideoGeneratorPanel({
         jobIds: submission.jobs.map((job) => job.job_id),
       });
     } catch (error) {
+      if (finishLocalCancellation()) return;
       if (controller.signal.aborted) return;
       const active = activeRequest();
       if (!active || active.cancelRequested || active.jobIds?.length) return;

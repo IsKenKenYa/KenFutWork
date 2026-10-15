@@ -1025,3 +1025,136 @@ it.each([
     },
   ]);
 });
+
+it.each([
+  ["单图", "保存成功"],
+  ["视频", "保存成功"],
+  ["单图", "保存失败"],
+  ["视频", "保存失败"],
+])("%s保存中停止后%s只结束本地请求，不提交生成", async (media, outcome) => {
+  const video = media === "视频";
+  const modelName = video ? "视频模型" : "图片模型";
+  let elements = [
+    {
+      id: "generator",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 400,
+      version: 1,
+      isDeleted: false,
+      customData: {
+        type: video ? "video-generator" : "image-generator",
+        status: "idle",
+        prompt: "猫",
+        model: "11111111-1111-4111-8111-111111111111:media-model",
+        aspectRatio: "",
+        quality: "",
+        requestId: "",
+        jobIds: [] as string[],
+        cancelRequested: false,
+        errorMessage: "",
+      },
+    },
+  ];
+  const appState = {
+    zoom: { value: 1 },
+    selectedElementIds: { generator: true },
+    activeTool: { type: "selection" },
+  };
+  let notify = () => {};
+  const api = {
+    getSceneElements: () => elements.filter((element) => !element.isDeleted),
+    getSceneElementsIncludingDeleted: () => elements,
+    getAppState: () => appState,
+    onChange: (
+      callback: (scene: typeof elements, state: typeof appState) => void,
+    ) => {
+      notify = () => callback(elements, appState);
+      return () => {};
+    },
+    updateScene: (update: { elements: typeof elements }) => {
+      elements = update.elements;
+      notify();
+    },
+  } as unknown as ExcalidrawImperativeAPI;
+  const posts: string[] = [];
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    const path = String(url);
+    if (path.endsWith(video ? "/api/video-models" : "/api/image-models"))
+      return Response.json({
+        models: [
+          {
+            id: elements[0]?.customData.model,
+            displayName: modelName,
+            provider: "供应商",
+          },
+        ],
+      });
+    if (init?.method === "POST") {
+      posts.push(path);
+      const body = JSON.parse(String(init.body));
+      return Response.json(
+        {
+          request_id: body.requestId,
+          jobs: [
+            {
+              job_id: "dddddddd-1111-4111-8111-111111111111",
+              status: "queued",
+            },
+          ],
+        },
+        { status: 202 },
+      );
+    }
+    return Response.json({ jobs: [] });
+  });
+  let finishPrepare = () => {};
+  const prepare = vi.fn(
+    () =>
+      new Promise<string | null>((resolve, reject) => {
+        finishPrepare = () => {
+          if (outcome === "保存成功") resolve("1");
+          else reject(new TypeError("保存失败"));
+        };
+      }),
+  );
+  render(
+    <ToastProvider>
+      <CanvasToolMenu
+        canvasId="aaaaaaaa-1111-4111-8111-111111111111"
+        projectId="bbbbbbbb-1111-4111-8111-111111111111"
+        prepare={prepare}
+        refresh={async () => {}}
+        accessToken={null}
+        excalidrawApi={api}
+      />
+    </ToastProvider>,
+  );
+  act(() => notify());
+  await screen.findByText(modelName);
+  fireEvent.keyDown(screen.getByPlaceholderText("今天我们要创作什么"), {
+    key: "Enter",
+  });
+  await waitFor(() => expect(prepare).toHaveBeenCalledOnce());
+  const requestId = elements[0]?.customData.requestId;
+  fireEvent.click(screen.getByRole("button", { name: "停止" }));
+  await act(async () => {
+    finishPrepare();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await screen.findByText("已本地停止");
+  expect(elements[0]?.customData).toMatchObject({
+    status: "error",
+    requestId,
+    jobIds: [],
+    cancelRequested: true,
+    errorMessage: "已本地停止",
+  });
+  expect(screen.queryByRole("button", { name: "停止中" })).toBeNull();
+  expect(
+    screen.getByPlaceholderText("今天我们要创作什么").hasAttribute("disabled"),
+  ).toBe(false);
+  expect(posts).toEqual([]);
+});

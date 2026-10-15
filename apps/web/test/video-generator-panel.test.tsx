@@ -11,6 +11,19 @@ import { VideoGeneratorPanel } from "../src/components/canvas/video-generator-pa
 import { ToastProvider } from "../src/components/toast";
 import type { VideoGeneratorData } from "../src/lib/canvas-video-generator";
 
+// Excalidraw 是外部编辑器边界；保留生成器状态并应用场景更新。
+function createGeneratorApi(elementId: string, data: VideoGeneratorData) {
+  let elements = [
+    { id: elementId, version: 1, isDeleted: false, customData: data },
+  ];
+  return {
+    getSceneElements: () => elements.filter((element) => !element.isDeleted),
+    updateScene: (update: { elements: typeof elements }) => {
+      elements = update.elements;
+    },
+  } as unknown as ExcalidrawImperativeAPI;
+}
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -378,10 +391,16 @@ it("未声明模型分辨率不等于仅支持720p", async () => {
       ],
     }),
   );
-  const api = {
-    getSceneElements: () => [],
-    updateScene: vi.fn(),
-  } as unknown as ExcalidrawImperativeAPI;
+  const data: VideoGeneratorData = {
+    type: "video-generator",
+    prompt: "一只猫",
+    model: "11111111-1111-4111-8111-111111111111:custom-video",
+    aspectRatio: "16:9",
+    duration: 5,
+    resolution: "720p",
+    status: "idle",
+  };
+  const api = createGeneratorApi("generator", data);
   render(
     <ToastProvider>
       <VideoGeneratorPanel
@@ -390,15 +409,7 @@ it("未声明模型分辨率不等于仅支持720p", async () => {
         prepare={async () => "1"}
         elementId="generator"
         elementBounds={{ x: 0, y: 0, width: 400, height: 225 }}
-        data={{
-          type: "video-generator",
-          prompt: "一只猫",
-          model: "11111111-1111-4111-8111-111111111111:custom-video",
-          aspectRatio: "16:9",
-          duration: 5,
-          resolution: "720p",
-          status: "idle",
-        }}
+        data={data}
         excalidrawApi={api}
         accessToken={null}
         canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
@@ -464,10 +475,16 @@ it("视频参数与首尾帧随模型恢复，音频和参数实际提交", asyn
       { status: 202 },
     );
   });
-  const api = {
-    getSceneElements: () => [],
-    updateScene: vi.fn(),
-  } as unknown as ExcalidrawImperativeAPI;
+  const data: VideoGeneratorData = {
+    type: "video-generator",
+    status: "idle",
+    prompt: "猫",
+    model: firstModel,
+    aspectRatio: "16:9",
+    duration: 5,
+    resolution: "720p",
+  };
+  const api = createGeneratorApi("generator", data);
   render(
     <ToastProvider>
       <VideoGeneratorPanel
@@ -476,15 +493,7 @@ it("视频参数与首尾帧随模型恢复，音频和参数实际提交", asyn
         prepare={async () => "1"}
         elementId="generator"
         elementBounds={{ x: 0, y: 0, width: 400, height: 225 }}
-        data={{
-          type: "video-generator",
-          status: "idle",
-          prompt: "猫",
-          model: firstModel,
-          aspectRatio: "16:9",
-          duration: 5,
-          resolution: "720p",
-        }}
+        data={data}
         excalidrawApi={api}
         accessToken={null}
         canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
@@ -582,10 +591,16 @@ it("实例声明的参考图能力优先于旧目录的不支持标记", async (
       { status: 202 },
     );
   });
-  const api = {
-    getSceneElements: () => [],
-    updateScene: vi.fn(),
-  } as unknown as ExcalidrawImperativeAPI;
+  const data: VideoGeneratorData = {
+    type: "video-generator",
+    status: "idle",
+    prompt: "猫",
+    model,
+    aspectRatio: "16:9",
+    duration: 5,
+    resolution: "720p",
+  };
+  const api = createGeneratorApi("generator", data);
   render(
     <ToastProvider>
       <VideoGeneratorPanel
@@ -594,15 +609,7 @@ it("实例声明的参考图能力优先于旧目录的不支持标记", async (
         prepare={async () => "1"}
         elementId="generator"
         elementBounds={{ x: 0, y: 0, width: 400, height: 225 }}
-        data={{
-          type: "video-generator",
-          status: "idle",
-          prompt: "猫",
-          model,
-          aspectRatio: "16:9",
-          duration: 5,
-          resolution: "720p",
-        }}
+        data={data}
         excalidrawApi={api}
         accessToken={null}
         canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}

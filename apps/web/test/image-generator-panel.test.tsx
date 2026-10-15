@@ -9,6 +9,20 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { ImageGeneratorPanel } from "../src/components/canvas/image-generator-panel";
 import { ToastProvider } from "../src/components/toast";
+import type { ImageGeneratorData } from "../src/lib/canvas-image-generator";
+
+// Excalidraw 是外部编辑器边界；保留生成器状态并应用场景更新。
+function createGeneratorApi(elementId: string, data: ImageGeneratorData) {
+  let elements = [
+    { id: elementId, version: 1, isDeleted: false, customData: data },
+  ];
+  return {
+    getSceneElements: () => elements.filter((element) => !element.isDeleted),
+    updateScene: (update: { elements: typeof elements }) => {
+      elements = update.elements;
+    },
+  } as unknown as ExcalidrawImperativeAPI;
+}
 
 afterEach(() => {
   cleanup();
@@ -39,10 +53,15 @@ it("新建生成器自动选择配置中的模型，不提交旧内置默认名"
       { status: 202 },
     );
   });
-  const api = {
-    getSceneElements: () => [],
-    updateScene: vi.fn(),
-  } as unknown as ExcalidrawImperativeAPI;
+  const data: ImageGeneratorData = {
+    type: "image-generator",
+    status: "idle",
+    prompt: "猫",
+    model: "google/nano-banana-2",
+    aspectRatio: "1:1",
+    quality: "hd",
+  };
+  const api = createGeneratorApi("new-generator", data);
   render(
     <ToastProvider>
       <ImageGeneratorPanel
@@ -51,14 +70,7 @@ it("新建生成器自动选择配置中的模型，不提交旧内置默认名"
         prepare={async () => "1"}
         elementId="new-generator"
         elementBounds={{ x: 0, y: 0, width: 400, height: 400 }}
-        data={{
-          type: "image-generator",
-          status: "idle",
-          prompt: "猫",
-          model: "google/nano-banana-2",
-          aspectRatio: "1:1",
-          quality: "hd",
-        }}
+        data={data}
         excalidrawApi={api}
         accessToken={null}
         canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
@@ -116,10 +128,15 @@ it("现有图片面板发送用户添加的参考图", async () => {
     );
   });
   // Excalidraw 是外部编辑器边界；测试只提供此工作流消费的接口。
-  const api = {
-    getSceneElements: () => [],
-    updateScene: vi.fn(),
-  } as unknown as ExcalidrawImperativeAPI;
+  const data: ImageGeneratorData = {
+    type: "image-generator",
+    prompt: "一只猫",
+    model: "11111111-1111-4111-8111-111111111111:gpt-image-1",
+    aspectRatio: "1:1",
+    quality: "hd",
+    status: "idle",
+  };
+  const api = createGeneratorApi("generator", data);
   render(
     <ToastProvider>
       <ImageGeneratorPanel
@@ -128,14 +145,7 @@ it("现有图片面板发送用户添加的参考图", async () => {
         prepare={async () => "1"}
         elementId="generator"
         elementBounds={{ x: 0, y: 0, width: 400, height: 400 }}
-        data={{
-          type: "image-generator",
-          prompt: "一只猫",
-          model: "11111111-1111-4111-8111-111111111111:gpt-image-1",
-          aspectRatio: "1:1",
-          quality: "hd",
-          status: "idle",
-        }}
+        data={data}
         excalidrawApi={api}
         accessToken={null}
         canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
@@ -268,10 +278,15 @@ it("图片参数跟随模型声明，切回模型恢复原参数并原样提交"
       { status: 202 },
     );
   });
-  const api = {
-    getSceneElements: () => [],
-    updateScene: vi.fn(),
-  } as unknown as ExcalidrawImperativeAPI;
+  const data: ImageGeneratorData = {
+    type: "image-generator",
+    status: "idle",
+    prompt: "猫",
+    model: firstModel,
+    aspectRatio: "1:1",
+    quality: "low",
+  };
+  const api = createGeneratorApi("generator", data);
   render(
     <ToastProvider>
       <ImageGeneratorPanel
@@ -280,14 +295,7 @@ it("图片参数跟随模型声明，切回模型恢复原参数并原样提交"
         prepare={async () => "1"}
         elementId="generator"
         elementBounds={{ x: 0, y: 0, width: 400, height: 400 }}
-        data={{
-          type: "image-generator",
-          status: "idle",
-          prompt: "猫",
-          model: firstModel,
-          aspectRatio: "1:1",
-          quality: "low",
-        }}
+        data={data}
         excalidrawApi={api}
         accessToken={null}
         canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
@@ -378,10 +386,15 @@ it("模型明确不支持的参数不展示或提交，其他模型草稿仍保�
       { status: 202 },
     );
   });
-  const api = {
-    getSceneElements: () => [],
-    updateScene: vi.fn(),
-  } as unknown as ExcalidrawImperativeAPI;
+  const data: ImageGeneratorData = {
+    type: "image-generator",
+    status: "idle",
+    prompt: "猫",
+    model: firstModel,
+    aspectRatio: "1:1",
+    quality: "high",
+  };
+  const api = createGeneratorApi("generator", data);
   render(
     <ToastProvider>
       <ImageGeneratorPanel
@@ -390,14 +403,7 @@ it("模型明确不支持的参数不展示或提交，其他模型草稿仍保�
         prepare={async () => "1"}
         elementId="generator"
         elementBounds={{ x: 0, y: 0, width: 400, height: 400 }}
-        data={{
-          type: "image-generator",
-          status: "idle",
-          prompt: "猫",
-          model: firstModel,
-          aspectRatio: "1:1",
-          quality: "high",
-        }}
+        data={data}
         excalidrawApi={api}
         accessToken={null}
         canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
@@ -669,10 +675,16 @@ it.each(["click", "enter"])(
         { status: 202 },
       );
     });
-    const api = {
-      getSceneElements: () => [],
-      updateScene: vi.fn(),
-    } as unknown as ExcalidrawImperativeAPI;
+    const data: ImageGeneratorData = {
+      type: "image-generator",
+      status: "idle",
+      prompt: "  ",
+      model,
+      aspectRatio: "",
+      quality: "",
+      inputImages: ["asset://eeeeeeee-1111-4111-8111-111111111111"],
+    };
+    const api = createGeneratorApi("generator", data);
     render(
       <ToastProvider>
         <ImageGeneratorPanel
@@ -681,15 +693,7 @@ it.each(["click", "enter"])(
           prepare={async () => "1"}
           elementId="generator"
           elementBounds={{ x: 0, y: 0, width: 400, height: 400 }}
-          data={{
-            type: "image-generator",
-            status: "idle",
-            prompt: "  ",
-            model,
-            aspectRatio: "",
-            quality: "",
-            inputImages: ["asset://eeeeeeee-1111-4111-8111-111111111111"],
-          }}
+          data={data}
           excalidrawApi={api}
           accessToken={null}
           canvasScrollZoom={{ scrollX: 0, scrollY: 0, zoom: 1 }}
