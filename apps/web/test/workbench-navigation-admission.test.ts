@@ -4,6 +4,25 @@ import { createHostWorkbenchNavigation } from "../src/components/workbench/zcode
 const cleanups: Array<() => void> = [];
 afterEach(() => {
   for (const dispose of cleanups.splice(0)) dispose();
+  sessionStorage.clear();
+});
+it("同一窗口重新挂载保留已确认的工作方式，仍对显式切换执行准入", async () => {
+  const first = createHostWorkbenchNavigation(window, ["code", "design"]);
+  first.setActiveMode("design");
+  first.dispose();
+  const admit = vi.fn(async () => false);
+  const restored = createHostWorkbenchNavigation(
+    window,
+    ["code", "design"],
+    admit,
+  );
+  cleanups.push(restored.dispose);
+  expect(restored.getSnapshot().mode).toBe("design");
+  expect(admit).not.toHaveBeenCalled();
+  send({ mode: "code" });
+  await Promise.resolve();
+  expect(admit).toHaveBeenCalledExactlyOnceWith("code");
+  expect(restored.getSnapshot().mode).toBe("design");
 });
 function send(data: Record<string, unknown>, source: Window = window) {
   window.dispatchEvent(

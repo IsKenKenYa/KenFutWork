@@ -151,6 +151,30 @@ it("深链design向壳推mode=design；无flow插件时availableModes只有code/
   });
 });
 
+it("刷新没有深链时只同步可用方式，让壳恢复当前窗口的选择", async () => {
+  installFixture();
+  const { send } = await renderCodeFrame();
+  const initial = send.mock.calls
+    .map(([message]) => message)
+    .filter((message) => message.type === "kenfutwork:workbench-navigation");
+  expect(initial.length).toBeGreaterThan(0);
+  expect(initial.every((message) => !("mode" in message))).toBe(true);
+});
+
+it("明确Code深链仍推送Code，覆盖壳先前的界面选择", async () => {
+  installFixture();
+  navigation.query = "mode=code";
+  const { send } = await renderCodeFrame();
+  expect(send).toHaveBeenCalledWith(
+    {
+      type: "kenfutwork:workbench-navigation",
+      availableModes: ["code", "design"],
+      mode: "code",
+    },
+    window.location.origin,
+  );
+});
+
 it("flow可用时availableModes带flow；插件停用后库存事件即时收口并保持当前mode", async () => {
   const plugin = { name: "kenfutwork-flow", installed: true, enabled: true };
   installFixture(true, true, undefined, true, [plugin]);
@@ -167,9 +191,8 @@ it("flow可用时availableModes带flow；插件停用后库存事件即时收口
   const initialNavigation = send.mock.calls
     .map(([message]) => message)
     .filter((message) => message.type === "kenfutwork:workbench-navigation");
-  expect(initialNavigation[0]).toMatchObject({ mode: "code" });
   expect(initialNavigation.filter((message) => "mode" in message)).toHaveLength(
-    1,
+    0,
   );
   send.mockClear();
   plugin.enabled = false;

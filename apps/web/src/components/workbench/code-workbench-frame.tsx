@@ -23,7 +23,7 @@ const DEFAULT_MODES: WorkbenchModes = ["code", "design"];
 
 /** Code 的独立原文档保护 Design 的 CSS、theme 与 portal。 */
 export function CodeWorkbenchFrame({
-  mode = "code",
+  mode,
   active = true,
   onOpenManagement,
   availableModes = DEFAULT_MODES,
@@ -61,7 +61,7 @@ export function CodeWorkbenchFrame({
     );
   }, [panels]);
   const ready = useRef(false);
-  const sentMode = useRef<WorkbenchMode | null>(null);
+  const sentMode = useRef<WorkbenchMode | undefined>(undefined);
   const sendActivity = useCallback(() => {
     frame.current?.contentWindow?.postMessage(
       { type: "kenfutwork:workspace-activity", active },
@@ -75,7 +75,7 @@ export function CodeWorkbenchFrame({
       {
         type: "kenfutwork:workbench-navigation",
         availableModes,
-        ...(sentMode.current !== mode ? { mode } : {}),
+        ...(mode !== undefined && sentMode.current !== mode ? { mode } : {}),
         ...(canvasId
           ? { documentTarget: { resourceType: "canvas", documentId: canvasId } }
           : {}),

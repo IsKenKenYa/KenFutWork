@@ -15,15 +15,35 @@ export function createHostWorkbenchNavigation(
   availableModes: readonly HostWorkbenchMode[],
   admitMode?: (mode: HostWorkbenchMode) => Promise<boolean>,
 ): HostWorkbenchNavigation & { dispose: () => void } {
+  let mode: HostWorkbenchMode = "code";
+  try {
+    const saved = window.sessionStorage.getItem("kenfutwork:workbench-mode");
+    if (saved === "code" || saved === "design" || saved === "flow") {
+      mode = availableModes.includes(saved)
+        ? saved
+        : saved === "flow"
+          ? "design"
+          : "code";
+    }
+  } catch {
+    // 窗口偏好不可用时仍可打开工作台，项目权限继续由服务端验证。
+  }
   let snapshot: {
     mode: HostWorkbenchMode;
     availableModes: readonly HostWorkbenchMode[];
     documentTarget?: { resourceType: "canvas"; documentId: string };
-  } = { mode: "code", availableModes };
+  } = { mode, availableModes };
   const listeners = new Set<() => void>();
   let modeRequest = 0;
   let disposed = false;
   const publish = (next: typeof snapshot) => {
+    if (next.mode !== snapshot.mode) {
+      try {
+        window.sessionStorage.setItem("kenfutwork:workbench-mode", next.mode);
+      } catch {
+        // 仅保存当前窗口的界面选择，不影响本次导航或 Run 上下文。
+      }
+    }
     snapshot = next;
     for (const listener of listeners) listener();
   };

@@ -222,14 +222,13 @@ it("仅向当前 Code 文档发送宿主配置；bootstrap 带本地实例主人
       window.location.origin,
     ),
   );
-  // 融合后模式经 workbench-navigation 推给壳（缺省 code）；
+  // 没有明确深链时由壳恢复窗口选择，父页仅同步可用工作方式；
   // 旧「code-navigate 换壳请求」已随契约删除——迟到的该消息被 schema 拒之门外。
   await waitFor(() =>
     expect(send).toHaveBeenCalledWith(
       {
         type: "kenfutwork:workbench-navigation",
         availableModes: ["code", "design"],
-        mode: "code",
       },
       window.location.origin,
     ),

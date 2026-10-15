@@ -32,7 +32,7 @@ function WorkbenchModeSurface() {
   );
   // 深链解析：flow 探针未落定前不推 flow（落定后可用才推，不可用回落 design——
   // 与旧壳「flow 不可用时弹回 Design」同一条纪律）。
-  const mode = useMemo<WorkbenchMode>(() => {
+  const mode = useMemo<WorkbenchMode | undefined>(() => {
     if (requested === "design") return "design";
     if (requested === "flow")
       return flowEntry === null
@@ -40,7 +40,7 @@ function WorkbenchModeSurface() {
         : flowEntry.available
           ? "flow"
           : "design";
-    return "code";
+    return requested === "code" ? "code" : undefined;
   }, [requested, flowEntry]);
   // 管理文档 keep-alive：首次打开后持续挂载（hidden 收起），重复打开不重载。
   const [management, setManagement] = useState<ManagementTarget | null>(null);
@@ -53,7 +53,7 @@ function WorkbenchModeSurface() {
     <>
       <CodeWorkbenchFrame
         availableModes={availableModes}
-        mode={mode}
+        {...(mode ? { mode } : {})}
         {...(requestedCanvas ? { canvasId: requestedCanvas } : {})}
         onOpenManagement={openManagement}
       />
