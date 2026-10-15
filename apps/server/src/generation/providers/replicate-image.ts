@@ -146,8 +146,7 @@ type QualityMap = Record<
 >;
 
 /**
- * Maps (model prefix → quality level → { paramName, paramValue }).
- * Lookup order: exact model ID → prefix before "/" → fallback.
+ * Maps known semantic quality values to a model's native parameter.
  */
 const QUALITY_MAP: QualityMap = {
   // Google Nano Banana Pro / 2: uses `resolution`
@@ -165,7 +164,6 @@ const QUALITY_MAP: QualityMap = {
   "google/imagen-4": {
     standard: { param: "image_size", value: "1K" },
     hd: { param: "image_size", value: "2K" },
-    ultra: { param: "image_size", value: "2K" }, // max 2K, cap silently
   },
   // ByteDance Seedream 5 Lite: uses `size`, max 3K
   "bytedance/seedream-5-lite": {
@@ -201,21 +199,40 @@ function applyQuality(
 ): void {
   if (!quality) return;
 
-  // GPT Image has native `quality` param
   if (INPUT_IMAGES_MODELS.has(model)) {
-    input.quality = GPT_IMAGE_QUALITY[quality] ?? "auto";
+    const nativeQuality = GPT_IMAGE_QUALITY[quality] ?? quality;
+    if (!["low", "medium", "high", "auto"].includes(nativeQuality)) {
+      throw new GenerationError(
+        "replicate",
+        "unsupported",
+        `模型${model}不支持质量${quality}。`,
+      );
+    }
+    input.quality = nativeQuality;
     return;
   }
-
-  // Lookup quality translation for this model
   const modelMap = QUALITY_MAP[model];
   if (modelMap) {
-    const entry = modelMap[quality];
-    if (entry) {
-      input[entry.param] = entry.value;
-    }
+    const entry =
+      modelMap[quality] ??
+      Object.values(modelMap).find((item) => item.value === quality);
+    if (!entry)
+      throw new GenerationError(
+        "replicate",
+        "unsupported",
+        `模型${model}不支持质量${quality}。`,
+      );
+    input[entry.param] = entry.value;
+    return;
   }
-  // Models not in QUALITY_MAP (Flux, Nano Banana, Recraft): no resolution param, skip
+  if (REPLICATE_IMAGE_MODELS.some((known) => known.id === model)) {
+    throw new GenerationError(
+      "replicate",
+      "unsupported",
+      `模型${model}不支持此质量参数。`,
+    );
+  }
+  input.quality = quality;
 }
 
 // ── Aspect ratio normalization ────────────────────────────────────────────
@@ -229,34 +246,16 @@ const MODEL_ASPECT_RATIOS: Record<string, string[]> = {
   "openai/gpt-image-1": ["1:1", "3:2", "2:3"],
 };
 
-function parseRatio(ratio: string): number {
-  const [w, h] = ratio.split(":").map(Number);
-  return w && h ? w / h : 1;
-}
-
-/**
- * If the model doesn't support the requested ratio, find the nearest one.
- * e.g. "16:9" (1.78) → "3:2" (1.5) for GPT Image.
- */
-function normalizeAspectRatio(model: string, ratio: string): string {
+function validateAspectRatio(model: string, ratio: string): string {
   const supported = MODEL_ASPECT_RATIOS[model];
-  if (!supported || supported.includes(ratio)) return ratio;
-
-  const target = parseRatio(ratio);
-  // 支持列表均为硬编码非空数组；空表时无从比较，原样返回请求比例
-  const initial = supported.at(0);
-  if (initial === undefined) return ratio;
-  let best = initial;
-  let bestDiff = Math.abs(parseRatio(best) - target);
-
-  for (const candidate of supported) {
-    const diff = Math.abs(parseRatio(candidate) - target);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      best = candidate;
-    }
+  if (supported && !supported.includes(ratio)) {
+    throw new GenerationError(
+      "replicate",
+      "unsupported",
+      `模型${model}不支持比例${ratio}。`,
+    );
   }
-  return best;
+  return ratio;
 }
 
 // ── Output format translation ────────────────────────────────────────────
@@ -273,7 +272,14 @@ function applyOutputFormat(
   model: string,
   format: string | undefined,
 ): void {
-  if (!format || NO_OUTPUT_FORMAT_MODELS.has(model)) return;
+  if (!format) return;
+  if (NO_OUTPUT_FORMAT_MODELS.has(model)) {
+    throw new GenerationError(
+      "replicate",
+      "unsupported",
+      `模型${model}不支持指定输出格式。`,
+    );
+  }
   input.output_format = format;
 }
 
@@ -388,26 +394,41 @@ export class ReplicateImageProvider implements ImageProvider {
     width: number;
     height: number;
   } {
+    const model = params.model.split(":")[0] ?? params.model;
     const rawRatio = params.aspectRatio ?? "1:1";
-    const aspectRatio = normalizeAspectRatio(params.model, rawRatio);
-    const { width, height } = aspectRatioToDimensions(aspectRatio);
+    const aspectRatio = validateAspectRatio(model, rawRatio);
+    const defaults = aspectRatioToDimensions(aspectRatio);
+    const width = params.width ?? defaults.width;
+    const height = params.height ?? defaults.height;
 
     const input: Record<string, unknown> = {
       prompt: params.prompt,
     };
 
     // Aspect ratio / size — Recraft uses pixel `size`, others use `aspect_ratio`
-    if (RECRAFT_MODELS.has(params.model)) {
+    if (RECRAFT_MODELS.has(model)) {
       input.size = `${width}x${height}`;
     } else {
       input.aspect_ratio = aspectRatio;
+      if (params.width !== undefined) input.width = params.width;
+      if (params.height !== undefined) input.height = params.height;
     }
 
     // Image input — parameter name varies by model
-    if (params.inputImages?.length && !TEXT_ONLY_MODELS.has(params.model)) {
-      if (SINGLE_IMAGE_INPUT_MODELS.has(params.model)) {
+    if (params.inputImages?.length) {
+      if (
+        TEXT_ONLY_MODELS.has(model) ||
+        (SINGLE_IMAGE_INPUT_MODELS.has(model) && params.inputImages.length > 1)
+      ) {
+        throw new GenerationError(
+          "replicate",
+          "unsupported",
+          `模型${model}不支持这些参考图。`,
+        );
+      }
+      if (SINGLE_IMAGE_INPUT_MODELS.has(model)) {
         input.input_image = params.inputImages[0];
-      } else if (INPUT_IMAGES_MODELS.has(params.model)) {
+      } else if (INPUT_IMAGES_MODELS.has(model)) {
         input.input_images = params.inputImages;
       } else {
         input.image_input = params.inputImages;
@@ -415,13 +436,13 @@ export class ReplicateImageProvider implements ImageProvider {
     }
 
     // Semantic params → model-specific translation
-    applyQuality(input, params.model, params.quality);
-    applyOutputFormat(input, params.model, params.outputFormat);
+    applyQuality(input, model, params.quality);
+    applyOutputFormat(input, model, params.outputFormat);
 
     return {
       input,
-      width: params.width ?? width,
-      height: params.height ?? height,
+      width,
+      height,
     };
   }
 }

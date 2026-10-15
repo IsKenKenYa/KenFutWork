@@ -265,6 +265,21 @@ function buildModelInput(params: VideoGenerateParams): {
   let endpoint = params.model;
 
   const hasImage = (params.inputImages?.length ?? 0) > 0;
+  const modelInfo = REPLICATE_VIDEO_MODELS.find(
+    (known) => known.id === params.model,
+  );
+  if (
+    hasImage &&
+    modelInfo &&
+    (modelInfo.capabilities.imageToVideo === false ||
+      (params.inputImages?.length ?? 0) > 1)
+  ) {
+    throw new GenerationError(
+      "replicate",
+      "unsupported",
+      `模型${params.model}不支持这些参考图。`,
+    );
+  }
   const duration = params.duration ?? 5;
   const aspectRatio = params.aspectRatio ?? "16:9";
 

@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, expect, it } from "vitest";
+import type { ImageGenerateParams, VideoGenerateParams } from "../types.js";
 import {
   createInstanceImageProvider,
   createInstanceVideoProvider,
@@ -324,4 +325,139 @@ it("Replicate版本模型ID通过通用predictions接口提交并保留完整版
       body: { version, input: { prompt: "a cat", aspect_ratio: "1:1" } },
     },
   ]);
+});
+
+it("Replicate已知不支持的选项明确拒绝，未知原生参数与GPT质量原样发送", async () => {
+  const requests: Array<{ url: string | undefined; body: unknown }> = [];
+  server = createServer(async (req, res) => {
+    requests.push({ url: req.url, body: await requestBody(req) });
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({
+        id: "parameter-prediction",
+        status: "starting",
+        output: null,
+      }),
+    );
+  });
+  const active = server;
+  await new Promise<void>((resolve) => active.listen(0, "127.0.0.1", resolve));
+  const { port } = active.address() as AddressInfo;
+  const credentials = {
+    apiKey: "parameters-test-key",
+    baseUrl: `http://127.0.0.1:${port}/v1`,
+  };
+  const image = createInstanceImageProvider({ credentials, models: [] });
+  const video = createInstanceVideoProvider({ credentials, models: [] });
+  const startImage = image.startAsync;
+  const startVideo = video.startAsync;
+  if (!startImage || !startVideo) throw new Error("Replicate异步接口未接线");
+
+  const unsupportedImages: ImageGenerateParams[] = [
+    {
+      model: "google/imagen-4",
+      prompt: "拒绝参考图",
+      inputImages: ["https://assets.example/reference.png"],
+    },
+    {
+      model: "black-forest-labs/flux-kontext-pro",
+      prompt: "拒绝多参考图",
+      inputImages: [
+        "https://assets.example/first.png",
+        "https://assets.example/second.png",
+      ],
+    },
+    {
+      model: "openai/gpt-image-1.5",
+      prompt: "不自动改比例",
+      aspectRatio: "16:9",
+    },
+    { model: "google/imagen-4", prompt: "不把4K改2K", quality: "ultra" },
+    {
+      model: "bytedance/seedream-4",
+      prompt: "不忽略格式",
+      outputFormat: "webp",
+    },
+  ];
+  const unsupportedVideos: VideoGenerateParams[] = [
+    {
+      model: "google/veo-3",
+      prompt: "拒绝视频参考图",
+      inputImages: ["https://assets.example/reference.png"],
+    },
+    {
+      model: "wan-video/wan-2.6",
+      prompt: "不丢第二张图",
+      inputImages: [
+        "https://assets.example/first.png",
+        "https://assets.example/second.png",
+      ],
+    },
+  ];
+  const rejected = await Promise.allSettled([
+    ...unsupportedImages.map((params) => startImage(params)),
+    ...unsupportedVideos.map((params) => startVideo(params)),
+  ]);
+  expect.soft(rejected).toEqual(
+    Array.from({ length: 7 }, () => ({
+      status: "rejected",
+      reason: expect.objectContaining({
+        code: expect.stringMatching(/^unsupported(?:_input|_parameter)?$/),
+      }),
+    })),
+  );
+  expect.soft(requests).toEqual([]);
+
+  await startImage({
+    model: "custom-owner/native-image",
+    prompt: "原生参数",
+    aspectRatio: "21:9",
+    quality: "studio",
+    width: 1536,
+    height: 640,
+    outputFormat: "webp",
+  });
+  await startImage({
+    model: "openai/gpt-image-1.5",
+    prompt: "原生GPT质量",
+    quality: "low",
+  });
+  expect
+    .soft(
+      requests.filter(
+        (request) =>
+          request.url === "/v1/models/custom-owner/native-image/predictions",
+      ),
+    )
+    .toEqual([
+      {
+        url: "/v1/models/custom-owner/native-image/predictions",
+        body: {
+          input: {
+            prompt: "原生参数",
+            aspect_ratio: "21:9",
+            quality: "studio",
+            width: 1536,
+            height: 640,
+            output_format: "webp",
+          },
+        },
+      },
+    ]);
+  expect
+    .soft(
+      requests.filter(
+        (request) =>
+          request.url === "/v1/models/openai/gpt-image-1.5/predictions" &&
+          JSON.stringify(request.body).includes("原生GPT质量"),
+      ),
+    )
+    .toEqual([
+      {
+        url: "/v1/models/openai/gpt-image-1.5/predictions",
+        body: {
+          input: { prompt: "原生GPT质量", aspect_ratio: "1:1", quality: "low" },
+        },
+      },
+    ]);
 });
