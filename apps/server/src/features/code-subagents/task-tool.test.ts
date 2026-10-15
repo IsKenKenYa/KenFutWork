@@ -129,6 +129,8 @@ it.each(["code", "design"] as const)(
   async (preset) => {
     const f = await fixture(preset);
     try {
+      const taskWorkContext = f.execution.taskWorkContext;
+      if (!taskWorkContext) throw new Error("测试前置缺失");
       const pending = f.tool.execute(input, f.execution);
       await f.ready;
       f.controller.abort("parent stopped");
@@ -136,9 +138,7 @@ it.each(["code", "design"] as const)(
         status: "canceled",
         summary: "stop",
       });
-      expect(
-        await f.manager.consumeNotifications(f.execution.taskWorkContext!),
-      ).toEqual([]);
+      expect(await f.manager.consumeNotifications(taskWorkContext)).toEqual([]);
       expect(f.requests).toHaveLength(1);
       expect(f.requests[0]).toMatchObject({
         parentSessionId: f.execution.sessionId,
@@ -206,12 +206,14 @@ it.each(["code", "design"] as const)(
   async (preset) => {
     const f = await fixture(preset);
     try {
+      const scopeHandle = f.execution.scopeHandle;
+      if (!scopeHandle) throw new Error("测试前置缺失");
       await expect(
         f.tool.execute(
           { ...input, subagent_type: "worker" },
           {
             ...f.execution,
-            scopeHandle: f.execution.scopeHandle!.derive("review"),
+            scopeHandle: scopeHandle.derive("review"),
           },
         ),
       ).rejects.toThrow(/只读父/);

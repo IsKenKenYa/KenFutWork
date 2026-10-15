@@ -68,10 +68,7 @@ function fixture() {
         operation: (signal: AbortSignal) => Promise<unknown>,
       ) => operation(origin.signal),
     },
-  } as unknown as Pick<
-    ExecutorContext,
-    "canvas" | "generationTargets"
-  >;
+  } as unknown as Pick<ExecutorContext, "canvas" | "generationTargets">;
   return {
     job,
     result,

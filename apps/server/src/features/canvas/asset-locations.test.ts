@@ -332,7 +332,8 @@ it.each([
 
 it("compensates the file move when an external layout change wins publication", async () => {
   const f = await fixture();
-  const originalMove = f.move.getMockImplementation()!;
+  const originalMove = f.move.getMockImplementation();
+  if (!originalMove) throw new Error("测试前置缺失");
   f.move.mockImplementationOnce(async (...args) => {
     const moved = await originalMove(...args);
     await writeFile(
@@ -383,7 +384,8 @@ it("compensates the file move when an external layout change wins publication", 
 it("preserves externally changed move bytes and reports repair when compensation is unsafe", async () => {
   const f = await fixture();
   const externalBytes = Buffer.from("external writer owns this file");
-  const originalMove = f.move.getMockImplementation()!;
+  const originalMove = f.move.getMockImplementation();
+  if (!originalMove) throw new Error("测试前置缺失");
   f.move.mockImplementationOnce(async (...args) => {
     const moved = await originalMove(...args);
     await writeFile(join(f.root, "new.png"), externalBytes);
@@ -434,7 +436,8 @@ it("rejects a late save using the original revision after the move", async () =>
 
 it("publishes real Canvas CAS references for a committed move even when the source copy remains", async () => {
   const f = await fixture();
-  const originalMove = f.move.getMockImplementation()!;
+  const originalMove = f.move.getMockImplementation();
+  if (!originalMove) throw new Error("测试前置缺失");
   f.move.mockImplementationOnce(async (...args) => {
     const committed = await originalMove(...args);
     // 已提交move的Provider返回新位置；清理旧副本失败不改变该receipt。

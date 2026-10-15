@@ -25,10 +25,12 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         await command("sendGoalCommand", { text: "继续解释" });
         await f.waitRuns(1);
         await (await command("pauseGoal", {})).settled;
-        const paused = (await f.repository.find(
+        const pausedRow = await f.repository.find(
           f.scope.instanceId,
           f.scope.taskId,
-        ))!.state!.goalRecord!;
+        );
+        if (!pausedRow?.state?.goalRecord) throw new Error("测试前置缺失");
+        const paused = pausedRow.state.goalRecord;
         const control: CodeGoalControl = {
           expectedGoal: { goalId: paused.goalId, revision: paused.revision },
         };
@@ -39,9 +41,12 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         await f.waitRuns(2);
         f.provider.enabled = false;
         f.provider.configRevision += 1;
-        const before = structuredClone(
-          (await f.repository.find(f.scope.instanceId, f.scope.taskId))!.state,
+        const replayRow = await f.repository.find(
+          f.scope.instanceId,
+          f.scope.taskId,
         );
+        if (!replayRow) throw new Error("测试前置缺失");
+        const before = structuredClone(replayRow.state);
         const captures = capture.mock.calls.length;
         const duplicate = await command("resumeGoal", {}, commandId, control);
         await duplicate.settled;
@@ -76,7 +81,7 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         expect(capture).toHaveBeenCalledTimes(captures);
         expect(f.runs).toHaveLength(2);
         expect(
-          (await f.repository.find(f.scope.instanceId, f.scope.taskId))!.state,
+          (await f.repository.find(f.scope.instanceId, f.scope.taskId))?.state,
         ).toEqual(before);
       } finally {
         await f.close();
@@ -103,11 +108,10 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
           async (
             input: Parameters<ConversationWorkContextProvider["prepare"]>[0],
           ) => {
+            const canvasId = input.context.canvasId;
             if (
-              !(await canvases.findById(
-                input.actor.instanceId,
-                input.context.canvasId!,
-              ))
+              !canvasId ||
+              !(await canvases.findById(input.actor.instanceId, canvasId))
             )
               throw new Error("画布已删除");
             return input.context;

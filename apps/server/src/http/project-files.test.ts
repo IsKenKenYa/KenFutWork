@@ -52,10 +52,10 @@ function repository(
     if (input.canvasId !== undefined) row.canvas_id = input.canvasId;
   };
   return {
-    find: async (instance, id) =>
-      rows.get(id)?.instance_id === instance
-        ? structuredClone(rows.get(id)!)
-        : null,
+    find: async (instance, id) => {
+      const row = rows.get(id);
+      return row?.instance_id === instance ? structuredClone(row) : null;
+    },
     prepare: async (record) => {
       if (!rows.has(record.id))
         rows.set(record.id, { ...structuredClone(record), byte_size: null });

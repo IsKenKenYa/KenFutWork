@@ -193,18 +193,21 @@ describe("项目画布文档的HTTP边界", () => {
     expect(f.createCanvas).not.toHaveBeenCalled();
   });
 
-  it.each(requests)("$method 未鉴权时拒绝请求且不触发文档操作", async (request) => {
-    const f = await fixture({ authenticated: false });
-    const response = await f.app.inject(request);
-    expect(response.statusCode).toBe(401);
-    expect(response.json()).toEqual({
-      error: {
-        code: "unauthorized",
-        message: "缺少或无效的本机接入凭据。",
-      },
-    });
-    expectNoDocumentOperation(f);
-  });
+  it.each(requests)(
+    "$method 未鉴权时拒绝请求且不触发文档操作",
+    async (request) => {
+      const f = await fixture({ authenticated: false });
+      const response = await f.app.inject(request);
+      expect(response.statusCode).toBe(401);
+      expect(response.json()).toEqual({
+        error: {
+          code: "unauthorized",
+          message: "缺少或无效的本机接入凭据。",
+        },
+      });
+      expectNoDocumentOperation(f);
+    },
+  );
 
   const invalidRequests = [
     {
@@ -243,7 +246,12 @@ describe("项目画布文档的HTTP边界", () => {
       payload: { name: "新名", expectedName: "海报", expectedRevision: "old" },
       field: "expectedRevision",
     },
-    { method: "DELETE", url: documentUrl, payload: {}, field: "expectedRevision" },
+    {
+      method: "DELETE",
+      url: documentUrl,
+      payload: {},
+      field: "expectedRevision",
+    },
     {
       method: "DELETE",
       url: documentUrl,
@@ -252,16 +260,19 @@ describe("项目画布文档的HTTP边界", () => {
     },
   ] as const;
 
-  it.each(invalidRequests)("$method 拒绝无效 $field，不进入文档服务", async (request) => {
-    const f = await fixture();
-    const { field, ...input } = request;
-    const response = await f.app.inject(input);
-    expect(response.statusCode).toBe(400);
-    expect(response.json().issues).toEqual(
-      expect.arrayContaining([expect.objectContaining({ path: [field] })]),
-    );
-    expectNoDocumentOperation(f);
-  });
+  it.each(invalidRequests)(
+    "$method 拒绝无效 $field，不进入文档服务",
+    async (request) => {
+      const f = await fixture();
+      const { field, ...input } = request;
+      const response = await f.app.inject(input);
+      expect(response.statusCode).toBe(400);
+      expect(response.json().issues).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: [field] })]),
+      );
+      expectNoDocumentOperation(f);
+    },
+  );
 
   describe.each([
     {
@@ -276,18 +287,25 @@ describe("项目画布文档的HTTP边界", () => {
     },
     {
       status: 403,
-      error: new CanvasServiceError("canvas_save_failed", "请先启用Design。", 403),
+      error: new CanvasServiceError(
+        "canvas_save_failed",
+        "请先启用Design。",
+        403,
+      ),
       code: "canvas_save_failed",
     },
   ])("文档服务拒绝 $status", ({ status, error, code }) => {
-    it.each(requests)("$method 保留状态、错误码与原因，不返回成功回执", async (request) => {
-      const f = await fixture({ error });
-      const response = await f.app.inject(request);
-      expect(response.statusCode).toBe(status);
-      expect(response.json()).toEqual({
-        error: { code, message: error.message },
-      });
-    });
+    it.each(requests)(
+      "$method 保留状态、错误码与原因，不返回成功回执",
+      async (request) => {
+        const f = await fixture({ error });
+        const response = await f.app.inject(request);
+        expect(response.statusCode).toBe(status);
+        expect(response.json()).toEqual({
+          error: { code, message: error.message },
+        });
+      },
+    );
   });
 
   it("列表保留项目不存在的404，不退化成内部错误", async () => {

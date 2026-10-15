@@ -323,7 +323,7 @@ it("深链flow但宿主适配层未配齐时回落design（不放空壳）", asy
 
 it("Code可信模型管理请求打开同一独立文档，拒绝伪造和无效目标，关闭保留Codeiframe", async () => {
   installFixture();
-  const { frame, message } = await renderCodeFrame();
+  const { frame } = await renderCodeFrame();
   const open = {
     type: "kenfutwork:open-management",
     target: {

@@ -33,8 +33,10 @@ it("相同生成Job重复发布只创建一个元素，不复活用户删除或�
   const second = await insertImageElement(store, input);
   expect(second).toEqual(first);
   expect(writes).toBe(1);
-  content.elements[0]!.x = 999;
-  content.elements[0]!.isDeleted = true;
+  const element = content.elements[0];
+  if (!element) throw new Error("测试前置缺失");
+  element.x = 999;
+  element.isDeleted = true;
   expect(await insertImageElement(store, input)).toEqual(first);
   expect(writes).toBe(1);
   expect(content.elements[0]).toMatchObject({ x: 999, isDeleted: true });

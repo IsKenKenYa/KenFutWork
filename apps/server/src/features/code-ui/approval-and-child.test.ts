@@ -55,7 +55,8 @@ it.each(["code", "design"] as const)(
         timestamp: "2026-10-03T00:00:00Z",
       });
       const snapshot = conversation.getSnapshot();
-      const tool = snapshot.rows.window.find((row) => row.kind === "toolCall")!;
+      const tool = snapshot.rows.window.find((row) => row.kind === "toolCall");
+      if (!tool) throw new Error("测试前置缺失");
       expect(snapshot.pendingInteractions[0]?.anchorRowId).toBe(tool.rowId);
       expect(tool).toMatchObject({ status: "pendingApproval" });
     } finally {

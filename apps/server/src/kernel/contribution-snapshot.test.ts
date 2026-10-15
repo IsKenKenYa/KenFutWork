@@ -89,7 +89,8 @@ it("删除和替换贡献不让旧定义或新实现复用原Run权限", async (
   const exposed = registry.resolveRunTools({
     ...resolution(),
     frozenContributions,
-  })[0]!;
+  })[0];
+  if (!exposed) throw new Error("测试前置缺失");
   dispose();
   expect(
     registry.resolveRunTools({ ...resolution(), frozenContributions }),

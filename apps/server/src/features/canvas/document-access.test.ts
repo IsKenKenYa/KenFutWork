@@ -234,7 +234,9 @@ it.each(["explore", "review"] as const)(
   "%s角色可以读文档但不能修改",
   async (role) => {
     const f = fixture();
-    f.context.scopeHandle = { ...f.context.scopeHandle!, role };
+    const scopeHandle = f.context.scopeHandle;
+    if (!scopeHandle) throw new Error("测试前置缺失");
+    f.context.scopeHandle = { ...scopeHandle, role };
     await expect(
       f.documents.authorize(f.context, "canvas", "read"),
     ).resolves.toEqual(f.actor);
@@ -281,10 +283,9 @@ it("Code显式资源引用也校验真实项目文档，不能借mode跳过引�
 it("父Run已结束时活跃只读子Run仍可读冻结文档，结束后拒绝迟到请求", async () => {
   const f = fixture();
   f.row.active_run_id = "next-parent-run";
-  f.row.state.runWorkContexts!.push([
-    "child-run",
-    { preset: "design", canvasId: "canvas" },
-  ]);
+  const runWorkContexts = f.row.state.runWorkContexts;
+  if (!runWorkContexts) throw new Error("测试前置缺失");
+  runWorkContexts.push(["child-run", { preset: "design", canvasId: "canvas" }]);
   f.row.state.snapshots = [
     {
       sessionId: "child",
@@ -300,7 +301,9 @@ it("父Run已结束时活跃只读子Run仍可读冻结文档，结束后拒绝�
   });
   f.context.sessionId = "child";
   f.context.runId = "child-run";
-  f.context.scopeHandle = { ...f.context.scopeHandle!, role: "explore" };
+  const scopeHandle = f.context.scopeHandle;
+  if (!scopeHandle) throw new Error("测试前置缺失");
+  f.context.scopeHandle = { ...scopeHandle, role: "explore" };
   await expect(
     f.documents.authorize(f.context, "canvas", "read"),
   ).resolves.toEqual(f.actor);
@@ -315,7 +318,9 @@ it("父Run已结束时活跃只读子Run仍可读冻结文档，结束后拒绝�
 
 it("选区assetId解析实际字节，冻结版本改变时拒绝且不扩目录授权", async () => {
   const f = fixture();
-  f.context.workContext!.selectedCanvasElements = [
+  const workContext = f.context.workContext;
+  if (!workContext) throw new Error("测试前置缺失");
+  workContext.selectedCanvasElements = [
     {
       id: "image",
       customData: { assetId: f.assetId, assetVersion: f.media.version },
@@ -363,14 +368,16 @@ it("未知、删除、跨项目和MIME错误的引用不能静默变成无参考
 it("品牌素材只从冻结套件父链读取，未知品牌素材错误不吞掉", async () => {
   const f = fixture();
   f.media.missing = true;
-  f.context.workContext!.brandKitId = randomUUID();
+  const workContext = f.context.workContext;
+  if (!workContext) throw new Error("测试前置缺失");
+  workContext.brandKitId = randomUUID();
   const refs = [{ reference: f.assetId, mediaType: "image" as const }];
   expect(
     (await f.documents.resolveMediaReferences(f.context, refs))[0],
   ).toMatch(/^data:image\/png;base64,/);
   expect(f.brandRead).toHaveBeenCalledWith(
     f.actor,
-    f.context.workContext!.brandKitId,
+    workContext.brandKitId,
     f.assetId,
     100,
   );

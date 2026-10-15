@@ -264,7 +264,9 @@ it("共享Code Task的Design Run沿真实提示执行上下文保留冻结画布
   const f = await fixture({ workContext });
   workContext.preset = "code";
   workContext.canvasId = "later-ui-canvas";
-  workContext.selectedCanvasElements![0]!.id = "later-ui-shape";
+  const elements = workContext.selectedCanvasElements;
+  if (!elements?.[0]) throw new Error("测试前置缺失");
+  elements[0].id = "later-ui-shape";
   const events = await f.drain();
   expect(events.filter((event) => event.type === "run.failed")).toEqual([]);
   expect(events.at(-1)?.type).toBe("run.completed");

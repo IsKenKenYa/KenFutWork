@@ -96,7 +96,7 @@ export function useVideoModelPreference() {
       const next = toggleMediaModel(preference, model);
       if (next !== preference) setPreference(next);
     },
-    [preference.mode, preference.models, setPreference],
+    [preference, setPreference],
   );
 
   const activeVideoGenerationPreference =

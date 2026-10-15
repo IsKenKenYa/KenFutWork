@@ -179,7 +179,9 @@ describe("get_brand_kit 工具（身份与绑定取自执行上下文）", () =>
 it("后续画布或项目默认品牌变化不改变已冻结品牌，输出真实assetId与已知MIME", async () => {
   const getKit = vi.fn(async () => {
     const kit = kitDetail();
-    kit.assets[2]!.metadata = { mime_type: "image/png" };
+    const asset = kit.assets[2];
+    if (!asset) throw new Error("测试前置缺失");
+    asset.metadata = { mime_type: "image/png" };
     return kit;
   });
   const output = await invoke(buildTool({ getKit }), {

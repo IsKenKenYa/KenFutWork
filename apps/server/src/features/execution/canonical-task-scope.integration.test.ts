@@ -23,7 +23,12 @@ async function fixture(kind: "code" | "design" = "code") {
   const threadId = randomUUID();
   await sql.execute(
     "insert into public.chat_sessions(id,instance_id,project_id,mode,created_by_client_id,thread_id) values($1,:instance,$2,'code',$3,$4)",
-    [original.taskId, original.projectId, database.actor.accessClientId, threadId],
+    [
+      original.taskId,
+      original.projectId,
+      database.actor.accessClientId,
+      threadId,
+    ],
   );
   await sql.execute(
     "update public.code_ui_sessions set chat_session_id=$1 where instance_id=:instance and id=$1",
@@ -42,7 +47,12 @@ async function fixture(kind: "code" | "design" = "code") {
   const work = createTaskWorkStore(database.persistence);
   const runs = createAgentRunRepository(database.persistence);
   const runId = randomUUID();
-  await runs.insert({ runId, sessionId: scope.taskId, threadId, status: "running" });
+  await runs.insert({
+    runId,
+    sessionId: scope.taskId,
+    threadId,
+    status: "running",
+  });
   const boundary: AgentTurnBoundary = {
     instanceId: scope.instanceId,
     projectId: scope.projectId,
@@ -75,7 +85,19 @@ async function fixture(kind: "code" | "design" = "code") {
     runId,
     threadId,
   };
-  return { database, original, sql, scopeRepository, handle, scope, work, runs, boundary, workContext, target };
+  return {
+    database,
+    original,
+    sql,
+    scopeRepository,
+    handle,
+    scope,
+    work,
+    runs,
+    boundary,
+    workContext,
+    target,
+  };
 }
 
 describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
@@ -87,14 +109,20 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         const f = await fixture(kind);
         expect(f.handle.preset).toBe("code");
         expect(f.scope).toEqual(f.original);
-        expect(await f.handle.resolvePath(".", "read")).toBe(f.original.rootDirectory);
+        expect(await f.handle.resolvePath(".", "read")).toBe(
+          f.original.rootDirectory,
+        );
         expect(await f.work.isCurrent(f.workContext)).toBe(true);
         expect(await f.runs.recordTurnBoundary(f.boundary)).toBe(true);
-        expect((await f.runs.getTurnBoundaries(f.target)).pre).toEqual(f.boundary);
+        expect((await f.runs.getTurnBoundaries(f.target)).pre).toEqual(
+          f.boundary,
+        );
 
         const otherDirectory = join(f.database.directory, "other-project");
         await mkdir(otherDirectory);
-        const { project: other } = await createProjectRepository(f.database.persistence).createProject({
+        const { project: other } = await createProjectRepository(
+          f.database.persistence,
+        ).createProject({
           instanceId: f.scope.instanceId,
           createdByClientId: f.database.actor.accessClientId,
           kind: "code",
@@ -104,20 +132,56 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
           canvasName: "unused",
           workDir: otherDirectory,
         });
-        expect(await f.runs.recordTurnBoundary({ ...f.boundary, projectId: other.id, phase: "post" })).toBe(false);
-        expect(await f.runs.getTurnBoundaries({ ...f.target, projectId: other.id })).toEqual({ pre: null, post: null });
-        expect(await f.scopeRepository.load(randomUUID(), f.scope.taskId)).toBeNull();
-        expect(await f.runs.recordTurnBoundary({ ...f.boundary, instanceId: randomUUID(), phase: "post" })).toBe(false);
-        expect(await f.runs.recordTurnBoundary({ ...f.boundary, taskKind: "design", phase: "post" })).toBe(false);
+        expect(
+          await f.runs.recordTurnBoundary({
+            ...f.boundary,
+            projectId: other.id,
+            phase: "post",
+          }),
+        ).toBe(false);
+        expect(
+          await f.runs.getTurnBoundaries({ ...f.target, projectId: other.id }),
+        ).toEqual({ pre: null, post: null });
+        expect(
+          await f.scopeRepository.load(randomUUID(), f.scope.taskId),
+        ).toBeNull();
+        expect(
+          await f.runs.recordTurnBoundary({
+            ...f.boundary,
+            instanceId: randomUUID(),
+            phase: "post",
+          }),
+        ).toBe(false);
+        expect(
+          await f.runs.recordTurnBoundary({
+            ...f.boundary,
+            taskKind: "design",
+            phase: "post",
+          }),
+        ).toBe(false);
 
-        const changed = await f.scopeRepository.beginUpdate!(f.scope, { sandboxMode: "read-only" });
-        expect(changed).toMatchObject({ preset: "code", state: "revoking", scope: { generation: f.scope.generation + 1 } });
+        const { beginUpdate, finishUpdate } = f.scopeRepository;
+        if (!beginUpdate || !finishUpdate) throw new Error("测试前置缺失");
+        const changed = await beginUpdate(f.scope, {
+          sandboxMode: "read-only",
+        });
+        expect(changed).toMatchObject({
+          preset: "code",
+          state: "revoking",
+          scope: { generation: f.scope.generation + 1 },
+        });
         expect(await f.work.isCurrent(f.workContext)).toBe(false);
         await expect(f.handle.resolvePath(".", "read")).rejects.toThrow();
-        expect(await f.scopeRepository.finishUpdate!(changed!.scope, "ready")).toBe(true);
+        if (!changed) throw new Error("测试前置缺失");
+        expect(await finishUpdate(changed.scope, "ready")).toBe(true);
         expect(await f.work.isCurrent(f.workContext)).toBe(false);
-        expect(await f.runs.recordTurnBoundary({ ...f.boundary, phase: "post" })).toBe(false);
-        expect((await f.scopeRepository.load(f.scope.instanceId, f.scope.taskId))?.scope).toMatchObject({
+        expect(
+          await f.runs.recordTurnBoundary({ ...f.boundary, phase: "post" }),
+        ).toBe(false);
+        expect(
+          (await f.scopeRepository.load(f.scope.instanceId, f.scope.taskId))
+            ?.scope,
+        ).toMatchObject({
           projectId: f.scope.projectId,
           taskId: f.scope.taskId,
           rootDirectory: f.original.rootDirectory,
@@ -134,11 +198,24 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         "update public.projects set kind='flow',enabled_modes=array['flow']::text[] where instance_id=:instance and id=$1",
         [f.scope.projectId],
       );
-      expect(await f.scopeRepository.load(f.scope.instanceId, f.scope.taskId)).toBeNull();
+      expect(
+        await f.scopeRepository.load(f.scope.instanceId, f.scope.taskId),
+      ).toBeNull();
       expect(await f.work.isCurrent(f.workContext)).toBe(false);
-      expect(await f.runs.recordTurnBoundary({ ...f.boundary, phase: "post" })).toBe(false);
-      expect(await f.runs.getTurnBoundaries(f.target)).toEqual({ pre: null, post: null });
-      expect(await f.scopeRepository.beginUpdate!(f.scope, { sandboxMode: "read-only" })).toBeNull();
+      expect(
+        await f.runs.recordTurnBoundary({ ...f.boundary, phase: "post" }),
+      ).toBe(false);
+      expect(await f.runs.getTurnBoundaries(f.target)).toEqual({
+        pre: null,
+        post: null,
+      });
+      const { beginUpdate } = f.scopeRepository;
+      if (!beginUpdate) throw new Error("测试前置缺失");
+      expect(
+        await beginUpdate(f.scope, {
+          sandboxMode: "read-only",
+        }),
+      ).toBeNull();
     });
   },
 );
