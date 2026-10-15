@@ -290,7 +290,7 @@ function buildModelInput(params: VideoGenerateParams): {
       input.duration = String(duration);
       input.aspect_ratio = aspectRatio;
       if (hasImage) input.image_url = params.inputImages?.[0];
-      if (params.enableAudio !== false) input.audio = true;
+      input.audio = params.enableAudio ?? true;
       break;
     }
 
@@ -311,7 +311,7 @@ function buildModelInput(params: VideoGenerateParams): {
       input.duration = duration;
       input.aspect_ratio = aspectRatio;
       if (hasImage) input.image = params.inputImages?.[0];
-      if (params.enableAudio !== false) input.audio = true;
+      input.audio = params.enableAudio ?? true;
       break;
     }
 
@@ -321,7 +321,7 @@ function buildModelInput(params: VideoGenerateParams): {
       input.aspect_ratio = aspectRatio;
       if (params.resolution) input.resolution = params.resolution;
       if (hasImage) input.image = params.inputImages?.[0];
-      if (params.enableAudio !== false) input.enable_audio = true;
+      input.enable_audio = params.enableAudio ?? true;
       break;
     }
 
@@ -337,7 +337,7 @@ function buildModelInput(params: VideoGenerateParams): {
     case "google/veo-3": {
       input.duration = duration;
       input.aspect_ratio = aspectRatio;
-      if (params.enableAudio !== false) input.generate_audio = true;
+      input.generate_audio = params.enableAudio ?? true;
       break;
     }
 
@@ -346,7 +346,7 @@ function buildModelInput(params: VideoGenerateParams): {
       input.duration = duration;
       input.aspect_ratio = aspectRatio;
       if (hasImage) input.image = params.inputImages?.[0];
-      if (params.enableAudio !== false) input.generate_audio = true;
+      input.generate_audio = params.enableAudio ?? true;
       break;
     }
 

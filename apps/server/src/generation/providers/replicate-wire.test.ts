@@ -249,6 +249,81 @@ it("Replicate图片取消调用实例地址的cancel端点且不重新提交", a
   ]);
 });
 
+it("Replicate已知视频分支显式音频false和true均实际发送", async () => {
+  const branches = [
+    {
+      model: "kwaivgi/kling-v3-video",
+      endpoint: "kwaivgi/kling-v3-video",
+      field: "audio",
+    },
+    {
+      model: "bytedance/seedance-1.5-pro",
+      endpoint: "bytedance/seedance-1.5-pro",
+      field: "audio",
+    },
+    {
+      model: "wan-video/wan-2.6",
+      endpoint: "wan-video/wan-2.6-t2v",
+      field: "enable_audio",
+    },
+    {
+      model: "google/veo-3",
+      endpoint: "google/veo-3",
+      field: "generate_audio",
+    },
+    {
+      model: "google/veo-3.1",
+      endpoint: "google/veo-3.1",
+      field: "generate_audio",
+    },
+  ] as const;
+  const requests: Array<{
+    method: string | undefined;
+    url: string | undefined;
+    body: unknown;
+  }> = [];
+  server = createServer(async (req, res) => {
+    requests.push({
+      method: req.method,
+      url: req.url,
+      body: await requestBody(req),
+    });
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({
+        id: "audio-prediction",
+        status: "starting",
+        output: null,
+      }),
+    );
+  });
+  const active = server;
+  await new Promise<void>((resolve) => active.listen(0, "127.0.0.1", resolve));
+  const { port } = active.address() as AddressInfo;
+  const provider = createInstanceVideoProvider({
+    credentials: {
+      apiKey: "audio-test-key",
+      baseUrl: `http://127.0.0.1:${port}/gateway/v1`,
+    },
+    models: branches.map(({ model }) => ({ id: model, name: model })),
+  });
+  if (!provider.startAsync) throw new Error("Replicate视频异步接口未接线");
+
+  for (const { model, endpoint, field } of branches) {
+    for (const enableAudio of [false, true]) {
+      await provider.startAsync({ model, prompt: "一只猫", enableAudio });
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({
+        method: "POST",
+        url: `/gateway/v1/models/${endpoint}/predictions`,
+        body: { input: { [field]: enableAudio } },
+      });
+      requests.length = 0;
+    }
+  }
+});
+
 it("Replicate自定义视频模型用实例地址单次提交、续查与取消", async () => {
   const requests: Array<{
     method: string | undefined;
