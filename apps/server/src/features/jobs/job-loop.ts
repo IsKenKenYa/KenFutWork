@@ -247,9 +247,6 @@ async function processMessage(
     return;
   }
 
-  const { attempt_count, max_attempts } =
-    await ctx.jobService.incrementAttempt(jobId);
-
   await ctx.jobService.markRunning(jobId);
 
   try {
@@ -274,6 +271,10 @@ async function processMessage(
       );
       return;
     }
+
+    // 查询尚未完成是正常进度；只有真实失败才消耗重试预算。
+    const { attempt_count, max_attempts } =
+      await ctx.jobService.incrementAttempt(jobId);
 
     // 不可重试的错误：同输入重试必然再失败，直接死信，让调用方快速拿到反馈
     const NON_RETRYABLE_CODES = new Set([

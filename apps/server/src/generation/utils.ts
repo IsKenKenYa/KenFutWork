@@ -1,3 +1,38 @@
+import type { GeneratedImage } from "./types.js";
+
+/** OpenAI/Ark Images API 均可能返回 URL 或 base64，不能把同步产物误当空结果。 */
+export function readGeneratedImage(
+  provider: string,
+  response: {
+    data?: Array<{ url?: string; b64_json?: string; size?: string }>;
+    output_format?: string;
+  },
+  defaults: { width: number; height: number; mimeType: string },
+): GeneratedImage {
+  const image = response.data?.[0];
+  const mimeType =
+    response.output_format === "png"
+      ? "image/png"
+      : response.output_format === "jpeg"
+        ? "image/jpeg"
+        : response.output_format === "webp"
+          ? "image/webp"
+          : defaults.mimeType;
+  const url =
+    image?.url ||
+    (image?.b64_json ? `data:${mimeType};base64,${image.b64_json}` : undefined);
+  if (!url)
+    throw new GenerationError(
+      provider,
+      "no_output",
+      "供应商未返回图片，请检查模型与生成结果。",
+    );
+  const actualSize = image?.size?.match(/^(\d+)x(\d+)$/);
+  const width = Number(actualSize?.[1]) || defaults.width;
+  const height = Number(actualSize?.[2]) || defaults.height;
+  return { url, mimeType, width, height };
+}
+
 const KNOWN_RATIOS: Record<string, { width: number; height: number }> = {
   "1:1": { width: 1024, height: 1024 },
   "16:9": { width: 1024, height: 576 },

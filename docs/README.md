@@ -48,6 +48,7 @@ graph LR
 | `调研/ZCode-3.15.1界面更新源码分析.md` | 3.14.3 与 3.15.1 固定源码的 UI 装配与移植影响对照 | **调研**：原移植清单仍固定 3.14.3，不代表宿主已升级或新版已发布 |
 | `调研/04-模型Provider调研.md` | 参考项目（cherry-studio / kimi-code / nomifun / dsh / jaaz / jellyfish / futureFlow）的模型 Provider 调研：LLM / IGM（图像生成）/ VGM（视频生成 + 视觉输入）三维度对比与本项目可学习点 | 调研：只作方向参考，落地结论写入《改造计划》§4.8/§4.10 与 《日志》四十六 |
 | `调研/05-生成通道轮子选型.md` | 生成通道生态尽调结论（已闭环）：AI SDK 生态本地实测（video 三段式 / edits 缝 / bytedance 包 / 反向适配不存在）、models.dev 能力库 vendor（快照 + 刷新脚本，实测 220 providers）、视频直连 poll 5/5 自含、`/v1/videos` 借形状不绑路径、视频词表借 fal 形状、中转 4 探测项、队列维持 PGMQ（否证理由勘误）；含触发器 T1–T3 与实现期确证点 | 调研结论：落地走《日志》台账；生成通道引 AI SDK 包，chat 层边界以 §4.8 为准 |
+| `调研/媒体生成供应商适配核验.md` | GPT Image、Gemini Image、Seedream、Seedance、MiniMax H3 官方协议与安装 SDK 核验；实例工厂和共享 Job 链路缺口 | 核验：真实模型验收由用户暂缓；修复与自动化证据见《日志》 |
 | `调研/03-改造建议与路线.md` | 双模式改造建议稿（v3） | **收口中**：§0–§7 为冻结区（`<!-- frozen:start/end -->` + `docs/frozen-lock.json` 校验，禁改）；**仅 §8 可编辑**；P0 定稿后整篇归档 |
 | `调研/05-Ruflo调研与可借鉴点.md` | Ruflo（原 claude-flow）形态核对与取舍：不引入依赖；可借鉴项（编排原语 / 记忆检索模式 / 角色清单）与落点、开工前待拍板口径 | 调研：结论按现有缝落地，落点以《改造计划》§4.2/§4.10 为准 |
 | `调研/06-参考项目Agent设计机制调研.md` | `references/` 下 9 个项目（zcode / dsh / codex / nomifun / kimi-code / cherry-studio / jaaz / loomic / langgraph）的 subagent、Agent 间协作、多模态读取、工具设计四主题源码级调研，结论带 `文件:行号` 引用可回源核对；文末附待拍板参照点清单 | 调研：只作方向参考；参照点拍板后写入《改造计划》§6 |

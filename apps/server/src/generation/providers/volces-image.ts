@@ -3,7 +3,11 @@ import type {
   ImageGenerateParams,
   ImageProvider,
 } from "../types.js";
-import { aspectRatioToDimensions, GenerationError } from "../utils.js";
+import {
+  aspectRatioToDimensions,
+  GenerationError,
+  readGeneratedImage,
+} from "../utils.js";
 
 const DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
 
@@ -21,20 +25,26 @@ export class VolcesImageProvider implements ImageProvider {
     headers?: Record<string, string>,
   ) {
     this.apiKey = apiKey;
-    this.baseURL = baseURL ?? DEFAULT_BASE_URL;
+    this.baseURL = (baseURL ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
     this.headers = headers;
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
-    const { width, height } = aspectRatioToDimensions(
-      params.aspectRatio ?? "1:1",
-    );
+    const aspectRatio = params.aspectRatio ?? "1:1";
+    const [rw, rh] = aspectRatio.split(":").map(Number);
+    const ratio = rw && rh ? Math.max(rw / rh, rh / rw) : 1;
+    // 新版 Seedream 以总像素限定下限；不能把长边 1K 当作合法的默认请求。
+    const pixels = params.quality === "ultra" ? 16_000_000 : 4_194_304;
+    const baseSize = params.model.includes("seedream-3-")
+      ? 1024
+      : Math.sqrt(pixels * ratio);
+    const { width, height } = aspectRatioToDimensions(aspectRatio, baseSize);
 
     const body = {
       model: params.model,
       prompt: params.prompt,
       size: `${width}x${height}`,
-      n: 1,
+      ...(params.inputImages?.length ? { image: params.inputImages } : {}),
     };
 
     const response = await fetch(`${this.baseURL}/images/generations`, {
@@ -58,19 +68,12 @@ export class VolcesImageProvider implements ImageProvider {
     }
 
     const data = (await response.json()) as {
-      data: Array<{ url?: string; b64_json?: string }>;
+      data?: Array<{ url?: string; b64_json?: string; size?: string }>;
     };
-    const imageData = data.data[0];
-    const url = imageData?.url;
-
-    if (!url) {
-      throw new GenerationError(
-        "volces",
-        "no_output",
-        "Volces returned no image URL",
-      );
-    }
-
-    return { url, mimeType: "image/png", width, height };
+    return readGeneratedImage("volces", data, {
+      width,
+      height,
+      mimeType: "image/png",
+    });
   }
 }

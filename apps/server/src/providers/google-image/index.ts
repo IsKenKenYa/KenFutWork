@@ -10,6 +10,7 @@ export function createInstanceImageProvider(
   const delegate = new GoogleImageProvider(
     options.credentials.apiKey,
     options.credentials.headers,
+    options.credentials.baseUrl,
   );
   return {
     name: "google-image",

@@ -79,23 +79,23 @@ export class GoogleImageProvider implements ImageProvider {
 
   private client: GoogleGenAI;
 
-  constructor(apiKey: string, headers?: Record<string, string>) {
+  constructor(
+    apiKey: string,
+    headers?: Record<string, string>,
+    baseUrl?: string,
+  ) {
     this.client = new GoogleGenAI({
       apiKey,
       // 自定义头（§4.8）：x-goog-api-key 等保留头由 SDK 按 apiKey 生成，不受其影响
-      ...(headers ? { httpOptions: { headers } } : {}),
+      httpOptions: {
+        ...(baseUrl ? { baseUrl } : {}),
+        ...(headers ? { headers } : {}),
+      },
     });
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
-    const apiModel = MODEL_MAP[params.model];
-    if (!apiModel) {
-      throw new GenerationError(
-        PROVIDER_NAME,
-        "model_not_found",
-        `Unknown Google image model: ${params.model}`,
-      );
-    }
+    const apiModel = MODEL_MAP[params.model] ?? params.model;
 
     const aspectRatio = params.aspectRatio ?? "1:1";
     const imageSize = QUALITY_TO_IMAGE_SIZE[params.quality ?? "hd"] ?? "2K";
@@ -127,7 +127,8 @@ export class GoogleImageProvider implements ImageProvider {
           responseModalities: ["IMAGE"],
           imageConfig: {
             aspectRatio,
-            imageSize,
+            // Gemini 2.5 Flash Image 仅支持默认尺寸；3 系及实例自定义模型沿用尺寸选项。
+            ...(apiModel === "gemini-2.5-flash-image" ? {} : { imageSize }),
           },
         },
       });

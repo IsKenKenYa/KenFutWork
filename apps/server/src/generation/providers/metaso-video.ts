@@ -17,7 +17,7 @@ const DEFAULT_MAX_WAIT_MS = 300_000;
 const REQUEST_TIMEOUT_MS = 30_000;
 const ALLOWED_RATIOS = new Set(["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]);
 
-const METASO_VIDEO_MODELS: readonly VideoModelInfo[] = [
+const METASO_VIDEO_MODELS: readonly [VideoModelInfo] = [
   {
     id: METASO_VIDEO_MODEL_ID,
     displayName: "MiniMax H3 (Metaso)",
@@ -191,7 +191,20 @@ export class MetasoVideoProvider implements VideoProvider {
       return { state: "failed", errorMessage: `${code}: ${detail}` };
     }
 
-    return { state: "in_progress" };
+    if (status === "cancelled") {
+      return {
+        state: "failed",
+        errorMessage: "Metaso video generation was cancelled",
+      };
+    }
+    if (status === "queued" || status === "running") {
+      return { state: "in_progress" };
+    }
+    throw new GenerationError(
+      PROVIDER_NAME,
+      "malformed_response",
+      `Metaso returned an unknown task status: ${redactSensitiveValue(sanitizeMessage(status), this.apiKey)}`,
+    );
   }
 
   async generate(params: VideoGenerateParams): Promise<GeneratedVideo> {
@@ -370,7 +383,7 @@ export class MetasoVideoProvider implements VideoProvider {
 }
 
 function buildCreateRequest(params: VideoGenerateParams) {
-  if (params.model !== METASO_VIDEO_MODEL_ID) {
+  if (params.model !== METASO_VIDEO_MODEL_ID && params.model !== API_MODEL_ID) {
     throw new GenerationError(
       PROVIDER_NAME,
       "model_not_found",

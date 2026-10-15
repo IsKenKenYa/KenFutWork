@@ -12,24 +12,16 @@ export function createInstanceVideoProvider(
     options.credentials.baseUrl,
     options.credentials.headers ? { headers: options.credentials.headers } : {},
   );
+  const model = delegate.models[0];
   return {
     name: "metaso",
     models: options.models.map((m) => ({
+      ...model,
       id: m.id,
       displayName: m.name,
-      description: "BYOK instance model",
-      capabilities: {
-        textToVideo: true,
-        imageToVideo: false,
-        videoToVideo: false,
-        audio: false,
-      },
-      limits: {
-        maxDuration: 10,
-        maxResolution: "1080p",
-        maxInputImages: 1,
-      },
     })),
     generate: (params) => delegate.generate(params),
+    startAsync: (params) => delegate.startAsync(params),
+    pollAsync: (providerJobId) => delegate.pollAsync(providerJobId),
   };
 }

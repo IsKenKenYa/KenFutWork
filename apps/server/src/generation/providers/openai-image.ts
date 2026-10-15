@@ -5,7 +5,49 @@ import type {
   ImageGenerateParams,
   ImageProvider,
 } from "../types.js";
-import { aspectRatioToDimensions, GenerationError } from "../utils.js";
+import {
+  aspectRatioToDimensions,
+  GenerationError,
+  readGeneratedImage,
+} from "../utils.js";
+
+function imageOptions(params: ImageGenerateParams) {
+  const dimensions = aspectRatioToDimensions(params.aspectRatio ?? "1:1");
+  // GPT Image 的标准尺寸不能用通用画布比例生成任意像素值。
+  const gptImage =
+    params.model.startsWith("gpt-image-") ||
+    params.model === "chatgpt-image-latest";
+  const { width, height } = gptImage
+    ? dimensions.width === dimensions.height
+      ? { width: 1024, height: 1024 }
+      : dimensions.width > dimensions.height
+        ? { width: 1536, height: 1024 }
+        : { width: 1024, height: 1536 }
+    : dimensions;
+  const outputFormat: "png" | "jpeg" | "webp" | undefined = !gptImage
+    ? undefined
+    : params.outputFormat === "jpg"
+      ? "jpeg"
+      : params.outputFormat;
+  const quality = params.quality
+    ? { standard: "low", hd: "medium", ultra: "high" }[params.quality]
+    : undefined;
+  return {
+    width,
+    height,
+    size: `${width}x${height}`,
+    mimeType:
+      outputFormat === "jpeg"
+        ? "image/jpeg"
+        : outputFormat === "webp"
+          ? "image/webp"
+          : "image/png",
+    ...(gptImage && quality
+      ? { quality: quality as "low" | "medium" | "high" }
+      : {}),
+    ...(outputFormat ? { output_format: outputFormat } : {}),
+  };
+}
 
 /**
  * 参考图 → multipart 文件体：URL 先下载、data URL 就地解码、裸 base64 兜底。
@@ -61,7 +103,7 @@ export class OpenAIImageProvider implements ImageProvider {
       ...(headers ? { defaultHeaders: headers } : {}),
     });
     this.apiKey = apiKey;
-    this.baseURL = baseURL;
+    this.baseURL = baseURL?.replace(/\/+$/, "");
     this.headers = headers;
   }
 
@@ -72,16 +114,21 @@ export class OpenAIImageProvider implements ImageProvider {
    */
   private async generateEdit(
     params: ImageGenerateParams,
-    size: string,
+    options: ReturnType<typeof imageOptions>,
   ): Promise<GeneratedImage> {
     const baseURL = this.baseURL ?? "https://api.openai.com/v1";
     const form = new FormData();
     form.append("model", params.model);
     form.append("prompt", params.prompt);
     form.append("n", "1");
-    form.append("size", size);
+    form.append("size", options.size);
+    if (options.quality) form.append("quality", options.quality);
+    if (options.output_format)
+      form.append("output_format", options.output_format);
+    const imageField =
+      (params.inputImages?.length ?? 0) > 1 ? "image[]" : "image";
     for (const source of params.inputImages ?? []) {
-      form.append("image", await toUploadFile(source));
+      form.append(imageField, await toUploadFile(source));
     }
 
     const response = await fetch(`${baseURL}/images/edits`, {
@@ -108,49 +155,29 @@ export class OpenAIImageProvider implements ImageProvider {
     const data = (await response.json()) as {
       data: Array<{ url?: string; b64_json?: string }>;
     };
-    const url = data.data[0]?.url;
-    if (!url) {
-      throw new GenerationError(
-        "openai",
-        "no_output",
-        "OpenAI edits returned no image URL",
-      );
-    }
-    const { width, height } = aspectRatioToDimensions(
-      params.aspectRatio ?? "1:1",
-    );
-    return { url, mimeType: "image/png", width, height };
+    return readGeneratedImage("openai", data, options);
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
-    const { width, height } = aspectRatioToDimensions(
-      params.aspectRatio ?? "1:1",
-    );
-    const size = `${width}x${height}`;
+    const options = imageOptions(params);
 
     try {
       // 带参考图 → 编辑路径；否则生成路径不变。
       if (params.inputImages?.length) {
-        return await this.generateEdit(params, size);
+        return await this.generateEdit(params, options);
       }
 
       const response = await this.client.images.generate({
         model: params.model,
         prompt: params.prompt,
-        size: size as "1024x1024",
+        size: options.size as "1024x1024",
         n: 1,
+        ...(options.quality ? { quality: options.quality } : {}),
+        ...(options.output_format
+          ? { output_format: options.output_format }
+          : {}),
       });
-
-      const url = response.data?.[0]?.url;
-      if (!url) {
-        throw new GenerationError(
-          "openai",
-          "no_output",
-          "OpenAI returned no image URL",
-        );
-      }
-
-      return { url, mimeType: "image/png", width, height };
+      return readGeneratedImage("openai", response, options);
     } catch (error) {
       if (error instanceof GenerationError) throw error;
       throw new GenerationError(
