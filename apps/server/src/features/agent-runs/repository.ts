@@ -96,6 +96,7 @@ export function createAgentRunRepository(
   return {
     async recordTurnBoundary(input) {
       const taskKind = input.taskKind ?? "code";
+      if (taskKind !== "code") return false;
       const rows = await persistence.forInstance(input.instanceId).query(
         `insert into public.agent_turn_boundaries (run_id,phase,instance_id,project_id,task_id,task_kind,boundary)
          select r.id,$2,:instance,o.project_id,o.task_id,$7,$5::jsonb
@@ -108,20 +109,14 @@ export function createAgentRunRepository(
            left join public.code_ui_sessions code_task on o.task_kind='code'
              and code_task.id=o.task_id and code_task.instance_id=o.instance_id
              and code_task.project_id=o.project_id and code_task.parent_session_id is null
-           left join public.design_task_executions design_task on o.task_kind='design'
-             and design_task.task_id=o.task_id and design_task.instance_id=o.instance_id
-             and design_task.project_id=o.project_id
           where r.id=$1 and r.thread_id=$6 and r.session_id=o.task_id
-            and c.thread_id=$6 and c.mode=$7 and p.kind=$7 and p.archived_at is null
-            and ((o.task_kind='code' and code_task.deleted_at is null
-                  and code_task.archived=false and code_task.execution_state='ready'
-                  and code_task.scope_generation=($5::jsonb->>'scopeGeneration')::bigint
-                  and ((($5::jsonb->'branchGeneration')='null'::jsonb)
-                    or code_task.branch_generation=($5::jsonb->>'branchGeneration')::bigint))
-              or (o.task_kind='design' and design_task.execution_state='ready'
-                  and design_task.scope_generation=($5::jsonb->>'scopeGeneration')::bigint
-                  and ((($5::jsonb->'branchGeneration')='null'::jsonb)
-                    or design_task.branch_generation=($5::jsonb->>'branchGeneration')::bigint)))
+            and c.thread_id=$6 and c.mode=$7 and p.archived_at is null
+            and p.kind in ('code','design') and p.enabled_modes && array['code','design']::text[]
+            and o.task_kind='code' and code_task.deleted_at is null
+            and code_task.archived=false and code_task.execution_state='ready'
+            and code_task.scope_generation=($5::jsonb->>'scopeGeneration')::bigint
+            and ((($5::jsonb->'branchGeneration')='null'::jsonb)
+              or code_task.branch_generation=($5::jsonb->>'branchGeneration')::bigint)
          on conflict (run_id,phase) do update
            set boundary=agent_turn_boundaries.boundary
            where agent_turn_boundaries.instance_id=excluded.instance_id
@@ -162,7 +157,8 @@ export function createAgentRunRepository(
           where b.instance_id=:instance and b.project_id=$1 and b.task_id=$2 and b.run_id=$3
             and b.task_kind=$5
             and r.thread_id=$4 and c.thread_id=$4 and c.instance_id=:instance
-            and c.project_id=$1 and c.mode=$5 and p.kind=$5 and p.archived_at is null
+            and c.project_id=$1 and c.mode=$5 and p.archived_at is null
+            and p.kind in ('code','design') and p.enabled_modes && array['code','design']::text[]
             and ((b.task_kind='code' and code_task.deleted_at is null
                   and code_task.archived=false and code_task.parent_session_id is null)
               or (b.task_kind='design' and design_task.task_id is not null))`,
