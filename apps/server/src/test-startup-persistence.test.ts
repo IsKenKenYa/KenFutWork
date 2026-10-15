@@ -1,6 +1,33 @@
 import { expect, it } from "vitest";
 import { createStartupPersistenceFixture } from "./test-startup-persistence.js";
 
+it("startup fixture显式模拟通知订阅，关闭后不能继续投递或开启发布事务", async () => {
+  const persistence = createStartupPersistenceFixture();
+  const received: string[] = [];
+  const subscription = await persistence.subscribeNotifications(
+    "startup_events",
+    (payload) => received.push(payload),
+  );
+  await persistence.execute("select pg_notify($1,$2)", [
+    "startup_events",
+    "actual-notification",
+  ]);
+  expect(received).toEqual(["actual-notification"]);
+  await subscription.release();
+  await persistence.execute("select pg_notify($1,$2)", [
+    "startup_events",
+    "after-close",
+  ]);
+  expect(received).toEqual(["actual-notification"]);
+  await persistence.close();
+  await expect(
+    persistence.subscribeNotifications("startup_events", () => {}),
+  ).rejects.toThrow("after close");
+  await expect(
+    persistence.withSessionTransaction(async () => {}),
+  ).rejects.toThrow("after close");
+});
+
 it("startup fixture owns one Design host lock and releases only that lease", async () => {
   const persistence = createStartupPersistenceFixture();
   try {

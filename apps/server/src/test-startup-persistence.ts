@@ -19,6 +19,8 @@ export function createStartupPersistenceFixture(): PersistenceService & {
   let tokenHash: unknown;
   let sessionLock: AbortController | undefined;
   let closed = false;
+  const notifications = new Map<string, Set<(payload: string) => void>>();
+  const subscriptions = new Set<AbortController>();
   const unsupported = (operation: string): never => {
     throw new Error(`路由装配夹具未提供数据库操作：${operation}`);
   };
@@ -78,6 +80,11 @@ export function createStartupPersistenceFixture(): PersistenceService & {
       return row as T | null;
     },
     async execute(statement, params = []) {
+      if (statement === "select pg_notify($1,$2)") {
+        for (const listener of notifications.get(String(params[0])) ?? [])
+          listener(String(params[1]));
+        return 1;
+      }
       if (
         /update public\.local_instances set last_data_dir/i.test(statement) &&
         params[0] === instanceId
@@ -97,6 +104,33 @@ export function createStartupPersistenceFixture(): PersistenceService & {
     },
     transaction: async (fn) =>
       fn({ ...sql, forInstance: (id) => persistence.forInstance(id) }),
+    withSessionTransaction: async (fn) => {
+      if (closed) return unsupported("withSessionTransaction after close");
+      const controller = new AbortController();
+      try {
+        return await persistence.transaction((tx) => fn(tx, controller.signal));
+      } finally {
+        controller.abort();
+      }
+    },
+    subscribeNotifications: async (channel, listener) => {
+      if (closed) return unsupported("subscribeNotifications after close");
+      if (!/^[a-z][a-z0-9_]{0,62}$/u.test(channel))
+        return unsupported(`subscribeNotifications(${channel})`);
+      const controller = new AbortController();
+      subscriptions.add(controller);
+      const entries = notifications.get(channel) ?? new Set();
+      entries.add(listener);
+      notifications.set(channel, entries);
+      return {
+        signal: controller.signal,
+        release: async () => {
+          entries.delete(listener);
+          subscriptions.delete(controller);
+          controller.abort();
+        },
+      };
+    },
     acquireSessionLock: async (key) => {
       if (key !== `design-goals-host:${instanceId}`)
         return unsupported(`acquireSessionLock(${key})`);
@@ -117,6 +151,9 @@ export function createStartupPersistenceFixture(): PersistenceService & {
       closed = true;
       sessionLock?.abort();
       sessionLock = undefined;
+      for (const subscription of subscriptions) subscription.abort();
+      subscriptions.clear();
+      notifications.clear();
       rmSync(dataDir, { recursive: true, force: true });
     },
   };

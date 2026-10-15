@@ -55,6 +55,9 @@ export interface PostgresConnection {
 export interface PostgresSessionConnection {
   query(text: string, values: unknown[]): Promise<PostgresResult>;
   onLost(listener: (cause: unknown) => void): () => void;
+  onNotification?(
+    listener: (channel: string, payload: string) => void,
+  ): () => void;
   release(): Promise<void>;
 }
 
@@ -158,6 +161,19 @@ async function createDedicatedSession(
   }
   return {
     query: runOn(client),
+    onNotification(listener) {
+      const received = (notification: {
+        channel: string;
+        payload?: string | undefined;
+      }) => {
+        if (!released && lost === undefined)
+          listener(notification.channel, notification.payload ?? "");
+      };
+      client.on("notification", received);
+      return () => {
+        client.off("notification", received);
+      };
+    },
     onLost(listener) {
       listeners.add(listener);
       if (lost !== undefined) listener(lost);
@@ -225,6 +241,49 @@ async function acquireSessionLock(
   };
 }
 
+async function subscribeNotifications(
+  runner: PostgresQueryRunner,
+  channel: string,
+  listener: (payload: string) => void,
+): Promise<PersistenceSessionLock> {
+  if (!/^[a-z][a-z0-9_]{0,62}$/u.test(channel))
+    throw new Error("数据库通知通道名称无效。");
+  const connection = await runner.acquireSession();
+  if (!connection.onNotification) {
+    await connection.release();
+    throw new Error("当前存储提供方不支持数据库通知，无法同步后台画布成果。");
+  }
+  const controller = new AbortController();
+  const removeLoss = connection.onLost((cause) =>
+    controller.abort(toSqlError(cause)),
+  );
+  const removeNotification = connection.onNotification((source, payload) => {
+    if (source === channel && !controller.signal.aborted) listener(payload);
+  });
+  try {
+    await connection.query(`listen "${channel}"`, []);
+    controller.signal.throwIfAborted();
+  } catch (error) {
+    removeLoss();
+    removeNotification();
+    await connection.release();
+    throw error;
+  }
+  let releasing: Promise<void> | undefined;
+  return {
+    signal: controller.signal,
+    release() {
+      releasing ??= (async () => {
+        controller.abort(new Error("数据库通知订阅已关闭。"));
+        removeLoss();
+        removeNotification();
+        await connection.release();
+      })();
+      return releasing;
+    },
+  };
+}
+
 /** 由给定 runner 组装服务（测试用假 runner；桌面内嵌 Postgres 复用同一逻辑）。 */
 export function createPersistenceFromRunner(
   runner: PostgresQueryRunner,
@@ -239,6 +298,79 @@ export function createPersistenceFromRunner(
     forInstance: (instanceId) =>
       createInstanceClient(normalizeQuery(runner.query), instanceId),
     transaction: (fn) => runTransaction(runner, fn),
+    async withSessionTransaction(fn) {
+      if (closing) throw new Error("存储服务已关闭，不能开启发布事务。");
+      const connection = await runner.acquireSession();
+      const controller = new AbortController();
+      const removeLoss = connection.onLost((cause) =>
+        controller.abort(toSqlError(cause)),
+      );
+      const query = normalizeQuery(connection.query);
+      let released: Promise<void> | undefined;
+      const resource: PersistenceSessionLock = {
+        signal: controller.signal,
+        release() {
+          released ??= (async () => {
+            controller.abort(new Error("发布事务已关闭。"));
+            removeLoss();
+            try {
+              await connection.release();
+            } finally {
+              locks.delete(resource);
+            }
+          })();
+          return released;
+        },
+      };
+      if (closing) {
+        await resource.release();
+        throw new Error("存储服务已关闭，不能开启发布事务。");
+      }
+      locks.add(resource);
+      try {
+        await query("begin", []);
+        controller.signal.throwIfAborted();
+        const result = await fn(
+          {
+            ...createClient(query),
+            forInstance: (id) => createInstanceClient(query, id),
+          },
+          controller.signal,
+        );
+        controller.signal.throwIfAborted();
+        await query("commit", []);
+        return result;
+      } catch (error) {
+        await query("rollback", []).catch(() => {});
+        throw error;
+      } finally {
+        await resource.release();
+      }
+    },
+    async subscribeNotifications(channel, listener) {
+      if (closing) throw new Error("存储服务已关闭，不能订阅数据库通知。");
+      const subscription = await subscribeNotifications(
+        runner,
+        channel,
+        listener,
+      );
+      const wrapped: PersistenceSessionLock = {
+        signal: subscription.signal,
+        async release() {
+          try {
+            await subscription.release();
+          } finally {
+            locks.delete(wrapped);
+          }
+        },
+      };
+      if (closing) {
+        await wrapped.release();
+        throw new Error("存储服务已关闭，不能订阅数据库通知。");
+      }
+      locks.add(wrapped);
+      return wrapped;
+    },
     async acquireSessionLock(key) {
       if (closing) throw new Error("存储服务已关闭，不能认领执行宿主。");
       const lock = await acquireSessionLock(runner, key);
