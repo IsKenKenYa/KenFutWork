@@ -63,8 +63,6 @@ export interface VideoJobSubmitParams {
   providerOptions?: Record<string, Record<string, JSONValue>>;
   headers?: Record<string, string>;
   abortSignal?: AbortSignal;
-  /** start 调用的重试上限（SDK 内建重试；默认 2，0 关闭）。 */
-  maxRetries?: number;
 }
 
 /**
@@ -93,7 +91,6 @@ export type VideoJobPollResult =
 export interface VideoJobPollOptions {
   headers?: Record<string, string>;
   abortSignal?: AbortSignal;
-  maxRetries?: number;
 }
 
 /** 厂商取消端点（按协议注入）：只收 operation，成功即云端任务被撤销。 */
@@ -211,9 +208,8 @@ export async function submitVideoJob(
     ...(params.providerOptions === undefined
       ? {}
       : { providerOptions: params.providerOptions }),
-    ...(params.maxRetries === undefined
-      ? {}
-      : { maxRetries: params.maxRetries }),
+    // 单次提交，所有重试与退避由共享Job引擎持久调度。
+    maxRetries: 0,
     ...(params.abortSignal === undefined
       ? {}
       : { abortSignal: params.abortSignal }),
@@ -240,9 +236,7 @@ export async function pollVideoJob(
     ...(options?.abortSignal === undefined
       ? {}
       : { abortSignal: options.abortSignal }),
-    ...(options?.maxRetries === undefined
-      ? {}
-      : { maxRetries: options.maxRetries }),
+    maxRetries: 0,
   });
   if (result.status === "pending") {
     return { state: "in_progress" };
