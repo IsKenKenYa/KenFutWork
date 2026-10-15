@@ -25,7 +25,7 @@ function cancellationMessage(jobs: BackgroundJob[]): string | undefined {
   return undefined;
 }
 
-function outputCount(jobs: BackgroundJob[]): number {
+function outputAssets(jobs: BackgroundJob[]): Set<string> {
   const assets = new Set<string>();
   for (const job of jobs) {
     if (!job.result) continue;
@@ -42,7 +42,7 @@ function outputCount(jobs: BackgroundJob[]): number {
       }
     }
   }
-  return assets.size;
+  return assets;
 }
 
 function requestedCount(jobs: BackgroundJob[], fallback: unknown): number {
@@ -75,6 +75,7 @@ export function useCanvasGenerationJobs(options: {
     if (!api) return;
     const completed = new Set<string>();
     const canceled = new Set<string>();
+    const refreshed = new Map<string, Set<string>>();
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     function patch(
@@ -124,6 +125,22 @@ export function useCanvasGenerationJobs(options: {
         return;
       }
       const jobIds = jobs.map((job) => job.id);
+      const generator = api
+        ?.getSceneElements()
+        .find(
+          (element) =>
+            element.id === id && element.customData?.requestId === requestId,
+        );
+      const assets = outputAssets(jobs);
+      const actual = assets.size;
+      const expected = requestedCount(jobs, generator?.customData?.count);
+      const unit =
+        generator?.customData?.type === "video-generator" ? "段" : "张";
+      const previousAssets = refreshed.get(requestId) ?? new Set<string>();
+      if ([...assets].some((asset) => !previousAssets.has(asset))) {
+        await current.current.refresh();
+        refreshed.set(requestId, new Set([...previousAssets, ...assets]));
+      }
       if (
         !jobs.every(
           (job) =>
@@ -137,20 +154,15 @@ export function useCanvasGenerationJobs(options: {
           JSON.stringify(element?.customData?.jobIds) !== JSON.stringify(jobIds)
         )
           patch(id, requestId, { jobIds });
-        const message = cancellationMessage(jobs);
+        const cancellation = cancellationMessage(jobs);
+        const message =
+          actual > 0
+            ? `已生成${actual}/${expected}${unit}${cancellation ? ` · ${cancellation}` : ""}`
+            : cancellation;
         if (message && element?.customData?.errorMessage !== message)
           patch(id, requestId, { errorMessage: message });
         return;
       }
-      const generator = api
-        ?.getSceneElements()
-        .find(
-          (element) =>
-            element.id === id && element.customData?.requestId === requestId,
-        );
-      const actual = outputCount(jobs);
-      const expected = requestedCount(jobs, generator?.customData?.count);
-      if (actual > 0) await current.current.refresh();
       if (
         jobs.every((job) => job.status === "succeeded") &&
         actual >= expected
@@ -162,12 +174,10 @@ export function useCanvasGenerationJobs(options: {
           jobs.find((job) => job.status !== "succeeded" && job.error_message)
             ?.error_message ??
           (actual < expected ? "返回数量不足。" : "生成已停止，请重新生成。");
-        const unit =
-          generator?.customData?.type === "video-generator" ? "段" : "张";
         patch(id, requestId, {
           jobIds,
           status: "error",
-          errorMessage: `已生成${actual}/${expected}${unit}；${reason}`,
+          errorMessage: `已生成${actual}/${expected}${unit} · ${reason}`,
         });
       }
       completed.add(requestId);

@@ -295,7 +295,7 @@ it.each([
   firstReply(Response.json({ jobs: [generationJob()] }));
   await screen.findByText("停止中", { selector: "div" });
   await waitFor(
-    () => expect(screen.getByText(`已生成0/1张；${message}`)).toBeTruthy(),
+    () => expect(screen.getByText(`已生成0/1张 · ${message}`)).toBeTruthy(),
     { timeout: 3500 },
   );
   expect(reads).toBeGreaterThanOrEqual(2);
@@ -570,3 +570,128 @@ it.each(["succeeded", "dead_letter"])(
     expect(requests.every((request) => request.method === "GET")).toBe(true);
   },
 );
+
+it("多图取消尚待确认时立即同步已成功成果与数量，继续查询且不重发生成", async () => {
+  const canvasId = "aaaaaaaa-1111-4111-8111-111111111111";
+  const projectId = "bbbbbbbb-1111-4111-8111-111111111111";
+  const requestId = "cccccccc-1111-4111-8111-111111111111";
+  let elements = [
+    {
+      id: "generator",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 400,
+      version: 1,
+      isDeleted: false,
+      customData: {
+        type: "image-generator",
+        status: "generating",
+        prompt: "猫",
+        model: "11111111-1111-4111-8111-111111111111:image-model",
+        aspectRatio: "",
+        quality: "",
+        count: 2,
+        requestId,
+        cancelRequested: true,
+      },
+    },
+  ];
+  const appState = {
+    zoom: { value: 1 },
+    selectedElementIds: { generator: true },
+    activeTool: { type: "selection" },
+  };
+  let notify = () => {};
+  const api = {
+    getSceneElements: () => elements.filter((element) => !element.isDeleted),
+    getSceneElementsIncludingDeleted: () => elements,
+    getAppState: () => appState,
+    onChange: (
+      callback: (scene: typeof elements, state: typeof appState) => void,
+    ) => {
+      notify = () => callback(elements, appState);
+      return () => {};
+    },
+    updateScene: (update: { elements: typeof elements }) => {
+      elements = update.elements;
+      notify();
+    },
+  } as unknown as ExcalidrawImperativeAPI;
+  let reads = 0;
+  let cancellationConfirmed = false;
+  const posts: string[] = [];
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    if (String(url).endsWith("/api/image-models"))
+      return Response.json({
+        models: [
+          {
+            id: elements[0]?.customData.model,
+            displayName: "图片模型",
+            provider: "供应商",
+          },
+        ],
+      });
+    if (init?.method === "POST") posts.push(String(url));
+    reads++;
+    return Response.json({
+      jobs: [
+        generationJob({
+          status: "succeeded",
+          payload: { generator_id: "generator", requested_count: 2 },
+          result: {
+            outputs: [
+              {
+                asset_id: "eeeeeeee-1111-4111-8111-111111111111",
+                element_id: "server-image",
+                object_path: "generated/image.png",
+                signed_url: "https://assets.example/image.png",
+                mime_type: "image/png",
+              },
+            ],
+          },
+        }),
+        generationJob({
+          id: "ffffffff-1111-4111-8111-111111111111",
+          status: "canceled",
+          payload: {
+            generator_id: "generator",
+            requested_count: 2,
+            _generation_cancel: {
+              state: cancellationConfirmed ? "local_only" : "pending",
+            },
+          },
+        }),
+      ],
+    });
+  });
+  const refresh = vi.fn(async () => {});
+  render(
+    <ToastProvider>
+      <CanvasToolMenu
+        canvasId={canvasId}
+        projectId={projectId}
+        prepare={async () => "1"}
+        refresh={refresh}
+        accessToken={null}
+        excalidrawApi={api}
+      />
+    </ToastProvider>,
+  );
+  act(() => notify());
+  await screen.findByText("图片模型");
+  await screen.findByText("已生成1/2张 · 停止中");
+  expect(elements[0]?.customData.status).toBe("generating");
+  expect(elements[0]?.isDeleted).toBe(false);
+  expect(refresh).toHaveBeenCalledOnce();
+  await waitFor(() => expect(reads).toBeGreaterThanOrEqual(2), {
+    timeout: 3500,
+  });
+  expect(refresh).toHaveBeenCalledOnce();
+  cancellationConfirmed = true;
+  await screen.findByText("已生成1/2张 · 已本地停止", {}, { timeout: 3500 });
+  expect(elements[0]?.customData.status).toBe("error");
+  expect(refresh).toHaveBeenCalledOnce();
+  expect(posts).toEqual([]);
+});
