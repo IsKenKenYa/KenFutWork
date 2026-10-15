@@ -10319,14 +10319,15 @@
       "source": "references/zcode/packages/ui/src/settings/model-provider-section/ProviderModelMetadataDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/model-provider-section/ProviderModelMetadataDialog.tsx",
       "sha256": "9d3f08fae02d05ee885ae331a9ae38f1cb46608f74dc3da52c493bd444a61c15",
-      "copiedSha256": "4977ab83eaefc89ed2d97cef3f78f196d2cc67d92b0b6f55622afd4f7d05718b",
+      "copiedSha256": "8628d8ec815c30f9225a0f766ff4f7abc185d2cd5d3f3907769a983cf4be81f3",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "2026-10-08统一模型：原装配接宿主真实协议/用途；生成编辑复用原行、Dialog及草稿生命周期，Flow不挂本机模型叶子",
         "生成叶子slot：保留原Dialog触发器/操作/错误/保存；生成隐藏聊天智能推荐与恢复提示",
         "生成叶子沿用原Enter/IME提交与保存中inert保护，技术输入失焦后读取最新草稿",
         "模型设置统一：供应商优先连接摘要、用途筛选及原编辑器复用，默认策略沿用实例modelDefaults。",
-        "统一模型配置入口：旧表单退役；原连接草稿承接共享请求头校验，实际媒体Dialog修正页脚与朗读标签。"
+        "统一模型配置入口：旧表单退役；原连接草稿承接共享请求头校验，实际媒体Dialog修正页脚与朗读标签。",
+        "窄屏Dialog保留原组件16px边距，桌面宽度仅由sm:max-w覆盖。"
       ]
     },
     {
