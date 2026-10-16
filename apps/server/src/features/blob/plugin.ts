@@ -47,11 +47,7 @@ export function createBlobPlugin(
       blob = createLocalFsBlobStore({
         publicBaseUrl:
           ctx.env.blobPublicBaseUrl ??
-          `${
-            ctx.env.webDist
-              ? `http://${ctx.env.serverHost === "::1" ? "[::1]" : (ctx.env.serverHost ?? "127.0.0.1")}:${ctx.env.port}`
-              : ctx.env.webOrigin
-          }/api/blobs`,
+          `http://${ctx.env.serverHost === "::1" ? "[::1]" : (ctx.env.serverHost ?? "127.0.0.1")}:${ctx.env.port}/api/blobs`,
         rootDir,
         signingSecret,
       });
