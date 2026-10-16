@@ -86,6 +86,11 @@ const TAG_META: Record<string, { folder: string; description: string }> = {
     folder: "模型",
     description: "对话/图像/视频模型清单与动态模型目录。",
   },
+  "open-design": {
+    folder: "OpenDesign 集成",
+    description:
+      "OpenDesign 设计联动画布的宿主状态探针；未配置或服务不可达时如实返回原因。",
+  },
   permissions: {
     folder: "权限",
     description: "权限档位、自动化档位与人工放行授权。",

@@ -969,6 +969,7 @@ const enUS: Record<string, string> = {
   "sidePane.restoreSize": "Restore panel width",
   "sidePane.addTab": "Add tab",
   "sidePane.openTab": "Open tab",
+  "sidePane.openDesign": "OpenDesign",
   "sidePane.subagent": "Subagent",
   "sidePane.subagentDirectory": "Subagents",
   "sidePane.selectionChat": "Side conversation",
@@ -2348,6 +2349,7 @@ const enUS: Record<string, string> = {
     "The source session was not found, or it no longer matches the current workspace filter.",
   "settings.usageTitle": "Usage stats",
   "settings.about.title": "About",
+  "settings.openDesign.title": "OpenDesign",
   "settings.usageDescription":
     "Review rough activity and model usage aggregated from local sessions.",
   "resourceManager.storage.summaryTotal": "Total used by KenFutWork",

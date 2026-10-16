@@ -13,7 +13,7 @@ paths-ignore:
   - '**/*.test.tsx'
   - '**/test/**'
   - '**/fixtures/**'
-  # vendored 第三方源码（来源与授权见 docs/源码来源/ 与 NOTICE.md）；
+  # vendored 第三方源码（来源与授权见 packages/third-party/zcode/ 与 NOTICE.md）；
   # 它的**依赖**仍由 Dependabot 与依赖关系图覆盖，这里只是不做代码扫描。
   - apps/web/src/components/workbench/zcode/**
   # 参考仓（submodule，CI 里本来也不检出，写上做双保险）与非源码目录

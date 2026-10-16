@@ -20,7 +20,10 @@ function canonicalPath(value) {
 }
 export function readZcodeInventory(root) {
   const inventory = JSON.parse(
-    readFileSync(join(root, "docs/源码来源/ZCode源码清单.json"), "utf8"),
+    readFileSync(
+      join(root, "packages/third-party/zcode/来源清单.json"),
+      "utf8",
+    ),
   );
   if (
     !commitPattern.test(inventory.revision) ||

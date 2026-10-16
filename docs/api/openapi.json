@@ -93,6 +93,11 @@
       "x-apifox-folder": "模型"
     },
     {
+      "name": "open-design",
+      "description": "OpenDesign 设计联动画布的宿主状态探针；未配置或服务不可达时如实返回原因。",
+      "x-apifox-folder": "OpenDesign 集成"
+    },
+    {
       "name": "permissions",
       "description": "权限档位、自动化档位与人工放行授权。",
       "x-apifox-folder": "权限"
@@ -6875,6 +6880,211 @@
         }
       }
     },
+    "/api/open-design/host/status": {
+      "get": {
+        "operationId": "getOpenDesignHostStatus",
+        "summary": "查询 OpenDesign 宿主就绪状态",
+        "description": "返回 OpenDesign 右侧栏面板是否可以出现：配置齐备且服务可达时为 enabled=true；未配置前端地址或服务不可达时返回 200 + enabled=false，并在 reasons 里给出可读原因。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostStatusResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/credentials": {
+      "post": {
+        "operationId": "postOpenDesignHostCredentials",
+        "summary": "下发 OpenDesign agent CLI 的 BYOK 凭证",
+        "description": "OpenDesign daemon 持共享密钥（Bearer，与 KENFUTWORK_OPEN_DESIGN_EMBED_SECRET 成对）调用，宿主返回全部启用且有 Key 的 BYOK 实例清单（providerId/name/protocol/apiBase/明文 apiKey），由 daemon 按各 coding-agent CLI 自行选用。未配密钥 503；协议版本不符 400；无可用实例 404；Key 读不到或地址非法 409（失败消息不含 Key 明文）。明文 Key 仅经此机器对机器通道下发，浏览器 iframe 不经过它。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostCredentialsRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostCredentialsResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/config": {
+      "get": {
+        "operationId": "getOpenDesignHostConfig",
+        "summary": "读取 OpenDesign 桌面承载配置",
+        "description": "返回桌面数据目录 config/open-design.env 里的当前配置（前端地址与成对密钥）、生效来源（env 覆盖 / 文件 / 未启用）与是否需要重启桌面才生效。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostConfigResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putOpenDesignHostConfig",
+        "summary": "写入 OpenDesign 桌面承载配置",
+        "description": "全量替换两键（空值=清除）：前端地址只接受 http(s) origin；写入桌面数据目录的配置文件，重启桌面后经壳白名单注入生效（装配期定形）。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostConfigUpdateSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostConfigResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/fonts": {
       "get": {
         "operationId": "getFonts",
@@ -11662,7 +11872,9 @@
                   "flow_engine_invalid",
                   "flow_billing_conflict",
                   "flow_billing_failed",
-                  "flow_engine_install_running"
+                  "flow_engine_install_running",
+                  "open_design_not_configured",
+                  "open_design_credential_unavailable"
                 ]
               },
               "message": {
@@ -14839,7 +15051,9 @@
                       "flow_engine_invalid",
                       "flow_billing_conflict",
                       "flow_billing_failed",
-                      "flow_engine_install_running"
+                      "flow_engine_install_running",
+                      "open_design_not_configured",
+                      "open_design_credential_unavailable"
                     ]
                   },
                   "message": {
@@ -20526,6 +20740,174 @@
         },
         "required": [
           "models"
+        ],
+        "additionalProperties": false
+      },
+      "openDesignHostConfigResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "frontendUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "embedSecret": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "restartRequired": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "env",
+              "file",
+              "none"
+            ]
+          }
+        },
+        "required": [
+          "frontendUrl",
+          "embedSecret",
+          "restartRequired",
+          "source"
+        ],
+        "additionalProperties": false
+      },
+      "openDesignHostConfigUpdateSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "frontendUrl": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "embedSecret": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "openDesignHostCredentialsRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "protocolVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16
+          }
+        }
+      },
+      "openDesignHostCredentialsResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "protocolVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16
+          },
+          "credentials": {
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "providerId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "protocol": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "apiBase": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "apiKey": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                }
+              },
+              "required": [
+                "providerId",
+                "name",
+                "protocol",
+                "apiBase",
+                "apiKey"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "credentials"
+        ],
+        "additionalProperties": false
+      },
+      "openDesignHostStatusResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "frontendUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "enabled",
+          "frontendUrl",
+          "reasons"
         ],
         "additionalProperties": false
       },

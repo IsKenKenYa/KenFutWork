@@ -50,7 +50,10 @@ const preservedSources = new Set<string>(
   (
     JSON.parse(
       readFileSync(
-        join(import.meta.dirname, "../../../docs/源码来源/ZCode源码清单.json"),
+        join(
+          import.meta.dirname,
+          "../../../packages/third-party/zcode/来源清单.json",
+        ),
         "utf8",
       ),
     ) as { records: Array<{ target: string }> }

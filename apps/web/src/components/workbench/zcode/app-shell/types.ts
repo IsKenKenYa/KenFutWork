@@ -240,6 +240,8 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   handleOpenDocument: (request: OpenDocumentSidePaneRequest) => void;
   handleOpenDeveloperTools: () => void;
   handleOpenTerminalTab: () => void;
+  /** 打开 OpenDesign 面板（Code 模式右侧栏的联动画布）。 */
+  handleOpenOpenDesign: () => void;
   handleToggleGit: () => void;
   handleOpenGitReview: (sourceId?: GitChangeSourceId) => void;
   handleToggleSidePane: () => void;

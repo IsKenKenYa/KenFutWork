@@ -1,7 +1,7 @@
 # PROJECT-CHECKPOINT — KenFutWork 遗留需求收口 + 融合兼容计划验收轮
 
 > 依据 goal-loop 规程维护。本文件是唯一状态真相源；memory/对话不是。
-> 启动：2026-10-12（用户会话）。分支 main。最近更新：2026-10-13 晚（**遗留台账退役：全部条目收口/定性，`docs/未做需求.md` 已删除**）。
+> 启动：2026-10-12（用户会话）。分支 main。最近更新：2026-10-14 晚（**flow-P7 深度收编评估稿退役 + `flow/` 子模块指针复原**；上一轮：遗留台账退役，`docs/未做需求.md` 已删除）。
 
 ## PROJECT GOAL
 
@@ -24,7 +24,7 @@
 ## HARD CONSTRAINTS
 
 - AGENTS.md 全部硬约束（提交纪律、文案门禁、测试纪律、禁提交密钥）；
-- vendored 改动最小化 + 登记 `docs/源码来源/ZCode源码清单.json`；
+- vendored 改动最小化 + 登记 `packages/third-party/zcode/来源清单.json`；
 - 契约改动走 `packages/shared` 单源 + Apifox 三连（import 为对外动作，无 CLI 登录则 BLOCKED）；
 - 不变量：工作台恒 Code 壳、Design 主区恒画布、Flow 入口随插件、Code Run 绑 Task 工作域；
 - 测试资源护栏：禁并行多测试实例。
@@ -42,7 +42,7 @@
 | U7 | 未做需求#7 Apifox 契约同步 | P1 | **DONE** | AI 分支导入 169 端点 + 幂等验收（§一百七十九）；用户 2026-10-13 确认已合并回 main |
 | U8 | 未做需求#8 HA 插件本体 | P1 | 暂缓 | 用户 2026-10-13 口径：不在当前融合范围内 |
 | U9 | 未做需求#9 Work/OpenDesign 规划 | P2 | 暂缓 | 用户 2026-10-13 口径：不在当前融合范围内 |
-| U10 | 未做需求#10 flow P7 + 上游 MIT LICENSE | P2 | **LICENSE DONE / P7 待上游** | 上游 MIT LICENSE 推送 `future73807/futureFlow@cc10b0b` + 主仓指针跟进；P7 评估成稿（`docs/插件/flow-P7深度收编评估.md`），四条触发条件 3 条不满足（#3 验收后条件②转「部分满足」） |
+| U10 | 未做需求#10 flow P7 + 上游 MIT LICENSE | P2 | **LICENSE DONE / P7 待上游** | 上游 MIT LICENSE 推送 `future73807/futureFlow@cc10b0b` + 主仓指针跟进（2026-10-14 工作区曾回退到 `cc10b0b8`，已 `git submodule update flow` 复原到记录值 `d6c6af79`）；P7 评估稿已退役（**结论保留**：四条触发条件 3 条不满足，#3 验收后条件②转「部分满足」；评估内容见《日志》一百七十六，退役记账见一百八十九） |
 | U11 | 未做需求#11 语言回写竞态 | P1 | DONE | 60c9f06d + 回归测试 |
 | U12 | 未做需求#12 随包 Python 缺 pytest + 沙箱未授权随包运行时目录 | P0 | DONE | 《日志》一百七十五/一百七十六；沙箱内 `python --version` → `Python 3.12.15`、`python -m pytest -q` → 17 passed |
 | U13 | 未做需求#13 run.failed `unsupported Unicode escape sequence` | P0 | DONE | 《日志》一百七十五；根因=命令输出 NUL → jsonb 拒绝；修复后该报错 0 条 |

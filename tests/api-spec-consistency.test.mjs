@@ -31,6 +31,7 @@ const CLOSED_TAGS = [
   "local-access",
   "mcp",
   "models",
+  "open-design",
   "permissions",
   "plugins",
   "projects",

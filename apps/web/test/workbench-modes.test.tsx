@@ -33,9 +33,8 @@ afterEach(() => {
 });
 
 /**
- * 主区懒加载块（CodeWorkbenchFrame 首包）在满负载的**全量并发**里可能明显慢于
- * Testing Library 默认 1s，属已登记的「首包懒加载超时」家族；显式放宽等待
- * （15s，留出 vitest 单测 20s 上限的余量）。
+ * 实例接入及工作台挂载可能慢于 Testing Library 默认等待；
+ * 保留既有15s边界，ready握手仍只发送一次。
  */
 const LAZY = { timeout: 15_000 } as const;
 
@@ -98,7 +97,10 @@ function host() {
 }
 
 async function renderCodeFrame() {
-  render(host());
+  // 先结算实例加载触发的React提交与effect，再模拟子文档的单次ready。
+  await act(async () => {
+    render(host());
+  });
   const frame = (await screen.findByTitle(
     "Code 工作台",
     {},

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -21,8 +21,13 @@ const { WorktreeMenu } = await import(
 
 const user = userEvent.setup();
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // React 19 调度器把未落地的 state 更新排到 setImmediate 上；用例收尾后 jsdom 已销毁，
+  // 那条回调再跑就抛 `window is not defined`（CI 上整包退 1，本机偶发不现）。趁环境还在排空。
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
   surfaceJson.mockReset();
   getWorkspaceState.mockReset();
 });

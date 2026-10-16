@@ -22,6 +22,7 @@ import {
   closeCodeViewerSidePane,
   openWhiteboardSidePane,
   openDocumentSidePane,
+  openOpenDesignSidePane,
   openModelTrajectorySidePane,
   openTerminalSidePane,
   openSubagentSessionSidePane,
@@ -810,6 +811,21 @@ export function useAppPanels(options: {
       const next = activateDeveloperToolsSidePane(current);
       logger.info(
         `[App] 打开右侧面板 mode=developer-tools workspace=${workspaceAbsPath} tabs=${next.tabs.length}`,
+      );
+      return next;
+    });
+  }, [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, workspaceAbsPath]);
+
+  /**
+   * 打开 OpenDesign 面板（Code 模式右侧栏的联动画布）。
+   * 入口只在「插件已装 + 宿主就绪」时出现（门控见 AnimatedSidePanePanel 的 openDesignEnabled）。
+   */
+  const handleOpenOpenDesign = useCallback(() => {
+    revealSidePaneForCurrentOwner();
+    commitOpenedSidePaneState((current) => {
+      const next = openOpenDesignSidePane(current);
+      logger.info(
+        `[App] 打开右侧面板 mode=open-design workspace=${workspaceAbsPath} tabs=${next.tabs.length}`,
       );
       return next;
     });
@@ -1628,6 +1644,7 @@ export function useAppPanels(options: {
     handleOpenTreemapping,
     handleOpenWhiteboard,
     handleOpenDeveloperTools,
+    handleOpenOpenDesign,
     handleOpenTerminalTab,
     handleOpenModelTrajectory,
     handleOpenSubagentSession,

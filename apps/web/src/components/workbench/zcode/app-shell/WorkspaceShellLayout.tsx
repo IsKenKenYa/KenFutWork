@@ -330,6 +330,7 @@ export const WorkspaceShellLayout = memo(
     handleOpenWhiteboard,
     handleOpenDocument,
     handleOpenDeveloperTools,
+    handleOpenOpenDesign,
     handleOpenTerminalTab,
     handleToggleGit,
     handleOpenGitReview,
@@ -1677,6 +1678,7 @@ export const WorkspaceShellLayout = memo(
         onOpenBrowserTab={handleOpenBrowserTab}
         onOpenWhiteboard={handleOpenWhiteboard}
         onOpenDeveloperTools={handleOpenDeveloperTools}
+        onOpenOpenDesignTab={handleOpenOpenDesign}
         onOpenTerminalTab={handleOpenTerminalTab}
         onOpenReviewTab={handleToggleGit}
         onOpenSelectionSideConversation={

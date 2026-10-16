@@ -7,6 +7,7 @@ export interface SidePaneTabPresentationLabels {
   codeViewerTitle: string;
   treemappingTitle: string;
   whiteboardTitle: string;
+  openDesignTitle: string;
   modelTrajectoryTitle: string;
   developerToolsTitle: string;
   terminalTitle: string;
@@ -61,6 +62,8 @@ export function getSidePaneTabSearchHint(tab: WorkspaceSidePaneTab): string {
   if (tab.type === "document") {
     return `${tab.title} ${tab.projectId} ${tab.documentId ?? ""} ${tab.resourceType} document`;
   }
+  if (tab.type === "open-design")
+    return "open design canvas prototype page dashboard export";
   if (tab.type === "model-trajectory") {
     return `${tab.title ?? ""} ${tab.taskId} model trajectory call io`;
   }
@@ -83,6 +86,7 @@ export function getLocalizedSidePaneTabTitle(
       "codeViewer.title": labels.codeViewerTitle,
       "treemapping.title": labels.treemappingTitle,
       "whiteboard.title": labels.whiteboardTitle,
+      "sidePane.openDesign": labels.openDesignTitle,
       "modelTrajectory.title": labels.modelTrajectoryTitle,
       "developerTools.title": labels.developerToolsTitle,
       "terminal.title": labels.terminalTitle,
@@ -119,6 +123,7 @@ export function getSidePaneTabTypeLabel(
   if (tab.type === "treemapping") return labels.treemappingTitle;
   if (tab.type === "whiteboard") return labels.whiteboardTitle;
   if (tab.type === "document") return "画布";
+  if (tab.type === "open-design") return labels.openDesignTitle;
   if (tab.type === "model-trajectory") return labels.modelTrajectoryTitle;
   if (tab.type === "developer-tools") return labels.developerToolsTitle;
   if (tab.type === "terminal" || tab.type === "bash-output") return labels.terminalTitle;

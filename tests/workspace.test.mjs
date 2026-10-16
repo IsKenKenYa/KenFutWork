@@ -337,7 +337,10 @@ const IGNORED_DIRS = new Set([
  *  把一处存储调用从一个耦合文件挪到另一个，指标会凭空变化。 */
 function listSupabaseSources() {
   const files = [];
-  const inventoryPath = path.join(rootDir, "docs/源码来源/ZCode源码清单.json");
+  const inventoryPath = path.join(
+    rootDir,
+    "packages/third-party/zcode/来源清单.json",
+  );
   const upstreamSources = existsSync(inventoryPath)
     ? new Map(
         JSON.parse(readFileSync(inventoryPath, "utf8")).records.map(
@@ -1335,7 +1338,9 @@ async function zcodeProvenanceFixture(t) {
   const donor = path.join(root, "references/zcode");
   await mkdir(path.join(donor, "src"), { recursive: true });
   await mkdir(path.join(root, "copied"));
-  await mkdir(path.join(root, "docs/源码来源"), { recursive: true });
+  await mkdir(path.join(root, "packages/third-party/zcode"), {
+    recursive: true,
+  });
   const git = async (...args) =>
     (await execFileAsync("git", ["-C", donor, ...args])).stdout.trim();
   const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -1377,7 +1382,7 @@ async function zcodeProvenanceFixture(t) {
   };
   const save = () =>
     writeFile(
-      path.join(root, "docs/源码来源/ZCode源码清单.json"),
+      path.join(root, "packages/third-party/zcode/来源清单.json"),
       JSON.stringify(inventory),
     );
   await save();

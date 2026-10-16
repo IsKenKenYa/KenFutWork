@@ -84,6 +84,21 @@ export interface DocumentSidePaneTab extends Omit<OpenDocumentSidePaneRequest, "
   openedAt?: number;
 }
 
+/**
+ * OpenDesign 面板 tab：Code 模式右侧栏的常驻视图（与浏览器面板同位互斥）。
+ *
+ * 面板内容是宿主 iframe（`OpenDesignPane`），tab 自身不带身份——探活与地址由壳内的
+ * `host/openDesignHost.ts`（`useOpenDesignEntry`）解析，入口显隐由启动卡按插件安装态门控。
+ * 用稳定 id 做**单例**（同 git）：工作区级的联动画布，重复打开即激活同一个。
+ */
+export interface OpenDesignSidePaneTab {
+  id: string;
+  type: "open-design";
+  ownerTaskId?: string | null;
+  workspaceKey?: string | null;
+  openedAt?: number;
+}
+
 export interface ModelTrajectorySidePaneTab {
   id: string;
   type: "model-trajectory";
@@ -539,6 +554,7 @@ export type WorkspaceSidePaneTab =
   | TreemappingSidePaneTab
   | WhiteboardSidePaneTab
   | DocumentSidePaneTab
+  | OpenDesignSidePaneTab
   | ModelTrajectorySidePaneTab
   | DeveloperToolsSidePaneTab
   | TerminalSidePaneTab
@@ -1086,6 +1102,8 @@ const WORKSPACE_GLOBAL_SIDE_PANE_TAB_TYPES = new Set<WorkspaceSidePaneTab["type"
   "git",
   "developer-tools",
   "treemapping",
+  // OpenDesign 是工作区级联动画布（同 git 的口径）：跨对话保持可见，不随对话切换消失。
+  "open-design",
 ]);
 
 function isWorkspaceGlobalSidePaneTab(tab: WorkspaceSidePaneTab): boolean {
@@ -1633,6 +1651,21 @@ export function openDocumentSidePane(
     ownerTaskId: null,
     openedAt: existing?.openedAt ?? Date.now(),
   });
+}
+
+function createOpenDesignSidePaneTab(): OpenDesignSidePaneTab {
+  // 单例：稳定 id 让 activateSidePaneTab 原地复用（重复打开即激活，不叠出第二个面）。
+  return {
+    id: "open-design",
+    type: "open-design",
+    openedAt: Date.now(),
+  };
+}
+
+export function openOpenDesignSidePane(
+  current: WorkspaceSidePaneState | null,
+): WorkspaceSidePaneState {
+  return activateSidePaneTab(current, createOpenDesignSidePaneTab());
 }
 
 export function openModelTrajectorySidePane(

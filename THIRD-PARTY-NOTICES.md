@@ -14,7 +14,7 @@
 | 版权人 | Z.AI Co., Ltd |
 | 许可 | Apache License 2.0 |
 | 落点 | `apps/web/src/components/workbench/zcode/`（仓库内别名 `@zui/*`）、`packages/zcode-*`（由 `scripts/vendor-zcode.mjs` 装配，`package.json` 声明 `license: "Apache-2.0"`） |
-| 义务履行 | 移植目录内保留上游 `LICENSE`、`NOTICE.md`、`THIRD-PARTY-NOTICES.md`（逐字节一致）；根 [`NOTICE.md`](NOTICE.md) 声明移植范围；逐文件来源、校验和与宿主适配偏差登记在 `docs/源码来源/ZCode源码清单.json`（3029 条记录），`scripts/vendor-zcode.mjs` 在清单建立后只核对漂移、不再复制 |
+| 义务履行 | 移植目录内保留上游 `LICENSE`、`NOTICE.md`、`THIRD-PARTY-NOTICES.md`（逐字节一致）；根 [`NOTICE.md`](NOTICE.md) 声明移植范围；逐文件来源、校验和与宿主适配偏差登记在 `packages/third-party/zcode/来源清单.json`（3029 条记录），`scripts/vendor-zcode.mjs` 在清单建立后只核对漂移、不再复制 |
 | 商标 | Apache-2.0 第 3 条不授予商标权；ZCode、Z.ai、GLM 归各自权利人，见 [`EULA.md`](EULA.md) §6 |
 
 ### A2. ai-elements（Apache-2.0，Vercel）与 ZCode 第一方包装
@@ -135,6 +135,7 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | 根 `flow/`（[futureFlow](https://github.com/future73807/futureFlow) 子模块，@ `d6c6af7`） | MIT | 上游 `cc10b0b` 已补标准许可文本，现有宿主能力分支合并保留在 `flow/LICENSE`；版权人为 `Copyright (c) 2026 future73807`。随产物分发时保留该许可与版权行；本地合并提交的远端可获取性仍须在父仓发布前核对 |
 | `flow/` 内 vendored Python wheels（pg8000、asn1crypto、six、python-dateutil、scramp） | 各自原生许可 | **待核**：随 flow 分发前逐 wheel 抄录许可与版权行 |
 | Dify（flow 的执行引擎方向，`DEC-11`） | Apache-2.0 + 附加条款（source-available） | 以**独立容器 + API 通信**接入，属聚合而非衍生作品；**禁止把 Dify 的 Python 代码复制进本 monorepo**，保持容器边界，分发时附其 `LICENSE`/`NOTICE` |
+| OpenDesign（伴随容器，规划 §9-3 于 2026-10-15 拍板） | Apache-2.0（上游 [nexu-io/open-design](https://github.com/nexu-io/open-design)） | 以**独立伴随容器 + API 通信**接入，属聚合而非衍生作品。本仓仅收录伴随 compose `open-design/docker-compose.open-design.yml`（派生自上游 release `open-design-v0.24.1` 的 `deploy/docker-compose.yml`，改动：端口写死伴随 origin、restart 改 `unless-stopped`、去掉自托管透传项）；镜像按 digest 钉死 `ghcr.io/nexu-io/od@sha256:587a992857d0f8b71011e4bc55c5851e33ef9fc4c169fc17e6447700ac428f22`（2026-10-15 观测的 `latest`，registry 无版本形态 tag）；**不把上游源码克隆进 monorepo**，Apache-2.0 义务在镜像层内履行 |
 | `references/` 全部子模块（Codex、Cherry Studio、Jaaz、kimi-code、langgraph、MCP SDK、Octop、nomifun-tauri、Loomic 等） | 各自许可（Apache-2.0/MIT 等） | **只作方向参考，未复制代码、schema、字段名与素材**（`flow/` 与 Code 模式的 ZCode 全量移植是明确例外，见 `AGENTS.md`）。子模块内容不随本仓库产物分发 |
 | 技能市场与 MCP 目录下载的第三方技能/server | 各自许可 | 由你在市场/注册表安装，安装时应核对；本仓库不为其许可背书 |
 

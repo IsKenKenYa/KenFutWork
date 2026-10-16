@@ -1,0 +1,62 @@
+# KenFutWork 的 OpenDesign 伴随容器栈（规划 §9-3 于 2026-10-15 拍板：伴随容器，随主程序起停）。
+#
+# 派生自上游 nexu-io/open-design（Apache-2.0）release `open-design-v0.24.1` 的
+# `deploy/docker-compose.yml`，按伴随语义收窄改动：
+# - 端口写死 `127.0.0.1:7456`——宿主按伴随 origin 判定托管（companion.ts），开口子会失配；
+# - `restart` 由 `always` 改 `unless-stopped`：绑定主程序生命周期的是服务端 up/down，
+#   `always` 会让容器在系统重启后于主程序之前自行复活；
+# - 去掉自托管口径的透传变量（镜像/端口覆盖等）：伴随形态不接受半个托管。
+#
+# 镜像锚点：`ghcr.io/nexu-io/od` 实测无版本形态 tag（仅 latest/edge/main-*/sha-*），
+# 故按 digest 钉死 = 2026-10-15 观测的 latest（对应 release open-design-v0.24.1，2026-09-24）。
+# 升级 = 改本文件钉新 digest 并走回归（§8 风险 3）；归属登记见 THIRD-PARTY-NOTICES.md §F。
+#
+# 认证口径（真机实证 2026-10-15，冒烟抓到）：上游硬校验「`OD_BIND_HOST=0.0.0.0` 必配
+# `OD_API_TOKEN`，否则崩溃循环」，而容器内经 DNAT 发布宿主端口必须监听 0.0.0.0（上游
+# 「环回免 token」豁免指裸进程绑环回，桥接网络不适用）；且带 token 时入站 Basic Auth
+# 会把 iframe（GET /）锁死在登录弹窗——伴随形态画布必须免。因此固定
+# `OD_DISABLE_API_AUTH=1`：本栈只发布在宿主 `127.0.0.1:7456`，可达面 = 本机进程，与
+# 上游环回豁免同一信任边界。`OD_API_TOKEN` 仍由服务端注入（未配时空串）——它是
+# daemon **出站**调宿主 `/api/open-design/host/credentials` 的成对凭证（O3/OD-4），
+# 与入站豁免互不相干；未配密钥时凭证缝如实 503，画布不受影响。
+
+name: kfw-open-design
+
+services:
+  open-design:
+    image: ghcr.io/nexu-io/od@sha256:587a992857d0f8b71011e4bc55c5851e33ef9fc4c169fc17e6447700ac428f22
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=192
+      OD_BIND_HOST: 0.0.0.0
+      OD_PORT: 7456
+      OD_WEB_PORT: 7456
+      OD_API_TOKEN: ${OD_API_TOKEN:-}
+      OD_DISABLE_API_AUTH: "1"
+    ports:
+      - "127.0.0.1:7456:7456"
+    volumes:
+      - open_design_data:/app/.od
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 384m
+    pids_limit: 256
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:7456/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  open_design_data:

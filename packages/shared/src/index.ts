@@ -23,6 +23,7 @@ export * from "./mcp-contracts.js";
 export * from "./model-context-windows.js";
 export * from "./model-management.js";
 export * from "./model-policy.js";
+export * from "./open-design-host.js";
 export * from "./plugin-contracts.js";
 export * from "./project-directory-contracts.js";
 export * from "./project-file-contracts.js";
