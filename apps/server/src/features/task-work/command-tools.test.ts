@@ -30,6 +30,12 @@ import type { TaskWorkContext } from "./types.js";
  */
 const SANDBOX_STARTUP_MS = 30_000;
 
+/**
+ * 真沙箱用例的测试级预算。轮询本身允许等满 SANDBOX_STARTUP_MS，
+ * 测试超时必须严格大于它——否则 CI 上一慢就只会判成「超时」，拿不到真结论。
+ */
+const REAL_PROCESS_TEST_MS = SANDBOX_STARTUP_MS * 2;
+
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -178,21 +184,25 @@ async function fixture(preset: "code" | "design" = "code") {
   return { root, main, manager, context, tool, execution, start, failFast };
 }
 
-it("Design Task 命令沿真实 Design ScopeHandle 接入共享 TaskWork", async () => {
-  const f = await fixture("design");
-  expect(f.tool("Bash").scope).toBe("design");
-  const workId = await f.start(f.main, "design-command");
-  expect(await f.manager.find(f.context, workId)).toMatchObject({
-    ownerKind: "design",
-    scope: {
-      instanceId: f.context.scope.instanceId,
-      projectId: f.context.scope.projectId,
-      taskId: f.context.scope.taskId,
-      rootDirectory: f.root,
-    },
-  });
-  await f.manager.stop(f.context, workId, "test complete");
-});
+it(
+  "Design Task 命令沿真实 Design ScopeHandle 接入共享 TaskWork",
+  async () => {
+    const f = await fixture("design");
+    expect(f.tool("Bash").scope).toBe("design");
+    const workId = await f.start(f.main, "design-command");
+    expect(await f.manager.find(f.context, workId)).toMatchObject({
+      ownerKind: "design",
+      scope: {
+        instanceId: f.context.scope.instanceId,
+        projectId: f.context.scope.projectId,
+        taskId: f.context.scope.taskId,
+        rootDirectory: f.root,
+      },
+    });
+    await f.manager.stop(f.context, workId, "test complete");
+  },
+  REAL_PROCESS_TEST_MS,
+);
 
 it.each(["TaskInput", "TaskStop"] as const)(
   "只读child不能通过%s控制parent，TaskOutput仍可读而主代理可停止",
@@ -238,60 +248,65 @@ it.each(["TaskInput", "TaskStop"] as const)(
         ),
     ).rejects.toMatchObject({ statusCode: 403 });
   },
+  REAL_PROCESS_TEST_MS,
 );
 
-it("worker可向自身派发的命令输入并停止，TaskOutput仍能读取整个Task", async () => {
-  const state = await fixture();
-  const worker = state.main.derive("worker", "worker-one");
-  const own = await state.start(worker, "own-command");
-  expect(await state.manager.find(state.context, own)).toMatchObject({
-    agentId: "worker-one",
-    status: "running",
-  });
-  expect(
-    await state
-      .tool("TaskInput")
-      .execute(
-        { task_id: own, data: "owned\n" },
-        state.execution(worker, "own-input"),
-      ),
-  ).toMatchObject({ inputSent: true });
-  await expect
-    .poll(
-      async () => {
-        await state.failFast(own);
-        return (
-          outputResult.parse(
-            await state
-              .tool("TaskOutput")
-              .execute(
-                { task_id: own },
-                state.execution(state.main, "read-child"),
-              ),
-          ).canonicalOutput.output?.data ?? ""
-        );
-      },
-      { timeout: SANDBOX_STARTUP_MS },
-    )
-    .toContain("echo:owned");
-  expect(
-    await state
-      .tool("TaskStop")
-      .execute({ task_id: own }, state.execution(worker, "own-stop")),
-  ).toMatchObject({ stopped: true });
-  expect(await state.manager.find(state.context, own)).toMatchObject({
-    status: "canceled",
-  });
-  const childForMain = await state.start(worker, "child-for-main");
-  expect(
-    await state
-      .tool("TaskStop")
-      .execute(
-        { task_id: childForMain },
-        state.execution(state.main, "main-stop-child"),
-      ),
-  ).toMatchObject({ stopped: true });
-});
+it(
+  "worker可向自身派发的命令输入并停止，TaskOutput仍能读取整个Task",
+  async () => {
+    const state = await fixture();
+    const worker = state.main.derive("worker", "worker-one");
+    const own = await state.start(worker, "own-command");
+    expect(await state.manager.find(state.context, own)).toMatchObject({
+      agentId: "worker-one",
+      status: "running",
+    });
+    expect(
+      await state
+        .tool("TaskInput")
+        .execute(
+          { task_id: own, data: "owned\n" },
+          state.execution(worker, "own-input"),
+        ),
+    ).toMatchObject({ inputSent: true });
+    await expect
+      .poll(
+        async () => {
+          await state.failFast(own);
+          return (
+            outputResult.parse(
+              await state
+                .tool("TaskOutput")
+                .execute(
+                  { task_id: own },
+                  state.execution(state.main, "read-child"),
+                ),
+            ).canonicalOutput.output?.data ?? ""
+          );
+        },
+        { timeout: SANDBOX_STARTUP_MS },
+      )
+      .toContain("echo:owned");
+    expect(
+      await state
+        .tool("TaskStop")
+        .execute({ task_id: own }, state.execution(worker, "own-stop")),
+    ).toMatchObject({ stopped: true });
+    expect(await state.manager.find(state.context, own)).toMatchObject({
+      status: "canceled",
+    });
+    const childForMain = await state.start(worker, "child-for-main");
+    expect(
+      await state
+        .tool("TaskStop")
+        .execute(
+          { task_id: childForMain },
+          state.execution(state.main, "main-stop-child"),
+        ),
+    ).toMatchObject({ stopped: true });
+  },
+  REAL_PROCESS_TEST_MS,
+);
 
 it.each([
   { original: "plan", approved: "yolo" },
@@ -352,4 +367,5 @@ it.each([
       state.main.backend.readPage({ path: marker }),
     ).rejects.toMatchObject({ code: "ENOENT" });
   },
+  REAL_PROCESS_TEST_MS,
 );
