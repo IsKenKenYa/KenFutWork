@@ -72,7 +72,10 @@ for (let index = 0; index < Math.max(files.length, 1); index += BATCH_SIZE) {
   const batch = files.slice(index, index + BATCH_SIZE);
   const result = spawnSync(
     process.execPath,
-    [biomeBin, "check", ...batch, ...args],
+    // biome 默认只打 20 条诊断，且把「超出上限、其余已截断」自己也记成 error——
+    // 存量 413 条 warning 足以让全量 lint 恒红，真错反而被这条噪音顶掉。
+    // 放开上限后 warning 照报不拦路，退出码只由真 error（format / parse）决定。
+    [biomeBin, "check", ...batch, "--max-diagnostics=none", ...args],
     {
       cwd: root,
       stdio: "inherit",

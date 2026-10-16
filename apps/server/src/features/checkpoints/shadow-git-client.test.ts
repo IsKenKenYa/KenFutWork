@@ -136,7 +136,13 @@ describe("影子 git（Code 模式检查点核心）", () => {
       await setup(scope);
       const recorded = execFileSync(
         "git",
-        ["config", "--file", join(scope.gitDir, "config"), "--get", "core.worktree"],
+        [
+          "config",
+          "--file",
+          join(scope.gitDir, "config"),
+          "--get",
+          "core.worktree",
+        ],
         { encoding: "utf8" },
       ).trim();
       // git 会把 Windows 路径规范成正斜杠，按同一口径比对。
