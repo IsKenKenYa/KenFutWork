@@ -430,6 +430,7 @@ export function CanvasEditor({
       canvasSceneState.acceptRemote(
         reconciliation.remote,
         remoteSnapshot.revision,
+        content,
       );
       const currentAppState = excalidrawApi.getAppState();
       const appState = {

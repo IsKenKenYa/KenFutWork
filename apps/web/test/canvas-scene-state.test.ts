@@ -4,6 +4,7 @@ import {
   createCanvasSceneState,
   reconcileCanvasScene,
 } from "../src/lib/canvas-scene-state";
+import { loadRealRestoreElements } from "./setup/real-excalidraw-restore";
 
 const content: CanvasContent = {
   elements: [{ id: "a", type: "rectangle", x: 0 }],
@@ -226,4 +227,102 @@ test("a single local layer reorder is kept while a conflicting remote reorder is
       remote: { ...base, elements: [a, c, b] },
     }),
   ).toBeNull();
+});
+
+test("real restoreElements hydration preserves the confirmed sparse remote baseline for later reconciliation", async () => {
+  const restoreElements = await loadRealRestoreElements();
+  const sparse = {
+    id: "a",
+    type: "rectangle",
+    x: 0,
+    y: 0,
+    width: 20,
+    height: 20,
+  };
+  const initial = { ...content, elements: [sparse] };
+  const restored = restoreElements(
+    initial.elements as unknown as Parameters<typeof restoreElements>[0],
+    null,
+  );
+  const state = createCanvasSceneState({ revision: "r1", content: initial });
+  state.hydrate({ ...initial, elements: restored });
+  const local = {
+    ...restored[0]!,
+    x: 25,
+    version: restored[0]!.version + 1,
+    versionNonce: 123,
+    updated: Date.now() + 1,
+  };
+  const latest = { ...initial, elements: [local] };
+  const remoteResult = { ...sparse, id: "remote-result", x: 80 };
+  state.observe(latest);
+  const remote = {
+    ...initial,
+    elements: [sparse, remoteResult],
+  };
+  const result = state.reconcileRemote(latest, remote);
+  expect(result?.merged.elements).toEqual([local, remoteResult]);
+  expect(state.isDirty).toBe(true);
+  if (!result) return;
+  state.acceptRemote(result.remote, "r2", remote);
+  state.observe(result.merged);
+  const laterResult = { ...sparse, id: "later-result", x: 120 };
+  expect(
+    state.reconcileRemote(result.merged, {
+      ...remote,
+      elements: [...remote.elements, laterResult],
+    })?.merged.elements,
+  ).toEqual([local, remoteResult, laterResult]);
+  expect(state.isDirty).toBe(true);
+});
+
+test("a confirmed real saved snapshot retains meaningful version and updated conflicts", async () => {
+  const restoreElements = await loadRealRestoreElements();
+  const sparse = {
+    id: "a",
+    type: "rectangle",
+    x: 0,
+    y: 0,
+    width: 20,
+    height: 20,
+  };
+  const restored = restoreElements(
+    [sparse] as unknown as Parameters<typeof restoreElements>[0],
+    null,
+  );
+  const initial = { ...content, elements: [sparse] };
+  const state = createCanvasSceneState({ revision: "r1", content: initial });
+  state.hydrate({ ...initial, elements: restored });
+  const savedElement = {
+    ...restored[0]!,
+    x: 25,
+    version: restored[0]!.version + 1,
+    versionNonce: 123,
+    updated: 100,
+  };
+  const submitted = { ...initial, elements: [savedElement] };
+  state.acknowledgeSave(state.captureSave(submitted), "r2");
+  const local = {
+    ...submitted,
+    elements: [
+      {
+        ...savedElement,
+        x: 30,
+        version: savedElement.version + 1,
+        updated: 200,
+      },
+    ],
+  };
+  state.observe(local);
+  for (const remoteElement of [
+    { ...savedElement, version: savedElement.version + 1 },
+    { ...savedElement, updated: 300 },
+  ]) {
+    expect(
+      state.reconcileRemote(local, {
+        ...submitted,
+        elements: [remoteElement],
+      }),
+    ).toBeNull();
+  }
 });

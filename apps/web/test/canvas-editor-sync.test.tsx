@@ -8,10 +8,16 @@ import {
 } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { loadRealRestoreElements } from "./setup/real-excalidraw-restore";
 
 const mocks = vi.hoisted(() => ({
   addFiles: vi.fn(),
   elements: [] as Array<Record<string, unknown>>,
+  restoreInitialElements: null as
+    | null
+    | ((
+        elements: Array<Record<string, unknown>>,
+      ) => Array<Record<string, unknown>>),
   files: {} as Record<string, Record<string, unknown>>,
   onChange: null as null | ((elements: unknown[], appState: unknown) => void),
   saveCanvas: vi.fn(),
@@ -63,7 +69,9 @@ vi.mock("next/dynamic", async () => {
         );
         React.useEffect(() => {
           if (!initialized.current) {
-            mocks.elements = props.initialData.elements;
+            mocks.elements = mocks.restoreInitialElements
+              ? mocks.restoreInitialElements(props.initialData.elements)
+              : props.initialData.elements;
             mocks.files = props.initialData.files;
             initialized.current = true;
           }
@@ -173,6 +181,7 @@ describe("CanvasEditor remote snapshot sync", () => {
       },
     );
     mocks.elements = [baseElement];
+    mocks.restoreInitialElements = null;
     mocks.files = {};
     mocks.onChange = null;
     mocks.saveCanvas.mockReset().mockResolvedValue({
@@ -464,6 +473,86 @@ describe("CanvasEditor remote snapshot sync", () => {
       "revision-generated",
     );
   });
+
+  it.each([true, false])(
+    "reconciles real restoreElements hydration with sparse remote content (local move: %s)",
+    async (moveLocal) => {
+      const restoreElements = await loadRealRestoreElements();
+      mocks.restoreInitialElements = (elements) =>
+        restoreElements(
+          elements as unknown as Parameters<typeof restoreElements>[0],
+          null,
+        );
+      const selection = vi.fn();
+      const view = render(
+        <CanvasEditor {...editorProps({ onSelectionChange: selection })} />,
+      );
+      await finishHydration();
+      const hydrated = mocks.elements[0]!;
+      expect(hydrated).toMatchObject({ isDeleted: false, seed: 1 });
+      expect(hydrated.version).toBeGreaterThanOrEqual(1);
+      expect(hydrated.index).toEqual(expect.any(String));
+      expect(hydrated.updated).toEqual(expect.any(Number));
+      expect(baseElement).not.toHaveProperty("version");
+      const local = moveLocal
+        ? {
+            ...hydrated,
+            x: 25,
+            version: Number(hydrated.version) + 1,
+            versionNonce: 123,
+            updated: Date.now() + 1,
+          }
+        : hydrated;
+      mocks.elements = [local];
+      mocks.appState = {
+        ...mocks.appState,
+        scrollX: -123,
+        scrollY: 45,
+        zoom: { value: 0.5 },
+        selectedElementIds: { "element-1": true },
+      };
+      fireEvent.click(screen.getByTestId("mock-excalidraw"));
+      const result = {
+        ...baseElement,
+        id: "remote-result",
+        type: "ellipse",
+        x: 80,
+      };
+      view.rerender(
+        <CanvasEditor
+          {...editorProps({
+            onSelectionChange: selection,
+            remoteSnapshot: {
+              revision: "revision-sparse-result",
+              content: { ...baseContent, elements: [baseElement, result] },
+            },
+          })}
+        />,
+      );
+      await act(async () => {});
+
+      expect(mocks.elements).toEqual([local, result]);
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(mocks.appState).toMatchObject({
+        scrollX: -123,
+        scrollY: 45,
+        zoom: { value: 0.5 },
+        selectedElementIds: { "element-1": true },
+      });
+      expect(selection).toHaveBeenLastCalledWith([
+        expect.objectContaining({ id: "element-1", x: moveLocal ? 25 : 0 }),
+      ]);
+      await act(async () => vi.advanceTimersByTimeAsync(1500));
+      if (moveLocal) {
+        expect(mocks.saveCanvas).toHaveBeenCalledWith(
+          null,
+          "canvas-1",
+          expect.objectContaining({ elements: [local, result] }),
+          "revision-sparse-result",
+        );
+      } else expect(mocks.saveCanvas).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([0, 2000])(
     "keeps edits made while a remote image downloads and saves the latest move with the image (%i ms download)",

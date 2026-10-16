@@ -37,6 +37,54 @@ function liveElements(scene: CanvasScene) {
   return scene.elements.filter((element) => !element.isDeleted);
 }
 
+/** 只继承同一确认快照在 hydrate 时产生的表示差异；远端真实字段变化仍保留。 */
+function projectRemoteElement(
+  confirmed: Record<string, unknown> | undefined,
+  hydrated: Record<string, unknown> | undefined,
+  remote: Record<string, unknown>,
+) {
+  if (sameValue(confirmed, remote)) return hydrated;
+  if (!confirmed || !hydrated) return remote;
+  const projected = { ...remote };
+  for (const [key, value] of Object.entries(hydrated)) {
+    if (sameValue(confirmed[key], remote[key])) projected[key] = value;
+  }
+  return projected;
+}
+
+function hasUniqueElementIds(elements: CanvasScene["elements"]) {
+  const ids = elements.map((element) => element.id);
+  return (
+    ids.every((id) => typeof id === "string") &&
+    new Set(ids).size === ids.length
+  );
+}
+
+function mergeDocumentSettings(
+  confirmed: CanvasScene["appState"],
+  baseline: CanvasScene["appState"],
+  local: CanvasScene["appState"],
+  remote: CanvasScene["appState"],
+) {
+  const merged: Record<string, unknown> = {};
+  const projected: Record<string, unknown> = {};
+  for (const key of ["viewBackgroundColor", "gridModeEnabled"] as const) {
+    const incoming = remote[key] ?? confirmed[key];
+    const remoteValue = sameValue(confirmed[key], incoming)
+      ? baseline[key]
+      : incoming;
+    const result = mergeValue(
+      baseline[key],
+      local[key] ?? baseline[key],
+      remoteValue,
+    );
+    if (!result) return null;
+    merged[key] = result.value;
+    projected[key] = remoteValue;
+  }
+  return { merged, projected };
+}
+
 function mergeElementOrder(
   base: CanvasScene["elements"],
   local: CanvasScene["elements"],
@@ -84,27 +132,38 @@ function mergeElementOrder(
 /** 缺席/墓碑均表示删除；同一元素的不同改动不能自动覆盖。 */
 export function reconcileCanvasScene(options: {
   base: CanvasScene;
+  localBase?: CanvasScene;
   local: CanvasScene;
   remote: CanvasScene;
 }): { remote: CanvasScene; merged: CanvasScene } | null {
-  const base = liveElements(options.base);
+  const localBaseline = options.localBase ?? options.base;
+  const confirmed = liveElements(options.base);
+  const base = liveElements(localBaseline);
   const local = liveElements(options.local);
-  const remote = liveElements(options.remote);
+  const rawRemote = liveElements(options.remote);
+  const confirmedById = new Map(
+    confirmed.map((element) => [element.id, element]),
+  );
   const baseById = new Map(base.map((element) => [element.id, element]));
   const localById = new Map(local.map((element) => [element.id, element]));
   const localAllById = new Map(
     options.local.elements.map((element) => [element.id, element]),
   );
-  const remoteById = new Map(remote.map((element) => [element.id, element]));
   if (
-    [base, local, remote].some((elements) =>
-      elements.some((element) => typeof element.id !== "string"),
-    ) ||
-    baseById.size !== base.length ||
-    localById.size !== local.length ||
-    remoteById.size !== remote.length
+    [confirmed, base, local, rawRemote].some(
+      (elements) => !hasUniqueElementIds(elements),
+    )
   )
     return null;
+  const remote = rawRemote.flatMap((element) => {
+    const projected = projectRemoteElement(
+      confirmedById.get(element.id),
+      baseById.get(element.id),
+      element,
+    );
+    return projected ? [projected] : [];
+  });
+  const remoteById = new Map(remote.map((element) => [element.id, element]));
   const merged = new Map<unknown, Record<string, unknown>>();
   const ids = new Set([
     ...baseById.keys(),
@@ -129,20 +188,19 @@ export function reconcileCanvasScene(options: {
       ...(localAllById.get(element.id) ?? element),
       isDeleted: true,
     }));
-  const appState: Record<string, unknown> = {};
-  const remoteSettings: Record<string, unknown> = {};
-  for (const key of ["viewBackgroundColor", "gridModeEnabled"] as const) {
-    const baseline = options.base.appState[key];
-    const localValue = options.local.appState[key] ?? baseline;
-    const remoteValue = options.remote.appState[key] ?? baseline;
-    const result = mergeValue(baseline, localValue, remoteValue);
-    if (!result) return null;
-    appState[key] = result.value;
-    remoteSettings[key] = remoteValue;
-  }
+  const settings = mergeDocumentSettings(
+    options.base.appState,
+    localBaseline.appState,
+    options.local.appState,
+    options.remote.appState,
+  );
+  if (!settings) return null;
   return {
-    remote: { elements: remote, appState: remoteSettings },
-    merged: { elements: [...elements, ...deletions], appState },
+    remote: { elements: remote, appState: settings.projected },
+    merged: {
+      elements: [...elements, ...deletions],
+      appState: settings.merged,
+    },
   };
 }
 
@@ -164,12 +222,21 @@ function sceneKey(scene: CanvasScene): string {
   ]);
 }
 
+function sceneFromKey(key: string): CanvasScene {
+  const [elements, appState] = JSON.parse(key) as [
+    CanvasScene["elements"],
+    CanvasScene["appState"],
+  ];
+  return { elements, appState };
+}
+
 export function createCanvasSceneState(initial: {
   revision: string;
   content: CanvasContent;
 }) {
   let currentKey = sceneKey(initial.content);
   let savedKey = currentKey;
+  let confirmedKey = currentKey;
   let version = 0;
   let savedVersion = 0;
   const knownRevisions = new Set([initial.revision]);
@@ -198,21 +265,20 @@ export function createCanvasSceneState(initial: {
       knownRevisions.add(revision);
       if (snapshot.version < savedVersion) return;
       savedKey = snapshot.key;
+      confirmedKey = snapshot.key;
       savedVersion = snapshot.version;
     },
-    acceptRemote(scene: CanvasScene, revision: string) {
+    acceptRemote(scene: CanvasScene, revision: string, confirmed = scene) {
       observe(scene);
       savedKey = currentKey;
+      confirmedKey = sceneKey(confirmed);
       savedVersion = version;
       knownRevisions.add(revision);
     },
     reconcileRemote(local: CanvasScene, remote: CanvasScene) {
-      const [elements, appState] = JSON.parse(savedKey) as [
-        CanvasScene["elements"],
-        CanvasScene["appState"],
-      ];
       return reconcileCanvasScene({
-        base: { elements, appState },
+        base: sceneFromKey(confirmedKey),
+        localBase: sceneFromKey(savedKey),
         local,
         remote,
       });
