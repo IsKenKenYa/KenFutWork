@@ -102,18 +102,24 @@ function activeProject(client: ProjectHost, tabs: TabStore | null) {
     : null;
 }
 
-/** 初始父导航等真实 tab store；恢复出的项目也须符合当前已确认方式。 */
+/** 显式模式意图等待真实项目；被动恢复只回落到项目已启用的方式。 */
 function useProjectModeAdmission(
   client: ProjectHost,
   tabs: TabStore | null,
   navigation: HostWorkbenchNavigation | undefined,
   askShare: (project: CodeUiWorkspace, preset: Preset) => Promise<boolean>,
+  finishShare: (shared: boolean) => void,
   transition: { current: boolean },
 ) {
   useEffect(() => {
     if (!tabs) return;
+    let unboundPreset: Preset | null = null;
+    let checkedDocument: ReturnType<
+      HostWorkbenchNavigation["getSnapshot"]
+    >["documentTarget"];
     const admit = async (preset: Preset) => {
       const project = activeProject(client, tabs);
+      unboundPreset = project ? null : preset;
       return !project || askShare(project, preset);
     };
     modeAdmission = admit;
@@ -127,27 +133,42 @@ function useProjectModeAdmission(
     let checked = "";
     const checkRestore = () => {
       if (transition.current) return;
+      const snapshot = navigation?.getSnapshot();
+      if (snapshot?.documentTarget !== checkedDocument) {
+        checkedDocument = snapshot?.documentTarget;
+        if (checkedDocument) {
+          unboundPreset = null;
+          finishShare(false);
+        }
+      }
       const project = activeProject(client, tabs);
-      const mode = navigation?.getSnapshot().mode;
+      const mode = snapshot?.mode;
       if (!project || !mode || mode === "flow") return;
+      const explicitPreset = unboundPreset;
+      unboundPreset = null;
+      const target = explicitPreset ?? mode;
       const key = JSON.stringify([
         project.projectId,
-        mode,
+        target,
         project.enabledModes,
       ]);
-      if (key === checked) return;
+      if (!explicitPreset && key === checked) return;
       checked = key;
-      if (projectSupportsMode(project, mode)) return;
+      if (projectSupportsMode(project, target)) {
+        if (explicitPreset) navigation?.setActiveMode(explicitPreset);
+        return;
+      }
       const fallback = project.kind === "design" ? "design" : "code";
       navigation?.setActiveMode(fallback);
-      void askShare(project, mode).then((allowed) => {
+      if (!explicitPreset) return;
+      void askShare(project, explicitPreset).then((allowed) => {
         if (
           current &&
           allowed &&
           activeProject(client, tabs)?.projectId === project.projectId &&
           navigation?.getSnapshot().mode === fallback
         )
-          navigation.open(mode);
+          navigation.open(explicitPreset);
       });
     };
     const releaseTabs = tabs.subscribe(checkRestore);
@@ -161,7 +182,7 @@ function useProjectModeAdmission(
       releaseNavigation?.();
       if (modeAdmission === admit) modeAdmission = null;
     };
-  }, [askShare, client, navigation, tabs, transition]);
+  }, [askShare, client, finishShare, navigation, tabs, transition]);
 }
 
 type OpenProject = (
@@ -263,6 +284,11 @@ export function SharedProjectNavigationProvider({
   const [request, setRequest] = useState<ShareRequest | null>(null);
   const requestRef = useRef<ShareRequest | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const finish = useCallback((shared: boolean) => {
+    requestRef.current?.resolve(shared);
+    requestRef.current = null;
+    setRequest(null);
+  }, []);
   const askShare = useCallback(
     (project: CodeUiWorkspace, preset: Preset) => {
       const latest =
@@ -304,6 +330,7 @@ export function SharedProjectNavigationProvider({
     tabs,
     navigation,
     askShare,
+    finish,
     projectTransition,
   );
   useEffect(
@@ -315,11 +342,6 @@ export function SharedProjectNavigationProvider({
     },
     [],
   );
-  const finish = (shared: boolean) => {
-    requestRef.current?.resolve(shared);
-    requestRef.current = null;
-    setRequest(null);
-  };
   const openProject = useCallback<OpenProject>(
     async (project, preset, isCurrent = () => true) => {
       if (!isCurrent() || !(await askShare(project, preset)) || !isCurrent())

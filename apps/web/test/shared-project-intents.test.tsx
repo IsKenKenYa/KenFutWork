@@ -30,6 +30,7 @@ import {
 } from "../src/components/workbench/zcode/host/SharedProjectNavigation";
 import { setSurfaceApiBase } from "../src/components/workbench/zcode/host/surfaceApi";
 import { useWorkbenchSurfaceMode } from "../src/components/workbench/zcode/host/useWorkbenchSurfaceMode";
+import { HostWorkbenchModeNavigation } from "../src/components/workbench/zcode/host/WorkbenchModeNavigation";
 import { createHostWorkbenchNavigation } from "../src/components/workbench/zcode/host/workbenchNavigation";
 
 const harness = vi.hoisted(() => ({
@@ -76,6 +77,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   setSurfaceApiBase("http://navigation.test");
   localStorage.clear();
+  sessionStorage.clear();
 });
 afterEach(() => {
   cleanup();
@@ -87,13 +89,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
   setSurfaceApiBase("");
   localStorage.clear();
+  sessionStorage.clear();
 });
 function Probe({
   initialProject,
   ready,
+  deferRestore = false,
 }: {
   initialProject: CodeUiWorkspace;
   ready: (store: TabStore) => void;
+  deferRestore?: boolean;
 }) {
   const store = useTabStoreApi();
   useSharedProjectTabs([]);
@@ -104,16 +109,18 @@ function Probe({
     setWorkspaceMainView: setView,
   });
   useLayoutEffect(() => {
-    store.getState().addTab(initialProject.path, {
-      workspaceIdentity: JSON.stringify([
-        initialProject.projectId,
-        initialProject.path,
-      ]),
-    });
+    if (!deferRestore)
+      store.getState().addTab(initialProject.path, {
+        workspaceIdentity: JSON.stringify([
+          initialProject.projectId,
+          initialProject.path,
+        ]),
+      });
     ready(store);
-  }, [initialProject, ready, store]);
+  }, [deferRestore, initialProject, ready, store]);
   return (
     <>
+      <HostWorkbenchModeNavigation />
       <SharedProjectNavigation />
       <output data-testid="active-project">{identity}</output>
       <output data-testid="main-view">{view}</output>
@@ -151,6 +158,7 @@ function sendNavigation(data: {
 async function fixture(
   initialProject: CodeUiWorkspace = code,
   options: {
+    deferRestore?: boolean;
     beforeRender?: (
       navigation: ReturnType<typeof createHostWorkbenchNavigation>,
     ) => void;
@@ -220,7 +228,11 @@ async function fixture(
   const tree = () => (
     <TabStoreProvider>
       <SharedProjectNavigationProvider client={client} navigation={navigation}>
-        <Probe initialProject={initialProject} ready={ready} />
+        <Probe
+          initialProject={initialProject}
+          ready={ready}
+          deferRestore={options.deferRestore ?? false}
+        />
       </SharedProjectNavigationProvider>
     </TabStoreProvider>
   );
@@ -229,18 +241,27 @@ async function fixture(
     client.dispose();
     navigation.dispose();
   });
-  await waitFor(() =>
-    expect(screen.getByTestId("active-project").textContent).toBe(
-      JSON.stringify([initialProject.projectId, initialProject.path]),
-    ),
-  );
+  if (!options.deferRestore)
+    await waitFor(() =>
+      expect(screen.getByTestId("active-project").textContent).toBe(
+        JSON.stringify([initialProject.projectId, initialProject.path]),
+      ),
+    );
   if (!tabs) throw new Error("真实 Tab store 未绑定");
+  const store = tabs;
   return {
     client,
     navigation,
     tabs,
     rpc,
     rerender: () => rendered.rerender(tree()),
+    restoreInitialProject: () =>
+      store.getState().addTab(initialProject.path, {
+        workspaceIdentity: JSON.stringify([
+          initialProject.projectId,
+          initialProject.path,
+        ]),
+      }),
   };
 }
 function canvasReads() {
@@ -381,15 +402,113 @@ it("初始父Design模式等待真实项目恢复与用户确认，取消留Code
   );
   expect(f.rpc).not.toHaveBeenCalled();
 });
-it("已选Design时恢复Code-only项目先回默认Code；取消不启用Design", async () => {
-  const f = await fixture(code, {
+it("冷窗口恢复Design-only项目跟随项目方式，不把默认Code当成共享请求", async () => {
+  const f = await fixture(design);
+  await waitFor(() =>
+    expect(screen.getByTestId("main-view").textContent).toBe("design"),
+  );
+  expect(f.navigation.getSnapshot().mode).toBe("design");
+  expect(screen.queryByRole("dialog", { name: "共享项目" })).toBeNull();
+  expect(patches()).toHaveLength(0);
+  expect(f.rpc).not.toHaveBeenCalled();
+});
+it.each([
+  ["design", code, "code", "启用 Design"],
+  ["code", design, "design", "启用 Code"],
+] as const)(
+  "明确父%s模式在真实项目延迟恢复后仍等待跨方式确认",
+  async (requestedMode, project, retainedMode, label) => {
+    const f = await fixture(project, {
+      deferRestore: true,
+      beforeRender: () => sendNavigation({ mode: requestedMode }),
+    });
+    await waitFor(() =>
+      expect(f.navigation.getSnapshot().mode).toBe(requestedMode),
+    );
+    expect(screen.queryByRole("dialog", { name: "共享项目" })).toBeNull();
+    await act(async () => {
+      f.restoreInitialProject();
+    });
+    await screen.findByRole("button", { name: label });
+    expect(f.navigation.getSnapshot().mode).toBe(retainedMode);
+    expect(patches()).toHaveLength(0);
+    expect(f.rpc).not.toHaveBeenCalled();
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "取消" })),
+    );
+    expect(f.navigation.getSnapshot().mode).toBe(retainedMode);
+    expect(patches()).toHaveLength(0);
+  },
+);
+it("恢复Design-only项目后显式点击Code仍须确认，取消不共享，确认保留同一项目", async () => {
+  const f = await fixture(design, {
     beforeRender: (navigation) => navigation.setActiveMode("design"),
   });
-  await screen.findByRole("button", { name: "启用 Design" });
-  await waitFor(() => expect(f.navigation.getSnapshot().mode).toBe("code"));
+  await act(async () =>
+    fireEvent.click(screen.getByRole("radio", { name: "Code" })),
+  );
+  await screen.findByRole("button", { name: "启用 Code" });
+  expect(f.navigation.getSnapshot().mode).toBe("design");
+  expect(patches()).toHaveLength(0);
   await act(async () =>
     fireEvent.click(screen.getByRole("button", { name: "取消" })),
   );
+  expect(f.navigation.getSnapshot().mode).toBe("design");
+  expect(screen.queryByRole("dialog", { name: "共享项目" })).toBeNull();
+  await act(async () =>
+    fireEvent.click(screen.getByRole("radio", { name: "Code" })),
+  );
+  await act(async () =>
+    fireEvent.click(await screen.findByRole("button", { name: "启用 Code" })),
+  );
+  await waitFor(() => expect(f.navigation.getSnapshot().mode).toBe("code"));
+  expect(patches()).toHaveLength(1);
+  expect(f.tabs.getState().activeWorkspaceIdentity).toBe(
+    JSON.stringify([design.projectId, design.path]),
+  );
+  expect(f.rpc).not.toHaveBeenCalled();
+});
+it("初始Design画布深链解析期间不为恢复出的旧项目询问共享，完成后打开真实项目文档", async () => {
+  let finishCanvas!: (result: unknown) => void;
+  const f = await fixture(design, {
+    beforeRender: () => {
+      harness.json.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishCanvas = resolve;
+          }),
+      );
+      sendNavigation({ mode: "design", canvasId: canvasA });
+    },
+  });
+  await waitFor(() => expect(canvasReads()).toHaveLength(1));
+  expect(screen.queryByRole("dialog", { name: "共享项目" })).toBeNull();
+  expect(patches()).toHaveLength(0);
+  expect(f.rpc).not.toHaveBeenCalled();
+  await act(async () =>
+    finishCanvas({
+      canvas: { id: canvasA, projectId: sharedA.projectId, name: "画布 A" },
+    }),
+  );
+  await waitFor(() =>
+    expect(f.tabs.getState().activeWorkspaceIdentity).toBe(
+      JSON.stringify([sharedA.projectId, sharedA.path]),
+    ),
+  );
+  expect(f.navigation.getSnapshot().mode).toBe("design");
+  expect(screen.getByTestId("main-view").textContent).toBe("design");
+  expect(takeCanvasDocumentOpen(sharedA.projectId)?.documentId).toBe(canvasA);
+  expect(takeCanvasDocumentOpen(design.projectId)).toBeUndefined();
+  expect(screen.queryByRole("dialog", { name: "共享项目" })).toBeNull();
+  expect(f.rpc).toHaveBeenCalledTimes(1);
+  expect(patches()).toHaveLength(0);
+});
+it("已选Design时恢复Code-only项目回默认Code，不发起共享", async () => {
+  const f = await fixture(code, {
+    beforeRender: (navigation) => navigation.setActiveMode("design"),
+  });
+  await waitFor(() => expect(f.navigation.getSnapshot().mode).toBe("code"));
+  expect(screen.queryByRole("dialog", { name: "共享项目" })).toBeNull();
   expect(screen.getByTestId("main-view").textContent).toBe("chat");
   expect(patches()).toHaveLength(0);
   f.rerender();
