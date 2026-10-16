@@ -8,127 +8,196 @@ import {
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
 import { ChevronDownIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { surfaceJson } from "./surfaceApi.js";
 
-/**
- * 执行模式 chip（G2/Q7，KenFutWork 宿主件，非上游移植）。
- *
- * 复用 Design 侧同一缝：GET/PUT /api/execution-modes/:threadId——store 按
- * thread_id 或 chat_sessions.id 双 alias 匹配，Code 根会话两者同为 sessionId。
- * 宿主接纳输入时冻结策略；切换只影响之后发送的输入。
- * 「计划」联动独立规划态，离开时只关闭规划，不改变基础权限。
- * 端点不可用/加载失败时整体隐藏，不摆空壳。
- */
-interface ExecutionModeChipProps {
+type ModeOption = { id: ExecutionMode; label: string };
+type ModeState = {
   sessionId: string | null;
-  disabled: boolean;
-  planEnabled?: boolean;
-  onSwitchMode?: (mode: string) => void;
-  onExecutionModeChange?: (mode: ExecutionMode | undefined) => void;
-}
-
-export function ExecutionModeChip({
+  modes: ModeOption[] | null;
+  mode: ExecutionMode | undefined;
+  saving: boolean;
+};
+const emptyState = (sessionId: string | null): ModeState => ({
   sessionId,
-  disabled,
+  modes: null,
+  mode: undefined,
+  saving: false,
+});
+
+/** Composer持有唯一策略状态；显示、提交与明确关闭规划消费同一份意图。 */
+export function useExecutionModeController({
+  sessionId,
   planEnabled,
   onSwitchMode,
-  onExecutionModeChange,
-}: ExecutionModeChipProps) {
-  const [modes, setModes] = useState<Array<{
-    id: ExecutionMode;
-    label: string;
-  }> | null>(null);
-  const [mode, setMode] = useState<ExecutionMode | null>(null);
-  const [saving, setSaving] = useState(false);
-  const generation = useRef(0);
+}: {
+  sessionId: string | null;
+  planEnabled?: boolean;
+  onSwitchMode?: (mode: string) => void;
+}) {
+  const [storedState, setState] = useState(() => emptyState(sessionId));
+  const state =
+    storedState.sessionId === sessionId ? storedState : emptyState(sessionId);
+  if (state !== storedState) setState(state);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const currentSession = useRef(sessionId);
-  const onModeChange = useRef(onExecutionModeChange);
   currentSession.current = sessionId;
-  onModeChange.current = onExecutionModeChange;
+  const taskGeneration = useRef(0);
+  const intentGeneration = useRef(0);
+  const planning = useRef(planEnabled);
+  planning.current = planEnabled;
+  const switchMode = useRef(onSwitchMode);
+  switchMode.current = onSwitchMode;
+  const planClosed = useRef(false);
+  const writes = useRef<Promise<unknown>>(Promise.resolve());
+  const update = useCallback(
+    (patch: Partial<ModeState>) => {
+      if (currentSession.current !== sessionId) return;
+      const next = { ...stateRef.current, ...patch };
+      stateRef.current = next;
+      setState(next);
+    },
+    [sessionId],
+  );
+  const persist = useCallback(
+    (targetSessionId: string, mode: ExecutionMode) => {
+      // 后一次明确关闭必须排在旧偏好写入之后；本次发送不等待这个队列。
+      const operation = writes.current
+        .catch(() => {})
+        .then(() =>
+          surfaceJson(
+            "/api/execution-modes/" + encodeURIComponent(targetSessionId),
+            {
+              method: "PUT",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ mode }),
+            },
+          ),
+        );
+      writes.current = operation;
+      return operation;
+    },
+    [],
+  );
 
   useEffect(() => {
-    const epoch = ++generation.current;
-    setModes(null);
-    setMode(null);
-    setSaving(false);
-    onModeChange.current?.(undefined);
+    const epoch = ++taskGeneration.current;
+    intentGeneration.current += 1;
+    planClosed.current = false;
+    writes.current = Promise.resolve();
+    update(emptyState(sessionId));
     if (!sessionId) return;
     let alive = true;
     void (async () => {
       try {
         const [list, current] = await Promise.all([
-          surfaceJson<{ modes: Array<{ id: ExecutionMode; label: string }> }>(
-            "/api/execution-modes",
-          ),
+          surfaceJson<{ modes: ModeOption[] }>("/api/execution-modes"),
           surfaceJson<{ mode: ExecutionMode }>(
-            `/api/execution-modes/${encodeURIComponent(sessionId)}`,
+            "/api/execution-modes/" + encodeURIComponent(sessionId),
           ),
         ]);
         if (
           !alive ||
-          epoch !== generation.current ||
+          epoch !== taskGeneration.current ||
           currentSession.current !== sessionId
         )
           return;
-        setModes(list.modes);
-        setMode(current.mode);
-        onModeChange.current?.(current.mode);
+        update({
+          modes: list.modes,
+          mode:
+            current.mode === "plan" && planClosed.current
+              ? "agent"
+              : current.mode,
+        });
       } catch {
-        // 端点不可用或会话无对应行 → 隐藏 chip，不阻塞 composer
+        // 端点不可用时隐藏菜单；明确关闭规划产生的本地意图仍用于发送。
       }
     })();
     return () => {
       alive = false;
-      generation.current += 1;
+      taskGeneration.current += 1;
     };
-  }, [sessionId]);
+  }, [sessionId, update]);
 
   const select = useCallback(
     async (next: string) => {
-      if (!sessionId || saving) return;
-      const previous = mode;
+      if (currentSession.current !== sessionId) return;
+      const previous = stateRef.current.mode;
+      if (!sessionId || stateRef.current.saving || !previous) return;
       const nextMode = next as ExecutionMode;
-      const previousPlanning = planEnabled ?? previous === "plan";
+      const previousPlanning = planning.current ?? previous === "plan";
       const nextPlanning =
         nextMode === "plan" ? true : previous === "plan" ? false : undefined;
-      const epoch = generation.current;
+      const taskEpoch = taskGeneration.current;
+      const intentEpoch = ++intentGeneration.current;
       const isCurrent = () =>
-        epoch === generation.current && currentSession.current === sessionId;
-      setMode(nextMode);
-      // 可见选择与本次点击意图同步；偏好落盘不阻塞发送。
-      onModeChange.current?.(nextMode);
+        currentSession.current === sessionId &&
+        taskEpoch === taskGeneration.current &&
+        intentEpoch === intentGeneration.current;
+      planClosed.current = false;
+      update({ mode: nextMode, saving: true });
       if (nextPlanning !== undefined)
-        onSwitchMode?.(nextPlanning ? "plan" : "plan-off");
-      setSaving(true);
+        switchMode.current?.(nextPlanning ? "plan" : "plan-off");
       try {
-        await surfaceJson(
-          `/api/execution-modes/${encodeURIComponent(sessionId)}`,
-          {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ mode: nextMode }),
-          },
-        );
-        if (!isCurrent()) return;
+        await persist(sessionId, nextMode);
       } catch {
         if (!isCurrent()) return;
-        if (previous) {
-          setMode(previous);
-          onModeChange.current?.(previous);
-          if (nextPlanning !== undefined)
-            onSwitchMode?.(previousPlanning ? "plan" : "plan-off");
-        }
+        update({ mode: previous });
+        if (nextPlanning !== undefined)
+          switchMode.current?.(previousPlanning ? "plan" : "plan-off");
       } finally {
-        if (isCurrent()) setSaving(false);
+        if (isCurrent()) update({ saving: false });
       }
     },
-    [mode, onSwitchMode, planEnabled, saving, sessionId],
+    [persist, sessionId, update],
   );
 
+  const switchCollaborationMode = useCallback(
+    (next: string) => {
+      if (currentSession.current !== sessionId) return;
+      if (next === "plan" || next === "plan-off") {
+        // 人工规划编辑拥有新代际，包含布尔值折返；旧PUT不能回滚它。
+        intentGeneration.current += 1;
+        planClosed.current = next === "plan-off";
+        update({ saving: false });
+        if (
+          next === "plan-off" &&
+          (stateRef.current.mode === "plan" ||
+            stateRef.current.mode === undefined)
+        ) {
+          update({ mode: "agent" });
+          if (sessionId) void persist(sessionId, "agent").catch(() => {});
+        }
+      }
+      switchMode.current?.(next);
+    },
+    [persist, sessionId, update],
+  );
+
+  return useMemo(
+    () => ({
+      mode: state.mode,
+      modes: state.modes,
+      saving: state.saving,
+      select,
+      switchCollaborationMode,
+    }),
+    [select, state.mode, state.modes, state.saving, switchCollaborationMode],
+  );
+}
+
+/** 受控菜单：自身不再持有另一份提交策略。 */
+export function ExecutionModeChip({
+  controller,
+  disabled,
+}: {
+  controller: ReturnType<typeof useExecutionModeController>;
+  disabled: boolean;
+}) {
+  const { mode, modes, saving, select } = controller;
   if (!modes || modes.length === 0 || !mode) return null;
   const label = modes.find((entry) => entry.id === mode)?.label ?? mode;
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>

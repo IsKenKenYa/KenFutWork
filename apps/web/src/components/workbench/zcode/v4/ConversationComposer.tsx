@@ -137,7 +137,7 @@ import { usePrimaryFollowupModifier } from "@zui/v4/composer/usePrimaryFollowupM
 import { useWebElementContexts } from "@zui/v4/composer/useWebElementContexts.js";
 import { V4ComposerCuaEntry } from "@zui/v4/composer/V4ComposerCuaEntry.js";
 // KenFutWork 宿主件：六档执行模式 chip（G2/Q7），实现位于 host/ 非上游移植。
-import { ExecutionModeChip } from "@zui/host/ExecutionModeChip.js";
+import { ExecutionModeChip, useExecutionModeController } from "@zui/host/ExecutionModeChip.js";
 // KenFutWork 宿主件：权限档 chip（G7/C1，旧四档语义）。
 import { PermissionTierChip } from "@zui/host/PermissionTierControl.js";
 import {
@@ -584,7 +584,12 @@ function ConversationComposerImpl({
   const configPickerScopeKey = `${workspaceKey}\0${draftScopeId}`;
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
-  const [executionMode, setExecutionMode] = useState<import("@kenfutwork/shared").ExecutionMode>();
+  const executionModeController = useExecutionModeController({
+    sessionId,
+    planEnabled: draftConfig?.planEnabled ?? snapshot?.config.planEnabled,
+    onSwitchMode,
+  });
+  const executionMode = executionModeController.mode;
   const [configPickerState, setConfigPickerState] = useState<{
     scopeKey: string;
     activePicker: V4ComposerConfigPicker | null;
@@ -2310,15 +2315,12 @@ function ConversationComposerImpl({
           disabled={disabled}
           activeConfigPicker={activeConfigPicker}
           onConfigPickerOpenChange={handleConfigPickerOpenChange}
-          onSwitchMode={onSwitchMode}
+          onSwitchMode={executionModeController.switchCollaborationMode}
         />
         {/* 宿主执行方式与原权限/规划控件并排，提交时捕获各自意图。 */}
         <ExecutionModeChip
-          sessionId={sessionId}
+          controller={executionModeController}
           disabled={disabled}
-          planEnabled={draftConfig?.planEnabled ?? snapshot?.config.planEnabled}
-          onSwitchMode={onSwitchMode}
-          onExecutionModeChange={setExecutionMode}
         />
         <PermissionTierChip />
         {/* 附件画廊重构曾整段覆盖 leadingActions，误删 CUA 常驻入口。
@@ -2349,6 +2351,7 @@ function ConversationComposerImpl({
       provider,
       remoteSessionId,
       runningSubagentCount,
+      executionModeController,
       sessionId,
       snapshot?.backgroundWorks,
       snapshot?.config.planEnabled,

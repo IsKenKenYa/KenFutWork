@@ -8,8 +8,8 @@ vi.mock("@zui/host/surfaceApi.js", () => ({
   surfaceJson: (path: string, init?: RequestInit) => surfaceJson(path, init),
 }));
 
-const { ExecutionModeChip } = await import(
-  "../src/components/workbench/zcode/host/ExecutionModeChip.js"
+const { ExecutionModeChipProbe: ExecutionModeChip } = await import(
+  "./setup/execution-mode-chip.js"
 );
 
 const MODES = {

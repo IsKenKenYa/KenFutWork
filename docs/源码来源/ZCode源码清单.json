@@ -11850,7 +11850,7 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationComposer.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationComposer.tsx",
       "sha256": "9bfa3d1365cfa7bf10e45d521a3d7201381aa27697c79b4f33b356cd2f4a3c2d",
-      "copiedSha256": "f23a56459fd97b84ee4c63c6138b37e6ec2d2e307faf749c6a21b9204328692d",
+      "copiedSha256": "99a6205145d4e1001f78e415bb9412456f4473a8ff3839991dce21c81bda6417",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
@@ -11862,7 +11862,8 @@
         "Code/Design统一实施：共享输入区提供通用上下文贡献header，保留原输入与提交交互。",
         "共享Harness执行策略：发送瞬间捕获宿主执行方式，与原Submission一起传入SessionPane；模式chip回传已持久化策略，未创建第二套提交或Goal循环。",
         "宿主点击策略：未加载选择时不伪造agent；已有可见选择在点击发送时独立捕获，跨异步配置准备保留该输入意图。",
-        "计划策略点击即同步独立规划草稿，Composer传入真实planEnabled以在偏好失败时恢复先前状态；迟到结果不改新Task。"
+        "计划策略点击即同步独立规划草稿，Composer传入真实planEnabled以在偏好失败时恢复先前状态；迟到结果不改新Task。",
+        "策略显示与发送共用Composer调用的宿主owner；明确关闭规划同时退出计划策略，Task与人工意图双代际拒绝旧PUT回滚，偏好写入按序且不阻塞发送。"
       ]
     },
     {

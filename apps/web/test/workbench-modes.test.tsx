@@ -187,7 +187,7 @@ it("flow可用时availableModes带flow；插件停用后库存事件即时收口
       }),
       window.location.origin,
     );
-  });
+  }, LAZY);
   const initialNavigation = send.mock.calls
     .map(([message]) => message)
     .filter((message) => message.type === "kenfutwork:workbench-navigation");
@@ -197,14 +197,16 @@ it("flow可用时availableModes带flow；插件停用后库存事件即时收口
   send.mockClear();
   plugin.enabled = false;
   fireEvent(window, new Event(PLUGIN_INVENTORY_CHANGED_EVENT));
-  await waitFor(() =>
-    expect(send).toHaveBeenCalledWith(
-      {
-        type: "kenfutwork:workbench-navigation",
-        availableModes: ["code", "design"],
-      },
-      window.location.origin,
-    ),
+  await waitFor(
+    () =>
+      expect(send).toHaveBeenCalledWith(
+        {
+          type: "kenfutwork:workbench-navigation",
+          availableModes: ["code", "design"],
+        },
+        window.location.origin,
+      ),
+    LAZY,
   );
   expect(
     send.mock.calls

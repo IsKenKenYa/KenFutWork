@@ -8,7 +8,7 @@ const surfaceJson = vi.fn();
 vi.mock("@zui/host/surfaceApi.js", () => ({
   surfaceJson: (path: string, init?: RequestInit) => surfaceJson(path, init),
 }));
-const { ExecutionModeChip } = await import(
+const { ExecutionModeChip, useExecutionModeController } = await import(
   "../src/components/workbench/zcode/host/ExecutionModeChip.js"
 );
 
@@ -38,24 +38,34 @@ function ComposerProbe({
     planEnabled: boolean;
   }>;
 }) {
-  const [mode, setMode] = useState<ExecutionMode>();
   const [planning, setPlanning] = useState(initialPlanning);
+  const controller = useExecutionModeController({
+    sessionId,
+    planEnabled: planning,
+    onSwitchMode: (next) => {
+      if (next === "plan" || next === "plan-off") setPlanning(next === "plan");
+      onSwitchMode(next);
+    },
+  });
+  const mode = controller.mode;
   useEffect(() => {
     setPlanning(sessionId ? initialPlanning : false);
   }, [initialPlanning, sessionId]);
   return (
     <>
-      <ExecutionModeChip
-        sessionId={sessionId}
-        disabled={false}
-        planEnabled={planning}
-        onSwitchMode={(next) => {
-          if (next === "plan" || next === "plan-off")
-            setPlanning(next === "plan");
-          onSwitchMode(next);
-        }}
-        onExecutionModeChange={setMode}
-      />
+      <ExecutionModeChip controller={controller} disabled={false} />
+      <button
+        type="button"
+        onClick={() => controller.switchCollaborationMode("plan-off")}
+      >
+        关闭规划
+      </button>
+      <button
+        type="button"
+        onClick={() => controller.switchCollaborationMode("plan")}
+      >
+        开启规划
+      </button>
       <button
         type="button"
         onClick={() => {
@@ -266,5 +276,112 @@ test("独立规划已开启时选择计划失败，保留原规划状态与自�
   expect(sentSubmissions).toEqual([
     { executionMode: "plan", planEnabled: true },
     { executionMode: "agent", planEnabled: true },
+  ]);
+});
+
+test.each(["success", "failure"] as const)(
+  "手动规划折返后旧计划PUT%s不覆盖新意图，偏好按点击顺序落盘",
+  async (result) => {
+    const user = userEvent.setup();
+    const pending = pendingModeChange();
+    const sent: ExecutionMode[] = [];
+    const sentSubmissions: Array<{
+      executionMode: ExecutionMode;
+      planEnabled: boolean;
+    }> = [];
+    const writes: string[] = [];
+    surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/api/execution-modes")
+        return {
+          modes: [
+            { id: "agent", label: "自主" },
+            { id: "plan", label: "计划" },
+          ],
+        };
+      if (init?.method !== "PUT") return { mode: "agent" };
+      const mode = JSON.parse(String(init.body)).mode;
+      writes.push(mode);
+      return mode === "plan" ? pending.promise : { mode };
+    });
+    render(
+      <ComposerProbe
+        sessionId="a"
+        sent={sent}
+        initialPlanning
+        sentSubmissions={sentSubmissions}
+        onSwitchMode={vi.fn()}
+      />,
+    );
+    await user.click(await screen.findByTestId("execution-mode-chip"));
+    await user.click(
+      await screen.findByRole("menuitemradio", { name: "计划" }),
+    );
+    await user.click(screen.getByRole("button", { name: "关闭规划" }));
+    await user.click(screen.getByRole("button", { name: "开启规划" }));
+    await user.click(screen.getByRole("button", { name: "关闭规划" }));
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    expect(sentSubmissions).toEqual([
+      { executionMode: "agent", planEnabled: false },
+    ]);
+    expect(writes).toEqual(["plan"]);
+    await act(async () =>
+      result === "success"
+        ? pending.resolve({ mode: "plan" })
+        : pending.reject(new Error("旧偏好失败")),
+    );
+    await waitFor(() => expect(writes).toEqual(["plan", "agent"]));
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    expect(sentSubmissions).toEqual([
+      { executionMode: "agent", planEnabled: false },
+      { executionMode: "agent", planEnabled: false },
+    ]);
+    expect(screen.getByTestId("execution-mode-chip").textContent).toContain(
+      "自主",
+    );
+  },
+);
+
+test("策略未加载时明确关闭规划，迟到plan读取不重开且本次发送携带自主", async () => {
+  const user = userEvent.setup();
+  const loading = deferred();
+  surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === "/api/execution-modes")
+      return {
+        modes: [
+          { id: "agent", label: "自主" },
+          { id: "plan", label: "计划" },
+        ],
+      };
+    if (init?.method === "PUT") return { mode: "agent" };
+    return loading.promise;
+  });
+  const sent: ExecutionMode[] = [];
+  const sentSubmissions: Array<{
+    executionMode: ExecutionMode;
+    planEnabled: boolean;
+  }> = [];
+  render(
+    <ComposerProbe
+      sessionId="a"
+      sent={sent}
+      initialPlanning
+      sentSubmissions={sentSubmissions}
+      onSwitchMode={vi.fn()}
+    />,
+  );
+  expect(screen.queryByTestId("execution-mode-chip")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "关闭规划" }));
+  await user.click(screen.getByRole("button", { name: "发送" }));
+  expect(sentSubmissions).toEqual([
+    { executionMode: "agent", planEnabled: false },
+  ]);
+  await act(async () => loading.resolve({ mode: "plan" }));
+  expect(
+    (await screen.findByTestId("execution-mode-chip")).textContent,
+  ).toContain("自主");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+  expect(sentSubmissions).toEqual([
+    { executionMode: "agent", planEnabled: false },
+    { executionMode: "agent", planEnabled: false },
   ]);
 });
