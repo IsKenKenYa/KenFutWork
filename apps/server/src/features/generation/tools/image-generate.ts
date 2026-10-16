@@ -5,6 +5,7 @@ import type {
   ImageQuality,
   OutputFormat,
 } from "../../../generation/types.js";
+import { findOwnedToolInterruption } from "../../../kernel/owned-tool-interruption.js";
 import type { ToolDefinition } from "../../../kernel/types.js";
 import type { CanvasDocumentAccess } from "../../canvas/document-access.js";
 import { generatedMediaDisplay } from "../media-display.js";
@@ -230,6 +231,7 @@ export async function runImageGenerate(
       }
       return result;
     } catch (error) {
+      if (findOwnedToolInterruption(error)) throw error;
       const message = error instanceof Error ? error.message : "Unknown error";
       return {
         summary: `Image generation failed with model ${input.model}: ${message}. Consider trying a different model or simplifying the prompt.`,

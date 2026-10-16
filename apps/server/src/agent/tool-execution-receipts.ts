@@ -1,6 +1,10 @@
 import { isDeepStrictEqual } from "node:util";
 import type { StreamEvent } from "@kenfutwork/shared";
 import type { ExecutionScopeHandle } from "../features/execution/scope-service.js";
+import {
+  OwnedToolInterruption,
+  TOOL_INTERRUPTION_SUMMARY,
+} from "../kernel/owned-tool-interruption.js";
 import type { ToolExecutionObservation } from "../kernel/types.js";
 
 export type ProductToolEvent = Extract<
@@ -18,6 +22,7 @@ export interface NativeToolProof {
   toolCallId: string;
   registered: boolean;
   events: ProductToolEvent[];
+  interruption?: OwnedToolInterruption;
 }
 
 /** Host-only authority; neither proof minting nor private Task bindings are exposed to Providers. */
@@ -104,6 +109,38 @@ export function createToolExecutionReceipts(options: {
         throw new Error("工具事件替换了真实执行结果。");
     }
   };
+  const isLateNativeInterruption = (
+    proof: NativeToolProof,
+    event: ProductToolEvent,
+  ) => {
+    if (
+      !(proof.interruption instanceof OwnedToolInterruption) ||
+      event.type !== "tool.completed" ||
+      event.status !== "cancelled" ||
+      event.outputSummary !== TOOL_INTERRUPTION_SUMMARY ||
+      event.output !== undefined ||
+      event.outputText !== undefined ||
+      event.artifacts !== undefined
+    )
+      return false;
+    const actual = completed.get(key(event));
+    return (
+      actual?.type === "tool.completed" &&
+      actual.runId === options.runId &&
+      actual.toolName === event.toolName &&
+      actual.agentName === event.agentName &&
+      actual.agentCallId === event.agentCallId &&
+      proof.events.every(
+        (entry) =>
+          entry.runId === options.runId &&
+          entry.toolCallId === proof.toolCallId &&
+          entry.toolName === proof.toolName &&
+          entry.toolName === event.toolName &&
+          entry.agentName === event.agentName &&
+          entry.agentCallId === event.agentCallId,
+      )
+    );
+  };
   return {
     async observe(fact: ToolExecutionObservation) {
       if (
@@ -116,8 +153,13 @@ export function createToolExecutionReceipts(options: {
     },
     async observeNative(proof: NativeToolProof) {
       if (proof.registered) {
+        const lateInterruptions = new Set<ProductToolEvent>();
         for (const event of proof.events)
-          if (event.type === "tool.completed") verify(event);
+          if (event.type === "tool.completed") {
+            if (isLateNativeInterruption(proof, event))
+              lateInterruptions.add(event);
+            else verify(event);
+          }
         // 目录或中间层可在进入内核前拒绝已注册工具；可信失败事实仍须可见。
         // 成功必须先经上面的真实内核回执验证，不能靠 native/provider 自报。
         if (
@@ -127,7 +169,8 @@ export function createToolExecutionReceipts(options: {
               (event.status === "error" || event.status === "cancelled"),
           )
         )
-          for (const event of proof.events) await emit(event);
+          for (const event of proof.events)
+            if (!lateInterruptions.has(event)) await emit(event);
         return;
       }
       // 未注册＝目录层自带的 SDK 工具（handler 真实存在，证明中间件已守住「有实际 handler」这一条）：

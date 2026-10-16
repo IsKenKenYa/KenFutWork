@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import {
+  type BackgroundJob,
   generationFileTargetSchema,
   jobResponseSchema,
   zcodeUiProtocol as protocol,
@@ -34,15 +35,27 @@ export function mediaRecoveryLatch() {
 
 async function startMediaSupplier() {
   const requests = { submissions: 0, polls: 0, downloads: 0 };
+  const submitted: Record<string, unknown>[] = [];
   let complete = false;
   let downloadGate: Promise<void> | undefined;
   let baseUrl = "";
   const handle = "accepted-media-recovery-handle";
   const server = createServer(async (request, response) => {
     if (request.method === "POST" && request.url === "/v1/api/generate") {
-      for await (const _chunk of request) {
-        // 消费本机替身请求体；不记录凭据或提示正文。
-      }
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<
+        string,
+        unknown
+      >;
+      // 仅保留协议参数；不记录凭据或提示正文。
+      submitted.push({
+        model: body.model,
+        duration: body.duration,
+        resolution: body.resolution,
+        aspectRatio: body.aspectRatio,
+        replyType: body.replyType,
+      });
       requests.submissions += 1;
       response.setHeader("content-type", "application/json");
       response.end(JSON.stringify({ id: handle, status: "running" }));
@@ -83,6 +96,7 @@ async function startMediaSupplier() {
     baseUrl,
     handle,
     requests,
+    submitted,
     complete: () => {
       complete = true;
     },
@@ -127,7 +141,10 @@ function rebuildMediaHost(
   }
 }
 
-function startMediaWorker(app: ReturnType<typeof buildApp>) {
+function startMediaWorker(
+  app: ReturnType<typeof buildApp>,
+  queueName = "image_generation_jobs",
+) {
   const kernel = app.kernel;
   return startJobLoop(
     {
@@ -150,16 +167,28 @@ function startMediaWorker(app: ReturnType<typeof buildApp>) {
         workerPollIntervalMs: 1000,
       },
     },
-    { queues: ["image_generation_jobs"] },
+    { queues: [queueName] },
   );
 }
 
 export async function createUnifiedMediaRecoveryFixture(
-  options: { submit?: boolean } = {},
+  options: {
+    submit?: boolean;
+    media?: "image" | "video";
+    submitThroughTool?: boolean;
+  } = {},
 ) {
   const fixture = await createCodeUiHttpFixture();
   const supplier = await startMediaSupplier();
-  const model = await heldModel();
+  const toolsByRequest: Record<
+    number,
+    {
+      id: string;
+      name: string;
+      arguments: Record<string, unknown>;
+    }
+  > = {};
+  const model = await heldModel({ toolsByRequest });
   const host = await createCodeSessionFixture(model.baseUrl, {
     client: fixture.client,
     initialConfig: { mode: "yolo", planEnabled: false },
@@ -188,6 +217,26 @@ export async function createUnifiedMediaRecoveryFixture(
     const canvas = await app.kernel
       .get("canvas")
       .createCanvas(fixture.actor, host.projectId, { name: "宿主恢复目标" });
+    const video = options.media === "video";
+    const mediaModel = video
+      ? {
+          id: "minimax-h3",
+          name: "恢复视频",
+          capability: "video" as const,
+          videoGeneration: {
+            durations: [1, 5, 10],
+            resolutions: ["480p", "768p", "1080p"],
+            aspectRatios: ["16:9", "9:16"],
+            referenceImages: 9,
+            audio: false,
+          },
+        }
+      : {
+          id: "nano-banana-2",
+          name: "恢复图片",
+          capability: "image" as const,
+          imageGeneration: { maxOutputs: 1 },
+        };
     const mediaProvider = await app.kernel
       .get("modelProviders")
       .createInstance(fixture.actor, {
@@ -195,15 +244,21 @@ export async function createUnifiedMediaRecoveryFixture(
         protocol: "grsai",
         baseUrl: supplier.baseUrl,
         apiKey: "integration-only-not-a-key",
-        models: [
-          {
-            id: "nano-banana-2",
-            name: "恢复图片",
-            capability: "image",
-            imageGeneration: { maxOutputs: 1 },
-          },
-        ],
+        models: [mediaModel],
       });
+    if (options.submitThroughTool)
+      toolsByRequest[0] = {
+        id: "owned-generation-wait",
+        name: video ? "generate_video" : "generate_image",
+        arguments: {
+          title: "宿主等待边界",
+          prompt: "一个蓝色方块",
+          model: `${mediaProvider.id}:${mediaModel.id}`,
+          ...(video
+            ? { duration: 1, resolution: "480p", aspectRatio: "16:9" }
+            : { aspectRatio: "1:1" }),
+        },
+      };
     const admitted = await host.command("sendText", {
       text: "保持当前Run，核对已受理媒体的宿主恢复",
       mode: "yolo",
@@ -227,22 +282,44 @@ export async function createUnifiedMediaRecoveryFixture(
     const thread = await app.kernel
       .get("threads")
       .resolveOwnedSessionThread(fixture.actor, host.sessionId);
-    const accepted = await app.kernel.get("jobs").createJob(fixture.actor, {
-      requestId: randomUUID(),
-      projectId: host.projectId,
-      sessionId: host.sessionId,
-      canvasId: canvas.id,
-      threadId: thread.threadId,
-      runId,
-      expectedScopeGeneration: handle.describe().generation,
-      expectedBranchGeneration: handle.branchGeneration,
-      jobType: "image_generation",
-      payload: {
-        prompt: "一个蓝色方块",
-        model: "nano-banana-2",
-        provider_instance_id: mediaProvider.id,
-      },
-    });
+    let accepted: BackgroundJob | undefined;
+    if (options.submitThroughTool) {
+      await vi.waitFor(
+        async () => {
+          accepted = (
+            await app.kernel.get("jobs").listJobs(fixture.actor)
+          ).find(
+            (job) =>
+              job.session_id === host.sessionId &&
+              job.job_type ===
+                (video ? "video_generation" : "image_generation"),
+          );
+          expect(accepted?.status).toBe("queued");
+        },
+        { timeout: 30_000 },
+      );
+    } else
+      accepted = await app.kernel.get("jobs").createJob(fixture.actor, {
+        requestId: randomUUID(),
+        projectId: host.projectId,
+        sessionId: host.sessionId,
+        canvasId: canvas.id,
+        threadId: thread.threadId,
+        runId,
+        expectedScopeGeneration: handle.describe().generation,
+        expectedBranchGeneration: handle.branchGeneration,
+        jobType: video ? "video_generation" : "image_generation",
+        payload: {
+          prompt: "一个蓝色方块",
+          model: mediaModel.id,
+          provider_instance_id: mediaProvider.id,
+          ...(video
+            ? { duration: 1, resolution: "480p", aspect_ratio: "16:9" }
+            : {}),
+        },
+      });
+    if (!accepted) throw new Error("实际生成工具没有接纳媒体Job。");
+    const acceptedJob = accepted;
     const target = generationFileTargetSchema.parse(accepted.file_target);
     expect(target).toMatchObject({
       kind: "task",
@@ -250,18 +327,31 @@ export async function createUnifiedMediaRecoveryFixture(
       originRunId: runId,
     });
     const job = async () => {
-      const response = await client.request(`/api/jobs/${accepted.id}`);
+      const response = await client.request(`/api/jobs/${acceptedJob.id}`);
       expect(response.status).toBe(200);
       return jobResponseSchema.parse(response.body).job;
     };
     if (options.submit !== false) {
-      worker = startMediaWorker(app);
+      worker = startMediaWorker(
+        app,
+        video ? "video_generation_jobs" : "image_generation_jobs",
+      );
       await vi.waitFor(
         async () => expect((await job()).provider_job_id).toBe(supplier.handle),
         { timeout: 30_000 },
       );
       await worker.shutdown();
       worker = undefined;
+      if (video)
+        expect(supplier.submitted).toEqual([
+          {
+            model: "minimax-h3",
+            duration: 1,
+            resolution: "480p",
+            aspectRatio: "landscape",
+            replyType: "async",
+          },
+        ]);
     }
     return {
       actor: fixture.actor,
@@ -269,7 +359,7 @@ export async function createUnifiedMediaRecoveryFixture(
       runId,
       target,
       canvasId: canvas.id,
-      jobId: accepted.id,
+      jobId: acceptedJob.id,
       supplier,
       model,
       job,
@@ -293,7 +383,10 @@ export async function createUnifiedMediaRecoveryFixture(
       },
       startRecovery() {
         supplier.complete();
-        worker = startMediaWorker(app);
+        worker = startMediaWorker(
+          app,
+          video ? "video_generation_jobs" : "image_generation_jobs",
+        );
       },
       async terminalJob() {
         let result = await job();

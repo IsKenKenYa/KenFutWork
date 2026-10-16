@@ -75,6 +75,7 @@ import type {
   AvailableModel,
   AvailableVideoModel,
 } from "../generation/types.js";
+import { OwnedToolInterruption } from "../kernel/owned-tool-interruption.js";
 import { promptExecutionContext } from "../kernel/prompt-execution.js";
 import { publicToolArguments } from "../kernel/tool-arguments.js";
 import type {
@@ -1167,8 +1168,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             pollCount++;
 
             if (run.controller.signal.aborted) {
-              await jobSvc.cancelJob(actor, job.id).catch(() => {});
-              throw new Error("Run was canceled");
+              if (run.stopReason !== "host_shutdown")
+                await jobSvc.cancelJob(actor, job.id).catch(() => {});
+              throw new OwnedToolInterruption();
             }
 
             const current = await jobSvc.getJobForWorker(job.id);
@@ -1308,8 +1310,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             pollCount++;
 
             if (run.controller.signal.aborted) {
-              await jobSvc.cancelJob(actor, job.id).catch(() => {});
-              throw new Error("Run was canceled");
+              if (run.stopReason !== "host_shutdown")
+                await jobSvc.cancelJob(actor, job.id).catch(() => {});
+              throw new OwnedToolInterruption();
             }
 
             const current = await jobSvc.getJobForWorker(job.id);

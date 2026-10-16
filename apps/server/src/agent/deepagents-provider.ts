@@ -1,5 +1,6 @@
 import { HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { publicToolOutput } from "../features/code-ui/tool-lifecycle.js";
+import { OwnedToolInterruption } from "../kernel/owned-tool-interruption.js";
 import { publicToolArguments } from "../kernel/tool-arguments.js";
 import type { ToolExecutionObservation } from "../kernel/types.js";
 import type { KenFutWorkAgent } from "./deep-agent.js";
@@ -13,7 +14,7 @@ import {
 /** Private default binding: model/backend/persistence/factory are deliberately still native. */
 export interface DeepAgentsProviderBinding {
   createAgent(): KenFutWorkAgent;
-  config(): Parameters<KenFutWorkAgent["streamEvents"]>[1];
+  config(): Parameters<KenFutWorkAgent["streamEvents"]>[1] & object;
 }
 
 /** Existing factory and raw-event adaptation are reused, never a second agent loop. */
@@ -38,6 +39,26 @@ export function createDeepAgentsProvider(
                 content: message.content as HumanMessage["content"],
               }),
           );
+          const stream = (async function* () {
+            const config = binding.config();
+            const signal = context.signal;
+            if (!signal) {
+              yield* native.streamEvents({ messages }, config);
+              return;
+            }
+            const forwarded = new AbortController();
+            const onAbort = () => forwarded.abort(new OwnedToolInterruption());
+            signal.addEventListener("abort", onAbort, { once: true });
+            if (signal.aborted) onAbort();
+            try {
+              yield* native.streamEvents(
+                { messages },
+                { ...config, signal: forwarded.signal },
+              );
+            } finally {
+              signal.removeEventListener("abort", onAbort);
+            }
+          })();
           return adaptDeepAgentStream({
             runId: context.runId,
             sessionId: context.sessionId,
@@ -56,7 +77,7 @@ export function createDeepAgentsProvider(
               ? { idleTimeoutMs: context.idleTimeoutMs }
               : {}),
             ...(context.abortRun ? { abortRun: context.abortRun } : {}),
-            stream: native.streamEvents({ messages }, binding.config()),
+            stream,
           });
         },
       };

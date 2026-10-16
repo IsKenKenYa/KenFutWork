@@ -9,6 +9,7 @@ import {
 } from "../features/permissions/code-policy.js";
 import type { PermissionService } from "../features/permissions/permission-service.js";
 import { contributionFingerprint } from "./contribution-fingerprint.js";
+import { findOwnedToolInterruption } from "./owned-tool-interruption.js";
 import { publicToolArguments } from "./tool-arguments.js";
 import type {
   AgentRunEvent,
@@ -30,6 +31,7 @@ import type {
   ToolContributionSnapshot,
   ToolDefinition,
   ToolExecutionContext,
+  ToolExecutionObservation,
   ToolRegistry,
   ToolScope,
   TurnStoppingPayload,
@@ -408,7 +410,7 @@ export class ToolRegistryImpl implements ToolRegistry {
     let executionCompleted = false;
     let normalizedArgs = args;
     const observe = async (
-      phase: "started" | "completed" | "failed",
+      phase: ToolExecutionObservation["phase"],
       output?: unknown,
       error?: string,
     ) => {
@@ -647,10 +649,15 @@ export class ToolRegistryImpl implements ToolRegistry {
           .catch(() => {});
       if (!executionCompleted) {
         if (!observedStarted) await observe("started");
+        const interruption = findOwnedToolInterruption(error);
         await observe(
-          "failed",
+          interruption ? "cancelled" : "failed",
           undefined,
-          error instanceof Error ? error.message : String(error),
+          interruption
+            ? undefined
+            : error instanceof Error
+              ? error.message
+              : String(error),
         );
       }
       throw error;

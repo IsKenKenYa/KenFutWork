@@ -353,7 +353,7 @@ export interface SystemPromptRegistry {
 
 /** Private executor observation; providers receive no capability to mint these facts. */
 export type ToolExecutionObservation = {
-  phase: "started" | "completed" | "failed";
+  phase: "started" | "completed" | "failed" | "cancelled";
   runId: string | undefined;
   toolCallId: string | undefined;
   scopeHandle: ExecutionScopeHandle | undefined;
