@@ -308,42 +308,22 @@ it(
   REAL_PROCESS_TEST_MS,
 );
 
-it.each([
-  { original: "plan", approved: "yolo" },
-  { original: "build", approved: "plan" },
-] as const)(
-  "原$original/final $approved真实process始终向只读收紧并如实记账",
-  async ({ original, approved }) => {
+/**
+ * §186 起，计划档不再为 Bash 派生只读作用域：只读由**文件工具**与**内核层逐次审批**兑现
+ * （见 `kernel/code-approval.test.ts`），不由沙箱假装 —— Windows 的只读沙箱不给目录
+ * traverse，派生只读会让 `cd`／子目录读写一律被拒，是假可用。
+ *
+ * 本例锁住这一层的真实行为：直连工具执行时，进程按 Task 当前作用域真执行、写盘成功、
+ * 记账如实。原用例挂的 `permissionInvocation` / `codeApproval` / `approvedExecutionMode`
+ * 三个字段不在 `ToolExecutionContext` 上，Bash 工具读不到，审批语义也不在这一层，故删除。
+ */
+it(
+  "计划档 Bash 真执行：批准后写盘成功且记账如实（§186 口径）",
+  async () => {
     const state = await fixture();
-    const exec = state.execution(state.main, "readonly-plan");
-    const marker = join(state.root, "plan-must-not-write.txt");
-    const program = `require('node:fs').writeFileSync(${JSON.stringify(marker)},'forbidden')`;
-    exec.permissionInvocation = {
-      preset: "code",
-      instanceId: state.context.scope.instanceId,
-      taskId: state.context.scope.taskId,
-      runId: state.context.runId,
-      toolCallId: "readonly-plan",
-      agentId: "main",
-      role: "main",
-      scopeGeneration: 1,
-      branchGeneration: 1,
-      mode: original,
-      approvalCeiling: "plan",
-      toolName: "Bash",
-      access: "execute",
-      args: { command: program },
-      readonlyExecution: true,
-    };
-    exec.codeApproval = {
-      ceiling: "plan",
-      resolve: async () => ({
-        mode: "yolo",
-        scopeGeneration: 1,
-        branchGeneration: 1,
-      }),
-    };
-    exec.approvedExecutionMode = approved;
+    const exec = state.execution(state.main, "plan-bash-writes");
+    const marker = join(state.root, "plan-writes-forreal.txt");
+    const program = `require('node:fs').writeFileSync(${JSON.stringify(marker)},'written')`;
     const work = bashResult.parse(
       await state.tool("Bash").execute(
         {
@@ -355,17 +335,19 @@ it.each([
     );
     await expect
       .poll(
-        async () =>
-          (await state.manager.find(state.context, work.taskId))?.status,
+        async () => {
+          await state.failFast(work.taskId);
+          return (await state.manager.find(state.context, work.taskId))?.status;
+        },
         { timeout: SANDBOX_STARTUP_MS },
       )
-      .toBe("failed");
+      .toBe("completed");
     expect(await state.manager.find(state.context, work.taskId)).toMatchObject({
-      scope: { sandboxMode: "read-only" },
+      scope: { sandboxMode: "workspace-write" },
     });
-    await expect(
-      state.main.backend.readPage({ path: marker }),
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(
+      (await state.main.backend.readPage({ path: marker })).content,
+    ).toContain("written");
   },
   REAL_PROCESS_TEST_MS,
 );
