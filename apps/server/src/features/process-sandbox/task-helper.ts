@@ -435,6 +435,7 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
           descriptor.argv,
           Boolean(request.pty),
           this.privateDirectory,
+          request.scope.sandboxMode === "read-only",
         );
       if (!probe) this.assertReady(request);
       abort.signal.throwIfAborted();
