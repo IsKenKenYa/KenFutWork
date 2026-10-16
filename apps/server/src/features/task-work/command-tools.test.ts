@@ -11,19 +11,19 @@ import { join } from "node:path";
 import type { CodeExecutionScope } from "@kenfutwork/shared";
 import { afterEach, expect, it } from "vitest";
 import { z } from "zod";
-import type { ToolExecutionContext } from "../../kernel/types.js";
 import { AgentRunEventBus, ToolRegistryImpl } from "../../kernel/context.js";
+import type { ToolExecutionContext } from "../../kernel/types.js";
 import {
   createExecutionScopes,
   type ExecutionScopeHandle,
 } from "../execution/scope-service.js";
 import { createLocalInstanceService } from "../local-instance/service.js";
+import { createPermissionService } from "../permissions/permission-service.js";
 import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
 } from "../persistence/providers/postgres.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
-import { createPermissionService } from "../permissions/permission-service.js";
 import { createSettingsRepository } from "../settings/repository.js";
 import { createSettingsService } from "../settings/settings-service.js";
 import { createTaskCommandTools } from "./command-tools.js";

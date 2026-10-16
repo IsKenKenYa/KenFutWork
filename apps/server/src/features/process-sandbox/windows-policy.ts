@@ -1,8 +1,8 @@
 import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { executionEnvironment, prependExecutionPath } from "./environment.js";
 import { accountEnvironment } from "./account-command.js";
+import { executionEnvironment, prependExecutionPath } from "./environment.js";
 import type { ProcessSpawnRequest } from "./types.js";
 import type { NativeLaunch } from "./windows-broker.js";
 import { windowsCommand } from "./windows-broker.js";

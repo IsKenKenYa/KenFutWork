@@ -4,17 +4,17 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
-import { unixCommand } from "./command.js";
 import { accountCommand } from "./account-command.js";
+import { unixCommand } from "./command.js";
 import { executionEnvironment, prependExecutionPath } from "./environment.js";
 import { prepareLinuxSandboxArgv } from "./linux-launch.js";
 import type { ProcessOwner } from "./managed-process.js";
 import { ProcessOutputCapture } from "./output-capture.js";
 import { commandDirectory, unixPolicy } from "./policy.js";
 import type { HelperRequest, HelperResponse } from "./protocol.js";
-import { readonlyProbe } from "./readonly-probe.js";
 import { prepareLinuxProcessInspector } from "./pty-native-runtime.js";
 import { loadTaskPtyRuntime } from "./pty-runtime.js";
+import { readonlyProbe } from "./readonly-probe.js";
 import { losesExecutionRights } from "./scope-change.js";
 import type {
   ManagedProcessSnapshot,
