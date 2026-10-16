@@ -50,7 +50,7 @@ export function isDangerousTool(toolName: string): boolean {
  * 危险调用的完整判据 = 名称命中危险模式 **或** 属主声明的执行效果不是只读。
  *
  * 为什么要看声明：插件 bundle 的工具名（`mihome_control`/`ha_control`…）不进名表，
- * 只按名字判会**静默放行设备写入**（《docs/插件/HA插件规划.md》§3.3）。工具注册时由
+ * 只按名字判会**静默放行设备写入**（《HA 插件规划》§3.3，见 `docs/插件/HA插件规划.md`）。工具注册时由
  * 属主声明 `access`（内建工具在各自定义处、插件在 `ctx.tools.register`），内核随
  * `tool-pre-execute` 事件把它带到这里：`read` = 只读放行，`write`/`execute` = 默认档
  * 需审批。`undefined`（未声明的旧工具）维持按名字判，行为不变。

@@ -19,7 +19,10 @@ const verification = spawnSync(
 );
 if (verification.status !== 0) process.exit(verification.status ?? 1);
 const inventory = JSON.parse(
-  readFileSync(resolve(root, "docs/源码来源/ZCode源码清单.json"), "utf8"),
+  readFileSync(
+    resolve(root, "packages/third-party/zcode/来源清单.json"),
+    "utf8",
+  ),
 );
 const upstream = new Set(inventory.records.map((record) => record.target));
 const kimiInventory = JSON.parse(

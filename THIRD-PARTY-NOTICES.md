@@ -14,7 +14,7 @@
 | 版权人 | Z.AI Co., Ltd |
 | 许可 | Apache License 2.0 |
 | 落点 | `apps/web/src/components/workbench/zcode/`（仓库内别名 `@zui/*`）、`packages/zcode-*`（由 `scripts/vendor-zcode.mjs` 装配，`package.json` 声明 `license: "Apache-2.0"`） |
-| 义务履行 | 移植目录内保留上游 `LICENSE`、`NOTICE.md`、`THIRD-PARTY-NOTICES.md`（逐字节一致）；根 [`NOTICE.md`](NOTICE.md) 声明移植范围；逐文件来源、校验和与宿主适配偏差登记在 `docs/源码来源/ZCode源码清单.json`（3029 条记录），`scripts/vendor-zcode.mjs` 在清单建立后只核对漂移、不再复制 |
+| 义务履行 | 移植目录内保留上游 `LICENSE`、`NOTICE.md`、`THIRD-PARTY-NOTICES.md`（逐字节一致）；根 [`NOTICE.md`](NOTICE.md) 声明移植范围；逐文件来源、校验和与宿主适配偏差登记在 `packages/third-party/zcode/来源清单.json`（3029 条记录），`scripts/vendor-zcode.mjs` 在清单建立后只核对漂移、不再复制 |
 | 商标 | Apache-2.0 第 3 条不授予商标权；ZCode、Z.ai、GLM 归各自权利人，见 [`EULA.md`](EULA.md) §6 |
 
 ### A2. ai-elements（Apache-2.0，Vercel）与 ZCode 第一方包装

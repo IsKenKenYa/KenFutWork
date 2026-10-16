@@ -24,7 +24,7 @@
 ## HARD CONSTRAINTS
 
 - AGENTS.md 全部硬约束（提交纪律、文案门禁、测试纪律、禁提交密钥）；
-- vendored 改动最小化 + 登记 `docs/源码来源/ZCode源码清单.json`；
+- vendored 改动最小化 + 登记 `packages/third-party/zcode/来源清单.json`；
 - 契约改动走 `packages/shared` 单源 + Apifox 三连（import 为对外动作，无 CLI 登录则 BLOCKED）；
 - 不变量：工作台恒 Code 壳、Design 主区恒画布、Flow 入口随插件、Code Run 绑 Task 工作域；
 - 测试资源护栏：禁并行多测试实例。

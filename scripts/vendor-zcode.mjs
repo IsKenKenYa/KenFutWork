@@ -47,7 +47,7 @@ const donorManifest = JSON.parse(
 );
 const uiTarget = join(root, "apps/web/src/components/workbench/zcode");
 const revision = "29628c9acdb81b703bbd4080c207a0e7ce5e276e";
-const inventoryPath = join(root, "docs/源码来源/ZCode源码清单.json");
+const inventoryPath = join(root, "packages/third-party/zcode/来源清单.json");
 // 已建立清单后默认只核对，禁止重新复制覆盖宿主接线或并行修改。
 if (existsSync(inventoryPath)) {
   const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
@@ -318,7 +318,7 @@ if (existsSync(inventoryPath)) {
       );
   }
 
-  const inventory = join(root, "docs/源码来源/ZCode源码清单.json");
+  const inventory = join(root, "packages/third-party/zcode/来源清单.json");
   mkdirSync(dirname(inventory), { recursive: true });
   writeFileSync(
     inventory,

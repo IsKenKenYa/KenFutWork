@@ -9,7 +9,7 @@
   思考折叠组件、配套 lib（shiki 高亮、文件展示、diff 预览等）与视觉原语
   （`components/ui/`）
 - 每个移植文件头部带「zcode 照搬」来源注释与适配注记；适配点仅限 import
-  路径映射与宿主能力 stub（详见仓库 `docs/方案设计/Code模式ZCode-UI照搬执行手册.md`）
+  路径映射与宿主能力 stub（详见仓库 `docs/方案设计/Code模式移植与交接.md#code-模式-zcode-全量源码移植执行手册`）
 - 上游版权与许可证文本：`references/zcode/LICENSE`（Apache-2.0）、
   `references/zcode/NOTICE.md`
 
