@@ -20,6 +20,7 @@ import type {
 import type {
   ScopeRepository,
   StoredExecutionScope,
+  TaskScopeInputFence,
   TaskScopePatch,
 } from "./scope-repository.js";
 import {
@@ -57,6 +58,7 @@ export interface ExecutionScopes {
     actor: LocalActor,
     taskId: string,
     patch: TaskScopePatch,
+    inputFence?: TaskScopeInputFence,
   ): Promise<CodeExecutionScope>;
   onRevoke(listener: (event: ScopeRevocation) => Promise<void>): () => void;
   onUpdated(listener: (event: ScopeRevocation) => Promise<void>): () => void;
@@ -504,7 +506,7 @@ export function createExecutionScopes(options: ScopeOptions): ExecutionScopes {
     openTask: (actor, taskId) => open(actor, taskId),
     openRestoringTask: (actor, taskId, expectedGeneration) =>
       open(actor, taskId, expectedGeneration),
-    async updateTask(actor, taskId, patch) {
+    async updateTask(actor, taskId, patch, inputFence) {
       const workspace = await options.localInstance.resolve(actor);
       const stored = await requireStored(
         options.repository,
@@ -518,6 +520,17 @@ export function createExecutionScopes(options: ScopeOptions): ExecutionScopes {
           409,
         );
       const previous = codeExecutionScopeSchema.parse(stored.scope);
+      if (
+        inputFence &&
+        (inputFence.scopeGeneration !== previous.generation ||
+          inputFence.branchGeneration !== stored.branchGeneration ||
+          patch.sandboxMode === undefined)
+      )
+        throw new ExecutionScopeError(
+          "scope_conflict",
+          "这条输入的Task授权已改变，请重新提交。",
+          409,
+        );
       if (stored.preset === "design") {
         if (!options.repository.isProjectOpen)
           throw new ExecutionScopeError(
@@ -579,6 +592,7 @@ export function createExecutionScopes(options: ScopeOptions): ExecutionScopes {
       const pending = await options.repository.beginUpdate(
         previous,
         normalizedPatch,
+        inputFence,
       );
       if (!pending)
         throw new ExecutionScopeError(

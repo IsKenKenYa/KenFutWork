@@ -1,6 +1,7 @@
 import type {
   ExecutionMode,
   zcodeUiProtocol as protocol,
+  SandboxMode,
 } from "@kenfutwork/shared";
 import type { ToolContributionSnapshot } from "../../kernel/types.js";
 import type { ModelInvocationSnapshot } from "../../providers/types.js";
@@ -13,6 +14,8 @@ export interface CodeAdmittedInput {
   runId: string;
   modelInvocation: ModelInvocationSnapshot;
   frozenContributions?: ToolContributionSnapshot;
+  /** 本次用户输入待消费的物理权限选择；历史重试不得重新签发。 */
+  pendingScopeSelection?: SandboxMode;
   scopeGeneration: number;
   branchGeneration: number;
   status: "queued" | "reserved" | "active" | "settled" | "discarded";

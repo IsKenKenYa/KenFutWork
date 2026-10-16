@@ -3112,6 +3112,10 @@ export class CodeUiService {
                 payload.expectedForegroundExecutionId !== activeExecution
               )
                 return { state, activeRunId: current.active_run_id };
+              // 尚未派发的权限选择与停止同一根锁失效；迟到CAS不能再次签发。
+              for (const record of state.inputs ?? [])
+                if (record.runId === execution)
+                  delete record.pendingScopeSelection;
               const stopped =
                 state.inputs?.filter(
                   (entry) =>
@@ -3571,6 +3575,36 @@ export class CodeUiService {
         const active = root.state?.inputs?.find(
           (input) => input.runId === previous && input.status === "active",
         );
+        // 在接纳边界用原resolver固定别名语义；不能先用current补flag再解释raw plan。
+        const currentExecution = resolveExecutionState({
+          mode: current.config.mode,
+          ...(current.config.planEnabled !== undefined
+            ? { planEnabled: current.config.planEnabled }
+            : {}),
+        });
+        const execution = resolveExecutionState(
+          {
+            ...(payload.mode !== undefined
+              ? {
+                  mode: protocol.commandPayloadSchemas.switchCollaborationMode.parse(
+                    { mode: payload.mode },
+                  ).mode,
+                }
+              : {}),
+            ...(executionMode === "plan"
+              ? { planEnabled: true }
+              : payload.planEnabled !== undefined
+                ? { planEnabled: payload.planEnabled }
+                : {}),
+          },
+          currentExecution,
+        );
+        const requestedSandboxMode =
+          !compact && payload.mode !== undefined && payload.mode !== "plan"
+            ? execution.mode === "yolo"
+              ? ("danger-full-access" as const)
+              : ("workspace-write" as const)
+            : undefined;
         const requestedGuide =
           !compact &&
           busy &&
@@ -3583,6 +3617,9 @@ export class CodeUiService {
           active?.intent.kind === "sendText" &&
           (!this.deps.captureContributions || !!active.frozenContributions) &&
           active.executionMode === executionMode &&
+          active.intent.mode === execution.mode &&
+          (requestedSandboxMode === undefined ||
+            root.sandbox_mode === requestedSandboxMode) &&
           canonical(workContextForRun(root.state!, previous!)) ===
             canonical(workContext) &&
           !codeInputs.length;
@@ -3617,30 +3654,6 @@ export class CodeUiService {
             };
           settlements = held.settlements;
         }
-        // 在接纳边界用原resolver固定别名语义；不能先用current补flag再解释raw plan。
-        const currentExecution = resolveExecutionState({
-          mode: current.config.mode,
-          ...(current.config.planEnabled !== undefined
-            ? { planEnabled: current.config.planEnabled }
-            : {}),
-        });
-        const execution = resolveExecutionState(
-          {
-            ...(payload.mode !== undefined
-              ? {
-                  mode: protocol.commandPayloadSchemas.switchCollaborationMode.parse(
-                    { mode: payload.mode },
-                  ).mode,
-                }
-              : {}),
-            ...(executionMode === "plan"
-              ? { planEnabled: true }
-              : payload.planEnabled !== undefined
-                ? { planEnabled: payload.planEnabled }
-                : {}),
-          },
-          currentExecution,
-        );
         const intent: protocol.ConversationInputIntent = {
           sourceCommandId: envelope.commandId,
           queueItemId: randomUUID(),
@@ -3687,6 +3700,9 @@ export class CodeUiService {
         };
         const record: CodeAdmittedInput = {
           executionMode,
+          ...(!guide && requestedSandboxMode
+            ? { pendingScopeSelection: requestedSandboxMode }
+            : {}),
           intent,
           runId: guide ? previous! : runId,
           modelInvocation,
@@ -4084,6 +4100,92 @@ export class CodeUiService {
     };
   }
 
+  /** 新输入已占有原Run身份后才更新物理权限；不从历史重试或后台续跑重新签发。 */
+  private async applyInputScope(
+    user: LocalActor,
+    sessionId: string,
+    runId: string,
+  ): Promise<void> {
+    const workspace = await this.deps.localInstance.resolve(user);
+    const before = await this.deps.repository.find(
+      workspace.instanceId,
+      sessionId,
+    );
+    const input = before?.state?.inputs?.find(
+      (record) => record.runId === runId && record.status === "active",
+    );
+    if (!input?.pendingScopeSelection || input.historyOf) return;
+    if (
+      !before ||
+      before.archived ||
+      before.execution_state !== "ready" ||
+      before.active_run_id !== runId ||
+      input.scopeGeneration !== Number(before.scope_generation) ||
+      input.branchGeneration !== Number(before.branch_generation) ||
+      before.state?.inputs?.some((record) => record.status === "reserved")
+    )
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "这条输入的Task授权或运行已改变，请重新提交。",
+      );
+    const updated =
+      before.sandbox_mode === input.pendingScopeSelection
+        ? { generation: Number(before.scope_generation) }
+        : await this.deps.executionScopes.updateTask(
+            user,
+            sessionId,
+            { sandboxMode: input.pendingScopeSelection },
+            {
+              scopeGeneration: input.scopeGeneration,
+              branchGeneration: input.branchGeneration,
+              runId,
+              sourceCommandId: input.intent.sourceCommandId,
+            },
+          );
+    await this.deps.repository.appendEvent(
+      workspace.instanceId,
+      sessionId,
+      {
+        key: `input-scope:${runId}/${updated.generation}`,
+        fingerprint: `${input.scopeGeneration}/${updated.generation}`,
+        event: {
+          type: "input.scope_selected",
+          runId,
+          scopeGeneration: updated.generation,
+        },
+      },
+      (root) => {
+        const state = structuredClone(root.state!);
+        const active = state.inputs?.find(
+          (record) => record.runId === runId && record.status === "active",
+        );
+        if (
+          root.archived ||
+          root.execution_state !== "ready" ||
+          root.active_run_id !== runId ||
+          Number(root.scope_generation) !== updated.generation ||
+          Number(root.branch_generation) !== input.branchGeneration ||
+          active?.scopeGeneration !== input.scopeGeneration ||
+          active.pendingScopeSelection !== input.pendingScopeSelection
+        )
+          throw new CodeUiRepositoryError(
+            "command_conflict",
+            "权限更新期间Task已停止或授权改变，输入未执行。",
+          );
+        // 只承接本次内部授权变化；外部撤权的代际不在此迁移。
+        for (const record of state.inputs ?? [])
+          if (
+            ["active", "queued"].includes(record.status) &&
+            record.scopeGeneration === input.scopeGeneration &&
+            record.branchGeneration === input.branchGeneration
+          )
+            record.scopeGeneration = updated.generation;
+        delete active.pendingScopeSelection;
+        return { state, activeRunId: root.active_run_id };
+      },
+    );
+  }
+
   private async runTurn(
     user: LocalActor,
     project: CodeUiWorkspace,
@@ -4103,6 +4205,7 @@ export class CodeUiService {
           "command_conflict",
           "执行宿主已关闭，不能启动新运行。",
         );
+      await this.applyInputScope(user, sessionId, runId);
       const scopeHandle = await this.deps.executionScopes.openTask(
         user,
         sessionId,

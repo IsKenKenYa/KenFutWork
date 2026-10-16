@@ -17,6 +17,13 @@ export type TaskScopePatch = {
   additionalDirectories?: AdditionalDirectory[] | undefined;
   sandboxMode?: SandboxMode | undefined;
 };
+/** 仅新输入的权限效果使用；与原Task/Run/输入身份同一CAS校验。 */
+export type TaskScopeInputFence = {
+  scopeGeneration: number;
+  branchGeneration: number;
+  runId: string;
+  sourceCommandId: string;
+};
 export interface ScopeRepository {
   isProjectOpen?(scope: CodeExecutionScope): Promise<boolean>;
   load(
@@ -26,6 +33,7 @@ export interface ScopeRepository {
   beginUpdate?(
     scope: CodeExecutionScope,
     patch: TaskScopePatch,
+    inputFence?: TaskScopeInputFence,
   ): Promise<StoredExecutionScope | null>;
   finishUpdate?(
     scope: CodeExecutionScope,
@@ -97,7 +105,7 @@ export function createScopeRepository(
         );
       return project?.id === scope.projectId;
     },
-    async beginUpdate(scope, patch) {
+    async beginUpdate(scope, patch, inputFence) {
       const row = await persistence
         .forInstance(scope.instanceId)
         .queryOne<ScopeRow>(
@@ -110,6 +118,14 @@ export function createScopeRepository(
             and p.id = s.project_id and p.kind in ('code','design') and p.enabled_modes && array['code','design']::text[] and p.archived_at is null
             and s.id = $1 and s.scope_generation = $2 and s.deleted_at is null
             and s.parent_session_id is null and s.execution_state <> 'revoking'
+            and ($5::bigint is null or (
+              s.branch_generation = $5 and s.active_run_id = $6::uuid
+              and s.state->'inputs' @> $7::jsonb
+              and not exists (
+                select 1 from jsonb_array_elements(s.state->'inputs') input
+                where input->>'status' = 'reserved'
+              )
+            ))
           returning s.*`,
           [
             scope.taskId,
@@ -118,6 +134,22 @@ export function createScopeRepository(
               ? null
               : JSON.stringify(patch.additionalDirectories),
             patch.sandboxMode ?? null,
+            inputFence?.branchGeneration ?? null,
+            inputFence?.runId ?? null,
+            inputFence
+              ? JSON.stringify([
+                  {
+                    runId: inputFence.runId,
+                    status: "active",
+                    scopeGeneration: inputFence.scopeGeneration,
+                    branchGeneration: inputFence.branchGeneration,
+                    pendingScopeSelection: patch.sandboxMode,
+                    intent: {
+                      sourceCommandId: inputFence.sourceCommandId,
+                    },
+                  },
+                ])
+              : null,
           ],
         );
       return row ? fromRow(row) : null;
