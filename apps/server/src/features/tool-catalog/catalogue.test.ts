@@ -6,9 +6,77 @@ import type { AgentMiddleware } from "langchain";
 import { expect, it } from "vitest";
 import { createRuntimeTestInstance } from "../../agent/runtime-test-fixtures.js";
 import { AgentRunEventBus, ToolRegistryImpl } from "../../kernel/context.js";
+import { createEnterPlanModeToolDefinition } from "../code-ui/enter-plan.js";
+import { createExitPlanModeToolDefinition } from "../code-ui/exit-plan.js";
+import { archiveTaskFixture } from "../context-history/test-fixture.js";
 import type { StoredExecutionScope } from "../execution/scope-repository.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import { createToolCatalogueMiddleware } from "./catalogue.js";
+
+it.each(["code", "design"] as const)(
+  "共享Task的%s主Run在实际模型目录保留共享规划工具，explore不可见",
+  async (preset) => {
+    const task = await archiveTaskFixture();
+    try {
+      const registry = new ToolRegistryImpl(new AgentRunEventBus());
+      registry.register(
+        createEnterPlanModeToolDefinition({
+          control: { enter: async () => "entered" },
+        }),
+      );
+      registry.register(
+        createExitPlanModeToolDefinition({
+          control: { exit: async () => "exited" },
+        }),
+      );
+      const names = async (handle: typeof task.handle) => {
+        const middleware = createToolCatalogueMiddleware(
+          {
+            registry,
+            resolution: {
+              preset,
+              scopeHandle: handle,
+              backendFactory: () => handle.backend,
+            },
+            execution: {
+              ...task.execution,
+              scopeHandle: handle,
+              workContext: { preset },
+              codeApproval: {
+                ceiling: "yolo",
+                resolve: async () => ({
+                  mode: "plan",
+                  scopeGeneration: task.identity.generation,
+                  branchGeneration: 1,
+                }),
+              },
+            },
+          },
+          { generation: task.identity.generation, names: new Set() },
+          async () => 5,
+        );
+        const request = { tools: [], messages: [] } as unknown as Parameters<
+          NonNullable<AgentMiddleware["wrapModelCall"]>
+        >[0];
+        let offered: string[] = [];
+        if (!middleware.wrapModelCall) throw new Error("规划目录中间件未装配");
+        await middleware.wrapModelCall(request, async (next) => {
+          offered = next.tools.map((tool) => String(tool.name));
+          return new AIMessage("plan");
+        });
+        return offered;
+      };
+      expect(await names(task.handle)).toEqual(
+        expect.arrayContaining(["EnterPlanMode", "ExitPlanMode"]),
+      );
+      expect(await names(task.handle.derive("explore", "reader"))).toEqual([
+        "ToolSearch",
+      ]);
+    } finally {
+      await task.cleanup();
+    }
+  },
+);
 
 it("下一模型请求重新核验真实scope代际，收紧权限撤销旧激活和写入schema", async () => {
   const temporary = await mkdtemp(join(tmpdir(), "kfw-tool-catalog-"));
