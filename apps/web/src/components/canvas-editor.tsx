@@ -18,8 +18,9 @@ import type { CanvasContent } from "@kenfutwork/shared";
 import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
+import { useCanvasDrafts } from "../hooks/use-canvas-drafts";
 import type { WebSocketHandle } from "../hooks/use-websocket";
+import { recoverCanvasDrafts } from "../lib/canvas-draft-recovery";
 import { isVideoUrl } from "../lib/canvas-elements";
 import { normalizeCanvasElements } from "../lib/canvas-normalize";
 import { shouldRefuseEmptySave } from "../lib/canvas-save-guard";
@@ -29,9 +30,11 @@ import {
 } from "../lib/canvas-save-session";
 import {
   canvasDocumentSettings,
+  canvasSceneKey,
   createCanvasSceneState,
 } from "../lib/canvas-scene-state";
 import { resolveCanvasSnapshotFiles } from "../lib/canvas-snapshot-files";
+import { triggerDownload } from "../lib/download";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
 import { CanvasStatsPanel } from "./canvas-stats-panel";
@@ -91,7 +94,16 @@ const SAVE_DEBOUNCE_MS = 1500;
 const THUMBNAIL_DEBOUNCE_MS = 10_000;
 const THUMBNAIL_MAX_SIZE = 400;
 
-export function CanvasEditor({
+export function CanvasEditor(props: CanvasEditorProps) {
+  return (
+    <CanvasEditorSession
+      key={JSON.stringify([props.projectId, props.canvasId])}
+      {...props}
+    />
+  );
+}
+
+function CanvasEditorSession({
   canvasId,
   projectId,
   revision,
@@ -131,6 +143,8 @@ export function CanvasEditor({
   }
   const canvasSaveSession = activeSaveSession.session;
   const canvasSceneState = activeSaveSession.scene;
+  const drafts = useCanvasDrafts(projectId, canvasId);
+  const [draftConflict, setDraftConflict] = useState(false);
   const [saveConflict, setSaveConflict] = useState<{
     session: ReturnType<typeof createCanvasSaveSession>;
     message: string;
@@ -143,15 +157,59 @@ export function CanvasEditor({
   // Tracks whether the one-time normalization pass has already run
   const normalizedRef = useRef(false);
 
+  const writeDraft = useCallback(
+    (
+      content: CanvasContent,
+      submitted: { revision: string; sceneKey: string } | null = null,
+    ) => {
+      const baseline = canvasSceneState.baseline;
+      const files = canvasSaveSession.knownFiles;
+      return drafts.write({
+        content,
+        base: {
+          revision: canvasSaveSession.revision ?? revision,
+          content: {
+            ...baseline.confirmed,
+            elements: [...baseline.confirmed.elements],
+            files,
+          },
+          localContent: {
+            ...baseline.local,
+            elements: [...baseline.local.elements],
+            files,
+          },
+        },
+        submitted,
+      });
+    },
+    [canvasSaveSession, canvasSceneState, drafts.write, revision],
+  );
   const sendCanvasSave = useCallback(
-    (content: CanvasContent, expectedRevision: string | null) =>
-      saveCanvas(accessTokenRef.current, canvasId, content, expectedRevision),
-    [canvasId],
+    (content: CanvasContent, expectedRevision: string | null) => {
+      const draft = writeDraft(content, {
+        revision: expectedRevision ?? revision,
+        sceneKey: canvasSceneKey(content),
+      });
+      return saveCanvas(
+        accessTokenRef.current,
+        canvasId,
+        content,
+        expectedRevision,
+      ).then((result) => {
+        void draft.acknowledge(result);
+        return result;
+      });
+    },
+    [canvasId, revision, writeDraft],
   );
   const sendCanvasKeepalive = useCallback(
     (content: CanvasContent, expectedRevision: string | null) => {
       const snapshot = structuredClone(content);
       const savedScene = canvasSceneState.captureSave(snapshot);
+      const draft = writeDraft(snapshot, {
+        revision: expectedRevision ?? revision,
+        sceneKey: savedScene.key,
+      });
       return saveCanvas(
         accessTokenRef.current,
         canvasId,
@@ -162,10 +220,11 @@ export function CanvasEditor({
         },
       ).then((result) => {
         canvasSceneState.acknowledgeSave(savedScene, result.revision);
+        void draft.acknowledge(result);
         return result;
       });
     },
-    [canvasId, canvasSceneState],
+    [canvasId, canvasSceneState, revision, writeDraft],
   );
   const onSaveConflict = useCallback(
     (error: Error) =>
@@ -487,58 +546,6 @@ export function CanvasEditor({
     [onApiReady],
   );
 
-  // Normalize agent-created elements on initial load.
-  // Uses DOM text measurement to fix server-side approximation errors.
-  useEffect(() => {
-    if (!excalidrawApi || normalizedRef.current) return;
-    normalizedRef.current = true;
-
-    // Run normalization after Excalidraw has loaded fonts.
-    // Store the handle so we can cancel on unmount to prevent memory leaks.
-    const idleHandle = ric(() => {
-      try {
-        const sceneElements = excalidrawApi.getSceneElements();
-        canvasSceneState.hydrate({
-          elements: sceneElements,
-          appState: canvasDocumentSettings(excalidrawApi.getAppState()),
-        });
-        // Create mutable copies for normalization
-        const mutableElements = sceneElements.map((el) => ({ ...el }));
-        const { changed } = normalizeCanvasElements(mutableElements);
-
-        if (changed) {
-          console.log("[canvas-editor] normalized agent-created elements");
-          excalidrawApi.updateScene({
-            elements: mutableElements,
-            // 旧写法 "NONE" 不在 0.18 的捕获枚举（NEVER/IMMEDIATELY/EVENTUALLY）里，
-            // 运行时不匹配任何分支、等价 EVENTUALLY；这里保持原值以免改变撤销栈行为。
-            captureUpdate: "NONE" as CaptureUpdateActionType,
-          });
-          // Persist normalized elements to DB
-          const files = buildKnownFiles(excalidrawApi.getFiles());
-          const appState = excalidrawApi.getAppState();
-          saveCanvasContent({
-            elements: mutableElements.filter((el) => !el.isDeleted),
-            appState: canvasDocumentSettings(appState),
-            files,
-          }).catch((err: Error) =>
-            console.warn("[canvas-editor] normalization save failed:", err),
-          );
-        }
-      } catch (err) {
-        console.warn("[canvas-editor] normalization failed:", err);
-      }
-
-      // Mark hydrated after normalization — auto-save is now safe.
-      // Before this point, onChange may fire with incomplete element lists
-      // during Excalidraw's internal initialization, which would cause a
-      // FULL REPLACE with empty content and silently wipe existing data.
-      hydratedRef.current = true;
-      setIsHydrated(true);
-    });
-    return () => cic(idleHandle);
-  }, [buildKnownFiles, canvasSceneState, excalidrawApi, saveCanvasContent]);
-
   const queueSceneSave = useCallback(
     (elements: readonly ExcalidrawElement[], appState: AppState) => {
       // --- 1. Debounced save ---
@@ -547,6 +554,13 @@ export function CanvasEditor({
       // Mark that a save is pending. The full payload is built lazily inside
       // the timeout to avoid constructing the files map on every drag frame.
       pendingSaveRef.current = { elements: [], appState: {}, files: {} };
+      writeDraft({
+        elements: elements.map((element) => ({ ...element })),
+        appState: canvasDocumentSettings(appState),
+        files: excalidrawApi
+          ? buildKnownFiles(excalidrawApi.getFiles())
+          : { ...initialFilesRef.current },
+      });
 
       saveTimerRef.current = setTimeout(() => {
         // Build the full payload only when the debounce fires
@@ -581,7 +595,7 @@ export function CanvasEditor({
           .catch((err) => console.error("[canvas-editor] save failed:", err));
       }, SAVE_DEBOUNCE_MS);
     },
-    [buildKnownFiles, excalidrawApi, saveCanvasContent],
+    [buildKnownFiles, excalidrawApi, saveCanvasContent, writeDraft],
   );
 
   const queueThumbnail = useCallback(() => {
@@ -698,6 +712,94 @@ export function CanvasEditor({
     },
     [canvasSceneState, publishSelection, queueSceneSave, queueThumbnail],
   );
+
+  // 先确认服务端快照的 hydrated 表示，再接纳本地稿，初始化空帧不能成为保存。
+  useEffect(() => {
+    if (!excalidrawApi || normalizedRef.current || !drafts.loaded) return;
+    const idleHandle = ric(() => {
+      normalizedRef.current = true;
+      const initialScene = {
+        elements: excalidrawApi.getSceneElements(),
+        appState: canvasDocumentSettings(excalidrawApi.getAppState()),
+      };
+      canvasSceneState.hydrate(initialScene);
+      const recovered = recoverCanvasDrafts(initialContent, drafts.drafts);
+      if (!recovered) setDraftConflict(true);
+      const content = recovered ?? initialContent;
+      // 任何一份冲突均不接纳之前的部分结果，所有原稿仍可单独导出。
+      const restored = !!recovered && drafts.drafts.length > 0;
+      const requiresFence =
+        restored &&
+        drafts.drafts.some(
+          (draft) =>
+            draft.submitted?.revision === canvasSaveSession.revision &&
+            draft.submitted.sceneKey !== canvasSceneKey(draft.content),
+        );
+      if (restored) {
+        drafts.restored(drafts.drafts);
+        initialFilesRef.current = content.files;
+        const inline = Object.values(content.files).filter(
+          (file) =>
+            typeof file.dataURL === "string" &&
+            file.dataURL.startsWith("data:"),
+        );
+        if (inline.length)
+          excalidrawApi.addFiles(inline as unknown as BinaryFileData[]);
+      }
+      const elements = (
+        restored ? content.elements : initialScene.elements
+      ).map((element) => ({ ...element }));
+      const { changed } = normalizeCanvasElements(elements);
+      hydratedRef.current = true;
+      setIsHydrated(true);
+      if (changed || restored) {
+        const settings = restored
+          ? canvasDocumentSettings(content.appState)
+          : initialScene.appState;
+        const currentAppState = excalidrawApi.getAppState();
+        const appState = {
+          viewBackgroundColor:
+            typeof settings.viewBackgroundColor === "string"
+              ? settings.viewBackgroundColor
+              : currentAppState.viewBackgroundColor,
+          gridModeEnabled:
+            typeof settings.gridModeEnabled === "boolean"
+              ? settings.gridModeEnabled
+              : currentAppState.gridModeEnabled,
+        };
+        excalidrawApi.updateScene({
+          elements: elements as unknown as readonly ExcalidrawElement[],
+          appState,
+          captureUpdate: "NONE" as CaptureUpdateActionType,
+        });
+        // updateScene 的 onChange 可延迟到下一帧；恢复完成即写本地日志。
+        handleChange(
+          elements as unknown as readonly ExcalidrawElement[],
+          excalidrawApi.getAppState(),
+        );
+        if (requiresFence && !canvasSceneState.isDirty)
+          queueSceneSave(
+            elements as unknown as readonly ExcalidrawElement[],
+            excalidrawApi.getAppState(),
+          );
+        else if (restored && !canvasSceneState.isDirty)
+          // 当前远端快照已覆盖全部恢复意图，无需再写服务器；仅确认原稿 token。
+          void drafts.confirmRestored(drafts.drafts);
+      }
+    });
+    return () => cic(idleHandle);
+  }, [
+    canvasSceneState,
+    canvasSaveSession,
+    drafts.drafts,
+    drafts.confirmRestored,
+    drafts.loaded,
+    drafts.restored,
+    excalidrawApi,
+    handleChange,
+    initialContent,
+    queueSceneSave,
+  ]);
 
   // Register screenshot RPC handler so the server can request canvas captures
   useEffect(() => {
@@ -1012,17 +1114,76 @@ export function CanvasEditor({
   // Allow any URL as a valid embeddable so our video links are accepted
   const validateEmbeddable = useCallback(() => true, []);
 
+  const exportDraft = async (content: CanvasContent, name: string) => {
+    try {
+      await triggerDownload(
+        `${name}.excalidraw`,
+        new Blob(
+          [
+            JSON.stringify({
+              type: "excalidraw",
+              version: 2,
+              source: "KenFutWork",
+              ...content,
+            }),
+          ],
+          { type: "application/json" },
+        ),
+      );
+    } catch {
+      setSaveHint("error");
+    }
+  };
+
   return (
     <ErrorBoundary
       onError={(err) => console.error("[canvas-editor] render crashed:", err)}
     >
-      <div className="h-full w-full relative">
+      <div className="h-full w-full relative" aria-busy={!isHydrated}>
         {saveConflict?.session === canvasSaveSession && (
           <div
             role="alert"
             className="absolute left-1/2 top-4 z-40 max-w-[min(90vw,48rem)] -translate-x-1/2 rounded-md border border-destructive/40 bg-card px-3 py-2 text-xs text-destructive shadow-card"
           >
             {saveConflict.message}
+            <button
+              type="button"
+              className="ml-3 underline"
+              onClick={() => {
+                const content = buildSavePayloadRef.current();
+                if (content) void exportDraft(content, "画布草稿");
+              }}
+            >
+              导出草稿
+            </button>
+          </div>
+        )}
+        {draftConflict && (
+          <div
+            role="alert"
+            className="absolute bottom-16 left-4 z-40 rounded-md border border-destructive/40 bg-card px-3 py-2 text-xs"
+          >
+            本地草稿存在冲突
+            {drafts.drafts.map((draft, index) => (
+              <button
+                key={draft.token}
+                type="button"
+                className="ml-3 underline"
+                onClick={() =>
+                  void exportDraft(draft.content, `画布草稿-${index + 1}`)
+                }
+              >
+                导出草稿 {index + 1}
+              </button>
+            ))}
+          </div>
+        )}
+        {drafts.error && (
+          <div
+            role="status"
+            className="absolute bottom-4 left-4 z-40 rounded-md border border-border bg-card px-3 py-2 text-xs"
+          >
+            {drafts.error}
           </div>
         )}
         {/* 提示放顶部居中（用户要求）：底部居中会被绘图工具条压住，角落又容易被忽略 */}
@@ -1042,6 +1203,7 @@ export function CanvasEditor({
           // 原生 UI 语言：不指定则默认英文（右键菜单 / 缩放 / 帮助 等全英文）
           langCode="zh-CN"
           theme={resolvedTheme === "dark" ? "dark" : "light"}
+          viewModeEnabled={!isHydrated}
           initialData={{
             // 服务端契约把画布内容存成不透明 JSON（Record<string, unknown>），
             // 进画布时才按 Excalidraw 场景类型收窄；形状由写端（本组件）保证。

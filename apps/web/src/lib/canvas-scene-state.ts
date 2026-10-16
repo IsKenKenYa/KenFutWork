@@ -215,14 +215,14 @@ export function canvasDocumentSettings(appState: {
   };
 }
 
-function sceneKey(scene: CanvasScene): string {
+export function canvasSceneKey(scene: CanvasScene): string {
   return JSON.stringify([
     scene.elements.filter((element) => !element.isDeleted),
     canvasDocumentSettings(scene.appState),
   ]);
 }
 
-function sceneFromKey(key: string): CanvasScene {
+export function canvasSceneFromKey(key: string): CanvasScene {
   const [elements, appState] = JSON.parse(key) as [
     CanvasScene["elements"],
     CanvasScene["appState"],
@@ -234,14 +234,14 @@ export function createCanvasSceneState(initial: {
   revision: string;
   content: CanvasContent;
 }) {
-  let currentKey = sceneKey(initial.content);
+  let currentKey = canvasSceneKey(initial.content);
   let savedKey = currentKey;
   let confirmedKey = currentKey;
   let version = 0;
   let savedVersion = 0;
   const knownRevisions = new Set([initial.revision]);
   const observe = (scene: CanvasScene): boolean => {
-    const next = sceneKey(scene);
+    const next = canvasSceneKey(scene);
     if (next === currentKey) return false;
     currentKey = next;
     version++;
@@ -271,14 +271,14 @@ export function createCanvasSceneState(initial: {
     acceptRemote(scene: CanvasScene, revision: string, confirmed = scene) {
       observe(scene);
       savedKey = currentKey;
-      confirmedKey = sceneKey(confirmed);
+      confirmedKey = canvasSceneKey(confirmed);
       savedVersion = version;
       knownRevisions.add(revision);
     },
     reconcileRemote(local: CanvasScene, remote: CanvasScene) {
       return reconcileCanvasScene({
-        base: sceneFromKey(confirmedKey),
-        localBase: sceneFromKey(savedKey),
+        base: canvasSceneFromKey(confirmedKey),
+        localBase: canvasSceneFromKey(savedKey),
         local,
         remote,
       });
@@ -291,6 +291,12 @@ export function createCanvasSceneState(initial: {
     },
     get version() {
       return version;
+    },
+    get baseline() {
+      return {
+        confirmed: canvasSceneFromKey(confirmedKey),
+        local: canvasSceneFromKey(savedKey),
+      };
     },
   };
 }
