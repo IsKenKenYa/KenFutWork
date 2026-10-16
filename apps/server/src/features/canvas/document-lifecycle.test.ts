@@ -205,40 +205,130 @@ it("其他实例不能借用文档ID进行条件删除", async () => {
   expect((await f.service.getCanvas(f.actor, first.id)).name).toBe("文档");
 });
 
-it("文档真实变化才广播，重放创建、同版本保存、GET和失败修改不形成通知回环", async () => {
+it("显式保存的新提交广播一次，重放创建、读取和过期修改不形成通知回环", async () => {
   const f = await fixture();
   const input = { name: "文档", requestId: randomUUID() };
   const first = await f.service.createCanvas(f.actor, "project", input);
-  await f.service.createCanvas(f.actor, "project", input);
-  await f.service.getCanvas(f.actor, first.id);
-  await f.service.saveCanvasContent(
+  expect(f.repository.notifyChanged).toHaveBeenCalledTimes(1);
+  expect(f.repository.notifyChanged).toHaveBeenNthCalledWith(
+    1,
+    f.actor.instanceId,
+    first.id,
+  );
+  const replay = await f.service.createCanvas(f.actor, "project", input);
+  expect(replay).toEqual(first);
+  expect(await f.service.getCanvas(f.actor, first.id)).toEqual(first);
+  expect(f.repository.notifyChanged).toHaveBeenCalledTimes(1);
+
+  const confirmed = await f.service.saveCanvasContent(
     f.actor,
     first.id,
     first.content,
     first.revision,
   );
-  expect(f.repository.notifyChanged).toHaveBeenCalledTimes(1);
+  expect(confirmed.revision).not.toBe(first.revision);
+  expect(f.repository.notifyChanged).toHaveBeenCalledTimes(2);
+  expect(f.repository.notifyChanged).toHaveBeenNthCalledWith(
+    2,
+    f.actor.instanceId,
+    first.id,
+  );
+  const refreshed = await f.service.getCanvas(f.actor, first.id);
+  expect(refreshed.content).toEqual(first.content);
+  expect(refreshed.revision).toBe(confirmed.revision);
+  expect(await f.service.getCanvas(f.actor, first.id)).toEqual(refreshed);
+  await expect(
+    f.service.saveCanvasContent(
+      f.actor,
+      first.id,
+      { ...first.content, elements: [{ id: "late-update" }] },
+      first.revision,
+    ),
+  ).rejects.toMatchObject({ code: "revision_conflict" });
+  expect(await f.service.getCanvas(f.actor, first.id)).toEqual(refreshed);
+  expect(f.repository.notifyChanged).toHaveBeenCalledTimes(2);
+
   const saved = await f.service.saveCanvasContent(
     f.actor,
     first.id,
     { elements: [{ id: "actual-update" }], appState: {}, files: {} },
-    first.revision,
+    confirmed.revision,
   );
-  expect(f.repository.notifyChanged).toHaveBeenCalledTimes(2);
-  await f.service.renameCanvas(f.actor, first.id, {
+  expect(saved.revision).not.toBe(confirmed.revision);
+  expect(f.repository.notifyChanged).toHaveBeenCalledTimes(3);
+  expect((await f.service.getCanvas(f.actor, first.id)).revision).toBe(
+    saved.revision,
+  );
+  const renamed = await f.service.renameCanvas(f.actor, first.id, {
     name: "改名",
     expectedName: "文档",
     expectedRevision: saved.revision,
   });
-  expect(f.repository.notifyChanged).toHaveBeenCalledTimes(3);
+  expect(renamed.name).toBe("改名");
+  expect(renamed.revision).toBe(saved.revision);
+  expect(f.repository.notifyChanged).toHaveBeenCalledTimes(4);
   await expect(
     f.service.deleteCanvas(f.actor, first.id, first.revision),
   ).rejects.toThrow("已改变");
-  expect(f.repository.notifyChanged).toHaveBeenCalledTimes(3);
-  await f.service.deleteCanvas(f.actor, first.id, saved.revision);
   expect(f.repository.notifyChanged).toHaveBeenCalledTimes(4);
+  await f.service.deleteCanvas(f.actor, first.id, saved.revision);
+  expect(f.repository.notifyChanged).toHaveBeenCalledTimes(5);
   expect(f.repository.notifyChanged).toHaveBeenLastCalledWith(
     f.actor.instanceId,
     first.id,
   );
+});
+
+it("生成事实重放保留用户移动后的提交且不重复广播，读取不会形成回环", async () => {
+  const f = await fixture();
+  const first = await f.service.createCanvas(f.actor, "project", {
+    name: "视频文档",
+  });
+  const input = {
+    canvasId: first.id,
+    insertionId: "video-job",
+    signedUrl: "https://example.com/generated.mp4",
+    width: 640,
+    height: 360,
+    mimeType: "video/mp4",
+  };
+  const inserted = await f.service.insertVideoElement(f.actor, input);
+  const generated = await f.service.getCanvas(f.actor, first.id);
+  expect(generated.revision).not.toBe(first.revision);
+  expect(generated.content.elements).toHaveLength(1);
+  expect(generated.content.elements[0]?.id).toBe(inserted.elementId);
+  expect(f.repository.notifyChanged).toHaveBeenCalledTimes(2);
+  expect(f.repository.notifyChanged).toHaveBeenNthCalledWith(
+    2,
+    f.actor.instanceId,
+    first.id,
+  );
+  const movedContent = {
+    ...generated.content,
+    elements: generated.content.elements.map((element) => ({
+      ...element,
+      x: 25,
+    })),
+  };
+  const moved = await f.service.saveCanvasContent(
+    f.actor,
+    first.id,
+    movedContent,
+    generated.revision,
+  );
+  expect(moved.revision).not.toBe(generated.revision);
+  expect(f.repository.notifyChanged).toHaveBeenCalledTimes(3);
+  expect(await f.service.insertVideoElement(f.actor, input)).toEqual(inserted);
+  const replayed = await f.service.getCanvas(f.actor, first.id);
+  expect(replayed.revision).toBe(moved.revision);
+  expect(replayed.content).toEqual(movedContent);
+  expect(await f.service.getCanvas(f.actor, first.id)).toEqual(replayed);
+  await expect(
+    f.service.insertVideoElement(f.actor, {
+      ...input,
+      signedUrl: "https://example.com/different.mp4",
+    }),
+  ).rejects.toThrow("生成结果发布身份冲突");
+  expect(await f.service.getCanvas(f.actor, first.id)).toEqual(replayed);
+  expect(f.repository.notifyChanged).toHaveBeenCalledTimes(3);
 });

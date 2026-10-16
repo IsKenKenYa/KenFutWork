@@ -860,7 +860,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: canvasSaveResponseSchema,
     summary: "保存画布内容",
     description:
-      "携带 expectedRevision 原子保存项目画布文件并返回新版本；文件已被其它编辑或 Git 修改时返回 409，不能静默覆盖。新增图片可含 base64 数据，请求体上限 50MB。",
+      "携带 expectedRevision 原子保存项目画布文件并返回新版本。版本必须使用最近读取或保存回执中的值；相同内容的显式保存也产生新版本。旧版本、其它编辑或 Git 修改导致版本不符时返回 409，不能静默覆盖。新增图片可含 base64 数据，请求体上限 50MB。",
   },
   // ---- chat.ts（会话与消息）----
   {

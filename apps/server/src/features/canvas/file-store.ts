@@ -152,7 +152,10 @@ export function createCanvasFileStore(options: {
     canvasId: string,
     expectedRevision: string | null | "latest",
     change: (previous: CanvasFileSnapshot | null) => CanvasContent,
-    beforePublish?: () => Promise<void>,
+    publication: {
+      beforePublish?: () => Promise<void>;
+      preserveUnchanged?: boolean;
+    } = {},
   ) => {
     canvasContentPath(options.projectRoot, canvasId);
     const root = await realpath(options.projectRoot);
@@ -172,9 +175,17 @@ export function createCanvasFileStore(options: {
         if (expectedRevision === "latest" && !previous) throw conflict();
         if ((previous?.revision ?? null) !== revision) throw conflict();
         const content = canvasContentSchema.parse(change(previous));
-        const bytes = Buffer.from(JSON.stringify(content));
+        if (
+          publication.preserveUnchanged &&
+          previous &&
+          isDeepStrictEqual(previous.content, content)
+        )
+          return previous;
+        // 显式保存即新提交；私有身份留在文件中，使字节SHA不复用旧CAS令牌。
+        const bytes = Buffer.from(
+          JSON.stringify({ ...content, _kenfutworkCommit: randomUUID() }),
+        );
         const result = { content, revision: hash(bytes) };
-        if (previous?.revision === result.revision) return result;
         const temporary = join(
           root,
           ".kenfutwork",
@@ -201,7 +212,7 @@ export function createCanvasFileStore(options: {
             throw invalidPath();
           if (((await readPath(path))?.revision ?? null) !== revision)
             throw conflict();
-          await beforePublish?.();
+          await publication.beforePublish?.();
           if ((await checkedRoot(options.projectRoot, false)) !== root)
             throw invalidPath();
           if (((await readPath(path))?.revision ?? null) !== revision)
@@ -256,19 +267,28 @@ export function createCanvasFileStore(options: {
     save: (canvasId, content, expectedRevision) =>
       publish(canvasId, expectedRevision, () => content),
     appendLatest: (canvasId, input) =>
-      publish(canvasId, "latest", (previous) => {
-        if (!previous) throw conflict();
-        return mergeAppend(previous.content, input);
-      }),
+      publish(
+        canvasId,
+        "latest",
+        (previous) => {
+          if (!previous) throw conflict();
+          return mergeAppend(previous.content, input);
+        },
+        { preserveUnchanged: true },
+      ),
     append: (canvasId, input, expectedRevision) =>
-      publish(canvasId, expectedRevision, (previous) =>
-        mergeAppend(
-          previous?.content ?? { elements: [], appState: {}, files: {} },
-          input,
-        ),
+      publish(
+        canvasId,
+        expectedRevision,
+        (previous) =>
+          mergeAppend(
+            previous?.content ?? { elements: [], appState: {}, files: {} },
+            input,
+          ),
+        { preserveUnchanged: true },
       ),
     update: (canvasId, content, expectedRevision, beforePublish) =>
-      publish(canvasId, expectedRevision, () => content, beforePublish),
+      publish(canvasId, expectedRevision, () => content, { beforePublish }),
   };
 }
 
