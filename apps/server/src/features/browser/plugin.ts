@@ -463,7 +463,20 @@ export function registerBrowserRoutes(
    */
   const tickets = createViewTicketStore();
   /** 当前那一路画面流的收尾函数（同一时刻只留一路，新流开起来时把上一路收掉）。 */
-  let activeStreamFinish: (() => void) | null = null;
+  let activeStreamFinish: (() => Promise<void>) | null = null;
+  const streamFinishes = new Set<() => Promise<void>>();
+  let closingStreams = false;
+  app.addHook("preClose", async () => {
+    closingStreams = true;
+    const results = await Promise.allSettled(
+      [...streamFinishes].map((finish) => finish()),
+    );
+    const errors = results.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (errors.length)
+      throw new AggregateError(errors, "浏览器画面流尚未确认关闭。");
+  });
   const authenticate = async (
     request: Parameters<LocalAccessVerifier["authenticate"]>[0],
     reply: FastifyReply,
@@ -657,6 +670,13 @@ export function registerBrowserRoutes(
         },
       });
     }
+    if (closingStreams)
+      return reply.code(503).send({
+        error: {
+          code: "browser_shutting_down",
+          message: "浏览器画面服务正在关闭。",
+        },
+      });
     reply.hijack();
     const response = reply.raw;
     response.writeHead(200, {
@@ -666,14 +686,37 @@ export function registerBrowserRoutes(
       "X-Accel-Buffering": "no",
     });
     let closed = false;
-    let stop: (() => Promise<void>) | null = null;
-    const finish = () => {
-      if (closed) return;
+    let resolveWatcher!: (stop: (() => Promise<void>) | null) => void;
+    const watcherReady = new Promise<(() => Promise<void>) | null>(
+      (resolve) => {
+        resolveWatcher = resolve;
+      },
+    );
+    let finished: Promise<void> | undefined;
+    const finish = (): Promise<void> => {
+      if (finished) return finished;
       closed = true;
-      if (activeStreamFinish === finish) activeStreamFinish = null;
-      void stop?.();
+      finished = (async () => {
+        const stop = await watcherReady;
+        await stop?.();
+      })().finally(() => {
+        if (activeStreamFinish === finish) activeStreamFinish = null;
+        streamFinishes.delete(finish);
+        response.off("close", responseClosed);
+        response.off("error", responseClosed);
+      });
+      // HTTP先结束，CDP准备/停止仍由同一个Promise归还，迟到句柄不能遗失。
       response.end();
+      return finished;
     };
+    const responseClosed = () => {
+      void finish().catch((error: unknown) => {
+        request.log.warn({ err: error }, "浏览器画面流资源释放失败。");
+      });
+    };
+    streamFinishes.add(finish);
+    response.once("close", responseClosed);
+    response.once("error", responseClosed);
     /**
      * 同一时刻只留**一路**画面流：上一路（面板换页/换视口时留下的那条）在这里收掉。
      *
@@ -683,10 +726,17 @@ export function registerBrowserRoutes(
      * 「正在打开内嵌浏览器…」再也不回来（pane 侧日志停在 `open() 开始`，服务端看不到那次
      * `status`）。上一路流下游已没人看（img 被换掉/卸载），收掉它不损失任何画面。
      */
-    activeStreamFinish?.();
+    const previous = activeStreamFinish;
     activeStreamFinish = finish;
     try {
-      stop = await options.browser.cdp.watch(meta, async (jpeg) => {
+      // 旧stop尚在恢复视口时不能启动新watch，避免旧操作迟到关闭新画面。
+      await previous?.();
+      if (closed) {
+        resolveWatcher(null);
+        await finish();
+        return reply;
+      }
+      const stop = await options.browser.cdp.watch(meta, async (jpeg) => {
         if (closed) return;
         const flushed = response.write(mjpegPart(jpeg));
         // 写不动就等 drain：上游（Chrome）以 ack 做背压，这里再堆帧只会把内存堆爆
@@ -694,17 +744,18 @@ export function registerBrowserRoutes(
           await new Promise<void>((resolve) => response.once("drain", resolve));
         }
       });
+      resolveWatcher(stop);
     } catch (error) {
+      resolveWatcher(null);
       // 已经 hijack 了：回不了 JSON，只能断流。但原因要留痕，否则面板里只显示「流断了」
       console.warn(
         "[browser] 画面流没能开始推送：",
         error instanceof Error ? error.message : error,
       );
-      finish();
+      await finish();
       return reply;
     }
-    request.raw.on("close", finish);
-    request.raw.on("error", finish);
+    if (closed) await finish();
     return reply;
   });
 

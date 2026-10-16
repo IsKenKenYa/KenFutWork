@@ -30,6 +30,55 @@ async function buildBrowserApp(browser: Record<string, unknown>) {
   return { app, headers: { authorization: `Bearer ${token}` } };
 }
 
+function browserStreamLatch() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
+
+async function withinBrowserCloseWindow(promise: Promise<unknown>) {
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise.then(() => true),
+      new Promise<boolean>((resolve) => {
+        deadline = setTimeout(() => resolve(false), 3000);
+      }),
+    ]);
+  } finally {
+    if (deadline) clearTimeout(deadline);
+  }
+}
+
+async function openBrowserFrameReader(
+  host: Awaited<ReturnType<typeof buildBrowserApp>>,
+) {
+  const { app, headers } = host;
+  app.log.level = "silent";
+  if (!app.server.listening) await app.listen({ port: 0, host: "127.0.0.1" });
+  const address = app.server.address();
+  if (!address || typeof address === "string")
+    throw new Error("浏览器画面流未取得真实HTTP端口。");
+  const minted = await app.inject({
+    headers,
+    method: "POST",
+    url: "/api/browser/cdp/view",
+    payload: { width: 800, height: 600 },
+  });
+  expect(minted.statusCode).toBe(200);
+  const ticket = (minted.json() as { ticket: string }).ticket;
+  const response = await fetch(
+    `http://127.0.0.1:${address.port}/api/browser/cdp/stream?ticket=${ticket}`,
+    { headers },
+  );
+  expect(response.status).toBe(200);
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("浏览器画面流没有读取通道。");
+  return reader;
+}
+
 describe("POST /api/browser/snapshot", () => {
   it("CDP 连着：回来真实渲染页 + 盒模型几何 + 视口 + 截图，source=cdp", async () => {
     const { app, headers } = await buildBrowserApp({
@@ -485,6 +534,191 @@ describe("面板画面流接口", () => {
       await second.cancel().catch(() => {});
     } finally {
       await app.close();
+    }
+  });
+
+  it("/stream：app.close主动结束仍被读取的MJPEG并停止CDP一次", async () => {
+    const frame = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+    let stopCount = 0;
+    const { app, headers } = await buildBrowserApp({
+      cdp: {
+        isConnected: () => true,
+        status: () => ({ status: "connected", currentUrl: "about:blank" }),
+        viewport: async () => ({ width: 800, height: 600, scale: 1 }),
+        resize: async () => {},
+        watch: async (
+          _options: unknown,
+          onFrame: (jpeg: Buffer) => Promise<void>,
+        ) => {
+          await onFrame(frame);
+          return async () => {
+            stopCount += 1;
+          };
+        },
+      },
+    });
+    app.log.level = "silent";
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const address = app.server.address();
+    if (!address || typeof address === "string")
+      throw new Error("浏览器画面流未取得真实HTTP端口。");
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const minted = await app.inject({
+        headers,
+        method: "POST",
+        url: "/api/browser/cdp/view",
+        payload: { width: 800, height: 600 },
+      });
+      expect(minted.statusCode).toBe(200);
+      const ticket = (minted.json() as { ticket: string }).ticket;
+      const response = await fetch(
+        `http://127.0.0.1:${address.port}/api/browser/cdp/stream?ticket=${ticket}`,
+        { headers },
+      );
+      expect(response.status).toBe(200);
+      reader = response.body?.getReader();
+      if (!reader) throw new Error("浏览器画面流没有读取通道。");
+      const first = await reader.read();
+      expect(first.done).toBe(false);
+      expect(Buffer.from(first.value ?? []).toString("latin1")).toContain(
+        "Content-Type: image/jpeg",
+      );
+
+      const closed = await Promise.race([
+        Promise.all([app.close(), reader.read()]).then(([, result]) =>
+          result.done ? "closed" : "unexpected-frame",
+        ),
+        new Promise<string>((resolve) => {
+          deadline = setTimeout(() => resolve("shutdown-blocked"), 3000);
+        }),
+      ]);
+      expect(closed).toBe("closed");
+      expect(stopCount).toBe(1);
+    } finally {
+      if (deadline) clearTimeout(deadline);
+      await reader?.cancel().catch(() => {});
+      await app.close();
+    }
+  });
+
+  it("/stream：watch迟到返回stop时先结束HTTP，再等待同一stop完成", async () => {
+    const watcherReady = browserStreamLatch();
+    const stopEntered = browserStreamLatch();
+    const stopReady = browserStreamLatch();
+    let stopCount = 0;
+    let shutdownFinished = false;
+    const host = await buildBrowserApp({
+      cdp: {
+        isConnected: () => true,
+        status: () => ({ status: "connected", currentUrl: "about:blank" }),
+        viewport: async () => ({ width: 800, height: 600, scale: 1 }),
+        resize: async () => {},
+        watch: async (
+          _options: unknown,
+          onFrame: (jpeg: Buffer) => Promise<void>,
+        ) => {
+          await onFrame(Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+          await watcherReady.promise;
+          return async () => {
+            stopCount += 1;
+            stopEntered.release();
+            await stopReady.promise;
+          };
+        },
+      },
+    });
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    try {
+      reader = await openBrowserFrameReader(host);
+      expect((await reader.read()).done).toBe(false);
+      const closing = host.app.close().then(() => {
+        shutdownFinished = true;
+      });
+      const eof = reader.read();
+      expect(await withinBrowserCloseWindow(eof)).toBe(true);
+      expect((await eof).done).toBe(true);
+      expect(shutdownFinished).toBe(false);
+      expect(stopCount).toBe(0);
+
+      watcherReady.release();
+      expect(await withinBrowserCloseWindow(stopEntered.promise)).toBe(true);
+      expect(shutdownFinished).toBe(false);
+      await reader.cancel();
+      stopReady.release();
+      expect(await withinBrowserCloseWindow(closing)).toBe(true);
+      expect(stopCount).toBe(1);
+    } finally {
+      watcherReady.release();
+      stopReady.release();
+      await reader?.cancel().catch(() => {});
+      await host.app.close();
+    }
+  });
+
+  it("/stream：旧流迟到stop与关闭不停止新流，关服仍独立归还两路资源", async () => {
+    const oldStopReady = browserStreamLatch();
+    const oldStopEntered = browserStreamLatch();
+    const stops = [0, 0];
+    let watches = 0;
+    const host = await buildBrowserApp({
+      cdp: {
+        isConnected: () => true,
+        status: () => ({ status: "connected", currentUrl: "about:blank" }),
+        viewport: async () => ({ width: 800, height: 600, scale: 1 }),
+        resize: async () => {},
+        watch: async (
+          _options: unknown,
+          onFrame: (jpeg: Buffer) => Promise<void>,
+        ) => {
+          const index = watches++;
+          await onFrame(Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+          return async () => {
+            stops[index] = (stops[index] ?? 0) + 1;
+            if (index === 0) {
+              oldStopEntered.release();
+              await oldStopReady.promise;
+            }
+          };
+        },
+      },
+    });
+    let first: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let second: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let secondOpening:
+      | Promise<ReadableStreamDefaultReader<Uint8Array>>
+      | undefined;
+    try {
+      first = await openBrowserFrameReader(host);
+      expect((await first.read()).done).toBe(false);
+      secondOpening = openBrowserFrameReader(host);
+      expect(await withinBrowserCloseWindow(oldStopEntered.promise)).toBe(true);
+      const oldEof = first.read();
+      expect(await withinBrowserCloseWindow(oldEof)).toBe(true);
+      expect((await oldEof).done).toBe(true);
+      expect(watches).toBe(1);
+      oldStopReady.release();
+      second = await secondOpening;
+      expect((await second.read()).done).toBe(false);
+      await first.cancel();
+      expect(stops).toEqual([1, 0]);
+
+      const eof = second.read();
+      const closing = host.app.close();
+      expect(await withinBrowserCloseWindow(Promise.all([closing, eof]))).toBe(
+        true,
+      );
+      expect((await eof).done).toBe(true);
+      expect(stops).toEqual([1, 1]);
+    } finally {
+      oldStopReady.release();
+      second ??= await secondOpening?.catch(() => undefined);
+      await Promise.all([
+        first?.cancel().catch(() => {}),
+        second?.cancel().catch(() => {}),
+      ]);
+      await host.app.close();
     }
   });
 });
