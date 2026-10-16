@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-15T03:03:15.817Z",
+  "updatedAt": "2026-10-16T04:14:31.143Z",
   "projects": {
     "8892388": {
       "branches": {
@@ -196,6 +196,20 @@
           "automationLifecycleStatus": "ACTIVE",
           "isArchived": false,
           "fetchedAt": "2026-10-15T03:03:15.817Z",
+          "lastKnownStatus": "ACTIVE"
+        },
+        "8737737": {
+          "projectId": 8892388,
+          "branchId": 8737737,
+          "name": "ai/20261016-from-main-harness-sync",
+          "branchKind": "ai",
+          "branchType": "SPRINT",
+          "sourceBranchId": 8691397,
+          "isAiBranch": true,
+          "isAiWritableBranch": true,
+          "automationLifecycleStatus": "ACTIVE",
+          "isArchived": false,
+          "fetchedAt": "2026-10-16T04:14:31.143Z",
           "lastKnownStatus": "ACTIVE"
         }
       },
@@ -574,6 +588,13 @@
       "branchId": 8730819,
       "sourceBranchId": 8691397,
       "createdAt": "2026-10-15T03:03:15.817Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8737737,
+      "sourceBranchId": 8691397,
+      "createdAt": "2026-10-16T04:14:31.143Z"
     }
   ]
 }
