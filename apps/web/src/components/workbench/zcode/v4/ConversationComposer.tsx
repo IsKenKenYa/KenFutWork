@@ -584,7 +584,7 @@ function ConversationComposerImpl({
   const configPickerScopeKey = `${workspaceKey}\0${draftScopeId}`;
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
-  const [executionMode, setExecutionMode] = useState<import("@kenfutwork/shared").ExecutionMode>("agent");
+  const [executionMode, setExecutionMode] = useState<import("@kenfutwork/shared").ExecutionMode>();
   const [configPickerState, setConfigPickerState] = useState<{
     scopeKey: string;
     activePicker: V4ComposerConfigPicker | null;
@@ -1397,7 +1397,7 @@ function ConversationComposerImpl({
           editorClearedOptimistically = true;
         }
         const sendResult = await onSendText(promptText, {
-          executionMode: submittedExecutionMode,
+          ...(submittedExecutionMode ? { executionMode: submittedExecutionMode } : {}),
           submission,
           telemetrySeed,
           ...(requestedDelivery ? { requestedDelivery } : {}),
@@ -2316,6 +2316,7 @@ function ConversationComposerImpl({
         <ExecutionModeChip
           sessionId={sessionId}
           disabled={disabled}
+          planEnabled={draftConfig?.planEnabled ?? snapshot?.config.planEnabled}
           onSwitchMode={onSwitchMode}
           onExecutionModeChange={setExecutionMode}
         />
@@ -2350,6 +2351,7 @@ function ConversationComposerImpl({
       runningSubagentCount,
       sessionId,
       snapshot?.backgroundWorks,
+      snapshot?.config.planEnabled,
       workspaceIdentity,
       workspacePath,
     ],

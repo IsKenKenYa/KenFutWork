@@ -10,6 +10,7 @@ import {
   type CodeUiWorkspace,
   canvasDocumentUpdatedMessageSchema,
   codeGoalControlSchema,
+  codeUiCommandCompanionSchema,
   codeUiControllerTaskListQuerySchema,
   type ExecutionMode,
   zcodeUiProtocol as protocol,
@@ -275,6 +276,7 @@ function publishOnce(operation: () => Promise<void>): () => Promise<void> {
 export function codeUiCommandFingerprint(
   envelope: protocol.CommandEnvelope,
   goalControl?: CodeGoalControl,
+  executionMode?: ExecutionMode,
 ): string {
   return createHash("sha256")
     .update(
@@ -283,6 +285,7 @@ export function codeUiCommandFingerprint(
         type: envelope.type,
         payload: envelope.payload,
         ...(goalControl ? { goalControl } : {}),
+        ...(executionMode ? { executionMode } : {}),
       }),
     )
     .digest("hex");
@@ -2457,6 +2460,14 @@ export class CodeUiService {
         input.goalControl === undefined
           ? undefined
           : codeGoalControlSchema.parse(input.goalControl);
+      const requestedMode = codeUiCommandCompanionSchema.parse(
+        args[0],
+      ).executionMode;
+      if (requestedMode === "loop")
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "循环模式已停用，请重新选择执行策略。",
+        );
       if (connectionId) {
         const bound = this.connections.require(
           workspace.instanceId,
@@ -2503,6 +2514,7 @@ export class CodeUiService {
           input.workspacePath,
           parsed.envelope,
           goalControl,
+          requestedMode,
         );
       if (
         parsed.envelope.type === "editUserQuery" ||
@@ -3330,10 +3342,17 @@ export class CodeUiService {
     workspacePath: string,
     envelope: protocol.CommandEnvelope,
     goalControl?: CodeGoalControl,
+    requestedMode?: ExecutionMode,
   ) {
     const release = this.deps.localInstance.beginAdmission();
     try {
-      return await this.admitText(user, workspacePath, envelope, goalControl);
+      return await this.admitText(
+        user,
+        workspacePath,
+        envelope,
+        goalControl,
+        requestedMode,
+      );
     } finally {
       release();
     }
@@ -3364,6 +3383,7 @@ export class CodeUiService {
     workspacePath: string,
     envelope: protocol.CommandEnvelope,
     goalControl?: CodeGoalControl,
+    requestedMode?: ExecutionMode,
   ) {
     if (!envelope.sessionId)
       throw new CodeUiRepositoryError("not_found", "发送命令缺少会话");
@@ -3377,6 +3397,7 @@ export class CodeUiService {
       loaded.instanceId,
       envelope,
       goalControl,
+      requestedMode,
     );
     if (replay) return { result: replay, publish: publishOnce(async () => {}) };
     try {
@@ -3386,6 +3407,7 @@ export class CodeUiService {
         envelope,
         loaded,
         goalControl,
+        requestedMode,
       );
     } catch (error) {
       // A concurrent copy may commit while this copy prepares resources. Return
@@ -3394,6 +3416,7 @@ export class CodeUiService {
         loaded.instanceId,
         envelope,
         goalControl,
+        requestedMode,
       );
       if (raced) return { result: raced, publish: publishOnce(async () => {}) };
       throw error;
@@ -3404,6 +3427,7 @@ export class CodeUiService {
     instanceId: string,
     envelope: protocol.CommandEnvelope,
     goalControl?: CodeGoalControl,
+    requestedMode?: ExecutionMode,
   ) {
     const queried = await this.deps.repository.queryCommands(
       instanceId,
@@ -3415,7 +3439,7 @@ export class CodeUiService {
     return this.deps.repository.applyCommand(
       instanceId,
       envelope,
-      codeUiCommandFingerprint(envelope, goalControl),
+      codeUiCommandFingerprint(envelope, goalControl, requestedMode),
       () => {
         throw new CodeUiRepositoryError(
           "command_conflict",
@@ -3431,6 +3455,7 @@ export class CodeUiService {
     envelope: protocol.CommandEnvelope,
     loaded: Awaited<ReturnType<CodeUiService["loadConversation"]>>,
     goalControl?: CodeGoalControl,
+    requestedMode?: ExecutionMode,
   ) {
     const compact = envelope.type === "compact";
     if (compact) protocol.commandPayloadSchemas.compact.parse(envelope.payload);
@@ -3474,17 +3499,19 @@ export class CodeUiService {
       loaded.root.id,
     );
     const executionMode =
+      requestedMode ??
       (await resolveCodeExecutionMode(
         this.deps.agentModes,
         thread.threadId,
         loaded.instanceId,
-      )) ?? "agent";
+      )) ??
+      "agent";
     const runId = randomUUID();
     const ack = await this.deps.repository.applyCommand(
       loaded.instanceId,
       envelope,
       // 运行身份来自本次事务；忙时立即发送先只认领，停止确认后才投影新一轮。
-      codeUiCommandFingerprint(envelope, goalControl),
+      codeUiCommandFingerprint(envelope, goalControl, requestedMode),
       (root) => {
         const host = createCodeUiConversation({
           goals: this.goals,
@@ -3606,9 +3633,11 @@ export class CodeUiService {
                   ).mode,
                 }
               : {}),
-            ...(payload.planEnabled !== undefined
-              ? { planEnabled: payload.planEnabled }
-              : {}),
+            ...(executionMode === "plan"
+              ? { planEnabled: true }
+              : payload.planEnabled !== undefined
+                ? { planEnabled: payload.planEnabled }
+                : {}),
           },
           currentExecution,
         );

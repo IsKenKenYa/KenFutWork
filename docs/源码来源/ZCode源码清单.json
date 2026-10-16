@@ -11850,7 +11850,7 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationComposer.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationComposer.tsx",
       "sha256": "9bfa3d1365cfa7bf10e45d521a3d7201381aa27697c79b4f33b356cd2f4a3c2d",
-      "copiedSha256": "a5adcc35ec8f39a62827ac61e6a0a3dfceb7dab98385550ec4a5577b9212b289",
+      "copiedSha256": "f23a56459fd97b84ee4c63c6138b37e6ec2d2e307faf749c6a21b9204328692d",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
@@ -11860,7 +11860,9 @@
         "宿主扩展（G5 顺手修复）：G2 引入的执行模式 chip 宿主件导入路径 ../../host/ExecutionModeChip.js 越出包界（vendor tsc TS2307），改为与其它宿主件一致的 @zui/host/ExecutionModeChip.js；仅路径修正，逻辑不动",
         "KenFutWork 宿主偏差：composer 挂权限档 chip PermissionTierChip（G7/C1 旧四档）",
         "Code/Design统一实施：共享输入区提供通用上下文贡献header，保留原输入与提交交互。",
-        "共享Harness执行策略：发送瞬间捕获宿主执行方式，与原Submission一起传入SessionPane；模式chip回传已持久化策略，未创建第二套提交或Goal循环。"
+        "共享Harness执行策略：发送瞬间捕获宿主执行方式，与原Submission一起传入SessionPane；模式chip回传已持久化策略，未创建第二套提交或Goal循环。",
+        "宿主点击策略：未加载选择时不伪造agent；已有可见选择在点击发送时独立捕获，跨异步配置准备保留该输入意图。",
+        "计划策略点击即同步独立规划草稿，Composer传入真实planEnabled以在偏好失败时恢复先前状态；迟到结果不改新Task。"
       ]
     },
     {
@@ -12175,7 +12177,7 @@
       "source": "references/zcode/packages/ui/src/v4/SessionPane.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/SessionPane.tsx",
       "sha256": "70542a0b03f61e3b4b4d61e29a7b69ca8cf354e3a51f71d0c21fde1d930e9629",
-      "copiedSha256": "e9b1e249836e20fa4f8a40e3c6dacc688b1f0f904fb83f5faad6310d761d64a5",
+      "copiedSha256": "256a8db6f13adf4256a2bbdf8f1ecba7b63bd86153e99749f4c42cbf57a47cc6",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：未接通自动化服务时撤下原行上下文与草稿建议的全部跳转回调；原会话装配不变",
@@ -12184,7 +12186,8 @@
         "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
         "主线 f723ec1d 浏览器拾取适配：外部文本插入支持当前 Live 会话，保留 focused 守卫；原始上游哈希不变。",
         "Code/Design统一实施：输入接纳前捕获平台工作上下文，经原V4发送与重放；撤回队列恢复会话草稿；上下文header由宿主经通用composer贡献接口提供，SessionPane不直接依赖Design实现。",
-        "共享Harness目标入口：捕获执行方式与当前Goal状态后沿原slash解析和sendGoalCommand派发；既有未验收目标的普通文本仍走原sendText引导，带附件的新目标保留输入并给出提示。"
+        "共享Harness目标入口：捕获执行方式与当前Goal状态后沿原slash解析和sendGoalCommand派发；既有未验收目标的普通文本仍走原sendText引导，带附件的新目标保留输入并给出提示。",
+        "宿主执行策略companion：普通输入和Goal沿原命令派发携带点击时选择，保留原V4 envelope与既有Goal fence/队列/重放身份。"
       ]
     },
     {
@@ -12218,10 +12221,11 @@
       "source": "references/zcode/packages/ui/src/v4/V4ConversationContext.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/V4ConversationContext.tsx",
       "sha256": "ffba1b388333c331369a9716b8220bfb32a396c3a44c45c0a53fc038e736869d",
-      "copiedSha256": "759608115133f092be04706000cf8e791205e77bcf8188889280ebb8e264f82c",
+      "copiedSha256": "358076b740a175d5a2711429d7d9b081706581a40694bb5747499d556c6b17ba",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "Workspace配置消费：main与pane共用原连接registry，commit激活配置lease；保留原附件预算及Root/file并行改动"
+        "Workspace配置消费：main与pane共用原连接registry，commit激活配置lease；保留原附件预算及Root/file并行改动",
+        "宿主执行策略companion：共享Context沿原transport参数类型透传点击选择，不增加第二条提交链路。"
       ]
     },
     {
@@ -12327,10 +12331,11 @@
       "source": "references/zcode/packages/ui/src/v4/agentConversationTransport.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/agentConversationTransport.ts",
       "sha256": "f4f9dac7d0df4a8303fe5a5eddec1e4d3bd5ad3eee3b9218916d2beafdb6e351",
-      "copiedSha256": "20697496a7e85fc971a41f7dcc173753dab2770dd049b94e6549db53cb06aa98",
+      "copiedSha256": "c53169d5d647e4b43c8b7e77f0569b7bf16a43f19e2127a3e98520afe8f2eaf2",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。"
+        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
+        "宿主执行策略companion：在服务RPC请求中携带本次选择，原V4 envelope保持不变；已有握手、延迟观测与服务代理继续复用。"
       ]
     },
     {
@@ -13173,10 +13178,11 @@
       "source": "references/zcode/packages/ui/src/v4/replaceableConversationTransport.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/replaceableConversationTransport.ts",
       "sha256": "da556ed823c30f9eeb6b0f0faa386d28e7f3eacedec648461233e14b7235e7fa",
-      "copiedSha256": "ffc8108372f6f0498a0157bdbf63aff0ffe970b5bd130ed7843bdbd0e68751d1",
+      "copiedSha256": "985e9d2eb75aee5cac144465d2b849593043b121ad68d83ab990a451f4b55ca2",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "KenFutWork宿主接线：typed动态配置与原通信作用域换代/注册清理；保留完整命令和Task身份，重连不重放写命令。"
+        "KenFutWork宿主接线：typed动态配置与原通信作用域换代/注册清理；保留完整命令和Task身份，重连不重放写命令。",
+        "宿主执行策略companion：在原可替换传输中透传同一次命令的策略参数，代理换代不重取会话偏好。"
       ]
     },
     {
@@ -13409,10 +13415,11 @@
       "source": "references/zcode/packages/ui/src/v4/transport.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/transport.ts",
       "sha256": "3d2533a9f0c53b65e40ffa991d0be1f59a6eebd501a418517eb3828fd3361d53",
-      "copiedSha256": "97fe652bd849128796a0181ce1d87f98fe38d02de2cfc1f2ad7fd503bb575f42",
+      "copiedSha256": "c939839a94e6e62687c75061226db2698825a3feb11dc891767667aac4048434",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。"
+        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
+        "宿主执行策略companion：sendCommand增加可选参数传本次选择，不向原V4 envelope/schema增加字段。"
       ]
     },
     {

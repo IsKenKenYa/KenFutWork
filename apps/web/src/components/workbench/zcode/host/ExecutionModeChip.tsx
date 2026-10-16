@@ -8,7 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
 import { ChevronDownIcon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { surfaceJson } from "./surfaceApi.js";
 
 /**
@@ -23,13 +23,15 @@ import { surfaceJson } from "./surfaceApi.js";
 interface ExecutionModeChipProps {
   sessionId: string | null;
   disabled: boolean;
+  planEnabled?: boolean;
   onSwitchMode?: (mode: string) => void;
-  onExecutionModeChange?: (mode: ExecutionMode) => void;
+  onExecutionModeChange?: (mode: ExecutionMode | undefined) => void;
 }
 
 export function ExecutionModeChip({
   sessionId,
   disabled,
+  planEnabled,
   onSwitchMode,
   onExecutionModeChange,
 }: ExecutionModeChipProps) {
@@ -39,11 +41,18 @@ export function ExecutionModeChip({
   }> | null>(null);
   const [mode, setMode] = useState<ExecutionMode | null>(null);
   const [saving, setSaving] = useState(false);
+  const generation = useRef(0);
+  const currentSession = useRef(sessionId);
+  const onModeChange = useRef(onExecutionModeChange);
+  currentSession.current = sessionId;
+  onModeChange.current = onExecutionModeChange;
 
   useEffect(() => {
+    const epoch = ++generation.current;
     setModes(null);
     setMode(null);
-    onExecutionModeChange?.("agent");
+    setSaving(false);
+    onModeChange.current?.(undefined);
     if (!sessionId) return;
     let alive = true;
     void (async () => {
@@ -56,25 +65,41 @@ export function ExecutionModeChip({
             `/api/execution-modes/${encodeURIComponent(sessionId)}`,
           ),
         ]);
-        if (!alive) return;
+        if (
+          !alive ||
+          epoch !== generation.current ||
+          currentSession.current !== sessionId
+        )
+          return;
         setModes(list.modes);
         setMode(current.mode);
-        onExecutionModeChange?.(current.mode);
+        onModeChange.current?.(current.mode);
       } catch {
         // 端点不可用或会话无对应行 → 隐藏 chip，不阻塞 composer
       }
     })();
     return () => {
       alive = false;
+      generation.current += 1;
     };
-  }, [onExecutionModeChange, sessionId]);
+  }, [sessionId]);
 
   const select = useCallback(
     async (next: string) => {
       if (!sessionId || saving) return;
       const previous = mode;
       const nextMode = next as ExecutionMode;
+      const previousPlanning = planEnabled ?? previous === "plan";
+      const nextPlanning =
+        nextMode === "plan" ? true : previous === "plan" ? false : undefined;
+      const epoch = generation.current;
+      const isCurrent = () =>
+        epoch === generation.current && currentSession.current === sessionId;
       setMode(nextMode);
+      // 可见选择与本次点击意图同步；偏好落盘不阻塞发送。
+      onModeChange.current?.(nextMode);
+      if (nextPlanning !== undefined)
+        onSwitchMode?.(nextPlanning ? "plan" : "plan-off");
       setSaving(true);
       try {
         await surfaceJson(
@@ -85,16 +110,20 @@ export function ExecutionModeChip({
             body: JSON.stringify({ mode: nextMode }),
           },
         );
-        if (nextMode === "plan") onSwitchMode?.("plan");
-        else if (previous === "plan") onSwitchMode?.("plan-off");
-        onExecutionModeChange?.(nextMode);
+        if (!isCurrent()) return;
       } catch {
-        if (previous) setMode(previous);
+        if (!isCurrent()) return;
+        if (previous) {
+          setMode(previous);
+          onModeChange.current?.(previous);
+          if (nextPlanning !== undefined)
+            onSwitchMode?.(previousPlanning ? "plan" : "plan-off");
+        }
       } finally {
-        setSaving(false);
+        if (isCurrent()) setSaving(false);
       }
     },
-    [mode, onExecutionModeChange, onSwitchMode, saving, sessionId],
+    [mode, onSwitchMode, planEnabled, saving, sessionId],
   );
 
   if (!modes || modes.length === 0 || !mode) return null;

@@ -132,6 +132,10 @@ Code V4与Design原`agent.run`传输保留用户原文。现有运行设置读�
 
 Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画布引用、选区、生成偏好在 `workContext` 内随输入接纳冻结。Task 持有固定文件目录与授权代际，画布引用不能签发目录授权。Goal、审批、取消、队列及重连使用同一会话协议；后续 Goal Run 重新捕获当时能力，已接纳输入保留自己的能力快照。
 
+`sendConversationCommandV4` 的 RPC 参数可在 `envelope` 同级携带第一方宿主 `executionMode`，唯一载体契约是 `packages/shared/src/code-ui-contracts.ts` 的 `codeUiCommandCompanionSchema`／`CodeUiCommandCompanion`。它与下文的 `goalControl` 都属于宿主 companion，不向原 V4 envelope、payload、SSE 帧或 WS `agent.run` 增加字段。Code、Design 共用原传输、可替换代理与服务客户端；本次点击的可见选择独立于另一标签页随后写入的会话偏好，接纳后持久冻结到原输入与 Run。
+
+同一命令和策略重放返回原回执；同命令改策略返回冲突，不借旧回执重跑。未提供 companion 时读取会话偏好，读取失败给出可读拒绝；已停用的 `loop` 不能接纳。`plan` 只开启独立规划收窄，不改基础文件／命令审批权限；`solo` 在共享工具门硬禁工具。目标入口仍派发原 `sendGoalCommand`，既有未验收 Goal 的普通补充沿原 `sendText`，不创建第二条目标运行链路。
+
 外部 HTTP `/api/runs` 与 WS `agent.run` 使用同一 `codeUi.admitExternalRun`。必须提供真实 Task 及匹配的项目、授权代际；`inputId` 是稳定命令身份，同身份重放不重新执行。WS 先发送 `command.ack`（含 taskId/sessionId/inputId/runId），再触发同一原会话发布；运行事件与恢复通过原会话订阅读取。旧 `task.resume` 返回 `shared_conversation_required`，不保留第二套 Design 事件回放或独立 Goal/审批端点。
 
 `agent.cancel` 由 canonical Task 输入和运行控制核验身份，先记录停止意图，再等待实际取消。旧素材参数与非 Agent 的外部执行模式明确拒绝，素材及策略由共享会话接纳。

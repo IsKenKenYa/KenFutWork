@@ -6,6 +6,7 @@ import {
   workspaceConfigTopicWireFrameSchema,
 } from "@zcode/shared/zcode-protocol-v4";
 import { z } from "zod";
+import { executionModeSchema } from "./capability-contracts.js";
 import { additionalDirectorySchema } from "./execution-contracts.js";
 import { governanceSetting } from "./governance.js";
 import { canvasDocumentUpdatedMessageSchema } from "./ws-protocol.js";
@@ -79,6 +80,14 @@ export const codeUiRpcRequestSchema = z.object({
   connectionId: z.string().optional(),
 });
 export const codeUiRpcResponseSchema = z.object({ result: z.unknown() });
+
+/** First-party RPC companion; extract only host-owned fields, leaving the original V4 envelope unchanged. */
+export const codeUiCommandCompanionSchema = z.object({
+  executionMode: executionModeSchema.optional(),
+});
+export type CodeUiCommandCompanion = z.infer<
+  typeof codeUiCommandCompanionSchema
+>;
 
 /** 原 Window Controller 查询入参；服务定义与结果类型仍直接引用固定原契约。 */
 export const codeUiControllerTaskListQuerySchema = z

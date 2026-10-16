@@ -1455,6 +1455,7 @@ export function SessionPane({
       telemetrySeed?: ConversationPromptTelemetrySeed,
       onEnvelopeCreated?: (envelope: CommandEnvelope) => void,
       sessionCreateSource?: SessionCreateSource,
+      executionMode?: Parameters<typeof sendCommand>[1],
     ): Promise<CommandAck> => {
       const submission = submissionConfigFromCommand(type, payload);
       const acceptRecent = submission
@@ -1512,7 +1513,7 @@ export function SessionPane({
             targetSessionId,
           );
         }
-        ack = await sendCommand(envelope);
+        ack = executionMode ? await sendCommand(envelope, executionMode) : await sendCommand(envelope);
         if (telemetrySeed?.localTtft && ack.reasonCode === "guard.heldQueueConfirmationStale")
           getLocalTtftObserver()?.confirmationRetry(telemetrySeed.localTtft);
         else if (telemetrySeed?.localTtft)
@@ -2532,6 +2533,7 @@ export function SessionPane({
       expectedHeldQueueItemIds?: readonly string[],
       submission?: ComposerSubmissionConfig,
       onAccepted?: (messageId: string) => void,
+      executionMode?: Parameters<typeof sendCommand>[1],
     ): Promise<boolean | "confirmationRequired"> => {
       let type: CommandType | null = null;
       let payload: Record<string, unknown> = {};
@@ -2581,6 +2583,8 @@ export function SessionPane({
         payload,
         targetSessionId,
         withBaseRevision ? baseRevision : undefined,
+        undefined, undefined, undefined, undefined,
+        type === "sendGoalCommand" || type === "compact" ? executionMode : undefined,
       );
       if (ack.status === "accepted") onAccepted?.(ack.commandId);
       if (ack.reasonCode === "guard.heldQueueConfirmationStale") {
@@ -2614,6 +2618,7 @@ export function SessionPane({
     ) => {
       let onAcceptedSelection: (() => void) | undefined;
       const dispatchSubmissionCommand = async (...args: Parameters<typeof dispatchCommand>) => {
+        args[8] = options?.executionMode;
         const ack = await dispatchCommand(...args);
         // 在原 accepted 边界写回推荐选择，早于新 Session 的草稿转移；失败不改用户意图。
         if (ack.status === "accepted" && submissionConfigFromCommand(args[0], args[1]))
@@ -2738,6 +2743,8 @@ export function SessionPane({
           heldQueueDisposition,
           expectedHeldQueueItemIds,
           submission,
+          undefined,
+          options?.executionMode,
         );
         if (consumed === "confirmationRequired") return consumed;
         if (consumed) {
@@ -2829,6 +2836,7 @@ export function SessionPane({
           expectedHeldQueueItemIds,
           submission,
           (messageId) => reportDraftCreated(newSessionId, createSourceAtSend, messageId),
+          options?.executionMode,
         );
         return;
       }

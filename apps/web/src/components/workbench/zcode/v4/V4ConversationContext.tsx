@@ -1,7 +1,5 @@
 import type { IServiceAccessor } from "@zcode/services";
 import type {
-  CommandAck,
-  CommandEnvelope,
   V4AttachmentPutParams,
   V4AttachmentPutResult,
   V4ConversationFileChangesParams,
@@ -47,7 +45,7 @@ import {
 export interface V4ConversationContextValue {
   attachmentBudget: ConversationTransport["attachmentBudget"];
   layer: SessionDataLayer;
-  sendCommand(envelope: CommandEnvelope): Promise<CommandAck>;
+  sendCommand: ConversationTransport["sendCommand"];
   fileChanges(params: V4ConversationFileChangesParams,
   ): Promise<V4ConversationFileChangesResult>;
   fileRewindPreview(
@@ -137,7 +135,7 @@ function ReadyV4ConversationProvider({
     const transport = lease.transport;
     return {
       layer: lease.layer,
-      sendCommand: (envelope: CommandEnvelope) => transport.sendCommand(envelope),
+      sendCommand: (...args: Parameters<ConversationTransport["sendCommand"]>) => transport.sendCommand(...args),
       fileChanges: (params: V4ConversationFileChangesParams) => transport.fileChanges(params),
       fileRewindPreview: (params: V4ConversationFileRewindPreviewParams) =>
         transport.fileRewindPreview(params),
@@ -311,7 +309,7 @@ function ReadyV4PaneConversationProvider({
       lease,
       value: {
         layer: lease.layer,
-        sendCommand: (envelope: CommandEnvelope) => lease.transport.sendCommand(envelope),
+        sendCommand: (...args: Parameters<ConversationTransport["sendCommand"]>) => lease.transport.sendCommand(...args),
         fileChanges: (params: V4ConversationFileChangesParams) =>
           lease.transport.fileChanges(params),
         fileRewindPreview: (params: V4ConversationFileRewindPreviewParams) =>

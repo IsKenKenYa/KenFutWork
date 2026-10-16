@@ -30,7 +30,7 @@ export interface PermissionInvocation extends ApprovalIdentity {
   preset: "code" | "design";
   threadId?: string | undefined;
   mode: CodeApprovalMode;
-  /** Immutable dispatch-time ceiling for worker agents. */
+  /** Immutable Run/child-dispatch ceiling, enforced for every scoped role. */
   approvalCeiling: CodeApprovalMode;
   toolName: string;
   /** Parsed by the actual tool schema before either admission gate. */
