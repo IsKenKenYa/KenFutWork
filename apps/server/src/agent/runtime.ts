@@ -1975,24 +1975,24 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 .map(toListItem);
               availableVideoModels = entries
                 .filter((e) => e.capability === "video")
-                .map((entry) => ({
-                  id: `${entry.provider.instanceId}:${entry.id}`,
-                  displayName: entry.name,
-                  description: `${entry.name}（实例：${entry.provider.name}）`,
-                  provider: entry.provider.name,
-                  // 任务级能力未在实例模型行声明（缺省=未知），工具面用保守占位
-                  capabilities: {
-                    textToVideo: true,
-                    imageToVideo: false,
-                    videoToVideo: false,
-                    audio: false,
-                  },
-                  limits: {
-                    maxDuration: 15,
-                    maxResolution: "1080p" as const,
-                    maxInputImages: 4,
-                  },
-                }));
+                .map((entry) => {
+                  const declared = entry.model.videoGeneration;
+                  return {
+                    ...toListItem(entry),
+                    ...(declared
+                      ? { videoGeneration: structuredClone(declared) }
+                      : {}),
+                    capabilities: {
+                      ...(declared?.referenceImages !== undefined
+                        ? { imageToVideo: declared.referenceImages > 0 }
+                        : {}),
+                      ...(declared?.audio !== undefined
+                        ? { audio: declared.audio }
+                        : {}),
+                    },
+                    limits: {},
+                  };
+                });
             } catch (catalogError) {
               console.warn(
                 "[runtime] 实例模型清单拉取失败（生成工具将报告未配置）:",

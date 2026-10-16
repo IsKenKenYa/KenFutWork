@@ -1,3 +1,5 @@
+import type { VideoGenerationCaps } from "@kenfutwork/shared";
+
 /** Metadata describing a model supported by a provider. */
 export interface ModelInfo {
   /** Provider-scoped model ID, e.g. "google/nano-banana-pro" */
@@ -141,6 +143,8 @@ export interface AvailableVideoModel extends VideoModelInfo {
 
 /** Extended model info with video-specific capabilities metadata. */
 export interface VideoModelInfo extends ModelInfo {
+  /** 实例模型声明；缺省保持未知，旧provider继续使用capabilities/limits。 */
+  videoGeneration?: VideoGenerationCaps;
   capabilities: {
     textToVideo?: boolean;
     imageToVideo?: boolean;

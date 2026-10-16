@@ -61,6 +61,11 @@ describe("runVideoGenerate capability enforcement", () => {
     );
 
     expect(submit).toHaveBeenCalledOnce();
+    expect(submit.mock.calls[0]?.[0]).toMatchObject({
+      duration: 5,
+      resolution: "720p",
+      aspectRatio: "16:9",
+    });
     expect(submit.mock.calls[0]?.[0]).not.toHaveProperty("enableAudio");
   });
 

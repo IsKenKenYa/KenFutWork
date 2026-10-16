@@ -9,6 +9,23 @@ import type { SubmitVideoJobFn } from "../tool-types.js";
 
 export type { SubmitVideoJobFn } from "../tool-types.js";
 
+/** 当前实例声明优先；旧provider目录继续提供原有的能力与上限。 */
+function videoParameterPolicy(model: AvailableVideoModel) {
+  const declared = model.videoGeneration;
+  return {
+    durations: declared?.durations ?? model.limits.allowedDurations,
+    maxDuration: declared?.durations ? undefined : model.limits.maxDuration,
+    resolutions: declared?.resolutions,
+    maxResolution: declared?.resolutions
+      ? undefined
+      : model.limits.maxResolution,
+    aspectRatios: declared?.aspectRatios,
+    referenceImages: declared?.referenceImages ?? model.limits.maxInputImages,
+    audio: declared?.audio ?? model.capabilities.audio,
+  };
+}
+type VideoParameterPolicy = ReturnType<typeof videoParameterPolicy>;
+
 // ── Dynamic schema builder ─────────────────────────────────────────────────
 
 function buildVideoGenerateSchema(models: AvailableVideoModel[]) {
@@ -16,7 +33,12 @@ function buildVideoGenerateSchema(models: AvailableVideoModel[]) {
   const defaultModel = modelIds[0];
 
   const modelDescription = models.length
-    ? `Video model to use. Available:\n${models.map((m) => `- ${m.id}: ${m.description}`).join("\n")}`
+    ? `Video model to use. Available:\n${models
+        .map((model) => {
+          const declared = JSON.stringify(videoParameterPolicy(model));
+          return `- ${model.id}: ${model.description}${declared === "{}" ? "" : `; ${declared}`}`;
+        })
+        .join("\n")}`
     : "Model identifier (no video providers currently registered)";
 
   const modelField =
@@ -53,40 +75,36 @@ function buildVideoGenerateSchema(models: AvailableVideoModel[]) {
     model: modelField,
     duration: z
       .number()
-      .int()
-      .min(3)
-      .max(16)
+      .positive()
       .optional()
-      .default(5)
       .describe(
-        "Video duration in seconds. Valid range depends on model (see model descriptions). Google Veo supports 4/6/8, Replicate models support 3-16.",
+        "Video duration in seconds. Use the selected model's declared durations; omit to use a supported model default when available.",
       ),
     resolution: z
-      .enum(["480p", "720p", "1080p", "4k"])
+      .string()
+      .min(1)
       .optional()
-      .default("720p")
       .describe(
-        "Output resolution. 720p recommended for balance of quality and speed. 1080p/4k supported by Google Veo official models (8s duration required).",
+        "Output resolution from the selected model's declarations; omit to use a supported model default when available.",
       ),
     aspectRatio: z
-      .enum(["1:1", "16:9", "9:16", "4:3", "3:4"])
+      .string()
+      .min(1)
       .optional()
-      .default("16:9")
       .describe(
-        "Video aspect ratio. 16:9 for landscape, 9:16 for portrait/mobile.",
+        "Video aspect ratio from the selected model's declarations; omit to use a supported model default when available.",
       ),
     inputImages: z
       .array(z.string())
-      .max(7)
       .optional()
       .describe(
-        "Reference image URLs for image-to-video. First image used as first frame. Only for models with I2V capability.",
+        "Reference images for models that allow them; respect the selected model's declared referenceImages limit.",
       ),
     inputVideo: z
       .string()
       .optional()
       .describe(
-        "Source video URL for video-to-video editing. Only for Kling O1.",
+        "Source video URL for video-to-video editing; requires declared reference-video capability.",
       ),
     enableAudio: z
       .boolean()
@@ -121,6 +139,42 @@ function buildVideoGenerateSchema(models: AvailableVideoModel[]) {
 
 // Infer input type from schema — includes the new `title` field
 type VideoGenerateInput = z.infer<ReturnType<typeof buildVideoGenerateSchema>>;
+
+function withModelDefaults(
+  input: VideoGenerateInput,
+  model: AvailableVideoModel,
+  policy: VideoParameterPolicy,
+): VideoGenerateInput {
+  const legacyDurations = model.limits.allowedDurations?.filter(
+    (duration) =>
+      model.limits.maxDuration === undefined ||
+      duration <= model.limits.maxDuration,
+  );
+  const duration =
+    model.videoGeneration?.durations?.[0] ??
+    (legacyDurations?.includes(5) ? 5 : legacyDurations?.[0]) ??
+    (policy.maxDuration !== undefined
+      ? Math.min(5, policy.maxDuration)
+      : undefined);
+  const resolution =
+    policy.resolutions?.[0] ??
+    (policy.maxResolution
+      ? policy.maxResolution === "480p"
+        ? "480p"
+        : "720p"
+      : undefined);
+  const aspectRatio =
+    policy.aspectRatios?.[0] ??
+    (Object.values(model.limits).some((value) => value !== undefined)
+      ? "16:9"
+      : undefined);
+  return {
+    ...input,
+    duration: input.duration ?? duration,
+    resolution: input.resolution ?? resolution,
+    aspectRatio: input.aspectRatio ?? aspectRatio,
+  };
+}
 
 type VideoGenerateResult = {
   assetId?: string;
@@ -177,7 +231,9 @@ export async function runVideoGenerate(
     };
   }
 
-  const capabilityError = validateCapabilities(input, selectedModel);
+  const policy = videoParameterPolicy(selectedModel);
+  input = withModelDefaults(input, selectedModel, policy);
+  const capabilityError = validateCapabilities(input, selectedModel, policy);
   if (capabilityError) {
     return {
       summary: `Video generation failed with model ${input.model}: ${capabilityError}`,
@@ -185,7 +241,7 @@ export async function runVideoGenerate(
     };
   }
 
-  const enableAudio = input.enableAudio;
+  const enableAudio = policy.audio === false ? undefined : input.enableAudio;
 
   // Job mode: submit to PGMQ and wait for worker
   if (submitVideoJob) {
@@ -195,9 +251,13 @@ export async function runVideoGenerate(
         ...(input.canvas_id ? { canvasId: input.canvas_id } : {}),
         prompt: input.prompt,
         model: input.model,
-        duration: input.duration,
-        resolution: input.resolution,
-        aspectRatio: input.aspectRatio,
+        ...(input.duration !== undefined ? { duration: input.duration } : {}),
+        ...(input.resolution !== undefined
+          ? { resolution: input.resolution }
+          : {}),
+        ...(input.aspectRatio !== undefined
+          ? { aspectRatio: input.aspectRatio }
+          : {}),
         ...(input.inputImages ? { inputImages: input.inputImages } : {}),
         ...(input.inputVideo ? { inputVideo: input.inputVideo } : {}),
         ...(enableAudio != null ? { enableAudio } : {}),
@@ -297,7 +357,7 @@ export function createVideoGenerateToolDefinition(deps?: {
 
   return {
     name: "generate_video",
-    description: `Generate a video using AI. Available models: ${modelSummary}. Supports text-to-video, image-to-video, and video editing. Returns the generated video URL.`,
+    description: `Generate a video using AI. Available models: ${modelSummary}. Use the selected model's declared parameters and media capabilities in the model field description. Returns the generated video URL.`,
     scope: "design",
     access: "execute",
     zodSchema: schema,
@@ -332,48 +392,71 @@ export function createVideoGenerateToolDefinition(deps?: {
 function validateCapabilities(
   input: VideoGenerateInput,
   model: AvailableVideoModel,
+  policy: VideoParameterPolicy,
 ): string | undefined {
-  if (input.enableAudio === true && model.capabilities.audio === false)
+  if (input.enableAudio === true && policy.audio === false)
     return `${model.displayName} does not support audio generation`;
-  if (input.inputImages?.length && model.capabilities.imageToVideo === false) {
+  const imageToVideo =
+    model.videoGeneration?.referenceImages !== undefined
+      ? model.videoGeneration.referenceImages > 0
+      : model.capabilities.imageToVideo;
+  if (input.inputImages?.length && imageToVideo === false) {
     return `${model.displayName} does not support image-to-video input`;
   }
   if (
-    model.limits.maxInputImages !== undefined &&
-    (input.inputImages?.length ?? 0) > model.limits.maxInputImages
+    policy.referenceImages !== undefined &&
+    (input.inputImages?.length ?? 0) > policy.referenceImages
   ) {
-    return `${model.displayName} accepts at most ${model.limits.maxInputImages} input image(s)`;
+    return `${model.displayName} accepts at most ${policy.referenceImages} input image(s)`;
   }
   if (input.inputVideo && model.capabilities.videoToVideo === false) {
     return `${model.displayName} does not support reference-video input`;
   }
   if (
-    model.limits.maxDuration !== undefined &&
-    input.duration > model.limits.maxDuration
+    input.duration !== undefined &&
+    policy.maxDuration !== undefined &&
+    input.duration > policy.maxDuration
   ) {
-    return `${model.displayName} supports at most ${model.limits.maxDuration} seconds`;
+    return `${model.displayName} supports at most ${policy.maxDuration} seconds`;
   }
   if (
-    model.limits.allowedDurations &&
-    !model.limits.allowedDurations.includes(input.duration)
+    input.duration !== undefined &&
+    policy.durations &&
+    !policy.durations.includes(input.duration)
   ) {
-    return `${model.displayName} supports durations: ${model.limits.allowedDurations.join(", ")} seconds`;
+    return `${model.displayName} supports durations: ${policy.durations.join(", ")} seconds`;
   }
+
+  if (
+    input.resolution !== undefined &&
+    policy.resolutions &&
+    !policy.resolutions.includes(input.resolution)
+  )
+    return `${model.displayName} supports resolutions: ${policy.resolutions.join(", ")}`;
+  if (
+    input.aspectRatio !== undefined &&
+    policy.aspectRatios &&
+    !policy.aspectRatios.includes(input.aspectRatio)
+  )
+    return `${model.displayName} supports aspect ratios: ${policy.aspectRatios.join(", ")}`;
 
   const requestedResolution =
     input.resolution === "4k" ? "2160p" : input.resolution;
-  const resolutionRank = {
-    "480p": 0,
-    "720p": 1,
-    "1080p": 2,
-    "2160p": 3,
+  const resolutionRank: Readonly<Record<string, number>> = {
+    "480p": 480,
+    "720p": 720,
+    "768p": 768,
+    "1080p": 1080,
+    "2160p": 2160,
   } as const;
   if (
-    model.limits.maxResolution !== undefined &&
-    resolutionRank[requestedResolution] >
-      resolutionRank[model.limits.maxResolution]
+    requestedResolution !== undefined &&
+    policy.maxResolution !== undefined &&
+    (resolutionRank[requestedResolution] === undefined ||
+      (resolutionRank[requestedResolution] ?? 0) >
+        (resolutionRank[policy.maxResolution] ?? 0))
   ) {
-    return `${model.displayName} supports up to ${model.limits.maxResolution}`;
+    return `${model.displayName} supports up to ${policy.maxResolution}`;
   }
 
   return undefined;
