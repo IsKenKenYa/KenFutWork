@@ -122,10 +122,7 @@ export function createCodePlatform(
       open: (entry) => openPluginPanel(entry.pluginId, entry.entryId),
     },
     async activateOrSetWorkspace(path) {
-      const workspace = await client.openWorkspace(
-        path,
-        client.projectForPath(path)?.projectId,
-      );
+      const workspace = await client.openWorkspace(path);
       const workspaceIdentity = client.workspaces.identityFor(
         workspace.projectId,
         workspace.path,
