@@ -88,6 +88,7 @@ function accessAt(
   >,
   path: string,
 ): "read-only" | "read-write" | null {
+  if (scope.sandboxMode === "danger-full-access") return "read-write";
   const roots = [
     { path: scope.rootDirectory, access: "read-write" as const },
     ...scope.additionalDirectories,
@@ -289,6 +290,7 @@ function intersect(
 class ScopeHandle implements ExecutionScopeHandle {
   readonly backend: ScopedBackend;
   private current: CodeExecutionScope;
+  private unrestrictedReadActive: boolean;
   constructor(
     private readonly load: () => Promise<CodeExecutionScope>,
     private readonly ceiling: CodeExecutionScope,
@@ -298,8 +300,11 @@ class ScopeHandle implements ExecutionScopeHandle {
     readonly agentId: string,
     private readonly readOnly: boolean,
     private readonly limits?: FileLimits,
+    private readonly unrestrictedRead = ceiling.sandboxMode ===
+      "danger-full-access",
   ) {
     this.current = intersect(ceiling, ceiling, readOnly);
+    this.unrestrictedReadActive = unrestrictedRead;
     this.backend = createScopedBackend(this, limits ? { limits } : {});
   }
   describe(): CodeExecutionScope {
@@ -315,6 +320,7 @@ class ScopeHandle implements ExecutionScopeHandle {
       agentId,
       this.readOnly || role === "explore" || role === "review",
       this.limits,
+      this.unrestrictedReadActive,
     );
   }
   restrictReadOnly(): ExecutionScopeHandle {
@@ -327,6 +333,7 @@ class ScopeHandle implements ExecutionScopeHandle {
       this.agentId,
       true,
       this.limits,
+      this.unrestrictedReadActive,
     );
   }
   async resolvePath(
@@ -339,12 +346,29 @@ class ScopeHandle implements ExecutionScopeHandle {
         "路径不能为空或包含空字符。",
         400,
       );
-    this.current = intersect(await this.load(), this.ceiling, this.readOnly);
+    const opened = await this.load();
+    this.unrestrictedReadActive =
+      this.unrestrictedRead && opened.sandboxMode === "danger-full-access";
+    this.current = intersect(opened, this.ceiling, this.readOnly);
     const target = await canonicalTarget(
       resolve(this.current.rootDirectory, path),
     );
     // realpath 等待期间发生撤销时，本操作也必须拒绝。
-    this.current = intersect(await this.load(), this.ceiling, this.readOnly);
+    const live = await this.load();
+    this.unrestrictedReadActive =
+      this.unrestrictedRead && live.sandboxMode === "danger-full-access";
+    this.current = intersect(live, this.ceiling, this.readOnly);
+    if (this.unrestrictedRead && live.sandboxMode === "danger-full-access") {
+      if (
+        operation === "read" ||
+        (!this.readOnly && this.current.sandboxMode === "danger-full-access")
+      )
+        return target;
+      throw new ExecutionScopeError(
+        "read_only",
+        "当前角色或执行方式只允许读取文件。",
+      );
+    }
     const access = accessAt(this.current, target);
     if (!access)
       throw new ExecutionScopeError(

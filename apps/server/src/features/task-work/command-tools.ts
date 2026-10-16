@@ -209,7 +209,7 @@ export function createTaskCommandTools(
     "Bash",
     bashSchema,
     "execute",
-    "在 Task 授权目录与 OS 沙箱中运行命令。run_in_background=true 显式交给 Task，前台结束后仍可运行并自动通知；timeout 是执行 deadline，后台缺省不设 deadline。",
+    "按 Task 真实权限运行命令；完全访问使用当前OS账户文件与网络权限，Plan仍物理只读无网。run_in_background=true 显式交给 Task，前台结束后仍可运行并自动通知；timeout 是执行 deadline，后台缺省不设 deadline。",
     async (raw, execCtx) => {
       const input = bashSchema.parse(raw);
       const handle = scopeOf(execCtx);

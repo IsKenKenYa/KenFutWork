@@ -8,8 +8,13 @@ export interface ProcessLimits {
 }
 
 export interface ProcessEnforcement {
-  backend: "srt-seatbelt" | "srt-bwrap" | "windows-task-broker";
-  filesystem: "enforced";
+  backend:
+    | "srt-seatbelt"
+    | "srt-bwrap"
+    | "windows-task-broker"
+    | "host-account";
+  filesystem: "enforced" | "unrestricted";
+  network?: "unrestricted";
   processRange: "pid-namespace" | "process-group" | "job-object";
   permissionsGeneration: number;
 }

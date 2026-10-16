@@ -5,6 +5,7 @@ interface ActiveFileOperation {
   controller: AbortController;
   finished: Promise<unknown>;
   writeRoots: string[];
+  unrestricted: boolean;
 }
 const active = new Map<string, Set<ActiveFileOperation>>();
 const revoking = new Map<string, Promise<void>>();
@@ -55,10 +56,11 @@ function writableRoots(scope: ScopedFilesystemScope): string[] {
 function assertWriteAdmission(
   scope: ScopedFilesystemScope,
   paths: readonly string[],
+  unrestricted = false,
 ): void {
   for (const barrier of restoreBarriers) {
     if (restorePermits.get(scope) === barrier) continue;
-    if (overlaps(paths, barrier.roots))
+    if (unrestricted || overlaps(paths, barrier.roots))
       throw new FileRestoreBarrierError(
         "目录正在恢复并生成恢复后快照，禁止普通文件写入。",
       );
@@ -91,7 +93,11 @@ export async function acquireTaskFileRestoreBarrier(
       throw new FileRestoreBarrierError("另一个文件恢复屏障已占用该目录。");
   for (const [owner, entries] of active) {
     if (owner === key) continue;
-    if ([...entries].some((entry) => overlaps(canonical, entry.writeRoots)))
+    if (
+      [...entries].some(
+        (entry) => entry.unrestricted || overlaps(canonical, entry.writeRoots),
+      )
+    )
       throw new FileRestoreBarrierError(
         "其他 Task 在相交的可写目录中有文件操作，不能开始恢复。",
       );
@@ -167,8 +173,13 @@ export function runFileOperation<T>(
     return Promise.reject(new Error("Task 文件作用域正在撤销，禁止新操作"));
   if (parentSignal?.aborted) return Promise.reject(parentSignal.reason);
   const writeRoots = operation === "write" ? writableRoots(scope) : [];
+  const unrestricted =
+    operation === "write" &&
+    identity.sandboxMode === "danger-full-access" &&
+    scope.role !== "explore" &&
+    scope.role !== "review";
   try {
-    assertWriteAdmission(scope, writeRoots);
+    assertWriteAdmission(scope, writeRoots, unrestricted);
   } catch (error) {
     return Promise.reject(error);
   }
@@ -181,11 +192,12 @@ export function runFileOperation<T>(
     controller,
     finished: Promise.resolve(),
     writeRoots,
+    unrestricted,
   };
   const finished = Promise.resolve()
     .then(() => {
       signal.throwIfAborted();
-      assertWriteAdmission(scope, writeRoots);
+      assertWriteAdmission(scope, writeRoots, unrestricted);
       return action(signal);
     })
     .finally(() => {

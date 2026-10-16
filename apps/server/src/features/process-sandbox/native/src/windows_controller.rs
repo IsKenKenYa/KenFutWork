@@ -139,7 +139,7 @@ fn run(reader: BufReader<File>, output: Emitter, job: Arc<ProcessJob>) -> Result
     } else {
         StdioMode::Pipes
     };
-    let mut child = match crate::windows::spawn_workload(&launch, mode) {
+    let mut child = match crate::windows::spawn_workload(&launch, mode, Arc::clone(&job)) {
         Ok(child) => child,
         Err(error) => {
             response(&output, id, Err(error))?;
@@ -173,7 +173,9 @@ fn run(reader: BufReader<File>, output: Emitter, job: Arc<ProcessJob>) -> Result
     response(
         &output,
         id,
-        Ok(json!({"pid":pid,"filesystem":"enforced","processRange":"job-object"})),
+        Ok(
+            json!({"pid":pid,"filesystem":if launch.unrestricted {"unrestricted"} else {"enforced"},"processRange":"job-object"}),
+        ),
     )?;
     let (send, receive) = mpsc::channel();
     let incoming = send.clone();

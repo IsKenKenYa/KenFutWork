@@ -7,6 +7,7 @@ import { ProcessSandboxError } from "./types.js";
 interface WriteDomain {
   writable: string[];
   readonly: string[];
+  unrestricted?: boolean;
 }
 interface Admission {
   scope: CodeExecutionScope;
@@ -20,6 +21,8 @@ interface Barrier {
 }
 
 async function writeDomain(scope: CodeExecutionScope): Promise<WriteDomain> {
+  if (scope.sandboxMode === "danger-full-access")
+    return { writable: [], readonly: [], unrestricted: true };
   if (scope.sandboxMode === "read-only") return { writable: [], readonly: [] };
   const root = await realpath(scope.rootDirectory);
   const additional = await Promise.all(
@@ -42,6 +45,7 @@ async function writeDomain(scope: CodeExecutionScope): Promise<WriteDomain> {
 }
 
 function intersects(domain: WriteDomain, roots: readonly string[]): boolean {
+  if (domain.unrestricted) return roots.length > 0;
   return roots.some((root) =>
     domain.writable.some((grant) => {
       const intersection = pathWithin(root, grant)

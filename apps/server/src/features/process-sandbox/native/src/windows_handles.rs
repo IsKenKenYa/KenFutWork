@@ -6,13 +6,17 @@ use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::thread;
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{
-    DuplicateHandle, HANDLE, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation,
+    DuplicateHandle, ERROR_INVALID_PARAMETER, HANDLE, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE,
+    SetHandleInformation, WAIT_OBJECT_0,
 };
 use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
 use windows_sys::Win32::System::JobObjects::*;
 use windows_sys::Win32::System::Pipes::CreatePipe;
 use windows_sys::Win32::System::SystemServices::JOB_OBJECT_QUERY;
-use windows_sys::Win32::System::Threading::GetCurrentProcess;
+use windows_sys::Win32::System::Threading::{
+    GetCurrentProcess, GetCurrentProcessId, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
+};
 
 pub fn check(value: i32, operation: &str) -> Result<()> {
     ensure!(
@@ -176,6 +180,46 @@ impl ProcessJob {
         }
         .to_vec())
     }
+    /// controller 留在同一 Job；仅终止已复验属于本 Job 的用户工作负载。
+    pub fn terminate_workloads(&self) -> Result<usize> {
+        let controller = unsafe { GetCurrentProcessId() };
+        let members: Vec<usize> = self
+            .process_ids()?
+            .into_iter()
+            .filter(|pid| *pid != controller as usize)
+            .collect();
+        for pid in &members {
+            let raw = unsafe {
+                OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
+                    0,
+                    *pid as u32,
+                )
+            };
+            if raw.is_null() {
+                let error = std::io::Error::last_os_error();
+                if error.raw_os_error() == Some(ERROR_INVALID_PARAMETER as i32) {
+                    continue;
+                }
+                return Err(error.into());
+            }
+            let process = own(raw)?;
+            let mut assigned = 0;
+            check(
+                unsafe { IsProcessInJob(process.as_raw_handle(), self.raw(), &mut assigned) },
+                "Workload Job identity",
+            )?;
+            if assigned == 0 {
+                continue;
+            }
+            if unsafe { TerminateProcess(process.as_raw_handle(), 137) } == 0
+                && unsafe { WaitForSingleObject(process.as_raw_handle(), 0) } != WAIT_OBJECT_0
+            {
+                return Err(std::io::Error::last_os_error().into());
+            }
+        }
+        Ok(members.len())
+    }
     pub fn wait_active(&self, expected: u32, grace_ms: u64, yield_ms: u64) -> Result<()> {
         let started = Instant::now();
         loop {
@@ -198,9 +242,7 @@ impl ProcessJob {
                         );
                     }
                     Err(error) => {
-                        anyhow::bail!(
-                            "Job 范围停止未确认，且成员列表查询失败：{error}"
-                        );
+                        anyhow::bail!("Job 范围停止未确认，且成员列表查询失败：{error}");
                     }
                 }
             }

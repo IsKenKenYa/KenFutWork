@@ -59,7 +59,7 @@ fn script_command_line(argv: &[String]) -> Result<String, wxc_common::cmdline::C
     cmdline_from_argv_for_context(argv, CommandLineContext::WindowsCreateProcess)
 }
 
-fn is_cmd_exe(path: &str) -> bool {
+pub(crate) fn is_cmd_exe(path: &str) -> bool {
     Path::new(path).file_name().is_some_and(|name| {
         matches!(
             name.to_string_lossy().to_ascii_lowercase().as_str(),
@@ -69,7 +69,7 @@ fn is_cmd_exe(path: &str) -> bool {
 }
 
 // 此 policy/launch 形状由 Codex mxc-sandbox 的一手实现改编，不含其 AgentLoop。
-fn execution_request(input: &Launch) -> Result<ExecutionRequest> {
+fn validate_launch(input: &Launch) -> Result<()> {
     ensure!(
         !input.task_id.is_empty() && input.generation > 0,
         "Task 执行身份或授权版本无效"
@@ -90,6 +90,11 @@ fn execution_request(input: &Launch) -> Result<ExecutionRequest> {
     {
         ensure!(PathBuf::from(path).is_absolute(), "目录授权必须是绝对路径");
     }
+    Ok(())
+}
+
+fn execution_request(input: &Launch) -> Result<ExecutionRequest> {
+    validate_launch(input)?;
     let mut policy = ContainerPolicy {
         capabilities: vec!["registryRead".to_owned()],
         readwrite_paths: input.write_roots.clone(),
@@ -141,7 +146,15 @@ fn execution_request(input: &Launch) -> Result<ExecutionRequest> {
     })
 }
 
-pub fn spawn_workload(input: &Launch, mode: StdioMode) -> Result<Box<dyn SandboxProcess>> {
+pub fn spawn_workload(
+    input: &Launch,
+    mode: StdioMode,
+    job: Arc<crate::windows_handles::ProcessJob>,
+) -> Result<Box<dyn SandboxProcess>> {
+    validate_launch(input)?;
+    if input.unrestricted {
+        return crate::windows_account::spawn_account(input, mode, job);
+    }
     capability_probe()?;
     let request = execution_request(input)?;
     ensure!(
@@ -193,7 +206,7 @@ fn reply(output: &Emitter, id: String, result: Result<Value>) -> Result<()> {
 }
 fn spawn(id: String, launch: Launch, processes: &mut Processes, output: &Emitter) -> Result<()> {
     capability_probe()?;
-    execution_request(&launch)?;
+    validate_launch(&launch)?;
     ensure!(!processes.contains_key(&launch.process_id), "命令身份重复");
     let (child, control, terminal) = NativeProcess::spawn(&launch)?;
     processes.insert(launch.process_id.clone(), Arc::clone(&child));
@@ -219,18 +232,20 @@ fn stop_all(processes: &Processes) -> Result<()> {
 }
 fn route(request: Request, processes: &mut Processes, output: &Emitter) -> Result<bool> {
     match request {
-        Request::Probe { id } => reply(
+        Request::Probe { id, unrestricted } => reply(
             output,
             id,
             (|| -> Result<Value> {
-                capability_probe()?;
+                if !unrestricted {
+                    capability_probe()?;
+                }
                 crate::windows_conpty::probe()?;
                 ensure!(
                     crate::windows_handles::ProcessJob::new()?.active()? == 0,
                     "Job probe 未为空"
                 );
                 Ok(
-                    json!({"filesystem":"enforced","processRange":"job-object","protocolVersion":2,"pty":"conpty","stdio":"ack-stream"}),
+                    json!({"filesystem":if unrestricted {"unrestricted"} else {"enforced"},"processRange":"job-object","protocolVersion":2,"pty":"conpty","stdio":"ack-stream","unrestrictedExecution":true}),
                 )
             })(),
         )?,

@@ -330,9 +330,11 @@ export function createProcessSandbox(
     let entry = tasks.get(request.scope.taskId);
     if (!entry) {
       const connection = (async () => {
-        const network = options.resolveNetwork
-          ? await options.resolveNetwork(request.scope)
-          : options.network;
+        const network =
+          request.scope.sandboxMode !== "danger-full-access" &&
+          options.resolveNetwork
+            ? await options.resolveNetwork(request.scope)
+            : options.network;
         return new TaskConnection(
           {
             ...options,

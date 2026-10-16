@@ -20,6 +20,7 @@ export async function commandDirectory(
   requested?: string,
 ): Promise<string> {
   const path = await realpath(resolve(scope.rootDirectory, requested ?? "."));
+  if (scope.sandboxMode === "danger-full-access") return path;
   const roots = [
     scope.rootDirectory,
     ...scope.additionalDirectories.map((directory) => directory.path),

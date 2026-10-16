@@ -24,6 +24,8 @@ export type NativeProcessEvent =
   | { event: "failure"; processId: string; code: string; message: string };
 
 export interface NativeLaunch {
+  /** 仅来自可信 Task danger-full-access；不是隔离失败的降级。 */
+  unrestricted?: boolean;
   processId: string;
   taskId: string;
   generation: number;

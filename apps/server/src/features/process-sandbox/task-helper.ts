@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
 import { unixCommand } from "./command.js";
+import { accountCommand } from "./account-command.js";
 import { executionEnvironment, prependExecutionPath } from "./environment.js";
 import { prepareLinuxSandboxArgv } from "./linux-launch.js";
 import type { ProcessOwner } from "./managed-process.js";
@@ -51,6 +52,8 @@ class TaskProcessHelper {
   private initialization: Promise<null> | undefined;
   private readonly invalidatedProcesses = new Set<string>();
   private readonly readOnlyProofs = new Map<string, Promise<void>>();
+  private readonly accountHome = homedir();
+  private sandboxInitialization: Promise<void> | undefined;
 
   async execute(input: HelperRequest): Promise<unknown> {
     if (input.method === "initialize") {
@@ -157,7 +160,10 @@ class TaskProcessHelper {
     process.env.HOME = home;
     process.env.CLAUDE_CODE_TMPDIR = this.temporaryDirectory;
     if (process.platform === "win32") {
-      if (input.options.network.allowedDomains.length > 0) {
+      if (
+        input.initial.scope.sandboxMode !== "danger-full-access" &&
+        input.options.network.allowedDomains.length > 0
+      ) {
         throw new ProcessSandboxError(
           "enforcement_unavailable",
           "当前原生 Windows PSEC 无法落实客户端专用的受限代理策略；拒绝扩大网络权限。",
@@ -179,11 +185,21 @@ class TaskProcessHelper {
       );
       const capability = (await this.windowsBroker.rpc({
         method: "probe",
-      })) as { protocolVersion?: number; pty?: string; stdio?: string };
+        ...(input.initial.scope.sandboxMode === "danger-full-access"
+          ? { unrestricted: true }
+          : {}),
+      })) as {
+        protocolVersion?: number;
+        pty?: string;
+        stdio?: string;
+        unrestrictedExecution?: boolean;
+      };
       if (
         capability.protocolVersion !== 2 ||
         capability.pty !== "conpty" ||
-        capability.stdio !== "ack-stream"
+        capability.stdio !== "ack-stream" ||
+        (input.initial.scope.sandboxMode === "danger-full-access" &&
+          capability.unrestrictedExecution !== true)
       )
         throw new ProcessSandboxError(
           "enforcement_unavailable",
@@ -194,23 +210,30 @@ class TaskProcessHelper {
       this.phase = "ready";
       return null;
     }
-    const policy = await this.policy(input.initial);
-    const dependencies = await SandboxManager.checkDependenciesAsync();
-    if (
-      !SandboxManager.isSupportedPlatform() ||
-      dependencies.errors.length > 0
-    ) {
-      throw new ProcessSandboxError(
-        "enforcement_unavailable",
-        `真实沙箱不可用：${dependencies.errors.join("；")}`,
-      );
-    }
-    await SandboxManager.initialize(policy, undefined, true);
-    if (input.initial.scope.sandboxMode === "read-only")
-      await this.ensureReadOnlyProof(input.initial);
-    else await this.probe(input.initial);
+    if (input.initial.scope.sandboxMode !== "danger-full-access")
+      await this.ensureSandbox(input.initial);
     this.phase = "ready";
     return null;
+  }
+
+  private ensureSandbox(request: ProcessSpawnRequest): Promise<void> {
+    this.sandboxInitialization ??= (async () => {
+      const policy = await this.policy(request);
+      const dependencies = await SandboxManager.checkDependenciesAsync();
+      if (
+        !SandboxManager.isSupportedPlatform() ||
+        dependencies.errors.length > 0
+      )
+        throw new ProcessSandboxError(
+          "enforcement_unavailable",
+          `真实沙箱不可用：${dependencies.errors.join("；")}`,
+        );
+      await SandboxManager.initialize(policy, undefined, true);
+      if (request.scope.sandboxMode === "read-only")
+        await this.ensureReadOnlyProof(request);
+      else await this.probe(request);
+    })();
+    return this.sandboxInitialization;
   }
 
   private async policy(
@@ -312,6 +335,11 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
     // 在第一次 await 前预留启动 Promise；失败也保留，不能重放不安全副作用。
     const pending = previous ?? {
       child: (async () => {
+        if (
+          !this.windowsBroker &&
+          request.scope.sandboxMode !== "danger-full-access"
+        )
+          await this.ensureSandbox(request);
         if (request.scope.sandboxMode === "read-only")
           await this.ensureReadOnlyProof(request);
         this.assertReady(request);
@@ -344,6 +372,7 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
           temporaryDirectory: this.temporaryDirectory,
           brokerPath: this.windowsBrokerPath,
           internalWriteRoots,
+          accountHome: this.accountHome,
           ...(this.requireOptions().runtimeReadRoots
             ? { runtimeReadRoots: this.requireOptions().runtimeReadRoots }
             : {}),
@@ -380,22 +409,28 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
         await child.ready.promise;
         return child;
       }
-      const policy = await this.policy(request, internalWriteRoots);
-      const command = unixCommand(request);
-      // 外层 launcher 是固定受信任的系统 shell；用户选择的 shell 只在 sandbox 内启动。
-      const descriptor = await SandboxManager.wrapWithSandboxArgv(
-        command,
-        "/bin/sh",
-        policy,
-        abort.signal,
-        cwd,
-        {
-          commandId: id,
-          commandText: request.command ?? request.argv?.executable ?? "命令",
-        },
-      );
-      wrapped = true;
-      if (process.platform === "linux")
+      const unrestricted = request.scope.sandboxMode === "danger-full-access";
+      if (unrestricted && request.pty && process.platform === "linux")
+        throw new ProcessSandboxError(
+          "enforcement_unavailable",
+          "Linux完全访问PTY尚缺受信任session范围管理，未启动终端。",
+        );
+      const descriptor = unrestricted
+        ? accountCommand(request, this.accountHome)
+        : await SandboxManager.wrapWithSandboxArgv(
+            unixCommand(request),
+            "/bin/sh",
+            await this.policy(request, internalWriteRoots),
+            abort.signal,
+            cwd,
+            {
+              commandId: id,
+              commandText:
+                request.command ?? request.argv?.executable ?? "命令",
+            },
+          );
+      wrapped = !unrestricted;
+      if (!unrestricted && process.platform === "linux")
         descriptor.argv = prepareLinuxSandboxArgv(
           descriptor.argv,
           Boolean(request.pty),
@@ -403,11 +438,12 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
         );
       if (!probe) this.assertReady(request);
       abort.signal.throwIfAborted();
-      descriptor.env = {
-        ...executionEnvironment(descriptor.env),
-        HOME: process.env.HOME,
-        CLAUDE_CODE_TMPDIR: this.temporaryDirectory,
-      };
+      if (!unrestricted)
+        descriptor.env = {
+          ...executionEnvironment(descriptor.env),
+          HOME: process.env.HOME,
+          CLAUDE_CODE_TMPDIR: this.temporaryDirectory,
+        };
       // POSIX 侧同样补随包运行时 PATH（与 Windows 路径口径一致，见 environment.ts）。
       prependExecutionPath(
         descriptor.env as Record<string, string>,
@@ -421,7 +457,7 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
       const ptyModule = request.pty ? await this.ptyRuntime : undefined;
       if (!probe) this.assertReady(request);
       abort.signal.throwIfAborted();
-      if (process.platform === "linux")
+      if (!unrestricted && process.platform === "linux")
         this.linuxInspector ??= prepareLinuxProcessInspector(
           this.privateDirectory,
           request.limits,
@@ -439,7 +475,9 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
         (changed) => {
           if (!probe) this.send({ event: "snapshot", snapshot: changed });
         },
-        () => SandboxManager.cleanupAfterCommand(),
+        () => {
+          if (!unrestricted) SandboxManager.cleanupAfterCommand();
+        },
         ptyModule?.module,
         (sequence, data, offset, nextOffset, stream) =>
           this.sendProcessOutput(
@@ -495,15 +533,25 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
       startedAt: new Date().toISOString(),
       finishedAt: null,
       enforcement: {
-        backend: this.windowsBroker
-          ? "windows-task-broker"
-          : process.platform === "darwin"
-            ? "srt-seatbelt"
-            : "srt-bwrap",
-        filesystem: "enforced",
+        backend:
+          request.scope.sandboxMode === "danger-full-access"
+            ? "host-account"
+            : this.windowsBroker
+              ? "windows-task-broker"
+              : process.platform === "darwin"
+                ? "srt-seatbelt"
+                : "srt-bwrap",
+        filesystem:
+          request.scope.sandboxMode === "danger-full-access"
+            ? "unrestricted"
+            : "enforced",
+        ...(request.scope.sandboxMode === "danger-full-access"
+          ? { network: "unrestricted" as const }
+          : {}),
         processRange: this.windowsBroker
           ? "job-object"
-          : process.platform === "darwin"
+          : process.platform === "darwin" ||
+              request.scope.sandboxMode === "danger-full-access"
             ? "process-group"
             : "pid-namespace",
         permissionsGeneration: request.scope.generation,
@@ -569,7 +617,7 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
       await this.revoke(this.generation, reason);
       this.phase = "closed";
       if (this.windowsBroker) await this.windowsBroker.close();
-      else await SandboxManager.reset();
+      else if (this.sandboxInitialization) await SandboxManager.reset();
       if (this.temporaryDirectory)
         await rm(this.temporaryDirectory, { recursive: true, force: true });
     })();

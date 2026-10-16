@@ -261,6 +261,15 @@
       "status": "active",
       "note": "独立kernel/测试的插件目录注入；正式本机入口统一为数据根/plugins"
     },
+    "RUN_FULL_ACCESS_INTEGRATION": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/execution/full-access.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "=1 在真实Unix主机启用账户级完全访问/受限/Plan/角色及降档回收回归；仅临时目录与本机HTTP，无生产读者"
+    },
     "RUN_LOCAL_INSTANCE_SCHEMA_INTEGRATION": {
       "surface": "test",
       "readers": [

@@ -78,6 +78,7 @@ export class UnixManagedProcess {
   private linuxRange: Promise<LinuxProcessRange> | undefined;
   private outputReader = false;
   private nativeExited = false;
+  private stoppingGroup: Promise<void> | undefined;
   private readonly pipeOutput = new Map<ProcessOutputStream, PipeOutputRelay>();
 
   constructor(
@@ -198,7 +199,7 @@ export class UnixManagedProcess {
       this.exited(exitCode, name);
     });
     this.snapshotValue.pid = pty.pid;
-    if (process.platform === "linux") {
+    if (this.snapshotValue.enforcement?.processRange === "pid-namespace") {
       this.openLinuxRange(pty.pid, () => pty.kill("SIGKILL"));
       return pty;
     }
@@ -266,7 +267,10 @@ export class UnixManagedProcess {
     }
     child.on("spawn", () => {
       this.snapshotValue.pid = child.pid ?? null;
-      if (process.platform === "linux" && child.pid)
+      if (
+        this.snapshotValue.enforcement?.processRange === "pid-namespace" &&
+        child.pid
+      )
         this.openLinuxRange(child.pid, () => child.kill("SIGKILL"));
       else {
         this.snapshotValue.state = "running";
@@ -521,6 +525,17 @@ export class UnixManagedProcess {
       this.child?.kill("SIGKILL");
       return this.wait();
     }
+    await this.stopGroup(pid);
+    await this.closed.promise;
+    return this.wait();
+  }
+
+  private stopGroup(pid: number): Promise<void> {
+    this.stoppingGroup ??= this.terminateGroup(pid);
+    return this.stoppingGroup;
+  }
+
+  private async terminateGroup(pid: number): Promise<void> {
     signalGroup(pid, "SIGTERM");
     if (!(await this.waitGroup(pid, this.request.limits.killGraceMs))) {
       signalGroup(pid, "SIGKILL");
@@ -533,8 +548,6 @@ export class UnixManagedProcess {
         );
       }
     }
-    await this.closed.promise;
-    return this.wait();
   }
 
   private async waitGroup(pid: number, timeoutMs?: number): Promise<boolean> {
@@ -556,7 +569,11 @@ export class UnixManagedProcess {
       await (await (this.ptyRange ?? this.linuxRange))?.stop();
     else {
       const pid = this.child?.pid ?? this.pty?.pid;
-      if (pid !== undefined) await this.waitGroup(pid);
+      if (pid !== undefined) {
+        if (this.request.scope.sandboxMode === "danger-full-access")
+          await this.stopGroup(pid);
+        else await this.waitGroup(pid);
+      }
     }
     const exit: ProcessExit = {
       exitCode,
