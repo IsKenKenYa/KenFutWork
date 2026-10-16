@@ -117,8 +117,17 @@ export function createToolExecutionReceipts(options: {
     async observeNative(proof: NativeToolProof) {
       if (proof.registered) {
         for (const event of proof.events)
-          if (event.type === "tool.completed" && event.status === "success")
-            verify(event);
+          if (event.type === "tool.completed") verify(event);
+        // 目录或中间层可在进入内核前拒绝已注册工具；可信失败事实仍须可见。
+        // 成功必须先经上面的真实内核回执验证，不能靠 native/provider 自报。
+        if (
+          proof.events.some(
+            (event) =>
+              event.type === "tool.completed" &&
+              (event.status === "error" || event.status === "cancelled"),
+          )
+        )
+          for (const event of proof.events) await emit(event);
         return;
       }
       // 未注册＝目录层自带的 SDK 工具（handler 真实存在，证明中间件已守住「有实际 handler」这一条）：

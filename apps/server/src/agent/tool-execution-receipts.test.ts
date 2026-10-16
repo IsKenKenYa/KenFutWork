@@ -29,6 +29,66 @@ function makeReceipts(projected: Event[] = []) {
 }
 
 describe("工具执行回执门：目录层自带 SDK 工具的豁免", () => {
+  it.each(["error", "cancelled"] as const)(
+    "已注册工具在目录或中间层%s时发布可信拒绝事实，重复证明不重复发布",
+    async (status) => {
+      const { receipts, published } = makeReceipts();
+      const started = event({
+        type: "tool.started",
+        toolName: "Write",
+        toolCallId: "call_registered_denied",
+        input: { file_path: "forbidden.txt", content: "must not write" },
+      });
+      const completed = event({
+        type: "tool.completed",
+        toolName: "Write",
+        toolCallId: "call_registered_denied",
+        status,
+        outputSummary: "当前规划状态拒绝写入",
+      });
+      const proof = {
+        toolName: "Write",
+        toolCallId: "call_registered_denied",
+        registered: true,
+        events: [started, completed],
+      };
+
+      await receipts.observeNative(proof);
+      expect(published).toEqual([started, completed]);
+      expect(receipts.gate.drain()).toEqual([started, completed]);
+      expect(receipts.gate.isExecuting()).toBe(false);
+
+      await receipts.observeNative(proof);
+      expect(published).toEqual([started, completed]);
+      expect(receipts.gate.drain()).toEqual([]);
+    },
+  );
+
+  it("已注册工具只有native成功证明而没有真实内核回执，仍拒绝并且不发布成功", async () => {
+    const { receipts, published } = makeReceipts();
+    await expect(
+      receipts.observeNative({
+        toolName: "Write",
+        toolCallId: "call_unproven_success",
+        registered: true,
+        events: [
+          event({
+            type: "tool.started",
+            toolName: "Write",
+            toolCallId: "call_unproven_success",
+          }),
+          event({
+            type: "tool.completed",
+            toolName: "Write",
+            toolCallId: "call_unproven_success",
+          }),
+        ],
+      }),
+    ).rejects.toThrow("工具成功事件缺少真实执行结果。");
+    expect(published).toEqual([]);
+    expect(receipts.gate.isExecuting()).toBe(false);
+  });
+
   it("已观察的 SDK 工具（registered:false）成功完成事件不被内核回执校验误杀，且完成事实仍会下发", async () => {
     const { receipts, published } = makeReceipts();
     const started = event({
