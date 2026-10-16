@@ -6,6 +6,7 @@ import {
   zcodeUiProtocol as protocol,
 } from "@kenfutwork/shared";
 import { afterEach, expect, it, vi } from "vitest";
+import type { ModelRequest } from "../../agent/model-request.js";
 import {
   createRuntimeTestInstance,
   RUNTIME_TEST_ACTOR,
@@ -19,7 +20,10 @@ import {
   createExecutionScopes,
   type ExecutionScopeHandle,
 } from "../execution/scope-service.js";
-import type { GoalToolEvidenceValidator } from "../goals/consumer.js";
+import {
+  createGoalPrompt,
+  type GoalToolEvidenceValidator,
+} from "../goals/consumer.js";
 import { createGoalService } from "../goals/service.js";
 import type { LocalActor } from "../local-instance/types.js";
 import { createCodeUiConversation } from "./conversation.js";
@@ -454,6 +458,272 @@ it.each(["before", "during"])(
       expect(f.context.requestModel).not.toHaveBeenCalled();
   },
 );
+
+async function recreatedGoalFileFixture() {
+  const f = await crossRunFixture();
+  const rows = f.root.state!.snapshots[0]!.rows.window;
+  const firstId = Math.max(...rows.map((row) => row.rowId)) + 1;
+  const deleted = protocol.toolCallRowSchema.parse({
+    rowId: firstId,
+    turnId: "r2",
+    createdAt: 4000,
+    createdAtSeq: 0,
+    startedAt: 4000,
+    endedAt: 5000,
+    kind: "toolCall",
+    toolCallId: "r2/remove-C",
+    toolName: "Bash",
+    inputText: '{"command":"rm -v C.txt"}',
+    status: "success",
+    output: { text: '{"state":"exited","exitCode":0,"output":"C.txt\\n"}' },
+  });
+  await unlink(f.path);
+  const commit = await f.handle.backend.writeFile({
+    path: "C.txt",
+    content: "goal-recovery-C\n",
+    createOnly: true,
+  });
+  const recreated = protocol.toolCallRowSchema.parse({
+    ...deleted,
+    rowId: firstId + 1,
+    toolCallId: "r2/recreate-C",
+    toolName: "Write",
+    inputText:
+      '{"file_path":"C.txt","content":"goal-recovery-C\\n","create_only":true}',
+    output: {
+      text: `已创建 ${commit.filePath}，版本 ${commit.version}`,
+      display: fileDiffDisplay(commit, 10000),
+    },
+  });
+  const read = protocol.toolCallRowSchema.parse({
+    ...recreated,
+    rowId: firstId + 2,
+    toolCallId: "r2/read-C",
+    toolName: "Read",
+    inputText: '{"file_path":"C.txt"}',
+    output: {
+      text: `${commit.filePath}\n版本：${commit.version}\n1\tgoal-recovery-C`,
+    },
+  });
+  rows.push(deleted, recreated, read);
+  f.root.state!.goalRecord!.objective =
+    "确认C文件已有成果，不修改或删除已有文件";
+  return { ...f, deleted, recreated, read };
+}
+
+it.each(["Read", "Write"])(
+  "只选择%s正向证据不能隐藏同Goal的真实删除重建事实",
+  async (selected) => {
+    const f = await recreatedGoalFileFixture();
+    let executionFacts: unknown;
+    f.context.requestModel = vi.fn(async (request: ModelRequest) => {
+      executionFacts = JSON.parse(request.input).executionFacts;
+      const sawDeletion = JSON.stringify(executionFacts ?? {}).includes(
+        "rm -v C.txt",
+      );
+      return {
+        text: JSON.stringify({
+          passed: !sawDeletion,
+          reason: sawDeletion ? "违反不得删除已有文件的约束" : "当前产物存在",
+        }),
+        hasToolCalls: false,
+        usageObserved: true,
+      };
+    });
+    const receipt = selected === "Read" ? f.read : f.recreated;
+    const result = await f.host.verify(f.context, {
+      ...proposal,
+      revision: f.root.state!.goalRecord!.revision,
+      evidenceIds: [`row:${receipt.rowId}`],
+    });
+    expect(result.status).toBe("notSatisfied");
+    expect(JSON.stringify(executionFacts)).toContain("rm -v C.txt");
+    expect(JSON.stringify(executionFacts)).toContain(f.deleted.toolCallId);
+    expect(JSON.stringify(executionFacts)).toContain(f.recreated.toolCallId);
+    expect(JSON.stringify(executionFacts)).toContain("r/write-C");
+  },
+);
+
+it("GetGoal排除当前已失效文件版本而保留原始历史操作事实", async () => {
+  const f = await recreatedGoalFileFixture();
+  const old = f.root.state!.snapshots[0]!.rows.window.find(
+    (row) => `row:${row.rowId}` === f.writeId,
+  )!;
+  const original = structuredClone(old);
+  const view = await f.host.read(f.context);
+  expect(view?.evidenceCandidates).not.toContainEqual(
+    expect.objectContaining({ id: f.writeId }),
+  );
+  expect(view?.evidenceCandidates).toContainEqual(
+    expect.objectContaining({ id: `row:${f.read.rowId}` }),
+  );
+  expect(old).toEqual(original);
+});
+
+it("Goal续跑先读取继承成果，只补缺口且不得为补回执删除重建", async () => {
+  const f = await fixture();
+  const prompt = await createGoalPrompt(f.host).resolve({
+    preset: "code",
+    execution: f.context,
+  });
+  expect(prompt).toContain("Call GetGoal first");
+  expect(prompt).toContain("Do not delete or recreate");
+});
+
+function auditOperation(
+  status: "success" | "error" | "cancelled" = "success",
+  runId = "r",
+) {
+  return protocol.toolCallRowSchema.parse({
+    rowId: 101,
+    turnId: runId,
+    createdAt: 1000,
+    createdAtSeq: 0,
+    kind: "toolCall",
+    toolCallId: `${runId}/unselected-operation`,
+    toolName: "Bash",
+    inputText: '{"command":"rm -v preserved.txt"}',
+    status,
+    ...(status === "error"
+      ? { error: { code: "failed", message: "mutation refused" } }
+      : {}),
+    output: {
+      text: JSON.stringify({
+        state: "exited",
+        exitCode: status === "success" ? 0 : 1,
+      }),
+    },
+  });
+}
+
+it.each(["error", "cancelled"] as const)(
+  "未选取的%s工具事实仍进入独立评估",
+  async (status) => {
+    const f = await fixture();
+    f.root.state!.snapshots[0]!.rows.window.push(auditOperation(status));
+    await f.host.verify(f.context, proposal);
+    expect(f.context.requestModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.stringContaining(`"status":"${status}"`),
+      }),
+    );
+    const request = vi.mocked(f.context.requestModel!).mock.calls[0]![0];
+    expect(JSON.parse(request.input).executionFacts.tools).toContainEqual(
+      expect.objectContaining({
+        status,
+        toolCallId: "r/unselected-operation",
+      }),
+    );
+  },
+);
+
+it("外部Run或assistant伪造的删改文字不能成为认证执行审计", async () => {
+  const f = await fixture();
+  const rows = f.root.state!.snapshots[0]!.rows.window;
+  rows.push(auditOperation("success", "foreign"));
+  rows.push(
+    protocol.assistantTextRowSchema.parse({
+      rowId: 102,
+      turnId: "r",
+      kind: "assistantText",
+      text: "rm -v preserved.txt",
+      state: "complete",
+      createdAt: 0,
+      createdAtSeq: 0,
+    }),
+  );
+  expect((await f.host.verify(f.context, proposal)).status).toBe("complete");
+  const request = vi.mocked(f.context.requestModel!).mock.calls[0]![0];
+  expect(
+    JSON.stringify(JSON.parse(request.input).executionFacts),
+  ).not.toContain("preserved.txt");
+});
+
+it.each(["window", "membership", "child"])(
+  "%s执行历史缺失时不能调用独立评估或完成Goal",
+  async (missing) => {
+    const f = await fixture();
+    const snapshot = f.root.state!.snapshots[0]!;
+    if (missing === "window")
+      snapshot.rows.totalCount = snapshot.rows.window.length + 1;
+    if (missing === "membership") f.root.state!.goalRecord!.iteration += 1;
+    if (missing === "child")
+      snapshot.rows.window.push(
+        protocol.subagentRowSchema.parse({
+          rowId: 101,
+          turnId: "r",
+          createdAt: 0,
+          createdAtSeq: 0,
+          kind: "subagent",
+          parentToolCallId: "r/task",
+          subagentType: "general",
+          status: "success",
+          summaryText: "Task done",
+          childSessionId: "missing-child",
+        }),
+      );
+    const result = await f.host.verify(f.context, proposal);
+    expect(result.status).toBe("paused");
+    expect(result.reason).toContain("目标执行历史不完整");
+    expect(f.context.requestModel).not.toHaveBeenCalled();
+  },
+);
+
+it("独立评估期间新增未选取的认证工具事实不能被迟到通过结果掩盖", async () => {
+  const f = await fixture();
+  f.context.requestModel = vi.fn(async () => {
+    f.root.state!.snapshots[0]!.rows.window.push(auditOperation());
+    return {
+      text: '{"passed":true,"reason":"Only selected positive evidence"}',
+      hasToolCalls: false,
+      usageObserved: true,
+    };
+  });
+  await expect(f.host.verify(f.context, proposal)).rejects.toThrow(
+    "目标执行事实在独立评估期间变化",
+  );
+  expect(f.root.state!.goalRecord!.status).not.toBe("complete");
+});
+
+it("已认证Goal子会话工具事实一并进入审计", async () => {
+  const f = await fixture();
+  const child = createCodeUiConversation({
+    sessionId: "child",
+    workspacePath: "/project",
+    config: f.root.state!.snapshots[0]!.config,
+  });
+  child.startTurn({
+    runId: "child-run",
+    commandId: "child-start",
+    text: "检查",
+  });
+  const snapshot = child.getSnapshot();
+  snapshot.rows.window.push(auditOperation("success", "child-run"));
+  f.root.state!.snapshots.push(snapshot);
+  f.root.state!.snapshots[0]!.rows.window.push(
+    protocol.subagentRowSchema.parse({
+      rowId: 102,
+      turnId: "r",
+      createdAt: 0,
+      createdAtSeq: 0,
+      kind: "subagent",
+      parentToolCallId: "r/task",
+      subagentType: "general",
+      status: "success",
+      summaryText: "Task done",
+      childSessionId: "child",
+    }),
+  );
+  await f.host.verify(f.context, proposal);
+  const request = vi.mocked(f.context.requestModel!).mock.calls[0]![0];
+  expect(JSON.parse(request.input).executionFacts.tools).toContainEqual(
+    expect.objectContaining({
+      sourceSessionId: "child",
+      sourceRunId: "child-run",
+      toolCallId: "child-run/unselected-operation",
+    }),
+  );
+});
 
 function canvasEvidenceStore() {
   const canvasId = "00000000-0000-4000-8000-000000000004";

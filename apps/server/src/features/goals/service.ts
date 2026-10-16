@@ -23,6 +23,21 @@ export interface GoalRunMember {
   branchGeneration: number;
   iteration: number;
 }
+/** Authenticated historical operations, separate from evidence of the current artifact state. */
+export interface GoalExecutionFacts {
+  complete: boolean;
+  runs: GoalRunMember[];
+  tools: Array<{
+    sourceId: string;
+    sourceSessionId: string;
+    sourceRunId: string;
+    toolCallId: string;
+    status: string;
+    tool: { name: string; inputText: string };
+    outputText: string;
+    error?: { code: string; message: string };
+  }>;
+}
 export interface GoalVerification {
   runId: string;
   /** Captured at verification; absent only in older persisted Goal records. */
@@ -56,6 +71,7 @@ export interface GoalRecord {
     runId: string;
     revision: number;
     evidence: GoalEvidence[];
+    executionFacts: GoalExecutionFacts;
     proposal: { passed: boolean; reason: string };
   } | null;
   reason: string | null;

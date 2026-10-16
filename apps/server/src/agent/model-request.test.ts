@@ -337,6 +337,7 @@ it("缺少真实用量不会伪造零用量", async () => {
         at: 0,
       }),
       evidence: [{ sourceId: "actual-receipt", passed: true }],
+      executionFacts: { complete: true, runs: [], tools: [] },
       proposal: { passed: true, reason: "File receipt" },
     }),
   ).toEqual({ error: "独立评估未返回用量，目标尚未验收。" });

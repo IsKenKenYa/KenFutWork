@@ -3,11 +3,13 @@ import type { ModelInvocationSnapshot } from "../../providers/types.js";
 import { evaluateGoal } from "../goals/evaluation.js";
 import type {
   GoalEvidence,
+  GoalExecutionFacts,
   GoalRecord,
   GoalRunMember,
   GoalService,
 } from "../goals/service.js";
 import { isGoalToolEvidence } from "../goals/tool-evidence.js";
+import { freezeChildSnapshots } from "./child-history.js";
 import type { CodeUiConversationState } from "./conversation.js";
 
 function verificationIteration(goal: GoalRecord): number | null {
@@ -169,6 +171,139 @@ function hasToolEvidenceProof(
     : toolName !== "manipulate_canvas";
 }
 
+async function currentFileCandidateRows(
+  context: PromptExecutionContext,
+  rows: protocol.ConversationRow[],
+): Promise<protocol.ConversationRow[]> {
+  const observed = new Map<
+    string,
+    ReturnType<
+      NonNullable<typeof context.scopeHandle>["backend"]["observeBinary"]
+    >
+  >();
+  const current: protocol.ConversationRow[] = [];
+  for (const row of rows) {
+    let matches = true;
+    for (const file of row.kind === "toolCall"
+      ? (evidenceFiles(row) ?? [])
+      : []) {
+      if (!context.scopeHandle)
+        throw new Error("验收证据缺少可信Task目录授权。");
+      let observation = observed.get(file.path);
+      if (!observation) {
+        observation = context.scopeHandle.backend.observeBinary(file.path);
+        observed.set(file.path, observation);
+      }
+      const actual = await observation;
+      context.signal?.throwIfAborted();
+      if (actual.path !== file.path || actual.version !== file.version)
+        matches = false;
+    }
+    if (matches) current.push(row);
+  }
+  return current;
+}
+
+function goalExecutionFacts(
+  state: CodeUiConversationState,
+  rootId: string,
+  goal: GoalRecord,
+): GoalExecutionFacts {
+  const runs: GoalRunMember[] = (goal.runs ?? []).filter(
+    (member) => member.branchGeneration === goal.branchGeneration,
+  );
+  if (
+    goal.claimedRunId &&
+    !runs.some((member) => member.runId === goal.claimedRunId)
+  )
+    runs.push({
+      runId: goal.claimedRunId,
+      branchGeneration: goal.branchGeneration,
+      iteration: goal.iteration,
+    });
+  runs.sort((left, right) => left.iteration - right.iteration);
+  const facts: GoalExecutionFacts = {
+    complete:
+      runs.length === goal.iteration &&
+      new Set(runs.map((member) => member.runId)).size === goal.iteration &&
+      runs.every((member, index) => member.iteration === index + 1),
+    runs,
+    tools: [],
+  };
+  const root = state.snapshots.find(
+    (snapshot) => snapshot.sessionId === rootId,
+  );
+  if (!root) return { ...facts, complete: false };
+  const selected = {
+    ...root,
+    rows: {
+      ...root.rows,
+      window: root.rows.window.filter((row) =>
+        belongsToGoal(row.turnId, goal.claimedRunId ?? "", goal),
+      ),
+    },
+  };
+  let descendants: protocol.ConversationSnapshot[] = [];
+  try {
+    descendants = freezeChildSnapshots(
+      selected,
+      new Map(
+        state.snapshots.map((snapshot) => [snapshot.sessionId, snapshot]),
+      ),
+    );
+  } catch {
+    facts.complete = false;
+  }
+  for (const snapshot of [root, ...descendants])
+    appendExecutionFacts(
+      facts,
+      snapshot,
+      snapshot.sessionId === rootId
+        ? selected.rows.window
+        : snapshot.rows.window,
+    );
+  return facts;
+}
+
+function appendExecutionFacts(
+  facts: GoalExecutionFacts,
+  snapshot: protocol.ConversationSnapshot,
+  rows: protocol.ConversationRow[],
+): void {
+  if (
+    snapshot.rows.window.length < snapshot.rows.totalCount ||
+    (snapshot.rows.firstRowId !== null &&
+      !snapshot.rows.window.some(
+        (row) => row.rowId === snapshot.rows.firstRowId,
+      ))
+  )
+    facts.complete = false;
+  for (const row of rows) {
+    if (
+      row.kind !== "toolCall" ||
+      ["GetGoal", "VerifyGoal"].includes(row.toolName)
+    )
+      continue;
+    if (!row.toolCallId.startsWith(`${row.turnId}/`)) {
+      facts.complete = false;
+      continue;
+    }
+    facts.tools.push({
+      sourceId: `session:${snapshot.sessionId}:row:${row.rowId}`,
+      sourceSessionId: snapshot.sessionId,
+      sourceRunId: row.turnId,
+      toolCallId: row.toolCallId,
+      status: row.status,
+      tool: {
+        name: row.toolName,
+        inputText: row.input ? JSON.stringify(row.input) : row.inputText,
+      },
+      outputText: row.output?.text ?? "",
+      ...(row.error ? { error: structuredClone(row.error) } : {}),
+    });
+  }
+}
+
 export function createTaskGoalHost(deps: {
   goals: GoalService;
   repository: Pick<CodeUiRepository, "find" | "appendEvent">;
@@ -229,6 +364,20 @@ export function createTaskGoalHost(deps: {
           throw new Error(
             "独立评估所属目标、Run或授权代际已改变，旧结果不再生效。",
           );
+        const rows =
+          root.state!.snapshots.find(
+            (snapshot) => snapshot.sessionId === root.id,
+          )?.rows.window ?? [];
+        const executionFacts = goalExecutionFacts(
+          root.state!,
+          root.id,
+          withGoalMembers(goal, rows),
+        );
+        if (
+          JSON.stringify(executionFacts) !==
+          JSON.stringify(captured.goal.evaluation!.executionFacts)
+        )
+          throw new Error("目标执行事实在独立评估期间变化，请重新验收。");
         const state = structuredClone(root.state!);
         state.goalRecord =
           "error" in verdict
@@ -275,19 +424,32 @@ export function createTaskGoalHost(deps: {
       if (visible) delete visible.evaluation;
       for (const evidence of visible?.verification?.evidence ?? [])
         delete evidence.detail;
+      const proofRows = (snapshot?.rows.window ?? []).filter(
+        (row) =>
+          row.kind !== "toolCall" ||
+          hasToolEvidenceProof(
+            row.toolName,
+            row.output?.text ?? "",
+            deps.goalToolEvidenceValidator?.(row.toolName),
+          ),
+      );
+      const candidateIds = new Set(
+        goalEvidenceCandidates(
+          proofRows,
+          context.runId!,
+          goal.revision,
+          boundGoal ?? undefined,
+        ).map((candidate) => candidate.id),
+      );
+      const candidates = await currentFileCandidateRows(
+        context,
+        proofRows.filter((row) => candidateIds.has(`row:${row.rowId}`)),
+      );
       return goal && visible
         ? {
             ...visible,
             evidenceCandidates: goalEvidenceCandidates(
-              (snapshot?.rows.window ?? []).filter(
-                (row) =>
-                  row.kind !== "toolCall" ||
-                  hasToolEvidenceProof(
-                    row.toolName,
-                    row.output?.text ?? "",
-                    deps.goalToolEvidenceValidator?.(row.toolName),
-                  ),
-              ),
+              candidates,
               context.runId!,
               goal.revision,
               boundGoal ?? undefined,
@@ -366,6 +528,7 @@ export function createTaskGoalHost(deps: {
             runId: context.runId!,
             revision: started.revision,
             evidence,
+            executionFacts: goalExecutionFacts(state, root.id, goal),
             proposal: { passed: input.passed, reason: input.reason },
           };
           state.goalRecord = started;
@@ -390,6 +553,7 @@ export function createTaskGoalHost(deps: {
           invocation: captured.invocation,
           goal: captured.goal,
           evidence: captured.goal.evaluation!.evidence,
+          executionFacts: captured.goal.evaluation!.executionFacts,
           proposal: captured.goal.evaluation!.proposal,
         });
         context.signal?.throwIfAborted();
