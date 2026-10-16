@@ -4131,6 +4131,17 @@ export class CodeUiService {
           "command_conflict",
           "这条输入缺少发送时的工作方式，请重新发送。",
         );
+      const approvalCeiling =
+        current.state!.inputs?.find(
+          (entry) =>
+            entry.runId === runId && entry.intent.delivery.admitted !== "guide",
+        )?.intent.mode ??
+        current.state!.runApprovalCeilings?.find(([id]) => id === runId)?.[1];
+      if (!approvalCeiling)
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "这条输入缺少发送时的执行权限，请重新发送。",
+        );
       const started = await this.deps.repository.startRunIfCurrent(
         scopeHandle.describe().instanceId,
         sessionId,
@@ -4200,11 +4211,7 @@ export class CodeUiService {
                       inputOrigin: "backgroundResult" as const,
                     }
                   : {}),
-              ...(currentInput?.intent.mode
-                ? {
-                    approvalCeiling: currentInput.intent.mode,
-                  }
-                : {}),
+              approvalCeiling,
               eventSink: async (event) =>
                 this.recordRunEvent(
                   user,

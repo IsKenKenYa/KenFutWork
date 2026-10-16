@@ -11,6 +11,7 @@ import {
 import type { ToolContributionSnapshot } from "../../kernel/types.js";
 import type { ModelInvocationSnapshot } from "../../providers/types.js";
 import { createGoalService } from "../goals/service.js";
+import type { CodeApprovalMode } from "../permissions/approval-types.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createCodeUiConversation } from "./conversation.js";
 import { createCodeUiTestInstance } from "./host-session.fixture.js";
@@ -25,6 +26,7 @@ function deferred() {
   return { promise, resolve };
 }
 export interface ControlledGoalRun {
+  approvalCeiling?: CodeApprovalMode;
   runId: string;
   prompt: string;
   modelInvocation?: ModelInvocationSnapshot;
@@ -106,6 +108,7 @@ function createControlledRuntime() {
     createRun(
       input: { prompt: string },
       options: {
+        approvalCeiling?: CodeApprovalMode;
         runId: string;
         modelInvocation?: ModelInvocationSnapshot;
         frozenContributions?: ToolContributionSnapshot;
@@ -113,6 +116,9 @@ function createControlledRuntime() {
       },
     ) {
       const run = {
+        ...(options.approvalCeiling
+          ? { approvalCeiling: options.approvalCeiling }
+          : {}),
         runId: options.runId,
         prompt: input.prompt,
         ...(options.modelInvocation
@@ -175,6 +181,7 @@ function makeGoalHost(
   name: string,
   captureContributions?: CodeUiServiceDeps["captureContributions"],
   workContextProvider?: CodeUiServiceDeps["workContextProvider"],
+  taskWork?: CodeUiServiceDeps["taskWork"],
 ) {
   const { database, scope, goals, repository, provider } = base;
   const service = new CodeUiService({
@@ -257,6 +264,7 @@ function makeGoalHost(
       notifyReady: async () => {},
       list: async () => [],
     },
+    ...(taskWork ? { taskWork } : {}),
     env: { checkpointRoot: join(database.directory, name) },
     ...(captureContributions ? { captureContributions } : {}),
     ...(workContextProvider ? { workContextProvider } : {}),
@@ -345,6 +353,7 @@ export async function createGoalServiceFixture() {
       name: string,
       captureContributions?: CodeUiServiceDeps["captureContributions"],
       workContextProvider?: CodeUiServiceDeps["workContextProvider"],
+      taskWork?: CodeUiServiceDeps["taskWork"],
     ) {
       const service = makeGoalHost(
         base,
@@ -352,6 +361,7 @@ export async function createGoalServiceFixture() {
         name,
         captureContributions,
         workContextProvider,
+        taskWork,
       );
       services.push(service);
       return service;

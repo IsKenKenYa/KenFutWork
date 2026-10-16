@@ -12,7 +12,10 @@ import {
   type GoalRecord,
   type GoalService,
 } from "../goals/service.js";
-import type { ApprovalEvent } from "../permissions/approval-types.js";
+import type {
+  ApprovalEvent,
+  CodeApprovalMode,
+} from "../permissions/approval-types.js";
 import type { RunUsageTotals } from "../usage/run-usage-accumulator.js";
 import { freezeChildSnapshots } from "./child-history.js";
 import { updateTurnFileSummary } from "./file-changes.js";
@@ -70,6 +73,7 @@ export interface CodeUiConversationState {
   runExecutionModes?: Array<
     [string, import("@kenfutwork/shared").ExecutionMode]
   >;
+  runApprovalCeilings?: Array<[string, CodeApprovalMode]>;
   initialWorkContext?: protocol.ConversationWorkContext;
   runWorkContexts?: Array<[string, protocol.ConversationWorkContext]>;
   runContributions?: Array<[string, ToolContributionSnapshot]>;
@@ -389,6 +393,7 @@ export function createCodeUiConversation(input: {
     structuredClone(input.state?.runContributions ?? []),
   );
   const runExecutionModes = new Map(input.state?.runExecutionModes ?? []);
+  const runApprovalCeilings = new Map(input.state?.runApprovalCeilings ?? []);
   const runOutcomes = new Map(input.state?.runOutcomes ?? []);
   const contextWindowProjections = new Map(
     input.state?.contextWindowProjections ?? [],
@@ -466,6 +471,10 @@ export function createCodeUiConversation(input: {
       contextWindowProjections.delete(root.sessionId);
     }
     runId = turn.runId;
+    const mode = protocol.commandPayloadSchemas.switchCollaborationMode.parse({
+      mode: turn.mode ?? root.config.mode,
+    }).mode;
+    runApprovalCeilings.set(turn.runId, mode === "plan" ? "build" : mode);
     if (turn.executionMode)
       runExecutionModes.set(turn.runId, turn.executionMode);
     runWorkContexts.set(
@@ -554,6 +563,7 @@ export function createCodeUiConversation(input: {
         runWorkContexts: [...runWorkContexts],
         runContributions: [...runContributions],
         runExecutionModes: [...runExecutionModes],
+        runApprovalCeilings: [...runApprovalCeilings],
         runOutcomes: [...runOutcomes],
         snapshots: [...snapshots.values()],
         dispatches: [...childByDispatch.entries()],
@@ -813,6 +823,9 @@ export function createCodeUiConversation(input: {
           runExecutionModes: [...runExecutionModes].filter(
             ([id]) => id === event.runId,
           ),
+          runApprovalCeilings: [...runApprovalCeilings].filter(
+            ([id]) => id === event.runId,
+          ),
           runOutcomes: [...runOutcomes].filter(([id]) => id === event.runId),
           runUsage: childRunUsage.get(childSessionId) ?? [],
           contextWindowProjections: [...contextWindowProjections].filter(
@@ -848,6 +861,8 @@ export function createCodeUiConversation(input: {
         runContributions.set(id, contribution);
       for (const [id, mode] of state.runExecutionModes ?? [])
         runExecutionModes.set(id, mode);
+      for (const [id, ceiling] of state.runApprovalCeilings ?? [])
+        runApprovalCeilings.set(id, ceiling);
       for (const [id, outcome] of state.runOutcomes ?? [])
         runOutcomes.set(id, outcome);
       for (const id of descendants) contextWindowProjections.delete(id);
