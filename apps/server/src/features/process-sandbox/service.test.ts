@@ -178,7 +178,9 @@ test("shell 不能绕过附加目录的只读授权，扩权保留后台进程�
 });
 
 test("真实命令的输出可继续读取，停止确认退出后不再接受 stdin", async () => {
-  const root = await mkdtemp(join(tmpdir(), "kfw-managed-process-"));
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), "kfw-managed-process-")),
+  );
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const sandbox: ProcessSandbox = createProcessSandbox({
     captureRoot: join(root, "capture"),
