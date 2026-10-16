@@ -16,6 +16,17 @@ paths-ignore:
   # vendored 第三方源码（来源与授权见 packages/third-party/zcode/ 与 NOTICE.md）；
   # 它的**依赖**仍由 Dependabot 与依赖关系图覆盖，这里只是不做代码扫描。
   - apps/web/src/components/workbench/zcode/**
+  # 同一批 vendored 的 ZCode 分包（与 semgrep / bearer 两个 job 的排除面对齐）：
+  # 实测 CodeQL 的 32 条 ReDoS 全落在 zcode 代码里，其中 4 条就在这些包中——
+  # 上一行只排了照搬 UI 目录，这些包没排，于是仍在报。
+  - packages/zcode-cua/**
+  - packages/zcode-model-option-map/**
+  - packages/zcode-provider/**
+  - packages/zcode-rpc/**
+  - packages/zcode-services/**
+  - packages/zcode-shared/**
+  - packages/zcode-window-controller/**
+  - packages/third-party/**
   # 参考仓（submodule，CI 里本来也不检出，写上做双保险）与非源码目录
   - references/**
   - flow/**
