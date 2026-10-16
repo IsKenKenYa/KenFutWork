@@ -407,7 +407,11 @@ export function createHumanWorkspaceRpc(options: {
       (stored.recentProjects === undefined
         ? workspaces.map((project) => project.path)
         : settings.recentProjects
-      ).filter((path) => owners.get(path)?.rootDirectory === path),
+      ).filter(
+        (path) =>
+          workspaces.some((project) => project.path === path) ||
+          owners.get(path)?.rootDirectory === path,
+      ),
     );
     const activeIndex = settings.lastActiveTabIndex;
     const tabs = settings.lastWorkspaceSession.flatMap((entry, index) => {
@@ -573,14 +577,24 @@ export function createHumanWorkspaceRpc(options: {
           parsed.lastActiveTaskByWorkspace,
         );
         const referencedKeys: string[] = [];
+        const recentProjectIds: string[] = [];
         if ("recentProjects" in normalized) {
           for (const path of parsed.recentProjects) {
-            if (owners.get(path)?.rootDirectory !== path)
+            // 最近目录只记录路径，不从同目录项目中推断执行身份。
+            const projects = workspaces.filter(
+              (project) => project.path === path,
+            );
+            const owner = owners.get(path);
+            if (!projects.length && owner?.rootDirectory !== path)
               throw new CodeUiRepositoryError(
                 "not_found",
                 "设置中的工作目录不属于当前工作区或已归档。",
               );
-            referencedKeys.push(path);
+            recentProjectIds.push(
+              ...projects.map((project) => project.projectId),
+            );
+            if (owner?.rootDirectory === path)
+              recentProjectIds.push(owner.projectId);
           }
         }
         if ("lastWorkspaceSession" in normalized) {
@@ -625,10 +639,13 @@ export function createHumanWorkspaceRpc(options: {
           await options.instanceId(actor),
           normalized,
           {
-            referencedProjectIds: referencedKeys.flatMap((key) => {
-              const owner = owners.get(key);
-              return owner ? [owner.projectId] : [];
-            }),
+            referencedProjectIds: [
+              ...recentProjectIds,
+              ...referencedKeys.flatMap((key) => {
+                const owner = owners.get(key);
+                return owner ? [owner.projectId] : [];
+              }),
+            ],
           },
         );
         if (!saved)

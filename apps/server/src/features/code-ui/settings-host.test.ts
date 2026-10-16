@@ -177,6 +177,29 @@ it("公开setting保存recent去重保序前10项，关闭保持空，非法尾�
   }
 });
 
+it("公开setting拒绝外实例保存recent且不改当前实例偏好", async () => {
+  const f = await fixture();
+  try {
+    await f.call("update", { recentProjects: [f.rootA] });
+    const before = structuredClone(f.readStored());
+    await expect(
+      f.service.hostRpc(
+        { ...f.actor, instanceId: randomUUID() },
+        "setting",
+        "update",
+        [{ recentProjects: [f.rootA] }],
+        f.connection.hello.connectionId,
+      ),
+    ).rejects.toMatchObject({ code: "instance_forbidden", statusCode: 403 });
+    expect(f.readStored()).toEqual(before);
+    expect(f.updates).toHaveBeenCalledTimes(1);
+    expect(f.openTask).not.toHaveBeenCalled();
+  } finally {
+    await f.connection.dispose();
+    await f.service.closeConnections();
+  }
+});
+
 it("公开setting宿主稀疏保存语言和显示偏好，空recent真实保留，非法混合patch不部分保存", async () => {
   const f = await fixture();
   try {
@@ -253,7 +276,7 @@ it("Task固定A与Project默认B的tab归属精准，Task关闭不能借同路�
     f.task.archived = true;
     expect(await f.call("get")).toMatchObject({
       result: {
-        recentProjects: [],
+        recentProjects: [f.rootA],
         lastWorkspaceSession: [],
         lastActiveTabIndex: 0,
         lastActiveTaskByWorkspace: {},
