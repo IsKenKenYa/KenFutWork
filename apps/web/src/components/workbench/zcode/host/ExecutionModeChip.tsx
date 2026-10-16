@@ -16,20 +16,22 @@ import { surfaceJson } from "./surfaceApi.js";
  *
  * 复用 Design 侧同一缝：GET/PUT /api/execution-modes/:threadId——store 按
  * thread_id 或 chat_sessions.id 双 alias 匹配，Code 根会话两者同为 sessionId。
- * 服务端 runTurn 派发前 hydrate，工具门/pre-step 引导/自动化分场景全部生效。
- * Q6 合并规则：选「计划」联动把 ZCode 协作档切到 plan；其余模式不干预协作档。
+ * 宿主接纳输入时冻结策略；切换只影响之后发送的输入。
+ * 「计划」联动独立规划态，离开时只关闭规划，不改变基础权限。
  * 端点不可用/加载失败时整体隐藏，不摆空壳。
  */
 interface ExecutionModeChipProps {
   sessionId: string | null;
   disabled: boolean;
   onSwitchMode?: (mode: string) => void;
+  onExecutionModeChange?: (mode: ExecutionMode) => void;
 }
 
 export function ExecutionModeChip({
   sessionId,
   disabled,
   onSwitchMode,
+  onExecutionModeChange,
 }: ExecutionModeChipProps) {
   const [modes, setModes] = useState<Array<{
     id: ExecutionMode;
@@ -41,6 +43,7 @@ export function ExecutionModeChip({
   useEffect(() => {
     setModes(null);
     setMode(null);
+    onExecutionModeChange?.("agent");
     if (!sessionId) return;
     let alive = true;
     void (async () => {
@@ -56,6 +59,7 @@ export function ExecutionModeChip({
         if (!alive) return;
         setModes(list.modes);
         setMode(current.mode);
+        onExecutionModeChange?.(current.mode);
       } catch {
         // 端点不可用或会话无对应行 → 隐藏 chip，不阻塞 composer
       }
@@ -63,7 +67,7 @@ export function ExecutionModeChip({
     return () => {
       alive = false;
     };
-  }, [sessionId]);
+  }, [onExecutionModeChange, sessionId]);
 
   const select = useCallback(
     async (next: string) => {
@@ -82,13 +86,15 @@ export function ExecutionModeChip({
           },
         );
         if (nextMode === "plan") onSwitchMode?.("plan");
+        else if (previous === "plan") onSwitchMode?.("plan-off");
+        onExecutionModeChange?.(nextMode);
       } catch {
         if (previous) setMode(previous);
       } finally {
         setSaving(false);
       }
     },
-    [mode, onSwitchMode, saving, sessionId],
+    [mode, onExecutionModeChange, onSwitchMode, saving, sessionId],
   );
 
   if (!modes || modes.length === 0 || !mode) return null;
@@ -102,7 +108,7 @@ export function ExecutionModeChip({
           size="sm"
           className="h-7 gap-1 px-2 text-xs"
           disabled={disabled || saving}
-          aria-label="执行模式"
+          aria-label="执行策略"
           data-testid="execution-mode-chip"
         >
           {label}

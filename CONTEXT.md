@@ -31,6 +31,7 @@
 - **Planning Epoch（规划代际）** — Task 根锁中按持久规划开关变化推进的版本；批准请求绑定该版本，避免迟到批准退出另一轮规划。与消息 revision、scopeGeneration、branchGeneration 分开。
 - **Approved Plan（批准计划）** — 人明确批准后在同一 Task 事务记录的计划事实，关联宿主管理文件相对引用、SHA-256 与原 Run/工具调用来源。作为实施上下文保留，执行继续遵守当前工作域、角色与审批；Todo 的 `snapshot.plan` 只表示进度。
 - **Permission Mode（基础权限模式）** — Task 的执行审批预设：原 wire `build`（变更逐次确认）、`edit`（仅受控文件编辑自动允许）、`yolo`（自动执行并显式选择账户级完全访问）；每个Run持有接纳时的基础权限上限，仍受独立规划、派生角色和撤权约束。规划状态单独持有；原 wire 的 `plan` 输入归一化仍在迁移。
+- **Execution Strategy（执行策略）** — 会话选择的自主、计划、对话、目标或技能插件创作策略；对应现有 `ExecutionMode` 契约，在输入接纳时冻结。与 Code/Design 工作方式、基础权限及独立规划状态分开。
 - **Capability Node（能力节点）** — 向服务端注册能力清单的 Worker 进程（云端容器 / 桌面本地 / 移动受限）。任务按能力路由。
 - **Job（队列任务）** — 后台队列的执行单元（图/视频生成等）。与 Task（用户工作项）严格区分；与 Run（agent 执行）严格区分。
 - **Execution Scope（执行作用域）** — 持久 Task 在当前授权代际下可访问的工作目录与可执行操作的边界；与接入客户端身份分开。

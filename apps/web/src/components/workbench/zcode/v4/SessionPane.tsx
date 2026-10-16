@@ -2629,7 +2629,13 @@ export function SessionPane({
       const contextAttachmentCount = options?.contextAttachmentCount ?? 0;
       let slashCommand = parseV4VisibleSlashCommand(text, readyAttachments, {
         contextAttachmentCount,
+        executionMode: options?.executionMode,
+        goalStatus: snapshotRef.current?.goal?.status,
       });
+      if (slashCommand?.kind === "unsupportedGoal" && slashCommand.action === "attachments") {
+        toast("目标仅支持文本");
+        return "blocked" as const;
+      }
 
       // `/plan` 首版只消费纯文本。必须在 provider readiness 和任何 command admission 之前
       // 拒绝附件/context，否则原始 `/plan ...` 会退化成普通 prompt，既绕过产品边界又清空草稿。

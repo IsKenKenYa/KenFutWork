@@ -190,6 +190,7 @@ const MODEL_SELECTION_LOADING_STATE: ModelSelectionState = { status: "loading",
 };
 
 export interface ConversationComposerSendOptions {
+  executionMode?: import("@kenfutwork/shared").ExecutionMode;
   /** 点击发送时复制的配置；null 表示未完成选择，Host 不得从 Session 补齐。 */
   submission?: ComposerSubmissionConfig | null;
   heldQueueDisposition?: "clearQueueAndSend" | "keepQueueAndSend";
@@ -583,6 +584,7 @@ function ConversationComposerImpl({
   const configPickerScopeKey = `${workspaceKey}\0${draftScopeId}`;
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
+  const [executionMode, setExecutionMode] = useState<import("@kenfutwork/shared").ExecutionMode>("agent");
   const [configPickerState, setConfigPickerState] = useState<{
     scopeKey: string;
     activePicker: V4ComposerConfigPicker | null;
@@ -1208,6 +1210,7 @@ function ConversationComposerImpl({
       const submittedDraft = snapshotDraftOfEditor();
       let cleanupRevision = contentRevisionRef.current;
       const submission = createSubmissionFromComposer?.() ?? null;
+      const submittedExecutionMode = executionMode;
       const submittedAttachmentIds = attachmentsApi.attachments.map((item) => item.id,
       );
       if (
@@ -1394,6 +1397,7 @@ function ConversationComposerImpl({
           editorClearedOptimistically = true;
         }
         const sendResult = await onSendText(promptText, {
+          executionMode: submittedExecutionMode,
           submission,
           telemetrySeed,
           ...(requestedDelivery ? { requestedDelivery } : {}),
@@ -1498,6 +1502,7 @@ function ConversationComposerImpl({
       conversationTelemetry,
       draftConfig,
       createSubmissionFromComposer,
+      executionMode,
       submissionReady,
       getCodeCommentContexts,
       telemetryDraftConfig,
@@ -2307,11 +2312,12 @@ function ConversationComposerImpl({
           onConfigPickerOpenChange={handleConfigPickerOpenChange}
           onSwitchMode={onSwitchMode}
         />
-        {/* KenFutWork 宿主件：六档执行模式与 ZCode 协作档并排（Q6），选「计划」联动切 plan。 */}
+        {/* 宿主执行方式与原权限/规划控件并排，提交时捕获各自意图。 */}
         <ExecutionModeChip
           sessionId={sessionId}
           disabled={disabled}
           onSwitchMode={onSwitchMode}
+          onExecutionModeChange={setExecutionMode}
         />
         <PermissionTierChip />
         {/* 附件画廊重构曾整段覆盖 leadingActions，误删 CUA 常驻入口。

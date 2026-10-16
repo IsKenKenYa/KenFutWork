@@ -5724,7 +5724,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "45ecd8286d2ff85447efa6dc9a531f20ba90965893c937064591982add81d706",
+      "copiedSha256": "241967355922d8e055e53f786cb6381d69546c33484a878c6975efc9a68b419e",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5738,14 +5738,15 @@
         "新增 settings.about.title（T16 关于分区标题）",
         "KenFutWork 宿主偏差：settings.permissions.title 词条",
         "KenFutWork 宿主偏差：新增 workspaceHeader.lockedDirectory（H1 chip 文案）",
-        "KenFutWork 宿主偏差：新增 settings.modelProvider.emptyTitle 文案"
+        "KenFutWork 宿主偏差：新增 settings.modelProvider.emptyTitle 文案",
+        "共享Harness权限说明：短语区分变更前询问、自动文件编辑、只读调查规划与本机文件和网络访问，不承诺受限网络可逐次提权。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "c510ef8adaf82b0f828ef669361a4d47d208c27c8597a4d5609a9ce4f21816b2",
+      "copiedSha256": "0e1cf7a655a008b78bec97e81333fa1850c8ed19fd503962383faa7b4e1e9f96",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5759,7 +5760,8 @@
         "新增 settings.about.title（T16 关于分区标题）",
         "KenFutWork 宿主偏差：settings.permissions.title 词条",
         "KenFutWork 宿主偏差：新增 workspaceHeader.lockedDirectory（H1 chip 文案）",
-        "KenFutWork 宿主偏差：新增 settings.modelProvider.emptyTitle 文案"
+        "KenFutWork 宿主偏差：新增 settings.modelProvider.emptyTitle 文案",
+        "共享Harness权限说明：短语区分变更前询问、自动文件编辑、只读调查规划与本机文件和网络访问，不承诺受限网络可逐次提权。"
       ]
     },
     {
@@ -11848,7 +11850,7 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationComposer.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationComposer.tsx",
       "sha256": "9bfa3d1365cfa7bf10e45d521a3d7201381aa27697c79b4f33b356cd2f4a3c2d",
-      "copiedSha256": "515ef8a15ff5621039468558c5784f469950fe512a793f0badb8cd8609fa375e",
+      "copiedSha256": "a5adcc35ec8f39a62827ac61e6a0a3dfceb7dab98385550ec4a5577b9212b289",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
@@ -11857,7 +11859,8 @@
         "KenFutWork 宿主偏差：composer 左下操作行插入六档执行模式 chip（G2/Q7，宿主件 ../../host/ExecutionModeChip.jsx，与 ZCode 协作档并排；选「计划」联动切 plan）",
         "宿主扩展（G5 顺手修复）：G2 引入的执行模式 chip 宿主件导入路径 ../../host/ExecutionModeChip.js 越出包界（vendor tsc TS2307），改为与其它宿主件一致的 @zui/host/ExecutionModeChip.js；仅路径修正，逻辑不动",
         "KenFutWork 宿主偏差：composer 挂权限档 chip PermissionTierChip（G7/C1 旧四档）",
-        "Code/Design统一实施：共享输入区提供通用上下文贡献header，保留原输入与提交交互。"
+        "Code/Design统一实施：共享输入区提供通用上下文贡献header，保留原输入与提交交互。",
+        "共享Harness执行策略：发送瞬间捕获宿主执行方式，与原Submission一起传入SessionPane；模式chip回传已持久化策略，未创建第二套提交或Goal循环。"
       ]
     },
     {
@@ -12172,7 +12175,7 @@
       "source": "references/zcode/packages/ui/src/v4/SessionPane.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/SessionPane.tsx",
       "sha256": "70542a0b03f61e3b4b4d61e29a7b69ca8cf354e3a51f71d0c21fde1d930e9629",
-      "copiedSha256": "9fed143d3380d292fac555200698c3ddf1820903f2e878c2094b41f00bf393fc",
+      "copiedSha256": "e9b1e249836e20fa4f8a40e3c6dacc688b1f0f904fb83f5faad6310d761d64a5",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：未接通自动化服务时撤下原行上下文与草稿建议的全部跳转回调；原会话装配不变",
@@ -12180,7 +12183,8 @@
         "Workspace配置消费：仅metadata恢复prepare传实际目标agent与resolved endpoint，保留Task附件与文件能力并行接线",
         "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
         "主线 f723ec1d 浏览器拾取适配：外部文本插入支持当前 Live 会话，保留 focused 守卫；原始上游哈希不变。",
-        "Code/Design统一实施：输入接纳前捕获平台工作上下文，经原V4发送与重放；撤回队列恢复会话草稿；上下文header由宿主经通用composer贡献接口提供，SessionPane不直接依赖Design实现。"
+        "Code/Design统一实施：输入接纳前捕获平台工作上下文，经原V4发送与重放；撤回队列恢复会话草稿；上下文header由宿主经通用composer贡献接口提供，SessionPane不直接依赖Design实现。",
+        "共享Harness目标入口：捕获执行方式与当前Goal状态后沿原slash解析和sendGoalCommand派发；既有未验收目标的普通文本仍走原sendText引导，带附件的新目标保留输入并给出提示。"
       ]
     },
     {
@@ -13224,9 +13228,10 @@
       "source": "references/zcode/packages/ui/src/v4/slashCommands.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/slashCommands.ts",
       "sha256": "23da23f671dea32904d759b4aef49fe3b3847fda7a561446a5a58dd2e3246660",
-      "copiedSha256": "23da23f671dea32904d759b4aef49fe3b3847fda7a561446a5a58dd2e3246660",
+      "copiedSha256": "ec84fdf7023eec173c908ec78684a77b7f0a8373aca27ba2caf54b0460a13bc1",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主目标菜单接线：目标方式下首次普通文本解析为原生sendGoalCommand，既有未验收Goal保留普通引导；显式slash优先，附件或结构化上下文不降级成普通新目标。"
       ]
     },
     {
