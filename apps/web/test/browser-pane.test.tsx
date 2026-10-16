@@ -221,7 +221,9 @@ test("拾取元素：snapshot 拉盒模型→叠框→点选把坐标引用填�
       };
     }
     if (path === "/api/browser/cdp/status") {
-      return { cdp: { status: "connected", currentUrl: "https://example.com" } };
+      return {
+        cdp: { status: "connected", currentUrl: "https://example.com" },
+      };
     }
     if (path === "/api/browser/cdp/view") {
       return {
@@ -280,7 +282,9 @@ test("拾取中 Esc 退出；调试控制台注入带上当前 url", async () =>
       };
     }
     if (path === "/api/browser/cdp/status") {
-      return { cdp: { status: "connected", currentUrl: "https://example.com" } };
+      return {
+        cdp: { status: "connected", currentUrl: "https://example.com" },
+      };
     }
     if (path === "/api/browser/cdp/view") {
       return {

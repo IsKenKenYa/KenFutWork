@@ -26,7 +26,9 @@ it("preserveNul：系统 consumer 要求逐字节保真时 NUL 分隔符原样�
   try {
     // 影子 Git 的 `ls-files -z` 清单：路径之间就是 NUL；剥掉会把整份清单粘成一个路径。
     capture.append(Buffer.from("a.txt\0dir/b.txt\0", "utf8"));
-    expect(capture.read(0, 64 * 1024, true, true).data).toBe("a.txt\0dir/b.txt\0");
+    expect(capture.read(0, 64 * 1024, true, true).data).toBe(
+      "a.txt\0dir/b.txt\0",
+    );
     // 缺省仍剥 NUL（默认口径不变）。
     expect(capture.read(0, 64 * 1024, true).data).toBe("a.txtdir/b.txt");
   } finally {
