@@ -1,12 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import {
+  backgroundJobSchema,
   instanceSettingsSchema,
   zcodeUiProtocol as protocol,
   providerInstanceResponseSchema,
+  type StreamEvent,
 } from "@kenfutwork/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { INTERRUPTED_RUN_MESSAGE } from "../agent-runs/reconcile.js";
+import { createScopeRepository } from "../execution/scope-repository.js";
+import { createExecutionScopes } from "../execution/scope-service.js";
+import { createGenerationTargets } from "../generation/file-targets.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createCodeUiConversation } from "./conversation.js";
 import { createCodeUiTestInstance } from "./host-session.fixture.js";
@@ -17,9 +22,25 @@ import { CodeUiService, type CodeUiServiceDeps } from "./service.js";
 describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
   "Code输入跨宿主重启 integration",
   () => {
-    it("真实持久队列在重启后终结并返回原输入disposition，不重放，也不触碰其它宿主Task", async () => {
+    const windows = [
+      "preempt",
+      "stop",
+      "plain",
+      "preempt-completed",
+      "queue-preempt-completed",
+      "plain-completed",
+    ] as const;
+    it.each(windows)("%s后冷恢复遵从原控制意图，输入不重放", async (window) => {
       const database = await createTaskWorkDatabase();
       const services: CodeUiService[] = [];
+      const stopRequests: string[] = [];
+      let stopGate: Promise<void> | undefined;
+      let releaseStop = () => {};
+      let pendingStop: Promise<unknown> | undefined;
+      let stopSettled = false;
+      const preempt = window.includes("preempt");
+      const queuePreempt = window.startsWith("queue-");
+      const completed = window.endsWith("-completed");
       try {
         const scope = database.context.scope;
         const actor = { instanceId: scope.instanceId, accessClientId: null };
@@ -65,7 +86,26 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
           }).exportState(),
           null,
         );
+        await database.persistence.forInstance(scope.instanceId).execute(
+          `with chat as (
+             insert into public.chat_sessions (id, instance_id, project_id, mode, thread_id)
+             values ($1, :instance, $2, 'code', $3) returning id
+           ) update public.code_ui_sessions root set chat_session_id=chat.id
+             from chat where root.instance_id=:instance and root.id=chat.id`,
+          [scope.taskId, scope.projectId, `thread:${scope.taskId}`],
+        );
+        const generationTargets = createGenerationTargets({
+          persistence: database.persistence,
+          executionScopes: createExecutionScopes({
+            repository: createScopeRepository(database.persistence),
+            localInstance: database.localInstance,
+          }),
+        });
         const runs: string[] = [];
+        const eventSinks = new Map<
+          string,
+          (event: StreamEvent) => Promise<void>
+        >();
         function host(name: string) {
           const service = new CodeUiService({
             repository,
@@ -125,12 +165,23 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
             agentRunMetadata: { createAcceptedRun: async () => {} },
             // A host lost after durable admission has no terminal sink receipt. No process is started by this adapter.
             agentRuns: {
-              createRun: (_input: unknown, options: { runId: string }) => {
+              createRun: (
+                _input: unknown,
+                options: {
+                  runId: string;
+                  eventSink: (event: StreamEvent) => Promise<void>;
+                },
+              ) => {
                 runs.push(options.runId);
+                eventSinks.set(options.runId, options.eventSink);
                 return { runId: options.runId };
               },
               async *streamRun() {},
               cancelRun() {},
+              async cancelRunAndWait(runId: string) {
+                stopRequests.push(runId);
+                await stopGate;
+              },
             },
             taskWork: {
               initialize: async () => [],
@@ -184,31 +235,134 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         expect(
           (await old.getSnapshot(actor, scope.taskId)).queue.items,
         ).toHaveLength(1);
-        const reservedCommandId = randomUUID();
-        commandIds.push(reservedCommandId);
-        const reserved = await rpc("sendConversationCommandV4", {
-          workspacePath: scope.rootDirectory,
-          envelope: {
-            clientId,
-            commandId: reservedCommandId,
-            sessionId: scope.taskId,
-            type: "sendText",
-            payload: {
-              text: "reserved",
-              requestedDelivery: "startNow",
-              modelSelection: selection,
+        const originalRunId = runs[0];
+        if (!originalRunId) throw new Error("持久接纳未生成原Run身份。");
+        const origin = {
+          actor,
+          projectId: scope.projectId,
+          sessionId: scope.taskId,
+          runId: originalRunId,
+          expectedScopeGeneration: scope.generation,
+          expectedBranchGeneration: database.context.branchGeneration,
+        };
+        const acceptedMedia = backgroundJobSchema.parse({
+          id: randomUUID(),
+          instance_id: scope.instanceId,
+          project_id: scope.projectId,
+          session_id: scope.taskId,
+          canvas_id: null,
+          thread_id: `thread:${scope.taskId}`,
+          file_target: await generationTargets.prepareOrigin(origin),
+          queue_name: "image_generation_jobs",
+          job_type: "image_generation",
+          status: "running",
+          payload: {},
+          provider_job_id: "accepted-before-host-loss",
+          result: null,
+          error_code: null,
+          error_message: null,
+          attempt_count: 1,
+          max_attempts: 3,
+          created_by_client_id: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          started_at: null,
+          completed_at: null,
+          failed_at: null,
+          canceled_at: null,
+        });
+        expect(await generationTargets.resolve(acceptedMedia)).toEqual({
+          kind: "task",
+          taskId: scope.taskId,
+        });
+        if (queuePreempt) {
+          const snapshot = await old.getSnapshot(actor, scope.taskId);
+          const queued = snapshot.queue.items[0];
+          if (!queued) throw new Error("公开快照缺少待立即发送的原排队输入。");
+          const reserved = await rpc("sendConversationCommandV4", {
+            workspacePath: scope.rootDirectory,
+            envelope: {
+              clientId,
+              commandId: randomUUID(),
+              sessionId: scope.taskId,
+              type: "sendQueuedNow",
+              payload: { queueItemId: queued.queueItemId },
+              baseRevision: snapshot.revision,
+              baseLogEpoch: snapshot.logEpoch,
+              issuedAt: Date.now(),
             },
-            issuedAt: Date.now(),
-          },
-        });
-        expect(reserved!.result).toMatchObject({
-          status: "accepted",
-          result: { delivery: "startNow" },
-        });
-        // 宿主在停止前台/发布新输入之前丢失；恢复不能执行这条已认领输入。
-        expect(
-          (await old.getSnapshot(actor, scope.taskId)).pendingCommands,
-        ).toHaveLength(1);
+          });
+          expect(reserved?.result).toMatchObject({ status: "accepted" });
+          expect(
+            (await old.getSnapshot(actor, scope.taskId)).pendingCommands,
+          ).toHaveLength(1);
+        } else if (preempt) {
+          const reservedCommandId = randomUUID();
+          commandIds.push(reservedCommandId);
+          const reserved = await rpc("sendConversationCommandV4", {
+            workspacePath: scope.rootDirectory,
+            envelope: {
+              clientId,
+              commandId: reservedCommandId,
+              sessionId: scope.taskId,
+              type: "sendText",
+              payload: {
+                text: "reserved",
+                requestedDelivery: "startNow",
+                modelSelection: selection,
+              },
+              issuedAt: Date.now(),
+            },
+          });
+          expect(reserved!.result).toMatchObject({
+            status: "accepted",
+            result: { delivery: "startNow" },
+          });
+          // 已accepted但未publish；旧Run尚未收到取消，恢复仍须保留抢占意图。
+          expect(
+            (await old.getSnapshot(actor, scope.taskId)).pendingCommands,
+          ).toHaveLength(1);
+        } else if (window === "stop") {
+          stopGate = new Promise<void>((resolve) => {
+            releaseStop = resolve;
+          });
+          pendingStop = rpc("sendConversationCommandV4", {
+            workspacePath: scope.rootDirectory,
+            envelope: {
+              clientId,
+              commandId: randomUUID(),
+              sessionId: scope.taskId,
+              type: "stop",
+              payload: { expectedForegroundExecutionId: originalRunId },
+              issuedAt: Date.now(),
+            },
+          }).then((reply) => {
+            stopSettled = true;
+            return reply;
+          });
+          // 取消能力只会在input.stop独立事务提交后被调用；ACK仍等待终态屏障。
+          await vi.waitFor(() => expect(stopRequests).toEqual([originalRunId]));
+          expect(stopSettled).toBe(false);
+          expect(
+            (await old.getSnapshot(actor, scope.taskId)).control.phase,
+          ).toBe("running");
+        }
+        if (completed) {
+          const sink = eventSinks.get(originalRunId);
+          if (!sink) throw new Error("真实接纳未绑定运行终态事件入口。");
+          await sink({
+            type: "run.completed",
+            runId: originalRunId,
+            timestamp: new Date().toISOString(),
+          });
+          expect(
+            (await old.getSnapshot(actor, scope.taskId)).control.phase,
+          ).toBe("completedSuccess");
+        }
+        if (preempt || window === "stop")
+          await expect(
+            generationTargets.resolve(acceptedMedia),
+          ).rejects.toMatchObject({ code: "invalid_input" });
         const foreign = host("foreign-host");
         const fork = await foreign.createSession(actor, {
           clientId,
@@ -239,14 +393,49 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         const restartedRpc = await connect(restarted);
         const snapshot = await restarted.getSnapshot(actor, scope.taskId);
         expect(snapshot.queue.items).toEqual([]);
-        expect(snapshot.control.phase).toBe("error");
-        expect(snapshot.control.lastError).toMatchObject({
-          code: "run_failed",
-          message: INTERRUPTED_RUN_MESSAGE,
-          recoverable: true,
-          source: "runtime",
-        });
+        if (completed) {
+          expect(snapshot.control.phase).toBe("completedSuccess");
+          expect(snapshot.control.lastError).toBeNull();
+        } else {
+          expect(snapshot.control.phase).toBe("error");
+          expect(snapshot.control.lastError).toMatchObject({
+            code: "run_failed",
+            message: INTERRUPTED_RUN_MESSAGE,
+            recoverable: true,
+            source: "runtime",
+          });
+        }
         expect(snapshot.pendingCommands).toEqual([]);
+        // 普通冷恢复只续接旧句柄；已持久Stop或抢占意图绝不能变成恢复授权。
+        if (!preempt && window !== "stop")
+          expect(await generationTargets.resolve(acceptedMedia)).toEqual({
+            kind: "task",
+            taskId: scope.taskId,
+          });
+        else
+          await expect(
+            generationTargets.resolve(acceptedMedia),
+          ).rejects.toMatchObject({ code: "invalid_input" });
+        if (window === "stop") expect(stopSettled).toBe(false);
+        if (!completed || preempt)
+          await expect(
+            generationTargets.resolve({
+              ...acceptedMedia,
+              provider_job_id: null,
+            }),
+          ).rejects.toMatchObject({ code: "invalid_input" });
+        else
+          expect(
+            await generationTargets.resolve({
+              ...acceptedMedia,
+              provider_job_id: null,
+            }),
+          ).toEqual({ kind: "task", taskId: scope.taskId });
+        await expect(
+          generationTargets.prepareOrigin(origin),
+        ).rejects.toMatchObject({
+          code: "invalid_input",
+        });
         expect(
           snapshot.rows.window.filter((row) => row.kind === "userInput"),
         ).toMatchObject([{ text: "active" }]);
@@ -258,13 +447,20 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         });
         expect(receipts!.result).toMatchObject({
           results: [
-            {
-              result: {
-                status: "failed",
-                reasonCode: "fault.command.inputDiscardedOnRestart",
-                result: { type: "inputDisposition", delivery: "startNow" },
-              },
-            },
+            completed
+              ? {
+                  result: {
+                    status: "accepted",
+                    result: { type: "inputAccepted", delivery: "startNow" },
+                  },
+                }
+              : {
+                  result: {
+                    status: "failed",
+                    reasonCode: "fault.command.inputDiscardedOnRestart",
+                    result: { type: "inputDisposition", delivery: "startNow" },
+                  },
+                },
             {
               result: {
                 status: "failed",
@@ -272,13 +468,20 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
                 result: { type: "inputDisposition", delivery: "queue" },
               },
             },
-            {
-              result: {
-                status: "failed",
-                reasonCode: "fault.command.inputDiscardedOnRestart",
-                result: { type: "inputDisposition", delivery: "startNow" },
-              },
-            },
+            ...(preempt && !queuePreempt
+              ? [
+                  {
+                    result: {
+                      status: "failed",
+                      reasonCode: "fault.command.inputDiscardedOnRestart",
+                      result: {
+                        type: "inputDisposition",
+                        delivery: "startNow",
+                      },
+                    },
+                  },
+                ]
+              : []),
           ],
         });
         const foreignControl = (
@@ -346,6 +549,8 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         expect(canceled.control.lastError).toBeNull();
         expect(runs).toHaveLength(2);
       } finally {
+        releaseStop();
+        await pendingStop;
         for (const service of services.reverse())
           await service.closeConnections();
         await database.close();

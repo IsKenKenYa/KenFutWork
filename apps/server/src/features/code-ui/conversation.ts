@@ -24,6 +24,7 @@ import { type CodeAdmittedInput, codeGuideMessageId } from "./input-intents.js";
 import type { OwnedHistoryOutput } from "./output-history-types.js";
 import type { CodeApprovedPlan } from "./planning-types.js";
 import { codeInputRouting, resolveHeldQueue } from "./queue-control.js";
+import { codeUiRunHasStopIntent } from "./run-outcome.js";
 import type { UserInputEvent } from "./user-input-types.js";
 import { freezeWorkContext } from "./work-context.js";
 
@@ -78,6 +79,10 @@ export interface CodeUiConversationState {
   runWorkContexts?: Array<[string, protocol.ConversationWorkContext]>;
   runContributions?: Array<[string, ToolContributionSnapshot]>;
   runOutcomes?: Array<[string, "completed" | "failed" | "canceled"]>;
+  /** Private executor/host recovery provenance; never inferred from public errors. */
+  hostShutdownRuns?: string[];
+  /** Exact Run ids from applied Stop or accepted preemption, never the raw ledger. */
+  stopRequestedRuns?: string[];
   goalRecord?: GoalRecord | null;
   goalModel?: {
     goalId: string;
@@ -395,6 +400,8 @@ export function createCodeUiConversation(input: {
   const runExecutionModes = new Map(input.state?.runExecutionModes ?? []);
   const runApprovalCeilings = new Map(input.state?.runApprovalCeilings ?? []);
   const runOutcomes = new Map(input.state?.runOutcomes ?? []);
+  const hostShutdownRuns = new Set(input.state?.hostShutdownRuns ?? []);
+  const stopRequestedRuns = [...(input.state?.stopRequestedRuns ?? [])];
   const contextWindowProjections = new Map(
     input.state?.contextWindowProjections ?? [],
   );
@@ -565,6 +572,10 @@ export function createCodeUiConversation(input: {
         runExecutionModes: [...runExecutionModes],
         runApprovalCeilings: [...runApprovalCeilings],
         runOutcomes: [...runOutcomes],
+        ...(hostShutdownRuns.size
+          ? { hostShutdownRuns: [...hostShutdownRuns] }
+          : {}),
+        ...(stopRequestedRuns.length ? { stopRequestedRuns } : {}),
         snapshots: [...snapshots.values()],
         dispatches: [...childByDispatch.entries()],
         closedRuns: [...closedRuns],
@@ -595,6 +606,12 @@ export function createCodeUiConversation(input: {
       owner?: { hostId: string; runtimeId: string },
     ) {
       if (owner) inputOwner = { ...owner };
+      if (
+        record.status === "reserved" &&
+        record.previousRunId &&
+        !stopRequestedRuns.includes(record.previousRunId)
+      )
+        stopRequestedRuns.push(record.previousRunId);
       inputs.push(structuredClone(record));
       if (record.status === "queued") {
         root.queue.items.push(protocol.queueItemSchema.parse(record.intent));
@@ -827,6 +844,12 @@ export function createCodeUiConversation(input: {
             ([id]) => id === event.runId,
           ),
           runOutcomes: [...runOutcomes].filter(([id]) => id === event.runId),
+          hostShutdownRuns: [...hostShutdownRuns].filter(
+            (id) => id === event.runId,
+          ),
+          stopRequestedRuns: stopRequestedRuns.filter(
+            (id) => id === event.runId,
+          ),
           runUsage: childRunUsage.get(childSessionId) ?? [],
           contextWindowProjections: [...contextWindowProjections].filter(
             ([id]) => descendants.has(id),
@@ -865,6 +888,9 @@ export function createCodeUiConversation(input: {
         runApprovalCeilings.set(id, ceiling);
       for (const [id, outcome] of state.runOutcomes ?? [])
         runOutcomes.set(id, outcome);
+      for (const id of state.hostShutdownRuns ?? []) hostShutdownRuns.add(id);
+      for (const id of state.stopRequestedRuns ?? [])
+        if (!stopRequestedRuns.includes(id)) stopRequestedRuns.push(id);
       for (const id of descendants) contextWindowProjections.delete(id);
       for (const [id, projectedRun] of state.contextWindowProjections ?? [])
         contextWindowProjections.set(id, projectedRun);
@@ -1345,6 +1371,12 @@ export function createCodeUiConversation(input: {
       }
       const at = Date.parse(event.timestamp);
       if (event.type === "run.canceled" || event.type === "run.failed") {
+        if (
+          event.type === "run.canceled" &&
+          event.stopReason === "host_shutdown" &&
+          !codeUiRunHasStopIntent({ inputs, stopRequestedRuns }, event.runId)
+        )
+          hostShutdownRuns.add(event.runId);
         runOutcomes.set(
           event.runId,
           event.type === "run.failed" ? "failed" : "canceled",

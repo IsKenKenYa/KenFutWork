@@ -27,6 +27,7 @@ import {
   publishHistoryPreparation,
 } from "./history-preparation.js";
 import type { CodeInputSettlement } from "./queue-control.js";
+import { codeUiRunHasStopIntent, codeUiRunOutcome } from "./run-outcome.js";
 import { freezeWorkContext, workContextForRun } from "./work-context.js";
 
 export type CodeUiSessionRecord = SqlRow & {
@@ -438,6 +439,12 @@ export function createCodeUiRepository(
             config: snapshot.config,
             state: root.state!,
           });
+          const lostRunId =
+            root.active_run_id &&
+            codeUiRunOutcome(root.state, root.active_run_id) === "active" &&
+            !codeUiRunHasStopIntent(root.state, root.active_run_id)
+              ? root.active_run_id
+              : null;
           if (root.active_run_id)
             host.recordEvent({
               type: "run.failed",
@@ -455,6 +462,11 @@ export function createCodeUiRepository(
               root.state!.goalModel,
             );
           const state = host.exportState();
+          // 同一宿主的排他恢复只记录本次确实丢失的活跃Run，不补写旧终态。
+          if (lostRunId)
+            state.hostShutdownRuns = [
+              ...new Set([...(state.hostShutdownRuns ?? []), lostRunId]),
+            ];
           const current = state.snapshots.find(
             (entry) => entry.sessionId === root.id,
           )!;

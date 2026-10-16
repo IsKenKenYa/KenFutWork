@@ -5,7 +5,11 @@ import {
   generationFileTargetSchema,
 } from "@kenfutwork/shared";
 import type { CodeUiConversationState } from "../code-ui/conversation.js";
-import { codeUiRunOutcome } from "../code-ui/run-outcome.js";
+import {
+  codeUiRunHasStopIntent,
+  codeUiRunOutcome,
+  codeUiRunStoppedByHost,
+} from "../code-ui/run-outcome.js";
 import type { ExecutionScopes } from "../execution/scope-service.js";
 import type { LocalActor } from "../local-instance/types.js";
 import type { PersistenceService, SqlRow } from "../persistence/types.js";
@@ -110,6 +114,7 @@ async function prepareOrigin(
   deps: TargetDeps,
   input: GenerationOrigin,
   storedInteractive = false,
+  acceptedProviderHandle = false,
 ): Promise<GenerationFileTarget> {
   if (input.interactiveRequest && !input.actor.accessClientId)
     throw new GenerationTargetError("交互式生成需要已授权的接入客户端");
@@ -144,7 +149,16 @@ async function prepareOrigin(
     throw new GenerationTargetError("生成任务缺少原Run身份，请重新提交");
   if (input.runId) {
     const outcome = codeUiRunOutcome(root.state, input.runId);
-    if (outcome !== "active" && !(storedInteractive && outcome === "completed"))
+    if (
+      codeUiRunHasStopIntent(root.state, input.runId) ||
+      (outcome !== "active" &&
+        !(storedInteractive && outcome === "completed") &&
+        !(
+          storedInteractive &&
+          acceptedProviderHandle &&
+          codeUiRunStoppedByHost(root.state, input.runId)
+        ))
+    )
       throw new GenerationTargetError(
         "生成任务的原Run已停止或状态不可验证，请重新提交",
       );
@@ -231,6 +245,7 @@ async function resolveFrozen(
         : {}),
     },
     true,
+    Boolean(job.provider_job_id),
   );
   if (target.kind === "task" && target.originRunId === undefined)
     throw new GenerationTargetError("生成任务缺少冻结原Run来源，请重新提交");

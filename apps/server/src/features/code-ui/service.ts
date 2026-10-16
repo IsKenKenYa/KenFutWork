@@ -3112,6 +3112,9 @@ export class CodeUiService {
                 payload.expectedForegroundExecutionId !== activeExecution
               )
                 return { state, activeRunId: current.active_run_id };
+              state.stopRequestedRuns = [
+                ...new Set([...(state.stopRequestedRuns ?? []), execution]),
+              ];
               // 尚未派发的权限选择与停止同一根锁失效；迟到CAS不能再次签发。
               for (const record of state.inputs ?? [])
                 if (record.runId === execution)

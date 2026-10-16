@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { backgroundJobSchema } from "@kenfutwork/shared";
 import { expect, it, vi } from "vitest";
+import { INTERRUPTED_RUN_MESSAGE } from "../agent-runs/reconcile.js";
+import {
+  type CodeUiConversationState,
+  createCodeUiConversation,
+} from "../code-ui/conversation.js";
 import type { ExecutionScopes } from "../execution/scope-service.js";
 import {
   createPersistenceFromRunner,
@@ -25,6 +30,7 @@ function fixture(
     readonly?: boolean;
     missingTask?: boolean;
     branchGeneration?: number;
+    state?: CodeUiConversationState;
   } = {},
 ) {
   const calls: Array<{ sql: string; values: unknown[] }> = [];
@@ -50,7 +56,7 @@ function fixture(
               root_directory: "/fixed/task",
               scope_generation: options.generation ?? 1,
               branch_generation: options.branchGeneration ?? 2,
-              state: {
+              state: options.state ?? {
                 closedRuns: [],
                 snapshots:
                   options.runOutcome === "unknown"
@@ -431,3 +437,60 @@ it("正常完成的原Run允许迟到成果，取消、失败与未知原Run均�
       }).service.resolve(job(target)),
     ).rejects.toThrow("原Run已停止");
 });
+
+it.each(["canceled", "failed"] as const)(
+  "原Run已%s后迟到host_shutdown不能补发恢复授权，公开重启错误文案也不算授权",
+  async (outcome) => {
+    const origin = fixture({ kind: "code", sharedProject: true });
+    const target = await origin.service.prepareOrigin({
+      runId: "run-1",
+      actor: { instanceId, accessClientId: null },
+      projectId,
+      sessionId,
+      expectedScopeGeneration: 1,
+      expectedBranchGeneration: 2,
+    });
+    const host = createCodeUiConversation({
+      sessionId,
+      workspacePath: "/fixed/task",
+      config: {
+        provider: "zcode",
+        model: "fixture",
+        thought: "",
+        followupMode: "queue",
+      },
+    });
+    host.startTurn({ runId: "run-1", commandId: "send", text: "开始" });
+    const terminal = {
+      runId: "run-1",
+      timestamp: "2026-10-17T00:00:00.000Z",
+    };
+    if (outcome === "failed")
+      host.recordEvent({
+        ...terminal,
+        type: "run.failed",
+        error: { code: "run_failed", message: INTERRUPTED_RUN_MESSAGE },
+      });
+    else
+      host.recordEvent({
+        ...terminal,
+        type: "run.canceled",
+        stopReason: "task_stopped",
+      });
+    host.recordEvent({
+      ...terminal,
+      type: "run.canceled",
+      stopReason: "host_shutdown",
+    });
+    await expect(
+      fixture({
+        kind: "code",
+        sharedProject: true,
+        state: host.exportState(),
+      }).service.resolve({
+        ...job(target),
+        provider_job_id: "accepted-before-terminal",
+      }),
+    ).rejects.toThrow("原Run已停止");
+  },
+);
