@@ -567,13 +567,9 @@ export function createProcessSandbox(
 
   return {
     acquireRestoreBarrier: (scope, roots) => restore.acquire(scope, roots),
-    get readonlyExecution() {
-      return (
-        ["darwin", "linux", "win32"].includes(process.platform) &&
-        !options.resolveNetwork &&
-        options.network.allowedDomains.length === 0
-      );
-    },
+    // 只读请求必须先通过 helper 的同 scope OS 探针；缺失隔离能力时拒绝执行。
+    readonlyExecution:
+      !options.resolveNetwork && options.network.allowedDomains.length === 0,
     spawn: (request) => spawn(request),
     spawnPty: (request: ProcessPtySpawnRequest) => spawn(request),
     spawnStdio: (request) => spawn({ ...request, stdio: "stream" }),

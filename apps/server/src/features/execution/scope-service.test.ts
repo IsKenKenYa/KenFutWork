@@ -79,6 +79,26 @@ it("Task 工作域拒绝越界和符号链接逃逸，只读角色不能提升�
       "只读",
     );
     expect(worker.describe()).not.toHaveProperty("accessToken");
+    const restricted = main.restrictReadOnly();
+    expect(restricted.describe()).toEqual({
+      ...main.describe(),
+      sandboxMode: "read-only",
+    });
+    expect(restricted.role).toBe(main.role);
+    expect(restricted.agentId).toBe(main.agentId);
+    expect(restricted.branchGeneration).toBe(main.branchGeneration);
+    expect(await restricted.resolvePath("new.txt", "read")).toBe(
+      join(root, "new.txt"),
+    );
+    await expect(restricted.resolvePath("new.txt", "write")).rejects.toThrow(
+      "只读",
+    );
+    await expect(
+      restricted.derive("worker", "descendant").resolvePath("new.txt", "write"),
+    ).rejects.toThrow("只读");
+    expect(await main.resolvePath("new.txt", "write")).toBe(
+      join(root, "new.txt"),
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
     await rm(outside, { recursive: true, force: true });

@@ -11,6 +11,7 @@ import type { ProcessOwner } from "./managed-process.js";
 import { ProcessOutputCapture } from "./output-capture.js";
 import { commandDirectory, unixPolicy } from "./policy.js";
 import type { HelperRequest, HelperResponse } from "./protocol.js";
+import { readonlyProbe } from "./readonly-probe.js";
 import { prepareLinuxProcessInspector } from "./pty-native-runtime.js";
 import { loadTaskPtyRuntime } from "./pty-runtime.js";
 import { losesExecutionRights } from "./scope-change.js";
@@ -49,6 +50,7 @@ class TaskProcessHelper {
   private closePromise: Promise<void> | undefined;
   private initialization: Promise<null> | undefined;
   private readonly invalidatedProcesses = new Set<string>();
+  private readonly readOnlyProofs = new Map<string, Promise<void>>();
 
   async execute(input: HelperRequest): Promise<unknown> {
     if (input.method === "initialize") {
@@ -187,6 +189,8 @@ class TaskProcessHelper {
           "enforcement_unavailable",
           "Windows native broker 缺少完整 ConPTY/stdio 能力，请更新发布资源。",
         );
+      if (input.initial.scope.sandboxMode === "read-only")
+        await this.ensureReadOnlyProof(input.initial);
       this.phase = "ready";
       return null;
     }
@@ -202,7 +206,9 @@ class TaskProcessHelper {
       );
     }
     await SandboxManager.initialize(policy, undefined, true);
-    await this.probe(input.initial);
+    if (input.initial.scope.sandboxMode === "read-only")
+      await this.ensureReadOnlyProof(input.initial);
+    else await this.probe(input.initial);
     this.phase = "ready";
     return null;
   }
@@ -240,27 +246,53 @@ class TaskProcessHelper {
     await writeFile(protectedFile, "private runtime probe", { mode: 0o600 });
     // Linux tmpfs 隐藏 private parent 时返回 ENOENT；Darwin seatbelt 返回 EACCES/EPERM。
     const unavailable = process.platform === "linux" ? ',"ENOENT"' : "";
-    const program = `const fs=require("node:fs");let denied=0;let read="allowed",write="allowed";try{fs.readFileSync(${JSON.stringify(protectedFile)})}catch(e){read=e.code;if(["EACCES","EPERM"${unavailable}].includes(e.code))denied++}try{fs.writeFileSync(${JSON.stringify(protectedFile)},"escape")}catch(e){write=e.code;if(["EACCES","EPERM","EROFS"${unavailable}].includes(e.code))denied++}if(denied!==2)process.stderr.write(JSON.stringify({read,write}));process.exit(denied===2?0:91)`;
-    const probe = await this.launch(
-      {
-        scope: request.scope,
-        agentId: "sandbox-probe",
-        invocationId: `probe:${randomUUID()}`,
-        argv: { executable: process.execPath, args: ["-e", program] },
-        background: false,
-        limits: request.limits,
-        timeoutMs: request.limits.killGraceMs,
-      },
-      true,
-    );
-    const exited = await probe.wait();
-    if (exited.exitCode !== 0 || !exited.rangeEmpty) {
-      const evidence = probe.output(0, request.limits.previewMaxChars).data;
-      throw new ProcessSandboxError(
-        "enforcement_unavailable",
-        `操作系统未落实读取/写入隔离：${evidence}`,
+    const checks =
+      request.scope.sandboxMode === "read-only"
+        ? readonlyProbe(request.scope)
+        : { program: "const readonlyFailures=[];", targets: [] };
+    const program = `const fs=require("node:fs");let denied=0;let read="allowed",write="allowed";try{fs.readFileSync(${JSON.stringify(protectedFile)})}catch(e){read=e.code;if(["EACCES","EPERM"${unavailable}].includes(e.code))denied++}try{fs.writeFileSync(${JSON.stringify(protectedFile)},"escape")}catch(e){write=e.code;if(["EACCES","EPERM","EROFS"${unavailable}].includes(e.code))denied++}${checks.program}
+if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read,write,readonlyFailures}));process.exit(denied===2&&readonlyFailures.length===0?0:91)`;
+    try {
+      const probe = await this.launch(
+        {
+          scope: request.scope,
+          agentId: request.agentId,
+          invocationId: `probe:${randomUUID()}`,
+          argv: { executable: process.execPath, args: ["-e", program] },
+          background: false,
+          limits: request.limits,
+          timeoutMs: request.limits.killGraceMs,
+        },
+        true,
+      );
+      const exited = await probe.wait();
+      if (exited.exitCode !== 0 || !exited.rangeEmpty) {
+        const evidence = probe.output(0, request.limits.previewMaxChars).data;
+        throw new ProcessSandboxError(
+          "enforcement_unavailable",
+          `操作系统未落实读取/写入隔离：${evidence}`,
+        );
+      }
+    } finally {
+      await Promise.all(
+        checks.targets.map((path) => rm(path, { force: true })),
       );
     }
+  }
+
+  private ensureReadOnlyProof(request: ProcessSpawnRequest): Promise<void> {
+    if (this.requireOptions().network.allowedDomains.length > 0)
+      throw new ProcessSandboxError(
+        "enforcement_unavailable",
+        "当前Task网络策略无法证明只读命令无网，未执行命令。",
+      );
+    const key = JSON.stringify(request.scope);
+    let proof = this.readOnlyProofs.get(key);
+    if (!proof) {
+      proof = this.probe(request);
+      this.readOnlyProofs.set(key, proof);
+    }
+    return proof;
   }
 
   private async spawn(
@@ -279,7 +311,12 @@ class TaskProcessHelper {
       );
     // 在第一次 await 前预留启动 Promise；失败也保留，不能重放不安全副作用。
     const pending = previous ?? {
-      child: this.launch(request, false, internalWriteRoots),
+      child: (async () => {
+        if (request.scope.sandboxMode === "read-only")
+          await this.ensureReadOnlyProof(request);
+        this.assertReady(request);
+        return this.launch(request, false, internalWriteRoots);
+      })(),
       fingerprint,
     };
     this.invocations.set(request.invocationId, pending);
@@ -326,7 +363,9 @@ class TaskProcessHelper {
           output,
           snapshot,
           launch,
-          (changed) => this.send({ event: "snapshot", snapshot: changed }),
+          (changed) => {
+            if (!probe) this.send({ event: "snapshot", snapshot: changed });
+          },
           (sequence, data, offset, nextOffset, stream) =>
             this.sendProcessOutput(
               id,

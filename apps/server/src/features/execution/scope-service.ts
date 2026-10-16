@@ -36,6 +36,8 @@ export interface ExecutionScopeHandle {
   readonly role: ExecutionRole;
   readonly agentId: string;
   derive(role: ExecutionRole, agentId?: string): ExecutionScopeHandle;
+  /** 仅收窄本次执行的文件权限；保留同一 Task、代际、角色与 agent 身份。 */
+  restrictReadOnly(): ExecutionScopeHandle;
   resolvePath(path: string, operation: "read" | "write"): Promise<string>;
   readonly backend: ScopedBackend;
 }
@@ -312,6 +314,18 @@ class ScopeHandle implements ExecutionScopeHandle {
       role,
       agentId,
       this.readOnly || role === "explore" || role === "review",
+      this.limits,
+    );
+  }
+  restrictReadOnly(): ExecutionScopeHandle {
+    return new ScopeHandle(
+      this.load,
+      this.current,
+      this.preset,
+      this.branchGeneration,
+      this.role,
+      this.agentId,
+      true,
       this.limits,
     );
   }

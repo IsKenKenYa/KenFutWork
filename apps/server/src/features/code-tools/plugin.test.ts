@@ -26,6 +26,9 @@ function scope(
     derive: () => {
       throw new Error("本用例不派生作用域");
     },
+    restrictReadOnly: () => {
+      throw new Error("本用例不收窄执行作用域");
+    },
   };
   return { ...input, branchGeneration: 1, backend: createScopedBackend(input) };
 }

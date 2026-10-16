@@ -129,7 +129,10 @@ export async function unixPolicy(input: {
   const privateDirectory = await realpath(input.privateDirectory);
   return {
     network: {
-      allowedDomains: [...input.network.allowedDomains],
+      allowedDomains:
+        input.scope.sandboxMode === "read-only"
+          ? []
+          : [...input.network.allowedDomains],
       deniedDomains: [...input.network.deniedDomains],
       strictAllowlist: true,
     },

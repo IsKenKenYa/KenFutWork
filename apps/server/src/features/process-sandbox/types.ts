@@ -134,7 +134,7 @@ export interface ManagedStdioProcess extends ManagedProcess {
 }
 
 export interface ProcessSandbox {
-  /** requestedScope只读时保证用户目录只读且无网；依赖缺失fail closed，不表示probe已就绪。 */
+  /** 仅受验证执行路径可声明：read-only 请求先通过同 scope OS 只读探针且无网，否则拒绝启动。 */
   readonly readonlyExecution?: boolean;
   acquireRestoreBarrier(
     scope: CodeExecutionScope,
