@@ -228,6 +228,8 @@ function goalExecutionFacts(
       new Set(runs.map((member) => member.runId)).size === goal.iteration &&
       runs.every((member, index) => member.iteration === index + 1),
     runs,
+    userInputs: [],
+    pendingUserInputs: [],
     tools: [],
   };
   const root = state.snapshots.find(
@@ -243,6 +245,7 @@ function goalExecutionFacts(
       ),
     },
   };
+  appendRootUserInputs(facts, state, rootId, selected.rows.window);
   let descendants: protocol.ConversationSnapshot[] = [];
   try {
     descendants = freezeChildSnapshots(
@@ -263,6 +266,51 @@ function goalExecutionFacts(
         : snapshot.rows.window,
     );
   return facts;
+}
+
+function appendRootUserInputs(
+  facts: GoalExecutionFacts,
+  state: CodeUiConversationState,
+  rootId: string,
+  rows: protocol.ConversationRow[],
+): void {
+  for (const row of rows) {
+    if (row.kind !== "userInput" || row.origin !== "realUser") continue;
+    facts.userInputs.push({
+      sourceId: `session:${rootId}:row:${row.rowId}`,
+      sourceSessionId: rootId,
+      sourceRunId: row.turnId,
+      sourceRowId: row.rowId,
+      at: row.createdAt,
+      text:
+        row.epilogueStart === undefined
+          ? row.text
+          : row.text.slice(0, row.epilogueStart),
+      guided: row.guided === true,
+      ...(row.sourceCommandId ? { sourceCommandId: row.sourceCommandId } : {}),
+      ...(row.clientId ? { clientId: row.clientId } : {}),
+    });
+  }
+  for (const input of state.inputs ?? []) {
+    if (
+      input.intent.kind !== "sendText" ||
+      !["queued", "reserved"].includes(input.status) ||
+      !facts.runs.some((run) => run.branchGeneration === input.branchGeneration)
+    )
+      continue;
+    facts.pendingUserInputs.push({
+      sourceId: `input:${JSON.stringify([input.intent.clientId, input.intent.sourceCommandId])}`,
+      sourceSessionId: rootId,
+      sourceRunId: input.runId,
+      sourceCommandId: input.intent.sourceCommandId,
+      clientId: input.intent.clientId,
+      at: input.intent.admittedAt,
+      text: input.intent.text,
+      admissionSeq: input.intent.order.admissionSeq,
+      status: input.status,
+      delivery: input.intent.delivery.admitted,
+    });
+  }
 }
 
 function appendExecutionFacts(
@@ -292,6 +340,8 @@ function appendExecutionFacts(
       sourceId: `session:${snapshot.sessionId}:row:${row.rowId}`,
       sourceSessionId: snapshot.sessionId,
       sourceRunId: row.turnId,
+      sourceRowId: row.rowId,
+      at: row.createdAt,
       toolCallId: row.toolCallId,
       status: row.status,
       tool: {
@@ -373,14 +423,25 @@ export function createTaskGoalHost(deps: {
           root.id,
           withGoalMembers(goal, rows),
         );
+        const prior = captured.goal.evaluation!.executionFacts;
+        const userInputChanged =
+          JSON.stringify([
+            executionFacts.userInputs,
+            executionFacts.pendingUserInputs,
+          ]) !== JSON.stringify([prior.userInputs, prior.pendingUserInputs]);
         if (
-          JSON.stringify(executionFacts) !==
-          JSON.stringify(captured.goal.evaluation!.executionFacts)
+          !userInputChanged &&
+          JSON.stringify(executionFacts) !== JSON.stringify(prior)
         )
           throw new Error("目标执行事实在独立评估期间变化，请重新验收。");
         const state = structuredClone(root.state!);
-        state.goalRecord =
-          "error" in verdict
+        state.goalRecord = userInputChanged
+          ? deps.goals.invalidateVerification(goal, {
+              goalId: goal.goalId,
+              revision: goal.revision,
+              runId: context.runId!,
+            })
+          : "error" in verdict
             ? deps.goals.pause(goal, {
                 goalId: goal.goalId,
                 revision: goal.revision,
@@ -518,6 +579,9 @@ export function createTaskGoalHost(deps: {
           );
           if (JSON.stringify(currentEvidence) !== JSON.stringify(evidence))
             throw new Error("验收证据已改变，请重新读取GetGoal候选。");
+          const executionFacts = goalExecutionFacts(state, root.id, goal);
+          if (executionFacts.pendingUserInputs.length)
+            throw new Error("请先处理已接纳的用户输入，再提交验收。");
           const started = deps.goals.beginVerification(goal, {
             goalId: goal.goalId,
             revision: input.revision,
@@ -528,7 +592,7 @@ export function createTaskGoalHost(deps: {
             runId: context.runId!,
             revision: started.revision,
             evidence,
-            executionFacts: goalExecutionFacts(state, root.id, goal),
+            executionFacts,
             proposal: { passed: input.passed, reason: input.reason },
           };
           state.goalRecord = started;

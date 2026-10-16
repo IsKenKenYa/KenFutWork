@@ -23,14 +23,37 @@ export interface GoalRunMember {
   branchGeneration: number;
   iteration: number;
 }
+export interface GoalUserInputFact {
+  sourceId: string;
+  sourceSessionId: string;
+  sourceRunId: string;
+  sourceCommandId?: string;
+  clientId?: string;
+  at: number;
+  text: string;
+}
 /** Authenticated historical operations, separate from evidence of the current artifact state. */
 export interface GoalExecutionFacts {
   complete: boolean;
   runs: GoalRunMember[];
+  userInputs: Array<
+    GoalUserInputFact & { sourceRowId: number; guided: boolean }
+  >;
+  pendingUserInputs: Array<
+    GoalUserInputFact & {
+      sourceCommandId: string;
+      clientId: string;
+      admissionSeq: number;
+      status: string;
+      delivery: string;
+    }
+  >;
   tools: Array<{
     sourceId: string;
     sourceSessionId: string;
     sourceRunId: string;
+    sourceRowId: number;
+    at: number;
     toolCallId: string;
     status: string;
     tool: { name: string; inputText: string };
@@ -113,6 +136,10 @@ export interface GoalService {
     input: GoalFence & { tokenBudget: number | null },
   ): GoalRecord;
   beginVerification(
+    current: GoalRecord,
+    input: GoalFence & { runId: string },
+  ): GoalRecord;
+  invalidateVerification(
     current: GoalRecord,
     input: GoalFence & { runId: string },
   ): GoalRecord;
@@ -220,6 +247,17 @@ const provider: GoalService = {
       throw new Error("Verification Run is no longer current");
     const goal = clone(current);
     goal.status = "verifying";
+    goal.revision += 1;
+    return goal;
+  },
+  invalidateVerification(current, input) {
+    fence(current, input);
+    if (current.claimedRunId !== input.runId || current.status !== "verifying")
+      throw new Error("Verification Run is no longer current");
+    const goal = clone(current);
+    goal.status = "active";
+    goal.evaluation = null;
+    goal.reason = "goal.userInputChanged";
     goal.revision += 1;
     return goal;
   },

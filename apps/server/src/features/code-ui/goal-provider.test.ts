@@ -28,11 +28,13 @@ import { createGoalService } from "../goals/service.js";
 import type { LocalActor } from "../local-instance/types.js";
 import { createCodeUiConversation } from "./conversation.js";
 import { createTaskGoalHost } from "./goals.js";
+import { type CodeAdmittedInput, codeGuideMessageId } from "./input-intents.js";
 import type { CodeUiRepository, CodeUiSessionRecord } from "./repository.js";
 
 async function fixture(
   handle?: ExecutionScopeHandle,
   toolEvidenceValidator?: GoalToolEvidenceValidator,
+  objective = "解释",
 ) {
   const scope = handle?.describe() ?? {
     instanceId: "instance",
@@ -66,12 +68,12 @@ async function fixture(
   conversation.setGoal(
     goals.create(null, {
       goalId: "g",
-      objective: "解释",
+      objective,
       branchGeneration: 1,
       at: 0,
     }),
   );
-  conversation.startTurn({ runId: "r", commandId: "send", text: "解释" });
+  conversation.startTurn({ runId: "r", commandId: "send", text: objective });
   const state = conversation.exportState();
   state.goalModel = {
     goalId: "g",
@@ -568,6 +570,258 @@ it("Goal续跑先读取继承成果，只补缺口且不得为补回执删除重
   });
   expect(prompt).toContain("Call GetGoal first");
   expect(prompt).toContain("Do not delete or recreate");
+});
+
+function supplementalInput(
+  state: NonNullable<CodeUiSessionRecord["state"]>,
+  delivery: "startNow" | "guide" | "queue",
+  runId: string,
+): CodeAdmittedInput {
+  const model = state.goalModel!;
+  return {
+    runId,
+    scopeGeneration: 1,
+    branchGeneration: 1,
+    modelInvocation: structuredClone(model.invocation),
+    status: delivery === "startNow" ? "active" : "queued",
+    intent: {
+      sourceCommandId: `constraint-${delivery}`,
+      queueItemId: `constraint-queue-${delivery}`,
+      clientId: "real-client",
+      kind: "sendText",
+      text: "不得修改 seed.txt",
+      attachments: [],
+      modelSelection: structuredClone(model.selection),
+      mode: "build",
+      planEnabled: false,
+      delivery: { requested: delivery, admitted: delivery },
+      order: { admissionSeq: 1 },
+      steer: { state: delivery === "guide" ? "steering" : "notRequested" },
+      dispatch: { state: delivery === "startNow" ? "admitted" : "queued" },
+      admittedAt: 1000,
+    },
+  };
+}
+
+function recordedGoalHost(f: Awaited<ReturnType<typeof fixture>>) {
+  return createCodeUiConversation({
+    goals: f.goals,
+    sessionId: f.root.id,
+    workspacePath: f.root.root_directory!,
+    config: f.root.state!.snapshots[0]!.config,
+    state: f.root.state!,
+  });
+}
+
+async function goalSupplementFixture(delivery: "turn" | "guide") {
+  const f = await fixture(undefined, undefined, "创建 report.txt");
+  const conversation = recordedGoalHost(f);
+  const runId = delivery === "turn" ? "supplement-run" : "r";
+  const supplement = supplementalInput(
+    f.root.state!,
+    delivery === "turn" ? "startNow" : "guide",
+    runId,
+  );
+  if (delivery === "turn")
+    conversation.recordEvent({
+      type: "run.completed",
+      runId: "r",
+      timestamp: new Date(500).toISOString(),
+    });
+  conversation.admitInput(supplement);
+  if (delivery === "turn") conversation.startInput(supplement);
+  else conversation.consumeGuides(new Set([codeGuideMessageId(supplement)]));
+  for (const { id, command } of [
+    { id: "modify-seed", command: "printf changed > seed.txt" },
+    { id: "create-report", command: "printf report > report.txt" },
+  ]) {
+    conversation.recordEvent({
+      type: "tool.started",
+      runId,
+      toolCallId: id,
+      toolName: "Bash",
+      input: { command },
+      timestamp: new Date(2000).toISOString(),
+    });
+    conversation.recordEvent({
+      type: "tool.completed",
+      runId,
+      toolCallId: id,
+      toolName: "Bash",
+      status: "success",
+      output: { state: "exited", exitCode: 0, output: "" },
+      timestamp: new Date(3000).toISOString(),
+    });
+  }
+  f.root.state = conversation.exportState();
+  f.root.active_run_id = runId;
+  f.context.runId = runId;
+  const report = f.root.state.snapshots[0]!.rows.window.find(
+    (row) =>
+      row.kind === "toolCall" && row.toolCallId === `${runId}/create-report`,
+  )!;
+  return { ...f, supplement, evidenceId: `row:${report.rowId}` };
+}
+
+it.each(["turn", "guide"] as const)(
+  "Goal通过%s接纳的真人补充约束必须进入独立评估",
+  async (delivery) => {
+    const f = await goalSupplementFixture(delivery);
+    let executionFacts: unknown;
+    f.context.requestModel = vi.fn(async (request: ModelRequest) => {
+      executionFacts = JSON.parse(request.input).executionFacts;
+      const facts = JSON.stringify(executionFacts);
+      const constrained = facts.includes("不得修改 seed.txt");
+      return {
+        text: JSON.stringify({
+          passed: !constrained,
+          reason: constrained ? "修改seed违反用户补充约束" : "report已创建",
+        }),
+        hasToolCalls: false,
+        usageObserved: true,
+      };
+    });
+    const result = await f.host.verify(f.context, {
+      ...proposal,
+      revision: f.root.state!.goalRecord!.revision,
+      evidenceIds: [f.evidenceId],
+    });
+    expect(result.status).toBe("notSatisfied");
+    expect(JSON.stringify(executionFacts)).toContain("不得修改 seed.txt");
+    expect(JSON.stringify(executionFacts)).toContain(
+      f.supplement.intent.sourceCommandId,
+    );
+    expect(JSON.stringify(executionFacts)).toContain(
+      "printf changed > seed.txt",
+    );
+  },
+);
+
+it("独立评估中已接纳但未消费的真人约束阻止旧verdict完成Goal", async () => {
+  const f = await fixture();
+  f.context.requestModel = vi.fn(async () => {
+    const conversation = recordedGoalHost(f);
+    conversation.admitInput(supplementalInput(f.root.state!, "guide", "r"));
+    f.root.state = conversation.exportState();
+    return {
+      text: '{"passed":true,"reason":"Only the prior requirements were checked"}',
+      hasToolCalls: false,
+      usageObserved: true,
+    };
+  });
+  const result = await f.host.verify(f.context, proposal).then(
+    (goal) => ({ goal }),
+    (error: unknown) => ({ error }),
+  );
+  expect(f.context.requestModel).toHaveBeenCalledOnce();
+  expect(f.root.state!.inputs).toContainEqual(
+    expect.objectContaining({
+      status: "queued",
+      intent: expect.objectContaining({ text: "不得修改 seed.txt" }),
+    }),
+  );
+  expect(f.root.state!.goalRecord!.status).not.toBe("complete");
+  if ("goal" in result) expect(result.goal.status).not.toBe("complete");
+  expect(f.root.state!.goalRecord).toMatchObject({
+    status: "active",
+    claimedRunId: "r",
+    iteration: 1,
+    evaluation: null,
+  });
+
+  const pending = f.root.state!.inputs!.find(
+    (input) => input.status === "queued",
+  )!;
+  const conversation = recordedGoalHost(f);
+  conversation.consumeGuides(new Set([codeGuideMessageId(pending)]));
+  f.root.state = conversation.exportState();
+  f.context.toolCallId = "verify-after-user-input";
+  f.context.requestModel = vi.fn(async (request: ModelRequest) => {
+    expect(request.input).toContain("不得修改 seed.txt");
+    return {
+      text: '{"passed":false,"reason":"The supplemental requirement needs checking"}',
+      hasToolCalls: false,
+      usageObserved: true,
+    };
+  });
+  const next = await f.host.verify(f.context, {
+    ...proposal,
+    revision: f.root.state.goalRecord!.revision,
+  });
+  expect(next.status).toBe("notSatisfied");
+  expect(f.context.requestModel).toHaveBeenCalledOnce();
+});
+
+it.each(["queue", "guide"] as const)(
+  "已接纳待消费的%s输入先于验收且不把Goal卡在verifying",
+  async (delivery) => {
+    const f = await fixture();
+    const conversation = recordedGoalHost(f);
+    conversation.admitInput(
+      supplementalInput(
+        f.root.state!,
+        delivery,
+        delivery === "guide" ? "r" : "future-user-run",
+      ),
+    );
+    f.root.state = conversation.exportState();
+    await expect(f.host.verify(f.context, proposal)).rejects.toThrow(
+      "请先处理已接纳的用户输入",
+    );
+    expect(f.context.requestModel).not.toHaveBeenCalled();
+    expect(f.root.state.goalRecord).toMatchObject({
+      status: "active",
+      claimedRunId: "r",
+    });
+    expect(f.root.state.goalRecord!.evaluation ?? null).toBeNull();
+  },
+);
+
+it("模型子任务和后台userInput不冒充真人补充约束", async () => {
+  const f = await fixture();
+  const generated = "模型子任务专用要求，不是真人约束";
+  const child = createCodeUiConversation({
+    sessionId: "constraint-child",
+    workspacePath: "/project",
+    config: f.root.state!.snapshots[0]!.config,
+  });
+  child.startTurn({
+    runId: "constraint-child-run",
+    commandId: "model-generated-command",
+    text: generated,
+  });
+  f.root.state!.snapshots.push(child.getSnapshot());
+  f.root.state!.snapshots[0]!.rows.window.push(
+    protocol.subagentRowSchema.parse({
+      rowId: 101,
+      turnId: "r",
+      createdAt: 0,
+      createdAtSeq: 0,
+      kind: "subagent",
+      parentToolCallId: "r/model-task",
+      subagentType: "general",
+      status: "success",
+      summaryText: "Task done",
+      childSessionId: "constraint-child",
+    }),
+    protocol.userInputRowSchema.parse({
+      rowId: 102,
+      turnId: "r",
+      createdAt: 0,
+      createdAtSeq: 0,
+      kind: "userInput",
+      origin: "backgroundResult",
+      text: generated,
+    }),
+  );
+  expect((await f.host.verify(f.context, proposal)).status).toBe("complete");
+  const request = vi.mocked(f.context.requestModel!).mock.calls[0]![0];
+  const facts = JSON.parse(request.input).executionFacts;
+  expect(facts.userInputs).toContainEqual(
+    expect.objectContaining({ text: "解释" }),
+  );
+  expect(JSON.stringify(facts.userInputs)).not.toContain(generated);
+  expect(facts.pendingUserInputs).toEqual([]);
 });
 
 function auditOperation(
