@@ -78,6 +78,7 @@ export function createTaskWorkManager(options: {
   >();
   const changeListeners = new Set<(record: TaskWorkRecord) => Promise<void>>();
   let closed = false;
+  let shutdown = false;
   let initialization: Promise<TaskWorkRecord[]> | undefined;
   let hostLease: TaskWorkHostLease | undefined;
   let closePromise: Promise<void> | undefined;
@@ -127,68 +128,90 @@ export function createTaskWorkManager(options: {
         "旧 Task 的执行范围尚未确认停止，不能重开。",
       );
   };
-  const initialize = () =>
-    (initialization ??= (async () => {
-      if (closed) throw new TaskWorkError("task_closed", "执行宿主已关闭。");
-      const lease = await store.acquireHost(options.executionHostId, ownerId);
-      if (!lease)
+  const claimHost = async (): Promise<TaskWorkRecord[]> => {
+    const lease = await store.acquireHost(options.executionHostId, ownerId);
+    if (!lease)
+      throw new TaskWorkError(
+        "execution_host_busy",
+        "此执行宿主已有活实例，不能恢复或重复派发后台工作。",
+      );
+    hostLease = lease;
+    const lost = () => {
+      if (closed || shutdown) return;
+      closed = true;
+      hostLease = undefined;
+      // 丢锁不是终局：DB 会话锁随连接死亡自动释放，清掉认领缓存，下一次使用重新认领。
+      initialization = undefined;
+      const taskKeys = new Set([
+        ...foreground.keys(),
+        ...[...live.values()].map((entry) => keyFor(entry.context)),
+      ]);
+      const tasks = [...taskKeys].map((key) => {
+        const [ownerKind, instanceId, taskId]: [
+          TaskWorkOwnerKind,
+          string,
+          string,
+        ] = JSON.parse(key);
+        return { instanceId, taskId, ownerKind };
+      });
+      for (const listener of hostLossListeners)
+        void Promise.resolve()
+          .then(() =>
+            listener({ executionHostId: options.executionHostId, tasks }),
+          )
+          .catch(report);
+      void Promise.all(
+        [...live].map(([id, entry]) =>
+          stopEntry(id, entry, "执行宿主独占会话丢失"),
+        ),
+      ).catch(report);
+    };
+    lease.signal.addEventListener("abort", lost, { once: true });
+    try {
+      if (shutdown || lease.signal.aborted)
         throw new TaskWorkError(
-          "execution_host_busy",
-          "此执行宿主已有活实例，不能恢复或重复派发后台工作。",
+          "execution_host_lost",
+          "执行宿主独占会话已失效。",
         );
-      hostLease = lease;
-      const lost = () => {
-        if (closed) return;
-        closed = true;
-        const taskKeys = new Set([
-          ...foreground.keys(),
-          ...[...live.values()].map((entry) => keyFor(entry.context)),
-        ]);
-        const tasks = [...taskKeys].map((key) => {
-          const [ownerKind, instanceId, taskId]: [
-            TaskWorkOwnerKind,
-            string,
-            string,
-          ] = JSON.parse(key);
-          return { instanceId, taskId, ownerKind };
-        });
-        for (const listener of hostLossListeners)
-          void Promise.resolve()
-            .then(() =>
-              listener({ executionHostId: options.executionHostId, tasks }),
-            )
-            .catch(report);
-        void Promise.all(
-          [...live].map(([id, entry]) =>
-            stopEntry(id, entry, "执行宿主独占会话丢失"),
-          ),
-        ).catch(report);
-      };
-      lease.signal.addEventListener("abort", lost, { once: true });
-      try {
-        if (closed || lease.signal.aborted)
-          throw new TaskWorkError(
-            "execution_host_lost",
-            "执行宿主独占会话已失效。",
-          );
-        const recovered = await store.interruptHost(
-          options.executionHostId,
-          ownerId,
-          now(),
+      const recovered = await store.interruptHost(
+        options.executionHostId,
+        ownerId,
+        now(),
+      );
+      if (lease.signal.aborted)
+        throw new TaskWorkError(
+          "execution_host_lost",
+          "执行宿主恢复期间失锁。",
         );
-        if (lease.signal.aborted)
-          throw new TaskWorkError(
-            "execution_host_lost",
-            "执行宿主恢复期间失锁。",
-          );
-        for (const record of recovered) await publish(record);
-        return recovered;
-      } catch (error) {
+      for (const record of recovered) await publish(record);
+      if (shutdown)
+        throw new TaskWorkError(
+          "execution_host_lost",
+          "执行宿主正在关闭，放弃本次认领。",
+        );
+      closed = false;
+      return recovered;
+    } catch (error) {
+      // 只清理仍归属本租约的状态：期间可能有更新的一次认领已经就位。
+      if (hostLease === lease) {
         closed = true;
-        await lease.release();
-        throw error;
+        hostLease = undefined;
       }
-    })());
+      await lease.release();
+      throw error;
+    }
+  };
+  const initialize = (): Promise<TaskWorkRecord[]> => {
+    // 显式关闭后不再重新认领；只读路径照旧放行，入口拒绝由 requireCurrent 的 closed 承担。
+    if (shutdown) return Promise.resolve([]);
+    if (initialization) return initialization;
+    const claim = claimHost();
+    initialization = claim;
+    void claim.catch(() => {
+      if (initialization === claim) initialization = undefined;
+    });
+    return claim;
+  };
 
   const wake = async (context: TaskWorkContext) => {
     const key = keyFor(context);
@@ -573,6 +596,7 @@ export function createTaskWorkManager(options: {
     },
     async close(reason) {
       closed = true;
+      shutdown = true;
       closePromise ??= (async () => {
         await initialization?.catch(() => {});
         const results = await Promise.allSettled(

@@ -808,6 +808,88 @@ it("忙碌前台保持排他并在模型边界消费一次，分支墓碑拒绝�
   }
 });
 
+it("宿主会话锁丢失后拒绝迟到操作，下一次使用自动重新认领恢复服务", async () => {
+  const store = createMemoryTaskWorkStore([context]);
+  const manager = createTaskWorkManager({
+    store,
+    executionHostId: "reclaim-host",
+    resolveMaxConcurrent: async () => 4,
+  });
+  const hostLost = vi.fn(async () => {});
+  manager.onHostLost(hostLost);
+  const leave = await manager.enterForeground(context);
+  await leave();
+  store.loseHost("reclaim-host");
+  // 丢失窗口：不经过重新认领的路径立即拒绝，宁可拒绝也不放行迟到操作。
+  await expect(
+    manager.consumeNotifications({ ...context, runId: "during-loss" }),
+  ).rejects.toMatchObject({ code: "task_closed" });
+  expect(hostLost).toHaveBeenCalledTimes(1);
+  // 下一次进入前台触发重新认领，服务自愈；恢复后不再重复通知丢锁。
+  const recovered = await manager.enterForeground({
+    ...context,
+    runId: "after-loss",
+  });
+  await recovered();
+  const steady = await manager.enterForeground({
+    ...context,
+    runId: "steady-run",
+  });
+  await steady();
+  expect(hostLost).toHaveBeenCalledTimes(1);
+  await manager.close("cleanup");
+});
+
+it("重新认领遇竞争者持锁报 execution_host_busy，锁释放后下一次使用恢复", async () => {
+  const store = createMemoryTaskWorkStore([context]);
+  const manager = createTaskWorkManager({
+    store,
+    executionHostId: "contend-host",
+    resolveMaxConcurrent: async () => 4,
+  });
+  await manager.initialize();
+  store.loseHost("contend-host");
+  const competitor = await store.acquireHost("contend-host", "competitor");
+  expect(competitor).not.toBeNull();
+  try {
+    await expect(
+      manager.enterForeground({ ...context, runId: "contended-run" }),
+    ).rejects.toMatchObject({ code: "execution_host_busy" });
+    // 失败的认领不缓存：竞争者释放后，下一次使用直接恢复。
+    if (competitor) await competitor.release();
+    const leave = await manager.enterForeground({
+      ...context,
+      runId: "after-release",
+    });
+    await leave();
+  } finally {
+    await manager.close("cleanup");
+  }
+});
+
+it("显式关闭后不再重新认领宿主，只读查询放行而入口拒绝", async () => {
+  const store = createMemoryTaskWorkStore([context]);
+  const manager = createTaskWorkManager({
+    store,
+    executionHostId: "shutdown-host",
+    resolveMaxConcurrent: async () => 4,
+  });
+  await manager.initialize();
+  store.loseHost("shutdown-host");
+  await manager.close("shutdown");
+  // 关闭后即使宿主锁空闲，本进程也不得再次认领：外部可以直接取得。
+  const competitor = await store.acquireHost("shutdown-host", "after-close");
+  expect(competitor).not.toBeNull();
+  try {
+    expect(await manager.find(context, "missing-work")).toBeNull();
+    await expect(
+      manager.enterForeground({ ...context, runId: "post-close" }),
+    ).rejects.toMatchObject({ code: "task_closed" });
+  } finally {
+    if (competitor) await competitor.release();
+  }
+});
+
 it("可信新scope在旧Task停止确认前不可重开，确认后旧scope终态不再唤醒", async () => {
   const store = createMemoryTaskWorkStore([context]);
   const manager = createTaskWorkManager({
