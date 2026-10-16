@@ -15,6 +15,17 @@ export type CodePermissionPolicyInput = Pick<
   | "planControl"
 >;
 
+/** Final tool facts and child dispatches cannot exceed the Run's admitted base mode. */
+export function narrowCodeApprovalMode(
+  current: CodeApprovalMode,
+  ceiling: CodeApprovalMode,
+): CodeApprovalMode {
+  if (current === "plan" || ceiling === "plan") return "plan";
+  if (current === "build" || ceiling === "build") return "build";
+  if (current === "edit" || ceiling === "edit") return "edit";
+  return "yolo";
+}
+
 /** 仅主Task可控制规划；控制声明不能掩盖资源副作用。 */
 export function allowsPlanControl(
   input: Pick<PermissionInvocation, "role" | "access" | "planControl">,
@@ -38,7 +49,6 @@ export function codePermissionPolicy(
   if (input.access === "read") return "allow";
   if (input.role === "explore" || input.role === "review") return "deny";
   const taskPolicy = modePolicy(input.mode, input);
-  if (input.role !== "worker") return taskPolicy;
   const ceiling = modePolicy(input.approvalCeiling, input);
   if (taskPolicy === "deny" || ceiling === "deny") return "deny";
   return taskPolicy === "ask" || ceiling === "ask" ? "ask" : "allow";

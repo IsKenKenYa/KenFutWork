@@ -52,6 +52,9 @@ export function createCodeChildHarness(deps: {
             }
           : {}),
         prompt: instructions,
+        ...(request.executionMode
+          ? { executionMode: request.executionMode }
+          : {}),
         model: request.model,
       },
       {

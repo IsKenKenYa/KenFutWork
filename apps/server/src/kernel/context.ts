@@ -3,7 +3,10 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { ServerEnv } from "../config/env.js";
 import type { PermissionInvocation } from "../features/permissions/approval-types.js";
-import { allowsPlanControl } from "../features/permissions/code-policy.js";
+import {
+  allowsPlanControl,
+  narrowCodeApprovalMode,
+} from "../features/permissions/code-policy.js";
 import type { PermissionService } from "../features/permissions/permission-service.js";
 import { contributionFingerprint } from "./contribution-fingerprint.js";
 import { publicToolArguments } from "./tool-arguments.js";
@@ -558,6 +561,9 @@ export class ToolRegistryImpl implements ToolRegistry {
       await observe("started");
       observedStarted = true;
       const decision = await this.events.emitWaterfall("tool-pre-execute", {
+        ...(execCtx.executionMode
+          ? { executionMode: execCtx.executionMode }
+          : {}),
         args: normalized,
         ...(invocation ? { permissionInvocation: invocation } : {}),
         decision: "allow",
@@ -598,10 +604,12 @@ export class ToolRegistryImpl implements ToolRegistry {
         });
         if (claim.decision === "deny")
           throw new ToolDeniedError(tool.name, claim.reason);
-        approvedExecutionMode =
+        approvedExecutionMode = narrowCodeApprovalMode(
           invocation.mode === "plan" || current.mode === "plan"
             ? "plan"
-            : current.mode;
+            : current.mode,
+          invocation.approvalCeiling,
+        );
       }
       revalidateRegistration();
       const { observeToolExecution: _observer, ...implementationContext } =

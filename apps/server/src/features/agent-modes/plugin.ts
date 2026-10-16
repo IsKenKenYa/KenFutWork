@@ -4,6 +4,7 @@ import {
   BUILTIN_EXECUTION_MODES,
   createExecutionModeService,
   evaluateToolPolicy,
+  policyForMode,
 } from "./execution-mode-service.js";
 import { createExecutionModeStore } from "./execution-mode-store.js";
 
@@ -35,13 +36,15 @@ export function createAgentModesPlugin(): PluginDefinition {
 
       // pre-step：按模式给模型输入注入引导（plan 规划、solo 禁工具提示等）
       ctx.on("pre-step", async (payload, next) => {
-        const mode = !payload.threadId
-          ? "agent"
-          : payload.preset === "code" && payload.instanceId && payload.taskId
-            ? await service.hydrate(payload.threadId, {
-                instanceId: payload.instanceId,
-              })
-            : service.getMode(payload.threadId);
+        const mode =
+          payload.executionMode ??
+          (!payload.threadId
+            ? "agent"
+            : payload.preset === "code" && payload.instanceId && payload.taskId
+              ? await service.hydrate(payload.threadId, {
+                  instanceId: payload.instanceId,
+                })
+              : service.getMode(payload.threadId));
         const directive = BUILTIN_EXECUTION_MODES.find(
           (m) => m.id === mode,
         )?.inputDirective;
@@ -53,13 +56,22 @@ export function createAgentModesPlugin(): PluginDefinition {
 
       // tool-pre-execute：solo 全禁、plan 只读（内核注册表路径的硬约束）
       ctx.on("tool-pre-execute", async (payload, next) => {
-        // Code Task 的 V4 mode/worker ceiling 由 permissions 的可信调用事实裁决。
-        if (payload.permissionInvocation?.preset === "code")
+        // Task策略来自已接纳Run；旧非Task调用保留线程策略。
+        if (
+          payload.permissionInvocation?.preset === "code" &&
+          !payload.executionMode
+        )
           return next(payload);
-        if (!payload.threadId) {
+        if (!payload.threadId && !payload.executionMode) {
           return next(payload);
         }
-        const policy = service.resolveToolPolicy(payload.threadId);
+        const policy = payload.executionMode
+          ? policyForMode(
+              payload.permissionInvocation && payload.executionMode === "plan"
+                ? "agent"
+                : payload.executionMode,
+            )
+          : service.resolveToolPolicy(payload.threadId!);
         const verdict = evaluateToolPolicy(policy, payload.toolName);
         if (verdict.allowed) {
           return next(payload);

@@ -18,7 +18,7 @@ describe("resolveCodeExecutionMode（G2 执行模式回 Code 壳）", () => {
     expect(await resolveCodeExecutionMode(undefined, "t", "i")).toBeUndefined();
   });
 
-  it("派发前按 threadId+instanceId hydrate，返回持久化模式", async () => {
+  it("接纳前按 threadId+instanceId hydrate，返回持久化模式", async () => {
     const agentModes = service({
       hydrate: vi.fn(async () => "plan" as const),
     });
@@ -30,7 +30,7 @@ describe("resolveCodeExecutionMode（G2 执行模式回 Code 壳）", () => {
     });
   });
 
-  it("hydrate 抛错回落缓存现值，模式存储故障不挡 run", async () => {
+  it("hydrate失败可读拒绝接纳，不以旧缓存冻结另一种策略", async () => {
     const agentModes = service({
       hydrate: vi.fn(async () => {
         throw new Error("store down");
@@ -39,7 +39,8 @@ describe("resolveCodeExecutionMode（G2 执行模式回 Code 壳）", () => {
     });
     await expect(
       resolveCodeExecutionMode(agentModes, "thread-1", "inst-1"),
-    ).resolves.toBe("plan");
+    ).rejects.toThrow("无法读取工作方式");
+    expect(agentModes.getMode).not.toHaveBeenCalled();
   });
 
   it("hydrate 判定旧 loop 模式退役时透出原因，不回落热缓存", async () => {

@@ -509,6 +509,9 @@ function createEditedInput(
 ): CodeAdmittedInput {
   return {
     runId: randomUUID(),
+    ...(source.canonical?.executionMode
+      ? { executionMode: source.canonical.executionMode }
+      : {}),
     ...(source.canonical?.frozenContributions
       ? {
           frozenContributions: structuredClone(

@@ -19,6 +19,7 @@ export interface ChildSession {
   }>;
 }
 export interface CodeChildRequest {
+  executionMode?: import("@kenfutwork/shared").ExecutionMode;
   workContext?: protocol.ConversationWorkContext;
   frozenContributions?: ToolContributionSnapshot;
   childSessionId: string;

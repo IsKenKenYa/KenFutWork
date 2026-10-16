@@ -51,6 +51,7 @@ export function claimGoalContinuation(
   });
   host.setInputOwner(input.owner);
   host.startTurn({
+    executionMode: "goal",
     runId: input.runId,
     commandId: input.commandId,
     text: input.text,

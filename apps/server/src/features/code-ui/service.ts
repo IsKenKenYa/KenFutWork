@@ -208,8 +208,7 @@ type CodePreparedModel = {
   modelInvocation: ModelInvocationSnapshot;
 };
 /**
- * 读回线程持久化的执行模式并 warm 缓存（G2/Q7，Code run 派发前调用）。
- * 模式存储故障回落缓存；已退役模式必须拒绝本轮执行。
+ * 接纳输入前读取持久策略；存储故障不能把旧缓存当成本次选择。
  */
 export async function resolveCodeExecutionMode(
   agentModes: ExecutionModeService | undefined,
@@ -221,7 +220,10 @@ export async function resolveCodeExecutionMode(
     return await agentModes.hydrate(threadId, { instanceId });
   } catch (error) {
     if (error instanceof RetiredExecutionModeError) throw error;
-    return agentModes.getMode(threadId);
+    throw new CodeUiRepositoryError(
+      "command_conflict",
+      "无法读取工作方式，请稍后重试。",
+    );
   }
 }
 
@@ -1351,6 +1353,14 @@ export class CodeUiService {
       actor,
       taskId,
     );
+    const executionMode =
+      goal && goal.status !== "complete"
+        ? "goal"
+        : ((await resolveCodeExecutionMode(
+            this.deps.agentModes,
+            thread.threadId,
+            instanceId,
+          )) ?? "agent");
     const commandId = `task-work:${createHash("sha256")
       .update(
         `${context.branchGeneration}/${pending
@@ -1401,6 +1411,7 @@ export class CodeUiService {
             ? freezeWorkContext(root.state?.goalModel?.workContext)
             : latestWorkContext(root.state!);
         host.startTurn({
+          executionMode,
           runId,
           commandId,
           text,
@@ -3462,6 +3473,12 @@ export class CodeUiService {
       user,
       loaded.root.id,
     );
+    const executionMode =
+      (await resolveCodeExecutionMode(
+        this.deps.agentModes,
+        thread.threadId,
+        loaded.instanceId,
+      )) ?? "agent";
     const runId = randomUUID();
     const ack = await this.deps.repository.applyCommand(
       loaded.instanceId,
@@ -3538,6 +3555,7 @@ export class CodeUiService {
           !!previous &&
           active?.intent.kind === "sendText" &&
           (!this.deps.captureContributions || !!active.frozenContributions) &&
+          active.executionMode === executionMode &&
           canonical(workContextForRun(root.state!, previous!)) ===
             canonical(workContext) &&
           !codeInputs.length;
@@ -3639,6 +3657,7 @@ export class CodeUiService {
           admittedAt: Date.now(),
         };
         const record: CodeAdmittedInput = {
+          executionMode,
           intent,
           runId: guide ? previous! : runId,
           modelInvocation,
@@ -4101,15 +4120,17 @@ export class CodeUiService {
         branchGeneration: Number(current.branch_generation),
         context: workContext,
       });
-      // G2 六档执行模式（Q7）：Code run 与 Design 共用同一 agentModes 缝。
-      // 派发前按 threadId 读回持久化模式 warm 缓存——工具门（toolGateFor）、
-      // pre-step 引导、自动化分场景都按 threadId 消费；读回失败按现状（agent）继续，
-      // 不让模式存储故障挡掉 run（与 WS 路径同口径）。
-      const executionMode = await resolveCodeExecutionMode(
-        this.deps.agentModes,
-        threadId,
-        scopeHandle.describe().instanceId,
-      );
+      const executionMode =
+        current.state!.inputs?.find(
+          (entry) =>
+            entry.runId === runId && entry.intent.delivery.admitted !== "guide",
+        )?.executionMode ??
+        current.state!.runExecutionModes?.find(([id]) => id === runId)?.[1];
+      if (!executionMode)
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "这条输入缺少发送时的工作方式，请重新发送。",
+        );
       const started = await this.deps.repository.startRunIfCurrent(
         scopeHandle.describe().instanceId,
         sessionId,
@@ -4181,9 +4202,7 @@ export class CodeUiService {
                   : {}),
               ...(currentInput?.intent.mode
                 ? {
-                    approvalCeiling: currentInput.intent.planEnabled
-                      ? ("plan" as const)
-                      : currentInput.intent.mode,
+                    approvalCeiling: currentInput.intent.mode,
                   }
                 : {}),
               eventSink: async (event) =>

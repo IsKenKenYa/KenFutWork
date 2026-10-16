@@ -211,6 +211,7 @@ export type DepsOf<_K extends ServiceKey> = {
 export type AgentRunEvent = "pre-step" | "tool-pre-execute" | "turn-stopping";
 
 export interface PreStepPayload {
+  executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
   input: unknown;
   runId: string | undefined;
   threadId?: string | undefined;
@@ -222,6 +223,7 @@ export interface PreStepPayload {
 }
 
 export interface ToolPreExecutePayload {
+  executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
   permissionInvocation?: PermissionInvocation | undefined;
   args: Record<string, unknown>;
   decision: "allow" | "deny";
@@ -362,6 +364,7 @@ export type ToolExecutionObservation = {
 };
 
 export interface ToolExecutionContext {
+  executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
   frozenContributions?: ToolContributionSnapshot | undefined;
   /** Frozen input resource references; filesystem permissions remain in scopeHandle. */
   workContext?:

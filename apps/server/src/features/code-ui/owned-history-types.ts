@@ -18,6 +18,7 @@ export type CodeReplayIntent = Pick<
   | "workContext"
 >;
 export interface CodeReplayInput {
+  executionMode?: import("@kenfutwork/shared").ExecutionMode;
   frozenContributions?: ToolContributionSnapshot;
   intent: CodeReplayIntent;
   modelInvocation: ModelInvocationSnapshot;

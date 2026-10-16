@@ -118,6 +118,9 @@ export function createCodeSubagentTool(deps: {
           input.subagent_type === "worker" ? "write" : "read",
         );
       const request: CodeChildRequest = {
+        ...(execution.executionMode
+          ? { executionMode: execution.executionMode }
+          : {}),
         ...(execution.frozenContributions
           ? {
               frozenContributions: structuredClone(

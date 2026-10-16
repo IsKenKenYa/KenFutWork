@@ -109,6 +109,7 @@ function replayInput(input: CodeAdmittedInput): CodeReplayInput {
     workContext,
   } = input.intent;
   return structuredClone({
+    ...(input.executionMode ? { executionMode: input.executionMode } : {}),
     intent: {
       sourceCommandId,
       clientId,

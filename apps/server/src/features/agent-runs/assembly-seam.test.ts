@@ -319,3 +319,123 @@ it.each(["solo", "plan"] as const)(
     }
   },
 );
+
+it("共享Task以Run冻结solo硬拒绝注册表只读工具，后切会话策略不追改已接纳agent", async () => {
+  const task = await archiveTaskFixture("code");
+  const { kernel, app } = await assembleSeamKernel(() => {
+    throw new Error("本例在真实Kernel执行缝验证，不运行模型");
+  });
+  let reads = 0;
+  try {
+    const threadId = "frozen-task-strategy";
+    await kernel.get("agentModes").activate(threadId, "agent");
+    const definition = {
+      name: "Read",
+      description: "读取Task内的内容",
+      scope: "shared" as const,
+      access: "read" as const,
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+      execute: async () => {
+        reads++;
+        return "实际读取结果";
+      },
+    };
+    const unregister = kernel.get("tools").register(definition);
+    try {
+      await expect(
+        kernel.get("tools").executeDefinition(
+          definition,
+          {},
+          {
+            ...task.execution,
+            executionMode: "solo",
+            threadId,
+          },
+        ),
+      ).rejects.toThrow(/solo/);
+      expect(reads).toBe(0);
+      await kernel.get("agentModes").activate(threadId, "solo");
+      await expect(
+        kernel.get("tools").executeDefinition(
+          definition,
+          {},
+          {
+            ...task.execution,
+            executionMode: "agent",
+            threadId,
+            toolCallId: "frozen-agent-read",
+          },
+        ),
+      ).resolves.toBe("实际读取结果");
+      expect(reads).toBe(1);
+    } finally {
+      unregister();
+    }
+  } finally {
+    await kernel.dispose();
+    await app.close();
+    await task.cleanup();
+  }
+});
+
+it("共享Task主Run接纳build后当前配置切yolo，写入仍须原调用审批", async () => {
+  const task = await archiveTaskFixture("code");
+  const { kernel, app } = await assembleSeamKernel(() => {
+    throw new Error("本例只使用真实Kernel和审批门");
+  });
+  let writes = 0;
+  const requested: string[] = [];
+  const permissions = kernel.get("permissions");
+  permissions.onEvent(async (event) => {
+    if (event.type !== "requested") return;
+    requested.push(event.identity.toolCallId);
+    await permissions.resolve({
+      interactionId: event.interaction.interactionId,
+      binding: event.identity,
+      answer: { optionId: "deny" },
+    });
+  });
+  const definition = {
+    name: "Write",
+    description: "写入Task文件",
+    scope: "shared" as const,
+    access: "write" as const,
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    execute: async () => {
+      writes++;
+      return "written";
+    },
+  };
+  const unregister = kernel.get("tools").register(definition);
+  try {
+    await expect(
+      kernel.get("tools").executeDefinition(
+        definition,
+        {},
+        {
+          ...task.execution,
+          executionMode: "agent",
+          codeApproval: {
+            ceiling: "build",
+            resolve: async () => ({
+              mode: "yolo",
+              scopeGeneration: task.identity.generation,
+              branchGeneration: 1,
+            }),
+          },
+        },
+      ),
+    ).rejects.toThrow(ToolDeniedError);
+    expect(requested).toEqual([task.execution.toolCallId]);
+    expect(writes).toBe(0);
+  } finally {
+    unregister();
+    await kernel.dispose();
+    await app.close();
+    await task.cleanup();
+  }
+});

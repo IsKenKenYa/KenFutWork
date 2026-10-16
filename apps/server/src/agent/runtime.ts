@@ -472,6 +472,7 @@ type CreateAgentRuntimeOptions = {
     actor: LocalActor,
   ) => Promise<{
     mode: import("../features/permissions/approval-types.js").CodeApprovalMode;
+    baseMode?: import("../features/permissions/approval-types.js").CodeApprovalMode;
     planEnabled?: boolean | undefined;
     planningEpoch?: number | undefined;
     scopeGeneration: number;
@@ -542,10 +543,13 @@ type CreateAgentRuntimeOptions = {
     },
   ) => Promise<{ input: unknown }>;
   /**
-   * 执行模式工具门（agent-modes 缝经 agent-runs 插件注入）：按线程返回
-   * solo/plan 的工具拦截判定；返回 undefined 表示全放行（agent 等模式）。
+   * 执行策略工具门：Task使用接纳快照，独立规划态仍由原Task审批链裁决。
    */
-  toolGateFor?: (threadId: string) => ToolGate | undefined;
+  toolGateFor?: (
+    threadId: string,
+    executionMode?: import("@kenfutwork/shared").ExecutionMode,
+    scoped?: boolean,
+  ) => ToolGate | undefined;
   /**
    * 检查点钩子（checkpoints 缝，可选依赖）：轮次开始/结束时打影子 git 快照。
    * runtime 只负责在正确时机调用（beforeTurn 在流启动前、afterTurn 在收尾 finally，
@@ -708,6 +712,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       input,
       runId: run.runId,
       preset: resolvePresetForRun(run),
+      ...(run.executionMode ? { executionMode: run.executionMode } : {}),
       ...(run.threadId ? { threadId: run.threadId } : {}),
       ...(run.sessionId ? { sessionId: run.sessionId } : {}),
       ...(scope ? { instanceId: scope.instanceId, taskId: scope.taskId } : {}),
@@ -1690,10 +1695,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
           const preset = resolvePresetForRun(run);
 
-          // 执行模式工具门：solo/plan 按线程策略拦截（undefined = 全放行）
+          // Task工具门消费Run快照；没有Task的旧调用继续使用线程策略。
           const toolGate =
-            !run.scopeHandle && run.threadId && options.toolGateFor
-              ? options.toolGateFor(run.threadId)
+            run.threadId && options.toolGateFor
+              ? options.toolGateFor(
+                  run.threadId,
+                  run.executionMode,
+                  !!run.scopeHandle,
+                )
               : undefined;
           // 被拒调用的可见性与有界失败：门只做判定，记账与中止由运行时负责
           // （只有它拿得到 runId/时间戳/abort 控制器）
@@ -2004,7 +2013,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             const resolve = () => resolver(handle, run.actor);
             const current = await resolve();
             codeApproval = {
-              ceiling: run.approvalCeiling ?? current.mode,
+              ceiling: run.approvalCeiling ?? current.baseMode ?? current.mode,
               resolve,
             };
           }
@@ -2032,6 +2041,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           });
           toolReceipts = executionReceipts;
           const runToolContext: ToolExecutionContext = {
+            ...(run.executionMode ? { executionMode: run.executionMode } : {}),
             ...(run.frozenContributions
               ? {
                   frozenContributions: structuredClone(run.frozenContributions),
