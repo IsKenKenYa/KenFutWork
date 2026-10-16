@@ -165,6 +165,8 @@ describe("FlowSurface project binding consumer", () => {
     expect(outbound).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).toBeNull();
     ready(newSource, projectA, 3);
+    // ready 被组件接受是异步的（状态落在下一个 microtask）；不等门就 navigate 会偶发丢消息。
+    await waitFor(() => expect(getFlowNavigationReady()).toBe(true));
     act(() => navigateFlowSurface("/tasks"));
     expect(outbound).toHaveBeenCalledWith(
       expect.objectContaining({ type: "ff-embed/navigate" }),
@@ -190,6 +192,9 @@ describe("FlowSurface project binding consumer", () => {
     const oldSource = frameWindow();
     const oldOutbound = vi.spyOn(oldSource, "postMessage");
     message(oldSource, { type: "ff-embed/hello", version: "v1" });
+    // 屏障：必须确认「挂起的那次换票」确实被旧项目的 hello 触发，否则一次性的
+    // mockImplementationOnce 会被新项目的 hello 消费掉，identity 永远发不出去（负载下偶发）。
+    await waitFor(() => expect(host.surfaceFetch).toHaveBeenCalledTimes(1));
     select(projectB, 1);
     view.rerender(<HostFlowSurface />);
     const newSource = frameWindow();
@@ -207,6 +212,8 @@ describe("FlowSurface project binding consumer", () => {
     expect(oldOutbound).not.toHaveBeenCalled();
     expect(outbound).not.toHaveBeenCalled();
     ready(newSource, projectB, 1);
+    // 同上：等组件真的接受权威 ready 再 navigate，否则断言打在异步落地之前，CI 负载下偶发红。
+    await waitFor(() => expect(getFlowNavigationReady()).toBe(true));
     act(() => navigateFlowSurface("/tasks"));
     expect(outbound).toHaveBeenCalledWith(
       expect.objectContaining({ type: "ff-embed/navigate" }),
