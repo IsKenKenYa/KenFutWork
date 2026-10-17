@@ -98,7 +98,7 @@ export function createCadTools(service: CadService): ToolDefinition[] {
     definition({
       name: "cad_run_python",
       description:
-        "在 Task 的真实 OS 沙箱中执行完整 FreeCAD Python source（按当前权限审批），覆盖草图约束、PartDesign、布尔、阵列、TechDraw 和其它已安装 Python 模块。预置 App/FreeCAD、Part、doc、output_directory，可 import 其它模块。documentPath仅读已有工程，新建省略；outputPath必须是新文件，由工具最终发布。中间重开验证用output_directory暂存，最终doc交给工具保存。可选result普通JSON原样放回执data，不自动去敏；stdout私有，大结果/媒体写Task文件返回路径。3D任务设置requireSolids:true，显式body.Tip=最终特征并检查尺寸/体积；2D检查Sketch自身几何，纯草图Body可无Tip/空Shape。无效几何或重算失败不报告成功。任意Python效果受Task权限约束。后台无Gui视图，用cad_preview检查线框。",
+        "在 Task 的真实 OS 沙箱中执行完整 FreeCAD Python source（按当前权限审批），覆盖草图约束、PartDesign、布尔、阵列、TechDraw 和其它已安装 Python 模块。预置 App/FreeCAD、Part、doc、output_directory，可 import 其它模块。documentPath仅读已有工程，新建省略；outputPath必须是新文件，由工具最终发布。中间重开验证用output_directory暂存，最终doc交给工具保存。可选result普通JSON原样放回执data，不自动去敏；stdout私有，大结果/媒体写Task文件返回路径。3D任务设置requireSolids:true，显式body.Tip=最终特征并检查尺寸/体积；2D检查Sketch自身几何，纯草图Body可无Tip/空Shape。无效几何或重算失败不报告成功。任意Python效果受Task权限约束。离屏GUI保存原生显示状态，按需设置最终对象的Visibility；不连接当前可见文档，不保证离屏OpenGL截图，使用cad_preview检查线框。",
       schema: cadPythonInputSchema,
       approvalReviewKind: "cad-python",
       execute: (input, context) =>

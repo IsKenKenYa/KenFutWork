@@ -352,6 +352,7 @@ async function executeCadRequest(
     await staged.handle.resolvePath(staged.input.documentPath, "read");
   if (staged.outputPath)
     await staged.handle.resolvePath(staged.outputPath, "write");
+  requireCadContext(context);
   const process = await options.sandbox.spawnStdio({
     scope: staged.handle.describe(),
     agentId: staged.handle.agentId,
@@ -372,6 +373,9 @@ async function executeCadRequest(
     limits,
     runtimeReadRoots: [runtime.runtimeRoot],
     env: {
+      ...(request.action === "primitive" || request.action === "python"
+        ? { QT_QPA_PLATFORM: "offscreen" }
+        : {}),
       KFW_CAD_REQUEST: staged.requestPath,
       KFW_CAD_RESULT: staged.resultPath,
       FREECAD_USER_HOME: staged.workingDirectory,
@@ -386,6 +390,7 @@ async function executeCadRequest(
   const exit = await drainCadProcess(process, signal);
   requireCadContext(context);
   const result = await readCadResult(staged, exit, limits.maxOutputBytes);
+  requireCadContext(context);
   signal.throwIfAborted();
   if (
     request.action === "preview" &&
@@ -449,14 +454,14 @@ export function createCadService(options: CadServiceOptions): CadService {
   >();
   const guard = async (context: ToolExecutionContext) => {
     const handle = requireCadContext(context);
-    await handle.resolvePath(".", "read");
-    requireCadContext(context);
     const gate = await options.gate();
     if (!gate.ok)
       throw new CadError(
         "plugin_disabled",
         gate.message ?? "请先在插件市场安装并启用 CAD 插件。",
       );
+    await handle.resolvePath(".", "read");
+    requireCadContext(context);
   };
   const onFailure = (error: unknown, context: ToolExecutionContext) =>
     failure(

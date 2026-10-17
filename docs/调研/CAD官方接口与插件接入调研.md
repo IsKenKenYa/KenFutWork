@@ -204,7 +204,19 @@ cad_probe_config_dir="$(mktemp -d)"
 
 已有 GLM 5.3 Flash 在 Code build 权限下，一条输入、一个 Run 完成原生参数化圆柱、STEP 和等轴线框 PNG。过程先误把不存在的输出当输入，继而误读 Python 元组；Agent 根据失败回执自行修正、重新描述并验证，没有由验收脚本补写交付文件或代答审批。独立回读确认 Tip=Pad，原生与 STEP 体积均为 1570.7963267948965 mm³，STEP 为 20×20×5 mm；改直径至 30 mm 后体积 3534.291735288518 mm³，源文件未改。该证据是后台圆柱交付闭环，不能扩大为全部工作台或当前 GUI 文档控制验收。
 
-原生应用控制已能读取、截图、操作菜单并执行官方 Python。GUI 重开上述交付后，Body／Pad 的 Visibility 为 false；只改变内存中的显示状态即可看到正确圆柱，未保存覆盖原工程。这个可见性缺口单独处理，不能以后台几何或 PNG 通过冒充“重开即显示”通过。
+原生应用控制已能读取、截图、操作菜单并执行官方 Python。GUI 重开上述交付后，Body／Pad 的 Visibility 为 false；只改变内存中的显示状态即可看到正确圆柱，未保存覆盖原工程。不能由这个加载结果倒推存盘属性为 false；原片的 App.Visibility 实际为 true，缺少的是 GUI 保存成员。后续修复及其边界见下节。
+
+### 9.3 官方视图保存、进阶工具链与取消
+
+官方 `1.1.4` 中，`setupWithoutGUI()` 创建 `Application(false)`，不建立监听文档生命周期的 GUI 文档；GUI 状态保存由 `Gui::Document` 的文档保存观察者完成。独立 CLI 对照也确认：`setupWithoutGUI()` 能保存有效几何，但没有 ViewObject 或 `GuiDocument.xml`；离屏 `QApplication`＋`FreeCADGui.showMainWindow()` 建立官方 GUI 保存器后，两者均存在。[FreeCADGuiPy.cpp](https://github.com/FreeCAD/FreeCAD/blob/1.1.4/src/Main/FreeCADGuiPy.cpp)、[Gui Application.cpp](https://github.com/FreeCAD/FreeCAD/blob/1.1.4/src/Gui/Application.cpp)、[Gui Document.cpp](https://github.com/FreeCAD/FreeCAD/blob/1.1.4/src/Gui/Document.cpp)
+
+KFW 仅对创建／修改操作选择 `QT_QPA_PLATFORM=offscreen` 并隐藏该独立进程的主窗，使用官方序列化器；不拼接 XML、不统一覆盖脚本的可见性。真实 Task 回归通过保存重开后的 Body／Pad 可见、草图隐藏，纯二维 Body／Sketch 可见及原语默认可见，同时保留 Tip 和体积。可见 FreeCAD 另行打开离屏样本，未手动切换 Visibility 就能显示正确圆柱。离屏平台报告没有 OpenGL 上下文，因此未把其缩略图或 framebuffer 当作有效预览；线框 PNG 路径保持独立。
+
+进阶回归通过真实 `createCadTools(service)` 消费：约束草图→Pad→Pocket→六孔原生环形阵列→外径 80→90 mm→保存重开→STEP 导出回读。逐步核对解析体积，最终 Tip、Profile、90×90×10 mm 包围盒、实体数及源工程字节均正确。此项属于 KFW 工具层实测；圆角、倒角、旋转等仍分别以此前官方测试证据登记，不虚构真实 Agent 全覆盖。
+
+真实 CAD 取消回归在源脚本写出就绪标记后中止 Task 信号，确认不发布最终 FCStd，并以同一 Task 的新信号继续建模成功。三项单元回归另锁定安装门控等待、派发前最后路径解析、退出后回执读取期间换代际均不得派发或报告旧成功。最终 CAD 三文件 **38 项**通过（含六项原生场景）；普通测试仍默认跳过原生场景。
+
+原 Code Flash Run 的持久事件已对账：六组成对 requested／resolved→allow，分别为三次 Python、检查、交换及预览；期间有独立模型调用用量，本机验收脚本未代答。Design 同 Task 的首次真实尝试尚未调用 CAD 插件，改走辅助 Write／直接 Bash；观察者拒绝无关 echo、允许已审阅的辅助脚本后停止测试 Run，未执行其直接启动 FreeCAD 的 Bash。该次明确不计 Design 插件验收通过，保留现场继续核查按需工具曝光。
 
 ## 10. 来源地图与证据限制
 

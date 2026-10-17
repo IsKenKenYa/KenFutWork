@@ -131,6 +131,23 @@ def require_task_directory(path, working_directory):
         raise ValueError("FreeCAD 的 Task 临时目录不存在")
 
 
+def initialize_qt(action):
+    from PySide import QtCore
+    if action not in ("primitive", "python"):
+        return QtCore.QCoreApplication.instance() or QtCore.QCoreApplication([])
+    if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+        raise ValueError("CAD 工程创建必须使用隔离的 Qt 离屏平台")
+    from PySide import QtWidgets
+    application = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    if not isinstance(application, QtWidgets.QApplication):
+        raise ValueError("CAD 工程创建不能从 QCoreApplication 升级为 GUI 应用")
+    import FreeCADGui as Gui
+    # 完整 GUI 文档注册官方序列化器，但不连接用户可见的 FreeCAD 进程。
+    Gui.showMainWindow()
+    Gui.getMainWindow().hide()
+    return application
+
+
 def projection(objects, view):
     import TechDraw
     direction = App.Vector(*{"isometric": (1, -1, 1), "top": (0, 0, 1), "front": (0, -1, 0), "right": (1, 0, 0)}[view])
@@ -230,9 +247,8 @@ envelope = {"protocol": "kfw-cad/1", "executionId": request["executionId"], "suc
 try:
     import FreeCAD as App
     import Part
-    from PySide import QtCore
-    # FreeCADCmd 没有默认 Qt 事件宿主；保留引用以支持 TechDraw 文档恢复。
-    qt_application = QtCore.QCoreApplication.instance() or QtCore.QCoreApplication([])
+    # 保留引用：authoring 使用完整离屏 GUI serializer，其余操作只需 Qt 核心事件宿主。
+    qt_application = initialize_qt(request["action"])
     for directory in (App.getUserAppDataDir(), App.getUserCachePath(), App.getTempPath()):
         require_task_directory(directory, os.path.realpath(request["workingDirectory"]))
     envelope.update(perform(request))

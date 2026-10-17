@@ -24,7 +24,9 @@ afterEach(async () => {
 });
 
 async function fixture(options?: {
-  gate?: { ok: boolean; message?: string };
+  gate?:
+    | { ok: boolean; message?: string }
+    | (() => Promise<{ ok: boolean; message?: string }>);
   data?: unknown;
   maxOutputBytes?: number;
   mode?:
@@ -99,7 +101,8 @@ async function fixture(options?: {
           await cancelled;
           return { ...cadTestExit, stopped: true };
         }
-        await writeFile(input.outputPath, "fixture artifact");
+        if (input.outputPath)
+          await writeFile(input.outputPath, "fixture artifact");
         const result = {
           protocol: "kfw-cad/1",
           executionId:
@@ -131,7 +134,10 @@ async function fixture(options?: {
   });
   const service = createCadService({
     sandbox: { spawnStdio: spawn } as unknown as ProcessSandbox,
-    gate: async () => options?.gate ?? { ok: true },
+    gate: async () => {
+      const gate = options?.gate;
+      return typeof gate === "function" ? gate() : (gate ?? { ok: true });
+    },
     detectRuntime: async () => ({
       executable: "/Applications/FreeCAD.app/Contents/Resources/bin/freecadcmd",
       runtimeRoot: "/Applications/FreeCAD.app",
@@ -305,6 +311,7 @@ describe("官方 CAD Task 执行", () => {
     expect(request).not.toHaveProperty("command");
     expect(request?.cwd).toContain(join(f.root, ".kfw-cad"));
     expect(request?.env).toMatchObject({
+      QT_QPA_PLATFORM: "offscreen",
       FREECAD_USER_HOME: request?.cwd,
       FREECAD_USER_DATA: request?.cwd,
       FREECAD_USER_TEMP: request?.cwd,
@@ -313,6 +320,20 @@ describe("官方 CAD Task 执行", () => {
     const output = result.structuredContent.outputPath;
     expect(typeof output).toBe("string");
     expect(await readFile(String(output), "utf8")).toBe("fixture artifact");
+  });
+
+  it("检查已有工程不启动离屏GUI保存宿主", async () => {
+    const f = await fixture();
+    const documentPath = join(f.root, "existing.FCStd");
+    await writeFile(documentPath, "input fixture");
+    const result = await f.service.execute(
+      { action: "describe", input: { documentPath } },
+      f.context,
+    );
+    expect(result.isError).not.toBe(true);
+    expect(f.spawn.mock.calls[0]?.[0].env).not.toHaveProperty(
+      "QT_QPA_PLATFORM",
+    );
   });
 
   it.each(["invalid-json", "wrong-id", "failed", "unconfirmed"] as const)(
@@ -357,6 +378,126 @@ describe("官方 CAD Task 执行", () => {
         f.context,
       ),
     ).toMatchObject({ isError: true });
+    expect(f.spawn).not.toHaveBeenCalled();
+  });
+
+  it("进程退出后读取回执期间撤权，未取消的Run也不能发布旧代际成功或重放进程", async () => {
+    const f = await fixture();
+    const handle = f.context.scopeHandle;
+    if (!handle) throw new Error("测试缺少真实Task作用域");
+    const resolvePath = handle.resolvePath.bind(handle);
+    let revoked = false;
+    vi.spyOn(handle, "resolvePath").mockImplementation(async (path, access) => {
+      if (!revoked && access === "read" && path.endsWith("result.json")) {
+        await readFile(path, "utf8");
+        revoked = true;
+        f.stored.scope = {
+          ...f.stored.scope,
+          generation: f.stored.scope.generation + 1,
+          sandboxMode: "read-only",
+        };
+      }
+      return resolvePath(path, access);
+    });
+    const request = {
+      action: "primitive" as const,
+      input: { kind: "sphere" as const, radius: 2 },
+    };
+    const result = await f.service.execute(request, f.context);
+    expect(revoked).toBe(true);
+    expect(f.controller.signal.aborted).toBe(false);
+    expect(f.context.taskWorkContext?.scope.generation).toBe(1);
+    expect(handle.describe().generation).toBe(2);
+    expect(result).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: "context_required" } },
+    });
+    expect(result.structuredContent).not.toHaveProperty("outputPath");
+    expect(await f.service.execute(request, f.context)).toEqual(result);
+    expect(f.spawn).toHaveBeenCalledOnce();
+  });
+
+  it("派发前最后输出路径解析期间代际改变，不能用刷新后的权限启动旧调用", async () => {
+    let gateCalls = 0;
+    const f = await fixture({
+      gate: async () => {
+        gateCalls++;
+        return { ok: true };
+      },
+    });
+    const handle = f.context.scopeHandle;
+    if (!handle) throw new Error("测试缺少真实Task作用域");
+    const outputPath = join(f.root, "last-dispatch.FCStd");
+    const resolvePath = handle.resolvePath.bind(handle);
+    let replaced = false;
+    vi.spyOn(handle, "resolvePath").mockImplementation(async (path, access) => {
+      if (
+        !replaced &&
+        gateCalls === 2 &&
+        access === "write" &&
+        path === outputPath
+      ) {
+        replaced = true;
+        f.stored.scope = {
+          ...f.stored.scope,
+          generation: f.stored.scope.generation + 1,
+        };
+      }
+      return resolvePath(path, access);
+    });
+    const result = await f.service.execute(
+      { action: "primitive", input: { kind: "sphere", radius: 2, outputPath } },
+      f.context,
+    );
+    expect(replaced).toBe(true);
+    expect(f.controller.signal.aborted).toBe(false);
+    expect(f.context.taskWorkContext?.scope.generation).toBe(1);
+    expect(handle.describe().generation).toBe(2);
+    expect(result).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: "context_required" } },
+    });
+    expect(f.spawn).not.toHaveBeenCalled();
+  });
+
+  it("最终安装门控等待期间代际改变，Run未取消也不能继续派发", async () => {
+    let gateCalls = 0;
+    let entered!: () => void;
+    let release!: () => void;
+    const enteredFinalGate = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const resumeFinalGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const f = await fixture({
+      gate: async () => {
+        gateCalls++;
+        if (gateCalls === 2) {
+          entered();
+          await resumeFinalGate;
+        }
+        return { ok: true };
+      },
+    });
+    const pending = f.service.execute(
+      { action: "primitive", input: { kind: "sphere", radius: 2 } },
+      f.context,
+    );
+    await enteredFinalGate;
+    f.stored.scope = {
+      ...f.stored.scope,
+      generation: f.stored.scope.generation + 1,
+    };
+    release();
+    const result = await pending;
+    expect(gateCalls).toBe(2);
+    expect(f.controller.signal.aborted).toBe(false);
+    expect(f.context.taskWorkContext?.scope.generation).toBe(1);
+    expect(result).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: "context_required" } },
+    });
     expect(f.spawn).not.toHaveBeenCalled();
   });
 

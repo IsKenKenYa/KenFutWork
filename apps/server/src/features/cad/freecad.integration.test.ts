@@ -1,13 +1,18 @@
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import type { ToolExecutionContext } from "../../kernel/types.js";
+import { z } from "zod";
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+} from "../../kernel/types.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
 import { detectFreeCadRuntime } from "./runtime.js";
 import { type CadService, createCadService } from "./service.js";
 import { cadTestLimits, createCadTestContext } from "./test-fixtures.js";
 import { cadResultSchema } from "./tool-contracts.js";
+import { createCadTools } from "./tools.js";
 
 it.skipIf(
   process.env.KENFUTWORK_CAD_INTEGRATION !== "1" ||
@@ -294,6 +299,344 @@ it.skipIf(
   120_000,
 );
 
+async function reopenWithGuiAssertions(input: {
+  service: CadService;
+  context: ToolExecutionContext;
+  documentPath: string;
+  assertions: string[];
+  callId: string;
+}) {
+  const reopened = await input.service.execute(
+    {
+      action: "python",
+      input: {
+        documentPath: input.documentPath,
+        source: [
+          "import zipfile",
+          `with zipfile.ZipFile(${JSON.stringify(input.documentPath)}) as archive:`,
+          "    assert 'GuiDocument.xml' in archive.namelist(), '工具保存的FCStd缺少GuiDocument.xml'",
+          "import FreeCADGui as Gui",
+          "assert App.GuiUp == 1, '重新打开没有创建GUI文档与ViewObject'",
+          "assert not Gui.getMainWindow().isVisible(), '离屏序列化不应显示主窗口'",
+          ...input.assertions,
+        ].join("\n"),
+      },
+    },
+    { ...input.context, toolCallId: input.callId },
+  );
+  expect(reopened.isError, JSON.stringify(reopened)).not.toBe(true);
+  return cadResultSchema.parse(reopened.structuredContent).data;
+}
+
+it.skipIf(
+  process.env.KENFUTWORK_CAD_INTEGRATION !== "1" ||
+    process.platform !== "darwin",
+)(
+  "离屏官方序列化保存并恢复3D和2D实际ViewObject可见性，保留Tip与体积",
+  async () =>
+    withNativeCad(async ({ service, context }) => {
+      const cylinder = await service.execute(
+        {
+          action: "python",
+          input: {
+            source: [
+              "import Sketcher",
+              "body = doc.addObject('PartDesign::Body', 'Body')",
+              "sketch = body.newObject('Sketcher::SketchObject', 'Sketch')",
+              "sketch.addGeometry(Part.Circle(App.Vector(0,0,0), App.Vector(0,0,1), 10), False)",
+              "pad = body.newObject('PartDesign::Pad', 'Pad')",
+              "pad.Profile = sketch",
+              "pad.Length = 5",
+              "body.Tip = pad",
+              "body.Visibility = True",
+              "pad.Visibility = True",
+              "sketch.Visibility = False",
+            ].join("\n"),
+            requireSolids: true,
+            expectedVolume: { objectName: "Body", value: Math.PI * 500 },
+          },
+        },
+        context,
+      );
+      expect(cylinder.isError, JSON.stringify(cylinder)).not.toBe(true);
+      expect(
+        await reopenWithGuiAssertions({
+          service,
+          context,
+          documentPath: String(cylinder.structuredContent.outputPath),
+          callId: "gui-reopen-3d",
+          assertions: [
+            "body, pad, sketch = doc.getObject('Body'), doc.getObject('Pad'), doc.getObject('Sketch')",
+            "assert body.Tip == pad",
+            "assert abs(body.Shape.Volume - 1570.7963267948965) < 1e-6",
+            "assert body.ViewObject is not None and pad.ViewObject is not None and sketch.ViewObject is not None",
+            "assert body.ViewObject.Visibility and body.ViewObject.isVisible(), 'Body实际视图应可见'",
+            "assert pad.ViewObject.Visibility and pad.ViewObject.isVisible(), 'Pad实际视图应可见'",
+            "assert not sketch.ViewObject.Visibility and not sketch.ViewObject.isVisible(), '隐藏草图不应在恢复后显示'",
+            "result = {'body_visible': bool(body.ViewObject.isVisible()), 'tip_visible': bool(pad.ViewObject.isVisible()), 'sketch_visible': bool(sketch.ViewObject.isVisible()), 'tip': body.Tip.Name}",
+          ],
+        }),
+      ).toEqual({
+        body_visible: true,
+        tip_visible: true,
+        sketch_visible: false,
+        tip: "Pad",
+      });
+      const drawing = await service.execute(
+        {
+          action: "python",
+          input: {
+            source: `${SKETCH_ONLY_SOURCE}\nbody.Visibility = True\nsketch.Visibility = True`,
+            requireSolids: false,
+          },
+        },
+        { ...context, toolCallId: "gui-create-2d" },
+      );
+      expect(drawing.isError, JSON.stringify(drawing)).not.toBe(true);
+      expect(
+        await reopenWithGuiAssertions({
+          service,
+          context,
+          documentPath: String(drawing.structuredContent.outputPath),
+          callId: "gui-reopen-2d",
+          assertions: [
+            "body, sketch = doc.getObject('Body'), doc.getObject('Sketch')",
+            "assert body.Tip is None and body.Shape.isNull() and sketch.Shape.isValid()",
+            "assert body.ViewObject is not None and sketch.ViewObject is not None",
+            "assert body.ViewObject.Visibility and body.ViewObject.isVisible(), '二维Body视图应可见'",
+            "assert sketch.ViewObject.Visibility and sketch.ViewObject.isVisible(), '二维草图实际视图应可见'",
+            "result = {'body_visible': bool(body.ViewObject.isVisible()), 'sketch_visible': bool(sketch.ViewObject.isVisible()), 'tip': None}",
+          ],
+        }),
+      ).toEqual({ body_visible: true, sketch_visible: true, tip: null });
+      const primitive = await service.execute(
+        {
+          action: "primitive",
+          input: { kind: "box", length: 10, width: 20, height: 30 },
+        },
+        { ...context, toolCallId: "gui-default-primitive" },
+      );
+      expect(primitive.isError, JSON.stringify(primitive)).not.toBe(true);
+      expect(
+        await reopenWithGuiAssertions({
+          service,
+          context,
+          documentPath: String(primitive.structuredContent.outputPath),
+          callId: "gui-reopen-default",
+          assertions: [
+            "obj = doc.getObject('Primitive')",
+            "assert obj.ViewObject is not None and abs(obj.Shape.Volume - 6000) < 1e-6",
+            "result = {'visible': bool(obj.ViewObject.Visibility), 'scene_visible': bool(obj.ViewObject.isVisible())}",
+          ],
+        }),
+      ).toEqual({ visible: true, scene_visible: true });
+    }),
+  120_000,
+);
+
+const FLANGE_MODEL_SOURCE = [
+  "import math, Sketcher",
+  "body = doc.addObject('PartDesign::Body', 'Body')",
+  "ring = body.newObject('Sketcher::SketchObject', 'RingSketch')",
+  "for radius in (40, 15):",
+  "    geometry = ring.addGeometry(Part.Circle(App.Vector(0,0,0), App.Vector(0,0,1), radius), False)",
+  "    ring.addConstraint(Sketcher.Constraint('Coincident', geometry, 3, -1, 1))",
+  "    ring.addConstraint(Sketcher.Constraint('Radius', geometry, radius))",
+  "ring.renameConstraint(1, 'OuterRadius')",
+  "ring.renameConstraint(3, 'InnerRadius')",
+  "pad = body.newObject('PartDesign::Pad', 'Pad')",
+  "pad.Profile = ring",
+  "pad.Length = 10",
+  "body.Tip = pad",
+  "doc.recompute()",
+  "pad_volume = pad.Shape.Volume",
+  "assert ring.DoF == 0 and ring.solve() == 0",
+  "assert math.isclose(pad_volume, math.pi * (40**2 - 15**2) * 10, abs_tol=1e-6)",
+  "hole = body.newObject('Sketcher::SketchObject', 'HoleSketch')",
+  "hole.Placement.Base.z = 10",
+  "circle = hole.addGeometry(Part.Circle(App.Vector(30,0,0), App.Vector(0,0,1), 4), False)",
+  "hole.addConstraint(Sketcher.Constraint('DistanceX', circle, 3, 30.0))",
+  "hole.addConstraint(Sketcher.Constraint('DistanceY', circle, 3, 0.0))",
+  "hole.addConstraint(Sketcher.Constraint('Radius', circle, 4.0))",
+  "pocket = body.newObject('PartDesign::Pocket', 'Pocket')",
+  "pocket.Profile = hole",
+  "pocket.Length = 10",
+  "body.Tip = pocket",
+  "doc.recompute()",
+  "pocket_volume = pocket.Shape.Volume",
+  "assert math.isclose(pocket_volume, math.pi * (40**2 - 15**2 - 4**2) * 10, abs_tol=1e-6)",
+  "pattern = body.newObject('PartDesign::PolarPattern', 'PolarPattern')",
+  "pattern.Originals = [pocket]",
+  "pattern.Axis = (hole, ['N_Axis'])",
+  "pattern.Angle = 360",
+  "pattern.Occurrences = 6",
+  "body.Tip = pattern",
+  "doc.recompute()",
+  "assert pattern.Shape.isValid() and len(pattern.Shape.Solids) == 1",
+  "assert math.isclose(body.Shape.Volume, math.pi * (40**2 - 15**2 - 6 * 4**2) * 10, abs_tol=1e-6)",
+  "for feature in (ring, pad, hole, pocket):",
+  "    feature.Visibility = False",
+  "body.Visibility = True",
+  "pattern.Visibility = True",
+  "result = {'pad_volume': pad_volume, 'pocket_volume': pocket_volume, 'volume': body.Shape.Volume, 'occurrences': pattern.Occurrences, 'tip': body.Tip.Name, 'pattern_type': pattern.TypeId}",
+].join("\n");
+
+async function callNativeCadTool(
+  tools: ToolDefinition[],
+  name: string,
+  args: Record<string, unknown>,
+  context: ToolExecutionContext,
+) {
+  const tool = tools.find((candidate) => candidate.name === name);
+  if (!tool) throw new Error(`缺少真实CAD工具：${name}`);
+  const output = z
+    .object({ isError: z.boolean().optional(), structuredContent: z.unknown() })
+    .parse(await tool.execute(args, context));
+  expect(output.isError, JSON.stringify(output)).not.toBe(true);
+  return cadResultSchema.parse(output.structuredContent);
+}
+
+it.skipIf(
+  process.env.KENFUTWORK_CAD_INTEGRATION !== "1" ||
+    process.platform !== "darwin",
+)(
+  "KFW原生进阶工具闭环覆盖草图Pad/Pocket/环形阵列、改尺寸保存重开及STEP数值回读",
+  async () =>
+    withNativeCad(async ({ service, context }) => {
+      const tools = createCadTools(service);
+      const volume = (radius: number) =>
+        Math.PI * (radius ** 2 - 15 ** 2 - 6 * 4 ** 2) * 10;
+      const first = await callNativeCadTool(
+        tools,
+        "cad_run_python",
+        {
+          source: FLANGE_MODEL_SOURCE,
+          requireSolids: true,
+          expectedVolume: { objectName: "Body", value: volume(40) },
+        },
+        { ...context, toolCallId: "advanced-create" },
+      );
+      expect(first.data).toMatchObject({
+        tip: "PolarPattern",
+        pattern_type: "PartDesign::PolarPattern",
+        occurrences: 6,
+      });
+      const initial = z
+        .object({
+          pad_volume: z.number(),
+          pocket_volume: z.number(),
+          volume: z.number(),
+        })
+        .parse(first.data);
+      expect(initial.pad_volume).toBeCloseTo(
+        Math.PI * (40 ** 2 - 15 ** 2) * 10,
+        5,
+      );
+      expect(initial.pocket_volume).toBeCloseTo(
+        Math.PI * (40 ** 2 - 15 ** 2 - 4 ** 2) * 10,
+        5,
+      );
+      expect(initial.volume).toBeCloseTo(volume(40), 5);
+      const originalPath = String(first.outputPath);
+      const originalBytes = await readFile(originalPath);
+      const changed = await callNativeCadTool(
+        tools,
+        "cad_run_python",
+        {
+          documentPath: originalPath,
+          source: [
+            "ring = doc.getObject('RingSketch')",
+            "ring.setDatum(1, App.Units.Quantity('45 mm'))",
+            "doc.recompute()",
+            "assert doc.getObject('Body').Tip.Name == 'PolarPattern'",
+            "result = {'outer_radius': ring.Geometry[0].Radius, 'tip': doc.getObject('Body').Tip.Name}",
+          ].join("\n"),
+          requireSolids: true,
+          expectedVolume: { objectName: "Body", value: volume(45) },
+        },
+        { ...context, toolCallId: "advanced-resize" },
+      );
+      expect(changed.data).toMatchObject({ tip: "PolarPattern" });
+      expect(
+        z.object({ outer_radius: z.number() }).parse(changed.data).outer_radius,
+      ).toBeCloseTo(45, 8);
+      expect(changed.outputPath).not.toBe(originalPath);
+      expect(await readFile(originalPath)).toEqual(originalBytes);
+      const reopened = await callNativeCadTool(
+        tools,
+        "cad_run_python",
+        {
+          documentPath: String(changed.outputPath),
+          source: [
+            "body, pad, pocket, pattern = [doc.getObject(name) for name in ('Body', 'Pad', 'Pocket', 'PolarPattern')]",
+            "assert body.Tip == pattern and pattern.TypeId == 'PartDesign::PolarPattern'",
+            "assert pad.Profile[0].Name == 'RingSketch' and pocket.Profile[0].Name == 'HoleSketch'",
+            "assert pattern.Occurrences == 6 and abs(doc.getObject('RingSketch').Geometry[0].Radius - 45) < 1e-8",
+            "assert body.Shape.isValid() and len(body.Shape.Solids) == 1",
+            "result = {'tip': body.Tip.Name, 'pad_profile': pad.Profile[0].Name, 'pocket_profile': pocket.Profile[0].Name, 'occurrences': pattern.Occurrences, 'volume': body.Shape.Volume, 'bounds': [body.Shape.BoundBox.XLength, body.Shape.BoundBox.YLength, body.Shape.BoundBox.ZLength]}",
+          ].join("\n"),
+          requireSolids: true,
+          expectedVolume: { objectName: "Body", value: volume(45) },
+        },
+        { ...context, toolCallId: "advanced-reopen" },
+      );
+      expect(reopened.data).toMatchObject({
+        tip: "PolarPattern",
+        pad_profile: "RingSketch",
+        pocket_profile: "HoleSketch",
+        occurrences: 6,
+      });
+      const geometry = z
+        .object({ volume: z.number(), bounds: z.array(z.number()).length(3) })
+        .parse(reopened.data);
+      expect(geometry.volume).toBeCloseTo(volume(45), 5);
+      for (const [index, expected] of [90, 90, 10].entries())
+        expect(geometry.bounds[index]).toBeCloseTo(expected, 6);
+      const step = await callNativeCadTool(
+        tools,
+        "cad_export",
+        { documentPath: String(changed.outputPath), format: "step" },
+        { ...context, toolCallId: "advanced-step" },
+      );
+      expect(await readFile(String(step.outputPath), "utf8")).toContain(
+        "ISO-10303-21",
+      );
+      const imported = await callNativeCadTool(
+        tools,
+        "cad_run_python",
+        {
+          source: [
+            `shape = Part.read(${JSON.stringify(String(step.outputPath))})`,
+            "assert not shape.isNull() and shape.isValid() and len(shape.Solids) == 1",
+            "obj = doc.addObject('Part::Feature', 'Roundtrip')",
+            "obj.Shape = shape",
+            "result = {'volume': shape.Volume, 'solids': len(shape.Solids), 'bounds': [shape.BoundBox.XLength, shape.BoundBox.YLength, shape.BoundBox.ZLength]}",
+          ].join("\n"),
+          requireSolids: true,
+          expectedVolume: {
+            objectName: "Roundtrip",
+            value: volume(45),
+            tolerance: 0.001,
+          },
+        },
+        { ...context, toolCallId: "advanced-step-readback" },
+      );
+      const readback = z
+        .object({
+          volume: z.number(),
+          solids: z.number(),
+          bounds: z.array(z.number()).length(3),
+        })
+        .parse(imported.data);
+      expect(readback.solids).toBe(1);
+      expect(readback.volume).toBeCloseTo(volume(45), 3);
+      for (const [index, expected] of [90, 90, 10].entries())
+        expect(readback.bounds[index]).toBeCloseTo(expected, 5);
+      expect(await readFile(originalPath)).toEqual(originalBytes);
+    }),
+  120_000,
+);
+
 const SKETCH_ONLY_SOURCE = [
   "import Sketcher",
   "body = doc.addObject('PartDesign::Body', 'Body')",
@@ -308,11 +651,12 @@ const SKETCH_ONLY_SOURCE = [
 
 async function withNativeCad(
   run: (fixture: {
+    root: string;
     service: CadService;
     context: ToolExecutionContext;
   }) => Promise<void>,
 ) {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "kfw-cad-2d-")));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "kfw-cad-native-")));
   const sandbox = createProcessSandbox({
     captureRoot: join(root, "capture"),
     network: { allowedDomains: [], deniedDomains: [] },
@@ -320,7 +664,7 @@ async function withNativeCad(
   const failures: unknown[] = [];
   try {
     const runtime = await detectFreeCadRuntime();
-    if (!runtime) throw new Error("显式二维原生验收要求本机已安装 FreeCAD");
+    if (!runtime) throw new Error("显式原生验收要求本机已安装 FreeCAD");
     const { context } = await createCadTestContext(root);
     const service = createCadService({
       sandbox,
@@ -328,22 +672,22 @@ async function withNativeCad(
       detectRuntime: async () => runtime,
       resolveLimits: async () => ({ limits: cadTestLimits, timeoutMs: 30_000 }),
     });
-    await run({ service, context });
+    await run({ root, service, context });
   } catch (error) {
     failures.push(error);
   } finally {
     try {
-      await sandbox.close("cad_2d_integration_cleanup");
+      await sandbox.close("cad_native_integration_cleanup");
       if (failures.length === 0)
         await rm(root, { recursive: true, force: true });
-      else console.error(`CAD 二维验收诊断目录：${root}`);
+      else console.error(`CAD 原生验收诊断目录：${root}`);
     } catch (error) {
       failures.push(error);
     }
   }
   if (failures.length === 1) throw failures[0];
   if (failures.length > 1)
-    throw new AggregateError(failures, "CAD 二维验收和资源清理均失败。");
+    throw new AggregateError(failures, "CAD 原生验收和资源清理均失败。");
 }
 
 it.skipIf(
@@ -429,6 +773,71 @@ it.skipIf(
           .subarray(1, 4)
           .toString(),
       ).toBe("PNG");
+    }),
+  60_000,
+);
+
+it.skipIf(
+  process.env.KENFUTWORK_CAD_INTEGRATION !== "1" ||
+    process.platform !== "darwin",
+)(
+  "真实CAD取消停止已就绪Python且不发布FCStd，同Task新signal仍可执行",
+  async () =>
+    withNativeCad(async ({ root, service, context }) => {
+      const controller = new AbortController();
+      const readyPath = join(root, "cad-cancel-ready.txt");
+      const outputPath = join(root, "cancelled.FCStd");
+      const running = service.execute(
+        {
+          action: "python",
+          input: {
+            outputPath,
+            source: [
+              "import time",
+              "box = doc.addObject('Part::Box', 'WaitingBox')",
+              "doc.recompute()",
+              `with open(${JSON.stringify(readyPath)}, 'w') as marker:`,
+              "    marker.write('ready')",
+              "while True:",
+              "    time.sleep(0.05)",
+            ].join("\n"),
+            requireSolids: true,
+          },
+        },
+        { ...context, signal: controller.signal, toolCallId: "real-cancel" },
+      );
+      await expect
+        .poll(async () => readFile(readyPath, "utf8").catch(() => ""), {
+          timeout: 20_000,
+          interval: 50,
+        })
+        .toBe("ready");
+      controller.abort();
+      expect(await running).toMatchObject({
+        isError: true,
+        structuredContent: { error: { code: "cancelled" } },
+      });
+      await expect(stat(outputPath)).rejects.toMatchObject({ code: "ENOENT" });
+      const continued = await service.execute(
+        {
+          action: "primitive",
+          input: { kind: "box", length: 10, width: 20, height: 30 },
+        },
+        {
+          ...context,
+          signal: new AbortController().signal,
+          toolCallId: "after-real-cancel",
+        },
+      );
+      expect(continued.isError, JSON.stringify(continued)).not.toBe(true);
+      expect(
+        cadResultSchema
+          .parse(continued.structuredContent)
+          .document?.objects.find((obj) => obj.name === "Primitive")?.shape,
+      ).toMatchObject({ valid: true, null: false, volume: 6000 });
+      expect(
+        (await readFile(String(continued.structuredContent.outputPath))).length,
+      ).toBeGreaterThan(0);
     }),
   60_000,
 );
