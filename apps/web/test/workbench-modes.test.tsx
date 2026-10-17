@@ -96,10 +96,11 @@ function host() {
   );
 }
 
-async function renderCodeFrame() {
+async function renderCodeFrame(tree = host()) {
+  let view!: ReturnType<typeof render>;
   // 先结算实例加载触发的React提交与effect，再模拟子文档的单次ready。
   await act(async () => {
-    render(host());
+    view = render(tree);
   });
   const frame = (await screen.findByTitle(
     "Code 工作台",
@@ -118,7 +119,7 @@ async function renderCodeFrame() {
       }),
     );
   message({ type: "kenfutwork:code-ready" });
-  return { frame, send, message };
+  return { view, frame, send, message };
 }
 
 it("工作台恒渲染Code壳：深链design也不换壳，mode经导航消息推给壳且URL参数一次性消费", async () => {
@@ -232,22 +233,7 @@ it("同一Code文档仅初始与明确外部模式变更带mode，能力更新�
       </LocalInstanceBoundary>
     </LocalInstanceProvider>
   );
-  const view = render(tree("code"));
-  const frame = (await screen.findByTitle(
-    "Code 工作台",
-    {},
-    LAZY,
-  )) as HTMLIFrameElement;
-  if (!frame.contentWindow) throw new Error("Code文档未创建");
-  const send = vi.spyOn(frame.contentWindow, "postMessage");
-  fireEvent(
-    window,
-    new MessageEvent("message", {
-      source: frame.contentWindow,
-      origin: window.location.origin,
-      data: { type: "kenfutwork:code-ready" },
-    }),
-  );
+  const { view, frame, send } = await renderCodeFrame(tree("code"));
   await waitFor(() =>
     expect(send).toHaveBeenCalledWith(
       {

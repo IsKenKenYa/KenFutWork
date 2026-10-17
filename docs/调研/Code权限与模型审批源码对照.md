@@ -266,3 +266,22 @@ ZCode 的用户 Stop 使用 `expectedForegroundExecutionId`：目标已变时 no
 [f-broker]: ../../apps/server/src/features/permissions/code-approval.ts
 [f-gate]: ../../apps/server/src/kernel/context.ts
 [f-task-policy]: ../../apps/server/src/features/permissions/code-policy.ts
+
+## 原生同题与单菜单验收（2026-10-17）
+
+本节是上述固定源码调研之后的独立实测，不改写调研当时的“未操作ZCode”边界。仅使用一个隔离目录`/private/tmp/kfw-zcode-parity-20261017`：四份初始文件、同一提示词、零依赖订单汇总任务。先保全ZCode完成版，再将同一目录逐文件恢复为初始哈希，供KFW运行。没有修改用户已有ZCode项目/任务，没有新媒体请求。
+
+| 观测项 | ZCode | KFW |
+| --- | --- | --- |
+| 界面模型 | 软通v2/GLM-5.3-Flash、最高 | 目录内glm-5.3-flash、max；原生usage同名 |
+| 用户输入 | 1条 | 1条 |
+| 变更审批 | 新项目逐调用确认，3次人工allowOnce | build、Plan关闭；独立审批配置，3次模型allow，人工0次 |
+| 操作 | 两次Write、一次npm test | 两次Write、一次npm test |
+| 测试 | 19/19；另跑Node核验通过 | 19/19；另跑Node核验通过 |
+| 文件边界 | 仅实现与README | 仅实现与README，测试哈希未变、无额外文件 |
+
+KFW Task`518ad419-2d96-43c8-90ea-d7edb3583438`、Run`55d7325f-5b52-4beb-b568-5fc3f56da315`最终`completedSuccess`，无遗留审批。三次requested/resolved的interactionId逐一一致、均allow，真实工具输出有`# pass 19 / # fail 0 / EXIT=0`；真实usage归原Run、provider_instance_id归本机目录引用。配置使用独立审批字段，不把本机选择写成业务默认值。中间Bash审批等待后自行完成，未人工接管或重新发输入。双方实际网关不同，ZCode总耗时包含后台开发时的审批等待，不据此作速度或后端一致性结论。
+
+通过`pnpm desktop`冷启动的原生壳核对：一个盾牌入口内包含原Plan、权限与执行方式分组；原图标与完全访问橙色状态保留；无独立“自主”或旧全局tier触发器。原生Task已完成时菜单显示“变更前确认＋自主”，打开菜单和Run过程均保持右侧既有画布标签。未把这次常规任务当作跨Run Goal、所有危险操作模型审查或未来Jev协议的验收。
+
+初始/完成tar、文件哈希、提示词、公开快照及脱敏审批/usage回执保存在本机忽略的`.kenfutwork-data/desktop-development/统一工作台验收/`，不把凭据或生成产物提交到仓库。
