@@ -1,8 +1,8 @@
 diff --git a/dist/cjs/server/webStandardStreamableHttp.js b/dist/cjs/server/webStandardStreamableHttp.js
-index fc1e159278cbaac333817cb7370c6df12cd20ac9..f276878985bf8e8552391835ad3c7fa3e1dd2d11 100644
+index f87ab6b..7959217 100644
 --- a/dist/cjs/server/webStandardStreamableHttp.js
 +++ b/dist/cjs/server/webStandardStreamableHttp.js
-@@ -785,6 +785,7 @@ class WebStandardStreamableHTTPServerTransport {
+@@ -797,6 +797,7 @@ class WebStandardStreamableHTTPServerTransport {
          this._streamMapping.clear();
          // Clear any pending responses
          this._requestResponseMap.clear();
@@ -10,7 +10,7 @@ index fc1e159278cbaac333817cb7370c6df12cd20ac9..f276878985bf8e8552391835ad3c7fa3
          this._resumableStreams.clear();
          this.onclose?.();
      }
-@@ -801,6 +802,19 @@ class WebStandardStreamableHTTPServerTransport {
+@@ -813,6 +814,19 @@ class WebStandardStreamableHTTPServerTransport {
          if (stream) {
              stream.cleanup();
          }
@@ -31,10 +31,10 @@ index fc1e159278cbaac333817cb7370c6df12cd20ac9..f276878985bf8e8552391835ad3c7fa3
      /**
       * Close the standalone GET SSE stream, triggering client reconnection.
 diff --git a/dist/esm/server/webStandardStreamableHttp.js b/dist/esm/server/webStandardStreamableHttp.js
-index 469abcff61f56c535f7e0c1da8fd637958e39f96..090c4260cbd3555cb678bd1e916134744ede7ab7 100644
+index dbc18fd..f2eaebd 100644
 --- a/dist/esm/server/webStandardStreamableHttp.js
 +++ b/dist/esm/server/webStandardStreamableHttp.js
-@@ -782,6 +782,7 @@ export class WebStandardStreamableHTTPServerTransport {
+@@ -794,6 +794,7 @@ export class WebStandardStreamableHTTPServerTransport {
          this._streamMapping.clear();
          // Clear any pending responses
          this._requestResponseMap.clear();
@@ -42,7 +42,7 @@ index 469abcff61f56c535f7e0c1da8fd637958e39f96..090c4260cbd3555cb678bd1e91613474
          this._resumableStreams.clear();
          this.onclose?.();
      }
-@@ -798,6 +799,19 @@ export class WebStandardStreamableHTTPServerTransport {
+@@ -810,6 +811,19 @@ export class WebStandardStreamableHTTPServerTransport {
          if (stream) {
              stream.cleanup();
          }

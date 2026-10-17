@@ -22,7 +22,7 @@
     "@langchain/langgraph-checkpoint": "^1.1.5",
     "@langchain/langgraph-checkpoint-postgres": "^1.0.5",
     "@langchain/openai": "^1.5.13",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@napi-rs/canvas": "0.1.100",
     "@vscode/ripgrep": "1.18.0",
     "@zcode/model-option-map": "workspace:*",

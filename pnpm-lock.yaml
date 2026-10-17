@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@modelcontextprotocol/sdk@<1.32.1': 1.32.1
   proxy-addr@<2.0.8: 2.0.8
   fast-uri@3: 3.1.8
   fast-uri@4: 4.1.5
@@ -17,9 +18,9 @@ overrides:
   lodash-es@<4.18.0: 4.18.1
 
 patchedDependencies:
-  '@modelcontextprotocol/sdk@1.30.0':
-    hash: 70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b
-    path: patches/@modelcontextprotocol__sdk@1.30.0.patch
+  '@modelcontextprotocol/sdk@1.32.1':
+    hash: 55bb8db15123d4ace5e17f6b711ad92dc9a2f159f353d6003b3bf11e014a0321
+    path: patches/@modelcontextprotocol__sdk@1.32.1.patch
   langchain@1.5.11:
     hash: 03f0d1e2212cdca4bc1935a5fbebd7981bc58e5519ca0918b5da939aa06accc9
     path: patches/langchain@1.5.11.patch
@@ -97,7 +98,7 @@ importers:
         version: 11.3.1
       '@google/genai':
         specifier: ^2.23.0
-        version: 2.23.0(@modelcontextprotocol/sdk@1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@4.6.5))
+        version: 2.23.0(@modelcontextprotocol/sdk@1.32.1(patch_hash=55bb8db15123d4ace5e17f6b711ad92dc9a2f159f353d6003b3bf11e014a0321)(@cfworker/json-schema@4.1.1)(zod@4.6.5))
       '@kenfutwork/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -126,8 +127,8 @@ importers:
         specifier: ^1.5.13
         version: 1.5.13(@langchain/core@1.2.12(@opentelemetry/api@1.9.1)(openai@7.20.0(undici@8.10.2)(ws@8.21.3)(zod@4.6.5))(ws@8.21.3))(undici@8.10.2)(ws@8.21.3)
       '@modelcontextprotocol/sdk':
-        specifier: ^1.30.0
-        version: 1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@4.6.5)
+        specifier: ^1.32.1
+        version: 1.32.1(patch_hash=55bb8db15123d4ace5e17f6b711ad92dc9a2f159f353d6003b3bf11e014a0321)(@cfworker/json-schema@4.1.1)(zod@4.6.5)
       '@napi-rs/canvas':
         specifier: 0.1.100
         version: 0.1.100
@@ -681,8 +682,8 @@ importers:
   packages/shared:
     dependencies:
       '@modelcontextprotocol/sdk':
-        specifier: ^1.30.0
-        version: 1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@4.6.5)
+        specifier: ^1.32.1
+        version: 1.32.1(patch_hash=55bb8db15123d4ace5e17f6b711ad92dc9a2f159f353d6003b3bf11e014a0321)(@cfworker/json-schema@4.1.1)(zod@4.6.5)
       '@zcode/provider':
         specifier: workspace:*
         version: link:../zcode-provider
@@ -1585,7 +1586,7 @@ packages:
     resolution: {integrity: sha512-NFMzktoZ7jJg9AA3vUbWZocnkQP6DSGzL21ORwdVcBWkHli3k7v6B9zy07M4bTiKDAyIWfUh2J/oLYxCu0hNpQ==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
-      '@modelcontextprotocol/sdk': ^1.25.2
+      '@modelcontextprotocol/sdk': 1.32.1
     peerDependenciesMeta:
       '@modelcontextprotocol/sdk':
         optional: true
@@ -2140,8 +2141,8 @@ packages:
   '@mermaid-js/parser@1.2.1':
     resolution: {integrity: sha512-n12NohV3mrUyUL2o93IgG/ifeW9FTyeJn3zDxkhwa8MJ9Fxg3HQMlA3RiGmD/3UnJvheztkjjQAjA2T4LmUcpw==}
 
-  '@modelcontextprotocol/sdk@1.30.0':
-    resolution: {integrity: sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA==}
+  '@modelcontextprotocol/sdk@1.32.1':
+    resolution: {integrity: sha512-2DdE+SJDtzLEEWzY1ZjY7Q+VcPhcV1KisD3zI4u0XZyktsjHum1mwbMI+JaulUBi2OZk+KJAi2uPXzxichPkdw==}
     engines: {node: '>=18'}
     peerDependencies:
       '@cfworker/json-schema': ^4.1.1
@@ -4452,8 +4453,8 @@ packages:
   bplist-creator@0.0.8:
     resolution: {integrity: sha512-Za9JKzD6fjLC16oX2wsXfc+qBEhJBJB1YPInoAQpMLhDuj5aVOv1baGeIQSq1Fr3OCqzvsoQcSBSwGId/Ja2PA==}
 
-  brace-expansion@5.0.9:
-    resolution: {integrity: sha512-ScQ4IuvIEF1TMlP7Zt+vjJ//9zlPb2SDcxWxM3bk8s6t6GGdJ7KO1dCcTidOPJKePW30LE/2cT7wCyPho9/Wxg==}
+  brace-expansion@5.0.12:
+    resolution: {integrity: sha512-YovQ3rzhaLMIrDjNDMkNS01tea93qhEhG5xy8f6+R0l+dw3Ki+5sCoIoI942iuLZTHWogWktgwVDhU09iNEimQ==}
     engines: {node: 20 || >=22}
 
   braces@3.0.3:
@@ -9148,14 +9149,14 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@google/genai@2.23.0(@modelcontextprotocol/sdk@1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@4.6.5))':
+  '@google/genai@2.23.0(@modelcontextprotocol/sdk@1.32.1(patch_hash=55bb8db15123d4ace5e17f6b711ad92dc9a2f159f353d6003b3bf11e014a0321)(@cfworker/json-schema@4.1.1)(zod@4.6.5))':
     dependencies:
       google-auth-library: 10.9.1
       p-retry: 4.6.2
       protobufjs: 7.6.6
       ws: 8.21.3
     optionalDependencies:
-      '@modelcontextprotocol/sdk': 1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@4.6.5)
+      '@modelcontextprotocol/sdk': 1.32.1(patch_hash=55bb8db15123d4ace5e17f6b711ad92dc9a2f159f353d6003b3bf11e014a0321)(@cfworker/json-schema@4.1.1)(zod@4.6.5)
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -9848,7 +9849,7 @@ snapshots:
     dependencies:
       '@chevrotain/types': 11.1.2
 
-  '@modelcontextprotocol/sdk@1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@3.25.76)':
+  '@modelcontextprotocol/sdk@1.32.1(patch_hash=55bb8db15123d4ace5e17f6b711ad92dc9a2f159f353d6003b3bf11e014a0321)(@cfworker/json-schema@4.1.1)(zod@3.25.76)':
     dependencies:
       '@hono/node-server': 2.1.1(hono@4.13.7)
       ajv: 8.20.0
@@ -9872,7 +9873,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@modelcontextprotocol/sdk@1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@4.6.5)':
+  '@modelcontextprotocol/sdk@1.32.1(patch_hash=55bb8db15123d4ace5e17f6b711ad92dc9a2f159f353d6003b3bf11e014a0321)(@cfworker/json-schema@4.1.1)(zod@4.6.5)':
     dependencies:
       '@hono/node-server': 2.1.1(hono@4.13.7)
       ajv: 8.20.0
@@ -12105,7 +12106,7 @@ snapshots:
     dependencies:
       stream-buffers: 2.2.0
 
-  brace-expansion@5.0.9:
+  brace-expansion@5.0.12:
     dependencies:
       balanced-match: 4.0.4
 
@@ -14408,7 +14409,7 @@ snapshots:
 
   minimatch@10.2.6:
     dependencies:
-      brace-expansion: 5.0.9
+      brace-expansion: 5.0.12
 
   minimist@1.2.8: {}
 
@@ -15580,7 +15581,7 @@ snapshots:
       '@babel/plugin-transform-typescript': 7.29.7(@babel/core@7.29.7)
       '@babel/preset-typescript': 7.29.7(@babel/core@7.29.7)
       '@dotenvx/dotenvx': 1.75.1
-      '@modelcontextprotocol/sdk': 1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@3.25.76)
+      '@modelcontextprotocol/sdk': 1.32.1(patch_hash=55bb8db15123d4ace5e17f6b711ad92dc9a2f159f353d6003b3bf11e014a0321)(@cfworker/json-schema@4.1.1)(zod@3.25.76)
       '@types/validate-npm-package-name': 4.0.2
       browserslist: 4.28.8
       commander: 14.0.3
@@ -15623,7 +15624,7 @@ snapshots:
       '@babel/plugin-transform-typescript': 7.29.7(@babel/core@7.29.7)
       '@babel/preset-typescript': 7.29.7(@babel/core@7.29.7)
       '@dotenvx/dotenvx': 1.75.1
-      '@modelcontextprotocol/sdk': 1.30.0(patch_hash=70f11f2f80d8cc59a5c034bcf5905caf678f1b3d442dbfbcdccbbba3805aeb2b)(@cfworker/json-schema@4.1.1)(zod@3.25.76)
+      '@modelcontextprotocol/sdk': 1.32.1(patch_hash=55bb8db15123d4ace5e17f6b711ad92dc9a2f159f353d6003b3bf11e014a0321)(@cfworker/json-schema@4.1.1)(zod@3.25.76)
       '@types/validate-npm-package-name': 4.0.2
       browserslist: 4.28.8
       cn: 0.2.6
