@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { isSea } from "node:sea";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -35,10 +35,26 @@ export function resolveProcessRuntime(input: {
   resourceRoot: string;
   env: Record<string, string | undefined>;
   sourceHelperPath?: string;
+  /** 检查点 Git 的 bin 目录（`env.gitBinDir`，宿主/随包同源）；宿主 git 时必须配对授权读根。 */
+  gitBinDir?: string;
 }) {
   const bundledRuntimes = BUNDLED_RUNTIME_NAMES.map((name) =>
     resolveRuntime(name, { env: input.env, exeDir: input.resourceRoot }),
   ).filter((root): root is RuntimeRoot => root !== null);
+  // 宿主 git 优先时（`gitBinDir` 指向宿主安装而非随包 runtime/git），PATH 前置已由
+  // server.ts 补上，但读/执行授权若不配对，broker 起的 git.exe 会因 DLL/libexec 不可读
+  // 死于 0xC0000135（stderr 为空，只报「检查点 Git 执行失败」）——与 environment.ts 的
+  // 「PATH 决定找得到，readRoots 决定跑得起来」不变量一致，这里补齐读根。
+  // 授权给**安装根**而非 bin 的直接父级：git 运行时还要读安装根下的 etc/gitconfig，
+  // 只给 mingw64 子树时会报 `unable to access '…/etc/gitconfig': Permission denied`。
+  const bundledGitBin = bundledRuntimes.find((root) => root.name === "git")
+    ?.binDir;
+  const systemGitReadRoot =
+    input.gitBinDir && input.gitBinDir !== bundledGitBin
+      ? basename(input.gitBinDir) === "bin"
+        ? dirname(dirname(input.gitBinDir))
+        : dirname(input.gitBinDir)
+      : null;
   const bundledNode =
     bundledRuntimes.find((root) => root.name === "node") ?? null;
   const nodePath = bundledNode
@@ -117,9 +133,13 @@ export function resolveProcessRuntime(input: {
       : [],
     // 沙箱只读授权：随包运行时的**整棵树**（python 要读自己的 Lib/、node 要读 lib/）。
     // 一个都没捆绑时（纯宿主运行时）退化成 helper Node 所在目录，行为与修复前一致。
-    runtimeReadRoots: bundledRuntimes.length
-      ? [...new Set(bundledRuntimes.map((root) => root.homeDir))]
-      : [dirname(nodePath)],
+    runtimeReadRoots: [
+      ...new Set([
+        ...bundledRuntimes.map((root) => root.homeDir),
+        ...(systemGitReadRoot ? [systemGitReadRoot] : []),
+        ...(bundledRuntimes.length === 0 ? [dirname(nodePath)] : []),
+      ]),
+    ],
     // 沙箱 PATH 前置：bin 目录（与上面 readRoots 成对，缺了按名字找不到 python）。
     runtimePathAdditions: bundledRuntimes.length
       ? [...new Set(bundledRuntimes.map((root) => root.binDir))]
