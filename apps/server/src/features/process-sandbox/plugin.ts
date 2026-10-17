@@ -44,7 +44,11 @@ export function createProcessSandboxPlugin(): PluginDefinition {
       });
       ctx.register("processSandbox", () =>
         createProcessSandbox({
-          ...resolveProcessRuntime({ resourceRoot, env: process.env }),
+          ...resolveProcessRuntime({
+            resourceRoot,
+            env: process.env,
+            ...(ctx.env.gitBinDir ? { gitBinDir: ctx.env.gitBinDir } : {}),
+          }),
           captureRoot: join(dirname(dataRoot), "execution-output"),
           network: { allowedDomains: [], deniedDomains: [] },
           onSnapshot: (snapshot) => {

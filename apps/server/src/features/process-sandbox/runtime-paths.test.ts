@@ -99,3 +99,26 @@ it("一个随包运行时都没有时，退化成 helper Node 所在目录（不
   // 没有随包运行时就没有 PATH 前置项（不改宿主 PATH 口径）。
   expect(resolved.runtimePathAdditions).toEqual([]);
 });
+
+it("宿主 git 优先时（gitBinDir 指向宿主安装），readRoots 配对授权其树——否则 broker 起 git 死于 0xC0000135、检查点/自动提交整族失效", () => {
+  const resourceRoot = fakeBundle();
+  // 宿主 git 命中后 server.ts 不再把 runtime/git 视为随包：bin 目录来自宿主安装。
+  const fakeHostGitBin = join(resourceRoot, "host-git", "mingw64", "bin");
+  mkdirSync(fakeHostGitBin, { recursive: true });
+  const resolved = resolveProcessRuntime({
+    resourceRoot,
+    env: {},
+    gitBinDir: fakeHostGitBin,
+  });
+  const roots = resolved.runtimeReadRoots.map((path) =>
+    path.replaceAll("\\", "/"),
+  );
+  // 读根必须包含宿主 git 的**安装根**（bin 上两级：etc/gitconfig、cmd/、mingw64/ 全在其下）。
+  expect(roots, "runtimeReadRoots 缺宿主 git 树").toContain(
+    join(resourceRoot, "host-git").replaceAll("\\", "/"),
+  );
+  // 去重不破坏：配对新增后仍无重复条目。
+  expect(new Set(roots).size).toBe(roots.length);
+  // PATH 前置不因宿主 git 改变口径（宿主 bin 由 server.ts 的 runtimePathAdditions 另行前置）。
+  expect(resolved.runtimePathAdditions).not.toContain(fakeHostGitBin);
+});
