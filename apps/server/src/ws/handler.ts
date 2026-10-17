@@ -882,7 +882,8 @@ async function handleAdmittedRunCommand(
     instanceId: authenticatedUser.instanceId,
     sessionId: payload.sessionId,
   });
-  log.info("started", { prompt: payload.prompt.slice(0, 80) });
+  // 只记长度：prompt 是用户内容，桌面形态落本机日志、自托管形态落运维日志，都不该带上原文。
+  log.info("started", { promptChars: payload.prompt.length });
 
   if (!services.localInstance) throw new Error("本地实例服务未装配。");
   const viewer = await services.localInstance.resolve(authenticatedUser);

@@ -1,4 +1,5 @@
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import websocket from "@fastify/websocket";
@@ -394,6 +395,57 @@ describe("WS 早期消息不丢失（回归）", () => {
       expect(got.includes("command.ack") || got.includes("run.failed")).toBe(
         true,
       );
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("agent.run 的 started 日志只报长度，不带 prompt 原文", async () => {
+    const { app, port, headers } = await startServer();
+    const prompt = "口令-不要进日志";
+    const sessionId = `s-log-${randomUUID()}`;
+    try {
+      await sendImmediatelyOnOpen(
+        port,
+        JSON.stringify({
+          type: "command",
+          action: "agent.run",
+          payload: {
+            sessionId,
+            conversationId: "c-1",
+            prompt,
+          },
+        }),
+        headers,
+      );
+      // logger 的结构化面（JSONL 落盘）才是「日志会不会带上用户内容」的判据；
+      // 路径与 logger.ts 的落盘口径一致（未设 KENFUTWORK_DATA_DIR 时归 apps/server/logs）。
+      const file = join(
+        import.meta.dirname ?? ".",
+        "..",
+        "..",
+        "logs",
+        `pipeline-${new Date().toISOString().slice(0, 10)}.log`,
+      );
+      const started = readFileSync(file, "utf8")
+        .split("\n")
+        .map((line) => {
+          try {
+            return JSON.parse(line) as Record<string, unknown>;
+          } catch {
+            return null;
+          }
+        })
+        .filter(
+          (entry) =>
+            entry?.scope === "agent.run" &&
+            entry?.event === "started" &&
+            entry?.sessionId === sessionId,
+        );
+      expect(started.length).toBeGreaterThan(0);
+      const entry = started[started.length - 1] as Record<string, unknown>;
+      expect(entry.prompt).toBeUndefined();
+      expect(entry.promptChars).toBe(prompt.length);
     } finally {
       await app.close();
     }
