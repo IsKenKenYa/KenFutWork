@@ -883,3 +883,122 @@ it.skipIf(
     }),
   60_000,
 );
+
+const PYTHON_DIAGNOSTIC_FAILURES = [
+  {
+    source:
+      "private_source_marker = 'cad-source-only'\nvalue = 1\nassert value == 2",
+    line: 3,
+    reason: "AssertionError",
+  },
+  {
+    source:
+      "private_source_marker = 'cad-source-only'\nvalue = 1\nvalue += 1\nraise ValueError('缺少所需圆弧')",
+    line: 4,
+    reason: "缺少所需圆弧",
+  },
+  {
+    source: "private_source_marker = 'cad-source-only'\nvalue = ",
+    line: 2,
+    reason: "invalid syntax",
+  },
+  {
+    source:
+      "def invalid_dimension():\n    private_source_marker = 'cad-source-only'\n    raise ValueError('孔径必须为正数')\ninvalid_dimension()",
+    line: 3,
+    reason: "孔径必须为正数",
+  },
+];
+
+const CLOSED_DOCUMENT_SOURCE = [
+  "import os",
+  "box = doc.addObject('Part::Box', 'Box')",
+  "box.Length, box.Width, box.Height = 10, 20, 30",
+  "doc.recompute()",
+  "mid = os.path.join(output_directory, 'intermediate.FCStd')",
+  "doc.saveAs(mid)",
+  "doc2 = App.openDocument(mid)",
+  "assert doc2.Name == doc.Name",
+  "App.closeDocument(doc2.Name)",
+  "doc3 = App.openDocument(mid)",
+  "App.setActiveDocument(doc3.Name)",
+  "result = {'reopened': doc3.Name}",
+].join("\n");
+
+it.skipIf(
+  process.env.KENFUTWORK_CAD_INTEGRATION !== "1" ||
+    process.platform !== "darwin",
+)(
+  "Python诊断保留脚本行号和原原因，关闭doc须显式赋回存活文档",
+  async () =>
+    withNativeCad(async ({ root, service, context }) => {
+      for (const [index, failure] of PYTHON_DIAGNOSTIC_FAILURES.entries()) {
+        const failed = await service.execute(
+          { action: "python", input: { source: failure.source } },
+          { ...context, toolCallId: `source-diagnostic-${index}` },
+        );
+        expect(failed.isError, JSON.stringify(failed)).toBe(true);
+        const error = z
+          .object({
+            error: z.object({ code: z.string(), message: z.string() }),
+          })
+          .parse(failed.structuredContent).error;
+        expect(error.code).toBe("execution_failed");
+        expect(error.message).toContain(failure.reason);
+        expect(error.message).toMatch(
+          new RegExp(`脚本第\\s*${failure.line}\\s*行`, "u"),
+        );
+        for (const privateDetail of [
+          "private_source_marker",
+          "cad-source-only",
+          "Traceback",
+          "runner.py",
+          root,
+        ])
+          expect(error.message).not.toContain(privateDetail);
+      }
+      const invalidPath = join(root, "closed-doc.FCStd");
+      const invalid = await service.execute(
+        {
+          action: "python",
+          input: {
+            source: CLOSED_DOCUMENT_SOURCE,
+            outputPath: invalidPath,
+            requireSolids: true,
+          },
+        },
+        { ...context, toolCallId: "closed-doc-diagnostic" },
+      );
+      expect(invalid.isError, JSON.stringify(invalid)).toBe(true);
+      const message = z
+        .object({ error: z.object({ message: z.string() }) })
+        .parse(invalid.structuredContent).error.message;
+      expect(message).toContain("doc 已关闭或无效");
+      expect(message).toContain("将仍存活的文档赋回 doc");
+      expect(message).not.toContain("Cannot access attribute");
+      expect(message).not.toContain("Traceback");
+      expect(message).not.toContain(root);
+      await expect(stat(invalidPath)).rejects.toMatchObject({ code: "ENOENT" });
+      const corrected = await service.execute(
+        {
+          action: "python",
+          input: {
+            source: `${CLOSED_DOCUMENT_SOURCE}\ndoc = doc3`,
+            requireSolids: true,
+            expectedVolume: { objectName: "Box", value: 6000 },
+          },
+        },
+        { ...context, toolCallId: "explicit-live-doc" },
+      );
+      expect(corrected.isError, JSON.stringify(corrected)).not.toBe(true);
+      expect(
+        cadResultSchema
+          .parse(corrected.structuredContent)
+          .document?.objects.find((object) => object.name === "Box")?.shape,
+      ).toMatchObject({ valid: true, null: false, volume: 6000 });
+      expect(
+        (await readFile(String(corrected.structuredContent.outputPath))).length,
+      ).toBeGreaterThan(0);
+    }),
+  90_000,
+);

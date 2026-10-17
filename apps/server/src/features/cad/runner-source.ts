@@ -173,6 +173,28 @@ def projection(objects, view):
     return svg, metadata, shape, direction
 
 
+def describe_error(error):
+    reason = str(error) or type(error).__name__
+    script_frames = [frame for frame in traceback.extract_tb(error.__traceback__) if frame.filename == "<cad_run_python>"]
+    line = script_frames[-1].lineno if script_frames else None
+    if isinstance(error, SyntaxError) and error.filename == "<cad_run_python>":
+        line = error.lineno
+    if line is not None:
+        return reason + "（脚本第 " + str(line) + " 行）"
+    return reason
+
+
+def require_live_document(namespace):
+    doc = namespace.get("doc")
+    try:
+        live = doc is not None and App.getDocument(doc.Name) is not None
+    except Exception:
+        live = False
+    if not live:
+        raise ValueError("Python 的 doc 已关闭或无效；请将仍存活的文档赋回 doc，再交给工具保存") from None
+    return doc
+
+
 def perform(request):
     args = request["input"]
     if args.get("documentPath"):
@@ -189,9 +211,7 @@ def perform(request):
     elif action == "python":
         namespace = {"App": App, "FreeCAD": App, "Part": Part, "doc": doc, "output_directory": request["workingDirectory"]}
         exec(compile(args["source"], "<cad_run_python>", "exec"), namespace)
-        doc = namespace["doc"]
-        if not doc or App.getDocument(doc.Name) is None:
-            raise ValueError("Python 没有保留有效的 doc 文档")
+        doc = require_live_document(namespace)
     validate(doc, action == "primitive" or args.get("requireSolids", False), args.get("expectedVolume"))
     response = {"version": [str(value) for value in App.Version()], "document": describe(doc)}
     if action == "python" and "result" in namespace:
@@ -254,7 +274,7 @@ try:
     envelope.update(perform(request))
     envelope["success"] = True
 except BaseException as error:
-    envelope["error"] = str(error) or type(error).__name__
+    envelope["error"] = describe_error(error)
     traceback.print_exc()
 finally:
     with open(result_path + ".tmp", "x", encoding="utf-8") as stream:

@@ -220,6 +220,14 @@ KFW 仅对创建／修改操作选择 `QT_QPA_PLATFORM=offscreen` 并隐藏该�
 
 完整服务器 profile 的临时真实 PG／HTTP 模型集成测试 **4 项通过**：实际安装本地官方 CAD bundle，共享同一 Project／Task，Design 首个真实模型请求包含 ToolSearch，搜索后 CAD Python 被送入独立审批；等待期间停用插件，即使模型返回 allow 也不派发。重新启用后同 Task 的 Code Run 重新审批并抵达可信进程入口。另一场景撤权取消原审批与 HTTP 审查，迟到 allow 不派发、没有伪造 FCStd。应用发现及进程边界在这组测试用替身，不将其当作几何实测；真实 CAD 几何由前述六项原生场景证明。撤权终态是带明确原因的 run_failed，区别于用户主动 Stop。
 
+### 9.4 真实模型脚本失败与诊断
+
+第二次 Design 输入明确要求 ToolSearch 后，真实 Flash 已成功搜索并调用 CAD 工具，否定了“Design 没有工具入口”的推断；同一 Task 的 code／design Run 工作方式也由持久输入与冻结绑定对账。脚本仍先后出现裸 AssertionError、关闭文档后保留失效 doc。后者可由官方同路径打开复用逻辑解释：saveAs(MID) 后 openDocument(MID) 返回已有文档，关闭该别名也会关闭原 doc。[Application.cpp](https://github.com/FreeCAD/FreeCAD/blob/1.1.4/src/App/Application.cpp#L937)
+
+观察窗口结束后重新读取，产品 Run 仍在等待人工审批，不能当作已经停止；待审批脚本仍有“实际 13 条约束却断言 12”及未把 doc3 赋回 doc 的静态错误，观察者随后显式停止这条测试 Run，确认 completedInterrupted、零活动和零待审批。未强行批准或修改模型脚本，不计作完整二维交付通过。
+
+运行器现在给真正属于 `<cad_run_python>` 的内层 traceback 帧补源行号；SyntaxError 用自身 filename／lineno 定位。脚本结束后的失效 doc 不伪造源行，明确要求将存活文档赋回 doc，不自动选择 ActiveDocument。新增真实回归覆盖裸断言、有说明异常、嵌套异常、语法错误、失效绑定与显式重新绑定后成功。只补定位，不追加源码、完整栈或宿主路径；原异常消息保持，不能据此承诺对用户自带消息自动去敏。
+
 ## 10. 来源地图与证据限制
 
 | 来源组 | 用途 | 强项与限制 |
