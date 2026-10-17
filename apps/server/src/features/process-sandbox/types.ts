@@ -36,6 +36,8 @@ export interface ProcessSpawnRequest {
   limits: ProcessLimits;
   /** 用户显式执行环境；不从服务端 process.env 批量继承。 */
   env?: Readonly<Record<string, string>>;
+  /** 仅可信执行 Provider 签发的本次运行时目录；不是模型参数，不增加 Task 文件写权限。 */
+  runtimeReadRoots?: readonly string[];
 }
 
 export type ProcessPtySpawnRequest = Omit<

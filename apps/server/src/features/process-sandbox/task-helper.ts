@@ -247,9 +247,10 @@ class TaskProcessHelper {
       temporaryDirectory: this.temporaryDirectory,
       network: options.network,
       internalWriteRoots,
-      ...(options.runtimeReadRoots
-        ? { runtimeReadRoots: options.runtimeReadRoots }
-        : {}),
+      runtimeReadRoots: [
+        ...(options.runtimeReadRoots ?? []),
+        ...(request.runtimeReadRoots ?? []),
+      ],
     });
     // SRT 明确的 macOS PTY ioctl 能力；仅该次 PTY 命令启用，目录与网络授权不变。
     return { ...policy, allowPty: request.pty !== undefined };
@@ -373,9 +374,10 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
           brokerPath: this.windowsBrokerPath,
           internalWriteRoots,
           accountHome: this.accountHome,
-          ...(this.requireOptions().runtimeReadRoots
-            ? { runtimeReadRoots: this.requireOptions().runtimeReadRoots }
-            : {}),
+          runtimeReadRoots: [
+            ...(this.requireOptions().runtimeReadRoots ?? []),
+            ...(request.runtimeReadRoots ?? []),
+          ],
           ...(this.requireOptions().runtimePathAdditions
             ? {
                 runtimePathAdditions:

@@ -1,6 +1,7 @@
 import { type ChildProcess, fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { realpath } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
+import { isAbsolute } from "node:path";
 import { isSea } from "node:sea";
 import { fileURLToPath } from "node:url";
 import { executionEnvironment } from "./environment.js";
@@ -217,6 +218,15 @@ interface TaskEntry {
 }
 
 function validateRequest(request: ProcessSpawnRequest): void {
+  if (
+    request.runtimeReadRoots?.some(
+      (root) => !isAbsolute(root) || root.includes("\0"),
+    )
+  )
+    throw new ProcessSandboxError(
+      "invalid_process_request",
+      "运行时读取根必须是可信 Provider 指定的绝对目录。",
+    );
   if (request.stdio && (!request.argv || request.pty))
     throw new ProcessSandboxError(
       "invalid_process_request",
@@ -445,6 +455,20 @@ export function createProcessSandbox(
     internalWriteRoots: readonly string[] = [],
   ): Promise<ManagedTerminalProcess & ManagedStdioProcess> => {
     validateRequest(request);
+    if (request.runtimeReadRoots?.length) {
+      const roots = await Promise.all(
+        request.runtimeReadRoots.map(async (root) => {
+          const canonical = await realpath(root);
+          if (!(await stat(canonical)).isDirectory())
+            throw new ProcessSandboxError(
+              "invalid_process_request",
+              "运行时读取根必须是已安装运行时的目录。",
+            );
+          return canonical;
+        }),
+      );
+      request = { ...request, runtimeReadRoots: [...new Set(roots)] };
+    }
     const admission = restore.reserve(request);
     let dispatched = false;
     let entry: TaskEntry;

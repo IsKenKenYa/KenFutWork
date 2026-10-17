@@ -60,6 +60,7 @@ const LEGAL_UPSTREAM = [
     "material-icon-theme-LICENSE.txt",
   ],
   ["patches/LICENSE-langchain.txt", "langchain-LICENSE.txt"],
+  ["patches/LICENSE-sandbox-runtime.txt", "sandbox-runtime-LICENSE.txt"],
 ];
 
 function stageLegalDocuments() {
