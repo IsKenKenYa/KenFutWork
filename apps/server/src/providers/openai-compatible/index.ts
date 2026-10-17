@@ -1,6 +1,6 @@
 import type { CallbackManagerForLLMRun } from "@langchain/core/callbacks/manager";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import type { BaseMessage } from "@langchain/core/messages";
+import { type BaseMessage, ToolMessage } from "@langchain/core/messages";
 import type { ChatGenerationChunk, ChatResult } from "@langchain/core/outputs";
 import { ChatOpenAICompletions, ChatOpenAIResponses } from "@langchain/openai";
 import type OpenAI from "openai";
@@ -21,6 +21,38 @@ import type {
 /** 探测缓存纠偏回调：运行期发现 Responses 不可用时触发（写探测缓存用）。 */
 export type OnResponsesFallback = () => void;
 
+/** 工具纯文本数组在 Chat 边界转为字符串，不改持久历史或多模态内容。 */
+function normalizeCompletionsToolText(messages: BaseMessage[]): BaseMessage[] {
+  return messages.map((message) => {
+    if (!ToolMessage.isInstance(message) || !Array.isArray(message.content)) {
+      return message;
+    }
+    const texts: string[] = [];
+    for (const block of message.content) {
+      if (
+        !block ||
+        typeof block !== "object" ||
+        block.type !== "text" ||
+        typeof block.text !== "string"
+      ) {
+        return message;
+      }
+      texts.push(block.text);
+    }
+    return new ToolMessage({
+      content: texts.join("\n"),
+      tool_call_id: message.tool_call_id,
+      ...(message.id !== undefined ? { id: message.id } : {}),
+      ...(message.name !== undefined ? { name: message.name } : {}),
+      ...(message.status !== undefined ? { status: message.status } : {}),
+      ...(message.artifact !== undefined ? { artifact: message.artifact } : {}),
+      additional_kwargs: message.additional_kwargs,
+      response_metadata: message.response_metadata,
+      ...(message.metadata !== undefined ? { metadata: message.metadata } : {}),
+    });
+  });
+}
+
 class InstanceCompletionsModel extends ChatOpenAICompletions {
   readonly requestBody: Record<string, unknown>;
   constructor(
@@ -37,6 +69,28 @@ class InstanceCompletionsModel extends ChatOpenAICompletions {
     return mergeInvocationParameters(
       super.invocationParams(options, extra),
       this.requestBody,
+    );
+  }
+  override async *_streamResponseChunks(
+    messages: BaseMessage[],
+    options: this["ParsedCallOptions"],
+    runManager?: CallbackManagerForLLMRun,
+  ): AsyncGenerator<ChatGenerationChunk> {
+    yield* super._streamResponseChunks(
+      normalizeCompletionsToolText(messages),
+      options,
+      runManager,
+    );
+  }
+  override _generate(
+    messages: BaseMessage[],
+    options: this["ParsedCallOptions"],
+    runManager?: CallbackManagerForLLMRun,
+  ): Promise<ChatResult> {
+    return super._generate(
+      normalizeCompletionsToolText(messages),
+      options,
+      runManager,
     );
   }
   protected override _convertCompletionsDeltaToBaseMessageChunk(
