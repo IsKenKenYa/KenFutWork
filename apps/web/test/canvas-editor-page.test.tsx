@@ -319,14 +319,32 @@ test("编辑器向共享宿主发真实选区、品牌、焦点和项目动作",
 });
 
 test("重放刷新只应用一次最新快照，编辑器不重挂且不发Run", async () => {
+  const post = vi
+    .spyOn(window.parent, "postMessage")
+    .mockImplementation(() => {});
   mocks.fetchCanvas
     .mockResolvedValueOnce(canvas())
     .mockResolvedValue(canvas("revision-2"));
   const view = render(<CanvasPage />);
   await view.findByTestId("editor");
-  refresh();
-  refresh();
-  refresh();
+  // 父effect先安装消息接收器再发布上下文；编辑器DOM出现不能证明这条订阅已就绪。
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      {
+        type: "kenfutwork:canvas-context",
+        canvasId: "canvas-a",
+        projectId: "project-a",
+        selectedCanvasElements: [],
+        brandKitId: "brand-a",
+      },
+      origin,
+    ),
+  );
+  await act(async () => {
+    refresh();
+    refresh();
+    refresh();
+  });
   await waitFor(() => expect(mocks.fetchCanvas).toHaveBeenCalledTimes(3));
   expect(mocks.applySnapshot).toHaveBeenCalledOnce();
   expect(mocks.applySnapshot).toHaveBeenCalledWith({
@@ -375,10 +393,12 @@ test("生成器和WS并发刷新同一revision，快照回执后两路继续完�
 
   mocks.handleSnapshot.mockImplementation((handled: () => void) => handled());
   mocks.fetchCanvas.mockResolvedValue(canvas("revision-3"));
-  listener({
-    type: "canvas.sync",
-    runId: "run-b",
-    timestamp: new Date().toISOString(),
+  await act(async () => {
+    listener({
+      type: "canvas.sync",
+      runId: "run-b",
+      timestamp: new Date().toISOString(),
+    });
   });
   await waitFor(() =>
     expect(view.getByTestId("editor").textContent).toContain("revision-3"),
@@ -695,15 +715,17 @@ test("真实WS先监听再resume，ACK和重连GET补放，重复canvas.sync只�
   const listener: Parameters<WebSocketHandle["onEvent"]>[0] =
     mocks.onEvent.mock.calls[0]?.[0];
   mocks.fetchCanvas.mockResolvedValue(canvas("revision-2"));
-  listener({
-    type: "canvas.sync",
-    runId: "run-a",
-    timestamp: new Date().toISOString(),
-  });
-  listener({
-    type: "canvas.sync",
-    runId: "run-a",
-    timestamp: new Date().toISOString(),
+  await act(async () => {
+    listener({
+      type: "canvas.sync",
+      runId: "run-a",
+      timestamp: new Date().toISOString(),
+    });
+    listener({
+      type: "canvas.sync",
+      runId: "run-a",
+      timestamp: new Date().toISOString(),
+    });
   });
   await waitFor(() => expect(mocks.applySnapshot).toHaveBeenCalledOnce());
   mocks.connected = false;
@@ -732,17 +754,18 @@ test("旧文档WS回执和推送迟到不刷新新文档", async () => {
   view.rerender(<CanvasPage />);
   await waitFor(() => expect(mocks.resumeCanvas).toHaveBeenCalledTimes(2));
   const reads = mocks.fetchCanvas.mock.calls.length;
-  oldListener({
-    type: "canvas.sync",
-    runId: "old-run",
-    timestamp: new Date().toISOString(),
+  await act(async () => {
+    oldListener({
+      type: "canvas.sync",
+      runId: "old-run",
+      timestamp: new Date().toISOString(),
+    });
+    oldAck({
+      type: "command.ack",
+      action: "canvas.resume",
+      payload: { canvasId: "canvas-a" },
+    });
   });
-  oldAck({
-    type: "command.ack",
-    action: "canvas.resume",
-    payload: { canvasId: "canvas-a" },
-  });
-  await Promise.resolve();
   expect(mocks.fetchCanvas).toHaveBeenCalledTimes(reads);
   expect(view.getByTestId("editor").textContent).toContain("canvas-b");
 });
@@ -787,12 +810,16 @@ test("文档变更独立通知按真实画布和项目对账，重复通知不�
     revision: "a".repeat(64),
     deleted: false,
   };
-  changed({ ...message, canvasId: "canvas-b" });
-  changed({ ...message, projectId: "project-b" });
+  await act(async () => {
+    changed({ ...message, canvasId: "canvas-b" });
+    changed({ ...message, projectId: "project-b" });
+  });
   expect(mocks.fetchCanvas).toHaveBeenCalledOnce();
   mocks.fetchCanvas.mockResolvedValue(canvas(message.revision));
-  changed(message);
-  changed(message);
+  await act(async () => {
+    changed(message);
+    changed(message);
+  });
   await waitFor(() => expect(mocks.applySnapshot).toHaveBeenCalledOnce());
   expect(post).toHaveBeenCalledWith(
     {
@@ -826,7 +853,8 @@ test("真实删除通知移除编辑器并通知宿主，删除后的迟到变�
     projectId: "project-a",
     deleted: true,
   };
-  changed(message);
+  // 删除回调还会触发WS effect清理；等本次派发的effect结算再检查release。
+  await act(async () => changed(message));
   await waitFor(() =>
     expect(view.getByRole("alert").textContent).toBe(
       "画布已删除，请选择其他画布",
@@ -843,7 +871,7 @@ test("真实删除通知移除编辑器并通知宿主，删除后的迟到变�
     },
     origin,
   );
-  changed({ ...message, deleted: false });
+  await act(async () => changed({ ...message, deleted: false }));
   expect(mocks.fetchCanvas).toHaveBeenCalledOnce();
   expect(mocks.startRun).not.toHaveBeenCalled();
 });
@@ -883,11 +911,13 @@ test("断线时删除画布，恢复ACK后的权威404清理旧编辑器与宿�
   const count = mocks.fetchCanvas.mock.calls.length;
   const late: Parameters<WebSocketHandle["onDocumentUpdated"]>[0] =
     mocks.onDocumentUpdated.mock.calls.at(-1)?.[0];
-  late({
-    type: "canvas.document.updated",
-    canvasId: "canvas-a",
-    projectId: "project-a",
-    deleted: false,
+  await act(async () => {
+    late({
+      type: "canvas.document.updated",
+      canvasId: "canvas-a",
+      projectId: "project-a",
+      deleted: false,
+    });
   });
   expect(mocks.fetchCanvas).toHaveBeenCalledTimes(count);
 });
