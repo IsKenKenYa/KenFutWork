@@ -1306,6 +1306,15 @@
       "status": "test-gate",
       "note": "真实 Windows 集成验收可选指定已构建 native broker 绝对路径；不改变产品运行配置"
     },
+    "KENFUTWORK_WINDOWS_FIXTURE_ROOT": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/process-sandbox/windows-native.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "真实 Windows 验收的夹具根目录；共享 %TEMP% 可能带外来容器授权，会让越权读断言假红"
+    },
     "KENFUTWORK_HARNESS_TEST_PG": {
       "surface": "test",
       "readers": [

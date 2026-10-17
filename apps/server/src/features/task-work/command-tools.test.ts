@@ -24,6 +24,10 @@ import {
   type PostgresQueryRunner,
 } from "../persistence/providers/postgres.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
+import {
+  nodeCommand,
+  slashPath,
+} from "../process-sandbox/test-node-command.js";
 import { createSettingsRepository } from "../settings/repository.js";
 import { createSettingsService } from "../settings/settings-service.js";
 import { createTaskCommandTools } from "./command-tools.js";
@@ -55,13 +59,21 @@ const outputResult = z.object({
     output: z.object({ data: z.string() }).nullable().optional(),
   }),
 });
-const quote = (text: string) => `'${text.replace(/'/g, "'\\''")}'`;
 
 async function fixture(preset: "code" | "design" = "code") {
   const directory = await realpath(
     await mkdtemp(join(tmpdir(), "command-ownership-")),
   );
-  cleanups.push(() => rm(directory, { recursive: true, force: true }));
+  // Windows 上子进程退出后目录会短暂处于删除挂起态，立刻 rmdir 报 EBUSY（与
+  // windows-native.integration.test.ts 同一现象）；POSIX 侧这两个参数是 no-op。
+  cleanups.push(() =>
+    rm(directory, {
+      recursive: true,
+      force: true,
+      maxRetries: 20,
+      retryDelay: 250,
+    }),
+  );
   const root = join(directory, "project");
   await mkdir(root);
   const actor = {
@@ -167,7 +179,7 @@ async function fixture(preset: "code" | "design" = "code") {
     const work = bashResult.parse(
       await tool("Bash").execute(
         {
-          command: `${quote(process.execPath)} -e ${quote(program)}`,
+          command: nodeCommand(program),
           run_in_background: true,
         },
         execution(handle, call),
@@ -218,7 +230,7 @@ it
       const warmup = `require('node:fs').writeFileSync(${JSON.stringify(join(state.root, "warmup.txt"))},'warm')`;
       await state.tool("Bash").execute(
         {
-          command: `${quote(process.execPath)} -e ${quote(warmup)}`,
+          command: nodeCommand(warmup),
           run_in_background: false,
         },
         state.execution(state.main, "writable-warmup"),
@@ -269,7 +281,7 @@ it
         await registry.executeDefinition(
           bash,
           {
-            command: `${quote(process.execPath)} -e ${quote(program)}`,
+            command: nodeCommand(program),
             run_in_background: false,
           },
           execution,
@@ -292,7 +304,7 @@ it
     const afterPlan = `require('node:fs').writeFileSync(${JSON.stringify(join(state.root, "after-plan.txt"))},'writable')`;
     await state.tool("Bash").execute(
       {
-        command: `${quote(process.execPath)} -e ${quote(afterPlan)}`,
+        command: nodeCommand(afterPlan),
         run_in_background: false,
       },
       state.execution(state.main, "writable-after-plan"),
@@ -442,7 +454,8 @@ it.each([
       : state.main;
     const exec = state.execution(handle, "approved-plan");
     const marker = join(state.root, "plan-command-output.txt");
-    const program = `require('node:fs').writeFileSync(${JSON.stringify(marker)},'approved')`;
+    const program = `require('node:fs').writeFileSync('${slashPath(marker)}','approved')`;
+    const command = nodeCommand(program);
     exec.permissionInvocation = {
       preset: "code",
       instanceId: state.context.scope.instanceId,
@@ -457,7 +470,7 @@ it.each([
       approvalCeiling: "plan",
       toolName: "Bash",
       access: "execute",
-      args: { command: program },
+      args: { command, run_in_background: true },
       readonlyExecution: true,
     };
     exec.codeApproval = {
@@ -470,13 +483,9 @@ it.each([
     };
     exec.approvedExecutionMode = approved;
     const work = bashResult.parse(
-      await state.tool("Bash").execute(
-        {
-          command: `${quote(process.execPath)} -e ${quote(program)}`,
-          run_in_background: true,
-        },
-        exec,
-      ),
+      await state
+        .tool("Bash")
+        .execute({ command, run_in_background: true }, exec),
     );
     await expect
       .poll(
@@ -491,6 +500,46 @@ it.each([
     await expect(
       state.main.backend.readPage({ path: marker }),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  },
+  REAL_PROCESS_TEST_MS,
+);
+
+/**
+ * 直连工具且没有审批上下文时，验证普通 Task 的真实写盘与记账；这不代表 Plan 授权。
+ * Plan 的原/最终审批档由上例与真实 kernel 路径验证，不能用直连调用推断其权限。
+ */
+it(
+  "普通Task直连Bash按现有作用域写盘成功且记账如实",
+  async () => {
+    const state = await fixture();
+    const exec = state.execution(state.main, "task-bash-writes");
+    const marker = join(state.root, "task-writes-forreal.txt");
+    // 正斜杠 + 单引号：整段程序里没有双引号，PowerShell 的 -Command 才不会把路径引号吞掉。
+    const program = `require('node:fs').writeFileSync('${slashPath(marker)}','written')`;
+    const work = bashResult.parse(
+      await state.tool("Bash").execute(
+        {
+          command: nodeCommand(program),
+          run_in_background: true,
+        },
+        exec,
+      ),
+    );
+    await expect
+      .poll(
+        async () => {
+          await state.failFast(work.taskId);
+          return (await state.manager.find(state.context, work.taskId))?.status;
+        },
+        { timeout: SANDBOX_STARTUP_MS },
+      )
+      .toBe("completed");
+    expect(await state.manager.find(state.context, work.taskId)).toMatchObject({
+      scope: { sandboxMode: "workspace-write" },
+    });
+    expect(
+      (await state.main.backend.readPage({ path: marker })).content,
+    ).toContain("written");
   },
   REAL_PROCESS_TEST_MS,
 );

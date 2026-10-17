@@ -395,8 +395,10 @@ it("Code可信模型管理请求打开同一独立文档，拒绝伪造和无效
       data: open,
     }),
   );
-  const manager = (await screen.findByTitle("管理设置")) as HTMLIFrameElement;
-  expect(manager.hasAttribute("hidden")).toBe(false);
+  const manager = screen.getByTitle("管理设置") as HTMLIFrameElement;
+  // 管理文档常驻在 DOM 里，变的只是 hidden：findByTitle 会立刻命中仍带 hidden 的旧元素，
+  // 断言就打在状态更新之前（CI 负载下假红成「expected true to be false」）。等属性再断言。
+  await waitFor(() => expect(manager.hasAttribute("hidden")).toBe(false));
   expect(screen.getByTitle("Code 工作台")).toBe(frame);
   fireEvent(
     window,
@@ -406,10 +408,8 @@ it("Code可信模型管理请求打开同一独立文档，拒绝伪造和无效
       data: { type: "kenfutwork:management-close" },
     }),
   );
-  // keep-alive：关闭后管理文档常驻但隐藏（下次打开不重载）
-  expect(
-    (screen.getByTitle("管理设置") as HTMLIFrameElement).hasAttribute("hidden"),
-  ).toBe(true);
+  // keep-alive：关闭后管理文档常驻但隐藏（下次打开不重载）——同样是等属性，不抢状态更新。
+  await waitFor(() => expect(manager.hasAttribute("hidden")).toBe(true));
   expect(screen.getByTitle("Code 工作台")).toBe(frame);
 });
 

@@ -1,6 +1,10 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
+import {
+  detectTerminalShells,
+  resolveTerminalShell,
+} from "../code-git/terminal-runner.js";
 import type { ProcessSpawnRequest } from "./types.js";
 import { ProcessSandboxError } from "./types.js";
 
@@ -42,11 +46,37 @@ export interface NativeLaunch {
   pty: { cols: number; rows: number } | null;
 }
 
+/**
+ * Windows 执行 shell 的默认值，不再直接抓 `ComSpec`：那条路径只会得到 `cmd /d /s /c`，
+ * 而 Bash 工具交给模型的是 Bash 语法——单引号在 cmd 里不是引号（本机实测 cmd 报「文件名、
+ * 目录名或卷标语法不正确」），看着像沙箱坏了，其实是外壳方言不匹配。终端侧早有同一口径
+ * （`code-git/terminal-runner.ts`：Windows 的默认终端是 PowerShell，cmd 只是平台兜底），
+ * 命令面此前没接上这套解析，这里复用它的 `auto` 顺序：pwsh → powershell → cmd。
+ *
+ * **不优先 Git Bash**（虽然那与 Bash 语法最贴）：`detectTerminalShells` 探到的是 PATH/常见
+ * 安装位置里的系统 Git，而 PSEC 的读域只含 Task 授权目录与随包运行时，bash.exe 加载不到
+ * 自己的 DLL——实测退出码 `0xC0000135`（STATUS_DLL_NOT_FOUND）。要给第三方安装树放开读域
+ * 是另一个决定，不在这里顺手做。
+ *
+ * 一个都探测不到时仍回 `ComSpec`，让下面的判定按原口径报错，不静默换外壳；结果按进程缓存。
+ */
+let cachedWindowsShell: string | null | undefined;
+export function resolveWindowsShell(): string | undefined {
+  if (cachedWindowsShell === undefined) {
+    cachedWindowsShell =
+      resolveTerminalShell(undefined, detectTerminalShells())?.executable ??
+      process.env.ComSpec ??
+      process.env.COMSPEC ??
+      null;
+  }
+  return cachedWindowsShell ?? undefined;
+}
+
 export function windowsCommand(request: ProcessSpawnRequest): string[] {
   if (request.argv) return [request.argv.executable, ...request.argv.args];
   if (!request.command)
     throw new ProcessSandboxError("invalid_process_request", "没有提供命令。");
-  const shell = request.shell ?? process.env.ComSpec ?? process.env.COMSPEC;
+  const shell = request.shell ?? resolveWindowsShell();
   if (!shell)
     throw new ProcessSandboxError(
       "enforcement_unavailable",

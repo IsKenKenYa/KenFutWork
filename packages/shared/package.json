@@ -14,11 +14,11 @@
     "dist"
   ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@zcode/provider": "workspace:*",
     "@zcode/services": "workspace:*",
     "@zcode/shared": "workspace:*",
-    "zod": "^4.6.5",
-    "@zcode/provider": "workspace:*"
+    "zod": "^4.6.5"
   },
   "scripts": {
     "build": "tsc --build tsconfig.json --force",

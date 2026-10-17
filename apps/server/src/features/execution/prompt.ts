@@ -1,4 +1,6 @@
+import { basename } from "node:path";
 import type { PromptSectionDefinition } from "../../kernel/types.js";
+import { resolveWindowsShell } from "../process-sandbox/windows-broker.js";
 
 /** 每模型边界由共同prompt registry重算，文本不签发目录或审批权限。 */
 export const executionScopePromptSection: PromptSectionDefinition = {
@@ -22,6 +24,13 @@ export const executionScopePromptSection: PromptSectionDefinition = {
       scope.sandboxMode === "danger-full-access"
         ? "完全访问：文件与网络使用当前操作系统账户权限，不受Task目录或网络白名单限制，不提升为root/管理员。Plan、只读角色、权限代际及派发上限仍收窄执行。"
         : "文件与命令仍受当前Task目录授权和操作系统隔离约束。";
-    return `## 当前执行工作域\nTask：${scope.taskId}\n角色：${context.executionRole ?? "main"}\nTask 审批模式：${context.approvalMode ?? "unknown"}；派发时权限上限：${context.approvalCeiling ?? "unknown"}\n${planning}\n${accessBoundary}\n授权代际：${scope.generation}；文件模式：${scope.sandboxMode}\n相对路径起点：${scope.rootDirectory}\n项目目录：\n${roots.map((root) => `- ${root.path}：${scope.sandboxMode === "read-only" ? "read-only" : root.access}`).join("\n")}\n只读角色和派发上限不能通过人审扩大。build 的变更与执行需要逐调用批准；edit 仅自动允许受控文件 Write/Edit/ApplyPatch；plan 只读，可信只读无网 Bash 仍需人审；yolo自动执行，文件与网络权限以当前真实工作域为准。`;
+    // 命令面按宿主外壳方言执行：不写清外壳，模型会照 Bash 习惯写单引号与 $()，
+    // 在 Windows 上得到的是 cmd/PowerShell 的解析错误（见 §222 的真机取证）。
+    const windowsShell =
+      process.platform === "win32" ? resolveWindowsShell() : undefined;
+    const shellNote = windowsShell
+      ? `执行外壳：${basename(windowsShell)}；命令按该外壳的语法与引号书写。\n`
+      : "";
+    return `## 当前执行工作域\nTask：${scope.taskId}\n角色：${context.executionRole ?? "main"}\nTask 审批模式：${context.approvalMode ?? "unknown"}；派发时权限上限：${context.approvalCeiling ?? "unknown"}\n${planning}\n${accessBoundary}\n授权代际：${scope.generation}；文件模式：${scope.sandboxMode}\n相对路径起点：${scope.rootDirectory}\n${shellNote}项目目录：\n${roots.map((root) => `- ${root.path}：${scope.sandboxMode === "read-only" ? "read-only" : root.access}`).join("\n")}\n只读角色和派发上限不能通过人审扩大。build 的变更与执行需要逐调用批准；edit 仅自动允许受控文件 Write/Edit/ApplyPatch；plan 只读且无网，可信只读 Bash 仍需逐调用批准；yolo自动执行，文件与网络权限以当前真实工作域为准。`;
   },
 };

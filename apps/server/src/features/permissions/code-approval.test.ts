@@ -321,7 +321,7 @@ describe("Code 逐调用审批公共服务", () => {
     expect(service.claim(input).decision).toBe("deny");
   });
 
-  it("main plan 的 Bash 逐调用 ask；审批不能替换已绑定的调用字段", async () => {
+  it("main plan 的可信只读 Bash 逐调用 ask；改变调用字段不能复用原审批", async () => {
     const service = createPermissionService();
     const input = invocation({
       mode: "plan",

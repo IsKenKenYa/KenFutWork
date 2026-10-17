@@ -89,7 +89,9 @@ jobs:
           # 只报告不染红：有命中也退 0，告警进代码扫描由人跟进。skip-path 单行逗号
           # 分隔（折叠换行会在逗号后混入空格，路径就匹配不上了）。
           exit-code: "0"
-          skip-path: packages/zcode-cua/**,packages/zcode-model-option-map/**,packages/zcode-provider/**,packages/zcode-rpc/**,packages/zcode-services/**,packages/zcode-shared/**,packages/zcode-window-controller/**,packages/third-party/**
+          # vendored 的 ZCode 照搬 UI（2714 个已提交第三方文件）与上游包同口径排除：
+          # 它报上来的 741 条我们改不动，上游一换就蒸发，只会让第一方的 493 条沉底。
+          skip-path: packages/zcode-cua/**,packages/zcode-model-option-map/**,packages/zcode-provider/**,packages/zcode-rpc/**,packages/zcode-services/**,packages/zcode-shared/**,packages/zcode-window-controller/**,packages/third-party/**,apps/web/src/components/workbench/zcode/**
       - name: 上传 SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@9f759ee644a3e7c15c1390abf49868036c00067b # v3.38.3
