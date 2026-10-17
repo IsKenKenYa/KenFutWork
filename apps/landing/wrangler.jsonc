@@ -1,0 +1,8 @@
+{
+  // Cloudflare Workers Builds 静态资产部署配置：CI 构建产出 dist/ 后由 `npx wrangler deploy` 发布。
+  "name": "kenfutwork-landing",
+  "compatibility_date": "2026-10-15",
+  "assets": {
+    "directory": "./dist"
+  }
+}
