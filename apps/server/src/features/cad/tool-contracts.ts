@@ -13,6 +13,84 @@ const destination = {
     .optional(),
 };
 const cadViewSchema = z.enum(["isometric", "top", "front", "right"]);
+const point2d = z.tuple([z.number().finite(), z.number().finite()]);
+const profileSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("rectangle"),
+      name: z.string().min(1),
+      width: positive,
+      height: positive,
+      origin: point2d
+        .describe("左下角的固定绝对坐标，默认 [0,0]，单位 mm。")
+        .optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("circle"),
+      name: z.string().min(1),
+      radius: positive,
+      center: point2d
+        .describe(
+          "圆心的固定绝对坐标，默认 [0,0]；不会随其它轮廓改尺寸而移动。",
+        )
+        .optional(),
+    })
+    .strict(),
+]);
+const operationSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("create_body"),
+      name: z.string().min(1),
+      label: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("create_sketch"),
+      name: z.string().min(1),
+      body: z.string().min(1).optional(),
+      label: z.string().optional(),
+      profiles: z
+        .array(profileSchema)
+        .min(1)
+        .superRefine((profiles, ctx) => {
+          const names = new Set<string>();
+          for (const [index, profile] of profiles.entries()) {
+            if (names.has(profile.name))
+              ctx.addIssue({
+                code: "custom",
+                path: [index, "name"],
+                message: "同一草图的轮廓名称不能重复",
+              });
+            names.add(profile.name);
+          }
+        }),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("set_dimension"),
+      object: z.string().min(1),
+      profile: z.string().min(1),
+      dimension: z.enum(["width", "height", "radius"]),
+      value: positive,
+    })
+    .strict(),
+]);
+export const cadOperationsInputSchema = z
+  .object({
+    ...destination,
+    operations: z
+      .array(operationSchema)
+      .min(1)
+      .describe(
+        "按顺序执行的建模操作；失败不发布输出，源工程保持不变。中间副作用不视为事务回滚。",
+      ),
+  })
+  .strict();
 
 export const cadPythonInputSchema = z
   .object({
@@ -100,6 +178,7 @@ export const cadStatusSchema = z.object({}).strict();
 export type CadRequest =
   | { action: "describe"; input: z.infer<typeof cadDescribeInputSchema> }
   | { action: "primitive"; input: z.infer<typeof cadPrimitiveInputSchema> }
+  | { action: "operations"; input: z.infer<typeof cadOperationsInputSchema> }
   | { action: "export"; input: z.infer<typeof cadExportInputSchema> }
   | { action: "preview"; input: z.infer<typeof cadPreviewInputSchema> }
   | { action: "python"; input: z.infer<typeof cadPythonInputSchema> };

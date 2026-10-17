@@ -33,6 +33,29 @@ it("CAD 审批保留完整 Python、工程和几何参数，不能把操作伪�
     ],
     ["cad-primitive", { kind: "box", length: 10, width: 20, height: 30 }],
     [
+      "cad-operations",
+      {
+        documentPath: "草图.FCStd",
+        outputPath: "草图-v2.FCStd",
+        operations: [
+          {
+            kind: "create_sketch",
+            name: "Sketch",
+            profiles: [
+              { kind: "circle", name: "Hole", radius: 3, center: [0, 0] },
+            ],
+          },
+          {
+            kind: "set_dimension",
+            object: "Sketch",
+            profile: "Hole",
+            dimension: "radius",
+            value: 4,
+          },
+        ],
+      },
+    ],
+    [
       "cad-export",
       { documentPath: "零件.FCStd", format: "step", objectNames: ["Body"] },
     ],
@@ -56,6 +79,19 @@ it("CAD 缺失脚本、未知参数、敏感访问与超长源码均交人工", 
     input("cad-python", { source: "open('/home/test/.ssh/id_rsa').read()" }),
     input("cad-python", { source: "#".repeat(8001) }),
     input("cad-primitive", { kind: "box", length: -1, width: 2, height: 3 }),
+    input("cad-operations", {
+      operations: [{ kind: "create_body", name: "Body", command: "hidden" }],
+    }),
+    input("cad-operations", {
+      operations: [{ kind: "create_body", name: "Body" }],
+      outputPath: ".ssh/key.FCStd",
+    }),
+    input("cad-operations", {
+      operations: Array.from({ length: 1000 }, (_, index) => ({
+        kind: "create_body",
+        name: `Body${index}`,
+      })),
+    }),
     input("cad-export", { documentPath: "零件.FCStd", format: "unknown" }),
   ]) {
     expect(approvalReviewEvidence(context)).toBeUndefined();

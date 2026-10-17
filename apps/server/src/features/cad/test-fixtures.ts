@@ -1,7 +1,24 @@
 import type { CodeExecutionScope } from "@kenfutwork/shared";
-import type { ToolExecutionContext } from "../../kernel/types.js";
+import { z } from "zod";
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+} from "../../kernel/types.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import type { ProcessExit, ProcessLimits } from "../process-sandbox/types.js";
+
+export async function executeCadTestTool(
+  tool: ToolDefinition,
+  args: Record<string, unknown>,
+  context: ToolExecutionContext,
+) {
+  return z
+    .object({
+      isError: z.boolean().optional(),
+      structuredContent: z.record(z.string(), z.unknown()),
+    })
+    .parse(await tool.execute(args, context));
+}
 
 export const cadTestLimits: ProcessLimits = {
   maxOutputBytes: 1_048_576,

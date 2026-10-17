@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   cadDescribeInputSchema,
   cadExportInputSchema,
+  cadOperationsInputSchema,
   cadPreviewInputSchema,
   cadPrimitiveInputSchema,
   cadPythonInputSchema,
@@ -12,6 +13,7 @@ export type ApprovalReviewKind = keyof typeof operationSchemas;
 const operationSchemas = {
   "cad-python": cadPythonInputSchema,
   "cad-primitive": cadPrimitiveInputSchema,
+  "cad-operations": cadOperationsInputSchema,
   "cad-export": cadExportInputSchema,
   "cad-describe": cadDescribeInputSchema,
   "cad-preview": cadPreviewInputSchema,
@@ -54,6 +56,7 @@ const inputSchema = z
       "command",
       "cad-python",
       "cad-primitive",
+      "cad-operations",
       "cad-export",
       "cad-describe",
       "cad-preview",

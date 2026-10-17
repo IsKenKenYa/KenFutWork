@@ -10,7 +10,11 @@ import type {
 import { createProcessSandbox } from "../process-sandbox/service.js";
 import { detectFreeCadRuntime } from "./runtime.js";
 import { type CadService, createCadService } from "./service.js";
-import { cadTestLimits, createCadTestContext } from "./test-fixtures.js";
+import {
+  cadTestLimits,
+  createCadTestContext,
+  executeCadTestTool,
+} from "./test-fixtures.js";
 import { cadResultSchema } from "./tool-contracts.js";
 import { createCadTools } from "./tools.js";
 
@@ -689,6 +693,376 @@ async function withNativeCad(
   if (failures.length > 1)
     throw new AggregateError(failures, "CAD 原生验收和资源清理均失败。");
 }
+
+it.skipIf(
+  process.env.KENFUTWORK_CAD_INTEGRATION !== "1" ||
+    process.platform !== "darwin",
+)(
+  "结构化草图在同一Sketch保留矩形和圆、完整约束及可编辑尺寸，重开和导出保持实际几何",
+  async () =>
+    withNativeCad(async ({ service, context }) => {
+      const tool = createCadTools(service).find(
+        (item) => item.name === "cad_apply_operations",
+      );
+      if (!tool) throw new Error("缺少结构化 CAD 工具");
+      const created = await executeCadTestTool(
+        tool,
+        {
+          operations: [
+            { kind: "create_body", name: "Body", label: "参数板" },
+            {
+              kind: "create_sketch",
+              name: "Sketch",
+              body: "Body",
+              label: "板与孔",
+              profiles: [
+                {
+                  kind: "rectangle",
+                  name: "Plate",
+                  width: 40,
+                  height: 20,
+                  origin: [-20, -10],
+                },
+                { kind: "circle", name: "Hole", radius: 3 },
+              ],
+            },
+          ],
+        },
+        context,
+      );
+      expect(created.isError, JSON.stringify(created)).not.toBe(true);
+      expect(created.structuredContent.data).toMatchObject({
+        operations: [
+          {
+            index: 1,
+            kind: "create_body",
+            objectName: "Body",
+            type: "PartDesign::Body",
+            tip: null,
+          },
+          {
+            index: 2,
+            kind: "create_sketch",
+            objectName: "Sketch",
+            type: "Sketcher::SketchObject",
+            geometryCount: 5,
+            fullyConstrained: true,
+            dimensions: { Plate_Width: 40, Plate_Height: 20, Hole_Radius: 3 },
+          },
+        ],
+      });
+      const originalPath = String(created.structuredContent.outputPath);
+      const originalBytes = await readFile(originalPath);
+      const changed = await executeCadTestTool(
+        tool,
+        {
+          documentPath: originalPath,
+          operations: [
+            {
+              kind: "set_dimension",
+              object: "Sketch",
+              profile: "Plate",
+              dimension: "width",
+              value: 60,
+            },
+            {
+              kind: "set_dimension",
+              object: "Sketch",
+              profile: "Plate",
+              dimension: "height",
+              value: 30,
+            },
+            {
+              kind: "set_dimension",
+              object: "Sketch",
+              profile: "Hole",
+              dimension: "radius",
+              value: 4,
+            },
+          ],
+        },
+        { ...context, toolCallId: "structured-dimensions" },
+      );
+      expect(changed.isError, JSON.stringify(changed)).not.toBe(true);
+      const receipts = z
+        .object({
+          operations: z.array(
+            z.object({
+              fullyConstrained: z.boolean(),
+              dimensions: z.record(z.string(), z.number()),
+            }),
+          ),
+        })
+        .parse(changed.structuredContent.data).operations;
+      expect(receipts).toHaveLength(3);
+      expect(receipts.every((receipt) => receipt.fullyConstrained)).toBe(true);
+      expect(receipts.at(-1)?.dimensions).toMatchObject({
+        Plate_Width: 60,
+        Plate_Height: 30,
+        Hole_Radius: 4,
+      });
+      const documentPath = String(changed.structuredContent.outputPath);
+      const readback = await service.execute(
+        {
+          action: "python",
+          input: {
+            documentPath,
+            source: [
+              "sketch = doc.getObject('Sketch')",
+              "body = doc.getObject('Body')",
+              "assert body.Tip is None and body.Label == '参数板'",
+              "assert sketch.Label == '板与孔' and sketch.GeometryCount == 5 and sketch.FullyConstrained",
+              "assert sketch.solve() == 0 and len(sketch.Shape.Wires) == 2",
+              "assert all(wire.isClosed() for wire in sketch.Shape.Wires)",
+              "assert abs(sketch.Geometry[0].StartPoint.x + 20) < 1e-6 and abs(sketch.Geometry[0].StartPoint.y + 10) < 1e-6",
+              "assert abs(sketch.Geometry[4].Center.x) < 1e-6 and abs(sketch.Geometry[4].Center.y) < 1e-6 and abs(sketch.Geometry[4].Radius - 4) < 1e-6",
+              "for name, expected in [('Plate_Width', 60), ('Plate_Height', 30), ('Hole_Radius', 4)]:",
+              "    indices = [index for index in range(sketch.ConstraintCount) if sketch.Constraints[index].Name == name]",
+              "    assert len(indices) == 1 and sketch.getDriving(indices[0]) and abs(sketch.getDatum(indices[0]).Value - expected) < 1e-6",
+              "assert body.ViewObject.Visibility and sketch.ViewObject.Visibility",
+              "result = {'geometry_count': sketch.GeometryCount, 'fully_constrained': sketch.FullyConstrained}",
+            ].join("\n"),
+          },
+        },
+        { ...context, toolCallId: "structured-native-readback" },
+      );
+      expect(readback.isError, JSON.stringify(readback)).not.toBe(true);
+      expect(readback.structuredContent.data).toEqual({
+        geometry_count: 5,
+        fully_constrained: true,
+      });
+      for (const format of ["svg", "dxf"] as const) {
+        const exported = await service.execute(
+          { action: "export", input: { documentPath, format, view: "top" } },
+          { ...context, toolCallId: `structured-${format}` },
+        );
+        expect(exported.isError, JSON.stringify(exported)).not.toBe(true);
+        expect(exported.structuredContent.preview).toMatchObject({
+          objectNames: ["Sketch"],
+          projectedBounds: [-20, -10, 40, 20],
+        });
+      }
+      const preview = await service.execute(
+        { action: "preview", input: { documentPath, view: "top" } },
+        { ...context, toolCallId: "structured-preview" },
+      );
+      expect(preview.isError, JSON.stringify(preview)).not.toBe(true);
+      expect(preview.modelContent?.some((item) => item.type === "image")).toBe(
+        true,
+      );
+      expect(await readFile(originalPath)).toEqual(originalBytes);
+    }),
+  90_000,
+);
+
+it.skipIf(
+  process.env.KENFUTWORK_CAD_INTEGRATION !== "1" ||
+    process.platform !== "darwin",
+)(
+  "结构化草图覆盖坐标轴与负坐标，拒绝名称碰撞、失配约束、参考尺寸及表达式绑定且不发布失败文件",
+  async () =>
+    withNativeCad(async ({ root, service, context }) => {
+      const tool = createCadTools(service).find(
+        (item) => item.name === "cad_apply_operations",
+      );
+      if (!tool) throw new Error("缺少结构化 CAD 工具");
+      const initial = await executeCadTestTool(
+        tool,
+        {
+          operations: [
+            {
+              kind: "create_sketch",
+              name: "Sketch",
+              profiles: [
+                { kind: "rectangle", name: "Plate", width: 40, height: 20 },
+                ...[
+                  [0, 0],
+                  [0, 12],
+                  [8, 0],
+                  [-8, -12],
+                ].map((center, index) => ({
+                  kind: "circle",
+                  name: `Hole${index}`,
+                  radius: 2,
+                  center,
+                })),
+              ],
+            },
+          ],
+        },
+        context,
+      );
+      expect(initial.isError, JSON.stringify(initial)).not.toBe(true);
+      expect(initial.structuredContent.data).toMatchObject({
+        operations: [{ geometryCount: 8, fullyConstrained: true }],
+      });
+      const documentPath = String(initial.structuredContent.outputPath);
+      const initialBytes = await readFile(documentPath);
+      const positions = await service.execute(
+        {
+          action: "python",
+          input: {
+            documentPath,
+            source: [
+              "sketch = doc.getObject('Sketch')",
+              "for index, (x, y) in enumerate([(0, 0), (0, 12), (8, 0), (-8, -12)], 4):",
+              "    circle = sketch.Geometry[index]",
+              "    assert abs(circle.Center.x - x) < 1e-6 and abs(circle.Center.y - y) < 1e-6 and abs(circle.Radius - 2) < 1e-6, '圆心或半径与固定坐标不符'",
+              "assert abs(sketch.Geometry[0].StartPoint.x) < 1e-6 and abs(sketch.Geometry[0].StartPoint.y) < 1e-6",
+            ].join("\n"),
+          },
+        },
+        { ...context, toolCallId: "structured-position-readback" },
+      );
+      expect(positions.isError, JSON.stringify(positions)).not.toBe(true);
+      const failures = [
+        [
+          {
+            kind: "create_sketch",
+            name: "Sketch",
+            profiles: [{ kind: "circle", name: "C", radius: 1 }],
+          },
+        ],
+        [
+          { kind: "create_body", name: "Body" },
+          { kind: "create_body", name: "Body" },
+        ],
+        [{ kind: "create_body", name: "Bad name" }],
+        [
+          {
+            kind: "create_sketch",
+            name: "Child",
+            body: "Sketch",
+            profiles: [{ kind: "circle", name: "C", radius: 1 }],
+          },
+        ],
+        [
+          {
+            kind: "set_dimension",
+            object: "Sketch",
+            profile: "Missing",
+            dimension: "width",
+            value: 5,
+          },
+        ],
+        [
+          {
+            kind: "set_dimension",
+            object: "Sketch",
+            profile: "Hole0",
+            dimension: "width",
+            value: 5,
+          },
+        ],
+      ];
+      for (const [index, operations] of failures.entries()) {
+        const outputPath = join(root, `failed-operations-${index}.FCStd`);
+        const result = await executeCadTestTool(
+          tool,
+          { documentPath, outputPath, operations },
+          { ...context, toolCallId: `structured-failure-${index}` },
+        );
+        expect(result.isError, JSON.stringify(result)).toBe(true);
+        const message = z
+          .object({ error: z.object({ message: z.string() }) })
+          .parse(result.structuredContent).error.message;
+        expect(message).toContain(operations.at(-1)?.kind);
+        expect(message).toContain(String(operations.length));
+        await expect(stat(outputPath)).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+      }
+      for (const [index, source] of [
+        "sketch.setDriving(index, False)",
+        "import Sketcher; sketch.setActive(index, False); sketch.addConstraint(Sketcher.Constraint('DistanceX', 0, 1, 0, 2, 40))",
+        "sketch.setExpression('Constraints.Plate_Width', '45 mm')",
+        "sketch.setExpression('Constraints[%d]' % index, '45 mm')",
+        "sketch.renameConstraint(index, 'Other'); sketch.renameConstraint(next(i for i in range(sketch.ConstraintCount) if sketch.Constraints[i].Name == 'Plate_Height'), 'Plate_Width')",
+      ].entries()) {
+        const external = await service.execute(
+          {
+            action: "python",
+            input: {
+              documentPath,
+              source: `sketch = doc.getObject('Sketch')\nindex = next(i for i in range(sketch.ConstraintCount) if sketch.Constraints[i].Name == 'Plate_Width')\n${source}\ndoc.recompute()`,
+            },
+          },
+          { ...context, toolCallId: `external-constraint-${index}` },
+        );
+        expect(external.isError, JSON.stringify(external)).not.toBe(true);
+        const protectedPath = String(external.structuredContent.outputPath);
+        const bytes = await readFile(protectedPath);
+        const outputPath = join(root, `protected-constraint-${index}.FCStd`);
+        const refused = await executeCadTestTool(
+          tool,
+          {
+            documentPath: protectedPath,
+            outputPath,
+            operations: [
+              {
+                kind: "set_dimension",
+                object: "Sketch",
+                profile: "Plate",
+                dimension: "width",
+                value: 50,
+              },
+            ],
+          },
+          { ...context, toolCallId: `protected-constraint-${index}` },
+        );
+        expect(refused.isError, JSON.stringify(refused)).toBe(true);
+        expect(JSON.stringify(refused.structuredContent)).toContain(
+          "set_dimension",
+        );
+        await expect(stat(outputPath)).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        expect(await readFile(protectedPath)).toEqual(bytes);
+        if (index === 1) {
+          const height = await executeCadTestTool(
+            tool,
+            {
+              documentPath: protectedPath,
+              operations: [
+                {
+                  kind: "set_dimension",
+                  object: "Sketch",
+                  profile: "Plate",
+                  dimension: "height",
+                  value: 25,
+                },
+              ],
+            },
+            { ...context, toolCallId: "active-height-with-inactive-width" },
+          );
+          expect(height.isError, JSON.stringify(height)).not.toBe(true);
+          const receipt = z
+            .object({
+              operations: z.array(
+                z.object({ dimensions: z.record(z.string(), z.number()) }),
+              ),
+            })
+            .parse(height.structuredContent.data).operations[0];
+          expect(receipt?.dimensions).toMatchObject({ Plate_Height: 25 });
+          expect(receipt?.dimensions).not.toHaveProperty("Plate_Width");
+          const actual = await service.execute(
+            {
+              action: "python",
+              input: {
+                documentPath: String(height.structuredContent.outputPath),
+                source:
+                  "sketch = doc.getObject('Sketch')\nassert abs(sketch.Geometry[0].EndPoint.x - sketch.Geometry[0].StartPoint.x - 40) < 1e-6\nassert abs(sketch.Geometry[1].EndPoint.y - sketch.Geometry[1].StartPoint.y - 25) < 1e-6",
+              },
+            },
+            { ...context, toolCallId: "inactive-width-geometry-readback" },
+          );
+          expect(actual.isError, JSON.stringify(actual)).not.toBe(true);
+        }
+      }
+      expect(await readFile(documentPath)).toEqual(initialBytes);
+    }),
+  120_000,
+);
 
 it.skipIf(
   process.env.KENFUTWORK_CAD_INTEGRATION !== "1" ||

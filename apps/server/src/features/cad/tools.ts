@@ -8,6 +8,7 @@ import type { CadService, CadToolResult } from "./service.js";
 import {
   cadDescribeInputSchema,
   cadExportInputSchema,
+  cadOperationsInputSchema,
   cadPreviewInputSchema,
   cadPrimitiveInputSchema,
   cadPythonInputSchema,
@@ -76,6 +77,15 @@ export function createCadTools(service: CadService): ToolDefinition[] {
       approvalReviewKind: "cad-primitive",
       execute: (input, context) =>
         service.execute({ action: "primitive", input }, context),
+    }),
+    definition({
+      name: "cad_apply_operations",
+      description:
+        "在独立 FreeCAD 工程按顺序创建 Body、带矩形/圆的约束草图或修改命名尺寸。轮廓名在同一草图内唯一，尺寸单位 mm，矩形 origin 是左下角，圆 center 是圆心，均为固定绝对坐标；不会自动随其它轮廓改尺寸居中。创建的草图完全约束，驱动尺寸命名为轮廓名_Width/_Height/_Radius。set_dimension 仅接受唯一且类型匹配的驱动尺寸，拒绝表达式绑定、参考或停用尺寸。documentPath只读入源工程，outputPath必须是新FCStd；不接管当前GUI文档。回执data.operations提供实际求解状态和尺寸。失败不发布最终文件，不承诺中间副作用事务回滚。复杂操作用cad_run_python。",
+      schema: cadOperationsInputSchema,
+      approvalReviewKind: "cad-operations",
+      execute: (input, context) =>
+        service.execute({ action: "operations", input }, context),
     }),
     definition({
       name: "cad_export",

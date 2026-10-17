@@ -13,6 +13,7 @@ import {
   cadTestExit,
   cadTestLimits,
   createCadTestContext,
+  executeCadTestTool,
 } from "./test-fixtures.js";
 import { cadResultSchema } from "./tool-contracts.js";
 import { createCadTools } from "./tools.js";
@@ -165,6 +166,126 @@ async function fixture(options?: {
 }
 
 describe("官方 CAD Task 执行", () => {
+  it("结构化操作完整传递 JSON 并沿用离屏沙箱与结果回执", async () => {
+    const data = {
+      operations: [{ objectName: "Sketch", fullyConstrained: true }],
+    };
+    const f = await fixture({ data });
+    const tool = createCadTools(f.service).find(
+      (item) => item.name === "cad_apply_operations",
+    );
+    if (!tool) throw new Error("缺少结构化 CAD 工具");
+    const args = {
+      operations: [
+        { kind: "create_body", name: "Body", label: "板" },
+        {
+          kind: "create_sketch",
+          name: "Sketch",
+          body: "Body",
+          profiles: [
+            { kind: "rectangle", name: "Plate", width: 40, height: 20 },
+            { kind: "circle", name: "Hole", radius: 3, center: [20, 10] },
+          ],
+        },
+      ],
+    };
+    const result = await executeCadTestTool(tool, args, f.context);
+    expect(result.isError, JSON.stringify(result)).not.toBe(true);
+    expect(result.structuredContent.data).toEqual(data);
+    expect(tool).toMatchObject({
+      scope: "shared",
+      exposure: "deferred",
+      access: "execute",
+      approvalReviewKind: "cad-operations",
+    });
+    expect(f.spawn).toHaveBeenCalledTimes(1);
+    const request = f.spawn.mock.calls[0]?.[0];
+    expect(request?.env?.QT_QPA_PLATFORM).toBe("offscreen");
+    const wire = JSON.parse(
+      await readFile(request?.env?.KFW_CAD_REQUEST ?? "", "utf8"),
+    );
+    expect(wire).toMatchObject({ action: "operations", input: args });
+  });
+
+  it("结构化操作拒绝空批次、重复轮廓、无效尺寸、未知操作和权限注入", async () => {
+    const f = await fixture();
+    const tool = createCadTools(f.service).find(
+      (item) => item.name === "cad_apply_operations",
+    );
+    if (!tool) throw new Error("缺少结构化 CAD 工具");
+    const rectangle = {
+      kind: "rectangle",
+      name: "Plate",
+      width: 40,
+      height: 20,
+    };
+    const sketch = {
+      kind: "create_sketch",
+      name: "Sketch",
+      profiles: [rectangle],
+    };
+    for (const args of [
+      { operations: [] },
+      { operations: [{ ...sketch, profiles: [] }] },
+      {
+        operations: [
+          {
+            ...sketch,
+            profiles: [rectangle, { kind: "circle", name: "Plate", radius: 3 }],
+          },
+        ],
+      },
+      ...[0, -1, Number.NaN, Number.POSITIVE_INFINITY].map((width) => ({
+        operations: [{ ...sketch, profiles: [{ ...rectangle, width }] }],
+      })),
+      {
+        operations: [
+          { ...sketch, profiles: [{ ...rectangle, origin: [0, Number.NaN] }] },
+        ],
+      },
+      {
+        operations: [
+          {
+            kind: "set_dimension",
+            object: "Sketch",
+            profile: "Plate",
+            dimension: "height",
+            value: 0,
+          },
+        ],
+      },
+      {
+        operations: [
+          {
+            kind: "set_property",
+            object: "Body",
+            property: "Tip",
+            value: "Sketch",
+          },
+        ],
+      },
+      { operations: [sketch], source: "arbitrary Python" },
+      { operations: [sketch], runtimeReadRoots: ["/"] },
+      {
+        operations: [
+          {
+            ...sketch,
+            profiles: [{ ...rectangle, source: "arbitrary Python" }],
+          },
+        ],
+      },
+    ]) {
+      expect(
+        await tool.execute(args, f.context),
+        JSON.stringify(args),
+      ).toMatchObject({
+        isError: true,
+        structuredContent: { error: { code: "invalid_arguments" } },
+      });
+    }
+    expect(f.spawn).not.toHaveBeenCalled();
+  });
+
   it.each([null, false, 0, "value", [1, "mm"], { radius: 10, valid: true }])(
     "Python自定义JSON data原样保留：%j",
     async (data) => {
@@ -529,6 +650,7 @@ describe("官方 CAD Task 执行", () => {
       ["cad_status", "shared", "deferred", undefined],
       ["cad_describe_document", "shared", "deferred", "cad-describe"],
       ["cad_create_primitive", "shared", "deferred", "cad-primitive"],
+      ["cad_apply_operations", "shared", "deferred", "cad-operations"],
       ["cad_export", "shared", "deferred", "cad-export"],
       ["cad_preview", "shared", "deferred", "cad-preview"],
       ["cad_run_python", "shared", "deferred", "cad-python"],

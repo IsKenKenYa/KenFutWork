@@ -228,6 +228,16 @@ KFW 仅对创建／修改操作选择 `QT_QPA_PLATFORM=offscreen` 并隐藏该�
 
 运行器现在给真正属于 `<cad_run_python>` 的内层 traceback 帧补源行号；SyntaxError 用自身 filename／lineno 定位。脚本结束后的失效 doc 不伪造源行，明确要求将存活文档赋回 doc，不自动选择 ActiveDocument。新增真实回归覆盖裸断言、有说明异常、嵌套异常、语法错误、失效绑定与显式重新绑定后成功。只补定位，不追加源码、完整栈或宿主路径；原异常消息保持，不能据此承诺对用户自带消息自动去敏。
 
+### 9.5 常用约束草图与命名尺寸
+
+新增共享按需工具 `cad_apply_operations`，首批覆盖 Body、同一 Sketch 内矩形／圆及命名驱动尺寸修改；复杂建模仍由受 Task 权限控制的 Python 补充。矩形宽高、圆半径与坐标使用真实 Sketcher 约束；零坐标按对应轴使用 PointOnObject，不用退化的零距离。坐标是固定绝对位置，不将初始居中误称为改尺寸后仍相对居中。接口事实交叉核对安装版随附 `SketcherTests/TestSketcherSolver.py`、`TestSketchExpression.py` 及 [Sketcher 官方 Python 包装](https://github.com/FreeCAD/FreeCAD/blob/1.1.4/src/Mod/Sketcher/App/SketchObjectPyImp.cpp)。
+
+原生回归确认同一草图五段几何、两个闭合轮廓、完全约束，宽高和半径修改后保存重开仍保持真实数值；零坐标、轴上点与负坐标均独立回读。原 FCStd 字节不变，SVG／DXF／PNG 来自修改后的工程。对象名称碰撞或自动改名、错误 Body、缺尺寸、参考／停用尺寸、失配类型均失败，指定最终文件不发布。
+
+测试另发现真实表达式保护缺陷：安装版保存的命名绑定为 `.Constraints.Plate_Width`，不能只匹配 `Constraints[index]`；原实现会保留 45 mm 表达式，却把要求改成 50 mm 的操作报告成功。修复后同时识别索引和命名路径，修改后回读生效值；命名／索引入口的表达式均由真实文件回归验证拒绝，不解除绑定。审查追加的原生 RED 还复现了停用尺寸仍保留 driving 标志，修改其值会误报成功而几何不动；现检查 `getActive`，回执只列启用的驱动尺寸，并验证同一草图其它启用尺寸仍可正常修改。[官方约束启停接口](https://github.com/FreeCAD/FreeCAD/blob/1.1.4/src/Mod/Sketcher/App/SketchObject.pyi#L498)
+
+CAD 三文件 **43 项通过，含九个原生场景**。这组工具层证据仍不等于新的真实 Flash 整轮任务或全部结构化三维操作已通过。
+
 ## 10. 来源地图与证据限制
 
 | 来源组 | 用途 | 强项与限制 |

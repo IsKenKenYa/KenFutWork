@@ -373,7 +373,9 @@ async function executeCadRequest(
     limits,
     runtimeReadRoots: [runtime.runtimeRoot],
     env: {
-      ...(request.action === "primitive" || request.action === "python"
+      ...(request.action === "primitive" ||
+      request.action === "python" ||
+      request.action === "operations"
         ? { QT_QPA_PLATFORM: "offscreen" }
         : {}),
       KFW_CAD_REQUEST: staged.requestPath,
