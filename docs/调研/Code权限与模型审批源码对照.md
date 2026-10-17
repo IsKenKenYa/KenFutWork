@@ -280,7 +280,7 @@ ZCode 的用户 Stop 使用 `expectedForegroundExecutionId`：目标已变时 no
 | 测试 | 19/19；另跑Node核验通过 | 19/19；另跑Node核验通过 |
 | 文件边界 | 仅实现与README | 仅实现与README，测试哈希未变、无额外文件 |
 
-KFW Task`518ad419-2d96-43c8-90ea-d7edb3583438`、Run`55d7325f-5b52-4beb-b568-5fc3f56da315`最终`completedSuccess`，无遗留审批。三次requested/resolved的interactionId逐一一致、均allow，真实工具输出有`# pass 19 / # fail 0 / EXIT=0`；真实usage归原Run、provider_instance_id归本机目录引用。配置使用独立审批字段，不把本机选择写成业务默认值。中间Bash审批等待后自行完成，未人工接管或重新发输入。双方实际网关不同，ZCode总耗时包含后台开发时的审批等待，不据此作速度或后端一致性结论。
+KFW Task`518ad419-2d96-43c8-90ea-d7edb3583438`、Run`55d7325f-5b52-4beb-b568-5fc3f56da315`最终`completedSuccess`，无遗留审批。三次requested/resolved的interactionId逐一一致、均allow，真实工具输出有`# pass 19 / # fail 0 / EXIT=0`；真实usage归原Run、provider_instance_id归本机目录引用。配置使用独立审批字段，不把本机选择写成业务默认值。中间Bash审批等待后自行完成，未人工接管或重新发输入。2026-10-18用户明确并提供ZCode配置截图：双方均使用GLM官方端点，同为GLM-5.3-Flash；“软通v2”和“Zhipu AI Coding Plan”是本机供应商显示名称，不能据名称推断网关不同。此前“实际网关不同”的表述没有依据，已撤回。该同题按同一官方模型条件比较Harness；ZCode总耗时包含后台开发时的人工审批等待，因此不比较速度。整体Code能力是否相当仍取决于对标任务覆盖范围，不能再以“网关不同”作为限制理由。
 
 通过`pnpm desktop`冷启动的原生壳核对：一个盾牌入口内包含原Plan、权限与执行方式分组；原图标与完全访问橙色状态保留；无独立“自主”或旧全局tier触发器。原生Task已完成时菜单显示“变更前确认＋自主”，打开菜单和Run过程均保持右侧既有画布标签。未把这次常规任务当作跨Run Goal、所有危险操作模型审查或未来Jev协议的验收。
 
