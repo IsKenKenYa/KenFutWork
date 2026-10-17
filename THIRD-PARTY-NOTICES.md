@@ -137,6 +137,7 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | Dify（flow 的执行引擎方向，`DEC-11`） | Apache-2.0 + 附加条款（source-available） | 以**独立容器 + API 通信**接入，属聚合而非衍生作品；**禁止把 Dify 的 Python 代码复制进本 monorepo**，保持容器边界，分发时附其 `LICENSE`/`NOTICE` |
 | OpenDesign（伴随容器，规划 §9-3 于 2026-10-15 拍板） | Apache-2.0（上游 [nexu-io/open-design](https://github.com/nexu-io/open-design)） | 以**独立伴随容器 + API 通信**接入，属聚合而非衍生作品。本仓仅收录伴随 compose `open-design/docker-compose.open-design.yml`（派生自上游 release `open-design-v0.24.1` 的 `deploy/docker-compose.yml`，改动：端口写死伴随 origin、restart 改 `unless-stopped`、去掉自托管透传项）；镜像按 digest 钉死 `ghcr.io/nexu-io/od@sha256:587a992857d0f8b71011e4bc55c5851e33ef9fc4c169fc17e6447700ac428f22`（2026-10-15 观测的 `latest`，registry 无版本形态 tag）；**不把上游源码克隆进 monorepo**，Apache-2.0 义务在镜像层内履行 |
 | `references/` 全部子模块（Codex、Cherry Studio、Jaaz、kimi-code、langgraph、MCP SDK、Octop、nomifun-tauri、Loomic 等） | 各自许可（Apache-2.0/MIT 等） | **只作方向参考，未复制代码、schema、字段名与素材**（`flow/` 与 Code 模式的 ZCode 全量移植是明确例外，见 `AGENTS.md`）。子模块内容不随本仓库产物分发 |
+| [Toonflow-app](https://github.com/HBAI-Ltd/Toonflow-app)，`references/toonflow-app`，固定 `d2e94aca7b59659ff6b4ca15f03cf134ec7f0e1d` | MIT；Copyright (c) 2026 HBAI-Ltd，见[上游许可](https://github.com/HBAI-Ltd/Toonflow-app/blob/d2e94aca7b59659ff6b4ca15f03cf134ec7f0e1d/LICENSE) | depth 1 只读参考；用于核验本地画布、媒体文件保存与任务恢复，不安装或执行上游，不复制实现，内容不随本仓库产物分发 |
 | 技能市场与 MCP 目录下载的第三方技能/server | 各自许可 | 由你在市场/注册表安装，安装时应核对；本仓库不为其许可背书 |
 
 ## G. 分发义务

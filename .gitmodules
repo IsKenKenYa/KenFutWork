@@ -63,3 +63,7 @@
 [submodule "references/new-api"]
 	path = references/new-api
 	url = https://github.com/QuantumNous/new-api.git
+[submodule "references/toonflow-app"]
+	path = references/toonflow-app
+	url = https://github.com/HBAI-Ltd/Toonflow-app.git
+	shallow = true
