@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import sharp from "sharp";
@@ -101,6 +101,68 @@ it("existing files require this agent to observe the current version before a wr
   expect(written.structuredPatch[0]?.lines).toEqual(["-first", "+second"]);
   expect((await backend.readPage({ path: "note.txt" })).content).toBe(
     "second\n",
+  );
+});
+
+it("文本Write仍按编码后的字节限制，边界可写且超限不创建文件", async () => {
+  const { backend: initial, rootDirectory, scope } = await fixture();
+  const backend = createScopedBackend(scope, {
+    limits: { ...initial.limits, codePatchMaxBytes: 1_024 },
+  });
+  const content = `${"界".repeat(341)}a`;
+  await backend.writeFile({ path: "boundary.txt", content });
+  expect(await readFile(join(rootDirectory, "boundary.txt"), "utf8")).toBe(
+    content,
+  );
+  await expect(
+    backend.writeFile({ path: "oversized.txt", content: `${content}a` }),
+  ).rejects.toThrow("写入超过字节上限 1024");
+  expect((await backend.observeBinary("oversized.txt")).version).toBeNull();
+});
+
+it("恢复仍按整个批次的原字节预算校验，超限前不停止分支或写入文件", async () => {
+  const { backend: initial, rootDirectory, scope } = await fixture();
+  const backend = createScopedBackend(scope, {
+    limits: { ...initial.limits, codePatchMaxBytes: 1_024 },
+  });
+  const first = await backend.observeBinary("first.bin");
+  const second = await backend.observeBinary("second.bin");
+  let commits = 0;
+  const beforeCommit = async () => {
+    commits++;
+    return scope;
+  };
+  const rejected = await backend.commitBatch(
+    [
+      { path: first.path, bytes: Buffer.alloc(512), expectedVersion: null },
+      { path: second.path, bytes: Buffer.alloc(513), expectedVersion: null },
+    ],
+    beforeCommit,
+  );
+  expect(rejected.complete).toBe(false);
+  expect(rejected.files).toEqual([]);
+  expect(rejected.failures).toEqual([
+    { filePath: first.path, error: "恢复计划超过工作区补丁字节预算" },
+  ]);
+  expect(commits).toBe(0);
+  expect((await backend.observeBinary("first.bin")).version).toBeNull();
+  expect((await backend.observeBinary("second.bin")).version).toBeNull();
+
+  const accepted = await backend.commitBatch(
+    [
+      { path: first.path, bytes: Buffer.alloc(512), expectedVersion: null },
+      { path: second.path, bytes: Buffer.alloc(512), expectedVersion: null },
+    ],
+    beforeCommit,
+  );
+  expect(accepted.complete).toBe(true);
+  expect(accepted.failures).toEqual([]);
+  expect(commits).toBe(1);
+  expect(await readFile(join(rootDirectory, "first.bin"))).toEqual(
+    Buffer.alloc(512),
+  );
+  expect(await readFile(join(rootDirectory, "second.bin"))).toEqual(
+    Buffer.alloc(512),
   );
 });
 

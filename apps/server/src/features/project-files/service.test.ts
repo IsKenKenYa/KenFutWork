@@ -420,6 +420,81 @@ it("Code使用固定Task根而不是Project默认根，撤权代际拒绝迟到�
   expect(await readFile(join(f.taskRoot, "assets/second.bin"))).toEqual(bytes);
   await expect(readFile(join(f.root, "assets/second.bin"))).rejects.toThrow();
 });
+it("Task素材通过真实namespace发布超过1MiB的原字节，不受编码补丁预算限制", async () => {
+  const f = await fixture();
+  f.useCode();
+  const media = Buffer.alloc(1_048_577, 0x5a);
+  const version =
+    "54ee86addafa96efebf6ea851e26f523c2e6dab06c80b1e69375b75cbc11ad28";
+  const receipt = await f.service.prepareWrite(f.actor, {
+    ...f.input,
+    target: { kind: "task", taskId: f.taskId },
+    writeFingerprint: version,
+  });
+
+  await f.service.namespaceProvider.upload(receipt.objectPath, media);
+
+  const downloaded = await f.service.namespaceProvider.download(
+    receipt.objectPath,
+  );
+  expect(downloaded).toEqual(media);
+  expect(createHash("sha256").update(downloaded).digest("hex")).toBe(version);
+  expect(await readFile(join(f.taskRoot, receipt.relativePath))).toEqual(media);
+  expect(await f.service.describe(f.actor, receipt.assetId)).toEqual(receipt);
+  expect(f.rows.get(receipt.assetId)).toMatchObject({
+    task_id: f.taskId,
+    file_state: "ready",
+    byte_size: media.byteLength,
+    write_fingerprint: version,
+  });
+  await expect(readFile(join(f.root, receipt.relativePath))).rejects.toThrow();
+});
+it("Task连续发布不同大素材保持独立，同素材重放幂等且异字节不覆盖", async () => {
+  const f = await fixture();
+  f.useCode();
+  const media = [
+    {
+      assetId: randomUUID(),
+      relativePath: "assets/first.bin",
+      bytes: Buffer.alloc(1_048_577, 0x5a),
+      version:
+        "54ee86addafa96efebf6ea851e26f523c2e6dab06c80b1e69375b75cbc11ad28",
+    },
+    {
+      assetId: randomUUID(),
+      relativePath: "assets/second.bin",
+      bytes: Buffer.alloc(1_048_593, 0xa5),
+      version:
+        "9ad443c1bd7a28b33711e7454b91549ebe6b6915be2c3bebbb28e0c415aab4ef",
+    },
+  ];
+  for (const item of media) {
+    const input = {
+      ...f.input,
+      target: { kind: "task" as const, taskId: f.taskId },
+      assetId: item.assetId,
+      relativePath: item.relativePath,
+      writeFingerprint: item.version,
+    };
+    const receipt = await f.service.prepareWrite(f.actor, input);
+    await f.service.namespaceProvider.upload(receipt.objectPath, item.bytes);
+    expect(await f.service.prepareWrite(f.actor, input)).toEqual(receipt);
+    await f.service.namespaceProvider.upload(receipt.objectPath, item.bytes);
+    await expect(
+      f.service.namespaceProvider.upload(
+        receipt.objectPath,
+        Buffer.alloc(item.bytes.byteLength, 0xff),
+      ),
+    ).rejects.toMatchObject({ code: "file_conflict" });
+  }
+  for (const item of media) {
+    const actual = await f.service.read(f.actor, item.assetId);
+    expect(actual).toEqual(item.bytes);
+    expect(createHash("sha256").update(actual).digest("hex")).toBe(
+      item.version,
+    );
+  }
+});
 it("跨实例与路径逃逸在文件或索引写入前拒绝", async () => {
   const f = await fixture();
   await expect(

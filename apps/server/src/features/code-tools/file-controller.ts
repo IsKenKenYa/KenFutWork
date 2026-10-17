@@ -282,8 +282,6 @@ export class ScopedFileController {
     signal?: AbortSignal,
   ): Promise<BinaryObservation> {
     signal?.throwIfAborted();
-    if (bytes.byteLength > this.limits.codePatchMaxBytes)
-      throw new Error("写入超过工作区字节预算");
     if ((await this.resolveWrite(path, signal)) !== path)
       throw new Error("提交路径已变化");
     await mkdir(dirname(path), { recursive: true });

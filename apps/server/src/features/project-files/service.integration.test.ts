@@ -21,7 +21,7 @@ describe.skipIf(process.env.KENFUTWORK_PROJECT_FILES_TEST_PG !== "1")(
       const db = await createTaskWorkDatabase();
       try {
         const projects = createProjectRepository(db.persistence);
-        const { project, canvas } = await projects.createProject({
+        const { project } = await projects.createProject({
           instanceId: db.instanceId,
           createdByClientId: db.actor.accessClientId,
           kind: "design",
@@ -30,9 +30,14 @@ describe.skipIf(process.env.KENFUTWORK_PROJECT_FILES_TEST_PG !== "1")(
           description: null,
           canvasName: "Canvas",
           workDir: db.context.scope.rootDirectory,
+          directoryChoice: "independent",
         });
-        if (!canvas) throw new Error("Canvas缺失");
         const sql = db.persistence.forInstance(db.instanceId);
+        const canvas = { id: randomUUID() };
+        await sql.execute(
+          "insert into public.canvases(id,project_id,name,is_primary,root_directory) select $1,p.id,'Canvas',true,p.work_dir from public.projects p where p.id=$2 and p.instance_id=:instance",
+          [canvas.id, project.id],
+        );
         const otherCanvasId = randomUUID();
         await sql.execute(
           "insert into public.canvases(id,project_id,name,is_primary,root_directory) select $1,p.id,'Other',false,p.work_dir from public.projects p where p.id=$2 and p.instance_id=:instance",
@@ -124,7 +129,7 @@ describe.skipIf(process.env.KENFUTWORK_PROJECT_FILES_TEST_PG !== "1")(
         await db.close();
       }
     });
-    it("旧Blob源保留，固定Task根发布、稳定assetId移动，真实代际拒绝迟到写", async () => {
+    it("10MiB原片不受文本补丁限制，旧Blob保留、Task发布幂等且真实代际拒绝迟到写", async () => {
       const database = await createTaskWorkDatabase();
       try {
         const { actor, instanceId } = database;
@@ -179,7 +184,7 @@ describe.skipIf(process.env.KENFUTWORK_PROJECT_FILES_TEST_PG !== "1")(
             "update public.projects set work_dir=$2 where instance_id=:instance and id=$1",
             [scope.projectId, newDefault],
           );
-        const bytes = Buffer.from("legacy-source-kept");
+        const bytes = Buffer.alloc(10_519_749, 0x5a);
         const hash = createHash("sha256").update(bytes).digest("hex");
         const legacyBlob = createLocalFsBlobStore({
           rootDir: join(database.directory, "legacy-blob"),
@@ -208,15 +213,26 @@ describe.skipIf(process.env.KENFUTWORK_PROJECT_FILES_TEST_PG !== "1")(
         };
         const receipt = await service.prepareWrite(actor, input);
         await service.namespaceProvider.upload(receipt.objectPath, bytes);
+        await service.namespaceProvider.upload(receipt.objectPath, bytes);
+        await expect(
+          service.namespaceProvider.upload(
+            receipt.objectPath,
+            Buffer.alloc(bytes.byteLength, 0xa5),
+          ),
+        ).rejects.toMatchObject({ code: "file_conflict" });
         expect(
-          await readFile(join(scope.rootDirectory, input.relativePath)),
-        ).toEqual(bytes);
+          createHash("sha256")
+            .update(
+              await readFile(join(scope.rootDirectory, input.relativePath)),
+            )
+            .digest("hex"),
+        ).toBe(hash);
         await expect(
           readFile(join(newDefault, input.relativePath)),
         ).rejects.toThrow();
-        expect(Buffer.from(await legacyBlob.download(legacyPath))).toEqual(
-          bytes,
-        );
+        expect(
+          Buffer.from(await legacyBlob.download(legacyPath)).equals(bytes),
+        ).toBe(true);
         const source = await database.persistence
           .forInstance(instanceId)
           .queryOne<{
@@ -235,7 +251,9 @@ describe.skipIf(process.env.KENFUTWORK_PROJECT_FILES_TEST_PG !== "1")(
         expect(await service.prepareWrite(actor, input)).toEqual(receipt);
         const moved = await service.move(actor, asset.id, "assets/renamed.bin");
         expect(moved.objectPath).toBe(receipt.objectPath);
-        expect(Buffer.from(await service.read(actor, asset.id))).toEqual(bytes);
+        expect(
+          Buffer.from(await service.read(actor, asset.id)).equals(bytes),
+        ).toBe(true);
         const delayed = await service.prepareWrite(actor, {
           ...input,
           assetId: randomUUID(),
