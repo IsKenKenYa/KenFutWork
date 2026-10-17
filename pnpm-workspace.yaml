@@ -10,6 +10,9 @@ ignoredBuiltDependencies:
   - '@embedded-postgres/windows-x64'
 
 onlyBuiltDependencies:
+  # macOS Postgres 需要 postinstall 按随包清单恢复动态库软链，否则干净安装无法启动。
+  - '@embedded-postgres/darwin-arm64'
+  - '@embedded-postgres/darwin-x64'
   - esbuild
   - sharp
   # 真实交互终端要的是 PTY（conpty），必须让它跑 native 构建/预编译下载
