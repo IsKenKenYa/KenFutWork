@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -8,9 +8,8 @@ vi.mock("@zui/host/surfaceApi.js", () => ({
   surfaceJson: (path: string, init?: RequestInit) => surfaceJson(path, init),
 }));
 
-const { ExecutionModeChipProbe: ExecutionModeChip } = await import(
-  "./setup/execution-mode-chip.js"
-);
+const { ExecutionModeChipProbe: ExecutionModeChip, readyComposerModeTrigger } =
+  await import("./setup/execution-mode-chip.js");
 
 const MODES = {
   modes: [
@@ -20,6 +19,16 @@ const MODES = {
     { id: "creative", label: "创造" },
   ],
 };
+
+async function openModeMenu(user: ReturnType<typeof userEvent.setup>) {
+  const trigger = screen.getByTestId("chat-mode-select-trigger");
+  await waitFor(() =>
+    expect(trigger.getAttribute("aria-expanded")).toBe("false"),
+  );
+  act(() => trigger.focus());
+  await user.keyboard("[Space]");
+  await screen.findByRole("menu");
+}
 
 afterEach(() => {
   cleanup();
@@ -33,7 +42,7 @@ afterEach(() => {
   surfaceJson.mockReset();
 });
 
-test("退出第二组计划只关闭规划开关，保留原基础权限", async () => {
+test("离开计划策略只关闭规划开关，保留原基础权限", async () => {
   const user = userEvent.setup();
   surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
     if (path === "/api/execution-modes") return MODES;
@@ -48,13 +57,13 @@ test("退出第二组计划只关闭规划开关，保留原基础权限", async
       onSwitchMode={onSwitchMode}
     />,
   );
-  await user.click(await screen.findByTestId("execution-mode-chip"));
+  await user.click(await readyComposerModeTrigger());
   await user.click(await screen.findByRole("menuitemradio", { name: "自主" }));
   await waitFor(() => expect(onSwitchMode).toHaveBeenCalledWith("plan-off"));
   expect(onSwitchMode.mock.calls).toEqual([["plan-off"]]);
 });
 
-test("执行模式 chip 菜单交互：PUT 写入、计划联动 plan、失败回退", async () => {
+test("原盾牌菜单：执行方式写入、唯一计划入口联动、失败回退", async () => {
   const user = userEvent.setup();
   const onExecutionModeChange = vi.fn();
   let putFails = false;
@@ -77,7 +86,7 @@ test("执行模式 chip 菜单交互：PUT 写入、计划联动 plan、失败�
       onExecutionModeChange={onExecutionModeChange}
     />,
   );
-  const chip = await screen.findByTestId("execution-mode-chip");
+  const chip = await readyComposerModeTrigger();
   expect(chip.textContent).toContain("自主");
 
   // 创造：PUT 生效，不干预 ZCode 协作档
@@ -96,14 +105,16 @@ test("执行模式 chip 菜单交互：PUT 写入、计划联动 plan、失败�
   expect(onExecutionModeChange).toHaveBeenLastCalledWith("creative");
 
   // 计划：联动把 ZCode 协作档切到 plan（Q6 合并规则）
-  await user.click(screen.getByTestId("execution-mode-chip"));
-  await user.click(await screen.findByRole("menuitemradio", { name: "计划" }));
+  await openModeMenu(user);
+  await user.click(
+    await screen.findByRole("menuitemcheckbox", { name: /^计划模式/ }),
+  );
   await waitFor(() => expect(onSwitchMode).toHaveBeenCalledWith("plan"));
   expect(onExecutionModeChange).toHaveBeenLastCalledWith("plan");
 
   // PUT 失败：回退显示原模式
   putFails = true;
-  await user.click(screen.getByTestId("execution-mode-chip"));
+  await openModeMenu(user);
   await user.click(await screen.findByRole("menuitemradio", { name: "目标" }));
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenLastCalledWith(
@@ -115,9 +126,62 @@ test("执行模式 chip 菜单交互：PUT 写入、计划联动 plan、失败�
     ),
   );
   await waitFor(() =>
-    expect(screen.getByTestId("execution-mode-chip").textContent).toContain(
-      "计划",
-    ),
+    expect(
+      screen.getByTestId("chat-mode-select-trigger").textContent,
+    ).toContain("计划"),
   );
   expect(onExecutionModeChange).toHaveBeenLastCalledWith("plan");
+});
+
+test("权限、独立计划与执行方式只有原盾牌一个入口，全权保留原橙色图标", async () => {
+  const user = userEvent.setup();
+  surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === "/api/execution-modes") return MODES;
+    if (init?.method === "PUT") return JSON.parse(String(init.body));
+    return { mode: "agent" };
+  });
+  const onSwitchMode = vi.fn();
+  render(
+    <ExecutionModeChip
+      sessionId="single-menu"
+      disabled={false}
+      onSwitchMode={onSwitchMode}
+    />,
+  );
+  const trigger = await readyComposerModeTrigger();
+  expect(trigger.className).toContain("text-warning");
+  expect(trigger.querySelector("svg.lucide-shield-alert")).not.toBeNull();
+  expect(screen.queryByTestId("execution-mode-chip")).toBeNull();
+  expect(screen.queryByTestId("permission-tier-chip")).toBeNull();
+  expect(screen.getAllByTestId("chat-mode-select-trigger")).toHaveLength(1);
+  await user.click(trigger);
+  expect(screen.getByRole("menu").textContent).toContain("权限");
+  expect(screen.getByRole("menu").textContent).toContain("执行方式");
+  for (const [label, icon] of [
+    ["自主", "bot"],
+    ["目标", "target"],
+    ["创造", "puzzle"],
+  ] as const) {
+    const item = screen.getByRole("menuitemradio", { name: label });
+    expect(item.querySelector(`svg.lucide-${icon}`)).not.toBeNull();
+    expect(item.className).toContain("min-h-13");
+  }
+  expect(
+    screen.getAllByRole("menuitemcheckbox", { name: /^计划模式/ }),
+  ).toHaveLength(1);
+  expect(screen.queryByRole("menuitemradio", { name: /^计划/ })).toBeNull();
+  expect(screen.getByRole("menu").textContent).toContain("人工或审批模型");
+  await user.click(screen.getByRole("menuitemradio", { name: /^变更前确认/ }));
+  expect(onSwitchMode).toHaveBeenLastCalledWith("build");
+  expect(trigger.textContent).toContain("自主");
+  expect(trigger.textContent).toContain("变更前确认");
+  expect(trigger.className).not.toContain("text-warning");
+  await openModeMenu(user);
+  await user.click(screen.getByRole("menuitemradio", { name: /^完全访问/ }));
+  expect(onSwitchMode).toHaveBeenLastCalledWith("yolo");
+  expect(trigger.querySelector("svg.lucide-shield-alert")).not.toBeNull();
+  expect(trigger.className).toContain("text-warning");
+  expect(
+    surfaceJson.mock.calls.some(([, init]) => init?.method === "PUT"),
+  ).toBe(false);
 });

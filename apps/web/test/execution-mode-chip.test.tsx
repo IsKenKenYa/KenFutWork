@@ -16,7 +16,7 @@ afterEach(() => {
   surfaceJson.mockReset();
 });
 
-test("执行模式 chip：加载后显示当前模式，隐藏于草稿态与端点失败", async () => {
+test("原盾牌始终可用，执行方式标签仅在真实策略加载后显示", async () => {
   surfaceJson.mockImplementation(async (path: string) => {
     if (path === "/api/execution-modes") {
       return {
@@ -31,13 +31,17 @@ test("执行模式 chip：加载后显示当前模式，隐藏于草稿态与端
   const { rerender } = render(
     <ExecutionModeChip sessionId={null} disabled={false} />,
   );
+  expect(screen.getByTestId("chat-mode-select-trigger").textContent).toContain(
+    "完全访问",
+  );
+  expect(screen.queryByTestId("execution-mode-label")).toBeNull();
   expect(screen.queryByTestId("execution-mode-chip")).toBeNull();
 
   rerender(<ExecutionModeChip sessionId="s1" disabled={false} />);
   await waitFor(() =>
-    expect(screen.getByTestId("execution-mode-chip").textContent).toContain(
-      "目标",
-    ),
+    expect(
+      screen.getByTestId("chat-mode-select-trigger").textContent,
+    ).toContain("目标"),
   );
 
   surfaceJson.mockImplementation(async () => {
@@ -45,6 +49,9 @@ test("执行模式 chip：加载后显示当前模式，隐藏于草稿态与端
   });
   rerender(<ExecutionModeChip sessionId="s2" disabled={false} />);
   await waitFor(() =>
-    expect(screen.queryByTestId("execution-mode-chip")).toBeNull(),
+    expect(screen.queryByTestId("execution-mode-label")).toBeNull(),
+  );
+  expect(screen.getByTestId("chat-mode-select-trigger").textContent).toContain(
+    "完全访问",
   );
 });

@@ -16,7 +16,14 @@ import { useProviderSettingsServiceView } from "@zui/hooks/useProviderSettingsVi
 import { useServices } from "@zui/hooks/useServices.js";
 import { projectProviderSettingsViewToFormProviders } from "@zui/lib/providerSettingsFormProjection.js";
 import { useEffect, useRef, useState } from "react";
-import { MODEL_KIND_LABELS, modelKind } from "./ModelSettingsSummary.js";
+import { modelKind } from "./ModelSettingsSummary.js";
+
+const MODEL_DEFAULT_LABELS = {
+  chat: "对话",
+  approval: "帮我批准",
+  image: "图片",
+  video: "视频",
+} as const;
 
 const referenceValue = (reference: ModelReference) =>
   JSON.stringify([reference.providerId, reference.modelId]);
@@ -62,7 +69,7 @@ function useModelDefaults() {
     };
   }, [service, revision, retry]);
   const save = async (
-    kind: "chat" | "image" | "video",
+    kind: keyof typeof MODEL_DEFAULT_LABELS,
     reference: ModelReference | null,
   ) => {
     if (!defaults || busy.current) return;
@@ -74,7 +81,7 @@ function useModelDefaults() {
     const next = {
       ...defaults,
       [kind]:
-        kind === "chat"
+        kind === "chat" || kind === "approval"
           ? reference
           : reference
             ? { mode: "manual", models: [reference] }
@@ -107,25 +114,33 @@ function useModelDefaults() {
   };
 }
 
-export function ModelDefaultsSection() {
+export function ModelDefaultsSection({
+  approvalOnly = false,
+}: {
+  approvalOnly?: boolean;
+} = {}) {
   const { view, defaults, error, loading, saving, save, retry } =
     useModelDefaults();
   const providers = view
     ? projectProviderSettingsViewToFormProviders(view)
     : [];
+  const kinds: readonly ("chat" | "approval" | "image" | "video")[] =
+    approvalOnly ? ["approval"] : ["chat", "approval", "image", "video"];
   return (
     <section
-      aria-label="默认模型"
+      aria-label={approvalOnly ? "审批" : "默认模型"}
       className="space-y-3 rounded-lg border border-border bg-surface p-3"
     >
-      <h3 className="text-ui-base font-medium">默认模型</h3>
+      <h3 className="text-ui-base font-medium">
+        {approvalOnly ? "审批" : "默认模型"}
+      </h3>
       <div className="flex flex-wrap gap-x-4 gap-y-3">
-        {(["chat", "image", "video"] as const).map((kind) => {
+        {kinds.map((kind) => {
           const policy = defaults?.[kind];
           const references =
-            kind === "chat"
-              ? defaults?.chat
-                ? [defaults.chat]
+            kind === "chat" || kind === "approval"
+              ? defaults?.[kind]
+                ? [defaults[kind]]
                 : []
               : policy && "mode" in policy && policy.mode === "manual"
                 ? policy.models
@@ -137,12 +152,18 @@ export function ModelDefaultsSection() {
                 ? referenceValue(references[0])
                 : "auto";
           const choices = providers
-            .filter((provider) => provider.enabled)
+            .filter(
+              (provider) =>
+                provider.enabled &&
+                (kind !== "approval" ||
+                  provider.native?.protocol !== "dify-engine"),
+            )
             .flatMap((provider) =>
               provider.models
                 .filter(
                   (model) =>
-                    model.config.enabled !== false && modelKind(model) === kind,
+                    model.config.enabled !== false &&
+                    modelKind(model) === (kind === "approval" ? "chat" : kind),
                 )
                 .map((model) => ({
                   reference: {
@@ -158,7 +179,7 @@ export function ModelDefaultsSection() {
               className="flex min-w-56 flex-1 items-center justify-between gap-3"
             >
               <span className="shrink-0 text-ui-sm text-foreground-subtle">
-                {MODEL_KIND_LABELS[kind]}
+                {MODEL_DEFAULT_LABELS[kind]}
               </span>
               <Select
                 value={selected}
@@ -172,13 +193,19 @@ export function ModelDefaultsSection() {
                 }}
               >
                 <SelectTrigger
-                  aria-label={`默认${MODEL_KIND_LABELS[kind]}模型`}
+                  aria-label={
+                    kind === "approval"
+                      ? "帮我批准模型"
+                      : `默认${MODEL_DEFAULT_LABELS[kind]}模型`
+                  }
                   className="w-48 min-w-0"
                 >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto">自动</SelectItem>
+                  <SelectItem value="auto">
+                    {kind === "approval" ? "人工审批" : "自动"}
+                  </SelectItem>
                   {selected === "multiple" ? (
                     <SelectItem value="multiple" disabled>
                       多模型（{references.length}）

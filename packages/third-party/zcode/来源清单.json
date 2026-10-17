@@ -11877,7 +11877,7 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationComposer.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationComposer.tsx",
       "sha256": "9bfa3d1365cfa7bf10e45d521a3d7201381aa27697c79b4f33b356cd2f4a3c2d",
-      "copiedSha256": "99a6205145d4e1001f78e415bb9412456f4473a8ff3839991dce21c81bda6417",
+      "copiedSha256": "41c9576084edf0f19f5ef65bfa914acb6861c4ce43cb30b44a7d362ea448cfb1",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
@@ -11885,12 +11885,13 @@
         "语音补全接线：从 snapshot.rows 提取指代消解上下文（recentMessagesFromSnapshot，只取真实用户输入与已完成正文）喂给「想」段；回复从 streaming 转为 complete 时调 speakReply 播报（历史行不重念）。验证见 code-voice.test（播报开关/上下文注入）与 voice-wiring-guard，哈希随本次改动更新。",
         "KenFutWork 宿主偏差：composer 左下操作行插入六档执行模式 chip（G2/Q7，宿主件 ../../host/ExecutionModeChip.jsx，与 ZCode 协作档并排；选「计划」联动切 plan）",
         "宿主扩展（G5 顺手修复）：G2 引入的执行模式 chip 宿主件导入路径 ../../host/ExecutionModeChip.js 越出包界（vendor tsc TS2307），改为与其它宿主件一致的 @zui/host/ExecutionModeChip.js；仅路径修正，逻辑不动",
-        "KenFutWork 宿主偏差：composer 挂权限档 chip PermissionTierChip（G7/C1 旧四档）",
+        "2026-10-17撤下不参与Task权限的旧全局PermissionTierChip；会话仅保留真实Task权限与独立执行策略，审批模型由既有模型设置独立选择。",
         "Code/Design统一实施：共享输入区提供通用上下文贡献header，保留原输入与提交交互。",
         "共享Harness执行策略：发送瞬间捕获宿主执行方式，与原Submission一起传入SessionPane；模式chip回传已持久化策略，未创建第二套提交或Goal循环。",
         "宿主点击策略：未加载选择时不伪造agent；已有可见选择在点击发送时独立捕获，跨异步配置准备保留该输入意图。",
         "计划策略点击即同步独立规划草稿，Composer传入真实planEnabled以在偏好失败时恢复先前状态；迟到结果不改新Task。",
-        "策略显示与发送共用Composer调用的宿主owner；明确关闭规划同时退出计划策略，Task与人工意图双代际拒绝旧PUT回滚，偏好写入按序且不阻塞发送。"
+        "策略显示与发送共用Composer调用的宿主owner；明确关闭规划同时退出计划策略，Task与人工意图双代际拒绝旧PUT回滚，偏好写入按序且不阻塞发送。",
+        "2026-10-17统一模式入口：移除独立执行策略与旧权限档按钮，唯一宿主策略owner传入原盾牌菜单；发送瞬间冻结与Plan关闭代际保持原接线。"
       ]
     },
     {
@@ -12507,18 +12508,20 @@
       "source": "references/zcode/packages/ui/src/v4/composer/V4ComposerModeControls.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/composer/V4ComposerModeControls.tsx",
       "sha256": "f5289c79b4798f97a4ced83cfa44fdf148741a11ccfaada84b7806b4ec67a328",
-      "copiedSha256": "1d95795edba444ad2052b380d324d9d3a5f548de5c73770804228dd71b695945",
+      "copiedSha256": "b60fedc4429b6efebf0f8dfd1a34a02070d046254b09737a6fc39cb4808e4040",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-10-17统一模式入口：原盾牌菜单分组承载权限、唯一Plan勾选与宿主执行方式；全权保持原橙色图标，Plan标记X关闭复用原owner，宿主审批描述不改上游字典。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/v4/composer/V4ComposerToolbar.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/composer/V4ComposerToolbar.tsx",
       "sha256": "fb0e3863fd51487d43e8201c19407b16ead3d53731d5eac7a1697412cfacacbf",
-      "copiedSha256": "09fb3ee3839b8d9236d64280ac740d48f0f27af2c8e17137a4756b61be3b4bc0",
+      "copiedSha256": "3a0fc302a44c81569c98acb0082c33f3d7eeaa45417f9c7766e2d5da98f672ea",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-10-17统一模式入口：仅增加Composer唯一ExecutionModeController的可选透传类型，不新增策略状态。"
       ]
     },
     {

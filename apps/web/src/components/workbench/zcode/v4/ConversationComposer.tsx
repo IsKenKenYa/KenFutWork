@@ -136,10 +136,8 @@ import { usePptxElementReferences } from "@zui/v4/composer/usePptxElementReferen
 import { usePrimaryFollowupModifier } from "@zui/v4/composer/usePrimaryFollowupModifier.js";
 import { useWebElementContexts } from "@zui/v4/composer/useWebElementContexts.js";
 import { V4ComposerCuaEntry } from "@zui/v4/composer/V4ComposerCuaEntry.js";
-// KenFutWork 宿主件：六档执行模式 chip（G2/Q7），实现位于 host/ 非上游移植。
-import { ExecutionModeChip, useExecutionModeController } from "@zui/host/ExecutionModeChip.js";
-// KenFutWork 宿主件：权限档 chip（G7/C1，旧四档语义）。
-import { PermissionTierChip } from "@zui/host/PermissionTierControl.js";
+// 原模式菜单与发送瞬间冻结共用唯一宿主策略owner。
+import { useExecutionModeController } from "@zui/host/ExecutionModeChip.js";
 import {
   type ModelSelectionSource,
   V4ComposerModelControls,
@@ -2316,13 +2314,8 @@ function ConversationComposerImpl({
           activeConfigPicker={activeConfigPicker}
           onConfigPickerOpenChange={handleConfigPickerOpenChange}
           onSwitchMode={executionModeController.switchCollaborationMode}
+          executionModeController={executionModeController}
         />
-        {/* 宿主执行方式与原权限/规划控件并排，提交时捕获各自意图。 */}
-        <ExecutionModeChip
-          controller={executionModeController}
-          disabled={disabled}
-        />
-        <PermissionTierChip />
         {/* 附件画廊重构曾整段覆盖 leadingActions，误删 CUA 常驻入口。
             入口自身继续负责平台、远程与设置可见性，不在 composer 重复判定。 */}
         <V4ComposerCuaEntry

@@ -4,6 +4,7 @@ import { ServiceProvider } from "@zui/hooks/useServices";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
 import { ModelDefaultsSection } from "../src/components/workbench/zcode/host/ModelDefaultsSection";
+import { PermissionTierSection } from "../src/components/workbench/zcode/host/PermissionTierControl";
 import { codeHostNotificationResponse } from "./setup/code-host-http";
 
 const scrollDescriptor = Object.getOwnPropertyDescriptor(
@@ -33,7 +34,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-function openDefaults(fail = false) {
+function openDefaults(fail = false, approvalOnly = false) {
   const ids = [
     "c0a03eb2-d58c-4637-9fda-c796230a751a",
     "722f052b-fd06-458b-a231-e43bce5b6613",
@@ -84,6 +85,13 @@ function openDefaults(fail = false) {
               headerKeys: [],
               models: [
                 { id: "same-model", name: "同名模型", capability: "image" },
+                { id: "chat-model", name: "对话模型", capability: "chat" },
+                {
+                  id: "disabled-chat",
+                  name: "停用对话",
+                  capability: "chat",
+                  enabled: false,
+                },
               ],
             },
             models: [
@@ -99,6 +107,18 @@ function openDefaults(fail = false) {
                 selectable: false,
                 issues: [],
               },
+              ...["chat-model", "disabled-chat"].map((modelId) => ({
+                kind: "candidate",
+                modelId,
+                builtin: false,
+                effectiveBuiltinConfig: {},
+                personalExactConfig: {},
+                effectiveConfig: { enabled: modelId !== "disabled-chat" },
+                enabled: modelId !== "disabled-chat",
+                executable: modelId !== "disabled-chat",
+                selectable: modelId !== "disabled-chat",
+                issues: [],
+              })),
             ],
           })),
         },
@@ -108,7 +128,7 @@ function openDefaults(fail = false) {
   client = new CodeHttpChannelClient({ apiBase: "http://localhost:3001" });
   render(
     <ServiceProvider services={client.services}>
-      <ModelDefaultsSection />
+      {approvalOnly ? <PermissionTierSection /> : <ModelDefaultsSection />}
     </ServiceProvider>,
   );
   return { calls, ids };
@@ -138,6 +158,85 @@ it("默认图片模型按供应商实例和原生ID保存，保留其他用途�
   expect(
     screen.getByRole("combobox", { name: "默认图片模型" }).textContent,
   ).toContain("网关2");
+});
+
+it("权限设置只选择真实审批模型，不再展示不作用于Task的全局权限档", async () => {
+  const { calls, ids } = openDefaults(false, true);
+  const approval = await screen.findByRole("combobox", {
+    name: "帮我批准模型",
+  });
+  await waitFor(() => expect(approval).toHaveProperty("disabled", false));
+  expect(screen.getAllByRole("combobox")).toHaveLength(1);
+  expect(screen.queryByLabelText("默认档")).toBeNull();
+  expect(approval.textContent).toContain("人工审批");
+  act(() => approval.focus());
+  await userEvent.keyboard("[Space]");
+  await screen.findByRole("option", { name: "网关1 / 对话模型" });
+  await userEvent.keyboard("[Home][ArrowDown][Enter]");
+  await waitFor(() =>
+    expect(calls.at(-1)).toEqual({
+      chat: null,
+      approval: { providerId: ids[0], modelId: "chat-model" },
+      image: { mode: "auto" },
+      video: { mode: "auto" },
+    }),
+  );
+});
+
+it("帮我批准独立选择启用对话模型，切回人工审批仍保留对话选择", async () => {
+  const { calls, ids } = openDefaults();
+  const approval = await screen.findByRole("combobox", {
+    name: "帮我批准模型",
+  });
+  await waitFor(() => expect(approval).toHaveProperty("disabled", false));
+  expect(approval.textContent).toContain("人工审批");
+  act(() => approval.focus());
+  await userEvent.keyboard("[Space]");
+  await screen.findByRole("option", { name: "网关2 / 对话模型" });
+  expect(screen.queryByRole("option", { name: /同名模型/ })).toBeNull();
+  expect(screen.queryByRole("option", { name: /停用对话/ })).toBeNull();
+  await userEvent.keyboard("[End][Enter]");
+  await waitFor(() =>
+    expect(calls).toEqual([
+      {
+        chat: null,
+        approval: { providerId: ids[1], modelId: "chat-model" },
+        image: { mode: "auto" },
+        video: { mode: "auto" },
+      },
+    ]),
+  );
+
+  const chat = screen.getByRole("combobox", { name: "默认对话模型" });
+  await waitFor(() => expect(chat).toHaveProperty("disabled", false));
+  act(() => chat.focus());
+  await userEvent.keyboard("[Space]");
+  await screen.findByRole("option", { name: "网关1 / 对话模型" });
+  await userEvent.keyboard("[Home][ArrowDown][Enter]");
+  await waitFor(() =>
+    expect(calls.at(-1)).toEqual({
+      chat: { providerId: ids[0], modelId: "chat-model" },
+      approval: { providerId: ids[1], modelId: "chat-model" },
+      image: { mode: "auto" },
+      video: { mode: "auto" },
+    }),
+  );
+
+  await waitFor(() => expect(approval).toHaveProperty("disabled", false));
+  act(() => approval.focus());
+  await userEvent.keyboard("[Space]");
+  await screen.findByRole("option", { name: "人工审批" });
+  await userEvent.keyboard("[Home][Enter]");
+  await waitFor(() =>
+    expect(calls.at(-1)).toEqual({
+      chat: { providerId: ids[0], modelId: "chat-model" },
+      approval: null,
+      image: { mode: "auto" },
+      video: { mode: "auto" },
+    }),
+  );
+  expect(approval.textContent).toContain("人工审批");
+  expect(chat.textContent).toContain("网关1");
 });
 
 it("默认模型写入失败保留原策略并显示错误，重试加载不伪报成功", async () => {

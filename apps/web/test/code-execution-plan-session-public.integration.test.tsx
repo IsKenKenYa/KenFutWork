@@ -132,7 +132,7 @@ async function waitForComposer(session: OriginalSessionView) {
   await waitFor(
     () => {
       expect(
-        session.view.getByTestId("execution-mode-chip").textContent,
+        session.view.getByTestId("chat-mode-select-trigger").textContent,
       ).toContain("自主");
       expect(
         session.view.getByTestId("v4-composer-input").textContent,
@@ -255,7 +255,7 @@ async function assertOriginalSend(f: {
     .soft(f.session.view.queryByTestId("v4-composer-plan-marker"))
     .toBeNull();
   expect
-    .soft(f.session.view.getByTestId("execution-mode-chip").textContent)
+    .soft(f.session.view.getByTestId("chat-mode-select-trigger").textContent)
     .toContain("自主");
 }
 
@@ -263,13 +263,15 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
   "原SessionPane执行策略与明确关闭规划 integration",
   () => {
     it("旧计划PUT失败不得覆盖期间实际Plan标记X关闭的规划与后续输入", async () => {
-      await withOriginalComposer(true, async (f) => {
+      await withOriginalComposer(false, async (f) => {
         const user = userEvent.setup({ document });
         f.holdPlanPut();
-        await user.click(f.session.view.getByTestId("execution-mode-chip"));
         await user.click(
-          await f.session.view.findByRole("menuitemradio", {
-            name: /^计划$/,
+          f.session.view.getByTestId("chat-mode-select-trigger"),
+        );
+        await user.click(
+          await f.session.view.findByRole("menuitemcheckbox", {
+            name: /^计划模式/,
           }),
         );
         await waitFor(() => expect(f.planPutStarted()).toBe(true));
@@ -288,7 +290,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         );
         await waitFor(() =>
           expect(
-            f.session.view.getByTestId("execution-mode-chip").textContent,
+            f.session.view.getByTestId("chat-mode-select-trigger").textContent,
           ).toContain("自主"),
         );
         expect
@@ -301,16 +303,18 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
     it("策略plan保存成功后实际Plan标记X退出策略，原发送冻结关闭规划且保留基础权限", async () => {
       await withOriginalComposer(false, async (f) => {
         const user = userEvent.setup({ document });
-        await user.click(f.session.view.getByTestId("execution-mode-chip"));
         await user.click(
-          await f.session.view.findByRole("menuitemradio", {
-            name: /^计划$/,
+          f.session.view.getByTestId("chat-mode-select-trigger"),
+        );
+        await user.click(
+          await f.session.view.findByRole("menuitemcheckbox", {
+            name: /^计划模式/,
           }),
         );
         await waitFor(() => {
-          const chip = f.session.view.getByTestId("execution-mode-chip");
+          const chip = f.session.view.getByTestId("chat-mode-select-trigger");
           expect(chip.textContent).toContain("计划");
-          expect(chip.hasAttribute("disabled")).toBe(false);
+          expect(chip.getAttribute("data-execution-mode-saving")).toBe("false");
         });
         const persisted = await f.host.client.request(
           `/api/execution-modes/${f.host.sessionId}`,
@@ -337,7 +341,9 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         // Soft assertions deliberately keep the original send path running on
         // the old implementation, so its real Run config is also observed.
         expect
-          .soft(f.session.view.getByTestId("execution-mode-chip").textContent)
+          .soft(
+            f.session.view.getByTestId("chat-mode-select-trigger").textContent,
+          )
           .toContain("自主");
         await assertOriginalSend(f);
       });

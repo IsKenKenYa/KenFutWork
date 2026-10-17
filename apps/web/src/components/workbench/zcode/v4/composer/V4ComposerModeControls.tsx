@@ -17,6 +17,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuLabel,
 } from "@zui/components/ui/dropdown-menu.js";
 import { Button } from "@zui/components/ui/button.js";
 import { cn } from "@zui/components/lib/utils.js";
@@ -34,6 +35,7 @@ import {
   useToolbarShortcutBindings,
 } from "@zui/v4/composer/toolbarShortcuts.js";
 import type { V4ComposerToolbarProps } from "@zui/v4/composer/V4ComposerToolbar.js";
+import { ExecutionModeMenuItems } from "@zui/host/ExecutionModeChip.js";
 
 function noop(): void {}
 
@@ -45,6 +47,7 @@ function V4ComposerModeSwitchImpl({
   activeConfigPicker,
   onConfigPickerOpenChange,
   onSwitchMode,
+  executionModeController,
 }: Pick<
   V4ComposerToolbarProps,
   | "workspacePath"
@@ -55,6 +58,7 @@ function V4ComposerModeSwitchImpl({
   | "activeConfigPicker"
   | "onConfigPickerOpenChange"
   | "onSwitchMode"
+  | "executionModeController"
 >) {
   const { intl } = useZCodeIntl();
   const displayProvider = provider ?? ZCODE_AGENT_PROVIDER;
@@ -68,6 +72,21 @@ function V4ComposerModeSwitchImpl({
   const planLabel = label(plan);
   // Plan 拆成独立勾选项后仍需保留原菜单说明，复用相同的国际化映射。
   const planDescriptionId = getModeOptionDescriptionMessageId(displayProvider, { value: plan.id });
+  const executionLabel = executionModeController?.modes?.find(
+    (entry) => entry.id === executionModeController.mode,
+  )?.label;
+  const selectPlan = (checked: boolean) => {
+    if (
+      checked &&
+      executionModeController?.mode &&
+      !executionModeController.saving &&
+      executionModeController.modes?.some((entry) => entry.id === "plan")
+    ) {
+      void executionModeController.select("plan");
+      return;
+    }
+    onSwitchMode(checked ? "plan" : "plan-off");
+  };
   const modeOption = useMemo<ZCodeConfigOption>(
     () => ({
       id: "mode",
@@ -115,15 +134,25 @@ function V4ComposerModeSwitchImpl({
               data-testid={TID_CHAT_MODE_SELECT_TRIGGER}
               data-composer-collapse-priority="1"
               aria-label={intl.formatMessage({ id: "chat.toolbar.mode.label" })}
+              data-execution-mode={executionModeController?.mode}
+              data-execution-mode-saving={executionModeController?.saving ?? false}
               className={cn(
                 "group/mode h-7 gap-1 rounded-lg px-2 text-ui-base data-[composer-compact=true]:w-7 data-[composer-compact=true]:px-0",
-                selected.id === "yolo" && "text-warning hover:text-warning",
+                selected.id === "yolo" && "text-warning hover:text-warning aria-expanded:text-warning",
               )}
             >
               <Icon className="size-4" />
               <span className="inline group-data-[composer-compact=true]/mode:hidden">
                 {label(selected)}
               </span>
+              {executionLabel && (
+                <span
+                  data-testid="execution-mode-label"
+                  className="text-ui-sm group-data-[composer-compact=true]/mode:hidden"
+                >
+                  · {executionLabel}
+                </span>
+              )}
               <ChevronDownIcon className="size-3.5 group-data-[composer-compact=true]/mode:hidden" />
             </Button>
           </DropdownMenuTrigger>
@@ -142,7 +171,8 @@ function V4ComposerModeSwitchImpl({
         >
           <DropdownMenuCheckboxItem
             checked={draftConfig?.planEnabled ?? false}
-            onCheckedChange={(checked) => onSwitchMode(checked ? "plan" : "plan-off")}
+            onCheckedChange={(checked) => selectPlan(checked === true)}
+            disabled={disabled}
             data-testid={testId(TID_CHAT_MODE_SELECT_ITEM, "plan")}
             className="min-h-13 items-start gap-3 py-2"
           >
@@ -157,6 +187,7 @@ function V4ComposerModeSwitchImpl({
             </span>
           </DropdownMenuCheckboxItem>
           <DropdownMenuSeparator />
+          <DropdownMenuLabel>权限</DropdownMenuLabel>
           <DropdownMenuRadioGroup value={selected.id} onValueChange={onSwitchMode}>
             {permissions.map((mode) => {
               const ModeIcon = resolveModeOptionIcon(mode.id);
@@ -167,6 +198,7 @@ function V4ComposerModeSwitchImpl({
                 <DropdownMenuRadioItem
                   key={mode.id}
                   value={mode.id}
+                  disabled={disabled}
                   data-testid={testId(TID_CHAT_MODE_SELECT_ITEM, mode.id)}
                   className="min-h-13 items-start gap-3 py-2"
                 >
@@ -175,7 +207,9 @@ function V4ComposerModeSwitchImpl({
                     <span>{label(mode)}</span>
                     {descriptionId && (
                       <span className="text-ui-sm text-foreground-subtle">
-                        {intl.formatMessage({ id: descriptionId })}
+                        {mode.id === "build"
+                          ? "人工或审批模型"
+                          : intl.formatMessage({ id: descriptionId })}
                       </span>
                     )}
                   </span>
@@ -183,6 +217,12 @@ function V4ComposerModeSwitchImpl({
               );
             })}
           </DropdownMenuRadioGroup>
+          {executionModeController && (
+            <ExecutionModeMenuItems
+              controller={executionModeController}
+              disabled={disabled}
+            />
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       {draftConfig?.planEnabled && (

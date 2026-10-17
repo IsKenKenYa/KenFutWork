@@ -1,17 +1,32 @@
 import type { ExecutionMode } from "@kenfutwork/shared";
-import { Button } from "@zui/components/ui/button.js";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@zui/components/ui/dropdown-menu.js";
-import { ChevronDownIcon } from "lucide-react";
+import {
+  BotIcon,
+  LightbulbIcon,
+  type LucideIcon,
+  MessageSquareIcon,
+  PuzzleIcon,
+  Repeat2Icon,
+  TargetIcon,
+  WorkflowIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { surfaceJson } from "./surfaceApi.js";
 
 type ModeOption = { id: ExecutionMode; label: string };
+const executionModeIcons: Partial<Record<ExecutionMode, LucideIcon>> = {
+  agent: BotIcon,
+  plan: LightbulbIcon,
+  solo: MessageSquareIcon,
+  goal: TargetIcon,
+  loop: Repeat2Icon,
+  creative: PuzzleIcon,
+};
 type ModeState = {
   sessionId: string | null;
   modes: ModeOption[] | null;
@@ -187,41 +202,48 @@ export function useExecutionModeController({
   );
 }
 
-/** 受控菜单：自身不再持有另一份提交策略。 */
-export function ExecutionModeChip({
+export type ExecutionModeController = ReturnType<
+  typeof useExecutionModeController
+>;
+
+/** 原模式菜单内的受控选项；策略与规划仍由Composer的唯一owner管理。 */
+export function ExecutionModeMenuItems({
   controller,
   disabled,
 }: {
-  controller: ReturnType<typeof useExecutionModeController>;
+  controller: ExecutionModeController;
   disabled: boolean;
 }) {
   const { mode, modes, saving, select } = controller;
   if (!modes || modes.length === 0 || !mode) return null;
-  const label = modes.find((entry) => entry.id === mode)?.label ?? mode;
+  const options = modes.filter((entry) => entry.id !== "plan");
+  if (options.length === 0) return null;
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1 px-2 text-xs"
-          disabled={disabled || saving}
-          aria-label="执行策略"
-          data-testid="execution-mode-chip"
-        >
-          {label}
-          <ChevronDownIcon className="size-3" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
-        <DropdownMenuRadioGroup value={mode} onValueChange={select}>
-          {modes.map((entry) => (
-            <DropdownMenuRadioItem key={entry.id} value={entry.id}>
-              {entry.label}
+    <>
+      <DropdownMenuSeparator />
+      <DropdownMenuLabel>执行方式</DropdownMenuLabel>
+      <DropdownMenuRadioGroup
+        value={mode}
+        onValueChange={select}
+        aria-label="执行方式"
+      >
+        {options.map((entry) => {
+          const ModeIcon = executionModeIcons[entry.id] ?? WorkflowIcon;
+          return (
+            <DropdownMenuRadioItem
+              key={entry.id}
+              value={entry.id}
+              disabled={disabled || saving}
+              className="min-h-13 items-start gap-3 py-2"
+            >
+              <ModeIcon className="mt-0.5 size-4.5 shrink-0" />
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span>{entry.label}</span>
+              </span>
             </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          );
+        })}
+      </DropdownMenuRadioGroup>
+    </>
   );
 }
