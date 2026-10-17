@@ -29,10 +29,24 @@ const limits: ProcessLimits = {
   killGraceMs: 2000,
 };
 async function fixture() {
+  // 夹具根必须落在「没有被别的容器授权过」的目录：共享 %TEMP% 上可能残留
+  // 外来 AppContainer/能力 SID 的继承 ACE（本机实测 `S-1-15-3-…:(I)(OI)(CI)(IO)(F)`，
+  // 由同机其它 agent 沙箱留下），那样下面的越权读会真的成功——是夹具选址错误，
+  // 不是沙箱失效。判据：对该父目录跑 `icacls` 若见 S-1-15-* 就换到干净盘（本机
+  // `KENFUTWORK_WINDOWS_FIXTURE_ROOT=D:\temp-kfw` 下同一断言转绿）。
+  const base = process.env.KENFUTWORK_WINDOWS_FIXTURE_ROOT ?? tmpdir();
   const temporary = await realpath(
-    await mkdtemp(join(tmpdir(), "kfw-win-native-")),
+    await mkdtemp(join(base, "kfw-win-native-")),
   );
-  cleanups.push(() => rm(temporary, { recursive: true, force: true }));
+  // 子进程退出后 Windows 仍会把目录留在删除挂起态一小会儿，立刻 rmdir 报 EBUSY。
+  cleanups.push(() =>
+    rm(temporary, {
+      recursive: true,
+      force: true,
+      maxRetries: 20,
+      retryDelay: 250,
+    }),
+  );
   const root = join(temporary, "project"),
     reference = join(temporary, "reference");
   await mkdir(root);
@@ -83,7 +97,12 @@ test.skipIf(!enabled)(
     cleanups.push(async () => {
       dispose();
     });
-    await expect.poll(() => output).toContain("ACCESS:true:true:reference");
+    await expect
+      .poll(() => output, {
+        message:
+          "ACCESS 三段期望 true:true:reference；第一段为 false 表示越权读成功。先排除夹具环境污染（对 fixture 父目录跑 icacls，见 fixture() 注释），再当沙箱缺陷查。",
+      })
+      .toContain("ACCESS:true:true:reference");
     expect(child.snapshot().enforcement).toMatchObject({
       backend: "windows-task-broker",
       filesystem: "enforced",
