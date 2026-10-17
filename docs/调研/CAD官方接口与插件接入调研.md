@@ -218,6 +218,8 @@ KFW 仅对创建／修改操作选择 `QT_QPA_PLATFORM=offscreen` 并隐藏该�
 
 原 Code Flash Run 的持久事件已对账：六组成对 requested／resolved→allow，分别为三次 Python、检查、交换及预览；期间有独立模型调用用量，本机验收脚本未代答。Design 同 Task 的首次真实尝试尚未调用 CAD 插件，改走辅助 Write／直接 Bash；观察者拒绝无关 echo、允许已审阅的辅助脚本后停止测试 Run，未执行其直接启动 FreeCAD 的 Bash。该次明确不计 Design 插件验收通过，保留现场继续核查按需工具曝光。
 
+完整服务器 profile 的临时真实 PG／HTTP 模型集成测试 **4 项通过**：实际安装本地官方 CAD bundle，共享同一 Project／Task，Design 首个真实模型请求包含 ToolSearch，搜索后 CAD Python 被送入独立审批；等待期间停用插件，即使模型返回 allow 也不派发。重新启用后同 Task 的 Code Run 重新审批并抵达可信进程入口。另一场景撤权取消原审批与 HTTP 审查，迟到 allow 不派发、没有伪造 FCStd。应用发现及进程边界在这组测试用替身，不将其当作几何实测；真实 CAD 几何由前述六项原生场景证明。撤权终态是带明确原因的 run_failed，区别于用户主动 Stop。
+
 ## 10. 来源地图与证据限制
 
 | 来源组 | 用途 | 强项与限制 |

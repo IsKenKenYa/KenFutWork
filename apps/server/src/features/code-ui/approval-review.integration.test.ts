@@ -1,8 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { createServer, type ServerResponse } from "node:http";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
+import * as cadRuntime from "../cad/runtime.js";
+import { CAD_BUNDLE_ID } from "../cad/service.js";
+import { ProcessSandboxError } from "../process-sandbox/types.js";
 import { createCodeUiHttpFixture } from "./code-ui-http.fixture.js";
 import { snapshot, waitPhase } from "./history-fork.fixture.js";
 import { createCodeSessionFixture } from "./host-session.fixture.js";
@@ -111,13 +114,17 @@ async function reviewerModel(hold = false) {
   };
 }
 
-async function setup(hold = false) {
+async function setup(
+  hold = false,
+  modelOptions?: Parameters<typeof heldModel>[0],
+) {
   const model = await heldModel({
     initialTool: {
       id: WRITE_CALL,
       name: "Write",
       arguments: { file_path: FILE, content: CONTENT },
     },
+    ...modelOptions,
     usage: { promptTokens: 11, completionTokens: 3 },
   });
   const reviewer = await reviewerModel(hold);
@@ -217,22 +224,185 @@ async function setup(hold = false) {
   }
 }
 
-async function approvalEvents(fixture: Fixture, host: Host) {
+async function approvalEvents(
+  fixture: Fixture,
+  host: Host,
+  toolCallId = WRITE_CALL,
+) {
   return fixture.database.persistence
     .forInstance(fixture.actor.instanceId)
     .query<{
       payload: {
         type: string;
         decision?: string;
-        identity: { runId: string; toolCallId: string };
+        identity: {
+          runId: string;
+          toolCallId: string;
+          taskId: string;
+          scopeGeneration: number;
+        };
         interaction: { interactionId: string };
       };
     }>(
       `select payload from public.code_ui_events
      where instance_id=:instance and root_session_id=$1 and event_key like 'approval:%'
        and payload->'identity'->>'toolCallId'=$2 order by seq`,
-      [host.sessionId, WRITE_CALL],
+      [host.sessionId, toolCallId],
     );
+}
+
+const CAD_TOOL = "cad_run_python";
+const CAD_CALL = "review-cad";
+const CAD_OUTPUT = "reviewed.FCStd";
+const CAD_SOURCE =
+  "box = doc.addObject('Part::Box', 'Box')\nbox.Length = 10\nbox.Width = 20\nbox.Height = 30\ndoc.recompute()";
+const CAD_INPUT = {
+  source: CAD_SOURCE,
+  outputPath: CAD_OUTPUT,
+  requireSolids: true,
+};
+
+/** 实际profile、官方bundle及审批；仅替换外部应用发现/进程派发边界，不伪造几何。 */
+async function setupCadReview() {
+  const runtime = {
+    executable: process.execPath,
+    runtimeRoot: dirname(process.execPath),
+  };
+  const discovery = vi
+    .spyOn(cadRuntime, "detectFreeCadRuntime")
+    .mockResolvedValue(runtime);
+  let base: Awaited<ReturnType<typeof setup>> | undefined;
+  try {
+    base = await setup(true, {
+      toolsByRequest: Object.fromEntries(
+        [0, 3].flatMap((offset) => [
+          [
+            offset,
+            {
+              id: `cad-discovery-${offset}`,
+              name: "ToolSearch",
+              arguments: { query: CAD_TOOL, max_results: 1 },
+            },
+          ],
+          [
+            offset + 1,
+            {
+              id: offset === 0 ? CAD_CALL : `${CAD_CALL}-resumed`,
+              name: CAD_TOOL,
+              arguments: CAD_INPUT,
+            },
+          ],
+        ]),
+      ),
+    });
+    const f = base;
+    const projects = f.fixture.app.kernel.get("projects");
+    await projects.updateProject(f.fixture.actor, f.host.projectId, {
+      enabled_modes: ["code", "design"],
+    });
+    expect(
+      (await projects.getProject(f.fixture.actor, f.host.projectId))
+        .enabled_modes,
+    ).toEqual(["code", "design"]);
+    const dispatch = vi
+      .spyOn(f.fixture.app.kernel.get("processSandbox"), "spawnStdio")
+      .mockRejectedValue(
+        new ProcessSandboxError("spawn_failed", "CAD_PROCESS_BOUNDARY"),
+      );
+    const registry = f.fixture.app.kernel.get("plugins");
+    const available = (await registry.list()).find(
+      (entry) => entry.name === CAD_BUNDLE_ID,
+    );
+    expect(available).toMatchObject({ installed: false });
+    const installed = await registry.install({
+      builtin: CAD_BUNDLE_ID,
+      allowLifecycleScripts: false,
+    });
+    expect(installed.report.compatible).toBe(true);
+    const inventory = await registry.readPackageInventory();
+    const actual = inventory.installed.find(
+      (entry) => entry.record.id === installed.installed.id,
+    );
+    if (!actual) throw new Error("官方CAD包没有实际安装记录");
+    expect(
+      JSON.parse(await readFile(join(actual.rootPath, "package.json"), "utf8"))
+        .name,
+    ).toBe(CAD_BUNDLE_ID);
+    let closing: Promise<void> | undefined;
+    return {
+      ...f,
+      registry,
+      runtime,
+      dispatch,
+      pluginId: installed.installed.id,
+      close() {
+        closing ??= f.close().finally(() => {
+          dispatch.mockRestore();
+          discovery.mockRestore();
+        });
+        return closing;
+      },
+    };
+  } catch (error) {
+    try {
+      await base?.close();
+    } finally {
+      discovery.mockRestore();
+    }
+    throw error;
+  }
+}
+
+type CadReviewFixture = Awaited<ReturnType<typeof setupCadReview>>;
+
+async function sendCadReview(
+  f: CadReviewFixture,
+  reviewerIndex: number,
+  preset: "code" | "design" = "code",
+) {
+  const sent = await f.host.command("sendText", {
+    text: `用FreeCAD创建10×20×30mm参数化Box，保存为${CAD_OUTPUT}。`,
+    mode: "build",
+    planEnabled: false,
+    workContext: { preset },
+  });
+  expect(protocol.commandAckSchema.parse(sent.body.result).status).toBe(
+    "accepted",
+  );
+  await vi.waitFor(
+    () => expect(f.reviewer.requests).toHaveLength(reviewerIndex + 1),
+    { timeout: 30_000 },
+  );
+  const review = f.reviewer.requests[reviewerIndex];
+  if (!review) throw new Error("CAD独立审查请求缺失");
+  const body = review.body;
+  expect(body.tools).toBeUndefined();
+  expect(body.tool_choice).toBeUndefined();
+  const messages = body.messages as Array<{ role: string; content: unknown }>;
+  const message = [...messages]
+    .reverse()
+    .find((entry) => entry.role === "user");
+  if (typeof message?.content !== "string")
+    throw new Error("CAD独立审查没有收到完整请求文本");
+  expect(JSON.parse(message.content)).toMatchObject({
+    tool: CAD_TOOL,
+    untrustedData: {
+      operation: { kind: "cad-python", args: CAD_INPUT },
+      workspace: { rootDirectory: f.host.workspacePath },
+    },
+  });
+  const requests = f.model.requests;
+  const second = requests[reviewerIndex * 3 + 1]?.body;
+  expect(JSON.stringify(second?.tools)).toContain(CAD_TOOL);
+}
+
+async function finishCadReview(f: CadReviewFixture, requestIndex: number) {
+  await vi.waitFor(
+    () => expect(f.model.requests).toHaveLength(requestIndex + 1),
+    { timeout: 30_000 },
+  );
+  f.model.finish(requestIndex);
+  return waitPhase(f.fixture, f.host.sessionId, "completedSuccess");
 }
 
 /** 真实临时PG、HTTP、SSE与native SDK；主模型和独立审查均只访问本机测试端点。 */
@@ -419,6 +589,138 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         ).rejects.toMatchObject({ code: "ENOENT" });
         expect(f.model.requests).toHaveLength(1);
         expect(f.reviewer.requests).toHaveLength(1);
+      } finally {
+        await f.close();
+      }
+    }, 120_000);
+
+    it("官方CAD包在Code/Design同一Task共享ToolSearch和独立审批，停用拒绝、启用恢复可信派发", async () => {
+      const f = await setupCadReview();
+      try {
+        await sendCadReview(f, 0, "design");
+        expect(f.model.requests[0]?.body.tools).toContainEqual(
+          expect.objectContaining({
+            function: expect.objectContaining({ name: "ToolSearch" }),
+          }),
+        );
+        expect(JSON.stringify(f.model.requests[0]?.body.tools)).not.toContain(
+          CAD_TOOL,
+        );
+        expect(f.dispatch).not.toHaveBeenCalled();
+        const disabled = await f.registry.setEnabled(f.pluginId, false);
+        expect(disabled.enabled).toBe(false);
+        expect(
+          (await f.registry.list()).find((entry) => entry.id === f.pluginId),
+        ).toMatchObject({ installed: true, enabled: false });
+        f.reviewer.allow(0);
+        await finishCadReview(f, 2);
+        expect(f.dispatch).not.toHaveBeenCalled();
+        expect(JSON.stringify(f.model.requests[2]?.body.messages)).toContain(
+          "plugin_disabled",
+        );
+        const denied = await approvalEvents(f.fixture, f.host, CAD_CALL);
+        expect(denied.map(({ payload }) => payload.type)).toEqual([
+          "requested",
+          "resolved",
+        ]);
+        expect(denied[1]?.payload.decision).toBe("allow");
+        expect(denied[0]?.payload.identity.taskId).toBe(f.host.sessionId);
+        await expect(
+          readFile(join(f.host.workspacePath, CAD_OUTPUT)),
+        ).rejects.toMatchObject({ code: "ENOENT" });
+
+        const enabled = await f.registry.setEnabled(f.pluginId, true);
+        expect(enabled.enabled).toBe(true);
+        await sendCadReview(f, 1, "code");
+        expect(f.dispatch).not.toHaveBeenCalled();
+        f.reviewer.allow(1);
+        await finishCadReview(f, 5);
+        expect(f.dispatch).toHaveBeenCalledOnce();
+        const request = f.dispatch.mock.calls[0]?.[0];
+        if (!request) throw new Error("CAD恢复后未进入可信派发入口");
+        expect(request.scope).toMatchObject({
+          instanceId: f.fixture.actor.instanceId,
+          projectId: f.host.projectId,
+          taskId: f.host.sessionId,
+          rootDirectory: f.host.workspacePath,
+        });
+        expect(request.argv?.executable).toBe(f.runtime.executable);
+        expect(request.runtimeReadRoots).toEqual([f.runtime.runtimeRoot]);
+        expect(request.cwd).toContain(join(f.host.workspacePath, ".kfw-cad"));
+        expect(request).not.toHaveProperty("command");
+        expect(JSON.stringify(f.model.requests[5]?.body.messages)).toContain(
+          "CAD_PROCESS_BOUNDARY",
+        );
+        const resumed = await approvalEvents(
+          f.fixture,
+          f.host,
+          `${CAD_CALL}-resumed`,
+        );
+        expect(resumed.map(({ payload }) => payload.type)).toEqual([
+          "requested",
+          "resolved",
+        ]);
+        expect(resumed[0]?.payload.identity.taskId).toBe(f.host.sessionId);
+        expect(resumed[1]?.payload.decision).toBe("allow");
+        // 外部应用边界故意拒绝：本例只证明准入与真实请求，不伪造CAD成功产物。
+        await expect(
+          readFile(join(f.host.workspacePath, CAD_OUTPUT)),
+        ).rejects.toMatchObject({ code: "ENOENT" });
+      } finally {
+        await f.close();
+      }
+    }, 120_000);
+
+    it("CAD独立审查等待中通过真实Task作用域撤权，取消原审批且迟到allow不得派发", async () => {
+      const f = await setupCadReview();
+      try {
+        await sendCadReview(f, 0);
+        const scopes = f.fixture.app.kernel.get("executionScopes");
+        const original = (
+          await scopes.openTask(f.fixture.actor, f.host.sessionId)
+        ).describe();
+        const updated = await scopes.updateTask(
+          f.fixture.actor,
+          f.host.sessionId,
+          { sandboxMode: "read-only" },
+        );
+        expect(updated.generation).toBeGreaterThan(original.generation);
+        expect(updated.sandboxMode).toBe("read-only");
+        await vi.waitFor(
+          async () => {
+            expect(f.reviewer.requests[0]?.closed).toBe(true);
+            expect(
+              (await approvalEvents(f.fixture, f.host, CAD_CALL)).map(
+                ({ payload }) => payload.type,
+              ),
+            ).toEqual(["requested", "cancelled"]);
+          },
+          { timeout: 30_000 },
+        );
+        f.reviewer.allow(0);
+        expect(f.dispatch).not.toHaveBeenCalled();
+        expect(
+          f.fixture.app.kernel
+            .get("permissions")
+            .listPending(f.fixture.actor.instanceId, f.host.sessionId),
+        ).toEqual([]);
+        const current = await waitPhase(f.fixture, f.host.sessionId, "error");
+        expect(current.control.lastError).toMatchObject({
+          code: "run_failed",
+          message: expect.stringContaining("授权已撤销"),
+        });
+        expect(current.pendingInteractions).toEqual([]);
+        expect(current.control.activeWorks).toEqual([]);
+        expect(f.dispatch).not.toHaveBeenCalled();
+        expect(
+          (await approvalEvents(f.fixture, f.host, CAD_CALL)).some(
+            ({ payload }) =>
+              payload.type === "resolved" && payload.decision === "allow",
+          ),
+        ).toBe(false);
+        await expect(
+          readFile(join(f.host.workspacePath, CAD_OUTPUT)),
+        ).rejects.toMatchObject({ code: "ENOENT" });
       } finally {
         await f.close();
       }
