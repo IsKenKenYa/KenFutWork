@@ -25,11 +25,14 @@ export interface ModelRequest {
   system: string;
   input: string;
   remainingTokens: number | null;
+  /** A caller can cancel its independent request without stopping the owning Run. */
+  signal?: AbortSignal | undefined;
 }
 export interface ModelRequestResult {
   text: string;
   hasToolCalls: boolean;
   usageObserved: boolean;
+  finishReason?: string | undefined;
 }
 export type ModelRequestPort = (
   request: ModelRequest,
@@ -48,6 +51,7 @@ async function invokeModelRequest(
     model: BaseLanguageModel;
     owner: ModelUsageOwner;
     signal: AbortSignal;
+    usageSignal: AbortSignal;
     onUsage(usage: ModelCallUsage): Promise<void>;
   },
 ): Promise<{ result: unknown; usageObserved: boolean }> {
@@ -55,10 +59,10 @@ async function invokeModelRequest(
   let usageObserved = false;
   const controller = new AbortController();
   const signal = AbortSignal.any([options.signal, controller.signal]);
-  let acceptingUsage = true;
   let usagePending: Promise<void> | undefined;
   const observeUsage = (native: unknown) => {
-    if (!acceptingUsage || signal.aborted) return;
+    // A superseded reviewer loses its decision, not a real receipt incurred by this live Run.
+    if (options.usageSignal.aborted) return;
     if (usagePending) return usagePending;
     const parsed = usageSchema.safeParse(
       AIMessage.isInstance(native) ? native.usage_metadata : undefined,
@@ -66,7 +70,7 @@ async function invokeModelRequest(
     if (!parsed.success) return;
     const usage = parsed.data;
     usagePending = Promise.resolve().then(async () => {
-      signal.throwIfAborted();
+      options.usageSignal.throwIfAborted();
       await options.onUsage({
         modelCallId,
         owner: options.owner,
@@ -76,7 +80,7 @@ async function invokeModelRequest(
           ? {}
           : { cachedInputTokens: usage.input_token_details.cache_read }),
       });
-      if (acceptingUsage && !signal.aborted) usageObserved = true;
+      if (!options.usageSignal.aborted) usageObserved = true;
     });
     return usagePending;
   };
@@ -102,6 +106,8 @@ async function invokeModelRequest(
       await observeUsage(result);
       return result;
     });
+  // The caller can leave first; a late native usage callback still has an observed rejection.
+  void pending.catch(() => {});
   let result: unknown;
   try {
     const source: AsyncIterable<unknown> = {
@@ -118,7 +124,6 @@ async function invokeModelRequest(
       break;
     }
   } finally {
-    acceptingUsage = false;
     controller.abort();
   }
   return { result, usageObserved };
@@ -135,7 +140,10 @@ export function createModelRequestPort(options: {
   onUsage(usage: ModelCallUsage): Promise<void>;
 }): ModelRequestPort {
   return async (request) => {
-    options.signal.throwIfAborted();
+    const signal = request.signal
+      ? AbortSignal.any([options.signal, request.signal])
+      : options.signal;
+    signal.throwIfAborted();
     const execution = await options.resolve(request.invocation);
     const messages = [
       new SystemMessage(request.system),
@@ -149,20 +157,25 @@ export function createModelRequestPort(options: {
           request.remainingTokens)
     )
       throw new Error("剩余目标预算不足以执行独立评估，请调整预算后恢复。");
-    options.signal.throwIfAborted();
+    signal.throwIfAborted();
     const { result, usageObserved } = await invokeModelRequest(messages, {
       model: execution.model,
       owner: execution.owner,
-      signal: options.signal,
+      signal,
+      usageSignal: options.signal,
       onUsage: options.onUsage,
     });
-    options.signal.throwIfAborted();
+    signal.throwIfAborted();
     if (!AIMessage.isInstance(result))
       throw new Error("模型请求未返回助手结果。");
     // Recheck the frozen configuration after an asynchronous provider response.
     await options.resolve(request.invocation);
-    options.signal.throwIfAborted();
+    signal.throwIfAborted();
     const content = result.content;
+    const finishReason =
+      result.response_metadata?.finish_reason ??
+      result.response_metadata?.stop_reason ??
+      result.response_metadata?.finishReason;
     return {
       text:
         typeof content === "string"
@@ -182,6 +195,7 @@ export function createModelRequestPort(options: {
         !!result.additional_kwargs.tool_calls?.length ||
         !!result.additional_kwargs.function_call,
       usageObserved,
+      ...(typeof finishReason === "string" ? { finishReason } : {}),
     };
   };
 }

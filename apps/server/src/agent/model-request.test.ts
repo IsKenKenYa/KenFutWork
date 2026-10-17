@@ -7,6 +7,7 @@ import {
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import {
   AIMessage,
+  AIMessageChunk,
   type BaseMessage,
   HumanMessage,
   SystemMessage,
@@ -141,6 +142,46 @@ it("同步SDK回调与返回结果的同一用量只归账一次", async () => {
     expect.objectContaining({ inputTokens: 12, outputTokens: 5 }),
   );
 });
+
+it("审查独立取消不停止所属Run，迟到原生用量仍记一次且结果不能复活许可", async () => {
+  const f = fixture();
+  const local = new AbortController();
+  let release!: (value: AIMessageChunk) => void;
+  let nativeSignal: AbortSignal | undefined;
+  const invoke = vi
+    .spyOn(f.model, "invoke")
+    .mockImplementation((_input, config) => {
+      nativeSignal = config?.signal;
+      return new Promise<AIMessageChunk>((resolve) => {
+        release = resolve;
+      });
+    });
+  const pending = f.port({ ...request, signal: local.signal });
+  const failed = expect(pending).rejects.toThrow("human answered");
+  await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+  local.abort(new Error("human answered"));
+  await failed;
+  expect(nativeSignal?.aborted).toBe(true);
+  expect(f.controller.signal.aborted).toBe(false);
+  release(
+    Object.assign(new AIMessageChunk('{"passed":true,"reason":"Evidence"}'), {
+      usage_metadata: { input_tokens: 12, output_tokens: 5, total_tokens: 17 },
+    }),
+  );
+  await vi.waitFor(() => expect(f.onUsage).toHaveBeenCalledTimes(1));
+  expect(f.onUsage).toHaveBeenCalledWith(
+    expect.objectContaining({ inputTokens: 12, outputTokens: 5 }),
+  );
+});
+
+it.each(["stop", "length", "end_turn", "max_tokens", "STOP"])(
+  "独立请求保留原生终止原因%s供审批判定完整性",
+  async (finishReason) => {
+    const f = fixture();
+    f.model.answer.response_metadata = { finish_reason: finishReason };
+    expect((await f.port(request)).finishReason).toBe(finishReason);
+  },
+);
 
 it.each(["callback", "result"] as const)(
   "%s来源的异步记账未成功前不能返回验收结果，失败必须透出",
@@ -517,6 +558,7 @@ it("真实协议适配器发送冻结无工具请求，用量加入原Run账本�
       text: '{"passed":false,"reason":"Missing file"}',
       hasToolCalls: false,
       usageObserved: true,
+      finishReason: "stop",
     });
     expect(bodies).toHaveLength(1);
     expect(bodies[0]).toMatchObject({ model: "m", max_tokens: 10 });
