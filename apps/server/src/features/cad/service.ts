@@ -374,7 +374,6 @@ async function executeCadRequest(
     env: {
       KFW_CAD_REQUEST: staged.requestPath,
       KFW_CAD_RESULT: staged.resultPath,
-      HOME: staged.workingDirectory,
       FREECAD_USER_HOME: staged.workingDirectory,
       FREECAD_USER_DATA: staged.workingDirectory,
       FREECAD_USER_TEMP: staged.workingDirectory,

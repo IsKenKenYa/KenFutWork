@@ -309,6 +309,7 @@ describe("官方 CAD Task 执行", () => {
       FREECAD_USER_DATA: request?.cwd,
       FREECAD_USER_TEMP: request?.cwd,
     });
+    expect(request?.env).not.toHaveProperty("HOME");
     const output = result.structuredContent.outputPath;
     expect(typeof output).toBe("string");
     expect(await readFile(String(output), "utf8")).toBe("fixture artifact");

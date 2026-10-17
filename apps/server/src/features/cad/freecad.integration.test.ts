@@ -2,9 +2,10 @@ import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
+import type { ToolExecutionContext } from "../../kernel/types.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
 import { detectFreeCadRuntime } from "./runtime.js";
-import { createCadService } from "./service.js";
+import { type CadService, createCadService } from "./service.js";
 import { cadTestLimits, createCadTestContext } from "./test-fixtures.js";
 import { cadResultSchema } from "./tool-contracts.js";
 
@@ -291,4 +292,185 @@ it.skipIf(
       throw new AggregateError(failures, "CAD 验收和资源清理均失败。");
   },
   120_000,
+);
+
+const SKETCH_ONLY_SOURCE = [
+  "import Sketcher",
+  "body = doc.addObject('PartDesign::Body', 'Body')",
+  "sketch = body.newObject('Sketcher::SketchObject', 'Sketch')",
+  "points = [(0,0,0), (10,0,0), (10,20,0), (0,20,0)]",
+  "for start, end in zip(points, points[1:] + points[:1]):",
+  "    sketch.addGeometry(Part.LineSegment(App.Vector(*start), App.Vector(*end)), False)",
+  "body.Tip = None",
+  "doc.recompute()",
+  "result = {'body_tip': body.Tip.Name if body.Tip else None, 'sketch_valid': sketch.Shape.isValid(), 'geometry_count': sketch.GeometryCount}",
+].join("\n");
+
+async function withNativeCad(
+  run: (fixture: {
+    service: CadService;
+    context: ToolExecutionContext;
+  }) => Promise<void>,
+) {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "kfw-cad-2d-")));
+  const sandbox = createProcessSandbox({
+    captureRoot: join(root, "capture"),
+    network: { allowedDomains: [], deniedDomains: [] },
+  });
+  const failures: unknown[] = [];
+  try {
+    const runtime = await detectFreeCadRuntime();
+    if (!runtime) throw new Error("显式二维原生验收要求本机已安装 FreeCAD");
+    const { context } = await createCadTestContext(root);
+    const service = createCadService({
+      sandbox,
+      gate: async () => ({ ok: true }),
+      detectRuntime: async () => runtime,
+      resolveLimits: async () => ({ limits: cadTestLimits, timeoutMs: 30_000 }),
+    });
+    await run({ service, context });
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    try {
+      await sandbox.close("cad_2d_integration_cleanup");
+      if (failures.length === 0)
+        await rm(root, { recursive: true, force: true });
+      else console.error(`CAD 二维验收诊断目录：${root}`);
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1)
+    throw new AggregateError(failures, "CAD 二维验收和资源清理均失败。");
+}
+
+it.skipIf(
+  process.env.KENFUTWORK_CAD_INTEGRATION !== "1" ||
+    process.platform !== "darwin",
+)(
+  "二维草图Body无Tip允许空聚合，仍保存有效草图并默认导出SVG/DXF和预览",
+  async () =>
+    withNativeCad(async ({ service, context }) => {
+      const created = await service.execute(
+        {
+          action: "python",
+          input: { source: SKETCH_ONLY_SOURCE, requireSolids: false },
+        },
+        context,
+      );
+      expect(created.isError, JSON.stringify(created)).not.toBe(true);
+      const result = cadResultSchema.parse(created.structuredContent);
+      expect(result.data).toEqual({
+        body_tip: null,
+        sketch_valid: true,
+        geometry_count: 4,
+      });
+      expect(
+        result.document?.objects.find((obj) => obj.name === "Body"),
+      ).toMatchObject({
+        tip: null,
+        shape: { null: true, valid: false, solids: 0, bounds: null },
+      });
+      expect(
+        result.document?.objects.find((obj) => obj.name === "Sketch"),
+      ).toMatchObject({
+        shape: { null: false, valid: true, solids: 0, edges: 4 },
+      });
+      const documentPath = String(result.outputPath);
+      expect((await readFile(documentPath)).length).toBeGreaterThan(0);
+      const described = await service.execute(
+        { action: "describe", input: { documentPath } },
+        { ...context, toolCallId: "describe-2d" },
+      );
+      expect(described.isError, JSON.stringify(described)).not.toBe(true);
+      const restored = cadResultSchema.parse(described.structuredContent);
+      expect(
+        restored.document?.objects.find((obj) => obj.name === "Body")?.shape
+          ?.bounds,
+      ).toBe(null);
+      for (const format of ["svg", "dxf"] as const) {
+        const exported = await service.execute(
+          { action: "export", input: { documentPath, format, view: "top" } },
+          { ...context, toolCallId: `2d-${format}` },
+        );
+        expect(exported.isError, JSON.stringify(exported)).not.toBe(true);
+        expect(
+          cadResultSchema.parse(exported.structuredContent).preview,
+        ).toMatchObject({
+          objectNames: ["Sketch"],
+          projectedBounds: [0, 0, 10, 20],
+        });
+        const file = await readFile(
+          String(exported.structuredContent.outputPath),
+          "utf8",
+        );
+        expect(file).toContain(
+          format === "svg"
+            ? 'xmlns="http://www.w3.org/2000/svg"'
+            : "\nENTITIES\n",
+        );
+      }
+      const preview = await service.execute(
+        { action: "preview", input: { documentPath, view: "top" } },
+        { ...context, toolCallId: "2d-preview" },
+      );
+      expect(preview.isError, JSON.stringify(preview)).not.toBe(true);
+      expect(preview.structuredContent.preview).toMatchObject({
+        objectNames: ["Sketch"],
+        projectedBounds: [0, 0, 10, 20],
+      });
+      expect(preview.modelContent?.some((item) => item.type === "image")).toBe(
+        true,
+      );
+      expect(
+        (await readFile(String(preview.structuredContent.outputPath)))
+          .subarray(1, 4)
+          .toString(),
+      ).toBe("PNG");
+    }),
+  60_000,
+);
+
+it.skipIf(
+  process.env.KENFUTWORK_CAD_INTEGRATION !== "1" ||
+    process.platform !== "darwin",
+)(
+  "二维聚合豁免不能放宽requireSolids、普通空Feature、坏Pad或缺Tip实体Body",
+  async () =>
+    withNativeCad(async ({ service, context }) => {
+      const solids = await service.execute(
+        {
+          action: "python",
+          input: { source: SKETCH_ONLY_SOURCE, requireSolids: true },
+        },
+        { ...context, toolCallId: "2d-needs-solid" },
+      );
+      expect(solids).toMatchObject({
+        isError: true,
+        structuredContent: {
+          error: { code: "execution_failed", message: "工程没有有效实体" },
+        },
+      });
+      const invalidSources = [
+        "doc.addObject('Part::Feature', 'EmptyFeature')",
+        "body = doc.addObject('PartDesign::Body', 'EmptyBody')",
+        `${SKETCH_ONLY_SOURCE}\npad = body.newObject('PartDesign::Pad', 'BadPad')\npad.Length = 5\nbody.Tip = pad`,
+        `${SKETCH_ONLY_SOURCE}\nfeature = body.newObject('PartDesign::Feature', 'SolidFeature')\nfeature.Shape = Part.makeBox(10,20,30)\nbody.Tip = None`,
+        `${SKETCH_ONLY_SOURCE}\nempty = body.newObject('Sketcher::SketchObject', 'EmptySketch')`,
+      ];
+      for (const [index, source] of invalidSources.entries()) {
+        const failed = await service.execute(
+          { action: "python", input: { source, requireSolids: false } },
+          { ...context, toolCallId: `2d-invalid-${index}` },
+        );
+        expect(failed, source).toMatchObject({
+          isError: true,
+          structuredContent: { error: { code: "execution_failed" } },
+        });
+        expect(failed.structuredContent).not.toHaveProperty("outputPath");
+      }
+    }),
+  60_000,
 );

@@ -93,7 +93,7 @@ export function createCadPlugin(options?: {
           scope: "always",
           async resolve() {
             if (!(await gate()).ok) return null;
-            return "CAD 插件：用 cad_status 发现 FreeCAD，用按需 CAD 工具操作独立工程。优先保留可编辑 FCStd，再导出交换文件；不操作用户当前 GUI 文档。复杂建模用完整 cad_run_python source，受当前 Task 执行审批及 OS 沙箱约束。PartDesign 脚本显式设置 Body.Tip 为最终特征，再检查目标对象与数值。基础模块存在不等于任务几何正确；失败后检查错误，不用旧 Shape 或残留文件冒充成功。用 cad_preview 检查真实几何投影的线框 PNG，或导出 SVG/DXF；该预览不是 GUI 着色渲染。";
+            return "CAD 插件：用 cad_status 发现 FreeCAD，用按需 CAD 工具操作独立工程。documentPath仅读已有工程，新建省略；outputPath是由工具发布的新文件，中间验证用output_directory，最终doc交给工具保存。优先保留可编辑 FCStd，再导出交换文件；不操作当前 GUI 文档。Python受Task审批与OS沙箱约束。3D任务设置requireSolids:true、Body.Tip为最终特征并检查数值；2D检查Sketch自身几何，纯草图Body可无Tip/空Shape。失败后检查错误，不用旧Shape或残留文件冒充成功。cad_preview提供真实线框PNG，SVG/DXF保留交换尺寸；预览不是GUI着色渲染。";
           },
         }),
       );

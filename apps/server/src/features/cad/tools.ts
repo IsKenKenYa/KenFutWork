@@ -98,7 +98,7 @@ export function createCadTools(service: CadService): ToolDefinition[] {
     definition({
       name: "cad_run_python",
       description:
-        "在 Task 的真实 OS 沙箱中执行完整 FreeCAD Python source（按当前权限审批），覆盖草图约束、PartDesign、布尔、阵列、TechDraw 和其它已安装 Python 模块。预置 App/FreeCAD、Part、doc、output_directory，可 import 其它模块。可选设置 result 为普通 JSON 值，原样放入回执data（不自动去敏）；stdout仍为私有日志。大结果/媒体写Task文件再返回路径，完整回执受当前进程输出设置约束。末尾保留有效 doc；显式设 body.Tip=最终特征并检查预期尺寸/体积。重算失败或无效几何不会报告成功；输出为新 FCStd。requireSolids 可要求实体，expectedVolume 做数值验收。任意Python与文件/网络效果都受当前Task权限约束，不是纯建模命令。后台不可使用Gui视图；用cad_preview生成真实几何线框预览。",
+        "在 Task 的真实 OS 沙箱中执行完整 FreeCAD Python source（按当前权限审批），覆盖草图约束、PartDesign、布尔、阵列、TechDraw 和其它已安装 Python 模块。预置 App/FreeCAD、Part、doc、output_directory，可 import 其它模块。documentPath仅读已有工程，新建省略；outputPath必须是新文件，由工具最终发布。中间重开验证用output_directory暂存，最终doc交给工具保存。可选result普通JSON原样放回执data，不自动去敏；stdout私有，大结果/媒体写Task文件返回路径。3D任务设置requireSolids:true，显式body.Tip=最终特征并检查尺寸/体积；2D检查Sketch自身几何，纯草图Body可无Tip/空Shape。无效几何或重算失败不报告成功。任意Python效果受Task权限约束。后台无Gui视图，用cad_preview检查线框。",
       schema: cadPythonInputSchema,
       approvalReviewKind: "cad-python",
       execute: (input, context) =>

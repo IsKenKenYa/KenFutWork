@@ -196,6 +196,16 @@ cad_probe_config_dir="$(mktemp -d)"
 
 串行全包测试 **19 任务成功**（server 3294／shared 170／Web 1065 通过，默认跳过另计）、全类型 **26 任务**、workspace **38 项**及 lint 零错误通过。真实模型整轮用户任务另行验收，不把本节服务层证据扩大成 Agent 或 GUI 全面验收。AutoCAD、Blender 均无本机验收。
 
+### 9.2 二维聚合边界与真实模型任务
+
+安装版对应的官方 `1.1.4` 源码将 Body 的 Tip 初值设为空；仅有 Sketch／Datum 不产生实体特征，无 Tip 的 Body 将 Shape 设为空后正常返回。因此不能用三维实体聚合规则拒绝合法纯草图工程。[BodyBase.cpp](https://github.com/FreeCAD/FreeCAD/blob/1.1.4/src/Mod/Part/App/BodyBase.cpp#L37)、[Body.h](https://github.com/FreeCAD/FreeCAD/blob/1.1.4/src/Mod/PartDesign/App/Body.h#L97)、[Body.cpp](https://github.com/FreeCAD/FreeCAD/blob/1.1.4/src/Mod/PartDesign/App/Body.cpp#L397)
+
+真实 Task 沙箱回归新增两项：10×20 mm 纯草图 Body 保存／重开、默认选择 Sketch 的 SVG／DXF 及 PNG 通过；要求实体、普通空 Feature、空 Body、坏 Pad、缺 Tip 的实体 Body、额外空草图均拒绝。合法空聚合返回 `bounds:null`。删除通用 HOME 重定向，继续使用 FreeCAD 官方专用配置／缓存／临时目录变量；本轮 CAD 三文件 31 项（含三项原生场景）通过。
+
+已有 GLM 5.3 Flash 在 Code build 权限下，一条输入、一个 Run 完成原生参数化圆柱、STEP 和等轴线框 PNG。过程先误把不存在的输出当输入，继而误读 Python 元组；Agent 根据失败回执自行修正、重新描述并验证，没有由验收脚本补写交付文件或代答审批。独立回读确认 Tip=Pad，原生与 STEP 体积均为 1570.7963267948965 mm³，STEP 为 20×20×5 mm；改直径至 30 mm 后体积 3534.291735288518 mm³，源文件未改。该证据是后台圆柱交付闭环，不能扩大为全部工作台或当前 GUI 文档控制验收。
+
+原生应用控制已能读取、截图、操作菜单并执行官方 Python。GUI 重开上述交付后，Body／Pad 的 Visibility 为 false；只改变内存中的显示状态即可看到正确圆柱，未保存覆盖原工程。这个可见性缺口单独处理，不能以后台几何或 PNG 通过冒充“重开即显示”通过。
+
 ## 10. 来源地图与证据限制
 
 | 来源组 | 用途 | 强项与限制 |

@@ -12,6 +12,13 @@ def has_shape_property(obj):
     return "Shape" in obj.PropertiesList
 
 
+def is_sketch_only_body(obj):
+    if not obj.isDerivedFrom("PartDesign::Body") or obj.Tip is not None:
+        return False
+    features = [member for member in obj.Group if has_shape_property(member)]
+    return bool(features) and all(member.isDerivedFrom("Sketcher::SketchObject") for member in features)
+
+
 def describe(doc):
     objects = []
     for obj in doc.Objects:
@@ -26,16 +33,17 @@ def describe(doc):
             item["tip"] = obj.Tip.Name if obj.Tip else None
         if has_shape_property(obj):
             shape = obj.Shape
-            bounds = shape.BoundBox
+            empty = shape.isNull()
+            bounds = None if empty else shape.BoundBox
             item["shape"] = {
-                "null": shape.isNull(),
-                "valid": not shape.isNull() and shape.isValid(),
-                "solids": len(shape.Solids),
-                "volume": shape.Volume,
-                "area": shape.Area,
-                "faces": len(shape.Faces),
-                "edges": len(shape.Edges),
-                "bounds": [bounds.XMin, bounds.YMin, bounds.ZMin, bounds.XMax, bounds.YMax, bounds.ZMax],
+                "null": empty,
+                "valid": not empty and shape.isValid(),
+                "solids": 0 if empty else len(shape.Solids),
+                "volume": 0 if empty else shape.Volume,
+                "area": 0 if empty else shape.Area,
+                "faces": 0 if empty else len(shape.Faces),
+                "edges": 0 if empty else len(shape.Edges),
+                "bounds": None if empty else [bounds.XMin, bounds.YMin, bounds.ZMin, bounds.XMax, bounds.YMax, bounds.ZMax],
             }
         objects.append(item)
     return {"name": doc.Name, "label": doc.Label, "objects": objects}
@@ -50,6 +58,9 @@ def validate(doc, require_solids=False, expected_volume=None):
         if not has_shape_property(obj):
             continue
         shape = obj.Shape
+        if shape.isNull() and is_sketch_only_body(obj):
+            # 纯二维草图不产生 Body 实体聚合；Sketch 自身仍在本循环逐项校验。
+            continue
         if shape.isNull() or not shape.isValid():
             raise ValueError("对象几何为空或无效: " + obj.Name)
         solids += len(shape.Solids)

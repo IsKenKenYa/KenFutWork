@@ -3,15 +3,26 @@ import { z } from "zod";
 const path = z.string().min(1);
 const positive = z.number().finite().positive();
 const destination = {
-  documentPath: path.optional(),
-  outputPath: path.optional(),
+  documentPath: path
+    .describe("只读入已有的 FCStd 工程；新建工程时省略。")
+    .optional(),
+  outputPath: path
+    .describe(
+      "必须是新文件路径，由工具最终发布；不要在 source 中先 saveAs 到此目标。",
+    )
+    .optional(),
 };
 const cadViewSchema = z.enum(["isometric", "top", "front", "right"]);
 
 export const cadPythonInputSchema = z
   .object({
     ...destination,
-    source: z.string().min(1),
+    source: z
+      .string()
+      .min(1)
+      .describe(
+        "FreeCAD Python。用 output_directory 暂存中间文件或做重开验证，最终保留 doc 交给工具保存；不要先写 outputPath。3D任务设置 requireSolids:true。",
+      ),
     requireSolids: z.boolean().optional(),
     expectedVolume: z
       .object({
@@ -66,20 +77,22 @@ export const cadPrimitiveInputSchema = z.discriminatedUnion("kind", [
 
 export const cadExportInputSchema = z
   .object({
-    documentPath: path,
+    documentPath: path.describe("只读入已有的 FCStd 工程。"),
     format: z.enum(["step", "stl", "obj", "brep", "svg", "dxf"]),
     objectNames: z.array(z.string().min(1)).min(1).optional(),
     view: cadViewSchema.optional(),
-    outputPath: path.optional(),
+    outputPath: destination.outputPath,
   })
   .strict();
-export const cadDescribeInputSchema = z.object({ documentPath: path }).strict();
+export const cadDescribeInputSchema = z
+  .object({ documentPath: path.describe("只读入已有的 FCStd 工程。") })
+  .strict();
 export const cadPreviewInputSchema = z
   .object({
-    documentPath: path,
+    documentPath: path.describe("只读入已有的 FCStd 工程。"),
     objectNames: z.array(z.string().min(1)).min(1).optional(),
     view: cadViewSchema.optional(),
-    outputPath: path.optional(),
+    outputPath: destination.outputPath,
   })
   .strict();
 export const cadStatusSchema = z.object({}).strict();
@@ -99,7 +112,7 @@ const shapeSchema = z.object({
   area: z.number().finite(),
   faces: z.number().int().nonnegative(),
   edges: z.number().int().nonnegative(),
-  bounds: z.array(z.number().finite()).length(6),
+  bounds: z.array(z.number().finite()).length(6).nullable(),
 });
 export const cadResultSchema = z.object({
   protocol: z.literal("kfw-cad/1"),
