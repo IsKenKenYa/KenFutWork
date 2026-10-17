@@ -8,6 +8,7 @@ import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
 import { createBlobPlugin } from "../features/blob/plugin.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
 import { createBrowserPlugin } from "../features/browser/plugin.js";
+import { createCadPlugin } from "../features/cad/plugin.js";
 import { createCanvasAssetLocationsPlugin } from "../features/canvas/asset-locations-plugin.js";
 import { createCanvasPublicationRelayPlugin } from "../features/canvas/generation-publication-relay.js";
 import {
@@ -223,6 +224,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createCodeUiAgentEventsPlugin(),
     // Computer Use（CU 插件重活层）：工具面按安装态门控，非 darwin 显式 unavailable
     createComputerUsePlugin(),
+    createCadPlugin(),
     createMcpPlugin(),
     createSearchPlugin(),
     createSystemPlugin(),

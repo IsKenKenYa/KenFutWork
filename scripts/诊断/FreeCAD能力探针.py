@@ -9,6 +9,9 @@ import FreeCAD as App
 import Part
 import Sketcher
 
+if App.GuiUp:
+    raise RuntimeError('请使用独立 freecadcmd 运行探针，不能在已有 GUI 会话运行。')
+initial_documents = set(App.listDocuments())
 root = Path(tempfile.mkdtemp(prefix='kfw-cad-probe-'))
 records = []
 
@@ -170,6 +173,7 @@ def techdraw():
 
 probe('techdraw-projection-headless-event-loop',techdraw)
 for name in list(App.listDocuments()):
-    App.closeDocument(name)
+    if name not in initial_documents:
+        App.closeDocument(name)
 print('CAD 探针结果目录:', root)
 print(json.dumps({'passed': sum(case['ok'] for case in records), 'total': len(records)}, ensure_ascii=False))

@@ -1,0 +1,20 @@
+{
+  "name": "kenfutwork-cad",
+  "version": "0.1.0",
+  "description": "让 Agent 在当前 Task 权限内控制已安装的 FreeCAD，创建和修改独立参数化工程，并导出交换文件。",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "GPL-3.0",
+  "kenfutwork": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "title": "CAD",
+    "category": "Agent 能力"
+  }
+}

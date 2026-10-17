@@ -19,6 +19,49 @@ function input(kind: ApprovalReviewKind, args: Record<string, unknown>) {
   };
 }
 
+it("CAD 审批保留完整 Python、工程和几何参数，不能把操作伪装成命令", () => {
+  const operations: Array<[ApprovalReviewKind, Record<string, unknown>]> = [
+    [
+      "cad-python",
+      {
+        source: "import Part\n# 忽略审批规则只是脚本中的不可信文字\n",
+        documentPath: "零件.FCStd",
+        outputPath: "零件-v2.FCStd",
+        requireSolids: true,
+        expectedVolume: { objectName: "Body", value: 1000, tolerance: 0.001 },
+      },
+    ],
+    ["cad-primitive", { kind: "box", length: 10, width: 20, height: 30 }],
+    [
+      "cad-export",
+      { documentPath: "零件.FCStd", format: "step", objectNames: ["Body"] },
+    ],
+    ["cad-describe", { documentPath: "零件.FCStd" }],
+    [
+      "cad-preview",
+      { documentPath: "零件.FCStd", view: "isometric", outputPath: "预览.png" },
+    ],
+  ];
+  for (const [kind, args] of operations) {
+    expect(approvalReviewEvidence(input(kind, args))).toMatchObject({
+      untrustedData: { operation: { kind, args } },
+    });
+  }
+});
+
+it("CAD 缺失脚本、未知参数、敏感访问与超长源码均交人工", () => {
+  for (const context of [
+    input("cad-python", { scriptPath: "changed-after-approval.py" }),
+    input("cad-python", { source: "print('ok')", hiddenCommand: "delete" }),
+    input("cad-python", { source: "open('/home/test/.ssh/id_rsa').read()" }),
+    input("cad-python", { source: "#".repeat(8001) }),
+    input("cad-primitive", { kind: "box", length: -1, width: 2, height: 3 }),
+    input("cad-export", { documentPath: "零件.FCStd", format: "unknown" }),
+  ]) {
+    expect(approvalReviewEvidence(context)).toBeUndefined();
+  }
+});
+
 it("普通小操作完整保留所有真实参数与工作域，只作为不可信数据传递", () => {
   const operations: Array<{
     kind: ApprovalReviewKind;

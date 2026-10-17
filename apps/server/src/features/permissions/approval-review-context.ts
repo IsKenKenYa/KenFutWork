@@ -1,8 +1,20 @@
 import { z } from "zod";
+import {
+  cadDescribeInputSchema,
+  cadExportInputSchema,
+  cadPreviewInputSchema,
+  cadPrimitiveInputSchema,
+  cadPythonInputSchema,
+} from "../cad/tool-contracts.js";
 
-export type ApprovalReviewKind = "write" | "edit" | "patch" | "command";
+export type ApprovalReviewKind = keyof typeof operationSchemas;
 
 const operationSchemas = {
+  "cad-python": cadPythonInputSchema,
+  "cad-primitive": cadPrimitiveInputSchema,
+  "cad-export": cadExportInputSchema,
+  "cad-describe": cadDescribeInputSchema,
+  "cad-preview": cadPreviewInputSchema,
   write: z
     .object({
       file_path: z.string().min(1),
@@ -35,7 +47,17 @@ const operationSchemas = {
 
 const inputSchema = z
   .object({
-    kind: z.enum(["write", "edit", "patch", "command"]),
+    kind: z.enum([
+      "write",
+      "edit",
+      "patch",
+      "command",
+      "cad-python",
+      "cad-primitive",
+      "cad-export",
+      "cad-describe",
+      "cad-preview",
+    ]),
     args: z.record(z.string(), z.unknown()),
     userRequest: z.string(),
     rootDirectory: z.string().min(1),

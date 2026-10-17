@@ -181,7 +181,20 @@ cad_probe_config_dir="$(mktemp -d)"
 
 探针初轮也抓到了自身两项错误并修正：原生新建特征不会自动保证 Body.Tip 指向它，漏设时 STEP 导出的是少五孔的旧状态；Pad.Profile 在当前版本返回 LinkSub 元组，不能当直接对象。两者均通过保存重开和 STEP 回读才发现，不能把初轮错误当 FreeCAD 后端故障。
 
-KFW 插件接线与完整用户任务仍在实施／验收中。首轮真实插件已生成有效工程，但双流消费接线缺失导致 helper 完成回报失败；修复后须按原入口复验，不以外围 CLI 成功替代。AutoCAD、Blender 均无本机验收。后续追加结果写明版本、入口、样件、断言和失败项；代码单测、应用内建测试、原生 GUI 与真实 Agent 任务分别登记。
+### 9.1 KFW 后台插件验收
+
+官方 bundle、共享按需工具及可信服务现已接线：`cad_status`、`cad_describe_document`、`cad_create_primitive`、`cad_run_python`、`cad_export`、`cad_preview`。源码层工具与预览共 **28 项**；CAD 审批复用严格入参和完整脚本证据，超预算／敏感／不完整证据保留人工审批。Python 可选 `result` 返回普通 JSON；日志不当作结果。
+
+显式运行 `KENFUTWORK_CAD_INTEGRATION=1 pnpm --filter @kenfutwork/server exec vitest run src/features/cad/freecad.integration.test.ts` 的完整场景已通过：真实 Task 沙箱内草图／约束／Pad，尺寸修改后原文件不变，STEP、PNG、SVG、DXF、BREP；嵌套容器与工程图引用不妨碍默认选对象，投影与 BREP 保留全局坐标，SVG／DXF 重新导入保持 10×20 mm。Python 自定义结果也由真实进程回读。普通测试仍默认跳过真实应用场景。
+
+实施中确实发现并修复的边界：
+
+- stdout／stderr 必须在退出等待前订阅并 ACK；原接线缺失导致 helper 回报失败，不能用已生成文件掩盖。
+- FreeCAD 文档临时目录依赖专用缓存目录，单设 TMPDIR 不够。使用官方 `FREECAD_USER_HOME/DATA/TEMP`，验证数据／缓存／临时／文档 transient 目录均在本次 Task 执行树；不允许退化写 `/`。依据为 [ApplicationDirectories.cpp](https://github.com/FreeCAD/FreeCAD/blob/main/src/App/ApplicationDirectories.cpp) 与 [Document.cpp](https://github.com/FreeCAD/FreeCAD/blob/main/src/App/Document.cpp)。
+- `hasattr(obj,"Shape")` 会包含容器与无限基准几何。默认选择只取真实 Shape 属性，不用全体 InList 判断几何替代；父容器 Placement 依官方组合式应用到副本。
+- SVG 交换文件保留毫米尺寸；PNG 在内存副本中设置与真实 viewBox 等比的像素视口，避免拉伸、非零坐标裁空及按自然 DPI 解码大位图。文件存在、解码成功仍不足以证明画面非空。
+
+串行全包测试 **19 任务成功**（server 3294／shared 170／Web 1065 通过，默认跳过另计）、全类型 **26 任务**、workspace **38 项**及 lint 零错误通过。真实模型整轮用户任务另行验收，不把本节服务层证据扩大成 Agent 或 GUI 全面验收。AutoCAD、Blender 均无本机验收。
 
 ## 10. 来源地图与证据限制
 
