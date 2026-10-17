@@ -131,6 +131,11 @@ test("shell 不能绕过附加目录的只读授权，扩权保留后台进程�
     scope,
     agentId: "worker",
     invocationId: "readonly-proof",
+    // 这条用例证的是「shell 不能绕过附加目录的只读授权」，与默认外壳落哪个方言无关；
+    // 载荷按 cmd 的引号形态书写，这里显式钉住 cmd，避免跟着 `resolveWindowsShell()` 漂移。
+    ...(process.platform === "win32"
+      ? { shell: "C:\\Windows\\System32\\cmd.exe" }
+      : {}),
     command: `${JSON.stringify(process.execPath)} -e "eval(Buffer.from('${encoded}','base64').toString())"`,
     background: true,
     timeoutMs: null,

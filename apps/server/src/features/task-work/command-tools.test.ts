@@ -15,6 +15,10 @@ import {
   type PostgresQueryRunner,
 } from "../persistence/providers/postgres.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
+import {
+  nodeCommand,
+  slashPath,
+} from "../process-sandbox/test-node-command.js";
 import { createSettingsRepository } from "../settings/repository.js";
 import { createSettingsService } from "../settings/settings-service.js";
 import { createTaskCommandTools } from "./command-tools.js";
@@ -46,13 +50,21 @@ const outputResult = z.object({
     output: z.object({ data: z.string() }).nullable().optional(),
   }),
 });
-const quote = (text: string) => `'${text.replace(/'/g, "'\\''")}'`;
 
 async function fixture(preset: "code" | "design" = "code") {
   const directory = await realpath(
     await mkdtemp(join(tmpdir(), "command-ownership-")),
   );
-  cleanups.push(() => rm(directory, { recursive: true, force: true }));
+  // Windows 上子进程退出后目录会短暂处于删除挂起态，立刻 rmdir 报 EBUSY（与
+  // windows-native.integration.test.ts 同一现象）；POSIX 侧这两个参数是 no-op。
+  cleanups.push(() =>
+    rm(directory, {
+      recursive: true,
+      force: true,
+      maxRetries: 20,
+      retryDelay: 250,
+    }),
+  );
   const root = join(directory, "project");
   await mkdir(root);
   const actor = {
@@ -157,7 +169,7 @@ async function fixture(preset: "code" | "design" = "code") {
     const work = bashResult.parse(
       await tool("Bash").execute(
         {
-          command: `${quote(process.execPath)} -e ${quote(program)}`,
+          command: nodeCommand(program),
           run_in_background: true,
         },
         execution(handle, call),
@@ -323,11 +335,12 @@ it(
     const state = await fixture();
     const exec = state.execution(state.main, "plan-bash-writes");
     const marker = join(state.root, "plan-writes-forreal.txt");
-    const program = `require('node:fs').writeFileSync(${JSON.stringify(marker)},'written')`;
+    // 正斜杠 + 单引号：整段程序里没有双引号，PowerShell 的 -Command 才不会把路径引号吞掉。
+    const program = `require('node:fs').writeFileSync('${slashPath(marker)}','written')`;
     const work = bashResult.parse(
       await state.tool("Bash").execute(
         {
-          command: `${quote(process.execPath)} -e ${quote(program)}`,
+          command: nodeCommand(program),
           run_in_background: true,
         },
         exec,
