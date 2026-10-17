@@ -47,6 +47,7 @@ import {
   createModelProvidersPlugin,
 } from "../features/model-providers/plugin.js";
 import { createOpenDesignHostPlugin } from "../features/open-design/plugin.js";
+import { createApprovalReviewPlugin } from "../features/permissions/approval-review-plugin.js";
 import { createPermissionsPlugin } from "../features/permissions/plugin.js";
 import { persistencePlugin } from "../features/persistence/plugin.js";
 import {
@@ -216,6 +217,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createSkillsPlugin(),
     createUsagePlugin(),
     createPermissionsPlugin({ events: deps.events }),
+    createApprovalReviewPlugin(),
     createAgentModesPlugin(),
     createCodeToolsPlugin(),
     createCodeUiAgentEventsPlugin(),

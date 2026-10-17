@@ -68,7 +68,10 @@ import {
   type CodeUiProviderSettingsRpc,
   createCodeUiProviderSettingsRpc,
 } from "../model-providers/provider-settings-rpc.js";
-import type { ApprovalEvent } from "../permissions/approval-types.js";
+import type {
+  ApprovalEvent,
+  ApprovalHostContext,
+} from "../permissions/approval-types.js";
 import type { PermissionService } from "../permissions/permission-service.js";
 import type { PluginRegistryService } from "../plugins/plugin-registry-service.js";
 import type { ProcessSandbox } from "../process-sandbox/types.js";
@@ -80,6 +83,7 @@ import type {
   TaskWorkManager,
   TaskWorkRecord,
 } from "../task-work/types.js";
+import { readCodeApprovalContext } from "./approval-context.js";
 import { createCodeApprovedPlanReader } from "./approved-plan-reader.js";
 import { createCodeApprovedPlanStore } from "./approved-plan-store.js";
 import { createCodeAttachmentHost } from "./attachments/host.js";
@@ -843,6 +847,12 @@ export class CodeUiService {
 
   async onApprovalEvent(event: ApprovalEvent): Promise<void> {
     return this.onBoundInteractionEvent(event);
+  }
+
+  async readApprovalContext(
+    context: ToolExecutionContext,
+  ): Promise<ApprovalHostContext | null> {
+    return readCodeApprovalContext(this.deps.repository, context);
   }
 
   async onUserInputEvent(event: UserInputEvent): Promise<void> {

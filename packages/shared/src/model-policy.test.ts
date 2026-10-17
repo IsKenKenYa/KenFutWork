@@ -1,11 +1,16 @@
 import { expect, it } from "vitest";
 import { instanceSettingsUpdateRequestSchema } from "./http.js";
+import { modelDefaultsSchema } from "./model-policy.js";
 
 it("实例模型默认无损承载聊天引用与图像手动候选，视频可独立自动", () => {
   const defaults = {
     chat: {
       providerId: "c0a03eb2-d58c-4637-9fda-c796230a751a",
       modelId: "聊天：中文/模型",
+    },
+    approval: {
+      providerId: "c0a03eb2-d58c-4637-9fda-c796230a751a",
+      modelId: "独立审批/模型",
     },
     image: {
       mode: "manual",
@@ -32,6 +37,7 @@ it("手动候选拒绝重复模型身份，同名模型可来自不同供应商"
   const request = (models: unknown[]) => ({
     modelDefaults: {
       chat: null,
+      approval: null,
       image: { mode: "manual", models },
       video: { mode: "auto" },
     },
@@ -68,6 +74,7 @@ it("UUID 大小写表示同一供应商，规范化后不能绕过候选去重",
   };
   const defaults = {
     chat: reference,
+    approval: null,
     image: { mode: "auto" },
     video: { mode: "auto" },
   };
@@ -94,6 +101,47 @@ it("UUID 大小写表示同一供应商，规范化后不能绕过候选去重",
           ],
         },
       },
+    }).success,
+  ).toBe(false);
+});
+
+it("旧模型默认未配置审批时规范为空，不继承聊天模型", () => {
+  const chat = {
+    providerId: "c0a03eb2-d58c-4637-9fda-c796230a751a",
+    modelId: "chat",
+  };
+  expect(
+    modelDefaultsSchema.parse({
+      chat,
+      image: { mode: "auto" },
+      video: { mode: "auto" },
+    }),
+  ).toEqual({
+    chat,
+    approval: null,
+    image: { mode: "auto" },
+    video: { mode: "auto" },
+  });
+});
+
+it("审批引用独立规范化且拒绝无效身份", () => {
+  const defaults = {
+    chat: null,
+    approval: {
+      providerId: "C0A03EB2-D58C-4637-9FDA-C796230A751A",
+      modelId: "审批：中文/模型",
+    },
+    image: { mode: "auto" },
+    video: { mode: "auto" },
+  };
+  expect(modelDefaultsSchema.parse(defaults).approval).toEqual({
+    providerId: "c0a03eb2-d58c-4637-9fda-c796230a751a",
+    modelId: "审批：中文/模型",
+  });
+  expect(
+    modelDefaultsSchema.safeParse({
+      ...defaults,
+      approval: { providerId: "不存在", modelId: "" },
     }).success,
   ).toBe(false);
 });

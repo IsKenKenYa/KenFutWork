@@ -199,6 +199,7 @@ export function createTaskCommandTools(
     scope: toolScope,
     exposure: "core",
     access,
+    ...(name === "Bash" ? { approvalReviewKind: "command" as const } : {}),
     description,
     parameters: z.toJSONSchema(schema),
     zodSchema: schema,

@@ -6,12 +6,17 @@ import { createToolLifecycleMiddleware } from "./tool-lifecycle.js";
 export function createCodeUiAgentEventsPlugin(): PluginDefinition {
   return {
     name: "code-ui:agent-events",
-    inject: [],
+    inject: ["codeUi"],
     apply(ctx) {
       const extension: AgentRunExtension = {
         preset: "shared",
         canonicalToolEvents: true,
-        createMiddleware: createToolLifecycleMiddleware,
+        createMiddleware(identity, context) {
+          if (context)
+            context.execution.readApprovalContext = () =>
+              ctx.get("codeUi").readApprovalContext(context.execution);
+          return createToolLifecycleMiddleware(identity, context);
+        },
       };
       return ctx.get("capabilities").register("agent-run-extension", {
         id: "code-ui:canonical-events",

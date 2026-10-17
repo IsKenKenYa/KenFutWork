@@ -12,6 +12,11 @@ export function validateModelDefaults(
       models: defaults.chat ? [defaults.chat] : [],
     },
     {
+      label: "审批",
+      capabilities: ["chat"],
+      models: defaults.approval ? [defaults.approval] : [],
+    },
+    {
       label: "图像",
       capabilities: ["image", "image-edit"],
       models: defaults.image.mode === "manual" ? defaults.image.models : [],
@@ -27,6 +32,7 @@ export function validateModelDefaults(
       const valid = entries.some(
         (entry) =>
           entry.provider.protocol !== "dify-engine" &&
+          entry.model.enabled !== false &&
           entry.provider.instanceId === reference.providerId &&
           entry.id === reference.modelId &&
           selection.capabilities.includes(entry.capability),

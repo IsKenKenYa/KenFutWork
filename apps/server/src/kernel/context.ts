@@ -133,6 +133,7 @@ function registrationSignature(tool: ToolDefinition) {
     access: tool.access,
     planControl: tool.planControl,
     readonlyExecution: tool.readonlyExecution,
+    approvalReviewKind: tool.approvalReviewKind,
     parameters: structuredClone(tool.parameters),
     configurationVersion: tool.configurationVersion,
   };
@@ -555,6 +556,21 @@ export class ToolRegistryImpl implements ToolRegistry {
             ? { planningEpoch: policy.planningEpoch }
             : {}),
           readonlyExecution: tool.readonlyExecution,
+          reviewKind: tool.approvalReviewKind,
+          ...(execCtx.actor &&
+          execCtx.requestModel &&
+          execCtx.readApprovalContext
+            ? {
+                reviewContext: {
+                  actor: execCtx.actor,
+                  readContext: execCtx.readApprovalContext,
+                  scope,
+                  maxCharacters:
+                    execCtx.scopeHandle.backend.limits.codeReadPageCharacters,
+                  requestModel: execCtx.requestModel,
+                },
+              }
+            : {}),
           signal: execCtx.signal,
           ...(execCtx.threadId ? { threadId: execCtx.threadId } : {}),
         };
@@ -599,6 +615,10 @@ export class ToolRegistryImpl implements ToolRegistry {
             tool.name,
             "等待审批期间 Task 授权代际或分支已改变。",
           );
+        const reviewed = await permissions.revalidate(invocation);
+        if (reviewed.decision === "deny")
+          throw new ToolDeniedError(tool.name, reviewed.reason);
+        execCtx.signal?.throwIfAborted();
         revalidateRegistration();
         const claim = permissions.claim({
           ...invocation,

@@ -111,6 +111,7 @@ export interface ServiceMap {
   projects: ProjectService;
   projectDirectoryRelink: ProjectDirectoryRelinkService;
   settings: SettingsService;
+  approvalReview: import("../features/permissions/approval-review-service.js").ApprovalReviewService;
   threads: ThreadService;
   uploads: UploadService;
   /**
@@ -364,6 +365,13 @@ export type ToolExecutionObservation = {
 };
 
 export interface ToolExecutionContext {
+  /** Current authenticated root requirements and budget, supplied by its Task host. */
+  readApprovalContext?:
+    | (() => Promise<
+        | import("../features/permissions/approval-types.js").ApprovalHostContext
+        | null
+      >)
+    | undefined;
   executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
   frozenContributions?: ToolContributionSnapshot | undefined;
   /** Frozen input resource references; filesystem permissions remain in scopeHandle. */
@@ -454,6 +462,10 @@ export interface ToolDefinition {
   planControl?: CodePlanControl | undefined;
   /** 仅可信执行属主签发：只读文件域且网络禁用，不来自模型参数。 */
   readonlyExecution?: boolean | undefined;
+  /** Enables a complete allowlisted approval projection; external tools do not mint it. */
+  approvalReviewKind?:
+    | import("../features/permissions/approval-review-context.js").ApprovalReviewKind
+    | undefined;
   parameters: Record<string, unknown>;
   /** 仅用于公开事件/显示/日志；执行与审批仍使用原始参数。 */
   projectArguments?:

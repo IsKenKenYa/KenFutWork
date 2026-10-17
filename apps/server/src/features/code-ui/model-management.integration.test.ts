@@ -193,6 +193,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         const providerId = created.body.id;
         const defaults = {
           chat: null,
+          approval: null,
           image: { mode: "manual", models: [{ providerId, modelId: "image" }] },
           video: { mode: "auto" },
         };

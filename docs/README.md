@@ -44,6 +44,7 @@ graph LR
 | `调研/Code与Design共享Harness对标核验.md` | Codex、ZCode、Claude Code、DSH 与 TapNow、Lovart、LibTV 的一手行为依据及 Excalidraw 同步边界 | **调研**：2026-10-16 对标验收映射；待 grilling 问题在文内登记，不新增架构决策 |
 | `调研/本地媒体写入限制与同类工具核验.md` | 本地图片生成保存、单次上传/下载、真实磁盘空间与 Agent 补丁预算的区别；Cherry Studio、ComfyUI、Jaaz、TapNow、Lovart 一手核验 | **调研**：2026-10-17 固定源码与官方文档快照；不以其它类型上限解释媒体保存错误 |
 | `调研/Toonflow本地画布与媒体落盘源码分析.md` | Toonflow 本地项目、媒体原片落盘、画布引用、100 MiB 下载边界、任务恢复与并发保存源码链 | **调研**：2026-10-17 固定 d2e94aca；只读参考，保留本项目 Task 授权、CAS 与代际边界 |
+| `调研/Code权限与模型审批源码对照.md` | ZCode、Kimi、DSH、Codex 的全权直通、确定性规则、模型审批、工具循环与取消消费边界 | **调研**：固定源码核验，不等同于发布版 GUI 验收；独立 BYOK 审批实施归 Code 工作域规格与日志 |
 | `调研/04-模型Provider调研.md` | 参考项目（cherry-studio / kimi-code / nomifun / dsh / jaaz / jellyfish / futureFlow）的模型 Provider 调研：LLM / IGM（图像生成）/ VGM（视频生成 + 视觉输入）三维度对比与本项目可学习点 | 调研：只作方向参考，落地结论写入《改造计划》§4.8/§4.10 与 《日志》四十六 |
 | `调研/媒体驱动接入协议核验.md` | GRSAI、小北API与APIMart官方协议、驱动接入边界及证据限制 | **调研**：不代表所有模型或真实网关已验收，实施回执见《日志》 |
 | `调研/05-生成通道轮子选型.md` | 生成通道生态尽调结论（已闭环）：AI SDK 生态本地实测（video 三段式 / edits 缝 / bytedance 包 / 反向适配不存在）、models.dev 能力库 vendor（快照 + 刷新脚本，实测 220 providers）、视频直连 poll 5/5 自含、`/v1/videos` 借形状不绑路径、视频词表借 fal 形状、中转 4 探测项、队列维持 PGMQ（否证理由勘误）；含触发器 T1–T3 与实现期确证点 | 调研结论：落地走《日志》台账；生成通道引 AI SDK 包，chat 层边界以 §4.8 为准 |

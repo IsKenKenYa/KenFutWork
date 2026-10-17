@@ -8,6 +8,8 @@ import type {
   ApprovalEvent,
   ApprovalIdentity,
   ApprovalResolution,
+  ApprovalReviewer,
+  ApprovalReviewGrant,
   BoundApprovalRequest,
   CodeApprovalService,
   PermissionInvocation,
@@ -22,6 +24,8 @@ interface ApprovalCall {
   result: PermissionDecision;
   wait: Promise<PermissionDecision>;
   finish: (decision: PermissionDecision) => void;
+  reviewGrant?: ApprovalReviewGrant | undefined;
+  stopReview: () => void;
 }
 
 function identity(input: PermissionInvocation): ApprovalIdentity {
@@ -69,6 +73,12 @@ function signature(input: PermissionInvocation): string {
     planControl: input.planControl,
     readonlyExecution: input.readonlyExecution,
     approvalCeiling: input.approvalCeiling,
+    reviewKind: input.reviewKind,
+    reviewContext: input.reviewContext
+      ? {
+          scope: input.reviewContext.scope,
+        }
+      : undefined,
   });
 }
 
@@ -156,7 +166,9 @@ function createRequest(input: PermissionInvocation): BoundApprovalRequest {
 }
 
 /** Broker for bound, in-process Code calls. No model-visible approval entry. */
-export function createCodeApprovalService(): CodeApprovalService {
+export function createCodeApprovalService(
+  options: { review?: ApprovalReviewer } = {},
+): CodeApprovalService {
   const calls = new Map<string, ApprovalCall>();
   const interactions = new Map<string, ApprovalCall>();
   const automaticClaims = new Set<string>();
@@ -200,6 +212,27 @@ export function createCodeApprovalService(): CodeApprovalService {
   }
 
   const service: CodeApprovalService = {
+    async revalidate(input) {
+      const result = service.peek(input);
+      if (result.decision !== "allow") return result;
+      const call = find(input);
+      const grant = call?.reviewGrant;
+      if (grant) {
+        let current = false;
+        try {
+          current = await grant.validate();
+        } catch {
+          /* fail to the original gate */
+        }
+        if (!current || grant.signal.aborted) {
+          await cancelCall(
+            call,
+            "审批配置或用户要求已改变，旧审查不能执行此操作。",
+          );
+        }
+      }
+      return service.peek(input);
+    },
     async admit(input) {
       if (input.signal?.aborted)
         return deny("此 Run 已停止，审批不能恢复执行。");
@@ -211,6 +244,8 @@ export function createCodeApprovalService(): CodeApprovalService {
       const policy = codePermissionPolicy(input);
       if (policy === "deny")
         return deny("当前 Task 模式或角色不允许此工具效果，审批不能扩权。");
+      if (previous?.reviewGrant?.signal.aborted)
+        return deny("审批配置已改变，请重新确认此操作。");
       if (previous)
         return previous.state === "pending" || previous.state === "resolving"
           ? previous.wait
@@ -218,8 +253,11 @@ export function createCodeApprovalService(): CodeApprovalService {
       if (policy === "allow") return { decision: "allow" };
       let finish!: ApprovalCall["finish"];
       let releaseSignal = () => {};
+      const reviewController = new AbortController();
       const wait = new Promise<PermissionDecision>((resolve) => {
         finish = (decision) => {
+          if (decision.decision !== "allow" || !call.reviewGrant)
+            call.stopReview();
           releaseSignal();
           resolve(decision);
         };
@@ -232,6 +270,11 @@ export function createCodeApprovalService(): CodeApprovalService {
         result: deny("等待用户审批。"),
         wait,
         finish,
+        stopReview: () => {
+          reviewController.abort();
+          call.reviewGrant?.release();
+          call.reviewGrant = undefined;
+        },
       };
       calls.set(callKey(input), call);
       interactions.set(request.interaction.interactionId, call);
@@ -250,6 +293,36 @@ export function createCodeApprovalService(): CodeApprovalService {
           () => {},
         );
       }
+      // Persist the request before a fast reviewer can publish its resolution.
+      // Human answers, cancellation and the final kernel claim keep the same broker.
+      if (call.state === "pending" && !input.planControl && options.review) {
+        const review = options.review;
+        const reviewed = { ...input, args: structuredClone(input.args) };
+        void (async () => {
+          try {
+            const result = await review(reviewed, reviewController.signal);
+            if (result === "manual") return;
+            if (
+              result.signal.aborted ||
+              reviewController.signal.aborted ||
+              input.signal?.aborted ||
+              call.state !== "pending" ||
+              call.signature !== signature(input)
+            ) {
+              result.release();
+              return;
+            }
+            call.reviewGrant = result;
+            await service.resolve({
+              interactionId: request.interaction.interactionId,
+              binding: request.identity,
+              answer: { optionId: "allowOnce" },
+            });
+          } catch {
+            // An unavailable or uncertain reviewer leaves this exact human request pending.
+          }
+        })();
+      }
       return wait;
     },
     peek(input) {
@@ -260,17 +333,26 @@ export function createCodeApprovalService(): CodeApprovalService {
       const call = find(input);
       if (codePermissionPolicy(input) === "deny")
         return deny("当前 Task 模式或角色不允许此工具效果，审批不能扩权。");
-      if (call) return conflict(call, input) ?? call.result;
+      if (call)
+        return (
+          conflict(call, input) ??
+          (call.reviewGrant?.signal.aborted
+            ? deny("审批配置已改变，请重新确认此操作。")
+            : call.result)
+        );
       return codePermissionPolicy(input) === "allow"
         ? { decision: "allow" }
         : deny("等待用户审批。");
     },
     claim(input) {
       const result = service.peek(input);
+      if (result.decision === "deny") find(input)?.stopReview();
       if (result.decision === "allow") {
         const call = find(input);
-        if (call) call.state = "claimed";
-        else automaticClaims.add(callKey(input));
+        if (call) {
+          call.state = "claimed";
+          call.stopReview();
+        } else automaticClaims.add(callKey(input));
       }
       return result;
     },
@@ -297,7 +379,11 @@ export function createCodeApprovalService(): CodeApprovalService {
           type: "resolved",
           decision: allowed ? "allow" : "deny",
         });
-        if (call.state === "resolving") {
+        if (call.state === "resolving" && call.reviewGrant?.signal.aborted) {
+          call.state = "denied";
+          call.result = deny("审批配置已改变，旧审查不能执行此操作。");
+          await emit(call, { type: "cancelled", reason: call.result.reason! });
+        } else if (call.state === "resolving") {
           call.state = allowed ? "allowed" : "denied";
           call.result = allowed
             ? { decision: "allow" }

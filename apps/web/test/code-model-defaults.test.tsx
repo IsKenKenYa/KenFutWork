@@ -41,6 +41,7 @@ function openDefaults(fail = false) {
   const calls: unknown[] = [];
   let defaults = {
     chat: null,
+    approval: null,
     image: { mode: "auto" },
     video: { mode: "auto" },
   };
@@ -125,6 +126,7 @@ it("默认图片模型按供应商实例和原生ID保存，保留其他用途�
     expect(calls).toEqual([
       {
         chat: null,
+        approval: null,
         image: {
           mode: "manual",
           models: [{ providerId: ids[1], modelId: "same-model" }],
