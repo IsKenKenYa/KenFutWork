@@ -1,6 +1,5 @@
 import type { ExecutionMode } from "@kenfutwork/shared";
 import {
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -221,7 +220,6 @@ export function ExecutionModeMenuItems({
   return (
     <>
       <DropdownMenuSeparator />
-      <DropdownMenuLabel>执行方式</DropdownMenuLabel>
       <DropdownMenuRadioGroup
         value={mode}
         onValueChange={select}
@@ -234,12 +232,9 @@ export function ExecutionModeMenuItems({
               key={entry.id}
               value={entry.id}
               disabled={disabled || saving}
-              className="min-h-13 items-start gap-3 py-2"
             >
-              <ModeIcon className="mt-0.5 size-4.5 shrink-0" />
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span>{entry.label}</span>
-              </span>
+              <ModeIcon className="size-4 shrink-0" />
+              <span>{entry.label}</span>
             </DropdownMenuRadioItem>
           );
         })}

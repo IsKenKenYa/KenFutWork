@@ -12508,10 +12508,11 @@
       "source": "references/zcode/packages/ui/src/v4/composer/V4ComposerModeControls.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/composer/V4ComposerModeControls.tsx",
       "sha256": "f5289c79b4798f97a4ced83cfa44fdf148741a11ccfaada84b7806b4ec67a328",
-      "copiedSha256": "b60fedc4429b6efebf0f8dfd1a34a02070d046254b09737a6fc39cb4808e4040",
+      "copiedSha256": "e9136194a476907b59e8389c46460b428ea3dcbe6bff67f7362ff2e5792f1883",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "2026-10-17统一模式入口：原盾牌菜单分组承载权限、唯一Plan勾选与宿主执行方式；全权保持原橙色图标，Plan标记X关闭复用原owner，宿主审批描述不改上游字典。"
+        "2026-10-17统一模式入口：原盾牌菜单分组承载权限、唯一Plan勾选与宿主执行方式；全权保持原橙色图标，Plan标记X关闭复用原owner，宿主审批描述不改上游字典。",
+        "2026-10-17菜单密度修正：移除新增可见分组标题，保留权限/执行方式语义分组；规划和权限项沿原布局，单行执行项使用原DropdownMenuRadioItem默认padding与行高。"
       ]
     },
     {

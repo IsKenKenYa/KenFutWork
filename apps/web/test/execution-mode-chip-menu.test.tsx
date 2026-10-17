@@ -155,8 +155,8 @@ test("权限、独立计划与执行方式只有原盾牌一个入口，全权�
   expect(screen.queryByTestId("permission-tier-chip")).toBeNull();
   expect(screen.getAllByTestId("chat-mode-select-trigger")).toHaveLength(1);
   await user.click(trigger);
-  expect(screen.getByRole("menu").textContent).toContain("权限");
-  expect(screen.getByRole("menu").textContent).toContain("执行方式");
+  const permissions = screen.getByRole("group", { name: "权限" });
+  const executionModes = screen.getByRole("group", { name: "执行方式" });
   for (const [label, icon] of [
     ["自主", "bot"],
     ["目标", "target"],
@@ -164,13 +164,18 @@ test("权限、独立计划与执行方式只有原盾牌一个入口，全权�
   ] as const) {
     const item = screen.getByRole("menuitemradio", { name: label });
     expect(item.querySelector(`svg.lucide-${icon}`)).not.toBeNull();
-    expect(item.className).toContain("min-h-13");
+    expect(executionModes.contains(item)).toBe(true);
   }
   expect(
     screen.getAllByRole("menuitemcheckbox", { name: /^计划模式/ }),
   ).toHaveLength(1);
   expect(screen.queryByRole("menuitemradio", { name: /^计划/ })).toBeNull();
   expect(screen.getByRole("menu").textContent).toContain("人工或审批模型");
+  expect(
+    permissions.contains(
+      screen.getByRole("menuitemradio", { name: /^变更前确认/ }),
+    ),
+  ).toBe(true);
   await user.click(screen.getByRole("menuitemradio", { name: /^变更前确认/ }));
   expect(onSwitchMode).toHaveBeenLastCalledWith("build");
   expect(trigger.textContent).toContain("自主");
