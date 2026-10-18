@@ -1,6 +1,6 @@
 # FreeCAD 专业工作台接口核验
 
-> **角色：调研 + FEM 代表流程实测记录。** 官方研究日期：2026-10-18；FEM 实测追加：2026-10-19。范围：内置 Assembly、CAM／Path、FEM、BIM／Arch／Draft 的官方接口、依赖、运行形态和后续验收要求。原研究批次优先读取本机 FreeCAD 1.1.4 随包 Python，再以官方固定提交 `4fd3bf320d9566a27e60069fc8387448aaa3a094` 的源码及官方文档交叉核对，当时未执行这些工作台或外部程序。随后已通过真实 Task 的 CAD 工具运行 FEM 轴向压力闭环，见 §5.3；Assembly、CAM、BIM／Draft 仍未实测。本页未新增安装应用、库或求解器，后台 FEM 证据不覆盖用户现存 GUI 文档。
+> **角色：调研 + Assembly／FEM 代表流程实测记录。** 官方研究日期：2026-10-18；Assembly／FEM 实测追加：2026-10-19。范围：内置 Assembly、CAM／Path、FEM、BIM／Arch／Draft 的官方接口、依赖、运行形态和后续验收要求。原研究批次优先读取本机 FreeCAD 1.1.4 随包 Python，再以官方固定提交 `4fd3bf320d9566a27e60069fc8387448aaa3a094` 的源码及官方文档交叉核对，当时未执行这些工作台或外部程序。随后已通过既有 CAD Python 工具验收内置 Grounded＋Fixed 装配闭环（§3.3）及真实 Task 的 FEM 轴向压力闭环（§5.3）；CAM、BIM／Draft 仍未实测。本页未新增安装应用、库或求解器，后台独立工程证据不覆盖用户现存 GUI 文档。
 >
 > 实施方向仍归[CAD 控制插件规划](../插件/CAD控制插件规划.md)。已完成的布尔、圆角／倒角、阵列及 TechDraw 代表工作流见[主调研 §9.14](CAD官方接口与插件接入调研.md)，本文不重复研究，也不把这些证据扩大为专业工作台已验收。AutoCAD／Blender 沿用主调研，不在本批重新研究。
 
@@ -12,18 +12,18 @@
 | --- | --- | --- |
 | 官方接口／源码 | 下文列出的函数、对象类型、返回值、依赖查找和 GUI 条件分支存在 | 本机导入成功、完整任务可执行或结果正确 |
 | 安装文件 | 本机存在对应模块、动态库、可执行文件及包版本记录 | 动态装载、ABI、PATH、外部进程或本机求解已通过 |
-| 代表流程 | FEM 轴向压力的新网格、新求解、结果校验及保存重开已实测，见 §5.3；其他专业流程仍是待执行建议 | FEM 所有物理场／求解器、装配、刀路或 IFC 已通过 |
-| KFW 产品整链 | 已由真实 Task 的既有 CAD Python／文件交付链完成 §5.3 的独立 FEM 工程、三种失败拒绝与真实Gmsh子进程取消 | 当前插件完整支持全部专业领域，或 GUI 固定标量工具能编辑其全部对象 |
+| 代表流程 | §3.3的同文档 Grounded＋Fixed 显式求解、参数修改、重开折返已实测；§5.3的 FEM 新网格、新求解、结果校验及重开已实测 | 全部装配关节／运动、FEM 所有物理场／求解器、刀路或 IFC 已通过 |
+| KFW 产品整链 | 既有 `cad_run_python` 已交付 §3.3 的原生装配工程；真实 Task 的 CAD Python／文件链已完成 §5.3 的独立 FEM 工程、三种失败拒绝与真实Gmsh子进程取消 | 当前插件完整支持全部专业领域，或 GUI 固定标量工具能编辑其全部对象 |
 
 官方 Headless 文档提供 `FreeCADCmd` 的无界面 Python 入口；领域脚本仍须由应用自己的解释器和模块环境执行，不能用系统 Python 的可导入性代替。Assembly／Draft／BIM 的数据 API、CAM 的 Job／Operation 与 FEM 的建模对象可以作为候选调用面，但 Qt、Coin、文档激活和外部进程仍需按下文逐项验证。没有查到可以替代这些流程的统一“专业工作台 CLI RPC”。[G1]
 
 ## 2. 本机只读盘点
 
-根路径为 `/Applications/FreeCAD.app/Contents/Resources/`。Info.plist 的 `CFBundleVersion` 及 conda 元数据均记录 FreeCAD 1.1.4；随包 Python 为 3.11.14。下表来自原研究批次的只读文件及元数据盘点；随后 FEM 的实际执行证据单列于 §5.3，不能倒写成原盘点时已经运行：
+根路径为 `/Applications/FreeCAD.app/Contents/Resources/`。Info.plist 的 `CFBundleVersion` 及 conda 元数据均记录 FreeCAD 1.1.4；随包 Python 为 3.11.14。下表来自原研究批次的只读文件及元数据盘点；随后 Assembly、FEM 的实际执行证据分别单列于 §3.3、§5.3，不能倒写成原盘点时已经运行：
 
 | 项目 | 已找到的条目 | 版本事实／限制 |
 | --- | --- | --- |
-| Assembly | `Mod/Assembly/`、`lib/AssemblyApp.so`、`lib/AssemblyGui.so`、`lib/libOndselSolver.1.0.1.dylib` | `share/pkgconfig/OndselSolver.pc` 记录 1.0.1；未验证装载及求解 |
+| Assembly | `Mod/Assembly/`、`lib/AssemblyApp.so`、`lib/AssemblyGui.so`、`lib/libOndselSolver.1.0.1.dylib` | `share/pkgconfig/OndselSolver.pc` 记录 1.0.1；随后原生装载、Fixed 求解及重开见 §3.3 |
 | CAM | `Mod/CAM/Path/`、`lib/area.so`、`lib/python3.11/site-packages/opencamlib/ocl.so` | conda 记录 OpenCamLib 2023.01.11；未验证具体算法或后处理器 |
 | FEM | `Mod/Fem/`、`bin/gmsh`、`bin/ccx` | conda 记录 Gmsh 4.15.0、CalculiX 2.23、VTK 9.3.1；随后 Gmsh／CalculiX 实际执行见 §5.3 |
 | BIM／Draft | `Mod/BIM/`、`Mod/Draft/`、IfcOpenShell 扩展模块 | conda 记录 IfcOpenShell 0.8.4；未验证 IFC 导入／导出及回读 |
@@ -46,17 +46,47 @@
 | 显式求解 | `assembly.solve()` 或 `assembly.solve(False)`，返回整数状态 |
 | 基准检查 | `assembly.isPartGrounded(component)` |
 
-求解 **0 为成功**；绑定文档列出 -6 无固定件、-4 过约束、-3 冲突、-5 约束格式错误、-1 求解器错误、-2 冗余约束。不能用 truthy 判断，也不能仅凭零件 Shape 有效判断装配约束已满足。`solve` 可改变零件 Placement；其可选 bool 参数涉及保存求解前位置，不是事务 CAS 或通用恢复承诺。[A2][A5]
+求解返回 **0 是本次装配验收的必要条件，不是充分条件**；绑定文档还列出 -6 无 grounded set、-4 过约束、-3 冲突、-5 约束格式错误、-1 求解器错误、-2 冗余约束。不能用 truthy 判断，也不能仅凭零件 Shape 有效或返回0判断目标零件已进入求解、装配约束已满足；还须核对预期零件的固定／连通关系及求解后连接器残差。`solve` 可改变零件 Placement；其可选 bool 参数涉及保存求解前位置，不是事务 CAS 或通用恢复承诺。[A2][A5]
+
+固定源码进一步表明，`getGroundedParts` 会纳入原生 Origin，`removeUnconnectedJoints` 从 grounded 图遍历，只在本次求解的局部集合中过滤不连通零件／关节，不删除原文档对象。因此删掉用户创建的 Grounded joint 不必使 grounded set 为空；原生 solver 可能只解包含 Origin 的子图并返回0。-6 是内部空 grounded set 的保护，不能将它写成“删除 Grounded 必返回-6”的契约。§3.3 的真实探针已经否定该假设；产品任务是否完成仍由目标关系与残差决定。[A10]
 
 GUI 的 SolveAssembly 命令依赖当前活动装配，并用事务包裹重算；后台不应照搬 `Gui.runCommand`、选择集或 `UtilsAssembly.activeAssembly()`。直接 API 可显式持有装配和引用，但 `JointObject.py` 仍导入 PySide、pivy／Coin 等，并可在设置连接器时自动求解。故“App 对象路径存在”并不证明纯无 GUI 启动条件已满足。[A3][A4][A7]
 
 ### 3.2 最小代表流程与判据
 
-**待执行建议**：同一个新工程中创建两个有明确基准面的参数化零件，建立 Assembly／JointGroup，固定第一个零件，再建立 Fixed joint 将第二个定位；显式求解，保存 FCStd，关闭重开，改变零件尺寸后重新定位连接器并求解。先使用同文档组件，避免把外部文件链接恢复问题混入第一条装配闭环。
+**原研究建议**：同一个新工程中创建两个有明确基准面的参数化零件，建立 Assembly／JointGroup，固定第一个零件，再建立 Fixed joint 将第二个定位；显式求解，保存 FCStd，关闭重开，改变零件尺寸后重新定位连接器并求解。§3.3 已用同文档双参数 Box 完成这条代表闭环；外部文件链接恢复仍单独待验。
 
-成功至少需要：求解码为0；固定件身份和 Placement 保持；连接器的全局位置／轴向残差在事先规定的容差内；组件数量及引用仍正确；保存重开后关节、固定关系和结果 Placement 可复算。子元素不能把示例里的固定 Face／Vertex 编号当成跨尺寸变化的永久标识。第二条流程再验证 Revolute 的预期自由度和受控角度，不能由 Fixed 样例推定所有关节、运动仿真和 BOM 已通过。[A1][A3]
+成功至少需要：求解码为0；预期固定件已 grounded 且连通、移动件属于该连通求解图；固定件身份和 Placement 保持；连接器的全局位置／轴向残差在事先规定的容差内；组件数量及引用仍正确；保存重开后关节、固定关系和结果 Placement 可复算。子元素不能把示例里的固定 Face／Vertex 编号当成跨尺寸变化的永久标识。第二条流程再验证 Revolute 的预期自由度和受控角度，不能由 Fixed 样例推定所有关节、运动仿真和 BOM 已通过。[A1][A3][A10]
 
-失败边界包括未固定、冲突／冗余、失效子元素、错误组件层级、外部零件缺失和求解后的部分 Placement 变化。失败应保留明确状态及自有工作副本，不把旧摆放当新结果。当前 GUI 标量写工具拒绝含 Proxy 的对象，不能据其已有验证宣称能直接编辑 Joint Proxy；专业装配首先需要独立后台流程验收。
+失败边界包括未固定、冲突／冗余、失效子元素、错误组件层级、外部零件缺失和求解后的部分 Placement 变化。失败应保留明确状态及自有工作副本，不把旧摆放当新结果。当前 GUI 标量写工具拒绝含 Proxy 的对象；§3.3 是既有 CAD Python 的独立后台工程证据，没有因此放宽用户 GUI 的 Joint Proxy 编辑权限。
+
+### 3.3 原生 Grounded＋Fixed：错位求解、参数变化与重开折返
+
+2026-10-19 主执行线程使用 [assembly-fixed.py](../../apps/server/src/features/cad/fixtures/assembly-fixed.py) 完成首条真实原生集成验收，用时5.04秒，随后又完成双零件 STEP 导出回读。能力经既有 `cad_run_python` 交付，没有新增固定结构的 Assembly 工具。工程包含原生 `Assembly::AssemblyObject`、`Assembly::JointGroup`、同文档两个参数 Box，以及真实 Grounded／Fixed Joint 的 App Proxy 和官方 ViewProvider；不使用 mock 或替代求解器。[A2][A4][A8]
+
+| 检查点 | 实际设置与观测 |
+| --- | --- |
+| 固定基准 | 固定零件 Placement 为位置(12,-4,3)、绕Z轴15°；每轮求解后保持 |
+| 故意错位 | 每阶段将移动零件先置于(-30,45,16)、绕(1,1,0)轴37°，避免沿用上轮已对齐的摆放 |
+| 连接器选择 | 从当前真实几何唯一识别 Vertex，直接写原生 `Reference1`／`Reference2` 后 `updateJCSPlacements`；不猜固定 Face／Vertex 编号 |
+| 局部坐标系 | 顶点连接器局部 Rotation 为 identity，依据官方 `findPlacement` 语义；局部位置由实际顶点确定，不把整个 Placement 假设为单位变换 |
+| 显式求解证据 | 更新 Reference／JCS 后仍确认错位，再调用 `assembly.solve()`；原生返回0后，连接器全局位置及三个轴向残差均小于10⁻⁶，固定件 Placement 保持 |
+| 持久化 | 独立重开后仍保留引用、原生 App／ViewProvider Proxy及几何体积，并继续改尺寸、错位及重新求解；每轮输入源文件字节保持 |
+
+官方 `setJointConnectors` 会触发额外预求解；本次没有把其预求解的结果当成显式 solver 成功。直接 Reference＋JCS 更新后的错位前提与求解后的残差分别断言，通用几何校验只说明几何可用，不能替代装配约束已满足的证据。[A4][A9]
+
+| 阶段 | 固定件尺寸／移动件尺寸（mm） | 本轮验证 |
+| --- | --- | --- |
+| 初次求解 | 20×12×8／7×5×4 | 真实错位→显式求解0→全局位置／轴向残差检查 |
+| 同工程改尺寸 | 26×12×11／9×6×6 | 从变化后的几何重识别顶点；重新错位、求解，引用和体积检查 |
+| 保存后独立重开再改 | 35×12×14／13×8×7 | 原生代理恢复；再次变化几何、重建JCS并显式求解 |
+| 再次重开恢复原尺寸 | 20×12×8／7×5×4 | 恢复参数后重新求解，固定基准、引用、体积及源文件字节检查 |
+
+最初仅创建 App Proxy 而漏建官方 ViewProvider 时，求解本身可成功，但独立重开后 `Joint.ViewObject.Proxy` 为整数，导致 redraw 错误。随后按随包 `CommandCreateJoint.py` 与 `JointObject.py` 的官方创建路径构建 `ViewProviderJoint`、`ViewProviderGroundedJoint`，再跑完整持久化链通过。该修复没有把 Proxy 设为 None、mock ViewProvider、静默修补旧工程或操作用户当前 GUI；也不能由“求解过一次”省略保存重开的代理恢复检查。[A4][A8]
+
+双零件 STEP 已实际导出并独立回读；约束、引用和 App／ViewProvider Proxy 的持久化证据仍来自 FCStd，不能以几何交换文件替代。另一条原生探针发现，移除 Grounded 后 `solve()` 实际返回0，否定了“必须-6”的原验收假设；这与 §3.1 的 Origin 和求解子图语义一致，不能通过伪造返回码或改生产运行时让它迎合测试。[A10]
+
+**当前证据边界**：上述同文档 Grounded＋Fixed 正常闭环、参数重开折返及双零件 STEP 回读已通过。失败用例也已通过：删除 Grounded、故意移错移动件，确认目标零件未固定／未连通，原生仍返回0但连接器残差未消除；脚本明确拒绝、不发布目标，源FCStd字节保持。其他关节、运动、BOM、外部链接、全部装配失败及用户当前 GUI 操作仍分别待验；该样件不构成全部 Assembly 已验收。
 
 ## 4. CAM／Path
 
@@ -150,7 +180,7 @@ Gmsh 采用分阶段准备／写入 API，CalculiX 采用官方 INP 写入和 FR
 
 失败边界已实际通过：从有结果的源工程重开，每轮重新网格；Analysis 移除材料、清空压力 References 均拒绝；真实 CCX 成功后删除本次 FRD 也拒绝，已有结果不算本次成功，目标文件不存在、输入字节保持。取消另用真实 Gmsh 解析 `.geo` 后自行写就绪标记再进入等待，确认父 FreeCAD 与子 Gmsh 两个 PID 存活后取消 Task，回执为 cancelled，两个 PID 均不存在，目标工程未发布。这条取消证据是进程范围验收，不把等待脚本当作网格成功，也不扩大为所有外部求解器的进程行为。
 
-**当前证据边界**：上述正常流程、参数折返、保存重开、三种失败及真实 Gmsh 子进程取消均已通过；通用 CAD 校验只保证对象状态与几何，有限元数值／载荷验证由本次脚本负责，不是新增固定 FEM 工具。该样件采用ν=0的均匀单轴场，未做独立网格收敛研究；它不覆盖其他材料、几何、接触、非线性、热／流／电磁、其他求解器、全部 FEM 工作台，也不构成制造或工程设计认证。Assembly、CAM、BIM／IFC及用户当前 GUI 文档仍是本页独立待验项。
+**当前证据边界**：上述正常流程、参数折返、保存重开、三种失败及真实 Gmsh 子进程取消均已通过；通用 CAD 校验只保证对象状态与几何，有限元数值／载荷验证由本次脚本负责，不是新增固定 FEM 工具。该样件采用ν=0的均匀单轴场，未做独立网格收敛研究；它不覆盖其他材料、几何、接触、非线性、热／流／电磁、其他求解器、全部 FEM 工作台，也不构成制造或工程设计认证。Assembly 的独立代表证据见 §3.3；CAM、BIM／IFC及用户当前 GUI 文档仍待验。
 
 ## 6. Draft、Arch／BIM 与 IFC
 
@@ -187,17 +217,17 @@ Gmsh 采用分阶段准备／写入 API，CalculiX 采用官方 INP 写入和 FR
 | 原建议顺序 | 最小独立交付 | 当前状态及仍需的本机／Task证据 |
 | --- | --- | --- |
 | 1 | Draft 二维对象→Arch 直墙／结构件→FCStd | 数据 API 与偏好隔离、参数变化、保存重开、几何／语义；再单独验证 IFC 回读 |
-| 2 | 内置 Assembly 的 grounded＋Fixed 闭环 | AssemblyApp 装载、明确求解码、连接器残差、Placement、保存重开及失败状态 |
+| 2 | 内置 Assembly 的 grounded＋Fixed 闭环 | §3.3的原生装载、显式求解0及残差检查、基准Placement、代理恢复、参数重开折返与STEP回读已通过；原生返回0但目标未连通／残差超限的拒绝与不发布也已通过，其余关节与失败另验 |
 | 3 | CAM Profile＋一个指定 post | 模型／stock／刀具、有效运动、包络／深度、真实后处理及 NC 回读 |
 | 4 | FEM 线弹性三维分析 | §5.3的新网格、ccx、真实结果、解析检查及重开已通过；三种失败拒绝与真实Gmsh取消另通过，网格收敛及其他领域另验 |
 
-每项先在新的独立工程中验证，再通过真实 Task 的既有 CAD Python／文件交付链验证，最后才决定是否增加专业结构化工具。FEM 已完成 §5.3 代表文档及 Shape Link 的实际交付；其他专业 Job、复杂 Analysis、Proxy 文档的兼容性仍须分别验证，不能从该样例推定全部文档能通过产品交付。GUI 当前文档接入另遵守已有打开句柄、观察前提和审批；不能把后台 Python 的权限证明移植为任意 GUI Python 权限。
+每项先在新的独立工程中验证，再通过真实 Task 的既有 CAD Python／文件交付链验证，最后才决定是否增加专业结构化工具。Assembly 已完成 §3.3 代表文档的原生代理恢复与显式约束求解，FEM 已完成 §5.3 代表文档及 Shape Link 的实际交付；其他专业 Job、复杂 Analysis、Proxy 文档的兼容性仍须分别验证，不能从这些样例推定全部文档能通过产品交付。GUI 当前文档接入另遵守已有打开句柄、观察前提和审批；不能把后台 Python 的权限证明移植为任意 GUI Python 权限。
 
-E 批次原交付是只读官方研究；随后新增的 FEM 数值实测已单列 §5.3。Assembly、CAM、BIM／IFC仍未实测，FEM 也仅完成该线弹性样件及§5.3列出的失败／取消边界，不能扩展为全部求解器／物理场已验收；用户现存 GUI 操作另验。没有新安装或要求安装任何应用、库或求解器。尚未覆盖的可执行性、性能和领域正确性保留待验，不能用包存在、import 或官方测试文件存在替代。
+E 批次原交付是只读官方研究；随后新增的 Assembly、FEM 实测分别单列 §3.3、§5.3。Assembly 仅完成上述 Grounded＋Fixed 正常闭环和双零件STEP回读，未固定／未连通而返回0的拒绝边界也已通过；FEM 仅完成该线弹性样件及§5.3列出的失败／取消边界。CAM、BIM／IFC仍未实测，不能扩展为所有专业工作台、全部关节、求解器或物理场已验收。用户现存 GUI 操作另验。没有新安装或要求安装任何应用、库或求解器。尚未覆盖的可执行性、性能和领域正确性保留待验，不能用包存在、import 或官方测试文件存在替代。
 
 ## 8. 来源
 
-下列源码固定到安装版对应提交；官方文档用于语义和流程概览，遇旧函数拼法或目录变化，以1.1.4源码与随包实现为准。原研究引用的随包测试仅作 API／预期行为依据；§5.3 是另外执行的 KFW 独立夹具，不能混称为这些官方测试全部通过。
+下列源码固定到安装版对应提交；官方文档用于语义和流程概览，遇旧函数拼法或目录变化，以1.1.4源码与随包实现为准。原研究引用的随包测试仅作 API／预期行为依据；§3.3、§5.3 是另外执行的 KFW 独立夹具，不能混称为这些官方测试全部通过。
 
 [G1]: https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Headless_FreeCAD.md
 [A1]: https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Assembly_Workbench.md
@@ -207,6 +237,9 @@ E 批次原交付是只读官方研究；随后新增的 FEM 数值实测已单�
 [A5]: https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/Assembly/App/AssemblyObject.pyi
 [A6]: https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/Assembly/App/AppAssembly.cpp
 [A7]: https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/Assembly/CommandSolveAssembly.py
+[A8]: https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/Assembly/CommandCreateJoint.py
+[A9]: https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/Assembly/UtilsAssembly.py
+[A10]: https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/Assembly/App/AssemblyObject.cpp#L707
 [C1]: https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/CAM_scripting.md
 [C2]: https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/CAM/Path/Main/Job.py
 [C3]: https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/CAM/CAMTests/TestPathProfile.py

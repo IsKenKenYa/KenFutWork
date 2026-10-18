@@ -43,7 +43,7 @@ Headless 文档明确区分应用文档与 GUI 文档：导入 `FreeCADGui` 不�
 | 工程文件及交换格式 | `Std Export` 与对应格式模块 | 导出正确对象；再导入核对几何和单位 | STEP／STL／BREP／SVG／DXF 已有分层回读证据，见 §9 |
 | 工程图 | TechDraw 文档对象、官方 TDTest | 投影完成后导出；模板、比例、尺寸与异步计算正确 | 离屏 A4／俯视图／真实尺寸及整页 SVG 已验，见 §9.14；独立 GUI 原生夹具另验证单页 PDF 导出与栅格查看，见 §9.17，不代表正式 PDF 工具或完整比例／标注验收 |
 | PNG 预览 | GUI view 的图像导出、scenegraph 路线 | 真实图像、视角和对象可见性正确；缺图形环境可解释 | 后台真实几何线框 PNG 已验，见 §9.1、§9.7；独立 GUI 原生夹具已导出并查看着色 PNG，见 §9.17，不代表正式 GUI 预览工具已交付 |
-| Draft／BIM／Assembly 等 | 对应工作台 Python／命令接口 | 安装模块、依赖和代表性任务分别通过 | 官方接口、依赖与代表流程已静态核验，实际流程仍待验，见[专业工作台核验](FreeCAD专业工作台接口核验.md) |
+| Draft／BIM／Assembly 等 | 对应工作台 Python／命令接口 | 安装模块、依赖和代表性任务分别通过 | 内置Assembly Grounded＋Fixed、完整Provider、重开折返与交换及未连通拒绝已验，见§9.26；其它关节与Draft／BIM仍待验，接口见[专业工作台核验](FreeCAD专业工作台接口核验.md) |
 | FEM／CAM 等 | 官方工作台与外部工具链 | 网格／求解器／后处理器可用；输出语义正确 | FEM真实新网格／CalculiX轴向压力及失败／停止代表流程见§9.25；其它FEM领域及CAM后处理待验，接口依赖见[专业工作台核验](FreeCAD专业工作台接口核验.md) |
 | 当前 GUI 文档 | 应用内 Python／GUI API | 明确文档身份、保留未保存工作、正确撤销和选择 | 固定查询／观察、直接标量读写、副本发布及自身已提交属性操作的显式撤销已有独立 GUI 的真实 Task 工具实证；原位保存仍待交付，见[桥接核验](FreeCAD当前文档桥接接口核验.md) §8～§15 |
 
@@ -501,4 +501,17 @@ CAD 将既有 Run／Task 合并 signal 传入 `spawnStdio(request, { signal })`�
 
 脚本使用官方分阶段Gmsh输入／网格装载和CalculiX INP／FRD接口配显式subprocess，避开便捷方法重设工作目录；本次输入、日志、网格及结果均在Task私有新目录，每个外部程序超时9秒、线程1。实际二进制从App.getHomePath()/bin定位，App.getResourceDir()在本机为Resources/share；报告记录候选与命中，不改用户全局偏好、不安装依赖、不使用示例的预制网格回退。
 
-这是后台Python代表验收及一处真实属性类型兼容修复，不是新增结构化FEM工具。通用几何检查不能证明物理分析正确，领域判据由Agent脚本核验。该ν=0单轴样件未做独立网格收敛研究，也不覆盖其它材料、物理场、非线性、接触或其它求解器。Assembly／CAM／BIM仍分别待验，未操作用户现存GUI或扩大Qt崩溃调查。最终命令与层级证据见同批《日志》，不相加。
+这是后台Python代表验收及一处真实属性类型兼容修复，不是新增结构化FEM工具。通用几何检查不能证明物理分析正确，领域判据由Agent脚本核验。该ν=0单轴样件未做独立网格收敛研究，也不覆盖其它材料、物理场、非线性、接触或其它求解器。Assembly代表流程续见§9.26；CAM／BIM仍待验，未操作用户现存GUI或扩大Qt崩溃调查。最终命令与层级证据见同批《日志》，不相加。
+
+
+### 9.26 内置 Assembly Fixed 的真实求解与完整 Provider
+
+既有后台 Python／Task 工具完成同文档两件参数 Box 的原生 `Assembly::AssemblyObject`、`Assembly::JointGroup`、Grounded＋Fixed。每轮先故意错位移动件，再直接设置官方连接器 Reference、调用 `updateJCSPlacements`；确认更新后仍错位才显式 `solve()`，求解返回0且连接器全局位置／三基轴残差均小于1e-6，固定件原 Placement 保持。没有用 `setJointConnectors` 的自动 preSolve 冒充显式求解，也不依赖 GUI 选择集、活动装配或 mock solver。
+
+固定件初始为(12,-4,3)mm＋绕Z15°；移动件求解前为(-30,45,16)mm＋绕(1,1,0)37°。两件初始20×12×8／7×5×4mm，改至26×12×11／9×6×6mm；独立保存重开再改35×12×14／13×8×7，下一独立重开折返20×12×8／7×5×4。连接器顶点按实际零件几何唯一识别，不猜固定FaceN；顶点局部identity Rotation按官方findPlacement核验。每轮检查参数体积、真实App／ViewProvider代理、归属和引用、固定基准与连接状态；源FCStd字节保持。
+
+初版只创建App关节代理，首次求解正常，但保存重开后ViewObject.Proxy是整数，`redrawJointPlacements`报属性错误。按随包`CommandCreateJoint.py`和`JointObject.py`的真实创建路径建立`ViewProviderJoint`与`ViewProviderGroundedJoint`后，离屏宿主可正常序列化／恢复；没有设None、mock GUI、静默修复旧文件或给Harness加兼容开关。这是领域脚本必须完成的官方对象创建，不是通用宿主替每个工作台猜Provider。
+
+另一个原生RED否定了“删Grounded必返回-6”的验收假设。[固定源码AssemblyObject.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/Assembly/App/AssemblyObject.cpp#L707)的getGroundedParts包含原生Origin；removeUnconnectedJoints会把不与任何固定对象连接的关节从本次求解vector过滤，而不删除文档关节。两零件均未连接Origin时，原生可跳过其约束并返回0，不会自动固定首个Box。必须继续核对`isPartGrounded`／`isPartConnected`与实际连接器残差，不能把返回码0或旧有效Shape单独当成功。
+
+这是一条Fixed代表流程，不是全部关节、运动、BOM、外部零件文件或当前GUI装配验收。通用CAD几何检查不能证明约束满足，脚本负责领域判据；其它工作台按独立流程推进，未操作用户现存GUI或扩大Qt崩溃调查。最终原生命令、失败不发布与STEP回读及门禁见同批《日志》。
