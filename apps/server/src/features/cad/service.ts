@@ -21,6 +21,17 @@ import {
   type CadGuiDocumentReader,
   createMacosCadGuiDocumentReader,
 } from "./gui-document-reader.js";
+import type { CadGuiSetPropertiesInput } from "./gui-operation-contracts.js";
+import {
+  type CadGuiOperationController,
+  CadGuiOperationError,
+  type CadGuiOperationResult,
+  createCadGuiOperationController,
+} from "./gui-operation-controller.js";
+import {
+  type CadGuiOperationStore,
+  CadGuiOperationStoreError,
+} from "./gui-operation-store.js";
 import {
   type CadGuiProbe,
   type CadGuiProbeContext,
@@ -72,6 +83,14 @@ export interface CadService {
     input: CadGuiInspectDocumentInput,
     context: ToolExecutionContext,
   ): Promise<CadToolResult>;
+  guiSetProperties(
+    input: CadGuiSetPropertiesInput,
+    context: ToolExecutionContext,
+  ): Promise<CadToolResult>;
+  guiOperationStatus(
+    operationId: string,
+    context: ToolExecutionContext,
+  ): Promise<CadToolResult>;
   execute(
     request: CadRequest,
     context: ToolExecutionContext,
@@ -88,6 +107,8 @@ export interface CadServiceOptions {
   detectRuntime?: () => Promise<CadRuntime | null>;
   guiProbe?: CadGuiProbe;
   guiDocumentReader?: CadGuiDocumentReader;
+  guiOperationController?: CadGuiOperationController;
+  guiOperationStore?: CadGuiOperationStore;
 }
 
 class CadError extends Error {
@@ -144,7 +165,9 @@ function failure(error: unknown, cancelled = false): CadToolResult {
     error instanceof CadOperationError ||
     error instanceof ProcessSandboxError ||
     error instanceof CadGuiProbeError ||
-    error instanceof CadGuiDocumentQueryError
+    error instanceof CadGuiDocumentQueryError ||
+    error instanceof CadGuiOperationError ||
+    error instanceof CadGuiOperationStoreError
       ? error.code
       : cancelled || (error instanceof Error && error.name === "AbortError")
         ? "cancelled"
@@ -153,6 +176,9 @@ function failure(error: unknown, cancelled = false): CadToolResult {
     isError: true,
     content: [{ type: "text", text: message }],
     structuredContent: {
+      ...(error instanceof CadGuiOperationError
+        ? { operationId: error.operationId, outcome: error.outcome }
+        : {}),
       error: {
         code,
         message,
@@ -511,11 +537,42 @@ function cadStatus(runtime: CadRuntime | null): CadToolResult {
   };
 }
 
+function guiOperationResult(
+  result: CadGuiOperationResult,
+  statusOnly = false,
+): CadToolResult {
+  const messages = {
+    committed: "已修改当前 FreeCAD 文档，尚未保存。",
+    no_op: "属性值无需修改。",
+    rejected: "本次修改未执行，请重新读取文档和属性后检查。",
+    partial:
+      "修改未完整完成，可能保留部分更改。请查询操作状态并检查 FreeCAD，勿直接重复执行。",
+    unknown: "修改结果尚未确认。请用同一操作编号查询状态，勿换编号重试。",
+    prepared: "操作已准备，尚未派发。",
+    cancelled: "操作在派发前已取消。",
+  };
+  return {
+    ...(!statusOnly && !["committed", "no_op"].includes(result.outcome)
+      ? { isError: true }
+      : {}),
+    content: [{ type: "text", text: messages[result.outcome] }],
+    structuredContent: { ...result },
+  };
+}
+
 export function createCadService(options: CadServiceOptions): CadService {
   const guiProbe = options.guiProbe ?? createMacosCadGuiProbe();
   const guiDocumentReader =
     options.guiDocumentReader ??
     createMacosCadGuiDocumentReader({ probe: guiProbe });
+  const guiOperations =
+    options.guiOperationController ??
+    (options.guiOperationStore
+      ? createCadGuiOperationController({
+          store: options.guiOperationStore,
+          probe: guiProbe,
+        })
+      : null);
   const invocations = new Map<
     string,
     {
@@ -552,7 +609,8 @@ export function createCadService(options: CadServiceOptions): CadService {
     payload:
       | CadRequest
       | { action: "gui-documents"; application: CadGuiApplication }
-      | { action: "gui-inspect"; input: CadGuiInspectDocumentInput },
+      | { action: "gui-inspect"; input: CadGuiInspectDocumentInput }
+      | { action: "gui-set-properties"; input: CadGuiSetPropertiesInput },
     context: ToolExecutionContext,
     operation: (
       context: ToolExecutionContext,
@@ -633,7 +691,10 @@ export function createCadService(options: CadServiceOptions): CadService {
     await activeGuard(context);
     return {
       content: [{ type: "text", text: summary(snapshot) }],
-      structuredContent: { ...snapshot, currentDocumentControl: false },
+      structuredContent: {
+        ...snapshot,
+        currentDocumentControl: Boolean(guiOperations),
+      },
     };
   };
   return {
@@ -676,7 +737,10 @@ export function createCadService(options: CadServiceOptions): CadService {
                 : "没有运行中的 FreeCAD 应用。",
             },
           ],
-          structuredContent: { applications, currentDocumentControl: false },
+          structuredContent: {
+            applications,
+            currentDocumentControl: Boolean(guiOperations),
+          },
         };
       });
     },
@@ -707,6 +771,93 @@ export function createCadService(options: CadServiceOptions): CadService {
             (snapshot) => `已读取 ${snapshot.objects.length} 个对象。`,
           ),
       );
+    },
+    guiSetProperties(input, context) {
+      const target = structuredClone(input);
+      return invoke(
+        { action: "gui-set-properties", input: target },
+        context,
+        async (context, activeGuard) => {
+          let mutationPossible = false;
+          try {
+            await activeGuard(context);
+            const handle = requireCadContext(context);
+            const scope = handle.describe();
+            if (scope.sandboxMode === "read-only")
+              throw new CadError(
+                "forbidden",
+                "当前 Task 仅允许读取，不能修改 FreeCAD 文档。",
+              );
+            if (!guiOperations)
+              throw new CadError(
+                "operation_storage_unavailable",
+                "CAD 操作存储尚未就绪，请重新启动应用后重试。",
+              );
+            const { limits, timeoutMs } = await options.resolveLimits(context);
+            await activeGuard(context);
+            mutationPossible = true;
+            const result = await guiOperations.execute(
+              target,
+              {
+                instanceId: scope.instanceId,
+                projectId: scope.projectId,
+                taskId: scope.taskId,
+                scopeGeneration: scope.generation,
+                branchGeneration: handle.branchGeneration,
+                runId: context.runId ?? "",
+                toolCallId: context.toolCallId ?? "",
+              },
+              {
+                ...(context.signal ? { signal: context.signal } : {}),
+                timeoutMs: timeoutMs ?? 60_000,
+                maxOutputBytes: limits.maxOutputBytes,
+              },
+              () => activeGuard(context),
+            );
+            await activeGuard(context);
+            return guiOperationResult(result);
+          } catch (error) {
+            const result = onFailure(error, context);
+            return {
+              ...result,
+              structuredContent: {
+                ...result.structuredContent,
+                operationId: target.operationId,
+                outcome: mutationPossible ? "unknown" : "rejected",
+              },
+            };
+          }
+        },
+      ).then((result) =>
+        result.isError && !result.structuredContent.operationId
+          ? {
+              ...result,
+              structuredContent: {
+                ...result.structuredContent,
+                operationId: target.operationId,
+                outcome: "unknown",
+              },
+            }
+          : result,
+      );
+    },
+    guiOperationStatus(operationId, context) {
+      return lifecycle.run(context, async (context) => {
+        await guard(context);
+        if (!guiOperations)
+          throw new CadError(
+            "operation_storage_unavailable",
+            "CAD 操作存储尚未就绪，请重新启动应用后重试。",
+          );
+        const scope = requireCadContext(context).describe();
+        const result = await guiOperations.status({
+          instanceId: scope.instanceId,
+          taskId: scope.taskId,
+          operationId,
+        });
+        await guard(context);
+        return guiOperationResult(result, true);
+      });
     },
     execute(request, context) {
       return invoke(request, context, (context, guard) =>

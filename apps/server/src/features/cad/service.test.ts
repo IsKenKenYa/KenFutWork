@@ -1004,6 +1004,8 @@ describe("官方 CAD Task 执行", () => {
       ["cad_gui_status", "shared", "deferred", undefined],
       ["cad_gui_documents", "shared", "deferred", "cad-gui-inspect"],
       ["cad_gui_inspect_document", "shared", "deferred", "cad-gui-inspect"],
+      ["cad_gui_set_properties", "shared", "deferred", "cad-gui-mutate"],
+      ["cad_gui_operation_status", "shared", "deferred", undefined],
       ["cad_describe_document", "shared", "deferred", "cad-describe"],
       ["cad_create_primitive", "shared", "deferred", "cad-primitive"],
       ["cad_apply_operations", "shared", "deferred", "cad-operations"],

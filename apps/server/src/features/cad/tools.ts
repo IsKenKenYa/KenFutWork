@@ -8,6 +8,10 @@ import {
   cadGuiDocumentsInputSchema,
   cadGuiInspectDocumentInputSchema,
 } from "./gui-document-contracts.js";
+import {
+  cadGuiOperationStatusInputSchema,
+  cadGuiSetPropertiesInputSchema,
+} from "./gui-operation-contracts.js";
 import type { CadService, CadToolResult } from "./service.js";
 import {
   cadDescribeInputSchema,
@@ -88,6 +92,22 @@ export function createCadTools(service: CadService): ToolDefinition[] {
       schema: cadGuiInspectDocumentInputSchema,
       approvalReviewKind: "cad-gui-inspect",
       execute: (input, context) => service.guiInspectDocument(input, context),
+    }),
+    definition({
+      name: "cad_gui_set_properties",
+      description:
+        "在当前 FreeCAD GUI 的活动文档中修改直接标量属性，尚不保存文件。先读取文档快照和指定对象属性，原样提供完整应用身份、桥代际、打开句柄、两个预期修订，以及每项 expectedValue/value；Quantity使用内部基础数值及八维单位签名。整批先校验，拒绝只读/不可变、转发属性、表达式绑定目标、枚举和复杂属性；可修改表达式的驱动属性。默认修改后重算，正常提交一条撤销记录；不承诺任意原生回调的事务原子性。外部GUI不继承Task OS沙箱，独立执行审批；仅固定操作，不接模型Python。operationId是持久幂等编号，同一请求重放沿用原编号。返回partial/unknown、停止或超时时，先用cad_gui_operation_status查询同一编号并检查现场，不换新编号盲重试，不自动撤销、保存或关闭用户工程。",
+      schema: cadGuiSetPropertiesInputSchema,
+      approvalReviewKind: "cad-gui-mutate",
+      execute: (input, context) => service.guiSetProperties(input, context),
+    }),
+    definition({
+      name: "cad_gui_operation_status",
+      description:
+        "读取当前Task内持久CAD操作的状态和原回执。只接受原operationId；不连接、重发或启动FreeCAD，不要求原GUI仍存活。已认领但无有效回执的操作保持unknown；取消请求不等于已回滚。重启、插件停用或Run结束不会删除操作记录。",
+      schema: cadGuiOperationStatusInputSchema,
+      execute: (input, context) =>
+        service.guiOperationStatus(input.operationId, context),
     }),
     definition({
       name: "cad_describe_document",

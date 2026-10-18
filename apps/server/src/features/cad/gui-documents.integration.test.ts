@@ -14,6 +14,7 @@ import { z } from "zod";
 import { runJxa } from "../computer-use/jxa.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
 import type { CadGuiApplication } from "./gui-document-contracts.js";
+import { createCadGuiOperationStore } from "./gui-operation-store.js";
 import { createMacosCadGuiProbe } from "./gui-probe.js";
 import { createMacosCadGuiTransport } from "./gui-transport.js";
 import { detectFreeCadRuntime } from "./runtime.js";
@@ -46,7 +47,7 @@ test.skipIf(
   process.platform !== "darwin" ||
     process.env.KENFUTWORK_CAD_GUI_DOCUMENTS_INTEGRATION !== "1",
 )(
-  "独立GUI经真实Task工具查询保存及未保存文档，保留事务/脏状态/源字节且正常退出",
+  "独立GUI经Task工具检查与修改属性，重放不重复执行且不保存源文件",
   async () => {
     const root = await realpath(
       await mkdtemp("/private/tmp/kfw-gui-document-"),
@@ -97,7 +98,7 @@ def prepare():
     os.replace(${JSON.stringify(readyTemporary)},${JSON.stringify(readyPath)})
 QtCore.QTimer.singleShot(0,prepare)
 # 测试宿主失联时也只清理本实例的自有文档，绝不按PID杀其它应用。
-QtCore.QTimer.singleShot(90000,lambda:exec(compile(open(${JSON.stringify(cleanupPath)},encoding='utf-8').read(),'kfw-fixture-cleanup','exec'),{}))
+QtCore.QTimer.singleShot(180000,lambda:exec(compile(open(${JSON.stringify(cleanupPath)},encoding='utf-8').read(),'kfw-fixture-cleanup','exec'),{}))
 `,
       { mode: 0o600 },
     );
@@ -199,6 +200,7 @@ JSON.stringify({count:Number(apps.count),target: a.isNil() ? null : {
       const service = createCadService({
         sandbox: work,
         guiProbe: probe,
+        guiOperationStore: createCadGuiOperationStore({ rootDirectory: root }),
         gate: async () => ({ ok: true }),
         resolveLimits: async () => ({
           limits: cadTestLimits,
@@ -219,7 +221,7 @@ JSON.stringify({count:Number(apps.count),target: a.isNil() ? null : {
             expect.objectContaining(doc),
           ),
         ),
-        currentDocumentControl: false,
+        currentDocumentControl: true,
       });
       const second = await executeCadTestTool(
         tool,
@@ -506,6 +508,183 @@ QtCore.QTimer.singleShot(0,apply_fixture_step)
       expect(restored.documents.map((doc) => doc.documentHandle)).not.toContain(
         resetSaved?.documentHandle,
       );
+      await mutateFixture(
+        "if owned[1].HasPendingTransaction: owned[1].abortTransaction()\nApp.setActiveDocument(owned[0].Name)",
+      );
+      const setTool = createCadTools(service).find(
+        (entry) => entry.name === "cad_gui_set_properties",
+      );
+      const statusTool = createCadTools(service).find(
+        (entry) => entry.name === "cad_gui_operation_status",
+      );
+      if (!setTool || !statusTool)
+        throw new Error("缺少受控写入或持久状态工具");
+      let operationSequence = 0;
+      const quantity = (value: number) => ({
+        kind: "quantity",
+        value,
+        unitSignature: [1, 0, 0, 0, 0, 0, 0, 0],
+      });
+      const currentTarget = async () => {
+        const latest = await executeCadTestTool(
+          tool,
+          { application },
+          { ...context, toolCallId: `edit-observe-${++operationSequence}` },
+        );
+        expect(latest.isError, JSON.stringify(latest)).not.toBe(true);
+        const observation = observations.parse(latest.structuredContent);
+        const document = observation.documents.find(
+          (doc) => doc.name === saved.name,
+        );
+        if (!document) throw new Error("自有编辑文档已离开实例");
+        return {
+          application,
+          bridgeEpoch: observation.bridgeEpoch,
+          documentHandle: document.documentHandle,
+          expectedApplicationRevision: observation.applicationRevision,
+          expectedDocumentRevision: document.revision,
+        };
+      };
+      const editInput = {
+        ...(await currentTarget()),
+        operationId: randomUUID(),
+        changes: [
+          {
+            objectName: "Box",
+            propertyName: "Length",
+            expectedValue: quantity(20),
+            value: quantity(25),
+          },
+        ],
+      };
+      const changedProperties = await executeCadTestTool(setTool, editInput, {
+        ...context,
+        toolCallId: "set-gui-length",
+      });
+      expect(
+        changedProperties.isError,
+        JSON.stringify(changedProperties),
+      ).not.toBe(true);
+      expect(changedProperties.structuredContent).toMatchObject({
+        operationId: editInput.operationId,
+        outcome: "committed",
+        state: "terminal",
+        receipt: {
+          mutationStarted: true,
+          commitAttempted: true,
+          commitObserved: true,
+          transactionState: "none",
+        },
+      });
+      await mutateFixture(
+        "doc=owned[0]\nassert doc.getObject('Box').Length.Value==25\nassert doc.getObject('Box').Width.Value==50\nassert dict(doc.getObject('Box').ExpressionEngine).get('Width')=='Length * 2'\nassert not doc.HasPendingTransaction\nbuiltins.__kfw_edit_undo_count__=len(doc.UndoNames)",
+      );
+      const noOpInput = {
+        ...(await currentTarget()),
+        operationId: randomUUID(),
+        changes: [
+          {
+            objectName: "Box",
+            propertyName: "Length",
+            expectedValue: quantity(25),
+            value: quantity(25),
+          },
+        ],
+      };
+      const noOp = await executeCadTestTool(setTool, noOpInput, {
+        ...context,
+        toolCallId: "set-gui-noop",
+      });
+      expect(noOp.isError, JSON.stringify(noOp)).not.toBe(true);
+      expect(noOp.structuredContent).toMatchObject({
+        outcome: "no_op",
+        receipt: {
+          mutationStarted: false,
+          commitAttempted: false,
+          commitObserved: false,
+        },
+      });
+      for (const changes of [
+        [
+          {
+            objectName: "Box",
+            propertyName: "Width",
+            expectedValue: quantity(50),
+            value: quantity(30),
+          },
+        ],
+        [
+          {
+            objectName: "Box",
+            propertyName: "ReadOnlyCount",
+            expectedValue: 4,
+            value: 7,
+          },
+        ],
+        [
+          {
+            objectName: "Box",
+            propertyName: "Length",
+            expectedValue: quantity(25),
+            value: quantity(30),
+          },
+          {
+            objectName: "Box",
+            propertyName: "FrozenNote",
+            expectedValue: "不可修改",
+            value: "替换",
+          },
+        ],
+      ]) {
+        const rejected = await executeCadTestTool(
+          setTool,
+          { ...(await currentTarget()), operationId: randomUUID(), changes },
+          { ...context, toolCallId: `set-gui-reject-${++operationSequence}` },
+        );
+        expect(rejected.isError, JSON.stringify(rejected)).toBe(true);
+        expect(rejected.structuredContent).toMatchObject({
+          outcome: "rejected",
+          receipt: { mutationStarted: false, commitObserved: false },
+        });
+      }
+      const restarted = createCadService({
+        sandbox: work,
+        guiProbe: probe,
+        guiOperationStore: createCadGuiOperationStore({ rootDirectory: root }),
+        gate: async () => ({ ok: true }),
+        resolveLimits: async () => ({
+          limits: cadTestLimits,
+          timeoutMs: 10_000,
+        }),
+      });
+      activateCadTestService(restarted);
+      try {
+        const replay = createCadTools(restarted).find(
+          (entry) => entry.name === "cad_gui_set_properties",
+        );
+        if (!replay) throw new Error("重启服务缺少受控修改工具");
+        const replayed = await executeCadTestTool(replay, editInput, {
+          ...context,
+          toolCallId: "replay-gui-length",
+        });
+        expect(replayed.isError, JSON.stringify(replayed)).not.toBe(true);
+        expect(replayed.structuredContent).toEqual(
+          changedProperties.structuredContent,
+        );
+        const persisted = await executeCadTestTool(
+          statusTool,
+          { operationId: editInput.operationId },
+          { ...context, toolCallId: "status-gui-length" },
+        );
+        expect(persisted.structuredContent).toEqual(
+          changedProperties.structuredContent,
+        );
+      } finally {
+        await restarted.dispose();
+      }
+      await mutateFixture(
+        "doc=owned[0]\nassert doc.getObject('Box').Length.Value==25\nassert doc.getObject('Box').Width.Value==50\nassert not doc.HasPendingTransaction\nassert len(doc.UndoNames)==builtins.__kfw_edit_undo_count__, 'replay/noop/rejected operation changed undo history'",
+      );
       expect(
         createHash("sha256")
           .update(await readFile(savedPath))
@@ -552,5 +731,5 @@ QtCore.QTimer.singleShot(0,apply_fixture_step)
       else console.error(`GUI文档原生验收诊断目录：${root}`);
     }
   },
-  120_000,
+  210_000,
 );

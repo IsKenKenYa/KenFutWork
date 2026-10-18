@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import { createProcessSandbox } from "../process-sandbox/service.js";
 import type { CadGuiDocumentsSnapshot } from "./gui-document-contracts.js";
+import type { CadGuiOperationResult } from "./gui-operation-controller.js";
 import { createCadService } from "./service.js";
 import {
   activateCadTestService,
@@ -80,10 +81,21 @@ async function fixture() {
     read: vi.fn(async () => snapshot),
     inspect: vi.fn(async () => inspection),
   };
+  const operationResult: CadGuiOperationResult = {
+    operationId: "b357cc8d-e5a1-4a3e-b23f-c145e99f163d",
+    state: "terminal",
+    outcome: "committed",
+    cancellationRequested: false,
+  };
+  const operations = {
+    execute: vi.fn(async () => operationResult),
+    status: vi.fn(async () => operationResult),
+  };
   let installed = true;
   const service = createCadService({
     sandbox,
     guiDocumentReader: reader,
+    guiOperationController: operations,
     gate: async () => ({ ok: installed }),
     resolveLimits: async () => ({ limits: cadTestLimits, timeoutMs: 30_000 }),
   });
@@ -95,6 +107,8 @@ async function fixture() {
     inspection,
     target,
     reader,
+    operations,
+    operationResult,
     service,
     spawn,
     disableGate() {
@@ -218,6 +232,108 @@ test("GUI 对象读取不以文档句柄绕过 Task 只读或插件安装状态"
   expect(disabled.reader.inspect).not.toHaveBeenCalled();
 });
 
+test("GUI 受控写入使用单独执行审批，持久操作状态查询不接入外部应用", async () => {
+  const f = await fixture();
+  const tool = createCadTools(f.service).find(
+    (entry) => entry.name === "cad_gui_set_properties",
+  );
+  expect(tool).toMatchObject({
+    access: "execute",
+    approvalReviewKind: "cad-gui-mutate",
+  });
+  if (!tool) throw new Error("缺少当前文档受控修改工具");
+  const input = {
+    ...f.target,
+    operationId: f.operationResult.operationId,
+    changes: [
+      {
+        objectName: "Box",
+        propertyName: "Label",
+        expectedValue: "Box",
+        value: "零件",
+      },
+    ],
+  };
+  expect(await tool.execute(input, f.context)).toMatchObject({
+    structuredContent: f.operationResult,
+  });
+  expect(f.operations.execute).toHaveBeenCalledWith(
+    { ...input, recompute: true },
+    expect.objectContaining({
+      instanceId: f.scope.instanceId,
+      projectId: f.scope.projectId,
+      taskId: f.scope.taskId,
+      scopeGeneration: f.scope.generation,
+      branchGeneration: 1,
+      runId: f.context.runId,
+      toolCallId: f.context.toolCallId,
+    }),
+    expect.objectContaining({
+      signal: expect.any(AbortSignal),
+      timeoutMs: 30_000,
+    }),
+    expect.any(Function),
+  );
+  const status = createCadTools(f.service).find(
+    (entry) => entry.name === "cad_gui_operation_status",
+  );
+  expect(status).toMatchObject({ access: "read" });
+  if (!status) throw new Error("缺少持久操作状态工具");
+  expect(
+    await status.execute(
+      { operationId: input.operationId },
+      { ...f.context, toolCallId: "status" },
+    ),
+  ).toMatchObject({
+    structuredContent: f.operationResult,
+  });
+  expect(f.operations.status).toHaveBeenCalledWith({
+    instanceId: f.scope.instanceId,
+    taskId: f.scope.taskId,
+    operationId: input.operationId,
+  });
+  expect(f.spawn).not.toHaveBeenCalled();
+  expect(f.reader.read).not.toHaveBeenCalled();
+  expect(f.reader.inspect).not.toHaveBeenCalled();
+});
+
+test("GUI 写入拒绝只读Task；迟到写入回执仍保留操作编号供查询", async () => {
+  const f = await fixture();
+  const input = {
+    ...f.target,
+    operationId: f.operationResult.operationId,
+    changes: [
+      {
+        objectName: "Box",
+        propertyName: "Label",
+        expectedValue: "Box",
+        value: "零件",
+      },
+    ],
+    recompute: true,
+  };
+  const tool = createCadTools(f.service).find(
+    (entry) => entry.name === "cad_gui_set_properties",
+  );
+  if (!tool) throw new Error("缺少当前文档受控修改工具");
+  f.stored.scope.sandboxMode = "read-only";
+  expect(await tool.execute(input, f.context)).toMatchObject({ isError: true });
+  expect(f.operations.execute).not.toHaveBeenCalled();
+  const late = await fixture();
+  late.operations.execute.mockImplementation(async () => {
+    late.stored.scope.generation++;
+    return late.operationResult;
+  });
+  const lateTool = createCadTools(late.service).find(
+    (entry) => entry.name === "cad_gui_set_properties",
+  );
+  if (!lateTool) throw new Error("缺少当前文档受控修改工具");
+  expect(await lateTool.execute(input, late.context)).toMatchObject({
+    isError: true,
+    structuredContent: { operationId: input.operationId, outcome: "unknown" },
+  });
+});
+
 test("通过现有Task与安装门控查询文档元数据，GUI不冒充Task沙箱进程", async () => {
   const f = await fixture();
   const tool = createCadTools(f.service).find(
@@ -226,7 +342,7 @@ test("通过现有Task与安装门控查询文档元数据，GUI不冒充Task沙
   if (!tool) throw new Error("缺少当前文档工具消费方");
   const result = await tool.execute({ application: f.application }, f.context);
   expect(result).toMatchObject({
-    structuredContent: { ...f.snapshot, currentDocumentControl: false },
+    structuredContent: { ...f.snapshot, currentDocumentControl: true },
   });
   expect(f.reader.read).toHaveBeenCalledWith(
     f.application,

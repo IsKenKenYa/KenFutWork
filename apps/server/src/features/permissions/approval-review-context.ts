@@ -3,6 +3,7 @@ import {
   cadGuiDocumentsInputSchema,
   cadGuiInspectDocumentInputSchema,
 } from "../cad/gui-document-contracts.js";
+import { cadGuiSetPropertiesInputSchema } from "../cad/gui-operation-contracts.js";
 import {
   cadDescribeInputSchema,
   cadExportInputSchema,
@@ -19,6 +20,7 @@ const operationSchemas = {
     cadGuiDocumentsInputSchema,
     cadGuiInspectDocumentInputSchema,
   ]),
+  "cad-gui-mutate": cadGuiSetPropertiesInputSchema,
   "cad-python": cadPythonInputSchema,
   "cad-primitive": cadPrimitiveInputSchema,
   "cad-operations": cadOperationsInputSchema,
@@ -98,6 +100,32 @@ function guiInspectionBoundary(args: Record<string, unknown>) {
   };
 }
 
+const CAD_GUI_MUTATION_EXECUTION_BOUNDARY = {
+  kind: "external-gui",
+  taskOsSandboxEnforced: false,
+  documentAccess: "write-selected-scalar-properties",
+  effects: [
+    "execute-fixed-macro",
+    "change-file-dialog-working-directory",
+    "observe-document-events",
+    "execute-property-getters",
+    "set-property-values",
+    "recompute-if-requested",
+    "commit-native-transaction",
+  ],
+  applicationIdentity: "untrusted-until-dispatch-verification",
+  documentIdentity: "untrusted-until-epoch-handle-revision-and-values-verified",
+  operationIdAuthority: "idempotency-only",
+  rollbackGuaranteed: false,
+  savesSourceFile: false,
+  excludedOperations: [
+    "arbitrary-python",
+    "save",
+    "close-document",
+    "automatic-undo",
+  ],
+} as const;
+
 const inputSchema = z
   .object({
     kind: z.enum([
@@ -112,6 +140,7 @@ const inputSchema = z
       "cad-describe",
       "cad-preview",
       "cad-gui-inspect",
+      "cad-gui-mutate",
     ]),
     args: z.record(z.string(), z.unknown()),
     userRequest: z.string(),
@@ -195,7 +224,13 @@ export function approvalReviewEvidence(input: {
       ? {
           executionBoundary: guiInspectionBoundary(operation.data),
         }
-      : {}),
+      : context.kind === "cad-gui-mutate"
+        ? {
+            executionBoundary: structuredClone(
+              CAD_GUI_MUTATION_EXECUTION_BOUNDARY,
+            ),
+          }
+        : {}),
     untrustedData: {
       userRequest: context.userRequest,
       workspace: {

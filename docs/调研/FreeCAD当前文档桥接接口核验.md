@@ -106,7 +106,7 @@ latest.json             04c9eca94eb205cddbdc49826c78c9de45ec86713b5962c440bdead1
 
 ## 7. 未验证项与下一批验收要求
 
-- 持久 `QLocalServer` bridge 尚未实现；固定宏查询切片见第 8 节，不能据此声称持久桥、文档编辑句柄或任意 GUI Python 已交付。
+- 持久 `QLocalServer` bridge 尚未实现；已交付的逐次固定宏查询／观察／检查／属性写入见第8—11节，不能据此声称持久server或任意GUI Python已交付。
 - 未在用户当前 GUI 加载桥或建立连接；不默认恢复 AX 自动化。Qt 6.8.3 的既有崩溃证据与未证实因果仍见原调研 §9.16；避免 AX 不等于修复了 Qt。
 - `--hidden`、独立目录和 Qt socket 规则有源码依据；本轮没有另做隐藏实例启动、恶意 peer、socket 替换、请求排队或回执后长期存活验收。
 - Windows／Linux 的控制与身份机制需各自验证；不能照搬 macOS peer PID 常量、Unix 地址或权限结论。
@@ -134,7 +134,7 @@ KENFUTWORK_CAD_GUI_DOCUMENTS_INTEGRATION=1 pnpm --filter @kenfutwork/server exec
 
 App 观察器能收到创建／删除、文档及对象属性、重算、文档 undo／redo、事务与保存事件；无文档参数的事件只增加全局观察计数。Gui ViewProvider 的删除／退出编辑参数可能正在失效，本实现完全不解引用，只计全局事件。回调源与签名见 [App 观察器](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentObserverPython.cpp)、[Gui 观察器](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Gui/DocumentObserverPython.cpp)。
 
-**事件不完整，不能包装成内容版本。** `DocumentObject::touch()` 没有该 Python observer 接线，GUI Modified setter 也不发观察事件；查询重读 primitive 元数据的差异会补增计数，但无法发现两次查询间改动后恢复原值。相机、选区和恢复完成也不由这些回调完整表达。见 [DocumentObject.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentObject.cpp)、[Gui Document.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Gui/Document.cpp)。当前只返回观察标识，不授权编辑；将来的固定操作还须复验原生状态、事务与预期属性。
+**事件不完整，不能包装成内容版本。** `DocumentObject::touch()` 没有该 Python observer 接线，GUI Modified setter 也不发观察事件；查询重读 primitive 元数据的差异会补增计数，但无法发现两次查询间改动后恢复原值。相机、选区和恢复完成也不由这些回调完整表达。见 [DocumentObject.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentObject.cpp)、[Gui Document.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Gui/Document.cpp)。观察器本身只返回标识，不授权编辑；固定写入还须复验原生状态、事务与预期属性。
 
 同一独立 GUI、真实 Task 的回绕验收已通过：连续查询保持代际／句柄／计数不变；自有夹具改尺寸并重算、undo、对象 touch、清除 Modified 后均观察到对应计数变化；关闭后重开同名同 UID 的 FCStd，旧句柄消失、新句柄不同，源文件 SHA-256 不变。测试中的修改来自专用夹具宏，产品工具仍只有元数据查询，不将该结果称为受控编辑交付。合法失败 ACK 不签发桥身份并可清理请求，迟到／畸形／旧协议回执仍拒绝。
 
@@ -150,3 +150,16 @@ App 观察器能收到创建／删除、文档及对象属性、重算、文档 
 安装版 FreeCAD 1.1.4 的 `getEditorMode` 是字符串列表，`getPropertyStatus` 混合字符串与数字，数字并不一律代表只读；文档没有 `.State`、ViewObject 没有 `ShapeColor`，未按旧文档猜接。读取以明确的 `ReadOnly`／`Immutable` 标志识别不可编辑属性，仅阻止表达式绑定的目标属性，保留 Length 驱动 Width 的形态。Quantity 返回八维单位签名；枚举只读并标明后续需要候选值验证。
 
 同一隔离 GUI 的真实 Task 工具验收通过：默认只列 Box；指定 Box 返回 Length=20 mm、Width=40 mm 及 `Length * 2`、只读整数、不可变字符串、布尔／字符串和枚举值；缺失对象、改变尺寸后的旧修订均拒绝。读取后观察快照和源 FCStd SHA-256 不变，随后既有 undo、touch、重开、同 wrapper clear／restore 回绕仍通过。运行时间约33秒；仅操作自有实例，没有用户现存 GUI／AX 验收。该结果不代表受控写入、保存或撤销已完成。
+
+
+## 11. 持久属性写入与原生事务
+
+`cad_gui_set_properties` 的固定提供方代码已能实际修改当前活动文档，`cad_gui_operation_status` 仅读持久结果。请求和模型参数不能携带宏路径或源码。GUI 内执行仍不继承 Task OS 沙箱，使用独立 `cad-gui-mutate` 审批；结构化预检检查原生状态、所有者、类型、标志、表达式与预期值，全部通过才开启唯一事务。原生类型及单位已由第10节本机证据核对，枚举和带 Python Proxy 的对象暂不支持该固定写入，完整后台 Python 保持可用。
+
+安装版真实后台 Task 事务探针确认：`getActiveTransaction()` 初始为 None，`setActiveTransaction(name, True)` 返回整数ID，读取活动事务得到 `(name, id)`；此时文档尚无 pending，首项属性改动才创建 pending 及 `UndoNames[0]`。正常 `doc.commitTransaction()` 后全局活动事务为 None、pending 为 False，撤销名保留。回调顺序是 `slotBeforeCloseTransaction(False)`、`slotCommitTransaction(doc)`、`slotCloseTransaction(False)`；commit回调时活动事务已清空，不判成外来事务。正常 Length 赋值会触发多次 Shape 改变，重算还会触发 Shape 与文档重算事件。固定版本源码中的全局事务关闭及其多文档影响见 [Application.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/Application.cpp) 和 [Document.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/Document.cpp)。
+
+短寿命操作观察器只捕获原始wrapper和primitive参数，不解引用删除对象；正常事务和已确认派生变化允许通过。操作在原生调用之间检查目标、控制文件身份、取消／过期和事务；夹取、意外回调或控制路径丢失即停止后续步骤，保留现场。不会在 finally 盲目 abort／undo，不把全局事务ID当 CAS 锁，不关闭后来出现的事务。`partial` 与 `unknown` 均需查询原操作并检查现场，不能解释为已回滚。
+
+派发与执行各有持久认领，文件写齐和fsync后再用硬链接独占发布；重复宏不覆盖首回执。准备时间不因重启延长，已有认领无回执永不自动重发。只有严格匹配原请求及行为语义的回执才报告成功。FreeCAD提交与磁盘回执落盘之间仍有不可消除的未知窗口，不能宣称最终恰好一次。
+
+本机独立 GUI 的 Task 工具完整链约48秒通过：Length 20→25mm、Width绑定重算为50mm；no-op不增加撤销记录；绑定目标、只读属性及“第一项有效、第二项不可变”的混合批均零写；重建服务和store后同一编号返回原回执，撤销记录未增加，源FCStd SHA-256不变。原生验收未覆盖任意工作台回调、全部FreeCAD属性或用户现存GUI；部分失败、取消、无回执及回执落盘失败另由固定源码与控制器边界测试验证。保存、副本发布和显式撤销仍未交付。

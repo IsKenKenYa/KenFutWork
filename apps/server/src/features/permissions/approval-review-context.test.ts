@@ -148,6 +148,48 @@ it("GUI 对象读取审批包含精确目标和属性 getter 的外部执行事�
     ).toBeUndefined();
 });
 
+it("GUI 受控修改审批明确原位写入、重算与事务边界，不把幂等编号当授权", () => {
+  const args = {
+    application: guiApplication(),
+    bridgeEpoch: "b1ff2ef8-0854-40c9-9da8-c9ff07bfb219",
+    documentHandle: "28686cba-59d6-44c3-a30c-bbca88a7d737",
+    expectedApplicationRevision: 2,
+    expectedDocumentRevision: 3,
+    operationId: "b357cc8d-e5a1-4a3e-b23f-c145e99f163d",
+    changes: [
+      {
+        objectName: "Box",
+        propertyName: "Label",
+        expectedValue: "Box",
+        value: "零件",
+      },
+    ],
+  };
+  expect(approvalReviewEvidence(input("cad-gui-mutate", args))).toMatchObject({
+    executionBoundary: {
+      taskOsSandboxEnforced: false,
+      documentAccess: "write-selected-scalar-properties",
+      rollbackGuaranteed: false,
+      savesSourceFile: false,
+      operationIdAuthority: "idempotency-only",
+      effects: expect.arrayContaining([
+        "set-property-values",
+        "commit-native-transaction",
+      ]),
+    },
+    untrustedData: { operation: { args: { ...args, recompute: true } } },
+  });
+  for (const extra of [
+    { source: "unsafe()" },
+    { changes: [] },
+    { changes: [args.changes[0], args.changes[0]] },
+    { operationId: "not-an-operation-id" },
+  ])
+    expect(
+      approvalReviewEvidence(input("cad-gui-mutate", { ...args, ...extra })),
+    ).toBeUndefined();
+});
+
 it("GUI 调用参数不能签发审批边界，注入文字仍留在不可信应用字段", () => {
   const application = guiApplication();
   const executionBoundary = {
